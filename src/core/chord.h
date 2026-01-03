@@ -11,6 +11,7 @@ namespace midisketch {
 struct Chord {
   std::array<int8_t, 4> intervals;  // Semitones from root
   uint8_t note_count;               // Number of notes in chord
+  bool is_diminished;               // True for diminished chords (vii°)
 };
 
 // Chord progression pattern (4 chords per pattern).

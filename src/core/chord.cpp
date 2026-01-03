@@ -57,9 +57,18 @@ const char* PROGRESSION_DISPLAYS[16] = {
 Chord buildChord(int8_t degree) {
   Chord c{};
   c.note_count = 3;
+  c.is_diminished = false;
 
-  // Determine major/minor quality
-  bool is_minor = (degree == 1 || degree == 2 || degree == 5 || degree == 6);
+  // vii is diminished (0, 3, 6) - minor 3rd + diminished 5th
+  if (degree == 6) {
+    c.intervals = {0, 3, 6, -1};  // Diminished triad
+    c.is_diminished = true;
+    return c;
+  }
+
+  // Determine major/minor quality for other degrees
+  // ii, iii, vi are minor; I, IV, V, bVII are major
+  bool is_minor = (degree == 1 || degree == 2 || degree == 5);
 
   if (is_minor) {
     c.intervals = {0, 3, 7, -1};  // Minor triad

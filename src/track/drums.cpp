@@ -25,6 +25,234 @@ constexpr Tick SIXTEENTH = TICKS_PER_BEAT / 4;
 // Ghost note velocity multiplier
 constexpr float GHOST_VEL = 0.45f;
 
+// Fill types for section transitions
+enum class FillType {
+  SnareRoll,      // Snare roll building up
+  TomDescend,     // High -> Mid -> Low tom roll
+  TomAscend,      // Low -> Mid -> High tom roll
+  SnareTomCombo,  // Snare with tom accents
+  SimpleCrash     // Just a crash (for sparse styles)
+};
+
+// Select fill type based on section transition and style
+FillType selectFillType(SectionType from, SectionType to, DrumStyle style,
+                        std::mt19937& rng) {
+  // Sparse style: simple crash only
+  if (style == DrumStyle::Sparse) {
+    return FillType::SimpleCrash;
+  }
+
+  // Determine energy level of transition
+  bool to_chorus = (to == SectionType::Chorus);
+  bool from_intro = (from == SectionType::Intro);
+  bool high_energy = (style == DrumStyle::Rock || style == DrumStyle::FourOnFloor);
+
+  std::uniform_int_distribution<int> fill_dist(0, 3);
+  int choice = fill_dist(rng);
+
+  // Into Chorus: prefer dramatic fills
+  if (to_chorus) {
+    if (high_energy) {
+      return (choice < 2) ? FillType::TomDescend : FillType::SnareRoll;
+    }
+    return (choice < 2) ? FillType::SnareTomCombo : FillType::TomDescend;
+  }
+
+  // From Intro: lighter fills
+  if (from_intro) {
+    return (choice < 2) ? FillType::SnareRoll : FillType::SimpleCrash;
+  }
+
+  // Default: random selection weighted by style
+  if (high_energy) {
+    switch (choice) {
+      case 0: return FillType::TomDescend;
+      case 1: return FillType::SnareRoll;
+      case 2: return FillType::TomAscend;
+      default: return FillType::SnareTomCombo;
+    }
+  }
+
+  return (choice < 2) ? FillType::SnareRoll : FillType::SnareTomCombo;
+}
+
+// Generate a fill at the given beat
+void generateFill(MidiTrack& track, Tick beat_tick, uint8_t beat,
+                  FillType fill_type, uint8_t velocity) {
+  uint8_t fill_vel = static_cast<uint8_t>(velocity * 0.9f);
+  uint8_t accent_vel = static_cast<uint8_t>(velocity * 0.95f);
+
+  switch (fill_type) {
+    case FillType::SnareRoll:
+      // 32nd note roll on beat 3-4
+      if (beat == 2) {
+        // Beat 3: 4 sixteenth notes
+        for (int i = 0; i < 4; ++i) {
+          uint8_t vel = static_cast<uint8_t>(fill_vel * (0.6f + 0.1f * i));
+          track.addNote(beat_tick + i * SIXTEENTH, SIXTEENTH, SD, vel);
+        }
+      } else if (beat == 3) {
+        // Beat 4: crescendo to accent
+        for (int i = 0; i < 3; ++i) {
+          uint8_t vel = static_cast<uint8_t>(fill_vel * (0.7f + 0.1f * i));
+          track.addNote(beat_tick + i * SIXTEENTH, SIXTEENTH, SD, vel);
+        }
+        track.addNote(beat_tick + 3 * SIXTEENTH, SIXTEENTH, SD, accent_vel);
+      }
+      break;
+
+    case FillType::TomDescend:
+      // High -> Mid -> Low tom roll
+      if (beat == 2) {
+        track.addNote(beat_tick, EIGHTH, SD, fill_vel);
+        track.addNote(beat_tick + EIGHTH, EIGHTH, TOM_H,
+                      static_cast<uint8_t>(fill_vel - 5));
+      } else if (beat == 3) {
+        track.addNote(beat_tick, SIXTEENTH, TOM_H, fill_vel);
+        track.addNote(beat_tick + SIXTEENTH, SIXTEENTH, TOM_M,
+                      static_cast<uint8_t>(fill_vel - 3));
+        track.addNote(beat_tick + EIGHTH, SIXTEENTH, TOM_M,
+                      static_cast<uint8_t>(fill_vel - 5));
+        track.addNote(beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, TOM_L,
+                      accent_vel);
+      }
+      break;
+
+    case FillType::TomAscend:
+      // Low -> Mid -> High tom roll
+      if (beat == 2) {
+        track.addNote(beat_tick, EIGHTH, SD, fill_vel);
+        track.addNote(beat_tick + EIGHTH, EIGHTH, TOM_L,
+                      static_cast<uint8_t>(fill_vel - 5));
+      } else if (beat == 3) {
+        track.addNote(beat_tick, SIXTEENTH, TOM_L, fill_vel);
+        track.addNote(beat_tick + SIXTEENTH, SIXTEENTH, TOM_M,
+                      static_cast<uint8_t>(fill_vel + 3));
+        track.addNote(beat_tick + EIGHTH, SIXTEENTH, TOM_M,
+                      static_cast<uint8_t>(fill_vel + 5));
+        track.addNote(beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, TOM_H,
+                      accent_vel);
+      }
+      break;
+
+    case FillType::SnareTomCombo:
+      // Snare with tom accents
+      if (beat == 2) {
+        track.addNote(beat_tick, EIGHTH, SD, fill_vel);
+        track.addNote(beat_tick + EIGHTH, SIXTEENTH, SD,
+                      static_cast<uint8_t>(fill_vel - 5));
+        track.addNote(beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, TOM_H,
+                      fill_vel);
+      } else if (beat == 3) {
+        track.addNote(beat_tick, SIXTEENTH, TOM_M, fill_vel);
+        track.addNote(beat_tick + SIXTEENTH, SIXTEENTH, SD,
+                      static_cast<uint8_t>(fill_vel - 3));
+        track.addNote(beat_tick + EIGHTH, SIXTEENTH, TOM_L,
+                      static_cast<uint8_t>(fill_vel + 2));
+        track.addNote(beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, BD,
+                      accent_vel);
+      }
+      break;
+
+    case FillType::SimpleCrash:
+      // Just kick on beat 4 for minimal transition
+      if (beat == 3) {
+        track.addNote(beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, BD,
+                      accent_vel);
+      }
+      break;
+  }
+}
+
+// Ghost note positions (16th note subdivision names)
+enum class GhostPosition {
+  E,  // "e" - first 16th after beat (e.g., 1e)
+  A   // "a" - third 16th after beat (e.g., 1a)
+};
+
+// Select ghost note positions based on groove feel
+std::vector<GhostPosition> selectGhostPositions(Mood mood, std::mt19937& rng) {
+  std::vector<GhostPosition> positions;
+
+  // Different grooves prefer different ghost positions
+  bool prefer_e = true;  // Most common position
+  bool prefer_a = false;
+
+  switch (mood) {
+    case Mood::EnergeticDance:
+    case Mood::IdolPop:
+    case Mood::Anthem:
+      // Energetic: both "e" and "a"
+      prefer_e = true;
+      prefer_a = true;
+      break;
+    case Mood::LightRock:
+    case Mood::ModernPop:
+      // Rock/Modern: "e" with occasional "a"
+      prefer_e = true;
+      prefer_a = (std::uniform_real_distribution<float>(0, 1)(rng) < 0.3f);
+      break;
+    case Mood::Ballad:
+    case Mood::Sentimental:
+    case Mood::Chill:
+      // Soft: minimal ghosts
+      prefer_e = (std::uniform_real_distribution<float>(0, 1)(rng) < 0.5f);
+      prefer_a = false;
+      break;
+    default:
+      // Standard: "e" position
+      prefer_e = true;
+      break;
+  }
+
+  if (prefer_e) positions.push_back(GhostPosition::E);
+  if (prefer_a) positions.push_back(GhostPosition::A);
+
+  return positions;
+}
+
+// Calculate ghost note density based on mood and section
+float getGhostDensity(Mood mood, SectionType section) {
+  float base_density = 0.3f;
+
+  // Section adjustment
+  switch (section) {
+    case SectionType::Intro:
+      base_density *= 0.3f;
+      break;
+    case SectionType::A:
+      base_density *= 0.7f;
+      break;
+    case SectionType::B:
+      base_density *= 0.9f;
+      break;
+    case SectionType::Chorus:
+      base_density *= 1.2f;
+      break;
+  }
+
+  // Mood adjustment
+  switch (mood) {
+    case Mood::EnergeticDance:
+    case Mood::IdolPop:
+    case Mood::Anthem:
+      base_density *= 1.3f;
+      break;
+    case Mood::LightRock:
+      base_density *= 1.1f;
+      break;
+    case Mood::Ballad:
+    case Mood::Sentimental:
+    case Mood::Chill:
+      base_density *= 0.4f;
+      break;
+    default:
+      break;
+  }
+
+  return std::min(0.7f, base_density);  // Cap at 70%
+}
+
 // Section-specific kick pattern flags
 struct KickPattern {
   bool beat1;      // Beat 1
@@ -227,23 +455,20 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         uint8_t velocity = calculateVelocity(section.type, beat, params.mood);
 
         // ===== FILLS at section ends =====
-        if (is_section_last_bar && !is_last_section && beat >= 2 &&
-            style != DrumStyle::Sparse) {
-          uint8_t fill_vel = static_cast<uint8_t>(velocity * 0.9f);
+        if (is_section_last_bar && !is_last_section && beat >= 2) {
+          // Determine next section for fill selection
+          SectionType next_section = (sec_idx + 1 < sections.size())
+                                         ? sections[sec_idx + 1].type
+                                         : section.type;
+
+          // Select fill type based on transition
+          static FillType current_fill = FillType::SnareRoll;
           if (beat == 2) {
-            track.addNote(beat_tick, EIGHTH, SD, fill_vel);
-            track.addNote(beat_tick + EIGHTH, EIGHTH, SD,
-                          static_cast<uint8_t>(fill_vel - 10));
-          } else {
-            // Tom fill on beat 4
-            track.addNote(beat_tick, SIXTEENTH, TOM_H, fill_vel);
-            track.addNote(beat_tick + SIXTEENTH, SIXTEENTH, TOM_M,
-                          static_cast<uint8_t>(fill_vel - 5));
-            track.addNote(beat_tick + EIGHTH, SIXTEENTH, TOM_L,
-                          static_cast<uint8_t>(fill_vel - 10));
-            track.addNote(beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, BD,
-                          velocity);
+            current_fill = selectFillType(section.type, next_section, style, rng);
           }
+
+          // Generate the fill
+          generateFill(track, beat_tick, beat, current_fill, velocity);
           continue;
         }
 
@@ -291,12 +516,26 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
 
         // ===== GHOST NOTES =====
         if (use_ghost_notes && (beat == 0 || beat == 2)) {
-          // Ghost note on the "e" of beat 1 and 3 (16th note after)
+          // Get ghost note positions and density based on mood
+          auto ghost_positions = selectGhostPositions(params.mood, rng);
+          float ghost_prob = getGhostDensity(params.mood, section.type);
+
           std::uniform_real_distribution<float> ghost_dist(0.0f, 1.0f);
-          float ghost_prob = (section.type == SectionType::Chorus) ? 0.5f : 0.3f;
-          if (ghost_dist(rng) < ghost_prob) {
-            uint8_t ghost_vel = static_cast<uint8_t>(velocity * GHOST_VEL);
-            track.addNote(beat_tick + SIXTEENTH, SIXTEENTH, SD, ghost_vel);
+
+          for (auto pos : ghost_positions) {
+            if (ghost_dist(rng) < ghost_prob) {
+              uint8_t ghost_vel = static_cast<uint8_t>(velocity * GHOST_VEL);
+              Tick ghost_offset = (pos == GhostPosition::E)
+                                      ? SIXTEENTH            // "e" = 1st 16th
+                                      : (SIXTEENTH * 3);     // "a" = 3rd 16th
+
+              // Slight velocity variation for "a" position
+              if (pos == GhostPosition::A) {
+                ghost_vel = static_cast<uint8_t>(ghost_vel * 0.9f);
+              }
+
+              track.addNote(beat_tick + ghost_offset, SIXTEENTH, SD, ghost_vel);
+            }
           }
         }
 

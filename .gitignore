@@ -22,6 +22,7 @@ _deps/
 *.swo
 *~
 *.bak
+# macOS
 .DS_Store
 
 # Claude Code configuration
@@ -37,6 +38,13 @@ backup/
 # Generated files
 *.log
 *.out
+*.mid
+*.midi
+*.wave
+*.wav
+*.flac
+*.mp3
+*.ogg
 
 # Test outputs (CMake CTest output directory)
 /Testing/
@@ -45,19 +53,14 @@ backup/
 *.gcno
 
 # Binaries (in build directory only)
-/build/suzume
-/build/suzume-cli
+/build
 *.exe
 
 # Compiled dictionaries
 *.dic
 
 # Dictionary cleanup artifacts
-data/core/original/
-data/core/noise/
-data/core/cleaned/
-data/user/original/
-data/user/noise/
+data
 
 # Dependencies
 third_party/*
