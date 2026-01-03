@@ -107,4 +107,40 @@ const char* getMoodName(Mood mood) {
   return "unknown";
 }
 
+DrumStyle getMoodDrumStyle(Mood mood) {
+  switch (mood) {
+    // Sparse - slow, minimal patterns
+    case Mood::Ballad:
+    case Mood::Sentimental:
+    case Mood::Chill:
+      return DrumStyle::Sparse;
+
+    // FourOnFloor - dance patterns
+    case Mood::EnergeticDance:
+    case Mood::ElectroPop:
+    case Mood::IdolPop:
+      return DrumStyle::FourOnFloor;
+
+    // Upbeat - driving patterns
+    case Mood::BrightUpbeat:
+    case Mood::ModernPop:
+    case Mood::Anthem:
+      return DrumStyle::Upbeat;
+
+    // Rock - rock patterns
+    case Mood::LightRock:
+      return DrumStyle::Rock;
+
+    // Standard - default pop patterns
+    case Mood::StraightPop:
+    case Mood::MidPop:
+    case Mood::EmotionalPop:
+    case Mood::DarkPop:
+    case Mood::Dramatic:
+    case Mood::Nostalgic:
+    default:
+      return DrumStyle::Standard;
+  }
+}
+
 }  // namespace midisketch

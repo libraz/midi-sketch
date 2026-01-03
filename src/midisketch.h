@@ -1,8 +1,9 @@
 #ifndef MIDISKETCH_H
 #define MIDISKETCH_H
 
-#include "core/types.h"
 #include "core/generator.h"
+#include "core/song.h"
+#include "core/types.h"
 #include "midi/midi_writer.h"
 
 namespace midisketch {
@@ -22,6 +23,16 @@ class MidiSketch {
   // @param new_seed New random seed (0 = auto)
   void regenerateMelody(uint32_t new_seed = 0);
 
+  // Returns the current melody data (seed + notes).
+  // Use this to save melody candidates for later comparison.
+  // @returns MelodyData containing seed and notes
+  MelodyData getMelody() const;
+
+  // Sets the melody from saved MelodyData.
+  // Replaces the current vocal track with the saved melody.
+  // @param melody MelodyData to apply
+  void setMelody(const MelodyData& melody);
+
   // Returns the MIDI data as a byte vector.
   // @returns MIDI binary data (SMF Type 1)
   std::vector<uint8_t> getMidi() const;
@@ -30,9 +41,9 @@ class MidiSketch {
   // @returns JSON string for playback/display
   std::string getEventsJson() const;
 
-  // Returns the generation result.
-  // @returns Reference to GenerationResult
-  const GenerationResult& getResult() const;
+  // Returns the generated song.
+  // @returns Reference to Song
+  const Song& getSong() const;
 
   // Returns the generation parameters.
   // @returns Reference to GeneratorParams

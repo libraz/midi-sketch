@@ -8,6 +8,9 @@ set(MIDISKETCH_SOURCES
   core/chord.cpp
   core/velocity.cpp
   core/preset_data.cpp
+  core/midi_track.cpp
+  core/arrangement.cpp
+  core/song.cpp
   midi/midi_writer.cpp
   track/track.cpp
   track/vocal.cpp
@@ -15,6 +18,7 @@ set(MIDISKETCH_SOURCES
   track/bass.cpp
   track/drums.cpp
   track/se.cpp
+  track/motif.cpp
 )
 
 # Create static library

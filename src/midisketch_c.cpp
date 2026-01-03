@@ -138,11 +138,11 @@ MidiSketchInfo midisketch_get_info(MidiSketchHandle handle) {
   if (!handle) return info;
 
   auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
-  const auto& result = sketch->getResult();
+  const auto& song = sketch->getSong();
 
-  info.total_bars = midisketch::calculateTotalBars(result.sections);
-  info.total_ticks = result.total_ticks;
-  info.bpm = result.bpm;
+  info.total_bars = song.arrangement().totalBars();
+  info.total_ticks = song.arrangement().totalTicks();
+  info.bpm = song.bpm();
   info.track_count = 4;  // Vocal, Chord, Bass, Drums
 
   return info;

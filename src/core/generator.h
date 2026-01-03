@@ -1,6 +1,7 @@
 #ifndef MIDISKETCH_CORE_GENERATOR_H
 #define MIDISKETCH_CORE_GENERATOR_H
 
+#include "core/song.h"
 #include "core/types.h"
 #include <random>
 
@@ -21,9 +22,28 @@ class Generator {
   // @param new_seed New random seed (0 = auto)
   void regenerateMelody(uint32_t new_seed = 0);
 
-  // Returns the current generation result.
-  // @returns Reference to GenerationResult
-  const GenerationResult& getResult() const { return result_; }
+  // Sets the melody from saved MelodyData.
+  // Replaces the current vocal track with the saved melody.
+  // @param melody MelodyData to apply
+  void setMelody(const MelodyData& melody);
+
+  // Regenerates only the motif track with a new seed.
+  // Other tracks remain unchanged.
+  // @param new_seed New random seed (0 = auto)
+  void regenerateMotif(uint32_t new_seed = 0);
+
+  // Returns current motif data for saving.
+  // @returns MotifData containing seed and pattern
+  MotifData getMotif() const;
+
+  // Sets the motif from saved MotifData.
+  // Replaces the current motif track with the saved motif.
+  // @param motif MotifData to apply
+  void setMotif(const MotifData& motif);
+
+  // Returns the generated song.
+  // @returns Reference to Song
+  const Song& getSong() const { return song_; }
 
   // Returns the current generation parameters.
   // @returns Reference to GeneratorParams
@@ -31,7 +51,7 @@ class Generator {
 
  private:
   GeneratorParams params_;
-  GenerationResult result_;
+  Song song_;
   std::mt19937 rng_;
 
   void generateVocal();
@@ -39,6 +59,10 @@ class Generator {
   void generateBass();
   void generateDrums();
   void generateSE();
+  void generateMotif();
+
+  // Rebuilds motif track from stored pattern.
+  void rebuildMotifFromPattern();
 
   // Calculates modulation point and amount based on structure and mood.
   void calculateModulation();

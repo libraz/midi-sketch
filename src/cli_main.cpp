@@ -12,7 +12,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
 
   midisketch::GeneratorParams params{};
   params.structure = midisketch::StructurePattern::StandardPop;
-  params.mood = midisketch::Mood::StraightPop;
+  params.mood = midisketch::Mood::EnergeticDance;
   params.chord_id = 0;  // Canon
   params.key = midisketch::Key::C;
   params.drums_enabled = true;
@@ -22,9 +22,23 @@ int main(int /*argc*/, char* /*argv*/[]) {
   params.bpm = 0;  // use default
   params.seed = 12345;
 
+  // BackgroundMotif style (Henceforth-type)
+  params.composition_style = midisketch::CompositionStyle::BackgroundMotif;
+  params.motif.length = midisketch::MotifLength::Bars2;
+  params.motif.note_count = 4;
+  params.motif.rhythm_density = midisketch::MotifRhythmDensity::Driving;
+  params.motif.motion = midisketch::MotifMotion::Stepwise;
+  params.motif.register_high = true;
+  params.motif.octave_layering_chorus = true;
+  params.motif_drum.hihat_drive = true;
+  params.motif_drum.hihat_density = midisketch::HihatDensity::EighthOpen;
+  params.motif_vocal.prominence = midisketch::VocalProminence::Background;
+  params.motif_vocal.rhythm_bias = midisketch::VocalRhythmBias::Sparse;
+
   std::cout << "Generating with:\n";
   std::cout << "  Structure: " << midisketch::getStructureName(params.structure) << "\n";
   std::cout << "  Mood: " << midisketch::getMoodName(params.mood) << "\n";
+  std::cout << "  Composition: BackgroundMotif\n";
   std::cout << "  BPM: " << (params.bpm == 0 ? midisketch::getMoodDefaultBpm(params.mood) : params.bpm) << "\n";
   std::cout << "  Modulation: " << (params.modulation ? "ON" : "OFF") << "\n";
   std::cout << "  Seed: " << params.seed << "\n\n";
@@ -41,18 +55,19 @@ int main(int /*argc*/, char* /*argv*/[]) {
   }
 
   // Print generation result
-  const auto& result = sketch.getResult();
+  const auto& song = sketch.getSong();
   std::cout << "\nGeneration result:\n";
-  std::cout << "  Total bars: " << midisketch::calculateTotalBars(result.sections) << "\n";
-  std::cout << "  Total ticks: " << result.total_ticks << "\n";
-  std::cout << "  BPM: " << result.bpm << "\n";
-  std::cout << "  Vocal notes: " << result.vocal.notes.size() << "\n";
-  std::cout << "  Chord notes: " << result.chord.notes.size() << "\n";
-  std::cout << "  Bass notes: " << result.bass.notes.size() << "\n";
-  std::cout << "  Drums notes: " << result.drums.notes.size() << "\n";
-  if (result.modulation_tick > 0) {
-    std::cout << "  Modulation at tick: " << result.modulation_tick
-              << " (+" << static_cast<int>(result.modulation_amount) << " semitones)\n";
+  std::cout << "  Total bars: " << song.arrangement().totalBars() << "\n";
+  std::cout << "  Total ticks: " << song.arrangement().totalTicks() << "\n";
+  std::cout << "  BPM: " << song.bpm() << "\n";
+  std::cout << "  Motif notes: " << song.motif().noteCount() << "\n";
+  std::cout << "  Vocal notes: " << song.vocal().noteCount() << "\n";
+  std::cout << "  Chord notes: " << song.chord().noteCount() << "\n";
+  std::cout << "  Bass notes: " << song.bass().noteCount() << "\n";
+  std::cout << "  Drums notes: " << song.drums().noteCount() << "\n";
+  if (song.modulationTick() > 0) {
+    std::cout << "  Modulation at tick: " << song.modulationTick()
+              << " (+" << static_cast<int>(song.modulationAmount()) << " semitones)\n";
   }
 
   return 0;

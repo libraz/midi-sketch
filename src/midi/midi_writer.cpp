@@ -57,13 +57,14 @@ void MidiWriter::writeHeader(uint16_t num_tracks, uint16_t division) {
   data_.push_back(division & 0xFF);
 }
 
-void MidiWriter::writeTrack(const TrackData& track, const std::string& name,
-                            uint16_t bpm, Key key, bool is_first_track,
-                            Tick mod_tick, int8_t mod_amount) {
+void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name,
+                            uint8_t channel, uint8_t program, uint16_t bpm,
+                            Key key, bool is_first_track, Tick mod_tick,
+                            int8_t mod_amount) {
   std::vector<uint8_t> track_data;
 
   // Track name (Meta event 0x03)
-  track_data.push_back(0x00);  // Delta time
+  track_data.push_back(0x00);
   track_data.push_back(0xFF);
   track_data.push_back(0x03);
   track_data.push_back(static_cast<uint8_t>(name.size()));
@@ -74,7 +75,7 @@ void MidiWriter::writeTrack(const TrackData& track, const std::string& name,
   // Tempo (only in first track)
   if (is_first_track) {
     uint32_t microseconds_per_beat = 60000000 / bpm;
-    track_data.push_back(0x00);  // Delta time
+    track_data.push_back(0x00);
     track_data.push_back(0xFF);
     track_data.push_back(0x51);
     track_data.push_back(0x03);
@@ -93,19 +94,14 @@ void MidiWriter::writeTrack(const TrackData& track, const std::string& name,
     track_data.push_back(0x08);  // 32nd notes per quarter
   }
 
-  // Program change
-  if (track.channel != 9) {  // Skip for drums
-    track_data.push_back(0x00);  // Delta time
-    track_data.push_back(0xC0 | track.channel);
-    track_data.push_back(track.program);
+  // Program change (skip for drums channel 9)
+  if (channel != 9) {
+    track_data.push_back(0x00);
+    track_data.push_back(0xC0 | channel);
+    track_data.push_back(program);
   }
 
-  // Sort notes by start time
-  std::vector<Note> sorted_notes = track.notes;
-  std::sort(sorted_notes.begin(), sorted_notes.end(),
-            [](const Note& a, const Note& b) { return a.start < b.start; });
-
-  // Build note on/off events
+  // Convert NoteEvents to note on/off events
   struct Event {
     Tick time;
     uint8_t type;  // 0x90 = note on, 0x80 = note off
@@ -114,18 +110,18 @@ void MidiWriter::writeTrack(const TrackData& track, const std::string& name,
   };
   std::vector<Event> events;
 
-  for (const auto& note : sorted_notes) {
-    uint8_t pitch = note.pitch;
-    if (track.channel != 9) {  // Not drums
+  for (const auto& note : track.notes()) {
+    uint8_t pitch = note.note;
+    if (channel != 9) {  // Not drums
       pitch = transposePitch(pitch, key);
       // Apply modulation if note starts after modulation point
-      if (mod_tick > 0 && note.start >= mod_tick && mod_amount != 0) {
+      if (mod_tick > 0 && note.startTick >= mod_tick && mod_amount != 0) {
         int new_pitch = pitch + mod_amount;
         pitch = static_cast<uint8_t>(std::clamp(new_pitch, 0, 127));
       }
     }
-    events.push_back({note.start, 0x90, pitch, note.velocity});
-    events.push_back({note.start + note.duration, 0x80, pitch, 0});
+    events.push_back({note.startTick, 0x90, pitch, note.velocity});
+    events.push_back({note.startTick + note.duration, 0x80, pitch, 0});
   }
 
   // Sort events by time
@@ -139,7 +135,7 @@ void MidiWriter::writeTrack(const TrackData& track, const std::string& name,
     prev_time = evt.time;
 
     writeVariableLength(track_data, delta);
-    track_data.push_back((evt.type & 0xF0) | track.channel);
+    track_data.push_back((evt.type & 0xF0) | channel);
     track_data.push_back(evt.pitch);
     track_data.push_back(evt.type == 0x90 ? evt.velocity : 0);
   }
@@ -162,16 +158,14 @@ void MidiWriter::writeTrack(const TrackData& track, const std::string& name,
   data_.push_back((track_length >> 8) & 0xFF);
   data_.push_back(track_length & 0xFF);
 
-  // Append track data
   data_.insert(data_.end(), track_data.begin(), track_data.end());
 }
 
-void MidiWriter::writeMarkerTrack(const std::vector<TextEvent>& markers,
-                                   uint16_t bpm) {
+void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm) {
   std::vector<uint8_t> track_data;
 
-  // Track name (Meta event 0x03)
-  track_data.push_back(0x00);  // Delta time
+  // Track name
+  track_data.push_back(0x00);
   track_data.push_back(0xFF);
   track_data.push_back(0x03);
   track_data.push_back(2);
@@ -180,7 +174,7 @@ void MidiWriter::writeMarkerTrack(const std::vector<TextEvent>& markers,
 
   // Tempo
   uint32_t microseconds_per_beat = 60000000 / bpm;
-  track_data.push_back(0x00);  // Delta time
+  track_data.push_back(0x00);
   track_data.push_back(0xFF);
   track_data.push_back(0x51);
   track_data.push_back(0x03);
@@ -193,20 +187,20 @@ void MidiWriter::writeMarkerTrack(const std::vector<TextEvent>& markers,
   track_data.push_back(0xFF);
   track_data.push_back(0x58);
   track_data.push_back(0x04);
-  track_data.push_back(0x04);  // Numerator
-  track_data.push_back(0x02);  // Denominator (power of 2)
-  track_data.push_back(0x18);  // Clocks per metronome click
-  track_data.push_back(0x08);  // 32nd notes per quarter
+  track_data.push_back(0x04);
+  track_data.push_back(0x02);
+  track_data.push_back(0x18);
+  track_data.push_back(0x08);
 
   // Write marker events (Meta event 0x06)
   Tick prev_time = 0;
-  for (const auto& marker : markers) {
+  for (const auto& marker : track.textEvents()) {
     Tick delta = marker.time - prev_time;
     prev_time = marker.time;
 
     writeVariableLength(track_data, delta);
     track_data.push_back(0xFF);
-    track_data.push_back(0x06);  // Marker event
+    track_data.push_back(0x06);
     track_data.push_back(static_cast<uint8_t>(marker.text.size()));
     for (char c : marker.text) {
       track_data.push_back(static_cast<uint8_t>(c));
@@ -231,42 +225,63 @@ void MidiWriter::writeMarkerTrack(const std::vector<TextEvent>& markers,
   data_.push_back((track_length >> 8) & 0xFF);
   data_.push_back(track_length & 0xFF);
 
-  // Append track data
   data_.insert(data_.end(), track_data.begin(), track_data.end());
 }
 
-void MidiWriter::build(const GenerationResult& result, Key key) {
+void MidiWriter::build(const Song& song, Key key) {
   data_.clear();
 
-  // Count non-empty tracks (SE/marker track always included)
-  uint16_t num_tracks = 1;  // SE track (marker track)
-  if (!result.vocal.notes.empty()) num_tracks++;
-  if (!result.chord.notes.empty()) num_tracks++;
-  if (!result.bass.notes.empty()) num_tracks++;
-  if (!result.drums.notes.empty()) num_tracks++;
+  // Count non-empty tracks (SE track always included)
+  uint16_t num_tracks = 1;  // SE track
+  if (!song.vocal().empty()) num_tracks++;
+  if (!song.chord().empty()) num_tracks++;
+  if (!song.bass().empty()) num_tracks++;
+  if (!song.drums().empty()) num_tracks++;
+  if (!song.motif().empty()) num_tracks++;
 
   writeHeader(num_tracks, TICKS_PER_BEAT);
 
   // SE track first (contains tempo and markers)
-  writeMarkerTrack(result.markers, result.bpm);
+  writeMarkerTrack(song.se(), song.bpm());
 
-  Tick mod_tick = result.modulation_tick;
-  int8_t mod_amount = result.modulation_amount;
+  Tick mod_tick = song.modulationTick();
+  int8_t mod_amount = song.modulationAmount();
 
-  if (!result.vocal.notes.empty()) {
-    writeTrack(result.vocal, "Vocal", result.bpm, key, false, mod_tick, mod_amount);
+  // Channel and program assignments
+  constexpr uint8_t VOCAL_CH = 0;
+  constexpr uint8_t VOCAL_PROG = 0;    // Piano
+  constexpr uint8_t CHORD_CH = 1;
+  constexpr uint8_t CHORD_PROG = 4;    // Electric Piano
+  constexpr uint8_t BASS_CH = 2;
+  constexpr uint8_t BASS_PROG = 33;    // Electric Bass
+  constexpr uint8_t MOTIF_CH = 3;
+  constexpr uint8_t MOTIF_PROG = 81;   // Synth Lead
+  constexpr uint8_t DRUMS_CH = 9;
+  constexpr uint8_t DRUMS_PROG = 0;
+
+  if (!song.vocal().empty()) {
+    writeTrack(song.vocal(), "Vocal", VOCAL_CH, VOCAL_PROG, song.bpm(), key,
+               false, mod_tick, mod_amount);
   }
 
-  if (!result.chord.notes.empty()) {
-    writeTrack(result.chord, "Chord", result.bpm, key, false, mod_tick, mod_amount);
+  if (!song.chord().empty()) {
+    writeTrack(song.chord(), "Chord", CHORD_CH, CHORD_PROG, song.bpm(), key,
+               false, mod_tick, mod_amount);
   }
 
-  if (!result.bass.notes.empty()) {
-    writeTrack(result.bass, "Bass", result.bpm, key, false, mod_tick, mod_amount);
+  if (!song.bass().empty()) {
+    writeTrack(song.bass(), "Bass", BASS_CH, BASS_PROG, song.bpm(), key,
+               false, mod_tick, mod_amount);
   }
 
-  if (!result.drums.notes.empty()) {
-    writeTrack(result.drums, "Drums", result.bpm, key, false, 0, 0);  // No modulation for drums
+  if (!song.motif().empty()) {
+    writeTrack(song.motif(), "Motif", MOTIF_CH, MOTIF_PROG, song.bpm(), key,
+               false, mod_tick, mod_amount);
+  }
+
+  if (!song.drums().empty()) {
+    writeTrack(song.drums(), "Drums", DRUMS_CH, DRUMS_PROG, song.bpm(), key,
+               false, 0, 0);  // No modulation for drums
   }
 }
 

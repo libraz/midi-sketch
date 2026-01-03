@@ -7,11 +7,10 @@ namespace {
 
 TEST(MidiWriterTest, EmptyResult) {
   MidiWriter writer;
-  GenerationResult result{};
-  result.bpm = 120;
-  result.total_ticks = 0;
+  Song song;
+  song.setBpm(120);
 
-  writer.build(result, Key::C);
+  writer.build(song, Key::C);
   auto data = writer.toBytes();
 
   // Should have at least header
@@ -26,17 +25,16 @@ TEST(MidiWriterTest, EmptyResult) {
 
 TEST(MidiWriterTest, HeaderFormat) {
   MidiWriter writer;
-  GenerationResult result{};
-  result.bpm = 120;
-  result.sections = buildStructure(StructurePattern::StandardPop);
-  result.total_ticks = calculateTotalTicks(result.sections);
+  Song song;
+  song.setBpm(120);
+
+  auto sections = buildStructure(StructurePattern::StandardPop);
+  song.setArrangement(Arrangement(sections));
 
   // Add some notes
-  result.vocal.channel = 0;
-  result.vocal.program = 0;
-  result.vocal.notes.push_back({60, 100, 0, 480});
+  song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(result, Key::C);
+  writer.build(song, Key::C);
   auto data = writer.toBytes();
 
   // Check header length = 6
@@ -52,14 +50,12 @@ TEST(MidiWriterTest, HeaderFormat) {
 
 TEST(MidiWriterTest, DivisionValue) {
   MidiWriter writer;
-  GenerationResult result{};
-  result.bpm = 120;
+  Song song;
+  song.setBpm(120);
 
-  result.vocal.channel = 0;
-  result.vocal.program = 0;
-  result.vocal.notes.push_back({60, 100, 0, 480});
+  song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(result, Key::C);
+  writer.build(song, Key::C);
   auto data = writer.toBytes();
 
   // Check division = 480
@@ -69,14 +65,12 @@ TEST(MidiWriterTest, DivisionValue) {
 
 TEST(MidiWriterTest, ContainsMTrkChunk) {
   MidiWriter writer;
-  GenerationResult result{};
-  result.bpm = 120;
+  Song song;
+  song.setBpm(120);
 
-  result.vocal.channel = 0;
-  result.vocal.program = 0;
-  result.vocal.notes.push_back({60, 100, 0, 480});
+  song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(result, Key::C);
+  writer.build(song, Key::C);
   auto data = writer.toBytes();
 
   // Look for MTrk
@@ -93,12 +87,12 @@ TEST(MidiWriterTest, ContainsMTrkChunk) {
 
 TEST(MidiWriterTest, ContainsMarkerEvents) {
   MidiWriter writer;
-  GenerationResult result{};
-  result.bpm = 120;
-  result.markers.push_back({0, "Intro"});
-  result.markers.push_back({1920, "Verse"});
+  Song song;
+  song.setBpm(120);
+  song.se().addText(0, "Intro");
+  song.se().addText(1920, "Verse");
 
-  writer.build(result, Key::C);
+  writer.build(song, Key::C);
   auto data = writer.toBytes();
 
   // Look for marker meta event (FF 06)
@@ -114,15 +108,13 @@ TEST(MidiWriterTest, ContainsMarkerEvents) {
 
 TEST(MidiWriterTest, SETrackIsFirstTrack) {
   MidiWriter writer;
-  GenerationResult result{};
-  result.bpm = 120;
-  result.markers.push_back({0, "A"});
+  Song song;
+  song.setBpm(120);
+  song.se().addText(0, "A");
 
-  result.vocal.channel = 0;
-  result.vocal.program = 0;
-  result.vocal.notes.push_back({60, 100, 0, 480});
+  song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(result, Key::C);
+  writer.build(song, Key::C);
   auto data = writer.toBytes();
 
   // Find first MTrk chunk (at offset 14)
