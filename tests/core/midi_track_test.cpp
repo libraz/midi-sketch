@@ -181,5 +181,37 @@ TEST(MidiTrackTest, ToMidiEventsSorted) {
   EXPECT_EQ(events[3].tick, 960u);
 }
 
+TEST(MidiTrackTest, AnalyzeRangeEmpty) {
+  MidiTrack track;
+  auto [low, high] = track.analyzeRange();
+
+  // Empty track returns invalid range (127, 0)
+  EXPECT_EQ(low, 127);
+  EXPECT_EQ(high, 0);
+}
+
+TEST(MidiTrackTest, AnalyzeRangeSingleNote) {
+  MidiTrack track;
+  track.addNote(0, 480, 60, 100);
+
+  auto [low, high] = track.analyzeRange();
+
+  EXPECT_EQ(low, 60);
+  EXPECT_EQ(high, 60);
+}
+
+TEST(MidiTrackTest, AnalyzeRangeMultipleNotes) {
+  MidiTrack track;
+  track.addNote(0, 480, 60, 100);
+  track.addNote(480, 480, 72, 100);
+  track.addNote(960, 480, 48, 100);
+  track.addNote(1440, 480, 84, 100);
+
+  auto [low, high] = track.analyzeRange();
+
+  EXPECT_EQ(low, 48);
+  EXPECT_EQ(high, 84);
+}
+
 }  // namespace
 }  // namespace midisketch

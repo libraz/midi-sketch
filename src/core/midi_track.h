@@ -3,6 +3,7 @@
 
 #include "core/types.h"
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace midisketch {
@@ -32,12 +33,17 @@ class MidiTrack {
 
   // Accessors
   const std::vector<NoteEvent>& notes() const { return notes_; }
+  std::vector<NoteEvent>& notes() { return notes_; }  // Non-const for modification
   const std::vector<TextEvent>& textEvents() const { return textEvents_; }
   bool empty() const { return notes_.empty() && textEvents_.empty(); }
   size_t noteCount() const { return notes_.size(); }
 
   // Get the last tick in this track
   Tick lastTick() const;
+
+  // Analyze pitch range of this track.
+  // @returns Pair of (lowest_note, highest_note). Returns (127, 0) if empty.
+  std::pair<uint8_t, uint8_t> analyzeRange() const;
 
  private:
   std::vector<NoteEvent> notes_;

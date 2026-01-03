@@ -83,6 +83,22 @@ Tick MidiTrack::lastTick() const {
   return last;
 }
 
+std::pair<uint8_t, uint8_t> MidiTrack::analyzeRange() const {
+  if (notes_.empty()) {
+    return {127, 0};  // Invalid range indicates empty track
+  }
+
+  uint8_t lowest = 127;
+  uint8_t highest = 0;
+
+  for (const auto& note : notes_) {
+    if (note.note < lowest) lowest = note.note;
+    if (note.note > highest) highest = note.note;
+  }
+
+  return {lowest, highest};
+}
+
 std::vector<MidiEvent> MidiTrack::toMidiEvents(uint8_t channel) const {
   std::vector<MidiEvent> events;
 

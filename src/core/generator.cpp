@@ -1,6 +1,7 @@
 #include "core/generator.h"
 #include "core/preset_data.h"
 #include "core/structure.h"
+#include "core/velocity.h"
 #include "track/bass.h"
 #include "track/chord_track.h"
 #include "track/drums.h"
@@ -52,16 +53,17 @@ void Generator::generate(const GeneratorParams& params) {
   }
 
   // Generate tracks based on composition style
+  // Bass is generated first, then Chord uses bass analysis for voicing
   if (params.composition_style == CompositionStyle::BackgroundMotif) {
     // BackgroundMotif: Motif first, then supporting tracks
     generateMotif();
-    generateChord();
     generateBass();
+    generateChord();  // Uses bass track for voicing coordination
     generateVocal();  // Will use suppressed generation
   } else {
-    // MelodyLead: Traditional order
-    generateChord();
+    // MelodyLead: Bass first for chord voicing coordination
     generateBass();
+    generateChord();  // Uses bass track for voicing coordination
     generateVocal();
   }
 
@@ -70,6 +72,14 @@ void Generator::generate(const GeneratorParams& params) {
   }
 
   generateSE();
+
+  // Apply transition dynamics to melodic tracks
+  applyTransitionDynamics();
+
+  // Apply humanization if enabled
+  if (params.humanize) {
+    applyHumanization();
+  }
 }
 
 void Generator::regenerateMelody(uint32_t new_seed) {
@@ -90,11 +100,17 @@ void Generator::setMelody(const MelodyData& melody) {
 }
 
 void Generator::generateVocal() {
-  generateVocalTrack(song_.vocal(), song_, params_, rng_);
+  // Pass motif track for range coordination in BackgroundMotif mode
+  const MidiTrack* motif_track =
+      (params_.composition_style == CompositionStyle::BackgroundMotif)
+          ? &song_.motif()
+          : nullptr;
+  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track);
 }
 
 void Generator::generateChord() {
-  generateChordTrack(song_.chord(), song_, params_);
+  // Pass bass track for voicing coordination and rng for chord extensions
+  generateChordTrack(song_.chord(), song_, params_, rng_, &song_.bass());
 }
 
 void Generator::generateBass() {
@@ -212,6 +228,83 @@ void Generator::rebuildMotifFromPattern() {
           }
         }
       }
+    }
+  }
+}
+
+void Generator::applyTransitionDynamics() {
+  const auto& sections = song_.arrangement().sections();
+
+  // Apply to melodic tracks (not SE)
+  std::vector<MidiTrack*> tracks = {
+      &song_.vocal(),
+      &song_.chord(),
+      &song_.bass(),
+      &song_.motif()
+  };
+
+  midisketch::applyAllTransitionDynamics(tracks, sections);
+}
+
+namespace {
+
+// Returns true if the tick position is on a strong beat (beats 1 or 3 in 4/4).
+bool isStrongBeat(Tick tick) {
+  Tick position_in_bar = tick % TICKS_PER_BAR;
+  // Beats 1 and 3 are at 0 and TICKS_PER_BEAT*2
+  return position_in_bar < TICKS_PER_BEAT / 4 ||
+         (position_in_bar >= TICKS_PER_BEAT * 2 &&
+          position_in_bar < TICKS_PER_BEAT * 2 + TICKS_PER_BEAT / 4);
+}
+
+}  // namespace
+
+void Generator::applyHumanization() {
+  // Maximum timing offset in ticks (approximately 8ms at 120 BPM)
+  constexpr Tick MAX_TIMING_OFFSET = 15;
+  // Maximum velocity variation
+  constexpr int MAX_VELOCITY_VARIATION = 8;
+
+  // Scale factors from parameters
+  float timing_scale = params_.humanize_timing;
+  float velocity_scale = params_.humanize_velocity;
+
+  // Create distributions
+  std::normal_distribution<float> timing_dist(0.0f, 3.0f);
+  std::uniform_int_distribution<int> velocity_dist(-MAX_VELOCITY_VARIATION,
+                                                    MAX_VELOCITY_VARIATION);
+
+  // Apply to melodic tracks (not SE or Drums)
+  std::vector<MidiTrack*> tracks = {
+      &song_.vocal(),
+      &song_.chord(),
+      &song_.bass(),
+      &song_.motif()
+  };
+
+  for (MidiTrack* track : tracks) {
+    auto& notes = track->notes();
+    for (auto& note : notes) {
+      // Timing humanization: only on weak beats
+      if (!isStrongBeat(note.startTick)) {
+        float offset = timing_dist(rng_) * timing_scale;
+        int tick_offset = static_cast<int>(offset * MAX_TIMING_OFFSET / 3.0f);
+        tick_offset = std::clamp(tick_offset,
+                                 -static_cast<int>(MAX_TIMING_OFFSET),
+                                 static_cast<int>(MAX_TIMING_OFFSET));
+        // Ensure we don't go negative
+        if (note.startTick > static_cast<Tick>(-tick_offset)) {
+          note.startTick = static_cast<Tick>(
+              static_cast<int>(note.startTick) + tick_offset);
+        }
+      }
+
+      // Velocity humanization: less variation on strong beats
+      float vel_factor = isStrongBeat(note.startTick) ? 0.5f : 1.0f;
+      int vel_offset = static_cast<int>(
+          velocity_dist(rng_) * velocity_scale * vel_factor);
+      int new_velocity = static_cast<int>(note.velocity) + vel_offset;
+      note.velocity = static_cast<uint8_t>(std::clamp(new_velocity, 1, 127));
     }
   }
 }

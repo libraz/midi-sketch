@@ -2,9 +2,11 @@
 #include "core/chord.h"
 #include "core/preset_data.h"
 #include "core/velocity.h"
+#include "track/bass.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <random>
 
 namespace midisketch {
 
@@ -237,11 +239,20 @@ std::vector<VoicedChord> generateVoicings(uint8_t root, const Chord& chord,
   return voicings;
 }
 
-// Select voicing type based on section and mood
-VoicingType selectVoicingType(SectionType section, Mood mood) {
+// Select voicing type based on section, mood, and bass pattern
+// @param bass_has_root True if bass is playing the root note
+VoicingType selectVoicingType(SectionType section, Mood mood, bool bass_has_root) {
   bool is_ballad = (mood == Mood::Ballad || mood == Mood::Sentimental ||
                     mood == Mood::Chill);
   bool is_dramatic = (mood == Mood::Dramatic || mood == Mood::Nostalgic);
+
+  // When bass has root, prefer rootless voicing in B/Chorus for cleaner sound
+  if (bass_has_root && (section == SectionType::B || section == SectionType::Chorus)) {
+    // Higher probability of rootless when bass covers root
+    if (!is_ballad) {
+      return VoicingType::Rootless;
+    }
+  }
 
   // Rootless voicing for dramatic or nostalgic moods in B/Chorus
   if (is_dramatic && (section == SectionType::B || section == SectionType::Chorus)) {
@@ -326,6 +337,120 @@ enum class ChordRhythm {
   Quarter,    // B section: quarter notes
   Eighth      // Chorus: eighth note pulse
 };
+
+// Harmonic rhythm: how often chords change
+enum class HarmonicDensity {
+  Slow,       // Chord changes every 2 bars (Intro)
+  Normal,     // Chord changes every bar (A, B)
+  Dense       // Chord may change mid-bar at phrase ends (B end, Chorus)
+};
+
+// Determines harmonic density based on section and mood
+struct HarmonicRhythmInfo {
+  HarmonicDensity density;
+  bool double_at_phrase_end;  // Add extra chord change at phrase end
+
+  static HarmonicRhythmInfo forSection(SectionType section, Mood mood) {
+    bool is_ballad = (mood == Mood::Ballad || mood == Mood::Sentimental ||
+                      mood == Mood::Chill);
+
+    switch (section) {
+      case SectionType::Intro:
+        return {HarmonicDensity::Slow, false};
+      case SectionType::A:
+        return {HarmonicDensity::Normal, false};
+      case SectionType::B:
+        return {HarmonicDensity::Normal, !is_ballad};
+      case SectionType::Chorus:
+        return {is_ballad ? HarmonicDensity::Normal : HarmonicDensity::Dense,
+                !is_ballad};
+      default:
+        return {HarmonicDensity::Normal, false};
+    }
+  }
+};
+
+// Check if a chord degree is the dominant (V)
+bool isDominant(int8_t degree) {
+  return degree == 4;  // V chord
+}
+
+// Select appropriate chord extension based on context
+ChordExtension selectChordExtension(int8_t degree, SectionType section,
+                                     int bar_in_section, int section_bars,
+                                     const ChordExtensionParams& ext_params,
+                                     std::mt19937& rng) {
+  if (!ext_params.enable_sus && !ext_params.enable_7th) {
+    return ChordExtension::None;
+  }
+
+  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+  float roll = dist(rng);
+
+  // Determine if chord is major or minor based on degree
+  bool is_minor = (degree == 1 || degree == 2 || degree == 5);
+  bool is_dominant = (degree == 4);  // V chord
+  bool is_tonic = (degree == 0);     // I chord
+
+  // Sus chords work well on:
+  // - First bar of section (suspension before resolution)
+  // - Pre-cadence positions (bar before section end)
+  if (ext_params.enable_sus) {
+    bool is_sus_context = (bar_in_section == 0) ||
+                          (bar_in_section == section_bars - 2);
+
+    if (is_sus_context && !is_minor && roll < ext_params.sus_probability) {
+      // sus4 more common than sus2
+      return (dist(rng) < 0.7f) ? ChordExtension::Sus4 : ChordExtension::Sus2;
+    }
+  }
+
+  // 7th chords work well on:
+  // - Dominant (V7) - very common
+  // - ii7 and vi7 - common in jazz/pop
+  // - B section and Chorus for richer harmony
+  if (ext_params.enable_7th) {
+    bool is_seventh_context =
+        (section == SectionType::B || section == SectionType::Chorus) ||
+        is_dominant;
+
+    float adjusted_prob = ext_params.seventh_probability;
+    if (is_dominant) {
+      adjusted_prob *= 2.0f;  // Double probability for V chord
+    }
+
+    if (is_seventh_context && roll < adjusted_prob) {
+      if (is_dominant) {
+        return ChordExtension::Dom7;  // V7
+      } else if (is_minor) {
+        return ChordExtension::Min7;  // ii7, iii7, vi7
+      } else if (is_tonic) {
+        return ChordExtension::Maj7;  // Imaj7
+      } else {
+        // IV chord - major 7th sounds good
+        return ChordExtension::Maj7;
+      }
+    }
+  }
+
+  return ChordExtension::None;
+}
+
+// Check if the next section is a Chorus (for cadence preparation)
+bool shouldAddDominantPreparation(SectionType current, SectionType next,
+                                   int8_t current_degree, Mood mood) {
+  // Only add dominant preparation before Chorus
+  if (next != SectionType::Chorus) return false;
+
+  // Skip for ballads (too dramatic)
+  if (mood == Mood::Ballad || mood == Mood::Sentimental) return false;
+
+  // Don't add if already on dominant
+  if (isDominant(current_degree)) return false;
+
+  // Add for B -> Chorus transition
+  return current == SectionType::B;
+}
 
 // Select rhythm pattern based on section and mood
 ChordRhythm selectRhythm(SectionType section, Mood mood) {
@@ -412,33 +537,133 @@ void generateChordBar(MidiTrack& track, Tick bar_start,
 }  // namespace
 
 void generateChordTrack(MidiTrack& track, const Song& song,
-                        const GeneratorParams& params) {
+                        const GeneratorParams& params,
+                        std::mt19937& rng,
+                        const MidiTrack* bass_track) {
   const auto& progression = getChordProgression(params.chord_id);
   const auto& sections = song.arrangement().sections();
 
   VoicedChord prev_voicing{};
   bool has_prev = false;
 
-  for (const auto& section : sections) {
+  for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
+    const auto& section = sections[sec_idx];
+    SectionType next_section_type = (sec_idx + 1 < sections.size())
+                                        ? sections[sec_idx + 1].type
+                                        : section.type;
+
     ChordRhythm rhythm = selectRhythm(section.type, params.mood);
-    VoicingType voicing_type = selectVoicingType(section.type, params.mood);
+    HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section.type, params.mood);
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
 
-      int chord_idx = bar % 4;
-      int8_t degree = progression.degrees[chord_idx];
+      // Harmonic rhythm: determine chord index
+      int chord_idx;
+      if (harmonic.density == HarmonicDensity::Slow) {
+        // Slow: chord changes every 2 bars
+        chord_idx = (bar / 2) % 4;
+      } else {
+        // Normal/Dense: chord changes every bar
+        chord_idx = bar % 4;
+      }
 
+      int8_t degree = progression.degrees[chord_idx];
       uint8_t root = degreeToRoot(degree, params.key);
-      Chord chord = getChordNotes(degree);
+
+      // Select chord extension based on context
+      ChordExtension extension = selectChordExtension(
+          degree, section.type, bar, section.bars,
+          params.chord_extension, rng);
+      Chord chord = getExtendedChord(degree, extension);
+
+      // Analyze bass pattern for this bar if bass track is available
+      bool bass_has_root = true;  // Default assumption
+      if (bass_track != nullptr) {
+        uint8_t bass_root = static_cast<uint8_t>(
+            std::clamp(static_cast<int>(root) - 12, 28, 55));
+        BassAnalysis bass_analysis =
+            BassAnalysis::analyzeBar(*bass_track, bar_start, bass_root);
+        bass_has_root = bass_analysis.has_root_on_beat1;
+      }
+
+      // Select voicing type with bass coordination
+      VoicingType voicing_type = selectVoicingType(section.type, params.mood,
+                                                    bass_has_root);
 
       // Select voicing with voice leading and type consideration
       VoicedChord voicing = selectVoicing(root, chord, prev_voicing, has_prev,
                                           voicing_type);
 
-      generateChordBar(track, bar_start, voicing, rhythm, section.type, params.mood);
+      // Check if this is the last bar of the section (for cadence preparation)
+      bool is_section_last_bar = (bar == section.bars - 1);
 
-      prev_voicing = voicing;
+      // Add dominant preparation before Chorus
+      if (is_section_last_bar &&
+          shouldAddDominantPreparation(section.type, next_section_type, degree, params.mood)) {
+        // Insert V chord in the second half of the last bar
+        uint8_t vel = calculateVelocity(section.type, 0, params.mood);
+
+        // First half: current chord
+        for (size_t i = 0; i < voicing.count; ++i) {
+          track.addNote(bar_start, HALF, voicing.pitches[i], vel);
+        }
+
+        // Second half: dominant (V) chord - use Dom7 if 7th extensions enabled
+        int8_t dominant_degree = 4;  // V
+        uint8_t dom_root = degreeToRoot(dominant_degree, params.key);
+        ChordExtension dom_ext = params.chord_extension.enable_7th
+                                     ? ChordExtension::Dom7
+                                     : ChordExtension::None;
+        Chord dom_chord = getExtendedChord(dominant_degree, dom_ext);
+        VoicedChord dom_voicing = selectVoicing(dom_root, dom_chord, voicing,
+                                                 true, voicing_type);
+
+        uint8_t vel_accent = static_cast<uint8_t>(std::min(127, vel + 5));
+        for (size_t i = 0; i < dom_voicing.count; ++i) {
+          track.addNote(bar_start + HALF, HALF, dom_voicing.pitches[i], vel_accent);
+        }
+
+        prev_voicing = dom_voicing;
+        has_prev = true;
+        continue;  // Skip normal generation for this bar
+      }
+
+      // Check if this is a phrase-ending bar (bar 3 or 7 in an 8-bar phrase)
+      bool is_phrase_end = harmonic.double_at_phrase_end &&
+                           (bar % 4 == 3) && (bar < section.bars - 1);
+
+      if (is_phrase_end && harmonic.density == HarmonicDensity::Dense) {
+        // Dense harmonic rhythm at phrase end: split bar into two chords
+        // First half: current chord
+        uint8_t vel = calculateVelocity(section.type, 0, params.mood);
+        for (size_t i = 0; i < voicing.count; ++i) {
+          track.addNote(bar_start, HALF, voicing.pitches[i], vel);
+        }
+
+        // Second half: next chord (anticipation)
+        int next_chord_idx = (chord_idx + 1) % 4;
+        int8_t next_degree = progression.degrees[next_chord_idx];
+        uint8_t next_root = degreeToRoot(next_degree, params.key);
+        ChordExtension next_ext = selectChordExtension(
+            next_degree, section.type, bar + 1, section.bars,
+            params.chord_extension, rng);
+        Chord next_chord = getExtendedChord(next_degree, next_ext);
+        VoicedChord next_voicing = selectVoicing(next_root, next_chord, voicing,
+                                                  true, voicing_type);
+
+        uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
+        for (size_t i = 0; i < next_voicing.count; ++i) {
+          track.addNote(bar_start + HALF, HALF, next_voicing.pitches[i], vel_weak);
+        }
+
+        prev_voicing = next_voicing;
+      } else {
+        // Normal chord generation for this bar
+        generateChordBar(track, bar_start, voicing, rhythm, section.type, params.mood);
+        prev_voicing = voicing;
+      }
+
       has_prev = true;
     }
   }

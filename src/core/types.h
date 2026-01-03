@@ -79,6 +79,16 @@ enum class Key : uint8_t {
 // Section type within a song structure.
 enum class SectionType { Intro, A, B, Chorus };
 
+// Extended chord types for harmonic variety.
+enum class ChordExtension : uint8_t {
+  None = 0,     // Basic triad
+  Sus2,         // Suspended 2nd (0, 2, 7)
+  Sus4,         // Suspended 4th (0, 5, 7)
+  Maj7,         // Major 7th (0, 4, 7, 11)
+  Min7,         // Minor 7th (0, 3, 7, 10)
+  Dom7          // Dominant 7th (0, 4, 7, 10)
+};
+
 // Represents a section in the song structure.
 struct Section {
   SectionType type;    // Section type
@@ -198,6 +208,14 @@ struct MotifDrumParams {
   HihatDensity hihat_density = HihatDensity::Eighth;
 };
 
+// Chord extension configuration.
+struct ChordExtensionParams {
+  bool enable_sus = false;          // Enable sus2/sus4 substitutions
+  bool enable_7th = false;          // Enable 7th chord extensions
+  float sus_probability = 0.2f;     // Probability of sus chord (0.0-1.0)
+  float seventh_probability = 0.3f; // Probability of 7th extension (0.0-1.0)
+};
+
 // Background motif vocal suppression.
 struct MotifVocalParams {
   VocalProminence prominence = VocalProminence::Background;
@@ -236,6 +254,14 @@ struct GeneratorParams {
 
   // Arrangement
   ArrangementGrowth arrangement_growth = ArrangementGrowth::LayerAdd;
+
+  // Chord extensions
+  ChordExtensionParams chord_extension;
+
+  // Humanization options
+  bool humanize = false;             // Enable timing/velocity humanization
+  float humanize_timing = 0.5f;      // Timing variation amount (0.0-1.0)
+  float humanize_velocity = 0.5f;    // Velocity variation amount (0.0-1.0)
 };
 
 }  // namespace midisketch

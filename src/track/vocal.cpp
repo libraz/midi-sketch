@@ -208,7 +208,8 @@ bool shouldUseAnticipation(float beat, SectionType section, std::mt19937& rng) {
 }  // namespace
 
 void generateVocalTrack(MidiTrack& track, Song& song,
-                        const GeneratorParams& params, std::mt19937& rng) {
+                        const GeneratorParams& params, std::mt19937& rng,
+                        const MidiTrack* motif_track) {
   // BackgroundMotif suppression settings
   const bool is_background_motif =
       params.composition_style == CompositionStyle::BackgroundMotif;
@@ -225,13 +226,43 @@ void generateVocalTrack(MidiTrack& track, Song& song,
                              ? 0.7f
                              : 1.0f;
 
+  // Effective vocal range (adjusted based on motif track if present)
+  uint8_t effective_vocal_low = params.vocal_low;
+  uint8_t effective_vocal_high = params.vocal_high;
+
+  // Adjust vocal range to avoid collision with motif track
+  if (is_background_motif && motif_track != nullptr && !motif_track->empty()) {
+    auto [motif_low, motif_high] = motif_track->analyzeRange();
+
+    // If motif is in high register (above C5 = 72)
+    if (motif_high > 72) {
+      // Limit vocal high to avoid overlap
+      effective_vocal_high = std::min(effective_vocal_high, static_cast<uint8_t>(72));
+      // Ensure minimum range of one octave
+      if (effective_vocal_high - effective_vocal_low < 12) {
+        effective_vocal_low = std::max(static_cast<uint8_t>(48),
+                                        static_cast<uint8_t>(effective_vocal_high - 12));
+      }
+    }
+    // If motif is in low register (below C4 = 60)
+    else if (motif_low < 60) {
+      // Raise vocal low to avoid overlap
+      effective_vocal_low = std::max(effective_vocal_low, static_cast<uint8_t>(65));
+      // Ensure minimum range of one octave
+      if (effective_vocal_high - effective_vocal_low < 12) {
+        effective_vocal_high = std::min(static_cast<uint8_t>(96),
+                                         static_cast<uint8_t>(effective_vocal_low + 12));
+      }
+    }
+  }
+
   const auto& progression = getChordProgression(params.chord_id);
   int key_offset = static_cast<int>(params.key);
 
-  // Helper: clamp pitch to vocal range
+  // Helper: clamp pitch to effective vocal range
   auto clampPitch = [&](int pitch) -> uint8_t {
     return static_cast<uint8_t>(
-        std::clamp(pitch, (int)params.vocal_low, (int)params.vocal_high));
+        std::clamp(pitch, (int)effective_vocal_low, (int)effective_vocal_high));
   };
 
   // Helper: get chord info for a bar
@@ -253,7 +284,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
   std::map<SectionType, int> section_occurrence;
 
   // Starting octave based on vocal range
-  int center_pitch = (params.vocal_low + params.vocal_high) / 2;
+  int center_pitch = (effective_vocal_low + effective_vocal_high) / 2;
   int base_octave = center_pitch / 12;
 
   // Track previous pitch for leap checking
@@ -279,8 +310,8 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       for (const auto& note : cached) {
         Tick absolute_tick = section.start_tick + note.startTick;
         int transposed_pitch = note.note + transpose;
-        transposed_pitch = std::clamp(transposed_pitch, (int)params.vocal_low,
-                                      (int)params.vocal_high);
+        transposed_pitch = std::clamp(transposed_pitch, (int)effective_vocal_low,
+                                      (int)effective_vocal_high);
         track.addNote(absolute_tick, note.duration,
                       static_cast<uint8_t>(transposed_pitch), note.velocity);
       }
@@ -435,9 +466,9 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         }
 
         // Ensure within vocal range
-        while (pitch < params.vocal_low) pitch += 12;
-        while (pitch > params.vocal_high) pitch -= 12;
-        pitch = std::clamp(pitch, (int)params.vocal_low, (int)params.vocal_high);
+        while (pitch < effective_vocal_low) pitch += 12;
+        while (pitch > effective_vocal_high) pitch -= 12;
+        pitch = std::clamp(pitch, (int)effective_vocal_low, (int)effective_vocal_high);
 
         prev_pitch = pitch;
 
@@ -468,14 +499,14 @@ void generateVocalTrack(MidiTrack& track, Song& song,
           SuspensionResult sus = applySuspension(current_chord_root, rn.eighths);
 
           int sus_pitch = degreeToPitch(sus.suspension_degree, base_octave, key_offset);
-          while (sus_pitch < params.vocal_low) sus_pitch += 12;
-          while (sus_pitch > params.vocal_high) sus_pitch -= 12;
-          sus_pitch = std::clamp(sus_pitch, (int)params.vocal_low, (int)params.vocal_high);
+          while (sus_pitch < effective_vocal_low) sus_pitch += 12;
+          while (sus_pitch > effective_vocal_high) sus_pitch -= 12;
+          sus_pitch = std::clamp(sus_pitch, (int)effective_vocal_low, (int)effective_vocal_high);
 
           int res_pitch = degreeToPitch(sus.resolution_degree, base_octave, key_offset);
-          while (res_pitch < params.vocal_low) res_pitch += 12;
-          while (res_pitch > params.vocal_high) res_pitch -= 12;
-          res_pitch = std::clamp(res_pitch, (int)params.vocal_low, (int)params.vocal_high);
+          while (res_pitch < effective_vocal_low) res_pitch += 12;
+          while (res_pitch > effective_vocal_high) res_pitch -= 12;
+          res_pitch = std::clamp(res_pitch, (int)effective_vocal_low, (int)effective_vocal_high);
 
           Tick sus_duration = static_cast<Tick>(sus.suspension_eighths * TICKS_PER_BEAT / 2);
           Tick res_duration = static_cast<Tick>(sus.resolution_eighths * TICKS_PER_BEAT / 2);
@@ -497,9 +528,9 @@ void generateVocalTrack(MidiTrack& track, Song& song,
           AnticipationResult ant = applyAnticipation(next_chord_root, rn.eighths);
 
           int ant_pitch = degreeToPitch(ant.degree, base_octave, key_offset);
-          while (ant_pitch < params.vocal_low) ant_pitch += 12;
-          while (ant_pitch > params.vocal_high) ant_pitch -= 12;
-          ant_pitch = std::clamp(ant_pitch, (int)params.vocal_low, (int)params.vocal_high);
+          while (ant_pitch < effective_vocal_low) ant_pitch += 12;
+          while (ant_pitch > effective_vocal_high) ant_pitch -= 12;
+          ant_pitch = std::clamp(ant_pitch, (int)effective_vocal_low, (int)effective_vocal_high);
 
           // Shift note earlier by the offset
           Tick ant_offset_ticks = static_cast<Tick>(std::abs(ant.beat_offset) * TICKS_PER_BEAT);

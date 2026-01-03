@@ -112,6 +112,49 @@ Chord getChordNotes(int8_t degree) {
   return buildChord(degree);
 }
 
+Chord getExtendedChord(int8_t degree, ChordExtension extension) {
+  Chord base = buildChord(degree);
+
+  switch (extension) {
+    case ChordExtension::Sus2:
+      // Replace 3rd with 2nd: (0, 2, 7)
+      base.intervals = {0, 2, 7, -1};
+      base.note_count = 3;
+      break;
+
+    case ChordExtension::Sus4:
+      // Replace 3rd with 4th: (0, 5, 7)
+      base.intervals = {0, 5, 7, -1};
+      base.note_count = 3;
+      break;
+
+    case ChordExtension::Maj7:
+      // Major 7th: (0, 4, 7, 11)
+      base.intervals = {0, 4, 7, 11};
+      base.note_count = 4;
+      break;
+
+    case ChordExtension::Min7:
+      // Minor 7th: (0, 3, 7, 10)
+      base.intervals = {0, 3, 7, 10};
+      base.note_count = 4;
+      break;
+
+    case ChordExtension::Dom7:
+      // Dominant 7th: (0, 4, 7, 10)
+      base.intervals = {0, 4, 7, 10};
+      base.note_count = 4;
+      break;
+
+    case ChordExtension::None:
+    default:
+      // Keep original chord
+      break;
+  }
+
+  return base;
+}
+
 const char* getChordProgressionName(uint8_t chord_id) {
   return PROGRESSION_NAMES[std::min(chord_id, static_cast<uint8_t>(15))];
 }

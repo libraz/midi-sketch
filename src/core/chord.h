@@ -35,6 +35,12 @@ uint8_t degreeToRoot(int8_t degree, Key key);
 // @returns Chord struct with intervals and note count
 Chord getChordNotes(int8_t degree);
 
+// Returns a chord with the specified extension applied.
+// @param degree Scale degree
+// @param extension Chord extension type
+// @returns Chord struct with intervals and note count
+Chord getExtendedChord(int8_t degree, ChordExtension extension);
+
 // Returns the name of a chord progression.
 // @param chord_id Progression index (0-15)
 // @returns Progression name (e.g., "Canon", "Pop1")

@@ -189,6 +189,60 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
 
 }  // namespace
 
+BassAnalysis BassAnalysis::analyzeBar(const MidiTrack& track, Tick bar_start,
+                                       uint8_t expected_root) {
+  BassAnalysis result;
+  result.root_note = expected_root;
+
+  Tick bar_end = bar_start + TICKS_PER_BAR;
+  uint8_t octave = static_cast<uint8_t>(
+      std::clamp(static_cast<int>(expected_root) + 12, 28, 55));
+
+  for (const auto& note : track.notes()) {
+    // Skip notes outside this bar
+    if (note.startTick < bar_start || note.startTick >= bar_end) {
+      continue;
+    }
+
+    Tick relative_tick = note.startTick - bar_start;
+    uint8_t pitch_class = note.note % 12;
+    uint8_t root_class = expected_root % 12;
+    uint8_t fifth_class = (expected_root + 7) % 12;
+
+    // Check beat 1 (first quarter note)
+    if (relative_tick < TICKS_PER_BEAT) {
+      if (pitch_class == root_class) {
+        result.has_root_on_beat1 = true;
+      }
+    }
+
+    // Check beat 3 (third quarter note)
+    if (relative_tick >= 2 * TICKS_PER_BEAT &&
+        relative_tick < 3 * TICKS_PER_BEAT) {
+      if (pitch_class == root_class) {
+        result.has_root_on_beat3 = true;
+      }
+    }
+
+    // Check for fifth usage
+    if (pitch_class == fifth_class) {
+      result.has_fifth = true;
+    }
+
+    // Check for octave jump
+    if (note.note == octave && octave != expected_root) {
+      result.uses_octave_jump = true;
+    }
+
+    // Track accented notes (high velocity)
+    if (note.velocity >= 90) {
+      result.accent_ticks.push_back(note.startTick);
+    }
+  }
+
+  return result;
+}
+
 void generateBassTrack(MidiTrack& track, const Song& song,
                        const GeneratorParams& params) {
   const auto& progression = getChordProgression(params.chord_id);

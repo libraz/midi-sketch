@@ -67,6 +67,12 @@ class Generator {
   // Calculates modulation point and amount based on structure and mood.
   void calculateModulation();
 
+  // Applies transition dynamics (crescendo/decrescendo) to all melodic tracks.
+  void applyTransitionDynamics();
+
+  // Applies humanization (timing/velocity variation) to all melodic tracks.
+  void applyHumanization();
+
   // Resolves seed value (0 = generate from clock).
   // @param seed Input seed
   // @returns Resolved seed value
