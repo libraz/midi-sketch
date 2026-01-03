@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>midi-sketch Demo</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+      color: #333;
+    }
+    h1 {
+      color: #2c3e50;
+      border-bottom: 2px solid #3498db;
+      padding-bottom: 10px;
+    }
+    .version {
+      color: #7f8c8d;
+      font-size: 0.9em;
+      font-weight: normal;
+    }
+    .section {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .section h2 {
+      margin-top: 0;
+      color: #2c3e50;
+      font-size: 1.2em;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+      color: #34495e;
+    }
+    select, input[type="number"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    select:focus, input:focus {
+      outline: none;
+      border-color: #3498db;
+    }
+    .row {
+      display: flex;
+      gap: 15px;
+    }
+    .row > .form-group {
+      flex: 1;
+    }
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .checkbox-group input {
+      width: auto;
+    }
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 4px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-primary {
+      background: #3498db;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #2980b9;
+    }
+    .btn-primary:disabled {
+      background: #bdc3c7;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: #2ecc71;
+      color: white;
+    }
+    .btn-secondary:hover {
+      background: #27ae60;
+    }
+    .btn-secondary:disabled {
+      background: #bdc3c7;
+      cursor: not-allowed;
+    }
+    .btn-play {
+      background: #9b59b6;
+      color: white;
+    }
+    .btn-play:hover {
+      background: #8e44ad;
+    }
+    .btn-play:disabled {
+      background: #bdc3c7;
+      cursor: not-allowed;
+    }
+    .btn-stop {
+      background: #e74c3c;
+      color: white;
+    }
+    .btn-stop:hover {
+      background: #c0392b;
+    }
+    .btn-stop:disabled {
+      background: #bdc3c7;
+      cursor: not-allowed;
+    }
+    .buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .result {
+      background: #ecf0f1;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      display: none;
+    }
+    .result.visible {
+      display: block;
+    }
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 15px;
+    }
+    .status.loading {
+      background: #fff3cd;
+      color: #856404;
+    }
+    .status.ready {
+      background: #d4edda;
+      color: #155724;
+    }
+    .status.error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    .chord-display {
+      color: #7f8c8d;
+      font-size: 0.9em;
+      margin-top: 5px;
+    }
+    .playback-info {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-top: 15px;
+      padding: 10px;
+      background: #ecf0f1;
+      border-radius: 4px;
+    }
+    .playback-info.hidden {
+      display: none;
+    }
+    .progress-bar {
+      flex: 1;
+      height: 8px;
+      background: #bdc3c7;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: #9b59b6;
+      width: 0%;
+      transition: width 0.1s linear;
+    }
+    .time-display {
+      font-family: monospace;
+      font-size: 14px;
+      min-width: 100px;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <h1>midi-sketch <span class="version" id="version">Loading...</span></h1>
+
+  <div id="status" class="status loading">Loading WASM module...</div>
+
+  <div class="section">
+    <h2>Parameters</h2>
+
+    <div class="form-group">
+      <label for="structure">Structure</label>
+      <select id="structure"></select>
+    </div>
+
+    <div class="form-group">
+      <label for="mood">Mood</label>
+      <select id="mood"></select>
+    </div>
+
+    <div class="form-group">
+      <label for="chord">Chord Progression</label>
+      <select id="chord"></select>
+      <div id="chord-display" class="chord-display"></div>
+    </div>
+
+    <div class="row">
+      <div class="form-group">
+        <label for="key">Key</label>
+        <select id="key">
+          <option value="0">C</option>
+          <option value="1">C#</option>
+          <option value="2">D</option>
+          <option value="3">Eb</option>
+          <option value="4">E</option>
+          <option value="5">F</option>
+          <option value="6">F#</option>
+          <option value="7">G</option>
+          <option value="8">Ab</option>
+          <option value="9">A</option>
+          <option value="10">Bb</option>
+          <option value="11">B</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="bpm">BPM (0=auto)</label>
+        <input type="number" id="bpm" value="0" min="0" max="180">
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="form-group">
+        <label for="vocal-low">Vocal Low</label>
+        <input type="number" id="vocal-low" value="55" min="36" max="96">
+      </div>
+      <div class="form-group">
+        <label for="vocal-high">Vocal High</label>
+        <input type="number" id="vocal-high" value="74" min="36" max="96">
+      </div>
+      <div class="form-group">
+        <label for="seed">Seed (0=random)</label>
+        <input type="number" id="seed" value="0" min="0">
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="drums" checked>
+          <label for="drums">Drums</label>
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="modulation">
+          <label for="modulation">Modulation</label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Actions</h2>
+    <div class="buttons">
+      <button id="generate" class="btn-primary" disabled>Generate</button>
+      <button id="regenerate" class="btn-secondary" disabled>Regenerate Melody</button>
+      <button id="play" class="btn-play" disabled>Play</button>
+      <button id="stop" class="btn-stop" disabled>Stop</button>
+      <button id="download" class="btn-secondary" disabled>Download MIDI</button>
+    </div>
+    <div id="playback-info" class="playback-info hidden">
+      <div class="progress-bar">
+        <div id="progress-fill" class="progress-bar-fill"></div>
+      </div>
+      <div id="time-display" class="time-display">0:00 / 0:00</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Result</h2>
+    <div id="result" class="result"></div>
+  </div>
+
+  <script src="https://unpkg.com/tone@14.7.77/build/Tone.js"></script>
+  <script type="module">
+    // Import the wrapper
+    import midisketch from '../dist/midisketch-wrapper.js';
+
+    let sketch = null;
+    let midiData = null;
+    let eventData = null;
+    let chords = [];
+    let isPlaying = false;
+    let scheduledEvents = [];
+    let startTime = 0;
+    let totalDuration = 0;
+    let animationFrame = null;
+
+    // Tone.js instruments
+    let synths = {};
+
+    const $ = (id) => document.getElementById(id);
+
+    async function init() {
+      try {
+        await midisketch.init();
+
+        $('version').textContent = `v${midisketch.getVersion()}`;
+        $('status').className = 'status ready';
+        $('status').textContent = 'Ready';
+
+        // Populate dropdowns
+        populateStructures();
+        populateMoods();
+        populateChords();
+
+        // Enable generate button
+        $('generate').disabled = false;
+
+        // Setup event listeners
+        $('generate').addEventListener('click', generate);
+        $('regenerate').addEventListener('click', regenerateMelody);
+        $('play').addEventListener('click', play);
+        $('stop').addEventListener('click', stop);
+        $('download').addEventListener('click', downloadMidi);
+        $('chord').addEventListener('change', updateChordDisplay);
+
+        updateChordDisplay();
+      } catch (e) {
+        $('status').className = 'status error';
+        $('status').textContent = `Error: ${e.message}`;
+        console.error(e);
+      }
+    }
+
+    function populateStructures() {
+      const select = $('structure');
+      const structures = midisketch.getStructures();
+      structures.forEach((s, i) => {
+        const option = document.createElement('option');
+        option.value = i;
+        option.textContent = s.name;
+        select.appendChild(option);
+      });
+    }
+
+    function populateMoods() {
+      const select = $('mood');
+      const moods = midisketch.getMoods();
+      moods.forEach((m, i) => {
+        const option = document.createElement('option');
+        option.value = i;
+        option.textContent = `${m.name} (${m.defaultBpm} BPM)`;
+        select.appendChild(option);
+      });
+    }
+
+    function populateChords() {
+      const select = $('chord');
+      chords = midisketch.getChords();
+      chords.forEach((c, i) => {
+        const option = document.createElement('option');
+        option.value = i;
+        option.textContent = c.name;
+        select.appendChild(option);
+      });
+    }
+
+    function updateChordDisplay() {
+      const idx = parseInt($('chord').value);
+      $('chord-display').textContent = chords[idx]?.display || '';
+    }
+
+    function getParams() {
+      return {
+        structureId: parseInt($('structure').value),
+        moodId: parseInt($('mood').value),
+        chordId: parseInt($('chord').value),
+        key: parseInt($('key').value),
+        drumsEnabled: $('drums').checked,
+        modulation: $('modulation').checked,
+        vocalLow: parseInt($('vocal-low').value),
+        vocalHigh: parseInt($('vocal-high').value),
+        bpm: parseInt($('bpm').value),
+        seed: parseInt($('seed').value)
+      };
+    }
+
+    function initSynths() {
+      // Dispose old synths
+      Object.values(synths).forEach(s => s.dispose());
+
+      // Create new synths for each track
+      synths = {
+        vocal: new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'triangle' },
+          envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.4 }
+        }).toDestination(),
+        chord: new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'sine' },
+          envelope: { attack: 0.05, decay: 0.2, sustain: 0.4, release: 0.8 }
+        }).toDestination(),
+        bass: new Tone.MonoSynth({
+          oscillator: { type: 'sawtooth' },
+          envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.3 },
+          filterEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.5, release: 0.2, baseFrequency: 200, octaves: 2 }
+        }).toDestination(),
+        drums: new Tone.MembraneSynth({
+          pitchDecay: 0.05,
+          octaves: 4,
+          envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.2 }
+        }).toDestination()
+      };
+
+      // Adjust volumes
+      synths.vocal.volume.value = -6;
+      synths.chord.volume.value = -12;
+      synths.bass.volume.value = -8;
+      synths.drums.volume.value = -4;
+    }
+
+    function midiToFreq(midi) {
+      return Tone.Frequency(midi, 'midi').toFrequency();
+    }
+
+    function midiToNote(midi) {
+      return Tone.Frequency(midi, 'midi').toNote();
+    }
+
+    function generate() {
+      try {
+        stop(); // Stop any playing
+
+        // Destroy previous instance
+        if (sketch) {
+          sketch.destroy();
+        }
+
+        sketch = new midisketch.MidiSketch();
+        sketch.generate(getParams());
+
+        midiData = sketch.getMidi();
+        eventData = sketch.getEvents();
+
+        // Show result
+        const result = $('result');
+        result.className = 'result visible';
+        result.textContent = `Generated MIDI: ${midiData.length} bytes\n`;
+        result.textContent += `Structure: ${$('structure').options[$('structure').selectedIndex].text}\n`;
+        result.textContent += `Mood: ${$('mood').options[$('mood').selectedIndex].text}\n`;
+        result.textContent += `Chord: ${chords[parseInt($('chord').value)].display}\n`;
+        result.textContent += `BPM: ${eventData.bpm}\n`;
+        result.textContent += `Duration: ${formatTime(ticksToSeconds(eventData.totalTicks, eventData.bpm))}`;
+
+        // Enable buttons
+        $('regenerate').disabled = false;
+        $('play').disabled = false;
+        $('download').disabled = false;
+
+        // Show playback info
+        $('playback-info').classList.remove('hidden');
+        totalDuration = ticksToSeconds(eventData.totalTicks, eventData.bpm);
+        updateTimeDisplay(0);
+
+      } catch (e) {
+        $('result').className = 'result visible';
+        $('result').textContent = `Error: ${e.message}`;
+        console.error(e);
+      }
+    }
+
+    function regenerateMelody() {
+      if (!sketch) return;
+
+      try {
+        stop();
+        const seed = parseInt($('seed').value);
+        sketch.regenerateMelody(seed === 0 ? Date.now() : seed);
+        midiData = sketch.getMidi();
+        eventData = sketch.getEvents();
+
+        $('result').textContent = `Regenerated melody: ${midiData.length} bytes`;
+      } catch (e) {
+        $('result').textContent = `Error: ${e.message}`;
+        console.error(e);
+      }
+    }
+
+    function ticksToSeconds(ticks, bpm) {
+      const ticksPerBeat = 480;
+      const secondsPerBeat = 60 / bpm;
+      return (ticks / ticksPerBeat) * secondsPerBeat;
+    }
+
+    function formatTime(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function updateTimeDisplay(currentTime) {
+      $('time-display').textContent = `${formatTime(currentTime)} / ${formatTime(totalDuration)}`;
+      const progress = totalDuration > 0 ? (currentTime / totalDuration) * 100 : 0;
+      $('progress-fill').style.width = `${progress}%`;
+    }
+
+    async function play() {
+      if (!eventData || isPlaying) return;
+
+      try {
+        // Start audio context
+        await Tone.start();
+
+        // Initialize synths
+        initSynths();
+
+        isPlaying = true;
+        $('play').disabled = true;
+        $('stop').disabled = false;
+        $('generate').disabled = true;
+        $('regenerate').disabled = true;
+
+        const bpm = eventData.bpm;
+        Tone.Transport.bpm.value = bpm;
+
+        // Clear previous scheduled events
+        scheduledEvents.forEach(id => Tone.Transport.clear(id));
+        scheduledEvents = [];
+
+        // Schedule notes for each track
+        eventData.tracks.forEach(track => {
+          const synth = synths[track.name.toLowerCase()];
+          if (!synth) return;
+
+          track.notes.forEach(note => {
+            const startTime = ticksToSeconds(note.start, bpm);
+            const duration = ticksToSeconds(note.duration, bpm);
+            const velocity = note.velocity / 127;
+
+            if (track.name.toLowerCase() === 'drums') {
+              // Drums use different pitches for different instruments
+              const id = Tone.Transport.schedule((time) => {
+                synth.triggerAttackRelease(midiToFreq(note.pitch), duration, time, velocity);
+              }, startTime);
+              scheduledEvents.push(id);
+            } else {
+              const id = Tone.Transport.schedule((time) => {
+                synth.triggerAttackRelease(midiToNote(note.pitch), duration, time, velocity);
+              }, startTime);
+              scheduledEvents.push(id);
+            }
+          });
+        });
+
+        // Schedule stop at end
+        const endTime = ticksToSeconds(eventData.totalTicks, bpm);
+        const stopId = Tone.Transport.schedule(() => {
+          stop();
+        }, endTime + 0.1);
+        scheduledEvents.push(stopId);
+
+        // Start transport
+        startTime = Tone.now();
+        Tone.Transport.start();
+
+        // Update progress
+        updateProgress();
+
+      } catch (e) {
+        console.error('Playback error:', e);
+        stop();
+      }
+    }
+
+    function updateProgress() {
+      if (!isPlaying) return;
+
+      const elapsed = Tone.Transport.seconds;
+      updateTimeDisplay(elapsed);
+
+      animationFrame = requestAnimationFrame(updateProgress);
+    }
+
+    function stop() {
+      isPlaying = false;
+
+      // Stop transport
+      Tone.Transport.stop();
+      Tone.Transport.cancel();
+
+      // Clear scheduled events
+      scheduledEvents.forEach(id => Tone.Transport.clear(id));
+      scheduledEvents = [];
+
+      // Cancel animation
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+        animationFrame = null;
+      }
+
+      // Reset UI
+      $('play').disabled = !eventData;
+      $('stop').disabled = true;
+      $('generate').disabled = false;
+      $('regenerate').disabled = !sketch;
+
+      updateTimeDisplay(0);
+    }
+
+    function downloadMidi() {
+      if (!midiData) return;
+      midisketch.downloadMidi(midiData, 'midi-sketch-output.mid');
+    }
+
+    init();
+  </script>
+</body>
+</html>
