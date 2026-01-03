@@ -26,11 +26,11 @@ MidiSketchError midisketch_generate(MidiSketchHandle handle,
     return MIDISKETCH_ERROR_INVALID_STRUCTURE;
   }
 
-  if (params->mood_id > 15) {
+  if (params->mood_id >= midisketch::MOOD_COUNT) {
     return MIDISKETCH_ERROR_INVALID_MOOD;
   }
 
-  if (params->chord_id > 15) {
+  if (params->chord_id >= midisketch::CHORD_COUNT) {
     return MIDISKETCH_ERROR_INVALID_CHORD;
   }
 
@@ -74,6 +74,20 @@ MidiSketchError midisketch_generate(MidiSketchHandle handle,
   gen_params.chord_extension.enable_7th = params->chord_ext_7th != 0;
   gen_params.chord_extension.sus_probability = params->chord_ext_sus_prob / 100.0f;
   gen_params.chord_extension.seventh_probability = params->chord_ext_7th_prob / 100.0f;
+
+  // 9th chord extensions
+  gen_params.chord_extension.enable_9th = params->chord_ext_9th != 0;
+  gen_params.chord_extension.ninth_probability = params->chord_ext_9th_prob / 100.0f;
+
+  // Composition style
+  gen_params.composition_style = static_cast<midisketch::CompositionStyle>(params->composition_style);
+
+  // Arpeggio parameters
+  gen_params.arpeggio_enabled = params->arpeggio_enabled != 0;
+  gen_params.arpeggio.pattern = static_cast<midisketch::ArpeggioPattern>(params->arpeggio_pattern);
+  gen_params.arpeggio.speed = static_cast<midisketch::ArpeggioSpeed>(params->arpeggio_speed);
+  gen_params.arpeggio.octave_range = params->arpeggio_octave_range > 0 ? params->arpeggio_octave_range : 2;
+  gen_params.arpeggio.gate = params->arpeggio_gate / 100.0f;
 
   sketch->generate(gen_params);
   return MIDISKETCH_OK;

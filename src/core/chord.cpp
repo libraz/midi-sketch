@@ -5,8 +5,8 @@ namespace midisketch {
 
 namespace {
 
-// Chord progression definitions (16 patterns)
-constexpr ChordProgression PROGRESSIONS[16] = {
+// Chord progression definitions (20 patterns)
+constexpr ChordProgression PROGRESSIONS[20] = {
     {{0, 4, 5, 3}},   // 0: Canon - I - V - vi - IV
     {{0, 5, 3, 4}},   // 1: Pop1 - I - vi - IV - V
     {{5, 3, 0, 4}},   // 2: Axis - vi - IV - I - V
@@ -23,17 +23,23 @@ constexpr ChordProgression PROGRESSIONS[16] = {
     {{0, 4, 5, 2}},   // 13: Extended - I - V - vi - iii (simplified)
     {{5, 0, 4, 3}},   // 14: Minor3 - vi - I - V - IV
     {{5, 3, 4, 0}},   // 15: Komuro - vi - IV - V - I
+    // New YOASOBI-style progressions
+    {{5, 2, 3, 0}},   // 16: YOASOBI1 - vi - iii - IV - I
+    {{1, 4, 0, 5}},   // 17: JazzPop - ii - V - I - vi
+    {{5, 1, 4, 0}},   // 18: YOASOBI2 - vi - ii - V - I (turnaround)
+    {{0, 5, 1, 4}},   // 19: CityPop - I - vi - ii - V
 };
 
 // Chord progression names
-const char* PROGRESSION_NAMES[16] = {
+const char* PROGRESSION_NAMES[20] = {
     "Canon",    "Pop1",    "Axis",     "Pop2",    "Classic", "Pop3",
     "Simple",   "Minor1",  "Minor2",   "Pop4",    "Pop5",    "Rock1",
     "Rock2",    "Extended", "Minor3",  "Komuro",
+    "YOASOBI1", "JazzPop", "YOASOBI2", "CityPop",
 };
 
 // Chord progression display strings
-const char* PROGRESSION_DISPLAYS[16] = {
+const char* PROGRESSION_DISPLAYS[20] = {
     "I - V - vi - IV",    // Canon
     "I - vi - IV - V",    // Pop1
     "vi - IV - I - V",    // Axis
@@ -50,10 +56,14 @@ const char* PROGRESSION_DISPLAYS[16] = {
     "I - V - vi - iii",   // Extended
     "vi - I - V - IV",    // Minor3
     "vi - IV - V - I",    // Komuro
+    "vi - iii - IV - I",  // YOASOBI1
+    "ii - V - I - vi",    // JazzPop
+    "vi - ii - V - I",    // YOASOBI2
+    "I - vi - ii - V",    // CityPop
 };
 
 // Builds a chord from scale degree.
-// Degrees: I=0, ii=1, iii=2, IV=3, V=4, vi=5, vii=6, bVII=10
+// Degrees: I=0, ii=1, iii=2, IV=3, V=4, vi=5, vii=6, bVII=10, bVI=8, bIII=11
 Chord buildChord(int8_t degree) {
   Chord c{};
   c.note_count = 3;
@@ -61,32 +71,36 @@ Chord buildChord(int8_t degree) {
 
   // vii is diminished (0, 3, 6) - minor 3rd + diminished 5th
   if (degree == 6) {
-    c.intervals = {0, 3, 6, -1};  // Diminished triad
+    c.intervals = {0, 3, 6, -1, -1};  // Diminished triad
     c.is_diminished = true;
     return c;
   }
 
   // Determine major/minor quality for other degrees
-  // ii, iii, vi are minor; I, IV, V, bVII are major
+  // ii, iii, vi are minor; I, IV, V, bVII, bVI, bIII are major
   bool is_minor = (degree == 1 || degree == 2 || degree == 5);
 
   if (is_minor) {
-    c.intervals = {0, 3, 7, -1};  // Minor triad
+    c.intervals = {0, 3, 7, -1, -1};  // Minor triad
   } else {
-    c.intervals = {0, 4, 7, -1};  // Major triad
+    c.intervals = {0, 4, 7, -1, -1};  // Major triad
   }
 
   return c;
 }
 
 // Converts degree to pitch class (0-11) in C major.
+// Borrowed chord degrees: bVII=10, bVI=8, bIII=11
 int degreeToSemitone(int8_t degree) {
   // C=0, D=2, E=4, F=5, G=7, A=9, B=11
   constexpr int SCALE_SEMITONES[7] = {0, 2, 4, 5, 7, 9, 11};
 
-  if (degree == 10) {
-    // bVII = Bb in C major
-    return 10;
+  // Borrowed chords from parallel minor
+  switch (degree) {
+    case 10: return 10;  // bVII = Bb in C major
+    case 8:  return 8;   // bVI = Ab in C major
+    case 11: return 3;   // bIII = Eb in C major
+    default: break;
   }
 
   if (degree >= 0 && degree < 7) {
@@ -99,7 +113,8 @@ int degreeToSemitone(int8_t degree) {
 }  // namespace
 
 const ChordProgression& getChordProgression(uint8_t chord_id) {
-  return PROGRESSIONS[std::min(chord_id, static_cast<uint8_t>(15))];
+  constexpr size_t count = sizeof(PROGRESSIONS) / sizeof(PROGRESSIONS[0]);
+  return PROGRESSIONS[std::min(static_cast<size_t>(chord_id), count - 1)];
 }
 
 uint8_t degreeToRoot(int8_t degree, Key key) {
@@ -118,32 +133,56 @@ Chord getExtendedChord(int8_t degree, ChordExtension extension) {
   switch (extension) {
     case ChordExtension::Sus2:
       // Replace 3rd with 2nd: (0, 2, 7)
-      base.intervals = {0, 2, 7, -1};
+      base.intervals = {0, 2, 7, -1, -1};
       base.note_count = 3;
       break;
 
     case ChordExtension::Sus4:
       // Replace 3rd with 4th: (0, 5, 7)
-      base.intervals = {0, 5, 7, -1};
+      base.intervals = {0, 5, 7, -1, -1};
       base.note_count = 3;
       break;
 
     case ChordExtension::Maj7:
       // Major 7th: (0, 4, 7, 11)
-      base.intervals = {0, 4, 7, 11};
+      base.intervals = {0, 4, 7, 11, -1};
       base.note_count = 4;
       break;
 
     case ChordExtension::Min7:
       // Minor 7th: (0, 3, 7, 10)
-      base.intervals = {0, 3, 7, 10};
+      base.intervals = {0, 3, 7, 10, -1};
       base.note_count = 4;
       break;
 
     case ChordExtension::Dom7:
       // Dominant 7th: (0, 4, 7, 10)
-      base.intervals = {0, 4, 7, 10};
+      base.intervals = {0, 4, 7, 10, -1};
       base.note_count = 4;
+      break;
+
+    case ChordExtension::Add9:
+      // Add 9th: (0, 4, 7, 14) - major triad + 9th
+      base.intervals = {0, 4, 7, 14, -1};
+      base.note_count = 4;
+      break;
+
+    case ChordExtension::Maj9:
+      // Major 9th: (0, 4, 7, 11, 14)
+      base.intervals = {0, 4, 7, 11, 14};
+      base.note_count = 5;
+      break;
+
+    case ChordExtension::Min9:
+      // Minor 9th: (0, 3, 7, 10, 14)
+      base.intervals = {0, 3, 7, 10, 14};
+      base.note_count = 5;
+      break;
+
+    case ChordExtension::Dom9:
+      // Dominant 9th: (0, 4, 7, 10, 14)
+      base.intervals = {0, 4, 7, 10, 14};
+      base.note_count = 5;
       break;
 
     case ChordExtension::None:
@@ -156,11 +195,13 @@ Chord getExtendedChord(int8_t degree, ChordExtension extension) {
 }
 
 const char* getChordProgressionName(uint8_t chord_id) {
-  return PROGRESSION_NAMES[std::min(chord_id, static_cast<uint8_t>(15))];
+  constexpr size_t count = sizeof(PROGRESSION_NAMES) / sizeof(PROGRESSION_NAMES[0]);
+  return PROGRESSION_NAMES[std::min(static_cast<size_t>(chord_id), count - 1)];
 }
 
 const char* getChordProgressionDisplay(uint8_t chord_id) {
-  return PROGRESSION_DISPLAYS[std::min(chord_id, static_cast<uint8_t>(15))];
+  constexpr size_t count = sizeof(PROGRESSION_DISPLAYS) / sizeof(PROGRESSION_DISPLAYS[0]);
+  return PROGRESSION_DISPLAYS[std::min(static_cast<size_t>(chord_id), count - 1)];
 }
 
 }  // namespace midisketch

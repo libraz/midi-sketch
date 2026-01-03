@@ -10,10 +10,10 @@ namespace midisketch {
 constexpr uint8_t STRUCTURE_COUNT = 10;
 
 // Number of available mood presets
-constexpr uint8_t MOOD_COUNT = 16;
+constexpr uint8_t MOOD_COUNT = 20;
 
 // Number of available chord progressions
-constexpr uint8_t CHORD_COUNT = 16;
+constexpr uint8_t CHORD_COUNT = 20;
 
 // Drum pattern style categories
 enum class DrumStyle : uint8_t {
@@ -21,7 +21,8 @@ enum class DrumStyle : uint8_t {
   Standard,     // Pop patterns - 8th note hi-hats, 2&4 snare
   FourOnFloor,  // Dance/EDM - kick on every beat
   Upbeat,       // Energetic - syncopated, driving
-  Rock          // Rock patterns - crash accents, ride cymbal
+  Rock,         // Rock patterns - crash accents, ride cymbal
+  Synth         // Synth-oriented - tight 16th hi-hats, punchy kick
 };
 
 // Returns the default BPM for a given mood.

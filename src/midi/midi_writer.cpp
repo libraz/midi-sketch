@@ -238,6 +238,7 @@ void MidiWriter::build(const Song& song, Key key) {
   if (!song.bass().empty()) num_tracks++;
   if (!song.drums().empty()) num_tracks++;
   if (!song.motif().empty()) num_tracks++;
+  if (!song.arpeggio().empty()) num_tracks++;
 
   writeHeader(num_tracks, TICKS_PER_BEAT);
 
@@ -256,6 +257,8 @@ void MidiWriter::build(const Song& song, Key key) {
   constexpr uint8_t BASS_PROG = 33;    // Electric Bass
   constexpr uint8_t MOTIF_CH = 3;
   constexpr uint8_t MOTIF_PROG = 81;   // Synth Lead
+  constexpr uint8_t ARPEGGIO_CH = 4;
+  constexpr uint8_t ARPEGGIO_PROG = 81;  // Saw Lead (Synth)
   constexpr uint8_t DRUMS_CH = 9;
   constexpr uint8_t DRUMS_PROG = 0;
 
@@ -277,6 +280,11 @@ void MidiWriter::build(const Song& song, Key key) {
   if (!song.motif().empty()) {
     writeTrack(song.motif(), "Motif", MOTIF_CH, MOTIF_PROG, song.bpm(), key,
                false, mod_tick, mod_amount);
+  }
+
+  if (!song.arpeggio().empty()) {
+    writeTrack(song.arpeggio(), "Arpeggio", ARPEGGIO_CH, ARPEGGIO_PROG,
+               song.bpm(), key, false, mod_tick, mod_amount);
   }
 
   if (!song.drums().empty()) {

@@ -9,7 +9,7 @@ namespace midisketch {
 
 // Chord intervals relative to root (-1 = unused).
 struct Chord {
-  std::array<int8_t, 4> intervals;  // Semitones from root
+  std::array<int8_t, 5> intervals;  // Semitones from root (up to 5 notes for 9th chords)
   uint8_t note_count;               // Number of notes in chord
   bool is_diminished;               // True for diminished chords (vii°)
 };
@@ -20,7 +20,7 @@ struct ChordProgression {
 };
 
 // Returns the chord progression for the given ID.
-// @param chord_id Progression index (0-15)
+// @param chord_id Progression index (0-19)
 // @returns Reference to ChordProgression struct
 const ChordProgression& getChordProgression(uint8_t chord_id);
 

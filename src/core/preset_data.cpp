@@ -5,7 +5,7 @@ namespace midisketch {
 namespace {
 
 // Mood default BPM values
-constexpr uint16_t MOOD_BPM[16] = {
+constexpr uint16_t MOOD_BPM[20] = {
     120,  // StraightPop
     130,  // BrightUpbeat
     140,  // EnergeticDance
@@ -22,10 +22,15 @@ constexpr uint16_t MOOD_BPM[16] = {
     135,  // ElectroPop
     145,  // IdolPop
     130,  // Anthem
+    // New synth-oriented moods
+    148,  // Yoasobi - fast anime-style
+    118,  // Synthwave - moderate retro
+    145,  // FutureBass - fast EDM
+    110,  // CityPop - moderate groove
 };
 
 // Mood note density values
-constexpr float MOOD_DENSITY[16] = {
+constexpr float MOOD_DENSITY[20] = {
     0.60f,  // StraightPop
     0.70f,  // BrightUpbeat
     0.80f,  // EnergeticDance
@@ -42,6 +47,11 @@ constexpr float MOOD_DENSITY[16] = {
     0.75f,  // ElectroPop
     0.80f,  // IdolPop
     0.70f,  // Anthem
+    // New synth-oriented moods
+    0.75f,  // Yoasobi - high density melody
+    0.55f,  // Synthwave - moderate
+    0.70f,  // FutureBass - high density
+    0.60f,  // CityPop - moderate groove
 };
 
 // Structure pattern names
@@ -59,7 +69,7 @@ const char* STRUCTURE_NAMES[10] = {
 };
 
 // Mood names
-const char* MOOD_NAMES[16] = {
+const char* MOOD_NAMES[20] = {
     "straight_pop",
     "bright_upbeat",
     "energetic_dance",
@@ -76,13 +86,18 @@ const char* MOOD_NAMES[16] = {
     "electro_pop",
     "idol_pop",
     "anthem",
+    "yoasobi",
+    "synthwave",
+    "future_bass",
+    "city_pop",
 };
 
 }  // namespace
 
 uint16_t getMoodDefaultBpm(Mood mood) {
   uint8_t idx = static_cast<uint8_t>(mood);
-  if (idx < 16) {
+  constexpr size_t count = sizeof(MOOD_BPM) / sizeof(MOOD_BPM[0]);
+  if (idx < count) {
     return MOOD_BPM[idx];
   }
   return 120;  // fallback
@@ -90,7 +105,8 @@ uint16_t getMoodDefaultBpm(Mood mood) {
 
 float getMoodDensity(Mood mood) {
   uint8_t idx = static_cast<uint8_t>(mood);
-  if (idx < 16) {
+  constexpr size_t count = sizeof(MOOD_DENSITY) / sizeof(MOOD_DENSITY[0]);
+  if (idx < count) {
     return MOOD_DENSITY[idx];
   }
   return 0.5f;  // fallback
@@ -98,7 +114,8 @@ float getMoodDensity(Mood mood) {
 
 const char* getStructureName(StructurePattern pattern) {
   uint8_t idx = static_cast<uint8_t>(pattern);
-  if (idx < 10) {
+  constexpr size_t count = sizeof(STRUCTURE_NAMES) / sizeof(STRUCTURE_NAMES[0]);
+  if (idx < count) {
     return STRUCTURE_NAMES[idx];
   }
   return "Unknown";
@@ -106,7 +123,8 @@ const char* getStructureName(StructurePattern pattern) {
 
 const char* getMoodName(Mood mood) {
   uint8_t idx = static_cast<uint8_t>(mood);
-  if (idx < 16) {
+  constexpr size_t count = sizeof(MOOD_NAMES) / sizeof(MOOD_NAMES[0]);
+  if (idx < count) {
     return MOOD_NAMES[idx];
   }
   return "unknown";
@@ -124,17 +142,24 @@ DrumStyle getMoodDrumStyle(Mood mood) {
     case Mood::EnergeticDance:
     case Mood::ElectroPop:
     case Mood::IdolPop:
+    case Mood::FutureBass:
       return DrumStyle::FourOnFloor;
 
     // Upbeat - driving patterns
     case Mood::BrightUpbeat:
     case Mood::ModernPop:
     case Mood::Anthem:
+    case Mood::Yoasobi:
       return DrumStyle::Upbeat;
 
     // Rock - rock patterns
     case Mood::LightRock:
       return DrumStyle::Rock;
+
+    // Synth - synth-oriented patterns
+    case Mood::Synthwave:
+    case Mood::CityPop:
+      return DrumStyle::Synth;
 
     // Standard - default pop patterns
     case Mood::StraightPop:

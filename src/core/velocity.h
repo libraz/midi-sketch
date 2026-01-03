@@ -34,6 +34,7 @@ struct VelocityBalance {
   static constexpr float BASS = 0.85f;
   static constexpr float DRUMS = 0.90f;
   static constexpr float MOTIF = 0.70f;
+  static constexpr float ARPEGGIO = 0.85f;
 
   // Get the multiplier for a track role.
   // @param role Track role

@@ -19,6 +19,7 @@ set(MIDISKETCH_SOURCES
   track/drums.cpp
   track/se.cpp
   track/motif.cpp
+  track/arpeggio.cpp
 )
 
 # Create static library

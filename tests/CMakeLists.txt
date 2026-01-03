@@ -20,6 +20,7 @@ set(TEST_SOURCES
   core/arrangement_test.cpp
   core/song_test.cpp
   midi/midi_writer_test.cpp
+  track/arpeggio_test.cpp
 )
 
 add_executable(midisketch_tests ${TEST_SOURCES})

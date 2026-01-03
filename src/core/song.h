@@ -20,6 +20,7 @@ class Song {
   MidiTrack& drums() { return drums_; }
   MidiTrack& se() { return se_; }
   MidiTrack& motif() { return motif_; }
+  MidiTrack& arpeggio() { return arpeggio_; }
 
   const MidiTrack& vocal() const { return vocal_; }
   const MidiTrack& chord() const { return chord_; }
@@ -27,6 +28,7 @@ class Song {
   const MidiTrack& drums() const { return drums_; }
   const MidiTrack& se() const { return se_; }
   const MidiTrack& motif() const { return motif_; }
+  const MidiTrack& arpeggio() const { return arpeggio_; }
 
   // Role-based access
   MidiTrack& track(TrackRole role);
@@ -71,6 +73,10 @@ class Song {
   }
   const std::vector<NoteEvent>& motifPattern() const { return motif_pattern_; }
 
+  // Arpeggio seed tracking
+  void setArpeggioSeed(uint32_t seed) { arpeggio_seed_ = seed; }
+  uint32_t arpeggioSeed() const { return arpeggio_seed_; }
+
  private:
   MidiTrack vocal_;
   MidiTrack chord_;
@@ -78,12 +84,14 @@ class Song {
   MidiTrack drums_;
   MidiTrack se_;
   MidiTrack motif_;
+  MidiTrack arpeggio_;
   Arrangement arrangement_;
   uint16_t bpm_ = 120;
   Tick modulationTick_ = 0;
   int8_t modulationAmount_ = 0;
   uint32_t melody_seed_ = 0;
   uint32_t motif_seed_ = 0;
+  uint32_t arpeggio_seed_ = 0;
   std::vector<NoteEvent> motif_pattern_;
 };
 

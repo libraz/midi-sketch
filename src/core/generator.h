@@ -60,6 +60,7 @@ class Generator {
   void generateDrums();
   void generateSE();
   void generateMotif();
+  void generateArpeggio();
 
   // Rebuilds motif track from stored pattern.
   void rebuildMotifFromPattern();

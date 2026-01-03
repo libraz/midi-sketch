@@ -8,6 +8,8 @@ float getMoodVelocityAdjustment(Mood mood) {
   switch (mood) {
     case Mood::EnergeticDance:
     case Mood::IdolPop:
+    case Mood::Yoasobi:
+    case Mood::FutureBass:
       return 1.1f;
     case Mood::Ballad:
     case Mood::Sentimental:
@@ -15,6 +17,9 @@ float getMoodVelocityAdjustment(Mood mood) {
       return 0.9f;
     case Mood::Dramatic:
       return 1.05f;
+    case Mood::Synthwave:
+    case Mood::CityPop:
+      return 0.95f;
     default:
       return 1.0f;
   }
@@ -88,6 +93,8 @@ float VelocityBalance::getMultiplier(TrackRole role) {
       return DRUMS;
     case TrackRole::Motif:
       return MOTIF;
+    case TrackRole::Arpeggio:
+      return ARPEGGIO;
     case TrackRole::SE:
     default:
       return 1.0f;

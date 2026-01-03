@@ -274,6 +274,15 @@
         </div>
       </div>
     </div>
+
+    <div class="form-group">
+      <label for="composition-style">Composition Style</label>
+      <select id="composition-style">
+        <option value="0">Melody Lead (Traditional)</option>
+        <option value="1">Background Motif</option>
+        <option value="2">Synth Driven (YOASOBI-style)</option>
+      </select>
+    </div>
   </div>
 
   <div class="section">
@@ -324,6 +333,72 @@
         <label for="7th-probability">7th Probability</label>
         <input type="range" id="7th-probability" min="0" max="100" value="30">
         <span id="7th-probability-value">30%</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="chord-ext-9th">
+          <label for="chord-ext-9th">9th Chords (YOASOBI-style)</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="row" id="chord-ext-9th-options" style="display: none;">
+      <div class="form-group">
+        <label for="9th-probability">9th Probability</label>
+        <input type="range" id="9th-probability" min="0" max="100" value="25">
+        <span id="9th-probability-value">25%</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Arpeggio</h2>
+
+    <div class="form-group">
+      <div class="checkbox-group">
+        <input type="checkbox" id="arpeggio-enabled">
+        <label for="arpeggio-enabled">Enable Arpeggio Track</label>
+      </div>
+    </div>
+
+    <div id="arpeggio-options" style="display: none;">
+      <div class="row">
+        <div class="form-group">
+          <label for="arpeggio-pattern">Pattern</label>
+          <select id="arpeggio-pattern">
+            <option value="0">Up</option>
+            <option value="1">Down</option>
+            <option value="2">Up-Down</option>
+            <option value="3">Random</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="arpeggio-speed">Speed</label>
+          <select id="arpeggio-speed">
+            <option value="0">8th Notes</option>
+            <option value="1" selected>16th Notes</option>
+            <option value="2">Triplets</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="form-group">
+          <label for="arpeggio-octave">Octave Range</label>
+          <select id="arpeggio-octave">
+            <option value="1">1 Octave</option>
+            <option value="2" selected>2 Octaves</option>
+            <option value="3">3 Octaves</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="arpeggio-gate">Gate Length</label>
+          <input type="range" id="arpeggio-gate" min="10" max="100" value="80">
+          <span id="arpeggio-gate-value">80%</span>
+        </div>
       </div>
     </div>
   </div>
@@ -413,6 +488,30 @@
           $('7th-probability-value').textContent = $('7th-probability').value + '%';
         });
 
+        // 9th chord extension
+        $('chord-ext-9th').addEventListener('change', () => {
+          $('chord-ext-9th-options').style.display = $('chord-ext-9th').checked ? 'flex' : 'none';
+        });
+        $('9th-probability').addEventListener('input', () => {
+          $('9th-probability-value').textContent = $('9th-probability').value + '%';
+        });
+
+        // Arpeggio options
+        $('arpeggio-enabled').addEventListener('change', () => {
+          $('arpeggio-options').style.display = $('arpeggio-enabled').checked ? 'block' : 'none';
+        });
+        $('arpeggio-gate').addEventListener('input', () => {
+          $('arpeggio-gate-value').textContent = $('arpeggio-gate').value + '%';
+        });
+
+        // Composition style: auto-enable arpeggio for SynthDriven
+        $('composition-style').addEventListener('change', () => {
+          if ($('composition-style').value === '2') {
+            $('arpeggio-enabled').checked = true;
+            $('arpeggio-options').style.display = 'block';
+          }
+        });
+
         updateChordDisplay();
       } catch (e) {
         $('status').className = 'status error';
@@ -484,7 +583,18 @@
         chordExtSus: $('chord-ext-sus').checked,
         chordExt7th: $('chord-ext-7th').checked,
         chordExtSusProb: parseInt($('sus-probability').value),
-        chordExt7thProb: parseInt($('7th-probability').value)
+        chordExt7thProb: parseInt($('7th-probability').value),
+        // 9th chord extension
+        chordExt9th: $('chord-ext-9th').checked,
+        chordExt9thProb: parseInt($('9th-probability').value),
+        // Composition style
+        compositionStyle: parseInt($('composition-style').value),
+        // Arpeggio options
+        arpeggioEnabled: $('arpeggio-enabled').checked,
+        arpeggioPattern: parseInt($('arpeggio-pattern').value),
+        arpeggioSpeed: parseInt($('arpeggio-speed').value),
+        arpeggioOctaveRange: parseInt($('arpeggio-octave').value),
+        arpeggioGate: parseInt($('arpeggio-gate').value)
       };
     }
 
@@ -511,6 +621,10 @@
           pitchDecay: 0.05,
           octaves: 4,
           envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.2 }
+        }).toDestination(),
+        arpeggio: new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'sawtooth' },
+          envelope: { attack: 0.01, decay: 0.15, sustain: 0.2, release: 0.3 }
         }).toDestination()
       };
 
@@ -519,6 +633,7 @@
       synths.chord.volume.value = -12;
       synths.bass.volume.value = -8;
       synths.drums.volume.value = -4;
+      synths.arpeggio.volume.value = -8;
     }
 
     function midiToFreq(midi) {

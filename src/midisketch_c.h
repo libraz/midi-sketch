@@ -32,9 +32,9 @@ typedef enum {
 
 // Generation parameters passed to midisketch_generate.
 typedef struct {
-  uint8_t structure_id;   // Structure pattern (0-4)
-  uint8_t mood_id;        // Mood preset (0-15)
-  uint8_t chord_id;       // Chord progression (0-15)
+  uint8_t structure_id;   // Structure pattern (0-9)
+  uint8_t mood_id;        // Mood preset (0-19)
+  uint8_t chord_id;       // Chord progression (0-19)
   uint8_t key;            // Key (0-11: C, C#, D, Eb, E, F, F#, G, Ab, A, Bb, B)
   uint8_t drums_enabled;  // Drums enabled (0=off, 1=on)
   uint8_t modulation;     // Key modulation (0=off, 1=on)
@@ -43,16 +43,30 @@ typedef struct {
   uint16_t bpm;           // Tempo (60-180, 0=use mood default)
   uint32_t seed;          // Random seed (0=auto)
 
-  // Humanization (Phase D)
+  // Humanization
   uint8_t humanize;            // Enable humanization (0=off, 1=on)
   uint8_t humanize_timing;     // Timing variation (0-100, maps to 0.0-1.0)
   uint8_t humanize_velocity;   // Velocity variation (0-100, maps to 0.0-1.0)
 
-  // Chord extensions (Phase D)
+  // Chord extensions
   uint8_t chord_ext_sus;       // Enable sus2/sus4 chords (0=off, 1=on)
   uint8_t chord_ext_7th;       // Enable 7th chords (0=off, 1=on)
   uint8_t chord_ext_sus_prob;  // Sus chord probability (0-100, maps to 0.0-1.0)
   uint8_t chord_ext_7th_prob;  // 7th chord probability (0-100, maps to 0.0-1.0)
+
+  // 9th chord extensions
+  uint8_t chord_ext_9th;       // Enable 9th chords (0=off, 1=on)
+  uint8_t chord_ext_9th_prob;  // 9th chord probability (0-100, maps to 0.0-1.0)
+
+  // Composition style
+  uint8_t composition_style;   // 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
+
+  // Arpeggio track
+  uint8_t arpeggio_enabled;    // Enable arpeggio track (0=off, 1=on)
+  uint8_t arpeggio_pattern;    // 0=Up, 1=Down, 2=UpDown, 3=Random
+  uint8_t arpeggio_speed;      // 0=Eighth, 1=Sixteenth, 2=Triplet
+  uint8_t arpeggio_octave_range; // 1-3 octaves
+  uint8_t arpeggio_gate;       // Gate length (0-100, maps to 0.0-1.0)
 } MidiSketchParams;
 
 // ============================================================================

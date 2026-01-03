@@ -51,7 +51,8 @@ enum class TrackRole : uint8_t {
   Bass,
   Drums,
   SE,
-  Motif  // Background motif track
+  Motif,    // Background motif track
+  Arpeggio  // Synth arpeggio track
 };
 
 // Represents a MIDI text/marker event.
@@ -94,7 +95,11 @@ enum class ChordExtension : uint8_t {
   Sus4,         // Suspended 4th (0, 5, 7)
   Maj7,         // Major 7th (0, 4, 7, 11)
   Min7,         // Minor 7th (0, 3, 7, 10)
-  Dom7          // Dominant 7th (0, 4, 7, 10)
+  Dom7,         // Dominant 7th (0, 4, 7, 10)
+  Add9,         // Add 9th (0, 4, 7, 14)
+  Maj9,         // Major 9th (0, 4, 7, 11, 14) - needs 5 notes
+  Min9,         // Minor 9th (0, 3, 7, 10, 14) - needs 5 notes
+  Dom9          // Dominant 9th (0, 4, 7, 10, 14) - needs 5 notes
 };
 
 // Represents a section in the song structure.
@@ -121,7 +126,7 @@ enum class StructurePattern : uint8_t {
   AnthemStyle       // Intro(4) -> A(8) -> Chorus(8) -> A(8) -> B(8) -> Chorus(8) -> Chorus(8) -> Outro(4)
 };
 
-// Mood/groove preset (16 patterns available).
+// Mood/groove preset (20 patterns available).
 enum class Mood : uint8_t {
   StraightPop = 0,
   BrightUpbeat,
@@ -138,13 +143,19 @@ enum class Mood : uint8_t {
   ModernPop,
   ElectroPop,
   IdolPop,
-  Anthem
+  Anthem,
+  // New synth-oriented moods
+  Yoasobi,      // Anime-style pop (148 BPM, high density)
+  Synthwave,    // Retro synth (118 BPM, medium density)
+  FutureBass,   // Future bass (145 BPM, high density)
+  CityPop       // City pop (110 BPM, medium density)
 };
 
 // Composition style determines overall musical approach.
 enum class CompositionStyle : uint8_t {
   MelodyLead = 0,    // Traditional: melody is foreground
-  BackgroundMotif    // Henceforth-style: motif is foreground
+  BackgroundMotif,   // Henceforth-style: motif is foreground
+  SynthDriven        // Synth/arpeggio as foreground, vocals subdued
 };
 
 // Motif length in bars.
@@ -197,6 +208,31 @@ enum class HihatDensity : uint8_t {
   EighthOpen   // 8th with open accents
 };
 
+// Arpeggio pattern direction.
+enum class ArpeggioPattern : uint8_t {
+  Up,        // Ascending notes
+  Down,      // Descending notes
+  UpDown,    // Ascending then descending
+  Random     // Random order
+};
+
+// Arpeggio note speed.
+enum class ArpeggioSpeed : uint8_t {
+  Eighth,      // 8th notes
+  Sixteenth,   // 16th notes (default, YOASOBI-style)
+  Triplet      // Triplet feel
+};
+
+// Arpeggio track configuration.
+struct ArpeggioParams {
+  ArpeggioPattern pattern = ArpeggioPattern::Up;
+  ArpeggioSpeed speed = ArpeggioSpeed::Sixteenth;
+  uint8_t octave_range = 2;     // 1-3 octaves
+  float gate = 0.8f;            // Gate length (0.0-1.0)
+  bool sync_chord = true;       // Sync with chord changes
+  uint8_t base_velocity = 90;   // Base velocity for arpeggio notes
+};
+
 // Motif (background melody) configuration.
 // Only active when composition_style = BackgroundMotif.
 struct MotifParams {
@@ -226,8 +262,10 @@ struct MotifDrumParams {
 struct ChordExtensionParams {
   bool enable_sus = false;          // Enable sus2/sus4 substitutions
   bool enable_7th = false;          // Enable 7th chord extensions
+  bool enable_9th = false;          // Enable 9th chord extensions
   float sus_probability = 0.2f;     // Probability of sus chord (0.0-1.0)
   float seventh_probability = 0.3f; // Probability of 7th extension (0.0-1.0)
+  float ninth_probability = 0.25f;  // Probability of 9th extension (0.0-1.0)
 };
 
 // Background motif vocal suppression.
@@ -271,6 +309,10 @@ struct GeneratorParams {
 
   // Chord extensions
   ChordExtensionParams chord_extension;
+
+  // Arpeggio track
+  bool arpeggio_enabled = false;     // Enable arpeggio track
+  ArpeggioParams arpeggio;           // Arpeggio configuration
 
   // Humanization options
   bool humanize = false;             // Enable timing/velocity humanization

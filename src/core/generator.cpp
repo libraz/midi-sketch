@@ -2,6 +2,7 @@
 #include "core/preset_data.h"
 #include "core/structure.h"
 #include "core/velocity.h"
+#include "track/arpeggio.h"
 #include "track/bass.h"
 #include "track/chord_track.h"
 #include "track/drums.h"
@@ -45,8 +46,9 @@ void Generator::generate(const GeneratorParams& params) {
   // Clear all tracks
   song_.clearAll();
 
-  // Calculate modulation (disabled for BackgroundMotif)
-  if (params.composition_style == CompositionStyle::BackgroundMotif) {
+  // Calculate modulation (disabled for BackgroundMotif and SynthDriven)
+  if (params.composition_style == CompositionStyle::BackgroundMotif ||
+      params.composition_style == CompositionStyle::SynthDriven) {
     song_.setModulation(0, 0);
   } else {
     calculateModulation();
@@ -60,6 +62,11 @@ void Generator::generate(const GeneratorParams& params) {
     generateBass();
     generateChord();  // Uses bass track for voicing coordination
     generateVocal();  // Will use suppressed generation
+  } else if (params.composition_style == CompositionStyle::SynthDriven) {
+    // SynthDriven: Arpeggio is foreground, vocals subdued
+    generateBass();
+    generateChord();  // Uses bass track for voicing coordination
+    generateVocal();  // Will generate subdued vocals
   } else {
     // MelodyLead: Bass first for chord voicing coordination
     generateBass();
@@ -69,6 +76,12 @@ void Generator::generate(const GeneratorParams& params) {
 
   if (params.drums_enabled) {
     generateDrums();
+  }
+
+  // SynthDriven automatically enables arpeggio
+  if (params.arpeggio_enabled ||
+      params.composition_style == CompositionStyle::SynthDriven) {
+    generateArpeggio();
   }
 
   generateSE();
@@ -119,6 +132,10 @@ void Generator::generateBass() {
 
 void Generator::generateDrums() {
   generateDrumsTrack(song_.drums(), song_, params_, rng_);
+}
+
+void Generator::generateArpeggio() {
+  generateArpeggioTrack(song_.arpeggio(), song_, params_, rng_);
 }
 
 void Generator::calculateModulation() {
