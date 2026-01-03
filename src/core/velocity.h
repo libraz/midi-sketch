@@ -43,12 +43,14 @@ struct VelocityBalance {
 
 // Apply crescendo/decrescendo dynamics at section transitions.
 // Modifies velocities of notes in the transition region.
+// B->Chorus transition applies crescendo across entire B section.
 // @param track Track to modify (in-place)
+// @param section_start Start tick of the current section
 // @param section_end End tick of the current section
 // @param from Section type being exited
 // @param to Section type being entered
-void applyTransitionDynamics(MidiTrack& track, Tick section_end,
-                              SectionType from, SectionType to);
+void applyTransitionDynamics(MidiTrack& track, Tick section_start,
+                              Tick section_end, SectionType from, SectionType to);
 
 // Apply transition dynamics to all melodic tracks based on arrangement.
 // @param tracks Vector of tracks to modify (in-place)

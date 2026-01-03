@@ -246,6 +246,12 @@ VoicingType selectVoicingType(SectionType section, Mood mood, bool bass_has_root
                     mood == Mood::Chill);
   bool is_dramatic = (mood == Mood::Dramatic || mood == Mood::Nostalgic);
 
+  // Intro/Interlude/Outro: always close voicing for stability
+  if (section == SectionType::Intro || section == SectionType::Interlude ||
+      section == SectionType::Outro) {
+    return VoicingType::Close;
+  }
+
   // When bass has root, prefer rootless voicing in B/Chorus for cleaner sound
   if (bass_has_root && (section == SectionType::B || section == SectionType::Chorus)) {
     // Higher probability of rootless when bass covers root
@@ -264,8 +270,8 @@ VoicingType selectVoicingType(SectionType section, Mood mood, bool bass_has_root
     return VoicingType::Open;
   }
 
-  // Open voicing for B section to add variety
-  if (section == SectionType::B && !is_ballad) {
+  // Open voicing for B section and Bridge to add variety
+  if ((section == SectionType::B || section == SectionType::Bridge) && !is_ballad) {
     return VoicingType::Open;
   }
 
@@ -356,6 +362,9 @@ struct HarmonicRhythmInfo {
 
     switch (section) {
       case SectionType::Intro:
+      case SectionType::Interlude:
+        return {HarmonicDensity::Slow, false};
+      case SectionType::Outro:
         return {HarmonicDensity::Slow, false};
       case SectionType::A:
         return {HarmonicDensity::Normal, false};
@@ -364,9 +373,10 @@ struct HarmonicRhythmInfo {
       case SectionType::Chorus:
         return {is_ballad ? HarmonicDensity::Normal : HarmonicDensity::Dense,
                 !is_ballad};
-      default:
+      case SectionType::Bridge:
         return {HarmonicDensity::Normal, false};
     }
+    return {HarmonicDensity::Normal, false};
   }
 };
 
@@ -461,7 +471,10 @@ ChordRhythm selectRhythm(SectionType section, Mood mood) {
 
   switch (section) {
     case SectionType::Intro:
+    case SectionType::Interlude:
       return ChordRhythm::Whole;
+    case SectionType::Outro:
+      return ChordRhythm::Half;
     case SectionType::A:
       return is_ballad ? ChordRhythm::Whole : ChordRhythm::Half;
     case SectionType::B:
@@ -470,9 +483,10 @@ ChordRhythm selectRhythm(SectionType section, Mood mood) {
       if (is_ballad) return ChordRhythm::Half;
       if (is_energetic) return ChordRhythm::Eighth;
       return ChordRhythm::Quarter;
-    default:
-      return ChordRhythm::Half;
+    case SectionType::Bridge:
+      return is_ballad ? ChordRhythm::Whole : ChordRhythm::Half;
   }
+  return ChordRhythm::Half;
 }
 
 // Generate chord notes for one bar

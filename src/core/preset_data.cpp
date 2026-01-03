@@ -45,12 +45,17 @@ constexpr float MOOD_DENSITY[16] = {
 };
 
 // Structure pattern names
-const char* STRUCTURE_NAMES[5] = {
+const char* STRUCTURE_NAMES[10] = {
     "StandardPop",
     "BuildUp",
     "DirectChorus",
     "RepeatChorus",
     "ShortForm",
+    "FullPop",
+    "FullWithBridge",
+    "DriveUpbeat",
+    "Ballad",
+    "AnthemStyle",
 };
 
 // Mood names
@@ -93,7 +98,7 @@ float getMoodDensity(Mood mood) {
 
 const char* getStructureName(StructurePattern pattern) {
   uint8_t idx = static_cast<uint8_t>(pattern);
-  if (idx < 5) {
+  if (idx < 10) {
     return STRUCTURE_NAMES[idx];
   }
   return "Unknown";

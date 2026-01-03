@@ -62,7 +62,8 @@ enum class BassPattern {
 BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood) {
   // When drums are off, bass takes rhythmic responsibility
   if (!drums_enabled) {
-    if (section == SectionType::Intro) {
+    if (section == SectionType::Intro || section == SectionType::Interlude ||
+        section == SectionType::Outro) {
       return BassPattern::RootFifth;
     }
     return BassPattern::RhythmicDrive;
@@ -76,7 +77,10 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood) {
 
   switch (section) {
     case SectionType::Intro:
+    case SectionType::Interlude:
       return BassPattern::WholeNote;
+    case SectionType::Outro:
+      return is_ballad ? BassPattern::WholeNote : BassPattern::RootFifth;
     case SectionType::A:
       return is_ballad ? BassPattern::WholeNote : BassPattern::RootFifth;
     case SectionType::B:
@@ -85,9 +89,10 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood) {
       if (is_ballad) return BassPattern::RootFifth;
       if (is_dance) return BassPattern::Driving;
       return BassPattern::Syncopated;
-    default:
-      return BassPattern::RootFifth;
+    case SectionType::Bridge:
+      return is_ballad ? BassPattern::WholeNote : BassPattern::RootFifth;
   }
+  return BassPattern::RootFifth;
 }
 
 // Generate one bar of bass based on pattern

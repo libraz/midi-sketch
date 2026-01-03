@@ -1,4 +1,4 @@
-.PHONY: help build test clean rebuild format wasm wasm-clean demo
+.PHONY: help build test clean rebuild format wasm wasm-clean serve demo
 
 BUILD_DIR := build
 WASM_BUILD_DIR := build-wasm
@@ -16,7 +16,8 @@ help:
 	@echo "  make format    - Format code"
 	@echo "  make wasm      - Build WASM module"
 	@echo "  make wasm-clean- Clean WASM build"
-	@echo "  make demo      - Start demo server"
+	@echo "  make serve     - Start demo server (no build)"
+	@echo "  make demo      - Build WASM and start demo server"
 
 configure:
 	@mkdir -p $(BUILD_DIR)
@@ -47,6 +48,9 @@ wasm-clean:
 	rm -rf $(WASM_BUILD_DIR)
 	rm -rf dist/*.wasm dist/*.js
 
-demo: wasm
+serve:
 	@echo "Starting demo server at http://localhost:8080/demo/"
+	@echo "Press Ctrl+C to stop"
 	python3 -m http.server 8080
+
+demo: wasm serve

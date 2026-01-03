@@ -77,7 +77,15 @@ enum class Key : uint8_t {
 };
 
 // Section type within a song structure.
-enum class SectionType { Intro, A, B, Chorus };
+enum class SectionType {
+  Intro,      // Instrumental introduction
+  A,          // A melody (verse)
+  B,          // B melody (pre-chorus)
+  Chorus,     // Chorus/refrain
+  Bridge,     // Bridge section (contrasting)
+  Interlude,  // Instrumental break
+  Outro       // Ending section
+};
 
 // Extended chord types for harmonic variety.
 enum class ChordExtension : uint8_t {
@@ -98,13 +106,19 @@ struct Section {
   Tick start_tick;     // Start position in ticks (computed)
 };
 
-// Song structure pattern (5 patterns available).
+// Song structure pattern (10 patterns available).
 enum class StructurePattern : uint8_t {
-  StandardPop = 0,  // A(8) -> B(8) -> Chorus(8)
-  BuildUp,          // Intro(2) -> A(8) -> B(8) -> Chorus(8)
-  DirectChorus,     // A(8) -> Chorus(8)
-  RepeatChorus,     // A(8) -> B(8) -> Chorus(8) -> Chorus(8)
-  ShortForm         // Intro(2) -> Chorus(8)
+  StandardPop = 0,  // A(8) -> B(8) -> Chorus(8) [24 bars, short]
+  BuildUp,          // Intro(4) -> A(8) -> B(8) -> Chorus(8) [28 bars]
+  DirectChorus,     // A(8) -> Chorus(8) [16 bars, short]
+  RepeatChorus,     // A(8) -> B(8) -> Chorus(8) -> Chorus(8) [32 bars]
+  ShortForm,        // Intro(4) -> Chorus(8) [12 bars, very short]
+  // Full-length patterns (90+ seconds)
+  FullPop,          // Intro(4) -> A(8) -> B(8) -> Chorus(8) -> A(8) -> B(8) -> Chorus(8) -> Outro(4)
+  FullWithBridge,   // Intro(4) -> A(8) -> B(8) -> Chorus(8) -> Bridge(8) -> Chorus(8) -> Outro(4)
+  DriveUpbeat,      // Intro(4) -> Chorus(8) -> A(8) -> B(8) -> Chorus(8) -> Chorus(8) -> Outro(4)
+  Ballad,           // Intro(8) -> A(8) -> B(8) -> Chorus(8) -> Interlude(4) -> B(8) -> Chorus(8) -> Outro(8)
+  AnthemStyle       // Intro(4) -> A(8) -> Chorus(8) -> A(8) -> B(8) -> Chorus(8) -> Chorus(8) -> Outro(4)
 };
 
 // Mood/groove preset (16 patterns available).

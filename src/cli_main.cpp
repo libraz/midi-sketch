@@ -11,12 +11,12 @@ int main(int /*argc*/, char* /*argv*/[]) {
   midisketch::MidiSketch sketch;
 
   midisketch::GeneratorParams params{};
-  params.structure = midisketch::StructurePattern::StandardPop;
-  params.mood = midisketch::Mood::EnergeticDance;
+  params.structure = midisketch::StructurePattern::FullPop;  // Full-length structure
+  params.mood = midisketch::Mood::BrightUpbeat;  // Upbeat mood for energetic feel
   params.chord_id = 0;  // Canon
   params.key = midisketch::Key::C;
   params.drums_enabled = true;
-  params.modulation = false;
+  params.modulation = true;  // Enable key modulation for variety
   params.vocal_low = 55;   // G3
   params.vocal_high = 74;  // D5
   params.bpm = 0;  // use default

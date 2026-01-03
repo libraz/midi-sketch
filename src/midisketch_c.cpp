@@ -22,7 +22,7 @@ MidiSketchError midisketch_generate(MidiSketchHandle handle,
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  if (params->structure_id > 4) {
+  if (params->structure_id >= midisketch::STRUCTURE_COUNT) {
     return MIDISKETCH_ERROR_INVALID_STRUCTURE;
   }
 
@@ -63,6 +63,17 @@ MidiSketchError midisketch_generate(MidiSketchHandle handle,
   gen_params.vocal_high = params->vocal_high;
   gen_params.bpm = params->bpm;
   gen_params.seed = params->seed;
+
+  // Humanization parameters
+  gen_params.humanize = params->humanize != 0;
+  gen_params.humanize_timing = params->humanize_timing / 100.0f;
+  gen_params.humanize_velocity = params->humanize_velocity / 100.0f;
+
+  // Chord extension parameters
+  gen_params.chord_extension.enable_sus = params->chord_ext_sus != 0;
+  gen_params.chord_extension.enable_7th = params->chord_ext_7th != 0;
+  gen_params.chord_extension.sus_probability = params->chord_ext_sus_prob / 100.0f;
+  gen_params.chord_extension.seventh_probability = params->chord_ext_7th_prob / 100.0f;
 
   sketch->generate(gen_params);
   return MIDISKETCH_OK;

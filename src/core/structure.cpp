@@ -10,6 +10,9 @@ std::string sectionTypeName(SectionType type) {
     case SectionType::A: return "A";
     case SectionType::B: return "B";
     case SectionType::Chorus: return "Chorus";
+    case SectionType::Bridge: return "Bridge";
+    case SectionType::Interlude: return "Interlude";
+    case SectionType::Outro: return "Outro";
   }
   return "";
 }
@@ -29,24 +32,28 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
 
   switch (pattern) {
     case StructurePattern::StandardPop:
+      // 24 bars - short form
       addSection(SectionType::A, 8);
       addSection(SectionType::B, 8);
       addSection(SectionType::Chorus, 8);
       break;
 
     case StructurePattern::BuildUp:
-      addSection(SectionType::Intro, 2);
+      // 28 bars - with intro
+      addSection(SectionType::Intro, 4);
       addSection(SectionType::A, 8);
       addSection(SectionType::B, 8);
       addSection(SectionType::Chorus, 8);
       break;
 
     case StructurePattern::DirectChorus:
+      // 16 bars - very short
       addSection(SectionType::A, 8);
       addSection(SectionType::Chorus, 8);
       break;
 
     case StructurePattern::RepeatChorus:
+      // 32 bars
       addSection(SectionType::A, 8);
       addSection(SectionType::B, 8);
       addSection(SectionType::Chorus, 8);
@@ -54,8 +61,67 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
       break;
 
     case StructurePattern::ShortForm:
-      addSection(SectionType::Intro, 2);
+      // 12 bars - very short, demo
+      addSection(SectionType::Intro, 4);
       addSection(SectionType::Chorus, 8);
+      break;
+
+    case StructurePattern::FullPop:
+      // 56 bars - full standard pop structure (~112 sec @120BPM)
+      addSection(SectionType::Intro, 4);
+      addSection(SectionType::A, 8);
+      addSection(SectionType::B, 8);
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::A, 8);
+      addSection(SectionType::B, 8);
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::Outro, 4);
+      break;
+
+    case StructurePattern::FullWithBridge:
+      // 48 bars - with bridge section (~96 sec @120BPM)
+      addSection(SectionType::Intro, 4);
+      addSection(SectionType::A, 8);
+      addSection(SectionType::B, 8);
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::Bridge, 8);
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::Outro, 4);
+      break;
+
+    case StructurePattern::DriveUpbeat:
+      // 52 bars - chorus-first upbeat style (~104 sec @120BPM)
+      addSection(SectionType::Intro, 4);
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::A, 8);
+      addSection(SectionType::B, 8);
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::Outro, 4);
+      break;
+
+    case StructurePattern::Ballad:
+      // 60 bars - slow ballad form with interlude (~144 sec @75BPM)
+      addSection(SectionType::Intro, 8);
+      addSection(SectionType::A, 8);
+      addSection(SectionType::B, 8);
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::Interlude, 4);
+      addSection(SectionType::B, 8);
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::Outro, 8);
+      break;
+
+    case StructurePattern::AnthemStyle:
+      // 52 bars - anthem style with early chorus (~104 sec @130BPM)
+      addSection(SectionType::Intro, 4);
+      addSection(SectionType::A, 8);
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::A, 8);
+      addSection(SectionType::B, 8);
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::Outro, 4);
       break;
   }
 

@@ -7,7 +7,7 @@
 namespace midisketch {
 
 // Number of available structure patterns
-constexpr uint8_t STRUCTURE_COUNT = 5;
+constexpr uint8_t STRUCTURE_COUNT = 10;
 
 // Number of available mood presets
 constexpr uint8_t MOOD_COUNT = 16;

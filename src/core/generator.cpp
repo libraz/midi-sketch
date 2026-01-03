@@ -134,7 +134,10 @@ void Generator::calculateModulation() {
   const auto& sections = song_.arrangement().sections();
 
   switch (params_.structure) {
-    case StructurePattern::RepeatChorus: {
+    case StructurePattern::RepeatChorus:
+    case StructurePattern::DriveUpbeat:
+    case StructurePattern::AnthemStyle: {
+      // Modulate at second Chorus
       int chorus_count = 0;
       for (const auto& section : sections) {
         if (section.type == SectionType::Chorus) {
@@ -148,11 +151,30 @@ void Generator::calculateModulation() {
       break;
     }
     case StructurePattern::StandardPop:
-    case StructurePattern::BuildUp: {
+    case StructurePattern::BuildUp:
+    case StructurePattern::FullPop: {
+      // Modulate at first Chorus following B section
       for (size_t i = 0; i < sections.size(); ++i) {
         if (sections[i].type == SectionType::Chorus) {
           if (i > 0 && sections[i - 1].type == SectionType::B) {
             mod_tick = sections[i].start_tick;
+            break;
+          }
+        }
+      }
+      break;
+    }
+    case StructurePattern::FullWithBridge:
+    case StructurePattern::Ballad: {
+      // Modulate after Bridge or Interlude, at last Chorus
+      for (size_t i = sections.size(); i > 0; --i) {
+        size_t idx = i - 1;
+        if (sections[idx].type == SectionType::Chorus) {
+          // Check if preceded by Bridge or Interlude
+          if (idx > 0 && (sections[idx - 1].type == SectionType::Bridge ||
+                          sections[idx - 1].type == SectionType::Interlude ||
+                          sections[idx - 1].type == SectionType::B)) {
+            mod_tick = sections[idx].start_tick;
             break;
           }
         }

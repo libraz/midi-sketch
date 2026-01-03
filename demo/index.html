@@ -277,6 +277,58 @@
   </div>
 
   <div class="section">
+    <h2>Advanced Options</h2>
+
+    <div class="form-group">
+      <div class="checkbox-group">
+        <input type="checkbox" id="humanize">
+        <label for="humanize">Humanize (timing/velocity variation)</label>
+      </div>
+    </div>
+
+    <div class="row" id="humanize-options" style="display: none;">
+      <div class="form-group">
+        <label for="humanize-timing">Timing Variation</label>
+        <input type="range" id="humanize-timing" min="0" max="100" value="50">
+        <span id="humanize-timing-value">50%</span>
+      </div>
+      <div class="form-group">
+        <label for="humanize-velocity">Velocity Variation</label>
+        <input type="range" id="humanize-velocity" min="0" max="100" value="50">
+        <span id="humanize-velocity-value">50%</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="chord-ext-sus">
+          <label for="chord-ext-sus">Sus2/Sus4 Chords</label>
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="chord-ext-7th">
+          <label for="chord-ext-7th">7th Chords</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="row" id="chord-ext-options" style="display: none;">
+      <div class="form-group">
+        <label for="sus-probability">Sus Probability</label>
+        <input type="range" id="sus-probability" min="0" max="100" value="20">
+        <span id="sus-probability-value">20%</span>
+      </div>
+      <div class="form-group">
+        <label for="7th-probability">7th Probability</label>
+        <input type="range" id="7th-probability" min="0" max="100" value="30">
+        <span id="7th-probability-value">30%</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
     <h2>Actions</h2>
     <div class="buttons">
       <button id="generate" class="btn-primary" disabled>Generate</button>
@@ -342,6 +394,25 @@
         $('download').addEventListener('click', downloadMidi);
         $('chord').addEventListener('change', updateChordDisplay);
 
+        // Advanced options event listeners
+        $('humanize').addEventListener('change', () => {
+          $('humanize-options').style.display = $('humanize').checked ? 'flex' : 'none';
+        });
+        $('humanize-timing').addEventListener('input', () => {
+          $('humanize-timing-value').textContent = $('humanize-timing').value + '%';
+        });
+        $('humanize-velocity').addEventListener('input', () => {
+          $('humanize-velocity-value').textContent = $('humanize-velocity').value + '%';
+        });
+        $('chord-ext-sus').addEventListener('change', updateChordExtOptions);
+        $('chord-ext-7th').addEventListener('change', updateChordExtOptions);
+        $('sus-probability').addEventListener('input', () => {
+          $('sus-probability-value').textContent = $('sus-probability').value + '%';
+        });
+        $('7th-probability').addEventListener('input', () => {
+          $('7th-probability-value').textContent = $('7th-probability').value + '%';
+        });
+
         updateChordDisplay();
       } catch (e) {
         $('status').className = 'status error';
@@ -388,6 +459,11 @@
       $('chord-display').textContent = chords[idx]?.display || '';
     }
 
+    function updateChordExtOptions() {
+      const show = $('chord-ext-sus').checked || $('chord-ext-7th').checked;
+      $('chord-ext-options').style.display = show ? 'flex' : 'none';
+    }
+
     function getParams() {
       return {
         structureId: parseInt($('structure').value),
@@ -399,7 +475,16 @@
         vocalLow: parseInt($('vocal-low').value),
         vocalHigh: parseInt($('vocal-high').value),
         bpm: parseInt($('bpm').value),
-        seed: parseInt($('seed').value)
+        seed: parseInt($('seed').value),
+        // Humanize options
+        humanize: $('humanize').checked,
+        humanizeTiming: parseInt($('humanize-timing').value),
+        humanizeVelocity: parseInt($('humanize-velocity').value),
+        // Chord extension options
+        chordExtSus: $('chord-ext-sus').checked,
+        chordExt7th: $('chord-ext-7th').checked,
+        chordExtSusProb: parseInt($('sus-probability').value),
+        chordExt7thProb: parseInt($('7th-probability').value)
       };
     }
 
@@ -467,7 +552,7 @@
         result.textContent += `Mood: ${$('mood').options[$('mood').selectedIndex].text}\n`;
         result.textContent += `Chord: ${chords[parseInt($('chord').value)].display}\n`;
         result.textContent += `BPM: ${eventData.bpm}\n`;
-        result.textContent += `Duration: ${formatTime(ticksToSeconds(eventData.totalTicks, eventData.bpm))}`;
+        result.textContent += `Duration: ${formatTime(ticksToSeconds(eventData.duration_ticks, eventData.bpm))}`;
 
         // Enable buttons
         $('regenerate').disabled = false;
@@ -476,7 +561,7 @@
 
         // Show playback info
         $('playback-info').classList.remove('hidden');
-        totalDuration = ticksToSeconds(eventData.totalTicks, eventData.bpm);
+        totalDuration = ticksToSeconds(eventData.duration_ticks, eventData.bpm);
         updateTimeDisplay(0);
 
       } catch (e) {
@@ -550,8 +635,8 @@
           if (!synth) return;
 
           track.notes.forEach(note => {
-            const startTime = ticksToSeconds(note.start, bpm);
-            const duration = ticksToSeconds(note.duration, bpm);
+            const startTime = ticksToSeconds(note.start_ticks, bpm);
+            const duration = ticksToSeconds(note.duration_ticks, bpm);
             const velocity = note.velocity / 127;
 
             if (track.name.toLowerCase() === 'drums') {
@@ -570,7 +655,7 @@
         });
 
         // Schedule stop at end
-        const endTime = ticksToSeconds(eventData.totalTicks, bpm);
+        const endTime = ticksToSeconds(eventData.duration_ticks, bpm);
         const stopId = Tone.Transport.schedule(() => {
           stop();
         }, endTime + 0.1);

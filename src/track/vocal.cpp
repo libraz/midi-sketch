@@ -293,6 +293,13 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
   const auto& sections = song.arrangement().sections();
   for (const auto& section : sections) {
+    // Skip instrumental sections (no vocal melody)
+    if (section.type == SectionType::Intro ||
+        section.type == SectionType::Interlude ||
+        section.type == SectionType::Outro) {
+      continue;
+    }
+
     section_occurrence[section.type]++;
     bool is_repeat = (section_occurrence[section.type] > 1);
     bool use_cached = is_repeat &&
@@ -306,12 +313,26 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     }
 
     if (use_cached) {
+      // Compute section-specific range for proper clamping
+      // (must match the range used when the phrase was originally generated)
+      int8_t cache_register_shift = 0;
+      switch (section.type) {
+        case SectionType::A: cache_register_shift = -2; break;
+        case SectionType::B: cache_register_shift = 2; break;
+        case SectionType::Chorus: cache_register_shift = 5; break;
+        default: break;
+      }
+      int cache_vocal_low = std::clamp(
+          static_cast<int>(effective_vocal_low) + cache_register_shift, 36, 96);
+      int cache_vocal_high = std::clamp(
+          static_cast<int>(effective_vocal_high) + cache_register_shift, 36, 96);
+
       const auto& cached = phrase_cache[section.type];
       for (const auto& note : cached) {
         Tick absolute_tick = section.start_tick + note.startTick;
         int transposed_pitch = note.note + transpose;
-        transposed_pitch = std::clamp(transposed_pitch, (int)effective_vocal_low,
-                                      (int)effective_vocal_high);
+        // Clamp to section-specific range (same as when originally generated)
+        transposed_pitch = std::clamp(transposed_pitch, cache_vocal_low, cache_vocal_high);
         track.addNote(absolute_tick, note.duration,
                       static_cast<uint8_t>(transposed_pitch), note.velocity);
       }
@@ -328,27 +349,60 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     int contour_variation = 0;
     float note_density = 1.0f;
 
+    // Section-specific melody parameters
+    // register_shift: shift vocal range (semitones, positive = higher)
+    // interval_boost: allow larger melodic leaps
+    int8_t register_shift = 0;
+    int8_t interval_boost = 0;
+
     switch (section.type) {
       case SectionType::Intro:
+      case SectionType::Interlude:
+      case SectionType::Outro:
+        // These are skipped above, but handle for completeness
         rhythm_pattern_idx = 3;
         note_density = 0.5f;
         break;
       case SectionType::A:
+        // A melody: restrained, mid-low register
         rhythm_pattern_idx = 0;
         contour_variation = 0;
-        note_density = 0.85f;
+        note_density = 0.7f;      // More sparse (was 0.85)
+        register_shift = -2;      // Lower register
+        interval_boost = 0;
         break;
       case SectionType::B:
+        // B melody: building tension, rising register
         rhythm_pattern_idx = 1;
         contour_variation = 1;
-        note_density = 0.9f;
+        note_density = 0.85f;     // Medium density
+        register_shift = 2;       // Slightly higher
+        interval_boost = 1;       // Slightly larger leaps
         break;
       case SectionType::Chorus:
+        // Chorus: climactic, high register, emphatic
         rhythm_pattern_idx = 2;
         contour_variation = 2;
-        note_density = 1.0f;
+        note_density = 1.0f;      // Full density
+        register_shift = 5;       // Higher register (+5 semitones)
+        interval_boost = 2;       // Allow bigger leaps for emotion
+        break;
+      case SectionType::Bridge:
+        // Bridge: contrasting, reflective
+        rhythm_pattern_idx = 3;
+        contour_variation = 3;
+        note_density = 0.6f;      // Sparse
+        register_shift = 0;
+        interval_boost = 0;
         break;
     }
+
+    // Apply register shift to effective range for this section
+    int section_vocal_low = static_cast<int>(effective_vocal_low) + register_shift;
+    int section_vocal_high = static_cast<int>(effective_vocal_high) + register_shift;
+    // Clamp to valid MIDI range
+    section_vocal_low = std::clamp(section_vocal_low, 36, 96);
+    section_vocal_high = std::clamp(section_vocal_high, 36, 96);
 
     // Apply BackgroundMotif suppression
     if (is_background_motif) {
@@ -368,6 +422,10 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       }
     }
 
+    // Chorus hook: store first 2-bar phrase and repeat it
+    std::vector<NoteEvent> chorus_hook_notes;
+    bool is_chorus = (section.type == SectionType::Chorus);
+
     // Process 2-bar motifs
     for (uint8_t motif_start = 0; motif_start < section.bars; motif_start += 2) {
       bool is_phrase_ending = ((motif_start + 2) % 4 == 0);
@@ -376,6 +434,32 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
       Tick motif_start_tick = section.start_tick + motif_start * TICKS_PER_BAR;
       Tick relative_motif_start = motif_start * TICKS_PER_BAR;
+
+      // For chorus: repeat the hook phrase every 4 bars (except phrase endings)
+      bool use_chorus_hook = is_chorus && motif_start > 0 &&
+                             !chorus_hook_notes.empty() &&
+                             (motif_start % 4 == 0) && !is_phrase_ending;
+
+      if (use_chorus_hook) {
+        // Repeat the chorus hook with slight variation
+        for (const auto& note : chorus_hook_notes) {
+          Tick absolute_tick = motif_start_tick + note.startTick;
+          // Apply slight pitch variation for interest
+          int varied_pitch = note.note;
+          if (motif_start >= 4) {
+            // Second repetition: transpose up slightly for climax
+            varied_pitch = std::min(127, note.note + 2);
+          }
+          varied_pitch = std::clamp(varied_pitch, section_vocal_low, section_vocal_high);
+          track.addNote(absolute_tick, note.duration,
+                        static_cast<uint8_t>(varied_pitch), note.velocity);
+          phrase_notes.push_back({note.startTick + relative_motif_start,
+                                  note.duration,
+                                  static_cast<uint8_t>(varied_pitch),
+                                  note.velocity});
+        }
+        continue;
+      }
 
       // Get chord info for this 2-bar segment
       auto [chord_root1, is_minor1] = getChordInfo(motif_start);
@@ -465,10 +549,10 @@ void generateVocalTrack(MidiTrack& track, Song& song,
           prev_interval = pitch - prev_pitch;
         }
 
-        // Ensure within vocal range
-        while (pitch < effective_vocal_low) pitch += 12;
-        while (pitch > effective_vocal_high) pitch -= 12;
-        pitch = std::clamp(pitch, (int)effective_vocal_low, (int)effective_vocal_high);
+        // Ensure within section-specific vocal range
+        while (pitch < section_vocal_low) pitch += 12;
+        while (pitch > section_vocal_high) pitch -= 12;
+        pitch = std::clamp(pitch, section_vocal_low, section_vocal_high);
 
         prev_pitch = pitch;
 
@@ -550,6 +634,14 @@ void generateVocalTrack(MidiTrack& track, Song& song,
           track.addNote(note_tick, duration, clampPitch(pitch), velocity);
           phrase_notes.push_back(
               {relative_tick, duration, clampPitch(pitch), velocity});
+
+          // Store notes for chorus hook (first 2-bar phrase only)
+          if (is_chorus && motif_start == 0) {
+            // Use relative tick within the motif (not section)
+            Tick motif_relative_tick = relative_tick - relative_motif_start;
+            chorus_hook_notes.push_back(
+                {motif_relative_tick, duration, clampPitch(pitch), velocity});
+          }
         }
       }
     }

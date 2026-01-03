@@ -218,7 +218,11 @@ float getGhostDensity(Mood mood, SectionType section) {
   // Section adjustment
   switch (section) {
     case SectionType::Intro:
+    case SectionType::Interlude:
       base_density *= 0.3f;
+      break;
+    case SectionType::Outro:
+      base_density *= 0.5f;
       break;
     case SectionType::A:
       base_density *= 0.7f;
@@ -228,6 +232,9 @@ float getGhostDensity(Mood mood, SectionType section) {
       break;
     case SectionType::Chorus:
       base_density *= 1.2f;
+      break;
+    case SectionType::Bridge:
+      base_density *= 0.6f;
       break;
   }
 
@@ -269,9 +276,19 @@ struct KickPattern {
 KickPattern getKickPattern(SectionType section, DrumStyle style, int bar) {
   KickPattern p = {false, false, false, false, false, false, false, false};
 
-  // Intro: minimal
-  if (section == SectionType::Intro) {
+  // Instrumental sections: minimal kick
+  if (section == SectionType::Intro || section == SectionType::Interlude) {
     p.beat1 = true;
+    if (bar % 2 == 1) {
+      p.beat3 = true;  // Add beat 3 on alternate bars for variation
+    }
+    return p;
+  }
+
+  // Outro: gradual fadeout pattern
+  if (section == SectionType::Outro) {
+    p.beat1 = true;
+    p.beat3 = true;
     return p;
   }
 
@@ -348,13 +365,17 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style) {
 
   // FourOnFloor: always 8th notes (classic open/closed pattern)
   if (style == DrumStyle::FourOnFloor) {
-    return (section == SectionType::Intro) ? HiHatLevel::Quarter
-                                           : HiHatLevel::Eighth;
+    return (section == SectionType::Intro || section == SectionType::Interlude)
+               ? HiHatLevel::Quarter
+               : HiHatLevel::Eighth;
   }
 
   switch (section) {
     case SectionType::Intro:
+    case SectionType::Interlude:
       return HiHatLevel::Quarter;
+    case SectionType::Outro:
+      return HiHatLevel::Eighth;
     case SectionType::A:
       return HiHatLevel::Eighth;
     case SectionType::B:
@@ -362,9 +383,10 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style) {
     case SectionType::Chorus:
       return (style == DrumStyle::Upbeat) ? HiHatLevel::Sixteenth
                                           : HiHatLevel::Eighth;
-    default:
+    case SectionType::Bridge:
       return HiHatLevel::Eighth;
   }
+  return HiHatLevel::Eighth;
 }
 
 }  // namespace
@@ -388,21 +410,36 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
     const auto& section = sections[sec_idx];
     bool is_last_section = (sec_idx == sections.size() - 1);
 
-    // Section-specific density for velocity
+    // Section-specific density for velocity - more contrast for dynamics
     float density_mult = 1.0f;
+    bool add_crash_accent = false;
     switch (section.type) {
       case SectionType::Intro:
+      case SectionType::Interlude:
+        density_mult = 0.5f;    // Very soft
+        break;
+      case SectionType::Outro:
         density_mult = 0.6f;
         break;
       case SectionType::A:
-        density_mult = 0.8f;
+        density_mult = 0.7f;    // Subdued verse
         break;
       case SectionType::B:
-        density_mult = 0.9f;
+        density_mult = 0.85f;   // Building tension
         break;
       case SectionType::Chorus:
-        density_mult = 1.0f;
+        density_mult = 1.15f;   // Powerful chorus
+        add_crash_accent = true;
         break;
+      case SectionType::Bridge:
+        density_mult = 0.6f;    // Sparse bridge
+        break;
+    }
+
+    // Add crash cymbal accent at the start of Chorus for impact
+    if (add_crash_accent && sec_idx > 0) {
+      uint8_t crash_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(105 * density_mult)));
+      track.addNote(section.start_tick, TICKS_PER_BEAT / 2, 49, crash_vel);  // Crash cymbal
     }
 
     HiHatLevel hh_level = getHiHatLevel(section.type, style);
@@ -413,7 +450,8 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
     }
 
     bool use_ghost_notes =
-        (section.type == SectionType::B || section.type == SectionType::Chorus)
+        (section.type == SectionType::B || section.type == SectionType::Chorus ||
+         section.type == SectionType::Bridge)
         && style != DrumStyle::Sparse;
 
     // Disable ghost notes for BackgroundMotif to keep pattern clean

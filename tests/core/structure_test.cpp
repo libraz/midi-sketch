@@ -24,9 +24,9 @@ TEST(StructureTest, BuildUpStructure) {
   auto sections = buildStructure(StructurePattern::BuildUp);
   ASSERT_EQ(sections.size(), 4);
 
-  // Intro(2) → A(8) → B(8) → Chorus(8)
+  // Intro(4) → A(8) → B(8) → Chorus(8)
   EXPECT_EQ(sections[0].type, SectionType::Intro);
-  EXPECT_EQ(sections[0].bars, 2);
+  EXPECT_EQ(sections[0].bars, 4);
 }
 
 TEST(StructureTest, TotalBarsCalculation) {
@@ -62,9 +62,9 @@ TEST(StructureTest, ShortFormStructure) {
   auto sections = buildStructure(StructurePattern::ShortForm);
   ASSERT_EQ(sections.size(), 2);
 
-  // Intro(2) → Chorus(8)
+  // Intro(4) → Chorus(8)
   EXPECT_EQ(sections[0].type, SectionType::Intro);
-  EXPECT_EQ(sections[0].bars, 2);
+  EXPECT_EQ(sections[0].bars, 4);
   EXPECT_EQ(sections[1].type, SectionType::Chorus);
   EXPECT_EQ(sections[1].bars, 8);
 }

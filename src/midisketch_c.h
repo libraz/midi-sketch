@@ -42,6 +42,17 @@ typedef struct {
   uint8_t vocal_high;     // Vocal range upper bound (MIDI note, e.g., 79=G5)
   uint16_t bpm;           // Tempo (60-180, 0=use mood default)
   uint32_t seed;          // Random seed (0=auto)
+
+  // Humanization (Phase D)
+  uint8_t humanize;            // Enable humanization (0=off, 1=on)
+  uint8_t humanize_timing;     // Timing variation (0-100, maps to 0.0-1.0)
+  uint8_t humanize_velocity;   // Velocity variation (0-100, maps to 0.0-1.0)
+
+  // Chord extensions (Phase D)
+  uint8_t chord_ext_sus;       // Enable sus2/sus4 chords (0=off, 1=on)
+  uint8_t chord_ext_7th;       // Enable 7th chords (0=off, 1=on)
+  uint8_t chord_ext_sus_prob;  // Sus chord probability (0-100, maps to 0.0-1.0)
+  uint8_t chord_ext_7th_prob;  // 7th chord probability (0-100, maps to 0.0-1.0)
 } MidiSketchParams;
 
 // ============================================================================
