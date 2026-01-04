@@ -104,6 +104,25 @@ MidiSketchError midisketch_regenerate_melody(MidiSketchHandle handle,
   return MIDISKETCH_OK;
 }
 
+MidiSketchError midisketch_regenerate_melody_ex(MidiSketchHandle handle,
+                                                const MidiSketchMelodyParams* params) {
+  if (!handle || !params) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+
+  midisketch::MelodyRegenerateParams regen_params;
+  regen_params.seed = params->seed;
+  regen_params.vocal_low = params->vocal_low;
+  regen_params.vocal_high = params->vocal_high;
+  regen_params.vocal_attitude = static_cast<midisketch::VocalAttitude>(params->vocal_attitude);
+  regen_params.composition_style = static_cast<midisketch::CompositionStyle>(params->composition_style);
+
+  sketch->regenerateMelody(regen_params);
+  return MIDISKETCH_OK;
+}
+
 MidiSketchMidiData* midisketch_get_midi(MidiSketchHandle handle) {
   if (!handle) return nullptr;
 

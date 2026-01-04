@@ -34,6 +34,11 @@ void MidiSketch::regenerateMelody(uint32_t new_seed) {
   midi_writer_.build(generator_.getSong(), generator_.getParams().key);
 }
 
+void MidiSketch::regenerateMelody(const MelodyRegenerateParams& params) {
+  generator_.regenerateMelody(params);
+  midi_writer_.build(generator_.getSong(), generator_.getParams().key);
+}
+
 void MidiSketch::regenerateVocalFromConfig(const SongConfig& config,
                                             uint32_t new_seed) {
   generator_.regenerateVocalFromConfig(config, new_seed);

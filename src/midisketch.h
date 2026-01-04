@@ -27,6 +27,12 @@ class MidiSketch {
   // @param new_seed New random seed (0 = auto)
   void regenerateMelody(uint32_t new_seed = 0);
 
+  // Regenerates only the melody with full parameter control.
+  // Updates vocal range, attitude, and composition style before regenerating.
+  // Other tracks (chord, bass, drums, arpeggio) remain unchanged.
+  // @param params MelodyRegenerateParams with all required fields
+  void regenerateMelody(const MelodyRegenerateParams& params);
+
   // Regenerates the vocal track with updated VocalAttitude.
   // @param config SongConfig containing the new VocalAttitude
   // @param new_seed New random seed (0 = keep current seed)

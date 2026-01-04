@@ -1006,5 +1006,201 @@ TEST(GeneratorTest, ChordExtensionParameterRanges) {
   EXPECT_GT(gen.getSong().chord().noteCount(), 0u);
 }
 
+// ===== MelodyRegenerateParams Tests =====
+
+TEST(GeneratorTest, RegenerateMelodyWithParamsUpdatesSeed) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ShortForm;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.vocal_low = 48;
+  params.vocal_high = 72;
+
+  gen.generate(params);
+  uint32_t original_seed = gen.getSong().melodySeed();
+
+  // Regenerate with new seed via MelodyRegenerateParams
+  MelodyRegenerateParams regen{};
+  regen.seed = 100;
+  regen.vocal_low = 48;
+  regen.vocal_high = 72;
+  regen.vocal_attitude = VocalAttitude::Clean;
+  regen.composition_style = CompositionStyle::MelodyLead;
+
+  gen.regenerateMelody(regen);
+  EXPECT_EQ(gen.getSong().melodySeed(), 100u);
+  EXPECT_NE(gen.getSong().melodySeed(), original_seed);
+}
+
+TEST(GeneratorTest, RegenerateMelodyWithParamsUpdatesVocalRange) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ShortForm;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.vocal_low = 48;
+  params.vocal_high = 72;
+
+  gen.generate(params);
+
+  // Regenerate with different vocal range
+  MelodyRegenerateParams regen{};
+  regen.seed = 42;  // Same seed
+  regen.vocal_low = 60;  // Higher range
+  regen.vocal_high = 84;
+  regen.vocal_attitude = VocalAttitude::Clean;
+  regen.composition_style = CompositionStyle::MelodyLead;
+
+  gen.regenerateMelody(regen);
+
+  // Verify params were updated
+  EXPECT_EQ(gen.getParams().vocal_low, 60u);
+  EXPECT_EQ(gen.getParams().vocal_high, 84u);
+
+  // Vocal notes should be within new range
+  const auto& vocal = gen.getSong().vocal().notes();
+  for (const auto& note : vocal) {
+    EXPECT_GE(note.note, 60u);
+    EXPECT_LE(note.note, 84u);
+  }
+}
+
+TEST(GeneratorTest, RegenerateMelodyWithParamsUpdatesAttitude) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ShortForm;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.vocal_low = 48;
+  params.vocal_high = 72;
+  params.vocal_attitude = VocalAttitude::Clean;
+
+  gen.generate(params);
+  EXPECT_EQ(gen.getParams().vocal_attitude, VocalAttitude::Clean);
+
+  // Regenerate with different attitude
+  MelodyRegenerateParams regen{};
+  regen.seed = 42;
+  regen.vocal_low = 48;
+  regen.vocal_high = 72;
+  regen.vocal_attitude = VocalAttitude::Expressive;
+  regen.composition_style = CompositionStyle::MelodyLead;
+
+  gen.regenerateMelody(regen);
+  EXPECT_EQ(gen.getParams().vocal_attitude, VocalAttitude::Expressive);
+}
+
+TEST(GeneratorTest, RegenerateMelodyWithParamsUpdatesCompositionStyle) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ShortForm;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.vocal_low = 48;
+  params.vocal_high = 72;
+  params.composition_style = CompositionStyle::MelodyLead;
+
+  gen.generate(params);
+  EXPECT_EQ(gen.getParams().composition_style, CompositionStyle::MelodyLead);
+
+  // Regenerate with different composition style
+  MelodyRegenerateParams regen{};
+  regen.seed = 42;
+  regen.vocal_low = 48;
+  regen.vocal_high = 72;
+  regen.vocal_attitude = VocalAttitude::Clean;
+  regen.composition_style = CompositionStyle::BackgroundMotif;
+
+  gen.regenerateMelody(regen);
+  EXPECT_EQ(gen.getParams().composition_style, CompositionStyle::BackgroundMotif);
+}
+
+TEST(GeneratorTest, RegenerateMelodyWithParamsPreservesBGM) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ShortForm;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.vocal_low = 48;
+  params.vocal_high = 72;
+  params.drums_enabled = true;
+
+  gen.generate(params);
+
+  // Save original BGM track data
+  const auto original_chord_notes = gen.getSong().chord().notes();
+  const auto original_bass_notes = gen.getSong().bass().notes();
+  const auto original_drums_notes = gen.getSong().drums().notes();
+
+  // Regenerate melody with different params
+  MelodyRegenerateParams regen{};
+  regen.seed = 999;  // Different seed
+  regen.vocal_low = 60;  // Different range
+  regen.vocal_high = 84;
+  regen.vocal_attitude = VocalAttitude::Expressive;  // Different attitude
+  regen.composition_style = CompositionStyle::MelodyLead;
+
+  gen.regenerateMelody(regen);
+
+  // BGM tracks should be unchanged
+  const auto& new_chord_notes = gen.getSong().chord().notes();
+  const auto& new_bass_notes = gen.getSong().bass().notes();
+  const auto& new_drums_notes = gen.getSong().drums().notes();
+
+  ASSERT_EQ(new_chord_notes.size(), original_chord_notes.size());
+  ASSERT_EQ(new_bass_notes.size(), original_bass_notes.size());
+  ASSERT_EQ(new_drums_notes.size(), original_drums_notes.size());
+
+  // Verify chord notes are identical
+  for (size_t i = 0; i < original_chord_notes.size(); ++i) {
+    EXPECT_EQ(new_chord_notes[i].startTick, original_chord_notes[i].startTick);
+    EXPECT_EQ(new_chord_notes[i].note, original_chord_notes[i].note);
+    EXPECT_EQ(new_chord_notes[i].duration, original_chord_notes[i].duration);
+  }
+
+  // Verify bass notes are identical
+  for (size_t i = 0; i < original_bass_notes.size(); ++i) {
+    EXPECT_EQ(new_bass_notes[i].startTick, original_bass_notes[i].startTick);
+    EXPECT_EQ(new_bass_notes[i].note, original_bass_notes[i].note);
+    EXPECT_EQ(new_bass_notes[i].duration, original_bass_notes[i].duration);
+  }
+
+  // Verify drums notes are identical
+  for (size_t i = 0; i < original_drums_notes.size(); ++i) {
+    EXPECT_EQ(new_drums_notes[i].startTick, original_drums_notes[i].startTick);
+    EXPECT_EQ(new_drums_notes[i].note, original_drums_notes[i].note);
+    EXPECT_EQ(new_drums_notes[i].duration, original_drums_notes[i].duration);
+  }
+}
+
+TEST(GeneratorTest, RegenerateMelodyWithSeedZeroGeneratesNewSeed) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ShortForm;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.vocal_low = 48;
+  params.vocal_high = 72;
+
+  gen.generate(params);
+  uint32_t original_seed = gen.getSong().melodySeed();
+
+  // Regenerate with seed=0 (should generate new random seed)
+  MelodyRegenerateParams regen{};
+  regen.seed = 0;  // Auto-generate seed
+  regen.vocal_low = 48;
+  regen.vocal_high = 72;
+  regen.vocal_attitude = VocalAttitude::Clean;
+  regen.composition_style = CompositionStyle::MelodyLead;
+
+  gen.regenerateMelody(regen);
+
+  // Seed should be different (with very high probability)
+  // Note: There's a tiny chance this could fail if the random seed happens to be 42
+  uint32_t new_seed = gen.getSong().melodySeed();
+  EXPECT_NE(new_seed, 0u);  // Should never be 0 after resolution
+}
+
 }  // namespace
 }  // namespace midisketch

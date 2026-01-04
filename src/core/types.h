@@ -444,6 +444,16 @@ struct GeneratorParams {
   StyleMelodyParams melody_params = {};  // Default: 7 semitone leap, unison ok, 0.8 resolution, 0.2 tension
 };
 
+// Parameters for regenerating only the vocal melody.
+// All fields are required - no sentinel values.
+struct MelodyRegenerateParams {
+  uint32_t seed;                       // Random seed (0 = new random)
+  uint8_t vocal_low;                   // Vocal range lower bound (MIDI note)
+  uint8_t vocal_high;                  // Vocal range upper bound (MIDI note)
+  VocalAttitude vocal_attitude;        // 0=Clean, 1=Expressive, 2=Raw
+  CompositionStyle composition_style;  // 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
+};
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_TYPES_H

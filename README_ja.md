@@ -66,14 +66,16 @@ auto midi = sketch.getMidi();       // SMFバイナリ
 auto json = sketch.getEventsJson(); // JSONイベント
 ```
 
-### JavaScript (WASM)
+### JavaScript / TypeScript (WASM)
 
-```javascript
-import createMidiSketch from './midisketch-wrapper.js';
+```typescript
+import { init, MidiSketch, VocalAttitude, CompositionStyle } from '@libraz/midi-sketch';
 
-const midi = await createMidiSketch();
+await init();
 
-midi.generate({
+const sketch = new MidiSketch();
+
+sketch.generate({
   structureId: 1,
   moodId: 0,
   chordId: 0,
@@ -81,8 +83,19 @@ midi.generate({
   seed: 12345
 });
 
-const midiData = midi.getMidi();    // Uint8Array
-const events = midi.getEvents();    // JSON
+const midiData = sketch.getMidi();    // Uint8Array
+const events = sketch.getEvents();    // 型付きオブジェクト
+
+// メロディのみ再生成（BGMは維持）
+sketch.regenerateMelodyEx({
+  seed: 0,                               // 0 = 新しいランダム
+  vocalLow: 55,
+  vocalHigh: 74,
+  vocalAttitude: VocalAttitude.Expressive,
+  compositionStyle: CompositionStyle.MelodyLead
+});
+
+sketch.destroy();
 ```
 
 ## ディレクトリ構成
@@ -109,9 +122,11 @@ midi-sketch/
 │       ├── motif.cpp         # 背景モチーフ
 │       ├── arpeggio.cpp      # アルペジオ
 │       └── se.cpp            # セクションマーカー
-├── tests/                    # テストスイート
+├── js/
+│   └── index.ts              # TypeScriptラッパー
+├── tests/                    # Google Test + vitest
 ├── demo/                     # ブラウザデモ
-└── dist/                     # WASMビルド成果物
+└── dist/                     # npmパッケージ出力
 ```
 
 ## 技術詳細

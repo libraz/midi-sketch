@@ -210,6 +210,23 @@ void Generator::regenerateMelody(uint32_t new_seed) {
   generateVocal();
 }
 
+void Generator::regenerateMelody(const MelodyRegenerateParams& regen_params) {
+  // Update generation params
+  params_.vocal_low = regen_params.vocal_low;
+  params_.vocal_high = regen_params.vocal_high;
+  params_.vocal_attitude = regen_params.vocal_attitude;
+  params_.composition_style = regen_params.composition_style;
+
+  // Resolve and apply seed
+  uint32_t seed = resolveSeed(regen_params.seed);
+  rng_.seed(seed);
+  song_.setMelodySeed(seed);
+
+  // Regenerate vocal track only
+  song_.clearTrack(TrackRole::Vocal);
+  generateVocal();
+}
+
 void Generator::regenerateVocalFromConfig(const SongConfig& config,
                                            uint32_t new_seed) {
   // Get the style preset for melody params

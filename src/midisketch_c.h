@@ -69,6 +69,16 @@ typedef struct {
   uint8_t arpeggio_gate;       // Gate length (0-100, maps to 0.0-1.0)
 } MidiSketchParams;
 
+// Melody regeneration parameters.
+// All fields are required - no sentinel values.
+typedef struct {
+  uint32_t seed;               // Random seed (0 = new random)
+  uint8_t vocal_low;           // Vocal range lower bound (MIDI note)
+  uint8_t vocal_high;          // Vocal range upper bound (MIDI note)
+  uint8_t vocal_attitude;      // 0=Clean, 1=Expressive, 2=Raw
+  uint8_t composition_style;   // 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
+} MidiSketchMelodyParams;
+
 // ============================================================================
 // Output Data Structures
 // ============================================================================
@@ -125,6 +135,17 @@ MidiSketchError midisketch_generate(
 MidiSketchError midisketch_regenerate_melody(
     MidiSketchHandle handle,
     uint32_t new_seed
+);
+
+// Regenerates only the melody track with full parameter control.
+// Updates vocal range, attitude, and composition style before regenerating.
+// Other tracks (chord, bass, drums, arpeggio) remain unchanged.
+// @param handle MidiSketch handle
+// @param params Melody regeneration parameters
+// @returns MIDISKETCH_OK on success, error code on failure
+MidiSketchError midisketch_regenerate_melody_ex(
+    MidiSketchHandle handle,
+    const MidiSketchMelodyParams* params
 );
 
 // ============================================================================

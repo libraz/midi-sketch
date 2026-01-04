@@ -28,6 +28,12 @@ class Generator {
   // @param new_seed New random seed (0 = auto)
   void regenerateMelody(uint32_t new_seed = 0);
 
+  // Regenerates only the melody track with full parameter control.
+  // Updates vocal range, attitude, and composition style before regenerating.
+  // Other tracks (chord, bass, drums, arpeggio) remain unchanged.
+  // @param params MelodyRegenerateParams with all required fields
+  void regenerateMelody(const MelodyRegenerateParams& params);
+
   // Regenerates only the vocal track with updated VocalAttitude.
   // Other tracks remain unchanged.
   // Uses the VocalAttitude and StyleMelodyParams from the config.

@@ -65,14 +65,16 @@ auto midi = sketch.getMidi();       // SMF binary
 auto json = sketch.getEventsJson(); // JSON events
 ```
 
-### JavaScript (WASM)
+### JavaScript / TypeScript (WASM)
 
-```javascript
-import createMidiSketch from './midisketch-wrapper.js';
+```typescript
+import { init, MidiSketch, VocalAttitude, CompositionStyle } from '@libraz/midi-sketch';
 
-const midi = await createMidiSketch();
+await init();
 
-midi.generate({
+const sketch = new MidiSketch();
+
+sketch.generate({
   structureId: 1,
   moodId: 0,
   chordId: 0,
@@ -80,8 +82,19 @@ midi.generate({
   seed: 12345
 });
 
-const midiData = midi.getMidi();    // Uint8Array
-const events = midi.getEvents();    // JSON object
+const midiData = sketch.getMidi();    // Uint8Array
+const events = sketch.getEvents();    // Typed object
+
+// Regenerate melody only (BGM unchanged)
+sketch.regenerateMelodyEx({
+  seed: 0,                               // 0 = new random
+  vocalLow: 55,
+  vocalHigh: 74,
+  vocalAttitude: VocalAttitude.Expressive,
+  compositionStyle: CompositionStyle.MelodyLead
+});
+
+sketch.destroy();
 ```
 
 ## Project Structure
@@ -108,9 +121,11 @@ midi-sketch/
 │       ├── motif.cpp         # Background motif
 │       ├── arpeggio.cpp      # Arpeggio patterns
 │       └── se.cpp            # Section markers
-├── tests/                    # Google Test suite
+├── js/
+│   └── index.ts              # TypeScript wrapper
+├── tests/                    # Google Test + vitest
 ├── demo/                     # Browser demo (Tone.js)
-└── dist/                     # WASM output
+└── dist/                     # npm package output
 ```
 
 ## Technical Details
