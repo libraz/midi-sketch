@@ -3,6 +3,7 @@
 #include "core/preset_data.h"
 #include "core/velocity.h"
 #include <algorithm>
+#include <array>
 
 namespace midisketch {
 
@@ -36,17 +37,70 @@ uint8_t getOctave(uint8_t root) {
   return static_cast<uint8_t>(octave);
 }
 
-// Get approach note (chromatic or diatonic) to next root
+// Major scale intervals from C (used for diatonic approach)
+constexpr int MAJOR_SCALE[7] = {0, 2, 4, 5, 7, 9, 11};
+
+// Check if two pitch classes create a dissonant interval (minor 2nd or major 7th)
+bool isDissonantInterval(int pc1, int pc2) {
+  int interval = std::abs(pc1 - pc2);
+  if (interval > 6) interval = 12 - interval;  // Normalize to smaller interval
+  return interval == 1;  // Minor 2nd (major 7th inverts to minor 2nd)
+}
+
+// Get all possible chord tones for the target chord (major and minor triads + common extensions)
+// In C major context, considers both major (I, IV, V) and minor (ii, iii, vi) chord structures
+std::array<int, 7> getAllPossibleChordTones(uint8_t root_midi) {
+  int root_pc = root_midi % 12;
+  // Include both major and minor 3rd, plus 6th and 7th for extensions
+  return {{
+    root_pc,                    // Root
+    (root_pc + 3) % 12,         // Minor 3rd
+    (root_pc + 4) % 12,         // Major 3rd
+    (root_pc + 7) % 12,         // Perfect 5th
+    (root_pc + 9) % 12,         // Major 6th (for vi chord context)
+    (root_pc + 10) % 12,        // Minor 7th
+    (root_pc + 11) % 12         // Major 7th
+  }};
+}
+
+// Check if a pitch class clashes with any possible chord tones
+bool clashesWithAnyChordTone(int pitch_class, const std::array<int, 7>& chord_tones) {
+  for (int tone : chord_tones) {
+    if (isDissonantInterval(pitch_class, tone)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Get diatonic approach note to next root (avoids chromatic clashes with chords)
 uint8_t getApproachNote(uint8_t current_root, uint8_t next_root) {
   int diff = static_cast<int>(next_root) - static_cast<int>(current_root);
   if (diff == 0) return current_root;
 
-  // Chromatic approach: one semitone below or above target
-  if (diff > 0) {
-    return clampBass(next_root - 1);  // Approach from below
-  } else {
-    return clampBass(next_root + 1);  // Approach from above
+  // Get all possible chord tones of the target chord (conservative: includes extensions)
+  auto chord_tones = getAllPossibleChordTones(next_root);
+
+  // Try fifth below target as primary approach (V-I motion)
+  int approach = static_cast<int>(next_root) - 7;  // Fifth below
+  if (approach < BASS_LOW) {
+    approach = next_root + 5;  // Fourth above instead (same pitch class)
   }
+  int approach_pc = approach % 12;
+
+  // Check if this approach clashes with any possible chord tones
+  if (!clashesWithAnyChordTone(approach_pc, chord_tones)) {
+    return clampBass(approach);
+  }
+
+  // Safe fallback: use root an octave below (never clashes with chord tones)
+  int octave_below = static_cast<int>(next_root) - 12;
+  if (octave_below >= BASS_LOW) {
+    return clampBass(octave_below);
+  }
+
+  // Last resort: use the root itself
+  return clampBass(next_root);
 }
 
 // Bass pattern types
@@ -279,20 +333,72 @@ BassAnalysis BassAnalysis::analyzeBar(const MidiTrack& track, Tick bar_start,
   return result;
 }
 
+// Check if dominant preparation should be added (matches chord_track.cpp logic)
+bool shouldAddDominantPreparation(SectionType current, SectionType next,
+                                   int8_t current_degree, Mood mood) {
+  // Only add dominant preparation before Chorus
+  if (next != SectionType::Chorus) return false;
+
+  // Skip for ballads (too dramatic)
+  if (mood == Mood::Ballad || mood == Mood::Sentimental) return false;
+
+  // Don't add if already on dominant
+  if (current_degree == 4) return false;  // V chord
+
+  // Add for B -> Chorus transition
+  return current == SectionType::B;
+}
+
+// Generate half-bar of bass (for split bars with dominant preparation)
+void generateBassHalfBar(MidiTrack& track, Tick half_start, uint8_t root,
+                          SectionType section, Mood mood, bool is_first_half) {
+  uint8_t vel = calculateVelocity(section, 0, mood);
+  uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
+  uint8_t fifth = getFifth(root);
+
+  // Simple half-bar pattern: root + fifth or root
+  if (is_first_half) {
+    track.addNote(half_start, QUARTER, root, vel);
+    track.addNote(half_start + QUARTER, QUARTER, fifth, vel_weak);
+  } else {
+    // Second half: emphasize dominant
+    uint8_t accent_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(vel) + 5));
+    track.addNote(half_start, QUARTER, root, accent_vel);
+    track.addNote(half_start + QUARTER, QUARTER, root, vel_weak);
+  }
+}
+
+// Harmonic rhythm must match chord_track.cpp for bass-chord synchronization
+bool useSlowHarmonicRhythm(SectionType section) {
+  return section == SectionType::Intro || section == SectionType::Interlude ||
+         section == SectionType::Outro;
+}
+
 void generateBassTrack(MidiTrack& track, const Song& song,
                        const GeneratorParams& params) {
   const auto& progression = getChordProgression(params.chord_id);
   const auto& sections = song.arrangement().sections();
 
-  for (const auto& section : sections) {
+  for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
+    const auto& section = sections[sec_idx];
+    SectionType next_section_type = (sec_idx + 1 < sections.size())
+                                        ? sections[sec_idx + 1].type
+                                        : section.type;
+
     BassPattern pattern = selectPattern(section.type, params.drums_enabled,
                                          params.mood, section.backing_density);
+
+    // Use same harmonic rhythm as chord_track.cpp
+    bool slow_harmonic = useSlowHarmonicRhythm(section.type);
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
 
-      int chord_idx = bar % progression.length;
-      int next_chord_idx = (bar + 1) % progression.length;
+      // Match chord_track.cpp: Slow = 2 bars per chord, Normal = 1 bar per chord
+      int chord_idx = slow_harmonic ? (bar / 2) % progression.length
+                                    : bar % progression.length;
+      int next_chord_idx = slow_harmonic ? ((bar + 1) / 2) % progression.length
+                                         : (bar + 1) % progression.length;
 
       int8_t degree = progression.at(chord_idx);
       int8_t next_degree = progression.at(next_chord_idx);
@@ -302,6 +408,20 @@ void generateBassTrack(MidiTrack& track, const Song& song,
       uint8_t next_root = clampBass(degreeToRoot(next_degree, Key::C) - 12);
 
       bool is_last_bar = (bar == section.bars - 1);
+
+      // Add dominant preparation before Chorus (sync with chord_track.cpp)
+      if (is_last_bar &&
+          shouldAddDominantPreparation(section.type, next_section_type,
+                                        degree, params.mood)) {
+        // Split bar: first half current chord, second half dominant (V)
+        int8_t dominant_degree = 4;  // V
+        uint8_t dominant_root = clampBass(degreeToRoot(dominant_degree, Key::C) - 12);
+
+        generateBassHalfBar(track, bar_start, root, section.type, params.mood, true);
+        generateBassHalfBar(track, bar_start + HALF, dominant_root,
+                             section.type, params.mood, false);
+        continue;
+      }
 
       generateBassBar(track, bar_start, root, next_root, pattern,
                       section.type, params.mood, is_last_bar);

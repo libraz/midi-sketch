@@ -1,4 +1,5 @@
 #include "core/generator.h"
+#include "core/chord.h"
 #include "core/preset_data.h"
 #include "core/structure.h"
 #include "core/velocity.h"
@@ -148,6 +149,10 @@ void Generator::generate(const GeneratorParams& params) {
   // Clear all tracks
   song_.clearAll();
 
+  // Initialize harmony context for coordinated track generation
+  const auto& progression = getChordProgression(params.chord_id);
+  harmony_context_.initialize(song_.arrangement(), progression, params.mood);
+
   // Calculate modulation (disabled for BackgroundMotif and SynthDriven)
   if (params.composition_style == CompositionStyle::BackgroundMotif ||
       params.composition_style == CompositionStyle::SynthDriven) {
@@ -237,12 +242,15 @@ void Generator::generateVocal() {
       (params_.composition_style == CompositionStyle::BackgroundMotif)
           ? &song_.motif()
           : nullptr;
-  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track);
+  // Pass harmony context for dissonance avoidance
+  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track, &harmony_context_);
 }
 
 void Generator::generateChord() {
   // Pass bass track for voicing coordination and rng for chord extensions
   generateChordTrack(song_.chord(), song_, params_, rng_, &song_.bass());
+  // Register chord notes with harmony context for other tracks to reference
+  harmony_context_.registerTrack(song_.chord(), TrackRole::Chord);
 }
 
 void Generator::generateBass() {

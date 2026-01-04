@@ -1,6 +1,7 @@
 #ifndef MIDISKETCH_CORE_GENERATOR_H
 #define MIDISKETCH_CORE_GENERATOR_H
 
+#include "core/harmony_context.h"
 #include "core/song.h"
 #include "core/types.h"
 #include <random>
@@ -65,6 +66,7 @@ class Generator {
   GeneratorParams params_;
   Song song_;
   std::mt19937 rng_;
+  HarmonyContext harmony_context_;
 
   void generateVocal();
   void generateChord();

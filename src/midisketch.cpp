@@ -138,15 +138,23 @@ std::string MidiSketch::getEventsJson() const {
   const auto& sections = song.arrangement().sections();
   for (size_t i = 0; i < sections.size(); ++i) {
     const auto& section = sections[i];
+    Tick end_tick = section.start_tick + section.bars * TICKS_PER_BAR;
     double start_seconds = static_cast<double>(section.start_tick) /
                            TICKS_PER_BEAT / song.bpm() * 60.0;
+    double end_seconds = static_cast<double>(end_tick) /
+                         TICKS_PER_BEAT / song.bpm() * 60.0;
 
     oss << "{";
+    oss << "\"name\":\"" << section.name << "\",";
     oss << "\"type\":\"" << section.name << "\",";
+    oss << "\"startTick\":" << section.start_tick << ",";
+    oss << "\"endTick\":" << end_tick << ",";
     oss << "\"start_bar\":" << section.startBar << ",";
     oss << "\"bars\":" << static_cast<int>(section.bars) << ",";
     oss << "\"start_ticks\":" << section.start_tick << ",";
-    oss << "\"start_seconds\":" << start_seconds;
+    oss << "\"end_ticks\":" << end_tick << ",";
+    oss << "\"start_seconds\":" << start_seconds << ",";
+    oss << "\"end_seconds\":" << end_seconds;
     oss << "}";
     if (i < sections.size() - 1) oss << ",";
   }

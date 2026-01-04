@@ -596,7 +596,81 @@ TEST_F(HarmonyIntegrationTest, FiveChordProgressionCadenceInsertion) {
 }
 
 // =============================================================================
-// Test 11: Arpeggio track included in transition dynamics
+// Test 11: Bass track synchronized with chord dominant preparation
+// =============================================================================
+
+TEST_F(HarmonyIntegrationTest, BassSyncWithDominantPreparation) {
+  // Use Idol Standard style with Canon progression
+  // B section should have dominant preparation before Chorus
+  params_.structure = StructurePattern::StandardPop;  // A-B-Chorus
+  params_.chord_id = 0;  // Canon: I-V-vi-IV
+  params_.mood = Mood::IdolPop;
+  params_.drums_enabled = true;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& song = gen.getSong();
+  const auto& sections = song.arrangement().sections();
+  const auto& bass_notes = song.bass().notes();
+  const auto& chord_notes = song.chord().notes();
+
+  // Find B section that precedes Chorus
+  for (size_t i = 0; i < sections.size(); ++i) {
+    if (sections[i].type != SectionType::B) continue;
+    if (i + 1 >= sections.size()) continue;
+    if (sections[i + 1].type != SectionType::Chorus) continue;
+
+    // Found B -> Chorus transition
+    Tick last_bar_start = sections[i].start_tick +
+                          (sections[i].bars - 1) * TICKS_PER_BAR;
+    Tick half_bar = TICKS_PER_BAR / 2;
+    Tick second_half_start = last_bar_start + half_bar;
+
+    // Get bass note in second half of last bar
+    uint8_t bass_in_second_half = 0;
+    for (const auto& note : bass_notes) {
+      if (note.startTick >= second_half_start &&
+          note.startTick < last_bar_start + TICKS_PER_BAR) {
+        bass_in_second_half = note.note;
+        break;
+      }
+    }
+
+    // Get chord root in second half (lowest note as approximation)
+    uint8_t chord_root_in_second_half = 127;
+    for (const auto& note : chord_notes) {
+      if (note.startTick >= second_half_start &&
+          note.startTick < last_bar_start + TICKS_PER_BAR) {
+        if (note.note < chord_root_in_second_half) {
+          chord_root_in_second_half = note.note;
+        }
+      }
+    }
+
+    // Bass and chord should be consonant (same pitch class or within chord)
+    if (bass_in_second_half > 0 && chord_root_in_second_half < 127) {
+      int bass_pc = bass_in_second_half % 12;
+      int chord_root_pc = chord_root_in_second_half % 12;
+
+      // For dominant preparation, both should be G (pitch class 7)
+      // or consonant interval (0, 3, 4, 5, 7 semitones)
+      int interval = (bass_pc - chord_root_pc + 12) % 12;
+      bool is_consonant = (interval == 0 || interval == 3 || interval == 4 ||
+                           interval == 5 || interval == 7 || interval == 8 ||
+                           interval == 9);
+      EXPECT_TRUE(is_consonant)
+          << "Bass and chord should be consonant at pre-chorus dominant. "
+          << "Bass pitch class: " << bass_pc
+          << ", Chord root pitch class: " << chord_root_pc
+          << ", Interval: " << interval;
+    }
+    break;  // Only check first B->Chorus transition
+  }
+}
+
+// =============================================================================
+// Test 12: Arpeggio track included in transition dynamics
 // =============================================================================
 
 TEST_F(HarmonyIntegrationTest, ArpeggioIncludedInTransitionDynamics) {

@@ -23,6 +23,7 @@ set(TEST_SOURCES
   core/harmony_integration_test.cpp
   midi/midi_writer_test.cpp
   track/arpeggio_test.cpp
+  analysis/dissonance_test.cpp
 )
 
 add_executable(midisketch_tests ${TEST_SOURCES})

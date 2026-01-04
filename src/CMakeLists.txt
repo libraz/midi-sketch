@@ -11,6 +11,7 @@ set(MIDISKETCH_SOURCES
   core/midi_track.cpp
   core/arrangement.cpp
   core/song.cpp
+  core/harmony_context.cpp
   midi/midi_writer.cpp
   track/track.cpp
   track/vocal.cpp
@@ -20,6 +21,7 @@ set(MIDISKETCH_SOURCES
   track/se.cpp
   track/motif.cpp
   track/arpeggio.cpp
+  analysis/dissonance.cpp
 )
 
 # Create static library

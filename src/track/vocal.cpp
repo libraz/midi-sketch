@@ -1,5 +1,6 @@
 #include "track/vocal.h"
 #include "core/chord.h"
+#include "core/harmony_context.h"
 #include "core/velocity.h"
 #include <algorithm>
 #include <array>
@@ -304,7 +305,8 @@ bool shouldUseAnticipation(float beat, SectionType section, std::mt19937& rng) {
 
 void generateVocalTrack(MidiTrack& track, Song& song,
                         const GeneratorParams& params, std::mt19937& rng,
-                        const MidiTrack* motif_track) {
+                        const MidiTrack* motif_track,
+                        const HarmonyContext* harmony_ctx) {
   // BackgroundMotif and SynthDriven suppression settings
   const bool is_background_motif =
       params.composition_style == CompositionStyle::BackgroundMotif;
@@ -385,6 +387,18 @@ void generateVocalTrack(MidiTrack& track, Song& song,
   auto clampPitch = [&](int pitch) -> uint8_t {
     return static_cast<uint8_t>(
         std::clamp(pitch, (int)effective_vocal_low, (int)effective_vocal_high));
+  };
+
+  // Helper: get safe pitch that doesn't clash with chord track
+  // Uses HarmonyContext if available, otherwise returns original pitch
+  auto getSafePitch = [&](int pitch, Tick start, Tick duration) -> uint8_t {
+    if (harmony_ctx == nullptr) {
+      return clampPitch(pitch);
+    }
+    // Use HarmonyContext to find a pitch that doesn't clash
+    return harmony_ctx->getSafePitch(
+        clampPitch(pitch), start, duration, TrackRole::Vocal,
+        effective_vocal_low, effective_vocal_high);
   };
 
   // Helper: get chord info for a bar
@@ -771,18 +785,20 @@ void generateVocalTrack(MidiTrack& track, Song& song,
           Tick sus_duration = static_cast<Tick>(sus.suspension_eighths * TICKS_PER_BEAT / 2);
           Tick res_duration = static_cast<Tick>(sus.resolution_eighths * TICKS_PER_BEAT / 2);
 
-          // Add suspension note
-          track.addNote(note_tick, sus_duration, clampPitch(sus_pitch), velocity);
-          phrase_notes.push_back({relative_tick, sus_duration, clampPitch(sus_pitch), velocity});
+          // Add suspension note - use safe pitch to avoid chord clashes
+          uint8_t safe_sus_pitch = getSafePitch(sus_pitch, note_tick, sus_duration);
+          track.addNote(note_tick, sus_duration, safe_sus_pitch, velocity);
+          phrase_notes.push_back({relative_tick, sus_duration, safe_sus_pitch, velocity});
 
-          // Add resolution note
+          // Add resolution note - use safe pitch to avoid chord clashes
           Tick res_tick = note_tick + sus_duration;
           Tick relative_res_tick = relative_tick + sus_duration;
           uint8_t res_vel = static_cast<uint8_t>(velocity * 0.9f);
-          track.addNote(res_tick, res_duration, clampPitch(res_pitch), res_vel);
-          phrase_notes.push_back({relative_res_tick, res_duration, clampPitch(res_pitch), res_vel});
+          uint8_t safe_res_pitch = getSafePitch(res_pitch, res_tick, res_duration);
+          track.addNote(res_tick, res_duration, safe_res_pitch, res_vel);
+          phrase_notes.push_back({relative_res_tick, res_duration, safe_res_pitch, res_vel});
 
-          prev_pitch = res_pitch;
+          prev_pitch = safe_res_pitch;
         } else if (use_anticipation && beat_in_motif >= 0.5f) {
           // Apply anticipation: early arrival of next chord tone
           AnticipationResult ant = applyAnticipation(next_chord_root, rn.eighths);
@@ -801,22 +817,24 @@ void generateVocalTrack(MidiTrack& track, Song& song,
           Tick ant_duration = static_cast<Tick>(ant.duration_eighths * TICKS_PER_BEAT / 2);
 
           // Add anticipation note
-          track.addNote(ant_tick, ant_duration, clampPitch(ant_pitch), velocity);
-          phrase_notes.push_back({relative_ant_tick, ant_duration, clampPitch(ant_pitch), velocity});
+          uint8_t safe_ant_pitch = getSafePitch(ant_pitch, ant_tick, ant_duration);
+          track.addNote(ant_tick, ant_duration, safe_ant_pitch, velocity);
+          phrase_notes.push_back({relative_ant_tick, ant_duration, safe_ant_pitch, velocity});
 
-          prev_pitch = ant_pitch;
+          prev_pitch = safe_ant_pitch;
         } else {
-          // Regular note
-          track.addNote(note_tick, duration, clampPitch(pitch), velocity);
+          // Regular note - use safe pitch to avoid chord clashes
+          uint8_t safe_pitch = getSafePitch(pitch, note_tick, duration);
+          track.addNote(note_tick, duration, safe_pitch, velocity);
           phrase_notes.push_back(
-              {relative_tick, duration, clampPitch(pitch), velocity});
+              {relative_tick, duration, safe_pitch, velocity});
 
           // Store notes for chorus hook (first 2-bar phrase only)
           if (is_chorus && motif_start == 0) {
             // Use relative tick within the motif (not section)
             Tick motif_relative_tick = relative_tick - relative_motif_start;
             chorus_hook_notes.push_back(
-                {motif_relative_tick, duration, clampPitch(pitch), velocity});
+                {motif_relative_tick, duration, safe_pitch, velocity});
           }
         }
       }
