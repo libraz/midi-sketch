@@ -122,6 +122,13 @@ std::string MidiSketch::getEventsJson() const {
   writeTrack(song.vocal(), "Vocal", 0, 0, true, true);
   writeTrack(song.chord(), "Chord", 1, 4, true, true);
   writeTrack(song.bass(), "Bass", 2, 33, true, true);
+  // Include Motif and Arpeggio tracks if they are not empty
+  if (!song.motif().empty()) {
+    writeTrack(song.motif(), "Motif", 3, 81, true, true);
+  }
+  if (!song.arpeggio().empty()) {
+    writeTrack(song.arpeggio(), "Arpeggio", 4, 81, true, true);
+  }
   writeTrack(song.drums(), "Drums", 9, 0, false, false);  // No transpose for drums
 
   oss << "],";
@@ -159,7 +166,7 @@ const GeneratorParams& MidiSketch::getParams() const {
 }
 
 const char* MidiSketch::version() {
-  return "0.1.0";
+  return "1.0.0";
 }
 
 }  // namespace midisketch

@@ -96,8 +96,8 @@ std::array<int, 2> getExtensionPitchClasses(int8_t degree) {
 }
 
 // Check if a pitch (MIDI note) is a chord tone using pitch class comparison
-// Also accepts 7th and 9th extensions as valid chord tones
-bool isChordTone(int pitch, int8_t degree) {
+// Accepts 7th and 9th extensions only when enabled in chord extension params
+bool isChordTone(int pitch, int8_t degree, const ChordExtensionParams& ext_params) {
   int pitch_class = ((pitch % 12) + 12) % 12;
   ChordTones ct = getChordTones(degree);
 
@@ -106,11 +106,17 @@ bool isChordTone(int pitch, int8_t degree) {
     if (ct.pitch_classes[i] == pitch_class) return true;
   }
 
-  // Also accept 7th and 9th extensions as valid chord tones
-  // This prevents dissonance when chord track uses extensions
-  auto extensions = getExtensionPitchClasses(degree);
-  for (int ext : extensions) {
-    if (ext >= 0 && ext == pitch_class) return true;
+  // Only accept extensions if they are enabled in params
+  // This ensures Vocal and Chord tracks use consistent harmony
+  if (ext_params.enable_7th || ext_params.enable_9th) {
+    auto extensions = getExtensionPitchClasses(degree);
+    // extensions[0] = 7th, extensions[1] = 9th
+    if (ext_params.enable_7th && extensions[0] >= 0 && extensions[0] == pitch_class) {
+      return true;
+    }
+    if (ext_params.enable_9th && extensions[1] >= 0 && extensions[1] == pitch_class) {
+      return true;
+    }
   }
 
   return false;
@@ -663,8 +669,9 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
         // On strong beats or marked positions, use chord tones
         // Use pitch class comparison for accurate chord tone detection
+        // Pass chord extension params to ensure Vocal/Chord consistency
         if (rn.strong || force_chord_tone) {
-          if (!isChordTone(pitch, static_cast<int8_t>(current_chord_root))) {
+          if (!isChordTone(pitch, static_cast<int8_t>(current_chord_root), params.chord_extension)) {
             pitch = nearestChordTonePitch(pitch, static_cast<int8_t>(current_chord_root));
           }
         }

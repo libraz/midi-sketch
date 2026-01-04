@@ -342,6 +342,13 @@ void Generator::regenerateMotif(uint32_t new_seed) {
   song_.setMotifSeed(seed);
   song_.clearTrack(TrackRole::Motif);
   generateMotif();
+
+  // BackgroundMotif mode: regenerate Vocal to avoid range collision with new Motif
+  // Vocal range is adjusted based on Motif range in generateVocalTrack()
+  if (params_.composition_style == CompositionStyle::BackgroundMotif) {
+    song_.clearTrack(TrackRole::Vocal);
+    generateVocal();
+  }
 }
 
 MotifData Generator::getMotif() const {
@@ -394,12 +401,13 @@ void Generator::rebuildMotifFromPattern() {
 void Generator::applyTransitionDynamics() {
   const auto& sections = song_.arrangement().sections();
 
-  // Apply to melodic tracks (not SE)
+  // Apply to melodic tracks (not SE or Drums)
   std::vector<MidiTrack*> tracks = {
       &song_.vocal(),
       &song_.chord(),
       &song_.bass(),
-      &song_.motif()
+      &song_.motif(),
+      &song_.arpeggio()
   };
 
   midisketch::applyAllTransitionDynamics(tracks, sections);
@@ -434,11 +442,14 @@ void Generator::applyHumanization() {
                                                     MAX_VELOCITY_VARIATION);
 
   // Apply to melodic tracks (not SE or Drums)
+  // Arpeggio is included for consistency, though its mechanical precision
+  // may benefit from less humanization in some contexts
   std::vector<MidiTrack*> tracks = {
       &song_.vocal(),
       &song_.chord(),
       &song_.bass(),
-      &song_.motif()
+      &song_.motif(),
+      &song_.arpeggio()
   };
 
   for (MidiTrack* track : tracks) {

@@ -358,8 +358,12 @@ void generateMotifTrack(MidiTrack& track, Song& song,
         adjusted_pitch = std::clamp(adjusted_pitch, 36, 108);
 
         // Occasionally apply tension based on chord quality (9th, 11th, 13th)
+        // Only apply if chord extensions are enabled to maintain Motif/Chord consistency
         std::uniform_real_distribution<float> tension_prob(0.0f, 1.0f);
-        bool use_tension = (section.type == SectionType::B ||
+        bool extensions_enabled = params.chord_extension.enable_7th ||
+                                  params.chord_extension.enable_9th;
+        bool use_tension = extensions_enabled &&
+                           (section.type == SectionType::B ||
                             section.type == SectionType::Chorus) &&
                            tension_prob(rng) < 0.15f;  // 15% chance in B/Chorus
 

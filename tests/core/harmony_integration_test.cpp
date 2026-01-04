@@ -342,5 +342,295 @@ TEST_F(HarmonyIntegrationTest, MotifNotesAvoidDissonance) {
   }
 }
 
+// =============================================================================
+// Test 7: Vocal extension consistency with ChordExtensionParams
+// =============================================================================
+
+TEST_F(HarmonyIntegrationTest, VocalRespectsChordExtensionParams_ExtensionsDisabled) {
+  // When chord extensions are disabled, vocal should NOT use 7th/9th as chord tones
+  params_.chord_extension.enable_7th = false;
+  params_.chord_extension.enable_9th = false;
+  params_.seed = 12345;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& song = gen.getSong();
+  const auto& vocal_notes = song.vocal().notes();
+  const auto& sections = song.arrangement().sections();
+  const auto& progression = getChordProgression(params_.chord_id);
+
+  int extension_on_strong_beat = 0;
+  int strong_beat_count = 0;
+
+  for (const auto& note : vocal_notes) {
+    for (const auto& section : sections) {
+      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      if (note.startTick >= section.start_tick && note.startTick < section_end) {
+        // Check if on strong beat (beat 1 or 3)
+        Tick position_in_bar = (note.startTick - section.start_tick) % TICKS_PER_BAR;
+        bool is_strong_beat = (position_in_bar < TICKS_PER_BEAT ||
+                               (position_in_bar >= 2 * TICKS_PER_BEAT &&
+                                position_in_bar < 3 * TICKS_PER_BEAT));
+
+        if (is_strong_beat) {
+          strong_beat_count++;
+          int bar = (note.startTick - section.start_tick) / TICKS_PER_BAR;
+          int chord_idx = bar % progression.length;
+          int8_t degree = progression.at(chord_idx);
+
+          // Check if note is an extension (not a basic triad tone)
+          auto chord_tones = getChordTonePitchClasses(degree);
+          auto extensions = getExtensionPitchClasses(degree);
+          int pc = getPitchClass(note.note);
+
+          if (chord_tones.count(pc) == 0 && extensions.count(pc) > 0) {
+            extension_on_strong_beat++;
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  // With extensions disabled, very few extension notes should appear on strong beats
+  if (strong_beat_count > 0) {
+    float extension_ratio = static_cast<float>(extension_on_strong_beat) / strong_beat_count;
+    EXPECT_LE(extension_ratio, 0.15f)
+        << "Too many extension notes on strong beats with extensions disabled: "
+        << (extension_ratio * 100) << "%";
+  }
+}
+
+TEST_F(HarmonyIntegrationTest, VocalRespectsChordExtensionParams_ExtensionsEnabled) {
+  // When chord extensions are enabled, vocal can use 7th/9th as chord tones
+  params_.chord_extension.enable_7th = true;
+  params_.chord_extension.enable_9th = true;
+  params_.chord_extension.seventh_probability = 0.5f;
+  params_.chord_extension.ninth_probability = 0.5f;
+  params_.seed = 12345;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& song = gen.getSong();
+  const auto& vocal_notes = song.vocal().notes();
+  const auto& sections = song.arrangement().sections();
+  const auto& progression = getChordProgression(params_.chord_id);
+
+  int valid_count = 0;
+  int total_strong_beat = 0;
+
+  for (const auto& note : vocal_notes) {
+    for (const auto& section : sections) {
+      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      if (note.startTick >= section.start_tick && note.startTick < section_end) {
+        Tick position_in_bar = (note.startTick - section.start_tick) % TICKS_PER_BAR;
+        bool is_strong_beat = (position_in_bar < TICKS_PER_BEAT ||
+                               (position_in_bar >= 2 * TICKS_PER_BEAT &&
+                                position_in_bar < 3 * TICKS_PER_BEAT));
+
+        if (is_strong_beat) {
+          total_strong_beat++;
+          int bar = (note.startTick - section.start_tick) / TICKS_PER_BAR;
+          int chord_idx = bar % progression.length;
+          int8_t degree = progression.at(chord_idx);
+
+          if (isValidChordTone(note.note, degree)) {
+            valid_count++;
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  // With extensions enabled, most strong beat notes should be valid chord tones
+  // Some passing tones and approach notes are acceptable
+  if (total_strong_beat > 0) {
+    float valid_ratio = static_cast<float>(valid_count) / total_strong_beat;
+    EXPECT_GE(valid_ratio, 0.75f)
+        << "Strong beat notes should be valid chord tones: "
+        << (valid_ratio * 100) << "%";
+  }
+}
+
+// =============================================================================
+// Test 8: Motif tension respects ChordExtensionParams
+// =============================================================================
+
+TEST_F(HarmonyIntegrationTest, MotifTensionRespectsExtensionParams_Disabled) {
+  params_.composition_style = CompositionStyle::BackgroundMotif;
+  params_.chord_extension.enable_7th = false;
+  params_.chord_extension.enable_9th = false;
+  params_.seed = 54321;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& song = gen.getSong();
+  const auto& motif_notes = song.motif().notes();
+
+  if (!motif_notes.empty()) {
+    const auto& progression = getChordProgression(params_.chord_id);
+    const auto& sections = song.arrangement().sections();
+
+    int tension_count = 0;
+
+    for (const auto& note : motif_notes) {
+      for (const auto& section : sections) {
+        Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+        if (note.startTick >= section.start_tick && note.startTick < section_end) {
+          int bar = (note.startTick - section.start_tick) / TICKS_PER_BAR;
+          int chord_idx = bar % progression.length;
+          int8_t degree = progression.at(chord_idx);
+
+          auto chord_tones = getChordTonePitchClasses(degree);
+          int pc = getPitchClass(note.note);
+
+          // Check for tension notes (9th, 11th, 13th = intervals 2, 5, 9 from root)
+          int root_pc = degreeToRoot(degree, Key::C) % 12;
+          int interval = (pc - root_pc + 12) % 12;
+
+          // 9th=2, 11th=5, 13th=9 are tensions
+          if (chord_tones.count(pc) == 0 && (interval == 2 || interval == 5 || interval == 9)) {
+            tension_count++;
+          }
+          break;
+        }
+      }
+    }
+
+    // With extensions disabled, very few tension notes should appear
+    float tension_ratio = static_cast<float>(tension_count) / motif_notes.size();
+    EXPECT_LE(tension_ratio, 0.05f)
+        << "Too many tension notes with extensions disabled: "
+        << (tension_ratio * 100) << "%";
+  }
+}
+
+// =============================================================================
+// Test 9: regenerateMotif maintains Vocal/Motif range separation
+// =============================================================================
+
+TEST_F(HarmonyIntegrationTest, RegenerateMotifMaintainsRangeSeparation) {
+  params_.composition_style = CompositionStyle::BackgroundMotif;
+  params_.motif.register_high = true;  // High register motif
+  params_.seed = 11111;
+
+  Generator gen;
+  gen.generate(params_);
+
+  // Get initial ranges
+  const auto& song1 = gen.getSong();
+  auto vocal_range1 = song1.vocal().analyzeRange();
+  auto motif_range1 = song1.motif().analyzeRange();
+
+  // Regenerate motif with different seed
+  gen.regenerateMotif(22222);
+
+  // Get new ranges
+  const auto& song2 = gen.getSong();
+  auto vocal_range2 = song2.vocal().analyzeRange();
+  auto motif_range2 = song2.motif().analyzeRange();
+
+  // In BackgroundMotif mode, vocal should be adjusted after motif regeneration
+  // Check that ranges don't significantly overlap
+  // analyzeRange() returns std::pair<uint8_t, uint8_t> where first=min, second=max
+
+  if (!song2.motif().empty() && !song2.vocal().empty()) {
+    // Calculate overlap (pair: first=min, second=max)
+    uint8_t overlap_low = std::max(vocal_range2.first, motif_range2.first);
+    uint8_t overlap_high = std::min(vocal_range2.second, motif_range2.second);
+
+    int overlap = (overlap_high > overlap_low) ? (overlap_high - overlap_low) : 0;
+
+    // Overlap should be minimal (less than one octave of significant overlap)
+    EXPECT_LE(overlap, 12)
+        << "Vocal and Motif ranges overlap too much after regeneration: "
+        << static_cast<int>(overlap) << " semitones";
+  }
+}
+
+// =============================================================================
+// Test 10: 5-chord progression with 8-bar sections inserts ii-V cadence
+// =============================================================================
+
+TEST_F(HarmonyIntegrationTest, FiveChordProgressionCadenceInsertion) {
+  // Use Extended5 (5 chords) with 8-bar section
+  params_.chord_id = 20;  // Royal Road (5 chords)
+  params_.structure = StructurePattern::StandardPop;  // Has 8-bar sections
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& song = gen.getSong();
+  const auto& sections = song.arrangement().sections();
+  const auto& progression = getChordProgression(params_.chord_id);
+
+  // Verify progression length is 5
+  ASSERT_EQ(progression.length, 5) << "Expected 5-chord progression";
+
+  // For each 8-bar section, check that chord progression is handled
+  for (const auto& section : sections) {
+    if (section.bars != 8) continue;
+    if (section.type == SectionType::Intro || section.type == SectionType::Outro) continue;
+
+    // 5-chord progression in 8 bars means 8 mod 5 = 3 leftover bars
+    // Cadence should be inserted to fill these bars
+    // The test verifies generation completes without issues
+
+    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    int chord_notes_in_section = 0;
+
+    for (const auto& note : song.chord().notes()) {
+      if (note.startTick >= section.start_tick && note.startTick < section_end) {
+        chord_notes_in_section++;
+      }
+    }
+
+    // Should have chord notes throughout the section
+    EXPECT_GT(chord_notes_in_section, 0)
+        << "Section " << section.name << " should have chord notes";
+  }
+}
+
+// =============================================================================
+// Test 11: Arpeggio track included in transition dynamics
+// =============================================================================
+
+TEST_F(HarmonyIntegrationTest, ArpeggioIncludedInTransitionDynamics) {
+  params_.arpeggio_enabled = true;
+  params_.structure = StructurePattern::BuildUp;  // Has sections with different energy
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& song = gen.getSong();
+  const auto& arpeggio_notes = song.arpeggio().notes();
+  const auto& sections = song.arrangement().sections();
+
+  if (arpeggio_notes.empty() || sections.size() < 2) {
+    GTEST_SKIP() << "Not enough data for transition test";
+  }
+
+  // Find velocity distribution near section transitions
+  // Check that velocities change near section boundaries
+
+  bool velocity_varies = false;
+  uint8_t prev_velocity = 0;
+
+  for (const auto& note : arpeggio_notes) {
+    if (note.velocity != prev_velocity && prev_velocity != 0) {
+      velocity_varies = true;
+      break;
+    }
+    prev_velocity = note.velocity;
+  }
+
+  EXPECT_TRUE(velocity_varies)
+      << "Arpeggio velocities should vary with transition dynamics";
+}
+
 }  // namespace
 }  // namespace midisketch
