@@ -50,6 +50,11 @@ MidiSketchError midisketch_generate(MidiSketchHandle handle,
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
+  if (params->target_duration_seconds != 0 &&
+      (params->target_duration_seconds < 60 || params->target_duration_seconds > 300)) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
   auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
 
   midisketch::GeneratorParams gen_params{};
@@ -88,6 +93,9 @@ MidiSketchError midisketch_generate(MidiSketchHandle handle,
   gen_params.arpeggio.speed = static_cast<midisketch::ArpeggioSpeed>(params->arpeggio_speed);
   gen_params.arpeggio.octave_range = params->arpeggio_octave_range > 0 ? params->arpeggio_octave_range : 2;
   gen_params.arpeggio.gate = params->arpeggio_gate / 100.0f;
+
+  // Duration control
+  gen_params.target_duration_seconds = params->target_duration_seconds;
 
   sketch->generate(gen_params);
   return MIDISKETCH_OK;

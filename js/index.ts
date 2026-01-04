@@ -112,6 +112,8 @@ export interface GeneratorParams {
   arpeggioOctaveRange?: number;
   /** Arpeggio gate length (0-100) */
   arpeggioGate?: number;
+  /** Target duration in seconds (0=use structureId, 60-300) */
+  targetDurationSeconds?: number;
 }
 
 /**
@@ -618,7 +620,7 @@ export class MidiSketch {
   }
 
   private allocParams(m: EmscriptenModule, params: GeneratorParams): number {
-    const ptr = m._malloc(32);
+    const ptr = m._malloc(34);
     const view = new DataView(m.HEAPU8.buffer);
 
     view.setUint8(ptr + 0, params.structureId ?? 0);
@@ -646,6 +648,8 @@ export class MidiSketch {
     view.setUint8(ptr + 28, params.arpeggioSpeed ?? 1);
     view.setUint8(ptr + 29, params.arpeggioOctaveRange ?? 2);
     view.setUint8(ptr + 30, params.arpeggioGate ?? 80);
+    // offset 31 is padding for alignment
+    view.setUint16(ptr + 32, params.targetDurationSeconds ?? 0, true);
 
     return ptr;
   }

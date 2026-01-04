@@ -694,14 +694,16 @@ TEST(KeyTransposeTest, AllTracksTransposed) {
   auto midi = sketch.getMidi();
   const auto& song = sketch.getSong();
 
-  // Helper to find first Note On pitch for a channel
-  auto findMidiPitch = [](const std::vector<uint8_t>& data, uint8_t ch) -> uint8_t {
-    for (size_t i = 0; i + 2 < data.size(); ++i) {
+  // Helper to find all Note On pitches for a channel (for chord comparison)
+  auto findMidiPitches = [](const std::vector<uint8_t>& data, uint8_t ch,
+                            int max_count) -> std::vector<uint8_t> {
+    std::vector<uint8_t> pitches;
+    for (size_t i = 0; i + 2 < data.size() && (int)pitches.size() < max_count; ++i) {
       if ((data[i] & 0xF0) == 0x90 && (data[i] & 0x0F) == ch) {
-        if (data[i + 2] > 0) return data[i + 1];
+        if (data[i + 2] > 0) pitches.push_back(data[i + 1]);
       }
     }
-    return 0;
+    return pitches;
   };
 
   // Helper to get first internal note pitch
@@ -715,17 +717,26 @@ TEST(KeyTransposeTest, AllTracksTransposed) {
   uint8_t internalChord = getFirstNote(song.chord());
   uint8_t internalBass = getFirstNote(song.bass());
 
-  uint8_t midiVocal = findMidiPitch(midi, 0);
-  uint8_t midiChord = findMidiPitch(midi, 1);
-  uint8_t midiBass = findMidiPitch(midi, 2);
-  uint8_t midiDrums = findMidiPitch(midi, 9);
+  auto midiVocalPitches = findMidiPitches(midi, 0, 1);
+  auto midiChordPitches = findMidiPitches(midi, 1, 5);  // Chord has multiple simultaneous notes
+  auto midiBassPitches = findMidiPitches(midi, 2, 1);
+  auto midiDrumPitches = findMidiPitches(midi, 9, 1);
+
+  uint8_t midiVocal = midiVocalPitches.empty() ? 0 : midiVocalPitches[0];
+  uint8_t midiBass = midiBassPitches.empty() ? 0 : midiBassPitches[0];
 
   // Melodic tracks: MIDI pitch = internal pitch + 7 (G is 7 semitones above C)
   if (internalVocal > 0 && midiVocal > 0) {
     EXPECT_EQ(midiVocal - internalVocal, 7) << "Vocal should be transposed";
   }
-  if (internalChord > 0 && midiChord > 0) {
-    EXPECT_EQ(midiChord - internalChord, 7) << "Chord should be transposed";
+  // For chord: check that the transposed internal pitch exists in MIDI output
+  // (Chord voicing may reorder notes during MIDI encoding)
+  if (internalChord > 0 && !midiChordPitches.empty()) {
+    uint8_t expectedMidiChord = internalChord + 7;
+    bool found = std::find(midiChordPitches.begin(), midiChordPitches.end(),
+                           expectedMidiChord) != midiChordPitches.end();
+    EXPECT_TRUE(found) << "Chord root should be transposed: expected "
+                       << (int)expectedMidiChord << " in MIDI output";
   }
   if (internalBass > 0 && midiBass > 0) {
     EXPECT_EQ(midiBass - internalBass, 7) << "Bass should be transposed";
@@ -733,7 +744,7 @@ TEST(KeyTransposeTest, AllTracksTransposed) {
 
   // Drums should NOT be transposed (remain on standard drum notes)
   // Drums use fixed GM drum map notes, not transposable
-  EXPECT_GT(midiDrums, 0u) << "Drums should have notes";
+  EXPECT_FALSE(midiDrumPitches.empty()) << "Drums should have notes";
 }
 
 // ============================================================================

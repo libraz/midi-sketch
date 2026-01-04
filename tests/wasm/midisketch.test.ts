@@ -62,8 +62,8 @@ describe('MidiSketch WASM', () => {
       paramsPtr: number,
     ) => number;
 
-    // Allocate params struct (32 bytes)
-    const paramsPtr = module._malloc(32);
+    // Allocate params struct (34 bytes)
+    const paramsPtr = module._malloc(34);
     const view = new DataView(module.HEAPU8.buffer);
 
     // Set basic params
@@ -77,11 +77,122 @@ describe('MidiSketch WASM', () => {
     view.setUint8(paramsPtr + 7, 79); // vocalHigh
     view.setUint16(paramsPtr + 8, 0, true); // bpm
     view.setUint32(paramsPtr + 12, 12345, true); // seed
+    // offset 31 is padding
+    view.setUint16(paramsPtr + 32, 0, true); // targetDurationSeconds (0 = use structureId)
 
     const result = generate(handle, paramsPtr);
     module._free(paramsPtr);
 
     expect(result).toBe(0); // MIDISKETCH_OK
+  });
+
+  describe('targetDurationSeconds', () => {
+    it('should reject duration below 60 seconds', () => {
+      const generate = module.cwrap('midisketch_generate', 'number', ['number', 'number']) as (
+        h: number,
+        paramsPtr: number,
+      ) => number;
+
+      const paramsPtr = module._malloc(34);
+      const view = new DataView(module.HEAPU8.buffer);
+
+      // Set minimal valid params
+      view.setUint8(paramsPtr + 0, 0); // structureId
+      view.setUint8(paramsPtr + 1, 0); // moodId
+      view.setUint8(paramsPtr + 2, 0); // chordId
+      view.setUint8(paramsPtr + 3, 0); // key
+      view.setUint8(paramsPtr + 4, 1); // drumsEnabled
+      view.setUint8(paramsPtr + 5, 0); // modulation
+      view.setUint8(paramsPtr + 6, 60); // vocalLow
+      view.setUint8(paramsPtr + 7, 79); // vocalHigh
+      view.setUint16(paramsPtr + 8, 120, true); // bpm
+      view.setUint32(paramsPtr + 12, 12345, true); // seed
+      view.setUint16(paramsPtr + 32, 30, true); // targetDurationSeconds (invalid: < 60)
+
+      const result = generate(handle, paramsPtr);
+      module._free(paramsPtr);
+
+      expect(result).toBe(1); // MIDISKETCH_ERROR_INVALID_PARAM
+    });
+
+    it('should reject duration above 300 seconds', () => {
+      const generate = module.cwrap('midisketch_generate', 'number', ['number', 'number']) as (
+        h: number,
+        paramsPtr: number,
+      ) => number;
+
+      const paramsPtr = module._malloc(34);
+      const view = new DataView(module.HEAPU8.buffer);
+
+      view.setUint8(paramsPtr + 0, 0);
+      view.setUint8(paramsPtr + 1, 0);
+      view.setUint8(paramsPtr + 2, 0);
+      view.setUint8(paramsPtr + 3, 0);
+      view.setUint8(paramsPtr + 4, 1);
+      view.setUint8(paramsPtr + 5, 0);
+      view.setUint8(paramsPtr + 6, 60);
+      view.setUint8(paramsPtr + 7, 79);
+      view.setUint16(paramsPtr + 8, 120, true);
+      view.setUint32(paramsPtr + 12, 12345, true);
+      view.setUint16(paramsPtr + 32, 400, true); // targetDurationSeconds (invalid: > 300)
+
+      const result = generate(handle, paramsPtr);
+      module._free(paramsPtr);
+
+      expect(result).toBe(1); // MIDISKETCH_ERROR_INVALID_PARAM
+    });
+
+    it('should accept valid duration and generate song', () => {
+      const generate = module.cwrap('midisketch_generate', 'number', ['number', 'number']) as (
+        h: number,
+        paramsPtr: number,
+      ) => number;
+      const getEvents = module.cwrap('midisketch_get_events', 'number', ['number']) as (
+        h: number,
+      ) => number;
+      const freeEvents = module.cwrap('midisketch_free_events', null, ['number']) as (
+        ptr: number,
+      ) => void;
+
+      const paramsPtr = module._malloc(34);
+      const view = new DataView(module.HEAPU8.buffer);
+
+      view.setUint8(paramsPtr + 0, 0);
+      view.setUint8(paramsPtr + 1, 0);
+      view.setUint8(paramsPtr + 2, 0);
+      view.setUint8(paramsPtr + 3, 0);
+      view.setUint8(paramsPtr + 4, 1);
+      view.setUint8(paramsPtr + 5, 0);
+      view.setUint8(paramsPtr + 6, 60);
+      view.setUint8(paramsPtr + 7, 79);
+      view.setUint16(paramsPtr + 8, 120, true); // bpm = 120
+      view.setUint32(paramsPtr + 12, 12345, true);
+      view.setUint16(paramsPtr + 32, 180, true); // targetDurationSeconds = 180 (3 minutes)
+
+      const result = generate(handle, paramsPtr);
+      module._free(paramsPtr);
+
+      expect(result).toBe(0); // MIDISKETCH_OK
+
+      // Verify generation produced valid output by checking events
+      const eventDataPtr = getEvents(handle);
+      const jsonPtr = module.HEAPU32[eventDataPtr >> 2];
+      const json = module.UTF8ToString(jsonPtr);
+      const data = JSON.parse(json);
+
+      // Check that we have tracks and notes
+      expect(data.tracks.length).toBeGreaterThan(0);
+
+      // At 120 BPM, 180 seconds should produce ~90 bars worth of content
+      // Verify there are a significant number of notes (duration-based songs are longer)
+      const totalNotes = data.tracks.reduce(
+        (sum: number, track: { notes: unknown[] }) => sum + track.notes.length,
+        0,
+      );
+      expect(totalNotes).toBeGreaterThan(100); // Longer song = more notes
+
+      freeEvents(eventDataPtr);
+    });
   });
 
   it('should get MIDI data after generation', () => {

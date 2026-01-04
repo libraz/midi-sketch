@@ -31,7 +31,7 @@ enum class VoicingType {
 
 // A voiced chord with absolute pitches
 struct VoicedChord {
-  std::array<uint8_t, 4> pitches;  // Up to 4 voices
+  std::array<uint8_t, 5> pitches;  // Up to 5 voices (for 9th chords)
   uint8_t count;                   // Number of voices
   VoicingType type;                // Voicing style used
 };

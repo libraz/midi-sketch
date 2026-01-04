@@ -1006,6 +1006,39 @@ TEST(GeneratorTest, ChordExtensionParameterRanges) {
   EXPECT_GT(gen.getSong().chord().noteCount(), 0u);
 }
 
+TEST(GeneratorTest, ChordExtension9thGeneratesWithoutCrash) {
+  // Regression test: 9th chords have 5 notes, VoicedChord must support this
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.chord_extension.enable_9th = true;
+  params.chord_extension.ninth_probability = 1.0f;  // Force 9th on all eligible
+
+  // Should complete without crash (was crashing due to array overflow)
+  gen.generate(params);
+  EXPECT_GT(gen.getSong().chord().noteCount(), 0u);
+}
+
+TEST(GeneratorTest, ChordExtension9thAndSusSimultaneous) {
+  // Test that enabling both sus and 9th doesn't crash
+  // (sus takes priority in selection logic, but both flags should be safe)
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ShortForm;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.chord_extension.enable_sus = true;
+  params.chord_extension.enable_9th = true;
+  params.chord_extension.sus_probability = 0.5f;
+  params.chord_extension.ninth_probability = 0.5f;
+
+  // Should complete without crash
+  gen.generate(params);
+  EXPECT_GT(gen.getSong().chord().noteCount(), 0u);
+}
+
 // ===== MelodyRegenerateParams Tests =====
 
 TEST(GeneratorTest, RegenerateMelodyWithParamsUpdatesSeed) {
@@ -1200,6 +1233,141 @@ TEST(GeneratorTest, RegenerateMelodyWithSeedZeroGeneratesNewSeed) {
   // Note: There's a tiny chance this could fail if the random seed happens to be 42
   uint32_t new_seed = gen.getSong().melodySeed();
   EXPECT_NE(new_seed, 0u);  // Should never be 0 after resolution
+}
+
+// ============================================================================
+// Vocal Range Constraint Tests
+// ============================================================================
+
+TEST(VocalRangeTest, AllNotesWithinSpecifiedRange) {
+  // Verify that all generated vocal notes stay within the specified range
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::FullPop;  // Has multiple sections
+  params.mood = Mood::StraightPop;
+  params.seed = 12345;
+  params.vocal_low = 60;   // C4
+  params.vocal_high = 72;  // C5 (one octave)
+
+  gen.generate(params);
+  const auto& notes = gen.getSong().vocal().notes();
+
+  ASSERT_FALSE(notes.empty()) << "Vocal track should have notes";
+
+  for (const auto& note : notes) {
+    EXPECT_GE(note.note, params.vocal_low)
+        << "Note pitch " << (int)note.note << " below vocal_low at tick "
+        << note.startTick;
+    EXPECT_LE(note.note, params.vocal_high)
+        << "Note pitch " << (int)note.note << " above vocal_high at tick "
+        << note.startTick;
+  }
+}
+
+TEST(VocalRangeTest, NarrowRangeConstraint) {
+  // Test with a narrow vocal range (perfect 5th)
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 54321;
+  params.vocal_low = 60;   // C4
+  params.vocal_high = 67;  // G4 (perfect 5th)
+
+  gen.generate(params);
+  const auto& notes = gen.getSong().vocal().notes();
+
+  ASSERT_FALSE(notes.empty()) << "Vocal track should have notes";
+
+  for (const auto& note : notes) {
+    EXPECT_GE(note.note, params.vocal_low);
+    EXPECT_LE(note.note, params.vocal_high);
+  }
+}
+
+TEST(VocalRangeTest, WideRangeConstraint) {
+  // Test with a wide vocal range (two octaves)
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ExtendedFull;
+  params.mood = Mood::Dramatic;
+  params.seed = 99999;
+  params.vocal_low = 55;   // G3
+  params.vocal_high = 79;  // G5 (two octaves)
+
+  gen.generate(params);
+  const auto& notes = gen.getSong().vocal().notes();
+
+  ASSERT_FALSE(notes.empty()) << "Vocal track should have notes";
+
+  for (const auto& note : notes) {
+    EXPECT_GE(note.note, params.vocal_low);
+    EXPECT_LE(note.note, params.vocal_high);
+  }
+}
+
+TEST(VocalRangeTest, RangeConstraintWithAllSectionTypes) {
+  // Test that register shifts in different sections don't exceed the range
+  // FullWithBridge has A, B, Chorus, Bridge - each with different register_shift
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::FullWithBridge;
+  params.mood = Mood::EmotionalPop;
+  params.seed = 11111;
+  params.vocal_low = 58;   // Bb3
+  params.vocal_high = 70;  // Bb4 (one octave)
+
+  gen.generate(params);
+  const auto& notes = gen.getSong().vocal().notes();
+
+  ASSERT_FALSE(notes.empty()) << "Vocal track should have notes";
+
+  uint8_t actual_low = 127;
+  uint8_t actual_high = 0;
+
+  for (const auto& note : notes) {
+    actual_low = std::min(actual_low, note.note);
+    actual_high = std::max(actual_high, note.note);
+    EXPECT_GE(note.note, params.vocal_low);
+    EXPECT_LE(note.note, params.vocal_high);
+  }
+
+  // Verify actual range is reasonable (uses at least half the available range)
+  int actual_range = actual_high - actual_low;
+  int available_range = params.vocal_high - params.vocal_low;
+  EXPECT_GE(actual_range, available_range / 2)
+      << "Melody should use a reasonable portion of the available range";
+}
+
+TEST(VocalRangeTest, RegenerateMelodyRespectsRange) {
+  // Verify that regenerateMelody also respects the vocal range
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.vocal_low = 62;   // D4
+  params.vocal_high = 74;  // D5
+
+  gen.generate(params);
+
+  // Regenerate with a different seed
+  MelodyRegenerateParams regen{};
+  regen.seed = 99999;
+  regen.vocal_low = 62;
+  regen.vocal_high = 74;
+  regen.vocal_attitude = VocalAttitude::Clean;
+  regen.composition_style = CompositionStyle::MelodyLead;
+
+  gen.regenerateMelody(regen);
+
+  const auto& notes = gen.getSong().vocal().notes();
+  ASSERT_FALSE(notes.empty());
+
+  for (const auto& note : notes) {
+    EXPECT_GE(note.note, regen.vocal_low);
+    EXPECT_LE(note.note, regen.vocal_high);
+  }
 }
 
 }  // namespace

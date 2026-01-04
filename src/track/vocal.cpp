@@ -166,7 +166,190 @@ enum class NonHarmonicType {
   Anticipation  // Early arrival of next chord tone
 };
 
-// Rhythm note structure
+// ============================================================================
+// Phrase-based melody generation (Music Theory Foundation)
+// ============================================================================
+//
+// A musical phrase is the smallest complete musical thought, analogous to a
+// sentence in language. In vocal music, phrases are bounded by breath points.
+//
+// Phrase Structure Principles:
+// 1. Length: Typically 2-4 bars (human breath capacity ~4-8 beats at moderate tempo)
+// 2. Arc: Rise to climax, then fall to resolution (tension-release)
+// 3. Cadence: Phrases end on stable tones (chord tones, especially root/5th)
+// 4. Breath: Rest between phrases (1/8 to 1/4 note duration)
+// 5. Legato: Notes within phrase are connected (gate ~95%)
+// 6. Phrase-final shortening: Last note of phrase is shorter (gate ~70%)
+//
+// Call-and-Response (Antecedent-Consequent):
+// - First phrase (call/antecedent): ends on less stable tone (3rd, 5th, or 2nd)
+// - Second phrase (response/consequent): ends on stable tone (root)
+// ============================================================================
+
+// Phrase note with articulation info
+struct PhraseNote {
+  float beat;           // Position in beats (0.0 = phrase start)
+  int eighths;          // Base duration in eighth notes
+  bool strong;          // Strong beat (1 or 3 in 4/4)
+  int contour_degree;   // Melodic contour: scale degree offset from phrase root
+  bool phrase_end;      // Is this the last note of the phrase?
+  bool is_chord_tone;   // Should land on chord tone?
+};
+
+// Complete phrase definition
+struct Phrase {
+  std::vector<PhraseNote> notes;
+  int breath_eighths;   // Rest duration after phrase (in eighth notes)
+  bool is_antecedent;   // True = ends on less stable tone (call)
+                        // False = ends on stable tone (response)
+};
+
+// Phrase patterns based on music theory
+// Each pattern represents a complete singable phrase with proper breath points
+std::vector<Phrase> getPhrasePatterns() {
+  return {
+    // Pattern 0: Simple 2-bar phrase (Verse - sparse, breathing room)
+    // Arc: stable start → slight rise → fall to resolution
+    // "Ta-a Ta Ta-a" pattern with breath
+    {
+      {
+        {0.0f, 3, true, 0, false, true},    // Beat 1: root (strong, chord tone)
+        {1.5f, 1, false, 1, false, false},  // Beat 1.5: step up (passing)
+        {2.0f, 2, true, 2, false, true},    // Beat 3: 3rd (strong, chord tone)
+        {3.0f, 3, false, 0, true, true},    // Beat 4: back to root (phrase end)
+      },
+      2,      // 1/4 note breath after phrase
+      false   // Consequent (ends on root)
+    },
+
+    // Pattern 1: 2-bar antecedent phrase (call - ends on 5th)
+    // Arc: start low → rise to climax → partial descent
+    {
+      {
+        {0.0f, 2, true, 0, false, true},    // Root start
+        {1.0f, 2, false, 2, false, true},   // Rise to 3rd
+        {2.0f, 3, true, 4, false, true},    // Climax on 5th (strong)
+        {3.5f, 2, false, 2, true, true},    // Descend to 3rd (phrase end - less stable)
+      },
+      2,      // Breath
+      true    // Antecedent (ends on 3rd - unstable, expects response)
+    },
+
+    // Pattern 2: 2-bar consequent phrase (response - ends on root)
+    // Arc: pickup → rise → strong descent to root
+    {
+      {
+        {0.0f, 2, true, 2, false, true},    // Start on 3rd
+        {1.0f, 2, false, 4, false, true},   // Rise to 5th
+        {2.0f, 2, true, 2, false, true},    // Back to 3rd (strong)
+        {3.0f, 3, false, 0, true, true},    // Resolve to root (phrase end)
+      },
+      3,      // Longer breath (phrase pair complete)
+      false   // Consequent (ends on root - stable)
+    },
+
+    // Pattern 3: Flowing 2-bar phrase (Chorus - more notes, connected)
+    // Continuous melodic line with clear arc
+    {
+      {
+        {0.0f, 2, true, 0, false, true},    // Root
+        {1.0f, 1, false, 1, false, false},  // Step (passing)
+        {1.5f, 1, false, 2, false, true},   // 3rd
+        {2.0f, 2, true, 4, false, true},    // 5th (climax, strong)
+        {3.0f, 1, false, 2, false, true},   // 3rd
+        {3.5f, 2, false, 0, true, true},    // Root (phrase end)
+      },
+      2,
+      false
+    },
+
+    // Pattern 4: Syncopated phrase (adds rhythmic interest)
+    // Accents on off-beats create forward momentum
+    {
+      {
+        {0.0f, 3, true, 0, false, true},    // Root (long)
+        {1.5f, 2, false, 2, false, true},   // Syncopated 3rd
+        {2.5f, 2, true, 4, false, true},    // 5th
+        {3.5f, 2, false, 2, true, true},    // End on 3rd (creates tension)
+      },
+      2,
+      true    // Antecedent
+    },
+
+    // Pattern 5: Sparse phrase (Bridge/Ballad - long notes, emotional)
+    // Few notes, each sustained for expression
+    {
+      {
+        {0.0f, 4, true, 0, false, true},    // Long root
+        {2.0f, 4, true, 4, false, true},    // Long 5th
+        {4.0f, 6, true, 2, false, true},    // Long 3rd
+        {7.0f, 2, false, 0, true, true},    // Resolve to root
+      },
+      4,      // Long breath (emotional pause)
+      false
+    },
+
+    // Pattern 6: Ascending phrase (B section - building tension)
+    {
+      {
+        {0.0f, 2, true, 0, false, true},    // Start low
+        {1.0f, 2, false, 1, false, false},  // Step up
+        {2.0f, 2, true, 2, false, true},    // Continue rise
+        {3.0f, 2, false, 4, true, true},    // End high (creates expectation)
+      },
+      2,
+      true    // Antecedent (high ending = unstable)
+    },
+
+    // Pattern 7: Descending phrase (resolution after tension)
+    {
+      {
+        {0.0f, 2, true, 4, false, true},    // Start high
+        {1.0f, 2, false, 2, false, true},   // Step down
+        {2.0f, 2, true, 1, false, false},   // Continue descent
+        {3.0f, 3, false, 0, true, true},    // Resolve to root
+      },
+      3,
+      false   // Consequent (low ending = stable)
+    },
+  };
+}
+
+// Get phrase pattern index based on section type and position
+int selectPhrasePattern(SectionType section, int phrase_in_section, bool is_ending) {
+  if (is_ending) {
+    // Final phrases should resolve (consequent patterns)
+    return (section == SectionType::Chorus) ? 3 : 2;
+  }
+
+  switch (section) {
+    case SectionType::A:
+      // Verse: alternating call-response, sparse
+      return (phrase_in_section % 2 == 0) ? 0 : 2;
+
+    case SectionType::B:
+      // Pre-chorus: building tension
+      return (phrase_in_section % 2 == 0) ? 6 : 4;
+
+    case SectionType::Chorus:
+      // Chorus: flowing, energetic
+      return (phrase_in_section % 2 == 0) ? 3 : 4;
+
+    case SectionType::Bridge:
+      // Bridge: sparse, emotional
+      return (phrase_in_section % 2 == 0) ? 5 : 7;
+
+    default:
+      return 0;
+  }
+}
+
+// Articulation constants (gate ratios)
+constexpr float LEGATO_GATE = 0.95f;        // Connected notes within phrase
+constexpr float PHRASE_END_GATE = 0.70f;    // Shortened phrase-final note
+constexpr float NORMAL_GATE = 0.85f;        // Standard articulation
+
+// Legacy rhythm patterns (kept for compatibility with existing code paths)
 struct RhythmNote {
   float beat;      // 0.0-7.5 (in quarter notes, 2 bars)
   int eighths;     // duration in eighth notes
@@ -518,11 +701,25 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     }
 
     // Apply register shift to effective range for this section
+    // IMPORTANT: Must stay within user-specified vocal range (params.vocal_low/high)
     int section_vocal_low = static_cast<int>(effective_vocal_low) + register_shift;
     int section_vocal_high = static_cast<int>(effective_vocal_high) + register_shift;
-    // Clamp to valid MIDI range
-    section_vocal_low = std::clamp(section_vocal_low, 36, 96);
-    section_vocal_high = std::clamp(section_vocal_high, 36, 96);
+
+    // First clamp to user-specified vocal range (this is the hard constraint)
+    section_vocal_low = std::clamp(section_vocal_low,
+                                    static_cast<int>(params.vocal_low),
+                                    static_cast<int>(params.vocal_high));
+    section_vocal_high = std::clamp(section_vocal_high,
+                                     static_cast<int>(params.vocal_low),
+                                     static_cast<int>(params.vocal_high));
+
+    // Ensure minimum range of 5 semitones (perfect 4th) for singability
+    if (section_vocal_high - section_vocal_low < 5) {
+      // Center the range within the constraint
+      int center = (section_vocal_low + section_vocal_high) / 2;
+      section_vocal_low = std::max(static_cast<int>(params.vocal_low), center - 6);
+      section_vocal_high = std::min(static_cast<int>(params.vocal_high), center + 6);
+    }
 
     // Apply BackgroundMotif suppression
     if (is_background_motif) {
@@ -670,14 +867,32 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         // Calculate scale degree
         int scale_degree = current_chord_root + contour_degree;
 
-        // Phase 2: Apply phrase_end_resolution at phrase endings
+        // Phrase ending resolution (music theory: phrases must resolve)
         // Check if this is the last note in the motif (phrase ending)
         bool is_last_note_in_motif = (contour_idx == contour.degrees.size() - 1) ||
                                       (&rn == &rhythm.back());
+
+        // Strong resolution at phrase boundaries
+        // Music theory: phrase endings should land on stable chord tones
         if (is_phrase_ending && is_last_note_in_motif) {
+          // Always force chord tone at phrase end (singability requirement)
+          force_chord_tone = true;
+
+          // For 4-bar phrases (strong cadence), prefer root or 5th
+          // The contour degree is already set, but we ensure stability
+          if (contour_degree != 0 && contour_degree != 4) {
+            // Prefer root (0) for strong resolution
+            std::uniform_real_distribution<float> res_dist(0.0f, 1.0f);
+            if (res_dist(rng) < melody_params.phrase_end_resolution) {
+              contour_degree = 0;  // Resolve to root
+              scale_degree = current_chord_root;
+            }
+          }
+        } else if (is_last_note_in_motif && !is_phrase_ending) {
+          // 2-bar boundary (weaker cadence): prefer chord tone but allow 3rd
           std::uniform_real_distribution<float> res_dist(0.0f, 1.0f);
-          if (res_dist(rng) < melody_params.phrase_end_resolution) {
-            force_chord_tone = true;  // Force resolution to chord tone
+          if (res_dist(rng) < 0.8f) {
+            force_chord_tone = true;
           }
         }
 
@@ -738,8 +953,31 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
         prev_pitch = pitch;
 
-        // Duration
-        Tick duration = static_cast<Tick>(rn.eighths * TICKS_PER_BEAT / 2);
+        // Duration with articulation (phrase-based gate control)
+        // Base duration in ticks
+        Tick base_duration = static_cast<Tick>(rn.eighths * TICKS_PER_BEAT / 2);
+
+        // Apply gate based on phrase position:
+        // - Phrase-final notes: shortened for breath (70% gate)
+        // - Notes within phrase: legato connection (95% gate)
+        // - Last note before phrase boundary: ensure breath space
+        float gate;
+        bool is_last_note_of_phrase = is_phrase_ending && (&rn == &rhythm.back());
+        bool is_near_phrase_end = is_phrase_ending &&
+                                   (beat_in_motif >= 3.0f || &rn == &rhythm.back());
+
+        if (is_last_note_of_phrase) {
+          // Phrase-final note: short for breath
+          gate = PHRASE_END_GATE;
+        } else if (is_near_phrase_end) {
+          // Near phrase end: transitional
+          gate = NORMAL_GATE;
+        } else {
+          // Within phrase: legato (connected)
+          gate = LEGATO_GATE;
+        }
+
+        Tick duration = static_cast<Tick>(base_duration * gate);
 
         // Velocity - stronger on chord tones
         uint8_t beat_num = static_cast<uint8_t>(beat_in_bar);

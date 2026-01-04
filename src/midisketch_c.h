@@ -67,6 +67,10 @@ typedef struct {
   uint8_t arpeggio_speed;      // 0=Eighth, 1=Sixteenth, 2=Triplet
   uint8_t arpeggio_octave_range; // 1-3 octaves
   uint8_t arpeggio_gate;       // Gate length (0-100, maps to 0.0-1.0)
+
+  // Duration control
+  uint8_t _reserved;                 // Alignment padding
+  uint16_t target_duration_seconds;  // Target duration (0=use structure, 60-300)
 } MidiSketchParams;
 
 // Melody regeneration parameters.
