@@ -52,6 +52,10 @@ backup/
 *.gcda
 *.gcno
 
+output.json
+output.mid
+analysis.json
+
 # Binaries (in build directory only)
 /build
 *.exe

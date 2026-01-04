@@ -4,7 +4,9 @@
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <set>
 #include <sstream>
+#include <tuple>
 
 namespace midisketch {
 
@@ -133,6 +135,69 @@ ChordTones getChordTones(int8_t degree) {
   return ct;
 }
 
+// Available tensions by chord quality (music theory standard).
+// These are notes that sound consonant even though they're not triad tones.
+struct AvailableTensions {
+  int ninth;   // 2 semitones above root (9th)
+  int eleventh;  // 5 semitones above root (11th) - only for minor
+  int thirteenth;  // 9 semitones above root (6th/13th)
+  bool has_ninth;
+  bool has_eleventh;
+  bool has_thirteenth;
+};
+
+AvailableTensions getAvailableTensions(int8_t degree) {
+  int normalized = ((degree % 7) + 7) % 7;
+  int root_pc = DEGREE_TO_PITCH_CLASS[normalized];
+
+  AvailableTensions t{};
+  t.ninth = (root_pc + 2) % 12;
+  t.eleventh = (root_pc + 5) % 12;
+  t.thirteenth = (root_pc + 9) % 12;
+
+  // Major chords (I, IV, V): 9th and 13th available
+  // Minor chords (ii, iii, vi): 9th and 11th available
+  // Diminished (vii°): limited tensions
+  switch (normalized) {
+    case 0:  // I (major)
+    case 3:  // IV (major)
+      t.has_ninth = true;
+      t.has_eleventh = false;  // 11th clashes with major 3rd
+      t.has_thirteenth = true;
+      break;
+    case 4:  // V (dominant)
+      t.has_ninth = true;
+      t.has_eleventh = false;
+      t.has_thirteenth = true;
+      break;
+    case 1:  // ii (minor)
+    case 2:  // iii (minor)
+    case 5:  // vi (minor)
+      t.has_ninth = true;
+      t.has_eleventh = true;  // 11th works on minor
+      t.has_thirteenth = false;  // 13th can clash on minor
+      break;
+    case 6:  // vii° (diminished)
+      t.has_ninth = false;
+      t.has_eleventh = false;
+      t.has_thirteenth = false;
+      break;
+  }
+
+  return t;
+}
+
+// Check if a pitch class is an available tension for the chord.
+bool isAvailableTension(int pitch_class, int8_t degree) {
+  AvailableTensions t = getAvailableTensions(degree);
+
+  if (t.has_ninth && pitch_class == t.ninth) return true;
+  if (t.has_eleventh && pitch_class == t.eleventh) return true;
+  if (t.has_thirteenth && pitch_class == t.thirteenth) return true;
+
+  return false;
+}
+
 // Check if a pitch class is a chord tone for the given degree.
 bool isPitchClassChordTone(int pitch_class, int8_t degree,
                            const ChordExtensionParams& ext_params) {
@@ -179,14 +244,43 @@ bool isPitchClassChordTone(int pitch_class, int8_t degree,
   return false;
 }
 
-// Check if an interval (in semitones mod 12) is dissonant.
-// Returns severity if dissonant, otherwise std::nullopt.
-std::pair<bool, DissonanceSeverity> checkIntervalDissonance(uint8_t semitones,
+// Check if an interval is dissonant, considering both pitch class and register.
+// actual_semitones: the real distance between notes (not modulo 12)
+// chord_degree: the current chord's scale degree
+// Returns (is_dissonant, severity).
+std::pair<bool, DissonanceSeverity> checkIntervalDissonance(uint8_t actual_semitones,
                                                             int8_t chord_degree) {
-  uint8_t interval = semitones % 12;
+  uint8_t interval = actual_semitones % 12;
 
-  // Minor 2nd (1) and Major 7th (11) are always severe.
+  // Register separation rule (music theory):
+  // Compound intervals (> 1 octave) are significantly less dissonant.
+  // Notes 2+ octaves apart rarely cause perceptual clashes.
+  bool is_compound = actual_semitones > 12;
+  bool is_wide_separation = actual_semitones > 24;
+
+  // Minor 2nd (1) and Major 7th (11) need special handling.
   if (interval == 1 || interval == 11) {
+    // Wide separation (2+ octaves): typically acceptable
+    if (is_wide_separation) {
+      return {false, DissonanceSeverity::Low};
+    }
+
+    // Compound interval (1-2 octaves): reduced severity
+    if (is_compound) {
+      return {true, DissonanceSeverity::Low};
+    }
+
+    // Same octave: check chord context for major 7th
+    if (interval == 11) {
+      // Maj7 chords on I (degree 0) and IV (degree 3) are common in pop/jazz.
+      // The major 7th is part of the chord structure, not dissonant.
+      int normalized = ((chord_degree % 7) + 7) % 7;
+      if (normalized == 0 || normalized == 3) {
+        // Could be intentional Maj7 voicing - reduce to medium
+        return {true, DissonanceSeverity::Medium};
+      }
+    }
+
     return {true, DissonanceSeverity::High};
   }
 
@@ -197,6 +291,13 @@ std::pair<bool, DissonanceSeverity> checkIntervalDissonance(uint8_t semitones,
     int normalized = ((chord_degree % 7) + 7) % 7;
     if (normalized == 4) {
       return {false, DissonanceSeverity::Low};  // Not dissonant on V
+    }
+    // Wide separation reduces severity
+    if (is_wide_separation) {
+      return {false, DissonanceSeverity::Low};
+    }
+    if (is_compound) {
+      return {true, DissonanceSeverity::Low};
     }
     return {true, DissonanceSeverity::Medium};
   }
@@ -296,11 +397,41 @@ std::vector<TimedNote> collectPitchedNotes(const Song& song) {
   return notes;
 }
 
-// Check if a tick position is on a strong beat (beat 1 or 3).
-bool isStrongBeat(Tick tick) {
+// Beat strength classification for severity determination.
+enum class BeatStrength {
+  Strong,    // Beat 1 (downbeat) - most important
+  Medium,    // Beat 3 (secondary strong beat)
+  Weak,      // Beats 2, 4 (weak beats)
+  Offbeat    // Subdivisions (e.g., "and" of beats)
+};
+
+BeatStrength getBeatStrength(Tick tick) {
   Tick beat_pos = tick % TICKS_PER_BAR;
-  // Beat 1: 0, Beat 2: 480, Beat 3: 960, Beat 4: 1440
-  return beat_pos < TICKS_PER_BEAT || (beat_pos >= TICKS_PER_BEAT * 2 && beat_pos < TICKS_PER_BEAT * 3);
+  Tick within_beat = beat_pos % TICKS_PER_BEAT;
+
+  // Check if on the beat or offbeat
+  bool on_beat = within_beat < (TICKS_PER_BEAT / 4);  // Within first 16th
+
+  if (!on_beat) {
+    return BeatStrength::Offbeat;
+  }
+
+  // Beat 1: 0
+  if (beat_pos < TICKS_PER_BEAT) {
+    return BeatStrength::Strong;
+  }
+  // Beat 3: 960
+  if (beat_pos >= TICKS_PER_BEAT * 2 && beat_pos < TICKS_PER_BEAT * 3) {
+    return BeatStrength::Medium;
+  }
+  // Beats 2 and 4
+  return BeatStrength::Weak;
+}
+
+// Legacy function for compatibility
+bool isStrongBeat(Tick tick) {
+  BeatStrength strength = getBeatStrength(tick);
+  return strength == BeatStrength::Strong || strength == BeatStrength::Medium;
 }
 
 }  // namespace
@@ -325,6 +456,10 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
   // Collect all pitched notes
   std::vector<TimedNote> all_notes = collectPitchedNotes(song);
 
+  // Deduplication: track reported clashes as (tick, pitch1, pitch2) tuples
+  // This prevents duplicate reports when chord track has duplicate notes
+  std::set<std::tuple<Tick, uint8_t, uint8_t>> reported_clashes;
+
   // Phase 1: Detect simultaneous clashes
   // For each pair of overlapping notes from different tracks
   for (size_t i = 0; i < all_notes.size(); ++i) {
@@ -336,19 +471,30 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
       if (note_b.start >= note_a.end) break;  // No more overlaps possible
       if (note_a.track == note_b.track) continue;  // Same track, skip
 
-      // Calculate interval
-      uint8_t interval = static_cast<uint8_t>(std::abs(static_cast<int>(note_a.pitch) -
-                                                       static_cast<int>(note_b.pitch))) %
-                         12;
+      // Calculate actual interval (not modulo 12) for register-aware analysis
+      uint8_t actual_interval = static_cast<uint8_t>(
+          std::abs(static_cast<int>(note_a.pitch) - static_cast<int>(note_b.pitch)));
+      uint8_t interval = actual_interval % 12;  // For reporting
+
+      // Deduplicate: skip if this exact clash was already reported
+      uint8_t low_pitch = std::min(note_a.pitch, note_b.pitch);
+      uint8_t high_pitch = std::max(note_a.pitch, note_b.pitch);
+      auto clash_key = std::make_tuple(note_a.start, low_pitch, high_pitch);
+      if (reported_clashes.count(clash_key) > 0) {
+        continue;  // Already reported
+      }
 
       // Get chord at this position using harmonic rhythm
       uint32_t bar = note_a.start / TICKS_PER_BAR;
       auto chord_info = getChordAtTick(note_a.start, song, progression, params.mood);
       int8_t degree = chord_info.degree;
 
-      auto [is_dissonant, severity] = checkIntervalDissonance(interval, degree);
+      auto [is_dissonant, severity] = checkIntervalDissonance(actual_interval, degree);
 
       if (is_dissonant) {
+        // Mark as reported to avoid duplicates
+        reported_clashes.insert(clash_key);
+
         DissonanceIssue issue;
         issue.type = DissonanceType::SimultaneousClash;
         issue.severity = severity;
@@ -390,37 +536,60 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
       int8_t degree = chord_info.degree;
       int pitch_class = note.note % 12;
 
-      if (!isPitchClassChordTone(pitch_class, degree, ext_params)) {
-        DissonanceSeverity severity =
-            isStrongBeat(note.startTick) ? DissonanceSeverity::Medium : DissonanceSeverity::Low;
+      // Skip if it's a chord tone
+      if (isPitchClassChordTone(pitch_class, degree, ext_params)) {
+        continue;
+      }
 
-        DissonanceIssue issue;
-        issue.type = DissonanceType::NonChordTone;
-        issue.severity = severity;
-        issue.tick = note.startTick;
-        issue.bar = bar;
-        issue.beat = 1.0f + static_cast<float>(note.startTick % TICKS_PER_BAR) / TICKS_PER_BEAT;
-        issue.track_name = trackRoleToString(role);
-        issue.pitch = note.note;
-        issue.pitch_name = midiNoteToName(note.note);
-        issue.chord_degree = degree;
-        issue.chord_name = getChordNameFromDegree(degree);
-        issue.chord_tones = getChordToneNames(degree);
+      // Check if it's an available tension (9th, 11th, 13th)
+      // Available tensions are musically acceptable and don't need reporting
+      if (isAvailableTension(pitch_class, degree)) {
+        continue;  // Skip - this is a valid tension, not a problem
+      }
 
-        report.issues.push_back(issue);
-        report.summary.non_chord_tones++;
+      // Determine severity based on beat strength
+      BeatStrength beat_strength = getBeatStrength(note.startTick);
+      DissonanceSeverity severity;
 
-        switch (severity) {
-          case DissonanceSeverity::High:
-            report.summary.high_severity++;
-            break;
-          case DissonanceSeverity::Medium:
-            report.summary.medium_severity++;
-            break;
-          case DissonanceSeverity::Low:
-            report.summary.low_severity++;
-            break;
-        }
+      switch (beat_strength) {
+        case BeatStrength::Strong:
+          severity = DissonanceSeverity::Medium;  // Beat 1 non-chord tone
+          break;
+        case BeatStrength::Medium:
+          severity = DissonanceSeverity::Low;  // Beat 3 - less critical
+          break;
+        case BeatStrength::Weak:
+        case BeatStrength::Offbeat:
+          severity = DissonanceSeverity::Low;  // Weak beats/offbeats are fine
+          break;
+      }
+
+      DissonanceIssue issue;
+      issue.type = DissonanceType::NonChordTone;
+      issue.severity = severity;
+      issue.tick = note.startTick;
+      issue.bar = bar;
+      issue.beat = 1.0f + static_cast<float>(note.startTick % TICKS_PER_BAR) / TICKS_PER_BEAT;
+      issue.track_name = trackRoleToString(role);
+      issue.pitch = note.note;
+      issue.pitch_name = midiNoteToName(note.note);
+      issue.chord_degree = degree;
+      issue.chord_name = getChordNameFromDegree(degree);
+      issue.chord_tones = getChordToneNames(degree);
+
+      report.issues.push_back(issue);
+      report.summary.non_chord_tones++;
+
+      switch (severity) {
+        case DissonanceSeverity::High:
+          report.summary.high_severity++;
+          break;
+        case DissonanceSeverity::Medium:
+          report.summary.medium_severity++;
+          break;
+        case DissonanceSeverity::Low:
+          report.summary.low_severity++;
+          break;
       }
     }
   };

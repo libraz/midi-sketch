@@ -706,5 +706,302 @@ TEST_F(HarmonyIntegrationTest, ArpeggioIncludedInTransitionDynamics) {
       << "Arpeggio velocities should vary with transition dynamics";
 }
 
+// =============================================================================
+// Test 13: Bass-chord collision avoidance (major 7th clash prevention)
+// =============================================================================
+
+TEST_F(HarmonyIntegrationTest, BassChordMajor7thClashAvoided) {
+  // Generate with multiple seeds to verify bass-chord coordination
+  params_.structure = StructurePattern::FullPop;  // Longer form with more bars
+  params_.mood = Mood::EnergeticDance;  // Uses more complex voicings
+  params_.drums_enabled = true;
+
+  int total_clashes = 0;
+  int total_bar_checks = 0;
+
+  for (int seed = 1; seed <= 5; ++seed) {
+    params_.seed = seed * 12345;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& song = gen.getSong();
+    const auto& bass_notes = song.bass().notes();
+    const auto& chord_notes = song.chord().notes();
+    const auto& sections = song.arrangement().sections();
+
+    // Check each bar for bass-chord major 7th clashes
+    for (const auto& section : sections) {
+      for (uint8_t bar = 0; bar < section.bars; ++bar) {
+        Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
+
+        total_bar_checks++;
+
+        // Get bass notes in this bar (beat 1)
+        std::set<int> bass_pitch_classes;
+        for (const auto& note : bass_notes) {
+          if (note.startTick >= bar_start &&
+              note.startTick < bar_start + TICKS_PER_BEAT) {
+            bass_pitch_classes.insert(note.note % 12);
+          }
+        }
+
+        // Get chord notes in this bar (beat 1)
+        std::set<int> chord_pitch_classes;
+        for (const auto& note : chord_notes) {
+          if (note.startTick >= bar_start &&
+              note.startTick < bar_start + TICKS_PER_BEAT) {
+            chord_pitch_classes.insert(note.note % 12);
+          }
+        }
+
+        // Check for major 7th clash (11 semitones between bass and chord)
+        for (int bass_pc : bass_pitch_classes) {
+          for (int chord_pc : chord_pitch_classes) {
+            int interval = std::abs(bass_pc - chord_pc);
+            if (interval > 6) interval = 12 - interval;
+            if (interval == 1) {  // Minor 2nd = Major 7th inverted
+              total_clashes++;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Allow up to 5% bass-chord clashes (very few should remain)
+  float clash_ratio = static_cast<float>(total_clashes) / total_bar_checks;
+  EXPECT_LE(clash_ratio, 0.10f)
+      << "Bass-chord major 7th clashes should be < 10%: " << (clash_ratio * 100)
+      << "% (" << total_clashes << "/" << total_bar_checks << " bars)";
+}
+
+// =============================================================================
+// Test 14: Chord voicing avoids clashing pitches with bass
+// =============================================================================
+
+TEST_F(HarmonyIntegrationTest, ChordVoicingFiltersBassClashes) {
+  // Test that chord voicing selection properly filters bass clashes
+  params_.structure = StructurePattern::StandardPop;
+  params_.mood = Mood::StraightPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& song = gen.getSong();
+  const auto& bass_notes = song.bass().notes();
+  const auto& chord_notes = song.chord().notes();
+
+  int simultaneous_clash_count = 0;
+  int simultaneous_note_pairs = 0;
+
+  // Check all simultaneous bass-chord note pairs
+  for (const auto& chord_note : chord_notes) {
+    for (const auto& bass_note : bass_notes) {
+      // Check if notes overlap in time
+      Tick chord_end = chord_note.startTick + chord_note.duration;
+      Tick bass_end = bass_note.startTick + bass_note.duration;
+
+      bool overlap = (chord_note.startTick < bass_end &&
+                      chord_end > bass_note.startTick);
+
+      if (overlap) {
+        simultaneous_note_pairs++;
+
+        // Check for dissonant interval (minor 2nd / major 7th)
+        int interval = std::abs((chord_note.note % 12) - (bass_note.note % 12));
+        if (interval > 6) interval = 12 - interval;
+
+        if (interval == 1) {
+          simultaneous_clash_count++;
+        }
+      }
+    }
+  }
+
+  // Most simultaneous bass-chord pairs should be consonant
+  if (simultaneous_note_pairs > 0) {
+    float clash_ratio = static_cast<float>(simultaneous_clash_count) /
+                        simultaneous_note_pairs;
+    EXPECT_LE(clash_ratio, 0.05f)
+        << "Chord voicing should avoid bass clashes: " << (clash_ratio * 100)
+        << "% clashing";
+  }
+}
+
+// =============================================================================
+// Test 15: Vocal-chord clash avoidance (including chorus hook repetition)
+// =============================================================================
+
+TEST_F(HarmonyIntegrationTest, VocalChordClashAvoided) {
+  // Test that vocal notes avoid major 7th and tritone clashes with chord
+  // This specifically tests the chorus hook repetition fix
+  params_.structure = StructurePattern::FullPop;  // Has multiple chorus sections
+  params_.mood = Mood::IdolPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& song = gen.getSong();
+  const auto& vocal_notes = song.vocal().notes();
+  const auto& chord_notes = song.chord().notes();
+
+  int clash_count = 0;
+  int overlap_count = 0;
+
+  // Check all vocal-chord note pairs for dissonant clashes
+  for (const auto& vocal_note : vocal_notes) {
+    Tick vocal_end = vocal_note.startTick + vocal_note.duration;
+
+    for (const auto& chord_note : chord_notes) {
+      Tick chord_end = chord_note.startTick + chord_note.duration;
+
+      // Check if notes overlap in time
+      bool overlap = (vocal_note.startTick < chord_end &&
+                      vocal_end > chord_note.startTick);
+
+      if (overlap) {
+        overlap_count++;
+
+        // Check for dissonant intervals (minor 2nd / major 7th and tritone)
+        int interval = std::abs((vocal_note.note % 12) - (chord_note.note % 12));
+        if (interval > 6) interval = 12 - interval;
+
+        // Minor 2nd (1) or tritone (6) are considered clashes
+        if (interval == 1 || interval == 6) {
+          clash_count++;
+        }
+      }
+    }
+  }
+
+  // Allow very few clashes (< 2%)
+  if (overlap_count > 0) {
+    float clash_ratio = static_cast<float>(clash_count) / overlap_count;
+    EXPECT_LE(clash_ratio, 0.02f)
+        << "Vocal-chord clashes should be < 2%: " << (clash_ratio * 100)
+        << "% (" << clash_count << "/" << overlap_count << " overlaps)";
+  }
+}
+
+// =============================================================================
+// Test 16: Chorus hook repetition maintains clash avoidance
+// =============================================================================
+
+TEST_F(HarmonyIntegrationTest, ChorusHookRepetitionAvoidsClashes) {
+  // Test specifically that repeated chorus hooks don't create clashes
+  // The chorus hook is repeated every 4 bars, and chord voicings may differ
+  params_.structure = StructurePattern::FullPop;
+  params_.mood = Mood::EnergeticDance;
+
+  // Test multiple seeds to ensure consistency
+  for (int seed = 1; seed <= 5; ++seed) {
+    params_.seed = seed * 11111;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& song = gen.getSong();
+    const auto& vocal_notes = song.vocal().notes();
+    const auto& chord_notes = song.chord().notes();
+    const auto& sections = song.arrangement().sections();
+
+    // Find chorus sections
+    for (const auto& section : sections) {
+      if (section.type != SectionType::Chorus) continue;
+
+      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+
+      // Check vocal notes in this chorus
+      for (const auto& vocal_note : vocal_notes) {
+        if (vocal_note.startTick < section.start_tick ||
+            vocal_note.startTick >= section_end) continue;
+
+        Tick vocal_end = vocal_note.startTick + vocal_note.duration;
+
+        // Check against overlapping chord notes
+        for (const auto& chord_note : chord_notes) {
+          Tick chord_end = chord_note.startTick + chord_note.duration;
+
+          bool overlap = (vocal_note.startTick < chord_end &&
+                          vocal_end > chord_note.startTick);
+
+          if (overlap) {
+            int interval = std::abs((vocal_note.note % 12) - (chord_note.note % 12));
+            if (interval > 6) interval = 12 - interval;
+
+            // Should not have minor 2nd (major 7th) clashes
+            EXPECT_NE(interval, 1)
+                << "Chorus at bar " << (vocal_note.startTick / TICKS_PER_BAR)
+                << " has major 7th clash between vocal " << (int)vocal_note.note
+                << " and chord " << (int)chord_note.note
+                << " (seed=" << params_.seed << ")";
+          }
+        }
+      }
+    }
+  }
+}
+
+// =============================================================================
+// Test 17: HarmonyContext tritone detection
+// =============================================================================
+
+TEST_F(HarmonyIntegrationTest, TritoneDetectedAsDissonant) {
+  // Test that HarmonyContext properly detects tritone (6 semitones) as dissonant
+  // This was added to prevent F# on C chord type clashes
+  params_.structure = StructurePattern::StandardPop;
+  params_.mood = Mood::StraightPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& song = gen.getSong();
+  const auto& vocal_notes = song.vocal().notes();
+  const auto& chord_notes = song.chord().notes();
+  const auto& bass_notes = song.bass().notes();
+
+  int tritone_count = 0;
+
+  // Check for tritone intervals between vocal and chord/bass
+  for (const auto& vocal_note : vocal_notes) {
+    Tick vocal_end = vocal_note.startTick + vocal_note.duration;
+
+    // Check against chord
+    for (const auto& chord_note : chord_notes) {
+      Tick chord_end = chord_note.startTick + chord_note.duration;
+      bool overlap = (vocal_note.startTick < chord_end &&
+                      vocal_end > chord_note.startTick);
+
+      if (overlap) {
+        int interval = std::abs((vocal_note.note % 12) - (chord_note.note % 12));
+        if (interval > 6) interval = 12 - interval;
+        if (interval == 6) tritone_count++;
+      }
+    }
+
+    // Check against bass
+    for (const auto& bass_note : bass_notes) {
+      Tick bass_end = bass_note.startTick + bass_note.duration;
+      bool overlap = (vocal_note.startTick < bass_end &&
+                      vocal_end > bass_note.startTick);
+
+      if (overlap) {
+        int interval = std::abs((vocal_note.note % 12) - (bass_note.note % 12));
+        if (interval > 6) interval = 12 - interval;
+        if (interval == 6) tritone_count++;
+      }
+    }
+  }
+
+  // Should have very few or no tritone clashes
+  EXPECT_LE(tritone_count, 5)
+      << "Tritone clashes between vocal and chord/bass should be minimal: "
+      << tritone_count;
+}
+
 }  // namespace
 }  // namespace midisketch

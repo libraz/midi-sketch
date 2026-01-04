@@ -105,23 +105,49 @@ uint8_t HarmonyContext::getSafePitch(uint8_t desired, Tick start, Tick duration,
     return desired;
   }
 
-  // Get chord tones for this tick
-  auto chord_tones = getChordTonesAt(start);
   int octave = desired / 12;
-
-  // Try to find a safe chord tone nearby
   int best_pitch = -1;
   int best_dist = 100;
 
+  // Strategy 1: Try actual sounding pitches from chord/bass (doubling is safe)
+  // This ensures we match the actual voicing, not just theoretical chord tones
+  for (const auto& note : notes_) {
+    if (note.track == track) continue;  // Skip same track
+    if (note.track == TrackRole::Drums || note.track == TrackRole::SE) continue;
+
+    // Check if this note is sounding at our time
+    Tick end = start + duration;
+    if (note.start < end && note.end > start) {
+      // This note is sounding - try its pitch in different octaves
+      int note_pc = note.pitch % 12;
+      for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
+        int candidate = (octave + oct_offset) * 12 + note_pc;
+        if (candidate < static_cast<int>(low) || candidate > static_cast<int>(high)) continue;
+        if (!isPitchSafe(static_cast<uint8_t>(candidate), start, duration, track)) continue;
+
+        int dist = std::abs(candidate - static_cast<int>(desired));
+        if (dist < best_dist) {
+          best_dist = dist;
+          best_pitch = candidate;
+        }
+      }
+    }
+  }
+
+  if (best_pitch >= 0) {
+    return static_cast<uint8_t>(best_pitch);
+  }
+
+  // Strategy 2: Try theoretical chord tones
+  auto chord_tones = getChordTonesAt(start);
   for (int ct_pc : chord_tones) {
-    // Check same octave and adjacent octaves
-    for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
+    for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
       int candidate = (octave + oct_offset) * 12 + ct_pc;
       if (candidate < static_cast<int>(low) || candidate > static_cast<int>(high)) continue;
       if (!isPitchSafe(static_cast<uint8_t>(candidate), start, duration, track)) continue;
 
       int dist = std::abs(candidate - static_cast<int>(desired));
-      if (dist < best_dist && dist > 0) {
+      if (dist < best_dist) {
         best_dist = dist;
         best_pitch = candidate;
       }
@@ -132,13 +158,25 @@ uint8_t HarmonyContext::getSafePitch(uint8_t desired, Tick start, Tick duration,
     return static_cast<uint8_t>(best_pitch);
   }
 
-  // Fallback: try semitone adjustments (whole steps preferred)
-  int adjustments[] = {2, -2, 1, -1, 3, -3};
+  // Strategy 3: Try any safe pitch nearby (prioritize small adjustments)
+  // Order: consonant intervals first (3rds, 5ths, octaves), then others
+  int adjustments[] = {3, -3, 4, -4, 5, -5, 7, -7, 12, -12, 2, -2, 1, -1};
   for (int adj : adjustments) {
     int candidate = static_cast<int>(desired) + adj;
     if (candidate < static_cast<int>(low) || candidate > static_cast<int>(high)) continue;
     if (isPitchSafe(static_cast<uint8_t>(candidate), start, duration, track)) {
       return static_cast<uint8_t>(candidate);
+    }
+  }
+
+  // Strategy 4: Exhaustive search in range
+  for (int dist = 1; dist <= 24; ++dist) {
+    for (int sign = -1; sign <= 1; sign += 2) {
+      int candidate = static_cast<int>(desired) + sign * dist;
+      if (candidate < static_cast<int>(low) || candidate > static_cast<int>(high)) continue;
+      if (isPitchSafe(static_cast<uint8_t>(candidate), start, duration, track)) {
+        return static_cast<uint8_t>(candidate);
+      }
     }
   }
 
@@ -160,7 +198,10 @@ void HarmonyContext::clearNotesForTrack(TrackRole track) {
 bool HarmonyContext::isDissonantInterval(int pc1, int pc2) {
   int interval = std::abs(pc1 - pc2);
   if (interval > 6) interval = 12 - interval;
-  return interval == 1;  // Minor 2nd (major 7th inverts to minor 2nd)
+
+  // Minor 2nd (1) = major 7th inverted - always dissonant
+  // Tritone (6) = highly dissonant, avoid in vocal against chord
+  return interval == 1 || interval == 6;
 }
 
 std::vector<int> HarmonyContext::getChordTonePitchClasses(int8_t degree) {

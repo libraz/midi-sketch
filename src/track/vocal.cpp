@@ -446,11 +446,21 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
     if (use_cached) {
       // Reuse cached phrase with absolute tick offset
-      // Modulation transpose will be applied by MidiWriter at output time
+      // Still check for clashes since chord voicings may differ
       const auto& cached = phrase_cache[section.type];
       for (const auto& note : cached) {
         Tick absolute_tick = section.start_tick + note.startTick;
-        track.addNote(absolute_tick, note.duration, note.note, note.velocity);
+        uint8_t pitch = note.note;
+
+        // Apply getSafePitch to avoid clashes with chord track
+        // (voicings may differ between repeated sections)
+        if (harmony_ctx != nullptr) {
+          pitch = harmony_ctx->getSafePitch(
+              pitch, absolute_tick, note.duration, TrackRole::Vocal,
+              effective_vocal_low, effective_vocal_high);
+        }
+
+        track.addNote(absolute_tick, note.duration, pitch, note.velocity);
       }
       continue;
     }
@@ -587,11 +597,15 @@ void generateVocalTrack(MidiTrack& track, Song& song,
             varied_pitch = std::min(127, note.note + 2);
           }
           varied_pitch = std::clamp(varied_pitch, section_vocal_low, section_vocal_high);
-          track.addNote(absolute_tick, note.duration,
-                        static_cast<uint8_t>(varied_pitch), note.velocity);
+
+          // Apply getSafePitch to avoid clashes with chord track
+          // (chord voicings may differ at repeated positions)
+          uint8_t safe_pitch = getSafePitch(varied_pitch, absolute_tick, note.duration);
+
+          track.addNote(absolute_tick, note.duration, safe_pitch, note.velocity);
           phrase_notes.push_back({note.startTick + relative_motif_start,
                                   note.duration,
-                                  static_cast<uint8_t>(varied_pitch),
+                                  safe_pitch,
                                   note.velocity});
         }
         continue;

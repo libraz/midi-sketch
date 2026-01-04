@@ -255,6 +255,8 @@ void Generator::generateChord() {
 
 void Generator::generateBass() {
   generateBassTrack(song_.bass(), song_, params_);
+  // Register bass notes with harmony context for other tracks to reference
+  harmony_context_.registerTrack(song_.bass(), TrackRole::Bass);
 }
 
 void Generator::generateDrums() {

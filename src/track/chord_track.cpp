@@ -168,27 +168,51 @@ std::vector<VoicedChord> generateOpenVoicings(uint8_t root, const Chord& chord) 
   return voicings;
 }
 
+// Check if a pitch class creates a dissonant interval with bass (minor 2nd / major 7th)
+bool clashesWithBass(int pitch_class, int bass_pitch_class) {
+  int interval = std::abs(pitch_class - bass_pitch_class);
+  if (interval > 6) interval = 12 - interval;
+  return interval == 1;  // Minor 2nd (major 7th inverts to minor 2nd)
+}
+
 // Generate rootless voicings (4-voice, root omitted for bass)
-std::vector<VoicedChord> generateRootlessVoicings(uint8_t root, const Chord& chord) {
+// bass_root: the bass note's pitch class (0-11), or -1 if unknown
+std::vector<VoicedChord> generateRootlessVoicings(uint8_t root, const Chord& chord,
+                                                   int bass_root_pc = -1) {
   std::vector<VoicedChord> voicings;
 
-  // Rootless voicing: omit root, add 7th or 9th
-  // For triads: 3rd, 5th, 7th (add implied 7th)
+  // Rootless voicing: omit root, use 3rd + 5th + extension
+  // Key principle: avoid notes that clash with bass (minor 2nd / major 7th)
   for (uint8_t base_octave = CHORD_LOW; base_octave <= CHORD_HIGH - 12; base_octave += 12) {
     VoicedChord v{};
     v.type = VoicingType::Rootless;
 
     bool is_minor = (chord.note_count >= 2 && chord.intervals[1] == 3);
+    int root_pc = root % 12;
 
-    // Build rootless voicing: 3rd, 5th, 7th
+    // Build rootless voicing: 3rd, 5th, + safe extension
+    // For major chords: use 6th (9 semitones) instead of M7 (11) to avoid clash
+    // For minor chords: m7 (10 semitones) is usually safe
     std::array<int, 4> intervals_rootless{};
     if (is_minor) {
       // Minor: m3, P5, m7
       intervals_rootless = {3, 7, 10, -1};
       v.count = 3;
     } else {
-      // Major: M3, P5, M7 (or dom7 for V chord)
-      intervals_rootless = {4, 7, 11, -1};
+      // Major: M3, P5, + choose safe extension
+      // M7 (11 semitones) clashes with bass if bass is on root (root + 11 = major 7th)
+      // Use 6th (9 semitones) as safer alternative for IV chord context
+      int extension = 9;  // Default to 6th (safe)
+
+      // If bass pitch class is known, check if M7 would clash
+      if (bass_root_pc >= 0) {
+        int m7_pc = (root_pc + 11) % 12;
+        if (!clashesWithBass(m7_pc, bass_root_pc)) {
+          extension = 11;  // M7 is safe, use it for richer sound
+        }
+      }
+
+      intervals_rootless = {4, 7, extension, -1};
       v.count = 3;
     }
 
@@ -208,6 +232,13 @@ std::vector<VoicedChord> generateRootlessVoicings(uint8_t root, const Chord& cho
         valid = false;
         break;
       }
+
+      // Additional check: skip voicing if this pitch clashes with bass
+      if (bass_root_pc >= 0 && clashesWithBass(pitch % 12, bass_root_pc)) {
+        valid = false;
+        break;
+      }
+
       v.pitches[i] = static_cast<uint8_t>(pitch);
     }
 
@@ -220,8 +251,10 @@ std::vector<VoicedChord> generateRootlessVoicings(uint8_t root, const Chord& cho
 }
 
 // Generate all possible voicings for a chord
+// bass_root_pc: bass note pitch class (0-11) for collision avoidance, or -1 if unknown
 std::vector<VoicedChord> generateVoicings(uint8_t root, const Chord& chord,
-                                           VoicingType preferred_type) {
+                                           VoicingType preferred_type,
+                                           int bass_root_pc = -1) {
   std::vector<VoicedChord> voicings;
 
   // Always include close voicings as fallback
@@ -232,7 +265,7 @@ std::vector<VoicedChord> generateVoicings(uint8_t root, const Chord& chord,
     auto open = generateOpenVoicings(root, chord);
     voicings.insert(voicings.end(), open.begin(), open.end());
   } else if (preferred_type == VoicingType::Rootless) {
-    auto rootless = generateRootlessVoicings(root, chord);
+    auto rootless = generateRootlessVoicings(root, chord, bass_root_pc);
     voicings.insert(voicings.end(), rootless.begin(), rootless.end());
   }
 
@@ -278,21 +311,75 @@ VoicingType selectVoicingType(SectionType section, Mood mood, bool bass_has_root
   return VoicingType::Close;
 }
 
+// Check if a voicing has any pitch that clashes with bass
+bool voicingClashesWithBass(const VoicedChord& v, int bass_root_pc) {
+  if (bass_root_pc < 0) return false;
+  for (uint8_t i = 0; i < v.count; ++i) {
+    if (clashesWithBass(v.pitches[i] % 12, bass_root_pc)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Remove clashing pitch from voicing (returns modified voicing with reduced count)
+VoicedChord removeClashingPitch(const VoicedChord& v, int bass_root_pc) {
+  if (bass_root_pc < 0) return v;
+
+  VoicedChord result{};
+  result.type = v.type;
+  result.count = 0;
+
+  for (uint8_t i = 0; i < v.count; ++i) {
+    if (!clashesWithBass(v.pitches[i] % 12, bass_root_pc)) {
+      result.pitches[result.count] = v.pitches[i];
+      result.count++;
+    }
+  }
+
+  return result;
+}
+
 // Select best voicing considering voice leading from previous chord
+// bass_root_pc: bass note pitch class (0-11) for collision avoidance, or -1 if unknown
 VoicedChord selectVoicing(uint8_t root, const Chord& chord,
                           const VoicedChord& prev_voicing, bool has_prev,
-                          VoicingType preferred_type) {
-  std::vector<VoicedChord> candidates = generateVoicings(root, chord, preferred_type);
+                          VoicingType preferred_type, int bass_root_pc = -1) {
+  std::vector<VoicedChord> candidates = generateVoicings(root, chord, preferred_type, bass_root_pc);
+
+  // Filter out voicings that clash with bass, or remove the clashing pitch
+  if (bass_root_pc >= 0) {
+    std::vector<VoicedChord> filtered;
+    for (const auto& v : candidates) {
+      if (!voicingClashesWithBass(v, bass_root_pc)) {
+        filtered.push_back(v);
+      } else {
+        // Try removing the clashing pitch
+        VoicedChord cleaned = removeClashingPitch(v, bass_root_pc);
+        if (cleaned.count >= 2) {  // Need at least 2 notes for a chord
+          filtered.push_back(cleaned);
+        }
+      }
+    }
+    if (!filtered.empty()) {
+      candidates = std::move(filtered);
+    }
+    // If all candidates clash, keep original candidates (better than nothing)
+  }
 
   if (candidates.empty()) {
-    // Fallback: simple root position
+    // Fallback: simple root position, avoiding clashing pitches
     VoicedChord fallback{};
     fallback.count = 0;
     fallback.type = VoicingType::Close;
     for (uint8_t i = 0; i < chord.note_count && i < 4; ++i) {
       if (chord.intervals[i] >= 0) {
-        fallback.pitches[fallback.count] = static_cast<uint8_t>(
-            std::clamp(root + chord.intervals[i], (int)CHORD_LOW, (int)CHORD_HIGH));
+        int pitch = std::clamp(root + chord.intervals[i], (int)CHORD_LOW, (int)CHORD_HIGH);
+        // Skip if clashes with bass
+        if (bass_root_pc >= 0 && clashesWithBass(pitch % 12, bass_root_pc)) {
+          continue;
+        }
+        fallback.pitches[fallback.count] = static_cast<uint8_t>(pitch);
         fallback.count++;
       }
     }
@@ -565,10 +652,44 @@ ChordRhythm selectRhythm(SectionType section, Mood mood,
   return base_rhythm;
 }
 
+// Find the first bass note in a time range that clashes with a chord pitch
+// Returns the start tick of the clashing bass note, or 0 if no clash found
+Tick findBassClashInRange(const MidiTrack* bass_track, Tick start, Tick end,
+                           int chord_pitch_pc) {
+  if (bass_track == nullptr) return 0;
+
+  for (const auto& note : bass_track->notes()) {
+    if (note.startTick >= start && note.startTick < end) {
+      int bass_pc = note.note % 12;
+      int interval = std::abs(chord_pitch_pc - bass_pc);
+      if (interval > 6) interval = 12 - interval;
+      if (interval == 1) {  // Minor 2nd / Major 7th clash
+        return note.startTick;
+      }
+    }
+  }
+  return 0;
+}
+
+// Calculate safe duration for a chord note to avoid bass clashes
+// Returns adjusted duration (may be shorter than original)
+Tick getSafeDuration(const MidiTrack* bass_track, Tick start, Tick duration,
+                      int chord_pitch_pc) {
+  Tick clash_tick = findBassClashInRange(bass_track, start, start + duration,
+                                          chord_pitch_pc);
+  if (clash_tick > 0 && clash_tick > start) {
+    // Shorten duration to end just before the clash
+    return clash_tick - start - EIGHTH / 2;  // Small gap before clash
+  }
+  return duration;
+}
+
 // Generate chord notes for one bar
+// bass_track: optional, for checking approach note clashes
 void generateChordBar(MidiTrack& track, Tick bar_start,
                       const VoicedChord& voicing, ChordRhythm rhythm,
-                      SectionType section, Mood mood) {
+                      SectionType section, Mood mood,
+                      const MidiTrack* bass_track = nullptr) {
   uint8_t vel = calculateVelocity(section, 0, mood);
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.8f);
 
@@ -576,15 +697,28 @@ void generateChordBar(MidiTrack& track, Tick bar_start,
     case ChordRhythm::Whole:
       // Whole note chord
       for (size_t i = 0; i < voicing.count; ++i) {
-        track.addNote(bar_start, WHOLE, voicing.pitches[i], vel);
+        int pc = voicing.pitches[i] % 12;
+        Tick dur = getSafeDuration(bass_track, bar_start, WHOLE, pc);
+        if (dur >= QUARTER) {  // Only add if duration is meaningful
+          track.addNote(bar_start, dur, voicing.pitches[i], vel);
+        }
       }
       break;
 
     case ChordRhythm::Half:
       // Two half notes
       for (size_t i = 0; i < voicing.count; ++i) {
-        track.addNote(bar_start, HALF, voicing.pitches[i], vel);
-        track.addNote(bar_start + HALF, HALF, voicing.pitches[i], vel_weak);
+        int pc = voicing.pitches[i] % 12;
+        // First half: check for clash in first half
+        Tick dur1 = getSafeDuration(bass_track, bar_start, HALF, pc);
+        if (dur1 >= QUARTER) {
+          track.addNote(bar_start, dur1, voicing.pitches[i], vel);
+        }
+        // Second half: check for clash in second half
+        Tick dur2 = getSafeDuration(bass_track, bar_start + HALF, HALF, pc);
+        if (dur2 >= QUARTER) {
+          track.addNote(bar_start + HALF, dur2, voicing.pitches[i], vel_weak);
+        }
       }
       break;
 
@@ -594,7 +728,11 @@ void generateChordBar(MidiTrack& track, Tick bar_start,
         Tick tick = bar_start + beat * QUARTER;
         uint8_t beat_vel = (beat == 0 || beat == 2) ? vel : vel_weak;
         for (size_t i = 0; i < voicing.count; ++i) {
-          track.addNote(tick, QUARTER, voicing.pitches[i], beat_vel);
+          int pc = voicing.pitches[i] % 12;
+          Tick dur = getSafeDuration(bass_track, tick, QUARTER, pc);
+          if (dur >= EIGHTH) {
+            track.addNote(tick, dur, voicing.pitches[i], beat_vel);
+          }
         }
       }
       break;
@@ -617,7 +755,13 @@ void generateChordBar(MidiTrack& track, Tick bar_start,
         }
 
         for (size_t i = 0; i < voicing.count; ++i) {
-          track.addNote(tick, EIGHTH, voicing.pitches[i], beat_vel);
+          // Eighth notes are short enough that clashes are less problematic
+          // Still check for immediate clash at note start
+          int pc = voicing.pitches[i] % 12;
+          Tick clash = findBassClashInRange(bass_track, tick, tick + 1, pc);
+          if (clash == 0) {  // No immediate clash
+            track.addNote(tick, EIGHTH, voicing.pitches[i], beat_vel);
+          }
         }
       }
       break;
@@ -671,12 +815,22 @@ void generateChordTrack(MidiTrack& track, const Song& song,
 
       // Analyze bass pattern for this bar if bass track is available
       bool bass_has_root = true;  // Default assumption
+      int bass_root_pc = -1;  // Bass root pitch class for collision avoidance
       if (bass_track != nullptr) {
         uint8_t bass_root = static_cast<uint8_t>(
             std::clamp(static_cast<int>(root) - 12, 28, 55));
         BassAnalysis bass_analysis =
             BassAnalysis::analyzeBar(*bass_track, bar_start, bass_root);
         bass_has_root = bass_analysis.has_root_on_beat1;
+
+        // Get the dominant bass pitch class for this bar (check beat 1 notes)
+        for (const auto& note : bass_track->notes()) {
+          if (note.startTick >= bar_start &&
+              note.startTick < bar_start + TICKS_PER_BEAT) {
+            bass_root_pc = note.note % 12;
+            break;  // Use first bass note on beat 1
+          }
+        }
       }
 
       // Select voicing type with bass coordination
@@ -684,8 +838,9 @@ void generateChordTrack(MidiTrack& track, const Song& song,
                                                     bass_has_root);
 
       // Select voicing with voice leading and type consideration
+      // Pass bass_root_pc to avoid clashes with bass
       VoicedChord voicing = selectVoicing(root, chord, prev_voicing, has_prev,
-                                          voicing_type);
+                                          voicing_type, bass_root_pc);
 
       // Check if this is the last bar of the section (for cadence preparation)
       bool is_section_last_bar = (bar == section.bars - 1);
@@ -696,9 +851,13 @@ void generateChordTrack(MidiTrack& track, const Song& song,
         // Insert V chord in the second half of the last bar
         uint8_t vel = calculateVelocity(section.type, 0, params.mood);
 
-        // First half: current chord
+        // First half: current chord (with bass clash check)
         for (size_t i = 0; i < voicing.count; ++i) {
-          track.addNote(bar_start, HALF, voicing.pitches[i], vel);
+          int pc = voicing.pitches[i] % 12;
+          Tick dur = getSafeDuration(bass_track, bar_start, HALF, pc);
+          if (dur >= QUARTER) {
+            track.addNote(bar_start, dur, voicing.pitches[i], vel);
+          }
         }
 
         // Second half: dominant (V) chord - use Dom7 if 7th extensions enabled
@@ -709,11 +868,15 @@ void generateChordTrack(MidiTrack& track, const Song& song,
                                      : ChordExtension::None;
         Chord dom_chord = getExtendedChord(dominant_degree, dom_ext);
         VoicedChord dom_voicing = selectVoicing(dom_root, dom_chord, voicing,
-                                                 true, voicing_type);
+                                                 true, voicing_type, bass_root_pc);
 
         uint8_t vel_accent = static_cast<uint8_t>(std::min(127, vel + 5));
         for (size_t i = 0; i < dom_voicing.count; ++i) {
-          track.addNote(bar_start + HALF, HALF, dom_voicing.pitches[i], vel_accent);
+          int pc = dom_voicing.pitches[i] % 12;
+          Tick dur = getSafeDuration(bass_track, bar_start + HALF, HALF, pc);
+          if (dur >= QUARTER) {
+            track.addNote(bar_start + HALF, dur, dom_voicing.pitches[i], vel_accent);
+          }
         }
 
         prev_voicing = dom_voicing;
@@ -734,9 +897,9 @@ void generateChordTrack(MidiTrack& track, const Song& song,
                                      : ChordExtension::None;
         Chord dom_chord = getExtendedChord(dominant_degree, dom_ext);
         VoicedChord dom_voicing = selectVoicing(dom_root, dom_chord, prev_voicing,
-                                                 has_prev, voicing_type);
+                                                 has_prev, voicing_type, bass_root_pc);
 
-        generateChordBar(track, bar_start, dom_voicing, rhythm, section.type, params.mood);
+        generateChordBar(track, bar_start, dom_voicing, rhythm, section.type, params.mood, bass_track);
         prev_voicing = dom_voicing;
         has_prev = true;
         continue;
@@ -752,9 +915,9 @@ void generateChordTrack(MidiTrack& track, const Song& song,
                                     : ChordExtension::None;
         Chord ii_chord = getExtendedChord(ii_degree, ii_ext);
         VoicedChord ii_voicing = selectVoicing(ii_root, ii_chord, prev_voicing,
-                                               has_prev, voicing_type);
+                                               has_prev, voicing_type, bass_root_pc);
 
-        generateChordBar(track, bar_start, ii_voicing, rhythm, section.type, params.mood);
+        generateChordBar(track, bar_start, ii_voicing, rhythm, section.type, params.mood, bass_track);
         prev_voicing = ii_voicing;
         has_prev = true;
         continue;
@@ -785,7 +948,11 @@ void generateChordTrack(MidiTrack& track, const Song& song,
         // First half: current chord
         uint8_t vel = calculateVelocity(section.type, 0, params.mood);
         for (size_t i = 0; i < voicing.count; ++i) {
-          track.addNote(bar_start, HALF, voicing.pitches[i], vel);
+          int pc = voicing.pitches[i] % 12;
+          Tick dur = getSafeDuration(bass_track, bar_start, HALF, pc);
+          if (dur >= QUARTER) {
+            track.addNote(bar_start, dur, voicing.pitches[i], vel);
+          }
         }
 
         // Second half: next chord (anticipation)
@@ -797,17 +964,21 @@ void generateChordTrack(MidiTrack& track, const Song& song,
             params.chord_extension, rng);
         Chord next_chord = getExtendedChord(next_degree, next_ext);
         VoicedChord next_voicing = selectVoicing(next_root, next_chord, voicing,
-                                                  true, voicing_type);
+                                                  true, voicing_type, bass_root_pc);
 
         uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
         for (size_t i = 0; i < next_voicing.count; ++i) {
-          track.addNote(bar_start + HALF, HALF, next_voicing.pitches[i], vel_weak);
+          int pc = next_voicing.pitches[i] % 12;
+          Tick dur = getSafeDuration(bass_track, bar_start + HALF, HALF, pc);
+          if (dur >= QUARTER) {
+            track.addNote(bar_start + HALF, dur, next_voicing.pitches[i], vel_weak);
+          }
         }
 
         prev_voicing = next_voicing;
       } else {
         // Normal chord generation for this bar
-        generateChordBar(track, bar_start, voicing, rhythm, section.type, params.mood);
+        generateChordBar(track, bar_start, voicing, rhythm, section.type, params.mood, bass_track);
         prev_voicing = voicing;
       }
 

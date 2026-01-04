@@ -2,6 +2,8 @@
 #include "analysis/dissonance.h"
 #include "core/generator.h"
 #include "core/song.h"
+#include <set>
+#include <tuple>
 
 namespace midisketch {
 namespace {
@@ -160,6 +162,140 @@ TEST(DissonanceTest, WithChordExtensions) {
   // With extensions enabled, 7th and 9th should be accepted as chord tones
   // This test just verifies the analysis doesn't crash with extensions
   EXPECT_GE(report.summary.total_issues, 0u);
+}
+
+// Test: Register separation reduces dissonance severity
+TEST(DissonanceTest, RegisterSeparationReducesSeverity) {
+  // When notes are 2+ octaves apart, the same pitch class interval
+  // should be less severe than same-octave clashes
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;
+  params.key = Key::C;
+  params.drums_enabled = true;
+  params.modulation = true;  // Enable modulation to test more scenarios
+  params.vocal_low = 60;
+  params.vocal_high = 84;  // Wide range to allow octave separation
+  params.seed = 77777;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  auto report = analyzeDissonance(song, params);
+
+  // With the register separation rule, high severity should be minimal
+  // because wide-register intervals are downgraded
+  EXPECT_EQ(report.summary.high_severity, 0u)
+      << "Register separation should prevent high severity clashes";
+}
+
+// Test: Available tensions are not flagged as issues
+TEST(DissonanceTest, AvailableTensionsAccepted) {
+  // 9th, 11th (on minor), 13th should not be flagged as non-chord tones
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::DirectChorus;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;
+  params.key = Key::C;
+  params.drums_enabled = true;
+  params.modulation = false;
+  params.vocal_low = 60;
+  params.vocal_high = 79;
+  params.seed = 88888;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  auto report = analyzeDissonance(song, params);
+
+  // Count non-chord tones on strong beats (these should be filtered by tension rules)
+  int strong_beat_nct = 0;
+  for (const auto& issue : report.issues) {
+    if (issue.type == DissonanceType::NonChordTone) {
+      // Check if on beat 1 (strong beat)
+      float beat_pos = issue.beat - 1.0f;  // 0-indexed beat
+      if (beat_pos < 0.5f) {  // Beat 1
+        strong_beat_nct++;
+      }
+    }
+  }
+
+  // Most strong beat notes should be chord tones or acceptable tensions
+  // Allow some non-chord tones (passing tones, etc.)
+  EXPECT_LE(strong_beat_nct, 10)
+      << "Too many non-chord tones on strong beats: " << strong_beat_nct;
+}
+
+// Test: Deduplication prevents duplicate clash reports
+TEST(DissonanceTest, DeduplicationWorks) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::FullPop;
+  params.mood = Mood::EnergeticDance;
+  params.chord_id = 0;
+  params.key = Key::C;
+  params.drums_enabled = true;
+  params.modulation = true;
+  params.vocal_low = 60;
+  params.vocal_high = 79;
+  params.seed = 11111;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  auto report = analyzeDissonance(song, params);
+
+  // Check for duplicate simultaneous clashes at same tick with same pitches
+  std::set<std::tuple<Tick, uint8_t, uint8_t>> seen_clashes;
+  int duplicates = 0;
+
+  for (const auto& issue : report.issues) {
+    if (issue.type == DissonanceType::SimultaneousClash && issue.notes.size() >= 2) {
+      uint8_t p1 = std::min(issue.notes[0].pitch, issue.notes[1].pitch);
+      uint8_t p2 = std::max(issue.notes[0].pitch, issue.notes[1].pitch);
+      auto key = std::make_tuple(issue.tick, p1, p2);
+
+      if (seen_clashes.count(key) > 0) {
+        duplicates++;
+      }
+      seen_clashes.insert(key);
+    }
+  }
+
+  EXPECT_EQ(duplicates, 0)
+      << "Deduplication should prevent duplicate clash reports: " << duplicates << " duplicates found";
+}
+
+// Test: Zero high severity issues after all fixes
+TEST(DissonanceTest, ZeroHighSeverityIssues) {
+  // With all the clash avoidance and analysis improvements,
+  // we should achieve zero high severity issues across multiple seeds
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::FullPop;
+  params.mood = Mood::IdolPop;
+  params.chord_id = 0;
+  params.key = Key::C;
+  params.drums_enabled = true;
+  params.modulation = true;
+  params.vocal_low = 60;
+  params.vocal_high = 79;
+
+  for (int seed = 1; seed <= 10; ++seed) {
+    params.seed = seed * 1234;
+
+    gen.generate(params);
+    const auto& song = gen.getSong();
+
+    auto report = analyzeDissonance(song, params);
+
+    EXPECT_EQ(report.summary.high_severity, 0u)
+        << "Seed " << params.seed << " has " << report.summary.high_severity
+        << " high severity issues";
+  }
 }
 
 }  // namespace
