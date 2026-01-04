@@ -14,9 +14,23 @@ struct Chord {
   bool is_diminished;               // True for diminished chords (vii°)
 };
 
-// Chord progression pattern (4 chords per pattern).
+// Maximum number of chords in a progression.
+constexpr uint8_t MAX_PROGRESSION_LENGTH = 8;
+
+// Chord progression pattern (variable length, up to 8 chords).
 struct ChordProgression {
-  std::array<int8_t, 4> degrees;  // Scale degrees: I=0, ii=1, iii=2, IV=3, V=4, vi=5, vii=6, bVII=10
+  std::array<int8_t, MAX_PROGRESSION_LENGTH> degrees;  // Scale degrees: I=0, ii=1, iii=2, IV=3, V=4, vi=5, vii=6, bVII=10
+  uint8_t length;  // Actual number of chords (1-8, typically 4-6)
+
+  // Access chord at bar position (wraps around based on length)
+  constexpr int8_t at(size_t bar) const {
+    return degrees[bar % length];
+  }
+
+  // Get next chord index (wraps around)
+  constexpr size_t nextIndex(size_t current) const {
+    return (current + 1) % length;
+  }
 };
 
 // Functional profile for chord progressions.
@@ -70,10 +84,15 @@ Chord getExtendedChord(int8_t degree, ChordExtension extension);
 // @returns Progression name (e.g., "Canon", "Pop1")
 const char* getChordProgressionName(uint8_t chord_id);
 
-// Returns the display string for a chord progression.
-// @param chord_id Progression index (0-15)
+// Returns the display string for a chord progression (Roman numerals).
+// @param chord_id Progression index (0-21)
 // @returns Display string (e.g., "I - V - vi - IV")
 const char* getChordProgressionDisplay(uint8_t chord_id);
+
+// Returns the chord names for a progression in C major.
+// @param chord_id Progression index (0-21)
+// @returns Chord names string (e.g., "C - G - Am - F")
+const char* getChordProgressionChords(uint8_t chord_id);
 
 // Returns the metadata for a chord progression.
 // @param chord_id Progression index (0-19)

@@ -291,11 +291,11 @@ void generateBassTrack(MidiTrack& track, const Song& song,
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
 
-      int chord_idx = bar % 4;
-      int next_chord_idx = (bar + 1) % 4;
+      int chord_idx = bar % progression.length;
+      int next_chord_idx = (bar + 1) % progression.length;
 
-      int8_t degree = progression.degrees[chord_idx];
-      int8_t next_degree = progression.degrees[next_chord_idx];
+      int8_t degree = progression.at(chord_idx);
+      int8_t next_degree = progression.at(next_chord_idx);
 
       // Internal processing is always in C major; transpose at MIDI output time
       uint8_t root = clampBass(degreeToRoot(degree, Key::C) - 12);

@@ -135,8 +135,8 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
       Tick bar_start = section.start_tick + (bar * TICKS_PER_BAR);
 
       // Get chord for this bar
-      int chord_idx = bar % 4;
-      int8_t degree = progression.degrees[chord_idx];
+      int chord_idx = bar % progression.length;
+      int8_t degree = progression.at(chord_idx);
       // Internal processing is always in C major; transpose at MIDI output time
       uint8_t root = degreeToRoot(degree, Key::C);
 

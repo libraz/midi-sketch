@@ -93,23 +93,24 @@ const char* MOOD_NAMES[20] = {
     "city_pop",
 };
 
-// Style preset definitions (Phase 3: 4 presets)
-const StylePreset STYLE_PRESETS[4] = {
+// Style preset definitions (13 presets)
+const StylePreset STYLE_PRESETS[13] = {
+    // ========== Pop/Dance (0-2) ==========
     // 0: Minimal Groove Pop
     {
         0,
         "minimal_groove_pop",
         "Minimal Groove Pop",
         "Repetitive 2-4 chord loops, simple melody",
-        StructurePattern::StandardPop,  // default_form
-        118, 128, 122,                  // tempo_min, tempo_max, tempo_default
-        VocalAttitude::Clean,           // default_vocal_attitude
-        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,  // allowed_vocal_attitudes
-        {0, 1, 6, 13, 17, 19, -1, -1},  // recommended progressions
-        {5, true, 0.9f, 0.1f},          // melody: small leap, unison ok, high resolution, low tension
-        {8, 0.7f, 0.2f},                // motif: 2 bars, high repeat, low variation
-        {true, 2, 1},                   // rhythm: drums primary, normal density, light syncopation
-        1                               // se_density: low
+        StructurePattern::StandardPop,
+        118, 128, 122,
+        VocalAttitude::Clean,
+        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
+        {0, 1, 6, 13, 17, 19, -1, -1},
+        {5, true, 0.9f, 0.1f},
+        {8, 0.7f, 0.2f},
+        {true, 2, 1},
+        1
     },
     // 1: Dance Pop Emotion
     {
@@ -117,68 +118,242 @@ const StylePreset STYLE_PRESETS[4] = {
         "dance_pop_emotion",
         "Dance Pop Emotion",
         "Classic structure, emotional chorus release",
-        StructurePattern::FullPop,      // default_form
-        120, 135, 128,                  // tempo_min, tempo_max, tempo_default
-        VocalAttitude::Expressive,      // default_vocal_attitude
-        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,  // allowed_vocal_attitudes
-        {0, 1, 2, 4, 5, 15, -1, -1},    // recommended progressions
-        {7, true, 0.8f, 0.3f},          // melody: moderate leap, high resolution, moderate tension
-        {8, 0.5f, 0.4f},                // motif: balanced repeat/variation
-        {true, 2, 2},                   // rhythm: normal density, medium syncopation
-        2                               // se_density: medium
+        StructurePattern::FullPop,
+        120, 135, 128,
+        VocalAttitude::Expressive,
+        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
+        {0, 1, 2, 4, 5, 15, -1, -1},
+        {7, true, 0.8f, 0.3f},
+        {8, 0.5f, 0.4f},
+        {true, 2, 2},
+        2
     },
-    // 2: Idol Standard
+    // 2: Bright Pop
     {
         2,
+        "bright_pop",
+        "Bright Pop",
+        "Upbeat, memorable melodies with simple structure",
+        StructurePattern::StandardPop,
+        125, 145, 135,
+        VocalAttitude::Clean,
+        ATTITUDE_CLEAN,
+        {0, 1, 3, 5, -1, -1, -1, -1},
+        {4, false, 0.95f, 0.05f},
+        {4, 0.85f, 0.1f},
+        {true, 2, 1},
+        1
+    },
+    // ========== Idol (3-6) ==========
+    // 3: Idol Standard
+    {
+        3,
         "idol_standard",
         "Idol Standard",
         "Unison-friendly, memorable melodies",
-        StructurePattern::StandardPop,  // default_form
-        130, 150, 140,                  // tempo_min, tempo_max, tempo_default
-        VocalAttitude::Clean,           // default_vocal_attitude
-        ATTITUDE_CLEAN,                 // allowed_vocal_attitudes (clean only)
-        {0, 1, 3, 4, 5, 9, -1, -1},     // recommended progressions
-        {4, false, 0.95f, 0.05f},       // melody: small leap, no unison repeat, very high resolution, minimal tension
-        {8, 0.8f, 0.1f},                // motif: high repeat, minimal variation
-        {true, 3, 0},                   // rhythm: high density, no syncopation
-        2                               // se_density: medium
+        StructurePattern::StandardPop,
+        130, 150, 140,
+        VocalAttitude::Clean,
+        ATTITUDE_CLEAN,
+        {0, 1, 3, 4, 5, 9, -1, -1},
+        {4, false, 0.95f, 0.05f},
+        {8, 0.8f, 0.1f},
+        {true, 3, 0},
+        2
     },
-    // 3: Rock Shout
+    // 4: Idol Emotion
     {
-        3,
+        4,
+        "idol_emotion",
+        "Idol Emotion",
+        "Emotional idol songs with building pre-chorus",
+        StructurePattern::FullPop,
+        120, 140, 130,
+        VocalAttitude::Expressive,
+        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
+        {0, 1, 2, 5, 15, -1, -1, -1},
+        {6, true, 0.85f, 0.25f},
+        {8, 0.6f, 0.3f},
+        {true, 2, 1},
+        2
+    },
+    // 5: Idol Energy
+    {
+        5,
+        "idol_energy",
+        "Idol Energy",
+        "High-energy idol songs for live performances",
+        StructurePattern::DriveUpbeat,
+        140, 160, 150,
+        VocalAttitude::Clean,
+        ATTITUDE_CLEAN,
+        {0, 2, 4, 9, -1, -1, -1, -1},
+        {5, false, 0.9f, 0.1f},
+        {4, 0.8f, 0.15f},
+        {true, 3, 2},
+        3
+    },
+    // 6: Idol Minimal
+    {
+        6,
+        "idol_minimal",
+        "Idol Minimal",
+        "Minimal idol songs for short-form content",
+        StructurePattern::ShortForm,
+        125, 145, 135,
+        VocalAttitude::Clean,
+        ATTITUDE_CLEAN,
+        {0, 6, -1, -1, -1, -1, -1, -1},
+        {3, false, 0.95f, 0.02f},
+        {4, 0.9f, 0.05f},
+        {true, 2, 0},
+        1
+    },
+    // ========== Rock/Emo (7-9) ==========
+    // 7: Rock Shout
+    {
+        7,
         "rock_shout",
         "Rock Shout",
         "Aggressive vocals with raw expression",
-        StructurePattern::FullPop,      // default_form
-        115, 135, 125,                  // tempo_min, tempo_max, tempo_default
-        VocalAttitude::Expressive,      // default_vocal_attitude
-        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE | ATTITUDE_RAW,  // all attitudes allowed
-        {4, 5, 6, 10, 11, -1, -1, -1},  // recommended progressions (rock-oriented)
-        {9, true, 0.6f, 0.5f},          // melody: large leap, allow unison, lower resolution, high tension
-        {8, 0.4f, 0.5f},                // motif: low repeat, high variation
-        {true, 3, 3},                   // rhythm: high density, heavy syncopation
-        2                               // se_density: medium
+        StructurePattern::FullPop,
+        115, 135, 125,
+        VocalAttitude::Expressive,
+        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE | ATTITUDE_RAW,
+        {4, 5, 6, 10, 11, -1, -1, -1},
+        {9, true, 0.6f, 0.5f},
+        {8, 0.4f, 0.5f},
+        {true, 3, 3},
+        2
+    },
+    // 8: Pop Emotion
+    {
+        8,
+        "pop_emotion",
+        "Pop Emotion",
+        "Word-driven emotional pop with lyrical focus",
+        StructurePattern::FullPop,
+        95, 120, 108,
+        VocalAttitude::Expressive,
+        ATTITUDE_EXPRESSIVE | ATTITUDE_RAW,
+        {1, 5, 8, 15, -1, -1, -1, -1},
+        {7, true, 0.7f, 0.4f},
+        {8, 0.4f, 0.5f},
+        {true, 1, 1},
+        1
+    },
+    // 9: Raw Emotional
+    {
+        9,
+        "raw_emotional",
+        "Raw Emotional",
+        "Intense emotional expression with boundary-breaking phrases",
+        StructurePattern::FullWithBridge,
+        90, 115, 102,
+        VocalAttitude::Expressive,
+        ATTITUDE_EXPRESSIVE | ATTITUDE_RAW,
+        {7, 8, 11, 15, -1, -1, -1, -1},
+        {9, true, 0.5f, 0.6f},
+        {8, 0.3f, 0.6f},
+        {true, 2, 2},
+        2
+    },
+    // ========== Special/Derived (10-12) ==========
+    // 10: Acoustic Pop
+    {
+        10,
+        "acoustic_pop",
+        "Acoustic Pop",
+        "Clear harmony, rhythm-light, vocal-centered",
+        StructurePattern::Ballad,
+        85, 110, 95,
+        VocalAttitude::Expressive,
+        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
+        {0, 1, 4, 17, -1, -1, -1, -1},
+        {6, true, 0.85f, 0.2f},
+        {8, 0.5f, 0.3f},
+        {false, 1, 0},
+        0
+    },
+    // 11: Live Call & Response
+    {
+        11,
+        "live_call_response",
+        "Live Call & Response",
+        "Concert-ready with call-response structure",
+        StructurePattern::AnthemStyle,
+        130, 150, 140,
+        VocalAttitude::Clean,
+        ATTITUDE_CLEAN,
+        {0, 2, 4, -1, -1, -1, -1, -1},
+        {4, false, 0.9f, 0.05f},
+        {4, 0.85f, 0.1f},
+        {true, 3, 1},
+        3
+    },
+    // 12: Background Motif
+    {
+        12,
+        "background_motif",
+        "Background Motif",
+        "Motif-driven with subdued vocals, ambient feel",
+        StructurePattern::StandardPop,
+        110, 130, 120,
+        VocalAttitude::Clean,
+        ATTITUDE_CLEAN,
+        {0, 6, 13, 19, -1, -1, -1, -1},
+        {4, false, 0.95f, 0.05f},
+        {8, 0.9f, 0.05f},
+        {true, 2, 0},
+        1
     },
 };
 
 // Form compatibility by style
 // Returns forms that work well with each style preset
-const StructurePattern STYLE_FORMS[4][5] = {
-    // Minimal Groove Pop: shorter forms
+const StructurePattern STYLE_FORMS[13][5] = {
+    // 0: Minimal Groove Pop - shorter forms
     {StructurePattern::StandardPop, StructurePattern::DirectChorus, StructurePattern::ShortForm,
      StructurePattern::RepeatChorus, StructurePattern::BuildUp},
-    // Dance Pop Emotion: full-length forms
+    // 1: Dance Pop Emotion - full-length forms
     {StructurePattern::FullPop, StructurePattern::FullWithBridge, StructurePattern::DriveUpbeat,
      StructurePattern::Ballad, StructurePattern::AnthemStyle},
-    // Idol Standard: standard and anthem forms
+    // 2: Bright Pop - standard forms
+    {StructurePattern::StandardPop, StructurePattern::DirectChorus, StructurePattern::RepeatChorus,
+     StructurePattern::BuildUp, StructurePattern::FullPop},
+    // 3: Idol Standard - standard and anthem forms
     {StructurePattern::StandardPop, StructurePattern::BuildUp, StructurePattern::RepeatChorus,
      StructurePattern::AnthemStyle, StructurePattern::FullPop},
-    // Rock Shout: driving forms
+    // 4: Idol Emotion - full-length emotional forms
+    {StructurePattern::FullPop, StructurePattern::FullWithBridge, StructurePattern::Ballad,
+     StructurePattern::StandardPop, StructurePattern::BuildUp},
+    // 5: Idol Energy - driving high-energy forms
+    {StructurePattern::DriveUpbeat, StructurePattern::AnthemStyle, StructurePattern::FullPop,
+     StructurePattern::RepeatChorus, StructurePattern::DirectChorus},
+    // 6: Idol Minimal - short forms only
+    {StructurePattern::ShortForm, StructurePattern::DirectChorus, StructurePattern::StandardPop,
+     StructurePattern::RepeatChorus, StructurePattern::BuildUp},
+    // 7: Rock Shout - driving forms
     {StructurePattern::FullPop, StructurePattern::DriveUpbeat, StructurePattern::AnthemStyle,
      StructurePattern::BuildUp, StructurePattern::FullWithBridge},
+    // 8: Pop Emotion - emotional full forms
+    {StructurePattern::FullPop, StructurePattern::FullWithBridge, StructurePattern::Ballad,
+     StructurePattern::StandardPop, StructurePattern::BuildUp},
+    // 9: Raw Emotional - varied emotional forms
+    {StructurePattern::FullWithBridge, StructurePattern::FullPop, StructurePattern::Ballad,
+     StructurePattern::BuildUp, StructurePattern::DriveUpbeat},
+    // 10: Acoustic Pop - ballad and simple forms
+    {StructurePattern::Ballad, StructurePattern::StandardPop, StructurePattern::FullWithBridge,
+     StructurePattern::ShortForm, StructurePattern::BuildUp},
+    // 11: Live Call & Response - anthem and driving forms
+    {StructurePattern::AnthemStyle, StructurePattern::DriveUpbeat, StructurePattern::RepeatChorus,
+     StructurePattern::FullPop, StructurePattern::DirectChorus},
+    // 12: Background Motif - repetitive forms
+    {StructurePattern::StandardPop, StructurePattern::RepeatChorus, StructurePattern::ShortForm,
+     StructurePattern::DirectChorus, StructurePattern::BuildUp},
 };
 
-constexpr size_t STYLE_FORM_COUNT[4] = {5, 5, 5, 5};
+constexpr size_t STYLE_FORM_COUNT[13] = {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
 
 }  // namespace
 

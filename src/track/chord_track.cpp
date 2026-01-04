@@ -630,13 +630,13 @@ void generateChordTrack(MidiTrack& track, const Song& song,
       int chord_idx;
       if (harmonic.density == HarmonicDensity::Slow) {
         // Slow: chord changes every 2 bars
-        chord_idx = (bar / 2) % 4;
+        chord_idx = (bar / 2) % progression.length;
       } else {
         // Normal/Dense: chord changes every bar
-        chord_idx = bar % 4;
+        chord_idx = bar % progression.length;
       }
 
-      int8_t degree = progression.degrees[chord_idx];
+      int8_t degree = progression.at(chord_idx);
       // Internal processing is always in C major; transpose at MIDI output time
       uint8_t root = degreeToRoot(degree, Key::C);
 
@@ -698,9 +698,15 @@ void generateChordTrack(MidiTrack& track, const Song& song,
         continue;  // Skip normal generation for this bar
       }
 
-      // Check if this is a phrase-ending bar (bar 3 or 7 in an 8-bar phrase)
+      // Check if this is a phrase-ending bar
+      // Phrase end occurs at:
+      // 1. Standard 4-bar phrase boundaries (bar 3, 7, etc.)
+      // 2. Chord progression cycle boundaries (last chord of progression)
+      bool is_4bar_phrase_end = (bar % 4 == 3);
+      bool is_chord_cycle_end = (bar % progression.length == progression.length - 1);
       bool is_phrase_end = harmonic.double_at_phrase_end &&
-                           (bar % 4 == 3) && (bar < section.bars - 1);
+                           (is_4bar_phrase_end || is_chord_cycle_end) &&
+                           (bar < section.bars - 1);
 
       // Dense harmonic rhythm: also allow mid-bar changes on even bars in Chorus
       // for energetic moods (more dynamic harmonic motion)
@@ -721,8 +727,8 @@ void generateChordTrack(MidiTrack& track, const Song& song,
         }
 
         // Second half: next chord (anticipation)
-        int next_chord_idx = (chord_idx + 1) % 4;
-        int8_t next_degree = progression.degrees[next_chord_idx];
+        int next_chord_idx = (chord_idx + 1) % progression.length;
+        int8_t next_degree = progression.at(next_chord_idx);
         uint8_t next_root = degreeToRoot(next_degree, Key::C);
         ChordExtension next_ext = selectChordExtension(
             next_degree, section.type, bar + 1, section.bars,

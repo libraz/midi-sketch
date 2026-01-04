@@ -309,8 +309,8 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
   // Helper: get chord info for a bar
   auto getChordInfo = [&](int bar_in_section) -> std::pair<int, bool> {
-    int chord_idx = bar_in_section % 4;
-    int8_t degree = progression.degrees[chord_idx];
+    int chord_idx = bar_in_section % progression.length;
+    int8_t degree = progression.at(chord_idx);
     Chord chord = getChordNotes(degree);
     int root = (degree == 10) ? 6 : degree;  // bVII -> treat as 6
     bool is_minor = (chord.intervals[1] == 3);

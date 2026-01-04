@@ -5,66 +5,99 @@ namespace midisketch {
 
 namespace {
 
-// Chord progression definitions (20 patterns)
-constexpr ChordProgression PROGRESSIONS[20] = {
-    {{0, 4, 5, 3}},   // 0: Canon - I - V - vi - IV
-    {{0, 5, 3, 4}},   // 1: Pop1 - I - vi - IV - V
-    {{5, 3, 0, 4}},   // 2: Axis - vi - IV - I - V
-    {{3, 0, 4, 5}},   // 3: Pop2 - IV - I - V - vi
-    {{0, 3, 4, 0}},   // 4: Classic - I - IV - V - I
-    {{0, 3, 5, 4}},   // 5: Pop3 - I - IV - vi - V
-    {{0, 4, 3, 0}},   // 6: Simple - I - V - IV - I
-    {{5, 4, 3, 4}},   // 7: Minor1 - vi - V - IV - V
-    {{5, 3, 4, 0}},   // 8: Minor2 - vi - IV - V - I
-    {{0, 4, 2, 3}},   // 9: Pop4 - I - V - iii - IV
-    {{0, 2, 3, 4}},   // 10: Pop5 - I - iii - IV - V
-    {{0, 10, 3, 0}},  // 11: Rock1 - I - bVII - IV - I
-    {{0, 3, 10, 0}},  // 12: Rock2 - I - IV - bVII - I
-    {{0, 4, 5, 2}},   // 13: Extended - I - V - vi - iii (simplified)
-    {{5, 0, 4, 3}},   // 14: Minor3 - vi - I - V - IV
-    {{5, 3, 4, 0}},   // 15: Komuro - vi - IV - V - I
-    // New YOASOBI-style progressions
-    {{5, 2, 3, 0}},   // 16: YOASOBI1 - vi - iii - IV - I
-    {{1, 4, 0, 5}},   // 17: JazzPop - ii - V - I - vi
-    {{5, 1, 4, 0}},   // 18: YOASOBI2 - vi - ii - V - I (turnaround)
-    {{0, 5, 1, 4}},   // 19: CityPop - I - vi - ii - V
+// Chord progression definitions (22 patterns: 20 x 4-chord + 2 x 5-chord)
+// Format: {{degrees...}, length}
+constexpr ChordProgression PROGRESSIONS[22] = {
+    // 4-chord progressions (length = 4)
+    {{0, 4, 5, 3, -1, -1, -1, -1}, 4},   // 0: Canon - I - V - vi - IV
+    {{0, 5, 3, 4, -1, -1, -1, -1}, 4},   // 1: Pop1 - I - vi - IV - V
+    {{5, 3, 0, 4, -1, -1, -1, -1}, 4},   // 2: Axis - vi - IV - I - V
+    {{3, 0, 4, 5, -1, -1, -1, -1}, 4},   // 3: Pop2 - IV - I - V - vi
+    {{0, 3, 4, 0, -1, -1, -1, -1}, 4},   // 4: Classic - I - IV - V - I
+    {{0, 3, 5, 4, -1, -1, -1, -1}, 4},   // 5: Pop3 - I - IV - vi - V
+    {{0, 4, 3, 0, -1, -1, -1, -1}, 4},   // 6: Simple - I - V - IV - I
+    {{5, 4, 3, 4, -1, -1, -1, -1}, 4},   // 7: Minor1 - vi - V - IV - V
+    {{5, 3, 4, 0, -1, -1, -1, -1}, 4},   // 8: Minor2 - vi - IV - V - I
+    {{0, 4, 2, 3, -1, -1, -1, -1}, 4},   // 9: Pop4 - I - V - iii - IV
+    {{0, 2, 3, 4, -1, -1, -1, -1}, 4},   // 10: Pop5 - I - iii - IV - V
+    {{0, 10, 3, 0, -1, -1, -1, -1}, 4},  // 11: Rock1 - I - bVII - IV - I
+    {{0, 3, 10, 0, -1, -1, -1, -1}, 4},  // 12: Rock2 - I - IV - bVII - I
+    {{0, 4, 5, 2, -1, -1, -1, -1}, 4},   // 13: Extended4 - I - V - vi - iii
+    {{5, 0, 4, 3, -1, -1, -1, -1}, 4},   // 14: Minor3 - vi - I - V - IV
+    {{5, 3, 4, 0, -1, -1, -1, -1}, 4},   // 15: Komuro - vi - IV - V - I
+    {{5, 2, 3, 0, -1, -1, -1, -1}, 4},   // 16: YOASOBI1 - vi - iii - IV - I
+    {{1, 4, 0, 5, -1, -1, -1, -1}, 4},   // 17: JazzPop - ii - V - I - vi
+    {{5, 1, 4, 0, -1, -1, -1, -1}, 4},   // 18: YOASOBI2 - vi - ii - V - I
+    {{0, 5, 1, 4, -1, -1, -1, -1}, 4},   // 19: CityPop - I - vi - ii - V
+    // 5-chord progressions (length = 5)
+    {{0, 4, 5, 2, 3, -1, -1, -1}, 5},    // 20: Extended5 - I - V - vi - iii - IV
+    {{5, 3, 0, 4, 1, -1, -1, -1}, 5},    // 21: Emotional5 - vi - IV - I - V - ii
 };
 
 // Chord progression names
-const char* PROGRESSION_NAMES[20] = {
+const char* PROGRESSION_NAMES[22] = {
     "Canon",    "Pop1",    "Axis",     "Pop2",    "Classic", "Pop3",
     "Simple",   "Minor1",  "Minor2",   "Pop4",    "Pop5",    "Rock1",
-    "Rock2",    "Extended", "Minor3",  "Komuro",
+    "Rock2",    "Extended4", "Minor3",  "Komuro",
     "YOASOBI1", "JazzPop", "YOASOBI2", "CityPop",
+    "Extended5", "Emotional5",
 };
 
-// Chord progression display strings
-const char* PROGRESSION_DISPLAYS[20] = {
-    "I - V - vi - IV",    // Canon
-    "I - vi - IV - V",    // Pop1
-    "vi - IV - I - V",    // Axis
-    "IV - I - V - vi",    // Pop2
-    "I - IV - V - I",     // Classic
-    "I - IV - vi - V",    // Pop3
-    "I - V - IV - I",     // Simple
-    "vi - V - IV - V",    // Minor1
-    "vi - IV - V - I",    // Minor2
-    "I - V - iii - IV",   // Pop4
-    "I - iii - IV - V",   // Pop5
-    "I - bVII - IV - I",  // Rock1
-    "I - IV - bVII - I",  // Rock2
-    "I - V - vi - iii",   // Extended (4-chord variant)
-    "vi - I - V - IV",    // Minor3
-    "vi - IV - V - I",    // Komuro
-    "vi - iii - IV - I",  // YOASOBI1
-    "ii - V - I - vi",    // JazzPop
-    "vi - ii - V - I",    // YOASOBI2
-    "I - vi - ii - V",    // CityPop
+// Chord progression display strings (Roman numeral notation)
+const char* PROGRESSION_ROMAN[22] = {
+    "I - V - vi - IV",        // Canon
+    "I - vi - IV - V",        // Pop1
+    "vi - IV - I - V",        // Axis
+    "IV - I - V - vi",        // Pop2
+    "I - IV - V - I",         // Classic
+    "I - IV - vi - V",        // Pop3
+    "I - V - IV - I",         // Simple
+    "vi - V - IV - V",        // Minor1
+    "vi - IV - V - I",        // Minor2
+    "I - V - iii - IV",       // Pop4
+    "I - iii - IV - V",       // Pop5
+    "I - bVII - IV - I",      // Rock1
+    "I - IV - bVII - I",      // Rock2
+    "I - V - vi - iii",       // Extended4
+    "vi - I - V - IV",        // Minor3
+    "vi - IV - V - I",        // Komuro
+    "vi - iii - IV - I",      // YOASOBI1
+    "ii - V - I - vi",        // JazzPop
+    "vi - ii - V - I",        // YOASOBI2
+    "I - vi - ii - V",        // CityPop
+    "I - V - vi - iii - IV",  // Extended5
+    "vi - IV - I - V - ii",   // Emotional5
+};
+
+// Chord progression display strings (C major chord names)
+const char* PROGRESSION_CHORDS[22] = {
+    "C - G - Am - F",         // Canon
+    "C - Am - F - G",         // Pop1
+    "Am - F - C - G",         // Axis
+    "F - C - G - Am",         // Pop2
+    "C - F - G - C",          // Classic
+    "C - F - Am - G",         // Pop3
+    "C - G - F - C",          // Simple
+    "Am - G - F - G",         // Minor1
+    "Am - F - G - C",         // Minor2
+    "C - G - Em - F",         // Pop4
+    "C - Em - F - G",         // Pop5
+    "C - Bb - F - C",         // Rock1
+    "C - F - Bb - C",         // Rock2
+    "C - G - Am - Em",        // Extended4
+    "Am - C - G - F",         // Minor3
+    "Am - F - G - C",         // Komuro
+    "Am - Em - F - C",        // YOASOBI1
+    "Dm - G - C - Am",        // JazzPop
+    "Am - Dm - G - C",        // YOASOBI2
+    "C - Am - Dm - G",        // CityPop
+    "C - G - Am - Em - F",    // Extended5
+    "Am - F - C - G - Dm",    // Emotional5
 };
 
 // Chord progression metadata with style compatibility
 // Compatible styles: STYLE_MINIMAL=1, STYLE_DANCE=2, STYLE_IDOL_STD=4, STYLE_IDOL_ENERGY=8, STYLE_ROCK=16
-constexpr ChordProgressionMeta PROGRESSION_META[20] = {
+constexpr ChordProgressionMeta PROGRESSION_META[22] = {
     {0, "Canon", FunctionalProfile::Loop, 0b00001111, "4ch_loop,diatonic"},
     {1, "Pop1", FunctionalProfile::Loop, 0b00001111, "4ch_loop,diatonic"},
     {2, "Axis", FunctionalProfile::Loop, 0b00011011, "4ch_loop,minor_feel"},
@@ -78,13 +111,15 @@ constexpr ChordProgressionMeta PROGRESSION_META[20] = {
     {10, "Pop5", FunctionalProfile::Stable, 0b00000111, "stepwise,diatonic"},
     {11, "Rock1", FunctionalProfile::TensionBuild, 0b00010000, "bVII,rock"},
     {12, "Rock2", FunctionalProfile::TensionBuild, 0b00010000, "bVII,rock"},
-    {13, "Extended", FunctionalProfile::Stable, 0b00000011, "iii_usage,extended"},
+    {13, "Extended4", FunctionalProfile::Stable, 0b00000011, "iii_usage,extended"},
     {14, "Minor3", FunctionalProfile::Loop, 0b00001010, "minor_feel,dance"},
     {15, "Komuro", FunctionalProfile::TensionBuild, 0b00001011, "minor_start,90s"},
     {16, "YOASOBI1", FunctionalProfile::Loop, 0b00001010, "anime,minor_start"},
     {17, "JazzPop", FunctionalProfile::CadenceStrong, 0b00000011, "ii_V_I,jazz"},
     {18, "YOASOBI2", FunctionalProfile::CadenceStrong, 0b00001010, "turnaround,anime"},
     {19, "CityPop", FunctionalProfile::Stable, 0b00000011, "city_pop,groove"},
+    {20, "Extended5", FunctionalProfile::Loop, 0b00000111, "5ch_loop,extended"},
+    {21, "Emotional5", FunctionalProfile::TensionBuild, 0b00001010, "5ch_loop,emotional"},
 };
 
 // Builds a chord from scale degree.
@@ -225,8 +260,13 @@ const char* getChordProgressionName(uint8_t chord_id) {
 }
 
 const char* getChordProgressionDisplay(uint8_t chord_id) {
-  constexpr size_t count = sizeof(PROGRESSION_DISPLAYS) / sizeof(PROGRESSION_DISPLAYS[0]);
-  return PROGRESSION_DISPLAYS[std::min(static_cast<size_t>(chord_id), count - 1)];
+  constexpr size_t count = sizeof(PROGRESSION_ROMAN) / sizeof(PROGRESSION_ROMAN[0]);
+  return PROGRESSION_ROMAN[std::min(static_cast<size_t>(chord_id), count - 1)];
+}
+
+const char* getChordProgressionChords(uint8_t chord_id) {
+  constexpr size_t count = sizeof(PROGRESSION_CHORDS) / sizeof(PROGRESSION_CHORDS[0]);
+  return PROGRESSION_CHORDS[std::min(static_cast<size_t>(chord_id), count - 1)];
 }
 
 const ChordProgressionMeta& getChordProgressionMeta(uint8_t chord_id) {

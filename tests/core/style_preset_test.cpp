@@ -14,7 +14,7 @@ namespace {
 // ============================================================================
 
 TEST(StylePresetTest, StylePresetCount) {
-  EXPECT_EQ(STYLE_PRESET_COUNT, 4);  // Phase 3: Added rock_shout
+  EXPECT_EQ(STYLE_PRESET_COUNT, 13);  // 13 style presets
 }
 
 TEST(StylePresetTest, GetStylePresetMinimalGroovePop) {
@@ -37,8 +37,8 @@ TEST(StylePresetTest, GetStylePresetDancePopEmotion) {
 }
 
 TEST(StylePresetTest, GetStylePresetIdolStandard) {
-  const StylePreset& preset = getStylePreset(2);
-  EXPECT_EQ(preset.id, 2);
+  const StylePreset& preset = getStylePreset(3);  // ID changed from 2 to 3
+  EXPECT_EQ(preset.id, 3);
   EXPECT_STREQ(preset.name, "idol_standard");
   EXPECT_STREQ(preset.display_name, "Idol Standard");
   EXPECT_EQ(preset.tempo_default, 140);
@@ -495,19 +495,19 @@ TEST(AllowUnisonRepeatTest, MinimalStyleAllowsUnisonRepeat) {
 // ============================================================================
 
 TEST(RockShoutStyleTest, PresetExists) {
-  const StylePreset& rock = getStylePreset(3);
+  const StylePreset& rock = getStylePreset(7);  // ID changed from 3 to 7
   EXPECT_STREQ(rock.name, "rock_shout");
   EXPECT_STREQ(rock.display_name, "Rock Shout");
 }
 
 TEST(RockShoutStyleTest, AllowsRawAttitude) {
-  const StylePreset& rock = getStylePreset(3);
+  const StylePreset& rock = getStylePreset(7);  // ID changed from 3 to 7
   // Should allow Raw attitude
   EXPECT_TRUE((rock.allowed_vocal_attitudes & ATTITUDE_RAW) != 0);
 }
 
 TEST(RockShoutStyleTest, ConfigWithRawIsValid) {
-  SongConfig config = createDefaultSongConfig(3);  // Rock Shout
+  SongConfig config = createDefaultSongConfig(7);  // Rock Shout (ID 7)
   config.vocal_attitude = VocalAttitude::Raw;
 
   SongConfigError error = validateSongConfig(config);
@@ -524,11 +524,11 @@ TEST(RockShoutStyleTest, OtherStylesRejectRaw) {
 }
 
 TEST(RawAttitudeTest, RawGeneratesDifferentMelody) {
-  SongConfig expressive_config = createDefaultSongConfig(3);  // Rock Shout
+  SongConfig expressive_config = createDefaultSongConfig(7);  // Rock Shout (ID 7)
   expressive_config.seed = 12345;
   expressive_config.vocal_attitude = VocalAttitude::Expressive;
 
-  SongConfig raw_config = createDefaultSongConfig(3);  // Rock Shout
+  SongConfig raw_config = createDefaultSongConfig(7);  // Rock Shout (ID 7)
   raw_config.seed = 12345;  // Same seed
   raw_config.vocal_attitude = VocalAttitude::Raw;
 
@@ -557,7 +557,7 @@ TEST(RawAttitudeTest, RawGeneratesDifferentMelody) {
 }
 
 TEST(DeviationAllowedTest, SectionsHaveDeviationFlag) {
-  SongConfig config = createDefaultSongConfig(3);
+  SongConfig config = createDefaultSongConfig(7);  // Rock Shout (ID 7)
   config.seed = 12345;
 
   MidiSketch sketch;
@@ -578,7 +578,7 @@ TEST(DeviationAllowedTest, SectionsHaveDeviationFlag) {
 }
 
 TEST(RegenerateVocalTest, UpdatesVocalAttitude) {
-  SongConfig config = createDefaultSongConfig(3);  // Rock Shout
+  SongConfig config = createDefaultSongConfig(7);  // Rock Shout (ID 7)
   config.seed = 12345;
   config.vocal_attitude = VocalAttitude::Clean;
 

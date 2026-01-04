@@ -13,11 +13,11 @@ constexpr uint8_t STRUCTURE_COUNT = 10;
 // Number of available mood presets
 constexpr uint8_t MOOD_COUNT = 20;
 
-// Number of available chord progressions
-constexpr uint8_t CHORD_COUNT = 20;
+// Number of available chord progressions (20 x 4-chord + 2 x 5-chord)
+constexpr uint8_t CHORD_COUNT = 22;
 
-// Number of available style presets (Phase 3: 4 presets)
-constexpr uint8_t STYLE_PRESET_COUNT = 4;
+// Number of available style presets
+constexpr uint8_t STYLE_PRESET_COUNT = 13;
 
 // Drum pattern style categories
 enum class DrumStyle : uint8_t {

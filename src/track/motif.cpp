@@ -313,8 +313,8 @@ void generateMotifTrack(MidiTrack& track, Song& song,
 
         // Determine which bar this note falls in
         uint32_t note_bar = bar_in_section + (note.startTick / TICKS_PER_BAR);
-        int chord_idx = note_bar % 4;
-        int8_t degree = progression.degrees[chord_idx];
+        int chord_idx = note_bar % progression.length;
+        int8_t degree = progression.at(chord_idx);
 
         // Get chord info (use Key::C for internal processing)
         uint8_t chord_root = degreeToRoot(degree, Key::C);
