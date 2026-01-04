@@ -122,8 +122,9 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
   Tick note_duration = getNoteDuration(arp.speed);
   Tick gated_duration = static_cast<Tick>(note_duration * arp.gate);
 
-  // Base octave for arpeggio (higher than bass, similar to chord)
-  constexpr uint8_t BASE_OCTAVE = 60;  // C4
+  // Base octave for arpeggio (higher than vocal to avoid melodic collision)
+  // Moved from C4(60) to C5(72) for 1-octave separation from vocal range
+  constexpr uint8_t BASE_OCTAVE = 72;  // C5
 
   for (const auto& section : sections) {
     // Intro/Outro: generate arpeggio with reduced intensity

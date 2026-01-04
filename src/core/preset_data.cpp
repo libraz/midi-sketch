@@ -56,7 +56,7 @@ constexpr float MOOD_DENSITY[20] = {
 };
 
 // Structure pattern names
-const char* STRUCTURE_NAMES[10] = {
+const char* STRUCTURE_NAMES[11] = {
     "StandardPop",
     "BuildUp",
     "DirectChorus",
@@ -67,6 +67,7 @@ const char* STRUCTURE_NAMES[10] = {
     "DriveUpbeat",
     "Ballad",
     "AnthemStyle",
+    "ExtendedFull",
 };
 
 // Mood names

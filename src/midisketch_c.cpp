@@ -258,13 +258,18 @@ static MidiSketchFormCandidates s_form_candidates;
 static MidiSketchSongConfig s_default_config;
 
 MidiSketchChordCandidates* midisketch_get_progressions_by_style_ptr(uint8_t style_id) {
-  // Get style preset and determine style mask
-  uint8_t style_mask = 1 << style_id;  // Simple mapping for Phase 1
+  // Get recommended progressions from StylePreset
+  const midisketch::StylePreset& preset = midisketch::getStylePreset(style_id);
 
-  auto progressions = midisketch::getChordProgressionsByStyle(style_mask);
-  s_chord_candidates.count = static_cast<uint8_t>(std::min(progressions.size(), size_t(20)));
-  for (size_t i = 0; i < s_chord_candidates.count; ++i) {
-    s_chord_candidates.ids[i] = progressions[i];
+  s_chord_candidates.count = 0;
+  for (size_t i = 0; i < 8; ++i) {
+    if (preset.recommended_progressions[i] >= 0) {
+      s_chord_candidates.ids[s_chord_candidates.count] =
+          static_cast<uint8_t>(preset.recommended_progressions[i]);
+      s_chord_candidates.count++;
+    } else {
+      break;  // -1 marks end of list
+    }
   }
   return &s_chord_candidates;
 }
@@ -295,6 +300,7 @@ MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
   s_default_config.humanize = cpp_config.humanize ? 1 : 0;
   s_default_config.humanize_timing = static_cast<uint8_t>(cpp_config.humanize_timing * 100);
   s_default_config.humanize_velocity = static_cast<uint8_t>(cpp_config.humanize_velocity * 100);
+  s_default_config.target_duration_seconds = cpp_config.target_duration_seconds;
   return &s_default_config;
 }
 
@@ -385,6 +391,7 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   cpp_config.humanize = config->humanize != 0;
   cpp_config.humanize_timing = config->humanize_timing / 100.0f;
   cpp_config.humanize_velocity = config->humanize_velocity / 100.0f;
+  cpp_config.target_duration_seconds = config->target_duration_seconds;
 
   sketch->generateFromConfig(cpp_config);
   return MIDISKETCH_OK;

@@ -486,6 +486,29 @@ bool shouldAddDominantPreparation(SectionType current, SectionType next,
   return current == SectionType::B;
 }
 
+// Check if section ending needs a cadence fix for irregular progression lengths
+// Returns true if the progression ends mid-cycle at section end
+bool needsCadenceFix(uint8_t section_bars, uint8_t progression_length,
+                     SectionType section, SectionType next_section) {
+  // Only apply to main content sections
+  if (section == SectionType::Intro || section == SectionType::Interlude ||
+      section == SectionType::Outro) {
+    return false;
+  }
+
+  // Check if progression divides evenly into section
+  if (section_bars % progression_length == 0) {
+    return false;  // Progression completes naturally
+  }
+
+  // Only apply before sections that need resolution (A, Chorus)
+  if (next_section == SectionType::Intro || next_section == SectionType::Outro) {
+    return false;
+  }
+
+  return true;  // Need to insert cadence
+}
+
 // Select rhythm pattern based on section, mood, and backing density
 ChordRhythm selectRhythm(SectionType section, Mood mood,
                           BackingDensity backing_density) {
@@ -696,6 +719,45 @@ void generateChordTrack(MidiTrack& track, const Song& song,
         prev_voicing = dom_voicing;
         has_prev = true;
         continue;  // Skip normal generation for this bar
+      }
+
+      // Fix cadence for irregular progression lengths (e.g., 5-chord in 8-bar section)
+      // Insert ii-V in last 2 bars when progression ends mid-cycle
+      bool is_second_last_bar = (bar == section.bars - 2);
+      if (is_section_last_bar && !isDominant(degree) &&
+          needsCadenceFix(section.bars, progression.length, section.type, next_section_type)) {
+        // Last bar: insert V chord
+        int8_t dominant_degree = 4;  // V
+        uint8_t dom_root = degreeToRoot(dominant_degree, Key::C);
+        ChordExtension dom_ext = params.chord_extension.enable_7th
+                                     ? ChordExtension::Dom7
+                                     : ChordExtension::None;
+        Chord dom_chord = getExtendedChord(dominant_degree, dom_ext);
+        VoicedChord dom_voicing = selectVoicing(dom_root, dom_chord, prev_voicing,
+                                                 has_prev, voicing_type);
+
+        generateChordBar(track, bar_start, dom_voicing, rhythm, section.type, params.mood);
+        prev_voicing = dom_voicing;
+        has_prev = true;
+        continue;
+      }
+
+      if (is_second_last_bar &&
+          needsCadenceFix(section.bars, progression.length, section.type, next_section_type)) {
+        // Second-to-last bar: insert ii chord (subdominant preparation)
+        int8_t ii_degree = 1;  // ii
+        uint8_t ii_root = degreeToRoot(ii_degree, Key::C);
+        ChordExtension ii_ext = params.chord_extension.enable_7th
+                                    ? ChordExtension::Min7
+                                    : ChordExtension::None;
+        Chord ii_chord = getExtendedChord(ii_degree, ii_ext);
+        VoicedChord ii_voicing = selectVoicing(ii_root, ii_chord, prev_voicing,
+                                               has_prev, voicing_type);
+
+        generateChordBar(track, bar_start, ii_voicing, rhythm, section.type, params.mood);
+        prev_voicing = ii_voicing;
+        has_prev = true;
+        continue;
       }
 
       // Check if this is a phrase-ending bar

@@ -215,6 +215,7 @@ typedef struct {
   uint8_t humanize;           // Enable humanization (0=off, 1=on)
   uint8_t humanize_timing;    // Timing variation (0-100)
   uint8_t humanize_velocity;  // Velocity variation (0-100)
+  uint16_t target_duration_seconds;  // Target duration in seconds (0 = use form_id)
 } MidiSketchSongConfig;
 
 // Style preset summary for listing.

@@ -831,5 +831,173 @@ TEST(ModulationTest, MidiOutputHasModulationApplied) {
   EXPECT_GT(note_ons.size(), 0u);
 }
 
+
+// ============================================================================
+// SongConfig.target_duration_seconds Tests
+// ============================================================================
+
+TEST(TargetDurationTest, DurationOverridesFormId) {
+  // When target_duration_seconds > 0, form should be ignored and
+  // structure should be generated based on duration
+  SongConfig config_form = createDefaultSongConfig(0);
+  config_form.seed = 12345;
+  config_form.form = StructurePattern::ShortForm;  // 12 bars
+  config_form.target_duration_seconds = 0;  // Use form
+
+  SongConfig config_duration = createDefaultSongConfig(0);
+  config_duration.seed = 12345;
+  config_duration.form = StructurePattern::ShortForm;  // Would be 12 bars
+  config_duration.target_duration_seconds = 180;  // Override to ~90 bars
+
+  MidiSketch sketch_form;
+  sketch_form.generateFromConfig(config_form);
+
+  MidiSketch sketch_duration;
+  sketch_duration.generateFromConfig(config_duration);
+
+  // Form-based should have ~12 bars (ShortForm)
+  // Duration-based should have ~90 bars (180sec@120BPM)
+  uint16_t bars_form = sketch_form.getSong().arrangement().totalBars();
+  uint16_t bars_duration = sketch_duration.getSong().arrangement().totalBars();
+
+  EXPECT_EQ(bars_form, 12) << "ShortForm should be 12 bars";
+  EXPECT_GT(bars_duration, bars_form)
+      << "target_duration_seconds should override form";
+  EXPECT_GE(bars_duration, 80)
+      << "180sec@120BPM should generate ~90 bars";
+}
+
+TEST(TargetDurationTest, DurationZeroUsesForm) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 12345;
+  config.form = StructurePattern::StandardPop;  // 24 bars
+  config.target_duration_seconds = 0;  // Use form
+
+  MidiSketch sketch;
+  sketch.generateFromConfig(config);
+
+  uint16_t total_bars = sketch.getSong().arrangement().totalBars();
+  EXPECT_EQ(total_bars, 24) << "target_duration_seconds=0 should use form pattern";
+}
+
+TEST(TargetDurationTest, GeneratedDurationApproximatesTarget) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 12345;
+  config.bpm = 120;
+  config.target_duration_seconds = 180;  // 3 minutes
+
+  MidiSketch sketch;
+  sketch.generateFromConfig(config);
+
+  const auto& song = sketch.getSong();
+  uint16_t total_bars = song.arrangement().totalBars();
+
+  // Calculate actual duration in seconds
+  // duration = total_bars * 4 beats * 60 / bpm
+  double actual_duration = static_cast<double>(total_bars) * 4.0 * 60.0 / 120.0;
+
+  // Should be within 30% of target (structure building isn't exact)
+  EXPECT_GE(actual_duration, 180 * 0.7) << "Duration should be close to target";
+  EXPECT_LE(actual_duration, 180 * 1.3) << "Duration should be close to target";
+}
+
+TEST(TargetDurationTest, ShortDurationProducesMinimumStructure) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 12345;
+  config.bpm = 120;
+  config.target_duration_seconds = 10;  // Very short
+
+  MidiSketch sketch;
+  sketch.generateFromConfig(config);
+
+  uint16_t total_bars = sketch.getSong().arrangement().totalBars();
+
+  // Minimum should be enforced
+  EXPECT_GE(total_bars, 12) << "Should enforce minimum structure size";
+}
+
+TEST(TargetDurationTest, LongDurationProducesMaximumStructure) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 12345;
+  config.bpm = 120;
+  config.target_duration_seconds = 600;  // 10 minutes
+
+  MidiSketch sketch;
+  sketch.generateFromConfig(config);
+
+  uint16_t total_bars = sketch.getSong().arrangement().totalBars();
+
+  // Maximum should be enforced (around 120 bars)
+  EXPECT_LE(total_bars, 150) << "Should enforce maximum structure size";
+}
+
+TEST(TargetDurationTest, DifferentBPMProducesDifferentBars) {
+  SongConfig config_slow = createDefaultSongConfig(0);
+  config_slow.seed = 12345;
+  config_slow.bpm = 60;
+  config_slow.target_duration_seconds = 180;
+
+  SongConfig config_fast = createDefaultSongConfig(0);
+  config_fast.seed = 12345;
+  config_fast.bpm = 180;
+  config_fast.target_duration_seconds = 180;
+
+  MidiSketch sketch_slow;
+  sketch_slow.generateFromConfig(config_slow);
+
+  MidiSketch sketch_fast;
+  sketch_fast.generateFromConfig(config_fast);
+
+  uint16_t bars_slow = sketch_slow.getSong().arrangement().totalBars();
+  uint16_t bars_fast = sketch_fast.getSong().arrangement().totalBars();
+
+  // Faster tempo = more bars for same duration
+  EXPECT_LT(bars_slow, bars_fast)
+      << "Slower BPM should produce fewer bars for same target duration";
+}
+
+TEST(TargetDurationTest, StructureHasRequiredSections) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 12345;
+  config.bpm = 120;
+  config.target_duration_seconds = 180;
+
+  MidiSketch sketch;
+  sketch.generateFromConfig(config);
+
+  const auto& sections = sketch.getSong().arrangement().sections();
+
+  bool has_intro = false;
+  bool has_chorus = false;
+  bool has_outro = false;
+
+  for (const auto& section : sections) {
+    if (section.type == SectionType::Intro) has_intro = true;
+    if (section.type == SectionType::Chorus) has_chorus = true;
+    if (section.type == SectionType::Outro) has_outro = true;
+  }
+
+  EXPECT_TRUE(has_intro) << "Generated structure should have Intro";
+  EXPECT_TRUE(has_chorus) << "Generated structure should have Chorus";
+  EXPECT_TRUE(has_outro) << "Generated structure should have Outro";
+}
+
+TEST(TargetDurationTest, SeedReproducibilityWithDuration) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 42;
+  config.bpm = 120;
+  config.target_duration_seconds = 180;
+
+  MidiSketch sketch1;
+  sketch1.generateFromConfig(config);
+
+  MidiSketch sketch2;
+  sketch2.generateFromConfig(config);
+
+  // Same seed should produce same output
+  EXPECT_EQ(sketch1.getMidi(), sketch2.getMidi());
+}
+
+
 }  // namespace
 }  // namespace midisketch

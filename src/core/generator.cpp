@@ -41,8 +41,8 @@ void Generator::generateFromConfig(const SongConfig& config) {
   // Use config BPM if specified, otherwise use style preset default
   params.bpm = (config.bpm != 0) ? config.bpm : preset.tempo_default;
 
-  // Map style preset to a mood (simplified for Phase 1)
-  // For now, use a sensible default based on the style
+  // Map style preset to mood and composition style
+  // Based on StylePreset definitions in preset_data.cpp
   switch (config.style_preset_id) {
     case 0:  // Minimal Groove Pop
       params.mood = Mood::StraightPop;
@@ -52,9 +52,49 @@ void Generator::generateFromConfig(const SongConfig& config) {
       params.mood = Mood::EnergeticDance;
       params.composition_style = CompositionStyle::MelodyLead;
       break;
-    case 2:  // Idol Standard
+    case 2:  // Bright Pop
+      params.mood = Mood::BrightUpbeat;
+      params.composition_style = CompositionStyle::MelodyLead;
+      break;
+    case 3:  // Idol Standard
       params.mood = Mood::IdolPop;
       params.composition_style = CompositionStyle::MelodyLead;
+      break;
+    case 4:  // Idol Emotion
+      params.mood = Mood::EmotionalPop;
+      params.composition_style = CompositionStyle::MelodyLead;
+      break;
+    case 5:  // Idol Energy
+      params.mood = Mood::IdolPop;
+      params.composition_style = CompositionStyle::MelodyLead;
+      break;
+    case 6:  // Idol Minimal
+      params.mood = Mood::IdolPop;
+      params.composition_style = CompositionStyle::MelodyLead;
+      break;
+    case 7:  // Rock Shout
+      params.mood = Mood::LightRock;
+      params.composition_style = CompositionStyle::MelodyLead;
+      break;
+    case 8:  // Pop Emotion
+      params.mood = Mood::EmotionalPop;
+      params.composition_style = CompositionStyle::MelodyLead;
+      break;
+    case 9:  // Raw Emotional
+      params.mood = Mood::Dramatic;
+      params.composition_style = CompositionStyle::MelodyLead;
+      break;
+    case 10:  // Acoustic Pop
+      params.mood = Mood::Ballad;
+      params.composition_style = CompositionStyle::MelodyLead;
+      break;
+    case 11:  // Live Call & Response
+      params.mood = Mood::Anthem;
+      params.composition_style = CompositionStyle::MelodyLead;
+      break;
+    case 12:  // Background Motif
+      params.mood = Mood::StraightPop;
+      params.composition_style = CompositionStyle::BackgroundMotif;
       break;
     default:
       params.mood = Mood::StraightPop;
@@ -73,6 +113,9 @@ void Generator::generateFromConfig(const SongConfig& config) {
   // Phase 2: Apply VocalAttitude and StyleMelodyParams
   params.vocal_attitude = config.vocal_attitude;
   params.melody_params = preset.melody;
+
+  // Dynamic duration (0 = use form pattern)
+  params.target_duration_seconds = config.target_duration_seconds;
 
   generate(params);
 }
@@ -93,8 +136,13 @@ void Generator::generate(const GeneratorParams& params) {
   }
   song_.setBpm(bpm);
 
-  // Build song structure
-  auto sections = buildStructure(params.structure);
+  // Build song structure (dynamic duration or fixed pattern)
+  std::vector<Section> sections;
+  if (params.target_duration_seconds > 0) {
+    sections = buildStructureForDuration(params.target_duration_seconds, bpm);
+  } else {
+    sections = buildStructure(params.structure);
+  }
   song_.setArrangement(Arrangement(sections));
 
   // Clear all tracks
@@ -253,7 +301,8 @@ void Generator::calculateModulation() {
       break;
     }
     case StructurePattern::FullWithBridge:
-    case StructurePattern::Ballad: {
+    case StructurePattern::Ballad:
+    case StructurePattern::ExtendedFull: {
       // Modulate after Bridge or Interlude, at last Chorus
       for (size_t i = sections.size(); i > 0; --i) {
         size_t idx = i - 1;

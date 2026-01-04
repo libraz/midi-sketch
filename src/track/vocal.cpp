@@ -28,47 +28,121 @@ float getFunctionalProfileTensionMultiplier(FunctionalProfile profile) {
 // Major scale semitones (relative to tonic)
 constexpr int SCALE[7] = {0, 2, 4, 5, 7, 9, 11};
 
-// Chord tones for each scale degree (0=root, 2=3rd, 4=5th in scale degrees)
-// For major chord: root, major 3rd, perfect 5th
-// For minor chord: root, minor 3rd, perfect 5th
+// Chord tones as pitch classes (0-11, semitones from C)
 struct ChordTones {
-  std::array<int, 3> degrees;  // Scale degrees that are chord tones
+  std::array<int, 5> pitch_classes;  // Pitch classes (0-11), -1 = unused
+  uint8_t count;                     // Number of chord tones
 };
 
-// Get chord tones for a chord built on given scale degree
-ChordTones getChordTones(int root_degree, bool /* is_minor */) {
-  // Chord tones in scale degrees relative to the key
-  // root = root_degree
-  // 3rd = root_degree + 2 (scale degrees)
-  // 5th = root_degree + 4 (scale degrees)
-  // Note: is_minor currently unused as we use scale degrees, not semitones
-  return {{root_degree, root_degree + 2, root_degree + 4}};
+// Scale degree to pitch class offset (C major reference)
+constexpr int DEGREE_TO_PITCH_CLASS[7] = {0, 2, 4, 5, 7, 9, 11};  // C,D,E,F,G,A,B
+
+// Get chord tones as pitch classes for a chord built on given scale degree
+// Uses actual chord intervals from chord.cpp for accuracy
+ChordTones getChordTones(int8_t degree) {
+  ChordTones ct{};
+  ct.count = 0;
+
+  // Get root pitch class from degree
+  int root_pc = DEGREE_TO_PITCH_CLASS[((degree % 7) + 7) % 7];
+
+  // Get chord intervals from the central chord definition
+  Chord chord = getChordNotes(degree);
+
+  for (uint8_t i = 0; i < chord.note_count && i < 5; ++i) {
+    if (chord.intervals[i] >= 0) {
+      ct.pitch_classes[ct.count] = (root_pc + chord.intervals[i]) % 12;
+      ct.count++;
+    }
+  }
+
+  // Fill remaining with -1
+  for (uint8_t i = ct.count; i < 5; ++i) {
+    ct.pitch_classes[i] = -1;
+  }
+
+  return ct;
 }
 
-// Check if a scale degree is a chord tone
-bool isChordTone(int scale_degree, int chord_root, bool is_minor) {
-  ChordTones ct = getChordTones(chord_root, is_minor);
-  int normalized = ((scale_degree % 7) + 7) % 7;
-  for (int tone : ct.degrees) {
-    if (((tone % 7) + 7) % 7 == normalized) return true;
+// Get available extension pitch classes for a chord
+// Returns 7th and 9th intervals based on chord quality
+std::array<int, 2> getExtensionPitchClasses(int8_t degree) {
+  int root_pc = DEGREE_TO_PITCH_CLASS[((degree % 7) + 7) % 7];
+  int normalized_degree = ((degree % 7) + 7) % 7;
+
+  // Determine chord quality and appropriate extensions
+  int seventh = -1;
+  int ninth = (root_pc + 2) % 12;  // 9th = major 2nd above root
+
+  switch (normalized_degree) {
+    case 0:  // I - major: maj7
+    case 3:  // IV - major: maj7
+      seventh = (root_pc + 11) % 12;  // Major 7th
+      break;
+    case 1:  // ii - minor: min7
+    case 2:  // iii - minor: min7
+    case 5:  // vi - minor: min7
+      seventh = (root_pc + 10) % 12;  // Minor 7th
+      break;
+    case 4:  // V - dominant: dom7
+      seventh = (root_pc + 10) % 12;  // Minor 7th (dominant)
+      break;
+    case 6:  // vii° - diminished: dim7
+      seventh = (root_pc + 9) % 12;  // Diminished 7th
+      break;
   }
+
+  return {{seventh, ninth}};
+}
+
+// Check if a pitch (MIDI note) is a chord tone using pitch class comparison
+// Also accepts 7th and 9th extensions as valid chord tones
+bool isChordTone(int pitch, int8_t degree) {
+  int pitch_class = ((pitch % 12) + 12) % 12;
+  ChordTones ct = getChordTones(degree);
+
+  // Check basic chord tones (root, 3rd, 5th)
+  for (uint8_t i = 0; i < ct.count; ++i) {
+    if (ct.pitch_classes[i] == pitch_class) return true;
+  }
+
+  // Also accept 7th and 9th extensions as valid chord tones
+  // This prevents dissonance when chord track uses extensions
+  auto extensions = getExtensionPitchClasses(degree);
+  for (int ext : extensions) {
+    if (ext >= 0 && ext == pitch_class) return true;
+  }
+
   return false;
 }
 
-// Get nearest chord tone to a given scale degree
-int nearestChordTone(int scale_degree, int chord_root, bool is_minor) {
-  ChordTones ct = getChordTones(chord_root, is_minor);
-  int best = ct.degrees[0];
+// Get nearest chord tone pitch to a given pitch
+// Returns the absolute pitch of the nearest chord tone
+int nearestChordTonePitch(int pitch, int8_t degree) {
+  ChordTones ct = getChordTones(degree);
+  int octave = pitch / 12;
+
+  int best_pitch = pitch;
   int best_dist = 100;
-  for (int tone : ct.degrees) {
-    int dist = std::abs(scale_degree - tone);
-    if (dist < best_dist) {
-      best = tone;
-      best_dist = dist;
+
+  for (uint8_t i = 0; i < ct.count; ++i) {
+    int ct_pc = ct.pitch_classes[i];
+    if (ct_pc < 0) continue;
+
+    // Check same octave and adjacent octaves
+    for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
+      int candidate = (octave + oct_offset) * 12 + ct_pc;
+      int dist = std::abs(candidate - pitch);
+      if (dist < best_dist) {
+        best_dist = dist;
+        best_pitch = candidate;
+      }
     }
   }
-  return best;
+
+  return best_pitch;
 }
+
 
 // Convert scale degree to pitch
 int degreeToPitch(int degree, int octave, int key_offset) {
@@ -373,9 +447,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
     // Section-specific melody parameters
     // register_shift: shift vocal range (semitones, positive = higher)
-    // interval_boost: allow larger melodic leaps
     int8_t register_shift = 0;
-    int8_t interval_boost = 0;
 
     switch (section.type) {
       case SectionType::Intro:
@@ -391,7 +463,6 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         contour_variation = 0;
         note_density = 0.7f;      // More sparse (was 0.85)
         register_shift = -2;      // Lower register
-        interval_boost = 0;
         break;
       case SectionType::B:
         // B melody: building tension, rising register
@@ -399,7 +470,6 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         contour_variation = 1;
         note_density = 0.85f;     // Medium density
         register_shift = 2;       // Slightly higher
-        interval_boost = 1;       // Slightly larger leaps
         break;
       case SectionType::Chorus:
         // Chorus: climactic, high register, emphatic
@@ -407,7 +477,6 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         contour_variation = 2;
         note_density = 1.0f;      // Full density
         register_shift = 5;       // Higher register (+5 semitones)
-        interval_boost = 2;       // Allow bigger leaps for emotion
         break;
       case SectionType::Bridge:
         // Bridge: contrasting, reflective
@@ -415,7 +484,6 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         contour_variation = 3;
         note_density = 0.6f;      // Sparse
         register_shift = 0;
-        interval_boost = 0;
         break;
     }
 
@@ -560,7 +628,6 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
         // Get the chord for this bar
         int current_chord_root = (bar_offset == 0) ? chord_root1 : chord_root2;
-        bool current_is_minor = (bar_offset == 0) ? is_minor1 : is_minor2;
 
         // Get contour degree
         int contour_degree = contour.degrees[contour_idx % contour.degrees.size()];
@@ -589,17 +656,18 @@ void generateVocalTrack(MidiTrack& track, Song& song,
           }
         }
 
-        // On strong beats or marked positions, use chord tones
-        if (rn.strong || force_chord_tone) {
-          if (!isChordTone(scale_degree, current_chord_root, current_is_minor)) {
-            scale_degree = nearestChordTone(scale_degree, current_chord_root, current_is_minor);
-          }
-        }
-
         contour_idx++;
 
-        // Convert to pitch
+        // Convert to pitch first, then apply chord tone correction using pitch class
         int pitch = degreeToPitch(scale_degree, base_octave, key_offset);
+
+        // On strong beats or marked positions, use chord tones
+        // Use pitch class comparison for accurate chord tone detection
+        if (rn.strong || force_chord_tone) {
+          if (!isChordTone(pitch, static_cast<int8_t>(current_chord_root))) {
+            pitch = nearestChordTonePitch(pitch, static_cast<int8_t>(current_chord_root));
+          }
+        }
 
         // Check for large leap (6+ semitones) and apply step-back rule
         if (prev_pitch > 0) {

@@ -97,13 +97,44 @@ bool isAvoidNote(int pitch, uint8_t chord_root, bool is_minor) {
   return interval == AVOID_MAJOR;
 }
 
-// Adjust pitch to avoid dissonance
+// Get chord tone pitch classes for a chord
+// Returns root, 3rd, 5th as pitch classes (0-11)
+std::array<int, 3> getChordPitchClasses(uint8_t chord_root, bool is_minor) {
+  int root_pc = chord_root % 12;
+  int third_offset = is_minor ? 3 : 4;  // minor 3rd or major 3rd
+  return {{
+    root_pc,
+    (root_pc + third_offset) % 12,
+    (root_pc + 7) % 12  // perfect 5th
+  }};
+}
+
+// Adjust pitch to avoid dissonance by resolving to nearest chord tone
 int adjustForChord(int pitch, uint8_t chord_root, bool is_minor) {
-  if (isAvoidNote(pitch, chord_root, is_minor)) {
-    // Move down by half step to become a chord tone or tension
-    return pitch - 1;
+  if (!isAvoidNote(pitch, chord_root, is_minor)) {
+    return pitch;
   }
-  return pitch;
+
+  // Find nearest chord tone
+  auto chord_tones = getChordPitchClasses(chord_root, is_minor);
+  int octave = pitch / 12;
+
+  int best_pitch = pitch;
+  int best_dist = 100;
+
+  for (int ct_pc : chord_tones) {
+    // Check same octave and adjacent octaves
+    for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
+      int candidate = (octave + oct_offset) * 12 + ct_pc;
+      int dist = std::abs(candidate - pitch);
+      if (dist < best_dist) {
+        best_dist = dist;
+        best_pitch = candidate;
+      }
+    }
+  }
+
+  return best_pitch;
 }
 
 // Generate rhythm positions with musical structure

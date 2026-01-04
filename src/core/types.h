@@ -131,7 +131,7 @@ struct Section {
   bool se_allowed = true;          // Allow sound effects
 };
 
-// Song structure pattern (10 patterns available).
+// Song structure pattern (11 patterns available).
 enum class StructurePattern : uint8_t {
   StandardPop = 0,  // A(8) -> B(8) -> Chorus(8) [24 bars, short]
   BuildUp,          // Intro(4) -> A(8) -> B(8) -> Chorus(8) [28 bars]
@@ -143,7 +143,9 @@ enum class StructurePattern : uint8_t {
   FullWithBridge,   // Intro(4) -> A(8) -> B(8) -> Chorus(8) -> Bridge(8) -> Chorus(8) -> Outro(4)
   DriveUpbeat,      // Intro(4) -> Chorus(8) -> A(8) -> B(8) -> Chorus(8) -> Chorus(8) -> Outro(4)
   Ballad,           // Intro(8) -> A(8) -> B(8) -> Chorus(8) -> Interlude(4) -> B(8) -> Chorus(8) -> Outro(8)
-  AnthemStyle       // Intro(4) -> A(8) -> Chorus(8) -> A(8) -> B(8) -> Chorus(8) -> Chorus(8) -> Outro(4)
+  AnthemStyle,      // Intro(4) -> A(8) -> Chorus(8) -> A(8) -> B(8) -> Chorus(8) -> Chorus(8) -> Outro(4)
+  // Extended full-length (~3 min @120BPM)
+  ExtendedFull      // Intro(4) -> A(8) -> B(8) -> Chorus(8) -> Interlude(4) -> A(8) -> B(8) -> Chorus(8) -> Bridge(8) -> Chorus(8) -> Chorus(8) -> Outro(8) [90 bars]
 };
 
 // Mood/groove preset (20 patterns available).
@@ -381,6 +383,7 @@ struct SongConfig {
 
   // Layer 3: Structure
   StructurePattern form = StructurePattern::StandardPop;
+  uint16_t target_duration_seconds = 0;  // 0 = use form pattern, >0 = auto-generate structure
 
   // Layer 5: Expression
   VocalAttitude vocal_attitude = VocalAttitude::Clean;
@@ -410,6 +413,7 @@ struct GeneratorParams {
   uint8_t vocal_high;          // Vocal range upper bound (MIDI note)
   uint16_t bpm;                // Tempo (0 = use mood default)
   uint32_t seed;               // Random seed (0 = auto)
+  uint16_t target_duration_seconds = 0;  // 0 = use structure pattern, >0 = auto-generate
 
   // Composition style
   CompositionStyle composition_style = CompositionStyle::MelodyLead;

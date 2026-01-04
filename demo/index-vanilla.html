@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>midi-sketch Demo</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+      color: #333;
+    }
+    h1 {
+      color: #2c3e50;
+      border-bottom: 2px solid #3498db;
+      padding-bottom: 10px;
+    }
+    .version {
+      color: #7f8c8d;
+      font-size: 0.9em;
+      font-weight: normal;
+    }
+    .section {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .section h2 {
+      margin-top: 0;
+      color: #2c3e50;
+      font-size: 1.2em;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+      color: #34495e;
+    }
+    select, input[type="number"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    select:focus, input:focus {
+      outline: none;
+      border-color: #3498db;
+    }
+    .row {
+      display: flex;
+      gap: 15px;
+    }
+    .row > .form-group {
+      flex: 1;
+    }
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .checkbox-group input {
+      width: auto;
+    }
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 4px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-primary {
+      background: #3498db;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #2980b9;
+    }
+    .btn-primary:disabled {
+      background: #bdc3c7;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: #2ecc71;
+      color: white;
+    }
+    .btn-secondary:hover {
+      background: #27ae60;
+    }
+    .btn-secondary:disabled {
+      background: #bdc3c7;
+      cursor: not-allowed;
+    }
+    .btn-play {
+      background: #9b59b6;
+      color: white;
+    }
+    .btn-play:hover {
+      background: #8e44ad;
+    }
+    .btn-play:disabled {
+      background: #bdc3c7;
+      cursor: not-allowed;
+    }
+    .btn-stop {
+      background: #e74c3c;
+      color: white;
+    }
+    .btn-stop:hover {
+      background: #c0392b;
+    }
+    .btn-stop:disabled {
+      background: #bdc3c7;
+      cursor: not-allowed;
+    }
+    .buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .result {
+      background: #ecf0f1;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      display: none;
+    }
+    .result.visible {
+      display: block;
+    }
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 15px;
+    }
+    .status.loading {
+      background: #fff3cd;
+      color: #856404;
+    }
+    .status.ready {
+      background: #d4edda;
+      color: #155724;
+    }
+    .status.error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    .chord-display {
+      color: #7f8c8d;
+      font-size: 0.9em;
+      margin-top: 5px;
+    }
+    .style-description {
+      color: #7f8c8d;
+      font-size: 0.85em;
+      margin-top: 5px;
+      font-style: italic;
+    }
+    .playback-info {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-top: 15px;
+      padding: 10px;
+      background: #ecf0f1;
+      border-radius: 4px;
+    }
+    .playback-info.hidden {
+      display: none;
+    }
+    .progress-bar {
+      flex: 1;
+      height: 8px;
+      background: #bdc3c7;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: #9b59b6;
+      width: 0%;
+      transition: width 0.1s linear;
+    }
+    .time-display {
+      font-family: monospace;
+      font-size: 14px;
+      min-width: 100px;
+      text-align: right;
+    }
+    .humanize-options {
+      display: none;
+      margin-top: 10px;
+    }
+    .humanize-options.visible {
+      display: flex;
+    }
+    .bpm-slider-container {
+      position: relative;
+      margin-top: 8px;
+    }
+    .bpm-slider {
+      width: 100%;
+      height: 8px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: linear-gradient(to right, #e74c3c 0%, #f39c12 25%, #2ecc71 50%, #f39c12 75%, #e74c3c 100%);
+      border-radius: 4px;
+      outline: none;
+    }
+    .bpm-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      background: #3498db;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid white;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .bpm-slider::-moz-range-thumb {
+      width: 20px;
+      height: 20px;
+      background: #3498db;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid white;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .bpm-range-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75em;
+      color: #7f8c8d;
+      margin-top: 4px;
+    }
+    .bpm-value {
+      text-align: center;
+      font-weight: bold;
+      font-size: 1.1em;
+      color: #2c3e50;
+      margin-top: 4px;
+    }
+    .bpm-recommendation {
+      text-align: center;
+      font-size: 0.8em;
+      color: #27ae60;
+      margin-top: 2px;
+    }
+    .vocal-range-visual {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .piano-range {
+      flex: 1;
+      height: 30px;
+      background: linear-gradient(to right,
+        #34495e 0%, #34495e 10%,
+        #ecf0f1 10%, #ecf0f1 20%,
+        #34495e 20%, #34495e 25%,
+        #ecf0f1 25%, #ecf0f1 35%,
+        #34495e 35%, #34495e 40%,
+        #ecf0f1 40%, #ecf0f1 50%,
+        #ecf0f1 50%, #ecf0f1 60%,
+        #34495e 60%, #34495e 65%,
+        #ecf0f1 65%, #ecf0f1 75%,
+        #34495e 75%, #34495e 80%,
+        #ecf0f1 80%, #ecf0f1 90%,
+        #34495e 90%, #34495e 95%,
+        #ecf0f1 95%, #ecf0f1 100%
+      );
+      border-radius: 4px;
+      position: relative;
+      border: 1px solid #bdc3c7;
+    }
+    .piano-range-highlight {
+      position: absolute;
+      height: 100%;
+      background: rgba(52, 152, 219, 0.5);
+      border-radius: 4px;
+    }
+    .vocal-note-display {
+      font-family: monospace;
+      font-size: 0.9em;
+      color: #2c3e50;
+      min-width: 80px;
+      text-align: center;
+    }
+    .chord-key-display {
+      font-family: monospace;
+      background: #ecf0f1;
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>midi-sketch <span class="version" id="version">Loading...</span></h1>
+
+  <div id="status" class="status loading">Loading WASM module...</div>
+
+  <div class="section">
+    <h2>Style & Structure</h2>
+
+    <div class="form-group">
+      <label for="style">Style Preset</label>
+      <select id="style"></select>
+      <div id="style-description" class="style-description"></div>
+    </div>
+
+    <div class="row">
+      <div class="form-group">
+        <label for="chord">Chord Progression</label>
+        <select id="chord"></select>
+        <div id="chord-display" class="chord-display"></div>
+      </div>
+      <div class="form-group">
+        <label for="form">Form</label>
+        <select id="form"></select>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="form-group">
+        <label for="key">Key</label>
+        <select id="key">
+          <option value="0">C</option>
+          <option value="1">C#</option>
+          <option value="2">D</option>
+          <option value="3">Eb</option>
+          <option value="4">E</option>
+          <option value="5">F</option>
+          <option value="6">F#</option>
+          <option value="7">G</option>
+          <option value="8">Ab</option>
+          <option value="9">A</option>
+          <option value="10">Bb</option>
+          <option value="11">B</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>BPM</label>
+      <div class="bpm-slider-container">
+        <input type="range" id="bpm" class="bpm-slider" min="60" max="180" value="120">
+        <div class="bpm-range-labels">
+          <span>60</span>
+          <span id="bpm-min-label">80</span>
+          <span id="bpm-default-label">120 (default)</span>
+          <span id="bpm-max-label">160</span>
+          <span>180</span>
+        </div>
+      </div>
+      <div class="bpm-value"><span id="bpm-value">120</span> BPM</div>
+      <div id="bpm-recommendation" class="bpm-recommendation"></div>
+    </div>
+
+    <div class="row">
+      <div class="form-group">
+        <label for="duration">Duration (seconds, 0=use Form)</label>
+        <input type="number" id="duration" value="0" min="0" max="300" step="30">
+        <div id="duration-hint" class="style-description">0 = use Form pattern</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Vocal & Expression</h2>
+
+    <div class="form-group">
+      <label>Vocal Range</label>
+      <div class="row">
+        <div class="form-group">
+          <label for="vocal-low" style="font-size: 0.85em;">Low</label>
+          <input type="range" id="vocal-low" value="55" min="36" max="84" style="width: 100%;">
+          <div id="vocal-low-display" class="vocal-note-display">G3</div>
+        </div>
+        <div class="form-group">
+          <label for="vocal-high" style="font-size: 0.85em;">High</label>
+          <input type="range" id="vocal-high" value="74" min="48" max="96" style="width: 100%;">
+          <div id="vocal-high-display" class="vocal-note-display">D5</div>
+        </div>
+      </div>
+      <div class="vocal-range-visual">
+        <span style="font-size: 0.8em; color: #7f8c8d;">C2</span>
+        <div class="piano-range" id="piano-range">
+          <div class="piano-range-highlight" id="vocal-highlight"></div>
+        </div>
+        <span style="font-size: 0.8em; color: #7f8c8d;">C7</span>
+      </div>
+      <div id="vocal-range-info" style="text-align: center; margin-top: 8px; font-size: 0.85em; color: #7f8c8d;">
+        Range: G3 - D5 (19 semitones)
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="form-group">
+        <label for="vocal-attitude">Vocal Style</label>
+        <select id="vocal-attitude">
+          <option value="0">Clean</option>
+          <option value="1">Expressive</option>
+          <option value="2">Raw</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="seed">Seed (0=random)</label>
+        <input type="number" id="seed" value="0" min="0">
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Options</h2>
+
+    <div class="row">
+      <div class="form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="drums" checked>
+          <label for="drums">Drums</label>
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="arpeggio">
+          <label for="arpeggio">Arpeggio</label>
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="humanize">
+          <label for="humanize">Humanize</label>
+        </div>
+      </div>
+    </div>
+
+    <div id="humanize-options" class="humanize-options row">
+      <div class="form-group">
+        <label for="humanize-timing">Timing Variation</label>
+        <input type="range" id="humanize-timing" min="0" max="100" value="50">
+        <span id="humanize-timing-value">50%</span>
+      </div>
+      <div class="form-group">
+        <label for="humanize-velocity">Velocity Variation</label>
+        <input type="range" id="humanize-velocity" min="0" max="100" value="50">
+        <span id="humanize-velocity-value">50%</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Actions</h2>
+    <div class="buttons">
+      <button id="generate" class="btn-primary" disabled>Generate</button>
+      <button id="regenerate" class="btn-secondary" disabled>Regenerate Melody</button>
+      <button id="play" class="btn-play" disabled>Play</button>
+      <button id="stop" class="btn-stop" disabled>Stop</button>
+      <button id="download" class="btn-secondary" disabled>Download MIDI</button>
+    </div>
+    <div id="playback-info" class="playback-info hidden">
+      <div class="progress-bar">
+        <div id="progress-fill" class="progress-bar-fill"></div>
+      </div>
+      <div id="time-display" class="time-display">0:00 / 0:00</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Result</h2>
+    <div id="result" class="result"></div>
+  </div>
+
+  <script src="https://unpkg.com/tone@14.7.77/build/Tone.js"></script>
+  <script type="module">
+    import midisketch from '../dist/midisketch-wrapper.js';
+
+    let sketch = null;
+    let midiData = null;
+    let eventData = null;
+    let isPlaying = false;
+    let scheduledEvents = [];
+    let startTime = 0;
+    let totalDuration = 0;
+    let animationFrame = null;
+
+    // Cache data
+    let stylePresets = [];
+    let allChords = [];
+    let allForms = [];
+
+    // Tone.js instruments
+    let synths = {};
+
+    const $ = (id) => document.getElementById(id);
+
+    // Note name conversion
+    const NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+    const KEY_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+
+    function midiToNoteName(midi) {
+      const octave = Math.floor(midi / 12) - 1;
+      const note = NOTE_NAMES[midi % 12];
+      return `${note}${octave}`;
+    }
+
+    function transposeChordSymbol(symbol, key) {
+      // Transpose I, IV, V, vi etc to actual chord names
+      const chordMap = {
+        'I': 0, 'II': 2, 'III': 4, 'IV': 5, 'V': 7, 'VI': 9, 'VII': 11,
+        'i': 0, 'ii': 2, 'iii': 4, 'iv': 5, 'v': 7, 'vi': 9, 'vii': 11,
+        'bII': 1, 'bIII': 3, 'bVI': 8, 'bVII': 10,
+        '#IV': 6, '#iv': 6
+      };
+
+      // Parse the chord (e.g., "vi" -> root + quality)
+      const match = symbol.match(/^([b#]?)([IViv]+)(.*)/);
+      if (!match) return symbol;
+
+      const [, accidental, numeral, suffix] = match;
+      const lookupKey = accidental + numeral;
+      const interval = chordMap[lookupKey];
+      if (interval === undefined) return symbol;
+
+      const rootNote = (key + interval) % 12;
+      const isMinor = numeral === numeral.toLowerCase();
+
+      // Format chord name
+      let chordName = KEY_NAMES[rootNote];
+      if (isMinor) chordName += 'm';
+      if (suffix) chordName += suffix.replace('7', '7');
+
+      return chordName;
+    }
+
+    function transposeChordDisplay(display, key) {
+      // display is like "I - V - vi - IV"
+      const parts = display.split(' - ');
+      const transposed = parts.map(p => transposeChordSymbol(p.trim(), key));
+      return transposed.join(' - ');
+    }
+
+    function updateVocalRangeDisplay() {
+      const low = parseInt($('vocal-low').value);
+      const high = parseInt($('vocal-high').value);
+
+      // Ensure low <= high
+      if (low > high) {
+        $('vocal-high').value = low;
+      }
+
+      const lowName = midiToNoteName(low);
+      const highName = midiToNoteName(Math.max(low, high));
+      const range = Math.max(low, high) - low;
+
+      $('vocal-low-display').textContent = lowName;
+      $('vocal-high-display').textContent = highName;
+      $('vocal-range-info').textContent = `Range: ${lowName} - ${highName} (${range} semitones)`;
+
+      // Update piano highlight (C2=36, C7=96 -> 60 semitones)
+      const startPercent = ((low - 36) / 60) * 100;
+      const widthPercent = ((Math.max(low, high) - low) / 60) * 100;
+      $('vocal-highlight').style.left = `${startPercent}%`;
+      $('vocal-highlight').style.width = `${widthPercent}%`;
+    }
+
+    function updateBpmDisplay() {
+      const bpm = parseInt($('bpm').value);
+      $('bpm-value').textContent = bpm;
+
+      // Check if within style's recommended range
+      const styleId = parseInt($('style').value);
+      const preset = stylePresets.find(p => p.id === styleId);
+      if (preset) {
+        const defaultBpm = preset.tempoDefault;
+        const diff = Math.abs(bpm - defaultBpm);
+        if (diff === 0) {
+          $('bpm-recommendation').textContent = '✓ Default for this style';
+          $('bpm-recommendation').style.color = '#27ae60';
+        } else if (diff <= 20) {
+          $('bpm-recommendation').textContent = `Style default: ${defaultBpm}`;
+          $('bpm-recommendation').style.color = '#7f8c8d';
+        } else {
+          $('bpm-recommendation').textContent = `⚠ Style default: ${defaultBpm}`;
+          $('bpm-recommendation').style.color = '#e67e22';
+        }
+      }
+    }
+
+    async function init() {
+      try {
+        await midisketch.init();
+
+        $('version').textContent = `v${midisketch.getVersion()}`;
+        $('status').className = 'status ready';
+        $('status').textContent = 'Ready';
+
+        // Get all data
+        stylePresets = midisketch.getStylePresets();
+        allChords = midisketch.getChords();
+        allForms = midisketch.getStructures();
+
+        // Populate style presets
+        populateStyles();
+
+        // Enable generate button
+        $('generate').disabled = false;
+
+        // Setup event listeners
+        $('generate').addEventListener('click', generate);
+        $('regenerate').addEventListener('click', regenerateMelody);
+        $('play').addEventListener('click', play);
+        $('stop').addEventListener('click', stop);
+        $('download').addEventListener('click', downloadMidi);
+        $('style').addEventListener('change', onStyleChange);
+        $('chord').addEventListener('change', updateChordDisplay);
+
+        // Humanize options
+        $('humanize').addEventListener('change', () => {
+          $('humanize-options').classList.toggle('visible', $('humanize').checked);
+        });
+        $('humanize-timing').addEventListener('input', () => {
+          $('humanize-timing-value').textContent = $('humanize-timing').value + '%';
+        });
+        $('humanize-velocity').addEventListener('input', () => {
+          $('humanize-velocity-value').textContent = $('humanize-velocity').value + '%';
+        });
+
+        // Duration input handler
+        $('duration').addEventListener('input', () => {
+          const duration = parseInt($('duration').value) || 0;
+          const bpm = parseInt($('bpm').value) || 120;
+          if (duration > 0) {
+            $('form').disabled = true;
+            const mins = Math.floor(duration / 60);
+            const secs = duration % 60;
+            const bars = Math.round(duration * bpm / 240);
+            $('duration-hint').textContent = `~${mins}:${secs.toString().padStart(2, '0')} (${bars} bars @${bpm}BPM) - Form ignored`;
+          } else {
+            $('form').disabled = false;
+            $('duration-hint').textContent = '0 = use Form pattern';
+          }
+        });
+
+        $('bpm').addEventListener('input', () => {
+          updateBpmDisplay();
+          // Re-calculate duration hint when BPM changes
+          const event = new Event('input');
+          $('duration').dispatchEvent(event);
+        });
+
+        // Vocal range handlers
+        $('vocal-low').addEventListener('input', updateVocalRangeDisplay);
+        $('vocal-high').addEventListener('input', updateVocalRangeDisplay);
+
+        // Key change updates chord display
+        $('key').addEventListener('change', updateChordDisplay);
+
+        // Trigger initial style selection
+        onStyleChange();
+
+        // Initialize displays
+        updateVocalRangeDisplay();
+        updateBpmDisplay();
+
+      } catch (e) {
+        $('status').className = 'status error';
+        $('status').textContent = `Error: ${e.message}`;
+        console.error(e);
+      }
+    }
+
+    function populateStyles() {
+      const select = $('style');
+      select.innerHTML = '';
+      stylePresets.forEach((preset) => {
+        const option = document.createElement('option');
+        option.value = preset.id;
+        option.textContent = preset.displayName;
+        select.appendChild(option);
+      });
+    }
+
+    function onStyleChange() {
+      const styleId = parseInt($('style').value);
+      const preset = stylePresets.find(p => p.id === styleId) || stylePresets[0];
+
+      // Update description
+      $('style-description').textContent = preset.description;
+
+      // Set BPM to style default
+      $('bpm').value = preset.tempoDefault;
+      updateBpmDisplay();
+
+      // Update chord progressions (filtered by style)
+      const chordIds = midisketch.getProgressionsByStyle(styleId);
+      populateChords(chordIds);
+
+      // Update forms (filtered by style)
+      const formIds = midisketch.getFormsByStyle(styleId);
+      populateForms(formIds);
+
+      // Update vocal attitude options
+      updateVocalAttitudes(preset.allowedAttitudes);
+
+      updateChordDisplay();
+    }
+
+    function populateChords(chordIds) {
+      const select = $('chord');
+      select.innerHTML = '';
+      chordIds.forEach(id => {
+        const chord = allChords[id];
+        if (chord) {
+          const option = document.createElement('option');
+          option.value = id;
+          option.textContent = chord.name;
+          select.appendChild(option);
+        }
+      });
+    }
+
+    function populateForms(formIds) {
+      const select = $('form');
+      select.innerHTML = '';
+      formIds.forEach(id => {
+        const form = allForms[id];
+        if (form) {
+          const option = document.createElement('option');
+          option.value = id;
+          option.textContent = form.name;
+          select.appendChild(option);
+        }
+      });
+    }
+
+    function updateVocalAttitudes(allowedFlags) {
+      const select = $('vocal-attitude');
+      const options = select.options;
+
+      // Clean = 1, Expressive = 2, Raw = 4
+      options[0].disabled = !(allowedFlags & 1);  // Clean
+      options[1].disabled = !(allowedFlags & 2);  // Expressive
+      options[2].disabled = !(allowedFlags & 4);  // Raw
+
+      // Select first allowed option
+      for (let i = 0; i < options.length; i++) {
+        if (!options[i].disabled) {
+          select.value = options[i].value;
+          break;
+        }
+      }
+    }
+
+    function updateChordDisplay() {
+      const idx = parseInt($('chord').value);
+      const chord = allChords[idx];
+      const key = parseInt($('key').value);
+
+      if (chord?.display) {
+        const romanDisplay = chord.display;
+        const keyName = KEY_NAMES[key];
+        const transposedDisplay = transposeChordDisplay(romanDisplay, key);
+
+        $('chord-display').innerHTML = `
+          <div style="color: #7f8c8d; font-size: 0.85em;">${romanDisplay}</div>
+          <div class="chord-key-display">Key of ${keyName}: <strong>${transposedDisplay}</strong></div>
+        `;
+      } else {
+        $('chord-display').textContent = '';
+      }
+    }
+
+    function getSongConfig() {
+      return {
+        stylePresetId: parseInt($('style').value),
+        key: parseInt($('key').value),
+        bpm: parseInt($('bpm').value) || 0,
+        seed: parseInt($('seed').value) || 0,
+        chordProgressionId: parseInt($('chord').value),
+        formId: parseInt($('form').value),
+        vocalAttitude: parseInt($('vocal-attitude').value),
+        drumsEnabled: $('drums').checked,
+        arpeggioEnabled: $('arpeggio').checked,
+        vocalLow: parseInt($('vocal-low').value),
+        vocalHigh: parseInt($('vocal-high').value),
+        humanize: $('humanize').checked,
+        humanizeTiming: parseInt($('humanize-timing').value),
+        humanizeVelocity: parseInt($('humanize-velocity').value),
+        targetDurationSeconds: parseInt($('duration').value) || 0
+      };
+    }
+
+    function initSynths() {
+      // Dispose old synths
+      Object.values(synths).forEach(s => s.dispose());
+
+      // Create new synths for each track
+      synths = {
+        vocal: new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'triangle' },
+          envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.4 }
+        }).toDestination(),
+        chord: new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'sine' },
+          envelope: { attack: 0.05, decay: 0.2, sustain: 0.4, release: 0.8 }
+        }).toDestination(),
+        bass: new Tone.MonoSynth({
+          oscillator: { type: 'sawtooth' },
+          envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.3 },
+          filterEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.5, release: 0.2, baseFrequency: 200, octaves: 2 }
+        }).toDestination(),
+        drums: new Tone.MembraneSynth({
+          pitchDecay: 0.05,
+          octaves: 4,
+          envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.2 }
+        }).toDestination(),
+        arpeggio: new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'sawtooth' },
+          envelope: { attack: 0.01, decay: 0.15, sustain: 0.2, release: 0.3 }
+        }).toDestination()
+      };
+
+      // Adjust volumes
+      synths.vocal.volume.value = -6;
+      synths.chord.volume.value = -12;
+      synths.bass.volume.value = -8;
+      synths.drums.volume.value = -4;
+      synths.arpeggio.volume.value = -8;
+    }
+
+    function midiToFreq(midi) {
+      return Tone.Frequency(midi, 'midi').toFrequency();
+    }
+
+    function midiToNote(midi) {
+      return Tone.Frequency(midi, 'midi').toNote();
+    }
+
+    function generate() {
+      try {
+        stop(); // Stop any playing
+
+        // Destroy previous instance
+        if (sketch) {
+          sketch.destroy();
+        }
+
+        sketch = new midisketch.MidiSketch();
+        const config = getSongConfig();
+        sketch.generateFromConfig(config);
+
+        midiData = sketch.getMidi();
+        eventData = sketch.getEvents();
+
+        // Get style info
+        const styleId = parseInt($('style').value);
+        const preset = stylePresets.find(p => p.id === styleId) || stylePresets[0];
+        const chordIdx = parseInt($('chord').value);
+        const chord = allChords[chordIdx];
+
+        // Show result
+        const result = $('result');
+        result.className = 'result visible';
+        result.textContent = `Generated MIDI: ${midiData.length} bytes\n`;
+        result.textContent += `Style: ${preset.displayName}\n`;
+        result.textContent += `Chord: ${chord?.display || 'N/A'}\n`;
+        result.textContent += `BPM: ${eventData.bpm}\n`;
+        result.textContent += `Duration: ${formatTime(ticksToSeconds(eventData.duration_ticks, eventData.bpm))}`;
+
+        // Enable buttons
+        $('regenerate').disabled = false;
+        $('play').disabled = false;
+        $('download').disabled = false;
+
+        // Show playback info
+        $('playback-info').classList.remove('hidden');
+        totalDuration = ticksToSeconds(eventData.duration_ticks, eventData.bpm);
+        updateTimeDisplay(0);
+
+      } catch (e) {
+        $('result').className = 'result visible';
+        $('result').textContent = `Error: ${e.message}`;
+        console.error(e);
+      }
+    }
+
+    function regenerateMelody() {
+      if (!sketch) return;
+
+      try {
+        stop();
+        const seed = parseInt($('seed').value);
+        sketch.regenerateMelody(seed === 0 ? Date.now() : seed);
+        midiData = sketch.getMidi();
+        eventData = sketch.getEvents();
+
+        $('result').textContent = `Regenerated melody: ${midiData.length} bytes`;
+      } catch (e) {
+        $('result').textContent = `Error: ${e.message}`;
+        console.error(e);
+      }
+    }
+
+    function ticksToSeconds(ticks, bpm) {
+      const ticksPerBeat = 480;
+      const secondsPerBeat = 60 / bpm;
+      return (ticks / ticksPerBeat) * secondsPerBeat;
+    }
+
+    function formatTime(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function updateTimeDisplay(currentTime) {
+      $('time-display').textContent = `${formatTime(currentTime)} / ${formatTime(totalDuration)}`;
+      const progress = totalDuration > 0 ? (currentTime / totalDuration) * 100 : 0;
+      $('progress-fill').style.width = `${progress}%`;
+    }
+
+    async function play() {
+      if (!eventData || isPlaying) return;
+
+      try {
+        // Start audio context
+        await Tone.start();
+
+        // Initialize synths
+        initSynths();
+
+        isPlaying = true;
+        $('play').disabled = true;
+        $('stop').disabled = false;
+        $('generate').disabled = true;
+        $('regenerate').disabled = true;
+
+        const bpm = eventData.bpm;
+        Tone.Transport.bpm.value = bpm;
+
+        // Clear previous scheduled events
+        scheduledEvents.forEach(id => Tone.Transport.clear(id));
+        scheduledEvents = [];
+
+        // Schedule notes for each track
+        eventData.tracks.forEach(track => {
+          const synth = synths[track.name.toLowerCase()];
+          if (!synth) return;
+
+          track.notes.forEach(note => {
+            const startTime = ticksToSeconds(note.start_ticks, bpm);
+            const duration = ticksToSeconds(note.duration_ticks, bpm);
+            const velocity = note.velocity / 127;
+
+            if (track.name.toLowerCase() === 'drums') {
+              const id = Tone.Transport.schedule((time) => {
+                synth.triggerAttackRelease(midiToFreq(note.pitch), duration, time, velocity);
+              }, startTime);
+              scheduledEvents.push(id);
+            } else {
+              const id = Tone.Transport.schedule((time) => {
+                synth.triggerAttackRelease(midiToNote(note.pitch), duration, time, velocity);
+              }, startTime);
+              scheduledEvents.push(id);
+            }
+          });
+        });
+
+        // Schedule stop at end
+        const endTime = ticksToSeconds(eventData.duration_ticks, bpm);
+        const stopId = Tone.Transport.schedule(() => {
+          stop();
+        }, endTime + 0.1);
+        scheduledEvents.push(stopId);
+
+        // Start transport
+        startTime = Tone.now();
+        Tone.Transport.start();
+
+        // Update progress
+        updateProgress();
+
+      } catch (e) {
+        console.error('Playback error:', e);
+        stop();
+      }
+    }
+
+    function updateProgress() {
+      if (!isPlaying) return;
+
+      const elapsed = Tone.Transport.seconds;
+      updateTimeDisplay(elapsed);
+
+      animationFrame = requestAnimationFrame(updateProgress);
+    }
+
+    function stop() {
+      isPlaying = false;
+
+      // Stop transport
+      Tone.Transport.stop();
+      Tone.Transport.cancel();
+
+      // Clear scheduled events
+      scheduledEvents.forEach(id => Tone.Transport.clear(id));
+      scheduledEvents = [];
+
+      // Cancel animation
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+        animationFrame = null;
+      }
+
+      // Reset UI
+      $('play').disabled = !eventData;
+      $('stop').disabled = true;
+      $('generate').disabled = false;
+      $('regenerate').disabled = !sketch;
+
+      updateTimeDisplay(0);
+    }
+
+    function downloadMidi() {
+      if (!midiData) return;
+      midisketch.downloadMidi(midiData, 'midi-sketch-output.mid');
+    }
+
+    init();
+  </script>
+</body>
+</html>

@@ -11,6 +11,12 @@ namespace midisketch {
 // @returns Vector of Section structs representing the song structure
 std::vector<Section> buildStructure(StructurePattern pattern);
 
+// Builds a list of sections to match a target duration.
+// @param target_seconds Target duration in seconds
+// @param bpm Tempo in beats per minute
+// @returns Vector of Section structs matching the target duration
+std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t bpm);
+
 // Calculates the total duration in ticks for the given sections.
 // @param sections Vector of sections
 // @returns Total ticks from start to end of last section
