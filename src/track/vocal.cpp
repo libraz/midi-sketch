@@ -10,6 +10,21 @@ namespace midisketch {
 
 namespace {
 
+// Phase 2: FunctionalProfile adjustment for tension usage
+float getFunctionalProfileTensionMultiplier(FunctionalProfile profile) {
+  switch (profile) {
+    case FunctionalProfile::Loop:
+      return 1.0f;  // Standard tension
+    case FunctionalProfile::TensionBuild:
+      return 1.5f;  // More tension for building sections
+    case FunctionalProfile::CadenceStrong:
+      return 0.5f;  // Less tension for strong cadences (more resolution)
+    case FunctionalProfile::Stable:
+      return 0.7f;  // Slightly less tension for stable progressions
+  }
+  return 1.0f;
+}
+
 // Major scale semitones (relative to tonic)
 constexpr int SCALE[7] = {0, 2, 4, 5, 7, 9, 11};
 
@@ -210,21 +225,47 @@ bool shouldUseAnticipation(float beat, SectionType section, std::mt19937& rng) {
 void generateVocalTrack(MidiTrack& track, Song& song,
                         const GeneratorParams& params, std::mt19937& rng,
                         const MidiTrack* motif_track) {
-  // BackgroundMotif suppression settings
+  // BackgroundMotif and SynthDriven suppression settings
   const bool is_background_motif =
       params.composition_style == CompositionStyle::BackgroundMotif;
+  const bool is_synth_driven =
+      params.composition_style == CompositionStyle::SynthDriven;
+  // Note: suppress_vocal is implicitly handled through is_background_motif and is_synth_driven
   const MotifVocalParams& vocal_params = params.motif_vocal;
 
+  // Phase 2: VocalAttitude and StyleMelodyParams
+  const VocalAttitude vocal_attitude = params.vocal_attitude;
+  const StyleMelodyParams& melody_params = params.melody_params;
+
+  // Phase 2: Get FunctionalProfile from chord progression
+  const ChordProgressionMeta& chord_meta = getChordProgressionMeta(params.chord_id);
+  float profile_multiplier = getFunctionalProfileTensionMultiplier(chord_meta.profile);
+
+  // Tension usage based on VocalAttitude and FunctionalProfile
+  float effective_tension_usage = melody_params.tension_usage * profile_multiplier;
+  if (vocal_attitude == VocalAttitude::Clean) {
+    effective_tension_usage *= 0.3f;  // Reduce tension for clean
+  } else if (vocal_attitude == VocalAttitude::Expressive) {
+    effective_tension_usage *= 1.5f;  // Increase tension for expressive
+    effective_tension_usage = std::min(effective_tension_usage, 0.6f);
+  }
+  // Note: Raw attitude is applied locally per section (see below)
+
   // Calculate max interval in scale degrees
+  // Convert semitones to approximate scale degrees (7 semitones ≈ 4 scale degrees)
+  int max_interval_from_params = (melody_params.max_leap_interval * 4) / 7;
+  max_interval_from_params = std::max(2, std::min(max_interval_from_params, 7));
   int max_interval_degrees = is_background_motif
                                  ? (vocal_params.interval_limit <= 4 ? 2 : 4)
-                                 : 7;
+                                 : max_interval_from_params;
 
-  // Velocity reduction for background
-  float velocity_scale = (is_background_motif &&
-                          vocal_params.prominence == VocalProminence::Background)
-                             ? 0.7f
-                             : 1.0f;
+  // Velocity reduction for background/synth-driven modes
+  float velocity_scale = 1.0f;
+  if (is_background_motif && vocal_params.prominence == VocalProminence::Background) {
+    velocity_scale = 0.7f;
+  } else if (is_synth_driven) {
+    velocity_scale = 0.75f;  // Subdued vocals in SynthDriven mode
+  }
 
   // Effective vocal range (adjusted based on motif track if present)
   uint8_t effective_vocal_low = params.vocal_low;
@@ -257,7 +298,8 @@ void generateVocalTrack(MidiTrack& track, Song& song,
   }
 
   const auto& progression = getChordProgression(params.chord_id);
-  int key_offset = static_cast<int>(params.key);
+  // Internal processing is always in C major; transpose at MIDI output time
+  int key_offset = 0;
 
   // Helper: clamp pitch to effective vocal range
   auto clampPitch = [&](int pitch) -> uint8_t {
@@ -305,36 +347,16 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     bool use_cached = is_repeat &&
                       (phrase_cache.find(section.type) != phrase_cache.end());
 
-    // Calculate transpose for modulation
-    int8_t transpose = 0;
-    if (song.modulationTick() > 0 &&
-        section.start_tick >= song.modulationTick()) {
-      transpose = song.modulationAmount();
-    }
+    // Modulation is applied at MIDI output time (in MidiWriter), not here.
+    // This ensures consistent handling across all tracks.
 
     if (use_cached) {
-      // Compute section-specific range for proper clamping
-      // (must match the range used when the phrase was originally generated)
-      int8_t cache_register_shift = 0;
-      switch (section.type) {
-        case SectionType::A: cache_register_shift = -2; break;
-        case SectionType::B: cache_register_shift = 2; break;
-        case SectionType::Chorus: cache_register_shift = 5; break;
-        default: break;
-      }
-      int cache_vocal_low = std::clamp(
-          static_cast<int>(effective_vocal_low) + cache_register_shift, 36, 96);
-      int cache_vocal_high = std::clamp(
-          static_cast<int>(effective_vocal_high) + cache_register_shift, 36, 96);
-
+      // Reuse cached phrase with absolute tick offset
+      // Modulation transpose will be applied by MidiWriter at output time
       const auto& cached = phrase_cache[section.type];
       for (const auto& note : cached) {
         Tick absolute_tick = section.start_tick + note.startTick;
-        int transposed_pitch = note.note + transpose;
-        // Clamp to section-specific range (same as when originally generated)
-        transposed_pitch = std::clamp(transposed_pitch, cache_vocal_low, cache_vocal_high);
-        track.addNote(absolute_tick, note.duration,
-                      static_cast<uint8_t>(transposed_pitch), note.velocity);
+        track.addNote(absolute_tick, note.duration, note.note, note.velocity);
       }
       continue;
     }
@@ -422,6 +444,32 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       }
     }
 
+    // Apply SynthDriven suppression (arpeggio is foreground)
+    if (is_synth_driven) {
+      rhythm_pattern_idx = 3;  // Use sparse pattern
+      note_density *= 0.5f;    // Reduce density significantly
+    }
+
+    // Phase 2: Apply Section.vocal_density to note density
+    switch (section.vocal_density) {
+      case VocalDensity::None:
+        continue;  // Skip this section entirely
+      case VocalDensity::Sparse:
+        note_density *= 0.6f;  // Reduce to 60% of current density
+        rhythm_pattern_idx = 3;  // Use sparse rhythm pattern
+        break;
+      case VocalDensity::Full:
+        // No modification - use full density
+        break;
+    }
+
+    // Phase 3: Raw attitude local application
+    // Raw is only applied in sections where deviation_allowed is true
+    bool apply_raw = (vocal_attitude == VocalAttitude::Raw) &&
+                     section.deviation_allowed;
+    bool allow_non_chord_landing = apply_raw;  // Allow non-chord tone resolution
+    int raw_leap_boost = apply_raw ? 2 : 0;  // Allow larger leaps
+
     // Chorus hook: store first 2-bar phrase and repeat it
     std::vector<NoteEvent> chorus_hook_notes;
     bool is_chorus = (section.type == SectionType::Chorus);
@@ -479,9 +527,11 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       }
 
       // Apply interval limiting for BackgroundMotif
+      // Phase 3: Raw allows larger leaps
+      int section_max_interval = max_interval_degrees + raw_leap_boost;
       if (is_background_motif) {
         for (auto& degree : contour.degrees) {
-          degree = std::clamp(degree, -max_interval_degrees, max_interval_degrees);
+          degree = std::clamp(degree, -section_max_interval, section_max_interval);
         }
       }
 
@@ -519,6 +569,26 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         // Calculate scale degree
         int scale_degree = current_chord_root + contour_degree;
 
+        // Phase 2: Apply phrase_end_resolution at phrase endings
+        // Check if this is the last note in the motif (phrase ending)
+        bool is_last_note_in_motif = (contour_idx == contour.degrees.size() - 1) ||
+                                      (&rn == &rhythm.back());
+        if (is_phrase_ending && is_last_note_in_motif) {
+          std::uniform_real_distribution<float> res_dist(0.0f, 1.0f);
+          if (res_dist(rng) < melody_params.phrase_end_resolution) {
+            force_chord_tone = true;  // Force resolution to chord tone
+          }
+        }
+
+        // Phase 3: Raw allows non-chord tone landing - skip chord tone enforcement
+        if (allow_non_chord_landing) {
+          // Raw: randomly allow non-chord tones even on strong beats (50% chance)
+          std::uniform_real_distribution<float> raw_dist(0.0f, 1.0f);
+          if (raw_dist(rng) < 0.5f) {
+            force_chord_tone = false;
+          }
+        }
+
         // On strong beats or marked positions, use chord tones
         if (rn.strong || force_chord_tone) {
           if (!isChordTone(scale_degree, current_chord_root, current_is_minor)) {
@@ -534,6 +604,15 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         // Check for large leap (6+ semitones) and apply step-back rule
         if (prev_pitch > 0) {
           int interval = pitch - prev_pitch;
+
+          // Phase 2: Apply allow_unison_repeat constraint
+          if (!melody_params.allow_unison_repeat && pitch == prev_pitch) {
+            // Avoid unison repetition - move by step
+            std::uniform_int_distribution<int> dir_dist(0, 1);
+            int direction = (dir_dist(rng) == 0) ? 1 : -1;
+            pitch = prev_pitch + direction * 2;  // Move by a scale step
+            interval = pitch - prev_pitch;
+          }
 
           // If previous was a large leap, move in opposite direction by step
           if (std::abs(prev_interval) >= 7) {  // 5th or larger
@@ -571,12 +650,34 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         int next_chord_root = (bar_offset == 0) ? chord_root2 : chord_root1;
 
         // Check for suspension or anticipation (not in BackgroundMotif mode)
-        bool use_suspension = !is_background_motif &&
-                              rn.eighths >= 2 &&
-                              shouldUseSuspension(beat_in_motif, section.type, rng);
-        bool use_anticipation = !is_background_motif &&
-                                !use_suspension &&
-                                shouldUseAnticipation(beat_in_motif, section.type, rng);
+        // Phase 2: Adjust based on VocalAttitude
+        // Phase 3: Raw attitude further increases non-harmonic tones
+        bool use_suspension = false;
+        bool use_anticipation = false;
+        if (!is_background_motif && rn.eighths >= 2) {
+          // Calculate base probability then adjust by attitude
+          float attitude_factor = 1.0f;
+          if (vocal_attitude == VocalAttitude::Clean) {
+            attitude_factor = 0.2f;  // Greatly reduce non-harmonic tones
+          } else if (vocal_attitude == VocalAttitude::Expressive) {
+            attitude_factor = 1.8f;  // Increase expressiveness
+          }
+          // Phase 3: Raw increases non-harmonic tones in allowed sections
+          if (apply_raw) {
+            attitude_factor = 2.5f;  // Maximum expressiveness for raw
+          }
+
+          // Check suspension with attitude-adjusted probability
+          if (shouldUseSuspension(beat_in_motif, section.type, rng)) {
+            std::uniform_real_distribution<float> check(0.0f, 1.0f);
+            use_suspension = (check(rng) < attitude_factor);
+          }
+          // Check anticipation with attitude-adjusted probability
+          if (!use_suspension && shouldUseAnticipation(beat_in_motif, section.type, rng)) {
+            std::uniform_real_distribution<float> check(0.0f, 1.0f);
+            use_anticipation = (check(rng) < attitude_factor);
+          }
+        }
 
         if (use_suspension) {
           // Apply 4-3 suspension: suspended note + resolution

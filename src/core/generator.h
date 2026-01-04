@@ -17,10 +17,22 @@ class Generator {
   // @param params Generation parameters
   void generate(const GeneratorParams& params);
 
+  // Generates all tracks from a SongConfig (new API).
+  // Converts SongConfig to GeneratorParams and generates.
+  // @param config Song configuration
+  void generateFromConfig(const SongConfig& config);
+
   // Regenerates only the melody track with a new seed.
   // Other tracks remain unchanged.
   // @param new_seed New random seed (0 = auto)
   void regenerateMelody(uint32_t new_seed = 0);
+
+  // Regenerates only the vocal track with updated VocalAttitude.
+  // Other tracks remain unchanged.
+  // Uses the VocalAttitude and StyleMelodyParams from the config.
+  // @param config SongConfig containing the new VocalAttitude
+  // @param new_seed New random seed (0 = keep current seed)
+  void regenerateVocalFromConfig(const SongConfig& config, uint32_t new_seed = 0);
 
   // Sets the melody from saved MelodyData.
   // Replaces the current vocal track with the saved melody.

@@ -3,6 +3,7 @@
 
 #include "core/types.h"
 #include <cstdint>
+#include <vector>
 
 namespace midisketch {
 
@@ -14,6 +15,9 @@ constexpr uint8_t MOOD_COUNT = 20;
 
 // Number of available chord progressions
 constexpr uint8_t CHORD_COUNT = 20;
+
+// Number of available style presets (Phase 3: 4 presets)
+constexpr uint8_t STYLE_PRESET_COUNT = 4;
 
 // Drum pattern style categories
 enum class DrumStyle : uint8_t {
@@ -49,6 +53,41 @@ const char* getMoodName(Mood mood);
 // @param mood Mood preset
 // @returns DrumStyle category
 DrumStyle getMoodDrumStyle(Mood mood);
+
+// ============================================================================
+// StylePreset API (Phase 1)
+// ============================================================================
+
+// Returns the style preset for the given ID.
+// @param style_id Style preset ID (0-2 for Phase 1)
+// @returns Reference to StylePreset struct
+const StylePreset& getStylePreset(uint8_t style_id);
+
+// Returns form candidates compatible with a style.
+// @param style_id Style preset ID
+// @returns Vector of compatible StructurePattern values
+std::vector<StructurePattern> getFormsByStyle(uint8_t style_id);
+
+// Creates a default SongConfig from a style preset.
+// @param style_id Style preset ID
+// @returns SongConfig with style defaults
+SongConfig createDefaultSongConfig(uint8_t style_id);
+
+// Validation error codes.
+enum class SongConfigError : uint8_t {
+  OK = 0,
+  InvalidStylePreset,
+  InvalidChordProgression,
+  InvalidForm,
+  InvalidVocalAttitude,
+  InvalidVocalRange,
+  InvalidBpm
+};
+
+// Validates a SongConfig.
+// @param config SongConfig to validate
+// @returns Error code (OK if valid)
+SongConfigError validateSongConfig(const SongConfig& config);
 
 }  // namespace midisketch
 

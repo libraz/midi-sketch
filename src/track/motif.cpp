@@ -14,7 +14,7 @@ constexpr int SCALE[7] = {0, 2, 4, 5, 7, 9, 11};
 // Avoid notes for common chords (relative to chord root in semitones)
 // These notes create dissonance when held against the chord
 constexpr int AVOID_MAJOR = 5;  // Perfect 4th above root (e.g., F over C major)
-constexpr int AVOID_MINOR = 6;  // Tritone (e.g., Bb over E minor in C major)
+constexpr int AVOID_MINOR = 8;  // Minor 6th above root (e.g., C over E minor - clashes with 5th)
 
 // Tension intervals in semitones from chord root
 constexpr int TENSION_9TH = 14;   // 9th = 2nd + octave (14 semitones from root)
@@ -239,8 +239,8 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params,
   const MotifParams& motif_params = params.motif;
   std::vector<NoteEvent> pattern;
 
-  // Determine base note (register) with key offset
-  int key_offset = static_cast<int>(params.key);
+  // Internal processing is always in C major; transpose at MIDI output time
+  int key_offset = 0;
   uint8_t base_note = motif_params.register_high ? 67 : 60;  // G4 or C4
 
   // Generate rhythm positions
@@ -316,8 +316,8 @@ void generateMotifTrack(MidiTrack& track, Song& song,
         int chord_idx = note_bar % 4;
         int8_t degree = progression.degrees[chord_idx];
 
-        // Get chord info
-        uint8_t chord_root = degreeToRoot(degree, params.key);
+        // Get chord info (use Key::C for internal processing)
+        uint8_t chord_root = degreeToRoot(degree, Key::C);
         Chord chord = getChordNotes(degree);
         bool is_minor = (chord.intervals[1] == 3);
         ChordQuality quality = getChordQuality(chord);

@@ -164,6 +164,12 @@
       font-size: 0.9em;
       margin-top: 5px;
     }
+    .style-description {
+      color: #7f8c8d;
+      font-size: 0.85em;
+      margin-top: 5px;
+      font-style: italic;
+    }
     .playback-info {
       display: flex;
       align-items: center;
@@ -195,6 +201,13 @@
       min-width: 100px;
       text-align: right;
     }
+    .humanize-options {
+      display: none;
+      margin-top: 10px;
+    }
+    .humanize-options.visible {
+      display: flex;
+    }
   </style>
 </head>
 <body>
@@ -203,22 +216,24 @@
   <div id="status" class="status loading">Loading WASM module...</div>
 
   <div class="section">
-    <h2>Parameters</h2>
+    <h2>Style & Structure</h2>
 
     <div class="form-group">
-      <label for="structure">Structure</label>
-      <select id="structure"></select>
+      <label for="style">Style Preset</label>
+      <select id="style"></select>
+      <div id="style-description" class="style-description"></div>
     </div>
 
-    <div class="form-group">
-      <label for="mood">Mood</label>
-      <select id="mood"></select>
-    </div>
-
-    <div class="form-group">
-      <label for="chord">Chord Progression</label>
-      <select id="chord"></select>
-      <div id="chord-display" class="chord-display"></div>
+    <div class="row">
+      <div class="form-group">
+        <label for="chord">Chord Progression</label>
+        <select id="chord"></select>
+        <div id="chord-display" class="chord-display"></div>
+      </div>
+      <div class="form-group">
+        <label for="form">Form</label>
+        <select id="form"></select>
+      </div>
     </div>
 
     <div class="row">
@@ -241,9 +256,13 @@
       </div>
       <div class="form-group">
         <label for="bpm">BPM (0=auto)</label>
-        <input type="number" id="bpm" value="0" min="0" max="180">
+        <input type="number" id="bpm" value="0" min="0" max="200">
       </div>
     </div>
+  </div>
+
+  <div class="section">
+    <h2>Vocal & Expression</h2>
 
     <div class="row">
       <div class="form-group">
@@ -255,10 +274,23 @@
         <input type="number" id="vocal-high" value="74" min="36" max="96">
       </div>
       <div class="form-group">
-        <label for="seed">Seed (0=random)</label>
-        <input type="number" id="seed" value="0" min="0">
+        <label for="vocal-attitude">Vocal Style</label>
+        <select id="vocal-attitude">
+          <option value="0">Clean</option>
+          <option value="1">Expressive</option>
+          <option value="2">Raw</option>
+        </select>
       </div>
     </div>
+
+    <div class="form-group">
+      <label for="seed">Seed (0=random)</label>
+      <input type="number" id="seed" value="0" min="0">
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Options</h2>
 
     <div class="row">
       <div class="form-group">
@@ -269,33 +301,19 @@
       </div>
       <div class="form-group">
         <div class="checkbox-group">
-          <input type="checkbox" id="modulation">
-          <label for="modulation">Modulation</label>
+          <input type="checkbox" id="arpeggio">
+          <label for="arpeggio">Arpeggio</label>
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="humanize">
+          <label for="humanize">Humanize</label>
         </div>
       </div>
     </div>
 
-    <div class="form-group">
-      <label for="composition-style">Composition Style</label>
-      <select id="composition-style">
-        <option value="0">Melody Lead (Traditional)</option>
-        <option value="1">Background Motif</option>
-        <option value="2">Synth Driven (YOASOBI-style)</option>
-      </select>
-    </div>
-  </div>
-
-  <div class="section">
-    <h2>Advanced Options</h2>
-
-    <div class="form-group">
-      <div class="checkbox-group">
-        <input type="checkbox" id="humanize">
-        <label for="humanize">Humanize (timing/velocity variation)</label>
-      </div>
-    </div>
-
-    <div class="row" id="humanize-options" style="display: none;">
+    <div id="humanize-options" class="humanize-options row">
       <div class="form-group">
         <label for="humanize-timing">Timing Variation</label>
         <input type="range" id="humanize-timing" min="0" max="100" value="50">
@@ -305,100 +323,6 @@
         <label for="humanize-velocity">Velocity Variation</label>
         <input type="range" id="humanize-velocity" min="0" max="100" value="50">
         <span id="humanize-velocity-value">50%</span>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="form-group">
-        <div class="checkbox-group">
-          <input type="checkbox" id="chord-ext-sus">
-          <label for="chord-ext-sus">Sus2/Sus4 Chords</label>
-        </div>
-      </div>
-      <div class="form-group">
-        <div class="checkbox-group">
-          <input type="checkbox" id="chord-ext-7th">
-          <label for="chord-ext-7th">7th Chords</label>
-        </div>
-      </div>
-    </div>
-
-    <div class="row" id="chord-ext-options" style="display: none;">
-      <div class="form-group">
-        <label for="sus-probability">Sus Probability</label>
-        <input type="range" id="sus-probability" min="0" max="100" value="20">
-        <span id="sus-probability-value">20%</span>
-      </div>
-      <div class="form-group">
-        <label for="7th-probability">7th Probability</label>
-        <input type="range" id="7th-probability" min="0" max="100" value="30">
-        <span id="7th-probability-value">30%</span>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="form-group">
-        <div class="checkbox-group">
-          <input type="checkbox" id="chord-ext-9th">
-          <label for="chord-ext-9th">9th Chords (YOASOBI-style)</label>
-        </div>
-      </div>
-    </div>
-
-    <div class="row" id="chord-ext-9th-options" style="display: none;">
-      <div class="form-group">
-        <label for="9th-probability">9th Probability</label>
-        <input type="range" id="9th-probability" min="0" max="100" value="25">
-        <span id="9th-probability-value">25%</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="section">
-    <h2>Arpeggio</h2>
-
-    <div class="form-group">
-      <div class="checkbox-group">
-        <input type="checkbox" id="arpeggio-enabled">
-        <label for="arpeggio-enabled">Enable Arpeggio Track</label>
-      </div>
-    </div>
-
-    <div id="arpeggio-options" style="display: none;">
-      <div class="row">
-        <div class="form-group">
-          <label for="arpeggio-pattern">Pattern</label>
-          <select id="arpeggio-pattern">
-            <option value="0">Up</option>
-            <option value="1">Down</option>
-            <option value="2">Up-Down</option>
-            <option value="3">Random</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="arpeggio-speed">Speed</label>
-          <select id="arpeggio-speed">
-            <option value="0">8th Notes</option>
-            <option value="1" selected>16th Notes</option>
-            <option value="2">Triplets</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="row">
-        <div class="form-group">
-          <label for="arpeggio-octave">Octave Range</label>
-          <select id="arpeggio-octave">
-            <option value="1">1 Octave</option>
-            <option value="2" selected>2 Octaves</option>
-            <option value="3">3 Octaves</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="arpeggio-gate">Gate Length</label>
-          <input type="range" id="arpeggio-gate" min="10" max="100" value="80">
-          <span id="arpeggio-gate-value">80%</span>
-        </div>
       </div>
     </div>
   </div>
@@ -427,18 +351,21 @@
 
   <script src="https://unpkg.com/tone@14.7.77/build/Tone.js"></script>
   <script type="module">
-    // Import the wrapper
     import midisketch from '../dist/midisketch-wrapper.js';
 
     let sketch = null;
     let midiData = null;
     let eventData = null;
-    let chords = [];
     let isPlaying = false;
     let scheduledEvents = [];
     let startTime = 0;
     let totalDuration = 0;
     let animationFrame = null;
+
+    // Cache data
+    let stylePresets = [];
+    let allChords = [];
+    let allForms = [];
 
     // Tone.js instruments
     let synths = {};
@@ -453,10 +380,13 @@
         $('status').className = 'status ready';
         $('status').textContent = 'Ready';
 
-        // Populate dropdowns
-        populateStructures();
-        populateMoods();
-        populateChords();
+        // Get all data
+        stylePresets = midisketch.getStylePresets();
+        allChords = midisketch.getChords();
+        allForms = midisketch.getStructures();
+
+        // Populate style presets
+        populateStyles();
 
         // Enable generate button
         $('generate').disabled = false;
@@ -467,11 +397,12 @@
         $('play').addEventListener('click', play);
         $('stop').addEventListener('click', stop);
         $('download').addEventListener('click', downloadMidi);
+        $('style').addEventListener('change', onStyleChange);
         $('chord').addEventListener('change', updateChordDisplay);
 
-        // Advanced options event listeners
+        // Humanize options
         $('humanize').addEventListener('change', () => {
-          $('humanize-options').style.display = $('humanize').checked ? 'flex' : 'none';
+          $('humanize-options').classList.toggle('visible', $('humanize').checked);
         });
         $('humanize-timing').addEventListener('input', () => {
           $('humanize-timing-value').textContent = $('humanize-timing').value + '%';
@@ -479,40 +410,10 @@
         $('humanize-velocity').addEventListener('input', () => {
           $('humanize-velocity-value').textContent = $('humanize-velocity').value + '%';
         });
-        $('chord-ext-sus').addEventListener('change', updateChordExtOptions);
-        $('chord-ext-7th').addEventListener('change', updateChordExtOptions);
-        $('sus-probability').addEventListener('input', () => {
-          $('sus-probability-value').textContent = $('sus-probability').value + '%';
-        });
-        $('7th-probability').addEventListener('input', () => {
-          $('7th-probability-value').textContent = $('7th-probability').value + '%';
-        });
 
-        // 9th chord extension
-        $('chord-ext-9th').addEventListener('change', () => {
-          $('chord-ext-9th-options').style.display = $('chord-ext-9th').checked ? 'flex' : 'none';
-        });
-        $('9th-probability').addEventListener('input', () => {
-          $('9th-probability-value').textContent = $('9th-probability').value + '%';
-        });
+        // Trigger initial style selection
+        onStyleChange();
 
-        // Arpeggio options
-        $('arpeggio-enabled').addEventListener('change', () => {
-          $('arpeggio-options').style.display = $('arpeggio-enabled').checked ? 'block' : 'none';
-        });
-        $('arpeggio-gate').addEventListener('input', () => {
-          $('arpeggio-gate-value').textContent = $('arpeggio-gate').value + '%';
-        });
-
-        // Composition style: auto-enable arpeggio for SynthDriven
-        $('composition-style').addEventListener('change', () => {
-          if ($('composition-style').value === '2') {
-            $('arpeggio-enabled').checked = true;
-            $('arpeggio-options').style.display = 'block';
-          }
-        });
-
-        updateChordDisplay();
       } catch (e) {
         $('status').className = 'status error';
         $('status').textContent = `Error: ${e.message}`;
@@ -520,81 +421,109 @@
       }
     }
 
-    function populateStructures() {
-      const select = $('structure');
-      const structures = midisketch.getStructures();
-      structures.forEach((s, i) => {
+    function populateStyles() {
+      const select = $('style');
+      select.innerHTML = '';
+      stylePresets.forEach((preset) => {
         const option = document.createElement('option');
-        option.value = i;
-        option.textContent = s.name;
+        option.value = preset.id;
+        option.textContent = preset.displayName;
         select.appendChild(option);
       });
     }
 
-    function populateMoods() {
-      const select = $('mood');
-      const moods = midisketch.getMoods();
-      moods.forEach((m, i) => {
-        const option = document.createElement('option');
-        option.value = i;
-        option.textContent = `${m.name} (${m.defaultBpm} BPM)`;
-        select.appendChild(option);
-      });
+    function onStyleChange() {
+      const styleId = parseInt($('style').value);
+      const preset = stylePresets.find(p => p.id === styleId) || stylePresets[0];
+
+      // Update description
+      $('style-description').textContent = preset.description;
+
+      // Update BPM placeholder
+      $('bpm').placeholder = preset.tempoDefault;
+
+      // Update chord progressions (filtered by style)
+      const chordIds = midisketch.getProgressionsByStyle(styleId);
+      populateChords(chordIds);
+
+      // Update forms (filtered by style)
+      const formIds = midisketch.getFormsByStyle(styleId);
+      populateForms(formIds);
+
+      // Update vocal attitude options
+      updateVocalAttitudes(preset.allowedAttitudes);
+
+      updateChordDisplay();
     }
 
-    function populateChords() {
+    function populateChords(chordIds) {
       const select = $('chord');
-      chords = midisketch.getChords();
-      chords.forEach((c, i) => {
-        const option = document.createElement('option');
-        option.value = i;
-        option.textContent = c.name;
-        select.appendChild(option);
+      select.innerHTML = '';
+      chordIds.forEach(id => {
+        const chord = allChords[id];
+        if (chord) {
+          const option = document.createElement('option');
+          option.value = id;
+          option.textContent = chord.name;
+          select.appendChild(option);
+        }
       });
+    }
+
+    function populateForms(formIds) {
+      const select = $('form');
+      select.innerHTML = '';
+      formIds.forEach(id => {
+        const form = allForms[id];
+        if (form) {
+          const option = document.createElement('option');
+          option.value = id;
+          option.textContent = form.name;
+          select.appendChild(option);
+        }
+      });
+    }
+
+    function updateVocalAttitudes(allowedFlags) {
+      const select = $('vocal-attitude');
+      const options = select.options;
+
+      // Clean = 1, Expressive = 2, Raw = 4
+      options[0].disabled = !(allowedFlags & 1);  // Clean
+      options[1].disabled = !(allowedFlags & 2);  // Expressive
+      options[2].disabled = !(allowedFlags & 4);  // Raw
+
+      // Select first allowed option
+      for (let i = 0; i < options.length; i++) {
+        if (!options[i].disabled) {
+          select.value = options[i].value;
+          break;
+        }
+      }
     }
 
     function updateChordDisplay() {
       const idx = parseInt($('chord').value);
-      $('chord-display').textContent = chords[idx]?.display || '';
+      const chord = allChords[idx];
+      $('chord-display').textContent = chord?.display || '';
     }
 
-    function updateChordExtOptions() {
-      const show = $('chord-ext-sus').checked || $('chord-ext-7th').checked;
-      $('chord-ext-options').style.display = show ? 'flex' : 'none';
-    }
-
-    function getParams() {
+    function getSongConfig() {
       return {
-        structureId: parseInt($('structure').value),
-        moodId: parseInt($('mood').value),
-        chordId: parseInt($('chord').value),
+        stylePresetId: parseInt($('style').value),
         key: parseInt($('key').value),
+        bpm: parseInt($('bpm').value) || 0,
+        seed: parseInt($('seed').value) || 0,
+        chordProgressionId: parseInt($('chord').value),
+        formId: parseInt($('form').value),
+        vocalAttitude: parseInt($('vocal-attitude').value),
         drumsEnabled: $('drums').checked,
-        modulation: $('modulation').checked,
+        arpeggioEnabled: $('arpeggio').checked,
         vocalLow: parseInt($('vocal-low').value),
         vocalHigh: parseInt($('vocal-high').value),
-        bpm: parseInt($('bpm').value),
-        seed: parseInt($('seed').value),
-        // Humanize options
         humanize: $('humanize').checked,
         humanizeTiming: parseInt($('humanize-timing').value),
-        humanizeVelocity: parseInt($('humanize-velocity').value),
-        // Chord extension options
-        chordExtSus: $('chord-ext-sus').checked,
-        chordExt7th: $('chord-ext-7th').checked,
-        chordExtSusProb: parseInt($('sus-probability').value),
-        chordExt7thProb: parseInt($('7th-probability').value),
-        // 9th chord extension
-        chordExt9th: $('chord-ext-9th').checked,
-        chordExt9thProb: parseInt($('9th-probability').value),
-        // Composition style
-        compositionStyle: parseInt($('composition-style').value),
-        // Arpeggio options
-        arpeggioEnabled: $('arpeggio-enabled').checked,
-        arpeggioPattern: parseInt($('arpeggio-pattern').value),
-        arpeggioSpeed: parseInt($('arpeggio-speed').value),
-        arpeggioOctaveRange: parseInt($('arpeggio-octave').value),
-        arpeggioGate: parseInt($('arpeggio-gate').value)
+        humanizeVelocity: parseInt($('humanize-velocity').value)
       };
     }
 
@@ -654,18 +583,24 @@
         }
 
         sketch = new midisketch.MidiSketch();
-        sketch.generate(getParams());
+        const config = getSongConfig();
+        sketch.generateFromConfig(config);
 
         midiData = sketch.getMidi();
         eventData = sketch.getEvents();
+
+        // Get style info
+        const styleId = parseInt($('style').value);
+        const preset = stylePresets.find(p => p.id === styleId) || stylePresets[0];
+        const chordIdx = parseInt($('chord').value);
+        const chord = allChords[chordIdx];
 
         // Show result
         const result = $('result');
         result.className = 'result visible';
         result.textContent = `Generated MIDI: ${midiData.length} bytes\n`;
-        result.textContent += `Structure: ${$('structure').options[$('structure').selectedIndex].text}\n`;
-        result.textContent += `Mood: ${$('mood').options[$('mood').selectedIndex].text}\n`;
-        result.textContent += `Chord: ${chords[parseInt($('chord').value)].display}\n`;
+        result.textContent += `Style: ${preset.displayName}\n`;
+        result.textContent += `Chord: ${chord?.display || 'N/A'}\n`;
         result.textContent += `BPM: ${eventData.bpm}\n`;
         result.textContent += `Duration: ${formatTime(ticksToSeconds(eventData.duration_ticks, eventData.bpm))}`;
 
@@ -755,7 +690,6 @@
             const velocity = note.velocity / 127;
 
             if (track.name.toLowerCase() === 'drums') {
-              // Drums use different pitches for different instruments
               const id = Tone.Transport.schedule((time) => {
                 synth.triggerAttackRelease(midiToFreq(note.pitch), duration, time, velocity);
               }, startTime);

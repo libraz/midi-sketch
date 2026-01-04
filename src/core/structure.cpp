@@ -24,8 +24,60 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
   Tick current_bar = 0;
   Tick current_tick = 0;
 
+  // Helper to get vocal density for a section type
+  auto getVocalDensity = [](SectionType type) -> VocalDensity {
+    switch (type) {
+      case SectionType::Intro:
+      case SectionType::Interlude:
+      case SectionType::Outro:
+        return VocalDensity::None;
+      case SectionType::A:
+      case SectionType::Bridge:
+        return VocalDensity::Sparse;
+      case SectionType::B:
+      case SectionType::Chorus:
+        return VocalDensity::Full;
+      default:
+        return VocalDensity::Full;
+    }
+  };
+
+  // Helper to get backing density for a section type
+  auto getBackingDensity = [](SectionType type) -> BackingDensity {
+    switch (type) {
+      case SectionType::Intro:
+      case SectionType::Bridge:
+      case SectionType::Interlude:
+        return BackingDensity::Thin;
+      case SectionType::Outro:
+      case SectionType::A:
+      case SectionType::B:
+        return BackingDensity::Normal;
+      case SectionType::Chorus:
+        return BackingDensity::Thick;
+      default:
+        return BackingDensity::Normal;
+    }
+  };
+
+  // Helper to check if section allows raw vocal deviation
+  auto getAllowDeviation = [](SectionType type) -> bool {
+    // Only Chorus and Bridge sections can potentially allow raw attitude
+    return type == SectionType::Chorus || type == SectionType::Bridge;
+  };
+
   auto addSection = [&](SectionType type, uint8_t bars) {
-    sections.push_back({type, sectionTypeName(type), bars, current_bar, current_tick});
+    Section section;
+    section.type = type;
+    section.name = sectionTypeName(type);
+    section.bars = bars;
+    section.startBar = current_bar;
+    section.start_tick = current_tick;
+    section.vocal_density = getVocalDensity(type);
+    section.backing_density = getBackingDensity(type);
+    section.deviation_allowed = getAllowDeviation(type);
+    section.se_allowed = true;
+    sections.push_back(section);
     current_bar += bars;
     current_tick += bars * TICKS_PER_BAR;
   };

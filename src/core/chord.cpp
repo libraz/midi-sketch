@@ -53,13 +53,38 @@ const char* PROGRESSION_DISPLAYS[20] = {
     "I - iii - IV - V",   // Pop5
     "I - bVII - IV - I",  // Rock1
     "I - IV - bVII - I",  // Rock2
-    "I - V - vi - iii",   // Extended
+    "I - V - vi - iii",   // Extended (4-chord variant)
     "vi - I - V - IV",    // Minor3
     "vi - IV - V - I",    // Komuro
     "vi - iii - IV - I",  // YOASOBI1
     "ii - V - I - vi",    // JazzPop
     "vi - ii - V - I",    // YOASOBI2
     "I - vi - ii - V",    // CityPop
+};
+
+// Chord progression metadata with style compatibility
+// Compatible styles: STYLE_MINIMAL=1, STYLE_DANCE=2, STYLE_IDOL_STD=4, STYLE_IDOL_ENERGY=8, STYLE_ROCK=16
+constexpr ChordProgressionMeta PROGRESSION_META[20] = {
+    {0, "Canon", FunctionalProfile::Loop, 0b00001111, "4ch_loop,diatonic"},
+    {1, "Pop1", FunctionalProfile::Loop, 0b00001111, "4ch_loop,diatonic"},
+    {2, "Axis", FunctionalProfile::Loop, 0b00011011, "4ch_loop,minor_feel"},
+    {3, "Pop2", FunctionalProfile::Loop, 0b00000111, "4ch_loop,diatonic"},
+    {4, "Classic", FunctionalProfile::CadenceStrong, 0b00010110, "strong_cadence,traditional"},
+    {5, "Pop3", FunctionalProfile::Loop, 0b00000111, "4ch_loop,diatonic"},
+    {6, "Simple", FunctionalProfile::Stable, 0b00000011, "simple,diatonic"},
+    {7, "Minor1", FunctionalProfile::TensionBuild, 0b00011000, "minor_key,tension"},
+    {8, "Minor2", FunctionalProfile::TensionBuild, 0b00011000, "minor_key,resolution"},
+    {9, "Pop4", FunctionalProfile::Loop, 0b00000111, "4ch_loop,iii_usage"},
+    {10, "Pop5", FunctionalProfile::Stable, 0b00000111, "stepwise,diatonic"},
+    {11, "Rock1", FunctionalProfile::TensionBuild, 0b00010000, "bVII,rock"},
+    {12, "Rock2", FunctionalProfile::TensionBuild, 0b00010000, "bVII,rock"},
+    {13, "Extended", FunctionalProfile::Stable, 0b00000011, "iii_usage,extended"},
+    {14, "Minor3", FunctionalProfile::Loop, 0b00001010, "minor_feel,dance"},
+    {15, "Komuro", FunctionalProfile::TensionBuild, 0b00001011, "minor_start,90s"},
+    {16, "YOASOBI1", FunctionalProfile::Loop, 0b00001010, "anime,minor_start"},
+    {17, "JazzPop", FunctionalProfile::CadenceStrong, 0b00000011, "ii_V_I,jazz"},
+    {18, "YOASOBI2", FunctionalProfile::CadenceStrong, 0b00001010, "turnaround,anime"},
+    {19, "CityPop", FunctionalProfile::Stable, 0b00000011, "city_pop,groove"},
 };
 
 // Builds a chord from scale degree.
@@ -202,6 +227,22 @@ const char* getChordProgressionName(uint8_t chord_id) {
 const char* getChordProgressionDisplay(uint8_t chord_id) {
   constexpr size_t count = sizeof(PROGRESSION_DISPLAYS) / sizeof(PROGRESSION_DISPLAYS[0]);
   return PROGRESSION_DISPLAYS[std::min(static_cast<size_t>(chord_id), count - 1)];
+}
+
+const ChordProgressionMeta& getChordProgressionMeta(uint8_t chord_id) {
+  constexpr size_t count = sizeof(PROGRESSION_META) / sizeof(PROGRESSION_META[0]);
+  return PROGRESSION_META[std::min(static_cast<size_t>(chord_id), count - 1)];
+}
+
+std::vector<uint8_t> getChordProgressionsByStyle(uint8_t style_mask) {
+  std::vector<uint8_t> result;
+  constexpr size_t count = sizeof(PROGRESSION_META) / sizeof(PROGRESSION_META[0]);
+  for (size_t i = 0; i < count; ++i) {
+    if (PROGRESSION_META[i].compatible_styles & style_mask) {
+      result.push_back(static_cast<uint8_t>(i));
+    }
+  }
+  return result;
 }
 
 }  // namespace midisketch

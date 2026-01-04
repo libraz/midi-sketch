@@ -23,6 +23,60 @@ uint32_t Generator::resolveSeed(uint32_t seed) {
   return seed;
 }
 
+void Generator::generateFromConfig(const SongConfig& config) {
+  // Get style preset for defaults
+  const StylePreset& preset = getStylePreset(config.style_preset_id);
+
+  // Convert SongConfig to GeneratorParams
+  GeneratorParams params;
+  params.structure = config.form;
+  params.chord_id = config.chord_progression_id;
+  params.key = config.key;
+  params.drums_enabled = config.drums_enabled;
+  params.modulation = true;  // Enable modulation by default
+  params.vocal_low = config.vocal_low;
+  params.vocal_high = config.vocal_high;
+  params.seed = config.seed;
+
+  // Use config BPM if specified, otherwise use style preset default
+  params.bpm = (config.bpm != 0) ? config.bpm : preset.tempo_default;
+
+  // Map style preset to a mood (simplified for Phase 1)
+  // For now, use a sensible default based on the style
+  switch (config.style_preset_id) {
+    case 0:  // Minimal Groove Pop
+      params.mood = Mood::StraightPop;
+      params.composition_style = CompositionStyle::MelodyLead;
+      break;
+    case 1:  // Dance Pop Emotion
+      params.mood = Mood::EnergeticDance;
+      params.composition_style = CompositionStyle::MelodyLead;
+      break;
+    case 2:  // Idol Standard
+      params.mood = Mood::IdolPop;
+      params.composition_style = CompositionStyle::MelodyLead;
+      break;
+    default:
+      params.mood = Mood::StraightPop;
+      params.composition_style = CompositionStyle::MelodyLead;
+      break;
+  }
+
+  // Arpeggio settings
+  params.arpeggio_enabled = config.arpeggio_enabled;
+
+  // Humanization
+  params.humanize = config.humanize;
+  params.humanize_timing = config.humanize_timing;
+  params.humanize_velocity = config.humanize_velocity;
+
+  // Phase 2: Apply VocalAttitude and StyleMelodyParams
+  params.vocal_attitude = config.vocal_attitude;
+  params.melody_params = preset.melody;
+
+  generate(params);
+}
+
 void Generator::generate(const GeneratorParams& params) {
   params_ = params;
 
@@ -97,6 +151,23 @@ void Generator::generate(const GeneratorParams& params) {
 
 void Generator::regenerateMelody(uint32_t new_seed) {
   uint32_t seed = resolveSeed(new_seed);
+  rng_.seed(seed);
+  song_.setMelodySeed(seed);
+  song_.clearTrack(TrackRole::Vocal);
+  generateVocal();
+}
+
+void Generator::regenerateVocalFromConfig(const SongConfig& config,
+                                           uint32_t new_seed) {
+  // Get the style preset for melody params
+  const StylePreset& preset = getStylePreset(config.style_preset_id);
+
+  // Update VocalAttitude and StyleMelodyParams
+  params_.vocal_attitude = config.vocal_attitude;
+  params_.melody_params = preset.melody;
+
+  // Regenerate with updated parameters
+  uint32_t seed = (new_seed == 0) ? song_.melodySeed() : resolveSeed(new_seed);
   rng_.seed(seed);
   song_.setMelodySeed(seed);
   song_.clearTrack(TrackRole::Vocal);

@@ -102,6 +102,20 @@ enum class ChordExtension : uint8_t {
   Dom9          // Dominant 9th (0, 4, 7, 10, 14) - needs 5 notes
 };
 
+// Vocal density per section.
+enum class VocalDensity : uint8_t {
+  None,    // No vocals
+  Sparse,  // Sparse vocals
+  Full     // Full vocals
+};
+
+// Backing density per section.
+enum class BackingDensity : uint8_t {
+  Thin,    // Thin backing
+  Normal,  // Normal backing
+  Thick    // Thick backing
+};
+
 // Represents a section in the song structure.
 struct Section {
   SectionType type;    // Section type
@@ -109,6 +123,12 @@ struct Section {
   uint8_t bars;        // Number of bars
   Tick startBar;       // Start position in bars
   Tick start_tick;     // Start position in ticks (computed)
+
+  // Section attributes (Phase 2 extension)
+  VocalDensity vocal_density = VocalDensity::Full;
+  BackingDensity backing_density = BackingDensity::Normal;
+  bool deviation_allowed = false;  // Allow raw vocal attitude
+  bool se_allowed = true;          // Allow sound effects
 };
 
 // Song structure pattern (10 patterns available).
@@ -188,6 +208,18 @@ enum class VocalProminence : uint8_t {
   Foreground,  // Traditional lead vocal
   Background   // Subdued, supporting role
 };
+
+// Vocal attitude determines expressiveness level.
+enum class VocalAttitude : uint8_t {
+  Clean = 0,      // Chord tones only, on-beat
+  Expressive = 1, // Tensions, delayed resolution, slight timing deviation
+  Raw = 2         // Non-chord tone landing, phrase boundary breaking (local only)
+};
+
+// Bit flags for allowed vocal attitudes.
+constexpr uint8_t ATTITUDE_CLEAN = 1 << 0;
+constexpr uint8_t ATTITUDE_EXPRESSIVE = 1 << 1;
+constexpr uint8_t ATTITUDE_RAW = 1 << 2;
 
 // Vocal rhythm bias.
 enum class VocalRhythmBias : uint8_t {
@@ -281,6 +313,90 @@ struct MotifData {
   std::vector<NoteEvent> pattern;  // Base motif pattern (one cycle)
 };
 
+// ============================================================================
+// 5-Layer Architecture Types (Phase 1)
+// ============================================================================
+
+// Melody constraint parameters for StylePreset.
+struct StyleMelodyParams {
+  uint8_t max_leap_interval = 7;      // Max leap in semitones (7 = 5th)
+  bool allow_unison_repeat = true;    // Allow consecutive same notes
+  float phrase_end_resolution = 0.8f; // Probability of resolving at phrase end
+  float tension_usage = 0.2f;         // Probability of using tensions (0.0-1.0)
+};
+
+// Motif constraint parameters for StylePreset.
+struct StyleMotifConstraints {
+  uint8_t motif_length_beats = 8;     // Motif length in beats
+  float repeat_rate = 0.6f;           // Probability of exact repetition
+  float variation_rate = 0.3f;        // Probability of variation
+};
+
+// Rhythm constraint parameters for StylePreset.
+struct StyleRhythmParams {
+  bool drums_primary = true;          // Drums as primary driver
+  uint8_t drum_density = 2;           // 0=sparse, 1=low, 2=normal, 3=high
+  uint8_t syncopation_level = 1;      // 0=none, 1=light, 2=medium, 3=heavy
+};
+
+// Style preset combining all constraints.
+struct StylePreset {
+  uint8_t id;
+  const char* name;           // Internal name (e.g., "minimal_groove_pop")
+  const char* display_name;   // Display name (e.g., "Minimal Groove Pop")
+  const char* description;    // Description for UI
+
+  // Default values
+  StructurePattern default_form;
+  uint16_t tempo_min;
+  uint16_t tempo_max;
+  uint16_t tempo_default;
+
+  // Vocal attitude settings
+  VocalAttitude default_vocal_attitude;
+  uint8_t allowed_vocal_attitudes;  // Bit flags (ATTITUDE_CLEAN | ...)
+
+  // Recommended chord progressions (ID array, -1 terminated)
+  int8_t recommended_progressions[8];
+
+  // Constraint parameters
+  StyleMelodyParams melody;
+  StyleMotifConstraints motif;
+  StyleRhythmParams rhythm;
+  uint8_t se_density;  // 0=none, 1=low, 2=med, 3=high
+};
+
+// Song configuration replacing GeneratorParams (new API).
+struct SongConfig {
+  // Style selection
+  uint8_t style_preset_id = 0;
+
+  // Layer 1: Song base
+  Key key = Key::C;
+  uint16_t bpm = 0;       // 0 = use style default
+  uint32_t seed = 0;      // 0 = random
+
+  // Layer 2: Chord progression
+  uint8_t chord_progression_id = 0;
+
+  // Layer 3: Structure
+  StructurePattern form = StructurePattern::StandardPop;
+
+  // Layer 5: Expression
+  VocalAttitude vocal_attitude = VocalAttitude::Clean;
+
+  // Options
+  bool drums_enabled = true;
+  bool arpeggio_enabled = false;
+  uint8_t vocal_low = 60;   // C4
+  uint8_t vocal_high = 79;  // G5
+
+  // Humanization
+  bool humanize = false;
+  float humanize_timing = 0.5f;
+  float humanize_velocity = 0.5f;
+};
+
 // Input parameters for MIDI generation.
 struct GeneratorParams {
   // Core parameters
@@ -318,6 +434,10 @@ struct GeneratorParams {
   bool humanize = false;             // Enable timing/velocity humanization
   float humanize_timing = 0.5f;      // Timing variation amount (0.0-1.0)
   float humanize_velocity = 0.5f;    // Velocity variation amount (0.0-1.0)
+
+  // Phase 2: Vocal expression parameters
+  VocalAttitude vocal_attitude = VocalAttitude::Clean;
+  StyleMelodyParams melody_params = {};  // Default: 7 semitone leap, unison ok, 0.8 resolution, 0.2 tension
 };
 
 }  // namespace midisketch

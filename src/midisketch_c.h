@@ -196,6 +196,111 @@ const char* midisketch_chord_display(uint8_t id);
 uint16_t midisketch_mood_default_bpm(uint8_t id);
 
 // ============================================================================
+// StylePreset API (Phase 1)
+// ============================================================================
+
+// Song configuration (new API, replaces MidiSketchParams).
+typedef struct {
+  uint8_t style_preset_id;    // Style preset ID (0-2 for Phase 1)
+  uint8_t key;                // Key (0-11)
+  uint16_t bpm;               // BPM (0 = use style default)
+  uint32_t seed;              // Random seed (0 = random)
+  uint8_t chord_progression_id;  // Chord progression ID (0-19)
+  uint8_t form_id;            // StructurePattern ID (0-9)
+  uint8_t vocal_attitude;     // 0=Clean, 1=Expressive, 2=Raw
+  uint8_t drums_enabled;      // 0=off, 1=on
+  uint8_t arpeggio_enabled;   // 0=off, 1=on
+  uint8_t vocal_low;          // Vocal range lower bound (MIDI note)
+  uint8_t vocal_high;         // Vocal range upper bound (MIDI note)
+  uint8_t humanize;           // Enable humanization (0=off, 1=on)
+  uint8_t humanize_timing;    // Timing variation (0-100)
+  uint8_t humanize_velocity;  // Velocity variation (0-100)
+} MidiSketchSongConfig;
+
+// Style preset summary for listing.
+typedef struct {
+  uint8_t id;
+  const char* name;
+  const char* display_name;
+  const char* description;
+  uint16_t tempo_default;
+  uint8_t allowed_attitudes;  // Bit flags
+} MidiSketchStylePresetSummary;
+
+// Chord progression candidates by style.
+typedef struct {
+  uint8_t count;
+  uint8_t ids[20];  // Max 20 progressions
+} MidiSketchChordCandidates;
+
+// Form candidates by style.
+typedef struct {
+  uint8_t count;
+  uint8_t ids[10];  // Max 10 forms
+} MidiSketchFormCandidates;
+
+// Config validation error codes.
+typedef enum {
+  MIDISKETCH_CONFIG_OK = 0,
+  MIDISKETCH_CONFIG_INVALID_STYLE = 1,
+  MIDISKETCH_CONFIG_INVALID_CHORD = 2,
+  MIDISKETCH_CONFIG_INVALID_FORM = 3,
+  MIDISKETCH_CONFIG_INVALID_ATTITUDE = 4,
+  MIDISKETCH_CONFIG_INVALID_VOCAL_RANGE = 5,
+  MIDISKETCH_CONFIG_INVALID_BPM = 6,
+} MidiSketchConfigError;
+
+// Returns the number of available style presets.
+// @returns Style preset count
+uint8_t midisketch_style_preset_count(void);
+
+// Individual getters for StylePreset fields (WASM-friendly)
+const char* midisketch_style_preset_name(uint8_t id);
+const char* midisketch_style_preset_display_name(uint8_t id);
+const char* midisketch_style_preset_description(uint8_t id);
+uint16_t midisketch_style_preset_tempo_default(uint8_t id);
+uint8_t midisketch_style_preset_allowed_attitudes(uint8_t id);
+
+// Returns a style preset summary (not for WASM use).
+// @param id Style preset ID
+// @returns Style preset summary
+MidiSketchStylePresetSummary midisketch_get_style_preset(uint8_t id);
+
+// Pointer-returning versions (WASM-friendly)
+MidiSketchChordCandidates* midisketch_get_progressions_by_style_ptr(uint8_t style_id);
+MidiSketchFormCandidates* midisketch_get_forms_by_style_ptr(uint8_t style_id);
+MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id);
+
+// Returns chord progression candidates for a style.
+// @param style_id Style preset ID
+// @returns Chord candidates struct
+MidiSketchChordCandidates midisketch_get_progressions_by_style(uint8_t style_id);
+
+// Returns form candidates for a style.
+// @param style_id Style preset ID
+// @returns Form candidates struct
+MidiSketchFormCandidates midisketch_get_forms_by_style(uint8_t style_id);
+
+// Creates a default song config for a style.
+// @param style_id Style preset ID
+// @returns Default song config
+MidiSketchSongConfig midisketch_create_default_config(uint8_t style_id);
+
+// Validates a song config.
+// @param config Song config to validate
+// @returns MIDISKETCH_CONFIG_OK if valid, error code otherwise
+MidiSketchConfigError midisketch_validate_config(const MidiSketchSongConfig* config);
+
+// Generates MIDI from a song config.
+// @param handle MidiSketch handle
+// @param config Song configuration
+// @returns MIDISKETCH_OK on success, error code on failure
+MidiSketchError midisketch_generate_from_config(
+    MidiSketchHandle handle,
+    const MidiSketchSongConfig* config
+);
+
+// ============================================================================
 // Utilities
 // ============================================================================
 

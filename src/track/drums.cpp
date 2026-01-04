@@ -211,8 +211,9 @@ std::vector<GhostPosition> selectGhostPositions(Mood mood, std::mt19937& rng) {
   return positions;
 }
 
-// Calculate ghost note density based on mood and section
-float getGhostDensity(Mood mood, SectionType section) {
+// Calculate ghost note density based on mood, section, and backing density
+float getGhostDensity(Mood mood, SectionType section,
+                       BackingDensity backing_density) {
   float base_density = 0.3f;
 
   // Section adjustment
@@ -254,6 +255,19 @@ float getGhostDensity(Mood mood, SectionType section) {
       base_density *= 0.4f;
       break;
     default:
+      break;
+  }
+
+  // Backing density adjustment
+  switch (backing_density) {
+    case BackingDensity::Thin:
+      base_density *= 0.5f;  // Half the ghost notes for thin
+      break;
+    case BackingDensity::Normal:
+      // No adjustment
+      break;
+    case BackingDensity::Thick:
+      base_density *= 1.4f;  // More ghost notes for thick
       break;
   }
 
@@ -330,6 +344,18 @@ KickPattern getKickPattern(SectionType section, DrumStyle style, int bar) {
       }
       break;
 
+    case DrumStyle::Synth:
+      // Synth: tight electronic pattern (YOASOBI/Synthwave style)
+      p.beat1 = true;
+      p.beat3 = true;
+      if (section == SectionType::B || section == SectionType::Chorus) {
+        p.beat2_and = true;  // Syncopated kick for drive
+      }
+      if (section == SectionType::Chorus) {
+        p.beat4_and = true;  // Push into next bar
+      }
+      break;
+
     case DrumStyle::Standard:
     default:
       // Standard pop
@@ -357,36 +383,64 @@ enum class HiHatLevel {
   Sixteenth   // 16th notes
 };
 
-HiHatLevel getHiHatLevel(SectionType section, DrumStyle style) {
+HiHatLevel getHiHatLevel(SectionType section, DrumStyle style,
+                          BackingDensity backing_density) {
+  HiHatLevel base_level = HiHatLevel::Eighth;
+
   if (style == DrumStyle::Sparse) {
-    return (section == SectionType::Chorus) ? HiHatLevel::Eighth
-                                            : HiHatLevel::Quarter;
+    base_level = (section == SectionType::Chorus) ? HiHatLevel::Eighth
+                                                   : HiHatLevel::Quarter;
+  } else if (style == DrumStyle::FourOnFloor) {
+    // FourOnFloor: always 8th notes (classic open/closed pattern)
+    // Don't apply backing_density adjustment - the open/closed pattern is essential
+    return HiHatLevel::Eighth;
+  } else if (style == DrumStyle::Synth) {
+    // Synth: tight 16th note hi-hat (YOASOBI/Synthwave style)
+    // Always 16th notes for driving electronic feel
+    return HiHatLevel::Sixteenth;
+  } else {
+    switch (section) {
+      case SectionType::Intro:
+      case SectionType::Interlude:
+        base_level = HiHatLevel::Quarter;
+        break;
+      case SectionType::Outro:
+        base_level = HiHatLevel::Eighth;
+        break;
+      case SectionType::A:
+        base_level = HiHatLevel::Eighth;
+        break;
+      case SectionType::B:
+        base_level = HiHatLevel::Eighth;
+        break;
+      case SectionType::Chorus:
+        base_level = (style == DrumStyle::Upbeat) ? HiHatLevel::Sixteenth
+                                                   : HiHatLevel::Eighth;
+        break;
+      case SectionType::Bridge:
+        base_level = HiHatLevel::Eighth;
+        break;
+    }
   }
 
-  // FourOnFloor: always 8th notes (classic open/closed pattern)
-  if (style == DrumStyle::FourOnFloor) {
-    return (section == SectionType::Intro || section == SectionType::Interlude)
-               ? HiHatLevel::Quarter
-               : HiHatLevel::Eighth;
+  // Adjust for backing density (except for FourOnFloor which returns early)
+  if (backing_density == BackingDensity::Thin) {
+    // Reduce density: move one level sparser
+    switch (base_level) {
+      case HiHatLevel::Sixteenth: return HiHatLevel::Eighth;
+      case HiHatLevel::Eighth: return HiHatLevel::Quarter;
+      case HiHatLevel::Quarter: return HiHatLevel::Quarter;
+    }
+  } else if (backing_density == BackingDensity::Thick) {
+    // Increase density: move one level denser
+    switch (base_level) {
+      case HiHatLevel::Quarter: return HiHatLevel::Eighth;
+      case HiHatLevel::Eighth: return HiHatLevel::Sixteenth;
+      case HiHatLevel::Sixteenth: return HiHatLevel::Sixteenth;
+    }
   }
 
-  switch (section) {
-    case SectionType::Intro:
-    case SectionType::Interlude:
-      return HiHatLevel::Quarter;
-    case SectionType::Outro:
-      return HiHatLevel::Eighth;
-    case SectionType::A:
-      return HiHatLevel::Eighth;
-    case SectionType::B:
-      return HiHatLevel::Eighth;
-    case SectionType::Chorus:
-      return (style == DrumStyle::Upbeat) ? HiHatLevel::Sixteenth
-                                          : HiHatLevel::Eighth;
-    case SectionType::Bridge:
-      return HiHatLevel::Eighth;
-  }
-  return HiHatLevel::Eighth;
+  return base_level;
 }
 
 }  // namespace
@@ -436,13 +490,27 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         break;
     }
 
+    // Adjust for backing density
+    switch (section.backing_density) {
+      case BackingDensity::Thin:
+        density_mult *= 0.75f;  // Softer for thin
+        break;
+      case BackingDensity::Normal:
+        // No adjustment
+        break;
+      case BackingDensity::Thick:
+        density_mult *= 1.15f;  // Louder for thick
+        break;
+    }
+
     // Add crash cymbal accent at the start of Chorus for impact
     if (add_crash_accent && sec_idx > 0) {
       uint8_t crash_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(105 * density_mult)));
       track.addNote(section.start_tick, TICKS_PER_BEAT / 2, 49, crash_vel);  // Crash cymbal
     }
 
-    HiHatLevel hh_level = getHiHatLevel(section.type, style);
+    HiHatLevel hh_level = getHiHatLevel(section.type, style,
+                                         section.backing_density);
 
     // BackgroundMotif: force 8th note hi-hat for consistent drive
     if (is_background_motif && drum_params.hihat_drive) {
@@ -556,7 +624,8 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         if (use_ghost_notes && (beat == 0 || beat == 2)) {
           // Get ghost note positions and density based on mood
           auto ghost_positions = selectGhostPositions(params.mood, rng);
-          float ghost_prob = getGhostDensity(params.mood, section.type);
+          float ghost_prob = getGhostDensity(params.mood, section.type,
+                                              section.backing_density);
 
           std::uniform_real_distribution<float> ghost_dist(0.0f, 1.0f);
 

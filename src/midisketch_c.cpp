@@ -205,6 +205,191 @@ uint16_t midisketch_mood_default_bpm(uint8_t id) {
   return midisketch::getMoodDefaultBpm(static_cast<midisketch::Mood>(id));
 }
 
+// ============================================================================
+// StylePreset API Implementation
+// ============================================================================
+
+uint8_t midisketch_style_preset_count(void) {
+  return midisketch::STYLE_PRESET_COUNT;
+}
+
+// Individual getters for StylePreset fields (WASM-friendly)
+const char* midisketch_style_preset_name(uint8_t id) {
+  const midisketch::StylePreset& preset = midisketch::getStylePreset(id);
+  return preset.name;
+}
+
+const char* midisketch_style_preset_display_name(uint8_t id) {
+  const midisketch::StylePreset& preset = midisketch::getStylePreset(id);
+  return preset.display_name;
+}
+
+const char* midisketch_style_preset_description(uint8_t id) {
+  const midisketch::StylePreset& preset = midisketch::getStylePreset(id);
+  return preset.description;
+}
+
+uint16_t midisketch_style_preset_tempo_default(uint8_t id) {
+  const midisketch::StylePreset& preset = midisketch::getStylePreset(id);
+  return preset.tempo_default;
+}
+
+uint8_t midisketch_style_preset_allowed_attitudes(uint8_t id) {
+  const midisketch::StylePreset& preset = midisketch::getStylePreset(id);
+  return preset.allowed_vocal_attitudes;
+}
+
+// Legacy struct-returning function (for non-WASM use)
+MidiSketchStylePresetSummary midisketch_get_style_preset(uint8_t id) {
+  const midisketch::StylePreset& preset = midisketch::getStylePreset(id);
+  MidiSketchStylePresetSummary summary{};
+  summary.id = preset.id;
+  summary.name = preset.name;
+  summary.display_name = preset.display_name;
+  summary.description = preset.description;
+  summary.tempo_default = preset.tempo_default;
+  summary.allowed_attitudes = preset.allowed_vocal_attitudes;
+  return summary;
+}
+
+// Static buffers for WASM returns
+static MidiSketchChordCandidates s_chord_candidates;
+static MidiSketchFormCandidates s_form_candidates;
+static MidiSketchSongConfig s_default_config;
+
+MidiSketchChordCandidates* midisketch_get_progressions_by_style_ptr(uint8_t style_id) {
+  // Get style preset and determine style mask
+  uint8_t style_mask = 1 << style_id;  // Simple mapping for Phase 1
+
+  auto progressions = midisketch::getChordProgressionsByStyle(style_mask);
+  s_chord_candidates.count = static_cast<uint8_t>(std::min(progressions.size(), size_t(20)));
+  for (size_t i = 0; i < s_chord_candidates.count; ++i) {
+    s_chord_candidates.ids[i] = progressions[i];
+  }
+  return &s_chord_candidates;
+}
+
+MidiSketchFormCandidates* midisketch_get_forms_by_style_ptr(uint8_t style_id) {
+  auto forms = midisketch::getFormsByStyle(style_id);
+  s_form_candidates.count = static_cast<uint8_t>(std::min(forms.size(), size_t(10)));
+  for (size_t i = 0; i < s_form_candidates.count; ++i) {
+    s_form_candidates.ids[i] = static_cast<uint8_t>(forms[i]);
+  }
+  return &s_form_candidates;
+}
+
+MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
+  midisketch::SongConfig cpp_config = midisketch::createDefaultSongConfig(style_id);
+
+  s_default_config.style_preset_id = cpp_config.style_preset_id;
+  s_default_config.key = static_cast<uint8_t>(cpp_config.key);
+  s_default_config.bpm = cpp_config.bpm;
+  s_default_config.seed = cpp_config.seed;
+  s_default_config.chord_progression_id = cpp_config.chord_progression_id;
+  s_default_config.form_id = static_cast<uint8_t>(cpp_config.form);
+  s_default_config.vocal_attitude = static_cast<uint8_t>(cpp_config.vocal_attitude);
+  s_default_config.drums_enabled = cpp_config.drums_enabled ? 1 : 0;
+  s_default_config.arpeggio_enabled = cpp_config.arpeggio_enabled ? 1 : 0;
+  s_default_config.vocal_low = cpp_config.vocal_low;
+  s_default_config.vocal_high = cpp_config.vocal_high;
+  s_default_config.humanize = cpp_config.humanize ? 1 : 0;
+  s_default_config.humanize_timing = static_cast<uint8_t>(cpp_config.humanize_timing * 100);
+  s_default_config.humanize_velocity = static_cast<uint8_t>(cpp_config.humanize_velocity * 100);
+  return &s_default_config;
+}
+
+// Legacy struct-returning functions (for non-WASM use)
+MidiSketchChordCandidates midisketch_get_progressions_by_style(uint8_t style_id) {
+  midisketch_get_progressions_by_style_ptr(style_id);
+  return s_chord_candidates;
+}
+
+MidiSketchFormCandidates midisketch_get_forms_by_style(uint8_t style_id) {
+  midisketch_get_forms_by_style_ptr(style_id);
+  return s_form_candidates;
+}
+
+MidiSketchSongConfig midisketch_create_default_config(uint8_t style_id) {
+  midisketch_create_default_config_ptr(style_id);
+  return s_default_config;
+}
+
+MidiSketchConfigError midisketch_validate_config(const MidiSketchSongConfig* config) {
+  if (!config) {
+    return MIDISKETCH_CONFIG_INVALID_STYLE;
+  }
+
+  // Convert to C++ config for validation
+  midisketch::SongConfig cpp_config;
+  cpp_config.style_preset_id = config->style_preset_id;
+  cpp_config.key = static_cast<midisketch::Key>(config->key);
+  cpp_config.bpm = config->bpm;
+  cpp_config.seed = config->seed;
+  cpp_config.chord_progression_id = config->chord_progression_id;
+  cpp_config.form = static_cast<midisketch::StructurePattern>(config->form_id);
+  cpp_config.vocal_attitude = static_cast<midisketch::VocalAttitude>(config->vocal_attitude);
+  cpp_config.drums_enabled = config->drums_enabled != 0;
+  cpp_config.arpeggio_enabled = config->arpeggio_enabled != 0;
+  cpp_config.vocal_low = config->vocal_low;
+  cpp_config.vocal_high = config->vocal_high;
+
+  midisketch::SongConfigError error = midisketch::validateSongConfig(cpp_config);
+
+  switch (error) {
+    case midisketch::SongConfigError::OK:
+      return MIDISKETCH_CONFIG_OK;
+    case midisketch::SongConfigError::InvalidStylePreset:
+      return MIDISKETCH_CONFIG_INVALID_STYLE;
+    case midisketch::SongConfigError::InvalidChordProgression:
+      return MIDISKETCH_CONFIG_INVALID_CHORD;
+    case midisketch::SongConfigError::InvalidForm:
+      return MIDISKETCH_CONFIG_INVALID_FORM;
+    case midisketch::SongConfigError::InvalidVocalAttitude:
+      return MIDISKETCH_CONFIG_INVALID_ATTITUDE;
+    case midisketch::SongConfigError::InvalidVocalRange:
+      return MIDISKETCH_CONFIG_INVALID_VOCAL_RANGE;
+    case midisketch::SongConfigError::InvalidBpm:
+      return MIDISKETCH_CONFIG_INVALID_BPM;
+    default:
+      return MIDISKETCH_CONFIG_INVALID_STYLE;
+  }
+}
+
+MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
+                                                 const MidiSketchSongConfig* config) {
+  if (!handle || !config) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  // Validate config first
+  MidiSketchConfigError validation = midisketch_validate_config(config);
+  if (validation != MIDISKETCH_CONFIG_OK) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+
+  // Convert C config to C++ SongConfig
+  midisketch::SongConfig cpp_config;
+  cpp_config.style_preset_id = config->style_preset_id;
+  cpp_config.key = static_cast<midisketch::Key>(config->key);
+  cpp_config.bpm = config->bpm;
+  cpp_config.seed = config->seed;
+  cpp_config.chord_progression_id = config->chord_progression_id;
+  cpp_config.form = static_cast<midisketch::StructurePattern>(config->form_id);
+  cpp_config.vocal_attitude = static_cast<midisketch::VocalAttitude>(config->vocal_attitude);
+  cpp_config.drums_enabled = config->drums_enabled != 0;
+  cpp_config.arpeggio_enabled = config->arpeggio_enabled != 0;
+  cpp_config.vocal_low = config->vocal_low;
+  cpp_config.vocal_high = config->vocal_high;
+  cpp_config.humanize = config->humanize != 0;
+  cpp_config.humanize_timing = config->humanize_timing / 100.0f;
+  cpp_config.humanize_velocity = config->humanize_velocity / 100.0f;
+
+  sketch->generateFromConfig(cpp_config);
+  return MIDISKETCH_OK;
+}
+
 const char* midisketch_version(void) {
   return midisketch::MidiSketch::version();
 }

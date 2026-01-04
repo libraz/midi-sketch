@@ -136,5 +136,74 @@ TEST(MidiWriterTest, SETrackIsFirstTrack) {
   EXPECT_TRUE(found_se);
 }
 
+// Helper: Extract first Note On pitch from MIDI data for a given channel
+uint8_t findFirstNoteOnPitch(const std::vector<uint8_t>& data, uint8_t channel) {
+  for (size_t i = 0; i + 2 < data.size(); ++i) {
+    // Note On: 0x9n where n is channel
+    if ((data[i] & 0xF0) == 0x90 && (data[i] & 0x0F) == channel) {
+      if (data[i + 2] > 0) {  // velocity > 0 means Note On
+        return data[i + 1];   // pitch
+      }
+    }
+  }
+  return 0;
+}
+
+// Regression test: Key transpose should only be applied once (at MIDI output)
+TEST(MidiWriterTest, KeyTransposeAppliedOnce) {
+  Song songC;
+  songC.setBpm(120);
+  // Add a note at C4 (MIDI note 60)
+  songC.vocal().addNote(0, 480, 60, 100);
+
+  MidiWriter writerC;
+  writerC.build(songC, Key::C);
+  auto dataC = writerC.toBytes();
+
+  Song songD;
+  songD.setBpm(120);
+  // Add the same note at C4 (MIDI note 60) - same internal representation
+  songD.vocal().addNote(0, 480, 60, 100);
+
+  MidiWriter writerD;
+  writerD.build(songD, Key::D);  // Key::D = 2 semitones up
+  auto dataD = writerD.toBytes();
+
+  // Find Note On pitches (channel 0 = vocal)
+  uint8_t pitchC = findFirstNoteOnPitch(dataC, 0);
+  uint8_t pitchD = findFirstNoteOnPitch(dataD, 0);
+
+  // C4 in C major should be 60
+  EXPECT_EQ(pitchC, 60);
+  // C4 in D major should be 62 (transposed +2 semitones)
+  EXPECT_EQ(pitchD, 62);
+  // Difference should be exactly 2 (not 4, which would indicate double transpose)
+  EXPECT_EQ(pitchD - pitchC, 2);
+}
+
+// Test: Key transpose should NOT affect drums (channel 9)
+TEST(MidiWriterTest, KeyTransposeDoesNotAffectDrums) {
+  Song song;
+  song.setBpm(120);
+  // Add a kick drum note (MIDI note 36)
+  song.drums().addNote(0, 480, 36, 100);
+
+  MidiWriter writerC;
+  writerC.build(song, Key::C);
+  auto dataC = writerC.toBytes();
+
+  MidiWriter writerD;
+  writerD.build(song, Key::D);
+  auto dataD = writerD.toBytes();
+
+  // Find Note On pitches (channel 9 = drums)
+  uint8_t pitchC = findFirstNoteOnPitch(dataC, 9);
+  uint8_t pitchD = findFirstNoteOnPitch(dataD, 9);
+
+  // Drums should not be transposed
+  EXPECT_EQ(pitchC, 36);
+  EXPECT_EQ(pitchD, 36);
+}
+
 }  // namespace
 }  // namespace midisketch

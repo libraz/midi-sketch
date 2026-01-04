@@ -390,7 +390,7 @@ ChordExtension selectChordExtension(int8_t degree, SectionType section,
                                      int bar_in_section, int section_bars,
                                      const ChordExtensionParams& ext_params,
                                      std::mt19937& rng) {
-  if (!ext_params.enable_sus && !ext_params.enable_7th) {
+  if (!ext_params.enable_sus && !ext_params.enable_7th && !ext_params.enable_9th) {
     return ChordExtension::None;
   }
 
@@ -443,6 +443,30 @@ ChordExtension selectChordExtension(int8_t degree, SectionType section,
     }
   }
 
+  // 9th chords work well on:
+  // - Dominant (V9) - jazz/pop feel
+  // - Tonic (Imaj9) - lush sound in chorus
+  // - Minor chords (ii9, vi9) - sophisticated harmony
+  if (ext_params.enable_9th) {
+    bool is_ninth_context =
+        (section == SectionType::Chorus) ||
+        (section == SectionType::B && is_dominant);
+
+    float ninth_roll = dist(rng);
+    if (is_ninth_context && ninth_roll < ext_params.ninth_probability) {
+      if (is_dominant) {
+        return ChordExtension::Dom9;  // V9
+      } else if (is_minor) {
+        return ChordExtension::Min9;  // ii9, vi9
+      } else if (is_tonic) {
+        return ChordExtension::Maj9;  // Imaj9
+      } else {
+        // IV chord - add9 for color
+        return ChordExtension::Add9;
+      }
+    }
+  }
+
   return ChordExtension::None;
 }
 
@@ -462,31 +486,60 @@ bool shouldAddDominantPreparation(SectionType current, SectionType next,
   return current == SectionType::B;
 }
 
-// Select rhythm pattern based on section and mood
-ChordRhythm selectRhythm(SectionType section, Mood mood) {
+// Select rhythm pattern based on section, mood, and backing density
+ChordRhythm selectRhythm(SectionType section, Mood mood,
+                          BackingDensity backing_density) {
   bool is_ballad = (mood == Mood::Ballad || mood == Mood::Sentimental ||
                     mood == Mood::Chill);
   bool is_energetic = (mood == Mood::EnergeticDance || mood == Mood::IdolPop ||
                        mood == Mood::BrightUpbeat);
 
+  ChordRhythm base_rhythm = ChordRhythm::Half;
+
   switch (section) {
     case SectionType::Intro:
     case SectionType::Interlude:
-      return ChordRhythm::Whole;
+      base_rhythm = ChordRhythm::Whole;
+      break;
     case SectionType::Outro:
-      return ChordRhythm::Half;
+      base_rhythm = ChordRhythm::Half;
+      break;
     case SectionType::A:
-      return is_ballad ? ChordRhythm::Whole : ChordRhythm::Half;
+      base_rhythm = is_ballad ? ChordRhythm::Whole : ChordRhythm::Half;
+      break;
     case SectionType::B:
-      return is_ballad ? ChordRhythm::Half : ChordRhythm::Quarter;
+      base_rhythm = is_ballad ? ChordRhythm::Half : ChordRhythm::Quarter;
+      break;
     case SectionType::Chorus:
-      if (is_ballad) return ChordRhythm::Half;
-      if (is_energetic) return ChordRhythm::Eighth;
-      return ChordRhythm::Quarter;
+      if (is_ballad) base_rhythm = ChordRhythm::Half;
+      else if (is_energetic) base_rhythm = ChordRhythm::Eighth;
+      else base_rhythm = ChordRhythm::Quarter;
+      break;
     case SectionType::Bridge:
-      return is_ballad ? ChordRhythm::Whole : ChordRhythm::Half;
+      base_rhythm = is_ballad ? ChordRhythm::Whole : ChordRhythm::Half;
+      break;
   }
-  return ChordRhythm::Half;
+
+  // Adjust rhythm based on backing density
+  if (backing_density == BackingDensity::Thin) {
+    // Reduce density: move one level sparser
+    switch (base_rhythm) {
+      case ChordRhythm::Eighth: return ChordRhythm::Quarter;
+      case ChordRhythm::Quarter: return ChordRhythm::Half;
+      case ChordRhythm::Half: return ChordRhythm::Whole;
+      case ChordRhythm::Whole: return ChordRhythm::Whole;
+    }
+  } else if (backing_density == BackingDensity::Thick) {
+    // Increase density: move one level denser
+    switch (base_rhythm) {
+      case ChordRhythm::Whole: return ChordRhythm::Half;
+      case ChordRhythm::Half: return ChordRhythm::Quarter;
+      case ChordRhythm::Quarter: return ChordRhythm::Eighth;
+      case ChordRhythm::Eighth: return ChordRhythm::Eighth;
+    }
+  }
+
+  return base_rhythm;
 }
 
 // Generate chord notes for one bar
@@ -566,7 +619,8 @@ void generateChordTrack(MidiTrack& track, const Song& song,
                                         ? sections[sec_idx + 1].type
                                         : section.type;
 
-    ChordRhythm rhythm = selectRhythm(section.type, params.mood);
+    ChordRhythm rhythm = selectRhythm(section.type, params.mood,
+                                       section.backing_density);
     HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section.type, params.mood);
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
@@ -583,7 +637,8 @@ void generateChordTrack(MidiTrack& track, const Song& song,
       }
 
       int8_t degree = progression.degrees[chord_idx];
-      uint8_t root = degreeToRoot(degree, params.key);
+      // Internal processing is always in C major; transpose at MIDI output time
+      uint8_t root = degreeToRoot(degree, Key::C);
 
       // Select chord extension based on context
       ChordExtension extension = selectChordExtension(
@@ -625,7 +680,7 @@ void generateChordTrack(MidiTrack& track, const Song& song,
 
         // Second half: dominant (V) chord - use Dom7 if 7th extensions enabled
         int8_t dominant_degree = 4;  // V
-        uint8_t dom_root = degreeToRoot(dominant_degree, params.key);
+        uint8_t dom_root = degreeToRoot(dominant_degree, Key::C);
         ChordExtension dom_ext = params.chord_extension.enable_7th
                                      ? ChordExtension::Dom7
                                      : ChordExtension::None;
@@ -647,7 +702,17 @@ void generateChordTrack(MidiTrack& track, const Song& song,
       bool is_phrase_end = harmonic.double_at_phrase_end &&
                            (bar % 4 == 3) && (bar < section.bars - 1);
 
-      if (is_phrase_end && harmonic.density == HarmonicDensity::Dense) {
+      // Dense harmonic rhythm: also allow mid-bar changes on even bars in Chorus
+      // for energetic moods (more dynamic harmonic motion)
+      bool is_dense_extra = (harmonic.density == HarmonicDensity::Dense) &&
+                            (section.type == SectionType::Chorus) &&
+                            (bar % 2 == 0) && (bar > 0) &&
+                            (params.mood == Mood::EnergeticDance ||
+                             params.mood == Mood::IdolPop ||
+                             params.mood == Mood::Yoasobi ||
+                             params.mood == Mood::FutureBass);
+
+      if ((is_phrase_end || is_dense_extra) && harmonic.density == HarmonicDensity::Dense) {
         // Dense harmonic rhythm at phrase end: split bar into two chords
         // First half: current chord
         uint8_t vel = calculateVelocity(section.type, 0, params.mood);
@@ -658,7 +723,7 @@ void generateChordTrack(MidiTrack& track, const Song& song,
         // Second half: next chord (anticipation)
         int next_chord_idx = (chord_idx + 1) % 4;
         int8_t next_degree = progression.degrees[next_chord_idx];
-        uint8_t next_root = degreeToRoot(next_degree, params.key);
+        uint8_t next_root = degreeToRoot(next_degree, Key::C);
         ChordExtension next_ext = selectChordExtension(
             next_degree, section.type, bar + 1, section.bars,
             params.chord_extension, rng);

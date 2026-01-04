@@ -7,43 +7,25 @@
 int main(int /*argc*/, char* /*argv*/[]) {
   std::cout << "midi-sketch v" << midisketch::MidiSketch::version() << "\n\n";
 
-  // Generate with default parameters
+  // Test with SongConfig API (same as demo)
   midisketch::MidiSketch sketch;
 
-  midisketch::GeneratorParams params{};
-  params.structure = midisketch::StructurePattern::FullPop;  // Full-length structure
-  params.mood = midisketch::Mood::BrightUpbeat;  // Upbeat mood for energetic feel
-  params.chord_id = 0;  // Canon
-  params.key = midisketch::Key::C;
-  params.drums_enabled = true;
-  params.modulation = true;  // Enable key modulation for variety
-  params.vocal_low = 55;   // G3
-  params.vocal_high = 74;  // D5
-  params.bpm = 0;  // use default
-  params.seed = 12345;
+  // Create config for Dance Pop Emotion + Pop4 (IV-I-V-vi)
+  midisketch::SongConfig config = midisketch::createDefaultSongConfig(1);  // Dance Pop Emotion
+  config.chord_progression_id = 3;  // Pop4: IV - I - V - vi
+  config.seed = 12345;
 
-  // BackgroundMotif style (Henceforth-type)
-  params.composition_style = midisketch::CompositionStyle::BackgroundMotif;
-  params.motif.length = midisketch::MotifLength::Bars2;
-  params.motif.note_count = 4;
-  params.motif.rhythm_density = midisketch::MotifRhythmDensity::Driving;
-  params.motif.motion = midisketch::MotifMotion::Stepwise;
-  params.motif.register_high = true;
-  params.motif.octave_layering_chorus = true;
-  params.motif_drum.hihat_drive = true;
-  params.motif_drum.hihat_density = midisketch::HihatDensity::EighthOpen;
-  params.motif_vocal.prominence = midisketch::VocalProminence::Background;
-  params.motif_vocal.rhythm_bias = midisketch::VocalRhythmBias::Sparse;
+  const auto& preset = midisketch::getStylePreset(config.style_preset_id);
 
-  std::cout << "Generating with:\n";
-  std::cout << "  Structure: " << midisketch::getStructureName(params.structure) << "\n";
-  std::cout << "  Mood: " << midisketch::getMoodName(params.mood) << "\n";
-  std::cout << "  Composition: BackgroundMotif\n";
-  std::cout << "  BPM: " << (params.bpm == 0 ? midisketch::getMoodDefaultBpm(params.mood) : params.bpm) << "\n";
-  std::cout << "  Modulation: " << (params.modulation ? "ON" : "OFF") << "\n";
-  std::cout << "  Seed: " << params.seed << "\n\n";
+  std::cout << "Generating with SongConfig:\n";
+  std::cout << "  Style: " << preset.display_name << "\n";
+  std::cout << "  Chord: " << config.chord_progression_id << "\n";
+  std::cout << "  Form: " << midisketch::getStructureName(config.form) << "\n";
+  std::cout << "  BPM: " << (config.bpm == 0 ? preset.tempo_default : config.bpm) << "\n";
+  std::cout << "  VocalAttitude: " << static_cast<int>(config.vocal_attitude) << "\n";
+  std::cout << "  Seed: " << config.seed << "\n\n";
 
-  sketch.generate(params);
+  sketch.generateFromConfig(config);
 
   // Write MIDI file
   auto midi_data = sketch.getMidi();
@@ -52,6 +34,14 @@ int main(int /*argc*/, char* /*argv*/[]) {
     file.write(reinterpret_cast<const char*>(midi_data.data()),
                static_cast<std::streamsize>(midi_data.size()));
     std::cout << "Saved: output.mid (" << midi_data.size() << " bytes)\n";
+  }
+
+  // Write events JSON
+  auto events_json = sketch.getEventsJson();
+  std::ofstream json_file("output.json");
+  if (json_file) {
+    json_file << events_json;
+    std::cout << "Saved: output.json\n";
   }
 
   // Print generation result

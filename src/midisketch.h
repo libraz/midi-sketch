@@ -19,9 +19,18 @@ class MidiSketch {
   // @param params Generation parameters
   void generate(const GeneratorParams& params);
 
+  // Generates MIDI from a SongConfig (new API).
+  // @param config Song configuration
+  void generateFromConfig(const SongConfig& config);
+
   // Regenerates only the melody with a new seed.
   // @param new_seed New random seed (0 = auto)
   void regenerateMelody(uint32_t new_seed = 0);
+
+  // Regenerates the vocal track with updated VocalAttitude.
+  // @param config SongConfig containing the new VocalAttitude
+  // @param new_seed New random seed (0 = keep current seed)
+  void regenerateVocalFromConfig(const SongConfig& config, uint32_t new_seed = 0);
 
   // Returns the current melody data (seed + notes).
   // Use this to save melody candidates for later comparison.

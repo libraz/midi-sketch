@@ -58,8 +58,9 @@ enum class BassPattern {
   RhythmicDrive   // Drums OFF: bass drives rhythm
 };
 
-// Select bass pattern based on section and drums
-BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood) {
+// Select bass pattern based on section, drums, mood, and backing density
+BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
+                           BackingDensity backing_density) {
   // When drums are off, bass takes rhythmic responsibility
   if (!drums_enabled) {
     if (section == SectionType::Intro || section == SectionType::Interlude ||
@@ -75,24 +76,54 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood) {
   bool is_dance = (mood == Mood::EnergeticDance || mood == Mood::ElectroPop ||
                    mood == Mood::IdolPop);
 
+  BassPattern base_pattern = BassPattern::RootFifth;
+
   switch (section) {
     case SectionType::Intro:
     case SectionType::Interlude:
-      return BassPattern::WholeNote;
+      base_pattern = BassPattern::WholeNote;
+      break;
     case SectionType::Outro:
-      return is_ballad ? BassPattern::WholeNote : BassPattern::RootFifth;
+      base_pattern = is_ballad ? BassPattern::WholeNote : BassPattern::RootFifth;
+      break;
     case SectionType::A:
-      return is_ballad ? BassPattern::WholeNote : BassPattern::RootFifth;
+      base_pattern = is_ballad ? BassPattern::WholeNote : BassPattern::RootFifth;
+      break;
     case SectionType::B:
-      return is_ballad ? BassPattern::RootFifth : BassPattern::Syncopated;
+      base_pattern = is_ballad ? BassPattern::RootFifth : BassPattern::Syncopated;
+      break;
     case SectionType::Chorus:
-      if (is_ballad) return BassPattern::RootFifth;
-      if (is_dance) return BassPattern::Driving;
-      return BassPattern::Syncopated;
+      if (is_ballad) base_pattern = BassPattern::RootFifth;
+      else if (is_dance) base_pattern = BassPattern::Driving;
+      else base_pattern = BassPattern::Syncopated;
+      break;
     case SectionType::Bridge:
-      return is_ballad ? BassPattern::WholeNote : BassPattern::RootFifth;
+      base_pattern = is_ballad ? BassPattern::WholeNote : BassPattern::RootFifth;
+      break;
   }
-  return BassPattern::RootFifth;
+
+  // Adjust pattern based on backing density
+  if (backing_density == BackingDensity::Thin) {
+    // Reduce density: move to sparser pattern
+    switch (base_pattern) {
+      case BassPattern::Driving: return BassPattern::Syncopated;
+      case BassPattern::Syncopated: return BassPattern::RootFifth;
+      case BassPattern::RhythmicDrive: return BassPattern::Syncopated;
+      case BassPattern::RootFifth: return BassPattern::WholeNote;
+      case BassPattern::WholeNote: return BassPattern::WholeNote;
+    }
+  } else if (backing_density == BackingDensity::Thick) {
+    // Increase density: move to denser pattern
+    switch (base_pattern) {
+      case BassPattern::WholeNote: return BassPattern::RootFifth;
+      case BassPattern::RootFifth: return BassPattern::Syncopated;
+      case BassPattern::Syncopated: return BassPattern::Driving;
+      case BassPattern::Driving: return BassPattern::Driving;
+      case BassPattern::RhythmicDrive: return BassPattern::RhythmicDrive;
+    }
+  }
+
+  return base_pattern;
 }
 
 // Generate one bar of bass based on pattern
@@ -255,7 +286,7 @@ void generateBassTrack(MidiTrack& track, const Song& song,
 
   for (const auto& section : sections) {
     BassPattern pattern = selectPattern(section.type, params.drums_enabled,
-                                         params.mood);
+                                         params.mood, section.backing_density);
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
@@ -266,8 +297,9 @@ void generateBassTrack(MidiTrack& track, const Song& song,
       int8_t degree = progression.degrees[chord_idx];
       int8_t next_degree = progression.degrees[next_chord_idx];
 
-      uint8_t root = clampBass(degreeToRoot(degree, params.key) - 12);
-      uint8_t next_root = clampBass(degreeToRoot(next_degree, params.key) - 12);
+      // Internal processing is always in C major; transpose at MIDI output time
+      uint8_t root = clampBass(degreeToRoot(degree, Key::C) - 12);
+      uint8_t next_root = clampBass(degreeToRoot(next_degree, Key::C) - 12);
 
       bool is_last_bar = (bar == section.bars - 1);
 

@@ -339,7 +339,6 @@ TEST(GeneratorTest, MelodyPhraseRepetitionWithModulation) {
 
   // Modulation should happen at second Chorus
   EXPECT_GT(song.modulationTick(), 0u);
-  int8_t mod_amount = song.modulationAmount();
 
   Tick chorus1_start = 16 * TICKS_PER_BAR;
   Tick chorus1_end = 24 * TICKS_PER_BAR;
@@ -358,13 +357,12 @@ TEST(GeneratorTest, MelodyPhraseRepetitionWithModulation) {
 
   ASSERT_EQ(chorus1_notes.size(), chorus2_notes.size());
 
-  // Notes should be transposed by modulation amount
+  // Internal notes should be IDENTICAL (no modulation applied internally).
+  // Modulation is applied at MIDI output time by MidiWriter.
+  // This ensures consistent handling across all tracks.
   for (size_t i = 0; i < chorus1_notes.size(); ++i) {
-    int expected_pitch = chorus1_notes[i].note + mod_amount;
-    // Allow for clamping at vocal range boundaries
-    if (expected_pitch >= params.vocal_low && expected_pitch <= params.vocal_high) {
-      EXPECT_EQ(chorus2_notes[i].note, expected_pitch);
-    }
+    EXPECT_EQ(chorus2_notes[i].note, chorus1_notes[i].note)
+        << "Internal notes should be identical; modulation is applied at output";
   }
 }
 

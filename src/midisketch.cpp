@@ -1,7 +1,19 @@
 #include "midisketch.h"
+#include <algorithm>
 #include <sstream>
 
 namespace midisketch {
+
+namespace {
+
+// Transpose pitch by key offset
+uint8_t transposePitch(uint8_t pitch, Key key) {
+  int offset = static_cast<int>(key);
+  int result = pitch + offset;
+  return static_cast<uint8_t>(std::clamp(result, 0, 127));
+}
+
+}  // namespace
 
 MidiSketch::MidiSketch() {}
 
@@ -12,8 +24,19 @@ void MidiSketch::generate(const GeneratorParams& params) {
   midi_writer_.build(generator_.getSong(), params.key);
 }
 
+void MidiSketch::generateFromConfig(const SongConfig& config) {
+  generator_.generateFromConfig(config);
+  midi_writer_.build(generator_.getSong(), config.key);
+}
+
 void MidiSketch::regenerateMelody(uint32_t new_seed) {
   generator_.regenerateMelody(new_seed);
+  midi_writer_.build(generator_.getSong(), generator_.getParams().key);
+}
+
+void MidiSketch::regenerateVocalFromConfig(const SongConfig& config,
+                                            uint32_t new_seed) {
+  generator_.regenerateVocalFromConfig(config, new_seed);
   midi_writer_.build(generator_.getSong(), generator_.getParams().key);
 }
 
@@ -33,11 +56,17 @@ std::vector<uint8_t> MidiSketch::getMidi() const {
 
 std::string MidiSketch::getEventsJson() const {
   const auto& song = generator_.getSong();
+  const auto& params = generator_.getParams();
   std::ostringstream oss;
 
   Tick total_ticks = song.arrangement().totalTicks();
   double duration_seconds = static_cast<double>(total_ticks) /
                             TICKS_PER_BEAT / song.bpm() * 60.0;
+
+  // Get modulation info
+  Tick mod_tick = song.modulationTick();
+  int8_t mod_amount = song.modulationAmount();
+  Key key = params.key;
 
   oss << "{";
   oss << "\"bpm\":" << song.bpm() << ",";
@@ -49,7 +78,8 @@ std::string MidiSketch::getEventsJson() const {
   oss << "\"tracks\":[";
 
   auto writeTrack = [&](const MidiTrack& track, const char* name,
-                        uint8_t channel, uint8_t program, bool comma) {
+                        uint8_t channel, uint8_t program, bool comma,
+                        bool apply_transpose) {
     oss << "{";
     oss << "\"name\":\"" << name << "\",";
     oss << "\"channel\":" << static_cast<int>(channel) << ",";
@@ -64,8 +94,18 @@ std::string MidiSketch::getEventsJson() const {
       double duration_secs = static_cast<double>(note.duration) /
                              TICKS_PER_BEAT / song.bpm() * 60.0;
 
+      // Apply transpose and modulation for non-drum tracks
+      uint8_t pitch = note.note;
+      if (apply_transpose) {
+        pitch = transposePitch(pitch, key);
+        if (mod_tick > 0 && note.startTick >= mod_tick && mod_amount != 0) {
+          int new_pitch = pitch + mod_amount;
+          pitch = static_cast<uint8_t>(std::clamp(new_pitch, 0, 127));
+        }
+      }
+
       oss << "{";
-      oss << "\"pitch\":" << static_cast<int>(note.note) << ",";
+      oss << "\"pitch\":" << static_cast<int>(pitch) << ",";
       oss << "\"velocity\":" << static_cast<int>(note.velocity) << ",";
       oss << "\"start_ticks\":" << note.startTick << ",";
       oss << "\"duration_ticks\":" << note.duration << ",";
@@ -79,10 +119,10 @@ std::string MidiSketch::getEventsJson() const {
     if (comma) oss << ",";
   };
 
-  writeTrack(song.vocal(), "Vocal", 0, 0, true);
-  writeTrack(song.chord(), "Chord", 1, 4, true);
-  writeTrack(song.bass(), "Bass", 2, 33, true);
-  writeTrack(song.drums(), "Drums", 9, 0, false);
+  writeTrack(song.vocal(), "Vocal", 0, 0, true, true);
+  writeTrack(song.chord(), "Chord", 1, 4, true, true);
+  writeTrack(song.bass(), "Bass", 2, 33, true, true);
+  writeTrack(song.drums(), "Drums", 9, 0, false, false);  // No transpose for drums
 
   oss << "],";
 

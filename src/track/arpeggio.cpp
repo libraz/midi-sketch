@@ -126,12 +126,8 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
   constexpr uint8_t BASE_OCTAVE = 60;  // C4
 
   for (const auto& section : sections) {
-    // Skip intro and outro for arpeggio unless explicitly enabled
-    if (section.type == SectionType::Intro ||
-        section.type == SectionType::Outro) {
-      // Light arpeggio in intro/outro with lower velocity
-      // Continue to generate but with reduced intensity
-    }
+    // Intro/Outro: generate arpeggio with reduced intensity
+    // Velocity is adjusted via calculateArpeggioVelocity() based on section type
 
     Tick section_end = section.start_tick + (section.bars * TICKS_PER_BAR);
 
@@ -141,7 +137,8 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
       // Get chord for this bar
       int chord_idx = bar % 4;
       int8_t degree = progression.degrees[chord_idx];
-      uint8_t root = degreeToRoot(degree, params.key);
+      // Internal processing is always in C major; transpose at MIDI output time
+      uint8_t root = degreeToRoot(degree, Key::C);
 
       // Adjust root to base octave
       while (root < BASE_OCTAVE) root += 12;

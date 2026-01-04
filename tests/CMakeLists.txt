@@ -19,6 +19,7 @@ set(TEST_SOURCES
   core/midi_track_test.cpp
   core/arrangement_test.cpp
   core/song_test.cpp
+  core/style_preset_test.cpp
   midi/midi_writer_test.cpp
   track/arpeggio_test.cpp
 )
