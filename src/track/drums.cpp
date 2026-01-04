@@ -211,9 +211,9 @@ std::vector<GhostPosition> selectGhostPositions(Mood mood, std::mt19937& rng) {
   return positions;
 }
 
-// Calculate ghost note density based on mood, section, and backing density
+// Calculate ghost note density based on mood, section, backing density, and BPM
 float getGhostDensity(Mood mood, SectionType section,
-                       BackingDensity backing_density) {
+                       BackingDensity backing_density, uint16_t bpm) {
   float base_density = 0.3f;
 
   // Section adjustment
@@ -271,7 +271,14 @@ float getGhostDensity(Mood mood, SectionType section,
       break;
   }
 
-  return std::min(0.7f, base_density);  // Cap at 70%
+  // BPM adjustment: reduce ghost notes at high tempos
+  // At 120 BPM: no adjustment, at 145 BPM: ~83%, at 100 BPM: capped at 100%
+  float bpm_factor = std::min(1.0f, 120.0f / bpm);
+  base_density *= bpm_factor;
+
+  // Cap based on BPM: lower cap at high tempos
+  float max_density = (bpm > 130) ? 0.5f : 0.7f;
+  return std::min(max_density, base_density);
 }
 
 // Section-specific kick pattern flags
@@ -625,7 +632,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
           // Get ghost note positions and density based on mood
           auto ghost_positions = selectGhostPositions(params.mood, rng);
           float ghost_prob = getGhostDensity(params.mood, section.type,
-                                              section.backing_density);
+                                              section.backing_density, params.bpm);
 
           std::uniform_real_distribution<float> ghost_dist(0.0f, 1.0f);
 
@@ -677,22 +684,34 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
               // Open hi-hat variations
               bool use_open = false;
 
-              // BackgroundMotif: consistent open hi-hat on off-beats
+              // BackgroundMotif: BPM-adaptive open hi-hat on off-beats
               if (motif_open_hh && eighth == 1) {
-                // Regular open hi-hat accents on every other off-beat
-                use_open = (beat == 1 || beat == 3);
-              } else if (style == DrumStyle::FourOnFloor && eighth == 1) {
-                // FourOnFloor: open hi-hat on every off-beat
-                use_open = true;
-              } else if (section.type == SectionType::Chorus && eighth == 1) {
-                // More open hi-hats in chorus
+                // Target: ~1.5 open hi-hats per second
+                float open_prob = 45.0f / params.bpm;
+                open_prob = std::min(0.8f, std::max(0.2f, open_prob));
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
-                use_open = (beat == 3 && open_dist(rng) < 0.4f) ||
-                           (beat == 1 && open_dist(rng) < 0.15f);
+                use_open = (beat == 1 || beat == 3) && open_dist(rng) < open_prob;
+              } else if (style == DrumStyle::FourOnFloor && eighth == 1) {
+                // FourOnFloor: BPM-adaptive open hi-hat on beats 2 and 4
+                // Target: ~1.5 open hi-hats per second
+                // With 2 candidates per bar: prob = 1.5 / (BPM/30) = 45/BPM
+                float open_prob = 45.0f / params.bpm;
+                open_prob = std::min(0.8f, std::max(0.15f, open_prob));
+                std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
+                use_open = (beat == 1 || beat == 3) && open_dist(rng) < open_prob;
+              } else if (section.type == SectionType::Chorus && eighth == 1) {
+                // More open hi-hats in chorus - BPM adaptive
+                // Base probabilities scaled by BPM factor
+                float bpm_scale = std::min(1.0f, 120.0f / params.bpm);
+                std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
+                use_open = (beat == 3 && open_dist(rng) < 0.4f * bpm_scale) ||
+                           (beat == 1 && open_dist(rng) < 0.15f * bpm_scale);
               } else if (section.type == SectionType::B && beat == 3 &&
                          eighth == 1) {
+                // B section accent - BPM adaptive
+                float bpm_scale = std::min(1.0f, 120.0f / params.bpm);
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
-                use_open = (open_dist(rng) < 0.25f);
+                use_open = (open_dist(rng) < 0.25f * bpm_scale);
               }
 
               if (use_open) {
@@ -719,10 +738,13 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
                 hh_vel = static_cast<uint8_t>(hh_vel * 0.5f);
               }
 
-              // Open hi-hat on beat 4's last 16th occasionally
+              // Open hi-hat on beat 4's last 16th - BPM adaptive
+              // Target: ~0.5 open hi-hats per second for 16th note patterns
               if (beat == 3 && sixteenth == 3) {
+                float open_prob = 30.0f / params.bpm;
+                open_prob = std::min(0.4f, std::max(0.1f, open_prob));
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
-                if (open_dist(rng) < 0.35f) {
+                if (open_dist(rng) < open_prob) {
                   track.addNote(hh_tick, SIXTEENTH, OHH,
                                 static_cast<uint8_t>(hh_vel * 1.2f));
                   continue;

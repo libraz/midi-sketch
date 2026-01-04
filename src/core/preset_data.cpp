@@ -405,10 +405,10 @@ DrumStyle getMoodDrumStyle(Mood mood) {
     // FourOnFloor - dance patterns
     case Mood::EnergeticDance:
     case Mood::ElectroPop:
-    case Mood::IdolPop:
       return DrumStyle::FourOnFloor;
 
     // Upbeat - driving patterns
+    case Mood::IdolPop:
     case Mood::BrightUpbeat:
     case Mood::ModernPop:
     case Mood::Anthem:

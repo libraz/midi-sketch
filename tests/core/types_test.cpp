@@ -96,9 +96,9 @@ TEST(TypesTest, DrumStyleMapping) {
   // FourOnFloor moods
   EXPECT_EQ(getMoodDrumStyle(Mood::EnergeticDance), DrumStyle::FourOnFloor);
   EXPECT_EQ(getMoodDrumStyle(Mood::ElectroPop), DrumStyle::FourOnFloor);
-  EXPECT_EQ(getMoodDrumStyle(Mood::IdolPop), DrumStyle::FourOnFloor);
 
   // Upbeat moods
+  EXPECT_EQ(getMoodDrumStyle(Mood::IdolPop), DrumStyle::Upbeat);
   EXPECT_EQ(getMoodDrumStyle(Mood::BrightUpbeat), DrumStyle::Upbeat);
   EXPECT_EQ(getMoodDrumStyle(Mood::ModernPop), DrumStyle::Upbeat);
   EXPECT_EQ(getMoodDrumStyle(Mood::Anthem), DrumStyle::Upbeat);

@@ -235,8 +235,8 @@ TEST(GeneratorTest, DrumStyleFourOnFloor) {
 
   // 10 bars * 4 beats = 40 kicks minimum (some fills reduce this)
   EXPECT_GT(kick_count, 30);
-  // Should have many open hi-hats
-  EXPECT_GT(open_hh_count, 20);
+  // Should have some open hi-hats (BPM-adaptive, probabilistic)
+  EXPECT_GT(open_hh_count, 5);
 }
 
 TEST(GeneratorTest, DrumStyleRock) {
