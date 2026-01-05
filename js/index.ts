@@ -3,11 +3,12 @@
  *
  * @example
  * ```typescript
- * import { MidiSketch, init, VocalAttitude } from '@libraz/midi-sketch';
+ * import { MidiSketch, init, createDefaultConfig } from '@libraz/midi-sketch';
  *
  * await init();
  * const sketch = new MidiSketch();
- * sketch.generate({ seed: 12345 });
+ * const config = createDefaultConfig(0);
+ * sketch.generateFromConfig(config);
  * const midiData = sketch.getMidi();
  * ```
  */
@@ -29,9 +30,7 @@ interface EmscriptenModule {
 interface Api {
   create: () => number;
   destroy: (handle: number) => void;
-  generate: (handle: number, paramsPtr: number) => number;
-  regenerateMelody: (handle: number, seed: number) => number;
-  regenerateMelodyEx: (handle: number, paramsPtr: number) => number;
+  regenerateVocal: (handle: number, paramsPtr: number) => number;
   getMidi: (handle: number) => number;
   freeMidi: (ptr: number) => void;
   getEvents: (handle: number) => number;
@@ -59,67 +58,10 @@ interface Api {
 }
 
 /**
- * Generation parameters for MIDI creation
- */
-export interface GeneratorParams {
-  /** Structure pattern (0-9) */
-  structureId?: number;
-  /** Mood preset (0-19) */
-  moodId?: number;
-  /** Chord progression (0-19) */
-  chordId?: number;
-  /** Key (0-11: C, C#, D, Eb, E, F, F#, G, Ab, A, Bb, B) */
-  key?: number;
-  /** Enable drums track */
-  drumsEnabled?: boolean;
-  /** Enable key modulation */
-  modulation?: boolean;
-  /** Vocal range lower bound (MIDI note) */
-  vocalLow?: number;
-  /** Vocal range upper bound (MIDI note) */
-  vocalHigh?: number;
-  /** Tempo (60-180, 0=use mood default) */
-  bpm?: number;
-  /** Random seed (0=auto) */
-  seed?: number;
-  /** Enable timing/velocity humanization */
-  humanize?: boolean;
-  /** Timing variation (0-100) */
-  humanizeTiming?: number;
-  /** Velocity variation (0-100) */
-  humanizeVelocity?: number;
-  /** Enable sus2/sus4 chords */
-  chordExtSus?: boolean;
-  /** Enable 7th chords */
-  chordExt7th?: boolean;
-  /** Sus chord probability (0-100) */
-  chordExtSusProb?: number;
-  /** 7th chord probability (0-100) */
-  chordExt7thProb?: number;
-  /** Enable 9th chords */
-  chordExt9th?: boolean;
-  /** 9th chord probability (0-100) */
-  chordExt9thProb?: number;
-  /** Composition style: 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven */
-  compositionStyle?: number;
-  /** Enable arpeggio track */
-  arpeggioEnabled?: boolean;
-  /** Arpeggio pattern: 0=Up, 1=Down, 2=UpDown, 3=Random */
-  arpeggioPattern?: number;
-  /** Arpeggio speed: 0=Eighth, 1=Sixteenth, 2=Triplet */
-  arpeggioSpeed?: number;
-  /** Arpeggio octave range (1-3) */
-  arpeggioOctaveRange?: number;
-  /** Arpeggio gate length (0-100) */
-  arpeggioGate?: number;
-  /** Target duration in seconds (0=use structureId, 60-300) */
-  targetDurationSeconds?: number;
-}
-
-/**
  * Song configuration for style-based generation
  */
 export interface SongConfig {
+  // Basic settings
   /** Style preset ID */
   stylePresetId: number;
   /** Key (0-11) */
@@ -136,26 +78,62 @@ export interface SongConfig {
   vocalAttitude: number;
   /** Enable drums */
   drumsEnabled: boolean;
+
+  // Arpeggio settings
   /** Enable arpeggio */
   arpeggioEnabled: boolean;
+  /** Arpeggio pattern: 0=Up, 1=Down, 2=UpDown, 3=Random */
+  arpeggioPattern: number;
+  /** Arpeggio speed: 0=Eighth, 1=Sixteenth, 2=Triplet */
+  arpeggioSpeed: number;
+  /** Arpeggio octave range (1-3) */
+  arpeggioOctaveRange: number;
+  /** Arpeggio gate length (0-100) */
+  arpeggioGate: number;
+
+  // Vocal settings
   /** Vocal range lower bound (MIDI note) */
   vocalLow: number;
   /** Vocal range upper bound (MIDI note) */
   vocalHigh: number;
+  /** Skip vocal generation (for BGM-first workflow) */
+  skipVocal: boolean;
+
+  // Humanization
   /** Enable humanization */
   humanize: boolean;
   /** Timing variation (0-100) */
   humanizeTiming: number;
   /** Velocity variation (0-100) */
   humanizeVelocity: number;
+
+  // Chord extensions
+  /** Enable sus2/sus4 chords */
+  chordExtSus: boolean;
+  /** Enable 7th chords */
+  chordExt7th: boolean;
+  /** Enable 9th chords */
+  chordExt9th: boolean;
+  /** Sus chord probability (0-100) */
+  chordExtSusProb: number;
+  /** 7th chord probability (0-100) */
+  chordExt7thProb: number;
+  /** 9th chord probability (0-100) */
+  chordExt9thProb: number;
+
+  // Composition style
+  /** Composition style: 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven */
+  compositionStyle: number;
+
+  // Duration
   /** Target duration in seconds (0 = use formId) */
   targetDurationSeconds: number;
 }
 
 /**
- * Parameters for melody regeneration
+ * Vocal regeneration parameters
  */
-export interface MelodyRegenerateParams {
+export interface VocalParams {
   /** Random seed (0 = new random) */
   seed: number;
   /** Vocal range lower bound (MIDI note) */
@@ -164,8 +142,6 @@ export interface MelodyRegenerateParams {
   vocalHigh: number;
   /** Vocal attitude: 0=Clean, 1=Expressive, 2=Raw */
   vocalAttitude: number;
-  /** Composition style: 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven */
-  compositionStyle: number;
 }
 
 /**
@@ -291,18 +267,10 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
   api = {
     create: m.cwrap('midisketch_create', 'number', []) as () => number,
     destroy: m.cwrap('midisketch_destroy', null, ['number']) as (handle: number) => void,
-    generate: m.cwrap('midisketch_generate', 'number', ['number', 'number']) as (
+    regenerateVocal: m.cwrap('midisketch_regenerate_vocal', 'number', ['number', 'number']) as (
       handle: number,
       paramsPtr: number,
     ) => number,
-    regenerateMelody: m.cwrap('midisketch_regenerate_melody', 'number', ['number', 'number']) as (
-      handle: number,
-      seed: number,
-    ) => number,
-    regenerateMelodyEx: m.cwrap('midisketch_regenerate_melody_ex', 'number', [
-      'number',
-      'number',
-    ]) as (handle: number, paramsPtr: number) => number,
     getMidi: m.cwrap('midisketch_get_midi', 'number', ['number']) as (handle: number) => number,
     freeMidi: m.cwrap('midisketch_free_midi', null, ['number']) as (ptr: number) => void,
     getEvents: m.cwrap('midisketch_get_events', 'number', ['number']) as (handle: number) => number,
@@ -470,6 +438,7 @@ export function createDefaultConfig(styleId: number): SongConfig {
   const retPtr = a.createDefaultConfigPtr(styleId);
   const view = new DataView(m.HEAPU8.buffer);
   return {
+    // Basic settings
     stylePresetId: view.getUint8(retPtr + 0),
     key: view.getUint8(retPtr + 1),
     bpm: view.getUint16(retPtr + 2, true),
@@ -478,13 +447,37 @@ export function createDefaultConfig(styleId: number): SongConfig {
     formId: view.getUint8(retPtr + 9),
     vocalAttitude: view.getUint8(retPtr + 10),
     drumsEnabled: view.getUint8(retPtr + 11) !== 0,
+
+    // Arpeggio settings
     arpeggioEnabled: view.getUint8(retPtr + 12) !== 0,
-    vocalLow: view.getUint8(retPtr + 13),
-    vocalHigh: view.getUint8(retPtr + 14),
-    humanize: view.getUint8(retPtr + 15) !== 0,
-    humanizeTiming: view.getUint8(retPtr + 16),
-    humanizeVelocity: view.getUint8(retPtr + 17),
-    targetDurationSeconds: view.getUint16(retPtr + 18, true),
+    arpeggioPattern: view.getUint8(retPtr + 13),
+    arpeggioSpeed: view.getUint8(retPtr + 14),
+    arpeggioOctaveRange: view.getUint8(retPtr + 15),
+    arpeggioGate: view.getUint8(retPtr + 16),
+
+    // Vocal settings
+    vocalLow: view.getUint8(retPtr + 17),
+    vocalHigh: view.getUint8(retPtr + 18),
+    skipVocal: view.getUint8(retPtr + 19) !== 0,
+
+    // Humanization
+    humanize: view.getUint8(retPtr + 20) !== 0,
+    humanizeTiming: view.getUint8(retPtr + 21),
+    humanizeVelocity: view.getUint8(retPtr + 22),
+
+    // Chord extensions
+    chordExtSus: view.getUint8(retPtr + 23) !== 0,
+    chordExt7th: view.getUint8(retPtr + 24) !== 0,
+    chordExt9th: view.getUint8(retPtr + 25) !== 0,
+    chordExtSusProb: view.getUint8(retPtr + 26),
+    chordExt7thProb: view.getUint8(retPtr + 27),
+    chordExt9thProb: view.getUint8(retPtr + 28),
+
+    // Composition style
+    compositionStyle: view.getUint8(retPtr + 29),
+
+    // Duration
+    targetDurationSeconds: view.getUint16(retPtr + 32, true),
   };
 }
 
@@ -503,52 +496,6 @@ export class MidiSketch {
   }
 
   /**
-   * Generate MIDI with the given parameters
-   */
-  generate(params: GeneratorParams = {}): void {
-    const a = getApi();
-    const m = getModule();
-    const paramsPtr = this.allocParams(m, params);
-    try {
-      const result = a.generate(this.handle, paramsPtr);
-      if (result !== 0) {
-        throw new Error(`Generation failed with error code: ${result}`);
-      }
-    } finally {
-      m._free(paramsPtr);
-    }
-  }
-
-  /**
-   * Regenerate only the melody track
-   */
-  regenerateMelody(seed = 0): void {
-    const a = getApi();
-    const result = a.regenerateMelody(this.handle, seed);
-    if (result !== 0) {
-      throw new Error(`Regeneration failed with error code: ${result}`);
-    }
-  }
-
-  /**
-   * Regenerate only the melody track with full parameter control.
-   * BGM tracks (chord, bass, drums, arpeggio) remain unchanged.
-   */
-  regenerateMelodyEx(params: MelodyRegenerateParams): void {
-    const a = getApi();
-    const m = getModule();
-    const paramsPtr = this.allocMelodyParams(m, params);
-    try {
-      const result = a.regenerateMelodyEx(this.handle, paramsPtr);
-      if (result !== 0) {
-        throw new Error(`Regeneration failed with error code: ${result}`);
-      }
-    } finally {
-      m._free(paramsPtr);
-    }
-  }
-
-  /**
    * Generate MIDI from a SongConfig
    */
   generateFromConfig(config: SongConfig): void {
@@ -562,6 +509,25 @@ export class MidiSketch {
       }
     } finally {
       m._free(configPtr);
+    }
+  }
+
+  /**
+   * Regenerate only the vocal track with the given parameters.
+   * BGM tracks (chord, bass, drums, arpeggio) remain unchanged.
+   * Use after generateFromConfig with skipVocal=true.
+   */
+  regenerateVocal(params: VocalParams): void {
+    const a = getApi();
+    const m = getModule();
+    const paramsPtr = this.allocVocalParams(m, params);
+    try {
+      const result = a.regenerateVocal(this.handle, paramsPtr);
+      if (result !== 0) {
+        throw new Error(`Vocal regeneration failed with error code: ${result}`);
+      }
+    } finally {
+      m._free(paramsPtr);
     }
   }
 
@@ -619,45 +585,11 @@ export class MidiSketch {
     }
   }
 
-  private allocParams(m: EmscriptenModule, params: GeneratorParams): number {
-    const ptr = m._malloc(34);
-    const view = new DataView(m.HEAPU8.buffer);
-
-    view.setUint8(ptr + 0, params.structureId ?? 0);
-    view.setUint8(ptr + 1, params.moodId ?? 0);
-    view.setUint8(ptr + 2, params.chordId ?? 0);
-    view.setUint8(ptr + 3, params.key ?? 0);
-    view.setUint8(ptr + 4, params.drumsEnabled !== false ? 1 : 0);
-    view.setUint8(ptr + 5, params.modulation ? 1 : 0);
-    view.setUint8(ptr + 6, params.vocalLow ?? 60);
-    view.setUint8(ptr + 7, params.vocalHigh ?? 79);
-    view.setUint16(ptr + 8, params.bpm ?? 0, true);
-    view.setUint32(ptr + 12, params.seed ?? 0, true);
-    view.setUint8(ptr + 16, params.humanize ? 1 : 0);
-    view.setUint8(ptr + 17, params.humanizeTiming ?? 50);
-    view.setUint8(ptr + 18, params.humanizeVelocity ?? 50);
-    view.setUint8(ptr + 19, params.chordExtSus ? 1 : 0);
-    view.setUint8(ptr + 20, params.chordExt7th ? 1 : 0);
-    view.setUint8(ptr + 21, params.chordExtSusProb ?? 20);
-    view.setUint8(ptr + 22, params.chordExt7thProb ?? 30);
-    view.setUint8(ptr + 23, params.chordExt9th ? 1 : 0);
-    view.setUint8(ptr + 24, params.chordExt9thProb ?? 25);
-    view.setUint8(ptr + 25, params.compositionStyle ?? 0);
-    view.setUint8(ptr + 26, params.arpeggioEnabled ? 1 : 0);
-    view.setUint8(ptr + 27, params.arpeggioPattern ?? 0);
-    view.setUint8(ptr + 28, params.arpeggioSpeed ?? 1);
-    view.setUint8(ptr + 29, params.arpeggioOctaveRange ?? 2);
-    view.setUint8(ptr + 30, params.arpeggioGate ?? 80);
-    // offset 31 is padding for alignment
-    view.setUint16(ptr + 32, params.targetDurationSeconds ?? 0, true);
-
-    return ptr;
-  }
-
   private allocSongConfig(m: EmscriptenModule, config: SongConfig): number {
-    const ptr = m._malloc(20);
+    const ptr = m._malloc(36); // Struct is 36 bytes with padding
     const view = new DataView(m.HEAPU8.buffer);
 
+    // Basic settings
     view.setUint8(ptr + 0, config.stylePresetId ?? 0);
     view.setUint8(ptr + 1, config.key ?? 0);
     view.setUint16(ptr + 2, config.bpm ?? 0, true);
@@ -666,18 +598,46 @@ export class MidiSketch {
     view.setUint8(ptr + 9, config.formId ?? 0);
     view.setUint8(ptr + 10, config.vocalAttitude ?? 0);
     view.setUint8(ptr + 11, config.drumsEnabled !== false ? 1 : 0);
+
+    // Arpeggio settings
     view.setUint8(ptr + 12, config.arpeggioEnabled ? 1 : 0);
-    view.setUint8(ptr + 13, config.vocalLow ?? 55);
-    view.setUint8(ptr + 14, config.vocalHigh ?? 74);
-    view.setUint8(ptr + 15, config.humanize ? 1 : 0);
-    view.setUint8(ptr + 16, config.humanizeTiming ?? 50);
-    view.setUint8(ptr + 17, config.humanizeVelocity ?? 50);
-    view.setUint16(ptr + 18, config.targetDurationSeconds ?? 0, true);
+    view.setUint8(ptr + 13, config.arpeggioPattern ?? 0);
+    view.setUint8(ptr + 14, config.arpeggioSpeed ?? 1);
+    view.setUint8(ptr + 15, config.arpeggioOctaveRange ?? 2);
+    view.setUint8(ptr + 16, config.arpeggioGate ?? 80);
+
+    // Vocal settings
+    view.setUint8(ptr + 17, config.vocalLow ?? 55);
+    view.setUint8(ptr + 18, config.vocalHigh ?? 74);
+    view.setUint8(ptr + 19, config.skipVocal ? 1 : 0);
+
+    // Humanization
+    view.setUint8(ptr + 20, config.humanize ? 1 : 0);
+    view.setUint8(ptr + 21, config.humanizeTiming ?? 50);
+    view.setUint8(ptr + 22, config.humanizeVelocity ?? 50);
+
+    // Chord extensions
+    view.setUint8(ptr + 23, config.chordExtSus ? 1 : 0);
+    view.setUint8(ptr + 24, config.chordExt7th ? 1 : 0);
+    view.setUint8(ptr + 25, config.chordExt9th ? 1 : 0);
+    view.setUint8(ptr + 26, config.chordExtSusProb ?? 20);
+    view.setUint8(ptr + 27, config.chordExt7thProb ?? 30);
+    view.setUint8(ptr + 28, config.chordExt9thProb ?? 25);
+
+    // Composition style
+    view.setUint8(ptr + 29, config.compositionStyle ?? 0);
+
+    // Reserved + padding
+    view.setUint8(ptr + 30, 0);
+    view.setUint8(ptr + 31, 0);
+
+    // Duration
+    view.setUint16(ptr + 32, config.targetDurationSeconds ?? 0, true);
 
     return ptr;
   }
 
-  private allocMelodyParams(m: EmscriptenModule, params: MelodyRegenerateParams): number {
+  private allocVocalParams(m: EmscriptenModule, params: VocalParams): number {
     const ptr = m._malloc(8);
     const view = new DataView(m.HEAPU8.buffer);
 
@@ -685,7 +645,6 @@ export class MidiSketch {
     view.setUint8(ptr + 4, params.vocalLow ?? 60);
     view.setUint8(ptr + 5, params.vocalHigh ?? 79);
     view.setUint8(ptr + 6, params.vocalAttitude ?? 0);
-    view.setUint8(ptr + 7, params.compositionStyle ?? 0);
 
     return ptr;
   }

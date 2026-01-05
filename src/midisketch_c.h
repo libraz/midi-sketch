@@ -27,63 +27,6 @@ typedef enum {
 } MidiSketchError;
 
 // ============================================================================
-// Input Parameters
-// ============================================================================
-
-// Generation parameters passed to midisketch_generate.
-typedef struct {
-  uint8_t structure_id;   // Structure pattern (0-9)
-  uint8_t mood_id;        // Mood preset (0-19)
-  uint8_t chord_id;       // Chord progression (0-19)
-  uint8_t key;            // Key (0-11: C, C#, D, Eb, E, F, F#, G, Ab, A, Bb, B)
-  uint8_t drums_enabled;  // Drums enabled (0=off, 1=on)
-  uint8_t modulation;     // Key modulation (0=off, 1=on)
-  uint8_t vocal_low;      // Vocal range lower bound (MIDI note, e.g., 60=C4)
-  uint8_t vocal_high;     // Vocal range upper bound (MIDI note, e.g., 79=G5)
-  uint16_t bpm;           // Tempo (60-180, 0=use mood default)
-  uint32_t seed;          // Random seed (0=auto)
-
-  // Humanization
-  uint8_t humanize;            // Enable humanization (0=off, 1=on)
-  uint8_t humanize_timing;     // Timing variation (0-100, maps to 0.0-1.0)
-  uint8_t humanize_velocity;   // Velocity variation (0-100, maps to 0.0-1.0)
-
-  // Chord extensions
-  uint8_t chord_ext_sus;       // Enable sus2/sus4 chords (0=off, 1=on)
-  uint8_t chord_ext_7th;       // Enable 7th chords (0=off, 1=on)
-  uint8_t chord_ext_sus_prob;  // Sus chord probability (0-100, maps to 0.0-1.0)
-  uint8_t chord_ext_7th_prob;  // 7th chord probability (0-100, maps to 0.0-1.0)
-
-  // 9th chord extensions
-  uint8_t chord_ext_9th;       // Enable 9th chords (0=off, 1=on)
-  uint8_t chord_ext_9th_prob;  // 9th chord probability (0-100, maps to 0.0-1.0)
-
-  // Composition style
-  uint8_t composition_style;   // 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
-
-  // Arpeggio track
-  uint8_t arpeggio_enabled;    // Enable arpeggio track (0=off, 1=on)
-  uint8_t arpeggio_pattern;    // 0=Up, 1=Down, 2=UpDown, 3=Random
-  uint8_t arpeggio_speed;      // 0=Eighth, 1=Sixteenth, 2=Triplet
-  uint8_t arpeggio_octave_range; // 1-3 octaves
-  uint8_t arpeggio_gate;       // Gate length (0-100, maps to 0.0-1.0)
-
-  // Duration control
-  uint8_t _reserved;                 // Alignment padding
-  uint16_t target_duration_seconds;  // Target duration (0=use structure, 60-300)
-} MidiSketchParams;
-
-// Melody regeneration parameters.
-// All fields are required - no sentinel values.
-typedef struct {
-  uint32_t seed;               // Random seed (0 = new random)
-  uint8_t vocal_low;           // Vocal range lower bound (MIDI note)
-  uint8_t vocal_high;          // Vocal range upper bound (MIDI note)
-  uint8_t vocal_attitude;      // 0=Clean, 1=Expressive, 2=Raw
-  uint8_t composition_style;   // 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
-} MidiSketchMelodyParams;
-
-// ============================================================================
 // Output Data Structures
 // ============================================================================
 
@@ -120,36 +63,26 @@ MidiSketchHandle midisketch_create(void);
 void midisketch_destroy(MidiSketchHandle handle);
 
 // ============================================================================
-// Generation
+// Vocal Regeneration
 // ============================================================================
 
-// Generates MIDI with the given parameters.
-// @param handle MidiSketch handle
-// @param params Generation parameters
-// @returns MIDISKETCH_OK on success, error code on failure
-MidiSketchError midisketch_generate(
-    MidiSketchHandle handle,
-    const MidiSketchParams* params
-);
+// Vocal regeneration parameters.
+typedef struct {
+  uint32_t seed;          // Random seed (0 = new random)
+  uint8_t vocal_low;      // Vocal range lower bound (MIDI note)
+  uint8_t vocal_high;     // Vocal range upper bound (MIDI note)
+  uint8_t vocal_attitude; // 0=Clean, 1=Expressive, 2=Raw
+} MidiSketchVocalParams;
 
-// Regenerates only the melody track with a new seed.
+// Regenerates only the vocal track with the given parameters.
+// BGM tracks (chord, bass, drums, arpeggio) remain unchanged.
+// Use after generateFromConfig with skipVocal=true.
 // @param handle MidiSketch handle
-// @param new_seed New random seed (0=auto)
+// @param params Vocal regeneration parameters
 // @returns MIDISKETCH_OK on success, error code on failure
-MidiSketchError midisketch_regenerate_melody(
+MidiSketchError midisketch_regenerate_vocal(
     MidiSketchHandle handle,
-    uint32_t new_seed
-);
-
-// Regenerates only the melody track with full parameter control.
-// Updates vocal range, attitude, and composition style before regenerating.
-// Other tracks (chord, bass, drums, arpeggio) remain unchanged.
-// @param handle MidiSketch handle
-// @param params Melody regeneration parameters
-// @returns MIDISKETCH_OK on success, error code on failure
-MidiSketchError midisketch_regenerate_melody_ex(
-    MidiSketchHandle handle,
-    const MidiSketchMelodyParams* params
+    const MidiSketchVocalParams* params
 );
 
 // ============================================================================
@@ -226,6 +159,7 @@ uint16_t midisketch_mood_default_bpm(uint8_t id);
 
 // Song configuration (new API, replaces MidiSketchParams).
 typedef struct {
+  // Basic settings
   uint8_t style_preset_id;    // Style preset ID (0-2 for Phase 1)
   uint8_t key;                // Key (0-11)
   uint16_t bpm;               // BPM (0 = use style default)
@@ -234,12 +168,37 @@ typedef struct {
   uint8_t form_id;            // StructurePattern ID (0-9)
   uint8_t vocal_attitude;     // 0=Clean, 1=Expressive, 2=Raw
   uint8_t drums_enabled;      // 0=off, 1=on
+
+  // Arpeggio settings
   uint8_t arpeggio_enabled;   // 0=off, 1=on
+  uint8_t arpeggio_pattern;   // 0=Up, 1=Down, 2=UpDown, 3=Random
+  uint8_t arpeggio_speed;     // 0=Eighth, 1=Sixteenth, 2=Triplet
+  uint8_t arpeggio_octave_range; // 1-3 octaves
+  uint8_t arpeggio_gate;      // Gate length (0-100, maps to 0.0-1.0)
+
+  // Vocal settings
   uint8_t vocal_low;          // Vocal range lower bound (MIDI note)
   uint8_t vocal_high;         // Vocal range upper bound (MIDI note)
+  uint8_t skip_vocal;         // Skip vocal generation (0=off, 1=on)
+
+  // Humanization
   uint8_t humanize;           // Enable humanization (0=off, 1=on)
   uint8_t humanize_timing;    // Timing variation (0-100)
   uint8_t humanize_velocity;  // Velocity variation (0-100)
+
+  // Chord extensions
+  uint8_t chord_ext_sus;      // Enable sus2/sus4 chords (0=off, 1=on)
+  uint8_t chord_ext_7th;      // Enable 7th chords (0=off, 1=on)
+  uint8_t chord_ext_9th;      // Enable 9th chords (0=off, 1=on)
+  uint8_t chord_ext_sus_prob; // Sus chord probability (0-100)
+  uint8_t chord_ext_7th_prob; // 7th chord probability (0-100)
+  uint8_t chord_ext_9th_prob; // 9th chord probability (0-100)
+
+  // Composition style
+  uint8_t composition_style;  // 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
+
+  // Duration
+  uint8_t _reserved;          // Padding for alignment
   uint16_t target_duration_seconds;  // Target duration in seconds (0 = use form_id)
 } MidiSketchSongConfig;
 

@@ -391,8 +391,18 @@ struct SongConfig {
   // Options
   bool drums_enabled = true;
   bool arpeggio_enabled = false;
-  uint8_t vocal_low = 60;   // C4
-  uint8_t vocal_high = 79;  // G5
+  bool skip_vocal = false;    // Skip vocal generation (for BGM-first workflow)
+  uint8_t vocal_low = 60;     // C4
+  uint8_t vocal_high = 79;    // G5
+
+  // Arpeggio settings
+  ArpeggioParams arpeggio;    // Pattern, speed, octave range, gate
+
+  // Chord extensions
+  ChordExtensionParams chord_extension;
+
+  // Composition style
+  CompositionStyle composition_style = CompositionStyle::MelodyLead;
 
   // Humanization
   bool humanize = false;
@@ -408,6 +418,7 @@ struct GeneratorParams {
   uint8_t chord_id;            // Chord progression ID (0-15)
   Key key;                     // Output key
   bool drums_enabled;          // Enable drums track
+  bool skip_vocal = false;     // Skip vocal track generation (for BGM-first workflow)
   bool modulation;             // Enable key modulation
   uint8_t vocal_low;           // Vocal range lower bound (MIDI note)
   uint8_t vocal_high;          // Vocal range upper bound (MIDI note)

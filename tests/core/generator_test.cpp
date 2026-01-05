@@ -1370,5 +1370,191 @@ TEST(VocalRangeTest, RegenerateMelodyRespectsRange) {
   }
 }
 
+// ============================================================================
+// Vocal Melody Generation Improvement Tests
+// ============================================================================
+
+TEST(VocalMelodyTest, VocalIntervalConstraint) {
+  // Test that maximum interval between consecutive vocal notes is <= 7 semitones
+  // (perfect 5th). This ensures singable melody lines without awkward leaps.
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::FullPop;  // Multiple sections for variety
+  params.mood = Mood::StraightPop;
+  params.seed = 12345;
+  params.vocal_low = 48;   // C3
+  params.vocal_high = 72;  // C5
+
+  gen.generate(params);
+  const auto& notes = gen.getSong().vocal().notes();
+
+  ASSERT_FALSE(notes.empty()) << "Vocal track should have notes";
+
+  // Check interval between consecutive notes
+  for (size_t i = 1; i < notes.size(); ++i) {
+    int interval = std::abs(static_cast<int>(notes[i].note) -
+                            static_cast<int>(notes[i - 1].note));
+    EXPECT_LE(interval, 7)
+        << "Interval of " << interval << " semitones between notes at tick "
+        << notes[i - 1].startTick << " (pitch " << (int)notes[i - 1].note
+        << ") and tick " << notes[i].startTick << " (pitch "
+        << (int)notes[i].note << ") exceeds 7 semitones (perfect 5th)";
+  }
+}
+
+TEST(VocalMelodyTest, ChorusHookRepetition) {
+  // Test that choruses have repeating melodic patterns.
+  // FullPop structure has 2 choruses - the first 4-8 notes should match
+  // (accounting for +1 semitone modulation applied to first chorus notes).
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::FullPop;  // Has 2 choruses
+  params.mood = Mood::StraightPop;
+  params.modulation = true;  // Modulation at second chorus
+  params.seed = 12345;
+  params.vocal_low = 48;
+  params.vocal_high = 72;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+  const auto& vocal = song.vocal().notes();
+
+  // FullPop: Intro(4) -> A(8) -> B(8) -> Chorus(8) -> A(8) -> B(8) -> Chorus(8) -> Outro(4)
+  // First Chorus: bars 20-27 (tick 38400-53760)
+  // Second Chorus: bars 44-51 (tick 84480-98880) - NOT bars 36-43 (that's B section!)
+  Tick chorus1_start = 20 * TICKS_PER_BAR;
+  Tick chorus1_end = 28 * TICKS_PER_BAR;
+  Tick chorus2_start = 44 * TICKS_PER_BAR;
+  Tick chorus2_end = 52 * TICKS_PER_BAR;
+
+  std::vector<NoteEvent> chorus1_notes, chorus2_notes;
+  for (const auto& note : vocal) {
+    if (note.startTick >= chorus1_start && note.startTick < chorus1_end) {
+      chorus1_notes.push_back(note);
+    }
+    if (note.startTick >= chorus2_start && note.startTick < chorus2_end) {
+      chorus2_notes.push_back(note);
+    }
+  }
+
+  ASSERT_FALSE(chorus1_notes.empty()) << "First chorus should have notes";
+  ASSERT_FALSE(chorus2_notes.empty()) << "Second chorus should have notes";
+
+  // Compare first 4-8 notes (hook pattern)
+  size_t compare_count = std::min({chorus1_notes.size(), chorus2_notes.size(), size_t(8)});
+  ASSERT_GE(compare_count, 4u) << "Each chorus should have at least 4 notes for hook comparison";
+
+  int matching_notes = 0;
+  int modulation_amount = song.modulationAmount();  // Usually +1 semitone
+
+  for (size_t i = 0; i < compare_count; ++i) {
+    // Adjust first chorus notes by modulation amount for comparison
+    // (internal representation has same notes, modulation applied at output)
+    int chorus1_adjusted = static_cast<int>(chorus1_notes[i].note);
+    int chorus2_pitch = static_cast<int>(chorus2_notes[i].note);
+
+    // Notes should be identical (no modulation in internal representation)
+    // or differ by modulation amount (if applied internally)
+    int pitch_diff = std::abs(chorus1_adjusted - chorus2_pitch);
+    if (pitch_diff <= modulation_amount || pitch_diff == 0) {
+      matching_notes++;
+    }
+  }
+
+  // At least 50% of hook notes should match (accounting for clash avoidance)
+  float match_ratio = static_cast<float>(matching_notes) / compare_count;
+  EXPECT_GE(match_ratio, 0.5f)
+      << "Chorus hook pattern matching: " << (match_ratio * 100.0f) << "% ("
+      << matching_notes << "/" << compare_count << " notes matched)";
+}
+
+TEST(VocalMelodyTest, VocalNoteDurationMinimum) {
+  // Test that average vocal note duration is at least 0.75 beats (360 ticks).
+  // This ensures singable melody with proper phrasing, not machine-gun notes.
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 12345;
+  params.vocal_low = 48;
+  params.vocal_high = 72;
+
+  gen.generate(params);
+  const auto& notes = gen.getSong().vocal().notes();
+
+  ASSERT_FALSE(notes.empty()) << "Vocal track should have notes";
+
+  // Calculate average duration
+  Tick total_duration = 0;
+  for (const auto& note : notes) {
+    total_duration += note.duration;
+  }
+
+  double average_duration = static_cast<double>(total_duration) / notes.size();
+  constexpr double MIN_AVERAGE_DURATION = 360.0;  // 0.75 beats in ticks
+
+  EXPECT_GE(average_duration, MIN_AVERAGE_DURATION)
+      << "Average vocal note duration " << average_duration
+      << " ticks is below minimum " << MIN_AVERAGE_DURATION
+      << " ticks (0.75 beats). Total notes: " << notes.size()
+      << ", Total duration: " << total_duration << " ticks";
+}
+
+TEST(GeneratorTest, SkipVocalGeneratesEmptyVocalTrack) {
+  // Test that skip_vocal=true generates no vocal notes.
+  // This enables BGM-first workflow where vocals are added later.
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 12345;
+  params.skip_vocal = true;
+
+  gen.generate(params);
+
+  // Vocal track should be empty
+  EXPECT_TRUE(gen.getSong().vocal().empty())
+      << "Vocal track should be empty when skip_vocal=true";
+
+  // Other tracks should still be generated
+  EXPECT_FALSE(gen.getSong().chord().empty())
+      << "Chord track should have notes";
+  EXPECT_FALSE(gen.getSong().bass().empty())
+      << "Bass track should have notes";
+}
+
+TEST(GeneratorTest, SkipVocalThenRegenerateMelody) {
+  // Test BGM-first workflow: skip vocal, then regenerate melody.
+  // Ensures regenerateMelody works correctly after skip_vocal.
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 12345;
+  params.skip_vocal = true;
+
+  gen.generate(params);
+  ASSERT_TRUE(gen.getSong().vocal().empty())
+      << "Vocal track should be empty initially";
+
+  // Regenerate melody
+  gen.regenerateMelody(54321);
+
+  // Now vocal track should have notes
+  EXPECT_FALSE(gen.getSong().vocal().empty())
+      << "Vocal track should have notes after regenerateMelody";
+
+  // Other tracks should remain unchanged
+  EXPECT_FALSE(gen.getSong().chord().empty());
+  EXPECT_FALSE(gen.getSong().bass().empty());
+}
+
+TEST(GeneratorTest, SkipVocalDefaultIsFalse) {
+  // Test that skip_vocal defaults to false for backward compatibility.
+  GeneratorParams params{};
+  EXPECT_FALSE(params.skip_vocal)
+      << "skip_vocal should default to false";
+}
+
 }  // namespace
 }  // namespace midisketch

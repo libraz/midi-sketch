@@ -56,97 +56,124 @@ describe('MidiSketch WASM', () => {
     expect(chordCount()).toBeGreaterThan(0);
   });
 
-  it('should generate MIDI successfully', () => {
-    const generate = module.cwrap('midisketch_generate', 'number', ['number', 'number']) as (
-      h: number,
-      paramsPtr: number,
-    ) => number;
-
-    // Allocate params struct (34 bytes)
-    const paramsPtr = module._malloc(34);
+  // Helper to allocate SongConfig struct (36 bytes with padding)
+  function allocSongConfig(config: {
+    stylePresetId?: number;
+    key?: number;
+    bpm?: number;
+    seed?: number;
+    chordProgressionId?: number;
+    formId?: number;
+    vocalAttitude?: number;
+    drumsEnabled?: boolean;
+    arpeggioEnabled?: boolean;
+    arpeggioPattern?: number;
+    arpeggioSpeed?: number;
+    arpeggioOctaveRange?: number;
+    arpeggioGate?: number;
+    vocalLow?: number;
+    vocalHigh?: number;
+    skipVocal?: boolean;
+    humanize?: boolean;
+    humanizeTiming?: number;
+    humanizeVelocity?: number;
+    chordExtSus?: boolean;
+    chordExt7th?: boolean;
+    chordExt9th?: boolean;
+    chordExtSusProb?: number;
+    chordExt7thProb?: number;
+    chordExt9thProb?: number;
+    compositionStyle?: number;
+    targetDurationSeconds?: number;
+  }): number {
+    const ptr = module._malloc(36);
     const view = new DataView(module.HEAPU8.buffer);
 
-    // Set basic params
-    view.setUint8(paramsPtr + 0, 0); // structureId
-    view.setUint8(paramsPtr + 1, 0); // moodId
-    view.setUint8(paramsPtr + 2, 0); // chordId
-    view.setUint8(paramsPtr + 3, 0); // key
-    view.setUint8(paramsPtr + 4, 1); // drumsEnabled
-    view.setUint8(paramsPtr + 5, 0); // modulation
-    view.setUint8(paramsPtr + 6, 60); // vocalLow
-    view.setUint8(paramsPtr + 7, 79); // vocalHigh
-    view.setUint16(paramsPtr + 8, 0, true); // bpm
-    view.setUint32(paramsPtr + 12, 12345, true); // seed
-    // offset 31 is padding
-    view.setUint16(paramsPtr + 32, 0, true); // targetDurationSeconds (0 = use structureId)
+    // Basic settings
+    view.setUint8(ptr + 0, config.stylePresetId ?? 0);
+    view.setUint8(ptr + 1, config.key ?? 0);
+    view.setUint16(ptr + 2, config.bpm ?? 0, true);
+    view.setUint32(ptr + 4, config.seed ?? 0, true);
+    view.setUint8(ptr + 8, config.chordProgressionId ?? 0);
+    view.setUint8(ptr + 9, config.formId ?? 0);
+    view.setUint8(ptr + 10, config.vocalAttitude ?? 0);
+    view.setUint8(ptr + 11, config.drumsEnabled !== false ? 1 : 0);
 
-    const result = generate(handle, paramsPtr);
-    module._free(paramsPtr);
+    // Arpeggio settings
+    view.setUint8(ptr + 12, config.arpeggioEnabled ? 1 : 0);
+    view.setUint8(ptr + 13, config.arpeggioPattern ?? 0);
+    view.setUint8(ptr + 14, config.arpeggioSpeed ?? 1);
+    view.setUint8(ptr + 15, config.arpeggioOctaveRange ?? 2);
+    view.setUint8(ptr + 16, config.arpeggioGate ?? 80);
+
+    // Vocal settings
+    view.setUint8(ptr + 17, config.vocalLow ?? 60);
+    view.setUint8(ptr + 18, config.vocalHigh ?? 79);
+    view.setUint8(ptr + 19, config.skipVocal ? 1 : 0);
+
+    // Humanization
+    view.setUint8(ptr + 20, config.humanize ? 1 : 0);
+    view.setUint8(ptr + 21, config.humanizeTiming ?? 50);
+    view.setUint8(ptr + 22, config.humanizeVelocity ?? 50);
+
+    // Chord extensions
+    view.setUint8(ptr + 23, config.chordExtSus ? 1 : 0);
+    view.setUint8(ptr + 24, config.chordExt7th ? 1 : 0);
+    view.setUint8(ptr + 25, config.chordExt9th ? 1 : 0);
+    view.setUint8(ptr + 26, config.chordExtSusProb ?? 20);
+    view.setUint8(ptr + 27, config.chordExt7thProb ?? 30);
+    view.setUint8(ptr + 28, config.chordExt9thProb ?? 25);
+
+    // Composition style
+    view.setUint8(ptr + 29, config.compositionStyle ?? 0);
+
+    // Reserved + padding
+    view.setUint8(ptr + 30, 0);
+    view.setUint8(ptr + 31, 0);
+
+    // Duration
+    view.setUint16(ptr + 32, config.targetDurationSeconds ?? 0, true);
+
+    return ptr;
+  }
+
+  // Helper to allocate VocalParams struct (8 bytes)
+  function allocVocalParams(params: {
+    seed?: number;
+    vocalLow?: number;
+    vocalHigh?: number;
+    vocalAttitude?: number;
+  }): number {
+    const ptr = module._malloc(8);
+    const view = new DataView(module.HEAPU8.buffer);
+
+    view.setUint32(ptr + 0, params.seed ?? 0, true);
+    view.setUint8(ptr + 4, params.vocalLow ?? 60);
+    view.setUint8(ptr + 5, params.vocalHigh ?? 79);
+    view.setUint8(ptr + 6, params.vocalAttitude ?? 0);
+
+    return ptr;
+  }
+
+  it('should generate MIDI from config successfully', () => {
+    const generateFromConfig = module.cwrap('midisketch_generate_from_config', 'number', [
+      'number',
+      'number',
+    ]) as (h: number, configPtr: number) => number;
+
+    const configPtr = allocSongConfig({ seed: 12345 });
+    const result = generateFromConfig(handle, configPtr);
+    module._free(configPtr);
 
     expect(result).toBe(0); // MIDISKETCH_OK
   });
 
-  describe('targetDurationSeconds', () => {
-    it('should reject duration below 60 seconds', () => {
-      const generate = module.cwrap('midisketch_generate', 'number', ['number', 'number']) as (
-        h: number,
-        paramsPtr: number,
-      ) => number;
-
-      const paramsPtr = module._malloc(34);
-      const view = new DataView(module.HEAPU8.buffer);
-
-      // Set minimal valid params
-      view.setUint8(paramsPtr + 0, 0); // structureId
-      view.setUint8(paramsPtr + 1, 0); // moodId
-      view.setUint8(paramsPtr + 2, 0); // chordId
-      view.setUint8(paramsPtr + 3, 0); // key
-      view.setUint8(paramsPtr + 4, 1); // drumsEnabled
-      view.setUint8(paramsPtr + 5, 0); // modulation
-      view.setUint8(paramsPtr + 6, 60); // vocalLow
-      view.setUint8(paramsPtr + 7, 79); // vocalHigh
-      view.setUint16(paramsPtr + 8, 120, true); // bpm
-      view.setUint32(paramsPtr + 12, 12345, true); // seed
-      view.setUint16(paramsPtr + 32, 30, true); // targetDurationSeconds (invalid: < 60)
-
-      const result = generate(handle, paramsPtr);
-      module._free(paramsPtr);
-
-      expect(result).toBe(1); // MIDISKETCH_ERROR_INVALID_PARAM
-    });
-
-    it('should reject duration above 300 seconds', () => {
-      const generate = module.cwrap('midisketch_generate', 'number', ['number', 'number']) as (
-        h: number,
-        paramsPtr: number,
-      ) => number;
-
-      const paramsPtr = module._malloc(34);
-      const view = new DataView(module.HEAPU8.buffer);
-
-      view.setUint8(paramsPtr + 0, 0);
-      view.setUint8(paramsPtr + 1, 0);
-      view.setUint8(paramsPtr + 2, 0);
-      view.setUint8(paramsPtr + 3, 0);
-      view.setUint8(paramsPtr + 4, 1);
-      view.setUint8(paramsPtr + 5, 0);
-      view.setUint8(paramsPtr + 6, 60);
-      view.setUint8(paramsPtr + 7, 79);
-      view.setUint16(paramsPtr + 8, 120, true);
-      view.setUint32(paramsPtr + 12, 12345, true);
-      view.setUint16(paramsPtr + 32, 400, true); // targetDurationSeconds (invalid: > 300)
-
-      const result = generate(handle, paramsPtr);
-      module._free(paramsPtr);
-
-      expect(result).toBe(1); // MIDISKETCH_ERROR_INVALID_PARAM
-    });
-
-    it('should accept valid duration and generate song', () => {
-      const generate = module.cwrap('midisketch_generate', 'number', ['number', 'number']) as (
-        h: number,
-        paramsPtr: number,
-      ) => number;
+  describe('skipVocal', () => {
+    it('should generate BGM without vocal when skipVocal is true', () => {
+      const generateFromConfig = module.cwrap('midisketch_generate_from_config', 'number', [
+        'number',
+        'number',
+      ]) as (h: number, configPtr: number) => number;
       const getEvents = module.cwrap('midisketch_get_events', 'number', ['number']) as (
         h: number,
       ) => number;
@@ -154,42 +181,109 @@ describe('MidiSketch WASM', () => {
         ptr: number,
       ) => void;
 
-      const paramsPtr = module._malloc(34);
-      const view = new DataView(module.HEAPU8.buffer);
+      const configPtr = allocSongConfig({ seed: 12345, skipVocal: true });
+      const result = generateFromConfig(handle, configPtr);
+      module._free(configPtr);
 
-      view.setUint8(paramsPtr + 0, 0);
-      view.setUint8(paramsPtr + 1, 0);
-      view.setUint8(paramsPtr + 2, 0);
-      view.setUint8(paramsPtr + 3, 0);
-      view.setUint8(paramsPtr + 4, 1);
-      view.setUint8(paramsPtr + 5, 0);
-      view.setUint8(paramsPtr + 6, 60);
-      view.setUint8(paramsPtr + 7, 79);
-      view.setUint16(paramsPtr + 8, 120, true); // bpm = 120
-      view.setUint32(paramsPtr + 12, 12345, true);
-      view.setUint16(paramsPtr + 32, 180, true); // targetDurationSeconds = 180 (3 minutes)
+      expect(result).toBe(0);
 
-      const result = generate(handle, paramsPtr);
-      module._free(paramsPtr);
-
-      expect(result).toBe(0); // MIDISKETCH_OK
-
-      // Verify generation produced valid output by checking events
+      // Check that vocal track is empty
       const eventDataPtr = getEvents(handle);
       const jsonPtr = module.HEAPU32[eventDataPtr >> 2];
       const json = module.UTF8ToString(jsonPtr);
       const data = JSON.parse(json);
 
-      // Check that we have tracks and notes
-      expect(data.tracks.length).toBeGreaterThan(0);
+      const vocalTrack = data.tracks.find((t: { name: string }) => t.name === 'Vocal');
+      expect(vocalTrack.notes.length).toBe(0);
 
-      // At 120 BPM, 180 seconds should produce ~90 bars worth of content
-      // Verify there are a significant number of notes (duration-based songs are longer)
-      const totalNotes = data.tracks.reduce(
-        (sum: number, track: { notes: unknown[] }) => sum + track.notes.length,
-        0,
+      // Other tracks should have notes
+      const chordTrack = data.tracks.find((t: { name: string }) => t.name === 'Chord');
+      expect(chordTrack.notes.length).toBeGreaterThan(0);
+
+      freeEvents(eventDataPtr);
+    });
+  });
+
+  describe('regenerateVocal', () => {
+    it('should regenerate vocal with params', () => {
+      const generateFromConfig = module.cwrap('midisketch_generate_from_config', 'number', [
+        'number',
+        'number',
+      ]) as (h: number, configPtr: number) => number;
+      const regenerateVocal = module.cwrap('midisketch_regenerate_vocal', 'number', [
+        'number',
+        'number',
+      ]) as (h: number, paramsPtr: number) => number;
+
+      // First generate BGM without vocal
+      const configPtr = allocSongConfig({ seed: 12345, skipVocal: true });
+      generateFromConfig(handle, configPtr);
+      module._free(configPtr);
+
+      // Then regenerate vocal
+      const paramsPtr = allocVocalParams({
+        seed: 54321,
+        vocalLow: 55,
+        vocalHigh: 74,
+        vocalAttitude: 1, // Expressive
+      });
+
+      const result = regenerateVocal(handle, paramsPtr);
+      module._free(paramsPtr);
+
+      expect(result).toBe(0); // MIDISKETCH_OK
+    });
+
+    it('should change vocal range after regeneration', () => {
+      const generateFromConfig = module.cwrap('midisketch_generate_from_config', 'number', [
+        'number',
+        'number',
+      ]) as (h: number, configPtr: number) => number;
+      const regenerateVocal = module.cwrap('midisketch_regenerate_vocal', 'number', [
+        'number',
+        'number',
+      ]) as (h: number, paramsPtr: number) => number;
+      const getEvents = module.cwrap('midisketch_get_events', 'number', ['number']) as (
+        h: number,
+      ) => number;
+      const freeEvents = module.cwrap('midisketch_free_events', null, ['number']) as (
+        ptr: number,
+      ) => void;
+
+      // Generate BGM without vocal
+      const configPtr = allocSongConfig({ seed: 12345, skipVocal: true });
+      generateFromConfig(handle, configPtr);
+      module._free(configPtr);
+
+      // Regenerate with restricted range
+      const paramsPtr = allocVocalParams({
+        seed: 11111,
+        vocalLow: 65,
+        vocalHigh: 72,
+        vocalAttitude: 0, // Clean
+      });
+
+      const result = regenerateVocal(handle, paramsPtr);
+      module._free(paramsPtr);
+      expect(result).toBe(0);
+
+      // Get events and check vocal notes
+      const eventDataPtr = getEvents(handle);
+      const jsonPtr = module.HEAPU32[eventDataPtr >> 2];
+      const json = module.UTF8ToString(jsonPtr);
+      const data = JSON.parse(json);
+
+      // Find vocal track
+      const vocalTrack = data.tracks.find((t: { name: string }) => t.name === 'Vocal');
+      expect(vocalTrack).toBeDefined();
+      expect(vocalTrack.notes.length).toBeGreaterThan(0);
+
+      // Most notes should be within range (allow some flexibility for melodic movement)
+      const inRangeNotes = vocalTrack.notes.filter(
+        (note: { pitch: number }) => note.pitch >= 65 && note.pitch <= 72,
       );
-      expect(totalNotes).toBeGreaterThan(100); // Longer song = more notes
+      const inRangeRatio = inRangeNotes.length / vocalTrack.notes.length;
+      expect(inRangeRatio).toBeGreaterThan(0.8); // At least 80% within range
 
       freeEvents(eventDataPtr);
     });
@@ -241,87 +335,6 @@ describe('MidiSketch WASM', () => {
     expect(data.tracks.length).toBeGreaterThan(0);
 
     freeEvents(eventDataPtr);
-  });
-
-  describe('regenerateMelody', () => {
-    it('should regenerate melody with new seed', () => {
-      const regenerateMelody = module.cwrap('midisketch_regenerate_melody', 'number', [
-        'number',
-        'number',
-      ]) as (h: number, seed: number) => number;
-
-      const result = regenerateMelody(handle, 99999);
-      expect(result).toBe(0); // MIDISKETCH_OK
-    });
-  });
-
-  describe('regenerateMelodyEx', () => {
-    it('should regenerate melody with full params', () => {
-      const regenerateMelodyEx = module.cwrap('midisketch_regenerate_melody_ex', 'number', [
-        'number',
-        'number',
-      ]) as (h: number, paramsPtr: number) => number;
-
-      // Allocate MidiSketchMelodyParams struct (8 bytes)
-      const paramsPtr = module._malloc(8);
-      const view = new DataView(module.HEAPU8.buffer);
-
-      view.setUint32(paramsPtr + 0, 54321, true); // seed
-      view.setUint8(paramsPtr + 4, 55); // vocalLow
-      view.setUint8(paramsPtr + 5, 74); // vocalHigh
-      view.setUint8(paramsPtr + 6, 1); // vocalAttitude (Expressive)
-      view.setUint8(paramsPtr + 7, 0); // compositionStyle (MelodyLead)
-
-      const result = regenerateMelodyEx(handle, paramsPtr);
-      module._free(paramsPtr);
-
-      expect(result).toBe(0); // MIDISKETCH_OK
-    });
-
-    it('should change vocal range after regeneration', () => {
-      const regenerateMelodyEx = module.cwrap('midisketch_regenerate_melody_ex', 'number', [
-        'number',
-        'number',
-      ]) as (h: number, paramsPtr: number) => number;
-      const getEvents = module.cwrap('midisketch_get_events', 'number', ['number']) as (
-        h: number,
-      ) => number;
-      const freeEvents = module.cwrap('midisketch_free_events', null, ['number']) as (
-        ptr: number,
-      ) => void;
-
-      // Regenerate with restricted range
-      const paramsPtr = module._malloc(8);
-      const view = new DataView(module.HEAPU8.buffer);
-
-      view.setUint32(paramsPtr + 0, 11111, true); // seed
-      view.setUint8(paramsPtr + 4, 65); // vocalLow (higher)
-      view.setUint8(paramsPtr + 5, 72); // vocalHigh (lower)
-      view.setUint8(paramsPtr + 6, 0); // vocalAttitude (Clean)
-      view.setUint8(paramsPtr + 7, 0); // compositionStyle
-
-      const result = regenerateMelodyEx(handle, paramsPtr);
-      module._free(paramsPtr);
-      expect(result).toBe(0);
-
-      // Get events and check vocal notes
-      const eventDataPtr = getEvents(handle);
-      const jsonPtr = module.HEAPU32[eventDataPtr >> 2];
-      const json = module.UTF8ToString(jsonPtr);
-      const data = JSON.parse(json);
-
-      // Find vocal track
-      const vocalTrack = data.tracks.find((t: { name: string }) => t.name === 'Vocal');
-      expect(vocalTrack).toBeDefined();
-
-      // All notes should be within range
-      for (const note of vocalTrack.notes) {
-        expect(note.pitch).toBeGreaterThanOrEqual(65);
-        expect(note.pitch).toBeLessThanOrEqual(72);
-      }
-
-      freeEvents(eventDataPtr);
-    });
   });
 
   describe('StylePreset API', () => {

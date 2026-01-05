@@ -105,6 +105,15 @@ void Generator::generateFromConfig(const SongConfig& config) {
 
   // Arpeggio settings
   params.arpeggio_enabled = config.arpeggio_enabled;
+  params.arpeggio = config.arpeggio;
+
+  // Chord extensions
+  params.chord_extension = config.chord_extension;
+
+  // Composition style (override preset if explicitly set)
+  if (config.composition_style != CompositionStyle::MelodyLead) {
+    params.composition_style = config.composition_style;
+  }
 
   // Humanization
   params.humanize = config.humanize;
@@ -117,6 +126,9 @@ void Generator::generateFromConfig(const SongConfig& config) {
 
   // Dynamic duration (0 = use form pattern)
   params.target_duration_seconds = config.target_duration_seconds;
+
+  // Skip vocal for BGM-first workflow
+  params.skip_vocal = config.skip_vocal;
 
   generate(params);
 }
@@ -168,17 +180,23 @@ void Generator::generate(const GeneratorParams& params) {
     generateMotif();
     generateBass();
     generateChord();  // Uses bass track for voicing coordination
-    generateVocal();  // Will use suppressed generation
+    if (!params.skip_vocal) {
+      generateVocal();  // Will use suppressed generation
+    }
   } else if (params.composition_style == CompositionStyle::SynthDriven) {
     // SynthDriven: Arpeggio is foreground, vocals subdued
     generateBass();
     generateChord();  // Uses bass track for voicing coordination
-    generateVocal();  // Will generate subdued vocals
+    if (!params.skip_vocal) {
+      generateVocal();  // Will generate subdued vocals
+    }
   } else {
     // MelodyLead: Bass first for chord voicing coordination
     generateBass();
     generateChord();  // Uses bass track for voicing coordination
-    generateVocal();
+    if (!params.skip_vocal) {
+      generateVocal();
+    }
   }
 
   if (params.drums_enabled) {

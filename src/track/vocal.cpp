@@ -150,6 +150,86 @@ int nearestChordTonePitch(int pitch, int8_t degree) {
   return best_pitch;
 }
 
+// Constrain pitch to be within max_interval of prev_pitch while respecting range
+// This is the KEY function for singable melodies - prevents large jumps
+int constrainInterval(int target_pitch, int prev_pitch, int max_interval,
+                      int range_low, int range_high) {
+  if (prev_pitch < 0) {
+    // No previous pitch, just clamp to range
+    return std::clamp(target_pitch, range_low, range_high);
+  }
+
+  int interval = target_pitch - prev_pitch;
+
+  // If interval is within limit, just clamp to range
+  if (std::abs(interval) <= max_interval) {
+    return std::clamp(target_pitch, range_low, range_high);
+  }
+
+  // Interval too large - find closest pitch in the allowed range
+  // Direction: preserve the intended direction of movement
+  int direction = (interval > 0) ? 1 : -1;
+
+  // Try the maximum allowed interval in the intended direction
+  int constrained = prev_pitch + (direction * max_interval);
+
+  // Clamp to vocal range
+  constrained = std::clamp(constrained, range_low, range_high);
+
+  // If clamping pushed us too far from target direction, try octave adjustment
+  if (direction > 0 && constrained < prev_pitch) {
+    // Wanted to go up but couldn't - we're at the top of range
+    constrained = prev_pitch;  // Stay on same pitch instead of jumping down
+  } else if (direction < 0 && constrained > prev_pitch) {
+    // Wanted to go down but couldn't - we're at the bottom of range
+    constrained = prev_pitch;  // Stay on same pitch instead of jumping up
+  }
+
+  return constrained;
+}
+
+// Find the closest chord tone to target within max_interval of prev_pitch
+int nearestChordToneWithinInterval(int target_pitch, int prev_pitch,
+                                   int8_t chord_degree, int max_interval,
+                                   int range_low, int range_high) {
+  ChordTones ct = getChordTones(chord_degree);
+
+  // If no previous pitch, just find nearest chord tone to target
+  if (prev_pitch < 0) {
+    int result = nearestChordTonePitch(target_pitch, chord_degree);
+    return std::clamp(result, range_low, range_high);
+  }
+
+  int best_pitch = prev_pitch;  // Default: stay on previous pitch
+  int best_dist_to_target = 100;
+
+  // Search for chord tones within max_interval of prev_pitch
+  for (uint8_t i = 0; i < ct.count; ++i) {
+    int ct_pc = ct.pitch_classes[i];
+    if (ct_pc < 0) continue;
+
+    // Check multiple octaves
+    for (int oct = (range_low / 12); oct <= (range_high / 12) + 1; ++oct) {
+      int candidate = oct * 12 + ct_pc;
+
+      // Must be within vocal range
+      if (candidate < range_low || candidate > range_high) continue;
+
+      // Must be within max_interval of prev_pitch
+      if (std::abs(candidate - prev_pitch) > max_interval) continue;
+
+      // Prefer candidates closer to the target pitch
+      int dist_to_target = std::abs(candidate - target_pitch);
+      if (dist_to_target < best_dist_to_target) {
+        best_dist_to_target = dist_to_target;
+        best_pitch = candidate;
+      }
+    }
+  }
+
+  return best_pitch;
+}
+
 
 // Convert scale degree to pitch
 int degreeToPitch(int degree, int octave, int key_offset) {
@@ -358,25 +438,27 @@ struct RhythmNote {
 };
 
 // Get rhythm patterns with strong beat marking
-// Patterns designed for lyrical vocal lines (8th note base, ~8-12 notes per 2 bars)
+// Patterns designed for SINGABLE vocal lines (longer notes, clear phrasing)
+// Key principle: Most notes should be 2+ eighths (1+ beat) for sustained singing
 std::vector<std::vector<RhythmNote>> getRhythmPatterns() {
   return {
-    // Pattern 0: Standard vocal rhythm (8th note base, 12 notes / 2 bars)
-    // Typical J-pop/pop verse rhythm with natural phrasing
-    {{0.0f, 1, true}, {0.5f, 1, false}, {1.0f, 2, false}, {2.0f, 1, true}, {2.5f, 1, false}, {3.0f, 2, false},
-     {4.0f, 1, true}, {4.5f, 1, false}, {5.0f, 2, false}, {6.0f, 1, true}, {6.5f, 1, false}, {7.0f, 2, false}},
-    // Pattern 1: Syncopated vocal (emphasis on off-beats, 10 notes)
-    {{0.0f, 2, true}, {1.0f, 1, false}, {1.5f, 1, false}, {2.0f, 2, true}, {3.0f, 1, false}, {3.5f, 1, false},
-     {4.0f, 2, true}, {5.0f, 1, false}, {5.5f, 1, false}, {6.0f, 3, true}},
-    // Pattern 2: Dense chorus rhythm (16th note feel, 14 notes)
-    {{0.0f, 1, true}, {0.5f, 1, false}, {1.0f, 1, false}, {1.5f, 1, false}, {2.0f, 1, true}, {2.5f, 1, false}, {3.0f, 2, false},
-     {4.0f, 1, true}, {4.5f, 1, false}, {5.0f, 1, false}, {5.5f, 1, false}, {6.0f, 1, true}, {6.5f, 1, false}, {7.0f, 2, false}},
-    // Pattern 3: Ballad/verse rhythm (longer notes with breath, 8 notes)
+    // Pattern 0: Verse rhythm - 8 notes / 2 bars, singable with breathing room
+    // "Ta--a Ta Ta--a Ta | Ta--a Ta Ta--a Ta" pattern
+    {{0.0f, 3, true}, {1.5f, 2, false}, {2.5f, 3, true}, {3.5f, 1, false},
+     {4.0f, 3, true}, {5.5f, 2, false}, {6.5f, 3, true}, {7.5f, 1, false}},
+    // Pattern 1: Verse variation - 8 notes with different rhythm feel
+    {{0.0f, 2, true}, {1.0f, 2, false}, {2.0f, 3, true}, {3.5f, 2, false},
+     {4.5f, 2, true}, {5.5f, 2, false}, {6.5f, 3, true}, {7.5f, 1, false}},
+    // Pattern 2: Chorus rhythm - 10 notes / 2 bars, energetic hook
     {{0.0f, 2, true}, {1.0f, 2, false}, {2.0f, 2, true}, {3.0f, 2, false},
-     {4.0f, 2, true}, {5.0f, 2, false}, {6.0f, 2, true}, {7.0f, 2, false}},
-    // Pattern 4: Call-response rhythm (phrase + rest + phrase, 10 notes)
-    {{0.0f, 1, true}, {0.5f, 1, false}, {1.0f, 1, false}, {1.5f, 2, false},
-     {4.0f, 1, true}, {4.5f, 1, false}, {5.0f, 1, false}, {5.5f, 1, false}, {6.0f, 2, true}, {7.0f, 2, false}},
+     {4.0f, 2, true}, {5.0f, 2, false}, {6.0f, 2, true}, {7.0f, 2, false},
+     {7.5f, 1, false}},
+    // Pattern 3: Sparse rhythm - 6 notes / 2 bars (bridge/ballad)
+    {{0.0f, 4, true}, {2.0f, 3, true}, {3.5f, 2, false},
+     {4.5f, 4, true}, {6.5f, 2, true}, {7.5f, 1, false}},
+    // Pattern 4: Pre-chorus build - 8 notes with syncopation
+    {{0.0f, 2, true}, {1.0f, 3, false}, {2.5f, 2, true}, {3.5f, 2, false},
+     {4.5f, 2, true}, {5.5f, 3, false}, {7.0f, 2, true}, {7.5f, 1, false}},
   };
 }
 
@@ -387,40 +469,41 @@ struct MelodicContour {
 };
 
 // Get contour patterns with chord tone markers
-// Extended to 14 notes to match dense rhythm patterns
+// Matched to new rhythm patterns (6-10 notes per 2 bars)
+// Key principle: Mostly stepwise motion (0-2 scale degrees), occasional 3rd
 std::vector<MelodicContour> getMelodicContours() {
   return {
-    // Contour 0: Arch shape - chord tones on strong beats (verse)
-    {{0, 1, 2, 2, 4, 4, 2, 1, 0, 0, 2, 2, 1, 0},
-     {true, false, true, false, true, false, true, false, true, false, true, false, false, true}},
-    // Contour 1: Ascending with stepwise motion (pre-chorus)
-    {{0, 1, 2, 2, 2, 4, 4, 4, 2, 2, 4, 4, 2, 0},
-     {true, false, true, false, false, true, false, false, true, false, true, false, false, true}},
-    // Contour 2: High energy with leaps (chorus)
-    {{0, 2, 4, 4, 5, 4, 2, 0, 2, 4, 4, 5, 4, 0},
-     {true, true, true, false, true, false, true, true, true, true, false, true, false, true}},
-    // Contour 3: Neighbor tone motion (verse - intimate)
-    {{0, 1, 0, -1, 0, 1, 2, 1, 0, 0, 1, 0, -1, 0},
-     {true, false, true, false, true, false, true, false, true, false, false, true, false, true}},
-    // Contour 4: Expressive with leaps and resolution (bridge)
-    {{0, 4, 2, 1, 0, 2, 4, 5, 4, 2, 1, 0, 0, 0},
-     {true, true, true, false, true, true, true, true, false, true, false, true, false, true}},
+    // Contour 0: Gentle arch - stepwise, singable (verse)
+    {{0, 1, 2, 2, 1, 0, 0, 1, 2, 0},
+     {true, false, true, true, false, true, true, false, true, true}},
+    // Contour 1: Ascending stepwise (pre-chorus, building)
+    {{0, 1, 2, 2, 2, 4, 4, 2, 2, 0},
+     {true, false, true, true, false, true, true, false, true, true}},
+    // Contour 2: Chorus hook - clear melodic shape
+    {{0, 2, 2, 4, 4, 2, 2, 0, 0, 2},
+     {true, true, true, true, true, true, true, true, true, true}},
+    // Contour 3: Intimate verse - neighbor tones only
+    {{0, 1, 0, 0, 1, 0, -1, 0, 1, 0},
+     {true, false, true, true, false, true, false, true, false, true}},
+    // Contour 4: Bridge - wider range but still singable
+    {{0, 2, 4, 2, 2, 0, 2, 4, 2, 0},
+     {true, true, true, true, false, true, true, true, true, true}},
   };
 }
 
 // Phrase ending contours - always end on stable chord tone
-// Extended to 14 notes to match dense rhythm patterns
+// Matched to new rhythm patterns (6-10 notes)
 std::vector<MelodicContour> getEndingContours() {
   return {
     // End on root (resolution) - gradual descent
-    {{2, 2, 1, 0, 0, 1, 2, 2, 1, 0, 0, 1, 0, 0},
-     {true, false, true, false, true, false, true, false, true, false, true, false, true, true}},
-    // 5th then root (authentic cadence feel) - strong resolution
-    {{4, 4, 2, 4, 2, 2, 4, 2, 1, 1, 0, 0, 0, 0},
-     {true, true, true, true, false, true, true, true, false, false, true, false, true, true}},
-    // Stepwise descent to root - smooth resolution
-    {{2, 2, 1, 1, 0, 2, 2, 1, 1, 0, 0, 1, 0, 0},
-     {true, false, true, false, true, true, false, true, false, true, true, false, true, true}},
+    {{2, 2, 1, 0, 2, 1, 0, 0, 0, 0},
+     {true, true, false, true, true, false, true, true, true, true}},
+    // 5th then root (authentic cadence) - strong resolution
+    {{4, 2, 4, 2, 0, 4, 2, 0, 0, 0},
+     {true, true, true, true, true, true, true, true, true, true}},
+    // Stepwise descent - smooth resolution
+    {{2, 1, 0, 1, 0, 2, 1, 0, 0, 0},
+     {true, false, true, false, true, true, false, true, true, true}},
   };
 }
 
@@ -659,14 +742,16 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         }
 
         track.addNote(absolute_tick, note.duration, pitch, note.velocity);
+        // Update prev_pitch for continuity with next section
+        prev_pitch = pitch;
       }
       continue;
     }
 
     // Generate new phrase
     std::vector<NoteEvent> phrase_notes;
-    prev_pitch = -1;
-    prev_interval = 0;
+    // NOTE: Don't reset prev_pitch here - maintain continuity across sections
+    // This ensures smooth melodic transitions at section boundaries
 
     // Select patterns based on section type
     int rhythm_pattern_idx = 0;
@@ -793,32 +878,67 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       Tick motif_start_tick = section.start_tick + motif_start * TICKS_PER_BAR;
       Tick relative_motif_start = motif_start * TICKS_PER_BAR;
 
-      // For chorus: repeat the hook phrase every 4 bars (except phrase endings)
+      // === CHORUS HOOK REPETITION ===
+      // In chorus: repeat the first 2-bar hook phrase throughout
+      // This creates a memorable, singable hook pattern
+      // Pattern: Hook (motif 0) -> Variation (motif 1) -> Hook (motif 2) -> Ending (motif 3)
       bool use_chorus_hook = is_chorus && motif_start > 0 &&
                              !chorus_hook_notes.empty() &&
-                             (motif_start % 4 == 0) && !is_phrase_ending;
+                             (motif_start % 2 == 0) &&  // Every 2 bars (motif 2, 4, 6...)
+                             !is_phrase_ending;  // Not at phrase endings (allow variation)
 
       if (use_chorus_hook) {
-        // Repeat the chorus hook with slight variation
+        // Repeat the chorus hook with optional pitch shift for climax
+        int pitch_shift = 0;
+        if (motif_start >= 4) {
+          // Second half of chorus: transpose up slightly for climax
+          pitch_shift = 2;  // One whole step up
+        }
+
+        constexpr int MAX_HOOK_INTERVAL = 7;  // Max interval for hook continuity
+        bool is_first_note = true;
+
         for (const auto& note : chorus_hook_notes) {
           Tick absolute_tick = motif_start_tick + note.startTick;
-          // Apply slight pitch variation for interest
-          int varied_pitch = note.note;
-          if (motif_start >= 4) {
-            // Second repetition: transpose up slightly for climax
-            varied_pitch = std::min(127, note.note + 2);
-          }
+          int varied_pitch = note.note + pitch_shift;
+
+          // First clamp to section range
           varied_pitch = std::clamp(varied_pitch, section_vocal_low, section_vocal_high);
 
+          // Apply interval constraint for EVERY note (not just first)
+          // This ensures melodic continuity within the hook replay
+          if (prev_pitch > 0) {
+            int interval = varied_pitch - prev_pitch;
+            if (std::abs(interval) > MAX_HOOK_INTERVAL) {
+              // Constrain to max interval while preserving direction
+              int direction = (interval > 0) ? 1 : -1;
+              int constrained = prev_pitch + (direction * MAX_HOOK_INTERVAL);
+              // Only use constrained if it's within the section range
+              if (constrained >= section_vocal_low && constrained <= section_vocal_high) {
+                varied_pitch = constrained;
+              }
+              // Otherwise keep the clamped pitch (may violate interval but stay in range)
+            }
+          }
+
           // Apply getSafePitch to avoid clashes with chord track
-          // (chord voicings may differ at repeated positions)
           uint8_t safe_pitch = getSafePitch(varied_pitch, absolute_tick, note.duration);
+
+          // IMPORTANT: If getSafePitch violates interval constraint, prefer melodic continuity
+          // Prioritize singability (max 7 semitone interval) over harmonic safety
+          if (prev_pitch > 0 && std::abs(static_cast<int>(safe_pitch) - prev_pitch) > MAX_HOOK_INTERVAL) {
+            // Revert to the interval-constrained pitch
+            safe_pitch = static_cast<uint8_t>(varied_pitch);
+          }
 
           track.addNote(absolute_tick, note.duration, safe_pitch, note.velocity);
           phrase_notes.push_back({note.startTick + relative_motif_start,
                                   note.duration,
                                   safe_pitch,
                                   note.velocity});
+
+          // Update prev_pitch for continuity
+          prev_pitch = safe_pitch;
         }
         continue;
       }
@@ -858,9 +978,15 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       // Generate notes for this motif
       size_t contour_idx = 0;
       for (const auto& rn : rhythm) {
-        // Skip some notes based on density
-        std::uniform_real_distribution<float> skip_dist(0.0f, 1.0f);
-        if (skip_dist(rng) > note_density) continue;
+        // === MUSIC THEORY: Strong beats must have notes ===
+        // Only skip weak-beat notes when density is low
+        // Strong beats (1, 3) always get notes for proper phrase structure
+        if (!rn.strong && note_density < 0.9f) {
+          std::uniform_real_distribution<float> skip_dist(0.0f, 1.0f);
+          // Higher skip probability when density is lower
+          float skip_prob = 1.0f - note_density;
+          if (skip_dist(rng) < skip_prob * 0.5f) continue;  // Max 50% skip rate
+        }
 
         float beat_in_motif = rn.beat;
         int bar_offset = static_cast<int>(beat_in_motif / 4.0f);
@@ -922,77 +1048,119 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
         contour_idx++;
 
-        // Convert to pitch first, then apply chord tone correction using pitch class
-        int pitch = degreeToPitch(scale_degree, base_octave, key_offset);
+        // === SINGABLE MELODY GENERATION ===
+        // Key principle: Limit intervals to create smooth, singable lines
+        // Maximum interval: 5 semitones (perfect 4th) for most notes
+        // Occasionally allow 7 semitones (perfect 5th) for expressiveness
+        constexpr int MAX_SINGABLE_INTERVAL = 5;  // Perfect 4th
+        constexpr int MAX_EXPRESSIVE_INTERVAL = 7;  // Perfect 5th (rare)
 
-        // On strong beats or marked positions, use chord tones
-        // Use pitch class comparison for accurate chord tone detection
-        // Pass chord extension params to ensure Vocal/Chord consistency
+        // Convert to target pitch first
+        int target_pitch = degreeToPitch(scale_degree, base_octave, key_offset);
+
+        // Determine effective max interval based on context
+        int max_interval = MAX_SINGABLE_INTERVAL;
+        if (section.type == SectionType::Chorus && rn.strong) {
+          // Allow slightly larger leaps in chorus on strong beats
+          max_interval = MAX_EXPRESSIVE_INTERVAL;
+        }
+
+        int pitch;
+        // IMPORTANT: Use GLOBAL vocal range for interval constraint, not section range
+        // Section range is for register shift, but interval must be enforced globally
+        // to prevent jarring jumps at section boundaries
+        int constraint_low = static_cast<int>(effective_vocal_low);
+        int constraint_high = static_cast<int>(effective_vocal_high);
+
         if (rn.strong || force_chord_tone) {
-          if (!isChordTone(pitch, static_cast<int8_t>(current_chord_root), params.chord_extension)) {
-            pitch = nearestChordTonePitch(pitch, static_cast<int8_t>(current_chord_root));
+          // On strong beats: find chord tone within interval limit
+          pitch = nearestChordToneWithinInterval(
+              target_pitch, prev_pitch, static_cast<int8_t>(current_chord_root),
+              max_interval, constraint_low, constraint_high);
+        } else {
+          // On weak beats: constrain interval, then adjust to scale if needed
+          pitch = constrainInterval(target_pitch, prev_pitch, max_interval,
+                                    constraint_low, constraint_high);
+        }
+
+        // After interval constraint, prefer section range but don't violate interval
+        if (prev_pitch > 0) {
+          if (pitch < section_vocal_low && section_vocal_low - prev_pitch <= max_interval) {
+            pitch = section_vocal_low;
+          } else if (pitch > section_vocal_high && prev_pitch - section_vocal_high <= max_interval) {
+            pitch = section_vocal_high;
+          }
+        } else {
+          // First note: clamp to section range
+          pitch = std::clamp(pitch, section_vocal_low, section_vocal_high);
+        }
+
+        // Phase 2: Apply allow_unison_repeat constraint
+        if (prev_pitch > 0 && !melody_params.allow_unison_repeat && pitch == prev_pitch) {
+          // Avoid unison repetition - move by step in contour direction
+          int direction = (contour_degree >= 0) ? 1 : -1;
+          int stepped = prev_pitch + direction * 2;  // Move by a whole step
+          if (stepped >= section_vocal_low && stepped <= section_vocal_high) {
+            pitch = stepped;
           }
         }
 
-        // Check for large leap (6+ semitones) and apply step-back rule
+        // Track interval for step-back rule
         if (prev_pitch > 0) {
           int interval = pitch - prev_pitch;
 
-          // Phase 2: Apply allow_unison_repeat constraint
-          if (!melody_params.allow_unison_repeat && pitch == prev_pitch) {
-            // Avoid unison repetition - move by step
-            std::uniform_int_distribution<int> dir_dist(0, 1);
-            int direction = (dir_dist(rng) == 0) ? 1 : -1;
-            pitch = prev_pitch + direction * 2;  // Move by a scale step
-            interval = pitch - prev_pitch;
-          }
-
-          // If previous was a large leap, move in opposite direction by step
-          if (std::abs(prev_interval) >= 7) {  // 5th or larger
-            if (prev_interval > 0 && interval > 0) {
-              // Was ascending leap, should descend
-              pitch = prev_pitch - 2;  // Step down
-            } else if (prev_interval < 0 && interval < 0) {
-              // Was descending leap, should ascend
-              pitch = prev_pitch + 2;  // Step up
+          // If previous was a large leap, encourage opposite direction by step
+          if (std::abs(prev_interval) >= MAX_EXPRESSIVE_INTERVAL) {
+            if (prev_interval > 0 && interval > 2) {
+              // Was ascending leap, prefer small descent or stay
+              pitch = std::max(section_vocal_low, prev_pitch - 2);
+            } else if (prev_interval < 0 && interval < -2) {
+              // Was descending leap, prefer small ascent or stay
+              pitch = std::min(section_vocal_high, prev_pitch + 2);
             }
           }
 
           prev_interval = pitch - prev_pitch;
         }
 
-        // Ensure within section-specific vocal range
-        while (pitch < section_vocal_low) pitch += 12;
-        while (pitch > section_vocal_high) pitch -= 12;
-        pitch = std::clamp(pitch, section_vocal_low, section_vocal_high);
+        // Save the actual previous pitch for interval checking in the final step
+        // prev_pitch will be updated to the STORED pitch after the note is added
+        int actual_prev_pitch = prev_pitch;
 
-        prev_pitch = pitch;
-
-        // Duration with articulation (phrase-based gate control)
-        // Base duration in ticks
+        // === PHRASE-AWARE DURATION CALCULATION ===
+        // Key principle: Last note of phrase should be LONGER for singability
+        // Pattern: short notes (8ths) -> phrase-final note (held, 1-2 beats)
         Tick base_duration = static_cast<Tick>(rn.eighths * TICKS_PER_BEAT / 2);
 
-        // Apply gate based on phrase position:
-        // - Phrase-final notes: shortened for breath (70% gate)
-        // - Notes within phrase: legato connection (95% gate)
-        // - Last note before phrase boundary: ensure breath space
-        float gate;
         bool is_last_note_of_phrase = is_phrase_ending && (&rn == &rhythm.back());
-        bool is_near_phrase_end = is_phrase_ending &&
-                                   (beat_in_motif >= 3.0f || &rn == &rhythm.back());
+        bool is_last_note_of_motif = (&rn == &rhythm.back());
+        bool is_near_phrase_end = is_phrase_ending && (beat_in_motif >= 6.0f);
+
+        // Determine gate and duration extension
+        float gate;
+        float duration_extend = 1.0f;  // Multiplier for extending duration
 
         if (is_last_note_of_phrase) {
-          // Phrase-final note: short for breath
-          gate = PHRASE_END_GATE;
+          // Phrase-final note: EXTEND duration for held note, then breath
+          // This is the "landing note" that gets sustained
+          gate = 0.85f;  // Moderate gate for natural release
+          duration_extend = 2.0f;  // Double the duration for held note
+        } else if (is_last_note_of_motif) {
+          // End of 2-bar motif (not phrase): hold longer for continuity
+          gate = LEGATO_GATE;
+          duration_extend = 1.5f;  // Extend by 50%
         } else if (is_near_phrase_end) {
-          // Near phrase end: transitional
-          gate = NORMAL_GATE;
+          // Approaching phrase end: prepare for hold
+          gate = LEGATO_GATE;
         } else {
           // Within phrase: legato (connected)
           gate = LEGATO_GATE;
         }
 
-        Tick duration = static_cast<Tick>(base_duration * gate);
+        // Calculate final duration
+        Tick duration = static_cast<Tick>(base_duration * duration_extend * gate);
+        // Ensure minimum duration of 1/4 beat for very short notes
+        duration = std::max(duration, static_cast<Tick>(TICKS_PER_BEAT / 4));
 
         // Velocity - stronger on chord tones
         uint8_t beat_num = static_cast<uint8_t>(beat_in_bar);
@@ -1092,9 +1260,21 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         } else {
           // Regular note - use safe pitch to avoid chord clashes
           uint8_t safe_pitch = getSafePitch(pitch, note_tick, duration);
+
+          // IMPORTANT: If getSafePitch violates interval constraint, prefer melodic continuity
+          // Use actual_prev_pitch (the PREVIOUS note's stored pitch) for accurate interval check
+          constexpr int MAX_REGULAR_INTERVAL = 7;  // Perfect 5th
+          if (actual_prev_pitch > 0 && std::abs(static_cast<int>(safe_pitch) - actual_prev_pitch) > MAX_REGULAR_INTERVAL) {
+            // Revert to the interval-constrained pitch
+            safe_pitch = static_cast<uint8_t>(pitch);
+          }
+
           track.addNote(note_tick, duration, safe_pitch, velocity);
           phrase_notes.push_back(
               {relative_tick, duration, safe_pitch, velocity});
+
+          // Update prev_pitch to the STORED pitch for next iteration
+          prev_pitch = safe_pitch;
 
           // Store notes for chorus hook (first 2-bar phrase only)
           if (is_chorus && motif_start == 0) {

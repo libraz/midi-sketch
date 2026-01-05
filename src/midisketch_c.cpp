@@ -16,104 +16,8 @@ void midisketch_destroy(MidiSketchHandle handle) {
   delete static_cast<midisketch::MidiSketch*>(handle);
 }
 
-MidiSketchError midisketch_generate(MidiSketchHandle handle,
-                                    const MidiSketchParams* params) {
-  if (!handle || !params) {
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  if (params->structure_id >= midisketch::STRUCTURE_COUNT) {
-    return MIDISKETCH_ERROR_INVALID_STRUCTURE;
-  }
-
-  if (params->mood_id >= midisketch::MOOD_COUNT) {
-    return MIDISKETCH_ERROR_INVALID_MOOD;
-  }
-
-  if (params->chord_id >= midisketch::CHORD_COUNT) {
-    return MIDISKETCH_ERROR_INVALID_CHORD;
-  }
-
-  if (params->key > 11) {
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  if (params->vocal_low > params->vocal_high) {
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  if (params->vocal_low < 36 || params->vocal_high > 96) {
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  if (params->bpm != 0 && (params->bpm < 60 || params->bpm > 180)) {
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  if (params->target_duration_seconds != 0 &&
-      (params->target_duration_seconds < 60 || params->target_duration_seconds > 300)) {
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
-
-  midisketch::GeneratorParams gen_params{};
-  gen_params.structure = static_cast<midisketch::StructurePattern>(params->structure_id);
-  gen_params.mood = static_cast<midisketch::Mood>(params->mood_id);
-  gen_params.chord_id = params->chord_id;
-  gen_params.key = static_cast<midisketch::Key>(params->key);
-  gen_params.drums_enabled = params->drums_enabled != 0;
-  gen_params.modulation = params->modulation != 0;
-  gen_params.vocal_low = params->vocal_low;
-  gen_params.vocal_high = params->vocal_high;
-  gen_params.bpm = params->bpm;
-  gen_params.seed = params->seed;
-
-  // Humanization parameters
-  gen_params.humanize = params->humanize != 0;
-  gen_params.humanize_timing = params->humanize_timing / 100.0f;
-  gen_params.humanize_velocity = params->humanize_velocity / 100.0f;
-
-  // Chord extension parameters
-  gen_params.chord_extension.enable_sus = params->chord_ext_sus != 0;
-  gen_params.chord_extension.enable_7th = params->chord_ext_7th != 0;
-  gen_params.chord_extension.sus_probability = params->chord_ext_sus_prob / 100.0f;
-  gen_params.chord_extension.seventh_probability = params->chord_ext_7th_prob / 100.0f;
-
-  // 9th chord extensions
-  gen_params.chord_extension.enable_9th = params->chord_ext_9th != 0;
-  gen_params.chord_extension.ninth_probability = params->chord_ext_9th_prob / 100.0f;
-
-  // Composition style
-  gen_params.composition_style = static_cast<midisketch::CompositionStyle>(params->composition_style);
-
-  // Arpeggio parameters
-  gen_params.arpeggio_enabled = params->arpeggio_enabled != 0;
-  gen_params.arpeggio.pattern = static_cast<midisketch::ArpeggioPattern>(params->arpeggio_pattern);
-  gen_params.arpeggio.speed = static_cast<midisketch::ArpeggioSpeed>(params->arpeggio_speed);
-  gen_params.arpeggio.octave_range = params->arpeggio_octave_range > 0 ? params->arpeggio_octave_range : 2;
-  gen_params.arpeggio.gate = params->arpeggio_gate / 100.0f;
-
-  // Duration control
-  gen_params.target_duration_seconds = params->target_duration_seconds;
-
-  sketch->generate(gen_params);
-  return MIDISKETCH_OK;
-}
-
-MidiSketchError midisketch_regenerate_melody(MidiSketchHandle handle,
-                                             uint32_t new_seed) {
-  if (!handle) {
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
-  sketch->regenerateMelody(new_seed);
-  return MIDISKETCH_OK;
-}
-
-MidiSketchError midisketch_regenerate_melody_ex(MidiSketchHandle handle,
-                                                const MidiSketchMelodyParams* params) {
+MidiSketchError midisketch_regenerate_vocal(MidiSketchHandle handle,
+                                             const MidiSketchVocalParams* params) {
   if (!handle || !params) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
@@ -125,7 +29,7 @@ MidiSketchError midisketch_regenerate_melody_ex(MidiSketchHandle handle,
   regen_params.vocal_low = params->vocal_low;
   regen_params.vocal_high = params->vocal_high;
   regen_params.vocal_attitude = static_cast<midisketch::VocalAttitude>(params->vocal_attitude);
-  regen_params.composition_style = static_cast<midisketch::CompositionStyle>(params->composition_style);
+  regen_params.composition_style = midisketch::CompositionStyle::MelodyLead;
 
   sketch->regenerateMelody(regen_params);
   return MIDISKETCH_OK;
@@ -313,6 +217,7 @@ MidiSketchFormCandidates* midisketch_get_forms_by_style_ptr(uint8_t style_id) {
 MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
   midisketch::SongConfig cpp_config = midisketch::createDefaultSongConfig(style_id);
 
+  // Basic settings
   s_default_config.style_preset_id = cpp_config.style_preset_id;
   s_default_config.key = static_cast<uint8_t>(cpp_config.key);
   s_default_config.bpm = cpp_config.bpm;
@@ -321,12 +226,35 @@ MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
   s_default_config.form_id = static_cast<uint8_t>(cpp_config.form);
   s_default_config.vocal_attitude = static_cast<uint8_t>(cpp_config.vocal_attitude);
   s_default_config.drums_enabled = cpp_config.drums_enabled ? 1 : 0;
+
+  // Arpeggio settings
   s_default_config.arpeggio_enabled = cpp_config.arpeggio_enabled ? 1 : 0;
+  s_default_config.arpeggio_pattern = static_cast<uint8_t>(cpp_config.arpeggio.pattern);
+  s_default_config.arpeggio_speed = static_cast<uint8_t>(cpp_config.arpeggio.speed);
+  s_default_config.arpeggio_octave_range = cpp_config.arpeggio.octave_range;
+  s_default_config.arpeggio_gate = static_cast<uint8_t>(cpp_config.arpeggio.gate * 100);
+
+  // Vocal settings
   s_default_config.vocal_low = cpp_config.vocal_low;
   s_default_config.vocal_high = cpp_config.vocal_high;
+  s_default_config.skip_vocal = cpp_config.skip_vocal ? 1 : 0;
+
+  // Humanization
   s_default_config.humanize = cpp_config.humanize ? 1 : 0;
   s_default_config.humanize_timing = static_cast<uint8_t>(cpp_config.humanize_timing * 100);
   s_default_config.humanize_velocity = static_cast<uint8_t>(cpp_config.humanize_velocity * 100);
+
+  // Chord extensions
+  s_default_config.chord_ext_sus = cpp_config.chord_extension.enable_sus ? 1 : 0;
+  s_default_config.chord_ext_7th = cpp_config.chord_extension.enable_7th ? 1 : 0;
+  s_default_config.chord_ext_9th = cpp_config.chord_extension.enable_9th ? 1 : 0;
+  s_default_config.chord_ext_sus_prob = static_cast<uint8_t>(cpp_config.chord_extension.sus_probability * 100);
+  s_default_config.chord_ext_7th_prob = static_cast<uint8_t>(cpp_config.chord_extension.seventh_probability * 100);
+  s_default_config.chord_ext_9th_prob = static_cast<uint8_t>(cpp_config.chord_extension.ninth_probability * 100);
+
+  // Composition style
+  s_default_config.composition_style = static_cast<uint8_t>(cpp_config.composition_style);
+
   s_default_config.target_duration_seconds = cpp_config.target_duration_seconds;
   return &s_default_config;
 }
@@ -412,12 +340,35 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   cpp_config.form = static_cast<midisketch::StructurePattern>(config->form_id);
   cpp_config.vocal_attitude = static_cast<midisketch::VocalAttitude>(config->vocal_attitude);
   cpp_config.drums_enabled = config->drums_enabled != 0;
+
+  // Arpeggio settings
   cpp_config.arpeggio_enabled = config->arpeggio_enabled != 0;
+  cpp_config.arpeggio.pattern = static_cast<midisketch::ArpeggioPattern>(config->arpeggio_pattern);
+  cpp_config.arpeggio.speed = static_cast<midisketch::ArpeggioSpeed>(config->arpeggio_speed);
+  cpp_config.arpeggio.octave_range = config->arpeggio_octave_range > 0 ? config->arpeggio_octave_range : 2;
+  cpp_config.arpeggio.gate = config->arpeggio_gate / 100.0f;
+
+  // Vocal settings
   cpp_config.vocal_low = config->vocal_low;
   cpp_config.vocal_high = config->vocal_high;
+  cpp_config.skip_vocal = config->skip_vocal != 0;
+
+  // Humanization
   cpp_config.humanize = config->humanize != 0;
   cpp_config.humanize_timing = config->humanize_timing / 100.0f;
   cpp_config.humanize_velocity = config->humanize_velocity / 100.0f;
+
+  // Chord extensions
+  cpp_config.chord_extension.enable_sus = config->chord_ext_sus != 0;
+  cpp_config.chord_extension.enable_7th = config->chord_ext_7th != 0;
+  cpp_config.chord_extension.enable_9th = config->chord_ext_9th != 0;
+  cpp_config.chord_extension.sus_probability = config->chord_ext_sus_prob / 100.0f;
+  cpp_config.chord_extension.seventh_probability = config->chord_ext_7th_prob / 100.0f;
+  cpp_config.chord_extension.ninth_probability = config->chord_ext_9th_prob / 100.0f;
+
+  // Composition style
+  cpp_config.composition_style = static_cast<midisketch::CompositionStyle>(config->composition_style);
+
   cpp_config.target_duration_seconds = config->target_duration_seconds;
 
   sketch->generateFromConfig(cpp_config);
