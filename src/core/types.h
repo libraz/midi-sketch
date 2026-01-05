@@ -453,6 +453,12 @@ struct SongConfig {
   // Composition style
   CompositionStyle composition_style = CompositionStyle::MelodyLead;
 
+  // Motif chord parameters (for BackgroundMotif style)
+  MotifChordParams motif_chord;
+
+  // Arrangement growth method
+  ArrangementGrowth arrangement_growth = ArrangementGrowth::LayerAdd;
+
   // Humanization
   bool humanize = false;
   float humanize_timing = 0.5f;

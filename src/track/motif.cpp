@@ -2,6 +2,7 @@
 #include "core/chord.h"
 #include <algorithm>
 #include <array>
+#include <map>
 #include <vector>
 
 namespace midisketch {
@@ -324,7 +325,18 @@ void generateMotifTrack(MidiTrack& track, Song& song,
   const auto& progression = getChordProgression(params.chord_id);
   Tick motif_length = static_cast<Tick>(motif_params.length) * TICKS_PER_BAR;
 
+  // Apply max_chord_count limit for BackgroundMotif style
+  // This limits the effective progression length to keep motif-style songs simple
+  uint8_t effective_prog_length = progression.length;
+  if (params.motif_chord.max_chord_count > 0 &&
+      params.motif_chord.max_chord_count < progression.length) {
+    effective_prog_length = params.motif_chord.max_chord_count;
+  }
+
   const auto& sections = song.arrangement().sections();
+
+  // Cache for section-specific patterns (used when repeat_scope == Section)
+  std::map<SectionType, std::vector<NoteEvent>> section_patterns;
 
   for (const auto& section : sections) {
     Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
@@ -333,18 +345,37 @@ void generateMotifTrack(MidiTrack& track, Song& song,
     // Apply octave layering for chorus if enabled
     bool add_octave = is_chorus && motif_params.octave_layering_chorus;
 
+    // Determine which pattern to use based on repeat_scope
+    std::vector<NoteEvent>* current_pattern = &pattern;
+    std::vector<NoteEvent> section_pattern;
+
+    if (motif_params.repeat_scope == MotifRepeatScope::Section) {
+      // Check if we already have a pattern for this section type
+      auto it = section_patterns.find(section.type);
+      if (it == section_patterns.end()) {
+        // Generate new pattern for this section type
+        section_pattern = generateMotifPattern(params, rng);
+        section_patterns[section.type] = section_pattern;
+        current_pattern = &section_patterns[section.type];
+      } else {
+        current_pattern = &it->second;
+      }
+    }
+    // else: FullSong - use the same base pattern for all sections
+
     // Repeat motif across the section
     for (Tick pos = section.start_tick; pos < section_end; pos += motif_length) {
       // Calculate which bar we're in for chord info
       uint32_t bar_in_section = (pos - section.start_tick) / TICKS_PER_BAR;
 
-      for (const auto& note : pattern) {
+      for (const auto& note : *current_pattern) {
         Tick absolute_tick = pos + note.startTick;
         if (absolute_tick >= section_end) continue;
 
         // Determine which bar this note falls in
         uint32_t note_bar = bar_in_section + (note.startTick / TICKS_PER_BAR);
-        int chord_idx = note_bar % progression.length;
+        // Use effective_prog_length to limit chord variety in BackgroundMotif mode
+        int chord_idx = note_bar % effective_prog_length;
         int8_t degree = progression.at(chord_idx);
 
         // Get chord info (use Key::C for internal processing)

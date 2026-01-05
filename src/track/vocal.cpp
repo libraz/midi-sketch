@@ -749,6 +749,19 @@ void generateVocalTrack(MidiTrack& track, Song& song,
   const VocalAttitude vocal_attitude = params.vocal_attitude;
   const StyleMelodyParams& melody_params = params.melody_params;
 
+  // === Vocal density parameters ===
+  // min_note_division: 4=quarter, 8=eighth, 16=sixteenth, 32=32nd
+  // Convert to minimum duration in eighths: 8/min_note_division
+  // e.g., min_note_division=4 -> min_eighths=2, min_note_division=16 -> min_eighths=0.5
+  const uint8_t min_note_division = melody_params.min_note_division;
+  const float min_duration_eighths = (min_note_division > 0) ? (8.0f / min_note_division) : 1.0f;
+
+  // vocal_rest_ratio: probability of adding rests between phrases (0.0-0.5)
+  const float vocal_rest_ratio = params.vocal_rest_ratio;
+
+  // vocal_allow_extreme_leap: allow up to octave leaps (for vocaloid mode)
+  const bool allow_extreme_leap = params.vocal_allow_extreme_leap;
+
   // Phase 2: Get FunctionalProfile from chord progression
   const ChordProgressionMeta& chord_meta = getChordProgressionMeta(params.chord_id);
   float profile_multiplier = getFunctionalProfileTensionMultiplier(chord_meta.profile);
@@ -1050,7 +1063,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
           pitch_shift = 2;  // One whole step up
         }
 
-        constexpr int MAX_HOOK_INTERVAL = 7;  // Max interval for hook continuity
+        const int MAX_HOOK_INTERVAL = allow_extreme_leap ? 12 : 7;  // Max interval for hook continuity
         bool is_first_note = true;
 
         for (const auto& note : chorus_hook_notes) {
@@ -1135,6 +1148,14 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       // Generate notes for this motif
       size_t contour_idx = 0;
       for (const auto& rn : rhythm) {
+        // === MIN NOTE DIVISION FILTER ===
+        // Skip notes shorter than the minimum note division
+        // rn.eighths is duration in eighth notes
+        // min_duration_eighths: 2.0 for quarter, 1.0 for eighth, 0.5 for 16th
+        if (static_cast<float>(rn.eighths) < min_duration_eighths) {
+          continue;  // Skip notes shorter than minimum duration
+        }
+
         // === IMPROVED SKIP LOGIC (Phase 3) ===
         // Skip logic is density-aware and section-aware
         // High density (>= 0.85): almost no skipping
@@ -1150,6 +1171,18 @@ void generateVocalTrack(MidiTrack& track, Song& song,
           float skip_prob = (1.0f - note_density) * 0.3f;
           should_skip = skip_dist(rng) < skip_prob;
         }
+
+        // === VOCAL REST RATIO ===
+        // Add additional rests based on vocal_rest_ratio
+        // This creates breathing room between phrases
+        // Only apply to weak beats to preserve phrase structure
+        if (!should_skip && !rn.strong && vocal_rest_ratio > 0.0f) {
+          std::uniform_real_distribution<float> rest_dist(0.0f, 1.0f);
+          // vocal_rest_ratio directly maps to skip probability for weak beats
+          // E.g., vocal_rest_ratio=0.15 → 15% chance of rest on weak beats
+          should_skip = rest_dist(rng) < vocal_rest_ratio;
+        }
+
         if (should_skip) continue;
 
         float beat_in_motif = rn.beat;
@@ -1216,8 +1249,9 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         // Key principle: Limit intervals to create smooth, singable lines
         // Maximum interval: 5 semitones (perfect 4th) for most notes
         // Occasionally allow 7 semitones (perfect 5th) for expressiveness
-        constexpr int MAX_SINGABLE_INTERVAL = 5;  // Perfect 4th
-        constexpr int MAX_EXPRESSIVE_INTERVAL = 7;  // Perfect 5th (rare)
+        // When allow_extreme_leap is true (vocaloid mode), allow up to octave
+        const int MAX_SINGABLE_INTERVAL = allow_extreme_leap ? 12 : 5;  // Octave or Perfect 4th
+        const int MAX_EXPRESSIVE_INTERVAL = allow_extreme_leap ? 12 : 7;  // Octave or Perfect 5th
 
         // Convert to target pitch first
         int target_pitch = degreeToPitch(scale_degree, base_octave, key_offset);
@@ -1430,7 +1464,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
           // IMPORTANT: If getSafePitch violates interval constraint, prefer melodic continuity
           // Use actual_prev_pitch (the PREVIOUS note's stored pitch) for accurate interval check
-          constexpr int MAX_REGULAR_INTERVAL = 7;  // Perfect 5th
+          const int MAX_REGULAR_INTERVAL = allow_extreme_leap ? 12 : 7;  // Octave or Perfect 5th
           if (actual_prev_pitch > 0 && std::abs(static_cast<int>(safe_pitch) - actual_prev_pitch) > MAX_REGULAR_INTERVAL) {
             // Revert to the interval-constrained pitch
             safe_pitch = static_cast<uint8_t>(pitch);

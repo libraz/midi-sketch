@@ -834,6 +834,15 @@ void generateChordTrack(MidiTrack& track, const Song& song,
   const auto& progression = getChordProgression(params.chord_id);
   const auto& sections = song.arrangement().sections();
 
+  // Apply max_chord_count limit for BackgroundMotif style
+  // This limits the effective progression length to keep motif-style songs simple
+  uint8_t effective_prog_length = progression.length;
+  if (params.composition_style == CompositionStyle::BackgroundMotif &&
+      params.motif_chord.max_chord_count > 0 &&
+      params.motif_chord.max_chord_count < progression.length) {
+    effective_prog_length = params.motif_chord.max_chord_count;
+  }
+
   VoicedChord prev_voicing{};
   bool has_prev = false;
 
@@ -854,10 +863,10 @@ void generateChordTrack(MidiTrack& track, const Song& song,
       int chord_idx;
       if (harmonic.density == HarmonicDensity::Slow) {
         // Slow: chord changes every 2 bars
-        chord_idx = (bar / 2) % progression.length;
+        chord_idx = (bar / 2) % effective_prog_length;
       } else {
         // Normal/Dense: chord changes every bar
-        chord_idx = bar % progression.length;
+        chord_idx = bar % effective_prog_length;
       }
 
       int8_t degree = progression.at(chord_idx);
@@ -985,7 +994,7 @@ void generateChordTrack(MidiTrack& track, const Song& song,
       // 1. Standard 4-bar phrase boundaries (bar 3, 7, etc.)
       // 2. Chord progression cycle boundaries (last chord of progression)
       bool is_4bar_phrase_end = (bar % 4 == 3);
-      bool is_chord_cycle_end = (bar % progression.length == progression.length - 1);
+      bool is_chord_cycle_end = (bar % effective_prog_length == effective_prog_length - 1);
       bool is_phrase_end = harmonic.double_at_phrase_end &&
                            (is_4bar_phrase_end || is_chord_cycle_end) &&
                            (bar < section.bars - 1);
@@ -1013,7 +1022,7 @@ void generateChordTrack(MidiTrack& track, const Song& song,
         }
 
         // Second half: next chord (anticipation)
-        int next_chord_idx = (chord_idx + 1) % progression.length;
+        int next_chord_idx = (chord_idx + 1) % effective_prog_length;
         int8_t next_degree = progression.at(next_chord_idx);
         uint8_t next_root = degreeToRoot(next_degree, Key::C);
         ChordExtension next_ext = selectChordExtension(
@@ -1036,6 +1045,24 @@ void generateChordTrack(MidiTrack& track, const Song& song,
       } else {
         // Normal chord generation for this bar
         generateChordBar(track, bar_start, voicing, rhythm, section.type, params.mood, bass_track);
+
+        // RegisterAdd mode: add octave doublings in Chorus for intensity buildup
+        // Instead of adding more instruments, we add register (octave) doublings
+        if (params.arrangement_growth == ArrangementGrowth::RegisterAdd &&
+            section.type == SectionType::Chorus) {
+          uint8_t vel = calculateVelocity(section.type, 0, params.mood);
+          uint8_t octave_vel = static_cast<uint8_t>(vel * 0.8f);  // Slightly softer
+
+          // Add lower octave doubling for fuller sound
+          for (size_t i = 0; i < voicing.count; ++i) {
+            int lower_pitch = static_cast<int>(voicing.pitches[i]) - 12;
+            if (lower_pitch >= CHORD_LOW && lower_pitch <= CHORD_HIGH) {
+              // Use whole note duration for sustained octave layer
+              track.addNote(bar_start, WHOLE, static_cast<uint8_t>(lower_pitch), octave_vel);
+            }
+          }
+        }
+
         prev_voicing = voicing;
       }
 

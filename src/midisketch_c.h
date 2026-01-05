@@ -223,6 +223,17 @@ typedef struct {
   uint8_t vocal_min_note_division; // Min note division (0=default, 4/8/16/32)
   uint8_t vocal_rest_ratio;        // Rest ratio * 100 (0-50)
   uint8_t vocal_allow_extreme_leap; // Allow extreme leaps (0=off, 1=on)
+
+  // Arrangement growth method
+  uint8_t arrangement_growth;      // 0=LayerAdd, 1=RegisterAdd
+
+  // Arpeggio sync settings
+  uint8_t arpeggio_sync_chord;     // Sync arpeggio with chord changes (0=off, 1=on, default=on)
+
+  // Motif settings (for BackgroundMotif style)
+  uint8_t motif_repeat_scope;      // 0=FullSong, 1=Section
+  uint8_t motif_fixed_progression; // Same progression all sections (0=off, 1=on, default=on)
+  uint8_t motif_max_chord_count;   // Max chord count (0=no limit, 2-8)
 } MidiSketchSongConfig;
 
 // Style preset summary for listing.

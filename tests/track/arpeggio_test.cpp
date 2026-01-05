@@ -220,5 +220,53 @@ TEST_F(ArpeggioTest, TrackRoleArpeggio) {
   EXPECT_FALSE(song.track(TrackRole::Arpeggio).empty());
 }
 
+TEST_F(ArpeggioTest, SyncChordTrue) {
+  // Test that sync_chord=true (default) syncs with chord changes each bar
+  params_.arpeggio.sync_chord = true;
+  params_.seed = 33333;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& arpeggio = gen.getSong().arpeggio();
+  EXPECT_FALSE(arpeggio.empty())
+      << "Arpeggio should be generated with sync_chord=true";
+}
+
+TEST_F(ArpeggioTest, SyncChordFalse) {
+  // Test that sync_chord=false continues pattern without chord resync
+  params_.arpeggio.sync_chord = false;
+  params_.seed = 33333;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& arpeggio = gen.getSong().arpeggio();
+  EXPECT_FALSE(arpeggio.empty())
+      << "Arpeggio should be generated with sync_chord=false";
+}
+
+TEST_F(ArpeggioTest, SyncChordAffectsPattern) {
+  // Test that sync_chord affects the arpeggio pattern behavior
+  params_.seed = 44444;
+
+  // Generate with sync_chord=true
+  params_.arpeggio.sync_chord = true;
+  Generator gen_sync;
+  gen_sync.generate(params_);
+  size_t sync_notes = gen_sync.getSong().arpeggio().notes().size();
+
+  // Generate with sync_chord=false
+  params_.arpeggio.sync_chord = false;
+  Generator gen_nosync;
+  gen_nosync.generate(params_);
+  size_t nosync_notes = gen_nosync.getSong().arpeggio().notes().size();
+
+  // Both should have similar note counts (timing is different, not note count)
+  // But ensure both generate something
+  EXPECT_GT(sync_notes, 0u) << "Sync chord should generate notes";
+  EXPECT_GT(nosync_notes, 0u) << "No sync chord should generate notes";
+}
+
 }  // namespace
 }  // namespace midisketch

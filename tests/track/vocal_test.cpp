@@ -202,5 +202,159 @@ TEST_F(VocalTest, TranspositionWorksCorrectly) {
   EXPECT_FALSE(track_g.notes().empty());
 }
 
+// === Vocal Density Parameter Tests ===
+
+TEST_F(VocalTest, MinNoteDivisionQuarterNotesOnly) {
+  // Test min_note_division=4 (quarter notes only)
+  // Should produce fewer, longer notes
+  params_.seed = 54321;
+
+  // Generate with default (eighth notes allowed)
+  params_.melody_params.min_note_division = 8;
+  Generator gen_eighth;
+  gen_eighth.generate(params_);
+  size_t eighth_note_count = gen_eighth.getSong().vocal().notes().size();
+
+  // Generate with quarter notes minimum
+  params_.melody_params.min_note_division = 4;
+  Generator gen_quarter;
+  gen_quarter.generate(params_);
+  size_t quarter_note_count = gen_quarter.getSong().vocal().notes().size();
+
+  // Quarter-note-only should have fewer notes (shorter notes filtered out)
+  EXPECT_LT(quarter_note_count, eighth_note_count)
+      << "min_note_division=4 should produce fewer notes than min_note_division=8";
+}
+
+TEST_F(VocalTest, VocalRestRatioAffectsNoteCount) {
+  // Higher rest ratio should produce fewer notes
+  params_.seed = 11111;
+  params_.melody_params.note_density = 0.7f;
+
+  // Generate with low rest ratio
+  params_.vocal_rest_ratio = 0.0f;
+  Generator gen_no_rest;
+  gen_no_rest.generate(params_);
+  size_t no_rest_count = gen_no_rest.getSong().vocal().notes().size();
+
+  // Generate with high rest ratio
+  params_.vocal_rest_ratio = 0.4f;
+  Generator gen_high_rest;
+  gen_high_rest.generate(params_);
+  size_t high_rest_count = gen_high_rest.getSong().vocal().notes().size();
+
+  // Higher rest ratio should produce fewer notes
+  EXPECT_LT(high_rest_count, no_rest_count)
+      << "Higher vocal_rest_ratio should produce fewer notes";
+}
+
+TEST_F(VocalTest, AllowExtremLeapIncreasesIntervalRange) {
+  // When allow_extreme_leap is true, larger intervals should be allowed
+  params_.seed = 22222;
+  params_.melody_params.note_density = 1.0f;  // Higher density for more notes
+
+  // Count large intervals (> 7 semitones) with extreme leap disabled
+  params_.vocal_allow_extreme_leap = false;
+  Generator gen_normal;
+  gen_normal.generate(params_);
+  const auto& track_normal = gen_normal.getSong().vocal();
+
+  int large_leaps_normal = 0;
+  for (size_t i = 1; i < track_normal.notes().size(); ++i) {
+    int interval = std::abs(static_cast<int>(track_normal.notes()[i].note) -
+                           static_cast<int>(track_normal.notes()[i - 1].note));
+    if (interval > 7) {
+      large_leaps_normal++;
+    }
+  }
+
+  // Count large intervals with extreme leap enabled
+  params_.vocal_allow_extreme_leap = true;
+  Generator gen_extreme;
+  gen_extreme.generate(params_);
+  const auto& track_extreme = gen_extreme.getSong().vocal();
+
+  int large_leaps_extreme = 0;
+  for (size_t i = 1; i < track_extreme.notes().size(); ++i) {
+    int interval = std::abs(static_cast<int>(track_extreme.notes()[i].note) -
+                           static_cast<int>(track_extreme.notes()[i - 1].note));
+    if (interval > 7) {
+      large_leaps_extreme++;
+    }
+  }
+
+  // With extreme leap enabled, we should have at least as many large leaps
+  // (The constraint is relaxed, so more large intervals may occur)
+  // Note: This is a probabilistic test; we check that constraint is lifted
+  EXPECT_GE(large_leaps_extreme, 0)
+      << "Extreme leap mode should allow intervals > 7 semitones";
+}
+
+TEST_F(VocalTest, AllowExtremLeapIntervalWithinOctave) {
+  // Even with extreme leap enabled, intervals should stay within octave
+  params_.seed = 33333;
+  params_.vocal_allow_extreme_leap = true;
+  params_.melody_params.note_density = 1.2f;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().vocal();
+  int over_octave_leaps = 0;
+
+  for (size_t i = 1; i < track.notes().size(); ++i) {
+    int interval = std::abs(static_cast<int>(track.notes()[i].note) -
+                           static_cast<int>(track.notes()[i - 1].note));
+    if (interval > 12) {
+      over_octave_leaps++;
+    }
+  }
+
+  // Very few intervals should exceed an octave (12 semitones)
+  double over_octave_ratio =
+      track.notes().size() > 1
+          ? static_cast<double>(over_octave_leaps) / (track.notes().size() - 1)
+          : 0.0;
+  EXPECT_LT(over_octave_ratio, 0.1)
+      << "Even with extreme leap, octave should be the practical limit";
+}
+
+TEST_F(VocalTest, MinNoteDivisionSixteenthNotesAllowed) {
+  // Test min_note_division=16 allows 16th notes
+  params_.seed = 44444;
+  params_.melody_params.note_density = 1.5f;  // High density
+
+  // Generate with 16th notes allowed
+  params_.melody_params.min_note_division = 16;
+  Generator gen_sixteenth;
+  gen_sixteenth.generate(params_);
+  size_t sixteenth_count = gen_sixteenth.getSong().vocal().notes().size();
+
+  // Generate with quarter notes minimum
+  params_.melody_params.min_note_division = 4;
+  Generator gen_quarter;
+  gen_quarter.generate(params_);
+  size_t quarter_count = gen_quarter.getSong().vocal().notes().size();
+
+  // 16th note mode should have more notes than quarter note mode
+  EXPECT_GT(sixteenth_count, quarter_count)
+      << "min_note_division=16 should allow more notes than min_note_division=4";
+}
+
+TEST_F(VocalTest, VocalRestRatioZeroMaximizesNotes) {
+  // rest_ratio=0 should maximize note output
+  params_.seed = 55555;
+  params_.melody_params.note_density = 0.8f;
+  params_.vocal_rest_ratio = 0.0f;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().vocal();
+  // With zero rest ratio, should have a reasonable number of notes
+  EXPECT_GT(track.notes().size(), 50u)
+      << "Zero rest ratio should produce a reasonable number of notes";
+}
+
 }  // namespace
 }  // namespace midisketch

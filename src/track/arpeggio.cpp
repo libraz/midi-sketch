@@ -126,36 +126,62 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
   // Moved from C4(60) to C5(72) for 1-octave separation from vocal range
   constexpr uint8_t BASE_OCTAVE = 72;  // C5
 
+  // When sync_chord is false, build one arpeggio pattern for section and continue
+  // When sync_chord is true, rebuild pattern each bar based on current chord
+  std::vector<uint8_t> persistent_arp_notes;
+  int persistent_pattern_index = 0;
+
   for (const auto& section : sections) {
     // Intro/Outro: generate arpeggio with reduced intensity
     // Velocity is adjusted via calculateArpeggioVelocity() based on section type
 
     Tick section_end = section.start_tick + (section.bars * TICKS_PER_BAR);
 
+    // When not syncing with chords, build pattern once at section start
+    if (!arp.sync_chord && persistent_arp_notes.empty()) {
+      // Use first chord of progression for the persistent pattern
+      int8_t degree = progression.at(0);
+      uint8_t root = degreeToRoot(degree, Key::C);
+      while (root < BASE_OCTAVE) root += 12;
+      while (root >= BASE_OCTAVE + 12) root -= 12;
+      Chord chord = getChordNotes(degree);
+      std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, arp.octave_range);
+      persistent_arp_notes = arrangeByPattern(chord_notes, arp.pattern, rng);
+    }
+
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + (bar * TICKS_PER_BAR);
 
-      // Get chord for this bar
-      int chord_idx = bar % progression.length;
-      int8_t degree = progression.at(chord_idx);
-      // Internal processing is always in C major; transpose at MIDI output time
-      uint8_t root = degreeToRoot(degree, Key::C);
+      std::vector<uint8_t> arp_notes;
+      int pattern_index;
 
-      // Adjust root to base octave
-      while (root < BASE_OCTAVE) root += 12;
-      while (root >= BASE_OCTAVE + 12) root -= 12;
+      if (arp.sync_chord) {
+        // Sync with chord: rebuild pattern each bar
+        int chord_idx = bar % progression.length;
+        int8_t degree = progression.at(chord_idx);
+        // Internal processing is always in C major; transpose at MIDI output time
+        uint8_t root = degreeToRoot(degree, Key::C);
 
-      Chord chord = getChordNotes(degree);
+        // Adjust root to base octave
+        while (root < BASE_OCTAVE) root += 12;
+        while (root >= BASE_OCTAVE + 12) root -= 12;
 
-      // Build arpeggio notes for this chord
-      std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, arp.octave_range);
-      std::vector<uint8_t> arp_notes = arrangeByPattern(chord_notes, arp.pattern, rng);
+        Chord chord = getChordNotes(degree);
+
+        // Build arpeggio notes for this chord
+        std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, arp.octave_range);
+        arp_notes = arrangeByPattern(chord_notes, arp.pattern, rng);
+        pattern_index = 0;  // Reset pattern index each bar
+      } else {
+        // No sync: continue with persistent pattern
+        arp_notes = persistent_arp_notes;
+        pattern_index = persistent_pattern_index;
+      }
 
       if (arp_notes.empty()) continue;
 
       // Generate arpeggio pattern for this bar
       Tick pos = bar_start;
-      int pattern_index = 0;
 
       while (pos < bar_start + TICKS_PER_BAR && pos < section_end) {
         uint8_t note = arp_notes[pattern_index % arp_notes.size()];
@@ -166,6 +192,11 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
 
         pos += note_duration;
         pattern_index++;
+      }
+
+      // Update persistent index if not syncing
+      if (!arp.sync_chord) {
+        persistent_pattern_index = pattern_index;
       }
     }
   }

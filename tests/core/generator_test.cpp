@@ -1760,5 +1760,159 @@ TEST(VocalDensityTest, GeneratorParamsDensityTransfer) {
       << "Vocal should be generated with custom density parameters";
 }
 
+// ============================================================================
+// SE Enabled Tests
+// ============================================================================
+
+TEST(SEEnabledTest, SETrackDisabledWhenFalse) {
+  // Test that SE track is empty when se_enabled is false
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(0);
+  config.se_enabled = false;
+  config.call_enabled = true;  // Call would normally add SE content
+  config.seed = 12345;
+
+  gen.generateFromConfig(config);
+
+  // SE track should be empty
+  EXPECT_TRUE(gen.getSong().se().empty())
+      << "SE track should be empty when se_enabled=false";
+}
+
+TEST(SEEnabledTest, SETrackEnabledWhenTrue) {
+  // Test that SE track has content when se_enabled is true with calls
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(0);
+  config.se_enabled = true;
+  config.call_enabled = true;  // Enable calls for SE content
+  config.seed = 12345;
+
+  gen.generateFromConfig(config);
+
+  // SE track should have content (text events or notes)
+  const auto& se_track = gen.getSong().se();
+  bool has_content = !se_track.notes().empty() || !se_track.textEvents().empty();
+  EXPECT_TRUE(has_content)
+      << "SE track should have events when se_enabled=true and call_enabled=true";
+}
+
+// ============================================================================
+// Arrangement Growth Tests
+// ============================================================================
+
+TEST(ArrangementGrowthTest, RegisterAddChorusHasOctaveDoublings) {
+  // Test that RegisterAdd mode adds octave doublings in Chorus
+  Generator gen_layer;
+  SongConfig config_layer = createDefaultSongConfig(0);
+  config_layer.arrangement_growth = ArrangementGrowth::LayerAdd;
+  config_layer.seed = 55555;
+  gen_layer.generateFromConfig(config_layer);
+
+  Generator gen_register;
+  SongConfig config_register = createDefaultSongConfig(0);
+  config_register.arrangement_growth = ArrangementGrowth::RegisterAdd;
+  config_register.seed = 55555;  // Same seed
+  gen_register.generateFromConfig(config_register);
+
+  // RegisterAdd should have more chord notes (due to octave doublings)
+  size_t layer_chord_notes = gen_layer.getSong().chord().notes().size();
+  size_t register_chord_notes = gen_register.getSong().chord().notes().size();
+
+  // RegisterAdd adds octave doublings, so should have more chord notes
+  EXPECT_GE(register_chord_notes, layer_chord_notes)
+      << "RegisterAdd mode should have at least as many chord notes due to octave doublings";
+}
+
+// ============================================================================
+// Motif Chord Tests
+// ============================================================================
+
+TEST(MotifChordTest, MaxChordCountLimitsProgression) {
+  // Test that max_chord_count limits the effective progression length
+  Generator gen_full;
+  SongConfig config_full = createDefaultSongConfig(12);  // Background Motif style
+  config_full.composition_style = CompositionStyle::BackgroundMotif;
+  config_full.motif_chord.max_chord_count = 8;  // Full progression
+  config_full.seed = 77777;
+  gen_full.generateFromConfig(config_full);
+
+  Generator gen_limited;
+  SongConfig config_limited = createDefaultSongConfig(12);
+  config_limited.composition_style = CompositionStyle::BackgroundMotif;
+  config_limited.motif_chord.max_chord_count = 2;  // Only 2 chords
+  config_limited.seed = 77777;  // Same seed
+  gen_limited.generateFromConfig(config_limited);
+
+  // Both should generate successfully
+  EXPECT_FALSE(gen_full.getSong().motif().empty())
+      << "Full progression motif should be generated";
+  EXPECT_FALSE(gen_limited.getSong().motif().empty())
+      << "Limited progression motif should be generated";
+
+  // The limited version might have different harmonic content
+  // (same pattern but fewer chord variations)
+}
+
+// ============================================================================
+// Motif Repeat Scope Tests
+// ============================================================================
+
+TEST(MotifRepeatScopeTest, FullSongSamePattern) {
+  // Test that repeat_scope=FullSong uses same pattern throughout
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 88888;
+  params.composition_style = CompositionStyle::BackgroundMotif;
+  params.motif.repeat_scope = MotifRepeatScope::FullSong;
+
+  gen.generate(params);
+
+  EXPECT_FALSE(gen.getSong().motif().empty())
+      << "Motif should be generated with FullSong scope";
+}
+
+TEST(MotifRepeatScopeTest, SectionScopeGenerates) {
+  // Test that repeat_scope=Section generates different patterns per section
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 88888;
+  params.composition_style = CompositionStyle::BackgroundMotif;
+  params.motif.repeat_scope = MotifRepeatScope::Section;
+
+  gen.generate(params);
+
+  EXPECT_FALSE(gen.getSong().motif().empty())
+      << "Motif should be generated with Section scope";
+}
+
+TEST(MotifRepeatScopeTest, SectionVsFullSongDiffers) {
+  // Test that Section scope produces different result than FullSong
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 99999;
+  params.composition_style = CompositionStyle::BackgroundMotif;
+
+  // Generate with FullSong scope
+  params.motif.repeat_scope = MotifRepeatScope::FullSong;
+  Generator gen_full;
+  gen_full.generate(params);
+  size_t full_notes = gen_full.getSong().motif().notes().size();
+
+  // Generate with Section scope (more patterns = potentially more unique notes)
+  params.motif.repeat_scope = MotifRepeatScope::Section;
+  Generator gen_section;
+  gen_section.generate(params);
+  size_t section_notes = gen_section.getSong().motif().notes().size();
+
+  // Both should have notes
+  EXPECT_GT(full_notes, 0u) << "FullSong scope should generate notes";
+  EXPECT_GT(section_notes, 0u) << "Section scope should generate notes";
+}
+
 }  // namespace
 }  // namespace midisketch

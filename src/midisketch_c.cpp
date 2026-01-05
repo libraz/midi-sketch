@@ -281,6 +281,17 @@ MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
   s_default_config.vocal_rest_ratio = static_cast<uint8_t>(cpp_config.vocal_rest_ratio * 100);
   s_default_config.vocal_allow_extreme_leap = cpp_config.vocal_allow_extreme_leap ? 1 : 0;
 
+  // Arrangement growth
+  s_default_config.arrangement_growth = static_cast<uint8_t>(cpp_config.arrangement_growth);
+
+  // Arpeggio sync settings
+  s_default_config.arpeggio_sync_chord = cpp_config.arpeggio.sync_chord ? 1 : 0;
+
+  // Motif settings
+  s_default_config.motif_repeat_scope = static_cast<uint8_t>(midisketch::MotifRepeatScope::FullSong);
+  s_default_config.motif_fixed_progression = cpp_config.motif_chord.fixed_progression ? 1 : 0;
+  s_default_config.motif_max_chord_count = cpp_config.motif_chord.max_chord_count;
+
   return &s_default_config;
 }
 
@@ -425,6 +436,16 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   cpp_config.vocal_min_note_division = config->vocal_min_note_division;
   cpp_config.vocal_rest_ratio = config->vocal_rest_ratio / 100.0f;
   cpp_config.vocal_allow_extreme_leap = config->vocal_allow_extreme_leap != 0;
+
+  // Arrangement growth
+  cpp_config.arrangement_growth = static_cast<midisketch::ArrangementGrowth>(config->arrangement_growth);
+
+  // Arpeggio sync settings
+  cpp_config.arpeggio.sync_chord = config->arpeggio_sync_chord != 0;
+
+  // Motif settings
+  cpp_config.motif_chord.fixed_progression = config->motif_fixed_progression != 0;
+  cpp_config.motif_chord.max_chord_count = config->motif_max_chord_count;
 
   sketch->generateFromConfig(cpp_config);
   return MIDISKETCH_OK;

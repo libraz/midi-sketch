@@ -83,6 +83,7 @@ class Generator {
   HarmonyContext harmony_context_;
 
   // Call system settings (stored from SongConfig)
+  bool se_enabled_ = true;  // Enable SE track generation
   bool call_enabled_ = false;
   bool call_notes_enabled_ = true;
   IntroChant intro_chant_ = IntroChant::None;

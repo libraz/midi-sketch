@@ -158,6 +158,22 @@ export interface SongConfig {
   vocalRestRatio: number;
   /** Allow extreme leaps for vocaloid-style melodies */
   vocalAllowExtremLeap: boolean;
+
+  // Arrangement settings
+  /** Arrangement growth: 0=LayerAdd, 1=RegisterAdd */
+  arrangementGrowth: number;
+
+  // Arpeggio sync settings
+  /** Sync arpeggio with chord changes (default=true) */
+  arpeggioSyncChord: boolean;
+
+  // Motif settings (for BackgroundMotif style)
+  /** Motif repeat scope: 0=FullSong, 1=Section */
+  motifRepeatScope: number;
+  /** Same progression for all sections (default=true) */
+  motifFixedProgression: boolean;
+  /** Max chord count (0=no limit, 2-8) */
+  motifMaxChordCount: number;
 }
 
 /**
@@ -293,6 +309,18 @@ export const CallDensity = {
   Minimal: 1,
   Standard: 2,
   Intense: 3,
+} as const;
+
+// Arrangement growth constants
+export const ArrangementGrowth = {
+  LayerAdd: 0,
+  RegisterAdd: 1,
+} as const;
+
+// Motif repeat scope constants
+export const MotifRepeatScope = {
+  FullSong: 0,
+  Section: 1,
 } as const;
 
 let moduleInstance: EmscriptenModule | null = null;
@@ -565,6 +593,17 @@ export function createDefaultConfig(styleId: number): SongConfig {
     vocalMinNoteDivision: view.getUint8(retPtr + 43),
     vocalRestRatio: view.getUint8(retPtr + 44),
     vocalAllowExtremLeap: view.getUint8(retPtr + 45) !== 0,
+
+    // Arrangement settings
+    arrangementGrowth: view.getUint8(retPtr + 46),
+
+    // Arpeggio sync settings
+    arpeggioSyncChord: view.getUint8(retPtr + 47) !== 0,
+
+    // Motif settings
+    motifRepeatScope: view.getUint8(retPtr + 48),
+    motifFixedProgression: view.getUint8(retPtr + 49) !== 0,
+    motifMaxChordCount: view.getUint8(retPtr + 50),
   };
 }
 
@@ -673,7 +712,7 @@ export class MidiSketch {
   }
 
   private allocSongConfig(m: EmscriptenModule, config: SongConfig): number {
-    const ptr = m._malloc(48); // Struct is 46 bytes, aligned to 48
+    const ptr = m._malloc(56); // Struct is 51 bytes, aligned to 56
     const view = new DataView(m.HEAPU8.buffer);
 
     // Basic settings
@@ -738,6 +777,17 @@ export class MidiSketch {
     view.setUint8(ptr + 43, config.vocalMinNoteDivision ?? 0);
     view.setUint8(ptr + 44, config.vocalRestRatio ?? 15);
     view.setUint8(ptr + 45, config.vocalAllowExtremLeap ? 1 : 0);
+
+    // Arrangement settings
+    view.setUint8(ptr + 46, config.arrangementGrowth ?? 0);
+
+    // Arpeggio sync settings
+    view.setUint8(ptr + 47, config.arpeggioSyncChord !== false ? 1 : 0);
+
+    // Motif settings
+    view.setUint8(ptr + 48, config.motifRepeatScope ?? 0);
+    view.setUint8(ptr + 49, config.motifFixedProgression !== false ? 1 : 0);
+    view.setUint8(ptr + 50, config.motifMaxChordCount ?? 4);
 
     return ptr;
   }

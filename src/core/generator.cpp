@@ -115,6 +115,12 @@ void Generator::generateFromConfig(const SongConfig& config) {
     params.composition_style = config.composition_style;
   }
 
+  // Motif chord parameters (for BackgroundMotif style)
+  params.motif_chord = config.motif_chord;
+
+  // Arrangement growth method
+  params.arrangement_growth = config.arrangement_growth;
+
   // Humanization
   params.humanize = config.humanize;
   params.humanize_timing = config.humanize_timing;
@@ -164,6 +170,7 @@ void Generator::generateFromConfig(const SongConfig& config) {
   params.skip_vocal = config.skip_vocal;
 
   // Store call settings for use in generate()
+  se_enabled_ = config.se_enabled;
   call_enabled_ = config.call_enabled;
   call_notes_enabled_ = config.call_notes_enabled;
   intro_chant_ = config.intro_chant;
@@ -257,7 +264,10 @@ void Generator::generate(const GeneratorParams& params) {
     generateArpeggio();
   }
 
-  generateSE();
+  // Generate SE track if enabled
+  if (se_enabled_) {
+    generateSE();
+  }
 
   // Apply transition dynamics to melodic tracks
   applyTransitionDynamics();
