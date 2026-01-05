@@ -710,10 +710,12 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
   const auto& sections = song.arrangement().sections();
   for (const auto& section : sections) {
-    // Skip instrumental sections (no vocal melody)
+    // Skip instrumental sections and call sections (no vocal melody)
     if (section.type == SectionType::Intro ||
         section.type == SectionType::Interlude ||
-        section.type == SectionType::Outro) {
+        section.type == SectionType::Outro ||
+        section.type == SectionType::Chant ||
+        section.type == SectionType::MixBreak) {
       continue;
     }
 
@@ -766,6 +768,8 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       case SectionType::Intro:
       case SectionType::Interlude:
       case SectionType::Outro:
+      case SectionType::Chant:
+      case SectionType::MixBreak:
         // These are skipped above, but handle for completeness
         rhythm_pattern_idx = 3;  // Ballad pattern
         note_density = 0.7f;

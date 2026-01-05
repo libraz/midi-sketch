@@ -81,13 +81,46 @@ enum class SongConfigError : uint8_t {
   InvalidForm,
   InvalidVocalAttitude,
   InvalidVocalRange,
-  InvalidBpm
+  InvalidBpm,
+  DurationTooShortForCall,   // Duration too short for call settings
+  InvalidModulationAmount    // Modulation semitones out of range
 };
 
 // Validates a SongConfig.
 // @param config SongConfig to validate
 // @returns Error code (OK if valid)
 SongConfigError validateSongConfig(const SongConfig& config);
+
+// ============================================================================
+// Call System Functions
+// ============================================================================
+
+// Calculates the number of bars for an intro chant pattern based on BPM.
+// The result is dynamically computed to ensure enough time for the chant.
+// @param chant IntroChant pattern
+// @param bpm BPM of the song
+// @returns Number of bars (2-16)
+uint8_t calcIntroChantBars(IntroChant chant, uint16_t bpm);
+
+// Calculates the number of bars for a MIX pattern based on BPM.
+// @param mix MixPattern
+// @param bpm BPM of the song
+// @returns Number of bars (2-12)
+uint8_t calcMixPatternBars(MixPattern mix, uint16_t bpm);
+
+// Calculates the minimum number of bars required for call settings.
+// @param intro_chant IntroChant pattern
+// @param mix_pattern MixPattern
+// @param bpm BPM of the song
+// @returns Minimum bars required
+uint16_t getMinimumBarsForCall(IntroChant intro_chant, MixPattern mix_pattern, uint16_t bpm);
+
+// Calculates the minimum duration in seconds for call settings.
+// @param intro_chant IntroChant pattern
+// @param mix_pattern MixPattern
+// @param bpm BPM of the song
+// @returns Minimum seconds required
+uint16_t getMinimumSecondsForCall(IntroChant intro_chant, MixPattern mix_pattern, uint16_t bpm);
 
 }  // namespace midisketch
 

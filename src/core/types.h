@@ -85,7 +85,10 @@ enum class SectionType {
   Chorus,     // Chorus/refrain
   Bridge,     // Bridge section (contrasting)
   Interlude,  // Instrumental break
-  Outro       // Ending section
+  Outro,      // Ending section
+  // Call sections (Vocal rests, SE outputs calls)
+  Chant,      // Chant section (e.g., Gachikoi) - 6-12 bars
+  MixBreak    // MIX section (e.g., Tiger) - 4-8 bars
 };
 
 // Extended chord types for harmonic variety.
@@ -146,6 +149,45 @@ enum class StructurePattern : uint8_t {
   AnthemStyle,      // Intro(4) -> A(8) -> Chorus(8) -> A(8) -> B(8) -> Chorus(8) -> Chorus(8) -> Outro(4)
   // Extended full-length (~3 min @120BPM)
   ExtendedFull      // Intro(4) -> A(8) -> B(8) -> Chorus(8) -> Interlude(4) -> A(8) -> B(8) -> Chorus(8) -> Bridge(8) -> Chorus(8) -> Chorus(8) -> Outro(8) [90 bars]
+};
+
+// Intro chant pattern (inserted after Intro).
+enum class IntroChant : uint8_t {
+  None = 0,
+  Gachikoi,      // Gachikoi chant (~18 sec)
+  Shouting       // Short shouting (~4 sec)
+};
+
+// MIX pattern (inserted before last Chorus).
+enum class MixPattern : uint8_t {
+  None = 0,
+  Standard,      // Standard MIX (~8 sec)
+  Tiger          // Tiger Fire MIX (~16 sec)
+};
+
+// Call density for normal sections (e.g., Chorus).
+enum class CallDensity : uint8_t {
+  None = 0,
+  Minimal,       // Hai! only, sparse
+  Standard,      // Hai!, Fu!, Sore! moderate
+  Intense        // Full call, every beat
+};
+
+// Energy curve for structure randomization.
+enum class EnergyCurve : uint8_t {
+  GradualBuild,  // Gradually builds up (standard idol song)
+  FrontLoaded,   // Energetic from the start (live-oriented)
+  WavePattern,   // Waves (ballad -> chorus explosion)
+  SteadyState    // Constant (BGM-oriented)
+};
+
+// Modulation timing.
+enum class ModulationTiming : uint8_t {
+  None = 0,      // No modulation
+  LastChorus,    // Before last chorus (most common)
+  AfterBridge,   // After bridge
+  EachChorus,    // Every chorus (rare)
+  Random         // Random based on seed
 };
 
 // Mood/groove preset (20 patterns available).
@@ -408,6 +450,20 @@ struct SongConfig {
   bool humanize = false;
   float humanize_timing = 0.5f;
   float humanize_velocity = 0.5f;
+
+  // Modulation options (extended)
+  ModulationTiming modulation_timing = ModulationTiming::None;
+  int8_t modulation_semitones = 2;  // +1 to +4 semitones
+
+  // SE/Call options
+  bool se_enabled = true;
+  bool call_enabled = false;
+  bool call_notes_enabled = true;  // Output calls as notes
+
+  // Chant/MIX settings (independent)
+  IntroChant intro_chant = IntroChant::None;   // Chant after Intro
+  MixPattern mix_pattern = MixPattern::None;   // MIX before last Chorus
+  CallDensity call_density = CallDensity::Standard;  // Call density in Chorus
 };
 
 // Input parameters for MIDI generation.

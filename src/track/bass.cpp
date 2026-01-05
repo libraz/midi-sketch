@@ -154,6 +154,14 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
     case SectionType::Bridge:
       base_pattern = is_ballad ? BassPattern::WholeNote : BassPattern::RootFifth;
       break;
+    case SectionType::Chant:
+      // Chant section: simple whole notes (quiet support)
+      base_pattern = BassPattern::WholeNote;
+      break;
+    case SectionType::MixBreak:
+      // MIX section: driving bass (high energy)
+      base_pattern = is_dance ? BassPattern::Driving : BassPattern::Syncopated;
+      break;
   }
 
   // Adjust pattern based on backing density
@@ -371,7 +379,7 @@ void generateBassHalfBar(MidiTrack& track, Tick half_start, uint8_t root,
 // Harmonic rhythm must match chord_track.cpp for bass-chord synchronization
 bool useSlowHarmonicRhythm(SectionType section) {
   return section == SectionType::Intro || section == SectionType::Interlude ||
-         section == SectionType::Outro;
+         section == SectionType::Outro || section == SectionType::Chant;
 }
 
 void generateBassTrack(MidiTrack& track, const Song& song,

@@ -18,9 +18,15 @@ Generate MIDI instantly in your browser — no installation required.
 
 ### Core Generation
 - **5-7 Track Output**: Vocal, Chord, Bass, Drums, Motif, Arpeggio, SE
-- **Preset-based Configuration**: Structure (10), Mood (20), Chord Progression (22)
+- **Preset-based Configuration**: Structure (10), StylePreset (17), Chord Progression (22)
 - **Deterministic Output**: Seed-based reproducible generation
 - **SMF Type 1 Output**: Standard MIDI file format
+
+### Call & Response
+- **Intro Chants**: Long pattern (~18 sec), Short pattern (~4 sec)
+- **MIX Patterns**: Standard (~8 sec), Extended (~16 sec)
+- **Call Density Control**: Minimal / Standard / Intense
+- **Vocal Rest Coordination**: Automatic vocal rest during call sections
 
 ### Music Theory
 - **Voice Leading**: Common tone retention, minimal movement
@@ -147,13 +153,15 @@ flowchart TD
     C --> D[generateBass]
     D --> E[generateVocal]
     E --> F[generateDrums]
-    F --> G[MidiWriter]
+    F --> H[generateSE]
+    H --> G[MidiWriter]
 
-    B -.- B1["Section[] (Intro, A, B, Chorus, Bridge, Outro)"]
+    B -.- B1["Section[] (Intro, A, B, Chorus, Bridge, Chant, MixBreak, Outro)"]
     C -.- C1["Voice leading, extensions, rootless voicing"]
     D -.- D1["Root, 5th, approach notes, octave jumps"]
     E -.- E1["Chord tones, non-chord tones, phrase cache"]
     F -.- F1["Pattern selection, fills, ghost notes"]
+    H -.- H1["Section markers, call events, modulation"]
     G -.- G1["Transpose to target key, SMF Type 1"]
 ```
 
@@ -167,6 +175,7 @@ flowchart TD
 | **Drums** | DrumStyle-based patterns (6 types), section-specific kicks/hats, fills at transitions |
 | **Motif** | 2-4 bar patterns, tension notes (9th/11th/13th), repeat scope control |
 | **Arpeggio** | Up/Down/UpDown/Random, 8th/16th/triplet speed, 1-3 octave range |
+| **SE** | Section markers, call events, modulation markers |
 
 ### Velocity Calculation
 
@@ -199,11 +208,25 @@ Chord extensions applied probabilistically:
 
 ### Modulation
 
+Modulation can be controlled via `ModulationTiming` enum or defaults based on structure:
+
+| ModulationTiming | Behavior |
+|------------------|----------|
+| None | No modulation |
+| LastChorus | Before last chorus (most common) |
+| AfterBridge | After bridge section |
+| EachChorus | Every chorus (rare) |
+| Random | Random chorus based on seed |
+
+**Default behavior by structure** (when ModulationTiming::None):
+
 | Structure | Modulation Point | Amount |
 |-----------|------------------|--------|
 | StandardPop | B → Chorus | +1 semitone |
 | RepeatChorus | Chorus 1 → 2 | +1 semitone |
 | Ballad patterns | B → Chorus | +2 semitones |
+
+Modulation amount is configurable via `modulation_semitones` (+1 to +4).
 
 ### DrumStyle Patterns
 
@@ -226,7 +249,21 @@ Chord extensions applied probabilistically:
 | Motif | 3 | 81 (Synth Lead) | Background |
 | Arpeggio | 4 | 81 (Saw Lead) | Arpeggio |
 | Drums | 9 | - | GM Drums |
-| SE | 15 | - | Markers |
+| SE | 15 | - | Markers, Call notes |
+
+### Section Types
+
+| Section | Description | Vocal | Backing |
+|---------|-------------|-------|---------|
+| Intro | Instrumental intro | None | Thin |
+| A | Verse | Sparse | Normal |
+| B | Pre-chorus | Full | Normal |
+| Chorus | Main chorus | Full | Thick |
+| Bridge | Contrasting section | Sparse | Thin |
+| Interlude | Instrumental break | None | Thin |
+| Outro | Ending | None | Normal |
+| **Chant** | Call/chant section | None | Thin |
+| **MixBreak** | MIX break section | None | Thick |
 
 ## Architecture
 
@@ -254,7 +291,7 @@ flowchart TD
 - No file I/O in core library
 - All presets as constexpr arrays
 - C API wrapper for JavaScript interop
-- Output size: ~80KB (wasm) + ~17KB (JS glue)
+- Output size: ~128KB (wasm) + ~19KB (JS glue)
 
 ## License
 

@@ -130,6 +130,17 @@ void Generator::generateFromConfig(const SongConfig& config) {
   // Skip vocal for BGM-first workflow
   params.skip_vocal = config.skip_vocal;
 
+  // Store call settings for use in generate()
+  call_enabled_ = config.call_enabled;
+  call_notes_enabled_ = config.call_notes_enabled;
+  intro_chant_ = config.intro_chant;
+  mix_pattern_ = config.mix_pattern;
+  call_density_ = config.call_density;
+
+  // Store modulation settings for use in calculateModulation()
+  modulation_timing_ = config.modulation_timing;
+  modulation_semitones_ = config.modulation_semitones;
+
   generate(params);
 }
 
@@ -152,9 +163,13 @@ void Generator::generate(const GeneratorParams& params) {
   // Build song structure (dynamic duration or fixed pattern)
   std::vector<Section> sections;
   if (params.target_duration_seconds > 0) {
-    sections = buildStructureForDuration(params.target_duration_seconds, bpm);
+    sections = buildStructureForDuration(params.target_duration_seconds, bpm,
+                                          call_enabled_, intro_chant_, mix_pattern_);
   } else {
     sections = buildStructure(params.structure);
+    if (call_enabled_) {
+      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
+    }
   }
   song_.setArrangement(Arrangement(sections));
 
@@ -305,67 +320,139 @@ void Generator::generateArpeggio() {
 void Generator::calculateModulation() {
   song_.setModulation(0, 0);
 
-  if (!params_.modulation) {
+  // Use new modulation_timing if set, otherwise fall back to legacy params_.modulation
+  ModulationTiming timing = modulation_timing_;
+  if (timing == ModulationTiming::None && !params_.modulation) {
     return;
   }
 
-  int8_t mod_amount = (params_.mood == Mood::Ballad) ? 2 : 1;
-  Tick mod_tick = 0;
+  // Use configured semitones for new API, or mood-based default for legacy
+  int8_t mod_amount;
+  if (timing != ModulationTiming::None) {
+    // New API: use configured semitones (default 2 if not set)
+    mod_amount = (modulation_semitones_ > 0) ? modulation_semitones_ : 2;
+  } else {
+    // Legacy API: use mood-based default
+    mod_amount = (params_.mood == Mood::Ballad) ? 2 : 1;
+  }
 
+  Tick mod_tick = 0;
   const auto& sections = song_.arrangement().sections();
 
-  switch (params_.structure) {
-    case StructurePattern::RepeatChorus:
-    case StructurePattern::DriveUpbeat:
-    case StructurePattern::AnthemStyle: {
-      // Modulate at second Chorus
-      int chorus_count = 0;
-      for (const auto& section : sections) {
-        if (section.type == SectionType::Chorus) {
-          chorus_count++;
-          if (chorus_count == 2) {
+  // Helper: find last Chorus
+  auto findLastChorus = [&]() -> Tick {
+    for (size_t i = sections.size(); i > 0; --i) {
+      if (sections[i - 1].type == SectionType::Chorus) {
+        return sections[i - 1].start_tick;
+      }
+    }
+    return 0;
+  };
+
+  // Helper: find Chorus after Bridge
+  auto findChorusAfterBridge = [&]() -> Tick {
+    for (size_t i = 0; i < sections.size(); ++i) {
+      if (sections[i].type == SectionType::Chorus && i > 0 &&
+          sections[i - 1].type == SectionType::Bridge) {
+        return sections[i].start_tick;
+      }
+    }
+    return 0;
+  };
+
+  // Use ModulationTiming if explicitly set
+  if (timing != ModulationTiming::None) {
+    switch (timing) {
+      case ModulationTiming::LastChorus:
+        mod_tick = findLastChorus();
+        break;
+      case ModulationTiming::AfterBridge:
+        mod_tick = findChorusAfterBridge();
+        if (mod_tick == 0) {
+          mod_tick = findLastChorus();  // Fallback
+        }
+        break;
+      case ModulationTiming::EachChorus:
+        // For each chorus modulation, we only set the first one here
+        // (full implementation would require track-level handling)
+        for (const auto& section : sections) {
+          if (section.type == SectionType::Chorus) {
             mod_tick = section.start_tick;
             break;
           }
         }
-      }
-      break;
-    }
-    case StructurePattern::StandardPop:
-    case StructurePattern::BuildUp:
-    case StructurePattern::FullPop: {
-      // Modulate at first Chorus following B section
-      for (size_t i = 0; i < sections.size(); ++i) {
-        if (sections[i].type == SectionType::Chorus) {
-          if (i > 0 && sections[i - 1].type == SectionType::B) {
-            mod_tick = sections[i].start_tick;
-            break;
+        break;
+      case ModulationTiming::Random: {
+        // Pick a random chorus
+        std::vector<Tick> chorus_ticks;
+        for (const auto& section : sections) {
+          if (section.type == SectionType::Chorus) {
+            chorus_ticks.push_back(section.start_tick);
           }
         }
+        if (!chorus_ticks.empty()) {
+          std::uniform_int_distribution<size_t> dist(0, chorus_ticks.size() - 1);
+          mod_tick = chorus_ticks[dist(rng_)];
+        }
+        break;
       }
-      break;
+      default:
+        break;
     }
-    case StructurePattern::FullWithBridge:
-    case StructurePattern::Ballad:
-    case StructurePattern::ExtendedFull: {
-      // Modulate after Bridge or Interlude, at last Chorus
-      for (size_t i = sections.size(); i > 0; --i) {
-        size_t idx = i - 1;
-        if (sections[idx].type == SectionType::Chorus) {
-          // Check if preceded by Bridge or Interlude
-          if (idx > 0 && (sections[idx - 1].type == SectionType::Bridge ||
-                          sections[idx - 1].type == SectionType::Interlude ||
-                          sections[idx - 1].type == SectionType::B)) {
-            mod_tick = sections[idx].start_tick;
-            break;
+  } else {
+    // Legacy behavior based on structure pattern
+    switch (params_.structure) {
+      case StructurePattern::RepeatChorus:
+      case StructurePattern::DriveUpbeat:
+      case StructurePattern::AnthemStyle: {
+        // Modulate at second Chorus
+        int chorus_count = 0;
+        for (const auto& section : sections) {
+          if (section.type == SectionType::Chorus) {
+            chorus_count++;
+            if (chorus_count == 2) {
+              mod_tick = section.start_tick;
+              break;
+            }
           }
         }
+        break;
       }
-      break;
+      case StructurePattern::StandardPop:
+      case StructurePattern::BuildUp:
+      case StructurePattern::FullPop: {
+        // Modulate at first Chorus following B section
+        for (size_t i = 0; i < sections.size(); ++i) {
+          if (sections[i].type == SectionType::Chorus) {
+            if (i > 0 && sections[i - 1].type == SectionType::B) {
+              mod_tick = sections[i].start_tick;
+              break;
+            }
+          }
+        }
+        break;
+      }
+      case StructurePattern::FullWithBridge:
+      case StructurePattern::Ballad:
+      case StructurePattern::ExtendedFull: {
+        // Modulate after Bridge or Interlude, at last Chorus
+        for (size_t i = sections.size(); i > 0; --i) {
+          size_t idx = i - 1;
+          if (sections[idx].type == SectionType::Chorus) {
+            if (idx > 0 && (sections[idx - 1].type == SectionType::Bridge ||
+                            sections[idx - 1].type == SectionType::Interlude ||
+                            sections[idx - 1].type == SectionType::B)) {
+              mod_tick = sections[idx].start_tick;
+              break;
+            }
+          }
+        }
+        break;
+      }
+      case StructurePattern::DirectChorus:
+      case StructurePattern::ShortForm:
+        return;  // No modulation for short structures
     }
-    case StructurePattern::DirectChorus:
-    case StructurePattern::ShortForm:
-      return;  // No modulation for short structures
   }
 
   if (mod_tick > 0) {
@@ -374,7 +461,12 @@ void Generator::calculateModulation() {
 }
 
 void Generator::generateSE() {
-  generateSETrack(song_.se(), song_);
+  if (call_enabled_) {
+    generateSETrack(song_.se(), song_, call_enabled_, call_notes_enabled_,
+                    intro_chant_, mix_pattern_, call_density_, rng_);
+  } else {
+    generateSETrack(song_.se(), song_);
+  }
 }
 
 void Generator::generateMotif() {

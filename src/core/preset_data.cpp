@@ -1,5 +1,6 @@
 #include "core/preset_data.h"
 #include "core/chord.h"
+#include <cmath>
 
 namespace midisketch {
 
@@ -602,7 +603,100 @@ SongConfigError validateSongConfig(const SongConfig& config) {
     return SongConfigError::InvalidBpm;
   }
 
+  // Validate modulation amount
+  if (config.modulation_timing != ModulationTiming::None) {
+    if (config.modulation_semitones < 1 || config.modulation_semitones > 4) {
+      return SongConfigError::InvalidModulationAmount;
+    }
+  }
+
+  // Validate call/duration compatibility
+  if (config.call_enabled && config.target_duration_seconds > 0) {
+    uint16_t resolved_bpm = (config.bpm != 0) ? config.bpm : preset.tempo_default;
+    uint16_t min_seconds = getMinimumSecondsForCall(
+        config.intro_chant, config.mix_pattern, resolved_bpm);
+
+    if (config.target_duration_seconds < min_seconds) {
+      return SongConfigError::DurationTooShortForCall;
+    }
+  }
+
   return SongConfigError::OK;
+}
+
+// ============================================================================
+// Call System Functions Implementation
+// ============================================================================
+
+uint8_t calcIntroChantBars(IntroChant chant, uint16_t bpm) {
+  // Required seconds for each pattern
+  constexpr float REQUIRED_SECONDS[] = {
+      0.0f,   // None
+      18.0f,  // Gachikoi (~18 sec)
+      4.0f    // Shouting (~4 sec)
+  };
+
+  uint8_t idx = static_cast<uint8_t>(chant);
+  if (idx >= sizeof(REQUIRED_SECONDS) / sizeof(REQUIRED_SECONDS[0])) {
+    return 0;
+  }
+
+  float seconds = REQUIRED_SECONDS[idx];
+  if (seconds <= 0.0f) {
+    return 0;
+  }
+
+  // bars = seconds * bpm / 240, rounded up
+  uint8_t bars = static_cast<uint8_t>(std::ceil(seconds * bpm / 240.0f));
+  // Clamp to [2, 16]
+  if (bars < 2) bars = 2;
+  if (bars > 16) bars = 16;
+  return bars;
+}
+
+uint8_t calcMixPatternBars(MixPattern mix, uint16_t bpm) {
+  // Required seconds for each pattern
+  constexpr float REQUIRED_SECONDS[] = {
+      0.0f,   // None
+      8.0f,   // Standard (~8 sec)
+      16.0f   // Tiger (~16 sec)
+  };
+
+  uint8_t idx = static_cast<uint8_t>(mix);
+  if (idx >= sizeof(REQUIRED_SECONDS) / sizeof(REQUIRED_SECONDS[0])) {
+    return 0;
+  }
+
+  float seconds = REQUIRED_SECONDS[idx];
+  if (seconds <= 0.0f) {
+    return 0;
+  }
+
+  // bars = seconds * bpm / 240, rounded up
+  uint8_t bars = static_cast<uint8_t>(std::ceil(seconds * bpm / 240.0f));
+  // Clamp to [2, 12]
+  if (bars < 2) bars = 2;
+  if (bars > 12) bars = 12;
+  return bars;
+}
+
+uint16_t getMinimumBarsForCall(IntroChant intro_chant, MixPattern mix_pattern, uint16_t bpm) {
+  uint16_t base_bars = 24;  // Basic structure (Intro + A + B + Chorus)
+
+  if (intro_chant != IntroChant::None) {
+    base_bars += calcIntroChantBars(intro_chant, bpm);
+  }
+  if (mix_pattern != MixPattern::None) {
+    base_bars += calcMixPatternBars(mix_pattern, bpm);
+  }
+
+  return base_bars;
+}
+
+uint16_t getMinimumSecondsForCall(IntroChant intro_chant, MixPattern mix_pattern, uint16_t bpm) {
+  uint16_t min_bars = getMinimumBarsForCall(intro_chant, mix_pattern, bpm);
+  // seconds = bars * 240 / bpm
+  return static_cast<uint16_t>(min_bars * 240 / bpm);
 }
 
 }  // namespace midisketch

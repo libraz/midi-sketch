@@ -200,6 +200,18 @@ typedef struct {
   // Duration
   uint8_t _reserved;          // Padding for alignment
   uint16_t target_duration_seconds;  // Target duration in seconds (0 = use form_id)
+
+  // Modulation settings
+  uint8_t modulation_timing;  // 0=None, 1=LastChorus, 2=AfterBridge, 3=EachChorus, 4=Random
+  int8_t modulation_semitones; // Semitones (+1 to +4)
+
+  // Call settings
+  uint8_t se_enabled;         // Enable SE track (0=off, 1=on)
+  uint8_t call_enabled;       // Enable call feature (0=off, 1=on)
+  uint8_t call_notes_enabled; // Output calls as notes (0=off, 1=on)
+  uint8_t intro_chant;        // IntroChant (0=None, 1=Gachikoi, 2=Shouting)
+  uint8_t mix_pattern;        // MixPattern (0=None, 1=Standard, 2=Tiger)
+  uint8_t call_density;       // CallDensity (0=None, 1=Minimal, 2=Standard, 3=Intense)
 } MidiSketchSongConfig;
 
 // Style preset summary for listing.
@@ -233,6 +245,8 @@ typedef enum {
   MIDISKETCH_CONFIG_INVALID_ATTITUDE = 4,
   MIDISKETCH_CONFIG_INVALID_VOCAL_RANGE = 5,
   MIDISKETCH_CONFIG_INVALID_BPM = 6,
+  MIDISKETCH_CONFIG_DURATION_TOO_SHORT = 7,
+  MIDISKETCH_CONFIG_INVALID_MODULATION = 8,
 } MidiSketchConfigError;
 
 // Returns the number of available style presets.

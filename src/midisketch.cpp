@@ -134,7 +134,55 @@ std::string MidiSketch::getEventsJson() const {
   if (!song.arpeggio().empty()) {
     writeTrack(song.arpeggio(), "Arpeggio", 4, 81, true, true);
   }
-  writeTrack(song.drums(), "Drums", 9, 0, false, false);  // No transpose for drums
+  writeTrack(song.drums(), "Drums", 9, 0, true, false);  // No transpose for drums
+
+  // Add SE track with text events
+  {
+    const auto& se_track = song.se();
+    oss << "{";
+    oss << "\"name\":\"SE\",";
+    oss << "\"channel\":15,";
+    oss << "\"program\":0,";
+
+    // Notes (call notes if enabled)
+    oss << "\"notes\":[";
+    const auto& notes = se_track.notes();
+    for (size_t i = 0; i < notes.size(); ++i) {
+      const auto& note = notes[i];
+      double start_seconds = static_cast<double>(note.startTick) /
+                             TICKS_PER_BEAT / song.bpm() * 60.0;
+      double duration_secs = static_cast<double>(note.duration) /
+                             TICKS_PER_BEAT / song.bpm() * 60.0;
+      oss << "{";
+      oss << "\"pitch\":" << static_cast<int>(note.note) << ",";
+      oss << "\"velocity\":" << static_cast<int>(note.velocity) << ",";
+      oss << "\"start_ticks\":" << note.startTick << ",";
+      oss << "\"duration_ticks\":" << note.duration << ",";
+      oss << "\"start_seconds\":" << start_seconds << ",";
+      oss << "\"duration_seconds\":" << duration_secs;
+      oss << "}";
+      if (i < notes.size() - 1) oss << ",";
+    }
+    oss << "],";
+
+    // Text events (section markers, call events, modulation)
+    oss << "\"textEvents\":[";
+    const auto& text_events = se_track.textEvents();
+    for (size_t i = 0; i < text_events.size(); ++i) {
+      const auto& evt = text_events[i];
+      double time_seconds = static_cast<double>(evt.time) /
+                            TICKS_PER_BEAT / song.bpm() * 60.0;
+      oss << "{";
+      oss << "\"tick\":" << evt.time << ",";
+      oss << "\"time_seconds\":" << time_seconds << ",";
+      oss << "\"text\":\"" << evt.text << "\"";
+      oss << "}";
+      if (i < text_events.size() - 1) oss << ",";
+    }
+    oss << "]";
+
+    oss << "}";
+  }
 
   oss << "],";
 

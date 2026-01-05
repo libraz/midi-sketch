@@ -1,4 +1,6 @@
 #include "core/structure.h"
+#include "core/preset_data.h"
+#include <algorithm>
 
 namespace midisketch {
 
@@ -13,6 +15,8 @@ std::string sectionTypeName(SectionType type) {
     case SectionType::Bridge: return "Bridge";
     case SectionType::Interlude: return "Interlude";
     case SectionType::Outro: return "Outro";
+    case SectionType::Chant: return "Chant";
+    case SectionType::MixBreak: return "MixBreak";
   }
   return "";
 }
@@ -30,6 +34,8 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
       case SectionType::Intro:
       case SectionType::Interlude:
       case SectionType::Outro:
+      case SectionType::Chant:     // Call section - Vocal rests
+      case SectionType::MixBreak:  // MIX section - Vocal rests
         return VocalDensity::None;
       case SectionType::A:
       case SectionType::Bridge:
@@ -48,12 +54,14 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
       case SectionType::Intro:
       case SectionType::Bridge:
       case SectionType::Interlude:
+      case SectionType::Chant:     // Call section - thin backing (quiet)
         return BackingDensity::Thin;
       case SectionType::Outro:
       case SectionType::A:
       case SectionType::B:
         return BackingDensity::Normal;
       case SectionType::Chorus:
+      case SectionType::MixBreak:  // MIX section - full energy
         return BackingDensity::Thick;
       default:
         return BackingDensity::Normal;
@@ -222,6 +230,8 @@ std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t
       case SectionType::Intro:
       case SectionType::Interlude:
       case SectionType::Outro:
+      case SectionType::Chant:     // Call section - Vocal rests
+      case SectionType::MixBreak:  // MIX section - Vocal rests
         return VocalDensity::None;
       case SectionType::A:
       case SectionType::Bridge:
@@ -240,12 +250,14 @@ std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t
       case SectionType::Intro:
       case SectionType::Bridge:
       case SectionType::Interlude:
+      case SectionType::Chant:     // Call section - thin backing (quiet)
         return BackingDensity::Thin;
       case SectionType::Outro:
       case SectionType::A:
       case SectionType::B:
         return BackingDensity::Normal;
       case SectionType::Chorus:
+      case SectionType::MixBreak:  // MIX section - full energy
         return BackingDensity::Thick;
       default:
         return BackingDensity::Normal;
@@ -337,6 +349,132 @@ uint16_t calculateTotalBars(const std::vector<Section>& sections) {
     total += s.bars;
   }
   return total;
+}
+
+// ============================================================================
+// Call System Structure Functions Implementation
+// ============================================================================
+
+void recalculateSectionTicks(std::vector<Section>& sections) {
+  Tick current_bar = 0;
+  Tick current_tick = 0;
+  for (auto& section : sections) {
+    section.startBar = current_bar;
+    section.start_tick = current_tick;
+    current_bar += section.bars;
+    current_tick += section.bars * TICKS_PER_BAR;
+  }
+}
+
+void insertCallSections(
+    std::vector<Section>& sections,
+    IntroChant intro_chant,
+    MixPattern mix_pattern,
+    uint16_t bpm) {
+
+  // Helper to get vocal density for a section type
+  auto getVocalDensity = [](SectionType type) -> VocalDensity {
+    switch (type) {
+      case SectionType::Intro:
+      case SectionType::Interlude:
+      case SectionType::Outro:
+      case SectionType::Chant:
+      case SectionType::MixBreak:
+        return VocalDensity::None;
+      case SectionType::A:
+      case SectionType::Bridge:
+        return VocalDensity::Sparse;
+      case SectionType::B:
+      case SectionType::Chorus:
+        return VocalDensity::Full;
+      default:
+        return VocalDensity::Full;
+    }
+  };
+
+  // Helper to get backing density for a section type
+  auto getBackingDensity = [](SectionType type) -> BackingDensity {
+    switch (type) {
+      case SectionType::Intro:
+      case SectionType::Bridge:
+      case SectionType::Interlude:
+      case SectionType::Chant:
+        return BackingDensity::Thin;
+      case SectionType::Outro:
+      case SectionType::A:
+      case SectionType::B:
+        return BackingDensity::Normal;
+      case SectionType::Chorus:
+      case SectionType::MixBreak:
+        return BackingDensity::Thick;
+      default:
+        return BackingDensity::Normal;
+    }
+  };
+
+  // 1. Insert Chant after Intro
+  if (intro_chant != IntroChant::None) {
+    Section chant;
+    chant.type = SectionType::Chant;
+    chant.bars = calcIntroChantBars(intro_chant, bpm);
+    chant.name = (intro_chant == IntroChant::Gachikoi) ? "Gachikoi" : "Shout";
+    chant.vocal_density = getVocalDensity(SectionType::Chant);
+    chant.backing_density = getBackingDensity(SectionType::Chant);
+    chant.deviation_allowed = false;
+    chant.se_allowed = true;
+
+    // Find Intro and insert after it
+    auto it = std::find_if(sections.begin(), sections.end(),
+        [](const Section& s) { return s.type == SectionType::Intro; });
+    if (it != sections.end()) {
+      sections.insert(it + 1, chant);
+    } else {
+      // No Intro found, insert at beginning
+      sections.insert(sections.begin(), chant);
+    }
+  }
+
+  // 2. Insert MixBreak before last Chorus
+  if (mix_pattern != MixPattern::None) {
+    Section mix;
+    mix.type = SectionType::MixBreak;
+    mix.bars = calcMixPatternBars(mix_pattern, bpm);
+    mix.name = (mix_pattern == MixPattern::Tiger) ? "TigerMix" : "Mix";
+    mix.vocal_density = getVocalDensity(SectionType::MixBreak);
+    mix.backing_density = getBackingDensity(SectionType::MixBreak);
+    mix.deviation_allowed = false;
+    mix.se_allowed = true;
+
+    // Find last Chorus (search from end)
+    auto it = std::find_if(sections.rbegin(), sections.rend(),
+        [](const Section& s) { return s.type == SectionType::Chorus; });
+    if (it != sections.rend()) {
+      // Convert reverse iterator to forward iterator and insert before
+      auto fwd_it = it.base();  // Points to element after the found one
+      sections.insert(fwd_it - 1, mix);
+    }
+  }
+
+  // Recalculate ticks
+  recalculateSectionTicks(sections);
+}
+
+std::vector<Section> buildStructureForDuration(
+    uint16_t target_seconds,
+    uint16_t bpm,
+    bool call_enabled,
+    IntroChant intro_chant,
+    MixPattern mix_pattern) {
+
+  // First build basic structure
+  std::vector<Section> sections = buildStructureForDuration(target_seconds, bpm);
+
+  // Then insert call sections if enabled
+  if (call_enabled) {
+    insertCallSections(sections, intro_chant, mix_pattern, bpm);
+  }
+
+  return sections;
 }
 
 }  // namespace midisketch

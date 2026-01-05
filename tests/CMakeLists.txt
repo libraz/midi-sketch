@@ -21,6 +21,7 @@ set(TEST_SOURCES
   core/song_test.cpp
   core/style_preset_test.cpp
   core/harmony_integration_test.cpp
+  core/call_test.cpp
   midi/midi_writer_test.cpp
   track/arpeggio_test.cpp
   analysis/dissonance_test.cpp

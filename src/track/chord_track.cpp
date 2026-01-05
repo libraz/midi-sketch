@@ -279,10 +279,15 @@ VoicingType selectVoicingType(SectionType section, Mood mood, bool bass_has_root
                     mood == Mood::Chill);
   bool is_dramatic = (mood == Mood::Dramatic || mood == Mood::Nostalgic);
 
-  // Intro/Interlude/Outro: always close voicing for stability
+  // Intro/Interlude/Outro/Chant: always close voicing for stability
   if (section == SectionType::Intro || section == SectionType::Interlude ||
-      section == SectionType::Outro) {
+      section == SectionType::Outro || section == SectionType::Chant) {
     return VoicingType::Close;
+  }
+
+  // MixBreak: open voicing for full energy
+  if (section == SectionType::MixBreak) {
+    return VoicingType::Open;
   }
 
   // When bass has root, prefer rootless voicing in B/Chorus for cleaner sound
@@ -462,6 +467,12 @@ struct HarmonicRhythmInfo {
                 !is_ballad};
       case SectionType::Bridge:
         return {HarmonicDensity::Normal, false};
+      case SectionType::Chant:
+        // Chant section: slow, sustained chords
+        return {HarmonicDensity::Slow, false};
+      case SectionType::MixBreak:
+        // MIX section: driving dense chords
+        return {HarmonicDensity::Dense, true};
     }
     return {HarmonicDensity::Normal, false};
   }
@@ -627,6 +638,14 @@ ChordRhythm selectRhythm(SectionType section, Mood mood,
       break;
     case SectionType::Bridge:
       base_rhythm = is_ballad ? ChordRhythm::Whole : ChordRhythm::Half;
+      break;
+    case SectionType::Chant:
+      // Chant section: sustained whole notes
+      base_rhythm = ChordRhythm::Whole;
+      break;
+    case SectionType::MixBreak:
+      // MIX section: driving quarter notes
+      base_rhythm = is_energetic ? ChordRhythm::Eighth : ChordRhythm::Quarter;
       break;
   }
 

@@ -256,6 +256,19 @@ MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
   s_default_config.composition_style = static_cast<uint8_t>(cpp_config.composition_style);
 
   s_default_config.target_duration_seconds = cpp_config.target_duration_seconds;
+
+  // Modulation settings
+  s_default_config.modulation_timing = static_cast<uint8_t>(cpp_config.modulation_timing);
+  s_default_config.modulation_semitones = cpp_config.modulation_semitones;
+
+  // Call settings
+  s_default_config.se_enabled = cpp_config.se_enabled ? 1 : 0;
+  s_default_config.call_enabled = cpp_config.call_enabled ? 1 : 0;
+  s_default_config.call_notes_enabled = cpp_config.call_notes_enabled ? 1 : 0;
+  s_default_config.intro_chant = static_cast<uint8_t>(cpp_config.intro_chant);
+  s_default_config.mix_pattern = static_cast<uint8_t>(cpp_config.mix_pattern);
+  s_default_config.call_density = static_cast<uint8_t>(cpp_config.call_density);
+
   return &s_default_config;
 }
 
@@ -293,6 +306,14 @@ MidiSketchConfigError midisketch_validate_config(const MidiSketchSongConfig* con
   cpp_config.arpeggio_enabled = config->arpeggio_enabled != 0;
   cpp_config.vocal_low = config->vocal_low;
   cpp_config.vocal_high = config->vocal_high;
+  cpp_config.target_duration_seconds = config->target_duration_seconds;
+
+  // Modulation and call settings
+  cpp_config.modulation_timing = static_cast<midisketch::ModulationTiming>(config->modulation_timing);
+  cpp_config.modulation_semitones = config->modulation_semitones;
+  cpp_config.call_enabled = config->call_enabled != 0;
+  cpp_config.intro_chant = static_cast<midisketch::IntroChant>(config->intro_chant);
+  cpp_config.mix_pattern = static_cast<midisketch::MixPattern>(config->mix_pattern);
 
   midisketch::SongConfigError error = midisketch::validateSongConfig(cpp_config);
 
@@ -311,6 +332,10 @@ MidiSketchConfigError midisketch_validate_config(const MidiSketchSongConfig* con
       return MIDISKETCH_CONFIG_INVALID_VOCAL_RANGE;
     case midisketch::SongConfigError::InvalidBpm:
       return MIDISKETCH_CONFIG_INVALID_BPM;
+    case midisketch::SongConfigError::DurationTooShortForCall:
+      return MIDISKETCH_CONFIG_DURATION_TOO_SHORT;
+    case midisketch::SongConfigError::InvalidModulationAmount:
+      return MIDISKETCH_CONFIG_INVALID_MODULATION;
     default:
       return MIDISKETCH_CONFIG_INVALID_STYLE;
   }
@@ -370,6 +395,18 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   cpp_config.composition_style = static_cast<midisketch::CompositionStyle>(config->composition_style);
 
   cpp_config.target_duration_seconds = config->target_duration_seconds;
+
+  // Modulation settings
+  cpp_config.modulation_timing = static_cast<midisketch::ModulationTiming>(config->modulation_timing);
+  cpp_config.modulation_semitones = config->modulation_semitones;
+
+  // Call settings
+  cpp_config.se_enabled = config->se_enabled != 0;
+  cpp_config.call_enabled = config->call_enabled != 0;
+  cpp_config.call_notes_enabled = config->call_notes_enabled != 0;
+  cpp_config.intro_chant = static_cast<midisketch::IntroChant>(config->intro_chant);
+  cpp_config.mix_pattern = static_cast<midisketch::MixPattern>(config->mix_pattern);
+  cpp_config.call_density = static_cast<midisketch::CallDensity>(config->call_density);
 
   sketch->generateFromConfig(cpp_config);
   return MIDISKETCH_OK;

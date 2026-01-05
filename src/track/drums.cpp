@@ -237,6 +237,14 @@ float getGhostDensity(Mood mood, SectionType section,
     case SectionType::Bridge:
       base_density *= 0.6f;
       break;
+    case SectionType::Chant:
+      // Chant section: quiet, minimal drums
+      base_density *= 0.2f;
+      break;
+    case SectionType::MixBreak:
+      // MIX section: full energy
+      base_density *= 1.3f;
+      break;
   }
 
   // Mood adjustment
@@ -303,6 +311,21 @@ KickPattern getKickPattern(SectionType section, DrumStyle style, int bar) {
     if (bar % 2 == 1) {
       p.beat3 = true;  // Add beat 3 on alternate bars for variation
     }
+    return p;
+  }
+
+  // Chant section: very minimal (just beat 1)
+  if (section == SectionType::Chant) {
+    p.beat1 = true;
+    return p;
+  }
+
+  // MixBreak section: driving pattern (similar to chorus)
+  if (section == SectionType::MixBreak) {
+    p.beat1 = true;
+    p.beat3 = true;
+    p.beat2_and = true;  // Syncopation
+    p.beat4_and = true;  // Push into next bar
     return p;
   }
 
@@ -427,6 +450,14 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style,
       case SectionType::Bridge:
         base_level = HiHatLevel::Eighth;
         break;
+      case SectionType::Chant:
+        // Chant section: minimal hi-hat
+        base_level = HiHatLevel::Quarter;
+        break;
+      case SectionType::MixBreak:
+        // MIX section: driving hi-hat
+        base_level = HiHatLevel::Eighth;
+        break;
     }
   }
 
@@ -494,6 +525,13 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         break;
       case SectionType::Bridge:
         density_mult = 0.6f;    // Sparse bridge
+        break;
+      case SectionType::Chant:
+        density_mult = 0.4f;    // Very quiet chant
+        break;
+      case SectionType::MixBreak:
+        density_mult = 1.2f;    // High energy MIX
+        add_crash_accent = true;
         break;
     }
 
