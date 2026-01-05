@@ -269,6 +269,12 @@ MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
   s_default_config.mix_pattern = static_cast<uint8_t>(cpp_config.mix_pattern);
   s_default_config.call_density = static_cast<uint8_t>(cpp_config.call_density);
 
+  // Vocal density settings
+  s_default_config.vocal_note_density = static_cast<uint8_t>(cpp_config.vocal_note_density * 100);
+  s_default_config.vocal_min_note_division = cpp_config.vocal_min_note_division;
+  s_default_config.vocal_rest_ratio = static_cast<uint8_t>(cpp_config.vocal_rest_ratio * 100);
+  s_default_config.vocal_allow_extreme_leap = cpp_config.vocal_allow_extreme_leap ? 1 : 0;
+
   return &s_default_config;
 }
 
@@ -407,6 +413,12 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   cpp_config.intro_chant = static_cast<midisketch::IntroChant>(config->intro_chant);
   cpp_config.mix_pattern = static_cast<midisketch::MixPattern>(config->mix_pattern);
   cpp_config.call_density = static_cast<midisketch::CallDensity>(config->call_density);
+
+  // Vocal density settings
+  cpp_config.vocal_note_density = config->vocal_note_density / 100.0f;
+  cpp_config.vocal_min_note_division = config->vocal_min_note_division;
+  cpp_config.vocal_rest_ratio = config->vocal_rest_ratio / 100.0f;
+  cpp_config.vocal_allow_extreme_leap = config->vocal_allow_extreme_leap != 0;
 
   sketch->generateFromConfig(cpp_config);
   return MIDISKETCH_OK;

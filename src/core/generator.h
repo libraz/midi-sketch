@@ -68,6 +68,14 @@ class Generator {
   // @returns Reference to GeneratorParams
   const GeneratorParams& getParams() const { return params_; }
 
+  // Sets modulation timing (for use before calling generate()).
+  // @param timing ModulationTiming value
+  // @param semitones Semitones to modulate (1-4, default 2)
+  void setModulationTiming(ModulationTiming timing, int8_t semitones = 2) {
+    modulation_timing_ = timing;
+    modulation_semitones_ = semitones;
+  }
+
  private:
   GeneratorParams params_;
   Song song_;

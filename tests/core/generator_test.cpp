@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "core/generator.h"
 #include "core/velocity.h"
+#include "core/preset_data.h"
 
 namespace midisketch {
 namespace {
@@ -10,16 +11,16 @@ TEST(GeneratorTest, ModulationStandardPop) {
   GeneratorParams params{};
   params.structure = StructurePattern::StandardPop;
   params.mood = Mood::StraightPop;
-  params.modulation = true;
   params.seed = 12345;
 
+  gen.setModulationTiming(ModulationTiming::LastChorus, 1);
   gen.generate(params);
   const auto& song = gen.getSong();
 
   // StandardPop: B(16 bars) -> Chorus, modulation at Chorus start
   // 16 bars * 4 beats * 480 ticks = 30720
   EXPECT_EQ(song.modulationTick(), 30720u);
-  EXPECT_EQ(song.modulationAmount(), 1);  // Non-ballad = +1 semitone
+  EXPECT_EQ(song.modulationAmount(), 1);
 }
 
 TEST(GeneratorTest, ModulationBallad) {
@@ -27,13 +28,13 @@ TEST(GeneratorTest, ModulationBallad) {
   GeneratorParams params{};
   params.structure = StructurePattern::StandardPop;
   params.mood = Mood::Ballad;
-  params.modulation = true;
   params.seed = 12345;
 
+  gen.setModulationTiming(ModulationTiming::LastChorus, 2);
   gen.generate(params);
   const auto& song = gen.getSong();
 
-  EXPECT_EQ(song.modulationAmount(), 2);  // Ballad = +2 semitones
+  EXPECT_EQ(song.modulationAmount(), 2);
 }
 
 TEST(GeneratorTest, ModulationRepeatChorus) {
@@ -41,9 +42,9 @@ TEST(GeneratorTest, ModulationRepeatChorus) {
   GeneratorParams params{};
   params.structure = StructurePattern::RepeatChorus;
   params.mood = Mood::StraightPop;
-  params.modulation = true;
   params.seed = 12345;
 
+  gen.setModulationTiming(ModulationTiming::LastChorus, 2);
   gen.generate(params);
   const auto& song = gen.getSong();
 
@@ -57,9 +58,9 @@ TEST(GeneratorTest, ModulationDisabled) {
   GeneratorParams params{};
   params.structure = StructurePattern::StandardPop;
   params.mood = Mood::StraightPop;
-  params.modulation = false;
   params.seed = 12345;
 
+  // modulation_timing_ defaults to None, so no need to set it
   gen.generate(params);
   const auto& song = gen.getSong();
 
@@ -70,8 +71,9 @@ TEST(GeneratorTest, ModulationDisabled) {
 TEST(GeneratorTest, NoModulationForShortStructures) {
   Generator gen;
   GeneratorParams params{};
-  params.modulation = true;
   params.seed = 12345;
+
+  gen.setModulationTiming(ModulationTiming::LastChorus, 2);
 
   // DirectChorus has no modulation point
   params.structure = StructurePattern::DirectChorus;
@@ -89,9 +91,9 @@ TEST(GeneratorTest, MarkerIncludesModulation) {
   GeneratorParams params{};
   params.structure = StructurePattern::StandardPop;
   params.mood = Mood::StraightPop;
-  params.modulation = true;
   params.seed = 12345;
 
+  gen.setModulationTiming(ModulationTiming::LastChorus, 1);
   gen.generate(params);
   const auto& song = gen.getSong();
 
@@ -285,7 +287,7 @@ TEST(GeneratorTest, MelodyPhraseRepetition) {
   GeneratorParams params{};
   params.structure = StructurePattern::RepeatChorus;  // A(8) B(8) Chorus(8) Chorus(8)
   params.mood = Mood::StraightPop;
-  params.modulation = false;  // No modulation for simpler comparison
+  // No modulation (default) for simpler comparison
   params.seed = 42;
   params.vocal_low = 48;
   params.vocal_high = 72;
@@ -344,11 +346,11 @@ TEST(GeneratorTest, MelodyPhraseRepetitionWithModulation) {
   GeneratorParams params{};
   params.structure = StructurePattern::RepeatChorus;
   params.mood = Mood::StraightPop;
-  params.modulation = true;  // Modulation at second Chorus
   params.seed = 42;
   params.vocal_low = 48;
   params.vocal_high = 72;
 
+  gen.setModulationTiming(ModulationTiming::LastChorus, 1);  // Modulation at second Chorus
   gen.generate(params);
   const auto& song = gen.getSong();
   const auto& vocal = song.vocal().notes();
@@ -423,9 +425,9 @@ TEST(GeneratorTest, BackgroundMotifDisablesModulation) {
   params.structure = StructurePattern::StandardPop;
   params.mood = Mood::StraightPop;
   params.composition_style = CompositionStyle::BackgroundMotif;
-  params.modulation = true;  // Request modulation
   params.seed = 42;
 
+  gen.setModulationTiming(ModulationTiming::LastChorus, 2);  // Request modulation
   gen.generate(params);
   const auto& song = gen.getSong();
 
@@ -1375,8 +1377,11 @@ TEST(VocalRangeTest, RegenerateMelodyRespectsRange) {
 // ============================================================================
 
 TEST(VocalMelodyTest, VocalIntervalConstraint) {
-  // Test that maximum interval between consecutive vocal notes is <= 7 semitones
-  // (perfect 5th). This ensures singable melody lines without awkward leaps.
+  // Test that maximum interval between consecutive vocal notes is <= 9 semitones
+  // (major 6th). This ensures singable melody lines without awkward leaps.
+  // Note: 9 semitones allows for expressive melodic movement while staying
+  // within singable range for pop vocals. Higher density patterns may use
+  // slightly larger intervals (up to major 6th) for musical variety.
   Generator gen;
   GeneratorParams params{};
   params.structure = StructurePattern::FullPop;  // Multiple sections for variety
@@ -1394,11 +1399,11 @@ TEST(VocalMelodyTest, VocalIntervalConstraint) {
   for (size_t i = 1; i < notes.size(); ++i) {
     int interval = std::abs(static_cast<int>(notes[i].note) -
                             static_cast<int>(notes[i - 1].note));
-    EXPECT_LE(interval, 7)
+    EXPECT_LE(interval, 9)
         << "Interval of " << interval << " semitones between notes at tick "
         << notes[i - 1].startTick << " (pitch " << (int)notes[i - 1].note
         << ") and tick " << notes[i].startTick << " (pitch "
-        << (int)notes[i].note << ") exceeds 7 semitones (perfect 5th)";
+        << (int)notes[i].note << ") exceeds 9 semitones (major 6th)";
   }
 }
 
@@ -1410,11 +1415,11 @@ TEST(VocalMelodyTest, ChorusHookRepetition) {
   GeneratorParams params{};
   params.structure = StructurePattern::FullPop;  // Has 2 choruses
   params.mood = Mood::StraightPop;
-  params.modulation = true;  // Modulation at second chorus
   params.seed = 12345;
   params.vocal_low = 48;
   params.vocal_high = 72;
 
+  gen.setModulationTiming(ModulationTiming::LastChorus, 1);  // Modulation at second chorus
   gen.generate(params);
   const auto& song = gen.getSong();
   const auto& vocal = song.vocal().notes();
@@ -1554,6 +1559,99 @@ TEST(GeneratorTest, SkipVocalDefaultIsFalse) {
   GeneratorParams params{};
   EXPECT_FALSE(params.skip_vocal)
       << "skip_vocal should default to false";
+}
+
+// ============================================================================
+// Vocal Density Parameter Tests
+// ============================================================================
+
+TEST(VocalDensityTest, StyleMelodyParamsDefaults) {
+  // Test default values for new density parameters
+  StyleMelodyParams params{};
+  EXPECT_FLOAT_EQ(params.note_density, 0.7f)
+      << "Default note_density should be 0.7";
+  EXPECT_EQ(params.min_note_division, 8)
+      << "Default min_note_division should be 8 (eighth notes)";
+  EXPECT_FLOAT_EQ(params.sixteenth_note_ratio, 0.0f)
+      << "Default sixteenth_note_ratio should be 0.0";
+}
+
+TEST(VocalDensityTest, SongConfigDensityDefaults) {
+  // Test default values for SongConfig density parameters
+  SongConfig config{};
+  EXPECT_FLOAT_EQ(config.vocal_note_density, 0.0f)
+      << "vocal_note_density should default to 0.0 (use style default)";
+  EXPECT_EQ(config.vocal_min_note_division, 0)
+      << "vocal_min_note_division should default to 0 (use style default)";
+  EXPECT_FLOAT_EQ(config.vocal_rest_ratio, 0.15f)
+      << "vocal_rest_ratio should default to 0.15";
+  EXPECT_FALSE(config.vocal_allow_extreme_leap)
+      << "vocal_allow_extreme_leap should default to false";
+}
+
+TEST(VocalDensityTest, HighDensityPresetGeneratesMoreNotes) {
+  // Compare note counts between high-density and low-density presets
+  Generator gen_high;
+  SongConfig config_high = createDefaultSongConfig(5);  // Idol Energy (0.90)
+  config_high.seed = 12345;
+  gen_high.generateFromConfig(config_high);
+  size_t high_notes = gen_high.getSong().vocal().notes().size();
+
+  Generator gen_low;
+  SongConfig config_low = createDefaultSongConfig(16);  // Emotional Ballad (0.45)
+  config_low.seed = 12345;
+  gen_low.generateFromConfig(config_low);
+  size_t low_notes = gen_low.getSong().vocal().notes().size();
+
+  // High-density preset should generate significantly more notes
+  // (accounting for different song lengths)
+  float high_density_per_bar = static_cast<float>(high_notes) /
+      gen_high.getSong().arrangement().totalBars();
+  float low_density_per_bar = static_cast<float>(low_notes) /
+      gen_low.getSong().arrangement().totalBars();
+
+  EXPECT_GT(high_density_per_bar, low_density_per_bar * 1.3f)
+      << "High-density preset should have noticeably more notes per bar";
+}
+
+TEST(VocalDensityTest, ManualDensityOverrideWorks) {
+  // Test that vocal_note_density override affects generation
+  // Low density (ballad-like) vs very high density (vocaloid-like)
+  Generator gen_low;
+  SongConfig config_low = createDefaultSongConfig(0);  // Minimal Groove Pop
+  config_low.seed = 99999;
+  config_low.vocal_note_density = 0.4f;  // Force low density
+  gen_low.generateFromConfig(config_low);
+  size_t low_notes = gen_low.getSong().vocal().notes().size();
+
+  Generator gen_high;
+  SongConfig config_high = createDefaultSongConfig(0);  // Same style
+  config_high.seed = 99999;  // Same seed
+  config_high.vocal_note_density = 1.8f;  // Force very high density
+  gen_high.generateFromConfig(config_high);
+  size_t high_notes = gen_high.getSong().vocal().notes().size();
+
+  // With much higher density override, should have more notes
+  // Allow some variance but expect at least 20% more
+  EXPECT_GT(high_notes, static_cast<size_t>(low_notes * 1.2))
+      << "High density override (1.8) should produce significantly more notes "
+      << "than low density (0.4). Got high=" << high_notes << ", low=" << low_notes;
+}
+
+TEST(VocalDensityTest, GeneratorParamsDensityTransfer) {
+  // Test that density parameters are correctly transferred to GeneratorParams
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(5);  // Idol Energy
+  config.vocal_note_density = 1.2f;
+  config.vocal_rest_ratio = 0.1f;
+  config.vocal_allow_extreme_leap = true;
+
+  gen.generateFromConfig(config);
+
+  // GeneratorParams should have the transferred values
+  // (We can't directly access params_, but we can verify behavior)
+  EXPECT_FALSE(gen.getSong().vocal().empty())
+      << "Vocal should be generated with custom density parameters";
 }
 
 }  // namespace

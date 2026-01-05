@@ -43,6 +43,7 @@ wasm-configure:
 wasm: wasm-configure
 	cmake --build $(WASM_BUILD_DIR) --parallel
 	@ls -lh dist/*.wasm dist/*.js 2>/dev/null || echo "WASM files not found"
+	yarn build:js
 
 wasm-clean:
 	rm -rf $(WASM_BUILD_DIR)

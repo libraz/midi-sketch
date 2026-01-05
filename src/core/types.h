@@ -367,6 +367,13 @@ struct StyleMelodyParams {
   bool allow_unison_repeat = true;    // Allow consecutive same notes
   float phrase_end_resolution = 0.8f; // Probability of resolving at phrase end
   float tension_usage = 0.2f;         // Probability of using tensions (0.0-1.0)
+
+  // === Vocal density parameters ===
+  float note_density = 0.7f;          // Base note density (0.3-2.0)
+                                      // 0.3=ballad, 0.7=standard, 1.0=idol
+                                      // 1.5=vocaloid, 2.0=ultra vocaloid
+  uint8_t min_note_division = 8;      // Minimum note division (4=quarter, 8=eighth, 16=16th, 32=32nd)
+  float sixteenth_note_ratio = 0.0f;  // Ratio of 16th notes (0.0-0.5)
 };
 
 // Motif constraint parameters for StylePreset.
@@ -464,6 +471,15 @@ struct SongConfig {
   IntroChant intro_chant = IntroChant::None;   // Chant after Intro
   MixPattern mix_pattern = MixPattern::None;   // MIX before last Chorus
   CallDensity call_density = CallDensity::Standard;  // Call density in Chorus
+
+  // === Vocal density parameters ===
+  float vocal_note_density = 0.0f;        // Note density override (0.0 = use style default)
+                                          // 0.3-0.5=ballad, 0.6-0.8=standard, 0.8-1.0=idol
+                                          // 1.0-1.3=vocaloid, 1.3-2.0=ultra vocaloid
+  uint8_t vocal_min_note_division = 0;    // Min note division override (0 = use style default)
+                                          // 4=quarter, 8=eighth, 16=16th, 32=32nd
+  float vocal_rest_ratio = 0.15f;         // Rest ratio between phrases (0.0-0.5)
+  bool vocal_allow_extreme_leap = false;  // Allow extreme leaps (for vocaloid mode)
 };
 
 // Input parameters for MIDI generation.
@@ -475,7 +491,7 @@ struct GeneratorParams {
   Key key;                     // Output key
   bool drums_enabled;          // Enable drums track
   bool skip_vocal = false;     // Skip vocal track generation (for BGM-first workflow)
-  bool modulation;             // Enable key modulation
+  // Note: Modulation is controlled via Generator::modulation_timing_ (set from SongConfig)
   uint8_t vocal_low;           // Vocal range lower bound (MIDI note)
   uint8_t vocal_high;          // Vocal range upper bound (MIDI note)
   uint16_t bpm;                // Tempo (0 = use mood default)
@@ -509,6 +525,10 @@ struct GeneratorParams {
   // Phase 2: Vocal expression parameters
   VocalAttitude vocal_attitude = VocalAttitude::Clean;
   StyleMelodyParams melody_params = {};  // Default: 7 semitone leap, unison ok, 0.8 resolution, 0.2 tension
+
+  // Vocal density parameters (from SongConfig override)
+  float vocal_rest_ratio = 0.15f;         // Rest ratio between phrases
+  bool vocal_allow_extreme_leap = false;  // Allow extreme leaps (vocaloid mode)
 };
 
 // Parameters for regenerating only the vocal melody.

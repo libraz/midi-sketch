@@ -759,11 +759,11 @@ TEST(ModulationTest, InternalNotesIdenticalBeforeAndAfterModulation) {
   GeneratorParams params{};
   params.structure = StructurePattern::RepeatChorus;
   params.mood = Mood::StraightPop;
-  params.modulation = true;
   params.seed = 42;
   params.vocal_low = 60;   // C4
   params.vocal_high = 79;  // G5
 
+  gen.setModulationTiming(ModulationTiming::LastChorus, 1);
   gen.generate(params);
   const auto& song = gen.getSong();
   const auto& vocal = song.vocal().notes();
@@ -809,10 +809,10 @@ TEST(ModulationTest, MidiOutputHasModulationApplied) {
   GeneratorParams params{};
   params.structure = StructurePattern::RepeatChorus;
   params.mood = Mood::StraightPop;
-  params.modulation = true;
   params.seed = 42;
   params.key = Key::C;
 
+  gen.setModulationTiming(ModulationTiming::LastChorus, 1);
   gen.generate(params);
   const auto& song = gen.getSong();
 

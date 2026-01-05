@@ -17,7 +17,7 @@ class ArpeggioTest : public ::testing::Test {
     params_.chord_id = 0;  // Canon progression
     params_.key = Key::C;
     params_.drums_enabled = false;
-    params_.modulation = false;
+    // modulation_timing defaults to None
     params_.vocal_low = 60;
     params_.vocal_high = 84;
     params_.bpm = 140;

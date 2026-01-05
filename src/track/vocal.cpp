@@ -459,7 +459,83 @@ std::vector<std::vector<RhythmNote>> getRhythmPatterns() {
     // Pattern 4: Pre-chorus build - 8 notes with syncopation
     {{0.0f, 2, true}, {1.0f, 3, false}, {2.5f, 2, true}, {3.5f, 2, false},
      {4.5f, 2, true}, {5.5f, 3, false}, {7.0f, 2, true}, {7.5f, 1, false}},
+
+    // === HIGH-DENSITY PATTERNS FOR IDOL/VOCALOID ===
+
+    // Pattern 5: High-density Verse (12 notes / 2 bars)
+    // "Ta-Ta-Ta Ta-Ta Ta-Ta-Ta Ta-Ta" - idol-style rapid phrasing
+    {{0.0f, 1, true}, {0.5f, 1, false}, {1.0f, 2, false}, {2.0f, 1, true},
+     {2.5f, 1, false}, {3.0f, 2, false}, {4.0f, 1, true}, {4.5f, 1, false},
+     {5.0f, 2, false}, {6.0f, 1, true}, {6.5f, 1, false}, {7.0f, 2, false}},
+
+    // Pattern 6: High-density Chorus (16 notes / 2 bars)
+    // Energetic hook with rapid-fire notes
+    {{0.0f, 1, true}, {0.5f, 1, false}, {1.0f, 1, false}, {1.5f, 1, false},
+     {2.0f, 1, true}, {2.5f, 1, false}, {3.0f, 1, false}, {3.5f, 1, false},
+     {4.0f, 1, true}, {4.5f, 1, false}, {5.0f, 1, false}, {5.5f, 1, false},
+     {6.0f, 1, true}, {6.5f, 1, false}, {7.0f, 1, false}, {7.5f, 1, false}},
+
+    // Pattern 7: Syncopated High-density (14 notes / 2 bars)
+    // Syncopation emphasis for groove
+    {{0.0f, 1, true}, {0.5f, 2, false}, {1.5f, 1, false}, {2.0f, 1, true},
+     {2.5f, 1, false}, {3.0f, 2, false}, {4.0f, 1, true}, {4.5f, 2, false},
+     {5.5f, 1, false}, {6.0f, 1, true}, {6.5f, 1, false}, {7.0f, 1, false},
+     {7.25f, 1, false}, {7.5f, 1, false}},
+
+    // Pattern 8: Vocaloid Standard (20 notes / 2 bars)
+    // 16th note grid, machine-like precision
+    {{0.0f, 1, true}, {0.25f, 1, false}, {0.5f, 1, false}, {0.75f, 1, false},
+     {1.0f, 1, true}, {1.5f, 1, false}, {2.0f, 1, true}, {2.25f, 1, false},
+     {2.5f, 1, false}, {2.75f, 1, false}, {3.0f, 1, true}, {3.5f, 1, false},
+     {4.0f, 1, true}, {4.25f, 1, false}, {4.5f, 1, false}, {5.0f, 1, true},
+     {5.5f, 1, false}, {6.0f, 1, true}, {6.5f, 1, false}, {7.0f, 2, false}},
   };
+}
+
+// Select rhythm pattern based on section type and note density
+int selectRhythmPattern(SectionType section, float note_density,
+                        float sixteenth_ratio, std::mt19937& rng) {
+  // Ultra-high density (vocaloid mode)
+  if (note_density >= 1.0f && sixteenth_ratio >= 0.25f) {
+    return 8;  // Vocaloid Standard
+  }
+
+  // High density
+  if (note_density >= 0.85f) {
+    if (section == SectionType::Chorus) {
+      return (sixteenth_ratio >= 0.2f) ? 6 : 2;  // High-density or standard Chorus
+    }
+    return (sixteenth_ratio >= 0.15f) ? 5 : 0;  // High-density or standard Verse
+  }
+
+  // Medium-high density
+  if (note_density >= 0.7f) {
+    std::uniform_int_distribution<int> dist(0, 1);
+    if (section == SectionType::Chorus) {
+      return dist(rng) == 0 ? 2 : 6;  // Mix chorus patterns
+    }
+    if (section == SectionType::B) {
+      return dist(rng) == 0 ? 4 : 7;  // Syncopated patterns
+    }
+    return dist(rng) == 0 ? 0 : 1;  // Standard verse patterns
+  }
+
+  // Low density (ballad)
+  if (note_density < 0.5f) {
+    return 3;  // Sparse pattern
+  }
+
+  // Standard density - section-based selection
+  switch (section) {
+    case SectionType::Chorus:
+      return 2;
+    case SectionType::B:
+      return 4;
+    case SectionType::Bridge:
+      return 3;
+    default:
+      return 0;
+  }
 }
 
 // Melodic contour that respects chord tones on strong beats
@@ -755,14 +831,16 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     // NOTE: Don't reset prev_pitch here - maintain continuity across sections
     // This ensures smooth melodic transitions at section boundaries
 
-    // Select patterns based on section type
-    int rhythm_pattern_idx = 0;
+    // Get base density from style preset, apply section multiplier
+    float base_density = melody_params.note_density;
+    float sixteenth_ratio = melody_params.sixteenth_note_ratio;
     int contour_variation = 0;
-    float note_density = 1.0f;
+    float note_density = base_density;
 
     // Section-specific melody parameters
     // register_shift: shift vocal range (semitones, positive = higher)
     int8_t register_shift = 0;
+    float section_density_factor = 1.0f;
 
     switch (section.type) {
       case SectionType::Intro:
@@ -771,38 +849,38 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       case SectionType::Chant:
       case SectionType::MixBreak:
         // These are skipped above, but handle for completeness
-        rhythm_pattern_idx = 3;  // Ballad pattern
-        note_density = 0.7f;
+        section_density_factor = 0.6f;
         break;
       case SectionType::A:
         // A melody: lyrical, natural phrasing
-        rhythm_pattern_idx = 0;   // Standard vocal rhythm (12 notes/2bars)
         contour_variation = 0;
-        note_density = 0.92f;     // High density for continuous singing
+        section_density_factor = 1.0f;
         register_shift = -2;      // Lower register
         break;
       case SectionType::B:
         // B melody: building tension, syncopated
-        rhythm_pattern_idx = 1;   // Syncopated pattern (10 notes)
         contour_variation = 1;
-        note_density = 0.95f;     // Very high density
-        register_shift = 2;       // Slightly higher
+        section_density_factor = 1.1f;  // Slightly higher for tension build
+        register_shift = 2;             // Slightly higher
         break;
       case SectionType::Chorus:
         // Chorus: climactic, dense, emphatic
-        rhythm_pattern_idx = 2;   // Dense chorus rhythm (14 notes)
         contour_variation = 2;
-        note_density = 1.0f;      // Full density - no skipping
-        register_shift = 5;       // Higher register (+5 semitones)
+        section_density_factor = 1.3f;  // Much higher for climax
+        register_shift = 5;             // Higher register (+5 semitones)
         break;
       case SectionType::Bridge:
         // Bridge: contrasting, more melodic breath
-        rhythm_pattern_idx = 4;   // Call-response pattern (10 notes)
         contour_variation = 4;
-        note_density = 0.88f;     // Good density with natural pauses
+        section_density_factor = 0.8f;  // Lower for contrast
         register_shift = 0;
         break;
     }
+
+    // Apply section density factor
+    note_density = base_density * section_density_factor;
+    // Clamp to reasonable range
+    note_density = std::clamp(note_density, 0.3f, 2.0f);
 
     // Apply register shift to effective range for this section
     // IMPORTANT: Must stay within user-specified vocal range (params.vocal_low/high)
@@ -829,24 +907,24 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     if (is_background_motif) {
       switch (vocal_params.rhythm_bias) {
         case VocalRhythmBias::Sparse:
-          rhythm_pattern_idx = 3;
           note_density *= 0.5f;
+          sixteenth_ratio = 0.0f;
           break;
         case VocalRhythmBias::OnBeat:
-          rhythm_pattern_idx = 0;
           note_density *= 0.7f;
+          sixteenth_ratio *= 0.5f;
           break;
         case VocalRhythmBias::OffBeat:
-          rhythm_pattern_idx = 1;
           note_density *= 0.7f;
+          sixteenth_ratio *= 0.5f;
           break;
       }
     }
 
     // Apply SynthDriven suppression (arpeggio is foreground)
     if (is_synth_driven) {
-      rhythm_pattern_idx = 3;  // Use sparse pattern
       note_density *= 0.5f;    // Reduce density significantly
+      sixteenth_ratio = 0.0f;  // No fast notes
     }
 
     // Phase 2: Apply Section.vocal_density to note density
@@ -855,7 +933,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         continue;  // Skip this section entirely
       case VocalDensity::Sparse:
         note_density *= 0.6f;  // Reduce to 60% of current density
-        rhythm_pattern_idx = 3;  // Use sparse rhythm pattern
+        sixteenth_ratio = 0.0f;  // No fast notes for sparse
         break;
       case VocalDensity::Full:
         // No modification - use full density
@@ -973,24 +1051,33 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         }
       }
 
-      // Select rhythm pattern
-      std::uniform_int_distribution<int> rhythm_var(0, 1);
-      int actual_rhythm = (rhythm_pattern_idx + rhythm_var(rng)) %
-                          static_cast<int>(rhythm_patterns.size());
+      // Select rhythm pattern using density-aware selection
+      int actual_rhythm = selectRhythmPattern(section.type, note_density,
+                                               sixteenth_ratio, rng);
+      // Ensure pattern index is within bounds
+      actual_rhythm = std::clamp(actual_rhythm, 0,
+                                  static_cast<int>(rhythm_patterns.size()) - 1);
       const auto& rhythm = rhythm_patterns[actual_rhythm];
 
       // Generate notes for this motif
       size_t contour_idx = 0;
       for (const auto& rn : rhythm) {
-        // === MUSIC THEORY: Strong beats must have notes ===
-        // Only skip weak-beat notes when density is low
-        // Strong beats (1, 3) always get notes for proper phrase structure
-        if (!rn.strong && note_density < 0.9f) {
+        // === IMPROVED SKIP LOGIC (Phase 3) ===
+        // Skip logic is density-aware and section-aware
+        // High density (>= 0.85): almost no skipping
+        // Chorus: never skip for full energy
+        // Strong beats: never skip for proper phrase structure
+        bool should_skip = false;
+        if (!rn.strong && section.type != SectionType::Chorus && note_density < 0.85f) {
+          // Only skip weak beats in non-chorus sections with lower density
           std::uniform_real_distribution<float> skip_dist(0.0f, 1.0f);
-          // Higher skip probability when density is lower
-          float skip_prob = 1.0f - note_density;
-          if (skip_dist(rng) < skip_prob * 0.5f) continue;  // Max 50% skip rate
+          // Skip probability inversely proportional to density
+          // At density 0.5: skip_prob = 0.35 * 0.3 = 0.105 (10.5%)
+          // At density 0.7: skip_prob = 0.15 * 0.3 = 0.045 (4.5%)
+          float skip_prob = (1.0f - note_density) * 0.3f;
+          should_skip = skip_dist(rng) < skip_prob;
         }
+        if (should_skip) continue;
 
         float beat_in_motif = rn.beat;
         int bar_offset = static_cast<int>(beat_in_motif / 4.0f);

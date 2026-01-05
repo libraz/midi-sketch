@@ -34,7 +34,7 @@ void Generator::generateFromConfig(const SongConfig& config) {
   params.chord_id = config.chord_progression_id;
   params.key = config.key;
   params.drums_enabled = config.drums_enabled;
-  params.modulation = true;  // Enable modulation by default
+  // Note: Modulation is controlled by modulation_timing_ member variable
   params.vocal_low = config.vocal_low;
   params.vocal_high = config.vocal_high;
   params.seed = config.seed;
@@ -123,6 +123,39 @@ void Generator::generateFromConfig(const SongConfig& config) {
   // Phase 2: Apply VocalAttitude and StyleMelodyParams
   params.vocal_attitude = config.vocal_attitude;
   params.melody_params = preset.melody;
+
+  // === VOCAL DENSITY PARAMETERS (Phase 4/5) ===
+  // Apply SongConfig overrides if specified
+  if (config.vocal_note_density > 0.0f) {
+    params.melody_params.note_density = config.vocal_note_density;
+  }
+  if (config.vocal_min_note_division > 0) {
+    params.melody_params.min_note_division = config.vocal_min_note_division;
+  }
+
+  // Apply MOOD_DENSITY to vocal (Phase 5)
+  // Mood density affects base note_density when not explicitly overridden
+  if (config.vocal_note_density == 0.0f) {
+    float mood_density = getMoodDensity(params.mood);
+    // Multiply base preset density by mood density factor
+    params.melody_params.note_density *= (mood_density + 0.5f);
+    // Clamp to valid range
+    params.melody_params.note_density = std::clamp(
+        params.melody_params.note_density, 0.3f, 2.0f);
+  }
+
+  // BPM boost for fast tempos (>= 140 BPM)
+  uint16_t effective_bpm = config.bpm > 0 ? config.bpm : preset.tempo_default;
+  if (effective_bpm >= 140) {
+    params.melody_params.note_density = std::min(
+        params.melody_params.note_density * 1.1f, 2.0f);
+    params.melody_params.sixteenth_note_ratio = std::min(
+        params.melody_params.sixteenth_note_ratio + 0.1f, 0.5f);
+  }
+
+  // Transfer vocal params to GeneratorParams
+  params.vocal_rest_ratio = config.vocal_rest_ratio;
+  params.vocal_allow_extreme_leap = config.vocal_allow_extreme_leap;
 
   // Dynamic duration (0 = use form pattern)
   params.target_duration_seconds = config.target_duration_seconds;
@@ -269,6 +302,27 @@ void Generator::regenerateVocalFromConfig(const SongConfig& config,
   params_.vocal_attitude = config.vocal_attitude;
   params_.melody_params = preset.melody;
 
+  // === VOCAL DENSITY PARAMETERS (Phase 4/5) ===
+  // Apply SongConfig overrides if specified
+  if (config.vocal_note_density > 0.0f) {
+    params_.melody_params.note_density = config.vocal_note_density;
+  }
+  if (config.vocal_min_note_division > 0) {
+    params_.melody_params.min_note_division = config.vocal_min_note_division;
+  }
+
+  // Apply MOOD_DENSITY to vocal
+  if (config.vocal_note_density == 0.0f) {
+    float mood_density = getMoodDensity(params_.mood);
+    params_.melody_params.note_density *= (mood_density + 0.5f);
+    params_.melody_params.note_density = std::clamp(
+        params_.melody_params.note_density, 0.3f, 2.0f);
+  }
+
+  // Transfer vocal params
+  params_.vocal_rest_ratio = config.vocal_rest_ratio;
+  params_.vocal_allow_extreme_leap = config.vocal_allow_extreme_leap;
+
   // Regenerate with updated parameters
   uint32_t seed = (new_seed == 0) ? song_.melodySeed() : resolveSeed(new_seed);
   rng_.seed(seed);
@@ -320,21 +374,20 @@ void Generator::generateArpeggio() {
 void Generator::calculateModulation() {
   song_.setModulation(0, 0);
 
-  // Use new modulation_timing if set, otherwise fall back to legacy params_.modulation
+  // Only apply modulation if modulation_timing is set (not None)
   ModulationTiming timing = modulation_timing_;
-  if (timing == ModulationTiming::None && !params_.modulation) {
+  if (timing == ModulationTiming::None) {
     return;
   }
 
-  // Use configured semitones for new API, or mood-based default for legacy
-  int8_t mod_amount;
-  if (timing != ModulationTiming::None) {
-    // New API: use configured semitones (default 2 if not set)
-    mod_amount = (modulation_semitones_ > 0) ? modulation_semitones_ : 2;
-  } else {
-    // Legacy API: use mood-based default
-    mod_amount = (params_.mood == Mood::Ballad) ? 2 : 1;
+  // Short structures don't support modulation (no meaningful modulation point)
+  if (params_.structure == StructurePattern::DirectChorus ||
+      params_.structure == StructurePattern::ShortForm) {
+    return;
   }
+
+  // Use configured semitones (default 2 if not set)
+  int8_t mod_amount = (modulation_semitones_ > 0) ? modulation_semitones_ : 2;
 
   Tick mod_tick = 0;
   const auto& sections = song_.arrangement().sections();

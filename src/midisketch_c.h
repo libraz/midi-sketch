@@ -212,6 +212,12 @@ typedef struct {
   uint8_t intro_chant;        // IntroChant (0=None, 1=Gachikoi, 2=Shouting)
   uint8_t mix_pattern;        // MixPattern (0=None, 1=Standard, 2=Tiger)
   uint8_t call_density;       // CallDensity (0=None, 1=Minimal, 2=Standard, 3=Intense)
+
+  // Vocal density settings (Phase 4/5)
+  uint8_t vocal_note_density;      // Note density * 100 (0 = use style default, 30-200)
+  uint8_t vocal_min_note_division; // Min note division (0=default, 4/8/16/32)
+  uint8_t vocal_rest_ratio;        // Rest ratio * 100 (0-50)
+  uint8_t vocal_allow_extreme_leap; // Allow extreme leaps (0=off, 1=on)
 } MidiSketchSongConfig;
 
 // Style preset summary for listing.

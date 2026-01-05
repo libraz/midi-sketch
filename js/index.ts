@@ -128,6 +128,36 @@ export interface SongConfig {
   // Duration
   /** Target duration in seconds (0 = use formId) */
   targetDurationSeconds: number;
+
+  // Modulation settings
+  /** Modulation timing: 0=None, 1=LastChorus, 2=AfterBridge, 3=EachChorus, 4=Random */
+  modulationTiming: number;
+  /** Modulation semitones (+1 to +4) */
+  modulationSemitones: number;
+
+  // SE/Call settings
+  /** Enable SE track */
+  seEnabled: boolean;
+  /** Enable call feature */
+  callEnabled: boolean;
+  /** Output calls as notes */
+  callNotesEnabled: boolean;
+  /** Intro chant: 0=None, 1=Gachikoi, 2=Shouting */
+  introChant: number;
+  /** Mix pattern: 0=None, 1=Standard, 2=Tiger */
+  mixPattern: number;
+  /** Call density: 0=None, 1=Minimal, 2=Standard, 3=Intense */
+  callDensity: number;
+
+  // Vocal density settings
+  /** Note density (0-200, where 0=use style default, 70=standard, 100=idol, 150=vocaloid) */
+  vocalNoteDensity: number;
+  /** Min note division (0=default, 4=quarter, 8=eighth, 16=sixteenth) */
+  vocalMinNoteDivision: number;
+  /** Rest ratio (0-50, percentage of phrase rest time) */
+  vocalRestRatio: number;
+  /** Allow extreme leaps for vocaloid-style melodies */
+  vocalAllowExtremLeap: boolean;
 }
 
 /**
@@ -225,6 +255,37 @@ export const CompositionStyle = {
 export const ATTITUDE_CLEAN = 1 << 0;
 export const ATTITUDE_EXPRESSIVE = 1 << 1;
 export const ATTITUDE_RAW = 1 << 2;
+
+// Modulation timing constants
+export const ModulationTiming = {
+  None: 0,
+  LastChorus: 1,
+  AfterBridge: 2,
+  EachChorus: 3,
+  Random: 4,
+} as const;
+
+// Intro chant constants
+export const IntroChant = {
+  None: 0,
+  Gachikoi: 1,
+  Shouting: 2,
+} as const;
+
+// Mix pattern constants
+export const MixPattern = {
+  None: 0,
+  Standard: 1,
+  Tiger: 2,
+} as const;
+
+// Call density constants
+export const CallDensity = {
+  None: 0,
+  Minimal: 1,
+  Standard: 2,
+  Intense: 3,
+} as const;
 
 let moduleInstance: EmscriptenModule | null = null;
 let api: Api | null = null;
@@ -478,6 +539,24 @@ export function createDefaultConfig(styleId: number): SongConfig {
 
     // Duration
     targetDurationSeconds: view.getUint16(retPtr + 32, true),
+
+    // Modulation settings
+    modulationTiming: view.getUint8(retPtr + 34),
+    modulationSemitones: view.getInt8(retPtr + 35),
+
+    // SE/Call settings
+    seEnabled: view.getUint8(retPtr + 36) !== 0,
+    callEnabled: view.getUint8(retPtr + 37) !== 0,
+    callNotesEnabled: view.getUint8(retPtr + 38) !== 0,
+    introChant: view.getUint8(retPtr + 39),
+    mixPattern: view.getUint8(retPtr + 40),
+    callDensity: view.getUint8(retPtr + 41),
+
+    // Vocal density settings
+    vocalNoteDensity: view.getUint8(retPtr + 42),
+    vocalMinNoteDivision: view.getUint8(retPtr + 43),
+    vocalRestRatio: view.getUint8(retPtr + 44),
+    vocalAllowExtremLeap: view.getUint8(retPtr + 45) !== 0,
   };
 }
 
@@ -586,7 +665,7 @@ export class MidiSketch {
   }
 
   private allocSongConfig(m: EmscriptenModule, config: SongConfig): number {
-    const ptr = m._malloc(36); // Struct is 36 bytes with padding
+    const ptr = m._malloc(48); // Struct is 46 bytes, aligned to 48
     const view = new DataView(m.HEAPU8.buffer);
 
     // Basic settings
@@ -633,6 +712,24 @@ export class MidiSketch {
 
     // Duration
     view.setUint16(ptr + 32, config.targetDurationSeconds ?? 0, true);
+
+    // Modulation settings
+    view.setUint8(ptr + 34, config.modulationTiming ?? 0);
+    view.setInt8(ptr + 35, config.modulationSemitones ?? 2);
+
+    // SE/Call settings
+    view.setUint8(ptr + 36, config.seEnabled !== false ? 1 : 0);
+    view.setUint8(ptr + 37, config.callEnabled ? 1 : 0);
+    view.setUint8(ptr + 38, config.callNotesEnabled !== false ? 1 : 0);
+    view.setUint8(ptr + 39, config.introChant ?? 0);
+    view.setUint8(ptr + 40, config.mixPattern ?? 0);
+    view.setUint8(ptr + 41, config.callDensity ?? 2);
+
+    // Vocal density settings
+    view.setUint8(ptr + 42, config.vocalNoteDensity ?? 0);
+    view.setUint8(ptr + 43, config.vocalMinNoteDivision ?? 0);
+    view.setUint8(ptr + 44, config.vocalRestRatio ?? 15);
+    view.setUint8(ptr + 45, config.vocalAllowExtremLeap ? 1 : 0);
 
     return ptr;
   }

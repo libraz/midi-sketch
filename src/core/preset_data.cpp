@@ -109,7 +109,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Clean,
         ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
         {0, 1, 6, 13, 17, 19, 20, -1},
-        {5, true, 0.9f, 0.1f},
+        {5, true, 0.9f, 0.1f, 0.65f, 8, 0.0f},  // Standard density
         {8, 0.7f, 0.2f},
         {true, 2, 1},
         1
@@ -125,7 +125,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Expressive,
         ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
         {0, 1, 2, 4, 5, 14, 15, -1},
-        {7, true, 0.8f, 0.3f},
+        {7, true, 0.8f, 0.3f, 0.75f, 8, 0.1f},  // Medium-high density for dance
         {8, 0.5f, 0.4f},
         {true, 2, 2},
         2
@@ -141,7 +141,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Clean,
         ATTITUDE_CLEAN,
         {0, 1, 3, 5, -1, -1, -1, -1},
-        {4, false, 0.95f, 0.05f},
+        {4, false, 0.95f, 0.05f, 0.80f, 8, 0.15f},  // Higher density for upbeat
         {4, 0.85f, 0.1f},
         {true, 2, 1},
         1
@@ -158,7 +158,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Clean,
         ATTITUDE_CLEAN,
         {0, 1, 3, 4, 5, 6, 9, -1},
-        {4, false, 0.95f, 0.05f},
+        {4, false, 0.95f, 0.05f, 0.85f, 8, 0.25f},  // High density idol
         {8, 0.8f, 0.1f},
         {true, 3, 0},
         2
@@ -174,7 +174,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Expressive,
         ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
         {0, 1, 2, 5, 15, 16, 18, 21},
-        {6, true, 0.85f, 0.25f},
+        {6, true, 0.85f, 0.25f, 0.80f, 8, 0.20f},  // Medium-high density
         {8, 0.6f, 0.3f},
         {true, 2, 1},
         2
@@ -190,7 +190,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Clean,
         ATTITUDE_CLEAN,
         {0, 2, 4, 6, 9, -1, -1, -1},
-        {5, false, 0.9f, 0.1f},
+        {5, false, 0.9f, 0.1f, 0.90f, 8, 0.30f},  // Very high density for energy
         {4, 0.8f, 0.15f},
         {true, 3, 2},
         3
@@ -206,7 +206,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Clean,
         ATTITUDE_CLEAN,
         {0, 6, -1, -1, -1, -1, -1, -1},
-        {3, false, 0.95f, 0.02f},
+        {3, false, 0.95f, 0.02f, 0.75f, 8, 0.15f},  // Medium density
         {4, 0.9f, 0.05f},
         {true, 2, 0},
         1
@@ -223,7 +223,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Expressive,
         ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE | ATTITUDE_RAW,
         {4, 5, 6, 10, 11, 12, -1, -1},
-        {9, true, 0.6f, 0.5f},
+        {9, true, 0.6f, 0.5f, 0.70f, 8, 0.10f},  // Medium density
         {8, 0.4f, 0.5f},
         {true, 3, 3},
         2
@@ -239,7 +239,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Expressive,
         ATTITUDE_EXPRESSIVE | ATTITUDE_RAW,
         {1, 5, 8, 15, 16, 18, -1, -1},
-        {7, true, 0.7f, 0.4f},
+        {7, true, 0.7f, 0.4f, 0.60f, 8, 0.05f},  // Lower density for emotional
         {8, 0.4f, 0.5f},
         {true, 1, 1},
         1
@@ -255,7 +255,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Expressive,
         ATTITUDE_EXPRESSIVE | ATTITUDE_RAW,
         {7, 8, 11, 15, 21, -1, -1, -1},
-        {9, true, 0.5f, 0.6f},
+        {9, true, 0.5f, 0.6f, 0.55f, 8, 0.0f},  // Lower density, no 16th
         {8, 0.3f, 0.6f},
         {true, 2, 2},
         2
@@ -272,7 +272,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Expressive,
         ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
         {0, 1, 4, 6, 17, -1, -1, -1},
-        {6, true, 0.85f, 0.2f},
+        {6, true, 0.85f, 0.2f, 0.50f, 4, 0.0f},  // Low density ballad
         {8, 0.5f, 0.3f},
         {false, 1, 0},
         0
@@ -288,7 +288,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Clean,
         ATTITUDE_CLEAN,
         {0, 2, 4, -1, -1, -1, -1, -1},
-        {4, false, 0.9f, 0.05f},
+        {4, false, 0.9f, 0.05f, 0.85f, 8, 0.20f},  // High density for live
         {4, 0.85f, 0.1f},
         {true, 3, 1},
         3
@@ -304,7 +304,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Clean,
         ATTITUDE_CLEAN,
         {0, 6, 13, 19, -1, -1, -1, -1},
-        {4, false, 0.95f, 0.05f},
+        {4, false, 0.95f, 0.05f, 0.50f, 8, 0.0f},  // Low density, subdued
         {8, 0.9f, 0.05f},
         {true, 2, 0},
         1
@@ -321,7 +321,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Clean,
         ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
         {7, 8, 10, 1, 5, -1, -1, -1},
-        {7, true, 0.75f, 0.35f},
+        {7, true, 0.75f, 0.35f, 0.65f, 8, 0.05f},  // Medium density groove
         {8, 0.5f, 0.4f},
         {true, 2, 1},
         2
@@ -337,7 +337,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Expressive,
         ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
         {5, 2, 6, 0, 4, -1, -1, -1},
-        {6, true, 0.8f, 0.3f},
+        {6, true, 0.8f, 0.3f, 0.85f, 8, 0.25f},  // High density anime style
         {8, 0.6f, 0.3f},
         {true, 3, 2},
         2
@@ -353,7 +353,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Clean,
         ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
         {0, 4, 9, 1, -1, -1, -1, -1},
-        {5, false, 0.85f, 0.15f},
+        {5, false, 0.85f, 0.15f, 0.75f, 16, 0.35f},  // High 16th ratio for EDM
         {4, 0.75f, 0.2f},
         {true, 2, 2},
         2
@@ -369,7 +369,7 @@ const StylePreset STYLE_PRESETS[17] = {
         VocalAttitude::Expressive,
         ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
         {1, 3, 8, 11, 5, -1, -1, -1},
-        {8, true, 0.7f, 0.4f},
+        {8, true, 0.7f, 0.4f, 0.45f, 4, 0.0f},  // Very low density ballad
         {8, 0.4f, 0.5f},
         {false, 1, 0},
         0

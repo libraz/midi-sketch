@@ -33,7 +33,7 @@ TEST(DissonanceTest, AnalyzeGeneratedSong) {
   params.chord_id = 0;  // Canon progression
   params.key = Key::C;
   params.drums_enabled = true;
-  params.modulation = false;
+  // modulation_timing defaults to None
   params.vocal_low = 60;
   params.vocal_high = 79;
   params.seed = 12345;
@@ -118,7 +118,7 @@ TEST(DissonanceTest, DifferentChordProgressions) {
   params.mood = Mood::StraightPop;
   params.key = Key::C;
   params.drums_enabled = true;
-  params.modulation = false;
+  // modulation_timing defaults to None
   params.vocal_low = 60;
   params.vocal_high = 79;
   params.seed = 54321;
@@ -145,7 +145,7 @@ TEST(DissonanceTest, WithChordExtensions) {
   params.chord_id = 0;
   params.key = Key::C;
   params.drums_enabled = true;
-  params.modulation = false;
+  // modulation_timing defaults to None
   params.vocal_low = 60;
   params.vocal_high = 79;
   params.seed = 99999;
@@ -175,11 +175,12 @@ TEST(DissonanceTest, RegisterSeparationReducesSeverity) {
   params.chord_id = 0;
   params.key = Key::C;
   params.drums_enabled = true;
-  params.modulation = true;  // Enable modulation to test more scenarios
+  // Enable modulation to test more scenarios
   params.vocal_low = 60;
   params.vocal_high = 84;  // Wide range to allow octave separation
   params.seed = 77777;
 
+  gen.setModulationTiming(ModulationTiming::LastChorus, 1);
   gen.generate(params);
   const auto& song = gen.getSong();
 
@@ -201,7 +202,7 @@ TEST(DissonanceTest, AvailableTensionsAccepted) {
   params.chord_id = 0;
   params.key = Key::C;
   params.drums_enabled = true;
-  params.modulation = false;
+  // modulation_timing defaults to None
   params.vocal_low = 60;
   params.vocal_high = 79;
   params.seed = 88888;
@@ -238,11 +239,11 @@ TEST(DissonanceTest, DeduplicationWorks) {
   params.chord_id = 0;
   params.key = Key::C;
   params.drums_enabled = true;
-  params.modulation = true;
   params.vocal_low = 60;
   params.vocal_high = 79;
   params.seed = 11111;
 
+  gen.setModulationTiming(ModulationTiming::LastChorus, 1);
   gen.generate(params);
   const auto& song = gen.getSong();
 
@@ -280,9 +281,10 @@ TEST(DissonanceTest, ZeroHighSeverityIssues) {
   params.chord_id = 0;
   params.key = Key::C;
   params.drums_enabled = true;
-  params.modulation = true;
   params.vocal_low = 60;
   params.vocal_high = 79;
+
+  gen.setModulationTiming(ModulationTiming::LastChorus, 1);
 
   for (int seed = 1; seed <= 10; ++seed) {
     params.seed = seed * 1234;
