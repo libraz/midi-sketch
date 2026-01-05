@@ -6,6 +6,14 @@
 
 A C++17 library for auto-generating pop music MIDI sketches. Designed for WebAssembly deployment with zero external dependencies.
 
+---
+
+### 🎮 [Live Demo](https://midisketch.libraz.net/)
+Generate MIDI instantly in your browser — no installation required.
+*[View demo source](https://github.com/libraz/midi-sketch-homepage)*
+
+---
+
 ## Features
 
 ### Core Generation

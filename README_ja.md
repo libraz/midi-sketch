@@ -7,6 +7,14 @@
 ポップス楽曲のMIDIスケッチを自動生成するC++17ライブラリです。
 外部ライブラリに依存せず、WebAssemblyとしてブラウザ上でも動作します。
 
+---
+
+### 🎮 [デモ](https://midisketch.libraz.net/ja/)
+インストール不要 — ブラウザで今すぐMIDI生成を体験できます。
+*[デモサイトのソース](https://github.com/libraz/midi-sketch-homepage)*
+
+---
+
 ## 特徴
 
 ### 生成機能
