@@ -112,9 +112,35 @@ enum class BassPattern {
   RhythmicDrive   // Drums OFF: bass drives rhythm
 };
 
+// Adjust pattern one level sparser
+BassPattern adjustPatternSparser(BassPattern pattern) {
+  switch (pattern) {
+    case BassPattern::Driving: return BassPattern::Syncopated;
+    case BassPattern::Syncopated: return BassPattern::RootFifth;
+    case BassPattern::RhythmicDrive: return BassPattern::Syncopated;
+    case BassPattern::RootFifth: return BassPattern::WholeNote;
+    case BassPattern::WholeNote: return BassPattern::WholeNote;
+  }
+  return pattern;
+}
+
+// Adjust pattern one level denser
+BassPattern adjustPatternDenser(BassPattern pattern) {
+  switch (pattern) {
+    case BassPattern::WholeNote: return BassPattern::RootFifth;
+    case BassPattern::RootFifth: return BassPattern::Syncopated;
+    case BassPattern::Syncopated: return BassPattern::Driving;
+    case BassPattern::Driving: return BassPattern::Driving;
+    case BassPattern::RhythmicDrive: return BassPattern::RhythmicDrive;
+  }
+  return pattern;
+}
+
 // Select bass pattern based on section, drums, mood, and backing density
+// Uses RNG to add variation while respecting musical constraints
 BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
-                           BackingDensity backing_density) {
+                           BackingDensity backing_density,
+                           std::mt19937& rng) {
   // When drums are off, bass takes rhythmic responsibility
   if (!drums_enabled) {
     if (section == SectionType::Intro || section == SectionType::Interlude ||
@@ -130,62 +156,91 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
   bool is_dance = (mood == Mood::EnergeticDance || mood == Mood::ElectroPop ||
                    mood == Mood::IdolPop);
 
-  BassPattern base_pattern = BassPattern::RootFifth;
+  // Allowed patterns for each section (first is most likely)
+  std::vector<BassPattern> allowed;
 
   switch (section) {
     case SectionType::Intro:
     case SectionType::Interlude:
-      base_pattern = BassPattern::WholeNote;
+      // Keep stable for intro/interlude
+      allowed = {BassPattern::WholeNote, BassPattern::RootFifth};
       break;
     case SectionType::Outro:
-      base_pattern = is_ballad ? BassPattern::WholeNote : BassPattern::RootFifth;
+      if (is_ballad) {
+        allowed = {BassPattern::WholeNote, BassPattern::RootFifth};
+      } else {
+        allowed = {BassPattern::RootFifth, BassPattern::WholeNote};
+      }
       break;
     case SectionType::A:
-      base_pattern = is_ballad ? BassPattern::WholeNote : BassPattern::RootFifth;
+      if (is_ballad) {
+        allowed = {BassPattern::WholeNote, BassPattern::RootFifth};
+      } else {
+        allowed = {BassPattern::RootFifth, BassPattern::WholeNote, BassPattern::Syncopated};
+      }
       break;
     case SectionType::B:
-      base_pattern = is_ballad ? BassPattern::RootFifth : BassPattern::Syncopated;
+      if (is_ballad) {
+        allowed = {BassPattern::RootFifth, BassPattern::WholeNote};
+      } else {
+        allowed = {BassPattern::Syncopated, BassPattern::RootFifth, BassPattern::Driving};
+      }
       break;
     case SectionType::Chorus:
-      if (is_ballad) base_pattern = BassPattern::RootFifth;
-      else if (is_dance) base_pattern = BassPattern::Driving;
-      else base_pattern = BassPattern::Syncopated;
+      if (is_ballad) {
+        allowed = {BassPattern::RootFifth, BassPattern::Syncopated};
+      } else if (is_dance) {
+        allowed = {BassPattern::Driving, BassPattern::Syncopated};
+      } else {
+        allowed = {BassPattern::Syncopated, BassPattern::Driving, BassPattern::RootFifth};
+      }
       break;
     case SectionType::Bridge:
-      base_pattern = is_ballad ? BassPattern::WholeNote : BassPattern::RootFifth;
+      if (is_ballad) {
+        allowed = {BassPattern::WholeNote, BassPattern::RootFifth};
+      } else {
+        allowed = {BassPattern::RootFifth, BassPattern::WholeNote, BassPattern::Syncopated};
+      }
       break;
     case SectionType::Chant:
-      // Chant section: simple whole notes (quiet support)
-      base_pattern = BassPattern::WholeNote;
+      // Chant section: simple whole notes (minimal variation)
+      allowed = {BassPattern::WholeNote};
       break;
     case SectionType::MixBreak:
       // MIX section: driving bass (high energy)
-      base_pattern = is_dance ? BassPattern::Driving : BassPattern::Syncopated;
+      if (is_dance) {
+        allowed = {BassPattern::Driving, BassPattern::Syncopated};
+      } else {
+        allowed = {BassPattern::Syncopated, BassPattern::Driving};
+      }
       break;
+  }
+
+  // Weighted random selection: first option has higher probability
+  BassPattern selected;
+  if (allowed.size() == 1) {
+    selected = allowed[0];
+  } else {
+    // 60% first option, 30% second, 10% third (if exists)
+    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    float roll = dist(rng);
+    if (roll < 0.60f) {
+      selected = allowed[0];
+    } else if (roll < 0.90f || allowed.size() == 2) {
+      selected = allowed[1];
+    } else {
+      selected = allowed[allowed.size() > 2 ? 2 : 1];
+    }
   }
 
   // Adjust pattern based on backing density
   if (backing_density == BackingDensity::Thin) {
-    // Reduce density: move to sparser pattern
-    switch (base_pattern) {
-      case BassPattern::Driving: return BassPattern::Syncopated;
-      case BassPattern::Syncopated: return BassPattern::RootFifth;
-      case BassPattern::RhythmicDrive: return BassPattern::Syncopated;
-      case BassPattern::RootFifth: return BassPattern::WholeNote;
-      case BassPattern::WholeNote: return BassPattern::WholeNote;
-    }
+    selected = adjustPatternSparser(selected);
   } else if (backing_density == BackingDensity::Thick) {
-    // Increase density: move to denser pattern
-    switch (base_pattern) {
-      case BassPattern::WholeNote: return BassPattern::RootFifth;
-      case BassPattern::RootFifth: return BassPattern::Syncopated;
-      case BassPattern::Syncopated: return BassPattern::Driving;
-      case BassPattern::Driving: return BassPattern::Driving;
-      case BassPattern::RhythmicDrive: return BassPattern::RhythmicDrive;
-    }
+    selected = adjustPatternDenser(selected);
   }
 
-  return base_pattern;
+  return selected;
 }
 
 // Generate one bar of bass based on pattern
@@ -383,7 +438,7 @@ bool useSlowHarmonicRhythm(SectionType section) {
 }
 
 void generateBassTrack(MidiTrack& track, const Song& song,
-                       const GeneratorParams& params) {
+                       const GeneratorParams& params, std::mt19937& rng) {
   const auto& progression = getChordProgression(params.chord_id);
   const auto& sections = song.arrangement().sections();
 
@@ -394,7 +449,7 @@ void generateBassTrack(MidiTrack& track, const Song& song,
                                         : section.type;
 
     BassPattern pattern = selectPattern(section.type, params.drums_enabled,
-                                         params.mood, section.backing_density);
+                                         params.mood, section.backing_density, rng);
 
     // Use same harmonic rhythm as chord_track.cpp
     bool slow_harmonic = useSlowHarmonicRhythm(section.type);

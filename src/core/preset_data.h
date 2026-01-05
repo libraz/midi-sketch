@@ -68,6 +68,12 @@ const StylePreset& getStylePreset(uint8_t style_id);
 // @returns Vector of compatible StructurePattern values
 std::vector<StructurePattern> getFormsByStyle(uint8_t style_id);
 
+// Selects a random form compatible with a style using weighted probability.
+// @param style_id Style preset ID
+// @param seed Random seed
+// @returns Selected StructurePattern
+StructurePattern selectRandomForm(uint8_t style_id, uint32_t seed);
+
 // Creates a default SongConfig from a style preset.
 // @param style_id Style preset ID
 // @returns SongConfig with style defaults

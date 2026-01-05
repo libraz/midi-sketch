@@ -2,6 +2,7 @@
 #include "analysis/dissonance.h"
 #include "core/preset_data.h"
 #include "core/structure.h"
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -11,6 +12,9 @@ namespace {
 void printUsage(const char* program) {
   std::cout << "Usage: " << program << " [options]\n\n";
   std::cout << "Options:\n";
+  std::cout << "  --seed N     Set random seed (0 = auto-random)\n";
+  std::cout << "  --style N    Set style preset ID (0-12)\n";
+  std::cout << "  --chord N    Set chord progression ID (0-19)\n";
   std::cout << "  --analyze    Analyze generated MIDI for dissonance issues\n";
   std::cout << "  --help       Show this help message\n";
 }
@@ -50,10 +54,19 @@ void printDissonanceSummary(const midisketch::DissonanceReport& report) {
 
 int main(int argc, char* argv[]) {
   bool analyze = false;
+  uint32_t seed = 0;  // 0 = auto-random
+  uint8_t style_id = 1;
+  uint8_t chord_id = 3;
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--analyze") == 0) {
       analyze = true;
+    } else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
+      seed = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
+    } else if (std::strcmp(argv[i], "--style") == 0 && i + 1 < argc) {
+      style_id = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+    } else if (std::strcmp(argv[i], "--chord") == 0 && i + 1 < argc) {
+      chord_id = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
       printUsage(argv[0]);
       return 0;
@@ -64,21 +77,24 @@ int main(int argc, char* argv[]) {
 
   midisketch::MidiSketch sketch;
 
-  midisketch::SongConfig config = midisketch::createDefaultSongConfig(1);
-  config.chord_progression_id = 3;
-  config.seed = 12345;
+  midisketch::SongConfig config = midisketch::createDefaultSongConfig(style_id);
+  config.chord_progression_id = chord_id;
+  config.seed = seed;
 
   const auto& preset = midisketch::getStylePreset(config.style_preset_id);
 
   std::cout << "Generating with SongConfig:\n";
   std::cout << "  Style: " << preset.display_name << "\n";
   std::cout << "  Chord: " << config.chord_progression_id << "\n";
-  std::cout << "  Form: " << midisketch::getStructureName(config.form) << "\n";
   std::cout << "  BPM: " << (config.bpm == 0 ? preset.tempo_default : config.bpm) << "\n";
   std::cout << "  VocalAttitude: " << static_cast<int>(config.vocal_attitude) << "\n";
-  std::cout << "  Seed: " << config.seed << "\n\n";
+  std::cout << "  Seed: " << config.seed << "\n";
 
   sketch.generateFromConfig(config);
+
+  // Show actual form used (may differ from config due to random selection)
+  std::cout << "  Form: " << midisketch::getStructureName(sketch.getParams().structure)
+            << " (selected)\n\n";
 
   // Write MIDI file
   auto midi_data = sketch.getMidi();

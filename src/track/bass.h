@@ -4,6 +4,7 @@
 #include "core/midi_track.h"
 #include "core/song.h"
 #include "core/types.h"
+#include <random>
 #include <vector>
 
 namespace midisketch {
@@ -30,8 +31,9 @@ struct BassAnalysis {
 // @param track Target MidiTrack to populate
 // @param song Song containing arrangement info
 // @param params Generation parameters (key, chord_id, mood)
+// @param rng Random number generator for pattern variation
 void generateBassTrack(MidiTrack& track, const Song& song,
-                       const GeneratorParams& params);
+                       const GeneratorParams& params, std::mt19937& rng);
 
 }  // namespace midisketch
 

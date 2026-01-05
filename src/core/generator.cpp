@@ -30,7 +30,21 @@ void Generator::generateFromConfig(const SongConfig& config) {
 
   // Convert SongConfig to GeneratorParams
   GeneratorParams params;
-  params.structure = config.form;
+
+  // If form matches preset default, use weighted random selection based on seed
+  // This allows users who explicitly set a form to keep their choice,
+  // while enabling variation for default configurations
+  if (config.form == preset.default_form && config.seed != 0) {
+    params.structure = selectRandomForm(config.style_preset_id, config.seed);
+  } else if (config.form == preset.default_form && config.seed == 0) {
+    // Seed 0 means auto-random, generate a seed first for form selection
+    uint32_t form_seed = static_cast<uint32_t>(
+        std::chrono::system_clock::now().time_since_epoch().count());
+    params.structure = selectRandomForm(config.style_preset_id, form_seed);
+  } else {
+    params.structure = config.form;
+  }
+
   params.chord_id = config.chord_progression_id;
   params.key = config.key;
   params.drums_enabled = config.drums_enabled;
@@ -379,7 +393,7 @@ void Generator::generateChord() {
 }
 
 void Generator::generateBass() {
-  generateBassTrack(song_.bass(), song_, params_);
+  generateBassTrack(song_.bass(), song_, params_, rng_);
   // Register bass notes with harmony context for other tracks to reference
   harmony_context_.registerTrack(song_.bass(), TrackRole::Bass);
 }

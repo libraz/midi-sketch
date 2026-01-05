@@ -151,6 +151,12 @@ enum class StructurePattern : uint8_t {
   ExtendedFull      // Intro(4) -> A(8) -> B(8) -> Chorus(8) -> Interlude(4) -> A(8) -> B(8) -> Chorus(8) -> Bridge(8) -> Chorus(8) -> Chorus(8) -> Outro(8) [90 bars]
 };
 
+// Form weight for random structure selection
+struct FormWeight {
+  StructurePattern form;
+  uint8_t weight;  // 1-100, higher = more likely
+};
+
 // Intro chant pattern (inserted after Intro).
 enum class IntroChant : uint8_t {
   None = 0,

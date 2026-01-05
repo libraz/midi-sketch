@@ -302,8 +302,12 @@ struct KickPattern {
 };
 
 // Get kick pattern based on section type and style
-KickPattern getKickPattern(SectionType section, DrumStyle style, int bar) {
+// Uses RNG to add syncopation variation
+KickPattern getKickPattern(SectionType section, DrumStyle style, int bar,
+                            std::mt19937& rng) {
   KickPattern p = {false, false, false, false, false, false, false, false};
+
+  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
   // Instrumental sections: minimal kick
   if (section == SectionType::Intro || section == SectionType::Interlude) {
@@ -346,8 +350,12 @@ KickPattern getKickPattern(SectionType section, DrumStyle style, int bar) {
       break;
 
     case DrumStyle::FourOnFloor:
-      // Dance: kick on every beat
+      // Dance: kick on every beat (with occasional variation)
       p.beat1 = p.beat2 = p.beat3 = p.beat4 = true;
+      // 20% chance to add offbeat syncopation
+      if (section == SectionType::Chorus && dist(rng) < 0.20f) {
+        p.beat2_and = true;
+      }
       break;
 
     case DrumStyle::Upbeat:
@@ -355,10 +363,12 @@ KickPattern getKickPattern(SectionType section, DrumStyle style, int bar) {
       p.beat1 = true;
       p.beat3 = true;
       if (section == SectionType::B || section == SectionType::Chorus) {
-        p.beat2_and = true;  // Syncopation before beat 3
+        // 70% chance for beat2_and syncopation
+        p.beat2_and = (dist(rng) < 0.70f);
       }
       if (section == SectionType::Chorus) {
-        p.beat4_and = true;  // Push into next bar
+        // 60% chance for beat4_and push
+        p.beat4_and = (dist(rng) < 0.60f);
       }
       break;
 
@@ -367,10 +377,13 @@ KickPattern getKickPattern(SectionType section, DrumStyle style, int bar) {
       p.beat1 = true;
       p.beat3 = true;
       if (section == SectionType::Chorus) {
-        p.beat2_and = true;  // Extra push
-        if (bar % 2 == 0) {
-          p.beat4_and = true;
-        }
+        // 65% chance for beat2_and
+        p.beat2_and = (dist(rng) < 0.65f);
+        // 40% chance for beat4_and
+        p.beat4_and = (dist(rng) < 0.40f);
+      } else if (section == SectionType::B) {
+        // 30% chance for syncopation in B section
+        p.beat2_and = (dist(rng) < 0.30f);
       }
       break;
 
@@ -379,10 +392,12 @@ KickPattern getKickPattern(SectionType section, DrumStyle style, int bar) {
       p.beat1 = true;
       p.beat3 = true;
       if (section == SectionType::B || section == SectionType::Chorus) {
-        p.beat2_and = true;  // Syncopated kick for drive
+        // 75% chance for syncopated kick
+        p.beat2_and = (dist(rng) < 0.75f);
       }
       if (section == SectionType::Chorus) {
-        p.beat4_and = true;  // Push into next bar
+        // 65% chance for push into next bar
+        p.beat4_and = (dist(rng) < 0.65f);
       }
       break;
 
@@ -392,13 +407,13 @@ KickPattern getKickPattern(SectionType section, DrumStyle style, int bar) {
       p.beat1 = true;
       p.beat3 = true;
       if (section == SectionType::B) {
-        // B section: add some syncopation
-        if (bar % 2 == 1) {
-          p.beat2_and = true;
-        }
+        // 50% chance for syncopation in B section
+        p.beat2_and = (dist(rng) < 0.50f);
       } else if (section == SectionType::Chorus) {
-        // Chorus: more driving
-        p.beat2_and = (bar % 2 == 0);
+        // 55% chance for driving syncopation
+        p.beat2_and = (dist(rng) < 0.55f);
+        // 35% chance for beat4_and
+        p.beat4_and = (dist(rng) < 0.35f);
       }
       break;
   }
@@ -413,20 +428,48 @@ enum class HiHatLevel {
   Sixteenth   // 16th notes
 };
 
+// Adjust hi-hat level one step sparser
+HiHatLevel adjustHiHatSparser(HiHatLevel level) {
+  switch (level) {
+    case HiHatLevel::Sixteenth: return HiHatLevel::Eighth;
+    case HiHatLevel::Eighth: return HiHatLevel::Quarter;
+    case HiHatLevel::Quarter: return HiHatLevel::Quarter;
+  }
+  return level;
+}
+
+// Adjust hi-hat level one step denser
+HiHatLevel adjustHiHatDenser(HiHatLevel level) {
+  switch (level) {
+    case HiHatLevel::Quarter: return HiHatLevel::Eighth;
+    case HiHatLevel::Eighth: return HiHatLevel::Sixteenth;
+    case HiHatLevel::Sixteenth: return HiHatLevel::Sixteenth;
+  }
+  return level;
+}
+
+// Get hi-hat level with randomized variation
 HiHatLevel getHiHatLevel(SectionType section, DrumStyle style,
-                          BackingDensity backing_density) {
+                          BackingDensity backing_density,
+                          std::mt19937& rng) {
+  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+
   HiHatLevel base_level = HiHatLevel::Eighth;
 
   if (style == DrumStyle::Sparse) {
     base_level = (section == SectionType::Chorus) ? HiHatLevel::Eighth
                                                    : HiHatLevel::Quarter;
   } else if (style == DrumStyle::FourOnFloor) {
-    // FourOnFloor: always 8th notes (classic open/closed pattern)
-    // Don't apply backing_density adjustment - the open/closed pattern is essential
+    // FourOnFloor: 8th notes base, but 25% chance for 16th in Chorus
+    if (section == SectionType::Chorus && dist(rng) < 0.25f) {
+      return HiHatLevel::Sixteenth;
+    }
     return HiHatLevel::Eighth;
   } else if (style == DrumStyle::Synth) {
-    // Synth: tight 16th note hi-hat (YOASOBI/Synthwave style)
-    // Always 16th notes for driving electronic feel
+    // Synth: 16th notes base, but 20% chance for 8th in A section
+    if (section == SectionType::A && dist(rng) < 0.20f) {
+      return HiHatLevel::Eighth;
+    }
     return HiHatLevel::Sixteenth;
   } else {
     switch (section) {
@@ -438,14 +481,20 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style,
         base_level = HiHatLevel::Eighth;
         break;
       case SectionType::A:
-        base_level = HiHatLevel::Eighth;
+        // 30% chance for quarter notes in A section (more laid back)
+        base_level = (dist(rng) < 0.30f) ? HiHatLevel::Quarter : HiHatLevel::Eighth;
         break;
       case SectionType::B:
-        base_level = HiHatLevel::Eighth;
+        // 25% chance for 16th notes in B section (building energy)
+        base_level = (dist(rng) < 0.25f) ? HiHatLevel::Sixteenth : HiHatLevel::Eighth;
         break;
       case SectionType::Chorus:
-        base_level = (style == DrumStyle::Upbeat) ? HiHatLevel::Sixteenth
-                                                   : HiHatLevel::Eighth;
+        if (style == DrumStyle::Upbeat) {
+          base_level = HiHatLevel::Sixteenth;
+        } else {
+          // 35% chance for 16th notes in Chorus
+          base_level = (dist(rng) < 0.35f) ? HiHatLevel::Sixteenth : HiHatLevel::Eighth;
+        }
         break;
       case SectionType::Bridge:
         base_level = HiHatLevel::Eighth;
@@ -455,27 +504,17 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style,
         base_level = HiHatLevel::Quarter;
         break;
       case SectionType::MixBreak:
-        // MIX section: driving hi-hat
-        base_level = HiHatLevel::Eighth;
+        // MIX section: 40% chance for 16th notes
+        base_level = (dist(rng) < 0.40f) ? HiHatLevel::Sixteenth : HiHatLevel::Eighth;
         break;
     }
   }
 
-  // Adjust for backing density (except for FourOnFloor which returns early)
+  // Adjust for backing density
   if (backing_density == BackingDensity::Thin) {
-    // Reduce density: move one level sparser
-    switch (base_level) {
-      case HiHatLevel::Sixteenth: return HiHatLevel::Eighth;
-      case HiHatLevel::Eighth: return HiHatLevel::Quarter;
-      case HiHatLevel::Quarter: return HiHatLevel::Quarter;
-    }
+    base_level = adjustHiHatSparser(base_level);
   } else if (backing_density == BackingDensity::Thick) {
-    // Increase density: move one level denser
-    switch (base_level) {
-      case HiHatLevel::Quarter: return HiHatLevel::Eighth;
-      case HiHatLevel::Eighth: return HiHatLevel::Sixteenth;
-      case HiHatLevel::Sixteenth: return HiHatLevel::Sixteenth;
-    }
+    base_level = adjustHiHatDenser(base_level);
   }
 
   return base_level;
@@ -555,7 +594,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
     }
 
     HiHatLevel hh_level = getHiHatLevel(section.type, style,
-                                         section.backing_density);
+                                         section.backing_density, rng);
 
     // BackgroundMotif: force 8th note hi-hat for consistent drive
     if (is_background_motif && drum_params.hihat_drive) {
@@ -599,7 +638,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
       }
 
       // Get kick pattern for this bar
-      KickPattern kick = getKickPattern(section.type, style, bar);
+      KickPattern kick = getKickPattern(section.type, style, bar, rng);
 
       for (uint8_t beat = 0; beat < 4; ++beat) {
         Tick beat_tick = bar_start + beat * TICKS_PER_BEAT;

@@ -1,6 +1,7 @@
 #include "core/preset_data.h"
 #include "core/chord.h"
 #include <cmath>
+#include <random>
 
 namespace midisketch {
 
@@ -376,63 +377,80 @@ const StylePreset STYLE_PRESETS[17] = {
     },
 };
 
-// Form compatibility by style
-// Returns forms that work well with each style preset
-const StructurePattern STYLE_FORMS[17][5] = {
+// Form compatibility by style with weights (higher = more likely)
+// Weight guidelines: Common=40-60, Frequent=20-35, Occasional=10-20, Rare=3-10
+const FormWeight STYLE_FORMS_WEIGHTED[17][5] = {
     // 0: Minimal Groove Pop - shorter forms
-    {StructurePattern::StandardPop, StructurePattern::DirectChorus, StructurePattern::ShortForm,
-     StructurePattern::RepeatChorus, StructurePattern::BuildUp},
+    {{{StructurePattern::StandardPop}, 50}, {{StructurePattern::DirectChorus}, 25},
+     {{StructurePattern::ShortForm}, 12}, {{StructurePattern::RepeatChorus}, 8},
+     {{StructurePattern::BuildUp}, 5}},
     // 1: Dance Pop Emotion - full-length forms
-    {StructurePattern::FullPop, StructurePattern::FullWithBridge, StructurePattern::DriveUpbeat,
-     StructurePattern::Ballad, StructurePattern::AnthemStyle},
+    {{{StructurePattern::FullPop}, 45}, {{StructurePattern::FullWithBridge}, 25},
+     {{StructurePattern::DriveUpbeat}, 15}, {{StructurePattern::Ballad}, 10},
+     {{StructurePattern::AnthemStyle}, 5}},
     // 2: Bright Pop - standard forms
-    {StructurePattern::StandardPop, StructurePattern::DirectChorus, StructurePattern::RepeatChorus,
-     StructurePattern::BuildUp, StructurePattern::FullPop},
+    {{{StructurePattern::StandardPop}, 45}, {{StructurePattern::DirectChorus}, 25},
+     {{StructurePattern::RepeatChorus}, 15}, {{StructurePattern::BuildUp}, 10},
+     {{StructurePattern::FullPop}, 5}},
     // 3: Idol Standard - standard and anthem forms
-    {StructurePattern::StandardPop, StructurePattern::BuildUp, StructurePattern::RepeatChorus,
-     StructurePattern::AnthemStyle, StructurePattern::FullPop},
+    {{{StructurePattern::StandardPop}, 40}, {{StructurePattern::BuildUp}, 25},
+     {{StructurePattern::RepeatChorus}, 15}, {{StructurePattern::AnthemStyle}, 12},
+     {{StructurePattern::FullPop}, 8}},
     // 4: Idol Emotion - full-length emotional forms
-    {StructurePattern::FullPop, StructurePattern::FullWithBridge, StructurePattern::Ballad,
-     StructurePattern::StandardPop, StructurePattern::BuildUp},
+    {{{StructurePattern::FullPop}, 45}, {{StructurePattern::FullWithBridge}, 25},
+     {{StructurePattern::Ballad}, 15}, {{StructurePattern::StandardPop}, 10},
+     {{StructurePattern::BuildUp}, 5}},
     // 5: Idol Energy - driving high-energy forms
-    {StructurePattern::DriveUpbeat, StructurePattern::AnthemStyle, StructurePattern::FullPop,
-     StructurePattern::RepeatChorus, StructurePattern::DirectChorus},
+    {{{StructurePattern::DriveUpbeat}, 40}, {{StructurePattern::AnthemStyle}, 30},
+     {{StructurePattern::FullPop}, 15}, {{StructurePattern::RepeatChorus}, 10},
+     {{StructurePattern::DirectChorus}, 5}},
     // 6: Idol Minimal - short forms only
-    {StructurePattern::ShortForm, StructurePattern::DirectChorus, StructurePattern::StandardPop,
-     StructurePattern::RepeatChorus, StructurePattern::BuildUp},
+    {{{StructurePattern::ShortForm}, 45}, {{StructurePattern::DirectChorus}, 30},
+     {{StructurePattern::StandardPop}, 15}, {{StructurePattern::RepeatChorus}, 7},
+     {{StructurePattern::BuildUp}, 3}},
     // 7: Rock Shout - driving forms
-    {StructurePattern::FullPop, StructurePattern::DriveUpbeat, StructurePattern::AnthemStyle,
-     StructurePattern::BuildUp, StructurePattern::FullWithBridge},
+    {{{StructurePattern::FullPop}, 40}, {{StructurePattern::DriveUpbeat}, 25},
+     {{StructurePattern::AnthemStyle}, 18}, {{StructurePattern::BuildUp}, 12},
+     {{StructurePattern::FullWithBridge}, 5}},
     // 8: Pop Emotion - emotional full forms
-    {StructurePattern::FullPop, StructurePattern::FullWithBridge, StructurePattern::Ballad,
-     StructurePattern::StandardPop, StructurePattern::BuildUp},
+    {{{StructurePattern::FullPop}, 45}, {{StructurePattern::FullWithBridge}, 25},
+     {{StructurePattern::Ballad}, 15}, {{StructurePattern::StandardPop}, 10},
+     {{StructurePattern::BuildUp}, 5}},
     // 9: Raw Emotional - varied emotional forms
-    {StructurePattern::FullWithBridge, StructurePattern::FullPop, StructurePattern::Ballad,
-     StructurePattern::BuildUp, StructurePattern::DriveUpbeat},
+    {{{StructurePattern::FullWithBridge}, 40}, {{StructurePattern::FullPop}, 25},
+     {{StructurePattern::Ballad}, 18}, {{StructurePattern::BuildUp}, 12},
+     {{StructurePattern::DriveUpbeat}, 5}},
     // 10: Acoustic Pop - ballad and simple forms
-    {StructurePattern::Ballad, StructurePattern::StandardPop, StructurePattern::FullWithBridge,
-     StructurePattern::ShortForm, StructurePattern::BuildUp},
+    {{{StructurePattern::Ballad}, 50}, {{StructurePattern::StandardPop}, 22},
+     {{StructurePattern::FullWithBridge}, 15}, {{StructurePattern::ShortForm}, 8},
+     {{StructurePattern::BuildUp}, 5}},
     // 11: Live Call & Response - anthem and driving forms
-    {StructurePattern::AnthemStyle, StructurePattern::DriveUpbeat, StructurePattern::RepeatChorus,
-     StructurePattern::FullPop, StructurePattern::DirectChorus},
+    {{{StructurePattern::AnthemStyle}, 45}, {{StructurePattern::DriveUpbeat}, 25},
+     {{StructurePattern::RepeatChorus}, 15}, {{StructurePattern::FullPop}, 10},
+     {{StructurePattern::DirectChorus}, 5}},
     // 12: Background Motif - repetitive forms
-    {StructurePattern::StandardPop, StructurePattern::RepeatChorus, StructurePattern::ShortForm,
-     StructurePattern::DirectChorus, StructurePattern::BuildUp},
+    {{{StructurePattern::StandardPop}, 45}, {{StructurePattern::RepeatChorus}, 25},
+     {{StructurePattern::ShortForm}, 15}, {{StructurePattern::DirectChorus}, 10},
+     {{StructurePattern::BuildUp}, 5}},
     // 13: City Pop - groovy full forms
-    {StructurePattern::FullPop, StructurePattern::FullWithBridge, StructurePattern::StandardPop,
-     StructurePattern::BuildUp, StructurePattern::Ballad},
+    {{{StructurePattern::FullPop}, 45}, {{StructurePattern::FullWithBridge}, 25},
+     {{StructurePattern::StandardPop}, 15}, {{StructurePattern::BuildUp}, 10},
+     {{StructurePattern::Ballad}, 5}},
     // 14: Anime Opening - build-up and driving forms
-    {StructurePattern::BuildUp, StructurePattern::DriveUpbeat, StructurePattern::FullPop,
-     StructurePattern::AnthemStyle, StructurePattern::FullWithBridge},
+    {{{StructurePattern::BuildUp}, 45}, {{StructurePattern::DriveUpbeat}, 25},
+     {{StructurePattern::FullPop}, 15}, {{StructurePattern::AnthemStyle}, 10},
+     {{StructurePattern::FullWithBridge}, 5}},
     // 15: EDM Synth Pop - direct and driving forms
-    {StructurePattern::DirectChorus, StructurePattern::DriveUpbeat, StructurePattern::RepeatChorus,
-     StructurePattern::BuildUp, StructurePattern::FullPop},
+    {{{StructurePattern::DirectChorus}, 45}, {{StructurePattern::DriveUpbeat}, 25},
+     {{StructurePattern::RepeatChorus}, 15}, {{StructurePattern::BuildUp}, 10},
+     {{StructurePattern::FullPop}, 5}},
     // 16: Emotional Ballad - slow emotional forms
-    {StructurePattern::Ballad, StructurePattern::FullWithBridge, StructurePattern::StandardPop,
-     StructurePattern::FullPop, StructurePattern::BuildUp},
+    {{{StructurePattern::Ballad}, 55}, {{StructurePattern::FullWithBridge}, 22},
+     {{StructurePattern::StandardPop}, 12}, {{StructurePattern::FullPop}, 8},
+     {{StructurePattern::BuildUp}, 3}},
 };
 
-constexpr size_t STYLE_FORM_COUNT[17] = {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
+constexpr size_t STYLE_FORM_COUNT = 5;
 
 }  // namespace
 
@@ -531,11 +549,39 @@ std::vector<StructurePattern> getFormsByStyle(uint8_t style_id) {
   if (style_id >= STYLE_PRESET_COUNT) {
     style_id = 0;
   }
-  size_t count = STYLE_FORM_COUNT[style_id];
-  for (size_t i = 0; i < count; ++i) {
-    result.push_back(STYLE_FORMS[style_id][i]);
+  for (size_t i = 0; i < STYLE_FORM_COUNT; ++i) {
+    result.push_back(STYLE_FORMS_WEIGHTED[style_id][i].form);
   }
   return result;
+}
+
+StructurePattern selectRandomForm(uint8_t style_id, uint32_t seed) {
+  if (style_id >= STYLE_PRESET_COUNT) {
+    style_id = 0;
+  }
+
+  // Calculate total weight
+  uint32_t total_weight = 0;
+  for (size_t i = 0; i < STYLE_FORM_COUNT; ++i) {
+    total_weight += STYLE_FORMS_WEIGHTED[style_id][i].weight;
+  }
+
+  // Use seed to generate a random value
+  std::mt19937 rng(seed);
+  std::uniform_int_distribution<uint32_t> dist(0, total_weight - 1);
+  uint32_t roll = dist(rng);
+
+  // Select form based on weighted random roll
+  uint32_t cumulative = 0;
+  for (size_t i = 0; i < STYLE_FORM_COUNT; ++i) {
+    cumulative += STYLE_FORMS_WEIGHTED[style_id][i].weight;
+    if (roll < cumulative) {
+      return STYLE_FORMS_WEIGHTED[style_id][i].form;
+    }
+  }
+
+  // Fallback: return default form
+  return STYLE_FORMS_WEIGHTED[style_id][0].form;
 }
 
 SongConfig createDefaultSongConfig(uint8_t style_id) {

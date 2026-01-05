@@ -881,14 +881,15 @@ TEST(TargetDurationTest, DurationOverridesFormId) {
 TEST(TargetDurationTest, DurationZeroUsesForm) {
   SongConfig config = createDefaultSongConfig(0);
   config.seed = 12345;
-  config.form = StructurePattern::StandardPop;  // 24 bars
+  // Use FullPop (not default for style 0) to test explicit form is respected
+  config.form = StructurePattern::FullPop;  // 56 bars
   config.target_duration_seconds = 0;  // Use form
 
   MidiSketch sketch;
   sketch.generateFromConfig(config);
 
   uint16_t total_bars = sketch.getSong().arrangement().totalBars();
-  EXPECT_EQ(total_bars, 24) << "target_duration_seconds=0 should use form pattern";
+  EXPECT_EQ(total_bars, 56) << "target_duration_seconds=0 should use form pattern";
 }
 
 TEST(TargetDurationTest, GeneratedDurationApproximatesTarget) {
