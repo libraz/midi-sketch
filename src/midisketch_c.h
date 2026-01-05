@@ -72,6 +72,11 @@ typedef struct {
   uint8_t vocal_low;      // Vocal range lower bound (MIDI note)
   uint8_t vocal_high;     // Vocal range upper bound (MIDI note)
   uint8_t vocal_attitude; // 0=Clean, 1=Expressive, 2=Raw
+  // Vocal density parameters (0 = use style default)
+  uint8_t vocal_note_density;      // Note density * 100 (0 = use style default, 30-200)
+  uint8_t vocal_min_note_division; // Min note division (0=default, 4/8/16/32)
+  uint8_t vocal_rest_ratio;        // Rest ratio * 100 (0-50)
+  uint8_t vocal_allow_extreme_leap; // Allow extreme leaps (0=off, 1=on)
 } MidiSketchVocalParams;
 
 // Regenerates only the vocal track with the given parameters.
@@ -272,6 +277,9 @@ uint8_t midisketch_style_preset_allowed_attitudes(uint8_t id);
 MidiSketchStylePresetSummary midisketch_get_style_preset(uint8_t id);
 
 // Pointer-returning versions (WASM-friendly)
+// WARNING: These functions use static buffers and are NOT thread-safe.
+// Do not call from multiple threads or Web Workers simultaneously.
+// The returned pointer is valid until the next call to the same function.
 MidiSketchChordCandidates* midisketch_get_progressions_by_style_ptr(uint8_t style_id);
 MidiSketchFormCandidates* midisketch_get_forms_by_style_ptr(uint8_t style_id);
 MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id);

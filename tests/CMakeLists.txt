@@ -24,6 +24,10 @@ set(TEST_SOURCES
   core/call_test.cpp
   midi/midi_writer_test.cpp
   track/arpeggio_test.cpp
+  track/vocal_test.cpp
+  track/chord_track_test.cpp
+  track/bass_test.cpp
+  track/drums_test.cpp
   analysis/dissonance_test.cpp
 )
 

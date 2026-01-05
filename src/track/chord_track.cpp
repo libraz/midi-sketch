@@ -62,6 +62,41 @@ int countCommonTones(const VoicedChord& prev, const VoicedChord& next) {
   return common;
 }
 
+// Check for parallel fifths or octaves between two voicings
+// Returns true if parallel motion in perfect intervals is detected
+bool hasParallelFifthsOrOctaves(const VoicedChord& prev, const VoicedChord& next) {
+  size_t count = std::min(prev.count, next.count);
+  if (count < 2) return false;
+
+  for (size_t i = 0; i < count; ++i) {
+    for (size_t j = i + 1; j < count; ++j) {
+      // Calculate intervals (mod 12 for octave equivalence)
+      int prev_interval = std::abs(static_cast<int>(prev.pitches[i]) -
+                                   static_cast<int>(prev.pitches[j])) % 12;
+      int next_interval = std::abs(static_cast<int>(next.pitches[i]) -
+                                   static_cast<int>(next.pitches[j])) % 12;
+
+      // Check for P5 (7 semitones) or P8/unison (0 semitones)
+      bool prev_is_perfect = (prev_interval == 7 || prev_interval == 0);
+      bool next_is_perfect = (next_interval == 7 || next_interval == 0);
+
+      if (prev_is_perfect && next_is_perfect && prev_interval == next_interval) {
+        // Both intervals are the same perfect interval
+        // Check if both voices move in the same direction (parallel motion)
+        int motion_i = static_cast<int>(next.pitches[i]) - static_cast<int>(prev.pitches[i]);
+        int motion_j = static_cast<int>(next.pitches[j]) - static_cast<int>(prev.pitches[j]);
+
+        // Parallel motion: both move same direction (and not stationary)
+        if (motion_i != 0 && motion_j != 0 &&
+            ((motion_i > 0) == (motion_j > 0))) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 // Generate close voicings for a chord
 std::vector<VoicedChord> generateCloseVoicings(uint8_t root, const Chord& chord) {
   std::vector<VoicedChord> voicings;
@@ -416,8 +451,11 @@ VoicedChord selectVoicing(uint8_t root, const Chord& chord,
     int distance = voicingDistance(prev_voicing, v);
     int type_bonus = (v.type == preferred_type) ? 30 : 0;
 
-    // Score: prioritize type match, common tones, then minimal movement
-    int score = type_bonus + common * 100 - distance;
+    // Penalize parallel fifths/octaves (classical voice leading rule)
+    int parallel_penalty = hasParallelFifthsOrOctaves(prev_voicing, v) ? -150 : 0;
+
+    // Score: prioritize type match, common tones, avoid parallels, minimize movement
+    int score = type_bonus + common * 100 + parallel_penalty - distance;
 
     if (score > best_score) {
       best = &v;

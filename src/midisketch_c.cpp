@@ -31,6 +31,12 @@ MidiSketchError midisketch_regenerate_vocal(MidiSketchHandle handle,
   regen_params.vocal_attitude = static_cast<midisketch::VocalAttitude>(params->vocal_attitude);
   regen_params.composition_style = midisketch::CompositionStyle::MelodyLead;
 
+  // Vocal density parameters
+  regen_params.vocal_note_density = params->vocal_note_density / 100.0f;
+  regen_params.vocal_min_note_division = params->vocal_min_note_division;
+  regen_params.vocal_rest_ratio = params->vocal_rest_ratio / 100.0f;
+  regen_params.vocal_allow_extreme_leap = params->vocal_allow_extreme_leap != 0;
+
   sketch->regenerateMelody(regen_params);
   return MIDISKETCH_OK;
 }

@@ -725,16 +725,14 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
               // BackgroundMotif: BPM-adaptive open hi-hat on off-beats
               if (motif_open_hh && eighth == 1) {
                 // Target: ~1.5 open hi-hats per second
-                float open_prob = 45.0f / params.bpm;
-                open_prob = std::min(0.8f, std::max(0.2f, open_prob));
+                float open_prob = std::clamp(45.0f / params.bpm, 0.2f, 0.8f);
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
                 use_open = (beat == 1 || beat == 3) && open_dist(rng) < open_prob;
               } else if (style == DrumStyle::FourOnFloor && eighth == 1) {
                 // FourOnFloor: BPM-adaptive open hi-hat on beats 2 and 4
                 // Target: ~1.5 open hi-hats per second
                 // With 2 candidates per bar: prob = 1.5 / (BPM/30) = 45/BPM
-                float open_prob = 45.0f / params.bpm;
-                open_prob = std::min(0.8f, std::max(0.15f, open_prob));
+                float open_prob = std::clamp(45.0f / params.bpm, 0.15f, 0.8f);
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
                 use_open = (beat == 1 || beat == 3) && open_dist(rng) < open_prob;
               } else if (section.type == SectionType::Chorus && eighth == 1) {
@@ -779,8 +777,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
               // Open hi-hat on beat 4's last 16th - BPM adaptive
               // Target: ~0.5 open hi-hats per second for 16th note patterns
               if (beat == 3 && sixteenth == 3) {
-                float open_prob = 30.0f / params.bpm;
-                open_prob = std::min(0.4f, std::max(0.1f, open_prob));
+                float open_prob = std::clamp(30.0f / params.bpm, 0.1f, 0.4f);
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
                 if (open_dist(rng) < open_prob) {
                   track.addNote(hh_tick, SIXTEENTH, OHH,

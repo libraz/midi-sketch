@@ -1237,6 +1237,112 @@ TEST(GeneratorTest, RegenerateMelodyWithSeedZeroGeneratesNewSeed) {
   EXPECT_NE(new_seed, 0u);  // Should never be 0 after resolution
 }
 
+TEST(GeneratorTest, RegenerateMelodyWithVocalDensityParams) {
+  // Test that vocal density parameters affect regenerateMelody
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 12345;
+  params.vocal_low = 55;
+  params.vocal_high = 74;
+
+  gen.generate(params);
+  size_t original_notes = gen.getSong().vocal().notes().size();
+
+  // Regenerate with high density
+  MelodyRegenerateParams regen_high{};
+  regen_high.seed = 54321;
+  regen_high.vocal_low = 55;
+  regen_high.vocal_high = 74;
+  regen_high.vocal_attitude = VocalAttitude::Clean;
+  regen_high.composition_style = CompositionStyle::MelodyLead;
+  regen_high.vocal_note_density = 1.5f;  // High density
+  regen_high.vocal_min_note_division = 16;
+  regen_high.vocal_rest_ratio = 0.05f;
+  regen_high.vocal_allow_extreme_leap = true;
+
+  gen.regenerateMelody(regen_high);
+  size_t high_density_notes = gen.getSong().vocal().notes().size();
+
+  // Regenerate with low density
+  MelodyRegenerateParams regen_low{};
+  regen_low.seed = 54321;  // Same seed
+  regen_low.vocal_low = 55;
+  regen_low.vocal_high = 74;
+  regen_low.vocal_attitude = VocalAttitude::Clean;
+  regen_low.composition_style = CompositionStyle::MelodyLead;
+  regen_low.vocal_note_density = 0.4f;  // Low density
+  regen_low.vocal_min_note_division = 4;
+  regen_low.vocal_rest_ratio = 0.4f;
+  regen_low.vocal_allow_extreme_leap = false;
+
+  gen.regenerateMelody(regen_low);
+  size_t low_density_notes = gen.getSong().vocal().notes().size();
+
+  // High density should produce more notes than low density
+  EXPECT_GT(high_density_notes, low_density_notes)
+      << "High density (1.5) should produce more notes than low density (0.4). "
+      << "Got high=" << high_density_notes << ", low=" << low_density_notes;
+}
+
+TEST(GeneratorTest, MelodyRegenerateParamsDefaultValues) {
+  // Test default values for MelodyRegenerateParams
+  MelodyRegenerateParams params{};
+
+  EXPECT_FLOAT_EQ(params.vocal_note_density, 0.0f)
+      << "vocal_note_density should default to 0.0 (use style default)";
+  EXPECT_EQ(params.vocal_min_note_division, 0)
+      << "vocal_min_note_division should default to 0 (use style default)";
+  EXPECT_FLOAT_EQ(params.vocal_rest_ratio, 0.15f)
+      << "vocal_rest_ratio should default to 0.15";
+  EXPECT_FALSE(params.vocal_allow_extreme_leap)
+      << "vocal_allow_extreme_leap should default to false";
+}
+
+TEST(GeneratorTest, RegenerateMelodyVocalDensityPreservesBGM) {
+  // Verify BGM tracks are preserved when regenerating with density params
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ShortForm;
+  params.mood = Mood::StraightPop;
+  params.seed = 11111;
+  params.skip_vocal = true;  // Generate BGM only
+
+  gen.generate(params);
+
+  // Save BGM note counts
+  size_t chord_count = gen.getSong().chord().notes().size();
+  size_t bass_count = gen.getSong().bass().notes().size();
+  size_t drums_count = gen.getSong().drums().notes().size();
+
+  // Regenerate vocal with density params
+  MelodyRegenerateParams regen{};
+  regen.seed = 22222;
+  regen.vocal_low = 55;
+  regen.vocal_high = 74;
+  regen.vocal_attitude = VocalAttitude::Expressive;
+  regen.composition_style = CompositionStyle::MelodyLead;
+  regen.vocal_note_density = 1.2f;
+  regen.vocal_min_note_division = 8;
+  regen.vocal_rest_ratio = 0.1f;
+  regen.vocal_allow_extreme_leap = true;
+
+  gen.regenerateMelody(regen);
+
+  // Vocal should now have notes
+  EXPECT_FALSE(gen.getSong().vocal().empty())
+      << "Vocal track should have notes after regeneration";
+
+  // BGM tracks should be unchanged
+  EXPECT_EQ(gen.getSong().chord().notes().size(), chord_count)
+      << "Chord track should be unchanged";
+  EXPECT_EQ(gen.getSong().bass().notes().size(), bass_count)
+      << "Bass track should be unchanged";
+  EXPECT_EQ(gen.getSong().drums().notes().size(), drums_count)
+      << "Drums track should be unchanged";
+}
+
 // ============================================================================
 // Vocal Range Constraint Tests
 // ============================================================================

@@ -15,7 +15,7 @@ constexpr ChordProgression PROGRESSIONS[22] = {
     {{3, 0, 4, 5, -1, -1, -1, -1}, 4},   // 3: Pop2 - IV - I - V - vi
     {{0, 3, 4, 0, -1, -1, -1, -1}, 4},   // 4: Classic - I - IV - V - I
     {{0, 3, 5, 4, -1, -1, -1, -1}, 4},   // 5: Pop3 - I - IV - vi - V
-    {{3, 4, 2, 5, -1, -1, -1, -1}, 4},   // 6: Oudou - IV - V - iii - vi (王道進行)
+    {{3, 4, 2, 5, -1, -1, -1, -1}, 4},   // 6: Oudou - IV - V - iii - vi (Royal Road progression)
     {{5, 4, 3, 4, -1, -1, -1, -1}, 4},   // 7: Minor1 - vi - V - IV - V
     {{5, 3, 4, 0, -1, -1, -1, -1}, 4},   // 8: Minor2 - vi - IV - V - I
     {{0, 4, 2, 3, -1, -1, -1, -1}, 4},   // 9: Pop4 - I - V - iii - IV
@@ -51,7 +51,7 @@ const char* PROGRESSION_ROMAN[22] = {
     "IV - I - V - vi",        // Pop2
     "I - IV - V - I",         // Classic
     "I - IV - vi - V",        // Pop3
-    "IV - V - iii - vi",      // Oudou (王道進行)
+    "IV - V - iii - vi",      // Oudou (Royal Road progression)
     "vi - V - IV - V",        // Minor1
     "vi - IV - V - I",        // Minor2
     "I - V - iii - IV",       // Pop4
@@ -77,7 +77,7 @@ const char* PROGRESSION_CHORDS[22] = {
     "F - C - G - Am",         // Pop2
     "C - F - G - C",          // Classic
     "C - F - Am - G",         // Pop3
-    "F - G - Em - Am",        // Oudou (王道進行)
+    "F - G - Em - Am",        // Oudou (Royal Road progression)
     "Am - G - F - G",         // Minor1
     "Am - F - G - C",         // Minor2
     "C - G - Em - F",         // Pop4

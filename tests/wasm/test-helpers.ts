@@ -56,6 +56,10 @@ export interface VocalParamsOptions {
   vocalLow?: number;
   vocalHigh?: number;
   vocalAttitude?: number;
+  vocalNoteDensity?: number;
+  vocalMinNoteDivision?: number;
+  vocalRestRatio?: number;
+  vocalAllowExtremLeap?: boolean;
 }
 
 export class WasmTestContext {
@@ -146,13 +150,18 @@ export class WasmTestContext {
   }
 
   allocVocalParams(params: VocalParamsOptions): number {
-    const ptr = this.module._malloc(8);
+    const ptr = this.module._malloc(12); // 11 bytes + padding
     const view = new DataView(this.module.HEAPU8.buffer);
 
     view.setUint32(ptr + 0, params.seed ?? 0, true);
     view.setUint8(ptr + 4, params.vocalLow ?? 60);
     view.setUint8(ptr + 5, params.vocalHigh ?? 79);
     view.setUint8(ptr + 6, params.vocalAttitude ?? 0);
+    // Vocal density parameters
+    view.setUint8(ptr + 7, params.vocalNoteDensity ?? 0);
+    view.setUint8(ptr + 8, params.vocalMinNoteDivision ?? 0);
+    view.setUint8(ptr + 9, params.vocalRestRatio ?? 15);
+    view.setUint8(ptr + 10, params.vocalAllowExtremLeap ? 1 : 0);
 
     return ptr;
   }

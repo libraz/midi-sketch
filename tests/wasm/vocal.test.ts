@@ -90,5 +90,93 @@ describe('MidiSketch WASM - Vocal', () => {
 
       cleanup();
     });
+
+    it('should apply vocal density parameters', () => {
+      // Generate BGM without vocal
+      ctx.generateFromConfig({ seed: 12345, skipVocal: true });
+
+      const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
+        'number',
+        'number',
+      ]) as (h: number, paramsPtr: number) => number;
+
+      // Regenerate with high density
+      const highDensityParams = ctx.allocVocalParams({
+        seed: 33333,
+        vocalLow: 55,
+        vocalHigh: 74,
+        vocalAttitude: 0,
+        vocalNoteDensity: 150, // 1.5 * 100
+        vocalMinNoteDivision: 16,
+        vocalRestRatio: 5, // 0.05 * 100
+        vocalAllowExtremLeap: true,
+      });
+
+      let result = regenerateVocal(ctx.handle, highDensityParams);
+      ctx.module._free(highDensityParams);
+      expect(result).toBe(0);
+
+      const { data: highData, cleanup: cleanupHigh } = ctx.getEventsJson();
+      const highTracks = (highData as { tracks: { name: string; notes: unknown[] }[] }).tracks;
+      const highVocalNotes = highTracks.find((t) => t.name === 'Vocal')?.notes.length ?? 0;
+      cleanupHigh();
+
+      // Regenerate with low density
+      const lowDensityParams = ctx.allocVocalParams({
+        seed: 33333, // Same seed
+        vocalLow: 55,
+        vocalHigh: 74,
+        vocalAttitude: 0,
+        vocalNoteDensity: 40, // 0.4 * 100
+        vocalMinNoteDivision: 4,
+        vocalRestRatio: 40, // 0.4 * 100
+        vocalAllowExtremLeap: false,
+      });
+
+      result = regenerateVocal(ctx.handle, lowDensityParams);
+      ctx.module._free(lowDensityParams);
+      expect(result).toBe(0);
+
+      const { data: lowData, cleanup: cleanupLow } = ctx.getEventsJson();
+      const lowTracks = (lowData as { tracks: { name: string; notes: unknown[] }[] }).tracks;
+      const lowVocalNotes = lowTracks.find((t) => t.name === 'Vocal')?.notes.length ?? 0;
+      cleanupLow();
+
+      // High density should produce more notes
+      expect(highVocalNotes).toBeGreaterThan(lowVocalNotes);
+    });
+
+    it('should use default density when parameters are zero', () => {
+      // Generate BGM without vocal
+      ctx.generateFromConfig({ seed: 44444, skipVocal: true });
+
+      const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
+        'number',
+        'number',
+      ]) as (h: number, paramsPtr: number) => number;
+
+      // Regenerate with default density (all zeros = use style default)
+      const defaultParams = ctx.allocVocalParams({
+        seed: 55555,
+        vocalLow: 55,
+        vocalHigh: 74,
+        vocalAttitude: 0,
+        vocalNoteDensity: 0, // Use style default
+        vocalMinNoteDivision: 0, // Use style default
+        vocalRestRatio: 15, // Default
+        vocalAllowExtremLeap: false,
+      });
+
+      const result = regenerateVocal(ctx.handle, defaultParams);
+      ctx.module._free(defaultParams);
+      expect(result).toBe(0);
+
+      const { data, cleanup } = ctx.getEventsJson();
+      const tracks = (data as { tracks: { name: string; notes: unknown[] }[] }).tracks;
+      const vocalTrack = tracks.find((t) => t.name === 'Vocal');
+
+      expect(vocalTrack?.notes.length).toBeGreaterThan(0);
+      cleanup();
+    });
   });
 });

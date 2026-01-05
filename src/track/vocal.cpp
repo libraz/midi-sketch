@@ -188,6 +188,31 @@ int constrainInterval(int target_pitch, int prev_pitch, int max_interval,
   return constrained;
 }
 
+// Snap a pitch to the nearest scale tone
+// key_offset: transposition amount (0 = C major)
+int snapToNearestScaleTone(int pitch, int key_offset) {
+  // Get pitch class relative to key
+  int pc = ((pitch - key_offset) % 12 + 12) % 12;
+
+  // Find nearest scale tone
+  int best_pc = SCALE[0];
+  int best_dist = 12;
+  for (int s : SCALE) {
+    int dist = std::min(std::abs(pc - s), 12 - std::abs(pc - s));
+    if (dist < best_dist) {
+      best_dist = dist;
+      best_pc = s;
+    }
+  }
+
+  // Reconstruct pitch with snapped pitch class
+  int octave = (pitch - key_offset) / 12;
+  if ((pitch - key_offset) < 0 && pc != 0) {
+    octave--;  // Adjust for negative pitch values
+  }
+  return octave * 12 + best_pc + key_offset;
+}
+
 // Find the closest chord tone to target within max_interval of prev_pitch
 int nearestChordToneWithinInterval(int target_pitch, int prev_pitch,
                                    int8_t chord_degree, int max_interval,
@@ -583,25 +608,73 @@ std::vector<MelodicContour> getEndingContours() {
   };
 }
 
-// Apply suspension: use 4th instead of 3rd, then resolve
-// Returns: {suspension_degree, resolution_degree, resolution_duration_eighths}
-struct SuspensionResult {
-  int suspension_degree;    // The suspended note (usually 4th = root + 3)
-  int resolution_degree;    // The resolution (usually 3rd = root + 2)
-  int suspension_eighths;   // Duration of suspension
-  int resolution_eighths;   // Duration of resolution
+// Suspension types for different harmonic contexts
+enum class SuspensionType {
+  Sus43,  // 4-3: Most common, works on all chords
+  Sus98,  // 9-8: Upper voice suspension, resolves to root
+  Sus76   // 7-6: Works well on minor chords
 };
 
-SuspensionResult applySuspension(int chord_root, int original_duration_eighths) {
-  // 4-3 suspension: hold the 4th, resolve to 3rd
-  int suspension = chord_root + 3;  // 4th scale degree above root
-  int resolution = chord_root + 2;  // 3rd scale degree above root
+// Apply suspension: use suspended note, then resolve
+// Returns: {suspension_degree, resolution_degree, durations}
+struct SuspensionResult {
+  int suspension_degree;    // The suspended note
+  int resolution_degree;    // The resolution note
+  int suspension_eighths;   // Duration of suspension
+  int resolution_eighths;   // Duration of resolution
+  SuspensionType type;      // Type of suspension used
+};
+
+// Select appropriate suspension type based on chord context
+SuspensionType selectSuspensionType(int chord_degree, std::mt19937& rng) {
+  int normalized = ((chord_degree % 7) + 7) % 7;
+  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+  float r = dist(rng);
+
+  // Minor chords (ii, iii, vi): 7-6 works well
+  if (normalized == 1 || normalized == 2 || normalized == 5) {
+    if (r < 0.3f) return SuspensionType::Sus76;
+    if (r < 0.6f) return SuspensionType::Sus98;
+    return SuspensionType::Sus43;
+  }
+
+  // Major chords (I, IV): prefer 4-3 or 9-8
+  if (r < 0.7f) return SuspensionType::Sus43;
+  return SuspensionType::Sus98;
+}
+
+SuspensionResult applySuspension(int chord_root, int original_duration_eighths,
+                                  SuspensionType type) {
+  int suspension, resolution;
+
+  switch (type) {
+    case SuspensionType::Sus43:
+      // 4-3 suspension: hold the 4th, resolve to 3rd
+      suspension = chord_root + 3;  // 4th scale degree above root
+      resolution = chord_root + 2;  // 3rd scale degree above root
+      break;
+    case SuspensionType::Sus98:
+      // 9-8 suspension: hold the 9th (=2nd), resolve to root (octave)
+      suspension = chord_root + 8;  // 9th (octave + 2nd) above root
+      resolution = chord_root + 7;  // Octave above root
+      break;
+    case SuspensionType::Sus76:
+      // 7-6 suspension: hold the 7th, resolve to 6th
+      suspension = chord_root + 6;  // 7th scale degree above root
+      resolution = chord_root + 5;  // 6th scale degree above root
+      break;
+  }
 
   // Split duration: suspension takes most, resolution takes rest
   int sus_dur = std::max(1, original_duration_eighths * 2 / 3);
   int res_dur = std::max(1, original_duration_eighths - sus_dur);
 
-  return {suspension, resolution, sus_dur, res_dur};
+  return {suspension, resolution, sus_dur, res_dur, type};
+}
+
+// Backward-compatible overload (defaults to 4-3 suspension)
+SuspensionResult applySuspension(int chord_root, int original_duration_eighths) {
+  return applySuspension(chord_root, original_duration_eighths, SuspensionType::Sus43);
 }
 
 // Apply anticipation: shift the note earlier and use next chord's tone
@@ -693,7 +766,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
   // Calculate max interval in scale degrees
   // Convert semitones to approximate scale degrees (7 semitones ≈ 4 scale degrees)
   int max_interval_from_params = (melody_params.max_leap_interval * 4) / 7;
-  max_interval_from_params = std::max(2, std::min(max_interval_from_params, 7));
+  max_interval_from_params = std::clamp(max_interval_from_params, 2, 7);
   int max_interval_degrees = is_background_motif
                                  ? (vocal_params.interval_limit <= 4 ? 2 : 4)
                                  : max_interval_from_params;
@@ -1169,9 +1242,11 @@ void generateVocalTrack(MidiTrack& track, Song& song,
               target_pitch, prev_pitch, static_cast<int8_t>(current_chord_root),
               max_interval, constraint_low, constraint_high);
         } else {
-          // On weak beats: constrain interval, then adjust to scale if needed
+          // On weak beats: constrain interval, then snap to scale tone
           pitch = constrainInterval(target_pitch, prev_pitch, max_interval,
                                     constraint_low, constraint_high);
+          // Ensure weak beat notes are scale tones (not arbitrary pitches)
+          pitch = snapToNearestScaleTone(pitch, key_offset);
         }
 
         // After interval constraint, prefer section range but don't violate interval
@@ -1295,8 +1370,9 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         }
 
         if (use_suspension) {
-          // Apply 4-3 suspension: suspended note + resolution
-          SuspensionResult sus = applySuspension(current_chord_root, rn.eighths);
+          // Select suspension type based on chord context (4-3, 9-8, or 7-6)
+          SuspensionType sus_type = selectSuspensionType(current_chord_root, rng);
+          SuspensionResult sus = applySuspension(current_chord_root, rn.eighths, sus_type);
 
           int sus_pitch = degreeToPitch(sus.suspension_degree, base_octave, key_offset);
           while (sus_pitch < effective_vocal_low) sus_pitch += 12;

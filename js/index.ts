@@ -172,6 +172,14 @@ export interface VocalParams {
   vocalHigh: number;
   /** Vocal attitude: 0=Clean, 1=Expressive, 2=Raw */
   vocalAttitude: number;
+  /** Note density (0-200, where 0=use style default, 70=standard, 100=idol, 150=vocaloid) */
+  vocalNoteDensity?: number;
+  /** Min note division (0=default, 4=quarter, 8=eighth, 16=sixteenth) */
+  vocalMinNoteDivision?: number;
+  /** Rest ratio (0-50, percentage of phrase rest time) */
+  vocalRestRatio?: number;
+  /** Allow extreme leaps for vocaloid-style melodies */
+  vocalAllowExtremLeap?: boolean;
 }
 
 /**
@@ -735,13 +743,18 @@ export class MidiSketch {
   }
 
   private allocVocalParams(m: EmscriptenModule, params: VocalParams): number {
-    const ptr = m._malloc(8);
+    const ptr = m._malloc(12); // 11 bytes + padding
     const view = new DataView(m.HEAPU8.buffer);
 
     view.setUint32(ptr + 0, params.seed ?? 0, true);
     view.setUint8(ptr + 4, params.vocalLow ?? 60);
     view.setUint8(ptr + 5, params.vocalHigh ?? 79);
     view.setUint8(ptr + 6, params.vocalAttitude ?? 0);
+    // Vocal density parameters
+    view.setUint8(ptr + 7, params.vocalNoteDensity ?? 0);
+    view.setUint8(ptr + 8, params.vocalMinNoteDivision ?? 0);
+    view.setUint8(ptr + 9, params.vocalRestRatio ?? 15);
+    view.setUint8(ptr + 10, params.vocalAllowExtremLeap ? 1 : 0);
 
     return ptr;
   }

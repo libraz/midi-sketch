@@ -539,6 +539,12 @@ struct MelodyRegenerateParams {
   uint8_t vocal_high;                  // Vocal range upper bound (MIDI note)
   VocalAttitude vocal_attitude;        // 0=Clean, 1=Expressive, 2=Raw
   CompositionStyle composition_style;  // 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
+
+  // Vocal density parameters (0 = use style default)
+  float vocal_note_density = 0.0f;     // Note density (0.3-2.0, 0 = style default)
+  uint8_t vocal_min_note_division = 0; // Min note division (4/8/16/32, 0 = style default)
+  float vocal_rest_ratio = 0.15f;      // Rest ratio between phrases (0.0-0.5)
+  bool vocal_allow_extreme_leap = false; // Allow extreme leaps (vocaloid mode)
 };
 
 }  // namespace midisketch

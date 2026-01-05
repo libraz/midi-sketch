@@ -283,6 +283,17 @@ void Generator::regenerateMelody(const MelodyRegenerateParams& regen_params) {
   params_.vocal_attitude = regen_params.vocal_attitude;
   params_.composition_style = regen_params.composition_style;
 
+  // === VOCAL DENSITY PARAMETERS ===
+  // Apply overrides if specified (non-zero values)
+  if (regen_params.vocal_note_density > 0.0f) {
+    params_.melody_params.note_density = regen_params.vocal_note_density;
+  }
+  if (regen_params.vocal_min_note_division > 0) {
+    params_.melody_params.min_note_division = regen_params.vocal_min_note_division;
+  }
+  params_.vocal_rest_ratio = regen_params.vocal_rest_ratio;
+  params_.vocal_allow_extreme_leap = regen_params.vocal_allow_extreme_leap;
+
   // Resolve and apply seed
   uint32_t seed = resolveSeed(regen_params.seed);
   rng_.seed(seed);
