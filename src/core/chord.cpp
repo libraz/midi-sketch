@@ -15,7 +15,7 @@ constexpr ChordProgression PROGRESSIONS[22] = {
     {{3, 0, 4, 5, -1, -1, -1, -1}, 4},   // 3: Pop2 - IV - I - V - vi
     {{0, 3, 4, 0, -1, -1, -1, -1}, 4},   // 4: Classic - I - IV - V - I
     {{0, 3, 5, 4, -1, -1, -1, -1}, 4},   // 5: Pop3 - I - IV - vi - V
-    {{0, 4, 3, 0, -1, -1, -1, -1}, 4},   // 6: Simple - I - V - IV - I
+    {{3, 4, 2, 5, -1, -1, -1, -1}, 4},   // 6: Oudou - IV - V - iii - vi (王道進行)
     {{5, 4, 3, 4, -1, -1, -1, -1}, 4},   // 7: Minor1 - vi - V - IV - V
     {{5, 3, 4, 0, -1, -1, -1, -1}, 4},   // 8: Minor2 - vi - IV - V - I
     {{0, 4, 2, 3, -1, -1, -1, -1}, 4},   // 9: Pop4 - I - V - iii - IV
@@ -37,7 +37,7 @@ constexpr ChordProgression PROGRESSIONS[22] = {
 // Chord progression names
 const char* PROGRESSION_NAMES[22] = {
     "Canon",    "Pop1",    "Axis",     "Pop2",    "Classic", "Pop3",
-    "Simple",   "Minor1",  "Minor2",   "Pop4",    "Pop5",    "Rock1",
+    "Oudou",    "Minor1",  "Minor2",   "Pop4",    "Pop5",    "Rock1",
     "Rock2",    "Extended4", "Minor3",  "Komuro",
     "YOASOBI1", "JazzPop", "YOASOBI2", "CityPop",
     "Extended5", "Emotional5",
@@ -51,7 +51,7 @@ const char* PROGRESSION_ROMAN[22] = {
     "IV - I - V - vi",        // Pop2
     "I - IV - V - I",         // Classic
     "I - IV - vi - V",        // Pop3
-    "I - V - IV - I",         // Simple
+    "IV - V - iii - vi",      // Oudou (王道進行)
     "vi - V - IV - V",        // Minor1
     "vi - IV - V - I",        // Minor2
     "I - V - iii - IV",       // Pop4
@@ -77,7 +77,7 @@ const char* PROGRESSION_CHORDS[22] = {
     "F - C - G - Am",         // Pop2
     "C - F - G - C",          // Classic
     "C - F - Am - G",         // Pop3
-    "C - G - F - C",          // Simple
+    "F - G - Em - Am",        // Oudou (王道進行)
     "Am - G - F - G",         // Minor1
     "Am - F - G - C",         // Minor2
     "C - G - Em - F",         // Pop4
@@ -104,7 +104,7 @@ constexpr ChordProgressionMeta PROGRESSION_META[22] = {
     {3, "Pop2", FunctionalProfile::Loop, 0b00000111, "4ch_loop,diatonic"},
     {4, "Classic", FunctionalProfile::CadenceStrong, 0b00010110, "strong_cadence,traditional"},
     {5, "Pop3", FunctionalProfile::Loop, 0b00000111, "4ch_loop,diatonic"},
-    {6, "Simple", FunctionalProfile::Stable, 0b00000011, "simple,diatonic"},
+    {6, "Oudou", FunctionalProfile::TensionBuild, 0b00001110, "anime,iconic,jpop"},
     {7, "Minor1", FunctionalProfile::TensionBuild, 0b00011000, "minor_key,tension"},
     {8, "Minor2", FunctionalProfile::TensionBuild, 0b00011000, "minor_key,resolution"},
     {9, "Pop4", FunctionalProfile::Loop, 0b00000111, "4ch_loop,iii_usage"},
