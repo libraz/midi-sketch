@@ -358,20 +358,25 @@ struct RhythmNote {
 };
 
 // Get rhythm patterns with strong beat marking
+// Patterns designed for lyrical vocal lines (8th note base, ~8-12 notes per 2 bars)
 std::vector<std::vector<RhythmNote>> getRhythmPatterns() {
   return {
-    // Pattern 0: Quarter note melody (simple, singable)
+    // Pattern 0: Standard vocal rhythm (8th note base, 12 notes / 2 bars)
+    // Typical J-pop/pop verse rhythm with natural phrasing
+    {{0.0f, 1, true}, {0.5f, 1, false}, {1.0f, 2, false}, {2.0f, 1, true}, {2.5f, 1, false}, {3.0f, 2, false},
+     {4.0f, 1, true}, {4.5f, 1, false}, {5.0f, 2, false}, {6.0f, 1, true}, {6.5f, 1, false}, {7.0f, 2, false}},
+    // Pattern 1: Syncopated vocal (emphasis on off-beats, 10 notes)
+    {{0.0f, 2, true}, {1.0f, 1, false}, {1.5f, 1, false}, {2.0f, 2, true}, {3.0f, 1, false}, {3.5f, 1, false},
+     {4.0f, 2, true}, {5.0f, 1, false}, {5.5f, 1, false}, {6.0f, 3, true}},
+    // Pattern 2: Dense chorus rhythm (16th note feel, 14 notes)
+    {{0.0f, 1, true}, {0.5f, 1, false}, {1.0f, 1, false}, {1.5f, 1, false}, {2.0f, 1, true}, {2.5f, 1, false}, {3.0f, 2, false},
+     {4.0f, 1, true}, {4.5f, 1, false}, {5.0f, 1, false}, {5.5f, 1, false}, {6.0f, 1, true}, {6.5f, 1, false}, {7.0f, 2, false}},
+    // Pattern 3: Ballad/verse rhythm (longer notes with breath, 8 notes)
     {{0.0f, 2, true}, {1.0f, 2, false}, {2.0f, 2, true}, {3.0f, 2, false},
-     {4.0f, 2, true}, {5.0f, 2, false}, {6.0f, 4, true}},
-    // Pattern 1: Syncopated (more rhythmic interest)
-    {{0.0f, 3, true}, {1.5f, 1, false}, {2.0f, 2, true}, {3.0f, 2, false},
-     {4.0f, 3, true}, {5.5f, 1, false}, {6.0f, 4, true}},
-    // Pattern 2: Long-short alternating
-    {{0.0f, 3, true}, {1.5f, 1, false}, {2.0f, 3, true}, {3.5f, 1, false},
-     {4.0f, 3, true}, {5.5f, 1, false}, {6.0f, 2, true}, {7.0f, 2, false}},
-    // Pattern 3: Sparse (for verses)
-    {{0.0f, 4, true}, {2.0f, 2, true}, {3.0f, 2, false},
-     {4.0f, 4, true}, {6.0f, 4, true}},
+     {4.0f, 2, true}, {5.0f, 2, false}, {6.0f, 2, true}, {7.0f, 2, false}},
+    // Pattern 4: Call-response rhythm (phrase + rest + phrase, 10 notes)
+    {{0.0f, 1, true}, {0.5f, 1, false}, {1.0f, 1, false}, {1.5f, 2, false},
+     {4.0f, 1, true}, {4.5f, 1, false}, {5.0f, 1, false}, {5.5f, 1, false}, {6.0f, 2, true}, {7.0f, 2, false}},
   };
 }
 
@@ -382,30 +387,40 @@ struct MelodicContour {
 };
 
 // Get contour patterns with chord tone markers
+// Extended to 14 notes to match dense rhythm patterns
 std::vector<MelodicContour> getMelodicContours() {
   return {
-    // Contour 0: Arch shape - chord tones on strong beats
-    {{0, 1, 2, 4, 2, 1, 0}, {true, false, true, true, true, false, true}},
-    // Contour 1: Ascending then resolve
-    {{0, 1, 2, 2, 4, 2, 0}, {true, false, true, false, true, false, true}},
-    // Contour 2: Descending from 5th
-    {{4, 2, 1, 0, 2, 1, 0}, {true, false, true, false, true, false, true}},
-    // Contour 3: Neighbor tone motion
-    {{0, 1, 0, -1, 0, 1, 0}, {true, false, true, false, true, false, true}},
-    // Contour 4: Leap then step (expressive)
-    {{0, 4, 2, 1, 2, 1, 0}, {true, true, true, false, true, false, true}},
+    // Contour 0: Arch shape - chord tones on strong beats (verse)
+    {{0, 1, 2, 2, 4, 4, 2, 1, 0, 0, 2, 2, 1, 0},
+     {true, false, true, false, true, false, true, false, true, false, true, false, false, true}},
+    // Contour 1: Ascending with stepwise motion (pre-chorus)
+    {{0, 1, 2, 2, 2, 4, 4, 4, 2, 2, 4, 4, 2, 0},
+     {true, false, true, false, false, true, false, false, true, false, true, false, false, true}},
+    // Contour 2: High energy with leaps (chorus)
+    {{0, 2, 4, 4, 5, 4, 2, 0, 2, 4, 4, 5, 4, 0},
+     {true, true, true, false, true, false, true, true, true, true, false, true, false, true}},
+    // Contour 3: Neighbor tone motion (verse - intimate)
+    {{0, 1, 0, -1, 0, 1, 2, 1, 0, 0, 1, 0, -1, 0},
+     {true, false, true, false, true, false, true, false, true, false, false, true, false, true}},
+    // Contour 4: Expressive with leaps and resolution (bridge)
+    {{0, 4, 2, 1, 0, 2, 4, 5, 4, 2, 1, 0, 0, 0},
+     {true, true, true, false, true, true, true, true, false, true, false, true, false, true}},
   };
 }
 
 // Phrase ending contours - always end on stable chord tone
+// Extended to 14 notes to match dense rhythm patterns
 std::vector<MelodicContour> getEndingContours() {
   return {
-    // End on root (resolution)
-    {{2, 1, 0, -1, 0, 1, 0}, {true, false, true, false, true, false, true}},
-    // 5th then root (authentic cadence feel)
-    {{4, 2, 4, 2, 1, 0, 0}, {true, true, true, true, false, true, true}},
-    // Stepwise descent to root
-    {{2, 1, 0, 2, 1, 0, 0}, {true, false, true, true, false, true, true}},
+    // End on root (resolution) - gradual descent
+    {{2, 2, 1, 0, 0, 1, 2, 2, 1, 0, 0, 1, 0, 0},
+     {true, false, true, false, true, false, true, false, true, false, true, false, true, true}},
+    // 5th then root (authentic cadence feel) - strong resolution
+    {{4, 4, 2, 4, 2, 2, 4, 2, 1, 1, 0, 0, 0, 0},
+     {true, true, true, true, false, true, true, true, false, false, true, false, true, true}},
+    // Stepwise descent to root - smooth resolution
+    {{2, 2, 1, 1, 0, 2, 2, 1, 1, 0, 0, 1, 0, 0},
+     {true, false, true, false, true, true, false, true, false, true, true, false, true, true}},
   };
 }
 
@@ -667,35 +682,35 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       case SectionType::Interlude:
       case SectionType::Outro:
         // These are skipped above, but handle for completeness
-        rhythm_pattern_idx = 3;
-        note_density = 0.5f;
+        rhythm_pattern_idx = 3;  // Ballad pattern
+        note_density = 0.7f;
         break;
       case SectionType::A:
-        // A melody: restrained, mid-low register
-        rhythm_pattern_idx = 0;
+        // A melody: lyrical, natural phrasing
+        rhythm_pattern_idx = 0;   // Standard vocal rhythm (12 notes/2bars)
         contour_variation = 0;
-        note_density = 0.7f;      // More sparse (was 0.85)
+        note_density = 0.92f;     // High density for continuous singing
         register_shift = -2;      // Lower register
         break;
       case SectionType::B:
-        // B melody: building tension, rising register
-        rhythm_pattern_idx = 1;
+        // B melody: building tension, syncopated
+        rhythm_pattern_idx = 1;   // Syncopated pattern (10 notes)
         contour_variation = 1;
-        note_density = 0.85f;     // Medium density
+        note_density = 0.95f;     // Very high density
         register_shift = 2;       // Slightly higher
         break;
       case SectionType::Chorus:
-        // Chorus: climactic, high register, emphatic
-        rhythm_pattern_idx = 2;
+        // Chorus: climactic, dense, emphatic
+        rhythm_pattern_idx = 2;   // Dense chorus rhythm (14 notes)
         contour_variation = 2;
-        note_density = 1.0f;      // Full density
+        note_density = 1.0f;      // Full density - no skipping
         register_shift = 5;       // Higher register (+5 semitones)
         break;
       case SectionType::Bridge:
-        // Bridge: contrasting, reflective
-        rhythm_pattern_idx = 3;
-        contour_variation = 3;
-        note_density = 0.6f;      // Sparse
+        // Bridge: contrasting, more melodic breath
+        rhythm_pattern_idx = 4;   // Call-response pattern (10 notes)
+        contour_variation = 4;
+        note_density = 0.88f;     // Good density with natural pauses
         register_shift = 0;
         break;
     }
