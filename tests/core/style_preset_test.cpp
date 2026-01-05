@@ -14,7 +14,7 @@ namespace {
 // ============================================================================
 
 TEST(StylePresetTest, StylePresetCount) {
-  EXPECT_EQ(STYLE_PRESET_COUNT, 13);  // 13 style presets
+  EXPECT_EQ(STYLE_PRESET_COUNT, 17);  // 17 style presets
 }
 
 TEST(StylePresetTest, GetStylePresetMinimalGroovePop) {

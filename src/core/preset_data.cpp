@@ -94,8 +94,8 @@ const char* MOOD_NAMES[20] = {
     "city_pop",
 };
 
-// Style preset definitions (13 presets)
-const StylePreset STYLE_PRESETS[13] = {
+// Style preset definitions (17 presets)
+const StylePreset STYLE_PRESETS[17] = {
     // ========== Pop/Dance (0-2) ==========
     // 0: Minimal Groove Pop
     {
@@ -308,11 +308,76 @@ const StylePreset STYLE_PRESETS[13] = {
         {true, 2, 0},
         1
     },
+    // ========== Genre-Specific (13-16) ==========
+    // 13: City Pop
+    {
+        13,
+        "city_pop",
+        "City Pop",
+        "Groovy 80s Japanese city pop with jazzy chords",
+        StructurePattern::FullPop,
+        95, 115, 105,
+        VocalAttitude::Clean,
+        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
+        {7, 8, 10, 1, 5, -1, -1, -1},
+        {7, true, 0.75f, 0.35f},
+        {8, 0.5f, 0.4f},
+        {true, 2, 1},
+        2
+    },
+    // 14: Anime Opening
+    {
+        14,
+        "anime_opening",
+        "Anime Opening",
+        "Epic, dramatic anime OP style with building energy",
+        StructurePattern::BuildUp,
+        130, 155, 142,
+        VocalAttitude::Expressive,
+        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
+        {5, 2, 6, 0, 4, -1, -1, -1},
+        {6, true, 0.8f, 0.3f},
+        {8, 0.6f, 0.3f},
+        {true, 3, 2},
+        2
+    },
+    // 15: EDM Synth Pop
+    {
+        15,
+        "edm_synth",
+        "EDM Synth Pop",
+        "Modern electronic dance music with synth leads",
+        StructurePattern::DirectChorus,
+        125, 145, 138,
+        VocalAttitude::Clean,
+        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
+        {0, 4, 9, 1, -1, -1, -1, -1},
+        {5, false, 0.85f, 0.15f},
+        {4, 0.75f, 0.2f},
+        {true, 2, 2},
+        2
+    },
+    // 16: Emotional Ballad
+    {
+        16,
+        "emotional_ballad",
+        "Emotional Ballad",
+        "Slow emotional ballad with expressive vocals",
+        StructurePattern::Ballad,
+        65, 85, 72,
+        VocalAttitude::Expressive,
+        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
+        {1, 3, 8, 11, 5, -1, -1, -1},
+        {8, true, 0.7f, 0.4f},
+        {8, 0.4f, 0.5f},
+        {false, 1, 0},
+        0
+    },
 };
 
 // Form compatibility by style
 // Returns forms that work well with each style preset
-const StructurePattern STYLE_FORMS[13][5] = {
+const StructurePattern STYLE_FORMS[17][5] = {
     // 0: Minimal Groove Pop - shorter forms
     {StructurePattern::StandardPop, StructurePattern::DirectChorus, StructurePattern::ShortForm,
      StructurePattern::RepeatChorus, StructurePattern::BuildUp},
@@ -352,9 +417,21 @@ const StructurePattern STYLE_FORMS[13][5] = {
     // 12: Background Motif - repetitive forms
     {StructurePattern::StandardPop, StructurePattern::RepeatChorus, StructurePattern::ShortForm,
      StructurePattern::DirectChorus, StructurePattern::BuildUp},
+    // 13: City Pop - groovy full forms
+    {StructurePattern::FullPop, StructurePattern::FullWithBridge, StructurePattern::StandardPop,
+     StructurePattern::BuildUp, StructurePattern::Ballad},
+    // 14: Anime Opening - build-up and driving forms
+    {StructurePattern::BuildUp, StructurePattern::DriveUpbeat, StructurePattern::FullPop,
+     StructurePattern::AnthemStyle, StructurePattern::FullWithBridge},
+    // 15: EDM Synth Pop - direct and driving forms
+    {StructurePattern::DirectChorus, StructurePattern::DriveUpbeat, StructurePattern::RepeatChorus,
+     StructurePattern::BuildUp, StructurePattern::FullPop},
+    // 16: Emotional Ballad - slow emotional forms
+    {StructurePattern::Ballad, StructurePattern::FullWithBridge, StructurePattern::StandardPop,
+     StructurePattern::FullPop, StructurePattern::BuildUp},
 };
 
-constexpr size_t STYLE_FORM_COUNT[13] = {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
+constexpr size_t STYLE_FORM_COUNT[17] = {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
 
 }  // namespace
 
