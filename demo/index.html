@@ -4,677 +4,637 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>midi-sketch Demo</title>
-  <link href="https://unpkg.com/vuetify@3/dist/vuetify.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7/css/materialdesignicons.min.css" rel="stylesheet">
   <style>
-    .chord-key-display {
-      font-family: monospace;
-      background: #f5f5f5;
-      padding: 8px 12px;
-      border-radius: 4px;
-      margin-top: 8px;
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px; margin: 0 auto; padding: 20px;
+      background: #f5f5f5; color: #333;
     }
+    h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+    .version { color: #7f8c8d; font-size: 0.9em; font-weight: normal; }
+    .section {
+      background: white; border-radius: 8px; padding: 20px;
+      margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .section h2 { margin-top: 0; color: #2c3e50; font-size: 1.2em; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; font-weight: 500; color: #34495e; }
+    select, input[type="number"] {
+      width: 100%; padding: 10px; border: 1px solid #ddd;
+      border-radius: 4px; font-size: 14px;
+    }
+    select:focus, input:focus { outline: none; border-color: #3498db; }
+    .row { display: flex; gap: 15px; flex-wrap: wrap; }
+    .row > .form-group { flex: 1; min-width: 120px; }
+    .checkbox-group { display: flex; align-items: center; gap: 10px; }
+    .checkbox-group input { width: auto; }
+    button {
+      padding: 12px 24px; border: none; border-radius: 4px;
+      font-size: 16px; cursor: pointer; transition: background 0.2s;
+    }
+    .btn-primary { background: #3498db; color: white; }
+    .btn-primary:hover { background: #2980b9; }
+    .btn-primary:disabled, .btn-secondary:disabled, .btn-play:disabled, .btn-stop:disabled {
+      background: #bdc3c7; cursor: not-allowed;
+    }
+    .btn-secondary { background: #2ecc71; color: white; }
+    .btn-secondary:hover { background: #27ae60; }
+    .btn-play { background: #9b59b6; color: white; }
+    .btn-play:hover { background: #8e44ad; }
+    .btn-stop { background: #e74c3c; color: white; }
+    .btn-stop:hover { background: #c0392b; }
+    .buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+    .result {
+      background: #ecf0f1; padding: 15px; border-radius: 4px;
+      font-family: monospace; font-size: 13px; white-space: pre-wrap;
+    }
+    .status { padding: 10px; border-radius: 4px; margin-bottom: 15px; }
+    .status.loading { background: #fff3cd; color: #856404; }
+    .status.ready { background: #d4edda; color: #155724; }
+    .status.error { background: #f8d7da; color: #721c24; }
+    .hint { color: #7f8c8d; font-size: 0.85em; margin-top: 5px; }
+    .chord-key-display {
+      font-family: monospace; background: #ecf0f1;
+      padding: 4px 8px; border-radius: 4px; margin-top: 5px;
+    }
+    .playback-info {
+      display: flex; align-items: center; gap: 15px; margin-top: 15px;
+      padding: 10px; background: #ecf0f1; border-radius: 4px;
+    }
+    .progress-bar {
+      flex: 1; height: 8px; background: #bdc3c7;
+      border-radius: 4px; overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%; background: #9b59b6; transition: width 0.1s linear;
+    }
+    .time-display { font-family: monospace; font-size: 14px; min-width: 100px; text-align: right; }
+    .slider-group { margin-top: 10px; }
+    .bpm-slider, .range-slider { width: 100%; }
+    .bpm-value { text-align: center; font-weight: bold; font-size: 1.1em; color: #2c3e50; margin-top: 4px; }
+    .bpm-rec { text-align: center; font-size: 0.8em; margin-top: 2px; }
+    .vocal-range-visual { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
     .piano-range {
-      height: 24px;
-      background: repeating-linear-gradient(
-        90deg,
-        #eceff1 0px, #eceff1 14px,
-        #37474f 14px, #37474f 20px,
-        #eceff1 20px, #eceff1 34px,
-        #37474f 34px, #37474f 40px,
-        #eceff1 40px, #eceff1 54px,
-        #eceff1 54px, #eceff1 68px,
-        #37474f 68px, #37474f 74px,
-        #eceff1 74px, #eceff1 88px,
-        #37474f 88px, #37474f 94px,
-        #eceff1 94px, #eceff1 108px,
-        #37474f 108px, #37474f 114px,
-        #eceff1 114px, #eceff1 128px
+      flex: 1; height: 24px; border-radius: 4px; position: relative; border: 1px solid #bdc3c7;
+      background: repeating-linear-gradient(90deg,
+        #ecf0f1 0px, #ecf0f1 14px, #34495e 14px, #34495e 20px,
+        #ecf0f1 20px, #ecf0f1 34px, #34495e 34px, #34495e 40px,
+        #ecf0f1 40px, #ecf0f1 54px, #ecf0f1 54px, #ecf0f1 68px,
+        #34495e 68px, #34495e 74px, #ecf0f1 74px, #ecf0f1 88px,
+        #34495e 88px, #34495e 94px, #ecf0f1 94px, #ecf0f1 108px,
+        #34495e 108px, #34495e 114px, #ecf0f1 114px, #ecf0f1 128px
       );
       background-size: 128px 100%;
-      border-radius: 4px;
-      position: relative;
-      border: 1px solid #ccc;
     }
     .piano-highlight {
-      position: absolute;
-      height: 100%;
-      background: rgba(33, 150, 243, 0.4);
-      border-radius: 4px;
-      pointer-events: none;
+      position: absolute; height: 100%; background: rgba(52, 152, 219, 0.5); border-radius: 4px;
     }
+    .vocal-note { font-family: monospace; font-size: 0.9em; min-width: 40px; text-align: center; }
+    .collapsible { cursor: pointer; user-select: none; }
+    .collapsible:after { content: ' +'; }
+    .collapsible.open:after { content: ' -'; }
+    .collapsed { display: none; }
   </style>
 </head>
 <body>
-  <div id="app">
-    <v-app>
-      <v-main class="bg-grey-lighten-4">
-        <v-container>
-          <v-row>
-            <v-col cols="12">
-              <h1 class="text-h4 mb-2">
-                midi-sketch
-                <span class="text-subtitle-1 text-grey">v{{ version }}</span>
-              </h1>
-              <v-alert v-if="!ready" type="info" variant="tonal" class="mb-4">
-                Loading WASM module...
-              </v-alert>
-              <v-alert v-else type="success" variant="tonal" class="mb-4">
-                Ready
-              </v-alert>
-            </v-col>
-          </v-row>
+  <div id="app" v-scope @vue:mounted="init()">
+    <h1>midi-sketch <span class="version">v{{ version }}</span></h1>
+    <div :class="['status', status.type]">{{ status.text }}</div>
 
-          <!-- Style & Structure -->
-          <v-card class="mb-4">
-            <v-card-title>Style & Structure</v-card-title>
-            <v-card-text>
-              <v-select
-                v-model="config.stylePresetId"
-                :items="styleItems"
-                label="Style Preset"
-                item-title="text"
-                item-value="value"
-                @update:model-value="onStyleChange"
-              ></v-select>
-              <div class="text-caption text-grey mb-4">{{ styleDescription }}</div>
+    <!-- Style & Structure -->
+    <div class="section">
+      <h2>Style & Structure</h2>
+      <div class="form-group">
+        <label>Style Preset</label>
+        <select v-model="config.stylePresetId" @change="onStyleChange">
+          <option v-for="s in stylePresets" :value="s.id">{{ s.displayName }}</option>
+        </select>
+        <div class="hint">{{ currentPreset?.description }}</div>
+      </div>
 
-              <v-row>
-                <v-col cols="6">
-                  <v-select
-                    v-model="config.chordProgressionId"
-                    :items="chordItems"
-                    label="Chord Progression"
-                    item-title="text"
-                    item-value="value"
-                  ></v-select>
-                  <div class="text-caption text-grey">{{ chordRomanDisplay }}</div>
-                  <div v-if="chordKeyDisplay" class="chord-key-display">
-                    Key of {{ keyName }}: <strong>{{ chordKeyDisplay }}</strong>
-                  </div>
-                </v-col>
-                <v-col cols="6">
-                  <v-select
-                    v-model="config.formId"
-                    :items="formItems"
-                    :disabled="config.targetDurationSeconds > 0"
-                    label="Form"
-                    item-title="text"
-                    item-value="value"
-                  ></v-select>
-                </v-col>
-              </v-row>
+      <div class="row">
+        <div class="form-group">
+          <label>Chord Progression</label>
+          <select v-model="config.chordProgressionId" @change="updateChordDisplay">
+            <option v-for="id in chordIds" :value="id">{{ allChords[id]?.name }}</option>
+          </select>
+          <div v-if="chordDisplay" class="hint">{{ chordDisplay.roman }}</div>
+          <div v-if="chordDisplay" class="chord-key-display">
+            Key of {{ keyName }}: <strong>{{ chordDisplay.transposed }}</strong>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Form</label>
+          <select v-model="config.formId" :disabled="config.targetDurationSeconds > 0">
+            <option v-for="id in formIds" :value="id">{{ allForms[id]?.name }}</option>
+          </select>
+        </div>
+      </div>
 
-              <v-select
-                v-model="config.key"
-                :items="keyItems"
-                label="Key"
-                item-title="text"
-                item-value="value"
-              ></v-select>
+      <div class="row">
+        <div class="form-group">
+          <label>Key</label>
+          <select v-model="config.key" @change="updateChordDisplay">
+            <option v-for="(k, i) in keyNames" :value="i">{{ k }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>BPM</label>
+          <input type="range" class="bpm-slider" v-model.number="config.bpm" min="60" max="180">
+          <div class="bpm-value">{{ config.bpm }} BPM</div>
+          <div class="bpm-rec" :style="{ color: bpmRecColor }">{{ bpmRec }}</div>
+        </div>
+        <div class="form-group">
+          <label>Duration (0 = Form)</label>
+          <input type="number" v-model.number="config.targetDurationSeconds" min="0" max="300" step="30">
+          <div class="hint">{{ durationHint }}</div>
+        </div>
+      </div>
 
-              <!-- BPM Slider -->
-              <div class="mt-4">
-                <div class="d-flex justify-space-between align-center">
-                  <span class="text-subtitle-2">BPM</span>
-                  <span class="text-h6">{{ config.bpm }}</span>
-                </div>
-                <v-slider
-                  v-model="config.bpm"
-                  :min="60"
-                  :max="180"
-                  :step="1"
-                  color="primary"
-                  track-color="grey-lighten-2"
-                  thumb-label
-                ></v-slider>
-                <div class="text-caption text-center" :class="bpmRecommendationClass">
-                  {{ bpmRecommendation }}
-                </div>
-              </div>
+      <div class="form-group">
+        <label>Seed (0 = random)</label>
+        <input type="number" v-model.number="config.seed" min="0">
+      </div>
+    </div>
 
-              <!-- Duration -->
-              <v-text-field
-                v-model.number="config.targetDurationSeconds"
-                label="Duration (seconds, 0 = use Form)"
-                type="number"
-                :min="0"
-                :max="300"
-                hint=""
-                persistent-hint
-              >
-                <template v-slot:message>
-                  {{ durationHint }}
-                </template>
-              </v-text-field>
-            </v-card-text>
-          </v-card>
+    <!-- Vocal & Expression -->
+    <div class="section">
+      <h2>Vocal & Expression</h2>
+      <div class="form-group">
+        <label>Vocal Range</label>
+        <div class="row">
+          <div class="form-group">
+            <label style="font-size:0.85em">Low</label>
+            <input type="range" v-model.number="config.vocalLow" min="36" max="84" class="range-slider">
+            <div class="vocal-note">{{ midiToNote(config.vocalLow) }}</div>
+          </div>
+          <div class="form-group">
+            <label style="font-size:0.85em">High</label>
+            <input type="range" v-model.number="config.vocalHigh" min="48" max="96" class="range-slider">
+            <div class="vocal-note">{{ midiToNote(effectiveVocalHigh) }}</div>
+          </div>
+        </div>
+        <div class="vocal-range-visual">
+          <span style="font-size:0.8em;color:#7f8c8d">C2</span>
+          <div class="piano-range">
+            <div class="piano-highlight" :style="pianoHighlightStyle"></div>
+          </div>
+          <span style="font-size:0.8em;color:#7f8c8d">C7</span>
+        </div>
+        <div class="hint" style="text-align:center;margin-top:8px">
+          {{ midiToNote(config.vocalLow) }} - {{ midiToNote(effectiveVocalHigh) }}
+          ({{ effectiveVocalHigh - config.vocalLow }} semitones)
+        </div>
+      </div>
 
-          <!-- Vocal & Expression -->
-          <v-card class="mb-4">
-            <v-card-title>Vocal & Expression</v-card-title>
-            <v-card-text>
-              <div class="text-subtitle-2 mb-2">Vocal Range</div>
-              <v-row>
-                <v-col cols="6">
-                  <v-slider
-                    v-model="config.vocalLow"
-                    :min="36"
-                    :max="84"
-                    :step="1"
-                    label="Low"
-                    thumb-label="always"
-                    color="blue"
-                  >
-                    <template v-slot:thumb-label>{{ midiToNote(config.vocalLow) }}</template>
-                  </v-slider>
-                </v-col>
-                <v-col cols="6">
-                  <v-slider
-                    v-model="config.vocalHigh"
-                    :min="48"
-                    :max="96"
-                    :step="1"
-                    label="High"
-                    thumb-label="always"
-                    color="blue"
-                  >
-                    <template v-slot:thumb-label>{{ midiToNote(config.vocalHigh) }}</template>
-                  </v-slider>
-                </v-col>
-              </v-row>
+      <div class="row">
+        <div class="form-group">
+          <label>Vocal Style</label>
+          <select v-model="config.vocalAttitude">
+            <option v-for="a in vocalAttitudes" :value="a.value" :disabled="a.disabled">{{ a.text }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Composition Style</label>
+          <select v-model="config.compositionStyle">
+            <option value="0">Melody Lead</option>
+            <option value="1">Background Motif</option>
+            <option value="2">Synth Driven</option>
+          </select>
+        </div>
+      </div>
+    </div>
 
-              <!-- Piano visualization -->
-              <div class="d-flex align-center ga-2 mb-2">
-                <span class="text-caption">C2</span>
-                <div class="piano-range flex-grow-1">
-                  <div class="piano-highlight" :style="pianoHighlightStyle"></div>
-                </div>
-                <span class="text-caption">C7</span>
-              </div>
-              <div class="text-caption text-center text-grey">
-                Range: {{ midiToNote(config.vocalLow) }} - {{ midiToNote(config.vocalHigh) }}
-                ({{ config.vocalHigh - config.vocalLow }} semitones)
-              </div>
+    <!-- Modulation & Arrangement -->
+    <div class="section">
+      <h2 class="collapsible" :class="{ open: showAdvanced }" @click="showAdvanced = !showAdvanced">
+        Modulation & Arrangement
+      </h2>
+      <div :class="{ collapsed: !showAdvanced }">
+        <div class="row">
+          <div class="form-group">
+            <label>Modulation Timing</label>
+            <select v-model="config.modulationTiming">
+              <option value="0">None</option>
+              <option value="1">Last Chorus</option>
+              <option value="2">After Bridge</option>
+              <option value="3">Each Chorus</option>
+              <option value="4">Random</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Modulation Semitones</label>
+            <input type="number" v-model.number="config.modulationSemitones" min="-6" max="6">
+          </div>
+        </div>
+        <div class="row">
+          <div class="form-group">
+            <label>Arrangement Growth</label>
+            <select v-model="config.arrangementGrowth">
+              <option value="0">Layer Add</option>
+              <option value="1">Register Add</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Motif Scope</label>
+            <select v-model="config.motifRepeatScope">
+              <option value="0">Full Song</option>
+              <option value="1">Section</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
 
-              <v-row class="mt-4">
-                <v-col cols="6">
-                  <v-select
-                    v-model="config.vocalAttitude"
-                    :items="vocalAttitudeItems"
-                    label="Vocal Style"
-                    item-title="text"
-                    item-value="value"
-                  ></v-select>
-                </v-col>
-                <v-col cols="6">
-                  <v-text-field
-                    v-model.number="config.seed"
-                    label="Seed (0 = random)"
-                    type="number"
-                    :min="0"
-                  ></v-text-field>
-                </v-col>
-              </v-row>
-            </v-card-text>
-          </v-card>
+    <!-- Options -->
+    <div class="section">
+      <h2>Options</h2>
+      <div class="row">
+        <div class="form-group"><div class="checkbox-group">
+          <input type="checkbox" id="drums" v-model="config.drumsEnabled"><label for="drums">Drums</label>
+        </div></div>
+        <div class="form-group"><div class="checkbox-group">
+          <input type="checkbox" id="arpeggio" v-model="config.arpeggioEnabled"><label for="arpeggio">Arpeggio</label>
+        </div></div>
+        <div class="form-group"><div class="checkbox-group">
+          <input type="checkbox" id="humanize" v-model="config.humanize"><label for="humanize">Humanize</label>
+        </div></div>
+        <div class="form-group"><div class="checkbox-group">
+          <input type="checkbox" id="se" v-model="config.seEnabled"><label for="se">SE</label>
+        </div></div>
+        <div class="form-group"><div class="checkbox-group">
+          <input type="checkbox" id="call" v-model="config.callEnabled"><label for="call">Call</label>
+        </div></div>
+      </div>
 
-          <!-- Options -->
-          <v-card class="mb-4">
-            <v-card-title>Options</v-card-title>
-            <v-card-text>
-              <v-row>
-                <v-col cols="4">
-                  <v-checkbox v-model="config.drumsEnabled" label="Drums" hide-details></v-checkbox>
-                </v-col>
-                <v-col cols="4">
-                  <v-checkbox v-model="config.arpeggioEnabled" label="Arpeggio" hide-details></v-checkbox>
-                </v-col>
-                <v-col cols="4">
-                  <v-checkbox v-model="config.humanize" label="Humanize" hide-details></v-checkbox>
-                </v-col>
-              </v-row>
+      <div v-if="config.humanize" class="slider-group row">
+        <div class="form-group">
+          <label>Timing {{ config.humanizeTiming }}%</label>
+          <input type="range" v-model.number="config.humanizeTiming" min="0" max="100" class="range-slider">
+        </div>
+        <div class="form-group">
+          <label>Velocity {{ config.humanizeVelocity }}%</label>
+          <input type="range" v-model.number="config.humanizeVelocity" min="0" max="100" class="range-slider">
+        </div>
+      </div>
 
-              <v-expand-transition>
-                <v-row v-if="config.humanize" class="mt-2">
-                  <v-col cols="6">
-                    <v-slider
-                      v-model="config.humanizeTiming"
-                      :min="0"
-                      :max="100"
-                      label="Timing"
-                      thumb-label
-                    ></v-slider>
-                  </v-col>
-                  <v-col cols="6">
-                    <v-slider
-                      v-model="config.humanizeVelocity"
-                      :min="0"
-                      :max="100"
-                      label="Velocity"
-                      thumb-label
-                    ></v-slider>
-                  </v-col>
-                </v-row>
-              </v-expand-transition>
-            </v-card-text>
-          </v-card>
+      <div v-if="config.arpeggioEnabled" class="slider-group row">
+        <div class="form-group">
+          <label>Arpeggio Speed</label>
+          <select v-model.number="config.arpeggioSpeed">
+            <option value="0">1/8</option>
+            <option value="1">1/16</option>
+            <option value="2">1/32</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Octave Range</label>
+          <input type="number" v-model.number="config.arpeggioOctaveRange" min="1" max="4">
+        </div>
+        <div class="form-group"><div class="checkbox-group">
+          <input type="checkbox" id="arpsync" v-model="config.arpeggioSyncChord">
+          <label for="arpsync">Sync Chord</label>
+        </div></div>
+      </div>
 
-          <!-- Actions -->
-          <v-card class="mb-4">
-            <v-card-title>Actions</v-card-title>
-            <v-card-text>
-              <v-btn-group>
-                <v-btn color="primary" :disabled="!ready" @click="generate">
-                  <v-icon start>mdi-music-note</v-icon>
-                  Generate
-                </v-btn>
-                <v-btn color="secondary" :disabled="!midiData" @click="regenerateMelody">
-                  <v-icon start>mdi-refresh</v-icon>
-                  Regenerate
-                </v-btn>
-                <v-btn color="purple" :disabled="!midiData || isPlaying" @click="play">
-                  <v-icon start>mdi-play</v-icon>
-                  Play
-                </v-btn>
-                <v-btn color="error" :disabled="!isPlaying" @click="stop">
-                  <v-icon start>mdi-stop</v-icon>
-                  Stop
-                </v-btn>
-                <v-btn color="success" :disabled="!midiData" @click="downloadMidi">
-                  <v-icon start>mdi-download</v-icon>
-                  Download
-                </v-btn>
-              </v-btn-group>
+      <div v-if="config.callEnabled" class="slider-group row">
+        <div class="form-group">
+          <label>Intro Chant</label>
+          <select v-model.number="config.introChant">
+            <option value="0">None</option>
+            <option value="1">Gachikoi</option>
+            <option value="2">Shouting</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Mix Pattern</label>
+          <select v-model.number="config.mixPattern">
+            <option value="0">None</option>
+            <option value="1">Standard</option>
+            <option value="2">Tiger</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Call Density</label>
+          <select v-model.number="config.callDensity">
+            <option value="0">None</option>
+            <option value="1">Minimal</option>
+            <option value="2">Standard</option>
+            <option value="3">Intense</option>
+          </select>
+        </div>
+      </div>
+    </div>
 
-              <v-progress-linear
-                v-if="midiData"
-                v-model="playbackProgress"
-                class="mt-4"
-                color="purple"
-                height="8"
-                rounded
-              ></v-progress-linear>
-              <div v-if="midiData" class="text-center text-caption mt-1">
-                {{ formatTime(playbackTime) }} / {{ formatTime(totalDuration) }}
-              </div>
-            </v-card-text>
-          </v-card>
+    <!-- Actions -->
+    <div class="section">
+      <h2>Actions</h2>
+      <div class="buttons">
+        <button class="btn-primary" :disabled="!ready" @click="generate">Generate</button>
+        <button class="btn-secondary" :disabled="!midiData" @click="regenerateVocal">Regen Vocal</button>
+        <button class="btn-play" :disabled="!midiData || isPlaying" @click="play">Play</button>
+        <button class="btn-stop" :disabled="!isPlaying" @click="stop">Stop</button>
+        <button class="btn-secondary" :disabled="!midiData" @click="downloadMidi">Download</button>
+      </div>
+      <div v-if="midiData" class="playback-info">
+        <div class="progress-bar">
+          <div class="progress-bar-fill" :style="{ width: playbackProgress + '%' }"></div>
+        </div>
+        <div class="time-display">{{ formatTime(playbackTime) }} / {{ formatTime(totalDuration) }}</div>
+      </div>
+    </div>
 
-          <!-- Result -->
-          <v-card v-if="resultText">
-            <v-card-title>Result</v-card-title>
-            <v-card-text>
-              <pre class="text-body-2">{{ resultText }}</pre>
-            </v-card-text>
-          </v-card>
-        </v-container>
-      </v-main>
-    </v-app>
+    <!-- Result -->
+    <div v-if="resultText" class="section">
+      <h2>Result</h2>
+      <div class="result">{{ resultText }}</div>
+    </div>
   </div>
 
-  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-  <script src="https://unpkg.com/vuetify@3/dist/vuetify.min.js"></script>
+  <script src="https://unpkg.com/petite-vue@0.4.1/dist/petite-vue.iife.js"></script>
   <script src="https://unpkg.com/tone@14.7.77/build/Tone.js"></script>
   <script type="module">
-    import midisketch from '../dist/midisketch-wrapper.js';
-
-    const { createApp, ref, computed, watch, onMounted } = Vue;
-    const { createVuetify } = Vuetify;
-
-    const vuetify = createVuetify();
+    import * as midisketch from '../dist/index.js';
 
     const NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
-    const KEY_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
-    createApp({
-      setup() {
-        // State
-        const ready = ref(false);
-        const version = ref('...');
-        const stylePresets = ref([]);
-        const allChords = ref([]);
-        const allForms = ref([]);
-        const chordIds = ref([]);
-        const formIds = ref([]);
+    PetiteVue.createApp({
+      // State
+      version: '...',
+      ready: false,
+      status: { type: 'loading', text: 'Loading WASM module...' },
+      stylePresets: [],
+      allChords: [],
+      allForms: [],
+      chordIds: [],
+      formIds: [],
+      keyNames: NOTE_NAMES,
+      showAdvanced: false,
+      vocalAttitudes: [
+        { value: 0, text: 'Clean', disabled: false },
+        { value: 1, text: 'Expressive', disabled: false },
+        { value: 2, text: 'Raw', disabled: false }
+      ],
+      config: {
+        stylePresetId: 0, key: 0, bpm: 120, seed: 0,
+        chordProgressionId: 0, formId: 5, vocalAttitude: 0,
+        drumsEnabled: true, arpeggioEnabled: false,
+        arpeggioSpeed: 1, arpeggioOctaveRange: 2, arpeggioGate: 80,
+        arpeggioSyncChord: true,
+        vocalLow: 55, vocalHigh: 74, skipVocal: false,
+        humanize: false, humanizeTiming: 50, humanizeVelocity: 50,
+        compositionStyle: 0, targetDurationSeconds: 0,
+        modulationTiming: 0, modulationSemitones: 2,
+        seEnabled: true, callEnabled: false, callNotesEnabled: true,
+        introChant: 0, mixPattern: 0, callDensity: 2,
+        arrangementGrowth: 0, motifRepeatScope: 0,
+        motifFixedProgression: true, motifMaxChordCount: 4
+      },
+      chordDisplay: null,
+      sketch: null,
+      midiData: null,
+      eventData: null,
+      isPlaying: false,
+      playbackTime: 0,
+      totalDuration: 0,
+      resultText: '',
 
-        const config = ref({
-          stylePresetId: 0,
-          key: 0,
-          bpm: 120,
-          seed: 0,
-          chordProgressionId: 0,
-          formId: 5,
-          vocalAttitude: 0,
-          drumsEnabled: true,
-          arpeggioEnabled: false,
-          vocalLow: 55,
-          vocalHigh: 74,
-          humanize: false,
-          humanizeTiming: 50,
-          humanizeVelocity: 50,
-          targetDurationSeconds: 0
-        });
+      // Internal
+      synths: {},
+      scheduledEvents: [],
+      animationFrame: null,
 
-        // Playback state
-        const sketch = ref(null);
-        const midiData = ref(null);
-        const eventData = ref(null);
-        const isPlaying = ref(false);
-        const playbackTime = ref(0);
-        const totalDuration = ref(0);
-        const resultText = ref('');
+      // Computed-like getters
+      get currentPreset() {
+        return this.stylePresets.find(p => p.id === this.config.stylePresetId);
+      },
+      get keyName() {
+        return NOTE_NAMES[this.config.key];
+      },
+      get effectiveVocalHigh() {
+        return Math.max(this.config.vocalLow, this.config.vocalHigh);
+      },
+      get pianoHighlightStyle() {
+        const low = this.config.vocalLow;
+        const high = this.effectiveVocalHigh;
+        return { left: `${((low - 36) / 60) * 100}%`, width: `${((high - low) / 60) * 100}%` };
+      },
+      get bpmRec() {
+        const p = this.currentPreset;
+        if (!p) return '';
+        const diff = Math.abs(this.config.bpm - p.tempoDefault);
+        if (diff === 0) return '\u2713 Default';
+        return `${diff > 20 ? '\u26a0 ' : ''}Default: ${p.tempoDefault}`;
+      },
+      get bpmRecColor() {
+        const p = this.currentPreset;
+        if (!p) return '#7f8c8d';
+        const diff = Math.abs(this.config.bpm - p.tempoDefault);
+        return diff === 0 ? '#27ae60' : diff <= 20 ? '#7f8c8d' : '#e67e22';
+      },
+      get durationHint() {
+        const d = this.config.targetDurationSeconds;
+        if (d === 0) return 'Use Form';
+        const bars = Math.round(d * this.config.bpm / 240);
+        return `~${Math.floor(d/60)}:${(d%60).toString().padStart(2,'0')} (${bars} bars)`;
+      },
+      get playbackProgress() {
+        return this.totalDuration > 0 ? (this.playbackTime / this.totalDuration) * 100 : 0;
+      },
 
-        // Synths
-        let synths = {};
-        let scheduledEvents = [];
-        let animationFrame = null;
+      // Methods
+      midiToNote(midi) {
+        return `${NOTE_NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
+      },
+      formatTime(s) {
+        return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
+      },
+      ticksToSeconds(ticks, bpm) {
+        return (ticks / 480) * (60 / bpm);
+      },
 
-        // Computed
-        const styleItems = computed(() =>
-          stylePresets.value.map(p => ({ text: p.displayName, value: p.id }))
-        );
+      transposeChord(symbol, key) {
+        const map = { I:0,II:2,III:4,IV:5,V:7,VI:9,VII:11,i:0,ii:2,iii:4,iv:5,v:7,vi:9,vii:11,bII:1,bIII:3,bVI:8,bVII:10,'#IV':6,'#iv':6 };
+        const m = symbol.match(/^([b#]?)([IViv]+)(.*)/);
+        if (!m) return symbol;
+        const interval = map[m[1] + m[2]];
+        if (interval === undefined) return symbol;
+        const root = (key + interval) % 12;
+        let name = NOTE_NAMES[root];
+        if (m[2] === m[2].toLowerCase()) name += 'm';
+        return name + m[3];
+      },
 
-        const chordItems = computed(() =>
-          chordIds.value.map(id => {
-            const chord = allChords.value[id];
-            return chord ? { text: chord.name, value: id } : null;
-          }).filter(Boolean)
-        );
+      updateChordDisplay() {
+        const chord = this.allChords[this.config.chordProgressionId];
+        if (!chord?.display) { this.chordDisplay = null; return; }
+        const transposed = chord.display.split(' - ').map(p => this.transposeChord(p.trim(), this.config.key)).join(' - ');
+        this.chordDisplay = { roman: chord.display, transposed };
+      },
 
-        const formItems = computed(() =>
-          formIds.value.map(id => {
-            const form = allForms.value[id];
-            return form ? { text: form.name, value: id } : null;
-          }).filter(Boolean)
-        );
-
-        const keyItems = computed(() =>
-          KEY_NAMES.map((name, i) => ({ text: name, value: i }))
-        );
-
-        const vocalAttitudeItems = computed(() => [
-          { text: 'Clean', value: 0 },
-          { text: 'Expressive', value: 1 },
-          { text: 'Raw', value: 2 }
-        ]);
-
-        const currentPreset = computed(() =>
-          stylePresets.value.find(p => p.id === config.value.stylePresetId)
-        );
-
-        const styleDescription = computed(() =>
-          currentPreset.value?.description || ''
-        );
-
-        const keyName = computed(() => KEY_NAMES[config.value.key]);
-
-        const chordRomanDisplay = computed(() => {
-          const chord = allChords.value[config.value.chordProgressionId];
-          return chord?.display || '';
-        });
-
-        const chordKeyDisplay = computed(() => {
-          const display = chordRomanDisplay.value;
-          if (!display) return '';
-          return transposeChordDisplay(display, config.value.key);
-        });
-
-        const bpmRecommendation = computed(() => {
-          if (!currentPreset.value) return '';
-          const diff = Math.abs(config.value.bpm - currentPreset.value.tempoDefault);
-          if (diff === 0) return '✓ Default for this style';
-          if (diff <= 20) return `Style default: ${currentPreset.value.tempoDefault}`;
-          return `⚠ Style default: ${currentPreset.value.tempoDefault}`;
-        });
-
-        const bpmRecommendationClass = computed(() => {
-          if (!currentPreset.value) return '';
-          const diff = Math.abs(config.value.bpm - currentPreset.value.tempoDefault);
-          if (diff === 0) return 'text-success';
-          if (diff <= 20) return 'text-grey';
-          return 'text-warning';
-        });
-
-        const durationHint = computed(() => {
-          const dur = config.value.targetDurationSeconds;
-          if (dur === 0) return '0 = use Form pattern';
-          const mins = Math.floor(dur / 60);
-          const secs = dur % 60;
-          const bars = Math.round(dur * config.value.bpm / 240);
-          return `~${mins}:${secs.toString().padStart(2, '0')} (${bars} bars) - Form ignored`;
-        });
-
-        const pianoHighlightStyle = computed(() => {
-          const low = config.value.vocalLow;
-          const high = Math.max(low, config.value.vocalHigh);
-          const startPercent = ((low - 36) / 60) * 100;
-          const widthPercent = ((high - low) / 60) * 100;
-          return { left: `${startPercent}%`, width: `${widthPercent}%` };
-        });
-
-        const playbackProgress = computed(() =>
-          totalDuration.value > 0 ? (playbackTime.value / totalDuration.value) * 100 : 0
-        );
-
-        // Methods
-        function midiToNote(midi) {
-          const octave = Math.floor(midi / 12) - 1;
-          return `${NOTE_NAMES[midi % 12]}${octave}`;
+      updateVocalAttitudes() {
+        const flags = this.currentPreset?.allowedAttitudes || 7;
+        this.vocalAttitudes[0].disabled = !(flags & 1);
+        this.vocalAttitudes[1].disabled = !(flags & 2);
+        this.vocalAttitudes[2].disabled = !(flags & 4);
+        for (const a of this.vocalAttitudes) {
+          if (!a.disabled) { this.config.vocalAttitude = a.value; break; }
         }
+      },
 
-        function transposeChordSymbol(symbol, key) {
-          const chordMap = {
-            'I': 0, 'II': 2, 'III': 4, 'IV': 5, 'V': 7, 'VI': 9, 'VII': 11,
-            'i': 0, 'ii': 2, 'iii': 4, 'iv': 5, 'v': 7, 'vi': 9, 'vii': 11,
-            'bII': 1, 'bIII': 3, 'bVI': 8, 'bVII': 10, '#IV': 6, '#iv': 6
-          };
-          const match = symbol.match(/^([b#]?)([IViv]+)(.*)/);
-          if (!match) return symbol;
-          const [, accidental, numeral, suffix] = match;
-          const interval = chordMap[accidental + numeral];
-          if (interval === undefined) return symbol;
-          const rootNote = (key + interval) % 12;
-          const isMinor = numeral === numeral.toLowerCase();
-          let name = KEY_NAMES[rootNote];
-          if (isMinor) name += 'm';
-          if (suffix) name += suffix;
-          return name;
-        }
+      onStyleChange() {
+        const p = this.currentPreset;
+        if (!p) return;
+        this.config.bpm = p.tempoDefault;
+        this.chordIds = midisketch.getProgressionsByStyle(this.config.stylePresetId);
+        this.formIds = midisketch.getFormsByStyle(this.config.stylePresetId);
+        if (this.chordIds.length) this.config.chordProgressionId = this.chordIds[0];
+        if (this.formIds.length) this.config.formId = this.formIds[0];
+        this.updateVocalAttitudes();
+        this.updateChordDisplay();
+      },
 
-        function transposeChordDisplay(display, key) {
-          return display.split(' - ').map(p => transposeChordSymbol(p.trim(), key)).join(' - ');
-        }
-
-        function formatTime(seconds) {
-          const mins = Math.floor(seconds / 60);
-          const secs = Math.floor(seconds % 60);
-          return `${mins}:${secs.toString().padStart(2, '0')}`;
-        }
-
-        function onStyleChange() {
-          const preset = currentPreset.value;
-          if (!preset) return;
-
-          config.value.bpm = preset.tempoDefault;
-          chordIds.value = midisketch.getProgressionsByStyle(config.value.stylePresetId);
-          formIds.value = midisketch.getFormsByStyle(config.value.stylePresetId);
-
-          if (chordIds.value.length > 0) {
-            config.value.chordProgressionId = chordIds.value[0];
-          }
-          if (formIds.value.length > 0) {
-            config.value.formId = formIds.value[0];
-          }
-        }
-
-        function initSynths() {
-          Object.values(synths).forEach(s => s.dispose());
-          synths = {
-            vocal: new Tone.PolySynth(Tone.Synth, {
-              oscillator: { type: 'triangle' },
-              envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.4 }
-            }).toDestination(),
-            chord: new Tone.PolySynth(Tone.Synth, {
-              oscillator: { type: 'sine' },
-              envelope: { attack: 0.05, decay: 0.2, sustain: 0.4, release: 0.8 }
-            }).toDestination(),
-            bass: new Tone.MonoSynth({
-              oscillator: { type: 'sawtooth' },
-              envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.3 }
-            }).toDestination(),
-            drums: new Tone.MembraneSynth().toDestination(),
-            arpeggio: new Tone.PolySynth(Tone.Synth, {
-              oscillator: { type: 'sawtooth' },
-              envelope: { attack: 0.01, decay: 0.15, sustain: 0.2, release: 0.3 }
-            }).toDestination()
-          };
-          synths.vocal.volume.value = -6;
-          synths.chord.volume.value = -12;
-          synths.bass.volume.value = -8;
-          synths.drums.volume.value = -4;
-          synths.arpeggio.volume.value = -8;
-        }
-
-        function ticksToSeconds(ticks, bpm) {
-          return (ticks / 480) * (60 / bpm);
-        }
-
-        async function generate() {
-          try {
-            stop();
-            if (sketch.value) sketch.value.destroy();
-
-            sketch.value = new midisketch.MidiSketch();
-            sketch.value.generateFromConfig(config.value);
-
-            midiData.value = sketch.value.getMidi();
-            eventData.value = sketch.value.getEvents();
-
-            const preset = currentPreset.value;
-            const chord = allChords.value[config.value.chordProgressionId];
-
-            totalDuration.value = ticksToSeconds(eventData.value.duration_ticks, eventData.value.bpm);
-
-            resultText.value = [
-              `Generated MIDI: ${midiData.value.length} bytes`,
-              `Style: ${preset?.displayName}`,
-              `Chord: ${chord?.display || 'N/A'}`,
-              `BPM: ${eventData.value.bpm}`,
-              `Duration: ${formatTime(totalDuration.value)}`
-            ].join('\n');
-
-          } catch (e) {
-            resultText.value = `Error: ${e.message}`;
-            console.error(e);
-          }
-        }
-
-        function regenerateMelody() {
-          if (!sketch.value) return;
-          try {
-            stop();
-            sketch.value.regenerateMelody(config.value.seed === 0 ? Date.now() : config.value.seed);
-            midiData.value = sketch.value.getMidi();
-            eventData.value = sketch.value.getEvents();
-            resultText.value = `Regenerated melody: ${midiData.value.length} bytes`;
-          } catch (e) {
-            resultText.value = `Error: ${e.message}`;
-          }
-        }
-
-        async function play() {
-          if (!eventData.value || isPlaying.value) return;
-          try {
-            await Tone.start();
-            initSynths();
-            isPlaying.value = true;
-
-            const bpm = eventData.value.bpm;
-            Tone.Transport.bpm.value = bpm;
-            scheduledEvents.forEach(id => Tone.Transport.clear(id));
-            scheduledEvents = [];
-
-            eventData.value.tracks.forEach(track => {
-              const synth = synths[track.name.toLowerCase()];
-              if (!synth) return;
-
-              track.notes.forEach(note => {
-                const startTime = ticksToSeconds(note.start_ticks, bpm);
-                const duration = ticksToSeconds(note.duration_ticks, bpm);
-                const velocity = note.velocity / 127;
-                const noteStr = Tone.Frequency(note.pitch, 'midi').toNote();
-
-                const id = Tone.Transport.schedule(time => {
-                  if (track.name.toLowerCase() === 'drums') {
-                    synth.triggerAttackRelease(Tone.Frequency(note.pitch, 'midi').toFrequency(), duration, time, velocity);
-                  } else {
-                    synth.triggerAttackRelease(noteStr, duration, time, velocity);
-                  }
-                }, startTime);
-                scheduledEvents.push(id);
-              });
-            });
-
-            const endTime = ticksToSeconds(eventData.value.duration_ticks, bpm);
-            scheduledEvents.push(Tone.Transport.schedule(() => stop(), endTime + 0.1));
-
-            Tone.Transport.start();
-            updateProgress();
-          } catch (e) {
-            console.error('Playback error:', e);
-            stop();
-          }
-        }
-
-        function updateProgress() {
-          if (!isPlaying.value) return;
-          playbackTime.value = Tone.Transport.seconds;
-          animationFrame = requestAnimationFrame(updateProgress);
-        }
-
-        function stop() {
-          isPlaying.value = false;
-          Tone.Transport.stop();
-          Tone.Transport.cancel();
-          scheduledEvents.forEach(id => Tone.Transport.clear(id));
-          scheduledEvents = [];
-          if (animationFrame) cancelAnimationFrame(animationFrame);
-          playbackTime.value = 0;
-        }
-
-        function downloadMidi() {
-          if (!midiData.value) return;
-          midisketch.downloadMidi(midiData.value, 'midi-sketch-output.mid');
-        }
-
-        // Initialize
-        onMounted(async () => {
-          try {
-            await midisketch.init();
-            version.value = midisketch.getVersion();
-            stylePresets.value = midisketch.getStylePresets();
-            allChords.value = midisketch.getChords();
-            allForms.value = midisketch.getStructures();
-            onStyleChange();
-            ready.value = true;
-          } catch (e) {
-            console.error('Init error:', e);
-          }
-        });
-
-        return {
-          ready, version, config,
-          styleItems, chordItems, formItems, keyItems, vocalAttitudeItems,
-          styleDescription, keyName, chordRomanDisplay, chordKeyDisplay,
-          bpmRecommendation, bpmRecommendationClass, durationHint,
-          pianoHighlightStyle, playbackProgress, playbackTime, totalDuration,
-          midiData, isPlaying, resultText,
-          midiToNote, formatTime, onStyleChange,
-          generate, regenerateMelody, play, stop, downloadMidi
+      initSynths() {
+        Object.values(this.synths).forEach(s => s.dispose());
+        this.synths = {
+          vocal: new Tone.PolySynth(Tone.Synth, {
+            oscillator: { type: 'triangle' },
+            envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.4 }
+          }).toDestination(),
+          chord: new Tone.PolySynth(Tone.Synth, {
+            oscillator: { type: 'sine' },
+            envelope: { attack: 0.05, decay: 0.2, sustain: 0.4, release: 0.8 }
+          }).toDestination(),
+          bass: new Tone.MonoSynth({
+            oscillator: { type: 'sawtooth' },
+            envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.3 }
+          }).toDestination(),
+          drums: new Tone.MembraneSynth().toDestination(),
+          arpeggio: new Tone.PolySynth(Tone.Synth, {
+            oscillator: { type: 'sawtooth' },
+            envelope: { attack: 0.01, decay: 0.15, sustain: 0.2, release: 0.3 }
+          }).toDestination()
         };
+        this.synths.vocal.volume.value = -6;
+        this.synths.chord.volume.value = -12;
+        this.synths.bass.volume.value = -8;
+        this.synths.drums.volume.value = -4;
+        this.synths.arpeggio.volume.value = -8;
+      },
+
+      generate() {
+        try {
+          this.stop();
+          if (this.sketch) this.sketch.destroy();
+          this.sketch = new midisketch.MidiSketch();
+          this.sketch.generateFromConfig(this.config);
+          this.midiData = this.sketch.getMidi();
+          this.eventData = this.sketch.getEvents();
+          this.totalDuration = this.ticksToSeconds(this.eventData.duration_ticks, this.eventData.bpm);
+          const p = this.currentPreset;
+          const c = this.allChords[this.config.chordProgressionId];
+          this.resultText = `Generated: ${this.midiData.length} bytes\nStyle: ${p?.displayName}\nChord: ${c?.display || 'N/A'}\nBPM: ${this.eventData.bpm}\nDuration: ${this.formatTime(this.totalDuration)}`;
+        } catch (e) {
+          this.resultText = `Error: ${e.message}`;
+          console.error(e);
+        }
+      },
+
+      regenerateVocal() {
+        if (!this.sketch) return;
+        try {
+          this.stop();
+          this.sketch.regenerateVocal({
+            seed: this.config.seed === 0 ? Date.now() : this.config.seed,
+            vocalLow: this.config.vocalLow,
+            vocalHigh: this.config.vocalHigh,
+            vocalAttitude: this.config.vocalAttitude
+          });
+          this.midiData = this.sketch.getMidi();
+          this.eventData = this.sketch.getEvents();
+          this.resultText = `Regenerated vocal: ${this.midiData.length} bytes`;
+        } catch (e) {
+          this.resultText = `Error: ${e.message}`;
+        }
+      },
+
+      async play() {
+        if (!this.eventData || this.isPlaying) return;
+        try {
+          await Tone.start();
+          this.initSynths();
+          this.isPlaying = true;
+          const bpm = this.eventData.bpm;
+          Tone.Transport.bpm.value = bpm;
+          this.scheduledEvents.forEach(id => Tone.Transport.clear(id));
+          this.scheduledEvents = [];
+
+          for (const track of this.eventData.tracks) {
+            const synth = this.synths[track.name.toLowerCase()];
+            if (!synth) continue;
+            for (const note of track.notes) {
+              const start = this.ticksToSeconds(note.start_ticks, bpm);
+              const dur = this.ticksToSeconds(note.duration_ticks, bpm);
+              const vel = note.velocity / 127;
+              const noteStr = Tone.Frequency(note.pitch, 'midi').toNote();
+              const id = Tone.Transport.schedule(time => {
+                if (track.name.toLowerCase() === 'drums') {
+                  synth.triggerAttackRelease(Tone.Frequency(note.pitch, 'midi').toFrequency(), dur, time, vel);
+                } else {
+                  synth.triggerAttackRelease(noteStr, dur, time, vel);
+                }
+              }, start);
+              this.scheduledEvents.push(id);
+            }
+          }
+
+          const endTime = this.ticksToSeconds(this.eventData.duration_ticks, bpm);
+          this.scheduledEvents.push(Tone.Transport.schedule(() => this.stop(), endTime + 0.1));
+          Tone.Transport.start();
+          this.updateProgress();
+        } catch (e) {
+          console.error('Playback error:', e);
+          this.stop();
+        }
+      },
+
+      updateProgress() {
+        if (!this.isPlaying) return;
+        this.playbackTime = Tone.Transport.seconds;
+        this.animationFrame = requestAnimationFrame(() => this.updateProgress());
+      },
+
+      stop() {
+        this.isPlaying = false;
+        Tone.Transport.stop();
+        Tone.Transport.cancel();
+        this.scheduledEvents.forEach(id => Tone.Transport.clear(id));
+        this.scheduledEvents = [];
+        if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
+        this.playbackTime = 0;
+      },
+
+      downloadMidi() {
+        if (this.midiData) midisketch.downloadMidi(this.midiData, 'midi-sketch-output.mid');
+      },
+
+      async init() {
+        try {
+          await midisketch.init();
+          this.version = midisketch.getVersion();
+          this.stylePresets = midisketch.getStylePresets();
+          this.allChords = midisketch.getChords();
+          this.allForms = midisketch.getStructures();
+          this.onStyleChange();
+          this.status = { type: 'ready', text: 'Ready' };
+          this.ready = true;
+        } catch (e) {
+          this.status = { type: 'error', text: `Error: ${e.message}` };
+          console.error(e);
+        }
       }
-    }).use(vuetify).mount('#app');
+    }).mount('#app');
   </script>
 </body>
 </html>

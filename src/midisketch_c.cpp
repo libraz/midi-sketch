@@ -281,6 +281,9 @@ MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
   s_default_config.vocal_rest_ratio = static_cast<uint8_t>(cpp_config.vocal_rest_ratio * 100);
   s_default_config.vocal_allow_extreme_leap = cpp_config.vocal_allow_extreme_leap ? 1 : 0;
 
+  // Vocal style preset
+  s_default_config.vocal_style = static_cast<uint8_t>(cpp_config.vocal_style);
+
   // Arrangement growth
   s_default_config.arrangement_growth = static_cast<uint8_t>(cpp_config.arrangement_growth);
 
@@ -436,6 +439,9 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   cpp_config.vocal_min_note_division = config->vocal_min_note_division;
   cpp_config.vocal_rest_ratio = config->vocal_rest_ratio / 100.0f;
   cpp_config.vocal_allow_extreme_leap = config->vocal_allow_extreme_leap != 0;
+
+  // Vocal style preset
+  cpp_config.vocal_style = static_cast<midisketch::VocalStylePreset>(config->vocal_style);
 
   // Arrangement growth
   cpp_config.arrangement_growth = static_cast<midisketch::ArrangementGrowth>(config->arrangement_growth);

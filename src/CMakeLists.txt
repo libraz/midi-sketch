@@ -12,6 +12,7 @@ set(MIDISKETCH_SOURCES
   core/arrangement.cpp
   core/song.cpp
   core/harmony_context.cpp
+  core/motif.cpp
   midi/midi_writer.cpp
   track/track.cpp
   track/vocal.cpp

@@ -356,5 +356,223 @@ TEST_F(VocalTest, VocalRestRatioZeroMaximizesNotes) {
       << "Zero rest ratio should produce a reasonable number of notes";
 }
 
+// === Note Overlap Prevention Tests ===
+
+TEST_F(VocalTest, NoOverlappingNotesAtAllDensities) {
+  // Test that notes never overlap at various density settings
+  for (float density : {0.3f, 0.5f, 0.7f, 1.0f, 1.5f, 2.0f}) {
+    params_.melody_params.note_density = density;
+    params_.seed = 12345;
+
+    Generator gen;
+    gen.generate(params_);
+    const auto& notes = gen.getSong().vocal().notes();
+
+    for (size_t i = 0; i + 1 < notes.size(); ++i) {
+      Tick end_tick = notes[i].startTick + notes[i].duration;
+      Tick next_start = notes[i + 1].startTick;
+      EXPECT_LE(end_tick, next_start)
+          << "Overlap at density=" << density << ", note " << i
+          << ": end=" << end_tick << ", next_start=" << next_start;
+    }
+  }
+}
+
+TEST_F(VocalTest, NoOverlapAtPhraseEndings) {
+  // Verify no overlap even at phrase endings where duration_extend is applied
+  params_.seed = 12345;
+  params_.melody_params.note_density = 0.7f;
+
+  Generator gen;
+  gen.generate(params_);
+  const auto& notes = gen.getSong().vocal().notes();
+
+  for (size_t i = 0; i + 1 < notes.size(); ++i) {
+    Tick end_tick = notes[i].startTick + notes[i].duration;
+    Tick next_start = notes[i + 1].startTick;
+    EXPECT_LE(end_tick, next_start)
+        << "Overlap at note " << i << ": end=" << end_tick
+        << ", next_start=" << next_start;
+  }
+}
+
+TEST_F(VocalTest, NoOverlapWithMultipleSeeds) {
+  // Test with various seeds to ensure robustness
+  for (uint32_t seed = 1; seed <= 10; ++seed) {
+    params_.seed = seed;
+    params_.melody_params.note_density = 0.8f;
+
+    Generator gen;
+    gen.generate(params_);
+    const auto& notes = gen.getSong().vocal().notes();
+
+    bool has_overlap = false;
+    for (size_t i = 0; i + 1 < notes.size(); ++i) {
+      Tick end_tick = notes[i].startTick + notes[i].duration;
+      Tick next_start = notes[i + 1].startTick;
+      if (end_tick > next_start) {
+        has_overlap = true;
+        break;
+      }
+    }
+    EXPECT_FALSE(has_overlap) << "Overlap detected with seed=" << seed;
+  }
+}
+
+// === Density Setting Respect Tests ===
+
+TEST_F(VocalTest, UserDensityIsRespected) {
+  // High density should produce more notes than low density
+  GeneratorParams params_low = params_;
+  params_low.melody_params.note_density = 0.4f;
+  params_low.seed = 12345;
+
+  GeneratorParams params_high = params_;
+  params_high.melody_params.note_density = 1.2f;
+  params_high.seed = 12345;
+
+  Generator gen_low, gen_high;
+  gen_low.generate(params_low);
+  gen_high.generate(params_high);
+
+  size_t count_low = gen_low.getSong().vocal().notes().size();
+  size_t count_high = gen_high.getSong().vocal().notes().size();
+
+  // High density setting should produce more notes (at least 20% more)
+  EXPECT_GT(count_high, count_low * 1.2)
+      << "Low density notes: " << count_low
+      << ", High density notes: " << count_high;
+}
+
+TEST_F(VocalTest, SectionModifierDoesNotOverride) {
+  // Same density setting with different seeds should produce similar note counts
+  // (section modifier should not cause extreme variation)
+  std::vector<size_t> note_counts;
+  for (uint32_t seed = 1; seed <= 5; ++seed) {
+    params_.seed = seed;
+    params_.melody_params.note_density = 0.5f;
+
+    Generator gen;
+    gen.generate(params_);
+    note_counts.push_back(gen.getSong().vocal().notes().size());
+  }
+
+  // Calculate average
+  size_t sum = 0;
+  for (size_t count : note_counts) sum += count;
+  size_t avg = sum / note_counts.size();
+
+  // Note counts should be within ±40% of average (not extreme variation)
+  for (size_t count : note_counts) {
+    EXPECT_GT(count, avg * 0.6)
+        << "Note count " << count << " is too low compared to average " << avg;
+    EXPECT_LT(count, avg * 1.4)
+        << "Note count " << count << " is too high compared to average " << avg;
+  }
+}
+
+// === Humanization Tests ===
+
+TEST_F(VocalTest, HumanizeDoesNotBreakOverlapPrevention) {
+  // Humanize with various settings should still prevent overlaps
+  params_.humanize = true;
+  params_.humanize_timing = 0.5f;
+  params_.humanize_velocity = 0.5f;
+  params_.seed = 12345;
+
+  Generator gen;
+  gen.generate(params_);
+  const auto& notes = gen.getSong().vocal().notes();
+
+  // Check no overlaps exist
+  for (size_t i = 0; i + 1 < notes.size(); ++i) {
+    Tick end_tick = notes[i].startTick + notes[i].duration;
+    Tick next_start = notes[i + 1].startTick;
+    EXPECT_LE(end_tick, next_start)
+        << "Overlap with humanize at note " << i;
+  }
+}
+
+TEST_F(VocalTest, HumanizeProducesValidNotes) {
+  params_.humanize = true;
+  params_.seed = 54321;
+
+  Generator gen;
+  gen.generate(params_);
+  const auto& notes = gen.getSong().vocal().notes();
+
+  // All notes should still be valid
+  for (const auto& note : notes) {
+    EXPECT_GE(note.note, 0);
+    EXPECT_LE(note.note, 127);
+    EXPECT_GT(note.velocity, 0);
+    EXPECT_LE(note.velocity, 127);
+    EXPECT_GT(note.duration, 0u);
+  }
+}
+
+// === VocalStylePreset Tests ===
+
+TEST_F(VocalTest, VocaloidStyleGeneratesMoreNotes) {
+  // Vocaloid style should generate significantly more notes than Standard
+  params_.seed = 12345;
+  params_.melody_params.note_density = 1.0f;
+
+  // Standard style (Auto uses pattern-based)
+  params_.vocal_style = VocalStylePreset::Auto;
+  Generator gen_standard;
+  gen_standard.generate(params_);
+  size_t standard_count = gen_standard.getSong().vocal().notes().size();
+
+  // Vocaloid style (16th note grid)
+  params_.vocal_style = VocalStylePreset::Vocaloid;
+  Generator gen_vocaloid;
+  gen_vocaloid.generate(params_);
+  size_t vocaloid_count = gen_vocaloid.getSong().vocal().notes().size();
+
+  // Vocaloid should generate more notes due to 16th note grid
+  EXPECT_GT(vocaloid_count, standard_count)
+      << "Standard: " << standard_count << ", Vocaloid: " << vocaloid_count;
+}
+
+TEST_F(VocalTest, UltraVocaloidStyleGeneratesMostNotes) {
+  // UltraVocaloid should generate even more notes than Vocaloid
+  params_.seed = 12345;
+  params_.melody_params.note_density = 1.0f;
+
+  // Vocaloid style
+  params_.vocal_style = VocalStylePreset::Vocaloid;
+  Generator gen_vocaloid;
+  gen_vocaloid.generate(params_);
+  size_t vocaloid_count = gen_vocaloid.getSong().vocal().notes().size();
+
+  // UltraVocaloid style (32nd note grid)
+  params_.vocal_style = VocalStylePreset::UltraVocaloid;
+  Generator gen_ultra;
+  gen_ultra.generate(params_);
+  size_t ultra_count = gen_ultra.getSong().vocal().notes().size();
+
+  // UltraVocaloid should generate more notes than Vocaloid
+  EXPECT_GT(ultra_count, vocaloid_count)
+      << "Vocaloid: " << vocaloid_count << ", UltraVocaloid: " << ultra_count;
+}
+
+TEST_F(VocalTest, VocaloidStyleNoOverlaps) {
+  // Vocaloid style should still have no overlapping notes
+  params_.seed = 12345;
+  params_.vocal_style = VocalStylePreset::Vocaloid;
+
+  Generator gen;
+  gen.generate(params_);
+  const auto& notes = gen.getSong().vocal().notes();
+
+  for (size_t i = 0; i + 1 < notes.size(); ++i) {
+    Tick end_tick = notes[i].startTick + notes[i].duration;
+    Tick next_start = notes[i + 1].startTick;
+    EXPECT_LE(end_tick, next_start)
+        << "Overlap at note " << i;
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

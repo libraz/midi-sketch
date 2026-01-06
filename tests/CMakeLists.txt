@@ -23,6 +23,7 @@ set(TEST_SOURCES
   core/harmony_integration_test.cpp
   core/call_test.cpp
   core/randomness_test.cpp
+  core/motif_test.cpp
   midi/midi_writer_test.cpp
   track/arpeggio_test.cpp
   track/vocal_test.cpp

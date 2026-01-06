@@ -264,12 +264,7 @@ int degreeToPitch(int degree, int octave, int key_offset) {
   return (octave + oct_adjust) * 12 + SCALE[d] + key_offset;
 }
 
-// Non-harmonic tone type
-enum class NonHarmonicType {
-  None,         // Regular note
-  Suspension,   // Held from previous chord, resolves down
-  Anticipation  // Early arrival of next chord tone
-};
+// NonHarmonicType is now defined in types.h
 
 // ============================================================================
 // Phrase-based melody generation (Music Theory Foundation)
@@ -454,13 +449,7 @@ constexpr float LEGATO_GATE = 0.95f;        // Connected notes within phrase
 constexpr float PHRASE_END_GATE = 0.70f;    // Shortened phrase-final note
 constexpr float NORMAL_GATE = 0.85f;        // Standard articulation
 
-// Legacy rhythm patterns (kept for compatibility with existing code paths)
-struct RhythmNote {
-  float beat;      // 0.0-7.5 (in quarter notes, 2 bars)
-  int eighths;     // duration in eighth notes
-  bool strong;     // true if on strong beat (1 or 3)
-  NonHarmonicType non_harmonic = NonHarmonicType::None;
-};
+// RhythmNote is now defined in types.h
 
 // Get rhythm patterns with strong beat marking
 // Patterns designed for SINGABLE vocal lines (longer notes, clear phrasing)
@@ -517,16 +506,81 @@ std::vector<std::vector<RhythmNote>> getRhythmPatterns() {
   };
 }
 
+// Generate YOASOBI-style 16th note grid rhythm (VocalStylePreset::Vocaloid)
+// Creates dense, rapid-fire melodies characteristic of Vocaloid producers
+std::vector<RhythmNote> generateVocaloidRhythm(int bars, float density,
+                                                std::mt19937& rng) {
+  std::vector<RhythmNote> rhythm;
+  const int sixteenths_per_bar = 16;
+  const int total_sixteenths = bars * sixteenths_per_bar;
+
+  std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
+
+  for (int i = 0; i < total_sixteenths; ++i) {
+    float beat = static_cast<float>(i) / 4.0f;  // Convert to quarter note beats
+    int beat_position = i % 4;  // Position within quarter note
+
+    // Strong beats (1 and 3 of each measure)
+    bool is_strong = (i % 16 == 0) || (i % 16 == 8);
+
+    // Density-based probability of note
+    // Strong beats: almost always have notes
+    // Weak beats: probability based on density
+    float note_prob = is_strong ? 0.95f : (density * 0.8f);
+
+    if (prob_dist(rng) < note_prob) {
+      // Duration: mostly 16th notes, occasionally 8th notes on strong beats
+      int eighths = (is_strong && prob_dist(rng) < 0.3f) ? 2 : 1;
+
+      rhythm.push_back({beat, eighths, is_strong, NonHarmonicType::None});
+    }
+  }
+
+  return rhythm;
+}
+
+// Generate Ultra Vocaloid rhythm (VocalStylePreset::UltraVocaloid)
+// 32nd note grid, no rests, machine-gun style (e.g., "Hatsune Miku no Shoushitsu")
+std::vector<RhythmNote> generateUltraVocaloidRhythm(int bars,
+                                                     std::mt19937& rng) {
+  std::vector<RhythmNote> rhythm;
+  const int thirtyseconds_per_bar = 32;
+  const int total_thirtyseconds = bars * thirtyseconds_per_bar;
+
+  std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
+
+  for (int i = 0; i < total_thirtyseconds; ++i) {
+    // Convert to quarter note beats (32 thirty-seconds = 4 quarter notes)
+    float beat = static_cast<float>(i) / 8.0f;
+    int beat_position = i % 8;  // Position within quarter note
+
+    // Strong beats
+    bool is_strong = (i % 32 == 0) || (i % 32 == 16);
+
+    // Almost all positions have notes in Ultra mode (95%+)
+    // Slight variation to avoid complete monotony
+    if (prob_dist(rng) < 0.98f || is_strong) {
+      // Duration: 32nd notes (half of an eighth = 0.5 eighths, stored as 1)
+      // For 32nd notes, we use eighths=1 but the actual duration is adjusted
+      rhythm.push_back({beat, 1, is_strong, NonHarmonicType::None});
+    }
+  }
+
+  return rhythm;
+}
+
 // Select rhythm pattern based on section type and note density
 int selectRhythmPattern(SectionType section, float note_density,
-                        float sixteenth_ratio, std::mt19937& rng) {
+                        float sixteenth_ratio, std::mt19937& rng,
+                        const StyleMelodyParams& melody_params) {
   // Ultra-high density (vocaloid mode)
-  if (note_density >= 1.0f && sixteenth_ratio >= 0.25f) {
+  if (note_density >= melody_params.vocaloid_density_threshold &&
+      sixteenth_ratio >= 0.25f) {
     return 8;  // Vocaloid Standard
   }
 
   // High density
-  if (note_density >= 0.85f) {
+  if (note_density >= melody_params.high_density_threshold) {
     if (section == SectionType::Chorus) {
       return (sixteenth_ratio >= 0.2f) ? 6 : 2;  // High-density or standard Chorus
     }
@@ -534,7 +588,7 @@ int selectRhythmPattern(SectionType section, float note_density,
   }
 
   // Medium-high density
-  if (note_density >= 0.7f) {
+  if (note_density >= melody_params.medium_density_threshold) {
     std::uniform_int_distribution<int> dist(0, 1);
     if (section == SectionType::Chorus) {
       return dist(rng) == 0 ? 2 : 6;  // Mix chorus patterns
@@ -546,7 +600,7 @@ int selectRhythmPattern(SectionType section, float note_density,
   }
 
   // Low density (ballad)
-  if (note_density < 0.5f) {
+  if (note_density < melody_params.low_density_threshold) {
     return 3;  // Sparse pattern
   }
 
@@ -729,6 +783,148 @@ bool shouldUseAnticipation(float beat, SectionType section, std::mt19937& rng) {
 
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
   return dist(rng) < prob;
+}
+
+// =============================================================================
+// POST-PROCESSING PIPELINE
+// =============================================================================
+// These functions are applied after note generation to clean up and enhance
+// the vocal track. Each function is designed for a specific purpose and can
+// be extended independently.
+
+// Sort notes by start tick for proper ordering
+void sortNotesByTick(std::vector<NoteEvent>& notes) {
+  std::sort(notes.begin(), notes.end(),
+            [](const NoteEvent& a, const NoteEvent& b) {
+              return a.startTick < b.startTick;
+            });
+}
+
+// Remove notes with same start tick, keeping the longest duration one
+void removeSameTickDuplicates(std::vector<NoteEvent>& notes) {
+  if (notes.size() < 2) return;
+
+  // Assumes notes are already sorted by startTick
+  std::vector<NoteEvent> unique_notes;
+  unique_notes.reserve(notes.size());
+
+  for (size_t i = 0; i < notes.size(); ++i) {
+    // Find all notes with the same start tick
+    size_t j = i;
+    size_t best_idx = i;
+    Tick best_duration = notes[i].duration;
+
+    while (j + 1 < notes.size() && notes[j + 1].startTick == notes[i].startTick) {
+      ++j;
+      if (notes[j].duration > best_duration) {
+        best_duration = notes[j].duration;
+        best_idx = j;
+      }
+    }
+
+    // Keep only the note with the longest duration
+    unique_notes.push_back(notes[best_idx]);
+    i = j;  // Skip to after the duplicate group
+  }
+
+  notes = std::move(unique_notes);
+}
+
+// Fix overlapping notes by capping duration to not exceed next note's start
+void fixNoteOverlaps(std::vector<NoteEvent>& notes) {
+  if (notes.size() < 2) return;
+
+  constexpr Tick MIN_GAP = 10;  // Minimum gap between notes for separation
+  for (size_t i = 0; i + 1 < notes.size(); ++i) {
+    Tick next_start = notes[i + 1].startTick;
+    Tick max_duration = (next_start > notes[i].startTick + MIN_GAP)
+                            ? (next_start - notes[i].startTick - MIN_GAP)
+                            : MIN_GAP;
+    if (notes[i].duration > max_duration) {
+      notes[i].duration = max_duration;
+    }
+  }
+}
+
+// Apply breath shortening at phrase boundaries
+// Creates natural breathing room between phrases (human singers need to breathe)
+void applyBreathShortening(std::vector<NoteEvent>& notes,
+                           const StyleMelodyParams& melody_params) {
+  if (notes.size() < 2) return;
+
+  // Phrase boundary typically occurs every 4-8 beats
+  constexpr Tick PHRASE_LENGTH_TICKS = TICKS_PER_BAR * 2;  // 2 bars = 1 phrase
+  constexpr Tick BREATH_DURATION = TICKS_PER_BEAT / 4;    // 16th note breath
+
+  for (size_t i = 0; i < notes.size(); ++i) {
+    // Check if this note is near a phrase boundary
+    Tick note_end = notes[i].startTick + notes[i].duration;
+    Tick next_phrase_start = ((notes[i].startTick / PHRASE_LENGTH_TICKS) + 1) *
+                             PHRASE_LENGTH_TICKS;
+
+    // If note ends close to phrase boundary, shorten for breath
+    if (note_end > next_phrase_start - BREATH_DURATION &&
+        note_end <= next_phrase_start + BREATH_DURATION) {
+      // Shorten the note to create breath space
+      Tick new_duration = next_phrase_start - notes[i].startTick - BREATH_DURATION;
+      if (new_duration > TICKS_PER_BEAT / 4) {  // Keep minimum 16th note
+        notes[i].duration = new_duration;
+      }
+    }
+  }
+}
+
+// Apply sustain extension to climax notes (highest pitch in a phrase)
+// Creates emotional emphasis on melodic peaks
+void applySustainExtension(std::vector<NoteEvent>& notes,
+                           const StyleMelodyParams& melody_params) {
+  if (notes.size() < 4) return;
+
+  // Find local maxima (notes higher than neighbors) and extend them
+  for (size_t i = 1; i < notes.size() - 1; ++i) {
+    bool is_local_max = notes[i].note > notes[i - 1].note &&
+                        notes[i].note > notes[i + 1].note;
+
+    if (is_local_max) {
+      // Extend duration by 25% (up to limit imposed by next note)
+      Tick extension = notes[i].duration / 4;
+      Tick next_start = notes[i + 1].startTick;
+      Tick max_duration = next_start > notes[i].startTick + 10
+                              ? next_start - notes[i].startTick - 10
+                              : notes[i].duration;
+
+      notes[i].duration = std::min(notes[i].duration + extension, max_duration);
+
+      // Also boost velocity slightly for emphasis
+      notes[i].velocity = std::min(static_cast<int>(notes[i].velocity) + 5, 127);
+    }
+  }
+}
+
+// Main post-processing function - orchestrates all post-processing steps
+void postProcessVocalTrack(MidiTrack& track, const GeneratorParams& params) {
+  auto& notes = track.notes();
+  if (notes.empty()) return;
+
+  const StyleMelodyParams& melody_params = params.melody_params;
+
+  // Step 1: Sort notes (may be out of order due to hook repetition)
+  sortNotesByTick(notes);
+
+  // Step 2: Remove same-tick duplicates (vocal can only sing one note at a time)
+  removeSameTickDuplicates(notes);
+
+  // Step 3: Fix overlapping notes (cap duration to not exceed next note)
+  fixNoteOverlaps(notes);
+
+  // Step 4: Apply humanization (only if enabled)
+  if (params.humanize) {
+    applyBreathShortening(notes, melody_params);
+    applySustainExtension(notes, melody_params);
+
+    // Re-fix overlaps after extensions
+    fixNoteOverlaps(notes);
+  }
 }
 
 }  // namespace
@@ -940,26 +1136,26 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       case SectionType::A:
         // A melody: lyrical, natural phrasing
         contour_variation = 0;
-        section_density_factor = 1.0f;
-        register_shift = -2;      // Lower register
+        section_density_factor = 0.95f;  // Slightly reduced for verse
+        register_shift = melody_params.verse_register_shift;
         break;
       case SectionType::B:
         // B melody: building tension, syncopated
         contour_variation = 1;
-        section_density_factor = 1.1f;  // Slightly higher for tension build
-        register_shift = 2;             // Slightly higher
+        section_density_factor = 1.05f;  // Modest increase for tension build
+        register_shift = melody_params.prechorus_register_shift;
         break;
       case SectionType::Chorus:
         // Chorus: climactic, dense, emphatic
         contour_variation = 2;
-        section_density_factor = 1.3f;  // Much higher for climax
-        register_shift = 5;             // Higher register (+5 semitones)
+        section_density_factor = melody_params.chorus_density_modifier;
+        register_shift = melody_params.chorus_register_shift;
         break;
       case SectionType::Bridge:
         // Bridge: contrasting, more melodic breath
         contour_variation = 4;
-        section_density_factor = 0.8f;  // Lower for contrast
-        register_shift = 0;
+        section_density_factor = 0.85f;  // Lower for contrast
+        register_shift = melody_params.bridge_register_shift;
         break;
     }
 
@@ -1137,17 +1333,37 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         }
       }
 
-      // Select rhythm pattern using density-aware selection
-      int actual_rhythm = selectRhythmPattern(section.type, note_density,
-                                               sixteenth_ratio, rng);
-      // Ensure pattern index is within bounds
-      actual_rhythm = std::clamp(actual_rhythm, 0,
-                                  static_cast<int>(rhythm_patterns.size()) - 1);
-      const auto& rhythm = rhythm_patterns[actual_rhythm];
+      // Select rhythm based on vocal style
+      std::vector<RhythmNote> custom_rhythm;
+      const std::vector<RhythmNote>* rhythm_ptr = nullptr;
+
+      if (params.vocal_style == VocalStylePreset::Vocaloid) {
+        // YOASOBI-style 16th note grid
+        custom_rhythm = generateVocaloidRhythm(bars_in_motif, note_density, rng);
+        rhythm_ptr = &custom_rhythm;
+      } else if (params.vocal_style == VocalStylePreset::UltraVocaloid) {
+        // Ultra Vocaloid 32nd note grid
+        custom_rhythm = generateUltraVocaloidRhythm(bars_in_motif, rng);
+        rhythm_ptr = &custom_rhythm;
+      } else {
+        // Standard pattern-based selection
+        int actual_rhythm = selectRhythmPattern(section.type, note_density,
+                                                 sixteenth_ratio, rng,
+                                                 melody_params);
+        // Ensure pattern index is within bounds
+        actual_rhythm = std::clamp(actual_rhythm, 0,
+                                    static_cast<int>(rhythm_patterns.size()) - 1);
+        rhythm_ptr = &rhythm_patterns[actual_rhythm];
+      }
+      const auto& rhythm = *rhythm_ptr;
+
+      // Calculate motif end tick for duration limiting
+      Tick motif_end_tick = motif_start_tick + bars_in_motif * TICKS_PER_BAR;
 
       // Generate notes for this motif
       size_t contour_idx = 0;
-      for (const auto& rn : rhythm) {
+      for (size_t rn_idx = 0; rn_idx < rhythm.size(); ++rn_idx) {
+        const auto& rn = rhythm[rn_idx];
         // === MIN NOTE DIVISION FILTER ===
         // Skip notes shorter than the minimum note division
         // rn.eighths is duration in eighth notes
@@ -1208,7 +1424,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         // Phrase ending resolution (music theory: phrases must resolve)
         // Check if this is the last note in the motif (phrase ending)
         bool is_last_note_in_motif = (contour_idx == contour.degrees.size() - 1) ||
-                                      (&rn == &rhythm.back());
+                                      (rn_idx == rhythm.size() - 1);
 
         // Strong resolution at phrase boundaries
         // Music theory: phrase endings should land on stable chord tones
@@ -1332,8 +1548,8 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         // Pattern: short notes (8ths) -> phrase-final note (held, 1-2 beats)
         Tick base_duration = static_cast<Tick>(rn.eighths * TICKS_PER_BEAT / 2);
 
-        bool is_last_note_of_phrase = is_phrase_ending && (&rn == &rhythm.back());
-        bool is_last_note_of_motif = (&rn == &rhythm.back());
+        bool is_last_note_of_phrase = is_phrase_ending && (rn_idx == rhythm.size() - 1);
+        bool is_last_note_of_motif = (rn_idx == rhythm.size() - 1);
         bool is_near_phrase_end = is_phrase_ending && (beat_in_motif >= 6.0f);
 
         // Determine gate and duration extension
@@ -1343,24 +1559,44 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         if (is_last_note_of_phrase) {
           // Phrase-final note: EXTEND duration for held note, then breath
           // This is the "landing note" that gets sustained
-          gate = 0.85f;  // Moderate gate for natural release
+          gate = melody_params.phrase_end_gate;
           duration_extend = 2.0f;  // Double the duration for held note
         } else if (is_last_note_of_motif) {
           // End of 2-bar motif (not phrase): hold longer for continuity
-          gate = LEGATO_GATE;
+          gate = melody_params.legato_gate;
           duration_extend = 1.5f;  // Extend by 50%
         } else if (is_near_phrase_end) {
           // Approaching phrase end: prepare for hold
-          gate = LEGATO_GATE;
+          gate = melody_params.legato_gate;
         } else {
           // Within phrase: legato (connected)
-          gate = LEGATO_GATE;
+          gate = melody_params.legato_gate;
         }
 
         // Calculate final duration
         Tick duration = static_cast<Tick>(base_duration * duration_extend * gate);
         // Ensure minimum duration of 1/4 beat for very short notes
         duration = std::max(duration, static_cast<Tick>(TICKS_PER_BEAT / 4));
+
+        // === OVERLAP PREVENTION ===
+        // Cap duration to avoid overlapping with the next note
+        // Calculate the limit tick (next note start or motif end)
+        Tick limit_tick = motif_end_tick;
+        if (rn_idx + 1 < rhythm.size()) {
+          // Look ahead to find the next rhythm note's timing
+          const auto& next_rn = rhythm[rn_idx + 1];
+          float next_beat_in_motif = next_rn.beat;
+          int next_bar_offset = static_cast<int>(next_beat_in_motif / 4.0f);
+          if (next_bar_offset < bars_in_motif) {
+            float next_beat_in_bar = next_beat_in_motif - next_bar_offset * 4.0f;
+            Tick next_note_tick = motif_start_tick + next_bar_offset * TICKS_PER_BAR +
+                                  static_cast<Tick>(next_beat_in_bar * TICKS_PER_BEAT);
+            limit_tick = std::min(limit_tick, next_note_tick);
+          }
+        }
+        // Ensure at least 10 ticks gap for note separation
+        Tick max_duration = (limit_tick > note_tick + 10) ? (limit_tick - note_tick - 10) : 10;
+        duration = std::min(duration, max_duration);
 
         // Velocity - stronger on chord tones
         uint8_t beat_num = static_cast<uint8_t>(beat_in_bar);
@@ -1490,6 +1726,9 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
     phrase_cache[section.type] = std::move(phrase_notes);
   }
+
+  // === POST-PROCESSING PIPELINE ===
+  postProcessVocalTrack(track, params);
 }
 
 }  // namespace midisketch

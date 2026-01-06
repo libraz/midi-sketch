@@ -37,6 +37,21 @@ struct NoteEvent {
   uint8_t velocity;  // MIDI velocity (0-127)
 };
 
+// Non-harmonic tone type for melodic ornamentation.
+enum class NonHarmonicType : uint8_t {
+  None,         // Regular note
+  Suspension,   // Held from previous chord, resolves down
+  Anticipation  // Early arrival of next chord tone
+};
+
+// Rhythm note for pattern-based melody generation.
+struct RhythmNote {
+  float beat;      // 0.0-7.5 (in quarter notes, 2 bars)
+  int eighths;     // Duration in eighth notes
+  bool strong;     // True if on strong beat (1 or 3)
+  NonHarmonicType non_harmonic = NonHarmonicType::None;
+};
+
 // Melody data for saving/restoring melody candidates.
 // Contains the seed used for generation and the resulting notes.
 struct MelodyData {
@@ -271,6 +286,19 @@ constexpr uint8_t ATTITUDE_CLEAN = 1 << 0;
 constexpr uint8_t ATTITUDE_EXPRESSIVE = 1 << 1;
 constexpr uint8_t ATTITUDE_RAW = 1 << 2;
 
+// Vocal style preset for melody generation.
+enum class VocalStylePreset : uint8_t {
+  Auto = 0,       // Use StylePreset defaults
+  Standard,       // General purpose
+  Vocaloid,       // YOASOBI/Vocaloid-P style (singable)
+  UltraVocaloid,  // Hatsune Miku no Shoushitsu level (not singable)
+  Idol,           // Love Live/Idolmaster style
+  Ballad,         // Slow ballad
+  Rock,           // Rock style
+  CityPop,        // City pop style
+  Anime           // Anime song style
+};
+
 // Vocal rhythm bias.
 enum class VocalRhythmBias : uint8_t {
   OnBeat,
@@ -380,6 +408,38 @@ struct StyleMelodyParams {
                                       // 1.5=vocaloid, 2.0=ultra vocaloid
   uint8_t min_note_division = 8;      // Minimum note division (4=quarter, 8=eighth, 16=16th, 32=32nd)
   float sixteenth_note_ratio = 0.0f;  // Ratio of 16th notes (0.0-0.5)
+
+  // === Syncopation ===
+  float syncopation_prob = 0.15f;     // Probability of syncopation
+  bool allow_bar_crossing = false;    // Allow notes to cross bar lines
+
+  // === Phrase characteristics ===
+  float long_note_ratio = 0.2f;       // Ratio of long notes in phrases
+  uint8_t phrase_length_bars = 2;     // Default phrase length in bars
+  bool hook_repetition = false;       // Enable hook repetition in chorus
+  bool use_leading_tone = true;       // Use leading tone for resolution
+
+  // === Section register shifts (semitones) ===
+  int8_t verse_register_shift = -2;      // A melody register shift
+  int8_t prechorus_register_shift = 2;   // B melody register shift
+  int8_t chorus_register_shift = 5;      // Chorus register shift
+  int8_t bridge_register_shift = 0;      // Bridge register shift
+
+  // === Chorus characteristics ===
+  float chorus_density_modifier = 1.10f; // Density modifier for chorus
+  bool chorus_long_tones = false;        // Use long sustained tones in chorus
+
+  // === Articulation (gate values) ===
+  float legato_gate = 0.95f;          // Gate for legato notes
+  float normal_gate = 0.85f;          // Gate for normal notes
+  float staccato_gate = 0.5f;         // Gate for staccato notes
+  float phrase_end_gate = 0.70f;      // Gate for phrase-ending notes
+
+  // === Density thresholds for rhythm selection ===
+  float vocaloid_density_threshold = 1.0f;  // Threshold for vocaloid patterns
+  float high_density_threshold = 0.85f;     // Threshold for high density
+  float medium_density_threshold = 0.7f;    // Threshold for medium density
+  float low_density_threshold = 0.5f;       // Threshold for low density
 };
 
 // Motif constraint parameters for StylePreset.
@@ -442,6 +502,7 @@ struct SongConfig {
 
   // Layer 5: Expression
   VocalAttitude vocal_attitude = VocalAttitude::Clean;
+  VocalStylePreset vocal_style = VocalStylePreset::Auto;  // Vocal style override
 
   // Options
   bool drums_enabled = true;
@@ -536,6 +597,7 @@ struct GeneratorParams {
 
   // Phase 2: Vocal expression parameters
   VocalAttitude vocal_attitude = VocalAttitude::Clean;
+  VocalStylePreset vocal_style = VocalStylePreset::Auto;  // Vocal style preset
   StyleMelodyParams melody_params = {};  // Default: 7 semitone leap, unison ok, 0.8 resolution, 0.2 tension
 
   // Vocal density parameters (from SongConfig override)

@@ -224,6 +224,10 @@ typedef struct {
   uint8_t vocal_rest_ratio;        // Rest ratio * 100 (0-50)
   uint8_t vocal_allow_extreme_leap; // Allow extreme leaps (0=off, 1=on)
 
+  // Vocal style preset
+  uint8_t vocal_style;             // 0=Auto, 1=Standard, 2=Vocaloid, 3=UltraVocaloid,
+                                   // 4=Idol, 5=Ballad, 6=Rock, 7=CityPop, 8=Anime
+
   // Arrangement growth method
   uint8_t arrangement_growth;      // 0=LayerAdd, 1=RegisterAdd
 

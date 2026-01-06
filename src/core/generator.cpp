@@ -333,8 +333,9 @@ void Generator::regenerateVocalFromConfig(const SongConfig& config,
   // Get the style preset for melody params
   const StylePreset& preset = getStylePreset(config.style_preset_id);
 
-  // Update VocalAttitude and StyleMelodyParams
+  // Update VocalAttitude, VocalStylePreset and StyleMelodyParams
   params_.vocal_attitude = config.vocal_attitude;
+  params_.vocal_style = config.vocal_style;
   params_.melody_params = preset.melody;
 
   // === VOCAL DENSITY PARAMETERS (Phase 4/5) ===
@@ -700,6 +701,22 @@ void Generator::applyHumanization() {
           velocity_dist(rng_) * velocity_scale * vel_factor);
       int new_velocity = static_cast<int>(note.velocity) + vel_offset;
       note.velocity = static_cast<uint8_t>(std::clamp(new_velocity, 1, 127));
+    }
+  }
+
+  // Fix vocal overlaps introduced by timing humanization
+  // Vocal must not have overlapping notes (singers can only sing one note)
+  auto& vocal_notes = song_.vocal().notes();
+  if (vocal_notes.size() > 1) {
+    constexpr Tick MIN_GAP = 10;
+    for (size_t i = 0; i + 1 < vocal_notes.size(); ++i) {
+      Tick next_start = vocal_notes[i + 1].startTick;
+      Tick max_duration = (next_start > vocal_notes[i].startTick + MIN_GAP)
+                              ? (next_start - vocal_notes[i].startTick - MIN_GAP)
+                              : MIN_GAP;
+      if (vocal_notes[i].duration > max_duration) {
+        vocal_notes[i].duration = max_duration;
+      }
     }
   }
 }
