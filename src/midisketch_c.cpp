@@ -514,6 +514,7 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   // Motif settings
   cpp_config.motif_chord.fixed_progression = config->motif_fixed_progression != 0;
   cpp_config.motif_chord.max_chord_count = config->motif_max_chord_count;
+  cpp_config.motif_repeat_scope = static_cast<midisketch::MotifRepeatScope>(config->motif_repeat_scope);
 
   // Melodic complexity, hook intensity, and groove
   cpp_config.melodic_complexity = static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);

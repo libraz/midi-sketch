@@ -390,6 +390,7 @@ void Generator::generateFromConfig(const SongConfig& config) {
 
   // Motif chord parameters (for BackgroundMotif style)
   params.motif_chord = config.motif_chord;
+  params.motif.repeat_scope = config.motif_repeat_scope;
 
   // Arrangement growth method
   params.arrangement_growth = config.arrangement_growth;

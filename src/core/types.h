@@ -562,6 +562,7 @@ struct SongConfig {
 
   // Motif chord parameters (for BackgroundMotif style)
   MotifChordParams motif_chord;
+  MotifRepeatScope motif_repeat_scope = MotifRepeatScope::FullSong;
 
   // Arrangement growth method
   ArrangementGrowth arrangement_growth = ArrangementGrowth::LayerAdd;

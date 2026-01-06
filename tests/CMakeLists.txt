@@ -27,6 +27,7 @@ set(TEST_SOURCES
   core/call_test.cpp
   core/randomness_test.cpp
   core/motif_test.cpp
+  core/struct_layout_test.cpp
   midi/midi_writer_test.cpp
   track/arpeggio_test.cpp
   track/vocal_test.cpp
