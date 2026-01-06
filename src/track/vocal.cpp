@@ -1681,9 +1681,31 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     bool allow_non_chord_landing = apply_raw;  // Allow non-chord tone resolution
     int raw_leap_boost = apply_raw ? 2 : 0;  // Allow larger leaps
 
-    // Chorus hook: store first 2-bar phrase and repeat it
+    // Section motif: store first 2-bar phrase and repeat for memorability
     std::vector<NoteEvent> chorus_hook_notes;
+    std::vector<NoteEvent> section_base_motif;  // For non-chorus sections
     bool is_chorus = (section.type == SectionType::Chorus);
+
+    // Determine repetition strength based on section type
+    // Higher = more repetition (0.0 = no repeat, 1.0 = always repeat)
+    float repetition_strength = 0.0f;
+    switch (section.type) {
+      case SectionType::Chorus:
+        repetition_strength = 1.0f;  // Already handled by chorus_hook
+        break;
+      case SectionType::A:  // Verse
+        repetition_strength = 0.7f;  // High repetition for catchiness
+        break;
+      case SectionType::B:  // Pre-chorus
+        repetition_strength = 0.5f;  // Moderate repetition
+        break;
+      case SectionType::Bridge:
+        repetition_strength = 0.3f;  // Less repetition for contrast
+        break;
+      default:
+        repetition_strength = 0.4f;
+        break;
+    }
 
     // Process 2-bar motifs
     for (uint8_t motif_start = 0; motif_start < section.bars; motif_start += 2) {
@@ -1694,14 +1716,14 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       Tick motif_start_tick = section.start_tick + motif_start * TICKS_PER_BAR;
       Tick relative_motif_start = motif_start * TICKS_PER_BAR;
 
-      // === CHORUS HOOK REPETITION ===
+      // === CHORUS HOOK REPETITION (IMPROVED) ===
       // In chorus: repeat the first 2-bar hook phrase throughout
       // This creates a memorable, singable hook pattern
-      // Pattern: Hook (motif 0) -> Variation (motif 1) -> Hook (motif 2) -> Ending (motif 3)
+      // Pattern: Hook (0) -> Hook (2) -> Hook+climax (4) -> Hook (6)
+      // Key change: Removed !is_phrase_ending to increase repetition rate (25% -> 75%)
       bool use_chorus_hook = is_chorus && motif_start > 0 &&
                              !chorus_hook_notes.empty() &&
-                             (motif_start % 2 == 0) &&  // Every 2 bars (motif 2, 4, 6...)
-                             !is_phrase_ending;  // Not at phrase endings (allow variation)
+                             (motif_start % 2 == 0);  // Every 2 bars (motif 2, 4, 6...)
 
       if (use_chorus_hook) {
         // Repeat the chorus hook with optional pitch shift for climax
@@ -1711,40 +1733,30 @@ void generateVocalTrack(MidiTrack& track, Song& song,
           pitch_shift = 2;  // One whole step up
         }
 
-        const int MAX_HOOK_INTERVAL = section_extreme_leap ? 12 : 7;  // Max interval for hook continuity
+        const int MAX_HOOK_INTERVAL = section_extreme_leap ? 12 : 7;
 
         for (const auto& note : chorus_hook_notes) {
           Tick absolute_tick = motif_start_tick + note.startTick;
           int varied_pitch = note.note + pitch_shift;
 
-          // First clamp to section range
+          // Clamp to section range
           varied_pitch = std::clamp(varied_pitch, section_vocal_low, section_vocal_high);
 
-          // Apply interval constraint for EVERY note (not just first)
-          // This ensures melodic continuity within the hook replay
+          // Apply interval constraint for melodic continuity
           if (prev_pitch > 0) {
             int interval = varied_pitch - prev_pitch;
             if (std::abs(interval) > MAX_HOOK_INTERVAL) {
-              // Constrain to max interval while preserving direction
               int direction = (interval > 0) ? 1 : -1;
               int constrained = prev_pitch + (direction * MAX_HOOK_INTERVAL);
-              // Only use constrained if it's within the section range
               if (constrained >= section_vocal_low && constrained <= section_vocal_high) {
                 varied_pitch = constrained;
               }
-              // Otherwise keep the clamped pitch (may violate interval but stay in range)
             }
           }
 
           // Apply getSafePitch to avoid clashes with chord track
+          // IMPORTANT: Always respect getSafePitch result for harmony safety
           uint8_t safe_pitch = getSafePitch(varied_pitch, absolute_tick, note.duration);
-
-          // IMPORTANT: If getSafePitch violates interval constraint, prefer melodic continuity
-          // Prioritize singability (max 7 semitone interval) over harmonic safety
-          if (prev_pitch > 0 && std::abs(static_cast<int>(safe_pitch) - prev_pitch) > MAX_HOOK_INTERVAL) {
-            // Revert to the interval-constrained pitch
-            safe_pitch = static_cast<uint8_t>(varied_pitch);
-          }
 
           track.addNote(absolute_tick, note.duration, safe_pitch, note.velocity);
           phrase_notes.push_back({note.startTick + relative_motif_start,
@@ -1752,7 +1764,54 @@ void generateVocalTrack(MidiTrack& track, Song& song,
                                   safe_pitch,
                                   note.velocity});
 
-          // Update prev_pitch for continuity
+          prev_pitch = safe_pitch;
+        }
+        continue;
+      }
+
+      // === SECTION MOTIF REPETITION (for non-Chorus sections) ===
+      // Repeat the first 2-bar motif for catchier, more memorable melodies
+      bool use_section_motif = !is_chorus && motif_start > 0 &&
+                               !section_base_motif.empty() &&
+                               !is_phrase_ending;  // Allow variation at phrase endings
+
+      // Probabilistic repetition based on section type
+      if (use_section_motif && repetition_strength > 0.0f) {
+        std::uniform_real_distribution<float> repeat_dist(0.0f, 1.0f);
+        use_section_motif = (repeat_dist(rng) < repetition_strength);
+      }
+
+      if (use_section_motif) {
+        const int MAX_MOTIF_INTERVAL = section_extreme_leap ? 12 : 7;
+
+        for (const auto& note : section_base_motif) {
+          Tick absolute_tick = motif_start_tick + note.startTick;
+          int varied_pitch = note.note;
+
+          // Clamp to section range
+          varied_pitch = std::clamp(varied_pitch, section_vocal_low, section_vocal_high);
+
+          // Apply interval constraint
+          if (prev_pitch > 0) {
+            int interval = varied_pitch - prev_pitch;
+            if (std::abs(interval) > MAX_MOTIF_INTERVAL) {
+              int direction = (interval > 0) ? 1 : -1;
+              int constrained = prev_pitch + (direction * MAX_MOTIF_INTERVAL);
+              if (constrained >= section_vocal_low && constrained <= section_vocal_high) {
+                varied_pitch = constrained;
+              }
+            }
+          }
+
+          // Apply getSafePitch for harmony safety
+          uint8_t safe_pitch = getSafePitch(varied_pitch, absolute_tick, note.duration);
+
+          track.addNote(absolute_tick, note.duration, safe_pitch, note.velocity);
+          phrase_notes.push_back({note.startTick + relative_motif_start,
+                                  note.duration,
+                                  safe_pitch,
+                                  note.velocity});
+
           prev_pitch = safe_pitch;
         }
         continue;
@@ -2338,6 +2397,13 @@ void generateVocalTrack(MidiTrack& track, Song& song,
             // Use relative tick within the motif (not section)
             Tick motif_relative_tick = relative_tick - relative_motif_start;
             chorus_hook_notes.push_back(
+                {motif_relative_tick, duration, safe_pitch, velocity});
+          }
+
+          // Store notes for section base motif (non-Chorus, first 2-bar)
+          if (!is_chorus && motif_start == 0) {
+            Tick motif_relative_tick = relative_tick - relative_motif_start;
+            section_base_motif.push_back(
                 {motif_relative_tick, duration, safe_pitch, velocity});
           }
         }

@@ -140,6 +140,95 @@ TEST(FormCandidatesTest, OutOfRangeFallback) {
 }
 
 // ============================================================================
+// VocalStylePreset Random Selection Tests
+// ============================================================================
+
+TEST(VocalStylePresetTest, SelectRandomVocalStyleReturnsValidStyle) {
+  // Test for all StylePresets
+  for (uint8_t style_id = 0; style_id < STYLE_PRESET_COUNT; ++style_id) {
+    VocalStylePreset result = selectRandomVocalStyle(style_id, 12345);
+    // Should not return Auto
+    EXPECT_NE(result, VocalStylePreset::Auto);
+    // Should be a valid enum value (0-12)
+    EXPECT_LE(static_cast<uint8_t>(result), 12);
+  }
+}
+
+TEST(VocalStylePresetTest, SelectRandomVocalStyleNeverReturnsUltraVocaloid) {
+  // UltraVocaloid is excluded from auto-selection
+  // Test with many different seeds
+  for (uint8_t style_id = 0; style_id < STYLE_PRESET_COUNT; ++style_id) {
+    for (uint32_t seed = 0; seed < 100; ++seed) {
+      VocalStylePreset result = selectRandomVocalStyle(style_id, seed);
+      EXPECT_NE(result, VocalStylePreset::UltraVocaloid)
+          << "UltraVocaloid should not be returned for style_id=" << (int)style_id
+          << " seed=" << seed;
+    }
+  }
+}
+
+TEST(VocalStylePresetTest, SelectRandomVocalStyleSeedReproducibility) {
+  // Same seed should produce same result
+  for (uint8_t style_id = 0; style_id < STYLE_PRESET_COUNT; ++style_id) {
+    VocalStylePreset result1 = selectRandomVocalStyle(style_id, 42);
+    VocalStylePreset result2 = selectRandomVocalStyle(style_id, 42);
+    EXPECT_EQ(result1, result2);
+  }
+}
+
+TEST(VocalStylePresetTest, SelectRandomVocalStyleDifferentSeeds) {
+  // Different seeds should (usually) produce different results for styles with multiple options
+  uint8_t style_id = 3;  // Idol Standard has 3 options
+  int different_count = 0;
+  VocalStylePreset first_result = selectRandomVocalStyle(style_id, 0);
+  for (uint32_t seed = 1; seed < 100; ++seed) {
+    VocalStylePreset result = selectRandomVocalStyle(style_id, seed);
+    if (result != first_result) {
+      different_count++;
+    }
+  }
+  // With 3 options and 100 seeds, we should see different results
+  EXPECT_GT(different_count, 0) << "Different seeds should produce different results";
+}
+
+TEST(VocalStylePresetTest, IdolStandardReturnsIdolStyles) {
+  // Idol Standard (ID 3) should return Idol, BrightKira, or CuteAffected
+  int idol_count = 0, brightkira_count = 0, cuteaffected_count = 0;
+  for (uint32_t seed = 0; seed < 300; ++seed) {
+    VocalStylePreset result = selectRandomVocalStyle(3, seed);
+    if (result == VocalStylePreset::Idol) idol_count++;
+    if (result == VocalStylePreset::BrightKira) brightkira_count++;
+    if (result == VocalStylePreset::CuteAffected) cuteaffected_count++;
+  }
+  // All three should appear at least once
+  EXPECT_GT(idol_count, 0) << "Idol should appear";
+  EXPECT_GT(brightkira_count, 0) << "BrightKira should appear";
+  EXPECT_GT(cuteaffected_count, 0) << "CuteAffected should appear";
+}
+
+TEST(VocalStylePresetTest, AnimeOpeningReturnsAnimeStyles) {
+  // Anime Opening (ID 14) should return Anime, Vocaloid, or BrightKira
+  int anime_count = 0, vocaloid_count = 0, brightkira_count = 0;
+  for (uint32_t seed = 0; seed < 300; ++seed) {
+    VocalStylePreset result = selectRandomVocalStyle(14, seed);
+    if (result == VocalStylePreset::Anime) anime_count++;
+    if (result == VocalStylePreset::Vocaloid) vocaloid_count++;
+    if (result == VocalStylePreset::BrightKira) brightkira_count++;
+  }
+  // All three should appear at least once
+  EXPECT_GT(anime_count, 0) << "Anime should appear";
+  EXPECT_GT(vocaloid_count, 0) << "Vocaloid should appear";
+  EXPECT_GT(brightkira_count, 0) << "BrightKira should appear";
+}
+
+TEST(VocalStylePresetTest, OutOfRangeFallback) {
+  // Invalid style_id should fallback to first style's options
+  VocalStylePreset result = selectRandomVocalStyle(99, 12345);
+  EXPECT_NE(result, VocalStylePreset::Auto);
+  EXPECT_NE(result, VocalStylePreset::UltraVocaloid);
+}
+
+// ============================================================================
 // SongConfig Tests
 // ============================================================================
 
@@ -330,10 +419,12 @@ TEST(VocalAttitudeTest, CleanVsExpressiveGeneratesDifferentMelody) {
   SongConfig clean_config = createDefaultSongConfig(1);  // Dance Pop allows both
   clean_config.seed = 12345;
   clean_config.vocal_attitude = VocalAttitude::Clean;
+  clean_config.vocal_style = VocalStylePreset::Standard;  // Fix VocalStyle for test
 
   SongConfig expressive_config = createDefaultSongConfig(1);
   expressive_config.seed = 12345;  // Same seed
   expressive_config.vocal_attitude = VocalAttitude::Expressive;
+  expressive_config.vocal_style = VocalStylePreset::Standard;  // Fix VocalStyle for test
 
   MidiSketch clean_sketch;
   clean_sketch.generateFromConfig(clean_config);

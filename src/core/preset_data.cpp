@@ -452,6 +452,48 @@ const FormWeight STYLE_FORMS_WEIGHTED[17][5] = {
 
 constexpr size_t STYLE_FORM_COUNT = 5;
 
+// Vocal style compatibility by StylePreset with weights (higher = more likely)
+// UltraVocaloid is excluded from auto-selection (use explicit setting only)
+// Weight 0 means unused slot
+const VocalStyleWeight STYLE_VOCAL_STYLES[17][4] = {
+    // 0: Minimal Groove Pop - simple styles
+    {{VocalStylePreset::Standard, 50}, {VocalStylePreset::CoolSynth, 50}, {}, {}},
+    // 1: Dance Pop Emotion - emotional dance styles
+    {{VocalStylePreset::Standard, 34}, {VocalStylePreset::Anime, 33}, {VocalStylePreset::BrightKira, 33}, {}},
+    // 2: Bright Pop - bright upbeat styles
+    {{VocalStylePreset::Standard, 34}, {VocalStylePreset::BrightKira, 33}, {VocalStylePreset::CuteAffected, 33}, {}},
+    // 3: Idol Standard - idol styles
+    {{VocalStylePreset::Idol, 34}, {VocalStylePreset::BrightKira, 33}, {VocalStylePreset::CuteAffected, 33}, {}},
+    // 4: Idol Emotion - emotional idol styles
+    {{VocalStylePreset::Idol, 34}, {VocalStylePreset::Anime, 33}, {VocalStylePreset::BrightKira, 33}, {}},
+    // 5: Idol Energy - high-energy idol styles
+    {{VocalStylePreset::Idol, 34}, {VocalStylePreset::BrightKira, 33}, {VocalStylePreset::PowerfulShout, 33}, {}},
+    // 6: Idol Minimal - simple idol styles
+    {{VocalStylePreset::Idol, 50}, {VocalStylePreset::Standard, 50}, {}, {}},
+    // 7: Rock Shout - rock styles
+    {{VocalStylePreset::Rock, 50}, {VocalStylePreset::PowerfulShout, 50}, {}, {}},
+    // 8: Pop Emotion - emotional pop styles
+    {{VocalStylePreset::Standard, 34}, {VocalStylePreset::Anime, 33}, {VocalStylePreset::CuteAffected, 33}, {}},
+    // 9: Raw Emotional - intense emotional styles
+    {{VocalStylePreset::Rock, 50}, {VocalStylePreset::PowerfulShout, 50}, {}, {}},
+    // 10: Acoustic Pop - acoustic/ballad styles
+    {{VocalStylePreset::Ballad, 50}, {VocalStylePreset::Standard, 50}, {}, {}},
+    // 11: Live Call & Response - live performance styles
+    {{VocalStylePreset::Idol, 34}, {VocalStylePreset::BrightKira, 33}, {VocalStylePreset::PowerfulShout, 33}, {}},
+    // 12: Background Motif - subdued styles
+    {{VocalStylePreset::Standard, 50}, {VocalStylePreset::CoolSynth, 50}, {}, {}},
+    // 13: City Pop - city pop styles
+    {{VocalStylePreset::CityPop, 50}, {VocalStylePreset::Standard, 50}, {}, {}},
+    // 14: Anime Opening - anime styles
+    {{VocalStylePreset::Anime, 34}, {VocalStylePreset::Vocaloid, 33}, {VocalStylePreset::BrightKira, 33}, {}},
+    // 15: EDM Synth Pop - synth/EDM styles
+    {{VocalStylePreset::CoolSynth, 50}, {VocalStylePreset::Vocaloid, 50}, {}, {}},
+    // 16: Emotional Ballad - ballad styles
+    {{VocalStylePreset::Ballad, 50}, {VocalStylePreset::Standard, 50}, {}, {}},
+};
+
+constexpr size_t STYLE_VOCAL_COUNT = 4;
+
 }  // namespace
 
 uint16_t getMoodDefaultBpm(Mood mood) {
@@ -582,6 +624,44 @@ StructurePattern selectRandomForm(uint8_t style_id, uint32_t seed) {
 
   // Fallback: return default form
   return STYLE_FORMS_WEIGHTED[style_id][0].form;
+}
+
+VocalStylePreset selectRandomVocalStyle(uint8_t style_id, uint32_t seed) {
+  if (style_id >= STYLE_PRESET_COUNT) {
+    style_id = 0;
+  }
+
+  // Calculate total weight (skip entries with weight 0)
+  uint32_t total_weight = 0;
+  for (size_t i = 0; i < STYLE_VOCAL_COUNT; ++i) {
+    if (STYLE_VOCAL_STYLES[style_id][i].weight > 0) {
+      total_weight += STYLE_VOCAL_STYLES[style_id][i].weight;
+    }
+  }
+
+  // If no weights defined, fallback to Standard
+  if (total_weight == 0) {
+    return VocalStylePreset::Standard;
+  }
+
+  // Use seed to generate a random value
+  std::mt19937 rng(seed);
+  std::uniform_int_distribution<uint32_t> dist(0, total_weight - 1);
+  uint32_t roll = dist(rng);
+
+  // Select style based on weighted random roll
+  uint32_t cumulative = 0;
+  for (size_t i = 0; i < STYLE_VOCAL_COUNT; ++i) {
+    if (STYLE_VOCAL_STYLES[style_id][i].weight > 0) {
+      cumulative += STYLE_VOCAL_STYLES[style_id][i].weight;
+      if (roll < cumulative) {
+        return STYLE_VOCAL_STYLES[style_id][i].style;
+      }
+    }
+  }
+
+  // Fallback: return first style
+  return STYLE_VOCAL_STYLES[style_id][0].style;
 }
 
 SongConfig createDefaultSongConfig(uint8_t style_id) {

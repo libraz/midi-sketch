@@ -370,6 +370,22 @@ void Generator::generateFromConfig(const SongConfig& config) {
       params.mood = Mood::StraightPop;
       params.composition_style = CompositionStyle::BackgroundMotif;
       break;
+    case 13:  // City Pop
+      params.mood = Mood::CityPop;
+      params.composition_style = CompositionStyle::MelodyLead;
+      break;
+    case 14:  // Anime Opening
+      params.mood = Mood::Yoasobi;
+      params.composition_style = CompositionStyle::MelodyLead;
+      break;
+    case 15:  // EDM Synth Pop
+      params.mood = Mood::FutureBass;
+      params.composition_style = CompositionStyle::SynthDriven;
+      break;
+    case 16:  // Emotional Ballad
+      params.mood = Mood::Ballad;
+      params.composition_style = CompositionStyle::MelodyLead;
+      break;
     default:
       params.mood = Mood::StraightPop;
       params.composition_style = CompositionStyle::MelodyLead;
@@ -403,6 +419,16 @@ void Generator::generateFromConfig(const SongConfig& config) {
   // Phase 2: Apply VocalAttitude, VocalStylePreset and StyleMelodyParams
   params.vocal_attitude = config.vocal_attitude;
   params.vocal_style = config.vocal_style;
+
+  // If VocalStylePreset::Auto, select a random style based on StylePreset
+  if (params.vocal_style == VocalStylePreset::Auto) {
+    // Use a seed derived from the main seed for consistent selection
+    uint32_t vocal_style_seed = config.seed != 0 ? config.seed ^ 0x56534C53 : // "VSLS"
+        static_cast<uint32_t>(
+            std::chrono::system_clock::now().time_since_epoch().count() ^ 0x56534C53);
+    params.vocal_style = selectRandomVocalStyle(config.style_preset_id, vocal_style_seed);
+  }
+
   params.melody_params = preset.melody;
 
   // === VOCAL DENSITY PARAMETERS (Phase 4/5) ===

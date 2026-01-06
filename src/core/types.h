@@ -304,6 +304,12 @@ enum class VocalStylePreset : uint8_t {
   PowerfulShout   // Powerful shout style
 };
 
+// Vocal style weight for random selection by StylePreset.
+struct VocalStyleWeight {
+  VocalStylePreset style;
+  uint8_t weight;  // 1-100, higher = more likely; 0 = unused slot
+};
+
 // Melodic complexity level for controlling melody simplicity.
 enum class MelodicComplexity : uint8_t {
   Simple = 0,    // Simple melody (fewer notes, smaller leaps, more repetition)

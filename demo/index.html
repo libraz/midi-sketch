@@ -191,6 +191,12 @@
       <div class="row">
         <div class="form-group">
           <label>Vocal Style</label>
+          <select v-model.number="config.vocalStyle">
+            <option v-for="vs in vocalStyles" :value="vs.value">{{ vs.text }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Vocal Attitude</label>
           <select v-model="config.vocalAttitude">
             <option v-for="a in vocalAttitudes" :value="a.value" :disabled="a.disabled">{{ a.text }}</option>
           </select>
@@ -376,9 +382,24 @@
         { value: 1, text: 'Expressive', disabled: false },
         { value: 2, text: 'Raw', disabled: false }
       ],
+      vocalStyles: [
+        { value: 0, text: 'Auto' },
+        { value: 1, text: 'Standard' },
+        { value: 2, text: 'Vocaloid' },
+        { value: 3, text: 'UltraVocaloid' },
+        { value: 4, text: 'Idol' },
+        { value: 5, text: 'Ballad' },
+        { value: 6, text: 'Rock' },
+        { value: 7, text: 'CityPop' },
+        { value: 8, text: 'Anime' },
+        { value: 9, text: 'BrightKira' },
+        { value: 10, text: 'CoolSynth' },
+        { value: 11, text: 'CuteAffected' },
+        { value: 12, text: 'PowerfulShout' }
+      ],
       config: {
         stylePresetId: 0, key: 0, bpm: 120, seed: 0,
-        chordProgressionId: 0, formId: 5, vocalAttitude: 0,
+        chordProgressionId: 0, formId: 5, vocalAttitude: 0, vocalStyle: 0,
         drumsEnabled: true, arpeggioEnabled: false,
         arpeggioSpeed: 1, arpeggioOctaveRange: 2, arpeggioGate: 80,
         arpeggioSyncChord: true,

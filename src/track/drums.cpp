@@ -448,11 +448,18 @@ HiHatLevel adjustHiHatDenser(HiHatLevel level) {
   return level;
 }
 
+// BPM threshold for 16th note hi-hat playability
+// 16th notes @ 150 BPM = 10 notes/sec (sustainable limit for drummers)
+constexpr uint16_t HH_16TH_BPM_THRESHOLD = 150;
+
 // Get hi-hat level with randomized variation
 HiHatLevel getHiHatLevel(SectionType section, DrumStyle style,
-                          BackingDensity backing_density,
+                          BackingDensity backing_density, uint16_t bpm,
                           std::mt19937& rng) {
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+
+  // High BPM: disable 16th note hi-hat for playability
+  bool allow_16th = (bpm < HH_16TH_BPM_THRESHOLD);
 
   HiHatLevel base_level = HiHatLevel::Eighth;
 
@@ -461,12 +468,16 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style,
                                                    : HiHatLevel::Quarter;
   } else if (style == DrumStyle::FourOnFloor) {
     // FourOnFloor: 8th notes base, but 25% chance for 16th in Chorus
-    if (section == SectionType::Chorus && dist(rng) < 0.25f) {
+    if (allow_16th && section == SectionType::Chorus && dist(rng) < 0.25f) {
       return HiHatLevel::Sixteenth;
     }
     return HiHatLevel::Eighth;
   } else if (style == DrumStyle::Synth) {
-    // Synth: 16th notes base, but 20% chance for 8th in A section
+    // Synth: 16th notes base, but fallback to 8th at high BPM
+    if (!allow_16th) {
+      return HiHatLevel::Eighth;
+    }
+    // 20% chance for 8th in A section
     if (section == SectionType::A && dist(rng) < 0.20f) {
       return HiHatLevel::Eighth;
     }
@@ -486,14 +497,20 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style,
         break;
       case SectionType::B:
         // 25% chance for 16th notes in B section (building energy)
-        base_level = (dist(rng) < 0.25f) ? HiHatLevel::Sixteenth : HiHatLevel::Eighth;
-        break;
-      case SectionType::Chorus:
-        if (style == DrumStyle::Upbeat) {
+        if (allow_16th && dist(rng) < 0.25f) {
           base_level = HiHatLevel::Sixteenth;
         } else {
+          base_level = HiHatLevel::Eighth;
+        }
+        break;
+      case SectionType::Chorus:
+        if (allow_16th && style == DrumStyle::Upbeat) {
+          base_level = HiHatLevel::Sixteenth;
+        } else if (allow_16th && dist(rng) < 0.35f) {
           // 35% chance for 16th notes in Chorus
-          base_level = (dist(rng) < 0.35f) ? HiHatLevel::Sixteenth : HiHatLevel::Eighth;
+          base_level = HiHatLevel::Sixteenth;
+        } else {
+          base_level = HiHatLevel::Eighth;
         }
         break;
       case SectionType::Bridge:
@@ -505,7 +522,11 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style,
         break;
       case SectionType::MixBreak:
         // MIX section: 40% chance for 16th notes
-        base_level = (dist(rng) < 0.40f) ? HiHatLevel::Sixteenth : HiHatLevel::Eighth;
+        if (allow_16th && dist(rng) < 0.40f) {
+          base_level = HiHatLevel::Sixteenth;
+        } else {
+          base_level = HiHatLevel::Eighth;
+        }
         break;
     }
   }
@@ -515,6 +536,11 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style,
     base_level = adjustHiHatSparser(base_level);
   } else if (backing_density == BackingDensity::Thick) {
     base_level = adjustHiHatDenser(base_level);
+  }
+
+  // Final BPM check: cap at 8th notes for high tempo
+  if (!allow_16th && base_level == HiHatLevel::Sixteenth) {
+    base_level = HiHatLevel::Eighth;
   }
 
   return base_level;
@@ -594,7 +620,8 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
     }
 
     HiHatLevel hh_level = getHiHatLevel(section.type, style,
-                                         section.backing_density, rng);
+                                         section.backing_density, params.bpm,
+                                         rng);
 
     // BackgroundMotif: force 8th note hi-hat for consistent drive
     if (is_background_motif && drum_params.hihat_drive) {
