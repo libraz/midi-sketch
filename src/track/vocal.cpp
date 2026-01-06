@@ -35,6 +35,337 @@ bool isInPassaggio(uint8_t pitch) {
   return pitch >= PASSAGGIO_LOW && pitch <= PASSAGGIO_HIGH;
 }
 
+// ============================================================================
+// Hook Point Support
+// ============================================================================
+//
+// Hook points are key moments in a melody where emphasis creates memorability.
+// Typically at chorus start and climax points.
+// HookIntensity controls how many hook points are applied:
+// - Off: No hook processing
+// - Light: Only chorus start (bar 0, beat 0)
+// - Normal: Chorus start + middle (bars 0, 2)
+// - Strong: All hook points in the chorus
+// ============================================================================
+
+// Definition of a hook point within a section
+struct HookPoint {
+  uint8_t bar_offset;        // Which bar in the section (0-based)
+  float beat;                // Which beat in the bar (0.0 = downbeat)
+  HookTechnique technique;   // What technique to apply
+  int8_t interval_hint;      // Interval adjustment hint (semitones)
+  uint8_t duration_eighths;  // Duration hint in eighth notes
+};
+
+// Predefined hook points for chorus sections
+// These create memorable "hook" moments in the melody
+constexpr HookPoint kChorusHooks[] = {
+    {0, 0.0f, HookTechnique::LongNote, 0, 4},       // Bar 0, beat 0: long opening
+    {0, 2.0f, HookTechnique::HighLeap, 5, 2},       // Bar 0, beat 2: upward leap
+    {1, 0.0f, HookTechnique::Repetition, 0, 2},     // Bar 1, beat 0: pitch repeat
+    {1, 3.0f, HookTechnique::Accent, 0, 1},         // Bar 1, beat 3: accent
+    {2, 0.0f, HookTechnique::LongNote, 0, 4},       // Bar 2, beat 0: long note
+    {3, 0.0f, HookTechnique::DescendingPhrase, -3, 2},  // Bar 3: descending
+};
+
+// Check if a position matches a hook point based on intensity level
+bool isHookPoint(uint8_t bar_in_section, float beat_in_bar,
+                 HookIntensity intensity, HookTechnique& out_technique,
+                 int8_t& out_interval, uint8_t& out_duration) {
+  if (intensity == HookIntensity::Off) {
+    return false;
+  }
+
+  for (const auto& hook : kChorusHooks) {
+    // Check bar and beat match (with small tolerance for beat)
+    if (hook.bar_offset == bar_in_section &&
+        std::abs(hook.beat - beat_in_bar) < 0.1f) {
+
+      // Filter by intensity level
+      bool should_apply = false;
+      switch (intensity) {
+        case HookIntensity::Light:
+          // Only first hook point (chorus opening)
+          should_apply = (hook.bar_offset == 0 && hook.beat < 0.1f);
+          break;
+        case HookIntensity::Normal:
+          // First two bars
+          should_apply = (hook.bar_offset <= 1);
+          break;
+        case HookIntensity::Strong:
+          // All hook points
+          should_apply = true;
+          break;
+        default:
+          break;
+      }
+
+      if (should_apply) {
+        out_technique = hook.technique;
+        out_interval = hook.interval_hint;
+        out_duration = hook.duration_eighths;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Apply hook technique to modify note parameters
+void applyHookTechnique(int& pitch, Tick& duration, uint8_t& velocity,
+                        HookTechnique technique, int8_t interval_hint,
+                        uint8_t duration_hint, uint8_t vocal_low,
+                        uint8_t vocal_high, int prev_pitch) {
+  switch (technique) {
+    case HookTechnique::LongNote:
+      // Extend duration to create a sustained "hook" note
+      duration = std::max(duration,
+                          static_cast<Tick>(duration_hint * TICKS_PER_BEAT / 2));
+      // Slightly boost velocity for emphasis
+      velocity = static_cast<uint8_t>(std::min(127, velocity + 8));
+      break;
+
+    case HookTechnique::HighLeap:
+      // Apply upward leap for dramatic effect
+      if (interval_hint > 0) {
+        int new_pitch = pitch + interval_hint;
+        // Constrain to vocal range
+        if (new_pitch <= vocal_high) {
+          pitch = new_pitch;
+        } else {
+          // If can't go up, at least move toward the top of range
+          pitch = std::min(pitch + 2, static_cast<int>(vocal_high));
+        }
+      }
+      // Boost velocity for emphasis
+      velocity = static_cast<uint8_t>(std::min(127, velocity + 12));
+      break;
+
+    case HookTechnique::Accent:
+      // Strong velocity accent
+      velocity = static_cast<uint8_t>(std::min(127, velocity + 15));
+      break;
+
+    case HookTechnique::Repetition:
+      // Repeat the previous pitch for hook recognition
+      if (prev_pitch > 0 && prev_pitch >= vocal_low && prev_pitch <= vocal_high) {
+        pitch = prev_pitch;
+      }
+      break;
+
+    case HookTechnique::DescendingPhrase:
+      // Move downward for resolution feel
+      if (interval_hint < 0) {
+        int new_pitch = pitch + interval_hint;
+        if (new_pitch >= vocal_low) {
+          pitch = new_pitch;
+        }
+      }
+      break;
+
+    default:
+      // No modification for None
+      break;
+  }
+}
+
+// ============================================================================
+// Section Melody Profile Support
+// ============================================================================
+//
+// Different sections of a song have different melodic characteristics:
+// - Verse (A): Lower energy, more conversational, moderate density
+// - Pre-chorus (B): Building tension, increasing density
+// - Chorus: High energy, memorable hooks, highest density
+// - Bridge: Contrast, often lower density with long notes
+// - Outro: Winding down, sparse with sustained notes
+// ============================================================================
+
+// Section-specific melody modifiers
+struct SectionMelodyModifier {
+  float density_modifier = 1.0f;    // Multiplier for note density
+  float rest_modifier = 1.0f;       // Multiplier for rest probability
+  float long_note_boost = 0.0f;     // Additive boost for long note probability
+};
+
+// Get section-specific melody modifiers based on section type
+// is_last_chorus: true if this is the final chorus (for climactic treatment)
+SectionMelodyModifier getSectionMelodyModifier(SectionType type, bool is_last_chorus) {
+  SectionMelodyModifier mod;
+
+  switch (type) {
+    case SectionType::Intro:
+      // Intro: sparse, atmospheric, prepare the listener
+      mod.density_modifier = 0.5f;
+      mod.rest_modifier = 2.0f;       // More rests for breathing room
+      mod.long_note_boost = 0.3f;     // More sustained notes
+      break;
+
+    case SectionType::A:
+      // Verse: conversational, moderate density
+      mod.density_modifier = 0.9f;
+      mod.rest_modifier = 1.2f;       // Slightly more rests
+      mod.long_note_boost = 0.0f;
+      break;
+
+    case SectionType::B:
+      // Pre-chorus: building tension
+      mod.density_modifier = 1.0f;
+      mod.rest_modifier = 1.0f;
+      mod.long_note_boost = 0.1f;     // Some held notes for anticipation
+      break;
+
+    case SectionType::Chorus:
+      // Chorus: high energy, memorable
+      mod.density_modifier = is_last_chorus ? 1.2f : 1.1f;
+      mod.rest_modifier = 0.8f;       // Fewer rests, more continuous
+      mod.long_note_boost = is_last_chorus ? 0.3f : 0.2f;  // Hook emphasis
+      break;
+
+    case SectionType::Bridge:
+      // Bridge: contrast, often more melodic
+      mod.density_modifier = 0.7f;
+      mod.rest_modifier = 1.5f;       // More space
+      mod.long_note_boost = 0.3f;     // Sustained emotional notes
+      break;
+
+    case SectionType::Outro:
+      // Outro: winding down
+      mod.density_modifier = 0.6f;
+      mod.rest_modifier = 1.5f;
+      mod.long_note_boost = 0.4f;     // Sustained for resolution
+      break;
+
+    case SectionType::Interlude:
+      // Interlude: instrumental break, sparse vocals if any
+      mod.density_modifier = 0.4f;
+      mod.rest_modifier = 2.5f;
+      mod.long_note_boost = 0.2f;
+      break;
+
+    case SectionType::Chant:
+      // Chant: repetitive, rhythmic
+      mod.density_modifier = 1.0f;
+      mod.rest_modifier = 0.7f;       // Less rests, more rhythmic
+      mod.long_note_boost = 0.0f;
+      break;
+
+    case SectionType::MixBreak:
+      // Mix break: atmospheric, sparse
+      mod.density_modifier = 0.3f;
+      mod.rest_modifier = 3.0f;
+      mod.long_note_boost = 0.5f;
+      break;
+
+    default:
+      // Default: no modification
+      break;
+  }
+
+  return mod;
+}
+
+// ============================================================================
+// Vocal Groove Feel Support
+// ============================================================================
+//
+// Groove controls the rhythmic timing and feel of the melody.
+// Different grooves shift note positions and affect note selection:
+// - Straight: Standard on-beat timing
+// - OffBeat: Phrases tend to start on upbeats
+// - Swing: Weak beats shifted later (triplet feel)
+// - Syncopated: Emphasis on off-beats and anticipations
+// - Driving16th: More 16th note activity
+// - Bouncy8th: Light swing on 8th notes
+// ============================================================================
+
+// Groove timing adjustment parameters
+struct GrooveParams {
+  float swing_amount = 0.0f;       // 0.0 = straight, 0.33 = full triplet swing
+  float offbeat_preference = 0.0f; // Probability bias for starting on offbeats
+  float syncopation_boost = 0.0f;  // Additional probability for syncopated notes
+  bool prefer_16th = false;        // Prefer 16th note patterns
+};
+
+// Get groove parameters for a given groove feel
+GrooveParams getGrooveParams(VocalGrooveFeel groove) {
+  GrooveParams params;
+
+  switch (groove) {
+    case VocalGrooveFeel::Straight:
+      // Default straight timing, no modifications
+      break;
+
+    case VocalGrooveFeel::OffBeat:
+      params.offbeat_preference = 0.4f;  // 40% more likely to start on upbeats
+      params.syncopation_boost = 0.2f;
+      break;
+
+    case VocalGrooveFeel::Swing:
+      params.swing_amount = 0.25f;  // Moderate swing (not full triplet)
+      params.syncopation_boost = 0.1f;
+      break;
+
+    case VocalGrooveFeel::Syncopated:
+      params.syncopation_boost = 0.4f;  // Strong syncopation preference
+      params.offbeat_preference = 0.3f;
+      break;
+
+    case VocalGrooveFeel::Driving16th:
+      params.prefer_16th = true;
+      params.syncopation_boost = 0.15f;
+      break;
+
+    case VocalGrooveFeel::Bouncy8th:
+      params.swing_amount = 0.15f;  // Light swing
+      break;
+
+    default:
+      break;
+  }
+
+  return params;
+}
+
+// Apply swing timing to a note tick
+// swing_amount: 0.0 = straight, 0.33 = full triplet swing
+// Affects every other 8th note position (upbeats)
+Tick applySwingTiming(Tick tick, float swing_amount) {
+  if (swing_amount <= 0.0f) return tick;
+
+  // Calculate position within the beat (480 ticks per beat)
+  Tick beat_pos = tick % TICKS_PER_BEAT;
+
+  // Check if this is an upbeat (8th note position = 240 ticks into beat)
+  // Upbeat is between 200-280 ticks (to catch slight variations)
+  if (beat_pos >= 200 && beat_pos <= 280) {
+    // Shift upbeat later by swing_amount * 160 ticks
+    // (160 = difference between straight 8th and triplet position)
+    Tick shift = static_cast<Tick>(swing_amount * 160.0f);
+    return tick + shift;
+  }
+
+  return tick;
+}
+
+// Check if a beat position should be preferred for offbeat groove
+// Note: Reserved for future offbeat groove enhancement
+[[maybe_unused]]
+bool shouldPreferOffbeat(float beat_in_bar, float offbeat_preference, std::mt19937& rng) {
+  if (offbeat_preference <= 0.0f) return false;
+
+  // Offbeat positions: 0.5, 1.5, 2.5, 3.5 (8th note upbeats)
+  float beat_fraction = beat_in_bar - std::floor(beat_in_bar);
+  bool is_offbeat = (beat_fraction >= 0.4f && beat_fraction <= 0.6f);
+
+  if (is_offbeat) {
+    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    return dist(rng) < offbeat_preference;
+  }
+
+  return false;
+}
+
 // Calculate tessitura (comfortable range) from full vocal range
 // Tessitura is typically the middle 60-70% of the range
 struct TessituraRange {
@@ -111,6 +442,8 @@ float getComfortScore(uint8_t pitch, const TessituraRange& tessitura,
 // Returns an adjusted pitch that's more comfortable to sing
 // IMPORTANT: This function is conservative to avoid breaking interval constraints
 // It only makes small adjustments (max 2 semitones) to preserve melodic shape
+// Note: Reserved for future tessitura-aware pitch adjustment
+[[maybe_unused]]
 uint8_t adjustForTessitura(uint8_t target_pitch, uint8_t /* prev_pitch */,
                             const TessituraRange& tessitura,
                             uint8_t vocal_low, uint8_t vocal_high,
@@ -908,6 +1241,10 @@ void generateVocalTrack(MidiTrack& track, Song& song,
   const bool is_vocaloid_style = (params.vocal_style == VocalStylePreset::Vocaloid ||
                                    params.vocal_style == VocalStylePreset::UltraVocaloid);
 
+  // === Vocal groove feel ===
+  // Get groove parameters for timing adjustments
+  const GrooveParams groove_params = getGrooveParams(params.vocal_groove);
+
   // === Vocal density parameters ===
   // min_note_division: 4=quarter, 8=eighth, 16=sixteenth, 32=32nd
   // Convert to minimum duration in eighths: 8/min_note_division
@@ -1087,6 +1424,33 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     bool is_repeat = (section_occurrence[section.type] > 1);
     bool use_cached = is_repeat &&
                       (phrase_cache.find(section.type) != phrase_cache.end());
+
+    // Determine if this is the last chorus by checking remaining sections
+    bool is_last_chorus = false;
+    if (section.type == SectionType::Chorus) {
+      is_last_chorus = true;  // Assume last until proven otherwise
+      bool found_current = false;
+      for (const auto& sec : sections) {
+        if (&sec == &section) {
+          found_current = true;
+          continue;
+        }
+        if (found_current && sec.type == SectionType::Chorus) {
+          is_last_chorus = false;  // Another chorus follows
+          break;
+        }
+      }
+    }
+
+    // Get section melody modifier for rest and long note adjustments
+    SectionMelodyModifier section_modifier = getSectionMelodyModifier(section.type, is_last_chorus);
+
+    // === SECTION-SPECIFIC EXTREME LEAP (RangeProfile) ===
+    // Only allow extreme leaps (octave jumps) in climactic sections
+    // This creates more dramatic contrast between verse and chorus
+    bool section_allows_extreme = (section.type == SectionType::Chorus ||
+                                   section.type == SectionType::Bridge);
+    bool section_extreme_leap = allow_extreme_leap && section_allows_extreme;
 
     // Modulation is applied at MIDI output time (in MidiWriter), not here.
     // This ensures consistent handling across all tracks.
@@ -1316,7 +1680,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
           pitch_shift = 2;  // One whole step up
         }
 
-        const int MAX_HOOK_INTERVAL = allow_extreme_leap ? 12 : 7;  // Max interval for hook continuity
+        const int MAX_HOOK_INTERVAL = section_extreme_leap ? 12 : 7;  // Max interval for hook continuity
 
         for (const auto& note : chorus_hook_notes) {
           Tick absolute_tick = motif_start_tick + note.startTick;
@@ -1502,9 +1866,11 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
           // === VOCAL REST RATIO ===
           // Add additional rests for breathing room
+          // Apply section_modifier.rest_modifier: higher = more rests
           if (!should_skip && !rn.strong && vocal_rest_ratio > 0.0f) {
+            float effective_rest_ratio = vocal_rest_ratio * section_modifier.rest_modifier;
             std::uniform_real_distribution<float> rest_dist(0.0f, 1.0f);
-            should_skip = rest_dist(rng) < vocal_rest_ratio;
+            should_skip = rest_dist(rng) < effective_rest_ratio;
           }
         }
 
@@ -1591,9 +1957,9 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         // Key principle: Limit intervals to create smooth, singable lines
         // Maximum interval: 5 semitones (perfect 4th) for most notes
         // Occasionally allow 7 semitones (perfect 5th) for expressiveness
-        // When allow_extreme_leap is true (vocaloid mode), allow up to octave
-        const int MAX_SINGABLE_INTERVAL = allow_extreme_leap ? 12 : 5;  // Octave or Perfect 4th
-        const int MAX_EXPRESSIVE_INTERVAL = allow_extreme_leap ? 12 : 7;  // Octave or Perfect 5th
+        // Section-specific: extreme leaps (octave) only in Chorus/Bridge
+        const int MAX_SINGABLE_INTERVAL = section_extreme_leap ? 12 : 5;  // Octave or Perfect 4th
+        const int MAX_EXPRESSIVE_INTERVAL = section_extreme_leap ? 12 : 7;  // Octave or Perfect 5th
 
         // Convert to target pitch first
         int target_pitch = degreeToPitch(scale_degree, base_octave, key_offset);
@@ -1612,7 +1978,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         int constraint_low = static_cast<int>(effective_vocal_low);
         int constraint_high = static_cast<int>(effective_vocal_high);
 
-        // === SECTION CADENCE (終止形) ===
+        // === SECTION CADENCE ===
         // Check for section final note and force chord tone resolution
         bool is_section_final_note_check = (motif_start + bars_in_motif >= section.bars) &&
                                            (rn_idx == rhythm.size() - 1);
@@ -1721,6 +2087,10 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         // Apply probabilistic long note extension based on style parameters
         // This creates the "anthem" feel for Idol/Rock/Ballad styles
         float long_note_prob = melody_params.long_note_ratio;
+
+        // Apply section-specific long note boost from SectionMelodyModifier
+        // This adds emotional sustain in bridges, outros, and last chorus
+        long_note_prob = std::min(1.0f, long_note_prob + section_modifier.long_note_boost);
 
         // Boost probability in chorus when chorus_long_tones is enabled
         if (section.type == SectionType::Chorus && melody_params.chorus_long_tones) {
@@ -1865,18 +2235,41 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
           prev_pitch = safe_ant_pitch;
         } else {
+          // === HOOK POINT PROCESSING ===
+          // Apply hook techniques at key positions in chorus sections
+          // This creates memorable "hook" moments in the melody
+          if (is_chorus && params.hook_intensity != HookIntensity::Off) {
+            uint8_t bar_in_section = motif_start + bar_offset;
+            HookTechnique hook_technique;
+            int8_t hook_interval;
+            uint8_t hook_duration;
+
+            if (isHookPoint(bar_in_section, beat_in_bar, params.hook_intensity,
+                            hook_technique, hook_interval, hook_duration)) {
+              // Apply hook technique to modify pitch, duration, and velocity
+              applyHookTechnique(pitch, duration, velocity, hook_technique,
+                                 hook_interval, hook_duration,
+                                 effective_vocal_low, effective_vocal_high,
+                                 prev_pitch);
+            }
+          }
+
           // Regular note - use safe pitch to avoid chord clashes
           uint8_t safe_pitch = getSafePitch(pitch, note_tick, duration);
 
           // IMPORTANT: If getSafePitch violates interval constraint, prefer melodic continuity
           // Use actual_prev_pitch (the PREVIOUS note's stored pitch) for accurate interval check
-          const int MAX_REGULAR_INTERVAL = allow_extreme_leap ? 12 : 7;  // Octave or Perfect 5th
+          const int MAX_REGULAR_INTERVAL = section_extreme_leap ? 12 : 7;  // Octave or Perfect 5th
           if (actual_prev_pitch > 0 && std::abs(static_cast<int>(safe_pitch) - actual_prev_pitch) > MAX_REGULAR_INTERVAL) {
             // Revert to the interval-constrained pitch
             safe_pitch = static_cast<uint8_t>(pitch);
           }
 
-          track.addNote(note_tick, duration, safe_pitch, velocity);
+          // === APPLY GROOVE TIMING ===
+          // Apply swing timing if groove_params.swing_amount > 0
+          Tick grooved_tick = applySwingTiming(note_tick, groove_params.swing_amount);
+
+          track.addNote(grooved_tick, duration, safe_pitch, velocity);
           phrase_notes.push_back(
               {relative_tick, duration, safe_pitch, velocity});
 

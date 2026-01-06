@@ -174,6 +174,14 @@ export interface SongConfig {
   motifFixedProgression: boolean;
   /** Max chord count (0=no limit, 2-8) */
   motifMaxChordCount: number;
+
+  // Melodic complexity and hook control
+  /** Melodic complexity: 0=Simple, 1=Standard, 2=Complex */
+  melodicComplexity: number;
+  /** Hook intensity: 0=Off, 1=Light, 2=Normal, 3=Strong */
+  hookIntensity: number;
+  /** Vocal groove feel: 0=Straight, 1=OffBeat, 2=Swing, 3=Syncopated, 4=Driving16th, 5=Bouncy8th */
+  vocalGroove: number;
 }
 
 /**
@@ -321,6 +329,49 @@ export const ArrangementGrowth = {
 export const MotifRepeatScope = {
   FullSong: 0,
   Section: 1,
+} as const;
+
+// Melodic complexity constants
+export const MelodicComplexity = {
+  Simple: 0,
+  Standard: 1,
+  Complex: 2,
+} as const;
+
+// Hook intensity constants
+export const HookIntensity = {
+  Off: 0,
+  Light: 1,
+  Normal: 2,
+  Strong: 3,
+} as const;
+
+// Vocal groove feel constants
+export const VocalGrooveFeel = {
+  Straight: 0,
+  OffBeat: 1,
+  Swing: 2,
+  Syncopated: 3,
+  Driving16th: 4,
+  Bouncy8th: 5,
+} as const;
+
+// Vocal style preset constants
+export const VocalStylePreset = {
+  Auto: 0,
+  Standard: 1,
+  Vocaloid: 2,
+  UltraVocaloid: 3,
+  Idol: 4,
+  Ballad: 5,
+  Rock: 6,
+  CityPop: 7,
+  Anime: 8,
+  // Extended styles (9-12)
+  BrightKira: 9,
+  CoolSynth: 10,
+  CuteAffected: 11,
+  PowerfulShout: 12,
 } as const;
 
 let moduleInstance: EmscriptenModule | null = null;
@@ -604,6 +655,11 @@ export function createDefaultConfig(styleId: number): SongConfig {
     motifRepeatScope: view.getUint8(retPtr + 48),
     motifFixedProgression: view.getUint8(retPtr + 49) !== 0,
     motifMaxChordCount: view.getUint8(retPtr + 50),
+
+    // Melodic complexity and hook control
+    melodicComplexity: view.getUint8(retPtr + 51),
+    hookIntensity: view.getUint8(retPtr + 52),
+    vocalGroove: view.getUint8(retPtr + 53),
   };
 }
 
@@ -788,6 +844,11 @@ export class MidiSketch {
     view.setUint8(ptr + 48, config.motifRepeatScope ?? 0);
     view.setUint8(ptr + 49, config.motifFixedProgression !== false ? 1 : 0);
     view.setUint8(ptr + 50, config.motifMaxChordCount ?? 4);
+
+    // Melodic complexity and hook control
+    view.setUint8(ptr + 51, config.melodicComplexity ?? 1); // Default: Standard
+    view.setUint8(ptr + 52, config.hookIntensity ?? 2); // Default: Normal
+    view.setUint8(ptr + 53, config.vocalGroove ?? 0); // Default: Straight
 
     return ptr;
   }

@@ -522,11 +522,6 @@ TEST_F(HarmonyIntegrationTest, RegenerateMotifMaintainsRangeSeparation) {
   Generator gen;
   gen.generate(params_);
 
-  // Get initial ranges
-  const auto& song1 = gen.getSong();
-  auto vocal_range1 = song1.vocal().analyzeRange();
-  auto motif_range1 = song1.motif().analyzeRange();
-
   // Regenerate motif with different seed
   gen.regenerateMotif(22222);
 

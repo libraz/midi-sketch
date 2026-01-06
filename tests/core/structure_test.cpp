@@ -107,6 +107,8 @@ TEST(StructureTest, ExtendedFullContainsRequiredSections) {
       case SectionType::Interlude: has_interlude = true; break;
       case SectionType::Bridge: has_bridge = true; break;
       case SectionType::Outro: has_outro = true; break;
+      case SectionType::Chant: break;  // Not expected in ExtendedFull
+      case SectionType::MixBreak: break;  // Not expected in ExtendedFull
     }
   }
 
@@ -215,8 +217,8 @@ TEST(StructureTest, BuildForDurationEndsWithOutro) {
 }
 
 TEST(StructureTest, BuildForDurationHasInterludeForLongSongs) {
-  // Long songs (2+ blocks = 60+ bars) should have Interlude
-  auto sections = buildStructureForDuration(180, 120);  // ~90 bars
+  // ExtendedFull pattern contains Interlude
+  auto sections = buildStructureForDuration(180, 120, StructurePattern::ExtendedFull);
 
   bool has_interlude = false;
   for (const auto& section : sections) {
@@ -226,12 +228,12 @@ TEST(StructureTest, BuildForDurationHasInterludeForLongSongs) {
     }
   }
 
-  EXPECT_TRUE(has_interlude) << "Long songs should have Interlude";
+  EXPECT_TRUE(has_interlude) << "ExtendedFull pattern should have Interlude";
 }
 
 TEST(StructureTest, BuildForDurationHasBridgeForVeryLongSongs) {
-  // Very long songs (3+ blocks = 80+ bars) should have Bridge
-  auto sections = buildStructureForDuration(240, 120);  // ~120 bars
+  // ExtendedFull pattern contains Bridge
+  auto sections = buildStructureForDuration(240, 120, StructurePattern::ExtendedFull);
 
   bool has_bridge = false;
   for (const auto& section : sections) {
@@ -241,7 +243,7 @@ TEST(StructureTest, BuildForDurationHasBridgeForVeryLongSongs) {
     }
   }
 
-  EXPECT_TRUE(has_bridge) << "Very long songs should have Bridge";
+  EXPECT_TRUE(has_bridge) << "ExtendedFull pattern should have Bridge";
 }
 
 TEST(StructureTest, BuildForDurationDifferentBPM) {

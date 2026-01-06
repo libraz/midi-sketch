@@ -149,10 +149,124 @@ void applyVocalStylePreset(GeneratorParams& params,
       params.vocal_rest_ratio = 0.1f;
       break;
 
+    // === Extended Styles (9-12) ===
+
+    case VocalStylePreset::BrightKira:
+      // BrightKira: Bright sparkly style
+      // High energy, uplifting, lots of movement
+      if (!user_set_division) {
+        params.melody_params.min_note_division = 8;
+      }
+      params.melody_params.sixteenth_note_ratio = 0.2f;
+      if (!user_set_density) {
+        params.melody_params.note_density = 0.85f;
+      }
+      params.melody_params.long_note_ratio = 0.2f;
+      params.melody_params.hook_repetition = true;
+      params.melody_params.chorus_long_tones = true;
+      params.melody_params.chorus_register_shift = 7;  // Higher for brightness
+      params.melody_params.max_leap_interval = 10;
+      params.melody_params.syncopation_prob = 0.2f;
+      params.vocal_rest_ratio = 0.08f;  // Less rests, more energy
+      break;
+
+    case VocalStylePreset::CoolSynth:
+      // CoolSynth: Cool synthetic style
+      // Robotic, precise, mechanical feel
+      if (!user_set_division) {
+        params.melody_params.min_note_division = 16;
+      }
+      params.melody_params.sixteenth_note_ratio = 0.35f;
+      if (!user_set_density) {
+        params.melody_params.note_density = 0.75f;
+      }
+      params.melody_params.long_note_ratio = 0.15f;
+      params.melody_params.hook_repetition = true;
+      params.melody_params.chorus_long_tones = false;  // No sustained notes
+      params.melody_params.max_leap_interval = 7;  // Smaller, mechanical leaps
+      params.melody_params.syncopation_prob = 0.15f;
+      params.melody_params.allow_bar_crossing = true;
+      params.vocal_rest_ratio = 0.12f;
+      break;
+
+    case VocalStylePreset::CuteAffected:
+      // CuteAffected: Cute affected style
+      // Sweet, bouncy, playful
+      if (!user_set_division) {
+        params.melody_params.min_note_division = 8;
+      }
+      params.melody_params.sixteenth_note_ratio = 0.15f;
+      if (!user_set_density) {
+        params.melody_params.note_density = 0.7f;
+      }
+      params.melody_params.long_note_ratio = 0.3f;  // More sustained "cute" notes
+      params.melody_params.hook_repetition = true;
+      params.melody_params.chorus_long_tones = true;
+      params.melody_params.chorus_register_shift = 5;  // Higher register
+      params.melody_params.max_leap_interval = 8;
+      params.melody_params.syncopation_prob = 0.1f;  // Less syncopation
+      params.vocal_rest_ratio = 0.15f;
+      break;
+
+    case VocalStylePreset::PowerfulShout:
+      // PowerfulShout: Powerful shout style
+      // Strong, intense, anthemic
+      if (!user_set_division) {
+        params.melody_params.min_note_division = 4;  // Quarter notes minimum
+      }
+      params.melody_params.sixteenth_note_ratio = 0.05f;  // Few fast notes
+      if (!user_set_density) {
+        params.melody_params.note_density = 0.6f;  // Lower density, bigger notes
+      }
+      params.melody_params.long_note_ratio = 0.5f;  // Many long, powerful notes
+      params.melody_params.hook_repetition = true;
+      params.melody_params.chorus_long_tones = true;
+      params.melody_params.chorus_density_modifier = 1.3f;  // Big chorus boost
+      params.melody_params.max_leap_interval = 12;  // Octave leaps allowed
+      params.melody_params.syncopation_prob = 0.2f;
+      params.vocal_rest_ratio = 0.2f;  // Breathing room for power
+      break;
+
     case VocalStylePreset::Auto:
     case VocalStylePreset::Standard:
     default:
       // No changes - use StylePreset defaults
+      break;
+  }
+}
+
+// Apply MelodicComplexity settings to melody parameters.
+// Simple: fewer notes, smaller leaps, more repetition
+// Complex: more notes, larger leaps, more variation
+void applyMelodicComplexity(GeneratorParams& params) {
+  switch (params.melodic_complexity) {
+    case MelodicComplexity::Simple:
+      // Reduce complexity for catchier, simpler melodies
+      params.melody_params.note_density *= 0.7f;
+      params.melody_params.max_leap_interval =
+          std::min(static_cast<uint8_t>(5), params.melody_params.max_leap_interval);
+      params.melody_params.hook_repetition = true;  // Enable hook repetition
+      params.melody_params.tension_usage *= 0.5f;   // Less tension
+      params.melody_params.sixteenth_note_ratio *= 0.5f;  // Fewer fast notes
+      params.melody_params.syncopation_prob *= 0.5f;  // Less syncopation
+      break;
+
+    case MelodicComplexity::Complex:
+      // Increase complexity for more varied, intricate melodies
+      params.melody_params.note_density *= 1.3f;
+      params.melody_params.max_leap_interval = std::min(
+          static_cast<uint8_t>(12),
+          static_cast<uint8_t>(params.melody_params.max_leap_interval * 1.5f));
+      params.melody_params.tension_usage *= 1.5f;
+      params.melody_params.sixteenth_note_ratio =
+          std::min(0.5f, params.melody_params.sixteenth_note_ratio * 1.5f);
+      params.melody_params.syncopation_prob =
+          std::min(0.5f, params.melody_params.syncopation_prob * 1.5f);
+      break;
+
+    case MelodicComplexity::Standard:
+    default:
+      // No changes
       break;
   }
 }
@@ -327,6 +441,14 @@ void Generator::generateFromConfig(const SongConfig& config) {
   // This may override rest_ratio/extreme_leap for high-density styles
   applyVocalStylePreset(params, config);
 
+  // Transfer melodic complexity, hook intensity, and groove feel
+  params.melodic_complexity = config.melodic_complexity;
+  params.hook_intensity = config.hook_intensity;
+  params.vocal_groove = config.vocal_groove;
+
+  // Apply MelodicComplexity-specific parameter adjustments
+  applyMelodicComplexity(params);
+
   // Dynamic duration (0 = use form pattern)
   params.target_duration_seconds = config.target_duration_seconds;
 
@@ -377,8 +499,10 @@ void Generator::generate(const GeneratorParams& params) {
   // Build song structure (dynamic duration or fixed pattern)
   std::vector<Section> sections;
   if (params.target_duration_seconds > 0) {
+    // Use the randomly selected structure pattern as base for duration scaling
     sections = buildStructureForDuration(params.target_duration_seconds, bpm,
-                                          call_enabled_, intro_chant_, mix_pattern_);
+                                          call_enabled_, intro_chant_, mix_pattern_,
+                                          params.structure);
   } else {
     sections = buildStructure(params.structure);
     if (call_enabled_) {
@@ -527,6 +651,13 @@ void Generator::regenerateVocalFromConfig(const SongConfig& config,
 
   // Apply VocalStylePreset-specific parameter adjustments
   applyVocalStylePreset(params_, config);
+
+  // Transfer melodic complexity and hook intensity
+  params_.melodic_complexity = config.melodic_complexity;
+  params_.hook_intensity = config.hook_intensity;
+
+  // Apply MelodicComplexity-specific parameter adjustments
+  applyMelodicComplexity(params_);
 
   // Regenerate with updated parameters
   uint32_t seed = (new_seed == 0) ? song_.melodySeed() : resolveSeed(new_seed);

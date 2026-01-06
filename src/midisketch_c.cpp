@@ -347,6 +347,11 @@ MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
   s_default_config.motif_fixed_progression = cpp_config.motif_chord.fixed_progression ? 1 : 0;
   s_default_config.motif_max_chord_count = cpp_config.motif_chord.max_chord_count;
 
+  // Melodic complexity, hook intensity, and groove
+  s_default_config.melodic_complexity = static_cast<uint8_t>(cpp_config.melodic_complexity);
+  s_default_config.hook_intensity = static_cast<uint8_t>(cpp_config.hook_intensity);
+  s_default_config.vocal_groove = static_cast<uint8_t>(cpp_config.vocal_groove);
+
   return &s_default_config;
 }
 
@@ -509,6 +514,11 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   // Motif settings
   cpp_config.motif_chord.fixed_progression = config->motif_fixed_progression != 0;
   cpp_config.motif_chord.max_chord_count = config->motif_max_chord_count;
+
+  // Melodic complexity, hook intensity, and groove
+  cpp_config.melodic_complexity = static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);
+  cpp_config.hook_intensity = static_cast<midisketch::HookIntensity>(config->hook_intensity);
+  cpp_config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(config->vocal_groove);
 
   sketch->generateFromConfig(cpp_config);
   return MIDISKETCH_OK;

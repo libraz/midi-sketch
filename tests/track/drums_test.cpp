@@ -514,7 +514,6 @@ TEST_F(DrumsTest, FillsAtSectionBoundaries) {
   gen.generate(params_);
 
   const auto& track = gen.getSong().drums();
-  const auto& arrangement = gen.getSong().arrangement();
 
   // Look for tom activity (fills typically use toms)
   int tom_notes = 0;

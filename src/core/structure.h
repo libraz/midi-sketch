@@ -14,8 +14,12 @@ std::vector<Section> buildStructure(StructurePattern pattern);
 // Builds a list of sections to match a target duration.
 // @param target_seconds Target duration in seconds
 // @param bpm Tempo in beats per minute
+// @param pattern Structure pattern to use as base (default: FullPop for complete song)
 // @returns Vector of Section structs matching the target duration
-std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t bpm);
+std::vector<Section> buildStructureForDuration(
+    uint16_t target_seconds,
+    uint16_t bpm,
+    StructurePattern pattern = StructurePattern::FullPop);
 
 // Calculates the total duration in ticks for the given sections.
 // @param sections Vector of sections
@@ -37,13 +41,15 @@ uint16_t calculateTotalBars(const std::vector<Section>& sections);
 // @param call_enabled Whether call is enabled
 // @param intro_chant IntroChant pattern
 // @param mix_pattern MixPattern
+// @param pattern Structure pattern to use as base (default: FullPop for complete song)
 // @returns Vector of Section structs with call sections inserted
 std::vector<Section> buildStructureForDuration(
     uint16_t target_seconds,
     uint16_t bpm,
     bool call_enabled,
     IntroChant intro_chant,
-    MixPattern mix_pattern);
+    MixPattern mix_pattern,
+    StructurePattern pattern = StructurePattern::FullPop);
 
 // Inserts call sections into an existing structure.
 // Modifies the sections vector in place, recalculating ticks.

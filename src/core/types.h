@@ -296,7 +296,37 @@ enum class VocalStylePreset : uint8_t {
   Ballad,         // Slow ballad
   Rock,           // Rock style
   CityPop,        // City pop style
-  Anime           // Anime song style
+  Anime,          // Anime song style
+  // Extended styles (9-12)
+  BrightKira,     // Bright sparkly style
+  CoolSynth,      // Cool synthetic style
+  CuteAffected,   // Cute affected style
+  PowerfulShout   // Powerful shout style
+};
+
+// Melodic complexity level for controlling melody simplicity.
+enum class MelodicComplexity : uint8_t {
+  Simple = 0,    // Simple melody (fewer notes, smaller leaps, more repetition)
+  Standard = 1,  // Standard complexity
+  Complex = 2    // Complex melody (more notes, larger leaps, more variation)
+};
+
+// Hook intensity for controlling catchiness at key positions.
+enum class HookIntensity : uint8_t {
+  Off = 0,     // No hook emphasis
+  Light = 1,   // Light emphasis (chorus start only)
+  Normal = 2,  // Normal emphasis (chorus start + middle)
+  Strong = 3   // Strong emphasis (all hook points)
+};
+
+// Hook technique applied at hook points.
+enum class HookTechnique : uint8_t {
+  None = 0,          // No special treatment
+  LongNote = 1,      // Long note (2+ beats)
+  HighLeap = 2,      // Upward leap (5th or more)
+  Accent = 3,        // Accent (high velocity)
+  Repetition = 4,    // Pitch repetition
+  DescendingPhrase = 5  // Descending phrase
 };
 
 // Vocal rhythm bias.
@@ -304,6 +334,16 @@ enum class VocalRhythmBias : uint8_t {
   OnBeat,
   OffBeat,
   Sparse
+};
+
+// Vocal groove feel - controls timing nuances and rhythmic character.
+enum class VocalGrooveFeel : uint8_t {
+  Straight = 0,     // On-beat, straight timing
+  OffBeat = 1,      // Off-beat emphasis, phrases start on upbeats
+  Swing = 2,        // Swing feel, triplet-based timing
+  Syncopated = 3,   // Heavy syncopation emphasis
+  Driving16th = 4,  // 16th note driven, energetic
+  Bouncy8th = 5     // Bouncy 8th notes with slight swing
 };
 
 // Arrangement growth method.
@@ -553,6 +593,11 @@ struct SongConfig {
                                           // 4=quarter, 8=eighth, 16=16th, 32=32nd
   float vocal_rest_ratio = 0.15f;         // Rest ratio between phrases (0.0-0.5)
   bool vocal_allow_extreme_leap = false;  // Allow extreme leaps (for vocaloid mode)
+
+  // === Melodic complexity and hook control ===
+  MelodicComplexity melodic_complexity = MelodicComplexity::Standard;
+  HookIntensity hook_intensity = HookIntensity::Normal;
+  VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
 };
 
 // Input parameters for MIDI generation.
@@ -603,6 +648,11 @@ struct GeneratorParams {
   // Vocal density parameters (from SongConfig override)
   float vocal_rest_ratio = 0.15f;         // Rest ratio between phrases
   bool vocal_allow_extreme_leap = false;  // Allow extreme leaps (vocaloid mode)
+
+  // Melodic complexity and hook control
+  MelodicComplexity melodic_complexity = MelodicComplexity::Standard;
+  HookIntensity hook_intensity = HookIntensity::Normal;
+  VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
 };
 
 // Parameters for regenerating only the vocal melody.

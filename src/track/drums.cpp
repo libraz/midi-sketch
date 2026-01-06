@@ -232,7 +232,7 @@ float getGhostDensity(Mood mood, SectionType section,
       base_density *= 0.9f;
       break;
     case SectionType::Chorus:
-      base_density *= 1.2f;
+      base_density *= 1.0f;  // No boost for DAW flexibility
       break;
     case SectionType::Bridge:
       base_density *= 0.6f;
@@ -559,7 +559,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         density_mult = 0.85f;   // Building tension
         break;
       case SectionType::Chorus:
-        density_mult = 1.15f;   // Powerful chorus
+        density_mult = 1.00f;   // Moderate chorus for DAW flexibility
         add_crash_accent = true;
         break;
       case SectionType::Bridge:

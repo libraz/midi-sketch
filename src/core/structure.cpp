@@ -213,10 +213,12 @@ Tick calculateTotalTicks(const std::vector<Section>& sections) {
   return last.start_tick + (last.bars * TICKS_PER_BEAT * 4);
 }
 
-std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t bpm) {
+std::vector<Section> buildStructureForDuration(
+    uint16_t target_seconds,
+    uint16_t bpm,
+    StructurePattern pattern) {
   // Calculate target bars from duration and BPM
   // bars = seconds * bpm / 60 / 4 (4 beats per bar)
-  // Use floating point to reduce rounding error (previously ±4 seconds)
   uint16_t target_bars = static_cast<uint16_t>(
       std::round(static_cast<float>(target_seconds) * bpm / 240.0f));
 
@@ -224,11 +226,18 @@ std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t
   target_bars = std::max(target_bars, static_cast<uint16_t>(12));
   target_bars = std::min(target_bars, static_cast<uint16_t>(120));
 
-  std::vector<Section> sections;
-  Tick current_bar = 0;
-  Tick current_tick = 0;
+  // Get base structure from pattern
+  std::vector<Section> sections = buildStructure(pattern);
+  uint16_t base_bars = calculateTotalBars(sections);
 
-  auto addSection = [&](SectionType type, uint8_t bars) {
+  // If target matches base (±8 bars tolerance), use pattern as-is
+  if (std::abs(static_cast<int>(target_bars) - static_cast<int>(base_bars)) <= 8) {
+    return sections;
+  }
+
+  // Helper to create a section with proper attributes
+  auto createSection = [](SectionType type, uint8_t bars,
+                          Tick& current_bar, Tick& current_tick) {
     Section section;
     section.type = type;
     section.name = sectionTypeName(type);
@@ -239,65 +248,80 @@ std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t
     section.backing_density = getBackingDensityForType(type);
     section.deviation_allowed = getAllowDeviationForType(type);
     section.se_allowed = true;
-    sections.push_back(section);
     current_bar += bars;
     current_tick += bars * TICKS_PER_BAR;
+    return section;
   };
 
-  uint16_t remaining_bars = target_bars;
+  // Need to scale the structure
+  if (target_bars > base_bars) {
+    // EXTEND: Add A-B-Chorus blocks before Outro
+    int extra_bars = target_bars - base_bars;
+    int blocks_to_add = extra_bars / 24;  // A(8)+B(8)+Chorus(8) = 24
 
-  // Always start with Intro (4 bars)
-  addSection(SectionType::Intro, 4);
-  remaining_bars -= 4;
+    // Find Outro position (or end if no Outro)
+    auto outro_it = std::find_if(sections.begin(), sections.end(),
+        [](const Section& s) { return s.type == SectionType::Outro; });
 
-  // Reserve for Outro (4-8 bars depending on length)
-  uint8_t outro_bars = (target_bars >= 60) ? 8 : 4;
-  remaining_bars -= outro_bars;
-
-  // Build main sections: A(8) + B(8) + Chorus(8) = 24 bar blocks
-  uint8_t block_size = 24;
-  int blocks = remaining_bars / block_size;
-
-  // Add optional Interlude/Bridge for longer songs
-  bool has_interlude = (blocks >= 2);
-  bool has_bridge = (blocks >= 3);
-
-  if (has_interlude) {
-    remaining_bars -= 4;  // Interlude
-  }
-  if (has_bridge) {
-    remaining_bars -= 8;  // Bridge
-  }
-
-  // Recalculate blocks after reserving special sections
-  blocks = remaining_bars / block_size;
-  blocks = std::max(blocks, 1);  // At least one block
-
-  // Generate A-B-Chorus blocks
-  for (int i = 0; i < blocks; ++i) {
-    addSection(SectionType::A, 8);
-    addSection(SectionType::B, 8);
-    addSection(SectionType::Chorus, 8);
-
-    // Add Interlude after first block
-    if (i == 0 && has_interlude) {
-      addSection(SectionType::Interlude, 4);
+    Tick insert_bar = 0;
+    Tick insert_tick = 0;
+    if (outro_it != sections.end()) {
+      insert_bar = outro_it->startBar;
+      insert_tick = outro_it->start_tick;
+    } else {
+      insert_bar = sections.back().startBar + sections.back().bars;
+      insert_tick = sections.back().start_tick + sections.back().bars * TICKS_PER_BAR;
     }
-  }
 
-  // Add Bridge before final Chorus if applicable
-  if (has_bridge) {
-    addSection(SectionType::Bridge, 8);
-    addSection(SectionType::Chorus, 8);  // Extra Chorus after Bridge
-  }
+    // Insert extra blocks
+    std::vector<Section> extra_sections;
+    for (int i = 0; i < blocks_to_add; ++i) {
+      extra_sections.push_back(createSection(SectionType::A, 8, insert_bar, insert_tick));
+      extra_sections.push_back(createSection(SectionType::B, 8, insert_bar, insert_tick));
+      extra_sections.push_back(createSection(SectionType::Chorus, 8, insert_bar, insert_tick));
+    }
 
-  // Add extra Chorus for dramatic ending on longer songs
-  if (target_bars >= 80) {
-    addSection(SectionType::Chorus, 8);
-  }
+    if (!extra_sections.empty()) {
+      if (outro_it != sections.end()) {
+        sections.insert(outro_it, extra_sections.begin(), extra_sections.end());
+      } else {
+        sections.insert(sections.end(), extra_sections.begin(), extra_sections.end());
+      }
+      recalculateSectionTicks(sections);
+    }
+  } else {
+    // SHORTEN: Remove some A/B sections while preserving pattern character
+    int excess_bars = base_bars - target_bars;
 
-  // End with Outro
-  addSection(SectionType::Outro, outro_bars);
+    // Find removable A or B sections (not the first occurrence, not right before Chorus)
+    // Priority: remove from the end, preserving first A-B-Chorus block
+    std::vector<size_t> removable_indices;
+    bool found_first_chorus = false;
+    for (size_t i = 0; i < sections.size(); ++i) {
+      const auto& s = sections[i];
+      if (s.type == SectionType::Chorus) {
+        found_first_chorus = true;
+      }
+      // Only consider A/B sections after the first Chorus
+      if (found_first_chorus && (s.type == SectionType::A || s.type == SectionType::B)) {
+        // Don't remove if next section is Chorus (keep B-Chorus pair)
+        if (i + 1 < sections.size() && sections[i + 1].type == SectionType::Chorus) {
+          continue;
+        }
+        removable_indices.push_back(i);
+      }
+    }
+
+    // Remove from end first
+    std::sort(removable_indices.rbegin(), removable_indices.rend());
+    for (size_t idx : removable_indices) {
+      if (excess_bars <= 0) break;
+      excess_bars -= sections[idx].bars;
+      sections.erase(sections.begin() + static_cast<ptrdiff_t>(idx));
+    }
+
+    recalculateSectionTicks(sections);
+  }
 
   return sections;
 }
@@ -383,10 +407,11 @@ std::vector<Section> buildStructureForDuration(
     uint16_t bpm,
     bool call_enabled,
     IntroChant intro_chant,
-    MixPattern mix_pattern) {
+    MixPattern mix_pattern,
+    StructurePattern pattern) {
 
-  // First build basic structure
-  std::vector<Section> sections = buildStructureForDuration(target_seconds, bpm);
+  // First build basic structure using the pattern
+  std::vector<Section> sections = buildStructureForDuration(target_seconds, bpm, pattern);
 
   // Then insert call sections if enabled
   if (call_enabled) {

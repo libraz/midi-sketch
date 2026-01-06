@@ -364,9 +364,6 @@ TEST(RegenerateMelodyVocalStyleTest, VocalStylePresetApplied) {
 
   gen.generate(params);
 
-  // Store original vocal track info
-  size_t original_notes = gen.getSong().vocal().notes().size();
-
   // Regenerate with Vocaloid style (should produce more notes)
   MelodyRegenerateParams regen_params;
   regen_params.seed = 33333;

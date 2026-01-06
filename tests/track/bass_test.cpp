@@ -224,6 +224,8 @@ TEST_F(BassTest, BassHasOctaveJumps) {
   // Bass patterns may include octave jumps
   // This is a verification, not an assertion (style-dependent)
   EXPECT_TRUE(track.notes().size() > 0);
+  // Octave jumps are style-dependent, just verify the check ran
+  (void)has_octave_jump;
 }
 
 TEST_F(BassTest, BassHasFifths) {
@@ -247,6 +249,8 @@ TEST_F(BassTest, BassHasFifths) {
 
   // Bass often uses root-fifth motion
   EXPECT_TRUE(track.notes().size() > 0);
+  // Fifths are style-dependent, just verify the check ran
+  (void)has_fifth;
 }
 
 TEST_F(BassTest, BassVelocityDynamics) {

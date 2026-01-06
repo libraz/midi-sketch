@@ -50,7 +50,7 @@ uint8_t calculateVelocity(SectionType section, uint8_t beat, Mood mood) {
       section_mult = 0.95f;   // Building pre-chorus
       break;
     case SectionType::Chorus:
-      section_mult = 1.20f;   // Powerful chorus (was 1.10)
+      section_mult = 1.05f;   // Moderate chorus for DAW flexibility
       break;
     case SectionType::Bridge:
       section_mult = 0.82f;   // Reflective bridge
@@ -122,10 +122,10 @@ void applyTransitionDynamics(MidiTrack& track, Tick section_start,
   float start_mult, end_mult;
 
   if (full_section_crescendo) {
-    // Crescendo across entire B section for dramatic build-up
+    // Crescendo across entire B section for moderate build-up
     transition_start = section_start;
-    start_mult = 0.75f;  // Start quieter
-    end_mult = 1.15f;    // End louder than normal
+    start_mult = 0.85f;  // Start slightly quieter
+    end_mult = 1.00f;    // End at normal level for DAW flexibility
   } else if (to_energy > from_energy) {
     // Normal crescendo: last bar only
     transition_start = (section_end > TICKS_PER_BAR)

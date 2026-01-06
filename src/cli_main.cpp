@@ -20,6 +20,7 @@ void printUsage(const char* program) {
   std::cout << "                    7=CityPop, 8=Anime)\n";
   std::cout << "  --note-density F  Set note density (0.3-2.0, default: style preset)\n";
   std::cout << "  --bpm N           Set BPM (60-200, default: style preset)\n";
+  std::cout << "  --duration N      Set target duration in seconds (0 = use pattern)\n";
   std::cout << "  --analyze         Analyze generated MIDI for dissonance issues\n";
   std::cout << "  --help            Show this help message\n";
 }
@@ -80,6 +81,7 @@ int main(int argc, char* argv[]) {
   uint8_t vocal_style = 0;  // 0 = Auto
   float note_density = 0.0f;  // 0 = use style default
   uint16_t bpm = 0;  // 0 = use style default
+  uint16_t duration = 0;  // 0 = use pattern default
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--analyze") == 0) {
@@ -96,6 +98,8 @@ int main(int argc, char* argv[]) {
       note_density = static_cast<float>(std::strtod(argv[++i], nullptr));
     } else if (std::strcmp(argv[i], "--bpm") == 0 && i + 1 < argc) {
       bpm = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 10));
+    } else if (std::strcmp(argv[i], "--duration") == 0 && i + 1 < argc) {
+      duration = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
       printUsage(argv[0]);
       return 0;
@@ -112,6 +116,7 @@ int main(int argc, char* argv[]) {
   config.vocal_style = static_cast<midisketch::VocalStylePreset>(vocal_style);
   config.vocal_note_density = note_density;
   config.bpm = bpm;  // 0 = use style default
+  config.target_duration_seconds = duration;  // 0 = use pattern default
 
   const auto& preset = midisketch::getStylePreset(config.style_preset_id);
 
@@ -123,6 +128,9 @@ int main(int argc, char* argv[]) {
   std::cout << "  VocalStyle: " << vocalStyleName(config.vocal_style) << "\n";
   if (config.vocal_note_density > 0.0f) {
     std::cout << "  NoteDensity: " << config.vocal_note_density << "\n";
+  }
+  if (config.target_duration_seconds > 0) {
+    std::cout << "  TargetDuration: " << config.target_duration_seconds << " sec\n";
   }
   std::cout << "  Seed: " << config.seed << "\n";
 

@@ -239,6 +239,11 @@ typedef struct {
   uint8_t motif_repeat_scope;      // 0=FullSong, 1=Section
   uint8_t motif_fixed_progression; // Same progression all sections (0=off, 1=on, default=on)
   uint8_t motif_max_chord_count;   // Max chord count (0=no limit, 2-8)
+
+  // Melodic complexity and hook control
+  uint8_t melodic_complexity;      // 0=Simple, 1=Standard, 2=Complex
+  uint8_t hook_intensity;          // 0=Off, 1=Light, 2=Normal, 3=Strong
+  uint8_t vocal_groove;            // 0=Straight, 1=OffBeat, 2=Swing, 3=Syncopated, 4=Driving16th, 5=Bouncy8th
 } MidiSketchSongConfig;
 
 // Style preset summary for listing.
