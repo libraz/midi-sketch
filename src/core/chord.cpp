@@ -149,17 +149,42 @@ Chord buildChord(int8_t degree) {
   return c;
 }
 
+// ============================================================================
+// Degree System Documentation
+// ============================================================================
+//
+// Diatonic degrees (0-6): Standard scale degrees in major key
+//   0 = I   (Tonic)      - C  in C major
+//   1 = ii  (Supertonic) - Dm in C major
+//   2 = iii (Mediant)    - Em in C major
+//   3 = IV  (Subdominant)- F  in C major
+//   4 = V   (Dominant)   - G  in C major
+//   5 = vi  (Submediant) - Am in C major
+//   6 = vii (Leading)    - Bdim in C major
+//
+// Borrowed degrees (8, 10, 11): Chords borrowed from parallel minor
+//   8  = bVI  (Flat 6th) - Ab in C major (from C minor)
+//   10 = bVII (Flat 7th) - Bb in C major (from C minor)
+//   11 = bIII (Flat 3rd) - Eb in C major (from C minor)
+//
+// The degree values 8, 10, 11 are chosen to avoid collision with diatonic
+// degrees (0-6) while providing meaningful identifiers:
+//   - 8  = Ab pitch class (8 semitones from C)
+//   - 10 = Bb pitch class (10 semitones from C)
+//   - 11 = bIII uses degree 11 as identifier, maps to Eb (3 semitones)
+//
+// ============================================================================
+
 // Converts degree to pitch class (0-11) in C major.
-// Borrowed chord degrees: bVII=10, bVI=8, bIII=11
 int degreeToSemitone(int8_t degree) {
   // C=0, D=2, E=4, F=5, G=7, A=9, B=11
   constexpr int SCALE_SEMITONES[7] = {0, 2, 4, 5, 7, 9, 11};
 
-  // Borrowed chords from parallel minor
+  // Borrowed chords from parallel minor (see documentation above)
   switch (degree) {
-    case 10: return 10;  // bVII = Bb in C major
-    case 8:  return 8;   // bVI = Ab in C major
-    case 11: return 3;   // bIII = Eb in C major
+    case 10: return 10;  // bVII = Bb (10 semitones from C)
+    case 8:  return 8;   // bVI  = Ab (8 semitones from C)
+    case 11: return 3;   // bIII = Eb (3 semitones from C)
     default: break;
   }
 

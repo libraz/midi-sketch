@@ -122,6 +122,37 @@ TEST_F(VocalTest, VocalIntervalConstraints) {
       << track.notes().size() - 1;
 }
 
+TEST_F(VocalTest, VocalPrefersTessitura) {
+  // Test that most vocal notes fall within the comfortable tessitura range
+  // Tessitura is approximately the middle 60% of the vocal range
+  Generator gen;
+  params_.seed = 12345;
+  params_.vocal_low = 48;   // C3
+  params_.vocal_high = 84;  // C6 (wide range)
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().vocal();
+  ASSERT_GT(track.notes().size(), 10u);
+
+  // Calculate tessitura: middle portion of range
+  int range = params_.vocal_high - params_.vocal_low;  // 36 semitones
+  int margin = range / 5;  // ~7 semitones
+  int tessitura_low = params_.vocal_low + margin;   // ~55 (G3)
+  int tessitura_high = params_.vocal_high - margin; // ~77 (F5)
+
+  int in_tessitura = 0;
+  for (const auto& note : track.notes()) {
+    if (note.note >= tessitura_low && note.note <= tessitura_high) {
+      in_tessitura++;
+    }
+  }
+
+  // Most notes (>50%) should be in tessitura for singable melodies
+  double tessitura_ratio = static_cast<double>(in_tessitura) / track.notes().size();
+  EXPECT_GT(tessitura_ratio, 0.5)
+      << "Only " << (tessitura_ratio * 100) << "% of notes in tessitura (expected >50%)";
+}
+
 TEST_F(VocalTest, DifferentSeedsProduceDifferentMelodies) {
   Generator gen1, gen2;
   params_.seed = 100;
@@ -675,6 +706,88 @@ TEST_F(VocalTest, SectionCadencePreservesRangeConstraints) {
         << "Note below vocal range: " << static_cast<int>(note.note);
     EXPECT_LE(note.note, params_.vocal_high)
         << "Note above vocal range: " << static_cast<int>(note.note);
+  }
+}
+
+// Test: Call-response phrase structure (2+2 bar pattern)
+// Call phrases (bars 0-1) should avoid root endings
+// Response phrases (bars 2-3) should prefer root endings
+TEST_F(VocalTest, CallResponsePhraseStructure) {
+  params_.structure = StructurePattern::StandardPop;
+  params_.mood = Mood::ElectroPop;
+  params_.seed = 12345;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal = gen.getSong().vocal();
+  const auto& note_list = vocal.notes();
+  ASSERT_FALSE(note_list.empty());
+
+  // Analyze phrase endings at 2-bar and 4-bar boundaries
+  // Root notes in C major are C (0, 12, 24...), so pitch % 12 == 0
+  int call_ends_on_root = 0;
+  int response_ends_on_root = 0;
+  int call_phrase_count = 0;
+  int response_phrase_count = 0;
+
+  constexpr Tick TICKS_PER_BAR_LOCAL = 1920;
+  constexpr Tick PHRASE_LENGTH = TICKS_PER_BAR_LOCAL * 2;
+
+  // Find the max phrase index
+  int max_phrase_idx = 0;
+  for (size_t i = 0; i < note_list.size(); ++i) {
+    int pidx = static_cast<int>(note_list[i].startTick / PHRASE_LENGTH);
+    if (pidx > max_phrase_idx) max_phrase_idx = pidx;
+  }
+
+  // For each phrase, find the last note and check if it ends on root
+  for (int pidx = 0; pidx <= max_phrase_idx; ++pidx) {
+    Tick phrase_start = pidx * PHRASE_LENGTH;
+    Tick phrase_end = phrase_start + PHRASE_LENGTH;
+
+    // Find last note in this phrase
+    Tick last_tick = 0;
+    uint8_t last_pitch = 0;
+    bool found_note = false;
+
+    for (size_t i = 0; i < note_list.size(); ++i) {
+      const auto& n = note_list[i];
+      if (n.startTick >= phrase_start && n.startTick < phrase_end) {
+        if (n.startTick >= last_tick) {
+          last_tick = n.startTick;
+          last_pitch = n.note;
+          found_note = true;
+        }
+      }
+    }
+
+    if (!found_note) continue;
+
+    bool is_root = (last_pitch % 12 == 0);  // C in C major
+    bool is_response = (pidx % 2 == 1);    // Odd phrases are responses
+
+    if (is_response) {
+      response_phrase_count++;
+      if (is_root) response_ends_on_root++;
+    } else {
+      call_phrase_count++;
+      if (is_root) call_ends_on_root++;
+    }
+  }
+
+  // Response phrases should more often end on root than call phrases
+  // This tests the call-response musical structure
+  if (call_phrase_count > 0 && response_phrase_count > 0) {
+    float call_root_ratio = static_cast<float>(call_ends_on_root) / call_phrase_count;
+    float response_root_ratio = static_cast<float>(response_ends_on_root) / response_phrase_count;
+
+    // Response phrases should have equal or higher root landing rate
+    // (allowing some tolerance for musical variation)
+    EXPECT_GE(response_root_ratio + 0.3f, call_root_ratio)
+        << "Response phrases should favor root endings more than call phrases. "
+        << "Call root ratio: " << call_root_ratio
+        << ", Response root ratio: " << response_root_ratio;
   }
 }
 

@@ -72,6 +72,22 @@ class HarmonyContext {
   // Clear notes from a specific track.
   void clearNotesForTrack(TrackRole track);
 
+  // Check for low register collision with bass track.
+  // Returns true if the pitch would conflict with bass notes in low register.
+  // In low register (< LOW_REGISTER_THRESHOLD), even octave unison and close
+  // intervals cause "muddy" sound, so we need stricter collision detection.
+  // @param pitch MIDI pitch to check
+  // @param start Start tick
+  // @param duration Duration in ticks
+  // @param threshold Semitone threshold for collision (default: 3 = minor 3rd)
+  // @returns true if collision detected, false if safe
+  bool hasBassCollision(uint8_t pitch, Tick start, Tick duration,
+                        int threshold = 3) const;
+
+  // Threshold for low register detection (C4 = 60).
+  // Below this pitch, stricter bass collision rules apply.
+  static constexpr uint8_t LOW_REGISTER_THRESHOLD = 60;
+
  private:
   // Chord information for a tick range.
   struct ChordInfo {

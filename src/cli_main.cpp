@@ -19,6 +19,7 @@ void printUsage(const char* program) {
   std::cout << "                    3=UltraVocaloid, 4=Idol, 5=Ballad, 6=Rock,\n";
   std::cout << "                    7=CityPop, 8=Anime)\n";
   std::cout << "  --note-density F  Set note density (0.3-2.0, default: style preset)\n";
+  std::cout << "  --bpm N           Set BPM (60-200, default: style preset)\n";
   std::cout << "  --analyze         Analyze generated MIDI for dissonance issues\n";
   std::cout << "  --help            Show this help message\n";
 }
@@ -78,6 +79,7 @@ int main(int argc, char* argv[]) {
   uint8_t chord_id = 3;
   uint8_t vocal_style = 0;  // 0 = Auto
   float note_density = 0.0f;  // 0 = use style default
+  uint16_t bpm = 0;  // 0 = use style default
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--analyze") == 0) {
@@ -92,6 +94,8 @@ int main(int argc, char* argv[]) {
       vocal_style = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--note-density") == 0 && i + 1 < argc) {
       note_density = static_cast<float>(std::strtod(argv[++i], nullptr));
+    } else if (std::strcmp(argv[i], "--bpm") == 0 && i + 1 < argc) {
+      bpm = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
       printUsage(argv[0]);
       return 0;
@@ -107,6 +111,7 @@ int main(int argc, char* argv[]) {
   config.seed = seed;
   config.vocal_style = static_cast<midisketch::VocalStylePreset>(vocal_style);
   config.vocal_note_density = note_density;
+  config.bpm = bpm;  // 0 = use style default
 
   const auto& preset = midisketch::getStylePreset(config.style_preset_id);
 

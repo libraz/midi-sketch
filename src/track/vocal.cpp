@@ -11,6 +11,154 @@ namespace midisketch {
 
 namespace {
 
+// ============================================================================
+// Passaggio and Tessitura Support
+// ============================================================================
+//
+// Passaggio: The transition zone between vocal registers (chest/head voice).
+// Singing through this zone requires careful technique, so we:
+// - Avoid sustaining notes in the passaggio
+// - Prefer stepping through rather than landing on passaggio notes
+//
+// Tessitura: The comfortable singing range within the full vocal range.
+// Most notes should fall within the tessitura for natural vocal quality.
+// ============================================================================
+
+// Passaggio zone: generalized for mixed voice types
+// Male passaggio: ~E4-F4 (64-65), Female: ~A4-B4 (69-71)
+// Using a combined zone covering common transition areas
+constexpr uint8_t PASSAGGIO_LOW = 64;   // E4
+constexpr uint8_t PASSAGGIO_HIGH = 71;  // B4
+
+// Check if a pitch is in the passaggio zone
+bool isInPassaggio(uint8_t pitch) {
+  return pitch >= PASSAGGIO_LOW && pitch <= PASSAGGIO_HIGH;
+}
+
+// Calculate tessitura (comfortable range) from full vocal range
+// Tessitura is typically the middle 60-70% of the range
+struct TessituraRange {
+  uint8_t low;
+  uint8_t high;
+  uint8_t center;
+};
+
+TessituraRange calculateTessitura(uint8_t vocal_low, uint8_t vocal_high) {
+  int range = vocal_high - vocal_low;
+
+  // Tessitura is the middle portion of the range
+  // Leave ~15-20% headroom at top and bottom for climactic moments
+  int margin = range / 5;  // 20% margin
+  margin = std::max(margin, 3);  // At least 3 semitones margin
+
+  TessituraRange t;
+  t.low = static_cast<uint8_t>(vocal_low + margin);
+  t.high = static_cast<uint8_t>(vocal_high - margin);
+  t.center = static_cast<uint8_t>((t.low + t.high) / 2);
+
+  // Ensure valid range
+  if (t.low >= t.high) {
+    t.low = vocal_low;
+    t.high = vocal_high;
+    t.center = (vocal_low + vocal_high) / 2;
+  }
+
+  return t;
+}
+
+// Check if a pitch is within the tessitura
+bool isInTessitura(uint8_t pitch, const TessituraRange& tessitura) {
+  return pitch >= tessitura.low && pitch <= tessitura.high;
+}
+
+// Calculate a comfort score for a pitch (higher = more comfortable)
+// Returns value 0.0-1.0
+float getComfortScore(uint8_t pitch, const TessituraRange& tessitura,
+                       uint8_t vocal_low, uint8_t /* vocal_high */) {
+  // Perfect score for tessitura center
+  if (pitch == tessitura.center) return 1.0f;
+
+  // High score for tessitura range
+  if (isInTessitura(pitch, tessitura)) {
+    // Score decreases slightly from center
+    int dist_from_center = std::abs(static_cast<int>(pitch) - tessitura.center);
+    int tessitura_half = (tessitura.high - tessitura.low) / 2;
+    if (tessitura_half == 0) tessitura_half = 1;
+    return 0.8f + 0.2f * (1.0f - static_cast<float>(dist_from_center) / tessitura_half);
+  }
+
+  // Reduced score for passaggio
+  if (isInPassaggio(pitch)) {
+    return 0.4f;
+  }
+
+  // Lower score for extreme notes
+  int dist_from_tessitura = 0;
+  if (pitch < tessitura.low) {
+    dist_from_tessitura = tessitura.low - pitch;
+  } else {
+    dist_from_tessitura = pitch - tessitura.high;
+  }
+
+  // Extreme notes get scores 0.3-0.6 based on distance
+  int total_margin = tessitura.low - vocal_low;
+  if (total_margin == 0) total_margin = 1;
+  float extremity = static_cast<float>(dist_from_tessitura) / total_margin;
+  return std::max(0.3f, 0.6f - 0.3f * extremity);
+}
+
+// Adjust pitch to prefer tessitura, avoiding passaggio for sustained notes
+// Returns an adjusted pitch that's more comfortable to sing
+// IMPORTANT: This function is conservative to avoid breaking interval constraints
+// It only makes small adjustments (max 2 semitones) to preserve melodic shape
+uint8_t adjustForTessitura(uint8_t target_pitch, uint8_t /* prev_pitch */,
+                            const TessituraRange& tessitura,
+                            uint8_t vocal_low, uint8_t vocal_high,
+                            bool is_sustained, std::mt19937& rng) {
+  // Maximum adjustment to avoid breaking interval constraints
+  constexpr int MAX_ADJUSTMENT = 2;  // Max 2 semitones shift
+
+  // If already comfortable, keep it
+  float comfort = getComfortScore(target_pitch, tessitura, vocal_low, vocal_high);
+  if (comfort >= 0.7f) {
+    return target_pitch;
+  }
+
+  // For sustained notes in passaggio, try small adjustment
+  if (is_sustained && isInPassaggio(target_pitch)) {
+    // Try moving by 1-2 semitones in the direction away from passaggio center
+    int passaggio_center = (PASSAGGIO_LOW + PASSAGGIO_HIGH) / 2;
+    int direction = (target_pitch < passaggio_center) ? -1 : 1;
+
+    for (int adj = 1; adj <= MAX_ADJUSTMENT; ++adj) {
+      uint8_t candidate = static_cast<uint8_t>(
+          std::clamp(static_cast<int>(target_pitch) + direction * adj,
+                     static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
+      if (!isInPassaggio(candidate)) {
+        return candidate;
+      }
+    }
+    // Couldn't escape passaggio with small adjustment - keep original
+    return target_pitch;
+  }
+
+  // For extreme notes, use probabilistic acceptance
+  // Higher comfort = more likely to keep the note
+  std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
+  if (prob_dist(rng) < comfort * 1.5f) {  // Increased acceptance rate
+    return target_pitch;
+  }
+
+  // Small pull toward tessitura (max 1 semitone)
+  if (target_pitch < tessitura.low && target_pitch + 1 <= vocal_high) {
+    return target_pitch + 1;  // Small step toward tessitura
+  } else if (target_pitch > tessitura.high && target_pitch >= vocal_low + 1) {
+    return target_pitch - 1;  // Small step toward tessitura
+  }
+
+  return target_pitch;
+}
+
 // Phase 2: FunctionalProfile adjustment for tension usage
 float getFunctionalProfileTensionMultiplier(FunctionalProfile profile) {
   switch (profile) {
@@ -156,9 +304,11 @@ int snapToNearestScaleTone(int pitch, int key_offset) {
 }
 
 // Find the closest chord tone to target within max_interval of prev_pitch
+// Optionally prefers pitches within the tessitura range
 int nearestChordToneWithinInterval(int target_pitch, int prev_pitch,
                                    int8_t chord_degree, int max_interval,
-                                   int range_low, int range_high) {
+                                   int range_low, int range_high,
+                                   const TessituraRange* tessitura = nullptr) {
   ChordTones ct = getChordTones(chord_degree);
 
   // If no previous pitch, just find nearest chord tone to target
@@ -168,7 +318,7 @@ int nearestChordToneWithinInterval(int target_pitch, int prev_pitch,
   }
 
   int best_pitch = prev_pitch;  // Default: stay on previous pitch
-  int best_dist_to_target = 100;
+  int best_score = -1000;       // Higher is better
 
   // Search for chord tones within max_interval of prev_pitch
   for (uint8_t i = 0; i < ct.count; ++i) {
@@ -185,10 +335,23 @@ int nearestChordToneWithinInterval(int target_pitch, int prev_pitch,
       // Must be within max_interval of prev_pitch
       if (std::abs(candidate - prev_pitch) > max_interval) continue;
 
-      // Prefer candidates closer to the target pitch
+      // Calculate score: prefer closer to target, bonus for tessitura
       int dist_to_target = std::abs(candidate - target_pitch);
-      if (dist_to_target < best_dist_to_target) {
-        best_dist_to_target = dist_to_target;
+      int score = 100 - dist_to_target;  // Base score: closer is better
+
+      // Tessitura bonus: prefer comfortable range
+      if (tessitura != nullptr) {
+        if (candidate >= tessitura->low && candidate <= tessitura->high) {
+          score += 20;  // Bonus for being in tessitura
+        }
+        // Small penalty for passaggio (but don't exclude it)
+        if (isInPassaggio(static_cast<uint8_t>(candidate))) {
+          score -= 5;
+        }
+      }
+
+      if (score > best_score) {
+        best_score = score;
         best_pitch = candidate;
       }
     }
@@ -734,6 +897,17 @@ void generateVocalTrack(MidiTrack& track, Song& song,
   const VocalAttitude vocal_attitude = params.vocal_attitude;
   const StyleMelodyParams& melody_params = params.melody_params;
 
+  // === BPM-AWARE SINGABILITY ADJUSTMENT ===
+  // At high BPM, reduce note density and limit note speed for human singability
+  // Reference BPM: 120 (standard J-POP tempo)
+  // At BPM 160+: 8th notes feel like 16ths at BPM 120
+  const uint16_t bpm = song.bpm();
+  const float bpm_factor = static_cast<float>(bpm) / 120.0f;  // 1.0 at 120 BPM
+
+  // Vocaloid styles ignore BPM adjustment (intentionally inhuman)
+  const bool is_vocaloid_style = (params.vocal_style == VocalStylePreset::Vocaloid ||
+                                   params.vocal_style == VocalStylePreset::UltraVocaloid);
+
   // === Vocal density parameters ===
   // min_note_division: 4=quarter, 8=eighth, 16=sixteenth, 32=32nd
   // Convert to minimum duration in eighths: 8/min_note_division
@@ -748,6 +922,16 @@ void generateVocalTrack(MidiTrack& track, Song& song,
   } else if (params.vocal_style == VocalStylePreset::Vocaloid) {
     // Vocaloid needs 16th notes - ensure min_note_division is at least 16
     min_note_division = std::max(min_note_division, static_cast<uint8_t>(16));
+  } else if (!is_vocaloid_style) {
+    // For singable styles, limit note speed based on BPM
+    // At high BPM, prevent notes that would be too fast to sing
+    if (bpm >= 160) {
+      // At 160+ BPM: max 8th notes (no 16ths or 32nds)
+      min_note_division = std::min(min_note_division, static_cast<uint8_t>(8));
+    } else if (bpm >= 140) {
+      // At 140-159 BPM: max 16th notes (limit rapid passages)
+      min_note_division = std::min(min_note_division, static_cast<uint8_t>(16));
+    }
   }
   const float min_duration_eighths = (min_note_division > 0) ? (8.0f / min_note_division) : 1.0f;
 
@@ -821,23 +1005,46 @@ void generateVocalTrack(MidiTrack& track, Song& song,
   // Internal processing is always in C major; transpose at MIDI output time
   int key_offset = 0;
 
+  // Calculate tessitura for comfortable pitch selection
+  TessituraRange tessitura = calculateTessitura(effective_vocal_low, effective_vocal_high);
+
   // Helper: clamp pitch to effective vocal range
   auto clampPitch = [&](int pitch) -> uint8_t {
     return static_cast<uint8_t>(
         std::clamp(pitch, (int)effective_vocal_low, (int)effective_vocal_high));
   };
 
-  // Helper: get safe pitch that doesn't clash with chord track
-  // Uses HarmonyContext if available, otherwise returns original pitch
+  // Helper: get safe pitch that doesn't clash with chord/bass tracks
   auto getSafePitch = [&](int pitch, Tick start, Tick duration) -> uint8_t {
+    uint8_t clamped = clampPitch(pitch);
+
     if (harmony_ctx == nullptr) {
-      return clampPitch(pitch);
+      return clamped;
     }
+
+    // Check for bass collision in low register first.
+    // If collision detected, prefer moving up by octave to avoid muddy sound.
+    if (harmony_ctx->hasBassCollision(clamped, start, duration)) {
+      // Try octave up
+      int octave_up = clamped + 12;
+      if (octave_up <= effective_vocal_high) {
+        // Check if octave up is also safe from bass collision
+        if (!harmony_ctx->hasBassCollision(static_cast<uint8_t>(octave_up),
+                                            start, duration)) {
+          clamped = static_cast<uint8_t>(octave_up);
+        }
+      }
+      // If octave up is out of range or still collides, getSafePitch will handle
+    }
+
     // Use HarmonyContext to find a pitch that doesn't clash
     return harmony_ctx->getSafePitch(
-        clampPitch(pitch), start, duration, TrackRole::Vocal,
+        clamped, start, duration, TrackRole::Vocal,
         effective_vocal_low, effective_vocal_high);
   };
+
+  // Tessitura pointer for optional use in pitch selection functions
+  const TessituraRange* tessitura_ptr = is_vocaloid_style ? nullptr : &tessitura;
 
   // Helper: get chord info for a bar
   auto getChordInfo = [&](int bar_in_section) -> std::pair<int, bool> {
@@ -960,10 +1167,52 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
     // Apply section density factor
     // Skip for Vocaloid/UltraVocaloid - rhythm generator controls density
-    bool is_vocaloid_style = (params.vocal_style == VocalStylePreset::Vocaloid ||
-                              params.vocal_style == VocalStylePreset::UltraVocaloid);
     if (!is_vocaloid_style) {
       note_density = base_density * section_density_factor;
+
+      // === VOICE PHYSIOLOGY-BASED DENSITY ADJUSTMENT ===
+      // Human vocal limits based on syllable rate research:
+      // - Comfortable sustained singing: 3-5 syllables/second
+      // - Fast pop/idol: 5-7 syllables/second
+      // - Extreme rap: 8-10 syllables/second
+      //
+      // Convert density to approximate notes-per-second (NPS):
+      // NPS = (density * 4) * (BPM / 60) at 8th note base
+      // Target NPS by style:
+      // - Ballad: 2-3 NPS
+      // - Idol/Standard: 3-5 NPS
+      // - Anime: 4-6 NPS
+      float target_max_nps = 5.0f;  // Default comfortable limit
+      switch (params.vocal_style) {
+        case VocalStylePreset::Ballad:
+          target_max_nps = 3.0f;  // Slow, sustained
+          break;
+        case VocalStylePreset::Idol:
+          target_max_nps = 4.5f;  // Dance-friendly, needs space for choreography
+          break;
+        case VocalStylePreset::Rock:
+          target_max_nps = 5.0f;  // Powerful, with shouts
+          break;
+        case VocalStylePreset::Anime:
+          target_max_nps = 6.0f;  // Dramatic, faster passages OK
+          break;
+        case VocalStylePreset::CityPop:
+          target_max_nps = 4.0f;  // Groove-based, not too busy
+          break;
+        default:
+          target_max_nps = 5.0f;  // Standard
+          break;
+      }
+
+      // Calculate current NPS based on density and BPM
+      // Approximate: density 1.0 at BPM 120 = 4 NPS (8th note base)
+      float current_nps = note_density * 4.0f * bpm_factor;
+
+      // If current NPS exceeds target, reduce density proportionally
+      if (current_nps > target_max_nps) {
+        float reduction_factor = target_max_nps / current_nps;
+        note_density *= reduction_factor;
+      }
     }
     // Clamp to reasonable range
     note_density = std::clamp(note_density, 0.3f, 2.0f);
@@ -1179,36 +1428,82 @@ void generateVocalTrack(MidiTrack& track, Song& song,
           continue;  // Skip notes shorter than minimum duration
         }
 
-        // === IMPROVED SKIP LOGIC (Phase 3) ===
-        // Skip logic is density-aware and section-aware
-        // High density (>= 0.85): almost no skipping
-        // Chorus: never skip for full energy
-        // Strong beats: never skip for proper phrase structure
-        // Vocaloid/UltraVocaloid: never skip (density is controlled in rhythm generation)
+        // === BPM-AWARE SINGABILITY SKIP LOGIC ===
+        // Formula-based calculation for human-singable note density
+        //
+        // Voice physiology limits:
+        // - Comfortable sustained singing: 3-5 syllables/second
+        // - Fast pop/idol: 5-7 syllables/second
+        // - Maximum human limit: ~10 syllables/second (brief passages only)
+        //
+        // Calculation:
+        // max_nps_at_bpm = (bpm / 60) * notes_per_beat_in_pattern
+        // For 8th note patterns: notes_per_beat ≈ 2
+        // skip_ratio = max(0, 1 - target_nps / (current_density * max_nps))
+        //
         bool should_skip = false;
-        bool is_vocaloid_style = (params.vocal_style == VocalStylePreset::Vocaloid ||
-                                   params.vocal_style == VocalStylePreset::UltraVocaloid);
 
-        // Skip Vocaloid styles - rhythm generation already handles density
+        // Vocaloid styles skip this check entirely (intentionally inhuman)
         if (!is_vocaloid_style) {
-          if (!rn.strong && section.type != SectionType::Chorus && note_density < 0.85f) {
-            // Only skip weak beats in non-chorus sections with lower density
+          // Calculate current maximum NPS based on BPM and pattern density
+          // Assuming average of 2 notes per beat in the pattern
+          float notes_per_beat = 2.0f * note_density;  // density scales notes
+          float max_nps = (static_cast<float>(bpm) / 60.0f) * notes_per_beat;
+
+          // Target NPS based on vocal style
+          // Key insight: At high BPM, even the same NPS feels more rushed
+          // because the listener's perception is tied to beats, not absolute time
+          // Scale target down at high BPM to maintain "singable feel"
+          float base_target_nps;
+          switch (params.vocal_style) {
+            case VocalStylePreset::Ballad:
+              base_target_nps = 3.0f;
+              break;
+            case VocalStylePreset::Idol:
+              base_target_nps = 4.0f;  // Lower base for dance-friendly
+              break;
+            case VocalStylePreset::CityPop:
+              base_target_nps = 3.5f;
+              break;
+            case VocalStylePreset::Anime:
+              base_target_nps = 5.0f;
+              break;
+            case VocalStylePreset::Rock:
+              base_target_nps = 4.5f;
+              break;
+            default:
+              base_target_nps = 4.5f;
+              break;
+          }
+
+          // Scale target NPS inversely with BPM
+          // Reference: BPM 120 = base target, BPM 180 = 67% of base target
+          // Formula: target = base * (120 / bpm)^0.5
+          // This gives a gentle curve that reduces target at high BPM
+          float bpm_scale = std::sqrt(120.0f / static_cast<float>(bpm));
+          float target_nps = base_target_nps * bpm_scale;
+
+          // Calculate skip probability to achieve target NPS
+          float skip_prob = 0.0f;
+          if (max_nps > target_nps) {
+            skip_prob = 1.0f - (target_nps / max_nps);
+          }
+
+          // Only skip weak beats (preserve strong beat structure for singability)
+          // Chorus sections skip at 50% rate (maintain energy but stay singable)
+          if (!rn.strong && skip_prob > 0.0f) {
+            float effective_skip_prob = skip_prob;
+            if (section.type == SectionType::Chorus) {
+              effective_skip_prob *= 0.5f;  // Chorus: half the skip rate
+            }
             std::uniform_real_distribution<float> skip_dist(0.0f, 1.0f);
-            // Skip probability inversely proportional to density
-            // At density 0.5: skip_prob = 0.35 * 0.3 = 0.105 (10.5%)
-            // At density 0.7: skip_prob = 0.15 * 0.3 = 0.045 (4.5%)
-            float skip_prob = (1.0f - note_density) * 0.3f;
-            should_skip = skip_dist(rng) < skip_prob;
+            should_skip = skip_dist(rng) < effective_skip_prob;
           }
 
           // === VOCAL REST RATIO ===
-          // Add additional rests based on vocal_rest_ratio
-          // This creates breathing room between phrases
-          // Only apply to weak beats to preserve phrase structure
+          // Add additional rests for breathing room
           if (!should_skip && !rn.strong && vocal_rest_ratio > 0.0f) {
             std::uniform_real_distribution<float> rest_dist(0.0f, 1.0f);
-            // vocal_rest_ratio directly maps to skip probability for weak beats
-            // E.g., vocal_rest_ratio=0.15 → 15% chance of rest on weak beats
             should_skip = rest_dist(rng) < vocal_rest_ratio;
           }
         }
@@ -1243,24 +1538,41 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         // Strong resolution at phrase boundaries
         // Music theory: phrase endings should land on stable chord tones
         if (is_phrase_ending && is_last_note_in_motif) {
-          // Always force chord tone at phrase end (singability requirement)
+          // Response phrase (consequent): strong resolution to root
+          // This is the "answer" to the preceding "call" phrase
           force_chord_tone = true;
 
-          // For 4-bar phrases (strong cadence), prefer root or 5th
+          // For response phrases, strongly prefer root for resolution
           // The contour degree is already set, but we ensure stability
-          if (contour_degree != 0 && contour_degree != 4) {
-            // Prefer root (0) for strong resolution
+          if (contour_degree != 0) {
+            // High probability of resolving to root (strong cadence)
             std::uniform_real_distribution<float> res_dist(0.0f, 1.0f);
             if (res_dist(rng) < melody_params.phrase_end_resolution) {
               contour_degree = 0;  // Resolve to root
               scale_degree = current_chord_root;
+            } else if (contour_degree != 4) {
+              // If not root, at least prefer 5th for stability
+              contour_degree = 4;
+              scale_degree = current_chord_root + 4;
             }
           }
         } else if (is_last_note_in_motif && !is_phrase_ending) {
-          // 2-bar boundary (weaker cadence): prefer chord tone but allow 3rd
-          std::uniform_real_distribution<float> res_dist(0.0f, 1.0f);
-          if (res_dist(rng) < 0.8f) {
-            force_chord_tone = true;
+          // Call phrase (antecedent): end on unstable tone for tension
+          // This creates a "question" that the response phrase answers
+          force_chord_tone = true;
+          std::uniform_real_distribution<float> call_dist(0.0f, 1.0f);
+          float call_roll = call_dist(rng);
+
+          // Prefer 3rd (creates tension) or 5th (semi-stable) for call phrase
+          if (contour_degree == 0) {
+            // Avoid root at call phrase end - creates premature resolution
+            if (call_roll < 0.6f) {
+              contour_degree = 2;  // 3rd - most tension
+              scale_degree = current_chord_root + 2;
+            } else {
+              contour_degree = 4;  // 5th - semi-stable
+              scale_degree = current_chord_root + 4;
+            }
           }
         }
 
@@ -1310,12 +1622,13 @@ void generateVocalTrack(MidiTrack& track, Song& song,
           // Prefer root (degree 0) for strongest cadence
           pitch = nearestChordToneWithinInterval(
               target_pitch, prev_pitch, static_cast<int8_t>(current_chord_root),
-              max_interval, constraint_low, constraint_high);
+              max_interval, constraint_low, constraint_high, tessitura_ptr);
         } else if (rn.strong || force_chord_tone) {
           // On strong beats: find chord tone within interval limit
+          // Use tessitura preference for comfortable pitch selection
           pitch = nearestChordToneWithinInterval(
               target_pitch, prev_pitch, static_cast<int8_t>(current_chord_root),
-              max_interval, constraint_low, constraint_high);
+              max_interval, constraint_low, constraint_high, tessitura_ptr);
         } else {
           // On weak beats: constrain interval, then snap to scale tone
           pitch = constrainInterval(target_pitch, prev_pitch, max_interval,
@@ -1404,10 +1717,36 @@ void generateVocalTrack(MidiTrack& track, Song& song,
           gate = melody_params.legato_gate;
         }
 
+        // === LONG NOTE RATIO & CHORUS LONG TONES ===
+        // Apply probabilistic long note extension based on style parameters
+        // This creates the "anthem" feel for Idol/Rock/Ballad styles
+        float long_note_prob = melody_params.long_note_ratio;
+
+        // Boost probability in chorus when chorus_long_tones is enabled
+        if (section.type == SectionType::Chorus && melody_params.chorus_long_tones) {
+          long_note_prob = std::min(1.0f, long_note_prob * 1.5f + 0.2f);
+        }
+
+        // Strong beats are more likely to be long notes (anchor points)
+        if (rn.strong) {
+          long_note_prob = std::min(1.0f, long_note_prob * 1.3f);
+        }
+
+        // Apply long note extension probabilistically
+        std::uniform_real_distribution<float> long_dist(0.0f, 1.0f);
+        if (long_dist(rng) < long_note_prob && !is_last_note_of_phrase) {
+          // Extend to 1.5-2.5 beats for "anthem" feel
+          duration_extend *= 1.8f;
+        }
+
         // Calculate final duration
         Tick duration = static_cast<Tick>(base_duration * duration_extend * gate);
-        // Ensure minimum duration of 1/4 beat for very short notes
-        duration = std::max(duration, static_cast<Tick>(TICKS_PER_BEAT / 4));
+        // Ensure minimum duration based on style (use grid_unit as minimum)
+        // UltraVocaloid: 60 ticks, Vocaloid: 120 ticks, Default: 120 ticks
+        Tick min_duration = (params.vocal_style == VocalStylePreset::UltraVocaloid)
+                                ? grid_unit
+                                : std::max(grid_unit, static_cast<Tick>(TICKS_PER_BEAT / 4));
+        duration = std::max(duration, min_duration);
 
         // === OVERLAP PREVENTION ===
         // Cap duration to avoid overlapping with the next note

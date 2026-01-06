@@ -1,6 +1,7 @@
 #include "core/structure.h"
 #include "core/preset_data.h"
 #include <algorithm>
+#include <cmath>
 
 namespace midisketch {
 
@@ -21,58 +22,60 @@ std::string sectionTypeName(SectionType type) {
   return "";
 }
 
+// Get vocal density for a section type
+// Extracted as shared function to avoid duplicate lambda definitions
+VocalDensity getVocalDensityForType(SectionType type) {
+  switch (type) {
+    case SectionType::Intro:
+    case SectionType::Interlude:
+    case SectionType::Outro:
+    case SectionType::Chant:     // Call section - Vocal rests
+    case SectionType::MixBreak:  // MIX section - Vocal rests
+      return VocalDensity::None;
+    case SectionType::A:
+    case SectionType::Bridge:
+      return VocalDensity::Sparse;
+    case SectionType::B:
+    case SectionType::Chorus:
+      return VocalDensity::Full;
+    default:
+      return VocalDensity::Full;
+  }
+}
+
+// Get backing density for a section type
+// Extracted as shared function to avoid duplicate lambda definitions
+BackingDensity getBackingDensityForType(SectionType type) {
+  switch (type) {
+    case SectionType::Intro:
+    case SectionType::Bridge:
+    case SectionType::Interlude:
+    case SectionType::Chant:     // Call section - thin backing (quiet)
+      return BackingDensity::Thin;
+    case SectionType::Outro:
+    case SectionType::A:
+    case SectionType::B:
+      return BackingDensity::Normal;
+    case SectionType::Chorus:
+    case SectionType::MixBreak:  // MIX section - full energy
+      return BackingDensity::Thick;
+    default:
+      return BackingDensity::Normal;
+  }
+}
+
+// Check if section allows raw vocal deviation
+bool getAllowDeviationForType(SectionType type) {
+  // Only Chorus and Bridge sections can potentially allow raw attitude
+  return type == SectionType::Chorus || type == SectionType::Bridge;
+}
+
 }  // namespace
 
 std::vector<Section> buildStructure(StructurePattern pattern) {
   std::vector<Section> sections;
   Tick current_bar = 0;
   Tick current_tick = 0;
-
-  // Helper to get vocal density for a section type
-  auto getVocalDensity = [](SectionType type) -> VocalDensity {
-    switch (type) {
-      case SectionType::Intro:
-      case SectionType::Interlude:
-      case SectionType::Outro:
-      case SectionType::Chant:     // Call section - Vocal rests
-      case SectionType::MixBreak:  // MIX section - Vocal rests
-        return VocalDensity::None;
-      case SectionType::A:
-      case SectionType::Bridge:
-        return VocalDensity::Sparse;
-      case SectionType::B:
-      case SectionType::Chorus:
-        return VocalDensity::Full;
-      default:
-        return VocalDensity::Full;
-    }
-  };
-
-  // Helper to get backing density for a section type
-  auto getBackingDensity = [](SectionType type) -> BackingDensity {
-    switch (type) {
-      case SectionType::Intro:
-      case SectionType::Bridge:
-      case SectionType::Interlude:
-      case SectionType::Chant:     // Call section - thin backing (quiet)
-        return BackingDensity::Thin;
-      case SectionType::Outro:
-      case SectionType::A:
-      case SectionType::B:
-        return BackingDensity::Normal;
-      case SectionType::Chorus:
-      case SectionType::MixBreak:  // MIX section - full energy
-        return BackingDensity::Thick;
-      default:
-        return BackingDensity::Normal;
-    }
-  };
-
-  // Helper to check if section allows raw vocal deviation
-  auto getAllowDeviation = [](SectionType type) -> bool {
-    // Only Chorus and Bridge sections can potentially allow raw attitude
-    return type == SectionType::Chorus || type == SectionType::Bridge;
-  };
 
   auto addSection = [&](SectionType type, uint8_t bars) {
     Section section;
@@ -81,9 +84,9 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
     section.bars = bars;
     section.startBar = current_bar;
     section.start_tick = current_tick;
-    section.vocal_density = getVocalDensity(type);
-    section.backing_density = getBackingDensity(type);
-    section.deviation_allowed = getAllowDeviation(type);
+    section.vocal_density = getVocalDensityForType(type);
+    section.backing_density = getBackingDensityForType(type);
+    section.deviation_allowed = getAllowDeviationForType(type);
     section.se_allowed = true;
     sections.push_back(section);
     current_bar += bars;
@@ -213,8 +216,9 @@ Tick calculateTotalTicks(const std::vector<Section>& sections) {
 std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t bpm) {
   // Calculate target bars from duration and BPM
   // bars = seconds * bpm / 60 / 4 (4 beats per bar)
+  // Use floating point to reduce rounding error (previously ±4 seconds)
   uint16_t target_bars = static_cast<uint16_t>(
-      static_cast<uint32_t>(target_seconds) * bpm / 240);
+      std::round(static_cast<float>(target_seconds) * bpm / 240.0f));
 
   // Minimum 12 bars (very short), maximum 120 bars (~4 min @120BPM)
   target_bars = std::max(target_bars, static_cast<uint16_t>(12));
@@ -224,51 +228,6 @@ std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t
   Tick current_bar = 0;
   Tick current_tick = 0;
 
-  // Helper to get vocal density for a section type
-  auto getVocalDensity = [](SectionType type) -> VocalDensity {
-    switch (type) {
-      case SectionType::Intro:
-      case SectionType::Interlude:
-      case SectionType::Outro:
-      case SectionType::Chant:     // Call section - Vocal rests
-      case SectionType::MixBreak:  // MIX section - Vocal rests
-        return VocalDensity::None;
-      case SectionType::A:
-      case SectionType::Bridge:
-        return VocalDensity::Sparse;
-      case SectionType::B:
-      case SectionType::Chorus:
-        return VocalDensity::Full;
-      default:
-        return VocalDensity::Full;
-    }
-  };
-
-  // Helper to get backing density for a section type
-  auto getBackingDensity = [](SectionType type) -> BackingDensity {
-    switch (type) {
-      case SectionType::Intro:
-      case SectionType::Bridge:
-      case SectionType::Interlude:
-      case SectionType::Chant:     // Call section - thin backing (quiet)
-        return BackingDensity::Thin;
-      case SectionType::Outro:
-      case SectionType::A:
-      case SectionType::B:
-        return BackingDensity::Normal;
-      case SectionType::Chorus:
-      case SectionType::MixBreak:  // MIX section - full energy
-        return BackingDensity::Thick;
-      default:
-        return BackingDensity::Normal;
-    }
-  };
-
-  // Helper to check if section allows raw vocal deviation
-  auto getAllowDeviation = [](SectionType type) -> bool {
-    return type == SectionType::Chorus || type == SectionType::Bridge;
-  };
-
   auto addSection = [&](SectionType type, uint8_t bars) {
     Section section;
     section.type = type;
@@ -276,9 +235,9 @@ std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t
     section.bars = bars;
     section.startBar = current_bar;
     section.start_tick = current_tick;
-    section.vocal_density = getVocalDensity(type);
-    section.backing_density = getBackingDensity(type);
-    section.deviation_allowed = getAllowDeviation(type);
+    section.vocal_density = getVocalDensityForType(type);
+    section.backing_density = getBackingDensityForType(type);
+    section.deviation_allowed = getAllowDeviationForType(type);
     section.se_allowed = true;
     sections.push_back(section);
     current_bar += bars;
@@ -372,54 +331,14 @@ void insertCallSections(
     MixPattern mix_pattern,
     uint16_t bpm) {
 
-  // Helper to get vocal density for a section type
-  auto getVocalDensity = [](SectionType type) -> VocalDensity {
-    switch (type) {
-      case SectionType::Intro:
-      case SectionType::Interlude:
-      case SectionType::Outro:
-      case SectionType::Chant:
-      case SectionType::MixBreak:
-        return VocalDensity::None;
-      case SectionType::A:
-      case SectionType::Bridge:
-        return VocalDensity::Sparse;
-      case SectionType::B:
-      case SectionType::Chorus:
-        return VocalDensity::Full;
-      default:
-        return VocalDensity::Full;
-    }
-  };
-
-  // Helper to get backing density for a section type
-  auto getBackingDensity = [](SectionType type) -> BackingDensity {
-    switch (type) {
-      case SectionType::Intro:
-      case SectionType::Bridge:
-      case SectionType::Interlude:
-      case SectionType::Chant:
-        return BackingDensity::Thin;
-      case SectionType::Outro:
-      case SectionType::A:
-      case SectionType::B:
-        return BackingDensity::Normal;
-      case SectionType::Chorus:
-      case SectionType::MixBreak:
-        return BackingDensity::Thick;
-      default:
-        return BackingDensity::Normal;
-    }
-  };
-
   // 1. Insert Chant after Intro
   if (intro_chant != IntroChant::None) {
     Section chant;
     chant.type = SectionType::Chant;
     chant.bars = calcIntroChantBars(intro_chant, bpm);
     chant.name = (intro_chant == IntroChant::Gachikoi) ? "Gachikoi" : "Shout";
-    chant.vocal_density = getVocalDensity(SectionType::Chant);
-    chant.backing_density = getBackingDensity(SectionType::Chant);
+    chant.vocal_density = getVocalDensityForType(SectionType::Chant);
+    chant.backing_density = getBackingDensityForType(SectionType::Chant);
     chant.deviation_allowed = false;
     chant.se_allowed = true;
 
@@ -440,8 +359,8 @@ void insertCallSections(
     mix.type = SectionType::MixBreak;
     mix.bars = calcMixPatternBars(mix_pattern, bpm);
     mix.name = (mix_pattern == MixPattern::Tiger) ? "TigerMix" : "Mix";
-    mix.vocal_density = getVocalDensity(SectionType::MixBreak);
-    mix.backing_density = getBackingDensity(SectionType::MixBreak);
+    mix.vocal_density = getVocalDensityForType(SectionType::MixBreak);
+    mix.backing_density = getBackingDensityForType(SectionType::MixBreak);
     mix.deviation_allowed = false;
     mix.se_allowed = true;
 

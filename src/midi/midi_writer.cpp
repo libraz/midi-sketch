@@ -63,12 +63,16 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name,
                             int8_t mod_amount) {
   std::vector<uint8_t> track_data;
 
-  // Track name (Meta event 0x03)
+  // Validate BPM to prevent division by zero
+  if (bpm == 0) bpm = 120;
+
+  // Track name (Meta event 0x03) - truncate to 255 bytes max
+  std::string track_name = name.size() > 255 ? name.substr(0, 255) : name;
   track_data.push_back(0x00);
   track_data.push_back(0xFF);
   track_data.push_back(0x03);
-  track_data.push_back(static_cast<uint8_t>(name.size()));
-  for (char c : name) {
+  track_data.push_back(static_cast<uint8_t>(track_name.size()));
+  for (char c : track_name) {
     track_data.push_back(static_cast<uint8_t>(c));
   }
 
@@ -164,6 +168,9 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name,
 void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm) {
   std::vector<uint8_t> track_data;
 
+  // Validate BPM to prevent division by zero
+  if (bpm == 0) bpm = 120;
+
   // Track name
   track_data.push_back(0x00);
   track_data.push_back(0xFF);
@@ -198,11 +205,16 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm) {
     Tick delta = marker.time - prev_time;
     prev_time = marker.time;
 
+    // Truncate marker text to 255 bytes max
+    std::string marker_text = marker.text.size() > 255
+                                  ? marker.text.substr(0, 255)
+                                  : marker.text;
+
     writeVariableLength(track_data, delta);
     track_data.push_back(0xFF);
     track_data.push_back(0x06);
-    track_data.push_back(static_cast<uint8_t>(marker.text.size()));
-    for (char c : marker.text) {
+    track_data.push_back(static_cast<uint8_t>(marker_text.size()));
+    for (char c : marker_text) {
       track_data.push_back(static_cast<uint8_t>(c));
     }
   }

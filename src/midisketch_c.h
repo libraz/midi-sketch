@@ -276,6 +276,16 @@ typedef enum {
   MIDISKETCH_CONFIG_INVALID_MODULATION = 8,
 } MidiSketchConfigError;
 
+// Returns a human-readable error message for the given config error.
+// @param error Config error code
+// @returns Error message string (static, do not free)
+const char* midisketch_config_error_string(MidiSketchConfigError error);
+
+// Returns the last config validation error from generate_from_config.
+// @param handle MidiSketch handle
+// @returns Last config error code (or MIDISKETCH_CONFIG_OK if none)
+MidiSketchConfigError midisketch_get_last_config_error(MidiSketchHandle handle);
+
 // Returns the number of available style presets.
 // @returns Style preset count
 uint8_t midisketch_style_preset_count(void);

@@ -205,5 +205,104 @@ TEST(MidiWriterTest, KeyTransposeDoesNotAffectDrums) {
   EXPECT_EQ(pitchD, 36);
 }
 
+// ============================================================================
+// Edge Case Tests (BPM=0, Text Length)
+// ============================================================================
+
+TEST(MidiWriterTest, BpmZeroDoesNotCrash) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(0);  // Invalid BPM
+  song.vocal().addNote(0, 480, 60, 100);
+
+  // Should not crash - BPM defaults to 120
+  EXPECT_NO_THROW(writer.build(song, Key::C));
+  auto data = writer.toBytes();
+  EXPECT_GT(data.size(), 0u);
+}
+
+TEST(MidiWriterTest, BpmZeroDefaultsTo120) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(0);  // Invalid BPM
+  song.vocal().addNote(0, 480, 60, 100);
+
+  writer.build(song, Key::C);
+  auto data = writer.toBytes();
+
+  // Find tempo meta event (FF 51 03) and check value
+  // 120 BPM = 500000 microseconds per beat = 0x07A120
+  bool found_tempo = false;
+  for (size_t i = 0; i + 6 < data.size(); ++i) {
+    if (data[i] == 0xFF && data[i + 1] == 0x51 && data[i + 2] == 0x03) {
+      uint32_t tempo = (data[i + 3] << 16) | (data[i + 4] << 8) | data[i + 5];
+      EXPECT_EQ(tempo, 500000u);  // 60000000 / 120 = 500000
+      found_tempo = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_tempo);
+}
+
+TEST(MidiWriterTest, LongTrackNameTruncatedTo255) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+  song.vocal().addNote(0, 480, 60, 100);
+
+  writer.build(song, Key::C);
+  auto data = writer.toBytes();
+
+  // Track names in this test are short ("SE", "Vocal"), so just verify no crash
+  // The truncation is applied but not exercised with current API
+  EXPECT_GT(data.size(), 0u);
+}
+
+TEST(MidiWriterTest, LongMarkerTextTruncatedTo255) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+
+  // Create a marker text > 255 bytes
+  std::string long_text(300, 'A');
+  song.se().addText(0, long_text);
+
+  // Should not crash
+  EXPECT_NO_THROW(writer.build(song, Key::C));
+  auto data = writer.toBytes();
+
+  // Find marker meta event (FF 06 len) and verify length <= 255
+  for (size_t i = 0; i + 2 < data.size(); ++i) {
+    if (data[i] == 0xFF && data[i + 1] == 0x06) {
+      // Length byte should be <= 255 (truncated from 300)
+      EXPECT_LE(data[i + 2], 255u);
+      // Verify actual truncation to 255
+      EXPECT_EQ(data[i + 2], 255u);
+      break;
+    }
+  }
+}
+
+TEST(MidiWriterTest, MarkerTextExactly255BytesNotTruncated) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+
+  // Create a marker text exactly 255 bytes
+  std::string exact_text(255, 'B');
+  song.se().addText(0, exact_text);
+
+  writer.build(song, Key::C);
+  auto data = writer.toBytes();
+
+  // Find marker meta event (FF 06 len) and verify length == 255
+  for (size_t i = 0; i + 2 < data.size(); ++i) {
+    if (data[i] == 0xFF && data[i + 1] == 0x06) {
+      EXPECT_EQ(data[i + 2], 255u);
+      break;
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

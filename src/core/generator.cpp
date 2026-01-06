@@ -26,52 +26,127 @@ void applyVocalStylePreset(GeneratorParams& params,
 
   switch (params.vocal_style) {
     case VocalStylePreset::Vocaloid:
-      // YOASOBI style: 16th note grid, high density
+      // YOASOBI style: 16th note grid, high density, syncopation
       if (!user_set_division) {
         params.melody_params.min_note_division = 16;
       }
       params.melody_params.sixteenth_note_ratio =
-          std::max(params.melody_params.sixteenth_note_ratio, 0.3f);
+          std::max(params.melody_params.sixteenth_note_ratio, 0.5f);
       if (!user_set_density) {
         params.melody_params.note_density =
-            std::max(params.melody_params.note_density, 1.0f);
+            std::max(params.melody_params.note_density, 1.2f);
       }
-      params.vocal_rest_ratio = 0.0f;  // No rests
+      params.melody_params.syncopation_prob = 0.4f;
+      params.melody_params.allow_bar_crossing = true;
+      params.melody_params.long_note_ratio = 0.1f;  // Few long notes
+      params.melody_params.max_leap_interval = 14;  // Octave+ allowed
+      params.vocal_rest_ratio = 0.05f;  // Minimal rests
       break;
 
     case VocalStylePreset::UltraVocaloid:
-      // Hatsune Miku no Shoushitsu style: 32nd note grid, maximum density
+      // Hatsune Miku no Shoushitsu: 32nd note grid, maximum density
       if (!user_set_division) {
         params.melody_params.min_note_division = 32;
       }
-      params.melody_params.sixteenth_note_ratio = 0.5f;
+      params.melody_params.sixteenth_note_ratio = 0.3f;  // Also use 16ths
       if (!user_set_density) {
-        params.melody_params.note_density = 2.0f;
+        params.melody_params.note_density = 2.5f;  // Extreme density
       }
-      params.vocal_rest_ratio = 0.0f;
+      params.melody_params.syncopation_prob = 0.3f;
+      params.melody_params.allow_bar_crossing = true;
+      params.melody_params.long_note_ratio = 0.0f;  // No long notes
+      params.melody_params.max_leap_interval = 24;  // 2 octaves allowed
+      params.melody_params.chorus_density_modifier = 1.0f;  // Keep density high
+      params.vocal_rest_ratio = 0.0f;  // No rests
       params.vocal_allow_extreme_leap = true;
       break;
 
     case VocalStylePreset::Idol:
-      // Idol style: high density, catchy
-      params.melody_params.sixteenth_note_ratio =
-          std::max(params.melody_params.sixteenth_note_ratio, 0.25f);
-      if (!user_set_density) {
-        params.melody_params.note_density =
-            std::max(params.melody_params.note_density, 0.85f);
+      // Idol style: catchy hooks, long tones in chorus, danceable
+      if (!user_set_division) {
+        params.melody_params.min_note_division = 8;  // Max 8th notes (no 16ths)
       }
+      params.melody_params.sixteenth_note_ratio = 0.15f;  // Limited 16ths
+      if (!user_set_density) {
+        params.melody_params.note_density = 0.8f;  // Medium density
+      }
+      params.melody_params.long_note_ratio = 0.25f;  // 25% long notes
+      params.melody_params.hook_repetition = true;  // Catchy hooks
+      params.melody_params.chorus_long_tones = true;  // Sustained chorus
+      params.melody_params.chorus_density_modifier = 0.85f;  // Lower density = longer notes
+      params.melody_params.max_leap_interval = 7;  // Singable (5th max)
+      params.vocal_rest_ratio = 0.15f;  // Space for calls
       break;
 
     case VocalStylePreset::Ballad:
-      // Ballad: sparse, long notes
+      // Ballad: sparse, sustained, emotional
       if (!user_set_division) {
-        params.melody_params.min_note_division =
-            std::min(params.melody_params.min_note_division, uint8_t(4));
+        params.melody_params.min_note_division = 4;  // Quarter notes minimum
       }
+      params.melody_params.sixteenth_note_ratio = 0.0f;  // No 16ths
       if (!user_set_density) {
-        params.melody_params.note_density =
-            std::min(params.melody_params.note_density, 0.5f);
+        params.melody_params.note_density = 0.4f;  // Low density
       }
+      params.melody_params.long_note_ratio = 0.5f;  // Half are long notes
+      params.melody_params.chorus_long_tones = true;
+      params.melody_params.max_leap_interval = 5;  // 4th max (smooth)
+      params.vocal_rest_ratio = 0.25f;  // Breathing space
+      break;
+
+    case VocalStylePreset::Rock:
+      // Rock: powerful, shout-friendly, driving
+      if (!user_set_division) {
+        params.melody_params.min_note_division = 8;
+      }
+      params.melody_params.sixteenth_note_ratio = 0.1f;
+      if (!user_set_density) {
+        params.melody_params.note_density = 0.7f;
+      }
+      params.melody_params.long_note_ratio = 0.3f;  // Shout-friendly
+      params.melody_params.hook_repetition = true;
+      params.melody_params.chorus_long_tones = true;
+      params.melody_params.chorus_register_shift = 7;  // High chorus (5th up)
+      params.melody_params.chorus_density_modifier = 0.8f;  // Shout = fewer notes
+      params.melody_params.max_leap_interval = 9;  // 6th (power chord feel)
+      params.melody_params.syncopation_prob = 0.25f;
+      params.melody_params.allow_bar_crossing = true;
+      params.vocal_rest_ratio = 0.1f;
+      break;
+
+    case VocalStylePreset::CityPop:
+      // City Pop: groove, syncopation, smooth
+      if (!user_set_division) {
+        params.melody_params.min_note_division = 8;
+      }
+      params.melody_params.sixteenth_note_ratio = 0.2f;
+      if (!user_set_density) {
+        params.melody_params.note_density = 0.6f;
+      }
+      params.melody_params.long_note_ratio = 0.3f;
+      params.melody_params.syncopation_prob = 0.35f;  // Groove-heavy
+      params.melody_params.allow_bar_crossing = true;
+      params.melody_params.tension_usage = 0.4f;  // Use 7th/9th
+      params.melody_params.max_leap_interval = 7;
+      params.vocal_rest_ratio = 0.2f;
+      break;
+
+    case VocalStylePreset::Anime:
+      // Anime: dramatic, catchy, hybrid
+      if (!user_set_division) {
+        params.melody_params.min_note_division = 8;
+      }
+      params.melody_params.sixteenth_note_ratio = 0.25f;
+      if (!user_set_density) {
+        params.melody_params.note_density = 0.85f;
+      }
+      params.melody_params.long_note_ratio = 0.25f;
+      params.melody_params.hook_repetition = true;
+      params.melody_params.chorus_long_tones = true;
+      params.melody_params.chorus_density_modifier = 1.15f;  // Climax boost
+      params.melody_params.max_leap_interval = 10;  // Dramatic leaps
+      params.melody_params.syncopation_prob = 0.25f;
+      params.melody_params.allow_bar_crossing = true;
+      params.vocal_rest_ratio = 0.1f;
       break;
 
     case VocalStylePreset::Auto:
@@ -275,6 +350,16 @@ void Generator::generateFromConfig(const SongConfig& config) {
 
 void Generator::generate(const GeneratorParams& params) {
   params_ = params;
+
+  // Validate vocal range to prevent invalid output
+  if (params_.vocal_low > params_.vocal_high) {
+    std::swap(params_.vocal_low, params_.vocal_high);
+  }
+  // Clamp to valid MIDI range
+  params_.vocal_low = std::clamp(params_.vocal_low, static_cast<uint8_t>(36),
+                                  static_cast<uint8_t>(96));
+  params_.vocal_high = std::clamp(params_.vocal_high, static_cast<uint8_t>(36),
+                                   static_cast<uint8_t>(96));
 
   // Initialize seed
   uint32_t seed = resolveSeed(params.seed);

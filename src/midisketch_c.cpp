@@ -5,14 +5,60 @@
 #include "core/structure.h"
 #include <cstring>
 #include <cstdlib>
+#include <unordered_map>
+
+namespace {
+// Thread-local storage for last config error per handle
+// Using void* as key to avoid issues with opaque handle
+std::unordered_map<void*, MidiSketchConfigError> g_last_config_errors;
+}  // namespace
 
 extern "C" {
+
+const char* midisketch_config_error_string(MidiSketchConfigError error) {
+  switch (error) {
+    case MIDISKETCH_CONFIG_OK:
+      return "No error";
+    case MIDISKETCH_CONFIG_INVALID_STYLE:
+      return "Invalid style preset ID";
+    case MIDISKETCH_CONFIG_INVALID_CHORD:
+      return "Invalid chord progression ID for this style";
+    case MIDISKETCH_CONFIG_INVALID_FORM:
+      return "Invalid form/structure ID for this style";
+    case MIDISKETCH_CONFIG_INVALID_ATTITUDE:
+      return "Invalid vocal attitude for this style";
+    case MIDISKETCH_CONFIG_INVALID_VOCAL_RANGE:
+      return "Invalid vocal range (low must be <= high, range 36-96)";
+    case MIDISKETCH_CONFIG_INVALID_BPM:
+      return "Invalid BPM (must be 40-240, or 0 for default)";
+    case MIDISKETCH_CONFIG_DURATION_TOO_SHORT:
+      return "Target duration too short (minimum 10 seconds)";
+    case MIDISKETCH_CONFIG_INVALID_MODULATION:
+      return "Invalid modulation settings";
+    default:
+      return "Unknown config error";
+  }
+}
+
+MidiSketchConfigError midisketch_get_last_config_error(MidiSketchHandle handle) {
+  if (!handle) {
+    return MIDISKETCH_CONFIG_OK;
+  }
+  auto it = g_last_config_errors.find(handle);
+  if (it != g_last_config_errors.end()) {
+    return it->second;
+  }
+  return MIDISKETCH_CONFIG_OK;
+}
 
 MidiSketchHandle midisketch_create(void) {
   return new midisketch::MidiSketch();
 }
 
 void midisketch_destroy(MidiSketchHandle handle) {
+  if (handle) {
+    g_last_config_errors.erase(handle);
+  }
   delete static_cast<midisketch::MidiSketch*>(handle);
 }
 
@@ -106,7 +152,7 @@ MidiSketchInfo midisketch_get_info(MidiSketchHandle handle) {
   info.total_bars = song.arrangement().totalBars();
   info.total_ticks = song.arrangement().totalTicks();
   info.bpm = song.bpm();
-  info.track_count = 4;  // Vocal, Chord, Bass, Drums
+  info.track_count = 7;  // Vocal, Chord, Bass, Drums, SE, Motif, Arpeggio
 
   return info;
 }
@@ -191,6 +237,11 @@ MidiSketchStylePresetSummary midisketch_get_style_preset(uint8_t id) {
 }
 
 // Static buffers for WASM returns
+// WARNING: These buffers are NOT thread-safe. This is acceptable because:
+// 1. WASM runs in a single-threaded environment
+// 2. The C API is designed for WASM/JavaScript interop
+// If using this library in a multi-threaded native context, callers must
+// ensure that these functions are not called concurrently.
 static MidiSketchChordCandidates s_chord_candidates;
 static MidiSketchFormCandidates s_form_candidates;
 static MidiSketchSongConfig s_default_config;
@@ -374,9 +425,14 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
+  // Clear previous config error
+  g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
+
   // Validate config first
   MidiSketchConfigError validation = midisketch_validate_config(config);
   if (validation != MIDISKETCH_CONFIG_OK) {
+    // Store detailed error for later retrieval
+    g_last_config_errors[handle] = validation;
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 

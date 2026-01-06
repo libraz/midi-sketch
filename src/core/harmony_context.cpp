@@ -223,4 +223,38 @@ std::vector<int> HarmonyContext::getChordTonePitchClasses(int8_t degree) {
   return result;
 }
 
+bool HarmonyContext::hasBassCollision(uint8_t pitch, Tick start, Tick duration,
+                                       int threshold) const {
+  // Only check if pitch is in low register
+  if (pitch >= LOW_REGISTER_THRESHOLD) {
+    return false;
+  }
+
+  Tick end = start + duration;
+
+  for (const auto& note : notes_) {
+    // Only check against bass track
+    if (note.track != TrackRole::Bass) continue;
+
+    // Check if notes overlap in time
+    if (note.start < end && note.end > start) {
+      // In low register, check for close interval collision (not just pitch class)
+      // This catches unison, minor 2nd, major 2nd, and minor 3rd (based on threshold)
+      int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
+
+      // Direct collision: pitches are within threshold semitones
+      if (interval <= threshold) {
+        return true;
+      }
+
+      // Octave doubling in low register also sounds muddy
+      // Check if same pitch class within one octave
+      if (interval > 0 && interval <= 12 && (interval % 12) == 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 }  // namespace midisketch

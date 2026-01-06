@@ -34,6 +34,7 @@ set(TEST_SOURCES
   track/bass_test.cpp
   track/drums_test.cpp
   analysis/dissonance_test.cpp
+  api/c_api_test.cpp
 )
 
 add_executable(midisketch_tests ${TEST_SOURCES})

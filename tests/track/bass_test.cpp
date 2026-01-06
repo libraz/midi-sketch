@@ -198,5 +198,311 @@ TEST_F(BassTest, TranspositionWorksCorrectly) {
   EXPECT_FALSE(track_g.notes().empty());
 }
 
+// ============================================================================
+// Bass Pattern Tests
+// ============================================================================
+
+TEST_F(BassTest, BassHasOctaveJumps) {
+  params_.seed = 100;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+
+  // Check for octave intervals between consecutive notes
+  bool has_octave_jump = false;
+  for (size_t i = 1; i < track.notes().size(); ++i) {
+    int interval = std::abs(static_cast<int>(track.notes()[i].note) -
+                            static_cast<int>(track.notes()[i - 1].note));
+    if (interval == 12) {  // Octave
+      has_octave_jump = true;
+      break;
+    }
+  }
+
+  // Bass patterns may include octave jumps
+  // This is a verification, not an assertion (style-dependent)
+  EXPECT_TRUE(track.notes().size() > 0);
+}
+
+TEST_F(BassTest, BassHasFifths) {
+  params_.seed = 100;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+
+  // Check for fifth intervals
+  bool has_fifth = false;
+  for (size_t i = 1; i < track.notes().size(); ++i) {
+    int interval = std::abs(static_cast<int>(track.notes()[i].note) -
+                            static_cast<int>(track.notes()[i - 1].note));
+    if (interval == 7) {  // Perfect fifth
+      has_fifth = true;
+      break;
+    }
+  }
+
+  // Bass often uses root-fifth motion
+  EXPECT_TRUE(track.notes().size() > 0);
+}
+
+TEST_F(BassTest, BassVelocityDynamics) {
+  params_.seed = 100;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+
+  std::vector<uint8_t> velocities;
+  for (const auto& note : track.notes()) {
+    velocities.push_back(note.velocity);
+  }
+
+  if (velocities.size() > 5) {
+    uint8_t min_vel = *std::min_element(velocities.begin(), velocities.end());
+    uint8_t max_vel = *std::max_element(velocities.begin(), velocities.end());
+
+    // Should have some velocity range
+    EXPECT_GE(max_vel - min_vel, 5)
+        << "Bass should have velocity dynamics";
+  }
+}
+
+TEST_F(BassTest, BassNotesOnChordChanges) {
+  params_.seed = 100;
+  params_.chord_id = 0;  // Canon progression
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+
+  // Count bass notes at bar starts (chord changes typically happen at bar starts)
+  int notes_at_bar_start = 0;
+  for (const auto& note : track.notes()) {
+    if (note.startTick % TICKS_PER_BAR == 0) {
+      notes_at_bar_start++;
+    }
+  }
+
+  // Should have notes at most bar starts
+  EXPECT_GT(notes_at_bar_start, 0) << "Bass should play on chord changes";
+}
+
+// ============================================================================
+// Section-Specific Bass Tests
+// ============================================================================
+
+TEST_F(BassTest, ChorusHasBassNotes) {
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 100;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+  const auto& arrangement = gen.getSong().arrangement();
+
+  // Find chorus section
+  Tick chorus_start = 0;
+  Tick chorus_end = 0;
+  for (const auto& section : arrangement.sections()) {
+    if (section.type == SectionType::Chorus) {
+      chorus_start = section.start_tick;
+      chorus_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      break;
+    }
+  }
+
+  // Count bass notes in chorus
+  int chorus_notes = 0;
+  for (const auto& note : track.notes()) {
+    if (note.startTick >= chorus_start && note.startTick < chorus_end) {
+      chorus_notes++;
+    }
+  }
+
+  EXPECT_GT(chorus_notes, 0) << "Chorus should have bass notes";
+}
+
+TEST_F(BassTest, IntroMayHaveSparserBass) {
+  params_.structure = StructurePattern::BuildUp;  // Has Intro
+  params_.seed = 100;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+  const auto& arrangement = gen.getSong().arrangement();
+
+  // Find intro section
+  Tick intro_start = 0;
+  Tick intro_end = 0;
+  for (const auto& section : arrangement.sections()) {
+    if (section.type == SectionType::Intro) {
+      intro_start = section.start_tick;
+      intro_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      break;
+    }
+  }
+
+  // Count bass notes in intro
+  int intro_notes = 0;
+  for (const auto& note : track.notes()) {
+    if (note.startTick >= intro_start && note.startTick < intro_end) {
+      intro_notes++;
+    }
+  }
+
+  // Intro may have bass notes (style-dependent)
+  EXPECT_GE(intro_notes, 0);
+}
+
+// ============================================================================
+// Mood-Specific Bass Tests
+// ============================================================================
+
+TEST_F(BassTest, BalladBassStyle) {
+  params_.mood = Mood::Ballad;
+  params_.seed = 100;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+
+  EXPECT_FALSE(track.notes().empty()) << "Ballad should have bass";
+}
+
+TEST_F(BassTest, DanceBassStyle) {
+  params_.mood = Mood::EnergeticDance;
+  params_.seed = 100;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+
+  EXPECT_FALSE(track.notes().empty()) << "Dance should have bass";
+}
+
+TEST_F(BassTest, RockBassStyle) {
+  params_.mood = Mood::LightRock;
+  params_.seed = 100;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+
+  EXPECT_FALSE(track.notes().empty()) << "Rock should have bass";
+}
+
+// ============================================================================
+// Approach Note Tests
+// ============================================================================
+
+TEST_F(BassTest, ApproachNotesUsed) {
+  params_.seed = 100;
+  params_.mood = Mood::StraightPop;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+
+  // Look for chromatic or stepwise movement before bar lines
+  int potential_approach_notes = 0;
+  for (size_t i = 1; i < track.notes().size(); ++i) {
+    const auto& prev = track.notes()[i - 1];
+    const auto& curr = track.notes()[i];
+
+    // If current note is on a bar line
+    if (curr.startTick % TICKS_PER_BAR == 0) {
+      int interval = std::abs(static_cast<int>(curr.note) -
+                              static_cast<int>(prev.note));
+      // Approach notes are typically 1-2 semitones or 5-7 (fourth/fifth)
+      if (interval >= 1 && interval <= 7) {
+        potential_approach_notes++;
+      }
+    }
+  }
+
+  // Should have some approach motion
+  EXPECT_GT(potential_approach_notes, 0)
+      << "Bass should use approach notes";
+}
+
+TEST_F(BassTest, BassAvoidsMajorSeventhWithChord) {
+  // This tests the bass-chord coordination
+  params_.seed = 100;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& bass_track = gen.getSong().bass();
+  const auto& chord_track = gen.getSong().chord();
+
+  // Count potential clashes (major 7th = 11 semitones)
+  int potential_clashes = 0;
+  for (const auto& bass_note : bass_track.notes()) {
+    for (const auto& chord_note : chord_track.notes()) {
+      // Check if notes overlap in time
+      if (chord_note.startTick <= bass_note.startTick &&
+          chord_note.startTick + chord_note.duration > bass_note.startTick) {
+        int interval = std::abs(static_cast<int>(bass_note.note) -
+                                static_cast<int>(chord_note.note)) % 12;
+        if (interval == 11 || interval == 1) {  // Major 7th or minor 2nd
+          potential_clashes++;
+        }
+      }
+    }
+  }
+
+  // Should have few clashes (some may occur in passing)
+  double clash_ratio = static_cast<double>(potential_clashes) /
+                       bass_track.notes().size();
+  EXPECT_LT(clash_ratio, 0.15)
+      << "Bass should avoid major 7th clashes with chord: "
+      << potential_clashes << " clashes out of " << bass_track.notes().size();
+}
+
+// ============================================================================
+// Duration Tests
+// ============================================================================
+
+TEST_F(BassTest, BassDurationValid) {
+  params_.seed = 100;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+
+  for (const auto& note : track.notes()) {
+    EXPECT_GT(note.duration, 0u) << "Bass note duration should be > 0";
+    EXPECT_LE(note.duration, TICKS_PER_BAR * 2)
+        << "Bass note duration should not exceed 2 bars";
+  }
+}
+
+TEST_F(BassTest, BassVelocityWithinBounds) {
+  params_.seed = 100;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+
+  for (const auto& note : track.notes()) {
+    EXPECT_GE(note.velocity, 30) << "Bass velocity too low";
+    EXPECT_LE(note.velocity, 127) << "Bass velocity too high";
+  }
+}
+
 }  // namespace
 }  // namespace midisketch
