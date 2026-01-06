@@ -266,5 +266,84 @@ TEST_F(ChordTrackTest, SusChordNoConsecutiveSusExtensions) {
   EXPECT_GT(chord_track.notes().size(), 0u);
 }
 
+// ============================================================================
+// Phase 2: Anticipation Tests
+// ============================================================================
+
+TEST_F(ChordTrackTest, AnticipationInChorusSection) {
+  // Test that chord anticipation is applied in Chorus sections
+  // Anticipation places next bar's chord at beat 4& (WHOLE - EIGHTH) of current bar
+  params_.structure = StructurePattern::FullPop;  // Has Chorus sections
+  params_.mood = Mood::EnergeticDance;
+  params_.seed = 303030;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& chord_track = gen.getSong().chord();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  EXPECT_FALSE(chord_track.empty()) << "Chord track should be generated";
+
+  // Find Chorus sections and check for anticipation notes
+  // Anticipation is applied on odd bars (1, 3, 5...) at beat 4& position
+  int anticipation_notes = 0;
+  constexpr Tick EIGHTH = TICKS_PER_BEAT / 2;
+  constexpr Tick ANT_OFFSET = TICKS_PER_BAR - EIGHTH;  // Beat 4&
+
+  for (const auto& sec : sections) {
+    if (sec.type != SectionType::Chorus && sec.type != SectionType::B) continue;
+
+    for (const auto& note : chord_track.notes()) {
+      if (note.startTick < sec.start_tick) continue;
+      if (note.startTick >= sec.start_tick + sec.bars * TICKS_PER_BAR) continue;
+
+      // Check if note is at anticipation position (beat 4&)
+      Tick relative = (note.startTick - sec.start_tick) % TICKS_PER_BAR;
+      if (relative == ANT_OFFSET) {
+        anticipation_notes++;
+      }
+    }
+  }
+
+  // Anticipation should be present in Chorus/B sections
+  EXPECT_GT(anticipation_notes, 0)
+      << "Chorus/B sections should have anticipation notes at beat 4&";
+}
+
+TEST_F(ChordTrackTest, NoAnticipationInIntroOutro) {
+  // Test that anticipation is NOT applied in Intro/Outro sections
+  params_.structure = StructurePattern::FullPop;
+  params_.seed = 313131;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& chord_track = gen.getSong().chord();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  constexpr Tick EIGHTH = TICKS_PER_BEAT / 2;
+  constexpr Tick ANT_OFFSET = TICKS_PER_BAR - EIGHTH;
+
+  // Check Intro and Outro sections
+  for (const auto& sec : sections) {
+    if (sec.type != SectionType::Intro && sec.type != SectionType::Outro) continue;
+
+    int anticipation_in_section = 0;
+    for (const auto& note : chord_track.notes()) {
+      if (note.startTick < sec.start_tick) continue;
+      if (note.startTick >= sec.start_tick + sec.bars * TICKS_PER_BAR) continue;
+
+      Tick relative = (note.startTick - sec.start_tick) % TICKS_PER_BAR;
+      if (relative == ANT_OFFSET) {
+        anticipation_in_section++;
+      }
+    }
+
+    EXPECT_EQ(anticipation_in_section, 0)
+        << "Intro/Outro should not have anticipation notes";
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

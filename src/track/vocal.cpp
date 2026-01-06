@@ -778,6 +778,32 @@ std::vector<std::vector<RhythmNote>> getRhythmPatterns() {
      {2.5f, 1, false}, {2.75f, 1, false}, {3.0f, 1, true}, {3.5f, 1, false},
      {4.0f, 1, true}, {4.25f, 1, false}, {4.5f, 1, false}, {5.0f, 1, true},
      {5.5f, 1, false}, {6.0f, 1, true}, {6.5f, 1, false}, {7.0f, 2, false}},
+
+    // === DOTTED RHYTHM PATTERNS ===
+
+    // Pattern 9: Dotted quarter + eighth (3:1) - Ballad/J-POP feel
+    // "Ta---Ta Ta---Ta | Ta---Ta Ta---Ta" - flowing, lyrical
+    {{0.0f, 3, true}, {1.5f, 1, false}, {2.0f, 3, true}, {3.5f, 1, false},
+     {4.0f, 3, true}, {5.5f, 1, false}, {6.0f, 3, true}, {7.5f, 1, false}},
+
+    // Pattern 10: Eighth + dotted quarter (1:3) - Forward momentum
+    // "Ta Ta--- Ta Ta--- | Ta Ta--- Ta Ta---" - driving feel
+    {{0.0f, 1, true}, {0.5f, 3, false}, {2.0f, 1, true}, {2.5f, 3, false},
+     {4.0f, 1, true}, {4.5f, 3, false}, {6.0f, 1, true}, {6.5f, 3, false}},
+
+    // === TRIPLET RHYTHM PATTERNS ===
+
+    // Pattern 11: Full triplet - 12 notes / 2 bars, jazz/gospel feel
+    // "Ta-ta-ta Ta-ta-ta | Ta-ta-ta Ta-ta-ta" - every beat subdivided into 3
+    {{0.0f, 1, true},      {0.33f, 1, false},  {0.67f, 1, false},
+     {1.0f, 1, true},      {1.33f, 1, false},  {1.67f, 1, false},
+     {2.0f, 1, true},      {2.33f, 1, false},  {2.67f, 1, false},
+     {3.0f, 1, true},      {3.33f, 1, false},  {3.67f, 1, false}},
+
+    // Pattern 12: Shuffle triplet - 8 notes / 2 bars, blues/swing feel
+    // Skip middle triplet for swing groove: "Ta--ta Ta--ta Ta--ta Ta--ta"
+    {{0.0f, 2, true},  {0.67f, 1, false}, {1.0f, 2, true},  {1.67f, 1, false},
+     {2.0f, 2, true},  {2.67f, 1, false}, {3.0f, 2, true},  {3.67f, 1, false}},
   };
 }
 
@@ -916,6 +942,11 @@ std::vector<MelodicContour> getMelodicContours() {
     // Contour 4: Bridge - wider range but still singable
     {{0, 2, 4, 2, 2, 0, 2, 4, 2, 0},
      {true, true, true, true, false, true, true, true, true, true}},
+    // Contour 5: Climax - reaches 6th (9 semitones) for emotional peak
+    // Used in Chorus/B section climaxes, builds to peak then descends
+    // Capped at 5 (6th degree = 9 semitones) to stay within singable range
+    {{0, 2, 4, 5, 5, 5, 5, 4, 2, 0},
+     {true, true, true, true, true, true, true, true, true, true}},
   };
 }
 
@@ -1738,10 +1769,25 @@ void generateVocalTrack(MidiTrack& track, Song& song,
             0, ending_contours.size() - 1);
         contour = ending_contours[end_dist(rng)];
       } else {
-        std::uniform_int_distribution<size_t> cont_dist(
-            0, melody_contours.size() - 1);
-        size_t idx = (cont_dist(rng) + contour_variation) % melody_contours.size();
-        contour = melody_contours[idx];
+        // Use contours 0-4 for general selection (preserves random distribution)
+        // Contour 5 (climax) is selected explicitly for Chorus climax moments
+        constexpr size_t kGeneralContourCount = 5;
+        size_t available_contours = std::min(kGeneralContourCount, melody_contours.size());
+
+        // Explicit climax contour selection for Chorus peak moment
+        // Use climax at 3rd motif (bars 4-5) of Chorus - deterministic, no random
+        bool use_climax = (section.type == SectionType::Chorus &&
+                            melody_contours.size() > 5 &&  // Climax contour exists
+                            motif_start == 4 &&            // 3rd motif (bars 4-5)
+                            section.bars >= 6);            // Only if chorus is long enough
+
+        if (use_climax) {
+          contour = melody_contours[5];  // Climax contour
+        } else {
+          std::uniform_int_distribution<size_t> cont_dist(0, available_contours - 1);
+          size_t idx = (cont_dist(rng) + contour_variation) % available_contours;
+          contour = melody_contours[idx];
+        }
       }
 
       // Apply interval limiting for BackgroundMotif
@@ -1765,6 +1811,17 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         // Ultra Vocaloid 32nd note grid
         custom_rhythm = generateUltraVocaloidRhythm(bars_in_motif, rng);
         rhythm_ptr = &custom_rhythm;
+      } else if (params.vocal_style == VocalStylePreset::Ballad) {
+        // Ballad style: use dotted patterns for flowing, lyrical feel
+        // Pattern 9: dotted quarter + eighth (3:1)
+        // Pattern 10: eighth + dotted quarter (1:3) for forward momentum
+        int pattern_idx = (section.type == SectionType::B) ? 10 : 9;
+        rhythm_ptr = &rhythm_patterns[pattern_idx];
+      } else if (params.vocal_groove == VocalGrooveFeel::Swing &&
+                 note_density < melody_params.medium_density_threshold) {
+        // Swing groove with low-medium density: use shuffle triplet pattern
+        // Pattern 12: Shuffle triplet - blues/swing feel (deterministic)
+        rhythm_ptr = &rhythm_patterns[12];
       } else {
         // Standard pattern-based selection
         int actual_rhythm = selectRhythmPattern(section.type, note_density,

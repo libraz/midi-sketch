@@ -659,6 +659,25 @@ bool needsCadenceFix(uint8_t section_bars, uint8_t progression_length,
   return true;  // Need to insert cadence
 }
 
+// Check if section type allows anticipation
+bool allowsAnticipation(SectionType section) {
+  switch (section) {
+    case SectionType::B:
+    case SectionType::Chorus:
+    case SectionType::MixBreak:
+      return true;
+    case SectionType::A:
+    case SectionType::Bridge:
+      return true;  // Allow but less frequently
+    case SectionType::Intro:
+    case SectionType::Interlude:
+    case SectionType::Outro:
+    case SectionType::Chant:
+      return false;
+  }
+  return false;
+}
+
 // Adjust rhythm one level sparser
 ChordRhythm adjustSparser(ChordRhythm rhythm) {
   switch (rhythm) {
@@ -1148,6 +1167,50 @@ void generateChordTrack(MidiTrack& track, const Song& song,
         }
 
         prev_voicing = voicing;
+      }
+
+      // === ANTICIPATION ===
+      // Add anticipation of NEXT bar's chord at the end of THIS bar
+      // Deterministic: use anticipation on specific bar positions to avoid RNG changes
+      // Apply on bars 1, 3, 5 (even sections get every other bar anticipation)
+      bool is_not_last_bar = (bar < section.bars - 1);
+      bool deterministic_ant = (bar % 2 == 1);  // Bars 1, 3, 5, etc.
+      if (is_not_last_bar && allowsAnticipation(section.type) && deterministic_ant) {
+        // Skip for A/Bridge sections to keep them more stable
+        if (section.type != SectionType::A && section.type != SectionType::Bridge) {
+          int next_bar = bar + 1;
+          int next_chord_idx = (harmonic.density == HarmonicDensity::Slow)
+                                   ? (next_bar / 2) % effective_prog_length
+                                   : next_bar % effective_prog_length;
+          int8_t next_degree = progression.at(next_chord_idx);
+
+          if (next_degree != degree) {
+            uint8_t next_root = degreeToRoot(next_degree, Key::C);
+            // Use same extension as current chord (deterministic)
+            Chord next_chord = getExtendedChord(next_degree, ChordExtension::None);
+
+            // Use close voicing (deterministic, no random)
+            VoicedChord ant_voicing;
+            ant_voicing.count = std::min(next_chord.note_count, (uint8_t)4);
+            for (size_t i = 0; i < ant_voicing.count; ++i) {
+              int pitch = 60 + next_root % 12 + next_chord.intervals[i];
+              if (pitch > 72) pitch -= 12;
+              ant_voicing.pitches[i] = static_cast<uint8_t>(pitch);
+            }
+
+            Tick ant_tick = bar_start + WHOLE - EIGHTH;
+            uint8_t vel = calculateVelocity(section.type, 0, params.mood);
+            uint8_t ant_vel = static_cast<uint8_t>(vel * 0.85f);
+
+            for (size_t i = 0; i < ant_voicing.count; ++i) {
+              int pc = ant_voicing.pitches[i] % 12;
+              Tick clash = findBassClashInRange(bass_track, ant_tick, ant_tick + 1, pc);
+              if (clash == 0) {
+                track.addNote(ant_tick, EIGHTH, ant_voicing.pitches[i], ant_vel);
+              }
+            }
+          }
+        }
       }
 
       has_prev = true;

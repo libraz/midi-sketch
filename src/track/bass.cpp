@@ -28,6 +28,22 @@ uint8_t getFifth(uint8_t root) {
   return clampBass(root + 7);
 }
 
+// Scale intervals from root (for walking bass)
+// Major scale: 0, 2, 4, 5, 7, 9, 11 (W-W-H-W-W-W-H)
+// Minor scale: 0, 2, 3, 5, 7, 8, 10 (W-H-W-W-H-W-W)
+constexpr int MAJOR_SCALE[] = {0, 2, 4, 5, 7, 9, 11};
+constexpr int MINOR_SCALE[] = {0, 2, 3, 5, 7, 8, 10};
+
+// Get scale tone at given scale degree (1-indexed, wraps at octave)
+uint8_t getScaleTone(uint8_t root, int scale_degree, bool is_minor) {
+  if (scale_degree <= 0) scale_degree = 1;
+  int normalized = ((scale_degree - 1) % 7);
+  int octave_offset = ((scale_degree - 1) / 7) * 12;
+  const int* scale = is_minor ? MINOR_SCALE : MAJOR_SCALE;
+  int interval = scale[normalized] + octave_offset;
+  return clampBass(static_cast<int>(root) + interval);
+}
+
 // Get octave above root
 uint8_t getOctave(uint8_t root) {
   int octave = root + 12;
@@ -106,7 +122,8 @@ enum class BassPattern {
   RootFifth,      // A section: root + fifth
   Syncopated,     // B section: syncopation
   Driving,        // Chorus: eighth note drive
-  RhythmicDrive   // Drums OFF: bass drives rhythm
+  RhythmicDrive,  // Drums OFF: bass drives rhythm
+  Walking         // Jazz/swing: quarter note scale walk
 };
 
 // Adjust pattern one level sparser
@@ -117,6 +134,7 @@ BassPattern adjustPatternSparser(BassPattern pattern) {
     case BassPattern::RhythmicDrive: return BassPattern::Syncopated;
     case BassPattern::RootFifth: return BassPattern::WholeNote;
     case BassPattern::WholeNote: return BassPattern::WholeNote;
+    case BassPattern::Walking: return BassPattern::RootFifth;
   }
   return pattern;
 }
@@ -129,6 +147,7 @@ BassPattern adjustPatternDenser(BassPattern pattern) {
     case BassPattern::Syncopated: return BassPattern::Driving;
     case BassPattern::Driving: return BassPattern::Driving;
     case BassPattern::RhythmicDrive: return BassPattern::RhythmicDrive;
+    case BassPattern::Walking: return BassPattern::Walking;
   }
   return pattern;
 }
@@ -152,6 +171,7 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
                     mood == Mood::Chill);
   bool is_dance = (mood == Mood::EnergeticDance || mood == Mood::ElectroPop ||
                    mood == Mood::IdolPop);
+  bool is_jazz_influenced = (mood == Mood::CityPop || mood == Mood::Nostalgic);
 
   // Allowed patterns for each section (first is most likely)
   std::vector<BassPattern> allowed;
@@ -172,6 +192,9 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
     case SectionType::A:
       if (is_ballad) {
         allowed = {BassPattern::WholeNote, BassPattern::RootFifth};
+      } else if (is_jazz_influenced) {
+        // Jazz/CityPop: walking bass adds groove
+        allowed = {BassPattern::Walking, BassPattern::RootFifth, BassPattern::Syncopated};
       } else {
         allowed = {BassPattern::RootFifth, BassPattern::WholeNote, BassPattern::Syncopated};
       }
@@ -179,6 +202,9 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
     case SectionType::B:
       if (is_ballad) {
         allowed = {BassPattern::RootFifth, BassPattern::WholeNote};
+      } else if (is_jazz_influenced) {
+        // Jazz/CityPop B section: walking bass with syncopation
+        allowed = {BassPattern::Walking, BassPattern::Syncopated, BassPattern::RootFifth};
       } else {
         allowed = {BassPattern::Syncopated, BassPattern::RootFifth, BassPattern::Driving};
       }
@@ -332,6 +358,37 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
 
           track.addNote(tick, EIGHTH, note, note_vel);
         }
+      }
+      break;
+
+    case BassPattern::Walking:
+      // Jazz/swing walking bass: quarter notes walking through scale
+      {
+        // Determine if current chord is minor (ii, iii, vi in major key)
+        int root_pc = root % 12;
+        bool is_minor = (root_pc == 2 || root_pc == 4 || root_pc == 9);
+
+        // Beat 1: Root (strong)
+        track.addNote(bar_start, QUARTER, root, vel);
+
+        // Beat 2: 2nd scale degree
+        uint8_t second_note = getScaleTone(root, 2, is_minor);
+        track.addNote(bar_start + QUARTER, QUARTER, second_note, vel_weak);
+
+        // Beat 3: 3rd scale degree (anchor tone)
+        uint8_t third_note = getScaleTone(root, 3, is_minor);
+        track.addNote(bar_start + 2 * QUARTER, QUARTER, third_note, vel);
+
+        // Beat 4: Approach to next root
+        uint8_t approach_note;
+        if (next_root != root) {
+          int next_root_val = static_cast<int>(next_root);
+          approach_note = clampBass(next_root > root ? next_root_val - 1
+                                                      : next_root_val + 1);
+        } else {
+          approach_note = getScaleTone(root, 5, is_minor);
+        }
+        track.addNote(bar_start + 3 * QUARTER, QUARTER, approach_note, vel_weak);
       }
       break;
   }
