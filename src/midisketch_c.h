@@ -72,6 +72,7 @@ typedef struct {
   uint8_t vocal_low;      // Vocal range lower bound (MIDI note)
   uint8_t vocal_high;     // Vocal range upper bound (MIDI note)
   uint8_t vocal_attitude; // 0=Clean, 1=Expressive, 2=Raw
+  uint8_t vocal_style;    // VocalStylePreset (0=Auto, 1=Standard, 2=Vocaloid, etc.)
   // Vocal density parameters (0 = use style default)
   uint8_t vocal_note_density;      // Note density * 100 (0 = use style default, 30-200)
   uint8_t vocal_min_note_division; // Min note division (0=default, 4/8/16/32)

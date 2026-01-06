@@ -614,6 +614,9 @@ struct MelodyRegenerateParams {
   VocalAttitude vocal_attitude;        // 0=Clean, 1=Expressive, 2=Raw
   CompositionStyle composition_style;  // 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
 
+  // Vocal style preset (Auto = use current style)
+  VocalStylePreset vocal_style = VocalStylePreset::Auto;
+
   // Vocal density parameters (0 = use style default)
   float vocal_note_density = 0.0f;     // Note density (0.3-2.0, 0 = style default)
   uint8_t vocal_min_note_division = 0; // Min note division (4/8/16/32, 0 = style default)

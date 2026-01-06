@@ -16,6 +16,9 @@ set(TEST_SOURCES
   core/structure_test.cpp
   core/chord_test.cpp
   core/generator_test.cpp
+  core/generator_vocal_test.cpp
+  core/generator_motif_test.cpp
+  core/generator_dynamics_test.cpp
   core/midi_track_test.cpp
   core/arrangement_test.cpp
   core/song_test.cpp

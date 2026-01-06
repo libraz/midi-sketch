@@ -29,6 +29,7 @@ MidiSketchError midisketch_regenerate_vocal(MidiSketchHandle handle,
   regen_params.vocal_low = params->vocal_low;
   regen_params.vocal_high = params->vocal_high;
   regen_params.vocal_attitude = static_cast<midisketch::VocalAttitude>(params->vocal_attitude);
+  regen_params.vocal_style = static_cast<midisketch::VocalStylePreset>(params->vocal_style);
   regen_params.composition_style = midisketch::CompositionStyle::MelodyLead;
 
   // Vocal density parameters

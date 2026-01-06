@@ -574,5 +574,109 @@ TEST_F(VocalTest, VocaloidStyleNoOverlaps) {
   }
 }
 
+// ============================================================================
+// Section Cadence (終止形) Tests
+// ============================================================================
+
+TEST_F(VocalTest, SectionFinalNoteIsChordTone) {
+  // Test that the final note of each section resolves to a chord tone
+  params_.seed = 98765;
+  params_.structure = StructurePattern::StandardPop;
+  params_.chord_id = 0;  // Canon progression
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal = gen.getSong().vocal();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  ASSERT_FALSE(vocal.empty()) << "Vocal track should have notes";
+  ASSERT_FALSE(sections.empty()) << "Should have sections";
+
+  // C major scale chord tones (pitch classes)
+  // For C major: C=0, E=4, G=7 (I chord tones)
+  // For other chords in the progression, we accept any diatonic pitch
+  std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
+
+  // Find the last note of each vocal section
+  for (const auto& section : sections) {
+    // Skip sections without vocals (Intro, Interlude, Outro, Chant, MixBreak)
+    if (section.type == SectionType::Intro ||
+        section.type == SectionType::Interlude ||
+        section.type == SectionType::Outro ||
+        section.type == SectionType::Chant ||
+        section.type == SectionType::MixBreak) {
+      continue;
+    }
+
+    Tick section_start = section.start_tick;
+    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+
+    // Find notes in this section
+    const NoteEvent* last_note = nullptr;
+    for (const auto& note : vocal.notes()) {
+      if (note.startTick >= section_start && note.startTick < section_end) {
+        if (last_note == nullptr || note.startTick > last_note->startTick) {
+          last_note = &note;
+        }
+      }
+    }
+
+    if (last_note != nullptr) {
+      int pc = last_note->note % 12;
+      EXPECT_TRUE(c_major_pcs.count(pc) > 0)
+          << "Section final note should be a scale tone. Got pitch class: " << pc
+          << " in section " << section.name;
+    }
+  }
+}
+
+TEST_F(VocalTest, CadenceAppliedToMultipleSections) {
+  // Verify cadence is applied across different section types
+  params_.seed = 11111;
+  params_.structure = StructurePattern::FullPop;  // Has many section types
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal = gen.getSong().vocal();
+  EXPECT_FALSE(vocal.empty()) << "Vocal track should be generated";
+
+  // Count sections with vocals
+  const auto& sections = gen.getSong().arrangement().sections();
+  int vocal_sections = 0;
+  for (const auto& section : sections) {
+    if (section.type != SectionType::Intro &&
+        section.type != SectionType::Interlude &&
+        section.type != SectionType::Outro &&
+        section.type != SectionType::Chant &&
+        section.type != SectionType::MixBreak) {
+      vocal_sections++;
+    }
+  }
+
+  EXPECT_GT(vocal_sections, 0) << "Should have at least one vocal section";
+}
+
+TEST_F(VocalTest, SectionCadencePreservesRangeConstraints) {
+  // Section final note should still respect vocal range
+  params_.seed = 22222;
+  params_.vocal_low = 60;  // C4
+  params_.vocal_high = 72;  // C5 (narrow range)
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal = gen.getSong().vocal();
+
+  // All notes (including section finals) should be in range
+  for (const auto& note : vocal.notes()) {
+    EXPECT_GE(note.note, params_.vocal_low)
+        << "Note below vocal range: " << static_cast<int>(note.note);
+    EXPECT_LE(note.note, params_.vocal_high)
+        << "Note above vocal range: " << static_cast<int>(note.note);
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

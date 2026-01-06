@@ -65,64 +65,6 @@ ChordTones getChordTones(int8_t degree) {
   return ct;
 }
 
-// Get available extension pitch classes for a chord
-// Returns 7th and 9th intervals based on chord quality
-std::array<int, 2> getExtensionPitchClasses(int8_t degree) {
-  int root_pc = DEGREE_TO_PITCH_CLASS[((degree % 7) + 7) % 7];
-  int normalized_degree = ((degree % 7) + 7) % 7;
-
-  // Determine chord quality and appropriate extensions
-  int seventh = -1;
-  int ninth = (root_pc + 2) % 12;  // 9th = major 2nd above root
-
-  switch (normalized_degree) {
-    case 0:  // I - major: maj7
-    case 3:  // IV - major: maj7
-      seventh = (root_pc + 11) % 12;  // Major 7th
-      break;
-    case 1:  // ii - minor: min7
-    case 2:  // iii - minor: min7
-    case 5:  // vi - minor: min7
-      seventh = (root_pc + 10) % 12;  // Minor 7th
-      break;
-    case 4:  // V - dominant: dom7
-      seventh = (root_pc + 10) % 12;  // Minor 7th (dominant)
-      break;
-    case 6:  // vii° - diminished: dim7
-      seventh = (root_pc + 9) % 12;  // Diminished 7th
-      break;
-  }
-
-  return {{seventh, ninth}};
-}
-
-// Check if a pitch (MIDI note) is a chord tone using pitch class comparison
-// Accepts 7th and 9th extensions only when enabled in chord extension params
-bool isChordTone(int pitch, int8_t degree, const ChordExtensionParams& ext_params) {
-  int pitch_class = ((pitch % 12) + 12) % 12;
-  ChordTones ct = getChordTones(degree);
-
-  // Check basic chord tones (root, 3rd, 5th)
-  for (uint8_t i = 0; i < ct.count; ++i) {
-    if (ct.pitch_classes[i] == pitch_class) return true;
-  }
-
-  // Only accept extensions if they are enabled in params
-  // This ensures Vocal and Chord tracks use consistent harmony
-  if (ext_params.enable_7th || ext_params.enable_9th) {
-    auto extensions = getExtensionPitchClasses(degree);
-    // extensions[0] = 7th, extensions[1] = 9th
-    if (ext_params.enable_7th && extensions[0] >= 0 && extensions[0] == pitch_class) {
-      return true;
-    }
-    if (ext_params.enable_9th && extensions[1] >= 0 && extensions[1] == pitch_class) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 // Get nearest chord tone pitch to a given pitch
 // Returns the absolute pitch of the nearest chord tone
 int nearestChordTonePitch(int pitch, int8_t degree) {
@@ -286,169 +228,6 @@ int degreeToPitch(int degree, int octave, int key_offset) {
 // - Second phrase (response/consequent): ends on stable tone (root)
 // ============================================================================
 
-// Phrase note with articulation info
-struct PhraseNote {
-  float beat;           // Position in beats (0.0 = phrase start)
-  int eighths;          // Base duration in eighth notes
-  bool strong;          // Strong beat (1 or 3 in 4/4)
-  int contour_degree;   // Melodic contour: scale degree offset from phrase root
-  bool phrase_end;      // Is this the last note of the phrase?
-  bool is_chord_tone;   // Should land on chord tone?
-};
-
-// Complete phrase definition
-struct Phrase {
-  std::vector<PhraseNote> notes;
-  int breath_eighths;   // Rest duration after phrase (in eighth notes)
-  bool is_antecedent;   // True = ends on less stable tone (call)
-                        // False = ends on stable tone (response)
-};
-
-// Phrase patterns based on music theory
-// Each pattern represents a complete singable phrase with proper breath points
-std::vector<Phrase> getPhrasePatterns() {
-  return {
-    // Pattern 0: Simple 2-bar phrase (Verse - sparse, breathing room)
-    // Arc: stable start → slight rise → fall to resolution
-    // "Ta-a Ta Ta-a" pattern with breath
-    {
-      {
-        {0.0f, 3, true, 0, false, true},    // Beat 1: root (strong, chord tone)
-        {1.5f, 1, false, 1, false, false},  // Beat 1.5: step up (passing)
-        {2.0f, 2, true, 2, false, true},    // Beat 3: 3rd (strong, chord tone)
-        {3.0f, 3, false, 0, true, true},    // Beat 4: back to root (phrase end)
-      },
-      2,      // 1/4 note breath after phrase
-      false   // Consequent (ends on root)
-    },
-
-    // Pattern 1: 2-bar antecedent phrase (call - ends on 5th)
-    // Arc: start low → rise to climax → partial descent
-    {
-      {
-        {0.0f, 2, true, 0, false, true},    // Root start
-        {1.0f, 2, false, 2, false, true},   // Rise to 3rd
-        {2.0f, 3, true, 4, false, true},    // Climax on 5th (strong)
-        {3.5f, 2, false, 2, true, true},    // Descend to 3rd (phrase end - less stable)
-      },
-      2,      // Breath
-      true    // Antecedent (ends on 3rd - unstable, expects response)
-    },
-
-    // Pattern 2: 2-bar consequent phrase (response - ends on root)
-    // Arc: pickup → rise → strong descent to root
-    {
-      {
-        {0.0f, 2, true, 2, false, true},    // Start on 3rd
-        {1.0f, 2, false, 4, false, true},   // Rise to 5th
-        {2.0f, 2, true, 2, false, true},    // Back to 3rd (strong)
-        {3.0f, 3, false, 0, true, true},    // Resolve to root (phrase end)
-      },
-      3,      // Longer breath (phrase pair complete)
-      false   // Consequent (ends on root - stable)
-    },
-
-    // Pattern 3: Flowing 2-bar phrase (Chorus - more notes, connected)
-    // Continuous melodic line with clear arc
-    {
-      {
-        {0.0f, 2, true, 0, false, true},    // Root
-        {1.0f, 1, false, 1, false, false},  // Step (passing)
-        {1.5f, 1, false, 2, false, true},   // 3rd
-        {2.0f, 2, true, 4, false, true},    // 5th (climax, strong)
-        {3.0f, 1, false, 2, false, true},   // 3rd
-        {3.5f, 2, false, 0, true, true},    // Root (phrase end)
-      },
-      2,
-      false
-    },
-
-    // Pattern 4: Syncopated phrase (adds rhythmic interest)
-    // Accents on off-beats create forward momentum
-    {
-      {
-        {0.0f, 3, true, 0, false, true},    // Root (long)
-        {1.5f, 2, false, 2, false, true},   // Syncopated 3rd
-        {2.5f, 2, true, 4, false, true},    // 5th
-        {3.5f, 2, false, 2, true, true},    // End on 3rd (creates tension)
-      },
-      2,
-      true    // Antecedent
-    },
-
-    // Pattern 5: Sparse phrase (Bridge/Ballad - long notes, emotional)
-    // Few notes, each sustained for expression
-    {
-      {
-        {0.0f, 4, true, 0, false, true},    // Long root
-        {2.0f, 4, true, 4, false, true},    // Long 5th
-        {4.0f, 6, true, 2, false, true},    // Long 3rd
-        {7.0f, 2, false, 0, true, true},    // Resolve to root
-      },
-      4,      // Long breath (emotional pause)
-      false
-    },
-
-    // Pattern 6: Ascending phrase (B section - building tension)
-    {
-      {
-        {0.0f, 2, true, 0, false, true},    // Start low
-        {1.0f, 2, false, 1, false, false},  // Step up
-        {2.0f, 2, true, 2, false, true},    // Continue rise
-        {3.0f, 2, false, 4, true, true},    // End high (creates expectation)
-      },
-      2,
-      true    // Antecedent (high ending = unstable)
-    },
-
-    // Pattern 7: Descending phrase (resolution after tension)
-    {
-      {
-        {0.0f, 2, true, 4, false, true},    // Start high
-        {1.0f, 2, false, 2, false, true},   // Step down
-        {2.0f, 2, true, 1, false, false},   // Continue descent
-        {3.0f, 3, false, 0, true, true},    // Resolve to root
-      },
-      3,
-      false   // Consequent (low ending = stable)
-    },
-  };
-}
-
-// Get phrase pattern index based on section type and position
-int selectPhrasePattern(SectionType section, int phrase_in_section, bool is_ending) {
-  if (is_ending) {
-    // Final phrases should resolve (consequent patterns)
-    return (section == SectionType::Chorus) ? 3 : 2;
-  }
-
-  switch (section) {
-    case SectionType::A:
-      // Verse: alternating call-response, sparse
-      return (phrase_in_section % 2 == 0) ? 0 : 2;
-
-    case SectionType::B:
-      // Pre-chorus: building tension
-      return (phrase_in_section % 2 == 0) ? 6 : 4;
-
-    case SectionType::Chorus:
-      // Chorus: flowing, energetic
-      return (phrase_in_section % 2 == 0) ? 3 : 4;
-
-    case SectionType::Bridge:
-      // Bridge: sparse, emotional
-      return (phrase_in_section % 2 == 0) ? 5 : 7;
-
-    default:
-      return 0;
-  }
-}
-
-// Articulation constants (gate ratios)
-constexpr float LEGATO_GATE = 0.95f;        // Connected notes within phrase
-constexpr float PHRASE_END_GATE = 0.70f;    // Shortened phrase-final note
-constexpr float NORMAL_GATE = 0.85f;        // Standard articulation
-
 // RhythmNote is now defined in types.h
 
 // Get rhythm patterns with strong beat marking
@@ -518,7 +297,6 @@ std::vector<RhythmNote> generateVocaloidRhythm(int bars, float density,
 
   for (int i = 0; i < total_sixteenths; ++i) {
     float beat = static_cast<float>(i) / 4.0f;  // Convert to quarter note beats
-    int beat_position = i % 4;  // Position within quarter note
 
     // Strong beats (1 and 3 of each measure)
     bool is_strong = (i % 16 == 0) || (i % 16 == 8);
@@ -552,7 +330,6 @@ std::vector<RhythmNote> generateUltraVocaloidRhythm(int bars,
   for (int i = 0; i < total_thirtyseconds; ++i) {
     // Convert to quarter note beats (32 thirty-seconds = 4 quarter notes)
     float beat = static_cast<float>(i) / 8.0f;
-    int beat_position = i % 8;  // Position within quarter note
 
     // Strong beats
     bool is_strong = (i % 32 == 0) || (i % 32 == 16);
@@ -726,11 +503,6 @@ SuspensionResult applySuspension(int chord_root, int original_duration_eighths,
   return {suspension, resolution, sus_dur, res_dur, type};
 }
 
-// Backward-compatible overload (defaults to 4-3 suspension)
-SuspensionResult applySuspension(int chord_root, int original_duration_eighths) {
-  return applySuspension(chord_root, original_duration_eighths, SuspensionType::Sus43);
-}
-
 // Apply anticipation: shift the note earlier and use next chord's tone
 struct AnticipationResult {
   float beat_offset;        // How much earlier (negative in beats)
@@ -850,6 +622,7 @@ void fixNoteOverlaps(std::vector<NoteEvent>& notes) {
 // Creates natural breathing room between phrases (human singers need to breathe)
 void applyBreathShortening(std::vector<NoteEvent>& notes,
                            const StyleMelodyParams& melody_params) {
+  (void)melody_params;  // Reserved for future use
   if (notes.size() < 2) return;
 
   // Phrase boundary typically occurs every 4-8 beats
@@ -878,6 +651,7 @@ void applyBreathShortening(std::vector<NoteEvent>& notes,
 // Creates emotional emphasis on melodic peaks
 void applySustainExtension(std::vector<NoteEvent>& notes,
                            const StyleMelodyParams& melody_params) {
+  (void)melody_params;  // Reserved for future use
   if (notes.size() < 4) return;
 
   // Find local maxima (notes higher than neighbors) and extend them
@@ -927,6 +701,21 @@ void postProcessVocalTrack(MidiTrack& track, const GeneratorParams& params) {
   }
 }
 
+// Get grid unit for duration calculation based on VocalStylePreset.
+// UltraVocaloid: 32nd note (60 ticks)
+// Vocaloid: 16th note (120 ticks)
+// Default: 8th note (240 ticks)
+Tick getGridUnit(VocalStylePreset style) {
+  switch (style) {
+    case VocalStylePreset::UltraVocaloid:
+      return TICKS_PER_BEAT / 8;  // 32nd note = 60 ticks
+    case VocalStylePreset::Vocaloid:
+      return TICKS_PER_BEAT / 4;  // 16th note = 120 ticks
+    default:
+      return TICKS_PER_BEAT / 2;  // 8th note = 240 ticks
+  }
+}
+
 }  // namespace
 
 void generateVocalTrack(MidiTrack& track, Song& song,
@@ -949,7 +738,17 @@ void generateVocalTrack(MidiTrack& track, Song& song,
   // min_note_division: 4=quarter, 8=eighth, 16=sixteenth, 32=32nd
   // Convert to minimum duration in eighths: 8/min_note_division
   // e.g., min_note_division=4 -> min_eighths=2, min_note_division=16 -> min_eighths=0.5
-  const uint8_t min_note_division = melody_params.min_note_division;
+  //
+  // Adjust min_note_division based on VocalStylePreset to allow fast notes
+  // Higher value = shorter notes allowed (32 = 32nd notes, 8 = 8th notes minimum)
+  uint8_t min_note_division = melody_params.min_note_division;
+  if (params.vocal_style == VocalStylePreset::UltraVocaloid) {
+    // UltraVocaloid needs 32nd notes - ensure min_note_division is at least 32
+    min_note_division = std::max(min_note_division, static_cast<uint8_t>(32));
+  } else if (params.vocal_style == VocalStylePreset::Vocaloid) {
+    // Vocaloid needs 16th notes - ensure min_note_division is at least 16
+    min_note_division = std::max(min_note_division, static_cast<uint8_t>(16));
+  }
   const float min_duration_eighths = (min_note_division > 0) ? (8.0f / min_note_division) : 1.0f;
 
   // vocal_rest_ratio: probability of adding rests between phrases (0.0-0.5)
@@ -1160,7 +959,12 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     }
 
     // Apply section density factor
-    note_density = base_density * section_density_factor;
+    // Skip for Vocaloid/UltraVocaloid - rhythm generator controls density
+    bool is_vocaloid_style = (params.vocal_style == VocalStylePreset::Vocaloid ||
+                              params.vocal_style == VocalStylePreset::UltraVocaloid);
+    if (!is_vocaloid_style) {
+      note_density = base_density * section_density_factor;
+    }
     // Clamp to reasonable range
     note_density = std::clamp(note_density, 0.3f, 2.0f);
 
@@ -1185,8 +989,8 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       section_vocal_high = std::min(static_cast<int>(params.vocal_high), center + 6);
     }
 
-    // Apply BackgroundMotif suppression
-    if (is_background_motif) {
+    // Apply BackgroundMotif suppression (skip for Vocaloid styles)
+    if (is_background_motif && !is_vocaloid_style) {
       switch (vocal_params.rhythm_bias) {
         case VocalRhythmBias::Sparse:
           note_density *= 0.5f;
@@ -1203,19 +1007,23 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       }
     }
 
-    // Apply SynthDriven suppression (arpeggio is foreground)
-    if (is_synth_driven) {
+    // Apply SynthDriven suppression (skip for Vocaloid styles)
+    if (is_synth_driven && !is_vocaloid_style) {
       note_density *= 0.5f;    // Reduce density significantly
       sixteenth_ratio = 0.0f;  // No fast notes
     }
 
     // Phase 2: Apply Section.vocal_density to note density
+    // VocalDensity::None still applies to Vocaloid (skip entire section)
+    // but Sparse is ignored for Vocaloid styles
     switch (section.vocal_density) {
       case VocalDensity::None:
         continue;  // Skip this section entirely
       case VocalDensity::Sparse:
-        note_density *= 0.6f;  // Reduce to 60% of current density
-        sixteenth_ratio = 0.0f;  // No fast notes for sparse
+        if (!is_vocaloid_style) {
+          note_density *= 0.6f;  // Reduce to 60% of current density
+          sixteenth_ratio = 0.0f;  // No fast notes for sparse
+        }
         break;
       case VocalDensity::Full:
         // No modification - use full density
@@ -1260,7 +1068,6 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         }
 
         const int MAX_HOOK_INTERVAL = allow_extreme_leap ? 12 : 7;  // Max interval for hook continuity
-        bool is_first_note = true;
 
         for (const auto& note : chorus_hook_notes) {
           Tick absolute_tick = motif_start_tick + note.startTick;
@@ -1377,26 +1184,33 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         // High density (>= 0.85): almost no skipping
         // Chorus: never skip for full energy
         // Strong beats: never skip for proper phrase structure
+        // Vocaloid/UltraVocaloid: never skip (density is controlled in rhythm generation)
         bool should_skip = false;
-        if (!rn.strong && section.type != SectionType::Chorus && note_density < 0.85f) {
-          // Only skip weak beats in non-chorus sections with lower density
-          std::uniform_real_distribution<float> skip_dist(0.0f, 1.0f);
-          // Skip probability inversely proportional to density
-          // At density 0.5: skip_prob = 0.35 * 0.3 = 0.105 (10.5%)
-          // At density 0.7: skip_prob = 0.15 * 0.3 = 0.045 (4.5%)
-          float skip_prob = (1.0f - note_density) * 0.3f;
-          should_skip = skip_dist(rng) < skip_prob;
-        }
+        bool is_vocaloid_style = (params.vocal_style == VocalStylePreset::Vocaloid ||
+                                   params.vocal_style == VocalStylePreset::UltraVocaloid);
 
-        // === VOCAL REST RATIO ===
-        // Add additional rests based on vocal_rest_ratio
-        // This creates breathing room between phrases
-        // Only apply to weak beats to preserve phrase structure
-        if (!should_skip && !rn.strong && vocal_rest_ratio > 0.0f) {
-          std::uniform_real_distribution<float> rest_dist(0.0f, 1.0f);
-          // vocal_rest_ratio directly maps to skip probability for weak beats
-          // E.g., vocal_rest_ratio=0.15 → 15% chance of rest on weak beats
-          should_skip = rest_dist(rng) < vocal_rest_ratio;
+        // Skip Vocaloid styles - rhythm generation already handles density
+        if (!is_vocaloid_style) {
+          if (!rn.strong && section.type != SectionType::Chorus && note_density < 0.85f) {
+            // Only skip weak beats in non-chorus sections with lower density
+            std::uniform_real_distribution<float> skip_dist(0.0f, 1.0f);
+            // Skip probability inversely proportional to density
+            // At density 0.5: skip_prob = 0.35 * 0.3 = 0.105 (10.5%)
+            // At density 0.7: skip_prob = 0.15 * 0.3 = 0.045 (4.5%)
+            float skip_prob = (1.0f - note_density) * 0.3f;
+            should_skip = skip_dist(rng) < skip_prob;
+          }
+
+          // === VOCAL REST RATIO ===
+          // Add additional rests based on vocal_rest_ratio
+          // This creates breathing room between phrases
+          // Only apply to weak beats to preserve phrase structure
+          if (!should_skip && !rn.strong && vocal_rest_ratio > 0.0f) {
+            std::uniform_real_distribution<float> rest_dist(0.0f, 1.0f);
+            // vocal_rest_ratio directly maps to skip probability for weak beats
+            // E.g., vocal_rest_ratio=0.15 → 15% chance of rest on weak beats
+            should_skip = rest_dist(rng) < vocal_rest_ratio;
+          }
         }
 
         if (should_skip) continue;
@@ -1486,7 +1300,18 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         int constraint_low = static_cast<int>(effective_vocal_low);
         int constraint_high = static_cast<int>(effective_vocal_high);
 
-        if (rn.strong || force_chord_tone) {
+        // === SECTION CADENCE (終止形) ===
+        // Check for section final note and force chord tone resolution
+        bool is_section_final_note_check = (motif_start + bars_in_motif >= section.bars) &&
+                                           (rn_idx == rhythm.size() - 1);
+
+        if (is_section_final_note_check) {
+          // Section final note: FORCE resolution to chord tone (root, 3rd, or 5th)
+          // Prefer root (degree 0) for strongest cadence
+          pitch = nearestChordToneWithinInterval(
+              target_pitch, prev_pitch, static_cast<int8_t>(current_chord_root),
+              max_interval, constraint_low, constraint_high);
+        } else if (rn.strong || force_chord_tone) {
           // On strong beats: find chord tone within interval limit
           pitch = nearestChordToneWithinInterval(
               target_pitch, prev_pitch, static_cast<int8_t>(current_chord_root),
@@ -1546,7 +1371,13 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         // === PHRASE-AWARE DURATION CALCULATION ===
         // Key principle: Last note of phrase should be LONGER for singability
         // Pattern: short notes (8ths) -> phrase-final note (held, 1-2 beats)
-        Tick base_duration = static_cast<Tick>(rn.eighths * TICKS_PER_BEAT / 2);
+        //
+        // Grid unit varies by VocalStylePreset:
+        // - UltraVocaloid: 32nd note (60 ticks)
+        // - Vocaloid: 16th note (120 ticks)
+        // - Default: 8th note (240 ticks)
+        Tick grid_unit = getGridUnit(params.vocal_style);
+        Tick base_duration = static_cast<Tick>(rn.eighths * grid_unit);
 
         bool is_last_note_of_phrase = is_phrase_ending && (rn_idx == rhythm.size() - 1);
         bool is_last_note_of_motif = (rn_idx == rhythm.size() - 1);

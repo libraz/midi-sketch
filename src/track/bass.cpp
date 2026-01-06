@@ -37,9 +37,6 @@ uint8_t getOctave(uint8_t root) {
   return static_cast<uint8_t>(octave);
 }
 
-// Major scale intervals from C (used for diatonic approach)
-constexpr int MAJOR_SCALE[7] = {0, 2, 4, 5, 7, 9, 11};
-
 // Check if two pitch classes create a dissonant interval (minor 2nd or major 7th)
 bool isDissonantInterval(int pc1, int pc2) {
   int interval = std::abs(pc1 - pc2);

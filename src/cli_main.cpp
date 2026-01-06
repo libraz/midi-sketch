@@ -12,11 +12,30 @@ namespace {
 void printUsage(const char* program) {
   std::cout << "Usage: " << program << " [options]\n\n";
   std::cout << "Options:\n";
-  std::cout << "  --seed N     Set random seed (0 = auto-random)\n";
-  std::cout << "  --style N    Set style preset ID (0-12)\n";
-  std::cout << "  --chord N    Set chord progression ID (0-19)\n";
-  std::cout << "  --analyze    Analyze generated MIDI for dissonance issues\n";
-  std::cout << "  --help       Show this help message\n";
+  std::cout << "  --seed N          Set random seed (0 = auto-random)\n";
+  std::cout << "  --style N         Set style preset ID (0-12)\n";
+  std::cout << "  --chord N         Set chord progression ID (0-19)\n";
+  std::cout << "  --vocal-style N   Set vocal style (0=Auto, 1=Standard, 2=Vocaloid,\n";
+  std::cout << "                    3=UltraVocaloid, 4=Idol, 5=Ballad, 6=Rock,\n";
+  std::cout << "                    7=CityPop, 8=Anime)\n";
+  std::cout << "  --note-density F  Set note density (0.3-2.0, default: style preset)\n";
+  std::cout << "  --analyze         Analyze generated MIDI for dissonance issues\n";
+  std::cout << "  --help            Show this help message\n";
+}
+
+const char* vocalStyleName(midisketch::VocalStylePreset style) {
+  switch (style) {
+    case midisketch::VocalStylePreset::Auto: return "Auto";
+    case midisketch::VocalStylePreset::Standard: return "Standard";
+    case midisketch::VocalStylePreset::Vocaloid: return "Vocaloid";
+    case midisketch::VocalStylePreset::UltraVocaloid: return "UltraVocaloid";
+    case midisketch::VocalStylePreset::Idol: return "Idol";
+    case midisketch::VocalStylePreset::Ballad: return "Ballad";
+    case midisketch::VocalStylePreset::Rock: return "Rock";
+    case midisketch::VocalStylePreset::CityPop: return "CityPop";
+    case midisketch::VocalStylePreset::Anime: return "Anime";
+    default: return "Unknown";
+  }
 }
 
 void printDissonanceSummary(const midisketch::DissonanceReport& report) {
@@ -57,6 +76,8 @@ int main(int argc, char* argv[]) {
   uint32_t seed = 0;  // 0 = auto-random
   uint8_t style_id = 1;
   uint8_t chord_id = 3;
+  uint8_t vocal_style = 0;  // 0 = Auto
+  float note_density = 0.0f;  // 0 = use style default
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--analyze") == 0) {
@@ -67,6 +88,10 @@ int main(int argc, char* argv[]) {
       style_id = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--chord") == 0 && i + 1 < argc) {
       chord_id = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+    } else if (std::strcmp(argv[i], "--vocal-style") == 0 && i + 1 < argc) {
+      vocal_style = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+    } else if (std::strcmp(argv[i], "--note-density") == 0 && i + 1 < argc) {
+      note_density = static_cast<float>(std::strtod(argv[++i], nullptr));
     } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
       printUsage(argv[0]);
       return 0;
@@ -80,6 +105,8 @@ int main(int argc, char* argv[]) {
   midisketch::SongConfig config = midisketch::createDefaultSongConfig(style_id);
   config.chord_progression_id = chord_id;
   config.seed = seed;
+  config.vocal_style = static_cast<midisketch::VocalStylePreset>(vocal_style);
+  config.vocal_note_density = note_density;
 
   const auto& preset = midisketch::getStylePreset(config.style_preset_id);
 
@@ -88,6 +115,10 @@ int main(int argc, char* argv[]) {
   std::cout << "  Chord: " << config.chord_progression_id << "\n";
   std::cout << "  BPM: " << (config.bpm == 0 ? preset.tempo_default : config.bpm) << "\n";
   std::cout << "  VocalAttitude: " << static_cast<int>(config.vocal_attitude) << "\n";
+  std::cout << "  VocalStyle: " << vocalStyleName(config.vocal_style) << "\n";
+  if (config.vocal_note_density > 0.0f) {
+    std::cout << "  NoteDensity: " << config.vocal_note_density << "\n";
+  }
   std::cout << "  Seed: " << config.seed << "\n";
 
   sketch.generateFromConfig(config);

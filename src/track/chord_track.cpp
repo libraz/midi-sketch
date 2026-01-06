@@ -911,6 +911,11 @@ void generateChordTrack(MidiTrack& track, const Song& song,
   VoicedChord prev_voicing{};
   bool has_prev = false;
 
+  // === SUS RESOLUTION TRACKING ===
+  // Track previous chord extension to ensure sus chords resolve properly
+  // (sus4 should resolve to 3rd on the next chord)
+  ChordExtension prev_extension = ChordExtension::None;
+
   for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
     const auto& section = sections[sec_idx];
     SectionType next_section_type = (sec_idx + 1 < sections.size())
@@ -942,7 +947,21 @@ void generateChordTrack(MidiTrack& track, const Song& song,
       ChordExtension extension = selectChordExtension(
           degree, section.type, bar, section.bars,
           params.chord_extension, rng);
+
+      // === SUS RESOLUTION GUARANTEE ===
+      // If previous chord was sus, force this chord to NOT be sus
+      // This ensures sus4 resolves to 3rd (natural chord tone)
+      if ((prev_extension == ChordExtension::Sus4 ||
+           prev_extension == ChordExtension::Sus2) &&
+          (extension == ChordExtension::Sus4 ||
+           extension == ChordExtension::Sus2)) {
+        extension = ChordExtension::None;  // Force resolution to natural chord
+      }
+
       Chord chord = getExtendedChord(degree, extension);
+
+      // Update prev_extension for next iteration
+      prev_extension = extension;
 
       // Analyze bass pattern for this bar if bass track is available
       bool bass_has_root = true;  // Default assumption

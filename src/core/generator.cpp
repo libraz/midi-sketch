@@ -14,6 +14,76 @@
 
 namespace midisketch {
 
+namespace {
+
+// Apply VocalStylePreset settings to melody parameters.
+// User explicit settings (vocal_note_density, vocal_min_note_division) take priority.
+void applyVocalStylePreset(GeneratorParams& params,
+                           const SongConfig& config) {
+  // Check if user explicitly set density/division
+  bool user_set_density = (config.vocal_note_density > 0.0f);
+  bool user_set_division = (config.vocal_min_note_division > 0);
+
+  switch (params.vocal_style) {
+    case VocalStylePreset::Vocaloid:
+      // YOASOBI style: 16th note grid, high density
+      if (!user_set_division) {
+        params.melody_params.min_note_division = 16;
+      }
+      params.melody_params.sixteenth_note_ratio =
+          std::max(params.melody_params.sixteenth_note_ratio, 0.3f);
+      if (!user_set_density) {
+        params.melody_params.note_density =
+            std::max(params.melody_params.note_density, 1.0f);
+      }
+      params.vocal_rest_ratio = 0.0f;  // No rests
+      break;
+
+    case VocalStylePreset::UltraVocaloid:
+      // Hatsune Miku no Shoushitsu style: 32nd note grid, maximum density
+      if (!user_set_division) {
+        params.melody_params.min_note_division = 32;
+      }
+      params.melody_params.sixteenth_note_ratio = 0.5f;
+      if (!user_set_density) {
+        params.melody_params.note_density = 2.0f;
+      }
+      params.vocal_rest_ratio = 0.0f;
+      params.vocal_allow_extreme_leap = true;
+      break;
+
+    case VocalStylePreset::Idol:
+      // Idol style: high density, catchy
+      params.melody_params.sixteenth_note_ratio =
+          std::max(params.melody_params.sixteenth_note_ratio, 0.25f);
+      if (!user_set_density) {
+        params.melody_params.note_density =
+            std::max(params.melody_params.note_density, 0.85f);
+      }
+      break;
+
+    case VocalStylePreset::Ballad:
+      // Ballad: sparse, long notes
+      if (!user_set_division) {
+        params.melody_params.min_note_division =
+            std::min(params.melody_params.min_note_division, uint8_t(4));
+      }
+      if (!user_set_density) {
+        params.melody_params.note_density =
+            std::min(params.melody_params.note_density, 0.5f);
+      }
+      break;
+
+    case VocalStylePreset::Auto:
+    case VocalStylePreset::Standard:
+    default:
+      // No changes - use StylePreset defaults
+      break;
+  }
+}
+
+}  // namespace
+
 Generator::Generator() : rng_(42) {}
 
 uint32_t Generator::resolveSeed(uint32_t seed) {
@@ -140,8 +210,9 @@ void Generator::generateFromConfig(const SongConfig& config) {
   params.humanize_timing = config.humanize_timing;
   params.humanize_velocity = config.humanize_velocity;
 
-  // Phase 2: Apply VocalAttitude and StyleMelodyParams
+  // Phase 2: Apply VocalAttitude, VocalStylePreset and StyleMelodyParams
   params.vocal_attitude = config.vocal_attitude;
+  params.vocal_style = config.vocal_style;
   params.melody_params = preset.melody;
 
   // === VOCAL DENSITY PARAMETERS (Phase 4/5) ===
@@ -176,6 +247,10 @@ void Generator::generateFromConfig(const SongConfig& config) {
   // Transfer vocal params to GeneratorParams
   params.vocal_rest_ratio = config.vocal_rest_ratio;
   params.vocal_allow_extreme_leap = config.vocal_allow_extreme_leap;
+
+  // Apply VocalStylePreset-specific parameter adjustments
+  // This may override rest_ratio/extreme_leap for high-density styles
+  applyVocalStylePreset(params, config);
 
   // Dynamic duration (0 = use form pattern)
   params.target_duration_seconds = config.target_duration_seconds;
@@ -307,6 +382,12 @@ void Generator::regenerateMelody(const MelodyRegenerateParams& regen_params) {
   params_.vocal_attitude = regen_params.vocal_attitude;
   params_.composition_style = regen_params.composition_style;
 
+  // === VOCAL STYLE PRESET ===
+  // Apply vocal style if not Auto (Auto = keep current style)
+  if (regen_params.vocal_style != VocalStylePreset::Auto) {
+    params_.vocal_style = regen_params.vocal_style;
+  }
+
   // === VOCAL DENSITY PARAMETERS ===
   // Apply overrides if specified (non-zero values)
   if (regen_params.vocal_note_density > 0.0f) {
@@ -358,6 +439,9 @@ void Generator::regenerateVocalFromConfig(const SongConfig& config,
   // Transfer vocal params
   params_.vocal_rest_ratio = config.vocal_rest_ratio;
   params_.vocal_allow_extreme_leap = config.vocal_allow_extreme_leap;
+
+  // Apply VocalStylePreset-specific parameter adjustments
+  applyVocalStylePreset(params_, config);
 
   // Regenerate with updated parameters
   uint32_t seed = (new_seed == 0) ? song_.melodySeed() : resolveSeed(new_seed);

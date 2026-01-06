@@ -36,7 +36,9 @@ uint8_t calculateVelocity(SectionType section, uint8_t beat, Mood mood) {
   switch (section) {
     case SectionType::Intro:
     case SectionType::Interlude:
-      section_mult = 0.75f;   // Quiet intro/interlude
+    case SectionType::Chant:
+    case SectionType::MixBreak:
+      section_mult = 0.75f;   // Quiet intro/interlude/chant
       break;
     case SectionType::Outro:
       section_mult = 0.80f;   // Fading outro
@@ -66,6 +68,8 @@ int getSectionEnergy(SectionType section) {
   switch (section) {
     case SectionType::Intro:
     case SectionType::Interlude:
+    case SectionType::Chant:
+    case SectionType::MixBreak:
       return 1;
     case SectionType::Outro:
       return 2;

@@ -100,6 +100,14 @@ uint8_t calculateArpeggioVelocity(uint8_t base_velocity, SectionType section,
     case SectionType::Bridge:
       section_mult = 0.85f;
       break;
+    case SectionType::Chant:
+      // Chant section: very quiet, subdued arpeggio
+      section_mult = 0.60f;
+      break;
+    case SectionType::MixBreak:
+      // MIX section: high energy, full intensity
+      section_mult = 1.05f;
+      break;
   }
 
   // Add slight accent on beat 1 notes
@@ -137,16 +145,22 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
 
     Tick section_end = section.start_tick + (section.bars * TICKS_PER_BAR);
 
-    // When not syncing with chords, build pattern once at section start
-    if (!arp.sync_chord && persistent_arp_notes.empty()) {
-      // Use first chord of progression for the persistent pattern
-      int8_t degree = progression.at(0);
+    // === PERIODIC REFRESH FOR NON-SYNC MODE ===
+    // When sync_chord is false, refresh pattern at each SECTION start
+    // This prevents excessive drift from chord progression in long songs
+    if (!arp.sync_chord) {
+      // Calculate which chord to use based on section's bar position
+      // This ensures arpeggio aligns with the chord at section start
+      uint32_t total_bar = section.start_tick / TICKS_PER_BAR;
+      int chord_idx = total_bar % progression.length;
+      int8_t degree = progression.at(chord_idx);
       uint8_t root = degreeToRoot(degree, Key::C);
       while (root < BASE_OCTAVE) root += 12;
       while (root >= BASE_OCTAVE + 12) root -= 12;
       Chord chord = getChordNotes(degree);
       std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, arp.octave_range);
       persistent_arp_notes = arrangeByPattern(chord_notes, arp.pattern, rng);
+      persistent_pattern_index = 0;  // Reset pattern index at section start
     }
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {

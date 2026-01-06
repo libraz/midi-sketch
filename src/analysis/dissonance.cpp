@@ -32,6 +32,8 @@ HarmonicDensity getHarmonicDensity(SectionType section, Mood mood) {
     case SectionType::Intro:
     case SectionType::Interlude:
     case SectionType::Outro:
+    case SectionType::Chant:
+    case SectionType::MixBreak:
       return HarmonicDensity::Slow;
     case SectionType::A:
     case SectionType::Bridge:
@@ -426,12 +428,6 @@ BeatStrength getBeatStrength(Tick tick) {
   }
   // Beats 2 and 4
   return BeatStrength::Weak;
-}
-
-// Legacy function for compatibility
-bool isStrongBeat(Tick tick) {
-  BeatStrength strength = getBeatStrength(tick);
-  return strength == BeatStrength::Strong || strength == BeatStrength::Medium;
 }
 
 }  // namespace
