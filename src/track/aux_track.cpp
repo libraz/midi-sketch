@@ -2,11 +2,36 @@
 #include "core/chord_utils.h"
 #include "core/harmony_context.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace midisketch {
 
+// ============================================================================
+// A1: AuxFunction Meta Information
+// ============================================================================
+
 namespace {
+
+// Meta information table for each AuxFunction.
+// Index matches AuxFunction enum value.
+constexpr std::array<AuxFunctionMeta, 5> kAuxFunctionMetaTable = {{
+    // PulseLoop: Rhythmic, ChordTone, EventProbability
+    {AuxTimingRole::Rhythmic, AuxHarmonicRole::ChordTone,
+     AuxDensityBehavior::EventProbability, 0.7f, 0.1f},
+    // TargetHint: Reactive, Target, EventProbability
+    {AuxTimingRole::Reactive, AuxHarmonicRole::Target,
+     AuxDensityBehavior::EventProbability, 0.5f, 0.2f},
+    // GrooveAccent: Rhythmic, Accent, EventProbability
+    {AuxTimingRole::Rhythmic, AuxHarmonicRole::Accent,
+     AuxDensityBehavior::EventProbability, 0.6f, 0.0f},
+    // PhraseTail: Reactive, Following, SkipRatio
+    {AuxTimingRole::Reactive, AuxHarmonicRole::Following,
+     AuxDensityBehavior::SkipRatio, 0.4f, 0.3f},
+    // EmotionalPad: Sustained, ChordTone, VoiceCount
+    {AuxTimingRole::Sustained, AuxHarmonicRole::ChordTone,
+     AuxDensityBehavior::VoiceCount, 1.0f, 0.4f},
+}};
 
 constexpr Tick TICK_SIXTEENTH = TICKS_PER_BEAT / 4;
 constexpr Tick TICK_EIGHTH = TICKS_PER_BEAT / 2;
@@ -19,6 +44,15 @@ bool notesOverlap(Tick start1, Tick end1, Tick start2, Tick end2) {
 }
 
 }  // namespace
+
+const AuxFunctionMeta& getAuxFunctionMeta(AuxFunction func) {
+  size_t idx = static_cast<size_t>(func);
+  if (idx < kAuxFunctionMetaTable.size()) {
+    return kAuxFunctionMetaTable[idx];
+  }
+  // Default to PulseLoop meta if out of range
+  return kAuxFunctionMetaTable[0];
+}
 
 MidiTrack AuxTrackGenerator::generate(
     const AuxConfig& config,
@@ -62,6 +96,9 @@ std::vector<NoteEvent> AuxTrackGenerator::generatePulseLoop(
 
   std::vector<NoteEvent> result;
 
+  // A1: Get function meta for dissonance tolerance
+  const auto& meta = getAuxFunctionMeta(AuxFunction::PulseLoop);
+
   uint8_t aux_low, aux_high;
   calculateAuxRange(config, ctx.main_tessitura, aux_low, aux_high);
 
@@ -97,19 +134,19 @@ std::vector<NoteEvent> AuxTrackGenerator::generatePulseLoop(
   size_t pattern_idx = 0;
 
   while (current_tick < ctx.section_end) {
-    // Apply density ratio
+    // A2: Apply density ratio (EventProbability behavior)
     std::uniform_real_distribution<float> density_dist(0.0f, 1.0f);
-    if (density_dist(rng) > config.density_ratio) {
+    if (density_dist(rng) > config.density_ratio * meta.base_density) {
       current_tick += note_duration;
       continue;
     }
 
     uint8_t pitch = pattern_pitches[pattern_idx % pattern_pitches.size()];
 
-    // Check for collision with main melody
+    // A7: Check for collision with function-specific tolerance
     pitch = getSafePitch(pitch, current_tick, note_duration,
                          ctx.main_melody, harmony, aux_low, aux_high,
-                         ctx.chord_degree);
+                         ctx.chord_degree, meta.dissonance_tolerance);
 
     result.push_back({current_tick, note_duration, pitch, velocity});
 
@@ -130,27 +167,42 @@ std::vector<NoteEvent> AuxTrackGenerator::generateTargetHint(
 
   if (!ctx.main_melody || ctx.main_melody->empty()) return result;
 
+  // A1: Get function meta
+  const auto& meta = getAuxFunctionMeta(AuxFunction::TargetHint);
+
   uint8_t aux_low, aux_high;
   calculateAuxRange(config, ctx.main_tessitura, aux_low, aux_high);
 
   uint8_t velocity = static_cast<uint8_t>(ctx.base_velocity * config.velocity_ratio);
 
-  // Find phrase boundaries in main melody (gaps > quarter note)
+  // A4: Use phrase boundaries from vocal if available
   std::vector<Tick> phrase_ends;
-  for (size_t i = 0; i < ctx.main_melody->size() - 1; ++i) {
-    const auto& note = (*ctx.main_melody)[i];
-    const auto& next = (*ctx.main_melody)[i + 1];
-    Tick gap = next.startTick - (note.startTick + note.duration);
-    if (gap > TICK_QUARTER) {
-      phrase_ends.push_back(note.startTick + note.duration);
+  if (ctx.phrase_boundaries && !ctx.phrase_boundaries->empty()) {
+    // Use vocal's phrase boundaries for coordination
+    for (const auto& boundary : *ctx.phrase_boundaries) {
+      if (boundary.is_breath &&
+          boundary.tick > ctx.section_start &&
+          boundary.tick <= ctx.section_end) {
+        phrase_ends.push_back(boundary.tick);
+      }
+    }
+  } else {
+    // Fallback: Find phrase boundaries in main melody (gaps > quarter note)
+    for (size_t i = 0; i + 1 < ctx.main_melody->size(); ++i) {
+      const auto& note = (*ctx.main_melody)[i];
+      const auto& next = (*ctx.main_melody)[i + 1];
+      Tick gap = next.startTick - (note.startTick + note.duration);
+      if (gap > TICK_QUARTER) {
+        phrase_ends.push_back(note.startTick + note.duration);
+      }
     }
   }
 
   // Add hints before phrase ends
   for (Tick phrase_end : phrase_ends) {
-    // Apply density ratio
+    // A2: Apply density ratio (EventProbability behavior)
     std::uniform_real_distribution<float> density_dist(0.0f, 1.0f);
-    if (density_dist(rng) > config.density_ratio) continue;
+    if (density_dist(rng) > config.density_ratio * meta.base_density) continue;
 
     // Play hint note half a bar before phrase end
     Tick hint_start = phrase_end - TICK_HALF;
@@ -168,9 +220,10 @@ std::vector<NoteEvent> AuxTrackGenerator::generateTargetHint(
     uint8_t pitch = static_cast<uint8_t>(octave * 12 + pc);
     pitch = std::clamp(pitch, aux_low, aux_high);
 
+    // A7: Use function-specific dissonance tolerance
     pitch = getSafePitch(pitch, hint_start, TICK_QUARTER,
                          ctx.main_melody, harmony, aux_low, aux_high,
-                         ctx.chord_degree);
+                         ctx.chord_degree, meta.dissonance_tolerance);
 
     result.push_back({hint_start, TICK_QUARTER, pitch, velocity});
   }
@@ -186,6 +239,9 @@ std::vector<NoteEvent> AuxTrackGenerator::generateGrooveAccent(
 
   std::vector<NoteEvent> result;
 
+  // A1: Get function meta
+  const auto& meta = getAuxFunctionMeta(AuxFunction::GrooveAccent);
+
   uint8_t aux_low, aux_high;
   calculateAuxRange(config, ctx.main_tessitura, aux_low, aux_high);
 
@@ -200,7 +256,8 @@ std::vector<NoteEvent> AuxTrackGenerator::generateGrooveAccent(
   uint8_t root_pitch = static_cast<uint8_t>(octave * 12 + root_pc);
   root_pitch = std::clamp(root_pitch, aux_low, aux_high);
 
-  // Place accents on beat 2 and 4 (backbeat)
+  // A5: Place accents on beat 2 and 4 (backbeat)
+  // Future: Could vary based on VocalGrooveFeel from params
   Tick bar_length = TICKS_PER_BAR;
   Tick current_bar = (ctx.section_start / bar_length) * bar_length;
 
@@ -208,11 +265,13 @@ std::vector<NoteEvent> AuxTrackGenerator::generateGrooveAccent(
     // Beat 2
     Tick beat2 = current_bar + TICKS_PER_BEAT;
     if (beat2 >= ctx.section_start && beat2 < ctx.section_end) {
+      // A2: Apply density ratio (EventProbability behavior)
       std::uniform_real_distribution<float> density_dist(0.0f, 1.0f);
-      if (density_dist(rng) < config.density_ratio) {
+      if (density_dist(rng) < config.density_ratio * meta.base_density) {
+        // A7: Use function-specific dissonance tolerance (very low for accents)
         uint8_t pitch = getSafePitch(root_pitch, beat2, TICK_EIGHTH,
                                      ctx.main_melody, harmony, aux_low, aux_high,
-                                     ctx.chord_degree);
+                                     ctx.chord_degree, meta.dissonance_tolerance);
         result.push_back({beat2, TICK_EIGHTH, pitch, velocity});
       }
     }
@@ -221,10 +280,10 @@ std::vector<NoteEvent> AuxTrackGenerator::generateGrooveAccent(
     Tick beat4 = current_bar + TICKS_PER_BEAT * 3;
     if (beat4 >= ctx.section_start && beat4 < ctx.section_end) {
       std::uniform_real_distribution<float> density_dist(0.0f, 1.0f);
-      if (density_dist(rng) < config.density_ratio) {
+      if (density_dist(rng) < config.density_ratio * meta.base_density) {
         uint8_t pitch = getSafePitch(root_pitch, beat4, TICK_EIGHTH,
                                      ctx.main_melody, harmony, aux_low, aux_high,
-                                     ctx.chord_degree);
+                                     ctx.chord_degree, meta.dissonance_tolerance);
         result.push_back({beat4, TICK_EIGHTH, pitch, velocity});
       }
     }
@@ -245,46 +304,77 @@ std::vector<NoteEvent> AuxTrackGenerator::generatePhraseTail(
 
   if (!ctx.main_melody || ctx.main_melody->empty()) return result;
 
+  // A1: Get function meta
+  const auto& meta = getAuxFunctionMeta(AuxFunction::PhraseTail);
+
   uint8_t aux_low, aux_high;
   calculateAuxRange(config, ctx.main_tessitura, aux_low, aux_high);
 
   uint8_t velocity = static_cast<uint8_t>(ctx.base_velocity * config.velocity_ratio);
 
-  // Find phrase endings (notes followed by rests)
-  for (size_t i = 0; i < ctx.main_melody->size(); ++i) {
-    const auto& note = (*ctx.main_melody)[i];
-    Tick note_end = note.startTick + note.duration;
-
-    // Check if this is a phrase ending
-    bool is_phrase_end = false;
-    if (i == ctx.main_melody->size() - 1) {
-      is_phrase_end = true;
-    } else {
-      const auto& next = (*ctx.main_melody)[i + 1];
-      Tick gap = next.startTick - note_end;
-      is_phrase_end = (gap > TICK_QUARTER);
+  // A4: Use phrase boundaries from vocal if available
+  std::vector<std::pair<Tick, uint8_t>> phrase_info;  // (end_tick, last_pitch)
+  if (ctx.phrase_boundaries && !ctx.phrase_boundaries->empty()) {
+    // Use vocal's phrase boundaries for tail placement
+    for (const auto& boundary : *ctx.phrase_boundaries) {
+      if (boundary.is_breath &&
+          boundary.tick >= ctx.section_start &&
+          boundary.tick < ctx.section_end) {
+        // Find the last melody note before this boundary
+        uint8_t last_pitch = 60;  // Default
+        for (const auto& note : *ctx.main_melody) {
+          Tick note_end = note.startTick + note.duration;
+          if (note_end <= boundary.tick && note_end > boundary.tick - TICKS_PER_BAR) {
+            last_pitch = note.note;
+          }
+        }
+        phrase_info.push_back({boundary.tick, last_pitch});
+      }
     }
+  }
 
-    if (!is_phrase_end) continue;
+  // Fallback: Find phrase endings in main melody
+  if (phrase_info.empty()) {
+    for (size_t i = 0; i < ctx.main_melody->size(); ++i) {
+      const auto& note = (*ctx.main_melody)[i];
+      Tick note_end = note.startTick + note.duration;
 
-    // Apply density ratio
+      bool is_phrase_end = false;
+      if (i == ctx.main_melody->size() - 1) {
+        is_phrase_end = true;
+      } else {
+        const auto& next = (*ctx.main_melody)[i + 1];
+        Tick gap = next.startTick - note_end;
+        is_phrase_end = (gap > TICK_QUARTER);
+      }
+
+      if (is_phrase_end) {
+        phrase_info.push_back({note_end, note.note});
+      }
+    }
+  }
+
+  // Generate tail notes
+  for (const auto& [phrase_end, last_pitch] : phrase_info) {
+    // A2: Apply density ratio (SkipRatio behavior)
     std::uniform_real_distribution<float> density_dist(0.0f, 1.0f);
-    if (density_dist(rng) > config.density_ratio) continue;
+    if (density_dist(rng) > config.density_ratio * meta.base_density) continue;
 
     // Add tail note after phrase ending
-    Tick tail_start = note_end + TICK_EIGHTH;
+    Tick tail_start = phrase_end + TICK_EIGHTH;
     if (tail_start >= ctx.section_end) continue;
 
     // Use a note below the phrase ending
-    int tail_pitch = note.note - 2;  // Step down
+    int tail_pitch = last_pitch - 2;  // Step down
     tail_pitch = snapToNearestScaleTone(tail_pitch, ctx.key_offset);
     tail_pitch = std::clamp(tail_pitch, static_cast<int>(aux_low),
                             static_cast<int>(aux_high));
 
+    // A7: Use function-specific dissonance tolerance (moderate for tails)
     uint8_t pitch = getSafePitch(static_cast<uint8_t>(tail_pitch),
                                  tail_start, TICK_EIGHTH,
                                  ctx.main_melody, harmony, aux_low, aux_high,
-                                 ctx.chord_degree);
+                                 ctx.chord_degree, meta.dissonance_tolerance);
 
     result.push_back({tail_start, TICK_EIGHTH, pitch,
                       static_cast<uint8_t>(velocity * 0.8f)});
@@ -300,6 +390,9 @@ std::vector<NoteEvent> AuxTrackGenerator::generateEmotionalPad(
     std::mt19937& rng) {
 
   std::vector<NoteEvent> result;
+
+  // A1: Get function meta
+  const auto& meta = getAuxFunctionMeta(AuxFunction::EmotionalPad);
 
   uint8_t aux_low, aux_high;
   calculateAuxRange(config, ctx.main_tessitura, aux_low, aux_high);
@@ -325,30 +418,51 @@ std::vector<NoteEvent> AuxTrackGenerator::generateEmotionalPad(
   Tick pad_duration = TICKS_PER_BAR * 2;
   Tick current_tick = ctx.section_start;
 
-  while (current_tick < ctx.section_end) {
-    // Apply density ratio
-    std::uniform_real_distribution<float> density_dist(0.0f, 1.0f);
-    if (density_dist(rng) > config.density_ratio) {
-      current_tick += pad_duration;
-      continue;
-    }
+  // A2: VoiceCount behavior - calculate how many voices based on density
+  int voice_count = static_cast<int>(2.0f * config.density_ratio * meta.base_density);
+  voice_count = std::clamp(voice_count, 1, 3);
 
+  while (current_tick < ctx.section_end) {
     Tick actual_duration = std::min(pad_duration, ctx.section_end - current_tick);
 
-    // Root note
+    // A6: Check if this is near section end for tension notes
+    bool is_section_ending = (ctx.section_end - current_tick <= TICKS_PER_BAR * 2);
+
+    // Root note (always)
     uint8_t safe_root = getSafePitch(root_pitch, current_tick, actual_duration,
                                      ctx.main_melody, harmony, aux_low, aux_high,
-                                     ctx.chord_degree);
+                                     ctx.chord_degree, meta.dissonance_tolerance);
     result.push_back({current_tick, actual_duration, safe_root, velocity});
 
-    // Fifth note (if not clashing)
-    if (std::abs(static_cast<int>(fifth_pitch) - static_cast<int>(safe_root)) > 2) {
+    // Fifth note (if voice_count >= 2)
+    if (voice_count >= 2 &&
+        std::abs(static_cast<int>(fifth_pitch) - static_cast<int>(safe_root)) > 2) {
       uint8_t safe_fifth = getSafePitch(fifth_pitch, current_tick, actual_duration,
                                         ctx.main_melody, harmony, aux_low, aux_high,
-                                        ctx.chord_degree);
+                                        ctx.chord_degree, meta.dissonance_tolerance);
       if (safe_fifth != safe_root) {
         result.push_back({current_tick, actual_duration, safe_fifth,
                           static_cast<uint8_t>(velocity * 0.9f)});
+      }
+    }
+
+    // A6: Add tension note (9th or sus4) at section ending
+    if (is_section_ending && voice_count >= 2) {
+      std::uniform_real_distribution<float> tension_dist(0.0f, 1.0f);
+      if (tension_dist(rng) < 0.5f) {  // 50% chance of tension
+        // Add 9th (2 semitones above root) or sus4 (5 semitones above root)
+        int tension_pc = (tension_dist(rng) < 0.5f) ? (root_pc + 2) % 12 : (root_pc + 5) % 12;
+        uint8_t tension_pitch = static_cast<uint8_t>(octave * 12 + tension_pc);
+        tension_pitch = std::clamp(tension_pitch, aux_low, aux_high);
+
+        // Tension notes use higher dissonance tolerance
+        uint8_t safe_tension = getSafePitch(tension_pitch, current_tick, actual_duration,
+                                            ctx.main_melody, harmony, aux_low, aux_high,
+                                            ctx.chord_degree, 0.5f);
+        if (safe_tension != safe_root && safe_tension != fifth_pitch) {
+          result.push_back({current_tick, actual_duration, safe_tension,
+                            static_cast<uint8_t>(velocity * 0.7f)});  // Softer tension
+        }
       }
     }
 
@@ -374,10 +488,26 @@ void AuxTrackGenerator::calculateAuxRange(
   }
 }
 
+// A4: Find breath points (phrase boundaries) within a time range.
+std::vector<Tick> AuxTrackGenerator::findBreathPointsInRange(
+    const std::vector<PhraseBoundary>* boundaries,
+    Tick start, Tick end) {
+  std::vector<Tick> result;
+  if (!boundaries) return result;
+
+  for (const auto& boundary : *boundaries) {
+    if (boundary.is_breath && boundary.tick >= start && boundary.tick < end) {
+      result.push_back(boundary.tick);
+    }
+  }
+  return result;
+}
+
 bool AuxTrackGenerator::isPitchSafe(
     uint8_t pitch, Tick start, Tick duration,
     const std::vector<NoteEvent>* main_melody,
-    const HarmonyContext& harmony) {
+    const HarmonyContext& harmony,
+    float dissonance_tolerance) {
 
   // Check against main melody
   if (main_melody) {
@@ -386,8 +516,24 @@ bool AuxTrackGenerator::isPitchSafe(
                        note.startTick, note.startTick + note.duration)) {
         int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(note.note));
         interval = interval % 12;
-        // Avoid minor 2nd (1) and major 7th (11)
-        if (interval == 1 || interval == 11) {
+
+        // A7: With higher tolerance, allow more intervals
+        // Base case: minor 2nd (1) and major 7th (11) are dissonant
+        bool is_dissonant = (interval == 1 || interval == 11);
+
+        // With tolerance > 0.3, also allow tritone (6)
+        if (dissonance_tolerance < 0.3f && interval == 6) {
+          is_dissonant = true;
+        }
+
+        // With tolerance > 0, probabilistically allow dissonance
+        if (is_dissonant && dissonance_tolerance > 0.0f) {
+          // Random check would need RNG, so just use threshold
+          if (dissonance_tolerance < 0.5f) {
+            return false;  // Still reject
+          }
+          // High tolerance: allow
+        } else if (is_dissonant) {
           return false;
         }
       }
@@ -403,9 +549,10 @@ uint8_t AuxTrackGenerator::getSafePitch(
     const std::vector<NoteEvent>* main_melody,
     const HarmonyContext& harmony,
     uint8_t low, uint8_t high,
-    int8_t chord_degree) {
+    int8_t chord_degree,
+    float dissonance_tolerance) {
 
-  if (isPitchSafe(desired, start, duration, main_melody, harmony)) {
+  if (isPitchSafe(desired, start, duration, main_melody, harmony, dissonance_tolerance)) {
     return desired;
   }
 
@@ -425,7 +572,7 @@ uint8_t AuxTrackGenerator::getSafePitch(
       if (candidate < low || candidate > high) continue;
 
       if (isPitchSafe(static_cast<uint8_t>(candidate), start, duration,
-                      main_melody, harmony)) {
+                      main_melody, harmony, dissonance_tolerance)) {
         int dist = std::abs(candidate - static_cast<int>(desired));
         if (dist < best_dist) {
           best_dist = dist;

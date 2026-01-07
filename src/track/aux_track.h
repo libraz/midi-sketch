@@ -3,13 +3,86 @@
 
 #include "core/midi_track.h"
 #include "core/pitch_utils.h"
+#include "core/track_layer.h"
 #include "core/types.h"
 #include <random>
+#include <unordered_map>
 #include <vector>
 
 namespace midisketch {
 
 class HarmonyContext;
+
+// ============================================================================
+// Phase 2: AuxFunction Meta Information (A1)
+// ============================================================================
+
+// Timing role describes when aux notes typically occur.
+enum class AuxTimingRole : uint8_t {
+  Rhythmic,    // PulseLoop, GrooveAccent: tied to beat grid
+  Reactive,    // TargetHint, PhraseTail: responds to main melody
+  Sustained    // EmotionalPad: long held notes
+};
+
+// Harmonic role describes pitch selection strategy.
+enum class AuxHarmonicRole : uint8_t {
+  ChordTone,   // PulseLoop, EmotionalPad: chord tones only
+  Target,      // TargetHint: anticipate melody targets
+  Following,   // PhraseTail: follow melody pitch
+  Accent       // GrooveAccent: root/fifth emphasis
+};
+
+// Density behavior describes how density_ratio is interpreted.
+enum class AuxDensityBehavior : uint8_t {
+  EventProbability,  // Each potential event has density_ratio chance
+  SkipRatio,         // Skip notes at density_ratio rate
+  VoiceCount         // Multiply voice count by density_ratio
+};
+
+// Meta information for each AuxFunction.
+struct AuxFunctionMeta {
+  AuxTimingRole timing_role;
+  AuxHarmonicRole harmonic_role;
+  AuxDensityBehavior density_behavior;
+  float base_density;           // Default density when density_ratio = 1.0
+  float dissonance_tolerance;   // A7: Higher = allow more dissonance (0.0-1.0)
+};
+
+// Get meta information for an AuxFunction.
+const AuxFunctionMeta& getAuxFunctionMeta(AuxFunction func);
+
+// ============================================================================
+// Phase 2: Aux Cache Key (A3)
+// ============================================================================
+
+// Cache key for aux phrase reuse (similar to Vocal's PhraseCacheKey).
+struct AuxCacheKey {
+  AuxFunction function;
+  SectionType section_type;
+  uint8_t bars;
+
+  bool operator==(const AuxCacheKey& other) const {
+    return function == other.function &&
+           section_type == other.section_type &&
+           bars == other.bars;
+  }
+};
+
+// Hash function for AuxCacheKey.
+struct AuxCacheKeyHash {
+  size_t operator()(const AuxCacheKey& key) const {
+    return std::hash<uint8_t>()(static_cast<uint8_t>(key.function)) ^
+           (std::hash<uint8_t>()(static_cast<uint8_t>(key.section_type)) << 4) ^
+           (std::hash<uint8_t>()(key.bars) << 8);
+  }
+};
+
+// Cached aux phrase (relative timing).
+struct CachedAuxPhrase {
+  std::vector<NoteEvent> notes;  // Relative timing from section start
+  uint8_t bars;
+  int reuse_count = 0;
+};
 
 // AuxTrackGenerator generates auxiliary sub-melody tracks.
 // Provides 5 different functions to complement the main melody.
@@ -24,6 +97,9 @@ class AuxTrackGenerator {
     uint8_t base_velocity;
     TessituraRange main_tessitura;  // Main melody's tessitura
     const std::vector<NoteEvent>* main_melody;  // Reference to main melody
+    // A4: Vocal breath coordination
+    const std::vector<PhraseBoundary>* phrase_boundaries;  // From vocal generation
+    SectionType section_type;  // For cache key
   };
 
   AuxTrackGenerator() = default;
@@ -104,6 +180,9 @@ class AuxTrackGenerator {
       const HarmonyContext& harmony,
       std::mt19937& rng);
 
+  // Clear phrase cache (call at start of song generation).
+  void clearCache() { phrase_cache_.clear(); }
+
  private:
   // Calculate aux range based on config offset and main tessitura.
   void calculateAuxRange(const AuxConfig& config,
@@ -111,16 +190,27 @@ class AuxTrackGenerator {
                          uint8_t& out_low, uint8_t& out_high);
 
   // Check if pitch is safe (doesn't clash with main melody).
+  // A7: Uses function-specific dissonance tolerance.
   bool isPitchSafe(uint8_t pitch, Tick start, Tick duration,
                    const std::vector<NoteEvent>* main_melody,
-                   const HarmonyContext& harmony);
+                   const HarmonyContext& harmony,
+                   float dissonance_tolerance = 0.0f);
 
   // Get safe pitch that doesn't clash.
   uint8_t getSafePitch(uint8_t desired, Tick start, Tick duration,
                        const std::vector<NoteEvent>* main_melody,
                        const HarmonyContext& harmony,
                        uint8_t low, uint8_t high,
-                       int8_t chord_degree);
+                       int8_t chord_degree,
+                       float dissonance_tolerance = 0.0f);
+
+  // A4: Find phrase boundaries within a time range.
+  std::vector<Tick> findBreathPointsInRange(
+      const std::vector<PhraseBoundary>* boundaries,
+      Tick start, Tick end);
+
+  // A3: Phrase cache for section repetition.
+  std::unordered_map<AuxCacheKey, CachedAuxPhrase, AuxCacheKeyHash> phrase_cache_;
 };
 
 }  // namespace midisketch
