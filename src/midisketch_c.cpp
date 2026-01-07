@@ -77,12 +77,7 @@ MidiSketchError midisketch_regenerate_vocal(MidiSketchHandle handle,
   regen_params.vocal_attitude = static_cast<midisketch::VocalAttitude>(params->vocal_attitude);
   regen_params.vocal_style = static_cast<midisketch::VocalStylePreset>(params->vocal_style);
   regen_params.composition_style = midisketch::CompositionStyle::MelodyLead;
-
-  // Vocal density parameters
-  regen_params.vocal_note_density = params->vocal_note_density / 100.0f;
-  regen_params.vocal_min_note_division = params->vocal_min_note_division;
-  regen_params.vocal_rest_ratio = params->vocal_rest_ratio / 100.0f;
-  regen_params.vocal_allow_extreme_leap = params->vocal_allow_extreme_leap != 0;
+  regen_params.melody_template = static_cast<midisketch::MelodyTemplateId>(params->melody_template);
 
   sketch->regenerateMelody(regen_params);
   return MIDISKETCH_OK;
@@ -327,14 +322,9 @@ MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
   s_default_config.mix_pattern = static_cast<uint8_t>(cpp_config.mix_pattern);
   s_default_config.call_density = static_cast<uint8_t>(cpp_config.call_density);
 
-  // Vocal density settings
-  s_default_config.vocal_note_density = static_cast<uint8_t>(cpp_config.vocal_note_density * 100);
-  s_default_config.vocal_min_note_division = cpp_config.vocal_min_note_division;
-  s_default_config.vocal_rest_ratio = static_cast<uint8_t>(cpp_config.vocal_rest_ratio * 100);
-  s_default_config.vocal_allow_extreme_leap = cpp_config.vocal_allow_extreme_leap ? 1 : 0;
-
-  // Vocal style preset
+  // Vocal style settings
   s_default_config.vocal_style = static_cast<uint8_t>(cpp_config.vocal_style);
+  s_default_config.melody_template = static_cast<uint8_t>(cpp_config.melody_template);
 
   // Arrangement growth
   s_default_config.arrangement_growth = static_cast<uint8_t>(cpp_config.arrangement_growth);
@@ -496,14 +486,9 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   cpp_config.mix_pattern = static_cast<midisketch::MixPattern>(config->mix_pattern);
   cpp_config.call_density = static_cast<midisketch::CallDensity>(config->call_density);
 
-  // Vocal density settings
-  cpp_config.vocal_note_density = config->vocal_note_density / 100.0f;
-  cpp_config.vocal_min_note_division = config->vocal_min_note_division;
-  cpp_config.vocal_rest_ratio = config->vocal_rest_ratio / 100.0f;
-  cpp_config.vocal_allow_extreme_leap = config->vocal_allow_extreme_leap != 0;
-
-  // Vocal style preset
+  // Vocal style settings
   cpp_config.vocal_style = static_cast<midisketch::VocalStylePreset>(config->vocal_style);
+  cpp_config.melody_template = static_cast<midisketch::MelodyTemplateId>(config->melody_template);
 
   // Arrangement growth
   cpp_config.arrangement_growth = static_cast<midisketch::ArrangementGrowth>(config->arrangement_growth);

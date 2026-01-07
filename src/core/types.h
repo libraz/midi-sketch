@@ -683,14 +683,8 @@ struct SongConfig {
   MixPattern mix_pattern = MixPattern::None;   // MIX before last Chorus
   CallDensity call_density = CallDensity::Standard;  // Call density in Chorus
 
-  // === Vocal density parameters ===
-  float vocal_note_density = 0.0f;        // Note density override (0.0 = use style default)
-                                          // 0.3-0.5=ballad, 0.6-0.8=standard, 0.8-1.0=idol
-                                          // 1.0-1.3=vocaloid, 1.3-2.0=ultra vocaloid
-  uint8_t vocal_min_note_division = 0;    // Min note division override (0 = use style default)
-                                          // 4=quarter, 8=eighth, 16=16th, 32=32nd
-  float vocal_rest_ratio = 0.15f;         // Rest ratio between phrases (0.0-0.5)
-  bool vocal_allow_extreme_leap = false;  // Allow extreme leaps (for vocaloid mode)
+  // === Melody template ===
+  MelodyTemplateId melody_template = MelodyTemplateId::Auto;  // Auto = use style default
 
   // === Melodic complexity and hook control ===
   MelodicComplexity melodic_complexity = MelodicComplexity::Standard;
@@ -743,9 +737,8 @@ struct GeneratorParams {
   VocalStylePreset vocal_style = VocalStylePreset::Auto;  // Vocal style preset
   StyleMelodyParams melody_params = {};  // Default: 7 semitone leap, unison ok, 0.8 resolution, 0.2 tension
 
-  // Vocal density parameters (from SongConfig override)
-  float vocal_rest_ratio = 0.15f;         // Rest ratio between phrases
-  bool vocal_allow_extreme_leap = false;  // Allow extreme leaps (vocaloid mode)
+  // Melody template (Auto = use style default)
+  MelodyTemplateId melody_template = MelodyTemplateId::Auto;
 
   // Melodic complexity and hook control
   MelodicComplexity melodic_complexity = MelodicComplexity::Standard;
@@ -765,11 +758,8 @@ struct MelodyRegenerateParams {
   // Vocal style preset (Auto = use current style)
   VocalStylePreset vocal_style = VocalStylePreset::Auto;
 
-  // Vocal density parameters (0 = use style default)
-  float vocal_note_density = 0.0f;     // Note density (0.3-2.0, 0 = style default)
-  uint8_t vocal_min_note_division = 0; // Min note division (4/8/16/32, 0 = style default)
-  float vocal_rest_ratio = 0.15f;      // Rest ratio between phrases (0.0-0.5)
-  bool vocal_allow_extreme_leap = false; // Allow extreme leaps (vocaloid mode)
+  // Melody template (Auto = use style default)
+  MelodyTemplateId melody_template = MelodyTemplateId::Auto;
 };
 
 }  // namespace midisketch

@@ -5,8 +5,8 @@
 // If these tests fail, JS binding code in js/index.ts must be updated.
 
 TEST(StructLayoutTest, SongConfigSize) {
-  // SongConfig should be exactly 56 bytes
-  EXPECT_EQ(sizeof(MidiSketchSongConfig), 56);
+  // SongConfig size reduced after removing deprecated params
+  EXPECT_EQ(sizeof(MidiSketchSongConfig), 52);
 }
 
 TEST(StructLayoutTest, SongConfigLayout) {
@@ -71,28 +71,26 @@ TEST(StructLayoutTest, SongConfigLayout) {
   CHECK_OFFSET(mix_pattern, 40);
   CHECK_OFFSET(call_density, 41);
 
-  // Vocal density settings (offset 42-45)
-  CHECK_OFFSET(vocal_note_density, 42);
-  CHECK_OFFSET(vocal_min_note_division, 43);
-  CHECK_OFFSET(vocal_rest_ratio, 44);
-  CHECK_OFFSET(vocal_allow_extreme_leap, 45);
+  // Vocal style settings (offset 42-43)
+  CHECK_OFFSET(vocal_style, 42);
+  CHECK_OFFSET(melody_template, 43);
 
-  // Critical: offset 46 and beyond - these were misaligned in JS
-  CHECK_OFFSET(vocal_style, 46);
-  CHECK_OFFSET(arrangement_growth, 47);
-  CHECK_OFFSET(arpeggio_sync_chord, 48);
-  CHECK_OFFSET(motif_repeat_scope, 49);
-  CHECK_OFFSET(motif_fixed_progression, 50);
-  CHECK_OFFSET(motif_max_chord_count, 51);
-  CHECK_OFFSET(melodic_complexity, 52);
-  CHECK_OFFSET(hook_intensity, 53);
-  CHECK_OFFSET(vocal_groove, 54);
+  // Additional settings
+  CHECK_OFFSET(arrangement_growth, 44);
+  CHECK_OFFSET(arpeggio_sync_chord, 45);
+  CHECK_OFFSET(motif_repeat_scope, 46);
+  CHECK_OFFSET(motif_fixed_progression, 47);
+  CHECK_OFFSET(motif_max_chord_count, 48);
+  CHECK_OFFSET(melodic_complexity, 49);
+  CHECK_OFFSET(hook_intensity, 50);
+  CHECK_OFFSET(vocal_groove, 51);
 
   #undef CHECK_OFFSET
 }
 
 TEST(StructLayoutTest, VocalParamsSize) {
-  // VocalParams should be exactly 12 bytes
+  // VocalParams: seed(4) + vocal_low(1) + vocal_high(1) + vocal_attitude(1)
+  //              + vocal_style(1) + melody_template(1) + padding = 12 bytes
   EXPECT_EQ(sizeof(MidiSketchVocalParams), 12);
 }
 
@@ -104,18 +102,13 @@ TEST(StructLayoutTest, VocalParamsLayout) {
     EXPECT_EQ(reinterpret_cast<uintptr_t>(&p.field) - base, expected) \
         << #field " offset mismatch"
 
-  // Basic settings (offset 0-6)
+  // Basic settings (offset 0-8)
   CHECK_OFFSET(seed, 0);
   CHECK_OFFSET(vocal_low, 4);
   CHECK_OFFSET(vocal_high, 5);
   CHECK_OFFSET(vocal_attitude, 6);
-
-  // Critical: offset 7 and beyond - these were misaligned in JS
   CHECK_OFFSET(vocal_style, 7);
-  CHECK_OFFSET(vocal_note_density, 8);
-  CHECK_OFFSET(vocal_min_note_division, 9);
-  CHECK_OFFSET(vocal_rest_ratio, 10);
-  CHECK_OFFSET(vocal_allow_extreme_leap, 11);
+  CHECK_OFFSET(melody_template, 8);
 
   #undef CHECK_OFFSET
 }

@@ -73,11 +73,7 @@ typedef struct {
   uint8_t vocal_high;     // Vocal range upper bound (MIDI note)
   uint8_t vocal_attitude; // 0=Clean, 1=Expressive, 2=Raw
   uint8_t vocal_style;    // VocalStylePreset (0=Auto, 1=Standard, 2=Vocaloid, etc.)
-  // Vocal density parameters (0 = use style default)
-  uint8_t vocal_note_density;      // Note density * 100 (0 = use style default, 30-200)
-  uint8_t vocal_min_note_division; // Min note division (0=default, 4/8/16/32)
-  uint8_t vocal_rest_ratio;        // Rest ratio * 100 (0-50)
-  uint8_t vocal_allow_extreme_leap; // Allow extreme leaps (0=off, 1=on)
+  uint8_t melody_template; // MelodyTemplateId (0=Auto, 1-7 = specific templates)
 } MidiSketchVocalParams;
 
 // Regenerates only the vocal track with the given parameters.
@@ -219,15 +215,10 @@ typedef struct {
   uint8_t mix_pattern;        // MixPattern (0=None, 1=Standard, 2=Tiger)
   uint8_t call_density;       // CallDensity (0=None, 1=Minimal, 2=Standard, 3=Intense)
 
-  // Vocal density settings (Phase 4/5)
-  uint8_t vocal_note_density;      // Note density * 100 (0 = use style default, 30-200)
-  uint8_t vocal_min_note_division; // Min note division (0=default, 4/8/16/32)
-  uint8_t vocal_rest_ratio;        // Rest ratio * 100 (0-50)
-  uint8_t vocal_allow_extreme_leap; // Allow extreme leaps (0=off, 1=on)
-
-  // Vocal style preset
+  // Vocal style settings
   uint8_t vocal_style;             // 0=Auto, 1=Standard, 2=Vocaloid, 3=UltraVocaloid,
                                    // 4=Idol, 5=Ballad, 6=Rock, 7=CityPop, 8=Anime
+  uint8_t melody_template;         // MelodyTemplateId (0=Auto, 1-7 = specific templates)
 
   // Arrangement growth method
   uint8_t arrangement_growth;      // 0=LayerAdd, 1=RegisterAdd

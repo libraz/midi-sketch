@@ -1,5 +1,7 @@
 #include "core/generator.h"
 #include "core/chord.h"
+#include "core/melody_templates.h"
+#include "core/pitch_utils.h"
 #include "core/preset_data.h"
 #include "core/structure.h"
 #include "core/velocity.h"
@@ -8,6 +10,7 @@
 #include "track/chord_track.h"
 #include "track/drums.h"
 #include "track/motif.h"
+#include "track/aux_track.h"
 #include "track/se.h"
 #include "track/vocal.h"
 #include <chrono>
@@ -17,214 +20,83 @@ namespace midisketch {
 namespace {
 
 // Apply VocalStylePreset settings to melody parameters.
-// User explicit settings (vocal_note_density, vocal_min_note_division) take priority.
+// MelodyDesigner uses templates based on vocal style, but melody_params
+// controls additional settings like register shift.
 void applyVocalStylePreset(GeneratorParams& params,
-                           const SongConfig& config) {
-  // Check if user explicitly set density/division
-  bool user_set_density = (config.vocal_note_density > 0.0f);
-  bool user_set_division = (config.vocal_min_note_division > 0);
-
+                           const SongConfig& /* config */) {
   switch (params.vocal_style) {
     case VocalStylePreset::Vocaloid:
-      // YOASOBI style: 16th note grid, high density, syncopation
-      if (!user_set_division) {
-        params.melody_params.min_note_division = 16;
-      }
-      params.melody_params.sixteenth_note_ratio =
-          std::max(params.melody_params.sixteenth_note_ratio, 0.5f);
-      if (!user_set_density) {
-        params.melody_params.note_density =
-            std::max(params.melody_params.note_density, 1.2f);
-      }
+    case VocalStylePreset::UltraVocaloid:
+      // High-energy synthetic styles
+      params.melody_params.max_leap_interval = 14;
       params.melody_params.syncopation_prob = 0.4f;
       params.melody_params.allow_bar_crossing = true;
-      params.melody_params.long_note_ratio = 0.1f;  // Few long notes
-      params.melody_params.max_leap_interval = 14;  // Octave+ allowed
-      params.vocal_rest_ratio = 0.05f;  // Minimal rests
-      break;
-
-    case VocalStylePreset::UltraVocaloid:
-      // Hatsune Miku no Shoushitsu: 32nd note grid, maximum density
-      if (!user_set_division) {
-        params.melody_params.min_note_division = 32;
-      }
-      params.melody_params.sixteenth_note_ratio = 0.3f;  // Also use 16ths
-      if (!user_set_density) {
-        params.melody_params.note_density = 2.5f;  // Extreme density
-      }
-      params.melody_params.syncopation_prob = 0.3f;
-      params.melody_params.allow_bar_crossing = true;
-      params.melody_params.long_note_ratio = 0.0f;  // No long notes
-      params.melody_params.max_leap_interval = 24;  // 2 octaves allowed
-      params.melody_params.chorus_density_modifier = 1.0f;  // Keep density high
-      params.vocal_rest_ratio = 0.0f;  // No rests
-      params.vocal_allow_extreme_leap = true;
       break;
 
     case VocalStylePreset::Idol:
-      // Idol style: catchy hooks, long tones in chorus, danceable
-      if (!user_set_division) {
-        params.melody_params.min_note_division = 8;  // Max 8th notes (no 16ths)
-      }
-      params.melody_params.sixteenth_note_ratio = 0.15f;  // Limited 16ths
-      if (!user_set_density) {
-        params.melody_params.note_density = 0.8f;  // Medium density
-      }
-      params.melody_params.long_note_ratio = 0.25f;  // 25% long notes
-      params.melody_params.hook_repetition = true;  // Catchy hooks
-      params.melody_params.chorus_long_tones = true;  // Sustained chorus
-      params.melody_params.chorus_density_modifier = 0.85f;  // Lower density = longer notes
-      params.melody_params.max_leap_interval = 7;  // Singable (5th max)
-      params.vocal_rest_ratio = 0.15f;  // Space for calls
+      params.melody_params.max_leap_interval = 7;
+      params.melody_params.hook_repetition = true;
+      params.melody_params.chorus_long_tones = true;
+      params.melody_params.chorus_density_modifier = 0.85f;
       break;
 
     case VocalStylePreset::Ballad:
-      // Ballad: sparse, sustained, emotional
-      if (!user_set_division) {
-        params.melody_params.min_note_division = 4;  // Quarter notes minimum
-      }
-      params.melody_params.sixteenth_note_ratio = 0.0f;  // No 16ths
-      if (!user_set_density) {
-        params.melody_params.note_density = 0.4f;  // Low density
-      }
-      params.melody_params.long_note_ratio = 0.5f;  // Half are long notes
+      params.melody_params.max_leap_interval = 5;
       params.melody_params.chorus_long_tones = true;
-      params.melody_params.max_leap_interval = 5;  // 4th max (smooth)
-      params.vocal_rest_ratio = 0.25f;  // Breathing space
       break;
 
     case VocalStylePreset::Rock:
-      // Rock: powerful, shout-friendly, driving
-      if (!user_set_division) {
-        params.melody_params.min_note_division = 8;
-      }
-      params.melody_params.sixteenth_note_ratio = 0.1f;
-      if (!user_set_density) {
-        params.melody_params.note_density = 0.7f;
-      }
-      params.melody_params.long_note_ratio = 0.3f;  // Shout-friendly
+      params.melody_params.max_leap_interval = 9;
       params.melody_params.hook_repetition = true;
       params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_register_shift = 7;  // High chorus (5th up)
-      params.melody_params.chorus_density_modifier = 0.8f;  // Shout = fewer notes
-      params.melody_params.max_leap_interval = 9;  // 6th (power chord feel)
+      params.melody_params.chorus_register_shift = 7;
       params.melody_params.syncopation_prob = 0.25f;
       params.melody_params.allow_bar_crossing = true;
-      params.vocal_rest_ratio = 0.1f;
       break;
 
     case VocalStylePreset::CityPop:
-      // City Pop: groove, syncopation, smooth
-      if (!user_set_division) {
-        params.melody_params.min_note_division = 8;
-      }
-      params.melody_params.sixteenth_note_ratio = 0.2f;
-      if (!user_set_density) {
-        params.melody_params.note_density = 0.6f;
-      }
-      params.melody_params.long_note_ratio = 0.3f;
-      params.melody_params.syncopation_prob = 0.35f;  // Groove-heavy
-      params.melody_params.allow_bar_crossing = true;
-      params.melody_params.tension_usage = 0.4f;  // Use 7th/9th
       params.melody_params.max_leap_interval = 7;
-      params.vocal_rest_ratio = 0.2f;
+      params.melody_params.syncopation_prob = 0.35f;
+      params.melody_params.allow_bar_crossing = true;
+      params.melody_params.tension_usage = 0.4f;
       break;
 
     case VocalStylePreset::Anime:
-      // Anime: dramatic, catchy, hybrid
-      if (!user_set_division) {
-        params.melody_params.min_note_division = 8;
-      }
-      params.melody_params.sixteenth_note_ratio = 0.25f;
-      if (!user_set_density) {
-        params.melody_params.note_density = 0.85f;
-      }
-      params.melody_params.long_note_ratio = 0.25f;
+      params.melody_params.max_leap_interval = 10;
       params.melody_params.hook_repetition = true;
       params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_density_modifier = 1.15f;  // Climax boost
-      params.melody_params.max_leap_interval = 10;  // Dramatic leaps
+      params.melody_params.chorus_density_modifier = 1.15f;
       params.melody_params.syncopation_prob = 0.25f;
       params.melody_params.allow_bar_crossing = true;
-      params.vocal_rest_ratio = 0.1f;
       break;
 
-    // === Extended Styles (9-12) ===
-
     case VocalStylePreset::BrightKira:
-      // BrightKira: Bright sparkly style
-      // High energy, uplifting, lots of movement
-      if (!user_set_division) {
-        params.melody_params.min_note_division = 8;
-      }
-      params.melody_params.sixteenth_note_ratio = 0.2f;
-      if (!user_set_density) {
-        params.melody_params.note_density = 0.85f;
-      }
-      params.melody_params.long_note_ratio = 0.2f;
+      params.melody_params.max_leap_interval = 10;
       params.melody_params.hook_repetition = true;
       params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_register_shift = 7;  // Higher for brightness
-      params.melody_params.max_leap_interval = 10;
-      params.melody_params.syncopation_prob = 0.2f;
-      params.vocal_rest_ratio = 0.08f;  // Less rests, more energy
+      params.melody_params.chorus_register_shift = 7;
       break;
 
     case VocalStylePreset::CoolSynth:
-      // CoolSynth: Cool synthetic style
-      // Robotic, precise, mechanical feel
-      if (!user_set_division) {
-        params.melody_params.min_note_division = 16;
-      }
-      params.melody_params.sixteenth_note_ratio = 0.35f;
-      if (!user_set_density) {
-        params.melody_params.note_density = 0.75f;
-      }
-      params.melody_params.long_note_ratio = 0.15f;
+      params.melody_params.max_leap_interval = 7;
       params.melody_params.hook_repetition = true;
-      params.melody_params.chorus_long_tones = false;  // No sustained notes
-      params.melody_params.max_leap_interval = 7;  // Smaller, mechanical leaps
       params.melody_params.syncopation_prob = 0.15f;
       params.melody_params.allow_bar_crossing = true;
-      params.vocal_rest_ratio = 0.12f;
       break;
 
     case VocalStylePreset::CuteAffected:
-      // CuteAffected: Cute affected style
-      // Sweet, bouncy, playful
-      if (!user_set_division) {
-        params.melody_params.min_note_division = 8;
-      }
-      params.melody_params.sixteenth_note_ratio = 0.15f;
-      if (!user_set_density) {
-        params.melody_params.note_density = 0.7f;
-      }
-      params.melody_params.long_note_ratio = 0.3f;  // More sustained "cute" notes
+      params.melody_params.max_leap_interval = 8;
       params.melody_params.hook_repetition = true;
       params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_register_shift = 5;  // Higher register
-      params.melody_params.max_leap_interval = 8;
-      params.melody_params.syncopation_prob = 0.1f;  // Less syncopation
-      params.vocal_rest_ratio = 0.15f;
+      params.melody_params.chorus_register_shift = 5;
       break;
 
     case VocalStylePreset::PowerfulShout:
-      // PowerfulShout: Powerful shout style
-      // Strong, intense, anthemic
-      if (!user_set_division) {
-        params.melody_params.min_note_division = 4;  // Quarter notes minimum
-      }
-      params.melody_params.sixteenth_note_ratio = 0.05f;  // Few fast notes
-      if (!user_set_density) {
-        params.melody_params.note_density = 0.6f;  // Lower density, bigger notes
-      }
-      params.melody_params.long_note_ratio = 0.5f;  // Many long, powerful notes
+      params.melody_params.max_leap_interval = 12;
       params.melody_params.hook_repetition = true;
       params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_density_modifier = 1.3f;  // Big chorus boost
-      params.melody_params.max_leap_interval = 12;  // Octave leaps allowed
+      params.melody_params.chorus_density_modifier = 1.3f;
       params.melody_params.syncopation_prob = 0.2f;
-      params.vocal_rest_ratio = 0.2f;  // Breathing room for power
       break;
 
     case VocalStylePreset::Auto:
@@ -431,41 +303,10 @@ void Generator::generateFromConfig(const SongConfig& config) {
 
   params.melody_params = preset.melody;
 
-  // === VOCAL DENSITY PARAMETERS (Phase 4/5) ===
-  // Apply SongConfig overrides if specified
-  if (config.vocal_note_density > 0.0f) {
-    params.melody_params.note_density = config.vocal_note_density;
-  }
-  if (config.vocal_min_note_division > 0) {
-    params.melody_params.min_note_division = config.vocal_min_note_division;
-  }
-
-  // Apply MOOD_DENSITY to vocal (Phase 5)
-  // Mood density affects base note_density when not explicitly overridden
-  if (config.vocal_note_density == 0.0f) {
-    float mood_density = getMoodDensity(params.mood);
-    // Multiply base preset density by mood density factor
-    params.melody_params.note_density *= (mood_density + 0.5f);
-    // Clamp to valid range
-    params.melody_params.note_density = std::clamp(
-        params.melody_params.note_density, 0.3f, 2.0f);
-  }
-
-  // BPM boost for fast tempos (>= 140 BPM)
-  uint16_t effective_bpm = config.bpm > 0 ? config.bpm : preset.tempo_default;
-  if (effective_bpm >= 140) {
-    params.melody_params.note_density = std::min(
-        params.melody_params.note_density * 1.1f, 2.0f);
-    params.melody_params.sixteenth_note_ratio = std::min(
-        params.melody_params.sixteenth_note_ratio + 0.1f, 0.5f);
-  }
-
-  // Transfer vocal params to GeneratorParams
-  params.vocal_rest_ratio = config.vocal_rest_ratio;
-  params.vocal_allow_extreme_leap = config.vocal_allow_extreme_leap;
+  // Apply melody template from config
+  params.melody_template = config.melody_template;
 
   // Apply VocalStylePreset-specific parameter adjustments
-  // This may override rest_ratio/extreme_leap for high-density styles
   applyVocalStylePreset(params, config);
 
   // Transfer melodic complexity, hook intensity, and groove feel
@@ -562,6 +403,7 @@ void Generator::generate(const GeneratorParams& params) {
     generateChord();  // Uses bass track for voicing coordination
     if (!params.skip_vocal) {
       generateVocal();  // Will use suppressed generation
+      generateAux();    // Aux track after vocal for collision avoidance
     }
   } else if (params.composition_style == CompositionStyle::SynthDriven) {
     // SynthDriven: Arpeggio is foreground, vocals subdued
@@ -569,6 +411,7 @@ void Generator::generate(const GeneratorParams& params) {
     generateChord();  // Uses bass track for voicing coordination
     if (!params.skip_vocal) {
       generateVocal();  // Will generate subdued vocals
+      generateAux();    // Aux track after vocal for collision avoidance
     }
   } else {
     // MelodyLead: Bass first for chord voicing coordination
@@ -576,6 +419,7 @@ void Generator::generate(const GeneratorParams& params) {
     generateChord();  // Uses bass track for voicing coordination
     if (!params.skip_vocal) {
       generateVocal();
+      generateAux();  // Aux track after vocal for collision avoidance
     }
   }
 
@@ -624,16 +468,11 @@ void Generator::regenerateMelody(const MelodyRegenerateParams& regen_params) {
     params_.vocal_style = regen_params.vocal_style;
   }
 
-  // === VOCAL DENSITY PARAMETERS ===
-  // Apply overrides if specified (non-zero values)
-  if (regen_params.vocal_note_density > 0.0f) {
-    params_.melody_params.note_density = regen_params.vocal_note_density;
+  // === MELODY TEMPLATE ===
+  // Apply melody template if not Auto
+  if (regen_params.melody_template != MelodyTemplateId::Auto) {
+    params_.melody_template = regen_params.melody_template;
   }
-  if (regen_params.vocal_min_note_division > 0) {
-    params_.melody_params.min_note_division = regen_params.vocal_min_note_division;
-  }
-  params_.vocal_rest_ratio = regen_params.vocal_rest_ratio;
-  params_.vocal_allow_extreme_leap = regen_params.vocal_allow_extreme_leap;
 
   // Resolve and apply seed
   uint32_t seed = resolveSeed(regen_params.seed);
@@ -654,27 +493,7 @@ void Generator::regenerateVocalFromConfig(const SongConfig& config,
   params_.vocal_attitude = config.vocal_attitude;
   params_.vocal_style = config.vocal_style;
   params_.melody_params = preset.melody;
-
-  // === VOCAL DENSITY PARAMETERS (Phase 4/5) ===
-  // Apply SongConfig overrides if specified
-  if (config.vocal_note_density > 0.0f) {
-    params_.melody_params.note_density = config.vocal_note_density;
-  }
-  if (config.vocal_min_note_division > 0) {
-    params_.melody_params.min_note_division = config.vocal_min_note_division;
-  }
-
-  // Apply MOOD_DENSITY to vocal
-  if (config.vocal_note_density == 0.0f) {
-    float mood_density = getMoodDensity(params_.mood);
-    params_.melody_params.note_density *= (mood_density + 0.5f);
-    params_.melody_params.note_density = std::clamp(
-        params_.melody_params.note_density, 0.3f, 2.0f);
-  }
-
-  // Transfer vocal params
-  params_.vocal_rest_ratio = config.vocal_rest_ratio;
-  params_.vocal_allow_extreme_leap = config.vocal_allow_extreme_leap;
+  params_.melody_template = config.melody_template;
 
   // Apply VocalStylePreset-specific parameter adjustments
   applyVocalStylePreset(params_, config);
@@ -732,6 +551,66 @@ void Generator::generateDrums() {
 
 void Generator::generateArpeggio() {
   generateArpeggioTrack(song_.arpeggio(), song_, params_, rng_);
+}
+
+void Generator::generateAux() {
+  // Get vocal track for reference
+  const MidiTrack& vocal_track = song_.vocal();
+  if (vocal_track.empty()) {
+    return;  // No vocal means no aux
+  }
+
+  // Get vocal tessitura for aux range calculation
+  auto [vocal_low, vocal_high] = vocal_track.analyzeRange();
+  TessituraRange main_tessitura = calculateTessitura(vocal_low, vocal_high);
+
+  // Determine which aux configurations to use based on vocal style
+  MelodyTemplateId template_id = getDefaultTemplateForStyle(
+      params_.vocal_style, SectionType::Chorus);
+
+  AuxConfig aux_configs[3];
+  uint8_t aux_count = 0;
+  getAuxConfigsForTemplate(template_id, aux_configs, &aux_count);
+
+  if (aux_count == 0) {
+    return;  // No aux configurations for this template
+  }
+
+  const auto& progression = getChordProgression(params_.chord_id);
+  AuxTrackGenerator aux_generator;
+
+  // Process each section
+  for (const auto& section : song_.arrangement().sections()) {
+    // Skip sections without vocals
+    if (section.type == SectionType::Intro ||
+        section.type == SectionType::Interlude ||
+        section.type == SectionType::Outro) {
+      continue;
+    }
+
+    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    int chord_idx = (section.startBar % progression.length);
+    int8_t chord_degree = progression.at(chord_idx);
+
+    // Create context for aux generation
+    AuxTrackGenerator::AuxContext ctx;
+    ctx.section_start = section.start_tick;
+    ctx.section_end = section_end;
+    ctx.chord_degree = chord_degree;
+    ctx.key_offset = 0;  // Always C major internally
+    ctx.base_velocity = 80;
+    ctx.main_tessitura = main_tessitura;
+    ctx.main_melody = &vocal_track.notes();
+
+    // Generate aux using first config (simplified for initial integration)
+    MidiTrack section_aux = aux_generator.generate(
+        aux_configs[0], ctx, harmony_context_, rng_);
+
+    // Add notes to main aux track
+    for (const auto& note : section_aux.notes()) {
+      song_.aux().addNote(note.startTick, note.duration, note.note, note.velocity);
+    }
+  }
 }
 
 void Generator::calculateModulation() {

@@ -99,6 +99,8 @@ float VelocityBalance::getMultiplier(TrackRole role) {
       return MOTIF;
     case TrackRole::Arpeggio:
       return ARPEGGIO;
+    case TrackRole::Aux:
+      return AUX;
     case TrackRole::SE:
     default:
       return 1.0f;

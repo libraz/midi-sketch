@@ -114,9 +114,10 @@ int main(int argc, char* argv[]) {
   config.chord_progression_id = chord_id;
   config.seed = seed;
   config.vocal_style = static_cast<midisketch::VocalStylePreset>(vocal_style);
-  config.vocal_note_density = note_density;
   config.bpm = bpm;  // 0 = use style default
   config.target_duration_seconds = duration;  // 0 = use pattern default
+  // note_density is deprecated; melody_template is used instead
+  (void)note_density;
 
   const auto& preset = midisketch::getStylePreset(config.style_preset_id);
 
@@ -126,9 +127,6 @@ int main(int argc, char* argv[]) {
   std::cout << "  BPM: " << (config.bpm == 0 ? preset.tempo_default : config.bpm) << "\n";
   std::cout << "  VocalAttitude: " << static_cast<int>(config.vocal_attitude) << "\n";
   std::cout << "  VocalStyle: " << vocalStyleName(config.vocal_style) << "\n";
-  if (config.vocal_note_density > 0.0f) {
-    std::cout << "  NoteDensity: " << config.vocal_note_density << "\n";
-  }
   if (config.target_duration_seconds > 0) {
     std::cout << "  TargetDuration: " << config.target_duration_seconds << " sec\n";
   }
