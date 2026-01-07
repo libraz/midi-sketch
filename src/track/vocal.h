@@ -3,6 +3,7 @@
 
 #include "core/midi_track.h"
 #include "core/song.h"
+#include "core/track_layer.h"
 #include "core/types.h"
 #include <random>
 

@@ -25,21 +25,68 @@ struct CachedPhrase {
 // Phrase variation types for cached phrase reuse
 // These are subtle variations that maintain recognizability while adding interest
 enum class PhraseVariation : uint8_t {
-  Exact,          // No change (primary)
-  LastNoteShift,  // Shift last note up/down by step
-  LastNoteLong,   // Extend last note duration
-  TailSwap,       // Swap last two notes
-  SlightRush      // Slightly earlier timing on weak beats
+  Exact,              // No change (primary)
+  LastNoteShift,      // Shift last note up/down by step
+  LastNoteLong,       // Extend last note duration
+  TailSwap,           // Swap last two notes
+  SlightRush,         // Slightly earlier timing on weak beats
+  // V1 additions: subtle variations for repeated sections
+  MicroRhythmChange,  // Slight timing variation on specific notes
+  BreathRestInsert,   // Insert short rest before phrase end
+  SlurMerge,          // Merge two adjacent short notes into one longer
+  RepeatNoteSimplify  // Simplify repeated notes (reduce density slightly)
 };
 
-// Select a phrase variation based on reuse count.
-// First use is always Exact, subsequent uses have 80% Exact, 20% variation.
+// Maximum number of variation types (excluding Exact)
+constexpr int kVariationTypeCount = 8;
+
+// Maximum reuse count before variation is forced (V4)
+constexpr int kMaxExactReuse = 2;
+
+// Singing effort thresholds (V6)
+constexpr int kHighRegisterThreshold = 74;  // D5 and above = high effort
+constexpr int kLargeIntervalThreshold = 7;  // Perfect 5th and above = effort
+constexpr float kHighEffortScore = 1.0f;
+constexpr float kMediumEffortScore = 0.5f;
+
+// PhraseCacheKey for extended cache lookup (V2)
+struct PhraseCacheKey {
+  SectionType section_type;
+  uint8_t bars;
+  int8_t chord_degree;  // Base chord degree affects melodic choices
+
+  bool operator==(const PhraseCacheKey& other) const {
+    return section_type == other.section_type &&
+           bars == other.bars &&
+           chord_degree == other.chord_degree;
+  }
+};
+
+// Hash function for PhraseCacheKey (V2)
+struct PhraseCacheKeyHash {
+  size_t operator()(const PhraseCacheKey& key) const {
+    return std::hash<uint8_t>()(static_cast<uint8_t>(key.section_type)) ^
+           (std::hash<uint8_t>()(key.bars) << 4) ^
+           (std::hash<int8_t>()(key.chord_degree) << 8);
+  }
+};
+
+// Select a phrase variation based on reuse count (V4: staged control).
+// First use: always Exact
+// 1-kMaxExactReuse: 80% Exact, 20% variation
+// After kMaxExactReuse: variation is forced (no more Exact)
 PhraseVariation selectPhraseVariation(int reuse_count, std::mt19937& rng) {
   if (reuse_count == 0) return PhraseVariation::Exact;
+
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-  if (dist(rng) < 0.8f) return PhraseVariation::Exact;  // 80% same
-  // 20% variation: randomly select one of the 4 variation types
-  return static_cast<PhraseVariation>(1 + (rng() % 4));
+
+  // V4: After maximum reuse, force variation
+  if (reuse_count <= kMaxExactReuse && dist(rng) < 0.8f) {
+    return PhraseVariation::Exact;  // 80% same
+  }
+
+  // Select variation: uniformly from all variation types
+  return static_cast<PhraseVariation>(1 + (rng() % kVariationTypeCount));
 }
 
 // Apply a phrase variation to notes.
@@ -94,12 +141,165 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes,
       break;
     }
 
+    // V1 additions: new subtle variations
+    case PhraseVariation::MicroRhythmChange: {
+      // Slight timing variation on random notes (±5-15 ticks)
+      std::uniform_int_distribution<int> tick_dist(-15, 15);
+      std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
+      for (auto& note : notes) {
+        if (prob_dist(rng) < 0.3f) {  // 30% of notes
+          int shift = tick_dist(rng);
+          if (shift != 0) {
+            int64_t new_tick = static_cast<int64_t>(note.startTick) + shift;
+            note.startTick = static_cast<Tick>(std::max(static_cast<int64_t>(0), new_tick));
+          }
+        }
+      }
+      break;
+    }
+
+    case PhraseVariation::BreathRestInsert: {
+      // Insert short rest before phrase end by shortening last note
+      if (notes.size() >= 2) {
+        auto& last = notes.back();
+        // Reduce duration by 60-120 ticks (1/8 to 1/4 beat of rest)
+        std::uniform_int_distribution<Tick> rest_dist(60, 120);
+        Tick rest_amount = rest_dist(rng);
+        if (last.duration > rest_amount + 60) {  // Keep at least 60 ticks
+          last.duration -= rest_amount;
+        }
+      }
+      break;
+    }
+
+    case PhraseVariation::SlurMerge: {
+      // Merge two adjacent short notes into one longer note
+      if (notes.size() >= 3) {
+        // Find a pair of short notes to merge
+        for (size_t i = 0; i + 1 < notes.size(); ++i) {
+          if (notes[i].duration <= TICKS_PER_BEAT / 2 &&
+              notes[i + 1].duration <= TICKS_PER_BEAT / 2) {
+            // Merge: extend first note, remove second
+            notes[i].duration = (notes[i + 1].startTick + notes[i + 1].duration) - notes[i].startTick;
+            notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(i + 1));
+            break;  // Only merge one pair
+          }
+        }
+      }
+      break;
+    }
+
+    case PhraseVariation::RepeatNoteSimplify: {
+      // Remove one repeated note (same pitch in sequence)
+      if (notes.size() >= 3) {
+        for (size_t i = 1; i < notes.size(); ++i) {
+          if (notes[i].note == notes[i - 1].note) {
+            // Extend previous note to cover the removed note
+            notes[i - 1].duration = (notes[i].startTick + notes[i].duration) - notes[i - 1].startTick;
+            notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(i));
+            break;  // Only simplify one instance
+          }
+        }
+      }
+      break;
+    }
+
     case PhraseVariation::Exact:
       // No change
       break;
   }
 }
 
+
+// Calculate singing effort score for a phrase (V6).
+// Higher score = more demanding to sing.
+// Returns: 0.0 (easy) to 1.0+ (difficult)
+float calculateSingingEffort(const std::vector<NoteEvent>& notes) {
+  if (notes.empty()) return 0.0f;
+
+  float effort = 0.0f;
+  int high_note_count = 0;
+  int large_interval_count = 0;
+
+  for (size_t i = 0; i < notes.size(); ++i) {
+    // High register penalty
+    if (notes[i].note >= kHighRegisterThreshold) {
+      high_note_count++;
+      // Longer high notes = more effort
+      effort += kMediumEffortScore * (notes[i].duration / static_cast<float>(TICKS_PER_BEAT));
+    }
+
+    // Large interval penalty
+    if (i > 0) {
+      int interval = std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
+      if (interval >= kLargeIntervalThreshold) {
+        large_interval_count++;
+        effort += kMediumEffortScore;
+      }
+    }
+  }
+
+  // Density penalty: many notes in short time
+  if (notes.size() > 1) {
+    Tick phrase_length = notes.back().startTick + notes.back().duration - notes[0].startTick;
+    float notes_per_beat = notes.size() * TICKS_PER_BEAT / static_cast<float>(phrase_length);
+    if (notes_per_beat > 2.0f) {  // More than 2 notes per beat = dense
+      effort += (notes_per_beat - 2.0f) * kMediumEffortScore;
+    }
+  }
+
+  // Normalize by phrase length (effort per bar)
+  if (notes.size() > 0) {
+    Tick phrase_length = notes.back().startTick + notes.back().duration - notes[0].startTick;
+    float bars = phrase_length / static_cast<float>(TICKS_PER_BAR);
+    if (bars > 0) {
+      effort /= bars;
+    }
+  }
+
+  return effort;
+}
+
+// Determine cadence type for phrase ending (V5).
+// Analyzes the last few notes to determine resolution type.
+CadenceType detectCadenceType(const std::vector<NoteEvent>& notes, int8_t chord_degree) {
+  if (notes.empty()) return CadenceType::None;
+
+  const auto& last_note = notes.back();
+  uint8_t pitch_class = last_note.note % 12;  // 0=C, 2=D, 4=E, 5=F, 7=G, 9=A, 11=B
+
+  // Strong cadence: ends on chord tone of tonic (I chord)
+  // In C major: C(0), E(4), G(7)
+  bool is_tonic_tone = (pitch_class == 0 || pitch_class == 4 || pitch_class == 7);
+
+  // Check if on strong beat (beats 1 or 3)
+  Tick beat_pos = last_note.startTick % TICKS_PER_BAR;
+  bool is_strong_beat = (beat_pos < TICKS_PER_BEAT / 4) ||
+                        (beat_pos >= TICKS_PER_BEAT * 2 - TICKS_PER_BEAT / 4 &&
+                         beat_pos < TICKS_PER_BEAT * 2 + TICKS_PER_BEAT / 4);
+
+  // Long note = more stable resolution
+  bool is_long = last_note.duration >= TICKS_PER_BEAT;
+
+  // Deceptive: ends on vi chord (chord_degree == 5)
+  if (chord_degree == 5 && pitch_class == 9) {  // A in C major
+    return CadenceType::Deceptive;
+  }
+
+  // Strong: tonic tone, on strong beat, long duration
+  if (is_tonic_tone && is_strong_beat && is_long) {
+    return CadenceType::Strong;
+  }
+
+  // Floating: tension note (2nd, 4th, 6th, 7th)
+  bool is_tension = (pitch_class == 2 || pitch_class == 5 || pitch_class == 9 || pitch_class == 11);
+  if (is_tension) {
+    return CadenceType::Floating;
+  }
+
+  // Weak: chord tone but not fully resolved
+  return CadenceType::Weak;
+}
 
 // Shift note timings by offset
 std::vector<NoteEvent> shiftTiming(const std::vector<NoteEvent>& notes, Tick offset) {
@@ -425,8 +625,11 @@ void generateVocalTrack(MidiTrack& track, Song& song,
   // Collect all notes
   std::vector<NoteEvent> all_notes;
 
-  // Phrase cache for section repetition (same section type → same melody)
-  std::unordered_map<SectionType, CachedPhrase> phrase_cache;
+  // Phrase cache for section repetition (V2: extended key with bars + chord_degree)
+  std::unordered_map<PhraseCacheKey, CachedPhrase, PhraseCacheKeyHash> phrase_cache;
+
+  // Clear existing phrase boundaries for fresh generation
+  song.clearPhraseBoundaries();
 
   // Process each section
   for (const auto& section : song.arrangement().sections()) {
@@ -467,9 +670,12 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
     std::vector<NoteEvent> section_notes;
 
-    // Check phrase cache for repeated sections
-    auto cache_it = phrase_cache.find(section.type);
-    if (cache_it != phrase_cache.end() && cache_it->second.bars == section.bars) {
+    // V2: Create extended cache key
+    PhraseCacheKey cache_key{section.type, section.bars, chord_degree};
+
+    // Check phrase cache for repeated sections (V2: extended key)
+    auto cache_it = phrase_cache.find(cache_key);
+    if (cache_it != phrase_cache.end()) {
       // Cache hit: reuse cached phrase with timing adjustment and optional variation
       CachedPhrase& cached = cache_it->second;
 
@@ -532,7 +738,21 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       cache_entry.bars = section.bars;
       cache_entry.vocal_low = section_vocal_low;
       cache_entry.vocal_high = section_vocal_high;
-      phrase_cache[section.type] = std::move(cache_entry);
+      phrase_cache[cache_key] = std::move(cache_entry);
+    }
+
+    // V5: Generate phrase boundary at section end
+    if (!section_notes.empty()) {
+      CadenceType cadence = detectCadenceType(section_notes, chord_degree);
+      bool is_section_end = true;
+      bool is_breath = true;  // Breath at every section end
+
+      PhraseBoundary boundary;
+      boundary.tick = section_end;
+      boundary.is_breath = is_breath;
+      boundary.is_section_end = is_section_end;
+      boundary.cadence = cadence;
+      song.addPhraseBoundary(boundary);
     }
 
     // Add to collected notes
