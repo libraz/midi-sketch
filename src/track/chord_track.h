@@ -8,6 +8,13 @@
 
 namespace midisketch {
 
+// Open voicing subtypes for wider chord spreads (C3 enhancement)
+enum class OpenVoicingType : uint8_t {
+  Drop2,   // Drop 2nd voice from top down an octave
+  Drop3,   // Drop 3rd voice from top down an octave
+  Spread   // Wide intervallic spacing (1-5-10 style)
+};
+
 // Generates chord track with voicings following chord progression.
 // @param track Target MidiTrack to populate
 // @param song Song containing arrangement info
