@@ -196,6 +196,14 @@ export interface VocalParams {
   vocalStyle?: number;
   /** Melody template: 0=Auto, 1=PlateauTalk, 2=RunUpTarget, etc. */
   melodyTemplate?: number;
+  /** Melodic complexity: 0=Simple, 1=Standard, 2=Complex */
+  melodicComplexity?: number;
+  /** Hook intensity: 0=Off, 1=Light, 2=Normal, 3=Strong */
+  hookIntensity?: number;
+  /** Vocal groove feel: 0=Straight, 1=OffBeat, 2=Swing, etc. */
+  vocalGroove?: number;
+  /** Composition style: 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven */
+  compositionStyle?: number;
 }
 
 /**
@@ -842,7 +850,7 @@ export class MidiSketch {
   }
 
   private allocVocalParams(m: EmscriptenModule, params: VocalParams): number {
-    const ptr = m._malloc(12); // 12 bytes (padded)
+    const ptr = m._malloc(16); // 16 bytes (padded)
     const view = new DataView(m.HEAPU8.buffer);
 
     view.setUint32(ptr + 0, params.seed ?? 0, true);
@@ -851,7 +859,11 @@ export class MidiSketch {
     view.setUint8(ptr + 6, params.vocalAttitude ?? 0);
     view.setUint8(ptr + 7, params.vocalStyle ?? 0);
     view.setUint8(ptr + 8, params.melodyTemplate ?? 0);
-    // Padding bytes 9-11
+    view.setUint8(ptr + 9, params.melodicComplexity ?? 1); // Default: Standard
+    view.setUint8(ptr + 10, params.hookIntensity ?? 2); // Default: Normal
+    view.setUint8(ptr + 11, params.vocalGroove ?? 0); // Default: Straight
+    view.setUint8(ptr + 12, params.compositionStyle ?? 0); // Default: MelodyLead
+    // Padding bytes 13-15
 
     return ptr;
   }

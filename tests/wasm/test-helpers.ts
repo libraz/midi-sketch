@@ -73,6 +73,10 @@ export interface VocalParamsOptions {
   vocalAttitude?: number;
   vocalStyle?: number;
   melodyTemplate?: number;
+  melodicComplexity?: number;
+  hookIntensity?: number;
+  vocalGroove?: number;
+  compositionStyle?: number;
 }
 
 export class WasmTestContext {
@@ -179,7 +183,7 @@ export class WasmTestContext {
   }
 
   allocVocalParams(params: VocalParamsOptions): number {
-    const ptr = this.module._malloc(12); // 12 bytes (padded)
+    const ptr = this.module._malloc(16); // 16 bytes (padded)
     const view = new DataView(this.module.HEAPU8.buffer);
 
     view.setUint32(ptr + 0, params.seed ?? 0, true);
@@ -188,7 +192,11 @@ export class WasmTestContext {
     view.setUint8(ptr + 6, params.vocalAttitude ?? 0);
     view.setUint8(ptr + 7, params.vocalStyle ?? 0);
     view.setUint8(ptr + 8, params.melodyTemplate ?? 0);
-    // Padding bytes 9-11
+    view.setUint8(ptr + 9, params.melodicComplexity ?? 1); // Default: Standard
+    view.setUint8(ptr + 10, params.hookIntensity ?? 2); // Default: Normal
+    view.setUint8(ptr + 11, params.vocalGroove ?? 0); // Default: Straight
+    view.setUint8(ptr + 12, params.compositionStyle ?? 0); // Default: MelodyLead
+    // Padding bytes 13-15
 
     return ptr;
   }

@@ -145,7 +145,91 @@ describe('Struct Roundtrip Tests', () => {
       expect(result).toBe(0);
     });
 
-    it('should regenerate vocal with all params including melodyTemplate', () => {
+    it('should regenerate vocal with melodicComplexity (offset 9)', () => {
+      ctx.generateFromConfig({ seed: 11111, skipVocal: true });
+
+      const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
+        'number',
+        'number',
+      ]) as (h: number, p: number) => number;
+
+      const paramsPtr = ctx.allocVocalParams({
+        seed: 55555,
+        vocalLow: 55,
+        vocalHigh: 75,
+        vocalAttitude: 0,
+        melodicComplexity: 2, // Complex
+      });
+
+      const result = regenerateVocal(ctx.handle, paramsPtr);
+      ctx.module._free(paramsPtr);
+      expect(result).toBe(0);
+    });
+
+    it('should regenerate vocal with hookIntensity (offset 10)', () => {
+      ctx.generateFromConfig({ seed: 11111, skipVocal: true });
+
+      const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
+        'number',
+        'number',
+      ]) as (h: number, p: number) => number;
+
+      const paramsPtr = ctx.allocVocalParams({
+        seed: 66666,
+        vocalLow: 55,
+        vocalHigh: 75,
+        vocalAttitude: 0,
+        hookIntensity: 3, // Strong
+      });
+
+      const result = regenerateVocal(ctx.handle, paramsPtr);
+      ctx.module._free(paramsPtr);
+      expect(result).toBe(0);
+    });
+
+    it('should regenerate vocal with vocalGroove (offset 11)', () => {
+      ctx.generateFromConfig({ seed: 11111, skipVocal: true });
+
+      const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
+        'number',
+        'number',
+      ]) as (h: number, p: number) => number;
+
+      const paramsPtr = ctx.allocVocalParams({
+        seed: 77777,
+        vocalLow: 55,
+        vocalHigh: 75,
+        vocalAttitude: 0,
+        vocalGroove: 2, // Swing
+      });
+
+      const result = regenerateVocal(ctx.handle, paramsPtr);
+      ctx.module._free(paramsPtr);
+      expect(result).toBe(0);
+    });
+
+    it('should regenerate vocal with compositionStyle (offset 12)', () => {
+      ctx.generateFromConfig({ seed: 11111, skipVocal: true });
+
+      const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
+        'number',
+        'number',
+      ]) as (h: number, p: number) => number;
+
+      const paramsPtr = ctx.allocVocalParams({
+        seed: 88888,
+        vocalLow: 55,
+        vocalHigh: 75,
+        vocalAttitude: 0,
+        compositionStyle: 1, // BackgroundMotif
+      });
+
+      const result = regenerateVocal(ctx.handle, paramsPtr);
+      ctx.module._free(paramsPtr);
+      expect(result).toBe(0);
+    });
+
+    it('should regenerate vocal with all params including new fields', () => {
       ctx.generateFromConfig({ seed: 11111, skipVocal: true });
 
       const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
@@ -160,6 +244,10 @@ describe('Struct Roundtrip Tests', () => {
         vocalAttitude: 1,
         vocalStyle: 3, // UltraVocaloid
         melodyTemplate: 2, // RunUpTarget
+        melodicComplexity: 2, // Complex
+        hookIntensity: 3, // Strong
+        vocalGroove: 4, // Driving16th
+        compositionStyle: 0, // MelodyLead
       });
 
       const result = regenerateVocal(ctx.handle, paramsPtr);
