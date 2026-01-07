@@ -271,6 +271,8 @@ void MidiWriter::build(const Song& song, Key key) {
   constexpr uint8_t MOTIF_PROG = 81;   // Synth Lead
   constexpr uint8_t ARPEGGIO_CH = 4;
   constexpr uint8_t ARPEGGIO_PROG = 81;  // Saw Lead (Synth)
+  constexpr uint8_t AUX_CH = 5;
+  constexpr uint8_t AUX_PROG = 89;       // Pad 2 - Warm
   constexpr uint8_t DRUMS_CH = 9;
   constexpr uint8_t DRUMS_PROG = 0;
 
@@ -296,6 +298,11 @@ void MidiWriter::build(const Song& song, Key key) {
 
   if (!song.arpeggio().empty()) {
     writeTrack(song.arpeggio(), "Arpeggio", ARPEGGIO_CH, ARPEGGIO_PROG,
+               song.bpm(), key, false, mod_tick, mod_amount);
+  }
+
+  if (!song.aux().empty()) {
+    writeTrack(song.aux(), "Aux", AUX_CH, AUX_PROG,
                song.bpm(), key, false, mod_tick, mod_amount);
   }
 

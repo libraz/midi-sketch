@@ -21,6 +21,7 @@ class Song {
   MidiTrack& se() { return se_; }
   MidiTrack& motif() { return motif_; }
   MidiTrack& arpeggio() { return arpeggio_; }
+  MidiTrack& aux() { return aux_; }
 
   const MidiTrack& vocal() const { return vocal_; }
   const MidiTrack& chord() const { return chord_; }
@@ -29,6 +30,7 @@ class Song {
   const MidiTrack& se() const { return se_; }
   const MidiTrack& motif() const { return motif_; }
   const MidiTrack& arpeggio() const { return arpeggio_; }
+  const MidiTrack& aux() const { return aux_; }
 
   // Role-based access
   MidiTrack& track(TrackRole role);
@@ -85,6 +87,7 @@ class Song {
   MidiTrack se_;
   MidiTrack motif_;
   MidiTrack arpeggio_;
+  MidiTrack aux_;
   Arrangement arrangement_;
   uint16_t bpm_ = 120;
   Tick modulationTick_ = 0;

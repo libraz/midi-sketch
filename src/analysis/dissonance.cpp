@@ -324,6 +324,8 @@ std::string trackRoleToString(TrackRole role) {
       return "motif";
     case TrackRole::Arpeggio:
       return "arpeggio";
+    case TrackRole::Aux:
+      return "aux";
   }
   return "unknown";
 }
@@ -391,6 +393,7 @@ std::vector<TimedNote> collectPitchedNotes(const Song& song) {
   addTrackNotes(song.bass(), TrackRole::Bass);
   addTrackNotes(song.motif(), TrackRole::Motif);
   addTrackNotes(song.arpeggio(), TrackRole::Arpeggio);
+  addTrackNotes(song.aux(), TrackRole::Aux);
 
   // Sort by start time
   std::sort(notes.begin(), notes.end(),
@@ -593,6 +596,7 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
   checkTrackForNonChordTones(song.vocal(), TrackRole::Vocal);
   checkTrackForNonChordTones(song.motif(), TrackRole::Motif);
   checkTrackForNonChordTones(song.arpeggio(), TrackRole::Arpeggio);
+  checkTrackForNonChordTones(song.aux(), TrackRole::Aux);
 
   // Calculate total
   report.summary.total_issues =

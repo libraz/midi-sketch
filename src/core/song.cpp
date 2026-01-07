@@ -11,6 +11,7 @@ MidiTrack& Song::track(TrackRole role) {
     case TrackRole::SE: return se_;
     case TrackRole::Motif: return motif_;
     case TrackRole::Arpeggio: return arpeggio_;
+    case TrackRole::Aux: return aux_;
   }
   return vocal_;  // fallback
 }
@@ -24,6 +25,7 @@ const MidiTrack& Song::track(TrackRole role) const {
     case TrackRole::SE: return se_;
     case TrackRole::Motif: return motif_;
     case TrackRole::Arpeggio: return arpeggio_;
+    case TrackRole::Aux: return aux_;
   }
   return vocal_;  // fallback
 }
@@ -44,6 +46,7 @@ void Song::clearAll() {
   se_.clear();
   motif_.clear();
   arpeggio_.clear();
+  aux_.clear();
   motif_pattern_.clear();
 }
 

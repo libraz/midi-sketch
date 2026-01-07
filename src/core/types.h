@@ -67,7 +67,8 @@ enum class TrackRole : uint8_t {
   Drums,
   SE,
   Motif,    // Background motif track
-  Arpeggio  // Synth arpeggio track
+  Arpeggio, // Synth arpeggio track
+  Aux       // Auxiliary vocal track (sub-melody)
 };
 
 // Represents a MIDI text/marker event.

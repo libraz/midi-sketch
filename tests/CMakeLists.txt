@@ -38,6 +38,7 @@ set(TEST_SOURCES
   track/bass_test.cpp
   track/drums_test.cpp
   track/melody_designer_test.cpp
+  track/aux_track_test.cpp
   analysis/dissonance_test.cpp
   api/c_api_test.cpp
 )
