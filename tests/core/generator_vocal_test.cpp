@@ -977,5 +977,227 @@ TEST(VocalStylePresetTest, BalladGeneratesFewerNotes) {
       << "Ballad style should generate fewer notes than Standard";
 }
 
+// ============================================================================
+// MelodyTemplateId Tests
+// ============================================================================
+
+TEST(GeneratorVocalTest, MelodyTemplateAutoUsesStyleDefault) {
+  // Auto template should use the style-based default
+  Generator gen;
+  SongConfig config{};
+  config.seed = 12345;
+  config.vocal_style = VocalStylePreset::Standard;
+  config.melody_template = MelodyTemplateId::Auto;  // Auto
+
+  gen.generateFromConfig(config);
+  size_t auto_notes = gen.getSong().vocal().notes().size();
+
+  EXPECT_GT(auto_notes, 0u) << "Auto template should generate notes";
+}
+
+TEST(GeneratorVocalTest, MelodyTemplateExplicitOverridesAuto) {
+  // Explicit template should be used regardless of style
+  Generator gen1;
+  SongConfig config1{};
+  config1.seed = 12345;
+  config1.vocal_style = VocalStylePreset::Standard;
+  config1.melody_template = MelodyTemplateId::PlateauTalk;
+
+  gen1.generateFromConfig(config1);
+  const auto& notes1 = gen1.getSong().vocal().notes();
+
+  Generator gen2;
+  SongConfig config2{};
+  config2.seed = 12345;  // Same seed
+  config2.vocal_style = VocalStylePreset::Standard;
+  config2.melody_template = MelodyTemplateId::RunUpTarget;
+
+  gen2.generateFromConfig(config2);
+  const auto& notes2 = gen2.getSong().vocal().notes();
+
+  // Different templates with same seed should produce different results
+  // (either different note count or different pitches)
+  bool different = (notes1.size() != notes2.size());
+  if (!different && !notes1.empty() && !notes2.empty()) {
+    // Check if pitches differ
+    for (size_t i = 0; i < std::min(notes1.size(), notes2.size()); ++i) {
+      if (notes1[i].note != notes2[i].note) {
+        different = true;
+        break;
+      }
+    }
+  }
+
+  EXPECT_TRUE(different)
+      << "Different templates should produce different melodies";
+}
+
+TEST(GeneratorVocalTest, AllMelodyTemplatesGenerateNotes) {
+  // Each explicit template should generate valid vocal notes
+  const MelodyTemplateId templates[] = {
+      MelodyTemplateId::PlateauTalk,
+      MelodyTemplateId::RunUpTarget,
+      MelodyTemplateId::DownResolve,
+      MelodyTemplateId::HookRepeat,
+      MelodyTemplateId::SparseAnchor,
+      MelodyTemplateId::CallResponse,
+      MelodyTemplateId::JumpAccent,
+  };
+
+  for (auto tmpl : templates) {
+    Generator gen;
+    SongConfig config{};
+    config.seed = 12345;
+    config.melody_template = tmpl;
+
+    gen.generateFromConfig(config);
+    size_t note_count = gen.getSong().vocal().notes().size();
+
+    EXPECT_GT(note_count, 0u)
+        << "Template " << static_cast<int>(tmpl) << " should generate notes";
+  }
+}
+
+// ============================================================================
+// HookIntensity Tests
+// ============================================================================
+
+TEST(GeneratorVocalTest, HookIntensityOffGeneratesNotes) {
+  Generator gen;
+  SongConfig config{};
+  config.seed = 12345;
+  config.hook_intensity = HookIntensity::Off;
+
+  gen.generateFromConfig(config);
+  EXPECT_GT(gen.getSong().vocal().notes().size(), 0u);
+}
+
+TEST(GeneratorVocalTest, HookIntensityStrongAffectsOutput) {
+  // Strong intensity should affect note durations/velocities at hook points
+  Generator gen1;
+  SongConfig config1{};
+  config1.seed = 12345;
+  config1.hook_intensity = HookIntensity::Off;
+
+  gen1.generateFromConfig(config1);
+  const auto& notes_off = gen1.getSong().vocal().notes();
+
+  Generator gen2;
+  SongConfig config2{};
+  config2.seed = 12345;
+  config2.hook_intensity = HookIntensity::Strong;
+
+  gen2.generateFromConfig(config2);
+  const auto& notes_strong = gen2.getSong().vocal().notes();
+
+  // Notes should be generated for both
+  ASSERT_GT(notes_off.size(), 0u);
+  ASSERT_GT(notes_strong.size(), 0u);
+
+  // Check for differences in duration or velocity
+  bool has_difference = false;
+  size_t check_count = std::min(notes_off.size(), notes_strong.size());
+  for (size_t i = 0; i < check_count && !has_difference; ++i) {
+    if (notes_off[i].duration != notes_strong[i].duration ||
+        notes_off[i].velocity != notes_strong[i].velocity) {
+      has_difference = true;
+    }
+  }
+
+  EXPECT_TRUE(has_difference)
+      << "Strong hook intensity should produce different durations/velocities";
+}
+
+TEST(GeneratorVocalTest, AllHookIntensitiesGenerateNotes) {
+  const HookIntensity intensities[] = {
+      HookIntensity::Off,
+      HookIntensity::Light,
+      HookIntensity::Normal,
+      HookIntensity::Strong,
+  };
+
+  for (auto intensity : intensities) {
+    Generator gen;
+    SongConfig config{};
+    config.seed = 12345;
+    config.hook_intensity = intensity;
+
+    gen.generateFromConfig(config);
+    EXPECT_GT(gen.getSong().vocal().notes().size(), 0u)
+        << "Intensity " << static_cast<int>(intensity) << " should generate notes";
+  }
+}
+
+// ============================================================================
+// VocalGrooveFeel Tests
+// ============================================================================
+
+TEST(GeneratorVocalTest, VocalGrooveStraightGeneratesNotes) {
+  Generator gen;
+  SongConfig config{};
+  config.seed = 12345;
+  config.vocal_groove = VocalGrooveFeel::Straight;
+
+  gen.generateFromConfig(config);
+  EXPECT_GT(gen.getSong().vocal().notes().size(), 0u);
+}
+
+TEST(GeneratorVocalTest, VocalGrooveSwingAffectsTiming) {
+  // Swing groove should shift note timings
+  Generator gen1;
+  SongConfig config1{};
+  config1.seed = 12345;
+  config1.vocal_groove = VocalGrooveFeel::Straight;
+
+  gen1.generateFromConfig(config1);
+  const auto& notes_straight = gen1.getSong().vocal().notes();
+
+  Generator gen2;
+  SongConfig config2{};
+  config2.seed = 12345;
+  config2.vocal_groove = VocalGrooveFeel::Swing;
+
+  gen2.generateFromConfig(config2);
+  const auto& notes_swing = gen2.getSong().vocal().notes();
+
+  // Both should generate notes
+  ASSERT_GT(notes_straight.size(), 0u);
+  ASSERT_GT(notes_swing.size(), 0u);
+
+  // Check for timing differences
+  bool has_timing_diff = false;
+  size_t check_count = std::min(notes_straight.size(), notes_swing.size());
+  for (size_t i = 0; i < check_count && !has_timing_diff; ++i) {
+    if (notes_straight[i].startTick != notes_swing[i].startTick) {
+      has_timing_diff = true;
+    }
+  }
+
+  EXPECT_TRUE(has_timing_diff)
+      << "Swing groove should produce different note timings";
+}
+
+TEST(GeneratorVocalTest, AllVocalGroovesGenerateNotes) {
+  const VocalGrooveFeel grooves[] = {
+      VocalGrooveFeel::Straight,
+      VocalGrooveFeel::OffBeat,
+      VocalGrooveFeel::Swing,
+      VocalGrooveFeel::Syncopated,
+      VocalGrooveFeel::Driving16th,
+      VocalGrooveFeel::Bouncy8th,
+  };
+
+  for (auto groove : grooves) {
+    Generator gen;
+    SongConfig config{};
+    config.seed = 12345;
+    config.vocal_groove = groove;
+
+    gen.generateFromConfig(config);
+    EXPECT_GT(gen.getSong().vocal().notes().size(), 0u)
+        << "Groove " << static_cast<int>(groove) << " should generate notes";
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

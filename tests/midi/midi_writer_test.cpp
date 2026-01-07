@@ -304,5 +304,49 @@ TEST(MidiWriterTest, MarkerTextExactly255BytesNotTruncated) {
   }
 }
 
+TEST(MidiWriterTest, AuxTrackOutputOnChannel5) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+
+  // Add a note to Aux track
+  song.aux().addNote(0, 480, 67, 80);  // G4
+
+  writer.build(song, Key::C);
+  auto data = writer.toBytes();
+
+  // Find Note On on channel 5 (Aux)
+  uint8_t pitch = findFirstNoteOnPitch(data, 5);
+  EXPECT_EQ(pitch, 67);  // G4
+}
+
+TEST(MidiWriterTest, AllEightTracksOutput) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+
+  // Add notes to all melodic tracks
+  song.vocal().addNote(0, 480, 60, 100);
+  song.chord().addNote(0, 480, 64, 100);
+  song.bass().addNote(0, 480, 48, 100);
+  song.motif().addNote(0, 480, 72, 100);
+  song.arpeggio().addNote(0, 480, 76, 100);
+  song.aux().addNote(0, 480, 67, 80);
+  song.drums().addNote(0, 480, 36, 100);
+  song.se().addText(0, "Test");
+
+  writer.build(song, Key::C);
+  auto data = writer.toBytes();
+
+  // Verify notes on each channel
+  EXPECT_EQ(findFirstNoteOnPitch(data, 0), 60);  // Vocal Ch0
+  EXPECT_EQ(findFirstNoteOnPitch(data, 1), 64);  // Chord Ch1
+  EXPECT_EQ(findFirstNoteOnPitch(data, 2), 48);  // Bass Ch2
+  EXPECT_EQ(findFirstNoteOnPitch(data, 3), 72);  // Motif Ch3
+  EXPECT_EQ(findFirstNoteOnPitch(data, 4), 76);  // Arpeggio Ch4
+  EXPECT_EQ(findFirstNoteOnPitch(data, 5), 67);  // Aux Ch5
+  EXPECT_EQ(findFirstNoteOnPitch(data, 9), 36);  // Drums Ch9
+}
+
 }  // namespace
 }  // namespace midisketch

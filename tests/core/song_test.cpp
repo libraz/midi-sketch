@@ -37,6 +37,9 @@ TEST(SongTest, TrackAccessors) {
   EXPECT_TRUE(song.chord().empty());
   EXPECT_TRUE(song.bass().empty());
   EXPECT_TRUE(song.drums().empty());
+  EXPECT_TRUE(song.motif().empty());
+  EXPECT_TRUE(song.arpeggio().empty());
+  EXPECT_TRUE(song.aux().empty());
   EXPECT_TRUE(song.se().empty());
 }
 
@@ -44,10 +47,12 @@ TEST(SongTest, TrackByRole) {
   Song song;
   song.vocal().addNote(0, 480, 60, 100);
   song.chord().addNote(0, 480, 64, 100);
+  song.aux().addNote(0, 480, 67, 80);
 
   EXPECT_EQ(song.track(TrackRole::Vocal).noteCount(), 1u);
   EXPECT_EQ(song.track(TrackRole::Chord).noteCount(), 1u);
   EXPECT_EQ(song.track(TrackRole::Bass).noteCount(), 0u);
+  EXPECT_EQ(song.track(TrackRole::Aux).noteCount(), 1u);
 }
 
 TEST(SongTest, ClearTrack) {

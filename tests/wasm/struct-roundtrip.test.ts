@@ -14,8 +14,8 @@ describe('Struct Roundtrip Tests', () => {
     ctx.destroy();
   });
 
-  describe('SongConfig offset 46+ fields', () => {
-    it('should accept vocalStyle parameter', () => {
+  describe('SongConfig offset 42+ fields', () => {
+    it('should accept vocalStyle parameter (offset 42)', () => {
       const result = ctx.generateFromConfig({
         seed: 12345,
         vocalStyle: 3, // CityPop
@@ -23,7 +23,15 @@ describe('Struct Roundtrip Tests', () => {
       expect(result).toBe(0);
     });
 
-    it('should accept arrangementGrowth parameter (offset 47)', () => {
+    it('should accept melodyTemplate parameter (offset 43)', () => {
+      const result = ctx.generateFromConfig({
+        seed: 12345,
+        melodyTemplate: 1, // PlateauTalk
+      });
+      expect(result).toBe(0);
+    });
+
+    it('should accept arrangementGrowth parameter (offset 44)', () => {
       const result = ctx.generateFromConfig({
         seed: 12345,
         arrangementGrowth: 1, // RegisterAdd
@@ -31,7 +39,7 @@ describe('Struct Roundtrip Tests', () => {
       expect(result).toBe(0);
     });
 
-    it('should accept arpeggioSyncChord parameter (offset 48)', () => {
+    it('should accept arpeggioSyncChord parameter (offset 45)', () => {
       const result = ctx.generateFromConfig({
         seed: 12345,
         arpeggioEnabled: true,
@@ -40,7 +48,7 @@ describe('Struct Roundtrip Tests', () => {
       expect(result).toBe(0);
     });
 
-    it('should accept motifRepeatScope parameter (offset 49)', () => {
+    it('should accept motifRepeatScope parameter (offset 46)', () => {
       const result = ctx.generateFromConfig({
         seed: 12345,
         compositionStyle: 1, // BackgroundMotif
@@ -116,7 +124,7 @@ describe('Struct Roundtrip Tests', () => {
       expect(result).toBe(0);
     });
 
-    it('should regenerate vocal with vocalNoteDensity (offset 8)', () => {
+    it('should regenerate vocal with melodyTemplate (offset 8)', () => {
       ctx.generateFromConfig({ seed: 11111, skipVocal: true });
 
       const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
@@ -129,7 +137,7 @@ describe('Struct Roundtrip Tests', () => {
         vocalLow: 55,
         vocalHigh: 75,
         vocalAttitude: 0,
-        vocalNoteDensity: 100, // Higher density
+        melodyTemplate: 1, // PlateauTalk
       });
 
       const result = regenerateVocal(ctx.handle, paramsPtr);
@@ -137,7 +145,7 @@ describe('Struct Roundtrip Tests', () => {
       expect(result).toBe(0);
     });
 
-    it('should regenerate vocal with all offset 7+ params', () => {
+    it('should regenerate vocal with all params including melodyTemplate', () => {
       ctx.generateFromConfig({ seed: 11111, skipVocal: true });
 
       const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
@@ -151,15 +159,78 @@ describe('Struct Roundtrip Tests', () => {
         vocalHigh: 75,
         vocalAttitude: 1,
         vocalStyle: 3, // UltraVocaloid
-        vocalNoteDensity: 150,
-        vocalMinNoteDivision: 16,
-        vocalRestRatio: 20,
-        vocalAllowExtremLeap: true,
+        melodyTemplate: 2, // RunUpTarget
       });
 
       const result = regenerateVocal(ctx.handle, paramsPtr);
       ctx.module._free(paramsPtr);
       expect(result).toBe(0);
+    });
+  });
+
+  describe('Struct offset validation', () => {
+    it('should accept all HookIntensity values at offset 50', () => {
+      // Test all hook intensity values generate successfully
+      for (const intensity of [0, 1, 2, 3]) {
+        const result = ctx.generateFromConfig({
+          seed: 77777 + intensity,
+          hookIntensity: intensity,
+        });
+        expect(result).toBe(0);
+      }
+    });
+
+    it('should accept all VocalGrooveFeel values at offset 51', () => {
+      // Test all groove values generate successfully
+      for (const groove of [0, 1, 2, 3, 4, 5]) {
+        const result = ctx.generateFromConfig({
+          seed: 88888 + groove,
+          vocalGroove: groove,
+        });
+        expect(result).toBe(0);
+      }
+    });
+
+    it('should correctly apply melodyTemplate at offset 43', () => {
+      // Generate with melody_template = Auto (0)
+      const result1 = ctx.generateFromConfig({
+        seed: 99999,
+        melodyTemplate: 0, // Auto
+      });
+      expect(result1).toBe(0);
+
+      const { data: data1, cleanup: cleanup1 } = ctx.getEventsJson();
+      const notes1 =
+        (data1 as { tracks: { name: string; notes: { pitch: number }[] }[] }).tracks.find(
+          (t) => t.name === 'Vocal',
+        )?.notes ?? [];
+      cleanup1();
+
+      // Generate with melody_template = JumpAccent (7)
+      const result2 = ctx.generateFromConfig({
+        seed: 99999, // Same seed
+        melodyTemplate: 7, // JumpAccent
+      });
+      expect(result2).toBe(0);
+
+      const { data: data2, cleanup: cleanup2 } = ctx.getEventsJson();
+      const notes2 =
+        (data2 as { tracks: { name: string; notes: { pitch: number }[] }[] }).tracks.find(
+          (t) => t.name === 'Vocal',
+        )?.notes ?? [];
+      cleanup2();
+
+      // Different templates should produce different melodies
+      let hasDifference = notes1.length !== notes2.length;
+      if (!hasDifference) {
+        for (let i = 0; i < notes1.length; i++) {
+          if (notes1[i].pitch !== notes2[i].pitch) {
+            hasDifference = true;
+            break;
+          }
+        }
+      }
+      expect(hasDifference).toBe(true);
     });
   });
 });

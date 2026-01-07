@@ -134,14 +134,148 @@ void removeOverlaps(std::vector<NoteEvent>& notes) {
   }
 }
 
+// Apply hook intensity effects to section notes
+// Higher intensity = longer notes at section start, more emphasis
+void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
+                        HookIntensity intensity, Tick section_start) {
+  if (intensity == HookIntensity::Off || notes.empty()) {
+    return;
+  }
+
+  // Hook points: Chorus start, B section climax
+  bool is_hook_section = (section_type == SectionType::Chorus ||
+                          section_type == SectionType::B);
+  if (!is_hook_section && intensity != HookIntensity::Strong) {
+    return;  // Only Strong applies to all sections
+  }
+
+  // Find notes at or near section start (first beat)
+  Tick hook_window = TICKS_PER_BEAT * 2;  // First 2 beats
+  std::vector<size_t> hook_note_indices;
+
+  for (size_t i = 0; i < notes.size(); ++i) {
+    if (notes[i].startTick >= section_start &&
+        notes[i].startTick < section_start + hook_window) {
+      hook_note_indices.push_back(i);
+    }
+  }
+
+  if (hook_note_indices.empty()) return;
+
+  // Apply effects based on intensity
+  float duration_mult = 1.0f;
+  float velocity_boost = 0.0f;
+
+  switch (intensity) {
+    case HookIntensity::Light:
+      duration_mult = 1.3f;   // 30% longer
+      velocity_boost = 5.0f;  // Slight velocity boost
+      break;
+    case HookIntensity::Normal:
+      duration_mult = 1.5f;   // 50% longer
+      velocity_boost = 10.0f;
+      break;
+    case HookIntensity::Strong:
+      duration_mult = 2.0f;   // Double duration
+      velocity_boost = 15.0f;
+      break;
+    default:
+      break;
+  }
+
+  // Apply to first few notes (depending on intensity)
+  size_t max_notes = (intensity == HookIntensity::Light) ? 1 :
+                     (intensity == HookIntensity::Normal) ? 2 : 3;
+  size_t apply_count = std::min(hook_note_indices.size(), max_notes);
+
+  for (size_t i = 0; i < apply_count; ++i) {
+    size_t idx = hook_note_indices[i];
+    notes[idx].duration = static_cast<Tick>(notes[idx].duration * duration_mult);
+    notes[idx].velocity = static_cast<uint8_t>(
+        std::clamp(static_cast<int>(notes[idx].velocity + velocity_boost), 1, 127));
+  }
+}
+
+// Apply groove feel timing adjustments
+void applyGrooveFeel(std::vector<NoteEvent>& notes, VocalGrooveFeel groove) {
+  if (groove == VocalGrooveFeel::Straight || notes.empty()) {
+    return;  // No adjustment for straight timing
+  }
+
+  constexpr Tick TICK_8TH = TICKS_PER_BEAT / 2;   // 240
+  constexpr Tick TICK_16TH = TICKS_PER_BEAT / 4;  // 120
+
+  for (auto& note : notes) {
+    // Get position within beat
+    Tick beat_pos = note.startTick % TICKS_PER_BEAT;
+    Tick shift = 0;
+
+    switch (groove) {
+      case VocalGrooveFeel::OffBeat:
+        // Shift on-beat notes slightly late, emphasize off-beats
+        if (beat_pos < TICK_16TH) {
+          shift = TICK_16TH / 2;  // Push on-beats late
+        }
+        break;
+
+      case VocalGrooveFeel::Swing:
+        // Swing: delay second 8th note of each beat pair
+        if (beat_pos >= TICK_8TH - TICK_16TH && beat_pos < TICK_8TH + TICK_16TH) {
+          // Second 8th note: push later for swing feel
+          shift = TICK_16TH / 2;
+        }
+        break;
+
+      case VocalGrooveFeel::Syncopated:
+        // Push notes on beats 2 and 4 earlier (anticipation)
+        {
+          Tick bar_pos = note.startTick % TICKS_PER_BAR;
+          // Beats 2 and 4 (at 480 and 1440 ticks)
+          if ((bar_pos >= TICKS_PER_BEAT - TICK_16TH && bar_pos < TICKS_PER_BEAT + TICK_16TH) ||
+              (bar_pos >= TICKS_PER_BEAT * 3 - TICK_16TH && bar_pos < TICKS_PER_BEAT * 3 + TICK_16TH)) {
+            shift = -TICK_16TH / 2;  // Anticipate
+          }
+        }
+        break;
+
+      case VocalGrooveFeel::Driving16th:
+        // Slight rush on all 16th notes (energetic feel)
+        if (beat_pos % TICK_16TH < TICK_16TH / 4) {
+          shift = -TICK_16TH / 4;  // Slight rush
+        }
+        break;
+
+      case VocalGrooveFeel::Bouncy8th:
+        // Bouncy: first 8th slightly short, second 8th delayed
+        if (beat_pos < TICK_8TH) {
+          // First 8th: no shift but make duration shorter
+          if (note.duration > TICK_8TH) {
+            note.duration = note.duration * 85 / 100;  // 85% duration
+          }
+        } else {
+          // Second 8th: slight delay
+          shift = TICK_16TH / 3;
+        }
+        break;
+
+      default:
+        break;
+    }
+
+    // Apply shift (ensure non-negative)
+    if (shift != 0) {
+      int64_t new_tick = static_cast<int64_t>(note.startTick) + shift;
+      note.startTick = static_cast<Tick>(std::max(static_cast<int64_t>(0), new_tick));
+    }
+  }
+}
+
 }  // namespace
 
 void generateVocalTrack(MidiTrack& track, Song& song,
                         const GeneratorParams& params, std::mt19937& rng,
                         const MidiTrack* motif_track,
                         const HarmonyContext* harmony_ctx) {
-  // Unused - template is selected per-section below
-  (void)params.vocal_style;
 
   // Determine effective vocal range
   uint8_t effective_vocal_low = params.vocal_low;
@@ -198,9 +332,11 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       continue;
     }
 
-    // Get template for this section type (may differ by section)
-    MelodyTemplateId section_template_id = getDefaultTemplateForStyle(
-        params.vocal_style, section.type);
+    // Get template: use explicit template if specified, otherwise auto-select by style/section
+    MelodyTemplateId section_template_id =
+        (params.melody_template != MelodyTemplateId::Auto)
+            ? params.melody_template
+            : getDefaultTemplateForStyle(params.vocal_style, section.type);
     const MelodyTemplate& section_tmpl = getTemplate(section_template_id);
 
     // Calculate section boundaries
@@ -276,6 +412,9 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         }
       }
 
+      // Apply hook intensity effects at hook points (Chorus, B section)
+      applyHookIntensity(section_notes, section.type, params.hook_intensity, section_start);
+
       // Cache the phrase (with relative timing)
       CachedPhrase cache_entry;
       cache_entry.notes = toRelativeTiming(section_notes, section_start);
@@ -294,6 +433,9 @@ void generateVocalTrack(MidiTrack& track, Song& song,
   // NOTE: Modulation is NOT applied internally.
   // MidiWriter applies modulation to all tracks when generating MIDI bytes.
   // This ensures consistent behavior and avoids double-modulation.
+
+  // Apply groove feel timing adjustments
+  applyGrooveFeel(all_notes, params.vocal_groove);
 
   // Remove overlapping notes
   removeOverlaps(all_notes);

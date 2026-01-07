@@ -171,6 +171,30 @@ TEST(PitchUtilsTest, IsNotDissonantConsonant) {
 }
 
 // ============================================================================
+// Context-Aware Dissonance Tests
+// ============================================================================
+
+TEST(PitchUtilsTest, IsDissonantWithContextMinor2ndAlwaysDissonant) {
+  // Minor 2nd is always dissonant regardless of chord context
+  EXPECT_TRUE(isDissonantIntervalWithContext(0, 1, 0));  // On I chord
+  EXPECT_TRUE(isDissonantIntervalWithContext(0, 1, 4));  // On V chord
+  EXPECT_TRUE(isDissonantIntervalWithContext(4, 5, 4));  // E-F on V chord
+}
+
+TEST(PitchUtilsTest, IsDissonantWithContextTritoneOnDominant) {
+  // Tritone is acceptable on dominant (V) chord (degree 4)
+  EXPECT_FALSE(isDissonantIntervalWithContext(0, 6, 4));  // C-F# on V
+  EXPECT_FALSE(isDissonantIntervalWithContext(5, 11, 4)); // F-B on V
+}
+
+TEST(PitchUtilsTest, IsDissonantWithContextTritoneOnNonDominant) {
+  // Tritone is dissonant on non-dominant chords
+  EXPECT_TRUE(isDissonantIntervalWithContext(0, 6, 0));   // C-F# on I
+  EXPECT_TRUE(isDissonantIntervalWithContext(0, 6, 3));   // C-F# on IV
+  EXPECT_TRUE(isDissonantIntervalWithContext(5, 11, 5));  // F-B on vi
+}
+
+// ============================================================================
 // Scale Snap Tests
 // ============================================================================
 

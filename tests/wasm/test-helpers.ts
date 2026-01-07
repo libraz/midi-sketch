@@ -49,12 +49,9 @@ export interface SongConfigOptions {
   introChant?: number;
   mixPattern?: number;
   callDensity?: number;
-  // Vocal density settings
-  vocalNoteDensity?: number;
-  vocalMinNoteDivision?: number;
-  vocalRestRatio?: number;
-  vocalAllowExtremLeap?: boolean;
+  // Vocal style settings
   vocalStyle?: number;
+  melodyTemplate?: number;
   // Arrangement settings
   arrangementGrowth?: number;
   // Arpeggio sync settings
@@ -75,10 +72,7 @@ export interface VocalParamsOptions {
   vocalHigh?: number;
   vocalAttitude?: number;
   vocalStyle?: number;
-  vocalNoteDensity?: number;
-  vocalMinNoteDivision?: number;
-  vocalRestRatio?: number;
-  vocalAllowExtremLeap?: boolean;
+  melodyTemplate?: number;
 }
 
 export class WasmTestContext {
@@ -101,7 +95,7 @@ export class WasmTestContext {
   }
 
   allocSongConfig(config: SongConfigOptions): number {
-    const ptr = this.module._malloc(56);
+    const ptr = this.module._malloc(52); // MidiSketchSongConfig size
     const view = new DataView(this.module.HEAPU8.buffer);
 
     // Basic settings
@@ -161,34 +155,31 @@ export class WasmTestContext {
     view.setUint8(ptr + 40, config.mixPattern ?? 0);
     view.setUint8(ptr + 41, config.callDensity ?? 2);
 
-    // Vocal density settings
-    view.setUint8(ptr + 42, config.vocalNoteDensity ?? 0);
-    view.setUint8(ptr + 43, config.vocalMinNoteDivision ?? 0);
-    view.setUint8(ptr + 44, config.vocalRestRatio ?? 15);
-    view.setUint8(ptr + 45, config.vocalAllowExtremLeap ? 1 : 0);
-    view.setUint8(ptr + 46, config.vocalStyle ?? 0);
+    // Vocal style settings (offset 42-43)
+    view.setUint8(ptr + 42, config.vocalStyle ?? 0);
+    view.setUint8(ptr + 43, config.melodyTemplate ?? 0);
 
-    // Arrangement settings
-    view.setUint8(ptr + 47, config.arrangementGrowth ?? 0);
+    // Arrangement settings (offset 44)
+    view.setUint8(ptr + 44, config.arrangementGrowth ?? 0);
 
-    // Arpeggio sync settings
-    view.setUint8(ptr + 48, config.arpeggioSyncChord !== false ? 1 : 0);
+    // Arpeggio sync settings (offset 45)
+    view.setUint8(ptr + 45, config.arpeggioSyncChord !== false ? 1 : 0);
 
-    // Motif settings
-    view.setUint8(ptr + 49, config.motifRepeatScope ?? 0);
-    view.setUint8(ptr + 50, config.motifFixedProgression !== false ? 1 : 0);
-    view.setUint8(ptr + 51, config.motifMaxChordCount ?? 4);
+    // Motif settings (offset 46-48)
+    view.setUint8(ptr + 46, config.motifRepeatScope ?? 0);
+    view.setUint8(ptr + 47, config.motifFixedProgression !== false ? 1 : 0);
+    view.setUint8(ptr + 48, config.motifMaxChordCount ?? 4);
 
-    // Melodic complexity and hook control
-    view.setUint8(ptr + 52, config.melodicComplexity ?? 1);
-    view.setUint8(ptr + 53, config.hookIntensity ?? 2);
-    view.setUint8(ptr + 54, config.vocalGroove ?? 0);
+    // Melodic complexity and hook control (offset 49-51)
+    view.setUint8(ptr + 49, config.melodicComplexity ?? 1);
+    view.setUint8(ptr + 50, config.hookIntensity ?? 2);
+    view.setUint8(ptr + 51, config.vocalGroove ?? 0);
 
     return ptr;
   }
 
   allocVocalParams(params: VocalParamsOptions): number {
-    const ptr = this.module._malloc(12); // 12 bytes
+    const ptr = this.module._malloc(12); // 12 bytes (padded)
     const view = new DataView(this.module.HEAPU8.buffer);
 
     view.setUint32(ptr + 0, params.seed ?? 0, true);
@@ -196,11 +187,8 @@ export class WasmTestContext {
     view.setUint8(ptr + 5, params.vocalHigh ?? 79);
     view.setUint8(ptr + 6, params.vocalAttitude ?? 0);
     view.setUint8(ptr + 7, params.vocalStyle ?? 0);
-    // Vocal density parameters
-    view.setUint8(ptr + 8, params.vocalNoteDensity ?? 0);
-    view.setUint8(ptr + 9, params.vocalMinNoteDivision ?? 0);
-    view.setUint8(ptr + 10, params.vocalRestRatio ?? 15);
-    view.setUint8(ptr + 11, params.vocalAllowExtremLeap ? 1 : 0);
+    view.setUint8(ptr + 8, params.melodyTemplate ?? 0);
+    // Padding bytes 9-11
 
     return ptr;
   }

@@ -17,7 +17,7 @@ Generate MIDI instantly in your browser — no installation required.
 ## Features
 
 ### Core Generation
-- **5-7 Track Output**: Vocal, Chord, Bass, Drums, Motif, Arpeggio, SE
+- **8 Track Output**: Vocal, Chord, Bass, Motif, Arpeggio, Aux, Drums, SE
 - **Preset-based Configuration**: Structure (10), StylePreset (17), Chord Progression (22)
 - **Deterministic Output**: Seed-based reproducible generation
 - **SMF Type 1 Output**: Standard MIDI file format
@@ -248,6 +248,7 @@ Modulation amount is configurable via `modulation_semitones` (+1 to +4).
 | Bass | 2 | 33 (E.Bass) | Bass line |
 | Motif | 3 | 81 (Synth Lead) | Background |
 | Arpeggio | 4 | 81 (Saw Lead) | Arpeggio |
+| Aux | 5 | 89 (Warm Pad) | Sub-melody |
 | Drums | 9 | - | GM Drums |
 | SE | 15 | - | Markers, Call notes |
 

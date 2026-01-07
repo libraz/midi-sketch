@@ -51,4 +51,27 @@ describe('MidiSketch WASM - Generation', () => {
 
     cleanup();
   });
+
+  it('should generate all 8 tracks', () => {
+    // Generate with all features enabled
+    ctx.generateFromConfig({
+      seed: 99999,
+      arpeggioEnabled: true,
+    });
+
+    const { data, cleanup } = ctx.getEventsJson();
+    const tracks = (data as { tracks: { name: string }[] }).tracks;
+
+    // Verify expected track names exist
+    const trackNames = tracks.map((t) => t.name);
+    expect(trackNames).toContain('SE');
+    expect(trackNames).toContain('Vocal');
+    expect(trackNames).toContain('Chord');
+    expect(trackNames).toContain('Bass');
+    expect(trackNames).toContain('Drums');
+    expect(trackNames).toContain('Arpeggio');
+    // Motif and Aux may or may not be present depending on generation
+
+    cleanup();
+  });
 });

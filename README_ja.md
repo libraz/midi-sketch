@@ -18,7 +18,7 @@
 ## 特徴
 
 ### 生成機能
-- **マルチトラック出力** — Vocal / Chord / Bass / Drums / Motif / Arpeggio / SE の最大7トラック
+- **8トラック出力** — Vocal / Chord / Bass / Motif / Arpeggio / Aux / Drums / SE
 - **豊富なプリセット** — 曲構成10種 × スタイルプリセット17種 × コード進行22種の組み合わせ
 - **再現性のある生成** — シード値を指定すれば同一のMIDIを再生成可能
 - **標準フォーマット** — SMF Type 1 形式で出力、任意のDAWで読み込み可能
@@ -250,6 +250,7 @@ velocity = (80 + 拍補正) × セクション係数 × トラック係数
 | Bass | 2 | 33 (E.Bass) | ベース |
 | Motif | 3 | 81 (Synth Lead) | 背景リフ |
 | Arpeggio | 4 | 81 (Saw Lead) | アルペジオ |
+| Aux | 5 | 89 (Warm Pad) | サブメロディ |
 | Drums | 9 | — | GM準拠 |
 | SE | 15 | — | マーカー、コールノート |
 
