@@ -88,6 +88,22 @@ int8_t getRegisterShift(SectionType type, const StyleMelodyParams& params) {
   }
 }
 
+// Get density modifier for section type based on melody params
+float getDensityModifier(SectionType type, const StyleMelodyParams& params) {
+  switch (type) {
+    case SectionType::A:
+      return params.verse_density_modifier;
+    case SectionType::B:
+      return params.prechorus_density_modifier;
+    case SectionType::Chorus:
+      return params.chorus_density_modifier;
+    case SectionType::Bridge:
+      return params.bridge_density_modifier;
+    default:
+      return 1.0f;
+  }
+}
+
 // Check if section type should have vocals
 bool sectionHasVocals(SectionType type) {
   switch (type) {
@@ -399,6 +415,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       ctx.tessitura = section_tessitura;
       ctx.vocal_low = section_vocal_low;
       ctx.vocal_high = section_vocal_high;
+      ctx.density_modifier = getDensityModifier(section.type, params.melody_params);
 
       section_notes = designer.generateSection(section_tmpl, ctx, harmony, rng);
 

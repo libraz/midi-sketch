@@ -68,12 +68,16 @@ void midisketch_destroy(MidiSketchHandle handle);
 
 // Vocal regeneration parameters.
 typedef struct {
-  uint32_t seed;          // Random seed (0 = new random)
-  uint8_t vocal_low;      // Vocal range lower bound (MIDI note)
-  uint8_t vocal_high;     // Vocal range upper bound (MIDI note)
-  uint8_t vocal_attitude; // 0=Clean, 1=Expressive, 2=Raw
-  uint8_t vocal_style;    // VocalStylePreset (0=Auto, 1=Standard, 2=Vocaloid, etc.)
-  uint8_t melody_template; // MelodyTemplateId (0=Auto, 1-7 = specific templates)
+  uint32_t seed;            // Random seed (0 = new random)
+  uint8_t vocal_low;        // Vocal range lower bound (MIDI note)
+  uint8_t vocal_high;       // Vocal range upper bound (MIDI note)
+  uint8_t vocal_attitude;   // 0=Clean, 1=Expressive, 2=Raw
+  uint8_t vocal_style;      // VocalStylePreset (0=Auto, 1=Standard, 2=Vocaloid, etc.)
+  uint8_t melody_template;  // MelodyTemplateId (0=Auto, 1-7 = specific templates)
+  uint8_t melodic_complexity; // MelodicComplexity (0=Simple, 1=Standard, 2=Complex)
+  uint8_t hook_intensity;   // HookIntensity (0=Off, 1=Light, 2=Normal, 3=Strong)
+  uint8_t vocal_groove;     // VocalGrooveFeel (0=Straight, 1=OffBeat, 2=Swing, etc.)
+  uint8_t composition_style; // CompositionStyle (0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven)
 } MidiSketchVocalParams;
 
 // Regenerates only the vocal track with the given parameters.

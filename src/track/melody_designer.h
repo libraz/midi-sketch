@@ -27,6 +27,7 @@ class MelodyDesigner {
     TessituraRange tessitura;   // Comfortable singing range
     uint8_t vocal_low;          // Absolute minimum pitch
     uint8_t vocal_high;         // Absolute maximum pitch
+    float density_modifier;     // Section-specific density multiplier (1.0 = default)
   };
 
   // Phrase generation result.
@@ -171,9 +172,11 @@ class MelodyDesigner {
       std::mt19937& rng);
 
   // Generate rhythm for a phrase.
+  // @param density_modifier Section-specific density multiplier (1.0 = default)
   std::vector<RhythmNote> generatePhraseRhythm(
       const MelodyTemplate& tmpl,
       uint8_t phrase_beats,
+      float density_modifier,
       std::mt19937& rng);
 };
 

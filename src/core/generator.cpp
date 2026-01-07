@@ -26,11 +26,27 @@ void applyVocalStylePreset(GeneratorParams& params,
                            const SongConfig& /* config */) {
   switch (params.vocal_style) {
     case VocalStylePreset::Vocaloid:
+      // YOASOBI style - energetic but balanced
+      params.melody_params.max_leap_interval = 12;
+      params.melody_params.syncopation_prob = 0.35f;
+      params.melody_params.allow_bar_crossing = true;
+      // Section density: verse moderate, chorus elevated
+      params.melody_params.verse_density_modifier = 0.8f;
+      params.melody_params.prechorus_density_modifier = 0.9f;
+      params.melody_params.chorus_density_modifier = 1.15f;
+      params.melody_params.bridge_density_modifier = 0.85f;
+      break;
+
     case VocalStylePreset::UltraVocaloid:
-      // High-energy synthetic styles
+      // Miku Disappearance style - ballad verse, barrage chorus
       params.melody_params.max_leap_interval = 14;
       params.melody_params.syncopation_prob = 0.4f;
       params.melody_params.allow_bar_crossing = true;
+      // Section density: ballad-like verse, extreme contrast with chorus
+      params.melody_params.verse_density_modifier = 0.3f;     // Ballad-like sparse
+      params.melody_params.prechorus_density_modifier = 0.5f; // Build tension
+      params.melody_params.chorus_density_modifier = 1.6f;    // Full barrage
+      params.melody_params.bridge_density_modifier = 0.35f;   // Return to ballad
       break;
 
     case VocalStylePreset::Idol:
@@ -475,6 +491,18 @@ void Generator::regenerateMelody(const MelodyRegenerateParams& regen_params) {
   if (regen_params.melody_template != MelodyTemplateId::Auto) {
     params_.melody_template = regen_params.melody_template;
   }
+
+  // === MELODIC COMPLEXITY, HOOK INTENSITY, GROOVE ===
+  params_.melodic_complexity = regen_params.melodic_complexity;
+  params_.hook_intensity = regen_params.hook_intensity;
+  params_.vocal_groove = regen_params.vocal_groove;
+
+  // Apply VocalStylePreset settings to melody_params
+  SongConfig dummy_config;
+  applyVocalStylePreset(params_, dummy_config);
+
+  // Apply MelodicComplexity-specific parameter adjustments
+  applyMelodicComplexity(params_);
 
   // Resolve and apply seed
   uint32_t seed = resolveSeed(regen_params.seed);

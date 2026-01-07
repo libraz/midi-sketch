@@ -562,9 +562,12 @@ struct StyleMelodyParams {
   int8_t chorus_register_shift = 5;      // Chorus register shift
   int8_t bridge_register_shift = 0;      // Bridge register shift
 
-  // === Chorus characteristics ===
-  float chorus_density_modifier = 1.10f; // Density modifier for chorus
-  bool chorus_long_tones = false;        // Use long sustained tones in chorus
+  // === Section density modifiers (multiplied with template sixteenth_density) ===
+  float verse_density_modifier = 1.0f;      // Density modifier for verse (A)
+  float prechorus_density_modifier = 1.0f;  // Density modifier for pre-chorus (B)
+  float chorus_density_modifier = 1.10f;    // Density modifier for chorus
+  float bridge_density_modifier = 1.0f;     // Density modifier for bridge
+  bool chorus_long_tones = false;           // Use long sustained tones in chorus
 
   // === Articulation (gate values) ===
   float legato_gate = 0.95f;          // Gate for legato notes
@@ -760,6 +763,15 @@ struct MelodyRegenerateParams {
 
   // Melody template (Auto = use style default)
   MelodyTemplateId melody_template = MelodyTemplateId::Auto;
+
+  // Melodic complexity (Simple/Standard/Complex)
+  MelodicComplexity melodic_complexity = MelodicComplexity::Standard;
+
+  // Hook intensity (Off/Light/Normal/Strong)
+  HookIntensity hook_intensity = HookIntensity::Normal;
+
+  // Vocal groove feel (Straight/OffBeat/Swing/Syncopated/Driving16th/Bouncy8th)
+  VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
 };
 
 }  // namespace midisketch

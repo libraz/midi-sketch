@@ -99,8 +99,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   result.notes.clear();
   result.direction_inertia = direction_inertia;
 
-  // Generate rhythm pattern
-  std::vector<RhythmNote> rhythm = generatePhraseRhythm(tmpl, phrase_beats, rng);
+  // Generate rhythm pattern with section density modifier
+  std::vector<RhythmNote> rhythm = generatePhraseRhythm(tmpl, phrase_beats, ctx.density_modifier, rng);
 
   // Calculate initial pitch if none provided
   int current_pitch;
@@ -483,6 +483,7 @@ int MelodyDesigner::calculateTargetPitch(
 std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
     const MelodyTemplate& tmpl,
     uint8_t phrase_beats,
+    float density_modifier,
     std::mt19937& rng) {
 
   std::vector<RhythmNote> rhythm;
@@ -491,10 +492,15 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
   float current_beat = 0.0f;
   float end_beat = static_cast<float>(phrase_beats);
 
+  // Apply section density modifier to sixteenth density
+  float effective_sixteenth_density = tmpl.sixteenth_density * density_modifier;
+  // Clamp to valid range [0.0, 0.95]
+  effective_sixteenth_density = std::min(effective_sixteenth_density, 0.95f);
+
   while (current_beat < end_beat - 0.25f) {
     // Determine note duration
     int eighths;
-    if (tmpl.rhythm_driven && dist(rng) < tmpl.sixteenth_density) {
+    if (tmpl.rhythm_driven && dist(rng) < effective_sixteenth_density) {
       eighths = 1;  // 16th note (0.5 eighth)
     } else if (dist(rng) < tmpl.long_note_ratio) {
       eighths = 4;  // Half note

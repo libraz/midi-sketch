@@ -76,8 +76,11 @@ MidiSketchError midisketch_regenerate_vocal(MidiSketchHandle handle,
   regen_params.vocal_high = params->vocal_high;
   regen_params.vocal_attitude = static_cast<midisketch::VocalAttitude>(params->vocal_attitude);
   regen_params.vocal_style = static_cast<midisketch::VocalStylePreset>(params->vocal_style);
-  regen_params.composition_style = midisketch::CompositionStyle::MelodyLead;
+  regen_params.composition_style = static_cast<midisketch::CompositionStyle>(params->composition_style);
   regen_params.melody_template = static_cast<midisketch::MelodyTemplateId>(params->melody_template);
+  regen_params.melodic_complexity = static_cast<midisketch::MelodicComplexity>(params->melodic_complexity);
+  regen_params.hook_intensity = static_cast<midisketch::HookIntensity>(params->hook_intensity);
+  regen_params.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(params->vocal_groove);
 
   sketch->regenerateMelody(regen_params);
   return MIDISKETCH_OK;
