@@ -298,17 +298,17 @@ flowchart TD
 
 This project is dual-licensed:
 
-- **Open Source**: [Apache License 2.0](LICENSE) - Free for open source projects with attribution
-- **Commercial**: [Commercial License](LICENSE-COMMERCIAL) - For closed-source or proprietary use
+- **Open Source**: [Apache License 2.0](LICENSE) - For evaluation, research, and non-commercial use
+- **Commercial**: [Commercial License](LICENSE-COMMERCIAL) - For closed-source, proprietary, or SaaS use
 
 ### Which License Do I Need?
 
 | Use Case | License |
 |----------|---------|
-| Open source project | Apache-2.0 (free) |
-| Personal/educational | Apache-2.0 (free) |
+| Evaluation / Research | Apache-2.0 (free) |
+| Non-commercial use | Apache-2.0 (free) |
 | Closed-source product | Commercial (paid) |
-| Remove attribution | Commercial (paid) |
+| Commercial SaaS | Commercial (paid) |
 
 For commercial licensing inquiries: libraz@libraz.net
 

@@ -64,8 +64,7 @@ ScaleType selectScaleType(bool is_minor, Mood mood) {
   }
 }
 
-// Backward compatibility alias
-constexpr const int* SCALE = SCALE_MAJOR;
+// Backward compatibility: SCALE_MAJOR is used directly via getScaleIntervals()
 
 // Avoid notes for common chords (relative to chord root in semitones)
 // These notes create dissonance when held against the chord

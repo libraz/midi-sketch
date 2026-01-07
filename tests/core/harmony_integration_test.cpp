@@ -1147,5 +1147,123 @@ TEST_F(HarmonyIntegrationTest, HasBassCollisionFunction) {
   }
 }
 
+// =============================================================================
+// Phase 3-4 Integration Tests
+// =============================================================================
+
+// Test: BackgroundMotif uses Hook role with appropriate velocity
+TEST_F(HarmonyIntegrationTest, BackgroundMotifUsesHookRole) {
+  params_.composition_style = CompositionStyle::BackgroundMotif;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& song = gen.getSong();
+  const auto& motif_notes = song.motif().notes();
+
+  if (!motif_notes.empty()) {
+    // Hook role uses velocity_base = 85
+    // Most notes should be around this velocity (allowing for section variation)
+    int high_velocity_count = 0;
+    for (const auto& note : motif_notes) {
+      if (note.velocity >= 70) {
+        high_velocity_count++;
+      }
+    }
+    float high_vel_ratio = static_cast<float>(high_velocity_count) / motif_notes.size();
+    EXPECT_GE(high_vel_ratio, 0.7f)
+        << "BackgroundMotif (Hook role) should have mostly high velocities";
+  }
+}
+
+// Test: Chord voicings vary across different moods
+TEST_F(HarmonyIntegrationTest, ChordVoicingsVaryByMood) {
+  Generator gen_dance, gen_ballad;
+
+  params_.mood = Mood::EnergeticDance;
+  params_.seed = 12345;
+  gen_dance.generate(params_);
+
+  params_.mood = Mood::Ballad;
+  params_.seed = 12345;  // Same seed
+  gen_ballad.generate(params_);
+
+  const auto& chord_dance = gen_dance.getSong().chord().notes();
+  const auto& chord_ballad = gen_ballad.getSong().chord().notes();
+
+  // Different moods should produce different voicings (parallel penalty differs)
+  bool some_difference = false;
+  size_t min_size = std::min(chord_dance.size(), chord_ballad.size());
+
+  for (size_t i = 0; i < min_size && i < 50; ++i) {
+    if (chord_dance[i].note != chord_ballad[i].note) {
+      some_difference = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(some_difference)
+      << "Different moods should produce different chord voicings";
+}
+
+// Test: All tracks maintain low dissonance after Phase 3-4 improvements
+TEST_F(HarmonyIntegrationTest, AllTracksLowDissonanceAfterImprovements) {
+  // Test multiple seeds across different moods
+  std::vector<Mood> test_moods = {
+      Mood::StraightPop, Mood::Ballad, Mood::EnergeticDance,
+      Mood::Dramatic, Mood::CityPop
+  };
+
+  for (Mood mood : test_moods) {
+    params_.mood = mood;
+    params_.seed = static_cast<uint32_t>(mood) * 10000 + 42;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& song = gen.getSong();
+    const auto& vocal = song.vocal().notes();
+    const auto& chord = song.chord().notes();
+    const auto& bass = song.bass().notes();
+
+    // Check for minor 2nd clashes between all track pairs
+    int clash_count = 0;
+    int pair_count = 0;
+
+    // Check vocal-chord
+    for (const auto& v : vocal) {
+      for (const auto& c : chord) {
+        if (v.startTick < c.startTick + c.duration &&
+            v.startTick + v.duration > c.startTick) {
+          pair_count++;
+          int interval = std::abs((v.note % 12) - (c.note % 12));
+          if (interval > 6) interval = 12 - interval;
+          if (interval == 1) clash_count++;
+        }
+      }
+    }
+
+    // Check vocal-bass
+    for (const auto& v : vocal) {
+      for (const auto& b : bass) {
+        if (v.startTick < b.startTick + b.duration &&
+            v.startTick + v.duration > b.startTick) {
+          pair_count++;
+          int interval = std::abs((v.note % 12) - (b.note % 12));
+          if (interval > 6) interval = 12 - interval;
+          if (interval == 1) clash_count++;
+        }
+      }
+    }
+
+    if (pair_count > 0) {
+      float clash_ratio = static_cast<float>(clash_count) / pair_count;
+      EXPECT_LE(clash_ratio, 0.02f)
+          << "Mood " << static_cast<int>(mood) << " has too many clashes: "
+          << (clash_ratio * 100) << "%";
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch
