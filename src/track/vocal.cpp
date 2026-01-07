@@ -207,6 +207,7 @@ void applyVelocityBalance(std::vector<NoteEvent>& notes, float scale) {
 }
 
 // Remove overlapping notes by adjusting duration
+// Ensures end_tick <= next_start for all consecutive note pairs
 void removeOverlaps(std::vector<NoteEvent>& notes) {
   if (notes.size() < 2) return;
 
@@ -217,15 +218,21 @@ void removeOverlaps(std::vector<NoteEvent>& notes) {
             });
 
   // Adjust durations to prevent overlap
-  for (size_t i = 0; i < notes.size() - 1; ++i) {
+  for (size_t i = 0; i + 1 < notes.size(); ++i) {
     Tick end_tick = notes[i].startTick + notes[i].duration;
     Tick next_start = notes[i + 1].startTick;
 
     if (end_tick > next_start) {
-      // Truncate current note to end before next note
-      Tick min_gap = 1;  // Minimum gap between notes
-      Tick max_duration = next_start - notes[i].startTick - min_gap;
-      notes[i].duration = std::max(static_cast<Tick>(1), max_duration);
+      // Guard against underflow: if same startTick, use minimum duration
+      Tick max_duration = (next_start > notes[i].startTick)
+                              ? (next_start - notes[i].startTick)
+                              : 1;
+      notes[i].duration = max_duration;
+
+      // If still overlapping (same startTick case), shift next note forward
+      if (notes[i].startTick + notes[i].duration > notes[i + 1].startTick) {
+        notes[i + 1].startTick = notes[i].startTick + notes[i].duration;
+      }
     }
   }
 }

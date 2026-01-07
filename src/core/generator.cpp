@@ -950,21 +950,28 @@ void Generator::applyHumanization() {
   // Vocal must not have overlapping notes (singers can only sing one note)
   auto& vocal_notes = song_.vocal().notes();
   if (vocal_notes.size() > 1) {
-    for (size_t i = 0; i + 1 < vocal_notes.size(); ++i) {
-      // Handle case where humanize reordered notes (startTick[i] > startTick[i+1])
-      if (vocal_notes[i].startTick > vocal_notes[i + 1].startTick) {
-        // Swap the notes to maintain order
-        std::swap(vocal_notes[i], vocal_notes[i + 1]);
-      }
+    // Sort by startTick to ensure proper order after humanization
+    std::sort(vocal_notes.begin(), vocal_notes.end(),
+              [](const NoteEvent& a, const NoteEvent& b) {
+                return a.startTick < b.startTick;
+              });
 
+    for (size_t i = 0; i + 1 < vocal_notes.size(); ++i) {
       Tick end_tick = vocal_notes[i].startTick + vocal_notes[i].duration;
       Tick next_start = vocal_notes[i + 1].startTick;
+
       // Ensure no overlap: end of current note <= start of next note
       if (end_tick > next_start) {
+        // Guard against underflow: if same startTick, use minimum duration
         Tick max_duration = (next_start > vocal_notes[i].startTick)
                                 ? (next_start - vocal_notes[i].startTick)
                                 : 1;
         vocal_notes[i].duration = max_duration;
+
+        // If still overlapping (same startTick case), shift next note
+        if (vocal_notes[i].startTick + vocal_notes[i].duration > next_start) {
+          vocal_notes[i + 1].startTick = vocal_notes[i].startTick + vocal_notes[i].duration;
+        }
       }
     }
   }

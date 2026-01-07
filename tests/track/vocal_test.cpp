@@ -1587,5 +1587,181 @@ TEST_F(VocalTest, CachedPhraseVariationProducesValidOutput) {
   }
 }
 
+// ============================================================================
+// Regression Tests: duration_ticks underflow bug (fixed 2026-01-07)
+// Bug: uint32_t underflow caused duration_ticks to become 0xFFFFFFFF
+// ============================================================================
+
+TEST_F(VocalTest, DurationTicksNeverUnderflows) {
+  // Test multiple seeds to ensure duration is never underflowed
+  for (uint32_t seed : {1u, 12345u, 54321u, 99999u, 1030586850u}) {
+    params_.seed = seed;
+    params_.humanize = true;  // Humanization can trigger overlap scenarios
+    params_.humanize_timing = 1.0f;
+
+    Generator gen;
+    gen.generate(params_);
+    const auto& notes = gen.getSong().vocal().notes();
+
+    for (size_t i = 0; i < notes.size(); ++i) {
+      // Check for underflow signature (0xFFFFFFFF or very large values)
+      EXPECT_LT(notes[i].duration, 100000u)
+          << "Duration appears underflowed at seed=" << seed << ", note " << i
+          << ": duration=" << notes[i].duration;
+
+      // Duration must be positive
+      EXPECT_GT(notes[i].duration, 0u)
+          << "Duration must be positive at seed=" << seed << ", note " << i;
+    }
+  }
+}
+
+TEST_F(VocalTest, RegenVocalDurationTicksNeverUnderflows) {
+  // Test regenerateMelody which was the original bug scenario
+  params_.seed = 2758722970;
+  params_.structure = StructurePattern::RepeatChorus;
+  params_.skip_vocal = true;
+
+  Generator gen;
+  gen.generate(params_);
+
+  // Regenerate vocal with the problematic seed using MelodyRegenerateParams
+  MelodyRegenerateParams regen;
+  regen.seed = 1030586850;
+  regen.vocal_low = 57;
+  regen.vocal_high = 79;
+  gen.regenerateMelody(regen);
+
+  const auto& notes = gen.getSong().vocal().notes();
+
+  for (size_t i = 0; i < notes.size(); ++i) {
+    EXPECT_LT(notes[i].duration, 100000u)
+        << "Duration appears underflowed at note " << i
+        << ": duration=" << notes[i].duration;
+    EXPECT_GT(notes[i].duration, 0u)
+        << "Duration must be positive at note " << i;
+  }
+}
+
+// ============================================================================
+// Data Integrity Tests: Ensure no anomalous data is generated
+// ============================================================================
+
+TEST_F(VocalTest, AllNotesHaveValidData) {
+  // Comprehensive validation of note data across various configurations
+  std::vector<uint32_t> test_seeds = {1, 100, 1000, 12345, 54321, 99999};
+
+  for (uint32_t seed : test_seeds) {
+    params_.seed = seed;
+
+    Generator gen;
+    gen.generate(params_);
+    const auto& notes = gen.getSong().vocal().notes();
+
+    for (size_t i = 0; i < notes.size(); ++i) {
+      // Pitch validation
+      EXPECT_GE(notes[i].note, 0)
+          << "Invalid pitch at seed=" << seed << ", note " << i;
+      EXPECT_LE(notes[i].note, 127)
+          << "Invalid pitch at seed=" << seed << ", note " << i;
+
+      // Velocity validation
+      EXPECT_GT(notes[i].velocity, 0)
+          << "Invalid velocity at seed=" << seed << ", note " << i;
+      EXPECT_LE(notes[i].velocity, 127)
+          << "Invalid velocity at seed=" << seed << ", note " << i;
+
+      // Duration validation
+      EXPECT_GT(notes[i].duration, 0u)
+          << "Invalid duration at seed=" << seed << ", note " << i;
+      EXPECT_LT(notes[i].duration, 50000u)  // ~26 bars max
+          << "Unreasonable duration at seed=" << seed << ", note " << i;
+
+      // startTick validation (reasonable bounds)
+      EXPECT_LT(notes[i].startTick, 500000u)  // ~260 bars max
+          << "Unreasonable startTick at seed=" << seed << ", note " << i;
+    }
+  }
+}
+
+TEST_F(VocalTest, AllCompositionStylesProduceValidData) {
+  // Test all composition styles produce valid output
+  for (int style = 0; style <= 2; ++style) {
+    params_.seed = 12345 + style;
+    params_.composition_style = static_cast<CompositionStyle>(style);
+
+    Generator gen;
+    gen.generate(params_);
+    const auto& notes = gen.getSong().vocal().notes();
+
+    for (size_t i = 0; i < notes.size(); ++i) {
+      EXPECT_GT(notes[i].duration, 0u)
+          << "Invalid duration for CompositionStyle=" << style << ", note " << i;
+      EXPECT_LT(notes[i].duration, 100000u)
+          << "Unreasonable duration for CompositionStyle=" << style << ", note " << i;
+    }
+  }
+}
+
+TEST_F(VocalTest, AllVocalGroovesProduceValidData) {
+  // Test all groove feels produce valid output
+  for (int groove = 0; groove <= 5; ++groove) {
+    params_.seed = 54321 + groove;
+    params_.vocal_groove = static_cast<VocalGrooveFeel>(groove);
+
+    Generator gen;
+    gen.generate(params_);
+    const auto& notes = gen.getSong().vocal().notes();
+
+    for (size_t i = 0; i < notes.size(); ++i) {
+      EXPECT_GT(notes[i].duration, 0u)
+          << "Invalid duration for VocalGroove=" << groove << ", note " << i;
+      EXPECT_LT(notes[i].duration, 100000u)
+          << "Unreasonable duration for VocalGroove=" << groove << ", note " << i;
+    }
+
+    // Verify no overlaps
+    for (size_t i = 0; i + 1 < notes.size(); ++i) {
+      Tick end_tick = notes[i].startTick + notes[i].duration;
+      EXPECT_LE(end_tick, notes[i + 1].startTick)
+          << "Overlap for VocalGroove=" << groove << " at note " << i;
+    }
+  }
+}
+
+TEST_F(VocalTest, ExtremeVocalRangesProduceValidData) {
+  // Test extreme vocal range configurations
+  struct RangeConfig {
+    uint8_t low;
+    uint8_t high;
+  };
+  std::vector<RangeConfig> ranges = {
+      {36, 96},  // Maximum range
+      {60, 65},  // Very narrow range
+      {36, 48},  // Low register
+      {84, 96},  // High register
+      {60, 60},  // Single note range
+  };
+
+  for (const auto& range : ranges) {
+    params_.seed = 99999;
+    params_.vocal_low = range.low;
+    params_.vocal_high = range.high;
+
+    Generator gen;
+    gen.generate(params_);
+    const auto& notes = gen.getSong().vocal().notes();
+
+    for (size_t i = 0; i < notes.size(); ++i) {
+      EXPECT_GT(notes[i].duration, 0u)
+          << "Invalid duration for range " << (int)range.low << "-" << (int)range.high
+          << ", note " << i;
+      EXPECT_LT(notes[i].duration, 100000u)
+          << "Unreasonable duration for range " << (int)range.low << "-" << (int)range.high
+          << ", note " << i;
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch
