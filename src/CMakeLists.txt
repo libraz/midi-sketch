@@ -25,6 +25,7 @@ set(MIDISKETCH_SOURCES
   track/se.cpp
   track/motif.cpp
   track/arpeggio.cpp
+  track/melody_designer.cpp
   analysis/dissonance.cpp
 )
 
