@@ -19,7 +19,87 @@ struct CachedPhrase {
   uint8_t bars;                   // Section length when cached
   uint8_t vocal_low;              // Vocal range when cached
   uint8_t vocal_high;
+  int reuse_count = 0;            // How many times this phrase has been reused
 };
+
+// Phrase variation types for cached phrase reuse
+// These are subtle variations that maintain recognizability while adding interest
+enum class PhraseVariation : uint8_t {
+  Exact,          // No change (primary)
+  LastNoteShift,  // Shift last note up/down by step
+  LastNoteLong,   // Extend last note duration
+  TailSwap,       // Swap last two notes
+  SlightRush      // Slightly earlier timing on weak beats
+};
+
+// Select a phrase variation based on reuse count.
+// First use is always Exact, subsequent uses have 80% Exact, 20% variation.
+PhraseVariation selectPhraseVariation(int reuse_count, std::mt19937& rng) {
+  if (reuse_count == 0) return PhraseVariation::Exact;
+  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+  if (dist(rng) < 0.8f) return PhraseVariation::Exact;  // 80% same
+  // 20% variation: randomly select one of the 4 variation types
+  return static_cast<PhraseVariation>(1 + (rng() % 4));
+}
+
+// Apply a phrase variation to notes.
+// Variations are subtle to maintain phrase identity.
+void applyPhraseVariation(std::vector<NoteEvent>& notes,
+                          PhraseVariation variation,
+                          [[maybe_unused]] std::mt19937& rng) {
+  if (notes.empty() || variation == PhraseVariation::Exact) {
+    return;
+  }
+
+  switch (variation) {
+    case PhraseVariation::LastNoteShift: {
+      // Shift last note by ±1-2 semitones
+      auto& last = notes.back();
+      std::uniform_int_distribution<int> shift_dist(-2, 2);
+      int shift = shift_dist(rng);
+      if (shift == 0) shift = 1;
+      int new_pitch = static_cast<int>(last.note) + shift;
+      last.note = static_cast<uint8_t>(std::clamp(new_pitch, 0, 127));
+      break;
+    }
+
+    case PhraseVariation::LastNoteLong: {
+      // Extend last note by 50%
+      auto& last = notes.back();
+      last.duration = static_cast<Tick>(last.duration * 1.5f);
+      break;
+    }
+
+    case PhraseVariation::TailSwap: {
+      // Swap last two notes (pitches only)
+      if (notes.size() >= 2) {
+        size_t n = notes.size();
+        std::swap(notes[n - 1].note, notes[n - 2].note);
+      }
+      break;
+    }
+
+    case PhraseVariation::SlightRush: {
+      // Rush weak beat notes slightly (10-20 ticks earlier)
+      for (auto& note : notes) {
+        Tick pos_in_bar = note.startTick % TICKS_PER_BAR;
+        // Weak beats: beat 2 and 4 (around TICKS_PER_BEAT and 3*TICKS_PER_BEAT)
+        bool is_weak = (pos_in_bar >= TICKS_PER_BEAT - 60 && pos_in_bar <= TICKS_PER_BEAT + 60) ||
+                       (pos_in_bar >= 3 * TICKS_PER_BEAT - 60 && pos_in_bar <= 3 * TICKS_PER_BEAT + 60);
+        if (is_weak && note.startTick >= 15) {
+          std::uniform_int_distribution<Tick> rush_dist(10, 20);
+          note.startTick -= rush_dist(rng);
+        }
+      }
+      break;
+    }
+
+    case PhraseVariation::Exact:
+      // No change
+      break;
+  }
+}
+
 
 // Shift note timings by offset
 std::vector<NoteEvent> shiftTiming(const std::vector<NoteEvent>& notes, Tick offset) {
@@ -383,11 +463,18 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     // Check phrase cache for repeated sections
     auto cache_it = phrase_cache.find(section.type);
     if (cache_it != phrase_cache.end() && cache_it->second.bars == section.bars) {
-      // Cache hit: reuse cached phrase with timing adjustment
-      const CachedPhrase& cached = cache_it->second;
+      // Cache hit: reuse cached phrase with timing adjustment and optional variation
+      CachedPhrase& cached = cache_it->second;
+
+      // Select variation based on reuse count (80% Exact, 20% variation)
+      PhraseVariation variation = selectPhraseVariation(cached.reuse_count, rng);
+      cached.reuse_count++;
 
       // Shift timing to current section start
       section_notes = shiftTiming(cached.notes, section_start);
+
+      // Apply subtle variation for interest while maintaining recognizability
+      applyPhraseVariation(section_notes, variation, rng);
 
       // Adjust pitch range if different
       section_notes = adjustPitchRange(section_notes,

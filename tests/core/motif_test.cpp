@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 #include "core/motif.h"
 #include "core/types.h"
+#include <map>
 #include <random>
+#include <set>
 
 namespace midisketch {
 namespace {
@@ -143,27 +145,73 @@ TEST_F(MotifTest, VariationEmbellished) {
 
 // === Integration with StyleMelodyParams ===
 
-TEST_F(MotifTest, HighDensityHookHasVariation) {
+TEST_F(MotifTest, HookIsFixedRegardlessOfDensity) {
   StyleMelodyParams params{};
   params.hook_repetition = true;
   params.note_density = 1.5f;  // High density
 
-  // Generate multiple hooks and check they're not all identical
+  // Generate multiple hooks - they should all be identical (no random variation)
+  // "Variation is the enemy, Exact is justice"
   std::vector<Motif> hooks;
   for (int i = 0; i < 5; ++i) {
     std::mt19937 rng(i * 100);
     hooks.push_back(designChorusHook(params, rng));
   }
 
-  // At least some variation should exist between hooks
-  bool has_variation = false;
+  // All hooks should be identical for memorability
   for (size_t i = 1; i < hooks.size(); ++i) {
-    if (hooks[i].contour_degrees != hooks[0].contour_degrees) {
-      has_variation = true;
-      break;
-    }
+    EXPECT_EQ(hooks[i].contour_degrees, hooks[0].contour_degrees)
+        << "Hooks should be fixed regardless of seed for catchy repetition";
   }
-  EXPECT_TRUE(has_variation) << "High density hooks should have some variation";
+}
+
+TEST_F(MotifTest, HookContourIsShort) {
+  // Ice Cream-style: 2-3 notes for memorability
+  StyleMelodyParams params{};
+  params.hook_repetition = true;
+  Motif hook = designChorusHook(params, rng_);
+
+  // Original contour is {0, 0, 2} which gets padded to rhythm size
+  // The key insight: contour values repeat (lots of 0s) for simplicity
+  std::set<int8_t> unique_values(hook.contour_degrees.begin(),
+                                  hook.contour_degrees.end());
+  EXPECT_LE(unique_values.size(), 3u)
+      << "Hook should use only 2-3 distinct pitch degrees";
+}
+
+// === Hook Variation Restriction Tests (Phase 1.1) ===
+
+TEST_F(MotifTest, SelectHookVariationReturnsOnlyAllowed) {
+  // "Variation is the enemy, Exact is justice"
+  // selectHookVariation should only return Exact or Fragmented
+  std::map<MotifVariation, int> counts;
+  for (int i = 0; i < 100; ++i) {
+    MotifVariation v = selectHookVariation(rng_);
+    counts[v]++;
+    EXPECT_TRUE(isHookAppropriateVariation(v))
+        << "selectHookVariation returned inappropriate variation";
+  }
+
+  // Should mostly be Exact (80%)
+  EXPECT_GT(counts[MotifVariation::Exact], 50)
+      << "Exact should be the dominant variation for hooks";
+  // Fragmented should be minority
+  EXPECT_LT(counts[MotifVariation::Fragmented], 50)
+      << "Fragmented should be rare for hooks";
+}
+
+TEST_F(MotifTest, IsHookAppropriateVariation) {
+  // Only Exact and Fragmented are appropriate for hooks
+  EXPECT_TRUE(isHookAppropriateVariation(MotifVariation::Exact));
+  EXPECT_TRUE(isHookAppropriateVariation(MotifVariation::Fragmented));
+
+  // All others destroy hook identity
+  EXPECT_FALSE(isHookAppropriateVariation(MotifVariation::Transposed));
+  EXPECT_FALSE(isHookAppropriateVariation(MotifVariation::Inverted));
+  EXPECT_FALSE(isHookAppropriateVariation(MotifVariation::Augmented));
+  EXPECT_FALSE(isHookAppropriateVariation(MotifVariation::Diminished));
+  EXPECT_FALSE(isHookAppropriateVariation(MotifVariation::Sequenced));
+  EXPECT_FALSE(isHookAppropriateVariation(MotifVariation::Embellished));
 }
 
 }  // namespace

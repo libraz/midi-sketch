@@ -300,5 +300,96 @@ TEST(DissonanceTest, ZeroHighSeverityIssues) {
   }
 }
 
+// === Phase 3 Tests: Track Pair Severity Adjustment ===
+
+// Test: Aux track issues should always be Low severity
+TEST(DissonanceTest, AuxTrackIssuesAreLowSeverity) {
+  // Generate a song and check that any Aux track issues are Low severity
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::FullPop;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;
+  params.key = Key::C;
+  params.drums_enabled = true;
+  params.vocal_low = 60;
+  params.vocal_high = 79;
+  params.seed = 54321;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  auto report = analyzeDissonance(song, params);
+
+  for (const auto& issue : report.issues) {
+    // Check if Aux track is involved
+    bool aux_involved = false;
+    if (issue.type == DissonanceType::SimultaneousClash) {
+      for (const auto& note_info : issue.notes) {
+        if (note_info.track_name == "aux") {
+          aux_involved = true;
+          break;
+        }
+      }
+    } else if (issue.type == DissonanceType::NonChordTone) {
+      aux_involved = (issue.track_name == "aux");
+    }
+
+    if (aux_involved) {
+      EXPECT_EQ(issue.severity, DissonanceSeverity::Low)
+          << "Aux track issues should be Low severity, but got "
+          << (issue.severity == DissonanceSeverity::High ? "High" : "Medium")
+          << " at tick " << issue.tick;
+    }
+  }
+}
+
+// Test: Background-background clashes have reduced severity
+TEST(DissonanceTest, BackgroundClashesHaveReducedSeverity) {
+  // Generate a dense song to increase chance of background-background clashes
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::FullPop;
+  params.mood = Mood::EnergeticDance;  // Dense arrangement
+  params.chord_id = 0;
+  params.key = Key::C;
+  params.drums_enabled = true;
+  params.vocal_low = 60;
+  params.vocal_high = 79;
+  params.seed = 99999;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  auto report = analyzeDissonance(song, params);
+
+  // Count High severity background-background clashes
+  // (there should be few or none due to severity reduction)
+  int high_background_clashes = 0;
+  for (const auto& issue : report.issues) {
+    if (issue.type == DissonanceType::SimultaneousClash &&
+        issue.severity == DissonanceSeverity::High) {
+      // Check if both tracks are background tracks
+      bool both_background = true;
+      for (const auto& note_info : issue.notes) {
+        if (note_info.track_name != "motif" &&
+            note_info.track_name != "arpeggio" &&
+            note_info.track_name != "aux" &&
+            note_info.track_name != "chord") {
+          both_background = false;
+          break;
+        }
+      }
+      if (both_background) {
+        high_background_clashes++;
+      }
+    }
+  }
+
+  // Background-background clashes should have reduced severity
+  EXPECT_EQ(high_background_clashes, 0)
+      << "Background-background clashes should not have High severity";
+}
+
 }  // namespace
 }  // namespace midisketch

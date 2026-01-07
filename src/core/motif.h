@@ -54,6 +54,18 @@ Motif applyVariation(const Motif& original, MotifVariation variation,
 // @returns A designed hook motif suitable for chorus
 Motif designChorusHook(const StyleMelodyParams& params, std::mt19937& rng);
 
+// Select a hook-appropriate variation.
+// For hooks, only Exact (main) and Fragmented (exception) are allowed.
+// "Variation is the enemy, Exact is justice"
+// @param rng Random number generator
+// @returns MotifVariation suitable for hooks (80% Exact, 20% Fragmented)
+MotifVariation selectHookVariation(std::mt19937& rng);
+
+// Check if a variation is appropriate for hooks.
+// @param variation The variation to check
+// @returns true if the variation preserves hook identity
+bool isHookAppropriateVariation(MotifVariation variation);
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_MOTIF_H

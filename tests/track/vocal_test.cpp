@@ -1511,5 +1511,81 @@ TEST_F(VocalTest, MotifRepetitionMaintainsHarmony) {
       << "Found " << clash_count << " minor 2nd/major 7th clashes";
 }
 
+// ============================================================================
+// Phase 2 Tests: Cached Phrase Variation
+// ============================================================================
+
+TEST_F(VocalTest, CachedPhraseVariationMaintainsRecognizability) {
+  // Cached phrases with variations should still be recognizable
+  // (similar note count and range to original)
+  params_.structure = StructurePattern::FullPop;  // Multiple sections for cache reuse
+  params_.seed = 77777;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal = gen.getSong().vocal().notes();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  // Find repeated section types and compare their phrases
+  std::map<SectionType, std::vector<std::pair<Tick, Tick>>> section_ranges;
+  for (const auto& sec : sections) {
+    Tick start = sec.start_tick;
+    Tick end = sec.start_tick + sec.bars * TICKS_PER_BAR;
+    section_ranges[sec.type].push_back({start, end});
+  }
+
+  // For each section type with multiple occurrences, compare note counts
+  for (const auto& [type, ranges] : section_ranges) {
+    if (ranges.size() < 2) continue;  // Need at least 2 occurrences
+
+    std::vector<int> note_counts;
+    for (const auto& [start, end] : ranges) {
+      int count = 0;
+      for (const auto& note : vocal) {
+        if (note.startTick >= start && note.startTick < end) {
+          count++;
+        }
+      }
+      note_counts.push_back(count);
+    }
+
+    // All instances should have similar note counts (within 50% of first)
+    if (note_counts[0] > 0) {
+      for (size_t i = 1; i < note_counts.size(); ++i) {
+        float ratio = static_cast<float>(note_counts[i]) / note_counts[0];
+        EXPECT_GT(ratio, 0.5f)
+            << "Cached phrase variation should maintain similar note count. "
+            << "First instance: " << note_counts[0]
+            << ", Instance " << i << ": " << note_counts[i];
+        EXPECT_LT(ratio, 1.5f)
+            << "Cached phrase variation should not add too many notes. "
+            << "First instance: " << note_counts[0]
+            << ", Instance " << i << ": " << note_counts[i];
+      }
+    }
+  }
+}
+
+TEST_F(VocalTest, CachedPhraseVariationProducesValidOutput) {
+  // Verify that phrase variation does not produce invalid notes
+  params_.structure = StructurePattern::FullPop;
+  params_.seed = 88888;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal = gen.getSong().vocal().notes();
+
+  // All notes should be valid
+  for (const auto& note : vocal) {
+    EXPECT_GE(note.note, 0) << "Note pitch should be >= 0";
+    EXPECT_LE(note.note, 127) << "Note pitch should be <= 127";
+    EXPECT_GT(note.duration, 0u) << "Note duration should be > 0";
+    EXPECT_GT(note.velocity, 0) << "Note velocity should be > 0";
+    EXPECT_LE(note.velocity, 127) << "Note velocity should be <= 127";
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

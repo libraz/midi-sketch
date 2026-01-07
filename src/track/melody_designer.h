@@ -3,8 +3,10 @@
 
 #include "core/chord_utils.h"
 #include "core/melody_templates.h"
+#include "core/motif.h"
 #include "core/pitch_utils.h"
 #include "core/types.h"
+#include <optional>
 #include <random>
 #include <vector>
 
@@ -178,6 +180,10 @@ class MelodyDesigner {
       uint8_t phrase_beats,
       float density_modifier,
       std::mt19937& rng);
+
+  // Cached chorus hook for Song-level fixation.
+  // Once generated, the same hook is reused throughout the song.
+  std::optional<Motif> cached_chorus_hook_;
 };
 
 }  // namespace midisketch

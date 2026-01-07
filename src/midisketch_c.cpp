@@ -34,7 +34,37 @@ const char* midisketch_config_error_string(MidiSketchConfigError error) {
     case MIDISKETCH_CONFIG_DURATION_TOO_SHORT:
       return "Target duration too short (minimum 10 seconds)";
     case MIDISKETCH_CONFIG_INVALID_MODULATION:
-      return "Invalid modulation settings";
+      return "Invalid modulation semitones (must be 1-4)";
+    case MIDISKETCH_CONFIG_INVALID_KEY:
+      return "Invalid key (must be 0-11)";
+    case MIDISKETCH_CONFIG_INVALID_COMPOSITION_STYLE:
+      return "Invalid composition style (must be 0-2)";
+    case MIDISKETCH_CONFIG_INVALID_ARPEGGIO_PATTERN:
+      return "Invalid arpeggio pattern (must be 0-3)";
+    case MIDISKETCH_CONFIG_INVALID_ARPEGGIO_SPEED:
+      return "Invalid arpeggio speed (must be 0-2)";
+    case MIDISKETCH_CONFIG_INVALID_VOCAL_STYLE:
+      return "Invalid vocal style (must be 0-12)";
+    case MIDISKETCH_CONFIG_INVALID_MELODY_TEMPLATE:
+      return "Invalid melody template (must be 0-7)";
+    case MIDISKETCH_CONFIG_INVALID_MELODIC_COMPLEXITY:
+      return "Invalid melodic complexity (must be 0-2)";
+    case MIDISKETCH_CONFIG_INVALID_HOOK_INTENSITY:
+      return "Invalid hook intensity (must be 0-3)";
+    case MIDISKETCH_CONFIG_INVALID_VOCAL_GROOVE:
+      return "Invalid vocal groove (must be 0-5)";
+    case MIDISKETCH_CONFIG_INVALID_CALL_DENSITY:
+      return "Invalid call density (must be 0-3)";
+    case MIDISKETCH_CONFIG_INVALID_INTRO_CHANT:
+      return "Invalid intro chant (must be 0-2)";
+    case MIDISKETCH_CONFIG_INVALID_MIX_PATTERN:
+      return "Invalid mix pattern (must be 0-2)";
+    case MIDISKETCH_CONFIG_INVALID_MOTIF_REPEAT_SCOPE:
+      return "Invalid motif repeat scope (must be 0-1)";
+    case MIDISKETCH_CONFIG_INVALID_ARRANGEMENT_GROWTH:
+      return "Invalid arrangement growth (must be 0-1)";
+    case MIDISKETCH_CONFIG_INVALID_MODULATION_TIMING:
+      return "Invalid modulation timing (must be 0-4)";
     default:
       return "Unknown config error";
   }
@@ -391,6 +421,19 @@ MidiSketchConfigError midisketch_validate_config(const MidiSketchSongConfig* con
   cpp_config.intro_chant = static_cast<midisketch::IntroChant>(config->intro_chant);
   cpp_config.mix_pattern = static_cast<midisketch::MixPattern>(config->mix_pattern);
 
+  // Additional enum fields for validation
+  cpp_config.composition_style = static_cast<midisketch::CompositionStyle>(config->composition_style);
+  cpp_config.arpeggio.pattern = static_cast<midisketch::ArpeggioPattern>(config->arpeggio_pattern);
+  cpp_config.arpeggio.speed = static_cast<midisketch::ArpeggioSpeed>(config->arpeggio_speed);
+  cpp_config.vocal_style = static_cast<midisketch::VocalStylePreset>(config->vocal_style);
+  cpp_config.melody_template = static_cast<midisketch::MelodyTemplateId>(config->melody_template);
+  cpp_config.melodic_complexity = static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);
+  cpp_config.hook_intensity = static_cast<midisketch::HookIntensity>(config->hook_intensity);
+  cpp_config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(config->vocal_groove);
+  cpp_config.call_density = static_cast<midisketch::CallDensity>(config->call_density);
+  cpp_config.motif_repeat_scope = static_cast<midisketch::MotifRepeatScope>(config->motif_repeat_scope);
+  cpp_config.arrangement_growth = static_cast<midisketch::ArrangementGrowth>(config->arrangement_growth);
+
   midisketch::SongConfigError error = midisketch::validateSongConfig(cpp_config);
 
   switch (error) {
@@ -412,6 +455,36 @@ MidiSketchConfigError midisketch_validate_config(const MidiSketchSongConfig* con
       return MIDISKETCH_CONFIG_DURATION_TOO_SHORT;
     case midisketch::SongConfigError::InvalidModulationAmount:
       return MIDISKETCH_CONFIG_INVALID_MODULATION;
+    case midisketch::SongConfigError::InvalidKey:
+      return MIDISKETCH_CONFIG_INVALID_KEY;
+    case midisketch::SongConfigError::InvalidCompositionStyle:
+      return MIDISKETCH_CONFIG_INVALID_COMPOSITION_STYLE;
+    case midisketch::SongConfigError::InvalidArpeggioPattern:
+      return MIDISKETCH_CONFIG_INVALID_ARPEGGIO_PATTERN;
+    case midisketch::SongConfigError::InvalidArpeggioSpeed:
+      return MIDISKETCH_CONFIG_INVALID_ARPEGGIO_SPEED;
+    case midisketch::SongConfigError::InvalidVocalStyle:
+      return MIDISKETCH_CONFIG_INVALID_VOCAL_STYLE;
+    case midisketch::SongConfigError::InvalidMelodyTemplate:
+      return MIDISKETCH_CONFIG_INVALID_MELODY_TEMPLATE;
+    case midisketch::SongConfigError::InvalidMelodicComplexity:
+      return MIDISKETCH_CONFIG_INVALID_MELODIC_COMPLEXITY;
+    case midisketch::SongConfigError::InvalidHookIntensity:
+      return MIDISKETCH_CONFIG_INVALID_HOOK_INTENSITY;
+    case midisketch::SongConfigError::InvalidVocalGroove:
+      return MIDISKETCH_CONFIG_INVALID_VOCAL_GROOVE;
+    case midisketch::SongConfigError::InvalidCallDensity:
+      return MIDISKETCH_CONFIG_INVALID_CALL_DENSITY;
+    case midisketch::SongConfigError::InvalidIntroChant:
+      return MIDISKETCH_CONFIG_INVALID_INTRO_CHANT;
+    case midisketch::SongConfigError::InvalidMixPattern:
+      return MIDISKETCH_CONFIG_INVALID_MIX_PATTERN;
+    case midisketch::SongConfigError::InvalidMotifRepeatScope:
+      return MIDISKETCH_CONFIG_INVALID_MOTIF_REPEAT_SCOPE;
+    case midisketch::SongConfigError::InvalidArrangementGrowth:
+      return MIDISKETCH_CONFIG_INVALID_ARRANGEMENT_GROWTH;
+    case midisketch::SongConfigError::InvalidModulationTiming:
+      return MIDISKETCH_CONFIG_INVALID_MODULATION_TIMING;
     default:
       return MIDISKETCH_CONFIG_INVALID_STYLE;
   }

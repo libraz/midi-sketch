@@ -83,7 +83,7 @@ Motif applyVariation(const Motif& original, MotifVariation variation,
   return result;
 }
 
-Motif designChorusHook(const StyleMelodyParams& params, std::mt19937& rng) {
+Motif designChorusHook(const StyleMelodyParams& params, [[maybe_unused]] std::mt19937& rng) {
   Motif hook;
   hook.length_beats = 8;  // 2-bar hook
   hook.ends_on_chord_tone = true;
@@ -100,8 +100,8 @@ Motif designChorusHook(const StyleMelodyParams& params, std::mt19937& rng) {
     };
     hook.climax_index = 3;  // Fourth note is the climax
 
-    // Ascending-then-descending contour for memorable hook
-    hook.contour_degrees = {0, 2, 4, 4, 7, 4, 0};
+    // Ice Cream-style: short, repetitive contour (2-3 notes)
+    hook.contour_degrees = {0, 0, 2};
   } else {
     // Standard style: gradual arch contour
     hook.rhythm = {
@@ -115,8 +115,8 @@ Motif designChorusHook(const StyleMelodyParams& params, std::mt19937& rng) {
     };
     hook.climax_index = 4;  // Fifth note is the climax
 
-    // Smooth arch contour
-    hook.contour_degrees = {0, 2, 4, 5, 7, 5, 4, 2, 0};
+    // Ice Cream-style: short, repetitive contour (2-3 notes)
+    hook.contour_degrees = {0, 2, 0};
   }
 
   // Adjust contour size to match rhythm size
@@ -127,18 +127,25 @@ Motif designChorusHook(const StyleMelodyParams& params, std::mt19937& rng) {
     hook.contour_degrees.resize(hook.rhythm.size());
   }
 
-  // Add some randomization based on density
-  if (params.note_density >= 1.0f) {
-    // High density: add some variation
-    std::uniform_int_distribution<int> var_dist(-1, 1);
-    for (size_t i = 1; i < hook.contour_degrees.size() - 1; ++i) {
-      if (!hook.rhythm[i].strong) {
-        hook.contour_degrees[i] += static_cast<int8_t>(var_dist(rng));
-      }
-    }
-  }
-
   return hook;
+}
+
+MotifVariation selectHookVariation(std::mt19937& rng) {
+  // "Variation is the enemy, Exact is justice"
+  // 80% Exact (main), 20% Fragmented (allowed exception)
+  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+  if (dist(rng) < 0.8f) {
+    return MotifVariation::Exact;
+  }
+  return MotifVariation::Fragmented;
+}
+
+bool isHookAppropriateVariation(MotifVariation variation) {
+  // Only Exact and Fragmented preserve hook identity
+  // All others (Inverted, Sequenced, Embellished, Transposed, etc.)
+  // make the melody sound different and reduce memorability
+  return variation == MotifVariation::Exact ||
+         variation == MotifVariation::Fragmented;
 }
 
 }  // namespace midisketch

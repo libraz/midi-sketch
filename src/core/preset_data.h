@@ -96,7 +96,22 @@ enum class SongConfigError : uint8_t {
   InvalidVocalRange,
   InvalidBpm,
   DurationTooShortForCall,   // Duration too short for call settings
-  InvalidModulationAmount    // Modulation semitones out of range
+  InvalidModulationAmount,   // Modulation semitones out of range
+  InvalidKey,                // Key out of range (0-11)
+  InvalidCompositionStyle,   // CompositionStyle out of range (0-2)
+  InvalidArpeggioPattern,    // ArpeggioPattern out of range (0-3)
+  InvalidArpeggioSpeed,      // ArpeggioSpeed out of range (0-2)
+  InvalidVocalStyle,         // VocalStylePreset out of range (0-12)
+  InvalidMelodyTemplate,     // MelodyTemplateId out of range (0-7)
+  InvalidMelodicComplexity,  // MelodicComplexity out of range (0-2)
+  InvalidHookIntensity,      // HookIntensity out of range (0-3)
+  InvalidVocalGroove,        // VocalGrooveFeel out of range (0-5)
+  InvalidCallDensity,        // CallDensity out of range (0-3)
+  InvalidIntroChant,         // IntroChant out of range (0-2)
+  InvalidMixPattern,         // MixPattern out of range (0-2)
+  InvalidMotifRepeatScope,   // MotifRepeatScope out of range (0-1)
+  InvalidArrangementGrowth,  // ArrangementGrowth out of range (0-1)
+  InvalidModulationTiming    // ModulationTiming out of range (0-4)
 };
 
 // Validates a SongConfig.

@@ -729,11 +729,86 @@ SongConfigError validateSongConfig(const SongConfig& config) {
     return SongConfigError::InvalidBpm;
   }
 
+  // Validate modulation timing (0-4)
+  if (static_cast<uint8_t>(config.modulation_timing) > 4) {
+    return SongConfigError::InvalidModulationTiming;
+  }
+
   // Validate modulation amount
   if (config.modulation_timing != ModulationTiming::None) {
     if (config.modulation_semitones < 1 || config.modulation_semitones > 4) {
       return SongConfigError::InvalidModulationAmount;
     }
+  }
+
+  // Validate key (0-11)
+  if (static_cast<uint8_t>(config.key) > 11) {
+    return SongConfigError::InvalidKey;
+  }
+
+  // Validate composition style (0-2)
+  if (static_cast<uint8_t>(config.composition_style) > 2) {
+    return SongConfigError::InvalidCompositionStyle;
+  }
+
+  // Validate arpeggio pattern (0-3)
+  if (static_cast<uint8_t>(config.arpeggio.pattern) > 3) {
+    return SongConfigError::InvalidArpeggioPattern;
+  }
+
+  // Validate arpeggio speed (0-2)
+  if (static_cast<uint8_t>(config.arpeggio.speed) > 2) {
+    return SongConfigError::InvalidArpeggioSpeed;
+  }
+
+  // Validate vocal style (0-12)
+  if (static_cast<uint8_t>(config.vocal_style) > 12) {
+    return SongConfigError::InvalidVocalStyle;
+  }
+
+  // Validate melody template (0-7)
+  if (static_cast<uint8_t>(config.melody_template) > 7) {
+    return SongConfigError::InvalidMelodyTemplate;
+  }
+
+  // Validate melodic complexity (0-2)
+  if (static_cast<uint8_t>(config.melodic_complexity) > 2) {
+    return SongConfigError::InvalidMelodicComplexity;
+  }
+
+  // Validate hook intensity (0-3)
+  if (static_cast<uint8_t>(config.hook_intensity) > 3) {
+    return SongConfigError::InvalidHookIntensity;
+  }
+
+  // Validate vocal groove (0-5)
+  if (static_cast<uint8_t>(config.vocal_groove) > 5) {
+    return SongConfigError::InvalidVocalGroove;
+  }
+
+  // Validate call density (0-3)
+  if (static_cast<uint8_t>(config.call_density) > 3) {
+    return SongConfigError::InvalidCallDensity;
+  }
+
+  // Validate intro chant (0-2)
+  if (static_cast<uint8_t>(config.intro_chant) > 2) {
+    return SongConfigError::InvalidIntroChant;
+  }
+
+  // Validate mix pattern (0-2)
+  if (static_cast<uint8_t>(config.mix_pattern) > 2) {
+    return SongConfigError::InvalidMixPattern;
+  }
+
+  // Validate motif repeat scope (0-1)
+  if (static_cast<uint8_t>(config.motif_repeat_scope) > 1) {
+    return SongConfigError::InvalidMotifRepeatScope;
+  }
+
+  // Validate arrangement growth (0-1)
+  if (static_cast<uint8_t>(config.arrangement_growth) > 1) {
+    return SongConfigError::InvalidArrangementGrowth;
   }
 
   // Validate call/duration compatibility

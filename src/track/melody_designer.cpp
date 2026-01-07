@@ -8,12 +8,34 @@ namespace midisketch {
 namespace {
 
 // Duration in ticks for different note values
-constexpr Tick TICK_SIXTEENTH = TICKS_PER_BEAT / 4;  // 120
 constexpr Tick TICK_EIGHTH = TICKS_PER_BEAT / 2;     // 240
 constexpr Tick TICK_QUARTER = TICKS_PER_BEAT;        // 480
 
 // Default velocity for melody notes
 constexpr uint8_t DEFAULT_VELOCITY = 100;
+
+// Responsibility pitch classes for Chorus/B sections (C major scale)
+// These create a consistent "anchor" feeling at phrase starts
+constexpr int8_t RESPONSIBILITY_PCS[] = {0, 7, 9};  // I(C), V(G), vi(A)
+
+// Get responsibility pitch for Chorus/B section phrase starts.
+// This creates a consistent starting point that makes hooks memorable.
+// @param chord_degree Current chord degree
+// @param tessitura_center Center of comfortable singing range
+// @param vocal_low Minimum pitch
+// @param vocal_high Maximum pitch
+// @returns A pitch that serves as a stable "anchor" for the phrase
+int getResponsibilityPitch(int8_t chord_degree, int tessitura_center,
+                           uint8_t vocal_low, uint8_t vocal_high) {
+  // Select target pitch class based on chord (cycles through I, V, vi)
+  int target_pc = RESPONSIBILITY_PCS[std::abs(chord_degree) % 3];
+  // Find the target pitch class in the octave containing tessitura center
+  int base = (tessitura_center / 12) * 12 + target_pc;
+  // Adjust to fit within vocal range
+  if (base < static_cast<int>(vocal_low)) base += 12;
+  if (base > static_cast<int>(vocal_high)) base -= 12;
+  return std::clamp(base, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
+}
 
 // Calculate number of phrases in a section
 uint8_t calculatePhraseCount(uint8_t section_bars, uint8_t phrase_length_bars) {
@@ -92,7 +114,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     const SectionContext& ctx,
     int prev_pitch,
     int direction_inertia,
-    const HarmonyContext& harmony,
+    [[maybe_unused]] const HarmonyContext& harmony,
     std::mt19937& rng) {
 
   PhraseResult result;
@@ -105,13 +127,19 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   // Calculate initial pitch if none provided
   int current_pitch;
   if (prev_pitch < 0) {
-    // Start near tessitura center
-    current_pitch = ctx.tessitura.center;
-    // Adjust to chord tone
-    current_pitch = nearestChordTonePitch(current_pitch, ctx.chord_degree);
-    current_pitch = std::clamp(current_pitch,
-                               static_cast<int>(ctx.vocal_low),
-                               static_cast<int>(ctx.vocal_high));
+    // For Chorus/B sections, use responsibility pitch for memorable anchoring
+    if (ctx.section_type == SectionType::Chorus || ctx.section_type == SectionType::B) {
+      current_pitch = getResponsibilityPitch(ctx.chord_degree, ctx.tessitura.center,
+                                             ctx.vocal_low, ctx.vocal_high);
+    } else {
+      // Start near tessitura center for other sections
+      current_pitch = ctx.tessitura.center;
+      // Adjust to chord tone
+      current_pitch = nearestChordTonePitch(current_pitch, ctx.chord_degree);
+      current_pitch = std::clamp(current_pitch,
+                                 static_cast<int>(ctx.vocal_low),
+                                 static_cast<int>(ctx.vocal_high));
+    }
   } else {
     current_pitch = prev_pitch;
   }
@@ -204,54 +232,62 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(
     Tick hook_start,
     const SectionContext& ctx,
     int prev_pitch,
-    const HarmonyContext& harmony,
+    [[maybe_unused]] const HarmonyContext& harmony,
     std::mt19937& rng) {
 
   PhraseResult result;
   result.notes.clear();
 
-  // Initialize pitch
-  int current_pitch;
+  // Initialize base pitch
+  int base_pitch;
   if (prev_pitch < 0) {
-    current_pitch = ctx.tessitura.center;
-    current_pitch = nearestChordTonePitch(current_pitch, ctx.chord_degree);
+    base_pitch = ctx.tessitura.center;
+    base_pitch = nearestChordTonePitch(base_pitch, ctx.chord_degree);
   } else {
-    current_pitch = prev_pitch;
+    base_pitch = prev_pitch;
   }
 
-  // Generate hook pattern based on template settings
-  uint8_t note_count = std::clamp(tmpl.hook_note_count,
-                                  static_cast<uint8_t>(2),
-                                  static_cast<uint8_t>(4));
+  // Song-level hook fixation: generate and cache hook motif once
+  // "Variation is the enemy, Exact is justice" - use the same hook throughout the song
+  if (!cached_chorus_hook_.has_value()) {
+    StyleMelodyParams hook_params{};
+    hook_params.hook_repetition = true;  // Use catchy repetitive style
+    cached_chorus_hook_ = designChorusHook(hook_params, rng);
+  }
+
+  const Motif& hook = *cached_chorus_hook_;
+
+  // Use template settings for timing control
   uint8_t repeat_count = std::clamp(tmpl.hook_repeat_count,
                                     static_cast<uint8_t>(2),
                                     static_cast<uint8_t>(4));
 
-  // Create hook motif pitches
+  // Build hook pitches from cached contour (Ice Cream-style: short, fixed pattern)
+  // Use only the first 3 contour notes (before padding) for memorable hooks
+  // Snap to chord tones for harmonic stability on strong beats
   std::vector<int> hook_pitches;
-  hook_pitches.push_back(current_pitch);
-
-  std::uniform_int_distribution<int> step_dist(-2, 2);
-  for (uint8_t i = 1; i < note_count; ++i) {
-    int step = step_dist(rng);
-    if (step == 0) step = 1;  // Avoid staying same in hook
-    int new_pitch = current_pitch + step;
-    new_pitch = snapToNearestScaleTone(new_pitch, ctx.key_offset);
-    new_pitch = std::clamp(new_pitch,
-                           static_cast<int>(ctx.vocal_low),
-                           static_cast<int>(ctx.vocal_high));
-    hook_pitches.push_back(new_pitch);
+  size_t contour_limit = std::min(hook.contour_degrees.size(), static_cast<size_t>(3));
+  for (size_t i = 0; i < contour_limit; ++i) {
+    int pitch = base_pitch + hook.contour_degrees[i];
+    // Snap to nearest chord tone for harmonic stability
+    pitch = nearestChordTonePitch(pitch, ctx.chord_degree);
+    pitch = std::clamp(pitch,
+                       static_cast<int>(ctx.vocal_low),
+                       static_cast<int>(ctx.vocal_high));
+    hook_pitches.push_back(pitch);
   }
 
   // Calculate timing for hook notes
-  Tick note_duration = TICK_EIGHTH;  // Quick notes for hooks
+  // Use quarter notes for hooks to maintain singability and avoid overlaps
+  Tick note_duration = TICK_QUARTER;  // Quarter notes for catchy hooks
   if (tmpl.rhythm_driven && tmpl.sixteenth_density > 0.3f) {
-    note_duration = TICK_SIXTEENTH;
+    note_duration = TICK_EIGHTH;  // Eighth notes for rhythm-driven styles
   }
 
   Tick current_tick = hook_start;
 
-  // Repeat the hook pattern
+  // Repeat the hook pattern (same pattern, multiple times for memorability)
+  // Use 0.85 gate to leave room for humanize timing adjustments
   for (uint8_t rep = 0; rep < repeat_count; ++rep) {
     for (size_t i = 0; i < hook_pitches.size(); ++i) {
       uint8_t velocity = DEFAULT_VELOCITY;
@@ -259,7 +295,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(
 
       result.notes.push_back({
           current_tick,
-          static_cast<Tick>(note_duration * 0.9f),  // Gate
+          static_cast<Tick>(note_duration * 0.85f),  // Gate with room for humanize
           static_cast<uint8_t>(hook_pitches[i]),
           velocity
       });
@@ -267,11 +303,13 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(
       current_tick += note_duration;
     }
 
-    // Small gap between repetitions
-    current_tick += TICK_SIXTEENTH;
+    // Quarter note gap between repetitions for breathing
+    current_tick += TICK_QUARTER;
   }
 
-  result.last_pitch = hook_pitches.back();
+  // Return a pitch close to base for smooth transition to next phrase
+  // This prevents large intervals between hook and following melody
+  result.last_pitch = base_pitch;
   result.direction_inertia = 0;  // Reset inertia after hook
 
   return result;
@@ -306,7 +344,7 @@ PitchChoice MelodyDesigner::selectPitchChoice(
 PitchChoice MelodyDesigner::applyDirectionInertia(
     PitchChoice choice,
     int inertia,
-    const MelodyTemplate& tmpl,
+    [[maybe_unused]] const MelodyTemplate& tmpl,
     std::mt19937& rng) {
 
   // Same pitch or target step - don't modify
@@ -381,7 +419,7 @@ int MelodyDesigner::getStabilizeStep(int leap_direction, int max_step) {
 }
 
 bool MelodyDesigner::isInSameVowelSection(
-    float pos1, float pos2, uint8_t phrase_length) {
+    float pos1, float pos2, [[maybe_unused]] uint8_t phrase_length) {
 
   // Simple vowel section model: divide phrase into 2-beat sections
   constexpr float VOWEL_SECTION_BEATS = 2.0f;
@@ -400,7 +438,7 @@ int MelodyDesigner::applyPitchChoice(
     PitchChoice choice,
     int current_pitch,
     int target_pitch,
-    int8_t chord_degree,
+    [[maybe_unused]] int8_t chord_degree,
     int key_offset,
     uint8_t vocal_low,
     uint8_t vocal_high) {
@@ -447,9 +485,9 @@ int MelodyDesigner::applyPitchChoice(
 int MelodyDesigner::calculateTargetPitch(
     const MelodyTemplate& tmpl,
     const SectionContext& ctx,
-    int current_pitch,
+    [[maybe_unused]] int current_pitch,
     const HarmonyContext& harmony,
-    std::mt19937& rng) {
+    [[maybe_unused]] std::mt19937& rng) {
 
   // Target is typically a chord tone in the upper part of tessitura
   std::vector<int> chord_tones = harmony.getChordTonesAt(ctx.section_start);

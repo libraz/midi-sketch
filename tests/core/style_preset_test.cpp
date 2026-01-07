@@ -1069,6 +1069,138 @@ TEST(TargetDurationTest, SeedReproducibilityWithDuration) {
   EXPECT_EQ(sketch1.getMidi(), sketch2.getMidi());
 }
 
+// ============================================================================
+// Enum Range Validation Tests (WASM crash prevention)
+// ============================================================================
+
+TEST(SongConfigValidationTest, InvalidKeyRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.key = static_cast<Key>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidKey);
+}
+
+TEST(SongConfigValidationTest, InvalidCompositionStyleRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.composition_style = static_cast<CompositionStyle>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidCompositionStyle);
+}
+
+TEST(SongConfigValidationTest, InvalidArpeggioPatternRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.arpeggio.pattern = static_cast<ArpeggioPattern>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidArpeggioPattern);
+}
+
+TEST(SongConfigValidationTest, InvalidArpeggioSpeedRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.arpeggio.speed = static_cast<ArpeggioSpeed>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidArpeggioSpeed);
+}
+
+TEST(SongConfigValidationTest, InvalidVocalStyleRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.vocal_style = static_cast<VocalStylePreset>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidVocalStyle);
+}
+
+TEST(SongConfigValidationTest, InvalidMelodyTemplateRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.melody_template = static_cast<MelodyTemplateId>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidMelodyTemplate);
+}
+
+TEST(SongConfigValidationTest, InvalidMelodicComplexityRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.melodic_complexity = static_cast<MelodicComplexity>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidMelodicComplexity);
+}
+
+TEST(SongConfigValidationTest, InvalidHookIntensityRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.hook_intensity = static_cast<HookIntensity>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidHookIntensity);
+}
+
+TEST(SongConfigValidationTest, InvalidVocalGrooveRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.vocal_groove = static_cast<VocalGrooveFeel>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidVocalGroove);
+}
+
+TEST(SongConfigValidationTest, InvalidCallDensityRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.call_density = static_cast<CallDensity>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidCallDensity);
+}
+
+TEST(SongConfigValidationTest, InvalidIntroChantRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.intro_chant = static_cast<IntroChant>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidIntroChant);
+}
+
+TEST(SongConfigValidationTest, InvalidMixPatternRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.mix_pattern = static_cast<MixPattern>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidMixPattern);
+}
+
+TEST(SongConfigValidationTest, InvalidMotifRepeatScopeRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.motif_repeat_scope = static_cast<MotifRepeatScope>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidMotifRepeatScope);
+}
+
+TEST(SongConfigValidationTest, InvalidArrangementGrowthRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.arrangement_growth = static_cast<ArrangementGrowth>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidArrangementGrowth);
+}
+
+TEST(SongConfigValidationTest, InvalidModulationTimingRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.modulation_timing = static_cast<ModulationTiming>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidModulationTiming);
+}
+
+TEST(SongConfigValidationTest, AllValidEnumValuesAccepted) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.key = Key::B;                                      // Max valid
+  config.composition_style = CompositionStyle::SynthDriven; // Max valid (2)
+  config.arpeggio.pattern = ArpeggioPattern::Random;        // Max valid (3)
+  config.arpeggio.speed = ArpeggioSpeed::Triplet;           // Max valid (2)
+  config.vocal_style = VocalStylePreset::PowerfulShout;     // Max valid (12)
+  config.melody_template = MelodyTemplateId::JumpAccent;    // Max valid (7)
+  config.melodic_complexity = MelodicComplexity::Complex;   // Max valid (2)
+  config.hook_intensity = HookIntensity::Strong;            // Max valid (3)
+  config.vocal_groove = VocalGrooveFeel::Bouncy8th;         // Max valid (5)
+  config.call_density = CallDensity::Intense;               // Max valid (3)
+  config.intro_chant = IntroChant::Shouting;                // Max valid (2)
+  config.mix_pattern = MixPattern::Tiger;                   // Max valid (2)
+  config.motif_repeat_scope = MotifRepeatScope::Section;    // Max valid (1)
+  config.arrangement_growth = ArrangementGrowth::RegisterAdd; // Max valid (1)
+  config.modulation_timing = ModulationTiming::Random;      // Max valid (4)
+  config.modulation_semitones = 2;  // Needed when timing != None
+
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::OK);
+}
+
 
 }  // namespace
 }  // namespace midisketch

@@ -307,6 +307,52 @@ std::pair<bool, DissonanceSeverity> checkIntervalDissonance(uint8_t actual_semit
   return {false, DissonanceSeverity::Low};  // Not dissonant
 }
 
+// Check if a track is a background/accompaniment track.
+bool isBackgroundTrack(TrackRole role) {
+  return role == TrackRole::Motif || role == TrackRole::Arpeggio ||
+         role == TrackRole::Aux || role == TrackRole::Chord;
+}
+
+// Adjust severity based on track pair.
+// Vocal-Bass clashes are most important (no reduction).
+// Background-background clashes are less important (severity reduced).
+// @param track1 First track role
+// @param track2 Second track role
+// @param base_severity The base severity from interval analysis
+// @returns Adjusted severity
+DissonanceSeverity adjustSeverityByTrackPair(TrackRole track1, TrackRole track2,
+                                              DissonanceSeverity base_severity) {
+  // Aux track involvement: always reduce to Low (sub-melody is less critical)
+  if (track1 == TrackRole::Aux || track2 == TrackRole::Aux) {
+    return DissonanceSeverity::Low;
+  }
+
+  // Vocal-Bass: strict (no reduction) - these are the main voices
+  bool is_vocal_bass = (track1 == TrackRole::Vocal && track2 == TrackRole::Bass) ||
+                       (track1 == TrackRole::Bass && track2 == TrackRole::Vocal);
+  if (is_vocal_bass) {
+    return base_severity;  // No reduction
+  }
+
+  // Background-background: lenient (High→Medium, Medium→Low)
+  if (isBackgroundTrack(track1) && isBackgroundTrack(track2)) {
+    switch (base_severity) {
+      case DissonanceSeverity::High:
+        return DissonanceSeverity::Medium;
+      case DissonanceSeverity::Medium:
+      case DissonanceSeverity::Low:
+        return DissonanceSeverity::Low;
+    }
+  }
+
+  // Other pairs (Vocal-Chord, Vocal-Motif, Bass-Chord, etc.): moderate reduction
+  // High→Medium only (Medium and Low stay the same)
+  if (base_severity == DissonanceSeverity::High) {
+    return DissonanceSeverity::Medium;
+  }
+  return base_severity;
+}
+
 // Convert track role to string name.
 std::string trackRoleToString(TrackRole role) {
   switch (role) {
@@ -488,9 +534,13 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
       auto chord_info = getChordAtTick(note_a.start, song, progression, params.mood);
       int8_t degree = chord_info.degree;
 
-      auto [is_dissonant, severity] = checkIntervalDissonance(actual_interval, degree);
+      auto [is_dissonant, base_severity] = checkIntervalDissonance(actual_interval, degree);
 
       if (is_dissonant) {
+        // Adjust severity based on track pair importance
+        DissonanceSeverity severity = adjustSeverityByTrackPair(
+            note_a.track, note_b.track, base_severity);
+
         // Mark as reported to avoid duplicates
         reported_clashes.insert(clash_key);
 
@@ -550,17 +600,22 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
       BeatStrength beat_strength = getBeatStrength(note.startTick);
       DissonanceSeverity severity;
 
-      switch (beat_strength) {
-        case BeatStrength::Strong:
-          severity = DissonanceSeverity::Medium;  // Beat 1 non-chord tone
-          break;
-        case BeatStrength::Medium:
-          severity = DissonanceSeverity::Low;  // Beat 3 - less critical
-          break;
-        case BeatStrength::Weak:
-        case BeatStrength::Offbeat:
-          severity = DissonanceSeverity::Low;  // Weak beats/offbeats are fine
-          break;
+      // Aux track (sub-melody): always Low severity
+      if (role == TrackRole::Aux) {
+        severity = DissonanceSeverity::Low;
+      } else {
+        switch (beat_strength) {
+          case BeatStrength::Strong:
+            severity = DissonanceSeverity::Medium;  // Beat 1 non-chord tone
+            break;
+          case BeatStrength::Medium:
+            severity = DissonanceSeverity::Low;  // Beat 3 - less critical
+            break;
+          case BeatStrength::Weak:
+          case BeatStrength::Offbeat:
+            severity = DissonanceSeverity::Low;  // Weak beats/offbeats are fine
+            break;
+        }
       }
 
       DissonanceIssue issue;
