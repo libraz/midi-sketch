@@ -9,9 +9,6 @@ namespace midisketch {
 
 namespace {
 
-// Scale degree to pitch class offset (C major reference).
-constexpr int DEGREE_TO_PITCH_CLASS[7] = {0, 2, 4, 5, 7, 9, 11};  // C,D,E,F,G,A,B
-
 // Harmonic rhythm: determines if chord changes are slow (every 2 bars).
 bool useSlowHarmonicRhythm(SectionType section, Mood mood) {
   (void)mood;  // Reserved for future use (ballad sections)
@@ -196,31 +193,13 @@ void HarmonyContext::clearNotesForTrack(TrackRole track) {
 }
 
 bool HarmonyContext::isDissonantInterval(int pc1, int pc2) {
-  int interval = std::abs(pc1 - pc2);
-  if (interval > 6) interval = 12 - interval;
-
-  // Minor 2nd (1) = major 7th inverted - always dissonant
-  // Tritone (6) = highly dissonant, avoid in vocal against chord
-  return interval == 1 || interval == 6;
+  // Delegate to pitch_utils free function
+  return midisketch::isDissonantInterval(pc1, pc2);
 }
 
 std::vector<int> HarmonyContext::getChordTonePitchClasses(int8_t degree) {
-  std::vector<int> result;
-
-  // Normalize degree to 0-6 range
-  int normalized = ((degree % 7) + 7) % 7;
-  int root_pc = DEGREE_TO_PITCH_CLASS[normalized];
-
-  // Get chord from chord.cpp for accurate intervals
-  Chord chord = getChordNotes(degree);
-
-  for (uint8_t i = 0; i < chord.note_count && i < 5; ++i) {
-    if (chord.intervals[i] >= 0) {
-      result.push_back((root_pc + chord.intervals[i]) % 12);
-    }
-  }
-
-  return result;
+  // Delegate to chord_utils free function
+  return midisketch::getChordTonePitchClasses(degree);
 }
 
 bool HarmonyContext::hasBassCollision(uint8_t pitch, Tick start, Tick duration,

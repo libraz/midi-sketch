@@ -1,6 +1,8 @@
 #ifndef MIDISKETCH_CORE_HARMONY_CONTEXT_H
 #define MIDISKETCH_CORE_HARMONY_CONTEXT_H
 
+#include "core/chord_utils.h"
+#include "core/pitch_utils.h"
 #include "core/types.h"
 #include <vector>
 
