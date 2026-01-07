@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "core/preset_data.h"
+#include "core/track_layer.h"
 #include "core/types.h"
 
 namespace midisketch {
@@ -111,6 +112,124 @@ TEST(TypesTest, DrumStyleMapping) {
   EXPECT_EQ(getMoodDrumStyle(Mood::MidPop), DrumStyle::Standard);
   EXPECT_EQ(getMoodDrumStyle(Mood::EmotionalPop), DrumStyle::Standard);
   EXPECT_EQ(getMoodDrumStyle(Mood::DarkPop), DrumStyle::Standard);
+}
+
+// ============================================================================
+// Phase 0: Layer Architecture Types Tests
+// ============================================================================
+
+TEST(TypesTest, CadenceTypeEnumValues) {
+  EXPECT_EQ(static_cast<uint8_t>(CadenceType::None), 0);
+  EXPECT_EQ(static_cast<uint8_t>(CadenceType::Strong), 1);
+  EXPECT_EQ(static_cast<uint8_t>(CadenceType::Weak), 2);
+  EXPECT_EQ(static_cast<uint8_t>(CadenceType::Floating), 3);
+  EXPECT_EQ(static_cast<uint8_t>(CadenceType::Deceptive), 4);
+}
+
+TEST(TypesTest, ScaleTypeEnumValues) {
+  EXPECT_EQ(static_cast<uint8_t>(ScaleType::Major), 0);
+  EXPECT_EQ(static_cast<uint8_t>(ScaleType::NaturalMinor), 1);
+  EXPECT_EQ(static_cast<uint8_t>(ScaleType::HarmonicMinor), 2);
+  EXPECT_EQ(static_cast<uint8_t>(ScaleType::Dorian), 3);
+  EXPECT_EQ(static_cast<uint8_t>(ScaleType::Mixolydian), 4);
+}
+
+TEST(TypesTest, PhraseBoundaryStructure) {
+  PhraseBoundary boundary;
+  boundary.tick = 1920;
+  boundary.is_breath = true;
+  boundary.is_section_end = false;
+  boundary.cadence = CadenceType::Weak;
+
+  EXPECT_EQ(boundary.tick, 1920u);
+  EXPECT_TRUE(boundary.is_breath);
+  EXPECT_FALSE(boundary.is_section_end);
+  EXPECT_EQ(boundary.cadence, CadenceType::Weak);
+}
+
+TEST(TypesTest, PhraseBoundarySectionEnd) {
+  PhraseBoundary boundary;
+  boundary.tick = 7680;  // End of 4 bars
+  boundary.is_breath = true;
+  boundary.is_section_end = true;
+  boundary.cadence = CadenceType::Strong;
+
+  EXPECT_EQ(boundary.tick, TICKS_PER_BAR * 4);
+  EXPECT_TRUE(boundary.is_breath);
+  EXPECT_TRUE(boundary.is_section_end);
+  EXPECT_EQ(boundary.cadence, CadenceType::Strong);
+}
+
+TEST(TypesTest, TrackLayerEnumValues) {
+  EXPECT_EQ(static_cast<uint8_t>(TrackLayer::Structural), 0);
+  EXPECT_EQ(static_cast<uint8_t>(TrackLayer::Identity), 1);
+  EXPECT_EQ(static_cast<uint8_t>(TrackLayer::Safety), 2);
+  EXPECT_EQ(static_cast<uint8_t>(TrackLayer::Performance), 3);
+}
+
+TEST(TypesTest, LayeredNoteStructure) {
+  LayeredNote layered;
+  layered.note = {0, 480, 60, 100};
+  layered.origin_layer = TrackLayer::Structural;
+  layered.timing_locked = false;
+  layered.pitch_locked = false;
+
+  EXPECT_EQ(layered.note.startTick, 0u);
+  EXPECT_EQ(layered.note.duration, 480u);
+  EXPECT_EQ(layered.note.note, 60);
+  EXPECT_EQ(layered.note.velocity, 100);
+  EXPECT_EQ(layered.origin_layer, TrackLayer::Structural);
+  EXPECT_FALSE(layered.timing_locked);
+  EXPECT_FALSE(layered.pitch_locked);
+}
+
+TEST(TypesTest, LayeredNoteDefaultValues) {
+  LayeredNote layered;
+  layered.note = {0, 240, 64, 80};
+
+  // Check default values
+  EXPECT_EQ(layered.origin_layer, TrackLayer::Structural);
+  EXPECT_FALSE(layered.timing_locked);
+  EXPECT_FALSE(layered.pitch_locked);
+}
+
+TEST(TypesTest, LayeredNoteLocking) {
+  LayeredNote layered;
+  layered.note = {960, 480, 67, 90};
+  layered.origin_layer = TrackLayer::Identity;
+
+  // Lock timing after L2 creates specific rhythmic pattern
+  layered.timing_locked = true;
+
+  EXPECT_EQ(layered.origin_layer, TrackLayer::Identity);
+  EXPECT_TRUE(layered.timing_locked);
+  EXPECT_FALSE(layered.pitch_locked);
+
+  // Later, L3 locks pitch after collision avoidance
+  layered.origin_layer = TrackLayer::Safety;
+  layered.pitch_locked = true;
+
+  EXPECT_EQ(layered.origin_layer, TrackLayer::Safety);
+  EXPECT_TRUE(layered.timing_locked);
+  EXPECT_TRUE(layered.pitch_locked);
+}
+
+TEST(TypesTest, LayerResultStructure) {
+  LayerResult result;
+  result.completed_layer = TrackLayer::Structural;
+
+  LayeredNote note1;
+  note1.note = {0, 480, 60, 100};
+  LayeredNote note2;
+  note2.note = {480, 480, 62, 90};
+
+  result.notes.push_back(note1);
+  result.notes.push_back(note2);
+
+  EXPECT_EQ(result.completed_layer, TrackLayer::Structural);
+  EXPECT_EQ(result.notes.size(), 2u);
+  EXPECT_EQ(result.notes[0].note.note, 60);
+  EXPECT_EQ(result.notes[1].note.note, 62);
 }
 
 }  // namespace

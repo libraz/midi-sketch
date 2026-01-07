@@ -44,6 +44,39 @@ enum class NonHarmonicType : uint8_t {
   Anticipation  // Early arrival of next chord tone
 };
 
+// ============================================================================
+// Layer Architecture Types (Phase 0 - Common Infrastructure)
+// ============================================================================
+
+// Cadence type for phrase endings.
+// Controls how phrases resolve harmonically.
+enum class CadenceType : uint8_t {
+  None,       // No specific cadence treatment
+  Strong,     // Full resolution (to tonic, on strong beat)
+  Weak,       // Partial resolution (stepwise motion, on weak beat)
+  Floating,   // Open ending (tension note, no resolution)
+  Deceptive   // Unexpected resolution (to vi or other)
+};
+
+// Scale type for melodic generation.
+// Determines available pitches for melody construction.
+enum class ScaleType : uint8_t {
+  Major,          // Ionian (W-W-H-W-W-W-H)
+  NaturalMinor,   // Aeolian (W-H-W-W-H-W-W)
+  HarmonicMinor,  // Natural minor with raised 7th
+  Dorian,         // Minor with raised 6th
+  Mixolydian      // Major with lowered 7th
+};
+
+// Phrase boundary information for inter-track coordination.
+// Used to communicate phrase structure between tracks (e.g., Vocal -> Aux).
+struct PhraseBoundary {
+  Tick tick;              // Position of boundary in ticks
+  bool is_breath;         // True if this is a breathing point
+  bool is_section_end;    // True if this is the end of a section
+  CadenceType cadence;    // Cadence type at this boundary
+};
+
 // Rhythm note for pattern-based melody generation.
 struct RhythmNote {
   float beat;      // 0.0-7.5 (in quarter notes, 2 bars)

@@ -117,5 +117,61 @@ TEST(SongTest, TimeInfo) {
   EXPECT_EQ(song.ticksPerBar(), 1920u);
 }
 
+// ============================================================================
+// Phase 0: Phrase Boundary Tests
+// ============================================================================
+
+TEST(SongTest, PhraseBoundariesDefault) {
+  Song song;
+  EXPECT_TRUE(song.phraseBoundaries().empty());
+}
+
+TEST(SongTest, AddPhraseBoundary) {
+  Song song;
+
+  PhraseBoundary boundary;
+  boundary.tick = 1920;
+  boundary.is_breath = true;
+  boundary.is_section_end = false;
+  boundary.cadence = CadenceType::Weak;
+
+  song.addPhraseBoundary(boundary);
+
+  EXPECT_EQ(song.phraseBoundaries().size(), 1u);
+  EXPECT_EQ(song.phraseBoundaries()[0].tick, 1920u);
+  EXPECT_TRUE(song.phraseBoundaries()[0].is_breath);
+  EXPECT_EQ(song.phraseBoundaries()[0].cadence, CadenceType::Weak);
+}
+
+TEST(SongTest, SetPhraseBoundaries) {
+  Song song;
+
+  std::vector<PhraseBoundary> boundaries;
+  boundaries.push_back({1920, true, false, CadenceType::Weak});
+  boundaries.push_back({3840, true, false, CadenceType::Floating});
+  boundaries.push_back({7680, true, true, CadenceType::Strong});
+
+  song.setPhraseBoundaries(boundaries);
+
+  EXPECT_EQ(song.phraseBoundaries().size(), 3u);
+  EXPECT_EQ(song.phraseBoundaries()[0].tick, 1920u);
+  EXPECT_EQ(song.phraseBoundaries()[1].tick, 3840u);
+  EXPECT_EQ(song.phraseBoundaries()[2].tick, 7680u);
+  EXPECT_TRUE(song.phraseBoundaries()[2].is_section_end);
+}
+
+TEST(SongTest, ClearPhraseBoundaries) {
+  Song song;
+
+  song.addPhraseBoundary({1920, true, false, CadenceType::Weak});
+  song.addPhraseBoundary({3840, true, true, CadenceType::Strong});
+
+  EXPECT_EQ(song.phraseBoundaries().size(), 2u);
+
+  song.clearPhraseBoundaries();
+
+  EXPECT_TRUE(song.phraseBoundaries().empty());
+}
+
 }  // namespace
 }  // namespace midisketch

@@ -75,6 +75,18 @@ class Song {
   }
   const std::vector<NoteEvent>& motifPattern() const { return motif_pattern_; }
 
+  // Phrase boundary storage (for inter-track coordination)
+  void setPhraseBoundaries(const std::vector<PhraseBoundary>& boundaries) {
+    phrase_boundaries_ = boundaries;
+  }
+  void addPhraseBoundary(const PhraseBoundary& boundary) {
+    phrase_boundaries_.push_back(boundary);
+  }
+  const std::vector<PhraseBoundary>& phraseBoundaries() const {
+    return phrase_boundaries_;
+  }
+  void clearPhraseBoundaries() { phrase_boundaries_.clear(); }
+
   // Arpeggio seed tracking
   void setArpeggioSeed(uint32_t seed) { arpeggio_seed_ = seed; }
   uint32_t arpeggioSeed() const { return arpeggio_seed_; }
@@ -96,6 +108,7 @@ class Song {
   uint32_t motif_seed_ = 0;
   uint32_t arpeggio_seed_ = 0;
   std::vector<NoteEvent> motif_pattern_;
+  std::vector<PhraseBoundary> phrase_boundaries_;
 };
 
 }  // namespace midisketch
