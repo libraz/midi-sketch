@@ -452,7 +452,9 @@ void Generator::regenerateMelody(uint32_t new_seed) {
   rng_.seed(seed);
   song_.setMelodySeed(seed);
   song_.clearTrack(TrackRole::Vocal);
+  song_.clearTrack(TrackRole::Aux);
   generateVocal();
+  generateAux();
 }
 
 void Generator::regenerateMelody(const MelodyRegenerateParams& regen_params) {
@@ -479,9 +481,11 @@ void Generator::regenerateMelody(const MelodyRegenerateParams& regen_params) {
   rng_.seed(seed);
   song_.setMelodySeed(seed);
 
-  // Regenerate vocal track only
+  // Regenerate vocal and aux tracks
   song_.clearTrack(TrackRole::Vocal);
+  song_.clearTrack(TrackRole::Aux);
   generateVocal();
+  generateAux();
 }
 
 void Generator::regenerateVocalFromConfig(const SongConfig& config,
@@ -510,16 +514,20 @@ void Generator::regenerateVocalFromConfig(const SongConfig& config,
   rng_.seed(seed);
   song_.setMelodySeed(seed);
   song_.clearTrack(TrackRole::Vocal);
+  song_.clearTrack(TrackRole::Aux);
   generateVocal();
+  generateAux();
 }
 
 void Generator::setMelody(const MelodyData& melody) {
   song_.setMelodySeed(melody.seed);
   song_.clearTrack(TrackRole::Vocal);
+  song_.clearTrack(TrackRole::Aux);
   for (const auto& note : melody.notes) {
     song_.vocal().addNote(note.startTick, note.duration, note.note,
                           note.velocity);
   }
+  generateAux();  // Regenerate aux based on restored vocal
 }
 
 void Generator::generateVocal() {

@@ -633,5 +633,90 @@ TEST(GeneratorTest, VocalRangeValidUnchanged) {
   }
 }
 
+// ============================================================================
+// Aux Regeneration Tests
+// ============================================================================
+
+TEST(GeneratorTest, RegenerateMelodyAlsoRegeneratesAux) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 12345;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  // Initial generation should produce aux notes
+  size_t initial_aux_count = song.aux().noteCount();
+  EXPECT_GT(initial_aux_count, 0u) << "Initial generation should produce aux notes";
+
+  // Regenerate melody with different seed
+  gen.regenerateMelody(99999);
+
+  // After regeneration, aux should still have notes
+  size_t regenerated_aux_count = song.aux().noteCount();
+  EXPECT_GT(regenerated_aux_count, 0u) << "Aux should have notes after regenerateMelody";
+}
+
+TEST(GeneratorTest, RegenerateMelodyWithParamsAlsoRegeneratesAux) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 12345;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  // Initial aux count
+  size_t initial_aux_count = song.aux().noteCount();
+  EXPECT_GT(initial_aux_count, 0u) << "Initial generation should produce aux notes";
+
+  // Regenerate with params
+  MelodyRegenerateParams regen_params{};
+  regen_params.seed = 88888;
+  regen_params.vocal_low = 55;
+  regen_params.vocal_high = 75;
+  regen_params.vocal_attitude = VocalAttitude::Clean;
+
+  gen.regenerateMelody(regen_params);
+
+  // After regeneration, aux should still have notes
+  size_t regenerated_aux_count = song.aux().noteCount();
+  EXPECT_GT(regenerated_aux_count, 0u) << "Aux should have notes after regenerateMelody with params";
+}
+
+TEST(GeneratorTest, SetMelodyAlsoRegeneratesAux) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 12345;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  // Save current melody manually
+  MelodyData original_melody;
+  original_melody.seed = song.melodySeed();
+  original_melody.notes = song.vocal().notes();
+  EXPECT_GT(original_melody.notes.size(), 0u);
+
+  // Clear and regenerate with different seed
+  gen.regenerateMelody(99999);
+
+  // Save aux count after regeneration
+  size_t aux_after_regen = song.aux().noteCount();
+  EXPECT_GT(aux_after_regen, 0u);
+
+  // Restore original melody
+  gen.setMelody(original_melody);
+
+  // Aux should be regenerated based on restored vocal
+  size_t aux_after_restore = song.aux().noteCount();
+  EXPECT_GT(aux_after_restore, 0u) << "Aux should have notes after setMelody";
+}
+
 }  // namespace
 }  // namespace midisketch

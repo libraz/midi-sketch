@@ -162,6 +162,7 @@ int main(int argc, char* argv[]) {
   std::cout << "  Total ticks: " << song.arrangement().totalTicks() << "\n";
   std::cout << "  BPM: " << song.bpm() << "\n";
   std::cout << "  Motif notes: " << song.motif().noteCount() << "\n";
+  std::cout << "  Aux notes: " << song.aux().noteCount() << "\n";
   std::cout << "  Vocal notes: " << song.vocal().noteCount() << "\n";
   std::cout << "  Chord notes: " << song.chord().noteCount() << "\n";
   std::cout << "  Bass notes: " << song.bass().noteCount() << "\n";
