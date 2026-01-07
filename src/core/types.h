@@ -317,6 +317,96 @@ enum class MelodicComplexity : uint8_t {
   Complex = 2    // Complex melody (more notes, larger leaps, more variation)
 };
 
+// ============================================================================
+// Melody Template System (Phase 1 - Vocal Redesign)
+// ============================================================================
+
+// Melody template identifier for template-driven melody generation.
+enum class MelodyTemplateId : uint8_t {
+  Auto = 0,          // Auto-select based on VocalStylePreset and section
+  PlateauTalk = 1,   // NewJeans/Billie style: high plateau, talk-sing
+  RunUpTarget = 2,   // YOASOBI/Ado style: run up to target note
+  DownResolve = 3,   // B-melody generic: descending resolution
+  HookRepeat = 4,    // TikTok/K-POP: short repeating hook
+  SparseAnchor = 5,  // Official髭男dism: sparse anchor notes
+  CallResponse = 6,  // Duet style: call and response
+  JumpAccent = 7     // Emotional peak: jump accent
+};
+
+// Pitch choice for template-driven melody generation.
+// Only 4 choices allowed to constrain melody movement.
+enum class PitchChoice : uint8_t {
+  Same,       // Stay on same pitch (plateau_ratio probability)
+  StepUp,     // Move up by 1 scale step
+  StepDown,   // Move down by 1 scale step
+  TargetStep  // Move toward target (±2 steps, only when has_target_pitch)
+};
+
+// Leap trigger conditions - leaps are events, not random.
+enum class LeapTrigger : uint8_t {
+  None,             // No leap
+  PhraseStart,      // At phrase beginning
+  EmotionalPeak,    // At emotional climax
+  SectionBoundary   // At section boundary
+};
+
+// Aux track function types for sub-track generation.
+enum class AuxFunction : uint8_t {
+  PulseLoop = 0,      // A: Addictive repetition (Ice Cream style)
+  TargetHint = 1,     // B: Hints at main melody destination
+  GrooveAccent = 2,   // C: Physical groove accent
+  PhraseTail = 3,     // D: Phrase ending, breathing
+  EmotionalPad = 4    // E: Emotional floor/pad
+};
+
+// Melody template structure for template-driven melody generation.
+struct MelodyTemplate {
+  const char* name;
+
+  // Pitch constraints
+  int8_t tessitura_range;           // Range from tessitura center (semitones)
+  float plateau_ratio;              // Same-pitch probability (0.0-1.0)
+  int8_t max_step;                  // Maximum step size (semitones)
+
+  // Target pitch
+  bool has_target_pitch;
+  float target_attraction_start;    // Phrase position to start attraction (0.0-1.0)
+  float target_attraction_strength; // Attraction strength (0.0-1.0)
+
+  // Rhythm
+  bool rhythm_driven;
+  float sixteenth_density;          // 16th note density (0.0-1.0)
+
+  // Vocal constraints
+  bool vowel_constraint;            // Apply vowel section rules
+  bool leap_as_event;               // Leaps only at trigger points
+
+  // Phrase characteristics
+  float phrase_end_resolution;      // Resolution probability at phrase end
+  float long_note_ratio;            // Long note ratio
+  float tension_allowance;          // Allowed tension (0.0-1.0)
+
+  // Human body constraints
+  uint8_t max_phrase_beats;         // Maximum phrase length (beats)
+  float high_register_plateau_boost; // Plateau boost in high register
+  uint8_t post_high_rest_beats;     // Rest beats after high notes
+
+  // Modern pop features
+  uint8_t hook_note_count;          // Notes in hook (2-4)
+  uint8_t hook_repeat_count;        // Hook repetition count (2-4)
+  bool allow_talk_sing;             // Allow talk-sing style
+};
+
+// Aux track configuration for sub-track generation.
+struct AuxConfig {
+  AuxFunction function;
+  int8_t range_offset;              // Offset from main melody range (negative = below)
+  int8_t range_width;               // Range width (semitones)
+  float velocity_ratio;             // Velocity ratio vs main melody (0.5-0.8)
+  float density_ratio;              // Density ratio vs main melody
+  bool sync_phrase_boundary;        // Sync with main melody phrase boundaries
+};
+
 // Hook intensity for controlling catchiness at key positions.
 enum class HookIntensity : uint8_t {
   Off = 0,     // No hook emphasis

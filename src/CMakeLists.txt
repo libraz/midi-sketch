@@ -15,6 +15,7 @@ set(MIDISKETCH_SOURCES
   core/motif.cpp
   core/pitch_utils.cpp
   core/chord_utils.cpp
+  core/melody_templates.cpp
   midi/midi_writer.cpp
   track/track.cpp
   track/vocal.cpp
