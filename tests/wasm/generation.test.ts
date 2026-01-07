@@ -74,4 +74,89 @@ describe('MidiSketch WASM - Generation', () => {
 
     cleanup();
   });
+
+  it('should generate tracks with notes', () => {
+    ctx.generateFromConfig({
+      seed: 54321,
+      drumsEnabled: true,
+    });
+
+    const { data, cleanup } = ctx.getEventsJson();
+    const tracks = (data as { tracks: { name: string; notes: unknown[] }[] }).tracks;
+
+    // Core tracks must have notes
+    const vocalTrack = tracks.find((t) => t.name === 'Vocal');
+    const chordTrack = tracks.find((t) => t.name === 'Chord');
+    const bassTrack = tracks.find((t) => t.name === 'Bass');
+    const drumsTrack = tracks.find((t) => t.name === 'Drums');
+
+    expect(vocalTrack).toBeDefined();
+    expect(chordTrack).toBeDefined();
+    expect(bassTrack).toBeDefined();
+    expect(drumsTrack).toBeDefined();
+
+    expect(vocalTrack!.notes.length).toBeGreaterThan(0);
+    expect(chordTrack!.notes.length).toBeGreaterThan(0);
+    expect(bassTrack!.notes.length).toBeGreaterThan(0);
+    expect(drumsTrack!.notes.length).toBeGreaterThan(0);
+
+    cleanup();
+  });
+
+  it('should generate valid note data', () => {
+    ctx.generateFromConfig({ seed: 11111 });
+
+    const { data, cleanup } = ctx.getEventsJson();
+    const tracks = (
+      data as {
+        tracks: {
+          name: string;
+          notes: {
+            start_ticks: number;
+            duration_ticks: number;
+            pitch: number;
+            velocity: number;
+          }[];
+        }[];
+      }
+    ).tracks;
+
+    const vocalTrack = tracks.find((t) => t.name === 'Vocal');
+    expect(vocalTrack).toBeDefined();
+    expect(vocalTrack!.notes.length).toBeGreaterThan(0);
+
+    // Verify note structure
+    const firstNote = vocalTrack!.notes[0];
+    expect(firstNote).toHaveProperty('start_ticks');
+    expect(firstNote).toHaveProperty('duration_ticks');
+    expect(firstNote).toHaveProperty('pitch');
+    expect(firstNote).toHaveProperty('velocity');
+
+    // Verify note values are reasonable
+    expect(firstNote.start_ticks).toBeGreaterThanOrEqual(0);
+    expect(firstNote.duration_ticks).toBeGreaterThan(0);
+    expect(firstNote.pitch).toBeGreaterThanOrEqual(0);
+    expect(firstNote.pitch).toBeLessThanOrEqual(127);
+    expect(firstNote.velocity).toBeGreaterThan(0);
+    expect(firstNote.velocity).toBeLessThanOrEqual(127);
+
+    cleanup();
+  });
+
+  it('should generate Aux track', () => {
+    // Generate with settings that should produce Aux track
+    ctx.generateFromConfig({
+      seed: 22222,
+    });
+
+    const { data, cleanup } = ctx.getEventsJson();
+    const tracks = (data as { tracks: { name: string; notes: unknown[] }[] }).tracks;
+
+    // Verify Aux track exists
+    const auxTrack = tracks.find((t) => t.name === 'Aux');
+    expect(auxTrack).toBeDefined();
+    expect(auxTrack!.notes.length).toBeGreaterThan(0);
+
+    cleanup();
+  });
 });
