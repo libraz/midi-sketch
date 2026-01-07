@@ -1431,5 +1431,180 @@ TEST(GeneratorVocalTest, RegenerateMelodyAppliesCompositionStyle) {
       << "composition_style should be updated to BackgroundMotif";
 }
 
+// =============================================================================
+// UltraVocaloid 32nd note and consecutive same note reduction tests
+// =============================================================================
+
+TEST(UltraVocaloidTest, ChorusGeneratesShortNotes) {
+  // Test that UltraVocaloid chorus sections generate short notes (32nd notes)
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 42;
+  config.vocal_style = VocalStylePreset::UltraVocaloid;
+  gen.generateFromConfig(config);
+
+  const auto& notes = gen.getSong().vocal().notes();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  ASSERT_GT(notes.size(), 0u) << "Should generate vocal notes";
+
+  // Find chorus section notes
+  int short_notes_in_chorus = 0;
+  int total_chorus_notes = 0;
+
+  for (const auto& section : sections) {
+    if (section.type != SectionType::Chorus) continue;
+
+    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    for (const auto& note : notes) {
+      if (note.startTick >= section.start_tick && note.startTick < section_end) {
+        total_chorus_notes++;
+        // 32nd note = 60 ticks, 16th note = 120 ticks
+        // With gating, short notes should be < 150 ticks
+        if (note.duration < 150) {
+          short_notes_in_chorus++;
+        }
+      }
+    }
+  }
+
+  // UltraVocaloid chorus should have a significant portion of short notes
+  if (total_chorus_notes > 0) {
+    float short_note_ratio = static_cast<float>(short_notes_in_chorus) / total_chorus_notes;
+    EXPECT_GT(short_note_ratio, 0.3f)
+        << "UltraVocaloid chorus should have many short notes: "
+        << (short_note_ratio * 100) << "% short notes";
+  }
+}
+
+TEST(UltraVocaloidTest, ReducedConsecutiveSameNotes) {
+  // Test that UltraVocaloid reduces consecutive same notes
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 42;
+  config.vocal_style = VocalStylePreset::UltraVocaloid;
+  gen.generateFromConfig(config);
+
+  const auto& notes = gen.getSong().vocal().notes();
+
+  ASSERT_GT(notes.size(), 1u) << "Should generate multiple vocal notes";
+
+  // Count consecutive same notes
+  int consecutive_same = 0;
+  int total_pairs = 0;
+
+  for (size_t i = 1; i < notes.size(); ++i) {
+    // Only count consecutive notes (within reasonable time gap)
+    if (notes[i].startTick - notes[i-1].startTick < TICKS_PER_BEAT * 2) {
+      total_pairs++;
+      if (notes[i].note == notes[i-1].note) {
+        consecutive_same++;
+      }
+    }
+  }
+
+  if (total_pairs > 0) {
+    float same_ratio = static_cast<float>(consecutive_same) / total_pairs;
+    // With consecutive_same_note_prob = 0.1, expect reduced same-note ratio
+    // Note: Hooks in chorus are intentionally repetitive for memorability
+    // so we use a higher threshold (50%) to account for hook patterns
+    EXPECT_LT(same_ratio, 0.50f)
+        << "UltraVocaloid should have reduced consecutive same notes: "
+        << (same_ratio * 100) << "% same pairs";
+  }
+}
+
+TEST(UltraVocaloidTest, VerseDensityLowerThanChorus) {
+  // Test that UltraVocaloid has the characteristic density contrast
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 42;
+  config.vocal_style = VocalStylePreset::UltraVocaloid;
+  gen.generateFromConfig(config);
+
+  const auto& notes = gen.getSong().vocal().notes();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  int verse_notes = 0;
+  int verse_bars = 0;
+  int chorus_notes = 0;
+  int chorus_bars = 0;
+
+  for (const auto& section : sections) {
+    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+
+    int section_note_count = 0;
+    for (const auto& note : notes) {
+      if (note.startTick >= section.start_tick && note.startTick < section_end) {
+        section_note_count++;
+      }
+    }
+
+    if (section.type == SectionType::A) {
+      verse_notes += section_note_count;
+      verse_bars += section.bars;
+    } else if (section.type == SectionType::Chorus) {
+      chorus_notes += section_note_count;
+      chorus_bars += section.bars;
+    }
+  }
+
+  // Calculate notes per bar for each section type
+  if (verse_bars > 0 && chorus_bars > 0) {
+    float verse_density = static_cast<float>(verse_notes) / verse_bars;
+    float chorus_density = static_cast<float>(chorus_notes) / chorus_bars;
+
+    // UltraVocaloid should have ballad-like verse and barrage chorus
+    EXPECT_GT(chorus_density, verse_density)
+        << "Chorus density (" << chorus_density << " notes/bar) should be higher than verse ("
+        << verse_density << " notes/bar)";
+  }
+}
+
+TEST(VocaloidConstraintTest, DisablesVowelConstraints) {
+  // Test that Vocaloid style disables vowel constraints but keeps breathing
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 42;
+  config.vocal_style = VocalStylePreset::Vocaloid;
+  gen.generateFromConfig(config);
+
+  // Verify vowel constraints are disabled but breathing is kept
+  EXPECT_TRUE(gen.getParams().melody_params.disable_vowel_constraints)
+      << "Vocaloid style should disable vowel constraints";
+  EXPECT_FALSE(gen.getParams().melody_params.disable_breathing_gaps)
+      << "Vocaloid style should keep breathing gaps for natural phrasing";
+}
+
+TEST(VocaloidConstraintTest, UltraVocaloidDisablesVowelConstraints) {
+  // Test that UltraVocaloid style disables vowel constraints but keeps breathing
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 42;
+  config.vocal_style = VocalStylePreset::UltraVocaloid;
+  gen.generateFromConfig(config);
+
+  // Verify vowel constraints are disabled but breathing is kept
+  EXPECT_TRUE(gen.getParams().melody_params.disable_vowel_constraints)
+      << "UltraVocaloid style should disable vowel constraints";
+  EXPECT_FALSE(gen.getParams().melody_params.disable_breathing_gaps)
+      << "UltraVocaloid style should keep breathing gaps for natural phrasing";
+}
+
+TEST(VocaloidConstraintTest, StandardKeepsAllConstraints) {
+  // Test that Standard style keeps all singing constraints enabled
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 42;
+  config.vocal_style = VocalStylePreset::Standard;
+  gen.generateFromConfig(config);
+
+  // Verify all constraints are enabled
+  EXPECT_FALSE(gen.getParams().melody_params.disable_vowel_constraints)
+      << "Standard style should keep vowel constraints enabled";
+  EXPECT_FALSE(gen.getParams().melody_params.disable_breathing_gaps)
+      << "Standard style should keep breathing gaps enabled";
+}
+
 }  // namespace
 }  // namespace midisketch

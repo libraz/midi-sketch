@@ -33,7 +33,6 @@ constexpr std::array<AuxFunctionMeta, 5> kAuxFunctionMetaTable = {{
      AuxDensityBehavior::VoiceCount, 1.0f, 0.4f},
 }};
 
-constexpr Tick TICK_SIXTEENTH = TICKS_PER_BEAT / 4;
 constexpr Tick TICK_EIGHTH = TICKS_PER_BEAT / 2;
 constexpr Tick TICK_QUARTER = TICKS_PER_BEAT;
 constexpr Tick TICK_HALF = TICKS_PER_BEAT * 2;

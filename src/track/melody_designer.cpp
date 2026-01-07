@@ -8,8 +8,8 @@ namespace midisketch {
 namespace {
 
 // Duration in ticks for different note values
-constexpr Tick TICK_EIGHTH = TICKS_PER_BEAT / 2;     // 240
-constexpr Tick TICK_QUARTER = TICKS_PER_BEAT;        // 480
+constexpr Tick TICK_EIGHTH = TICKS_PER_BEAT / 2;        // 240
+constexpr Tick TICK_QUARTER = TICKS_PER_BEAT;           // 480
 
 // Default velocity for melody notes
 constexpr uint8_t DEFAULT_VELOCITY = 100;
@@ -98,8 +98,8 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(
     // Move to next phrase position
     current_tick += actual_beats * TICKS_PER_BEAT;
 
-    // Add rest between phrases (breathing)
-    if (i < phrase_count - 1) {
+    // Add rest between phrases (breathing) - skip if breathing gaps disabled
+    if (i < phrase_count - 1 && !ctx.disable_breathing_gaps) {
       current_tick += TICK_EIGHTH;  // Short breath
     }
   }
@@ -121,8 +121,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   result.notes.clear();
   result.direction_inertia = direction_inertia;
 
-  // Generate rhythm pattern with section density modifier
-  std::vector<RhythmNote> rhythm = generatePhraseRhythm(tmpl, phrase_beats, ctx.density_modifier, rng);
+  // Generate rhythm pattern with section density modifier and 32nd note ratio
+  std::vector<RhythmNote> rhythm = generatePhraseRhythm(tmpl, phrase_beats, ctx.density_modifier, ctx.thirtysecond_ratio, rng);
 
   // Calculate initial pitch if none provided
   int current_pitch;
@@ -162,8 +162,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     // Apply direction inertia
     choice = applyDirectionInertia(choice, result.direction_inertia, tmpl, rng);
 
-    // Check vowel section constraint
-    if (tmpl.vowel_constraint && i > 0) {
+    // Check vowel section constraint (skip if vowel constraints disabled)
+    if (tmpl.vowel_constraint && i > 0 && !ctx.disable_vowel_constraints) {
       bool same_vowel = isInSameVowelSection(
           rhythm[i-1].beat, rn.beat, phrase_beats);
       if (same_vowel) {
@@ -186,6 +186,21 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
                                      ctx.chord_degree, ctx.key_offset,
                                      ctx.vocal_low, ctx.vocal_high);
 
+    // Apply consecutive same note reduction
+    // If new_pitch == current_pitch and random > consecutive_same_note_prob, force a step
+    if (new_pitch == current_pitch && ctx.consecutive_same_note_prob < 1.0f) {
+      std::uniform_real_distribution<float> same_dist(0.0f, 1.0f);
+      if (same_dist(rng) > ctx.consecutive_same_note_prob) {
+        // Force a step movement (up or down by 1-2 semitones)
+        std::uniform_int_distribution<int> step_dist(-2, 2);
+        int step = step_dist(rng);
+        if (step == 0) step = 1;  // Avoid same note
+        new_pitch = std::clamp(current_pitch + step,
+                               static_cast<int>(ctx.vocal_low),
+                               static_cast<int>(ctx.vocal_high));
+      }
+    }
+
     // Update direction inertia
     int movement = new_pitch - current_pitch;
     if (movement > 0) {
@@ -200,7 +215,16 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
 
     // Calculate note timing
     Tick note_start = phrase_start + static_cast<Tick>(rn.beat * TICKS_PER_BEAT);
-    Tick note_duration = rn.eighths * TICK_EIGHTH;
+    // Calculate duration based on next note's position or use eighths field
+    Tick note_duration;
+    if (i + 1 < rhythm.size()) {
+      // Duration until next note
+      float beat_duration = rhythm[i + 1].beat - rn.beat;
+      note_duration = static_cast<Tick>(beat_duration * TICKS_PER_BEAT);
+    } else {
+      // Last note: use eighths field
+      note_duration = rn.eighths * TICK_EIGHTH;
+    }
 
     // Apply gate for phrase ending
     bool is_phrase_end = (i == rhythm.size() - 1);
@@ -522,6 +546,7 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
     const MelodyTemplate& tmpl,
     uint8_t phrase_beats,
     float density_modifier,
+    float thirtysecond_ratio,
     std::mt19937& rng) {
 
   std::vector<RhythmNote> rhythm;
@@ -535,21 +560,32 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
   // Clamp to valid range [0.0, 0.95]
   effective_sixteenth_density = std::min(effective_sixteenth_density, 0.95f);
 
-  while (current_beat < end_beat - 0.25f) {
-    // Determine note duration
-    int eighths;
-    if (tmpl.rhythm_driven && dist(rng) < effective_sixteenth_density) {
-      eighths = 1;  // 16th note (0.5 eighth)
+  // Use smaller margin when 32nd notes are enabled, otherwise keep original
+  float end_margin = (thirtysecond_ratio > 0.0f) ? 0.125f : 0.25f;
+
+  while (current_beat < end_beat - end_margin) {
+    // Determine note duration (in eighths, float to support 32nds)
+    float eighths;
+    if (thirtysecond_ratio > 0.0f && dist(rng) < thirtysecond_ratio) {
+      eighths = 0.5f;  // 32nd note (0.25 eighth = 0.125 beats)
+    } else if (tmpl.rhythm_driven && dist(rng) < effective_sixteenth_density) {
+      eighths = 1.0f;  // 16th note (0.5 eighth)
     } else if (dist(rng) < tmpl.long_note_ratio) {
-      eighths = 4;  // Half note
+      eighths = 4.0f;  // Half note
     } else {
-      eighths = 2;  // Quarter note (most common)
+      eighths = 2.0f;  // Quarter note (most common)
     }
 
     // Check if strong beat
     bool strong = (static_cast<int>(current_beat) % 2 == 0);
 
-    rhythm.push_back({current_beat, eighths, strong});
+    // For RhythmNote, convert float eighths back to int (32nd = 0.5 -> 1 for special handling)
+    int rhythm_eighths = static_cast<int>(eighths);
+    if (eighths < 1.0f) {
+      // 32nd note: store as 1 to indicate shortest note (16th-equivalent for now)
+      rhythm_eighths = 1;
+    }
+    rhythm.push_back({current_beat, rhythm_eighths, strong});
 
     current_beat += eighths * 0.5f;  // Convert eighths to beats
   }

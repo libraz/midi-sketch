@@ -578,6 +578,7 @@ struct StyleMelodyParams {
                                       // 1.5=vocaloid, 2.0=ultra vocaloid
   uint8_t min_note_division = 8;      // Minimum note division (4=quarter, 8=eighth, 16=16th, 32=32nd)
   float sixteenth_note_ratio = 0.0f;  // Ratio of 16th notes (0.0-0.5)
+  float thirtysecond_note_ratio = 0.0f;  // Base ratio of 32nd notes (0.0-1.0)
 
   // === Syncopation ===
   float syncopation_prob = 0.15f;     // Probability of syncopation
@@ -601,6 +602,19 @@ struct StyleMelodyParams {
   float chorus_density_modifier = 1.10f;    // Density modifier for chorus
   float bridge_density_modifier = 1.0f;     // Density modifier for bridge
   bool chorus_long_tones = false;           // Use long sustained tones in chorus
+
+  // === Section-specific 32nd note ratios (for UltraVocaloid style) ===
+  float verse_thirtysecond_ratio = 0.0f;      // 32nd note ratio for verse (A)
+  float prechorus_thirtysecond_ratio = 0.0f;  // 32nd note ratio for pre-chorus (B)
+  float chorus_thirtysecond_ratio = 0.0f;     // 32nd note ratio for chorus
+  float bridge_thirtysecond_ratio = 0.0f;     // 32nd note ratio for bridge
+
+  // === Consecutive same note control ===
+  float consecutive_same_note_prob = 1.0f;  // Probability of allowing same consecutive note (0.0-1.0)
+
+  // === Human singing constraints ===
+  bool disable_vowel_constraints = false;    // Disable vowel section step limits for Vocaloid styles
+  bool disable_breathing_gaps = false;       // Disable breathing rests between phrases (machine-like)
 
   // === Articulation (gate values) ===
   float legato_gate = 0.95f;          // Gate for legato notes

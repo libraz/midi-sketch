@@ -43,11 +43,6 @@ constexpr int kVariationTypeCount = 8;
 // Maximum reuse count before variation is forced (V4)
 constexpr int kMaxExactReuse = 2;
 
-// Singing effort thresholds (V6)
-constexpr int kHighRegisterThreshold = 74;  // D5 and above = high effort
-constexpr int kLargeIntervalThreshold = 7;  // Perfect 5th and above = effort
-constexpr float kHighEffortScore = 1.0f;
-constexpr float kMediumEffortScore = 0.5f;
 
 // PhraseCacheKey for extended cache lookup (V2)
 struct PhraseCacheKey {
@@ -210,56 +205,6 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes,
   }
 }
 
-
-// Calculate singing effort score for a phrase (V6).
-// Higher score = more demanding to sing.
-// Returns: 0.0 (easy) to 1.0+ (difficult)
-float calculateSingingEffort(const std::vector<NoteEvent>& notes) {
-  if (notes.empty()) return 0.0f;
-
-  float effort = 0.0f;
-  int high_note_count = 0;
-  int large_interval_count = 0;
-
-  for (size_t i = 0; i < notes.size(); ++i) {
-    // High register penalty
-    if (notes[i].note >= kHighRegisterThreshold) {
-      high_note_count++;
-      // Longer high notes = more effort
-      effort += kMediumEffortScore * (notes[i].duration / static_cast<float>(TICKS_PER_BEAT));
-    }
-
-    // Large interval penalty
-    if (i > 0) {
-      int interval = std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
-      if (interval >= kLargeIntervalThreshold) {
-        large_interval_count++;
-        effort += kMediumEffortScore;
-      }
-    }
-  }
-
-  // Density penalty: many notes in short time
-  if (notes.size() > 1) {
-    Tick phrase_length = notes.back().startTick + notes.back().duration - notes[0].startTick;
-    float notes_per_beat = notes.size() * TICKS_PER_BEAT / static_cast<float>(phrase_length);
-    if (notes_per_beat > 2.0f) {  // More than 2 notes per beat = dense
-      effort += (notes_per_beat - 2.0f) * kMediumEffortScore;
-    }
-  }
-
-  // Normalize by phrase length (effort per bar)
-  if (notes.size() > 0) {
-    Tick phrase_length = notes.back().startTick + notes.back().duration - notes[0].startTick;
-    float bars = phrase_length / static_cast<float>(TICKS_PER_BAR);
-    if (bars > 0) {
-      effort /= bars;
-    }
-  }
-
-  return effort;
-}
-
 // Determine cadence type for phrase ending (V5).
 // Analyzes the last few notes to determine resolution type.
 CadenceType detectCadenceType(const std::vector<NoteEvent>& notes, int8_t chord_degree) {
@@ -381,6 +326,22 @@ float getDensityModifier(SectionType type, const StyleMelodyParams& params) {
       return params.bridge_density_modifier;
     default:
       return 1.0f;
+  }
+}
+
+// Get 32nd note ratio for section type based on melody params
+float getThirtysecondRatio(SectionType type, const StyleMelodyParams& params) {
+  switch (type) {
+    case SectionType::A:
+      return params.verse_thirtysecond_ratio;
+    case SectionType::B:
+      return params.prechorus_thirtysecond_ratio;
+    case SectionType::Chorus:
+      return params.chorus_thirtysecond_ratio;
+    case SectionType::Bridge:
+      return params.bridge_thirtysecond_ratio;
+    default:
+      return params.thirtysecond_note_ratio;  // Fallback to base ratio
   }
 }
 
@@ -716,6 +677,10 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       ctx.vocal_low = section_vocal_low;
       ctx.vocal_high = section_vocal_high;
       ctx.density_modifier = getDensityModifier(section.type, params.melody_params);
+      ctx.thirtysecond_ratio = getThirtysecondRatio(section.type, params.melody_params);
+      ctx.consecutive_same_note_prob = params.melody_params.consecutive_same_note_prob;
+      ctx.disable_vowel_constraints = params.melody_params.disable_vowel_constraints;
+      ctx.disable_breathing_gaps = params.melody_params.disable_breathing_gaps;
 
       section_notes = designer.generateSection(section_tmpl, ctx, harmony, rng);
 

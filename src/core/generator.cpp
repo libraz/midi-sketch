@@ -35,6 +35,8 @@ void applyVocalStylePreset(GeneratorParams& params,
       params.melody_params.prechorus_density_modifier = 0.9f;
       params.melody_params.chorus_density_modifier = 1.15f;
       params.melody_params.bridge_density_modifier = 0.85f;
+      // Disable vowel section step limits, keep breathing for natural phrasing
+      params.melody_params.disable_vowel_constraints = true;
       break;
 
     case VocalStylePreset::UltraVocaloid:
@@ -47,6 +49,15 @@ void applyVocalStylePreset(GeneratorParams& params,
       params.melody_params.prechorus_density_modifier = 0.5f; // Build tension
       params.melody_params.chorus_density_modifier = 1.6f;    // Full barrage
       params.melody_params.bridge_density_modifier = 0.35f;   // Return to ballad
+      // 32nd note ratios: A=30%, Chorus=100%
+      params.melody_params.verse_thirtysecond_ratio = 0.3f;      // 30% 32nd in verse
+      params.melody_params.prechorus_thirtysecond_ratio = 0.5f;  // 50% 32nd in pre-chorus
+      params.melody_params.chorus_thirtysecond_ratio = 1.0f;     // 100% 32nd in chorus
+      params.melody_params.bridge_thirtysecond_ratio = 0.2f;     // 20% 32nd in bridge
+      // Reduce consecutive same note probability (10% chance to allow)
+      params.melody_params.consecutive_same_note_prob = 0.1f;
+      // Disable vowel section step limits, keep breathing for natural phrasing
+      params.melody_params.disable_vowel_constraints = true;
       break;
 
     case VocalStylePreset::Idol:

@@ -29,7 +29,11 @@ class MelodyDesigner {
     TessituraRange tessitura;   // Comfortable singing range
     uint8_t vocal_low;          // Absolute minimum pitch
     uint8_t vocal_high;         // Absolute maximum pitch
-    float density_modifier;     // Section-specific density multiplier (1.0 = default)
+    float density_modifier = 1.0f;     // Section-specific density multiplier (1.0 = default)
+    float thirtysecond_ratio = 0.0f;   // Section-specific 32nd note ratio (0.0-1.0)
+    float consecutive_same_note_prob = 1.0f;  // Probability of allowing same consecutive note (0.0-1.0)
+    bool disable_vowel_constraints = false;   // Disable vowel section step limits
+    bool disable_breathing_gaps = false;      // Disable breathing rests between phrases
   };
 
   // Phrase generation result.
@@ -175,10 +179,12 @@ class MelodyDesigner {
 
   // Generate rhythm for a phrase.
   // @param density_modifier Section-specific density multiplier (1.0 = default)
+  // @param thirtysecond_ratio Ratio of 32nd notes (0.0-1.0)
   std::vector<RhythmNote> generatePhraseRhythm(
       const MelodyTemplate& tmpl,
       uint8_t phrase_beats,
       float density_modifier,
+      float thirtysecond_ratio,
       std::mt19937& rng);
 
   // Cached chorus hook for Song-level fixation.
