@@ -49,6 +49,84 @@ std::vector<int> getChordTonePitchClasses(int8_t degree) {
   return result;
 }
 
+// Major scale intervals from root: W-W-H-W-W-W-H (0, 2, 4, 5, 7, 9, 11)
+static constexpr int MAJOR_SCALE_INTERVALS[7] = {0, 2, 4, 5, 7, 9, 11};
+
+bool isScaleTone(int pitch_class, uint8_t key) {
+  // Normalize pitch class
+  int normalized_pc = ((pitch_class % 12) + 12) % 12;
+
+  // Check each scale degree
+  for (int interval : MAJOR_SCALE_INTERVALS) {
+    int scale_pc = (key + interval) % 12;
+    if (normalized_pc == scale_pc) {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::vector<int> getScalePitchClasses(uint8_t key) {
+  std::vector<int> result;
+  result.reserve(7);
+
+  for (int interval : MAJOR_SCALE_INTERVALS) {
+    result.push_back((key + interval) % 12);
+  }
+
+  return result;
+}
+
+std::vector<int> getAvailableTensionPitchClasses(int8_t degree) {
+  std::vector<int> result;
+
+  // Normalize degree to 0-6 range
+  int normalized = ((degree % 7) + 7) % 7;
+  int root_pc = DEGREE_TO_PITCH_CLASS[normalized];
+
+  // Available tensions by degree (in semitones from root):
+  // I (0): 9th (+2), 13th (+9) - avoid 11th (#4 clashes with 3rd)
+  // ii (1): 9th (+2), 11th (+5), 13th (+9)
+  // iii (2): 11th (+5) - avoid 9th (b9), avoid 13th (b13)
+  // IV (3): 9th (+2), #11th (+6), 13th (+9)
+  // V (4): 9th (+2), 13th (+9) - 11th only if sus4
+  // vi (5): 9th (+2), 11th (+5) - avoid 13th (b13)
+  // vii° (6): 11th (+5) - limited use
+
+  switch (normalized) {
+    case 0:  // I major
+      result.push_back((root_pc + 2) % 12);   // 9th
+      result.push_back((root_pc + 9) % 12);   // 13th
+      break;
+    case 1:  // ii minor
+      result.push_back((root_pc + 2) % 12);   // 9th
+      result.push_back((root_pc + 5) % 12);   // 11th
+      result.push_back((root_pc + 9) % 12);   // 13th
+      break;
+    case 2:  // iii minor
+      result.push_back((root_pc + 5) % 12);   // 11th
+      break;
+    case 3:  // IV major
+      result.push_back((root_pc + 2) % 12);   // 9th
+      result.push_back((root_pc + 6) % 12);   // #11th
+      result.push_back((root_pc + 9) % 12);   // 13th
+      break;
+    case 4:  // V dominant
+      result.push_back((root_pc + 2) % 12);   // 9th
+      result.push_back((root_pc + 9) % 12);   // 13th
+      break;
+    case 5:  // vi minor
+      result.push_back((root_pc + 2) % 12);   // 9th
+      result.push_back((root_pc + 5) % 12);   // 11th
+      break;
+    case 6:  // vii diminished
+      result.push_back((root_pc + 5) % 12);   // 11th
+      break;
+  }
+
+  return result;
+}
+
 int nearestChordTonePitch(int pitch, int8_t degree) {
   ChordTones ct = getChordTones(degree);
   int octave = pitch / 12;

@@ -229,6 +229,10 @@ const GeneratorParams& MidiSketch::getParams() const {
   return generator_.getParams();
 }
 
+const HarmonyContext& MidiSketch::getHarmonyContext() const {
+  return generator_.getHarmonyContext();
+}
+
 const char* MidiSketch::version() {
   return "1.0.0";
 }

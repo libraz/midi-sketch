@@ -64,6 +64,10 @@ class MidiSketch {
   // @returns Reference to GeneratorParams
   const GeneratorParams& getParams() const;
 
+  // Returns the harmony context (for piano roll safety API).
+  // @returns Reference to HarmonyContext
+  const HarmonyContext& getHarmonyContext() const;
+
   // Returns the library version string.
   // @returns Version string (e.g., "0.1.0")
   static const char* version();

@@ -68,6 +68,10 @@ class Generator {
   // @returns Reference to GeneratorParams
   const GeneratorParams& getParams() const { return params_; }
 
+  // Returns the harmony context (for piano roll safety API).
+  // @returns Reference to HarmonyContext
+  const HarmonyContext& getHarmonyContext() const { return harmony_context_; }
+
   // Sets modulation timing (for use before calling generate()).
   // @param timing ModulationTiming value
   // @param semitones Semitones to modulate (1-4, default 2)

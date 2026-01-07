@@ -31,6 +31,7 @@ set(TEST_SOURCES
   core/pitch_utils_test.cpp
   core/chord_utils_test.cpp
   core/melody_templates_test.cpp
+  core/piano_roll_test.cpp
   midi/midi_writer_test.cpp
   track/arpeggio_test.cpp
   track/vocal_test.cpp

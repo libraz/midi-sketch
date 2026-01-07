@@ -3,8 +3,11 @@
 #include "core/preset_data.h"
 #include "core/chord.h"
 #include "core/structure.h"
+#include "core/chord_utils.h"
+#include "core/piano_roll_safety.h"
 #include <cstring>
 #include <cstdlib>
+#include <algorithm>
 #include <unordered_map>
 
 namespace {
@@ -596,6 +599,294 @@ void* midisketch_malloc(size_t size) {
 
 void midisketch_free(void* ptr) {
   free(ptr);
+}
+
+// ============================================================================
+// Piano Roll Safety API Implementation
+// ============================================================================
+
+namespace {
+
+// Helper to check if a value is in a vector
+bool containsPitchClass(const std::vector<int>& vec, int value) {
+  return std::find(vec.begin(), vec.end(), value) != vec.end();
+}
+
+// Static buffer for single-tick queries
+MidiSketchPianoRollInfo s_single_info;
+
+// Note name lookup table
+const char* NOTE_NAMES[] = {
+  "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
+};
+
+// Track name lookup
+const char* TRACK_NAMES[] = {
+  "Vocal", "Chord", "Bass", "Drums", "SE", "Motif", "Arpeggio", "Aux"
+};
+
+// Fill piano roll info for a single tick
+void fillPianoRollInfo(MidiSketchPianoRollInfo* info,
+                       const midisketch::Song& song,
+                       const midisketch::HarmonyContext& harmony,
+                       const midisketch::GeneratorParams& params,
+                       uint32_t tick,
+                       uint8_t prev_pitch = 255) {
+  info->tick = tick;
+  info->chord_degree = harmony.getChordDegreeAt(tick);
+
+  // Get current key considering modulation
+  uint8_t base_key = static_cast<uint8_t>(params.key);
+  info->current_key = midisketch::getCurrentKey(song, tick, base_key);
+
+  // Get chord tones and tensions for current degree
+  auto chord_tones = midisketch::getChordTonePitchClasses(info->chord_degree);
+  auto tensions = midisketch::getAvailableTensionPitchClasses(info->chord_degree);
+  auto scale_tones = midisketch::getScalePitchClasses(info->current_key);
+
+  // Clear recommended notes
+  info->recommended_count = 0;
+  uint8_t used_pitch_classes = 0;  // Bit mask for pitch classes already in recommended
+
+  // Process each MIDI note
+  for (int note = 0; note < 128; ++note) {
+    int pc = note % 12;
+    uint16_t reason = MIDISKETCH_REASON_NONE;
+    info->collision[note] = {0, 0, 0};  // Clear collision info
+
+    // 0. Vocal range check (highest priority)
+    if (note < params.vocal_low) {
+      info->safety[note] = MIDISKETCH_NOTE_DISSONANT;
+      info->reason[note] = MIDISKETCH_REASON_OUT_OF_RANGE | MIDISKETCH_REASON_TOO_LOW;
+      continue;
+    }
+    if (note > params.vocal_high) {
+      info->safety[note] = MIDISKETCH_NOTE_DISSONANT;
+      info->reason[note] = MIDISKETCH_REASON_OUT_OF_RANGE | MIDISKETCH_REASON_TOO_HIGH;
+      continue;
+    }
+
+    // 1. BGM collision check
+    midisketch::CollisionResult collision =
+        midisketch::checkBgmCollisionDetailed(song, tick, static_cast<uint8_t>(note));
+
+    if (collision.type == midisketch::CollisionType::Severe) {
+      info->safety[note] = MIDISKETCH_NOTE_DISSONANT;
+      info->collision[note] = {
+        static_cast<uint8_t>(collision.track),
+        collision.colliding_pitch,
+        collision.interval
+      };
+      if (collision.interval == 1) {
+        reason = MIDISKETCH_REASON_MINOR_2ND;
+      } else if (collision.interval == 11) {
+        reason = MIDISKETCH_REASON_MAJOR_7TH;
+      }
+      info->reason[note] = reason;
+      continue;
+    }
+
+    if (collision.type == midisketch::CollisionType::Mild) {
+      reason |= MIDISKETCH_REASON_TRITONE;
+      info->collision[note] = {
+        static_cast<uint8_t>(collision.track),
+        collision.colliding_pitch,
+        collision.interval
+      };
+    }
+
+    // 2. Low register check (C4 = 60)
+    bool is_low_register = (note < 60);
+    if (is_low_register) {
+      reason |= MIDISKETCH_REASON_LOW_REGISTER;
+    }
+
+    // 3. Large leap check (if prev_pitch provided)
+    if (prev_pitch != 255 && prev_pitch < 128) {
+      int leap = std::abs(note - static_cast<int>(prev_pitch));
+      if (leap >= 9) {  // 6th or more (9+ semitones)
+        reason |= MIDISKETCH_REASON_LARGE_LEAP;
+      }
+    }
+
+    // 4. Harmonic classification
+    bool is_chord_tone = containsPitchClass(chord_tones, pc);
+    bool is_tension = containsPitchClass(tensions, pc);
+    bool is_scale_tone = containsPitchClass(scale_tones, pc);
+
+    if (is_chord_tone) {
+      reason |= MIDISKETCH_REASON_CHORD_TONE;
+      // Low register chord tones get warning
+      info->safety[note] = is_low_register ? MIDISKETCH_NOTE_WARNING : MIDISKETCH_NOTE_SAFE;
+    } else if (is_tension) {
+      reason |= MIDISKETCH_REASON_TENSION;
+      info->safety[note] = MIDISKETCH_NOTE_WARNING;
+    } else if (is_scale_tone) {
+      reason |= MIDISKETCH_REASON_SCALE_TONE | MIDISKETCH_REASON_PASSING_TONE;
+      info->safety[note] = MIDISKETCH_NOTE_WARNING;
+    } else {
+      reason |= MIDISKETCH_REASON_NON_SCALE;
+      info->safety[note] = MIDISKETCH_NOTE_DISSONANT;
+    }
+
+    // If tritone collision, downgrade to warning if not already dissonant
+    if ((reason & MIDISKETCH_REASON_TRITONE) && info->safety[note] == MIDISKETCH_NOTE_SAFE) {
+      info->safety[note] = MIDISKETCH_NOTE_WARNING;
+    }
+
+    // If large leap, add warning if clean
+    if ((reason & MIDISKETCH_REASON_LARGE_LEAP) && info->safety[note] == MIDISKETCH_NOTE_SAFE) {
+      info->safety[note] = MIDISKETCH_NOTE_WARNING;
+    }
+
+    info->reason[note] = reason;
+
+    // Build recommended notes (chord tones in vocal range, no collision, unique pitch class)
+    if (is_chord_tone && !is_low_register && collision.type == midisketch::CollisionType::None &&
+        info->recommended_count < 8) {
+      // Check if this pitch class is already recommended
+      if (!(used_pitch_classes & (1 << pc))) {
+        info->recommended[info->recommended_count] = static_cast<uint8_t>(note);
+        info->recommended_count++;
+        used_pitch_classes |= (1 << pc);
+      }
+    }
+  }
+}
+
+}  // namespace
+
+MidiSketchPianoRollData* midisketch_get_piano_roll_safety(
+    MidiSketchHandle handle,
+    uint32_t start_tick,
+    uint32_t end_tick,
+    uint32_t step) {
+  if (!handle || step == 0 || start_tick > end_tick) {
+    return nullptr;
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  const auto& song = sketch->getSong();
+  const auto& harmony = sketch->getHarmonyContext();
+  const auto& params = sketch->getParams();
+
+  // Calculate entry count
+  size_t count = (end_tick - start_tick) / step + 1;
+
+  // Allocate result
+  auto* result = static_cast<MidiSketchPianoRollData*>(
+      malloc(sizeof(MidiSketchPianoRollData)));
+  if (!result) return nullptr;
+
+  result->data = static_cast<MidiSketchPianoRollInfo*>(
+      malloc(sizeof(MidiSketchPianoRollInfo) * count));
+  if (!result->data) {
+    free(result);
+    return nullptr;
+  }
+  result->count = count;
+
+  // Fill each tick
+  for (size_t i = 0; i < count; ++i) {
+    uint32_t tick = start_tick + static_cast<uint32_t>(i) * step;
+    fillPianoRollInfo(&result->data[i], song, harmony, params, tick);
+  }
+
+  return result;
+}
+
+MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_at(
+    MidiSketchHandle handle,
+    uint32_t tick) {
+  if (!handle) return nullptr;
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  const auto& song = sketch->getSong();
+  const auto& harmony = sketch->getHarmonyContext();
+  const auto& params = sketch->getParams();
+
+  fillPianoRollInfo(&s_single_info, song, harmony, params, tick);
+  return &s_single_info;
+}
+
+MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_with_context(
+    MidiSketchHandle handle,
+    uint32_t tick,
+    uint8_t prev_pitch) {
+  if (!handle) return nullptr;
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  const auto& song = sketch->getSong();
+  const auto& harmony = sketch->getHarmonyContext();
+  const auto& params = sketch->getParams();
+
+  fillPianoRollInfo(&s_single_info, song, harmony, params, tick, prev_pitch);
+  return &s_single_info;
+}
+
+void midisketch_free_piano_roll_data(MidiSketchPianoRollData* data) {
+  if (data) {
+    free(data->data);
+    free(data);
+  }
+}
+
+const char* midisketch_reason_to_string(uint16_t reason) {
+  // Static buffer for result
+  static char buffer[256];
+  buffer[0] = '\0';
+
+  if (reason == MIDISKETCH_REASON_NONE) {
+    return "None";
+  }
+
+  bool first = true;
+  auto append = [&](const char* str) {
+    if (!first) strcat(buffer, ", ");
+    strcat(buffer, str);
+    first = false;
+  };
+
+  if (reason & MIDISKETCH_REASON_CHORD_TONE) append("Chord tone");
+  if (reason & MIDISKETCH_REASON_TENSION) append("Tension");
+  if (reason & MIDISKETCH_REASON_SCALE_TONE) append("Scale tone");
+  if (reason & MIDISKETCH_REASON_LOW_REGISTER) append("Low register");
+  if (reason & MIDISKETCH_REASON_TRITONE) append("Tritone");
+  if (reason & MIDISKETCH_REASON_LARGE_LEAP) append("Large leap");
+  if (reason & MIDISKETCH_REASON_MINOR_2ND) append("Minor 2nd collision");
+  if (reason & MIDISKETCH_REASON_MAJOR_7TH) append("Major 7th collision");
+  if (reason & MIDISKETCH_REASON_NON_SCALE) append("Non-scale tone");
+  if (reason & MIDISKETCH_REASON_PASSING_TONE) append("Passing tone");
+  if (reason & MIDISKETCH_REASON_OUT_OF_RANGE) append("Out of range");
+  if (reason & MIDISKETCH_REASON_TOO_HIGH) append("Too high");
+  if (reason & MIDISKETCH_REASON_TOO_LOW) append("Too low");
+
+  return buffer;
+}
+
+const char* midisketch_collision_to_string(const MidiSketchCollisionInfo* collision) {
+  if (!collision || collision->interval_semitones == 0) {
+    return "";
+  }
+
+  // Static buffer for result
+  static char buffer[64];
+
+  const char* track_name = "Unknown";
+  if (collision->track_role < 8) {
+    track_name = TRACK_NAMES[collision->track_role];
+  }
+
+  int octave = collision->colliding_pitch / 12 - 1;
+  const char* note_name = NOTE_NAMES[collision->colliding_pitch % 12];
+
+  const char* interval_name = (collision->interval_semitones == 1) ? "minor 2nd" :
+                              (collision->interval_semitones == 6) ? "tritone" :
+                              (collision->interval_semitones == 11) ? "major 7th" : "interval";
+
+  snprintf(buffer, sizeof(buffer), "%s %s%d %s",
+           track_name, note_name, octave, interval_name);
+  return buffer;
 }
 
 }  // extern "C"

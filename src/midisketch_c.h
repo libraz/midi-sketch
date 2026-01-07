@@ -355,6 +355,115 @@ MidiSketchError midisketch_generate_from_config(
 );
 
 // ============================================================================
+// Piano Roll Safety API
+// ============================================================================
+
+// Note safety level for piano roll visualization.
+typedef enum {
+  MIDISKETCH_NOTE_SAFE = 0,      // Green: chord tone, safe to use
+  MIDISKETCH_NOTE_WARNING = 1,   // Yellow: tension, low register, or passing tone
+  MIDISKETCH_NOTE_DISSONANT = 2  // Red: dissonant or out of range
+} MidiSketchNoteSafety;
+
+// Reason flags for note safety classification (bitfield, can be combined).
+typedef enum {
+  MIDISKETCH_REASON_NONE = 0,
+
+  // Positive reasons (green)
+  MIDISKETCH_REASON_CHORD_TONE = 1,       // Chord tone (root, 3rd, 5th, 7th)
+  MIDISKETCH_REASON_TENSION = 2,          // Tension (9th, 11th, 13th)
+  MIDISKETCH_REASON_SCALE_TONE = 4,       // Scale tone (not chord but in scale)
+
+  // Warning reasons (yellow)
+  MIDISKETCH_REASON_LOW_REGISTER = 8,     // Low register (below C4), may sound muddy
+  MIDISKETCH_REASON_TRITONE = 16,         // Tritone interval (unstable except on V7)
+  MIDISKETCH_REASON_LARGE_LEAP = 32,      // Large leap (6+ semitones from prev note)
+
+  // Dissonant reasons (red) - specific collision info
+  MIDISKETCH_REASON_MINOR_2ND = 64,       // Minor 2nd (1 semitone) collision
+  MIDISKETCH_REASON_MAJOR_7TH = 128,      // Major 7th (11 semitones) collision
+  MIDISKETCH_REASON_NON_SCALE = 256,      // Non-scale tone (chromatic)
+  MIDISKETCH_REASON_PASSING_TONE = 512,   // Can be used as passing tone
+
+  // Out of range reasons (red)
+  MIDISKETCH_REASON_OUT_OF_RANGE = 1024,  // Outside vocal range
+  MIDISKETCH_REASON_TOO_HIGH = 2048,      // Too high to sing
+  MIDISKETCH_REASON_TOO_LOW = 4096        // Too low to sing
+} MidiSketchNoteReason;
+
+// Collision info for a note that collides with BGM.
+typedef struct {
+  uint8_t track_role;         // TrackRole of colliding track (0=Vocal, 1=Chord, etc.)
+  uint8_t colliding_pitch;    // MIDI pitch of colliding note
+  uint8_t interval_semitones; // Collision interval (1, 6, or 11)
+} MidiSketchCollisionInfo;
+
+// Piano roll safety info for a single tick.
+typedef struct {
+  uint32_t tick;                           // Tick position
+  int8_t chord_degree;                     // Current chord degree (0=I, 1=ii, etc.)
+  uint8_t current_key;                     // Current key (0-11, considering modulation)
+  uint8_t safety[128];                     // Safety level for each MIDI note (0-127)
+  uint16_t reason[128];                    // Reason flags for each note
+  MidiSketchCollisionInfo collision[128];  // Collision details (valid only if colliding)
+  uint8_t recommended[8];                  // Recommended notes (priority order, max 8)
+  uint8_t recommended_count;               // Number of recommended notes
+} MidiSketchPianoRollInfo;
+
+// Batch result for multiple ticks.
+typedef struct {
+  MidiSketchPianoRollInfo* data;  // Array of info structs
+  size_t count;                   // Number of entries
+} MidiSketchPianoRollData;
+
+// Get piano roll safety data for a tick range.
+// @param handle MidiSketch handle (must have generated MIDI)
+// @param start_tick Start tick
+// @param end_tick End tick
+// @param step Step size in ticks (e.g., 120 for 16th notes)
+// @returns Pointer to batch data (must be freed with midisketch_free_piano_roll_data)
+MidiSketchPianoRollData* midisketch_get_piano_roll_safety(
+    MidiSketchHandle handle,
+    uint32_t start_tick,
+    uint32_t end_tick,
+    uint32_t step
+);
+
+// Get piano roll safety info for a single tick.
+// @param handle MidiSketch handle
+// @param tick Tick position
+// @returns Pointer to static info (valid until next call, do not free)
+MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_at(
+    MidiSketchHandle handle,
+    uint32_t tick
+);
+
+// Get piano roll safety info with context (previous note for leap detection).
+// @param handle MidiSketch handle
+// @param tick Tick position
+// @param prev_pitch Previous note pitch (255 if none)
+// @returns Pointer to static info (valid until next call, do not free)
+MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_with_context(
+    MidiSketchHandle handle,
+    uint32_t tick,
+    uint8_t prev_pitch
+);
+
+// Free piano roll batch data.
+// @param data Pointer returned by midisketch_get_piano_roll_safety
+void midisketch_free_piano_roll_data(MidiSketchPianoRollData* data);
+
+// Convert reason flags to human-readable string.
+// @param reason Reason flags
+// @returns Static string description (do not free)
+const char* midisketch_reason_to_string(uint16_t reason);
+
+// Convert collision info to human-readable string.
+// @param collision Collision info pointer
+// @returns Static string description (e.g., "Bass F3 minor 2nd")
+const char* midisketch_collision_to_string(const MidiSketchCollisionInfo* collision);
+
+// ============================================================================
 // Utilities
 // ============================================================================
 
