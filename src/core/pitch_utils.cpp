@@ -114,6 +114,28 @@ bool isDissonantInterval(int pc1, int pc2) {
   return interval == 1 || interval == 6;
 }
 
+bool isDissonantIntervalWithContext(int pc1, int pc2, int8_t chord_degree) {
+  int interval = std::abs(pc1 - pc2);
+  if (interval > 6) interval = 12 - interval;
+
+  // Minor 2nd (1) is always dissonant
+  if (interval == 1) {
+    return true;
+  }
+
+  // Tritone (6) is acceptable on dominant (V) chord
+  // The tritone is part of the dominant 7th chord structure
+  if (interval == 6) {
+    int normalized = ((chord_degree % 7) + 7) % 7;
+    if (normalized == 4) {
+      return false;  // V chord - tritone is part of the chord
+    }
+    return true;  // Other chords - tritone is dissonant
+  }
+
+  return false;
+}
+
 int snapToNearestScaleTone(int pitch, int key_offset) {
   // Get pitch class relative to key
   int pc = ((pitch - key_offset) % 12 + 12) % 12;

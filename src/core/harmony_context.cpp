@@ -81,13 +81,17 @@ bool HarmonyContext::isPitchSafe(uint8_t pitch, Tick start, Tick duration, Track
   int pitch_pc = pitch % 12;
   Tick end = start + duration;
 
+  // Get chord context for smarter dissonance detection
+  int8_t chord_degree = getChordDegreeAt(start);
+
   for (const auto& note : notes_) {
     if (note.track == exclude) continue;
 
     // Check if notes overlap in time
     if (note.start < end && note.end > start) {
       int note_pc = note.pitch % 12;
-      if (isDissonantInterval(pitch_pc, note_pc)) {
+      // Use contextual check - allows tritone on dominant chord
+      if (midisketch::isDissonantIntervalWithContext(pitch_pc, note_pc, chord_degree)) {
         return false;
       }
     }

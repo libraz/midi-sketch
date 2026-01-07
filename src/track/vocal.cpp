@@ -7,10 +7,70 @@
 #include "core/velocity.h"
 #include "track/melody_designer.h"
 #include <algorithm>
+#include <unordered_map>
 
 namespace midisketch {
 
 namespace {
+
+// Cached phrase for section repetition
+struct CachedPhrase {
+  std::vector<NoteEvent> notes;  // Notes with timing relative to section start
+  uint8_t bars;                   // Section length when cached
+  uint8_t vocal_low;              // Vocal range when cached
+  uint8_t vocal_high;
+};
+
+// Shift note timings by offset
+std::vector<NoteEvent> shiftTiming(const std::vector<NoteEvent>& notes, Tick offset) {
+  std::vector<NoteEvent> result;
+  result.reserve(notes.size());
+  for (const auto& note : notes) {
+    NoteEvent shifted = note;
+    shifted.startTick += offset;
+    result.push_back(shifted);
+  }
+  return result;
+}
+
+// Adjust pitches to new vocal range
+std::vector<NoteEvent> adjustPitchRange(const std::vector<NoteEvent>& notes,
+                                         uint8_t orig_low, uint8_t orig_high,
+                                         uint8_t new_low, uint8_t new_high) {
+  if (orig_low == new_low && orig_high == new_high) {
+    return notes;  // No adjustment needed
+  }
+
+  std::vector<NoteEvent> result;
+  result.reserve(notes.size());
+
+  // Calculate shift based on center points
+  int orig_center = (orig_low + orig_high) / 2;
+  int new_center = (new_low + new_high) / 2;
+  int shift = new_center - orig_center;
+
+  for (const auto& note : notes) {
+    NoteEvent adjusted = note;
+    int new_pitch = static_cast<int>(note.note) + shift;
+    // Clamp to new range
+    new_pitch = std::clamp(new_pitch, static_cast<int>(new_low), static_cast<int>(new_high));
+    adjusted.note = static_cast<uint8_t>(new_pitch);
+    result.push_back(adjusted);
+  }
+  return result;
+}
+
+// Convert notes to relative timing (subtract section start)
+std::vector<NoteEvent> toRelativeTiming(const std::vector<NoteEvent>& notes, Tick section_start) {
+  std::vector<NoteEvent> result;
+  result.reserve(notes.size());
+  for (const auto& note : notes) {
+    NoteEvent relative = note;
+    relative.startTick -= section_start;
+    result.push_back(relative);
+  }
+  return result;
+}
 
 // Get register shift for section type based on melody params
 int8_t getRegisterShift(SectionType type, const StyleMelodyParams& params) {
@@ -39,18 +99,6 @@ bool sectionHasVocals(SectionType type) {
       return false;
     default:
       return true;
-  }
-}
-
-// Apply modulation transpose to notes after modulation point
-void applyModulation(std::vector<NoteEvent>& notes, Tick mod_tick, int8_t mod_amount) {
-  if (mod_tick == 0 || mod_amount == 0) return;
-
-  for (auto& note : notes) {
-    if (note.startTick >= mod_tick) {
-      note.note = static_cast<uint8_t>(
-          std::clamp(static_cast<int>(note.note) + mod_amount, 0, 127));
-    }
   }
 }
 
@@ -119,9 +167,6 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     }
   }
 
-  // Calculate tessitura
-  TessituraRange tessitura = calculateTessitura(effective_vocal_low, effective_vocal_high);
-
   // Get chord progression
   const auto& progression = getChordProgression(params.chord_id);
 
@@ -142,6 +187,9 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
   // Collect all notes
   std::vector<NoteEvent> all_notes;
+
+  // Phrase cache for section repetition (same section type → same melody)
+  std::unordered_map<SectionType, CachedPhrase> phrase_cache;
 
   // Process each section
   for (const auto& section : song.arrangement().sections()) {
@@ -178,30 +226,63 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     // Recalculate tessitura for section
     TessituraRange section_tessitura = calculateTessitura(section_vocal_low, section_vocal_high);
 
-    // Create section context
-    MelodyDesigner::SectionContext ctx;
-    ctx.section_type = section.type;
-    ctx.section_start = section_start;
-    ctx.section_end = section_end;
-    ctx.section_bars = section.bars;
-    ctx.chord_degree = chord_degree;
-    ctx.key_offset = 0;  // Always C major internally
-    ctx.tessitura = section_tessitura;
-    ctx.vocal_low = section_vocal_low;
-    ctx.vocal_high = section_vocal_high;
+    std::vector<NoteEvent> section_notes;
 
-    // Generate melody for section
-    std::vector<NoteEvent> section_notes = designer.generateSection(
-        section_tmpl, ctx, harmony, rng);
+    // Check phrase cache for repeated sections
+    auto cache_it = phrase_cache.find(section.type);
+    if (cache_it != phrase_cache.end() && cache_it->second.bars == section.bars) {
+      // Cache hit: reuse cached phrase with timing adjustment
+      const CachedPhrase& cached = cache_it->second;
 
-    // Apply HarmonyContext collision avoidance
-    if (harmony_ctx != nullptr) {
-      for (auto& note : section_notes) {
-        uint8_t safe_pitch = harmony_ctx->getSafePitch(
-            note.note, note.startTick, note.duration, TrackRole::Vocal,
-            section_vocal_low, section_vocal_high);
-        note.note = safe_pitch;
+      // Shift timing to current section start
+      section_notes = shiftTiming(cached.notes, section_start);
+
+      // Adjust pitch range if different
+      section_notes = adjustPitchRange(section_notes,
+                                        cached.vocal_low, cached.vocal_high,
+                                        section_vocal_low, section_vocal_high);
+
+      // Re-apply getSafePitch (chord context may differ)
+      if (harmony_ctx != nullptr) {
+        for (auto& note : section_notes) {
+          uint8_t safe_pitch = harmony_ctx->getSafePitch(
+              note.note, note.startTick, note.duration, TrackRole::Vocal,
+              section_vocal_low, section_vocal_high);
+          note.note = safe_pitch;
+        }
       }
+    } else {
+      // Cache miss: generate new melody
+      MelodyDesigner::SectionContext ctx;
+      ctx.section_type = section.type;
+      ctx.section_start = section_start;
+      ctx.section_end = section_end;
+      ctx.section_bars = section.bars;
+      ctx.chord_degree = chord_degree;
+      ctx.key_offset = 0;  // Always C major internally
+      ctx.tessitura = section_tessitura;
+      ctx.vocal_low = section_vocal_low;
+      ctx.vocal_high = section_vocal_high;
+
+      section_notes = designer.generateSection(section_tmpl, ctx, harmony, rng);
+
+      // Apply HarmonyContext collision avoidance
+      if (harmony_ctx != nullptr) {
+        for (auto& note : section_notes) {
+          uint8_t safe_pitch = harmony_ctx->getSafePitch(
+              note.note, note.startTick, note.duration, TrackRole::Vocal,
+              section_vocal_low, section_vocal_high);
+          note.note = safe_pitch;
+        }
+      }
+
+      // Cache the phrase (with relative timing)
+      CachedPhrase cache_entry;
+      cache_entry.notes = toRelativeTiming(section_notes, section_start);
+      cache_entry.bars = section.bars;
+      cache_entry.vocal_low = section_vocal_low;
+      cache_entry.vocal_high = section_vocal_high;
+      phrase_cache[section.type] = std::move(cache_entry);
     }
 
     // Add to collected notes

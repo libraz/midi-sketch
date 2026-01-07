@@ -86,6 +86,16 @@ int constrainInterval(int target_pitch, int prev_pitch, int max_interval,
 // @returns true if interval is dissonant
 bool isDissonantInterval(int pc1, int pc2);
 
+// Check if two pitch classes create a dissonant interval with chord context.
+// More nuanced than isDissonantInterval:
+// - Minor 2nd is always dissonant
+// - Tritone is acceptable on dominant (V) chord
+// @param pc1 First pitch class (0-11)
+// @param pc2 Second pitch class (0-11)
+// @param chord_degree Current chord's scale degree (0-6)
+// @returns true if interval is dissonant in this context
+bool isDissonantIntervalWithContext(int pc1, int pc2, int8_t chord_degree);
+
 // ============================================================================
 // Scale Functions
 // ============================================================================
