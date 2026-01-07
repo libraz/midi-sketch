@@ -214,5 +214,59 @@ TEST_F(MotifTest, IsHookAppropriateVariation) {
   EXPECT_FALSE(isHookAppropriateVariation(MotifVariation::Embellished));
 }
 
+// =============================================================================
+// Phase 4: M9 MotifRole Tests
+// =============================================================================
+
+TEST_F(MotifTest, MotifRoleEnumExists) {
+  // Verify MotifRole enum is defined
+  MotifRole hook = MotifRole::Hook;
+  MotifRole texture = MotifRole::Texture;
+  MotifRole counter = MotifRole::Counter;
+
+  EXPECT_NE(static_cast<uint8_t>(hook), static_cast<uint8_t>(texture));
+  EXPECT_NE(static_cast<uint8_t>(texture), static_cast<uint8_t>(counter));
+}
+
+TEST_F(MotifTest, MotifRoleMetaHookProperties) {
+  MotifRoleMeta meta = getMotifRoleMeta(MotifRole::Hook);
+
+  EXPECT_EQ(meta.role, MotifRole::Hook);
+  EXPECT_GT(meta.exact_repeat_prob, 0.8f);  // High repetition
+  EXPECT_LT(meta.variation_range, 0.2f);     // Low variation
+  EXPECT_GT(meta.velocity_base, 80u);        // Prominent
+  EXPECT_TRUE(meta.allow_octave_layer);
+}
+
+TEST_F(MotifTest, MotifRoleMetaTextureProperties) {
+  MotifRoleMeta meta = getMotifRoleMeta(MotifRole::Texture);
+
+  EXPECT_EQ(meta.role, MotifRole::Texture);
+  EXPECT_LT(meta.exact_repeat_prob, 0.7f);   // More variation allowed
+  EXPECT_GT(meta.variation_range, 0.3f);      // Moderate variation
+  EXPECT_LT(meta.velocity_base, 80u);         // Softer
+  EXPECT_FALSE(meta.allow_octave_layer);      // No octave for texture
+}
+
+TEST_F(MotifTest, MotifRoleMetaCounterProperties) {
+  MotifRoleMeta meta = getMotifRoleMeta(MotifRole::Counter);
+
+  EXPECT_EQ(meta.role, MotifRole::Counter);
+  EXPECT_GT(meta.exact_repeat_prob, 0.5f);    // Moderate repetition
+  EXPECT_LT(meta.variation_range, 0.5f);       // Some variation
+  EXPECT_TRUE(meta.allow_octave_layer);
+}
+
+TEST_F(MotifTest, DifferentRolesHaveDifferentVelocities) {
+  auto hook_meta = getMotifRoleMeta(MotifRole::Hook);
+  auto texture_meta = getMotifRoleMeta(MotifRole::Texture);
+  auto counter_meta = getMotifRoleMeta(MotifRole::Counter);
+
+  // Hook should be loudest (most prominent)
+  EXPECT_GT(hook_meta.velocity_base, texture_meta.velocity_base);
+  // Texture should be softest
+  EXPECT_LT(texture_meta.velocity_base, counter_meta.velocity_base);
+}
+
 }  // namespace
 }  // namespace midisketch

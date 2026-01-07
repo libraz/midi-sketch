@@ -1,5 +1,6 @@
 #include "track/motif.h"
 #include "core/chord.h"
+#include "core/motif.h"
 #include <algorithm>
 #include <array>
 #include <map>
@@ -7,10 +8,64 @@
 
 namespace midisketch {
 
+// =============================================================================
+// M1: ScaleType Support - Convert scale type to interval array
+// =============================================================================
+
 namespace {
 
-// Major scale semitones (relative to tonic)
-constexpr int SCALE[7] = {0, 2, 4, 5, 7, 9, 11};
+// M1: Scale interval arrays for different scale types
+constexpr int SCALE_MAJOR[7] = {0, 2, 4, 5, 7, 9, 11};       // Ionian
+constexpr int SCALE_NATURAL_MINOR[7] = {0, 2, 3, 5, 7, 8, 10}; // Aeolian
+constexpr int SCALE_HARMONIC_MINOR[7] = {0, 2, 3, 5, 7, 8, 11}; // Raised 7th
+constexpr int SCALE_DORIAN[7] = {0, 2, 3, 5, 7, 9, 10};       // Minor with raised 6th
+constexpr int SCALE_MIXOLYDIAN[7] = {0, 2, 4, 5, 7, 9, 10};   // Major with lowered 7th
+
+// M1: Get scale intervals for a given scale type
+const int* getScaleIntervals(ScaleType scale) {
+  switch (scale) {
+    case ScaleType::Major:
+      return SCALE_MAJOR;
+    case ScaleType::NaturalMinor:
+      return SCALE_NATURAL_MINOR;
+    case ScaleType::HarmonicMinor:
+      return SCALE_HARMONIC_MINOR;
+    case ScaleType::Dorian:
+      return SCALE_DORIAN;
+    case ScaleType::Mixolydian:
+      return SCALE_MIXOLYDIAN;
+  }
+  return SCALE_MAJOR;
+}
+
+// M1: Determine appropriate scale type based on chord quality and mood
+ScaleType selectScaleType(bool is_minor, Mood mood) {
+  if (is_minor) {
+    // Minor chord context
+    switch (mood) {
+      case Mood::Dramatic:
+      case Mood::DarkPop:
+        return ScaleType::HarmonicMinor;  // Raised 7th for dramatic effect
+      case Mood::Chill:
+      case Mood::CityPop:
+        return ScaleType::Dorian;  // Softer, jazzier minor
+      default:
+        return ScaleType::NaturalMinor;
+    }
+  } else {
+    // Major chord context
+    switch (mood) {
+      case Mood::Synthwave:
+      case Mood::FutureBass:
+        return ScaleType::Mixolydian;  // Flattened 7th for synth feel
+      default:
+        return ScaleType::Major;
+    }
+  }
+}
+
+// Backward compatibility alias
+constexpr const int* SCALE = SCALE_MAJOR;
 
 // Avoid notes for common chords (relative to chord root in semitones)
 // These notes create dissonance when held against the chord
@@ -81,12 +136,14 @@ int applyTension(int base_pitch, uint8_t chord_root, ChordQuality quality,
   return tension_pitch;
 }
 
-// Convert scale degree to pitch with key offset
-int degreeToPitch(int degree, int base_note, int key_offset) {
+// M1: Convert scale degree to pitch with key offset and scale type
+int degreeToPitch(int degree, int base_note, int key_offset,
+                  ScaleType scale = ScaleType::Major) {
+  const int* scale_intervals = getScaleIntervals(scale);
   int d = ((degree % 7) + 7) % 7;
   int oct_adjust = degree / 7;
   if (degree < 0 && degree % 7 != 0) oct_adjust--;
-  return base_note + oct_adjust * 12 + SCALE[d] + key_offset;
+  return base_note + oct_adjust * 12 + scale_intervals[d] + key_offset;
 }
 
 // Check if a pitch is an avoid note for the given chord
@@ -313,9 +370,35 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params,
   return pattern;
 }
 
+// =============================================================================
+// Motif Track Layer Architecture
+// =============================================================================
+//
+// L1 (Structural Layer):
+//   - generateMotifPattern()       - Base pattern generation
+//   - generateRhythmPositions()    - Rhythm structure
+//   - generatePitchSequence()      - Melodic contour
+//
+// L2 (Identity Layer):
+//   - M4: Section pattern caching  - Phrase reuse
+//   - M9: MotifRole behavior       - Variation control
+//   - MotifRepeatScope             - Pattern repetition scope
+//
+// L3 (Safety Layer):
+//   - adjustForChord()             - Avoid note resolution
+//   - isAvoidNote()                - Dissonance detection
+//   - M1: ScaleType selection      - Scale-aware pitch adjustment
+//
+// L4 (Performance Layer):
+//   - Velocity from MotifRole      - Role-based dynamics
+//   - Octave layering              - Chorus enhancement
+//   - Tension application          - Color notes
+//
+// =============================================================================
+
 void generateMotifTrack(MidiTrack& track, Song& song,
                         const GeneratorParams& params, std::mt19937& rng) {
-  // Generate base motif pattern
+  // L1: Generate base motif pattern
   std::vector<NoteEvent> pattern = generateMotifPattern(params, rng);
   song.setMotifPattern(pattern);
 
@@ -326,7 +409,6 @@ void generateMotifTrack(MidiTrack& track, Song& song,
   Tick motif_length = static_cast<Tick>(motif_params.length) * TICKS_PER_BAR;
 
   // Apply max_chord_count limit for BackgroundMotif style
-  // This limits the effective progression length to keep motif-style songs simple
   uint8_t effective_prog_length = progression.length;
   if (params.motif_chord.max_chord_count > 0 &&
       params.motif_chord.max_chord_count < progression.length) {
@@ -335,27 +417,42 @@ void generateMotifTrack(MidiTrack& track, Song& song,
 
   const auto& sections = song.arrangement().sections();
 
-  // Cache for section-specific patterns (used when repeat_scope == Section)
+  // M9: Determine motif role for this track
+  // BackgroundMotif style uses Hook role, SynthDriven uses Texture
+  MotifRole role = (params.composition_style == CompositionStyle::BackgroundMotif)
+                       ? MotifRole::Hook
+                       : MotifRole::Texture;
+  MotifRoleMeta role_meta = getMotifRoleMeta(role);
+
+  // M4: Cache for section-specific patterns (used when repeat_scope == Section)
   std::map<SectionType, std::vector<NoteEvent>> section_patterns;
 
   for (const auto& section : sections) {
     Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
     bool is_chorus = (section.type == SectionType::Chorus);
 
-    // Apply octave layering for chorus if enabled
-    bool add_octave = is_chorus && motif_params.octave_layering_chorus;
+    // M9: Apply octave layering based on role metadata
+    bool add_octave = is_chorus && motif_params.octave_layering_chorus &&
+                      role_meta.allow_octave_layer;
 
-    // Determine which pattern to use based on repeat_scope
+    // L2: Determine which pattern to use based on repeat_scope
     std::vector<NoteEvent>* current_pattern = &pattern;
     std::vector<NoteEvent> section_pattern;
 
     if (motif_params.repeat_scope == MotifRepeatScope::Section) {
-      // Check if we already have a pattern for this section type
+      // M4: Check cache for this section type
       auto it = section_patterns.find(section.type);
       if (it == section_patterns.end()) {
-        // Generate new pattern for this section type
-        section_pattern = generateMotifPattern(params, rng);
-        section_patterns[section.type] = section_pattern;
+        // M9: Apply variation based on role
+        std::uniform_real_distribution<float> var_dist(0.0f, 1.0f);
+        if (var_dist(rng) < role_meta.exact_repeat_prob) {
+          // Use base pattern (exact repeat)
+          section_patterns[section.type] = pattern;
+        } else {
+          // Generate new pattern for variation
+          section_pattern = generateMotifPattern(params, rng);
+          section_patterns[section.type] = section_pattern;
+        }
         current_pattern = &section_patterns[section.type];
       } else {
         current_pattern = &it->second;
@@ -384,11 +481,15 @@ void generateMotifTrack(MidiTrack& track, Song& song,
         bool is_minor = (chord.intervals[1] == 3);
         ChordQuality quality = getChordQuality(chord);
 
-        // Adjust pitch to avoid dissonance with current chord
+        // M1: Select scale type based on chord quality and mood
+        // (Used for future scale-aware adjustments; infrastructure ready)
+        [[maybe_unused]] ScaleType scale = selectScaleType(is_minor, params.mood);
+
+        // L3: Adjust pitch to avoid dissonance with current chord
         int adjusted_pitch = adjustForChord(note.note, chord_root, is_minor);
         adjusted_pitch = std::clamp(adjusted_pitch, 36, 108);
 
-        // Occasionally apply tension based on chord quality (9th, 11th, 13th)
+        // L4: Occasionally apply tension based on chord quality (9th, 11th, 13th)
         // Only apply if chord extensions are enabled to maintain Motif/Chord consistency
         std::uniform_real_distribution<float> tension_prob(0.0f, 1.0f);
         bool extensions_enabled = params.chord_extension.enable_7th ||
@@ -403,15 +504,27 @@ void generateMotifTrack(MidiTrack& track, Song& song,
           adjusted_pitch = std::clamp(adjusted_pitch, 36, 108);
         }
 
+        // M9: Apply role-based velocity adjustment
+        uint8_t vel = role_meta.velocity_base;
+        // Section-based velocity variation (only when not fixed)
+        if (!motif_params.velocity_fixed) {
+          if (is_chorus) {
+            vel = std::min(static_cast<uint8_t>(127), static_cast<uint8_t>(vel + 10));
+          } else if (section.type == SectionType::Intro ||
+                     section.type == SectionType::Outro) {
+            vel = static_cast<uint8_t>(vel * 0.85f);
+          }
+        }
+
         // Add main note
         track.addNote(absolute_tick, note.duration,
-                      static_cast<uint8_t>(adjusted_pitch), note.velocity);
+                      static_cast<uint8_t>(adjusted_pitch), vel);
 
-        // Add octave doubling for chorus
+        // L4: Add octave doubling for chorus (if role allows)
         if (add_octave) {
           int octave_pitch = adjusted_pitch + 12;
           if (octave_pitch <= 108) {
-            uint8_t octave_vel = static_cast<uint8_t>(note.velocity * 0.85);
+            uint8_t octave_vel = static_cast<uint8_t>(vel * 0.85f);
             track.addNote(absolute_tick, note.duration,
                           static_cast<uint8_t>(octave_pitch), octave_vel);
           }

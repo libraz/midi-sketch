@@ -1,7 +1,7 @@
 # midi-sketch
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/libraz/midi-sketch)
-[![License](https://img.shields.io/badge/License-Apache_2.0-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache_2.0_/_Commercial-green.svg)](LICENSE)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-orange.svg)](https://isocpp.org/)
 
 A C++17 library for auto-generating pop music MIDI sketches. Designed for WebAssembly deployment with zero external dependencies.
@@ -296,15 +296,27 @@ flowchart TD
 
 ## License
 
-This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
+This project is dual-licensed:
+
+- **Open Source**: [Apache License 2.0](LICENSE) - Free for open source projects with attribution
+- **Commercial**: [Commercial License](LICENSE-COMMERCIAL) - For closed-source or proprietary use
+
+### Which License Do I Need?
+
+| Use Case | License |
+|----------|---------|
+| Open source project | Apache-2.0 (free) |
+| Personal/educational | Apache-2.0 (free) |
+| Closed-source product | Commercial (paid) |
+| Remove attribution | Commercial (paid) |
+
+For commercial licensing inquiries: libraz@libraz.net
 
 ### Scope Notice
 
 This project provides a core engine, not a complete music generation system.
 
 Sound sources, vocals, and rendering are out of scope.
-
-Commercial licensing for extended components may be available upon request.
 
 ## Author
 
