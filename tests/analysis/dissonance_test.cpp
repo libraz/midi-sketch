@@ -391,5 +391,264 @@ TEST(DissonanceTest, BackgroundClashesHaveReducedSeverity) {
       << "Background-background clashes should not have High severity";
 }
 
+// ============================================================================
+// ParsedMidi Analysis Tests
+// ============================================================================
+
+TEST(DissonanceTest, AnalyzeFromParsedMidiBasic) {
+  // Create a ParsedMidi with a known clash
+  ParsedMidi midi;
+  midi.format = 1;
+  midi.num_tracks = 2;
+  midi.division = 480;
+  midi.bpm = 120;
+
+  // Track 1: Vocal with E4
+  ParsedTrack vocal_track;
+  vocal_track.name = "Vocal";
+  vocal_track.channel = 0;
+  ParsedNote note1{64, 100, 0, 480};  // E4 at tick 0
+  vocal_track.notes.push_back(note1);
+  midi.tracks.push_back(vocal_track);
+
+  // Track 2: Chord with F4 (minor 2nd clash)
+  ParsedTrack chord_track;
+  chord_track.name = "Chord";
+  chord_track.channel = 1;
+  ParsedNote note2{65, 80, 0, 480};  // F4 at tick 0
+  chord_track.notes.push_back(note2);
+  midi.tracks.push_back(chord_track);
+
+  auto report = analyzeDissonanceFromParsedMidi(midi);
+
+  // Should detect the minor 2nd clash
+  EXPECT_GE(report.summary.total_issues, 1u);
+  EXPECT_GE(report.summary.simultaneous_clashes, 1u);
+
+  // Find the clash and verify it's High severity
+  bool found_clash = false;
+  for (const auto& issue : report.issues) {
+    if (issue.type == DissonanceType::SimultaneousClash &&
+        issue.interval_semitones == 1) {
+      found_clash = true;
+      EXPECT_EQ(issue.severity, DissonanceSeverity::High);
+      EXPECT_EQ(issue.interval_name, "minor 2nd");
+      break;
+    }
+  }
+  EXPECT_TRUE(found_clash) << "Minor 2nd clash should be detected";
+}
+
+TEST(DissonanceTest, AnalyzeFromParsedMidiNoDrums) {
+  // Create a ParsedMidi with drums - drums should be skipped
+  ParsedMidi midi;
+  midi.format = 1;
+  midi.num_tracks = 2;
+  midi.division = 480;
+  midi.bpm = 120;
+
+  // Track 1: Drums (channel 9)
+  ParsedTrack drums_track;
+  drums_track.name = "Drums";
+  drums_track.channel = 9;
+  ParsedNote kick{36, 100, 0, 240};
+  ParsedNote snare{38, 100, 0, 240};  // Same time as kick
+  drums_track.notes.push_back(kick);
+  drums_track.notes.push_back(snare);
+  midi.tracks.push_back(drums_track);
+
+  // Track 2: Melodic track
+  ParsedTrack melody_track;
+  melody_track.name = "Melody";
+  melody_track.channel = 0;
+  ParsedNote note{60, 100, 0, 480};
+  melody_track.notes.push_back(note);
+  midi.tracks.push_back(melody_track);
+
+  auto report = analyzeDissonanceFromParsedMidi(midi);
+
+  // Drums should not cause clashes
+  for (const auto& issue : report.issues) {
+    if (issue.type == DissonanceType::SimultaneousClash) {
+      for (const auto& note_info : issue.notes) {
+        EXPECT_NE(note_info.track_name, "Drums")
+            << "Drums track should be excluded from clash detection";
+      }
+    }
+  }
+}
+
+TEST(DissonanceTest, AnalyzeFromParsedMidiEmptyTracks) {
+  ParsedMidi midi;
+  midi.format = 1;
+  midi.num_tracks = 0;
+  midi.division = 480;
+  midi.bpm = 120;
+
+  auto report = analyzeDissonanceFromParsedMidi(midi);
+
+  EXPECT_EQ(report.summary.total_issues, 0u);
+  EXPECT_TRUE(report.issues.empty());
+}
+
+TEST(DissonanceTest, AnalyzeFromParsedMidiNoClash) {
+  // Create a ParsedMidi with consonant intervals
+  ParsedMidi midi;
+  midi.format = 1;
+  midi.num_tracks = 2;
+  midi.division = 480;
+  midi.bpm = 120;
+
+  // Track 1: C4
+  ParsedTrack track1;
+  track1.name = "Track1";
+  track1.channel = 0;
+  ParsedNote note1{60, 100, 0, 480};  // C4
+  track1.notes.push_back(note1);
+  midi.tracks.push_back(track1);
+
+  // Track 2: E4 (major 3rd - consonant)
+  ParsedTrack track2;
+  track2.name = "Track2";
+  track2.channel = 1;
+  ParsedNote note2{64, 80, 0, 480};  // E4
+  track2.notes.push_back(note2);
+  midi.tracks.push_back(track2);
+
+  auto report = analyzeDissonanceFromParsedMidi(midi);
+
+  // Major 3rd is consonant, should not be flagged as high severity
+  for (const auto& issue : report.issues) {
+    if (issue.type == DissonanceType::SimultaneousClash) {
+      EXPECT_NE(issue.severity, DissonanceSeverity::High)
+          << "Major 3rd should not be flagged as high severity";
+    }
+  }
+}
+
+TEST(DissonanceTest, AnalyzeFromParsedMidiTritone) {
+  // Test tritone detection
+  ParsedMidi midi;
+  midi.format = 1;
+  midi.num_tracks = 2;
+  midi.division = 480;
+  midi.bpm = 120;
+
+  // Track 1: C4
+  ParsedTrack track1;
+  track1.name = "Track1";
+  track1.channel = 0;
+  ParsedNote note1{60, 100, 0, 480};  // C4
+  track1.notes.push_back(note1);
+  midi.tracks.push_back(track1);
+
+  // Track 2: F#4 (tritone)
+  ParsedTrack track2;
+  track2.name = "Track2";
+  track2.channel = 1;
+  ParsedNote note2{66, 80, 0, 480};  // F#4
+  track2.notes.push_back(note2);
+  midi.tracks.push_back(track2);
+
+  auto report = analyzeDissonanceFromParsedMidi(midi);
+
+  // Should detect tritone (may be medium severity in context)
+  bool found_tritone = false;
+  for (const auto& issue : report.issues) {
+    if (issue.type == DissonanceType::SimultaneousClash &&
+        issue.interval_semitones == 6) {
+      found_tritone = true;
+      EXPECT_EQ(issue.interval_name, "tritone");
+      break;
+    }
+  }
+  EXPECT_TRUE(found_tritone) << "Tritone should be detected";
+}
+
+TEST(DissonanceTest, AnalyzeFromParsedMidiMajor7th) {
+  // Test major 7th detection
+  ParsedMidi midi;
+  midi.format = 1;
+  midi.num_tracks = 2;
+  midi.division = 480;
+  midi.bpm = 120;
+
+  // Track 1: C4
+  ParsedTrack track1;
+  track1.name = "Track1";
+  track1.channel = 0;
+  ParsedNote note1{60, 100, 0, 480};  // C4
+  track1.notes.push_back(note1);
+  midi.tracks.push_back(track1);
+
+  // Track 2: B4 (major 7th)
+  ParsedTrack track2;
+  track2.name = "Track2";
+  track2.channel = 1;
+  ParsedNote note2{71, 80, 0, 480};  // B4
+  track2.notes.push_back(note2);
+  midi.tracks.push_back(track2);
+
+  auto report = analyzeDissonanceFromParsedMidi(midi);
+
+  // Should detect major 7th
+  // Note: Without chord info, defaults to I chord (degree 0), where major 7th
+  // is considered part of Imaj7 voicing and gets Medium severity
+  bool found_major7th = false;
+  for (const auto& issue : report.issues) {
+    if (issue.type == DissonanceType::SimultaneousClash &&
+        issue.interval_semitones == 11) {
+      found_major7th = true;
+      EXPECT_EQ(issue.interval_name, "major 7th");
+      // On I chord context, major 7th is downgraded to Medium (Imaj7 voicing)
+      EXPECT_EQ(issue.severity, DissonanceSeverity::Medium);
+      break;
+    }
+  }
+  EXPECT_TRUE(found_major7th) << "Major 7th should be detected";
+}
+
+TEST(DissonanceTest, AnalyzeFromParsedMidiNonOverlappingNotes) {
+  // Notes that don't overlap should not clash
+  ParsedMidi midi;
+  midi.format = 1;
+  midi.num_tracks = 2;
+  midi.division = 480;
+  midi.bpm = 120;
+
+  // Track 1: E4 at tick 0
+  ParsedTrack track1;
+  track1.name = "Track1";
+  track1.channel = 0;
+  ParsedNote note1{64, 100, 0, 480};  // E4, ends at 480
+  track1.notes.push_back(note1);
+  midi.tracks.push_back(track1);
+
+  // Track 2: F4 at tick 480 (starts after first note ends)
+  ParsedTrack track2;
+  track2.name = "Track2";
+  track2.channel = 1;
+  ParsedNote note2{65, 80, 480, 480};  // F4, starts at 480
+  track2.notes.push_back(note2);
+  midi.tracks.push_back(track2);
+
+  auto report = analyzeDissonanceFromParsedMidi(midi);
+
+  // No clash should be detected between non-overlapping notes
+  for (const auto& issue : report.issues) {
+    if (issue.type == DissonanceType::SimultaneousClash) {
+      // Check if both notes are involved
+      bool e4_involved = false;
+      bool f4_involved = false;
+      for (const auto& note_info : issue.notes) {
+        if (note_info.pitch == 64) e4_involved = true;
+        if (note_info.pitch == 65) f4_involved = true;
+      }
+      EXPECT_FALSE(e4_involved && f4_involved)
+          << "Non-overlapping E4 and F4 should not clash";
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

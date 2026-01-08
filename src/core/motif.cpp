@@ -1,4 +1,5 @@
 #include "core/motif.h"
+#include "core/pitch_utils.h"
 #include <algorithm>
 
 namespace midisketch {
@@ -237,9 +238,10 @@ std::vector<NoteEvent> placeMotifInIntro(const Motif& motif,
       NoteEvent note;
       note.startTick = note_start;
       note.duration = rn.eighths * (TICKS_PER_BEAT / 2);
-      note.note = static_cast<uint8_t>(
-          std::clamp(static_cast<int>(base_pitch) + motif.contour_degrees[i],
-                     0, 127));
+      // Calculate pitch and snap to scale (key_offset=0 for C major)
+      int raw_pitch = static_cast<int>(base_pitch) + motif.contour_degrees[i];
+      raw_pitch = snapToNearestScaleTone(raw_pitch, 0);
+      note.note = static_cast<uint8_t>(std::clamp(raw_pitch, 0, 127));
       note.velocity = velocity;
 
       result.push_back(note);

@@ -43,6 +43,11 @@ constexpr int kVariationTypeCount = 8;
 // Maximum reuse count before variation is forced (V4)
 constexpr int kMaxExactReuse = 2;
 
+// Singing effort thresholds (V6)
+constexpr int kHighRegisterThreshold = 74;  // D5 and above = high effort
+constexpr int kLargeIntervalThreshold = 7;  // Perfect 5th and above = effort
+constexpr float kHighEffortScore = 1.0f;
+constexpr float kMediumEffortScore = 0.5f;
 
 // PhraseCacheKey for extended cache lookup (V2)
 struct PhraseCacheKey {
@@ -244,6 +249,55 @@ CadenceType detectCadenceType(const std::vector<NoteEvent>& notes, int8_t chord_
 
   // Weak: chord tone but not fully resolved
   return CadenceType::Weak;
+}
+
+// Calculate singing effort score for a phrase (V6).
+// Higher score = more demanding to sing.
+// Returns: 0.0 (easy) to 1.0+ (difficult)
+float calculateSingingEffort(const std::vector<NoteEvent>& notes) {
+  if (notes.empty()) return 0.0f;
+
+  float effort = 0.0f;
+  int high_note_count = 0;
+  int large_interval_count = 0;
+
+  for (size_t i = 0; i < notes.size(); ++i) {
+    // High register penalty
+    if (notes[i].note >= kHighRegisterThreshold) {
+      high_note_count++;
+      // Longer high notes = more effort
+      effort += kMediumEffortScore * (notes[i].duration / static_cast<float>(TICKS_PER_BEAT));
+    }
+
+    // Large interval penalty
+    if (i > 0) {
+      int interval = std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
+      if (interval >= kLargeIntervalThreshold) {
+        large_interval_count++;
+        effort += kMediumEffortScore;
+      }
+    }
+  }
+
+  // Density penalty: many notes in short time
+  if (notes.size() > 1) {
+    Tick phrase_length = notes.back().startTick + notes.back().duration - notes[0].startTick;
+    float notes_per_beat = notes.size() * TICKS_PER_BEAT / static_cast<float>(phrase_length);
+    if (notes_per_beat > 2.0f) {  // More than 2 notes per beat = dense
+      effort += (notes_per_beat - 2.0f) * kMediumEffortScore;
+    }
+  }
+
+  // Normalize by phrase length (effort per bar)
+  if (notes.size() > 0) {
+    Tick phrase_length = notes.back().startTick + notes.back().duration - notes[0].startTick;
+    float bars = phrase_length / static_cast<float>(TICKS_PER_BAR);
+    if (bars > 0) {
+      effort /= bars;
+    }
+  }
+
+  return effort;
 }
 
 // Shift note timings by offset

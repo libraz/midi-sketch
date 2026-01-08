@@ -18,7 +18,15 @@ set(MIDISKETCH_SOURCES
   core/melody_templates.cpp
   core/melody_evaluator.cpp
   core/piano_roll_safety.cpp
+  core/config_converter.cpp
+  core/modulation_calculator.cpp
+  core/post_processor.cpp
+  core/section_utils.cpp
   midi/midi_writer.cpp
+  midi/midi_reader.cpp
+  midi/midi_validator.cpp
+  midi/ump.cpp
+  midi/midi2_writer.cpp
   track/track.cpp
   track/vocal.cpp
   track/chord_track.cpp

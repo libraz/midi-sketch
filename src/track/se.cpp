@@ -1,4 +1,5 @@
 #include "track/se.h"
+#include "core/timing_constants.h"
 
 namespace midisketch {
 
@@ -7,9 +8,9 @@ namespace {
 // Fixed pitch for all calls (C3)
 constexpr uint8_t CALL_PITCH = 48;
 
-// Note durations
-constexpr Tick EIGHTH_NOTE = TICKS_PER_BEAT / 2;  // 240 ticks
-constexpr Tick QUARTER_NOTE = TICKS_PER_BEAT;     // 480 ticks
+// Local aliases for timing constants
+constexpr Tick EIGHTH_NOTE = TICK_EIGHTH;
+constexpr Tick QUARTER_NOTE = TICK_QUARTER;
 
 // Maximum notes in a chant preset
 constexpr size_t MAX_CHANT_NOTES = 16;

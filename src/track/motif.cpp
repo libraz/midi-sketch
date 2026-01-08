@@ -12,7 +12,12 @@ namespace midisketch {
 // M1: ScaleType Support - Convert scale type to interval array
 // =============================================================================
 
-namespace {
+// Internal implementation details for motif track generation.
+// Using named namespace instead of anonymous to:
+// 1. Provide clearer separation from core/motif.cpp
+// 2. Enable testing of internal functions if needed
+// 3. Avoid potential ODR issues with anonymous namespaces
+namespace motif_detail {
 
 // M1: Scale interval arrays for different scale types
 constexpr int SCALE_MAJOR[7] = {0, 2, 4, 5, 7, 9, 11};       // Ionian
@@ -194,6 +199,55 @@ int adjustForChord(int pitch, uint8_t chord_root, bool is_minor) {
   return best_pitch;
 }
 
+// Adjust pitch to nearest scale tone for mood-appropriate melodic color
+// @param pitch Input pitch (MIDI note number)
+// @param key_root Key root (0-11)
+// @param scale Scale type to use
+// @returns Adjusted pitch on the scale
+int adjustPitchToScale(int pitch, uint8_t key_root, ScaleType scale) {
+  const int* intervals = getScaleIntervals(scale);
+  int pitch_class = ((pitch - static_cast<int>(key_root)) % 12 + 12) % 12;
+
+  // Check if already on scale - no adjustment needed
+  for (int i = 0; i < 7; ++i) {
+    if (intervals[i] == pitch_class) {
+      return pitch;
+    }
+  }
+
+  // Find nearest scale tone by checking both directions
+  int best_pitch = pitch;
+  int best_dist = 12;
+
+  for (int i = 0; i < 7; ++i) {
+    int scale_pc = intervals[i];
+    // Calculate distance considering octave wrap
+    int dist1 = std::abs(scale_pc - pitch_class);
+    int dist2 = 12 - dist1;
+    int dist = std::min(dist1, dist2);
+
+    if (dist < best_dist) {
+      best_dist = dist;
+      // Move to nearest scale tone
+      if (scale_pc > pitch_class) {
+        if (scale_pc - pitch_class <= 6) {
+          best_pitch = pitch + (scale_pc - pitch_class);
+        } else {
+          best_pitch = pitch - (12 - scale_pc + pitch_class);
+        }
+      } else {
+        if (pitch_class - scale_pc <= 6) {
+          best_pitch = pitch - (pitch_class - scale_pc);
+        } else {
+          best_pitch = pitch + (12 - pitch_class + scale_pc);
+        }
+      }
+    }
+  }
+
+  return best_pitch;
+}
+
 // Generate rhythm positions with musical structure
 std::vector<Tick> generateRhythmPositions(MotifRhythmDensity density,
                                            MotifLength length,
@@ -320,7 +374,7 @@ std::vector<int> generatePitchSequence(uint8_t note_count,
   return degrees;
 }
 
-}  // namespace
+}  // namespace motif_detail
 
 std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params,
                                              std::mt19937& rng) {
@@ -332,12 +386,12 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params,
   uint8_t base_note = motif_params.register_high ? 67 : 60;  // G4 or C4
 
   // Generate rhythm positions
-  std::vector<Tick> positions = generateRhythmPositions(
+  std::vector<Tick> positions = motif_detail::generateRhythmPositions(
       motif_params.rhythm_density, motif_params.length,
       motif_params.note_count, rng);
 
   // Generate pitch sequence with structure
-  std::vector<int> degrees = generatePitchSequence(
+  std::vector<int> degrees = motif_detail::generatePitchSequence(
       motif_params.note_count, motif_params.motion, rng);
 
   // Calculate note duration
@@ -358,7 +412,7 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params,
   size_t pitch_idx = 0;
   for (Tick pos : positions) {
     int degree = degrees[pitch_idx % degrees.size()];
-    int pitch = degreeToPitch(degree, base_note, key_offset);
+    int pitch = motif_detail::degreeToPitch(degree, base_note, key_offset);
 
     pitch = std::clamp(pitch, 36, 96);
 
@@ -478,14 +532,14 @@ void generateMotifTrack(MidiTrack& track, Song& song,
         uint8_t chord_root = degreeToRoot(degree, Key::C);
         Chord chord = getChordNotes(degree);
         bool is_minor = (chord.intervals[1] == 3);
-        ChordQuality quality = getChordQuality(chord);
+        motif_detail::ChordQuality quality = motif_detail::getChordQuality(chord);
 
         // M1: Select scale type based on chord quality and mood
-        // (Used for future scale-aware adjustments; infrastructure ready)
-        [[maybe_unused]] ScaleType scale = selectScaleType(is_minor, params.mood);
+        ScaleType scale = motif_detail::selectScaleType(is_minor, params.mood);
 
-        // L3: Adjust pitch to avoid dissonance with current chord
-        int adjusted_pitch = adjustForChord(note.note, chord_root, is_minor);
+        // L3: First adjust pitch to scale, then to chord for dissonance avoidance
+        int adjusted_pitch = motif_detail::adjustPitchToScale(note.note, 0, scale);  // Key::C = 0
+        adjusted_pitch = motif_detail::adjustForChord(adjusted_pitch, chord_root, is_minor);
         adjusted_pitch = std::clamp(adjusted_pitch, 36, 108);
 
         // L4: Occasionally apply tension based on chord quality (9th, 11th, 13th)
@@ -499,7 +553,7 @@ void generateMotifTrack(MidiTrack& track, Song& song,
                            tension_prob(rng) < 0.15f;  // 15% chance in B/Chorus
 
         if (use_tension) {
-          adjusted_pitch = applyTension(adjusted_pitch, chord_root, quality, rng);
+          adjusted_pitch = motif_detail::applyTension(adjusted_pitch, chord_root, quality, rng);
           adjusted_pitch = std::clamp(adjusted_pitch, 36, 108);
         }
 

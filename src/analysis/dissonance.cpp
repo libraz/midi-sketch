@@ -678,6 +678,124 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
   return report;
 }
 
+DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
+  DissonanceReport report{};
+  report.summary = {};
+
+  // Collect all notes from all tracks with track name info
+  struct TimedNoteWithName {
+    Tick start;
+    Tick end;
+    uint8_t pitch;
+    std::string track_name;
+  };
+
+  std::vector<TimedNoteWithName> all_notes;
+
+  for (size_t track_idx = 0; track_idx < midi.tracks.size(); ++track_idx) {
+    const auto& track = midi.tracks[track_idx];
+
+    // Skip drum tracks (channel 9 or track named "Drums")
+    // Drum note numbers represent instruments, not pitches
+    if (track.channel == 9 || track.name == "Drums") {
+      continue;
+    }
+
+    std::string track_name = track.name.empty()
+        ? "Track" + std::to_string(track_idx)
+        : track.name;
+    for (const auto& note : track.notes) {
+      TimedNoteWithName timed_note;
+      timed_note.start = note.start;
+      timed_note.end = note.start + note.duration;
+      timed_note.pitch = note.pitch;
+      timed_note.track_name = track_name;
+      all_notes.push_back(timed_note);
+    }
+  }
+
+  // Sort by start time
+  std::sort(all_notes.begin(), all_notes.end(),
+            [](const TimedNoteWithName& a, const TimedNoteWithName& b) {
+              return a.start < b.start;
+            });
+
+  // Deduplication set
+  std::set<std::tuple<Tick, uint8_t, uint8_t>> reported_clashes;
+
+  // Detect simultaneous clashes
+  for (size_t i = 0; i < all_notes.size(); ++i) {
+    for (size_t j = i + 1; j < all_notes.size(); ++j) {
+      const auto& note_a = all_notes[i];
+      const auto& note_b = all_notes[j];
+
+      // Check if they overlap in time
+      if (note_b.start >= note_a.end) break;  // No more overlaps possible
+      if (note_a.track_name == note_b.track_name) continue;  // Same track, skip
+
+      // Calculate interval
+      uint8_t actual_interval = static_cast<uint8_t>(
+          std::abs(static_cast<int>(note_a.pitch) - static_cast<int>(note_b.pitch)));
+      uint8_t interval = actual_interval % 12;
+
+      // Deduplicate
+      uint8_t low_pitch = std::min(note_a.pitch, note_b.pitch);
+      uint8_t high_pitch = std::max(note_a.pitch, note_b.pitch);
+      auto clash_key = std::make_tuple(note_a.start, low_pitch, high_pitch);
+      if (reported_clashes.count(clash_key) > 0) {
+        continue;
+      }
+
+      // Check for dissonant intervals
+      // Without chord info, use default chord degree 0 (C major)
+      auto [is_dissonant, severity] = checkIntervalDissonance(actual_interval, 0);
+
+      if (is_dissonant) {
+        reported_clashes.insert(clash_key);
+
+        uint32_t bar = note_a.start / midi.division / 4;  // Assuming 4/4 time
+        float beat = 1.0f + static_cast<float>(note_a.start % (midi.division * 4)) /
+                               static_cast<float>(midi.division);
+
+        DissonanceIssue issue;
+        issue.type = DissonanceType::SimultaneousClash;
+        issue.severity = severity;
+        issue.tick = note_a.start;
+        issue.bar = bar;
+        issue.beat = beat;
+        issue.interval_semitones = interval;
+        issue.interval_name = intervalToName(interval);
+
+        issue.notes.push_back({note_a.track_name, note_a.pitch, midiNoteToName(note_a.pitch)});
+        issue.notes.push_back({note_b.track_name, note_b.pitch, midiNoteToName(note_b.pitch)});
+
+        report.issues.push_back(issue);
+        report.summary.simultaneous_clashes++;
+
+        switch (severity) {
+          case DissonanceSeverity::High:
+            report.summary.high_severity++;
+            break;
+          case DissonanceSeverity::Medium:
+            report.summary.medium_severity++;
+            break;
+          case DissonanceSeverity::Low:
+            report.summary.low_severity++;
+            break;
+        }
+      }
+    }
+  }
+
+  report.summary.total_issues = report.summary.simultaneous_clashes;
+
+  // Sort by tick
+  std::sort(report.issues.begin(), report.issues.end(),
+            [](const DissonanceIssue& a, const DissonanceIssue& b) { return a.tick < b.tick; });
+
+  return report;
+}
+
 std::string dissonanceReportToJson(const DissonanceReport& report) {
   std::ostringstream ss;
   ss << "{\n";

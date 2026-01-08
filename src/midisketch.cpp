@@ -13,6 +13,37 @@ uint8_t transposePitch(uint8_t pitch, Key key) {
   return static_cast<uint8_t>(std::clamp(result, 0, 127));
 }
 
+// Metadata format version (increment when format changes incompatibly)
+constexpr int kMetadataFormatVersion = 1;
+
+// Generate metadata JSON from generator params
+std::string generateMetadata(const GeneratorParams& params) {
+  std::ostringstream oss;
+  oss << "{";
+  // Identification fields (for distinguishing from other JSON)
+  oss << "\"generator\":\"midi-sketch\",";
+  oss << "\"format_version\":" << kMetadataFormatVersion << ",";
+  oss << "\"library_version\":\"" << MidiSketch::version() << "\",";
+  // Generation parameters
+  oss << "\"seed\":" << params.seed << ",";
+  oss << "\"chord_id\":" << static_cast<int>(params.chord_id) << ",";
+  oss << "\"structure\":" << static_cast<int>(params.structure) << ",";
+  oss << "\"bpm\":" << params.bpm << ",";
+  oss << "\"key\":" << static_cast<int>(params.key) << ",";
+  oss << "\"mood\":" << static_cast<int>(params.mood) << ",";
+  oss << "\"vocal_low\":" << static_cast<int>(params.vocal_low) << ",";
+  oss << "\"vocal_high\":" << static_cast<int>(params.vocal_high) << ",";
+  oss << "\"vocal_attitude\":" << static_cast<int>(params.vocal_attitude) << ",";
+  oss << "\"vocal_style\":" << static_cast<int>(params.vocal_style) << ",";
+  oss << "\"melody_template\":" << static_cast<int>(params.melody_template) << ",";
+  oss << "\"melodic_complexity\":" << static_cast<int>(params.melodic_complexity) << ",";
+  oss << "\"hook_intensity\":" << static_cast<int>(params.hook_intensity) << ",";
+  oss << "\"composition_style\":" << static_cast<int>(params.composition_style) << ",";
+  oss << "\"drums_enabled\":" << (params.drums_enabled ? "true" : "false");
+  oss << "}";
+  return oss.str();
+}
+
 }  // namespace
 
 MidiSketch::MidiSketch() {}
@@ -21,28 +52,36 @@ MidiSketch::~MidiSketch() {}
 
 void MidiSketch::generate(const GeneratorParams& params) {
   generator_.generate(params);
-  midi_writer_.build(generator_.getSong(), params.key);
+  midi_writer_.build(generator_.getSong(), params.key,
+                     generateMetadata(generator_.getParams()), midi_format_);
 }
 
 void MidiSketch::generateFromConfig(const SongConfig& config) {
   generator_.generateFromConfig(config);
-  midi_writer_.build(generator_.getSong(), config.key);
+  midi_writer_.build(generator_.getSong(), config.key,
+                     generateMetadata(generator_.getParams()), midi_format_);
 }
 
 void MidiSketch::regenerateMelody(uint32_t new_seed) {
   generator_.regenerateMelody(new_seed);
-  midi_writer_.build(generator_.getSong(), generator_.getParams().key);
+  const auto& params = generator_.getParams();
+  midi_writer_.build(generator_.getSong(), params.key,
+                     generateMetadata(params), midi_format_);
 }
 
 void MidiSketch::regenerateMelody(const MelodyRegenerateParams& params) {
   generator_.regenerateMelody(params);
-  midi_writer_.build(generator_.getSong(), generator_.getParams().key);
+  const auto& gen_params = generator_.getParams();
+  midi_writer_.build(generator_.getSong(), gen_params.key,
+                     generateMetadata(gen_params), midi_format_);
 }
 
 void MidiSketch::regenerateVocalFromConfig(const SongConfig& config,
                                             uint32_t new_seed) {
   generator_.regenerateVocalFromConfig(config, new_seed);
-  midi_writer_.build(generator_.getSong(), generator_.getParams().key);
+  const auto& params = generator_.getParams();
+  midi_writer_.build(generator_.getSong(), params.key,
+                     generateMetadata(params), midi_format_);
 }
 
 MelodyData MidiSketch::getMelody() const {
@@ -52,7 +91,17 @@ MelodyData MidiSketch::getMelody() const {
 
 void MidiSketch::setMelody(const MelodyData& melody) {
   generator_.setMelody(melody);
-  midi_writer_.build(generator_.getSong(), generator_.getParams().key);
+  const auto& params = generator_.getParams();
+  midi_writer_.build(generator_.getSong(), params.key,
+                     generateMetadata(params), midi_format_);
+}
+
+void MidiSketch::setMidiFormat(MidiFormat format) {
+  midi_format_ = format;
+}
+
+MidiFormat MidiSketch::getMidiFormat() const {
+  return midi_format_;
 }
 
 std::vector<uint8_t> MidiSketch::getMidi() const {

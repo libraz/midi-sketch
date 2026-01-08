@@ -1,6 +1,9 @@
 #include "track/chord_track.h"
 #include "core/chord.h"
+#include "core/mood_utils.h"
+#include "core/pitch_utils.h"
 #include "core/preset_data.h"
+#include "core/timing_constants.h"
 #include "core/track_layer.h"
 #include "core/velocity.h"
 #include "track/bass.h"
@@ -48,15 +51,11 @@ namespace midisketch {
 
 namespace {
 
-// Timing constants
-constexpr Tick WHOLE = TICKS_PER_BAR;
-constexpr Tick HALF = TICKS_PER_BAR / 2;
-constexpr Tick QUARTER = TICKS_PER_BEAT;
-constexpr Tick EIGHTH = TICKS_PER_BEAT / 2;
-
-// Chord voicing range
-constexpr uint8_t CHORD_LOW = 48;   // C3
-constexpr uint8_t CHORD_HIGH = 84;  // C6
+// Local aliases for timing constants
+constexpr Tick WHOLE = TICK_WHOLE;
+constexpr Tick HALF = TICK_HALF;
+constexpr Tick QUARTER = TICK_QUARTER;
+constexpr Tick EIGHTH = TICK_EIGHTH;
 
 // Voicing type for different musical contexts
 enum class VoicingType {
@@ -475,10 +474,9 @@ std::vector<VoicedChord> generateRootlessVoicings(uint8_t root, const Chord& cho
 // C3: Select open voicing subtype based on section and chord context
 OpenVoicingType selectOpenVoicingSubtype(SectionType section, Mood mood,
                                           const Chord& chord, std::mt19937& rng) {
-  bool is_ballad = (mood == Mood::Ballad || mood == Mood::Sentimental ||
-                    mood == Mood::Chill);
-  bool is_dramatic = (mood == Mood::Dramatic || mood == Mood::Nostalgic ||
-                      mood == Mood::DarkPop);
+  bool is_ballad = MoodClassification::isBallad(mood);
+  bool is_dramatic = MoodClassification::isDramatic(mood) ||
+                     mood == Mood::DarkPop;
   bool has_7th = (chord.note_count >= 4 && chord.intervals[3] >= 0);
 
   // Spread voicing for atmospheric sections (Intro, Interlude, Bridge)
@@ -558,9 +556,8 @@ std::vector<VoicedChord> generateVoicings(uint8_t root, const Chord& chord,
 // Select voicing type based on section, mood, and bass pattern
 // @param bass_has_root True if bass is playing the root note
 VoicingType selectVoicingType(SectionType section, Mood mood, bool bass_has_root) {
-  bool is_ballad = (mood == Mood::Ballad || mood == Mood::Sentimental ||
-                    mood == Mood::Chill);
-  bool is_dramatic = (mood == Mood::Dramatic || mood == Mood::Nostalgic);
+  bool is_ballad = MoodClassification::isBallad(mood);
+  bool is_dramatic = MoodClassification::isDramatic(mood);
 
   // Intro/Interlude/Outro/Chant: always close voicing for stability
   if (section == SectionType::Intro || section == SectionType::Interlude ||
@@ -792,8 +789,7 @@ struct HarmonicRhythmInfo {
   bool double_at_phrase_end;  // Add extra chord change at phrase end
 
   static HarmonicRhythmInfo forSection(SectionType section, Mood mood) {
-    bool is_ballad = (mood == Mood::Ballad || mood == Mood::Sentimental ||
-                      mood == Mood::Chill);
+    bool is_ballad = MoodClassification::isBallad(mood);
 
     switch (section) {
       case SectionType::Intro:
@@ -918,7 +914,7 @@ bool shouldAddDominantPreparation(SectionType current, SectionType next,
   if (next != SectionType::Chorus) return false;
 
   // Skip for ballads (too dramatic)
-  if (mood == Mood::Ballad || mood == Mood::Sentimental) return false;
+  if (MoodClassification::isBallad(mood)) return false;
 
   // Don't add if already on dominant
   if (isDominant(current_degree)) return false;
@@ -996,10 +992,9 @@ ChordRhythm adjustDenser(ChordRhythm rhythm) {
 ChordRhythm selectRhythm(SectionType section, Mood mood,
                           BackingDensity backing_density,
                           std::mt19937& rng) {
-  bool is_ballad = (mood == Mood::Ballad || mood == Mood::Sentimental ||
-                    mood == Mood::Chill);
-  bool is_energetic = (mood == Mood::EnergeticDance || mood == Mood::IdolPop ||
-                       mood == Mood::BrightUpbeat);
+  bool is_ballad = MoodClassification::isBallad(mood);
+  bool is_energetic = MoodClassification::isDanceOriented(mood) ||
+                      mood == Mood::BrightUpbeat;
 
   // Allowed rhythms for each section (first is most likely)
   std::vector<ChordRhythm> allowed;

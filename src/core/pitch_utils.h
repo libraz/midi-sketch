@@ -1,9 +1,58 @@
 #ifndef MIDISKETCH_CORE_PITCH_UTILS_H
 #define MIDISKETCH_CORE_PITCH_UTILS_H
 
+#include <algorithm>
 #include <cstdint>
 
 namespace midisketch {
+
+// ============================================================================
+// Track Pitch Range Constants
+// ============================================================================
+// Standard pitch ranges for each track type.
+// These ranges are chosen for musical clarity and to avoid frequency masking.
+constexpr uint8_t BASS_LOW = 28;    // E1 - Electric bass low range
+constexpr uint8_t BASS_HIGH = 55;   // G3 - Bass upper limit
+
+constexpr uint8_t CHORD_LOW = 48;   // C3 - Chord voicing lower limit
+constexpr uint8_t CHORD_HIGH = 84;  // C6 - Chord voicing upper limit
+
+constexpr uint8_t MOTIF_LOW = 36;   // C2 - Motif lower limit
+constexpr uint8_t MOTIF_HIGH = 108; // C8 - Motif upper limit (wide range for synths)
+
+// ============================================================================
+// Pitch Clamp Functions
+// ============================================================================
+// Clamp pitch to specified range. Returns uint8_t for direct MIDI use.
+// @param pitch Input pitch (may be out of range)
+// @param low Minimum allowed pitch
+// @param high Maximum allowed pitch
+// @returns Clamped pitch within [low, high]
+inline uint8_t clampPitch(int pitch, uint8_t low, uint8_t high) {
+  return static_cast<uint8_t>(std::clamp(pitch, static_cast<int>(low),
+                                          static_cast<int>(high)));
+}
+
+// Clamp pitch to bass range (28-55, E1-G3).
+// @param pitch Input pitch
+// @returns Clamped pitch within bass range
+inline uint8_t clampBass(int pitch) {
+  return clampPitch(pitch, BASS_LOW, BASS_HIGH);
+}
+
+// Clamp pitch to chord voicing range (48-84, C3-C6).
+// @param pitch Input pitch
+// @returns Clamped pitch within chord range
+inline uint8_t clampChord(int pitch) {
+  return clampPitch(pitch, CHORD_LOW, CHORD_HIGH);
+}
+
+// Clamp pitch to motif range (36-108, C2-C8).
+// @param pitch Input pitch
+// @returns Clamped pitch within motif range
+inline uint8_t clampMotif(int pitch) {
+  return clampPitch(pitch, MOTIF_LOW, MOTIF_HIGH);
+}
 
 // ============================================================================
 // Passaggio Constants

@@ -2,6 +2,8 @@
 #include "analysis/dissonance.h"
 #include "core/preset_data.h"
 #include "core/structure.h"
+#include "midi/midi_reader.h"
+#include "midi/midi_validator.h"
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -22,7 +24,17 @@ void printUsage(const char* program) {
   std::cout << "  --bpm N           Set BPM (60-200, default: style preset)\n";
   std::cout << "  --duration N      Set target duration in seconds (0 = use pattern)\n";
   std::cout << "  --form N          Set form/structure pattern ID (0-17)\n";
+  std::cout << "  --input FILE      Analyze existing MIDI file for dissonance\n";
   std::cout << "  --analyze         Analyze generated MIDI for dissonance issues\n";
+  std::cout << "  --skip-vocal      Skip vocal in initial generation (for BGM-first workflow)\n";
+  std::cout << "  --regenerate-vocal  Regenerate vocal after initial generation\n";
+  std::cout << "  --vocal-seed N    Seed for vocal regeneration (requires --regenerate-vocal)\n";
+  std::cout << "  --vocal-attitude N  Vocal attitude for regeneration (0-2)\n";
+  std::cout << "  --vocal-low N     Vocal range low (MIDI note, default 57)\n";
+  std::cout << "  --vocal-high N    Vocal range high (MIDI note, default 79)\n";
+  std::cout << "  --format FMT      Set MIDI format (smf1 or smf2, default: smf2)\n";
+  std::cout << "  --validate FILE   Validate MIDI file structure\n";
+  std::cout << "  --json            Output JSON to stdout (with --validate or --analyze)\n";
   std::cout << "  --help            Show this help message\n";
 }
 
@@ -76,6 +88,11 @@ void printDissonanceSummary(const midisketch::DissonanceReport& report) {
 
 int main(int argc, char* argv[]) {
   bool analyze = false;
+  bool skip_vocal = false;
+  bool regenerate_vocal = false;
+  std::string input_file;     // Input MIDI file for analysis
+  std::string validate_file;  // MIDI file for validation
+  bool json_output = false;   // Output JSON to stdout
   uint32_t seed = 0;  // 0 = auto-random
   uint8_t style_id = 1;
   uint8_t chord_id = 3;
@@ -84,10 +101,18 @@ int main(int argc, char* argv[]) {
   uint16_t bpm = 0;  // 0 = use style default
   uint16_t duration = 0;  // 0 = use pattern default
   int form_id = -1;  // -1 = use style default
+  uint32_t vocal_seed = 0;
+  uint8_t vocal_attitude = 1;
+  uint8_t vocal_low = 57;
+  uint8_t vocal_high = 79;
+  midisketch::MidiFormat midi_format = midisketch::kDefaultMidiFormat;
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--analyze") == 0) {
       analyze = true;
+    } else if (std::strcmp(argv[i], "--input") == 0 && i + 1 < argc) {
+      input_file = argv[++i];
+      analyze = true;  // Implicitly enable analysis for input files
     } else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
       seed = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--style") == 0 && i + 1 < argc) {
@@ -104,15 +129,110 @@ int main(int argc, char* argv[]) {
       duration = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--form") == 0 && i + 1 < argc) {
       form_id = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
+    } else if (std::strcmp(argv[i], "--skip-vocal") == 0) {
+      skip_vocal = true;
+    } else if (std::strcmp(argv[i], "--regenerate-vocal") == 0) {
+      regenerate_vocal = true;
+    } else if (std::strcmp(argv[i], "--vocal-seed") == 0 && i + 1 < argc) {
+      vocal_seed = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
+    } else if (std::strcmp(argv[i], "--vocal-attitude") == 0 && i + 1 < argc) {
+      vocal_attitude = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+    } else if (std::strcmp(argv[i], "--vocal-low") == 0 && i + 1 < argc) {
+      vocal_low = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+    } else if (std::strcmp(argv[i], "--vocal-high") == 0 && i + 1 < argc) {
+      vocal_high = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+    } else if (std::strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
+      ++i;
+      if (std::strcmp(argv[i], "smf1") == 0 || std::strcmp(argv[i], "SMF1") == 0) {
+        midi_format = midisketch::MidiFormat::SMF1;
+      } else if (std::strcmp(argv[i], "smf2") == 0 || std::strcmp(argv[i], "SMF2") == 0) {
+        midi_format = midisketch::MidiFormat::SMF2;
+      } else {
+        std::cerr << "Unknown format: " << argv[i] << " (use smf1 or smf2)\n";
+        return 1;
+      }
+    } else if (std::strcmp(argv[i], "--validate") == 0 && i + 1 < argc) {
+      validate_file = argv[++i];
+    } else if (std::strcmp(argv[i], "--json") == 0) {
+      json_output = true;
     } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
       printUsage(argv[0]);
       return 0;
     }
   }
 
+  // Validate mode: validate MIDI file structure
+  if (!validate_file.empty()) {
+    midisketch::MidiValidator validator;
+    auto report = validator.validate(validate_file);
+
+    if (json_output) {
+      // JSON to stdout (no version banner)
+      std::cout << report.toJson();
+    } else {
+      // Text report to stdout
+      std::cout << "midi-sketch v" << midisketch::MidiSketch::version() << "\n\n";
+      std::cout << report.toTextReport(validate_file);
+    }
+
+    return report.valid ? 0 : 1;
+  }
+
   std::cout << "midi-sketch v" << midisketch::MidiSketch::version() << "\n\n";
 
+  // Input file mode: analyze existing MIDI file
+  if (!input_file.empty()) {
+    std::cout << "Analyzing: " << input_file << "\n\n";
+
+    midisketch::MidiReader reader;
+    if (!reader.read(input_file)) {
+      std::cerr << "Error: " << reader.getError() << "\n";
+      return 1;
+    }
+
+    const auto& midi = reader.getParsedMidi();
+    std::cout << "MIDI Info:\n";
+    std::cout << "  Format: " << midi.format << "\n";
+    std::cout << "  Tracks: " << midi.num_tracks << "\n";
+    std::cout << "  Division: " << midi.division << " ticks/quarter\n";
+    std::cout << "  BPM: " << midi.bpm << "\n";
+
+    // Show generation metadata if present
+    if (midi.hasMidiSketchMetadata()) {
+      std::cout << "  Generated by: midi-sketch\n";
+      std::cout << "  Metadata: " << midi.metadata << "\n";
+    } else {
+      std::cout << "  Generated by: (unknown - no midi-sketch metadata)\n";
+    }
+    std::cout << "\n";
+
+    std::cout << "Tracks:\n";
+    for (size_t i = 0; i < midi.tracks.size(); ++i) {
+      const auto& track = midi.tracks[i];
+      std::cout << "  [" << i << "] " << (track.name.empty() ? "(unnamed)" : track.name)
+                << " - " << track.notes.size() << " notes, ch " << static_cast<int>(track.channel)
+                << ", prog " << static_cast<int>(track.program) << "\n";
+    }
+    std::cout << "\n";
+
+    // Perform dissonance analysis
+    auto report = midisketch::analyzeDissonanceFromParsedMidi(midi);
+
+    printDissonanceSummary(report);
+
+    // Write analysis JSON
+    auto analysis_json = midisketch::dissonanceReportToJson(report);
+    std::ofstream analysis_file("analysis.json");
+    if (analysis_file) {
+      analysis_file << analysis_json;
+      std::cout << "\nSaved: analysis.json\n";
+    }
+
+    return 0;
+  }
+
   midisketch::MidiSketch sketch;
+  sketch.setMidiFormat(midi_format);
 
   midisketch::SongConfig config = midisketch::createDefaultSongConfig(style_id);
   config.chord_progression_id = chord_id;
@@ -153,6 +273,20 @@ int main(int argc, char* argv[]) {
     file.write(reinterpret_cast<const char*>(midi_data.data()),
                static_cast<std::streamsize>(midi_data.size()));
     std::cout << "Saved: output.mid (" << midi_data.size() << " bytes)\n";
+  }
+
+  // Validate generated MIDI
+  {
+    midisketch::MidiValidator validator;
+    auto report = validator.validate(midi_data);
+    if (!report.valid) {
+      std::cerr << "\nWARNING: Generated MIDI validation failed!\n";
+      for (const auto& issue : report.issues) {
+        if (issue.severity == midisketch::ValidationSeverity::Error) {
+          std::cerr << "  X " << issue.message << "\n";
+        }
+      }
+    }
   }
 
   // Write events JSON

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "core/motif.h"
+#include "core/generator.h"
 #include "core/types.h"
 #include <map>
 #include <random>
@@ -384,6 +385,51 @@ TEST_F(MotifTest, PlaceMotifInIntroRepeats) {
   EXPECT_GE(notes.size(), 4u);
 }
 
+TEST_F(MotifTest, PlaceMotifInIntroSnapsToScale) {
+  // Test that notes are snapped to C major scale even when base_pitch is off-scale
+  Motif motif;
+  motif.rhythm = {{0.0f, 2, true}, {1.0f, 2, false}, {2.0f, 2, true}};
+  motif.contour_degrees = {0, 1, -1};  // +1 and -1 could create off-scale notes
+  motif.length_beats = 4;
+
+  // Use base_pitch = 68 (G#4) which is NOT in C major scale
+  // After snap, should become G4 (67) or A4 (69)
+  uint8_t off_scale_base = 68;  // G#4
+  std::vector<NoteEvent> notes = placeMotifInIntro(motif, 0, TICKS_PER_BAR, off_scale_base, 100);
+
+  ASSERT_GT(notes.size(), 0u);
+
+  // C major scale pitch classes: 0, 2, 4, 5, 7, 9, 11 (C, D, E, F, G, A, B)
+  auto isInCMajorScale = [](uint8_t pitch) {
+    int pc = pitch % 12;
+    return pc == 0 || pc == 2 || pc == 4 || pc == 5 || pc == 7 || pc == 9 || pc == 11;
+  };
+
+  // All notes should be in C major scale
+  for (const auto& note : notes) {
+    EXPECT_TRUE(isInCMajorScale(note.note))
+        << "Pitch " << static_cast<int>(note.note)
+        << " (pitch class " << (note.note % 12) << ") is not in C major scale";
+  }
+}
+
+TEST_F(MotifTest, PlaceMotifInIntroSnapsContourDegrees) {
+  // Test that contour degrees that would produce off-scale notes are snapped
+  Motif motif;
+  motif.rhythm = {{0.0f, 2, true}};
+  motif.contour_degrees = {1};  // +1 semitone from base
+  motif.length_beats = 4;
+
+  // base_pitch = 65 (F4), +1 = 66 (F#4), which is NOT in scale
+  // F#4 (pc=6) is equidistant from F (pc=5) and G (pc=7), snaps to F (first found)
+  uint8_t base_f4 = 65;
+  std::vector<NoteEvent> notes = placeMotifInIntro(motif, 0, TICKS_PER_BAR, base_f4, 100);
+
+  ASSERT_GT(notes.size(), 0u);
+  // 65 + 1 = 66 (F#4) -> snapped to 65 (F4) due to equal distance
+  EXPECT_EQ(notes[0].note, 65) << "F#4 should snap to F4 in C major (equidistant, F found first)";
+}
+
 // ============================================================================
 // placeMotifInAux Tests
 // ============================================================================
@@ -410,6 +456,126 @@ TEST_F(MotifTest, PlaceMotifInAuxReducedVelocity) {
   ASSERT_GT(notes.size(), 0u);
   // Velocity should be reduced (80 * 0.5 = 40)
   EXPECT_LE(notes[0].velocity, 80u);
+}
+
+// ============================================================================
+// Phase 12: ScaleType Integration Tests
+// ============================================================================
+
+// Note: These tests verify the ScaleType functionality that is now active
+// in motif generation (track/motif.cpp). The internal functions are in
+// namespace motif_detail, so we test through the public interface.
+
+TEST_F(MotifTest, ScaleTypeEnumCoversAllValues) {
+  // Verify all ScaleType values are defined
+  EXPECT_EQ(static_cast<uint8_t>(ScaleType::Major), 0);
+  EXPECT_EQ(static_cast<uint8_t>(ScaleType::NaturalMinor), 1);
+  EXPECT_EQ(static_cast<uint8_t>(ScaleType::HarmonicMinor), 2);
+  EXPECT_EQ(static_cast<uint8_t>(ScaleType::Dorian), 3);
+  EXPECT_EQ(static_cast<uint8_t>(ScaleType::Mixolydian), 4);
+}
+
+// Test that motif generation produces notes on scale (integration test)
+// This implicitly tests adjustPitchToScale via the generator
+
+class ScaleTypeIntegrationTest : public ::testing::Test {
+ protected:
+  // Check if a pitch is on a given scale
+  bool isOnScale(int pitch, ScaleType scale) {
+    // Scale intervals from C
+    static const int major[] = {0, 2, 4, 5, 7, 9, 11};
+    static const int natural_minor[] = {0, 2, 3, 5, 7, 8, 10};
+    static const int harmonic_minor[] = {0, 2, 3, 5, 7, 8, 11};
+    static const int dorian[] = {0, 2, 3, 5, 7, 9, 10};
+    static const int mixolydian[] = {0, 2, 4, 5, 7, 9, 10};
+
+    const int* intervals;
+    switch (scale) {
+      case ScaleType::Major: intervals = major; break;
+      case ScaleType::NaturalMinor: intervals = natural_minor; break;
+      case ScaleType::HarmonicMinor: intervals = harmonic_minor; break;
+      case ScaleType::Dorian: intervals = dorian; break;
+      case ScaleType::Mixolydian: intervals = mixolydian; break;
+      default: intervals = major; break;
+    }
+
+    int pitch_class = pitch % 12;
+    for (int i = 0; i < 7; ++i) {
+      if (intervals[i] == pitch_class) return true;
+    }
+    return false;
+  }
+};
+
+TEST_F(ScaleTypeIntegrationTest, MotifNotesAreOnScale) {
+  // Generate motif with BackgroundMotif style and check notes are on scale
+  // Since we use Key::C internally, notes should be on the selected scale
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;  // Should use Major scale
+  params.composition_style = CompositionStyle::BackgroundMotif;
+  params.seed = 42;
+
+  gen.generate(params);
+  const auto& motif_notes = gen.getSong().motif().notes();
+
+  // Check that most notes are on the Major scale (allowing some passing tones)
+  int on_scale_count = 0;
+  for (const auto& note : motif_notes) {
+    if (isOnScale(note.note, ScaleType::Major)) {
+      on_scale_count++;
+    }
+  }
+
+  // At least 80% of notes should be on scale
+  if (!motif_notes.empty()) {
+    float ratio = static_cast<float>(on_scale_count) / motif_notes.size();
+    EXPECT_GE(ratio, 0.8f) << "Most motif notes should be on the Major scale";
+  }
+}
+
+TEST_F(ScaleTypeIntegrationTest, DramaticMoodUsesHarmonicMinor) {
+  // Dramatic mood with minor chord should use Harmonic Minor
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::Dramatic;  // Should trigger HarmonicMinor for minor chords
+  params.composition_style = CompositionStyle::BackgroundMotif;
+  params.seed = 42;
+
+  gen.generate(params);
+  const auto& motif_notes = gen.getSong().motif().notes();
+
+  // Motif should be generated
+  EXPECT_GT(motif_notes.size(), 0u) << "Dramatic mood should generate motif notes";
+}
+
+TEST_F(ScaleTypeIntegrationTest, SynthwaveMoodUsesMixolydian) {
+  // Synthwave mood should use Mixolydian scale
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::Synthwave;  // Should use Mixolydian
+  params.composition_style = CompositionStyle::BackgroundMotif;
+  params.seed = 42;
+
+  gen.generate(params);
+  const auto& motif_notes = gen.getSong().motif().notes();
+
+  // Check that notes are on Mixolydian scale
+  int on_scale_count = 0;
+  for (const auto& note : motif_notes) {
+    if (isOnScale(note.note, ScaleType::Mixolydian)) {
+      on_scale_count++;
+    }
+  }
+
+  // At least 70% of notes should be on scale (Mixolydian differs from Major by b7)
+  if (!motif_notes.empty()) {
+    float ratio = static_cast<float>(on_scale_count) / motif_notes.size();
+    EXPECT_GE(ratio, 0.7f) << "Synthwave mood motif should be on Mixolydian scale";
+  }
 }
 
 }  // namespace

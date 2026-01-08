@@ -1,15 +1,12 @@
 #include "track/melody_designer.h"
 #include "core/harmony_context.h"
+#include "core/timing_constants.h"
 #include <algorithm>
 #include <cmath>
 
 namespace midisketch {
 
 namespace {
-
-// Duration in ticks for different note values
-constexpr Tick TICK_EIGHTH = TICKS_PER_BEAT / 2;        // 240
-constexpr Tick TICK_QUARTER = TICKS_PER_BEAT;           // 480
 
 // Default velocity for melody notes
 constexpr uint8_t DEFAULT_VELOCITY = 100;

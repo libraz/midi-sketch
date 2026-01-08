@@ -2,12 +2,14 @@
 #define MIDISKETCH_ANALYSIS_DISSONANCE_H
 
 #include "core/types.h"
+#include "midi/midi_reader.h"
 #include <string>
 #include <vector>
 
 namespace midisketch {
 
 class Song;
+struct ParsedMidi;
 
 // Severity level for dissonance issues.
 enum class DissonanceSeverity : uint8_t {
@@ -77,6 +79,12 @@ struct DissonanceReport {
 // @param params The parameters used for generation (for chord progression info)
 // @returns DissonanceReport containing all detected issues
 DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& params);
+
+// Analyzes a parsed MIDI file for dissonance issues.
+// Uses only simultaneous clash detection (no chord progression info available).
+// @param midi The parsed MIDI file
+// @returns DissonanceReport containing detected issues
+DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi);
 
 // Converts a DissonanceReport to JSON string.
 // @param report The report to convert

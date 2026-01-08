@@ -1,6 +1,9 @@
 #include "track/bass.h"
 #include "core/chord.h"
+#include "core/mood_utils.h"
+#include "core/pitch_utils.h"
 #include "core/preset_data.h"
+#include "core/timing_constants.h"
 #include "core/velocity.h"
 #include <algorithm>
 #include <array>
@@ -9,19 +12,10 @@ namespace midisketch {
 
 namespace {
 
-// Timing constants
-constexpr Tick HALF = TICKS_PER_BAR / 2;
-constexpr Tick QUARTER = TICKS_PER_BEAT;
-constexpr Tick EIGHTH = TICKS_PER_BEAT / 2;
-
-// Bass note range
-constexpr uint8_t BASS_LOW = 28;   // E1
-constexpr uint8_t BASS_HIGH = 55;  // G3
-
-// Clamp bass note to valid range
-uint8_t clampBass(int note) {
-  return static_cast<uint8_t>(std::clamp(note, (int)BASS_LOW, (int)BASS_HIGH));
-}
+// Local aliases for timing constants
+constexpr Tick HALF = TICK_HALF;
+constexpr Tick QUARTER = TICK_QUARTER;
+constexpr Tick EIGHTH = TICK_EIGHTH;
 
 // Get fifth above root (7 semitones)
 uint8_t getFifth(uint8_t root) {
@@ -166,12 +160,10 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
     return BassPattern::RhythmicDrive;
   }
 
-  // Mood-based adjustments
-  bool is_ballad = (mood == Mood::Ballad || mood == Mood::Sentimental ||
-                    mood == Mood::Chill);
-  bool is_dance = (mood == Mood::EnergeticDance || mood == Mood::ElectroPop ||
-                   mood == Mood::IdolPop);
-  bool is_jazz_influenced = (mood == Mood::CityPop || mood == Mood::Nostalgic);
+  // Mood-based adjustments using MoodClassification utilities
+  bool is_ballad = MoodClassification::isBallad(mood);
+  bool is_dance = MoodClassification::isDanceOriented(mood);
+  bool is_jazz_influenced = MoodClassification::isJazzInfluenced(mood);
 
   // Allowed patterns for each section (first is most likely)
   std::vector<BassPattern> allowed;
@@ -457,7 +449,7 @@ bool shouldAddDominantPreparation(SectionType current, SectionType next,
   if (next != SectionType::Chorus) return false;
 
   // Skip for ballads (too dramatic)
-  if (mood == Mood::Ballad || mood == Mood::Sentimental) return false;
+  if (MoodClassification::isBallad(mood)) return false;
 
   // Don't add if already on dominant
   if (current_degree == 4) return false;  // V chord

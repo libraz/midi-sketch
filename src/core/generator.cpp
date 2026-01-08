@@ -1,7 +1,10 @@
 #include "core/generator.h"
 #include "core/chord.h"
+#include "core/config_converter.h"
 #include "core/melody_templates.h"
+#include "core/modulation_calculator.h"
 #include "core/pitch_utils.h"
+#include "core/post_processor.h"
 #include "core/preset_data.h"
 #include "core/structure.h"
 #include "core/velocity.h"
@@ -17,161 +20,6 @@
 
 namespace midisketch {
 
-namespace {
-
-// Apply VocalStylePreset settings to melody parameters.
-// MelodyDesigner uses templates based on vocal style, but melody_params
-// controls additional settings like register shift.
-void applyVocalStylePreset(GeneratorParams& params,
-                           const SongConfig& /* config */) {
-  switch (params.vocal_style) {
-    case VocalStylePreset::Vocaloid:
-      // YOASOBI style - energetic but balanced
-      params.melody_params.max_leap_interval = 12;
-      params.melody_params.syncopation_prob = 0.35f;
-      params.melody_params.allow_bar_crossing = true;
-      // Section density: verse moderate, chorus elevated
-      params.melody_params.verse_density_modifier = 0.8f;
-      params.melody_params.prechorus_density_modifier = 0.9f;
-      params.melody_params.chorus_density_modifier = 1.15f;
-      params.melody_params.bridge_density_modifier = 0.85f;
-      // Disable vowel section step limits, keep breathing for natural phrasing
-      params.melody_params.disable_vowel_constraints = true;
-      break;
-
-    case VocalStylePreset::UltraVocaloid:
-      // Miku Disappearance style - ballad verse, barrage chorus
-      params.melody_params.max_leap_interval = 14;
-      params.melody_params.syncopation_prob = 0.4f;
-      params.melody_params.allow_bar_crossing = true;
-      // Section density: ballad-like verse, extreme contrast with chorus
-      params.melody_params.verse_density_modifier = 0.3f;     // Ballad-like sparse
-      params.melody_params.prechorus_density_modifier = 0.5f; // Build tension
-      params.melody_params.chorus_density_modifier = 1.6f;    // Full barrage
-      params.melody_params.bridge_density_modifier = 0.35f;   // Return to ballad
-      // 32nd note ratios: A=30%, Chorus=100%
-      params.melody_params.verse_thirtysecond_ratio = 0.3f;      // 30% 32nd in verse
-      params.melody_params.prechorus_thirtysecond_ratio = 0.5f;  // 50% 32nd in pre-chorus
-      params.melody_params.chorus_thirtysecond_ratio = 1.0f;     // 100% 32nd in chorus
-      params.melody_params.bridge_thirtysecond_ratio = 0.2f;     // 20% 32nd in bridge
-      // Reduce consecutive same note probability (10% chance to allow)
-      params.melody_params.consecutive_same_note_prob = 0.1f;
-      // Disable vowel section step limits, keep breathing for natural phrasing
-      params.melody_params.disable_vowel_constraints = true;
-      break;
-
-    case VocalStylePreset::Idol:
-      params.melody_params.max_leap_interval = 7;
-      params.melody_params.hook_repetition = true;
-      params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_density_modifier = 0.85f;
-      break;
-
-    case VocalStylePreset::Ballad:
-      params.melody_params.max_leap_interval = 5;
-      params.melody_params.chorus_long_tones = true;
-      break;
-
-    case VocalStylePreset::Rock:
-      params.melody_params.max_leap_interval = 9;
-      params.melody_params.hook_repetition = true;
-      params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_register_shift = 7;
-      params.melody_params.syncopation_prob = 0.25f;
-      params.melody_params.allow_bar_crossing = true;
-      break;
-
-    case VocalStylePreset::CityPop:
-      params.melody_params.max_leap_interval = 7;
-      params.melody_params.syncopation_prob = 0.35f;
-      params.melody_params.allow_bar_crossing = true;
-      params.melody_params.tension_usage = 0.4f;
-      break;
-
-    case VocalStylePreset::Anime:
-      params.melody_params.max_leap_interval = 10;
-      params.melody_params.hook_repetition = true;
-      params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_density_modifier = 1.15f;
-      params.melody_params.syncopation_prob = 0.25f;
-      params.melody_params.allow_bar_crossing = true;
-      break;
-
-    case VocalStylePreset::BrightKira:
-      params.melody_params.max_leap_interval = 10;
-      params.melody_params.hook_repetition = true;
-      params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_register_shift = 7;
-      break;
-
-    case VocalStylePreset::CoolSynth:
-      params.melody_params.max_leap_interval = 7;
-      params.melody_params.hook_repetition = true;
-      params.melody_params.syncopation_prob = 0.15f;
-      params.melody_params.allow_bar_crossing = true;
-      break;
-
-    case VocalStylePreset::CuteAffected:
-      params.melody_params.max_leap_interval = 8;
-      params.melody_params.hook_repetition = true;
-      params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_register_shift = 5;
-      break;
-
-    case VocalStylePreset::PowerfulShout:
-      params.melody_params.max_leap_interval = 12;
-      params.melody_params.hook_repetition = true;
-      params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_density_modifier = 1.3f;
-      params.melody_params.syncopation_prob = 0.2f;
-      break;
-
-    case VocalStylePreset::Auto:
-    case VocalStylePreset::Standard:
-    default:
-      // No changes - use StylePreset defaults
-      break;
-  }
-}
-
-// Apply MelodicComplexity settings to melody parameters.
-// Simple: fewer notes, smaller leaps, more repetition
-// Complex: more notes, larger leaps, more variation
-void applyMelodicComplexity(GeneratorParams& params) {
-  switch (params.melodic_complexity) {
-    case MelodicComplexity::Simple:
-      // Reduce complexity for catchier, simpler melodies
-      params.melody_params.note_density *= 0.7f;
-      params.melody_params.max_leap_interval =
-          std::min(static_cast<uint8_t>(5), params.melody_params.max_leap_interval);
-      params.melody_params.hook_repetition = true;  // Enable hook repetition
-      params.melody_params.tension_usage *= 0.5f;   // Less tension
-      params.melody_params.sixteenth_note_ratio *= 0.5f;  // Fewer fast notes
-      params.melody_params.syncopation_prob *= 0.5f;  // Less syncopation
-      break;
-
-    case MelodicComplexity::Complex:
-      // Increase complexity for more varied, intricate melodies
-      params.melody_params.note_density *= 1.3f;
-      params.melody_params.max_leap_interval = std::min(
-          static_cast<uint8_t>(12),
-          static_cast<uint8_t>(params.melody_params.max_leap_interval * 1.5f));
-      params.melody_params.tension_usage *= 1.5f;
-      params.melody_params.sixteenth_note_ratio =
-          std::min(0.5f, params.melody_params.sixteenth_note_ratio * 1.5f);
-      params.melody_params.syncopation_prob =
-          std::min(0.5f, params.melody_params.syncopation_prob * 1.5f);
-      break;
-
-    case MelodicComplexity::Standard:
-    default:
-      // No changes
-      break;
-  }
-}
-
-}  // namespace
-
 Generator::Generator() : rng_(42) {}
 
 uint32_t Generator::resolveSeed(uint32_t seed) {
@@ -183,199 +31,22 @@ uint32_t Generator::resolveSeed(uint32_t seed) {
 }
 
 void Generator::generateFromConfig(const SongConfig& config) {
-  // Get style preset for defaults
-  const StylePreset& preset = getStylePreset(config.style_preset_id);
-
-  // Convert SongConfig to GeneratorParams
-  GeneratorParams params;
-
-  // If form was explicitly set, use it directly
-  // Otherwise, if form matches preset default, use weighted random selection
-  if (config.form_explicit) {
-    params.structure = config.form;
-  } else if (config.form == preset.default_form && config.seed != 0) {
-    params.structure = selectRandomForm(config.style_preset_id, config.seed);
-  } else if (config.form == preset.default_form && config.seed == 0) {
-    // Seed 0 means auto-random, generate a seed first for form selection
-    uint32_t form_seed = static_cast<uint32_t>(
-        std::chrono::system_clock::now().time_since_epoch().count());
-    params.structure = selectRandomForm(config.style_preset_id, form_seed);
-  } else {
-    params.structure = config.form;
-  }
-
-  params.chord_id = config.chord_progression_id;
-  params.key = config.key;
-  params.drums_enabled = config.drums_enabled;
-  // Note: Modulation is controlled by modulation_timing_ member variable
-  params.vocal_low = config.vocal_low;
-  params.vocal_high = config.vocal_high;
-  params.seed = config.seed;
-
-  // Use config BPM if specified, otherwise use style preset default
-  params.bpm = (config.bpm != 0) ? config.bpm : preset.tempo_default;
-
-  // Map style preset to mood and composition style
-  // Based on StylePreset definitions in preset_data.cpp
-  switch (config.style_preset_id) {
-    case 0:  // Minimal Groove Pop
-      params.mood = Mood::StraightPop;
-      params.composition_style = CompositionStyle::MelodyLead;
-      break;
-    case 1:  // Dance Pop Emotion
-      params.mood = Mood::EnergeticDance;
-      params.composition_style = CompositionStyle::MelodyLead;
-      break;
-    case 2:  // Bright Pop
-      params.mood = Mood::BrightUpbeat;
-      params.composition_style = CompositionStyle::MelodyLead;
-      break;
-    case 3:  // Idol Standard
-      params.mood = Mood::IdolPop;
-      params.composition_style = CompositionStyle::MelodyLead;
-      break;
-    case 4:  // Idol Emotion
-      params.mood = Mood::EmotionalPop;
-      params.composition_style = CompositionStyle::MelodyLead;
-      break;
-    case 5:  // Idol Energy
-      params.mood = Mood::IdolPop;
-      params.composition_style = CompositionStyle::MelodyLead;
-      break;
-    case 6:  // Idol Minimal
-      params.mood = Mood::IdolPop;
-      params.composition_style = CompositionStyle::MelodyLead;
-      break;
-    case 7:  // Rock Shout
-      params.mood = Mood::LightRock;
-      params.composition_style = CompositionStyle::MelodyLead;
-      break;
-    case 8:  // Pop Emotion
-      params.mood = Mood::EmotionalPop;
-      params.composition_style = CompositionStyle::MelodyLead;
-      break;
-    case 9:  // Raw Emotional
-      params.mood = Mood::Dramatic;
-      params.composition_style = CompositionStyle::MelodyLead;
-      break;
-    case 10:  // Acoustic Pop
-      params.mood = Mood::Ballad;
-      params.composition_style = CompositionStyle::MelodyLead;
-      break;
-    case 11:  // Live Call & Response
-      params.mood = Mood::Anthem;
-      params.composition_style = CompositionStyle::MelodyLead;
-      break;
-    case 12:  // Background Motif
-      params.mood = Mood::StraightPop;
-      params.composition_style = CompositionStyle::BackgroundMotif;
-      break;
-    case 13:  // City Pop
-      params.mood = Mood::CityPop;
-      params.composition_style = CompositionStyle::MelodyLead;
-      break;
-    case 14:  // Anime Opening
-      params.mood = Mood::Yoasobi;
-      params.composition_style = CompositionStyle::MelodyLead;
-      break;
-    case 15:  // EDM Synth Pop
-      params.mood = Mood::FutureBass;
-      params.composition_style = CompositionStyle::SynthDriven;
-      break;
-    case 16:  // Emotional Ballad
-      params.mood = Mood::Ballad;
-      params.composition_style = CompositionStyle::MelodyLead;
-      break;
-    default:
-      params.mood = Mood::StraightPop;
-      params.composition_style = CompositionStyle::MelodyLead;
-      break;
-  }
-
-  // Arpeggio settings
-  params.arpeggio_enabled = config.arpeggio_enabled;
-  params.arpeggio = config.arpeggio;
-
-  // Chord extensions
-  params.chord_extension = config.chord_extension;
-
-  // Composition style (override preset if explicitly set)
-  if (config.composition_style != CompositionStyle::MelodyLead) {
-    params.composition_style = config.composition_style;
-  }
-
-  // Motif chord parameters (for BackgroundMotif style)
-  params.motif_chord = config.motif_chord;
-  params.motif.repeat_scope = config.motif_repeat_scope;
-
-  // Arrangement growth method
-  params.arrangement_growth = config.arrangement_growth;
-
-  // Humanization
-  params.humanize = config.humanize;
-  params.humanize_timing = config.humanize_timing;
-  params.humanize_velocity = config.humanize_velocity;
-
-  // Phase 2: Apply VocalAttitude, VocalStylePreset and StyleMelodyParams
-  params.vocal_attitude = config.vocal_attitude;
-  params.vocal_style = config.vocal_style;
-
-  // If VocalStylePreset::Auto, select a random style based on StylePreset
-  if (params.vocal_style == VocalStylePreset::Auto) {
-    // Use a seed derived from the main seed for consistent selection
-    uint32_t vocal_style_seed = config.seed != 0 ? config.seed ^ 0x56534C53 : // "VSLS"
-        static_cast<uint32_t>(
-            std::chrono::system_clock::now().time_since_epoch().count() ^ 0x56534C53);
-    params.vocal_style = selectRandomVocalStyle(config.style_preset_id, vocal_style_seed);
-  }
-
-  params.melody_params = preset.melody;
-
-  // Apply melody template from config
-  params.melody_template = config.melody_template;
-
-  // Apply VocalStylePreset-specific parameter adjustments
-  applyVocalStylePreset(params, config);
-
-  // Transfer melodic complexity, hook intensity, and groove feel
-  params.melodic_complexity = config.melodic_complexity;
-  params.hook_intensity = config.hook_intensity;
-  params.vocal_groove = config.vocal_groove;
-
-  // Apply MelodicComplexity-specific parameter adjustments
-  applyMelodicComplexity(params);
-
-  // Dynamic duration (0 = use form pattern)
-  params.target_duration_seconds = config.target_duration_seconds;
-
-  // Skip vocal for BGM-first workflow
-  params.skip_vocal = config.skip_vocal;
+  // Use ConfigConverter for SongConfig -> GeneratorParams conversion
+  auto result = ConfigConverter::convert(config);
 
   // Store call settings for use in generate()
-  se_enabled_ = config.se_enabled;
-  // Resolve CallSetting to bool
-  switch (config.call_setting) {
-    case CallSetting::Enabled:
-      call_enabled_ = true;
-      break;
-    case CallSetting::Disabled:
-      call_enabled_ = false;
-      break;
-    case CallSetting::Auto:
-    default:
-      call_enabled_ = isCallEnabled(params.vocal_style);
-      break;
-  }
-  call_notes_enabled_ = config.call_notes_enabled;
-  intro_chant_ = config.intro_chant;
-  mix_pattern_ = config.mix_pattern;
-  call_density_ = config.call_density;
+  se_enabled_ = result.se_enabled;
+  call_enabled_ = result.call_enabled;
+  call_notes_enabled_ = result.call_notes_enabled;
+  intro_chant_ = result.intro_chant;
+  mix_pattern_ = result.mix_pattern;
+  call_density_ = result.call_density;
 
   // Store modulation settings for use in calculateModulation()
-  modulation_timing_ = config.modulation_timing;
-  modulation_semitones_ = config.modulation_semitones;
+  modulation_timing_ = result.modulation_timing;
+  modulation_semitones_ = result.modulation_semitones;
 
-  generate(params);
+  generate(result.params);
 }
 
 void Generator::generate(const GeneratorParams& params) {
@@ -523,10 +194,10 @@ void Generator::regenerateMelody(const MelodyRegenerateParams& regen_params) {
 
   // Apply VocalStylePreset settings to melody_params
   SongConfig dummy_config;
-  applyVocalStylePreset(params_, dummy_config);
+  ConfigConverter::applyVocalStylePreset(params_, dummy_config);
 
   // Apply MelodicComplexity-specific parameter adjustments
-  applyMelodicComplexity(params_);
+  ConfigConverter::applyMelodicComplexity(params_);
 
   // Resolve and apply seed
   uint32_t seed = resolveSeed(regen_params.seed);
@@ -552,14 +223,14 @@ void Generator::regenerateVocalFromConfig(const SongConfig& config,
   params_.melody_template = config.melody_template;
 
   // Apply VocalStylePreset-specific parameter adjustments
-  applyVocalStylePreset(params_, config);
+  ConfigConverter::applyVocalStylePreset(params_, config);
 
   // Transfer melodic complexity and hook intensity
   params_.melodic_complexity = config.melodic_complexity;
   params_.hook_intensity = config.hook_intensity;
 
   // Apply MelodicComplexity-specific parameter adjustments
-  applyMelodicComplexity(params_);
+  ConfigConverter::applyMelodicComplexity(params_);
 
   // Regenerate with updated parameters
   uint32_t seed = (new_seed == 0) ? song_.melodySeed() : resolveSeed(new_seed);
@@ -683,11 +354,22 @@ void Generator::generateAux() {
     if (section.type == SectionType::Intro) {
       // Intro: Use cached chorus motif if available, otherwise MelodicHook
       if (cached_chorus_motif_.has_value()) {
+        // Apply hook-appropriate variation (80% Exact, 20% Fragmented)
+        // WORKAROUND: Use local rng instead of rng_ member reference.
+        // Passing rng_ directly to applyVariation/selectHookVariation causes Segfault
+        // in Release builds (-O2/-O3). The root cause appears to be compiler optimization
+        // affecting std::mt19937& reference passing across translation units.
+        std::mt19937 variation_rng(static_cast<uint32_t>(rng_()));
+        MotifVariation variation = selectHookVariation(variation_rng);
+        Motif varied_motif = applyVariation(*cached_chorus_motif_, variation, 0, variation_rng);
+
         // Place chorus motif in intro (foreshadowing the hook)
-        uint8_t base_pitch = (vocal_low + vocal_high) / 2;  // Center of vocal range
+        // Center of vocal range, snapped to scale
+        int center = (vocal_low + vocal_high) / 2;
+        uint8_t base_pitch = static_cast<uint8_t>(snapToNearestScaleTone(center, 0));
         uint8_t velocity = static_cast<uint8_t>(ctx.base_velocity * 0.8f);
         auto motif_notes = placeMotifInIntro(
-            *cached_chorus_motif_, section.start_tick, section_end,
+            varied_motif, section.start_tick, section_end,
             base_pitch, velocity);
         for (const auto& note : motif_notes) {
           song_.aux().addNote(note.startTick, note.duration, note.note, note.velocity);
@@ -738,145 +420,15 @@ void Generator::generateAux() {
 }
 
 void Generator::calculateModulation() {
-  song_.setModulation(0, 0);
+  // Use ModulationCalculator for modulation calculation
+  auto result = ModulationCalculator::calculate(
+      modulation_timing_,
+      modulation_semitones_,
+      params_.structure,
+      song_.arrangement().sections(),
+      rng_);
 
-  // Only apply modulation if modulation_timing is set (not None)
-  ModulationTiming timing = modulation_timing_;
-  if (timing == ModulationTiming::None) {
-    return;
-  }
-
-  // Short structures don't support modulation (no meaningful modulation point)
-  if (params_.structure == StructurePattern::DirectChorus ||
-      params_.structure == StructurePattern::ShortForm) {
-    return;
-  }
-
-  // Use configured semitones (default 2 if not set)
-  int8_t mod_amount = (modulation_semitones_ > 0) ? modulation_semitones_ : 2;
-
-  Tick mod_tick = 0;
-  const auto& sections = song_.arrangement().sections();
-
-  // Helper: find last Chorus
-  auto findLastChorus = [&]() -> Tick {
-    for (size_t i = sections.size(); i > 0; --i) {
-      if (sections[i - 1].type == SectionType::Chorus) {
-        return sections[i - 1].start_tick;
-      }
-    }
-    return 0;
-  };
-
-  // Helper: find Chorus after Bridge
-  auto findChorusAfterBridge = [&]() -> Tick {
-    for (size_t i = 0; i < sections.size(); ++i) {
-      if (sections[i].type == SectionType::Chorus && i > 0 &&
-          sections[i - 1].type == SectionType::Bridge) {
-        return sections[i].start_tick;
-      }
-    }
-    return 0;
-  };
-
-  // Use ModulationTiming if explicitly set
-  if (timing != ModulationTiming::None) {
-    switch (timing) {
-      case ModulationTiming::LastChorus:
-        mod_tick = findLastChorus();
-        break;
-      case ModulationTiming::AfterBridge:
-        mod_tick = findChorusAfterBridge();
-        if (mod_tick == 0) {
-          mod_tick = findLastChorus();  // Fallback
-        }
-        break;
-      case ModulationTiming::EachChorus:
-        // For each chorus modulation, we only set the first one here
-        // (full implementation would require track-level handling)
-        for (const auto& section : sections) {
-          if (section.type == SectionType::Chorus) {
-            mod_tick = section.start_tick;
-            break;
-          }
-        }
-        break;
-      case ModulationTiming::Random: {
-        // Pick a random chorus
-        std::vector<Tick> chorus_ticks;
-        for (const auto& section : sections) {
-          if (section.type == SectionType::Chorus) {
-            chorus_ticks.push_back(section.start_tick);
-          }
-        }
-        if (!chorus_ticks.empty()) {
-          std::uniform_int_distribution<size_t> dist(0, chorus_ticks.size() - 1);
-          mod_tick = chorus_ticks[dist(rng_)];
-        }
-        break;
-      }
-      default:
-        break;
-    }
-  } else {
-    // Legacy behavior based on structure pattern
-    switch (params_.structure) {
-      case StructurePattern::RepeatChorus:
-      case StructurePattern::DriveUpbeat:
-      case StructurePattern::AnthemStyle: {
-        // Modulate at second Chorus
-        int chorus_count = 0;
-        for (const auto& section : sections) {
-          if (section.type == SectionType::Chorus) {
-            chorus_count++;
-            if (chorus_count == 2) {
-              mod_tick = section.start_tick;
-              break;
-            }
-          }
-        }
-        break;
-      }
-      case StructurePattern::StandardPop:
-      case StructurePattern::BuildUp:
-      case StructurePattern::FullPop: {
-        // Modulate at first Chorus following B section
-        for (size_t i = 0; i < sections.size(); ++i) {
-          if (sections[i].type == SectionType::Chorus) {
-            if (i > 0 && sections[i - 1].type == SectionType::B) {
-              mod_tick = sections[i].start_tick;
-              break;
-            }
-          }
-        }
-        break;
-      }
-      case StructurePattern::FullWithBridge:
-      case StructurePattern::Ballad:
-      case StructurePattern::ExtendedFull: {
-        // Modulate after Bridge or Interlude, at last Chorus
-        for (size_t i = sections.size(); i > 0; --i) {
-          size_t idx = i - 1;
-          if (sections[idx].type == SectionType::Chorus) {
-            if (idx > 0 && (sections[idx - 1].type == SectionType::Bridge ||
-                            sections[idx - 1].type == SectionType::Interlude ||
-                            sections[idx - 1].type == SectionType::B)) {
-              mod_tick = sections[idx].start_tick;
-              break;
-            }
-          }
-        }
-        break;
-      }
-      case StructurePattern::DirectChorus:
-      case StructurePattern::ShortForm:
-        return;  // No modulation for short structures
-    }
-  }
-
-  if (mod_tick > 0) {
-    song_.setModulation(mod_tick, mod_amount);
-  }
+  song_.setModulation(result.tick, result.amount);
 }
 
 void Generator::generateSE() {
@@ -969,37 +521,8 @@ void Generator::applyTransitionDynamics() {
   midisketch::applyAllTransitionDynamics(tracks, sections);
 }
 
-namespace {
-
-// Returns true if the tick position is on a strong beat (beats 1 or 3 in 4/4).
-bool isStrongBeat(Tick tick) {
-  Tick position_in_bar = tick % TICKS_PER_BAR;
-  // Beats 1 and 3 are at 0 and TICKS_PER_BEAT*2
-  return position_in_bar < TICKS_PER_BEAT / 4 ||
-         (position_in_bar >= TICKS_PER_BEAT * 2 &&
-          position_in_bar < TICKS_PER_BEAT * 2 + TICKS_PER_BEAT / 4);
-}
-
-}  // namespace
-
 void Generator::applyHumanization() {
-  // Maximum timing offset in ticks (approximately 8ms at 120 BPM)
-  constexpr Tick MAX_TIMING_OFFSET = 15;
-  // Maximum velocity variation
-  constexpr int MAX_VELOCITY_VARIATION = 8;
-
-  // Scale factors from parameters
-  float timing_scale = params_.humanize_timing;
-  float velocity_scale = params_.humanize_velocity;
-
-  // Create distributions
-  std::normal_distribution<float> timing_dist(0.0f, 3.0f);
-  std::uniform_int_distribution<int> velocity_dist(-MAX_VELOCITY_VARIATION,
-                                                    MAX_VELOCITY_VARIATION);
-
-  // Apply to melodic tracks (not SE or Drums)
-  // Arpeggio is included for consistency, though its mechanical precision
-  // may benefit from less humanization in some contexts
+  // Use PostProcessor for humanization
   std::vector<MidiTrack*> tracks = {
       &song_.vocal(),
       &song_.chord(),
@@ -1008,61 +531,12 @@ void Generator::applyHumanization() {
       &song_.arpeggio()
   };
 
-  for (MidiTrack* track : tracks) {
-    auto& notes = track->notes();
-    for (auto& note : notes) {
-      // Timing humanization: only on weak beats
-      if (!isStrongBeat(note.startTick)) {
-        float offset = timing_dist(rng_) * timing_scale;
-        int tick_offset = static_cast<int>(offset * MAX_TIMING_OFFSET / 3.0f);
-        tick_offset = std::clamp(tick_offset,
-                                 -static_cast<int>(MAX_TIMING_OFFSET),
-                                 static_cast<int>(MAX_TIMING_OFFSET));
-        // Ensure we don't go negative
-        if (note.startTick > static_cast<Tick>(-tick_offset)) {
-          note.startTick = static_cast<Tick>(
-              static_cast<int>(note.startTick) + tick_offset);
-        }
-      }
+  PostProcessor::HumanizeParams humanize_params;
+  humanize_params.timing = params_.humanize_timing;
+  humanize_params.velocity = params_.humanize_velocity;
 
-      // Velocity humanization: less variation on strong beats
-      float vel_factor = isStrongBeat(note.startTick) ? 0.5f : 1.0f;
-      int vel_offset = static_cast<int>(
-          velocity_dist(rng_) * velocity_scale * vel_factor);
-      int new_velocity = static_cast<int>(note.velocity) + vel_offset;
-      note.velocity = static_cast<uint8_t>(std::clamp(new_velocity, 1, 127));
-    }
-  }
-
-  // Fix vocal overlaps introduced by timing humanization
-  // Vocal must not have overlapping notes (singers can only sing one note)
-  auto& vocal_notes = song_.vocal().notes();
-  if (vocal_notes.size() > 1) {
-    // Sort by startTick to ensure proper order after humanization
-    std::sort(vocal_notes.begin(), vocal_notes.end(),
-              [](const NoteEvent& a, const NoteEvent& b) {
-                return a.startTick < b.startTick;
-              });
-
-    for (size_t i = 0; i + 1 < vocal_notes.size(); ++i) {
-      Tick end_tick = vocal_notes[i].startTick + vocal_notes[i].duration;
-      Tick next_start = vocal_notes[i + 1].startTick;
-
-      // Ensure no overlap: end of current note <= start of next note
-      if (end_tick > next_start) {
-        // Guard against underflow: if same startTick, use minimum duration
-        Tick max_duration = (next_start > vocal_notes[i].startTick)
-                                ? (next_start - vocal_notes[i].startTick)
-                                : 1;
-        vocal_notes[i].duration = max_duration;
-
-        // If still overlapping (same startTick case), shift next note
-        if (vocal_notes[i].startTick + vocal_notes[i].duration > next_start) {
-          vocal_notes[i + 1].startTick = vocal_notes[i].startTick + vocal_notes[i].duration;
-        }
-      }
-    }
-  }
+  PostProcessor::applyHumanization(tracks, humanize_params, rng_);
+  PostProcessor::fixVocalOverlaps(song_.vocal());
 }
 
 }  // namespace midisketch

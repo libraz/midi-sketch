@@ -43,6 +43,19 @@ struct VelocityBalance {
   static float getMultiplier(TrackRole role);
 };
 
+// Named velocity ratio constants for consistent dynamics across tracks.
+// Use these instead of magic numbers like "* 0.85f".
+namespace VelocityRatio {
+  constexpr float ACCENT = 0.95f;       // Accented notes (slightly above normal)
+  constexpr float NORMAL = 0.9f;        // Standard velocity
+  constexpr float WEAK_BEAT = 0.85f;    // Off-beat or weak beat notes
+  constexpr float SOFT = 0.8f;          // Softer notes (e.g., intro sections)
+  constexpr float TENSION = 0.7f;       // Tension notes, octave doublings
+  constexpr float BACKGROUND = 0.65f;   // Background elements
+  constexpr float VERY_SOFT = 0.6f;     // Very subdued notes
+  constexpr float GHOST = 0.5f;         // Ghost notes (drums)
+}  // namespace VelocityRatio
+
 // Apply crescendo/decrescendo dynamics at section transitions.
 // Modifies velocities of notes in the transition region.
 // B->Chorus transition applies crescendo across entire B section.

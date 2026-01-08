@@ -33,7 +33,11 @@ set(TEST_SOURCES
   core/melody_templates_test.cpp
   core/melody_evaluator_test.cpp
   core/piano_roll_test.cpp
-  midi/midi_writer_test.cpp
+  midi/midi_writer_smf1_test.cpp
+  midi/midi_reader_test.cpp
+  midi/midi_validator_test.cpp
+  midi/ump_test.cpp
+  midi/midi2_writer_test.cpp
   track/arpeggio_test.cpp
   track/vocal_test.cpp
   track/chord_track_test.cpp

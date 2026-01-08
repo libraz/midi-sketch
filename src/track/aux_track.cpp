@@ -1,6 +1,7 @@
 #include "track/aux_track.h"
 #include "core/chord_utils.h"
 #include "core/harmony_context.h"
+#include "core/timing_constants.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -39,9 +40,6 @@ constexpr std::array<AuxFunctionMeta, 7> kAuxFunctionMetaTable = {{
      AuxDensityBehavior::EventProbability, 1.0f, 0.1f},
 }};
 
-constexpr Tick TICK_EIGHTH = TICKS_PER_BEAT / 2;
-constexpr Tick TICK_QUARTER = TICKS_PER_BEAT;
-constexpr Tick TICK_HALF = TICKS_PER_BEAT * 2;
 
 // Check if two notes overlap in time
 bool notesOverlap(Tick start1, Tick end1, Tick start2, Tick end2) {

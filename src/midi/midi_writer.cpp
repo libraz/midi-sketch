@@ -1,10 +1,15 @@
 #include "midi/midi_writer.h"
+
+#include "midi/midi2_writer.h"
+
 #include <algorithm>
 #include <fstream>
 
 namespace midisketch {
 
 MidiWriter::MidiWriter() {}
+
+MidiWriter::~MidiWriter() = default;
 
 void MidiWriter::writeVariableLength(std::vector<uint8_t>& buf, uint32_t value) {
   if (value == 0) {
@@ -165,7 +170,8 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name,
   data_.insert(data_.end(), track_data.begin(), track_data.end());
 }
 
-void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm) {
+void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
+                                   const std::string& metadata) {
   std::vector<uint8_t> track_data;
 
   // Validate BPM to prevent division by zero
@@ -178,6 +184,19 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm) {
   track_data.push_back(2);
   track_data.push_back('S');
   track_data.push_back('E');
+
+  // Generation metadata as Text Event (0xFF 0x01)
+  // Prefix with "MIDISKETCH:" for easy identification
+  if (!metadata.empty()) {
+    std::string meta_text = "MIDISKETCH:" + metadata;
+    track_data.push_back(0x00);  // Delta time
+    track_data.push_back(0xFF);
+    track_data.push_back(0x01);  // Text Event
+    writeVariableLength(track_data, static_cast<uint32_t>(meta_text.size()));
+    for (char c : meta_text) {
+      track_data.push_back(static_cast<uint8_t>(c));
+    }
+  }
 
   // Tempo
   uint32_t microseconds_per_beat = 60000000 / bpm;
@@ -240,7 +259,26 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm) {
   data_.insert(data_.end(), track_data.begin(), track_data.end());
 }
 
-void MidiWriter::build(const Song& song, Key key) {
+void MidiWriter::build(const Song& song, Key key, const std::string& metadata,
+                        MidiFormat format) {
+  if (format == MidiFormat::SMF2) {
+    buildSMF2(song, key, metadata);
+  } else {
+    buildSMF1(song, key, metadata);
+  }
+}
+
+void MidiWriter::buildSMF2(const Song& song, Key key,
+                            const std::string& metadata) {
+  if (!midi2_writer_) {
+    midi2_writer_ = std::make_unique<Midi2Writer>();
+  }
+  midi2_writer_->buildContainer(song, key, metadata);
+  data_ = midi2_writer_->toBytes();
+}
+
+void MidiWriter::buildSMF1(const Song& song, Key key,
+                            const std::string& metadata) {
   data_.clear();
 
   // Count non-empty tracks (SE track always included)
@@ -251,11 +289,12 @@ void MidiWriter::build(const Song& song, Key key) {
   if (!song.drums().empty()) num_tracks++;
   if (!song.motif().empty()) num_tracks++;
   if (!song.arpeggio().empty()) num_tracks++;
+  if (!song.aux().empty()) num_tracks++;
 
   writeHeader(num_tracks, TICKS_PER_BEAT);
 
-  // SE track first (contains tempo and markers)
-  writeMarkerTrack(song.se(), song.bpm());
+  // SE track first (contains tempo, markers, and metadata)
+  writeMarkerTrack(song.se(), song.bpm(), metadata);
 
   Tick mod_tick = song.modulationTick();
   int8_t mod_amount = song.modulationAmount();

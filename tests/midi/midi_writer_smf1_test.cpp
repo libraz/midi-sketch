@@ -1,16 +1,17 @@
 #include <gtest/gtest.h>
 #include "midi/midi_writer.h"
 #include "core/structure.h"
+#include <cstring>
 
 namespace midisketch {
 namespace {
 
-TEST(MidiWriterTest, EmptyResult) {
+TEST(MidiWriterSmf1Test, EmptyResult) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
 
-  writer.build(song, Key::C);
+  writer.build(song, Key::C, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Should have at least header
@@ -23,7 +24,7 @@ TEST(MidiWriterTest, EmptyResult) {
   EXPECT_EQ(data[3], 'd');
 }
 
-TEST(MidiWriterTest, HeaderFormat) {
+TEST(MidiWriterSmf1Test, HeaderFormat) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
@@ -34,7 +35,7 @@ TEST(MidiWriterTest, HeaderFormat) {
   // Add some notes
   song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(song, Key::C);
+  writer.build(song, Key::C, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Check header length = 6
@@ -48,14 +49,14 @@ TEST(MidiWriterTest, HeaderFormat) {
   EXPECT_EQ(data[9], 1);
 }
 
-TEST(MidiWriterTest, DivisionValue) {
+TEST(MidiWriterSmf1Test, DivisionValue) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
 
   song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(song, Key::C);
+  writer.build(song, Key::C, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Check division = 480
@@ -63,14 +64,14 @@ TEST(MidiWriterTest, DivisionValue) {
   EXPECT_EQ(division, 480);
 }
 
-TEST(MidiWriterTest, ContainsMTrkChunk) {
+TEST(MidiWriterSmf1Test, ContainsMTrkChunk) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
 
   song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(song, Key::C);
+  writer.build(song, Key::C, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Look for MTrk
@@ -85,14 +86,14 @@ TEST(MidiWriterTest, ContainsMTrkChunk) {
   EXPECT_TRUE(found);
 }
 
-TEST(MidiWriterTest, ContainsMarkerEvents) {
+TEST(MidiWriterSmf1Test, ContainsMarkerEvents) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
   song.se().addText(0, "Intro");
   song.se().addText(1920, "Verse");
 
-  writer.build(song, Key::C);
+  writer.build(song, Key::C, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Look for marker meta event (FF 06)
@@ -106,7 +107,7 @@ TEST(MidiWriterTest, ContainsMarkerEvents) {
   EXPECT_TRUE(found_marker);
 }
 
-TEST(MidiWriterTest, SETrackIsFirstTrack) {
+TEST(MidiWriterSmf1Test, SETrackIsFirstTrack) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
@@ -114,7 +115,7 @@ TEST(MidiWriterTest, SETrackIsFirstTrack) {
 
   song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(song, Key::C);
+  writer.build(song, Key::C, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Find first MTrk chunk (at offset 14)
@@ -150,14 +151,14 @@ uint8_t findFirstNoteOnPitch(const std::vector<uint8_t>& data, uint8_t channel) 
 }
 
 // Regression test: Key transpose should only be applied once (at MIDI output)
-TEST(MidiWriterTest, KeyTransposeAppliedOnce) {
+TEST(MidiWriterSmf1Test, KeyTransposeAppliedOnce) {
   Song songC;
   songC.setBpm(120);
   // Add a note at C4 (MIDI note 60)
   songC.vocal().addNote(0, 480, 60, 100);
 
   MidiWriter writerC;
-  writerC.build(songC, Key::C);
+  writerC.build(songC, Key::C, "", MidiFormat::SMF1);
   auto dataC = writerC.toBytes();
 
   Song songD;
@@ -166,7 +167,7 @@ TEST(MidiWriterTest, KeyTransposeAppliedOnce) {
   songD.vocal().addNote(0, 480, 60, 100);
 
   MidiWriter writerD;
-  writerD.build(songD, Key::D);  // Key::D = 2 semitones up
+  writerD.build(songD, Key::D, "", MidiFormat::SMF1);  // Key::D = 2 semitones up
   auto dataD = writerD.toBytes();
 
   // Find Note On pitches (channel 0 = vocal)
@@ -182,18 +183,18 @@ TEST(MidiWriterTest, KeyTransposeAppliedOnce) {
 }
 
 // Test: Key transpose should NOT affect drums (channel 9)
-TEST(MidiWriterTest, KeyTransposeDoesNotAffectDrums) {
+TEST(MidiWriterSmf1Test, KeyTransposeDoesNotAffectDrums) {
   Song song;
   song.setBpm(120);
   // Add a kick drum note (MIDI note 36)
   song.drums().addNote(0, 480, 36, 100);
 
   MidiWriter writerC;
-  writerC.build(song, Key::C);
+  writerC.build(song, Key::C, "", MidiFormat::SMF1);
   auto dataC = writerC.toBytes();
 
   MidiWriter writerD;
-  writerD.build(song, Key::D);
+  writerD.build(song, Key::D, "", MidiFormat::SMF1);
   auto dataD = writerD.toBytes();
 
   // Find Note On pitches (channel 9 = drums)
@@ -209,25 +210,25 @@ TEST(MidiWriterTest, KeyTransposeDoesNotAffectDrums) {
 // Edge Case Tests (BPM=0, Text Length)
 // ============================================================================
 
-TEST(MidiWriterTest, BpmZeroDoesNotCrash) {
+TEST(MidiWriterSmf1Test, BpmZeroDoesNotCrash) {
   MidiWriter writer;
   Song song;
   song.setBpm(0);  // Invalid BPM
   song.vocal().addNote(0, 480, 60, 100);
 
   // Should not crash - BPM defaults to 120
-  EXPECT_NO_THROW(writer.build(song, Key::C));
+  EXPECT_NO_THROW(writer.build(song, Key::C, "", MidiFormat::SMF1));
   auto data = writer.toBytes();
   EXPECT_GT(data.size(), 0u);
 }
 
-TEST(MidiWriterTest, BpmZeroDefaultsTo120) {
+TEST(MidiWriterSmf1Test, BpmZeroDefaultsTo120) {
   MidiWriter writer;
   Song song;
   song.setBpm(0);  // Invalid BPM
   song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(song, Key::C);
+  writer.build(song, Key::C, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Find tempo meta event (FF 51 03) and check value
@@ -244,13 +245,13 @@ TEST(MidiWriterTest, BpmZeroDefaultsTo120) {
   EXPECT_TRUE(found_tempo);
 }
 
-TEST(MidiWriterTest, LongTrackNameTruncatedTo255) {
+TEST(MidiWriterSmf1Test, LongTrackNameTruncatedTo255) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
   song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(song, Key::C);
+  writer.build(song, Key::C, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Track names in this test are short ("SE", "Vocal"), so just verify no crash
@@ -258,7 +259,7 @@ TEST(MidiWriterTest, LongTrackNameTruncatedTo255) {
   EXPECT_GT(data.size(), 0u);
 }
 
-TEST(MidiWriterTest, LongMarkerTextTruncatedTo255) {
+TEST(MidiWriterSmf1Test, LongMarkerTextTruncatedTo255) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
@@ -268,7 +269,7 @@ TEST(MidiWriterTest, LongMarkerTextTruncatedTo255) {
   song.se().addText(0, long_text);
 
   // Should not crash
-  EXPECT_NO_THROW(writer.build(song, Key::C));
+  EXPECT_NO_THROW(writer.build(song, Key::C, "", MidiFormat::SMF1));
   auto data = writer.toBytes();
 
   // Find marker meta event (FF 06 len) and verify length <= 255
@@ -283,7 +284,7 @@ TEST(MidiWriterTest, LongMarkerTextTruncatedTo255) {
   }
 }
 
-TEST(MidiWriterTest, MarkerTextExactly255BytesNotTruncated) {
+TEST(MidiWriterSmf1Test, MarkerTextExactly255BytesNotTruncated) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
@@ -292,7 +293,7 @@ TEST(MidiWriterTest, MarkerTextExactly255BytesNotTruncated) {
   std::string exact_text(255, 'B');
   song.se().addText(0, exact_text);
 
-  writer.build(song, Key::C);
+  writer.build(song, Key::C, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Find marker meta event (FF 06 len) and verify length == 255
@@ -304,7 +305,7 @@ TEST(MidiWriterTest, MarkerTextExactly255BytesNotTruncated) {
   }
 }
 
-TEST(MidiWriterTest, AuxTrackOutputOnChannel5) {
+TEST(MidiWriterSmf1Test, AuxTrackOutputOnChannel5) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
@@ -312,7 +313,7 @@ TEST(MidiWriterTest, AuxTrackOutputOnChannel5) {
   // Add a note to Aux track
   song.aux().addNote(0, 480, 67, 80);  // G4
 
-  writer.build(song, Key::C);
+  writer.build(song, Key::C, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Find Note On on channel 5 (Aux)
@@ -320,7 +321,7 @@ TEST(MidiWriterTest, AuxTrackOutputOnChannel5) {
   EXPECT_EQ(pitch, 67);  // G4
 }
 
-TEST(MidiWriterTest, AllEightTracksOutput) {
+TEST(MidiWriterSmf1Test, AllEightTracksOutput) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
@@ -335,7 +336,7 @@ TEST(MidiWriterTest, AllEightTracksOutput) {
   song.drums().addNote(0, 480, 36, 100);
   song.se().addText(0, "Test");
 
-  writer.build(song, Key::C);
+  writer.build(song, Key::C, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Verify notes on each channel
@@ -346,6 +347,85 @@ TEST(MidiWriterTest, AllEightTracksOutput) {
   EXPECT_EQ(findFirstNoteOnPitch(data, 4), 76);  // Arpeggio Ch4
   EXPECT_EQ(findFirstNoteOnPitch(data, 5), 67);  // Aux Ch5
   EXPECT_EQ(findFirstNoteOnPitch(data, 9), 36);  // Drums Ch9
+}
+
+// ============================================================================
+// Metadata Embedding Tests
+// ============================================================================
+
+TEST(MidiWriterSmf1Test, MetadataEmbeddedAsTextEvent) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+  song.vocal().addNote(0, 480, 60, 100);
+
+  std::string metadata = R"({"generator":"midi-sketch","format_version":1,"library_version":"1.0.0","seed":12345})";
+  writer.build(song, Key::C, metadata, MidiFormat::SMF1);
+  auto data = writer.toBytes();
+
+  // Look for Text Event (FF 01) with MIDISKETCH: prefix
+  bool found_metadata = false;
+  std::string prefix = "MIDISKETCH:";
+
+  for (size_t i = 0; i + prefix.size() + 2 < data.size(); ++i) {
+    if (data[i] == 0xFF && data[i + 1] == 0x01) {
+      // Found text event, check for prefix
+      size_t len_offset = i + 2;
+      uint8_t len = data[len_offset];
+      size_t text_offset = len_offset + 1;
+
+      if (text_offset + prefix.size() <= data.size()) {
+        std::string text(reinterpret_cast<const char*>(data.data() + text_offset),
+                         std::min(static_cast<size_t>(len), prefix.size()));
+        if (text == prefix) {
+          found_metadata = true;
+          break;
+        }
+      }
+    }
+  }
+  EXPECT_TRUE(found_metadata) << "MIDISKETCH metadata text event not found";
+}
+
+TEST(MidiWriterSmf1Test, MetadataNotEmbeddedWhenEmpty) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+  song.vocal().addNote(0, 480, 60, 100);
+
+  writer.build(song, Key::C, "", MidiFormat::SMF1);  // No metadata
+  auto data = writer.toBytes();
+
+  // Search for MIDISKETCH: prefix
+  std::string prefix = "MIDISKETCH:";
+  bool found_metadata = false;
+
+  for (size_t i = 0; i + prefix.size() < data.size(); ++i) {
+    if (std::memcmp(data.data() + i, prefix.c_str(), prefix.size()) == 0) {
+      found_metadata = true;
+      break;
+    }
+  }
+  EXPECT_FALSE(found_metadata) << "MIDISKETCH metadata should not be present";
+}
+
+TEST(MidiWriterSmf1Test, MetadataContainsFullJson) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+  song.vocal().addNote(0, 480, 60, 100);
+
+  std::string metadata = R"({"key":"value","number":42})";
+  writer.build(song, Key::C, metadata, MidiFormat::SMF1);
+  auto data = writer.toBytes();
+
+  // Convert entire MIDI to string and search for metadata content
+  std::string data_str(reinterpret_cast<const char*>(data.data()), data.size());
+
+  EXPECT_NE(data_str.find("MIDISKETCH:"), std::string::npos);
+  EXPECT_NE(data_str.find("key"), std::string::npos);
+  EXPECT_NE(data_str.find("value"), std::string::npos);
+  EXPECT_NE(data_str.find("42"), std::string::npos);
 }
 
 }  // namespace

@@ -1,5 +1,6 @@
 #include "track/drums.h"
 #include "core/preset_data.h"
+#include "core/timing_constants.h"
 #include "core/velocity.h"
 
 namespace midisketch {
@@ -18,9 +19,9 @@ constexpr uint8_t TOM_H = 50;     // High Tom
 constexpr uint8_t TOM_M = 47;     // Mid Tom
 constexpr uint8_t TOM_L = 45;     // Low Tom
 
-// Timing constants
-constexpr Tick EIGHTH = TICKS_PER_BEAT / 2;
-constexpr Tick SIXTEENTH = TICKS_PER_BEAT / 4;
+// Local aliases for timing constants
+constexpr Tick EIGHTH = TICK_EIGHTH;
+constexpr Tick SIXTEENTH = TICK_SIXTEENTH;
 
 // Ghost note velocity multiplier
 constexpr float GHOST_VEL = 0.45f;

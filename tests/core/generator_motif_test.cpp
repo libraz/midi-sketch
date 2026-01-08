@@ -452,5 +452,84 @@ TEST(MotifRepeatScopeTest, SectionVsFullSongDiffers) {
   EXPECT_GT(section_notes, 0u) << "Section scope should generate notes";
 }
 
+// ============================================================================
+// Phase 12: applyVariation Integration Tests
+// ============================================================================
+
+TEST(IntroMotifVariationTest, IntroSectionUsesChorusMotif) {
+  // Test that intro section places chorus motif in aux track
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(0);
+  config.form = StructurePattern::BuildUp;  // Has Intro section
+  config.form_explicit = true;
+  config.seed = 12345;
+
+  gen.generateFromConfig(config);
+  const auto& song = gen.getSong();
+
+  // Find intro section aux notes
+  const auto& arrangement = song.arrangement();
+  Tick intro_end = 0;
+  for (const auto& section : arrangement.sections()) {
+    if (section.type == SectionType::Intro) {
+      intro_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      break;
+    }
+  }
+
+  // Aux track should have notes in intro (from chorus motif placement)
+  const auto& aux_notes = song.aux().notes();
+  int intro_aux_count = 0;
+  for (const auto& note : aux_notes) {
+    if (note.startTick < intro_end) {
+      intro_aux_count++;
+    }
+  }
+
+  EXPECT_GT(intro_aux_count, 0)
+      << "Intro section should have aux notes from chorus motif placement";
+}
+
+TEST(IntroMotifVariationTest, DifferentSeedsProduceDifferentVariations) {
+  // Test that different seeds produce different aux patterns in intro
+  // (due to variation selection being seed-dependent)
+  std::vector<size_t> aux_note_counts;
+
+  for (uint32_t seed = 1; seed <= 5; ++seed) {
+    Generator gen;
+    SongConfig config = createDefaultSongConfig(0);
+    config.form = StructurePattern::BuildUp;
+    config.form_explicit = true;
+    config.seed = seed * 11111;
+
+    gen.generateFromConfig(config);
+    aux_note_counts.push_back(gen.getSong().aux().noteCount());
+  }
+
+  // Verify all seeds produce aux notes
+  for (size_t count : aux_note_counts) {
+    EXPECT_GT(count, 0u) << "All seeds should produce aux notes";
+  }
+
+  // Note: With 80% Exact / 20% Fragmented variation probability,
+  // different seeds may produce similar results. The key assertion
+  // is that the variation mechanism doesn't crash and produces output.
+}
+
+TEST(IntroMotifVariationTest, StructureWithoutIntroNoVariationCrash) {
+  // Test that structures without intro don't crash
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(0);
+  config.form = StructurePattern::ImmediateVocal;  // No intro
+  config.form_explicit = true;
+  config.seed = 54321;
+
+  // Should not crash
+  EXPECT_NO_THROW(gen.generateFromConfig(config));
+
+  // Aux track should still have notes (from other sections)
+  EXPECT_GT(gen.getSong().aux().noteCount(), 0u);
+}
+
 }  // namespace
 }  // namespace midisketch

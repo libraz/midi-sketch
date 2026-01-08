@@ -48,8 +48,16 @@ class MidiSketch {
   // @param melody MelodyData to apply
   void setMelody(const MelodyData& melody);
 
+  // Sets the MIDI output format.
+  // @param format MidiFormat::SMF1 or MidiFormat::SMF2
+  void setMidiFormat(MidiFormat format);
+
+  // Returns the current MIDI format.
+  // @returns Current MidiFormat
+  MidiFormat getMidiFormat() const;
+
   // Returns the MIDI data as a byte vector.
-  // @returns MIDI binary data (SMF Type 1)
+  // @returns MIDI binary data
   std::vector<uint8_t> getMidi() const;
 
   // Returns the event data as a JSON string.
@@ -75,6 +83,7 @@ class MidiSketch {
  private:
   Generator generator_;
   MidiWriter midi_writer_;
+  MidiFormat midi_format_ = kDefaultMidiFormat;
 };
 
 }  // namespace midisketch

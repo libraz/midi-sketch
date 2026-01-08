@@ -67,15 +67,6 @@ enum class MotifVariation : uint8_t {
   Embellished   // Add ornamental notes
 };
 
-// Section-specific motif usage plan
-struct SectionMotifPlan {
-  SectionType section;
-  uint8_t primary_motif_id;
-  MotifVariation variation;
-  uint8_t repetition_count;
-  int8_t pitch_shift;
-};
-
 // Apply variation to a motif
 // @param original The original motif
 // @param variation Type of variation to apply

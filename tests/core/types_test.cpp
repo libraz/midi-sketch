@@ -167,70 +167,8 @@ TEST(TypesTest, TrackLayerEnumValues) {
   EXPECT_EQ(static_cast<uint8_t>(TrackLayer::Performance), 3);
 }
 
-TEST(TypesTest, LayeredNoteStructure) {
-  LayeredNote layered;
-  layered.note = {0, 480, 60, 100};
-  layered.origin_layer = TrackLayer::Structural;
-  layered.timing_locked = false;
-  layered.pitch_locked = false;
-
-  EXPECT_EQ(layered.note.startTick, 0u);
-  EXPECT_EQ(layered.note.duration, 480u);
-  EXPECT_EQ(layered.note.note, 60);
-  EXPECT_EQ(layered.note.velocity, 100);
-  EXPECT_EQ(layered.origin_layer, TrackLayer::Structural);
-  EXPECT_FALSE(layered.timing_locked);
-  EXPECT_FALSE(layered.pitch_locked);
-}
-
-TEST(TypesTest, LayeredNoteDefaultValues) {
-  LayeredNote layered;
-  layered.note = {0, 240, 64, 80};
-
-  // Check default values
-  EXPECT_EQ(layered.origin_layer, TrackLayer::Structural);
-  EXPECT_FALSE(layered.timing_locked);
-  EXPECT_FALSE(layered.pitch_locked);
-}
-
-TEST(TypesTest, LayeredNoteLocking) {
-  LayeredNote layered;
-  layered.note = {960, 480, 67, 90};
-  layered.origin_layer = TrackLayer::Identity;
-
-  // Lock timing after L2 creates specific rhythmic pattern
-  layered.timing_locked = true;
-
-  EXPECT_EQ(layered.origin_layer, TrackLayer::Identity);
-  EXPECT_TRUE(layered.timing_locked);
-  EXPECT_FALSE(layered.pitch_locked);
-
-  // Later, L3 locks pitch after collision avoidance
-  layered.origin_layer = TrackLayer::Safety;
-  layered.pitch_locked = true;
-
-  EXPECT_EQ(layered.origin_layer, TrackLayer::Safety);
-  EXPECT_TRUE(layered.timing_locked);
-  EXPECT_TRUE(layered.pitch_locked);
-}
-
-TEST(TypesTest, LayerResultStructure) {
-  LayerResult result;
-  result.completed_layer = TrackLayer::Structural;
-
-  LayeredNote note1;
-  note1.note = {0, 480, 60, 100};
-  LayeredNote note2;
-  note2.note = {480, 480, 62, 90};
-
-  result.notes.push_back(note1);
-  result.notes.push_back(note2);
-
-  EXPECT_EQ(result.completed_layer, TrackLayer::Structural);
-  EXPECT_EQ(result.notes.size(), 2u);
-  EXPECT_EQ(result.notes[0].note.note, 60);
-  EXPECT_EQ(result.notes[1].note.note, 62);
-}
+// Note: Tests for LayeredNote and LayerResult were removed
+// as these structs were removed from track_layer.h (unused code cleanup).
 
 }  // namespace
 }  // namespace midisketch
