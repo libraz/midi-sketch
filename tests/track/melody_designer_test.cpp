@@ -16,7 +16,7 @@ MelodyDesigner::SectionContext createTestContext() {
   ctx.section_bars = 4;
   ctx.chord_degree = 0;  // I chord
   ctx.key_offset = 0;    // C major
-  ctx.tessitura = {60, 72, 66};  // C4 to C5
+  ctx.tessitura = TessituraRange{60, 72, 66};  // C4 to C5
   ctx.vocal_low = 55;    // G3
   ctx.vocal_high = 79;   // G5
   return ctx;
@@ -456,6 +456,106 @@ TEST(MelodyDesignerTest, ApplyTransitionApproachNoOpWithoutTransition) {
   for (size_t i = 0; i < notes.size(); ++i) {
     EXPECT_EQ(notes[i].note, original_notes[i].note);
     EXPECT_EQ(notes[i].velocity, original_notes[i].velocity);
+  }
+}
+
+// ============================================================================
+// Hook Duration Regression Tests
+// ============================================================================
+
+// Regression test for hook duration calculation fix.
+// Previously, hooks could span more time than phrase_beats, causing
+// the next phrase to start during the hook and create overlapping notes.
+// After removeOverlaps, these became 1-tick duration notes.
+TEST(MelodyDesignerTest, HookDoesNotCreateOverlappingNotes) {
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  // Use HookRepeat template which has high hook repeat count
+  // This tests the hook overlap scenario
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::HookRepeat);
+
+  // Create a Chorus context (hooks are generated for Chorus sections)
+  MelodyDesigner::SectionContext ctx;
+  ctx.section_type = SectionType::Chorus;
+  ctx.section_start = 0;
+  ctx.section_end = TICKS_PER_BAR * 8;  // 8 bars
+  ctx.section_bars = 8;
+  ctx.chord_degree = 0;
+  ctx.key_offset = 0;
+  ctx.tessitura = TessituraRange{60, 72, 66};
+  ctx.vocal_low = 57;
+  ctx.vocal_high = 79;
+  ctx.density_modifier = 1.0f;
+  ctx.thirtysecond_ratio = 0.0f;
+
+  auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+
+  // Verify no notes have extremely short duration (< 60 ticks = 1/8 beat)
+  // Notes with duration of 1 tick indicate overlap collision
+  constexpr Tick MIN_DURATION = 60;
+  int short_notes = 0;
+  for (const auto& note : notes) {
+    if (note.duration < MIN_DURATION) {
+      short_notes++;
+    }
+  }
+
+  EXPECT_EQ(short_notes, 0)
+      << "Found " << short_notes << " notes with duration < " << MIN_DURATION
+      << " ticks. This indicates hook overlap issue.";
+}
+
+// Test that generated notes have no same-tick collisions across templates
+TEST(MelodyDesignerTest, NoSameTickCollisionAcrossTemplates) {
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+  std::mt19937 rng(123);
+
+  // Test with multiple templates that have hooks
+  std::vector<MelodyTemplateId> templates = {
+      MelodyTemplateId::HookRepeat,
+      MelodyTemplateId::PlateauTalk,
+      MelodyTemplateId::RunUpTarget,
+  };
+
+  for (auto tmpl_id : templates) {
+    const MelodyTemplate& tmpl = getTemplate(tmpl_id);
+
+    MelodyDesigner::SectionContext ctx;
+    ctx.section_type = SectionType::Chorus;
+    ctx.section_start = 0;
+    ctx.section_end = TICKS_PER_BAR * 8;
+    ctx.section_bars = 8;
+    ctx.chord_degree = 0;
+    ctx.key_offset = 0;
+    ctx.tessitura = TessituraRange{60, 72, 66};
+    ctx.vocal_low = 57;
+    ctx.vocal_high = 79;
+    ctx.density_modifier = 1.0f;
+    ctx.thirtysecond_ratio = 0.0f;
+
+    auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+
+    // No note should have same start_tick as another
+    // (which would indicate hook overlap that got resolved to 1-tick note)
+    for (size_t i = 0; i + 1 < notes.size(); ++i) {
+      EXPECT_LT(notes[i].start_tick, notes[i + 1].start_tick)
+          << "Notes at index " << i << " and " << (i + 1)
+          << " have same or reversed start_tick with template "
+          << static_cast<int>(tmpl_id);
+    }
+
+    // No notes should have extremely short duration (< 60 ticks)
+    // This indicates overlap collision that was resolved
+    constexpr Tick MIN_DURATION = 60;
+    for (size_t i = 0; i < notes.size(); ++i) {
+      EXPECT_GE(notes[i].duration, MIN_DURATION)
+          << "Note at index " << i << " has duration " << notes[i].duration
+          << " which indicates overlap collision with template "
+          << static_cast<int>(tmpl_id);
+    }
   }
 }
 
