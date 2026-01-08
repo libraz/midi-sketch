@@ -352,7 +352,7 @@ MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
 
   // Call settings
   s_default_config.se_enabled = cpp_config.se_enabled ? 1 : 0;
-  s_default_config.call_enabled = cpp_config.call_enabled ? 1 : 0;
+  s_default_config.call_setting = static_cast<uint8_t>(cpp_config.call_setting);
   s_default_config.call_notes_enabled = cpp_config.call_notes_enabled ? 1 : 0;
   s_default_config.intro_chant = static_cast<uint8_t>(cpp_config.intro_chant);
   s_default_config.mix_pattern = static_cast<uint8_t>(cpp_config.mix_pattern);
@@ -420,7 +420,7 @@ MidiSketchConfigError midisketch_validate_config(const MidiSketchSongConfig* con
   // Modulation and call settings
   cpp_config.modulation_timing = static_cast<midisketch::ModulationTiming>(config->modulation_timing);
   cpp_config.modulation_semitones = config->modulation_semitones;
-  cpp_config.call_enabled = config->call_enabled != 0;
+  cpp_config.call_setting = static_cast<midisketch::CallSetting>(config->call_setting);
   cpp_config.intro_chant = static_cast<midisketch::IntroChant>(config->intro_chant);
   cpp_config.mix_pattern = static_cast<midisketch::MixPattern>(config->mix_pattern);
 
@@ -559,7 +559,7 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
 
   // Call settings
   cpp_config.se_enabled = config->se_enabled != 0;
-  cpp_config.call_enabled = config->call_enabled != 0;
+  cpp_config.call_setting = static_cast<midisketch::CallSetting>(config->call_setting);
   cpp_config.call_notes_enabled = config->call_notes_enabled != 0;
   cpp_config.intro_chant = static_cast<midisketch::IntroChant>(config->intro_chant);
   cpp_config.mix_pattern = static_cast<midisketch::MixPattern>(config->mix_pattern);

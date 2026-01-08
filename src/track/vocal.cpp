@@ -682,7 +682,23 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       ctx.disable_vowel_constraints = params.melody_params.disable_vowel_constraints;
       ctx.disable_breathing_gaps = params.melody_params.disable_breathing_gaps;
 
-      section_notes = designer.generateSection(section_tmpl, ctx, harmony, rng);
+      // Set transition info for next section (if any)
+      const auto& sections = song.arrangement().sections();
+      for (size_t i = 0; i < sections.size(); ++i) {
+        if (&sections[i] == &section && i + 1 < sections.size()) {
+          ctx.transition_to_next = getTransition(section.type, sections[i + 1].type);
+          break;
+        }
+      }
+
+      // Generate melody with evaluation (selects best from 3 candidates)
+      section_notes = designer.generateSectionWithEvaluation(
+          section_tmpl, ctx, harmony, rng, params.vocal_style, 3);
+
+      // Apply transition approach if transition info was set
+      if (ctx.transition_to_next) {
+        designer.applyTransitionApproach(section_notes, ctx, harmony);
+      }
 
       // Apply HarmonyContext collision avoidance
       if (harmony_ctx != nullptr) {
@@ -721,6 +737,26 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     }
 
     // Add to collected notes
+    // Check interval between last note of previous section and first note of this section
+    if (!all_notes.empty() && !section_notes.empty()) {
+      constexpr int MAX_INTERVAL = 9;
+      int prev_note = all_notes.back().note;
+      int first_note = section_notes.front().note;
+      int interval = std::abs(first_note - prev_note);
+      if (interval > MAX_INTERVAL) {
+        // Adjust the first note of this section to be within MAX_INTERVAL
+        if (first_note > prev_note) {
+          section_notes.front().note = static_cast<uint8_t>(prev_note + MAX_INTERVAL);
+        } else {
+          section_notes.front().note = static_cast<uint8_t>(prev_note - MAX_INTERVAL);
+        }
+        // Re-constrain to vocal range
+        section_notes.front().note = static_cast<uint8_t>(std::clamp(
+            static_cast<int>(section_notes.front().note),
+            static_cast<int>(section_vocal_low),
+            static_cast<int>(section_vocal_high)));
+      }
+    }
     for (const auto& note : section_notes) {
       all_notes.push_back(note);
     }

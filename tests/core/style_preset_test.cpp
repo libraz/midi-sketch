@@ -121,14 +121,14 @@ TEST(ChordProgressionMetaTest, RockProgressions) {
 
 TEST(FormCandidatesTest, GetFormsByStyle) {
   auto forms = getFormsByStyle(0);  // Minimal Groove Pop
-  EXPECT_EQ(forms.size(), 5u);
+  EXPECT_EQ(forms.size(), 8u);  // Expanded to 8 slots (including new patterns)
   // First form should be StandardPop
   EXPECT_EQ(forms[0], StructurePattern::StandardPop);
 }
 
 TEST(FormCandidatesTest, DancePopHasFullForms) {
   auto forms = getFormsByStyle(1);  // Dance Pop Emotion
-  EXPECT_EQ(forms.size(), 5u);
+  EXPECT_EQ(forms.size(), 8u);  // Expanded to 8 slots (including new patterns)
   // First form should be FullPop
   EXPECT_EQ(forms[0], StructurePattern::FullPop);
 }

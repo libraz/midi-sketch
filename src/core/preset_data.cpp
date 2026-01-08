@@ -58,7 +58,7 @@ constexpr float MOOD_DENSITY[20] = {
 };
 
 // Structure pattern names
-const char* STRUCTURE_NAMES[11] = {
+const char* STRUCTURE_NAMES[18] = {
     "StandardPop",
     "BuildUp",
     "DirectChorus",
@@ -70,6 +70,13 @@ const char* STRUCTURE_NAMES[11] = {
     "Ballad",
     "AnthemStyle",
     "ExtendedFull",
+    "ChorusFirst",
+    "ChorusFirstShort",
+    "ChorusFirstFull",
+    "ImmediateVocal",
+    "ImmediateVocalFull",
+    "AChorusB",
+    "DoubleVerse",
 };
 
 // Mood names
@@ -379,78 +386,95 @@ const StylePreset STYLE_PRESETS[17] = {
 
 // Form compatibility by style with weights (higher = more likely)
 // Weight guidelines: Common=40-60, Frequent=20-35, Occasional=10-20, Rare=3-10
-const FormWeight STYLE_FORMS_WEIGHTED[17][5] = {
+const FormWeight STYLE_FORMS_WEIGHTED[17][8] = {
     // 0: Minimal Groove Pop - shorter forms
-    {{StructurePattern::StandardPop, 50}, {StructurePattern::DirectChorus, 25},
-     {StructurePattern::ShortForm, 12}, {StructurePattern::RepeatChorus, 8},
-     {StructurePattern::BuildUp, 5}},
-    // 1: Dance Pop Emotion - full-length forms
-    {{StructurePattern::FullPop, 45}, {StructurePattern::FullWithBridge, 25},
-     {StructurePattern::DriveUpbeat, 15}, {StructurePattern::Ballad, 10},
-     {StructurePattern::AnthemStyle, 5}},
+    {{StructurePattern::StandardPop, 40}, {StructurePattern::DirectChorus, 20},
+     {StructurePattern::ShortForm, 10}, {StructurePattern::RepeatChorus, 8},
+     {StructurePattern::BuildUp, 5}, {StructurePattern::ChorusFirstShort, 10},
+     {StructurePattern::ImmediateVocal, 7}, {StructurePattern::ChorusFirst, 0}},
+    // 1: Dance Pop Emotion - full-length forms + chorus-first
+    {{StructurePattern::FullPop, 35}, {StructurePattern::FullWithBridge, 20},
+     {StructurePattern::DriveUpbeat, 12}, {StructurePattern::Ballad, 8},
+     {StructurePattern::AnthemStyle, 5}, {StructurePattern::ChorusFirst, 10},
+     {StructurePattern::ChorusFirstFull, 10}, {StructurePattern::ImmediateVocalFull, 0}},
     // 2: Bright Pop - standard forms
-    {{StructurePattern::StandardPop, 45}, {StructurePattern::DirectChorus, 25},
-     {StructurePattern::RepeatChorus, 15}, {StructurePattern::BuildUp, 10},
-     {StructurePattern::FullPop, 5}},
-    // 3: Idol Standard - standard and anthem forms
-    {{StructurePattern::StandardPop, 40}, {StructurePattern::BuildUp, 25},
-     {StructurePattern::RepeatChorus, 15}, {StructurePattern::AnthemStyle, 12},
-     {StructurePattern::FullPop, 8}},
+    {{StructurePattern::StandardPop, 35}, {StructurePattern::DirectChorus, 20},
+     {StructurePattern::RepeatChorus, 12}, {StructurePattern::BuildUp, 8},
+     {StructurePattern::FullPop, 5}, {StructurePattern::ChorusFirst, 10},
+     {StructurePattern::ImmediateVocal, 10}, {StructurePattern::AChorusB, 0}},
+    // 3: Idol Standard - standard and anthem + chorus-first
+    {{StructurePattern::StandardPop, 30}, {StructurePattern::BuildUp, 18},
+     {StructurePattern::RepeatChorus, 12}, {StructurePattern::AnthemStyle, 10},
+     {StructurePattern::FullPop, 8}, {StructurePattern::ChorusFirst, 12},
+     {StructurePattern::ChorusFirstShort, 10}, {StructurePattern::AChorusB, 0}},
     // 4: Idol Emotion - full-length emotional forms
-    {{StructurePattern::FullPop, 45}, {StructurePattern::FullWithBridge, 25},
-     {StructurePattern::Ballad, 15}, {StructurePattern::StandardPop, 10},
-     {StructurePattern::BuildUp, 5}},
-    // 5: Idol Energy - driving high-energy forms
-    {{StructurePattern::DriveUpbeat, 40}, {StructurePattern::AnthemStyle, 30},
-     {StructurePattern::FullPop, 15}, {StructurePattern::RepeatChorus, 10},
-     {StructurePattern::DirectChorus, 5}},
-    // 6: Idol Minimal - short forms only
-    {{StructurePattern::ShortForm, 45}, {StructurePattern::DirectChorus, 30},
-     {StructurePattern::StandardPop, 15}, {StructurePattern::RepeatChorus, 7},
-     {StructurePattern::BuildUp, 3}},
+    {{StructurePattern::FullPop, 35}, {StructurePattern::FullWithBridge, 20},
+     {StructurePattern::Ballad, 12}, {StructurePattern::StandardPop, 8},
+     {StructurePattern::BuildUp, 5}, {StructurePattern::DoubleVerse, 10},
+     {StructurePattern::ChorusFirstFull, 10}, {StructurePattern::ImmediateVocalFull, 0}},
+    // 5: Idol Energy - driving high-energy + chorus-first
+    {{StructurePattern::DriveUpbeat, 30}, {StructurePattern::AnthemStyle, 22},
+     {StructurePattern::FullPop, 12}, {StructurePattern::RepeatChorus, 8},
+     {StructurePattern::DirectChorus, 5}, {StructurePattern::ChorusFirst, 13},
+     {StructurePattern::ChorusFirstShort, 10}, {StructurePattern::AChorusB, 0}},
+    // 6: Idol Minimal - short forms + chorus-first-short
+    {{StructurePattern::ShortForm, 30}, {StructurePattern::DirectChorus, 22},
+     {StructurePattern::StandardPop, 12}, {StructurePattern::RepeatChorus, 5},
+     {StructurePattern::BuildUp, 3}, {StructurePattern::ChorusFirstShort, 18},
+     {StructurePattern::ImmediateVocal, 10}, {StructurePattern::ChorusFirst, 0}},
     // 7: Rock Shout - driving forms
-    {{StructurePattern::FullPop, 40}, {StructurePattern::DriveUpbeat, 25},
-     {StructurePattern::AnthemStyle, 18}, {StructurePattern::BuildUp, 12},
-     {StructurePattern::FullWithBridge, 5}},
+    {{StructurePattern::FullPop, 32}, {StructurePattern::DriveUpbeat, 20},
+     {StructurePattern::AnthemStyle, 15}, {StructurePattern::BuildUp, 10},
+     {StructurePattern::FullWithBridge, 5}, {StructurePattern::ImmediateVocalFull, 10},
+     {StructurePattern::AChorusB, 8}, {StructurePattern::ChorusFirst, 0}},
     // 8: Pop Emotion - emotional full forms
-    {{StructurePattern::FullPop, 45}, {StructurePattern::FullWithBridge, 25},
-     {StructurePattern::Ballad, 15}, {StructurePattern::StandardPop, 10},
-     {StructurePattern::BuildUp, 5}},
+    {{StructurePattern::FullPop, 35}, {StructurePattern::FullWithBridge, 20},
+     {StructurePattern::Ballad, 12}, {StructurePattern::StandardPop, 8},
+     {StructurePattern::BuildUp, 5}, {StructurePattern::DoubleVerse, 10},
+     {StructurePattern::ImmediateVocalFull, 10}, {StructurePattern::ChorusFirstFull, 0}},
     // 9: Raw Emotional - varied emotional forms
-    {{StructurePattern::FullWithBridge, 40}, {StructurePattern::FullPop, 25},
-     {StructurePattern::Ballad, 18}, {StructurePattern::BuildUp, 12},
-     {StructurePattern::DriveUpbeat, 5}},
+    {{StructurePattern::FullWithBridge, 32}, {StructurePattern::FullPop, 20},
+     {StructurePattern::Ballad, 15}, {StructurePattern::BuildUp, 10},
+     {StructurePattern::DriveUpbeat, 5}, {StructurePattern::DoubleVerse, 10},
+     {StructurePattern::ImmediateVocalFull, 8}, {StructurePattern::ChorusFirstFull, 0}},
     // 10: Acoustic Pop - ballad and simple forms
-    {{StructurePattern::Ballad, 50}, {StructurePattern::StandardPop, 22},
-     {StructurePattern::FullWithBridge, 15}, {StructurePattern::ShortForm, 8},
-     {StructurePattern::BuildUp, 5}},
-    // 11: Live Call & Response - anthem and driving forms
-    {{StructurePattern::AnthemStyle, 45}, {StructurePattern::DriveUpbeat, 25},
-     {StructurePattern::RepeatChorus, 15}, {StructurePattern::FullPop, 10},
-     {StructurePattern::DirectChorus, 5}},
+    {{StructurePattern::Ballad, 40}, {StructurePattern::StandardPop, 18},
+     {StructurePattern::FullWithBridge, 12}, {StructurePattern::ShortForm, 6},
+     {StructurePattern::BuildUp, 4}, {StructurePattern::DoubleVerse, 12},
+     {StructurePattern::ImmediateVocal, 8}, {StructurePattern::AChorusB, 0}},
+    // 11: Live Call & Response - anthem and driving + chorus-first
+    {{StructurePattern::AnthemStyle, 35}, {StructurePattern::DriveUpbeat, 20},
+     {StructurePattern::RepeatChorus, 12}, {StructurePattern::FullPop, 8},
+     {StructurePattern::DirectChorus, 5}, {StructurePattern::ChorusFirst, 12},
+     {StructurePattern::AChorusB, 8}, {StructurePattern::ChorusFirstShort, 0}},
     // 12: Background Motif - repetitive forms
-    {{StructurePattern::StandardPop, 45}, {StructurePattern::RepeatChorus, 25},
-     {StructurePattern::ShortForm, 15}, {StructurePattern::DirectChorus, 10},
-     {StructurePattern::BuildUp, 5}},
+    {{StructurePattern::StandardPop, 35}, {StructurePattern::RepeatChorus, 20},
+     {StructurePattern::ShortForm, 12}, {StructurePattern::DirectChorus, 8},
+     {StructurePattern::BuildUp, 5}, {StructurePattern::ChorusFirstShort, 10},
+     {StructurePattern::ImmediateVocal, 10}, {StructurePattern::ChorusFirst, 0}},
     // 13: City Pop - groovy full forms
-    {{StructurePattern::FullPop, 45}, {StructurePattern::FullWithBridge, 25},
-     {StructurePattern::StandardPop, 15}, {StructurePattern::BuildUp, 10},
-     {StructurePattern::Ballad, 5}},
-    // 14: Anime Opening - build-up and driving forms
-    {{StructurePattern::BuildUp, 45}, {StructurePattern::DriveUpbeat, 25},
-     {StructurePattern::FullPop, 15}, {StructurePattern::AnthemStyle, 10},
-     {StructurePattern::FullWithBridge, 5}},
-    // 15: EDM Synth Pop - direct and driving forms
-    {{StructurePattern::DirectChorus, 45}, {StructurePattern::DriveUpbeat, 25},
-     {StructurePattern::RepeatChorus, 15}, {StructurePattern::BuildUp, 10},
-     {StructurePattern::FullPop, 5}},
+    {{StructurePattern::FullPop, 35}, {StructurePattern::FullWithBridge, 20},
+     {StructurePattern::StandardPop, 12}, {StructurePattern::BuildUp, 8},
+     {StructurePattern::Ballad, 5}, {StructurePattern::ImmediateVocalFull, 10},
+     {StructurePattern::DoubleVerse, 10}, {StructurePattern::AChorusB, 0}},
+    // 14: Anime Opening - build-up + immediate vocal (YOASOBI style)
+    {{StructurePattern::BuildUp, 30}, {StructurePattern::DriveUpbeat, 18},
+     {StructurePattern::FullPop, 12}, {StructurePattern::AnthemStyle, 8},
+     {StructurePattern::FullWithBridge, 4}, {StructurePattern::ImmediateVocal, 15},
+     {StructurePattern::ImmediateVocalFull, 13}, {StructurePattern::ChorusFirst, 0}},
+    // 15: EDM Synth Pop - direct + chorus-first
+    {{StructurePattern::DirectChorus, 32}, {StructurePattern::DriveUpbeat, 18},
+     {StructurePattern::RepeatChorus, 12}, {StructurePattern::BuildUp, 8},
+     {StructurePattern::FullPop, 5}, {StructurePattern::ChorusFirst, 13},
+     {StructurePattern::ChorusFirstShort, 12}, {StructurePattern::ImmediateVocal, 0}},
     // 16: Emotional Ballad - slow emotional forms
-    {{StructurePattern::Ballad, 55}, {StructurePattern::FullWithBridge, 22},
-     {StructurePattern::StandardPop, 12}, {StructurePattern::FullPop, 8},
-     {StructurePattern::BuildUp, 3}},
+    {{StructurePattern::Ballad, 42}, {StructurePattern::FullWithBridge, 18},
+     {StructurePattern::StandardPop, 10}, {StructurePattern::FullPop, 6},
+     {StructurePattern::BuildUp, 3}, {StructurePattern::DoubleVerse, 12},
+     {StructurePattern::ImmediateVocalFull, 9}, {StructurePattern::AChorusB, 0}},
 };
 
-constexpr size_t STYLE_FORM_COUNT = 5;
+constexpr size_t STYLE_FORM_COUNT = 8;
 
 // Vocal style compatibility by StylePreset with weights (higher = more likely)
 // UltraVocaloid is excluded from auto-selection (use explicit setting only)
@@ -812,7 +836,9 @@ SongConfigError validateSongConfig(const SongConfig& config) {
   }
 
   // Validate call/duration compatibility
-  if (config.call_enabled && config.target_duration_seconds > 0) {
+  // Check if calls might be enabled (Enabled or Auto with potential call style)
+  bool calls_may_be_enabled = (config.call_setting != CallSetting::Disabled);
+  if (calls_may_be_enabled && config.target_duration_seconds > 0) {
     uint16_t resolved_bpm = (config.bpm != 0) ? config.bpm : preset.tempo_default;
     uint16_t min_seconds = getMinimumSecondsForCall(
         config.intro_chant, config.mix_pattern, resolved_bpm);

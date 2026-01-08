@@ -65,7 +65,7 @@ TEST(StructLayoutTest, SongConfigLayout) {
 
   // Call settings (offset 36-41)
   CHECK_OFFSET(se_enabled, 36);
-  CHECK_OFFSET(call_enabled, 37);
+  CHECK_OFFSET(call_setting, 37);
   CHECK_OFFSET(call_notes_enabled, 38);
   CHECK_OFFSET(intro_chant, 39);
   CHECK_OFFSET(mix_pattern, 40);

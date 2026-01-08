@@ -183,7 +183,23 @@ struct Section {
   bool se_allowed = true;          // Allow sound effects
 };
 
-// Song structure pattern (11 patterns available).
+// Section transition parameters for smooth melodic flow between sections.
+struct SectionTransition {
+  SectionType from;
+  SectionType to;
+  int8_t pitch_tendency;     // Pitch direction at transition (+up, -down)
+  float velocity_growth;     // Velocity change rate (1.0 = no change)
+  uint8_t approach_beats;    // Start approach N beats before section end
+  bool use_leading_tone;     // Insert leading tone at boundary
+};
+
+// Get transition parameters for a section pair.
+// @param from Source section type
+// @param to Destination section type
+// @returns Pointer to transition params, or nullptr if no specific transition
+const SectionTransition* getTransition(SectionType from, SectionType to);
+
+// Song structure pattern (18 patterns available).
 enum class StructurePattern : uint8_t {
   StandardPop = 0,  // A(8) -> B(8) -> Chorus(8) [24 bars, short]
   BuildUp,          // Intro(4) -> A(8) -> B(8) -> Chorus(8) [28 bars]
@@ -197,7 +213,17 @@ enum class StructurePattern : uint8_t {
   Ballad,           // Intro(8) -> A(8) -> B(8) -> Chorus(8) -> Interlude(4) -> B(8) -> Chorus(8) -> Outro(8)
   AnthemStyle,      // Intro(4) -> A(8) -> Chorus(8) -> A(8) -> B(8) -> Chorus(8) -> Chorus(8) -> Outro(4)
   // Extended full-length (~3 min @120BPM)
-  ExtendedFull      // Intro(4) -> A(8) -> B(8) -> Chorus(8) -> Interlude(4) -> A(8) -> B(8) -> Chorus(8) -> Bridge(8) -> Chorus(8) -> Chorus(8) -> Outro(8) [90 bars]
+  ExtendedFull,     // Intro(4) -> A(8) -> B(8) -> Chorus(8) -> Interlude(4) -> A(8) -> B(8) -> Chorus(8) -> Bridge(8) -> Chorus(8) -> Chorus(8) -> Outro(8) [90 bars]
+  // Chorus-first patterns (15-second rule for hooks)
+  ChorusFirst,      // Chorus(8) -> A(8) -> B(8) -> Chorus(8) [32 bars]
+  ChorusFirstShort, // Chorus(8) -> A(8) -> Chorus(8) [24 bars]
+  ChorusFirstFull,  // Chorus(8) -> A(8) -> B(8) -> Chorus(8) -> A(8) -> B(8) -> Chorus(8) [56 bars]
+  // Immediate vocal patterns (no intro)
+  ImmediateVocal,   // A(8) -> B(8) -> Chorus(8) [24 bars, no intro]
+  ImmediateVocalFull, // A(8) -> B(8) -> Chorus(8) -> A(8) -> B(8) -> Chorus(8) [48 bars]
+  // Additional variations
+  AChorusB,         // A(8) -> Chorus(8) -> B(8) -> Chorus(8) [32 bars]
+  DoubleVerse       // A(8) -> A(8) -> B(8) -> Chorus(8) [32 bars]
 };
 
 // Form weight for random structure selection
@@ -226,6 +252,13 @@ enum class CallDensity : uint8_t {
   Minimal,       // Hai! only, sparse
   Standard,      // Hai!, Fu!, Sore! moderate
   Intense        // Full call, every beat
+};
+
+// Call enable setting (explicit control).
+enum class CallSetting : uint8_t {
+  Auto = 0,      // Use style-based default (isCallEnabled())
+  Enabled,       // Force enable calls
+  Disabled       // Force disable calls
 };
 
 // Energy curve for structure randomization.
@@ -390,7 +423,9 @@ enum class AuxFunction : uint8_t {
   TargetHint = 1,     // B: Hints at main melody destination
   GrooveAccent = 2,   // C: Physical groove accent
   PhraseTail = 3,     // D: Phrase ending, breathing
-  EmotionalPad = 4    // E: Emotional floor/pad
+  EmotionalPad = 4,   // E: Emotional floor/pad
+  Unison = 5,         // F: Vocal unison (doubles main melody)
+  MelodicHook = 6     // G: Melodic hook (Fortune Cookie style intro)
 };
 
 // Melody template structure for template-driven melody generation.
@@ -685,6 +720,7 @@ struct SongConfig {
 
   // Layer 3: Structure
   StructurePattern form = StructurePattern::StandardPop;
+  bool form_explicit = false;  // True if form was explicitly set by user
   uint16_t target_duration_seconds = 0;  // 0 = use form pattern, >0 = auto-generate structure
 
   // Layer 5: Expression
@@ -725,7 +761,7 @@ struct SongConfig {
 
   // SE/Call options
   bool se_enabled = true;
-  bool call_enabled = false;
+  CallSetting call_setting = CallSetting::Auto;  // Auto = style-based default
   bool call_notes_enabled = true;  // Output calls as notes
 
   // Chant/MIX settings (independent)

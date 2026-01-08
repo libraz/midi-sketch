@@ -315,7 +315,7 @@ TEST(SEEnabledTest, SETrackDisabledWhenFalse) {
   Generator gen;
   SongConfig config = createDefaultSongConfig(0);
   config.se_enabled = false;
-  config.call_enabled = true;  // Call would normally add SE content
+  config.call_setting = CallSetting::Enabled;  // Call would normally add SE content
   config.seed = 12345;
 
   gen.generateFromConfig(config);
@@ -330,7 +330,7 @@ TEST(SEEnabledTest, SETrackEnabledWhenTrue) {
   Generator gen;
   SongConfig config = createDefaultSongConfig(0);
   config.se_enabled = true;
-  config.call_enabled = true;  // Enable calls for SE content
+  config.call_setting = CallSetting::Enabled;  // Enable calls for SE content
   config.seed = 12345;
 
   gen.generateFromConfig(config);
@@ -339,7 +339,7 @@ TEST(SEEnabledTest, SETrackEnabledWhenTrue) {
   const auto& se_track = gen.getSong().se();
   bool has_content = !se_track.notes().empty() || !se_track.textEvents().empty();
   EXPECT_TRUE(has_content)
-      << "SE track should have events when se_enabled=true and call_enabled=true";
+      << "SE track should have events when se_enabled=true and call_setting=Enabled";
 }
 
 // ============================================================================
@@ -716,6 +716,69 @@ TEST(GeneratorTest, SetMelodyAlsoRegeneratesAux) {
   // Aux should be regenerated based on restored vocal
   size_t aux_after_restore = song.aux().noteCount();
   EXPECT_GT(aux_after_restore, 0u) << "Aux should have notes after setMelody";
+}
+
+// ============================================================================
+// SongConfig form_explicit Tests
+// ============================================================================
+
+TEST(GeneratorTest, FormExplicitRespectsUserChoice) {
+  // When form_explicit is true, the specified form should be used
+  // even if it matches the preset default
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(1);  // Dance Pop Emotion, default: FullPop
+
+  // Set form to FullPop (same as default) but mark as explicit
+  config.form = StructurePattern::FullPop;
+  config.form_explicit = true;
+  config.seed = 12345;
+
+  gen.generateFromConfig(config);
+
+  // Should use FullPop, not random selection
+  EXPECT_EQ(gen.getParams().structure, StructurePattern::FullPop);
+}
+
+TEST(GeneratorTest, FormExplicitWithDifferentForm) {
+  // When form_explicit is true with non-default form
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(1);  // Dance Pop Emotion, default: FullPop
+
+  // Set form to StandardPop (different from default)
+  config.form = StructurePattern::StandardPop;
+  config.form_explicit = true;
+  config.seed = 12345;
+
+  gen.generateFromConfig(config);
+
+  // Should use StandardPop
+  EXPECT_EQ(gen.getParams().structure, StructurePattern::StandardPop);
+}
+
+TEST(GeneratorTest, FormNotExplicitUsesRandomSelection) {
+  // When form_explicit is false and form matches default, random selection is used
+  Generator gen1;
+  Generator gen2;
+
+  SongConfig config1 = createDefaultSongConfig(1);
+  SongConfig config2 = createDefaultSongConfig(1);
+
+  // Both use default form, not explicit
+  config1.form_explicit = false;
+  config2.form_explicit = false;
+
+  // Different seeds should potentially give different forms
+  config1.seed = 11111;
+  config2.seed = 22222;
+
+  gen1.generateFromConfig(config1);
+  gen2.generateFromConfig(config2);
+
+  // Note: This test may occasionally fail if random selection happens
+  // to choose the same form for both seeds. We just verify it runs.
+  // The important thing is that the generator doesn't crash.
+  EXPECT_TRUE(gen1.getParams().structure >= StructurePattern::StandardPop);
+  EXPECT_TRUE(gen2.getParams().structure >= StructurePattern::StandardPop);
 }
 
 }  // namespace

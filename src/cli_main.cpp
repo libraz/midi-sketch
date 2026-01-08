@@ -21,6 +21,7 @@ void printUsage(const char* program) {
   std::cout << "  --note-density F  Set note density (0.3-2.0, default: style preset)\n";
   std::cout << "  --bpm N           Set BPM (60-200, default: style preset)\n";
   std::cout << "  --duration N      Set target duration in seconds (0 = use pattern)\n";
+  std::cout << "  --form N          Set form/structure pattern ID (0-17)\n";
   std::cout << "  --analyze         Analyze generated MIDI for dissonance issues\n";
   std::cout << "  --help            Show this help message\n";
 }
@@ -82,6 +83,7 @@ int main(int argc, char* argv[]) {
   float note_density = 0.0f;  // 0 = use style default
   uint16_t bpm = 0;  // 0 = use style default
   uint16_t duration = 0;  // 0 = use pattern default
+  int form_id = -1;  // -1 = use style default
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--analyze") == 0) {
@@ -100,6 +102,8 @@ int main(int argc, char* argv[]) {
       bpm = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--duration") == 0 && i + 1 < argc) {
       duration = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 10));
+    } else if (std::strcmp(argv[i], "--form") == 0 && i + 1 < argc) {
+      form_id = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
       printUsage(argv[0]);
       return 0;
@@ -116,6 +120,10 @@ int main(int argc, char* argv[]) {
   config.vocal_style = static_cast<midisketch::VocalStylePreset>(vocal_style);
   config.bpm = bpm;  // 0 = use style default
   config.target_duration_seconds = duration;  // 0 = use pattern default
+  if (form_id >= 0 && form_id < static_cast<int>(midisketch::STRUCTURE_COUNT)) {
+    config.form = static_cast<midisketch::StructurePattern>(form_id);
+    config.form_explicit = true;
+  }
   // note_density is deprecated; melody_template is used instead
   (void)note_density;
 

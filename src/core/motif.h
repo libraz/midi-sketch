@@ -103,6 +103,42 @@ MotifVariation selectHookVariation(std::mt19937& rng);
 // @returns true if the variation preserves hook identity
 bool isHookAppropriateVariation(MotifVariation variation);
 
+// Extract a motif from chorus vocal notes.
+// Creates a Motif from the first few notes of the chorus melody.
+// @param chorus_notes Notes from the chorus section
+// @param max_notes Maximum notes to include (default 8)
+// @returns Extracted motif with relative contour
+Motif extractMotifFromChorus(const std::vector<NoteEvent>& chorus_notes,
+                              size_t max_notes = 8);
+
+// Place a motif in the intro section.
+// Generates notes from the motif for the intro, transposed to the given base.
+// @param motif The motif to place
+// @param intro_start Start tick of the intro section
+// @param intro_end End tick of the intro section
+// @param base_pitch Base pitch for transposition
+// @param velocity Base velocity for notes
+// @returns Vector of note events
+std::vector<NoteEvent> placeMotifInIntro(const Motif& motif,
+                                          Tick intro_start,
+                                          Tick intro_end,
+                                          uint8_t base_pitch,
+                                          uint8_t velocity);
+
+// Place a motif in the aux track.
+// Similar to placeMotifInIntro but with velocity adjustment.
+// @param motif The motif to place
+// @param section_start Start tick of the section
+// @param section_end End tick of the section
+// @param base_pitch Base pitch for transposition
+// @param velocity_ratio Velocity multiplier (0.0-1.0)
+// @returns Vector of note events
+std::vector<NoteEvent> placeMotifInAux(const Motif& motif,
+                                        Tick section_start,
+                                        Tick section_end,
+                                        uint8_t base_pitch,
+                                        float velocity_ratio);
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_MOTIF_H

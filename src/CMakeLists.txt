@@ -16,6 +16,7 @@ set(MIDISKETCH_SOURCES
   core/pitch_utils.cpp
   core/chord_utils.cpp
   core/melody_templates.cpp
+  core/melody_evaluator.cpp
   core/piano_roll_safety.cpp
   midi/midi_writer.cpp
   track/track.cpp

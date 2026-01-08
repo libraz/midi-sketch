@@ -2,6 +2,7 @@
 #define MIDISKETCH_TRACK_MELODY_DESIGNER_H
 
 #include "core/chord_utils.h"
+#include "core/melody_evaluator.h"
 #include "core/melody_templates.h"
 #include "core/motif.h"
 #include "core/pitch_utils.h"
@@ -34,6 +35,9 @@ class MelodyDesigner {
     float consecutive_same_note_prob = 1.0f;  // Probability of allowing same consecutive note (0.0-1.0)
     bool disable_vowel_constraints = false;   // Disable vowel section step limits
     bool disable_breathing_gaps = false;      // Disable breathing rests between phrases
+
+    // Transition processing
+    const SectionTransition* transition_to_next = nullptr;  // Transition to next section
   };
 
   // Phrase generation result.
@@ -56,6 +60,23 @@ class MelodyDesigner {
       const SectionContext& ctx,
       const HarmonyContext& harmony,
       std::mt19937& rng);
+
+  // Generate melody with evaluation and candidate selection.
+  // Generates multiple candidates and selects the best based on evaluation.
+  // @param tmpl Melody template to use
+  // @param ctx Section context
+  // @param harmony Harmony context for chord information
+  // @param rng Random number generator
+  // @param vocal_style Vocal style for evaluation weights
+  // @param candidate_count Number of candidates to generate (default 3)
+  // @returns Vector of note events (best candidate)
+  std::vector<NoteEvent> generateSectionWithEvaluation(
+      const MelodyTemplate& tmpl,
+      const SectionContext& ctx,
+      const HarmonyContext& harmony,
+      std::mt19937& rng,
+      VocalStylePreset vocal_style = VocalStylePreset::Standard,
+      int candidate_count = 3);
 
   // Generate a single melodic phrase.
   // @param tmpl Melody template
@@ -158,7 +179,25 @@ class MelodyDesigner {
   // @returns Maximum step in semitones
   static int8_t getMaxStepInVowelSection(bool in_same_vowel);
 
+  // Apply transition approach processing to notes near section end.
+  // Modifies pitch and velocity to create natural flow into next section.
+  // @param notes Notes to modify (in place)
+  // @param ctx Section context with transition info
+  // @param harmony Harmony context for chord info
+  void applyTransitionApproach(
+      std::vector<NoteEvent>& notes,
+      const SectionContext& ctx,
+      const HarmonyContext& harmony);
+
  private:
+  // Insert a leading tone at section boundary for smooth transition.
+  // @param notes Notes to modify (in place)
+  // @param ctx Section context
+  // @param harmony Harmony context
+  void insertLeadingTone(
+      std::vector<NoteEvent>& notes,
+      const SectionContext& ctx,
+      const HarmonyContext& harmony);
   // Apply pitch choice to get new pitch.
   int applyPitchChoice(
       PitchChoice choice,

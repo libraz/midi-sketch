@@ -189,10 +189,11 @@ void Generator::generateFromConfig(const SongConfig& config) {
   // Convert SongConfig to GeneratorParams
   GeneratorParams params;
 
-  // If form matches preset default, use weighted random selection based on seed
-  // This allows users who explicitly set a form to keep their choice,
-  // while enabling variation for default configurations
-  if (config.form == preset.default_form && config.seed != 0) {
+  // If form was explicitly set, use it directly
+  // Otherwise, if form matches preset default, use weighted random selection
+  if (config.form_explicit) {
+    params.structure = config.form;
+  } else if (config.form == preset.default_form && config.seed != 0) {
     params.structure = selectRandomForm(config.style_preset_id, config.seed);
   } else if (config.form == preset.default_form && config.seed == 0) {
     // Seed 0 means auto-random, generate a seed first for form selection
@@ -352,7 +353,19 @@ void Generator::generateFromConfig(const SongConfig& config) {
 
   // Store call settings for use in generate()
   se_enabled_ = config.se_enabled;
-  call_enabled_ = config.call_enabled;
+  // Resolve CallSetting to bool
+  switch (config.call_setting) {
+    case CallSetting::Enabled:
+      call_enabled_ = true;
+      break;
+    case CallSetting::Disabled:
+      call_enabled_ = false;
+      break;
+    case CallSetting::Auto:
+    default:
+      call_enabled_ = isCallEnabled(params.vocal_style);
+      break;
+  }
   call_notes_enabled_ = config.call_notes_enabled;
   intro_chant_ = config.intro_chant;
   mix_pattern_ = config.mix_pattern;
@@ -603,8 +616,24 @@ void Generator::generateArpeggio() {
 void Generator::generateAux() {
   // Get vocal track for reference
   const MidiTrack& vocal_track = song_.vocal();
-  if (vocal_track.empty()) {
-    return;  // No vocal means no aux
+
+  // Extract motif from first chorus for intro placement (Stage 4)
+  cached_chorus_motif_.reset();
+  for (const auto& section : song_.arrangement().sections()) {
+    if (section.type == SectionType::Chorus) {
+      std::vector<NoteEvent> chorus_notes;
+      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      for (const auto& note : vocal_track.notes()) {
+        if (note.startTick >= section.start_tick &&
+            note.startTick < section_end) {
+          chorus_notes.push_back(note);
+        }
+      }
+      if (!chorus_notes.empty()) {
+        cached_chorus_motif_ = extractMotifFromChorus(chorus_notes);
+        break;  // Only first chorus
+      }
+    }
   }
 
   // Get vocal tessitura for aux range calculation
@@ -619,18 +648,16 @@ void Generator::generateAux() {
   uint8_t aux_count = 0;
   getAuxConfigsForTemplate(template_id, aux_configs, &aux_count);
 
-  if (aux_count == 0) {
-    return;  // No aux configurations for this template
-  }
-
   const auto& progression = getChordProgression(params_.chord_id);
   AuxTrackGenerator aux_generator;
 
+  // Track chorus repeat count for harmony mode selection
+  int chorus_count = 0;
+
   // Process each section
   for (const auto& section : song_.arrangement().sections()) {
-    // Skip sections without vocals
-    if (section.type == SectionType::Intro ||
-        section.type == SectionType::Interlude ||
+    // Skip interlude and outro (no aux needed)
+    if (section.type == SectionType::Interlude ||
         section.type == SectionType::Outro) {
       continue;
     }
@@ -648,10 +675,60 @@ void Generator::generateAux() {
     ctx.base_velocity = 80;
     ctx.main_tessitura = main_tessitura;
     ctx.main_melody = &vocal_track.notes();
+    ctx.section_type = section.type;
 
-    // Generate aux using first config (simplified for initial integration)
+    // Select aux configuration based on section type and vocal density
+    AuxConfig config;
+
+    if (section.type == SectionType::Intro) {
+      // Intro: Use cached chorus motif if available, otherwise MelodicHook
+      if (cached_chorus_motif_.has_value()) {
+        // Place chorus motif in intro (foreshadowing the hook)
+        uint8_t base_pitch = (vocal_low + vocal_high) / 2;  // Center of vocal range
+        uint8_t velocity = static_cast<uint8_t>(ctx.base_velocity * 0.8f);
+        auto motif_notes = placeMotifInIntro(
+            *cached_chorus_motif_, section.start_tick, section_end,
+            base_pitch, velocity);
+        for (const auto& note : motif_notes) {
+          song_.aux().addNote(note.startTick, note.duration, note.note, note.velocity);
+        }
+        continue;  // Skip aux generator for this section
+      }
+      // Fallback: Use MelodicHook (Fortune Cookie style backing hook)
+      config.function = AuxFunction::MelodicHook;
+      config.range_offset = 0;
+      config.range_width = 6;
+      config.velocity_ratio = 0.8f;
+      config.density_ratio = 1.0f;
+      config.sync_phrase_boundary = true;
+    } else if (section.type == SectionType::Chorus &&
+               section.vocal_density == VocalDensity::Full) {
+      // Chorus with full vocals: Use Unison or Harmony based on repeat count
+      ++chorus_count;
+      if (chorus_count == 1) {
+        // First chorus: Unison
+        config.function = AuxFunction::Unison;
+        config.velocity_ratio = 0.7f;
+      } else {
+        // Subsequent choruses: Harmony (3rd above)
+        config.function = AuxFunction::Unison;  // Uses generateHarmony internally
+        config.velocity_ratio = 0.65f;
+      }
+      config.range_offset = 0;
+      config.range_width = 0;
+      config.density_ratio = 1.0f;
+      config.sync_phrase_boundary = true;
+    } else if (aux_count > 0) {
+      // Other sections: Use default aux config
+      config = aux_configs[0];
+    } else {
+      // No aux config available, skip
+      continue;
+    }
+
+    // Generate aux for this section
     MidiTrack section_aux = aux_generator.generate(
-        aux_configs[0], ctx, harmony_context_, rng_);
+        config, ctx, harmony_context_, rng_);
 
     // Add notes to main aux track
     for (const auto& note : section_aux.notes()) {

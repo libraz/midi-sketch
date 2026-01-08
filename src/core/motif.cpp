@@ -148,4 +148,119 @@ bool isHookAppropriateVariation(MotifVariation variation) {
          variation == MotifVariation::Fragmented;
 }
 
+Motif extractMotifFromChorus(const std::vector<NoteEvent>& chorus_notes,
+                              size_t max_notes) {
+  Motif motif;
+
+  if (chorus_notes.empty()) {
+    return motif;
+  }
+
+  // Take the first max_notes notes
+  size_t note_count = std::min(chorus_notes.size(), max_notes);
+
+  // Use first note as reference pitch
+  int reference_pitch = chorus_notes[0].note;
+  Tick reference_start = chorus_notes[0].startTick;
+
+  motif.rhythm.clear();
+  motif.contour_degrees.clear();
+
+  for (size_t i = 0; i < note_count; ++i) {
+    const auto& note = chorus_notes[i];
+
+    // Calculate relative timing in beats
+    Tick relative_tick = note.startTick - reference_start;
+    float beat_pos = static_cast<float>(relative_tick) / TICKS_PER_BEAT;
+
+    // Determine eighths and strong beat status
+    int eighths = static_cast<int>(note.duration / (TICKS_PER_BEAT / 2));
+    eighths = std::max(1, std::min(8, eighths));  // Clamp to 1-8
+
+    bool is_strong = (relative_tick % (TICKS_PER_BEAT * 2)) == 0;
+
+    motif.rhythm.push_back({beat_pos, eighths, is_strong});
+
+    // Calculate relative degree (from reference pitch)
+    int8_t degree = static_cast<int8_t>(note.note - reference_pitch);
+    motif.contour_degrees.push_back(degree);
+  }
+
+  // Find climax (highest pitch)
+  if (!motif.contour_degrees.empty()) {
+    auto max_it = std::max_element(motif.contour_degrees.begin(),
+                                   motif.contour_degrees.end());
+    motif.climax_index = static_cast<uint8_t>(
+        std::distance(motif.contour_degrees.begin(), max_it));
+  }
+
+  // Calculate total length in beats
+  if (!motif.rhythm.empty()) {
+    const auto& last_rhythm = motif.rhythm.back();
+    float last_beat = last_rhythm.beat + last_rhythm.eighths * 0.5f;
+    motif.length_beats = static_cast<uint8_t>(std::ceil(last_beat));
+    // Round up to 4 or 8
+    if (motif.length_beats <= 4) {
+      motif.length_beats = 4;
+    } else if (motif.length_beats <= 8) {
+      motif.length_beats = 8;
+    }
+  }
+
+  return motif;
+}
+
+std::vector<NoteEvent> placeMotifInIntro(const Motif& motif,
+                                          Tick intro_start,
+                                          Tick intro_end,
+                                          uint8_t base_pitch,
+                                          uint8_t velocity) {
+  std::vector<NoteEvent> result;
+
+  if (motif.rhythm.empty() || motif.contour_degrees.empty()) {
+    return result;
+  }
+
+  Tick motif_length_ticks = motif.length_beats * TICKS_PER_BEAT;
+  Tick current_start = intro_start;
+
+  // Repeat motif until we fill the intro section
+  while (current_start + motif_length_ticks <= intro_end) {
+    size_t note_count = std::min(motif.rhythm.size(), motif.contour_degrees.size());
+
+    for (size_t i = 0; i < note_count; ++i) {
+      const auto& rn = motif.rhythm[i];
+      Tick note_start = current_start + static_cast<Tick>(rn.beat * TICKS_PER_BEAT);
+
+      if (note_start >= intro_end) break;
+
+      NoteEvent note;
+      note.startTick = note_start;
+      note.duration = rn.eighths * (TICKS_PER_BEAT / 2);
+      note.note = static_cast<uint8_t>(
+          std::clamp(static_cast<int>(base_pitch) + motif.contour_degrees[i],
+                     0, 127));
+      note.velocity = velocity;
+
+      result.push_back(note);
+    }
+
+    current_start += motif_length_ticks;
+  }
+
+  return result;
+}
+
+std::vector<NoteEvent> placeMotifInAux(const Motif& motif,
+                                        Tick section_start,
+                                        Tick section_end,
+                                        uint8_t base_pitch,
+                                        float velocity_ratio) {
+  // Base velocity for aux track (softer than main)
+  uint8_t aux_velocity = static_cast<uint8_t>(80 * velocity_ratio);
+
+  // Use the same placement logic as intro
+  return placeMotifInIntro(motif, section_start, section_end, base_pitch, aux_velocity);
+}
+
 }  // namespace midisketch

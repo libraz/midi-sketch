@@ -203,7 +203,7 @@ TEST_F(CallSystemTest, GetMinimumSecondsForCall_CalculatesCorrectly) {
 TEST_F(CallSystemTest, Generator_WithCallEnabled_ProducesCallSections) {
   Generator gen;
   SongConfig config = createDefaultSongConfig(0);
-  config.call_enabled = true;
+  config.call_setting = CallSetting::Enabled;
   config.intro_chant = IntroChant::Gachikoi;
   config.mix_pattern = MixPattern::Standard;
   config.target_duration_seconds = 120;  // Enough duration
@@ -226,7 +226,7 @@ TEST_F(CallSystemTest, Generator_WithCallEnabled_ProducesCallSections) {
 TEST_F(CallSystemTest, Generator_WithCallDisabled_NoCallSections) {
   Generator gen;
   SongConfig config = createDefaultSongConfig(0);
-  config.call_enabled = false;
+  config.call_setting = CallSetting::Disabled;
   config.intro_chant = IntroChant::Gachikoi;  // Set but should be ignored
   config.mix_pattern = MixPattern::Tiger;
 
@@ -246,7 +246,7 @@ TEST_F(CallSystemTest, Generator_WithCallDisabled_NoCallSections) {
 
 TEST_F(CallSystemTest, Validation_DurationTooShortForCall_ReturnsError) {
   SongConfig config = createDefaultSongConfig(0);
-  config.call_enabled = true;
+  config.call_setting = CallSetting::Enabled;
   config.intro_chant = IntroChant::Gachikoi;
   config.mix_pattern = MixPattern::Tiger;
   config.target_duration_seconds = 30;  // Too short
@@ -257,7 +257,7 @@ TEST_F(CallSystemTest, Validation_DurationTooShortForCall_ReturnsError) {
 
 TEST_F(CallSystemTest, Validation_SufficientDuration_ReturnsOK) {
   SongConfig config = createDefaultSongConfig(0);
-  config.call_enabled = true;
+  config.call_setting = CallSetting::Enabled;
   config.intro_chant = IntroChant::Gachikoi;
   config.mix_pattern = MixPattern::Tiger;
   config.target_duration_seconds = 180;  // Long enough
@@ -330,7 +330,7 @@ TEST_F(CallSystemTest, Modulation_Random_SetsModulationAtSomeChorus) {
 TEST_F(CallSystemTest, DrumsTrack_ChantSection_HasReducedDensity) {
   Generator gen;
   SongConfig config = createDefaultSongConfig(0);
-  config.call_enabled = true;
+  config.call_setting = CallSetting::Enabled;
   config.intro_chant = IntroChant::Gachikoi;
   config.target_duration_seconds = 120;
   config.seed = 12345;
@@ -378,7 +378,7 @@ TEST_F(CallSystemTest, DrumsTrack_ChantSection_HasReducedDensity) {
 TEST_F(CallSystemTest, DrumsTrack_MixBreakSection_HasFullEnergy) {
   Generator gen;
   SongConfig config = createDefaultSongConfig(0);
-  config.call_enabled = true;
+  config.call_setting = CallSetting::Enabled;
   config.mix_pattern = MixPattern::Tiger;
   config.target_duration_seconds = 120;
   config.seed = 12345;
@@ -418,7 +418,7 @@ TEST_F(CallSystemTest, DrumsTrack_MixBreakSection_HasFullEnergy) {
 TEST_F(CallSystemTest, BassTrack_ChantSection_HasSimplePattern) {
   Generator gen;
   SongConfig config = createDefaultSongConfig(0);
-  config.call_enabled = true;
+  config.call_setting = CallSetting::Enabled;
   config.intro_chant = IntroChant::Gachikoi;
   config.target_duration_seconds = 120;
   config.seed = 12345;
@@ -459,7 +459,7 @@ TEST_F(CallSystemTest, BassTrack_ChantSection_HasSimplePattern) {
 TEST_F(CallSystemTest, ChordTrack_ChantSection_HasSustainedVoicing) {
   Generator gen;
   SongConfig config = createDefaultSongConfig(0);
-  config.call_enabled = true;
+  config.call_setting = CallSetting::Enabled;
   config.intro_chant = IntroChant::Gachikoi;
   config.target_duration_seconds = 120;
   config.seed = 12345;
@@ -503,7 +503,7 @@ TEST_F(CallSystemTest, ChordTrack_ChantSection_HasSustainedVoicing) {
 TEST_F(CallSystemTest, VocalTrack_CallSections_AreEmpty) {
   Generator gen;
   SongConfig config = createDefaultSongConfig(0);
-  config.call_enabled = true;
+  config.call_setting = CallSetting::Enabled;
   config.intro_chant = IntroChant::Gachikoi;
   config.mix_pattern = MixPattern::Tiger;
   config.target_duration_seconds = 120;
@@ -538,7 +538,7 @@ TEST_F(CallSystemTest, VocalTrack_CallSections_AreEmpty) {
 TEST_F(CallSystemTest, SETrack_CallSections_HaveCallNotes) {
   Generator gen;
   SongConfig config = createDefaultSongConfig(0);
-  config.call_enabled = true;
+  config.call_setting = CallSetting::Enabled;
   config.call_notes_enabled = true;
   config.intro_chant = IntroChant::Gachikoi;
   config.mix_pattern = MixPattern::Tiger;

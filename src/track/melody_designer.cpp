@@ -107,6 +107,40 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(
   return result;
 }
 
+std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
+    const MelodyTemplate& tmpl,
+    const SectionContext& ctx,
+    const HarmonyContext& harmony,
+    std::mt19937& rng,
+    VocalStylePreset vocal_style,
+    int candidate_count) {
+
+  // Get evaluation config for the vocal style
+  const EvaluatorConfig& config = MelodyEvaluator::getEvaluatorConfig(vocal_style);
+
+  // Generate multiple candidates
+  std::vector<std::pair<std::vector<NoteEvent>, float>> candidates;
+  candidates.reserve(static_cast<size_t>(candidate_count));
+
+  for (int i = 0; i < candidate_count; ++i) {
+    // Generate a candidate melody
+    std::vector<NoteEvent> melody = generateSection(tmpl, ctx, harmony, rng);
+
+    // Evaluate it
+    MelodyScore score = MelodyEvaluator::evaluate(melody, harmony);
+    float total_score = score.total(config);
+
+    candidates.emplace_back(std::move(melody), total_score);
+  }
+
+  // Find the best candidate
+  auto best_it = std::max_element(
+      candidates.begin(), candidates.end(),
+      [](const auto& a, const auto& b) { return a.second < b.second; });
+
+  return std::move(best_it->first);
+}
+
 MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     const MelodyTemplate& tmpl,
     Tick phrase_start,
@@ -456,6 +490,125 @@ bool MelodyDesigner::isInSameVowelSection(
 
 int8_t MelodyDesigner::getMaxStepInVowelSection(bool in_same_vowel) {
   return in_same_vowel ? 2 : 4;
+}
+
+void MelodyDesigner::applyTransitionApproach(
+    std::vector<NoteEvent>& notes,
+    const SectionContext& ctx,
+    const HarmonyContext& harmony) {
+
+  if (!ctx.transition_to_next || notes.empty()) return;
+
+  const auto& trans = *ctx.transition_to_next;
+  Tick approach_start = ctx.section_end - trans.approach_beats * TICKS_PER_BEAT;
+
+  // Maximum allowed interval (major 6th = 9 semitones)
+  constexpr int MAX_INTERVAL = 9;
+
+  int prev_pitch = -1;
+
+  for (auto& note : notes) {
+    if (note.startTick < approach_start) {
+      prev_pitch = note.note;
+      continue;
+    }
+
+    // 1. Apply pitch tendency (creating "run-up" to next section)
+    float progress = static_cast<float>(note.startTick - approach_start) /
+                     static_cast<float>(ctx.section_end - approach_start);
+    int8_t pitch_shift = static_cast<int8_t>(trans.pitch_tendency * progress);
+
+    // Move toward chord tone while shifting
+    int8_t chord_degree = harmony.getChordDegreeAt(note.startTick);
+    int new_pitch = nearestChordTonePitch(
+        note.note + pitch_shift, chord_degree);
+
+    // Constrain to vocal range
+    new_pitch = std::clamp(
+        new_pitch, static_cast<int>(ctx.vocal_low), static_cast<int>(ctx.vocal_high));
+
+    // Ensure interval constraint with previous note
+    if (prev_pitch >= 0) {
+      int interval = std::abs(new_pitch - prev_pitch);
+      if (interval > MAX_INTERVAL) {
+        // Reduce the shift to stay within interval constraint
+        if (new_pitch > prev_pitch) {
+          new_pitch = prev_pitch + MAX_INTERVAL;
+        } else {
+          new_pitch = prev_pitch - MAX_INTERVAL;
+        }
+        // Re-constrain to vocal range
+        new_pitch = std::clamp(
+            new_pitch, static_cast<int>(ctx.vocal_low), static_cast<int>(ctx.vocal_high));
+      }
+    }
+
+    note.note = static_cast<uint8_t>(new_pitch);
+    prev_pitch = new_pitch;
+
+    // 2. Apply velocity gradient (crescendo/decrescendo)
+    float vel_factor = 1.0f + (trans.velocity_growth - 1.0f) * progress;
+    note.velocity = static_cast<uint8_t>(
+        std::clamp(static_cast<float>(note.velocity) * vel_factor, 1.0f, 127.0f));
+  }
+
+  // 3. Insert leading tone if requested (skip if it would create large interval)
+  if (trans.use_leading_tone && !notes.empty()) {
+    int last_pitch = notes.back().note;
+    int leading_pitch = ctx.tessitura.center - 1;
+    if (std::abs(leading_pitch - last_pitch) <= MAX_INTERVAL) {
+      insertLeadingTone(notes, ctx, harmony);
+    }
+  }
+}
+
+void MelodyDesigner::insertLeadingTone(
+    std::vector<NoteEvent>& notes,
+    const SectionContext& ctx,
+    [[maybe_unused]] const HarmonyContext& harmony) {
+
+  if (notes.empty()) return;
+
+  // Maximum allowed interval (major 6th = 9 semitones)
+  constexpr int MAX_INTERVAL = 9;
+
+  // Find the last note
+  auto& last_note = notes.back();
+
+  // Leading tone: one semitone below the expected first note of next section
+  // In C major, this is typically B (11) leading to C (0)
+  // We approximate by using a semitone below the current tessitura center
+  int leading_pitch = ctx.tessitura.center - 1;
+
+  // Ensure it's within range
+  if (leading_pitch < static_cast<int>(ctx.vocal_low)) {
+    leading_pitch = ctx.vocal_low;
+  }
+  if (leading_pitch > static_cast<int>(ctx.vocal_high)) {
+    leading_pitch = ctx.vocal_high;
+  }
+
+  // Check interval constraint with last note
+  int interval = std::abs(leading_pitch - static_cast<int>(last_note.note));
+  if (interval > MAX_INTERVAL) {
+    // Skip inserting leading tone if interval is too large
+    return;
+  }
+
+  // Insert a short leading tone just before section end
+  // Only if there's space and the last note ends before section end
+  Tick last_note_end = last_note.startTick + last_note.duration;
+  Tick leading_tone_start = ctx.section_end - TICKS_PER_BEAT / 4;  // 16th note before end
+
+  if (last_note_end <= leading_tone_start) {
+    NoteEvent leading_note;
+    leading_note.startTick = leading_tone_start;
+    leading_note.duration = TICKS_PER_BEAT / 4;  // 16th note duration
+    leading_note.note = static_cast<uint8_t>(leading_pitch);
+    leading_note.velocity = static_cast<uint8_t>(std::min(127, static_cast<int>(last_note.velocity) + 10));  // Slightly louder
+
+    notes.push_back(leading_note);
+  }
 }
 
 int MelodyDesigner::applyPitchChoice(

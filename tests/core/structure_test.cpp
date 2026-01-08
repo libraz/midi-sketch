@@ -320,5 +320,169 @@ TEST(StructureTest, BuildForDurationZeroBPMSafe) {
   EXPECT_GE(total_bars, 12u) << "Zero BPM should produce minimum structure";
 }
 
+// ============================================================================
+// Chorus-First Pattern Tests (15-second rule for hooks)
+// ============================================================================
+
+TEST(StructureTest, ChorusFirstStartsWithChorus) {
+  auto sections = buildStructure(StructurePattern::ChorusFirst);
+  ASSERT_GT(sections.size(), 0u);
+
+  // First section should be Chorus for immediate hook
+  EXPECT_EQ(sections[0].type, SectionType::Chorus);
+  EXPECT_EQ(sections[0].bars, 8);
+  EXPECT_EQ(sections[0].start_tick, 0u);
+}
+
+TEST(StructureTest, ChorusFirstStructure) {
+  auto sections = buildStructure(StructurePattern::ChorusFirst);
+  ASSERT_EQ(sections.size(), 4);
+
+  // Chorus(8) -> A(8) -> B(8) -> Chorus(8)
+  EXPECT_EQ(sections[0].type, SectionType::Chorus);
+  EXPECT_EQ(sections[1].type, SectionType::A);
+  EXPECT_EQ(sections[2].type, SectionType::B);
+  EXPECT_EQ(sections[3].type, SectionType::Chorus);
+
+  EXPECT_EQ(calculateTotalBars(sections), 32);
+}
+
+TEST(StructureTest, ChorusFirstShortStructure) {
+  auto sections = buildStructure(StructurePattern::ChorusFirstShort);
+  ASSERT_EQ(sections.size(), 3);
+
+  // Chorus(8) -> A(8) -> Chorus(8)
+  EXPECT_EQ(sections[0].type, SectionType::Chorus);
+  EXPECT_EQ(sections[1].type, SectionType::A);
+  EXPECT_EQ(sections[2].type, SectionType::Chorus);
+
+  EXPECT_EQ(calculateTotalBars(sections), 24);
+}
+
+TEST(StructureTest, ChorusFirstFullStructure) {
+  auto sections = buildStructure(StructurePattern::ChorusFirstFull);
+  ASSERT_EQ(sections.size(), 7);
+
+  // Chorus(8) -> A(8) -> B(8) -> Chorus(8) -> A(8) -> B(8) -> Chorus(8)
+  EXPECT_EQ(sections[0].type, SectionType::Chorus);
+  EXPECT_EQ(sections[1].type, SectionType::A);
+  EXPECT_EQ(sections[2].type, SectionType::B);
+  EXPECT_EQ(sections[3].type, SectionType::Chorus);
+  EXPECT_EQ(sections[4].type, SectionType::A);
+  EXPECT_EQ(sections[5].type, SectionType::B);
+  EXPECT_EQ(sections[6].type, SectionType::Chorus);
+
+  EXPECT_EQ(calculateTotalBars(sections), 56);
+}
+
+// ============================================================================
+// Immediate Vocal Pattern Tests (no intro)
+// ============================================================================
+
+TEST(StructureTest, ImmediateVocalStartsWithA) {
+  auto sections = buildStructure(StructurePattern::ImmediateVocal);
+  ASSERT_GT(sections.size(), 0u);
+
+  // First section should be A (no intro)
+  EXPECT_EQ(sections[0].type, SectionType::A);
+  EXPECT_EQ(sections[0].start_tick, 0u);
+}
+
+TEST(StructureTest, ImmediateVocalStructure) {
+  auto sections = buildStructure(StructurePattern::ImmediateVocal);
+  ASSERT_EQ(sections.size(), 3);
+
+  // A(8) -> B(8) -> Chorus(8) - same as StandardPop but without intro
+  EXPECT_EQ(sections[0].type, SectionType::A);
+  EXPECT_EQ(sections[1].type, SectionType::B);
+  EXPECT_EQ(sections[2].type, SectionType::Chorus);
+
+  EXPECT_EQ(calculateTotalBars(sections), 24);
+}
+
+TEST(StructureTest, ImmediateVocalFullStructure) {
+  auto sections = buildStructure(StructurePattern::ImmediateVocalFull);
+  ASSERT_EQ(sections.size(), 6);
+
+  // A(8) -> B(8) -> Chorus(8) -> A(8) -> B(8) -> Chorus(8)
+  EXPECT_EQ(sections[0].type, SectionType::A);
+  EXPECT_EQ(sections[1].type, SectionType::B);
+  EXPECT_EQ(sections[2].type, SectionType::Chorus);
+  EXPECT_EQ(sections[3].type, SectionType::A);
+  EXPECT_EQ(sections[4].type, SectionType::B);
+  EXPECT_EQ(sections[5].type, SectionType::Chorus);
+
+  EXPECT_EQ(calculateTotalBars(sections), 48);
+}
+
+// ============================================================================
+// Additional Variation Pattern Tests
+// ============================================================================
+
+TEST(StructureTest, AChorusBStructure) {
+  auto sections = buildStructure(StructurePattern::AChorusB);
+  ASSERT_EQ(sections.size(), 4);
+
+  // A(8) -> Chorus(8) -> B(8) -> Chorus(8)
+  EXPECT_EQ(sections[0].type, SectionType::A);
+  EXPECT_EQ(sections[1].type, SectionType::Chorus);
+  EXPECT_EQ(sections[2].type, SectionType::B);
+  EXPECT_EQ(sections[3].type, SectionType::Chorus);
+
+  EXPECT_EQ(calculateTotalBars(sections), 32);
+}
+
+TEST(StructureTest, DoubleVerseStructure) {
+  auto sections = buildStructure(StructurePattern::DoubleVerse);
+  ASSERT_EQ(sections.size(), 4);
+
+  // A(8) -> A(8) -> B(8) -> Chorus(8)
+  EXPECT_EQ(sections[0].type, SectionType::A);
+  EXPECT_EQ(sections[1].type, SectionType::A);
+  EXPECT_EQ(sections[2].type, SectionType::B);
+  EXPECT_EQ(sections[3].type, SectionType::Chorus);
+
+  EXPECT_EQ(calculateTotalBars(sections), 32);
+}
+
+TEST(StructureTest, ChorusFirstChorusWithin15Seconds) {
+  // At 120 BPM, 8 bars = 16 seconds
+  // At 150 BPM, 8 bars = 12.8 seconds (within 15-second rule)
+  auto sections = buildStructure(StructurePattern::ChorusFirst);
+  ASSERT_GT(sections.size(), 0u);
+
+  // First section is Chorus, starts at tick 0
+  EXPECT_EQ(sections[0].type, SectionType::Chorus);
+  EXPECT_EQ(sections[0].start_tick, 0u);
+
+  // Chorus is immediately available (no intro delay)
+}
+
+TEST(StructureTest, AllNewPatternsProduceValidSections) {
+  // Test that all new patterns produce valid section structures
+  std::vector<StructurePattern> new_patterns = {
+      StructurePattern::ChorusFirst,
+      StructurePattern::ChorusFirstShort,
+      StructurePattern::ChorusFirstFull,
+      StructurePattern::ImmediateVocal,
+      StructurePattern::ImmediateVocalFull,
+      StructurePattern::AChorusB,
+      StructurePattern::DoubleVerse,
+  };
+
+  for (const auto& pattern : new_patterns) {
+    auto sections = buildStructure(pattern);
+    EXPECT_GT(sections.size(), 0u) << "Pattern should produce sections";
+    EXPECT_GT(calculateTotalBars(sections), 0u) << "Pattern should have bars";
+
+    // Verify section ticks are sequential
+    Tick expected_tick = 0;
+    for (const auto& section : sections) {
+      EXPECT_EQ(section.start_tick, expected_tick);
+      expected_tick += section.bars * TICKS_PER_BAR;
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

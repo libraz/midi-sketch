@@ -31,6 +31,7 @@ set(TEST_SOURCES
   core/pitch_utils_test.cpp
   core/chord_utils_test.cpp
   core/melody_templates_test.cpp
+  core/melody_evaluator_test.cpp
   core/piano_roll_test.cpp
   midi/midi_writer_test.cpp
   track/arpeggio_test.cpp
@@ -40,6 +41,7 @@ set(TEST_SOURCES
   track/drums_test.cpp
   track/melody_designer_test.cpp
   track/aux_track_test.cpp
+  track/se_test.cpp
   analysis/dissonance_test.cpp
   api/c_api_test.cpp
 )

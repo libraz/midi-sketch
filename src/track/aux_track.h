@@ -29,7 +29,16 @@ enum class AuxHarmonicRole : uint8_t {
   ChordTone,   // PulseLoop, EmotionalPad: chord tones only
   Target,      // TargetHint: anticipate melody targets
   Following,   // PhraseTail: follow melody pitch
-  Accent       // GrooveAccent: root/fifth emphasis
+  Accent,      // GrooveAccent: root/fifth emphasis
+  Unison       // Unison: exact same pitch as main melody
+};
+
+// Harmony mode for unison/harmony switching.
+enum class HarmonyMode : uint8_t {
+  UnisonOnly,      // Always unison (same pitch)
+  ThirdAbove,      // Harmony 3rd above
+  ThirdBelow,      // Harmony 3rd below
+  Alternating      // Alternate between unison and harmony
 };
 
 // Density behavior describes how density_ratio is interpreted.
@@ -175,6 +184,47 @@ class AuxTrackGenerator {
   // @param rng Random number generator
   // @returns Vector of note events
   std::vector<NoteEvent> generateEmotionalPad(
+      const AuxContext& ctx,
+      const AuxConfig& config,
+      const HarmonyContext& harmony,
+      std::mt19937& rng);
+
+  // F: Unison - Doubles the main melody
+  // Creates a slightly offset copy of the main melody for doubling effect.
+  // @param ctx Aux context
+  // @param config Configuration
+  // @param harmony Harmony context
+  // @param rng Random number generator
+  // @returns Vector of note events
+  std::vector<NoteEvent> generateUnison(
+      const AuxContext& ctx,
+      const AuxConfig& config,
+      const HarmonyContext& harmony,
+      std::mt19937& rng);
+
+  // F+: Harmony - Creates harmony line based on main melody
+  // Generates harmony (3rd above/below) based on the main melody.
+  // @param ctx Aux context
+  // @param config Configuration
+  // @param harmony Harmony context
+  // @param mode Harmony mode (third above/below/alternating)
+  // @param rng Random number generator
+  // @returns Vector of note events
+  std::vector<NoteEvent> generateHarmony(
+      const AuxContext& ctx,
+      const AuxConfig& config,
+      const HarmonyContext& harmony,
+      HarmonyMode mode,
+      std::mt19937& rng);
+
+  // G: Melodic Hook - Creates memorable hook phrase
+  // Generates a repeating melodic hook (Fortune Cookie intro style).
+  // @param ctx Aux context
+  // @param config Configuration
+  // @param harmony Harmony context
+  // @param rng Random number generator
+  // @returns Vector of note events
+  std::vector<NoteEvent> generateMelodicHook(
       const AuxContext& ctx,
       const AuxConfig& config,
       const HarmonyContext& harmony,

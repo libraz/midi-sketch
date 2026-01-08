@@ -15,7 +15,7 @@ namespace {
 
 // Meta information table for each AuxFunction.
 // Index matches AuxFunction enum value.
-constexpr std::array<AuxFunctionMeta, 5> kAuxFunctionMetaTable = {{
+constexpr std::array<AuxFunctionMeta, 7> kAuxFunctionMetaTable = {{
     // PulseLoop: Rhythmic, ChordTone, EventProbability
     {AuxTimingRole::Rhythmic, AuxHarmonicRole::ChordTone,
      AuxDensityBehavior::EventProbability, 0.7f, 0.1f},
@@ -31,6 +31,12 @@ constexpr std::array<AuxFunctionMeta, 5> kAuxFunctionMetaTable = {{
     // EmotionalPad: Sustained, ChordTone, VoiceCount
     {AuxTimingRole::Sustained, AuxHarmonicRole::ChordTone,
      AuxDensityBehavior::VoiceCount, 1.0f, 0.4f},
+    // Unison: Reactive, Unison, EventProbability (full density)
+    {AuxTimingRole::Reactive, AuxHarmonicRole::Unison,
+     AuxDensityBehavior::EventProbability, 1.0f, 0.0f},
+    // MelodicHook: Rhythmic, ChordTone, EventProbability
+    {AuxTimingRole::Rhythmic, AuxHarmonicRole::ChordTone,
+     AuxDensityBehavior::EventProbability, 1.0f, 0.1f},
 }};
 
 constexpr Tick TICK_EIGHTH = TICKS_PER_BEAT / 2;
@@ -77,6 +83,12 @@ MidiTrack AuxTrackGenerator::generate(
       break;
     case AuxFunction::EmotionalPad:
       notes = generateEmotionalPad(ctx, config, harmony, rng);
+      break;
+    case AuxFunction::Unison:
+      notes = generateUnison(ctx, config, harmony, rng);
+      break;
+    case AuxFunction::MelodicHook:
+      notes = generateMelodicHook(ctx, config, harmony, rng);
       break;
   }
 
@@ -584,6 +596,199 @@ uint8_t AuxTrackGenerator::getSafePitch(
   return static_cast<uint8_t>(std::clamp(best_pitch,
                                           static_cast<int>(low),
                                           static_cast<int>(high)));
+}
+
+// ============================================================================
+// F: Unison - Doubles the main melody
+// ============================================================================
+
+std::vector<NoteEvent> AuxTrackGenerator::generateUnison(
+    const AuxContext& ctx,
+    const AuxConfig& config,
+    [[maybe_unused]] const HarmonyContext& harmony,
+    std::mt19937& rng) {
+
+  std::vector<NoteEvent> result;
+  if (!ctx.main_melody || ctx.main_melody->empty()) return result;
+
+  // Timing offset distribution (±5-10 ticks for natural doubling feel)
+  std::uniform_int_distribution<int> offset_dist(5, 10);
+  std::uniform_int_distribution<int> sign_dist(0, 1);
+
+  for (const auto& note : *ctx.main_melody) {
+    // Only process notes within section range
+    if (note.startTick < ctx.section_start ||
+        note.startTick >= ctx.section_end) continue;
+
+    NoteEvent unison = note;
+
+    // Add slight timing offset for natural doubling feel
+    int offset = offset_dist(rng) * (sign_dist(rng) ? 1 : -1);
+    unison.startTick = static_cast<Tick>(
+        std::max(static_cast<int>(ctx.section_start),
+                 static_cast<int>(note.startTick) + offset));
+
+    // Reduce velocity for background effect
+    unison.velocity = static_cast<uint8_t>(
+        std::clamp(static_cast<int>(note.velocity * config.velocity_ratio),
+                   1, 127));
+
+    result.push_back(unison);
+  }
+
+  return result;
+}
+
+// ============================================================================
+// F+: Harmony - Creates harmony line based on main melody
+// ============================================================================
+
+std::vector<NoteEvent> AuxTrackGenerator::generateHarmony(
+    const AuxContext& ctx,
+    const AuxConfig& config,
+    const HarmonyContext& harmony,
+    HarmonyMode mode,
+    std::mt19937& rng) {
+
+  std::vector<NoteEvent> result;
+  if (!ctx.main_melody || ctx.main_melody->empty()) return result;
+
+  // Timing offset distribution
+  std::uniform_int_distribution<int> offset_dist(3, 8);
+  std::uniform_int_distribution<int> sign_dist(0, 1);
+
+  int note_count = 0;
+  for (const auto& note : *ctx.main_melody) {
+    // Only process notes within section range
+    if (note.startTick < ctx.section_start ||
+        note.startTick >= ctx.section_end) continue;
+
+    NoteEvent harm = note;
+
+    // Determine harmony interval based on mode
+    int interval = 0;
+    switch (mode) {
+      case HarmonyMode::UnisonOnly:
+        interval = 0;
+        break;
+      case HarmonyMode::ThirdAbove:
+        interval = 3;  // Minor 3rd (could be 4 for major 3rd)
+        break;
+      case HarmonyMode::ThirdBelow:
+        interval = -3;
+        break;
+      case HarmonyMode::Alternating:
+        // Alternate between unison and third above
+        interval = (note_count % 2 == 0) ? 0 : 3;
+        break;
+    }
+
+    // Apply interval and snap to chord tone
+    int new_pitch = note.note + interval;
+    int8_t chord_degree = harmony.getChordDegreeAt(note.startTick);
+    new_pitch = nearestChordTonePitch(new_pitch, chord_degree);
+
+    // Clamp to reasonable range
+    harm.note = static_cast<uint8_t>(std::clamp(new_pitch, 48, 84));
+
+    // Add slight timing offset
+    int offset = offset_dist(rng) * (sign_dist(rng) ? 1 : -1);
+    harm.startTick = static_cast<Tick>(
+        std::max(static_cast<int>(ctx.section_start),
+                 static_cast<int>(note.startTick) + offset));
+
+    // Reduce velocity
+    harm.velocity = static_cast<uint8_t>(
+        std::clamp(static_cast<int>(note.velocity * config.velocity_ratio),
+                   1, 127));
+
+    result.push_back(harm);
+    ++note_count;
+  }
+
+  return result;
+}
+
+// ============================================================================
+// G: MelodicHook - Creates memorable hook phrase
+// ============================================================================
+
+std::vector<NoteEvent> AuxTrackGenerator::generateMelodicHook(
+    const AuxContext& ctx,
+    const AuxConfig& config,
+    const HarmonyContext& harmony,
+    std::mt19937& rng) {
+
+  std::vector<NoteEvent> result;
+
+  // Calculate aux range
+  uint8_t aux_low, aux_high;
+  calculateAuxRange(config, ctx.main_tessitura, aux_low, aux_high);
+
+  // Hook pattern: AAAB style (3 repeats + variation)
+  // Each hook phrase is 2 bars (8 beats)
+  constexpr Tick HOOK_PHRASE_TICKS = TICKS_PER_BAR * 2;
+
+  // Simple hook motif: 4 notes per bar
+  constexpr int NOTES_PER_BAR = 4;
+  constexpr Tick NOTE_DURATION = TICKS_PER_BEAT;
+
+  Tick current_tick = ctx.section_start;
+
+  // Generate base hook pattern (first 2 bars)
+  std::vector<NoteEvent> base_hook;
+  int8_t chord_degree = harmony.getChordDegreeAt(ctx.section_start);
+
+  // Start from chord root in aux range
+  int base_pitch = nearestChordTonePitch(
+      (aux_low + aux_high) / 2, chord_degree);
+
+  // Simple melodic pattern: root, 3rd, 5th, 3rd
+  std::array<int, 4> intervals = {0, 4, 7, 4};  // Major chord intervals
+
+  for (int i = 0; i < NOTES_PER_BAR * 2; ++i) {
+    int pitch = base_pitch + intervals[i % 4];
+    pitch = std::clamp(pitch, static_cast<int>(aux_low), static_cast<int>(aux_high));
+
+    NoteEvent note;
+    note.startTick = current_tick;
+    note.duration = NOTE_DURATION - TICKS_PER_BEAT / 8;  // Slight gap
+    note.note = static_cast<uint8_t>(pitch);
+    note.velocity = static_cast<uint8_t>(ctx.base_velocity * config.velocity_ratio);
+
+    base_hook.push_back(note);
+    current_tick += NOTE_DURATION;
+  }
+
+  // Repeat base hook with variations (AAAB pattern)
+  Tick section_length = ctx.section_end - ctx.section_start;
+  int phrases_needed = static_cast<int>(section_length / HOOK_PHRASE_TICKS);
+
+  std::uniform_int_distribution<int> variation_dist(-2, 2);
+
+  for (int phrase = 0; phrase < phrases_needed; ++phrase) {
+    Tick phrase_start = ctx.section_start + phrase * HOOK_PHRASE_TICKS;
+
+    for (const auto& note : base_hook) {
+      NoteEvent hook_note = note;
+      hook_note.startTick = phrase_start + (note.startTick - ctx.section_start);
+
+      // Apply variation on the B phrase (every 4th phrase)
+      if (phrase % 4 == 3) {
+        int variation = variation_dist(rng);
+        int new_pitch = hook_note.note + variation;
+        hook_note.note = static_cast<uint8_t>(
+            std::clamp(new_pitch, static_cast<int>(aux_low), static_cast<int>(aux_high)));
+      }
+
+      // Skip if outside section
+      if (hook_note.startTick >= ctx.section_end) continue;
+
+      result.push_back(hook_note);
+    }
+  }
+
+  return result;
 }
 
 }  // namespace midisketch

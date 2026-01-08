@@ -213,7 +213,7 @@ typedef struct {
 
   // Call settings
   uint8_t se_enabled;         // Enable SE track (0=off, 1=on)
-  uint8_t call_enabled;       // Enable call feature (0=off, 1=on)
+  uint8_t call_setting;       // CallSetting (0=Auto, 1=Enabled, 2=Disabled)
   uint8_t call_notes_enabled; // Output calls as notes (0=off, 1=on)
   uint8_t intro_chant;        // IntroChant (0=None, 1=Gachikoi, 2=Shouting)
   uint8_t mix_pattern;        // MixPattern (0=None, 1=Standard, 2=Tiger)

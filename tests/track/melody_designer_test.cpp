@@ -359,5 +359,105 @@ TEST(MelodyDesignerTest, GenerateSectionDifferentTemplates) {
   }
 }
 
+// ============================================================================
+// Section Transition Tests
+// ============================================================================
+
+TEST(MelodyDesignerTest, GetTransitionBToChorus) {
+  const SectionTransition* trans = getTransition(SectionType::B, SectionType::Chorus);
+  ASSERT_NE(trans, nullptr);
+
+  // B→Chorus should have upward pitch tendency
+  EXPECT_GT(trans->pitch_tendency, 0);
+  // Should use leading tone
+  EXPECT_TRUE(trans->use_leading_tone);
+  // Should have velocity growth (excitement)
+  EXPECT_GT(trans->velocity_growth, 1.0f);
+}
+
+TEST(MelodyDesignerTest, GetTransitionBridgeToChorus) {
+  const SectionTransition* trans = getTransition(SectionType::Bridge, SectionType::Chorus);
+  ASSERT_NE(trans, nullptr);
+
+  // Bridge→Chorus should have strong upward tendency
+  EXPECT_GE(trans->pitch_tendency, 3);
+  EXPECT_TRUE(trans->use_leading_tone);
+}
+
+TEST(MelodyDesignerTest, GetTransitionChorusToA) {
+  const SectionTransition* trans = getTransition(SectionType::Chorus, SectionType::A);
+  ASSERT_NE(trans, nullptr);
+
+  // Chorus→A should calm down (negative tendency)
+  EXPECT_LT(trans->pitch_tendency, 0);
+  // Should have velocity decrease
+  EXPECT_LT(trans->velocity_growth, 1.0f);
+}
+
+TEST(MelodyDesignerTest, GetTransitionNoTransition) {
+  // No specific transition defined for Outro→Intro
+  const SectionTransition* trans = getTransition(SectionType::Outro, SectionType::Intro);
+  EXPECT_EQ(trans, nullptr);
+}
+
+TEST(MelodyDesignerTest, ApplyTransitionApproachModifiesNotes) {
+  MelodyDesigner designer;
+  auto ctx = createTestContext();
+  ctx.section_type = SectionType::B;
+  ctx.transition_to_next = getTransition(SectionType::B, SectionType::Chorus);
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+  auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+
+  // Store original velocities near section end
+  std::vector<uint8_t> original_velocities;
+  Tick approach_start = ctx.section_end - 4 * TICKS_PER_BEAT;
+  for (const auto& note : notes) {
+    if (note.startTick >= approach_start) {
+      original_velocities.push_back(note.velocity);
+    }
+  }
+
+  // Apply transition
+  designer.applyTransitionApproach(notes, ctx, harmony);
+
+  // Verify velocities changed (should be louder due to velocity_growth > 1)
+  size_t idx = 0;
+  for (const auto& note : notes) {
+    if (note.startTick >= approach_start && idx < original_velocities.size()) {
+      // Due to crescendo, later notes should be louder or same
+      EXPECT_GE(note.velocity, original_velocities[idx] * 0.9f)
+          << "Velocity should not decrease significantly during approach";
+      ++idx;
+    }
+  }
+}
+
+TEST(MelodyDesignerTest, ApplyTransitionApproachNoOpWithoutTransition) {
+  MelodyDesigner designer;
+  auto ctx = createTestContext();
+  ctx.transition_to_next = nullptr;  // No transition
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+  auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+
+  // Store original notes
+  auto original_notes = notes;
+
+  // Apply transition (should be no-op)
+  designer.applyTransitionApproach(notes, ctx, harmony);
+
+  // Notes should be unchanged
+  EXPECT_EQ(notes.size(), original_notes.size());
+  for (size_t i = 0; i < notes.size(); ++i) {
+    EXPECT_EQ(notes[i].note, original_notes[i].note);
+    EXPECT_EQ(notes[i].velocity, original_notes[i].velocity);
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

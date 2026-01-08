@@ -48,6 +48,24 @@ constexpr ChantPreset GACHIKOI_INTRO = {
     {65, 68, 70, 72, 75, 78, 80, 82, 85, 88, 92, 110, 0, 0, 0, 0}
 };
 
+// PPPH: 3 claps + "hai" (B section ending, lead into Chorus)
+// "Pan-Pan-Pan-Hai!"
+constexpr ChantPreset PPPH_PATTERN = {
+    "PPPH",
+    4,
+    {1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {90, 95, 100, 110, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+};
+
+// Intro MIX pattern (extended version for Intro sections)
+// "Fu-Fu-Fu-Fu-Fu-Fuu-Fuu-Waa"
+constexpr ChantPreset INTRO_MIX_PATTERN = {
+    "IntroMix",
+    8,
+    {1, 1, 1, 1, 1, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0},
+    {80, 82, 85, 88, 90, 95, 100, 110, 0, 0, 0, 0, 0, 0, 0, 0}
+};
+
 // Add chant notes from a preset
 void addChantNotes(MidiTrack& track, Tick start_tick, const ChantPreset& preset,
                    bool notes_enabled) {
@@ -208,6 +226,73 @@ void generateSETrack(
     for (const auto& section : sections) {
       generateCallsForSection(track, section, intro_chant, mix_pattern,
                               call_density, call_notes_enabled, rng);
+    }
+
+    // Insert PPPH at B→Chorus transitions (Wotagei culture)
+    insertPPPHAtBtoChorus(track, sections, call_notes_enabled);
+
+    // Insert MIX at Intro sections
+    insertMIXAtIntro(track, sections, call_notes_enabled);
+  }
+}
+
+bool isCallEnabled(VocalStylePreset style) {
+  switch (style) {
+    case VocalStylePreset::Idol:
+    case VocalStylePreset::BrightKira:
+    case VocalStylePreset::CuteAffected:
+      return true;
+
+    case VocalStylePreset::Ballad:
+    case VocalStylePreset::Rock:
+    case VocalStylePreset::PowerfulShout:
+    case VocalStylePreset::CoolSynth:
+    case VocalStylePreset::CityPop:
+      return false;
+
+    case VocalStylePreset::Standard:
+    case VocalStylePreset::Vocaloid:
+    case VocalStylePreset::UltraVocaloid:
+    case VocalStylePreset::Anime:
+    case VocalStylePreset::Auto:
+    default:
+      return false;
+  }
+}
+
+void insertPPPHAtBtoChorus(
+    MidiTrack& track,
+    const std::vector<Section>& sections,
+    bool notes_enabled) {
+
+  for (size_t i = 0; i + 1 < sections.size(); ++i) {
+    if (sections[i].type == SectionType::B &&
+        sections[i + 1].type == SectionType::Chorus) {
+      // Start PPPH at the last bar of B section
+      Tick ppph_start = sections[i].start_tick +
+                        (sections[i].bars - 1) * TICKS_PER_BAR;
+
+      // Add text marker
+      track.addText(ppph_start, "PPPH");
+
+      // Add the chant notes
+      addChantNotes(track, ppph_start, PPPH_PATTERN, notes_enabled);
+    }
+  }
+}
+
+void insertMIXAtIntro(
+    MidiTrack& track,
+    const std::vector<Section>& sections,
+    bool notes_enabled) {
+
+  for (const auto& section : sections) {
+    if (section.type == SectionType::Intro) {
+      // Add text marker
+      track.addText(section.start_tick, "IntroMix");
+
+      // Add the intro MIX pattern
+      addChantNotes(track, section.start_tick, INTRO_MIX_PATTERN, notes_enabled);
     }
   }
 }

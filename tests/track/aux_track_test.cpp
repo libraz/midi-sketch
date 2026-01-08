@@ -393,5 +393,331 @@ TEST(AuxTrackTest, TrackRoleAuxValue) {
   EXPECT_EQ(static_cast<uint8_t>(TrackRole::Aux), 7);
 }
 
+// ============================================================================
+// New AuxFunction Enum Tests
+// ============================================================================
+
+TEST(AuxTrackTest, AuxFunctionEnumValuesExtended) {
+  EXPECT_EQ(static_cast<uint8_t>(AuxFunction::Unison), 5);
+  EXPECT_EQ(static_cast<uint8_t>(AuxFunction::MelodicHook), 6);
+}
+
+TEST(AuxTrackTest, AuxHarmonicRoleUnisonValue) {
+  EXPECT_EQ(static_cast<uint8_t>(AuxHarmonicRole::Unison), 4);
+}
+
+TEST(AuxTrackTest, HarmonyModeEnumValues) {
+  EXPECT_EQ(static_cast<uint8_t>(HarmonyMode::UnisonOnly), 0);
+  EXPECT_EQ(static_cast<uint8_t>(HarmonyMode::ThirdAbove), 1);
+  EXPECT_EQ(static_cast<uint8_t>(HarmonyMode::ThirdBelow), 2);
+  EXPECT_EQ(static_cast<uint8_t>(HarmonyMode::Alternating), 3);
+}
+
+// ============================================================================
+// Unison Function Tests
+// ============================================================================
+
+TEST(AuxTrackTest, UnisonProducesNotes) {
+  AuxTrackGenerator generator;
+  auto ctx = createTestContext();
+  auto main_melody = createTestMainMelody();
+  ctx.main_melody = &main_melody;
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  AuxConfig config;
+  config.function = AuxFunction::Unison;
+  config.velocity_ratio = 0.7f;
+
+  auto notes = generator.generateUnison(ctx, config, harmony, rng);
+
+  // Should produce notes (same count as main melody within section)
+  EXPECT_GT(notes.size(), 0u);
+  EXPECT_LE(notes.size(), main_melody.size());
+}
+
+TEST(AuxTrackTest, UnisonMatchesMelodyPitches) {
+  AuxTrackGenerator generator;
+  auto ctx = createTestContext();
+  auto main_melody = createTestMainMelody();
+  ctx.main_melody = &main_melody;
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  AuxConfig config;
+  config.function = AuxFunction::Unison;
+  config.velocity_ratio = 0.7f;
+
+  auto notes = generator.generateUnison(ctx, config, harmony, rng);
+
+  // All unison notes should have same pitch as corresponding main melody notes
+  for (const auto& unison : notes) {
+    bool found_match = false;
+    for (const auto& main : main_melody) {
+      // Pitch should match exactly
+      if (unison.note == main.note) {
+        found_match = true;
+        break;
+      }
+    }
+    EXPECT_TRUE(found_match) << "Unison pitch should match main melody";
+  }
+}
+
+TEST(AuxTrackTest, UnisonHasReducedVelocity) {
+  AuxTrackGenerator generator;
+  auto ctx = createTestContext();
+  auto main_melody = createTestMainMelody();
+  ctx.main_melody = &main_melody;
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  AuxConfig config;
+  config.function = AuxFunction::Unison;
+  config.velocity_ratio = 0.7f;
+
+  auto notes = generator.generateUnison(ctx, config, harmony, rng);
+
+  // Unison velocity should be reduced
+  for (const auto& note : notes) {
+    EXPECT_LE(note.velocity, 100 * 0.8f) << "Unison velocity should be reduced";
+  }
+}
+
+TEST(AuxTrackTest, UnisonEmptyWithNoMainMelody) {
+  AuxTrackGenerator generator;
+  auto ctx = createTestContext();
+  ctx.main_melody = nullptr;  // No main melody
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  AuxConfig config;
+  config.function = AuxFunction::Unison;
+
+  auto notes = generator.generateUnison(ctx, config, harmony, rng);
+
+  EXPECT_EQ(notes.size(), 0u) << "Unison should produce no notes without main melody";
+}
+
+// ============================================================================
+// Harmony Function Tests
+// ============================================================================
+
+TEST(AuxTrackTest, HarmonyProducesNotes) {
+  AuxTrackGenerator generator;
+  auto ctx = createTestContext();
+  auto main_melody = createTestMainMelody();
+  ctx.main_melody = &main_melody;
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  AuxConfig config;
+  config.function = AuxFunction::Unison;  // Using Unison config but calling Harmony
+  config.velocity_ratio = 0.7f;
+
+  auto notes = generator.generateHarmony(ctx, config, harmony, HarmonyMode::ThirdAbove, rng);
+
+  EXPECT_GT(notes.size(), 0u);
+}
+
+TEST(AuxTrackTest, HarmonyThirdAboveIsHigher) {
+  AuxTrackGenerator generator;
+  auto ctx = createTestContext();
+  auto main_melody = createTestMainMelody();
+  ctx.main_melody = &main_melody;
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  AuxConfig config;
+  config.velocity_ratio = 0.7f;
+
+  auto notes = generator.generateHarmony(ctx, config, harmony, HarmonyMode::ThirdAbove, rng);
+
+  // Third above should generally be higher (allowing for some chord tone snapping)
+  int higher_count = 0;
+  for (size_t i = 0; i < std::min(notes.size(), main_melody.size()); ++i) {
+    if (notes[i].note >= main_melody[i].note) ++higher_count;
+  }
+  EXPECT_GT(higher_count, static_cast<int>(notes.size() / 2))
+      << "Third above should produce higher pitches";
+}
+
+// ============================================================================
+// MelodicHook Function Tests
+// ============================================================================
+
+TEST(AuxTrackTest, MelodicHookProducesNotes) {
+  AuxTrackGenerator generator;
+  auto ctx = createTestContext();
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  AuxConfig config;
+  config.function = AuxFunction::MelodicHook;
+  config.velocity_ratio = 0.8f;
+  config.range_offset = 0;
+  config.range_width = 12;
+
+  auto notes = generator.generateMelodicHook(ctx, config, harmony, rng);
+
+  EXPECT_GT(notes.size(), 0u) << "MelodicHook should produce notes";
+}
+
+TEST(AuxTrackTest, MelodicHookHasRepetition) {
+  AuxTrackGenerator generator;
+  auto ctx = createTestContext();
+  ctx.section_end = TICKS_PER_BAR * 8;  // 8 bars for multiple phrases
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  AuxConfig config;
+  config.function = AuxFunction::MelodicHook;
+  config.velocity_ratio = 0.8f;
+
+  auto notes = generator.generateMelodicHook(ctx, config, harmony, rng);
+
+  // Should have multiple notes forming repeating pattern
+  EXPECT_GT(notes.size(), 8u) << "MelodicHook should produce multiple phrases";
+}
+
+TEST(AuxTrackTest, GenerateDispatchesUnison) {
+  AuxTrackGenerator generator;
+  auto ctx = createTestContext();
+  auto main_melody = createTestMainMelody();
+  ctx.main_melody = &main_melody;
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  AuxConfig config;
+  config.function = AuxFunction::Unison;
+  config.velocity_ratio = 0.7f;
+
+  MidiTrack track = generator.generate(config, ctx, harmony, rng);
+
+  EXPECT_GT(track.noteCount(), 0u) << "Generate should dispatch to Unison";
+}
+
+TEST(AuxTrackTest, GenerateDispatchesMelodicHook) {
+  AuxTrackGenerator generator;
+  auto ctx = createTestContext();
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  AuxConfig config;
+  config.function = AuxFunction::MelodicHook;
+  config.velocity_ratio = 0.8f;
+
+  MidiTrack track = generator.generate(config, ctx, harmony, rng);
+
+  EXPECT_GT(track.noteCount(), 0u) << "Generate should dispatch to MelodicHook";
+}
+
 }  // namespace
 }  // namespace midisketch
+
+// ============================================================================
+// Generator Integration Test for Intro Motif Placement
+// ============================================================================
+
+#include "midisketch.h"
+
+TEST(AuxTrackIntegrationTest, IntroPlacesChorusMotif) {
+  // Use FullPop which has Intro(4) + A(8) + B(8) + Chorus(8) + ...
+  midisketch::Generator gen;
+  midisketch::GeneratorParams params;
+  params.structure = midisketch::StructurePattern::FullPop;
+  params.mood = midisketch::Mood::StraightPop;
+  params.seed = 12345;
+
+  gen.generate(params);
+
+  const auto& song = gen.getSong();
+  const auto& aux = song.aux().notes();
+
+  // FullPop has 4-bar intro
+  const midisketch::Tick intro_end = 4 * midisketch::TICKS_PER_BAR;
+
+  // Find notes in intro
+  int intro_aux_count = 0;
+  for (const auto& note : aux) {
+    if (note.startTick < intro_end) {
+      intro_aux_count++;
+    }
+  }
+
+  // Intro should have aux notes (from chorus motif placement)
+  // Note: If no chorus notes exist yet, MelodicHook is used instead
+  EXPECT_GT(intro_aux_count, 0) << "Intro should have aux notes (motif or MelodicHook)";
+}
+
+TEST(AuxTrackIntegrationTest, ChorusHasUnisonAux) {
+  // Use ChorusFirstFull which has Chorus at the start
+  midisketch::Generator gen;
+  midisketch::GeneratorParams params;
+  params.structure = midisketch::StructurePattern::ChorusFirstFull;
+  params.mood = midisketch::Mood::IdolPop;
+  params.seed = 12345;
+
+  gen.generate(params);
+
+  const auto& song = gen.getSong();
+  const auto& aux = song.aux().notes();
+  const auto& vocal = song.vocal().notes();
+
+  // ChorusFirstFull starts with Chorus(8)
+  const midisketch::Tick chorus_end = 8 * midisketch::TICKS_PER_BAR;
+
+  // Find aux notes in first chorus
+  int chorus_aux_count = 0;
+  for (const auto& note : aux) {
+    if (note.startTick < chorus_end) {
+      chorus_aux_count++;
+    }
+  }
+
+  // Chorus should have aux notes (Unison following vocal)
+  EXPECT_GT(chorus_aux_count, 0) << "Chorus should have aux notes (Unison)";
+
+  // Verify aux notes are close to vocal notes (Unison behavior)
+  if (!aux.empty() && !vocal.empty()) {
+    // First aux note should be near first vocal note
+    auto first_aux = aux[0];
+    bool found_nearby_vocal = false;
+    for (const auto& v : vocal) {
+      if (std::abs(static_cast<int>(first_aux.startTick) - static_cast<int>(v.startTick)) < 480) {
+        found_nearby_vocal = true;
+        break;
+      }
+    }
+    EXPECT_TRUE(found_nearby_vocal) << "Unison aux should follow vocal timing";
+  }
+}
+
+TEST(AuxTrackIntegrationTest, SecondChorusHasHarmonyAux) {
+  // Use ChorusFirstFull which has multiple choruses
+  midisketch::Generator gen;
+  midisketch::GeneratorParams params;
+  params.structure = midisketch::StructurePattern::ChorusFirstFull;
+  params.mood = midisketch::Mood::IdolPop;
+  params.seed = 12345;
+
+  gen.generate(params);
+
+  const auto& aux = gen.getSong().aux().notes();
+
+  // ChorusFirstFull: Chorus(8) + A(8) + B(8) + Chorus(8) + ...
+  // Second chorus starts at bar 24 (8+8+8)
+  const midisketch::Tick second_chorus_start = 24 * midisketch::TICKS_PER_BAR;
+  const midisketch::Tick second_chorus_end = 32 * midisketch::TICKS_PER_BAR;
+
+  // Find aux notes in second chorus
+  int second_chorus_aux = 0;
+  for (const auto& note : aux) {
+    if (note.startTick >= second_chorus_start && note.startTick < second_chorus_end) {
+      second_chorus_aux++;
+    }
+  }
+
+  // Second chorus should have aux notes (may be Harmony or Unison)
+  EXPECT_GT(second_chorus_aux, 0) << "Second chorus should have aux notes";
+}

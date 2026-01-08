@@ -268,5 +268,149 @@ TEST_F(MotifTest, DifferentRolesHaveDifferentVelocities) {
   EXPECT_LT(texture_meta.velocity_base, counter_meta.velocity_base);
 }
 
+// ============================================================================
+// extractMotifFromChorus Tests
+// ============================================================================
+
+TEST_F(MotifTest, ExtractMotifFromChorusEmpty) {
+  std::vector<NoteEvent> empty_notes;
+  Motif motif = extractMotifFromChorus(empty_notes);
+
+  EXPECT_TRUE(motif.rhythm.empty());
+  EXPECT_TRUE(motif.contour_degrees.empty());
+}
+
+TEST_F(MotifTest, ExtractMotifFromChorusBasic) {
+  std::vector<NoteEvent> chorus_notes;
+  // Create a simple 4-note melody: C4, E4, G4, C5
+  Tick current = 0;
+  chorus_notes.push_back({current, TICKS_PER_BEAT, 60, 100});  // C4
+  current += TICKS_PER_BEAT;
+  chorus_notes.push_back({current, TICKS_PER_BEAT, 64, 100});  // E4 (+4)
+  current += TICKS_PER_BEAT;
+  chorus_notes.push_back({current, TICKS_PER_BEAT, 67, 100});  // G4 (+7)
+  current += TICKS_PER_BEAT;
+  chorus_notes.push_back({current, TICKS_PER_BEAT, 72, 100});  // C5 (+12)
+
+  Motif motif = extractMotifFromChorus(chorus_notes);
+
+  EXPECT_EQ(motif.rhythm.size(), 4u);
+  EXPECT_EQ(motif.contour_degrees.size(), 4u);
+
+  // Check relative degrees (from first note = 0)
+  EXPECT_EQ(motif.contour_degrees[0], 0);   // Reference pitch
+  EXPECT_EQ(motif.contour_degrees[1], 4);   // +4 (E4 from C4)
+  EXPECT_EQ(motif.contour_degrees[2], 7);   // +7 (G4 from C4)
+  EXPECT_EQ(motif.contour_degrees[3], 12);  // +12 (C5 from C4)
+}
+
+TEST_F(MotifTest, ExtractMotifFromChorusMaxNotes) {
+  std::vector<NoteEvent> chorus_notes;
+  // Create more notes than max_notes
+  for (int i = 0; i < 16; ++i) {
+    chorus_notes.push_back({static_cast<Tick>(i * TICKS_PER_BEAT),
+                            TICKS_PER_BEAT, static_cast<uint8_t>(60 + i), 100});
+  }
+
+  // Extract with max_notes = 4
+  Motif motif = extractMotifFromChorus(chorus_notes, 4);
+
+  EXPECT_EQ(motif.rhythm.size(), 4u);
+  EXPECT_EQ(motif.contour_degrees.size(), 4u);
+}
+
+TEST_F(MotifTest, ExtractMotifFromChorusFindsClimax) {
+  std::vector<NoteEvent> chorus_notes;
+  // Create melody where highest note is in the middle
+  chorus_notes.push_back({0, TICKS_PER_BEAT, 60, 100});                    // C4
+  chorus_notes.push_back({TICKS_PER_BEAT, TICKS_PER_BEAT, 72, 100});       // C5 (highest)
+  chorus_notes.push_back({TICKS_PER_BEAT * 2, TICKS_PER_BEAT, 64, 100});   // E4
+
+  Motif motif = extractMotifFromChorus(chorus_notes);
+
+  // Climax should be at index 1 (C5 is highest)
+  EXPECT_EQ(motif.climax_index, 1u);
+}
+
+// ============================================================================
+// placeMotifInIntro Tests
+// ============================================================================
+
+TEST_F(MotifTest, PlaceMotifInIntroEmpty) {
+  Motif empty_motif;
+  std::vector<NoteEvent> notes = placeMotifInIntro(empty_motif, 0, TICKS_PER_BAR * 4, 60, 100);
+
+  EXPECT_TRUE(notes.empty());
+}
+
+TEST_F(MotifTest, PlaceMotifInIntroProducesNotes) {
+  Motif motif;
+  motif.rhythm = {{0.0f, 2, true}, {1.0f, 2, false}};
+  motif.contour_degrees = {0, 2};
+  motif.length_beats = 4;
+
+  Tick intro_start = 0;
+  Tick intro_end = TICKS_PER_BAR * 4;
+
+  std::vector<NoteEvent> notes = placeMotifInIntro(motif, intro_start, intro_end, 60, 100);
+
+  EXPECT_GT(notes.size(), 0u);
+}
+
+TEST_F(MotifTest, PlaceMotifInIntroTransposes) {
+  Motif motif;
+  motif.rhythm = {{0.0f, 2, true}};
+  motif.contour_degrees = {5};  // +5 from base
+  motif.length_beats = 4;
+
+  std::vector<NoteEvent> notes = placeMotifInIntro(motif, 0, TICKS_PER_BAR * 4, 60, 100);
+
+  ASSERT_GT(notes.size(), 0u);
+  EXPECT_EQ(notes[0].note, 65);  // 60 + 5 = 65
+}
+
+TEST_F(MotifTest, PlaceMotifInIntroRepeats) {
+  Motif motif;
+  motif.rhythm = {{0.0f, 2, true}};
+  motif.contour_degrees = {0};
+  motif.length_beats = 4;  // 4 beats = 1 bar
+
+  Tick intro_start = 0;
+  Tick intro_end = TICKS_PER_BAR * 4;  // 4 bars
+
+  std::vector<NoteEvent> notes = placeMotifInIntro(motif, intro_start, intro_end, 60, 100);
+
+  // Should repeat motif to fill the intro (4 bars / 1 bar = 4 repetitions)
+  EXPECT_GE(notes.size(), 4u);
+}
+
+// ============================================================================
+// placeMotifInAux Tests
+// ============================================================================
+
+TEST_F(MotifTest, PlaceMotifInAuxProducesNotes) {
+  Motif motif;
+  motif.rhythm = {{0.0f, 2, true}, {1.0f, 2, false}};
+  motif.contour_degrees = {0, 2};
+  motif.length_beats = 4;
+
+  std::vector<NoteEvent> notes = placeMotifInAux(motif, 0, TICKS_PER_BAR * 4, 60, 0.7f);
+
+  EXPECT_GT(notes.size(), 0u);
+}
+
+TEST_F(MotifTest, PlaceMotifInAuxReducedVelocity) {
+  Motif motif;
+  motif.rhythm = {{0.0f, 2, true}};
+  motif.contour_degrees = {0};
+  motif.length_beats = 4;
+
+  std::vector<NoteEvent> notes = placeMotifInAux(motif, 0, TICKS_PER_BAR * 4, 60, 0.5f);
+
+  ASSERT_GT(notes.size(), 0u);
+  // Velocity should be reduced (80 * 0.5 = 40)
+  EXPECT_LE(notes[0].velocity, 80u);
+}
+
 }  // namespace
 }  // namespace midisketch

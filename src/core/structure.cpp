@@ -202,6 +202,68 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
       addSection(SectionType::Chorus, 8);
       addSection(SectionType::Outro, 8);
       break;
+
+    // Chorus-first patterns (15-second rule for hooks)
+    case StructurePattern::ChorusFirst:
+      // 32 bars - chorus first for immediate hook
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::A, 8);
+      addSection(SectionType::B, 8);
+      addSection(SectionType::Chorus, 8);
+      break;
+
+    case StructurePattern::ChorusFirstShort:
+      // 24 bars - short chorus first
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::A, 8);
+      addSection(SectionType::Chorus, 8);
+      break;
+
+    case StructurePattern::ChorusFirstFull:
+      // 56 bars - full-length chorus first
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::A, 8);
+      addSection(SectionType::B, 8);
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::A, 8);
+      addSection(SectionType::B, 8);
+      addSection(SectionType::Chorus, 8);
+      break;
+
+    // Immediate vocal patterns (no intro)
+    case StructurePattern::ImmediateVocal:
+      // 24 bars - yoru ni kakeru style, immediate vocal
+      addSection(SectionType::A, 8);
+      addSection(SectionType::B, 8);
+      addSection(SectionType::Chorus, 8);
+      break;
+
+    case StructurePattern::ImmediateVocalFull:
+      // 48 bars - full-length immediate vocal
+      addSection(SectionType::A, 8);
+      addSection(SectionType::B, 8);
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::A, 8);
+      addSection(SectionType::B, 8);
+      addSection(SectionType::Chorus, 8);
+      break;
+
+    // Additional variations
+    case StructurePattern::AChorusB:
+      // 32 bars - alternating A-Chorus-B pattern
+      addSection(SectionType::A, 8);
+      addSection(SectionType::Chorus, 8);
+      addSection(SectionType::B, 8);
+      addSection(SectionType::Chorus, 8);
+      break;
+
+    case StructurePattern::DoubleVerse:
+      // 32 bars - double A section before B
+      addSection(SectionType::A, 8);
+      addSection(SectionType::A, 8);
+      addSection(SectionType::B, 8);
+      addSection(SectionType::Chorus, 8);
+      break;
   }
 
   return sections;

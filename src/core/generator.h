@@ -2,8 +2,10 @@
 #define MIDISKETCH_CORE_GENERATOR_H
 
 #include "core/harmony_context.h"
+#include "core/motif.h"
 #include "core/song.h"
 #include "core/types.h"
+#include <optional>
 #include <random>
 
 namespace midisketch {
@@ -97,6 +99,9 @@ class Generator {
   // Modulation settings (stored from SongConfig)
   ModulationTiming modulation_timing_ = ModulationTiming::None;
   int8_t modulation_semitones_ = 2;
+
+  // Cached chorus motif for intro placement (Stage 4)
+  std::optional<Motif> cached_chorus_motif_;
 
   void generateVocal();
   void generateChord();
