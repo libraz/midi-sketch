@@ -19,6 +19,9 @@ constexpr uint8_t CHORD_COUNT = 22;
 // Number of available style presets
 constexpr uint8_t STYLE_PRESET_COUNT = 17;
 
+// Number of available vocal style presets (Auto + 12 styles)
+constexpr uint8_t VOCAL_STYLE_PRESET_COUNT = 13;
+
 // Drum pattern style categories
 enum class DrumStyle : uint8_t {
   Sparse,       // Ballad, Sentimental, Chill - minimal, half-time feel
@@ -118,6 +121,46 @@ enum class SongConfigError : uint8_t {
 // @param config SongConfig to validate
 // @returns Error code (OK if valid)
 SongConfigError validateSongConfig(const SongConfig& config);
+
+// ============================================================================
+// VocalStylePreset Data Table
+// ============================================================================
+
+// Vocal style preset parameter data for table-driven configuration.
+// Used by ConfigConverter::applyVocalStylePreset() instead of switch-case.
+struct VocalStylePresetData {
+  VocalStylePreset id;
+
+  // Basic parameters
+  uint8_t max_leap_interval;      // Max leap in semitones (5-14)
+  float syncopation_prob;         // Syncopation probability (0.0-0.5)
+  bool allow_bar_crossing;        // Allow notes to cross bar lines
+
+  // Section density modifiers (multiplied with template density)
+  float verse_density_modifier;      // Verse (A) density modifier
+  float prechorus_density_modifier;  // Pre-chorus (B) density modifier
+  float chorus_density_modifier;     // Chorus density modifier
+  float bridge_density_modifier;     // Bridge density modifier
+
+  // Section-specific 32nd note ratios (for UltraVocaloid style)
+  float verse_thirtysecond_ratio;      // Verse 32nd note ratio
+  float prechorus_thirtysecond_ratio;  // Pre-chorus 32nd note ratio
+  float chorus_thirtysecond_ratio;     // Chorus 32nd note ratio
+  float bridge_thirtysecond_ratio;     // Bridge 32nd note ratio
+
+  // Additional parameters
+  float consecutive_same_note_prob;  // Same-note repetition probability (0.0-1.0)
+  bool disable_vowel_constraints;    // Disable vowel section limits
+  bool hook_repetition;              // Enable hook repetition in chorus
+  bool chorus_long_tones;            // Use long sustained tones in chorus
+  int8_t chorus_register_shift;      // Chorus register shift (semitones)
+  float tension_usage;               // Tension usage probability (0.0-1.0)
+};
+
+// Returns the vocal style preset data for the given style.
+// @param style VocalStylePreset value
+// @returns Reference to VocalStylePresetData struct
+const VocalStylePresetData& getVocalStylePresetData(VocalStylePreset style);
 
 // ============================================================================
 // Call System Functions

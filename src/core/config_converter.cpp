@@ -41,147 +41,134 @@ constexpr size_t kStylePresetCount =
 
 void ConfigConverter::applyVocalStylePreset(GeneratorParams& params,
                                              const SongConfig& /* config */) {
-  switch (params.vocal_style) {
-    case VocalStylePreset::Vocaloid:
-      // YOASOBI style - energetic but balanced
-      params.melody_params.max_leap_interval = 12;
-      params.melody_params.syncopation_prob = 0.35f;
-      params.melody_params.allow_bar_crossing = true;
-      // Section density: verse moderate, chorus elevated
-      params.melody_params.verse_density_modifier = 0.8f;
-      params.melody_params.prechorus_density_modifier = 0.9f;
-      params.melody_params.chorus_density_modifier = 1.15f;
-      params.melody_params.bridge_density_modifier = 0.85f;
-      // Disable vowel section step limits, keep breathing for natural phrasing
-      params.melody_params.disable_vowel_constraints = true;
-      break;
-
-    case VocalStylePreset::UltraVocaloid:
-      // Miku Disappearance style - ballad verse, barrage chorus
-      params.melody_params.max_leap_interval = 14;
-      params.melody_params.syncopation_prob = 0.4f;
-      params.melody_params.allow_bar_crossing = true;
-      // Section density: ballad-like verse, extreme contrast with chorus
-      params.melody_params.verse_density_modifier = 0.3f;     // Ballad-like sparse
-      params.melody_params.prechorus_density_modifier = 0.5f; // Build tension
-      params.melody_params.chorus_density_modifier = 1.6f;    // Full barrage
-      params.melody_params.bridge_density_modifier = 0.35f;   // Return to ballad
-      // 32nd note ratios: A=30%, Chorus=100%
-      params.melody_params.verse_thirtysecond_ratio = 0.3f;      // 30% 32nd in verse
-      params.melody_params.prechorus_thirtysecond_ratio = 0.5f;  // 50% 32nd in pre-chorus
-      params.melody_params.chorus_thirtysecond_ratio = 1.0f;     // 100% 32nd in chorus
-      params.melody_params.bridge_thirtysecond_ratio = 0.2f;     // 20% 32nd in bridge
-      // Reduce consecutive same note probability (10% chance to allow)
-      params.melody_params.consecutive_same_note_prob = 0.1f;
-      // Disable vowel section step limits, keep breathing for natural phrasing
-      params.melody_params.disable_vowel_constraints = true;
-      break;
-
-    case VocalStylePreset::Idol:
-      params.melody_params.max_leap_interval = 7;
-      params.melody_params.hook_repetition = true;
-      params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_density_modifier = 0.85f;
-      break;
-
-    case VocalStylePreset::Ballad:
-      params.melody_params.max_leap_interval = 5;
-      params.melody_params.chorus_long_tones = true;
-      break;
-
-    case VocalStylePreset::Rock:
-      params.melody_params.max_leap_interval = 9;
-      params.melody_params.hook_repetition = true;
-      params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_register_shift = 7;
-      params.melody_params.syncopation_prob = 0.25f;
-      params.melody_params.allow_bar_crossing = true;
-      break;
-
-    case VocalStylePreset::CityPop:
-      params.melody_params.max_leap_interval = 7;
-      params.melody_params.syncopation_prob = 0.35f;
-      params.melody_params.allow_bar_crossing = true;
-      params.melody_params.tension_usage = 0.4f;
-      break;
-
-    case VocalStylePreset::Anime:
-      params.melody_params.max_leap_interval = 10;
-      params.melody_params.hook_repetition = true;
-      params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_density_modifier = 1.15f;
-      params.melody_params.syncopation_prob = 0.25f;
-      params.melody_params.allow_bar_crossing = true;
-      break;
-
-    case VocalStylePreset::BrightKira:
-      params.melody_params.max_leap_interval = 10;
-      params.melody_params.hook_repetition = true;
-      params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_register_shift = 7;
-      break;
-
-    case VocalStylePreset::CoolSynth:
-      params.melody_params.max_leap_interval = 7;
-      params.melody_params.hook_repetition = true;
-      params.melody_params.syncopation_prob = 0.15f;
-      params.melody_params.allow_bar_crossing = true;
-      break;
-
-    case VocalStylePreset::CuteAffected:
-      params.melody_params.max_leap_interval = 8;
-      params.melody_params.hook_repetition = true;
-      params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_register_shift = 5;
-      break;
-
-    case VocalStylePreset::PowerfulShout:
-      params.melody_params.max_leap_interval = 12;
-      params.melody_params.hook_repetition = true;
-      params.melody_params.chorus_long_tones = true;
-      params.melody_params.chorus_density_modifier = 1.3f;
-      params.melody_params.syncopation_prob = 0.2f;
-      break;
-
-    case VocalStylePreset::Auto:
-    case VocalStylePreset::Standard:
-    default:
-      // No changes - use StylePreset defaults
-      break;
+  // Skip Auto and Standard - they use StylePreset defaults
+  if (params.vocal_style == VocalStylePreset::Auto ||
+      params.vocal_style == VocalStylePreset::Standard) {
+    return;
   }
+
+  // Get preset data from table
+  const VocalStylePresetData& data = getVocalStylePresetData(params.vocal_style);
+
+  // Apply basic parameters
+  params.melody_params.max_leap_interval = data.max_leap_interval;
+  params.melody_params.syncopation_prob = data.syncopation_prob;
+  params.melody_params.allow_bar_crossing = data.allow_bar_crossing;
+
+  // Apply section density modifiers
+  params.melody_params.verse_density_modifier = data.verse_density_modifier;
+  params.melody_params.prechorus_density_modifier = data.prechorus_density_modifier;
+  params.melody_params.chorus_density_modifier = data.chorus_density_modifier;
+  params.melody_params.bridge_density_modifier = data.bridge_density_modifier;
+
+  // Apply section-specific 32nd note ratios
+  params.melody_params.verse_thirtysecond_ratio = data.verse_thirtysecond_ratio;
+  params.melody_params.prechorus_thirtysecond_ratio = data.prechorus_thirtysecond_ratio;
+  params.melody_params.chorus_thirtysecond_ratio = data.chorus_thirtysecond_ratio;
+  params.melody_params.bridge_thirtysecond_ratio = data.bridge_thirtysecond_ratio;
+
+  // Apply additional parameters
+  params.melody_params.consecutive_same_note_prob = data.consecutive_same_note_prob;
+  params.melody_params.disable_vowel_constraints = data.disable_vowel_constraints;
+  params.melody_params.hook_repetition = data.hook_repetition;
+  params.melody_params.chorus_long_tones = data.chorus_long_tones;
+  params.melody_params.chorus_register_shift = data.chorus_register_shift;
+  params.melody_params.tension_usage = data.tension_usage;
 }
 
+namespace {
+
+// ============================================================================
+// MelodicComplexity Modifier Table
+// ============================================================================
+//
+// Multipliers and caps applied based on MelodicComplexity level.
+// All values are multipliers (1.0 = no change) except where noted.
+//
+// Columns:
+// [1] complexity            - MelodicComplexity enum
+// [2] density_mult          - note_density multiplier
+// [3] leap_mult             - max_leap_interval multiplier (capped by leap_cap)
+// [4] leap_cap              - max_leap_interval upper limit
+// [5] force_hook            - force hook_repetition = true
+// [6] tension_mult          - tension_usage multiplier
+// [7] sixteenth_mult        - sixteenth_note_ratio multiplier (capped at 0.5)
+// [8] syncopation_mult      - syncopation_prob multiplier (capped at 0.5)
+//
+struct ComplexityModifier {
+  MelodicComplexity complexity;
+  float density_mult;
+  float leap_mult;
+  uint8_t leap_cap;
+  bool force_hook;
+  float tension_mult;
+  float sixteenth_mult;
+  float syncopation_mult;
+};
+
+constexpr ComplexityModifier kComplexityModifiers[] = {
+    // Simple: catchier, easier to sing/remember
+    {MelodicComplexity::Simple,
+     0.7f,   // density: 70% (sparser)
+     1.0f,   // leap_mult: no change (capped at 5)
+     5,      // leap_cap: max 4th interval
+     true,   // force_hook: enable repetition
+     0.5f,   // tension: 50% (safer notes)
+     0.5f,   // sixteenth: 50% (fewer fast notes)
+     0.5f},  // syncopation: 50% (more on-beat)
+
+    // Standard: no changes (multipliers = 1.0)
+    {MelodicComplexity::Standard,
+     1.0f, 1.0f, 12, false, 1.0f, 1.0f, 1.0f},
+
+    // Complex: more intricate, varied melodies
+    {MelodicComplexity::Complex,
+     1.3f,   // density: 130% (denser)
+     1.5f,   // leap_mult: 150% (wider leaps)
+     12,     // leap_cap: max octave
+     false,  // force_hook: no forced repetition
+     1.5f,   // tension: 150% (more color)
+     1.5f,   // sixteenth: 150% (more fast notes, capped at 0.5)
+     1.5f},  // syncopation: 150% (more off-beat, capped at 0.5)
+};
+
+constexpr size_t kComplexityModifierCount =
+    sizeof(kComplexityModifiers) / sizeof(kComplexityModifiers[0]);
+
+}  // namespace
+
 void ConfigConverter::applyMelodicComplexity(GeneratorParams& params) {
-  switch (params.melodic_complexity) {
-    case MelodicComplexity::Simple:
-      // Reduce complexity for catchier, simpler melodies
-      params.melody_params.note_density *= 0.7f;
-      params.melody_params.max_leap_interval =
-          std::min(static_cast<uint8_t>(5), params.melody_params.max_leap_interval);
-      params.melody_params.hook_repetition = true;  // Enable hook repetition
-      params.melody_params.tension_usage *= 0.5f;   // Less tension
-      params.melody_params.sixteenth_note_ratio *= 0.5f;  // Fewer fast notes
-      params.melody_params.syncopation_prob *= 0.5f;  // Less syncopation
+  // Find modifier for current complexity
+  const ComplexityModifier* modifier = nullptr;
+  for (size_t i = 0; i < kComplexityModifierCount; ++i) {
+    if (kComplexityModifiers[i].complexity == params.melodic_complexity) {
+      modifier = &kComplexityModifiers[i];
       break;
-
-    case MelodicComplexity::Complex:
-      // Increase complexity for more varied, intricate melodies
-      params.melody_params.note_density *= 1.3f;
-      params.melody_params.max_leap_interval = std::min(
-          static_cast<uint8_t>(12),
-          static_cast<uint8_t>(params.melody_params.max_leap_interval * 1.5f));
-      params.melody_params.tension_usage *= 1.5f;
-      params.melody_params.sixteenth_note_ratio =
-          std::min(0.5f, params.melody_params.sixteenth_note_ratio * 1.5f);
-      params.melody_params.syncopation_prob =
-          std::min(0.5f, params.melody_params.syncopation_prob * 1.5f);
-      break;
-
-    case MelodicComplexity::Standard:
-    default:
-      // No changes
-      break;
+    }
   }
+
+  if (!modifier || modifier->complexity == MelodicComplexity::Standard) {
+    return;  // No changes for Standard or unknown
+  }
+
+  // Apply multipliers
+  params.melody_params.note_density *= modifier->density_mult;
+
+  params.melody_params.max_leap_interval = std::min(
+      modifier->leap_cap,
+      static_cast<uint8_t>(params.melody_params.max_leap_interval * modifier->leap_mult));
+
+  if (modifier->force_hook) {
+    params.melody_params.hook_repetition = true;
+  }
+
+  params.melody_params.tension_usage *= modifier->tension_mult;
+
+  params.melody_params.sixteenth_note_ratio =
+      std::min(0.5f, params.melody_params.sixteenth_note_ratio * modifier->sixteenth_mult);
+
+  params.melody_params.syncopation_prob =
+      std::min(0.5f, params.melody_params.syncopation_prob * modifier->syncopation_mult);
 }
 
 ConfigConverter::ConversionResult ConfigConverter::convert(const SongConfig& config) {

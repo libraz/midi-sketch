@@ -289,6 +289,81 @@ const MelodyTemplate* kTemplates[] = {
 // Default fallback template
 constexpr MelodyTemplate kDefaultTemplate = kPlateauTalk;
 
+// ============================================================================
+// Style × Section → Template Mapping Table
+// ============================================================================
+//
+// This table defines style-specific template overrides for each section.
+// If a (style, section) pair is not found, the section default is used.
+//
+// Format: {style, section, template_id}
+//
+struct StyleSectionTemplate {
+  VocalStylePreset style;
+  SectionType section;
+  MelodyTemplateId template_id;
+};
+
+constexpr StyleSectionTemplate kStyleSectionOverrides[] = {
+    // -------------------------------------------------------------------------
+    // Verse (Section A) overrides
+    // -------------------------------------------------------------------------
+    // Vocaloid/UltraVocaloid: energetic run-up style
+    {VocalStylePreset::Vocaloid, SectionType::A, MelodyTemplateId::RunUpTarget},
+    {VocalStylePreset::UltraVocaloid, SectionType::A, MelodyTemplateId::RunUpTarget},
+    // CityPop/CoolSynth: talk-sing plateau (explicit, same as default)
+    {VocalStylePreset::CityPop, SectionType::A, MelodyTemplateId::PlateauTalk},
+    {VocalStylePreset::CoolSynth, SectionType::A, MelodyTemplateId::PlateauTalk},
+    // Ballad: sparse anchor notes
+    {VocalStylePreset::Ballad, SectionType::A, MelodyTemplateId::SparseAnchor},
+
+    // -------------------------------------------------------------------------
+    // Chorus overrides
+    // -------------------------------------------------------------------------
+    // Vocaloid/UltraVocaloid: keep energetic run-up
+    {VocalStylePreset::Vocaloid, SectionType::Chorus, MelodyTemplateId::RunUpTarget},
+    {VocalStylePreset::UltraVocaloid, SectionType::Chorus, MelodyTemplateId::RunUpTarget},
+    // Idol/BrightKira: catchy hook repeat (explicit, same as default)
+    {VocalStylePreset::Idol, SectionType::Chorus, MelodyTemplateId::HookRepeat},
+    {VocalStylePreset::BrightKira, SectionType::Chorus, MelodyTemplateId::HookRepeat},
+    // PowerfulShout/Rock: dramatic jump accent
+    {VocalStylePreset::PowerfulShout, SectionType::Chorus, MelodyTemplateId::JumpAccent},
+    {VocalStylePreset::Rock, SectionType::Chorus, MelodyTemplateId::JumpAccent},
+    // Ballad: sparse anchor
+    {VocalStylePreset::Ballad, SectionType::Chorus, MelodyTemplateId::SparseAnchor},
+};
+
+constexpr size_t kStyleSectionOverrideCount =
+    sizeof(kStyleSectionOverrides) / sizeof(kStyleSectionOverrides[0]);
+
+// ============================================================================
+// Section Default Templates
+// ============================================================================
+//
+// Default template for each section type when no style override exists.
+//
+// Format: {section, default_template}
+//
+struct SectionDefaultTemplate {
+  SectionType section;
+  MelodyTemplateId template_id;
+};
+
+constexpr SectionDefaultTemplate kSectionDefaults[] = {
+    {SectionType::Intro, MelodyTemplateId::SparseAnchor},
+    {SectionType::Outro, MelodyTemplateId::SparseAnchor},
+    {SectionType::A, MelodyTemplateId::PlateauTalk},       // Verse default
+    {SectionType::B, MelodyTemplateId::DownResolve},       // Pre-chorus
+    {SectionType::Chorus, MelodyTemplateId::HookRepeat},   // Chorus default
+    {SectionType::Bridge, MelodyTemplateId::JumpAccent},
+    {SectionType::Interlude, MelodyTemplateId::SparseAnchor},
+    {SectionType::Chant, MelodyTemplateId::CallResponse},
+    {SectionType::MixBreak, MelodyTemplateId::CallResponse},
+};
+
+constexpr size_t kSectionDefaultCount =
+    sizeof(kSectionDefaults) / sizeof(kSectionDefaults[0]);
+
 }  // namespace
 
 const MelodyTemplate& getTemplate(MelodyTemplateId id) {
@@ -302,59 +377,23 @@ const MelodyTemplate& getTemplate(MelodyTemplateId id) {
 
 MelodyTemplateId getDefaultTemplateForStyle(VocalStylePreset style,
                                              SectionType section) {
-  // Section-based defaults
-  switch (section) {
-    case SectionType::Intro:
-    case SectionType::Outro:
-      return MelodyTemplateId::SparseAnchor;
-
-    case SectionType::A:  // Verse
-      switch (style) {
-        case VocalStylePreset::Vocaloid:
-        case VocalStylePreset::UltraVocaloid:
-          return MelodyTemplateId::RunUpTarget;
-        case VocalStylePreset::CityPop:
-        case VocalStylePreset::CoolSynth:
-          return MelodyTemplateId::PlateauTalk;
-        case VocalStylePreset::Ballad:
-          return MelodyTemplateId::SparseAnchor;
-        default:
-          return MelodyTemplateId::PlateauTalk;
-      }
-
-    case SectionType::B:  // Pre-chorus
-      return MelodyTemplateId::DownResolve;
-
-    case SectionType::Chorus:
-      switch (style) {
-        case VocalStylePreset::Vocaloid:
-        case VocalStylePreset::UltraVocaloid:
-          return MelodyTemplateId::RunUpTarget;
-        case VocalStylePreset::Idol:
-        case VocalStylePreset::BrightKira:
-          return MelodyTemplateId::HookRepeat;
-        case VocalStylePreset::PowerfulShout:
-        case VocalStylePreset::Rock:
-          return MelodyTemplateId::JumpAccent;
-        case VocalStylePreset::Ballad:
-          return MelodyTemplateId::SparseAnchor;
-        default:
-          return MelodyTemplateId::HookRepeat;
-      }
-
-    case SectionType::Bridge:
-      return MelodyTemplateId::JumpAccent;
-
-    case SectionType::Interlude:
-      return MelodyTemplateId::SparseAnchor;
-
-    case SectionType::Chant:
-    case SectionType::MixBreak:
-      return MelodyTemplateId::CallResponse;
-
-    default:
-      return MelodyTemplateId::PlateauTalk;
+  // 1. Check for style-specific override
+  for (size_t i = 0; i < kStyleSectionOverrideCount; ++i) {
+    if (kStyleSectionOverrides[i].style == style &&
+        kStyleSectionOverrides[i].section == section) {
+      return kStyleSectionOverrides[i].template_id;
+    }
   }
+
+  // 2. Use section default
+  for (size_t i = 0; i < kSectionDefaultCount; ++i) {
+    if (kSectionDefaults[i].section == section) {
+      return kSectionDefaults[i].template_id;
+    }
+  }
+
+  // 3. Fallback
+  return MelodyTemplateId::PlateauTalk;
 }
 
 void getAuxConfigsForTemplate(MelodyTemplateId id,

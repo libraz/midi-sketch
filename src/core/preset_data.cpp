@@ -518,6 +518,157 @@ const VocalStyleWeight STYLE_VOCAL_STYLES[17][4] = {
 
 constexpr size_t STYLE_VOCAL_COUNT = 4;
 
+// ============================================================================
+// VocalStylePreset Data Table
+// ============================================================================
+//
+// Column definitions (18 fields per entry):
+//
+// [1] id                          - VocalStylePreset enum value
+// [2] max_leap_interval           - Max melodic leap in semitones (5=4th, 7=5th, 12=octave, 14=9th)
+// [3] syncopation_prob            - Syncopation probability (0.0-0.5, higher=more off-beat)
+// [4] allow_bar_crossing          - Allow notes to cross bar lines (true=more flowing phrases)
+//
+// Section density modifiers (multiplied with base density):
+// [5] verse_density_modifier      - Verse (A) density (0.3=sparse ballad, 1.0=normal)
+// [6] prechorus_density_modifier  - Pre-chorus (B) density
+// [7] chorus_density_modifier     - Chorus density (1.0=normal, 1.6=ultra-dense)
+// [8] bridge_density_modifier     - Bridge density
+//
+// Section 32nd note ratios (for fast passages):
+// [9]  verse_thirtysecond_ratio   - Verse 32nd note ratio (0.0=none, 1.0=all 32nd)
+// [10] prechorus_thirtysecond_ratio
+// [11] chorus_thirtysecond_ratio
+// [12] bridge_thirtysecond_ratio
+//
+// Additional parameters:
+// [13] consecutive_same_note_prob - Same-note repeat probability (0.1=rare, 1.0=allow all)
+// [14] disable_vowel_constraints  - Disable human singing limits (true for Vocaloid styles)
+// [15] hook_repetition            - Enable hook phrase repetition in chorus
+// [16] chorus_long_tones          - Use sustained notes in chorus
+// [17] chorus_register_shift      - Chorus pitch shift in semitones (5=normal, 7=higher)
+// [18] tension_usage              - Tension note probability (0.2=low, 0.4=jazzy)
+//
+const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
+    // -------------------------------------------------------------------------
+    // Auto (0) - Default values, no style-specific changes applied
+    // -------------------------------------------------------------------------
+    {VocalStylePreset::Auto,
+     7, 0.15f, false,                    // leap=5th, low synco, no bar cross
+     1.0f, 1.0f, 1.10f, 1.0f,            // normal density all sections
+     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
+     1.0f, false, false, false, 5, 0.2f}, // all same-note OK, no special flags
+
+    // -------------------------------------------------------------------------
+    // Standard (1) - General purpose pop melody
+    // -------------------------------------------------------------------------
+    {VocalStylePreset::Standard,
+     7, 0.15f, false,                    // leap=5th, low synco, no bar cross
+     1.0f, 1.0f, 1.10f, 1.0f,            // normal density all sections
+     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
+     1.0f, false, false, false, 5, 0.2f}, // standard settings
+
+    // -------------------------------------------------------------------------
+    // Vocaloid (2) - YOASOBI style: energetic, wide leaps, singable
+    // -------------------------------------------------------------------------
+    {VocalStylePreset::Vocaloid,
+     12, 0.35f, true,                    // leap=octave, high synco, bar cross OK
+     0.8f, 0.9f, 1.15f, 0.85f,           // verse sparse, chorus dense
+     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes (still singable)
+     1.0f, true, false, false, 5, 0.2f}, // disable vowel limits
+
+    // -------------------------------------------------------------------------
+    // UltraVocaloid (3) - Miku Disappearance style: ballad verse + barrage chorus
+    // Extreme contrast between sparse intro and machine-gun chorus
+    // -------------------------------------------------------------------------
+    {VocalStylePreset::UltraVocaloid,
+     14, 0.4f, true,                     // leap=9th(!), high synco, bar cross OK
+     0.3f, 0.5f, 1.6f, 0.35f,            // verse=ballad(30%), chorus=160%(!!)
+     0.3f, 0.5f, 1.0f, 0.2f,             // 32nd: verse=30%, chorus=100%(!!)
+     0.1f, true, false, false, 5, 0.2f}, // same-note=10% only, disable vowel
+
+    // -------------------------------------------------------------------------
+    // Idol (4) - Love Live/Idolmaster style: catchy, unison-friendly
+    // -------------------------------------------------------------------------
+    {VocalStylePreset::Idol,
+     7, 0.15f, false,                    // leap=5th, low synco (easy to dance)
+     1.0f, 1.0f, 0.85f, 1.0f,            // chorus slightly sparser (long tones)
+     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
+     1.0f, false, true, true, 5, 0.2f},  // hook repeat + long tones in chorus
+
+    // -------------------------------------------------------------------------
+    // Ballad (5) - Slow emotional ballad: small leaps, sustained notes
+    // -------------------------------------------------------------------------
+    {VocalStylePreset::Ballad,
+     5, 0.15f, false,                    // leap=4th only, gentle movement
+     1.0f, 1.0f, 1.10f, 1.0f,            // normal density
+     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
+     1.0f, false, false, true, 5, 0.2f}, // long tones in chorus
+
+    // -------------------------------------------------------------------------
+    // Rock (6) - Rock style: powerful, driving, wide chorus register
+    // -------------------------------------------------------------------------
+    {VocalStylePreset::Rock,
+     9, 0.25f, true,                     // leap=6th, medium synco, bar cross OK
+     1.0f, 1.0f, 1.10f, 1.0f,            // normal density
+     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
+     1.0f, false, true, true, 7, 0.2f},  // hook + long tones, chorus +7 semitones
+
+    // -------------------------------------------------------------------------
+    // CityPop (7) - 80s Japanese city pop: groovy, jazzy tensions
+    // -------------------------------------------------------------------------
+    {VocalStylePreset::CityPop,
+     7, 0.35f, true,                     // leap=5th, high synco (groovy)
+     1.0f, 1.0f, 1.10f, 1.0f,            // normal density
+     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
+     1.0f, false, false, false, 5, 0.4f}, // tension=0.4 (jazzy chords)
+
+    // -------------------------------------------------------------------------
+    // Anime (8) - Anime OP/ED style: dramatic, wide leaps, building energy
+    // -------------------------------------------------------------------------
+    {VocalStylePreset::Anime,
+     10, 0.25f, true,                    // leap=minor 7th, medium synco
+     1.0f, 1.0f, 1.15f, 1.0f,            // chorus 15% denser
+     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
+     1.0f, false, true, true, 5, 0.2f},  // hook repeat + long tones
+
+    // -------------------------------------------------------------------------
+    // BrightKira (9) - Bright sparkly idol style: energetic, high register
+    // -------------------------------------------------------------------------
+    {VocalStylePreset::BrightKira,
+     10, 0.15f, false,                   // leap=minor 7th, low synco
+     1.0f, 1.0f, 1.10f, 1.0f,            // normal density
+     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
+     1.0f, false, true, true, 7, 0.2f},  // hook + long, chorus +7 semitones
+
+    // -------------------------------------------------------------------------
+    // CoolSynth (10) - Cool synthetic style: mechanical, flowing phrases
+    // -------------------------------------------------------------------------
+    {VocalStylePreset::CoolSynth,
+     7, 0.15f, true,                     // leap=5th, low synco, bar cross OK
+     1.0f, 1.0f, 1.10f, 1.0f,            // normal density
+     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
+     1.0f, false, true, false, 5, 0.2f}, // hook repeat, no long tones
+
+    // -------------------------------------------------------------------------
+    // CuteAffected (11) - Cute affected style: slightly wider leaps
+    // -------------------------------------------------------------------------
+    {VocalStylePreset::CuteAffected,
+     8, 0.15f, false,                    // leap=minor 6th, low synco
+     1.0f, 1.0f, 1.10f, 1.0f,            // normal density
+     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
+     1.0f, false, true, true, 5, 0.2f},  // hook repeat + long tones
+
+    // -------------------------------------------------------------------------
+    // PowerfulShout (12) - Powerful shout style: big leaps, dense chorus
+    // -------------------------------------------------------------------------
+    {VocalStylePreset::PowerfulShout,
+     12, 0.2f, false,                    // leap=octave, medium synco
+     1.0f, 1.0f, 1.3f, 1.0f,             // chorus 30% denser
+     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
+     1.0f, false, true, true, 5, 0.2f},  // hook repeat + long tones
+};
+
 }  // namespace
 
 uint16_t getMoodDefaultBpm(Mood mood) {
@@ -556,47 +707,54 @@ const char* getMoodName(Mood mood) {
   return "unknown";
 }
 
+namespace {
+
+// ============================================================================
+// Mood → DrumStyle Mapping Table
+// ============================================================================
+//
+// Maps each Mood to its appropriate DrumStyle.
+// Index corresponds to Mood enum value (0-19).
+//
+// DrumStyle categories:
+// - Sparse:      Ballad, slow patterns (half-time feel)
+// - Standard:    Default pop patterns (8th note hi-hats, 2&4 snare)
+// - FourOnFloor: Dance/EDM (kick on every beat)
+// - Upbeat:      Energetic (syncopated, driving)
+// - Rock:        Rock patterns (crash accents, ride cymbal)
+// - Synth:       Synth-oriented (tight 16th hi-hats, punchy kick)
+//
+constexpr DrumStyle MOOD_DRUM_STYLES[20] = {
+    DrumStyle::Standard,     // 0: StraightPop
+    DrumStyle::Upbeat,       // 1: BrightUpbeat
+    DrumStyle::FourOnFloor,  // 2: EnergeticDance
+    DrumStyle::Rock,         // 3: LightRock
+    DrumStyle::Standard,     // 4: MidPop
+    DrumStyle::Standard,     // 5: EmotionalPop
+    DrumStyle::Sparse,       // 6: Sentimental
+    DrumStyle::Sparse,       // 7: Chill
+    DrumStyle::Sparse,       // 8: Ballad
+    DrumStyle::Standard,     // 9: DarkPop
+    DrumStyle::Standard,     // 10: Dramatic
+    DrumStyle::Standard,     // 11: Nostalgic
+    DrumStyle::Upbeat,       // 12: ModernPop
+    DrumStyle::FourOnFloor,  // 13: ElectroPop
+    DrumStyle::Upbeat,       // 14: IdolPop
+    DrumStyle::Upbeat,       // 15: Anthem
+    DrumStyle::Synth,        // 16: Yoasobi
+    DrumStyle::Synth,        // 17: Synthwave
+    DrumStyle::Synth,        // 18: FutureBass
+    DrumStyle::Synth,        // 19: CityPop
+};
+
+}  // namespace
+
 DrumStyle getMoodDrumStyle(Mood mood) {
-  switch (mood) {
-    // Sparse - slow, minimal patterns
-    case Mood::Ballad:
-    case Mood::Sentimental:
-    case Mood::Chill:
-      return DrumStyle::Sparse;
-
-    // FourOnFloor - dance patterns
-    case Mood::EnergeticDance:
-    case Mood::ElectroPop:
-      return DrumStyle::FourOnFloor;
-
-    // Upbeat - driving patterns
-    case Mood::IdolPop:
-    case Mood::BrightUpbeat:
-    case Mood::ModernPop:
-    case Mood::Anthem:
-      return DrumStyle::Upbeat;
-
-    // Rock - rock patterns
-    case Mood::LightRock:
-      return DrumStyle::Rock;
-
-    // Synth - synth-oriented patterns (tight 16th HH)
-    case Mood::Yoasobi:
-    case Mood::Synthwave:
-    case Mood::FutureBass:
-    case Mood::CityPop:
-      return DrumStyle::Synth;
-
-    // Standard - default pop patterns
-    case Mood::StraightPop:
-    case Mood::MidPop:
-    case Mood::EmotionalPop:
-    case Mood::DarkPop:
-    case Mood::Dramatic:
-    case Mood::Nostalgic:
-    default:
-      return DrumStyle::Standard;
+  uint8_t idx = static_cast<uint8_t>(mood);
+  if (idx < sizeof(MOOD_DRUM_STYLES) / sizeof(MOOD_DRUM_STYLES[0])) {
+    return MOOD_DRUM_STYLES[idx];
   }
+  return DrumStyle::Standard;  // fallback
 }
 
 // ============================================================================
@@ -924,6 +1082,18 @@ uint16_t getMinimumSecondsForCall(IntroChant intro_chant, MixPattern mix_pattern
   uint16_t min_bars = getMinimumBarsForCall(intro_chant, mix_pattern, bpm);
   // seconds = bars * 240 / bpm
   return static_cast<uint16_t>(min_bars * 240 / bpm);
+}
+
+// ============================================================================
+// VocalStylePreset Data API Implementation
+// ============================================================================
+
+const VocalStylePresetData& getVocalStylePresetData(VocalStylePreset style) {
+  uint8_t idx = static_cast<uint8_t>(style);
+  if (idx >= VOCAL_STYLE_PRESET_COUNT) {
+    idx = static_cast<uint8_t>(VocalStylePreset::Standard);  // fallback
+  }
+  return VOCAL_STYLE_PRESET_DATA[idx];
 }
 
 }  // namespace midisketch

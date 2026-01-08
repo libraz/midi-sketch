@@ -208,32 +208,44 @@ MelodyScore MelodyEvaluator::evaluate(const std::vector<NoteEvent>& notes,
   return score;
 }
 
+// ============================================================================
+// VocalStylePreset → EvaluatorConfig Mapping Table
+// ============================================================================
+//
+// Maps each VocalStylePreset to its appropriate EvaluatorConfig.
+// Index corresponds to VocalStylePreset enum value (0-12).
+//
+// EvaluatorConfig types:
+// - kStandardConfig:  Balanced weights for general pop
+// - kIdolConfig:      Singability + repetition focused (idol, bright)
+// - kVocaloidConfig:  Technique focused (allows difficult intervals)
+// - kBalladConfig:    Maximum singability, minimal surprise
+// - kYoasobiConfig:   Contour + surprise allowed (anime style)
+//
+namespace {
+const EvaluatorConfig* const kEvaluatorConfigMap[13] = {
+    &kStandardConfig,   // 0: Auto
+    &kStandardConfig,   // 1: Standard
+    &kVocaloidConfig,   // 2: Vocaloid
+    &kVocaloidConfig,   // 3: UltraVocaloid
+    &kIdolConfig,       // 4: Idol
+    &kBalladConfig,     // 5: Ballad
+    &kStandardConfig,   // 6: Rock
+    &kStandardConfig,   // 7: CityPop
+    &kYoasobiConfig,    // 8: Anime
+    &kIdolConfig,       // 9: BrightKira
+    &kVocaloidConfig,   // 10: CoolSynth
+    &kIdolConfig,       // 11: CuteAffected
+    &kStandardConfig,   // 12: PowerfulShout
+};
+}  // namespace
+
 const EvaluatorConfig& MelodyEvaluator::getEvaluatorConfig(VocalStylePreset style) {
-  switch (style) {
-    case VocalStylePreset::Idol:
-    case VocalStylePreset::BrightKira:
-    case VocalStylePreset::CuteAffected:
-      return kIdolConfig;
-
-    case VocalStylePreset::Vocaloid:
-    case VocalStylePreset::UltraVocaloid:
-    case VocalStylePreset::CoolSynth:
-      return kVocaloidConfig;
-
-    case VocalStylePreset::Ballad:
-      return kBalladConfig;
-
-    case VocalStylePreset::Anime:
-      return kYoasobiConfig;
-
-    case VocalStylePreset::Standard:
-    case VocalStylePreset::Rock:
-    case VocalStylePreset::PowerfulShout:
-    case VocalStylePreset::CityPop:
-    case VocalStylePreset::Auto:
-    default:
-      return kStandardConfig;
+  uint8_t idx = static_cast<uint8_t>(style);
+  if (idx < sizeof(kEvaluatorConfigMap) / sizeof(kEvaluatorConfigMap[0])) {
+    return *kEvaluatorConfigMap[idx];
   }
+  return kStandardConfig;  // fallback
 }
 
 }  // namespace midisketch
