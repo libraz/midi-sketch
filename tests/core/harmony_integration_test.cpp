@@ -1265,5 +1265,60 @@ TEST_F(HarmonyIntegrationTest, AllTracksLowDissonanceAfterImprovements) {
   }
 }
 
+// =============================================================================
+// Test 18: Bass-Chord phrase-end synchronization
+// =============================================================================
+
+TEST_F(HarmonyIntegrationTest, BassChordPhraseEndSynchronization) {
+  // This test verifies the fix for bass-chord phrase-end sync bug.
+  // When chord track anticipates the next chord at phrase-end,
+  // bass track should also switch to the anticipated chord's root.
+  // Bug: seed 2475149142 had E-F minor 2nd and B-C major 7th clashes
+  // at bar 23/24 and 47/48 where chord anticipated C major but bass
+  // played F (from F major).
+
+  params_.seed = 2475149142;
+  params_.chord_id = 0;        // Canon progression
+  params_.structure = static_cast<StructurePattern>(5);  // form 5
+  params_.bpm = 132;
+  params_.mood = static_cast<Mood>(14);  // style 14
+  params_.drums_enabled = true;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& song = gen.getSong();
+  const auto& chord_notes = song.chord().notes();
+  const auto& bass_notes = song.bass().notes();
+
+  // Check for minor 2nd (E-F) and major 7th (B-C) clashes between bass and chord
+  int critical_clashes = 0;
+
+  for (const auto& chord_note : chord_notes) {
+    Tick chord_end = chord_note.start_tick + chord_note.duration;
+
+    for (const auto& bass_note : bass_notes) {
+      Tick bass_end = bass_note.start_tick + bass_note.duration;
+
+      // Check if notes overlap
+      if (chord_note.start_tick < bass_end && chord_end > bass_note.start_tick) {
+        int interval = std::abs((chord_note.note % 12) - (bass_note.note % 12));
+        if (interval > 6) interval = 12 - interval;
+
+        // Minor 2nd (1 semitone) is critical clash
+        if (interval == 1) {
+          critical_clashes++;
+        }
+      }
+    }
+  }
+
+  // With phrase-end sync fix, there should be very few or no minor 2nd clashes
+  // between bass and chord. Previously this seed had 4 such clashes.
+  EXPECT_LE(critical_clashes, 2)
+      << "Bass-chord phrase-end sync should prevent minor 2nd clashes. "
+      << "Found " << critical_clashes << " clashes with seed 2475149142";
+}
+
 }  // namespace
 }  // namespace midisketch

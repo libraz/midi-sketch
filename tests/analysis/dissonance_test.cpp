@@ -651,5 +651,235 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiNonOverlappingNotes) {
   }
 }
 
+// =============================================================================
+// Integration Tests: Dissonance Severity Tracking
+// =============================================================================
+
+// Test: Bass-chord phrase-end sync regression test (specific seed that was fixed)
+TEST(DissonanceIntegrationTest, BassChordPhraseEndSyncRegressionTest) {
+  // This test verifies the fix for phrase-end sync bug.
+  // Seed 2475149142 previously had 4 medium severity bass-chord clashes
+  // at phrase-end bars where chord anticipated but bass didn't.
+
+  Generator gen;
+  GeneratorParams params{};
+  params.seed = 2475149142;
+  params.chord_id = 0;
+  params.structure = static_cast<StructurePattern>(5);
+  params.mood = static_cast<Mood>(14);
+  params.key = Key::C;
+  params.drums_enabled = true;
+  params.vocal_low = 60;
+  params.vocal_high = 79;
+  params.bpm = 132;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  auto report = analyzeDissonance(song, params);
+
+  // After phrase-end sync fix, this specific seed should have 0 medium+ issues
+  EXPECT_EQ(report.summary.medium_severity, 0u)
+      << "Phrase-end sync regression: seed 2475149142 should have 0 medium issues, "
+      << "but has " << report.summary.medium_severity;
+  EXPECT_EQ(report.summary.high_severity, 0u)
+      << "Phrase-end sync regression: seed 2475149142 should have 0 high issues, "
+      << "but has " << report.summary.high_severity;
+}
+
+// Test: Bass-chord phrase-end sync verification with dissonance analysis
+TEST(DissonanceIntegrationTest, BassChordPhraseEndSyncNoMediumIssues) {
+  // Specific test for the phrase-end sync bug fix
+  // Seed 2475149142 previously had medium severity E-F and B-C clashes
+
+  Generator gen;
+  GeneratorParams params{};
+  params.seed = 2475149142;
+  params.chord_id = 0;
+  params.structure = static_cast<StructurePattern>(5);
+  params.mood = static_cast<Mood>(14);
+  params.key = Key::C;
+  params.drums_enabled = true;
+  params.vocal_low = 60;
+  params.vocal_high = 79;
+  params.bpm = 132;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  auto report = analyzeDissonance(song, params);
+
+  // Should have zero medium severity bass-chord clashes after fix
+  int bass_chord_medium = 0;
+  for (const auto& issue : report.issues) {
+    if (issue.type == DissonanceType::SimultaneousClash &&
+        issue.severity == DissonanceSeverity::Medium) {
+      // Check if bass and chord are involved
+      bool has_bass = false;
+      bool has_chord = false;
+      for (const auto& note : issue.notes) {
+        if (note.track_name == "bass") has_bass = true;
+        if (note.track_name == "chord") has_chord = true;
+      }
+      if (has_bass && has_chord) {
+        bass_chord_medium++;
+      }
+    }
+  }
+
+  EXPECT_EQ(bass_chord_medium, 0)
+      << "Bass-chord phrase-end sync should prevent medium severity clashes. "
+      << "Found " << bass_chord_medium << " bass-chord medium clashes";
+}
+
+// Test: Zero HIGH severity issues across all configurations
+TEST(DissonanceIntegrationTest, ZeroHighSeverityMultiSeed) {
+  // Critical: No HIGH severity issues should ever occur
+  // This tests bass-chord clashes and other critical dissonances
+
+  std::vector<Mood> test_moods = {
+      Mood::StraightPop, Mood::Ballad, Mood::EnergeticDance,
+      Mood::IdolPop, Mood::CityPop, Mood::Yoasobi, Mood::FutureBass
+  };
+
+  std::vector<StructurePattern> test_structures = {
+      StructurePattern::StandardPop, StructurePattern::FullPop,
+      StructurePattern::DirectChorus, StructurePattern::BuildUp
+  };
+
+  int total_high = 0;
+  int total_tests = 0;
+
+  for (Mood mood : test_moods) {
+    for (int seed_idx = 0; seed_idx < 5; ++seed_idx) {
+      uint32_t seed = static_cast<uint32_t>(mood) * 10000 + seed_idx * 7919 + 42;
+      StructurePattern structure = test_structures[seed_idx % test_structures.size()];
+      uint8_t chord_id = seed_idx % 5;
+
+      Generator gen;
+      GeneratorParams params{};
+      params.seed = seed;
+      params.chord_id = chord_id;
+      params.structure = structure;
+      params.mood = mood;
+      params.key = Key::C;
+      params.drums_enabled = true;
+      params.vocal_low = 60;
+      params.vocal_high = 79;
+
+      gen.generate(params);
+      const auto& song = gen.getSong();
+
+      auto report = analyzeDissonance(song, params);
+      total_tests++;
+
+      if (report.summary.high_severity > 0) {
+        total_high++;
+        ADD_FAILURE() << "Mood " << static_cast<int>(mood)
+            << " structure " << static_cast<int>(structure)
+            << " seed " << seed << " has " << report.summary.high_severity
+            << " HIGH severity issues";
+      }
+    }
+  }
+
+  EXPECT_EQ(total_high, 0)
+      << total_high << "/" << total_tests << " configurations have HIGH severity";
+}
+
+// Test: Random seed stress test - no HIGH severity
+TEST(DissonanceIntegrationTest, RandomSeedStressTestNoHighSeverity) {
+  // Test many random seeds to ensure no HIGH severity issues
+  std::vector<uint32_t> random_seeds = {
+      1, 42, 123, 456, 789, 1000, 2000, 3000, 4000, 5000,
+      12345, 23456, 34567, 45678, 56789, 67890, 78901, 89012, 90123, 1234,
+      111111, 222222, 333333, 444444, 555555, 666666, 777777, 888888, 999999, 100000,
+      2475149142,  // Regression test seed
+      1111111111, 2222222222, 3333333333, 4294967295,
+      1234567890, 987654321, 192837465, 564738291, 102938475,
+      999, 9999, 99999, 999999, 9999999, 99999999, 999999999, 1000000000,
+      2147483647, 2147483648
+  };
+
+  int total_high = 0;
+  int total_tests = 0;
+
+  for (uint32_t seed : random_seeds) {
+    Generator gen;
+    GeneratorParams params{};
+    params.seed = seed;
+    params.chord_id = seed % 5;
+    params.structure = static_cast<StructurePattern>(seed % 6);
+    params.mood = static_cast<Mood>(seed % 15);
+    params.key = Key::C;
+    params.drums_enabled = true;
+    params.vocal_low = 60;
+    params.vocal_high = 79;
+
+    gen.generate(params);
+    const auto& song = gen.getSong();
+
+    auto report = analyzeDissonance(song, params);
+    total_tests++;
+
+    if (report.summary.high_severity > 0) {
+      total_high++;
+      ADD_FAILURE() << "Seed " << seed << " has "
+          << report.summary.high_severity << " HIGH severity issues";
+    }
+  }
+
+  EXPECT_EQ(total_high, 0)
+      << total_high << "/" << total_tests << " seeds have HIGH severity";
+}
+
+// Test: Medium severity should be low (tracking metric, not strict)
+TEST(DissonanceIntegrationTest, MediumSeverityMetrics) {
+  // Track medium severity issues across random seeds
+  // This is a quality metric, not a strict requirement
+
+  std::vector<uint32_t> random_seeds = {
+      1, 42, 123, 456, 789, 1000, 2000, 3000, 4000, 5000,
+      12345, 23456, 34567, 45678, 56789, 67890, 78901, 89012, 90123, 1234
+  };
+
+  int total_medium = 0;
+  int total_tests = 0;
+  int seeds_with_medium = 0;
+
+  for (uint32_t seed : random_seeds) {
+    Generator gen;
+    GeneratorParams params{};
+    params.seed = seed;
+    params.chord_id = seed % 5;
+    params.structure = static_cast<StructurePattern>(seed % 6);
+    params.mood = static_cast<Mood>(seed % 15);
+    params.key = Key::C;
+    params.drums_enabled = true;
+    params.vocal_low = 60;
+    params.vocal_high = 79;
+
+    gen.generate(params);
+    const auto& song = gen.getSong();
+
+    auto report = analyzeDissonance(song, params);
+    total_tests++;
+    total_medium += report.summary.medium_severity;
+    if (report.summary.medium_severity > 0) {
+      seeds_with_medium++;
+    }
+  }
+
+  // Report metrics (informational, not strict)
+  float avg_medium = static_cast<float>(total_medium) / total_tests;
+  float pct_with_medium = static_cast<float>(seeds_with_medium) / total_tests * 100;
+
+  // Quality thresholds: average < 3 medium issues per song, < 80% of seeds have issues
+  EXPECT_LT(avg_medium, 3.0f)
+      << "Average medium issues per song should be < 3, got " << avg_medium;
+  EXPECT_LT(pct_with_medium, 80.0f)
+      << "Less than 80% of seeds should have medium issues, got " << pct_with_medium << "%";
+}
+
 }  // namespace
 }  // namespace midisketch

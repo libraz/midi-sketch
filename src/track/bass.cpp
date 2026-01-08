@@ -1,5 +1,6 @@
 #include "track/bass.h"
 #include "core/chord.h"
+#include "core/harmonic_rhythm.h"
 #include "core/mood_utils.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
@@ -522,6 +523,23 @@ void generateBassTrack(MidiTrack& track, const Song& song,
 
         generateBassHalfBar(track, bar_start, root, section.type, params.mood, true);
         generateBassHalfBar(track, bar_start + HALF, dominant_root,
+                             section.type, params.mood, false);
+        continue;
+      }
+
+      // Phrase-end split: sync with chord_track.cpp anticipation
+      HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section.type, params.mood);
+      int effective_prog_length = slow_harmonic ? (progression.length + 1) / 2
+                                                : progression.length;
+      if (shouldSplitPhraseEnd(bar, section.bars, effective_prog_length, harmonic,
+                                section.type, params.mood)) {
+        // Split bar: first half current root, second half next root
+        int anticipate_chord_idx = (chord_idx + 1) % progression.length;
+        int8_t anticipate_degree = progression.at(anticipate_chord_idx);
+        uint8_t anticipate_root = clampBass(degreeToRoot(anticipate_degree, Key::C) - 12);
+
+        generateBassHalfBar(track, bar_start, root, section.type, params.mood, true);
+        generateBassHalfBar(track, bar_start + HALF, anticipate_root,
                              section.type, params.mood, false);
         continue;
       }

@@ -1,5 +1,6 @@
 #include "track/chord_track.h"
 #include "core/chord.h"
+#include "core/harmonic_rhythm.h"
 #include "core/mood_utils.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
@@ -435,12 +436,9 @@ std::vector<VoicedChord> generateRootlessVoicings(uint8_t root, const Chord& cho
         break;
       }
       int pitch = root + intervals_rootless[i];
-      pitch = base_octave + (pitch % 12);
-
-      // Handle octave stacking for higher extensions
-      if (intervals_rootless[i] >= 12) {
-        pitch = base_octave + 12 + ((intervals_rootless[i] - 12) % 12);
-      }
+      // Place note in base_octave, with higher octave for extensions >= 12
+      int octave_offset = (intervals_rootless[i] >= 12) ? 12 : 0;
+      pitch = base_octave + octave_offset + (pitch % 12);
 
       if (v.count > 0 && pitch <= v.pitches[v.count - 1]) {
         pitch += 12;
@@ -776,47 +774,6 @@ enum class ChordRhythm {
   Eighth      // Chorus: eighth note pulse
 };
 
-// Harmonic rhythm: how often chords change
-enum class HarmonicDensity {
-  Slow,       // Chord changes every 2 bars (Intro)
-  Normal,     // Chord changes every bar (A, B)
-  Dense       // Chord may change mid-bar at phrase ends (B end, Chorus)
-};
-
-// Determines harmonic density based on section and mood
-struct HarmonicRhythmInfo {
-  HarmonicDensity density;
-  bool double_at_phrase_end;  // Add extra chord change at phrase end
-
-  static HarmonicRhythmInfo forSection(SectionType section, Mood mood) {
-    bool is_ballad = MoodClassification::isBallad(mood);
-
-    switch (section) {
-      case SectionType::Intro:
-      case SectionType::Interlude:
-        return {HarmonicDensity::Slow, false};
-      case SectionType::Outro:
-        return {HarmonicDensity::Slow, false};
-      case SectionType::A:
-        return {HarmonicDensity::Normal, false};
-      case SectionType::B:
-        return {HarmonicDensity::Normal, !is_ballad};
-      case SectionType::Chorus:
-        return {is_ballad ? HarmonicDensity::Normal : HarmonicDensity::Dense,
-                !is_ballad};
-      case SectionType::Bridge:
-        return {HarmonicDensity::Normal, false};
-      case SectionType::Chant:
-        // Chant section: slow, sustained chords
-        return {HarmonicDensity::Slow, false};
-      case SectionType::MixBreak:
-        // MIX section: driving dense chords
-        return {HarmonicDensity::Dense, true};
-    }
-    return {HarmonicDensity::Normal, false};
-  }
-};
-
 // Check if a chord degree is the dominant (V)
 bool isDominant(int8_t degree) {
   return degree == 4;  // V chord
@@ -1081,12 +1038,15 @@ ChordRhythm selectRhythm(SectionType section, Mood mood,
 
 // Find the first bass note in a time range that clashes with a chord pitch
 // Returns the start tick of the clashing bass note, or 0 if no clash found
+// Checks for notes that OVERLAP with the range, not just notes that start in it
 Tick findBassClashInRange(const MidiTrack* bass_track, Tick start, Tick end,
                            int chord_pitch_pc) {
   if (bass_track == nullptr) return 0;
 
   for (const auto& note : bass_track->notes()) {
-    if (note.start_tick >= start && note.start_tick < end) {
+    Tick note_end = note.start_tick + note.duration;
+    // Check if note overlaps with [start, end) range
+    if (note.start_tick < end && note_end > start) {
       int bass_pc = note.note % 12;
       int interval = std::abs(chord_pitch_pc - bass_pc);
       if (interval > 6) interval = 12 - interval;
@@ -1386,27 +1346,13 @@ void generateChordTrack(MidiTrack& track, const Song& song,
         continue;
       }
 
-      // Check if this is a phrase-ending bar
-      // Phrase end occurs at:
-      // 1. Standard 4-bar phrase boundaries (bar 3, 7, etc.)
-      // 2. Chord progression cycle boundaries (last chord of progression)
-      bool is_4bar_phrase_end = (bar % 4 == 3);
-      bool is_chord_cycle_end = (bar % effective_prog_length == effective_prog_length - 1);
-      bool is_phrase_end = harmonic.double_at_phrase_end &&
-                           (is_4bar_phrase_end || is_chord_cycle_end) &&
-                           (bar < section.bars - 1);
+      // Check if this bar should split for phrase-end anticipation
+      // Uses shared logic with bass track for synchronization
+      bool should_split = shouldSplitPhraseEnd(
+          bar, section.bars, effective_prog_length, harmonic,
+          section.type, params.mood);
 
-      // Dense harmonic rhythm: also allow mid-bar changes on even bars in Chorus
-      // for energetic moods (more dynamic harmonic motion)
-      bool is_dense_extra = (harmonic.density == HarmonicDensity::Dense) &&
-                            (section.type == SectionType::Chorus) &&
-                            (bar % 2 == 0) && (bar > 0) &&
-                            (params.mood == Mood::EnergeticDance ||
-                             params.mood == Mood::IdolPop ||
-                             params.mood == Mood::Yoasobi ||
-                             params.mood == Mood::FutureBass);
-
-      if ((is_phrase_end || is_dense_extra) && harmonic.density == HarmonicDensity::Dense) {
+      if (should_split) {
         // Dense harmonic rhythm at phrase end: split bar into two chords
         // First half: current chord
         uint8_t vel = calculateVelocity(section.type, 0, params.mood);
@@ -1426,8 +1372,11 @@ void generateChordTrack(MidiTrack& track, const Song& song,
             next_degree, section.type, bar + 1, section.bars,
             params.chord_extension, rng);
         Chord next_chord = getExtendedChord(next_degree, next_ext);
+
+        // Bass also splits at phrase-end, so use next chord's root for clash check
+        int next_bass_root_pc = next_root % 12;
         VoicedChord next_voicing = selectVoicing(next_root, next_chord, voicing,
-                                                  true, voicing_type, bass_root_pc, rng,
+                                                  true, voicing_type, next_bass_root_pc, rng,
                                                   open_subtype, params.mood);
 
         uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
@@ -1499,7 +1448,8 @@ void generateChordTrack(MidiTrack& track, const Song& song,
 
             for (size_t i = 0; i < ant_voicing.count; ++i) {
               int pc = ant_voicing.pitches[i] % 12;
-              Tick clash = findBassClashInRange(bass_track, ant_tick, ant_tick + 1, pc);
+              // Check entire EIGHTH duration for bass clashes
+              Tick clash = findBassClashInRange(bass_track, ant_tick, ant_tick + EIGHTH, pc);
               if (clash == 0) {
                 track.addNote(ant_tick, EIGHTH, ant_voicing.pitches[i], ant_vel);
               }
