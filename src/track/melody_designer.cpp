@@ -93,7 +93,26 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(
     direction_inertia = phrase_result.direction_inertia;
 
     // Move to next phrase position
-    current_tick += actual_beats * TICKS_PER_BEAT;
+    // For hooks, calculate actual duration from generated notes to avoid overlap
+    // when hook spans multiple phrase lengths (e.g., Idol style with 4 repeats)
+    if (is_hook_position && !phrase_result.notes.empty()) {
+      // Find the end tick of the last generated note
+      Tick last_note_end = 0;
+      for (const auto& note : phrase_result.notes) {
+        Tick note_end = note.start_tick + note.duration;
+        if (note_end > last_note_end) {
+          last_note_end = note_end;
+        }
+      }
+      // Advance current_tick to after the hook (with small gap)
+      if (last_note_end > current_tick) {
+        current_tick = last_note_end;
+      } else {
+        current_tick += actual_beats * TICKS_PER_BEAT;
+      }
+    } else {
+      current_tick += actual_beats * TICKS_PER_BEAT;
+    }
 
     // Add rest between phrases (breathing) - skip if breathing gaps disabled
     if (i < phrase_count - 1 && !ctx.disable_breathing_gaps) {
