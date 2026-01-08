@@ -58,7 +58,7 @@ struct ChordProgressionMeta {
 };
 
 // Returns the chord progression for the given ID.
-// @param chord_id Progression index (0-19)
+// @param chord_id Progression index (0-21)
 // @returns Reference to ChordProgression struct
 const ChordProgression& getChordProgression(uint8_t chord_id);
 
@@ -80,7 +80,7 @@ Chord getChordNotes(int8_t degree);
 Chord getExtendedChord(int8_t degree, ChordExtension extension);
 
 // Returns the name of a chord progression.
-// @param chord_id Progression index (0-15)
+// @param chord_id Progression index (0-21)
 // @returns Progression name (e.g., "Canon", "Pop1")
 const char* getChordProgressionName(uint8_t chord_id);
 
@@ -95,7 +95,7 @@ const char* getChordProgressionDisplay(uint8_t chord_id);
 const char* getChordProgressionChords(uint8_t chord_id);
 
 // Returns the metadata for a chord progression.
-// @param chord_id Progression index (0-19)
+// @param chord_id Progression index (0-21)
 // @returns Reference to ChordProgressionMeta struct
 const ChordProgressionMeta& getChordProgressionMeta(uint8_t chord_id);
 

@@ -337,8 +337,8 @@ TEST(MelodyDesignerTest, GenerateSectionNotesInTimeRange) {
   auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
 
   for (const auto& note : notes) {
-    EXPECT_GE(note.startTick, ctx.section_start);
-    EXPECT_LE(note.startTick + note.duration, ctx.section_end + TICKS_PER_BEAT);
+    EXPECT_GE(note.start_tick, ctx.section_start);
+    EXPECT_LE(note.start_tick + note.duration, ctx.section_end + TICKS_PER_BEAT);
   }
 }
 
@@ -415,7 +415,7 @@ TEST(MelodyDesignerTest, ApplyTransitionApproachModifiesNotes) {
   std::vector<uint8_t> original_velocities;
   Tick approach_start = ctx.section_end - 4 * TICKS_PER_BEAT;
   for (const auto& note : notes) {
-    if (note.startTick >= approach_start) {
+    if (note.start_tick >= approach_start) {
       original_velocities.push_back(note.velocity);
     }
   }
@@ -426,7 +426,7 @@ TEST(MelodyDesignerTest, ApplyTransitionApproachModifiesNotes) {
   // Verify velocities changed (should be louder due to velocity_growth > 1)
   size_t idx = 0;
   for (const auto& note : notes) {
-    if (note.startTick >= approach_start && idx < original_velocities.size()) {
+    if (note.start_tick >= approach_start && idx < original_velocities.size()) {
       // Due to crescendo, later notes should be louder or same
       EXPECT_GE(note.velocity, original_velocities[idx] * 0.9f)
           << "Velocity should not decrease significantly during approach";

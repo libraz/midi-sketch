@@ -98,7 +98,7 @@ TEST(SETest, InsertPPPHAtCorrectPosition) {
   // Check that the first note is at or after the expected position
   auto notes = track.notes();
   ASSERT_GT(notes.size(), 0u);
-  EXPECT_GE(notes[0].startTick, expected_start)
+  EXPECT_GE(notes[0].start_tick, expected_start)
       << "PPPH should start at last bar of B section";
 }
 
@@ -162,7 +162,7 @@ TEST(SETest, InsertMIXAtIntroStart) {
   // MIX should start at the beginning of Intro
   auto notes = track.notes();
   ASSERT_GT(notes.size(), 0u);
-  EXPECT_EQ(notes[0].startTick, intro_section.start_tick)
+  EXPECT_EQ(notes[0].start_tick, intro_section.start_tick)
       << "IntroMix should start at beginning of Intro";
 }
 

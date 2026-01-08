@@ -36,10 +36,10 @@ void MidiTrack::clampVelocity(uint8_t min_vel, uint8_t max_vel) {
 MidiTrack MidiTrack::slice(Tick fromTick, Tick toTick) const {
   MidiTrack result;
   for (const auto& note : notes_) {
-    Tick noteEnd = note.startTick + note.duration;
-    if (note.startTick >= fromTick && noteEnd <= toTick) {
+    Tick noteEnd = note.start_tick + note.duration;
+    if (note.start_tick >= fromTick && noteEnd <= toTick) {
       NoteEvent sliced = note;
-      sliced.startTick -= fromTick;  // Adjust to relative position
+      sliced.start_tick -= fromTick;  // Adjust to relative position
       result.notes_.push_back(sliced);
     }
   }
@@ -56,7 +56,7 @@ MidiTrack MidiTrack::slice(Tick fromTick, Tick toTick) const {
 void MidiTrack::append(const MidiTrack& other, Tick offsetTick) {
   for (const auto& note : other.notes_) {
     NoteEvent shifted = note;
-    shifted.startTick += offsetTick;
+    shifted.start_tick += offsetTick;
     notes_.push_back(shifted);
   }
   for (const auto& text : other.textEvents_) {
@@ -74,7 +74,7 @@ void MidiTrack::clear() {
 Tick MidiTrack::lastTick() const {
   Tick last = 0;
   for (const auto& note : notes_) {
-    Tick noteEnd = note.startTick + note.duration;
+    Tick noteEnd = note.start_tick + note.duration;
     if (noteEnd > last) last = noteEnd;
   }
   for (const auto& text : textEvents_) {
@@ -105,11 +105,11 @@ std::vector<MidiEvent> MidiTrack::toMidiEvents(uint8_t channel) const {
   // Convert NoteEvents to note-on/off MidiEvents
   for (const auto& note : notes_) {
     // Note on: status = 0x90 | channel
-    events.push_back({note.startTick, static_cast<uint8_t>(0x90 | channel),
+    events.push_back({note.start_tick, static_cast<uint8_t>(0x90 | channel),
                       note.note, note.velocity});
 
     // Note off: status = 0x80 | channel
-    events.push_back({note.startTick + note.duration,
+    events.push_back({note.start_tick + note.duration,
                       static_cast<uint8_t>(0x80 | channel), note.note, 0});
   }
 

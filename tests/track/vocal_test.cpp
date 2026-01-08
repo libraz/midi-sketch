@@ -191,7 +191,7 @@ TEST_F(VocalTest, SameSeedProducesSameMelody) {
   for (size_t i = 0; i < track1.notes().size(); ++i) {
     EXPECT_EQ(track1.notes()[i].note, track2.notes()[i].note)
         << "Note mismatch at index " << i;
-    EXPECT_EQ(track1.notes()[i].startTick, track2.notes()[i].startTick)
+    EXPECT_EQ(track1.notes()[i].start_tick, track2.notes()[i].start_tick)
         << "Timing mismatch at index " << i;
   }
 }
@@ -310,8 +310,8 @@ TEST_F(VocalTest, NoOverlappingNotesWithVariousSeeds) {
     const auto& notes = gen.getSong().vocal().notes();
 
     for (size_t i = 0; i + 1 < notes.size(); ++i) {
-      Tick end_tick = notes[i].startTick + notes[i].duration;
-      Tick next_start = notes[i + 1].startTick;
+      Tick end_tick = notes[i].start_tick + notes[i].duration;
+      Tick next_start = notes[i + 1].start_tick;
       EXPECT_LE(end_tick, next_start)
           << "Overlap at seed=" << seed << ", note " << i
           << ": end=" << end_tick << ", next_start=" << next_start;
@@ -328,8 +328,8 @@ TEST_F(VocalTest, NoOverlapAtPhraseEndings) {
   const auto& notes = gen.getSong().vocal().notes();
 
   for (size_t i = 0; i + 1 < notes.size(); ++i) {
-    Tick end_tick = notes[i].startTick + notes[i].duration;
-    Tick next_start = notes[i + 1].startTick;
+    Tick end_tick = notes[i].start_tick + notes[i].duration;
+    Tick next_start = notes[i + 1].start_tick;
     EXPECT_LE(end_tick, next_start)
         << "Overlap at note " << i << ": end=" << end_tick
         << ", next_start=" << next_start;
@@ -347,8 +347,8 @@ TEST_F(VocalTest, NoOverlapWithMultipleSeeds) {
 
     bool has_overlap = false;
     for (size_t i = 0; i + 1 < notes.size(); ++i) {
-      Tick end_tick = notes[i].startTick + notes[i].duration;
-      Tick next_start = notes[i + 1].startTick;
+      Tick end_tick = notes[i].start_tick + notes[i].duration;
+      Tick next_start = notes[i + 1].start_tick;
       if (end_tick > next_start) {
         has_overlap = true;
         break;
@@ -401,8 +401,8 @@ TEST_F(VocalTest, HumanizeDoesNotBreakOverlapPrevention) {
 
   // Check no overlaps exist
   for (size_t i = 0; i + 1 < notes.size(); ++i) {
-    Tick end_tick = notes[i].startTick + notes[i].duration;
-    Tick next_start = notes[i + 1].startTick;
+    Tick end_tick = notes[i].start_tick + notes[i].duration;
+    Tick next_start = notes[i + 1].start_tick;
     EXPECT_LE(end_tick, next_start)
         << "Overlap with humanize at note " << i;
   }
@@ -464,8 +464,8 @@ TEST_F(VocalTest, VocaloidStyleNoOverlaps) {
   const auto& notes = gen.getSong().vocal().notes();
 
   for (size_t i = 0; i + 1 < notes.size(); ++i) {
-    Tick end_tick = notes[i].startTick + notes[i].duration;
-    Tick next_start = notes[i + 1].startTick;
+    Tick end_tick = notes[i].start_tick + notes[i].duration;
+    Tick next_start = notes[i + 1].start_tick;
     EXPECT_LE(end_tick, next_start)
         << "Overlap at note " << i;
   }
@@ -512,8 +512,8 @@ TEST_F(VocalTest, SectionFinalNoteIsChordTone) {
     // Find notes in this section
     const NoteEvent* last_note = nullptr;
     for (const auto& note : vocal.notes()) {
-      if (note.startTick >= section_start && note.startTick < section_end) {
-        if (last_note == nullptr || note.startTick > last_note->startTick) {
+      if (note.start_tick >= section_start && note.start_tick < section_end) {
+        if (last_note == nullptr || note.start_tick > last_note->start_tick) {
           last_note = &note;
         }
       }
@@ -603,7 +603,7 @@ TEST_F(VocalTest, CallResponsePhraseStructure) {
   // Find the max phrase index
   int max_phrase_idx = 0;
   for (size_t i = 0; i < note_list.size(); ++i) {
-    int pidx = static_cast<int>(note_list[i].startTick / PHRASE_LENGTH);
+    int pidx = static_cast<int>(note_list[i].start_tick / PHRASE_LENGTH);
     if (pidx > max_phrase_idx) max_phrase_idx = pidx;
   }
 
@@ -619,9 +619,9 @@ TEST_F(VocalTest, CallResponsePhraseStructure) {
 
     for (size_t i = 0; i < note_list.size(); ++i) {
       const auto& n = note_list[i];
-      if (n.startTick >= phrase_start && n.startTick < phrase_end) {
-        if (n.startTick >= last_tick) {
-          last_tick = n.startTick;
+      if (n.start_tick >= phrase_start && n.start_tick < phrase_end) {
+        if (n.start_tick >= last_tick) {
+          last_tick = n.start_tick;
           last_pitch = n.note;
           found_note = true;
         }
@@ -808,8 +808,8 @@ TEST_F(VocalTest, HookIntensityStrongCreatesLongNotesAtChorusStart) {
   // - High velocity (100+) indicating accent/emphasis
   bool has_hook_effect = false;
   for (const auto& note : vocal) {
-    if (note.startTick >= chorus_start &&
-        note.startTick < chorus_start + TICKS_PER_BAR) {
+    if (note.start_tick >= chorus_start &&
+        note.start_tick < chorus_start + TICKS_PER_BAR) {
       // Check for extended duration or accent
       if (note.duration >= TICKS_PER_BEAT * 1.5 || note.velocity >= 100) {
         has_hook_effect = true;
@@ -888,8 +888,8 @@ TEST_F(VocalTest, ChorusHasHigherDensityThanVerse) {
   for (const auto& sec : sections) {
     int notes_in_section = 0;
     for (const auto& note : vocal) {
-      if (note.startTick >= sec.start_tick &&
-          note.startTick < sec.start_tick + sec.bars * TICKS_PER_BAR) {
+      if (note.start_tick >= sec.start_tick &&
+          note.start_tick < sec.start_tick + sec.bars * TICKS_PER_BAR) {
         notes_in_section++;
       }
     }
@@ -935,8 +935,8 @@ TEST_F(VocalTest, BridgeHasLowerDensityThanChorus) {
   for (const auto& sec : sections) {
     int notes_in_section = 0;
     for (const auto& note : vocal) {
-      if (note.startTick >= sec.start_tick &&
-          note.startTick < sec.start_tick + sec.bars * TICKS_PER_BAR) {
+      if (note.start_tick >= sec.start_tick &&
+          note.start_tick < sec.start_tick + sec.bars * TICKS_PER_BAR) {
         notes_in_section++;
       }
     }
@@ -1000,10 +1000,10 @@ TEST_F(VocalTest, LastChorusHasHigherIntensity) {
   // Count notes in first and last chorus
   int first_notes = 0, last_notes = 0;
   for (const auto& note : vocal) {
-    if (note.startTick >= first_chorus_start && note.startTick < first_chorus_end) {
+    if (note.start_tick >= first_chorus_start && note.start_tick < first_chorus_end) {
       first_notes++;
     }
-    if (note.startTick >= last_chorus_start && note.startTick < last_chorus_end) {
+    if (note.start_tick >= last_chorus_start && note.start_tick < last_chorus_end) {
       last_notes++;
     }
   }
@@ -1048,7 +1048,7 @@ TEST_F(VocalTest, SwingGrooveShiftsWeakBeatTiming) {
   // Swing timing shifts these positions slightly later
   int swing_upbeats_shifted = 0;
   for (const auto& note : swing_notes) {
-    Tick pos_in_beat = note.startTick % TICKS_PER_BEAT;
+    Tick pos_in_beat = note.start_tick % TICKS_PER_BEAT;
     // Check if note is shifted from straight 8th position (240) to swing position (280-360)
     if (pos_in_beat >= 280 && pos_in_beat <= 400) {
       swing_upbeats_shifted++;
@@ -1218,8 +1218,8 @@ TEST_F(VocalTest, ExtremeLeapOnlyInChorusAndBridge) {
     // Find notes in this section
     std::vector<const NoteEvent*> section_notes;
     for (const auto& note : vocal) {
-      if (note.startTick >= sec.start_tick &&
-          note.startTick < sec.start_tick + sec.bars * TICKS_PER_BAR) {
+      if (note.start_tick >= sec.start_tick &&
+          note.start_tick < sec.start_tick + sec.bars * TICKS_PER_BAR) {
         section_notes.push_back(&note);
       }
     }
@@ -1272,7 +1272,7 @@ TEST_F(VocalTest, SwingGrooveUsesTripletPattern) {
   // Check for notes at non-standard beat positions (not 0, 240, 480)
   int shuffle_notes = 0;
   for (const auto& note : vocal) {
-    Tick beat_pos = note.startTick % TICKS_PER_BEAT;
+    Tick beat_pos = note.start_tick % TICKS_PER_BEAT;
     // Shuffle positions: around 320 ticks (0.67 beat)
     // Allow some tolerance for rounding
     if (beat_pos >= 300 && beat_pos <= 340) {
@@ -1330,7 +1330,7 @@ TEST_F(VocalTest, ChorusHasMelodicContent) {
     Tick chorus_end = sec.start_tick + sec.bars * TICKS_PER_BAR;
 
     for (const auto& note : vocal) {
-      if (note.startTick >= chorus_start && note.startTick < chorus_end) {
+      if (note.start_tick >= chorus_start && note.start_tick < chorus_end) {
         found_chorus_notes = true;
         break;
       }
@@ -1368,7 +1368,7 @@ TEST_F(VocalTest, ChorusHookRepetitionImproved) {
 
       std::vector<uint8_t> pitches;
       for (const auto& note : vocal) {
-        if (note.startTick >= motif_start && note.startTick < motif_end) {
+        if (note.start_tick >= motif_start && note.start_tick < motif_end) {
           pitches.push_back(note.note);
         }
       }
@@ -1435,7 +1435,7 @@ TEST_F(VocalTest, SectionMotifRepetitionInVerse) {
 
       std::vector<uint8_t> pitches;
       for (const auto& note : vocal) {
-        if (note.startTick >= motif_start && note.startTick < motif_end) {
+        if (note.start_tick >= motif_start && note.start_tick < motif_end) {
           pitches.push_back(note.note);
         }
       }
@@ -1491,9 +1491,9 @@ TEST_F(VocalTest, MotifRepetitionMaintainsHarmony) {
   for (const auto& v : vocal) {
     for (const auto& c : chord) {
       // Check if notes overlap
-      Tick v_end = v.startTick + v.duration;
-      Tick c_end = c.startTick + c.duration;
-      bool overlap = (v.startTick < c_end) && (c.startTick < v_end);
+      Tick v_end = v.start_tick + v.duration;
+      Tick c_end = c.start_tick + c.duration;
+      bool overlap = (v.start_tick < c_end) && (c.start_tick < v_end);
 
       if (overlap) {
         int interval = std::abs(static_cast<int>(v.note % 12) -
@@ -1543,7 +1543,7 @@ TEST_F(VocalTest, CachedPhraseVariationMaintainsRecognizability) {
     for (const auto& [start, end] : ranges) {
       int count = 0;
       for (const auto& note : vocal) {
-        if (note.startTick >= start && note.startTick < end) {
+        if (note.start_tick >= start && note.start_tick < end) {
           count++;
         }
       }
@@ -1678,7 +1678,7 @@ TEST_F(VocalTest, AllNotesHaveValidData) {
           << "Unreasonable duration at seed=" << seed << ", note " << i;
 
       // startTick validation (reasonable bounds)
-      EXPECT_LT(notes[i].startTick, 500000u)  // ~260 bars max
+      EXPECT_LT(notes[i].start_tick, 500000u)  // ~260 bars max
           << "Unreasonable startTick at seed=" << seed << ", note " << i;
     }
   }
@@ -1722,8 +1722,8 @@ TEST_F(VocalTest, AllVocalGroovesProduceValidData) {
 
     // Verify no overlaps
     for (size_t i = 0; i + 1 < notes.size(); ++i) {
-      Tick end_tick = notes[i].startTick + notes[i].duration;
-      EXPECT_LE(end_tick, notes[i + 1].startTick)
+      Tick end_tick = notes[i].start_tick + notes[i].duration;
+      EXPECT_LE(end_tick, notes[i + 1].start_tick)
           << "Overlap for VocalGroove=" << groove << " at note " << i;
     }
   }
@@ -1894,7 +1894,7 @@ TEST_F(VocalTest, PhraseCacheReuseWithExtendedKey) {
   for (const auto& [start, end] : chorus_ranges) {
     int count = 0;
     for (const auto& note : vocal) {
-      if (note.startTick >= start && note.startTick < end) {
+      if (note.start_tick >= start && note.start_tick < end) {
         count++;
       }
     }

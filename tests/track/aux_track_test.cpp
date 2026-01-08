@@ -184,7 +184,7 @@ TEST(AuxTrackTest, GrooveAccentOnBackbeats) {
 
   for (const auto& note : notes) {
     // Check that notes are on beat 2 or 4 (or close)
-    Tick beat_in_bar = note.startTick % TICKS_PER_BAR;
+    Tick beat_in_bar = note.start_tick % TICKS_PER_BAR;
     bool is_beat2 = (beat_in_bar >= TICKS_PER_BEAT - 10 &&
                      beat_in_bar <= TICKS_PER_BEAT + 10);
     bool is_beat4 = (beat_in_bar >= TICKS_PER_BEAT * 3 - 10 &&
@@ -367,12 +367,12 @@ TEST(AuxTrackTest, AvoidsClashWithMainMelody) {
   // Check that no aux notes clash with main melody
   for (const auto& aux_note : notes) {
     for (const auto& main_note : main_melody) {
-      Tick aux_end = aux_note.startTick + aux_note.duration;
-      Tick main_end = main_note.startTick + main_note.duration;
+      Tick aux_end = aux_note.start_tick + aux_note.duration;
+      Tick main_end = main_note.start_tick + main_note.duration;
 
       // Check if notes overlap
-      bool overlaps = (aux_note.startTick < main_end &&
-                       main_note.startTick < aux_end);
+      bool overlaps = (aux_note.start_tick < main_end &&
+                       main_note.start_tick < aux_end);
 
       if (overlaps) {
         // If overlapping, interval should not be minor 2nd or major 7th
@@ -640,7 +640,7 @@ TEST(AuxTrackIntegrationTest, IntroPlacesChorusMotif) {
   // Find notes in intro
   int intro_aux_count = 0;
   for (const auto& note : aux) {
-    if (note.startTick < intro_end) {
+    if (note.start_tick < intro_end) {
       intro_aux_count++;
     }
   }
@@ -670,7 +670,7 @@ TEST(AuxTrackIntegrationTest, ChorusHasUnisonAux) {
   // Find aux notes in first chorus
   int chorus_aux_count = 0;
   for (const auto& note : aux) {
-    if (note.startTick < chorus_end) {
+    if (note.start_tick < chorus_end) {
       chorus_aux_count++;
     }
   }
@@ -684,7 +684,7 @@ TEST(AuxTrackIntegrationTest, ChorusHasUnisonAux) {
     auto first_aux = aux[0];
     bool found_nearby_vocal = false;
     for (const auto& v : vocal) {
-      if (std::abs(static_cast<int>(first_aux.startTick) - static_cast<int>(v.startTick)) < 480) {
+      if (std::abs(static_cast<int>(first_aux.start_tick) - static_cast<int>(v.start_tick)) < 480) {
         found_nearby_vocal = true;
         break;
       }
@@ -713,7 +713,7 @@ TEST(AuxTrackIntegrationTest, SecondChorusHasHarmonyAux) {
   // Find aux notes in second chorus
   int second_chorus_aux = 0;
   for (const auto& note : aux) {
-    if (note.startTick >= second_chorus_start && note.startTick < second_chorus_end) {
+    if (note.start_tick >= second_chorus_start && note.start_tick < second_chorus_end) {
       second_chorus_aux++;
     }
   }

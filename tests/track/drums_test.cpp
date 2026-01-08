@@ -147,7 +147,7 @@ TEST_F(DrumsTest, KickOnDownbeats) {
   for (const auto& note : track.notes()) {
     if (note.note == KICK || note.note == 35) {
       // Check if on beat 1 of a bar
-      if (note.startTick % TICKS_PER_BAR == 0) {
+      if (note.start_tick % TICKS_PER_BAR == 0) {
         kicks_on_beat_one++;
       }
     }
@@ -167,7 +167,7 @@ TEST_F(DrumsTest, SnareOnBackbeats) {
   for (const auto& note : track.notes()) {
     if (note.note == SNARE || note.note == 40) {
       // Check if on beats 2 or 4 (backbeats)
-      Tick beat_in_bar = (note.startTick % TICKS_PER_BAR) / TICKS_PER_BEAT;
+      Tick beat_in_bar = (note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
       if (beat_in_bar == 1 || beat_in_bar == 3) {
         snares_on_backbeat++;
       }
@@ -217,7 +217,7 @@ TEST_F(DrumsTest, SameSeedProducesSameDrums) {
   for (size_t i = 0; i < track1.notes().size(); ++i) {
     EXPECT_EQ(track1.notes()[i].note, track2.notes()[i].note)
         << "Note mismatch at index " << i;
-    EXPECT_EQ(track1.notes()[i].startTick, track2.notes()[i].startTick)
+    EXPECT_EQ(track1.notes()[i].start_tick, track2.notes()[i].start_tick)
         << "Timing mismatch at index " << i;
   }
 }
@@ -303,7 +303,7 @@ TEST_F(DrumsTest, FourOnFloorKickPattern) {
   for (const auto& note : track.notes()) {
     if (note.note == KICK || note.note == 35) {
       // Check if on quarter note beat
-      if (note.startTick % TICKS_PER_BEAT == 0) {
+      if (note.start_tick % TICKS_PER_BEAT == 0) {
         kicks_on_quarters++;
       }
     }
@@ -375,9 +375,9 @@ TEST_F(DrumsTest, ChorusHasHigherDensity) {
   }
 
   for (const auto& note : track.notes()) {
-    if (note.startTick >= a_start && note.startTick < a_end) {
+    if (note.start_tick >= a_start && note.start_tick < a_end) {
       a_notes++;
-    } else if (note.startTick >= chorus_start && note.startTick < chorus_end) {
+    } else if (note.start_tick >= chorus_start && note.start_tick < chorus_end) {
       chorus_notes++;
     }
   }
@@ -405,8 +405,8 @@ TEST_F(DrumsTest, CrashOnSectionStart) {
 
     for (const auto& note : track.notes()) {
       if (note.note == CRASH || note.note == 49) {
-        if (note.startTick >= section.start_tick &&
-            note.startTick < section.start_tick + TICKS_PER_BEAT / 2) {
+        if (note.start_tick >= section.start_tick &&
+            note.start_tick < section.start_tick + TICKS_PER_BEAT / 2) {
           crashes_at_section_start++;
           break;
         }

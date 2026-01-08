@@ -247,7 +247,7 @@ void Generator::setMelody(const MelodyData& melody) {
   song_.clearTrack(TrackRole::Vocal);
   song_.clearTrack(TrackRole::Aux);
   for (const auto& note : melody.notes) {
-    song_.vocal().addNote(note.startTick, note.duration, note.note,
+    song_.vocal().addNote(note.start_tick, note.duration, note.note,
                           note.velocity);
   }
   generateAux();  // Regenerate aux based on restored vocal
@@ -295,8 +295,8 @@ void Generator::generateAux() {
       std::vector<NoteEvent> chorus_notes;
       Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
       for (const auto& note : vocal_track.notes()) {
-        if (note.startTick >= section.start_tick &&
-            note.startTick < section_end) {
+        if (note.start_tick >= section.start_tick &&
+            note.start_tick < section_end) {
           chorus_notes.push_back(note);
         }
       }
@@ -334,7 +334,7 @@ void Generator::generateAux() {
     }
 
     Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
-    int chord_idx = (section.startBar % progression.length);
+    int chord_idx = (section.start_bar % progression.length);
     int8_t chord_degree = progression.at(chord_idx);
 
     // Create context for aux generation
@@ -372,7 +372,7 @@ void Generator::generateAux() {
             varied_motif, section.start_tick, section_end,
             base_pitch, velocity);
         for (const auto& note : motif_notes) {
-          song_.aux().addNote(note.startTick, note.duration, note.note, note.velocity);
+          song_.aux().addNote(note.start_tick, note.duration, note.note, note.velocity);
         }
         continue;  // Skip aux generator for this section
       }
@@ -414,7 +414,7 @@ void Generator::generateAux() {
 
     // Add notes to main aux track
     for (const auto& note : section_aux.notes()) {
-      song_.aux().addNote(note.startTick, note.duration, note.note, note.velocity);
+      song_.aux().addNote(note.start_tick, note.duration, note.note, note.velocity);
     }
   }
 }
@@ -487,7 +487,7 @@ void Generator::rebuildMotifFromPattern() {
 
     for (Tick pos = section.start_tick; pos < section_end; pos += motif_length) {
       for (const auto& note : pattern) {
-        Tick absolute_tick = pos + note.startTick;
+        Tick absolute_tick = pos + note.start_tick;
         if (absolute_tick >= section_end) continue;
 
         song_.motif().addNote(absolute_tick, note.duration, note.note,

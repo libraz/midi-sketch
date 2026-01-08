@@ -91,7 +91,7 @@ MidiTrack AuxTrackGenerator::generate(
   }
 
   for (const auto& note : notes) {
-    track.addNote(note.startTick, note.duration, note.note, note.velocity);
+    track.addNote(note.start_tick, note.duration, note.note, note.velocity);
   }
 
   return track;
@@ -200,9 +200,9 @@ std::vector<NoteEvent> AuxTrackGenerator::generateTargetHint(
     for (size_t i = 0; i + 1 < ctx.main_melody->size(); ++i) {
       const auto& note = (*ctx.main_melody)[i];
       const auto& next = (*ctx.main_melody)[i + 1];
-      Tick gap = next.startTick - (note.startTick + note.duration);
+      Tick gap = next.start_tick - (note.start_tick + note.duration);
       if (gap > TICK_QUARTER) {
-        phrase_ends.push_back(note.startTick + note.duration);
+        phrase_ends.push_back(note.start_tick + note.duration);
       }
     }
   }
@@ -332,7 +332,7 @@ std::vector<NoteEvent> AuxTrackGenerator::generatePhraseTail(
         // Find the last melody note before this boundary
         uint8_t last_pitch = 60;  // Default
         for (const auto& note : *ctx.main_melody) {
-          Tick note_end = note.startTick + note.duration;
+          Tick note_end = note.start_tick + note.duration;
           if (note_end <= boundary.tick && note_end > boundary.tick - TICKS_PER_BAR) {
             last_pitch = note.note;
           }
@@ -346,14 +346,14 @@ std::vector<NoteEvent> AuxTrackGenerator::generatePhraseTail(
   if (phrase_info.empty()) {
     for (size_t i = 0; i < ctx.main_melody->size(); ++i) {
       const auto& note = (*ctx.main_melody)[i];
-      Tick note_end = note.startTick + note.duration;
+      Tick note_end = note.start_tick + note.duration;
 
       bool is_phrase_end = false;
       if (i == ctx.main_melody->size() - 1) {
         is_phrase_end = true;
       } else {
         const auto& next = (*ctx.main_melody)[i + 1];
-        Tick gap = next.startTick - note_end;
+        Tick gap = next.start_tick - note_end;
         is_phrase_end = (gap > TICK_QUARTER);
       }
 
@@ -522,7 +522,7 @@ bool AuxTrackGenerator::isPitchSafe(
   if (main_melody) {
     for (const auto& note : *main_melody) {
       if (notesOverlap(start, start + duration,
-                       note.startTick, note.startTick + note.duration)) {
+                       note.start_tick, note.start_tick + note.duration)) {
         int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(note.note));
         interval = interval % 12;
 
@@ -615,16 +615,16 @@ std::vector<NoteEvent> AuxTrackGenerator::generateUnison(
 
   for (const auto& note : *ctx.main_melody) {
     // Only process notes within section range
-    if (note.startTick < ctx.section_start ||
-        note.startTick >= ctx.section_end) continue;
+    if (note.start_tick < ctx.section_start ||
+        note.start_tick >= ctx.section_end) continue;
 
     NoteEvent unison = note;
 
     // Add slight timing offset for natural doubling feel
     int offset = offset_dist(rng) * (sign_dist(rng) ? 1 : -1);
-    unison.startTick = static_cast<Tick>(
+    unison.start_tick = static_cast<Tick>(
         std::max(static_cast<int>(ctx.section_start),
-                 static_cast<int>(note.startTick) + offset));
+                 static_cast<int>(note.start_tick) + offset));
 
     // Reduce velocity for background effect
     unison.velocity = static_cast<uint8_t>(
@@ -658,8 +658,8 @@ std::vector<NoteEvent> AuxTrackGenerator::generateHarmony(
   int note_count = 0;
   for (const auto& note : *ctx.main_melody) {
     // Only process notes within section range
-    if (note.startTick < ctx.section_start ||
-        note.startTick >= ctx.section_end) continue;
+    if (note.start_tick < ctx.section_start ||
+        note.start_tick >= ctx.section_end) continue;
 
     NoteEvent harm = note;
 
@@ -683,7 +683,7 @@ std::vector<NoteEvent> AuxTrackGenerator::generateHarmony(
 
     // Apply interval and snap to chord tone
     int new_pitch = note.note + interval;
-    int8_t chord_degree = harmony.getChordDegreeAt(note.startTick);
+    int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
     new_pitch = nearestChordTonePitch(new_pitch, chord_degree);
 
     // Clamp to reasonable range
@@ -691,9 +691,9 @@ std::vector<NoteEvent> AuxTrackGenerator::generateHarmony(
 
     // Add slight timing offset
     int offset = offset_dist(rng) * (sign_dist(rng) ? 1 : -1);
-    harm.startTick = static_cast<Tick>(
+    harm.start_tick = static_cast<Tick>(
         std::max(static_cast<int>(ctx.section_start),
-                 static_cast<int>(note.startTick) + offset));
+                 static_cast<int>(note.start_tick) + offset));
 
     // Reduce velocity
     harm.velocity = static_cast<uint8_t>(
@@ -749,7 +749,7 @@ std::vector<NoteEvent> AuxTrackGenerator::generateMelodicHook(
     pitch = std::clamp(pitch, static_cast<int>(aux_low), static_cast<int>(aux_high));
 
     NoteEvent note;
-    note.startTick = current_tick;
+    note.start_tick = current_tick;
     note.duration = NOTE_DURATION - TICKS_PER_BEAT / 8;  // Slight gap
     note.note = static_cast<uint8_t>(pitch);
     note.velocity = static_cast<uint8_t>(ctx.base_velocity * config.velocity_ratio);
@@ -769,7 +769,7 @@ std::vector<NoteEvent> AuxTrackGenerator::generateMelodicHook(
 
     for (const auto& note : base_hook) {
       NoteEvent hook_note = note;
-      hook_note.startTick = phrase_start + (note.startTick - ctx.section_start);
+      hook_note.start_tick = phrase_start + (note.start_tick - ctx.section_start);
 
       // Apply variation on the B phrase (every 4th phrase)
       if (phrase % 4 == 3) {
@@ -780,7 +780,7 @@ std::vector<NoteEvent> AuxTrackGenerator::generateMelodicHook(
       }
 
       // Skip if outside section
-      if (hook_note.startTick >= ctx.section_end) continue;
+      if (hook_note.start_tick >= ctx.section_end) continue;
 
       result.push_back(hook_note);
     }

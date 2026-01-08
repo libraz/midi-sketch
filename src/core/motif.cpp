@@ -162,7 +162,7 @@ Motif extractMotifFromChorus(const std::vector<NoteEvent>& chorus_notes,
 
   // Use first note as reference pitch
   int reference_pitch = chorus_notes[0].note;
-  Tick reference_start = chorus_notes[0].startTick;
+  Tick reference_start = chorus_notes[0].start_tick;
 
   motif.rhythm.clear();
   motif.contour_degrees.clear();
@@ -171,7 +171,7 @@ Motif extractMotifFromChorus(const std::vector<NoteEvent>& chorus_notes,
     const auto& note = chorus_notes[i];
 
     // Calculate relative timing in beats
-    Tick relative_tick = note.startTick - reference_start;
+    Tick relative_tick = note.start_tick - reference_start;
     float beat_pos = static_cast<float>(relative_tick) / TICKS_PER_BEAT;
 
     // Determine eighths and strong beat status
@@ -236,7 +236,7 @@ std::vector<NoteEvent> placeMotifInIntro(const Motif& motif,
       if (note_start >= intro_end) break;
 
       NoteEvent note;
-      note.startTick = note_start;
+      note.start_tick = note_start;
       note.duration = rn.eighths * (TICKS_PER_BEAT / 2);
       // Calculate pitch and snap to scale (key_offset=0 for C major)
       int raw_pitch = static_cast<int>(base_pitch) + motif.contour_degrees[i];

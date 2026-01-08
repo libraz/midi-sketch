@@ -32,21 +32,21 @@ void PostProcessor::applyHumanization(std::vector<MidiTrack*>& tracks,
     auto& notes = track->notes();
     for (auto& note : notes) {
       // Timing humanization: only on weak beats
-      if (!isStrongBeat(note.startTick)) {
+      if (!isStrongBeat(note.start_tick)) {
         float offset = timing_dist(rng) * timing_scale;
         int tick_offset = static_cast<int>(offset * MAX_TIMING_OFFSET / 3.0f);
         tick_offset = std::clamp(tick_offset,
                                  -static_cast<int>(MAX_TIMING_OFFSET),
                                  static_cast<int>(MAX_TIMING_OFFSET));
         // Ensure we don't go negative
-        if (note.startTick > static_cast<Tick>(-tick_offset)) {
-          note.startTick = static_cast<Tick>(
-              static_cast<int>(note.startTick) + tick_offset);
+        if (note.start_tick > static_cast<Tick>(-tick_offset)) {
+          note.start_tick = static_cast<Tick>(
+              static_cast<int>(note.start_tick) + tick_offset);
         }
       }
 
       // Velocity humanization: less variation on strong beats
-      float vel_factor = isStrongBeat(note.startTick) ? 0.5f : 1.0f;
+      float vel_factor = isStrongBeat(note.start_tick) ? 0.5f : 1.0f;
       int vel_offset = static_cast<int>(
           velocity_dist(rng) * velocity_scale * vel_factor);
       int new_velocity = static_cast<int>(note.velocity) + vel_offset;
@@ -64,24 +64,24 @@ void PostProcessor::fixVocalOverlaps(MidiTrack& vocal_track) {
   // Sort by startTick to ensure proper order after humanization
   std::sort(vocal_notes.begin(), vocal_notes.end(),
             [](const NoteEvent& a, const NoteEvent& b) {
-              return a.startTick < b.startTick;
+              return a.start_tick < b.start_tick;
             });
 
   for (size_t i = 0; i + 1 < vocal_notes.size(); ++i) {
-    Tick end_tick = vocal_notes[i].startTick + vocal_notes[i].duration;
-    Tick next_start = vocal_notes[i + 1].startTick;
+    Tick end_tick = vocal_notes[i].start_tick + vocal_notes[i].duration;
+    Tick next_start = vocal_notes[i + 1].start_tick;
 
     // Ensure no overlap: end of current note <= start of next note
     if (end_tick > next_start) {
       // Guard against underflow: if same startTick, use minimum duration
-      Tick max_duration = (next_start > vocal_notes[i].startTick)
-                              ? (next_start - vocal_notes[i].startTick)
+      Tick max_duration = (next_start > vocal_notes[i].start_tick)
+                              ? (next_start - vocal_notes[i].start_tick)
                               : 1;
       vocal_notes[i].duration = max_duration;
 
       // If still overlapping (same startTick case), shift next note
-      if (vocal_notes[i].startTick + vocal_notes[i].duration > next_start) {
-        vocal_notes[i + 1].startTick = vocal_notes[i].startTick + vocal_notes[i].duration;
+      if (vocal_notes[i].start_tick + vocal_notes[i].duration > next_start) {
+        vocal_notes[i + 1].start_tick = vocal_notes[i].start_tick + vocal_notes[i].duration;
       }
     }
   }

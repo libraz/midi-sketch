@@ -96,7 +96,7 @@ TEST(GeneratorTest, SetMelodyPreservesNoteData) {
   ASSERT_EQ(restored_notes.size(), saved.notes.size());
 
   for (size_t i = 0; i < restored_notes.size(); ++i) {
-    EXPECT_EQ(restored_notes[i].startTick, saved.notes[i].startTick);
+    EXPECT_EQ(restored_notes[i].start_tick, saved.notes[i].start_tick);
     EXPECT_EQ(restored_notes[i].duration, saved.notes[i].duration);
     EXPECT_EQ(restored_notes[i].note, saved.notes[i].note);
     EXPECT_EQ(restored_notes[i].velocity, saved.notes[i].velocity);
@@ -131,10 +131,10 @@ TEST(GeneratorTest, MelodyPhraseRepetition) {
 
   std::vector<NoteEvent> chorus1_notes, chorus2_notes;
   for (const auto& note : vocal) {
-    if (note.startTick >= chorus1_start && note.startTick < chorus1_end) {
+    if (note.start_tick >= chorus1_start && note.start_tick < chorus1_end) {
       chorus1_notes.push_back(note);
     }
-    if (note.startTick >= chorus2_start && note.startTick < chorus2_end) {
+    if (note.start_tick >= chorus2_start && note.start_tick < chorus2_end) {
       chorus2_notes.push_back(note);
     }
   }
@@ -178,10 +178,10 @@ TEST(GeneratorTest, MelodyPhraseRepetitionWithModulation) {
 
   std::vector<NoteEvent> chorus1_notes, chorus2_notes;
   for (const auto& note : vocal) {
-    if (note.startTick >= chorus1_start && note.startTick < chorus1_end) {
+    if (note.start_tick >= chorus1_start && note.start_tick < chorus1_end) {
       chorus1_notes.push_back(note);
     }
-    if (note.startTick >= chorus2_start && note.startTick < chorus2_end) {
+    if (note.start_tick >= chorus2_start && note.start_tick < chorus2_end) {
       chorus2_notes.push_back(note);
     }
   }
@@ -349,21 +349,21 @@ TEST(GeneratorTest, RegenerateMelodyWithParamsPreservesBGM) {
 
   // Verify chord notes are identical
   for (size_t i = 0; i < original_chord_notes.size(); ++i) {
-    EXPECT_EQ(new_chord_notes[i].startTick, original_chord_notes[i].startTick);
+    EXPECT_EQ(new_chord_notes[i].start_tick, original_chord_notes[i].start_tick);
     EXPECT_EQ(new_chord_notes[i].note, original_chord_notes[i].note);
     EXPECT_EQ(new_chord_notes[i].duration, original_chord_notes[i].duration);
   }
 
   // Verify bass notes are identical
   for (size_t i = 0; i < original_bass_notes.size(); ++i) {
-    EXPECT_EQ(new_bass_notes[i].startTick, original_bass_notes[i].startTick);
+    EXPECT_EQ(new_bass_notes[i].start_tick, original_bass_notes[i].start_tick);
     EXPECT_EQ(new_bass_notes[i].note, original_bass_notes[i].note);
     EXPECT_EQ(new_bass_notes[i].duration, original_bass_notes[i].duration);
   }
 
   // Verify drums notes are identical
   for (size_t i = 0; i < original_drums_notes.size(); ++i) {
-    EXPECT_EQ(new_drums_notes[i].startTick, original_drums_notes[i].startTick);
+    EXPECT_EQ(new_drums_notes[i].start_tick, original_drums_notes[i].start_tick);
     EXPECT_EQ(new_drums_notes[i].note, original_drums_notes[i].note);
     EXPECT_EQ(new_drums_notes[i].duration, original_drums_notes[i].duration);
   }
@@ -508,10 +508,10 @@ TEST(VocalRangeTest, AllNotesWithinSpecifiedRange) {
   for (const auto& note : notes) {
     EXPECT_GE(note.note, params.vocal_low)
         << "Note pitch " << (int)note.note << " below vocal_low at tick "
-        << note.startTick;
+        << note.start_tick;
     EXPECT_LE(note.note, params.vocal_high)
         << "Note pitch " << (int)note.note << " above vocal_high at tick "
-        << note.startTick;
+        << note.start_tick;
   }
 }
 
@@ -650,8 +650,8 @@ TEST(VocalMelodyTest, VocalIntervalConstraint) {
                             static_cast<int>(notes[i - 1].note));
     EXPECT_LE(interval, 9)
         << "Interval of " << interval << " semitones between notes at tick "
-        << notes[i - 1].startTick << " (pitch " << (int)notes[i - 1].note
-        << ") and tick " << notes[i].startTick << " (pitch "
+        << notes[i - 1].start_tick << " (pitch " << (int)notes[i - 1].note
+        << ") and tick " << notes[i].start_tick << " (pitch "
         << (int)notes[i].note << ") exceeds 9 semitones (major 6th)";
   }
 }
@@ -683,10 +683,10 @@ TEST(VocalMelodyTest, ChorusHookRepetition) {
 
   std::vector<NoteEvent> chorus1_notes, chorus2_notes;
   for (const auto& note : vocal) {
-    if (note.startTick >= chorus1_start && note.startTick < chorus1_end) {
+    if (note.start_tick >= chorus1_start && note.start_tick < chorus1_end) {
       chorus1_notes.push_back(note);
     }
-    if (note.startTick >= chorus2_start && note.startTick < chorus2_end) {
+    if (note.start_tick >= chorus2_start && note.start_tick < chorus2_end) {
       chorus2_notes.push_back(note);
     }
   }
@@ -1168,7 +1168,7 @@ TEST(GeneratorVocalTest, VocalGrooveSwingAffectsTiming) {
   bool has_timing_diff = false;
   size_t check_count = std::min(notes_straight.size(), notes_swing.size());
   for (size_t i = 0; i < check_count && !has_timing_diff; ++i) {
-    if (notes_straight[i].startTick != notes_swing[i].startTick) {
+    if (notes_straight[i].start_tick != notes_swing[i].start_tick) {
       has_timing_diff = true;
     }
   }
@@ -1457,7 +1457,7 @@ TEST(UltraVocaloidTest, ChorusGeneratesShortNotes) {
 
     Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
     for (const auto& note : notes) {
-      if (note.startTick >= section.start_tick && note.startTick < section_end) {
+      if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
         total_chorus_notes++;
         // 32nd note = 60 ticks, 16th note = 120 ticks
         // With gating, short notes should be < 150 ticks
@@ -1495,7 +1495,7 @@ TEST(UltraVocaloidTest, ReducedConsecutiveSameNotes) {
 
   for (size_t i = 1; i < notes.size(); ++i) {
     // Only count consecutive notes (within reasonable time gap)
-    if (notes[i].startTick - notes[i-1].startTick < TICKS_PER_BEAT * 2) {
+    if (notes[i].start_tick - notes[i-1].start_tick < TICKS_PER_BEAT * 2) {
       total_pairs++;
       if (notes[i].note == notes[i-1].note) {
         consecutive_same++;
@@ -1535,7 +1535,7 @@ TEST(UltraVocaloidTest, VerseDensityLowerThanChorus) {
 
     int section_note_count = 0;
     for (const auto& note : notes) {
-      if (note.startTick >= section.start_tick && note.startTick < section_end) {
+      if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
         section_note_count++;
       }
     }

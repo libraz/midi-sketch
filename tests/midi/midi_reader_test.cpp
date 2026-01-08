@@ -108,9 +108,9 @@ TEST(MidiReaderTest, RoundtripNoteValues) {
   ASSERT_FALSE(vocal->notes.empty());
   bool found = false;
   for (const auto& note : vocal->notes) {
-    if (note.pitch == 72 && note.velocity == 110) {
+    if (note.note == 72 && note.velocity == 110) {
       found = true;
-      EXPECT_EQ(note.start, 0u);
+      EXPECT_EQ(note.start_tick, 0u);
       EXPECT_EQ(note.duration, 480u);
       break;
     }
@@ -136,7 +136,7 @@ TEST(MidiReaderTest, RoundtripKeyTranspose) {
   ASSERT_FALSE(vocal->notes.empty());
 
   // Note should be transposed to D4 (62)
-  EXPECT_EQ(vocal->notes[0].pitch, 62);
+  EXPECT_EQ(vocal->notes[0].note, 62);
 }
 
 // ============================================================================
@@ -190,8 +190,8 @@ TEST(MidiReaderTest, GetTrackReturnsCorrectTrack) {
   // Vocal should have pitch 60, Bass should have pitch 36
   EXPECT_FALSE(vocal->notes.empty());
   EXPECT_FALSE(bass->notes.empty());
-  EXPECT_EQ(vocal->notes[0].pitch, 60);
-  EXPECT_EQ(bass->notes[0].pitch, 36);
+  EXPECT_EQ(vocal->notes[0].note, 60);
+  EXPECT_EQ(bass->notes[0].note, 36);
 }
 
 // ============================================================================
@@ -268,7 +268,7 @@ TEST(MidiReaderTest, NotesSortedByStartTime) {
 
   // Notes should be sorted by start time
   for (size_t i = 1; i < vocal->notes.size(); ++i) {
-    EXPECT_LE(vocal->notes[i - 1].start, vocal->notes[i].start);
+    EXPECT_LE(vocal->notes[i - 1].start_tick, vocal->notes[i].start_tick);
   }
 }
 
@@ -290,7 +290,7 @@ TEST(MidiReaderTest, DrumsNotTransposed) {
   ASSERT_FALSE(drums->notes.empty());
 
   // Drums should NOT be transposed
-  EXPECT_EQ(drums->notes[0].pitch, 36);
+  EXPECT_EQ(drums->notes[0].note, 36);
 }
 
 TEST(MidiReaderTest, VariableLengthQuantityParsing) {
@@ -315,11 +315,11 @@ TEST(MidiReaderTest, VariableLengthQuantityParsing) {
   bool found_first = false;
   bool found_second = false;
   for (const auto& note : vocal->notes) {
-    if (note.pitch == 60 && note.start == 0) {
+    if (note.note == 60 && note.start_tick == 0) {
       found_first = true;
       EXPECT_EQ(note.duration, 960u);
     }
-    if (note.pitch == 64 && note.start == 15360) {
+    if (note.note == 64 && note.start_tick == 15360) {
       found_second = true;
     }
   }

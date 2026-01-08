@@ -20,7 +20,7 @@ TEST(MidiTrackTest, AddNote) {
   EXPECT_EQ(track.lastTick(), 480u);
 
   const auto& notes = track.notes();
-  EXPECT_EQ(notes[0].startTick, 0u);
+  EXPECT_EQ(notes[0].start_tick, 0u);
   EXPECT_EQ(notes[0].duration, 480u);
   EXPECT_EQ(notes[0].note, 60);
   EXPECT_EQ(notes[0].velocity, 100);
@@ -108,9 +108,9 @@ TEST(MidiTrackTest, Slice) {
 
   EXPECT_EQ(sliced.noteCount(), 2u);
   const auto& notes = sliced.notes();
-  EXPECT_EQ(notes[0].startTick, 0u);   // Adjusted from 480
+  EXPECT_EQ(notes[0].start_tick, 0u);   // Adjusted from 480
   EXPECT_EQ(notes[0].note, 64);
-  EXPECT_EQ(notes[1].startTick, 480u); // Adjusted from 960
+  EXPECT_EQ(notes[1].start_tick, 480u); // Adjusted from 960
   EXPECT_EQ(notes[1].note, 67);
 }
 
@@ -126,9 +126,9 @@ TEST(MidiTrackTest, Append) {
 
   EXPECT_EQ(track1.noteCount(), 3u);
   const auto& notes = track1.notes();
-  EXPECT_EQ(notes[0].startTick, 0u);
-  EXPECT_EQ(notes[1].startTick, 1920u);
-  EXPECT_EQ(notes[2].startTick, 2400u);
+  EXPECT_EQ(notes[0].start_tick, 0u);
+  EXPECT_EQ(notes[1].start_tick, 1920u);
+  EXPECT_EQ(notes[2].start_tick, 2400u);
 }
 
 TEST(MidiTrackTest, Clear) {

@@ -700,7 +700,7 @@ TEST(KeyTransposeTest, InternalNotesAreCMajor) {
   for (size_t i = 0; i < notesC.size(); ++i) {
     EXPECT_EQ(notesC[i].note, notesD[i].note)
         << "Internal notes should be identical for same seed";
-    EXPECT_EQ(notesC[i].startTick, notesD[i].startTick);
+    EXPECT_EQ(notesC[i].start_tick, notesD[i].start_tick);
     EXPECT_EQ(notesC[i].duration, notesD[i].duration);
   }
 }
@@ -837,7 +837,7 @@ TEST(ModulationTest, InternalNotesIdenticalBeforeAndAfterModulation) {
   // Find notes before and after modulation tick
   std::vector<NoteEvent> before_notes, after_notes;
   for (const auto& note : vocal) {
-    if (note.startTick < mod_tick) {
+    if (note.start_tick < mod_tick) {
       before_notes.push_back(note);
     } else {
       after_notes.push_back(note);

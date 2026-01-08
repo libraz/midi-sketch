@@ -81,10 +81,10 @@ TEST(GeneratorTest, MotifPatternRepetition) {
   if (motif.size() >= 8) {
     // First motif cycle should have same relative timing as later ones
     Tick motif_length = 2 * TICKS_PER_BAR;
-    auto first_note_offset = motif[0].startTick % motif_length;
+    auto first_note_offset = motif[0].start_tick % motif_length;
     bool found_repeat = false;
     for (size_t i = 1; i < motif.size(); ++i) {
-      if (motif[i].startTick % motif_length == first_note_offset) {
+      if (motif[i].start_tick % motif_length == first_note_offset) {
         found_repeat = true;
         break;
       }
@@ -111,7 +111,7 @@ TEST(GeneratorTest, MotifOctaveLayeringInChorus) {
 
   std::vector<NoteEvent> chorus_notes;
   for (const auto& note : motif) {
-    if (note.startTick >= chorus_start && note.startTick < chorus_end) {
+    if (note.start_tick >= chorus_start && note.start_tick < chorus_end) {
       chorus_notes.push_back(note);
     }
   }
@@ -121,7 +121,7 @@ TEST(GeneratorTest, MotifOctaveLayeringInChorus) {
   bool has_octave_double = false;
   for (size_t i = 0; i < chorus_notes.size(); ++i) {
     for (size_t j = i + 1; j < chorus_notes.size(); ++j) {
-      if (chorus_notes[i].startTick == chorus_notes[j].startTick &&
+      if (chorus_notes[i].start_tick == chorus_notes[j].start_tick &&
           std::abs(static_cast<int>(chorus_notes[i].note) -
                    static_cast<int>(chorus_notes[j].note)) == 12) {
         has_octave_double = true;
@@ -326,7 +326,7 @@ TEST(GeneratorTest, GenerationOrderBassBeforeChord) {
   const auto& bass_notes = song.bass().notes();
   bool has_note_at_start = false;
   for (const auto& note : bass_notes) {
-    if (note.startTick < TICKS_PER_BEAT) {
+    if (note.start_tick < TICKS_PER_BEAT) {
       has_note_at_start = true;
       break;
     }
@@ -481,7 +481,7 @@ TEST(IntroMotifVariationTest, IntroSectionUsesChorusMotif) {
   const auto& aux_notes = song.aux().notes();
   int intro_aux_count = 0;
   for (const auto& note : aux_notes) {
-    if (note.startTick < intro_end) {
+    if (note.start_tick < intro_end) {
       intro_aux_count++;
     }
   }

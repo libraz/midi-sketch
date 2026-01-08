@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "core/chord_utils.h"
+#include "core/pitch_utils.h"
 
 namespace midisketch {
 namespace {
@@ -8,14 +9,15 @@ namespace {
 // Constants Tests
 // ============================================================================
 
-TEST(ChordUtilsTest, DegreeToPoitchClassConstants) {
-  EXPECT_EQ(DEGREE_TO_PITCH_CLASS[0], 0);   // C
-  EXPECT_EQ(DEGREE_TO_PITCH_CLASS[1], 2);   // D
-  EXPECT_EQ(DEGREE_TO_PITCH_CLASS[2], 4);   // E
-  EXPECT_EQ(DEGREE_TO_PITCH_CLASS[3], 5);   // F
-  EXPECT_EQ(DEGREE_TO_PITCH_CLASS[4], 7);   // G
-  EXPECT_EQ(DEGREE_TO_PITCH_CLASS[5], 9);   // A
-  EXPECT_EQ(DEGREE_TO_PITCH_CLASS[6], 11);  // B
+TEST(ChordUtilsTest, ScaleConstants) {
+  // SCALE from pitch_utils.h defines major scale intervals
+  EXPECT_EQ(SCALE[0], 0);   // C
+  EXPECT_EQ(SCALE[1], 2);   // D
+  EXPECT_EQ(SCALE[2], 4);   // E
+  EXPECT_EQ(SCALE[3], 5);   // F
+  EXPECT_EQ(SCALE[4], 7);   // G
+  EXPECT_EQ(SCALE[5], 9);   // A
+  EXPECT_EQ(SCALE[6], 11);  // B
 }
 
 // ============================================================================

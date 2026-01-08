@@ -12,7 +12,7 @@ TEST(TypesTest, TicksPerBeat) {
 
 TEST(TypesTest, NoteEventStructure) {
   NoteEvent note{0, 480, 60, 100};
-  EXPECT_EQ(note.startTick, 0u);
+  EXPECT_EQ(note.start_tick, 0u);
   EXPECT_EQ(note.duration, 480u);
   EXPECT_EQ(note.note, 60);
   EXPECT_EQ(note.velocity, 100);
@@ -69,7 +69,7 @@ TEST(TypesTest, MelodyDataStructure) {
   EXPECT_EQ(melody.seed, 12345u);
   EXPECT_EQ(melody.notes.size(), 2u);
   EXPECT_EQ(melody.notes[0].note, 60);
-  EXPECT_EQ(melody.notes[1].startTick, 480u);
+  EXPECT_EQ(melody.notes[1].start_tick, 480u);
 }
 
 TEST(TypesTest, MelodyDataCopy) {

@@ -1,5 +1,6 @@
 #include "analysis/dissonance.h"
 #include "core/chord.h"
+#include "core/json_helpers.h"
 #include "core/song.h"
 #include <algorithm>
 #include <cmath>
@@ -430,7 +431,7 @@ std::vector<TimedNote> collectPitchedNotes(const Song& song) {
 
   auto addTrackNotes = [&notes](const MidiTrack& track, TrackRole role) {
     for (const auto& note : track.notes()) {
-      notes.push_back({note.startTick, note.startTick + note.duration, note.note, role});
+      notes.push_back({note.start_tick, note.start_tick + note.duration, note.note, role});
     }
   };
 
@@ -580,8 +581,8 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
   // Only check vocal, motif, and arpeggio (melodic tracks)
   auto checkTrackForNonChordTones = [&](const MidiTrack& track, TrackRole role) {
     for (const auto& note : track.notes()) {
-      uint32_t bar = note.startTick / TICKS_PER_BAR;
-      auto chord_info = getChordAtTick(note.startTick, song, progression, params.mood);
+      uint32_t bar = note.start_tick / TICKS_PER_BAR;
+      auto chord_info = getChordAtTick(note.start_tick, song, progression, params.mood);
       int8_t degree = chord_info.degree;
       int pitch_class = note.note % 12;
 
@@ -597,7 +598,7 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
       }
 
       // Determine severity based on beat strength
-      BeatStrength beat_strength = getBeatStrength(note.startTick);
+      BeatStrength beat_strength = getBeatStrength(note.start_tick);
       DissonanceSeverity severity;
 
       // Aux track (sub-melody): always Low severity
@@ -621,9 +622,9 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
       DissonanceIssue issue;
       issue.type = DissonanceType::NonChordTone;
       issue.severity = severity;
-      issue.tick = note.startTick;
+      issue.tick = note.start_tick;
       issue.bar = bar;
-      issue.beat = 1.0f + static_cast<float>(note.startTick % TICKS_PER_BAR) / TICKS_PER_BEAT;
+      issue.beat = 1.0f + static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
       issue.track_name = trackRoleToString(role);
       issue.pitch = note.note;
       issue.pitch_name = midiNoteToName(note.note);
@@ -706,9 +707,9 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
         : track.name;
     for (const auto& note : track.notes) {
       TimedNoteWithName timed_note;
-      timed_note.start = note.start;
-      timed_note.end = note.start + note.duration;
-      timed_note.pitch = note.pitch;
+      timed_note.start = note.start_tick;
+      timed_note.end = note.start_tick + note.duration;
+      timed_note.pitch = note.note;
       timed_note.track_name = track_name;
       all_notes.push_back(timed_note);
     }
@@ -798,80 +799,78 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
 
 std::string dissonanceReportToJson(const DissonanceReport& report) {
   std::ostringstream ss;
-  ss << "{\n";
+  json::Writer w(ss);
 
-  // Summary
-  ss << "  \"summary\": {\n";
-  ss << "    \"total_issues\": " << report.summary.total_issues << ",\n";
-  ss << "    \"simultaneous_clashes\": " << report.summary.simultaneous_clashes << ",\n";
-  ss << "    \"non_chord_tones\": " << report.summary.non_chord_tones << ",\n";
-  ss << "    \"high_severity\": " << report.summary.high_severity << ",\n";
-  ss << "    \"medium_severity\": " << report.summary.medium_severity << ",\n";
-  ss << "    \"low_severity\": " << report.summary.low_severity << ",\n";
-  ss << "    \"modulation_tick\": " << report.summary.modulation_tick << ",\n";
-  ss << "    \"modulation_amount\": " << static_cast<int>(report.summary.modulation_amount) << ",\n";
-  ss << "    \"pre_modulation_issues\": " << report.summary.pre_modulation_issues << ",\n";
-  ss << "    \"post_modulation_issues\": " << report.summary.post_modulation_issues << "\n";
-  ss << "  },\n";
+  auto severityStr = [](DissonanceSeverity s) -> const char* {
+    switch (s) {
+      case DissonanceSeverity::High: return "high";
+      case DissonanceSeverity::Medium: return "medium";
+      default: return "low";
+    }
+  };
 
-  // Issues
-  ss << "  \"issues\": [";
+  // Format beat with 2 decimal places
+  auto formatBeat = [](float beat) {
+    std::ostringstream os;
+    os << std::fixed << std::setprecision(2) << beat;
+    return os.str();
+  };
 
-  for (size_t i = 0; i < report.issues.size(); ++i) {
-    const auto& issue = report.issues[i];
-    if (i > 0) ss << ",";
-    ss << "\n    {\n";
+  w.beginObject()
+      .beginObject("summary")
+      .write("total_issues", report.summary.total_issues)
+      .write("simultaneous_clashes", report.summary.simultaneous_clashes)
+      .write("non_chord_tones", report.summary.non_chord_tones)
+      .write("high_severity", report.summary.high_severity)
+      .write("medium_severity", report.summary.medium_severity)
+      .write("low_severity", report.summary.low_severity)
+      .write("modulation_tick", report.summary.modulation_tick)
+      .write("modulation_amount", static_cast<int>(report.summary.modulation_amount))
+      .write("pre_modulation_issues", report.summary.pre_modulation_issues)
+      .write("post_modulation_issues", report.summary.post_modulation_issues)
+      .endObject()
+      .beginArray("issues");
 
-    // Type
-    ss << "      \"type\": \""
-       << (issue.type == DissonanceType::SimultaneousClash ? "simultaneous_clash" : "non_chord_tone")
-       << "\",\n";
-
-    // Severity
-    const char* severity_str = "low";
-    if (issue.severity == DissonanceSeverity::High)
-      severity_str = "high";
-    else if (issue.severity == DissonanceSeverity::Medium)
-      severity_str = "medium";
-    ss << "      \"severity\": \"" << severity_str << "\",\n";
-
-    // Position
-    ss << "      \"tick\": " << issue.tick << ",\n";
-    ss << "      \"bar\": " << issue.bar << ",\n";
-    ss << "      \"beat\": " << std::fixed << std::setprecision(2) << issue.beat << ",\n";
+  for (const auto& issue : report.issues) {
+    w.beginObject()
+        .write("type", issue.type == DissonanceType::SimultaneousClash
+                           ? "simultaneous_clash"
+                           : "non_chord_tone")
+        .write("severity", severityStr(issue.severity))
+        .write("tick", issue.tick)
+        .write("bar", issue.bar)
+        .raw("beat", formatBeat(issue.beat));
 
     if (issue.type == DissonanceType::SimultaneousClash) {
-      ss << "      \"interval_semitones\": " << static_cast<int>(issue.interval_semitones) << ",\n";
-      ss << "      \"interval_name\": \"" << issue.interval_name << "\",\n";
-      ss << "      \"notes\": [\n";
-      for (size_t n = 0; n < issue.notes.size(); ++n) {
-        if (n > 0) ss << ",\n";
-        ss << "        {\"track\": \"" << issue.notes[n].track_name << "\", \"pitch\": "
-           << static_cast<int>(issue.notes[n].pitch) << ", \"name\": \"" << issue.notes[n].pitch_name
-           << "\"}";
-      }
-      ss << "\n      ]\n";
-    } else {
-      ss << "      \"track\": \"" << issue.track_name << "\",\n";
-      ss << "      \"pitch\": " << static_cast<int>(issue.pitch) << ",\n";
-      ss << "      \"pitch_name\": \"" << issue.pitch_name << "\",\n";
-      ss << "      \"chord_degree\": " << static_cast<int>(issue.chord_degree) << ",\n";
-      ss << "      \"chord_name\": \"" << issue.chord_name << "\",\n";
-      ss << "      \"chord_tones\": [";
-      for (size_t t = 0; t < issue.chord_tones.size(); ++t) {
-        if (t > 0) ss << ", ";
-        ss << "\"" << issue.chord_tones[t] << "\"";
-      }
-      ss << "]\n";
-    }
+      w.write("interval_semitones", static_cast<int>(issue.interval_semitones))
+          .write("interval_name", issue.interval_name)
+          .beginArray("notes");
 
-    ss << "    }";
+      for (const auto& note : issue.notes) {
+        w.beginObject()
+            .write("track", note.track_name)
+            .write("pitch", static_cast<int>(note.pitch))
+            .write("name", note.pitch_name)
+            .endObject();
+      }
+      w.endArray();
+    } else {
+      w.write("track", issue.track_name)
+          .write("pitch", static_cast<int>(issue.pitch))
+          .write("pitch_name", issue.pitch_name)
+          .write("chord_degree", static_cast<int>(issue.chord_degree))
+          .write("chord_name", issue.chord_name)
+          .beginArray("chord_tones");
+
+      for (const auto& tone : issue.chord_tones) {
+        w.value(tone);
+      }
+      w.endArray();
+    }
+    w.endObject();
   }
 
-  if (!report.issues.empty()) ss << "\n  ";
-  ss << "]\n";
-  ss << "}\n";
-
+  w.endArray().endObject();
   return ss.str();
 }
 

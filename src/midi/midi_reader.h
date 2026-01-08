@@ -7,20 +7,12 @@
 
 namespace midisketch {
 
-// Note info for parsed MIDI
-struct ParsedNote {
-  uint8_t pitch = 0;
-  uint8_t velocity = 0;
-  Tick start = 0;
-  Tick duration = 0;
-};
-
 // Parsed MIDI track info
 struct ParsedTrack {
   std::string name;
   uint8_t channel = 0;
   uint8_t program = 0;
-  std::vector<ParsedNote> notes;
+  std::vector<NoteEvent> notes;
 };
 
 // Parsed MIDI file info

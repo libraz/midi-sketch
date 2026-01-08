@@ -519,11 +519,11 @@ void generateMotifTrack(MidiTrack& track, Song& song,
       uint32_t bar_in_section = (pos - section.start_tick) / TICKS_PER_BAR;
 
       for (const auto& note : *current_pattern) {
-        Tick absolute_tick = pos + note.startTick;
+        Tick absolute_tick = pos + note.start_tick;
         if (absolute_tick >= section_end) continue;
 
         // Determine which bar this note falls in
-        uint32_t note_bar = bar_in_section + (note.startTick / TICKS_PER_BAR);
+        uint32_t note_bar = bar_in_section + (note.start_tick / TICKS_PER_BAR);
         // Use effective_prog_length to limit chord variety in BackgroundMotif mode
         int chord_idx = note_bar % effective_prog_length;
         int8_t degree = progression.at(chord_idx);

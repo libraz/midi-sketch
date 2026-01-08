@@ -9,8 +9,8 @@ ChordTones getChordTones(int8_t degree) {
   ChordTones ct{};
   ct.count = 0;
 
-  // Get root pitch class from degree
-  int root_pc = DEGREE_TO_PITCH_CLASS[((degree % 7) + 7) % 7];
+  // Get root pitch class from degree (use SCALE from pitch_utils.h)
+  int root_pc = SCALE[((degree % 7) + 7) % 7];
 
   // Get chord intervals from the central chord definition
   Chord chord = getChordNotes(degree);
@@ -35,7 +35,7 @@ std::vector<int> getChordTonePitchClasses(int8_t degree) {
 
   // Normalize degree to 0-6 range
   int normalized = ((degree % 7) + 7) % 7;
-  int root_pc = DEGREE_TO_PITCH_CLASS[normalized];
+  int root_pc = SCALE[normalized];
 
   // Get chord from chord.cpp for accurate intervals
   Chord chord = getChordNotes(degree);
@@ -49,15 +49,12 @@ std::vector<int> getChordTonePitchClasses(int8_t degree) {
   return result;
 }
 
-// Major scale intervals from root: W-W-H-W-W-W-H (0, 2, 4, 5, 7, 9, 11)
-static constexpr int MAJOR_SCALE_INTERVALS[7] = {0, 2, 4, 5, 7, 9, 11};
-
 bool isScaleTone(int pitch_class, uint8_t key) {
   // Normalize pitch class
   int normalized_pc = ((pitch_class % 12) + 12) % 12;
 
-  // Check each scale degree
-  for (int interval : MAJOR_SCALE_INTERVALS) {
+  // Check each scale degree (SCALE is defined in pitch_utils.h)
+  for (int interval : SCALE) {
     int scale_pc = (key + interval) % 12;
     if (normalized_pc == scale_pc) {
       return true;
@@ -70,7 +67,7 @@ std::vector<int> getScalePitchClasses(uint8_t key) {
   std::vector<int> result;
   result.reserve(7);
 
-  for (int interval : MAJOR_SCALE_INTERVALS) {
+  for (int interval : SCALE) {
     result.push_back((key + interval) % 12);
   }
 
@@ -82,7 +79,7 @@ std::vector<int> getAvailableTensionPitchClasses(int8_t degree) {
 
   // Normalize degree to 0-6 range
   int normalized = ((degree % 7) + 7) % 7;
-  int root_pc = DEGREE_TO_PITCH_CLASS[normalized];
+  int root_pc = SCALE[normalized];
 
   // Available tensions by degree (in semitones from root):
   // I (0): 9th (+2), 13th (+9) - avoid 11th (#4 clashes with 3rd)

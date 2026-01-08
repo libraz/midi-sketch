@@ -720,7 +720,7 @@ VoicedChord selectVoicing(uint8_t root, const Chord& chord,
     std::vector<size_t> tied_indices;
     int best_score = -1000;
     for (size_t i = 0; i < candidates.size(); ++i) {
-      int dist = std::abs(candidates[i].pitches[0] - 60);  // Distance from C4
+      int dist = std::abs(candidates[i].pitches[0] - MIDI_C4);  // Distance from C4
       int type_bonus = (candidates[i].type == preferred_type) ? 50 : 0;
       int score = type_bonus - dist;
       if (score > best_score) {
@@ -1086,12 +1086,12 @@ Tick findBassClashInRange(const MidiTrack* bass_track, Tick start, Tick end,
   if (bass_track == nullptr) return 0;
 
   for (const auto& note : bass_track->notes()) {
-    if (note.startTick >= start && note.startTick < end) {
+    if (note.start_tick >= start && note.start_tick < end) {
       int bass_pc = note.note % 12;
       int interval = std::abs(chord_pitch_pc - bass_pc);
       if (interval > 6) interval = 12 - interval;
       if (interval == 1) {  // Minor 2nd / Major 7th clash
-        return note.startTick;
+        return note.start_tick;
       }
     }
   }
@@ -1280,8 +1280,8 @@ void generateChordTrack(MidiTrack& track, const Song& song,
 
         // Get the dominant bass pitch class for this bar (check beat 1 notes)
         for (const auto& note : bass_track->notes()) {
-          if (note.startTick >= bar_start &&
-              note.startTick < bar_start + TICKS_PER_BEAT) {
+          if (note.start_tick >= bar_start &&
+              note.start_tick < bar_start + TICKS_PER_BEAT) {
             bass_root_pc = note.note % 12;
             break;  // Use first bass note on beat 1
           }

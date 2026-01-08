@@ -9,16 +9,10 @@
 namespace midisketch {
 
 // ============================================================================
-// Constants
-// ============================================================================
-
-// Scale degree to pitch class offset (C major reference)
-// C=0, D=2, E=4, F=5, G=7, A=9, B=11
-constexpr int DEGREE_TO_PITCH_CLASS[7] = {0, 2, 4, 5, 7, 9, 11};
-
-// ============================================================================
 // ChordTones
 // ============================================================================
+// Note: Use SCALE from pitch_utils.h for degree to pitch class conversion.
+// SCALE[degree] gives the pitch class offset for diatonic degrees (0-6).
 
 // Chord tones as pitch classes (0-11, semitones from C)
 struct ChordTones {

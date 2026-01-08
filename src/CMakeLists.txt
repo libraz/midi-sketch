@@ -1,5 +1,5 @@
-# Core library sources
-set(MIDISKETCH_SOURCES
+# Core sources (required for both WASM and CLI)
+set(MIDISKETCH_CORE_SOURCES
   midisketch.cpp
   midisketch_c.cpp
   core/types.cpp
@@ -23,10 +23,6 @@ set(MIDISKETCH_SOURCES
   core/post_processor.cpp
   core/section_utils.cpp
   midi/midi_writer.cpp
-  midi/midi_reader.cpp
-  midi/midi_validator.cpp
-  midi/ump.cpp
-  midi/midi2_writer.cpp
   track/track.cpp
   track/vocal.cpp
   track/chord_track.cpp
@@ -37,7 +33,21 @@ set(MIDISKETCH_SOURCES
   track/arpeggio.cpp
   track/melody_designer.cpp
   track/aux_track.cpp
+)
+
+# CLI-only sources (not needed for WASM)
+set(MIDISKETCH_CLI_SOURCES
+  midi/midi_reader.cpp
+  midi/midi_validator.cpp
+  midi/ump.cpp
+  midi/midi2_writer.cpp
   analysis/dissonance.cpp
+)
+
+# Combined sources for full library
+set(MIDISKETCH_SOURCES
+  ${MIDISKETCH_CORE_SOURCES}
+  ${MIDISKETCH_CLI_SOURCES}
 )
 
 # Create static library
@@ -45,8 +55,8 @@ add_library(midisketch_lib STATIC ${MIDISKETCH_SOURCES})
 target_include_directories(midisketch_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 if(BUILD_WASM)
-  # WASM executable
-  add_executable(midisketch ${MIDISKETCH_SOURCES})
+  # WASM executable (core sources only, excludes CLI-only modules)
+  add_executable(midisketch ${MIDISKETCH_CORE_SOURCES})
   target_include_directories(midisketch PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
   # Copy to dist directory

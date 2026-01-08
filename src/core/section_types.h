@@ -55,7 +55,7 @@ struct Section {
   SectionType type;    // Section type
   std::string name;    // Display name (INTRO / A / B / CHORUS)
   uint8_t bars;        // Number of bars
-  Tick startBar;       // Start position in bars
+  Tick start_bar;      // Start position in bars
   Tick start_tick;     // Start position in ticks (computed)
 
   // Section attributes (Phase 2 extension)

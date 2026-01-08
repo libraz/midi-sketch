@@ -23,9 +23,8 @@ uint8_t getFifth(uint8_t root) {
 }
 
 // Scale intervals from root (for walking bass)
-// Major scale: 0, 2, 4, 5, 7, 9, 11 (W-W-H-W-W-W-H)
+// Major scale uses SCALE from pitch_utils.h: {0, 2, 4, 5, 7, 9, 11}
 // Minor scale: 0, 2, 3, 5, 7, 8, 10 (W-H-W-W-H-W-W)
-constexpr int MAJOR_SCALE[] = {0, 2, 4, 5, 7, 9, 11};
 constexpr int MINOR_SCALE[] = {0, 2, 3, 5, 7, 8, 10};
 
 // Get scale tone at given scale degree (1-indexed, wraps at octave)
@@ -33,8 +32,8 @@ uint8_t getScaleTone(uint8_t root, int scale_degree, bool is_minor) {
   if (scale_degree <= 0) scale_degree = 1;
   int normalized = ((scale_degree - 1) % 7);
   int octave_offset = ((scale_degree - 1) / 7) * 12;
-  const int* scale = is_minor ? MINOR_SCALE : MAJOR_SCALE;
-  int interval = scale[normalized] + octave_offset;
+  // Use SCALE from pitch_utils.h for major, local MINOR_SCALE for minor
+  int interval = (is_minor ? MINOR_SCALE[normalized] : SCALE[normalized]) + octave_offset;
   return clampBass(static_cast<int>(root) + interval);
 }
 
@@ -47,12 +46,7 @@ uint8_t getOctave(uint8_t root) {
   return static_cast<uint8_t>(octave);
 }
 
-// Check if two pitch classes create a dissonant interval (minor 2nd or major 7th)
-bool isDissonantInterval(int pc1, int pc2) {
-  int interval = std::abs(pc1 - pc2);
-  if (interval > 6) interval = 12 - interval;  // Normalize to smaller interval
-  return interval == 1;  // Minor 2nd (major 7th inverts to minor 2nd)
-}
+// Note: isDissonantInterval is defined in pitch_utils.h
 
 // Get all possible chord tones for the target chord (major and minor triads + common extensions)
 // In C major context, considers both major (I, IV, V) and minor (ii, iii, vi) chord structures
@@ -399,11 +393,11 @@ BassAnalysis BassAnalysis::analyzeBar(const MidiTrack& track, Tick bar_start,
 
   for (const auto& note : track.notes()) {
     // Skip notes outside this bar
-    if (note.startTick < bar_start || note.startTick >= bar_end) {
+    if (note.start_tick < bar_start || note.start_tick >= bar_end) {
       continue;
     }
 
-    Tick relative_tick = note.startTick - bar_start;
+    Tick relative_tick = note.start_tick - bar_start;
     uint8_t pitch_class = note.note % 12;
     uint8_t root_class = expected_root % 12;
     uint8_t fifth_class = (expected_root + 7) % 12;
@@ -435,7 +429,7 @@ BassAnalysis BassAnalysis::analyzeBar(const MidiTrack& track, Tick bar_start,
 
     // Track accented notes (high velocity)
     if (note.velocity >= 90) {
-      result.accent_ticks.push_back(note.startTick);
+      result.accent_ticks.push_back(note.start_tick);
     }
   }
 

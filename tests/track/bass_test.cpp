@@ -117,7 +117,7 @@ TEST_F(BassTest, BassFollowsChordProgression) {
   int downbeat_notes = 0;
   for (const auto& note : bass_track.notes()) {
     // Downbeat = start of each bar (every TICKS_PER_BAR ticks)
-    if (note.startTick % TICKS_PER_BAR == 0) {
+    if (note.start_tick % TICKS_PER_BAR == 0) {
       downbeat_notes++;
     }
   }
@@ -288,7 +288,7 @@ TEST_F(BassTest, BassNotesOnChordChanges) {
   // Count bass notes at bar starts (chord changes typically happen at bar starts)
   int notes_at_bar_start = 0;
   for (const auto& note : track.notes()) {
-    if (note.startTick % TICKS_PER_BAR == 0) {
+    if (note.start_tick % TICKS_PER_BAR == 0) {
       notes_at_bar_start++;
     }
   }
@@ -325,7 +325,7 @@ TEST_F(BassTest, ChorusHasBassNotes) {
   // Count bass notes in chorus
   int chorus_notes = 0;
   for (const auto& note : track.notes()) {
-    if (note.startTick >= chorus_start && note.startTick < chorus_end) {
+    if (note.start_tick >= chorus_start && note.start_tick < chorus_end) {
       chorus_notes++;
     }
   }
@@ -357,7 +357,7 @@ TEST_F(BassTest, IntroMayHaveSparserBass) {
   // Count bass notes in intro
   int intro_notes = 0;
   for (const auto& note : track.notes()) {
-    if (note.startTick >= intro_start && note.startTick < intro_end) {
+    if (note.start_tick >= intro_start && note.start_tick < intro_end) {
       intro_notes++;
     }
   }
@@ -426,7 +426,7 @@ TEST_F(BassTest, ApproachNotesUsed) {
     const auto& curr = track.notes()[i];
 
     // If current note is on a bar line
-    if (curr.startTick % TICKS_PER_BAR == 0) {
+    if (curr.start_tick % TICKS_PER_BAR == 0) {
       int interval = std::abs(static_cast<int>(curr.note) -
                               static_cast<int>(prev.note));
       // Approach notes are typically 1-2 semitones or 5-7 (fourth/fifth)
@@ -456,8 +456,8 @@ TEST_F(BassTest, BassAvoidsMajorSeventhWithChord) {
   for (const auto& bass_note : bass_track.notes()) {
     for (const auto& chord_note : chord_track.notes()) {
       // Check if notes overlap in time
-      if (chord_note.startTick <= bass_note.startTick &&
-          chord_note.startTick + chord_note.duration > bass_note.startTick) {
+      if (chord_note.start_tick <= bass_note.start_tick &&
+          chord_note.start_tick + chord_note.duration > bass_note.start_tick) {
         int interval = std::abs(static_cast<int>(bass_note.note) -
                                 static_cast<int>(chord_note.note)) % 12;
         if (interval == 11 || interval == 1) {  // Major 7th or minor 2nd
@@ -533,8 +533,8 @@ TEST_F(BassTest, WalkingBassInCityPopMood) {
 
     int notes_in_section = 0;
     for (const auto& note : bass_track.notes()) {
-      if (note.startTick >= sec.start_tick &&
-          note.startTick < sec.start_tick + sec.bars * TICKS_PER_BAR) {
+      if (note.start_tick >= sec.start_tick &&
+          note.start_tick < sec.start_tick + sec.bars * TICKS_PER_BAR) {
         notes_in_section++;
       }
     }
@@ -573,8 +573,8 @@ TEST_F(BassTest, WalkingBassScaleTones) {
 
   for (size_t i = 1; i < bass_track.notes().size(); ++i) {
     // Only check notes within same bar (walking bass is per-bar)
-    Tick bar1 = bass_track.notes()[i-1].startTick / TICKS_PER_BAR;
-    Tick bar2 = bass_track.notes()[i].startTick / TICKS_PER_BAR;
+    Tick bar1 = bass_track.notes()[i-1].start_tick / TICKS_PER_BAR;
+    Tick bar2 = bass_track.notes()[i].start_tick / TICKS_PER_BAR;
     if (bar1 != bar2) continue;
 
     int interval = std::abs(static_cast<int>(bass_track.notes()[i].note) -

@@ -1,6 +1,7 @@
 #include "midisketch.h"
 #include <algorithm>
 #include <sstream>
+#include "core/json_helpers.h"
 
 namespace midisketch {
 
@@ -19,28 +20,27 @@ constexpr int kMetadataFormatVersion = 1;
 // Generate metadata JSON from generator params
 std::string generateMetadata(const GeneratorParams& params) {
   std::ostringstream oss;
-  oss << "{";
-  // Identification fields (for distinguishing from other JSON)
-  oss << "\"generator\":\"midi-sketch\",";
-  oss << "\"format_version\":" << kMetadataFormatVersion << ",";
-  oss << "\"library_version\":\"" << MidiSketch::version() << "\",";
-  // Generation parameters
-  oss << "\"seed\":" << params.seed << ",";
-  oss << "\"chord_id\":" << static_cast<int>(params.chord_id) << ",";
-  oss << "\"structure\":" << static_cast<int>(params.structure) << ",";
-  oss << "\"bpm\":" << params.bpm << ",";
-  oss << "\"key\":" << static_cast<int>(params.key) << ",";
-  oss << "\"mood\":" << static_cast<int>(params.mood) << ",";
-  oss << "\"vocal_low\":" << static_cast<int>(params.vocal_low) << ",";
-  oss << "\"vocal_high\":" << static_cast<int>(params.vocal_high) << ",";
-  oss << "\"vocal_attitude\":" << static_cast<int>(params.vocal_attitude) << ",";
-  oss << "\"vocal_style\":" << static_cast<int>(params.vocal_style) << ",";
-  oss << "\"melody_template\":" << static_cast<int>(params.melody_template) << ",";
-  oss << "\"melodic_complexity\":" << static_cast<int>(params.melodic_complexity) << ",";
-  oss << "\"hook_intensity\":" << static_cast<int>(params.hook_intensity) << ",";
-  oss << "\"composition_style\":" << static_cast<int>(params.composition_style) << ",";
-  oss << "\"drums_enabled\":" << (params.drums_enabled ? "true" : "false");
-  oss << "}";
+  json::Writer w(oss);
+  w.beginObject()
+      .write("generator", "midi-sketch")
+      .write("format_version", kMetadataFormatVersion)
+      .write("library_version", MidiSketch::version())
+      .write("seed", params.seed)
+      .write("chord_id", static_cast<int>(params.chord_id))
+      .write("structure", static_cast<int>(params.structure))
+      .write("bpm", params.bpm)
+      .write("key", static_cast<int>(params.key))
+      .write("mood", static_cast<int>(params.mood))
+      .write("vocal_low", static_cast<int>(params.vocal_low))
+      .write("vocal_high", static_cast<int>(params.vocal_high))
+      .write("vocal_attitude", static_cast<int>(params.vocal_attitude))
+      .write("vocal_style", static_cast<int>(params.vocal_style))
+      .write("melody_template", static_cast<int>(params.melody_template))
+      .write("melodic_complexity", static_cast<int>(params.melodic_complexity))
+      .write("hook_intensity", static_cast<int>(params.hook_intensity))
+      .write("composition_style", static_cast<int>(params.composition_style))
+      .write("drums_enabled", params.drums_enabled)
+      .endObject();
   return oss.str();
 }
 
@@ -112,6 +112,7 @@ std::string MidiSketch::getEventsJson() const {
   const auto& song = generator_.getSong();
   const auto& params = generator_.getParams();
   std::ostringstream oss;
+  json::Writer w(oss);
 
   Tick total_ticks = song.arrangement().totalTicks();
   double duration_seconds = static_cast<double>(total_ticks) /
@@ -122,150 +123,123 @@ std::string MidiSketch::getEventsJson() const {
   int8_t mod_amount = song.modulationAmount();
   Key key = params.key;
 
-  oss << "{";
-  oss << "\"bpm\":" << song.bpm() << ",";
-  oss << "\"division\":" << TICKS_PER_BEAT << ",";
-  oss << "\"duration_ticks\":" << total_ticks << ",";
-  oss << "\"duration_seconds\":" << duration_seconds << ",";
+  // Helper to write a single note
+  auto writeNote = [&](const NoteEvent& note, bool apply_transpose) {
+    double start_seconds = static_cast<double>(note.start_tick) /
+                           TICKS_PER_BEAT / song.bpm() * 60.0;
+    double duration_secs = static_cast<double>(note.duration) /
+                           TICKS_PER_BEAT / song.bpm() * 60.0;
 
-  // Tracks
-  oss << "\"tracks\":[";
-
-  auto writeTrack = [&](const MidiTrack& track, const char* name,
-                        uint8_t channel, uint8_t program, bool comma,
-                        bool apply_transpose) {
-    oss << "{";
-    oss << "\"name\":\"" << name << "\",";
-    oss << "\"channel\":" << static_cast<int>(channel) << ",";
-    oss << "\"program\":" << static_cast<int>(program) << ",";
-    oss << "\"notes\":[";
-
-    const auto& notes = track.notes();
-    for (size_t i = 0; i < notes.size(); ++i) {
-      const auto& note = notes[i];
-      double start_seconds = static_cast<double>(note.startTick) /
-                             TICKS_PER_BEAT / song.bpm() * 60.0;
-      double duration_secs = static_cast<double>(note.duration) /
-                             TICKS_PER_BEAT / song.bpm() * 60.0;
-
-      // Apply transpose and modulation for non-drum tracks
-      uint8_t pitch = note.note;
-      if (apply_transpose) {
-        pitch = transposePitch(pitch, key);
-        if (mod_tick > 0 && note.startTick >= mod_tick && mod_amount != 0) {
-          int new_pitch = pitch + mod_amount;
-          pitch = static_cast<uint8_t>(std::clamp(new_pitch, 0, 127));
-        }
+    uint8_t pitch = note.note;
+    if (apply_transpose) {
+      pitch = transposePitch(pitch, key);
+      if (mod_tick > 0 && note.start_tick >= mod_tick && mod_amount != 0) {
+        int new_pitch = pitch + mod_amount;
+        pitch = static_cast<uint8_t>(std::clamp(new_pitch, 0, 127));
       }
-
-      oss << "{";
-      oss << "\"pitch\":" << static_cast<int>(pitch) << ",";
-      oss << "\"velocity\":" << static_cast<int>(note.velocity) << ",";
-      oss << "\"start_ticks\":" << note.startTick << ",";
-      oss << "\"duration_ticks\":" << note.duration << ",";
-      oss << "\"start_seconds\":" << start_seconds << ",";
-      oss << "\"duration_seconds\":" << duration_secs;
-      oss << "}";
-      if (i < notes.size() - 1) oss << ",";
     }
 
-    oss << "]}";
-    if (comma) oss << ",";
+    w.beginObject()
+        .write("pitch", static_cast<int>(pitch))
+        .write("velocity", static_cast<int>(note.velocity))
+        .write("start_ticks", note.start_tick)
+        .write("duration_ticks", note.duration)
+        .write("start_seconds", start_seconds)
+        .write("duration_seconds", duration_secs)
+        .endObject();
   };
 
-  writeTrack(song.vocal(), "Vocal", 0, 0, true, true);
-  writeTrack(song.chord(), "Chord", 1, 4, true, true);
-  writeTrack(song.bass(), "Bass", 2, 33, true, true);
-  // Include Motif, Arpeggio, and Aux tracks if they are not empty
+  // Helper to write a track
+  auto writeTrack = [&](const MidiTrack& track, const char* name,
+                        uint8_t channel, uint8_t program, bool apply_transpose) {
+    w.beginObject()
+        .write("name", name)
+        .write("channel", static_cast<int>(channel))
+        .write("program", static_cast<int>(program))
+        .beginArray("notes");
+
+    for (const auto& note : track.notes()) {
+      writeNote(note, apply_transpose);
+    }
+
+    w.endArray().endObject();
+  };
+
+  w.beginObject()
+      .write("bpm", song.bpm())
+      .write("division", TICKS_PER_BEAT)
+      .write("duration_ticks", total_ticks)
+      .write("duration_seconds", duration_seconds)
+      .beginArray("tracks");
+
+  // Write tracks
+  writeTrack(song.vocal(), "Vocal", 0, 0, true);
+  writeTrack(song.chord(), "Chord", 1, 4, true);
+  writeTrack(song.bass(), "Bass", 2, 33, true);
   if (!song.motif().empty()) {
-    writeTrack(song.motif(), "Motif", 3, 81, true, true);
+    writeTrack(song.motif(), "Motif", 3, 81, true);
   }
   if (!song.arpeggio().empty()) {
-    writeTrack(song.arpeggio(), "Arpeggio", 4, 81, true, true);
+    writeTrack(song.arpeggio(), "Arpeggio", 4, 81, true);
   }
   if (!song.aux().empty()) {
-    writeTrack(song.aux(), "Aux", 5, 89, true, true);
+    writeTrack(song.aux(), "Aux", 5, 89, true);
   }
-  writeTrack(song.drums(), "Drums", 9, 0, true, false);  // No transpose for drums
+  writeTrack(song.drums(), "Drums", 9, 0, false);
 
-  // Add SE track with text events
+  // SE track with text events
   {
     const auto& se_track = song.se();
-    oss << "{";
-    oss << "\"name\":\"SE\",";
-    oss << "\"channel\":15,";
-    oss << "\"program\":0,";
+    w.beginObject()
+        .write("name", "SE")
+        .write("channel", 15)
+        .write("program", 0)
+        .beginArray("notes");
 
-    // Notes (call notes if enabled)
-    oss << "\"notes\":[";
-    const auto& notes = se_track.notes();
-    for (size_t i = 0; i < notes.size(); ++i) {
-      const auto& note = notes[i];
-      double start_seconds = static_cast<double>(note.startTick) /
-                             TICKS_PER_BEAT / song.bpm() * 60.0;
-      double duration_secs = static_cast<double>(note.duration) /
-                             TICKS_PER_BEAT / song.bpm() * 60.0;
-      oss << "{";
-      oss << "\"pitch\":" << static_cast<int>(note.note) << ",";
-      oss << "\"velocity\":" << static_cast<int>(note.velocity) << ",";
-      oss << "\"start_ticks\":" << note.startTick << ",";
-      oss << "\"duration_ticks\":" << note.duration << ",";
-      oss << "\"start_seconds\":" << start_seconds << ",";
-      oss << "\"duration_seconds\":" << duration_secs;
-      oss << "}";
-      if (i < notes.size() - 1) oss << ",";
+    for (const auto& note : se_track.notes()) {
+      writeNote(note, false);
     }
-    oss << "],";
 
-    // Text events (section markers, call events, modulation)
-    oss << "\"textEvents\":[";
-    const auto& text_events = se_track.textEvents();
-    for (size_t i = 0; i < text_events.size(); ++i) {
-      const auto& evt = text_events[i];
+    w.endArray().beginArray("textEvents");
+
+    for (const auto& evt : se_track.textEvents()) {
       double time_seconds = static_cast<double>(evt.time) /
                             TICKS_PER_BEAT / song.bpm() * 60.0;
-      oss << "{";
-      oss << "\"tick\":" << evt.time << ",";
-      oss << "\"time_seconds\":" << time_seconds << ",";
-      oss << "\"text\":\"" << evt.text << "\"";
-      oss << "}";
-      if (i < text_events.size() - 1) oss << ",";
+      w.beginObject()
+          .write("tick", evt.time)
+          .write("time_seconds", time_seconds)
+          .write("text", evt.text)
+          .endObject();
     }
-    oss << "]";
 
-    oss << "}";
+    w.endArray().endObject();
   }
 
-  oss << "],";
+  w.endArray().beginArray("sections");
 
   // Sections
-  oss << "\"sections\":[";
-  const auto& sections = song.arrangement().sections();
-  for (size_t i = 0; i < sections.size(); ++i) {
-    const auto& section = sections[i];
+  for (const auto& section : song.arrangement().sections()) {
     Tick end_tick = section.start_tick + section.bars * TICKS_PER_BAR;
     double start_seconds = static_cast<double>(section.start_tick) /
                            TICKS_PER_BEAT / song.bpm() * 60.0;
     double end_seconds = static_cast<double>(end_tick) /
                          TICKS_PER_BEAT / song.bpm() * 60.0;
 
-    oss << "{";
-    oss << "\"name\":\"" << section.name << "\",";
-    oss << "\"type\":\"" << section.name << "\",";
-    oss << "\"startTick\":" << section.start_tick << ",";
-    oss << "\"endTick\":" << end_tick << ",";
-    oss << "\"start_bar\":" << section.startBar << ",";
-    oss << "\"bars\":" << static_cast<int>(section.bars) << ",";
-    oss << "\"start_ticks\":" << section.start_tick << ",";
-    oss << "\"end_ticks\":" << end_tick << ",";
-    oss << "\"start_seconds\":" << start_seconds << ",";
-    oss << "\"end_seconds\":" << end_seconds;
-    oss << "}";
-    if (i < sections.size() - 1) oss << ",";
+    w.beginObject()
+        .write("name", section.name)
+        .write("type", section.name)
+        .write("startTick", section.start_tick)
+        .write("endTick", end_tick)
+        .write("start_bar", section.start_bar)
+        .write("bars", static_cast<int>(section.bars))
+        .write("start_ticks", section.start_tick)
+        .write("end_ticks", end_tick)
+        .write("start_seconds", start_seconds)
+        .write("end_seconds", end_seconds)
+        .endObject();
   }
-  oss << "]";
 
-  oss << "}";
+  w.endArray().endObject();
 
   return oss.str();
 }

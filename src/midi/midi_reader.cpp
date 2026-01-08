@@ -108,11 +108,14 @@ uint32_t MidiReader::readVariableLength(const uint8_t* data, size_t& offset,
                                          size_t max_size) {
   uint32_t result = 0;
   uint8_t byte;
+  int count = 0;
 
+  // MIDI VLQ allows maximum 4 bytes (28 bits of data)
   do {
-    if (offset >= max_size) return result;
+    if (offset >= max_size || count >= 4) return result;
     byte = data[offset++];
     result = (result << 7) | (byte & 0x7F);
+    count++;
   } while (byte & 0x80);
 
   return result;
@@ -183,11 +186,11 @@ bool MidiReader::parseTrack(const uint8_t* data, size_t size) {
         uint16_t key = (static_cast<uint16_t>(channel) << 8) | pitch;
         auto it = active_notes.find(key);
         if (it != active_notes.end()) {
-          ParsedNote note;
-          note.pitch = pitch;
+          NoteEvent note;
+          note.note = pitch;
           note.velocity = it->second.second;
-          note.start = it->second.first;
-          note.duration = current_tick - note.start;
+          note.start_tick = it->second.first;
+          note.duration = current_tick - note.start_tick;
           track.notes.push_back(note);
           active_notes.erase(it);
         }
@@ -206,11 +209,11 @@ bool MidiReader::parseTrack(const uint8_t* data, size_t size) {
           // Note Off (velocity 0)
           auto it = active_notes.find(key);
           if (it != active_notes.end()) {
-            ParsedNote note;
-            note.pitch = pitch;
+            NoteEvent note;
+            note.note = pitch;
             note.velocity = it->second.second;
-            note.start = it->second.first;
-            note.duration = current_tick - note.start;
+            note.start_tick = it->second.first;
+            note.duration = current_tick - note.start_tick;
             track.notes.push_back(note);
             active_notes.erase(it);
           }
@@ -218,11 +221,11 @@ bool MidiReader::parseTrack(const uint8_t* data, size_t size) {
           // Note On - close any existing note first
           auto it = active_notes.find(key);
           if (it != active_notes.end()) {
-            ParsedNote note;
-            note.pitch = pitch;
+            NoteEvent note;
+            note.note = pitch;
             note.velocity = it->second.second;
-            note.start = it->second.first;
-            note.duration = current_tick - note.start;
+            note.start_tick = it->second.first;
+            note.duration = current_tick - note.start_tick;
             track.notes.push_back(note);
           }
           active_notes[key] = {current_tick, velocity};
@@ -302,17 +305,17 @@ bool MidiReader::parseTrack(const uint8_t* data, size_t size) {
 
   // Close any remaining active notes
   for (const auto& [key, value] : active_notes) {
-    ParsedNote note;
-    note.pitch = key & 0xFF;
+    NoteEvent note;
+    note.note = key & 0xFF;
     note.velocity = value.second;
-    note.start = value.first;
-    note.duration = current_tick - note.start;
+    note.start_tick = value.first;
+    note.duration = current_tick - note.start_tick;
     track.notes.push_back(note);
   }
 
   // Sort notes by start time
   std::sort(track.notes.begin(), track.notes.end(),
-            [](const ParsedNote& a, const ParsedNote& b) { return a.start < b.start; });
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
   midi_.tracks.push_back(std::move(track));
   return true;

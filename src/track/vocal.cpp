@@ -129,13 +129,13 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes,
     case PhraseVariation::SlightRush: {
       // Rush weak beat notes slightly (10-20 ticks earlier)
       for (auto& note : notes) {
-        Tick pos_in_bar = note.startTick % TICKS_PER_BAR;
+        Tick pos_in_bar = note.start_tick % TICKS_PER_BAR;
         // Weak beats: beat 2 and 4 (around TICKS_PER_BEAT and 3*TICKS_PER_BEAT)
         bool is_weak = (pos_in_bar >= TICKS_PER_BEAT - 60 && pos_in_bar <= TICKS_PER_BEAT + 60) ||
                        (pos_in_bar >= 3 * TICKS_PER_BEAT - 60 && pos_in_bar <= 3 * TICKS_PER_BEAT + 60);
-        if (is_weak && note.startTick >= 15) {
+        if (is_weak && note.start_tick >= 15) {
           std::uniform_int_distribution<Tick> rush_dist(10, 20);
-          note.startTick -= rush_dist(rng);
+          note.start_tick -= rush_dist(rng);
         }
       }
       break;
@@ -150,8 +150,8 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes,
         if (prob_dist(rng) < 0.3f) {  // 30% of notes
           int shift = tick_dist(rng);
           if (shift != 0) {
-            int64_t new_tick = static_cast<int64_t>(note.startTick) + shift;
-            note.startTick = static_cast<Tick>(std::max(static_cast<int64_t>(0), new_tick));
+            int64_t new_tick = static_cast<int64_t>(note.start_tick) + shift;
+            note.start_tick = static_cast<Tick>(std::max(static_cast<int64_t>(0), new_tick));
           }
         }
       }
@@ -180,7 +180,7 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes,
           if (notes[i].duration <= TICKS_PER_BEAT / 2 &&
               notes[i + 1].duration <= TICKS_PER_BEAT / 2) {
             // Merge: extend first note, remove second
-            notes[i].duration = (notes[i + 1].startTick + notes[i + 1].duration) - notes[i].startTick;
+            notes[i].duration = (notes[i + 1].start_tick + notes[i + 1].duration) - notes[i].start_tick;
             notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(i + 1));
             break;  // Only merge one pair
           }
@@ -195,7 +195,7 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes,
         for (size_t i = 1; i < notes.size(); ++i) {
           if (notes[i].note == notes[i - 1].note) {
             // Extend previous note to cover the removed note
-            notes[i - 1].duration = (notes[i].startTick + notes[i].duration) - notes[i - 1].startTick;
+            notes[i - 1].duration = (notes[i].start_tick + notes[i].duration) - notes[i - 1].start_tick;
             notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(i));
             break;  // Only simplify one instance
           }
@@ -223,7 +223,7 @@ CadenceType detectCadenceType(const std::vector<NoteEvent>& notes, int8_t chord_
   bool is_tonic_tone = (pitch_class == 0 || pitch_class == 4 || pitch_class == 7);
 
   // Check if on strong beat (beats 1 or 3)
-  Tick beat_pos = last_note.startTick % TICKS_PER_BAR;
+  Tick beat_pos = last_note.start_tick % TICKS_PER_BAR;
   bool is_strong_beat = (beat_pos < TICKS_PER_BEAT / 4) ||
                         (beat_pos >= TICKS_PER_BEAT * 2 - TICKS_PER_BEAT / 4 &&
                          beat_pos < TICKS_PER_BEAT * 2 + TICKS_PER_BEAT / 4);
@@ -281,7 +281,7 @@ float calculateSingingEffort(const std::vector<NoteEvent>& notes) {
 
   // Density penalty: many notes in short time
   if (notes.size() > 1) {
-    Tick phrase_length = notes.back().startTick + notes.back().duration - notes[0].startTick;
+    Tick phrase_length = notes.back().start_tick + notes.back().duration - notes[0].start_tick;
     float notes_per_beat = notes.size() * TICKS_PER_BEAT / static_cast<float>(phrase_length);
     if (notes_per_beat > 2.0f) {  // More than 2 notes per beat = dense
       effort += (notes_per_beat - 2.0f) * kMediumEffortScore;
@@ -290,7 +290,7 @@ float calculateSingingEffort(const std::vector<NoteEvent>& notes) {
 
   // Normalize by phrase length (effort per bar)
   if (notes.size() > 0) {
-    Tick phrase_length = notes.back().startTick + notes.back().duration - notes[0].startTick;
+    Tick phrase_length = notes.back().start_tick + notes.back().duration - notes[0].start_tick;
     float bars = phrase_length / static_cast<float>(TICKS_PER_BAR);
     if (bars > 0) {
       effort /= bars;
@@ -306,7 +306,7 @@ std::vector<NoteEvent> shiftTiming(const std::vector<NoteEvent>& notes, Tick off
   result.reserve(notes.size());
   for (const auto& note : notes) {
     NoteEvent shifted = note;
-    shifted.startTick += offset;
+    shifted.start_tick += offset;
     result.push_back(shifted);
   }
   return result;
@@ -345,7 +345,7 @@ std::vector<NoteEvent> toRelativeTiming(const std::vector<NoteEvent>& notes, Tic
   result.reserve(notes.size());
   for (const auto& note : notes) {
     NoteEvent relative = note;
-    relative.startTick -= section_start;
+    relative.start_tick -= section_start;
     result.push_back(relative);
   }
   return result;
@@ -429,24 +429,24 @@ void removeOverlaps(std::vector<NoteEvent>& notes) {
   // Sort by start tick
   std::sort(notes.begin(), notes.end(),
             [](const NoteEvent& a, const NoteEvent& b) {
-              return a.startTick < b.startTick;
+              return a.start_tick < b.start_tick;
             });
 
   // Adjust durations to prevent overlap
   for (size_t i = 0; i + 1 < notes.size(); ++i) {
-    Tick end_tick = notes[i].startTick + notes[i].duration;
-    Tick next_start = notes[i + 1].startTick;
+    Tick end_tick = notes[i].start_tick + notes[i].duration;
+    Tick next_start = notes[i + 1].start_tick;
 
     if (end_tick > next_start) {
       // Guard against underflow: if same startTick, use minimum duration
-      Tick max_duration = (next_start > notes[i].startTick)
-                              ? (next_start - notes[i].startTick)
+      Tick max_duration = (next_start > notes[i].start_tick)
+                              ? (next_start - notes[i].start_tick)
                               : 1;
       notes[i].duration = max_duration;
 
       // If still overlapping (same startTick case), shift next note forward
-      if (notes[i].startTick + notes[i].duration > notes[i + 1].startTick) {
-        notes[i + 1].startTick = notes[i].startTick + notes[i].duration;
+      if (notes[i].start_tick + notes[i].duration > notes[i + 1].start_tick) {
+        notes[i + 1].start_tick = notes[i].start_tick + notes[i].duration;
       }
     }
   }
@@ -472,8 +472,8 @@ void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
   std::vector<size_t> hook_note_indices;
 
   for (size_t i = 0; i < notes.size(); ++i) {
-    if (notes[i].startTick >= section_start &&
-        notes[i].startTick < section_start + hook_window) {
+    if (notes[i].start_tick >= section_start &&
+        notes[i].start_tick < section_start + hook_window) {
       hook_note_indices.push_back(i);
     }
   }
@@ -525,7 +525,7 @@ void applyGrooveFeel(std::vector<NoteEvent>& notes, VocalGrooveFeel groove) {
 
   for (auto& note : notes) {
     // Get position within beat
-    Tick beat_pos = note.startTick % TICKS_PER_BEAT;
+    Tick beat_pos = note.start_tick % TICKS_PER_BEAT;
     Tick shift = 0;
 
     switch (groove) {
@@ -547,7 +547,7 @@ void applyGrooveFeel(std::vector<NoteEvent>& notes, VocalGrooveFeel groove) {
       case VocalGrooveFeel::Syncopated:
         // Push notes on beats 2 and 4 earlier (anticipation)
         {
-          Tick bar_pos = note.startTick % TICKS_PER_BAR;
+          Tick bar_pos = note.start_tick % TICKS_PER_BAR;
           // Beats 2 and 4 (at 480 and 1440 ticks)
           if ((bar_pos >= TICKS_PER_BEAT - TICK_16TH && bar_pos < TICKS_PER_BEAT + TICK_16TH) ||
               (bar_pos >= TICKS_PER_BEAT * 3 - TICK_16TH && bar_pos < TICKS_PER_BEAT * 3 + TICK_16TH)) {
@@ -582,8 +582,8 @@ void applyGrooveFeel(std::vector<NoteEvent>& notes, VocalGrooveFeel groove) {
 
     // Apply shift (ensure non-negative)
     if (shift != 0) {
-      int64_t new_tick = static_cast<int64_t>(note.startTick) + shift;
-      note.startTick = static_cast<Tick>(std::max(static_cast<int64_t>(0), new_tick));
+      int64_t new_tick = static_cast<int64_t>(note.start_tick) + shift;
+      note.start_tick = static_cast<Tick>(std::max(static_cast<int64_t>(0), new_tick));
     }
   }
 }
@@ -665,7 +665,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
 
     // Get chord for this section
-    int chord_idx = section.startBar % progression.length;
+    int chord_idx = section.start_bar % progression.length;
     int8_t chord_degree = progression.at(chord_idx);
 
     // Apply register shift for section (clamped to original range)
@@ -713,7 +713,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       if (harmony_ctx != nullptr) {
         for (auto& note : section_notes) {
           uint8_t safe_pitch = harmony_ctx->getSafePitch(
-              note.note, note.startTick, note.duration, TrackRole::Vocal,
+              note.note, note.start_tick, note.duration, TrackRole::Vocal,
               section_vocal_low, section_vocal_high);
           note.note = safe_pitch;
         }
@@ -758,7 +758,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       if (harmony_ctx != nullptr) {
         for (auto& note : section_notes) {
           uint8_t safe_pitch = harmony_ctx->getSafePitch(
-              note.note, note.startTick, note.duration, TrackRole::Vocal,
+              note.note, note.start_tick, note.duration, TrackRole::Vocal,
               section_vocal_low, section_vocal_high);
           note.note = safe_pitch;
         }
@@ -831,7 +831,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
   // Add notes to track
   for (const auto& note : all_notes) {
-    track.addNote(note.startTick, note.duration, note.note, note.velocity);
+    track.addNote(note.start_tick, note.duration, note.note, note.velocity);
   }
 }
 

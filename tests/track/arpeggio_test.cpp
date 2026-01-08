@@ -87,7 +87,7 @@ TEST_F(ArpeggioTest, SixteenthNoteSpeed) {
   bool found_sixteenth = false;
 
   for (size_t i = 1; i < track.notes().size() && i < 10; ++i) {
-    Tick spacing = track.notes()[i].startTick - track.notes()[i-1].startTick;
+    Tick spacing = track.notes()[i].start_tick - track.notes()[i-1].start_tick;
     if (spacing == expected_duration) {
       found_sixteenth = true;
       break;
@@ -109,7 +109,7 @@ TEST_F(ArpeggioTest, EighthNoteSpeed) {
   bool found_eighth = false;
 
   for (size_t i = 1; i < track.notes().size() && i < 10; ++i) {
-    Tick spacing = track.notes()[i].startTick - track.notes()[i-1].startTick;
+    Tick spacing = track.notes()[i].start_tick - track.notes()[i-1].start_tick;
     if (spacing == expected_duration) {
       found_eighth = true;
       break;
@@ -318,7 +318,7 @@ TEST_F(ArpeggioTest, SyncChordFalseRefreshesAtSectionBoundary) {
   bool has_notes_after_first_section = false;
 
   for (const auto& note : arpeggio.notes()) {
-    if (note.startTick >= first_section_end) {
+    if (note.start_tick >= first_section_end) {
       has_notes_after_first_section = true;
       break;
     }
@@ -350,8 +350,8 @@ TEST_F(ArpeggioTest, SyncChordFalsePatternRefreshedPerSection) {
     bool has_notes_in_mid_section = false;
 
     for (const auto& note : arpeggio.notes()) {
-      if (note.startTick >= mid_section_start &&
-          note.startTick < mid_section_start + TICKS_PER_BAR) {
+      if (note.start_tick >= mid_section_start &&
+          note.start_tick < mid_section_start + TICKS_PER_BAR) {
         has_notes_in_mid_section = true;
         break;
       }

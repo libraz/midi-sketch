@@ -110,9 +110,9 @@ TEST_F(HarmonyIntegrationTest, VocalNotesAreChordTonesOrExtensions) {
     // Find which section and bar this note is in
     for (const auto& section : sections) {
       Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
-      if (note.startTick >= section.start_tick && note.startTick < section_end) {
+      if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
         // Calculate bar within section
-        int bar = (note.startTick - section.start_tick) / TICKS_PER_BAR;
+        int bar = (note.start_tick - section.start_tick) / TICKS_PER_BAR;
         int chord_idx = bar % progression.length;
         int8_t degree = progression.at(chord_idx);
 
@@ -274,7 +274,7 @@ TEST_F(HarmonyIntegrationTest, FiveChordProgressionHasCadence) {
 
     // Check if any chord note in last bar has G as root (V chord indicator)
     for (const auto& note : chord_notes) {
-      if (note.startTick >= last_bar_start && note.startTick < section_end) {
+      if (note.start_tick >= last_bar_start && note.start_tick < section_end) {
         // G is pitch class 7 - just verify the search works
         // It's acceptable if not found (depends on progression alignment)
         if (getPitchClass(note.note) == 7) {
@@ -313,8 +313,8 @@ TEST_F(HarmonyIntegrationTest, MotifNotesAvoidDissonance) {
       // Find the chord for this note's position
       for (const auto& section : sections) {
         Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
-        if (note.startTick >= section.start_tick && note.startTick < section_end) {
-          int bar = (note.startTick - section.start_tick) / TICKS_PER_BAR;
+        if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
+          int bar = (note.start_tick - section.start_tick) / TICKS_PER_BAR;
           int chord_idx = bar % progression.length;
           int8_t degree = progression.at(chord_idx);
 
@@ -366,16 +366,16 @@ TEST_F(HarmonyIntegrationTest, VocalRespectsChordExtensionParams_ExtensionsDisab
   for (const auto& note : vocal_notes) {
     for (const auto& section : sections) {
       Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
-      if (note.startTick >= section.start_tick && note.startTick < section_end) {
+      if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
         // Check if on strong beat (beat 1 or 3)
-        Tick position_in_bar = (note.startTick - section.start_tick) % TICKS_PER_BAR;
+        Tick position_in_bar = (note.start_tick - section.start_tick) % TICKS_PER_BAR;
         bool is_strong_beat = (position_in_bar < TICKS_PER_BEAT ||
                                (position_in_bar >= 2 * TICKS_PER_BEAT &&
                                 position_in_bar < 3 * TICKS_PER_BEAT));
 
         if (is_strong_beat) {
           strong_beat_count++;
-          int bar = (note.startTick - section.start_tick) / TICKS_PER_BAR;
+          int bar = (note.start_tick - section.start_tick) / TICKS_PER_BAR;
           int chord_idx = bar % progression.length;
           int8_t degree = progression.at(chord_idx);
 
@@ -426,15 +426,15 @@ TEST_F(HarmonyIntegrationTest, VocalRespectsChordExtensionParams_ExtensionsEnabl
   for (const auto& note : vocal_notes) {
     for (const auto& section : sections) {
       Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
-      if (note.startTick >= section.start_tick && note.startTick < section_end) {
-        Tick position_in_bar = (note.startTick - section.start_tick) % TICKS_PER_BAR;
+      if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
+        Tick position_in_bar = (note.start_tick - section.start_tick) % TICKS_PER_BAR;
         bool is_strong_beat = (position_in_bar < TICKS_PER_BEAT ||
                                (position_in_bar >= 2 * TICKS_PER_BEAT &&
                                 position_in_bar < 3 * TICKS_PER_BEAT));
 
         if (is_strong_beat) {
           total_strong_beat++;
-          int bar = (note.startTick - section.start_tick) / TICKS_PER_BAR;
+          int bar = (note.start_tick - section.start_tick) / TICKS_PER_BAR;
           int chord_idx = bar % progression.length;
           int8_t degree = progression.at(chord_idx);
 
@@ -482,8 +482,8 @@ TEST_F(HarmonyIntegrationTest, MotifTensionRespectsExtensionParams_Disabled) {
     for (const auto& note : motif_notes) {
       for (const auto& section : sections) {
         Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
-        if (note.startTick >= section.start_tick && note.startTick < section_end) {
-          int bar = (note.startTick - section.start_tick) / TICKS_PER_BAR;
+        if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
+          int bar = (note.start_tick - section.start_tick) / TICKS_PER_BAR;
           int chord_idx = bar % progression.length;
           int8_t degree = progression.at(chord_idx);
 
@@ -581,7 +581,7 @@ TEST_F(HarmonyIntegrationTest, FiveChordProgressionCadenceInsertion) {
     int chord_notes_in_section = 0;
 
     for (const auto& note : song.chord().notes()) {
-      if (note.startTick >= section.start_tick && note.startTick < section_end) {
+      if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
         chord_notes_in_section++;
       }
     }
@@ -627,8 +627,8 @@ TEST_F(HarmonyIntegrationTest, BassSyncWithDominantPreparation) {
     // Get bass note in second half of last bar
     uint8_t bass_in_second_half = 0;
     for (const auto& note : bass_notes) {
-      if (note.startTick >= second_half_start &&
-          note.startTick < last_bar_start + TICKS_PER_BAR) {
+      if (note.start_tick >= second_half_start &&
+          note.start_tick < last_bar_start + TICKS_PER_BAR) {
         bass_in_second_half = note.note;
         break;
       }
@@ -637,8 +637,8 @@ TEST_F(HarmonyIntegrationTest, BassSyncWithDominantPreparation) {
     // Get chord root in second half (lowest note as approximation)
     uint8_t chord_root_in_second_half = 127;
     for (const auto& note : chord_notes) {
-      if (note.startTick >= second_half_start &&
-          note.startTick < last_bar_start + TICKS_PER_BAR) {
+      if (note.start_tick >= second_half_start &&
+          note.start_tick < last_bar_start + TICKS_PER_BAR) {
         if (note.note < chord_root_in_second_half) {
           chord_root_in_second_half = note.note;
         }
@@ -737,8 +737,8 @@ TEST_F(HarmonyIntegrationTest, BassChordMajor7thClashAvoided) {
         // Get bass notes in this bar (beat 1)
         std::set<int> bass_pitch_classes;
         for (const auto& note : bass_notes) {
-          if (note.startTick >= bar_start &&
-              note.startTick < bar_start + TICKS_PER_BEAT) {
+          if (note.start_tick >= bar_start &&
+              note.start_tick < bar_start + TICKS_PER_BEAT) {
             bass_pitch_classes.insert(note.note % 12);
           }
         }
@@ -746,8 +746,8 @@ TEST_F(HarmonyIntegrationTest, BassChordMajor7thClashAvoided) {
         // Get chord notes in this bar (beat 1)
         std::set<int> chord_pitch_classes;
         for (const auto& note : chord_notes) {
-          if (note.startTick >= bar_start &&
-              note.startTick < bar_start + TICKS_PER_BEAT) {
+          if (note.start_tick >= bar_start &&
+              note.start_tick < bar_start + TICKS_PER_BEAT) {
             chord_pitch_classes.insert(note.note % 12);
           }
         }
@@ -797,11 +797,11 @@ TEST_F(HarmonyIntegrationTest, ChordVoicingFiltersBassClashes) {
   for (const auto& chord_note : chord_notes) {
     for (const auto& bass_note : bass_notes) {
       // Check if notes overlap in time
-      Tick chord_end = chord_note.startTick + chord_note.duration;
-      Tick bass_end = bass_note.startTick + bass_note.duration;
+      Tick chord_end = chord_note.start_tick + chord_note.duration;
+      Tick bass_end = bass_note.start_tick + bass_note.duration;
 
-      bool overlap = (chord_note.startTick < bass_end &&
-                      chord_end > bass_note.startTick);
+      bool overlap = (chord_note.start_tick < bass_end &&
+                      chord_end > bass_note.start_tick);
 
       if (overlap) {
         simultaneous_note_pairs++;
@@ -850,14 +850,14 @@ TEST_F(HarmonyIntegrationTest, VocalChordClashAvoided) {
 
   // Check all vocal-chord note pairs for dissonant clashes
   for (const auto& vocal_note : vocal_notes) {
-    Tick vocal_end = vocal_note.startTick + vocal_note.duration;
+    Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
 
     for (const auto& chord_note : chord_notes) {
-      Tick chord_end = chord_note.startTick + chord_note.duration;
+      Tick chord_end = chord_note.start_tick + chord_note.duration;
 
       // Check if notes overlap in time
-      bool overlap = (vocal_note.startTick < chord_end &&
-                      vocal_end > chord_note.startTick);
+      bool overlap = (vocal_note.start_tick < chord_end &&
+                      vocal_end > chord_note.start_tick);
 
       if (overlap) {
         overlap_count++;
@@ -913,17 +913,17 @@ TEST_F(HarmonyIntegrationTest, ChorusHookRepetitionAvoidsClashes) {
 
       // Check vocal notes in this chorus
       for (const auto& vocal_note : vocal_notes) {
-        if (vocal_note.startTick < section.start_tick ||
-            vocal_note.startTick >= section_end) continue;
+        if (vocal_note.start_tick < section.start_tick ||
+            vocal_note.start_tick >= section_end) continue;
 
-        Tick vocal_end = vocal_note.startTick + vocal_note.duration;
+        Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
 
         // Check against overlapping chord notes
         for (const auto& chord_note : chord_notes) {
-          Tick chord_end = chord_note.startTick + chord_note.duration;
+          Tick chord_end = chord_note.start_tick + chord_note.duration;
 
-          bool overlap = (vocal_note.startTick < chord_end &&
-                          vocal_end > chord_note.startTick);
+          bool overlap = (vocal_note.start_tick < chord_end &&
+                          vocal_end > chord_note.start_tick);
 
           if (overlap) {
             int interval = std::abs((vocal_note.note % 12) - (chord_note.note % 12));
@@ -931,7 +931,7 @@ TEST_F(HarmonyIntegrationTest, ChorusHookRepetitionAvoidsClashes) {
 
             // Should not have minor 2nd (major 7th) clashes
             EXPECT_NE(interval, 1)
-                << "Chorus at bar " << (vocal_note.startTick / TICKS_PER_BAR)
+                << "Chorus at bar " << (vocal_note.start_tick / TICKS_PER_BAR)
                 << " has major 7th clash between vocal " << (int)vocal_note.note
                 << " and chord " << (int)chord_note.note
                 << " (seed=" << params_.seed << ")";
@@ -965,13 +965,13 @@ TEST_F(HarmonyIntegrationTest, TritoneDetectedAsDissonant) {
 
   // Check for tritone intervals between vocal and chord/bass
   for (const auto& vocal_note : vocal_notes) {
-    Tick vocal_end = vocal_note.startTick + vocal_note.duration;
+    Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
 
     // Check against chord
     for (const auto& chord_note : chord_notes) {
-      Tick chord_end = chord_note.startTick + chord_note.duration;
-      bool overlap = (vocal_note.startTick < chord_end &&
-                      vocal_end > chord_note.startTick);
+      Tick chord_end = chord_note.start_tick + chord_note.duration;
+      bool overlap = (vocal_note.start_tick < chord_end &&
+                      vocal_end > chord_note.start_tick);
 
       if (overlap) {
         int interval = std::abs((vocal_note.note % 12) - (chord_note.note % 12));
@@ -982,9 +982,9 @@ TEST_F(HarmonyIntegrationTest, TritoneDetectedAsDissonant) {
 
     // Check against bass
     for (const auto& bass_note : bass_notes) {
-      Tick bass_end = bass_note.startTick + bass_note.duration;
-      bool overlap = (vocal_note.startTick < bass_end &&
-                      vocal_end > bass_note.startTick);
+      Tick bass_end = bass_note.start_tick + bass_note.duration;
+      bool overlap = (vocal_note.start_tick < bass_end &&
+                      vocal_end > bass_note.start_tick);
 
       if (overlap) {
         int interval = std::abs((vocal_note.note % 12) - (bass_note.note % 12));
@@ -1032,13 +1032,13 @@ TEST_F(HarmonyIntegrationTest, BassCollisionDetectedInLowRegister) {
   for (const auto& vocal_note : vocal_notes) {
     if (vocal_note.note >= LOW_REGISTER) continue;
 
-    Tick vocal_end = vocal_note.startTick + vocal_note.duration;
+    Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
 
     for (const auto& bass_note : bass_notes) {
-      Tick bass_end = bass_note.startTick + bass_note.duration;
+      Tick bass_end = bass_note.start_tick + bass_note.duration;
 
       // Check overlap
-      if (vocal_note.startTick < bass_end && vocal_end > bass_note.startTick) {
+      if (vocal_note.start_tick < bass_end && vocal_end > bass_note.start_tick) {
         int interval = std::abs(vocal_note.note - bass_note.note);
         // In low register, intervals <= 3 semitones are problematic
         if (interval <= 3) {
@@ -1084,15 +1084,15 @@ TEST_F(HarmonyIntegrationTest, VocalAvoidsBassByOctaveShift) {
     if (vocal_note.note >= 60) continue;  // Skip notes above C4
     notes_in_low_register++;
 
-    Tick vocal_end = vocal_note.startTick + vocal_note.duration;
+    Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
     bool has_nearby_bass = false;
     bool has_good_separation = true;
 
     for (const auto& bass_note : bass_notes) {
-      Tick bass_end = bass_note.startTick + bass_note.duration;
+      Tick bass_end = bass_note.start_tick + bass_note.duration;
 
       // Check overlap
-      if (vocal_note.startTick < bass_end && vocal_end > bass_note.startTick) {
+      if (vocal_note.start_tick < bass_end && vocal_end > bass_note.start_tick) {
         has_nearby_bass = true;
         int interval = std::abs(vocal_note.note - bass_note.note);
         // Good separation is > 3 semitones (more than minor 3rd)
@@ -1233,8 +1233,8 @@ TEST_F(HarmonyIntegrationTest, AllTracksLowDissonanceAfterImprovements) {
     // Check vocal-chord
     for (const auto& v : vocal) {
       for (const auto& c : chord) {
-        if (v.startTick < c.startTick + c.duration &&
-            v.startTick + v.duration > c.startTick) {
+        if (v.start_tick < c.start_tick + c.duration &&
+            v.start_tick + v.duration > c.start_tick) {
           pair_count++;
           int interval = std::abs((v.note % 12) - (c.note % 12));
           if (interval > 6) interval = 12 - interval;
@@ -1246,8 +1246,8 @@ TEST_F(HarmonyIntegrationTest, AllTracksLowDissonanceAfterImprovements) {
     // Check vocal-bass
     for (const auto& v : vocal) {
       for (const auto& b : bass) {
-        if (v.startTick < b.startTick + b.duration &&
-            v.startTick + v.duration > b.startTick) {
+        if (v.start_tick < b.start_tick + b.duration &&
+            v.start_tick + v.duration > b.start_tick) {
           pair_count++;
           int interval = std::abs((v.note % 12) - (b.note % 12));
           if (interval > 6) interval = 12 - interval;

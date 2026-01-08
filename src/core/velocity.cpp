@@ -152,8 +152,8 @@ void applyTransitionDynamics(MidiTrack& track, Tick section_start,
 
   for (auto& note : notes) {
     // Only modify notes in the transition region
-    if (note.startTick >= transition_start && note.startTick < section_end) {
-      float position = static_cast<float>(note.startTick - transition_start) /
+    if (note.start_tick >= transition_start && note.start_tick < section_end) {
+      float position = static_cast<float>(note.start_tick - transition_start) /
                        static_cast<float>(duration);
 
       float multiplier = start_mult + (end_mult - start_mult) * position;

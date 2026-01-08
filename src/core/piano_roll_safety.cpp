@@ -27,7 +27,7 @@ CollisionResult checkTrackCollision(const MidiTrack& track, TrackRole role,
 
   for (const auto& note : track.notes()) {
     // Check if note is sounding at this tick
-    if (note.startTick <= tick && tick < note.startTick + note.duration) {
+    if (note.start_tick <= tick && tick < note.start_tick + note.duration) {
       int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(note.note));
 
       if (isSevereInterval(interval)) {

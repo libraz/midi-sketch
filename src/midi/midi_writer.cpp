@@ -118,19 +118,20 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name,
     uint8_t velocity;
   };
   std::vector<Event> events;
+  events.reserve(track.notes().size() * 2);  // 2 events per note (on + off)
 
   for (const auto& note : track.notes()) {
     uint8_t pitch = note.note;
     if (channel != 9) {  // Not drums
       pitch = transposePitch(pitch, key);
       // Apply modulation if note starts after modulation point
-      if (mod_tick > 0 && note.startTick >= mod_tick && mod_amount != 0) {
+      if (mod_tick > 0 && note.start_tick >= mod_tick && mod_amount != 0) {
         int new_pitch = pitch + mod_amount;
         pitch = static_cast<uint8_t>(std::clamp(new_pitch, 0, 127));
       }
     }
-    events.push_back({note.startTick, 0x90, pitch, note.velocity});
-    events.push_back({note.startTick + note.duration, 0x80, pitch, 0});
+    events.push_back({note.start_tick, 0x90, pitch, note.velocity});
+    events.push_back({note.start_tick + note.duration, 0x80, pitch, 0});
   }
 
   // Sort events by time

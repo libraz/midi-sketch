@@ -361,7 +361,7 @@ TEST_F(CallSystemTest, DrumsTrack_ChantSection_HasReducedDensity) {
   size_t chant_notes = 0;
   size_t total_notes = drums.noteCount();
   for (const auto& note : drums.notes()) {
-    if (note.startTick >= chant_start && note.startTick < chant_end) {
+    if (note.start_tick >= chant_start && note.start_tick < chant_end) {
       ++chant_notes;
     }
   }
@@ -405,7 +405,7 @@ TEST_F(CallSystemTest, DrumsTrack_MixBreakSection_HasFullEnergy) {
 
   size_t mix_notes = 0;
   for (const auto& note : drums.notes()) {
-    if (note.startTick >= mix_start && note.startTick < mix_end) {
+    if (note.start_tick >= mix_start && note.start_tick < mix_end) {
       ++mix_notes;
     }
   }
@@ -445,7 +445,7 @@ TEST_F(CallSystemTest, BassTrack_ChantSection_HasSimplePattern) {
 
   size_t chant_notes = 0;
   for (const auto& note : bass.notes()) {
-    if (note.startTick >= chant_start && note.startTick < chant_end) {
+    if (note.start_tick >= chant_start && note.start_tick < chant_end) {
       ++chant_notes;
     }
   }
@@ -487,10 +487,10 @@ TEST_F(CallSystemTest, ChordTrack_ChantSection_HasSustainedVoicing) {
   size_t chant_attacks = 0;
   Tick last_tick = 0;
   for (const auto& note : chord.notes()) {
-    if (note.startTick >= chant_start && note.startTick < chant_end) {
-      if (note.startTick != last_tick) {
+    if (note.start_tick >= chant_start && note.start_tick < chant_end) {
+      if (note.start_tick != last_tick) {
         ++chant_attacks;
-        last_tick = note.startTick;
+        last_tick = note.start_tick;
       }
     }
   }
@@ -524,7 +524,7 @@ TEST_F(CallSystemTest, VocalTrack_CallSections_AreEmpty) {
       // Count vocal notes in this section
       size_t section_vocals = 0;
       for (const auto& note : vocal.notes()) {
-        if (note.startTick >= section_start && note.startTick < section_end) {
+        if (note.start_tick >= section_start && note.start_tick < section_end) {
           ++section_vocals;
         }
       }
@@ -572,7 +572,7 @@ TEST_F(CallSystemTest, SETrack_CallSections_HaveCallNotes) {
       Tick section_end = section_start + section.bars * TICKS_PER_BAR;
 
       for (const auto& note : se.notes()) {
-        if (note.startTick >= section_start && note.startTick < section_end) {
+        if (note.start_tick >= section_start && note.start_tick < section_end) {
           notes_in_call_sections = true;
           break;
         }

@@ -123,12 +123,13 @@ bool isDissonantIntervalWithContext(int pc1, int pc2, int8_t chord_degree) {
     return true;
   }
 
-  // Tritone (6) is acceptable on dominant (V) chord
-  // The tritone is part of the dominant 7th chord structure
+  // Tritone (6) is acceptable on dominant (V) and diminished (vii°) chords
+  // V: tritone between 3rd and 7th of dominant 7th chord
+  // vii°: tritone between root and diminished 5th
   if (interval == 6) {
     int normalized = ((chord_degree % 7) + 7) % 7;
-    if (normalized == 4) {
-      return false;  // V chord - tritone is part of the chord
+    if (normalized == 4 || normalized == 6) {
+      return false;  // V or vii chord - tritone is part of the chord
     }
     return true;  // Other chords - tritone is dissonant
   }
@@ -152,10 +153,9 @@ int snapToNearestScaleTone(int pitch, int key_offset) {
   }
 
   // Reconstruct pitch with snapped pitch class
-  int octave = (pitch - key_offset) / 12;
-  if ((pitch - key_offset) < 0 && pc != 0) {
-    octave--;  // Adjust for negative pitch values
-  }
+  // Use floor division for correct octave calculation with negative values
+  int relative = pitch - key_offset;
+  int octave = relative >= 0 ? relative / 12 : (relative - 11) / 12;
   return octave * 12 + best_pc + key_offset;
 }
 

@@ -93,8 +93,8 @@ TEST(DissonanceTest, JsonOutputFormat) {
 
   std::string json = dissonanceReportToJson(report);
 
-  // Check for key elements in JSON
-  EXPECT_NE(json.find("\"total_issues\": 2"), std::string::npos);
+  // Check for key elements in JSON (compact format without spaces)
+  EXPECT_NE(json.find("\"total_issues\":2"), std::string::npos);
   EXPECT_NE(json.find("\"simultaneous_clash\""), std::string::npos);
   EXPECT_NE(json.find("\"non_chord_tone\""), std::string::npos);
   EXPECT_NE(json.find("\"minor 2nd\""), std::string::npos);
@@ -107,8 +107,9 @@ TEST(DissonanceTest, EmptyReportJson) {
   DissonanceReport report{};
   std::string json = dissonanceReportToJson(report);
 
-  EXPECT_NE(json.find("\"total_issues\": 0"), std::string::npos);
-  EXPECT_NE(json.find("\"issues\": []"), std::string::npos);
+  // Compact JSON format
+  EXPECT_NE(json.find("\"total_issues\":0"), std::string::npos);
+  EXPECT_NE(json.find("\"issues\":[]"), std::string::npos);
 }
 
 TEST(DissonanceTest, DifferentChordProgressions) {
@@ -407,7 +408,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiBasic) {
   ParsedTrack vocal_track;
   vocal_track.name = "Vocal";
   vocal_track.channel = 0;
-  ParsedNote note1{64, 100, 0, 480};  // E4 at tick 0
+  NoteEvent note1{0, 480, 64, 100};  // E4 at tick 0
   vocal_track.notes.push_back(note1);
   midi.tracks.push_back(vocal_track);
 
@@ -415,7 +416,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiBasic) {
   ParsedTrack chord_track;
   chord_track.name = "Chord";
   chord_track.channel = 1;
-  ParsedNote note2{65, 80, 0, 480};  // F4 at tick 0
+  NoteEvent note2{0, 480, 65, 80};  // F4 at tick 0
   chord_track.notes.push_back(note2);
   midi.tracks.push_back(chord_track);
 
@@ -451,8 +452,8 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiNoDrums) {
   ParsedTrack drums_track;
   drums_track.name = "Drums";
   drums_track.channel = 9;
-  ParsedNote kick{36, 100, 0, 240};
-  ParsedNote snare{38, 100, 0, 240};  // Same time as kick
+  NoteEvent kick{0, 240, 36, 100};
+  NoteEvent snare{0, 240, 38, 100};  // Same time as kick
   drums_track.notes.push_back(kick);
   drums_track.notes.push_back(snare);
   midi.tracks.push_back(drums_track);
@@ -461,7 +462,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiNoDrums) {
   ParsedTrack melody_track;
   melody_track.name = "Melody";
   melody_track.channel = 0;
-  ParsedNote note{60, 100, 0, 480};
+  NoteEvent note{0, 480, 60, 100};
   melody_track.notes.push_back(note);
   midi.tracks.push_back(melody_track);
 
@@ -503,7 +504,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiNoClash) {
   ParsedTrack track1;
   track1.name = "Track1";
   track1.channel = 0;
-  ParsedNote note1{60, 100, 0, 480};  // C4
+  NoteEvent note1{0, 480, 60, 100};  // C4
   track1.notes.push_back(note1);
   midi.tracks.push_back(track1);
 
@@ -511,7 +512,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiNoClash) {
   ParsedTrack track2;
   track2.name = "Track2";
   track2.channel = 1;
-  ParsedNote note2{64, 80, 0, 480};  // E4
+  NoteEvent note2{0, 480, 64, 80};  // E4
   track2.notes.push_back(note2);
   midi.tracks.push_back(track2);
 
@@ -538,7 +539,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiTritone) {
   ParsedTrack track1;
   track1.name = "Track1";
   track1.channel = 0;
-  ParsedNote note1{60, 100, 0, 480};  // C4
+  NoteEvent note1{0, 480, 60, 100};  // C4
   track1.notes.push_back(note1);
   midi.tracks.push_back(track1);
 
@@ -546,7 +547,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiTritone) {
   ParsedTrack track2;
   track2.name = "Track2";
   track2.channel = 1;
-  ParsedNote note2{66, 80, 0, 480};  // F#4
+  NoteEvent note2{0, 480, 66, 80};  // F#4
   track2.notes.push_back(note2);
   midi.tracks.push_back(track2);
 
@@ -577,7 +578,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiMajor7th) {
   ParsedTrack track1;
   track1.name = "Track1";
   track1.channel = 0;
-  ParsedNote note1{60, 100, 0, 480};  // C4
+  NoteEvent note1{0, 480, 60, 100};  // C4
   track1.notes.push_back(note1);
   midi.tracks.push_back(track1);
 
@@ -585,7 +586,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiMajor7th) {
   ParsedTrack track2;
   track2.name = "Track2";
   track2.channel = 1;
-  ParsedNote note2{71, 80, 0, 480};  // B4
+  NoteEvent note2{0, 480, 71, 80};  // B4
   track2.notes.push_back(note2);
   midi.tracks.push_back(track2);
 
@@ -620,7 +621,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiNonOverlappingNotes) {
   ParsedTrack track1;
   track1.name = "Track1";
   track1.channel = 0;
-  ParsedNote note1{64, 100, 0, 480};  // E4, ends at 480
+  NoteEvent note1{0, 480, 64, 100};  // E4, ends at 480
   track1.notes.push_back(note1);
   midi.tracks.push_back(track1);
 
@@ -628,7 +629,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiNonOverlappingNotes) {
   ParsedTrack track2;
   track2.name = "Track2";
   track2.channel = 1;
-  ParsedNote note2{65, 80, 480, 480};  // F4, starts at 480
+  NoteEvent note2{480, 480, 65, 80};  // F4, starts at 480
   track2.notes.push_back(note2);
   midi.tracks.push_back(track2);
 

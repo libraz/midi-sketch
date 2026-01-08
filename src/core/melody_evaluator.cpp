@@ -49,11 +49,11 @@ float MelodyEvaluator::calcChordToneRatio(const std::vector<NoteEvent>& notes,
 
   for (const auto& note : notes) {
     // Strong beat: tick % (TICKS_PER_BEAT * 2) == 0 (beat 1 and 3)
-    if (note.startTick % (TICKS_PER_BEAT * 2) == 0) {
+    if (note.start_tick % (TICKS_PER_BEAT * 2) == 0) {
       ++strong_beat_notes;
 
       // Check if note is a chord tone
-      std::vector<int> chord_tones = harmony.getChordTonesAt(note.startTick);
+      std::vector<int> chord_tones = harmony.getChordTonesAt(note.start_tick);
       int pitch_class = note.note % 12;
 
       for (int tone : chord_tones) {
@@ -76,6 +76,7 @@ float MelodyEvaluator::calcContourShape(const std::vector<NoteEvent>& notes) {
 
   // Extract contour (direction changes)
   std::vector<int8_t> contour;
+  contour.reserve(notes.size() - 1);
   for (size_t i = 1; i < notes.size(); ++i) {
     int diff = notes[i].note - notes[i - 1].note;
     if (diff > 0)

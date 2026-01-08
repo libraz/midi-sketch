@@ -53,11 +53,23 @@ void HarmonyContext::initialize(const Arrangement& arrangement,
 }
 
 int8_t HarmonyContext::getChordDegreeAt(Tick tick) const {
-  for (const auto& chord : chords_) {
-    if (tick >= chord.start && tick < chord.end) {
-      return chord.degree;
+  if (chords_.empty()) {
+    return 0;  // Fallback: return I chord
+  }
+
+  // Binary search: find first chord whose start > tick
+  auto it = std::upper_bound(
+      chords_.begin(), chords_.end(), tick,
+      [](Tick t, const ChordInfo& c) { return t < c.start; });
+
+  // If it's not the first element, check the previous chord
+  if (it != chords_.begin()) {
+    --it;
+    if (tick >= it->start && tick < it->end) {
+      return it->degree;
     }
   }
+
   // Fallback: return I chord
   return 0;
 }
@@ -73,7 +85,7 @@ void HarmonyContext::registerNote(Tick start, Tick duration, uint8_t pitch, Trac
 
 void HarmonyContext::registerTrack(const MidiTrack& track, TrackRole role) {
   for (const auto& note : track.notes()) {
-    registerNote(note.startTick, note.duration, note.note, role);
+    registerNote(note.start_tick, note.duration, note.note, role);
   }
 }
 

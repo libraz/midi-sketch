@@ -19,6 +19,9 @@ constexpr uint8_t BEATS_PER_BAR = 4;
 // Ticks per bar
 constexpr Tick TICKS_PER_BAR = TICKS_PER_BEAT * BEATS_PER_BAR;
 
+// MIDI note number for Middle C (C4)
+constexpr uint8_t MIDI_C4 = 60;
+
 // Raw MIDI event (lowest level, write-out only).
 // Does not carry musical meaning - used only for SMF output.
 struct MidiEvent {
@@ -31,7 +34,7 @@ struct MidiEvent {
 // Note event (intermediate representation).
 // Combines note-on/off into single object for easy editing.
 struct NoteEvent {
-  Tick startTick;    // Start time in ticks
+  Tick start_tick;   // Start time in ticks
   Tick duration;     // Duration in ticks
   uint8_t note;      // MIDI note number (0-127)
   uint8_t velocity;  // MIDI velocity (0-127)

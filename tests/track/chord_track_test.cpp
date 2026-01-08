@@ -82,7 +82,7 @@ TEST_F(ChordTrackTest, ChordVoicingHasMultipleNotes) {
   // Check that chords have multiple simultaneous notes
   std::map<Tick, int> notes_per_tick;
   for (const auto& note : track.notes()) {
-    notes_per_tick[note.startTick]++;
+    notes_per_tick[note.start_tick]++;
   }
 
   // At least some chords should have 3+ notes
@@ -296,11 +296,11 @@ TEST_F(ChordTrackTest, AnticipationInChorusSection) {
     if (sec.type != SectionType::Chorus && sec.type != SectionType::B) continue;
 
     for (const auto& note : chord_track.notes()) {
-      if (note.startTick < sec.start_tick) continue;
-      if (note.startTick >= sec.start_tick + sec.bars * TICKS_PER_BAR) continue;
+      if (note.start_tick < sec.start_tick) continue;
+      if (note.start_tick >= sec.start_tick + sec.bars * TICKS_PER_BAR) continue;
 
       // Check if note is at anticipation position (beat 4&)
-      Tick relative = (note.startTick - sec.start_tick) % TICKS_PER_BAR;
+      Tick relative = (note.start_tick - sec.start_tick) % TICKS_PER_BAR;
       if (relative == ANT_OFFSET) {
         anticipation_notes++;
       }
@@ -332,10 +332,10 @@ TEST_F(ChordTrackTest, NoAnticipationInIntroOutro) {
 
     int anticipation_in_section = 0;
     for (const auto& note : chord_track.notes()) {
-      if (note.startTick < sec.start_tick) continue;
-      if (note.startTick >= sec.start_tick + sec.bars * TICKS_PER_BAR) continue;
+      if (note.start_tick < sec.start_tick) continue;
+      if (note.start_tick >= sec.start_tick + sec.bars * TICKS_PER_BAR) continue;
 
-      Tick relative = (note.startTick - sec.start_tick) % TICKS_PER_BAR;
+      Tick relative = (note.start_tick - sec.start_tick) % TICKS_PER_BAR;
       if (relative == ANT_OFFSET) {
         anticipation_in_section++;
       }
@@ -411,7 +411,7 @@ TEST_F(ChordTrackTest, RootlessVoicingsGenerateMultipleNotes) {
   // Check that chords have 3-4 simultaneous notes (rootless voicings)
   std::map<Tick, int> notes_per_tick;
   for (const auto& note : chord_track.notes()) {
-    notes_per_tick[note.startTick]++;
+    notes_per_tick[note.start_tick]++;
   }
 
   int chords_with_4_voices = 0;

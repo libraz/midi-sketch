@@ -39,7 +39,7 @@ Tick Arrangement::totalTicks() const {
 
 const Section* Arrangement::sectionAtBar(uint32_t bar) const {
   for (const auto& section : sections_) {
-    if (bar >= section.startBar && bar < section.startBar + section.bars) {
+    if (bar >= section.start_bar && bar < section.start_bar + section.bars) {
       return &section;
     }
   }

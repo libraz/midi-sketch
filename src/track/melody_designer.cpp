@@ -505,18 +505,18 @@ void MelodyDesigner::applyTransitionApproach(
   int prev_pitch = -1;
 
   for (auto& note : notes) {
-    if (note.startTick < approach_start) {
+    if (note.start_tick < approach_start) {
       prev_pitch = note.note;
       continue;
     }
 
     // 1. Apply pitch tendency (creating "run-up" to next section)
-    float progress = static_cast<float>(note.startTick - approach_start) /
+    float progress = static_cast<float>(note.start_tick - approach_start) /
                      static_cast<float>(ctx.section_end - approach_start);
     int8_t pitch_shift = static_cast<int8_t>(trans.pitch_tendency * progress);
 
     // Move toward chord tone while shifting
-    int8_t chord_degree = harmony.getChordDegreeAt(note.startTick);
+    int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
     int new_pitch = nearestChordTonePitch(
         note.note + pitch_shift, chord_degree);
 
@@ -594,12 +594,12 @@ void MelodyDesigner::insertLeadingTone(
 
   // Insert a short leading tone just before section end
   // Only if there's space and the last note ends before section end
-  Tick last_note_end = last_note.startTick + last_note.duration;
+  Tick last_note_end = last_note.start_tick + last_note.duration;
   Tick leading_tone_start = ctx.section_end - TICKS_PER_BEAT / 4;  // 16th note before end
 
   if (last_note_end <= leading_tone_start) {
     NoteEvent leading_note;
-    leading_note.startTick = leading_tone_start;
+    leading_note.start_tick = leading_tone_start;
     leading_note.duration = TICKS_PER_BEAT / 4;  // 16th note duration
     leading_note.note = static_cast<uint8_t>(leading_pitch);
     leading_note.velocity = static_cast<uint8_t>(std::min(127, static_cast<int>(last_note.velocity) + 10));  // Slightly louder

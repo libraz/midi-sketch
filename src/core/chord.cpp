@@ -1,4 +1,5 @@
 #include "core/chord.h"
+#include "core/pitch_utils.h"
 #include <algorithm>
 
 namespace midisketch {
@@ -176,10 +177,8 @@ Chord buildChord(int8_t degree) {
 // ============================================================================
 
 // Converts degree to pitch class (0-11) in C major.
+// Uses SCALE from pitch_utils.h for diatonic degrees.
 int degreeToSemitone(int8_t degree) {
-  // C=0, D=2, E=4, F=5, G=7, A=9, B=11
-  constexpr int SCALE_SEMITONES[7] = {0, 2, 4, 5, 7, 9, 11};
-
   // Borrowed chords from parallel minor (see documentation above)
   switch (degree) {
     case 10: return 10;  // bVII = Bb (10 semitones from C)
@@ -188,8 +187,9 @@ int degreeToSemitone(int8_t degree) {
     default: break;
   }
 
+  // Diatonic degrees (0-6) use SCALE from pitch_utils.h
   if (degree >= 0 && degree < 7) {
-    return SCALE_SEMITONES[degree];
+    return SCALE[degree];
   }
 
   return 0;
@@ -205,7 +205,7 @@ const ChordProgression& getChordProgression(uint8_t chord_id) {
 uint8_t degreeToRoot(int8_t degree, Key key) {
   int semitone = degreeToSemitone(degree);
   int root = (semitone + static_cast<int>(key)) % 12;
-  return static_cast<uint8_t>(root + 60);  // C4 base
+  return static_cast<uint8_t>(root + MIDI_C4);  // C4 base
 }
 
 Chord getChordNotes(int8_t degree) {
@@ -215,57 +215,69 @@ Chord getChordNotes(int8_t degree) {
 Chord getExtendedChord(int8_t degree, ChordExtension extension) {
   Chord base = buildChord(degree);
 
+  // Determine chord quality from base chord
+  bool is_minor = (base.intervals[1] == 3);  // Minor 3rd
+  bool is_diminished = base.is_diminished;
+
   switch (extension) {
     case ChordExtension::Sus2:
-      // Replace 3rd with 2nd: (0, 2, 7)
+      // Replace 3rd with 2nd: (0, 2, 7) - works for any chord
       base.intervals = {0, 2, 7, -1, -1};
       base.note_count = 3;
       break;
 
     case ChordExtension::Sus4:
-      // Replace 3rd with 4th: (0, 5, 7)
+      // Replace 3rd with 4th: (0, 5, 7) - works for any chord
       base.intervals = {0, 5, 7, -1, -1};
       base.note_count = 3;
       break;
 
     case ChordExtension::Maj7:
-      // Major 7th: (0, 4, 7, 11)
-      base.intervals = {0, 4, 7, 11, -1};
+      // Major 7th: preserve 3rd, add major 7th (11 semitones)
+      // For major chords: CMaj7 = (0, 4, 7, 11)
+      // For minor chords: CmMaj7 = (0, 3, 7, 11) - less common but valid
+      base.intervals[3] = 11;
       base.note_count = 4;
       break;
 
     case ChordExtension::Min7:
-      // Minor 7th: (0, 3, 7, 10)
-      base.intervals = {0, 3, 7, 10, -1};
+      // Minor 7th: preserve 3rd, add minor 7th (10 semitones)
+      // For minor chords: Cm7 = (0, 3, 7, 10)
+      // For major chords: C7 (dominant) = (0, 4, 7, 10)
+      // For diminished: Cdim7/half-dim = (0, 3, 6, 10)
+      base.intervals[3] = 10;
       base.note_count = 4;
       break;
 
     case ChordExtension::Dom7:
-      // Dominant 7th: (0, 4, 7, 10)
+      // Dominant 7th: major 3rd + minor 7th (typically for V chord)
+      // Force major 3rd for dominant function: (0, 4, 7, 10)
       base.intervals = {0, 4, 7, 10, -1};
       base.note_count = 4;
       break;
 
     case ChordExtension::Add9:
-      // Add 9th: (0, 4, 7, 14) - major triad + 9th
-      base.intervals = {0, 4, 7, 14, -1};
+      // Add 9th: preserve chord quality, add 9th (14 semitones)
+      base.intervals[3] = 14;
       base.note_count = 4;
       break;
 
     case ChordExtension::Maj9:
-      // Major 9th: (0, 4, 7, 11, 14)
-      base.intervals = {0, 4, 7, 11, 14};
+      // Major 9th: preserve 3rd, add major 7th + 9th
+      base.intervals[3] = 11;
+      base.intervals[4] = 14;
       base.note_count = 5;
       break;
 
     case ChordExtension::Min9:
-      // Minor 9th: (0, 3, 7, 10, 14)
-      base.intervals = {0, 3, 7, 10, 14};
+      // Minor 9th: preserve 3rd, add minor 7th + 9th
+      base.intervals[3] = 10;
+      base.intervals[4] = 14;
       base.note_count = 5;
       break;
 
     case ChordExtension::Dom9:
-      // Dominant 9th: (0, 4, 7, 10, 14)
+      // Dominant 9th: major 3rd + minor 7th + 9th
       base.intervals = {0, 4, 7, 10, 14};
       base.note_count = 5;
       break;
@@ -275,6 +287,10 @@ Chord getExtendedChord(int8_t degree, ChordExtension extension) {
       // Keep original chord
       break;
   }
+
+  // Suppress unused variable warnings
+  (void)is_minor;
+  (void)is_diminished;
 
   return base;
 }

@@ -82,7 +82,7 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
     section.type = type;
     section.name = sectionTypeName(type);
     section.bars = bars;
-    section.startBar = current_bar;
+    section.start_bar = current_bar;
     section.start_tick = current_tick;
     section.vocal_density = getVocalDensityForType(type);
     section.backing_density = getBackingDensityForType(type);
@@ -188,7 +188,7 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
       break;
 
     case StructurePattern::ExtendedFull:
-      // 90 bars - extended full form (~180 sec @120BPM = 3 min)
+      // 88 bars - extended full form (~176 sec @120BPM = ~3 min)
       addSection(SectionType::Intro, 4);
       addSection(SectionType::A, 8);
       addSection(SectionType::B, 8);
@@ -304,7 +304,7 @@ std::vector<Section> buildStructureForDuration(
     section.type = type;
     section.name = sectionTypeName(type);
     section.bars = bars;
-    section.startBar = current_bar;
+    section.start_bar = current_bar;
     section.start_tick = current_tick;
     section.vocal_density = getVocalDensityForType(type);
     section.backing_density = getBackingDensityForType(type);
@@ -328,10 +328,10 @@ std::vector<Section> buildStructureForDuration(
     Tick insert_bar = 0;
     Tick insert_tick = 0;
     if (outro_it != sections.end()) {
-      insert_bar = outro_it->startBar;
+      insert_bar = outro_it->start_bar;
       insert_tick = outro_it->start_tick;
     } else {
-      insert_bar = sections.back().startBar + sections.back().bars;
+      insert_bar = sections.back().start_bar + sections.back().bars;
       insert_tick = sections.back().start_tick + sections.back().bars * TICKS_PER_BAR;
     }
 
@@ -404,7 +404,7 @@ void recalculateSectionTicks(std::vector<Section>& sections) {
   Tick current_bar = 0;
   Tick current_tick = 0;
   for (auto& section : sections) {
-    section.startBar = current_bar;
+    section.start_bar = current_bar;
     section.start_tick = current_tick;
     current_bar += section.bars;
     current_tick += section.bars * TICKS_PER_BAR;

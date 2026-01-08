@@ -81,10 +81,10 @@ TEST(GeneratorTest, TransitionDynamicsApplied) {
   bool has_notes_before_chorus = false;
 
   for (const auto& note : vocal) {
-    if (note.startTick >= a_end - TICKS_PER_BAR && note.startTick < a_end) {
+    if (note.start_tick >= a_end - TICKS_PER_BAR && note.start_tick < a_end) {
       has_notes_before_b = true;
     }
-    if (note.startTick >= b_end - TICKS_PER_BAR && note.startTick < b_end) {
+    if (note.start_tick >= b_end - TICKS_PER_BAR && note.start_tick < b_end) {
       has_notes_before_chorus = true;
     }
   }
@@ -138,7 +138,7 @@ TEST(GeneratorTest, HumanizeModifiesNotes) {
   // At least some notes should differ in timing or velocity
   bool has_difference = false;
   for (size_t i = 0; i < notes_no_humanize.size(); ++i) {
-    if (notes_no_humanize[i].startTick != notes_humanized[i].startTick ||
+    if (notes_no_humanize[i].start_tick != notes_humanized[i].start_tick ||
         notes_no_humanize[i].velocity != notes_humanized[i].velocity) {
       has_difference = true;
       break;
@@ -162,7 +162,7 @@ TEST(GeneratorTest, HumanizeTimingWithinBounds) {
 
   // All notes should still have reasonable timing (>= 0)
   for (const auto& note : notes) {
-    EXPECT_GE(note.startTick, 0u);
+    EXPECT_GE(note.start_tick, 0u);
   }
 }
 
