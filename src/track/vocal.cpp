@@ -43,10 +43,10 @@ constexpr int kVariationTypeCount = 8;
 // Maximum reuse count before variation is forced (V4)
 constexpr int kMaxExactReuse = 2;
 
-// Singing effort thresholds (V6)
+// Singing effort thresholds (V6: reserved for future vocal constraint system)
 constexpr int kHighRegisterThreshold = 74;  // D5 and above = high effort
 constexpr int kLargeIntervalThreshold = 7;  // Perfect 5th and above = effort
-constexpr float kHighEffortScore = 1.0f;
+[[maybe_unused]] constexpr float kHighEffortScore = 1.0f;
 constexpr float kMediumEffortScore = 0.5f;
 
 // PhraseCacheKey for extended cache lookup (V2)
@@ -254,17 +254,16 @@ CadenceType detectCadenceType(const std::vector<NoteEvent>& notes, int8_t chord_
 // Calculate singing effort score for a phrase (V6).
 // Higher score = more demanding to sing.
 // Returns: 0.0 (easy) to 1.0+ (difficult)
-float calculateSingingEffort(const std::vector<NoteEvent>& notes) {
+// Note: Reserved for future use in vocal constraint system.
+[[maybe_unused]] static float calculateSingingEffort(
+    const std::vector<NoteEvent>& notes) {
   if (notes.empty()) return 0.0f;
 
   float effort = 0.0f;
-  int high_note_count = 0;
-  int large_interval_count = 0;
 
   for (size_t i = 0; i < notes.size(); ++i) {
     // High register penalty
     if (notes[i].note >= kHighRegisterThreshold) {
-      high_note_count++;
       // Longer high notes = more effort
       effort += kMediumEffortScore * (notes[i].duration / static_cast<float>(TICKS_PER_BEAT));
     }
@@ -273,7 +272,6 @@ float calculateSingingEffort(const std::vector<NoteEvent>& notes) {
     if (i > 0) {
       int interval = std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
       if (interval >= kLargeIntervalThreshold) {
-        large_interval_count++;
         effort += kMediumEffortScore;
       }
     }

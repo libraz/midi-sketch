@@ -247,6 +247,19 @@ int main(int argc, char* argv[]) {
   // note_density is deprecated; melody_template is used instead
   (void)note_density;
 
+  // Vocal parameters
+  config.skip_vocal = skip_vocal;
+  if (vocal_attitude <= 2) {
+    config.vocal_attitude =
+        static_cast<midisketch::VocalAttitude>(vocal_attitude);
+  }
+  config.vocal_low = vocal_low;
+  config.vocal_high = vocal_high;
+
+  // regenerate_vocal is handled separately (not part of initial config)
+  (void)regenerate_vocal;
+  (void)vocal_seed;
+
   const auto& preset = midisketch::getStylePreset(config.style_preset_id);
 
   std::cout << "Generating with SongConfig:\n";

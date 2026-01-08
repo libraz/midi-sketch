@@ -10,7 +10,9 @@
 
 namespace midisketch {
 
+#ifndef MIDISKETCH_WASM
 class Midi2Writer;  // Forward declaration
+#endif
 
 // Writes MIDI data in SMF Type 1 or MIDI 2.0 format.
 // This class is intentionally "dumb" - it only handles byte-level output.
@@ -38,13 +40,17 @@ class MidiWriter {
 
  private:
   std::vector<uint8_t> data_;
+#ifndef MIDISKETCH_WASM
   std::unique_ptr<Midi2Writer> midi2_writer_;
+#endif
 
   // Builds SMF1 format
   void buildSMF1(const Song& song, Key key, const std::string& metadata);
 
+#ifndef MIDISKETCH_WASM
   // Builds SMF2 format (uses Midi2Writer)
   void buildSMF2(const Song& song, Key key, const std::string& metadata);
+#endif
 
   // Writes the MIDI file header chunk.
   void writeHeader(uint16_t num_tracks, uint16_t division);

@@ -58,6 +58,7 @@ if(BUILD_WASM)
   # WASM executable (core sources only, excludes CLI-only modules)
   add_executable(midisketch ${MIDISKETCH_CORE_SOURCES})
   target_include_directories(midisketch PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_definitions(midisketch PRIVATE MIDISKETCH_WASM)
 
   # Copy to dist directory
   add_custom_command(TARGET midisketch POST_BUILD

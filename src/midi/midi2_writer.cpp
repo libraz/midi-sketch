@@ -164,6 +164,7 @@ void Midi2Writer::writeMarkerData(const MidiTrack& track, uint8_t group,
 void Midi2Writer::buildClip(const MidiTrack& track, const std::string& name,
                              uint8_t channel, uint8_t program, uint16_t bpm,
                              Key key, Tick mod_tick, int8_t mod_amount) {
+  (void)name;  // Reserved for future use
   data_.clear();
 
   // SMF2CLIP header

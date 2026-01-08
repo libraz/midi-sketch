@@ -1,6 +1,8 @@
 #include "midi/midi_writer.h"
 
+#ifndef MIDISKETCH_WASM
 #include "midi/midi2_writer.h"
+#endif
 
 #include <algorithm>
 #include <fstream>
@@ -262,13 +264,20 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
 
 void MidiWriter::build(const Song& song, Key key, const std::string& metadata,
                         MidiFormat format) {
+#ifdef MIDISKETCH_WASM
+  // WASM build only supports SMF1
+  (void)format;
+  buildSMF1(song, key, metadata);
+#else
   if (format == MidiFormat::SMF2) {
     buildSMF2(song, key, metadata);
   } else {
     buildSMF1(song, key, metadata);
   }
+#endif
 }
 
+#ifndef MIDISKETCH_WASM
 void MidiWriter::buildSMF2(const Song& song, Key key,
                             const std::string& metadata) {
   if (!midi2_writer_) {
@@ -277,6 +286,7 @@ void MidiWriter::buildSMF2(const Song& song, Key key,
   midi2_writer_->buildContainer(song, key, metadata);
   data_ = midi2_writer_->toBytes();
 }
+#endif
 
 void MidiWriter::buildSMF1(const Song& song, Key key,
                             const std::string& metadata) {

@@ -114,9 +114,8 @@ TEST(AuxTrackTest, TargetHintWithMainMelody) {
 
   auto notes = generator.generateTargetHint(ctx, config, harmony, rng);
 
-  // Should produce some notes before phrase endings
-  // Note: May be 0 if density check fails
-  EXPECT_TRUE(notes.size() >= 0u);
+  // Verify no crash; note count may be 0 if density check fails
+  (void)notes;
 }
 
 TEST(AuxTrackTest, TargetHintEmptyWithNoMelody) {
