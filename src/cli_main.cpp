@@ -58,6 +58,8 @@ void printDissonanceSummary(const midisketch::DissonanceReport& report) {
   std::cout << "Total issues: " << report.summary.total_issues << "\n";
   std::cout << "  Simultaneous clashes: " << report.summary.simultaneous_clashes << "\n";
   std::cout << "  Non-chord tones: " << report.summary.non_chord_tones << "\n";
+  std::cout << "  Sustained over chord change: " << report.summary.sustained_over_chord_change
+            << "\n";
   std::cout << "Severity breakdown:\n";
   std::cout << "  High: " << report.summary.high_severity << "\n";
   std::cout << "  Medium: " << report.summary.medium_severity << "\n";
@@ -75,6 +77,9 @@ void printDissonanceSummary(const midisketch::DissonanceReport& report) {
           if (i > 0) std::cout << " and ";
           std::cout << issue.notes[i].track_name << "(" << issue.notes[i].pitch_name << ")";
         }
+      } else if (issue.type == midisketch::DissonanceType::SustainedOverChordChange) {
+        std::cout << issue.pitch_name << " in " << issue.track_name << " sustained from "
+                  << issue.original_chord_name << " into " << issue.chord_name;
       } else {
         std::cout << issue.pitch_name << " in " << issue.track_name << " vs chord "
                   << issue.chord_name;

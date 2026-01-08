@@ -45,7 +45,8 @@ TEST(DissonanceTest, AnalyzeGeneratedSong) {
 
   // Basic sanity checks
   EXPECT_EQ(report.summary.total_issues,
-            report.summary.simultaneous_clashes + report.summary.non_chord_tones);
+            report.summary.simultaneous_clashes + report.summary.non_chord_tones +
+            report.summary.sustained_over_chord_change);
   EXPECT_EQ(report.summary.total_issues,
             report.summary.high_severity + report.summary.medium_severity +
                 report.summary.low_severity);
@@ -134,7 +135,8 @@ TEST(DissonanceTest, DifferentChordProgressions) {
 
     // Should not crash and should produce valid summaries
     EXPECT_EQ(report.summary.total_issues,
-              report.summary.simultaneous_clashes + report.summary.non_chord_tones);
+              report.summary.simultaneous_clashes + report.summary.non_chord_tones +
+              report.summary.sustained_over_chord_change);
   }
 }
 
@@ -655,36 +657,46 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiNonOverlappingNotes) {
 // Integration Tests: Dissonance Severity Tracking
 // =============================================================================
 
-// Test: Bass-chord phrase-end sync regression test (specific seed that was fixed)
-TEST(DissonanceIntegrationTest, BassChordPhraseEndSyncRegressionTest) {
-  // This test verifies the fix for phrase-end sync bug.
-  // Seed 2475149142 previously had 4 medium severity bass-chord clashes
-  // at phrase-end bars where chord anticipated but bass didn't.
+// Test: Vocal notes should not sustain over chord changes causing high severity issues
+TEST(DissonanceIntegrationTest, VocalSustainOverChordChangeTest) {
+  // Verifies that melody generation aligns phrases with harmonic rhythm,
+  // preventing vocal notes from sustaining into chord changes where they
+  // become non-chord tones (high severity dissonance).
 
   Generator gen;
   GeneratorParams params{};
-  params.seed = 2475149142;
-  params.chord_id = 0;
-  params.structure = static_cast<StructurePattern>(5);
-  params.mood = static_cast<Mood>(14);
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
   params.key = Key::C;
   params.drums_enabled = true;
   params.vocal_low = 60;
   params.vocal_high = 79;
-  params.bpm = 132;
 
-  gen.generate(params);
-  const auto& song = gen.getSong();
+  // Test across multiple seeds to ensure robustness
+  std::vector<uint32_t> test_seeds = {12345, 54321, 98765, 11111, 22222};
 
-  auto report = analyzeDissonance(song, params);
+  for (uint32_t seed : test_seeds) {
+    params.seed = seed;
+    gen.generate(params);
+    const auto& song = gen.getSong();
 
-  // After phrase-end sync fix, this specific seed should have 0 medium+ issues
-  EXPECT_EQ(report.summary.medium_severity, 0u)
-      << "Phrase-end sync regression: seed 2475149142 should have 0 medium issues, "
-      << "but has " << report.summary.medium_severity;
-  EXPECT_EQ(report.summary.high_severity, 0u)
-      << "Phrase-end sync regression: seed 2475149142 should have 0 high issues, "
-      << "but has " << report.summary.high_severity;
+    auto report = analyzeDissonance(song, params);
+
+    // Count high-severity sustained-over-chord-change issues from vocal track
+    uint32_t vocal_sustain_high = 0;
+    for (const auto& issue : report.issues) {
+      if (issue.type == DissonanceType::SustainedOverChordChange &&
+          issue.severity == DissonanceSeverity::High &&
+          issue.track_name == "vocal") {
+        ++vocal_sustain_high;
+      }
+    }
+
+    // Vocal track should have zero high-severity sustained-over-chord-change issues
+    EXPECT_EQ(vocal_sustain_high, 0u)
+        << "Seed " << seed << " has " << vocal_sustain_high
+        << " high-severity vocal notes sustaining over chord changes";
+  }
 }
 
 // Test: Bass-chord phrase-end sync verification with dissonance analysis

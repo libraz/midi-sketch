@@ -30,6 +30,7 @@ class MelodyDesigner {
     TessituraRange tessitura;   // Comfortable singing range
     uint8_t vocal_low;          // Absolute minimum pitch
     uint8_t vocal_high;         // Absolute maximum pitch
+    Mood mood = Mood::StraightPop;  // Mood for harmonic rhythm calculation
     float density_modifier = 1.0f;     // Section-specific density multiplier (1.0 = default)
     float thirtysecond_ratio = 0.0f;   // Section-specific 32nd note ratio (0.0-1.0)
     float consecutive_same_note_prob = 1.0f;  // Probability of allowing same consecutive note (0.0-1.0)

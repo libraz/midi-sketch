@@ -21,7 +21,8 @@ enum class DissonanceSeverity : uint8_t {
 // Type of dissonance detected.
 enum class DissonanceType : uint8_t {
   SimultaneousClash,  // Two notes sounding together with dissonant interval
-  NonChordTone        // Note not belonging to current chord
+  NonChordTone,       // Note not belonging to current chord (checked at 32nd note resolution)
+  SustainedOverChordChange  // Note was chord tone at start but not after chord change
 };
 
 // Information about a single note involved in a dissonance.
@@ -44,13 +45,17 @@ struct DissonanceIssue {
   std::string interval_name;     // "minor 2nd", "tritone", etc.
   std::vector<DissonanceNoteInfo> notes;  // Notes involved
 
-  // For NonChordTone
+  // For NonChordTone and SustainedOverChordChange
   std::string track_name;        // Track containing the offending note
   uint8_t pitch;                 // MIDI note number
   std::string pitch_name;        // "F#4"
   int8_t chord_degree;           // Current chord's scale degree
   std::string chord_name;        // "C", "Am", etc.
   std::vector<std::string> chord_tones;  // Expected chord tones
+
+  // For SustainedOverChordChange only
+  Tick note_start_tick;          // When the note started
+  std::string original_chord_name;  // Chord when note started (was valid)
 };
 
 // Summary statistics.
@@ -58,6 +63,7 @@ struct DissonanceSummary {
   uint32_t total_issues;
   uint32_t simultaneous_clashes;
   uint32_t non_chord_tones;
+  uint32_t sustained_over_chord_change;
   uint32_t high_severity;
   uint32_t medium_severity;
   uint32_t low_severity;

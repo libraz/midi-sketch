@@ -1976,5 +1976,285 @@ TEST_F(VocalTest, CadenceTypeFloatingOnTensionEndings) {
       << "Should have variety in cadence types based on phrase endings";
 }
 
+// ============================================================================
+// Regression Tests: Chromatic Note Prevention (fixed 2026-01-09)
+// Bug: Pitch modifications in vocal.cpp did not snap to scale, causing
+// chromatic notes like D#4 to appear in C major, creating minor 2nd clashes.
+// Root causes fixed:
+// 1. applyPhraseVariation::LastNoteShift shifted by semitones instead of scale degrees
+// 2. adjustPitchRange didn't snap after center-based shift
+// 3. Section boundary interval adjustment didn't snap after clamping
+// 4. applyCollisionAvoidanceWithIntervalConstraint didn't snap after interval enforcement
+// ============================================================================
+
+TEST_F(VocalTest, VocalNotesStrictlyOnScale) {
+  // Stricter test: ALL vocal notes must be on C major scale (no exceptions)
+  // C major scale pitch classes: C=0, D=2, E=4, F=5, G=7, A=9, B=11
+  std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
+
+  // Test with multiple seeds including the one that caused the original bug
+  std::vector<uint32_t> test_seeds = {1041208883u, 12345u, 54321u, 99999u, 777777u};
+
+  for (uint32_t seed : test_seeds) {
+    params_.key = Key::C;
+    params_.seed = seed;
+    params_.structure = StructurePattern::FullPop;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().vocal();
+
+    for (const auto& note : track.notes()) {
+      int pc = note.note % 12;
+      EXPECT_TRUE(c_major_pcs.count(pc) > 0)
+          << "Chromatic note detected at seed=" << seed
+          << ": pitch " << static_cast<int>(note.note)
+          << " (pitch class " << pc << ") is not in C major scale. "
+          << "Tick: " << note.start_tick;
+    }
+  }
+}
+
+TEST_F(VocalTest, RegressionChromaticNoteFromLastNoteShift) {
+  // Regression test for LastNoteShift variation creating chromatic notes
+  // Old bug: shift by ±1-2 semitones could turn E4 into D#4
+  // Fix: shift by scale degrees instead of semitones
+  std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
+
+  // Run many iterations to trigger LastNoteShift variation (20% probability)
+  for (uint32_t seed = 1; seed <= 50; ++seed) {
+    params_.key = Key::C;
+    params_.seed = seed;
+    params_.structure = StructurePattern::RepeatChorus;  // More cache reuse = more variations
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().vocal();
+
+    for (const auto& note : track.notes()) {
+      int pc = note.note % 12;
+      EXPECT_TRUE(c_major_pcs.count(pc) > 0)
+          << "LastNoteShift variation created chromatic note at seed=" << seed
+          << ": pitch class " << pc;
+    }
+  }
+}
+
+TEST_F(VocalTest, RegressionChromaticNoteFromSectionBoundary) {
+  // Regression test for section boundary interval adjustment creating chromatic notes
+  // Old bug: prev_note ± MAX_INTERVAL could land on non-scale pitch
+  // Fix: snap to nearest scale tone after interval adjustment
+  std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
+
+  // Use structures with many section transitions
+  std::vector<StructurePattern> patterns = {
+      StructurePattern::FullPop,
+      StructurePattern::FullWithBridge,
+      StructurePattern::ExtendedFull,
+      StructurePattern::RepeatChorus
+  };
+
+  for (auto pattern : patterns) {
+    params_.key = Key::C;
+    params_.seed = 12345;
+    params_.structure = pattern;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().vocal();
+    const auto& sections = gen.getSong().arrangement().sections();
+
+    // Check notes at section boundaries specifically
+    for (size_t s = 1; s < sections.size(); ++s) {
+      Tick section_start = sections[s].start_tick;
+
+      // Find first note in this section
+      for (const auto& note : track.notes()) {
+        if (note.start_tick >= section_start &&
+            note.start_tick < section_start + TICKS_PER_BAR) {
+          int pc = note.note % 12;
+          EXPECT_TRUE(c_major_pcs.count(pc) > 0)
+              << "Section boundary created chromatic note at structure="
+              << static_cast<int>(pattern)
+              << ", section " << s << ": pitch class " << pc;
+          break;  // Only check first note of section
+        }
+      }
+    }
+  }
+}
+
+TEST_F(VocalTest, RegressionChromaticNoteFromAdjustPitchRange) {
+  // Regression test for adjustPitchRange creating chromatic notes
+  // Old bug: center-based shift didn't snap to scale
+  // Fix: apply snapToNearestScaleTone after shift
+  std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
+
+  // Test with different register shifts (which trigger adjustPitchRange)
+  params_.key = Key::C;
+  params_.structure = StructurePattern::FullPop;
+  params_.melody_params.chorus_register_shift = 5;  // Upward shift in chorus
+  params_.melody_params.verse_register_shift = -3;  // Downward shift in verse
+
+  for (uint32_t seed = 1; seed <= 20; ++seed) {
+    params_.seed = seed;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().vocal();
+
+    for (const auto& note : track.notes()) {
+      int pc = note.note % 12;
+      EXPECT_TRUE(c_major_pcs.count(pc) > 0)
+          << "adjustPitchRange created chromatic note at seed=" << seed
+          << ": pitch class " << pc;
+    }
+  }
+}
+
+TEST_F(VocalTest, RegressionChromaticNoteFromCollisionAvoidance) {
+  // Regression test for collision avoidance interval re-enforcement creating chromatic notes
+  // Old bug: prev_pitch ± MAX_VOCAL_INTERVAL could land on non-scale pitch
+  // Fix: snap to nearest scale tone after interval constraint
+  std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
+
+  // Use dense harmony contexts to trigger more collision avoidance
+  params_.key = Key::C;
+  params_.structure = StructurePattern::FullPop;
+  params_.composition_style = CompositionStyle::MelodyLead;  // Dense vocal
+
+  for (uint32_t seed = 1; seed <= 30; ++seed) {
+    params_.seed = seed;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().vocal();
+
+    for (const auto& note : track.notes()) {
+      int pc = note.note % 12;
+      EXPECT_TRUE(c_major_pcs.count(pc) > 0)
+          << "Collision avoidance created chromatic note at seed=" << seed
+          << ": pitch class " << pc << " at tick " << note.start_tick;
+    }
+  }
+}
+
+TEST_F(VocalTest, RegressionOriginalBugSeed1041208883) {
+  // Exact regression test for the original bug report
+  // Seed 1041208883 with specific params produced D#4 at bars 12, 36, 60
+  std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
+
+  params_.key = Key::C;
+  params_.seed = 1041208883;
+  params_.chord_id = 0;
+  params_.structure = StructurePattern::FullPop;
+  params_.mood = Mood::ElectroPop;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().vocal();
+
+  // Check for D#4 (pitch 63) specifically - this was the bug
+  bool found_d_sharp = false;
+  for (const auto& note : track.notes()) {
+    if (note.note == 63) {  // D#4
+      found_d_sharp = true;
+      break;
+    }
+  }
+  EXPECT_FALSE(found_d_sharp)
+      << "D#4 (pitch 63) should not appear in C major vocal track";
+
+  // Also verify all notes are on scale
+  for (const auto& note : track.notes()) {
+    int pc = note.note % 12;
+    EXPECT_TRUE(c_major_pcs.count(pc) > 0)
+        << "Original bug seed produced chromatic note: pitch "
+        << static_cast<int>(note.note) << " (pitch class " << pc << ")";
+  }
+}
+
+TEST_F(VocalTest, VocalNotesStrictlyOnScaleMultipleStructures) {
+  // Verify no chromatic notes across different structure patterns
+  // Note: All generation is internally in C major (key offset applied at output)
+  std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
+
+  std::vector<StructurePattern> patterns = {
+      StructurePattern::StandardPop,
+      StructurePattern::ShortForm,
+      StructurePattern::RepeatChorus,
+      StructurePattern::DirectChorus,
+      StructurePattern::ExtendedFull
+  };
+
+  for (auto pattern : patterns) {
+    params_.key = Key::C;  // Internal generation is always C major
+    params_.seed = 12345;
+    params_.structure = pattern;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().vocal();
+
+    for (const auto& note : track.notes()) {
+      int pc = note.note % 12;
+      EXPECT_TRUE(c_major_pcs.count(pc) > 0)
+          << "Chromatic note in structure " << static_cast<int>(pattern)
+          << ": pitch " << static_cast<int>(note.note)
+          << " (pitch class " << pc << ")";
+    }
+  }
+}
+
+TEST_F(VocalTest, NoMinor2ndClashesWithChord) {
+  // Ultimate regression test: verify no minor 2nd (1 semitone) clashes
+  // between vocal and chord tracks - this was the original symptom
+
+  params_.key = Key::C;
+  params_.seed = 1041208883;  // Original bug seed
+  params_.structure = StructurePattern::FullPop;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal = gen.getSong().vocal().notes();
+  const auto& chord = gen.getSong().chord().notes();
+
+  int minor_2nd_clashes = 0;
+
+  for (const auto& v : vocal) {
+    Tick v_end = v.start_tick + v.duration;
+
+    for (const auto& c : chord) {
+      Tick c_end = c.start_tick + c.duration;
+
+      // Check if notes overlap
+      bool overlap = (v.start_tick < c_end) && (c.start_tick < v_end);
+
+      if (overlap) {
+        int interval = std::abs(static_cast<int>(v.note % 12) -
+                                static_cast<int>(c.note % 12));
+        // Normalize to smallest interval
+        if (interval > 6) interval = 12 - interval;
+
+        if (interval == 1) {  // Minor 2nd
+          minor_2nd_clashes++;
+        }
+      }
+    }
+  }
+
+  EXPECT_EQ(minor_2nd_clashes, 0)
+      << "Found " << minor_2nd_clashes << " minor 2nd clashes between vocal and chord. "
+      << "This indicates chromatic notes in the vocal track.";
+}
+
 }  // namespace
 }  // namespace midisketch

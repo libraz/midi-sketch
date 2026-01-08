@@ -100,12 +100,33 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes,
 
   switch (variation) {
     case PhraseVariation::LastNoteShift: {
-      // Shift last note by ±1-2 semitones
+      // Shift last note by ±1-2 scale degrees (not semitones)
       auto& last = notes.back();
       std::uniform_int_distribution<int> shift_dist(-2, 2);
       int shift = shift_dist(rng);
       if (shift == 0) shift = 1;
-      int new_pitch = static_cast<int>(last.note) + shift;
+      // Shift by scale degrees: find current scale position and move
+      int pc = last.note % 12;
+      int octave = last.note / 12;
+      // Find current scale index
+      int scale_idx = 0;
+      for (int i = 0; i < 7; ++i) {
+        if (SCALE[i] == pc || (SCALE[i] < pc && (i == 6 || SCALE[i + 1] > pc))) {
+          scale_idx = i;
+          break;
+        }
+      }
+      // Apply scale degree shift with octave wrapping
+      int new_scale_idx = scale_idx + shift;
+      while (new_scale_idx < 0) {
+        new_scale_idx += 7;
+        octave--;
+      }
+      while (new_scale_idx >= 7) {
+        new_scale_idx -= 7;
+        octave++;
+      }
+      int new_pitch = octave * 12 + SCALE[new_scale_idx];
       last.note = static_cast<uint8_t>(std::clamp(new_pitch, 0, 127));
       break;
     }
@@ -313,7 +334,8 @@ std::vector<NoteEvent> shiftTiming(const std::vector<NoteEvent>& notes, Tick off
 // Adjust pitches to new vocal range
 std::vector<NoteEvent> adjustPitchRange(const std::vector<NoteEvent>& notes,
                                          uint8_t orig_low, uint8_t orig_high,
-                                         uint8_t new_low, uint8_t new_high) {
+                                         uint8_t new_low, uint8_t new_high,
+                                         int key_offset = 0) {
   if (orig_low == new_low && orig_high == new_high) {
     return notes;  // No adjustment needed
   }
@@ -329,6 +351,8 @@ std::vector<NoteEvent> adjustPitchRange(const std::vector<NoteEvent>& notes,
   for (const auto& note : notes) {
     NoteEvent adjusted = note;
     int new_pitch = static_cast<int>(note.note) + shift;
+    // Snap to scale to prevent chromatic notes
+    new_pitch = snapToNearestScaleTone(new_pitch, key_offset);
     // Clamp to new range
     new_pitch = std::clamp(new_pitch, static_cast<int>(new_low), static_cast<int>(new_high));
     adjusted.note = static_cast<uint8_t>(new_pitch);
@@ -586,6 +610,50 @@ void applyGrooveFeel(std::vector<NoteEvent>& notes, VocalGrooveFeel groove) {
   }
 }
 
+// Apply HarmonyContext collision avoidance with interval constraint enforcement.
+// This ensures that after getSafePitch adjusts pitches to avoid collisions,
+// consecutive notes still respect the singable interval limit (major 6th).
+void applyCollisionAvoidanceWithIntervalConstraint(
+    std::vector<NoteEvent>& notes,
+    const HarmonyContext* harmony_ctx,
+    uint8_t vocal_low,
+    uint8_t vocal_high) {
+  if (harmony_ctx == nullptr || notes.empty()) return;
+
+  constexpr int MAX_VOCAL_INTERVAL = 9;  // Major 6th - singable leap limit
+
+  for (size_t i = 0; i < notes.size(); ++i) {
+    auto& note = notes[i];
+
+    // Apply collision avoidance
+    uint8_t safe_pitch = harmony_ctx->getSafePitch(
+        note.note, note.start_tick, note.duration, TrackRole::Vocal,
+        vocal_low, vocal_high);
+    // Snap to scale (getSafePitch may return non-scale tones in fallback strategies)
+    int snapped = snapToNearestScaleTone(safe_pitch, 0);  // 0 = C major (internal key)
+    note.note = static_cast<uint8_t>(std::clamp(snapped,
+        static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
+
+    // Re-enforce interval constraint (getSafePitch may have expanded interval)
+    if (i > 0) {
+      int prev_pitch = notes[i - 1].note;
+      int interval = std::abs(static_cast<int>(note.note) - prev_pitch);
+      if (interval > MAX_VOCAL_INTERVAL) {
+        int new_pitch;
+        if (note.note > prev_pitch) {
+          new_pitch = prev_pitch + MAX_VOCAL_INTERVAL;
+        } else {
+          new_pitch = prev_pitch - MAX_VOCAL_INTERVAL;
+        }
+        // Snap to scale after interval adjustment
+        new_pitch = snapToNearestScaleTone(new_pitch, 0);
+        note.note = static_cast<uint8_t>(std::clamp(new_pitch,
+            static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
+      }
+    }
+  }
+}
+
 }  // namespace
 
 void generateVocalTrack(MidiTrack& track, Song& song,
@@ -707,15 +775,9 @@ void generateVocalTrack(MidiTrack& track, Song& song,
                                         cached.vocal_low, cached.vocal_high,
                                         section_vocal_low, section_vocal_high);
 
-      // Re-apply getSafePitch (chord context may differ)
-      if (harmony_ctx != nullptr) {
-        for (auto& note : section_notes) {
-          uint8_t safe_pitch = harmony_ctx->getSafePitch(
-              note.note, note.start_tick, note.duration, TrackRole::Vocal,
-              section_vocal_low, section_vocal_high);
-          note.note = safe_pitch;
-        }
-      }
+      // Re-apply collision avoidance (chord context may differ)
+      applyCollisionAvoidanceWithIntervalConstraint(
+          section_notes, harmony_ctx, section_vocal_low, section_vocal_high);
     } else {
       // Cache miss: generate new melody
       MelodyDesigner::SectionContext ctx;
@@ -728,6 +790,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       ctx.tessitura = section_tessitura;
       ctx.vocal_low = section_vocal_low;
       ctx.vocal_high = section_vocal_high;
+      ctx.mood = params.mood;  // For harmonic rhythm alignment
       ctx.density_modifier = getDensityModifier(section.type, params.melody_params);
       ctx.thirtysecond_ratio = getThirtysecondRatio(section.type, params.melody_params);
       ctx.consecutive_same_note_prob = params.melody_params.consecutive_same_note_prob;
@@ -752,15 +815,9 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         designer.applyTransitionApproach(section_notes, ctx, harmony);
       }
 
-      // Apply HarmonyContext collision avoidance
-      if (harmony_ctx != nullptr) {
-        for (auto& note : section_notes) {
-          uint8_t safe_pitch = harmony_ctx->getSafePitch(
-              note.note, note.start_tick, note.duration, TrackRole::Vocal,
-              section_vocal_low, section_vocal_high);
-          note.note = safe_pitch;
-        }
-      }
+      // Apply HarmonyContext collision avoidance with interval constraint
+      applyCollisionAvoidanceWithIntervalConstraint(
+          section_notes, harmony_ctx, section_vocal_low, section_vocal_high);
 
       // Apply hook intensity effects at hook points (Chorus, B section)
       applyHookIntensity(section_notes, section.type, params.hook_intensity, section_start);
@@ -797,14 +854,17 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       int interval = std::abs(first_note - prev_note);
       if (interval > MAX_INTERVAL) {
         // Adjust the first note of this section to be within MAX_INTERVAL
+        int new_pitch;
         if (first_note > prev_note) {
-          section_notes.front().note = static_cast<uint8_t>(prev_note + MAX_INTERVAL);
+          new_pitch = prev_note + MAX_INTERVAL;
         } else {
-          section_notes.front().note = static_cast<uint8_t>(prev_note - MAX_INTERVAL);
+          new_pitch = prev_note - MAX_INTERVAL;
         }
+        // Snap to scale to prevent chromatic notes
+        new_pitch = snapToNearestScaleTone(new_pitch, 0);  // 0 = C major (internal key)
         // Re-constrain to vocal range
         section_notes.front().note = static_cast<uint8_t>(std::clamp(
-            static_cast<int>(section_notes.front().note),
+            new_pitch,
             static_cast<int>(section_vocal_low),
             static_cast<int>(section_vocal_high)));
       }

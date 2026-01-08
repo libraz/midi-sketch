@@ -654,9 +654,129 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
   checkTrackForNonChordTones(song.arpeggio(), TrackRole::Arpeggio);
   checkTrackForNonChordTones(song.aux(), TrackRole::Aux);
 
+  // Phase 3: Detect sustained notes over chord changes
+  // Check if notes that were chord tones at start become non-chord tones after chord change
+
+  // Build chord timeline: list of (tick, degree) for each chord change
+  struct ChordChange {
+    Tick tick;
+    int8_t degree;
+  };
+  std::vector<ChordChange> chord_timeline;
+
+  // Scan through arrangement to find chord changes
+  const auto& arrangement = song.arrangement();
+  for (const auto& section : arrangement.sections()) {
+    HarmonicDensity density = getHarmonicDensity(section.type, params.mood);
+    uint32_t section_start_bar = section.start_tick / TICKS_PER_BAR;
+    uint32_t section_bars = section.bars;
+
+    for (uint32_t bar_offset = 0; bar_offset < section_bars; ++bar_offset) {
+      Tick bar_tick = (section_start_bar + bar_offset) * TICKS_PER_BAR;
+      int chord_idx = getChordIndexAtBar(bar_offset, progression, density);
+      int8_t degree = progression.degrees[chord_idx];
+
+      // Only add if different from previous chord
+      if (chord_timeline.empty() || chord_timeline.back().degree != degree) {
+        chord_timeline.push_back({bar_tick, degree});
+      }
+    }
+  }
+
+  // For each melodic note, check if it spans a chord change and becomes non-chord tone
+  auto checkSustainedOverChordChange = [&](const MidiTrack& track, TrackRole role) {
+    for (const auto& note : track.notes()) {
+      Tick note_start = note.start_tick;
+      Tick note_end = note.start_tick + note.duration;
+      int pitch_class = note.note % 12;
+
+      // Get chord at note start
+      auto start_chord_info = getChordAtTick(note_start, song, progression, params.mood);
+      int8_t start_degree = start_chord_info.degree;
+
+      // Skip if note wasn't a chord tone at start (that's a NonChordTone issue)
+      if (!isPitchClassChordTone(pitch_class, start_degree, ext_params) &&
+          !isAvailableTension(pitch_class, start_degree)) {
+        continue;
+      }
+
+      // Find chord changes during note duration
+      for (const auto& change : chord_timeline) {
+        if (change.tick <= note_start) continue;  // Before note started
+        if (change.tick >= note_end) break;       // After note ended
+
+        // Chord changed while note is sustaining
+        int8_t new_degree = change.degree;
+
+        // Check if note is still a chord tone after the change
+        if (!isPitchClassChordTone(pitch_class, new_degree, ext_params) &&
+            !isAvailableTension(pitch_class, new_degree)) {
+          // Note became non-chord tone after chord change!
+
+          // Severity: High if on strong beat, Medium otherwise
+          // Vocal track is more critical
+          BeatStrength beat_strength = getBeatStrength(change.tick);
+          DissonanceSeverity severity;
+          if (role == TrackRole::Aux) {
+            severity = DissonanceSeverity::Low;
+          } else if (role == TrackRole::Vocal) {
+            severity = (beat_strength == BeatStrength::Strong)
+                           ? DissonanceSeverity::High
+                           : DissonanceSeverity::Medium;
+          } else {
+            severity = (beat_strength == BeatStrength::Strong)
+                           ? DissonanceSeverity::Medium
+                           : DissonanceSeverity::Low;
+          }
+
+          uint32_t bar = change.tick / TICKS_PER_BAR;
+
+          DissonanceIssue issue;
+          issue.type = DissonanceType::SustainedOverChordChange;
+          issue.severity = severity;
+          issue.tick = change.tick;
+          issue.bar = bar;
+          issue.beat = 1.0f + static_cast<float>(change.tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
+          issue.track_name = trackRoleToString(role);
+          issue.pitch = note.note;
+          issue.pitch_name = midiNoteToName(note.note);
+          issue.chord_degree = new_degree;
+          issue.chord_name = getChordNameFromDegree(new_degree);
+          issue.chord_tones = getChordToneNames(new_degree);
+          issue.note_start_tick = note_start;
+          issue.original_chord_name = getChordNameFromDegree(start_degree);
+
+          report.issues.push_back(issue);
+          report.summary.sustained_over_chord_change++;
+
+          switch (severity) {
+            case DissonanceSeverity::High:
+              report.summary.high_severity++;
+              break;
+            case DissonanceSeverity::Medium:
+              report.summary.medium_severity++;
+              break;
+            case DissonanceSeverity::Low:
+              report.summary.low_severity++;
+              break;
+          }
+
+          // Only report the first chord change for this note
+          break;
+        }
+      }
+    }
+  };
+
+  checkSustainedOverChordChange(song.vocal(), TrackRole::Vocal);
+  checkSustainedOverChordChange(song.motif(), TrackRole::Motif);
+  checkSustainedOverChordChange(song.arpeggio(), TrackRole::Arpeggio);
+  checkSustainedOverChordChange(song.aux(), TrackRole::Aux);
+
   // Calculate total
   report.summary.total_issues =
-      report.summary.simultaneous_clashes + report.summary.non_chord_tones;
+      report.summary.simultaneous_clashes + report.summary.non_chord_tones +
+      report.summary.sustained_over_chord_change;
 
   // Add modulation info
   report.summary.modulation_tick = song.modulationTick();
@@ -821,6 +941,7 @@ std::string dissonanceReportToJson(const DissonanceReport& report) {
       .write("total_issues", report.summary.total_issues)
       .write("simultaneous_clashes", report.summary.simultaneous_clashes)
       .write("non_chord_tones", report.summary.non_chord_tones)
+      .write("sustained_over_chord_change", report.summary.sustained_over_chord_change)
       .write("high_severity", report.summary.high_severity)
       .write("medium_severity", report.summary.medium_severity)
       .write("low_severity", report.summary.low_severity)
@@ -831,11 +952,18 @@ std::string dissonanceReportToJson(const DissonanceReport& report) {
       .endObject()
       .beginArray("issues");
 
+  auto issueTypeStr = [](DissonanceType t) -> const char* {
+    switch (t) {
+      case DissonanceType::SimultaneousClash: return "simultaneous_clash";
+      case DissonanceType::NonChordTone: return "non_chord_tone";
+      case DissonanceType::SustainedOverChordChange: return "sustained_over_chord_change";
+    }
+    return "unknown";
+  };
+
   for (const auto& issue : report.issues) {
     w.beginObject()
-        .write("type", issue.type == DissonanceType::SimultaneousClash
-                           ? "simultaneous_clash"
-                           : "non_chord_tone")
+        .write("type", issueTypeStr(issue.type))
         .write("severity", severityStr(issue.severity))
         .write("tick", issue.tick)
         .write("bar", issue.bar)
@@ -854,7 +982,21 @@ std::string dissonanceReportToJson(const DissonanceReport& report) {
             .endObject();
       }
       w.endArray();
+    } else if (issue.type == DissonanceType::SustainedOverChordChange) {
+      w.write("track", issue.track_name)
+          .write("pitch", static_cast<int>(issue.pitch))
+          .write("pitch_name", issue.pitch_name)
+          .write("note_start_tick", issue.note_start_tick)
+          .write("original_chord", issue.original_chord_name)
+          .write("new_chord", issue.chord_name)
+          .beginArray("new_chord_tones");
+
+      for (const auto& tone : issue.chord_tones) {
+        w.value(tone);
+      }
+      w.endArray();
     } else {
+      // NonChordTone
       w.write("track", issue.track_name)
           .write("pitch", static_cast<int>(issue.pitch))
           .write("pitch_name", issue.pitch_name)

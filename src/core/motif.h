@@ -49,6 +49,7 @@ inline MotifRoleMeta getMotifRoleMeta(MotifRole role) {
 struct Motif {
   std::vector<RhythmNote> rhythm;       // Rhythm pattern
   std::vector<int8_t> contour_degrees;  // Degrees relative to chord root
+  std::vector<uint8_t> absolute_pitches;  // Original absolute MIDI pitches
   uint8_t climax_index = 0;             // Index of highest note
   uint8_t length_beats = 8;             // Length in beats (default: 2 bars)
   int8_t register_center = 0;           // Center register offset

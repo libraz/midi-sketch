@@ -578,5 +578,152 @@ TEST_F(ScaleTypeIntegrationTest, SynthwaveMoodUsesMixolydian) {
   }
 }
 
+// ============================================================================
+// Absolute Pitch Tests (Regression tests for aux track melodic reproduction)
+// ============================================================================
+
+TEST_F(MotifTest, ExtractMotifFromChorusStoresAbsolutePitches) {
+  // Verify that extractMotifFromChorus stores absolute pitches correctly
+  std::vector<NoteEvent> chorus_notes;
+  // Create a melody: C4, E4, G4, C5
+  Tick current = 0;
+  chorus_notes.push_back({current, TICKS_PER_BEAT, 60, 100});  // C4
+  current += TICKS_PER_BEAT;
+  chorus_notes.push_back({current, TICKS_PER_BEAT, 64, 100});  // E4
+  current += TICKS_PER_BEAT;
+  chorus_notes.push_back({current, TICKS_PER_BEAT, 67, 100});  // G4
+  current += TICKS_PER_BEAT;
+  chorus_notes.push_back({current, TICKS_PER_BEAT, 72, 100});  // C5
+
+  Motif motif = extractMotifFromChorus(chorus_notes);
+
+  // absolute_pitches should be populated
+  ASSERT_EQ(motif.absolute_pitches.size(), 4u);
+  EXPECT_EQ(motif.absolute_pitches[0], 60u);  // C4
+  EXPECT_EQ(motif.absolute_pitches[1], 64u);  // E4
+  EXPECT_EQ(motif.absolute_pitches[2], 67u);  // G4
+  EXPECT_EQ(motif.absolute_pitches[3], 72u);  // C5
+}
+
+TEST_F(MotifTest, PlaceMotifInIntroUsesAbsolutePitchesWithOctaveAdjustment) {
+  // Verify that placeMotifInIntro uses absolute_pitches when available
+  Motif motif;
+  motif.rhythm = {{0.0f, 2, true}, {1.0f, 2, false}, {2.0f, 2, true}};
+  motif.contour_degrees = {0, 4, 7};  // These would give C, E, G
+  motif.absolute_pitches = {72, 76, 79};  // C5, E5, G5 (higher octave)
+  motif.length_beats = 4;
+
+  // Place with base_pitch at C4 (60) - should transpose down ~1 octave
+  std::vector<NoteEvent> notes = placeMotifInIntro(motif, 0, TICKS_PER_BAR * 4, 60, 100);
+
+  ASSERT_GE(notes.size(), 3u);
+
+  // With octave adjustment, the melodic contour should be preserved
+  // Original: C5(72), E5(76), G5(79) - intervals: 0, +4, +7
+  // After octave shift to ~60: should be ~C4(60), E4(64), G4(67)
+  // Notes get snapped to scale, so check relative intervals are preserved
+  int interval_1_2 = static_cast<int>(notes[1].note) - static_cast<int>(notes[0].note);
+  int interval_1_3 = static_cast<int>(notes[2].note) - static_cast<int>(notes[0].note);
+
+  // Intervals should match original (4 and 7 semitones)
+  EXPECT_EQ(interval_1_2, 4) << "E-C interval should be preserved";
+  EXPECT_EQ(interval_1_3, 7) << "G-C interval should be preserved";
+}
+
+TEST_F(MotifTest, PlaceMotifInIntroFallsBackToContourDegrees) {
+  // Verify that placeMotifInIntro falls back to contour_degrees when
+  // absolute_pitches is empty
+  Motif motif;
+  motif.rhythm = {{0.0f, 2, true}, {1.0f, 2, false}};
+  motif.contour_degrees = {0, 5};
+  motif.absolute_pitches.clear();  // No absolute pitches
+  motif.length_beats = 4;
+
+  std::vector<NoteEvent> notes = placeMotifInIntro(motif, 0, TICKS_PER_BAR * 4, 60, 100);
+
+  ASSERT_GE(notes.size(), 2u);
+  // Should use base_pitch + contour_degrees
+  // Note: 60 + 5 = 65 (F4), which is in C major scale
+  EXPECT_EQ(notes[0].note, 60u);  // C4 (base + 0)
+  EXPECT_EQ(notes[1].note, 65u);  // F4 (base + 5)
+}
+
+TEST_F(MotifTest, VariationTransposedUpdatesAbsolutePitches) {
+  Motif original;
+  original.contour_degrees = {0, 2, 4};
+  original.absolute_pitches = {60, 62, 64};  // C4, D4, E4
+
+  Motif transposed = applyVariation(original, MotifVariation::Transposed, 5, rng_);
+
+  // absolute_pitches should also be transposed
+  ASSERT_EQ(transposed.absolute_pitches.size(), 3u);
+  EXPECT_EQ(transposed.absolute_pitches[0], 65u);  // 60 + 5
+  EXPECT_EQ(transposed.absolute_pitches[1], 67u);  // 62 + 5
+  EXPECT_EQ(transposed.absolute_pitches[2], 69u);  // 64 + 5
+}
+
+TEST_F(MotifTest, VariationInvertedUpdatesAbsolutePitches) {
+  Motif original;
+  original.contour_degrees = {0, 2, 4};  // Ascending
+  original.absolute_pitches = {60, 62, 64};  // C4, D4, E4
+
+  Motif inverted = applyVariation(original, MotifVariation::Inverted, 0, rng_);
+
+  // absolute_pitches should be inverted around first note
+  // Pivot = 60, inversion: 60, 58, 56
+  ASSERT_EQ(inverted.absolute_pitches.size(), 3u);
+  EXPECT_EQ(inverted.absolute_pitches[0], 60u);  // Pivot unchanged
+  EXPECT_EQ(inverted.absolute_pitches[1], 58u);  // 60 - (62 - 60) = 58
+  EXPECT_EQ(inverted.absolute_pitches[2], 56u);  // 60 - (64 - 60) = 56
+}
+
+TEST_F(MotifTest, VariationFragmentedTruncatesAbsolutePitches) {
+  Motif original;
+  original.rhythm = {{0.0f, 2, true}, {1.0f, 2, false},
+                     {2.0f, 2, true}, {3.0f, 2, false}};
+  original.contour_degrees = {0, 2, 4, 2};
+  original.absolute_pitches = {60, 62, 64, 62};
+  original.length_beats = 8;
+
+  Motif fragmented = applyVariation(original, MotifVariation::Fragmented, 0, rng_);
+
+  // Should keep only first half
+  EXPECT_EQ(fragmented.absolute_pitches.size(), 2u);
+  EXPECT_EQ(fragmented.absolute_pitches[0], 60u);
+  EXPECT_EQ(fragmented.absolute_pitches[1], 62u);
+}
+
+TEST_F(MotifTest, AuxTrackReproducesMelodicContourFaithfully) {
+  // Integration test: verify aux reproduces vocal melody contour
+  // Create a distinctive melody pattern
+  std::vector<NoteEvent> chorus_notes;
+  Tick current = 0;
+  // Distinctive melody: C4, G4, E4, A4 (with varied intervals)
+  chorus_notes.push_back({current, TICKS_PER_BEAT, 60, 100});  // C4
+  current += TICKS_PER_BEAT;
+  chorus_notes.push_back({current, TICKS_PER_BEAT, 67, 100});  // G4 (+7)
+  current += TICKS_PER_BEAT;
+  chorus_notes.push_back({current, TICKS_PER_BEAT, 64, 100});  // E4 (+4)
+  current += TICKS_PER_BEAT;
+  chorus_notes.push_back({current, TICKS_PER_BEAT, 69, 100});  // A4 (+9)
+
+  Motif motif = extractMotifFromChorus(chorus_notes);
+
+  // Place in intro at lower register (base_pitch = 48, C3)
+  std::vector<NoteEvent> aux_notes = placeMotifInIntro(motif, 0, TICKS_PER_BAR * 4, 48, 80);
+
+  ASSERT_GE(aux_notes.size(), 4u);
+
+  // Verify intervals are preserved (melodic contour)
+  // Original intervals from first note: 0, +7, +4, +9
+  int first_pitch = aux_notes[0].note;
+  EXPECT_EQ(static_cast<int>(aux_notes[1].note) - first_pitch, 7)
+      << "Interval to 2nd note should be +7";
+  EXPECT_EQ(static_cast<int>(aux_notes[2].note) - first_pitch, 4)
+      << "Interval to 3rd note should be +4";
+  EXPECT_EQ(static_cast<int>(aux_notes[3].note) - first_pitch, 9)
+      << "Interval to 4th note should be +9";
+}
+
 }  // namespace
 }  // namespace midisketch

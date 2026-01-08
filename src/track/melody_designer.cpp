@@ -1,4 +1,5 @@
 #include "track/melody_designer.h"
+#include "core/harmonic_rhythm.h"
 #include "core/harmony_context.h"
 #include "core/timing_constants.h"
 #include <algorithm>
@@ -50,8 +51,22 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(
 
   std::vector<NoteEvent> result;
 
-  // Calculate phrase structure
+  // Calculate phrase structure aligned with harmonic rhythm
   uint8_t phrase_beats = tmpl.max_phrase_beats;
+
+  // Get harmonic rhythm for this section to align phrases with chord changes
+  HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(ctx.section_type, ctx.mood);
+
+  // Determine chord change interval in beats
+  // Slow: 8 beats (2 bars), Normal: 4 beats (1 bar), Dense: 4 beats minimum
+  uint8_t chord_unit_beats = (harmonic.density == HarmonicDensity::Slow) ? 8 : 4;
+
+  // Align phrase length to chord boundaries
+  // This prevents melodies from sustaining across chord changes
+  if (phrase_beats > chord_unit_beats) {
+    phrase_beats = chord_unit_beats;
+  }
+
   uint8_t phrase_bars = (phrase_beats + 3) / 4;  // Convert to bars
   uint8_t phrase_count = calculatePhraseCount(ctx.section_bars, phrase_bars);
 
@@ -83,9 +98,26 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(
                                            harmony, rng);
     }
 
-    // Append notes to result
+    // Append notes to result, enforcing interval constraint between phrases
+    constexpr int MAX_PHRASE_INTERVAL = 9;  // Major 6th
     for (const auto& note : phrase_result.notes) {
-      result.push_back(note);
+      NoteEvent adjusted_note = note;
+      // Check interval with previous note in result
+      if (!result.empty()) {
+        int prev_note_pitch = result.back().note;
+        int interval = std::abs(static_cast<int>(adjusted_note.note) - prev_note_pitch);
+        if (interval > MAX_PHRASE_INTERVAL) {
+          // Adjust pitch to stay within interval constraint
+          if (adjusted_note.note > prev_note_pitch) {
+            adjusted_note.note = static_cast<uint8_t>(prev_note_pitch + MAX_PHRASE_INTERVAL);
+          } else {
+            adjusted_note.note = static_cast<uint8_t>(prev_note_pitch - MAX_PHRASE_INTERVAL);
+          }
+          // Clamp to vocal range
+          adjusted_note.note = std::clamp(adjusted_note.note, ctx.vocal_low, ctx.vocal_high);
+        }
+      }
+      result.push_back(adjusted_note);
     }
 
     // Update state for next phrase
@@ -118,6 +150,13 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(
     if (i < phrase_count - 1 && !ctx.disable_breathing_gaps) {
       current_tick += TICK_EIGHTH;  // Short breath
     }
+
+    // Snap to next chord boundary (phrase_beats * TICKS_PER_BEAT grid)
+    // This ensures each phrase starts at a chord change, preventing sustain issues
+    Tick chord_interval = phrase_beats * TICKS_PER_BEAT;
+    Tick relative_tick = current_tick - ctx.section_start;
+    Tick next_boundary = ((relative_tick + chord_interval - 1) / chord_interval) * chord_interval;
+    current_tick = ctx.section_start + next_boundary;
   }
 
   return result;
@@ -251,6 +290,33 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       }
     }
 
+    // Enforce maximum interval constraint (major 6th = 9 semitones)
+    // This ensures singable melody lines without awkward leaps
+    constexpr int MAX_INTERVAL = 9;
+    int interval = std::abs(new_pitch - current_pitch);
+    if (interval > MAX_INTERVAL) {
+      if (new_pitch > current_pitch) {
+        new_pitch = current_pitch + MAX_INTERVAL;
+      } else {
+        new_pitch = current_pitch - MAX_INTERVAL;
+      }
+      // Re-snap to scale tone after adjustment
+      new_pitch = snapToNearestScaleTone(new_pitch, ctx.key_offset);
+      new_pitch = std::clamp(new_pitch,
+                             static_cast<int>(ctx.vocal_low),
+                             static_cast<int>(ctx.vocal_high));
+      // Re-check interval after snap (snap may have expanded the interval)
+      interval = std::abs(new_pitch - current_pitch);
+      if (interval > MAX_INTERVAL) {
+        // Snap moved us too far, adjust back within constraint
+        if (new_pitch > current_pitch) {
+          new_pitch = current_pitch + MAX_INTERVAL;
+        } else {
+          new_pitch = current_pitch - MAX_INTERVAL;
+        }
+      }
+    }
+
     // Update direction inertia
     int movement = new_pitch - current_pitch;
     if (movement > 0) {
@@ -280,6 +346,16 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     bool is_phrase_end = (i == rhythm.size() - 1);
     float gate = is_phrase_end ? tmpl.phrase_end_resolution * 0.8f : 0.9f;
     note_duration = static_cast<Tick>(note_duration * gate);
+
+    // Clamp note duration to phrase boundary (prevents sustain over chord change)
+    Tick phrase_end = phrase_start + phrase_beats * TICKS_PER_BEAT;
+    if (note_start + note_duration > phrase_end) {
+      note_duration = phrase_end - note_start;
+      // Ensure minimum duration (16th note) for musical validity
+      if (note_duration < TICK_SIXTEENTH) {
+        note_duration = TICK_SIXTEENTH;
+      }
+    }
 
     // Calculate velocity
     uint8_t velocity = DEFAULT_VELOCITY;
@@ -336,19 +412,44 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(
                                     static_cast<uint8_t>(2),
                                     static_cast<uint8_t>(4));
 
-  // Build hook pitches from cached contour (Ice Cream-style: short, fixed pattern)
-  // Use only the first 3 contour notes (before padding) for memorable hooks
-  // Snap to chord tones for harmonic stability on strong beats
+  // Build hook pitches from cached contour (short pattern for memorability)
+  // Use only first 3 notes to maintain hook identity across repetitions
+  // Strong beats snap to chord tones, weak beats allow scale tones
+  constexpr int MAX_INTERVAL = 9;  // Major 6th - singable leap limit
   std::vector<int> hook_pitches;
   size_t contour_limit = std::min(hook.contour_degrees.size(), static_cast<size_t>(3));
+  int prev_hook_pitch = base_pitch;
   for (size_t i = 0; i < contour_limit; ++i) {
     int pitch = base_pitch + hook.contour_degrees[i];
-    // Snap to nearest chord tone for harmonic stability
-    pitch = nearestChordTonePitch(pitch, ctx.chord_degree);
+    bool is_strong = (i < hook.rhythm.size()) ? hook.rhythm[i].strong : true;
+
+    if (is_strong) {
+      // Strong beats: snap to chord tones for harmonic stability
+      pitch = nearestChordTonePitch(pitch, ctx.chord_degree);
+    } else {
+      // Weak beats: allow scale tones for melodic movement
+      pitch = snapToNearestScaleTone(pitch, ctx.key_offset);
+    }
+
     pitch = std::clamp(pitch,
                        static_cast<int>(ctx.vocal_low),
                        static_cast<int>(ctx.vocal_high));
+
+    // Ensure interval constraint with previous note
+    int interval = std::abs(pitch - prev_hook_pitch);
+    if (interval > MAX_INTERVAL) {
+      if (pitch > prev_hook_pitch) {
+        pitch = prev_hook_pitch + MAX_INTERVAL;
+      } else {
+        pitch = prev_hook_pitch - MAX_INTERVAL;
+      }
+      pitch = std::clamp(pitch,
+                         static_cast<int>(ctx.vocal_low),
+                         static_cast<int>(ctx.vocal_high));
+    }
+
     hook_pitches.push_back(pitch);
+    prev_hook_pitch = pitch;
   }
 
   // Calculate timing for hook notes
