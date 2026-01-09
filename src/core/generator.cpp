@@ -369,6 +369,116 @@ void Generator::generateWithVocal(const GeneratorParams& params) {
   generateAccompanimentForVocal();
 }
 
+void Generator::regenerateAccompaniment(uint32_t new_seed) {
+  AccompanimentConfig config;
+  config.seed = new_seed;
+  // Use current params_ values as defaults
+  config.drums_enabled = params_.drums_enabled;
+  config.arpeggio_enabled = params_.arpeggio_enabled;
+  config.arpeggio_pattern = static_cast<uint8_t>(params_.arpeggio.pattern);
+  config.arpeggio_speed = static_cast<uint8_t>(params_.arpeggio.speed);
+  config.arpeggio_octave_range = params_.arpeggio.octave_range;
+  config.arpeggio_gate = static_cast<uint8_t>(params_.arpeggio.gate * 100);
+  config.arpeggio_sync_chord = params_.arpeggio.sync_chord;
+  config.chord_ext_sus = params_.chord_extension.enable_sus;
+  config.chord_ext_7th = params_.chord_extension.enable_7th;
+  config.chord_ext_9th = params_.chord_extension.enable_9th;
+  config.chord_ext_sus_prob = static_cast<uint8_t>(params_.chord_extension.sus_probability * 100);
+  config.chord_ext_7th_prob = static_cast<uint8_t>(params_.chord_extension.seventh_probability * 100);
+  config.chord_ext_9th_prob = static_cast<uint8_t>(params_.chord_extension.ninth_probability * 100);
+  config.humanize = params_.humanize;
+  config.humanize_timing = static_cast<uint8_t>(params_.humanize_timing * 100);
+  config.humanize_velocity = static_cast<uint8_t>(params_.humanize_velocity * 100);
+  config.se_enabled = se_enabled_;
+  config.call_enabled = call_enabled_;
+  config.call_density = static_cast<uint8_t>(call_density_);
+  config.intro_chant = static_cast<uint8_t>(intro_chant_);
+  config.mix_pattern = static_cast<uint8_t>(mix_pattern_);
+  config.call_notes_enabled = call_notes_enabled_;
+
+  regenerateAccompaniment(config);
+}
+
+void Generator::regenerateAccompaniment(const AccompanimentConfig& config) {
+  // Apply config to params_
+  params_.drums_enabled = config.drums_enabled;
+  params_.arpeggio_enabled = config.arpeggio_enabled;
+  params_.arpeggio.pattern = static_cast<ArpeggioPattern>(config.arpeggio_pattern);
+  params_.arpeggio.speed = static_cast<ArpeggioSpeed>(config.arpeggio_speed);
+  params_.arpeggio.octave_range = config.arpeggio_octave_range;
+  params_.arpeggio.gate = config.arpeggio_gate / 100.0f;
+  params_.arpeggio.sync_chord = config.arpeggio_sync_chord;
+  params_.chord_extension.enable_sus = config.chord_ext_sus;
+  params_.chord_extension.enable_7th = config.chord_ext_7th;
+  params_.chord_extension.enable_9th = config.chord_ext_9th;
+  params_.chord_extension.sus_probability = config.chord_ext_sus_prob / 100.0f;
+  params_.chord_extension.seventh_probability = config.chord_ext_7th_prob / 100.0f;
+  params_.chord_extension.ninth_probability = config.chord_ext_9th_prob / 100.0f;
+  params_.humanize = config.humanize;
+  params_.humanize_timing = config.humanize_timing / 100.0f;
+  params_.humanize_velocity = config.humanize_velocity / 100.0f;
+  se_enabled_ = config.se_enabled;
+  call_enabled_ = config.call_enabled;
+  call_density_ = static_cast<CallDensity>(config.call_density);
+  intro_chant_ = static_cast<IntroChant>(config.intro_chant);
+  mix_pattern_ = static_cast<MixPattern>(config.mix_pattern);
+  call_notes_enabled_ = config.call_notes_enabled;
+
+  // Resolve seed (0 = auto-generate from clock)
+  uint32_t seed = resolveSeed(config.seed);
+  rng_.seed(seed);
+
+  // Clear all accompaniment tracks (keep vocal)
+  song_.clearTrack(TrackRole::Aux);
+  song_.clearTrack(TrackRole::Bass);
+  song_.clearTrack(TrackRole::Chord);
+  song_.clearTrack(TrackRole::Drums);
+  song_.clearTrack(TrackRole::Arpeggio);
+  song_.clearTrack(TrackRole::Motif);
+  song_.clearTrack(TrackRole::SE);
+
+  // Clear harmony context notes and re-register vocal
+  harmony_context_.clearNotes();
+  harmony_context_.registerTrack(song_.vocal(), TrackRole::Vocal);
+
+  // Regenerate accompaniment
+  generateAccompanimentForVocal();
+}
+
+void Generator::generateAccompanimentForVocal(const AccompanimentConfig& config) {
+  // Apply config to params_
+  params_.drums_enabled = config.drums_enabled;
+  params_.arpeggio_enabled = config.arpeggio_enabled;
+  params_.arpeggio.pattern = static_cast<ArpeggioPattern>(config.arpeggio_pattern);
+  params_.arpeggio.speed = static_cast<ArpeggioSpeed>(config.arpeggio_speed);
+  params_.arpeggio.octave_range = config.arpeggio_octave_range;
+  params_.arpeggio.gate = config.arpeggio_gate / 100.0f;
+  params_.arpeggio.sync_chord = config.arpeggio_sync_chord;
+  params_.chord_extension.enable_sus = config.chord_ext_sus;
+  params_.chord_extension.enable_7th = config.chord_ext_7th;
+  params_.chord_extension.enable_9th = config.chord_ext_9th;
+  params_.chord_extension.sus_probability = config.chord_ext_sus_prob / 100.0f;
+  params_.chord_extension.seventh_probability = config.chord_ext_7th_prob / 100.0f;
+  params_.chord_extension.ninth_probability = config.chord_ext_9th_prob / 100.0f;
+  params_.humanize = config.humanize;
+  params_.humanize_timing = config.humanize_timing / 100.0f;
+  params_.humanize_velocity = config.humanize_velocity / 100.0f;
+  se_enabled_ = config.se_enabled;
+  call_enabled_ = config.call_enabled;
+  call_density_ = static_cast<CallDensity>(config.call_density);
+  intro_chant_ = static_cast<IntroChant>(config.intro_chant);
+  mix_pattern_ = static_cast<MixPattern>(config.mix_pattern);
+  call_notes_enabled_ = config.call_notes_enabled;
+
+  // Seed RNG if specified
+  if (config.seed != 0) {
+    rng_.seed(config.seed);
+  }
+
+  // Generate accompaniment
+  generateAccompanimentForVocal();
+}
+
 void Generator::setMelody(const MelodyData& melody) {
   song_.setMelodySeed(melody.seed);
   song_.clearTrack(TrackRole::Vocal);

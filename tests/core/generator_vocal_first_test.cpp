@@ -89,27 +89,39 @@ TEST_F(GeneratorVocalFirstTest, GenerateVocalOnlyDeterministic) {
 // === regenerateVocal Tests ===
 
 TEST_F(GeneratorVocalFirstTest, RegenerateVocalChangesVocal) {
+  // Try multiple seeds - at least one should produce different results
+  constexpr uint32_t seeds[] = {99999, 88888, 77777};
+  bool found_difference = false;
+
   Generator gen;
   gen.generateVocal(params_);
 
-  const auto& original_vocal = gen.getSong().vocal().notes();
-  size_t original_count = original_vocal.size();
-  uint8_t original_first_note = original_vocal.empty() ? 0 : original_vocal[0].note;
+  const auto original_vocal = gen.getSong().vocal().notes();
 
-  // Regenerate with different seed
-  gen.regenerateVocal(99999);
+  for (uint32_t seed : seeds) {
+    gen.regenerateVocal(seed);
+    const auto& new_vocal = gen.getSong().vocal().notes();
 
-  const auto& new_vocal = gen.getSong().vocal().notes();
+    // Check for any difference
+    if (new_vocal.size() != original_vocal.size()) {
+      found_difference = true;
+      break;
+    }
+    for (size_t i = 0; i < new_vocal.size(); ++i) {
+      if (new_vocal[i].note != original_vocal[i].note ||
+          new_vocal[i].start_tick != original_vocal[i].start_tick) {
+        found_difference = true;
+        break;
+      }
+    }
+    if (found_difference) break;
 
-  // New vocal should be different (with high probability)
-  // Note: Could be same by chance, but very unlikely with different seed
-  bool is_different = (new_vocal.size() != original_count);
-  if (!is_different && !new_vocal.empty()) {
-    is_different = (new_vocal[0].note != original_first_note);
+    // Also verify regeneration produces valid output
+    EXPECT_FALSE(new_vocal.empty()) << "Regenerated vocal should have notes";
   }
 
-  // At minimum, regeneration should produce a valid vocal
-  EXPECT_FALSE(new_vocal.empty()) << "Regenerated vocal should have notes";
+  EXPECT_TRUE(found_difference)
+      << "At least one of 3 seeds should produce different vocal output";
 }
 
 TEST_F(GeneratorVocalFirstTest, RegenerateVocalPreservesStructure) {
@@ -170,6 +182,143 @@ TEST_F(GeneratorVocalFirstTest, GenerateAccompanimentPreservesVocal) {
         << "Vocal note changed at index " << i;
     EXPECT_EQ(preserved_vocal[i].start_tick, original_vocal[i].start_tick)
         << "Vocal timing changed at index " << i;
+  }
+}
+
+// === regenerateAccompaniment Tests ===
+
+TEST_F(GeneratorVocalFirstTest, RegenerateAccompanimentPreservesVocal) {
+  Generator gen;
+  gen.generateWithVocal(params_);
+
+  // Store original vocal
+  std::vector<NoteEvent> original_vocal = gen.getSong().vocal().notes();
+
+  // Regenerate accompaniment with different seed
+  gen.regenerateAccompaniment(99999);
+
+  // Vocal should be preserved
+  const auto& preserved_vocal = gen.getSong().vocal().notes();
+  ASSERT_EQ(preserved_vocal.size(), original_vocal.size());
+
+  for (size_t i = 0; i < original_vocal.size(); ++i) {
+    EXPECT_EQ(preserved_vocal[i].note, original_vocal[i].note)
+        << "Vocal note changed at index " << i;
+    EXPECT_EQ(preserved_vocal[i].start_tick, original_vocal[i].start_tick)
+        << "Vocal timing changed at index " << i;
+  }
+}
+
+TEST_F(GeneratorVocalFirstTest, RegenerateAccompanimentChangesAccompaniment) {
+  // Try multiple seeds - at least one should produce different results
+  constexpr uint32_t seeds[] = {99999, 88888, 77777};
+  bool found_difference = false;
+
+  Generator gen;
+  gen.generateWithVocal(params_);
+
+  // Store original accompaniment
+  const auto original_bass = gen.getSong().bass().notes();
+  const auto original_chord = gen.getSong().chord().notes();
+
+  for (uint32_t seed : seeds) {
+    gen.regenerateAccompaniment(seed);
+
+    const auto& new_bass = gen.getSong().bass().notes();
+    const auto& new_chord = gen.getSong().chord().notes();
+
+    // Check bass for differences
+    if (new_bass.size() != original_bass.size()) {
+      found_difference = true;
+      break;
+    }
+    for (size_t i = 0; i < new_bass.size(); ++i) {
+      if (new_bass[i].note != original_bass[i].note ||
+          new_bass[i].start_tick != original_bass[i].start_tick) {
+        found_difference = true;
+        break;
+      }
+    }
+    if (found_difference) break;
+
+    // Check chord for differences
+    if (new_chord.size() != original_chord.size()) {
+      found_difference = true;
+      break;
+    }
+    for (size_t i = 0; i < new_chord.size(); ++i) {
+      if (new_chord[i].note != original_chord[i].note ||
+          new_chord[i].start_tick != original_chord[i].start_tick) {
+        found_difference = true;
+        break;
+      }
+    }
+    if (found_difference) break;
+
+    // Also verify regeneration produces valid output
+    EXPECT_FALSE(new_bass.empty()) << "Regenerated bass should have notes";
+    EXPECT_FALSE(new_chord.empty()) << "Regenerated chord should have notes";
+  }
+
+  EXPECT_TRUE(found_difference)
+      << "At least one of 3 seeds should produce different accompaniment";
+}
+
+TEST_F(GeneratorVocalFirstTest, RegenerateAccompanimentDeterministic) {
+  Generator gen1, gen2;
+
+  // Generate with same initial params
+  gen1.generateWithVocal(params_);
+  gen2.generateWithVocal(params_);
+
+  // Regenerate with same seed
+  gen1.regenerateAccompaniment(88888);
+  gen2.regenerateAccompaniment(88888);
+
+  // Accompaniment should be identical
+  const auto& bass1 = gen1.getSong().bass().notes();
+  const auto& bass2 = gen2.getSong().bass().notes();
+
+  ASSERT_EQ(bass1.size(), bass2.size());
+  for (size_t i = 0; i < bass1.size(); ++i) {
+    EXPECT_EQ(bass1[i].note, bass2[i].note);
+    EXPECT_EQ(bass1[i].start_tick, bass2[i].start_tick);
+  }
+
+  const auto& chord1 = gen1.getSong().chord().notes();
+  const auto& chord2 = gen2.getSong().chord().notes();
+
+  ASSERT_EQ(chord1.size(), chord2.size());
+  for (size_t i = 0; i < chord1.size(); ++i) {
+    EXPECT_EQ(chord1[i].note, chord2[i].note);
+    EXPECT_EQ(chord1[i].start_tick, chord2[i].start_tick);
+  }
+}
+
+TEST_F(GeneratorVocalFirstTest, RegenerateAccompanimentMultipleTimes) {
+  Generator gen;
+  gen.generateWithVocal(params_);
+
+  // Store original vocal
+  std::vector<NoteEvent> original_vocal = gen.getSong().vocal().notes();
+
+  // Regenerate multiple times with different seeds
+  std::vector<size_t> bass_counts;
+  for (uint32_t seed : {11111u, 22222u, 33333u}) {
+    gen.regenerateAccompaniment(seed);
+    bass_counts.push_back(gen.getSong().bass().noteCount());
+
+    // Vocal should always be preserved
+    const auto& vocal = gen.getSong().vocal().notes();
+    ASSERT_EQ(vocal.size(), original_vocal.size());
+    for (size_t i = 0; i < original_vocal.size(); ++i) {
+      EXPECT_EQ(vocal[i].note, original_vocal[i].note);
+    }
+  }
+
+  // All regenerations should produce valid bass tracks
+  for (auto count : bass_counts) {
+    EXPECT_GT(count, 0u) << "Each regeneration should produce bass notes";
   }
 }
 

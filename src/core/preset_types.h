@@ -332,6 +332,46 @@ struct VocalConfig {
   CompositionStyle composition_style = CompositionStyle::MelodyLead;
 };
 
+/// @brief Configuration for accompaniment generation/regeneration.
+/// Contains all accompaniment-related parameters (drums, arpeggio, chord, humanize, SE, call).
+struct AccompanimentConfig {
+  uint32_t seed = 0;  ///< Random seed for BGM (0 = auto-generate)
+
+  /// Drums
+  bool drums_enabled = true;
+
+  /// Arpeggio
+  bool arpeggio_enabled = false;
+  uint8_t arpeggio_pattern = 0;       ///< 0=Up, 1=Down, 2=UpDown, 3=Random
+  uint8_t arpeggio_speed = 1;         ///< 0=Eighth, 1=Sixteenth, 2=Triplet
+  uint8_t arpeggio_octave_range = 2;  ///< 1-3 octaves
+  uint8_t arpeggio_gate = 80;         ///< Gate length (0-100)
+  bool arpeggio_sync_chord = true;    ///< Sync with chord changes
+
+  /// Chord Extensions
+  bool chord_ext_sus = false;
+  bool chord_ext_7th = false;
+  bool chord_ext_9th = false;
+  uint8_t chord_ext_sus_prob = 20;    ///< Sus probability (0-100)
+  uint8_t chord_ext_7th_prob = 30;    ///< 7th probability (0-100)
+  uint8_t chord_ext_9th_prob = 25;    ///< 9th probability (0-100)
+
+  /// Humanization
+  bool humanize = false;
+  uint8_t humanize_timing = 50;       ///< Timing variation (0-100)
+  uint8_t humanize_velocity = 50;     ///< Velocity variation (0-100)
+
+  /// SE
+  bool se_enabled = true;
+
+  /// Call System
+  bool call_enabled = false;
+  uint8_t call_density = 2;           ///< 0=Sparse, 1=Light, 2=Standard, 3=Dense
+  uint8_t intro_chant = 0;            ///< 0=None, 1=Gachikoi, 2=Mix
+  uint8_t mix_pattern = 0;            ///< 0=None, 1=Standard, 2=Tiger
+  bool call_notes_enabled = true;     ///< Output call as MIDI notes
+};
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_PRESET_TYPES_H

@@ -96,6 +96,27 @@ void MidiSketch::generateAccompanimentForVocal() {
                      generateMetadata(params), midi_format_);
 }
 
+void MidiSketch::regenerateAccompaniment(uint32_t new_seed) {
+  generator_.regenerateAccompaniment(new_seed);
+  const auto& params = generator_.getParams();
+  midi_writer_.build(generator_.getSong(), params.key,
+                     generateMetadata(params), midi_format_);
+}
+
+void MidiSketch::regenerateAccompaniment(const AccompanimentConfig& config) {
+  generator_.regenerateAccompaniment(config);
+  const auto& params = generator_.getParams();
+  midi_writer_.build(generator_.getSong(), params.key,
+                     generateMetadata(params), midi_format_);
+}
+
+void MidiSketch::generateAccompanimentForVocal(const AccompanimentConfig& config) {
+  generator_.generateAccompanimentForVocal(config);
+  const auto& params = generator_.getParams();
+  midi_writer_.build(generator_.getSong(), params.key,
+                     generateMetadata(params), midi_format_);
+}
+
 void MidiSketch::generateWithVocal(const SongConfig& config) {
   auto result = ConfigConverter::convert(config);
   generator_.generateWithVocal(result.params);

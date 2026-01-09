@@ -241,6 +241,74 @@ MidiSketchError midisketch_generate_accompaniment(MidiSketchHandle handle) {
   return MIDISKETCH_OK;
 }
 
+MidiSketchError midisketch_regenerate_accompaniment(MidiSketchHandle handle,
+                                                     uint32_t new_seed) {
+  if (!handle) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  sketch->regenerateAccompaniment(new_seed);
+  return MIDISKETCH_OK;
+}
+
+namespace {
+midisketch::AccompanimentConfig convertToAccompanimentConfig(
+    const MidiSketchAccompanimentConfig* config) {
+  midisketch::AccompanimentConfig cpp_config;
+  cpp_config.seed = config->seed;
+  cpp_config.drums_enabled = config->drums_enabled != 0;
+  cpp_config.arpeggio_enabled = config->arpeggio_enabled != 0;
+  cpp_config.arpeggio_pattern = config->arpeggio_pattern;
+  cpp_config.arpeggio_speed = config->arpeggio_speed;
+  cpp_config.arpeggio_octave_range = config->arpeggio_octave_range;
+  cpp_config.arpeggio_gate = config->arpeggio_gate;
+  cpp_config.arpeggio_sync_chord = config->arpeggio_sync_chord != 0;
+  cpp_config.chord_ext_sus = config->chord_ext_sus != 0;
+  cpp_config.chord_ext_7th = config->chord_ext_7th != 0;
+  cpp_config.chord_ext_9th = config->chord_ext_9th != 0;
+  cpp_config.chord_ext_sus_prob = config->chord_ext_sus_prob;
+  cpp_config.chord_ext_7th_prob = config->chord_ext_7th_prob;
+  cpp_config.chord_ext_9th_prob = config->chord_ext_9th_prob;
+  cpp_config.humanize = config->humanize != 0;
+  cpp_config.humanize_timing = config->humanize_timing;
+  cpp_config.humanize_velocity = config->humanize_velocity;
+  cpp_config.se_enabled = config->se_enabled != 0;
+  cpp_config.call_enabled = config->call_enabled != 0;
+  cpp_config.call_density = config->call_density;
+  cpp_config.intro_chant = config->intro_chant;
+  cpp_config.mix_pattern = config->mix_pattern;
+  cpp_config.call_notes_enabled = config->call_notes_enabled != 0;
+  return cpp_config;
+}
+}  // namespace
+
+MidiSketchError midisketch_generate_accompaniment_with_config(
+    MidiSketchHandle handle,
+    const MidiSketchAccompanimentConfig* config) {
+  if (!handle || !config) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  midisketch::AccompanimentConfig cpp_config = convertToAccompanimentConfig(config);
+  sketch->generateAccompanimentForVocal(cpp_config);
+  return MIDISKETCH_OK;
+}
+
+MidiSketchError midisketch_regenerate_accompaniment_with_config(
+    MidiSketchHandle handle,
+    const MidiSketchAccompanimentConfig* config) {
+  if (!handle || !config) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  midisketch::AccompanimentConfig cpp_config = convertToAccompanimentConfig(config);
+  sketch->regenerateAccompaniment(cpp_config);
+  return MIDISKETCH_OK;
+}
+
 MidiSketchError midisketch_generate_with_vocal(MidiSketchHandle handle,
                                                 const MidiSketchSongConfig* config) {
   if (!handle || !config) {

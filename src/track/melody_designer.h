@@ -44,6 +44,7 @@ class MelodyDesigner {
     bool disable_breathing_gaps = false;      ///< Remove breathing rests between phrases
     const SectionTransition* transition_to_next = nullptr;  ///< Transition to next section
     bool enable_embellishment = true;         ///< Enable melodic embellishment (NCT insertion)
+    VocalAttitude vocal_attitude = VocalAttitude::Expressive;  ///< Vocal style attitude
   };
 
   /// @brief Result of generating a single phrase.
@@ -224,6 +225,10 @@ class MelodyDesigner {
       const SectionContext& ctx,
       const HarmonyContext& harmony);
   // Apply pitch choice to get new pitch.
+  // VocalAttitude affects candidate pitches:
+  //   Clean: chord tones only (1, 3, 5)
+  //   Expressive: chord tones + tensions (7, 9)
+  //   Raw: all scale tones
   int applyPitchChoice(
       PitchChoice choice,
       int current_pitch,
@@ -231,7 +236,8 @@ class MelodyDesigner {
       int8_t chord_degree,
       int key_offset,
       uint8_t vocal_low,
-      uint8_t vocal_high);
+      uint8_t vocal_high,
+      VocalAttitude attitude);
 
   // Calculate target pitch for phrase based on template.
   int calculateTargetPitch(

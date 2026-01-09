@@ -59,6 +59,9 @@ interface Api {
   generateVocal: (handle: number, configPtr: number) => number;
   regenerateVocal: (handle: number, configPtr: number) => number;
   generateAccompaniment: (handle: number) => number;
+  generateAccompanimentWithConfig: (handle: number, configPtr: number) => number;
+  regenerateAccompaniment: (handle: number, seed: number) => number;
+  regenerateAccompanimentWithConfig: (handle: number, configPtr: number) => number;
   generateWithVocal: (handle: number, configPtr: number) => number;
 }
 
@@ -272,6 +275,70 @@ export interface VocalConfig {
   vocalGroove?: number;
   /** Composition style: 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven */
   compositionStyle?: number;
+}
+
+/**
+ * Configuration for accompaniment generation/regeneration.
+ */
+export interface AccompanimentConfig {
+  /** Random seed for BGM (0 = auto-generate) */
+  seed?: number;
+
+  // Drums
+  /** Enable drums */
+  drumsEnabled?: boolean;
+
+  // Arpeggio
+  /** Enable arpeggio */
+  arpeggioEnabled?: boolean;
+  /** Arpeggio pattern: 0=Up, 1=Down, 2=UpDown, 3=Random */
+  arpeggioPattern?: number;
+  /** Arpeggio speed: 0=Eighth, 1=Sixteenth, 2=Triplet */
+  arpeggioSpeed?: number;
+  /** Arpeggio octave range: 1-3 */
+  arpeggioOctaveRange?: number;
+  /** Arpeggio gate length: 0-100 */
+  arpeggioGate?: number;
+  /** Sync arpeggio with chord changes */
+  arpeggioSyncChord?: boolean;
+
+  // Chord Extensions
+  /** Enable sus chord extension */
+  chordExtSus?: boolean;
+  /** Enable 7th chord extension */
+  chordExt7th?: boolean;
+  /** Enable 9th chord extension */
+  chordExt9th?: boolean;
+  /** Sus probability: 0-100 */
+  chordExtSusProb?: number;
+  /** 7th probability: 0-100 */
+  chordExt7thProb?: number;
+  /** 9th probability: 0-100 */
+  chordExt9thProb?: number;
+
+  // Humanization
+  /** Enable humanization */
+  humanize?: boolean;
+  /** Timing variation: 0-100 */
+  humanizeTiming?: number;
+  /** Velocity variation: 0-100 */
+  humanizeVelocity?: number;
+
+  // SE
+  /** Enable SE track */
+  seEnabled?: boolean;
+
+  // Call System
+  /** Enable call system */
+  callEnabled?: boolean;
+  /** Call density: 0=Sparse, 1=Light, 2=Standard, 3=Dense */
+  callDensity?: number;
+  /** Intro chant: 0=None, 1=Gachikoi, 2=Mix */
+  introChant?: number;
+  /** Mix pattern: 0=None, 1=Standard, 2=Tiger */
+  mixPattern?: number;
+  /** Output call as MIDI notes */
+  callNotesEnabled?: boolean;
 }
 
 /**
@@ -549,6 +616,20 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
     generateAccompaniment: m.cwrap('midisketch_generate_accompaniment', 'number', ['number']) as (
       handle: number,
     ) => number,
+    generateAccompanimentWithConfig: m.cwrap(
+      'midisketch_generate_accompaniment_with_config',
+      'number',
+      ['number', 'number'],
+    ) as (handle: number, configPtr: number) => number,
+    regenerateAccompaniment: m.cwrap('midisketch_regenerate_accompaniment', 'number', [
+      'number',
+      'number',
+    ]) as (handle: number, seed: number) => number,
+    regenerateAccompanimentWithConfig: m.cwrap(
+      'midisketch_regenerate_accompaniment_with_config',
+      'number',
+      ['number', 'number'],
+    ) as (handle: number, configPtr: number) => number,
     generateWithVocal: m.cwrap('midisketch_generate_with_vocal', 'number', [
       'number',
       'number',
@@ -962,17 +1043,114 @@ export class MidiSketch {
    * Generate accompaniment tracks for existing vocal.
    * Must be called after generateVocal() or generateWithVocal().
    * Generates: Aux → Bass → Chord → Drums (adapting to vocal).
+   * @param config Optional accompaniment configuration
    * @throws {MidiSketchGenerationError} If generation fails
    */
-  generateAccompaniment(): void {
+  generateAccompaniment(config?: AccompanimentConfig): void {
     const a = getApi();
-    const result = a.generateAccompaniment(this.handle);
-    if (result !== 0) {
-      throw new MidiSketchGenerationError(
-        result,
-        `Accompaniment generation failed with error code: ${result}`,
-      );
+    if (config === undefined) {
+      const result = a.generateAccompaniment(this.handle);
+      if (result !== 0) {
+        throw new MidiSketchGenerationError(
+          result,
+          `Accompaniment generation failed with error code: ${result}`,
+        );
+      }
+    } else {
+      const m = getModule();
+      const configPtr = this.allocAccompanimentConfig(m, config);
+      try {
+        const result = a.generateAccompanimentWithConfig(this.handle, configPtr);
+        if (result !== 0) {
+          throw new MidiSketchGenerationError(
+            result,
+            `Accompaniment generation failed with error code: ${result}`,
+          );
+        }
+      } finally {
+        m._free(configPtr);
+      }
     }
+  }
+
+  /**
+   * Regenerate accompaniment tracks with a new seed or configuration.
+   * Keeps current vocal, regenerates all accompaniment tracks
+   * (Aux, Bass, Chord, Drums, etc.) with the specified seed/config.
+   * Must have existing vocal (call generateVocal() first).
+   * @param seedOrConfig Random seed (0 = auto-generate) or AccompanimentConfig
+   * @throws {MidiSketchGenerationError} If regeneration fails
+   */
+  regenerateAccompaniment(seedOrConfig: number | AccompanimentConfig = 0): void {
+    const a = getApi();
+    if (typeof seedOrConfig === 'number') {
+      const result = a.regenerateAccompaniment(this.handle, seedOrConfig);
+      if (result !== 0) {
+        throw new MidiSketchGenerationError(
+          result,
+          `Accompaniment regeneration failed with error code: ${result}`,
+        );
+      }
+    } else {
+      const m = getModule();
+      const configPtr = this.allocAccompanimentConfig(m, seedOrConfig);
+      try {
+        const result = a.regenerateAccompanimentWithConfig(this.handle, configPtr);
+        if (result !== 0) {
+          throw new MidiSketchGenerationError(
+            result,
+            `Accompaniment regeneration failed with error code: ${result}`,
+          );
+        }
+      } finally {
+        m._free(configPtr);
+      }
+    }
+  }
+
+  /**
+   * Allocate and populate AccompanimentConfig in WASM memory.
+   */
+  private allocAccompanimentConfig(m: EmscriptenModule, config: AccompanimentConfig): number {
+    // MidiSketchAccompanimentConfig struct size: 28 bytes
+    const configPtr = m._malloc(28);
+    const view = new DataView(m.HEAPU8.buffer, configPtr, 28);
+
+    view.setUint32(0, config.seed ?? 0, true); // seed
+
+    view.setUint8(4, config.drumsEnabled !== false ? 1 : 0); // drums_enabled
+
+    view.setUint8(5, config.arpeggioEnabled ? 1 : 0); // arpeggio_enabled
+    view.setUint8(6, config.arpeggioPattern ?? 0); // arpeggio_pattern
+    view.setUint8(7, config.arpeggioSpeed ?? 1); // arpeggio_speed
+    view.setUint8(8, config.arpeggioOctaveRange ?? 2); // arpeggio_octave_range
+    view.setUint8(9, config.arpeggioGate ?? 80); // arpeggio_gate
+    view.setUint8(10, config.arpeggioSyncChord !== false ? 1 : 0); // arpeggio_sync_chord
+
+    view.setUint8(11, config.chordExtSus ? 1 : 0); // chord_ext_sus
+    view.setUint8(12, config.chordExt7th ? 1 : 0); // chord_ext_7th
+    view.setUint8(13, config.chordExt9th ? 1 : 0); // chord_ext_9th
+    view.setUint8(14, config.chordExtSusProb ?? 20); // chord_ext_sus_prob
+    view.setUint8(15, config.chordExt7thProb ?? 30); // chord_ext_7th_prob
+    view.setUint8(16, config.chordExt9thProb ?? 25); // chord_ext_9th_prob
+
+    view.setUint8(17, config.humanize ? 1 : 0); // humanize
+    view.setUint8(18, config.humanizeTiming ?? 50); // humanize_timing
+    view.setUint8(19, config.humanizeVelocity ?? 50); // humanize_velocity
+
+    view.setUint8(20, config.seEnabled !== false ? 1 : 0); // se_enabled
+
+    view.setUint8(21, config.callEnabled ? 1 : 0); // call_enabled
+    view.setUint8(22, config.callDensity ?? 2); // call_density
+    view.setUint8(23, config.introChant ?? 0); // intro_chant
+    view.setUint8(24, config.mixPattern ?? 0); // mix_pattern
+    view.setUint8(25, config.callNotesEnabled !== false ? 1 : 0); // call_notes_enabled
+
+    // Reserved padding
+    view.setUint8(26, 0);
+    view.setUint8(27, 0);
+
+    return configPtr;
   }
 
   /**

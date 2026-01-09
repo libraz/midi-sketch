@@ -340,6 +340,47 @@ typedef struct {
   uint8_t _reserved[2];       ///< Padding for alignment (total: 16 bytes)
 } MidiSketchVocalConfig;
 
+/// @brief Accompaniment generation/regeneration configuration.
+typedef struct {
+  uint32_t seed;              ///< Random seed for BGM (0 = auto-generate)
+
+  // Drums
+  uint8_t drums_enabled;      ///< Enable drums (0=false, 1=true)
+
+  // Arpeggio
+  uint8_t arpeggio_enabled;   ///< Enable arpeggio (0=false, 1=true)
+  uint8_t arpeggio_pattern;   ///< 0=Up, 1=Down, 2=UpDown, 3=Random
+  uint8_t arpeggio_speed;     ///< 0=Eighth, 1=Sixteenth, 2=Triplet
+  uint8_t arpeggio_octave_range; ///< 1-3 octaves
+  uint8_t arpeggio_gate;      ///< Gate length (0-100)
+  uint8_t arpeggio_sync_chord; ///< Sync with chord changes (0=false, 1=true)
+
+  // Chord Extensions
+  uint8_t chord_ext_sus;      ///< Enable sus (0=false, 1=true)
+  uint8_t chord_ext_7th;      ///< Enable 7th (0=false, 1=true)
+  uint8_t chord_ext_9th;      ///< Enable 9th (0=false, 1=true)
+  uint8_t chord_ext_sus_prob; ///< Sus probability (0-100)
+  uint8_t chord_ext_7th_prob; ///< 7th probability (0-100)
+  uint8_t chord_ext_9th_prob; ///< 9th probability (0-100)
+
+  // Humanization
+  uint8_t humanize;           ///< Enable humanize (0=false, 1=true)
+  uint8_t humanize_timing;    ///< Timing variation (0-100)
+  uint8_t humanize_velocity;  ///< Velocity variation (0-100)
+
+  // SE
+  uint8_t se_enabled;         ///< Enable SE track (0=false, 1=true)
+
+  // Call System
+  uint8_t call_enabled;       ///< Enable call (0=false, 1=true)
+  uint8_t call_density;       ///< 0=Sparse, 1=Light, 2=Standard, 3=Dense
+  uint8_t intro_chant;        ///< 0=None, 1=Gachikoi, 2=Mix
+  uint8_t mix_pattern;        ///< 0=None, 1=Standard, 2=Tiger
+  uint8_t call_notes_enabled; ///< Output call as MIDI notes (0=false, 1=true)
+
+  uint8_t _reserved[2];       ///< Padding for alignment (total: 28 bytes)
+} MidiSketchAccompanimentConfig;
+
 /**
  * @brief Generate only the vocal track without accompaniment.
  *
@@ -378,6 +419,52 @@ MidiSketchError midisketch_regenerate_vocal(
  * @return MIDISKETCH_OK on success
  */
 MidiSketchError midisketch_generate_accompaniment(MidiSketchHandle handle);
+
+/**
+ * @brief Generate accompaniment tracks with configuration.
+ *
+ * Must be called after generateVocal().
+ * Generates: Aux → Bass → Chord → Drums (adapting to vocal).
+ * @param handle MidiSketch handle
+ * @param config Accompaniment configuration
+ * @return MIDISKETCH_OK on success
+ */
+MidiSketchError midisketch_generate_accompaniment_with_config(
+    MidiSketchHandle handle,
+    const MidiSketchAccompanimentConfig* config
+);
+
+/**
+ * @brief Regenerate accompaniment tracks with a new seed.
+ *
+ * Keeps current vocal, clears and regenerates all accompaniment tracks
+ * (Aux, Bass, Chord, Drums, etc.) with the specified seed.
+ * Must have existing vocal (call generateVocal() first).
+ *
+ * @param handle MidiSketch handle
+ * @param new_seed New random seed for accompaniment (0 = auto-generate)
+ * @return MIDISKETCH_OK on success
+ */
+MidiSketchError midisketch_regenerate_accompaniment(
+    MidiSketchHandle handle,
+    uint32_t new_seed
+);
+
+/**
+ * @brief Regenerate accompaniment tracks with configuration.
+ *
+ * Keeps current vocal, clears and regenerates all accompaniment tracks
+ * with the specified configuration.
+ * Must have existing vocal (call generateVocal() first).
+ *
+ * @param handle MidiSketch handle
+ * @param config Accompaniment configuration
+ * @return MIDISKETCH_OK on success
+ */
+MidiSketchError midisketch_regenerate_accompaniment_with_config(
+    MidiSketchHandle handle,
+    const MidiSketchAccompanimentConfig* config
+);
 
 /**
  * @brief Generate all tracks with vocal-first priority.

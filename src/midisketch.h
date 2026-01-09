@@ -59,9 +59,38 @@ class MidiSketch {
   /**
    * @brief Generate accompaniment tracks for existing vocal.
    *
+   * Uses current parameters from generateVocal() call.
    * Must be called after generateVocal() or generateWithVocal().
    */
   void generateAccompanimentForVocal();
+
+  /**
+   * @brief Generate accompaniment tracks with configuration.
+   *
+   * @param config Accompaniment configuration
+   * @pre Must have existing vocal (call generateVocal() first)
+   */
+  void generateAccompanimentForVocal(const AccompanimentConfig& config);
+
+  /**
+   * @brief Regenerate accompaniment tracks with a new seed.
+   *
+   * Keeps current vocal, regenerates all accompaniment tracks
+   * (Aux, Bass, Chord, Drums, etc.) with the specified seed.
+   *
+   * @param new_seed New random seed for accompaniment (0 = auto-generate)
+   */
+  void regenerateAccompaniment(uint32_t new_seed = 0);
+
+  /**
+   * @brief Regenerate accompaniment tracks with configuration.
+   *
+   * Keeps current vocal, regenerates all accompaniment tracks
+   * with the specified configuration.
+   *
+   * @param config Accompaniment configuration
+   */
+  void regenerateAccompaniment(const AccompanimentConfig& config);
 
   /**
    * @brief Generate all tracks with vocal-first priority.

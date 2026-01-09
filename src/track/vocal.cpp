@@ -823,6 +823,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       ctx.consecutive_same_note_prob = params.melody_params.consecutive_same_note_prob;
       ctx.disable_vowel_constraints = params.melody_params.disable_vowel_constraints;
       ctx.disable_breathing_gaps = params.melody_params.disable_breathing_gaps;
+      ctx.vocal_attitude = params.vocal_attitude;
 
       // Set transition info for next section (if any)
       const auto& sections = song.arrangement().sections();

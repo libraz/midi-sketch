@@ -297,7 +297,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     // Use note_chord_degree (chord at this note's position) instead of ctx.chord_degree
     int new_pitch = applyPitchChoice(choice, current_pitch, target_pitch,
                                      note_chord_degree, ctx.key_offset,
-                                     ctx.vocal_low, ctx.vocal_high);
+                                     ctx.vocal_low, ctx.vocal_high,
+                                     ctx.vocal_attitude);
 
     // Apply consecutive same note reduction (move to different chord tone)
     if (new_pitch == current_pitch && ctx.consecutive_same_note_prob < 1.0f) {
@@ -749,17 +750,47 @@ int MelodyDesigner::applyPitchChoice(
     int8_t chord_degree,
     [[maybe_unused]] int key_offset,
     uint8_t vocal_low,
-    uint8_t vocal_high) {
+    uint8_t vocal_high,
+    VocalAttitude attitude) {
 
-  // Chord-tone-first approach: all melody notes start as chord tones.
-  // Passing tones are added intentionally in weak beats later.
+  // VocalAttitude affects candidate pitch selection:
+  //   Clean: chord tones only (1, 3, 5)
+  //   Expressive: chord tones + tensions (7, 9)
+  //   Raw: all scale tones (more freedom)
 
   // Get chord tones for current chord
   std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
 
-  // Build candidate pitches from chord tones within vocal range
+  // Build candidate pitch classes based on VocalAttitude
+  std::vector<int> candidate_pcs;
+  switch (attitude) {
+    case VocalAttitude::Clean:
+      // Chord tones only (safe, consonant)
+      candidate_pcs = chord_tones;
+      break;
+
+    case VocalAttitude::Expressive:
+      // Chord tones + tensions (7th, 9th = 2nd)
+      candidate_pcs = chord_tones;
+      // Add 7th (11 semitones from root for major, 10 for minor/dominant)
+      {
+        int root_pc = chord_tones.empty() ? 0 : chord_tones[0];
+        int seventh = (root_pc + 11) % 12;  // Major 7th
+        int ninth = (root_pc + 2) % 12;     // 9th = 2nd
+        candidate_pcs.push_back(seventh);
+        candidate_pcs.push_back(ninth);
+      }
+      break;
+
+    case VocalAttitude::Raw:
+      // All scale tones (C major: 0, 2, 4, 5, 7, 9, 11)
+      candidate_pcs = {0, 2, 4, 5, 7, 9, 11};
+      break;
+  }
+
+  // Build candidate pitches within vocal range
   std::vector<int> candidates;
-  for (int pc : chord_tones) {
+  for (int pc : candidate_pcs) {
     // Check multiple octaves (4-6 covers typical vocal range)
     for (int oct = 4; oct <= 6; ++oct) {
       int candidate = oct * 12 + pc;

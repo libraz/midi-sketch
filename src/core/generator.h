@@ -61,6 +61,17 @@ class Generator {
   void generateAccompanimentForVocal();
 
   /**
+   * @brief Generate accompaniment tracks with configuration.
+   *
+   * Generates: Aux → Bass → Chord → Drums → Arpeggio → Motif → SE
+   * Accompaniment adapts to existing vocal.
+   *
+   * @param config Accompaniment configuration
+   * @pre Must have existing vocal (call generateVocal() first)
+   */
+  void generateAccompanimentForVocal(const AccompanimentConfig& config);
+
+  /**
    * @brief Regenerate vocal track with a new seed.
    * @param new_seed New random seed (0 = auto-generate from clock)
    */
@@ -86,6 +97,28 @@ class Generator {
    * @param melody Saved melody data to restore
    */
   void setMelody(const MelodyData& melody);
+
+  /**
+   * @brief Regenerate accompaniment tracks with a new seed.
+   *
+   * Keeps current vocal, clears and regenerates all accompaniment tracks
+   * (Aux, Bass, Chord, Drums, Arpeggio, Motif, SE) with the specified seed.
+   *
+   * @param new_seed New random seed for accompaniment (0 = auto-generate)
+   * @pre Must have existing vocal (call generateVocal() first)
+   */
+  void regenerateAccompaniment(uint32_t new_seed = 0);
+
+  /**
+   * @brief Regenerate accompaniment tracks with configuration.
+   *
+   * Keeps current vocal, clears and regenerates all accompaniment tracks
+   * with the specified configuration.
+   *
+   * @param config Accompaniment configuration
+   * @pre Must have existing vocal (call generateVocal() first)
+   */
+  void regenerateAccompaniment(const AccompanimentConfig& config);
 
   /// @}
   /// @name Motif Control
