@@ -6,6 +6,7 @@
 #include "track/melody_designer.h"
 #include "core/harmonic_rhythm.h"
 #include "core/harmony_context.h"
+#include "core/melody_embellishment.h"
 #include "core/note_factory.h"
 #include "core/timing_constants.h"
 #include <algorithm>
@@ -163,6 +164,12 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(
     Tick relative_tick = current_tick - ctx.section_start;
     Tick next_boundary = ((relative_tick + chord_interval - 1) / chord_interval) * chord_interval;
     current_tick = ctx.section_start + next_boundary;
+  }
+
+  // Apply melodic embellishment (non-chord tones) if enabled
+  if (ctx.enable_embellishment && !result.empty()) {
+    EmbellishmentConfig emb_config = MelodicEmbellisher::getConfigForMood(ctx.mood);
+    result = MelodicEmbellisher::embellish(result, emb_config, harmony, ctx.key_offset, rng);
   }
 
   return result;
@@ -654,6 +661,8 @@ void MelodyDesigner::applyTransitionApproach(
         } else {
           new_pitch = prev_pitch - MAX_INTERVAL;
         }
+        // Snap to scale to prevent chromatic notes
+        new_pitch = snapToNearestScaleTone(new_pitch, ctx.key_offset);
         // Re-constrain to vocal range
         new_pitch = std::clamp(
             new_pitch, static_cast<int>(ctx.vocal_low), static_cast<int>(ctx.vocal_high));

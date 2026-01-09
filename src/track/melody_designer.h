@@ -43,6 +43,7 @@ class MelodyDesigner {
     bool disable_vowel_constraints = false;   ///< Allow large intervals within syllables
     bool disable_breathing_gaps = false;      ///< Remove breathing rests between phrases
     const SectionTransition* transition_to_next = nullptr;  ///< Transition to next section
+    bool enable_embellishment = true;         ///< Enable melodic embellishment (NCT insertion)
   };
 
   /// @brief Result of generating a single phrase.

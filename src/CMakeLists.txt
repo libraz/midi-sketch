@@ -18,6 +18,7 @@ set(MIDISKETCH_CORE_SOURCES
   core/chord_utils.cpp
   core/melody_templates.cpp
   core/melody_evaluator.cpp
+  core/melody_embellishment.cpp
   core/piano_roll_safety.cpp
   core/config_converter.cpp
   core/modulation_calculator.cpp
