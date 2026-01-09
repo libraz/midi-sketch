@@ -179,9 +179,9 @@ TEST(GeneratorTest, SetMotifRestoresPattern) {
   EXPECT_EQ(gen.getSong().motif().noteCount(), original_count);
 }
 
-TEST(GeneratorTest, BackgroundMotifVocalGeneration) {
-  // Test that BackgroundMotif style generates vocal notes
-  // NOTE: rhythm_bias suppression is not yet implemented in MelodyDesigner
+TEST(GeneratorTest, BackgroundMotifIsBGMOnly) {
+  // Test that BackgroundMotif style is BGM-only (no Vocal/Aux)
+  // This avoids dissonance issues from BGM-first vocal generation
   GeneratorParams params{};
   params.structure = StructurePattern::ShortForm;
   params.drums_enabled = false;
@@ -191,19 +191,19 @@ TEST(GeneratorTest, BackgroundMotifVocalGeneration) {
 
   Generator gen1, gen2;
 
-  // MelodyLead
+  // MelodyLead should generate vocal
   params.composition_style = CompositionStyle::MelodyLead;
   gen1.generate(params);
-  size_t melody_lead_notes = gen1.getSong().vocal().noteCount();
+  EXPECT_GT(gen1.getSong().vocal().noteCount(), 0u)
+      << "MelodyLead should generate vocal notes";
 
-  // BackgroundMotif
+  // BackgroundMotif is BGM-only (no vocal to avoid dissonance)
   params.composition_style = CompositionStyle::BackgroundMotif;
   gen2.generate(params);
-  size_t background_notes = gen2.getSong().vocal().noteCount();
-
-  // Both styles should generate vocal notes
-  EXPECT_GT(melody_lead_notes, 0u) << "MelodyLead should generate vocal notes";
-  EXPECT_GT(background_notes, 0u) << "BackgroundMotif should generate vocal notes";
+  EXPECT_EQ(gen2.getSong().vocal().noteCount(), 0u)
+      << "BackgroundMotif should not generate vocal (BGM-only mode)";
+  EXPECT_GT(gen2.getSong().motif().noteCount(), 0u)
+      << "BackgroundMotif should generate motif";
 }
 
 TEST(GeneratorTest, BackgroundMotifDrumsHiHatDriven) {
@@ -285,33 +285,8 @@ TEST(GeneratorTest, BassChordCoordination) {
   EXPECT_LT(bass_high, chord_low + 12);  // Bass should be mostly below chord
 }
 
-TEST(GeneratorTest, VocalMotifRangeSeparation) {
-  // Test that Vocal and Motif tracks are separated in range
-  Generator gen;
-  GeneratorParams params{};
-  params.structure = StructurePattern::StandardPop;
-  params.mood = Mood::StraightPop;
-  params.composition_style = CompositionStyle::BackgroundMotif;
-  params.motif.register_high = true;  // High register motif
-  params.vocal_low = 48;
-  params.vocal_high = 84;
-  params.seed = 42;
-
-  gen.generate(params);
-  const auto& song = gen.getSong();
-
-  // Both tracks should have notes
-  EXPECT_GT(song.vocal().noteCount(), 0u);
-  EXPECT_GT(song.motif().noteCount(), 0u);
-
-  // Analyze ranges
-  auto [vocal_low, vocal_high] = song.vocal().analyzeRange();
-  (void)vocal_low;  // Used for documentation purposes
-
-  // With high register motif, vocal should be adjusted to avoid overlap
-  // Allow some overlap but vocal shouldn't go as high as the full range
-  EXPECT_LE(vocal_high, 78);  // Should be limited below original 84
-}
+// VocalMotifRangeSeparation test removed: BackgroundMotif no longer generates Vocal
+// (BGM-only mode to avoid dissonance issues from BGM-first vocal generation)
 
 TEST(GeneratorTest, GenerationOrderBassBeforeChord) {
   // Test that generation order is Bass -> Chord (Bass has notes when Chord is generated)

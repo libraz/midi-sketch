@@ -118,24 +118,17 @@ void Generator::generate(const GeneratorParams& params) {
   }
 
   // Generate tracks based on composition style
-  // Order: Bass → Vocal → Aux → Chord (so chord can avoid aux clashes)
+  // BackgroundMotif/SynthDriven: BGM only (no Vocal/Aux - causes dissonance issues)
+  // MelodyLead: Vocal-first flow for proper harmonic coordination
   if (params.composition_style == CompositionStyle::BackgroundMotif) {
-    // BackgroundMotif: Motif first, then supporting tracks
+    // BackgroundMotif: Motif-driven BGM (Vocal/Aux disabled)
     generateMotif();
     generateBass();
-    if (!params.skip_vocal) {
-      generateVocal();  // Will use suppressed generation
-      generateAux();    // Aux track after vocal for collision avoidance
-    }
-    generateChord();  // Uses bass and aux tracks for voicing coordination
+    generateChord();
   } else if (params.composition_style == CompositionStyle::SynthDriven) {
-    // SynthDriven: Arpeggio is foreground, vocals subdued
+    // SynthDriven: Arpeggio-driven BGM (Vocal/Aux disabled)
     generateBass();
-    if (!params.skip_vocal) {
-      generateVocal();  // Will generate subdued vocals
-      generateAux();    // Aux track after vocal for collision avoidance
-    }
-    generateChord();  // Uses bass and aux tracks for voicing coordination
+    generateChord();
   } else {
     // MelodyLead: Vocal-first for bass to avoid vocal clashes
     if (!params.skip_vocal) {
@@ -595,6 +588,9 @@ void Generator::generateAux() {
   // Get vocal track for reference
   const MidiTrack& vocal_track = song_.vocal();
 
+  // Analyze vocal for MotifCounter generation
+  VocalAnalysis vocal_analysis = analyzeVocal(vocal_track);
+
   // Extract motif from first chorus for intro placement (Stage 4)
   cached_chorus_motif_.reset();
   for (const auto& section : song_.arrangement().sections()) {
@@ -694,6 +690,25 @@ void Generator::generateAux() {
       config.velocity_ratio = 0.8f;
       config.density_ratio = 1.0f;
       config.sync_phrase_boundary = true;
+    } else if (section.type == SectionType::A ||
+               section.type == SectionType::B ||
+               section.type == SectionType::Bridge) {
+      // A/B/Bridge: Use MotifCounter for counter melody
+      // This creates rhythmic complementation with vocal
+      config.function = AuxFunction::MotifCounter;
+      config.range_offset = -12;  // Below vocal
+      config.range_width = 12;
+      config.velocity_ratio = 0.7f;
+      config.density_ratio = 0.8f;
+      config.sync_phrase_boundary = true;
+
+      // Generate MotifCounter directly (requires VocalAnalysis)
+      auto counter_notes = aux_generator.generateMotifCounter(
+          ctx, config, harmony_context_, vocal_analysis, rng_);
+      for (const auto& note : counter_notes) {
+        song_.aux().addNote(note);
+      }
+      continue;  // Skip normal generation for this section
     } else if (section.type == SectionType::Chorus &&
                section.vocal_density == VocalDensity::Full) {
       // Chorus with full vocals: Use Unison or Harmony based on repeat count
@@ -795,13 +810,7 @@ void Generator::regenerateMotif(uint32_t new_seed) {
   song_.setMotifSeed(seed);
   song_.clearTrack(TrackRole::Motif);
   generateMotif();
-
-  // BackgroundMotif mode: regenerate Vocal to avoid range collision with new Motif
-  // Vocal range is adjusted based on Motif range in generateVocalTrack()
-  if (params_.composition_style == CompositionStyle::BackgroundMotif) {
-    song_.clearTrack(TrackRole::Vocal);
-    generateVocal();
-  }
+  // Note: BackgroundMotif no longer generates Vocal (BGM-only mode)
 }
 
 MotifData Generator::getMotif() const {

@@ -32,7 +32,7 @@ constexpr StylePresetMapping kStylePresetMappings[] = {
     {Mood::Dramatic, CompositionStyle::MelodyLead},          // 9: Raw Emotional
     {Mood::Ballad, CompositionStyle::MelodyLead},            // 10: Acoustic Pop
     {Mood::Anthem, CompositionStyle::MelodyLead},            // 11: Live Call & Response
-    {Mood::StraightPop, CompositionStyle::BackgroundMotif},  // 12: Background Motif
+    {Mood::StraightPop, CompositionStyle::MelodyLead},  // 12: Background Motif (deprecated, now MelodyLead)
     {Mood::CityPop, CompositionStyle::MelodyLead},           // 13: City Pop
     {Mood::Yoasobi, CompositionStyle::MelodyLead},           // 14: Anime Opening
     {Mood::FutureBass, CompositionStyle::SynthDriven},       // 15: EDM Synth Pop
