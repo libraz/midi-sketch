@@ -94,3 +94,39 @@ TEST(StructLayoutTest, SongConfigLayout) {
 }
 
 // MidiSketchVocalParams tests removed - struct deprecated
+
+TEST(StructLayoutTest, PianoRollInfoSize) {
+  // MidiSketchPianoRollInfo size for WASM binding
+  // tick(4) + chord_degree(1) + current_key(1) + safety(128) + reason(256)
+  // + collision(384) + recommended(8) + recommended_count(1) + padding(1) = 784
+  EXPECT_EQ(sizeof(MidiSketchPianoRollInfo), 784);
+}
+
+TEST(StructLayoutTest, PianoRollInfoLayout) {
+  MidiSketchPianoRollInfo info{};
+  const auto base = reinterpret_cast<uintptr_t>(&info);
+
+  #define CHECK_OFFSET(field, expected) \
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(&info.field) - base, expected) \
+        << #field " offset mismatch"
+
+  CHECK_OFFSET(tick, 0);           // 4 bytes
+  CHECK_OFFSET(chord_degree, 4);   // 1 byte
+  CHECK_OFFSET(current_key, 5);    // 1 byte
+  CHECK_OFFSET(safety, 6);         // 128 bytes
+  CHECK_OFFSET(reason, 134);       // 256 bytes (128 * 2)
+  CHECK_OFFSET(collision, 390);    // 384 bytes (128 * 3)
+  CHECK_OFFSET(recommended, 774);  // 8 bytes
+  CHECK_OFFSET(recommended_count, 782);  // 1 byte
+
+  #undef CHECK_OFFSET
+}
+
+TEST(StructLayoutTest, CollisionInfoSize) {
+  EXPECT_EQ(sizeof(MidiSketchCollisionInfo), 3);
+}
+
+TEST(StructLayoutTest, PianoRollDataSize) {
+  // Pointer + size_t (both 4 bytes in WASM32)
+  EXPECT_EQ(sizeof(MidiSketchPianoRollData), 16);  // 64-bit: 8 + 8
+}

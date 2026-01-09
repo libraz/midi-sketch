@@ -99,6 +99,18 @@ class Generator {
   void setMelody(const MelodyData& melody);
 
   /**
+   * @brief Set custom vocal notes for accompaniment generation.
+   *
+   * Initializes the song structure and chord progression from params,
+   * then replaces the vocal track with the provided notes.
+   * Call generateAccompanimentForVocal() after this.
+   *
+   * @param params Generation parameters (for structure/chord setup)
+   * @param notes Vector of NoteEvent representing the custom vocal
+   */
+  void setVocalNotes(const GeneratorParams& params, const std::vector<NoteEvent>& notes);
+
+  /**
    * @brief Regenerate accompaniment tracks with a new seed.
    *
    * Keeps current vocal, clears and regenerates all accompaniment tracks

@@ -481,6 +481,38 @@ MidiSketchError midisketch_generate_with_vocal(
 );
 
 // ============================================================================
+// Custom Vocal Import API
+// ============================================================================
+
+/// @brief Note input for custom vocal track.
+typedef struct {
+  uint32_t start_tick;   ///< Note start time in ticks
+  uint32_t duration;     ///< Note duration in ticks
+  uint8_t pitch;         ///< MIDI note number (0-127)
+  uint8_t velocity;      ///< Note velocity (0-127)
+} MidiSketchNoteInput;
+
+/**
+ * @brief Set custom vocal notes for accompaniment generation.
+ *
+ * Replaces the vocal track with custom notes. After calling this,
+ * use generateAccompaniment() to generate accompaniment tracks
+ * that fit the custom vocal melody.
+ *
+ * @param handle MidiSketch handle
+ * @param config Song configuration (for structure/chord setup)
+ * @param notes Array of note inputs
+ * @param count Number of notes
+ * @return MIDISKETCH_OK on success
+ */
+MidiSketchError midisketch_set_vocal_notes(
+    MidiSketchHandle handle,
+    const MidiSketchSongConfig* config,
+    const MidiSketchNoteInput* notes,
+    size_t count
+);
+
+// ============================================================================
 // Piano Roll Safety API
 // ============================================================================
 

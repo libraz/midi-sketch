@@ -115,6 +115,19 @@ class MidiSketch {
   void setMelody(const MelodyData& melody);
 
   /**
+   * @brief Set custom vocal notes for accompaniment generation.
+   *
+   * Initializes the song structure and chord progression from config,
+   * then replaces the vocal track with the provided notes.
+   * Call generateAccompanimentForVocal() after this to generate
+   * accompaniment tracks that fit the custom vocal melody.
+   *
+   * @param config Song configuration (for structure/chord setup)
+   * @param notes Vector of NoteEvent representing the custom vocal
+   */
+  void setVocalNotes(const SongConfig& config, const std::vector<NoteEvent>& notes);
+
+  /**
    * @brief Set MIDI output format.
    * @param format MidiFormat::SMF1 or MidiFormat::SMF2
    */

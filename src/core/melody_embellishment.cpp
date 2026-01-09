@@ -418,7 +418,7 @@ std::optional<NoteEvent> MelodicEmbellisher::tryInsertPassingTone(
     const NoteEvent& to,
     int key_offset,
     bool prefer_pentatonic,
-    std::mt19937& rng) {
+    [[maybe_unused]] std::mt19937& rng) {
 
   int interval = static_cast<int>(to.note) - static_cast<int>(from.note);
   if (std::abs(interval) < MIN_PT_INTERVAL) return std::nullopt;

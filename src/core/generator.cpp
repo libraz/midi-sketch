@@ -489,6 +489,70 @@ void Generator::setMelody(const MelodyData& melody) {
   generateAux();  // Regenerate aux based on restored vocal
 }
 
+void Generator::setVocalNotes(const GeneratorParams& params,
+                              const std::vector<NoteEvent>& notes) {
+  params_ = params;
+
+  // Validate vocal range
+  if (params_.vocal_low > params_.vocal_high) {
+    std::swap(params_.vocal_low, params_.vocal_high);
+  }
+  params_.vocal_low = std::clamp(params_.vocal_low, static_cast<uint8_t>(36),
+                                  static_cast<uint8_t>(96));
+  params_.vocal_high = std::clamp(params_.vocal_high, static_cast<uint8_t>(36),
+                                   static_cast<uint8_t>(96));
+
+  // Initialize seed (use provided seed or generate)
+  uint32_t seed = resolveSeed(params.seed);
+  rng_.seed(seed);
+  song_.setMelodySeed(seed);
+  song_.setMotifSeed(seed);
+
+  // Resolve BPM
+  uint16_t bpm = params.bpm;
+  if (bpm == 0) {
+    bpm = getMoodDefaultBpm(params.mood);
+  }
+  song_.setBpm(bpm);
+
+  // Build song structure
+  std::vector<Section> sections;
+  if (params.target_duration_seconds > 0) {
+    sections = buildStructureForDuration(params.target_duration_seconds, bpm,
+                                          call_enabled_, intro_chant_, mix_pattern_,
+                                          params.structure);
+  } else {
+    sections = buildStructure(params.structure);
+    if (call_enabled_) {
+      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
+    }
+  }
+  song_.setArrangement(Arrangement(sections));
+
+  // Clear all tracks
+  song_.clearAll();
+
+  // Initialize harmony context
+  const auto& progression = getChordProgression(params.chord_id);
+  harmony_context_.initialize(song_.arrangement(), progression, params.mood);
+
+  // Calculate modulation
+  if (params.composition_style == CompositionStyle::BackgroundMotif ||
+      params.composition_style == CompositionStyle::SynthDriven) {
+    song_.setModulation(0, 0);
+  } else {
+    calculateModulation();
+  }
+
+  // Set custom vocal notes
+  for (const auto& note : notes) {
+    song_.vocal().addNote(note);
+  }
+
+  // Register vocal notes with harmony context for accompaniment coordination
+  harmony_context_.registerTrack(song_.vocal(), TrackRole::Vocal);
+}
+
 void Generator::generateVocal() {
   // Pass motif track for range coordination in BackgroundMotif mode
   const MidiTrack* motif_track =

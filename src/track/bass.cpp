@@ -753,7 +753,6 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song,
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
-      int absolute_bar = static_cast<int>(bar_start / TICKS_PER_BAR) + 1;
 
       // Get chord info
       int chord_idx = slow_harmonic ? (bar / 2) % progression.length

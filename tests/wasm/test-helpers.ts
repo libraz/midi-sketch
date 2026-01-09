@@ -222,6 +222,47 @@ export class WasmTestContext {
     return result;
   }
 
+  setVocalNotes(
+    config: SongConfigOptions,
+    notes: { startTick: number; duration: number; pitch: number; velocity: number }[],
+  ): number {
+    const setNotesFn = this.module.cwrap('midisketch_set_vocal_notes', 'number', [
+      'number',
+      'number',
+      'number',
+      'number',
+    ]) as (h: number, configPtr: number, notesPtr: number, count: number) => number;
+
+    const configPtr = this.allocSongConfig(config);
+    const notesPtr = this.allocNoteInputArray(notes);
+
+    const result = setNotesFn(this.handle, configPtr, notesPtr, notes.length);
+
+    this.module._free(configPtr);
+    this.module._free(notesPtr);
+    return result;
+  }
+
+  private allocNoteInputArray(
+    notes: { startTick: number; duration: number; pitch: number; velocity: number }[],
+  ): number {
+    // MidiSketchNoteInput struct size: 12 bytes (uint32 + uint32 + uint8 + uint8 + 2 padding)
+    const structSize = 12;
+    const ptr = this.module._malloc(notes.length * structSize);
+    const view = new DataView(this.module.HEAPU8.buffer);
+
+    for (let i = 0; i < notes.length; i++) {
+      const offset = ptr + i * structSize;
+      view.setUint32(offset + 0, notes[i].startTick, true);
+      view.setUint32(offset + 4, notes[i].duration, true);
+      view.setUint8(offset + 8, notes[i].pitch);
+      view.setUint8(offset + 9, notes[i].velocity);
+      // 2 bytes padding (10-11)
+    }
+
+    return ptr;
+  }
+
   getEventsJson(): { data: unknown; cleanup: () => void } {
     const getEvents = this.module.cwrap('midisketch_get_events', 'number', ['number']) as (
       h: number,
@@ -240,4 +281,121 @@ export class WasmTestContext {
       cleanup: () => freeEvents(eventDataPtr),
     };
   }
+
+  // Piano Roll Safety API
+
+  getPianoRollSafetyAt(tick: number): PianoRollInfo {
+    const getSafetyAt = this.module.cwrap('midisketch_get_piano_roll_safety_at', 'number', [
+      'number',
+      'number',
+    ]) as (h: number, tick: number) => number;
+
+    const infoPtr = getSafetyAt(this.handle, tick);
+    if (!infoPtr) {
+      throw new Error('Failed to get piano roll safety info');
+    }
+
+    return this.parsePianoRollInfo(infoPtr);
+  }
+
+  getPianoRollSafetyWithContext(tick: number, prevPitch: number): PianoRollInfo {
+    const getSafetyWithContext = this.module.cwrap(
+      'midisketch_get_piano_roll_safety_with_context',
+      'number',
+      ['number', 'number', 'number'],
+    ) as (h: number, tick: number, prevPitch: number) => number;
+
+    const infoPtr = getSafetyWithContext(this.handle, tick, prevPitch);
+    if (!infoPtr) {
+      throw new Error('Failed to get piano roll safety info');
+    }
+
+    return this.parsePianoRollInfo(infoPtr);
+  }
+
+  getPianoRollSafety(startTick: number, endTick: number, step: number): PianoRollInfo[] {
+    const getSafety = this.module.cwrap('midisketch_get_piano_roll_safety', 'number', [
+      'number',
+      'number',
+      'number',
+      'number',
+    ]) as (h: number, startTick: number, endTick: number, step: number) => number;
+    const freePianoRollData = this.module.cwrap('midisketch_free_piano_roll_data', null, [
+      'number',
+    ]) as (ptr: number) => void;
+
+    const dataPtr = getSafety(this.handle, startTick, endTick, step);
+    if (!dataPtr) {
+      throw new Error('Failed to get piano roll safety data');
+    }
+
+    try {
+      const infoArrayPtr = this.module.HEAPU32[dataPtr >> 2];
+      const count = this.module.HEAPU32[(dataPtr + 4) >> 2];
+
+      const results: PianoRollInfo[] = [];
+      const infoSize = 784; // sizeof(MidiSketchPianoRollInfo)
+
+      for (let i = 0; i < count; i++) {
+        const infoPtr = infoArrayPtr + i * infoSize;
+        results.push(this.parsePianoRollInfo(infoPtr));
+      }
+
+      return results;
+    } finally {
+      freePianoRollData(dataPtr);
+    }
+  }
+
+  private parsePianoRollInfo(ptr: number): PianoRollInfo {
+    const view = new DataView(this.module.HEAPU8.buffer);
+
+    const tick = view.getUint32(ptr + 0, true);
+    const chordDegree = view.getInt8(ptr + 4);
+    const currentKey = view.getUint8(ptr + 5);
+
+    const safety: number[] = [];
+    for (let i = 0; i < 128; i++) {
+      safety.push(view.getUint8(ptr + 6 + i));
+    }
+
+    const reason: number[] = [];
+    for (let i = 0; i < 128; i++) {
+      reason.push(view.getUint16(ptr + 134 + i * 2, true));
+    }
+
+    const collision: CollisionInfo[] = [];
+    for (let i = 0; i < 128; i++) {
+      const offset = ptr + 390 + i * 3;
+      collision.push({
+        trackRole: view.getUint8(offset),
+        collidingPitch: view.getUint8(offset + 1),
+        intervalSemitones: view.getUint8(offset + 2),
+      });
+    }
+
+    const recommendedCount = view.getUint8(ptr + 782);
+    const recommended: number[] = [];
+    for (let i = 0; i < recommendedCount && i < 8; i++) {
+      recommended.push(view.getUint8(ptr + 774 + i));
+    }
+
+    return { tick, chordDegree, currentKey, safety, reason, collision, recommended };
+  }
+}
+
+export interface CollisionInfo {
+  trackRole: number;
+  collidingPitch: number;
+  intervalSemitones: number;
+}
+
+export interface PianoRollInfo {
+  tick: number;
+  chordDegree: number;
+  currentKey: number;
+  safety: number[];
+  reason: number[];
+  collision: CollisionInfo[];
+  recommended: number[];
 }

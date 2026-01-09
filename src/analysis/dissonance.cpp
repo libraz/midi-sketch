@@ -314,12 +314,6 @@ std::pair<bool, DissonanceSeverity> checkIntervalDissonance(uint8_t actual_semit
   return {false, DissonanceSeverity::Low};  // Not dissonant
 }
 
-// Check if a track is a background/accompaniment track.
-bool isBackgroundTrack(TrackRole role) {
-  return role == TrackRole::Motif || role == TrackRole::Arpeggio ||
-         role == TrackRole::Aux || role == TrackRole::Chord;
-}
-
 // Convert track role to string name.
 std::string trackRoleToString(TrackRole role) {
   switch (role) {

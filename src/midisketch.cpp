@@ -136,6 +136,14 @@ void MidiSketch::setMelody(const MelodyData& melody) {
                      generateMetadata(params), midi_format_);
 }
 
+void MidiSketch::setVocalNotes(const SongConfig& config,
+                               const std::vector<NoteEvent>& notes) {
+  auto result = ConfigConverter::convert(config);
+  generator_.setVocalNotes(result.params, notes);
+  midi_writer_.build(generator_.getSong(), config.key,
+                     generateMetadata(generator_.getParams()), midi_format_);
+}
+
 void MidiSketch::setMidiFormat(MidiFormat format) {
   midi_format_ = format;
 }

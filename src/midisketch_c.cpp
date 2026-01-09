@@ -331,6 +331,44 @@ MidiSketchError midisketch_generate_with_vocal(MidiSketchHandle handle,
   return MIDISKETCH_OK;
 }
 
+MidiSketchError midisketch_set_vocal_notes(MidiSketchHandle handle,
+                                           const MidiSketchSongConfig* config,
+                                           const MidiSketchNoteInput* notes,
+                                           size_t count) {
+  if (!handle || !config) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  // Clear previous config error
+  g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
+
+  // Validate config first
+  MidiSketchConfigError validation = midisketch_validate_config(config);
+  if (validation != MIDISKETCH_CONFIG_OK) {
+    g_last_config_errors[handle] = validation;
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  midisketch::SongConfig cpp_config = convertToSongConfig(config);
+
+  // Convert C notes to C++ NoteEvents
+  std::vector<midisketch::NoteEvent> cpp_notes;
+  cpp_notes.reserve(count);
+  for (size_t i = 0; i < count; ++i) {
+    midisketch::NoteEvent note(
+        notes[i].start_tick,
+        notes[i].duration,
+        notes[i].pitch,
+        notes[i].velocity
+    );
+    cpp_notes.push_back(note);
+  }
+
+  sketch->setVocalNotes(cpp_config, cpp_notes);
+  return MIDISKETCH_OK;
+}
+
 MidiSketchMidiData* midisketch_get_midi(MidiSketchHandle handle) {
   if (!handle) return nullptr;
 

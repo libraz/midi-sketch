@@ -140,12 +140,6 @@ TEST_F(Midi2WriterTest, BuildClipEndsWithEndOfClip) {
   EXPECT_EQ(mt, 0xF);
 
   // Check status is 0x21 (End of Clip)
-  // Word 0 format: [MT:4][Format:2][Status:10][data:16]
-  // Status is in bits 16-25 of word 0
-  uint16_t status = ((data[lastMsgOffset + 1] & 0xFF) << 2) |
-                    ((data[lastMsgOffset + 2] >> 6) & 0x03);
-  // Actually simpler: status byte is at offset+2 upper 2 bits + offset+1
-  // Let's just check the raw bytes match expected pattern
   // End of Clip: 0xF0002100 in first word
   uint32_t word0 = (data[lastMsgOffset] << 24) | (data[lastMsgOffset + 1] << 16) |
                    (data[lastMsgOffset + 2] << 8) | data[lastMsgOffset + 3];

@@ -140,4 +140,106 @@ describe('MidiSketch WASM - Vocal', () => {
       expect(traditionalNotes.length).toBeGreaterThan(0);
     });
   });
+
+  describe('Custom Vocal Notes (setVocalNotes)', () => {
+    it('should set custom vocal notes', () => {
+      const customNotes = [
+        { startTick: 0, duration: 480, pitch: 60, velocity: 100 },
+        { startTick: 480, duration: 480, pitch: 62, velocity: 90 },
+        { startTick: 960, duration: 480, pitch: 64, velocity: 85 },
+        { startTick: 1440, duration: 480, pitch: 65, velocity: 80 },
+      ];
+
+      const result = ctx.setVocalNotes({ seed: 12345 }, customNotes);
+      expect(result).toBe(0);
+
+      const { data, cleanup } = ctx.getEventsJson();
+      const tracks = (
+        data as { tracks: { name: string; notes: { pitch: number; start_ticks: number }[] }[] }
+      ).tracks;
+
+      const vocalTrack = tracks.find((t) => t.name === 'Vocal');
+      expect(vocalTrack?.notes.length).toBe(4);
+
+      // Verify notes match
+      expect(vocalTrack?.notes[0].pitch).toBe(60);
+      expect(vocalTrack?.notes[1].pitch).toBe(62);
+      expect(vocalTrack?.notes[2].pitch).toBe(64);
+      expect(vocalTrack?.notes[3].pitch).toBe(65);
+
+      cleanup();
+    });
+
+    it('should generate accompaniment after setVocalNotes', () => {
+      const customNotes = [
+        { startTick: 0, duration: 480, pitch: 60, velocity: 100 },
+        { startTick: 480, duration: 480, pitch: 64, velocity: 90 },
+        { startTick: 960, duration: 480, pitch: 67, velocity: 85 },
+        { startTick: 1440, duration: 480, pitch: 72, velocity: 80 },
+      ];
+
+      // Set custom vocal
+      const setResult = ctx.setVocalNotes({ seed: 12345, drumsEnabled: true }, customNotes);
+      expect(setResult).toBe(0);
+
+      // Verify vocal is set but accompaniment is empty
+      const { data: beforeData, cleanup: beforeCleanup } = ctx.getEventsJson();
+      const beforeTracks = (beforeData as { tracks: { name: string; notes: unknown[] }[] }).tracks;
+      expect(beforeTracks.find((t) => t.name === 'Vocal')?.notes.length).toBe(4);
+      expect(beforeTracks.find((t) => t.name === 'Chord')?.notes.length).toBe(0);
+      expect(beforeTracks.find((t) => t.name === 'Bass')?.notes.length).toBe(0);
+      beforeCleanup();
+
+      // Generate accompaniment
+      const accResult = ctx.generateAccompaniment();
+      expect(accResult).toBe(0);
+
+      // Verify all tracks are now generated
+      const { data: afterData, cleanup: afterCleanup } = ctx.getEventsJson();
+      const afterTracks = (afterData as { tracks: { name: string; notes: unknown[] }[] }).tracks;
+
+      expect(afterTracks.find((t) => t.name === 'Vocal')?.notes.length).toBe(4);
+      expect(afterTracks.find((t) => t.name === 'Chord')?.notes.length).toBeGreaterThan(0);
+      expect(afterTracks.find((t) => t.name === 'Bass')?.notes.length).toBeGreaterThan(0);
+
+      afterCleanup();
+    });
+
+    it('should preserve custom vocal notes after accompaniment generation', () => {
+      const customNotes = [
+        { startTick: 0, duration: 960, pitch: 60, velocity: 100 },
+        { startTick: 960, duration: 960, pitch: 67, velocity: 90 },
+      ];
+
+      ctx.setVocalNotes({ seed: 12345 }, customNotes);
+      ctx.generateAccompaniment();
+
+      const { data, cleanup } = ctx.getEventsJson();
+      const tracks = (
+        data as { tracks: { name: string; notes: { pitch: number; duration_ticks: number }[] }[] }
+      ).tracks;
+
+      const vocalTrack = tracks.find((t) => t.name === 'Vocal');
+      expect(vocalTrack?.notes.length).toBe(2);
+      expect(vocalTrack?.notes[0].pitch).toBe(60);
+      expect(vocalTrack?.notes[0].duration_ticks).toBe(960);
+      expect(vocalTrack?.notes[1].pitch).toBe(67);
+      expect(vocalTrack?.notes[1].duration_ticks).toBe(960);
+
+      cleanup();
+    });
+
+    it('should work with empty notes array', () => {
+      const result = ctx.setVocalNotes({ seed: 12345 }, []);
+      expect(result).toBe(0);
+
+      const { data, cleanup } = ctx.getEventsJson();
+      const tracks = (data as { tracks: { name: string; notes: unknown[] }[] }).tracks;
+
+      const vocalTrack = tracks.find((t) => t.name === 'Vocal');
+      expect(vocalTrack?.notes.length).toBe(0);
+
+      cleanup();
+    });
+  });
 });

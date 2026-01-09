@@ -1111,5 +1111,196 @@ TEST(VocaloidConstraintTest, StandardKeepsAllConstraints) {
       << "Standard style should keep breathing gaps enabled";
 }
 
+// ============================================================================
+// Custom Vocal Notes Tests (setVocalNotes API)
+// ============================================================================
+
+TEST(CustomVocalTest, SetVocalNotesCreatesVocalTrack) {
+  // Test that setVocalNotes creates a vocal track with the provided notes
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ShortForm;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+
+  // Create custom vocal notes
+  std::vector<NoteEvent> custom_notes;
+  custom_notes.push_back(NoteEvent(0, 480, 60, 100));       // C4, beat 1
+  custom_notes.push_back(NoteEvent(480, 480, 62, 100));     // D4, beat 2
+  custom_notes.push_back(NoteEvent(960, 480, 64, 100));     // E4, beat 3
+  custom_notes.push_back(NoteEvent(1440, 480, 65, 100));    // F4, beat 4
+
+  gen.setVocalNotes(params, custom_notes);
+
+  // Verify vocal track has exactly the custom notes
+  const auto& vocal_notes = gen.getSong().vocal().notes();
+  ASSERT_EQ(vocal_notes.size(), custom_notes.size());
+
+  for (size_t i = 0; i < custom_notes.size(); ++i) {
+    EXPECT_EQ(vocal_notes[i].start_tick, custom_notes[i].start_tick);
+    EXPECT_EQ(vocal_notes[i].duration, custom_notes[i].duration);
+    EXPECT_EQ(vocal_notes[i].note, custom_notes[i].note);
+    EXPECT_EQ(vocal_notes[i].velocity, custom_notes[i].velocity);
+  }
+}
+
+TEST(CustomVocalTest, SetVocalNotesThenGenerateAccompaniment) {
+  // Test the full custom vocal workflow: set notes -> generate accompaniment
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ShortForm;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.drums_enabled = true;
+
+  // Create a simple C major melody
+  std::vector<NoteEvent> custom_notes;
+  custom_notes.push_back(NoteEvent(0, 480, 60, 100));       // C4
+  custom_notes.push_back(NoteEvent(480, 480, 64, 100));     // E4
+  custom_notes.push_back(NoteEvent(960, 480, 67, 100));     // G4
+  custom_notes.push_back(NoteEvent(1440, 480, 72, 100));    // C5
+  custom_notes.push_back(NoteEvent(1920, 960, 60, 100));    // C4 (whole note)
+
+  gen.setVocalNotes(params, custom_notes);
+
+  // Verify vocal track is set
+  EXPECT_EQ(gen.getSong().vocal().notes().size(), 5u);
+
+  // Generate accompaniment
+  gen.generateAccompanimentForVocal();
+
+  // Verify accompaniment tracks are generated
+  EXPECT_FALSE(gen.getSong().bass().empty())
+      << "Bass track should be generated";
+  EXPECT_FALSE(gen.getSong().chord().empty())
+      << "Chord track should be generated";
+  EXPECT_FALSE(gen.getSong().drums().empty())
+      << "Drums track should be generated";
+
+  // Verify custom vocal notes are preserved
+  const auto& vocal_notes = gen.getSong().vocal().notes();
+  EXPECT_EQ(vocal_notes.size(), 5u) << "Custom vocal notes should be preserved";
+}
+
+TEST(CustomVocalTest, SetVocalNotesInitializesStructure) {
+  // Test that setVocalNotes properly initializes song structure
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+
+  std::vector<NoteEvent> custom_notes;
+  custom_notes.push_back(NoteEvent(0, 480, 60, 100));
+
+  gen.setVocalNotes(params, custom_notes);
+
+  // Verify structure is initialized
+  const auto& sections = gen.getSong().arrangement().sections();
+  EXPECT_FALSE(sections.empty()) << "Sections should be created";
+
+  // StandardPop should have Intro, A, B, Chorus, etc.
+  EXPECT_GE(sections.size(), 3u) << "Should have multiple sections";
+}
+
+TEST(CustomVocalTest, SetVocalNotesWithEmptyNotes) {
+  // Test that setVocalNotes works with empty notes array
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ShortForm;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+
+  std::vector<NoteEvent> empty_notes;
+
+  gen.setVocalNotes(params, empty_notes);
+
+  // Vocal track should be empty
+  EXPECT_TRUE(gen.getSong().vocal().empty());
+
+  // Structure should still be initialized
+  EXPECT_FALSE(gen.getSong().arrangement().sections().empty());
+}
+
+TEST(CustomVocalTest, SetVocalNotesRegistersWithHarmonyContext) {
+  // Test that custom vocal notes are registered with harmony context
+  // This ensures accompaniment properly avoids vocal clashes
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ShortForm;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+
+  std::vector<NoteEvent> custom_notes;
+  // Create notes that span multiple ticks
+  custom_notes.push_back(NoteEvent(0, 960, 60, 100));      // C4, bar 1 first half
+  custom_notes.push_back(NoteEvent(960, 960, 64, 100));    // E4, bar 1 second half
+
+  gen.setVocalNotes(params, custom_notes);
+  gen.generateAccompanimentForVocal();
+
+  // Verify bass and chord tracks are generated (meaning harmony context worked)
+  EXPECT_FALSE(gen.getSong().bass().empty());
+  EXPECT_FALSE(gen.getSong().chord().empty());
+
+  // Check that bass avoids clashing with custom vocal
+  const auto& bass_notes = gen.getSong().bass().notes();
+  for (const auto& bass_note : bass_notes) {
+    // Bass notes during custom vocal should not be 1 semitone away (minor 2nd)
+    for (const auto& vocal_note : custom_notes) {
+      if (bass_note.start_tick >= vocal_note.start_tick &&
+          bass_note.start_tick < vocal_note.start_tick + vocal_note.duration) {
+        int interval = std::abs(static_cast<int>(bass_note.note) -
+                                static_cast<int>(vocal_note.note)) % 12;
+        // Minor 2nd (1 semitone) or major 7th (11 semitones) are severe clashes
+        EXPECT_NE(interval, 1)
+            << "Bass should avoid minor 2nd clash with custom vocal";
+      }
+    }
+  }
+}
+
+TEST(CustomVocalTest, SetVocalNotesLongMelody) {
+  // Test with a longer, more complex custom melody
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::FullPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.drums_enabled = true;
+
+  // Create a 4-bar melody (1 bar = 1920 ticks)
+  std::vector<NoteEvent> custom_notes;
+  // Bar 1: C E G E
+  custom_notes.push_back(NoteEvent(0, 480, 60, 100));
+  custom_notes.push_back(NoteEvent(480, 480, 64, 90));
+  custom_notes.push_back(NoteEvent(960, 480, 67, 85));
+  custom_notes.push_back(NoteEvent(1440, 480, 64, 80));
+  // Bar 2: F A G F
+  custom_notes.push_back(NoteEvent(1920, 480, 65, 100));
+  custom_notes.push_back(NoteEvent(2400, 480, 69, 90));
+  custom_notes.push_back(NoteEvent(2880, 480, 67, 85));
+  custom_notes.push_back(NoteEvent(3360, 480, 65, 80));
+  // Bar 3: E G B G
+  custom_notes.push_back(NoteEvent(3840, 480, 64, 100));
+  custom_notes.push_back(NoteEvent(4320, 480, 67, 90));
+  custom_notes.push_back(NoteEvent(4800, 480, 71, 85));
+  custom_notes.push_back(NoteEvent(5280, 480, 67, 80));
+  // Bar 4: D - - C (hold D, resolve to C)
+  custom_notes.push_back(NoteEvent(5760, 1440, 62, 100));  // D held
+  custom_notes.push_back(NoteEvent(7200, 480, 60, 85));    // C resolve
+
+  gen.setVocalNotes(params, custom_notes);
+  gen.generateAccompanimentForVocal();
+
+  // Verify all notes are preserved
+  EXPECT_EQ(gen.getSong().vocal().notes().size(), custom_notes.size());
+
+  // Verify accompaniment is generated
+  EXPECT_FALSE(gen.getSong().bass().empty());
+  EXPECT_FALSE(gen.getSong().chord().empty());
+  EXPECT_FALSE(gen.getSong().drums().empty());
+}
+
 }  // namespace
 }  // namespace midisketch
