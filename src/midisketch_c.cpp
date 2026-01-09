@@ -1,3 +1,8 @@
+/**
+ * @file midisketch_c.cpp
+ * @brief Implementation of C API for WASM and FFI bindings.
+ */
+
 #include "midisketch_c.h"
 #include "midisketch.h"
 #include "core/preset_data.h"

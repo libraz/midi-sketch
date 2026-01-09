@@ -1,3 +1,8 @@
+/**
+ * @file section_utils.cpp
+ * @brief Implementation of section search utilities.
+ */
+
 #include "core/section_utils.h"
 #include <algorithm>
 

@@ -1,3 +1,8 @@
+/**
+ * @file json_helpers_test.cpp
+ * @brief Tests for JSON helpers.
+ */
+
 #include "core/json_helpers.h"
 #include <gtest/gtest.h>
 #include <sstream>

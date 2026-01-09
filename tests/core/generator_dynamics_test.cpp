@@ -1,3 +1,8 @@
+/**
+ * @file generator_dynamics_test.cpp
+ * @brief Tests for generator dynamics.
+ */
+
 #include <gtest/gtest.h>
 #include "core/generator.h"
 #include "core/velocity.h"

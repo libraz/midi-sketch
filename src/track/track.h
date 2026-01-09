@@ -1,7 +1,11 @@
+/**
+ * @file track.h
+ * @brief Aggregate header for all track generators.
+ */
+
 #ifndef MIDISKETCH_TRACK_TRACK_H
 #define MIDISKETCH_TRACK_TRACK_H
 
-// Aggregate header for all track generators.
 // Include this header to access all track generation functions.
 
 #include "track/bass.h"

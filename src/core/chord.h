@@ -1,3 +1,8 @@
+/**
+ * @file chord.h
+ * @brief Chord structures and progression definitions.
+ */
+
 #ifndef MIDISKETCH_CORE_CHORD_H
 #define MIDISKETCH_CORE_CHORD_H
 
@@ -7,101 +12,144 @@
 
 namespace midisketch {
 
-// Chord intervals relative to root (-1 = unused).
+/**
+ * @brief Chord structure with intervals relative to root.
+ *
+ * Intervals: Major(0,4,7), Minor(0,3,7), Dim(0,3,6). Unused slots = -1.
+ */
 struct Chord {
-  std::array<int8_t, 5> intervals;  // Semitones from root (up to 5 notes for 9th chords)
-  uint8_t note_count;               // Number of notes in chord
-  bool is_diminished;               // True for diminished chords (vii°)
+  std::array<int8_t, 5> intervals;  ///< Semitones from root (up to 5 for 9th chords)
+  uint8_t note_count;               ///< Number of notes in this chord
+  bool is_diminished;               ///< True for diminished chords (vii°)
 };
 
-// Maximum number of chords in a progression.
+/// Maximum chords in a progression (most are 4-6).
 constexpr uint8_t MAX_PROGRESSION_LENGTH = 8;
 
-// Chord progression pattern (variable length, up to 8 chords).
+/**
+ * @brief Chord progression pattern with scale degrees.
+ *
+ * Degrees: 0=I, 1=ii, 2=iii, 3=IV, 4=V, 5=vi, 6=vii, 10=bVII.
+ * Wraps around progression length.
+ */
 struct ChordProgression {
-  std::array<int8_t, MAX_PROGRESSION_LENGTH> degrees;  // Scale degrees: I=0, ii=1, iii=2, IV=3, V=4, vi=5, vii=6, bVII=10
-  uint8_t length;  // Actual number of chords (1-8, typically 4-6)
+  std::array<int8_t, MAX_PROGRESSION_LENGTH> degrees;  ///< Scale degrees (I=0, V=4, vi=5, etc.)
+  uint8_t length;  ///< Number of chords (1-8, typically 4)
 
-  // Access chord at bar position (wraps around based on length)
+  /// Access chord at bar position (wraps around based on length).
   constexpr int8_t at(size_t bar) const {
     return degrees[bar % length];
   }
 
-  // Get next chord index (wraps around)
+  /// Get next chord index (wraps around).
   constexpr size_t nextIndex(size_t current) const {
     return (current + 1) % length;
   }
 };
 
-// Functional profile for chord progressions.
+/**
+ * @brief Functional profile categorizing chord progressions.
+ */
 enum class FunctionalProfile : uint8_t {
-  Loop,           // Circular (4-chord loop, etc.)
-  TensionBuild,   // Tension building
-  CadenceStrong,  // Strong cadence (V-I resolution)
-  Stable          // Stable (diatonic-centered)
+  Loop,           ///< Circular, repeating naturally
+  TensionBuild,   ///< Builds tension over time
+  CadenceStrong,  ///< Strong V-I resolution
+  Stable          ///< Diatonic, tonic-centered
 };
 
-// Style compatibility bit flags.
-constexpr uint8_t STYLE_MINIMAL = 1 << 0;
-constexpr uint8_t STYLE_DANCE = 1 << 1;
-constexpr uint8_t STYLE_IDOL_STD = 1 << 2;
-constexpr uint8_t STYLE_IDOL_ENERGY = 1 << 3;
-constexpr uint8_t STYLE_ROCK = 1 << 4;
+/// @name Style Compatibility Flags
+/// Bit flags indicating which musical styles a progression suits.
+/// @{
+constexpr uint8_t STYLE_MINIMAL = 1 << 0;     ///< Minimal/ambient electronic
+constexpr uint8_t STYLE_DANCE = 1 << 1;       ///< Dance/EDM
+constexpr uint8_t STYLE_IDOL_STD = 1 << 2;    ///< Standard idol pop
+constexpr uint8_t STYLE_IDOL_ENERGY = 1 << 3; ///< High-energy idol
+constexpr uint8_t STYLE_ROCK = 1 << 4;        ///< Rock/band sound
+/// @}
 
-// Chord progression metadata.
+/**
+ * @brief Metadata for a chord progression preset.
+ *
+ * Contains human-readable name, functional classification, and style
+ * compatibility information for each built-in progression.
+ */
 struct ChordProgressionMeta {
-  uint8_t id;
-  const char* name;
-  FunctionalProfile profile;
-  uint8_t compatible_styles;  // Bit flags
-  const char* tags;           // Comma-separated tags
+  uint8_t id;                   ///< Progression index (0-21)
+  const char* name;             ///< Human-readable name (e.g., "Canon")
+  FunctionalProfile profile;    ///< Functional classification
+  uint8_t compatible_styles;    ///< Style compatibility bit flags
+  const char* tags;             ///< Comma-separated tags for search
 };
 
-// Returns the chord progression for the given ID.
-// @param chord_id Progression index (0-21)
-// @returns Reference to ChordProgression struct
+/**
+ * @brief Get chord progression by ID.
+ * @param chord_id Progression index (0-21)
+ * @return Reference to ChordProgression struct
+ */
 const ChordProgression& getChordProgression(uint8_t chord_id);
 
-// Converts a scale degree to a MIDI root note.
-// @param degree Scale degree (0=I, 4=V, 5=vi, etc.)
-// @param key Target key
-// @returns MIDI note number for the root
+/**
+ * @brief Convert scale degree to MIDI root note.
+ * @param degree Scale degree (0=I, 3=IV, 4=V, 5=vi, etc.)
+ * @param key Target key for transposition
+ * @return MIDI note number for the chord root
+ */
 uint8_t degreeToRoot(int8_t degree, Key key);
 
-// Returns the chord intervals for a given scale degree.
-// @param degree Scale degree
-// @returns Chord struct with intervals and note count
+/**
+ * @brief Get chord intervals for a scale degree.
+ *
+ * I,IV,V=Major(0,4,7), ii,iii,vi=Minor(0,3,7), vii=Dim(0,3,6).
+ *
+ * @param degree Scale degree (0-6)
+ * @return Chord struct with intervals and note count
+ */
 Chord getChordNotes(int8_t degree);
 
-// Returns a chord with the specified extension applied.
-// @param degree Scale degree
-// @param extension Chord extension type
-// @returns Chord struct with intervals and note count
+/**
+ * @brief Get chord with extension applied.
+ *
+ * 7th=+10, 9th=+10+14, sus2=2, sus4=5, add9=+14.
+ *
+ * @param degree Scale degree (0-6)
+ * @param extension Chord extension type
+ * @return Chord struct with extended intervals
+ */
 Chord getExtendedChord(int8_t degree, ChordExtension extension);
 
-// Returns the name of a chord progression.
-// @param chord_id Progression index (0-21)
-// @returns Progression name (e.g., "Canon", "Pop1")
+/**
+ * @brief Get human-readable name of a progression.
+ * @param chord_id Progression index (0-21)
+ * @return Name string (e.g., "Canon", "Pop1", "Emotional")
+ */
 const char* getChordProgressionName(uint8_t chord_id);
 
-// Returns the display string for a chord progression (Roman numerals).
-// @param chord_id Progression index (0-21)
-// @returns Display string (e.g., "I - V - vi - IV")
+/**
+ * @brief Get Roman numeral display string.
+ * @param chord_id Progression index (0-21)
+ * @return Display string (e.g., "I - V - vi - IV")
+ */
 const char* getChordProgressionDisplay(uint8_t chord_id);
 
-// Returns the chord names for a progression in C major.
-// @param chord_id Progression index (0-21)
-// @returns Chord names string (e.g., "C - G - Am - F")
+/**
+ * @brief Get chord names in C major.
+ * @param chord_id Progression index (0-21)
+ * @return Chord names string (e.g., "C - G - Am - F")
+ */
 const char* getChordProgressionChords(uint8_t chord_id);
 
-// Returns the metadata for a chord progression.
-// @param chord_id Progression index (0-21)
-// @returns Reference to ChordProgressionMeta struct
+/**
+ * @brief Get metadata for a chord progression.
+ * @param chord_id Progression index (0-21)
+ * @return Reference to ChordProgressionMeta struct
+ */
 const ChordProgressionMeta& getChordProgressionMeta(uint8_t chord_id);
 
-// Returns chord progression IDs compatible with a style.
-// @param style_mask Style bit mask (STYLE_MINIMAL, etc.)
-// @returns Vector of compatible chord progression IDs
+/**
+ * @brief Get progression IDs compatible with a style.
+ * @param style_mask Style bit mask (STYLE_MINIMAL, STYLE_DANCE, etc.)
+ * @return Vector of compatible chord progression IDs
+ */
 std::vector<uint8_t> getChordProgressionsByStyle(uint8_t style_mask);
 
 }  // namespace midisketch

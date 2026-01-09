@@ -1,3 +1,8 @@
+/**
+ * @file midi_track_test.cpp
+ * @brief Tests for MidiTrack operations.
+ */
+
 #include <gtest/gtest.h>
 #include "core/midi_track.h"
 

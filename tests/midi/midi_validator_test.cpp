@@ -1,3 +1,8 @@
+/**
+ * @file midi_validator_test.cpp
+ * @brief Tests for MIDI file validator.
+ */
+
 #include <gtest/gtest.h>
 #include "core/preset_data.h"
 #include "midi/midi_validator.h"

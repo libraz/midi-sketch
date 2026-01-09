@@ -1,3 +1,8 @@
+/**
+ * @file generator_vocal_test.cpp
+ * @brief Tests for vocal generation.
+ */
+
 #include <gtest/gtest.h>
 #include "core/generator.h"
 #include "core/preset_data.h"

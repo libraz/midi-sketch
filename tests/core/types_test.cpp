@@ -1,3 +1,8 @@
+/**
+ * @file types_test.cpp
+ * @brief Tests for core types.
+ */
+
 #include <gtest/gtest.h>
 #include "core/preset_data.h"
 #include "core/track_layer.h"

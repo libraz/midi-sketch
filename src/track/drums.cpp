@@ -1,3 +1,8 @@
+/**
+ * @file drums.cpp
+ * @brief Implementation of drum track generation.
+ */
+
 #include "track/drums.h"
 #include "core/preset_data.h"
 #include "core/timing_constants.h"
@@ -22,6 +27,16 @@ constexpr uint8_t TOM_L = 45;     // Low Tom
 // Local aliases for timing constants
 constexpr Tick EIGHTH = TICK_EIGHTH;
 constexpr Tick SIXTEENTH = TICK_SIXTEENTH;
+
+// Helper to add drum notes (no provenance tracking needed for percussion)
+void addDrumNote(MidiTrack& track, Tick start, Tick duration, uint8_t note, uint8_t velocity) {
+  NoteEvent event;
+  event.start_tick = start;
+  event.duration = duration;
+  event.note = note;
+  event.velocity = velocity;
+  track.addNote(event);
+}
 
 // Ghost note velocity multiplier
 constexpr float GHOST_VEL = 0.45f;
@@ -90,31 +105,31 @@ void generateFill(MidiTrack& track, Tick beat_tick, uint8_t beat,
         // Beat 3: 4 sixteenth notes
         for (int i = 0; i < 4; ++i) {
           uint8_t vel = static_cast<uint8_t>(fill_vel * (0.6f + 0.1f * i));
-          track.addNote(beat_tick + i * SIXTEENTH, SIXTEENTH, SD, vel);
+          addDrumNote(track,beat_tick + i * SIXTEENTH, SIXTEENTH, SD, vel);
         }
       } else if (beat == 3) {
         // Beat 4: crescendo to accent
         for (int i = 0; i < 3; ++i) {
           uint8_t vel = static_cast<uint8_t>(fill_vel * (0.7f + 0.1f * i));
-          track.addNote(beat_tick + i * SIXTEENTH, SIXTEENTH, SD, vel);
+          addDrumNote(track,beat_tick + i * SIXTEENTH, SIXTEENTH, SD, vel);
         }
-        track.addNote(beat_tick + 3 * SIXTEENTH, SIXTEENTH, SD, accent_vel);
+        addDrumNote(track,beat_tick + 3 * SIXTEENTH, SIXTEENTH, SD, accent_vel);
       }
       break;
 
     case FillType::TomDescend:
       // High -> Mid -> Low tom roll
       if (beat == 2) {
-        track.addNote(beat_tick, EIGHTH, SD, fill_vel);
-        track.addNote(beat_tick + EIGHTH, EIGHTH, TOM_H,
+        addDrumNote(track,beat_tick, EIGHTH, SD, fill_vel);
+        addDrumNote(track,beat_tick + EIGHTH, EIGHTH, TOM_H,
                       static_cast<uint8_t>(fill_vel - 5));
       } else if (beat == 3) {
-        track.addNote(beat_tick, SIXTEENTH, TOM_H, fill_vel);
-        track.addNote(beat_tick + SIXTEENTH, SIXTEENTH, TOM_M,
+        addDrumNote(track,beat_tick, SIXTEENTH, TOM_H, fill_vel);
+        addDrumNote(track,beat_tick + SIXTEENTH, SIXTEENTH, TOM_M,
                       static_cast<uint8_t>(fill_vel - 3));
-        track.addNote(beat_tick + EIGHTH, SIXTEENTH, TOM_M,
+        addDrumNote(track,beat_tick + EIGHTH, SIXTEENTH, TOM_M,
                       static_cast<uint8_t>(fill_vel - 5));
-        track.addNote(beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, TOM_L,
+        addDrumNote(track,beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, TOM_L,
                       accent_vel);
       }
       break;
@@ -122,16 +137,16 @@ void generateFill(MidiTrack& track, Tick beat_tick, uint8_t beat,
     case FillType::TomAscend:
       // Low -> Mid -> High tom roll
       if (beat == 2) {
-        track.addNote(beat_tick, EIGHTH, SD, fill_vel);
-        track.addNote(beat_tick + EIGHTH, EIGHTH, TOM_L,
+        addDrumNote(track,beat_tick, EIGHTH, SD, fill_vel);
+        addDrumNote(track,beat_tick + EIGHTH, EIGHTH, TOM_L,
                       static_cast<uint8_t>(fill_vel - 5));
       } else if (beat == 3) {
-        track.addNote(beat_tick, SIXTEENTH, TOM_L, fill_vel);
-        track.addNote(beat_tick + SIXTEENTH, SIXTEENTH, TOM_M,
+        addDrumNote(track,beat_tick, SIXTEENTH, TOM_L, fill_vel);
+        addDrumNote(track,beat_tick + SIXTEENTH, SIXTEENTH, TOM_M,
                       static_cast<uint8_t>(fill_vel + 3));
-        track.addNote(beat_tick + EIGHTH, SIXTEENTH, TOM_M,
+        addDrumNote(track,beat_tick + EIGHTH, SIXTEENTH, TOM_M,
                       static_cast<uint8_t>(fill_vel + 5));
-        track.addNote(beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, TOM_H,
+        addDrumNote(track,beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, TOM_H,
                       accent_vel);
       }
       break;
@@ -139,18 +154,18 @@ void generateFill(MidiTrack& track, Tick beat_tick, uint8_t beat,
     case FillType::SnareTomCombo:
       // Snare with tom accents
       if (beat == 2) {
-        track.addNote(beat_tick, EIGHTH, SD, fill_vel);
-        track.addNote(beat_tick + EIGHTH, SIXTEENTH, SD,
+        addDrumNote(track,beat_tick, EIGHTH, SD, fill_vel);
+        addDrumNote(track,beat_tick + EIGHTH, SIXTEENTH, SD,
                       static_cast<uint8_t>(fill_vel - 5));
-        track.addNote(beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, TOM_H,
+        addDrumNote(track,beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, TOM_H,
                       fill_vel);
       } else if (beat == 3) {
-        track.addNote(beat_tick, SIXTEENTH, TOM_M, fill_vel);
-        track.addNote(beat_tick + SIXTEENTH, SIXTEENTH, SD,
+        addDrumNote(track,beat_tick, SIXTEENTH, TOM_M, fill_vel);
+        addDrumNote(track,beat_tick + SIXTEENTH, SIXTEENTH, SD,
                       static_cast<uint8_t>(fill_vel - 3));
-        track.addNote(beat_tick + EIGHTH, SIXTEENTH, TOM_L,
+        addDrumNote(track,beat_tick + EIGHTH, SIXTEENTH, TOM_L,
                       static_cast<uint8_t>(fill_vel + 2));
-        track.addNote(beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, BD,
+        addDrumNote(track,beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, BD,
                       accent_vel);
       }
       break;
@@ -158,7 +173,7 @@ void generateFill(MidiTrack& track, Tick beat_tick, uint8_t beat,
     case FillType::SimpleCrash:
       // Just kick on beat 4 for minimal transition
       if (beat == 3) {
-        track.addNote(beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, BD,
+        addDrumNote(track,beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, BD,
                       accent_vel);
       }
       break;
@@ -617,7 +632,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
     // Add crash cymbal accent at the start of Chorus for impact
     if (add_crash_accent && sec_idx > 0) {
       uint8_t crash_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(105 * density_mult)));
-      track.addNote(section.start_tick, TICKS_PER_BEAT / 2, 49, crash_vel);  // Crash cymbal
+      addDrumNote(track,section.start_tick, TICKS_PER_BEAT / 2, 49, crash_vel);  // Crash cymbal
     }
 
     HiHatLevel hh_level = getHiHatLevel(section.type, style,
@@ -661,7 +676,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         }
         if (add_crash) {
           uint8_t crash_vel = calculateVelocity(section.type, 0, params.mood);
-          track.addNote(bar_start, EIGHTH, CRASH, crash_vel);
+          addDrumNote(track,bar_start, EIGHTH, CRASH, crash_vel);
         }
       }
 
@@ -714,11 +729,11 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         }
 
         if (play_kick_on) {
-          track.addNote(beat_tick, EIGHTH, BD, velocity);
+          addDrumNote(track,beat_tick, EIGHTH, BD, velocity);
         }
         if (play_kick_and) {
           uint8_t and_vel = static_cast<uint8_t>(velocity * 0.85f);
-          track.addNote(beat_tick + EIGHTH, EIGHTH, BD, and_vel);
+          addDrumNote(track,beat_tick + EIGHTH, EIGHTH, BD, and_vel);
         }
 
         // ===== SNARE DRUM =====
@@ -726,9 +741,9 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         if ((beat == 1 || beat == 3) && !is_intro_first) {
           if (style == DrumStyle::Sparse) {
             uint8_t snare_vel = static_cast<uint8_t>(velocity * 0.8f);
-            track.addNote(beat_tick, EIGHTH, SIDESTICK, snare_vel);
+            addDrumNote(track,beat_tick, EIGHTH, SIDESTICK, snare_vel);
           } else {
-            track.addNote(beat_tick, EIGHTH, SD, velocity);
+            addDrumNote(track,beat_tick, EIGHTH, SD, velocity);
           }
         }
 
@@ -753,7 +768,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
                 ghost_vel = static_cast<uint8_t>(ghost_vel * 0.9f);
               }
 
-              track.addNote(beat_tick + ghost_offset, SIXTEENTH, SD, ghost_vel);
+              addDrumNote(track,beat_tick + ghost_offset, SIXTEENTH, SD, ghost_vel);
             }
           }
         }
@@ -767,7 +782,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
             if (section.type != SectionType::Intro || beat == 0) {
               uint8_t hh_vel =
                   static_cast<uint8_t>(velocity * density_mult * 0.75f);
-              track.addNote(beat_tick, EIGHTH, hh_instrument, hh_vel);
+              addDrumNote(track,beat_tick, EIGHTH, hh_instrument, hh_vel);
             }
             break;
 
@@ -818,10 +833,10 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
               }
 
               if (use_open) {
-                track.addNote(hh_tick, EIGHTH, OHH,
+                addDrumNote(track,hh_tick, EIGHTH, OHH,
                               static_cast<uint8_t>(hh_vel * 1.1f));
               } else {
-                track.addNote(hh_tick, EIGHTH / 2, hh_instrument, hh_vel);
+                addDrumNote(track,hh_tick, EIGHTH / 2, hh_instrument, hh_vel);
               }
             }
             break;
@@ -847,13 +862,13 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
                 float open_prob = std::clamp(30.0f / params.bpm, 0.1f, 0.4f);
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
                 if (open_dist(rng) < open_prob) {
-                  track.addNote(hh_tick, SIXTEENTH, OHH,
+                  addDrumNote(track,hh_tick, SIXTEENTH, OHH,
                                 static_cast<uint8_t>(hh_vel * 1.2f));
                   continue;
                 }
               }
 
-              track.addNote(hh_tick, SIXTEENTH / 2, hh_instrument, hh_vel);
+              addDrumNote(track,hh_tick, SIXTEENTH / 2, hh_instrument, hh_vel);
             }
             break;
         }

@@ -1,3 +1,8 @@
+/**
+ * @file modulation_calculator.cpp
+ * @brief Implementation of key modulation calculation.
+ */
+
 #include "core/modulation_calculator.h"
 
 namespace midisketch {

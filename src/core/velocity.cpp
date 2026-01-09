@@ -1,3 +1,8 @@
+/**
+ * @file velocity.cpp
+ * @brief Implementation of velocity adjustments.
+ */
+
 #include "core/velocity.h"
 #include "core/midi_track.h"
 #include <algorithm>

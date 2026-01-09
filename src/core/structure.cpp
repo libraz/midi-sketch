@@ -1,3 +1,8 @@
+/**
+ * @file structure.cpp
+ * @brief Implementation of song structure builders.
+ */
+
 #include "core/structure.h"
 #include "core/preset_data.h"
 #include <algorithm>

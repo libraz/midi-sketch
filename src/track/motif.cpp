@@ -1,9 +1,17 @@
+/**
+ * @file motif.cpp
+ * @brief Implementation of background motif track generation.
+ */
+
 #include "track/motif.h"
 #include "core/chord.h"
+#include "core/harmony_context.h"
 #include "core/motif.h"
+#include "core/note_factory.h"
 #include <algorithm>
 #include <array>
 #include <map>
+#include <memory>
 #include <vector>
 
 namespace midisketch {
@@ -450,12 +458,15 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params,
 // =============================================================================
 
 void generateMotifTrack(MidiTrack& track, Song& song,
-                        const GeneratorParams& params, std::mt19937& rng) {
+                        const GeneratorParams& params, std::mt19937& rng,
+                        const HarmonyContext& harmony) {
   // L1: Generate base motif pattern
   std::vector<NoteEvent> pattern = generateMotifPattern(params, rng);
   song.setMotifPattern(pattern);
 
   if (pattern.empty()) return;
+
+  NoteFactory factory(harmony);
 
   const MotifParams& motif_params = params.motif;
   const auto& progression = getChordProgression(params.chord_id);
@@ -570,16 +581,16 @@ void generateMotifTrack(MidiTrack& track, Song& song,
         }
 
         // Add main note
-        track.addNote(absolute_tick, note.duration,
-                      static_cast<uint8_t>(adjusted_pitch), vel);
+        track.addNote(factory.create(absolute_tick, note.duration,
+                      static_cast<uint8_t>(adjusted_pitch), vel, NoteSource::Motif));
 
         // L4: Add octave doubling for chorus (if role allows)
         if (add_octave) {
           int octave_pitch = adjusted_pitch + 12;
           if (octave_pitch <= 108) {
             uint8_t octave_vel = static_cast<uint8_t>(vel * 0.85f);
-            track.addNote(absolute_tick, note.duration,
-                          static_cast<uint8_t>(octave_pitch), octave_vel);
+            track.addNote(factory.create(absolute_tick, note.duration,
+                          static_cast<uint8_t>(octave_pitch), octave_vel, NoteSource::Motif));
           }
         }
       }

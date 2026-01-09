@@ -1,3 +1,8 @@
+/**
+ * @file midi2_writer.h
+ * @brief MIDI 2.0 Clip and Container file writer using UMP messages.
+ */
+
 #ifndef MIDISKETCH_MIDI2_WRITER_H
 #define MIDISKETCH_MIDI2_WRITER_H
 

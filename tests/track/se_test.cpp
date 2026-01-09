@@ -1,3 +1,8 @@
+/**
+ * @file se_test.cpp
+ * @brief Tests for SE track generation.
+ */
+
 #include <gtest/gtest.h>
 #include "core/arrangement.h"
 #include "core/generator.h"

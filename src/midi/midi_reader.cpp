@@ -1,3 +1,8 @@
+/**
+ * @file midi_reader.cpp
+ * @brief Implementation of MIDI file parser.
+ */
+
 #include "midi/midi_reader.h"
 #include <algorithm>
 #include <cctype>

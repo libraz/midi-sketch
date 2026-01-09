@@ -1,3 +1,8 @@
+/**
+ * @file struct_layout_test.cpp
+ * @brief Tests for struct layout compatibility.
+ */
+
 #include <gtest/gtest.h>
 #include "midisketch_c.h"
 

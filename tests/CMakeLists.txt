@@ -17,6 +17,7 @@ set(TEST_SOURCES
   core/chord_test.cpp
   core/generator_test.cpp
   core/generator_vocal_test.cpp
+  core/generator_vocal_first_test.cpp
   core/generator_motif_test.cpp
   core/generator_dynamics_test.cpp
   core/midi_track_test.cpp
@@ -46,10 +47,15 @@ set(TEST_SOURCES
   track/vocal_test.cpp
   track/chord_track_test.cpp
   track/bass_test.cpp
+  track/bass_with_vocal_test.cpp
+  track/chord_with_context_test.cpp
   track/drums_test.cpp
   track/melody_designer_test.cpp
   track/aux_track_test.cpp
+  track/aux_dissonance_regression_test.cpp
+  track/bass_dissonance_regression_test.cpp
   track/se_test.cpp
+  track/vocal_analysis_test.cpp
   analysis/dissonance_test.cpp
   api/c_api_test.cpp
 )

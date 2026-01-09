@@ -1,3 +1,8 @@
+/**
+ * @file se.h
+ * @brief SE track with section markers and modulation events.
+ */
+
 #ifndef MIDISKETCH_TRACK_SE_H
 #define MIDISKETCH_TRACK_SE_H
 

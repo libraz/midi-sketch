@@ -1,3 +1,8 @@
+/**
+ * @file randomness_test.cpp
+ * @brief Tests for randomness behavior.
+ */
+
 #include "core/generator.h"
 #include "core/preset_data.h"
 #include "midisketch.h"

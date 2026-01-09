@@ -1,3 +1,8 @@
+/**
+ * @file ump_test.cpp
+ * @brief Tests for UMP message builders.
+ */
+
 #include <gtest/gtest.h>
 
 #include "midi/ump.h"

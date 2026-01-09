@@ -1,3 +1,8 @@
+/**
+ * @file post_processor.h
+ * @brief Track post-processing for humanization and dynamics.
+ */
+
 #ifndef MIDISKETCH_CORE_POST_PROCESSOR_H
 #define MIDISKETCH_CORE_POST_PROCESSOR_H
 

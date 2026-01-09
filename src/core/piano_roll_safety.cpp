@@ -1,3 +1,8 @@
+/**
+ * @file piano_roll_safety.cpp
+ * @brief Implementation of collision detection.
+ */
+
 #include "core/piano_roll_safety.h"
 #include "core/song.h"
 #include <cstdlib>

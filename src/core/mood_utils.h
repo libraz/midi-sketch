@@ -1,3 +1,8 @@
+/**
+ * @file mood_utils.h
+ * @brief Mood classification utilities for consistent handling.
+ */
+
 #ifndef MIDISKETCH_CORE_MOOD_UTILS_H
 #define MIDISKETCH_CORE_MOOD_UTILS_H
 

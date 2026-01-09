@@ -1,3 +1,8 @@
+/**
+ * @file cli_main.cpp
+ * @brief Command-line interface for MIDI generation and analysis.
+ */
+
 #include "midisketch.h"
 #include "analysis/dissonance.h"
 #include "core/preset_data.h"

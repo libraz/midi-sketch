@@ -1,3 +1,8 @@
+/**
+ * @file preset_data.h
+ * @brief Preset data accessors for moods and styles.
+ */
+
 #ifndef MIDISKETCH_CORE_PRESET_DATA_H
 #define MIDISKETCH_CORE_PRESET_DATA_H
 

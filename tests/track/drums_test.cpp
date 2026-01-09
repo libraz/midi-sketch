@@ -1,3 +1,8 @@
+/**
+ * @file drums_test.cpp
+ * @brief Tests for drum track generation.
+ */
+
 #include <gtest/gtest.h>
 #include "core/generator.h"
 #include "core/song.h"

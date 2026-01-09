@@ -1,3 +1,8 @@
+/**
+ * @file config_converter.cpp
+ * @brief Implementation of SongConfig to GeneratorParams conversion.
+ */
+
 #include "core/config_converter.h"
 #include "core/preset_data.h"
 #include "track/se.h"

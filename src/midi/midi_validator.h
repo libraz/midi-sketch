@@ -1,3 +1,8 @@
+/**
+ * @file midi_validator.h
+ * @brief MIDI file structure validator supporting SMF1 and SMF2 formats.
+ */
+
 #pragma once
 
 #include "core/types.h"

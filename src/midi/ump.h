@@ -1,3 +1,8 @@
+/**
+ * @file ump.h
+ * @brief Universal MIDI Packet (UMP) message builders for MIDI 2.0.
+ */
+
 #ifndef MIDISKETCH_MIDI_UMP_H
 #define MIDISKETCH_MIDI_UMP_H
 

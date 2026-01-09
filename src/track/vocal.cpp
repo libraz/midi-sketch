@@ -1,3 +1,11 @@
+/**
+ * @file vocal.cpp
+ * @brief Vocal melody track generation with phrase caching and variation.
+ *
+ * Phrase-based approach: each section generates/reuses cached phrases with
+ * subtle variations for varied repetition (scale degrees, singability, cadences).
+ */
+
 #include "track/vocal.h"
 #include "core/chord.h"
 #include "core/chord_utils.h"
@@ -13,47 +21,63 @@ namespace midisketch {
 
 namespace {
 
-// Cached phrase for section repetition
+/// Cached phrase for section repetition (Chorus 1 & 2 share melody with variations).
 struct CachedPhrase {
-  std::vector<NoteEvent> notes;  // Notes with timing relative to section start
-  uint8_t bars;                   // Section length when cached
-  uint8_t vocal_low;              // Vocal range when cached
+  std::vector<NoteEvent> notes;  ///< Notes with timing relative to section start
+  uint8_t bars;                   ///< Section length when cached
+  uint8_t vocal_low;              ///< Vocal range when cached
   uint8_t vocal_high;
-  int reuse_count = 0;            // How many times this phrase has been reused
+  int reuse_count = 0;            ///< How many times this phrase has been reused
 };
 
-// Phrase variation types for cached phrase reuse
-// These are subtle variations that maintain recognizability while adding interest
+/// Phrase variation types: tail changes, timing shifts, ornaments, dynamics.
 enum class PhraseVariation : uint8_t {
-  Exact,              // No change (primary)
-  LastNoteShift,      // Shift last note up/down by step
-  LastNoteLong,       // Extend last note duration
-  TailSwap,           // Swap last two notes
-  SlightRush,         // Slightly earlier timing on weak beats
-  // V1 additions: subtle variations for repeated sections
-  MicroRhythmChange,  // Slight timing variation on specific notes
-  BreathRestInsert,   // Insert short rest before phrase end
-  SlurMerge,          // Merge two adjacent short notes into one longer
-  RepeatNoteSimplify  // Simplify repeated notes (reduce density slightly)
+  Exact,              ///< No change - use original phrase
+  LastNoteShift,      ///< Shift last note by scale degree (common ending variation)
+  LastNoteLong,       ///< Extend last note duration (dramatic ending)
+  TailSwap,           ///< Swap last two notes (melodic variation)
+  SlightRush,         ///< Earlier timing on weak beats (adds energy)
+  MicroRhythmChange,  ///< Subtle timing variation (human feel)
+  BreathRestInsert,   ///< Short rest before phrase end (breathing room)
+  SlurMerge,          ///< Merge short notes into longer (legato effect)
+  RepeatNoteSimplify  ///< Reduce repeated notes (cleaner articulation)
 };
 
-// Maximum number of variation types (excluding Exact)
+/// Maximum number of variation types (excluding Exact)
 constexpr int kVariationTypeCount = 8;
 
-// Maximum reuse count before variation is forced (V4)
+/// Maximum reuse count before variation is forced.
+/// After this many exact repetitions, variation is mandatory to prevent monotony.
 constexpr int kMaxExactReuse = 2;
 
-// Singing effort thresholds (V6: reserved for future vocal constraint system)
-constexpr int kHighRegisterThreshold = 74;  // D5 and above = high effort
-constexpr int kLargeIntervalThreshold = 7;  // Perfect 5th and above = effort
+/// @name Singing Effort Thresholds
+/// Used to calculate vocal difficulty score for phrases.
+/// Higher effort phrases are harder to sing and may need rest afterward.
+/// @{
+
+/// D5 (MIDI 74) and above requires significant vocal effort.
+/// This is the "break point" for many singers (passaggio).
+constexpr int kHighRegisterThreshold = 74;
+
+/// Perfect 5th (7 semitones) and above is a significant vocal leap.
+/// Larger intervals require more breath control and precision.
+constexpr int kLargeIntervalThreshold = 7;
+
 [[maybe_unused]] constexpr float kHighEffortScore = 1.0f;
 constexpr float kMediumEffortScore = 0.5f;
+/// @}
 
-// PhraseCacheKey for extended cache lookup (V2)
+/**
+ * @brief Extended cache key for phrase lookup.
+ *
+ * Phrases are cached not just by section type, but also by length and
+ * starting chord. This ensures that a 4-bar chorus starting on I chord
+ * is cached separately from an 8-bar chorus starting on IV chord.
+ */
 struct PhraseCacheKey {
-  SectionType section_type;
-  uint8_t bars;
-  int8_t chord_degree;  // Base chord degree affects melodic choices
+  SectionType section_type;  ///< Section type (Verse, Chorus, etc.)
+  uint8_t bars;              ///< Section length in bars
+  int8_t chord_degree;       ///< Starting chord degree (affects melodic choices)
 
   bool operator==(const PhraseCacheKey& other) const {
     return section_type == other.section_type &&
@@ -62,7 +86,7 @@ struct PhraseCacheKey {
   }
 };
 
-// Hash function for PhraseCacheKey (V2)
+/// Hash function for PhraseCacheKey enabling use in unordered_map.
 struct PhraseCacheKeyHash {
   size_t operator()(const PhraseCacheKey& key) const {
     return std::hash<uint8_t>()(static_cast<uint8_t>(key.section_type)) ^
@@ -71,26 +95,28 @@ struct PhraseCacheKeyHash {
   }
 };
 
-// Select a phrase variation based on reuse count (V4: staged control).
-// First use: always Exact
-// 1-kMaxExactReuse: 80% Exact, 20% variation
-// After kMaxExactReuse: variation is forced (no more Exact)
+/// Select phrase variation: exact for first/early repeats, forced variation later.
 PhraseVariation selectPhraseVariation(int reuse_count, std::mt19937& rng) {
+  // First occurrence: establish the phrase exactly
   if (reuse_count == 0) return PhraseVariation::Exact;
 
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
-  // V4: After maximum reuse, force variation
+  // Early repeats: 80% exact to reinforce, 20% variation for interest
   if (reuse_count <= kMaxExactReuse && dist(rng) < 0.8f) {
-    return PhraseVariation::Exact;  // 80% same
+    return PhraseVariation::Exact;
   }
 
-  // Select variation: uniformly from all variation types
+  // Later repeats: force variation to prevent monotony
   return static_cast<PhraseVariation>(1 + (rng() % kVariationTypeCount));
 }
 
-// Apply a phrase variation to notes.
-// Variations are subtle to maintain phrase identity.
+/**
+ * @brief Apply phrase variation to notes (ending changes, timing shifts, slurs).
+ * @param notes Notes to modify (in-place)
+ * @param variation Type of variation to apply
+ * @param rng Random number generator for variation parameters
+ */
 void applyPhraseVariation(std::vector<NoteEvent>& notes,
                           PhraseVariation variation,
                           [[maybe_unused]] std::mt19937& rng) {
@@ -231,8 +257,8 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes,
   }
 }
 
-// Determine cadence type for phrase ending (V5).
-// Analyzes the last few notes to determine resolution type.
+/// Determine cadence: Strong (tonic tone+strong beat), Weak, Floating (tension),
+/// or Deceptive (vi instead of I). Helps accompaniment support phrase endings.
 CadenceType detectCadenceType(const std::vector<NoteEvent>& notes, int8_t chord_degree) {
   if (notes.empty()) return CadenceType::None;
 
@@ -240,29 +266,31 @@ CadenceType detectCadenceType(const std::vector<NoteEvent>& notes, int8_t chord_
   uint8_t pitch_class = last_note.note % 12;  // 0=C, 2=D, 4=E, 5=F, 7=G, 9=A, 11=B
 
   // Strong cadence: ends on chord tone of tonic (I chord)
-  // In C major: C(0), E(4), G(7)
+  // In C major: C(0), E(4), G(7) - the "stable" tones
   bool is_tonic_tone = (pitch_class == 0 || pitch_class == 4 || pitch_class == 7);
 
-  // Check if on strong beat (beats 1 or 3)
+  // Check if on strong beat (beats 1 or 3 in 4/4)
   Tick beat_pos = last_note.start_tick % TICKS_PER_BAR;
   bool is_strong_beat = (beat_pos < TICKS_PER_BEAT / 4) ||
                         (beat_pos >= TICKS_PER_BEAT * 2 - TICKS_PER_BEAT / 4 &&
                          beat_pos < TICKS_PER_BEAT * 2 + TICKS_PER_BEAT / 4);
 
-  // Long note = more stable resolution
+  // Long note = more stable resolution (quarter note or longer)
   bool is_long = last_note.duration >= TICKS_PER_BEAT;
 
-  // Deceptive: ends on vi chord (chord_degree == 5)
-  if (chord_degree == 5 && pitch_class == 9) {  // A in C major
+  // Deceptive: ends on vi chord tone (A in C major)
+  // chord_degree == 5 means vi chord (0-indexed scale degrees)
+  if (chord_degree == 5 && pitch_class == 9) {
     return CadenceType::Deceptive;
   }
 
-  // Strong: tonic tone, on strong beat, long duration
+  // Strong: tonic tone + strong beat + long duration = maximum closure
   if (is_tonic_tone && is_strong_beat && is_long) {
     return CadenceType::Strong;
   }
 
-  // Floating: tension note (2nd, 4th, 6th, 7th)
+  // Floating: tension note creates suspense
+  // 2nd(D), 4th(F), 6th(A), 7th(B) in C major
   bool is_tension = (pitch_class == 2 || pitch_class == 5 || pitch_class == 9 || pitch_class == 11);
   if (is_tension) {
     return CadenceType::Floating;
@@ -272,10 +300,8 @@ CadenceType detectCadenceType(const std::vector<NoteEvent>& notes, int8_t chord_
   return CadenceType::Weak;
 }
 
-// Calculate singing effort score for a phrase (V6).
-// Higher score = more demanding to sing.
-// Returns: 0.0 (easy) to 1.0+ (difficult)
-// Note: Reserved for future use in vocal constraint system.
+/// Calculate singing effort: high register + large intervals + note density.
+/// @return Effort score 0.0 (easy) to 1.0+ (demanding). Reserved for future use.
 [[maybe_unused]] static float calculateSingingEffort(
     const std::vector<NoteEvent>& notes) {
   if (notes.empty()) return 0.0f;
@@ -474,8 +500,8 @@ void removeOverlaps(std::vector<NoteEvent>& notes) {
   }
 }
 
-// Apply hook intensity effects to section notes
-// Higher intensity = longer notes at section start, more emphasis
+/// Apply hook intensity (Light/Normal/Strong) to first 1-3 notes of section.
+/// Emphasizes "money notes" at chorus/B-section starts.
 void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
                         HookIntensity intensity, Tick section_start) {
   if (intensity == HookIntensity::Off || notes.empty()) {
@@ -536,14 +562,15 @@ void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
   }
 }
 
-// Apply groove feel timing adjustments
+/// Apply groove timing: OffBeat (laid-back), Swing (shuffle), Syncopated (funk),
+/// Driving16th (energetic), Bouncy8th (playful). 10-60 tick adjustments.
 void applyGrooveFeel(std::vector<NoteEvent>& notes, VocalGrooveFeel groove) {
   if (groove == VocalGrooveFeel::Straight || notes.empty()) {
     return;  // No adjustment for straight timing
   }
 
-  constexpr Tick TICK_8TH = TICKS_PER_BEAT / 2;   // 240
-  constexpr Tick TICK_16TH = TICKS_PER_BEAT / 4;  // 120
+  constexpr Tick TICK_8TH = TICKS_PER_BEAT / 2;   // 240 ticks
+  constexpr Tick TICK_16TH = TICKS_PER_BEAT / 4;  // 120 ticks
 
   for (auto& note : notes) {
     // Get position within beat
@@ -610,27 +637,30 @@ void applyGrooveFeel(std::vector<NoteEvent>& notes, VocalGrooveFeel groove) {
   }
 }
 
-// Apply HarmonyContext collision avoidance with interval constraint enforcement.
-// This ensures that after getSafePitch adjusts pitches to avoid collisions,
-// consecutive notes still respect the singable interval limit (major 6th).
+/// Apply collision avoidance while maintaining singable intervals (≤major 6th).
+/// Snaps to chord tones after avoiding clashes with bass/chord.
 void applyCollisionAvoidanceWithIntervalConstraint(
     std::vector<NoteEvent>& notes,
-    const HarmonyContext* harmony_ctx,
+    const HarmonyContext& harmony,
     uint8_t vocal_low,
     uint8_t vocal_high) {
-  if (harmony_ctx == nullptr || notes.empty()) return;
+  if (notes.empty()) return;
 
-  constexpr int MAX_VOCAL_INTERVAL = 9;  // Major 6th - singable leap limit
+  // Major 6th (9 semitones) - the practical limit for singable leaps
+  constexpr int MAX_VOCAL_INTERVAL = 9;
 
   for (size_t i = 0; i < notes.size(); ++i) {
     auto& note = notes[i];
 
+    // Get chord degree at this note's position
+    int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
+
     // Apply collision avoidance
-    uint8_t safe_pitch = harmony_ctx->getSafePitch(
+    uint8_t safe_pitch = harmony.getSafePitch(
         note.note, note.start_tick, note.duration, TrackRole::Vocal,
         vocal_low, vocal_high);
-    // Snap to scale (getSafePitch may return non-scale tones in fallback strategies)
-    int snapped = snapToNearestScaleTone(safe_pitch, 0);  // 0 = C major (internal key)
+    // Snap to chord tone (to maintain harmonic stability)
+    int snapped = nearestChordTonePitch(safe_pitch, chord_degree);
     note.note = static_cast<uint8_t>(std::clamp(snapped,
         static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
 
@@ -639,16 +669,11 @@ void applyCollisionAvoidanceWithIntervalConstraint(
       int prev_pitch = notes[i - 1].note;
       int interval = std::abs(static_cast<int>(note.note) - prev_pitch);
       if (interval > MAX_VOCAL_INTERVAL) {
-        int new_pitch;
-        if (note.note > prev_pitch) {
-          new_pitch = prev_pitch + MAX_VOCAL_INTERVAL;
-        } else {
-          new_pitch = prev_pitch - MAX_VOCAL_INTERVAL;
-        }
-        // Snap to scale after interval adjustment
-        new_pitch = snapToNearestScaleTone(new_pitch, 0);
-        note.note = static_cast<uint8_t>(std::clamp(new_pitch,
-            static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
+        // Use nearestChordToneWithinInterval to find chord tone within constraint
+        int new_pitch = nearestChordToneWithinInterval(
+            note.note, prev_pitch, chord_degree, MAX_VOCAL_INTERVAL,
+            vocal_low, vocal_high, nullptr);
+        note.note = static_cast<uint8_t>(new_pitch);
       }
     }
   }
@@ -659,7 +684,8 @@ void applyCollisionAvoidanceWithIntervalConstraint(
 void generateVocalTrack(MidiTrack& track, Song& song,
                         const GeneratorParams& params, std::mt19937& rng,
                         const MidiTrack* motif_track,
-                        const HarmonyContext* harmony_ctx) {
+                        const HarmonyContext& harmony,
+                        bool skip_collision_avoidance) {
 
   // Determine effective vocal range
   uint8_t effective_vocal_low = params.vocal_low;
@@ -698,10 +724,6 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
   // Create MelodyDesigner
   MelodyDesigner designer;
-
-  // Create dummy HarmonyContext if not provided
-  HarmonyContext dummy_harmony;
-  const HarmonyContext& harmony = harmony_ctx ? *harmony_ctx : dummy_harmony;
 
   // Collect all notes
   std::vector<NoteEvent> all_notes;
@@ -776,8 +798,10 @@ void generateVocalTrack(MidiTrack& track, Song& song,
                                         section_vocal_low, section_vocal_high);
 
       // Re-apply collision avoidance (chord context may differ)
-      applyCollisionAvoidanceWithIntervalConstraint(
-          section_notes, harmony_ctx, section_vocal_low, section_vocal_high);
+      if (!skip_collision_avoidance) {
+        applyCollisionAvoidanceWithIntervalConstraint(
+            section_notes, harmony, section_vocal_low, section_vocal_high);
+      }
     } else {
       // Cache miss: generate new melody
       MelodyDesigner::SectionContext ctx;
@@ -816,8 +840,10 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       }
 
       // Apply HarmonyContext collision avoidance with interval constraint
-      applyCollisionAvoidanceWithIntervalConstraint(
-          section_notes, harmony_ctx, section_vocal_low, section_vocal_high);
+      if (!skip_collision_avoidance) {
+        applyCollisionAvoidanceWithIntervalConstraint(
+            section_notes, harmony, section_vocal_low, section_vocal_high);
+      }
 
       // Apply hook intensity effects at hook points (Chorus, B section)
       applyHookIntensity(section_notes, section.type, params.hook_intensity, section_start);
@@ -853,20 +879,13 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       int first_note = section_notes.front().note;
       int interval = std::abs(first_note - prev_note);
       if (interval > MAX_INTERVAL) {
-        // Adjust the first note of this section to be within MAX_INTERVAL
-        int new_pitch;
-        if (first_note > prev_note) {
-          new_pitch = prev_note + MAX_INTERVAL;
-        } else {
-          new_pitch = prev_note - MAX_INTERVAL;
-        }
-        // Snap to scale to prevent chromatic notes
-        new_pitch = snapToNearestScaleTone(new_pitch, 0);  // 0 = C major (internal key)
-        // Re-constrain to vocal range
-        section_notes.front().note = static_cast<uint8_t>(std::clamp(
-            new_pitch,
-            static_cast<int>(section_vocal_low),
-            static_cast<int>(section_vocal_high)));
+        // Get chord degree at first note's position
+        int8_t first_note_chord_degree = harmony.getChordDegreeAt(section_notes.front().start_tick);
+        // Use nearestChordToneWithinInterval to stay on chord tones
+        int new_pitch = nearestChordToneWithinInterval(
+            first_note, prev_note, first_note_chord_degree, MAX_INTERVAL,
+            section_vocal_low, section_vocal_high, nullptr);
+        section_notes.front().note = static_cast<uint8_t>(new_pitch);
       }
     }
     for (const auto& note : section_notes) {
@@ -887,9 +906,9 @@ void generateVocalTrack(MidiTrack& track, Song& song,
   // Apply velocity scale
   applyVelocityBalance(all_notes, velocity_scale);
 
-  // Add notes to track
+  // Add notes to track (preserving provenance)
   for (const auto& note : all_notes) {
-    track.addNote(note.start_tick, note.duration, note.note, note.velocity);
+    track.addNote(note);
   }
 }
 

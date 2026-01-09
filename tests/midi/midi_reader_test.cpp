@@ -1,3 +1,8 @@
+/**
+ * @file midi_reader_test.cpp
+ * @brief Tests for MIDI file parser.
+ */
+
 #include <gtest/gtest.h>
 #include "midi/midi_reader.h"
 #include "midi/midi_writer.h"

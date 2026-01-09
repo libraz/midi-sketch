@@ -1,7 +1,11 @@
+/**
+ * @file types.h
+ * @brief Master header aggregating all type definitions.
+ */
+
 #ifndef MIDISKETCH_CORE_TYPES_H
 #define MIDISKETCH_CORE_TYPES_H
 
-// Master header for all type definitions.
 // Includes are ordered by dependency: basic -> section -> melody -> preset.
 
 #include "core/basic_types.h"

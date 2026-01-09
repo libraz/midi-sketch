@@ -1,3 +1,8 @@
+/**
+ * @file style_preset_test.cpp
+ * @brief Tests for style presets.
+ */
+
 #include <gtest/gtest.h>
 #include "core/chord.h"
 #include "core/generator.h"

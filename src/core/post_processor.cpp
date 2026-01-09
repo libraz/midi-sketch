@@ -1,3 +1,8 @@
+/**
+ * @file post_processor.cpp
+ * @brief Implementation of track post-processing.
+ */
+
 #include "core/post_processor.h"
 #include <algorithm>
 

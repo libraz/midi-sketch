@@ -1,3 +1,8 @@
+/**
+ * @file structure.h
+ * @brief Song structure patterns and section builders.
+ */
+
 #ifndef MIDISKETCH_CORE_STRUCTURE_H
 #define MIDISKETCH_CORE_STRUCTURE_H
 
@@ -6,43 +11,52 @@
 
 namespace midisketch {
 
-// Builds a list of sections based on the given structure pattern.
-// @param pattern Structure pattern to use
-// @returns Vector of Section structs representing the song structure
+/**
+ * @brief Build sections from structure pattern.
+ * @param pattern Structure pattern to use
+ * @return Vector of Section structs
+ */
 std::vector<Section> buildStructure(StructurePattern pattern);
 
-// Builds a list of sections to match a target duration.
-// @param target_seconds Target duration in seconds
-// @param bpm Tempo in beats per minute
-// @param pattern Structure pattern to use as base (default: FullPop for complete song)
-// @returns Vector of Section structs matching the target duration
+/**
+ * @brief Build sections to match target duration.
+ * @param target_seconds Target duration in seconds
+ * @param bpm Tempo in beats per minute
+ * @param pattern Base pattern (default: FullPop)
+ * @return Vector of Section structs
+ */
 std::vector<Section> buildStructureForDuration(
     uint16_t target_seconds,
     uint16_t bpm,
     StructurePattern pattern = StructurePattern::FullPop);
 
-// Calculates the total duration in ticks for the given sections.
-// @param sections Vector of sections
-// @returns Total ticks from start to end of last section
+/**
+ * @brief Calculate total ticks for sections.
+ * @param sections Vector of sections
+ * @return Total ticks
+ */
 Tick calculateTotalTicks(const std::vector<Section>& sections);
 
-// Calculates the total number of bars in the given sections.
-// @param sections Vector of sections
-// @returns Sum of all section bar counts
+/**
+ * @brief Calculate total bars for sections.
+ * @param sections Vector of sections
+ * @return Sum of all bar counts
+ */
 uint16_t calculateTotalBars(const std::vector<Section>& sections);
 
-// ============================================================================
-// Call System Structure Functions
-// ============================================================================
+/// @name Call System Structure Functions
+/// @{
 
-// Builds a list of sections with call support.
-// @param target_seconds Target duration in seconds
-// @param bpm Tempo in beats per minute
-// @param call_enabled Whether call is enabled
-// @param intro_chant IntroChant pattern
-// @param mix_pattern MixPattern
-// @param pattern Structure pattern to use as base (default: FullPop for complete song)
-// @returns Vector of Section structs with call sections inserted
+/**
+ * @brief Build sections with call support.
+ * @param target_seconds Target duration in seconds
+ * @param bpm Tempo in beats per minute
+ * @param call_enabled Whether call is enabled
+ * @param intro_chant IntroChant pattern
+ * @param mix_pattern MixPattern
+ * @param pattern Base pattern (default: FullPop)
+ * @return Vector of Section structs with call sections
+ */
 std::vector<Section> buildStructureForDuration(
     uint16_t target_seconds,
     uint16_t bpm,
@@ -51,21 +65,26 @@ std::vector<Section> buildStructureForDuration(
     MixPattern mix_pattern,
     StructurePattern pattern = StructurePattern::FullPop);
 
-// Inserts call sections into an existing structure.
-// Modifies the sections vector in place, recalculating ticks.
-// @param sections Vector of sections to modify
-// @param intro_chant IntroChant pattern (inserted after Intro)
-// @param mix_pattern MixPattern (inserted before last Chorus)
-// @param bpm BPM for calculating bar counts
+/**
+ * @brief Insert call sections into existing structure (in-place).
+ * @param sections Sections to modify
+ * @param intro_chant IntroChant pattern (after Intro)
+ * @param mix_pattern MixPattern (before last Chorus)
+ * @param bpm BPM for bar count calculation
+ */
 void insertCallSections(
     std::vector<Section>& sections,
     IntroChant intro_chant,
     MixPattern mix_pattern,
     uint16_t bpm);
 
-// Recalculates start_tick for all sections after modification.
-// @param sections Vector of sections to update
+/**
+ * @brief Recalculate start_tick for all sections.
+ * @param sections Sections to update
+ */
 void recalculateSectionTicks(std::vector<Section>& sections);
+
+/// @}
 
 }  // namespace midisketch
 

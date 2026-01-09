@@ -1,3 +1,8 @@
+/**
+ * @file types.cpp
+ * @brief Section transition and type helper implementations.
+ */
+
 #include "core/types.h"
 
 namespace midisketch {

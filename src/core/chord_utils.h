@@ -1,3 +1,8 @@
+/**
+ * @file chord_utils.h
+ * @brief Chord voicing utilities and tone helpers.
+ */
+
 #ifndef MIDISKETCH_CORE_CHORD_UTILS_H
 #define MIDISKETCH_CORE_CHORD_UTILS_H
 

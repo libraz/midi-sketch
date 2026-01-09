@@ -1,3 +1,8 @@
+/**
+ * @file pitch_utils_test.cpp
+ * @brief Tests for pitch utilities.
+ */
+
 #include <gtest/gtest.h>
 #include "core/pitch_utils.h"
 

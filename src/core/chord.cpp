@@ -1,3 +1,8 @@
+/**
+ * @file chord.cpp
+ * @brief Chord progression definitions and accessors.
+ */
+
 #include "core/chord.h"
 #include "core/pitch_utils.h"
 #include <algorithm>

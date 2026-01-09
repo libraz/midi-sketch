@@ -1,3 +1,8 @@
+/**
+ * @file preset_types.h
+ * @brief Mood, GeneratorParams, and SongConfig types.
+ */
+
 #ifndef MIDISKETCH_CORE_PRESET_TYPES_H
 #define MIDISKETCH_CORE_PRESET_TYPES_H
 
@@ -10,7 +15,7 @@
 
 namespace midisketch {
 
-// Mood/groove preset (20 patterns available).
+/// @brief Mood/groove preset (20 patterns available).
 enum class Mood : uint8_t {
   StraightPop = 0,
   BrightUpbeat,
@@ -28,312 +33,312 @@ enum class Mood : uint8_t {
   ElectroPop,
   IdolPop,
   Anthem,
-  // New synth-oriented moods
-  Yoasobi,      // Anime-style pop (148 BPM, high density)
-  Synthwave,    // Retro synth (118 BPM, medium density)
-  FutureBass,   // Future bass (145 BPM, high density)
-  CityPop       // City pop (110 BPM, medium density)
+  /// New synth-oriented moods
+  Yoasobi,      ///< Anime-style pop (148 BPM, high density)
+  Synthwave,    ///< Retro synth (118 BPM, medium density)
+  FutureBass,   ///< Future bass (145 BPM, high density)
+  CityPop       ///< City pop (110 BPM, medium density)
 };
 
-// Composition style determines overall musical approach.
+/// @brief Composition style determines overall musical approach.
 enum class CompositionStyle : uint8_t {
-  MelodyLead = 0,    // Traditional: melody is foreground
-  BackgroundMotif,   // Henceforth-style: motif is foreground
-  SynthDriven        // Synth/arpeggio as foreground, vocals subdued
+  MelodyLead = 0,    ///< Traditional: melody is foreground
+  BackgroundMotif,   ///< Henceforth-style: motif is foreground
+  SynthDriven        ///< Synth/arpeggio as foreground, vocals subdued
 };
 
-// Motif length in bars.
+/// @brief Motif length in bars.
 enum class MotifLength : uint8_t {
   Bars2 = 2,
   Bars4 = 4
 };
 
-// Motif rhythm density.
+/// @brief Motif rhythm density.
 enum class MotifRhythmDensity : uint8_t {
-  Sparse,   // Quarter note based
-  Medium,   // Eighth note based
-  Driving   // Eighth + light 16th
+  Sparse,   ///< Quarter note based
+  Medium,   ///< Eighth note based
+  Driving   ///< Eighth + light 16th
 };
 
-// Motif melodic motion.
+/// @brief Motif melodic motion.
 enum class MotifMotion : uint8_t {
-  Stepwise,    // Scale steps only
-  GentleLeap   // Up to 3rd intervals
+  Stepwise,    ///< Scale steps only
+  GentleLeap   ///< Up to 3rd intervals
 };
 
-// Motif repetition scope.
+/// @brief Motif repetition scope.
 enum class MotifRepeatScope : uint8_t {
-  FullSong,  // Same motif throughout
-  Section    // Regenerate per section
+  FullSong,  ///< Same motif throughout
+  Section    ///< Regenerate per section
 };
 
-// Arpeggio pattern direction.
+/// @brief Arpeggio pattern direction.
 enum class ArpeggioPattern : uint8_t {
-  Up,        // Ascending notes
-  Down,      // Descending notes
-  UpDown,    // Ascending then descending
-  Random     // Random order
+  Up,        ///< Ascending notes
+  Down,      ///< Descending notes
+  UpDown,    ///< Ascending then descending
+  Random     ///< Random order
 };
 
-// Arpeggio note speed.
+/// @brief Arpeggio note speed.
 enum class ArpeggioSpeed : uint8_t {
-  Eighth,      // 8th notes
-  Sixteenth,   // 16th notes (default, YOASOBI-style)
-  Triplet      // Triplet feel
+  Eighth,      ///< 8th notes
+  Sixteenth,   ///< 16th notes (default, YOASOBI-style)
+  Triplet      ///< Triplet feel
 };
 
-// Arpeggio track configuration.
+/// @brief Arpeggio track configuration.
 struct ArpeggioParams {
   ArpeggioPattern pattern = ArpeggioPattern::Up;
   ArpeggioSpeed speed = ArpeggioSpeed::Sixteenth;
-  uint8_t octave_range = 2;     // 1-3 octaves
-  float gate = 0.8f;            // Gate length (0.0-1.0)
-  bool sync_chord = true;       // Sync with chord changes
-  uint8_t base_velocity = 90;   // Base velocity for arpeggio notes
+  uint8_t octave_range = 2;     ///< 1-3 octaves
+  float gate = 0.8f;            ///< Gate length (0.0-1.0)
+  bool sync_chord = true;       ///< Sync with chord changes
+  uint8_t base_velocity = 90;   ///< Base velocity for arpeggio notes
 };
 
-// Motif (background melody) configuration.
-// Only active when composition_style = BackgroundMotif.
+/// @brief Motif (background melody) configuration.
+/// Only active when composition_style = BackgroundMotif.
 struct MotifParams {
   MotifLength length = MotifLength::Bars2;
-  uint8_t note_count = 4;  // 3, 4, or 5
-  bool register_high = false;  // false=mid, true=high
+  uint8_t note_count = 4;  ///< 3, 4, or 5
+  bool register_high = false;  ///< false=mid, true=high
   MotifRhythmDensity rhythm_density = MotifRhythmDensity::Medium;
   MotifMotion motion = MotifMotion::Stepwise;
   MotifRepeatScope repeat_scope = MotifRepeatScope::FullSong;
-  bool octave_layering_chorus = true;  // Double at chorus
-  bool velocity_fixed = true;  // Fixed velocity (groove via drums)
+  bool octave_layering_chorus = true;  ///< Double at chorus
+  bool velocity_fixed = true;  ///< Fixed velocity (groove via drums)
 };
 
-// Background motif specific chord constraints.
+/// @brief Background motif specific chord constraints.
 struct MotifChordParams {
-  bool fixed_progression = true;  // Same progression all sections
-  uint8_t max_chord_count = 4;    // Max 4 for motif style
+  bool fixed_progression = true;  ///< Same progression all sections
+  uint8_t max_chord_count = 4;    ///< Max 4 for motif style
 };
 
-// Background motif drum configuration.
+/// @brief Background motif drum configuration.
 struct MotifDrumParams {
-  bool hihat_drive = true;  // Hi-hat is primary driver
+  bool hihat_drive = true;  ///< Hi-hat is primary driver
   HihatDensity hihat_density = HihatDensity::Eighth;
 };
 
-// Chord extension configuration.
+/// @brief Chord extension configuration.
 struct ChordExtensionParams {
-  bool enable_sus = false;          // Enable sus2/sus4 substitutions
-  bool enable_7th = false;          // Enable 7th chord extensions
-  bool enable_9th = false;          // Enable 9th chord extensions
-  float sus_probability = 0.2f;     // Probability of sus chord (0.0-1.0)
-  float seventh_probability = 0.3f; // Probability of 7th extension (0.0-1.0)
-  float ninth_probability = 0.25f;  // Probability of 9th extension (0.0-1.0)
+  bool enable_sus = false;          ///< Enable sus2/sus4 substitutions
+  bool enable_7th = false;          ///< Enable 7th chord extensions
+  bool enable_9th = false;          ///< Enable 9th chord extensions
+  float sus_probability = 0.2f;     ///< Probability of sus chord (0.0-1.0)
+  float seventh_probability = 0.3f; ///< Probability of 7th extension (0.0-1.0)
+  float ninth_probability = 0.25f;  ///< Probability of 9th extension (0.0-1.0)
 };
 
-// Background motif vocal suppression.
+/// @brief Background motif vocal suppression.
 struct MotifVocalParams {
   VocalProminence prominence = VocalProminence::Background;
   VocalRhythmBias rhythm_bias = VocalRhythmBias::Sparse;
-  uint8_t interval_limit = 4;  // Max interval in semitones (3rd=4, 5th=7)
+  uint8_t interval_limit = 4;  ///< Max interval in semitones (3rd=4, 5th=7)
 };
 
-// Motif data for saving/restoring motif patterns.
+/// @brief Motif data for saving/restoring motif patterns.
 struct MotifData {
   uint32_t seed;
-  std::vector<NoteEvent> pattern;  // Base motif pattern (one cycle)
+  std::vector<NoteEvent> pattern;  ///< Base motif pattern (one cycle)
 };
 
-// ============================================================================
-// 5-Layer Architecture Types (Phase 1)
-// ============================================================================
+/// ============================================================================
+/// 5-Layer Architecture Types (Phase 1)
+/// ============================================================================
 
-// Motif constraint parameters for StylePreset.
+/// @brief Motif constraint parameters for StylePreset.
 struct StyleMotifConstraints {
-  uint8_t motif_length_beats = 8;     // Motif length in beats
-  float repeat_rate = 0.6f;           // Probability of exact repetition
-  float variation_rate = 0.3f;        // Probability of variation
+  uint8_t motif_length_beats = 8;     ///< Motif length in beats
+  float repeat_rate = 0.6f;           ///< Probability of exact repetition
+  float variation_rate = 0.3f;        ///< Probability of variation
 };
 
-// Rhythm constraint parameters for StylePreset.
+/// @brief Rhythm constraint parameters for StylePreset.
 struct StyleRhythmParams {
-  bool drums_primary = true;          // Drums as primary driver
-  uint8_t drum_density = 2;           // 0=sparse, 1=low, 2=normal, 3=high
-  uint8_t syncopation_level = 1;      // 0=none, 1=light, 2=medium, 3=heavy
+  bool drums_primary = true;          ///< Drums as primary driver
+  uint8_t drum_density = 2;           ///< 0=sparse, 1=low, 2=normal, 3=high
+  uint8_t syncopation_level = 1;      ///< 0=none, 1=light, 2=medium, 3=heavy
 };
 
-// Style preset combining all constraints.
+/// @brief Style preset combining all constraints.
 struct StylePreset {
   uint8_t id;
-  const char* name;           // Internal name (e.g., "minimal_groove_pop")
-  const char* display_name;   // Display name (e.g., "Minimal Groove Pop")
-  const char* description;    // Description for UI
+  const char* name;           ///< Internal name (e.g., "minimal_groove_pop")
+  const char* display_name;   ///< Display name (e.g., "Minimal Groove Pop")
+  const char* description;    ///< Description for UI
 
-  // Default values
+  /// Default values
   StructurePattern default_form;
   uint16_t tempo_min;
   uint16_t tempo_max;
   uint16_t tempo_default;
 
-  // Vocal attitude settings
+  /// Vocal attitude settings
   VocalAttitude default_vocal_attitude;
-  uint8_t allowed_vocal_attitudes;  // Bit flags (ATTITUDE_CLEAN | ...)
+  uint8_t allowed_vocal_attitudes;  ///< Bit flags (ATTITUDE_CLEAN | ...)
 
-  // Recommended chord progressions (ID array, -1 terminated)
+  /// Recommended chord progressions (ID array, -1 terminated)
   int8_t recommended_progressions[8];
 
-  // Constraint parameters
+  /// Constraint parameters
   StyleMelodyParams melody;
   StyleMotifConstraints motif;
   StyleRhythmParams rhythm;
-  uint8_t se_density;  // 0=none, 1=low, 2=med, 3=high
+  uint8_t se_density;  ///< 0=none, 1=low, 2=med, 3=high
 };
 
-// Song configuration replacing GeneratorParams (new API).
+/// @brief Song configuration replacing GeneratorParams (new API).
 struct SongConfig {
-  // Style selection
+  /// Style selection
   uint8_t style_preset_id = 0;
 
-  // Layer 1: Song base
+  /// Layer 1: Song base
   Key key = Key::C;
-  uint16_t bpm = 0;       // 0 = use style default
-  uint32_t seed = 0;      // 0 = random
+  uint16_t bpm = 0;       ///< 0 = use style default
+  uint32_t seed = 0;      ///< 0 = random
 
-  // Layer 2: Chord progression
+  /// Layer 2: Chord progression
   uint8_t chord_progression_id = 0;
 
-  // Layer 3: Structure
+  /// Layer 3: Structure
   StructurePattern form = StructurePattern::StandardPop;
-  bool form_explicit = false;  // True if form was explicitly set by user
-  uint16_t target_duration_seconds = 0;  // 0 = use form pattern, >0 = auto-generate structure
+  bool form_explicit = false;  ///< True if form was explicitly set by user
+  uint16_t target_duration_seconds = 0;  ///< 0 = use form pattern, >0 = auto-generate structure
 
-  // Layer 5: Expression
+  /// Layer 5: Expression
   VocalAttitude vocal_attitude = VocalAttitude::Clean;
-  VocalStylePreset vocal_style = VocalStylePreset::Auto;  // Vocal style override
+  VocalStylePreset vocal_style = VocalStylePreset::Auto;  ///< Vocal style override
 
-  // Options
+  /// Options
   bool drums_enabled = true;
   bool arpeggio_enabled = false;
-  bool skip_vocal = false;    // Skip vocal generation (for BGM-first workflow)
-  uint8_t vocal_low = 60;     // C4
-  uint8_t vocal_high = 79;    // G5
+  bool skip_vocal = false;    ///< Skip vocal generation (for BGM-first workflow)
+  uint8_t vocal_low = 60;     ///< C4
+  uint8_t vocal_high = 79;    ///< G5
 
-  // Arpeggio settings
-  ArpeggioParams arpeggio;    // Pattern, speed, octave range, gate
+  /// Arpeggio settings
+  ArpeggioParams arpeggio;    ///< Pattern, speed, octave range, gate
 
-  // Chord extensions
+  /// Chord extensions
   ChordExtensionParams chord_extension;
 
-  // Composition style
+  /// Composition style
   CompositionStyle composition_style = CompositionStyle::MelodyLead;
 
-  // Motif chord parameters (for BackgroundMotif style)
+  /// Motif chord parameters (for BackgroundMotif style)
   MotifChordParams motif_chord;
   MotifRepeatScope motif_repeat_scope = MotifRepeatScope::FullSong;
 
-  // Arrangement growth method
+  /// Arrangement growth method
   ArrangementGrowth arrangement_growth = ArrangementGrowth::LayerAdd;
 
-  // Humanization
+  /// Humanization
   bool humanize = false;
   float humanize_timing = 0.5f;
   float humanize_velocity = 0.5f;
 
-  // Modulation options (extended)
+  /// Modulation options (extended)
   ModulationTiming modulation_timing = ModulationTiming::None;
-  int8_t modulation_semitones = 2;  // +1 to +4 semitones
+  int8_t modulation_semitones = 2;  ///< +1 to +4 semitones
 
-  // SE/Call options
+  /// SE/Call options
   bool se_enabled = true;
-  CallSetting call_setting = CallSetting::Auto;  // Auto = style-based default
-  bool call_notes_enabled = true;  // Output calls as notes
+  CallSetting call_setting = CallSetting::Auto;  ///< Auto = style-based default
+  bool call_notes_enabled = true;  ///< Output calls as notes
 
-  // Chant/MIX settings (independent)
-  IntroChant intro_chant = IntroChant::None;   // Chant after Intro
-  MixPattern mix_pattern = MixPattern::None;   // MIX before last Chorus
-  CallDensity call_density = CallDensity::Standard;  // Call density in Chorus
+  /// Chant/MIX settings (independent)
+  IntroChant intro_chant = IntroChant::None;   ///< Chant after Intro
+  MixPattern mix_pattern = MixPattern::None;   ///< MIX before last Chorus
+  CallDensity call_density = CallDensity::Standard;  ///< Call density in Chorus
 
-  // === Melody template ===
-  MelodyTemplateId melody_template = MelodyTemplateId::Auto;  // Auto = use style default
+  /// === Melody template ===
+  MelodyTemplateId melody_template = MelodyTemplateId::Auto;  ///< Auto = use style default
 
-  // === Melodic complexity and hook control ===
+  /// === Melodic complexity and hook control ===
   MelodicComplexity melodic_complexity = MelodicComplexity::Standard;
   HookIntensity hook_intensity = HookIntensity::Normal;
   VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
 };
 
-// Input parameters for MIDI generation.
+/// @brief Input parameters for MIDI generation.
 struct GeneratorParams {
-  // Core parameters
-  StructurePattern structure;  // Song structure pattern (0-4)
-  Mood mood;                   // Mood/groove preset (0-15)
-  uint8_t chord_id;            // Chord progression ID (0-15)
-  Key key;                     // Output key
-  bool drums_enabled;          // Enable drums track
-  bool skip_vocal = false;     // Skip vocal track generation (for BGM-first workflow)
-  // Note: Modulation is controlled via Generator::modulation_timing_ (set from SongConfig)
-  uint8_t vocal_low;           // Vocal range lower bound (MIDI note)
-  uint8_t vocal_high;          // Vocal range upper bound (MIDI note)
-  uint16_t bpm;                // Tempo (0 = use mood default)
-  uint32_t seed;               // Random seed (0 = auto)
-  uint16_t target_duration_seconds = 0;  // 0 = use structure pattern, >0 = auto-generate
+  /// Core parameters
+  StructurePattern structure;  ///< Song structure pattern (0-4)
+  Mood mood;                   ///< Mood/groove preset (0-15)
+  uint8_t chord_id;            ///< Chord progression ID (0-15)
+  Key key;                     ///< Output key
+  bool drums_enabled;          ///< Enable drums track
+  bool skip_vocal = false;     ///< Skip vocal track generation (for BGM-first workflow)
+  /// Note: Modulation is controlled via Generator::modulation_timing_ (set from SongConfig)
+  uint8_t vocal_low;           ///< Vocal range lower bound (MIDI note)
+  uint8_t vocal_high;          ///< Vocal range upper bound (MIDI note)
+  uint16_t bpm;                ///< Tempo (0 = use mood default)
+  uint32_t seed;               ///< Random seed (0 = auto)
+  uint16_t target_duration_seconds = 0;  ///< 0 = use structure pattern, >0 = auto-generate
 
-  // Composition style
+  /// Composition style
   CompositionStyle composition_style = CompositionStyle::MelodyLead;
 
-  // Motif parameters (active when BackgroundMotif)
+  /// Motif parameters (active when BackgroundMotif)
   MotifParams motif;
   MotifChordParams motif_chord;
   MotifDrumParams motif_drum;
   MotifVocalParams motif_vocal;
 
-  // Arrangement
+  /// Arrangement
   ArrangementGrowth arrangement_growth = ArrangementGrowth::LayerAdd;
 
-  // Chord extensions
+  /// Chord extensions
   ChordExtensionParams chord_extension;
 
-  // Arpeggio track
-  bool arpeggio_enabled = false;     // Enable arpeggio track
-  ArpeggioParams arpeggio;           // Arpeggio configuration
+  /// Arpeggio track
+  bool arpeggio_enabled = false;     ///< Enable arpeggio track
+  ArpeggioParams arpeggio;           ///< Arpeggio configuration
 
-  // Humanization options
-  bool humanize = false;             // Enable timing/velocity humanization
-  float humanize_timing = 0.5f;      // Timing variation amount (0.0-1.0)
-  float humanize_velocity = 0.5f;    // Velocity variation amount (0.0-1.0)
+  /// Humanization options
+  bool humanize = false;             ///< Enable timing/velocity humanization
+  float humanize_timing = 0.5f;      ///< Timing variation amount (0.0-1.0)
+  float humanize_velocity = 0.5f;    ///< Velocity variation amount (0.0-1.0)
 
-  // Phase 2: Vocal expression parameters
+  /// Phase 2: Vocal expression parameters
   VocalAttitude vocal_attitude = VocalAttitude::Clean;
-  VocalStylePreset vocal_style = VocalStylePreset::Auto;  // Vocal style preset
-  StyleMelodyParams melody_params = {};  // Default: 7 semitone leap, unison ok, 0.8 resolution, 0.2 tension
+  VocalStylePreset vocal_style = VocalStylePreset::Auto;  ///< Vocal style preset
+  StyleMelodyParams melody_params = {};  ///< Default: 7 semitone leap, unison ok, 0.8 resolution, 0.2 tension
 
-  // Melody template (Auto = use style default)
+  /// Melody template (Auto = use style default)
   MelodyTemplateId melody_template = MelodyTemplateId::Auto;
 
-  // Melodic complexity and hook control
+  /// Melodic complexity and hook control
   MelodicComplexity melodic_complexity = MelodicComplexity::Standard;
   HookIntensity hook_intensity = HookIntensity::Normal;
   VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
 };
 
-// Parameters for regenerating only the vocal melody.
-// All fields are required - no sentinel values.
+/// @brief Parameters for regenerating only the vocal melody.
+/// All fields are required - no sentinel values.
 struct MelodyRegenerateParams {
-  uint32_t seed;                       // Random seed (0 = new random)
-  uint8_t vocal_low;                   // Vocal range lower bound (MIDI note)
-  uint8_t vocal_high;                  // Vocal range upper bound (MIDI note)
-  VocalAttitude vocal_attitude;        // 0=Clean, 1=Expressive, 2=Raw
-  CompositionStyle composition_style;  // 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
+  uint32_t seed;                       ///< Random seed (0 = new random)
+  uint8_t vocal_low;                   ///< Vocal range lower bound (MIDI note)
+  uint8_t vocal_high;                  ///< Vocal range upper bound (MIDI note)
+  VocalAttitude vocal_attitude;        ///< 0=Clean, 1=Expressive, 2=Raw
+  CompositionStyle composition_style;  ///< 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
 
-  // Vocal style preset (Auto = use current style)
+  /// Vocal style preset (Auto = use current style)
   VocalStylePreset vocal_style = VocalStylePreset::Auto;
 
-  // Melody template (Auto = use style default)
+  /// Melody template (Auto = use style default)
   MelodyTemplateId melody_template = MelodyTemplateId::Auto;
 
-  // Melodic complexity (Simple/Standard/Complex)
+  /// Melodic complexity (Simple/Standard/Complex)
   MelodicComplexity melodic_complexity = MelodicComplexity::Standard;
 
-  // Hook intensity (Off/Light/Normal/Strong)
+  /// Hook intensity (Off/Light/Normal/Strong)
   HookIntensity hook_intensity = HookIntensity::Normal;
 
-  // Vocal groove feel (Straight/OffBeat/Swing/Syncopated/Driving16th/Bouncy8th)
+  /// Vocal groove feel (Straight/OffBeat/Swing/Syncopated/Driving16th/Bouncy8th)
   VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
 };
 

@@ -1,3 +1,8 @@
+/**
+ * @file midi_validator.cpp
+ * @brief Implementation of MIDI file structure validator.
+ */
+
 #include "midi/midi_validator.h"
 #include <cstring>
 #include <fstream>

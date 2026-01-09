@@ -1,3 +1,8 @@
+/**
+ * @file velocity_test.cpp
+ * @brief Tests for velocity calculations.
+ */
+
 #include <gtest/gtest.h>
 #include "core/velocity.h"
 #include "core/midi_track.h"

@@ -1,3 +1,8 @@
+/**
+ * @file melody_evaluator.h
+ * @brief Melody quality scoring for candidate selection.
+ */
+
 #ifndef MIDISKETCH_CORE_MELODY_EVALUATOR_H
 #define MIDISKETCH_CORE_MELODY_EVALUATOR_H
 

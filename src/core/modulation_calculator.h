@@ -1,3 +1,8 @@
+/**
+ * @file modulation_calculator.h
+ * @brief Key modulation point and amount calculation.
+ */
+
 #ifndef MIDISKETCH_CORE_MODULATION_CALCULATOR_H
 #define MIDISKETCH_CORE_MODULATION_CALCULATOR_H
 

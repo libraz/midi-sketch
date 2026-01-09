@@ -1,3 +1,8 @@
+/**
+ * @file section_utils.h
+ * @brief Utilities for searching sections in arrangements.
+ */
+
 #ifndef MIDISKETCH_CORE_SECTION_UTILS_H_
 #define MIDISKETCH_CORE_SECTION_UTILS_H_
 

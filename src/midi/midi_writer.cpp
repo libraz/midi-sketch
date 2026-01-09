@@ -1,3 +1,8 @@
+/**
+ * @file midi_writer.cpp
+ * @brief Implementation of SMF Type 1 and MIDI 2.0 file writer.
+ */
+
 #include "midi/midi_writer.h"
 
 #ifndef MIDISKETCH_WASM

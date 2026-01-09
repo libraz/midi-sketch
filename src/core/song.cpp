@@ -1,3 +1,8 @@
+/**
+ * @file song.cpp
+ * @brief Implementation of Song container operations.
+ */
+
 #include "core/song.h"
 
 namespace midisketch {

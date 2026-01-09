@@ -1,3 +1,8 @@
+/**
+ * @file song_test.cpp
+ * @brief Tests for Song container.
+ */
+
 #include <gtest/gtest.h>
 #include "core/song.h"
 #include "core/structure.h"

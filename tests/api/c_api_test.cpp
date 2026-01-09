@@ -1,3 +1,8 @@
+/**
+ * @file c_api_test.cpp
+ * @brief Tests for C API bindings.
+ */
+
 #include <gtest/gtest.h>
 #include <cstring>
 #include "midisketch_c.h"

@@ -1,3 +1,8 @@
+/**
+ * @file timing_constants.h
+ * @brief Common timing constants for MIDI note durations.
+ */
+
 #ifndef MIDISKETCH_CORE_TIMING_CONSTANTS_H_
 #define MIDISKETCH_CORE_TIMING_CONSTANTS_H_
 

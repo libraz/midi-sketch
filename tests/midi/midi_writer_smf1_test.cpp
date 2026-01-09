@@ -1,3 +1,8 @@
+/**
+ * @file midi_writer_smf1_test.cpp
+ * @brief Tests for SMF1 MIDI writer.
+ */
+
 #include <gtest/gtest.h>
 #include "midi/midi_writer.h"
 #include "core/structure.h"

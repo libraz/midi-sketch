@@ -1,3 +1,8 @@
+/**
+ * @file melody_templates_test.cpp
+ * @brief Tests for melody templates.
+ */
+
 #include <gtest/gtest.h>
 #include "core/melody_templates.h"
 

@@ -1,3 +1,8 @@
+/**
+ * @file piano_roll_test.cpp
+ * @brief Tests for piano roll safety.
+ */
+
 #include <gtest/gtest.h>
 #include "midisketch_c.h"
 #include "midisketch.h"

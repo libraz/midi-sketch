@@ -1,8 +1,18 @@
+/**
+ * @file generator.cpp
+ * @brief Main MIDI generator orchestrating multi-track song creation.
+ *
+ * Generation order: Bass→Chord→Vocal→Aux→Drums→Arp→SE (standard mode) or
+ * Vocal-first (melody priority) with HarmonyContext for collision avoidance.
+ */
+
 #include "core/generator.h"
 #include "core/chord.h"
+#include "core/chord_utils.h"
 #include "core/config_converter.h"
 #include "core/melody_templates.h"
 #include "core/modulation_calculator.h"
+#include "core/note_factory.h"
 #include "core/pitch_utils.h"
 #include "core/post_processor.h"
 #include "core/preset_data.h"
@@ -16,11 +26,13 @@
 #include "track/aux_track.h"
 #include "track/se.h"
 #include "track/vocal.h"
+#include "track/vocal_analysis.h"
+#include <algorithm>
 #include <chrono>
 
 namespace midisketch {
 
-Generator::Generator() : rng_(42) {}
+Generator::Generator() : rng_(42) {}  // Default seed for reproducibility
 
 uint32_t Generator::resolveSeed(uint32_t seed) {
   if (seed == 0) {
@@ -106,32 +118,36 @@ void Generator::generate(const GeneratorParams& params) {
   }
 
   // Generate tracks based on composition style
-  // Bass is generated first, then Chord uses bass analysis for voicing
+  // Order: Bass → Vocal → Aux → Chord (so chord can avoid aux clashes)
   if (params.composition_style == CompositionStyle::BackgroundMotif) {
     // BackgroundMotif: Motif first, then supporting tracks
     generateMotif();
     generateBass();
-    generateChord();  // Uses bass track for voicing coordination
     if (!params.skip_vocal) {
       generateVocal();  // Will use suppressed generation
       generateAux();    // Aux track after vocal for collision avoidance
     }
+    generateChord();  // Uses bass and aux tracks for voicing coordination
   } else if (params.composition_style == CompositionStyle::SynthDriven) {
     // SynthDriven: Arpeggio is foreground, vocals subdued
     generateBass();
-    generateChord();  // Uses bass track for voicing coordination
     if (!params.skip_vocal) {
       generateVocal();  // Will generate subdued vocals
       generateAux();    // Aux track after vocal for collision avoidance
     }
+    generateChord();  // Uses bass and aux tracks for voicing coordination
   } else {
-    // MelodyLead: Bass first for chord voicing coordination
-    generateBass();
-    generateChord();  // Uses bass track for voicing coordination
+    // MelodyLead: Vocal-first for bass to avoid vocal clashes
     if (!params.skip_vocal) {
       generateVocal();
-      generateAux();  // Aux track after vocal for collision avoidance
+      VocalAnalysis vocal_analysis = analyzeVocal(song_.vocal());
+      generateBassTrackWithVocal(song_.bass(), song_, params_, rng_, vocal_analysis, harmony_context_);
+      harmony_context_.registerTrack(song_.bass(), TrackRole::Bass);
+      generateAux();
+    } else {
+      generateBass();  // No vocal to avoid
     }
+    generateChord();  // Uses bass and aux tracks for voicing coordination
   }
 
   if (params.drums_enabled) {
@@ -242,13 +258,166 @@ void Generator::regenerateVocalFromConfig(const SongConfig& config,
   generateAux();
 }
 
+// ============================================================================
+// Vocal-First Generation API
+// ============================================================================
+
+/**
+ * @brief Generate only the vocal track without accompaniment.
+ *
+ * First step of trial-and-error workflow: vocal→evaluate→regenerate→add accompaniment.
+ * Skips collision avoidance so vocal uses full creative range.
+ */
+void Generator::generateVocalOnly(const GeneratorParams& params) {
+  params_ = params;
+
+  // Validate vocal range
+  if (params_.vocal_low > params_.vocal_high) {
+    std::swap(params_.vocal_low, params_.vocal_high);
+  }
+  params_.vocal_low = std::clamp(params_.vocal_low, static_cast<uint8_t>(36),
+                                  static_cast<uint8_t>(96));
+  params_.vocal_high = std::clamp(params_.vocal_high, static_cast<uint8_t>(36),
+                                   static_cast<uint8_t>(96));
+
+  // Initialize seed
+  uint32_t seed = resolveSeed(params.seed);
+  rng_.seed(seed);
+  song_.setMelodySeed(seed);
+  song_.setMotifSeed(seed);
+
+  // Resolve BPM
+  uint16_t bpm = params.bpm;
+  if (bpm == 0) {
+    bpm = getMoodDefaultBpm(params.mood);
+  }
+  song_.setBpm(bpm);
+
+  // Build song structure
+  std::vector<Section> sections;
+  if (params.target_duration_seconds > 0) {
+    sections = buildStructureForDuration(params.target_duration_seconds, bpm,
+                                          call_enabled_, intro_chant_, mix_pattern_,
+                                          params.structure);
+  } else {
+    sections = buildStructure(params.structure);
+    if (call_enabled_) {
+      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
+    }
+  }
+  song_.setArrangement(Arrangement(sections));
+
+  // Clear all tracks
+  song_.clearAll();
+
+  // Initialize harmony context (needed for chord tones reference)
+  const auto& progression = getChordProgression(params.chord_id);
+  harmony_context_.initialize(song_.arrangement(), progression, params.mood);
+
+  // Calculate modulation
+  if (params.composition_style == CompositionStyle::BackgroundMotif ||
+      params.composition_style == CompositionStyle::SynthDriven) {
+    song_.setModulation(0, 0);
+  } else {
+    calculateModulation();
+  }
+
+  // Generate ONLY vocal track with collision avoidance skipped
+  // (no other tracks exist yet, so collision avoidance is meaningless)
+  // BUT we still pass harmony_context_ for chord-aware melody generation
+  const MidiTrack* motif_track = nullptr;
+  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track,
+                     harmony_context_,  // Pass for chord-aware melody generation
+                     true);              // skip_collision_avoidance = true
+}
+
+void Generator::regenerateVocalOnly(uint32_t new_seed) {
+  uint32_t seed = resolveSeed(new_seed);
+  rng_.seed(seed);
+  song_.setMelodySeed(seed);
+
+  // Clear only vocal track (preserve structure and other settings)
+  song_.clearTrack(TrackRole::Vocal);
+
+  // Regenerate vocal with collision avoidance skipped
+  // BUT we still pass harmony_context_ for chord-aware melody generation
+  const MidiTrack* motif_track = nullptr;
+  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track,
+                     harmony_context_,  // Pass for chord-aware melody generation
+                     true);              // skip_collision_avoidance = true
+}
+
+/**
+ * @brief Generate accompaniment tracks that adapt to existing vocal.
+ *
+ * Uses VocalAnalysis for bass contrary motion, chord register avoidance, and
+ * aux call-and-response patterns. All tracks coordinate to support melody.
+ */
+void Generator::generateAccompanimentForVocal() {
+  // Analyze existing vocal to extract characteristics
+  VocalAnalysis vocal_analysis = analyzeVocal(song_.vocal());
+
+  // Generate Aux track (references vocal for call-and-response)
+  generateAux();
+
+  // Generate Bass adapted to vocal contour
+  // Uses contrary motion and respects vocal phrase boundaries
+  generateBassTrackWithVocal(song_.bass(), song_, params_, rng_, vocal_analysis, harmony_context_);
+  harmony_context_.registerTrack(song_.bass(), TrackRole::Bass);
+
+  // Generate Chord voicings that avoid vocal register
+  generateChordTrackWithContext(song_.chord(), song_, params_, rng_,
+                                 &song_.bass(), vocal_analysis, &song_.aux(),
+                                 harmony_context_);
+  harmony_context_.registerTrack(song_.chord(), TrackRole::Chord);
+
+  // Generate optional tracks
+  if (params_.drums_enabled) {
+    generateDrums();
+  }
+
+  if (params_.arpeggio_enabled ||
+      params_.composition_style == CompositionStyle::SynthDriven) {
+    generateArpeggio();
+  }
+
+  // Generate Motif if BackgroundMotif style
+  if (params_.composition_style == CompositionStyle::BackgroundMotif) {
+    generateMotif();
+  }
+
+  // Generate SE track if enabled
+  if (se_enabled_) {
+    generateSE();
+  }
+
+  // Apply post-processing
+  applyTransitionDynamics();
+  if (params_.humanize) {
+    applyHumanization();
+  }
+}
+
+/**
+ * @brief Generate all tracks with vocal-first priority.
+ *
+ * Implements "melody is king" principle: vocal first (unconstrained),
+ * then accompaniment adapts with contrary motion and register avoidance.
+ */
+void Generator::generateWithVocal(const GeneratorParams& params) {
+  // Step 1: Generate vocal freely (no collision avoidance)
+  generateVocalOnly(params);
+
+  // Step 2: Generate accompaniment that adapts to vocal
+  generateAccompanimentForVocal();
+}
+
 void Generator::setMelody(const MelodyData& melody) {
   song_.setMelodySeed(melody.seed);
   song_.clearTrack(TrackRole::Vocal);
   song_.clearTrack(TrackRole::Aux);
   for (const auto& note : melody.notes) {
-    song_.vocal().addNote(note.start_tick, note.duration, note.note,
-                          note.velocity);
+    song_.vocal().addNote(note);
   }
   generateAux();  // Regenerate aux based on restored vocal
 }
@@ -260,18 +429,25 @@ void Generator::generateVocal() {
           ? &song_.motif()
           : nullptr;
   // Pass harmony context for dissonance avoidance
-  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track, &harmony_context_);
+  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track, harmony_context_);
+  // Register vocal notes for other tracks to avoid clashes
+  harmony_context_.registerTrack(song_.vocal(), TrackRole::Vocal);
 }
 
 void Generator::generateChord() {
-  // Pass bass track for voicing coordination and rng for chord extensions
-  generateChordTrack(song_.chord(), song_, params_, rng_, &song_.bass());
+  // Use HarmonyContext for comprehensive clash avoidance
+  // VocalAnalysis kept for API compatibility but collision detection uses harmony_context_
+  VocalAnalysis vocal_analysis = analyzeVocal(song_.vocal());
+  const MidiTrack* aux_ptr = song_.aux().notes().empty() ? nullptr : &song_.aux();
+  generateChordTrackWithContext(song_.chord(), song_, params_, rng_,
+                                 &song_.bass(), vocal_analysis, aux_ptr,
+                                 harmony_context_);
   // Register chord notes with harmony context for other tracks to reference
   harmony_context_.registerTrack(song_.chord(), TrackRole::Chord);
 }
 
 void Generator::generateBass() {
-  generateBassTrack(song_.bass(), song_, params_, rng_);
+  generateBassTrack(song_.bass(), song_, params_, rng_, harmony_context_);
   // Register bass notes with harmony context for other tracks to reference
   harmony_context_.registerTrack(song_.bass(), TrackRole::Bass);
 }
@@ -281,7 +457,7 @@ void Generator::generateDrums() {
 }
 
 void Generator::generateArpeggio() {
-  generateArpeggioTrack(song_.arpeggio(), song_, params_, rng_);
+  generateArpeggioTrack(song_.arpeggio(), song_, params_, rng_, harmony_context_);
 }
 
 void Generator::generateAux() {
@@ -371,8 +547,12 @@ void Generator::generateAux() {
         auto motif_notes = placeMotifInIntro(
             varied_motif, section.start_tick, section_end,
             base_pitch, velocity);
-        for (const auto& note : motif_notes) {
-          song_.aux().addNote(note.start_tick, note.duration, note.note, note.velocity);
+        for (auto note : motif_notes) {
+          // Snap pitch to chord tone at this tick to avoid dissonance
+          int8_t chord_degree = harmony_context_.getChordDegreeAt(note.start_tick);
+          int snapped_pitch = nearestChordTonePitch(note.note, chord_degree);
+          note.note = static_cast<uint8_t>(std::clamp(snapped_pitch, 48, 84));
+          song_.aux().addNote(note);
         }
         continue;  // Skip aux generator for this section
       }
@@ -414,9 +594,43 @@ void Generator::generateAux() {
 
     // Add notes to main aux track
     for (const auto& note : section_aux.notes()) {
-      song_.aux().addNote(note.start_tick, note.duration, note.note, note.velocity);
+      song_.aux().addNote(note);
     }
   }
+
+  // Post-process: trim aux notes that sustain over chord changes
+  // For non-chord tones, even tiny overlaps sound bad - trim any overlap
+  constexpr Tick kSuspensionThreshold = 0;    // No overlap allowed - any overlap should be trimmed
+  constexpr Tick kMinNoteDuration = 120;      // Minimum note length after trimming
+
+  auto& aux_notes = song_.aux().notes();
+  for (size_t i = 0; i < aux_notes.size(); ++i) {
+    auto& note = aux_notes[i];
+    Tick note_end = note.start_tick + note.duration;
+    Tick chord_change = harmony_context_.getNextChordChangeTick(note.start_tick);
+
+    if (chord_change > 0 && chord_change > note.start_tick && chord_change < note_end) {
+      Tick overlap = note_end - chord_change;
+
+      if (overlap > kSuspensionThreshold) {
+        // Check if note is a chord tone in the new chord
+        auto new_chord_tones = harmony_context_.getChordTonesAt(chord_change);
+        int note_pc = note.note % 12;
+        bool is_chord_tone = std::find(new_chord_tones.begin(), new_chord_tones.end(), note_pc)
+                             != new_chord_tones.end();
+
+        if (!is_chord_tone) {
+          Tick new_duration = chord_change - note.start_tick - 10;
+          if (new_duration >= kMinNoteDuration) {
+            note.duration = new_duration;
+          }
+        }
+      }
+    }
+  }
+
+  // Register aux notes for other tracks to avoid clashes
+  harmony_context_.registerTrack(song_.aux(), TrackRole::Aux);
 }
 
 void Generator::calculateModulation() {
@@ -441,7 +655,7 @@ void Generator::generateSE() {
 }
 
 void Generator::generateMotif() {
-  generateMotifTrack(song_.motif(), song_, params_, rng_);
+  generateMotifTrack(song_.motif(), song_, params_, rng_, harmony_context_);
 }
 
 void Generator::regenerateMotif(uint32_t new_seed) {
@@ -479,6 +693,7 @@ void Generator::rebuildMotifFromPattern() {
   Tick motif_length = static_cast<Tick>(motif_params.length) * TICKS_PER_BAR;
 
   const auto& sections = song_.arrangement().sections();
+  NoteFactory factory(harmony_context_);
 
   for (const auto& section : sections) {
     Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
@@ -490,15 +705,15 @@ void Generator::rebuildMotifFromPattern() {
         Tick absolute_tick = pos + note.start_tick;
         if (absolute_tick >= section_end) continue;
 
-        song_.motif().addNote(absolute_tick, note.duration, note.note,
-                              note.velocity);
+        song_.motif().addNote(factory.create(absolute_tick, note.duration, note.note,
+                              note.velocity, NoteSource::Motif));
 
         if (add_octave) {
           uint8_t octave_pitch = note.note + 12;
           if (octave_pitch <= 108) {
             uint8_t octave_vel = static_cast<uint8_t>(note.velocity * 0.85);
-            song_.motif().addNote(absolute_tick, note.duration, octave_pitch,
-                                  octave_vel);
+            song_.motif().addNote(factory.create(absolute_tick, note.duration, octave_pitch,
+                                  octave_vel, NoteSource::Motif));
           }
         }
       }

@@ -1,3 +1,8 @@
+/**
+ * @file arrangement.cpp
+ * @brief Implementation of arrangement utilities.
+ */
+
 #include "core/arrangement.h"
 
 namespace midisketch {

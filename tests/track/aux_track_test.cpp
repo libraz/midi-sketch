@@ -1,5 +1,11 @@
+/**
+ * @file aux_track_test.cpp
+ * @brief Tests for aux track generation.
+ */
+
 #include <gtest/gtest.h>
 #include "core/harmony_context.h"
+#include "core/timing_constants.h"
 #include "track/aux_track.h"
 #include <random>
 
@@ -719,4 +725,164 @@ TEST(AuxTrackIntegrationTest, SecondChorusHasHarmonyAux) {
 
   // Second chorus should have aux notes (may be Harmony or Unison)
   EXPECT_GT(second_chorus_aux, 0) << "Second chorus should have aux notes";
+}
+
+// ============================================================================
+// MotifCounter Function Tests
+// ============================================================================
+
+TEST(AuxTrackTest, MotifCounterProducesNotes) {
+  midisketch::AuxTrackGenerator generator;
+  auto ctx = midisketch::createTestContext();
+  auto main_melody = midisketch::createTestMainMelody();
+  ctx.main_melody = &main_melody;
+  midisketch::HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  // Create vocal analysis from main melody
+  midisketch::MidiTrack vocal_track;
+  for (const auto& note : main_melody) {
+    vocal_track.addNote(note.start_tick, note.duration, note.note, note.velocity);
+  }
+  midisketch::VocalAnalysis va = midisketch::analyzeVocal(vocal_track);
+
+  midisketch::AuxConfig config;
+  config.function = midisketch::AuxFunction::MotifCounter;
+  config.velocity_ratio = 0.7f;
+  config.density_ratio = 1.0f;
+
+  auto notes = generator.generateMotifCounter(ctx, config, harmony, va, rng);
+
+  EXPECT_GT(notes.size(), 0u) << "MotifCounter should produce notes";
+}
+
+TEST(AuxTrackTest, MotifCounterUsesSeparateRegister) {
+  midisketch::AuxTrackGenerator generator;
+  auto ctx = midisketch::createTestContext();
+
+  // Create high-register vocal melody (C5-G5)
+  std::vector<midisketch::NoteEvent> high_melody;
+  midisketch::Tick current = 0;
+  for (int i = 0; i < 16; ++i) {
+    midisketch::NoteEvent note;
+    note.start_tick = current;
+    note.duration = midisketch::TICKS_PER_BEAT / 2;
+    note.note = static_cast<uint8_t>(72 + (i % 8));  // C5+
+    note.velocity = 100;
+    high_melody.push_back(note);
+    current += midisketch::TICKS_PER_BEAT;
+  }
+  ctx.main_melody = &high_melody;
+  ctx.main_tessitura = {72, 84, 78};
+
+  midisketch::HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  midisketch::MidiTrack vocal_track;
+  for (const auto& note : high_melody) {
+    vocal_track.addNote(note.start_tick, note.duration, note.note, note.velocity);
+  }
+  midisketch::VocalAnalysis va = midisketch::analyzeVocal(vocal_track);
+
+  midisketch::AuxConfig config;
+  config.function = midisketch::AuxFunction::MotifCounter;
+  config.velocity_ratio = 0.7f;
+  config.density_ratio = 1.0f;
+
+  auto notes = generator.generateMotifCounter(ctx, config, harmony, va, rng);
+
+  // Counter melody should be in lower register (below vocal)
+  for (const auto& note : notes) {
+    EXPECT_LT(note.note, 72) << "Counter should use lower register for high vocal";
+  }
+}
+
+TEST(AuxTrackTest, MotifCounterRhythmicComplementation) {
+  midisketch::AuxTrackGenerator generator;
+  auto ctx = midisketch::createTestContext();
+
+  // Create sparse vocal melody (long notes)
+  std::vector<midisketch::NoteEvent> sparse_melody;
+  midisketch::Tick current = 0;
+  for (int i = 0; i < 4; ++i) {
+    // One whole note per bar (very sparse)
+    midisketch::NoteEvent note;
+    note.start_tick = current;
+    note.duration = midisketch::TICKS_PER_BAR - midisketch::TICK_SIXTEENTH;
+    note.note = static_cast<uint8_t>(64 + i);
+    note.velocity = 100;
+    sparse_melody.push_back(note);
+    current += midisketch::TICKS_PER_BAR;
+  }
+  ctx.main_melody = &sparse_melody;
+
+  midisketch::HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  midisketch::MidiTrack vocal_track;
+  for (const auto& note : sparse_melody) {
+    vocal_track.addNote(note.start_tick, note.duration, note.note, note.velocity);
+  }
+  midisketch::VocalAnalysis va = midisketch::analyzeVocal(vocal_track);
+
+  midisketch::AuxConfig config;
+  config.function = midisketch::AuxFunction::MotifCounter;
+  config.velocity_ratio = 0.7f;
+  config.density_ratio = 1.0f;
+
+  auto notes = generator.generateMotifCounter(ctx, config, harmony, va, rng);
+
+  // For sparse vocal, counter should have shorter notes (more dense)
+  if (!notes.empty()) {
+    // Average duration should be less than half note
+    midisketch::Tick total_duration = 0;
+    for (const auto& note : notes) {
+      total_duration += note.duration;
+    }
+    midisketch::Tick avg_duration = total_duration / notes.size();
+    EXPECT_LE(avg_duration, midisketch::TICK_HALF)
+        << "Counter should use shorter notes for sparse vocal";
+  }
+}
+
+TEST(AuxTrackTest, MotifCounterAvoidsVocalCollision) {
+  midisketch::AuxTrackGenerator generator;
+  auto ctx = midisketch::createTestContext();
+  auto main_melody = midisketch::createTestMainMelody();
+  ctx.main_melody = &main_melody;
+  midisketch::HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  midisketch::MidiTrack vocal_track;
+  for (const auto& note : main_melody) {
+    vocal_track.addNote(note.start_tick, note.duration, note.note, note.velocity);
+  }
+  midisketch::VocalAnalysis va = midisketch::analyzeVocal(vocal_track);
+
+  midisketch::AuxConfig config;
+  config.function = midisketch::AuxFunction::MotifCounter;
+  config.velocity_ratio = 0.7f;
+  config.density_ratio = 1.0f;
+
+  auto notes = generator.generateMotifCounter(ctx, config, harmony, va, rng);
+
+  // Check for minor 2nd collisions
+  int collision_count = 0;
+  for (const auto& counter_note : notes) {
+    midisketch::Tick counter_end = counter_note.start_tick + counter_note.duration;
+    for (const auto& vocal_note : main_melody) {
+      midisketch::Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
+      // Check overlap
+      if (counter_note.start_tick < vocal_end && vocal_note.start_tick < counter_end) {
+        int interval = std::abs(static_cast<int>(counter_note.note) -
+                                static_cast<int>(vocal_note.note)) % 12;
+        if (interval == 1 || interval == 11) {
+          collision_count++;
+        }
+      }
+    }
+  }
+
+  // Should have minimal collisions
+  EXPECT_LT(collision_count, 3) << "MotifCounter should minimize minor 2nd collisions";
 }

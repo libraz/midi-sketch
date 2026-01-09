@@ -1,3 +1,8 @@
+/**
+ * @file motif.cpp
+ * @brief Implementation of motif variation operations.
+ */
+
 #include "core/motif.h"
 #include "core/pitch_utils.h"
 #include <algorithm>

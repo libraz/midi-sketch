@@ -1,3 +1,8 @@
+/**
+ * @file generator.h
+ * @brief Main MIDI generator class for complete song creation.
+ */
+
 #ifndef MIDISKETCH_CORE_GENERATOR_H
 #define MIDISKETCH_CORE_GENERATOR_H
 
@@ -10,124 +15,201 @@
 
 namespace midisketch {
 
-// Main generator class for MIDI content creation.
-// Generates all tracks (vocal, chord, bass, drums, SE) based on input parameters.
+/**
+ * @brief Main generator class for MIDI content creation.
+ *
+ * Creates 8 tracks: Vocal, Chord, Bass, Drums, Motif, Arpeggio, Aux, SE.
+ *
+ * Workflows:
+ * - generate(): Standard (Chord→Bass→Vocal)
+ * - generateWithVocal(): Vocal-first (Vocal→Bass→Chord)
+ * - generateVocalOnly() + generateAccompanimentForVocal(): Trial-and-error
+ */
 class Generator {
  public:
   Generator();
 
-  // Generates all tracks with the given parameters.
-  // @param params Generation parameters
+  /// @name Standard Generation
+  /// @{
+
+  /**
+   * @brief Generate all tracks with the given parameters.
+   * @param params Generation parameters (key, tempo, mood, etc.)
+   */
   void generate(const GeneratorParams& params);
 
-  // Generates all tracks from a SongConfig (new API).
-  // Converts SongConfig to GeneratorParams and generates.
-  // @param config Song configuration
+  /**
+   * @brief Generate all tracks from a SongConfig.
+   * @param config Song configuration with all settings
+   */
   void generateFromConfig(const SongConfig& config);
 
-  // Regenerates only the melody track with a new seed.
-  // Other tracks remain unchanged.
-  // @param new_seed New random seed (0 = auto)
+  /// @}
+  /// @name Vocal-First Generation (Trial-and-Error Workflow)
+  /// @{
+
+  /**
+   * @brief Generate only the vocal track without accompaniment.
+   * @param params Generation parameters
+   */
+  void generateVocalOnly(const GeneratorParams& params);
+
+  /**
+   * @brief Generate accompaniment tracks for existing vocal.
+   * @pre Must be called after generateVocalOnly() or generateWithVocal()
+   */
+  void generateAccompanimentForVocal();
+
+  /**
+   * @brief Regenerate vocal track with a new seed.
+   * @param new_seed New random seed (0 = auto-generate from clock)
+   */
+  void regenerateVocalOnly(uint32_t new_seed = 0);
+
+  /**
+   * @brief Generate all tracks with vocal-first priority.
+   *
+   * Vocal→Bass→Chord order. Accompaniment adapts to melody.
+   *
+   * @param params Generation parameters
+   */
+  void generateWithVocal(const GeneratorParams& params);
+
+  /// @}
+  /// @name Melody Regeneration
+  /// @{
+
+  /**
+   * @brief Regenerate melody track with a new seed.
+   * @param new_seed New random seed (0 = auto)
+   */
   void regenerateMelody(uint32_t new_seed = 0);
 
-  // Regenerates only the melody track with full parameter control.
-  // Updates vocal range, attitude, and composition style before regenerating.
-  // Other tracks (chord, bass, drums, arpeggio) remain unchanged.
-  // @param params MelodyRegenerateParams with all required fields
+  /**
+   * @brief Regenerate melody with full parameter control.
+   * @param params Complete melody regeneration parameters
+   */
   void regenerateMelody(const MelodyRegenerateParams& params);
 
-  // Regenerates only the vocal track with updated VocalAttitude.
-  // Other tracks remain unchanged.
-  // Uses the VocalAttitude and StyleMelodyParams from the config.
-  // @param config SongConfig containing the new VocalAttitude
-  // @param new_seed New random seed (0 = keep current seed)
+  /**
+   * @brief Regenerate vocal track from SongConfig.
+   * @param config SongConfig with new vocal settings
+   * @param new_seed New random seed (0 = keep current)
+   */
   void regenerateVocalFromConfig(const SongConfig& config, uint32_t new_seed = 0);
 
-  // Sets the melody from saved MelodyData.
-  // Replaces the current vocal track with the saved melody.
-  // @param melody MelodyData to apply
+  /**
+   * @brief Set melody from saved MelodyData.
+   * @param melody Saved melody data to restore
+   */
   void setMelody(const MelodyData& melody);
 
-  // Regenerates only the motif track with a new seed.
-  // Other tracks remain unchanged.
-  // @param new_seed New random seed (0 = auto)
+  /// @}
+  /// @name Motif Control
+  /// @{
+
+  /**
+   * @brief Regenerate motif track with a new seed.
+   * @param new_seed New random seed (0 = auto)
+   */
   void regenerateMotif(uint32_t new_seed = 0);
 
-  // Returns current motif data for saving.
-  // @returns MotifData containing seed and pattern
+  /** @brief Get current motif data for saving. */
   MotifData getMotif() const;
 
-  // Sets the motif from saved MotifData.
-  // Replaces the current motif track with the saved motif.
-  // @param motif MotifData to apply
+  /** @brief Set motif from saved MotifData. */
   void setMotif(const MotifData& motif);
 
-  // Returns the generated song.
-  // @returns Reference to Song
+  /// @}
+  /// @name Accessors
+  /// @{
+
+  /** @brief Get the generated song. */
   const Song& getSong() const { return song_; }
 
-  // Returns the current generation parameters.
-  // @returns Reference to GeneratorParams
+  /** @brief Get current generation parameters. */
   const GeneratorParams& getParams() const { return params_; }
 
-  // Returns the harmony context (for piano roll safety API).
-  // @returns Reference to HarmonyContext
+  /** @brief Get harmony context (for external collision checking). */
   const HarmonyContext& getHarmonyContext() const { return harmony_context_; }
 
-  // Sets modulation timing (for use before calling generate()).
-  // @param timing ModulationTiming value
-  // @param semitones Semitones to modulate (1-4, default 2)
+  /**
+   * @brief Set modulation timing for key change.
+   * @param timing When to modulate (None, LastChorus, AfterBridge)
+   * @param semitones Steps to modulate up (1-4, typically 2)
+   */
   void setModulationTiming(ModulationTiming timing, int8_t semitones = 2) {
     modulation_timing_ = timing;
     modulation_semitones_ = semitones;
   }
 
+  /// @}
+
  private:
-  GeneratorParams params_;
-  Song song_;
-  std::mt19937 rng_;
-  HarmonyContext harmony_context_;
+  /// @name State
+  /// @{
+  GeneratorParams params_;           ///< Current generation parameters
+  Song song_;                        ///< Generated song data
+  std::mt19937 rng_;                 ///< Random number generator (Mersenne Twister)
+  HarmonyContext harmony_context_;   ///< Tracks notes for collision avoidance
+  /// @}
 
-  // Call system settings (stored from SongConfig)
-  bool se_enabled_ = true;  // Enable SE track generation
-  bool call_enabled_ = false;
-  bool call_notes_enabled_ = true;
-  IntroChant intro_chant_ = IntroChant::None;
-  MixPattern mix_pattern_ = MixPattern::None;
-  CallDensity call_density_ = CallDensity::Standard;
+  /// @name Call/SE System Settings
+  /// Stored from SongConfig for SE track generation
+  /// @{
+  bool se_enabled_ = true;           ///< Enable SE (sound effect) track
+  bool call_enabled_ = false;        ///< Enable call-and-response patterns
+  bool call_notes_enabled_ = true;   ///< Include pitched notes in calls
+  IntroChant intro_chant_ = IntroChant::None;  ///< Intro chant style
+  MixPattern mix_pattern_ = MixPattern::None;  ///< Mix breakdown pattern
+  CallDensity call_density_ = CallDensity::Standard;  ///< Call frequency
+  /// @}
 
-  // Modulation settings (stored from SongConfig)
+  /// @name Modulation Settings
+  /// @{
   ModulationTiming modulation_timing_ = ModulationTiming::None;
-  int8_t modulation_semitones_ = 2;
+  int8_t modulation_semitones_ = 2;  ///< Key change amount (1-4 semitones)
+  /// @}
 
-  // Cached chorus motif for intro placement (Stage 4)
+  /// Cached chorus motif for intro placement (enables "teaser" riffs)
   std::optional<Motif> cached_chorus_motif_;
 
-  void generateVocal();
-  void generateChord();
-  void generateBass();
-  void generateDrums();
-  void generateSE();
-  void generateMotif();
-  void generateArpeggio();
-  void generateAux();
+  /// @name Track Generation Methods
+  /// Each generates a single track and registers notes with HarmonyContext
+  /// @{
+  void generateVocal();     ///< Main melody track
+  void generateChord();     ///< Chord voicing track
+  void generateBass();      ///< Bass line track
+  void generateDrums();     ///< Drum pattern track
+  void generateSE();        ///< Sound effects (calls, chants)
+  void generateMotif();     ///< Background motif track
+  void generateArpeggio();  ///< Arpeggio pattern track
+  void generateAux();       ///< Auxiliary melody track
+  /// @}
 
-  // Rebuilds motif track from stored pattern.
+  /// @name Post-Processing Methods
+  /// @{
+
+  /** @brief Rebuild motif track from stored pattern data. */
   void rebuildMotifFromPattern();
 
-  // Calculates modulation point and amount based on structure and mood.
+  /** @brief Calculate modulation point and amount from structure/mood. */
   void calculateModulation();
 
-  // Applies transition dynamics (crescendo/decrescendo) to all melodic tracks.
+  /** @brief Apply transition dynamics to melodic tracks. */
   void applyTransitionDynamics();
 
-  // Applies humanization (timing/velocity variation) to all melodic tracks.
+  /** @brief Apply humanization to all melodic tracks. */
   void applyHumanization();
 
-  // Resolves seed value (0 = generate from clock).
-  // @param seed Input seed
-  // @returns Resolved seed value
+  /**
+   * @brief Resolve seed value (0 = generate from system clock).
+   * @param seed Input seed (0 for auto)
+   * @return Resolved seed value
+   */
   uint32_t resolveSeed(uint32_t seed);
+
+  /// @}
 };
 
 }  // namespace midisketch

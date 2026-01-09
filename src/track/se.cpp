@@ -1,3 +1,8 @@
+/**
+ * @file se.cpp
+ * @brief Implementation of SE track generation.
+ */
+
 #include "track/se.h"
 #include "core/timing_constants.h"
 
@@ -11,6 +16,16 @@ constexpr uint8_t CALL_PITCH = 48;
 // Local aliases for timing constants
 constexpr Tick EIGHTH_NOTE = TICK_EIGHTH;
 constexpr Tick QUARTER_NOTE = TICK_QUARTER;
+
+// Helper to add SE notes (no provenance tracking needed for SE)
+void addSENote(MidiTrack& track, Tick start, Tick duration, uint8_t note, uint8_t velocity) {
+  NoteEvent event;
+  event.start_tick = start;
+  event.duration = duration;
+  event.note = note;
+  event.velocity = velocity;
+  track.addNote(event);
+}
 
 // Maximum notes in a chant preset
 constexpr size_t MAX_CHANT_NOTES = 16;
@@ -75,7 +90,7 @@ void addChantNotes(MidiTrack& track, Tick start_tick, const ChantPreset& preset,
     Tick duration = preset.rhythm[i] * EIGHTH_NOTE;
     uint8_t vel = preset.velocity[i];
     if (notes_enabled) {
-      track.addNote(current, duration, CALL_PITCH, vel);
+      addSENote(track,current, duration, CALL_PITCH, vel);
     }
     current += duration;
   }
@@ -86,7 +101,7 @@ void addSimpleCall(MidiTrack& track, Tick tick, const char* tag,
                    Tick duration, uint8_t velocity, bool notes_enabled) {
   track.addText(tick, tag);
   if (notes_enabled) {
-    track.addNote(tick, duration, CALL_PITCH, velocity);
+    addSENote(track,tick, duration, CALL_PITCH, velocity);
   }
 }
 
@@ -139,7 +154,7 @@ void generateCallsForSection(
         if (notes_enabled) {
           // Simple repeated shouts
           for (Tick t = section.start_tick; t < section_end; t += TICKS_PER_BAR) {
-            track.addNote(t, QUARTER_NOTE, CALL_PITCH, 100);
+            addSENote(track,t, QUARTER_NOTE, CALL_PITCH, 100);
           }
         }
       }

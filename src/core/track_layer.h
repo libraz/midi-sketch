@@ -1,3 +1,8 @@
+/**
+ * @file track_layer.h
+ * @brief Track generation layer definitions.
+ */
+
 #ifndef MIDISKETCH_CORE_TRACK_LAYER_H
 #define MIDISKETCH_CORE_TRACK_LAYER_H
 

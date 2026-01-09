@@ -1,3 +1,8 @@
+/**
+ * @file motif.h
+ * @brief Background motif track generation.
+ */
+
 #ifndef MIDISKETCH_TRACK_MOTIF_H
 #define MIDISKETCH_TRACK_MOTIF_H
 
@@ -8,14 +13,18 @@
 
 namespace midisketch {
 
+class HarmonyContext;
+
 // Generates background motif track for BackgroundMotif composition style.
 // The motif is a short repeating pattern that becomes the song's main focus.
 // @param track Target MidiTrack to populate
 // @param song Song containing arrangement info
 // @param params Generation parameters
 // @param rng Random number generator
+// @param harmony HarmonyContext for provenance tracking (optional)
 void generateMotifTrack(MidiTrack& track, Song& song,
-                        const GeneratorParams& params, std::mt19937& rng);
+                        const GeneratorParams& params, std::mt19937& rng,
+                        const HarmonyContext& harmony);
 
 // Generates a single motif pattern (one cycle).
 // @param params Generation parameters

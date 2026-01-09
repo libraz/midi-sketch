@@ -1,3 +1,8 @@
+/**
+ * @file structure_test.cpp
+ * @brief Tests for song structure builders.
+ */
+
 #include <gtest/gtest.h>
 #include <cmath>
 #include "core/structure.h"

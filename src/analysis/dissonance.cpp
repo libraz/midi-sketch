@@ -1,6 +1,12 @@
+/**
+ * @file dissonance.cpp
+ * @brief Implementation of dissonance analysis.
+ */
+
 #include "analysis/dissonance.h"
 #include "core/chord.h"
 #include "core/json_helpers.h"
+#include "core/note_factory.h"
 #include "core/song.h"
 #include <algorithm>
 #include <cmath>
@@ -314,46 +320,6 @@ bool isBackgroundTrack(TrackRole role) {
          role == TrackRole::Aux || role == TrackRole::Chord;
 }
 
-// Adjust severity based on track pair.
-// Vocal-Bass clashes are most important (no reduction).
-// Background-background clashes are less important (severity reduced).
-// @param track1 First track role
-// @param track2 Second track role
-// @param base_severity The base severity from interval analysis
-// @returns Adjusted severity
-DissonanceSeverity adjustSeverityByTrackPair(TrackRole track1, TrackRole track2,
-                                              DissonanceSeverity base_severity) {
-  // Aux track involvement: always reduce to Low (sub-melody is less critical)
-  if (track1 == TrackRole::Aux || track2 == TrackRole::Aux) {
-    return DissonanceSeverity::Low;
-  }
-
-  // Vocal-Bass: strict (no reduction) - these are the main voices
-  bool is_vocal_bass = (track1 == TrackRole::Vocal && track2 == TrackRole::Bass) ||
-                       (track1 == TrackRole::Bass && track2 == TrackRole::Vocal);
-  if (is_vocal_bass) {
-    return base_severity;  // No reduction
-  }
-
-  // Background-background: lenient (High→Medium, Medium→Low)
-  if (isBackgroundTrack(track1) && isBackgroundTrack(track2)) {
-    switch (base_severity) {
-      case DissonanceSeverity::High:
-        return DissonanceSeverity::Medium;
-      case DissonanceSeverity::Medium:
-      case DissonanceSeverity::Low:
-        return DissonanceSeverity::Low;
-    }
-  }
-
-  // Other pairs (Vocal-Chord, Vocal-Motif, Bass-Chord, etc.): moderate reduction
-  // High→Medium only (Medium and Low stay the same)
-  if (base_severity == DissonanceSeverity::High) {
-    return DissonanceSeverity::Medium;
-  }
-  return base_severity;
-}
-
 // Convert track role to string name.
 std::string trackRoleToString(TrackRole role) {
   switch (role) {
@@ -423,6 +389,12 @@ struct TimedNote {
   Tick end;
   uint8_t pitch;
   TrackRole track;
+  // Provenance info
+  int8_t prov_chord_degree = -1;
+  Tick prov_lookup_tick = 0;
+  uint8_t prov_source = 0;
+  uint8_t prov_original_pitch = 0;
+  bool has_provenance = false;
 };
 
 // Collect all pitched notes from melodic tracks (excluding drums and SE).
@@ -431,7 +403,18 @@ std::vector<TimedNote> collectPitchedNotes(const Song& song) {
 
   auto addTrackNotes = [&notes](const MidiTrack& track, TrackRole role) {
     for (const auto& note : track.notes()) {
-      notes.push_back({note.start_tick, note.start_tick + note.duration, note.note, role});
+      TimedNote tn;
+      tn.start = note.start_tick;
+      tn.end = note.start_tick + note.duration;
+      tn.pitch = note.note;
+      tn.track = role;
+      // Copy provenance
+      tn.prov_chord_degree = note.prov_chord_degree;
+      tn.prov_lookup_tick = note.prov_lookup_tick;
+      tn.prov_source = note.prov_source;
+      tn.prov_original_pitch = note.prov_original_pitch;
+      tn.has_provenance = note.hasValidProvenance();
+      notes.push_back(tn);
     }
   };
 
@@ -539,8 +522,8 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
 
       if (is_dissonant) {
         // Adjust severity based on track pair importance
-        DissonanceSeverity severity = adjustSeverityByTrackPair(
-            note_a.track, note_b.track, base_severity);
+        // Use base severity directly (no track-pair adjustment)
+        DissonanceSeverity severity = base_severity;
 
         // Mark as reported to avoid duplicates
         reported_clashes.insert(clash_key);
@@ -554,10 +537,28 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
         issue.interval_semitones = interval;
         issue.interval_name = intervalToName(interval);
 
-        issue.notes.push_back(
-            {trackRoleToString(note_a.track), note_a.pitch, midiNoteToName(note_a.pitch)});
-        issue.notes.push_back(
-            {trackRoleToString(note_b.track), note_b.pitch, midiNoteToName(note_b.pitch)});
+        // Create DissonanceNoteInfo with provenance
+        DissonanceNoteInfo info_a;
+        info_a.track_name = trackRoleToString(note_a.track);
+        info_a.pitch = note_a.pitch;
+        info_a.pitch_name = midiNoteToName(note_a.pitch);
+        info_a.prov_chord_degree = note_a.prov_chord_degree;
+        info_a.prov_lookup_tick = note_a.prov_lookup_tick;
+        info_a.prov_source = note_a.prov_source;
+        info_a.prov_original_pitch = note_a.prov_original_pitch;
+        info_a.has_provenance = note_a.has_provenance;
+        issue.notes.push_back(info_a);
+
+        DissonanceNoteInfo info_b;
+        info_b.track_name = trackRoleToString(note_b.track);
+        info_b.pitch = note_b.pitch;
+        info_b.pitch_name = midiNoteToName(note_b.pitch);
+        info_b.prov_chord_degree = note_b.prov_chord_degree;
+        info_b.prov_lookup_tick = note_b.prov_lookup_tick;
+        info_b.prov_source = note_b.prov_source;
+        info_b.prov_original_pitch = note_b.prov_original_pitch;
+        info_b.has_provenance = note_b.has_provenance;
+        issue.notes.push_back(info_b);
 
         report.issues.push_back(issue);
         report.summary.simultaneous_clashes++;
@@ -597,26 +598,21 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
         continue;  // Skip - this is a valid tension, not a problem
       }
 
-      // Determine severity based on beat strength
+      // Determine severity based on beat strength (applies to all tracks equally)
       BeatStrength beat_strength = getBeatStrength(note.start_tick);
       DissonanceSeverity severity;
 
-      // Aux track (sub-melody): always Low severity
-      if (role == TrackRole::Aux) {
-        severity = DissonanceSeverity::Low;
-      } else {
-        switch (beat_strength) {
-          case BeatStrength::Strong:
-            severity = DissonanceSeverity::Medium;  // Beat 1 non-chord tone
-            break;
-          case BeatStrength::Medium:
-            severity = DissonanceSeverity::Low;  // Beat 3 - less critical
-            break;
-          case BeatStrength::Weak:
-          case BeatStrength::Offbeat:
-            severity = DissonanceSeverity::Low;  // Weak beats/offbeats are fine
-            break;
-        }
+      switch (beat_strength) {
+        case BeatStrength::Strong:
+          severity = DissonanceSeverity::Medium;  // Beat 1 non-chord tone
+          break;
+        case BeatStrength::Medium:
+          severity = DissonanceSeverity::Low;  // Beat 3 - less critical
+          break;
+        case BeatStrength::Weak:
+        case BeatStrength::Offbeat:
+          severity = DissonanceSeverity::Low;  // Weak beats/offbeats are fine
+          break;
       }
 
       DissonanceIssue issue;
@@ -631,6 +627,13 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
       issue.chord_degree = degree;
       issue.chord_name = getChordNameFromDegree(degree);
       issue.chord_tones = getChordToneNames(degree);
+
+      // Copy provenance from NoteEvent
+      issue.has_provenance = note.hasValidProvenance();
+      issue.prov_chord_degree = note.prov_chord_degree;
+      issue.prov_lookup_tick = note.prov_lookup_tick;
+      issue.prov_source = note.prov_source;
+      issue.prov_original_pitch = note.prov_original_pitch;
 
       report.issues.push_back(issue);
       report.summary.non_chord_tones++;
@@ -714,12 +717,10 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
           // Note became non-chord tone after chord change!
 
           // Severity: High if on strong beat, Medium otherwise
-          // Vocal track is more critical
+          // Vocal track is more critical (applies to all tracks equally now)
           BeatStrength beat_strength = getBeatStrength(change.tick);
           DissonanceSeverity severity;
-          if (role == TrackRole::Aux) {
-            severity = DissonanceSeverity::Low;
-          } else if (role == TrackRole::Vocal) {
+          if (role == TrackRole::Vocal) {
             severity = (beat_strength == BeatStrength::Strong)
                            ? DissonanceSeverity::High
                            : DissonanceSeverity::Medium;
@@ -978,8 +979,17 @@ std::string dissonanceReportToJson(const DissonanceReport& report) {
         w.beginObject()
             .write("track", note.track_name)
             .write("pitch", static_cast<int>(note.pitch))
-            .write("name", note.pitch_name)
-            .endObject();
+            .write("name", note.pitch_name);
+        // Add provenance if available
+        if (note.has_provenance) {
+          w.beginObject("provenance")
+              .write("chord_degree", static_cast<int>(note.prov_chord_degree))
+              .write("lookup_tick", note.prov_lookup_tick)
+              .write("source", noteSourceToString(static_cast<NoteSource>(note.prov_source)))
+              .write("original_pitch", static_cast<int>(note.prov_original_pitch))
+              .endObject();
+        }
+        w.endObject();
       }
       w.endArray();
     } else if (issue.type == DissonanceType::SustainedOverChordChange) {
@@ -1008,6 +1018,16 @@ std::string dissonanceReportToJson(const DissonanceReport& report) {
         w.value(tone);
       }
       w.endArray();
+
+      // Add provenance if available
+      if (issue.has_provenance) {
+        w.beginObject("provenance")
+            .write("generation_chord_degree", static_cast<int>(issue.prov_chord_degree))
+            .write("generation_lookup_tick", issue.prov_lookup_tick)
+            .write("generation_source", noteSourceToString(static_cast<NoteSource>(issue.prov_source)))
+            .write("original_pitch", static_cast<int>(issue.prov_original_pitch))
+            .endObject();
+      }
     }
     w.endObject();
   }

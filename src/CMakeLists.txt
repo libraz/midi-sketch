@@ -12,6 +12,7 @@ set(MIDISKETCH_CORE_SOURCES
   core/arrangement.cpp
   core/song.cpp
   core/harmony_context.cpp
+  core/note_factory.cpp
   core/motif.cpp
   core/pitch_utils.cpp
   core/chord_utils.cpp
@@ -33,6 +34,7 @@ set(MIDISKETCH_CORE_SOURCES
   track/arpeggio.cpp
   track/melody_designer.cpp
   track/aux_track.cpp
+  track/vocal_analysis.cpp
 )
 
 # CLI-only sources (not needed for WASM)

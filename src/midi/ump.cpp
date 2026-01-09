@@ -1,3 +1,8 @@
+/**
+ * @file ump.cpp
+ * @brief Implementation of UMP message builders for MIDI 2.0.
+ */
+
 #include "midi/ump.h"
 
 #include <algorithm>

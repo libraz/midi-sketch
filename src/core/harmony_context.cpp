@@ -1,3 +1,8 @@
+/**
+ * @file harmony_context.cpp
+ * @brief Implementation of harmony context tracking.
+ */
+
 #include "core/harmony_context.h"
 #include "core/arrangement.h"
 #include "core/chord.h"
@@ -72,6 +77,31 @@ int8_t HarmonyContext::getChordDegreeAt(Tick tick) const {
 
   // Fallback: return I chord
   return 0;
+}
+
+Tick HarmonyContext::getNextChordChangeTick(Tick after) const {
+  if (chords_.empty()) {
+    return 0;
+  }
+
+  // Find the chord that contains 'after'
+  for (size_t i = 0; i < chords_.size(); ++i) {
+    if (after >= chords_[i].start && after < chords_[i].end) {
+      // Check if next chord exists and has different degree
+      if (i + 1 < chords_.size() && chords_[i + 1].degree != chords_[i].degree) {
+        return chords_[i + 1].start;
+      }
+      // Same degree continues, keep looking
+      for (size_t j = i + 1; j < chords_.size(); ++j) {
+        if (chords_[j].degree != chords_[i].degree) {
+          return chords_[j].start;
+        }
+      }
+      break;
+    }
+  }
+
+  return 0;  // No chord change found
 }
 
 std::vector<int> HarmonyContext::getChordTonesAt(Tick tick) const {

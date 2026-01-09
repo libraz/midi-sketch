@@ -1,3 +1,8 @@
+/**
+ * @file chord_track_test.cpp
+ * @brief Tests for chord track generation.
+ */
+
 #include <gtest/gtest.h>
 #include "core/generator.h"
 #include "core/song.h"

@@ -1,3 +1,8 @@
+/**
+ * @file harmonic_rhythm.h
+ * @brief Harmonic density definitions for chord change timing.
+ */
+
 #ifndef MIDISKETCH_CORE_HARMONIC_RHYTHM_H_
 #define MIDISKETCH_CORE_HARMONIC_RHYTHM_H_
 

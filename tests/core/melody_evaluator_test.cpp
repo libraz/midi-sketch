@@ -1,3 +1,8 @@
+/**
+ * @file melody_evaluator_test.cpp
+ * @brief Tests for melody evaluator.
+ */
+
 #include <gtest/gtest.h>
 #include "core/arrangement.h"
 #include "core/chord.h"

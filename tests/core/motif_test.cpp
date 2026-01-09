@@ -1,3 +1,8 @@
+/**
+ * @file motif_test.cpp
+ * @brief Tests for motif operations.
+ */
+
 #include <gtest/gtest.h>
 #include "core/motif.h"
 #include "core/generator.h"

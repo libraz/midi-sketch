@@ -1,3 +1,8 @@
+/**
+ * @file chord_utils.cpp
+ * @brief Implementation of chord voicing utilities.
+ */
+
 #include "core/chord_utils.h"
 #include "core/chord.h"
 #include <algorithm>

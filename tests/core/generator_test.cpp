@@ -1,3 +1,8 @@
+/**
+ * @file generator_test.cpp
+ * @brief Tests for generator core functionality.
+ */
+
 #include <gtest/gtest.h>
 #include "core/generator.h"
 #include "core/preset_data.h"

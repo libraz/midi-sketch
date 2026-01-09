@@ -1,3 +1,8 @@
+/**
+ * @file bass_test.cpp
+ * @brief Tests for bass track generation.
+ */
+
 #include <gtest/gtest.h>
 #include "core/generator.h"
 #include "core/song.h"

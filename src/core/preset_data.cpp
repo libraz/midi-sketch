@@ -1,3 +1,8 @@
+/**
+ * @file preset_data.cpp
+ * @brief Mood and style preset data definitions.
+ */
+
 #include "core/preset_data.h"
 #include "core/chord.h"
 #include <cmath>

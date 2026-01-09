@@ -1,3 +1,8 @@
+/**
+ * @file track.cpp
+ * @brief Build system placeholder for track module.
+ */
+
 #include "track/track.h"
 
 // This file exists for build system compatibility.

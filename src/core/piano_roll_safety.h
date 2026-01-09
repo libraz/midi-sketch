@@ -1,3 +1,8 @@
+/**
+ * @file piano_roll_safety.h
+ * @brief Collision detection between vocal and BGM notes.
+ */
+
 #ifndef MIDISKETCH_CORE_PIANO_ROLL_SAFETY_H
 #define MIDISKETCH_CORE_PIANO_ROLL_SAFETY_H
 

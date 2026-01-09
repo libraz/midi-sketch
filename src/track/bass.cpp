@@ -1,34 +1,62 @@
+/**
+ * @file bass.cpp
+ * @brief Implementation of bass track generation.
+ *
+ * Harmonic anchor, rhythmic foundation, voice leading.
+ * Pattern-based approach with approach notes at chord boundaries.
+ */
+
 #include "track/bass.h"
 #include "core/chord.h"
 #include "core/harmonic_rhythm.h"
+#include "core/harmony_context.h"
 #include "core/mood_utils.h"
+#include "core/note_factory.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
 #include <algorithm>
 #include <array>
+#include <memory>
+
+// Debug flag for bass transformation logging (set to 1 to enable)
+#ifndef BASS_DEBUG_LOG
+#define BASS_DEBUG_LOG 0
+#endif
+
+#if BASS_DEBUG_LOG
+#include <iostream>
+#endif
 
 namespace midisketch {
 
 namespace {
 
-// Local aliases for timing constants
 constexpr Tick HALF = TICK_HALF;
 constexpr Tick QUARTER = TICK_QUARTER;
 constexpr Tick EIGHTH = TICK_EIGHTH;
 
-// Get fifth above root (7 semitones)
+/// Convert degree to bass root pitch, using appropriate octave.
+/// Tries -12 (one octave down) first, then -24 if still above BASS_HIGH.
+uint8_t getBassRoot(int8_t degree, Key key = Key::C) {
+  int mid_pitch = degreeToRoot(degree, key);  // C4 range (60-71)
+  int root = mid_pitch - 12;  // Try C3 range first
+  if (root > BASS_HIGH) {
+    root = mid_pitch - 24;  // Use C2 range if needed
+  }
+  return clampBass(root);
+}
+
+/// Get perfect 5th (7 semitones) above root.
 uint8_t getFifth(uint8_t root) {
   return clampBass(root + 7);
 }
 
-// Scale intervals from root (for walking bass)
-// Major scale uses SCALE from pitch_utils.h: {0, 2, 4, 5, 7, 9, 11}
-// Minor scale: 0, 2, 3, 5, 7, 8, 10 (W-H-W-W-H-W-W)
+/// Natural minor scale intervals: W-H-W-W-H-W-W (0,2,3,5,7,8,10 semitones).
 constexpr int MINOR_SCALE[] = {0, 2, 3, 5, 7, 8, 10};
 
-// Get scale tone at given scale degree (1-indexed, wraps at octave)
+/// Get scale tone at degree (1-indexed). Uses minor scale if is_minor.
 uint8_t getScaleTone(uint8_t root, int scale_degree, bool is_minor) {
   if (scale_degree <= 0) scale_degree = 1;
   int normalized = ((scale_degree - 1) % 7);
@@ -38,7 +66,7 @@ uint8_t getScaleTone(uint8_t root, int scale_degree, bool is_minor) {
   return clampBass(static_cast<int>(root) + interval);
 }
 
-// Get octave above root
+/// Get octave above root (+12), or root if exceeds range.
 uint8_t getOctave(uint8_t root) {
   int octave = root + 12;
   if (octave > BASS_HIGH) {
@@ -47,10 +75,7 @@ uint8_t getOctave(uint8_t root) {
   return static_cast<uint8_t>(octave);
 }
 
-// Note: isDissonantInterval is defined in pitch_utils.h
-
-// Get all possible chord tones for the target chord (major and minor triads + common extensions)
-// In C major context, considers both major (I, IV, V) and minor (ii, iii, vi) chord structures
+/// Get all possible chord tones (R, m3, M3, P5, M6, m7, M7) for approach note safety.
 std::array<int, 7> getAllPossibleChordTones(uint8_t root_midi) {
   int root_pc = root_midi % 12;
   // Include both major and minor 3rd, plus 6th and 7th for extensions
@@ -65,7 +90,7 @@ std::array<int, 7> getAllPossibleChordTones(uint8_t root_midi) {
   }};
 }
 
-// Check if a pitch class clashes with any possible chord tones
+/// Check if pitch class clashes (m2 or M7) with any chord tone.
 bool clashesWithAnyChordTone(int pitch_class, const std::array<int, 7>& chord_tones) {
   for (int tone : chord_tones) {
     if (isDissonantInterval(pitch_class, tone)) {
@@ -75,7 +100,7 @@ bool clashesWithAnyChordTone(int pitch_class, const std::array<int, 7>& chord_to
   return false;
 }
 
-// Get diatonic approach note to next root (avoids chromatic clashes with chords)
+/// Get approach note: try 5th below (V-I), fallback to octave or root.
 uint8_t getApproachNote(uint8_t current_root, uint8_t next_root) {
   int diff = static_cast<int>(next_root) - static_cast<int>(current_root);
   if (diff == 0) return current_root;
@@ -105,14 +130,15 @@ uint8_t getApproachNote(uint8_t current_root, uint8_t next_root) {
   return clampBass(next_root);
 }
 
-// Bass pattern types
+/// Bass pattern types. WholeNote=stability, RootFifth=1-5, Syncopated=off-beat,
+/// Driving=8th pulse, RhythmicDrive=no drums, Walking=jazz scale walk.
 enum class BassPattern {
-  WholeNote,      // Intro: sustained root
-  RootFifth,      // A section: root + fifth
-  Syncopated,     // B section: syncopation
-  Driving,        // Chorus: eighth note drive
-  RhythmicDrive,  // Drums OFF: bass drives rhythm
-  Walking         // Jazz/swing: quarter note scale walk
+  WholeNote,      ///< Sustained root notes for stability
+  RootFifth,      ///< Root-fifth alternation (classic pop/rock)
+  Syncopated,     ///< Off-beat accents for groove
+  Driving,        ///< Eighth-note pulse for energy
+  RhythmicDrive,  ///< Bass drives rhythm when drums are off
+  Walking         ///< Quarter-note scale walk (jazz influence)
 };
 
 // Adjust pattern one level sparser
@@ -256,7 +282,8 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
 // Generate one bar of bass based on pattern
 void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
                      uint8_t next_root, BassPattern pattern,
-                     SectionType section, Mood mood, bool is_last_bar) {
+                     SectionType section, Mood mood, bool is_last_bar,
+                     const NoteFactory& factory) {
   uint8_t vel = calculateVelocity(section, 0, mood);
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
   uint8_t fifth = getFifth(root);
@@ -265,30 +292,30 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
   switch (pattern) {
     case BassPattern::WholeNote:
       // Intro pattern: whole note or two half notes
-      track.addNote(bar_start, HALF, root, vel);
-      track.addNote(bar_start + HALF, HALF, root, vel_weak);
+      track.addNote(factory.create(bar_start, HALF, root, vel, NoteSource::BassPattern));
+      track.addNote(factory.create(bar_start + HALF, HALF, root, vel_weak, NoteSource::BassPattern));
       break;
 
     case BassPattern::RootFifth:
       // A section: root on 1, fifth on 3
-      track.addNote(bar_start, QUARTER, root, vel);
-      track.addNote(bar_start + QUARTER, QUARTER, root, vel_weak);
-      track.addNote(bar_start + 2 * QUARTER, QUARTER, fifth, vel);
-      track.addNote(bar_start + 3 * QUARTER, QUARTER, root, vel_weak);
+      track.addNote(factory.create(bar_start, QUARTER, root, vel, NoteSource::BassPattern));
+      track.addNote(factory.create(bar_start + QUARTER, QUARTER, root, vel_weak, NoteSource::BassPattern));
+      track.addNote(factory.create(bar_start + 2 * QUARTER, QUARTER, fifth, vel, NoteSource::BassPattern));
+      track.addNote(factory.create(bar_start + 3 * QUARTER, QUARTER, root, vel_weak, NoteSource::BassPattern));
       break;
 
     case BassPattern::Syncopated:
       // B section: syncopation with approach note
-      track.addNote(bar_start, QUARTER, root, vel);
-      track.addNote(bar_start + QUARTER, EIGHTH, fifth, vel_weak);
-      track.addNote(bar_start + QUARTER + EIGHTH, EIGHTH, root, vel_weak);
-      track.addNote(bar_start + 2 * QUARTER, QUARTER, root, vel);
+      track.addNote(factory.create(bar_start, QUARTER, root, vel, NoteSource::BassPattern));
+      track.addNote(factory.create(bar_start + QUARTER, EIGHTH, fifth, vel_weak, NoteSource::BassPattern));
+      track.addNote(factory.create(bar_start + QUARTER + EIGHTH, EIGHTH, root, vel_weak, NoteSource::BassPattern));
+      track.addNote(factory.create(bar_start + 2 * QUARTER, QUARTER, root, vel, NoteSource::BassPattern));
       // Approach note before next bar
       if (is_last_bar || next_root != root) {
         uint8_t approach = getApproachNote(root, next_root);
-        track.addNote(bar_start + 3 * QUARTER + EIGHTH, EIGHTH, approach, vel_weak);
+        track.addNote(factory.create(bar_start + 3 * QUARTER + EIGHTH, EIGHTH, approach, vel_weak, NoteSource::BassPattern));
       } else {
-        track.addNote(bar_start + 3 * QUARTER, QUARTER, fifth, vel_weak);
+        track.addNote(factory.create(bar_start + 3 * QUARTER, QUARTER, fifth, vel_weak, NoteSource::BassPattern));
       }
       break;
 
@@ -300,14 +327,14 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
 
         // Alternate between root and octave/fifth
         if (beat == 0) {
-          track.addNote(beat_tick, EIGHTH, root, beat_vel);
-          track.addNote(beat_tick + EIGHTH, EIGHTH, octave, vel_weak);
+          track.addNote(factory.create(beat_tick, EIGHTH, root, beat_vel, NoteSource::BassPattern));
+          track.addNote(factory.create(beat_tick + EIGHTH, EIGHTH, octave, vel_weak, NoteSource::BassPattern));
         } else if (beat == 2) {
-          track.addNote(beat_tick, EIGHTH, root, beat_vel);
-          track.addNote(beat_tick + EIGHTH, EIGHTH, fifth, vel_weak);
+          track.addNote(factory.create(beat_tick, EIGHTH, root, beat_vel, NoteSource::BassPattern));
+          track.addNote(factory.create(beat_tick + EIGHTH, EIGHTH, fifth, vel_weak, NoteSource::BassPattern));
         } else {
-          track.addNote(beat_tick, EIGHTH, root, beat_vel);
-          track.addNote(beat_tick + EIGHTH, EIGHTH, root, vel_weak);
+          track.addNote(factory.create(beat_tick, EIGHTH, root, beat_vel, NoteSource::BassPattern));
+          track.addNote(factory.create(beat_tick + EIGHTH, EIGHTH, root, vel_weak, NoteSource::BassPattern));
         }
       }
       break;
@@ -343,7 +370,7 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
             }
           }
 
-          track.addNote(tick, EIGHTH, note, note_vel);
+          track.addNote(factory.create(tick, EIGHTH, note, note_vel, NoteSource::BassPattern));
         }
       }
       break;
@@ -355,17 +382,6 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
         int root_pc = root % 12;
         bool is_minor = (root_pc == 2 || root_pc == 4 || root_pc == 9);
 
-        // Beat 1: Root (strong)
-        track.addNote(bar_start, QUARTER, root, vel);
-
-        // Beat 2: 2nd scale degree
-        uint8_t second_note = getScaleTone(root, 2, is_minor);
-        track.addNote(bar_start + QUARTER, QUARTER, second_note, vel_weak);
-
-        // Beat 3: 3rd scale degree (anchor tone)
-        uint8_t third_note = getScaleTone(root, 3, is_minor);
-        track.addNote(bar_start + 2 * QUARTER, QUARTER, third_note, vel);
-
         // Beat 4: Approach to next root
         uint8_t approach_note;
         if (next_root != root) {
@@ -375,7 +391,17 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
         } else {
           approach_note = getScaleTone(root, 5, is_minor);
         }
-        track.addNote(bar_start + 3 * QUARTER, QUARTER, approach_note, vel_weak);
+
+        // Beat 1: Root (strong)
+        track.addNote(factory.create(bar_start, QUARTER, root, vel, NoteSource::BassPattern));
+        // Beat 2: 2nd scale degree
+        uint8_t second_note = getScaleTone(root, 2, is_minor);
+        track.addNote(factory.create(bar_start + QUARTER, QUARTER, second_note, vel_weak, NoteSource::BassPattern));
+        // Beat 3: 3rd scale degree (anchor tone)
+        uint8_t third_note = getScaleTone(root, 3, is_minor);
+        track.addNote(factory.create(bar_start + 2 * QUARTER, QUARTER, third_note, vel, NoteSource::BassPattern));
+        // Beat 4
+        track.addNote(factory.create(bar_start + 3 * QUARTER, QUARTER, approach_note, vel_weak, NoteSource::BassPattern));
       }
       break;
   }
@@ -455,20 +481,21 @@ bool shouldAddDominantPreparation(SectionType current, SectionType next,
 
 // Generate half-bar of bass (for split bars with dominant preparation)
 void generateBassHalfBar(MidiTrack& track, Tick half_start, uint8_t root,
-                          SectionType section, Mood mood, bool is_first_half) {
+                          SectionType section, Mood mood, bool is_first_half,
+                          const NoteFactory& factory) {
   uint8_t vel = calculateVelocity(section, 0, mood);
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
   uint8_t fifth = getFifth(root);
 
   // Simple half-bar pattern: root + fifth or root
   if (is_first_half) {
-    track.addNote(half_start, QUARTER, root, vel);
-    track.addNote(half_start + QUARTER, QUARTER, fifth, vel_weak);
+    track.addNote(factory.create(half_start, QUARTER, root, vel, NoteSource::BassPattern));
+    track.addNote(factory.create(half_start + QUARTER, QUARTER, fifth, vel_weak, NoteSource::BassPattern));
   } else {
     // Second half: emphasize dominant
     uint8_t accent_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(vel) + 5));
-    track.addNote(half_start, QUARTER, root, accent_vel);
-    track.addNote(half_start + QUARTER, QUARTER, root, vel_weak);
+    track.addNote(factory.create(half_start, QUARTER, root, accent_vel, NoteSource::BassPattern));
+    track.addNote(factory.create(half_start + QUARTER, QUARTER, root, vel_weak, NoteSource::BassPattern));
   }
 }
 
@@ -479,9 +506,12 @@ bool useSlowHarmonicRhythm(SectionType section) {
 }
 
 void generateBassTrack(MidiTrack& track, const Song& song,
-                       const GeneratorParams& params, std::mt19937& rng) {
+                       const GeneratorParams& params, std::mt19937& rng,
+                       const HarmonyContext& harmony) {
   const auto& progression = getChordProgression(params.chord_id);
   const auto& sections = song.arrangement().sections();
+
+  NoteFactory factory(harmony);
 
   for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
     const auto& section = sections[sec_idx];
@@ -508,8 +538,8 @@ void generateBassTrack(MidiTrack& track, const Song& song,
       int8_t next_degree = progression.at(next_chord_idx);
 
       // Internal processing is always in C major; transpose at MIDI output time
-      uint8_t root = clampBass(degreeToRoot(degree, Key::C) - 12);
-      uint8_t next_root = clampBass(degreeToRoot(next_degree, Key::C) - 12);
+      uint8_t root = getBassRoot(degree);
+      uint8_t next_root = getBassRoot(next_degree);
 
       bool is_last_bar = (bar == section.bars - 1);
 
@@ -519,11 +549,11 @@ void generateBassTrack(MidiTrack& track, const Song& song,
                                         degree, params.mood)) {
         // Split bar: first half current chord, second half dominant (V)
         int8_t dominant_degree = 4;  // V
-        uint8_t dominant_root = clampBass(degreeToRoot(dominant_degree, Key::C) - 12);
+        uint8_t dominant_root = getBassRoot(dominant_degree);
 
-        generateBassHalfBar(track, bar_start, root, section.type, params.mood, true);
+        generateBassHalfBar(track, bar_start, root, section.type, params.mood, true, factory);
         generateBassHalfBar(track, bar_start + HALF, dominant_root,
-                             section.type, params.mood, false);
+                             section.type, params.mood, false, factory);
         continue;
       }
 
@@ -536,16 +566,290 @@ void generateBassTrack(MidiTrack& track, const Song& song,
         // Split bar: first half current root, second half next root
         int anticipate_chord_idx = (chord_idx + 1) % progression.length;
         int8_t anticipate_degree = progression.at(anticipate_chord_idx);
-        uint8_t anticipate_root = clampBass(degreeToRoot(anticipate_degree, Key::C) - 12);
+        uint8_t anticipate_root = getBassRoot(anticipate_degree);
 
-        generateBassHalfBar(track, bar_start, root, section.type, params.mood, true);
+        generateBassHalfBar(track, bar_start, root, section.type, params.mood, true, factory);
         generateBassHalfBar(track, bar_start + HALF, anticipate_root,
-                             section.type, params.mood, false);
+                             section.type, params.mood, false, factory);
         continue;
       }
 
       generateBassBar(track, bar_start, root, next_root, pattern,
-                      section.type, params.mood, is_last_bar);
+                      section.type, params.mood, is_last_bar, factory);
+    }
+  }
+}
+
+// Select bass pattern based on vocal density (Rhythmic Complementation)
+BassPattern selectPatternForVocalDensity(float vocal_density, SectionType section,
+                                         Mood mood, std::mt19937& rng) {
+  // Special sections always use simple patterns, regardless of vocal density
+  if (section == SectionType::Chant || section == SectionType::Intro ||
+      section == SectionType::Outro) {
+    return BassPattern::WholeNote;
+  }
+
+  // High vocal density (>0.6) → simpler bass (whole notes, half notes)
+  // Low vocal density (<0.3) → more active bass (driving, walking)
+  // Medium density → standard patterns
+
+  if (vocal_density > 0.6f) {
+    // Vocal is dense, bass should be sparse
+    return BassPattern::WholeNote;
+  }
+
+  if (vocal_density < 0.3f) {
+    // Vocal is sparse, bass can be more active
+    if (MoodClassification::isJazzInfluenced(mood)) {
+      return BassPattern::Walking;
+    }
+    return BassPattern::Driving;
+  }
+
+  // Medium density: use section-based defaults
+  bool drums_enabled = true;  // Assume drums in vocal-first mode
+  return selectPattern(section, drums_enabled, mood, BackingDensity::Normal, rng);
+}
+
+// Helper: pitch to note name for logging
+const char* pitchToNoteName(uint8_t pitch) {
+  static const char* names[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+  static char buf[8];
+  int octave = (pitch / 12) - 1;
+  snprintf(buf, sizeof(buf), "%s%d", names[pitch % 12], octave);
+  return buf;
+}
+
+// Helper: motion type to string for logging
+const char* motionTypeToString(MotionType motion) {
+  switch (motion) {
+    case MotionType::Contrary: return "Contrary";
+    case MotionType::Similar: return "Similar";
+    case MotionType::Parallel: return "Parallel";
+    case MotionType::Oblique: return "Oblique";
+  }
+  return "Unknown";
+}
+
+// Check if pitch class is diatonic in C major
+bool isDiatonicInC(int pitch_class) {
+  // C major scale: C(0), D(2), E(4), F(5), G(7), A(9), B(11)
+  constexpr int diatonic[] = {0, 2, 4, 5, 7, 9, 11};
+  int pc = ((pitch_class % 12) + 12) % 12;  // Normalize to 0-11
+  for (int d : diatonic) {
+    if (pc == d) return true;
+  }
+  return false;
+}
+
+// Adjust bass pitch based on Motion Type and vocal direction
+uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion,
+                             int8_t vocal_direction, uint8_t vocal_pitch) {
+  // Ensure 2+ octave separation (24 semitones) for doubling avoidance
+  constexpr int kMinOctaveSeparation = 24;
+
+  int bass_pitch = static_cast<int>(base_pitch);
+  int v_pitch = static_cast<int>(vocal_pitch);
+  [[maybe_unused]] int original_bass = bass_pitch;
+
+  // Check pitch class conflict (same pitch class within 2 octaves)
+  if (v_pitch > 0) {  // Only check if vocal is sounding
+    int separation = std::abs(bass_pitch - v_pitch);
+    if ((bass_pitch % 12) == (v_pitch % 12) && separation < kMinOctaveSeparation) {
+      // Same pitch class, too close - adjust bass down an octave if possible
+      if (bass_pitch - 12 >= BASS_LOW) {
+#if BASS_DEBUG_LOG
+        std::cerr << "    [vocal_avoid] same pitch class, -12: "
+                  << bass_pitch << " -> " << (bass_pitch - 12) << "\n";
+#endif
+        bass_pitch -= 12;
+      } else if (bass_pitch + 12 <= BASS_HIGH) {
+#if BASS_DEBUG_LOG
+        std::cerr << "    [vocal_avoid] same pitch class, +12: "
+                  << bass_pitch << " -> " << (bass_pitch + 12) << "\n";
+#endif
+        bass_pitch += 12;
+      }
+    }
+  }
+
+  [[maybe_unused]] int after_vocal_avoid = bass_pitch;
+
+  // Apply motion type adjustments - ONLY if result is diatonic
+  int proposed_pitch = bass_pitch;
+  switch (motion) {
+    case MotionType::Contrary:
+      // Move opposite to vocal direction
+      if (vocal_direction > 0 && bass_pitch - 2 >= BASS_LOW) {
+        proposed_pitch = bass_pitch - 2;  // Vocal going up, bass goes down
+      } else if (vocal_direction < 0 && bass_pitch + 2 <= BASS_HIGH) {
+        proposed_pitch = bass_pitch + 2;  // Vocal going down, bass goes up
+      }
+      break;
+
+    case MotionType::Similar:
+      // Move same direction as vocal but different interval
+      if (vocal_direction > 0 && bass_pitch + 1 <= BASS_HIGH) {
+        proposed_pitch = bass_pitch + 1;
+      } else if (vocal_direction < 0 && bass_pitch - 1 >= BASS_LOW) {
+        proposed_pitch = bass_pitch - 1;
+      }
+      break;
+
+    case MotionType::Parallel:
+    case MotionType::Oblique:
+    default:
+      // No adjustment
+      break;
+  }
+
+  // Only apply motion if result is diatonic
+  if (proposed_pitch != bass_pitch) {
+    if (isDiatonicInC(proposed_pitch)) {
+#if BASS_DEBUG_LOG
+      std::cerr << "    [motion] " << motionTypeToString(motion) << ": "
+                << bass_pitch << " -> " << proposed_pitch << " (diatonic OK)\n";
+#endif
+      bass_pitch = proposed_pitch;
+    } else {
+#if BASS_DEBUG_LOG
+      std::cerr << "    [motion] " << motionTypeToString(motion) << ": "
+                << bass_pitch << " -> " << proposed_pitch
+                << " REJECTED (non-diatonic " << (proposed_pitch % 12) << ")\n";
+#endif
+      // Keep original bass_pitch
+    }
+  }
+
+  return clampBass(bass_pitch);
+}
+
+void generateBassTrackWithVocal(MidiTrack& track, const Song& song,
+                                const GeneratorParams& params, std::mt19937& rng,
+                                const VocalAnalysis& vocal_analysis,
+                                const HarmonyContext& harmony) {
+  const auto& progression = getChordProgression(params.chord_id);
+  const auto& sections = song.arrangement().sections();
+
+  NoteFactory factory(harmony);
+
+#if BASS_DEBUG_LOG
+  std::cerr << "\n=== BASS TRANSFORM LOG (chord_id=" << static_cast<int>(params.chord_id)
+            << ", prog_len=" << static_cast<int>(progression.length) << ") ===\n";
+#endif
+
+  for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
+    const auto& section = sections[sec_idx];
+    SectionType next_section_type = (sec_idx + 1 < sections.size())
+                                        ? sections[sec_idx + 1].type
+                                        : section.type;
+
+    // Get vocal density for this section to choose pattern
+    float section_vocal_density = getVocalDensityForSection(vocal_analysis, section);
+    BassPattern pattern = selectPatternForVocalDensity(section_vocal_density,
+                                                       section.type, params.mood, rng);
+
+    bool slow_harmonic = useSlowHarmonicRhythm(section.type);
+
+    for (uint8_t bar = 0; bar < section.bars; ++bar) {
+      Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
+      int absolute_bar = static_cast<int>(bar_start / TICKS_PER_BAR) + 1;
+
+      // Get chord info
+      int chord_idx = slow_harmonic ? (bar / 2) % progression.length
+                                    : bar % progression.length;
+      int next_chord_idx = slow_harmonic ? ((bar + 1) / 2) % progression.length
+                                         : (bar + 1) % progression.length;
+
+      int8_t degree = progression.at(chord_idx);
+      int8_t next_degree = progression.at(next_chord_idx);
+
+      uint8_t root = getBassRoot(degree);
+      uint8_t next_root = getBassRoot(next_degree);
+
+      // Get vocal info at this position
+      int8_t vocal_direction = getVocalDirectionAt(vocal_analysis, bar_start);
+      uint8_t vocal_pitch = getVocalPitchAt(vocal_analysis, bar_start);
+
+      // Select motion type based on vocal direction
+      MotionType motion = selectMotionType(vocal_direction, bar, rng);
+
+#if BASS_DEBUG_LOG
+      std::cerr << "Bar " << absolute_bar << " (tick=" << bar_start << "): "
+                << "chord_idx=" << chord_idx << " -> degree=" << static_cast<int>(degree)
+                << " -> root=" << static_cast<int>(root)
+                << "(" << pitchToNoteName(root) << ")"
+                << " | vocal=" << static_cast<int>(vocal_pitch)
+                << "(" << (vocal_pitch > 0 ? pitchToNoteName(vocal_pitch) : "none") << ")"
+                << " dir=" << static_cast<int>(vocal_direction)
+                << " motion=" << motionTypeToString(motion) << "\n";
+#endif
+
+      // Adjust root pitch based on motion type and vocal
+      uint8_t adjusted_root = adjustPitchForMotion(root, motion, vocal_direction, vocal_pitch);
+
+#if BASS_DEBUG_LOG
+      if (adjusted_root != root) {
+        std::cerr << "  => adjusted_root=" << static_cast<int>(adjusted_root)
+                  << "(" << pitchToNoteName(adjusted_root) << ") [CHANGED from "
+                  << pitchToNoteName(root) << "]\n";
+      }
+#endif
+
+      bool is_last_bar = (bar == section.bars - 1);
+
+      // Handle dominant preparation
+      if (is_last_bar &&
+          shouldAddDominantPreparation(section.type, next_section_type,
+                                        degree, params.mood)) {
+        int8_t dominant_degree = 4;
+        uint8_t dominant_root = getBassRoot(dominant_degree);
+
+        generateBassHalfBar(track, bar_start, adjusted_root, section.type, params.mood, true, factory);
+        generateBassHalfBar(track, bar_start + HALF, dominant_root,
+                             section.type, params.mood, false, factory);
+        continue;
+      }
+
+      // Handle phrase-end split
+      HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section.type, params.mood);
+      int effective_prog_length = slow_harmonic ? (progression.length + 1) / 2
+                                                : progression.length;
+      if (shouldSplitPhraseEnd(bar, section.bars, effective_prog_length, harmonic,
+                                section.type, params.mood)) {
+        int anticipate_chord_idx = (chord_idx + 1) % progression.length;
+        int8_t anticipate_degree = progression.at(anticipate_chord_idx);
+        uint8_t anticipate_root = getBassRoot(anticipate_degree);
+
+        // Check if anticipation would clash with vocal during second half of bar
+        // Check multiple points: beat 3, beat 3.5, beat 4, beat 4.5
+        bool anticipate_clashes = false;
+        for (Tick offset : {HALF, HALF + QUARTER / 2, HALF + QUARTER, HALF + QUARTER + QUARTER / 2}) {
+          uint8_t vocal_pitch = getVocalPitchAt(vocal_analysis, bar_start + offset);
+          if (vocal_pitch > 0) {
+            int interval = std::abs(static_cast<int>(anticipate_root % 12) -
+                                    static_cast<int>(vocal_pitch % 12));
+            if (interval > 6) interval = 12 - interval;  // Normalize to 0-6
+            // Minor 2nd (1) or major 7th (11->1 after normalization) = clash
+            if (interval == 1) {
+              anticipate_clashes = true;
+              break;
+            }
+          }
+        }
+
+        if (!anticipate_clashes) {
+          generateBassHalfBar(track, bar_start, adjusted_root, section.type, params.mood, true, factory);
+          generateBassHalfBar(track, bar_start + HALF, anticipate_root,
+                               section.type, params.mood, false, factory);
+          continue;
+        }
+        // Fall through to generate full bar without anticipation
+      }
+
+      // Generate the bar with adjusted root
+      generateBassBar(track, bar_start, adjusted_root, next_root, pattern,
+                      section.type, params.mood, is_last_bar, factory);
     }
   }
 }

@@ -1,3 +1,8 @@
+/**
+ * @file arpeggio_test.cpp
+ * @brief Tests for arpeggio track generation.
+ */
+
 #include <gtest/gtest.h>
 #include "core/generator.h"
 #include "core/song.h"

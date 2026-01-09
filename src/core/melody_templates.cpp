@@ -1,3 +1,8 @@
+/**
+ * @file melody_templates.cpp
+ * @brief Melody template definitions and accessors.
+ */
+
 #include "core/melody_templates.h"
 
 namespace midisketch {

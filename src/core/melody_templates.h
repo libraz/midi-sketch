@@ -1,3 +1,8 @@
+/**
+ * @file melody_templates.h
+ * @brief Predefined melody templates for different styles.
+ */
+
 #ifndef MIDISKETCH_CORE_MELODY_TEMPLATES_H
 #define MIDISKETCH_CORE_MELODY_TEMPLATES_H
 

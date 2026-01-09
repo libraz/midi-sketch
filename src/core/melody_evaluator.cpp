@@ -1,3 +1,8 @@
+/**
+ * @file melody_evaluator.cpp
+ * @brief Implementation of melody quality scoring.
+ */
+
 #include "core/melody_evaluator.h"
 #include "core/harmony_context.h"
 #include "core/types.h"

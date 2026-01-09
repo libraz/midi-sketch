@@ -1,3 +1,8 @@
+/**
+ * @file song.h
+ * @brief Song container holding all tracks and arrangement.
+ */
+
 #ifndef MIDISKETCH_CORE_SONG_H
 #define MIDISKETCH_CORE_SONG_H
 
@@ -7,13 +12,13 @@
 
 namespace midisketch {
 
-// Overall song management class.
-// Holds all tracks and provides regeneration control.
+/// @brief Song container holding all tracks and arrangement.
 class Song {
  public:
   Song() = default;
 
-  // Track accessors
+  /// @name Track Accessors
+  /// @{
   MidiTrack& vocal() { return vocal_; }
   MidiTrack& chord() { return chord_; }
   MidiTrack& bass() { return bass_; }
@@ -22,7 +27,6 @@ class Song {
   MidiTrack& motif() { return motif_; }
   MidiTrack& arpeggio() { return arpeggio_; }
   MidiTrack& aux() { return aux_; }
-
   const MidiTrack& vocal() const { return vocal_; }
   const MidiTrack& chord() const { return chord_; }
   const MidiTrack& bass() const { return bass_; }
@@ -31,51 +35,66 @@ class Song {
   const MidiTrack& motif() const { return motif_; }
   const MidiTrack& arpeggio() const { return arpeggio_; }
   const MidiTrack& aux() const { return aux_; }
+  /// @}
 
-  // Role-based access
+  /// @name Role-Based Access
+  /// @{
   MidiTrack& track(TrackRole role);
   const MidiTrack& track(TrackRole role) const;
+  /// @}
 
-  // Track management
+  /// @name Track Management
+  /// @{
   void clearTrack(TrackRole role);
   void replaceTrack(TrackRole role, const MidiTrack& newTrack);
   void clearAll();
+  /// @}
 
-  // Arrangement
+  /// @name Arrangement
+  /// @{
   void setArrangement(const Arrangement& arrangement);
   const Arrangement& arrangement() const { return arrangement_; }
+  /// @}
 
-  // Time info
+  /// @name Time Info
+  /// @{
   Tick ticksPerBar() const { return TICKS_PER_BAR; }
   Tick ticksPerBeat() const { return TICKS_PER_BEAT; }
   uint8_t beatsPerBar() const { return BEATS_PER_BAR; }
+  /// @}
 
-  // Metadata
+  /// @name Metadata
+  /// @{
   void setBpm(uint16_t bpm) { bpm_ = bpm; }
   uint16_t bpm() const { return bpm_; }
-
   void setModulation(Tick tick, int8_t amount) {
     modulationTick_ = tick;
     modulationAmount_ = amount;
   }
   Tick modulationTick() const { return modulationTick_; }
   int8_t modulationAmount() const { return modulationAmount_; }
+  /// @}
 
-  // Melody seed tracking (for getMelody/setMelody)
+  /// @name Seed Tracking
+  /// @{
   void setMelodySeed(uint32_t seed) { melody_seed_ = seed; }
   uint32_t melodySeed() const { return melody_seed_; }
-
-  // Motif seed tracking (for getMotif/setMotif)
   void setMotifSeed(uint32_t seed) { motif_seed_ = seed; }
   uint32_t motifSeed() const { return motif_seed_; }
+  void setArpeggioSeed(uint32_t seed) { arpeggio_seed_ = seed; }
+  uint32_t arpeggioSeed() const { return arpeggio_seed_; }
+  /// @}
 
-  // Motif pattern storage (base pattern for repetition)
+  /// @name Motif Pattern
+  /// @{
   void setMotifPattern(const std::vector<NoteEvent>& pattern) {
     motif_pattern_ = pattern;
   }
   const std::vector<NoteEvent>& motifPattern() const { return motif_pattern_; }
+  /// @}
 
-  // Phrase boundary storage (for inter-track coordination)
+  /// @name Phrase Boundaries (inter-track coordination)
+  /// @{
   void setPhraseBoundaries(const std::vector<PhraseBoundary>& boundaries) {
     phrase_boundaries_ = boundaries;
   }
@@ -86,10 +105,7 @@ class Song {
     return phrase_boundaries_;
   }
   void clearPhraseBoundaries() { phrase_boundaries_.clear(); }
-
-  // Arpeggio seed tracking
-  void setArpeggioSeed(uint32_t seed) { arpeggio_seed_ = seed; }
-  uint32_t arpeggioSeed() const { return arpeggio_seed_; }
+  /// @}
 
  private:
   MidiTrack vocal_;

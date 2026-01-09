@@ -1,3 +1,8 @@
+/**
+ * @file section_utils_test.cpp
+ * @brief Tests for section utilities.
+ */
+
 #include <gtest/gtest.h>
 #include "core/section_utils.h"
 

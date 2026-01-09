@@ -1,3 +1,8 @@
+/**
+ * @file chord_test.cpp
+ * @brief Tests for chord progressions.
+ */
+
 #include <gtest/gtest.h>
 #include "core/chord.h"
 

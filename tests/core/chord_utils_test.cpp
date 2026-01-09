@@ -1,3 +1,8 @@
+/**
+ * @file chord_utils_test.cpp
+ * @brief Tests for chord utilities.
+ */
+
 #include <gtest/gtest.h>
 #include "core/chord_utils.h"
 #include "core/pitch_utils.h"

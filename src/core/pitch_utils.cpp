@@ -1,3 +1,8 @@
+/**
+ * @file pitch_utils.cpp
+ * @brief Implementation of pitch and scale utilities.
+ */
+
 #include "core/pitch_utils.h"
 #include <algorithm>
 #include <cmath>

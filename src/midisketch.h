@@ -1,3 +1,8 @@
+/**
+ * @file midisketch.h
+ * @brief High-level API for MIDI generation.
+ */
+
 #ifndef MIDISKETCH_H
 #define MIDISKETCH_H
 
@@ -8,76 +13,104 @@
 
 namespace midisketch {
 
-// High-level API for MIDI generation.
-// Wraps Generator and MidiWriter for convenient usage.
+/// @brief High-level API wrapping Generator and MidiWriter.
 class MidiSketch {
  public:
   MidiSketch();
   ~MidiSketch();
 
-  // Generates MIDI with the given parameters.
-  // @param params Generation parameters
+  /**
+   * @brief Generate MIDI with the given parameters.
+   * @param params Generation parameters
+   */
   void generate(const GeneratorParams& params);
 
-  // Generates MIDI from a SongConfig (new API).
-  // @param config Song configuration
+  /**
+   * @brief Generate MIDI from a SongConfig.
+   * @param config Song configuration
+   */
   void generateFromConfig(const SongConfig& config);
 
-  // Regenerates only the melody with a new seed.
-  // @param new_seed New random seed (0 = auto)
+  /**
+   * @brief Regenerate only the melody with a new seed.
+   * @param new_seed Random seed (0 = auto)
+   */
   void regenerateMelody(uint32_t new_seed = 0);
 
-  // Regenerates only the melody with full parameter control.
-  // Updates vocal range, attitude, and composition style before regenerating.
-  // Other tracks (chord, bass, drums, arpeggio) remain unchanged.
-  // @param params MelodyRegenerateParams with all required fields
+  /**
+   * @brief Regenerate melody with full parameter control.
+   *
+   * Updates vocal range, attitude, and composition style.
+   * Other tracks (chord, bass, drums, arpeggio) remain unchanged.
+   * @param params MelodyRegenerateParams with all required fields
+   */
   void regenerateMelody(const MelodyRegenerateParams& params);
 
-  // Regenerates the vocal track with updated VocalAttitude.
-  // @param config SongConfig containing the new VocalAttitude
-  // @param new_seed New random seed (0 = keep current seed)
+  /**
+   * @brief Regenerate vocal track with updated VocalAttitude.
+   * @param config SongConfig containing the new VocalAttitude
+   * @param new_seed Random seed (0 = keep current seed)
+   */
   void regenerateVocalFromConfig(const SongConfig& config, uint32_t new_seed = 0);
 
-  // Returns the current melody data (seed + notes).
-  // Use this to save melody candidates for later comparison.
-  // @returns MelodyData containing seed and notes
+  /**
+   * @brief Get current melody data (seed + notes).
+   * @return MelodyData for saving/comparing candidates
+   */
   MelodyData getMelody() const;
 
-  // Sets the melody from saved MelodyData.
-  // Replaces the current vocal track with the saved melody.
-  // @param melody MelodyData to apply
+  /**
+   * @brief Set melody from saved MelodyData.
+   * @param melody MelodyData to apply to vocal track
+   */
   void setMelody(const MelodyData& melody);
 
-  // Sets the MIDI output format.
-  // @param format MidiFormat::SMF1 or MidiFormat::SMF2
+  /**
+   * @brief Set MIDI output format.
+   * @param format MidiFormat::SMF1 or MidiFormat::SMF2
+   */
   void setMidiFormat(MidiFormat format);
 
-  // Returns the current MIDI format.
-  // @returns Current MidiFormat
+  /**
+   * @brief Get current MIDI format.
+   * @return Current MidiFormat
+   */
   MidiFormat getMidiFormat() const;
 
-  // Returns the MIDI data as a byte vector.
-  // @returns MIDI binary data
+  /**
+   * @brief Get MIDI data as byte vector.
+   * @return MIDI binary data
+   */
   std::vector<uint8_t> getMidi() const;
 
-  // Returns the event data as a JSON string.
-  // @returns JSON string for playback/display
+  /**
+   * @brief Get event data as JSON string.
+   * @return JSON string for playback/display
+   */
   std::string getEventsJson() const;
 
-  // Returns the generated song.
-  // @returns Reference to Song
+  /**
+   * @brief Get generated song.
+   * @return Reference to Song
+   */
   const Song& getSong() const;
 
-  // Returns the generation parameters.
-  // @returns Reference to GeneratorParams
+  /**
+   * @brief Get generation parameters.
+   * @return Reference to GeneratorParams
+   */
   const GeneratorParams& getParams() const;
 
-  // Returns the harmony context (for piano roll safety API).
-  // @returns Reference to HarmonyContext
+  /**
+   * @brief Get harmony context for piano roll safety API.
+   * @return Reference to HarmonyContext
+   */
   const HarmonyContext& getHarmonyContext() const;
 
-  // Returns the library version string.
-  // @returns Version string (e.g., "0.1.0")
+  /**
+   * @brief Get library version string.
+   * @return Version string (e.g., "0.1.0")
+   */
   static const char* version();
 
  private:

@@ -1,3 +1,8 @@
+/**
+ * @file midi2_writer_test.cpp
+ * @brief Tests for MIDI 2.0 writer.
+ */
+
 #include <gtest/gtest.h>
 
 #include "core/midi_track.h"

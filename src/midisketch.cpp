@@ -1,3 +1,8 @@
+/**
+ * @file midisketch.cpp
+ * @brief Implementation of high-level MIDI generation API.
+ */
+
 #include "midisketch.h"
 #include <algorithm>
 #include <sstream>

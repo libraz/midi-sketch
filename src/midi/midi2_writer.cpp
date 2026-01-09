@@ -1,3 +1,8 @@
+/**
+ * @file midi2_writer.cpp
+ * @brief Implementation of MIDI 2.0 Clip and Container file writer.
+ */
+
 #include "midi/midi2_writer.h"
 
 #include "midi/ump.h"

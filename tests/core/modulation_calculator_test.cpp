@@ -1,3 +1,8 @@
+/**
+ * @file modulation_calculator_test.cpp
+ * @brief Tests for modulation calculator.
+ */
+
 #include <gtest/gtest.h>
 #include "core/modulation_calculator.h"
 #include "core/structure.h"

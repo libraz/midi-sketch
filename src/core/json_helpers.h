@@ -1,3 +1,8 @@
+/**
+ * @file json_helpers.h
+ * @brief JSON string escaping utilities.
+ */
+
 #pragma once
 
 #include <sstream>

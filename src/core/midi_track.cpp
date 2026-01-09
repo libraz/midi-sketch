@@ -1,12 +1,43 @@
+/**
+ * @file midi_track.cpp
+ * @brief Implementation of MidiTrack operations.
+ */
+
 #include "core/midi_track.h"
 #include <algorithm>
 
 namespace midisketch {
 
-void MidiTrack::addNote(Tick startTick, Tick length, uint8_t note,
-                         uint8_t velocity) {
-  notes_.push_back({startTick, length, note, velocity});
+void MidiTrack::addNote(const NoteEvent& event) {
+  notes_.push_back(event);
 }
+
+// Suppress deprecation warning for legacy implementation
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
+void MidiTrack::addNote(Tick startTick, Tick length, uint8_t note,
+                        uint8_t velocity) {
+  // Legacy API: create NoteEvent without provenance
+  NoteEvent event;
+  event.start_tick = startTick;
+  event.duration = length;
+  event.note = note;
+  event.velocity = velocity;
+  // prov_* fields remain at default values (-1, 0, 0, 0)
+  notes_.push_back(event);
+}
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 void MidiTrack::addText(Tick tick, const std::string& text) {
   textEvents_.push_back({tick, text});

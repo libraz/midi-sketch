@@ -1,3 +1,8 @@
+/**
+ * @file arrangement_test.cpp
+ * @brief Tests for arrangement utilities.
+ */
+
 #include <gtest/gtest.h>
 #include "core/arrangement.h"
 #include "core/structure.h"

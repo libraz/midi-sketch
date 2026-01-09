@@ -1,7 +1,15 @@
+/**
+ * @file arpeggio.cpp
+ * @brief Implementation of arpeggio track generation.
+ */
+
 #include "track/arpeggio.h"
 #include "core/chord.h"
+#include "core/harmony_context.h"
+#include "core/note_factory.h"
 #include "core/velocity.h"
 #include <algorithm>
+#include <memory>
 #include <vector>
 
 namespace midisketch {
@@ -120,9 +128,12 @@ uint8_t calculateArpeggioVelocity(uint8_t base_velocity, SectionType section,
 }  // namespace
 
 void generateArpeggioTrack(MidiTrack& track, const Song& song,
-                           const GeneratorParams& params, std::mt19937& rng) {
+                           const GeneratorParams& params, std::mt19937& rng,
+                           const HarmonyContext& harmony) {
   const auto& sections = song.arrangement().sections();
   if (sections.empty()) return;
+
+  NoteFactory factory(harmony);
 
   const auto& progression = getChordProgression(params.chord_id);
   const ArpeggioParams& arp = params.arpeggio;
@@ -202,7 +213,7 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
         uint8_t velocity = calculateArpeggioVelocity(
             arp.base_velocity, section.type, pattern_index % arp_notes.size());
 
-        track.addNote(pos, gated_duration, note, velocity);
+        track.addNote(factory.create(pos, gated_duration, note, velocity, NoteSource::Arpeggio));
 
         pos += note_duration;
         pattern_index++;

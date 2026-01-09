@@ -1,3 +1,8 @@
+/**
+ * @file melody_designer_test.cpp
+ * @brief Tests for melody designer.
+ */
+
 #include <gtest/gtest.h>
 #include "core/harmony_context.h"
 #include "core/melody_templates.h"
