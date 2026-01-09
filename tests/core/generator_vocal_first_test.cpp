@@ -30,11 +30,11 @@ class GeneratorVocalFirstTest : public ::testing::Test {
   GeneratorParams params_;
 };
 
-// === generateVocalOnly Tests ===
+// === generateVocal Tests ===
 
 TEST_F(GeneratorVocalFirstTest, GenerateVocalOnlyProducesVocalTrack) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   const auto& song = gen.getSong();
   EXPECT_FALSE(song.vocal().empty()) << "Vocal track should be generated";
@@ -43,7 +43,7 @@ TEST_F(GeneratorVocalFirstTest, GenerateVocalOnlyProducesVocalTrack) {
 
 TEST_F(GeneratorVocalFirstTest, GenerateVocalOnlyNoAccompaniment) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   const auto& song = gen.getSong();
 
@@ -59,7 +59,7 @@ TEST_F(GeneratorVocalFirstTest, GenerateVocalOnlyNoAccompaniment) {
 
 TEST_F(GeneratorVocalFirstTest, GenerateVocalOnlyInitializesStructure) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   const auto& song = gen.getSong();
   const auto& sections = song.arrangement().sections();
@@ -71,8 +71,8 @@ TEST_F(GeneratorVocalFirstTest, GenerateVocalOnlyInitializesStructure) {
 TEST_F(GeneratorVocalFirstTest, GenerateVocalOnlyDeterministic) {
   Generator gen1, gen2;
 
-  gen1.generateVocalOnly(params_);
-  gen2.generateVocalOnly(params_);
+  gen1.generateVocal(params_);
+  gen2.generateVocal(params_);
 
   const auto& vocal1 = gen1.getSong().vocal().notes();
   const auto& vocal2 = gen2.getSong().vocal().notes();
@@ -86,18 +86,18 @@ TEST_F(GeneratorVocalFirstTest, GenerateVocalOnlyDeterministic) {
   }
 }
 
-// === regenerateVocalOnly Tests ===
+// === regenerateVocal Tests ===
 
-TEST_F(GeneratorVocalFirstTest, RegenerateVocalOnlyChangesVocal) {
+TEST_F(GeneratorVocalFirstTest, RegenerateVocalChangesVocal) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   const auto& original_vocal = gen.getSong().vocal().notes();
   size_t original_count = original_vocal.size();
   uint8_t original_first_note = original_vocal.empty() ? 0 : original_vocal[0].note;
 
   // Regenerate with different seed
-  gen.regenerateVocalOnly(99999);
+  gen.regenerateVocal(99999);
 
   const auto& new_vocal = gen.getSong().vocal().notes();
 
@@ -112,15 +112,15 @@ TEST_F(GeneratorVocalFirstTest, RegenerateVocalOnlyChangesVocal) {
   EXPECT_FALSE(new_vocal.empty()) << "Regenerated vocal should have notes";
 }
 
-TEST_F(GeneratorVocalFirstTest, RegenerateVocalOnlyPreservesStructure) {
+TEST_F(GeneratorVocalFirstTest, RegenerateVocalPreservesStructure) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   const auto& sections_before = gen.getSong().arrangement().sections();
   size_t section_count = sections_before.size();
   uint16_t bpm = gen.getSong().bpm();
 
-  gen.regenerateVocalOnly(99999);
+  gen.regenerateVocal(99999);
 
   // Structure should be preserved
   EXPECT_EQ(gen.getSong().arrangement().sections().size(), section_count);
@@ -131,7 +131,7 @@ TEST_F(GeneratorVocalFirstTest, RegenerateVocalOnlyPreservesStructure) {
 
 TEST_F(GeneratorVocalFirstTest, GenerateAccompanimentAddsAllTracks) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   // Store original vocal for comparison
   std::vector<NoteEvent> original_vocal = gen.getSong().vocal().notes();
@@ -154,7 +154,7 @@ TEST_F(GeneratorVocalFirstTest, GenerateAccompanimentAddsAllTracks) {
 
 TEST_F(GeneratorVocalFirstTest, GenerateAccompanimentPreservesVocal) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   // Store original vocal
   std::vector<NoteEvent> original_vocal = gen.getSong().vocal().notes();
@@ -220,14 +220,14 @@ TEST_F(GeneratorVocalFirstTest, TrialAndErrorWorkflow) {
   Generator gen;
 
   // Step 1: Generate vocal only
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
   EXPECT_FALSE(gen.getSong().vocal().empty());
   EXPECT_TRUE(gen.getSong().chord().empty());
 
   // Step 2: Try different seeds
   std::vector<size_t> note_counts;
   for (uint32_t seed : {12345u, 54321u, 99999u}) {
-    gen.regenerateVocalOnly(seed);
+    gen.regenerateVocal(seed);
     note_counts.push_back(gen.getSong().vocal().noteCount());
     EXPECT_GT(gen.getSong().vocal().noteCount(), 0u);
   }
@@ -246,7 +246,7 @@ TEST_F(GeneratorVocalFirstTest, VocalOnlyStaysOnScale) {
   std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
 
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   for (const auto& note : gen.getSong().vocal().notes()) {
     int pc = note.note % 12;

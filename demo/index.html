@@ -44,7 +44,22 @@
     .btn-play:hover { background: #8e44ad; }
     .btn-stop { background: #e74c3c; color: white; }
     .btn-stop:hover { background: #c0392b; }
+    .btn-vocal { background: #f39c12; color: white; }
+    .btn-vocal:hover { background: #d68910; }
+    .btn-vocal:disabled { background: #bdc3c7; cursor: not-allowed; }
     .buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+    .workflow-toggle {
+      display: flex; gap: 5px; margin-bottom: 15px;
+      background: #ecf0f1; padding: 5px; border-radius: 4px;
+    }
+    .workflow-toggle button {
+      flex: 1; padding: 8px 12px; font-size: 13px;
+      background: transparent; border: none; border-radius: 4px;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .workflow-toggle button.active { background: #3498db; color: white; }
+    .workflow-toggle button:not(.active):hover { background: #d5dbdb; }
+    .workflow-hint { font-size: 0.85em; color: #7f8c8d; margin-bottom: 10px; }
     .result {
       background: #ecf0f1; padding: 15px; border-radius: 4px;
       font-family: monospace; font-size: 13px; white-space: pre-wrap;
@@ -95,6 +110,17 @@
     .collapsible:after { content: ' +'; }
     .collapsible.open:after { content: ' -'; }
     .collapsed { display: none; }
+    .vocal-config-panel {
+      margin-top: 15px; padding: 15px; background: #fff3cd;
+      border-radius: 8px; border: 1px solid #ffc107;
+    }
+    .vocal-config-panel h3 { margin: 0 0 10px 0; font-size: 1em; color: #856404; }
+    .vocal-config-panel .row { margin-bottom: 10px; }
+    .vocal-config-panel .form-group { flex: 1; min-width: 100px; }
+    .vocal-config-panel select, .vocal-config-panel input { padding: 6px; font-size: 13px; }
+    .btn-tweak { background: #fd7e14; color: white; font-size: 14px; padding: 8px 12px; }
+    .btn-tweak:hover { background: #e96b02; }
+    .btn-tweak.active { background: #dc3545; }
   </style>
 </head>
 <body>
@@ -336,13 +362,100 @@
     <!-- Actions -->
     <div class="section">
       <h2>Actions</h2>
-      <div class="buttons">
-        <button class="btn-primary" :disabled="!ready" @click="generate">Generate</button>
-        <button class="btn-secondary" :disabled="!midiData" @click="regenerateVocal">Regen Vocal</button>
+      <div class="workflow-toggle">
+        <button :class="{ active: workflow === 'vocalFirst' }" @click="workflow = 'vocalFirst'">Vocal First</button>
+        <button :class="{ active: workflow === 'bgmOnly' }" @click="workflow = 'bgmOnly'">BGM Only</button>
+      </div>
+      <div class="workflow-hint">{{ workflowHint }}</div>
+
+      <!-- Vocal First Workflow -->
+      <div v-if="workflow === 'vocalFirst'" class="buttons">
+        <button class="btn-vocal" :disabled="!ready" @click="generateVocal">1. Vocal Only</button>
+        <button class="btn-vocal" :disabled="!hasVocalOnly" @click="regenerateVocal">New Seed</button>
+        <button :class="['btn-tweak', { active: showVocalConfig }]" :disabled="!hasVocalOnly" @click="showVocalConfig = !showVocalConfig">Tweak</button>
+        <button class="btn-primary" :disabled="!hasVocalOnly" @click="generateAccompaniment">2. Add Accompaniment</button>
         <button class="btn-play" :disabled="!midiData || isPlaying" @click="play">Play</button>
         <button class="btn-stop" :disabled="!isPlaying" @click="stop">Stop</button>
         <button class="btn-secondary" :disabled="!midiData" @click="downloadMidi">Download</button>
       </div>
+
+      <!-- Vocal Config Panel -->
+      <div v-if="workflow === 'vocalFirst' && hasVocalOnly && showVocalConfig" class="vocal-config-panel">
+        <h3>Vocal Regeneration Settings</h3>
+        <div class="row">
+          <div class="form-group">
+            <label>Vocal Low</label>
+            <select v-model.number="vocalConfig.vocalLow">
+              <option v-for="n in vocalNoteOptions" :value="n.value">{{ n.text }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Vocal High</label>
+            <select v-model.number="vocalConfig.vocalHigh">
+              <option v-for="n in vocalNoteOptions" :value="n.value">{{ n.text }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Attitude</label>
+            <select v-model.number="vocalConfig.vocalAttitude">
+              <option value="0">Clean</option>
+              <option value="1">Expressive</option>
+              <option value="2">Raw</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="form-group">
+            <label>Vocal Style</label>
+            <select v-model.number="vocalConfig.vocalStyle">
+              <option v-for="vs in vocalStyles" :value="vs.value">{{ vs.text }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Complexity</label>
+            <select v-model.number="vocalConfig.melodicComplexity">
+              <option value="0">Simple</option>
+              <option value="1">Standard</option>
+              <option value="2">Complex</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Hook</label>
+            <select v-model.number="vocalConfig.hookIntensity">
+              <option value="0">Off</option>
+              <option value="1">Light</option>
+              <option value="2">Normal</option>
+              <option value="3">Strong</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="form-group">
+            <label>Groove</label>
+            <select v-model.number="vocalConfig.vocalGroove">
+              <option value="0">Straight</option>
+              <option value="1">OffBeat</option>
+              <option value="2">Swing</option>
+              <option value="3">Syncopated</option>
+              <option value="4">Driving16th</option>
+              <option value="5">Bouncy8th</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 2;">
+            <label>&nbsp;</label>
+            <button class="btn-vocal" style="width: 100%;" @click="regenerateVocalWithConfig">Regenerate with Settings</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- BGM Only Workflow -->
+      <div v-if="workflow === 'bgmOnly'" class="buttons">
+        <button class="btn-primary" :disabled="!ready" @click="generateBgmOnly">Generate BGM</button>
+        <button class="btn-play" :disabled="!midiData || isPlaying" @click="play">Play</button>
+        <button class="btn-stop" :disabled="!isPlaying" @click="stop">Stop</button>
+        <button class="btn-secondary" :disabled="!midiData" @click="downloadMidi">Download</button>
+      </div>
+
       <div v-if="midiData" class="playback-info">
         <div class="progress-bar">
           <div class="progress-bar-fill" :style="{ width: playbackProgress + '%' }"></div>
@@ -359,11 +472,58 @@
   </div>
 
   <script src="https://unpkg.com/petite-vue@0.4.1/dist/petite-vue.iife.js"></script>
-  <script src="https://unpkg.com/tone@14.7.77/build/Tone.js"></script>
   <script type="module">
     import * as midisketch from '../dist/index.js';
 
     const NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+
+    // Simple Web Audio synth
+    function midiToFreq(midi) {
+      return 440 * Math.pow(2, (midi - 69) / 12);
+    }
+
+    function createSimpleSynth(audioContext) {
+      const gainNode = audioContext.createGain();
+      gainNode.gain.value = 0.3;
+      gainNode.connect(audioContext.destination);
+      const activeOscs = [];
+
+      return {
+        play(pitch, startTime, duration, velocity = 100) {
+          const osc = audioContext.createOscillator();
+          const env = audioContext.createGain();
+          osc.type = 'triangle';
+          osc.frequency.value = midiToFreq(pitch);
+          env.gain.value = 0;
+          osc.connect(env);
+          env.connect(gainNode);
+
+          const vol = (velocity / 127) * 0.5;
+          // Attack
+          env.gain.setValueAtTime(0, startTime);
+          env.gain.linearRampToValueAtTime(vol, startTime + 0.02);
+          // Sustain & Release
+          env.gain.setValueAtTime(vol, startTime + duration - 0.05);
+          env.gain.linearRampToValueAtTime(0, startTime + duration);
+
+          osc.start(startTime);
+          osc.stop(startTime + duration + 0.1);
+          activeOscs.push(osc);
+          // Auto-cleanup
+          osc.onended = () => {
+            const idx = activeOscs.indexOf(osc);
+            if (idx !== -1) activeOscs.splice(idx, 1);
+          };
+        },
+        stopAll() {
+          const now = audioContext.currentTime;
+          activeOscs.forEach(osc => {
+            try { osc.stop(now); } catch (e) {}
+          });
+          activeOscs.length = 0;
+        }
+      };
+    }
 
     PetiteVue.createApp({
       // State
@@ -420,11 +580,37 @@
       playbackTime: 0,
       totalDuration: 0,
       resultText: '',
+      workflow: 'vocalFirst',
+      hasVocalOnly: false,
+      showVocalConfig: false,
+      vocalConfig: {
+        seed: 0,
+        vocalLow: 55,
+        vocalHigh: 74,
+        vocalAttitude: 0,
+        vocalStyle: 0,
+        melodicComplexity: 1,
+        hookIntensity: 2,
+        vocalGroove: 0,
+        compositionStyle: 0
+      },
+      vocalNoteOptions: (() => {
+        const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const options = [];
+        for (let n = 36; n <= 96; n++) {
+          const noteName = notes[n % 12];
+          const octave = Math.floor(n / 12) - 1;
+          options.push({ value: n, text: `${noteName}${octave} (${n})` });
+        }
+        return options;
+      })(),
 
-      // Internal
-      synths: {},
-      scheduledEvents: [],
+      // Internal (Web Audio)
+      audioContext: null,
+      synth: null,
       animationFrame: null,
+      playStartTime: 0,
+      stopTimeout: null,
 
       // Computed-like getters
       get currentPreset() {
@@ -462,6 +648,12 @@
       },
       get playbackProgress() {
         return this.totalDuration > 0 ? (this.playbackTime / this.totalDuration) * 100 : 0;
+      },
+      get workflowHint() {
+        if (this.workflow === 'vocalFirst') {
+          return 'Step 1: Generate vocal only. Try different seeds. Step 2: Add accompaniment when satisfied.';
+        }
+        return 'Generate instrumental BGM without vocal track.';
       },
 
       // Methods
@@ -516,46 +708,53 @@
         this.updateChordDisplay();
       },
 
-      initSynths() {
-        Object.values(this.synths).forEach(s => s.dispose());
-        this.synths = {
-          vocal: new Tone.PolySynth(Tone.Synth, {
-            oscillator: { type: 'triangle' },
-            envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.4 }
-          }).toDestination(),
-          chord: new Tone.PolySynth(Tone.Synth, {
-            oscillator: { type: 'sine' },
-            envelope: { attack: 0.05, decay: 0.2, sustain: 0.4, release: 0.8 }
-          }).toDestination(),
-          bass: new Tone.MonoSynth({
-            oscillator: { type: 'sawtooth' },
-            envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.3 }
-          }).toDestination(),
-          drums: new Tone.MembraneSynth().toDestination(),
-          arpeggio: new Tone.PolySynth(Tone.Synth, {
-            oscillator: { type: 'sawtooth' },
-            envelope: { attack: 0.01, decay: 0.15, sustain: 0.2, release: 0.3 }
-          }).toDestination()
-        };
-        this.synths.vocal.volume.value = -6;
-        this.synths.chord.volume.value = -12;
-        this.synths.bass.volume.value = -8;
-        this.synths.drums.volume.value = -4;
-        this.synths.arpeggio.volume.value = -8;
+      initAudio() {
+        if (!this.audioContext) {
+          this.audioContext = new AudioContext();
+        }
+        this.synth = createSimpleSynth(this.audioContext);
       },
 
-      generate() {
+      generateBgmOnly() {
         try {
           this.stop();
           if (this.sketch) this.sketch.destroy();
           this.sketch = new midisketch.MidiSketch();
-          this.sketch.generateFromConfig(this.config);
+          const bgmConfig = { ...this.config, skipVocal: true };
+          this.sketch.generateFromConfig(bgmConfig);
           this.midiData = this.sketch.getMidi();
           this.eventData = this.sketch.getEvents();
           this.totalDuration = this.ticksToSeconds(this.eventData.duration_ticks, this.eventData.bpm);
+          this.hasVocalOnly = false;
           const p = this.currentPreset;
           const c = this.allChords[this.config.chordProgressionId];
-          this.resultText = `Generated: ${this.midiData.length} bytes\nStyle: ${p?.displayName}\nChord: ${c?.display || 'N/A'}\nBPM: ${this.eventData.bpm}\nDuration: ${this.formatTime(this.totalDuration)}`;
+          this.resultText = `BGM Generated: ${this.midiData.length} bytes\nStyle: ${p?.displayName}\nChord: ${c?.display || 'N/A'}\nBPM: ${this.eventData.bpm}\nDuration: ${this.formatTime(this.totalDuration)}`;
+        } catch (e) {
+          this.resultText = `Error: ${e.message}`;
+          console.error(e);
+        }
+      },
+
+      generateVocal() {
+        try {
+          this.stop();
+          if (this.sketch) this.sketch.destroy();
+          this.sketch = new midisketch.MidiSketch();
+          this.sketch.generateVocal(this.config);
+          this.midiData = this.sketch.getMidi();
+          this.eventData = this.sketch.getEvents();
+          this.totalDuration = this.ticksToSeconds(this.eventData.duration_ticks, this.eventData.bpm);
+          this.hasVocalOnly = true;
+          this.showVocalConfig = false;
+          // Initialize vocalConfig from current config
+          this.vocalConfig.vocalLow = this.config.vocalLow;
+          this.vocalConfig.vocalHigh = this.config.vocalHigh;
+          this.vocalConfig.vocalAttitude = this.config.vocalAttitude;
+          this.vocalConfig.vocalStyle = this.config.vocalStyle;
+          this.vocalConfig.compositionStyle = this.config.compositionStyle;
+          const vocalTrack = this.eventData.tracks.find(t => t.name === 'Vocal');
+          const noteCount = vocalTrack?.notes?.length || 0;
+          this.resultText = `Vocal Only: ${noteCount} notes\nBPM: ${this.eventData.bpm}\nDuration: ${this.formatTime(this.totalDuration)}\n\nTry different seeds or tweak settings, then add accompaniment.`;
         } catch (e) {
           this.resultText = `Error: ${e.message}`;
           console.error(e);
@@ -563,18 +762,63 @@
       },
 
       regenerateVocal() {
-        if (!this.sketch) return;
+        if (!this.sketch || !this.hasVocalOnly) return;
         try {
           this.stop();
+          const newSeed = Date.now();
+          this.sketch.regenerateVocal(newSeed);
+          this.midiData = this.sketch.getMidi();
+          this.eventData = this.sketch.getEvents();
+          const vocalTrack = this.eventData.tracks.find(t => t.name === 'Vocal');
+          const noteCount = vocalTrack?.notes?.length || 0;
+          this.resultText = `Vocal regenerated (seed: ${newSeed})\n${noteCount} notes`;
+        } catch (e) {
+          this.resultText = `Error: ${e.message}`;
+        }
+      },
+
+      regenerateVocalWithConfig() {
+        if (!this.sketch || !this.hasVocalOnly) return;
+        try {
+          this.stop();
+          const newSeed = Date.now();
           this.sketch.regenerateVocal({
-            seed: this.config.seed === 0 ? Date.now() : this.config.seed,
-            vocalLow: this.config.vocalLow,
-            vocalHigh: this.config.vocalHigh,
-            vocalAttitude: this.config.vocalAttitude
+            seed: newSeed,
+            vocalLow: this.vocalConfig.vocalLow,
+            vocalHigh: this.vocalConfig.vocalHigh,
+            vocalAttitude: this.vocalConfig.vocalAttitude,
+            vocalStyle: this.vocalConfig.vocalStyle,
+            melodicComplexity: this.vocalConfig.melodicComplexity,
+            hookIntensity: this.vocalConfig.hookIntensity,
+            vocalGroove: this.vocalConfig.vocalGroove,
+            compositionStyle: this.vocalConfig.compositionStyle
           });
           this.midiData = this.sketch.getMidi();
           this.eventData = this.sketch.getEvents();
-          this.resultText = `Regenerated vocal: ${this.midiData.length} bytes`;
+          const vocalTrack = this.eventData.tracks.find(t => t.name === 'Vocal');
+          const noteCount = vocalTrack?.notes?.length || 0;
+          const attNames = ['Clean', 'Expressive', 'Raw'];
+          this.resultText = `Vocal regenerated with settings:\n` +
+            `Range: ${this.midiToNote(this.vocalConfig.vocalLow)}-${this.midiToNote(this.vocalConfig.vocalHigh)}\n` +
+            `Attitude: ${attNames[this.vocalConfig.vocalAttitude]}\n` +
+            `${noteCount} notes`;
+        } catch (e) {
+          this.resultText = `Error: ${e.message}`;
+          console.error(e);
+        }
+      },
+
+      generateAccompaniment() {
+        if (!this.sketch || !this.hasVocalOnly) return;
+        try {
+          this.stop();
+          this.sketch.generateAccompaniment();
+          this.midiData = this.sketch.getMidi();
+          this.eventData = this.sketch.getEvents();
+          this.hasVocalOnly = false;
+          const p = this.currentPreset;
+          const c = this.allChords[this.config.chordProgressionId];
+          this.resultText = `Complete: ${this.midiData.length} bytes\nStyle: ${p?.displayName}\nChord: ${c?.display || 'N/A'}\nBPM: ${this.eventData.bpm}\nDuration: ${this.formatTime(this.totalDuration)}`;
         } catch (e) {
           this.resultText = `Error: ${e.message}`;
         }
@@ -583,36 +827,35 @@
       async play() {
         if (!this.eventData || this.isPlaying) return;
         try {
-          await Tone.start();
-          this.initSynths();
-          this.isPlaying = true;
-          const bpm = this.eventData.bpm;
-          Tone.Transport.bpm.value = bpm;
-          this.scheduledEvents.forEach(id => Tone.Transport.clear(id));
-          this.scheduledEvents = [];
+          this.initAudio();
+          const ctx = this.audioContext;
+          if (ctx.state === 'suspended') await ctx.resume();
 
+          const bpm = this.eventData.bpm;
+          const now = ctx.currentTime + 0.1; // Small buffer
+          this.playStartTime = now;
+
+          console.log('Playing:', { bpm, tracks: this.eventData.tracks.map(t => ({ name: t.name, notes: t.notes?.length })) });
+
+          let noteCount = 0;
           for (const track of this.eventData.tracks) {
-            const synth = this.synths[track.name.toLowerCase()];
-            if (!synth) continue;
-            for (const note of track.notes) {
+            const trackName = track.name.toLowerCase();
+            // Skip drums and SE for now (simple synth only)
+            if (trackName === 'drums' || trackName === 'se') continue;
+
+            for (const note of track.notes || []) {
               const start = this.ticksToSeconds(note.start_ticks, bpm);
-              const dur = this.ticksToSeconds(note.duration_ticks, bpm);
-              const vel = note.velocity / 127;
-              const noteStr = Tone.Frequency(note.pitch, 'midi').toNote();
-              const id = Tone.Transport.schedule(time => {
-                if (track.name.toLowerCase() === 'drums') {
-                  synth.triggerAttackRelease(Tone.Frequency(note.pitch, 'midi').toFrequency(), dur, time, vel);
-                } else {
-                  synth.triggerAttackRelease(noteStr, dur, time, vel);
-                }
-              }, start);
-              this.scheduledEvents.push(id);
+              const dur = Math.max(0.1, this.ticksToSeconds(note.duration_ticks, bpm));
+              this.synth.play(note.pitch, now + start, dur, note.velocity);
+              noteCount++;
             }
           }
+          console.log('Scheduled', noteCount, 'notes');
 
-          const endTime = this.ticksToSeconds(this.eventData.duration_ticks, bpm);
-          this.scheduledEvents.push(Tone.Transport.schedule(() => this.stop(), endTime + 0.1));
-          Tone.Transport.start();
+          this.isPlaying = true;
+          this.totalDuration = this.ticksToSeconds(this.eventData.duration_ticks, bpm);
+          // Auto-stop
+          this.stopTimeout = setTimeout(() => this.stop(), this.totalDuration * 1000 + 500);
           this.updateProgress();
         } catch (e) {
           console.error('Playback error:', e);
@@ -621,18 +864,28 @@
       },
 
       updateProgress() {
-        if (!this.isPlaying) return;
-        this.playbackTime = Tone.Transport.seconds;
+        if (!this.isPlaying || !this.audioContext) return;
+        this.playbackTime = this.audioContext.currentTime - this.playStartTime;
+        if (this.playbackTime >= this.totalDuration) {
+          this.stop();
+          return;
+        }
         this.animationFrame = requestAnimationFrame(() => this.updateProgress());
       },
 
       stop() {
         this.isPlaying = false;
-        Tone.Transport.stop();
-        Tone.Transport.cancel();
-        this.scheduledEvents.forEach(id => Tone.Transport.clear(id));
-        this.scheduledEvents = [];
-        if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
+        if (this.stopTimeout) {
+          clearTimeout(this.stopTimeout);
+          this.stopTimeout = null;
+        }
+        if (this.synth) {
+          this.synth.stopAll();
+        }
+        if (this.animationFrame) {
+          cancelAnimationFrame(this.animationFrame);
+          this.animationFrame = null;
+        }
         this.playbackTime = 0;
       },
 
@@ -642,7 +895,7 @@
 
       async init() {
         try {
-          await midisketch.init();
+          await midisketch.init({ wasmPath: '../dist/midisketch.wasm' });
           this.version = midisketch.getVersion();
           this.stylePresets = midisketch.getStylePresets();
           this.allChords = midisketch.getChords();

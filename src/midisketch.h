@@ -31,27 +31,47 @@ class MidiSketch {
    */
   void generateFromConfig(const SongConfig& config);
 
-  /**
-   * @brief Regenerate only the melody with a new seed.
-   * @param new_seed Random seed (0 = auto)
-   */
-  void regenerateMelody(uint32_t new_seed = 0);
+  /// @name Vocal-First Generation (Trial-and-Error Workflow)
+  /// @{
 
   /**
-   * @brief Regenerate melody with full parameter control.
+   * @brief Generate only the vocal track without accompaniment.
+   * @param config Song configuration
+   */
+  void generateVocal(const SongConfig& config);
+
+  /**
+   * @brief Regenerate vocal track with a new seed.
    *
-   * Updates vocal range, attitude, and composition style.
-   * Other tracks (chord, bass, drums, arpeggio) remain unchanged.
-   * @param params MelodyRegenerateParams with all required fields
+   * Keeps the same chord progression and structure.
+   * @param new_seed New random seed (0 = auto-generate)
    */
-  void regenerateMelody(const MelodyRegenerateParams& params);
+  void regenerateVocal(uint32_t new_seed = 0);
 
   /**
-   * @brief Regenerate vocal track with updated VocalAttitude.
-   * @param config SongConfig containing the new VocalAttitude
-   * @param new_seed Random seed (0 = keep current seed)
+   * @brief Regenerate vocal track with new configuration.
+   *
+   * Updates vocal parameters and generates a new melody.
+   * @param config Vocal configuration with all parameters
    */
-  void regenerateVocalFromConfig(const SongConfig& config, uint32_t new_seed = 0);
+  void regenerateVocal(const VocalConfig& config);
+
+  /**
+   * @brief Generate accompaniment tracks for existing vocal.
+   *
+   * Must be called after generateVocal() or generateWithVocal().
+   */
+  void generateAccompanimentForVocal();
+
+  /**
+   * @brief Generate all tracks with vocal-first priority.
+   *
+   * Vocal → Aux → Bass → Chord → Drums order.
+   * @param config Song configuration
+   */
+  void generateWithVocal(const SongConfig& config);
+
+  /// @}
 
   /**
    * @brief Get current melody data (seed + notes).

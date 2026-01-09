@@ -39,7 +39,7 @@ TEST(GeneratorTest, RegenerateMelodyUpdatesSeed) {
   uint32_t original_seed = gen.getSong().melodySeed();
 
   // Regenerate with new seed
-  gen.regenerateMelody(100);
+  gen.regenerateVocal(100);
   EXPECT_EQ(gen.getSong().melodySeed(), 100u);
   EXPECT_NE(gen.getSong().melodySeed(), original_seed);
 }
@@ -60,7 +60,7 @@ TEST(GeneratorTest, SetMelodyRestoresNotes) {
   size_t original_count = original.notes.size();
 
   // Regenerate with different seed
-  gen.regenerateMelody(100);
+  gen.regenerateVocal(100);
   ASSERT_NE(gen.getSong().vocal().notes().size(), 0u);
 
   // Restore original melody
@@ -91,7 +91,7 @@ TEST(GeneratorTest, SetMelodyPreservesNoteData) {
   saved.notes = original_notes;
 
   // Regenerate with different seed
-  gen.regenerateMelody(999);
+  gen.regenerateVocal(999);
 
   // Restore
   gen.setMelody(saved);
@@ -209,293 +209,6 @@ TEST(GeneratorTest, MelodyPhraseRepetitionWithModulation) {
 }
 
 // ============================================================================
-// MelodyRegenerateParams Tests
-// ============================================================================
-
-TEST(GeneratorTest, RegenerateMelodyWithParamsUpdatesSeed) {
-  Generator gen;
-  GeneratorParams params{};
-  params.structure = StructurePattern::ShortForm;
-  params.mood = Mood::StraightPop;
-  params.seed = 42;
-  params.vocal_low = 48;
-  params.vocal_high = 72;
-
-  gen.generate(params);
-  uint32_t original_seed = gen.getSong().melodySeed();
-
-  // Regenerate with new seed via MelodyRegenerateParams
-  MelodyRegenerateParams regen{};
-  regen.seed = 100;
-  regen.vocal_low = 48;
-  regen.vocal_high = 72;
-  regen.vocal_attitude = VocalAttitude::Clean;
-  regen.composition_style = CompositionStyle::MelodyLead;
-
-  gen.regenerateMelody(regen);
-  EXPECT_EQ(gen.getSong().melodySeed(), 100u);
-  EXPECT_NE(gen.getSong().melodySeed(), original_seed);
-}
-
-TEST(GeneratorTest, RegenerateMelodyWithParamsUpdatesVocalRange) {
-  Generator gen;
-  GeneratorParams params{};
-  params.structure = StructurePattern::ShortForm;
-  params.mood = Mood::StraightPop;
-  params.seed = 42;
-  params.vocal_low = 48;
-  params.vocal_high = 72;
-
-  gen.generate(params);
-
-  // Regenerate with different vocal range
-  MelodyRegenerateParams regen{};
-  regen.seed = 42;  // Same seed
-  regen.vocal_low = 60;  // Higher range
-  regen.vocal_high = 84;
-  regen.vocal_attitude = VocalAttitude::Clean;
-  regen.composition_style = CompositionStyle::MelodyLead;
-
-  gen.regenerateMelody(regen);
-
-  // Verify params were updated
-  EXPECT_EQ(gen.getParams().vocal_low, 60u);
-  EXPECT_EQ(gen.getParams().vocal_high, 84u);
-
-  // Vocal notes should be within new range
-  const auto& vocal = gen.getSong().vocal().notes();
-  for (const auto& note : vocal) {
-    EXPECT_GE(note.note, 60u);
-    EXPECT_LE(note.note, 84u);
-  }
-}
-
-TEST(GeneratorTest, RegenerateMelodyWithParamsUpdatesAttitude) {
-  Generator gen;
-  GeneratorParams params{};
-  params.structure = StructurePattern::ShortForm;
-  params.mood = Mood::StraightPop;
-  params.seed = 42;
-  params.vocal_low = 48;
-  params.vocal_high = 72;
-  params.vocal_attitude = VocalAttitude::Clean;
-
-  gen.generate(params);
-  EXPECT_EQ(gen.getParams().vocal_attitude, VocalAttitude::Clean);
-
-  // Regenerate with different attitude
-  MelodyRegenerateParams regen{};
-  regen.seed = 42;
-  regen.vocal_low = 48;
-  regen.vocal_high = 72;
-  regen.vocal_attitude = VocalAttitude::Expressive;
-  regen.composition_style = CompositionStyle::MelodyLead;
-
-  gen.regenerateMelody(regen);
-  EXPECT_EQ(gen.getParams().vocal_attitude, VocalAttitude::Expressive);
-}
-
-TEST(GeneratorTest, RegenerateMelodyWithParamsUpdatesCompositionStyle) {
-  Generator gen;
-  GeneratorParams params{};
-  params.structure = StructurePattern::ShortForm;
-  params.mood = Mood::StraightPop;
-  params.seed = 42;
-  params.vocal_low = 48;
-  params.vocal_high = 72;
-  params.composition_style = CompositionStyle::MelodyLead;
-
-  gen.generate(params);
-  EXPECT_EQ(gen.getParams().composition_style, CompositionStyle::MelodyLead);
-
-  // Regenerate with different composition style
-  MelodyRegenerateParams regen{};
-  regen.seed = 42;
-  regen.vocal_low = 48;
-  regen.vocal_high = 72;
-  regen.vocal_attitude = VocalAttitude::Clean;
-  regen.composition_style = CompositionStyle::BackgroundMotif;
-
-  gen.regenerateMelody(regen);
-  EXPECT_EQ(gen.getParams().composition_style, CompositionStyle::BackgroundMotif);
-}
-
-TEST(GeneratorTest, RegenerateMelodyWithParamsPreservesBGM) {
-  Generator gen;
-  GeneratorParams params{};
-  params.structure = StructurePattern::ShortForm;
-  params.mood = Mood::StraightPop;
-  params.seed = 42;
-  params.vocal_low = 48;
-  params.vocal_high = 72;
-  params.drums_enabled = true;
-
-  gen.generate(params);
-
-  // Save original BGM track data
-  const auto original_chord_notes = gen.getSong().chord().notes();
-  const auto original_bass_notes = gen.getSong().bass().notes();
-  const auto original_drums_notes = gen.getSong().drums().notes();
-
-  // Regenerate melody with different params
-  MelodyRegenerateParams regen{};
-  regen.seed = 999;  // Different seed
-  regen.vocal_low = 60;  // Different range
-  regen.vocal_high = 84;
-  regen.vocal_attitude = VocalAttitude::Expressive;  // Different attitude
-  regen.composition_style = CompositionStyle::MelodyLead;
-
-  gen.regenerateMelody(regen);
-
-  // BGM tracks should be unchanged
-  const auto& new_chord_notes = gen.getSong().chord().notes();
-  const auto& new_bass_notes = gen.getSong().bass().notes();
-  const auto& new_drums_notes = gen.getSong().drums().notes();
-
-  ASSERT_EQ(new_chord_notes.size(), original_chord_notes.size());
-  ASSERT_EQ(new_bass_notes.size(), original_bass_notes.size());
-  ASSERT_EQ(new_drums_notes.size(), original_drums_notes.size());
-
-  // Verify chord notes are identical
-  for (size_t i = 0; i < original_chord_notes.size(); ++i) {
-    EXPECT_EQ(new_chord_notes[i].start_tick, original_chord_notes[i].start_tick);
-    EXPECT_EQ(new_chord_notes[i].note, original_chord_notes[i].note);
-    EXPECT_EQ(new_chord_notes[i].duration, original_chord_notes[i].duration);
-  }
-
-  // Verify bass notes are identical
-  for (size_t i = 0; i < original_bass_notes.size(); ++i) {
-    EXPECT_EQ(new_bass_notes[i].start_tick, original_bass_notes[i].start_tick);
-    EXPECT_EQ(new_bass_notes[i].note, original_bass_notes[i].note);
-    EXPECT_EQ(new_bass_notes[i].duration, original_bass_notes[i].duration);
-  }
-
-  // Verify drums notes are identical
-  for (size_t i = 0; i < original_drums_notes.size(); ++i) {
-    EXPECT_EQ(new_drums_notes[i].start_tick, original_drums_notes[i].start_tick);
-    EXPECT_EQ(new_drums_notes[i].note, original_drums_notes[i].note);
-    EXPECT_EQ(new_drums_notes[i].duration, original_drums_notes[i].duration);
-  }
-}
-
-TEST(GeneratorTest, RegenerateMelodyWithSeedZeroGeneratesNewSeed) {
-  Generator gen;
-  GeneratorParams params{};
-  params.structure = StructurePattern::ShortForm;
-  params.mood = Mood::StraightPop;
-  params.seed = 42;
-  params.vocal_low = 48;
-  params.vocal_high = 72;
-
-  gen.generate(params);
-
-  // Regenerate with seed=0 (should generate new random seed)
-  MelodyRegenerateParams regen{};
-  regen.seed = 0;  // Auto-generate seed
-  regen.vocal_low = 48;
-  regen.vocal_high = 72;
-  regen.vocal_attitude = VocalAttitude::Clean;
-  regen.composition_style = CompositionStyle::MelodyLead;
-
-  gen.regenerateMelody(regen);
-
-  // Seed should be different (with very high probability)
-  // Note: There's a tiny chance this could fail if the random seed happens to be 42
-  uint32_t new_seed = gen.getSong().melodySeed();
-  EXPECT_NE(new_seed, 0u);  // Should never be 0 after resolution
-}
-
-TEST(GeneratorTest, RegenerateMelodyWithVocalDensityParams) {
-  // Test that vocal density parameters affect regenerateMelody
-  Generator gen;
-  GeneratorParams params{};
-  params.structure = StructurePattern::StandardPop;
-  params.mood = Mood::StraightPop;
-  params.seed = 12345;
-  params.vocal_low = 55;
-  params.vocal_high = 74;
-
-  gen.generate(params);
-
-  // Regenerate with Vocaloid style
-  MelodyRegenerateParams regen_vocaloid{};
-  regen_vocaloid.seed = 54321;
-  regen_vocaloid.vocal_low = 55;
-  regen_vocaloid.vocal_high = 74;
-  regen_vocaloid.vocal_attitude = VocalAttitude::Clean;
-  regen_vocaloid.composition_style = CompositionStyle::MelodyLead;
-  regen_vocaloid.vocal_style = VocalStylePreset::Vocaloid;
-
-  gen.regenerateMelody(regen_vocaloid);
-  size_t vocaloid_notes = gen.getSong().vocal().notes().size();
-
-  // Regenerate with Ballad style
-  MelodyRegenerateParams regen_ballad{};
-  regen_ballad.seed = 54321;  // Same seed
-  regen_ballad.vocal_low = 55;
-  regen_ballad.vocal_high = 74;
-  regen_ballad.vocal_attitude = VocalAttitude::Clean;
-  regen_ballad.composition_style = CompositionStyle::MelodyLead;
-  regen_ballad.vocal_style = VocalStylePreset::Ballad;
-
-  gen.regenerateMelody(regen_ballad);
-  size_t ballad_notes = gen.getSong().vocal().notes().size();
-
-  // Both styles should produce notes
-  EXPECT_GT(vocaloid_notes, 0u) << "Vocaloid style should produce notes";
-  EXPECT_GT(ballad_notes, 0u) << "Ballad style should produce notes";
-}
-
-TEST(GeneratorTest, MelodyRegenerateParamsDefaultValues) {
-  // Test default values for MelodyRegenerateParams
-  MelodyRegenerateParams params{};
-
-  EXPECT_EQ(params.vocal_style, VocalStylePreset::Auto)
-      << "vocal_style should default to Auto";
-  EXPECT_EQ(params.melody_template, MelodyTemplateId::Auto)
-      << "melody_template should default to Auto";
-}
-
-TEST(GeneratorTest, RegenerateMelodyPreservesBGM) {
-  // Verify BGM tracks are preserved when regenerating
-  Generator gen;
-  GeneratorParams params{};
-  params.structure = StructurePattern::ShortForm;
-  params.mood = Mood::StraightPop;
-  params.seed = 11111;
-  params.skip_vocal = true;  // Generate BGM only
-
-  gen.generate(params);
-
-  // Save BGM note counts
-  size_t chord_count = gen.getSong().chord().notes().size();
-  size_t bass_count = gen.getSong().bass().notes().size();
-  size_t drums_count = gen.getSong().drums().notes().size();
-
-  // Regenerate vocal
-  MelodyRegenerateParams regen{};
-  regen.seed = 22222;
-  regen.vocal_low = 55;
-  regen.vocal_high = 74;
-  regen.vocal_attitude = VocalAttitude::Expressive;
-  regen.composition_style = CompositionStyle::MelodyLead;
-
-  gen.regenerateMelody(regen);
-
-  // Vocal should now have notes
-  EXPECT_FALSE(gen.getSong().vocal().empty())
-      << "Vocal track should have notes after regeneration";
-
-  // BGM tracks should be unchanged
-  EXPECT_EQ(gen.getSong().chord().notes().size(), chord_count)
-      << "Chord track should be unchanged";
-  EXPECT_EQ(gen.getSong().bass().notes().size(), bass_count)
-      << "Bass track should be unchanged";
-  EXPECT_EQ(gen.getSong().drums().notes().size(), drums_count)
-      << "Drums track should be unchanged";
-}
-
-// ============================================================================
 // Vocal Range Constraint Tests
 // ============================================================================
 
@@ -599,8 +312,8 @@ TEST(VocalRangeTest, RangeConstraintWithAllSectionTypes) {
       << "Melody should use a reasonable portion of the available range";
 }
 
-TEST(VocalRangeTest, RegenerateMelodyRespectsRange) {
-  // Verify that regenerateMelody also respects the vocal range
+TEST(VocalRangeTest, RegenerateVocalRespectsRange) {
+  // Verify that regenerateVocal also respects the vocal range
   Generator gen;
   GeneratorParams params{};
   params.structure = StructurePattern::StandardPop;
@@ -612,21 +325,15 @@ TEST(VocalRangeTest, RegenerateMelodyRespectsRange) {
   gen.generate(params);
 
   // Regenerate with a different seed
-  MelodyRegenerateParams regen{};
-  regen.seed = 99999;
-  regen.vocal_low = 62;
-  regen.vocal_high = 74;
-  regen.vocal_attitude = VocalAttitude::Clean;
-  regen.composition_style = CompositionStyle::MelodyLead;
-
-  gen.regenerateMelody(regen);
+  gen.regenerateVocal(99999);
 
   const auto& notes = gen.getSong().vocal().notes();
   ASSERT_FALSE(notes.empty());
 
+  // Range should be respected (using the original params)
   for (const auto& note : notes) {
-    EXPECT_GE(note.note, regen.vocal_low);
-    EXPECT_LE(note.note, regen.vocal_high);
+    EXPECT_GE(note.note, params.vocal_low);
+    EXPECT_LE(note.note, params.vocal_high);
   }
 }
 
@@ -813,9 +520,9 @@ TEST(GeneratorTest, SkipVocalGeneratesEmptyVocalTrack) {
       << "Bass track should have notes";
 }
 
-TEST(GeneratorTest, SkipVocalThenRegenerateMelody) {
+TEST(GeneratorTest, SkipVocalThenRegenerateVocal) {
   // Test BGM-first workflow: skip vocal, then regenerate melody.
-  // Ensures regenerateMelody works correctly after skip_vocal.
+  // Ensures regenerateVocal works correctly after skip_vocal.
   Generator gen;
   GeneratorParams params{};
   params.structure = StructurePattern::StandardPop;
@@ -828,11 +535,11 @@ TEST(GeneratorTest, SkipVocalThenRegenerateMelody) {
       << "Vocal track should be empty initially";
 
   // Regenerate melody
-  gen.regenerateMelody(54321);
+  gen.regenerateVocal(54321);
 
   // Now vocal track should have notes
   EXPECT_FALSE(gen.getSong().vocal().empty())
-      << "Vocal track should have notes after regenerateMelody";
+      << "Vocal track should have notes after regenerateVocal";
 
   // Other tracks should remain unchanged
   EXPECT_FALSE(gen.getSong().chord().empty());
@@ -1227,238 +934,6 @@ TEST(GeneratorVocalTest, AllVocalGroovesGenerateNotes) {
     EXPECT_GT(gen.getSong().vocal().notes().size(), 0u)
         << "Groove " << static_cast<int>(groove) << " should generate notes";
   }
-}
-
-// ============================================================================
-// VocalStyle via regenerateMelody Tests
-// ============================================================================
-
-TEST(GeneratorVocalTest, RegenerateMelodyAppliesVocalStyleParams) {
-  // Test that regenerateMelody applies VocalStylePreset settings to melody_params.
-  // UltraVocaloid should set max_leap_interval to 14 (via applyVocalStylePreset).
-  Generator gen;
-  GeneratorParams params{};
-  params.structure = StructurePattern::ShortForm;
-  params.mood = Mood::StraightPop;
-  params.seed = 42;
-  params.vocal_low = 48;
-  params.vocal_high = 72;
-  params.vocal_style = VocalStylePreset::Standard;  // Start with Standard
-
-  gen.generate(params);
-
-  // Default/Standard should have smaller max_leap_interval
-  EXPECT_EQ(gen.getParams().melody_params.max_leap_interval, 7)
-      << "Standard style should have max_leap_interval=7";
-
-  // Regenerate with UltraVocaloid style
-  MelodyRegenerateParams regen{};
-  regen.seed = 100;
-  regen.vocal_low = 48;
-  regen.vocal_high = 72;
-  regen.vocal_attitude = VocalAttitude::Clean;
-  regen.composition_style = CompositionStyle::MelodyLead;
-  regen.vocal_style = VocalStylePreset::UltraVocaloid;
-
-  gen.regenerateMelody(regen);
-
-  // UltraVocaloid should set max_leap_interval to 14
-  EXPECT_EQ(gen.getParams().vocal_style, VocalStylePreset::UltraVocaloid)
-      << "vocal_style should be updated to UltraVocaloid";
-  EXPECT_EQ(gen.getParams().melody_params.max_leap_interval, 14)
-      << "UltraVocaloid should set max_leap_interval=14";
-  EXPECT_FLOAT_EQ(gen.getParams().melody_params.syncopation_prob, 0.4f)
-      << "UltraVocaloid should set syncopation_prob=0.4";
-  EXPECT_TRUE(gen.getParams().melody_params.allow_bar_crossing)
-      << "UltraVocaloid should enable allow_bar_crossing";
-}
-
-TEST(GeneratorVocalTest, RegenerateMelodyVocalStyleAutoKeepsCurrent) {
-  // When vocal_style is Auto, regenerateMelody should keep current style.
-  Generator gen;
-  GeneratorParams params{};
-  params.structure = StructurePattern::ShortForm;
-  params.mood = Mood::StraightPop;
-  params.seed = 42;
-  params.vocal_low = 48;
-  params.vocal_high = 72;
-  params.vocal_style = VocalStylePreset::Vocaloid;
-
-  gen.generate(params);
-  EXPECT_EQ(gen.getParams().vocal_style, VocalStylePreset::Vocaloid);
-
-  // Regenerate with Auto (should keep Vocaloid)
-  MelodyRegenerateParams regen{};
-  regen.seed = 100;
-  regen.vocal_low = 48;
-  regen.vocal_high = 72;
-  regen.vocal_attitude = VocalAttitude::Clean;
-  regen.composition_style = CompositionStyle::MelodyLead;
-  regen.vocal_style = VocalStylePreset::Auto;  // Auto = keep current
-
-  gen.regenerateMelody(regen);
-
-  EXPECT_EQ(gen.getParams().vocal_style, VocalStylePreset::Vocaloid)
-      << "Auto should keep current vocal_style";
-}
-
-TEST(GeneratorVocalTest, RegenerateMelodyAppliesIdolStyleParams) {
-  // Test that Idol style applies its specific parameters.
-  Generator gen;
-  GeneratorParams params{};
-  params.structure = StructurePattern::ShortForm;
-  params.mood = Mood::StraightPop;
-  params.seed = 42;
-  params.vocal_low = 48;
-  params.vocal_high = 72;
-
-  gen.generate(params);
-
-  // Regenerate with Idol style
-  MelodyRegenerateParams regen{};
-  regen.seed = 100;
-  regen.vocal_low = 48;
-  regen.vocal_high = 72;
-  regen.vocal_attitude = VocalAttitude::Clean;
-  regen.composition_style = CompositionStyle::MelodyLead;
-  regen.vocal_style = VocalStylePreset::Idol;
-
-  gen.regenerateMelody(regen);
-
-  // Idol should set specific parameters
-  EXPECT_EQ(gen.getParams().melody_params.max_leap_interval, 7)
-      << "Idol style should have max_leap_interval=7";
-  EXPECT_TRUE(gen.getParams().melody_params.hook_repetition)
-      << "Idol style should enable hook_repetition";
-  EXPECT_TRUE(gen.getParams().melody_params.chorus_long_tones)
-      << "Idol style should enable chorus_long_tones";
-}
-
-TEST(GeneratorVocalTest, RegenerateMelodyAppliesMelodicComplexity) {
-  // Test that melodic_complexity is applied via regenerateMelody.
-  Generator gen;
-  GeneratorParams params{};
-  params.structure = StructurePattern::ShortForm;
-  params.mood = Mood::StraightPop;
-  params.seed = 42;
-  params.vocal_low = 48;
-  params.vocal_high = 72;
-  params.melodic_complexity = MelodicComplexity::Standard;
-
-  gen.generate(params);
-  EXPECT_EQ(gen.getParams().melodic_complexity, MelodicComplexity::Standard);
-
-  // Regenerate with Complex
-  MelodyRegenerateParams regen{};
-  regen.seed = 100;
-  regen.vocal_low = 48;
-  regen.vocal_high = 72;
-  regen.vocal_attitude = VocalAttitude::Clean;
-  regen.composition_style = CompositionStyle::MelodyLead;
-  regen.melodic_complexity = MelodicComplexity::Complex;
-
-  gen.regenerateMelody(regen);
-
-  EXPECT_EQ(gen.getParams().melodic_complexity, MelodicComplexity::Complex)
-      << "melodic_complexity should be updated to Complex";
-}
-
-TEST(GeneratorVocalTest, RegenerateMelodyAppliesHookIntensity) {
-  // Test that hook_intensity is applied via regenerateMelody.
-  Generator gen;
-  GeneratorParams params{};
-  params.structure = StructurePattern::ShortForm;
-  params.mood = Mood::StraightPop;
-  params.seed = 42;
-  params.vocal_low = 48;
-  params.vocal_high = 72;
-  params.hook_intensity = HookIntensity::Normal;
-
-  gen.generate(params);
-  EXPECT_EQ(gen.getParams().hook_intensity, HookIntensity::Normal);
-
-  // Regenerate with Strong
-  MelodyRegenerateParams regen{};
-  regen.seed = 100;
-  regen.vocal_low = 48;
-  regen.vocal_high = 72;
-  regen.vocal_attitude = VocalAttitude::Clean;
-  regen.composition_style = CompositionStyle::MelodyLead;
-  regen.hook_intensity = HookIntensity::Strong;
-
-  gen.regenerateMelody(regen);
-
-  EXPECT_EQ(gen.getParams().hook_intensity, HookIntensity::Strong)
-      << "hook_intensity should be updated to Strong";
-}
-
-TEST(GeneratorVocalTest, RegenerateMelodyAppliesVocalGroove) {
-  // Test that vocal_groove is applied via regenerateMelody.
-  Generator gen;
-  GeneratorParams params{};
-  params.structure = StructurePattern::ShortForm;
-  params.mood = Mood::StraightPop;
-  params.seed = 42;
-  params.vocal_low = 48;
-  params.vocal_high = 72;
-  params.vocal_groove = VocalGrooveFeel::Straight;
-
-  gen.generate(params);
-  EXPECT_EQ(gen.getParams().vocal_groove, VocalGrooveFeel::Straight);
-
-  // Regenerate with Swing
-  MelodyRegenerateParams regen{};
-  regen.seed = 100;
-  regen.vocal_low = 48;
-  regen.vocal_high = 72;
-  regen.vocal_attitude = VocalAttitude::Clean;
-  regen.composition_style = CompositionStyle::MelodyLead;
-  regen.vocal_groove = VocalGrooveFeel::Swing;
-
-  gen.regenerateMelody(regen);
-
-  EXPECT_EQ(gen.getParams().vocal_groove, VocalGrooveFeel::Swing)
-      << "vocal_groove should be updated to Swing";
-}
-
-TEST(GeneratorVocalTest, MelodyRegenerateParamsNewDefaults) {
-  // Test default values for newly added parameters in MelodyRegenerateParams.
-  MelodyRegenerateParams params{};
-
-  EXPECT_EQ(params.melodic_complexity, MelodicComplexity::Standard)
-      << "melodic_complexity should default to Standard";
-  EXPECT_EQ(params.hook_intensity, HookIntensity::Normal)
-      << "hook_intensity should default to Normal";
-  EXPECT_EQ(params.vocal_groove, VocalGrooveFeel::Straight)
-      << "vocal_groove should default to Straight";
-}
-
-TEST(GeneratorVocalTest, RegenerateMelodyAppliesCompositionStyle) {
-  // Test that composition_style is applied via regenerateMelody.
-  Generator gen;
-  GeneratorParams params{};
-  params.structure = StructurePattern::ShortForm;
-  params.mood = Mood::StraightPop;
-  params.seed = 42;
-  params.vocal_low = 48;
-  params.vocal_high = 72;
-  params.composition_style = CompositionStyle::MelodyLead;
-
-  gen.generate(params);
-  EXPECT_EQ(gen.getParams().composition_style, CompositionStyle::MelodyLead);
-
-  // Regenerate with BackgroundMotif
-  MelodyRegenerateParams regen{};
-  regen.seed = 100;
-  regen.vocal_low = 48;
-  regen.vocal_high = 72;
-  regen.vocal_attitude = VocalAttitude::Clean;
-  regen.composition_style = CompositionStyle::BackgroundMotif;
-
-  gen.regenerateMelody(regen);
-
-  EXPECT_EQ(gen.getParams().composition_style, CompositionStyle::BackgroundMotif)
-      << "composition_style should be updated to BackgroundMotif";
 }
 
 // =============================================================================

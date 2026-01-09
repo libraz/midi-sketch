@@ -66,19 +66,6 @@ export interface SongConfigOptions {
   vocalGroove?: number;
 }
 
-export interface VocalParamsOptions {
-  seed?: number;
-  vocalLow?: number;
-  vocalHigh?: number;
-  vocalAttitude?: number;
-  vocalStyle?: number;
-  melodyTemplate?: number;
-  melodicComplexity?: number;
-  hookIntensity?: number;
-  vocalGroove?: number;
-  compositionStyle?: number;
-}
-
 export class WasmTestContext {
   module!: WasmModule;
   handle!: number;
@@ -182,27 +169,49 @@ export class WasmTestContext {
     return ptr;
   }
 
-  allocVocalParams(params: VocalParamsOptions): number {
-    const ptr = this.module._malloc(16); // 16 bytes (padded)
-    const view = new DataView(this.module.HEAPU8.buffer);
-
-    view.setUint32(ptr + 0, params.seed ?? 0, true);
-    view.setUint8(ptr + 4, params.vocalLow ?? 60);
-    view.setUint8(ptr + 5, params.vocalHigh ?? 79);
-    view.setUint8(ptr + 6, params.vocalAttitude ?? 0);
-    view.setUint8(ptr + 7, params.vocalStyle ?? 0);
-    view.setUint8(ptr + 8, params.melodyTemplate ?? 0);
-    view.setUint8(ptr + 9, params.melodicComplexity ?? 1); // Default: Standard
-    view.setUint8(ptr + 10, params.hookIntensity ?? 2); // Default: Normal
-    view.setUint8(ptr + 11, params.vocalGroove ?? 0); // Default: Straight
-    view.setUint8(ptr + 12, params.compositionStyle ?? 0); // Default: MelodyLead
-    // Padding bytes 13-15
-
-    return ptr;
-  }
-
   generateFromConfig(config: SongConfigOptions): number {
     const generateFn = this.module.cwrap('midisketch_generate_from_config', 'number', [
+      'number',
+      'number',
+    ]) as (h: number, configPtr: number) => number;
+
+    const configPtr = this.allocSongConfig(config);
+    const result = generateFn(this.handle, configPtr);
+    this.module._free(configPtr);
+    return result;
+  }
+
+  generateVocal(config: SongConfigOptions): number {
+    const generateFn = this.module.cwrap('midisketch_generate_vocal', 'number', [
+      'number',
+      'number',
+    ]) as (h: number, configPtr: number) => number;
+
+    const configPtr = this.allocSongConfig(config);
+    const result = generateFn(this.handle, configPtr);
+    this.module._free(configPtr);
+    return result;
+  }
+
+  regenerateVocal(newSeed: number): number {
+    const regenerateFn = this.module.cwrap('midisketch_regenerate_vocal', 'number', [
+      'number',
+      'number',
+    ]) as (h: number, seed: number) => number;
+
+    return regenerateFn(this.handle, newSeed);
+  }
+
+  generateAccompaniment(): number {
+    const generateFn = this.module.cwrap('midisketch_generate_accompaniment', 'number', [
+      'number',
+    ]) as (h: number) => number;
+
+    return generateFn(this.handle);
+  }
+
+  generateWithVocal(config: SongConfigOptions): number {
+    const generateFn = this.module.cwrap('midisketch_generate_with_vocal', 'number', [
       'number',
       'number',
     ]) as (h: number, configPtr: number) => number;

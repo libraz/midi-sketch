@@ -317,29 +317,19 @@ struct GeneratorParams {
   VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
 };
 
-/// @brief Parameters for regenerating only the vocal melody.
-/// All fields are required - no sentinel values.
-struct MelodyRegenerateParams {
-  uint32_t seed;                       ///< Random seed (0 = new random)
-  uint8_t vocal_low;                   ///< Vocal range lower bound (MIDI note)
-  uint8_t vocal_high;                  ///< Vocal range upper bound (MIDI note)
-  VocalAttitude vocal_attitude;        ///< 0=Clean, 1=Expressive, 2=Raw
-  CompositionStyle composition_style;  ///< 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
-
-  /// Vocal style preset (Auto = use current style)
+/// @brief Configuration for vocal regeneration.
+/// Contains all vocal-related parameters that can be changed during regeneration.
+struct VocalConfig {
+  uint32_t seed = 0;                   ///< Random seed (0 = new random)
+  uint8_t vocal_low = 60;              ///< Vocal range lower bound (MIDI note)
+  uint8_t vocal_high = 79;             ///< Vocal range upper bound (MIDI note)
+  VocalAttitude vocal_attitude = VocalAttitude::Clean;
   VocalStylePreset vocal_style = VocalStylePreset::Auto;
-
-  /// Melody template (Auto = use style default)
   MelodyTemplateId melody_template = MelodyTemplateId::Auto;
-
-  /// Melodic complexity (Simple/Standard/Complex)
   MelodicComplexity melodic_complexity = MelodicComplexity::Standard;
-
-  /// Hook intensity (Off/Light/Normal/Strong)
   HookIntensity hook_intensity = HookIntensity::Normal;
-
-  /// Vocal groove feel (Straight/OffBeat/Swing/Syncopated/Driving16th/Bouncy8th)
   VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
+  CompositionStyle composition_style = CompositionStyle::MelodyLead;
 };
 
 }  // namespace midisketch

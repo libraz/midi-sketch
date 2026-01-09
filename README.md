@@ -99,14 +99,16 @@ sketch.generate({
 const midiData = sketch.getMidi();    // Uint8Array
 const events = sketch.getEvents();    // Typed object
 
-// Regenerate melody only (BGM unchanged)
-sketch.regenerateMelodyEx({
-  seed: 0,                               // 0 = new random
+// Vocal-first workflow: generate vocal only, then accompaniment
+sketch.generateVocal(config);         // Generate vocal only
+sketch.regenerateVocal(12345);        // Regenerate with new seed
+sketch.regenerateVocal({              // Or with full config
+  seed: 54321,
   vocalLow: 55,
-  vocalHigh: 74,
-  vocalAttitude: VocalAttitude.Expressive,
-  compositionStyle: CompositionStyle.MelodyLead
+  vocalHigh: 75,
+  vocalAttitude: 1                    // Expressive
 });
+sketch.generateAccompaniment();       // Add accompaniment tracks
 
 sketch.destroy();
 ```

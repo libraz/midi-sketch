@@ -72,38 +72,6 @@ MidiSketchHandle midisketch_create(void);
 void midisketch_destroy(MidiSketchHandle handle);
 
 // ============================================================================
-// Vocal Regeneration
-// ============================================================================
-
-/// @brief Vocal regeneration parameters.
-typedef struct {
-  uint32_t seed;            ///< Random seed (0 = new random)
-  uint8_t vocal_low;        ///< Vocal range lower bound (MIDI note)
-  uint8_t vocal_high;       ///< Vocal range upper bound (MIDI note)
-  uint8_t vocal_attitude;   ///< 0=Clean, 1=Expressive, 2=Raw
-  uint8_t vocal_style;      ///< VocalStylePreset (0=Auto, 1=Standard, etc.)
-  uint8_t melody_template;  ///< MelodyTemplateId (0=Auto, 1-7)
-  uint8_t melodic_complexity; ///< 0=Simple, 1=Standard, 2=Complex
-  uint8_t hook_intensity;   ///< 0=Off, 1=Light, 2=Normal, 3=Strong
-  uint8_t vocal_groove;     ///< 0=Straight, 1=OffBeat, 2=Swing, etc.
-  uint8_t composition_style; ///< 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
-} MidiSketchVocalParams;
-
-/**
- * @brief Regenerate only the vocal track.
- *
- * BGM tracks (chord, bass, drums, arpeggio) remain unchanged.
- * Use after generateFromConfig with skipVocal=true.
- * @param handle MidiSketch handle
- * @param params Vocal regeneration parameters
- * @return MIDISKETCH_OK on success
- */
-MidiSketchError midisketch_regenerate_vocal(
-    MidiSketchHandle handle,
-    const MidiSketchVocalParams* params
-);
-
-// ============================================================================
 // Output Retrieval
 // ============================================================================
 
@@ -349,6 +317,78 @@ MidiSketchConfigError midisketch_validate_config(const MidiSketchSongConfig* con
  * @return MIDISKETCH_OK on success
  */
 MidiSketchError midisketch_generate_from_config(
+    MidiSketchHandle handle,
+    const MidiSketchSongConfig* config
+);
+
+// ============================================================================
+// Vocal-First Generation (Trial-and-Error Workflow)
+// ============================================================================
+
+/// @brief Vocal regeneration configuration.
+typedef struct {
+  uint32_t seed;              ///< Random seed (0 = new random)
+  uint8_t vocal_low;          ///< Vocal range lower bound (MIDI note, 36-96)
+  uint8_t vocal_high;         ///< Vocal range upper bound (MIDI note, 36-96)
+  uint8_t vocal_attitude;     ///< 0=Clean, 1=Expressive, 2=Raw
+  uint8_t vocal_style;        ///< VocalStylePreset (0=Auto, 1-8)
+  uint8_t melody_template;    ///< MelodyTemplateId (0=Auto, 1-7)
+  uint8_t melodic_complexity; ///< 0=Simple, 1=Standard, 2=Complex
+  uint8_t hook_intensity;     ///< 0=Off, 1=Light, 2=Normal, 3=Strong
+  uint8_t vocal_groove;       ///< 0=Straight, 1=OffBeat, 2=Swing, etc.
+  uint8_t composition_style;  ///< 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
+  uint8_t _reserved[2];       ///< Padding for alignment (total: 16 bytes)
+} MidiSketchVocalConfig;
+
+/**
+ * @brief Generate only the vocal track without accompaniment.
+ *
+ * Creates vocal melody based on chord progression. Accompaniment tracks
+ * are empty. Use generateAccompaniment() to add accompaniment later.
+ * @param handle MidiSketch handle
+ * @param config Song configuration
+ * @return MIDISKETCH_OK on success
+ */
+MidiSketchError midisketch_generate_vocal(
+    MidiSketchHandle handle,
+    const MidiSketchSongConfig* config
+);
+
+/**
+ * @brief Regenerate vocal track with new configuration.
+ *
+ * Keeps the same chord progression and structure, but generates a new melody
+ * with the specified vocal parameters.
+ * Accompaniment tracks are cleared (call generateAccompaniment() to regenerate).
+ * @param handle MidiSketch handle
+ * @param config Vocal configuration (NULL = regenerate with same settings, new seed)
+ * @return MIDISKETCH_OK on success
+ */
+MidiSketchError midisketch_regenerate_vocal(
+    MidiSketchHandle handle,
+    const MidiSketchVocalConfig* config
+);
+
+/**
+ * @brief Generate accompaniment tracks for existing vocal.
+ *
+ * Must be called after generateVocal() or generateWithVocal().
+ * Generates: Aux → Bass → Chord → Drums (adapting to vocal).
+ * @param handle MidiSketch handle
+ * @return MIDISKETCH_OK on success
+ */
+MidiSketchError midisketch_generate_accompaniment(MidiSketchHandle handle);
+
+/**
+ * @brief Generate all tracks with vocal-first priority.
+ *
+ * Generation order: Vocal → Aux → Bass → Chord → Drums.
+ * Accompaniment adapts to vocal melody.
+ * @param handle MidiSketch handle
+ * @param config Song configuration
+ * @return MIDISKETCH_OK on success
+ */
+MidiSketchError midisketch_generate_with_vocal(
     MidiSketchHandle handle,
     const MidiSketchSongConfig* config
 );

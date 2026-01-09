@@ -40,7 +40,7 @@ class ChordWithContextTest : public ::testing::Test {
 
 TEST_F(ChordWithContextTest, GeneratesChordTrack) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   VocalAnalysis va = analyzeVocal(gen.getSong().vocal());
 
@@ -62,7 +62,7 @@ TEST_F(ChordWithContextTest, GeneratesChordTrack) {
 
 TEST_F(ChordWithContextTest, ChordNotesInValidRange) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   VocalAnalysis va = analyzeVocal(gen.getSong().vocal());
 
@@ -84,7 +84,7 @@ TEST_F(ChordWithContextTest, ChordNotesInValidRange) {
 
 TEST_F(ChordWithContextTest, DeterministicGeneration) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   VocalAnalysis va = analyzeVocal(gen.getSong().vocal());
 
@@ -116,7 +116,7 @@ TEST_F(ChordWithContextTest, DeterministicGeneration) {
 
 TEST_F(ChordWithContextTest, AvoidsVocalDoublingWhenPossible) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   VocalAnalysis va = analyzeVocal(gen.getSong().vocal());
 
@@ -169,7 +169,7 @@ TEST_F(ChordWithContextTest, AvoidsVocalDoublingWhenPossible) {
 
 TEST_F(ChordWithContextTest, GeneratesWithAuxTrack) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   VocalAnalysis va = analyzeVocal(gen.getSong().vocal());
 
@@ -194,7 +194,7 @@ TEST_F(ChordWithContextTest, GeneratesWithAuxTrack) {
 
 TEST_F(ChordWithContextTest, ReducesMinor2ndClashesWithAux) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   VocalAnalysis va = analyzeVocal(gen.getSong().vocal());
 
@@ -245,7 +245,7 @@ TEST_F(ChordWithContextTest, ReducesMinor2ndClashesWithAux) {
 
 TEST_F(ChordWithContextTest, WorksWithGenerateAccompaniment) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
   gen.generateAccompanimentForVocal();
 
   // Verify chord track was generated
@@ -258,7 +258,7 @@ TEST_F(ChordWithContextTest, WorksWithGenerateAccompaniment) {
 
 TEST_F(ChordWithContextTest, FallbackWhenAllVoicingsFiltered) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   VocalAnalysis va = analyzeVocal(gen.getSong().vocal());
 

@@ -100,27 +100,166 @@ void midisketch_destroy(MidiSketchHandle handle) {
   delete static_cast<midisketch::MidiSketch*>(handle);
 }
 
+// ============================================================================
+// Vocal-First Generation API Implementation
+// ============================================================================
+
+namespace {
+// Helper to convert C config to C++ SongConfig
+midisketch::SongConfig convertToSongConfig(const MidiSketchSongConfig* config) {
+  midisketch::SongConfig cpp_config;
+  cpp_config.style_preset_id = config->style_preset_id;
+  cpp_config.key = static_cast<midisketch::Key>(config->key);
+  cpp_config.bpm = config->bpm;
+  cpp_config.seed = config->seed;
+  cpp_config.chord_progression_id = config->chord_progression_id;
+  cpp_config.form = static_cast<midisketch::StructurePattern>(config->form_id);
+  cpp_config.vocal_attitude = static_cast<midisketch::VocalAttitude>(config->vocal_attitude);
+  cpp_config.drums_enabled = config->drums_enabled != 0;
+
+  // Arpeggio settings
+  cpp_config.arpeggio_enabled = config->arpeggio_enabled != 0;
+  cpp_config.arpeggio.pattern = static_cast<midisketch::ArpeggioPattern>(config->arpeggio_pattern);
+  cpp_config.arpeggio.speed = static_cast<midisketch::ArpeggioSpeed>(config->arpeggio_speed);
+  cpp_config.arpeggio.octave_range = config->arpeggio_octave_range > 0 ? config->arpeggio_octave_range : 2;
+  cpp_config.arpeggio.gate = config->arpeggio_gate / 100.0f;
+  cpp_config.arpeggio.sync_chord = config->arpeggio_sync_chord != 0;
+
+  // Vocal settings
+  cpp_config.vocal_low = config->vocal_low;
+  cpp_config.vocal_high = config->vocal_high;
+  cpp_config.skip_vocal = config->skip_vocal != 0;
+
+  // Humanization
+  cpp_config.humanize = config->humanize != 0;
+  cpp_config.humanize_timing = config->humanize_timing / 100.0f;
+  cpp_config.humanize_velocity = config->humanize_velocity / 100.0f;
+
+  // Chord extensions
+  cpp_config.chord_extension.enable_sus = config->chord_ext_sus != 0;
+  cpp_config.chord_extension.enable_7th = config->chord_ext_7th != 0;
+  cpp_config.chord_extension.enable_9th = config->chord_ext_9th != 0;
+  cpp_config.chord_extension.sus_probability = config->chord_ext_sus_prob / 100.0f;
+  cpp_config.chord_extension.seventh_probability = config->chord_ext_7th_prob / 100.0f;
+  cpp_config.chord_extension.ninth_probability = config->chord_ext_9th_prob / 100.0f;
+
+  // Composition style
+  cpp_config.composition_style = static_cast<midisketch::CompositionStyle>(config->composition_style);
+  cpp_config.target_duration_seconds = config->target_duration_seconds;
+
+  // Modulation settings
+  cpp_config.modulation_timing = static_cast<midisketch::ModulationTiming>(config->modulation_timing);
+  cpp_config.modulation_semitones = config->modulation_semitones;
+
+  // Call settings
+  cpp_config.se_enabled = config->se_enabled != 0;
+  cpp_config.call_setting = static_cast<midisketch::CallSetting>(config->call_setting);
+  cpp_config.call_notes_enabled = config->call_notes_enabled != 0;
+  cpp_config.intro_chant = static_cast<midisketch::IntroChant>(config->intro_chant);
+  cpp_config.mix_pattern = static_cast<midisketch::MixPattern>(config->mix_pattern);
+  cpp_config.call_density = static_cast<midisketch::CallDensity>(config->call_density);
+
+  // Vocal style settings
+  cpp_config.vocal_style = static_cast<midisketch::VocalStylePreset>(config->vocal_style);
+  cpp_config.melody_template = static_cast<midisketch::MelodyTemplateId>(config->melody_template);
+
+  // Arrangement growth
+  cpp_config.arrangement_growth = static_cast<midisketch::ArrangementGrowth>(config->arrangement_growth);
+
+  // Motif settings
+  cpp_config.motif_chord.fixed_progression = config->motif_fixed_progression != 0;
+  cpp_config.motif_chord.max_chord_count = config->motif_max_chord_count;
+  cpp_config.motif_repeat_scope = static_cast<midisketch::MotifRepeatScope>(config->motif_repeat_scope);
+
+  // Melodic complexity, hook intensity, and groove
+  cpp_config.melodic_complexity = static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);
+  cpp_config.hook_intensity = static_cast<midisketch::HookIntensity>(config->hook_intensity);
+  cpp_config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(config->vocal_groove);
+
+  return cpp_config;
+}
+}  // namespace
+
+MidiSketchError midisketch_generate_vocal(MidiSketchHandle handle,
+                                                const MidiSketchSongConfig* config) {
+  if (!handle || !config) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  // Clear previous config error
+  g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
+
+  // Validate config first
+  MidiSketchConfigError validation = midisketch_validate_config(config);
+  if (validation != MIDISKETCH_CONFIG_OK) {
+    g_last_config_errors[handle] = validation;
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  midisketch::SongConfig cpp_config = convertToSongConfig(config);
+  sketch->generateVocal(cpp_config);
+  return MIDISKETCH_OK;
+}
+
 MidiSketchError midisketch_regenerate_vocal(MidiSketchHandle handle,
-                                             const MidiSketchVocalParams* params) {
-  if (!handle || !params) {
+                                            const MidiSketchVocalConfig* config) {
+  if (!handle) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
   auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
 
-  midisketch::MelodyRegenerateParams regen_params;
-  regen_params.seed = params->seed;
-  regen_params.vocal_low = params->vocal_low;
-  regen_params.vocal_high = params->vocal_high;
-  regen_params.vocal_attitude = static_cast<midisketch::VocalAttitude>(params->vocal_attitude);
-  regen_params.vocal_style = static_cast<midisketch::VocalStylePreset>(params->vocal_style);
-  regen_params.composition_style = static_cast<midisketch::CompositionStyle>(params->composition_style);
-  regen_params.melody_template = static_cast<midisketch::MelodyTemplateId>(params->melody_template);
-  regen_params.melodic_complexity = static_cast<midisketch::MelodicComplexity>(params->melodic_complexity);
-  regen_params.hook_intensity = static_cast<midisketch::HookIntensity>(params->hook_intensity);
-  regen_params.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(params->vocal_groove);
+  if (config) {
+    // Apply vocal config parameters
+    midisketch::VocalConfig vocal_config;
+    vocal_config.seed = config->seed;
+    vocal_config.vocal_low = config->vocal_low;
+    vocal_config.vocal_high = config->vocal_high;
+    vocal_config.vocal_attitude = static_cast<midisketch::VocalAttitude>(config->vocal_attitude);
+    vocal_config.vocal_style = static_cast<midisketch::VocalStylePreset>(config->vocal_style);
+    vocal_config.melody_template = static_cast<midisketch::MelodyTemplateId>(config->melody_template);
+    vocal_config.melodic_complexity = static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);
+    vocal_config.hook_intensity = static_cast<midisketch::HookIntensity>(config->hook_intensity);
+    vocal_config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(config->vocal_groove);
+    vocal_config.composition_style = static_cast<midisketch::CompositionStyle>(config->composition_style);
+    sketch->regenerateVocal(vocal_config);
+  } else {
+    // NULL config = regenerate with new seed only
+    sketch->regenerateVocal(0);
+  }
+  return MIDISKETCH_OK;
+}
 
-  sketch->regenerateMelody(regen_params);
+MidiSketchError midisketch_generate_accompaniment(MidiSketchHandle handle) {
+  if (!handle) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  sketch->generateAccompanimentForVocal();
+  return MIDISKETCH_OK;
+}
+
+MidiSketchError midisketch_generate_with_vocal(MidiSketchHandle handle,
+                                                const MidiSketchSongConfig* config) {
+  if (!handle || !config) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  // Clear previous config error
+  g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
+
+  // Validate config first
+  MidiSketchConfigError validation = midisketch_validate_config(config);
+  if (validation != MIDISKETCH_CONFIG_OK) {
+    g_last_config_errors[handle] = validation;
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  midisketch::SongConfig cpp_config = convertToSongConfig(config);
+  sketch->generateWithVocal(cpp_config);
   return MIDISKETCH_OK;
 }
 

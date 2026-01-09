@@ -645,23 +645,23 @@ TEST(DeviationAllowedTest, SectionsHaveDeviationFlag) {
   }
 }
 
-TEST(RegenerateVocalTest, UpdatesVocalAttitude) {
-  SongConfig config = createDefaultSongConfig(7);  // Rock Shout (ID 7)
-  config.seed = 12345;
-  config.vocal_attitude = VocalAttitude::Clean;
+TEST(RegenerateVocalTest, DifferentAttitudesProduceDifferentOutput) {
+  // Test that different VocalAttitude settings produce different vocal output
+  SongConfig clean_config = createDefaultSongConfig(7);  // Rock Shout (ID 7)
+  clean_config.seed = 12345;
+  clean_config.vocal_attitude = VocalAttitude::Clean;
 
-  MidiSketch sketch;
-  sketch.generateFromConfig(config);
-
-  // Get initial melody
-  auto clean_notes = sketch.getSong().vocal().notes();
-
-  // Regenerate with Raw attitude (same seed)
-  SongConfig raw_config = config;
+  SongConfig raw_config = createDefaultSongConfig(7);  // Rock Shout (ID 7)
+  raw_config.seed = 12345;
   raw_config.vocal_attitude = VocalAttitude::Raw;
-  sketch.regenerateVocalFromConfig(raw_config, 12345);
 
-  auto raw_notes = sketch.getSong().vocal().notes();
+  MidiSketch clean_sketch;
+  clean_sketch.generateFromConfig(clean_config);
+  auto clean_notes = clean_sketch.getSong().vocal().notes();
+
+  MidiSketch raw_sketch;
+  raw_sketch.generateFromConfig(raw_config);
+  auto raw_notes = raw_sketch.getSong().vocal().notes();
 
   // Notes should be different due to Raw processing
   bool has_difference = (clean_notes.size() != raw_notes.size());

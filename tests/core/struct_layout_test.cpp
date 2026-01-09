@@ -93,33 +93,4 @@ TEST(StructLayoutTest, SongConfigLayout) {
   #undef CHECK_OFFSET
 }
 
-TEST(StructLayoutTest, VocalParamsSize) {
-  // VocalParams: seed(4) + vocal_low(1) + vocal_high(1) + vocal_attitude(1)
-  //              + vocal_style(1) + melody_template(1) + melodic_complexity(1)
-  //              + hook_intensity(1) + vocal_groove(1) + composition_style(1)
-  //              + padding(3) = 16 bytes
-  EXPECT_EQ(sizeof(MidiSketchVocalParams), 16);
-}
-
-TEST(StructLayoutTest, VocalParamsLayout) {
-  MidiSketchVocalParams p{};
-  const auto base = reinterpret_cast<uintptr_t>(&p);
-
-  #define CHECK_OFFSET(field, expected) \
-    EXPECT_EQ(reinterpret_cast<uintptr_t>(&p.field) - base, expected) \
-        << #field " offset mismatch"
-
-  // Basic settings (offset 0-12)
-  CHECK_OFFSET(seed, 0);
-  CHECK_OFFSET(vocal_low, 4);
-  CHECK_OFFSET(vocal_high, 5);
-  CHECK_OFFSET(vocal_attitude, 6);
-  CHECK_OFFSET(vocal_style, 7);
-  CHECK_OFFSET(melody_template, 8);
-  CHECK_OFFSET(melodic_complexity, 9);
-  CHECK_OFFSET(hook_intensity, 10);
-  CHECK_OFFSET(vocal_groove, 11);
-  CHECK_OFFSET(composition_style, 12);
-
-  #undef CHECK_OFFSET
-}
+// MidiSketchVocalParams tests removed - struct deprecated

@@ -6,6 +6,7 @@
 #include "midisketch.h"
 #include <algorithm>
 #include <sstream>
+#include "core/config_converter.h"
 #include "core/json_helpers.h"
 
 namespace midisketch {
@@ -67,26 +68,39 @@ void MidiSketch::generateFromConfig(const SongConfig& config) {
                      generateMetadata(generator_.getParams()), midi_format_);
 }
 
-void MidiSketch::regenerateMelody(uint32_t new_seed) {
-  generator_.regenerateMelody(new_seed);
+void MidiSketch::generateVocal(const SongConfig& config) {
+  auto result = ConfigConverter::convert(config);
+  generator_.generateVocal(result.params);
+  midi_writer_.build(generator_.getSong(), config.key,
+                     generateMetadata(generator_.getParams()), midi_format_);
+}
+
+void MidiSketch::regenerateVocal(uint32_t new_seed) {
+  generator_.regenerateVocal(new_seed);
   const auto& params = generator_.getParams();
   midi_writer_.build(generator_.getSong(), params.key,
                      generateMetadata(params), midi_format_);
 }
 
-void MidiSketch::regenerateMelody(const MelodyRegenerateParams& params) {
-  generator_.regenerateMelody(params);
-  const auto& gen_params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), gen_params.key,
-                     generateMetadata(gen_params), midi_format_);
-}
-
-void MidiSketch::regenerateVocalFromConfig(const SongConfig& config,
-                                            uint32_t new_seed) {
-  generator_.regenerateVocalFromConfig(config, new_seed);
+void MidiSketch::regenerateVocal(const VocalConfig& config) {
+  generator_.regenerateVocal(config);
   const auto& params = generator_.getParams();
   midi_writer_.build(generator_.getSong(), params.key,
                      generateMetadata(params), midi_format_);
+}
+
+void MidiSketch::generateAccompanimentForVocal() {
+  generator_.generateAccompanimentForVocal();
+  const auto& params = generator_.getParams();
+  midi_writer_.build(generator_.getSong(), params.key,
+                     generateMetadata(params), midi_format_);
+}
+
+void MidiSketch::generateWithVocal(const SongConfig& config) {
+  auto result = ConfigConverter::convert(config);
+  generator_.generateWithVocal(result.params);
+  midi_writer_.build(generator_.getSong(), config.key,
+                     generateMetadata(generator_.getParams()), midi_format_);
 }
 
 MelodyData MidiSketch::getMelody() const {

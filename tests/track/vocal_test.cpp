@@ -1623,20 +1623,18 @@ TEST_F(VocalTest, DurationTicksNeverUnderflows) {
 }
 
 TEST_F(VocalTest, RegenVocalDurationTicksNeverUnderflows) {
-  // Test regenerateMelody which was the original bug scenario
+  // Test regenerateVocal which was the original bug scenario
   params_.seed = 2758722970;
   params_.structure = StructurePattern::RepeatChorus;
   params_.skip_vocal = true;
+  params_.vocal_low = 57;
+  params_.vocal_high = 79;
 
   Generator gen;
   gen.generate(params_);
 
-  // Regenerate vocal with the problematic seed using MelodyRegenerateParams
-  MelodyRegenerateParams regen;
-  regen.seed = 1030586850;
-  regen.vocal_low = 57;
-  regen.vocal_high = 79;
-  gen.regenerateMelody(regen);
+  // Regenerate vocal with the problematic seed using regenerateVocal
+  gen.regenerateVocal(1030586850);
 
   const auto& notes = gen.getSong().vocal().notes();
 

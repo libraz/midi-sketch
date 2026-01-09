@@ -100,14 +100,16 @@ sketch.generate({
 const midiData = sketch.getMidi();    // Uint8Array
 const events = sketch.getEvents();    // 型付きオブジェクト
 
-// メロディのみ再生成（BGMは維持）
-sketch.regenerateMelodyEx({
-  seed: 0,                               // 0 = 新しいランダム
+// ボーカル優先ワークフロー: ボーカルのみ生成、その後伴奏を追加
+sketch.generateVocal(config);         // ボーカルのみ生成
+sketch.regenerateVocal(12345);        // 新しいシードで再生成
+sketch.regenerateVocal({              // または設定変更して再生成
+  seed: 54321,
   vocalLow: 55,
-  vocalHigh: 74,
-  vocalAttitude: VocalAttitude.Expressive,
-  compositionStyle: CompositionStyle.MelodyLead
+  vocalHigh: 75,
+  vocalAttitude: 1                    // Expressive
 });
+sketch.generateAccompaniment();       // 伴奏トラックを追加
 
 sketch.destroy();
 ```

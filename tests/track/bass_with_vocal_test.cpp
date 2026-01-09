@@ -39,7 +39,7 @@ class BassWithVocalTest : public ::testing::Test {
 
 TEST_F(BassWithVocalTest, GeneratesBassTrack) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   // Analyze vocal
   VocalAnalysis va = analyzeVocal(gen.getSong().vocal());
@@ -56,7 +56,7 @@ TEST_F(BassWithVocalTest, GeneratesBassTrack) {
 
 TEST_F(BassWithVocalTest, BassNotesInValidRange) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   VocalAnalysis va = analyzeVocal(gen.getSong().vocal());
 
@@ -73,7 +73,7 @@ TEST_F(BassWithVocalTest, BassNotesInValidRange) {
 
 TEST_F(BassWithVocalTest, DeterministicGeneration) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   VocalAnalysis va = analyzeVocal(gen.getSong().vocal());
 
@@ -100,7 +100,7 @@ TEST_F(BassWithVocalTest, DeterministicGeneration) {
 
 TEST_F(BassWithVocalTest, MaintainsOctaveSeparation) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   VocalAnalysis va = analyzeVocal(gen.getSong().vocal());
 
@@ -157,7 +157,7 @@ TEST_F(BassWithVocalTest, AdaptsToDenseVocal) {
   params_.structure = StructurePattern::ShortForm;
 
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   VocalAnalysis va = analyzeVocal(gen.getSong().vocal());
 
@@ -176,7 +176,7 @@ TEST_F(BassWithVocalTest, AdaptsToSparseVocal) {
   params_.seed = 22222;
 
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   VocalAnalysis va = analyzeVocal(gen.getSong().vocal());
 
@@ -204,7 +204,7 @@ TEST_F(BassWithVocalTest, WorksWithDifferentMoods) {
     params_.seed = static_cast<uint32_t>(mood) + 10000;
 
     Generator gen;
-    gen.generateVocalOnly(params_);
+    gen.generateVocal(params_);
 
     VocalAnalysis va = analyzeVocal(gen.getSong().vocal());
 
@@ -233,7 +233,7 @@ TEST_F(BassWithVocalTest, WorksWithDifferentStructures) {
     params_.seed = static_cast<uint32_t>(structure) + 20000;
 
     Generator gen;
-    gen.generateVocalOnly(params_);
+    gen.generateVocal(params_);
 
     VocalAnalysis va = analyzeVocal(gen.getSong().vocal());
 
@@ -251,7 +251,7 @@ TEST_F(BassWithVocalTest, WorksWithDifferentStructures) {
 
 TEST_F(BassWithVocalTest, HandlesEmptyVocalAnalysis) {
   Generator gen;
-  gen.generateVocalOnly(params_);
+  gen.generateVocal(params_);
 
   // Create empty vocal analysis
   VocalAnalysis empty_va{};

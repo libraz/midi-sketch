@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type SongConfigOptions, type VocalParamsOptions, WasmTestContext } from './test-helpers';
+import { type SongConfigOptions, WasmTestContext } from './test-helpers';
 
 // Parameter ranges based on midisketch_c.h and validation rules
 const PARAM_RANGES = {
@@ -108,32 +108,6 @@ function* generateCombinations(count: number, baseSeed: number): Generator<SongC
       melodicComplexity: pick(PARAM_RANGES.melodicComplexity, rng),
       hookIntensity: pick(PARAM_RANGES.hookIntensity, rng),
       vocalGroove: pick(PARAM_RANGES.vocalGroove, rng),
-    };
-  }
-}
-
-function* generateVocalParamsCombinations(
-  count: number,
-  baseSeed: number,
-): Generator<VocalParamsOptions> {
-  const rng = createRng(baseSeed);
-
-  for (let i = 0; i < count; i++) {
-    // Generate valid vocal range (low <= high, both in 36-96)
-    const low = VOCAL_RANGE.min + Math.floor(rng() * 36); // 36-71
-    const high = Math.max(low, VOCAL_RANGE.min + 24 + Math.floor(rng() * 36)); // At least low, up to 95
-
-    yield {
-      seed: Math.floor(rng() * 1000000),
-      vocalLow: low,
-      vocalHigh: Math.min(high, VOCAL_RANGE.max),
-      vocalAttitude: pick(PARAM_RANGES.vocalAttitude, rng),
-      vocalStyle: pick(PARAM_RANGES.vocalStyle, rng),
-      melodyTemplate: pick(PARAM_RANGES.melodyTemplate, rng),
-      melodicComplexity: pick(PARAM_RANGES.melodicComplexity, rng),
-      hookIntensity: pick(PARAM_RANGES.hookIntensity, rng),
-      vocalGroove: pick(PARAM_RANGES.vocalGroove, rng),
-      compositionStyle: pick(PARAM_RANGES.compositionStyle, rng),
     };
   }
 }
@@ -298,317 +272,9 @@ describe('MidiSketch WASM - Exhaustive Parameter Tests', () => {
     });
   });
 
-  describe('Random combinations - regenerate_vocal', () => {
-    const COMBINATION_COUNT = 50;
-    const vocalCombinations = [...generateVocalParamsCombinations(COMBINATION_COUNT, 123)];
+  // regenerate_vocal tests removed - API deprecated
 
-    it.each(
-      vocalCombinations.map((c, i) => [i, c] as const),
-    )('vocal regeneration #%i should complete without crash', (_index, params) => {
-      // First generate BGM without vocal
-      ctx.generateFromConfig({ seed: 99999, skipVocal: true });
-
-      // Then regenerate vocal
-      const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
-        'number',
-        'number',
-      ]) as (h: number, p: number) => number;
-
-      const paramsPtr = ctx.allocVocalParams(params);
-      const result = regenerateVocal(ctx.handle, paramsPtr);
-      ctx.module._free(paramsPtr);
-
-      expect(result).toBe(0);
-
-      // Verify we can get events JSON
-      const { cleanup } = ctx.getEventsJson();
-      cleanup();
-    });
-  });
-
-  describe('Regression - reported crash cases', () => {
-    // Crash reported on 2026-01-07 - exact reproduction
-    it('should handle regenerateVocal after BGM with stylePresetId=3', () => {
-      // Exact BGM config from crash report
-      const bgmConfig: SongConfigOptions = {
-        stylePresetId: 3,
-        key: 0,
-        bpm: 132,
-        seed: 2758722970,
-        chordProgressionId: 0,
-        formId: 5,
-        vocalAttitude: 0,
-        drumsEnabled: true,
-        arpeggioEnabled: false,
-        arpeggioPattern: 0,
-        arpeggioSpeed: 1,
-        arpeggioOctaveRange: 2,
-        arpeggioGate: 80,
-        vocalLow: 57,
-        vocalHigh: 79,
-        skipVocal: true,
-        humanize: false,
-        humanizeTiming: 50,
-        humanizeVelocity: 50,
-        chordExtSus: false,
-        chordExt7th: false,
-        chordExt9th: false,
-        chordExtSusProb: 20,
-        chordExt7thProb: 30,
-        chordExt9thProb: 25,
-        compositionStyle: 0,
-        targetDurationSeconds: 150,
-        modulationTiming: 0,
-        modulationSemitones: 2,
-        callEnabled: false,
-        callNotesEnabled: true,
-        introChant: 0,
-        mixPattern: 0,
-        callDensity: 2,
-        melodyTemplate: 0,
-        arrangementGrowth: 0,
-        arpeggioSyncChord: true,
-        motifRepeatScope: 0,
-        motifFixedProgression: true,
-        motifMaxChordCount: 4,
-      };
-
-      // Generate BGM
-      const genResult = ctx.generateFromConfig(bgmConfig);
-      expect(genResult).toBe(0);
-
-      // Exact vocal params from crash report
-      const vocalParams: VocalParamsOptions = {
-        seed: 1030586850,
-        vocalLow: 57,
-        vocalHigh: 79,
-        vocalAttitude: 0,
-        vocalStyle: 0,
-        melodyTemplate: 0,
-        melodicComplexity: 1,
-        hookIntensity: 2,
-        vocalGroove: 0,
-        compositionStyle: 0,
-      };
-
-      const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
-        'number',
-        'number',
-      ]) as (h: number, p: number) => number;
-
-      const paramsPtr = ctx.allocVocalParams(vocalParams);
-      const result = regenerateVocal(ctx.handle, paramsPtr);
-      ctx.module._free(paramsPtr);
-
-      expect(result).toBe(0);
-
-      // Verify we can get events JSON without crash
-      const { cleanup } = ctx.getEventsJson();
-      cleanup();
-    });
-
-    it('should handle regenerateVocal with seed=1030586850', () => {
-      // First generate BGM without vocal
-      const genResult = ctx.generateFromConfig({ seed: 12345, skipVocal: true });
-      expect(genResult).toBe(0);
-
-      // Exact params from crash report
-      const crashParams: VocalParamsOptions = {
-        seed: 1030586850,
-        vocalLow: 57,
-        vocalHigh: 79,
-        vocalAttitude: 0,
-        vocalStyle: 0,
-        melodyTemplate: 0,
-        melodicComplexity: 1,
-        hookIntensity: 2,
-        vocalGroove: 0,
-        compositionStyle: 0,
-      };
-
-      const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
-        'number',
-        'number',
-      ]) as (h: number, p: number) => number;
-
-      const paramsPtr = ctx.allocVocalParams(crashParams);
-      const result = regenerateVocal(ctx.handle, paramsPtr);
-      ctx.module._free(paramsPtr);
-
-      expect(result).toBe(0);
-
-      // Verify we can get events JSON without crash
-      const { cleanup } = ctx.getEventsJson();
-      cleanup();
-    });
-
-    it('should parse eventsJson correctly after regenerateVocal', () => {
-      // Generate BGM with exact crash config
-      const bgmConfig: SongConfigOptions = {
-        stylePresetId: 3,
-        key: 0,
-        bpm: 132,
-        seed: 2758722970,
-        chordProgressionId: 0,
-        formId: 5,
-        vocalAttitude: 0,
-        drumsEnabled: true,
-        skipVocal: true,
-        compositionStyle: 0,
-        targetDurationSeconds: 150,
-      };
-
-      const genResult = ctx.generateFromConfig(bgmConfig);
-      expect(genResult).toBe(0);
-
-      // Regenerate vocal
-      const vocalParams: VocalParamsOptions = {
-        seed: 1030586850,
-        vocalLow: 57,
-        vocalHigh: 79,
-        vocalAttitude: 0,
-        vocalStyle: 0,
-        melodyTemplate: 0,
-        melodicComplexity: 1,
-        hookIntensity: 2,
-        vocalGroove: 0,
-        compositionStyle: 0,
-      };
-
-      const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
-        'number',
-        'number',
-      ]) as (h: number, p: number) => number;
-
-      const paramsPtr = ctx.allocVocalParams(vocalParams);
-      const result = regenerateVocal(ctx.handle, paramsPtr);
-      ctx.module._free(paramsPtr);
-      expect(result).toBe(0);
-
-      // Get and parse events JSON - this is what the Vue component does
-      const { data: events, cleanup } = ctx.getEventsJson();
-      expect(events).toBeDefined();
-      expect(Array.isArray((events as { tracks: unknown[] }).tracks)).toBe(true);
-
-      // Check vocal track exists and has notes
-      const tracks = (events as { tracks: { name: string; notes: unknown[] }[] }).tracks;
-      const vocalTrack = tracks.find((t) => t.name === 'Vocal');
-      expect(vocalTrack).toBeDefined();
-      expect(Array.isArray(vocalTrack?.notes)).toBe(true);
-      expect(vocalTrack?.notes.length).toBeGreaterThan(0);
-
-      cleanup();
-    });
-
-    it('should build MIDI correctly after regenerateVocal', () => {
-      // Generate BGM with exact crash config
-      const bgmConfig: SongConfigOptions = {
-        stylePresetId: 3,
-        key: 0,
-        bpm: 132,
-        seed: 2758722970,
-        chordProgressionId: 0,
-        formId: 5,
-        vocalAttitude: 0,
-        drumsEnabled: true,
-        skipVocal: true,
-        compositionStyle: 0,
-        targetDurationSeconds: 150,
-      };
-
-      const genResult = ctx.generateFromConfig(bgmConfig);
-      expect(genResult).toBe(0);
-
-      // Regenerate vocal
-      const vocalParams: VocalParamsOptions = {
-        seed: 1030586850,
-        vocalLow: 57,
-        vocalHigh: 79,
-        vocalAttitude: 0,
-        vocalStyle: 0,
-        melodyTemplate: 0,
-        melodicComplexity: 1,
-        hookIntensity: 2,
-        vocalGroove: 0,
-        compositionStyle: 0,
-      };
-
-      const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
-        'number',
-        'number',
-      ]) as (h: number, p: number) => number;
-
-      const paramsPtr = ctx.allocVocalParams(vocalParams);
-      const result = regenerateVocal(ctx.handle, paramsPtr);
-      ctx.module._free(paramsPtr);
-      expect(result).toBe(0);
-
-      // Get MIDI data - this is what the Vue component does
-      const getMidi = ctx.module.cwrap('midisketch_get_midi', 'number', ['number']) as (
-        h: number,
-      ) => number;
-      const freeMidi = ctx.module.cwrap('midisketch_free_midi', null, ['number']) as (
-        ptr: number,
-      ) => void;
-
-      const midiDataPtr = getMidi(ctx.handle);
-      expect(midiDataPtr).toBeGreaterThan(0);
-
-      // MidiData struct: { data: pointer, size: uint32 }
-      const dataPtr = ctx.module.HEAPU32[midiDataPtr >> 2];
-      const size = ctx.module.HEAPU32[(midiDataPtr >> 2) + 1];
-      expect(size).toBeGreaterThan(0);
-      expect(dataPtr).toBeGreaterThan(0);
-
-      // Verify MIDI data is valid (starts with MThd)
-      const midiBytes = new Uint8Array(ctx.module.HEAPU8.buffer, dataPtr, 4);
-      expect(String.fromCharCode(...midiBytes)).toBe('MThd');
-
-      freeMidi(midiDataPtr);
-    });
-
-    // Test regenerateVocal after various initial generation states
-    it('should handle regenerateVocal after different initial configs', () => {
-      const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
-        'number',
-        'number',
-      ]) as (h: number, p: number) => number;
-
-      const vocalParams: VocalParamsOptions = {
-        seed: 1030586850,
-        vocalLow: 57,
-        vocalHigh: 79,
-        vocalAttitude: 0,
-        vocalStyle: 0,
-        melodyTemplate: 0,
-        melodicComplexity: 1,
-        hookIntensity: 2,
-        vocalGroove: 0,
-        compositionStyle: 0,
-      };
-
-      // Test with different initial generation configs
-      const initialConfigs = [
-        { seed: 1, skipVocal: true },
-        { seed: 1, skipVocal: true, stylePresetId: 1 },
-        { seed: 1, skipVocal: true, stylePresetId: 2 },
-        { seed: 1, skipVocal: true, bpm: 180 },
-        { seed: 1, skipVocal: true, formId: 5 },
-        { seed: 1, skipVocal: true, chordProgressionId: 10 },
-      ];
-
-      for (const config of initialConfigs) {
-        const genResult = ctx.generateFromConfig(config);
-        expect(genResult).toBe(0);
-
-        const paramsPtr = ctx.allocVocalParams(vocalParams);
-        const result = regenerateVocal(ctx.handle, paramsPtr);
-        ctx.module._free(paramsPtr);
-
-        expect(result).toBe(0);
-      }
-    });
-  });
+  // Regression tests for regenerateVocal removed - API deprecated
 
   describe('Edge cases - vocal range (valid)', () => {
     const validEdgeCases = [
@@ -733,24 +399,7 @@ describe('MidiSketch WASM - Exhaustive Parameter Tests', () => {
       }
     });
 
-    it('should handle 20 generate + regenerate cycles', () => {
-      const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
-        'number',
-        'number',
-      ]) as (h: number, p: number) => number;
-
-      for (let i = 0; i < 20; i++) {
-        // Generate BGM
-        const genResult = ctx.generateFromConfig({ seed: 90000 + i, skipVocal: true });
-        expect(genResult).toBe(0);
-
-        // Regenerate vocal
-        const paramsPtr = ctx.allocVocalParams({ seed: 90000 + i + 1000 });
-        const regenResult = regenerateVocal(ctx.handle, paramsPtr);
-        ctx.module._free(paramsPtr);
-        expect(regenResult).toBe(0);
-      }
-    });
+    // regenerate_vocal cycle test removed - API deprecated
   });
 
   // ============================================================================
@@ -802,46 +451,7 @@ describe('MidiSketch WASM - Exhaustive Parameter Tests', () => {
       expect(note.duration_seconds).toBeGreaterThan(0);
     }
 
-    it('should not produce negative duration_ticks after regenerateVocal', () => {
-      // This was the exact scenario that triggered the bug
-      const bgmConfig: SongConfigOptions = {
-        stylePresetId: 3,
-        seed: 2758722970,
-        formId: 5,
-        skipVocal: true,
-        targetDurationSeconds: 150,
-      };
-
-      const genResult = ctx.generateFromConfig(bgmConfig);
-      expect(genResult).toBe(0);
-
-      // Regenerate vocal with the problematic seed
-      const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
-        'number',
-        'number',
-      ]) as (h: number, p: number) => number;
-
-      const paramsPtr = ctx.allocVocalParams({
-        seed: 1030586850,
-        vocalLow: 57,
-        vocalHigh: 79,
-      });
-      const result = regenerateVocal(ctx.handle, paramsPtr);
-      ctx.module._free(paramsPtr);
-      expect(result).toBe(0);
-
-      // Validate all notes have valid duration_ticks
-      const { data, cleanup } = ctx.getEventsJson();
-      const events = data as EventData;
-
-      for (const track of events.tracks) {
-        for (let i = 0; i < track.notes.length; i++) {
-          validateNoteData(track.notes[i], track.name, i);
-        }
-      }
-
-      cleanup();
-    });
+    // regenerateVocal duration_ticks test removed - API deprecated
 
     it('should not produce negative duration_ticks with humanization enabled', () => {
       // Humanization can cause timing shifts that lead to overlaps
@@ -865,34 +475,7 @@ describe('MidiSketch WASM - Exhaustive Parameter Tests', () => {
       cleanup();
     });
 
-    it('should handle multiple regenerateVocal calls without underflow', () => {
-      ctx.generateFromConfig({ seed: 99999, skipVocal: true });
-
-      const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
-        'number',
-        'number',
-      ]) as (h: number, p: number) => number;
-
-      // Multiple regenerations with different seeds
-      for (const seed of [111, 222, 333, 444, 555]) {
-        const paramsPtr = ctx.allocVocalParams({ seed });
-        const result = regenerateVocal(ctx.handle, paramsPtr);
-        ctx.module._free(paramsPtr);
-        expect(result).toBe(0);
-
-        const { data, cleanup } = ctx.getEventsJson();
-        const events = data as EventData;
-
-        const vocalTrack = events.tracks.find((t) => t.name === 'Vocal');
-        expect(vocalTrack).toBeDefined();
-
-        for (let i = 0; i < vocalTrack?.notes.length; i++) {
-          validateNoteData(vocalTrack?.notes[i], 'Vocal', i);
-        }
-
-        cleanup();
-      }
-    });
+    // multiple regenerateVocal calls test removed - API deprecated
   });
 
   // ============================================================================
@@ -1044,38 +627,7 @@ describe('MidiSketch WASM - Exhaustive Parameter Tests', () => {
       }
     });
 
-    it('should produce valid data after BGM + vocal regeneration workflow', () => {
-      // This is the typical user workflow that exposed the bug
-      const result = ctx.generateFromConfig({
-        seed: 140000,
-        skipVocal: true,
-        targetDurationSeconds: 120,
-      });
-      expect(result).toBe(0);
-
-      const regenerateVocal = ctx.module.cwrap('midisketch_regenerate_vocal', 'number', [
-        'number',
-        'number',
-      ]) as (h: number, p: number) => number;
-
-      // Regenerate with different parameters
-      const vocalConfigs = [
-        { seed: 1, vocalLow: 55, vocalHigh: 75 },
-        { seed: 2, vocalLow: 60, vocalHigh: 72 },
-        { seed: 3, vocalLow: 48, vocalHigh: 84 },
-      ];
-
-      for (const config of vocalConfigs) {
-        const paramsPtr = ctx.allocVocalParams(config);
-        const regenResult = regenerateVocal(ctx.handle, paramsPtr);
-        ctx.module._free(paramsPtr);
-        expect(regenResult).toBe(0);
-
-        const { data, cleanup } = ctx.getEventsJson();
-        validateEventData(data as EventData, `vocal config seed=${config.seed}`);
-        cleanup();
-      }
-    });
+    // BGM + vocal regeneration workflow test removed - API deprecated
 
     it('should produce valid data across 20 random configurations', () => {
       const rng = createTestRng(42);

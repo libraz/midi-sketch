@@ -174,90 +174,6 @@ void Generator::generate(const GeneratorParams& params) {
   }
 }
 
-void Generator::regenerateMelody(uint32_t new_seed) {
-  uint32_t seed = resolveSeed(new_seed);
-  rng_.seed(seed);
-  song_.setMelodySeed(seed);
-  song_.clearTrack(TrackRole::Vocal);
-  song_.clearTrack(TrackRole::Aux);
-  generateVocal();
-  generateAux();
-}
-
-void Generator::regenerateMelody(const MelodyRegenerateParams& regen_params) {
-  // Update generation params
-  params_.vocal_low = regen_params.vocal_low;
-  params_.vocal_high = regen_params.vocal_high;
-  params_.vocal_attitude = regen_params.vocal_attitude;
-  params_.composition_style = regen_params.composition_style;
-
-  // === VOCAL STYLE PRESET ===
-  // Apply vocal style if not Auto (Auto = keep current style)
-  if (regen_params.vocal_style != VocalStylePreset::Auto) {
-    params_.vocal_style = regen_params.vocal_style;
-  }
-
-  // === MELODY TEMPLATE ===
-  // Apply melody template if not Auto
-  if (regen_params.melody_template != MelodyTemplateId::Auto) {
-    params_.melody_template = regen_params.melody_template;
-  }
-
-  // === MELODIC COMPLEXITY, HOOK INTENSITY, GROOVE ===
-  params_.melodic_complexity = regen_params.melodic_complexity;
-  params_.hook_intensity = regen_params.hook_intensity;
-  params_.vocal_groove = regen_params.vocal_groove;
-
-  // Apply VocalStylePreset settings to melody_params
-  SongConfig dummy_config;
-  ConfigConverter::applyVocalStylePreset(params_, dummy_config);
-
-  // Apply MelodicComplexity-specific parameter adjustments
-  ConfigConverter::applyMelodicComplexity(params_);
-
-  // Resolve and apply seed
-  uint32_t seed = resolveSeed(regen_params.seed);
-  rng_.seed(seed);
-  song_.setMelodySeed(seed);
-
-  // Regenerate vocal and aux tracks
-  song_.clearTrack(TrackRole::Vocal);
-  song_.clearTrack(TrackRole::Aux);
-  generateVocal();
-  generateAux();
-}
-
-void Generator::regenerateVocalFromConfig(const SongConfig& config,
-                                           uint32_t new_seed) {
-  // Get the style preset for melody params
-  const StylePreset& preset = getStylePreset(config.style_preset_id);
-
-  // Update VocalAttitude, VocalStylePreset and StyleMelodyParams
-  params_.vocal_attitude = config.vocal_attitude;
-  params_.vocal_style = config.vocal_style;
-  params_.melody_params = preset.melody;
-  params_.melody_template = config.melody_template;
-
-  // Apply VocalStylePreset-specific parameter adjustments
-  ConfigConverter::applyVocalStylePreset(params_, config);
-
-  // Transfer melodic complexity and hook intensity
-  params_.melodic_complexity = config.melodic_complexity;
-  params_.hook_intensity = config.hook_intensity;
-
-  // Apply MelodicComplexity-specific parameter adjustments
-  ConfigConverter::applyMelodicComplexity(params_);
-
-  // Regenerate with updated parameters
-  uint32_t seed = (new_seed == 0) ? song_.melodySeed() : resolveSeed(new_seed);
-  rng_.seed(seed);
-  song_.setMelodySeed(seed);
-  song_.clearTrack(TrackRole::Vocal);
-  song_.clearTrack(TrackRole::Aux);
-  generateVocal();
-  generateAux();
-}
-
 // ============================================================================
 // Vocal-First Generation API
 // ============================================================================
@@ -268,7 +184,7 @@ void Generator::regenerateVocalFromConfig(const SongConfig& config,
  * First step of trial-and-error workflow: vocal→evaluate→regenerate→add accompaniment.
  * Skips collision avoidance so vocal uses full creative range.
  */
-void Generator::generateVocalOnly(const GeneratorParams& params) {
+void Generator::generateVocal(const GeneratorParams& params) {
   params_ = params;
 
   // Validate vocal range
@@ -331,7 +247,7 @@ void Generator::generateVocalOnly(const GeneratorParams& params) {
                      true);              // skip_collision_avoidance = true
 }
 
-void Generator::regenerateVocalOnly(uint32_t new_seed) {
+void Generator::regenerateVocal(uint32_t new_seed) {
   uint32_t seed = resolveSeed(new_seed);
   rng_.seed(seed);
   song_.setMelodySeed(seed);
@@ -345,6 +261,47 @@ void Generator::regenerateVocalOnly(uint32_t new_seed) {
   generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track,
                      harmony_context_,  // Pass for chord-aware melody generation
                      true);              // skip_collision_avoidance = true
+}
+
+void Generator::regenerateVocal(const VocalConfig& config) {
+  // Apply vocal configuration to generator params
+  params_.vocal_low = config.vocal_low;
+  params_.vocal_high = config.vocal_high;
+  params_.vocal_attitude = config.vocal_attitude;
+  params_.composition_style = config.composition_style;
+
+  // Apply vocal style if not Auto
+  if (config.vocal_style != VocalStylePreset::Auto) {
+    params_.vocal_style = config.vocal_style;
+  }
+
+  // Apply melody template if not Auto
+  if (config.melody_template != MelodyTemplateId::Auto) {
+    params_.melody_template = config.melody_template;
+  }
+
+  // Apply melodic complexity, hook intensity, and groove
+  params_.melodic_complexity = config.melodic_complexity;
+  params_.hook_intensity = config.hook_intensity;
+  params_.vocal_groove = config.vocal_groove;
+
+  // Apply VocalStylePreset and MelodicComplexity settings
+  SongConfig dummy_config;
+  ConfigConverter::applyVocalStylePreset(params_, dummy_config);
+  ConfigConverter::applyMelodicComplexity(params_);
+
+  // Resolve and apply seed
+  uint32_t seed = resolveSeed(config.seed);
+  rng_.seed(seed);
+  song_.setMelodySeed(seed);
+
+  // Clear only vocal track
+  song_.clearTrack(TrackRole::Vocal);
+
+  // Regenerate vocal
+  const MidiTrack* motif_track = nullptr;
+  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track,
+                     harmony_context_, true);
 }
 
 /**
@@ -406,7 +363,7 @@ void Generator::generateAccompanimentForVocal() {
  */
 void Generator::generateWithVocal(const GeneratorParams& params) {
   // Step 1: Generate vocal freely (no collision avoidance)
-  generateVocalOnly(params);
+  generateVocal(params);
 
   // Step 2: Generate accompaniment that adapts to vocal
   generateAccompanimentForVocal();

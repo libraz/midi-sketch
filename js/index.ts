@@ -30,7 +30,6 @@ interface EmscriptenModule {
 interface Api {
   create: () => number;
   destroy: (handle: number) => void;
-  regenerateVocal: (handle: number, paramsPtr: number) => number;
   getMidi: (handle: number) => number;
   freeMidi: (ptr: number) => void;
   getEvents: (handle: number) => number;
@@ -56,6 +55,11 @@ interface Api {
   validateConfig: (configPtr: number) => number;
   generateFromConfig: (handle: number, configPtr: number) => number;
   configErrorString: (error: number) => string;
+  // Vocal-first generation APIs
+  generateVocal: (handle: number, configPtr: number) => number;
+  regenerateVocal: (handle: number, configPtr: number) => number;
+  generateAccompaniment: (handle: number) => number;
+  generateWithVocal: (handle: number, configPtr: number) => number;
 }
 
 /**
@@ -245,17 +249,17 @@ export interface SongConfig {
 }
 
 /**
- * Vocal regeneration parameters
+ * Vocal regeneration configuration
  */
-export interface VocalParams {
+export interface VocalConfig {
   /** Random seed (0 = new random) */
-  seed: number;
-  /** Vocal range lower bound (MIDI note) */
-  vocalLow: number;
-  /** Vocal range upper bound (MIDI note) */
-  vocalHigh: number;
+  seed?: number;
+  /** Vocal range lower bound (MIDI note, 36-96) */
+  vocalLow?: number;
+  /** Vocal range upper bound (MIDI note, 36-96) */
+  vocalHigh?: number;
   /** Vocal attitude: 0=Clean, 1=Expressive, 2=Raw */
-  vocalAttitude: number;
+  vocalAttitude?: number;
   /** Vocal style preset: 0=Auto, 1=Standard, 2=Vocaloid, etc. */
   vocalStyle?: number;
   /** Melody template: 0=Auto, 1=PlateauTalk, 2=RunUpTarget, etc. */
@@ -479,10 +483,6 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
   api = {
     create: m.cwrap('midisketch_create', 'number', []) as () => number,
     destroy: m.cwrap('midisketch_destroy', null, ['number']) as (handle: number) => void,
-    regenerateVocal: m.cwrap('midisketch_regenerate_vocal', 'number', ['number', 'number']) as (
-      handle: number,
-      paramsPtr: number,
-    ) => number,
     getMidi: m.cwrap('midisketch_get_midi', 'number', ['number']) as (handle: number) => number,
     freeMidi: m.cwrap('midisketch_free_midi', null, ['number']) as (ptr: number) => void,
     getEvents: m.cwrap('midisketch_get_events', 'number', ['number']) as (handle: number) => number,
@@ -537,6 +537,22 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
     configErrorString: m.cwrap('midisketch_config_error_string', 'string', ['number']) as (
       error: number,
     ) => string,
+    // Vocal-first generation APIs
+    generateVocal: m.cwrap('midisketch_generate_vocal', 'number', ['number', 'number']) as (
+      handle: number,
+      configPtr: number,
+    ) => number,
+    regenerateVocal: m.cwrap('midisketch_regenerate_vocal', 'number', ['number', 'number']) as (
+      handle: number,
+      configPtr: number,
+    ) => number,
+    generateAccompaniment: m.cwrap('midisketch_generate_accompaniment', 'number', ['number']) as (
+      handle: number,
+    ) => number,
+    generateWithVocal: m.cwrap('midisketch_generate_with_vocal', 'number', [
+      'number',
+      'number',
+    ]) as (handle: number, configPtr: number) => number,
   };
 }
 
@@ -882,17 +898,55 @@ export class MidiSketch {
   }
 
   /**
-   * Regenerate only the vocal track with the given parameters.
-   * BGM tracks (chord, bass, drums, arpeggio) remain unchanged.
-   * Use after generateFromConfig with skipVocal=true.
-   * @throws {MidiSketchGenerationError} If regeneration fails
+   * Generate only the vocal track without accompaniment.
+   * Use for trial-and-error workflow: generate vocal, listen, regenerate if needed.
+   * Call generateAccompaniment() when satisfied with the vocal.
+   * @throws {MidiSketchConfigError} If config validation fails
+   * @throws {MidiSketchGenerationError} If generation fails
    */
-  regenerateVocal(params: VocalParams): void {
+  generateVocal(config: SongConfig): void {
     const a = getApi();
     const m = getModule();
-    const paramsPtr = this.allocVocalParams(m, params);
+    const configPtr = this.allocSongConfig(m, config);
     try {
-      const result = a.regenerateVocal(this.handle, paramsPtr);
+      const result = a.generateVocal(this.handle, configPtr);
+      if (result !== 0) {
+        const validationResult = a.validateConfig(configPtr);
+        if (validationResult !== 0) {
+          const validationMessage = a.configErrorString(validationResult);
+          throw new MidiSketchConfigError(validationResult, validationMessage);
+        }
+        throw new MidiSketchGenerationError(
+          result,
+          `Vocal generation failed with error code: ${result}`,
+        );
+      }
+    } finally {
+      m._free(configPtr);
+    }
+  }
+
+  /**
+   * Regenerate vocal track with new configuration or seed.
+   * Keeps the same chord progression and structure.
+   * @param configOrSeed VocalConfig object or seed number (default: 0 = new random)
+   * @throws {MidiSketchGenerationError} If regeneration fails
+   */
+  regenerateVocal(configOrSeed: VocalConfig | number = 0): void {
+    const a = getApi();
+    const m = getModule();
+
+    let configPtr = 0;
+    if (typeof configOrSeed === 'number') {
+      // Seed only - create minimal config with just seed
+      configPtr = this.allocVocalConfig(m, { seed: configOrSeed });
+    } else {
+      // Full config
+      configPtr = this.allocVocalConfig(m, configOrSeed);
+    }
+
+    try {
+      const result = a.regenerateVocal(this.handle, configPtr);
       if (result !== 0) {
         throw new MidiSketchGenerationError(
           result,
@@ -900,7 +954,50 @@ export class MidiSketch {
         );
       }
     } finally {
-      m._free(paramsPtr);
+      m._free(configPtr);
+    }
+  }
+
+  /**
+   * Generate accompaniment tracks for existing vocal.
+   * Must be called after generateVocal() or generateWithVocal().
+   * Generates: Aux → Bass → Chord → Drums (adapting to vocal).
+   * @throws {MidiSketchGenerationError} If generation fails
+   */
+  generateAccompaniment(): void {
+    const a = getApi();
+    const result = a.generateAccompaniment(this.handle);
+    if (result !== 0) {
+      throw new MidiSketchGenerationError(
+        result,
+        `Accompaniment generation failed with error code: ${result}`,
+      );
+    }
+  }
+
+  /**
+   * Generate all tracks with vocal-first priority.
+   * Generation order: Vocal → Aux → Bass → Chord → Drums.
+   * Accompaniment adapts to vocal melody.
+   * @throws {MidiSketchConfigError} If config validation fails
+   * @throws {MidiSketchGenerationError} If generation fails
+   */
+  generateWithVocal(config: SongConfig): void {
+    const a = getApi();
+    const m = getModule();
+    const configPtr = this.allocSongConfig(m, config);
+    try {
+      const result = a.generateWithVocal(this.handle, configPtr);
+      if (result !== 0) {
+        const validationResult = a.validateConfig(configPtr);
+        if (validationResult !== 0) {
+          const validationMessage = a.configErrorString(validationResult);
+          throw new MidiSketchConfigError(validationResult, validationMessage);
+        }
+        throw new MidiSketchGenerationError(result, `Generation failed with error code: ${result}`);
+      }
+    } finally {
+      m._free(configPtr);
     }
   }
 
@@ -1042,21 +1139,27 @@ export class MidiSketch {
     return ptr;
   }
 
-  private allocVocalParams(m: EmscriptenModule, params: VocalParams): number {
-    const ptr = m._malloc(16); // 16 bytes (padded)
+  private allocVocalConfig(m: EmscriptenModule, config: VocalConfig): number {
+    const ptr = m._malloc(16); // MidiSketchVocalConfig size (16 bytes with padding)
     const view = new DataView(m.HEAPU8.buffer);
 
-    view.setUint32(ptr + 0, params.seed ?? 0, true);
-    view.setUint8(ptr + 4, params.vocalLow ?? 60);
-    view.setUint8(ptr + 5, params.vocalHigh ?? 79);
-    view.setUint8(ptr + 6, params.vocalAttitude ?? 0);
-    view.setUint8(ptr + 7, params.vocalStyle ?? 0);
-    view.setUint8(ptr + 8, params.melodyTemplate ?? 0);
-    view.setUint8(ptr + 9, params.melodicComplexity ?? 1); // Default: Standard
-    view.setUint8(ptr + 10, params.hookIntensity ?? 2); // Default: Normal
-    view.setUint8(ptr + 11, params.vocalGroove ?? 0); // Default: Straight
-    view.setUint8(ptr + 12, params.compositionStyle ?? 0); // Default: MelodyLead
-    // Padding bytes 13-15
+    // Layout: seed(4) + vocal_low(1) + vocal_high(1) + vocal_attitude(1)
+    //         + vocal_style(1) + melody_template(1) + melodic_complexity(1)
+    //         + hook_intensity(1) + vocal_groove(1) + composition_style(1)
+    //         + reserved(2) = 16 bytes
+    view.setUint32(ptr + 0, config.seed ?? 0, true);
+    view.setUint8(ptr + 4, config.vocalLow ?? 60);
+    view.setUint8(ptr + 5, config.vocalHigh ?? 79);
+    view.setUint8(ptr + 6, config.vocalAttitude ?? 0);
+    view.setUint8(ptr + 7, config.vocalStyle ?? 0);
+    view.setUint8(ptr + 8, config.melodyTemplate ?? 0);
+    view.setUint8(ptr + 9, config.melodicComplexity ?? 1); // Default: Standard
+    view.setUint8(ptr + 10, config.hookIntensity ?? 2); // Default: Normal
+    view.setUint8(ptr + 11, config.vocalGroove ?? 0); // Default: Straight
+    view.setUint8(ptr + 12, config.compositionStyle ?? 0);
+    view.setUint8(ptr + 13, 0); // Reserved
+    view.setUint8(ptr + 14, 0); // Reserved
+    view.setUint8(ptr + 15, 0); // Padding (explicit for clarity)
 
     return ptr;
   }

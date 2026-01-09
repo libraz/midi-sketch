@@ -23,7 +23,7 @@ namespace midisketch {
  * Workflows:
  * - generate(): Standard (Chord→Bass→Vocal)
  * - generateWithVocal(): Vocal-first (Vocal→Bass→Chord)
- * - generateVocalOnly() + generateAccompanimentForVocal(): Trial-and-error
+ * - generateVocal() + generateAccompanimentForVocal(): Trial-and-error
  */
 class Generator {
  public:
@@ -52,11 +52,11 @@ class Generator {
    * @brief Generate only the vocal track without accompaniment.
    * @param params Generation parameters
    */
-  void generateVocalOnly(const GeneratorParams& params);
+  void generateVocal(const GeneratorParams& params);
 
   /**
    * @brief Generate accompaniment tracks for existing vocal.
-   * @pre Must be called after generateVocalOnly() or generateWithVocal()
+   * @pre Must be called after generateVocal() or generateWithVocal()
    */
   void generateAccompanimentForVocal();
 
@@ -64,7 +64,13 @@ class Generator {
    * @brief Regenerate vocal track with a new seed.
    * @param new_seed New random seed (0 = auto-generate from clock)
    */
-  void regenerateVocalOnly(uint32_t new_seed = 0);
+  void regenerateVocal(uint32_t new_seed = 0);
+
+  /**
+   * @brief Regenerate vocal track with new configuration.
+   * @param config Vocal configuration with all parameters
+   */
+  void regenerateVocal(const VocalConfig& config);
 
   /**
    * @brief Generate all tracks with vocal-first priority.
@@ -74,29 +80,6 @@ class Generator {
    * @param params Generation parameters
    */
   void generateWithVocal(const GeneratorParams& params);
-
-  /// @}
-  /// @name Melody Regeneration
-  /// @{
-
-  /**
-   * @brief Regenerate melody track with a new seed.
-   * @param new_seed New random seed (0 = auto)
-   */
-  void regenerateMelody(uint32_t new_seed = 0);
-
-  /**
-   * @brief Regenerate melody with full parameter control.
-   * @param params Complete melody regeneration parameters
-   */
-  void regenerateMelody(const MelodyRegenerateParams& params);
-
-  /**
-   * @brief Regenerate vocal track from SongConfig.
-   * @param config SongConfig with new vocal settings
-   * @param new_seed New random seed (0 = keep current)
-   */
-  void regenerateVocalFromConfig(const SongConfig& config, uint32_t new_seed = 0);
 
   /**
    * @brief Set melody from saved MelodyData.
