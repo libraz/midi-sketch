@@ -15,6 +15,8 @@
 
 namespace midisketch {
 
+class HarmonyContext;
+
 #ifndef MIDISKETCH_WASM
 class Midi2Writer;
 #endif
@@ -34,6 +36,15 @@ class MidiWriter {
    */
   void build(const Song& song, Key key, const std::string& metadata = "",
              MidiFormat format = kDefaultMidiFormat);
+
+  /**
+   * @brief Build vocal preview MIDI (vocal + root bass only).
+   * @param song Song containing vocal track
+   * @param harmony HarmonyContext for chord root extraction
+   * @param key Output key for transposition
+   */
+  void buildVocalPreview(const Song& song, const HarmonyContext& harmony,
+                         Key key);
 
   /** @brief Get MIDI data as byte vector. @return Binary MIDI data */
   std::vector<uint8_t> toBytes() const;

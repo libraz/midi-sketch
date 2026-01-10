@@ -146,6 +146,17 @@ class MidiSketch {
   std::vector<uint8_t> getMidi() const;
 
   /**
+   * @brief Get vocal preview MIDI (vocal + root bass only).
+   *
+   * Returns a minimal MIDI file containing only the vocal melody and
+   * a simple bass line using chord root notes. Useful for vocal practice
+   * or melody review without full accompaniment.
+   *
+   * @return MIDI binary data
+   */
+  std::vector<uint8_t> getVocalPreviewMidi() const;
+
+  /**
    * @brief Get event data as JSON string.
    * @return JSON string for playback/display
    */

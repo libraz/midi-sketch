@@ -219,6 +219,11 @@ ConfigConverter::ConversionResult ConfigConverter::convert(const SongConfig& con
     params.composition_style = CompositionStyle::MelodyLead;
   }
 
+  // Override mood if explicitly specified
+  if (config.mood_explicit) {
+    params.mood = static_cast<Mood>(config.mood);
+  }
+
   // Arpeggio settings
   params.arpeggio_enabled = config.arpeggio_enabled;
   params.arpeggio = config.arpeggio;

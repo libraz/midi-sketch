@@ -389,6 +389,26 @@ MidiSketchMidiData* midisketch_get_midi(MidiSketchHandle handle) {
   return result;
 }
 
+MidiSketchMidiData* midisketch_get_vocal_preview_midi(MidiSketchHandle handle) {
+  if (!handle) return nullptr;
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  auto midi_bytes = sketch->getVocalPreviewMidi();
+
+  auto* result = static_cast<MidiSketchMidiData*>(malloc(sizeof(MidiSketchMidiData)));
+  if (!result) return nullptr;
+
+  result->size = midi_bytes.size();
+  result->data = static_cast<uint8_t*>(malloc(result->size));
+  if (!result->data) {
+    free(result);
+    return nullptr;
+  }
+
+  memcpy(result->data, midi_bytes.data(), result->size);
+  return result;
+}
+
 void midisketch_free_midi(MidiSketchMidiData* data) {
   if (data) {
     free(data->data);

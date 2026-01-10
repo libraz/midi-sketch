@@ -83,8 +83,19 @@ void midisketch_destroy(MidiSketchHandle handle);
 MidiSketchMidiData* midisketch_get_midi(MidiSketchHandle handle);
 
 /**
+ * @brief Get vocal preview MIDI (vocal + root bass only).
+ *
+ * Returns a minimal MIDI file containing only the vocal melody and
+ * a simple bass line using chord root notes. Useful for vocal practice.
+ *
+ * @param handle MidiSketch handle
+ * @return MidiData (must be freed with midisketch_free_midi)
+ */
+MidiSketchMidiData* midisketch_get_vocal_preview_midi(MidiSketchHandle handle);
+
+/**
  * @brief Free MIDI data.
- * @param data Pointer returned by midisketch_get_midi
+ * @param data Pointer returned by midisketch_get_midi or midisketch_get_vocal_preview_midi
  */
 void midisketch_free_midi(MidiSketchMidiData* data);
 

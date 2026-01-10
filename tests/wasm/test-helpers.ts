@@ -66,6 +66,32 @@ export interface SongConfigOptions {
   vocalGroove?: number;
 }
 
+export interface AccompanimentConfigOptions {
+  seed?: number;
+  drumsEnabled?: boolean;
+  arpeggioEnabled?: boolean;
+  arpeggioPattern?: number;
+  arpeggioSpeed?: number;
+  arpeggioOctaveRange?: number;
+  arpeggioGate?: number;
+  arpeggioSyncChord?: boolean;
+  chordExtSus?: boolean;
+  chordExt7th?: boolean;
+  chordExt9th?: boolean;
+  chordExtSusProb?: number;
+  chordExt7thProb?: number;
+  chordExt9thProb?: number;
+  humanize?: boolean;
+  humanizeTiming?: number;
+  humanizeVelocity?: number;
+  seEnabled?: boolean;
+  callEnabled?: boolean;
+  callDensity?: number;
+  introChant?: number;
+  mixPattern?: number;
+  callNotesEnabled?: boolean;
+}
+
 export class WasmTestContext {
   module!: WasmModule;
   handle!: number;
@@ -140,7 +166,11 @@ export class WasmTestContext {
 
     // Call settings
     view.setUint8(ptr + 36, config.seEnabled !== false ? 1 : 0);
-    view.setUint8(ptr + 37, config.callEnabled ? 1 : 0);
+    // CallSetting: 0=Auto, 1=Enabled, 2=Disabled
+    // When callEnabled is explicitly false, use Disabled(2) to avoid validation errors
+    // When callEnabled is true, use Enabled(1)
+    // When callEnabled is undefined, default to Disabled(2) for predictable tests
+    view.setUint8(ptr + 37, config.callEnabled === true ? 1 : 2);
     view.setUint8(ptr + 38, config.callNotesEnabled !== false ? 1 : 0);
     view.setUint8(ptr + 39, config.introChant ?? 0);
     view.setUint8(ptr + 40, config.mixPattern ?? 0);
@@ -202,12 +232,77 @@ export class WasmTestContext {
     return regenerateFn(this.handle, newSeed);
   }
 
-  generateAccompaniment(): number {
-    const generateFn = this.module.cwrap('midisketch_generate_accompaniment', 'number', [
-      'number',
-    ]) as (h: number) => number;
+  generateAccompaniment(config?: AccompanimentConfigOptions): number {
+    if (config) {
+      const generateFn = this.module.cwrap(
+        'midisketch_generate_accompaniment_with_config',
+        'number',
+        ['number', 'number'],
+      ) as (h: number, configPtr: number) => number;
 
-    return generateFn(this.handle);
+      const configPtr = this.allocAccompanimentConfig(config);
+      const result = generateFn(this.handle, configPtr);
+      this.module._free(configPtr);
+      return result;
+    } else {
+      const generateFn = this.module.cwrap('midisketch_generate_accompaniment', 'number', [
+        'number',
+      ]) as (h: number) => number;
+      return generateFn(this.handle);
+    }
+  }
+
+  regenerateAccompaniment(seedOrConfig?: number | AccompanimentConfigOptions): number {
+    if (typeof seedOrConfig === 'object') {
+      const regenerateFn = this.module.cwrap(
+        'midisketch_regenerate_accompaniment_with_config',
+        'number',
+        ['number', 'number'],
+      ) as (h: number, configPtr: number) => number;
+
+      const configPtr = this.allocAccompanimentConfig(seedOrConfig);
+      const result = regenerateFn(this.handle, configPtr);
+      this.module._free(configPtr);
+      return result;
+    } else {
+      const regenerateFn = this.module.cwrap('midisketch_regenerate_accompaniment', 'number', [
+        'number',
+        'number',
+      ]) as (h: number, seed: number) => number;
+      return regenerateFn(this.handle, seedOrConfig ?? 0);
+    }
+  }
+
+  allocAccompanimentConfig(config: AccompanimentConfigOptions): number {
+    const ptr = this.module._malloc(28); // MidiSketchAccompanimentConfig size
+    const view = new DataView(this.module.HEAPU8.buffer, ptr, 28);
+
+    view.setUint32(0, config.seed ?? 0, true); // seed
+    view.setUint8(4, config.drumsEnabled ? 1 : 0);
+    view.setUint8(5, config.arpeggioEnabled ? 1 : 0);
+    view.setUint8(6, config.arpeggioPattern ?? 0);
+    view.setUint8(7, config.arpeggioSpeed ?? 0);
+    view.setUint8(8, config.arpeggioOctaveRange ?? 2);
+    view.setUint8(9, config.arpeggioGate ?? 80);
+    view.setUint8(10, config.arpeggioSyncChord ? 1 : 0);
+    view.setUint8(11, config.chordExtSus ? 1 : 0);
+    view.setUint8(12, config.chordExt7th ? 1 : 0);
+    view.setUint8(13, config.chordExt9th ? 1 : 0);
+    view.setUint8(14, config.chordExtSusProb ?? 30);
+    view.setUint8(15, config.chordExt7thProb ?? 20);
+    view.setUint8(16, config.chordExt9thProb ?? 10);
+    view.setUint8(17, config.humanize ? 1 : 0);
+    view.setUint8(18, config.humanizeTiming ?? 20);
+    view.setUint8(19, config.humanizeVelocity ?? 10);
+    view.setUint8(20, config.seEnabled !== false ? 1 : 0);
+    view.setUint8(21, config.callEnabled ? 1 : 0);
+    view.setUint8(22, config.callDensity ?? 2);
+    view.setUint8(23, config.introChant ?? 0);
+    view.setUint8(24, config.mixPattern ?? 0);
+    view.setUint8(25, config.callNotesEnabled ? 1 : 0);
+    // _reserved[2] at offset 26-27
+
+    return ptr;
   }
 
   generateWithVocal(config: SongConfigOptions): number {

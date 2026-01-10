@@ -194,6 +194,8 @@ struct StylePreset {
 struct SongConfig {
   /// Style selection
   uint8_t style_preset_id = 0;
+  uint8_t mood = 0;             ///< Mood preset ID (0-19)
+  bool mood_explicit = false;   ///< True if mood was explicitly set by user
 
   /// Layer 1: Song base
   Key key = Key::C;

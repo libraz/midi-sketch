@@ -159,4 +159,43 @@ describe('MidiSketch WASM - Generation', () => {
 
     cleanup();
   });
+
+  it('should get vocal preview MIDI (vocal + root bass)', () => {
+    ctx.generateFromConfig({ seed: 33333 });
+
+    const getMidi = ctx.module.cwrap('midisketch_get_midi', 'number', ['number']) as (
+      h: number,
+    ) => number;
+    const getVocalPreviewMidi = ctx.module.cwrap('midisketch_get_vocal_preview_midi', 'number', [
+      'number',
+    ]) as (h: number) => number;
+    const freeMidi = ctx.module.cwrap('midisketch_free_midi', null, ['number']) as (
+      ptr: number,
+    ) => void;
+
+    // Get full MIDI
+    const fullMidiPtr = getMidi(ctx.handle);
+    expect(fullMidiPtr).toBeGreaterThan(0);
+    const fullSize = ctx.module.HEAPU32[(fullMidiPtr + 4) >> 2];
+
+    // Get vocal preview MIDI
+    const previewMidiPtr = getVocalPreviewMidi(ctx.handle);
+    expect(previewMidiPtr).toBeGreaterThan(0);
+
+    const previewDataPtr = ctx.module.HEAPU32[previewMidiPtr >> 2];
+    const previewSize = ctx.module.HEAPU32[(previewMidiPtr + 4) >> 2];
+
+    expect(previewDataPtr).toBeGreaterThan(0);
+    expect(previewSize).toBeGreaterThan(0);
+
+    // Check MIDI header (MThd)
+    const header = new Uint8Array(ctx.module.HEAPU8.buffer, previewDataPtr, 4);
+    expect(String.fromCharCode(...header)).toBe('MThd');
+
+    // Preview should be smaller than full MIDI (fewer tracks)
+    expect(previewSize).toBeLessThan(fullSize);
+
+    freeMidi(previewMidiPtr);
+    freeMidi(fullMidiPtr);
+  });
 });

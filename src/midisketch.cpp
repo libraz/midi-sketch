@@ -156,6 +156,13 @@ std::vector<uint8_t> MidiSketch::getMidi() const {
   return midi_writer_.toBytes();
 }
 
+std::vector<uint8_t> MidiSketch::getVocalPreviewMidi() const {
+  MidiWriter writer;
+  writer.buildVocalPreview(generator_.getSong(), generator_.getHarmonyContext(),
+                           generator_.getParams().key);
+  return writer.toBytes();
+}
+
 std::string MidiSketch::getEventsJson() const {
   const auto& song = generator_.getSong();
   const auto& params = generator_.getParams();

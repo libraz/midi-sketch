@@ -311,6 +311,15 @@ void Generator::regenerateVocal(const VocalConfig& config) {
  * aux call-and-response patterns. All tracks coordinate to support melody.
  */
 void Generator::generateAccompanimentForVocal() {
+  // Clear all accompaniment tracks (keep vocal) to prevent accumulation
+  song_.clearTrack(TrackRole::Aux);
+  song_.clearTrack(TrackRole::Bass);
+  song_.clearTrack(TrackRole::Chord);
+  song_.clearTrack(TrackRole::Drums);
+  song_.clearTrack(TrackRole::Arpeggio);
+  song_.clearTrack(TrackRole::Motif);
+  song_.clearTrack(TrackRole::SE);
+
   // Analyze existing vocal to extract characteristics
   VocalAnalysis vocal_analysis = analyzeVocal(song_.vocal());
 

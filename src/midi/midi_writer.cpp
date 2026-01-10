@@ -5,6 +5,8 @@
 
 #include "midi/midi_writer.h"
 
+#include "core/harmony_context.h"
+
 #ifndef MIDISKETCH_WASM
 #include "midi/midi2_writer.h"
 #endif
@@ -378,6 +380,71 @@ bool MidiWriter::writeToFile(const std::string& path) const {
   file.write(reinterpret_cast<const char*>(data_.data()),
              static_cast<std::streamsize>(data_.size()));
   return file.good();
+}
+
+void MidiWriter::buildVocalPreview(const Song& song,
+                                    const HarmonyContext& harmony, Key key) {
+  data_.clear();
+
+  // Create root bass track from chord changes
+  MidiTrack root_bass;
+  constexpr int SCALE[7] = {0, 2, 4, 5, 7, 9, 11};  // C major scale
+  constexpr uint8_t BASS_OCTAVE = 36;  // C2 base
+  constexpr uint8_t BASS_VELOCITY = 80;
+
+  // Get total duration from song
+  Tick total_ticks = song.arrangement().totalTicks();
+  if (total_ticks == 0) {
+    total_ticks = song.vocal().empty() ? 0 : song.vocal().notes().back().start_tick +
+                                              song.vocal().notes().back().duration;
+  }
+
+  // Generate root notes at each chord change
+  Tick current_tick = 0;
+  while (current_tick < total_ticks) {
+    int8_t degree = harmony.getChordDegreeAt(current_tick);
+    Tick next_change = harmony.getNextChordChangeTick(current_tick);
+    if (next_change == 0 || next_change <= current_tick) {
+      next_change = total_ticks;  // Last chord extends to end
+    }
+
+    // Calculate root pitch (C2 base + scale degree)
+    int root_pc = SCALE[((degree % 7) + 7) % 7];
+    uint8_t root_pitch = BASS_OCTAVE + static_cast<uint8_t>(root_pc);
+
+    // Add whole note (or duration until next chord change)
+    Tick duration = next_change - current_tick;
+    root_bass.addNote(current_tick, duration, root_pitch, BASS_VELOCITY);
+
+    current_tick = next_change;
+  }
+
+  // Count tracks: SE (tempo) + Vocal + Bass
+  uint16_t num_tracks = 1;  // SE track for tempo
+  if (!song.vocal().empty()) num_tracks++;
+  if (!root_bass.empty()) num_tracks++;
+
+  writeHeader(num_tracks, TICKS_PER_BEAT);
+
+  // SE track (tempo only, no markers)
+  MidiTrack empty_se;
+  writeMarkerTrack(empty_se, song.bpm(), "");
+
+  // Vocal track
+  constexpr uint8_t VOCAL_CH = 0;
+  constexpr uint8_t VOCAL_PROG = 0;  // Piano
+  if (!song.vocal().empty()) {
+    writeTrack(song.vocal(), "Vocal", VOCAL_CH, VOCAL_PROG, song.bpm(), key,
+               false, 0, 0);
+  }
+
+  // Root bass track
+  constexpr uint8_t BASS_CH = 2;
+  constexpr uint8_t BASS_PROG = 33;  // Electric Bass
+  if (!root_bass.empty()) {
+    writeTrack(root_bass, "Bass", BASS_CH, BASS_PROG, song.bpm(), key,
+               false, 0, 0);
+  }
 }
 
 }  // namespace midisketch

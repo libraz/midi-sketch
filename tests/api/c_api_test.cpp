@@ -170,5 +170,143 @@ TEST(CApiTest, GetLastConfigErrorNullHandle) {
   EXPECT_EQ(err, MIDISKETCH_CONFIG_OK);
 }
 
+// ============================================================================
+// Vocal Preview MIDI Tests
+// ============================================================================
+
+TEST(CApiTest, GetVocalPreviewMidi) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+
+  MidiSketchSongConfig config = midisketch_create_default_config(0);
+  config.seed = 12345;
+
+  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  EXPECT_EQ(err, MIDISKETCH_OK);
+
+  // Get vocal preview MIDI
+  MidiSketchMidiData* preview = midisketch_get_vocal_preview_midi(handle);
+  ASSERT_NE(preview, nullptr);
+  EXPECT_GT(preview->size, 0u);
+  EXPECT_NE(preview->data, nullptr);
+
+  // Verify it's valid MIDI (starts with MThd)
+  EXPECT_EQ(preview->data[0], 'M');
+  EXPECT_EQ(preview->data[1], 'T');
+  EXPECT_EQ(preview->data[2], 'h');
+  EXPECT_EQ(preview->data[3], 'd');
+
+  // Get full MIDI for comparison
+  MidiSketchMidiData* full = midisketch_get_midi(handle);
+  ASSERT_NE(full, nullptr);
+
+  // Preview should be smaller than full MIDI (fewer tracks)
+  EXPECT_LT(preview->size, full->size);
+
+  midisketch_free_midi(preview);
+  midisketch_free_midi(full);
+  midisketch_destroy(handle);
+}
+
+TEST(CApiTest, GetVocalPreviewMidiNullHandle) {
+  MidiSketchMidiData* preview = midisketch_get_vocal_preview_midi(nullptr);
+  EXPECT_EQ(preview, nullptr);
+}
+
+// ============================================================================
+// Accompaniment Regeneration Tests
+// ============================================================================
+
+TEST(CApiTest, GenerateAccompanimentMultipleTimesDoesNotAccumulate) {
+  // Regression test: generateAccompaniment was accumulating notes/markers
+  // instead of clearing tracks before regeneration
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+
+  // Step 1: Generate vocal only
+  MidiSketchSongConfig config = midisketch_create_default_config(0);
+  config.seed = 12345;
+  config.skip_vocal = 0;
+
+  MidiSketchError err = midisketch_generate_vocal(handle, &config);
+  EXPECT_EQ(err, MIDISKETCH_OK);
+
+  // Step 2: Generate accompaniment first time
+  err = midisketch_generate_accompaniment(handle);
+  EXPECT_EQ(err, MIDISKETCH_OK);
+
+  // Get MIDI size after first accompaniment generation
+  MidiSketchMidiData* midi1 = midisketch_get_midi(handle);
+  ASSERT_NE(midi1, nullptr);
+  size_t size1 = midi1->size;
+  midisketch_free_midi(midi1);
+
+  // Step 3: Generate accompaniment again (should NOT accumulate)
+  err = midisketch_generate_accompaniment(handle);
+  EXPECT_EQ(err, MIDISKETCH_OK);
+
+  // Get MIDI size after second accompaniment generation
+  MidiSketchMidiData* midi2 = midisketch_get_midi(handle);
+  ASSERT_NE(midi2, nullptr);
+  size_t size2 = midi2->size;
+  midisketch_free_midi(midi2);
+
+  // Sizes should be similar (same seed, same config)
+  // Allow small variation for timing differences
+  EXPECT_NEAR(static_cast<double>(size1), static_cast<double>(size2),
+              static_cast<double>(size1) * 0.1);
+
+  // Step 4: Generate accompaniment third time
+  err = midisketch_generate_accompaniment(handle);
+  EXPECT_EQ(err, MIDISKETCH_OK);
+
+  MidiSketchMidiData* midi3 = midisketch_get_midi(handle);
+  ASSERT_NE(midi3, nullptr);
+  size_t size3 = midi3->size;
+  midisketch_free_midi(midi3);
+
+  // Size should still be similar (not growing)
+  EXPECT_NEAR(static_cast<double>(size1), static_cast<double>(size3),
+              static_cast<double>(size1) * 0.1);
+
+  midisketch_destroy(handle);
+}
+
+TEST(CApiTest, RegenerateAccompanimentMultipleTimesDoesNotAccumulate) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+
+  // Generate vocal
+  MidiSketchSongConfig config = midisketch_create_default_config(0);
+  config.seed = 12345;
+
+  MidiSketchError err = midisketch_generate_vocal(handle, &config);
+  EXPECT_EQ(err, MIDISKETCH_OK);
+
+  // First accompaniment
+  err = midisketch_generate_accompaniment(handle);
+  EXPECT_EQ(err, MIDISKETCH_OK);
+
+  MidiSketchMidiData* midi1 = midisketch_get_midi(handle);
+  size_t size1 = midi1->size;
+  midisketch_free_midi(midi1);
+
+  // Regenerate with different seeds multiple times
+  for (int i = 0; i < 5; ++i) {
+    err = midisketch_regenerate_accompaniment(handle, 100000 + i);
+    EXPECT_EQ(err, MIDISKETCH_OK);
+  }
+
+  MidiSketchMidiData* midi2 = midisketch_get_midi(handle);
+  size_t size2 = midi2->size;
+  midisketch_free_midi(midi2);
+
+  // Size should be similar (not growing with each regeneration)
+  EXPECT_NEAR(static_cast<double>(size1), static_cast<double>(size2),
+              static_cast<double>(size1) * 0.15);
+
+  midisketch_destroy(handle);
+}
+
 }  // namespace
 }  // namespace midisketch

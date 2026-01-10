@@ -101,6 +101,33 @@ describe('MidiSketch WASM - Vocal', () => {
       fullCleanup();
     });
 
+    it('should generate accompaniment with config after generateVocal', () => {
+      // Generate vocal only
+      ctx.generateVocal({ seed: 77777 });
+
+      // Generate accompaniment with specific config
+      const result = ctx.generateAccompaniment({
+        seed: 88888,
+        drumsEnabled: true,
+        arpeggioEnabled: true,
+        arpeggioPattern: 2, // UpDown
+        chordExt7th: true,
+        chordExt7thProb: 50,
+      });
+      expect(result).toBe(0);
+
+      // Check all tracks are generated
+      const { data, cleanup } = ctx.getEventsJson();
+      const tracks = (data as { tracks: { name: string; notes: unknown[] }[] }).tracks;
+
+      expect(tracks.find((t) => t.name === 'Vocal')?.notes.length).toBeGreaterThan(0);
+      expect(tracks.find((t) => t.name === 'Chord')?.notes.length).toBeGreaterThan(0);
+      expect(tracks.find((t) => t.name === 'Bass')?.notes.length).toBeGreaterThan(0);
+      expect(tracks.find((t) => t.name === 'Arpeggio')?.notes.length).toBeGreaterThan(0);
+
+      cleanup();
+    });
+
     it('should generate all tracks with generateWithVocal', () => {
       const result = ctx.generateWithVocal({ seed: 44444 });
       expect(result).toBe(0);
