@@ -320,6 +320,10 @@ void Generator::generateAccompanimentForVocal() {
   song_.clearTrack(TrackRole::Motif);
   song_.clearTrack(TrackRole::SE);
 
+  // Clear harmony context notes and re-register vocal
+  harmony_context_.clearNotes();
+  harmony_context_.registerTrack(song_.vocal(), TrackRole::Vocal);
+
   // Analyze existing vocal to extract characteristics
   VocalAnalysis vocal_analysis = analyzeVocal(song_.vocal());
 
