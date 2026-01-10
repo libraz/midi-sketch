@@ -744,33 +744,147 @@ void Generator::generateAux() {
     }
   }
 
-  // Post-process: trim aux notes that sustain over chord changes
-  // For non-chord tones, even tiny overlaps sound bad - trim any overlap
-  constexpr Tick kSuspensionThreshold = 0;    // No overlap allowed - any overlap should be trimmed
-  constexpr Tick kMinNoteDuration = 120;      // Minimum note length after trimming
+  // Post-process: resolve aux notes that sustain over chord changes
+  // Instead of trimming, resolve to nearest chord tone (musical suspension resolution)
+  constexpr Tick kAnticipationThreshold = 120;  // Notes starting this close to change are "anticipations"
+  constexpr Tick kMinNoteDuration = 120;        // Minimum note length for split
 
   auto& aux_notes = song_.aux().notes();
+  std::vector<NoteEvent> notes_to_add;
+
   for (size_t i = 0; i < aux_notes.size(); ++i) {
     auto& note = aux_notes[i];
     Tick note_end = note.start_tick + note.duration;
     Tick chord_change = harmony_context_.getNextChordChangeTick(note.start_tick);
 
     if (chord_change > 0 && chord_change > note.start_tick && chord_change < note_end) {
-      Tick overlap = note_end - chord_change;
+      // Check if note is a chord tone in the new chord
+      auto new_chord_tones = harmony_context_.getChordTonesAt(chord_change);
+      int note_pc = note.note % 12;
+      bool is_chord_tone = std::find(new_chord_tones.begin(), new_chord_tones.end(), note_pc)
+                           != new_chord_tones.end();
 
-      if (overlap > kSuspensionThreshold) {
-        // Check if note is a chord tone in the new chord
-        auto new_chord_tones = harmony_context_.getChordTonesAt(chord_change);
-        int note_pc = note.note % 12;
-        bool is_chord_tone = std::find(new_chord_tones.begin(), new_chord_tones.end(), note_pc)
-                             != new_chord_tones.end();
+      if (!is_chord_tone) {
+        Tick time_before_change = chord_change - note.start_tick;
+        Tick time_after_change = note_end - chord_change;
 
-        if (!is_chord_tone) {
-          Tick new_duration = chord_change - note.start_tick - 10;
-          if (new_duration >= kMinNoteDuration) {
-            note.duration = new_duration;
+        // Find nearest chord tone in new chord that doesn't clash with other tracks
+        int octave = note.note / 12;
+        int best_pitch = note.note;
+        int best_dist = 100;
+        for (int tone : new_chord_tones) {
+          for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
+            int candidate = (octave + oct_offset) * 12 + tone;
+            if (candidate < 36 || candidate > 96) continue;  // Reasonable range
+            int dist = std::abs(candidate - static_cast<int>(note.note));
+            if (dist < best_dist && dist > 0) {
+              // Check for clashes with other tracks at chord_change tick
+              bool clashes = !harmony_context_.isPitchSafe(
+                  static_cast<uint8_t>(candidate), chord_change, time_after_change, TrackRole::Aux);
+              if (!clashes) {
+                best_dist = dist;
+                best_pitch = candidate;
+              }
+            }
           }
         }
+        // If all candidates clash, still use the nearest chord tone (better than non-chord tone)
+        if (best_pitch == note.note) {
+          for (int tone : new_chord_tones) {
+            int candidate = octave * 12 + tone;
+            if (candidate >= 36 && candidate <= 96) {
+              best_pitch = candidate;
+              break;
+            }
+          }
+        }
+
+        if (time_before_change < kAnticipationThreshold) {
+          // Anticipation: change entire note to new chord tone
+          note.note = static_cast<uint8_t>(best_pitch);
+        } else if (time_before_change >= kMinNoteDuration && time_after_change >= kMinNoteDuration) {
+          // Split note: keep first part, add resolved second part
+          Tick original_duration = note.duration;
+          note.duration = time_before_change;
+
+          NoteEvent resolved_note;
+          resolved_note.start_tick = chord_change;
+          resolved_note.duration = time_after_change;
+          resolved_note.note = static_cast<uint8_t>(best_pitch);
+          resolved_note.velocity = static_cast<uint8_t>(note.velocity * 0.9f);
+          notes_to_add.push_back(resolved_note);
+        } else {
+          // Cannot split well - just change to chord tone
+          note.note = static_cast<uint8_t>(best_pitch);
+        }
+      }
+    }
+  }
+
+  // Add resolved notes
+  for (const auto& note : notes_to_add) {
+    song_.aux().addNote(note);
+  }
+
+  // Post-process: fix any remaining clashes with Bass track
+  // This catches edge cases where aux notes were generated before bass registration
+  for (size_t i = 0; i < aux_notes.size(); ++i) {
+    auto& note = aux_notes[i];
+    Tick note_end = note.start_tick + note.duration;
+
+    // Check if this note clashes with bass
+    if (!harmony_context_.isPitchSafe(note.note, note.start_tick, note.duration, TrackRole::Aux)) {
+      // Check if note crosses a chord boundary - need to consider both chords
+      Tick chord_change = harmony_context_.getNextChordChangeTick(note.start_tick);
+      bool crosses_chord = (chord_change > 0 && chord_change > note.start_tick && chord_change < note_end);
+
+      // Get chord tones - if crosses chord, need tones that work in both
+      auto start_chord_tones = harmony_context_.getChordTonesAt(note.start_tick);
+      std::vector<int> valid_tones;
+
+      if (crosses_chord) {
+        // Find tones that are chord tones in BOTH chords
+        auto end_chord_tones = harmony_context_.getChordTonesAt(chord_change);
+        for (int tone : start_chord_tones) {
+          if (std::find(end_chord_tones.begin(), end_chord_tones.end(), tone) != end_chord_tones.end()) {
+            valid_tones.push_back(tone);
+          }
+        }
+        // If no common tones, use start chord tones and trim note
+        if (valid_tones.empty()) {
+          valid_tones = start_chord_tones;
+          // Trim note to before chord change
+          if (chord_change - note.start_tick >= kMinNoteDuration) {
+            note.duration = chord_change - note.start_tick - 10;
+          }
+        }
+      } else {
+        valid_tones = start_chord_tones;
+      }
+
+      int octave = note.note / 12;
+      int best_pitch = note.note;
+      int best_dist = 100;
+
+      for (int tone : valid_tones) {
+        for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
+          int candidate = (octave + oct_offset) * 12 + tone;
+          if (candidate < 36 || candidate > 96) continue;
+
+          // Check if this candidate is safe (use trimmed duration if applicable)
+          if (harmony_context_.isPitchSafe(static_cast<uint8_t>(candidate),
+                                            note.start_tick, note.duration, TrackRole::Aux)) {
+            int dist = std::abs(candidate - static_cast<int>(note.note));
+            if (dist < best_dist) {
+              best_dist = dist;
+              best_pitch = candidate;
+            }
+          }
+        }
+      }
+
+      if (best_pitch != note.note) {
+        note.note = static_cast<uint8_t>(best_pitch);
       }
     }
   }

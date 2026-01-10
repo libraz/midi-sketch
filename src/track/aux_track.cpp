@@ -1008,9 +1008,12 @@ std::vector<NoteEvent> AuxTrackGenerator::generateMotifCounter(
       int8_t vocal_direction = getVocalDirectionAt(vocal_analysis, current_tick);
       int vocal_pitch = getVocalPitchAt(vocal_analysis, current_tick);
 
+      // Get chord degree at current tick (not section start)
+      int8_t current_chord_degree = harmony.getChordDegreeAt(current_tick);
+
       // Determine counter pitch using contrary motion
       int counter_pitch;
-      ChordTones ct = getChordTones(ctx.chord_degree);
+      ChordTones ct = getChordTones(current_chord_degree);
 
       if (vocal_pitch > 0 && ct.count > 0) {
         // Calculate target based on contrary motion
@@ -1025,21 +1028,39 @@ std::vector<NoteEvent> AuxTrackGenerator::generateMotifCounter(
         }
         // vocal_direction == 0: static → use middle register
 
-        // Snap to nearest chord tone
-        counter_pitch = nearestChordTonePitch(target_pitch, ctx.chord_degree);
+        // Snap to nearest chord tone at current tick
+        counter_pitch = nearestChordTonePitch(target_pitch, current_chord_degree);
         counter_pitch = std::clamp(counter_pitch, static_cast<int>(aux_low),
                                     static_cast<int>(aux_high));
       } else {
         // Fallback: use middle of range on chord tone
-        counter_pitch = nearestChordTonePitch((aux_low + aux_high) / 2, ctx.chord_degree);
+        counter_pitch = nearestChordTonePitch((aux_low + aux_high) / 2, current_chord_degree);
       }
 
       // Get safe pitch (avoid collisions)
       Tick note_duration = std::min(base_note_duration, phrase_end - current_tick);
+
+      // Check for chord change during this note (anticipation handling)
+      // If note starts close to chord change and extends past it, use new chord's tones
+      Tick next_chord_change = harmony.getNextChordChangeTick(current_tick);
+      constexpr Tick kAnticipationThreshold = 120;  // 1/16 beat - notes starting this close to change are "anticipations"
+
+      if (next_chord_change > 0 &&
+          next_chord_change > current_tick &&
+          next_chord_change < current_tick + note_duration &&
+          next_chord_change - current_tick < kAnticipationThreshold) {
+        // This note anticipates the next chord - use new chord's tones
+        int8_t next_chord_degree = harmony.getChordDegreeAt(next_chord_change);
+        counter_pitch = nearestChordTonePitch(counter_pitch, next_chord_degree);
+        counter_pitch = std::clamp(counter_pitch, static_cast<int>(aux_low),
+                                    static_cast<int>(aux_high));
+        current_chord_degree = next_chord_degree;  // Update for getSafePitch
+      }
+
       uint8_t safe_pitch = getSafePitch(
           static_cast<uint8_t>(counter_pitch), current_tick, note_duration,
           ctx.main_melody, harmony, aux_low, aux_high,
-          ctx.chord_degree, meta.dissonance_tolerance);
+          current_chord_degree, meta.dissonance_tolerance);
 
       // Add note
       result.push_back({current_tick, note_duration, safe_pitch, velocity});
@@ -1062,21 +1083,87 @@ std::vector<NoteEvent> AuxTrackGenerator::generateMotifCounter(
         continue;
       }
 
+      // Get chord degree at current tick
+      int8_t current_chord_degree = harmony.getChordDegreeAt(rest_start);
+
       // Get chord tone for this position
-      int counter_pitch = nearestChordTonePitch((aux_low + aux_high) / 2, ctx.chord_degree);
+      int counter_pitch = nearestChordTonePitch((aux_low + aux_high) / 2, current_chord_degree);
       counter_pitch = std::clamp(counter_pitch, static_cast<int>(aux_low),
                                   static_cast<int>(aux_high));
 
       uint8_t safe_pitch = getSafePitch(
           static_cast<uint8_t>(counter_pitch), rest_start, TICK_QUARTER,
           ctx.main_melody, harmony, aux_low, aux_high,
-          ctx.chord_degree, meta.dissonance_tolerance);
+          current_chord_degree, meta.dissonance_tolerance);
 
       result.push_back({rest_start, TICK_QUARTER, safe_pitch, velocity});
     }
   }
 
-  return result;
+  // Post-process: resolve notes that sustain over chord changes
+  // Instead of trimming, resolve to nearest chord tone (musical suspension resolution)
+  constexpr Tick kSuspensionThreshold = 240;  // 1/8 beat - allow short suspensions
+  constexpr Tick kMinNoteDuration = 120;      // Minimum note length
+
+  std::vector<NoteEvent> resolved_result;
+  for (auto& note : result) {
+    Tick note_end = note.start_tick + note.duration;
+    Tick chord_change = harmony.getNextChordChangeTick(note.start_tick);
+
+    if (chord_change > 0 && chord_change > note.start_tick && chord_change < note_end) {
+      // Note crosses chord boundary
+      Tick overlap = note_end - chord_change;
+
+      if (overlap > kSuspensionThreshold) {
+        // Check if note is a chord tone in the new chord
+        auto new_chord_tones = harmony.getChordTonesAt(chord_change);
+        int note_pc = note.note % 12;
+        bool is_chord_tone = std::find(new_chord_tones.begin(), new_chord_tones.end(), note_pc)
+                             != new_chord_tones.end();
+
+        if (!is_chord_tone) {
+          // Split note and resolve second part to nearest chord tone
+          Tick first_duration = chord_change - note.start_tick;
+          Tick second_duration = note_end - chord_change;
+
+          if (first_duration >= kMinNoteDuration && second_duration >= kMinNoteDuration) {
+            // First part: original pitch until chord change
+            NoteEvent first_part = note;
+            first_part.duration = first_duration;
+            resolved_result.push_back(first_part);
+
+            // Second part: resolve to nearest chord tone
+            int octave = note.note / 12;
+            int best_pitch = note.note;
+            int best_dist = 100;
+
+            for (int tone : new_chord_tones) {
+              for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
+                int candidate = (octave + oct_offset) * 12 + tone;
+                if (candidate < aux_low || candidate > aux_high) continue;
+                int dist = std::abs(candidate - static_cast<int>(note.note));
+                if (dist < best_dist && dist > 0) {  // Must be different pitch
+                  best_dist = dist;
+                  best_pitch = candidate;
+                }
+              }
+            }
+
+            NoteEvent second_part;
+            second_part.start_tick = chord_change;
+            second_part.duration = second_duration;
+            second_part.note = static_cast<uint8_t>(best_pitch);
+            second_part.velocity = static_cast<uint8_t>(note.velocity * 0.9f);  // Slightly softer resolution
+            resolved_result.push_back(second_part);
+            continue;  // Skip adding original note
+          }
+        }
+      }
+    }
+    resolved_result.push_back(note);
+  }
+
+  return resolved_result;
 }
 
 }  // namespace midisketch

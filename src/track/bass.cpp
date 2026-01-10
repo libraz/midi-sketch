@@ -382,12 +382,11 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
         int root_pc = root % 12;
         bool is_minor = (root_pc == 2 || root_pc == 4 || root_pc == 9);
 
-        // Beat 4: Approach to next root
+        // Beat 4: Approach to next root (use safe approach with dissonance check)
         uint8_t approach_note;
         if (next_root != root) {
-          int next_root_val = static_cast<int>(next_root);
-          approach_note = clampBass(next_root > root ? next_root_val - 1
-                                                      : next_root_val + 1);
+          // Use getApproachNote which checks for dissonance and uses safe intervals
+          approach_note = getApproachNote(root, next_root);
         } else {
           approach_note = getScaleTone(root, 5, is_minor);
         }

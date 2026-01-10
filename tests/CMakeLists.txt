@@ -54,6 +54,7 @@ set(TEST_SOURCES
   track/aux_track_test.cpp
   track/aux_dissonance_regression_test.cpp
   track/bass_dissonance_regression_test.cpp
+  track/dissonance_fixes_test.cpp
   track/se_test.cpp
   track/vocal_analysis_test.cpp
   analysis/dissonance_test.cpp
