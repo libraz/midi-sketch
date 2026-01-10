@@ -151,6 +151,13 @@ void Generator::generate(const GeneratorParams& params) {
   if (params.arpeggio_enabled ||
       params.composition_style == CompositionStyle::SynthDriven) {
     generateArpeggio();
+
+    // BGM-only mode: resolve any chord-arpeggio clashes
+    // In BGM, harmonic purity is critical - no dissonance allowed
+    if (params.composition_style == CompositionStyle::SynthDriven ||
+        params.composition_style == CompositionStyle::BackgroundMotif) {
+      resolveArpeggioChordClashes();
+    }
   }
 
   // Generate SE track if enabled
@@ -584,6 +591,66 @@ void Generator::generateArpeggio() {
   generateArpeggioTrack(song_.arpeggio(), song_, params_, rng_, harmony_context_);
 }
 
+void Generator::resolveArpeggioChordClashes() {
+  // Dissonant intervals to resolve (in semitones)
+  constexpr int MINOR_2ND = 1;
+  constexpr int MAJOR_7TH = 11;
+  constexpr int TRITONE = 6;
+
+  auto& arp_notes = song_.arpeggio().notes();
+  const auto& chord_notes = song_.chord().notes();
+
+  // Collect all chord pitches active at each tick for efficient lookup
+  auto hasClashWithChord = [&](uint8_t pitch, Tick start, Tick end) {
+    for (const auto& chord : chord_notes) {
+      Tick chord_end = chord.start_tick + chord.duration;
+      if (start >= chord_end || end <= chord.start_tick) continue;
+
+      int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(chord.note)) % 12;
+      if (interval == MINOR_2ND || interval == MAJOR_7TH || interval == TRITONE) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  for (auto& arp : arp_notes) {
+    Tick arp_end = arp.start_tick + arp.duration;
+
+    if (!hasClashWithChord(arp.note, arp.start_tick, arp_end)) {
+      continue;  // No clash, keep original
+    }
+
+    // Find alternative pitch that doesn't clash
+    auto chord_tones = harmony_context_.getChordTonesAt(arp.start_tick);
+    int octave = arp.note / 12;
+    int best_pitch = arp.note;
+    int best_dist = 100;
+
+    for (int tone : chord_tones) {
+      for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
+        int candidate = (octave + oct_offset) * 12 + tone;
+        if (candidate < 48 || candidate > 96) continue;
+
+        // Check this candidate doesn't clash with any chord note
+        if (hasClashWithChord(static_cast<uint8_t>(candidate), arp.start_tick, arp_end)) {
+          continue;
+        }
+
+        int dist = std::abs(candidate - static_cast<int>(arp.note));
+        if (dist < best_dist) {
+          best_dist = dist;
+          best_pitch = candidate;
+        }
+      }
+    }
+
+    if (best_dist < 100) {
+      arp.note = static_cast<uint8_t>(best_pitch);
+    }
+  }
+}
+
 void Generator::generateAux() {
   // Get vocal track for reference
   const MidiTrack& vocal_track = song_.vocal();
@@ -804,7 +871,6 @@ void Generator::generateAux() {
           note.note = static_cast<uint8_t>(best_pitch);
         } else if (time_before_change >= kMinNoteDuration && time_after_change >= kMinNoteDuration) {
           // Split note: keep first part, add resolved second part
-          Tick original_duration = note.duration;
           note.duration = time_before_change;
 
           NoteEvent resolved_note;

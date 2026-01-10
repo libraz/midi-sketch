@@ -730,6 +730,14 @@ void MelodyDesigner::insertLeadingTone(
   Tick last_note_end = last_note.start_tick + last_note.duration;
   Tick leading_tone_start = ctx.section_end - TICKS_PER_BEAT / 4;  // 16th note before end
 
+  // Skip if gap is too large - leading tone needs melodic context
+  // An isolated note after a long gap sounds unnatural
+  constexpr Tick MAX_GAP = TICKS_PER_BEAT / 2;  // Half beat (8th note gap max)
+  if (leading_tone_start > last_note_end &&
+      leading_tone_start - last_note_end > MAX_GAP) {
+    return;
+  }
+
   if (last_note_end <= leading_tone_start) {
     uint8_t velocity = static_cast<uint8_t>(
         std::min(127, static_cast<int>(last_note.velocity) + 10));  // Slightly louder

@@ -218,6 +218,9 @@ class Generator {
   /// @name Post-Processing Methods
   /// @{
 
+  /** @brief Resolve chord-arpeggio clashes for BGM-only mode. */
+  void resolveArpeggioChordClashes();
+
   /** @brief Rebuild motif track from stored pattern data. */
   void rebuildMotifFromPattern();
 

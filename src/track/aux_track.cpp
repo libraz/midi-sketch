@@ -622,9 +622,10 @@ uint8_t AuxTrackGenerator::getSafePitch(
   int8_t actual_chord_degree = harmony.getChordDegreeAt(start);
 
   // Check if this is a strong beat (beat 1 or 3)
+  // Use full beat range to catch notes slightly off the beat
   Tick bar_pos = start % TICKS_PER_BAR;
-  bool is_strong_beat = (bar_pos < TICKS_PER_BEAT / 2) ||
-                        (bar_pos >= 2 * TICKS_PER_BEAT && bar_pos < 2 * TICKS_PER_BEAT + TICKS_PER_BEAT / 2);
+  bool is_strong_beat = (bar_pos < TICKS_PER_BEAT) ||
+                        (bar_pos >= 2 * TICKS_PER_BEAT && bar_pos < 3 * TICKS_PER_BEAT);
 
   // Strong beats: prefer chord tones for harmonic stability
   if (is_strong_beat) {

@@ -531,5 +531,54 @@ TEST(DissonanceFixesIntegration, MinimalMinor2ndClashesOnDownbeats) {
       << (clash_ratio * 100) << "% (" << total_clashes << "/" << total_checked << ")";
 }
 
+// ============================================================================
+// Test: BGM-only mode zero dissonance guarantee
+// ============================================================================
+// SynthDriven mode should produce zero dissonance issues for any seed.
+// This tests the resolveArpeggioChordClashes() post-process.
+
+TEST(BGMOnlyDissonanceTest, SynthDrivenModeZeroDissonance) {
+  // Test multiple seeds to ensure consistency
+  std::vector<uint32_t> test_seeds = {1, 42, 100, 999, 12345, 54321, 77777};
+
+  for (uint32_t seed : test_seeds) {
+    SongConfig config;
+    config.style_preset_id = 15;  // EDM Synth Pop (SynthDriven)
+    config.seed = seed;
+
+    Generator generator;
+    generator.generateFromConfig(config);
+    const Song& song = generator.getSong();
+
+    // Check for chord-arpeggio clashes (minor 2nd, major 7th, tritone)
+    const auto& chord_notes = song.chord().notes();
+    const auto& arp_notes = song.arpeggio().notes();
+
+    int clash_count = 0;
+    for (const auto& arp : arp_notes) {
+      Tick arp_end = arp.start_tick + arp.duration;
+
+      for (const auto& chord : chord_notes) {
+        Tick chord_end = chord.start_tick + chord.duration;
+
+        // Check for overlap
+        if (arp.start_tick >= chord_end || arp_end <= chord.start_tick) {
+          continue;
+        }
+
+        // Check for dissonant intervals
+        int interval = std::abs(static_cast<int>(arp.note) - static_cast<int>(chord.note)) % 12;
+        if (interval == 1 || interval == 11 || interval == 6) {
+          ++clash_count;
+        }
+      }
+    }
+
+    EXPECT_EQ(clash_count, 0)
+        << "SynthDriven mode should have zero chord-arpeggio clashes, "
+        << "but seed " << seed << " has " << clash_count << " clashes";
+  }
+}
+
 }  // namespace
 }  // namespace midisketch
