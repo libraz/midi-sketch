@@ -143,7 +143,7 @@ uint16_t midisketch_mood_default_bpm(uint8_t id);
 /// @brief Song configuration (new API, replaces MidiSketchParams).
 typedef struct {
   // Basic settings
-  uint8_t style_preset_id;    ///< Style preset ID (0-12)
+  uint8_t style_preset_id;    ///< Style preset ID (0-16)
   uint8_t key;                ///< Key (0-11)
   uint16_t bpm;               ///< BPM (0 = use style default)
   uint32_t seed;              ///< Random seed (0 = random)
@@ -331,7 +331,7 @@ typedef struct {
   uint8_t vocal_low;          ///< Vocal range lower bound (MIDI note, 36-96)
   uint8_t vocal_high;         ///< Vocal range upper bound (MIDI note, 36-96)
   uint8_t vocal_attitude;     ///< 0=Clean, 1=Expressive, 2=Raw
-  uint8_t vocal_style;        ///< VocalStylePreset (0=Auto, 1-8)
+  uint8_t vocal_style;        ///< VocalStylePreset (0=Auto, 1-12)
   uint8_t melody_template;    ///< MelodyTemplateId (0=Auto, 1-7)
   uint8_t melodic_complexity; ///< 0=Simple, 1=Standard, 2=Complex
   uint8_t hook_intensity;     ///< 0=Off, 1=Light, 2=Normal, 3=Strong

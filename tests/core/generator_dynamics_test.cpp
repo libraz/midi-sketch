@@ -81,15 +81,16 @@ TEST(GeneratorTest, TransitionDynamicsApplied) {
   Tick a_end = 8 * TICKS_PER_BAR;
   Tick b_end = 16 * TICKS_PER_BAR;
 
-  // Check that notes exist near section boundaries
+  // Check that notes exist near section boundaries (within last 2 bars)
+  // Using 2 bars instead of 1 to avoid dependency on leading tone insertion
   bool has_notes_before_b = false;
   bool has_notes_before_chorus = false;
 
   for (const auto& note : vocal) {
-    if (note.start_tick >= a_end - TICKS_PER_BAR && note.start_tick < a_end) {
+    if (note.start_tick >= a_end - 2 * TICKS_PER_BAR && note.start_tick < a_end) {
       has_notes_before_b = true;
     }
-    if (note.start_tick >= b_end - TICKS_PER_BAR && note.start_tick < b_end) {
+    if (note.start_tick >= b_end - 2 * TICKS_PER_BAR && note.start_tick < b_end) {
       has_notes_before_chorus = true;
     }
   }
