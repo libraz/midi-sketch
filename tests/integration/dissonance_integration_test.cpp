@@ -19,10 +19,6 @@
 namespace midisketch {
 namespace {
 
-// Dissonant intervals in semitones (within same octave context)
-constexpr int INTERVAL_MINOR_2ND = 1;
-constexpr int INTERVAL_MAJOR_7TH = 11;
-
 // Maximum allowed register separation for clash detection (2 octaves)
 constexpr int MAX_CLASH_SEPARATION = 24;
 
@@ -34,17 +30,6 @@ struct ClashInfo {
   Tick tick;
   int interval;
 };
-
-// Check if an interval is considered dissonant with chord context
-// Tritones are allowed on V (dominant) and vii° chords
-bool isDissonantIntervalWithChordContext(int pitch_class_interval, int8_t chord_degree) {
-  if (pitch_class_interval == INTERVAL_MINOR_2ND ||
-      pitch_class_interval == INTERVAL_MAJOR_7TH) {
-    return true;  // Always dissonant
-  }
-  // Use the same context-aware logic as the generator
-  return midisketch::isDissonantIntervalWithContext(0, pitch_class_interval, chord_degree);
-}
 
 // Get track name for reporting
 std::string getTrackName(const MidiTrack* track, const Song& song) {
@@ -81,14 +66,13 @@ std::vector<ClashInfo> findClashes(const MidiTrack& track_a, const std::string& 
       // Skip wide separations (perceptually not clashing)
       if (actual_interval >= MAX_CLASH_SEPARATION) continue;
 
-      // Check pitch class interval with chord context
-      int pitch_class_interval = actual_interval % 12;
+      // Check dissonance using unified logic from pitch_utils
       Tick overlap_tick = std::max(start_a, start_b);
       int8_t chord_degree = harmony.getChordDegreeAt(overlap_tick);
 
-      if (isDissonantIntervalWithChordContext(pitch_class_interval, chord_degree)) {
+      if (isDissonantActualInterval(actual_interval, chord_degree)) {
         clashes.push_back({name_a, name_b, note_a.note, note_b.note,
-                          overlap_tick, pitch_class_interval});
+                          overlap_tick, actual_interval});
       }
     }
   }
@@ -152,6 +136,15 @@ TEST_F(TrackClashIntegrationTest, MelodyLeadMode_NoDissonantClashes) {
     gen.generate(params_);
 
     auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
+
+    if (!clashes.empty()) {
+      std::cerr << "\n=== Seed " << seed << " clashes ===\n";
+      for (const auto& c : clashes) {
+        std::cerr << c.track_a << "(" << (int)c.pitch_a << ") vs "
+                  << c.track_b << "(" << (int)c.pitch_b << ") "
+                  << "interval=" << c.interval << " tick=" << c.tick << "\n";
+      }
+    }
 
     EXPECT_EQ(clashes.size(), 0u)
         << "MelodyLead mode (seed " << seed << ") has " << clashes.size()

@@ -8,6 +8,7 @@
 #include "core/chord.h"
 #include "core/harmonic_rhythm.h"
 #include "core/midi_track.h"
+#include "core/pitch_utils.h"
 #include <algorithm>
 #include <cmath>
 
@@ -126,7 +127,6 @@ void HarmonyContext::registerTrack(const MidiTrack& track, TrackRole role) {
 }
 
 bool HarmonyContext::isPitchSafe(uint8_t pitch, Tick start, Tick duration, TrackRole exclude) const {
-  int pitch_pc = pitch % 12;
   Tick end = start + duration;
 
   // Get chord context for smarter dissonance detection
@@ -137,9 +137,8 @@ bool HarmonyContext::isPitchSafe(uint8_t pitch, Tick start, Tick duration, Track
 
     // Check if notes overlap in time
     if (note.start < end && note.end > start) {
-      int note_pc = note.pitch % 12;
-      // Use contextual check - allows tritone on dominant chord
-      if (midisketch::isDissonantIntervalWithContext(pitch_pc, note_pc, chord_degree)) {
+      int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
+      if (isDissonantActualInterval(actual_semitones, chord_degree)) {
         return false;
       }
     }

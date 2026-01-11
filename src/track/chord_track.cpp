@@ -1501,10 +1501,9 @@ std::vector<VoicedChord> filterVoicingsForContext(
     const std::vector<int>& motif_pcs = {}) {
 
   std::vector<VoicedChord> filtered;
-  std::vector<VoicedChord> vocal_doubling_only;  // Fallback: only vocal doubling issue
 
   for (const auto& v : candidates) {
-    bool has_vocal_doubling = false;
+    bool has_vocal_clash = false;
     bool has_aux_clash = false;
     bool has_bass_clash = false;
     bool has_motif_clash = false;
@@ -1512,9 +1511,15 @@ std::vector<VoicedChord> filterVoicingsForContext(
     for (uint8_t i = 0; i < v.count; ++i) {
       int pc = v.pitches[i] % 12;
 
-      // Priority 1: Vocal pitch class doubling (absolute prohibition)
-      if (vocal_pc >= 0 && pc == vocal_pc) {
-        has_vocal_doubling = true;
+      // Priority 1: Vocal close interval clash (absolute prohibition)
+      // Unison (0), minor 2nd (1), major 2nd (2) all cause harsh dissonance
+      // Major 2nd sounds particularly harsh when chord and vocal overlap
+      if (vocal_pc >= 0) {
+        int interval = std::abs(pc - vocal_pc);
+        if (interval > 6) interval = 12 - interval;
+        if (interval <= 2) {
+          has_vocal_clash = true;
+        }
       }
 
       // Priority 2: Bass semitone clash
@@ -1537,11 +1542,11 @@ std::vector<VoicedChord> filterVoicingsForContext(
       }
     }
 
-    if (!has_vocal_doubling && !has_bass_clash && !has_aux_clash && !has_motif_clash) {
+    if (!has_vocal_clash && !has_bass_clash && !has_aux_clash && !has_motif_clash) {
       // Perfect: no issues
       filtered.push_back(v);
-    } else if (!has_vocal_doubling) {
-      // Has bass/aux/motif clash but no vocal doubling - try removing clashing pitches
+    } else if (!has_vocal_clash) {
+      // Has bass/aux/motif clash but no vocal clash - try removing clashing pitches
       VoicedChord modified = v;
       modified.count = 0;
       for (uint8_t i = 0; i < v.count; ++i) {
@@ -1577,14 +1582,50 @@ std::vector<VoicedChord> filterVoicingsForContext(
         filtered.push_back(modified);
       }
     } else {
-      // Has vocal doubling - save for fallback
-      vocal_doubling_only.push_back(v);
+      // Has vocal clash - try removing clashing pitches first
+      VoicedChord modified = v;
+      modified.count = 0;
+      for (uint8_t i = 0; i < v.count; ++i) {
+        int pc = v.pitches[i] % 12;
+        bool skip = false;
+
+        // Skip if clashes with vocal (close interval)
+        if (vocal_pc >= 0) {
+          int interval = std::abs(pc - vocal_pc);
+          if (interval > 6) interval = 12 - interval;
+          if (interval <= 2) skip = true;
+        }
+
+        // Also skip other clashes
+        if (bass_root_pc >= 0 && !skip && clashesWithBass(pc, bass_root_pc)) {
+          skip = true;
+        }
+        if (aux_pc >= 0 && !skip) {
+          int interval = std::abs(pc - aux_pc);
+          if (interval > 6) interval = 12 - interval;
+          if (interval == 1) skip = true;
+        }
+        if (!motif_pcs.empty() && !skip && clashesWithPitchClasses(pc, motif_pcs)) {
+          skip = true;
+        }
+
+        if (!skip) {
+          modified.pitches[modified.count] = v.pitches[i];
+          modified.count++;
+        }
+      }
+
+      if (modified.count >= 2) {
+        filtered.push_back(modified);
+      }
+      // If modified voicing has < 2 notes, skip it entirely
     }
   }
 
-  // Fallback: if all filtered, allow vocal doubling as last resort
+  // Fallback: if all filtered out, return original candidates
+  // (better to have some chord than none)
   if (filtered.empty()) {
-    return vocal_doubling_only.empty() ? candidates : vocal_doubling_only;
+    return candidates;
   }
 
   return filtered;

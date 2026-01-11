@@ -7,6 +7,7 @@
 #include "core/chord.h"
 #include "core/json_helpers.h"
 #include "core/note_factory.h"
+#include "core/pitch_utils.h"
 #include "core/song.h"
 #include <algorithm>
 #include <cmath>
@@ -304,64 +305,77 @@ bool isPitchClassChordTone(int pitch_class, int8_t degree,
 }
 
 // Check if an interval is dissonant, considering both pitch class and register.
+// Uses the unified isDissonantActualInterval for base detection, then adds severity.
+// The analyzer also checks compound intervals (1+ octave) that the generator allows.
 // actual_semitones: the real distance between notes (not modulo 12)
 // chord_degree: the current chord's scale degree
 // Returns (is_dissonant, severity).
 std::pair<bool, DissonanceSeverity> checkIntervalDissonance(uint8_t actual_semitones,
                                                             int8_t chord_degree) {
-  uint8_t interval = actual_semitones % 12;
-
-  // Register separation rule (music theory):
-  // Compound intervals (> 1 octave) are significantly less dissonant.
-  // Notes 2+ octaves apart rarely cause perceptual clashes.
+  uint8_t pitch_class_interval = actual_semitones % 12;
   bool is_compound = actual_semitones > 12;
   bool is_wide_separation = actual_semitones > 24;
 
-  // Minor 2nd (1) and Major 7th (11) need special handling.
-  if (interval == 1 || interval == 11) {
-    // Wide separation (2+ octaves): typically acceptable
-    if (is_wide_separation) {
-      return {false, DissonanceSeverity::Low};
-    }
+  // Wide separation (2+ octaves): typically acceptable regardless of interval
+  if (is_wide_separation) {
+    return {false, DissonanceSeverity::Low};
+  }
 
-    // Compound interval (1-2 octaves): reduced severity
-    if (is_compound) {
-      return {true, DissonanceSeverity::Low};
-    }
+  // First check with unified function (handles close-range dissonances)
+  bool is_dissonant = isDissonantActualInterval(actual_semitones, chord_degree);
 
-    // Same octave: check chord context for major 7th
-    if (interval == 11) {
-      // Maj7 chords on I (degree 0) and IV (degree 3) are common in pop/jazz.
-      // The major 7th is part of the chord structure, not dissonant.
+  // Analyzer also checks compound intervals for reporting purposes
+  // These are less harsh but worth noting
+  if (!is_dissonant && is_compound) {
+    // Minor 2nd as compound (13 semitones = minor 9th): still harsh
+    if (pitch_class_interval == 1 || pitch_class_interval == 11) {
+      is_dissonant = true;
+    }
+    // Tritone as compound (18 semitones): context-dependent
+    if (pitch_class_interval == 6) {
       int normalized = ((chord_degree % 7) + 7) % 7;
-      if (normalized == 0 || normalized == 3) {
-        // Could be intentional Maj7 voicing - reduce to medium
-        return {true, DissonanceSeverity::Medium};
+      if (normalized != 4 && normalized != 6) {
+        is_dissonant = true;  // Not V or vii - tritone is dissonant
       }
     }
+  }
 
+  if (!is_dissonant) {
+    return {false, DissonanceSeverity::Low};
+  }
+
+  // Determine severity based on interval type and register
+  // Minor 2nd (1) and minor 9th (13): highest severity
+  if (actual_semitones == 1 || actual_semitones == 13) {
     return {true, DissonanceSeverity::High};
   }
 
-  // Tritone (6) is context-dependent.
-  // It's acceptable in dominant 7th chords (degree 4 = V).
-  if (interval == 6) {
-    // On V chord (dominant), tritone is part of the chord structure
-    int normalized = ((chord_degree % 7) + 7) % 7;
-    if (normalized == 4) {
-      return {false, DissonanceSeverity::Low};  // Not dissonant on V
-    }
-    // Wide separation reduces severity
-    if (is_wide_separation) {
-      return {false, DissonanceSeverity::Low};
-    }
-    if (is_compound) {
-      return {true, DissonanceSeverity::Low};
-    }
-    return {true, DissonanceSeverity::Medium};
+  // Major 2nd (2): high severity in close range
+  if (actual_semitones == 2) {
+    return {true, DissonanceSeverity::High};
   }
 
-  return {false, DissonanceSeverity::Low};  // Not dissonant
+  // Major 7th (11): check chord context
+  if (actual_semitones == 11) {
+    int normalized = ((chord_degree % 7) + 7) % 7;
+    if (normalized == 0 || normalized == 3) {
+      return {true, DissonanceSeverity::Medium};  // Could be intentional Maj7
+    }
+    return {true, DissonanceSeverity::High};
+  }
+
+  // Compound minor 2nd / major 7th: reduced severity
+  if (is_compound && (pitch_class_interval == 1 || pitch_class_interval == 11)) {
+    return {true, DissonanceSeverity::Low};
+  }
+
+  // Tritone: medium severity for close range, low for compound
+  if (pitch_class_interval == 6) {
+    return {true, is_compound ? DissonanceSeverity::Low : DissonanceSeverity::Medium};
+  }
+
+  // Default to medium for any other flagged interval
+  return {true, DissonanceSeverity::Medium};
 }
 
 // Convert track role to string name.
@@ -1170,11 +1184,11 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
       // Without chord info, use default chord degree 0 (C major)
       auto [is_dissonant, base_severity] = checkIntervalDissonance(actual_interval, 0);
 
-      // Also check for major 2nd (2 semitones) between melodic tracks and chord.
-      // This catches Vocal-Chord clashes like F vs G that sound harsh but aren't
-      // flagged by checkIntervalDissonance (which only checks minor 2nd, major 7th, tritone).
+      // Also check for major 2nd (2 semitones actual) between melodic tracks and chord.
+      // This catches Vocal-Chord clashes like F vs G that sound harsh.
+      // Note: Minor 7th (10) and major 9th (14) are acceptable in Pop (7th chords, add9).
       bool is_melodic_chord_clash = false;
-      if (!is_dissonant && (interval == 2 || interval == 10)) {  // Major 2nd or minor 7th
+      if (!is_dissonant && actual_interval == 2) {  // Only actual major 2nd, not compound
         // Only flag if one track is melodic (Vocal, Motif, Aux) and other is Chord
         bool a_is_melodic = (note_a.track_name == "Vocal" || note_a.track_name == "Motif" ||
                              note_a.track_name == "Aux");
@@ -1184,12 +1198,9 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
         bool b_is_chord = (note_b.track_name == "Chord");
 
         if ((a_is_melodic && b_is_chord) || (b_is_melodic && a_is_chord)) {
-          // Major 2nd between melodic and chord - close range only
-          if (actual_interval <= 14) {  // Within 1 octave + minor 2nd
-            is_dissonant = true;
-            is_melodic_chord_clash = true;
-            base_severity = DissonanceSeverity::Medium;  // Will be elevated on strong beats
-          }
+          is_dissonant = true;
+          is_melodic_chord_clash = true;
+          base_severity = DissonanceSeverity::Medium;  // Will be elevated on strong beats
         }
       }
 

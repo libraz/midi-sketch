@@ -167,6 +167,21 @@ bool isDissonantInterval(int pc1, int pc2);
  */
 bool isDissonantIntervalWithContext(int pc1, int pc2, int8_t chord_degree);
 
+/**
+ * @brief Check if an actual semitone interval is dissonant (Pop theory).
+ *
+ * Uses actual semitone distance for accurate dissonance detection.
+ * Compound intervals (1+ octave) are treated differently:
+ * - Minor 2nd (1) and minor 9th (13): always harsh
+ * - Major 2nd (2): harsh in close range only
+ * - Minor 7th (10), major 9th (14): acceptable in Pop (7th chords, add9)
+ *
+ * @param actual_semitones Actual distance between notes in semitones
+ * @param chord_degree Current chord's scale degree (0=I, 4=V, etc.)
+ * @return true if interval is dissonant
+ */
+bool isDissonantActualInterval(int actual_semitones, int8_t chord_degree);
+
 // ============================================================================
 // Scale Functions
 // ============================================================================

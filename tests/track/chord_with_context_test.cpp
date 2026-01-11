@@ -444,6 +444,188 @@ TEST_F(ChordWithContextTest, RegressionTestOriginalBugParameters) {
   EXPECT_EQ(clash_count, 0) << "No minor 2nd clashes expected with original bug parameters";
 }
 
+// === Vocal Close Interval Avoidance Tests ===
+// These tests verify that Chord voicing avoids close intervals with Vocal
+// (minor 2nd, major 2nd) to prevent harsh dissonance.
+// This is the "Vocal Priority" principle: Vocal melody is generated first,
+// and Chord track adapts its voicing to avoid clashing with Vocal.
+
+// Helper function to count dissonant interval clashes between two tracks
+// Uses same criteria as dissonance analysis: minor 2nd (1) and major 2nd (2)
+// These are the harshest intervals when Chord and Vocal overlap
+int countDissonantClashes(const MidiTrack& track1, const MidiTrack& track2) {
+  int count = 0;
+  for (const auto& note1 : track1.notes()) {
+    Tick end1 = note1.start_tick + note1.duration;
+    int pc1 = note1.note % 12;
+
+    for (const auto& note2 : track2.notes()) {
+      Tick end2 = note2.start_tick + note2.duration;
+      int pc2 = note2.note % 12;
+
+      // Check if notes overlap in time
+      if (note1.start_tick < end2 && note2.start_tick < end1) {
+        // Check for dissonant intervals: minor 2nd (1), major 2nd (2)
+        int interval = std::abs(pc1 - pc2);
+        if (interval > 6) interval = 12 - interval;
+        // Minor 2nd is the most dissonant, major 2nd is also harsh
+        if (interval == 1 || interval == 2) {
+          count++;
+        }
+      }
+    }
+  }
+  return count;
+}
+
+TEST_F(ChordWithContextTest, AvoidsCloseIntervalsWithVocalFullGeneration) {
+  // Test that full generation pipeline avoids close intervals between
+  // Chord and Vocal tracks. Uses Generator::generate() for realistic scenario.
+  //
+  // Root cause of original bug: filterVoicingsForContext() only checked
+  // for unison (vocal_pc == chord_pc) but not close intervals.
+  // Fix: Extended check to interval <= 2 semitones.
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal_track = gen.getSong().vocal();
+  const auto& chord_track = gen.getSong().chord();
+
+  ASSERT_GT(vocal_track.noteCount(), 0u);
+  ASSERT_GT(chord_track.noteCount(), 0u);
+
+  int close_count = countDissonantClashes(vocal_track, chord_track);
+
+  // With the fix, close interval clashes should be minimal
+  // Allow some tolerance as complete elimination may not be possible
+  EXPECT_LT(close_count, 20)
+      << "Close interval clashes between Vocal and Chord should be minimal";
+}
+
+TEST_F(ChordWithContextTest, AvoidsCloseIntervalsWithVocalModulation) {
+  // Test that Vocal close interval avoidance works with modulation enabled.
+  // Modulation transposes the key mid-song, which could cause new clashes
+  // if the avoidance logic doesn't account for pitch class correctly.
+
+  Generator gen;
+  gen.setModulationTiming(ModulationTiming::LastChorus, 2);
+  gen.generate(params_);
+
+  const auto& vocal_track = gen.getSong().vocal();
+  const auto& chord_track = gen.getSong().chord();
+
+  ASSERT_GT(vocal_track.noteCount(), 0u);
+  ASSERT_GT(chord_track.noteCount(), 0u);
+
+  int close_count = countDissonantClashes(vocal_track, chord_track);
+
+  EXPECT_LT(close_count, 20)
+      << "Close interval clashes with modulation should be minimal";
+}
+
+TEST_F(ChordWithContextTest, AvoidsCloseIntervalsAcrossMultipleSeeds) {
+  // Stress test: verify close interval avoidance across multiple seeds
+  // to ensure the fix is robust and doesn't depend on specific RNG states.
+
+  std::vector<uint32_t> test_seeds = {100, 200, 300, 400, 500, 1000, 2000, 3000};
+
+  for (uint32_t seed : test_seeds) {
+    GeneratorParams params = params_;
+    params.seed = seed;
+
+    Generator gen;
+    gen.generate(params);
+
+    const auto& vocal_track = gen.getSong().vocal();
+    const auto& chord_track = gen.getSong().chord();
+
+    if (vocal_track.noteCount() == 0 || chord_track.noteCount() == 0) {
+      continue;  // Skip if tracks are empty
+    }
+
+    int close_count = countDissonantClashes(vocal_track, chord_track);
+
+    EXPECT_LT(close_count, 30)
+        << "Seed " << seed << " has " << close_count << " close interval clashes";
+  }
+}
+
+TEST_F(ChordWithContextTest, AvoidsCloseIntervalsAcrossAllChordProgressions) {
+  // Verify close interval avoidance works for all 22 chord progressions.
+  // Different progressions have different harmonic contexts which could
+  // affect voicing selection.
+
+  for (uint8_t chord_id = 0; chord_id < 22; ++chord_id) {
+    GeneratorParams params = params_;
+    params.chord_id = chord_id;
+    params.seed = 42;  // Fixed seed for reproducibility
+
+    Generator gen;
+    gen.generate(params);
+
+    const auto& vocal_track = gen.getSong().vocal();
+    const auto& chord_track = gen.getSong().chord();
+
+    if (vocal_track.noteCount() == 0 || chord_track.noteCount() == 0) {
+      continue;
+    }
+
+    int close_count = countDissonantClashes(vocal_track, chord_track);
+
+    EXPECT_LT(close_count, 30)
+        << "Chord progression " << static_cast<int>(chord_id)
+        << " has " << close_count << " close interval clashes";
+  }
+}
+
+TEST_F(ChordWithContextTest, RegressionVocalCloseIntervalOriginalBug) {
+  // Regression test based on backup/dissonance_investigation_2026-01-12.md
+  // Original bug: Chord(C4/E4) vs Vocal/Aux(D5) causing major 2nd/minor 7th
+  // clashes at bars 17, 22, 24, 46, 48, 72.
+  //
+  // Note: The original MIDI had metadata bugs, so exact reproduction is
+  // not possible. This test uses similar parameters to verify the fix.
+
+  params_.chord_id = 2;  // Axis progression: vi-IV-I-V
+  params_.mood = Mood::IdolPop;  // mood 14
+  params_.bpm = 160;
+  params_.seed = 12345;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal_track = gen.getSong().vocal();
+  const auto& chord_track = gen.getSong().chord();
+
+  ASSERT_GT(vocal_track.noteCount(), 0u);
+  ASSERT_GT(chord_track.noteCount(), 0u);
+
+  // Count close interval clashes (major 2nd = interval 2)
+  int major_2nd_count = 0;
+  for (const auto& vocal_note : vocal_track.notes()) {
+    Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
+    int vocal_pc = vocal_note.note % 12;
+
+    for (const auto& chord_note : chord_track.notes()) {
+      Tick chord_end = chord_note.start_tick + chord_note.duration;
+      int chord_pc = chord_note.note % 12;
+
+      if (vocal_note.start_tick < chord_end && chord_note.start_tick < vocal_end) {
+        int interval = std::abs(vocal_pc - chord_pc);
+        if (interval > 6) interval = 12 - interval;
+        if (interval == 2) {  // Major 2nd specifically
+          major_2nd_count++;
+        }
+      }
+    }
+  }
+
+  // After fix, major 2nd clashes should be minimal
+  EXPECT_LT(major_2nd_count, 10)
+      << "Major 2nd clashes between Vocal and Chord should be minimal";
+}
+
 // === Chord-Bass Tritone Avoidance Tests ===
 
 TEST_F(ChordWithContextTest, AvoidsTritoneCashesWithBass) {

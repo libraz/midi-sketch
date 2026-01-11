@@ -30,10 +30,6 @@ constexpr int MIN_PT_INTERVAL = 3;
 // Minimum duration for splitting into NCT + resolution
 constexpr Tick MIN_SPLIT_DURATION = TICK_EIGHTH;
 
-// Anticipation window before chord change
-constexpr Tick ANT_WINDOW_MIN = TICK_SIXTEENTH;
-constexpr Tick ANT_WINDOW_MAX = TICK_EIGHTH;
-
 }  // namespace
 
 // ============================================================================

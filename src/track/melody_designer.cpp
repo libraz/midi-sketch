@@ -19,21 +19,6 @@ namespace {
 // Default velocity for melody notes
 constexpr uint8_t DEFAULT_VELOCITY = 100;
 
-// Check if a tick position is on a strong beat (Beat 1 or Beat 3).
-// Strong beats are critical for harmonic establishment in pop music.
-// @param tick Absolute tick position
-// @return true if on Beat 1 or Beat 3 of any bar
-bool isStrongBeat(Tick tick) {
-  Tick pos_in_bar = tick % TICKS_PER_BAR;
-  // Beat 1: 0 to TICKS_PER_BEAT (with tolerance for slight offsets)
-  // Beat 3: 2*TICKS_PER_BEAT to 3*TICKS_PER_BEAT
-  constexpr Tick TOLERANCE = TICKS_PER_BEAT / 8;  // 1/32 note tolerance
-  bool is_beat_1 = pos_in_bar < TOLERANCE;
-  bool is_beat_3 = (pos_in_bar >= 2 * TICKS_PER_BEAT - TOLERANCE) &&
-                   (pos_in_bar < 2 * TICKS_PER_BEAT + TOLERANCE);
-  return is_beat_1 || is_beat_3;
-}
-
 // Get the bass root pitch class for a given chord degree.
 // This is the note that bass will play as the harmonic foundation.
 // @param chord_degree Chord degree (0-6 for diatonic)

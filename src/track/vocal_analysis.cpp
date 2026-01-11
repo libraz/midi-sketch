@@ -132,7 +132,6 @@ std::vector<VocalPhraseInfo> extractPhrases(const std::vector<NoteEvent>& notes,
   Tick phrase_end = sorted_notes[0].start_tick + sorted_notes[0].duration;
   uint8_t phrase_low = sorted_notes[0].note;
   uint8_t phrase_high = sorted_notes[0].note;
-  size_t phrase_note_count = 1;
   Tick phrase_total_duration = sorted_notes[0].duration;
 
   for (size_t i = 1; i < sorted_notes.size(); ++i) {
@@ -154,14 +153,12 @@ std::vector<VocalPhraseInfo> extractPhrases(const std::vector<NoteEvent>& notes,
       phrase_end = note.start_tick + note.duration;
       phrase_low = note.note;
       phrase_high = note.note;
-      phrase_note_count = 1;
       phrase_total_duration = note.duration;
     } else {
       // Continue current phrase - extend and update stats
       phrase_end = std::max(phrase_end, note.start_tick + note.duration);
       phrase_low = std::min(phrase_low, note.note);
       phrase_high = std::max(phrase_high, note.note);
-      phrase_note_count++;
       phrase_total_duration += note.duration;
     }
   }

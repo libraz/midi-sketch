@@ -123,8 +123,15 @@ bool isDissonantIntervalWithContext(int pc1, int pc2, int8_t chord_degree) {
   int interval = std::abs(pc1 - pc2);
   if (interval > 6) interval = 12 - interval;
 
-  // Minor 2nd (1) is always dissonant
+  // Minor 2nd (1) is always dissonant - creates harsh beating
   if (interval == 1) {
+    return true;
+  }
+
+  // Major 2nd (2) is dissonant when tracks overlap
+  // While acceptable as passing tone or tension within a chord,
+  // it sounds harsh when Chord and Vocal play simultaneously
+  if (interval == 2) {
     return true;
   }
 
@@ -139,6 +146,40 @@ bool isDissonantIntervalWithContext(int pc1, int pc2, int8_t chord_degree) {
     return true;  // Other chords - tritone is dissonant
   }
 
+  return false;
+}
+
+bool isDissonantActualInterval(int actual_semitones, int8_t chord_degree) {
+  // Minor 2nd (1 semitone): always dissonant
+  if (actual_semitones == 1) {
+    return true;
+  }
+
+  // Major 2nd (2 semitones): dissonant in close range
+  if (actual_semitones == 2) {
+    return true;
+  }
+
+  // Major 7th (11 semitones): dissonant
+  if (actual_semitones == 11) {
+    return true;
+  }
+
+  // Minor 9th (13 semitones): still harsh (extended minor 2nd)
+  if (actual_semitones == 13) {
+    return true;
+  }
+
+  // Tritone (6 semitones): context-dependent
+  // Allowed on V (dominant) and vii° (diminished) chords
+  if (actual_semitones == 6) {
+    int normalized = ((chord_degree % 7) + 7) % 7;
+    if (normalized != 4 && normalized != 6) {
+      return true;  // Not V or vii - tritone is dissonant
+    }
+  }
+
+  // Minor 7th (10), major 9th (14), etc.: acceptable in Pop
   return false;
 }
 
