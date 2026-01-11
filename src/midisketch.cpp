@@ -49,6 +49,14 @@ std::string generateMetadata(const GeneratorParams& params) {
       .write("vocal_groove", static_cast<int>(params.vocal_groove))
       .write("target_duration", params.target_duration_seconds)
       .write("drums_enabled", params.drums_enabled)
+      .write("modulation_timing", static_cast<int>(params.modulation_timing))
+      .write("modulation_semitones", static_cast<int>(params.modulation_semitones))
+      .write("se_enabled", params.se_enabled)
+      .write("call_enabled", params.call_enabled)
+      .write("call_notes_enabled", params.call_notes_enabled)
+      .write("intro_chant", static_cast<int>(params.intro_chant))
+      .write("mix_pattern", static_cast<int>(params.mix_pattern))
+      .write("call_density", static_cast<int>(params.call_density))
       .endObject();
   return oss.str();
 }

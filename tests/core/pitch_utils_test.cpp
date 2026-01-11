@@ -200,6 +200,86 @@ TEST(PitchUtilsTest, IsDissonantWithContextTritoneOnNonDominant) {
 }
 
 // ============================================================================
+// Actual Interval Dissonance Tests (isDissonantActualInterval)
+// ============================================================================
+
+TEST(PitchUtilsTest, IsDissonantActualInterval_BasicIntervals) {
+  // Basic dissonant intervals (within one octave)
+  EXPECT_TRUE(isDissonantActualInterval(1, 0));   // Minor 2nd
+  EXPECT_TRUE(isDissonantActualInterval(2, 0));   // Major 2nd
+  EXPECT_TRUE(isDissonantActualInterval(11, 0));  // Major 7th
+  EXPECT_TRUE(isDissonantActualInterval(6, 0));   // Tritone on I chord
+}
+
+TEST(PitchUtilsTest, IsDissonantActualInterval_ConsonantIntervals) {
+  // Consonant intervals should NOT be flagged
+  EXPECT_FALSE(isDissonantActualInterval(3, 0));   // Minor 3rd
+  EXPECT_FALSE(isDissonantActualInterval(4, 0));   // Major 3rd
+  EXPECT_FALSE(isDissonantActualInterval(5, 0));   // Perfect 4th
+  EXPECT_FALSE(isDissonantActualInterval(7, 0));   // Perfect 5th
+  EXPECT_FALSE(isDissonantActualInterval(8, 0));   // Minor 6th
+  EXPECT_FALSE(isDissonantActualInterval(9, 0));   // Major 6th
+  EXPECT_FALSE(isDissonantActualInterval(10, 0));  // Minor 7th (acceptable in pop)
+  EXPECT_FALSE(isDissonantActualInterval(12, 0));  // Octave
+}
+
+TEST(PitchUtilsTest, IsDissonantActualInterval_CompoundMinor2nd) {
+  // Compound minor 2nd (minor 9th and beyond) - dissonant at any octave
+  EXPECT_TRUE(isDissonantActualInterval(13, 0));  // Minor 9th (1 + 12)
+  EXPECT_TRUE(isDissonantActualInterval(25, 0));  // Minor 2nd + 2 octaves
+}
+
+TEST(PitchUtilsTest, IsDissonantActualInterval_CompoundMajor7th) {
+  // Compound major 7th - dissonant at any octave (bass-vocal clash case)
+  // Example: F3(53) vs E5(76) = 23 semitones
+  EXPECT_TRUE(isDissonantActualInterval(23, 0));  // Major 7th + octave
+  EXPECT_TRUE(isDissonantActualInterval(35, 0));  // Major 7th + 2 octaves
+}
+
+TEST(PitchUtilsTest, IsDissonantActualInterval_CompoundTritone) {
+  // Compound tritone - context-dependent at any octave
+  // Example: F3(53) vs B4(71) = 18 semitones
+  EXPECT_TRUE(isDissonantActualInterval(18, 0));   // Tritone + octave on I chord
+  EXPECT_TRUE(isDissonantActualInterval(18, 3));   // Tritone + octave on IV chord
+  EXPECT_FALSE(isDissonantActualInterval(18, 4));  // Tritone + octave on V chord (allowed)
+  EXPECT_FALSE(isDissonantActualInterval(18, 6));  // Tritone + octave on vii chord (allowed)
+  EXPECT_TRUE(isDissonantActualInterval(30, 0));   // Tritone + 2 octaves on I chord
+}
+
+TEST(PitchUtilsTest, IsDissonantActualInterval_Major9thIsConsonant) {
+  // Major 9th (14 semitones) is a common chord extension - NOT dissonant
+  // This is critical: add9 chords use this interval
+  EXPECT_FALSE(isDissonantActualInterval(14, 0));  // Major 9th
+  EXPECT_FALSE(isDissonantActualInterval(14, 3));  // Major 9th on IV
+  EXPECT_FALSE(isDissonantActualInterval(14, 5));  // Major 9th on vi
+}
+
+TEST(PitchUtilsTest, IsDissonantActualInterval_VeryWideIntervalsAllowed) {
+  // Intervals >= 36 semitones (3 octaves) are allowed
+  // Perceptual harshness is sufficiently reduced at this distance
+  EXPECT_FALSE(isDissonantActualInterval(36, 0));  // 3 octaves (would be pc=0)
+  EXPECT_FALSE(isDissonantActualInterval(37, 0));  // 3 octaves + minor 2nd
+  EXPECT_FALSE(isDissonantActualInterval(47, 0));  // 3 octaves + major 7th
+  EXPECT_FALSE(isDissonantActualInterval(42, 0));  // 3 octaves + tritone
+}
+
+TEST(PitchUtilsTest, IsDissonantActualInterval_RealWorldBassVocalClash) {
+  // Real-world test cases from dissonance analysis
+  // Bass F3 (53) vs Vocal B4 (71) = 18 semitones (compound tritone)
+  // On I chord (C): should be dissonant
+  EXPECT_TRUE(isDissonantActualInterval(18, 0));
+
+  // Bass F3 (53) vs Vocal E5 (76) = 23 semitones (compound major 7th)
+  // Should always be dissonant
+  EXPECT_TRUE(isDissonantActualInterval(23, 0));
+  EXPECT_TRUE(isDissonantActualInterval(23, 4));  // Even on V chord
+
+  // Bass G3 (55) vs Vocal B4 (71) = 16 semitones (major 10th)
+  // Should NOT be dissonant
+  EXPECT_FALSE(isDissonantActualInterval(16, 0));
+}
+
+// ============================================================================
 // Scale Snap Tests
 // ============================================================================
 

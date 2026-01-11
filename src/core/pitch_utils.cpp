@@ -150,36 +150,44 @@ bool isDissonantIntervalWithContext(int pc1, int pc2, int8_t chord_degree) {
 }
 
 bool isDissonantActualInterval(int actual_semitones, int8_t chord_degree) {
-  // Minor 2nd (1 semitone): always dissonant
-  if (actual_semitones == 1) {
+  // For very wide intervals (3+ octaves), perceptual harshness is reduced
+  // sufficiently that we can allow them through
+  if (actual_semitones >= 36) {
+    return false;
+  }
+
+  // Pitch class interval for octave-equivalent checks
+  int pc_interval = actual_semitones % 12;
+
+  // Minor 2nd (pitch class 1): harsh beating at any octave
+  // Catches: 1, 13, 25 semitones (within 36 limit)
+  if (pc_interval == 1) {
     return true;
   }
 
-  // Major 2nd (2 semitones): dissonant in close range
+  // Major 2nd: only dissonant in close range (exact 2 semitones)
+  // Major 9th (14) is a common chord extension in pop - NOT dissonant
   if (actual_semitones == 2) {
     return true;
   }
 
-  // Major 7th (11 semitones): dissonant
-  if (actual_semitones == 11) {
+  // Major 7th (pitch class 11): creates tension with root at any octave
+  // Catches: 11, 23, 35 semitones
+  if (pc_interval == 11) {
     return true;
   }
 
-  // Minor 9th (13 semitones): still harsh (extended minor 2nd)
-  if (actual_semitones == 13) {
-    return true;
-  }
-
-  // Tritone (6 semitones): context-dependent
+  // Tritone (pitch class 6): context-dependent at any octave
   // Allowed on V (dominant) and vii° (diminished) chords
-  if (actual_semitones == 6) {
+  // Catches: 6, 18, 30 semitones
+  if (pc_interval == 6) {
     int normalized = ((chord_degree % 7) + 7) % 7;
     if (normalized != 4 && normalized != 6) {
       return true;  // Not V or vii - tritone is dissonant
     }
   }
 
-  // Minor 7th (10), major 9th (14), etc.: acceptable in Pop
+  // Minor 7th (10), major 9th (14), perfect 12th (19), etc.: acceptable in Pop
   return false;
 }
 

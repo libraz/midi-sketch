@@ -225,26 +225,8 @@ MidiValidationReport MidiValidator::validate(const uint8_t* data,
 
 DetectedMidiFormat MidiValidator::detectFormat(const uint8_t* data,
                                                size_t size) {
-  if (size >= 16) {
-    // Check for ktmidi container first (16-byte header)
-    if (std::memcmp(data, "AAAAAAAAEEEEEEEE", 16) == 0) {
-      return DetectedMidiFormat::SMF2_ktmidi;
-    }
-  }
-
-  if (size >= 8) {
-    if (std::memcmp(data, "SMF2CLIP", 8) == 0) {
-      return DetectedMidiFormat::SMF2_Clip;
-    }
-    if (std::memcmp(data, "SMF2CON1", 8) == 0) {
-      return DetectedMidiFormat::SMF2_Container;
-    }
-    if (std::memcmp(data, "MThd", 4) == 0) {
-      return DetectedMidiFormat::SMF1;
-    }
-  }
-
-  return DetectedMidiFormat::Unknown;
+  // Delegate to MidiReader's implementation
+  return MidiReader::detectFormat(data, size);
 }
 
 std::string MidiValidator::formatName(DetectedMidiFormat format) {

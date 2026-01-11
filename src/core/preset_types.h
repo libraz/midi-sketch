@@ -318,6 +318,18 @@ struct GeneratorParams {
   MelodicComplexity melodic_complexity = MelodicComplexity::Standard;
   HookIntensity hook_intensity = HookIntensity::Normal;
   VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
+
+  /// Modulation settings (for metadata/regeneration determinism)
+  ModulationTiming modulation_timing = ModulationTiming::None;
+  int8_t modulation_semitones = 2;  ///< Key change amount (1-4 semitones)
+
+  /// Call/SE settings (for metadata/regeneration determinism)
+  bool se_enabled = true;                       ///< SE track enabled
+  bool call_enabled = false;                    ///< Call enabled
+  bool call_notes_enabled = true;               ///< Call as MIDI notes
+  IntroChant intro_chant = IntroChant::None;    ///< Intro chant pattern
+  MixPattern mix_pattern = MixPattern::None;    ///< MIX pattern
+  CallDensity call_density = CallDensity::Standard;  ///< Call density
 };
 
 /// @brief Configuration for vocal regeneration.

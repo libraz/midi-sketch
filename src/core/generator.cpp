@@ -58,6 +58,18 @@ void Generator::generateFromConfig(const SongConfig& config) {
   modulation_timing_ = result.modulation_timing;
   modulation_semitones_ = result.modulation_semitones;
 
+  // Copy modulation settings to params for metadata serialization
+  result.params.modulation_timing = result.modulation_timing;
+  result.params.modulation_semitones = result.modulation_semitones;
+
+  // Copy call/SE settings to params for metadata serialization
+  result.params.se_enabled = result.se_enabled;
+  result.params.call_enabled = result.call_enabled;
+  result.params.call_notes_enabled = result.call_notes_enabled;
+  result.params.intro_chant = result.intro_chant;
+  result.params.mix_pattern = result.mix_pattern;
+  result.params.call_density = result.call_density;
+
   generate(result.params);
 }
 

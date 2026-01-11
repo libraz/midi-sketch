@@ -12,6 +12,15 @@
 
 namespace midisketch {
 
+/// @brief Detected MIDI file format.
+enum class DetectedMidiFormat {
+  Unknown,
+  SMF1,           // Standard MIDI File Type 0/1/2
+  SMF2_Clip,      // SMF2CLIP (single clip)
+  SMF2_Container, // SMF2CON1 (official container)
+  SMF2_ktmidi     // AAAAAAAAEEEEEEEE (ktmidi container)
+};
+
 /// @brief Parsed MIDI track info.
 struct ParsedTrack {
   std::string name;               ///< Track name
@@ -40,6 +49,24 @@ struct ParsedMidi {
 class MidiReader {
  public:
   MidiReader() = default;
+
+  /** @brief Detect MIDI format from header bytes.
+   *  @param data Pointer to file data
+   *  @param size Size of data
+   *  @return Detected format */
+  static DetectedMidiFormat detectFormat(const uint8_t* data, size_t size);
+
+  /** @brief Check if data is SMF1 format.
+   *  @param data Pointer to file data
+   *  @param size Size of data
+   *  @return true if SMF1 */
+  static bool isSMF1Format(const uint8_t* data, size_t size);
+
+  /** @brief Check if data is SMF2 format (Clip or Container).
+   *  @param data Pointer to file data
+   *  @param size Size of data
+   *  @return true if SMF2 */
+  static bool isSMF2Format(const uint8_t* data, size_t size);
 
   /** @brief Read MIDI from file. @param path File path @return Success */
   bool read(const std::string& path);

@@ -5,21 +5,12 @@
 
 #pragma once
 
-#include "core/types.h"
+#include "midi/midi_reader.h"  // for DetectedMidiFormat
 #include <cstdint>
 #include <string>
 #include <vector>
 
 namespace midisketch {
-
-// Detected MIDI file format
-enum class DetectedMidiFormat {
-  Unknown,
-  SMF1,           // Standard MIDI File Type 0/1/2
-  SMF2_Clip,      // SMF2CLIP (single clip)
-  SMF2_Container, // SMF2CON1 (official container)
-  SMF2_ktmidi     // AAAAAAAAEEEEEEEE (ktmidi container)
-};
 
 // Validation issue severity
 enum class ValidationSeverity { Info, Warning, Error };

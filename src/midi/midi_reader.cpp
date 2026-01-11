@@ -40,6 +40,45 @@ bool iequals(const std::string& a, const std::string& b) {
 
 }  // namespace
 
+// Static format detection methods
+
+DetectedMidiFormat MidiReader::detectFormat(const uint8_t* data, size_t size) {
+  if (size >= 16) {
+    // Check for ktmidi container first (16-byte header)
+    if (std::memcmp(data, "AAAAAAAAEEEEEEEE", 16) == 0) {
+      return DetectedMidiFormat::SMF2_ktmidi;
+    }
+  }
+
+  if (size >= 8) {
+    if (std::memcmp(data, "SMF2CLIP", 8) == 0) {
+      return DetectedMidiFormat::SMF2_Clip;
+    }
+    if (std::memcmp(data, "SMF2CON1", 8) == 0) {
+      return DetectedMidiFormat::SMF2_Container;
+    }
+  }
+
+  if (size >= 4) {
+    if (std::memcmp(data, "MThd", 4) == 0) {
+      return DetectedMidiFormat::SMF1;
+    }
+  }
+
+  return DetectedMidiFormat::Unknown;
+}
+
+bool MidiReader::isSMF1Format(const uint8_t* data, size_t size) {
+  return detectFormat(data, size) == DetectedMidiFormat::SMF1;
+}
+
+bool MidiReader::isSMF2Format(const uint8_t* data, size_t size) {
+  auto format = detectFormat(data, size);
+  return format == DetectedMidiFormat::SMF2_Clip ||
+         format == DetectedMidiFormat::SMF2_Container ||
+         format == DetectedMidiFormat::SMF2_ktmidi;
+}
+
 const ParsedTrack* ParsedMidi::getTrack(const std::string& name) const {
   for (const auto& track : tracks) {
     if (iequals(track.name, name)) {
