@@ -668,5 +668,226 @@ TEST(MelodyDesignerTest, PhraseGapsProvideBreathingRoom) {
       << "This suggests excessive gaps (1-bar alternation pattern).";
 }
 
+// ============================================================================
+// Downbeat Chord-Tone Constraint Tests
+// ============================================================================
+
+// Helper to get chord tones for a given degree
+std::vector<int> getChordTonePCs(int8_t degree) {
+  // Diatonic triads in C major: I=CEG, ii=DFA, iii=EGB, IV=FAC, V=GBD, vi=ACE, vii°=BDF
+  constexpr int CHORD_TONES[7][3] = {
+      {0, 4, 7},   // I: C E G
+      {2, 5, 9},   // ii: D F A
+      {4, 7, 11},  // iii: E G B
+      {5, 9, 0},   // IV: F A C
+      {7, 11, 2},  // V: G B D
+      {9, 0, 4},   // vi: A C E
+      {11, 2, 5},  // vii°: B D F
+  };
+  int normalized = ((degree % 7) + 7) % 7;
+  return {CHORD_TONES[normalized][0], CHORD_TONES[normalized][1], CHORD_TONES[normalized][2]};
+}
+
+// Test that downbeat notes are always chord tones
+// This is a fundamental pop music theory principle
+TEST(MelodyDesignerTest, DownbeatNotesAreChordTones) {
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+
+  // Test with multiple seeds to ensure seed-independence
+  std::vector<uint32_t> seeds = {1, 42, 123, 456, 789, 1000, 9999, 12345};
+
+  // Test with multiple templates
+  std::vector<MelodyTemplateId> templates = {
+      MelodyTemplateId::PlateauTalk,
+      MelodyTemplateId::RunUpTarget,
+      MelodyTemplateId::SparseAnchor,
+      MelodyTemplateId::HookRepeat,
+  };
+
+  for (uint32_t seed : seeds) {
+    for (auto tmpl_id : templates) {
+      std::mt19937 rng(seed);
+      const MelodyTemplate& tmpl = getTemplate(tmpl_id);
+
+      MelodyDesigner::SectionContext ctx;
+      ctx.section_type = SectionType::A;
+      ctx.section_start = 0;
+      ctx.section_end = TICKS_PER_BAR * 8;
+      ctx.section_bars = 8;
+      ctx.chord_degree = 0;  // I chord
+      ctx.key_offset = 0;
+      ctx.tessitura = TessituraRange{60, 72, 66};
+      ctx.vocal_low = 55;
+      ctx.vocal_high = 79;
+      ctx.mood = Mood::StraightPop;
+      ctx.vocal_attitude = VocalAttitude::Clean;
+
+      auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+
+      // Check each note on a downbeat (beat 1 of each bar)
+      for (const auto& note : notes) {
+        Tick bar_pos = note.start_tick % TICKS_PER_BAR;
+        bool is_downbeat = bar_pos < TICKS_PER_BEAT / 4;
+
+        if (is_downbeat) {
+          // Get chord degree at this position
+          int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
+          // Use degree 0 if harmony not initialized
+          if (chord_degree < 0 || chord_degree > 6) chord_degree = 0;
+
+          std::vector<int> chord_tones = getChordTonePCs(chord_degree);
+          int pitch_class = note.note % 12;
+
+          bool is_chord_tone = false;
+          for (int ct : chord_tones) {
+            if (pitch_class == ct) {
+              is_chord_tone = true;
+              break;
+            }
+          }
+
+          EXPECT_TRUE(is_chord_tone)
+              << "Downbeat note " << static_cast<int>(note.note)
+              << " (PC=" << pitch_class << ") at tick " << note.start_tick
+              << " is not a chord tone of degree " << static_cast<int>(chord_degree)
+              << ". Chord tones: " << chord_tones[0] << "," << chord_tones[1] << "," << chord_tones[2]
+              << ". Seed=" << seed << ", Template=" << static_cast<int>(tmpl_id);
+        }
+      }
+    }
+  }
+}
+
+// Test that downbeat constraint works across different section types
+TEST(MelodyDesignerTest, DownbeatChordToneAcrossSectionTypes) {
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+
+  std::vector<SectionType> section_types = {
+      SectionType::Intro,
+      SectionType::A,
+      SectionType::B,
+      SectionType::Chorus,
+      SectionType::Bridge,
+  };
+
+  std::vector<uint32_t> seeds = {42, 123, 456};
+
+  for (uint32_t seed : seeds) {
+    for (SectionType sec_type : section_types) {
+      std::mt19937 rng(seed);
+      const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+
+      MelodyDesigner::SectionContext ctx;
+      ctx.section_type = sec_type;
+      ctx.section_start = 0;
+      ctx.section_end = TICKS_PER_BAR * 8;
+      ctx.section_bars = 8;
+      ctx.chord_degree = 0;
+      ctx.key_offset = 0;
+      ctx.tessitura = TessituraRange{60, 72, 66};
+      ctx.vocal_low = 55;
+      ctx.vocal_high = 79;
+      ctx.mood = Mood::StraightPop;
+      ctx.vocal_attitude = VocalAttitude::Clean;
+
+      auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+
+      for (const auto& note : notes) {
+        Tick bar_pos = note.start_tick % TICKS_PER_BAR;
+        bool is_downbeat = bar_pos < TICKS_PER_BEAT / 4;
+
+        if (is_downbeat) {
+          int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
+          if (chord_degree < 0 || chord_degree > 6) chord_degree = 0;
+
+          std::vector<int> chord_tones = getChordTonePCs(chord_degree);
+          int pitch_class = note.note % 12;
+
+          bool is_chord_tone = false;
+          for (int ct : chord_tones) {
+            if (pitch_class == ct) {
+              is_chord_tone = true;
+              break;
+            }
+          }
+
+          EXPECT_TRUE(is_chord_tone)
+              << "Downbeat note PC=" << pitch_class << " at tick " << note.start_tick
+              << " (bar " << (note.start_tick / TICKS_PER_BAR + 1) << ")"
+              << " is not a chord tone. Chord degree=" << static_cast<int>(chord_degree)
+              << ", SectionType=" << static_cast<int>(sec_type)
+              << ". Seed=" << seed;
+        }
+      }
+    }
+  }
+}
+
+// Test that non-downbeat positions can still have non-chord tones
+// (to ensure we're not over-constraining)
+TEST(MelodyDesignerTest, NonDownbeatAllowsNonChordTones) {
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+
+  // Use a larger number of seeds to find at least one non-chord tone
+  std::vector<uint32_t> seeds = {1, 42, 123, 456, 789, 1000, 5000, 9999};
+  bool found_non_chord_tone_on_weak_beat = false;
+
+  for (uint32_t seed : seeds) {
+    if (found_non_chord_tone_on_weak_beat) break;
+
+    std::mt19937 rng(seed);
+    // Use Expressive attitude which allows tensions
+    const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+
+    MelodyDesigner::SectionContext ctx;
+    ctx.section_type = SectionType::A;
+    ctx.section_start = 0;
+    ctx.section_end = TICKS_PER_BAR * 8;
+    ctx.section_bars = 8;
+    ctx.chord_degree = 0;
+    ctx.key_offset = 0;
+    ctx.tessitura = TessituraRange{60, 72, 66};
+    ctx.vocal_low = 55;
+    ctx.vocal_high = 79;
+    ctx.mood = Mood::StraightPop;
+    ctx.vocal_attitude = VocalAttitude::Expressive;  // Allow tensions
+
+    auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+
+    for (const auto& note : notes) {
+      Tick bar_pos = note.start_tick % TICKS_PER_BAR;
+      bool is_downbeat = bar_pos < TICKS_PER_BEAT / 4;
+
+      if (!is_downbeat) {
+        std::vector<int> chord_tones = getChordTonePCs(0);  // I chord
+        int pitch_class = note.note % 12;
+
+        bool is_chord_tone = false;
+        for (int ct : chord_tones) {
+          if (pitch_class == ct) {
+            is_chord_tone = true;
+            break;
+          }
+        }
+
+        if (!is_chord_tone) {
+          found_non_chord_tone_on_weak_beat = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // This test verifies we're not over-constraining - weak beats should
+  // occasionally have non-chord tones (tensions, passing tones, etc.)
+  // If this fails, the constraint might be too aggressive
+  EXPECT_TRUE(found_non_chord_tone_on_weak_beat)
+      << "No non-chord tones found on weak beats across " << seeds.size()
+      << " seeds. The downbeat constraint may be over-applied.";
+}
+
 }  // namespace
 }  // namespace midisketch

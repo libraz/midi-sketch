@@ -242,6 +242,32 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(
     result = MelodicEmbellisher::embellish(result, emb_config, harmony, ctx.key_offset, rng);
   }
 
+  // Final downbeat chord-tone enforcement
+  // Ensures all notes on beat 1 are chord tones, even after embellishment
+  for (auto& note : result) {
+    Tick bar_pos = note.start_tick % TICKS_PER_BAR;
+    bool is_downbeat = bar_pos < TICKS_PER_BEAT / 4;
+    if (is_downbeat) {
+      int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
+      std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
+      int pitch_pc = note.note % 12;
+      bool is_chord_tone = false;
+      for (int ct : chord_tones) {
+        if (pitch_pc == ct) {
+          is_chord_tone = true;
+          break;
+        }
+      }
+      if (!is_chord_tone) {
+        int new_pitch = nearestChordTonePitch(note.note, chord_degree);
+        new_pitch = std::clamp(new_pitch,
+                               static_cast<int>(ctx.vocal_low),
+                               static_cast<int>(ctx.vocal_high));
+        note.note = static_cast<uint8_t>(new_pitch);
+      }
+    }
+  }
+
   return result;
 }
 
@@ -426,6 +452,35 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       }
     }
 
+    // Downbeat chord-tone constraint: beat 1 of each bar requires chord tones.
+    // In pop music theory, the downbeat (beat 1) is the strongest metric position
+    // and must establish clear harmonic grounding. Non-chord tones (tensions like
+    // 9th, 11th, 13th) on beat 1 create harmonic ambiguity and weaken the phrase.
+    // This is a fundamental principle in pop arranging - save tensions for weak
+    // beats and passing tones, use chord tones (1, 3, 5) on strong beats.
+    {
+      Tick bar_pos = note_start % TICKS_PER_BAR;
+      bool is_downbeat = bar_pos < TICKS_PER_BEAT / 4;
+      if (is_downbeat) {
+        std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
+        int new_pc = new_pitch % 12;
+        bool is_chord_tone = false;
+        for (int ct : chord_tones) {
+          if (new_pc == ct) {
+            is_chord_tone = true;
+            break;
+          }
+        }
+        if (!is_chord_tone) {
+          // Snap to nearest chord tone for strong harmonic grounding
+          new_pitch = nearestChordTonePitch(new_pitch, note_chord_degree);
+          new_pitch = std::clamp(new_pitch,
+                                 static_cast<int>(ctx.vocal_low),
+                                 static_cast<int>(ctx.vocal_high));
+        }
+      }
+    }
+
     // Update direction inertia
     int movement = new_pitch - current_pitch;
     if (movement > 0) {
@@ -583,6 +638,29 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(
         if (isAvoidNoteWithRoot(pitch_pc, bass_root_pc)) {
           pitch = getNearestSafeChordTone(pitch, note_chord_degree, bass_root_pc,
                                            ctx.vocal_low, ctx.vocal_high);
+        }
+      }
+
+      // Downbeat chord-tone constraint for hooks
+      {
+        Tick bar_pos = current_tick % TICKS_PER_BAR;
+        bool is_downbeat = bar_pos < TICKS_PER_BEAT / 4;
+        if (is_downbeat) {
+          std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
+          int pitch_pc = pitch % 12;
+          bool is_chord_tone = false;
+          for (int ct : chord_tones) {
+            if (pitch_pc == ct) {
+              is_chord_tone = true;
+              break;
+            }
+          }
+          if (!is_chord_tone) {
+            pitch = nearestChordTonePitch(pitch, note_chord_degree);
+            pitch = std::clamp(pitch,
+                               static_cast<int>(ctx.vocal_low),
+                               static_cast<int>(ctx.vocal_high));
+          }
         }
       }
 

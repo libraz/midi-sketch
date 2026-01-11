@@ -266,7 +266,7 @@ struct StyleMelodyParams {
   /// @{
   float verse_density_modifier = 1.0f;      ///< Density modifier for verse (A)
   float prechorus_density_modifier = 1.0f;  ///< Density modifier for pre-chorus (B)
-  float chorus_density_modifier = 1.10f;    ///< Density modifier for chorus
+  float chorus_density_modifier = 0.9f;     ///< Density modifier for chorus (reduced to prevent 8th note saturation)
   float bridge_density_modifier = 1.0f;     ///< Density modifier for bridge
   bool chorus_long_tones = false;           ///< Use long sustained tones in chorus
   /// @}

@@ -560,7 +560,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // -------------------------------------------------------------------------
     {VocalStylePreset::Auto,
      7, 0.15f, false,                    // leap=5th, low synco, no bar cross
-     1.0f, 1.0f, 1.10f, 1.0f,            // normal density all sections
+     1.0f, 1.0f, 0.9f, 1.0f,             // chorus=90% (avoid 8th note saturation)
      0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
      1.0f, false, false, false, 5, 0.2f}, // all same-note OK, no special flags
 
@@ -569,7 +569,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // -------------------------------------------------------------------------
     {VocalStylePreset::Standard,
      7, 0.15f, false,                    // leap=5th, low synco, no bar cross
-     1.0f, 1.0f, 1.10f, 1.0f,            // normal density all sections
+     1.0f, 1.0f, 0.85f, 1.0f,            // chorus=85% (room for long notes)
      0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
      1.0f, false, false, false, 5, 0.2f}, // standard settings
 
@@ -578,7 +578,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // -------------------------------------------------------------------------
     {VocalStylePreset::Vocaloid,
      12, 0.35f, true,                    // leap=octave, high synco, bar cross OK
-     0.8f, 0.9f, 1.15f, 0.85f,           // verse sparse, chorus dense
+     0.8f, 0.9f, 1.0f, 0.85f,            // verse sparse, chorus=100% (singable pace)
      0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes (still singable)
      1.0f, true, false, false, 5, 0.2f}, // disable vowel limits
 
@@ -588,7 +588,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // -------------------------------------------------------------------------
     {VocalStylePreset::UltraVocaloid,
      14, 0.4f, true,                     // leap=9th(!), high synco, bar cross OK
-     0.3f, 0.5f, 1.6f, 0.35f,            // verse=ballad(30%), chorus=160%(!!)
+     0.3f, 0.5f, 1.4f, 0.35f,            // verse=ballad(30%), chorus=140%
      0.3f, 0.5f, 1.0f, 0.2f,             // 32nd: verse=30%, chorus=100%(!!)
      0.1f, true, false, false, 5, 0.2f}, // same-note=10% only, disable vowel
 
@@ -606,7 +606,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // -------------------------------------------------------------------------
     {VocalStylePreset::Ballad,
      5, 0.15f, false,                    // leap=4th only, gentle movement
-     1.0f, 1.0f, 1.10f, 1.0f,            // normal density
+     1.0f, 1.0f, 0.55f, 1.0f,            // chorus=55% (long tones, breathing room)
      0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
      1.0f, false, false, true, 5, 0.2f}, // long tones in chorus
 
@@ -615,7 +615,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // -------------------------------------------------------------------------
     {VocalStylePreset::Rock,
      9, 0.25f, true,                     // leap=6th, medium synco, bar cross OK
-     1.0f, 1.0f, 1.10f, 1.0f,            // normal density
+     1.0f, 1.0f, 0.75f, 1.0f,            // chorus=75% (power needs sustain)
      0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
      1.0f, false, true, true, 7, 0.2f},  // hook + long tones, chorus +7 semitones
 
@@ -624,7 +624,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // -------------------------------------------------------------------------
     {VocalStylePreset::CityPop,
      7, 0.35f, true,                     // leap=5th, high synco (groovy)
-     1.0f, 1.0f, 1.10f, 1.0f,            // normal density
+     1.0f, 1.0f, 0.75f, 1.0f,            // chorus=75% (relaxed groove)
      0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
      1.0f, false, false, false, 5, 0.4f}, // tension=0.4 (jazzy chords)
 
@@ -633,7 +633,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // -------------------------------------------------------------------------
     {VocalStylePreset::Anime,
      10, 0.25f, true,                    // leap=minor 7th, medium synco
-     1.0f, 1.0f, 1.15f, 1.0f,            // chorus 15% denser
+     1.0f, 1.0f, 1.0f, 1.0f,             // chorus=100% (balanced for drama)
      0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
      1.0f, false, true, true, 5, 0.2f},  // hook repeat + long tones
 
@@ -642,7 +642,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // -------------------------------------------------------------------------
     {VocalStylePreset::BrightKira,
      10, 0.15f, false,                   // leap=minor 7th, low synco
-     1.0f, 1.0f, 1.10f, 1.0f,            // normal density
+     1.0f, 1.0f, 1.0f, 1.0f,             // chorus=100% (bright but not rushed)
      0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
      1.0f, false, true, true, 7, 0.2f},  // hook + long, chorus +7 semitones
 
@@ -651,7 +651,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // -------------------------------------------------------------------------
     {VocalStylePreset::CoolSynth,
      7, 0.15f, true,                     // leap=5th, low synco, bar cross OK
-     1.0f, 1.0f, 1.10f, 1.0f,            // normal density
+     1.0f, 1.0f, 0.75f, 1.0f,            // chorus=75% (cool and relaxed)
      0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
      1.0f, false, true, false, 5, 0.2f}, // hook repeat, no long tones
 
@@ -660,16 +660,16 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // -------------------------------------------------------------------------
     {VocalStylePreset::CuteAffected,
      8, 0.15f, false,                    // leap=minor 6th, low synco
-     1.0f, 1.0f, 1.10f, 1.0f,            // normal density
+     1.0f, 1.0f, 0.9f, 1.0f,             // chorus=90% (cute, not frantic)
      0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
      1.0f, false, true, true, 5, 0.2f},  // hook repeat + long tones
 
     // -------------------------------------------------------------------------
-    // PowerfulShout (12) - Powerful shout style: big leaps, dense chorus
+    // PowerfulShout (12) - Powerful shout style: big leaps, power sustain
     // -------------------------------------------------------------------------
     {VocalStylePreset::PowerfulShout,
      12, 0.2f, false,                    // leap=octave, medium synco
-     1.0f, 1.0f, 1.3f, 1.0f,             // chorus 30% denser
+     1.0f, 1.0f, 0.75f, 1.0f,            // chorus=75% (power needs sustain)
      0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
      1.0f, false, true, true, 5, 0.2f},  // hook repeat + long tones
 };
