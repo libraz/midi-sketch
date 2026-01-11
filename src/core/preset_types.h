@@ -272,6 +272,7 @@ struct GeneratorParams {
   Mood mood;                   ///< Mood/groove preset (0-15)
   uint8_t chord_id;            ///< Chord progression ID (0-15)
   Key key;                     ///< Output key
+  uint8_t style_preset_id = 0; ///< Style preset ID (for metadata/regeneration)
   bool drums_enabled;          ///< Enable drums track
   bool skip_vocal = false;     ///< Skip vocal track generation (for BGM-first workflow)
   /// Note: Modulation is controlled via Generator::modulation_timing_ (set from SongConfig)

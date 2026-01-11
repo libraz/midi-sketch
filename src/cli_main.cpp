@@ -55,8 +55,14 @@ void printUsage(const char* program) {
 midisketch::SongConfig configFromMetadata(const std::string& metadata) {
   midisketch::json::Parser p(metadata);
 
-  // Start with default config
-  midisketch::SongConfig config = midisketch::createDefaultSongConfig(0);
+  // Get style_preset_id first (defaults to 0 for backward compatibility)
+  uint8_t style_preset_id = 0;
+  if (p.has("style_preset_id")) {
+    style_preset_id = static_cast<uint8_t>(p.getInt("style_preset_id"));
+  }
+
+  // Start with default config for the correct style preset
+  midisketch::SongConfig config = midisketch::createDefaultSongConfig(style_preset_id);
 
   // Core parameters from metadata
   if (p.has("seed")) config.seed = p.getUint("seed");
@@ -87,6 +93,12 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata) {
   }
   if (p.has("composition_style")) {
     config.composition_style = static_cast<midisketch::CompositionStyle>(p.getInt("composition_style"));
+  }
+  if (p.has("vocal_groove")) {
+    config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(p.getInt("vocal_groove"));
+  }
+  if (p.has("target_duration")) {
+    config.target_duration_seconds = static_cast<uint16_t>(p.getInt("target_duration"));
   }
   if (p.has("drums_enabled")) config.drums_enabled = p.getBool("drums_enabled");
 

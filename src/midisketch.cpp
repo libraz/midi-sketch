@@ -21,7 +21,7 @@ uint8_t transposePitch(uint8_t pitch, Key key) {
 }
 
 // Metadata format version (increment when format changes incompatibly)
-constexpr int kMetadataFormatVersion = 1;
+constexpr int kMetadataFormatVersion = 2;
 
 // Generate metadata JSON from generator params
 std::string generateMetadata(const GeneratorParams& params) {
@@ -37,6 +37,7 @@ std::string generateMetadata(const GeneratorParams& params) {
       .write("bpm", params.bpm)
       .write("key", static_cast<int>(params.key))
       .write("mood", static_cast<int>(params.mood))
+      .write("style_preset_id", static_cast<int>(params.style_preset_id))
       .write("vocal_low", static_cast<int>(params.vocal_low))
       .write("vocal_high", static_cast<int>(params.vocal_high))
       .write("vocal_attitude", static_cast<int>(params.vocal_attitude))
@@ -45,6 +46,8 @@ std::string generateMetadata(const GeneratorParams& params) {
       .write("melodic_complexity", static_cast<int>(params.melodic_complexity))
       .write("hook_intensity", static_cast<int>(params.hook_intensity))
       .write("composition_style", static_cast<int>(params.composition_style))
+      .write("vocal_groove", static_cast<int>(params.vocal_groove))
+      .write("target_duration", params.target_duration_seconds)
       .write("drums_enabled", params.drums_enabled)
       .endObject();
   return oss.str();

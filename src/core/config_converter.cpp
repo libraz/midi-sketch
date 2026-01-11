@@ -204,6 +204,7 @@ ConfigConverter::ConversionResult ConfigConverter::convert(const SongConfig& con
   params.vocal_low = config.vocal_low;
   params.vocal_high = config.vocal_high;
   params.seed = config.seed;
+  params.style_preset_id = config.style_preset_id;
 
   // Use config BPM if specified, otherwise use style preset default
   params.bpm = (config.bpm != 0) ? config.bpm : preset.tempo_default;
