@@ -52,6 +52,7 @@ set(TEST_SOURCES
   track/chord_with_context_test.cpp
   track/drums_test.cpp
   track/melody_designer_test.cpp
+  track/motif_test.cpp
   track/aux_track_test.cpp
   track/aux_dissonance_regression_test.cpp
   track/bass_dissonance_regression_test.cpp
