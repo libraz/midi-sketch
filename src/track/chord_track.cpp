@@ -1477,13 +1477,26 @@ int getAuxPitchClassAt(const MidiTrack* aux_track, Tick tick) {
   return -1;
 }
 
-// Filter voicings to avoid doubling vocal pitch class and clashing with Aux
+// Check if a pitch class creates a minor 2nd interval with any of the given pitch classes
+bool clashesWithPitchClasses(int pc, const std::vector<int>& pitch_classes) {
+  for (int other_pc : pitch_classes) {
+    int interval = std::abs(pc - other_pc);
+    if (interval > 6) interval = 12 - interval;
+    if (interval == 1) {  // Minor 2nd clash
+      return true;
+    }
+  }
+  return false;
+}
+
+// Filter voicings to avoid doubling vocal pitch class and clashing with Aux/Motif
 // Returns filtered voicings, or original candidates if all are filtered
 std::vector<VoicedChord> filterVoicingsForContext(
     const std::vector<VoicedChord>& candidates,
     int vocal_pc,
     int aux_pc,
-    int bass_root_pc) {
+    int bass_root_pc,
+    const std::vector<int>& motif_pcs = {}) {
 
   std::vector<VoicedChord> filtered;
   std::vector<VoicedChord> vocal_doubling_only;  // Fallback: only vocal doubling issue
@@ -1492,6 +1505,7 @@ std::vector<VoicedChord> filterVoicingsForContext(
     bool has_vocal_doubling = false;
     bool has_aux_clash = false;
     bool has_bass_clash = false;
+    bool has_motif_clash = false;
 
     for (uint8_t i = 0; i < v.count; ++i) {
       int pc = v.pitches[i] % 12;
@@ -1514,13 +1528,18 @@ std::vector<VoicedChord> filterVoicingsForContext(
           has_aux_clash = true;
         }
       }
+
+      // Priority 4: Motif semitone clash (critical for BGM mode)
+      if (!motif_pcs.empty() && clashesWithPitchClasses(pc, motif_pcs)) {
+        has_motif_clash = true;
+      }
     }
 
-    if (!has_vocal_doubling && !has_bass_clash && !has_aux_clash) {
+    if (!has_vocal_doubling && !has_bass_clash && !has_aux_clash && !has_motif_clash) {
       // Perfect: no issues
       filtered.push_back(v);
     } else if (!has_vocal_doubling) {
-      // Has bass/aux clash but no vocal doubling - try removing clashing pitches
+      // Has bass/aux/motif clash but no vocal doubling - try removing clashing pitches
       VoicedChord modified = v;
       modified.count = 0;
       for (uint8_t i = 0; i < v.count; ++i) {
@@ -1537,6 +1556,13 @@ std::vector<VoicedChord> filterVoicingsForContext(
           int interval = std::abs(pc - aux_pc);
           if (interval > 6) interval = 12 - interval;
           if (interval == 1) skip = true;
+        }
+
+        // Skip if clashes with motif
+        if (!motif_pcs.empty() && !skip) {
+          if (clashesWithPitchClasses(pc, motif_pcs)) {
+            skip = true;
+          }
         }
 
         if (!skip) {
@@ -1630,6 +1656,9 @@ void generateChordTrackWithContext(MidiTrack& track, const Song& song,
       int vocal_pc = getVocalPitchClassAt(vocal_analysis, bar_start);
       int aux_pc = getAuxPitchClassAt(aux_track, bar_start);
 
+      // Get Motif pitch classes for this bar (critical for BGM mode)
+      std::vector<int> motif_pcs = harmony.getPitchClassesFromTrackAt(bar_start, TrackRole::Motif);
+
       // Get bass pitch class
       int bass_root_pc = -1;
       bool bass_has_root = true;
@@ -1659,9 +1688,9 @@ void generateChordTrackWithContext(MidiTrack& track, const Song& song,
       std::vector<VoicedChord> candidates = generateVoicings(root, chord, voicing_type,
                                                               bass_root_pc, open_subtype);
 
-      // Filter voicings for vocal/aux/bass context
+      // Filter voicings for vocal/aux/bass/motif context
       std::vector<VoicedChord> filtered = filterVoicingsForContext(
-          candidates, vocal_pc, aux_pc, bass_root_pc);
+          candidates, vocal_pc, aux_pc, bass_root_pc, motif_pcs);
 
       // Select best voicing from filtered candidates with voice leading
       VoicedChord voicing;
@@ -1780,7 +1809,7 @@ void generateChordTrackWithContext(MidiTrack& track, const Song& song,
         auto dom_candidates = generateVoicings(dom_root, dom_chord, voicing_type,
                                                 bass_root_pc, open_subtype);
         auto dom_filtered = filterVoicingsForContext(dom_candidates, vocal_pc,
-                                                      aux_pc, bass_root_pc);
+                                                      aux_pc, bass_root_pc, motif_pcs);
         VoicedChord dom_voicing = dom_filtered.empty()
                                       ? selectVoicing(dom_root, dom_chord, prev_voicing,
                                                       has_prev, voicing_type, bass_root_pc,
@@ -1805,7 +1834,7 @@ void generateChordTrackWithContext(MidiTrack& track, const Song& song,
         auto ii_candidates = generateVoicings(ii_root, ii_chord, voicing_type,
                                                bass_root_pc, open_subtype);
         auto ii_filtered = filterVoicingsForContext(ii_candidates, vocal_pc,
-                                                     aux_pc, bass_root_pc);
+                                                     aux_pc, bass_root_pc, motif_pcs);
         VoicedChord ii_voicing = ii_filtered.empty()
                                      ? selectVoicing(ii_root, ii_chord, prev_voicing,
                                                      has_prev, voicing_type, bass_root_pc,

@@ -282,4 +282,30 @@ bool HarmonyContext::hasBassCollision(uint8_t pitch, Tick start, Tick duration,
   return false;
 }
 
+std::vector<int> HarmonyContext::getPitchClassesFromTrackAt(Tick tick, TrackRole role) const {
+  std::vector<int> pitch_classes;
+
+  for (const auto& note : notes_) {
+    if (note.track != role) continue;
+
+    // Check if note is sounding at this tick
+    if (note.start <= tick && note.end > tick) {
+      int pc = note.pitch % 12;
+      // Avoid duplicates
+      bool found = false;
+      for (int existing : pitch_classes) {
+        if (existing == pc) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        pitch_classes.push_back(pc);
+      }
+    }
+  }
+
+  return pitch_classes;
+}
+
 }  // namespace midisketch

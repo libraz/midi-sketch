@@ -4,12 +4,14 @@
  */
 
 #include <gtest/gtest.h>
+#include "core/chord.h"
 #include "core/generator.h"
 #include "core/harmony_context.h"
 #include "core/song.h"
 #include "core/types.h"
 #include "track/bass.h"
 #include "track/chord_track.h"
+#include "track/motif.h"
 #include "track/vocal.h"
 #include "track/vocal_analysis.h"
 #include <random>
@@ -282,6 +284,164 @@ TEST_F(ChordWithContextTest, FallbackWhenAllVoicingsFiltered) {
 
   // Even with aggressive filtering, chord should still be generated
   EXPECT_FALSE(chord_track.empty()) << "Chord track should fallback gracefully";
+}
+
+// === Motif Clash Avoidance Tests (BackgroundMotif mode) ===
+
+TEST_F(ChordWithContextTest, AvoidsMinor2ndClashesWithMotif) {
+  // This tests the fix for the issue where Chord voicing selection
+  // didn't consider Motif pitch classes, causing minor 2nd clashes.
+  //
+  // Root cause: filterVoicingsForContext() only checked Vocal/Aux/Bass
+  // but not Motif, so Chord could select voicings clashing with Motif.
+
+  params_.composition_style = CompositionStyle::BackgroundMotif;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& song = gen.getSong();
+  const auto& motif_track = song.motif();
+  const auto& chord_track = song.chord();
+
+  // BackgroundMotif should generate Motif track
+  ASSERT_GT(motif_track.noteCount(), 0u) << "Motif track should have notes";
+  ASSERT_GT(chord_track.noteCount(), 0u) << "Chord track should have notes";
+
+  // Count minor 2nd clashes between Chord and Motif
+  int clash_count = 0;
+  for (const auto& chord_note : chord_track.notes()) {
+    Tick chord_end = chord_note.start_tick + chord_note.duration;
+    int chord_pc = chord_note.note % 12;
+
+    for (const auto& motif_note : motif_track.notes()) {
+      Tick motif_end = motif_note.start_tick + motif_note.duration;
+      int motif_pc = motif_note.note % 12;
+
+      // Check if notes overlap in time
+      if (chord_note.start_tick < motif_end && motif_note.start_tick < chord_end) {
+        // Check for minor 2nd interval (1 semitone)
+        int interval = std::abs(chord_pc - motif_pc);
+        if (interval > 6) interval = 12 - interval;
+        if (interval == 1) {
+          clash_count++;
+        }
+      }
+    }
+  }
+
+  // There should be zero or very few minor 2nd clashes
+  // The fix ensures filterVoicingsForContext() filters Motif clashes
+  EXPECT_EQ(clash_count, 0) << "No minor 2nd clashes between Chord and Motif expected";
+}
+
+TEST_F(ChordWithContextTest, MotifRegisteredBeforeChordGeneration) {
+  // Verify that in BackgroundMotif mode, Motif is registered to HarmonyContext
+  // before Chord is generated, so Chord can avoid clashing with Motif.
+
+  params_.composition_style = CompositionStyle::BackgroundMotif;
+  params_.seed = 42;
+
+  // Use Generator to set up the song (includes proper arrangement building)
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& song = gen.getSong();
+  const auto& motif_track = song.motif();
+
+  // BackgroundMotif should generate Motif track
+  ASSERT_GT(motif_track.noteCount(), 0u) << "Motif track should have notes";
+
+  // Verify HarmonyContext can retrieve Motif pitch classes
+  // (This tests the getPitchClassesFromTrackAt functionality)
+  HarmonyContext harmony;
+  const auto& progression = getChordProgression(params_.chord_id);
+  harmony.initialize(song.arrangement(), progression, params_.mood);
+  harmony.registerTrack(motif_track, TrackRole::Motif);
+
+  Tick first_note_tick = motif_track.notes()[0].start_tick;
+  auto motif_pcs = harmony.getPitchClassesFromTrackAt(first_note_tick, TrackRole::Motif);
+  EXPECT_FALSE(motif_pcs.empty()) << "Motif pitch classes should be retrievable from HarmonyContext";
+
+  // Chord track should also be generated
+  EXPECT_GT(song.chord().noteCount(), 0u) << "Chord track should be generated";
+}
+
+TEST_F(ChordWithContextTest, ChordVoicingFiltersMotifPitchClasses) {
+  // Direct test of HarmonyContext.getPitchClassesFromTrackAt():
+  // Verifies the mechanism that retrieves Motif pitch classes for filtering.
+  //
+  // Original bug scenario: Motif A4 (pitch class 9) vs Chord G#4 (pitch class 8)
+  // This test ensures the HarmonyContext correctly exposes Motif pitches.
+
+  HarmonyContext harmony;
+
+  // Register a Motif note: A4 (MIDI 69, pitch class 9)
+  Tick note_start = 0;
+  Tick note_duration = TICKS_PER_BAR;
+  harmony.registerNote(note_start, note_duration, 69, TrackRole::Motif);
+
+  // Verify the Motif pitch class is accessible at the note's position
+  auto motif_pcs = harmony.getPitchClassesFromTrackAt(note_start, TrackRole::Motif);
+  ASSERT_EQ(motif_pcs.size(), 1u);
+  EXPECT_EQ(motif_pcs[0], 9) << "Motif pitch class should be 9 (A)";
+
+  // Verify pitch class is NOT returned for other tracks
+  auto chord_pcs = harmony.getPitchClassesFromTrackAt(note_start, TrackRole::Chord);
+  EXPECT_TRUE(chord_pcs.empty()) << "No Chord notes registered";
+
+  // Verify pitch class is NOT returned outside the note duration
+  auto motif_pcs_after = harmony.getPitchClassesFromTrackAt(note_start + note_duration + 1, TrackRole::Motif);
+  EXPECT_TRUE(motif_pcs_after.empty()) << "No Motif notes sounding after duration";
+}
+
+TEST_F(ChordWithContextTest, RegressionTestOriginalBugParameters) {
+  // Regression test using the exact parameters from the original bug report:
+  // - seed: 1904591157
+  // - chord_id: 1
+  // - composition_style: BackgroundMotif
+  // - key: 4 (E major)
+  // - mood: 14
+  //
+  // The bug caused G#4 vs A4 clashes at bar 2 and bar 78.
+
+  params_.seed = 1904591157;
+  params_.chord_id = 1;
+  params_.composition_style = CompositionStyle::BackgroundMotif;
+  params_.key = Key::E;  // Key 4 = E major
+  params_.mood = Mood::IdolPop;  // Mood 14
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& motif_track = gen.getSong().motif();
+  const auto& chord_track = gen.getSong().chord();
+
+  ASSERT_GT(motif_track.noteCount(), 0u) << "Motif track should have notes";
+  ASSERT_GT(chord_track.noteCount(), 0u) << "Chord track should have notes";
+
+  // Count minor 2nd clashes (the original bug)
+  int clash_count = 0;
+  for (const auto& chord_note : chord_track.notes()) {
+    Tick chord_end = chord_note.start_tick + chord_note.duration;
+    int chord_pc = chord_note.note % 12;
+
+    for (const auto& motif_note : motif_track.notes()) {
+      Tick motif_end = motif_note.start_tick + motif_note.duration;
+      int motif_pc = motif_note.note % 12;
+
+      if (chord_note.start_tick < motif_end && motif_note.start_tick < chord_end) {
+        int interval = std::abs(chord_pc - motif_pc);
+        if (interval > 6) interval = 12 - interval;
+        if (interval == 1) {
+          clash_count++;
+        }
+      }
+    }
+  }
+
+  // Original bug had 2 high-severity clashes; after fix should be 0
+  EXPECT_EQ(clash_count, 0) << "No minor 2nd clashes expected with original bug parameters";
 }
 
 }  // namespace

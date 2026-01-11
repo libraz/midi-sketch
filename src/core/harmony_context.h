@@ -123,6 +123,18 @@ class HarmonyContext {
   bool hasBassCollision(uint8_t pitch, Tick start, Tick duration,
                         int threshold = 3) const;
 
+  /**
+   * @brief Get pitch classes from a specific track at a tick.
+   *
+   * Returns all pitch classes (0-11) for notes from the specified track
+   * that are sounding at the given tick.
+   *
+   * @param tick Position in ticks
+   * @param role Which track to query
+   * @return Vector of pitch classes (may be empty if no notes sounding)
+   */
+  std::vector<int> getPitchClassesFromTrackAt(Tick tick, TrackRole role) const;
+
   /// C4 (middle C) - below this, stricter low-register rules apply.
   static constexpr uint8_t LOW_REGISTER_THRESHOLD = 60;
 
