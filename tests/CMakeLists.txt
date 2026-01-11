@@ -58,6 +58,8 @@ set(TEST_SOURCES
   track/motif_test.cpp
   track/aux_track_test.cpp
   track/aux_dissonance_regression_test.cpp
+  track/aux_chorus_behavior_test.cpp
+  track/phrase_ending_test.cpp
   track/bass_dissonance_regression_test.cpp
   track/dissonance_fixes_test.cpp
   track/se_test.cpp

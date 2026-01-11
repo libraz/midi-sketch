@@ -450,10 +450,17 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       note_duration = rn.eighths * TICK_EIGHTH;
     }
 
-    // Apply gate for phrase ending
+    // Apply gate: shorten interior notes slightly, but extend phrase-ending notes
+    // In pop music, phrase endings need longer notes for resolution and breathing room
     bool is_phrase_end = (i == rhythm.size() - 1);
-    float gate = is_phrase_end ? tmpl.phrase_end_resolution * 0.8f : 0.9f;
-    note_duration = static_cast<Tick>(note_duration * gate);
+    if (is_phrase_end) {
+      // Extend phrase-ending note to fill to phrase boundary (handled below)
+      // Minimum duration is quarter note for proper cadence
+      note_duration = std::max(note_duration, static_cast<Tick>(TICK_QUARTER));
+    } else {
+      // Slight gate for articulation on interior notes
+      note_duration = static_cast<Tick>(note_duration * 0.9f);
+    }
 
     // Clamp note duration to chord change boundary (prevents dissonance when chord changes)
     Tick chord_change = harmony.getNextChordChangeTick(note_start);
@@ -1089,10 +1096,11 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
   // Clamp to valid range [0.0, 0.95]
   effective_sixteenth_density = std::min(effective_sixteenth_density, 0.95f);
 
-  // Use smaller margin when 32nd notes are enabled, otherwise keep original
-  float end_margin = (thirtysecond_ratio > 0.0f) ? 0.125f : 0.25f;
+  // Reserve space for final phrase-ending note (at least 1 beat before end)
+  // This ensures proper cadence with a longer final note on a strong beat
+  float phrase_body_end = end_beat - 1.0f;
 
-  while (current_beat < end_beat - end_margin) {
+  while (current_beat < phrase_body_end) {
     // Determine note duration (in eighths, float to support 32nds)
     float eighths;
     if (thirtysecond_ratio > 0.0f && dist(rng) < thirtysecond_ratio) {
@@ -1117,6 +1125,25 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
     rhythm.push_back({current_beat, rhythm_eighths, strong});
 
     current_beat += eighths * 0.5f;  // Convert eighths to beats
+  }
+
+  // Add final phrase-ending note on a strong beat
+  // In pop music, phrases should end on strong beats (1, 2, 3, 4) with longer notes
+  if (phrase_beats >= 2) {
+    // Snap to nearest integer beat for the final note
+    float final_beat = std::floor(current_beat);
+    if (final_beat < current_beat) {
+      final_beat = std::ceil(current_beat);
+    }
+    // Ensure we don't exceed the phrase
+    if (final_beat >= end_beat) {
+      final_beat = end_beat - 1.0f;
+    }
+    // Final note is at least a quarter note (2 eighths), extending to phrase end
+    int final_eighths = static_cast<int>((end_beat - final_beat) * 2.0f);
+    final_eighths = std::max(final_eighths, 2);  // At least quarter note
+
+    rhythm.push_back({final_beat, final_eighths, true});  // Strong beat
   }
 
   return rhythm;

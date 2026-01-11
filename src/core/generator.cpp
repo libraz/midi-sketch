@@ -793,21 +793,16 @@ void Generator::generateAux() {
       continue;  // Skip normal generation for this section
     } else if (section.type == SectionType::Chorus &&
                section.vocal_density == VocalDensity::Full) {
-      // Chorus with full vocals: Use Unison or Harmony based on repeat count
+      // Chorus with full vocals: Use EmotionalPad for harmonic support
+      // In pop music, the pad provides chord tones (root + fifth) beneath the vocal,
+      // NOT melody doubling. Unison doubling should be done by backup vocals, not pad.
       ++chorus_count;
-      if (chorus_count == 1) {
-        // First chorus: Unison
-        config.function = AuxFunction::Unison;
-        config.velocity_ratio = 0.7f;
-      } else {
-        // Subsequent choruses: Harmony (3rd above)
-        config.function = AuxFunction::Unison;  // Uses generateHarmony internally
-        config.velocity_ratio = 0.65f;
-      }
-      config.range_offset = 0;
-      config.range_width = 0;
-      config.density_ratio = 1.0f;
-      config.sync_phrase_boundary = true;
+      config.function = AuxFunction::EmotionalPad;
+      config.range_offset = -12;  // One octave below vocal for clarity
+      config.range_width = 12;    // Reasonable pad range
+      config.velocity_ratio = 0.6f;  // Softer than vocal
+      config.density_ratio = 0.8f;   // Allow some space
+      config.sync_phrase_boundary = false;  // Pad sustains independently
     } else if (aux_count > 0) {
       // Other sections: Use default aux config
       config = aux_configs[0];

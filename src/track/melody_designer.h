@@ -215,6 +215,26 @@ class MelodyDesigner {
       const SectionContext& ctx,
       const HarmonyContext& harmony);
 
+  /**
+   * @brief Generate rhythm pattern for a phrase.
+   *
+   * Creates a sequence of RhythmNote positions for a phrase.
+   * Ensures proper phrase endings: final note on strong beat with longer duration.
+   *
+   * @param tmpl Melody template with rhythm parameters
+   * @param phrase_beats Length of phrase in beats
+   * @param density_modifier Section-specific density multiplier (1.0 = default)
+   * @param thirtysecond_ratio Ratio of 32nd notes (0.0-1.0)
+   * @param rng Random number generator
+   * @return Vector of rhythm positions for the phrase
+   */
+  std::vector<RhythmNote> generatePhraseRhythm(
+      const MelodyTemplate& tmpl,
+      uint8_t phrase_beats,
+      float density_modifier,
+      float thirtysecond_ratio,
+      std::mt19937& rng);
+
  private:
   // Insert a leading tone at section boundary for smooth transition.
   // @param notes Notes to modify (in place)
@@ -245,16 +265,6 @@ class MelodyDesigner {
       const SectionContext& ctx,
       int current_pitch,
       const HarmonyContext& harmony,
-      std::mt19937& rng);
-
-  // Generate rhythm for a phrase.
-  // @param density_modifier Section-specific density multiplier (1.0 = default)
-  // @param thirtysecond_ratio Ratio of 32nd notes (0.0-1.0)
-  std::vector<RhythmNote> generatePhraseRhythm(
-      const MelodyTemplate& tmpl,
-      uint8_t phrase_beats,
-      float density_modifier,
-      float thirtysecond_ratio,
       std::mt19937& rng);
 
   // Cached chorus hook for Song-level fixation.
