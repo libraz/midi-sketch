@@ -342,7 +342,9 @@ std::vector<VoicedChord> generateSpreadVoicings(uint8_t root, const Chord& chord
 bool clashesWithBass(int pitch_class, int bass_pitch_class) {
   int interval = std::abs(pitch_class - bass_pitch_class);
   if (interval > 6) interval = 12 - interval;
-  return interval == 1;  // Minor 2nd (major 7th inverts to minor 2nd)
+  // Minor 2nd (1) and Tritone (6) both clash with bass
+  // Tritone creates harsh dissonance on strong beats (e.g., B vs F)
+  return interval == 1 || interval == 6;
 }
 
 // C4: Generate rootless voicings (up to 4-voice, root omitted for bass)

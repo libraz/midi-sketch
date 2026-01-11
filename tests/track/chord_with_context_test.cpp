@@ -444,5 +444,102 @@ TEST_F(ChordWithContextTest, RegressionTestOriginalBugParameters) {
   EXPECT_EQ(clash_count, 0) << "No minor 2nd clashes expected with original bug parameters";
 }
 
+// === Chord-Bass Tritone Avoidance Tests ===
+
+TEST_F(ChordWithContextTest, AvoidsTritoneCashesWithBass) {
+  // This tests that Chord voicing avoids tritone interval with Bass.
+  // Tritone (6 semitones, e.g., B vs F) creates harsh dissonance on strong beats.
+  //
+  // Root cause: clashesWithBass() only checked minor 2nd, not tritone.
+  // Fix: Extended clashesWithBass() to also reject tritone intervals.
+
+  Generator gen;
+
+  // Test across multiple seeds to ensure robustness
+  std::vector<uint32_t> test_seeds = {12345, 54321, 98765, 3604033891};
+
+  for (uint32_t seed : test_seeds) {
+    GeneratorParams params = params_;
+    params.seed = seed;
+
+    gen.generate(params);
+    const auto& song = gen.getSong();
+
+    const auto& chord_track = song.chord();
+    const auto& bass_track = song.bass();
+
+    // Count tritone clashes between Chord and Bass
+    int tritone_clash_count = 0;
+
+    for (const auto& chord_note : chord_track.notes()) {
+      Tick chord_end = chord_note.start_tick + chord_note.duration;
+      int chord_pc = chord_note.note % 12;
+
+      for (const auto& bass_note : bass_track.notes()) {
+        Tick bass_end = bass_note.start_tick + bass_note.duration;
+        int bass_pc = bass_note.note % 12;
+
+        // Check if notes overlap in time
+        if (chord_note.start_tick < bass_end && bass_note.start_tick < chord_end) {
+          // Check for tritone interval (6 semitones)
+          int interval = std::abs(chord_pc - bass_pc);
+          if (interval > 6) interval = 12 - interval;
+          if (interval == 6) {
+            tritone_clash_count++;
+          }
+        }
+      }
+    }
+
+    // Should have zero or very few Chord-Bass tritone clashes
+    EXPECT_EQ(tritone_clash_count, 0)
+        << "Seed " << seed << " has " << tritone_clash_count << " Chord-Bass tritone clashes";
+  }
+}
+
+TEST_F(ChordWithContextTest, RegressionChordBassTritoneOriginalBug) {
+  // Regression test for backup/midi-sketch-1768105073187.mid bug.
+  // Original: Chord B4/B3 vs Bass F3 tritone clashes at bar 29/53 beat 1.
+  // Fix: clashesWithBass() now rejects tritone intervals.
+
+  params_.seed = 3604033891;
+  params_.chord_id = 0;
+  params_.structure = static_cast<StructurePattern>(5);
+  params_.bpm = 160;
+  params_.key = Key::C;
+  params_.mood = Mood::IdolPop;
+  params_.composition_style = CompositionStyle::MelodyLead;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& chord_track = gen.getSong().chord();
+  const auto& bass_track = gen.getSong().bass();
+
+  // Count tritone clashes
+  int tritone_clash_count = 0;
+  for (const auto& chord_note : chord_track.notes()) {
+    Tick chord_end = chord_note.start_tick + chord_note.duration;
+    int chord_pc = chord_note.note % 12;
+
+    for (const auto& bass_note : bass_track.notes()) {
+      Tick bass_end = bass_note.start_tick + bass_note.duration;
+      int bass_pc = bass_note.note % 12;
+
+      if (chord_note.start_tick < bass_end && bass_note.start_tick < chord_end) {
+        int interval = std::abs(chord_pc - bass_pc);
+        if (interval > 6) interval = 12 - interval;
+        if (interval == 6) {
+          tritone_clash_count++;
+        }
+      }
+    }
+  }
+
+  // Original bug had multiple Chord-Bass tritone clashes; after fix should be 0
+  EXPECT_EQ(tritone_clash_count, 0)
+      << "No Chord-Bass tritone clashes expected with original bug parameters";
+}
+
 }  // namespace
 }  // namespace midisketch

@@ -457,6 +457,79 @@ BeatStrength getBeatStrength(Tick tick) {
   return BeatStrength::Weak;
 }
 
+// Section position context for severity adjustment.
+enum class SectionPosition {
+  SectionStart,  // First bar of a section (most critical)
+  PhraseStart,   // Beat 1 of any bar
+  Normal         // Other positions
+};
+
+// Get section position context for a tick.
+SectionPosition getSectionPosition(Tick tick, const Song& song) {
+  const auto& arrangement = song.arrangement();
+  uint32_t bar = tick / TICKS_PER_BAR;
+  Tick beat_pos = tick % TICKS_PER_BAR;
+
+  // Check if this is beat 1
+  bool is_beat_1 = beat_pos < TICKS_PER_BEAT;
+
+  // Find which section this tick belongs to
+  for (const auto& section : arrangement.sections()) {
+    uint32_t section_start_bar = section.start_tick / TICKS_PER_BAR;
+    uint32_t section_end_bar = section_start_bar + section.bars;
+
+    if (bar >= section_start_bar && bar < section_end_bar) {
+      // Check if this is the first bar of the section
+      if (bar == section_start_bar && is_beat_1) {
+        return SectionPosition::SectionStart;
+      }
+      break;
+    }
+  }
+
+  if (is_beat_1) {
+    return SectionPosition::PhraseStart;
+  }
+  return SectionPosition::Normal;
+}
+
+// Adjust severity based on musical context (beat strength and section position).
+// This makes dissonance at section starts (like B section) more severe.
+DissonanceSeverity adjustSeverityForContext(DissonanceSeverity base_severity,
+                                             BeatStrength beat_strength,
+                                             SectionPosition section_pos) {
+  // Section start + beat 1 = most critical position
+  // Any dissonance here should be elevated
+  if (section_pos == SectionPosition::SectionStart) {
+    // Elevate Low -> Medium, Medium -> High
+    if (base_severity == DissonanceSeverity::Low) {
+      return DissonanceSeverity::Medium;
+    }
+    if (base_severity == DissonanceSeverity::Medium) {
+      return DissonanceSeverity::High;
+    }
+    return base_severity;
+  }
+
+  // Beat 1 of any bar is important
+  if (beat_strength == BeatStrength::Strong) {
+    // Elevate Low -> Medium on strong beats
+    if (base_severity == DissonanceSeverity::Low) {
+      return DissonanceSeverity::Medium;
+    }
+    return base_severity;
+  }
+
+  // Weak beats and offbeats: reduce severity slightly
+  // Tritones on offbeats are often acceptable as passing tones
+  if (beat_strength == BeatStrength::Offbeat || beat_strength == BeatStrength::Weak) {
+    // Keep Low as Low, but don't reduce further
+    return base_severity;
+  }
+
+  return base_severity;
+}
+
 }  // namespace
 
 std::string midiNoteToName(uint8_t midi_note) {
@@ -515,9 +588,10 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
       auto [is_dissonant, base_severity] = checkIntervalDissonance(actual_interval, degree);
 
       if (is_dissonant) {
-        // Adjust severity based on track pair importance
-        // Use base severity directly (no track-pair adjustment)
-        DissonanceSeverity severity = base_severity;
+        // Adjust severity based on musical context (beat strength, section position)
+        BeatStrength beat_strength = getBeatStrength(note_a.start);
+        SectionPosition section_pos = getSectionPosition(note_a.start, song);
+        DissonanceSeverity severity = adjustSeverityForContext(base_severity, beat_strength, section_pos);
 
         // Mark as reported to avoid duplicates
         reported_clashes.insert(clash_key);
@@ -864,14 +938,36 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
 
       // Check for dissonant intervals
       // Without chord info, use default chord degree 0 (C major)
-      auto [is_dissonant, severity] = checkIntervalDissonance(actual_interval, 0);
+      auto [is_dissonant, base_severity] = checkIntervalDissonance(actual_interval, 0);
 
       if (is_dissonant) {
         reported_clashes.insert(clash_key);
 
-        uint32_t bar = note_a.start / midi.division / 4;  // Assuming 4/4 time
-        float beat = 1.0f + static_cast<float>(note_a.start % (midi.division * 4)) /
+        // Calculate bar and beat using MIDI division
+        Tick ticks_per_bar = midi.division * 4;  // Assuming 4/4 time
+        uint32_t bar = note_a.start / ticks_per_bar;
+        float beat = 1.0f + static_cast<float>(note_a.start % ticks_per_bar) /
                                static_cast<float>(midi.division);
+
+        // Apply beat strength adjustment (limited context without song structure)
+        Tick beat_pos = note_a.start % ticks_per_bar;
+        BeatStrength beat_strength;
+        if (beat_pos < static_cast<Tick>(midi.division)) {
+          beat_strength = BeatStrength::Strong;  // Beat 1
+        } else if (beat_pos >= static_cast<Tick>(midi.division * 2) &&
+                   beat_pos < static_cast<Tick>(midi.division * 3)) {
+          beat_strength = BeatStrength::Medium;  // Beat 3
+        } else {
+          beat_strength = BeatStrength::Weak;  // Beats 2 and 4
+        }
+
+        // Adjust severity for strong beats (section context not available for external MIDI)
+        DissonanceSeverity severity = base_severity;
+        if (beat_strength == BeatStrength::Strong) {
+          if (base_severity == DissonanceSeverity::Low) {
+            severity = DissonanceSeverity::Medium;
+          }
+        }
 
         DissonanceIssue issue;
         issue.type = DissonanceType::SimultaneousClash;
