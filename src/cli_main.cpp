@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 
 namespace {
@@ -32,6 +33,7 @@ void printUsage(const char* program) {
   std::cout << "  --bpm N           Set BPM (60-200, default: style preset)\n";
   std::cout << "  --duration N      Set target duration in seconds (0 = use pattern)\n";
   std::cout << "  --form N          Set form/structure pattern ID (0-17)\n";
+  std::cout << "  --key N           Set key (0-11: C, C#, D, Eb, E, F, F#, G, Ab, A, Bb, B)\n";
   std::cout << "  --input FILE      Analyze existing MIDI file for dissonance\n";
   std::cout << "  --analyze         Analyze generated MIDI for dissonance issues\n";
   std::cout << "  --skip-vocal      Skip vocal in initial generation (for BGM-first workflow)\n";
@@ -93,6 +95,13 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata) {
   return config;
 }
 
+const char* keyName(midisketch::Key key) {
+  static const char* names[] = {"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
+  int idx = static_cast<int>(key);
+  if (idx >= 0 && idx < 12) return names[idx];
+  return "C";
+}
+
 const char* vocalStyleName(midisketch::VocalStylePreset style) {
   switch (style) {
     case midisketch::VocalStylePreset::Auto: return "Auto";
@@ -108,36 +117,188 @@ const char* vocalStyleName(midisketch::VocalStylePreset style) {
   }
 }
 
-void printDissonanceSummary(const midisketch::DissonanceReport& report) {
+// Classify issue by actionability
+enum class ActionLevel { Critical, Warning, Info };
+
+ActionLevel getActionLevel(const midisketch::DissonanceIssue& issue) {
+  using DT = midisketch::DissonanceType;
+  using DS = midisketch::DissonanceSeverity;
+
+  // CRITICAL: Definitely wrong, needs fixing
+  if (issue.type == DT::NonDiatonicNote) return ActionLevel::Critical;
+  if (issue.type == DT::SimultaneousClash && issue.severity == DS::High) return ActionLevel::Critical;
+
+  // WARNING: Might be intentional but worth checking
+  if (issue.type == DT::SimultaneousClash) return ActionLevel::Warning;
+  if (issue.type == DT::SustainedOverChordChange && issue.severity == DS::High) return ActionLevel::Warning;
+
+  // INFO: Normal musical tension (passing tones, neighbor tones, etc.)
+  return ActionLevel::Info;
+}
+
+const char* actionLevelName(ActionLevel level) {
+  switch (level) {
+    case ActionLevel::Critical: return "CRITICAL";
+    case ActionLevel::Warning: return "WARNING";
+    case ActionLevel::Info: return "INFO";
+  }
+  return "UNKNOWN";
+}
+
+const char* actionLevelColor(ActionLevel level) {
+  switch (level) {
+    case ActionLevel::Critical: return "\033[31m";  // Red
+    case ActionLevel::Warning: return "\033[33m";   // Yellow
+    case ActionLevel::Info: return "\033[36m";      // Cyan
+  }
+  return "";
+}
+
+// Forward declarations
+void printIssueWithContext(const midisketch::DissonanceIssue& issue, const char* reset,
+                           const midisketch::Song* song);
+
+// Get notes playing at a specific tick from a track
+std::vector<std::pair<std::string, uint8_t>> getNotesAtTick(
+    const midisketch::MidiTrack& track, const std::string& track_name, midisketch::Tick tick) {
+  std::vector<std::pair<std::string, uint8_t>> result;
+  for (const auto& note : track.notes()) {
+    if (note.start_tick <= tick && note.start_tick + note.duration > tick) {
+      result.emplace_back(track_name, note.note);
+    }
+  }
+  return result;
+}
+
+// Get all notes playing at a specific tick from the song
+std::vector<std::pair<std::string, uint8_t>> getAllNotesAtTick(
+    const midisketch::Song& song, midisketch::Tick tick) {
+  std::vector<std::pair<std::string, uint8_t>> result;
+
+  auto add = [&](const midisketch::MidiTrack& track, const std::string& name) {
+    auto notes = getNotesAtTick(track, name, tick);
+    result.insert(result.end(), notes.begin(), notes.end());
+  };
+
+  add(song.vocal(), "vocal");
+  add(song.chord(), "chord");
+  add(song.bass(), "bass");
+  add(song.motif(), "motif");
+  add(song.arpeggio(), "arp");
+  add(song.aux(), "aux");
+
+  return result;
+}
+
+void printDissonanceSummary(const midisketch::DissonanceReport& report,
+                            const midisketch::Song* song = nullptr) {
+  const char* reset = "\033[0m";
+
+  // Count by action level
+  int critical = 0, warning = 0, info = 0;
+  for (const auto& issue : report.issues) {
+    switch (getActionLevel(issue)) {
+      case ActionLevel::Critical: critical++; break;
+      case ActionLevel::Warning: warning++; break;
+      case ActionLevel::Info: info++; break;
+    }
+  }
+
   std::cout << "\n=== Dissonance Analysis ===\n";
-  std::cout << "Total issues: " << report.summary.total_issues << "\n";
-  std::cout << "  Simultaneous clashes: " << report.summary.simultaneous_clashes << "\n";
-  std::cout << "  Non-chord tones: " << report.summary.non_chord_tones << "\n";
-  std::cout << "  Sustained over chord change: " << report.summary.sustained_over_chord_change
-            << "\n";
-  std::cout << "Severity breakdown:\n";
-  std::cout << "  High: " << report.summary.high_severity << "\n";
-  std::cout << "  Medium: " << report.summary.medium_severity << "\n";
-  std::cout << "  Low: " << report.summary.low_severity << "\n";
 
-  if (report.summary.high_severity > 0) {
-    std::cout << "\nHigh severity issues:\n";
+  // Action-oriented summary
+  std::cout << "\nAction Summary:\n";
+  if (critical > 0) {
+    std::cout << actionLevelColor(ActionLevel::Critical) << "  CRITICAL: " << critical
+              << " issues require fixing" << reset << "\n";
+  }
+  if (warning > 0) {
+    std::cout << actionLevelColor(ActionLevel::Warning) << "  WARNING:  " << warning
+              << " issues worth reviewing" << reset << "\n";
+  }
+  std::cout << actionLevelColor(ActionLevel::Info) << "  INFO:     " << info
+            << " normal musical tensions (no action needed)" << reset << "\n";
+
+  // Technical breakdown (for debugging)
+  std::cout << "\nTechnical Breakdown:\n";
+  std::cout << "  Simultaneous clashes:      " << report.summary.simultaneous_clashes << "\n";
+  std::cout << "  Non-chord tones:           " << report.summary.non_chord_tones
+            << " (usually acceptable)\n";
+  std::cout << "  Sustained over chord:      " << report.summary.sustained_over_chord_change << "\n";
+  std::cout << "  Non-diatonic notes:        " << report.summary.non_diatonic_notes << "\n";
+
+  // Print CRITICAL issues with context
+  if (critical > 0) {
+    std::cout << "\n" << actionLevelColor(ActionLevel::Critical)
+              << "=== CRITICAL Issues (require fixing) ===" << reset << "\n";
     for (const auto& issue : report.issues) {
-      if (issue.severity != midisketch::DissonanceSeverity::High) continue;
+      if (getActionLevel(issue) != ActionLevel::Critical) continue;
+      printIssueWithContext(issue, reset, song);
+    }
+  }
 
-      std::cout << "  Bar " << issue.bar << ", beat " << issue.beat << ": ";
-      if (issue.type == midisketch::DissonanceType::SimultaneousClash) {
-        std::cout << issue.interval_name << " clash between ";
-        for (size_t i = 0; i < issue.notes.size(); ++i) {
-          if (i > 0) std::cout << " and ";
-          std::cout << issue.notes[i].track_name << "(" << issue.notes[i].pitch_name << ")";
-        }
-      } else if (issue.type == midisketch::DissonanceType::SustainedOverChordChange) {
-        std::cout << issue.pitch_name << " in " << issue.track_name << " sustained from "
-                  << issue.original_chord_name << " into " << issue.chord_name;
-      } else {
-        std::cout << issue.pitch_name << " in " << issue.track_name << " vs chord "
-                  << issue.chord_name;
+  // Print WARNING issues with context
+  if (warning > 0) {
+    std::cout << "\n" << actionLevelColor(ActionLevel::Warning)
+              << "=== WARNING Issues (review recommended) ===" << reset << "\n";
+    for (const auto& issue : report.issues) {
+      if (getActionLevel(issue) != ActionLevel::Warning) continue;
+      printIssueWithContext(issue, reset, song);
+    }
+  }
+}
+
+void printIssueWithContext(const midisketch::DissonanceIssue& issue, const char* reset,
+                           const midisketch::Song* song) {
+  using DT = midisketch::DissonanceType;
+
+  std::cout << "\n  Bar " << issue.bar << ", beat " << std::fixed << std::setprecision(1)
+            << issue.beat << " (tick " << issue.tick << "):\n";
+
+  // Issue description
+  std::cout << "    ";
+  if (issue.type == DT::SimultaneousClash) {
+    std::cout << "Clash: " << issue.interval_name << " between ";
+    for (size_t i = 0; i < issue.notes.size(); ++i) {
+      if (i > 0) std::cout << " vs ";
+      std::cout << issue.notes[i].track_name << "(" << issue.notes[i].pitch_name << ")";
+    }
+  } else if (issue.type == DT::SustainedOverChordChange) {
+    std::cout << "Sustained: " << issue.track_name << "(" << issue.pitch_name << ") "
+              << "held from " << issue.original_chord_name << " into " << issue.chord_name;
+  } else if (issue.type == DT::NonDiatonicNote) {
+    std::cout << "Non-diatonic: " << issue.track_name << "(" << issue.pitch_name << ") "
+              << "not in " << issue.key_name;
+    std::cout << "\n    Expected: ";
+    for (size_t i = 0; i < issue.scale_tones.size(); ++i) {
+      if (i > 0) std::cout << ", ";
+      std::cout << issue.scale_tones[i];
+    }
+  } else {
+    std::cout << "Non-chord tone: " << issue.track_name << "(" << issue.pitch_name << ") "
+              << "on " << issue.chord_name << " chord";
+    std::cout << "\n    Chord tones: ";
+    for (size_t i = 0; i < issue.chord_tones.size(); ++i) {
+      if (i > 0) std::cout << ", ";
+      std::cout << issue.chord_tones[i];
+    }
+  }
+  std::cout << "\n";
+
+  // Chord context
+  if (!issue.chord_name.empty()) {
+    std::cout << "    Chord: " << issue.chord_name << "\n";
+  }
+
+  // Show all notes playing at this tick (for debugging context)
+  if (song) {
+    auto notes_at_tick = getAllNotesAtTick(*song, issue.tick);
+    if (!notes_at_tick.empty()) {
+      std::cout << "    Playing: ";
+      for (size_t i = 0; i < notes_at_tick.size(); ++i) {
+        if (i > 0) std::cout << ", ";
+        std::cout << notes_at_tick[i].first << "("
+                  << midisketch::midiNoteToName(notes_at_tick[i].second) << ")";
       }
       std::cout << "\n";
     }
@@ -166,6 +327,7 @@ int main(int argc, char* argv[]) {
   uint16_t bpm = 0;  // 0 = use style default
   uint16_t duration = 0;  // 0 = use pattern default
   int form_id = -1;  // -1 = use style default
+  int key_id = -1;   // -1 = use default (C)
   uint32_t vocal_seed = 0;
   uint8_t vocal_attitude = 1;
   uint8_t vocal_low = 57;
@@ -197,6 +359,8 @@ int main(int argc, char* argv[]) {
       duration = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--form") == 0 && i + 1 < argc) {
       form_id = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
+    } else if (std::strcmp(argv[i], "--key") == 0 && i + 1 < argc) {
+      key_id = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--skip-vocal") == 0) {
       skip_vocal = true;
     } else if (std::strcmp(argv[i], "--regenerate-vocal") == 0) {
@@ -415,6 +579,9 @@ int main(int argc, char* argv[]) {
     config.form = static_cast<midisketch::StructurePattern>(form_id);
     config.form_explicit = true;
   }
+  if (key_id >= 0 && key_id <= 11) {
+    config.key = static_cast<midisketch::Key>(key_id);
+  }
   // note_density is deprecated; melody_template is used instead
   (void)note_density;
 
@@ -435,6 +602,7 @@ int main(int argc, char* argv[]) {
 
   std::cout << "Generating with SongConfig:\n";
   std::cout << "  Style: " << preset.display_name << "\n";
+  std::cout << "  Key: " << keyName(config.key) << "\n";
   std::cout << "  Chord: " << config.chord_progression_id << "\n";
   std::cout << "  BPM: " << (config.bpm == 0 ? preset.tempo_default : config.bpm) << "\n";
   std::cout << "  VocalAttitude: " << static_cast<int>(config.vocal_attitude) << "\n";
@@ -503,7 +671,7 @@ int main(int argc, char* argv[]) {
     const auto& params = sketch.getParams();
     auto report = midisketch::analyzeDissonance(song, params);
 
-    printDissonanceSummary(report);
+    printDissonanceSummary(report, &song);
 
     // Write analysis JSON
     auto analysis_json = midisketch::dissonanceReportToJson(report);

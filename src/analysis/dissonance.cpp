@@ -111,6 +111,37 @@ constexpr const char* INTERVAL_NAMES[12] = {
 // Scale degree to pitch class offset (C major reference).
 constexpr int DEGREE_TO_PITCH_CLASS[7] = {0, 2, 4, 5, 7, 9, 11};  // C,D,E,F,G,A,B
 
+// C major diatonic pitch classes (used for non-diatonic detection).
+// Internal generation is always in C major; transpose happens at output time.
+constexpr int C_MAJOR_DIATONIC[7] = {0, 2, 4, 5, 7, 9, 11};  // C,D,E,F,G,A,B
+
+// Check if a pitch class is diatonic to C major.
+bool isDiatonicToCMajor(int pitch_class) {
+  for (int i = 0; i < 7; ++i) {
+    if (C_MAJOR_DIATONIC[i] == pitch_class) return true;
+  }
+  return false;
+}
+
+// Get key name for display.
+std::string getKeyName(Key key) {
+  static const char* names[] = {"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
+  int idx = static_cast<int>(key);
+  if (idx >= 0 && idx < 12) return std::string(names[idx]) + " major";
+  return "C major";
+}
+
+// Get scale tones for a key (for display).
+std::vector<std::string> getScaleTones(Key key) {
+  int offset = static_cast<int>(key);
+  std::vector<std::string> tones;
+  for (int i = 0; i < 7; ++i) {
+    int pc = (C_MAJOR_DIATONIC[i] + offset) % 12;
+    tones.push_back(NOTE_NAMES[pc]);
+  }
+  return tones;
+}
+
 // Chord names for each scale degree (C major).
 constexpr const char* CHORD_NAMES[12] = {"C",  "C#", "D",  "D#/Eb", "E",  "F",
                                          "F#", "G",  "G#/Ab", "A", "A#/Bb", "B"};
@@ -121,12 +152,31 @@ struct ChordTones {
   uint8_t count;
 };
 
+// Get root pitch class for a degree, handling borrowed chords correctly.
+// This mirrors the logic in chord.cpp degreeToSemitone().
+int getRootPitchClass(int8_t degree) {
+  // Borrowed chords from parallel minor
+  switch (degree) {
+    case 10: return 10;  // bVII = Bb (10 semitones from C)
+    case 8:  return 8;   // bVI  = Ab (8 semitones from C)
+    case 11: return 3;   // bIII = Eb (3 semitones from C)
+    default: break;
+  }
+
+  // Diatonic degrees (0-6) use DEGREE_TO_PITCH_CLASS
+  if (degree >= 0 && degree < 7) {
+    return DEGREE_TO_PITCH_CLASS[degree];
+  }
+
+  return 0;
+}
+
 ChordTones getChordTones(int8_t degree) {
   ChordTones ct{};
   ct.count = 0;
 
-  int normalized_degree = ((degree % 7) + 7) % 7;
-  int root_pc = DEGREE_TO_PITCH_CLASS[normalized_degree];
+  // Use getRootPitchClass which correctly handles borrowed chords (bVII, bVI, bIII)
+  int root_pc = getRootPitchClass(degree);
 
   Chord chord = getChordNotes(degree);
 
@@ -842,10 +892,132 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
   checkSustainedOverChordChange(song.arpeggio(), TrackRole::Arpeggio);
   checkSustainedOverChordChange(song.aux(), TrackRole::Aux);
 
+  // Phase 4: Detect non-diatonic notes
+  // Internal generation is in C major; if a note is not diatonic to C major,
+  // it will produce a non-diatonic note in the target key after transposition.
+  // EXCEPTION: Chord tones of borrowed chords (bVII, bVI, bIII) are intentional
+  // and should not be flagged as issues.
+  auto checkTrackForNonDiatonicNotes = [&](const MidiTrack& track, TrackRole role) {
+    for (const auto& note : track.notes()) {
+      int pitch_class = note.note % 12;
+
+      // Skip if diatonic to C major (internal key)
+      if (isDiatonicToCMajor(pitch_class)) {
+        continue;
+      }
+
+      // Check if this non-diatonic note is a chord tone of:
+      // 1. The current chord (handles borrowed chords like bVII, bVI, bIII)
+      // 2. The next chord in progression (handles phrase-end anticipation)
+      // Note: getChordAtTick returns a valid degree even when found=false (fallback)
+      auto chord_info = getChordAtTick(note.start_tick, song, progression, params.mood);
+
+      // Check current chord
+      ChordTones ct = getChordTones(chord_info.degree);
+      bool is_borrowed_chord_tone = false;
+      for (uint8_t i = 0; i < ct.count; ++i) {
+        if (ct.pitch_classes[i] == pitch_class) {
+          is_borrowed_chord_tone = true;
+          break;
+        }
+      }
+
+      // Also check next chord in progression (for anticipation)
+      // This is important because at phrase-end bars, tracks anticipate the next chord
+      if (!is_borrowed_chord_tone) {
+        uint32_t bar = note.start_tick / TICKS_PER_BAR;
+        int bar_in_progression = bar % progression.length;
+        int next_chord_idx = (bar_in_progression + 1) % progression.length;
+        int8_t next_degree = progression.degrees[next_chord_idx];
+        ChordTones next_ct = getChordTones(next_degree);
+        for (uint8_t i = 0; i < next_ct.count; ++i) {
+          if (next_ct.pitch_classes[i] == pitch_class) {
+            is_borrowed_chord_tone = true;
+            break;
+          }
+        }
+      }
+
+      if (is_borrowed_chord_tone) {
+        // This is a chord tone of a borrowed chord - intentional, not an issue
+        continue;
+      }
+
+      // Non-diatonic note found!
+      // Determine severity based on beat strength
+      BeatStrength beat_strength = getBeatStrength(note.start_tick);
+      DissonanceSeverity severity;
+
+      switch (beat_strength) {
+        case BeatStrength::Strong:
+          // Non-diatonic on beat 1 is very noticeable
+          severity = DissonanceSeverity::High;
+          break;
+        case BeatStrength::Medium:
+          // Beat 3 is still fairly prominent
+          severity = DissonanceSeverity::Medium;
+          break;
+        case BeatStrength::Weak:
+        case BeatStrength::Offbeat:
+          // Weak beats could be chromatic passing tones
+          severity = DissonanceSeverity::Medium;
+          break;
+      }
+
+      uint32_t bar = note.start_tick / TICKS_PER_BAR;
+
+      // Calculate the transposed pitch (what the listener will hear)
+      int key_offset = static_cast<int>(params.key);
+      uint8_t transposed_pitch = static_cast<uint8_t>(
+          std::clamp(static_cast<int>(note.note) + key_offset, 0, 127));
+
+      DissonanceIssue issue;
+      issue.type = DissonanceType::NonDiatonicNote;
+      issue.severity = severity;
+      issue.tick = note.start_tick;
+      issue.bar = bar;
+      issue.beat = 1.0f + static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
+      issue.track_name = trackRoleToString(role);
+      issue.pitch = transposed_pitch;  // Show transposed pitch
+      issue.pitch_name = midiNoteToName(transposed_pitch);  // Show transposed name
+      issue.key_name = getKeyName(params.key);
+      issue.scale_tones = getScaleTones(params.key);
+
+      // Copy provenance
+      issue.has_provenance = note.hasValidProvenance();
+      issue.prov_chord_degree = note.prov_chord_degree;
+      issue.prov_lookup_tick = note.prov_lookup_tick;
+      issue.prov_source = note.prov_source;
+      issue.prov_original_pitch = note.prov_original_pitch;
+
+      report.issues.push_back(issue);
+      report.summary.non_diatonic_notes++;
+
+      switch (severity) {
+        case DissonanceSeverity::High:
+          report.summary.high_severity++;
+          break;
+        case DissonanceSeverity::Medium:
+          report.summary.medium_severity++;
+          break;
+        case DissonanceSeverity::Low:
+          report.summary.low_severity++;
+          break;
+      }
+    }
+  };
+
+  checkTrackForNonDiatonicNotes(song.vocal(), TrackRole::Vocal);
+  checkTrackForNonDiatonicNotes(song.chord(), TrackRole::Chord);
+  checkTrackForNonDiatonicNotes(song.bass(), TrackRole::Bass);
+  checkTrackForNonDiatonicNotes(song.motif(), TrackRole::Motif);
+  checkTrackForNonDiatonicNotes(song.arpeggio(), TrackRole::Arpeggio);
+  checkTrackForNonDiatonicNotes(song.aux(), TrackRole::Aux);
+
   // Calculate total
   report.summary.total_issues =
       report.summary.simultaneous_clashes + report.summary.non_chord_tones +
-      report.summary.sustained_over_chord_change;
+      report.summary.sustained_over_chord_change + report.summary.non_diatonic_notes;
 
   // Add modulation info
   report.summary.modulation_tick = song.modulationTick();
@@ -1033,6 +1205,7 @@ std::string dissonanceReportToJson(const DissonanceReport& report) {
       .write("simultaneous_clashes", report.summary.simultaneous_clashes)
       .write("non_chord_tones", report.summary.non_chord_tones)
       .write("sustained_over_chord_change", report.summary.sustained_over_chord_change)
+      .write("non_diatonic_notes", report.summary.non_diatonic_notes)
       .write("high_severity", report.summary.high_severity)
       .write("medium_severity", report.summary.medium_severity)
       .write("low_severity", report.summary.low_severity)
@@ -1048,6 +1221,7 @@ std::string dissonanceReportToJson(const DissonanceReport& report) {
       case DissonanceType::SimultaneousClash: return "simultaneous_clash";
       case DissonanceType::NonChordTone: return "non_chord_tone";
       case DissonanceType::SustainedOverChordChange: return "sustained_over_chord_change";
+      case DissonanceType::NonDiatonicNote: return "non_diatonic_note";
     }
     return "unknown";
   };
@@ -1095,6 +1269,28 @@ std::string dissonanceReportToJson(const DissonanceReport& report) {
         w.value(tone);
       }
       w.endArray();
+    } else if (issue.type == DissonanceType::NonDiatonicNote) {
+      // NonDiatonicNote
+      w.write("track", issue.track_name)
+          .write("pitch", static_cast<int>(issue.pitch))
+          .write("pitch_name", issue.pitch_name)
+          .write("key", issue.key_name)
+          .beginArray("scale_tones");
+
+      for (const auto& tone : issue.scale_tones) {
+        w.value(tone);
+      }
+      w.endArray();
+
+      // Add provenance if available
+      if (issue.has_provenance) {
+        w.beginObject("provenance")
+            .write("chord_degree", static_cast<int>(issue.prov_chord_degree))
+            .write("lookup_tick", issue.prov_lookup_tick)
+            .write("source", noteSourceToString(static_cast<NoteSource>(issue.prov_source)))
+            .write("original_pitch", static_cast<int>(issue.prov_original_pitch))
+            .endObject();
+      }
     } else {
       // NonChordTone
       w.write("track", issue.track_name)

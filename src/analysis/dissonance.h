@@ -27,7 +27,8 @@ enum class DissonanceSeverity : uint8_t {
 enum class DissonanceType : uint8_t {
   SimultaneousClash,         ///< Two notes with dissonant interval
   NonChordTone,              ///< Note not in current chord
-  SustainedOverChordChange   ///< Note became non-chord after change
+  SustainedOverChordChange,  ///< Note became non-chord after change
+  NonDiatonicNote            ///< Note not in the key's scale
 };
 
 /// @brief Note info in a dissonance.
@@ -71,6 +72,9 @@ struct DissonanceIssue {
   // SustainedOverChordChange fields
   Tick note_start_tick;          ///< When note started
   std::string original_chord_name;  ///< Chord when note started
+  // NonDiatonicNote fields
+  std::string key_name;          ///< Current key (e.g., "E major")
+  std::vector<std::string> scale_tones;  ///< Expected scale tones
 };
 
 /// @brief Summary statistics.
@@ -79,6 +83,7 @@ struct DissonanceSummary {
   uint32_t simultaneous_clashes;     ///< Clash count
   uint32_t non_chord_tones;          ///< Non-chord tone count
   uint32_t sustained_over_chord_change;  ///< Sustained issue count
+  uint32_t non_diatonic_notes;       ///< Non-diatonic note count
   uint32_t high_severity;            ///< High severity count
   uint32_t medium_severity;          ///< Medium severity count
   uint32_t low_severity;             ///< Low severity count

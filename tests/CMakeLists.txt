@@ -49,6 +49,7 @@ set(TEST_SOURCES
   track/chord_track_test.cpp
   track/bass_test.cpp
   track/bass_with_vocal_test.cpp
+  track/bass_diatonic_test.cpp
   track/chord_with_context_test.cpp
   track/drums_test.cpp
   track/melody_designer_test.cpp
@@ -60,6 +61,7 @@ set(TEST_SOURCES
   track/se_test.cpp
   track/vocal_analysis_test.cpp
   analysis/dissonance_test.cpp
+  analysis/non_diatonic_detection_test.cpp
   api/c_api_test.cpp
   integration/dissonance_integration_test.cpp
 )

@@ -48,21 +48,60 @@ uint8_t getBassRoot(int8_t degree, Key key = Key::C) {
   return clampBass(root);
 }
 
-/// Get perfect 5th (7 semitones) above root.
+/// Get diatonic 5th above root (in C major context).
+/// Returns perfect 5th (+7) for most roots, but diminished 5th (+6) for B (vii chord).
 uint8_t getFifth(uint8_t root) {
-  return clampBass(root + 7);
+  int pitch_class = root % 12;
+  // B (pitch class 11) has a diminished 5th in C major (B->F = 6 semitones)
+  // All other diatonic roots have perfect 5th (7 semitones)
+  int interval = (pitch_class == 11) ? 6 : 7;
+  return clampBass(root + interval);
 }
 
-/// Natural minor scale intervals: W-H-W-W-H-W-W (0,2,3,5,7,8,10 semitones).
-constexpr int MINOR_SCALE[] = {0, 2, 3, 5, 7, 8, 10};
+/// C major diatonic pitch classes.
+constexpr int C_MAJOR_DIATONIC[7] = {0, 2, 4, 5, 7, 9, 11};  // C,D,E,F,G,A,B
 
-/// Get scale tone at degree (1-indexed). Uses minor scale if is_minor.
-uint8_t getScaleTone(uint8_t root, int scale_degree, bool is_minor) {
-  if (scale_degree <= 0) scale_degree = 1;
-  int normalized = ((scale_degree - 1) % 7);
-  int octave_offset = ((scale_degree - 1) / 7) * 12;
-  // Use SCALE from pitch_utils.h for major, local MINOR_SCALE for minor
-  int interval = (is_minor ? MINOR_SCALE[normalized] : SCALE[normalized]) + octave_offset;
+/// Get the next diatonic note in C major, stepping from the given pitch.
+/// direction: +1 for ascending, -1 for descending
+/// This ensures Walking Bass uses key-relative diatonic motion, not chord-relative scales.
+uint8_t getNextDiatonic(uint8_t pitch, int direction) {
+  int pc = pitch % 12;
+  int octave = pitch / 12;
+
+  if (direction > 0) {
+    // Find next diatonic note above
+    for (int i = 0; i < 7; ++i) {
+      if (C_MAJOR_DIATONIC[i] > pc) {
+        return clampBass(octave * 12 + C_MAJOR_DIATONIC[i]);
+      }
+    }
+    // Wrap to next octave (C)
+    return clampBass((octave + 1) * 12 + C_MAJOR_DIATONIC[0]);
+  } else {
+    // Find next diatonic note below
+    for (int i = 6; i >= 0; --i) {
+      if (C_MAJOR_DIATONIC[i] < pc) {
+        return clampBass(octave * 12 + C_MAJOR_DIATONIC[i]);
+      }
+    }
+    // Wrap to previous octave (B)
+    return clampBass((octave - 1) * 12 + C_MAJOR_DIATONIC[6]);
+  }
+}
+
+/// Get diatonic chord tone (3rd or 5th) for the chord root in C major context.
+/// For minor chords (ii, iii, vi), returns the minor 3rd which is diatonic.
+/// For major chords (I, IV, V), returns the major 3rd which is diatonic.
+uint8_t getDiatonicThird(uint8_t root) {
+  int root_pc = root % 12;
+  // In C major, the 3rd above each diatonic root is also diatonic:
+  // C->E, D->F, E->G, F->A, G->B, A->C, B->D
+  // These are all either 3 or 4 semitones, depending on the chord quality
+  // Minor chords (Dm, Em, Am): 3 semitones (minor 3rd)
+  // Major chords (C, F, G): 4 semitones (major 3rd)
+  // Diminished (Bdim): 3 semitones (minor 3rd)
+  bool is_minor_or_dim = (root_pc == 2 || root_pc == 4 || root_pc == 9 || root_pc == 11);
+  int interval = is_minor_or_dim ? 3 : 4;
   return clampBass(static_cast<int>(root) + interval);
 }
 
@@ -100,7 +139,15 @@ bool clashesWithAnyChordTone(int pitch_class, const std::array<int, 7>& chord_to
   return false;
 }
 
+/// Check if pitch class is diatonic in C major (helper for getApproachNote)
+bool isApproachDiatonic(int pitch_class) {
+  // C major scale: C(0), D(2), E(4), F(5), G(7), A(9), B(11)
+  int pc = ((pitch_class % 12) + 12) % 12;
+  return pc == 0 || pc == 2 || pc == 4 || pc == 5 || pc == 7 || pc == 9 || pc == 11;
+}
+
 /// Get approach note: try 5th below (V-I), fallback to octave or root.
+/// Only returns diatonic notes in C major context.
 uint8_t getApproachNote(uint8_t current_root, uint8_t next_root) {
   int diff = static_cast<int>(next_root) - static_cast<int>(current_root);
   if (diff == 0) return current_root;
@@ -115,9 +162,19 @@ uint8_t getApproachNote(uint8_t current_root, uint8_t next_root) {
   }
   int approach_pc = approach % 12;
 
-  // Check if this approach clashes with any possible chord tones
-  if (!clashesWithAnyChordTone(approach_pc, chord_tones)) {
+  // Check if approach is diatonic AND doesn't clash with chord tones
+  if (isApproachDiatonic(approach_pc) && !clashesWithAnyChordTone(approach_pc, chord_tones)) {
     return clampBass(approach);
+  }
+
+  // Try fourth below as alternative (e.g., for approaching F, use C instead of Bb)
+  int alt_approach = static_cast<int>(next_root) - 5;  // Fourth below
+  if (alt_approach < BASS_LOW) {
+    alt_approach = next_root + 7;  // Fifth above instead
+  }
+  int alt_pc = alt_approach % 12;
+  if (isApproachDiatonic(alt_pc) && !clashesWithAnyChordTone(alt_pc, chord_tones)) {
+    return clampBass(alt_approach);
   }
 
   // Safe fallback: use root an octave below (never clashes with chord tones)
@@ -459,25 +516,25 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
 
     case BassPattern::Walking:
       // Jazz/swing walking bass: quarter notes walking through scale
-      // All notes use safety checks to ensure vocal priority
+      // Uses KEY-RELATIVE diatonic steps (C major), not chord-relative scales.
+      // This ensures all passing tones are diatonic to the key.
       {
-        // Determine if current chord is minor (ii, iii, vi in major key)
-        int root_pc = root % 12;
-        bool is_minor = (root_pc == 2 || root_pc == 4 || root_pc == 9);
-
         // Beat 4: Approach to next root (use safe approach with dissonance check)
         uint8_t approach_note;
         if (next_root != root) {
           // Use getApproachNote which checks for dissonance and uses safe intervals
           approach_note = getApproachNote(root, next_root);
         } else {
-          approach_note = getScaleTone(root, 5, is_minor);
+          // Same chord repeating: use diatonic 5th
+          approach_note = getFifth(root);
         }
 
         // Beat 1: Root (strong) with safety check
         addSafeBassNote(track, factory, bar_start, QUARTER, root, vel, harmony);
-        // Beat 2: 2nd scale degree with safety check
-        uint8_t second_note = getScaleTone(root, 2, is_minor);
+
+        // Beat 2: Next diatonic step up from root (key-relative, not chord-relative)
+        // E.g., on Em: E -> F (not F# which would be chord-relative 2nd)
+        uint8_t second_note = getNextDiatonic(root, +1);
         {
           auto safe_second = factory.createSafe(bar_start + QUARTER, QUARTER, second_note, vel_weak,
                                                  TrackRole::Bass, NoteSource::BassPattern);
@@ -487,8 +544,10 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
             addSafeBassNote(track, factory, bar_start + QUARTER, QUARTER, root, vel_weak, harmony);
           }
         }
-        // Beat 3: 3rd scale degree with safety check
-        uint8_t third_note = getScaleTone(root, 3, is_minor);
+
+        // Beat 3: Diatonic 3rd of the chord (always diatonic in C major context)
+        // E.g., on Em: G (minor 3rd), on C: E (major 3rd)
+        uint8_t third_note = getDiatonicThird(root);
         {
           auto safe_third = factory.createSafe(bar_start + 2 * QUARTER, QUARTER, third_note, vel,
                                                 TrackRole::Bass, NoteSource::BassPattern);
@@ -498,6 +557,7 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
             addSafeBassNote(track, factory, bar_start + 2 * QUARTER, QUARTER, root, vel, harmony);
           }
         }
+
         // Beat 4: Approach note with safety check
         auto safe_approach = factory.createSafe(bar_start + 3 * QUARTER, QUARTER, approach_note,
                                                  vel_weak, TrackRole::Bass, NoteSource::BassPattern);
@@ -882,6 +942,16 @@ uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion,
     }
   }
 
+  // Final safety check: ensure result is diatonic to C major
+  // If motion adjustments produced a non-diatonic pitch, revert to original
+  if (!isDiatonicInC(bass_pitch)) {
+#if BASS_DEBUG_LOG
+    std::cerr << "    [final_check] non-diatonic " << bass_pitch
+              << " -> reverting to " << base_pitch << "\n";
+#endif
+    bass_pitch = static_cast<int>(base_pitch);
+  }
+
   return clampBass(bass_pitch);
 }
 
@@ -935,7 +1005,7 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song,
       MotionType motion = selectMotionType(vocal_direction, bar, rng);
 
 #if BASS_DEBUG_LOG
-      std::cerr << "Bar " << absolute_bar << " (tick=" << bar_start << "): "
+      std::cerr << "Bar " << static_cast<int>(bar) << " (tick=" << bar_start << "): "
                 << "chord_idx=" << chord_idx << " -> degree=" << static_cast<int>(degree)
                 << " -> root=" << static_cast<int>(root)
                 << "(" << pitchToNoteName(root) << ")"
