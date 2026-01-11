@@ -84,6 +84,7 @@ ScaleType selectScaleType(bool is_minor, Mood mood) {
 constexpr int AVOID_MAJOR = 5;  // Perfect 4th above root (e.g., F over C major)
 constexpr int AVOID_MINOR = 8;  // Minor 6th above root (e.g., C over E minor - clashes with 5th)
 constexpr int AVOID_TRITONE = 6;  // Tritone above root (e.g., D# over A - highly dissonant)
+constexpr int AVOID_MAJOR_7TH = 11;  // Major 7th above root (e.g., G# over A - minor 2nd inversion)
 
 // Tension intervals in semitones from chord root
 constexpr int TENSION_9TH = 14;   // 9th = 2nd + octave (14 semitones from root)
@@ -162,8 +163,8 @@ int degreeToPitch(int degree, int base_note, int key_offset,
 // Check if a pitch is an avoid note for the given chord
 bool isAvoidNote(int pitch, uint8_t chord_root, bool is_minor) {
   int interval = ((pitch - chord_root) % 12 + 12) % 12;
-  // Tritone is always dissonant against any chord root
-  if (interval == AVOID_TRITONE) {
+  // Tritone and major 7th are always dissonant against any chord root
+  if (interval == AVOID_TRITONE || interval == AVOID_MAJOR_7TH) {
     return true;
   }
   if (is_minor) {

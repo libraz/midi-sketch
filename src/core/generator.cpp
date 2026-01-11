@@ -122,10 +122,13 @@ void Generator::generate(const GeneratorParams& params) {
   // MelodyLead: Vocal-first flow for proper harmonic coordination
   if (params.composition_style == CompositionStyle::BackgroundMotif) {
     // BackgroundMotif: Motif-driven BGM (Vocal/Aux disabled)
-    // Generate Motif first and register to HarmonyContext so Chord can avoid it
+    // Generate Bass first so Motif can avoid clashing with bass notes
+    generateBass();
+    harmony_context_.registerTrack(song_.bass(), TrackRole::Bass);
+    // Now generate Motif with Bass registered for collision avoidance
     generateMotif();
     harmony_context_.registerTrack(song_.motif(), TrackRole::Motif);
-    generateBass();
+    // Finally generate Chord avoiding both Bass and Motif
     generateChord();
   } else if (params.composition_style == CompositionStyle::SynthDriven) {
     // SynthDriven: Arpeggio-driven BGM (Vocal/Aux disabled)

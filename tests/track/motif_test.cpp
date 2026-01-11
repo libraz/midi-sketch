@@ -159,5 +159,112 @@ TEST_F(MotifDissonanceTest, AdjustsAvoidNotesToChordTones) {
   EXPECT_GT(motif_notes.size(), 0u) << "Should generate motif notes in BGM mode";
 }
 
+// =============================================================================
+// Generation Order Test (Architecture-level fix)
+// =============================================================================
+// Bug: In BGM mode, Motif was generated BEFORE Bass, so isPitchSafe() had
+// nothing to check against. This caused Motif-Bass clashes.
+// Fix: Changed generation order to Bass -> Motif so HarmonyContext has
+// Bass notes registered when Motif is generated.
+
+TEST_F(MotifDissonanceTest, BGMGenerationOrderAllowsClashAvoidance) {
+  // Use exact parameters from bug report
+  params_.seed = 3054356854;
+  params_.chord_id = 2;
+  params_.bpm = 150;
+  params_.key = Key::E;
+  params_.composition_style = CompositionStyle::BackgroundMotif;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& motif_notes = gen.getSong().motif().notes();
+  const auto& bass_notes = gen.getSong().bass().notes();
+
+  if (motif_notes.empty() || bass_notes.empty()) {
+    GTEST_SKIP() << "No motif or bass notes generated";
+  }
+
+  int dissonant_clashes = 0;
+
+  for (const auto& motif_note : motif_notes) {
+    Tick motif_start = motif_note.start_tick;
+    Tick motif_end = motif_start + motif_note.duration;
+
+    for (const auto& bass_note : bass_notes) {
+      Tick bass_start = bass_note.start_tick;
+      Tick bass_end = bass_start + bass_note.duration;
+
+      bool overlap = (motif_start < bass_end) && (bass_start < motif_end);
+      if (!overlap) continue;
+
+      int actual_interval = std::abs(static_cast<int>(motif_note.note) -
+                                     static_cast<int>(bass_note.note));
+
+      // Skip wide separations (2+ octaves)
+      if (actual_interval >= 24) continue;
+
+      int pitch_class_interval = actual_interval % 12;
+
+      // Check for dissonant intervals: minor 2nd (1), tritone (6), major 7th (11)
+      if (pitch_class_interval == 1 || pitch_class_interval == 6 ||
+          pitch_class_interval == 11) {
+        dissonant_clashes++;
+      }
+    }
+  }
+
+  // Before fix: 10+ clashes, After fix: 0
+  EXPECT_EQ(dissonant_clashes, 0)
+      << "BGM mode should generate Motif after Bass to enable clash avoidance. "
+      << "Found " << dissonant_clashes << " dissonant clashes";
+}
+
+// Test second BGM file parameters
+TEST_F(MotifDissonanceTest, BGMGenerationOrderSecondFile) {
+  params_.seed = 2802138756;
+  params_.chord_id = 0;
+  params_.bpm = 132;
+  params_.composition_style = CompositionStyle::BackgroundMotif;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& motif_notes = gen.getSong().motif().notes();
+  const auto& bass_notes = gen.getSong().bass().notes();
+
+  if (motif_notes.empty() || bass_notes.empty()) {
+    GTEST_SKIP() << "No motif or bass notes generated";
+  }
+
+  int dissonant_clashes = 0;
+
+  for (const auto& motif_note : motif_notes) {
+    Tick motif_start = motif_note.start_tick;
+    Tick motif_end = motif_start + motif_note.duration;
+
+    for (const auto& bass_note : bass_notes) {
+      Tick bass_start = bass_note.start_tick;
+      Tick bass_end = bass_start + bass_note.duration;
+
+      bool overlap = (motif_start < bass_end) && (bass_start < motif_end);
+      if (!overlap) continue;
+
+      int actual_interval = std::abs(static_cast<int>(motif_note.note) -
+                                     static_cast<int>(bass_note.note));
+      if (actual_interval >= 24) continue;
+
+      int pitch_class_interval = actual_interval % 12;
+      if (pitch_class_interval == 1 || pitch_class_interval == 6 ||
+          pitch_class_interval == 11) {
+        dissonant_clashes++;
+      }
+    }
+  }
+
+  EXPECT_EQ(dissonant_clashes, 0)
+      << "Found " << dissonant_clashes << " dissonant Motif-Bass clashes";
+}
+
 }  // namespace
 }  // namespace midisketch
