@@ -456,7 +456,7 @@ TEST_F(ChordWithContextTest, AvoidsTritoneCashesWithBass) {
   Generator gen;
 
   // Test across multiple seeds to ensure robustness
-  std::vector<uint32_t> test_seeds = {12345, 54321, 98765, 3604033891};
+  std::vector<uint32_t> test_seeds = {12345, 54321, 98765, 3604033891, 2316818684};
 
   for (uint32_t seed : test_seeds) {
     GeneratorParams params = params_;

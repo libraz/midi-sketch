@@ -46,6 +46,7 @@ void printUsage(const char* program) {
   std::cout << "  --validate FILE   Validate MIDI file structure\n";
   std::cout << "  --regenerate FILE Regenerate MIDI from embedded metadata\n";
   std::cout << "  --new-seed N      Use new seed when regenerating (default: same seed)\n";
+  std::cout << "  --bar N           Show notes at bar N (1-indexed) by track\n";
   std::cout << "  --json            Output JSON to stdout (with --validate or --analyze)\n";
   std::cout << "  --help            Show this help message\n";
 }
@@ -305,6 +306,79 @@ void printIssueWithContext(const midisketch::DissonanceIssue& issue, const char*
   }
 }
 
+// Display notes at a specific bar, grouped by track
+void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num) {
+  constexpr midisketch::Tick TICKS_PER_BAR = 1920;  // 480 * 4
+  midisketch::Tick bar_start = static_cast<midisketch::Tick>((bar_num - 1) * TICKS_PER_BAR);
+  midisketch::Tick bar_end = bar_start + TICKS_PER_BAR;
+
+  std::cout << "\n=== Bar " << bar_num << " (tick " << bar_start << "-" << bar_end << ") ===\n\n";
+
+  // Track order for display
+  std::vector<std::string> track_order = {"Vocal", "Chord", "Bass", "Motif", "Arpeggio", "Aux", "Drums"};
+
+  for (const auto& track_name : track_order) {
+    const midisketch::ParsedTrack* track = midi.getTrack(track_name);
+    if (!track || track->notes.empty()) continue;
+
+    // Collect notes that are sounding at this bar
+    std::vector<std::pair<float, std::string>> bar_notes;  // beat, description
+
+    for (const auto& note : track->notes) {
+      midisketch::Tick note_end = note.start_tick + note.duration;
+
+      // Note starts in this bar OR note started before and extends into this bar
+      bool starts_in_bar = (note.start_tick >= bar_start && note.start_tick < bar_end);
+      bool sustains_into_bar = (note.start_tick < bar_start && note_end > bar_start);
+
+      if (starts_in_bar || sustains_into_bar) {
+        float beat = (note.start_tick >= bar_start)
+                         ? (static_cast<float>(note.start_tick - bar_start) / 480.0f + 1.0f)
+                         : 0.0f;  // Sustained from previous bar
+
+        std::string note_name = midisketch::midiNoteToName(note.note);
+        std::string desc;
+
+        if (sustains_into_bar && !starts_in_bar) {
+          desc = "→ " + note_name + " (sustained)";
+        } else {
+          // Show duration
+          std::string dur_str;
+          if (note.duration == 0) {
+            dur_str = "dur=0 ⚠️";
+          } else if (note.duration >= 1920) {
+            dur_str = std::to_string(note.duration / 1920) + " bar";
+          } else if (note.duration >= 480) {
+            dur_str = std::to_string(note.duration / 480) + " beat";
+          } else {
+            dur_str = std::to_string(note.duration) + " tick";
+          }
+          desc = note_name + " (" + dur_str + ")";
+        }
+
+        bar_notes.push_back({beat, desc});
+      }
+    }
+
+    if (!bar_notes.empty()) {
+      std::cout << track_name << ":\n";
+
+      // Sort by beat
+      std::sort(bar_notes.begin(), bar_notes.end(),
+                [](const auto& a, const auto& b) { return a.first < b.first; });
+
+      for (const auto& [beat, desc] : bar_notes) {
+        if (beat == 0.0f) {
+          std::cout << "  " << desc << "\n";
+        } else {
+          std::cout << "  beat " << std::fixed << std::setprecision(1) << beat << ": " << desc << "\n";
+        }
+      }
+      std::cout << "\n";
+    }
+  }
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -333,6 +407,7 @@ int main(int argc, char* argv[]) {
   uint8_t vocal_low = 57;
   uint8_t vocal_high = 79;
   midisketch::MidiFormat midi_format = midisketch::kDefaultMidiFormat;
+  int bar_num = 0;  // 0 = no bar inspection
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--analyze") == 0) {
@@ -392,6 +467,12 @@ int main(int argc, char* argv[]) {
       use_new_seed = true;
     } else if (std::strcmp(argv[i], "--json") == 0) {
       json_output = true;
+    } else if (std::strcmp(argv[i], "--bar") == 0 && i + 1 < argc) {
+      bar_num = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
+      if (bar_num < 1) {
+        std::cerr << "Error: --bar must be >= 1\n";
+        return 1;
+      }
     } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
       printUsage(argv[0]);
       return 0;
@@ -561,6 +642,11 @@ int main(int argc, char* argv[]) {
       std::cout << "\nSaved: analysis.json\n";
     }
 
+    // Bar inspection
+    if (bar_num > 0) {
+      showBarNotes(midi, bar_num);
+    }
+
     return 0;
   }
 
@@ -679,6 +765,16 @@ int main(int argc, char* argv[]) {
     if (analysis_file) {
       analysis_file << analysis_json;
       std::cout << "\nSaved: analysis.json\n";
+    }
+  }
+
+  // Bar inspection
+  if (bar_num > 0) {
+    midisketch::MidiReader reader;
+    if (reader.read("output.mid")) {
+      showBarNotes(reader.getParsedMidi(), bar_num);
+    } else {
+      std::cerr << "Error reading output.mid for bar inspection\n";
     }
   }
 

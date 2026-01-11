@@ -143,9 +143,16 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name,
     events.push_back({note.start_tick + note.duration, 0x80, pitch, 0});
   }
 
-  // Sort events by time
+  // Sort events by time, with note-off before note-on at same time.
+  // This ensures proper handling of overlapping notes with same pitch:
+  // when a note ends and another starts at the same tick, the old note
+  // is properly closed (note-off 0x80) before the new one starts (note-on 0x90).
   std::sort(events.begin(), events.end(),
-            [](const Event& a, const Event& b) { return a.time < b.time; });
+            [](const Event& a, const Event& b) {
+              if (a.time != b.time) return a.time < b.time;
+              // At same time: note-off (0x80) before note-on (0x90)
+              return a.type < b.type;
+            });
 
   // Write events with delta times
   Tick prev_time = 0;

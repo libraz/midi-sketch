@@ -1,6 +1,12 @@
+import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      './midisketch.js': path.resolve(__dirname, 'dist/midisketch.js'),
+    },
+  },
   test: {
     globals: true,
     environment: 'node',
