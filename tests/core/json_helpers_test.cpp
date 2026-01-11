@@ -324,6 +324,113 @@ TEST(JsonEdgeCaseTest, MultipleArraysInObject) {
   EXPECT_EQ(oss.str(), R"({"first":[1],"second":[2]})");
 }
 
+// ============================================================================
+// Parser tests
+// ============================================================================
+
+TEST(JsonParserTest, EmptyObject) {
+  Parser p("{}");
+  EXPECT_FALSE(p.has("anything"));
+}
+
+TEST(JsonParserTest, SimpleValues) {
+  Parser p(R"({"name":"test","count":42,"enabled":true})");
+  EXPECT_TRUE(p.has("name"));
+  EXPECT_TRUE(p.has("count"));
+  EXPECT_TRUE(p.has("enabled"));
+  EXPECT_FALSE(p.has("missing"));
+
+  EXPECT_EQ(p.getString("name"), "test");
+  EXPECT_EQ(p.getInt("count"), 42);
+  EXPECT_TRUE(p.getBool("enabled"));
+}
+
+TEST(JsonParserTest, DefaultValues) {
+  Parser p("{}");
+  EXPECT_EQ(p.getInt("missing", 99), 99);
+  EXPECT_EQ(p.getUint("missing", 123u), 123u);
+  EXPECT_EQ(p.getBool("missing", true), true);
+  EXPECT_EQ(p.getString("missing", "default"), "default");
+}
+
+TEST(JsonParserTest, IntegerTypes) {
+  Parser p(R"({"positive":12345,"negative":-100,"zero":0})");
+  EXPECT_EQ(p.getInt("positive"), 12345);
+  EXPECT_EQ(p.getInt("negative"), -100);
+  EXPECT_EQ(p.getInt("zero"), 0);
+}
+
+TEST(JsonParserTest, UnsignedIntegers) {
+  Parser p(R"({"seed":4294967295})");
+  EXPECT_EQ(p.getUint("seed"), 4294967295u);
+}
+
+TEST(JsonParserTest, BooleanValues) {
+  Parser p(R"({"yes":true,"no":false})");
+  EXPECT_TRUE(p.getBool("yes"));
+  EXPECT_FALSE(p.getBool("no"));
+}
+
+TEST(JsonParserTest, StringWithEscapes) {
+  Parser p(R"({"text":"hello\"world"})");
+  EXPECT_EQ(p.getString("text"), "hello\"world");
+}
+
+TEST(JsonParserTest, Whitespace) {
+  Parser p(R"({  "key"  :  "value"  ,  "num"  :  42  })");
+  EXPECT_EQ(p.getString("key"), "value");
+  EXPECT_EQ(p.getInt("num"), 42);
+}
+
+TEST(JsonParserTest, MetadataFormat) {
+  // Test parsing actual metadata format
+  std::string metadata = R"({
+    "generator":"midi-sketch",
+    "format_version":1,
+    "seed":12345,
+    "chord_id":5,
+    "structure":12,
+    "bpm":122,
+    "key":0,
+    "mood":0,
+    "vocal_low":57,
+    "vocal_high":79,
+    "drums_enabled":true
+  })";
+  Parser p(metadata);
+
+  EXPECT_EQ(p.getString("generator"), "midi-sketch");
+  EXPECT_EQ(p.getInt("format_version"), 1);
+  EXPECT_EQ(p.getUint("seed"), 12345u);
+  EXPECT_EQ(p.getInt("chord_id"), 5);
+  EXPECT_EQ(p.getInt("structure"), 12);
+  EXPECT_EQ(p.getInt("bpm"), 122);
+  EXPECT_EQ(p.getInt("key"), 0);
+  EXPECT_EQ(p.getInt("vocal_low"), 57);
+  EXPECT_EQ(p.getInt("vocal_high"), 79);
+  EXPECT_TRUE(p.getBool("drums_enabled"));
+}
+
+TEST(JsonParserTest, InvalidJson) {
+  // Parser should handle invalid JSON gracefully
+  Parser p1("not json");
+  EXPECT_FALSE(p1.has("key"));
+
+  Parser p2("{broken");
+  EXPECT_FALSE(p2.has("key"));
+
+  Parser p3("");
+  EXPECT_FALSE(p3.has("key"));
+}
+
+TEST(JsonParserTest, NumericStringConversion) {
+  // String containing number should be parsed as string, not number
+  Parser p(R"({"str_num":"42"})");
+  EXPECT_EQ(p.getString("str_num"), "42");
+  // getInt on a string "42" should still work via stoi
+  EXPECT_EQ(p.getInt("str_num"), 42);
+}
+
 }  // namespace
 }  // namespace json
 }  // namespace midisketch

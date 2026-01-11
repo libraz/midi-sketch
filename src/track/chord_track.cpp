@@ -534,13 +534,24 @@ std::vector<VoicedChord> generateVoicings(uint8_t root, const Chord& chord,
 
 // Select voicing type based on section, mood, and bass pattern
 // @param bass_has_root True if bass is playing the root note
-VoicingType selectVoicingType(SectionType section, Mood mood, bool bass_has_root) {
+// @param rng Random number generator for probabilistic selection
+// Design: Express section contrast through voicing spread, not rhythm density.
+// - A section: Close (stable foundation)
+// - B section: Close-dominant (reduce "darkness", build anticipation)
+// - Chorus: Open-dominant (spacious release, room for vocals)
+// - Bridge: Mixed (introspective flexibility)
+VoicingType selectVoicingType(SectionType section, Mood mood, bool /*bass_has_root*/,
+                               std::mt19937* rng = nullptr) {
   bool is_ballad = MoodClassification::isBallad(mood);
-  bool is_dramatic = MoodClassification::isDramatic(mood);
 
   // Intro/Interlude/Outro/Chant: always close voicing for stability
   if (section == SectionType::Intro || section == SectionType::Interlude ||
       section == SectionType::Outro || section == SectionType::Chant) {
+    return VoicingType::Close;
+  }
+
+  // A section: always close voicing for stable foundation
+  if (section == SectionType::A) {
     return VoicingType::Close;
   }
 
@@ -549,27 +560,35 @@ VoicingType selectVoicingType(SectionType section, Mood mood, bool bass_has_root
     return VoicingType::Open;
   }
 
-  // When bass has root, prefer rootless voicing in B/Chorus for cleaner sound
-  if (bass_has_root && (section == SectionType::B || section == SectionType::Chorus)) {
-    // Higher probability of rootless when bass covers root
-    if (!is_ballad) {
-      return VoicingType::Rootless;
+  // Helper for probabilistic selection
+  auto rollProbability = [&](float threshold) -> bool {
+    if (!rng) return false;  // Default to first option if no RNG
+    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    return dist(*rng) < threshold;
+  };
+
+  // B section: Close 60%, Open 40% (reduce darkness from previous Rootless-heavy)
+  if (section == SectionType::B) {
+    if (is_ballad) {
+      return VoicingType::Close;  // Ballads: always close for intimacy
     }
+    return rollProbability(0.40f) ? VoicingType::Open : VoicingType::Close;
   }
 
-  // Rootless voicing for dramatic or nostalgic moods in B/Chorus
-  if (is_dramatic && (section == SectionType::B || section == SectionType::Chorus)) {
-    return VoicingType::Rootless;
+  // Chorus: Open 60%, Close 40% (spacious release, room for vocals)
+  if (section == SectionType::Chorus) {
+    if (is_ballad) {
+      return VoicingType::Open;  // Ballads: open for emotional breadth
+    }
+    return rollProbability(0.60f) ? VoicingType::Open : VoicingType::Close;
   }
 
-  // Open voicing for ballads in chorus (more spacious sound)
-  if (is_ballad && section == SectionType::Chorus) {
-    return VoicingType::Open;
-  }
-
-  // Open voicing for B section and Bridge to add variety
-  if ((section == SectionType::B || section == SectionType::Bridge) && !is_ballad) {
-    return VoicingType::Open;
+  // Bridge: Close 50%, Open 50% (introspective, flexible)
+  if (section == SectionType::Bridge) {
+    if (is_ballad) {
+      return VoicingType::Close;  // Ballads: intimate bridge
+    }
+    return rollProbability(0.50f) ? VoicingType::Open : VoicingType::Close;
   }
 
   return VoicingType::Close;
@@ -927,6 +946,9 @@ ChordRhythm adjustDenser(ChordRhythm rhythm) {
 
 // Select rhythm pattern based on section, mood, and backing density
 // Uses RNG to add variation while respecting musical constraints
+// Design: Express energy through voicing spread, not rhythm density.
+// Keep chord rhythms relaxed to give vocals room to breathe.
+// Energy progression: Intro(static) -> A(relaxed) -> B(building) -> Chorus(release)
 ChordRhythm selectRhythm(SectionType section, Mood mood,
                           BackingDensity backing_density,
                           std::mt19937& rng) {
@@ -934,76 +956,102 @@ ChordRhythm selectRhythm(SectionType section, Mood mood,
   bool is_energetic = MoodClassification::isDanceOriented(mood) ||
                       mood == Mood::BrightUpbeat;
 
-  // Allowed rhythms for each section (first is most likely)
+  // Allowed rhythms for each section with weights (first is most likely)
+  // Weights: [0]=primary, [1]=secondary, [2]=rare
   std::vector<ChordRhythm> allowed;
+  std::array<float, 3> weights = {0.60f, 0.30f, 0.10f};  // Default weights
 
   switch (section) {
     case SectionType::Intro:
     case SectionType::Interlude:
-      // Intro/Interlude: keep stable, minimal variation
+      // Intro/Interlude: very static (70% Whole, 30% Half)
       allowed = {ChordRhythm::Whole, ChordRhythm::Half};
+      weights = {0.70f, 0.30f, 0.0f};
       break;
     case SectionType::Outro:
+      // Outro: winding down (50% Half, 50% Whole)
       allowed = {ChordRhythm::Half, ChordRhythm::Whole};
+      weights = {0.50f, 0.50f, 0.0f};
       break;
     case SectionType::A:
+      // A section: relaxed foundation (40% Whole, 50% Half, 10% Quarter)
       if (is_ballad) {
         allowed = {ChordRhythm::Whole, ChordRhythm::Half};
+        weights = {0.60f, 0.40f, 0.0f};
       } else {
-        allowed = {ChordRhythm::Half, ChordRhythm::Quarter, ChordRhythm::Whole};
+        allowed = {ChordRhythm::Whole, ChordRhythm::Half, ChordRhythm::Quarter};
+        weights = {0.40f, 0.50f, 0.10f};
       }
       break;
     case SectionType::B:
+      // B section: building anticipation (50% Half, 40% Quarter, 10% Eighth)
       if (is_ballad) {
         allowed = {ChordRhythm::Half, ChordRhythm::Quarter};
+        weights = {0.70f, 0.30f, 0.0f};
       } else {
-        allowed = {ChordRhythm::Quarter, ChordRhythm::Half, ChordRhythm::Eighth};
+        allowed = {ChordRhythm::Half, ChordRhythm::Quarter, ChordRhythm::Eighth};
+        weights = {0.50f, 0.40f, 0.10f};
       }
       break;
     case SectionType::Chorus:
+      // Chorus: spacious release - give vocals room to breathe
+      // Avoid excessive eighth-note strumming
       if (is_ballad) {
         allowed = {ChordRhythm::Half, ChordRhythm::Quarter};
+        weights = {0.65f, 0.35f, 0.0f};
       } else if (is_energetic) {
-        allowed = {ChordRhythm::Eighth, ChordRhythm::Quarter};
+        // Even energetic moods: reduce eighth-note density significantly
+        // (50% Quarter, 35% Half, 15% Eighth)
+        allowed = {ChordRhythm::Quarter, ChordRhythm::Half, ChordRhythm::Eighth};
+        weights = {0.50f, 0.35f, 0.15f};
       } else {
-        allowed = {ChordRhythm::Quarter, ChordRhythm::Eighth, ChordRhythm::Half};
+        // Normal: balanced (45% Half, 45% Quarter, 10% Eighth)
+        allowed = {ChordRhythm::Half, ChordRhythm::Quarter, ChordRhythm::Eighth};
+        weights = {0.45f, 0.45f, 0.10f};
       }
       break;
     case SectionType::Bridge:
+      // Bridge: introspective, static (40% Whole, 50% Half, 10% Quarter)
       if (is_ballad) {
         allowed = {ChordRhythm::Whole, ChordRhythm::Half};
+        weights = {0.60f, 0.40f, 0.0f};
       } else {
-        allowed = {ChordRhythm::Half, ChordRhythm::Quarter, ChordRhythm::Whole};
+        allowed = {ChordRhythm::Whole, ChordRhythm::Half, ChordRhythm::Quarter};
+        weights = {0.40f, 0.50f, 0.10f};
       }
       break;
     case SectionType::Chant:
       // Chant section: sustained whole notes (no variation)
       allowed = {ChordRhythm::Whole};
+      weights = {1.0f, 0.0f, 0.0f};
       break;
     case SectionType::MixBreak:
-      // MIX section: driving patterns
+      // MIX section: driving patterns (still use eighth here for EDM feel)
       if (is_energetic) {
         allowed = {ChordRhythm::Eighth, ChordRhythm::Quarter};
+        weights = {0.60f, 0.40f, 0.0f};
       } else {
         allowed = {ChordRhythm::Quarter, ChordRhythm::Eighth};
+        weights = {0.60f, 0.40f, 0.0f};
       }
       break;
   }
 
-  // Weighted random selection: first option has higher probability
+  // Weighted random selection based on computed weights
   ChordRhythm selected;
   if (allowed.size() == 1) {
     selected = allowed[0];
   } else {
-    // 60% first option, 30% second, 10% third (if exists)
     std::uniform_real_distribution<float> dist(0.0f, 1.0f);
     float roll = dist(rng);
-    if (roll < 0.60f) {
-      selected = allowed[0];
-    } else if (roll < 0.90f || allowed.size() == 2) {
-      selected = allowed[1];
-    } else {
-      selected = allowed[allowed.size() > 2 ? 2 : 1];
+    float cumulative = 0.0f;
+    selected = allowed[0];  // Default fallback
+    for (size_t i = 0; i < allowed.size(); ++i) {
+      cumulative += weights[i];
+      if (roll < cumulative) {
+        selected = allowed[i];
+        break;
+      }
     }
   }
 
@@ -1196,7 +1244,7 @@ void generateChordTrack(MidiTrack& track, const Song& song,
 
       // Select voicing type with bass coordination
       VoicingType voicing_type = selectVoicingType(section.type, params.mood,
-                                                    bass_has_root);
+                                                    bass_has_root, &rng);
 
       // C3: Select open voicing subtype based on context
       OpenVoicingType open_subtype = selectOpenVoicingSubtype(section.type, params.mood,
@@ -1603,7 +1651,7 @@ void generateChordTrackWithContext(MidiTrack& track, const Song& song,
 
       // Select voicing type with bass coordination
       VoicingType voicing_type = selectVoicingType(section.type, params.mood,
-                                                    bass_has_root);
+                                                    bass_has_root, &rng);
       OpenVoicingType open_subtype = selectOpenVoicingSubtype(section.type, params.mood,
                                                                chord, rng);
 

@@ -44,6 +44,7 @@ set(MIDISKETCH_CLI_SOURCES
   midi/midi_validator.cpp
   midi/ump.cpp
   midi/midi2_writer.cpp
+  midi/midi2_reader.cpp
   analysis/dissonance.cpp
 )
 

@@ -5,9 +5,11 @@
 
 #include "midisketch.h"
 #include "analysis/dissonance.h"
+#include "core/json_helpers.h"
 #include "core/preset_data.h"
 #include "core/structure.h"
 #include "midi/midi_reader.h"
+#include "midi/midi2_reader.h"
 #include "midi/midi_validator.h"
 #include <cstdlib>
 #include <cstring>
@@ -40,8 +42,55 @@ void printUsage(const char* program) {
   std::cout << "  --vocal-high N    Vocal range high (MIDI note, default 79)\n";
   std::cout << "  --format FMT      Set MIDI format (smf1 or smf2, default: smf2)\n";
   std::cout << "  --validate FILE   Validate MIDI file structure\n";
+  std::cout << "  --regenerate FILE Regenerate MIDI from embedded metadata\n";
+  std::cout << "  --new-seed N      Use new seed when regenerating (default: same seed)\n";
   std::cout << "  --json            Output JSON to stdout (with --validate or --analyze)\n";
   std::cout << "  --help            Show this help message\n";
+}
+
+// Parse MIDI metadata JSON and create SongConfig
+midisketch::SongConfig configFromMetadata(const std::string& metadata) {
+  midisketch::json::Parser p(metadata);
+
+  // Start with default config
+  midisketch::SongConfig config = midisketch::createDefaultSongConfig(0);
+
+  // Core parameters from metadata
+  if (p.has("seed")) config.seed = p.getUint("seed");
+  if (p.has("chord_id")) config.chord_progression_id = static_cast<uint8_t>(p.getInt("chord_id"));
+  if (p.has("structure")) config.form = static_cast<midisketch::StructurePattern>(p.getInt("structure"));
+  if (p.has("bpm")) config.bpm = static_cast<uint16_t>(p.getInt("bpm"));
+  if (p.has("key")) config.key = static_cast<midisketch::Key>(p.getInt("key"));
+  if (p.has("mood")) {
+    config.mood = static_cast<uint8_t>(p.getInt("mood"));
+    config.mood_explicit = true;
+  }
+  if (p.has("vocal_low")) config.vocal_low = static_cast<uint8_t>(p.getInt("vocal_low"));
+  if (p.has("vocal_high")) config.vocal_high = static_cast<uint8_t>(p.getInt("vocal_high"));
+  if (p.has("vocal_attitude")) {
+    config.vocal_attitude = static_cast<midisketch::VocalAttitude>(p.getInt("vocal_attitude"));
+  }
+  if (p.has("vocal_style")) {
+    config.vocal_style = static_cast<midisketch::VocalStylePreset>(p.getInt("vocal_style"));
+  }
+  if (p.has("melody_template")) {
+    config.melody_template = static_cast<midisketch::MelodyTemplateId>(p.getInt("melody_template"));
+  }
+  if (p.has("melodic_complexity")) {
+    config.melodic_complexity = static_cast<midisketch::MelodicComplexity>(p.getInt("melodic_complexity"));
+  }
+  if (p.has("hook_intensity")) {
+    config.hook_intensity = static_cast<midisketch::HookIntensity>(p.getInt("hook_intensity"));
+  }
+  if (p.has("composition_style")) {
+    config.composition_style = static_cast<midisketch::CompositionStyle>(p.getInt("composition_style"));
+  }
+  if (p.has("drums_enabled")) config.drums_enabled = p.getBool("drums_enabled");
+
+  // Mark form as explicit since it was loaded from metadata
+  config.form_explicit = true;
+
+  return config;
 }
 
 const char* vocalStyleName(midisketch::VocalStylePreset style) {
@@ -101,9 +150,12 @@ int main(int argc, char* argv[]) {
   bool analyze = false;
   bool skip_vocal = false;
   bool regenerate_vocal = false;
-  std::string input_file;     // Input MIDI file for analysis
-  std::string validate_file;  // MIDI file for validation
-  bool json_output = false;   // Output JSON to stdout
+  std::string input_file;       // Input MIDI file for analysis
+  std::string validate_file;    // MIDI file for validation
+  std::string regenerate_file;  // MIDI file to regenerate from metadata
+  bool use_new_seed = false;    // Use different seed when regenerating
+  uint32_t new_seed = 0;        // New seed for regeneration
+  bool json_output = false;     // Output JSON to stdout
   uint32_t seed = 0;  // 0 = auto-random
   uint8_t style_id = 1;
   uint8_t mood_id = 0;
@@ -169,6 +221,11 @@ int main(int argc, char* argv[]) {
       }
     } else if (std::strcmp(argv[i], "--validate") == 0 && i + 1 < argc) {
       validate_file = argv[++i];
+    } else if (std::strcmp(argv[i], "--regenerate") == 0 && i + 1 < argc) {
+      regenerate_file = argv[++i];
+    } else if (std::strcmp(argv[i], "--new-seed") == 0 && i + 1 < argc) {
+      new_seed = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
+      use_new_seed = true;
     } else if (std::strcmp(argv[i], "--json") == 0) {
       json_output = true;
     } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
@@ -195,6 +252,102 @@ int main(int argc, char* argv[]) {
   }
 
   std::cout << "midi-sketch v" << midisketch::MidiSketch::version() << "\n\n";
+
+  // Regenerate mode: regenerate MIDI from embedded metadata
+  if (!regenerate_file.empty()) {
+    std::cout << "Regenerating from: " << regenerate_file << "\n\n";
+
+    std::string metadata;
+
+    // Try to read file - first check if it's MIDI 2.0 format
+    std::ifstream probe_file(regenerate_file, std::ios::binary);
+    if (!probe_file) {
+      std::cerr << "Error: Failed to open file: " << regenerate_file << "\n";
+      return 1;
+    }
+    uint8_t header[16];
+    probe_file.read(reinterpret_cast<char*>(header), 16);
+    probe_file.close();
+
+    if (midisketch::Midi2Reader::isMidi2Format(header, 16)) {
+      // MIDI 2.0 format (ktmidi container or SMF2CLIP)
+      midisketch::Midi2Reader reader2;
+      if (!reader2.read(regenerate_file)) {
+        std::cerr << "Error: " << reader2.getError() << "\n";
+        return 1;
+      }
+      const auto& midi2 = reader2.getParsedMidi();
+      if (!midi2.hasMidiSketchMetadata()) {
+        std::cerr << "Error: No midi-sketch metadata found in file.\n";
+        std::cerr << "This file was not generated by midi-sketch or metadata is missing.\n";
+        return 1;
+      }
+      metadata = midi2.metadata;
+      std::cout << "Format: MIDI 2.0 (ktmidi container)\n";
+    } else {
+      // Standard MIDI format (SMF1)
+      midisketch::MidiReader reader;
+      if (!reader.read(regenerate_file)) {
+        std::cerr << "Error: " << reader.getError() << "\n";
+        return 1;
+      }
+      const auto& midi = reader.getParsedMidi();
+      if (!midi.hasMidiSketchMetadata()) {
+        std::cerr << "Error: No midi-sketch metadata found in file.\n";
+        std::cerr << "This file was not generated by midi-sketch or metadata is missing.\n";
+        return 1;
+      }
+      metadata = midi.metadata;
+      std::cout << "Format: Standard MIDI (SMF1)\n";
+    }
+
+    std::cout << "Original metadata: " << metadata << "\n\n";
+
+    // Parse metadata and create config
+    midisketch::SongConfig config = configFromMetadata(metadata);
+
+    // Override seed if requested
+    if (use_new_seed) {
+      std::cout << "Using new seed: " << new_seed << " (original: " << config.seed << ")\n";
+      config.seed = new_seed;
+    }
+
+    midisketch::MidiSketch sketch;
+    sketch.setMidiFormat(midi_format);
+    sketch.generateFromConfig(config);
+
+    // Write regenerated MIDI
+    auto midi_data = sketch.getMidi();
+    std::ofstream file("regenerated.mid", std::ios::binary);
+    if (file) {
+      file.write(reinterpret_cast<const char*>(midi_data.data()),
+                 static_cast<std::streamsize>(midi_data.size()));
+      std::cout << "Saved: regenerated.mid (" << midi_data.size() << " bytes)\n";
+    }
+
+    // Print generation result
+    const auto& song = sketch.getSong();
+    std::cout << "\nRegeneration result:\n";
+    std::cout << "  Total bars: " << song.arrangement().totalBars() << "\n";
+    std::cout << "  Total ticks: " << song.arrangement().totalTicks() << "\n";
+    std::cout << "  BPM: " << song.bpm() << "\n";
+    std::cout << "  Seed: " << config.seed << "\n";
+
+    if (analyze) {
+      const auto& params = sketch.getParams();
+      auto report = midisketch::analyzeDissonance(song, params);
+      printDissonanceSummary(report);
+
+      auto analysis_json = midisketch::dissonanceReportToJson(report);
+      std::ofstream analysis_file("analysis.json");
+      if (analysis_file) {
+        analysis_file << analysis_json;
+        std::cout << "\nSaved: analysis.json\n";
+      }
+    }
+
+    return 0;
+  }
 
   // Input file mode: analyze existing MIDI file
   if (!input_file.empty()) {

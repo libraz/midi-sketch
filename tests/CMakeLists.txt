@@ -43,6 +43,7 @@ set(TEST_SOURCES
   midi/midi_validator_test.cpp
   midi/ump_test.cpp
   midi/midi2_writer_test.cpp
+  midi/midi2_reader_test.cpp
   track/arpeggio_test.cpp
   track/vocal_test.cpp
   track/chord_track_test.cpp

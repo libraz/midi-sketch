@@ -511,5 +511,53 @@ TEST(IntroMotifVariationTest, StructureWithoutIntroNoVariationCrash) {
   EXPECT_GT(gen.getSong().aux().noteCount(), 0u);
 }
 
+// ============================================================================
+// Chord-Motif Dissonance Avoidance Tests
+// ============================================================================
+
+TEST(GeneratorTest, BackgroundMotifNoChordMotifClash) {
+  // Test that BackgroundMotif mode avoids Chord-Motif dissonance
+  // by registering Motif to HarmonyContext before Chord generation
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ShortForm;
+  params.mood = Mood::StraightPop;
+  params.composition_style = CompositionStyle::BackgroundMotif;
+  params.drums_enabled = true;
+  params.seed = 42;
+  params.key = Key::E;  // E major has G# which can clash with A
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  // Both tracks should have notes
+  ASSERT_GT(song.motif().noteCount(), 0u);
+  ASSERT_GT(song.chord().noteCount(), 0u);
+
+  // Check for minor 2nd (semitone) clashes between Chord and Motif
+  int clash_count = 0;
+  for (const auto& motif_note : song.motif().notes()) {
+    for (const auto& chord_note : song.chord().notes()) {
+      // Check if notes overlap in time
+      Tick motif_end = motif_note.start_tick + motif_note.duration;
+      Tick chord_end = chord_note.start_tick + chord_note.duration;
+      bool overlaps = (motif_note.start_tick < chord_end) &&
+                      (chord_note.start_tick < motif_end);
+
+      if (overlaps) {
+        // Check for minor 2nd interval (1 semitone)
+        int interval = std::abs(static_cast<int>(motif_note.note) -
+                                static_cast<int>(chord_note.note)) % 12;
+        if (interval == 1 || interval == 11) {
+          clash_count++;
+        }
+      }
+    }
+  }
+
+  // Allow very few clashes (ideally zero, but timing edge cases may occur)
+  EXPECT_LT(clash_count, 5) << "Too many Chord-Motif minor 2nd clashes: " << clash_count;
+}
+
 }  // namespace
 }  // namespace midisketch

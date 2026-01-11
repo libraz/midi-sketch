@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <cstdint>
+#include <map>
 #include <sstream>
 #include <string>
 
@@ -404,6 +406,181 @@ class ArrayScope {
 
  private:
   Writer& w_;
+};
+
+// ============================================================================
+// Simple JSON Parser for Metadata
+// ============================================================================
+
+/**
+ * @brief Simple JSON parser for reading metadata.
+ *
+ * Supports only the subset needed for metadata parsing:
+ * - Objects with string, number, and boolean values
+ * - No nested objects/arrays (not needed for metadata)
+ *
+ * @example
+ * ```cpp
+ * json::Parser p(R"({"seed":12345,"key":2,"drums_enabled":true})");
+ * p.getInt("seed");        // returns 12345
+ * p.getInt("key");         // returns 2
+ * p.getBool("drums_enabled"); // returns true
+ * ```
+ */
+class Parser {
+ public:
+  /**
+   * @brief Constructs a parser with JSON string.
+   * @param json The JSON string to parse.
+   */
+  explicit Parser(const std::string& json) : json_(json) { parse(); }
+
+  /**
+   * @brief Check if a key exists.
+   * @param key The key to check.
+   * @return True if key exists.
+   */
+  bool has(const std::string& key) const {
+    return values_.find(key) != values_.end();
+  }
+
+  /**
+   * @brief Get an integer value.
+   * @param key The key to look up.
+   * @param default_val Default value if key not found.
+   * @return The integer value.
+   */
+  int getInt(const std::string& key, int default_val = 0) const {
+    auto it = values_.find(key);
+    if (it == values_.end()) return default_val;
+    try {
+      return std::stoi(it->second);
+    } catch (...) {
+      return default_val;
+    }
+  }
+
+  /**
+   * @brief Get an unsigned integer value.
+   * @param key The key to look up.
+   * @param default_val Default value if key not found.
+   * @return The unsigned integer value.
+   */
+  uint32_t getUint(const std::string& key, uint32_t default_val = 0) const {
+    auto it = values_.find(key);
+    if (it == values_.end()) return default_val;
+    try {
+      return static_cast<uint32_t>(std::stoul(it->second));
+    } catch (...) {
+      return default_val;
+    }
+  }
+
+  /**
+   * @brief Get a boolean value.
+   * @param key The key to look up.
+   * @param default_val Default value if key not found.
+   * @return The boolean value.
+   */
+  bool getBool(const std::string& key, bool default_val = false) const {
+    auto it = values_.find(key);
+    if (it == values_.end()) return default_val;
+    return it->second == "true";
+  }
+
+  /**
+   * @brief Get a string value.
+   * @param key The key to look up.
+   * @param default_val Default value if key not found.
+   * @return The string value.
+   */
+  std::string getString(const std::string& key,
+                        const std::string& default_val = "") const {
+    auto it = values_.find(key);
+    if (it == values_.end()) return default_val;
+    return it->second;
+  }
+
+ private:
+  void parse() {
+    size_t pos = 0;
+    skipWhitespace(pos);
+    if (pos >= json_.size() || json_[pos] != '{') return;
+    ++pos;
+
+    while (pos < json_.size()) {
+      skipWhitespace(pos);
+      if (json_[pos] == '}') break;
+      if (json_[pos] == ',') { ++pos; continue; }
+
+      // Parse key
+      std::string key = parseString(pos);
+      if (key.empty()) break;
+
+      skipWhitespace(pos);
+      if (pos >= json_.size() || json_[pos] != ':') break;
+      ++pos;
+      skipWhitespace(pos);
+
+      // Parse value
+      std::string value = parseValue(pos);
+      values_[key] = value;
+    }
+  }
+
+  void skipWhitespace(size_t& pos) const {
+    while (pos < json_.size() &&
+           (json_[pos] == ' ' || json_[pos] == '\t' ||
+            json_[pos] == '\n' || json_[pos] == '\r')) {
+      ++pos;
+    }
+  }
+
+  std::string parseString(size_t& pos) {
+    if (pos >= json_.size() || json_[pos] != '"') return "";
+    ++pos;
+    std::string result;
+    while (pos < json_.size() && json_[pos] != '"') {
+      if (json_[pos] == '\\' && pos + 1 < json_.size()) {
+        ++pos;
+        switch (json_[pos]) {
+          case 'n': result += '\n'; break;
+          case 'r': result += '\r'; break;
+          case 't': result += '\t'; break;
+          case '"': result += '"'; break;
+          case '\\': result += '\\'; break;
+          default: result += json_[pos]; break;
+        }
+      } else {
+        result += json_[pos];
+      }
+      ++pos;
+    }
+    if (pos < json_.size()) ++pos;  // Skip closing quote
+    return result;
+  }
+
+  std::string parseValue(size_t& pos) {
+    skipWhitespace(pos);
+    if (pos >= json_.size()) return "";
+
+    // String value
+    if (json_[pos] == '"') {
+      return parseString(pos);
+    }
+
+    // Number, boolean, or null
+    std::string value;
+    while (pos < json_.size() && json_[pos] != ',' && json_[pos] != '}' &&
+           json_[pos] != ' ' && json_[pos] != '\t' && json_[pos] != '\n') {
+      value += json_[pos];
+      ++pos;
+    }
+    return value;
+  }
+
+  std::string json_;
+  std::map<std::string, std::string> values_;
 };
 
 }  // namespace json

@@ -160,9 +160,10 @@ TEST_F(ChordWithContextTest, AvoidsVocalDoublingWhenPossible) {
 
   // Doubling should be reduced compared to total overlaps
   // Allow some doubling (fallback case), but it should be minimized
+  // Note: Close voicing increases doubling slightly vs Rootless, so threshold is 0.35
   float doubling_ratio = static_cast<float>(doubling_count) / overlap_count;
-  EXPECT_LT(doubling_ratio, 0.3f) << "Doubling ratio should be low: "
-                                   << doubling_count << "/" << overlap_count;
+  EXPECT_LT(doubling_ratio, 0.35f) << "Doubling ratio should be low: "
+                                    << doubling_count << "/" << overlap_count;
 }
 
 // === Aux Clash Avoidance Tests ===

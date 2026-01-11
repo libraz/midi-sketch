@@ -580,14 +580,36 @@ void generateMotifTrack(MidiTrack& track, Song& song,
           }
         }
 
-        // Add main note
-        track.addNote(factory.create(absolute_tick, note.duration,
-                      static_cast<uint8_t>(adjusted_pitch), vel, NoteSource::Motif));
+        // Add main note with collision avoidance
+        // Check if pitch is safe (avoids clashing with Chord track)
+        uint8_t final_pitch = static_cast<uint8_t>(adjusted_pitch);
+        if (!harmony.isPitchSafe(final_pitch, absolute_tick, note.duration, TrackRole::Motif)) {
+          // Try adjusting pitch to avoid collision
+          // First try half-step up
+          if (adjusted_pitch + 1 <= 108 &&
+              harmony.isPitchSafe(static_cast<uint8_t>(adjusted_pitch + 1),
+                                  absolute_tick, note.duration, TrackRole::Motif)) {
+            final_pitch = static_cast<uint8_t>(adjusted_pitch + 1);
+          }
+          // Then try half-step down
+          else if (adjusted_pitch - 1 >= 36 &&
+                   harmony.isPitchSafe(static_cast<uint8_t>(adjusted_pitch - 1),
+                                       absolute_tick, note.duration, TrackRole::Motif)) {
+            final_pitch = static_cast<uint8_t>(adjusted_pitch - 1);
+          }
+          // Skip note if still clashing (rare case)
+          else {
+            continue;
+          }
+        }
+        track.addNote(factory.create(absolute_tick, note.duration, final_pitch, vel, NoteSource::Motif));
 
         // L4: Add octave doubling for chorus (if role allows)
         if (add_octave) {
-          int octave_pitch = adjusted_pitch + 12;
-          if (octave_pitch <= 108) {
+          int octave_pitch = final_pitch + 12;
+          if (octave_pitch <= 108 &&
+              harmony.isPitchSafe(static_cast<uint8_t>(octave_pitch),
+                                  absolute_tick, note.duration, TrackRole::Motif)) {
             uint8_t octave_vel = static_cast<uint8_t>(vel * 0.85f);
             track.addNote(factory.create(absolute_tick, note.duration,
                           static_cast<uint8_t>(octave_pitch), octave_vel, NoteSource::Motif));

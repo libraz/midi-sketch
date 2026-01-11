@@ -252,9 +252,9 @@ TEST(CApiTest, GenerateAccompanimentMultipleTimesDoesNotAccumulate) {
   midisketch_free_midi(midi2);
 
   // Sizes should be similar (same seed, same config)
-  // Allow small variation for timing differences
+  // Allow variation for RNG consumption differences in voicing/rhythm selection
   EXPECT_NEAR(static_cast<double>(size1), static_cast<double>(size2),
-              static_cast<double>(size1) * 0.1);
+              static_cast<double>(size1) * 0.2);
 
   // Step 4: Generate accompaniment third time
   err = midisketch_generate_accompaniment(handle);
@@ -267,7 +267,7 @@ TEST(CApiTest, GenerateAccompanimentMultipleTimesDoesNotAccumulate) {
 
   // Size should still be similar (not growing)
   EXPECT_NEAR(static_cast<double>(size1), static_cast<double>(size3),
-              static_cast<double>(size1) * 0.1);
+              static_cast<double>(size1) * 0.2);
 
   midisketch_destroy(handle);
 }
