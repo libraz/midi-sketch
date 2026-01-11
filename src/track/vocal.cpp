@@ -694,6 +694,17 @@ void generateVocalTrack(MidiTrack& track, Song& song,
   uint8_t effective_vocal_low = params.vocal_low;
   uint8_t effective_vocal_high = params.vocal_high;
 
+  // Adjust vocal_high to account for modulation
+  // After modulation, notes will be transposed up by modulationAmount semitones.
+  // To ensure the final pitch stays within vocal_high, reduce effective_vocal_high.
+  int8_t mod_amount = song.modulationAmount();
+  if (mod_amount > 0) {
+    int adjusted_high = static_cast<int>(params.vocal_high) - mod_amount;
+    // Ensure at least 1 octave (12 semitones) range remains
+    int min_high = static_cast<int>(effective_vocal_low) + 12;
+    effective_vocal_high = static_cast<uint8_t>(std::max(min_high, adjusted_high));
+  }
+
   // Adjust range for BackgroundMotif to avoid collision with motif
   if (params.composition_style == CompositionStyle::BackgroundMotif &&
       motif_track != nullptr && !motif_track->empty()) {

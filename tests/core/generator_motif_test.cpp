@@ -33,7 +33,7 @@ TEST(GeneratorTest, BackgroundMotifGeneratesMotifTrack) {
   EXPECT_GT(song.motifPattern().size(), 0u);
 }
 
-TEST(GeneratorTest, BackgroundMotifDisablesModulation) {
+TEST(GeneratorTest, BackgroundMotifSupportsModulation) {
   Generator gen;
   GeneratorParams params{};
   params.structure = StructurePattern::StandardPop;
@@ -45,9 +45,9 @@ TEST(GeneratorTest, BackgroundMotifDisablesModulation) {
   gen.generate(params);
   const auto& song = gen.getSong();
 
-  // Modulation should be disabled for BackgroundMotif
-  EXPECT_EQ(song.modulationTick(), 0u);
-  EXPECT_EQ(song.modulationAmount(), 0);
+  // Modulation should be enabled for BackgroundMotif (BGM mode)
+  EXPECT_GT(song.modulationTick(), 0u);
+  EXPECT_EQ(song.modulationAmount(), 2);
 }
 
 TEST(GeneratorTest, MelodyLeadDoesNotGenerateMotif) {

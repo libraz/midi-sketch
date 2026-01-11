@@ -36,6 +36,8 @@ set(TEST_SOURCES
   core/piano_roll_test.cpp
   core/velocity_test.cpp
   core/modulation_calculator_test.cpp
+  core/modulation_bgm_test.cpp
+  core/modulation_vocal_range_test.cpp
   core/section_utils_test.cpp
   core/json_helpers_test.cpp
   midi/midi_writer_smf1_test.cpp

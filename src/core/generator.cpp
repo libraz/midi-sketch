@@ -109,13 +109,8 @@ void Generator::generate(const GeneratorParams& params) {
   const auto& progression = getChordProgression(params.chord_id);
   harmony_context_.initialize(song_.arrangement(), progression, params.mood);
 
-  // Calculate modulation (disabled for BackgroundMotif and SynthDriven)
-  if (params.composition_style == CompositionStyle::BackgroundMotif ||
-      params.composition_style == CompositionStyle::SynthDriven) {
-    song_.setModulation(0, 0);
-  } else {
-    calculateModulation();
-  }
+  // Calculate modulation for all composition styles
+  calculateModulation();
 
   // Generate tracks based on composition style
   // BackgroundMotif/SynthDriven: BGM only (no Vocal/Aux - causes dissonance issues)
@@ -235,13 +230,8 @@ void Generator::generateVocal(const GeneratorParams& params) {
   const auto& progression = getChordProgression(params.chord_id);
   harmony_context_.initialize(song_.arrangement(), progression, params.mood);
 
-  // Calculate modulation
-  if (params.composition_style == CompositionStyle::BackgroundMotif ||
-      params.composition_style == CompositionStyle::SynthDriven) {
-    song_.setModulation(0, 0);
-  } else {
-    calculateModulation();
-  }
+  // Calculate modulation for all composition styles
+  calculateModulation();
 
   // Generate ONLY vocal track with collision avoidance skipped
   // (no other tracks exist yet, so collision avoidance is meaningless)
@@ -554,13 +544,8 @@ void Generator::setVocalNotes(const GeneratorParams& params,
   const auto& progression = getChordProgression(params.chord_id);
   harmony_context_.initialize(song_.arrangement(), progression, params.mood);
 
-  // Calculate modulation
-  if (params.composition_style == CompositionStyle::BackgroundMotif ||
-      params.composition_style == CompositionStyle::SynthDriven) {
-    song_.setModulation(0, 0);
-  } else {
-    calculateModulation();
-  }
+  // Calculate modulation for all composition styles
+  calculateModulation();
 
   // Set custom vocal notes
   for (const auto& note : notes) {
