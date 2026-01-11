@@ -39,4 +39,15 @@ NoteEvent NoteFactory::modify(const NoteEvent& original, uint8_t new_pitch,
   return event;
 }
 
+std::optional<NoteEvent> NoteFactory::createSafe(Tick start, Tick duration, uint8_t pitch,
+                                                  uint8_t velocity, TrackRole track,
+                                                  NoteSource source) const {
+  // Check if pitch is safe against registered tracks
+  if (!harmony_.isPitchSafe(pitch, start, duration, track)) {
+    return std::nullopt;
+  }
+
+  return create(start, duration, pitch, velocity, source);
+}
+
 }  // namespace midisketch

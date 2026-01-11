@@ -270,6 +270,114 @@ TEST_F(BassWithVocalTest, HandlesEmptyVocalAnalysis) {
   EXPECT_FALSE(bass_track.empty());
 }
 
+// === Minor 2nd Clash Avoidance Tests ===
+
+// Regression test for issue: Bass fifth creating minor 2nd with sustained vocal
+// Bug: Syncopated/RootFifth patterns generated fifths without checking
+// if they clash with currently sounding vocal notes.
+// Example: Vocal G4 sustaining while Bass plays F#3 (fifth of B) = minor 2nd clash
+TEST_F(BassWithVocalTest, AvoidsFifthClashWithSustainedVocal) {
+  // Use the exact parameters that triggered the original bug
+  params_.seed = 4130447576;
+  params_.chord_id = 2;  // Axis progression
+  params_.structure = StructurePattern::FullPop;
+  params_.bpm = 160;
+  params_.mood = Mood::IdolPop;  // Style 14 - the original bug parameters
+
+  Generator gen;
+  gen.generateWithVocal(params_);
+
+  const auto& vocal_notes = gen.getSong().vocal().notes();
+  const auto& bass_notes = gen.getSong().bass().notes();
+
+  int minor_2nd_clashes = 0;
+
+  for (const auto& bass_note : bass_notes) {
+    Tick bass_start = bass_note.start_tick;
+    Tick bass_end = bass_start + bass_note.duration;
+
+    for (const auto& vocal_note : vocal_notes) {
+      Tick vocal_start = vocal_note.start_tick;
+      Tick vocal_end = vocal_start + vocal_note.duration;
+
+      // Check if notes overlap in time
+      bool overlap = (bass_start < vocal_end) && (vocal_start < bass_end);
+      if (!overlap) continue;
+
+      // Calculate actual semitone distance (not pitch class)
+      // Music theory: notes 2+ octaves apart (24+ semitones) don't clash perceptually
+      int actual_interval = std::abs(static_cast<int>(bass_note.note) -
+                                     static_cast<int>(vocal_note.note));
+
+      // Wide separation (2+ octaves): not a clash
+      if (actual_interval >= 24) continue;
+
+      // Check for minor 2nd (1 semitone) pitch class
+      int pitch_class_interval = actual_interval % 12;
+      if (pitch_class_interval > 6) pitch_class_interval = 12 - pitch_class_interval;
+
+      if (pitch_class_interval == 1) {  // Minor 2nd within 2 octaves
+        minor_2nd_clashes++;
+      }
+    }
+  }
+
+  // Should have zero minor 2nd clashes within audible range
+  // Before fix: clashes occurred, After fix: createSafe prevents them
+  EXPECT_EQ(minor_2nd_clashes, 0)
+      << "Bass should avoid minor 2nd clashes with sustained vocal notes. "
+      << "Found " << minor_2nd_clashes << " clashes";
+}
+
+// Test that bass createSafe fallback works correctly across multiple seeds
+TEST_F(BassWithVocalTest, FallsBackToRootWhenFifthClashes) {
+  // Test across multiple seeds to ensure robustness
+  std::vector<uint32_t> test_seeds = {12345, 67890, 4130447576, 99999};
+
+  int total_clashes = 0;
+  int total_bass_notes = 0;
+
+  for (uint32_t seed : test_seeds) {
+    params_.seed = seed;
+
+    Generator gen;
+    gen.generateWithVocal(params_);
+
+    const auto& vocal_notes = gen.getSong().vocal().notes();
+    const auto& bass_notes = gen.getSong().bass().notes();
+    total_bass_notes += bass_notes.size();
+
+    for (const auto& bass_note : bass_notes) {
+      Tick bass_start = bass_note.start_tick;
+      Tick bass_end = bass_start + bass_note.duration;
+
+      for (const auto& vocal_note : vocal_notes) {
+        Tick vocal_start = vocal_note.start_tick;
+        Tick vocal_end = vocal_start + vocal_note.duration;
+
+        bool overlap = (bass_start < vocal_end) && (vocal_start < bass_end);
+        if (!overlap) continue;
+
+        // Calculate actual semitone distance (music theory aware)
+        int actual_interval = std::abs(static_cast<int>(bass_note.note) -
+                                       static_cast<int>(vocal_note.note));
+
+        // Wide separation (2+ octaves): not a perceptual clash
+        if (actual_interval >= 24) continue;
+
+        int pitch_class_interval = actual_interval % 12;
+        if (pitch_class_interval > 6) pitch_class_interval = 12 - pitch_class_interval;
+
+        if (pitch_class_interval == 1) total_clashes++;
+      }
+    }
+  }
+
+  // Should have zero or very few clashes within audible range
+  EXPECT_LE(total_clashes, 2)
+      << "Too many minor 2nd clashes across seeds: " << total_clashes;
+}
+
 // === Integration with Generator ===
 
 TEST_F(BassWithVocalTest, IntegrationWithGenerateWithVocal) {

@@ -7,6 +7,7 @@
 #define MIDISKETCH_CORE_NOTE_FACTORY_H
 
 #include "core/basic_types.h"
+#include <optional>
 
 namespace midisketch {
 
@@ -88,6 +89,23 @@ class NoteFactory {
   /// @return NoteEvent with updated provenance
   NoteEvent modify(const NoteEvent& original, uint8_t new_pitch,
                    NoteSource new_source) const;
+
+  /// @brief Create a note only if it's harmonically safe.
+  ///
+  /// Checks isPitchSafe() before creating the note. Returns nullopt if
+  /// the pitch would create a dissonant interval with registered tracks.
+  /// Use for approach notes and other non-essential notes.
+  ///
+  /// @param start Start tick
+  /// @param duration Duration in ticks
+  /// @param pitch MIDI pitch
+  /// @param velocity MIDI velocity
+  /// @param track TrackRole for collision checking (exclude same track)
+  /// @param source Generation phase for debugging
+  /// @return NoteEvent if safe, nullopt if would create dissonance
+  std::optional<NoteEvent> createSafe(Tick start, Tick duration, uint8_t pitch,
+                                       uint8_t velocity, TrackRole track,
+                                       NoteSource source = NoteSource::Unknown) const;
 
   /// @brief Access the harmony context.
   const HarmonyContext& harmony() const { return harmony_; }

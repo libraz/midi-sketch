@@ -19,6 +19,86 @@ namespace {
 // Default velocity for melody notes
 constexpr uint8_t DEFAULT_VELOCITY = 100;
 
+// Check if a tick position is on a strong beat (Beat 1 or Beat 3).
+// Strong beats are critical for harmonic establishment in pop music.
+// @param tick Absolute tick position
+// @return true if on Beat 1 or Beat 3 of any bar
+bool isStrongBeat(Tick tick) {
+  Tick pos_in_bar = tick % TICKS_PER_BAR;
+  // Beat 1: 0 to TICKS_PER_BEAT (with tolerance for slight offsets)
+  // Beat 3: 2*TICKS_PER_BEAT to 3*TICKS_PER_BEAT
+  constexpr Tick TOLERANCE = TICKS_PER_BEAT / 8;  // 1/32 note tolerance
+  bool is_beat_1 = pos_in_bar < TOLERANCE;
+  bool is_beat_3 = (pos_in_bar >= 2 * TICKS_PER_BEAT - TOLERANCE) &&
+                   (pos_in_bar < 2 * TICKS_PER_BEAT + TOLERANCE);
+  return is_beat_1 || is_beat_3;
+}
+
+// Get the bass root pitch class for a given chord degree.
+// This is the note that bass will play as the harmonic foundation.
+// @param chord_degree Chord degree (0-6 for diatonic)
+// @return Pitch class of the bass root (0-11)
+int getBassRootPitchClass(int8_t chord_degree) {
+  // In diatonic system, bass plays the root of each chord
+  // Degree 0 = I (root = 0/C), Degree 1 = ii (root = 2/D), etc.
+  // Map: 0->0, 1->2, 2->4, 3->5, 4->7, 5->9, 6->11
+  constexpr int DEGREE_TO_ROOT[] = {0, 2, 4, 5, 7, 9, 11};
+  int normalized = ((chord_degree % 7) + 7) % 7;
+  return DEGREE_TO_ROOT[normalized];
+}
+
+// Check if a pitch creates an "avoid note" relationship with the chord root.
+// Based on music theory: avoid notes are pitches that create:
+// - Minor 9th (1 semitone) with chord tones
+// - Tritone (6 semitones) with chord root (makes non-dominant chords sound dominant)
+// @param pitch_pc Pitch class of the melody note (0-11)
+// @param root_pc Pitch class of the chord root (0-11)
+// @return true if the pitch should be avoided on strong beats
+bool isAvoidNoteWithRoot(int pitch_pc, int root_pc) {
+  int interval = std::abs(pitch_pc - root_pc);
+  if (interval > 6) interval = 12 - interval;  // Normalize to 0-6
+  // Minor 2nd (1) = half step above root, creates harsh dissonance
+  // Tritone (6) = augmented 4th, makes chord sound like dominant
+  return interval == 1 || interval == 6;
+}
+
+// Get the nearest chord tone that is NOT an avoid note with the root.
+// @param current_pitch Current pitch to adjust
+// @param chord_degree Chord degree for getting chord tones
+// @param root_pc Root pitch class
+// @param vocal_low Minimum allowed pitch
+// @param vocal_high Maximum allowed pitch
+// @return Adjusted pitch (nearest safe chord tone)
+int getNearestSafeChordTone(int current_pitch, int8_t chord_degree, int root_pc,
+                            uint8_t vocal_low, uint8_t vocal_high) {
+  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
+  if (chord_tones.empty()) return current_pitch;
+
+  int best_pitch = current_pitch;
+  int best_distance = 100;
+
+  // Search in multiple octaves
+  for (int pc : chord_tones) {
+    // Skip if this pitch class is an avoid note with root
+    if (isAvoidNoteWithRoot(pc, root_pc)) continue;
+
+    for (int oct = 3; oct <= 6; ++oct) {
+      int candidate = oct * 12 + pc;
+      if (candidate < static_cast<int>(vocal_low) ||
+          candidate > static_cast<int>(vocal_high)) {
+        continue;
+      }
+      int dist = std::abs(candidate - current_pitch);
+      if (dist < best_distance) {
+        best_distance = dist;
+        best_pitch = candidate;
+      }
+    }
+  }
+
+  return best_pitch;
+}
+
 // Responsibility pitch classes for Chorus/B sections (C major scale)
 // These create a consistent "anchor" feeling at phrase starts
 constexpr int8_t RESPONSIBILITY_PCS[] = {0, 7, 9};  // I(C), V(G), vi(A)
@@ -342,6 +422,20 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
           ctx.vocal_low, ctx.vocal_high, &ctx.tessitura);
     }
 
+    // Avoid note check: melody should not form tritone/minor2nd with bass root
+    // This applies to ALL notes, not just strong beats, because bass establishes
+    // the harmonic foundation throughout the bar.
+    // Based on pop music theory: the bass root defines the chord's identity.
+    {
+      int bass_root_pc = getBassRootPitchClass(note_chord_degree);
+      int pitch_pc = new_pitch % 12;
+      if (isAvoidNoteWithRoot(pitch_pc, bass_root_pc)) {
+        // Adjust to nearest safe chord tone
+        new_pitch = getNearestSafeChordTone(new_pitch, note_chord_degree, bass_root_pc,
+                                             ctx.vocal_low, ctx.vocal_high);
+      }
+    }
+
     // Update direction inertia
     int movement = new_pitch - current_pitch;
     if (movement > 0) {
@@ -472,6 +566,17 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(
       pitch = nearestChordToneWithinInterval(
           pitch, prev_hook_pitch, note_chord_degree, MAX_INTERVAL,
           ctx.vocal_low, ctx.vocal_high, &ctx.tessitura);
+
+      // Avoid note check: melody should not form tritone/minor2nd with bass root
+      // This applies to ALL notes because bass establishes harmonic foundation.
+      {
+        int bass_root_pc = getBassRootPitchClass(note_chord_degree);
+        int pitch_pc = pitch % 12;
+        if (isAvoidNoteWithRoot(pitch_pc, bass_root_pc)) {
+          pitch = getNearestSafeChordTone(pitch, note_chord_degree, bass_root_pc,
+                                           ctx.vocal_low, ctx.vocal_high);
+        }
+      }
 
       uint8_t velocity = DEFAULT_VELOCITY;
       if (i == 0) velocity += 10;  // Accent first note of each repetition
