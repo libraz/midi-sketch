@@ -6,23 +6,12 @@
 #include "core/harmony_context.h"
 #include "core/arrangement.h"
 #include "core/chord.h"
+#include "core/harmonic_rhythm.h"
 #include "core/midi_track.h"
 #include <algorithm>
 #include <cmath>
 
 namespace midisketch {
-
-namespace {
-
-// Harmonic rhythm: determines if chord changes are slow (every 2 bars).
-bool useSlowHarmonicRhythm(SectionType section, Mood mood) {
-  (void)mood;  // Reserved for future use (ballad sections)
-  return section == SectionType::Intro ||
-         section == SectionType::Interlude ||
-         section == SectionType::Outro;
-}
-
-}  // namespace
 
 void HarmonyContext::initialize(const Arrangement& arrangement,
                                  const ChordProgression& progression,
@@ -33,26 +22,43 @@ void HarmonyContext::initialize(const Arrangement& arrangement,
   const auto& sections = arrangement.sections();
 
   for (const auto& section : sections) {
-    bool slow_harmonic = useSlowHarmonicRhythm(section.type, mood);
+    HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section.type, mood);
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
-      Tick bar_end = bar_start + TICKS_PER_BAR;
 
       // Calculate chord index based on harmonic rhythm
       int chord_idx;
-      if (slow_harmonic) {
+      if (harmonic.density == HarmonicDensity::Slow) {
         // Slow: chord changes every 2 bars
         chord_idx = (bar / 2) % progression.length;
       } else {
-        // Normal: chord changes every bar
+        // Normal/Dense: chord changes every bar
         chord_idx = bar % progression.length;
       }
 
       int8_t degree = progression.degrees[chord_idx];
 
-      // Add chord info for this bar
-      chords_.push_back({bar_start, bar_end, degree});
+      // Check if this bar should split for phrase-end anticipation (Dense rhythm)
+      // Uses same logic as chord_track for synchronization
+      bool should_split = shouldSplitPhraseEnd(
+          bar, section.bars, progression.length, harmonic,
+          section.type, mood);
+
+      if (should_split) {
+        // Dense harmonic rhythm: split bar into two chord entries
+        // First half: current chord
+        Tick half_bar = TICKS_PER_BAR / 2;
+        chords_.push_back({bar_start, bar_start + half_bar, degree});
+
+        // Second half: next chord (anticipation)
+        int next_chord_idx = (chord_idx + 1) % progression.length;
+        int8_t next_degree = progression.degrees[next_chord_idx];
+        chords_.push_back({bar_start + half_bar, bar_start + TICKS_PER_BAR, next_degree});
+      } else {
+        // Normal: one chord for the whole bar
+        chords_.push_back({bar_start, bar_start + TICKS_PER_BAR, degree});
+      }
     }
   }
 }

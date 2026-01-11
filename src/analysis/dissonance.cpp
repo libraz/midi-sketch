@@ -696,6 +696,41 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
     }
   }
 
+  // Helper: Check if a melodic note creates a close interval (major 2nd or minor 2nd)
+  // with any actually sounding chord note at the same time.
+  // Returns: (has_close_interval, interval_semitones, clashing_chord_pitch)
+  auto checkCloseIntervalWithChord = [&](const NoteEvent& melodic_note)
+      -> std::tuple<bool, uint8_t, uint8_t> {
+    Tick note_start = melodic_note.start_tick;
+    Tick note_end = note_start + melodic_note.duration;
+
+    for (const auto& chord_note : song.chord().notes()) {
+      Tick chord_start = chord_note.start_tick;
+      Tick chord_end = chord_start + chord_note.duration;
+
+      // Check if they overlap in time
+      if (note_start >= chord_end || chord_start >= note_end) {
+        continue;  // No overlap
+      }
+
+      // Calculate interval
+      int interval = std::abs(static_cast<int>(melodic_note.note) -
+                              static_cast<int>(chord_note.note));
+      int interval_class = interval % 12;
+
+      // Check for minor 2nd (1) or major 2nd (2)
+      if (interval_class == 1 || interval_class == 2 ||
+          interval_class == 10 || interval_class == 11) {
+        // Close interval found (including inversions: 10=minor 7th, 11=major 7th)
+        // Only report for same-octave or close range (within 1 octave)
+        if (interval <= 14) {  // Up to minor 9th
+          return {true, static_cast<uint8_t>(interval_class), chord_note.note};
+        }
+      }
+    }
+    return {false, 0, 0};
+  };
+
   // Phase 2: Detect non-chord tones
   // Only check vocal, motif, and arpeggio (melodic tracks)
   auto checkTrackForNonChordTones = [&](const MidiTrack& track, TrackRole role) {
@@ -716,7 +751,7 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
         continue;  // Skip - this is a valid tension, not a problem
       }
 
-      // Determine severity based on beat strength (applies to all tracks equally)
+      // Determine base severity based on beat strength
       BeatStrength beat_strength = getBeatStrength(note.start_tick);
       DissonanceSeverity severity;
 
@@ -731,6 +766,29 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
         case BeatStrength::Offbeat:
           severity = DissonanceSeverity::Low;  // Weak beats/offbeats are fine
           break;
+      }
+
+      // Check if this non-chord tone creates a close interval with actual chord notes.
+      // This catches cases like F against G (major 2nd) which is theoretically a non-chord
+      // tone but sounds particularly harsh when the close interval is actually voiced.
+      auto [has_close_interval, interval_semitones, clashing_pitch] =
+          checkCloseIntervalWithChord(note);
+
+      if (has_close_interval) {
+        // Upgrade severity when a close interval is present
+        // Major 2nd (2) on medium/strong beat -> High severity
+        // Minor 2nd (1) on any beat -> High severity
+        if (interval_semitones == 1 || interval_semitones == 11) {
+          severity = DissonanceSeverity::High;  // Minor 2nd is always harsh
+        } else if (interval_semitones == 2 || interval_semitones == 10) {
+          // Major 2nd - severity depends on beat
+          if (beat_strength == BeatStrength::Strong ||
+              beat_strength == BeatStrength::Medium) {
+            severity = DissonanceSeverity::High;  // Prominent position
+          } else {
+            severity = DissonanceSeverity::Medium;  // Weak beat, less critical
+          }
+        }
       }
 
       DissonanceIssue issue;
@@ -1112,6 +1170,29 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
       // Without chord info, use default chord degree 0 (C major)
       auto [is_dissonant, base_severity] = checkIntervalDissonance(actual_interval, 0);
 
+      // Also check for major 2nd (2 semitones) between melodic tracks and chord.
+      // This catches Vocal-Chord clashes like F vs G that sound harsh but aren't
+      // flagged by checkIntervalDissonance (which only checks minor 2nd, major 7th, tritone).
+      bool is_melodic_chord_clash = false;
+      if (!is_dissonant && (interval == 2 || interval == 10)) {  // Major 2nd or minor 7th
+        // Only flag if one track is melodic (Vocal, Motif, Aux) and other is Chord
+        bool a_is_melodic = (note_a.track_name == "Vocal" || note_a.track_name == "Motif" ||
+                             note_a.track_name == "Aux");
+        bool b_is_melodic = (note_b.track_name == "Vocal" || note_b.track_name == "Motif" ||
+                             note_b.track_name == "Aux");
+        bool a_is_chord = (note_a.track_name == "Chord");
+        bool b_is_chord = (note_b.track_name == "Chord");
+
+        if ((a_is_melodic && b_is_chord) || (b_is_melodic && a_is_chord)) {
+          // Major 2nd between melodic and chord - close range only
+          if (actual_interval <= 14) {  // Within 1 octave + minor 2nd
+            is_dissonant = true;
+            is_melodic_chord_clash = true;
+            base_severity = DissonanceSeverity::Medium;  // Will be elevated on strong beats
+          }
+        }
+      }
+
       if (is_dissonant) {
         reported_clashes.insert(clash_key);
 
@@ -1139,6 +1220,13 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
           if (base_severity == DissonanceSeverity::Low) {
             severity = DissonanceSeverity::Medium;
           }
+        }
+
+        // Elevate melodic-chord major 2nd clashes on strong/medium beats to High
+        // These sound particularly harsh and are almost always unintentional
+        if (is_melodic_chord_clash &&
+            (beat_strength == BeatStrength::Strong || beat_strength == BeatStrength::Medium)) {
+          severity = DissonanceSeverity::High;
         }
 
         DissonanceIssue issue;

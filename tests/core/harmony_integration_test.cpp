@@ -6,6 +6,8 @@
 #include <gtest/gtest.h>
 #include "core/generator.h"
 #include "core/chord.h"
+#include "core/harmony_context.h"
+#include "core/harmonic_rhythm.h"
 #include "core/preset_data.h"
 #include "core/song.h"
 #include "core/types.h"
@@ -1324,6 +1326,140 @@ TEST_F(HarmonyIntegrationTest, BassChordPhraseEndSynchronization) {
   EXPECT_LE(critical_clashes, 2)
       << "Bass-chord phrase-end sync should prevent minor 2nd clashes. "
       << "Found " << critical_clashes << " clashes with seed 2475149142";
+}
+
+// ============================================================================
+// Dense Harmonic Rhythm Synchronization Tests
+// ============================================================================
+// These tests verify that HarmonyContext correctly handles Dense harmonic rhythm
+// for Chorus sections with energetic moods (EnergeticDance, IdolPop, etc.).
+//
+// Root cause of original bug (backup/midi-sketch-1768137053786.mid):
+// - Chord track used shouldSplitPhraseEnd() to change chords mid-bar
+// - HarmonyContext didn't know about mid-bar splits, returned wrong chord degree
+// - Vocal track generated notes based on wrong chord, causing dissonance
+//
+// Fix: HarmonyContext now uses HarmonicRhythmInfo::forSection() and
+// shouldSplitPhraseEnd() to synchronize with chord track timing.
+// ============================================================================
+
+TEST(HarmonyContextDenseRhythm, MidBarChordChangeInChorus) {
+  // Create 8-bar Chorus section
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.name = "CHORUS";
+  chorus.bars = 8;
+  chorus.start_tick = 0;
+  Arrangement arrangement({chorus});
+
+  // Canon progression: I-V-vi-IV = {0, 4, 5, 3}
+  const auto& progression = getChordProgression(0);
+
+  // Test with EnergeticDance mood (triggers Dense harmonic rhythm)
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, progression, Mood::EnergeticDance);
+
+  // Verify Dense rhythm is used for Chorus with EnergeticDance
+  HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(SectionType::Chorus, Mood::EnergeticDance);
+  ASSERT_EQ(harmonic.density, HarmonicDensity::Dense)
+      << "Chorus with EnergeticDance should use Dense harmonic rhythm";
+
+  // Find a bar where shouldSplitPhraseEnd() returns true
+  // For EnergeticDance Chorus: bar % 2 == 0 && bar > 0 triggers dense_extra
+  int split_bar = 2;  // Bar 2 should split (even bar, > 0)
+  bool should_split = shouldSplitPhraseEnd(
+      split_bar, 8, progression.length, harmonic,
+      SectionType::Chorus, Mood::EnergeticDance);
+  ASSERT_TRUE(should_split) << "Bar " << split_bar << " should trigger mid-bar split";
+
+  // Calculate tick positions
+  Tick bar_start = split_bar * TICKS_PER_BAR;
+  Tick bar_mid = bar_start + TICKS_PER_BAR / 2;
+
+  // Get chord degrees at first half and second half of split bar
+  int8_t degree_first_half = harmony.getChordDegreeAt(bar_start);
+  int8_t degree_second_half = harmony.getChordDegreeAt(bar_mid);
+
+  // Expected: bar 2 -> chord_idx 2 -> degree 5 (vi = Am)
+  // Second half: chord_idx 3 -> degree 3 (IV = F)
+  int expected_first = progression.degrees[split_bar % progression.length];
+  int expected_second = progression.degrees[(split_bar + 1) % progression.length];
+
+  EXPECT_EQ(degree_first_half, expected_first)
+      << "First half of bar " << split_bar << " should have degree " << expected_first;
+
+  EXPECT_EQ(degree_second_half, expected_second)
+      << "Second half of bar " << split_bar << " should have degree " << expected_second;
+
+  // Verify the chord actually changes mid-bar
+  EXPECT_NE(degree_first_half, degree_second_half)
+      << "Chord should change mid-bar for Dense rhythm";
+
+  // Verify just before mid-bar still has first chord
+  int8_t degree_just_before = harmony.getChordDegreeAt(bar_mid - 1);
+  EXPECT_EQ(degree_just_before, expected_first)
+      << "Just before mid-bar should still have first chord";
+}
+
+TEST(HarmonyContextDenseRhythm, BalladDoesNotSplitMidBar) {
+  // Ballad mood should NOT use Dense harmonic rhythm
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.name = "CHORUS";
+  chorus.bars = 8;
+  chorus.start_tick = 0;
+  Arrangement arrangement({chorus});
+  const auto& progression = getChordProgression(0);
+
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, progression, Mood::Ballad);
+
+  // Verify Ballad uses Normal rhythm (not Dense)
+  HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(SectionType::Chorus, Mood::Ballad);
+  EXPECT_NE(harmonic.density, HarmonicDensity::Dense)
+      << "Chorus with Ballad should NOT use Dense harmonic rhythm";
+
+  // Bar 2 should NOT split for Ballad
+  Tick bar_start = 2 * TICKS_PER_BAR;
+  Tick bar_mid = bar_start + TICKS_PER_BAR / 2;
+
+  int8_t degree_first_half = harmony.getChordDegreeAt(bar_start);
+  int8_t degree_second_half = harmony.getChordDegreeAt(bar_mid);
+
+  // For Ballad, entire bar should have same chord
+  EXPECT_EQ(degree_first_half, degree_second_half)
+      << "Ballad should NOT have mid-bar chord changes";
+}
+
+TEST(HarmonyContextDenseRhythm, SlowSectionsNotAffected) {
+  // Intro should use Slow harmonic rhythm (2 bars per chord)
+  Section intro;
+  intro.type = SectionType::Intro;
+  intro.name = "INTRO";
+  intro.bars = 4;
+  intro.start_tick = 0;
+  Arrangement arrangement({intro});
+  const auto& progression = getChordProgression(0);
+
+  HarmonyContext harmony;
+  harmony.initialize(arrangement, progression, Mood::EnergeticDance);
+
+  // Verify Slow rhythm for Intro even with EnergeticDance mood
+  HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(SectionType::Intro, Mood::EnergeticDance);
+  EXPECT_EQ(harmonic.density, HarmonicDensity::Slow)
+      << "Intro should use Slow harmonic rhythm";
+
+  // Bar 0 and Bar 1 should have same chord (Slow = 2 bars per chord)
+  int8_t degree_bar0 = harmony.getChordDegreeAt(0);
+  int8_t degree_bar1 = harmony.getChordDegreeAt(TICKS_PER_BAR);
+
+  EXPECT_EQ(degree_bar0, degree_bar1)
+      << "Slow harmonic rhythm: bars 0 and 1 should have same chord";
+
+  // Bar 2 should have next chord
+  int8_t degree_bar2 = harmony.getChordDegreeAt(2 * TICKS_PER_BAR);
+  EXPECT_NE(degree_bar0, degree_bar2)
+      << "Slow harmonic rhythm: chord should change after 2 bars";
 }
 
 }  // namespace

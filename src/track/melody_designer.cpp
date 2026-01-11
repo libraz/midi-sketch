@@ -238,12 +238,17 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(
       current_tick += TICK_EIGHTH;  // Short breath
     }
 
-    // Snap to next chord boundary (phrase_beats * TICKS_PER_BEAT grid)
-    // This ensures each phrase starts at a chord change, preventing sustain issues
-    Tick chord_interval = phrase_beats * TICKS_PER_BEAT;
+    // Snap to next half-bar boundary (phrase_beats/2 * TICKS_PER_BEAT grid)
+    // Using half-bar intervals reduces gaps while respecting harmonic rhythm
+    // This ensures phrases start at musically sensible points without large silences
+    Tick half_phrase_beats = std::max(static_cast<Tick>(phrase_beats / 2), static_cast<Tick>(2));
+    Tick snap_interval = half_phrase_beats * TICKS_PER_BEAT;
     Tick relative_tick = current_tick - ctx.section_start;
-    Tick next_boundary = ((relative_tick + chord_interval - 1) / chord_interval) * chord_interval;
+    Tick next_boundary = ((relative_tick + snap_interval - 1) / snap_interval) * snap_interval;
     current_tick = ctx.section_start + next_boundary;
+
+    // Ensure we don't exceed section end
+    if (current_tick >= ctx.section_end) break;
   }
 
   // Apply melodic embellishment (non-chord tones) if enabled
@@ -465,7 +470,18 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     float gate = is_phrase_end ? tmpl.phrase_end_resolution * 0.8f : 0.9f;
     note_duration = static_cast<Tick>(note_duration * gate);
 
-    // Clamp note duration to phrase boundary (prevents sustain over chord change)
+    // Clamp note duration to chord change boundary (prevents dissonance when chord changes)
+    Tick chord_change = harmony.getNextChordChangeTick(note_start);
+    if (chord_change > 0 && chord_change > note_start &&
+        note_start + note_duration > chord_change) {
+      // Shorten note to end just before chord change
+      Tick new_duration = chord_change - note_start - 10;  // Small gap before chord change
+      if (new_duration >= TICK_SIXTEENTH) {
+        note_duration = new_duration;
+      }
+    }
+
+    // Also clamp to phrase boundary for phrase ending
     Tick phrase_end = phrase_start + phrase_beats * TICKS_PER_BEAT;
     if (note_start + note_duration > phrase_end) {
       note_duration = phrase_end - note_start;
@@ -581,9 +597,22 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(
       uint8_t velocity = DEFAULT_VELOCITY;
       if (i == 0) velocity += 10;  // Accent first note of each repetition
 
+      // Calculate duration with gate
+      Tick actual_duration = static_cast<Tick>(note_duration * 0.85f);
+
+      // Clamp duration to chord change boundary
+      Tick chord_change = harmony.getNextChordChangeTick(current_tick);
+      if (chord_change > 0 && chord_change > current_tick &&
+          current_tick + actual_duration > chord_change) {
+        Tick new_duration = chord_change - current_tick - 10;
+        if (new_duration >= TICK_SIXTEENTH) {
+          actual_duration = new_duration;
+        }
+      }
+
       result.notes.push_back(factory.create(
           current_tick,
-          static_cast<Tick>(note_duration * 0.85f),  // Gate with room for humanize
+          actual_duration,
           static_cast<uint8_t>(pitch),
           velocity,
           NoteSource::Hook));
