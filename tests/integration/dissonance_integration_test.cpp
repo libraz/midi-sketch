@@ -303,6 +303,43 @@ TEST_F(TrackClashIntegrationTest, VocalBassClashes_MelodyLeadMode) {
   }
 }
 
+// Regression test for anticipation tritone bug
+// Bug: Bass anticipation to next chord didn't check for tritone clash with vocal
+// Example: Vocal B4 vs Bass F3 (anticipating F chord) = 18 semitones = compound tritone
+TEST_F(TrackClashIntegrationTest, AnticipationTritoneRegression_Seed464394633) {
+  params_.composition_style = CompositionStyle::MelodyLead;
+  params_.seed = 464394633;
+  params_.target_duration_seconds = 150;
+
+  Generator gen;
+  gen.generate(params_);
+
+  auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
+
+  // This seed previously caused F-B tritone clashes at bar 53
+  // due to bass anticipation not checking for tritone interval
+  EXPECT_EQ(clashes.size(), 0u)
+      << "Anticipation tritone regression: " << clashes.size() << " clashes found";
+}
+
+// Regression test for chord-bass tritone clash
+// Bug: Bass anticipation F clashed with Chord B on phrase boundaries
+TEST_F(TrackClashIntegrationTest, ChordBassAnticipationRegression_Seed3263424241) {
+  params_.composition_style = CompositionStyle::MelodyLead;
+  params_.seed = 3263424241;
+  params_.target_duration_seconds = 150;
+
+  Generator gen;
+  gen.generate(params_);
+
+  auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
+
+  // This seed previously caused Chord(B) vs Bass(F) tritone clashes
+  // at bars 17, 33, 41 due to phrase-end anticipation
+  EXPECT_EQ(clashes.size(), 0u)
+      << "Chord-Bass anticipation regression: " << clashes.size() << " clashes found";
+}
+
 // Diagnostic test to identify which track pairs are clashing
 TEST_F(TrackClashIntegrationTest, DISABLED_DiagnoseClashSources) {
   params_.composition_style = CompositionStyle::MelodyLead;

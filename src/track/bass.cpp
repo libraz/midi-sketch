@@ -8,6 +8,7 @@
 
 #include "track/bass.h"
 #include "core/chord.h"
+#include "core/chord_utils.h"
 #include "core/harmonic_rhythm.h"
 #include "core/harmony_context.h"
 #include "core/mood_utils.h"
@@ -747,10 +748,22 @@ void generateBassTrack(MidiTrack& track, const Song& song,
         int8_t anticipate_degree = progression.at(anticipate_chord_idx);
         uint8_t anticipate_root = getBassRoot(anticipate_degree);
 
-        generateBassHalfBar(track, bar_start, root, section.type, params.mood, true, factory, harmony);
-        generateBassHalfBar(track, bar_start + HALF, anticipate_root,
-                             section.type, params.mood, false, factory, harmony);
-        continue;
+        // Check if anticipation would clash with registered tracks (Vocal, etc.)
+        bool anticipate_clashes = false;
+        for (Tick offset : {HALF, HALF + QUARTER / 2, HALF + QUARTER, HALF + QUARTER + QUARTER / 2}) {
+          if (!harmony.isPitchSafe(anticipate_root, bar_start + offset, QUARTER, TrackRole::Bass)) {
+            anticipate_clashes = true;
+            break;
+          }
+        }
+
+        if (!anticipate_clashes) {
+          generateBassHalfBar(track, bar_start, root, section.type, params.mood, true, factory, harmony);
+          generateBassHalfBar(track, bar_start + HALF, anticipate_root,
+                               section.type, params.mood, false, factory, harmony);
+          continue;
+        }
+        // Fall through to generate full bar without anticipation
       }
 
       generateBassBar(track, bar_start, root, next_root, pattern,
@@ -829,9 +842,21 @@ bool wouldClashWithVocal(int bass_pitch, int vocal_pitch) {
   return interval == 1;  // Minor 2nd is a harsh clash
 }
 
+// Check if a pitch is a chord tone of the given degree
+bool isPitchChordTone(int pitch, int8_t degree) {
+  auto chord_tones = getChordTonePitchClasses(degree);
+  int pitch_class = ((pitch % 12) + 12) % 12;  // Normalize to 0-11
+  for (int ct : chord_tones) {
+    if (ct == pitch_class) return true;
+  }
+  return false;
+}
+
 // Adjust bass pitch based on Motion Type and vocal direction
+// degree parameter is used to ensure adjusted pitch is still a chord tone
 uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion,
-                             int8_t vocal_direction, uint8_t vocal_pitch) {
+                             int8_t vocal_direction, uint8_t vocal_pitch,
+                             int8_t degree) {
   // Ensure 2+ octave separation (24 semitones) for doubling avoidance
   constexpr int kMinOctaveSeparation = 24;
 
@@ -890,49 +915,58 @@ uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion,
       break;
   }
 
-  // Only apply motion if result is diatonic AND doesn't clash with vocal
+  // Only apply motion if result is diatonic, chord tone, AND doesn't clash with vocal
+  // CRITICAL: Bass must stay on chord tones to define harmony correctly
   if (proposed_pitch != bass_pitch) {
     bool diatonic_ok = isDiatonicInC(proposed_pitch);
+    bool chord_tone_ok = isPitchChordTone(proposed_pitch, degree);
     bool vocal_ok = !wouldClashWithVocal(proposed_pitch, v_pitch);
 
-    if (diatonic_ok && vocal_ok) {
+    if (diatonic_ok && chord_tone_ok && vocal_ok) {
 #if BASS_DEBUG_LOG
       std::cerr << "    [motion] " << motionTypeToString(motion) << ": "
-                << bass_pitch << " -> " << proposed_pitch << " (diatonic OK, vocal OK)\n";
+                << bass_pitch << " -> " << proposed_pitch
+                << " (diatonic OK, chord tone OK, vocal OK)\n";
 #endif
       bass_pitch = proposed_pitch;
     } else {
 #if BASS_DEBUG_LOG
       std::cerr << "    [motion] " << motionTypeToString(motion) << ": "
                 << bass_pitch << " -> " << proposed_pitch
-                << " REJECTED (" << (diatonic_ok ? "vocal clash" : "non-diatonic") << ")\n";
+                << " REJECTED ("
+                << (!diatonic_ok ? "non-diatonic" :
+                    (!chord_tone_ok ? "non-chord-tone" : "vocal clash"))
+                << ")\n";
 #endif
-      // Keep original bass_pitch
+      // Keep original bass_pitch - motion adjustment rejected
     }
   }
 
   // Final check: if the current bass_pitch still clashes with vocal, try to fix it
+  // CRITICAL: All alternatives must be chord tones to maintain harmonic integrity
   if (wouldClashWithVocal(bass_pitch, v_pitch)) {
-    // Vocal priority: bass must yield
+    // Vocal priority: bass must yield, but only to chord tones
     // Try moving bass down by a whole step (more musical than half step)
     if (bass_pitch - 2 >= BASS_LOW && isDiatonicInC(bass_pitch - 2) &&
+        isPitchChordTone(bass_pitch - 2, degree) &&
         !wouldClashWithVocal(bass_pitch - 2, v_pitch)) {
 #if BASS_DEBUG_LOG
-      std::cerr << "    [vocal_priority] clash fix: "
+      std::cerr << "    [vocal_priority] clash fix (chord tone): "
                 << bass_pitch << " -> " << (bass_pitch - 2) << "\n";
 #endif
       bass_pitch -= 2;
     }
     // Try moving up by a whole step
     else if (bass_pitch + 2 <= BASS_HIGH && isDiatonicInC(bass_pitch + 2) &&
+             isPitchChordTone(bass_pitch + 2, degree) &&
              !wouldClashWithVocal(bass_pitch + 2, v_pitch)) {
 #if BASS_DEBUG_LOG
-      std::cerr << "    [vocal_priority] clash fix: "
+      std::cerr << "    [vocal_priority] clash fix (chord tone): "
                 << bass_pitch << " -> " << (bass_pitch + 2) << "\n";
 #endif
       bass_pitch += 2;
     }
-    // Try octave down
+    // Try octave down - always safe for same pitch class
     else if (bass_pitch - 12 >= BASS_LOW) {
 #if BASS_DEBUG_LOG
       std::cerr << "    [vocal_priority] octave down: "
@@ -1016,7 +1050,8 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song,
 #endif
 
       // Adjust root pitch based on motion type and vocal
-      uint8_t adjusted_root = adjustPitchForMotion(root, motion, vocal_direction, vocal_pitch);
+      // Pass degree to ensure adjusted pitch is still a chord tone
+      uint8_t adjusted_root = adjustPitchForMotion(root, motion, vocal_direction, vocal_pitch, degree);
 
 #if BASS_DEBUG_LOG
       if (adjusted_root != root) {
@@ -1052,16 +1087,25 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song,
         uint8_t anticipate_root = getBassRoot(anticipate_degree);
 
         // Check if anticipation would clash with vocal during second half of bar
+        // Use HarmonyContext for comprehensive clash detection (includes registered Vocal)
         // Check multiple points: beat 3, beat 3.5, beat 4, beat 4.5
         bool anticipate_clashes = false;
         for (Tick offset : {HALF, HALF + QUARTER / 2, HALF + QUARTER, HALF + QUARTER + QUARTER / 2}) {
-          uint8_t vocal_pitch = getVocalPitchAt(vocal_analysis, bar_start + offset);
-          if (vocal_pitch > 0) {
+          Tick check_tick = bar_start + offset;
+          // Use isPitchSafe which checks against all registered tracks
+          if (!harmony.isPitchSafe(anticipate_root, check_tick, QUARTER, TrackRole::Bass)) {
+            anticipate_clashes = true;
+            break;
+          }
+          // Also check manual vocal analysis for cases where vocal isn't registered yet
+          uint8_t vocal_pitch_at = getVocalPitchAt(vocal_analysis, check_tick);
+          if (vocal_pitch_at > 0) {
             int interval = std::abs(static_cast<int>(anticipate_root % 12) -
-                                    static_cast<int>(vocal_pitch % 12));
+                                    static_cast<int>(vocal_pitch_at % 12));
             if (interval > 6) interval = 12 - interval;  // Normalize to 0-6
-            // Minor 2nd (1) or major 7th (11->1 after normalization) = clash
-            if (interval == 1) {
+            // Minor 2nd (1), major 7th (11->1), or tritone (6) = clash
+            // Tritone is always problematic for bass-vocal (bass defines harmony)
+            if (interval == 1 || interval == 6) {
               anticipate_clashes = true;
               break;
             }

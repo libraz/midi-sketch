@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 #include "core/generator.h"
 #include "core/chord.h"
+#include "core/chord_utils.h"
 #include "core/song.h"
 #include "core/types.h"
 #include <set>
@@ -305,6 +306,99 @@ TEST_F(BassDiatonicTest, BorrowedChordProgressionsUseCorrectRoots) {
       EXPECT_EQ(pitch % 12, 10)
           << "Borrowed chord progression should only have Bb (pitch class 10), "
           << "but found pitch class " << (pitch % 12);
+    }
+  }
+}
+
+// Test: Bass notes on beat 1 must be chord tones
+// This verifies the adjustPitchForMotion chord tone validation fix.
+// Previously, motion adjustments could move bass to non-chord tones
+// (e.g., G -> F for V chord because F is diatonic but not a chord tone).
+TEST_F(BassDiatonicTest, BassOnBeatOneMustBeChordTone) {
+  // Include chord_utils.h is already available via chord.h
+  const Tick BEAT_THRESHOLD = TICKS_PER_BEAT / 4;  // Allow small timing tolerance
+
+  // Test across multiple moods and seeds to ensure robustness
+  std::vector<Mood> test_moods = {
+      Mood::StraightPop, Mood::ElectroPop, Mood::Yoasobi,
+      Mood::IdolPop, Mood::CityPop
+  };
+
+  for (Mood mood : test_moods) {
+    params_.mood = mood;
+    params_.composition_style = CompositionStyle::MelodyLead;
+
+    for (uint32_t seed = 1; seed <= 5; ++seed) {
+      params_.seed = seed;
+
+      Generator gen;
+      gen.generate(params_);
+
+      const auto& song = gen.getSong();
+      const auto& bass_track = song.bass();
+      const auto& progression = getChordProgression(params_.chord_id);
+      const auto& sections = song.arrangement().sections();
+
+      int non_chord_tone_count = 0;
+      std::vector<std::string> issues;
+
+      for (const auto& note : bass_track.notes()) {
+        // Check if note is on beat 1 of a bar
+        Tick beat_position = note.start_tick % TICKS_PER_BAR;
+        if (beat_position > BEAT_THRESHOLD) continue;  // Not on beat 1
+
+        // Find which section this note is in
+        uint32_t bar = note.start_tick / TICKS_PER_BAR;
+        const Section* section = nullptr;
+        for (const auto& sec : sections) {
+          uint32_t sec_start_bar = sec.start_tick / TICKS_PER_BAR;
+          if (bar >= sec_start_bar && bar < sec_start_bar + sec.bars) {
+            section = &sec;
+            break;
+          }
+        }
+
+        if (!section) continue;
+
+        // Calculate chord degree at this bar (matching bass generation logic)
+        uint32_t section_start_bar = section->start_tick / TICKS_PER_BAR;
+        uint32_t bar_in_section = bar - section_start_bar;
+        bool slow_harmonic = (section->type == SectionType::Intro ||
+                              section->type == SectionType::Interlude ||
+                              section->type == SectionType::Outro ||
+                              section->type == SectionType::Chant);
+        int chord_idx = slow_harmonic ? (bar_in_section / 2) % progression.length
+                                      : bar_in_section % progression.length;
+        int8_t degree = progression.degrees[chord_idx];
+
+        // Get chord tones for this degree
+        auto chord_tones = getChordTonePitchClasses(degree);
+        int pitch_class = note.note % 12;
+
+        // Check if bass note is a chord tone
+        bool is_chord_tone = false;
+        for (int ct : chord_tones) {
+          if (ct == pitch_class) {
+            is_chord_tone = true;
+            break;
+          }
+        }
+
+        if (!is_chord_tone) {
+          non_chord_tone_count++;
+          if (issues.size() < 3) {  // Limit error details
+            std::string issue = "Bar " + std::to_string(bar) +
+                               ": bass=" + pitchClassName(pitch_class) +
+                               " not in chord (degree " + std::to_string(degree) + ")";
+            issues.push_back(issue);
+          }
+        }
+      }
+
+      EXPECT_EQ(non_chord_tone_count, 0)
+          << "Mood " << static_cast<int>(mood) << " seed " << seed
+          << ": " << non_chord_tone_count << " bass notes on beat 1 are non-chord tones. "
+          << (issues.empty() ? "" : issues[0]);
     }
   }
 }

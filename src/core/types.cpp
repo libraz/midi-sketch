@@ -11,8 +11,9 @@ namespace {
 
 // Main section transition patterns
 constexpr SectionTransition kTransitions[] = {
-    // B→Chorus: Building excitement toward chorus
-    {SectionType::B, SectionType::Chorus, 3, 1.15f, 4, true},
+    // B→Chorus: Maintain melodic register, let dynamics build tension
+    // (pitch_tendency=0 preserves motif continuity; chorus brings melodic peak)
+    {SectionType::B, SectionType::Chorus, 0, 1.15f, 4, false},
 
     // A→B: Gentle rise
     {SectionType::A, SectionType::B, 1, 1.05f, 2, false},

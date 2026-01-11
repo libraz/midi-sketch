@@ -746,8 +746,8 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
   };
 
   // Phase 2: Detect non-chord tones
-  // Only check vocal, motif, and arpeggio (melodic tracks)
-  auto checkTrackForNonChordTones = [&](const MidiTrack& track, TrackRole role) {
+  // Check melodic tracks and bass (bass defines harmony, so non-chord tones are serious)
+  auto checkTrackForNonChordTones = [&](const MidiTrack& track, TrackRole role, bool is_bass = false) {
     for (const auto& note : track.notes()) {
       uint32_t bar = note.start_tick / TICKS_PER_BAR;
       auto chord_info = getChordAtTick(note.start_tick, song, progression, params.mood);
@@ -769,17 +769,33 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
       BeatStrength beat_strength = getBeatStrength(note.start_tick);
       DissonanceSeverity severity;
 
-      switch (beat_strength) {
-        case BeatStrength::Strong:
-          severity = DissonanceSeverity::Medium;  // Beat 1 non-chord tone
-          break;
-        case BeatStrength::Medium:
-          severity = DissonanceSeverity::Low;  // Beat 3 - less critical
-          break;
-        case BeatStrength::Weak:
-        case BeatStrength::Offbeat:
-          severity = DissonanceSeverity::Low;  // Weak beats/offbeats are fine
-          break;
+      // Bass non-chord tones are more severe because bass defines the harmony
+      if (is_bass) {
+        switch (beat_strength) {
+          case BeatStrength::Strong:
+            severity = DissonanceSeverity::High;  // Beat 1 bass non-chord tone is serious
+            break;
+          case BeatStrength::Medium:
+            severity = DissonanceSeverity::Medium;  // Beat 3 - still problematic
+            break;
+          case BeatStrength::Weak:
+          case BeatStrength::Offbeat:
+            severity = DissonanceSeverity::Low;  // Passing tones on weak beats OK
+            break;
+        }
+      } else {
+        switch (beat_strength) {
+          case BeatStrength::Strong:
+            severity = DissonanceSeverity::Medium;  // Beat 1 non-chord tone
+            break;
+          case BeatStrength::Medium:
+            severity = DissonanceSeverity::Low;  // Beat 3 - less critical
+            break;
+          case BeatStrength::Weak:
+          case BeatStrength::Offbeat:
+            severity = DissonanceSeverity::Low;  // Weak beats/offbeats are fine
+            break;
+        }
       }
 
       // Check if this non-chord tone creates a close interval with actual chord notes.
@@ -846,6 +862,7 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
   checkTrackForNonChordTones(song.motif(), TrackRole::Motif);
   checkTrackForNonChordTones(song.arpeggio(), TrackRole::Arpeggio);
   checkTrackForNonChordTones(song.aux(), TrackRole::Aux);
+  checkTrackForNonChordTones(song.bass(), TrackRole::Bass, true);  // Bass with higher severity
 
   // Phase 3: Detect sustained notes over chord changes
   // Check if notes that were chord tones at start become non-chord tones after chord change
