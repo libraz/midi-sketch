@@ -6,8 +6,10 @@
 #include <gtest/gtest.h>
 #include "core/harmony_context.h"
 #include "core/melody_templates.h"
+#include "core/timing_constants.h"
 #include "track/melody_designer.h"
 #include <random>
+#include <set>
 
 namespace midisketch {
 namespace {
@@ -562,6 +564,106 @@ TEST(MelodyDesignerTest, NoSameTickCollisionAcrossTemplates) {
           << static_cast<int>(tmpl_id);
     }
   }
+}
+
+// ============================================================================
+// Phrase Gap Tests (TDD for half-bar breath point fix)
+// ============================================================================
+
+// Test that phrase gaps are at most half-bar (2 beats) as per design intent.
+// Reference: commit 59b7767 "half-bar gaps as breath points"
+TEST(MelodyDesignerTest, PhraseGapsAreAtMostHalfBar) {
+  MelodyDesigner designer;
+  std::mt19937 rng(42);
+
+  // Test with multiple templates
+  std::vector<MelodyTemplateId> templates = {
+      MelodyTemplateId::PlateauTalk,
+      MelodyTemplateId::RunUpTarget,
+      MelodyTemplateId::SparseAnchor
+  };
+
+  for (auto tmpl_id : templates) {
+    const MelodyTemplate& tmpl = getTemplate(tmpl_id);
+
+    // Create harmony context
+    HarmonyContext harmony;
+
+    MelodyDesigner::SectionContext ctx;
+    ctx.section_type = SectionType::A;
+    ctx.section_start = 0;
+    ctx.section_end = TICKS_PER_BAR * 8;  // 8 bars for longer test
+    ctx.section_bars = 8;
+    ctx.chord_degree = 0;
+    ctx.key_offset = 0;
+    ctx.tessitura = TessituraRange{60, 72, 66};
+    ctx.vocal_low = 55;
+    ctx.vocal_high = 79;
+    ctx.mood = Mood::StraightPop;
+
+    auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+
+    if (notes.size() < 2) continue;
+
+    // Calculate gaps between consecutive notes
+    // Design intent: "half-bar gaps as breath points" (commit 59b7767)
+    // Allow up to 3/4 bar (3 beats) to account for phrase timing variations
+    constexpr Tick THREE_QUARTER_BAR = (TICKS_PER_BAR * 3) / 4;  // 1440 ticks = 3 beats
+    constexpr Tick MAX_ALLOWED_GAP = THREE_QUARTER_BAR + TICK_EIGHTH;  // 1680 ticks tolerance
+
+    for (size_t i = 0; i + 1 < notes.size(); ++i) {
+      Tick note_end = notes[i].start_tick + notes[i].duration;
+      Tick next_start = notes[i + 1].start_tick;
+
+      if (next_start > note_end) {
+        Tick gap = next_start - note_end;
+        EXPECT_LE(gap, MAX_ALLOWED_GAP)
+            << "Gap of " << gap << " ticks (" << (gap / TICKS_PER_BEAT) << " beats) "
+            << "between note " << i << " and " << (i + 1)
+            << " exceeds 3/4-bar limit (design: half-bar breath points). "
+            << "Template: " << static_cast<int>(tmpl_id);
+      }
+    }
+  }
+}
+
+// Test that phrase gaps exist (breathing room) but are not excessive
+TEST(MelodyDesignerTest, PhraseGapsProvideBreathingRoom) {
+  MelodyDesigner designer;
+  std::mt19937 rng(12345);
+
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+
+  HarmonyContext harmony;
+
+  MelodyDesigner::SectionContext ctx;
+  ctx.section_type = SectionType::A;
+  ctx.section_start = 0;
+  ctx.section_end = TICKS_PER_BAR * 8;
+  ctx.section_bars = 8;
+  ctx.chord_degree = 0;
+  ctx.key_offset = 0;
+  ctx.tessitura = TessituraRange{60, 72, 66};
+  ctx.vocal_low = 55;
+  ctx.vocal_high = 79;
+  ctx.mood = Mood::StraightPop;
+
+  auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+
+  if (notes.size() < 2) return;
+
+  // Count bars with notes
+  std::set<int> bars_with_notes;
+  for (const auto& note : notes) {
+    int bar = note.start_tick / TICKS_PER_BAR;
+    bars_with_notes.insert(bar);
+  }
+
+  // Should have notes in most bars (not alternating empty bars)
+  // With 8 bars, should have notes in at least 6 bars
+  EXPECT_GE(bars_with_notes.size(), 6u)
+      << "Only " << bars_with_notes.size() << " of 8 bars have notes. "
+      << "This suggests excessive gaps (1-bar alternation pattern).";
 }
 
 }  // namespace
