@@ -5,6 +5,7 @@
 
 #include "track/arpeggio.h"
 #include "core/chord.h"
+#include "core/harmonic_rhythm.h"
 #include "core/harmony_context.h"
 #include "core/note_factory.h"
 #include "core/velocity.h"
@@ -156,14 +157,25 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
 
     Tick section_end = section.start_tick + (section.bars * TICKS_PER_BAR);
 
+    // Get harmonic rhythm info for this section
+    // This ensures arpeggio chord changes match chord_track timing
+    HarmonicRhythmInfo harmonic =
+        HarmonicRhythmInfo::forSection(section.type, params.mood);
+
     // === PERIODIC REFRESH FOR NON-SYNC MODE ===
     // When sync_chord is false, refresh pattern at each SECTION start
     // This prevents excessive drift from chord progression in long songs
     if (!arp.sync_chord) {
       // Calculate which chord to use based on section's bar position
       // This ensures arpeggio aligns with the chord at section start
+      // Respect HarmonicDensity for consistent chord alignment with chord_track
       uint32_t total_bar = section.start_tick / TICKS_PER_BAR;
-      int chord_idx = total_bar % progression.length;
+      int chord_idx;
+      if (harmonic.density == HarmonicDensity::Slow) {
+        chord_idx = (total_bar / 2) % progression.length;
+      } else {
+        chord_idx = total_bar % progression.length;
+      }
       int8_t degree = progression.at(chord_idx);
       uint8_t root = degreeToRoot(degree, Key::C);
       while (root < BASE_OCTAVE) root += 12;
@@ -177,12 +189,26 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + (bar * TICKS_PER_BAR);
 
+      // Check for phrase-end split (matches chord_track behavior)
+      bool should_split = shouldSplitPhraseEnd(
+          bar, section.bars, progression.length, harmonic,
+          section.type, params.mood);
+
       std::vector<uint8_t> arp_notes;
+      std::vector<uint8_t> next_arp_notes;  // For phrase-end split
       int pattern_index;
 
       if (arp.sync_chord) {
         // Sync with chord: rebuild pattern each bar
-        int chord_idx = bar % progression.length;
+        // Use HarmonicDensity to match chord_track timing
+        int chord_idx;
+        if (harmonic.density == HarmonicDensity::Slow) {
+          // Slow: chord changes every 2 bars (matches chord_track)
+          chord_idx = (bar / 2) % progression.length;
+        } else {
+          // Normal/Dense: chord changes every bar
+          chord_idx = bar % progression.length;
+        }
         int8_t degree = progression.at(chord_idx);
         // Internal processing is always in C major; transpose at MIDI output time
         uint8_t root = degreeToRoot(degree, Key::C);
@@ -197,6 +223,18 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
         std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, arp.octave_range);
         arp_notes = arrangeByPattern(chord_notes, arp.pattern, rng);
         pattern_index = 0;  // Reset pattern index each bar
+
+        // If phrase-end split, prepare next chord's notes
+        if (should_split) {
+          int next_chord_idx = (chord_idx + 1) % progression.length;
+          int8_t next_degree = progression.at(next_chord_idx);
+          uint8_t next_root = degreeToRoot(next_degree, Key::C);
+          while (next_root < BASE_OCTAVE) next_root += 12;
+          while (next_root >= BASE_OCTAVE + 12) next_root -= 12;
+          Chord next_chord = getChordNotes(next_degree);
+          std::vector<uint8_t> next_chord_notes = buildChordNotes(next_root, next_chord, arp.octave_range);
+          next_arp_notes = arrangeByPattern(next_chord_notes, arp.pattern, rng);
+        }
       } else {
         // No sync: continue with persistent pattern
         arp_notes = persistent_arp_notes;
@@ -207,11 +245,18 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
 
       // Generate arpeggio pattern for this bar
       Tick pos = bar_start;
+      Tick half_bar = bar_start + (TICKS_PER_BAR / 2);
 
       while (pos < bar_start + TICKS_PER_BAR && pos < section_end) {
-        uint8_t note = arp_notes[pattern_index % arp_notes.size()];
+        // Select notes based on phrase-end split
+        const std::vector<uint8_t>& current_notes =
+            (should_split && pos >= half_bar && !next_arp_notes.empty())
+                ? next_arp_notes
+                : arp_notes;
+
+        uint8_t note = current_notes[pattern_index % current_notes.size()];
         uint8_t velocity = calculateArpeggioVelocity(
-            arp.base_velocity, section.type, pattern_index % arp_notes.size());
+            arp.base_velocity, section.type, pattern_index % current_notes.size());
 
         track.addNote(factory.create(pos, gated_duration, note, velocity, NoteSource::Arpeggio));
 
