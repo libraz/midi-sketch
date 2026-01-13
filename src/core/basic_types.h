@@ -180,7 +180,7 @@ struct PhraseBoundary {
 /// @brief Rhythm note for pattern-based melody generation.
 struct RhythmNote {
   float beat;      ///< 0.0-7.5 (in quarter notes, 2 bars)
-  int eighths;     ///< Duration in eighth notes
+  float eighths;   ///< Duration in eighth notes (supports 0.5 for 16th notes)
   bool strong;     ///< True if on strong beat (1 or 3)
   NonHarmonicType non_harmonic = NonHarmonicType::None;  ///< Ornamentation type
 };

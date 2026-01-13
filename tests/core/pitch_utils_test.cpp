@@ -329,5 +329,27 @@ TEST(PitchUtilsTest, ScaleConstants) {
   EXPECT_EQ(SCALE[6], 11);  // B
 }
 
+// ============================================================================
+// Melodic Interval Constants Tests
+// ============================================================================
+
+TEST(PitchUtilsTest, MaxMelodicIntervalValue) {
+  // kMaxMelodicInterval should be 9 (Major 6th)
+  // This is the maximum singable leap for pop melodies
+  EXPECT_EQ(kMaxMelodicInterval, 9);
+}
+
+TEST(PitchUtilsTest, MaxMelodicIntervalIsLessThanOctave) {
+  // The maximum melodic interval should be less than an octave (12 semitones)
+  // to ensure all melodies are singable
+  EXPECT_LT(kMaxMelodicInterval, 12);
+}
+
+TEST(PitchUtilsTest, MaxMelodicIntervalIsAtLeastPerfectFifth) {
+  // The maximum melodic interval should be at least a perfect 5th (7 semitones)
+  // to allow expressive melodic leaps
+  EXPECT_GE(kMaxMelodicInterval, 7);
+}
+
 }  // namespace
 }  // namespace midisketch

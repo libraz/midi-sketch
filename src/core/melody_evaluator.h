@@ -57,8 +57,9 @@ struct MelodyScore {
 /// @brief Melody quality evaluator for candidate selection.
 class MelodyEvaluator {
  public:
-  /// Calculate singability score based on average interval size.
-  /// Ideal: 2-4 semitones average -> 1.0
+  /// Calculate singability score based on interval distribution.
+  /// Rewards step motion (1-2 semitones), penalizes excessive leaps.
+  /// Target: Step 40-50%, Same 20-30%, SmallLeap 15-25%, LargeLeap 5-10%
   /// @param notes Vector of note events
   /// @returns Score 0.0-1.0
   static float calcSingability(const std::vector<NoteEvent>& notes);

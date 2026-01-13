@@ -240,16 +240,16 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     // Add to collected notes
     // Check interval between last note of previous section and first note of this section
     if (!all_notes.empty() && !section_notes.empty()) {
-      constexpr int MAX_INTERVAL = 9;
+      // kMaxMelodicInterval from pitch_utils.h
       int prev_note = all_notes.back().note;
       int first_note = section_notes.front().note;
       int interval = std::abs(first_note - prev_note);
-      if (interval > MAX_INTERVAL) {
+      if (interval > kMaxMelodicInterval) {
         // Get chord degree at first note's position
         int8_t first_note_chord_degree = harmony.getChordDegreeAt(section_notes.front().start_tick);
         // Use nearestChordToneWithinInterval to stay on chord tones
         int new_pitch = nearestChordToneWithinInterval(
-            first_note, prev_note, first_note_chord_degree, MAX_INTERVAL,
+            first_note, prev_note, first_note_chord_degree, kMaxMelodicInterval,
             section_vocal_low, section_vocal_high, nullptr);
         section_notes.front().note = static_cast<uint8_t>(new_pitch);
       }
@@ -286,6 +286,23 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
   // Apply velocity scale
   applyVelocityBalance(all_notes, velocity_scale);
+
+  // FINAL INTERVAL ENFORCEMENT: Ensure no consecutive notes exceed kMaxMelodicInterval
+  // This catches any intervals that slipped through earlier processing
+  // kMaxMelodicInterval from pitch_utils.h (Major 6th)
+  for (size_t i = 1; i < all_notes.size(); ++i) {
+    int prev_pitch = all_notes[i - 1].note;
+    int curr_pitch = all_notes[i].note;
+    int interval = std::abs(curr_pitch - prev_pitch);
+    if (interval > kMaxMelodicInterval) {
+      // Use nearestChordToneWithinInterval to fix
+      int8_t chord_degree = harmony.getChordDegreeAt(all_notes[i].start_tick);
+      int fixed_pitch = nearestChordToneWithinInterval(
+          curr_pitch, prev_pitch, chord_degree, kMaxMelodicInterval,
+          params.vocal_low, params.vocal_high, nullptr);
+      all_notes[i].note = static_cast<uint8_t>(fixed_pitch);
+    }
+  }
 
   // Add notes to track (preserving provenance)
   for (const auto& note : all_notes) {

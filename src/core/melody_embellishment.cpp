@@ -30,6 +30,17 @@ constexpr int MIN_PT_INTERVAL = 3;
 // Minimum duration for splitting into NCT + resolution
 constexpr Tick MIN_SPLIT_DURATION = TICK_EIGHTH;
 
+// Probability (0-100) to use 16th note grid instead of 8th note grid
+// Adds rhythmic variety while keeping 8th notes as the default
+constexpr int SIXTEENTH_NOTE_PROBABILITY = 25;
+
+// Returns the quantization grid size (TICK_EIGHTH or TICK_SIXTEENTH)
+// based on probability. 25% chance of using 16th note grid.
+inline Tick getQuantizationGrid(std::mt19937& rng) {
+  std::uniform_int_distribution<int> dist(0, 99);
+  return (dist(rng) < SIXTEENTH_NOTE_PROBABILITY) ? TICK_SIXTEENTH : TICK_EIGHTH;
+}
+
 }  // namespace
 
 // ============================================================================
@@ -414,7 +425,7 @@ std::optional<NoteEvent> MelodicEmbellisher::tryInsertPassingTone(
     const NoteEvent& to,
     int key_offset,
     bool prefer_pentatonic,
-    [[maybe_unused]] std::mt19937& rng) {
+    std::mt19937& rng) {
 
   int interval = static_cast<int>(to.note) - static_cast<int>(from.note);
   if (std::abs(interval) < MIN_PT_INTERVAL) return std::nullopt;
@@ -432,16 +443,19 @@ std::optional<NoteEvent> MelodicEmbellisher::tryInsertPassingTone(
     return std::nullopt;
   }
 
-  // Place PT at midpoint
+  // Place PT at midpoint, quantized to grid (probabilistic 8th/16th note)
+  Tick grid = getQuantizationGrid(rng);
   Tick pt_start = from.start_tick + from.duration;
+  // Snap to next grid position for natural rhythm
+  pt_start = ((pt_start + grid - 1) / grid) * grid;
 
   // Check for underflow: pt_start must be before to.start_tick
   if (pt_start >= to.start_tick) return std::nullopt;
 
   Tick available_space = to.start_tick - pt_start;
-  Tick pt_duration = std::min(static_cast<Tick>(TICK_EIGHTH), available_space);
+  Tick pt_duration = std::min(grid, available_space);
 
-  if (pt_duration < TICK_SIXTEENTH) return std::nullopt;
+  if (pt_duration < grid) return std::nullopt;  // Minimum grid duration
 
   // Verify weak beat placement
   BeatStrength beat = getBeatStrength(pt_start);
@@ -461,19 +475,21 @@ std::optional<std::pair<NoteEvent, NoteEvent>> MelodicEmbellisher::tryAddNeighbo
     bool upper,
     int key_offset,
     bool prefer_pentatonic,
-    [[maybe_unused]] std::mt19937& rng) {
+    std::mt19937& rng) {
 
   if (chord_tone.duration < MIN_SPLIT_DURATION * 2) return std::nullopt;
 
   int direction = upper ? 1 : -1;
   int nt_pitch = scaleStep(chord_tone.note, direction, key_offset, prefer_pentatonic);
 
-  // Split duration: NT + return
-  Tick nt_duration = chord_tone.duration / 2;
+  // Split duration: NT + return, quantized to grid (probabilistic 8th/16th)
+  Tick grid = getQuantizationGrid(rng);
+  Tick nt_duration = (chord_tone.duration / 2 / grid) * grid;
+  if (nt_duration < grid) nt_duration = grid;
   Tick return_duration = chord_tone.duration - nt_duration;
 
   // Safety check: ensure both durations are valid
-  if (nt_duration == 0 || return_duration == 0) return std::nullopt;
+  if (return_duration < grid) return std::nullopt;
 
   // Neighbor tone
   NoteEvent nt;
@@ -497,7 +513,7 @@ std::optional<std::pair<NoteEvent, NoteEvent>> MelodicEmbellisher::tryConvertToA
     bool upper,
     int key_offset,
     bool allow_chromatic,
-    [[maybe_unused]] std::mt19937& rng) {
+    std::mt19937& rng) {
 
   if (chord_tone.duration < MIN_SPLIT_DURATION * 2) return std::nullopt;
 
@@ -528,11 +544,14 @@ std::optional<std::pair<NoteEvent, NoteEvent>> MelodicEmbellisher::tryConvertToA
   }
 
   // Split: appoggiatura takes more time (expressive emphasis)
-  Tick app_duration = (chord_tone.duration * 2) / 3;
+  // Quantize to grid (probabilistic 8th/16th) for natural rhythm
+  Tick grid = getQuantizationGrid(rng);
+  Tick app_duration = ((chord_tone.duration * 2) / 3 / grid) * grid;
+  if (app_duration < grid) app_duration = grid;
   Tick res_duration = chord_tone.duration - app_duration;
 
-  // Safety check: ensure both durations are valid
-  if (app_duration == 0 || res_duration == 0) return std::nullopt;
+  // Safety check: ensure resolution has valid duration
+  if (res_duration < grid) return std::nullopt;
 
   // Appoggiatura
   NoteEvent app;
@@ -556,10 +575,11 @@ std::optional<NoteEvent> MelodicEmbellisher::tryAddAnticipation(
     const NoteEvent& next,
     Tick next_chord_tick,
     int8_t next_chord_degree,
-    [[maybe_unused]] std::mt19937& rng) {
+    std::mt19937& rng) {
 
-  // Anticipation window: just before chord change
-  Tick ant_start = next_chord_tick - TICK_SIXTEENTH;
+  // Anticipation window: just before chord change (probabilistic 8th/16th grid)
+  Tick grid = getQuantizationGrid(rng);
+  Tick ant_start = next_chord_tick - grid;
 
   // Must be within current note's duration
   if (ant_start <= current.start_tick) return std::nullopt;
@@ -592,7 +612,7 @@ std::optional<NoteEvent> MelodicEmbellisher::tryAddAnticipation(
 
   NoteEvent ant;
   ant.start_tick = ant_start;
-  ant.duration = TICK_SIXTEENTH;
+  ant.duration = grid;  // Match grid quantization
   ant.note = static_cast<uint8_t>(ant_pitch);
   ant.velocity = current.velocity;
 

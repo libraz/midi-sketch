@@ -4,6 +4,7 @@
  */
 
 #include <gtest/gtest.h>
+#include "core/basic_types.h"
 #include "core/preset_data.h"
 #include "core/track_layer.h"
 #include "core/types.h"
@@ -174,6 +175,56 @@ TEST(TypesTest, TrackLayerEnumValues) {
 
 // Note: Tests for LayeredNote and LayerResult were removed
 // as these structs were removed from track_layer.h (unused code cleanup).
+
+// ============================================================================
+// RhythmNote Tests
+// ============================================================================
+
+TEST(TypesTest, RhythmNoteBasicStructure) {
+  RhythmNote rn;
+  rn.beat = 0.0f;
+  rn.eighths = 2.0f;  // Quarter note
+  rn.strong = true;
+
+  EXPECT_EQ(rn.beat, 0.0f);
+  EXPECT_EQ(rn.eighths, 2.0f);
+  EXPECT_TRUE(rn.strong);
+}
+
+TEST(TypesTest, RhythmNoteSupportsFloatEighths) {
+  // RhythmNote.eighths was changed from int to float to support
+  // 16th notes (0.5 eighths) and other fractional durations
+  RhythmNote sixteenth;
+  sixteenth.beat = 0.0f;
+  sixteenth.eighths = 0.5f;  // 16th note = half of an 8th note
+  sixteenth.strong = false;
+
+  EXPECT_EQ(sixteenth.eighths, 0.5f);
+
+  RhythmNote dotted_eighth;
+  dotted_eighth.beat = 0.5f;
+  dotted_eighth.eighths = 1.5f;  // Dotted 8th note
+  dotted_eighth.strong = false;
+
+  EXPECT_EQ(dotted_eighth.eighths, 1.5f);
+}
+
+TEST(TypesTest, RhythmNoteNonHarmonicType) {
+  RhythmNote rn;
+  rn.beat = 1.0f;
+  rn.eighths = 1.0f;
+  rn.strong = false;
+  rn.non_harmonic = NonHarmonicType::Anticipation;
+
+  EXPECT_EQ(rn.non_harmonic, NonHarmonicType::Anticipation);
+
+  // Default should be None
+  RhythmNote default_rn;
+  default_rn.beat = 0.0f;
+  default_rn.eighths = 2.0f;
+  default_rn.strong = true;
+  EXPECT_EQ(default_rn.non_harmonic, NonHarmonicType::None);
+}
 
 }  // namespace
 }  // namespace midisketch

@@ -730,5 +730,83 @@ TEST_F(MotifTest, AuxTrackReproducesMelodicContourFaithfully) {
       << "Interval to 4th note should be +9";
 }
 
+// ============================================================================
+// Memorable Hook Contour Pattern Tests
+// ============================================================================
+
+TEST_F(MotifTest, HookRepetitionFalseProducesVariety) {
+  // When hook_repetition=false, different seeds should produce different contours
+  // (selected from kMemorableHookContours array)
+  StyleMelodyParams params{};
+  params.hook_repetition = false;
+
+  std::set<std::vector<int8_t>> unique_contours;
+  const int num_seeds = 20;
+
+  for (int seed = 0; seed < num_seeds; ++seed) {
+    std::mt19937 rng(seed * 1000);
+    Motif hook = designChorusHook(params, rng);
+    unique_contours.insert(hook.contour_degrees);
+  }
+
+  // With 5 different patterns (excluding Type 0 reserved for repetition),
+  // we should see at least 2 different contours across 20 seeds
+  EXPECT_GE(unique_contours.size(), 2u)
+      << "Different seeds should produce variety in hook contours";
+}
+
+TEST_F(MotifTest, HookRepetitionTrueProducesFixedPattern) {
+  // When hook_repetition=true, all seeds should produce the same contour (Type 0)
+  StyleMelodyParams params{};
+  params.hook_repetition = true;
+
+  std::vector<int8_t> first_contour;
+  const int num_seeds = 10;
+
+  for (int seed = 0; seed < num_seeds; ++seed) {
+    std::mt19937 rng(seed * 1000);
+    Motif hook = designChorusHook(params, rng);
+
+    if (seed == 0) {
+      first_contour = hook.contour_degrees;
+    } else {
+      EXPECT_EQ(hook.contour_degrees, first_contour)
+          << "hook_repetition=true should always produce the same contour";
+    }
+  }
+}
+
+TEST_F(MotifTest, HookContourStartsAtZero) {
+  // All hook contours should start at 0 (root/tonic) for stability
+  StyleMelodyParams params_rep{};
+  params_rep.hook_repetition = true;
+  Motif hook_rep = designChorusHook(params_rep, rng_);
+  EXPECT_EQ(hook_rep.contour_degrees[0], 0)
+      << "Hook contour should start at 0 (root)";
+
+  StyleMelodyParams params_std{};
+  params_std.hook_repetition = false;
+  Motif hook_std = designChorusHook(params_std, rng_);
+  EXPECT_EQ(hook_std.contour_degrees[0], 0)
+      << "Hook contour should start at 0 (root)";
+}
+
+TEST_F(MotifTest, HookContourUsesSmallIntervals) {
+  // Hook contours should use singable intervals (within an octave)
+  StyleMelodyParams params{};
+  params.hook_repetition = false;
+
+  for (int seed = 0; seed < 10; ++seed) {
+    std::mt19937 rng(seed * 500);
+    Motif hook = designChorusHook(params, rng);
+
+    for (size_t i = 1; i < hook.contour_degrees.size(); ++i) {
+      int interval = std::abs(hook.contour_degrees[i] - hook.contour_degrees[i - 1]);
+      EXPECT_LE(interval, 7)
+          << "Hook contour interval should be <= 7 (perfect 5th) for singability";
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

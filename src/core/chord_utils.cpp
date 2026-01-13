@@ -7,6 +7,7 @@
 #include "core/chord.h"
 #include <algorithm>
 #include <cmath>
+#include <random>
 
 namespace midisketch {
 
@@ -185,16 +186,30 @@ int nearestChordToneWithinInterval(int target_pitch, int prev_pitch,
       // Must be within max_interval of prev_pitch
       if (std::abs(candidate - prev_pitch) > max_interval) continue;
 
-      // Calculate score: prefer closer to target, bonus for tessitura
+      // Calculate score: balance target proximity with stepwise motion
       int dist_to_target = std::abs(candidate - target_pitch);
-      int score = 100 - dist_to_target;  // Base score: closer is better
+      int dist_to_prev = std::abs(candidate - prev_pitch);
+
+      // Base score: closer to target is better
+      int score = 100 - dist_to_target;
+
+      // SINGABILITY: prefer small intervals while still reaching target
+      // Balance: don't over-penalize movement, but discourage large leaps
+      if (dist_to_prev == 0) {
+        score += 20;  // Same note: stable (reduced to allow target progression)
+      } else if (dist_to_prev <= 2) {
+        score += 25;  // Step motion (1-2 semitones): most singable
+      } else if (dist_to_prev <= 4) {
+        score += 5;   // Small leap (3-4 semitones): acceptable
+      } else {
+        score -= (dist_to_prev - 4) * 8;  // Large leaps: stronger penalty
+      }
 
       // Tessitura bonus: prefer comfortable range
       if (tessitura != nullptr) {
         if (candidate >= tessitura->low && candidate <= tessitura->high) {
-          score += 20;  // Bonus for being in tessitura
+          score += 15;  // Bonus for being in tessitura
         }
-        // Small penalty for passaggio (but don't exclude it)
         if (isInPassaggio(static_cast<uint8_t>(candidate))) {
           score -= 5;
         }
@@ -208,6 +223,109 @@ int nearestChordToneWithinInterval(int target_pitch, int prev_pitch,
   }
 
   return best_pitch;
+}
+
+int stepwiseToTarget(int prev_pitch, int target_pitch,
+                     int8_t chord_degree, int range_low, int range_high,
+                     uint8_t key, int prefer_same_note,
+                     std::mt19937* rng) {
+  // Determine direction toward target
+  int direction = 0;
+  if (target_pitch > prev_pitch) {
+    direction = 1;
+  } else if (target_pitch < prev_pitch) {
+    direction = -1;
+  }
+
+  // Random chance to stay on same note (increases same-note ratio)
+  if (rng != nullptr && direction == 0) {
+    // If target equals prev, very high chance to stay
+    return std::clamp(prev_pitch, range_low, range_high);
+  }
+  if (rng != nullptr && prefer_same_note > 0) {
+    std::uniform_int_distribution<int> dist(0, 99);
+    if (dist(*rng) < prefer_same_note) {
+      return std::clamp(prev_pitch, range_low, range_high);
+    }
+  }
+
+  // Get chord tones for avoid-note checking
+  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
+
+  // Determine step order: whole step (2) vs half step (1)
+  // Default: whole step first (more melodic)
+  // Exception 1: Leading tone resolution (7th degree ascending to tonic)
+  // Exception 2: 30% random chance for half step (adds variety)
+  int prev_pc = ((prev_pitch % 12) + 12) % 12;
+  int leading_tone = (11 + key) % 12;  // 7th degree in major scale
+  bool is_leading_tone_resolution = (prev_pc == leading_tone && direction > 0);
+
+  bool prefer_half_step = is_leading_tone_resolution;
+  if (!prefer_half_step && rng != nullptr) {
+    std::uniform_int_distribution<int> step_dist(0, 99);
+    prefer_half_step = (step_dist(*rng) < 30);  // 30% chance
+  }
+
+  // Try step motion (1-2 semitones in the direction)
+  const int step_first = prefer_half_step ? 1 : 2;
+  const int step_second = prefer_half_step ? 2 : 1;
+
+  for (int step : {step_first, step_second}) {
+    int candidate = prev_pitch + direction * step;
+
+    // Check range
+    if (candidate < range_low || candidate > range_high) {
+      continue;
+    }
+
+    // Check if it's a scale tone
+    int pc = ((candidate % 12) + 12) % 12;
+    if (!isScaleTone(pc, key)) {
+      continue;
+    }
+
+    // Check if it's not an avoid note (minor 2nd or tritone from root)
+    int root_pc = SCALE[((chord_degree % 7) + 7) % 7];
+    root_pc = (root_pc + key) % 12;
+    int interval = ((pc - root_pc) % 12 + 12) % 12;
+    // Avoid: minor 2nd (1), tritone (6) over root
+    if (interval == 1 || interval == 6) {
+      continue;
+    }
+
+    // Valid step motion found
+    return candidate;
+  }
+
+  // Step motion failed, try opposite direction step (might resolve better)
+  for (int step : {step_first, step_second}) {
+    int candidate = prev_pitch - direction * step;
+    if (direction == 0) {
+      candidate = prev_pitch + step;  // Default to up if no direction
+    }
+
+    if (candidate < range_low || candidate > range_high) {
+      continue;
+    }
+
+    int pc = ((candidate % 12) + 12) % 12;
+    if (!isScaleTone(pc, key)) {
+      continue;
+    }
+
+    int root_pc = SCALE[((chord_degree % 7) + 7) % 7];
+    root_pc = (root_pc + key) % 12;
+    int interval = ((pc - root_pc) % 12 + 12) % 12;
+    if (interval == 1 || interval == 6) {
+      continue;
+    }
+
+    return candidate;
+  }
+
+  // Step motion failed - stay on current pitch (better than jumping to chord tone)
+  // This prioritizes singability over harmonic "correctness"
+  return std::clamp(prev_pitch, range_low, range_high);
 }
 
 }  // namespace midisketch

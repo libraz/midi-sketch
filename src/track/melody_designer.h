@@ -326,7 +326,8 @@ class MelodyDesigner {
       int key_offset,
       uint8_t vocal_low,
       uint8_t vocal_high,
-      VocalAttitude attitude);
+      VocalAttitude attitude,
+      bool disable_singability = false);
 
   // Calculate target pitch for phrase based on template.
   int calculateTargetPitch(

@@ -72,6 +72,7 @@ set(TEST_SOURCES
   analysis/non_diatonic_detection_test.cpp
   api/c_api_test.cpp
   integration/dissonance_integration_test.cpp
+  integration/dissonance_diagnostic_test.cpp
 )
 
 add_executable(midisketch_tests ${TEST_SOURCES})

@@ -9,6 +9,7 @@
 #include "core/pitch_utils.h"  // For TessituraRange
 #include <array>
 #include <cstdint>
+#include <random>
 #include <vector>
 
 namespace midisketch {
@@ -82,6 +83,26 @@ int nearestChordToneWithinInterval(int target_pitch, int prev_pitch,
                                    int8_t chord_degree, int max_interval,
                                    int range_low, int range_high,
                                    const TessituraRange* tessitura = nullptr);
+
+// ============================================================================
+// Stepwise Motion Functions
+// ============================================================================
+
+// Move stepwise (1-2 semitones) toward target, preferring scale tones.
+// This creates more singable melodies by avoiding large chord-tone jumps.
+// @param prev_pitch Current pitch to move from
+// @param target_pitch Desired target pitch (direction indicator)
+// @param chord_degree Scale degree of current chord
+// @param range_low Minimum allowed pitch
+// @param range_high Maximum allowed pitch
+// @param key Current key (0-11, 0=C)
+// @param prefer_same_note Probability (0-100) to stay on same note
+// @param rng Random number generator for prefer_same_note
+// @returns New pitch moved stepwise toward target
+int stepwiseToTarget(int prev_pitch, int target_pitch,
+                     int8_t chord_degree, int range_low, int range_high,
+                     uint8_t key = 0, int prefer_same_note = 30,
+                     std::mt19937* rng = nullptr);
 
 }  // namespace midisketch
 

@@ -16,35 +16,65 @@ namespace midisketch {
 float MelodyEvaluator::calcSingability(const std::vector<NoteEvent>& notes) {
   if (notes.size() < 2) return 0.5f;
 
-  float total_interval = 0.0f;
-  int count = 0;
+  // Count intervals by category for detailed scoring
+  int same_count = 0;       // 0 semitones
+  int step_count = 0;       // 1-2 semitones (true step motion)
+  int small_leap_count = 0; // 3-4 semitones (small leaps)
+  int large_leap_count = 0; // 5+ semitones
 
   for (size_t i = 1; i < notes.size(); ++i) {
     int interval = std::abs(notes[i].note - notes[i - 1].note);
-    total_interval += static_cast<float>(interval);
-    ++count;
+    if (interval == 0) {
+      same_count++;
+    } else if (interval <= 2) {
+      step_count++;
+    } else if (interval <= 4) {
+      small_leap_count++;
+    } else {
+      large_leap_count++;
+    }
   }
 
-  if (count == 0) return 0.5f;
+  int total = same_count + step_count + small_leap_count + large_leap_count;
+  if (total == 0) return 0.5f;
 
-  float avg_interval = total_interval / static_cast<float>(count);
+  // Calculate ratios
+  float same_ratio = static_cast<float>(same_count) / total;
+  float step_ratio = static_cast<float>(step_count) / total;
+  float small_leap_ratio = static_cast<float>(small_leap_count) / total;
+  float large_leap_ratio = static_cast<float>(large_leap_count) / total;
 
-  // Ideal: 2-4 semitones average -> 1.0
-  // 0-1 semitones: slightly low (0.7-0.9)
-  // 5-6 semitones: acceptable (0.7-0.9)
-  // 7+ semitones: too jumpy (0.3-0.6)
-  if (avg_interval >= 2.0f && avg_interval <= 4.0f) {
-    return 1.0f;
-  } else if (avg_interval < 2.0f) {
-    // Too static, but not terrible
-    return 0.7f + (avg_interval / 2.0f) * 0.2f;
-  } else if (avg_interval <= 6.0f) {
-    // Acceptable range
-    return 1.0f - (avg_interval - 4.0f) * 0.15f;
-  } else {
-    // Too jumpy
-    return std::max(0.3f, 0.7f - (avg_interval - 6.0f) * 0.1f);
-  }
+  // Singability scoring (pop vocal theory):
+  // - Step motion (1-2 semitones): most singable, highest score
+  // - Same pitch: good for hooks/repetition, neutral-positive
+  // - Small leaps (3-4 semitones): acceptable but less singable
+  // - Large leaps (5+ semitones): difficult, penalized
+  //
+  // Target: Step 40-50%, Same 20-30%, SmallLeap 15-25%, LargeLeap 5-10%
+  float score = 0.0f;
+
+  // Step motion: strongest positive contribution (target 40-50%)
+  // Score peaks at 45%, drops off at extremes
+  float step_score = 1.0f - std::abs(step_ratio - 0.45f) * 2.0f;
+  step_score = std::max(0.0f, step_score);
+  score += step_score * 0.40f;  // 40% weight
+
+  // Same pitch: moderate positive (target 20-30%)
+  float same_score = 1.0f - std::abs(same_ratio - 0.25f) * 3.0f;
+  same_score = std::max(0.0f, same_score);
+  score += same_score * 0.20f;  // 20% weight
+
+  // Small leaps: slight penalty if too many (target 15-25%)
+  float small_leap_score = 1.0f - std::max(0.0f, small_leap_ratio - 0.25f) * 3.0f;
+  small_leap_score = std::max(0.0f, small_leap_score);
+  score += small_leap_score * 0.25f;  // 25% weight
+
+  // Large leaps: penalty (target 5-10%)
+  float large_leap_score = 1.0f - std::max(0.0f, large_leap_ratio - 0.10f) * 5.0f;
+  large_leap_score = std::max(0.0f, large_leap_score);
+  score += large_leap_score * 0.15f;  // 15% weight
+
+  return std::clamp(score, 0.0f, 1.0f);
 }
 
 float MelodyEvaluator::calcChordToneRatio(const std::vector<NoteEvent>& notes,

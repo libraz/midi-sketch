@@ -60,7 +60,7 @@ Motif applyVariation(const Motif& original, MotifVariation variation,
     case MotifVariation::Diminished:
       // Halve all durations
       for (auto& rn : result.rhythm) {
-        rn.eighths = std::max(1, rn.eighths / 2);
+        rn.eighths = std::max(0.5f, rn.eighths / 2.0f);
         rn.beat /= 2.0f;
       }
       result.length_beats /= 2;
@@ -115,10 +115,53 @@ Motif applyVariation(const Motif& original, MotifVariation variation,
   return result;
 }
 
-Motif designChorusHook(const StyleMelodyParams& params, [[maybe_unused]] std::mt19937& rng) {
+// Memorable hook contour patterns (J-POP/K-POP style)
+// Each pattern is 6 notes with clear melodic structure
+// Values are semitone offsets from base pitch
+constexpr int8_t kMemorableHookContours[][6] = {
+    // Type 0: Pedal Tone - repetition with color notes (default for hook_repetition)
+    // "Earworm" style - same note returns, small variations between
+    // Uses only 3 distinct values (0, 2, 4) for memorability
+    {0, 0, 2, 0, 4, 0},
+
+    // Type 1: Rising Arch - gradual rise to peak, then resolve
+    // Classic J-POP pattern: builds tension, releases at end
+    {0, 2, 4, 5, 4, 0},
+
+    // Type 2: Question-Answer - ascending question, descending answer
+    // Creates call-response feel within the hook
+    {0, 4, 2, 0, 4, 0},
+
+    // Type 3: Leap-Step - dramatic leap then stepwise return
+    // High impact opening, memorable first impression
+    {0, 7, 5, 4, 2, 0},
+
+    // Type 4: Wave - gentle oscillation building to peak
+    // Flowing, singable melodic line
+    {0, 2, 0, 4, 2, 0},
+
+    // Type 5: Climax Rush - steady climb to high point
+    // Dramatic buildup effect
+    {0, 2, 4, 5, 7, 5},
+};
+constexpr size_t kMemorableHookContourCount =
+    sizeof(kMemorableHookContours) / sizeof(kMemorableHookContours[0]);
+
+Motif designChorusHook(const StyleMelodyParams& params, std::mt19937& rng) {
   Motif hook;
   hook.length_beats = 8;  // 2-bar hook
   hook.ends_on_chord_tone = true;
+
+  // Select contour pattern:
+  // - hook_repetition=true: use fixed pattern (Type 0) for maximum memorability
+  // - hook_repetition=false: random selection for variety
+  size_t contour_idx = 0;
+  if (!params.hook_repetition) {
+    std::uniform_int_distribution<size_t> contour_dist(
+        1, kMemorableHookContourCount - 1);  // Skip Type 0 (reserved for repetition)
+    contour_idx = contour_dist(rng);
+  }
+  const int8_t* selected_contour = kMemorableHookContours[contour_idx];
 
   if (params.hook_repetition) {
     // Idol/Anime style: catchy, repetitive rhythm
@@ -131,36 +174,36 @@ Motif designChorusHook(const StyleMelodyParams& params, [[maybe_unused]] std::mt
         {7.0f, 2, false},  // Beat 4: quarter note
     };
     hook.climax_index = 3;  // Fourth note is the climax
-
-    // Short hook with wider intervals: root -> 4th -> 3rd (3 notes, memorable)
-    // Uses 4th (5 semitones) as passing tone for melodic interest
-    // Stays within major 6th constraint after chord tone snapping
-    hook.contour_degrees = {0, 5, 4};
   } else {
-    // Standard style: gradual arch contour
+    // Standard style: syncopated feel
     hook.rhythm = {
         {0.0f, 2, true},   // Beat 1: quarter note
         {1.0f, 2, false},  // Beat 2: quarter note
         {2.0f, 2, true},   // Beat 3: quarter note
         {3.0f, 2, false},  // Beat 4: quarter note
         {4.0f, 3, true},   // Beat 1 (bar 2): dotted quarter - climax
-        {5.5f, 2, false},  // Beat 2.5: quarter note
-        {6.5f, 3, true},   // Beat 3.5: dotted quarter
+        {5.5f, 3, true},   // Beat 2.5: dotted quarter
     };
     hook.climax_index = 4;  // Fifth note is the climax
-
-    // Arch contour: root -> 3rd -> 4th (3 notes)
-    // 3rd on weak beat adds melodic interest, 4th provides gentle rise
-    // Stays within major 6th interval constraint
-    hook.contour_degrees = {0, 4, 5};
   }
 
-  // Adjust contour size to match rhythm size
+  // Use complete contour pattern (no zero-padding!)
+  hook.contour_degrees.clear();
+  for (size_t i = 0; i < 6 && i < hook.rhythm.size(); ++i) {
+    hook.contour_degrees.push_back(selected_contour[i]);
+  }
+
+  // If rhythm has more notes than contour, use ABAB structure
+  // (repeat the pattern with slight variation)
   while (hook.contour_degrees.size() < hook.rhythm.size()) {
-    hook.contour_degrees.push_back(0);
-  }
-  if (hook.contour_degrees.size() > hook.rhythm.size()) {
-    hook.contour_degrees.resize(hook.rhythm.size());
+    size_t idx = hook.contour_degrees.size() % 6;
+    // Second half: slight variation (-2 semitones for "answer" feel)
+    int8_t varied = selected_contour[idx];
+    if (hook.contour_degrees.size() >= 6) {
+      varied = std::max(static_cast<int8_t>(-2),
+                        static_cast<int8_t>(varied - 2));
+    }
+    hook.contour_degrees.push_back(varied);
   }
 
   return hook;
@@ -211,8 +254,8 @@ Motif extractMotifFromChorus(const std::vector<NoteEvent>& chorus_notes,
     float beat_pos = static_cast<float>(relative_tick) / TICKS_PER_BEAT;
 
     // Determine eighths and strong beat status
-    int eighths = static_cast<int>(note.duration / (TICKS_PER_BEAT / 2));
-    eighths = std::max(1, std::min(8, eighths));  // Clamp to 1-8
+    float eighths = static_cast<float>(note.duration) / (TICKS_PER_BEAT / 2);
+    eighths = std::max(0.5f, std::min(8.0f, eighths));  // Clamp to 0.5-8
 
     bool is_strong = (relative_tick % (TICKS_PER_BEAT * 2)) == 0;
 
@@ -239,10 +282,11 @@ Motif extractMotifFromChorus(const std::vector<NoteEvent>& chorus_notes,
     const auto& last_rhythm = motif.rhythm.back();
     float last_beat = last_rhythm.beat + last_rhythm.eighths * 0.5f;
     motif.length_beats = static_cast<uint8_t>(std::ceil(last_beat));
-    // Round up to 4 or 8
+    // Round up to 4 or 8, cap at 8 for practical placement
     if (motif.length_beats <= 4) {
       motif.length_beats = 4;
-    } else if (motif.length_beats <= 8) {
+    } else {
+      // Cap at 8 beats (2 bars) - longer motifs are truncated for intro placement
       motif.length_beats = 8;
     }
   }

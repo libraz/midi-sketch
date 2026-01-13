@@ -35,11 +35,14 @@ std::vector<NoteEvent> createTestMelody(const std::vector<uint8_t>& pitches,
 // ============================================================================
 
 TEST(MelodyEvaluatorTest, SingabilityIdealRange) {
-  // Average interval 2-4 semitones should score high
-  // C4 -> E4 -> G4 -> E4 -> G4 (intervals: 4, 3, -3, 3 -> avg ~3.25)
-  auto melody = createTestMelody({60, 64, 67, 64, 67});
+  // New model: prefers step motion (1-2 semitones) over small leaps (3-4 semitones)
+  // Good singable melody: mix of steps and same notes with occasional small leaps
+  // C4 -> D4 -> E4 -> E4 -> D4 -> C4 -> E4 -> D4 -> C4 -> C4
+  // intervals: 2, 2, 0, -2, -2, 4, -2, -2, 0
+  // same: 2, step: 6, small: 1, large: 0 = ~22% same, 67% step, 11% small
+  auto melody = createTestMelody({60, 62, 64, 64, 62, 60, 64, 62, 60, 60});
   float score = MelodyEvaluator::calcSingability(melody);
-  EXPECT_GE(score, 0.8f) << "Moderate leaps should be highly singable";
+  EXPECT_GE(score, 0.6f) << "Step-motion dominated melody should score well";
 }
 
 TEST(MelodyEvaluatorTest, SingabilityTooJumpy) {
@@ -47,16 +50,28 @@ TEST(MelodyEvaluatorTest, SingabilityTooJumpy) {
   // C4 -> G4 -> C5 -> G5 (7 semitones each)
   auto melody = createTestMelody({60, 67, 72, 79});
   float score = MelodyEvaluator::calcSingability(melody);
-  EXPECT_LE(score, 0.7f) << "Large leaps should reduce singability";
+  EXPECT_LE(score, 0.5f) << "Large leaps should reduce singability";
 }
 
 TEST(MelodyEvaluatorTest, SingabilityTooStatic) {
-  // Same note repeated should score lower
+  // Same note repeated: penalized for lack of step motion but not terrible
   // C4 -> C4 -> C4 -> C4
   auto melody = createTestMelody({60, 60, 60, 60});
   float score = MelodyEvaluator::calcSingability(melody);
-  EXPECT_LE(score, 0.9f) << "Static melody should have reduced singability";
-  EXPECT_GE(score, 0.5f) << "Static melody shouldn't be terrible";
+  // 100% same notes: step_ratio=0, same_ratio=1.0, small=0, large=0
+  // step_score=0 (very low), same_score=0.25 (penalized for being >25%)
+  // Total should be low because no step motion
+  EXPECT_LE(score, 0.5f) << "Static melody lacks step motion";
+  EXPECT_GE(score, 0.2f) << "Static melody shouldn't be terrible";
+}
+
+TEST(MelodyEvaluatorTest, SingabilityExcessiveSmallLeaps) {
+  // Too many small leaps (3-4 semitones) without step motion
+  // C4 -> E4 -> G4 -> E4 -> G4 (intervals: 4, 3, -3, 3 = 100% small leaps)
+  auto melody = createTestMelody({60, 64, 67, 64, 67});
+  float score = MelodyEvaluator::calcSingability(melody);
+  // All small leaps: step_ratio=0 → penalized
+  EXPECT_LE(score, 0.5f) << "Excessive small leaps without steps should be penalized";
 }
 
 TEST(MelodyEvaluatorTest, SingabilityEmptyMelody) {

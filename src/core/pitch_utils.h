@@ -28,6 +28,18 @@ constexpr uint8_t MOTIF_HIGH = 108; ///< C8 - Motif upper limit (wide for synths
 /// @}
 
 // ============================================================================
+// Melodic Interval Constants
+// ============================================================================
+
+/// @name Melodic Interval Limits
+/// @{
+/// Maximum melodic interval for singable melodies (Major 6th = 9 semitones).
+/// Larger intervals are difficult to sing and sound unnatural in pop melodies.
+/// Applied at multiple stages: pitch selection, adjustment, and final validation.
+constexpr int kMaxMelodicInterval = 9;
+/// @}
+
+// ============================================================================
 // Pitch Clamp Functions
 // ============================================================================
 

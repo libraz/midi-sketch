@@ -15,6 +15,7 @@ namespace {
 
 // Template 1: PlateauTalk (NewJeans/Billie style)
 // High plateau with talk-sing characteristics
+// Target pitch is now mandatory for melodic direction.
 constexpr MelodyTemplate kPlateauTalk = {
     "PlateauTalk",
     // Pitch constraints
@@ -22,10 +23,10 @@ constexpr MelodyTemplate kPlateauTalk = {
     0.7f,  // plateau_ratio: 70% same pitch
     2,     // max_step: 2 semitones
 
-    // Target pitch
-    false,  // has_target_pitch
-    0.0f,   // target_attraction_start
-    0.0f,   // target_attraction_strength
+    // Target pitch (mandatory for melodic direction)
+    true,   // has_target_pitch: ENABLED - creates forward motion
+    0.6f,   // target_attraction_start: late attraction (plateau first)
+    0.5f,   // target_attraction_strength: moderate (preserve plateau feel)
 
     // Rhythm
     true,   // rhythm_driven
@@ -129,6 +130,7 @@ constexpr MelodyTemplate kDownResolve = {
 
 // Template 4: HookRepeat (TikTok/K-POP)
 // Short repeating hook for maximum catchiness
+// Target pitch creates a "destination" even for short hooks.
 constexpr MelodyTemplate kHookRepeat = {
     "HookRepeat",
     // Pitch constraints
@@ -136,10 +138,10 @@ constexpr MelodyTemplate kHookRepeat = {
     0.5f,  // plateau_ratio: moderate
     2,     // max_step
 
-    // Target pitch
-    false,  // has_target_pitch
-    0.0f,   // target_attraction_start
-    0.0f,   // target_attraction_strength
+    // Target pitch (mandatory for melodic direction)
+    true,   // has_target_pitch: ENABLED - hook resolves to target
+    0.5f,   // target_attraction_start: mid-phrase attraction
+    0.7f,   // target_attraction_strength: strong (hook clarity)
 
     // Rhythm
     true,   // rhythm_driven
