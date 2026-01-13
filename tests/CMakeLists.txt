@@ -16,6 +16,7 @@ set(TEST_SOURCES
   core/structure_test.cpp
   core/chord_test.cpp
   core/generator_test.cpp
+  core/generator_di_test.cpp
   core/generator_vocal_test.cpp
   core/generator_vocal_first_test.cpp
   core/generator_motif_test.cpp
@@ -25,6 +26,7 @@ set(TEST_SOURCES
   core/song_test.cpp
   core/style_preset_test.cpp
   core/harmony_integration_test.cpp
+  core/track_registration_guard_test.cpp
   core/call_test.cpp
   core/randomness_test.cpp
   core/motif_test.cpp
@@ -34,6 +36,7 @@ set(TEST_SOURCES
   core/melody_templates_test.cpp
   core/melody_evaluator_test.cpp
   core/piano_roll_test.cpp
+  core/music_theory_test.cpp
   core/velocity_test.cpp
   core/modulation_calculator_test.cpp
   core/modulation_bgm_test.cpp
@@ -61,6 +64,7 @@ set(TEST_SOURCES
   track/aux_chorus_behavior_test.cpp
   track/phrase_ending_test.cpp
   track/bass_dissonance_regression_test.cpp
+  track/bass_music_theory_test.cpp
   track/dissonance_fixes_test.cpp
   track/se_test.cpp
   track/vocal_analysis_test.cpp
@@ -71,6 +75,9 @@ set(TEST_SOURCES
 )
 
 add_executable(midisketch_tests ${TEST_SOURCES})
+target_include_directories(midisketch_tests PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+)
 target_link_libraries(midisketch_tests PRIVATE
   midisketch_lib
   GTest::gtest_main

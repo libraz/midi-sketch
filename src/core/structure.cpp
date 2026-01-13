@@ -7,6 +7,7 @@
 #include "core/preset_data.h"
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 namespace midisketch {
 

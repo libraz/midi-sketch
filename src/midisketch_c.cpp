@@ -894,7 +894,7 @@ const char* TRACK_NAMES[] = {
 // Fill piano roll info for a single tick
 void fillPianoRollInfo(MidiSketchPianoRollInfo* info,
                        const midisketch::Song& song,
-                       const midisketch::HarmonyContext& harmony,
+                       const midisketch::IHarmonyContext& harmony,
                        const midisketch::GeneratorParams& params,
                        uint32_t tick,
                        uint8_t prev_pitch = 255) {

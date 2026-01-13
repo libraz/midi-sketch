@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
 #include "core/arrangement.h"
 #include "core/chord.h"
 #include "core/types.h"

@@ -15,7 +15,7 @@
 
 namespace midisketch {
 
-class HarmonyContext;
+class IHarmonyContext;
 
 #ifndef MIDISKETCH_WASM
 class Midi2Writer;
@@ -43,7 +43,7 @@ class MidiWriter {
    * @param harmony HarmonyContext for chord root extraction
    * @param key Output key for transposition
    */
-  void buildVocalPreview(const Song& song, const HarmonyContext& harmony,
+  void buildVocalPreview(const Song& song, const IHarmonyContext& harmony,
                          Key key);
 
   /** @brief Get MIDI data as byte vector. @return Binary MIDI data */

@@ -13,25 +13,16 @@ namespace midisketch {
 /// @brief Converts SongConfig to GeneratorParams (internal representation).
 class ConfigConverter {
  public:
-  /// @brief Conversion result including call/modulation settings.
-  struct ConversionResult {
-    GeneratorParams params;                                    ///< Converted params
-    bool se_enabled = true;                                    ///< SE track enabled
-    bool call_enabled = false;                                 ///< Call enabled
-    bool call_notes_enabled = true;                            ///< Call as notes
-    IntroChant intro_chant = IntroChant::None;                 ///< Intro chant
-    MixPattern mix_pattern = MixPattern::None;                 ///< MIX pattern
-    CallDensity call_density = CallDensity::Standard;          ///< Call density
-    ModulationTiming modulation_timing = ModulationTiming::None;  ///< Modulation timing
-    int8_t modulation_semitones = 2;                           ///< Modulation amount
-  };
-
   /**
    * @brief Convert SongConfig to GeneratorParams.
+   *
+   * All settings including call/SE and modulation are stored directly
+   * in GeneratorParams for single source of truth.
+   *
    * @param config Source configuration
-   * @return ConversionResult with params and settings
+   * @return Converted GeneratorParams
    */
-  static ConversionResult convert(const SongConfig& config);
+  static GeneratorParams convert(const SongConfig& config);
 
   /**
    * @brief Apply VocalStylePreset to melody parameters.

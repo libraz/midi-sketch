@@ -8,7 +8,7 @@
 
 #include <gtest/gtest.h>
 #include "core/generator.h"
-#include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
@@ -32,7 +32,7 @@ struct ClashInfo {
 };
 
 // Get track name for reporting
-std::string getTrackName(const MidiTrack* track, const Song& song) {
+[[maybe_unused]] std::string getTrackName(const MidiTrack* track, const Song& song) {
   if (track == &song.vocal()) return "Vocal";
   if (track == &song.bass()) return "Bass";
   if (track == &song.chord()) return "Chord";
@@ -44,7 +44,7 @@ std::string getTrackName(const MidiTrack* track, const Song& song) {
 // Find all dissonant clashes between two tracks using chord context
 std::vector<ClashInfo> findClashes(const MidiTrack& track_a, const std::string& name_a,
                                     const MidiTrack& track_b, const std::string& name_b,
-                                    const HarmonyContext& harmony) {
+                                    const IHarmonyContext& harmony) {
   std::vector<ClashInfo> clashes;
 
   for (const auto& note_a : track_a.notes()) {
@@ -81,7 +81,7 @@ std::vector<ClashInfo> findClashes(const MidiTrack& track_a, const std::string& 
 }
 
 // Analyze all track pairs in a song for dissonances using chord context
-std::vector<ClashInfo> analyzeAllTrackPairs(const Song& song, const HarmonyContext& harmony) {
+std::vector<ClashInfo> analyzeAllTrackPairs(const Song& song, const IHarmonyContext& harmony) {
   std::vector<ClashInfo> all_clashes;
 
   // Get all melodic tracks (skip drums and SE)

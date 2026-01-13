@@ -6,11 +6,11 @@
 #ifndef MIDISKETCH_CORE_GENERATOR_H
 #define MIDISKETCH_CORE_GENERATOR_H
 
-#include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
 #include "core/motif.h"
 #include "core/song.h"
 #include "core/types.h"
-#include <optional>
+#include <memory>
 #include <random>
 
 namespace midisketch {
@@ -28,6 +28,12 @@ namespace midisketch {
 class Generator {
  public:
   Generator();
+
+  /**
+   * @brief Construct with injected HarmonyContext (for testing).
+   * @param harmony_context Custom harmony context implementation
+   */
+  explicit Generator(std::unique_ptr<IHarmonyContext> harmony_context);
 
   /// @name Standard Generation
   /// @{
@@ -152,14 +158,23 @@ class Generator {
   /// @name Accessors
   /// @{
 
-  /** @brief Get the generated song. */
+  /** @brief Get the generated song (const). */
   const Song& getSong() const { return song_; }
+
+  /** @brief Get the generated song (mutable, for Strategy pattern). */
+  Song& getSong() { return song_; }
 
   /** @brief Get current generation parameters. */
   const GeneratorParams& getParams() const { return params_; }
 
   /** @brief Get harmony context (for external collision checking). */
-  const HarmonyContext& getHarmonyContext() const { return harmony_context_; }
+  const IHarmonyContext& getHarmonyContext() const { return *harmony_context_; }
+
+  /** @brief Get harmony context (mutable, for Strategy pattern). */
+  IHarmonyContext& getHarmonyContext() { return *harmony_context_; }
+
+  /** @brief Get random number generator (mutable, for Strategy pattern). */
+  std::mt19937& getRng() { return rng_; }
 
   /**
    * @brief Set modulation timing for key change.
@@ -172,6 +187,26 @@ class Generator {
   }
 
   /// @}
+  /// @name Strategy Invocation Methods
+  /// Used by CompositionStrategy to invoke track generation
+  /// @{
+
+  /** @brief Invoke vocal track generation. */
+  void invokeGenerateVocal() { generateVocal(); }
+
+  /** @brief Invoke bass track generation. */
+  void invokeGenerateBass() { generateBass(); }
+
+  /** @brief Invoke chord track generation. */
+  void invokeGenerateChord() { generateChord(); }
+
+  /** @brief Invoke motif track generation. */
+  void invokeGenerateMotif() { generateMotif(); }
+
+  /** @brief Invoke aux track generation. */
+  void invokeGenerateAux() { generateAux(); }
+
+  /// @}
 
  private:
   /// @name State
@@ -179,7 +214,7 @@ class Generator {
   GeneratorParams params_;           ///< Current generation parameters
   Song song_;                        ///< Generated song data
   std::mt19937 rng_;                 ///< Random number generator (Mersenne Twister)
-  HarmonyContext harmony_context_;   ///< Tracks notes for collision avoidance
+  std::unique_ptr<IHarmonyContext> harmony_context_;  ///< Tracks notes for collision avoidance
   /// @}
 
   /// @name Call/SE System Settings
@@ -198,9 +233,6 @@ class Generator {
   ModulationTiming modulation_timing_ = ModulationTiming::None;
   int8_t modulation_semitones_ = 2;  ///< Key change amount (1-4 semitones)
   /// @}
-
-  /// Cached chorus motif for intro placement (enables "teaser" riffs)
-  std::optional<Motif> cached_chorus_motif_;
 
   /// @name Track Generation Methods
   /// Each generates a single track and registers notes with HarmonyContext

@@ -7,6 +7,7 @@
 #include "core/generator.h"
 #include "core/chord.h"
 #include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
 #include "core/harmonic_rhythm.h"
 #include "core/preset_data.h"
 #include "core/song.h"

@@ -9,6 +9,7 @@
 #include "core/arrangement.h"
 #include "core/midi_track.h"
 #include "core/types.h"
+#include <array>
 
 namespace midisketch {
 
@@ -19,34 +20,40 @@ class Song {
 
   /// @name Track Accessors
   /// @{
-  MidiTrack& vocal() { return vocal_; }
-  MidiTrack& chord() { return chord_; }
-  MidiTrack& bass() { return bass_; }
-  MidiTrack& drums() { return drums_; }
-  MidiTrack& se() { return se_; }
-  MidiTrack& motif() { return motif_; }
-  MidiTrack& arpeggio() { return arpeggio_; }
-  MidiTrack& aux() { return aux_; }
-  const MidiTrack& vocal() const { return vocal_; }
-  const MidiTrack& chord() const { return chord_; }
-  const MidiTrack& bass() const { return bass_; }
-  const MidiTrack& drums() const { return drums_; }
-  const MidiTrack& se() const { return se_; }
-  const MidiTrack& motif() const { return motif_; }
-  const MidiTrack& arpeggio() const { return arpeggio_; }
-  const MidiTrack& aux() const { return aux_; }
+  MidiTrack& vocal() { return tracks_[static_cast<size_t>(TrackRole::Vocal)]; }
+  MidiTrack& chord() { return tracks_[static_cast<size_t>(TrackRole::Chord)]; }
+  MidiTrack& bass() { return tracks_[static_cast<size_t>(TrackRole::Bass)]; }
+  MidiTrack& drums() { return tracks_[static_cast<size_t>(TrackRole::Drums)]; }
+  MidiTrack& se() { return tracks_[static_cast<size_t>(TrackRole::SE)]; }
+  MidiTrack& motif() { return tracks_[static_cast<size_t>(TrackRole::Motif)]; }
+  MidiTrack& arpeggio() { return tracks_[static_cast<size_t>(TrackRole::Arpeggio)]; }
+  MidiTrack& aux() { return tracks_[static_cast<size_t>(TrackRole::Aux)]; }
+  const MidiTrack& vocal() const { return tracks_[static_cast<size_t>(TrackRole::Vocal)]; }
+  const MidiTrack& chord() const { return tracks_[static_cast<size_t>(TrackRole::Chord)]; }
+  const MidiTrack& bass() const { return tracks_[static_cast<size_t>(TrackRole::Bass)]; }
+  const MidiTrack& drums() const { return tracks_[static_cast<size_t>(TrackRole::Drums)]; }
+  const MidiTrack& se() const { return tracks_[static_cast<size_t>(TrackRole::SE)]; }
+  const MidiTrack& motif() const { return tracks_[static_cast<size_t>(TrackRole::Motif)]; }
+  const MidiTrack& arpeggio() const { return tracks_[static_cast<size_t>(TrackRole::Arpeggio)]; }
+  const MidiTrack& aux() const { return tracks_[static_cast<size_t>(TrackRole::Aux)]; }
   /// @}
 
   /// @name Role-Based Access
   /// @{
-  MidiTrack& track(TrackRole role);
-  const MidiTrack& track(TrackRole role) const;
+  MidiTrack& track(TrackRole role) { return tracks_[static_cast<size_t>(role)]; }
+  const MidiTrack& track(TrackRole role) const { return tracks_[static_cast<size_t>(role)]; }
+  /// @}
+
+  /// @name Track Iteration
+  /// @{
+  std::array<MidiTrack, kTrackCount>& tracks() { return tracks_; }
+  const std::array<MidiTrack, kTrackCount>& tracks() const { return tracks_; }
   /// @}
 
   /// @name Track Management
   /// @{
-  void clearTrack(TrackRole role);
-  void replaceTrack(TrackRole role, const MidiTrack& newTrack);
+  void clearTrack(TrackRole role) { track(role).clear(); }
+  void replaceTrack(TrackRole role, const MidiTrack& newTrack) { track(role) = newTrack; }
   void clearAll();
   /// @}
 
@@ -108,14 +115,7 @@ class Song {
   /// @}
 
  private:
-  MidiTrack vocal_;
-  MidiTrack chord_;
-  MidiTrack bass_;
-  MidiTrack drums_;
-  MidiTrack se_;
-  MidiTrack motif_;
-  MidiTrack arpeggio_;
-  MidiTrack aux_;
+  std::array<MidiTrack, kTrackCount> tracks_;
   Arrangement arrangement_;
   uint16_t bpm_ = 120;
   Tick modulationTick_ = 0;

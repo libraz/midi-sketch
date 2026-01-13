@@ -176,9 +176,9 @@ class MidiSketch {
 
   /**
    * @brief Get harmony context for piano roll safety API.
-   * @return Reference to HarmonyContext
+   * @return Reference to IHarmonyContext
    */
-  const HarmonyContext& getHarmonyContext() const;
+  const IHarmonyContext& getHarmonyContext() const;
 
   /**
    * @brief Get library version string.

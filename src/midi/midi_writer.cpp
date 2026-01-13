@@ -390,7 +390,7 @@ bool MidiWriter::writeToFile(const std::string& path) const {
 }
 
 void MidiWriter::buildVocalPreview(const Song& song,
-                                    const HarmonyContext& harmony, Key key) {
+                                    const IHarmonyContext& harmony, Key key) {
   data_.clear();
 
   // Create root bass track from chord changes

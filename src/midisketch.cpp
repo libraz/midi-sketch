@@ -80,8 +80,8 @@ void MidiSketch::generateFromConfig(const SongConfig& config) {
 }
 
 void MidiSketch::generateVocal(const SongConfig& config) {
-  auto result = ConfigConverter::convert(config);
-  generator_.generateVocal(result.params);
+  GeneratorParams params = ConfigConverter::convert(config);
+  generator_.generateVocal(params);
   midi_writer_.build(generator_.getSong(), config.key,
                      generateMetadata(generator_.getParams()), midi_format_);
 }
@@ -129,8 +129,8 @@ void MidiSketch::generateAccompanimentForVocal(const AccompanimentConfig& config
 }
 
 void MidiSketch::generateWithVocal(const SongConfig& config) {
-  auto result = ConfigConverter::convert(config);
-  generator_.generateWithVocal(result.params);
+  GeneratorParams params = ConfigConverter::convert(config);
+  generator_.generateWithVocal(params);
   midi_writer_.build(generator_.getSong(), config.key,
                      generateMetadata(generator_.getParams()), midi_format_);
 }
@@ -149,8 +149,8 @@ void MidiSketch::setMelody(const MelodyData& melody) {
 
 void MidiSketch::setVocalNotes(const SongConfig& config,
                                const std::vector<NoteEvent>& notes) {
-  auto result = ConfigConverter::convert(config);
-  generator_.setVocalNotes(result.params, notes);
+  GeneratorParams params = ConfigConverter::convert(config);
+  generator_.setVocalNotes(params, notes);
   midi_writer_.build(generator_.getSong(), config.key,
                      generateMetadata(generator_.getParams()), midi_format_);
 }
@@ -318,7 +318,7 @@ const GeneratorParams& MidiSketch::getParams() const {
   return generator_.getParams();
 }
 
-const HarmonyContext& MidiSketch::getHarmonyContext() const {
+const IHarmonyContext& MidiSketch::getHarmonyContext() const {
   return generator_.getHarmonyContext();
 }
 

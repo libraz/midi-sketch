@@ -176,7 +176,7 @@ ActionLevel getActionLevel(const midisketch::DissonanceIssue& issue) {
   return ActionLevel::Info;
 }
 
-const char* actionLevelName(ActionLevel level) {
+[[maybe_unused]] const char* actionLevelName(ActionLevel level) {
   switch (level) {
     case ActionLevel::Critical: return "CRITICAL";
     case ActionLevel::Warning: return "WARNING";
@@ -288,7 +288,7 @@ void printDissonanceSummary(const midisketch::DissonanceReport& report,
   }
 }
 
-void printIssueWithContext(const midisketch::DissonanceIssue& issue, const char* reset,
+void printIssueWithContext(const midisketch::DissonanceIssue& issue, const char* /*reset*/,
                            const midisketch::Song* song) {
   using DT = midisketch::DissonanceType;
 

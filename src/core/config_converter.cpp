@@ -176,9 +176,8 @@ void ConfigConverter::applyMelodicComplexity(GeneratorParams& params) {
       std::min(0.5f, params.melody_params.syncopation_prob * modifier->syncopation_mult);
 }
 
-ConfigConverter::ConversionResult ConfigConverter::convert(const SongConfig& config) {
-  ConversionResult result;
-  GeneratorParams& params = result.params;
+GeneratorParams ConfigConverter::convert(const SongConfig& config) {
+  GeneratorParams params;
 
   // Get style preset for defaults
   const StylePreset& preset = getStylePreset(config.style_preset_id);
@@ -284,31 +283,31 @@ ConfigConverter::ConversionResult ConfigConverter::convert(const SongConfig& con
   // Skip vocal for BGM-first workflow
   params.skip_vocal = config.skip_vocal;
 
-  // Store call settings
-  result.se_enabled = config.se_enabled;
+  // Store call/SE settings directly in params (single source of truth)
+  params.se_enabled = config.se_enabled;
   // Resolve CallSetting to bool
   switch (config.call_setting) {
     case CallSetting::Enabled:
-      result.call_enabled = true;
+      params.call_enabled = true;
       break;
     case CallSetting::Disabled:
-      result.call_enabled = false;
+      params.call_enabled = false;
       break;
     case CallSetting::Auto:
     default:
-      result.call_enabled = isCallEnabled(params.vocal_style);
+      params.call_enabled = isCallEnabled(params.vocal_style);
       break;
   }
-  result.call_notes_enabled = config.call_notes_enabled;
-  result.intro_chant = config.intro_chant;
-  result.mix_pattern = config.mix_pattern;
-  result.call_density = config.call_density;
+  params.call_notes_enabled = config.call_notes_enabled;
+  params.intro_chant = config.intro_chant;
+  params.mix_pattern = config.mix_pattern;
+  params.call_density = config.call_density;
 
-  // Store modulation settings
-  result.modulation_timing = config.modulation_timing;
-  result.modulation_semitones = config.modulation_semitones;
+  // Store modulation settings directly in params
+  params.modulation_timing = config.modulation_timing;
+  params.modulation_semitones = config.modulation_semitones;
 
-  return result;
+  return params;
 }
 
 }  // namespace midisketch

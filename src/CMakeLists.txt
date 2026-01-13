@@ -12,6 +12,10 @@ set(MIDISKETCH_CORE_SOURCES
   core/arrangement.cpp
   core/song.cpp
   core/harmony_context.cpp
+  core/chord_progression_tracker.cpp
+  core/track_collision_detector.cpp
+  core/safe_pitch_resolver.cpp
+  core/track_registration_guard.cpp
   core/note_factory.cpp
   core/motif.cpp
   core/pitch_utils.cpp
@@ -20,6 +24,8 @@ set(MIDISKETCH_CORE_SOURCES
   core/melody_evaluator.cpp
   core/melody_embellishment.cpp
   core/piano_roll_safety.cpp
+  core/collision_resolver.cpp
+  core/composition_strategy.cpp
   core/config_converter.cpp
   core/modulation_calculator.cpp
   core/post_processor.cpp
@@ -27,6 +33,8 @@ set(MIDISKETCH_CORE_SOURCES
   midi/midi_writer.cpp
   track/track.cpp
   track/vocal.cpp
+  track/phrase_variation.cpp
+  track/vocal_helpers.cpp
   track/chord_track.cpp
   track/bass.cpp
   track/drums.cpp
@@ -62,7 +70,9 @@ if(BUILD_WASM)
   # WASM executable (core sources only, excludes CLI-only modules)
   add_executable(midisketch ${MIDISKETCH_CORE_SOURCES})
   target_include_directories(midisketch PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-  target_compile_definitions(midisketch PRIVATE MIDISKETCH_WASM)
+  # MIDISKETCH_WASM: General WASM build flag
+  # MIDISKETCH_NO_NOTE_PROVENANCE: Disable NoteEvent provenance fields (~40 bytes/note savings)
+  target_compile_definitions(midisketch PRIVATE MIDISKETCH_WASM MIDISKETCH_NO_NOTE_PROVENANCE)
 
   # Copy to dist directory
   add_custom_command(TARGET midisketch POST_BUILD
