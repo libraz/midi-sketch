@@ -220,6 +220,74 @@ enum class HihatDensity : uint8_t {
 
 /// @}
 
+/// @name Hook-First Generation Types
+/// @{
+
+/// @brief Role of each beat position within a phrase.
+///
+/// Used for template-driven melody generation where each position
+/// has a specific function in the melodic contour.
+enum class PhraseRole : uint8_t {
+  Anchor,    ///< Stable position (chord tones, phrase start/end)
+  Approach,  ///< Transitional (passing tones, approach notes)
+  Peak,      ///< Melodic climax (highest pitch candidate)
+  Hook,      ///< Memorable motif (repetition allowed)
+  Release    ///< Resolution (descending, tension release)
+};
+
+/// @brief Abstract hook skeleton patterns (relative pitch patterns).
+///
+/// These are the "DNA" of catchy melodies - minimal patterns that
+/// create memorable hooks when expanded to actual pitches.
+enum class HookSkeleton : uint8_t {
+  Repeat,       ///< Same pitch repetition: X X X
+  Ascending,    ///< Rising scale: X X+1 X+2
+  AscendDrop,   ///< Rise then fall: X X+2 X+4 X+3
+  LeapReturn,   ///< Jump and resolve: X X+5 X+2
+  RhythmRepeat  ///< Rhythmic emphasis with rests: X - X - X
+};
+
+/// @brief Betrayal patterns for hook variation.
+///
+/// Applied to hook repetitions to add interest while maintaining
+/// recognizability. Only ONE betrayal per hook cycle.
+enum class HookBetrayal : uint8_t {
+  None,        ///< Exact repetition (first occurrence)
+  LastPitch,   ///< Modify final pitch only
+  SingleLeap,  ///< Insert one unexpected leap
+  SingleRest,  ///< Insert one rest
+  ExtendOne    ///< Extend one note duration
+};
+
+/// @brief Melodic contour type for GlobalMotif.
+///
+/// Describes the overall shape of a melodic phrase.
+enum class ContourType : uint8_t {
+  Ascending,   ///< Generally rising (low to high)
+  Descending,  ///< Generally falling (high to low)
+  Peak,        ///< Rise then fall (arch shape)
+  Valley,      ///< Fall then rise (bowl shape)
+  Plateau      ///< Relatively flat (same register)
+};
+
+/// @brief Global motif for song-wide melodic unity.
+///
+/// Extracted from the chorus hook and used as a reference point
+/// during evaluation. Does NOT constrain generation - only provides
+/// light bonus for similar candidates.
+struct GlobalMotif {
+  ContourType contour_type = ContourType::Plateau;  ///< Overall contour shape
+  int8_t interval_signature[8] = {0};  ///< Relative intervals (max 8 notes)
+  uint8_t interval_count = 0;          ///< Number of intervals in signature
+  uint8_t rhythm_signature[8] = {0};   ///< Rhythm pattern (duration ratios)
+  uint8_t rhythm_count = 0;            ///< Number of rhythm values
+
+  /// @brief Check if motif is initialized.
+  bool isValid() const { return interval_count > 0; }
+};
+
+/// @}
+
 /// @name Style Melody Parameters (5-Layer Architecture)
 /// @{
 
@@ -281,7 +349,7 @@ struct StyleMelodyParams {
 
   /// @name Consecutive same note control
   /// @{
-  float consecutive_same_note_prob = 1.0f;  ///< Probability of allowing same consecutive note (0.0-1.0)
+  float consecutive_same_note_prob = 0.6f;  ///< Probability of allowing same consecutive note (0.0-1.0)
   /// @}
 
   /// @name Human singing constraints

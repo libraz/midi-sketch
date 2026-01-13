@@ -10,6 +10,14 @@
 #include <string>
 #include <vector>
 
+// Note provenance tracking (enabled by default, disable for WASM/release builds)
+// This adds ~40 bytes per NoteEvent for debugging pitch transformations.
+// To disable: define MIDISKETCH_NO_NOTE_PROVENANCE before including this header,
+// or add -DMIDISKETCH_NO_NOTE_PROVENANCE to compiler flags.
+#ifndef MIDISKETCH_NO_NOTE_PROVENANCE
+#define MIDISKETCH_NOTE_PROVENANCE 1
+#endif
+
 namespace midisketch {
 
 /// Time unit in ticks.
@@ -34,6 +42,8 @@ struct MidiEvent {
   uint8_t data1;   ///< First data byte
   uint8_t data2;   ///< Second data byte
 };
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
 
 /// @brief Transformation step type for pitch debugging.
 enum class TransformStepType : uint8_t {
@@ -79,6 +89,8 @@ struct TransformStep {
 /// @brief Maximum number of transformation steps to track.
 constexpr size_t kMaxTransformSteps = 8;
 
+#endif  // MIDISKETCH_NOTE_PROVENANCE
+
 /// @brief Note event (combines note-on/off for easy editing).
 struct NoteEvent {
   Tick start_tick;   ///< Start time in ticks
@@ -86,6 +98,7 @@ struct NoteEvent {
   uint8_t note;      ///< MIDI note number (0-127)
   uint8_t velocity;  ///< MIDI velocity (0-127)
 
+#ifdef MIDISKETCH_NOTE_PROVENANCE
   // === Provenance tracking for debugging ===
   int8_t prov_chord_degree = -1;    ///< Chord degree at creation (-1 = unknown)
   Tick prov_lookup_tick = 0;        ///< Tick used for chord lookup
@@ -95,6 +108,7 @@ struct NoteEvent {
   // === Transformation history for debugging ===
   TransformStep transform_steps[kMaxTransformSteps] = {};  ///< Transformation history
   uint8_t transform_count = 0;  ///< Number of valid steps
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 
   /// @brief Default constructor.
   NoteEvent() = default;
@@ -103,6 +117,7 @@ struct NoteEvent {
   NoteEvent(Tick start, Tick dur, uint8_t n, uint8_t vel)
       : start_tick(start), duration(dur), note(n), velocity(vel) {}
 
+#ifdef MIDISKETCH_NOTE_PROVENANCE
   /// @brief Check if provenance is valid (created via NoteFactory).
   bool hasValidProvenance() const { return prov_chord_degree >= 0; }
 
@@ -117,6 +132,16 @@ struct NoteEvent {
 
   /// @brief Check if transformation history is available.
   bool hasTransformHistory() const { return transform_count > 0; }
+#else
+  /// @brief Stub: always returns false when provenance is disabled.
+  bool hasValidProvenance() const { return false; }
+
+  /// @brief Stub: no-op when provenance is disabled.
+  bool addTransformStep(int, uint8_t, uint8_t, int8_t = 0, int8_t = 0) { return false; }
+
+  /// @brief Stub: always returns false when provenance is disabled.
+  bool hasTransformHistory() const { return false; }
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 };
 
 /// @brief Non-harmonic tone type for melodic ornamentation.
@@ -177,6 +202,9 @@ enum class TrackRole : uint8_t {
   Arpeggio,   ///< Synth arpeggio track
   Aux         ///< Auxiliary vocal track (sub-melody)
 };
+
+/// @brief Number of track roles.
+inline constexpr size_t kTrackCount = 8;
 
 /// @brief MIDI text/marker event.
 struct TextEvent {
