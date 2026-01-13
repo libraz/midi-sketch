@@ -397,14 +397,15 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
     const IHarmonyContext& harmony,
     std::mt19937& rng,
     VocalStylePreset vocal_style,
+    MelodicComplexity melodic_complexity,
     int candidate_count) {
 
   // Generate multiple candidates
   std::vector<std::pair<std::vector<NoteEvent>, float>> candidates;
   candidates.reserve(static_cast<size_t>(candidate_count));
 
-  // Get style bias for interval weighting
-  const StyleBias& bias = getStyleBias(vocal_style);
+  // Get style bias for interval weighting, adjusted for complexity
+  StyleBias bias = adjustBiasForComplexity(getStyleBias(vocal_style), melodic_complexity);
 
   for (int i = 0; i < candidate_count; ++i) {
     // Generate a candidate melody
@@ -894,8 +895,9 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(
 
   // Hybrid approach: blend HookSkeleton contour hint with existing Motif
   // HookSkeleton provides melodic DNA, Motif provides rhythm (maintained)
+  // HookIntensity influences skeleton selection: Strong → more Repeat/AscendDrop
   if (!cached_hook_skeleton_.has_value()) {
-    cached_hook_skeleton_ = selectHookSkeleton(ctx.section_type, rng);
+    cached_hook_skeleton_ = selectHookSkeleton(ctx.section_type, rng, ctx.hook_intensity);
   }
   SkeletonPattern skeleton_contour = getSkeletonPattern(*cached_hook_skeleton_);
 

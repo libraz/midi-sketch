@@ -100,15 +100,73 @@ constexpr SkeletonWeights kDefaultSkeletonWeights = {
     0.9f,   // rhythm_repeat
 };
 
-/// @brief Select a hook skeleton based on section type.
+/// @brief Apply HookIntensity multiplier to skeleton weights.
+///
+/// HookIntensity affects the selection probability of different skeletons:
+/// - Off: Reduces Repeat, favors variety
+/// - Light: Default weights (no modification)
+/// - Normal: Boosts Repeat and RhythmRepeat (catchy patterns)
+/// - Strong: Greatly boosts Repeat and AscendDrop (most memorable)
+///
+/// @param base Base weights from section type
+/// @param intensity Hook intensity level
+/// @returns Modified weights
+inline SkeletonWeights applyHookIntensityToWeights(
+    const SkeletonWeights& base,
+    HookIntensity intensity) {
+
+  SkeletonWeights result = base;
+
+  switch (intensity) {
+    case HookIntensity::Off:
+      // Reduce repetitive patterns, favor variety
+      result.repeat *= 0.5f;
+      result.rhythm_repeat *= 0.6f;
+      result.ascending *= 1.2f;
+      result.leap_return *= 1.3f;
+      break;
+
+    case HookIntensity::Light:
+      // Default weights - no modification
+      break;
+
+    case HookIntensity::Normal:
+      // Boost catchy patterns
+      result.repeat *= 1.3f;
+      result.rhythm_repeat *= 1.4f;
+      result.ascend_drop *= 1.1f;
+      break;
+
+    case HookIntensity::Strong:
+      // Maximum memorability
+      result.repeat *= 1.8f;
+      result.ascend_drop *= 1.5f;
+      result.rhythm_repeat *= 1.6f;
+      result.ascending *= 1.2f;
+      break;
+  }
+
+  return result;
+}
+
+/// @brief Select a hook skeleton based on section type and hook intensity.
 /// @param type Section type
 /// @param rng Random number generator
+/// @param intensity Hook intensity (default: Normal)
 /// @returns Selected HookSkeleton
-inline HookSkeleton selectHookSkeleton(SectionType type, std::mt19937& rng) {
-  const SkeletonWeights& weights =
+inline HookSkeleton selectHookSkeleton(
+    SectionType type,
+    std::mt19937& rng,
+    HookIntensity intensity = HookIntensity::Normal) {
+
+  // Get base weights from section type
+  const SkeletonWeights& base_weights =
       (type == SectionType::Chorus)
           ? kChorusSkeletonWeights
           : kDefaultSkeletonWeights;
+
+  // Apply HookIntensity modifier
+  SkeletonWeights weights = applyHookIntensityToWeights(base_weights, intensity);
 
   float total = weights.repeat + weights.ascending + weights.ascend_drop +
                 weights.leap_return + weights.rhythm_repeat;

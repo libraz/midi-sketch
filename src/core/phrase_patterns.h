@@ -178,6 +178,53 @@ inline const PhrasePattern& getDefaultPatternForSection(SectionType type) {
   }
 }
 
+/// @brief Get pattern for vocal style and section type.
+///
+/// Style-specific overrides for certain sections, falling back to
+/// default section patterns when no override applies.
+///
+/// @param style Vocal style preset
+/// @param section Section type
+/// @returns Appropriate pattern for style/section combination
+inline const PhrasePattern& getPatternForStyleAndSection(
+    VocalStylePreset style, SectionType section) {
+
+  // Style-specific overrides for Chorus
+  if (section == SectionType::Chorus) {
+    switch (style) {
+      case VocalStylePreset::Idol:
+      case VocalStylePreset::Rock:
+      case VocalStylePreset::Vocaloid:
+      case VocalStylePreset::Anime:
+        // Repetition-focused: strong hook patterns for memorable choruses
+        return kHookRelease;
+      case VocalStylePreset::Ballad:
+        // Resolution-focused: descending resolution for emotional impact
+        return kDescendResolve;
+      default:
+        break;
+    }
+  }
+
+  // Style-specific overrides for Verse (A section)
+  if (section == SectionType::A) {
+    switch (style) {
+      case VocalStylePreset::Ballad:
+        // Gentle plateau for storytelling
+        return kPlateau;
+      case VocalStylePreset::Anime:
+      case VocalStylePreset::Vocaloid:
+        // More dynamic verse with wave contour
+        return kWave;
+      default:
+        break;
+    }
+  }
+
+  // Default: fall back to section-based pattern
+  return getDefaultPatternForSection(section);
+}
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_PHRASE_PATTERNS_H

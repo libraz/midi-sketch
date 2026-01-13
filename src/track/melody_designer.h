@@ -46,6 +46,7 @@ class MelodyDesigner {
     const SectionTransition* transition_to_next = nullptr;  ///< Transition to next section
     bool enable_embellishment = true;         ///< Enable melodic embellishment (NCT insertion)
     VocalAttitude vocal_attitude = VocalAttitude::Expressive;  ///< Vocal style attitude
+    HookIntensity hook_intensity = HookIntensity::Normal;  ///< Hook pattern selection intensity
   };
 
   /// @brief Result of generating a single phrase.
@@ -78,6 +79,7 @@ class MelodyDesigner {
    * @param harmony Harmony context for chord-aware generation
    * @param rng Random number generator
    * @param vocal_style Style affects evaluation weights
+   * @param melodic_complexity Complexity affects StyleBias adjustments
    * @param candidate_count How many candidates to generate (default 100)
    * @return Best-scoring candidate's notes
    */
@@ -87,6 +89,7 @@ class MelodyDesigner {
       const IHarmonyContext& harmony,
       std::mt19937& rng,
       VocalStylePreset vocal_style = VocalStylePreset::Standard,
+      MelodicComplexity melodic_complexity = MelodicComplexity::Standard,
       int candidate_count = 100);
 
   /**

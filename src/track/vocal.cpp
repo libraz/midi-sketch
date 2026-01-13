@@ -173,6 +173,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       ctx.disable_vowel_constraints = params.melody_params.disable_vowel_constraints;
       ctx.disable_breathing_gaps = params.melody_params.disable_breathing_gaps;
       ctx.vocal_attitude = params.vocal_attitude;
+      ctx.hook_intensity = params.hook_intensity;  // For HookSkeleton selection
 
       // Set transition info for next section (if any)
       const auto& sections = song.arrangement().sections();
@@ -186,7 +187,8 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       // Generate melody with evaluation (candidate count varies by section importance)
       int candidate_count = MelodyDesigner::getCandidateCountForSection(section.type);
       section_notes = designer.generateSectionWithEvaluation(
-          section_tmpl, ctx, harmony, rng, params.vocal_style, candidate_count);
+          section_tmpl, ctx, harmony, rng, params.vocal_style,
+          params.melodic_complexity, candidate_count);
 
       // Apply transition approach if transition info was set
       if (ctx.transition_to_next) {

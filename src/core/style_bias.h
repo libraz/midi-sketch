@@ -187,6 +187,31 @@ inline const StyleBias& getStyleBias(VocalStylePreset style) {
   }
 }
 
+/// @brief Adjust style bias based on melodic complexity.
+/// @param base Base style bias
+/// @param complexity Melodic complexity level
+/// @returns Adjusted StyleBias with complexity applied
+inline StyleBias adjustBiasForComplexity(const StyleBias& base,
+                                          MelodicComplexity complexity) {
+  StyleBias adjusted = base;
+
+  switch (complexity) {
+    case MelodicComplexity::Simple:
+      adjusted.stepwise_weight *= 1.3f;
+      adjusted.leap_weight *= 0.5f;
+      adjusted.same_pitch_weight *= 1.2f;
+      break;
+    case MelodicComplexity::Complex:
+      adjusted.stepwise_weight *= 0.8f;
+      adjusted.leap_weight *= 1.3f;
+      adjusted.skip_weight *= 1.2f;
+      break;
+    default:  // Standard - no adjustment
+      break;
+  }
+  return adjusted;
+}
+
 /// @brief Apply interval bias to a score.
 /// @param interval Interval size in semitones
 /// @param bias Style bias to apply
