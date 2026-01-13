@@ -7,6 +7,7 @@
 #include "core/chord.h"
 #include "core/generator.h"
 #include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
 #include "core/song.h"
 #include "core/types.h"
 #include "track/bass.h"
@@ -55,8 +56,11 @@ TEST_F(ChordWithContextTest, GeneratesChordTrack) {
   // Generate chord with context
   MidiTrack chord_track;
   std::mt19937 rng2(params_.seed + 1);
-  generateChordTrackWithContext(chord_track, gen.getSong(), params_, rng2,
-                                 &bass_track, va, nullptr, harmony);
+  auto ctx = TrackGenerationContextBuilder(gen.getSong(), params_, rng2, harmony)
+      .withBassTrack(&bass_track)
+      .withVocalAnalysis(&va)
+      .build();
+  generateChordTrackWithContext(chord_track, ctx);
 
   EXPECT_FALSE(chord_track.empty()) << "Chord track should be generated";
   EXPECT_GT(chord_track.noteCount(), 0u) << "Chord track should have notes";
@@ -75,8 +79,11 @@ TEST_F(ChordWithContextTest, ChordNotesInValidRange) {
 
   MidiTrack chord_track;
   std::mt19937 rng2(params_.seed + 1);
-  generateChordTrackWithContext(chord_track, gen.getSong(), params_, rng2,
-                                 &bass_track, va, nullptr, harmony);
+  auto ctx = TrackGenerationContextBuilder(gen.getSong(), params_, rng2, harmony)
+      .withBassTrack(&bass_track)
+      .withVocalAnalysis(&va)
+      .build();
+  generateChordTrackWithContext(chord_track, ctx);
 
   for (const auto& note : chord_track.notes()) {
     EXPECT_GE(note.note, 48) << "Chord note too low: " << static_cast<int>(note.note);
@@ -98,14 +105,20 @@ TEST_F(ChordWithContextTest, DeterministicGeneration) {
   // First generation
   MidiTrack chord1;
   std::mt19937 rng1(params_.seed + 1);
-  generateChordTrackWithContext(chord1, gen.getSong(), params_, rng1,
-                                 &bass_track, va, nullptr, harmony);
+  auto ctx1 = TrackGenerationContextBuilder(gen.getSong(), params_, rng1, harmony)
+      .withBassTrack(&bass_track)
+      .withVocalAnalysis(&va)
+      .build();
+  generateChordTrackWithContext(chord1, ctx1);
 
   // Second generation with same seed
   MidiTrack chord2;
   std::mt19937 rng2(params_.seed + 1);
-  generateChordTrackWithContext(chord2, gen.getSong(), params_, rng2,
-                                 &bass_track, va, nullptr, harmony);
+  auto ctx2 = TrackGenerationContextBuilder(gen.getSong(), params_, rng2, harmony)
+      .withBassTrack(&bass_track)
+      .withVocalAnalysis(&va)
+      .build();
+  generateChordTrackWithContext(chord2, ctx2);
 
   ASSERT_EQ(chord1.noteCount(), chord2.noteCount());
   for (size_t i = 0; i < chord1.noteCount(); ++i) {
@@ -129,8 +142,11 @@ TEST_F(ChordWithContextTest, AvoidsVocalDoublingWhenPossible) {
 
   MidiTrack chord_track;
   std::mt19937 rng(params_.seed + 1);
-  generateChordTrackWithContext(chord_track, gen.getSong(), params_, rng,
-                                 &bass_track, va, nullptr, harmony);
+  auto ctx = TrackGenerationContextBuilder(gen.getSong(), params_, rng, harmony)
+      .withBassTrack(&bass_track)
+      .withVocalAnalysis(&va)
+      .build();
+  generateChordTrackWithContext(chord_track, ctx);
 
   const auto& vocal_notes = gen.getSong().vocal().notes();
   const auto& chord_notes = chord_track.notes();
@@ -189,8 +205,12 @@ TEST_F(ChordWithContextTest, GeneratesWithAuxTrack) {
 
   MidiTrack chord_track;
   std::mt19937 rng(params_.seed + 1);
-  generateChordTrackWithContext(chord_track, gen.getSong(), params_, rng,
-                                 &bass_track, va, &aux_track, harmony);
+  auto ctx = TrackGenerationContextBuilder(gen.getSong(), params_, rng, harmony)
+      .withBassTrack(&bass_track)
+      .withAuxTrack(&aux_track)
+      .withVocalAnalysis(&va)
+      .build();
+  generateChordTrackWithContext(chord_track, ctx);
 
   EXPECT_FALSE(chord_track.empty()) << "Chord track should be generated with aux";
 }
@@ -215,8 +235,12 @@ TEST_F(ChordWithContextTest, ReducesMinor2ndClashesWithAux) {
 
   MidiTrack chord_track;
   std::mt19937 rng(params_.seed + 1);
-  generateChordTrackWithContext(chord_track, gen.getSong(), params_, rng,
-                                 &bass_track, va, &aux_track, harmony);
+  auto ctx = TrackGenerationContextBuilder(gen.getSong(), params_, rng, harmony)
+      .withBassTrack(&bass_track)
+      .withAuxTrack(&aux_track)
+      .withVocalAnalysis(&va)
+      .build();
+  generateChordTrackWithContext(chord_track, ctx);
 
   // Count minor 2nd clashes
   int clash_count = 0;
@@ -279,8 +303,12 @@ TEST_F(ChordWithContextTest, FallbackWhenAllVoicingsFiltered) {
 
   MidiTrack chord_track;
   std::mt19937 rng(params_.seed + 1);
-  generateChordTrackWithContext(chord_track, gen.getSong(), params_, rng,
-                                 &bass_track, va, &aux_track, harmony);
+  auto ctx = TrackGenerationContextBuilder(gen.getSong(), params_, rng, harmony)
+      .withBassTrack(&bass_track)
+      .withAuxTrack(&aux_track)
+      .withVocalAnalysis(&va)
+      .build();
+  generateChordTrackWithContext(chord_track, ctx);
 
   // Even with aggressive filtering, chord should still be generated
   EXPECT_FALSE(chord_track.empty()) << "Chord track should fallback gracefully";

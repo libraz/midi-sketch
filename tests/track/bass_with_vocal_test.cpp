@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include "core/generator.h"
 #include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
 #include "core/song.h"
 #include "core/types.h"
 #include "track/bass.h"

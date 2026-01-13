@@ -155,7 +155,6 @@ TEST(PhraseEndingTest, FinalNoteStartsAfterPhraseBody) {
       // (no overlapping rhythm positions)
       const auto& second_last = rhythm[rhythm.size() - 2];
       const auto& final_note = rhythm.back();
-      float second_last_end = second_last.beat + (second_last.eighths * 0.5f);
 
       EXPECT_GE(final_note.beat, second_last.beat)
           << "Seed " << seed << ": Final note at beat " << final_note.beat

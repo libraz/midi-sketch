@@ -5,7 +5,7 @@
 
 #include "track/motif.h"
 #include "core/chord.h"
-#include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
 #include "core/motif.h"
 #include "core/note_factory.h"
 #include <algorithm>
@@ -465,7 +465,7 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params,
 
 void generateMotifTrack(MidiTrack& track, Song& song,
                         const GeneratorParams& params, std::mt19937& rng,
-                        const HarmonyContext& harmony) {
+                        const IHarmonyContext& harmony) {
   // L1: Generate base motif pattern
   std::vector<NoteEvent> pattern = generateMotifPattern(params, rng);
   song.setMotifPattern(pattern);

@@ -13,6 +13,7 @@
 #include "core/chord.h"
 #include "core/generator.h"
 #include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
 #include "track/bass.h"

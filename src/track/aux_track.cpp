@@ -4,8 +4,10 @@
  */
 
 #include "track/aux_track.h"
+#include "core/chord.h"
 #include "core/chord_utils.h"
-#include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
+#include "core/melody_templates.h"
 #include "core/note_factory.h"
 #include "core/timing_constants.h"
 #include <algorithm>
@@ -69,7 +71,7 @@ const AuxFunctionMeta& getAuxFunctionMeta(AuxFunction func) {
 MidiTrack AuxTrackGenerator::generate(
     const AuxConfig& config,
     const AuxContext& ctx,
-    const HarmonyContext& harmony,
+    const IHarmonyContext& harmony,
     std::mt19937& rng) {
 
   MidiTrack track;
@@ -141,10 +143,329 @@ MidiTrack AuxTrackGenerator::generate(
   return track;
 }
 
+// ============================================================================
+// Full Song Aux Generation (moved from Generator::generateAux)
+// ============================================================================
+
+void AuxTrackGenerator::generateFullTrack(
+    MidiTrack& track,
+    const SongContext& song_ctx,
+    IHarmonyContext& harmony,
+    std::mt19937& rng) {
+
+  if (!song_ctx.sections || !song_ctx.vocal_track || !song_ctx.progression) {
+    return;
+  }
+
+  const MidiTrack& vocal_track = *song_ctx.vocal_track;
+  const auto& progression = *song_ctx.progression;
+
+  // Analyze vocal for MotifCounter generation
+  VocalAnalysis vocal_analysis = analyzeVocal(vocal_track);
+
+  // Extract motif from first chorus for intro placement
+  cached_chorus_motif_.reset();
+  for (const auto& section : *song_ctx.sections) {
+    if (section.type == SectionType::Chorus) {
+      std::vector<NoteEvent> chorus_notes;
+      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      for (const auto& note : vocal_track.notes()) {
+        if (note.start_tick >= section.start_tick &&
+            note.start_tick < section_end) {
+          chorus_notes.push_back(note);
+        }
+      }
+      if (!chorus_notes.empty()) {
+        cached_chorus_motif_ = extractMotifFromChorus(chorus_notes);
+        break;  // Only first chorus
+      }
+    }
+  }
+
+  // Get vocal tessitura for aux range calculation
+  auto [vocal_low, vocal_high] = vocal_track.analyzeRange();
+  TessituraRange main_tessitura = calculateTessitura(vocal_low, vocal_high);
+
+  // Determine which aux configurations to use based on vocal style
+  MelodyTemplateId template_id = getDefaultTemplateForStyle(
+      song_ctx.vocal_style, SectionType::Chorus);
+
+  AuxConfig aux_configs[3];
+  uint8_t aux_count = 0;
+  getAuxConfigsForTemplate(template_id, aux_configs, &aux_count);
+
+  // Collect all generated notes for post-processing
+  std::vector<NoteEvent> all_notes;
+
+  // Process each section
+  for (const auto& section : *song_ctx.sections) {
+    // Skip interlude and outro (no aux needed)
+    if (section.type == SectionType::Interlude ||
+        section.type == SectionType::Outro) {
+      continue;
+    }
+
+    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    int chord_idx = (section.start_bar % progression.length);
+    int8_t chord_degree = progression.at(chord_idx);
+
+    // Create context for aux generation
+    AuxContext ctx;
+    ctx.section_start = section.start_tick;
+    ctx.section_end = section_end;
+    ctx.chord_degree = chord_degree;
+    ctx.key_offset = 0;  // Always C major internally
+    ctx.base_velocity = 80;
+    ctx.main_tessitura = main_tessitura;
+    ctx.main_melody = &vocal_track.notes();
+    ctx.section_type = section.type;
+
+    // Select aux configuration based on section type and vocal density
+    AuxConfig config;
+
+    if (section.type == SectionType::Intro) {
+      // Intro: Use cached chorus motif if available, otherwise MelodicHook
+      if (cached_chorus_motif_.has_value()) {
+        // Apply hook-appropriate variation (80% Exact, 20% Fragmented)
+        // WORKAROUND: Use local rng instead of rng reference.
+        // Passing rng directly to applyVariation/selectHookVariation causes Segfault
+        // in Release builds (-O2/-O3). The root cause appears to be compiler optimization
+        // affecting std::mt19937& reference passing across translation units.
+        std::mt19937 variation_rng(static_cast<uint32_t>(rng()));
+        MotifVariation variation = selectHookVariation(variation_rng);
+        Motif varied_motif = applyVariation(*cached_chorus_motif_, variation, 0, variation_rng);
+
+        // Place chorus motif in intro (foreshadowing the hook)
+        // Center of vocal range, snapped to scale
+        int center = (song_ctx.vocal_low + song_ctx.vocal_high) / 2;
+        uint8_t base_pitch = static_cast<uint8_t>(snapToNearestScaleTone(center, 0));
+        uint8_t velocity = static_cast<uint8_t>(ctx.base_velocity * 0.8f);
+        auto motif_notes = placeMotifInIntro(
+            varied_motif, section.start_tick, section_end,
+            base_pitch, velocity);
+        for (auto note : motif_notes) {
+          // Snap pitch to chord tone at this tick to avoid dissonance
+          int8_t note_chord_degree = harmony.getChordDegreeAt(note.start_tick);
+          int snapped_pitch = nearestChordTonePitch(note.note, note_chord_degree);
+          note.note = static_cast<uint8_t>(std::clamp(snapped_pitch, 48, 84));
+          all_notes.push_back(note);
+        }
+        continue;  // Skip aux generator for this section
+      }
+      // Fallback: Use MelodicHook (Fortune Cookie style backing hook)
+      config.function = AuxFunction::MelodicHook;
+      config.range_offset = 0;
+      config.range_width = 6;
+      config.velocity_ratio = 0.8f;
+      config.density_ratio = 1.0f;
+      config.sync_phrase_boundary = true;
+    } else if (section.type == SectionType::A ||
+               section.type == SectionType::B ||
+               section.type == SectionType::Bridge) {
+      // A/B/Bridge: Use MotifCounter for counter melody
+      // This creates rhythmic complementation with vocal
+      config.function = AuxFunction::MotifCounter;
+      config.range_offset = -12;  // Below vocal
+      config.range_width = 12;
+      config.velocity_ratio = 0.7f;
+      config.density_ratio = 0.8f;
+      config.sync_phrase_boundary = true;
+
+      // Generate MotifCounter directly (requires VocalAnalysis)
+      auto counter_notes = generateMotifCounter(ctx, config, harmony, vocal_analysis, rng);
+      for (const auto& note : counter_notes) {
+        all_notes.push_back(note);
+      }
+      continue;  // Skip normal generation for this section
+    } else if (section.type == SectionType::Chorus &&
+               section.vocal_density == VocalDensity::Full) {
+      // Chorus with full vocals: Use EmotionalPad for harmonic support
+      // In pop music, the pad provides chord tones (root + fifth) beneath the vocal,
+      // NOT melody doubling. Unison doubling should be done by backup vocals, not pad.
+      config.function = AuxFunction::EmotionalPad;
+      config.range_offset = -12;  // One octave below vocal for clarity
+      config.range_width = 12;    // Reasonable pad range
+      config.velocity_ratio = 0.6f;  // Softer than vocal
+      config.density_ratio = 0.8f;   // Allow some space
+      config.sync_phrase_boundary = false;  // Pad sustains independently
+    } else if (aux_count > 0) {
+      // Other sections: Use default aux config
+      config = aux_configs[0];
+    } else {
+      // No aux config available, skip
+      continue;
+    }
+
+    // Generate aux for this section
+    MidiTrack section_aux = generate(config, ctx, harmony, rng);
+
+    // Add notes to collected notes
+    for (const auto& note : section_aux.notes()) {
+      all_notes.push_back(note);
+    }
+  }
+
+  // Post-process all notes
+  postProcessNotes(all_notes, harmony);
+
+  // Add to output track
+  NoteFactory factory(harmony);
+  for (const auto& note : all_notes) {
+    track.addNote(factory.create(note.start_tick, note.duration, note.note,
+                                  note.velocity, NoteSource::Aux));
+  }
+}
+
+void AuxTrackGenerator::postProcessNotes(
+    std::vector<NoteEvent>& notes,
+    IHarmonyContext& harmony) {
+
+  constexpr Tick kAnticipationThreshold = 120;  // Notes starting this close to change are "anticipations"
+  constexpr Tick kMinNoteDuration = 120;        // Minimum note length for split
+
+  std::vector<NoteEvent> notes_to_add;
+
+  // First pass: resolve notes that sustain over chord changes
+  for (size_t i = 0; i < notes.size(); ++i) {
+    auto& note = notes[i];
+    Tick note_end = note.start_tick + note.duration;
+    Tick chord_change = harmony.getNextChordChangeTick(note.start_tick);
+
+    if (chord_change > 0 && chord_change > note.start_tick && chord_change < note_end) {
+      // Check if note is a chord tone in the new chord
+      auto new_chord_tones = harmony.getChordTonesAt(chord_change);
+      int note_pc = note.note % 12;
+      bool is_chord_tone = std::find(new_chord_tones.begin(), new_chord_tones.end(), note_pc)
+                           != new_chord_tones.end();
+
+      if (!is_chord_tone) {
+        Tick time_before_change = chord_change - note.start_tick;
+        Tick time_after_change = note_end - chord_change;
+
+        // Find nearest chord tone in new chord that doesn't clash with other tracks
+        int octave = note.note / 12;
+        int best_pitch = note.note;
+        int best_dist = 100;
+        for (int tone : new_chord_tones) {
+          for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
+            int candidate = (octave + oct_offset) * 12 + tone;
+            if (candidate < 36 || candidate > 96) continue;  // Reasonable range
+            int dist = std::abs(candidate - static_cast<int>(note.note));
+            if (dist < best_dist && dist > 0) {
+              // Check for clashes with other tracks at chord_change tick
+              bool clashes = !harmony.isPitchSafe(
+                  static_cast<uint8_t>(candidate), chord_change, time_after_change, TrackRole::Aux);
+              if (!clashes) {
+                best_dist = dist;
+                best_pitch = candidate;
+              }
+            }
+          }
+        }
+        // If all candidates clash, still use the nearest chord tone (better than non-chord tone)
+        if (best_pitch == note.note) {
+          for (int tone : new_chord_tones) {
+            int candidate = octave * 12 + tone;
+            if (candidate >= 36 && candidate <= 96) {
+              best_pitch = candidate;
+              break;
+            }
+          }
+        }
+
+        if (time_before_change < kAnticipationThreshold) {
+          // Anticipation: change entire note to new chord tone
+          note.note = static_cast<uint8_t>(best_pitch);
+        } else if (time_before_change >= kMinNoteDuration && time_after_change >= kMinNoteDuration) {
+          // Split note: keep first part, add resolved second part
+          note.duration = time_before_change;
+
+          NoteEvent resolved_note;
+          resolved_note.start_tick = chord_change;
+          resolved_note.duration = time_after_change;
+          resolved_note.note = static_cast<uint8_t>(best_pitch);
+          resolved_note.velocity = static_cast<uint8_t>(note.velocity * 0.9f);
+          notes_to_add.push_back(resolved_note);
+        } else {
+          // Cannot split well - just change to chord tone
+          note.note = static_cast<uint8_t>(best_pitch);
+        }
+      }
+    }
+  }
+
+  // Add resolved notes
+  for (const auto& note : notes_to_add) {
+    notes.push_back(note);
+  }
+
+  // Second pass: fix any remaining clashes with Bass track
+  for (size_t i = 0; i < notes.size(); ++i) {
+    auto& note = notes[i];
+    Tick note_end = note.start_tick + note.duration;
+
+    // Check if this note clashes with bass
+    if (!harmony.isPitchSafe(note.note, note.start_tick, note.duration, TrackRole::Aux)) {
+      // Check if note crosses a chord boundary - need to consider both chords
+      Tick chord_change = harmony.getNextChordChangeTick(note.start_tick);
+      bool crosses_chord = (chord_change > 0 && chord_change > note.start_tick && chord_change < note_end);
+
+      // Get chord tones - if crosses chord, need tones that work in both
+      auto start_chord_tones = harmony.getChordTonesAt(note.start_tick);
+      std::vector<int> valid_tones;
+
+      if (crosses_chord) {
+        // Find tones that are chord tones in BOTH chords
+        auto end_chord_tones = harmony.getChordTonesAt(chord_change);
+        for (int tone : start_chord_tones) {
+          if (std::find(end_chord_tones.begin(), end_chord_tones.end(), tone) != end_chord_tones.end()) {
+            valid_tones.push_back(tone);
+          }
+        }
+        // If no common tones, use start chord tones and trim note
+        if (valid_tones.empty()) {
+          valid_tones = start_chord_tones;
+          // Trim note to before chord change
+          if (chord_change - note.start_tick >= kMinNoteDuration) {
+            note.duration = chord_change - note.start_tick - 10;
+          }
+        }
+      } else {
+        valid_tones = start_chord_tones;
+      }
+
+      int octave = note.note / 12;
+      int best_pitch = note.note;
+      int best_dist = 100;
+
+      for (int tone : valid_tones) {
+        for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
+          int candidate = (octave + oct_offset) * 12 + tone;
+          if (candidate < 36 || candidate > 96) continue;
+
+          // Check if this candidate is safe (use trimmed duration if applicable)
+          if (harmony.isPitchSafe(static_cast<uint8_t>(candidate),
+                                   note.start_tick, note.duration, TrackRole::Aux)) {
+            int dist = std::abs(candidate - static_cast<int>(note.note));
+            if (dist < best_dist) {
+              best_dist = dist;
+              best_pitch = candidate;
+            }
+          }
+        }
+      }
+
+      if (best_pitch != note.note) {
+        note.note = static_cast<uint8_t>(best_pitch);
+      }
+    }
+  }
+}
+
 std::vector<NoteEvent> AuxTrackGenerator::generatePulseLoop(
     const AuxContext& ctx,
     const AuxConfig& config,
-    const HarmonyContext& harmony,
+    const IHarmonyContext& harmony,
     std::mt19937& rng) {
 
   std::vector<NoteEvent> result;
@@ -213,7 +534,7 @@ std::vector<NoteEvent> AuxTrackGenerator::generatePulseLoop(
 std::vector<NoteEvent> AuxTrackGenerator::generateTargetHint(
     const AuxContext& ctx,
     const AuxConfig& config,
-    const HarmonyContext& harmony,
+    const IHarmonyContext& harmony,
     std::mt19937& rng) {
 
   std::vector<NoteEvent> result;
@@ -287,7 +608,7 @@ std::vector<NoteEvent> AuxTrackGenerator::generateTargetHint(
 std::vector<NoteEvent> AuxTrackGenerator::generateGrooveAccent(
     const AuxContext& ctx,
     const AuxConfig& config,
-    const HarmonyContext& harmony,
+    const IHarmonyContext& harmony,
     std::mt19937& rng) {
 
   std::vector<NoteEvent> result;
@@ -350,7 +671,7 @@ std::vector<NoteEvent> AuxTrackGenerator::generateGrooveAccent(
 std::vector<NoteEvent> AuxTrackGenerator::generatePhraseTail(
     const AuxContext& ctx,
     const AuxConfig& config,
-    const HarmonyContext& harmony,
+    const IHarmonyContext& harmony,
     std::mt19937& rng) {
 
   std::vector<NoteEvent> result;
@@ -439,7 +760,7 @@ std::vector<NoteEvent> AuxTrackGenerator::generatePhraseTail(
 std::vector<NoteEvent> AuxTrackGenerator::generateEmotionalPad(
     const AuxContext& ctx,
     const AuxConfig& config,
-    const HarmonyContext& harmony,
+    const IHarmonyContext& harmony,
     std::mt19937& rng) {
 
   std::vector<NoteEvent> result;
@@ -572,7 +893,7 @@ std::vector<Tick> AuxTrackGenerator::findBreathPointsInRange(
 bool AuxTrackGenerator::isPitchSafe(
     uint8_t pitch, Tick start, Tick duration,
     const std::vector<NoteEvent>* main_melody,
-    const HarmonyContext& harmony,
+    const IHarmonyContext& harmony,
     float dissonance_tolerance) {
 
   // Check against main melody
@@ -613,7 +934,7 @@ bool AuxTrackGenerator::isPitchSafe(
 uint8_t AuxTrackGenerator::getSafePitch(
     uint8_t desired, Tick start, Tick duration,
     const std::vector<NoteEvent>* main_melody,
-    const HarmonyContext& harmony,
+    const IHarmonyContext& harmony,
     uint8_t low, uint8_t high,
     [[maybe_unused]] int8_t chord_degree,
     float dissonance_tolerance) {
@@ -716,11 +1037,19 @@ uint8_t AuxTrackGenerator::getSafePitch(
 std::vector<NoteEvent> AuxTrackGenerator::generateUnison(
     const AuxContext& ctx,
     const AuxConfig& config,
-    [[maybe_unused]] const HarmonyContext& harmony,
+    [[maybe_unused]] const IHarmonyContext& harmony,
     std::mt19937& rng) {
 
   std::vector<NoteEvent> result;
   if (!ctx.main_melody || ctx.main_melody->empty()) return result;
+
+  // Check derivability: unison requires stable rhythm (contour less important)
+  DerivabilityScore score = analyzeDerivability(*ctx.main_melody);
+  // Unison only needs rhythm stability - contour doesn't matter for pitch doubling
+  if (score.rhythm_stability < 0.5f) {
+    // Rhythm too irregular for unison doubling
+    return result;
+  }
 
   // Timing offset distribution (±5-10 ticks for natural doubling feel)
   std::uniform_int_distribution<int> offset_dist(5, 10);
@@ -757,12 +1086,20 @@ std::vector<NoteEvent> AuxTrackGenerator::generateUnison(
 std::vector<NoteEvent> AuxTrackGenerator::generateHarmony(
     const AuxContext& ctx,
     const AuxConfig& config,
-    const HarmonyContext& harmony,
+    const IHarmonyContext& harmony,
     HarmonyMode mode,
     std::mt19937& rng) {
 
   std::vector<NoteEvent> result;
   if (!ctx.main_melody || ctx.main_melody->empty()) return result;
+
+  // Check derivability: harmony benefits from stable rhythm and reasonable contour
+  DerivabilityScore score = analyzeDerivability(*ctx.main_melody);
+  // Harmony needs rhythm stability and pitch simplicity (contour is nice-to-have)
+  if (score.rhythm_stability < 0.5f || score.pitch_simplicity < 0.4f) {
+    // Melody too complex for parallel harmony
+    return result;
+  }
 
   // Timing offset distribution
   std::uniform_int_distribution<int> offset_dist(3, 8);
@@ -827,7 +1164,7 @@ std::vector<NoteEvent> AuxTrackGenerator::generateHarmony(
 std::vector<NoteEvent> AuxTrackGenerator::generateMelodicHook(
     const AuxContext& ctx,
     const AuxConfig& config,
-    const HarmonyContext& harmony,
+    const IHarmonyContext& harmony,
     std::mt19937& rng) {
 
   std::vector<NoteEvent> result;
@@ -922,7 +1259,7 @@ std::vector<NoteEvent> AuxTrackGenerator::generateMelodicHook(
 std::vector<NoteEvent> AuxTrackGenerator::generateMotifCounter(
     const AuxContext& ctx,
     const AuxConfig& config,
-    const HarmonyContext& harmony,
+    const IHarmonyContext& harmony,
     const VocalAnalysis& vocal_analysis,
     std::mt19937& rng) {
 
@@ -1165,6 +1502,105 @@ std::vector<NoteEvent> AuxTrackGenerator::generateMotifCounter(
   }
 
   return resolved_result;
+}
+
+// ============================================================================
+// Derivability Analysis
+// ============================================================================
+
+DerivabilityScore analyzeDerivability(const std::vector<NoteEvent>& notes) {
+  DerivabilityScore score = {0.0f, 0.0f, 0.0f};
+
+  if (notes.size() < 4) {
+    // Too few notes to analyze meaningfully
+    return {0.5f, 0.5f, 0.5f};
+  }
+
+  // === Rhythm Stability ===
+  // Analyze how consistent note durations are
+  {
+    std::vector<Tick> durations;
+    durations.reserve(notes.size());
+    for (const auto& note : notes) {
+      durations.push_back(note.duration);
+    }
+
+    // Calculate duration variance
+    Tick sum = 0;
+    for (Tick d : durations) {
+      sum += d;
+    }
+    Tick mean = sum / static_cast<Tick>(durations.size());
+
+    float variance = 0.0f;
+    for (Tick d : durations) {
+      float diff = static_cast<float>(d - mean);
+      variance += diff * diff;
+    }
+    variance /= static_cast<float>(durations.size());
+
+    // Normalize: low variance = high stability
+    // Typical duration ~240 ticks (eighth note), variance up to 60000
+    float normalized_variance = variance / 60000.0f;
+    score.rhythm_stability = std::max(0.0f, 1.0f - normalized_variance);
+  }
+
+  // === Contour Clarity ===
+  // Analyze how clear the melodic direction is
+  {
+    int direction_changes = 0;
+    int consistent_direction = 0;
+    int prev_direction = 0;
+
+    for (size_t i = 1; i < notes.size(); ++i) {
+      int diff = static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note);
+      int direction = (diff > 0) ? 1 : (diff < 0) ? -1 : 0;
+
+      if (direction != 0) {
+        if (prev_direction != 0 && direction != prev_direction) {
+          direction_changes++;
+        } else if (prev_direction != 0 && direction == prev_direction) {
+          consistent_direction++;
+        }
+        prev_direction = direction;
+      }
+    }
+
+    // Clear contour: few direction changes, or many consistent directions
+    float total_movements = static_cast<float>(direction_changes + consistent_direction);
+    if (total_movements > 0) {
+      float consistency_ratio = static_cast<float>(consistent_direction) / total_movements;
+      score.contour_clarity = 0.4f + consistency_ratio * 0.6f;
+    } else {
+      score.contour_clarity = 0.5f;
+    }
+  }
+
+  // === Pitch Simplicity ===
+  // Analyze how simple the pitch relationships are
+  {
+    int simple_intervals = 0;  // unison, 2nd, 3rd
+    int complex_intervals = 0; // 4th and larger
+
+    for (size_t i = 1; i < notes.size(); ++i) {
+      int interval = std::abs(static_cast<int>(notes[i].note) -
+                              static_cast<int>(notes[i - 1].note));
+      if (interval <= 4) {
+        simple_intervals++;
+      } else {
+        complex_intervals++;
+      }
+    }
+
+    float total = static_cast<float>(simple_intervals + complex_intervals);
+    if (total > 0) {
+      score.pitch_simplicity = static_cast<float>(simple_intervals) / total;
+    } else {
+      score.pitch_simplicity = 0.5f;
+    }
+  }
+
+  return score;
 }
 
 }  // namespace midisketch

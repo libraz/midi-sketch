@@ -8,14 +8,12 @@
 
 #include "core/midi_track.h"
 #include "core/song.h"
+#include "core/track_generation_context.h"
 #include "core/types.h"
 #include "track/vocal_analysis.h"
 #include <random>
 
 namespace midisketch {
-
-// Forward declaration
-class HarmonyContext;
 
 /// @brief Open voicing subtypes. Drop2=jazz, Drop3=big band, Spread=atmospheric.
 enum class OpenVoicingType : uint8_t {
@@ -25,42 +23,27 @@ enum class OpenVoicingType : uint8_t {
 };
 
 /**
- * @brief Generate chord track with intelligent voicing selection.
+ * @brief Generate chord track using TrackGenerationContext.
+ *
+ * Uses intelligent voicing selection with voice leading optimization.
+ * Supports collision avoidance with bass, aux, and vocal tracks.
+ *
  * @param track Target MidiTrack to populate with chord notes
- * @param song Song containing arrangement and section information
- * @param params Generation parameters (key, chord_id, mood, extensions)
- * @param rng Random number generator for voicing selection tiebreakers
- * @param harmony HarmonyContext for provenance tracking
- * @param bass_track Optional bass track for collision avoidance
+ * @param ctx Generation context containing all parameters
  */
-void generateChordTrack(MidiTrack& track, const Song& song,
-                        const GeneratorParams& params,
-                        std::mt19937& rng,
-                        const HarmonyContext& harmony,
-                        const MidiTrack* bass_track = nullptr,
-                        const MidiTrack* aux_track = nullptr);
+void generateChordTrack(MidiTrack& track, const TrackGenerationContext& ctx);
 
 /**
- * @brief Generate chord track adapted to vocal-first context.
+ * @brief Generate chord track with vocal context.
  *
  * Avoids doubling vocal pitch class and clashing with bass/aux.
+ * Falls back to basic generation if ctx.vocal_analysis is not set.
  *
  * @param track Target MidiTrack to populate with chord notes
- * @param song Song containing arrangement and section information
- * @param params Generation parameters (key, chord_id, mood, extensions)
- * @param rng Random number generator for voicing selection
- * @param bass_track Bass track for collision avoidance
- * @param vocal_analysis Pre-computed analysis of the vocal track
- * @param aux_track Optional aux track for clash avoidance
- * @param harmony HarmonyContext for provenance tracking
+ * @param ctx Generation context (should include vocal_analysis for best results)
  */
-void generateChordTrackWithContext(MidiTrack& track, const Song& song,
-                                   const GeneratorParams& params,
-                                   std::mt19937& rng,
-                                   const MidiTrack* bass_track,
-                                   const VocalAnalysis& vocal_analysis,
-                                   const MidiTrack* aux_track,
-                                   const HarmonyContext& harmony);
+void generateChordTrackWithContext(MidiTrack& track,
+                                   const TrackGenerationContext& ctx);
 
 }  // namespace midisketch
 

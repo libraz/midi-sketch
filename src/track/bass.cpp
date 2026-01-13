@@ -10,7 +10,7 @@
 #include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/harmonic_rhythm.h"
-#include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
 #include "core/mood_utils.h"
 #include "core/note_factory.h"
 #include "core/pitch_utils.h"
@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <optional>
 
 // Debug flag for bass transformation logging (set to 1 to enable)
 #ifndef BASS_DEBUG_LOG
@@ -34,28 +35,35 @@ namespace midisketch {
 
 namespace {
 
+// Timing constants
 constexpr Tick HALF = TICK_HALF;
 constexpr Tick QUARTER = TICK_QUARTER;
 constexpr Tick EIGHTH = TICK_EIGHTH;
 
+// Pitch constants (semitones)
+constexpr int OCTAVE = 12;           ///< One octave in semitones
+constexpr int TWO_OCTAVES = 24;      ///< Two octaves in semitones
+constexpr int PERFECT_5TH = 7;       ///< Perfect 5th interval
+constexpr int DIMINISHED_5TH = 6;    ///< Diminished 5th interval
+
 /// Convert degree to bass root pitch, using appropriate octave.
-/// Tries -12 (one octave down) first, then -24 if still above BASS_HIGH.
+/// Tries one octave down first, then two octaves if still above BASS_HIGH.
 uint8_t getBassRoot(int8_t degree, Key key = Key::C) {
   int mid_pitch = degreeToRoot(degree, key);  // C4 range (60-71)
-  int root = mid_pitch - 12;  // Try C3 range first
+  int root = mid_pitch - OCTAVE;  // Try C3 range first
   if (root > BASS_HIGH) {
-    root = mid_pitch - 24;  // Use C2 range if needed
+    root = mid_pitch - TWO_OCTAVES;  // Use C2 range if needed
   }
   return clampBass(root);
 }
 
 /// Get diatonic 5th above root (in C major context).
-/// Returns perfect 5th (+7) for most roots, but diminished 5th (+6) for B (vii chord).
+/// Returns perfect 5th for most roots, but diminished 5th for B (vii chord).
 uint8_t getFifth(uint8_t root) {
-  int pitch_class = root % 12;
-  // B (pitch class 11) has a diminished 5th in C major (B->F = 6 semitones)
-  // All other diatonic roots have perfect 5th (7 semitones)
-  int interval = (pitch_class == 11) ? 6 : 7;
+  int pitch_class = root % OCTAVE;
+  // B (pitch class 11) has a diminished 5th in C major (B->F)
+  // All other diatonic roots have perfect 5th
+  int interval = (pitch_class == 11) ? DIMINISHED_5TH : PERFECT_5TH;
   return clampBass(root + interval);
 }
 
@@ -66,53 +74,64 @@ constexpr int C_MAJOR_DIATONIC[7] = {0, 2, 4, 5, 7, 9, 11};  // C,D,E,F,G,A,B
 /// direction: +1 for ascending, -1 for descending
 /// This ensures Walking Bass uses key-relative diatonic motion, not chord-relative scales.
 uint8_t getNextDiatonic(uint8_t pitch, int direction) {
-  int pc = pitch % 12;
-  int octave = pitch / 12;
+  int pc = pitch % OCTAVE;
+  int oct = pitch / OCTAVE;
 
   if (direction > 0) {
     // Find next diatonic note above
     for (int i = 0; i < 7; ++i) {
       if (C_MAJOR_DIATONIC[i] > pc) {
-        return clampBass(octave * 12 + C_MAJOR_DIATONIC[i]);
+        return clampBass(oct * OCTAVE + C_MAJOR_DIATONIC[i]);
       }
     }
     // Wrap to next octave (C)
-    return clampBass((octave + 1) * 12 + C_MAJOR_DIATONIC[0]);
+    return clampBass((oct + 1) * OCTAVE + C_MAJOR_DIATONIC[0]);
   } else {
     // Find next diatonic note below
     for (int i = 6; i >= 0; --i) {
       if (C_MAJOR_DIATONIC[i] < pc) {
-        return clampBass(octave * 12 + C_MAJOR_DIATONIC[i]);
+        return clampBass(oct * OCTAVE + C_MAJOR_DIATONIC[i]);
       }
     }
     // Wrap to previous octave (B)
-    return clampBass((octave - 1) * 12 + C_MAJOR_DIATONIC[6]);
+    return clampBass((oct - 1) * OCTAVE + C_MAJOR_DIATONIC[6]);
   }
 }
+
+// Interval constants for thirds
+constexpr int MINOR_3RD = 3;  ///< Minor 3rd interval
+constexpr int MAJOR_3RD = 4;  ///< Major 3rd interval
 
 /// Get diatonic chord tone (3rd or 5th) for the chord root in C major context.
 /// For minor chords (ii, iii, vi), returns the minor 3rd which is diatonic.
 /// For major chords (I, IV, V), returns the major 3rd which is diatonic.
 uint8_t getDiatonicThird(uint8_t root) {
-  int root_pc = root % 12;
+  int root_pc = root % OCTAVE;
   // In C major, the 3rd above each diatonic root is also diatonic:
   // C->E, D->F, E->G, F->A, G->B, A->C, B->D
   // These are all either 3 or 4 semitones, depending on the chord quality
-  // Minor chords (Dm, Em, Am): 3 semitones (minor 3rd)
-  // Major chords (C, F, G): 4 semitones (major 3rd)
-  // Diminished (Bdim): 3 semitones (minor 3rd)
+  // Minor chords (Dm, Em, Am): minor 3rd
+  // Major chords (C, F, G): major 3rd
+  // Diminished (Bdim): minor 3rd
   bool is_minor_or_dim = (root_pc == 2 || root_pc == 4 || root_pc == 9 || root_pc == 11);
-  int interval = is_minor_or_dim ? 3 : 4;
+  int interval = is_minor_or_dim ? MINOR_3RD : MAJOR_3RD;
   return clampBass(static_cast<int>(root) + interval);
 }
 
-/// Get octave above root (+12), or root if exceeds range.
+/// Get octave above root, or root if exceeds range.
 uint8_t getOctave(uint8_t root) {
-  int octave = root + 12;
-  if (octave > BASS_HIGH) {
+  int octave_up = root + OCTAVE;
+  if (octave_up > BASS_HIGH) {
     return root;  // Stay at root if octave is too high
   }
-  return static_cast<uint8_t>(octave);
+  return static_cast<uint8_t>(octave_up);
+}
+
+/// Get chromatic approach note (half-step below target). Jazz walking bass style.
+uint8_t getChromaticApproach(uint8_t target) {
+  int approach = static_cast<int>(target) - 1;
+  if (approach < BASS_LOW) approach += 12;
+  return clampBass(approach);
 }
 
 /// Get all possible chord tones (R, m3, M3, P5, M6, m7, M7) for approach note safety.
@@ -130,10 +149,12 @@ std::array<int, 7> getAllPossibleChordTones(uint8_t root_midi) {
   }};
 }
 
-/// Check if pitch class clashes (m2 or M7) with any chord tone.
-bool clashesWithAnyChordTone(int pitch_class, const std::array<int, 7>& chord_tones) {
+/// Check if pitch class clashes with any chord tone using context-aware dissonance check.
+/// On V (degree 4) and vii° (degree 6), tritone is acceptable.
+bool clashesWithAnyChordTone(int pitch_class, const std::array<int, 7>& chord_tones,
+                             int8_t target_degree) {
   for (int tone : chord_tones) {
-    if (isDissonantInterval(pitch_class, tone)) {
+    if (isDissonantIntervalWithContext(pitch_class, tone, target_degree)) {
       return true;
     }
   }
@@ -143,48 +164,68 @@ bool clashesWithAnyChordTone(int pitch_class, const std::array<int, 7>& chord_to
 /// Check if pitch class is diatonic in C major (helper for getApproachNote)
 bool isApproachDiatonic(int pitch_class) {
   // C major scale: C(0), D(2), E(4), F(5), G(7), A(9), B(11)
-  int pc = ((pitch_class % 12) + 12) % 12;
+  int pc = ((pitch_class % OCTAVE) + OCTAVE) % OCTAVE;
   return pc == 0 || pc == 2 || pc == 4 || pc == 5 || pc == 7 || pc == 9 || pc == 11;
 }
 
-/// Get approach note: try 5th below (V-I), fallback to octave or root.
-/// Only returns diatonic notes in C major context.
-uint8_t getApproachNote(uint8_t current_root, uint8_t next_root) {
+/// Get chord function (Tonic/Dominant/Subdominant) for approach selection.
+enum class ChordFunction { Tonic, Dominant, Subdominant };
+
+ChordFunction getChordFunction(int8_t degree) {
+  int d = ((degree % 7) + 7) % 7;
+  if (d == 0 || d == 2 || d == 5) return ChordFunction::Tonic;      // I, iii, vi
+  if (d == 4 || d == 6) return ChordFunction::Dominant;              // V, vii°
+  return ChordFunction::Subdominant;                                 // ii, IV
+}
+
+/// Get approach note with chord function awareness.
+uint8_t getApproachNote(uint8_t current_root, uint8_t next_root, int8_t target_degree) {
   int diff = static_cast<int>(next_root) - static_cast<int>(current_root);
   if (diff == 0) return current_root;
 
-  // Get all possible chord tones of the target chord (conservative: includes extensions)
   auto chord_tones = getAllPossibleChordTones(next_root);
+  ChordFunction func = getChordFunction(target_degree);
 
-  // Try fifth below target as primary approach (V-I motion)
-  int approach = static_cast<int>(next_root) - 7;  // Fifth below
-  if (approach < BASS_LOW) {
-    approach = next_root + 5;  // Fourth above instead (same pitch class)
-  }
-  int approach_pc = approach % 12;
+  // Helper to try an approach
+  auto tryApproach = [&](int offset) -> std::optional<uint8_t> {
+    int approach = static_cast<int>(next_root) + offset;
+    if (approach < BASS_LOW) approach += OCTAVE;
+    if (approach > BASS_HIGH) approach -= OCTAVE;
+    int pc = approach % OCTAVE;
+    if (isApproachDiatonic(pc) &&
+        !clashesWithAnyChordTone(pc, chord_tones, target_degree)) {
+      return clampBass(approach);
+    }
+    return std::nullopt;
+  };
 
-  // Check if approach is diatonic AND doesn't clash with chord tones
-  if (isApproachDiatonic(approach_pc) && !clashesWithAnyChordTone(approach_pc, chord_tones)) {
-    return clampBass(approach);
+  // Function-specific approach priorities
+  constexpr int PERFECT_4TH = 5;  // Perfect 4th interval
+  constexpr int WHOLE_STEP = 2;   // Whole step interval
+  constexpr int HALF_STEP = 1;    // Half step interval
+
+  switch (func) {
+    case ChordFunction::Tonic:
+      // I/iii/vi: Fifth below (V-I) or leading tone (half-step below)
+      if (auto r = tryApproach(-PERFECT_5TH)) return *r;  // 5th below
+      if (auto r = tryApproach(-HALF_STEP)) return *r;    // leading tone
+      break;
+    case ChordFunction::Dominant:
+      // V/vii°: Fifth below (ii-V) or step above (IV-V)
+      if (auto r = tryApproach(-PERFECT_5TH)) return *r;  // 5th below
+      if (auto r = tryApproach(+WHOLE_STEP)) return *r;   // step above
+      break;
+    case ChordFunction::Subdominant:
+      // ii/IV: Fifth below (vi-ii) or step below
+      if (auto r = tryApproach(-PERFECT_5TH)) return *r;  // 5th below
+      if (auto r = tryApproach(-WHOLE_STEP)) return *r;   // step below
+      break;
   }
 
-  // Try fourth below as alternative (e.g., for approaching F, use C instead of Bb)
-  int alt_approach = static_cast<int>(next_root) - 5;  // Fourth below
-  if (alt_approach < BASS_LOW) {
-    alt_approach = next_root + 7;  // Fifth above instead
-  }
-  int alt_pc = alt_approach % 12;
-  if (isApproachDiatonic(alt_pc) && !clashesWithAnyChordTone(alt_pc, chord_tones)) {
-    return clampBass(alt_approach);
-  }
-
-  // Safe fallback: use root an octave below (never clashes with chord tones)
-  int octave_below = static_cast<int>(next_root) - 12;
-  if (octave_below >= BASS_LOW) {
-    return clampBass(octave_below);
-  }
-
-  // Last resort: use the root itself
+  // Common fallbacks
+  if (auto r = tryApproach(-PERFECT_4TH)) return *r;  // 4th below
+  int octave_below = static_cast<int>(next_root) - OCTAVE;
+  if (octave_below >= BASS_LOW) return clampBass(octave_below);
   return clampBass(next_root);
 }
 
@@ -339,27 +380,61 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
 
 // Helper to add a bass note with safety check against vocal
 // If the desired pitch clashes, uses harmony context to find safe alternative
+// IMPORTANT: For bass, the result must always be a chord tone to define harmony
+// VOCAL PRIORITY: If all chord tones clash with vocal, skip the note entirely
 void addSafeBassNote(MidiTrack& track, const NoteFactory& factory,
                      Tick start, Tick duration, uint8_t pitch, uint8_t velocity,
-                     const HarmonyContext& harmony) {
+                     const IHarmonyContext& harmony) {
   auto safe_note = factory.createSafe(start, duration, pitch, velocity,
                                        TrackRole::Bass, NoteSource::BassPattern);
   if (safe_note) {
     track.addNote(*safe_note);
   } else {
-    // Pitch clashes with vocal - find a safe alternative
-    uint8_t safe_pitch = harmony.getSafePitch(pitch, start, duration,
-                                               TrackRole::Bass, BASS_LOW, BASS_HIGH);
-    track.addNote(factory.create(start, duration, safe_pitch, velocity, NoteSource::BassPattern));
+    // Pitch clashes with vocal - find a safe chord tone alternative
+    // VOCAL PRIORITY: Bass must yield to vocal, but must also play chord tones
+    int8_t degree = harmony.getChordDegreeAt(start);
+    auto chord_tones = getChordTonePitchClasses(degree);
+    int octave = pitch / OCTAVE;
+
+    // Try each chord tone in various octaves, checking for vocal safety
+    uint8_t best_pitch = 0;
+    int best_dist = 100;
+    bool found_safe = false;
+
+    for (int ct_pc : chord_tones) {
+      // Try multiple octaves within bass range
+      for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
+        int candidate = (octave + oct_offset) * OCTAVE + ct_pc;
+        if (candidate < BASS_LOW || candidate > BASS_HIGH) continue;
+
+        // Check if this chord tone is safe (doesn't clash with vocal)
+        if (harmony.isPitchSafe(static_cast<uint8_t>(candidate), start, duration, TrackRole::Bass)) {
+          int dist = std::abs(candidate - static_cast<int>(pitch));
+          if (dist < best_dist) {
+            best_dist = dist;
+            best_pitch = static_cast<uint8_t>(candidate);
+            found_safe = true;
+          }
+        }
+      }
+    }
+
+    // If safe chord tone found, add the note
+    // Otherwise, skip the note entirely (silence is better than dissonance)
+    if (found_safe) {
+      track.addNote(factory.create(start, duration, best_pitch, velocity, NoteSource::BassPattern));
+    }
+    // Note: If no safe chord tone exists, we intentionally don't add any note.
+    // This respects vocal priority and avoids harmonic clash.
   }
 }
 
 // Generate one bar of bass based on pattern
 // Uses HarmonyContext for all notes to ensure vocal priority
 void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
-                     uint8_t next_root, BassPattern pattern,
+                     uint8_t next_root, int8_t next_degree, BassPattern pattern,
                      SectionType section, Mood mood, bool is_last_bar,
-                     const NoteFactory& factory, const HarmonyContext& harmony) {
+                     const NoteFactory& factory, const IHarmonyContext& harmony) {
   uint8_t vel = calculateVelocity(section, 0, mood);
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
   uint8_t fifth = getFifth(root);
@@ -408,7 +483,7 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
       addSafeBassNote(track, factory, bar_start + 2 * QUARTER, QUARTER, root, vel, harmony);
       // Approach note before next bar
       if (is_last_bar || next_root != root) {
-        uint8_t approach = getApproachNote(root, next_root);
+        uint8_t approach = getApproachNote(root, next_root, next_degree);
         auto safe_note = factory.createSafe(bar_start + 3 * QUARTER + EIGHTH, EIGHTH,
                                              approach, vel_weak, TrackRole::Bass,
                                              NoteSource::BassPattern);
@@ -488,7 +563,7 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
           // Beat 4&: approach or octave with safety check
           else if (eighth == 7) {
             if (next_root != root) {
-              uint8_t approach = getApproachNote(root, next_root);
+              uint8_t approach = getApproachNote(root, next_root, next_degree);
               auto safe_approach = factory.createSafe(tick, EIGHTH, approach, note_vel,
                                                        TrackRole::Bass, NoteSource::BassPattern);
               if (safe_approach) {
@@ -519,14 +594,22 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
       // Jazz/swing walking bass: quarter notes walking through scale
       // Uses KEY-RELATIVE diatonic steps (C major), not chord-relative scales.
       // This ensures all passing tones are diatonic to the key.
+      // Walking bass: jazz-style chromatic approach (half-step below target)
       {
-        // Beat 4: Approach to next root (use safe approach with dissonance check)
+        // Beat 4: Chromatic approach (jazz) or diatonic approach (pop)
         uint8_t approach_note;
         if (next_root != root) {
-          // Use getApproachNote which checks for dissonance and uses safe intervals
-          approach_note = getApproachNote(root, next_root);
+          // Try chromatic approach first (jazz style)
+          uint8_t chromatic = getChromaticApproach(next_root);
+          auto chord_tones = getAllPossibleChordTones(next_root);
+          int chromatic_pc = chromatic % 12;
+          // Use chromatic if it doesn't clash; otherwise diatonic
+          if (!clashesWithAnyChordTone(chromatic_pc, chord_tones, next_degree)) {
+            approach_note = chromatic;
+          } else {
+            approach_note = getApproachNote(root, next_root, next_degree);
+          }
         } else {
-          // Same chord repeating: use diatonic 5th
           approach_note = getFifth(root);
         }
 
@@ -655,7 +738,7 @@ bool shouldAddDominantPreparation(SectionType current, SectionType next,
 // Uses HarmonyContext for all notes to ensure vocal priority
 void generateBassHalfBar(MidiTrack& track, Tick half_start, uint8_t root,
                           SectionType section, Mood mood, bool is_first_half,
-                          const NoteFactory& factory, const HarmonyContext& harmony) {
+                          const NoteFactory& factory, const IHarmonyContext& harmony) {
   uint8_t vel = calculateVelocity(section, 0, mood);
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
   uint8_t fifth = getFifth(root);
@@ -687,7 +770,7 @@ bool useSlowHarmonicRhythm(SectionType section) {
 
 void generateBassTrack(MidiTrack& track, const Song& song,
                        const GeneratorParams& params, std::mt19937& rng,
-                       const HarmonyContext& harmony) {
+                       const IHarmonyContext& harmony) {
   const auto& progression = getChordProgression(params.chord_id);
   const auto& sections = song.arrangement().sections();
 
@@ -766,7 +849,7 @@ void generateBassTrack(MidiTrack& track, const Song& song,
         // Fall through to generate full bar without anticipation
       }
 
-      generateBassBar(track, bar_start, root, next_root, pattern,
+      generateBassBar(track, bar_start, root, next_root, next_degree, pattern,
                       section.type, params.mood, is_last_bar, factory, harmony);
     }
   }
@@ -842,12 +925,21 @@ bool wouldClashWithVocal(int bass_pitch, int vocal_pitch) {
   return interval == 1;  // Minor 2nd is a harsh clash
 }
 
-// Check if a pitch is a chord tone of the given degree
-bool isPitchChordTone(int pitch, int8_t degree) {
+// Check if a pitch is a chord tone of the given degree.
+// @param include_7th If true, includes 7th as chord tone (jazz style)
+bool isPitchChordTone(int pitch, int8_t degree, bool include_7th = false) {
   auto chord_tones = getChordTonePitchClasses(degree);
-  int pitch_class = ((pitch % 12) + 12) % 12;  // Normalize to 0-11
+  int pitch_class = ((pitch % 12) + 12) % 12;
   for (int ct : chord_tones) {
     if (ct == pitch_class) return true;
+  }
+  if (include_7th) {
+    // Add 7th: major chords get major 7th, minor chords get minor 7th
+    int d = ((degree % 7) + 7) % 7;
+    int root_pc = SCALE[d];
+    bool is_minor = (d == 1 || d == 2 || d == 5);  // ii, iii, vi
+    int seventh_pc = (root_pc + (is_minor ? 10 : 11)) % 12;
+    if (pitch_class == seventh_pc) return true;
   }
   return false;
 }
@@ -992,7 +1084,7 @@ uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion,
 void generateBassTrackWithVocal(MidiTrack& track, const Song& song,
                                 const GeneratorParams& params, std::mt19937& rng,
                                 const VocalAnalysis& vocal_analysis,
-                                const HarmonyContext& harmony) {
+                                const IHarmonyContext& harmony) {
   const auto& progression = getChordProgression(params.chord_id);
   const auto& sections = song.arrangement().sections();
 
@@ -1122,7 +1214,7 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song,
       }
 
       // Generate the bar with adjusted root
-      generateBassBar(track, bar_start, adjusted_root, next_root, pattern,
+      generateBassBar(track, bar_start, adjusted_root, next_root, next_degree, pattern,
                       section.type, params.mood, is_last_bar, factory, harmony);
     }
   }

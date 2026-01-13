@@ -13,7 +13,7 @@
 
 namespace midisketch {
 
-class HarmonyContext;
+class IHarmonyContext;
 
 // Generates background motif track for BackgroundMotif composition style.
 // The motif is a short repeating pattern that becomes the song's main focus.
@@ -24,7 +24,7 @@ class HarmonyContext;
 // @param harmony HarmonyContext for provenance tracking (optional)
 void generateMotifTrack(MidiTrack& track, Song& song,
                         const GeneratorParams& params, std::mt19937& rng,
-                        const HarmonyContext& harmony);
+                        const IHarmonyContext& harmony);
 
 // Generates a single motif pattern (one cycle).
 // @param params Generation parameters

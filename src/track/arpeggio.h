@@ -13,7 +13,7 @@
 
 namespace midisketch {
 
-class HarmonyContext;
+class IHarmonyContext;
 
 /**
  * @brief Generate arpeggio track following chord progression.
@@ -26,7 +26,7 @@ class HarmonyContext;
  */
 void generateArpeggioTrack(MidiTrack& track, const Song& song,
                            const GeneratorParams& params, std::mt19937& rng,
-                           const HarmonyContext& harmony);
+                           const IHarmonyContext& harmony);
 
 }  // namespace midisketch
 

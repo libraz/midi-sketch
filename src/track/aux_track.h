@@ -10,17 +10,20 @@
 #define MIDISKETCH_TRACK_AUX_TRACK_H
 
 #include "core/midi_track.h"
+#include "core/motif.h"
 #include "core/pitch_utils.h"
 #include "core/track_layer.h"
 #include "core/types.h"
 #include "track/vocal_analysis.h"
+#include <optional>
 #include <random>
 #include <unordered_map>
 #include <vector>
 
 namespace midisketch {
 
-class HarmonyContext;
+class IHarmonyContext;
+struct ChordProgression;
 
 /// Aux timing: Rhythmic=beat grid, Reactive=responds to melody, Sustained=long notes.
 enum class AuxTimingRole : uint8_t {
@@ -64,6 +67,42 @@ struct AuxFunctionMeta {
 
 /// Get meta information for AuxFunction.
 const AuxFunctionMeta& getAuxFunctionMeta(AuxFunction func);
+
+/// @brief Derivability score for melody-to-aux transformation.
+///
+/// Evaluates how suitable a melody is for deriving harmony parts,
+/// unison doublings, or counter-melodies. Higher scores indicate
+/// melodies that will produce better-sounding derived parts.
+struct DerivabilityScore {
+  float rhythm_stability;    ///< Consistent rhythm patterns (0.0-1.0)
+  float contour_clarity;     ///< Clear melodic direction (0.0-1.0)
+  float pitch_simplicity;    ///< Simple pitch relationships (0.0-1.0)
+
+  /// @brief Check if melody is suitable for derivation.
+  /// @returns true if all thresholds met
+  bool canDerive() const {
+    return rhythm_stability > 0.7f &&
+           contour_clarity > 0.6f &&
+           pitch_simplicity > 0.5f;
+  }
+
+  /// @brief Get overall derivability score.
+  /// @returns Weighted average (0.0-1.0)
+  float total() const {
+    return rhythm_stability * 0.4f +
+           contour_clarity * 0.35f +
+           pitch_simplicity * 0.25f;
+  }
+};
+
+/// @brief Analyze melody for derivability.
+///
+/// Examines rhythm regularity, melodic contour, and pitch complexity
+/// to determine if the melody is suitable for generating harmony parts.
+///
+/// @param notes Melody notes to analyze
+/// @returns DerivabilityScore with component scores
+DerivabilityScore analyzeDerivability(const std::vector<NoteEvent>& notes);
 
 /// Cache key for aux phrase reuse (repeated sections like Chorus1/Chorus2).
 struct AuxCacheKey {
@@ -111,61 +150,82 @@ class AuxTrackGenerator {
     SectionType section_type;   ///< Section type for cache key and pattern selection
   };
 
+  /// Full song context for complete aux track generation.
+  struct SongContext {
+    const std::vector<Section>* sections;        ///< All sections in song
+    const MidiTrack* vocal_track;                ///< Vocal track for analysis
+    const ChordProgression* progression;         ///< Chord progression
+    VocalStylePreset vocal_style;                ///< For template selection
+    uint8_t vocal_low;                           ///< Vocal range low
+    uint8_t vocal_high;                          ///< Vocal range high
+  };
+
   AuxTrackGenerator() = default;
 
-  /// Generate aux track based on config.
+  /// Generate complete aux track for entire song.
+  /// Handles section iteration, motif caching, and post-processing.
+  /// @param track Output track to populate
+  /// @param song_ctx Song-level context
+  /// @param harmony HarmonyContext for chord info and collision avoidance
+  /// @param rng Random number generator
+  void generateFullTrack(MidiTrack& track,
+                         const SongContext& song_ctx,
+                         IHarmonyContext& harmony,
+                         std::mt19937& rng);
+
+  /// Generate aux track based on config (single section).
   MidiTrack generate(const AuxConfig& config,
                      const AuxContext& ctx,
-                     const HarmonyContext& harmony,
+                     const IHarmonyContext& harmony,
                      std::mt19937& rng);
 
   /// A: Pulse Loop - hypnotic chord tone pattern (BLACKPINK "Ice Cream" style).
   std::vector<NoteEvent> generatePulseLoop(
       const AuxContext& ctx,
       const AuxConfig& config,
-      const HarmonyContext& harmony,
+      const IHarmonyContext& harmony,
       std::mt19937& rng);
 
   /// B: Target Hint - anticipates melody destination (R&B style).
   std::vector<NoteEvent> generateTargetHint(
       const AuxContext& ctx,
       const AuxConfig& config,
-      const HarmonyContext& harmony,
+      const IHarmonyContext& harmony,
       std::mt19937& rng);
 
   /// C: Groove Accent - root/5th emphasis on off-beats for groove.
   std::vector<NoteEvent> generateGrooveAccent(
       const AuxContext& ctx,
       const AuxConfig& config,
-      const HarmonyContext& harmony,
+      const IHarmonyContext& harmony,
       std::mt19937& rng);
 
   /// D: Phrase Tail - fills gaps after vocal phrases (call-response).
   std::vector<NoteEvent> generatePhraseTail(
       const AuxContext& ctx,
       const AuxConfig& config,
-      const HarmonyContext& harmony,
+      const IHarmonyContext& harmony,
       std::mt19937& rng);
 
   /// E: Emotional Pad - sustained chord tones for atmosphere.
   std::vector<NoteEvent> generateEmotionalPad(
       const AuxContext& ctx,
       const AuxConfig& config,
-      const HarmonyContext& harmony,
+      const IHarmonyContext& harmony,
       std::mt19937& rng);
 
   /// F: Unison - doubles melody for power (use sparingly).
   std::vector<NoteEvent> generateUnison(
       const AuxContext& ctx,
       const AuxConfig& config,
-      const HarmonyContext& harmony,
+      const IHarmonyContext& harmony,
       std::mt19937& rng);
 
   /// F+: Harmony - parallel 3rds/6ths above/below melody (Beatles style).
   std::vector<NoteEvent> generateHarmony(
       const AuxContext& ctx,
       const AuxConfig& config,
-      const HarmonyContext& harmony,
+      const IHarmonyContext& harmony,
       HarmonyMode mode,
       std::mt19937& rng);
 
@@ -173,14 +233,14 @@ class AuxTrackGenerator {
   std::vector<NoteEvent> generateMelodicHook(
       const AuxContext& ctx,
       const AuxConfig& config,
-      const HarmonyContext& harmony,
+      const IHarmonyContext& harmony,
       std::mt19937& rng);
 
   /// H: Motif Counter - counter-melody using contrary motion/rhythmic complement.
   std::vector<NoteEvent> generateMotifCounter(
       const AuxContext& ctx,
       const AuxConfig& config,
-      const HarmonyContext& harmony,
+      const IHarmonyContext& harmony,
       const VocalAnalysis& vocal_analysis,
       std::mt19937& rng);
 
@@ -190,14 +250,19 @@ class AuxTrackGenerator {
   void calculateAuxRange(const AuxConfig& config, const TessituraRange& main_tessitura,
                          uint8_t& out_low, uint8_t& out_high);
   bool isPitchSafe(uint8_t pitch, Tick start, Tick duration,
-                   const std::vector<NoteEvent>* main_melody, const HarmonyContext& harmony,
+                   const std::vector<NoteEvent>* main_melody, const IHarmonyContext& harmony,
                    float dissonance_tolerance = 0.0f);
   uint8_t getSafePitch(uint8_t desired, Tick start, Tick duration,
-                       const std::vector<NoteEvent>* main_melody, const HarmonyContext& harmony,
+                       const std::vector<NoteEvent>* main_melody, const IHarmonyContext& harmony,
                        uint8_t low, uint8_t high, int8_t chord_degree, float dissonance_tolerance = 0.0f);
   std::vector<Tick> findBreathPointsInRange(const std::vector<PhraseBoundary>* boundaries, Tick start, Tick end);
 
+  /// Post-process notes: resolve chord crossings, fix bass clashes.
+  void postProcessNotes(std::vector<NoteEvent>& notes,
+                        IHarmonyContext& harmony);
+
   std::unordered_map<AuxCacheKey, CachedAuxPhrase, AuxCacheKeyHash> phrase_cache_;
+  std::optional<Motif> cached_chorus_motif_;  ///< Chorus motif for intro placement
 };
 
 }  // namespace midisketch

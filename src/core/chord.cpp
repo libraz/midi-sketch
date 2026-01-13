@@ -142,8 +142,25 @@ Chord buildChord(int8_t degree) {
     return c;
   }
 
-  // Determine major/minor quality for other degrees
-  // ii, iii, vi are minor; I, IV, V, bVII, bVI, bIII are major
+  // Determine major/minor quality based on music theory:
+  //
+  // Diatonic chords in major key:
+  //   ii, iii, vi are MINOR (built on 2nd, 3rd, 6th scale degrees)
+  //   I, IV, V are MAJOR (built on 1st, 4th, 5th scale degrees)
+  //
+  // Borrowed chords from parallel minor (modal interchange):
+  //   bVII (degree 10): MAJOR triad - e.g., Bb major in C major
+  //     Rationale: In C natural minor, bVII is Bb-D-F (Bb major triad)
+  //     Common use: bVII-I is a plagal-like resolution (Mixolydian feel)
+  //
+  //   bVI (degree 8): MAJOR triad - e.g., Ab major in C major
+  //     Rationale: In C natural minor, bVI is Ab-C-Eb (Ab major triad)
+  //     Common use: bVI-bVII-I (Aeolian cadence) in rock/pop
+  //
+  //   bIII (degree 11): MAJOR triad - e.g., Eb major in C major
+  //     Rationale: In C natural minor, bIII is Eb-G-Bb (Eb major triad)
+  //     Common use: I-bIII-IV progression, chromatic mediant relationships
+  //
   bool is_minor = (degree == 1 || degree == 2 || degree == 5);
 
   if (is_minor) {

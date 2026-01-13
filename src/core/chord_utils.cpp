@@ -166,7 +166,8 @@ int nearestChordToneWithinInterval(int target_pitch, int prev_pitch,
     return std::clamp(result, range_low, range_high);
   }
 
-  int best_pitch = prev_pitch;  // Default: stay on previous pitch
+  // Default: stay on previous pitch, but clamped to range
+  int best_pitch = std::clamp(prev_pitch, range_low, range_high);
   int best_score = -1000;       // Higher is better
 
   // Search for chord tones within max_interval of prev_pitch

@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 #include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
 #include "core/timing_constants.h"
 #include "track/aux_track.h"
 #include <random>

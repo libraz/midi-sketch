@@ -6,7 +6,7 @@
 #include "track/arpeggio.h"
 #include "core/chord.h"
 #include "core/harmonic_rhythm.h"
-#include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
 #include "core/note_factory.h"
 #include "core/velocity.h"
 #include <algorithm>
@@ -130,7 +130,7 @@ uint8_t calculateArpeggioVelocity(uint8_t base_velocity, SectionType section,
 
 void generateArpeggioTrack(MidiTrack& track, const Song& song,
                            const GeneratorParams& params, std::mt19937& rng,
-                           const HarmonyContext& harmony) {
+                           const IHarmonyContext& harmony) {
   const auto& sections = song.arrangement().sections();
   if (sections.empty()) return;
 

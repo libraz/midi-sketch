@@ -8,7 +8,7 @@
 
 #include "track/chord_track.h"
 #include "core/chord.h"
-#include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
 #include "core/harmonic_rhythm.h"
 #include "core/mood_utils.h"
 #include "core/note_factory.h"
@@ -55,13 +55,16 @@ struct VoicedChord {
   OpenVoicingType open_subtype = OpenVoicingType::Drop2;  ///< Open voicing variant
 };
 
-/// Calculate voice leading distance (sum of semitone movements). Lower = smoother.
+/// Calculate voice leading distance with weighted voices.
+/// Bass (index 0) and soprano (top) weighted 2x, inner voices 1x.
 int voicingDistance(const VoicedChord& prev, const VoicedChord& next) {
   int total = 0;
   size_t min_count = std::min(prev.count, next.count);
   for (size_t i = 0; i < min_count; ++i) {
-    int diff = static_cast<int>(next.pitches[i]) - static_cast<int>(prev.pitches[i]);
-    total += std::abs(diff);
+    int diff = std::abs(static_cast<int>(next.pitches[i]) - static_cast<int>(prev.pitches[i]));
+    // Weight bass (i=0) and soprano (i=min_count-1) 2x
+    int weight = (i == 0 || i == min_count - 1) ? 2 : 1;
+    total += diff * weight;
   }
   return total;
 }
@@ -82,6 +85,19 @@ int countCommonTones(const VoicedChord& prev, const VoicedChord& next) {
 }
 
 /// Check for parallel 5ths/octaves (forbidden in classical, relaxed in pop/dance).
+///
+/// Music theory context:
+/// - Classical harmony: Parallel 5ths/octaves are forbidden because they reduce
+///   voice independence and create "hollow" sound in counterpoint
+/// - Pop/Rock: Parallel motion is common and stylistically appropriate
+///   - Power chords are intentionally parallel 5ths
+///   - Electronic/EDM uses parallel motion for effect
+///
+/// Current behavior: Always checks, but caller decides whether to avoid.
+/// Future enhancement: Genre parameter to control strictness:
+///   - Classical: strict avoidance
+///   - Pop/Rock: allow parallel motion
+///   - Jazz: intermediate (avoid in inner voices)
 bool hasParallelFifthsOrOctaves(const VoicedChord& prev, const VoicedChord& next) {
   size_t count = std::min(prev.count, next.count);
   if (count < 2) return false;
@@ -1071,7 +1087,7 @@ ChordRhythm selectRhythm(SectionType section, Mood mood,
 void generateChordBar(MidiTrack& track, Tick bar_start,
                       const VoicedChord& voicing, ChordRhythm rhythm,
                       SectionType section, Mood mood,
-                      const HarmonyContext& harmony) {
+                      const IHarmonyContext& harmony) {
   uint8_t vel = calculateVelocity(section, 0, mood);
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.8f);
 
@@ -1149,12 +1165,17 @@ void generateChordBar(MidiTrack& track, Tick bar_start,
 
 }  // namespace
 
-void generateChordTrack(MidiTrack& track, const Song& song,
-                        const GeneratorParams& params,
-                        std::mt19937& rng,
-                        const HarmonyContext& harmony,
-                        const MidiTrack* bass_track,
-                        const MidiTrack* /*aux_track*/) {
+// =========================================================================
+// Internal implementations (not exposed in header)
+// =========================================================================
+
+// Internal implementation of generateChordTrack (basic version without vocal context).
+void generateChordTrackImpl(MidiTrack& track, const Song& song,
+                            const GeneratorParams& params,
+                            std::mt19937& rng,
+                            const IHarmonyContext& harmony,
+                            const MidiTrack* bass_track,
+                            const MidiTrack* /*aux_track*/) {
   // bass_track is used for BassAnalysis (voicing selection)
   // Collision avoidance is handled via HarmonyContext.isPitchSafe()
   const auto& progression = getChordProgression(params.chord_id);
@@ -1631,13 +1652,14 @@ std::vector<VoicedChord> filterVoicingsForContext(
   return filtered;
 }
 
-void generateChordTrackWithContext(MidiTrack& track, const Song& song,
-                                   const GeneratorParams& params,
-                                   std::mt19937& rng,
-                                   const MidiTrack* bass_track,
-                                   const VocalAnalysis& vocal_analysis,
-                                   const MidiTrack* aux_track,
-                                   const HarmonyContext& harmony) {
+// Internal implementation of generateChordTrackWithContext (with vocal context).
+void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
+                                       const GeneratorParams& params,
+                                       std::mt19937& rng,
+                                       const MidiTrack* bass_track,
+                                       const VocalAnalysis& vocal_analysis,
+                                       const MidiTrack* aux_track,
+                                       const IHarmonyContext& harmony) {
   // bass_track/vocal_analysis/aux_track are used for voicing selection
   // Collision avoidance is handled via HarmonyContext.isPitchSafe()
   const auto& progression = getChordProgression(params.chord_id);
@@ -2001,6 +2023,28 @@ void generateChordTrackWithContext(MidiTrack& track, const Song& song,
       has_prev = true;
     }
   }
+}
+
+// =========================================================================
+// Public API (context-based)
+// =========================================================================
+
+void generateChordTrack(MidiTrack& track, const TrackGenerationContext& ctx) {
+  generateChordTrackImpl(track, ctx.song, ctx.params, ctx.rng, ctx.harmony,
+                         ctx.bass_track, ctx.aux_track);
+}
+
+void generateChordTrackWithContext(MidiTrack& track,
+                                   const TrackGenerationContext& ctx) {
+  // Require vocal analysis for this overload
+  if (!ctx.hasVocalAnalysis()) {
+    // Fall back to basic generation if no vocal analysis
+    generateChordTrack(track, ctx);
+    return;
+  }
+  generateChordTrackWithContextImpl(track, ctx.song, ctx.params, ctx.rng,
+                                    ctx.bass_track, *ctx.vocal_analysis,
+                                    ctx.aux_track, ctx.harmony);
 }
 
 }  // namespace midisketch

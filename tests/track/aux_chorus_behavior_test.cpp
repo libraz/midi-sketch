@@ -16,6 +16,7 @@
 #include "core/chord_utils.h"
 #include "core/generator.h"
 #include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
 #include "core/timing_constants.h"
 #include "track/aux_track.h"
 #include <algorithm>

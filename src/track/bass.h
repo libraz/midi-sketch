@@ -17,7 +17,7 @@
 
 namespace midisketch {
 
-class HarmonyContext;
+class IHarmonyContext;
 
 /// Bass pattern analysis for chord voicing coordination (avoid doubling).
 struct BassAnalysis {
@@ -36,13 +36,13 @@ struct BassAnalysis {
 /// Generate bass track with pattern selection based on section type.
 void generateBassTrack(MidiTrack& track, const Song& song,
                        const GeneratorParams& params, std::mt19937& rng,
-                       const HarmonyContext& harmony);
+                       const IHarmonyContext& harmony);
 
 /// Generate bass adapted to vocal (motion type, density reciprocity, doubling avoidance).
 void generateBassTrackWithVocal(MidiTrack& track, const Song& song,
                                 const GeneratorParams& params, std::mt19937& rng,
                                 const VocalAnalysis& vocal_analysis,
-                                const HarmonyContext& harmony);
+                                const IHarmonyContext& harmony);
 
 }  // namespace midisketch
 
