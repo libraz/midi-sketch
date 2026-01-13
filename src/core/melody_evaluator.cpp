@@ -557,9 +557,92 @@ float MelodyEvaluator::calcGapRatio(const std::vector<NoteEvent>& notes,
   return std::min(1.0f, gap_ratio * 0.6f + coverage_penalty * 0.4f);
 }
 
+float MelodyEvaluator::calcBreathlessPenalty(const std::vector<NoteEvent>& notes) {
+  if (notes.size() < 4) return 0.0f;
+
+  // Count consecutive short notes without breathing room
+  constexpr Tick kShortNoteThreshold = TICKS_PER_BEAT / 4;  // 16th note or shorter
+  constexpr Tick kBreathingGapThreshold = TICKS_PER_BEAT / 2;  // 8th note gap minimum
+
+  int consecutive_short = 0;
+  int max_consecutive_short = 0;
+  Tick total_short_duration = 0;
+
+  for (size_t i = 0; i < notes.size(); ++i) {
+    bool is_short = notes[i].duration <= kShortNoteThreshold;
+
+    if (is_short) {
+      consecutive_short++;
+      total_short_duration += notes[i].duration;
+
+      // Check if there's a breathing gap after this note
+      if (i + 1 < notes.size()) {
+        Tick gap = notes[i + 1].start_tick -
+                   (notes[i].start_tick + notes[i].duration);
+        if (gap >= kBreathingGapThreshold) {
+          // Breathing opportunity found, reset
+          max_consecutive_short = std::max(max_consecutive_short, consecutive_short);
+          consecutive_short = 0;
+        }
+      }
+    } else {
+      max_consecutive_short = std::max(max_consecutive_short, consecutive_short);
+      consecutive_short = 0;
+    }
+  }
+  max_consecutive_short = std::max(max_consecutive_short, consecutive_short);
+
+  // Penalty based on max consecutive short notes
+  // 4-5 consecutive 16th notes = OK (one beat)
+  // 6-8 = getting hard
+  // 9+ = very breathless
+  float penalty = 0.0f;
+  if (max_consecutive_short > 8) {
+    penalty = 0.25f;
+  } else if (max_consecutive_short > 5) {
+    penalty = 0.1f + 0.05f * (max_consecutive_short - 5);
+  }
+
+  return std::min(penalty, 0.3f);
+}
+
+float MelodyEvaluator::getGapThreshold(VocalStylePreset style) {
+  switch (style) {
+    // High density styles - less silence allowed
+    case VocalStylePreset::Idol:
+    case VocalStylePreset::BrightKira:
+    case VocalStylePreset::CuteAffected:
+    case VocalStylePreset::Rock:
+    case VocalStylePreset::PowerfulShout:
+      return 0.30f;
+
+    // Vocaloid styles - machine-like, very high density
+    case VocalStylePreset::Vocaloid:
+    case VocalStylePreset::UltraVocaloid:
+      return 0.25f;
+
+    // Ballad - more silence is natural
+    case VocalStylePreset::Ballad:
+      return 0.50f;
+
+    // City Pop - jazzy, some space is good
+    case VocalStylePreset::CityPop:
+      return 0.45f;
+
+    // Anime - dramatic, varied density
+    case VocalStylePreset::Anime:
+      return 0.35f;
+
+    // Standard and others
+    default:
+      return 0.40f;
+  }
+}
+
 float MelodyEvaluator::evaluateForCulling(const std::vector<NoteEvent>& notes,
                                            const IHarmonyContext& harmony,
-                                           Tick phrase_duration) {
+                                           Tick phrase_duration,
+                                           VocalStylePreset style) {
   if (notes.empty()) return 0.0f;  // Empty = reject
 
   float score = 1.0f;
@@ -568,6 +651,14 @@ float MelodyEvaluator::evaluateForCulling(const std::vector<NoteEvent>& notes,
   score -= calcHighRegisterPenalty(notes);
   score -= calcLeapAfterHighPenalty(notes);
   score -= calcRapidDirectionChangePenalty(notes);
+
+  // === Breathless Penalty (style-dependent) ===
+  // Vocaloid styles tolerate more consecutive short notes
+  bool is_vocaloid_style = (style == VocalStylePreset::Vocaloid ||
+                            style == VocalStylePreset::UltraVocaloid);
+  if (!is_vocaloid_style) {
+    score -= calcBreathlessPenalty(notes);
+  }
 
   // === Music Theory Penalties ===
   // Non-chord tones on strong beats (reuse existing)
@@ -589,13 +680,13 @@ float MelodyEvaluator::evaluateForCulling(const std::vector<NoteEvent>& notes,
     score -= (kCohesionThreshold - cohesion) * 0.35f;
   }
 
-  // === Gap Ratio Penalty (primary fix for scattered notes) ===
+  // === Gap Ratio Penalty (style-dependent threshold) ===
   // High gap ratio = notes floating in isolation = bad melody
   float gap_ratio = calcGapRatio(notes, phrase_duration);
-  constexpr float kGapThreshold = 0.4f;  // Allow up to 40% silence
-  if (gap_ratio > kGapThreshold) {
+  float gap_threshold = getGapThreshold(style);
+  if (gap_ratio > gap_threshold) {
     // Strong penalty for scattered melodies: max ~0.3 penalty when gap = 1.0
-    score -= (gap_ratio - kGapThreshold) * 0.5f;
+    score -= (gap_ratio - gap_threshold) * 0.5f;
   }
 
   // === Bonuses ===

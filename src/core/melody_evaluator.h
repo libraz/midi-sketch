@@ -163,6 +163,26 @@ class MelodyEvaluator {
   static float calcGapRatio(const std::vector<NoteEvent>& notes,
                             Tick phrase_duration);
 
+  /// @brief Calculate penalty for breathless singing (too many consecutive short notes).
+  ///
+  /// In pop vocals, consecutive short notes (16th notes) without breaks
+  /// make phrases unsingable because there's no time to breathe.
+  /// This is especially important for non-Vocaloid styles.
+  ///
+  /// @param notes Vector of note events
+  /// @returns Penalty 0.0-0.3 (higher = more breathless)
+  static float calcBreathlessPenalty(const std::vector<NoteEvent>& notes);
+
+  /// @brief Get gap threshold for a vocal style preset.
+  ///
+  /// Different styles have different tolerances for silence:
+  /// - Ballad: higher threshold (more silence OK)
+  /// - Idol/Rock: lower threshold (needs higher density)
+  ///
+  /// @param style Vocal style preset
+  /// @returns Gap threshold 0.0-1.0
+  static float getGapThreshold(VocalStylePreset style);
+
   /// @brief Penalty-based evaluation for culling bad candidates.
   ///
   /// Starts at 1.0 and subtracts penalties for:
@@ -170,16 +190,19 @@ class MelodyEvaluator {
   /// - Music theory issues (non-chord tones on strong beats)
   /// - Low phrase cohesion (scattered notes without connection)
   /// - High gap ratio (too much silence = floating notes)
+  /// - Breathless singing (too many consecutive short notes)
   ///
   /// Used in generateSectionWithCulling() to filter out poor melodies.
   ///
   /// @param notes Vector of note events
   /// @param harmony Harmony context for chord info
   /// @param phrase_duration Total duration of the phrase (ticks)
+  /// @param style Vocal style preset (for style-specific thresholds)
   /// @returns Score 0.0-1.0 (higher = better)
   static float evaluateForCulling(const std::vector<NoteEvent>& notes,
                                   const IHarmonyContext& harmony,
-                                  Tick phrase_duration);
+                                  Tick phrase_duration,
+                                  VocalStylePreset style = VocalStylePreset::Standard);
 
   /// @}
 };
