@@ -418,8 +418,9 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
     MelodyScore style_score = MelodyEvaluator::evaluate(melody, harmony);
     float style_total = style_score.total(config);
 
-    // Culling evaluation: penalty-based (singing difficulty, monotony)
-    float culling_score = MelodyEvaluator::evaluateForCulling(melody, harmony);
+    // Culling evaluation: penalty-based (singing difficulty, monotony, gaps)
+    Tick phrase_duration = ctx.section_end - ctx.section_start;
+    float culling_score = MelodyEvaluator::evaluateForCulling(melody, harmony, phrase_duration);
 
     // StyleBias evaluation: interval pattern preferences
     float bias_score = 1.0f;

@@ -381,74 +381,156 @@ float MelodyEvaluator::calcMotifRepeatBonus(const std::vector<NoteEvent>& notes)
 }
 
 float MelodyEvaluator::calcPhraseCohesionBonus(const std::vector<NoteEvent>& notes) {
-  if (notes.size() < 4) return 0.5f;
+  // Short phrases can't be evaluated for cohesion - return no bonus
+  if (notes.size() < 4) return 0.0f;
 
   float stepwise_score = 0.0f;
   float rhythm_score = 0.0f;
   float cell_score = 0.0f;
 
-  // === 1. Stepwise motion ratio ===
-  // Count intervals that are stepwise (0-2 semitones)
-  int stepwise_count = 0;
+  // === 1. Stepwise motion: consecutive run length ===
+  // Instead of simple ratio, measure the longest consecutive stepwise run.
+  // This distinguishes "connected melody" from "scattered stepwise fragments".
+  int max_run = 0;
+  int current_run = 0;
   for (size_t i = 1; i < notes.size(); ++i) {
     int interval = std::abs(notes[i].note - notes[i - 1].note);
     if (interval <= 2) {  // Unison, minor 2nd, or major 2nd
-      stepwise_count++;
+      current_run++;
+      max_run = std::max(max_run, current_run);
+    } else {
+      current_run = 0;
     }
   }
-  stepwise_score = static_cast<float>(stepwise_count) /
-                   static_cast<float>(notes.size() - 1);
+  // Score based on max run relative to phrase length
+  // Ideal: at least half the notes are in one connected run
+  stepwise_score = std::min(1.0f, static_cast<float>(max_run) /
+                                      static_cast<float>(notes.size() / 2));
 
-  // === 2. Rhythm consistency ===
-  // Check if note durations cluster into similar values
-  std::vector<Tick> durations;
-  durations.reserve(notes.size());
-  for (const auto& note : notes) {
-    durations.push_back(note.duration);
-  }
-
-  // Find most common duration (quantized to 8th note)
+  // === 2. Rhythm pattern consistency ===
+  // Check for (duration, beat_position) patterns, not just duration frequency.
+  // This prevents short scattered notes from scoring high.
   constexpr Tick kQuantize = TICKS_PER_BEAT / 2;  // 8th note
-  std::vector<int> duration_counts(8, 0);  // 0-7 = 8th note multiples
-  for (Tick dur : durations) {
-    int idx = static_cast<int>(std::min(dur / kQuantize, static_cast<Tick>(7)));
-    duration_counts[static_cast<size_t>(idx)]++;
-  }
-  int max_count = *std::max_element(duration_counts.begin(), duration_counts.end());
-  rhythm_score = static_cast<float>(max_count) / static_cast<float>(notes.size());
+  constexpr Tick kBeatQuantize = TICKS_PER_BEAT;
 
-  // === 3. Short cell repetition ===
-  // Look for 2-3 note patterns that repeat
-  auto getIntervalCell = [&](size_t start, size_t len) {
-    std::vector<int8_t> cell;
-    for (size_t i = start; i < start + len && i + 1 < notes.size(); ++i) {
-      cell.push_back(static_cast<int8_t>(notes[i + 1].note - notes[i].note));
+  // Create rhythm signature: (quantized_duration, beat_offset)
+  std::vector<std::pair<int, int>> rhythm_patterns;
+  rhythm_patterns.reserve(notes.size());
+  for (const auto& note : notes) {
+    int dur_idx = static_cast<int>(std::min(note.duration / kQuantize,
+                                            static_cast<Tick>(7)));
+    int beat_offset = static_cast<int>((note.start_tick % kBeatQuantize) /
+                                       (kBeatQuantize / 4));  // 0-3 within beat
+    rhythm_patterns.push_back({dur_idx, beat_offset});
+  }
+
+  // Count most frequent pattern
+  int max_pattern_count = 0;
+  for (size_t i = 0; i < rhythm_patterns.size(); ++i) {
+    int count = 0;
+    for (size_t j = 0; j < rhythm_patterns.size(); ++j) {
+      if (rhythm_patterns[i] == rhythm_patterns[j]) count++;
     }
-    return cell;
+    max_pattern_count = std::max(max_pattern_count, count);
+  }
+  rhythm_score = static_cast<float>(max_pattern_count) /
+                 static_cast<float>(notes.size());
+
+  // === 3. Cell repetition: 3-gram (2 intervals + 2 durations) ===
+  // A "cell" is: (interval1, interval2, dur_ratio1, dur_ratio2)
+  // This captures melodic+rhythmic motifs, not just pitch direction.
+  struct Cell {
+    int8_t int1, int2;   // Two consecutive intervals
+    int8_t dur1, dur2;   // Duration ratios (quantized)
+
+    bool operator==(const Cell& other) const {
+      return int1 == other.int1 && int2 == other.int2 &&
+             dur1 == other.dur1 && dur2 == other.dur2;
+    }
   };
 
-  int cell_matches = 0;
-  int cell_checks = 0;
-  // Check for 2-note cell repetition
-  for (size_t i = 0; i + 3 < notes.size(); i += 2) {
-    auto cell1 = getIntervalCell(i, 2);
-    auto cell2 = getIntervalCell(i + 2, 2);
-    if (cell1.size() >= 1 && cell2.size() >= 1 && cell1[0] == cell2[0]) {
-      cell_matches++;
-    }
-    cell_checks++;
-  }
-  if (cell_checks > 0) {
-    cell_score = static_cast<float>(cell_matches) / static_cast<float>(cell_checks);
+  std::vector<Cell> cells;
+  cells.reserve(notes.size() > 2 ? notes.size() - 2 : 0);
+
+  for (size_t i = 0; i + 2 < notes.size(); ++i) {
+    Cell c;
+    c.int1 = static_cast<int8_t>(std::clamp(
+        notes[i + 1].note - notes[i].note, -12, 12));
+    c.int2 = static_cast<int8_t>(std::clamp(
+        notes[i + 2].note - notes[i + 1].note, -12, 12));
+    c.dur1 = static_cast<int8_t>(std::min(
+        notes[i].duration / kQuantize, static_cast<Tick>(7)));
+    c.dur2 = static_cast<int8_t>(std::min(
+        notes[i + 1].duration / kQuantize, static_cast<Tick>(7)));
+    cells.push_back(c);
   }
 
-  // Weighted combination: stepwise is most important
+  // Find most frequent 3-gram cell
+  int max_cell_count = 0;
+  for (size_t i = 0; i < cells.size(); ++i) {
+    int count = 0;
+    for (size_t j = 0; j < cells.size(); ++j) {
+      if (cells[i] == cells[j]) count++;
+    }
+    max_cell_count = std::max(max_cell_count, count);
+  }
+  if (!cells.empty()) {
+    // Need at least 2 occurrences for it to be a "repetition"
+    cell_score = (max_cell_count >= 2)
+                     ? static_cast<float>(max_cell_count) /
+                           static_cast<float>(cells.size())
+                     : 0.0f;
+  }
+
+  // Weighted combination: stepwise run is most important for cohesion
   return stepwise_score * 0.5f + rhythm_score * 0.25f + cell_score * 0.25f;
 }
 
+float MelodyEvaluator::calcGapRatio(const std::vector<NoteEvent>& notes,
+                                     Tick phrase_duration) {
+  if (notes.empty() || phrase_duration == 0) return 1.0f;  // All gap = worst
+  if (notes.size() == 1) {
+    // Single note: gap = phrase - note duration
+    Tick note_coverage = notes[0].duration;
+    return 1.0f - static_cast<float>(note_coverage) /
+                      static_cast<float>(phrase_duration);
+  }
+
+  // Calculate total sounding time
+  Tick total_sounding = 0;
+  for (const auto& note : notes) {
+    total_sounding += note.duration;
+  }
+
+  // Calculate gaps between consecutive notes
+  Tick total_gaps = 0;
+  for (size_t i = 1; i < notes.size(); ++i) {
+    Tick gap = notes[i].start_tick -
+               (notes[i - 1].start_tick + notes[i - 1].duration);
+    if (gap > 0) {
+      total_gaps += gap;
+    }
+  }
+
+  // Also account for gap at the start and end of phrase
+  // (assuming notes are within phrase_start to phrase_start + phrase_duration)
+  // For simplicity, we use the gap-to-phrase ratio
+  float gap_ratio = static_cast<float>(total_gaps) /
+                    static_cast<float>(phrase_duration);
+
+  // Also penalize low note density (notes not filling the phrase)
+  float coverage = static_cast<float>(total_sounding) /
+                   static_cast<float>(phrase_duration);
+  float coverage_penalty = std::max(0.0f, 1.0f - coverage);
+
+  // Combine: direct gaps + low coverage
+  return std::min(1.0f, gap_ratio * 0.6f + coverage_penalty * 0.4f);
+}
+
 float MelodyEvaluator::evaluateForCulling(const std::vector<NoteEvent>& notes,
-                                           const IHarmonyContext& harmony) {
-  if (notes.empty()) return 0.5f;
+                                           const IHarmonyContext& harmony,
+                                           Tick phrase_duration) {
+  if (notes.empty()) return 0.0f;  // Empty = reject
 
   float score = 1.0f;
 
@@ -467,15 +549,31 @@ float MelodyEvaluator::evaluateForCulling(const std::vector<NoteEvent>& notes,
   // === Boring Melody Penalties ===
   score -= calcMonotonyPenalty(notes);
 
+  // === Phrase Cohesion Gate (penalty for low cohesion) ===
+  // Convert cohesion from bonus to penalty: if below threshold, penalize.
+  // This is the primary gate for "scattered note" problems.
+  float cohesion = calcPhraseCohesionBonus(notes);
+  constexpr float kCohesionThreshold = 0.45f;
+  if (cohesion < kCohesionThreshold) {
+    // Penalize lack of cohesion: max ~0.16 penalty when cohesion = 0
+    score -= (kCohesionThreshold - cohesion) * 0.35f;
+  }
+
+  // === Gap Ratio Penalty (primary fix for scattered notes) ===
+  // High gap ratio = notes floating in isolation = bad melody
+  float gap_ratio = calcGapRatio(notes, phrase_duration);
+  constexpr float kGapThreshold = 0.4f;  // Allow up to 40% silence
+  if (gap_ratio > kGapThreshold) {
+    // Strong penalty for scattered melodies: max ~0.3 penalty when gap = 1.0
+    score -= (gap_ratio - kGapThreshold) * 0.5f;
+  }
+
   // === Bonuses ===
   score += calcClearPeakBonus(notes);
   score += calcMotifRepeatBonus(notes);
 
-  // === Shape Selection Bonuses ===
-  // These actively select "good shapes" rather than just penalizing bad ones.
-  // Without these, melodies that avoid penalties but lack coherence survive.
-  score += calcPhraseCohesionBonus(notes) * 0.1f;  // Phrase unity
-  score += calcContourShape(notes) * 0.1f;         // Directional clarity
+  // Note: calcContourShape removed from here (duplicate with style_total).
+  // Contour evaluation should be done via MelodyScore::total() with EvaluatorConfig.
 
   return std::clamp(score, 0.0f, 1.0f);
 }

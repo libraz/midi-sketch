@@ -1,7 +1,7 @@
 # midi-sketch
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/libraz/midi-sketch)
-[![License](https://img.shields.io/badge/License-Apache_2.0-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache_2.0_/_Commercial-green.svg)](LICENSE)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-orange.svg)](https://isocpp.org/)
 
 ポップス楽曲のMIDIスケッチを自動生成するC++17ライブラリです。
@@ -9,55 +9,28 @@
 
 ---
 
-### 🎮 [デモ](https://midisketch.libraz.net/ja/)
-インストール不要 — ブラウザで今すぐMIDI生成を体験できます。
-*[デモサイトのソース](https://github.com/libraz/midi-sketch-homepage)*
+### [デモ](https://midisketch.libraz.net/ja/) | [ドキュメント](https://midisketch.libraz.net/ja/docs/getting-started.html)
 
 ---
 
 ## 特徴
 
-### 生成機能
 - **8トラック出力** — Vocal / Chord / Bass / Motif / Arpeggio / Aux / Drums / SE
-- **豊富なプリセット** — 曲構成10種 × スタイルプリセット17種 × コード進行22種の組み合わせ
-- **再現性のある生成** — シード値を指定すれば同一のMIDIを再生成可能
-- **標準フォーマット** — SMF Type 1 形式で出力、任意のDAWで読み込み可能
-
-### コール＆レスポンス
-- **イントロコール** — ロングパターン（約18秒）、ショートパターン（約4秒）
-- **MIXパターン** — 標準（約8秒）、拡張（約16秒）
-- **コール密度制御** — 控えめ / 標準 / 激しい から選択
-- **Vocal自動休符** — コールセクション中はVocalが自動的に休符に
-
-### 音楽理論の適用
-- **ボイスリーディング** — 共通音の保持と最小限の声部移動
-- **非和声音の処理** — 掛留音・先取音・経過音を自然に配置
-- **テンションコード** — 7th / 9th / sus2 / sus4 を文脈に応じて付加
-- **セクション別ダイナミクス** — Aメロ→サビで盛り上がるベロシティ設計
-
-### 3つの作曲スタイル
-- **MelodyLead** — ボーカルメロディが主役の王道アレンジ
-- **BackgroundMotif** — リフやモチーフが前面、ボーカルは控えめ
-- **SynthDriven** — アルペジオ主体のエレクトロ系サウンド
+- **豊富なプリセット** — 曲構成(18) × スタイル(17) × ムード(20) × コード進行(22)
+- **高度なメロディ** — フレーズベース生成、HookIntensity、MelodicComplexity、VocalStyleProfile
+- **音楽理論** — ボイスリーディング、非和声音、テンションコード、セクション別ダイナミクス
+- **作曲スタイル** — MelodyLead、BackgroundMotif、SynthDriven
+- **再現性** — シード値による再現可能な生成
 
 ## ビルド
 
 ```bash
-# ネイティブビルド
-make build
-
-# テスト実行
-make test
-
-# CLI実行（output.mid を生成）
-./build/bin/midisketch_cli
+make build              # ネイティブビルド
+make test               # テスト実行
+./build/bin/midisketch_cli  # output.mid を生成
 
 # WASMビルド（要 Emscripten）
-source ~/emsdk/emsdk_env.sh
-make wasm
-
-# ブラウザデモ起動
-make demo
+source ~/emsdk/emsdk_env.sh && make wasm
 ```
 
 ## 使い方
@@ -69,251 +42,80 @@ make demo
 
 midisketch::MidiSketch sketch;
 midisketch::GeneratorParams params;
-params.structure_id = 1;   // BuildUp (0-9)
+params.structure_id = 1;   // BuildUp (0-17)
 params.mood_id = 0;        // StraightPop (0-19)
 params.chord_id = 0;       // カノン進行 (0-21)
-params.key = 0;            // Cメジャー (0-11)
-params.seed = 12345;       // 0 でランダム
+params.seed = 12345;
 
 sketch.generate(params);
 auto midi = sketch.getMidi();       // SMFバイナリ
-auto json = sketch.getEventsJson(); // JSONイベント
 ```
 
 ### JavaScript / TypeScript (WASM)
 
 ```typescript
-import { init, MidiSketch, VocalAttitude, CompositionStyle } from '@libraz/midi-sketch';
+import { init, MidiSketch } from '@libraz/midi-sketch';
 
 await init();
-
 const sketch = new MidiSketch();
 
 sketch.generate({
   structureId: 1,
   moodId: 0,
   chordId: 0,
-  key: 0,
   seed: 12345
 });
 
-const midiData = sketch.getMidi();    // Uint8Array
-const events = sketch.getEvents();    // 型付きオブジェクト
-
-// ボーカル優先ワークフロー: ボーカルのみ生成、その後伴奏を追加
-sketch.generateVocal(config);         // ボーカルのみ生成
-sketch.regenerateVocal(12345);        // 新しいシードで再生成
-sketch.regenerateVocal({              // または設定変更して再生成
-  seed: 54321,
-  vocalLow: 55,
-  vocalHigh: 75,
-  vocalAttitude: 1                    // Expressive
-});
-sketch.generateAccompaniment();       // 伴奏トラックを追加
-
+const midiData = sketch.getMidi();  // Uint8Array
 sketch.destroy();
 ```
-
-## ディレクトリ構成
-
-```
-midi-sketch/
-├── src/
-│   ├── midisketch.h/cpp      # 公開API
-│   ├── midisketch_c.h/cpp    # C API（WASM連携用）
-│   ├── core/
-│   │   ├── types.h           # 型定義
-│   │   ├── generator.cpp     # 生成エンジン本体
-│   │   ├── structure.cpp     # 曲構成パターン
-│   │   ├── chord.cpp         # コード進行定義
-│   │   ├── velocity.cpp      # ベロシティ計算
-│   │   └── preset_data.cpp   # ムードプリセット
-│   ├── midi/
-│   │   └── midi_writer.cpp   # SMF書き出し
-│   └── track/
-│       ├── vocal.cpp         # メロディ生成
-│       ├── chord_track.cpp   # コードボイシング
-│       ├── bass.cpp          # ベースライン
-│       ├── drums.cpp         # ドラムパターン
-│       ├── motif.cpp         # 背景モチーフ
-│       ├── arpeggio.cpp      # アルペジオ
-│       └── se.cpp            # セクションマーカー
-├── js/
-│   └── index.ts              # TypeScriptラッパー
-├── tests/                    # Google Test + vitest
-├── demo/                     # ブラウザデモ
-└── dist/                     # npmパッケージ出力
-```
-
-## 技術詳細
-
-### 生成フロー
-
-```mermaid
-flowchart TD
-    A[GeneratorParams] --> B[buildStructure]
-    B --> C[generateChord]
-    C --> D[generateBass]
-    D --> E[generateVocal]
-    E --> F[generateDrums]
-    F --> H[generateSE]
-    H --> G[MidiWriter]
-
-    B -.- B1["セクション配列を構築（Chant/MixBreak含む）"]
-    C -.- C1["ボイスリーディング・テンション付加"]
-    D -.- D1["ルート・5度・アプローチノート"]
-    E -.- E1["コードトーン優先・フレーズ反復"]
-    F -.- F1["パターン選択・フィル挿入"]
-    H -.- H1["セクションマーカー・コールイベント・転調"]
-    G -.- G1["キー移調・SMF出力"]
-```
-
-### 各トラックの生成ロジック
-
-| トラック | 概要 |
-|---------|------|
-| **Chord** | 共通音保持と最小移動によるボイスリーディング。ベースがルートを弾く場合はルートレスボイシングを選択 |
-| **Bass** | 1拍目にルート音、5度や経過音でラインを構成。セクションに応じて密度を調整 |
-| **Vocal** | 強拍ではコードトーンを優先。4-3掛留や先取音で動きを付け、同一セクションではフレーズを再利用 |
-| **Drums** | 6種類のDrumStyleからパターンを選択。セクション遷移時にはフィルを自動挿入 |
-| **Motif** | 2〜4小節のパターンを生成し反復。B・サビではテンションノートを付加 |
-| **Arpeggio** | Up / Down / UpDown / Random から選択。8分・16分・3連など速度も指定可能 |
-| **SE** | セクションマーカー、コールイベント、転調マーカーを出力 |
-
-### ベロシティ設計
-
-```
-velocity = (80 + 拍補正) × セクション係数 × トラック係数
-```
-
-| セクション | 係数 | | トラック | 係数 |
-|-----------|------|-|---------|------|
-| Intro | 0.75 | | Vocal | 1.00 |
-| Aメロ | 0.85 | | Chord | 0.75 |
-| Bメロ | 1.00 | | Bass | 0.85 |
-| サビ | 1.20 | | Drums | 0.90 |
-| Bridge | 0.90 | | Motif | 0.70 |
-| Outro | 0.80 | | Arpeggio | 0.85 |
-
-### コード進行（22パターン）
-
-4〜5コードの可変長進行に対応しています。
-
-| 種別 | 例 |
-|------|-----|
-| 4コード | Canon (I-V-vi-IV)、Axis (vi-IV-I-V)、小室進行 (vi-IV-V-I) |
-| 5コード | Extended5 (I-V-vi-iii-IV)、Emotional5 (vi-IV-I-V-ii) |
-
-テンションは文脈に応じて確率的に付加されます。
-
-- **sus2 / sus4** — サブドミナント周辺で使用
-- **7th** — ドミナント（V）や ii で効果的
-- **9th** — トニック（I）やサビの vi で使用
-
-### 転調
-
-`ModulationTiming` で明示的に制御するか、構成パターンに応じたデフォルト動作を使用できます。
-
-| ModulationTiming | 動作 |
-|------------------|------|
-| None | 転調なし |
-| LastChorus | 最後のサビ前で転調（最も一般的） |
-| AfterBridge | ブリッジ後で転調 |
-| EachChorus | 毎サビで転調（稀） |
-| Random | シードに基づきランダム選択 |
-
-**デフォルト動作（ModulationTiming::None 時）：**
-
-| 曲構成 | 転調タイミング | 転調量 |
-|--------|---------------|--------|
-| StandardPop | Bメロ → サビ | +1（半音） |
-| RepeatChorus | サビ1 → サビ2 | +1（半音） |
-| Ballad系 | Bメロ → サビ | +2（全音） |
-
-転調量は `modulation_semitones`（+1〜+4）で設定可能。
-
-### ドラムスタイル
-
-| スタイル | 対象ムード | 特徴 |
-|---------|-----------|------|
-| Sparse | Ballad, Chill | サイドスティック中心、控えめ |
-| Standard | StraightPop | 8ビートの基本形 |
-| FourOnFloor | ElectroPop, IdolPop | 4つ打ちキック |
-| Upbeat | BrightUpbeat | 16分ハイハット、シンコペーション |
-| Rock | LightRock | ライドシンバル主体 |
-| Synth | Yoasobi, Synthwave | タイトな16分ハイハット |
 
 ## 出力トラック
 
 | トラック | Ch | Program | 役割 |
 |---------|-----|---------|------|
-| Vocal | 0 | 0 (Piano) | メロディ |
-| Chord | 1 | 4 (E.Piano) | コード |
-| Bass | 2 | 33 (E.Bass) | ベース |
-| Motif | 3 | 81 (Synth Lead) | 背景リフ |
-| Arpeggio | 4 | 81 (Saw Lead) | アルペジオ |
-| Aux | 5 | 89 (Warm Pad) | サブメロディ |
+| Vocal | 0 | Piano | メロディ |
+| Chord | 1 | E.Piano | コード |
+| Bass | 2 | E.Bass | ベース |
+| Motif | 3 | Synth Lead | 背景リフ |
+| Arpeggio | 4 | Saw Lead | アルペジオ |
+| Aux | 5 | Warm Pad | サブメロディ |
 | Drums | 9 | — | GM準拠 |
-| SE | 15 | — | マーカー、コールノート |
+| SE | 15 | — | マーカー |
 
-### セクション種類
+## ドキュメント
 
-| セクション | 説明 | Vocal | Backing |
-|-----------|------|-------|---------|
-| Intro | イントロ | なし | 薄め |
-| A | Aメロ | 控えめ | 標準 |
-| B | Bメロ | フル | 標準 |
-| Chorus | サビ | フル | 厚め |
-| Bridge | ブリッジ | 控えめ | 薄め |
-| Interlude | 間奏 | なし | 薄め |
-| Outro | アウトロ | なし | 標準 |
-| **Chant** | コール/チャントセクション | なし | 薄め |
-| **MixBreak** | MIXブレイクセクション | なし | 厚め |
-
-## アーキテクチャ
-
-### 設計方針
-
-- **内部処理はCメジャー固定** — 出力時に指定キーへ移調
-- **NoteEvent で編集** — 開始位置・長さ・ピッチ・ベロシティを保持する高レベル表現
-- **MidiEvent は出力専用** — SMF書き出し時に低レベルバイト列へ変換
-- **プリセットは constexpr** — コンパイル時に埋め込み、WASMサイズを最適化
-
-### クラス構成
-
-```mermaid
-flowchart TD
-    Song --> Arrangement["Arrangement<br/>セクション管理"]
-    Song --> MidiTrack["MidiTrack[]<br/>トラック別ノート"]
-    MidiTrack --> NoteEvent["NoteEvent[]<br/>音符データ"]
-    NoteEvent -->|出力時| MidiEvent["MidiEvent[]<br/>MIDIバイト列"]
-    MidiEvent --> SMF["SMF Type 1"]
-```
-
-### WASM向け最適化
-
-- 外部ライブラリ依存なし
-- コアライブラリ内でファイルI/O禁止
-- 全プリセットを constexpr 配列で定義
-- JavaScript連携用にC APIラッパーを用意
-- 出力サイズ: wasm 約128KB + JSグルー 約19KB
+- [はじめに](https://midisketch.libraz.net/ja/docs/getting-started.html)
+- [APIリファレンス](https://midisketch.libraz.net/ja/docs/api.html)
+- [プリセット一覧](https://midisketch.libraz.net/ja/docs/presets.html)
+- [トラック生成](https://midisketch.libraz.net/ja/docs/track-generators.html)
+- [アーキテクチャ](https://midisketch.libraz.net/ja/docs/architecture.html)
+- [CLIリファレンス](https://midisketch.libraz.net/ja/docs/cli.html)
 
 ## ライセンス
 
-Apache License 2.0 で公開しています。詳細は [LICENSE](LICENSE) をご覧ください。
+本プロジェクトはデュアルライセンスです:
+
+- **オープンソース**: [Apache License 2.0](LICENSE) — 評価・研究・非商用利用向け
+- **商用**: [商用ライセンス](LICENSE-COMMERCIAL) — クローズドソース・プロプライエタリ・SaaS利用向け
+
+### どちらのライセンスが必要?
+
+| 用途 | ライセンス |
+|------|-----------|
+| 評価 / 研究 | Apache-2.0（無料） |
+| 非商用利用 | Apache-2.0（無料） |
+| クローズドソース製品 | 商用（有料） |
+| 商用SaaS | 商用（有料） |
+
+商用ライセンスのお問い合わせ: libraz@libraz.net
 
 ### スコープについて
 
 本プロジェクトは **MIDIスケッチ生成エンジン** を提供するものです。
 完成された楽曲制作システムではありません。
 
-- 音源・シンセサイザー
-- ボーカル合成
-- オーディオレンダリング
-
-これらは本プロジェクトのスコープ外です。
-
-拡張コンポーネントの商用ライセンスについてはお問い合わせください。
+音源・ボーカル合成・オーディオレンダリングは本プロジェクトのスコープ外です。
 
 ## 作者
 

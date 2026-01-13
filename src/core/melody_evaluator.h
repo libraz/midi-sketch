@@ -142,24 +142,43 @@ class MelodyEvaluator {
   /// @brief Calculate bonus for phrase cohesion (notes forming coherent groups).
   ///
   /// Evaluates whether notes cluster into recognizable phrase units:
-  /// - Stepwise motion (unison/2nd intervals)
-  /// - Consistent rhythm patterns
-  /// - Short cell repetition
+  /// - Stepwise motion runs (consecutive connected notes)
+  /// - Consistent rhythm patterns (duration + beat position)
+  /// - 3-gram cell repetition (interval + duration motifs)
   ///
   /// @param notes Vector of note events
-  /// @returns Bonus 0.0-1.0
+  /// @returns Score 0.0-1.0 (higher = more cohesive)
   static float calcPhraseCohesionBonus(const std::vector<NoteEvent>& notes);
+
+  /// @brief Calculate gap ratio (silence between notes).
+  ///
+  /// Measures the ratio of silence/gaps to total phrase duration.
+  /// High gap ratio indicates "scattered" melody - notes floating in isolation.
+  /// This is the primary metric for detecting the "safe floating notes" problem.
+  ///
+  /// @param notes Vector of note events
+  /// @param phrase_duration Total duration of the phrase (ticks)
+  /// @returns Gap ratio 0.0-1.0 (higher = more gaps = more scattered)
+  static float calcGapRatio(const std::vector<NoteEvent>& notes,
+                            Tick phrase_duration);
 
   /// @brief Penalty-based evaluation for culling bad candidates.
   ///
-  /// Starts at 1.0 and subtracts penalties, adds bonuses.
+  /// Starts at 1.0 and subtracts penalties for:
+  /// - Singing difficulty (high register, leap after high, rapid changes)
+  /// - Music theory issues (non-chord tones on strong beats)
+  /// - Low phrase cohesion (scattered notes without connection)
+  /// - High gap ratio (too much silence = floating notes)
+  ///
   /// Used in generateSectionWithCulling() to filter out poor melodies.
   ///
   /// @param notes Vector of note events
   /// @param harmony Harmony context for chord info
+  /// @param phrase_duration Total duration of the phrase (ticks)
   /// @returns Score 0.0-1.0 (higher = better)
   static float evaluateForCulling(const std::vector<NoteEvent>& notes,
-                                  const IHarmonyContext& harmony);
+                                  const IHarmonyContext& harmony,
+                                  Tick phrase_duration);
 
   /// @}
 };
