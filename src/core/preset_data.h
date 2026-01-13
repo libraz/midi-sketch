@@ -37,6 +37,65 @@ enum class DrumStyle : uint8_t {
   Synth         // Synth-oriented - tight 16th hi-hats, punchy kick
 };
 
+// ============================================================================
+// Bass Genre System
+// ============================================================================
+//
+// Genre classification for bass pattern selection.
+// Each genre defines preferred patterns for each section type.
+//
+enum class BassGenre : uint8_t {
+  Standard,    // Default pop patterns
+  Ballad,      // Slow, sustained (WholeNote, RootFifth)
+  Rock,        // Aggressive, power-driven (PowerDrive, Aggressive)
+  Dance,       // High-energy (Aggressive, OctaveJump)
+  Electronic,  // Sidechain pulse, modern EDM (SidechainPulse)
+  Jazz,        // Walking bass, groove (Groove, Walking)
+  Idol,        // Bright, energetic (Driving, OctaveJump)
+  COUNT
+};
+
+// Bass pattern types (forward declaration for BassGenrePatterns)
+// Full enum defined in bass.cpp - values must match
+enum class BassPatternId : uint8_t {
+  WholeNote = 0,
+  RootFifth = 1,
+  Syncopated = 2,
+  Driving = 3,
+  RhythmicDrive = 4,
+  Walking = 5,
+  PowerDrive = 6,
+  Aggressive = 7,
+  SidechainPulse = 8,
+  Groove = 9,
+  OctaveJump = 10
+};
+
+// Section indices for bass pattern table
+enum class BassSection : uint8_t {
+  Intro = 0,   // Also used for Interlude
+  A = 1,       // Verse
+  B = 2,       // Pre-chorus
+  Chorus = 3,
+  Bridge = 4,
+  Outro = 5,
+  Mix = 6,     // MixBreak
+  COUNT = 7
+};
+
+// Pattern selection weights for a section
+// First pattern is primary (60%), second is secondary (30%), third is rare (10%)
+struct BassPatternChoice {
+  BassPatternId primary;
+  BassPatternId secondary;
+  BassPatternId tertiary;
+};
+
+// Bass patterns for all sections of a genre
+struct BassGenrePatterns {
+  BassPatternChoice sections[static_cast<int>(BassSection::COUNT)];
+};
+
 // Returns the default BPM for a given mood.
 // @param mood Mood preset
 // @returns Default BPM (60-180)
@@ -61,6 +120,16 @@ const char* getMoodName(Mood mood);
 // @param mood Mood preset
 // @returns DrumStyle category
 DrumStyle getMoodDrumStyle(Mood mood);
+
+// Returns the bass genre for a given mood.
+// @param mood Mood preset
+// @returns BassGenre category
+BassGenre getMoodBassGenre(Mood mood);
+
+// Returns the bass genre patterns for a given genre.
+// @param genre BassGenre category
+// @returns Reference to BassGenrePatterns struct
+const BassGenrePatterns& getBassGenrePatterns(BassGenre genre);
 
 // ============================================================================
 // StylePreset API (Phase 1)

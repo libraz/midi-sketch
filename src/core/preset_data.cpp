@@ -763,6 +763,154 @@ DrumStyle getMoodDrumStyle(Mood mood) {
 }
 
 // ============================================================================
+// Bass Genre System Implementation
+// ============================================================================
+//
+// Mood → BassGenre Mapping Table
+// Maps each Mood to its appropriate BassGenre category.
+//
+// Genre categories:
+// - Standard:   Default pop patterns
+// - Ballad:     Slow, sustained (Ballad, Sentimental, Chill)
+// - Rock:       Aggressive, power-driven (LightRock, Anthem, Yoasobi)
+// - Dance:      High-energy (EnergeticDance, IdolPop, FutureBass)
+// - Electronic: Sidechain, modern (ElectroPop, Synthwave)
+// - Jazz:       Walking bass, groove (CityPop, ModernPop)
+// - Idol:       Bright, energetic (BrightUpbeat, IdolPop)
+//
+constexpr BassGenre MOOD_BASS_GENRES[20] = {
+    BassGenre::Standard,     // 0: StraightPop
+    BassGenre::Idol,         // 1: BrightUpbeat
+    BassGenre::Dance,        // 2: EnergeticDance
+    BassGenre::Rock,         // 3: LightRock
+    BassGenre::Standard,     // 4: MidPop
+    BassGenre::Standard,     // 5: EmotionalPop
+    BassGenre::Ballad,       // 6: Sentimental
+    BassGenre::Ballad,       // 7: Chill
+    BassGenre::Ballad,       // 8: Ballad
+    BassGenre::Standard,     // 9: DarkPop
+    BassGenre::Standard,     // 10: Dramatic
+    BassGenre::Standard,     // 11: Nostalgic
+    BassGenre::Jazz,         // 12: ModernPop
+    BassGenre::Electronic,   // 13: ElectroPop
+    BassGenre::Idol,         // 14: IdolPop
+    BassGenre::Rock,         // 15: Anthem
+    BassGenre::Rock,         // 16: Yoasobi
+    BassGenre::Electronic,   // 17: Synthwave
+    BassGenre::Dance,        // 18: FutureBass
+    BassGenre::Jazz,         // 19: CityPop
+};
+
+// ============================================================================
+// BASS GENRE PATTERN MAPPING TABLE
+// ============================================================================
+//
+// | Genre      | Intro    | A (Verse)     | B (PreCho)    | Chorus        | Bridge   | Outro    | Mix          |
+// |------------|----------|---------------|---------------|---------------|----------|----------|--------------|
+// | Standard   | WN,RF,RF | RF,WN,SY      | SY,RF,DR      | SY,DR,RF      | RF,WN,SY | RF,WN,WN | DR,SY,AG     |
+// | Ballad     | WN,RF,RF | WN,RF,RF      | RF,WN,WN      | RF,SY,SY      | WN,RF,RF | WN,RF,RF | RF,SY,SY     |
+// | Rock       | WN,RF,RF | PD,RF,SY      | PD,DR,SY      | AG,PD,DR      | RF,PD,SY | RF,WN,WN | AG,PD,DR     |
+// | Dance      | WN,RF,RF | RF,SY,OJ      | SY,DR,OJ      | AG,DR,OJ      | RF,SY,SY | RF,WN,WN | AG,OJ,DR     |
+// | Electronic | WN,RF,SP | SP,RF,OJ      | SP,DR,OJ      | AG,SP,OJ      | RF,SP,SY | SP,RF,RF | AG,OJ,DR     |
+// | Jazz       | WN,RF,RF | GR,WK,SY      | GR,WK,SY      | GR,DR,WK      | WK,GR,RF | RF,WN,WN | DR,GR,SY     |
+// | Idol       | WN,RF,RF | RF,SY,OJ      | SY,DR,OJ      | DR,OJ,AG      | RF,SY,SY | RF,WN,WN | AG,OJ,DR     |
+//
+// Abbreviations:
+//   WN=WholeNote, RF=RootFifth, SY=Syncopated, DR=Driving, WK=Walking
+//   PD=PowerDrive, AG=Aggressive, SP=SidechainPulse, GR=Groove, OJ=OctaveJump
+//
+using BP = BassPatternId;
+
+constexpr BassGenrePatterns BASS_GENRE_PATTERNS[static_cast<int>(BassGenre::COUNT)] = {
+  // Standard (default pop)
+  {{
+    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // Intro
+    {BP::RootFifth,   BP::WholeNote,   BP::Syncopated},   // A
+    {BP::Syncopated,  BP::RootFifth,   BP::Driving},      // B
+    {BP::Syncopated,  BP::Driving,     BP::RootFifth},    // Chorus
+    {BP::RootFifth,   BP::WholeNote,   BP::Syncopated},   // Bridge
+    {BP::RootFifth,   BP::WholeNote,   BP::WholeNote},    // Outro
+    {BP::Driving,     BP::Syncopated,  BP::Aggressive},   // Mix
+  }},
+  // Ballad (slow, sustained)
+  {{
+    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // Intro
+    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // A
+    {BP::RootFifth,   BP::WholeNote,   BP::WholeNote},    // B
+    {BP::RootFifth,   BP::Syncopated,  BP::Syncopated},   // Chorus
+    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // Bridge
+    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // Outro
+    {BP::RootFifth,   BP::Syncopated,  BP::Syncopated},   // Mix
+  }},
+  // Rock (aggressive, power-driven)
+  {{
+    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // Intro
+    {BP::PowerDrive,  BP::RootFifth,   BP::Syncopated},   // A
+    {BP::PowerDrive,  BP::Driving,     BP::Syncopated},   // B
+    {BP::Aggressive,  BP::PowerDrive,  BP::Driving},      // Chorus
+    {BP::RootFifth,   BP::PowerDrive,  BP::Syncopated},   // Bridge
+    {BP::RootFifth,   BP::WholeNote,   BP::WholeNote},    // Outro
+    {BP::Aggressive,  BP::PowerDrive,  BP::Driving},      // Mix
+  }},
+  // Dance (high-energy)
+  {{
+    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // Intro
+    {BP::RootFifth,   BP::Syncopated,  BP::OctaveJump},   // A
+    {BP::Syncopated,  BP::Driving,     BP::OctaveJump},   // B
+    {BP::Aggressive,  BP::Driving,     BP::OctaveJump},   // Chorus
+    {BP::RootFifth,   BP::Syncopated,  BP::Syncopated},   // Bridge
+    {BP::RootFifth,   BP::WholeNote,   BP::WholeNote},    // Outro
+    {BP::Aggressive,  BP::OctaveJump,  BP::Driving},      // Mix
+  }},
+  // Electronic (sidechain, modern EDM)
+  {{
+    {BP::WholeNote,   BP::RootFifth,   BP::SidechainPulse}, // Intro
+    {BP::SidechainPulse, BP::RootFifth, BP::OctaveJump},  // A
+    {BP::SidechainPulse, BP::Driving,  BP::OctaveJump},   // B
+    {BP::Aggressive,  BP::SidechainPulse, BP::OctaveJump},// Chorus
+    {BP::RootFifth,   BP::SidechainPulse, BP::Syncopated},// Bridge
+    {BP::SidechainPulse, BP::RootFifth, BP::RootFifth},   // Outro
+    {BP::Aggressive,  BP::OctaveJump,  BP::Driving},      // Mix
+  }},
+  // Jazz (walking bass, groove - CityPop/ModernPop)
+  {{
+    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // Intro
+    {BP::Groove,      BP::Walking,     BP::Syncopated},   // A
+    {BP::Groove,      BP::Walking,     BP::Syncopated},   // B
+    {BP::Groove,      BP::Driving,     BP::Walking},      // Chorus
+    {BP::Walking,     BP::Groove,      BP::RootFifth},    // Bridge
+    {BP::RootFifth,   BP::WholeNote,   BP::WholeNote},    // Outro
+    {BP::Driving,     BP::Groove,      BP::Syncopated},   // Mix
+  }},
+  // Idol (bright, energetic)
+  {{
+    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // Intro
+    {BP::RootFifth,   BP::Syncopated,  BP::OctaveJump},   // A
+    {BP::Syncopated,  BP::Driving,     BP::OctaveJump},   // B
+    {BP::Driving,     BP::OctaveJump,  BP::Aggressive},   // Chorus
+    {BP::RootFifth,   BP::Syncopated,  BP::Syncopated},   // Bridge
+    {BP::RootFifth,   BP::WholeNote,   BP::WholeNote},    // Outro
+    {BP::Aggressive,  BP::OctaveJump,  BP::Driving},      // Mix
+  }},
+};
+
+BassGenre getMoodBassGenre(Mood mood) {
+  uint8_t idx = static_cast<uint8_t>(mood);
+  if (idx < sizeof(MOOD_BASS_GENRES) / sizeof(MOOD_BASS_GENRES[0])) {
+    return MOOD_BASS_GENRES[idx];
+  }
+  return BassGenre::Standard;  // fallback
+}
+
+const BassGenrePatterns& getBassGenrePatterns(BassGenre genre) {
+  uint8_t idx = static_cast<uint8_t>(genre);
+  if (idx >= static_cast<uint8_t>(BassGenre::COUNT)) {
+    idx = 0;  // fallback to Standard
+  }
+  return BASS_GENRE_PATTERNS[idx];
+}
+
+// ============================================================================
 // StylePreset API Implementation
 // ============================================================================
 

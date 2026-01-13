@@ -229,45 +229,122 @@ uint8_t getApproachNote(uint8_t current_root, uint8_t next_root, int8_t target_d
   return clampBass(next_root);
 }
 
-/// Bass pattern types. WholeNote=stability, RootFifth=1-5, Syncopated=off-beat,
-/// Driving=8th pulse, RhythmicDrive=no drums, Walking=jazz scale walk.
+/// Bass pattern types for different genres and styles.
+/// Each pattern is designed based on music theory and bass playing techniques.
 enum class BassPattern {
-  WholeNote,      ///< Sustained root notes for stability
-  RootFifth,      ///< Root-fifth alternation (classic pop/rock)
-  Syncopated,     ///< Off-beat accents for groove
-  Driving,        ///< Eighth-note pulse for energy
+  WholeNote,      ///< Sustained root notes for stability (Ballad, Intro)
+  RootFifth,      ///< Root-fifth alternation (classic pop)
+  Syncopated,     ///< Off-beat accents for groove (Pre-chorus)
+  Driving,        ///< Eighth-note pulse for energy (Chorus)
   RhythmicDrive,  ///< Bass drives rhythm when drums are off
-  Walking         ///< Quarter-note scale walk (jazz influence)
+  Walking,        ///< Quarter-note scale walk (Jazz, CityPop)
+  // New aggressive/genre-specific patterns
+  PowerDrive,     ///< Root-5th emphasis for rock (LightRock, Anthem)
+  Aggressive,     ///< 16th note patterns for high energy (Dance, Yoasobi chorus)
+  SidechainPulse, ///< EDM sidechain compression style (ElectroPop, FutureBass)
+  Groove,         ///< Smooth groove with passing tones (CityPop, ModernPop)
+  OctaveJump      ///< Octave alternation for dance music
 };
 
-// Adjust pattern one level sparser
+// Adjust pattern one level sparser (reduce density/aggression)
 BassPattern adjustPatternSparser(BassPattern pattern) {
   switch (pattern) {
+    case BassPattern::Aggressive: return BassPattern::Driving;
     case BassPattern::Driving: return BassPattern::Syncopated;
     case BassPattern::Syncopated: return BassPattern::RootFifth;
     case BassPattern::RhythmicDrive: return BassPattern::Syncopated;
     case BassPattern::RootFifth: return BassPattern::WholeNote;
     case BassPattern::WholeNote: return BassPattern::WholeNote;
     case BassPattern::Walking: return BassPattern::RootFifth;
+    case BassPattern::PowerDrive: return BassPattern::RootFifth;
+    case BassPattern::SidechainPulse: return BassPattern::RootFifth;
+    case BassPattern::Groove: return BassPattern::Walking;
+    case BassPattern::OctaveJump: return BassPattern::Driving;
   }
   return pattern;
 }
 
-// Adjust pattern one level denser
+// Adjust pattern one level denser (increase density/aggression)
 BassPattern adjustPatternDenser(BassPattern pattern) {
   switch (pattern) {
     case BassPattern::WholeNote: return BassPattern::RootFifth;
     case BassPattern::RootFifth: return BassPattern::Syncopated;
     case BassPattern::Syncopated: return BassPattern::Driving;
-    case BassPattern::Driving: return BassPattern::Driving;
+    case BassPattern::Driving: return BassPattern::Aggressive;
+    case BassPattern::Aggressive: return BassPattern::Aggressive;
     case BassPattern::RhythmicDrive: return BassPattern::RhythmicDrive;
-    case BassPattern::Walking: return BassPattern::Walking;
+    case BassPattern::Walking: return BassPattern::Groove;
+    case BassPattern::PowerDrive: return BassPattern::Aggressive;
+    case BassPattern::SidechainPulse: return BassPattern::Aggressive;
+    case BassPattern::Groove: return BassPattern::Groove;
+    case BassPattern::OctaveJump: return BassPattern::Aggressive;
   }
   return pattern;
 }
 
-// Select bass pattern based on section, drums, mood, and backing density
-// Uses RNG to add variation while respecting musical constraints
+// ============================================================================
+// Pattern Selection (using Genre Master from preset_data)
+// ============================================================================
+
+// Convert BassPatternId to local BassPattern enum
+BassPattern fromPatternId(BassPatternId id) {
+  switch (id) {
+    case BassPatternId::WholeNote: return BassPattern::WholeNote;
+    case BassPatternId::RootFifth: return BassPattern::RootFifth;
+    case BassPatternId::Syncopated: return BassPattern::Syncopated;
+    case BassPatternId::Driving: return BassPattern::Driving;
+    case BassPatternId::RhythmicDrive: return BassPattern::RhythmicDrive;
+    case BassPatternId::Walking: return BassPattern::Walking;
+    case BassPatternId::PowerDrive: return BassPattern::PowerDrive;
+    case BassPatternId::Aggressive: return BassPattern::Aggressive;
+    case BassPatternId::SidechainPulse: return BassPattern::SidechainPulse;
+    case BassPatternId::Groove: return BassPattern::Groove;
+    case BassPatternId::OctaveJump: return BassPattern::OctaveJump;
+  }
+  return BassPattern::RootFifth;
+}
+
+// Map SectionType to BassSection
+BassSection toBassSection(SectionType section) {
+  switch (section) {
+    case SectionType::Intro:
+    case SectionType::Interlude:
+      return BassSection::Intro;
+    case SectionType::A:
+      return BassSection::A;
+    case SectionType::B:
+      return BassSection::B;
+    case SectionType::Chorus:
+      return BassSection::Chorus;
+    case SectionType::Bridge:
+      return BassSection::Bridge;
+    case SectionType::Outro:
+      return BassSection::Outro;
+    case SectionType::MixBreak:
+      return BassSection::Mix;
+    case SectionType::Chant:
+      return BassSection::Intro;  // Use intro patterns (simple)
+  }
+  return BassSection::A;
+}
+
+// Select pattern from genre master table with weighted random
+BassPattern selectFromGenreTable(BassGenre genre, BassSection section, std::mt19937& rng) {
+  const auto& patterns = getBassGenrePatterns(genre);
+  const auto& choice = patterns.sections[static_cast<int>(section)];
+
+  // 60% primary, 30% secondary, 10% tertiary
+  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+  float roll = dist(rng);
+
+  if (roll < 0.60f) return fromPatternId(choice.primary);
+  if (roll < 0.90f) return fromPatternId(choice.secondary);
+  return fromPatternId(choice.tertiary);
+}
+
+// ============================================================================
+// Main Pattern Selection Function
+// ============================================================================
 BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
                            BackingDensity backing_density,
                            std::mt19937& rng) {
@@ -280,93 +357,15 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
     return BassPattern::RhythmicDrive;
   }
 
-  // Mood-based adjustments using MoodClassification utilities
-  bool is_ballad = MoodClassification::isBallad(mood);
-  bool is_dance = MoodClassification::isDanceOriented(mood);
-  bool is_jazz_influenced = MoodClassification::isJazzInfluenced(mood);
-
-  // Allowed patterns for each section (first is most likely)
-  std::vector<BassPattern> allowed;
-
-  switch (section) {
-    case SectionType::Intro:
-    case SectionType::Interlude:
-      // Keep stable for intro/interlude
-      allowed = {BassPattern::WholeNote, BassPattern::RootFifth};
-      break;
-    case SectionType::Outro:
-      if (is_ballad) {
-        allowed = {BassPattern::WholeNote, BassPattern::RootFifth};
-      } else {
-        allowed = {BassPattern::RootFifth, BassPattern::WholeNote};
-      }
-      break;
-    case SectionType::A:
-      if (is_ballad) {
-        allowed = {BassPattern::WholeNote, BassPattern::RootFifth};
-      } else if (is_jazz_influenced) {
-        // Jazz/CityPop: walking bass adds groove
-        allowed = {BassPattern::Walking, BassPattern::RootFifth, BassPattern::Syncopated};
-      } else {
-        allowed = {BassPattern::RootFifth, BassPattern::WholeNote, BassPattern::Syncopated};
-      }
-      break;
-    case SectionType::B:
-      if (is_ballad) {
-        allowed = {BassPattern::RootFifth, BassPattern::WholeNote};
-      } else if (is_jazz_influenced) {
-        // Jazz/CityPop B section: walking bass with syncopation
-        allowed = {BassPattern::Walking, BassPattern::Syncopated, BassPattern::RootFifth};
-      } else {
-        allowed = {BassPattern::Syncopated, BassPattern::RootFifth, BassPattern::Driving};
-      }
-      break;
-    case SectionType::Chorus:
-      if (is_ballad) {
-        allowed = {BassPattern::RootFifth, BassPattern::Syncopated};
-      } else if (is_dance) {
-        allowed = {BassPattern::Driving, BassPattern::Syncopated};
-      } else {
-        allowed = {BassPattern::Syncopated, BassPattern::Driving, BassPattern::RootFifth};
-      }
-      break;
-    case SectionType::Bridge:
-      if (is_ballad) {
-        allowed = {BassPattern::WholeNote, BassPattern::RootFifth};
-      } else {
-        allowed = {BassPattern::RootFifth, BassPattern::WholeNote, BassPattern::Syncopated};
-      }
-      break;
-    case SectionType::Chant:
-      // Chant section: simple whole notes (minimal variation)
-      allowed = {BassPattern::WholeNote};
-      break;
-    case SectionType::MixBreak:
-      // MIX section: driving bass (high energy)
-      if (is_dance) {
-        allowed = {BassPattern::Driving, BassPattern::Syncopated};
-      } else {
-        allowed = {BassPattern::Syncopated, BassPattern::Driving};
-      }
-      break;
+  // Chant section: always whole notes
+  if (section == SectionType::Chant) {
+    return BassPattern::WholeNote;
   }
 
-  // Weighted random selection: first option has higher probability
-  BassPattern selected;
-  if (allowed.size() == 1) {
-    selected = allowed[0];
-  } else {
-    // 60% first option, 30% second, 10% third (if exists)
-    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-    float roll = dist(rng);
-    if (roll < 0.60f) {
-      selected = allowed[0];
-    } else if (roll < 0.90f || allowed.size() == 2) {
-      selected = allowed[1];
-    } else {
-      selected = allowed[allowed.size() > 2 ? 2 : 1];
-    }
-  }
+  // Look up from genre master table (in preset_data.cpp)
+  BassGenre genre = getMoodBassGenre(mood);
+  BassSection bass_section = toBassSection(section);
+  BassPattern selected = selectFromGenreTable(genre, bass_section, rng);
 
   // Adjust pattern based on backing density
   if (backing_density == BackingDensity::Thin) {
@@ -655,6 +654,206 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root,
             track.addNote(*safe_fifth);
           } else {
             addSafeBassNote(track, factory, bar_start + 3 * QUARTER, QUARTER, root, vel_weak, harmony);
+          }
+        }
+      }
+      break;
+
+    case BassPattern::PowerDrive:
+      // Rock-style pattern: Root-Fifth emphasis with aggressive accents
+      // Based on rock bass technique: power chord support
+      {
+        uint8_t accent_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(vel) + 10));
+
+        // Beat 1: Root with accent (power)
+        addSafeBassNote(track, factory, bar_start, QUARTER, root, accent_vel, harmony);
+
+        // Beat 2: Fifth (rock feel - emphasizes power chord)
+        {
+          auto safe_fifth = factory.createSafe(bar_start + QUARTER, QUARTER, fifth, vel,
+                                                TrackRole::Bass, NoteSource::BassPattern);
+          if (safe_fifth) {
+            track.addNote(*safe_fifth);
+          } else {
+            addSafeBassNote(track, factory, bar_start + QUARTER, QUARTER, root, vel, harmony);
+          }
+        }
+
+        // Beat 3: Root (re-establish)
+        addSafeBassNote(track, factory, bar_start + 2 * QUARTER, QUARTER, root, vel, harmony);
+
+        // Beat 4: Fifth or approach note
+        if (is_last_bar || next_root != root) {
+          uint8_t approach = getApproachNote(root, next_root, next_degree);
+          auto safe_approach = factory.createSafe(bar_start + 3 * QUARTER, QUARTER, approach, vel_weak,
+                                                   TrackRole::Bass, NoteSource::BassPattern);
+          if (safe_approach) {
+            track.addNote(*safe_approach);
+          } else {
+            addSafeBassNote(track, factory, bar_start + 3 * QUARTER, QUARTER, fifth, vel_weak, harmony);
+          }
+        } else {
+          addSafeBassNote(track, factory, bar_start + 3 * QUARTER, QUARTER, fifth, vel_weak, harmony);
+        }
+      }
+      break;
+
+    case BassPattern::Aggressive:
+      // High-energy 16th note pattern for dance/anime chorus
+      // Based on aggressive bass technique: fast subdivisions
+      {
+        constexpr Tick SIXTEENTH = EIGHTH / 2;
+        uint8_t accent_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(vel) + 10));
+
+        for (int beat = 0; beat < 4; ++beat) {
+          Tick beat_start = bar_start + beat * QUARTER;
+          uint8_t beat_vel = (beat == 0 || beat == 2) ? accent_vel : vel;
+
+          // 4 sixteenth notes per beat
+          for (int sub = 0; sub < 4; ++sub) {
+            Tick note_start = beat_start + sub * SIXTEENTH;
+            uint8_t note_vel = (sub == 0) ? beat_vel : vel_weak;
+
+            // On beat 4, last 16th: approach note if chord changes
+            if (beat == 3 && sub == 3 && (is_last_bar || next_root != root)) {
+              uint8_t approach = getApproachNote(root, next_root, next_degree);
+              auto safe_note = factory.createSafe(note_start, SIXTEENTH, approach, note_vel,
+                                                   TrackRole::Bass, NoteSource::BassPattern);
+              if (safe_note) {
+                track.addNote(*safe_note);
+              } else {
+                addSafeBassNote(track, factory, note_start, SIXTEENTH, root, note_vel, harmony);
+              }
+            }
+            // Sub-beat 2 (the "&"): occasionally use fifth
+            else if (sub == 2 && (beat == 1 || beat == 3)) {
+              auto safe_fifth = factory.createSafe(note_start, SIXTEENTH, fifth, note_vel,
+                                                    TrackRole::Bass, NoteSource::BassPattern);
+              if (safe_fifth) {
+                track.addNote(*safe_fifth);
+              } else {
+                addSafeBassNote(track, factory, note_start, SIXTEENTH, root, note_vel, harmony);
+              }
+            }
+            // Default: root
+            else {
+              addSafeBassNote(track, factory, note_start, SIXTEENTH, root, note_vel, harmony);
+            }
+          }
+        }
+      }
+      break;
+
+    case BassPattern::SidechainPulse:
+      // EDM sidechain compression style pattern
+      // Based on electronic music production: ducking effect simulation
+      {
+        // Simulate sidechain: notes start after kick attack (offset by 8th)
+        // Long sustain that "swells" back in
+        constexpr Tick SIDECHAIN_OFFSET = EIGHTH / 2;  // Start slightly after beat
+        constexpr Tick SUSTAIN_DUR = QUARTER + EIGHTH;  // Dotted quarter for swell effect
+
+        // Beats 1-2: Root with sidechain feel
+        addSafeBassNote(track, factory, bar_start + SIDECHAIN_OFFSET, SUSTAIN_DUR, root, vel, harmony);
+
+        // Beats 3-4: Root or fifth with sidechain feel
+        {
+          auto safe_fifth = factory.createSafe(bar_start + 2 * QUARTER + SIDECHAIN_OFFSET, SUSTAIN_DUR, fifth, vel,
+                                                TrackRole::Bass, NoteSource::BassPattern);
+          if (safe_fifth) {
+            track.addNote(*safe_fifth);
+          } else {
+            addSafeBassNote(track, factory, bar_start + 2 * QUARTER + SIDECHAIN_OFFSET, SUSTAIN_DUR, root, vel, harmony);
+          }
+        }
+      }
+      break;
+
+    case BassPattern::Groove:
+      // Smooth groove pattern for CityPop/R&B
+      // Based on groove bass technique: passing tones and smooth voice leading
+      {
+        // Beat 1: Root (anchor)
+        addSafeBassNote(track, factory, bar_start, QUARTER, root, vel, harmony);
+
+        // Beat 2: Passing tone (diatonic 2nd above root)
+        {
+          uint8_t passing = getNextDiatonic(root, +1);
+          auto safe_passing = factory.createSafe(bar_start + QUARTER, EIGHTH, passing, vel_weak,
+                                                  TrackRole::Bass, NoteSource::BassPattern);
+          if (safe_passing) {
+            track.addNote(*safe_passing);
+          } else {
+            addSafeBassNote(track, factory, bar_start + QUARTER, EIGHTH, root, vel_weak, harmony);
+          }
+          // Second half of beat 2: back to root or third
+          uint8_t third = getDiatonicThird(root);
+          auto safe_third = factory.createSafe(bar_start + QUARTER + EIGHTH, EIGHTH, third, vel_weak,
+                                                TrackRole::Bass, NoteSource::BassPattern);
+          if (safe_third) {
+            track.addNote(*safe_third);
+          } else {
+            addSafeBassNote(track, factory, bar_start + QUARTER + EIGHTH, EIGHTH, root, vel_weak, harmony);
+          }
+        }
+
+        // Beat 3: Fifth (groove anchor)
+        {
+          auto safe_fifth = factory.createSafe(bar_start + 2 * QUARTER, QUARTER, fifth, vel,
+                                                TrackRole::Bass, NoteSource::BassPattern);
+          if (safe_fifth) {
+            track.addNote(*safe_fifth);
+          } else {
+            addSafeBassNote(track, factory, bar_start + 2 * QUARTER, QUARTER, root, vel, harmony);
+          }
+        }
+
+        // Beat 4: Chromatic or diatonic approach
+        {
+          uint8_t approach = (next_root != root)
+                               ? getApproachNote(root, next_root, next_degree)
+                               : getNextDiatonic(root, -1);  // Step below for groove
+          auto safe_approach = factory.createSafe(bar_start + 3 * QUARTER, QUARTER, approach, vel_weak,
+                                                   TrackRole::Bass, NoteSource::BassPattern);
+          if (safe_approach) {
+            track.addNote(*safe_approach);
+          } else {
+            addSafeBassNote(track, factory, bar_start + 3 * QUARTER, QUARTER, root, vel_weak, harmony);
+          }
+        }
+      }
+      break;
+
+    case BassPattern::OctaveJump:
+      // Dance music octave alternation pattern
+      // Based on dance bass technique: octave jumps for energy
+      {
+        // Eighth notes alternating between root and octave above
+        for (int eighth_idx = 0; eighth_idx < 8; ++eighth_idx) {
+          Tick note_start = bar_start + eighth_idx * EIGHTH;
+          bool is_downbeat = (eighth_idx % 2 == 0);
+          uint8_t note_vel = is_downbeat ? vel : vel_weak;
+
+          // Downbeats (0, 2, 4, 6): root
+          // Upbeats (1, 3, 5, 7): octave above
+          if (is_downbeat) {
+            addSafeBassNote(track, factory, note_start, EIGHTH, root, note_vel, harmony);
+          } else {
+            // Try octave above, fallback to fifth if octave too high
+            auto safe_oct = factory.createSafe(note_start, EIGHTH, octave, note_vel,
+                                                TrackRole::Bass, NoteSource::BassPattern);
+            if (safe_oct) {
+              track.addNote(*safe_oct);
+            } else {
+              // Fallback: try fifth
+              auto safe_fifth = factory.createSafe(note_start, EIGHTH, fifth, note_vel,
+                                                    TrackRole::Bass, NoteSource::BassPattern);
+              if (safe_fifth) {
+                track.addNote(*safe_fifth);
+              } else {
+                addSafeBassNote(track, factory, note_start, EIGHTH, root, note_vel, harmony);
+              }
+            }
           }
         }
       }

@@ -66,6 +66,36 @@ inline bool prefersSparsity(Mood mood) {
   return isBallad(mood) || isDramatic(mood);
 }
 
+// Check if mood is aggressive/rock-oriented (powerful, driving bass).
+// @param mood Mood to check
+// @returns true if aggressive bass patterns preferred
+inline bool isAggressive(Mood mood) {
+  return mood == Mood::LightRock || mood == Mood::Anthem ||
+         mood == Mood::Yoasobi;
+}
+
+// Check if mood is electronic/EDM (sidechain, pulse patterns).
+// @param mood Mood to check
+// @returns true if electronic bass patterns preferred
+inline bool isElectronic(Mood mood) {
+  return mood == Mood::EnergeticDance || mood == Mood::ElectroPop ||
+         mood == Mood::Synthwave || mood == Mood::FutureBass;
+}
+
+// Check if mood is groove-oriented (smooth, funky patterns).
+// @param mood Mood to check
+// @returns true if groove bass patterns preferred
+inline bool isGrooveOriented(Mood mood) {
+  return mood == Mood::CityPop || mood == Mood::ModernPop;
+}
+
+// Check if mood prefers high-energy idol patterns.
+// @param mood Mood to check
+// @returns true if idol bass patterns preferred
+inline bool isIdol(Mood mood) {
+  return mood == Mood::IdolPop || mood == Mood::BrightUpbeat;
+}
+
 // Mood category for higher-level classification.
 enum class MoodCategory {
   Ballad,
