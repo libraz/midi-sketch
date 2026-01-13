@@ -10,8 +10,8 @@
 #include "core/melody_embellishment.h"
 #include "core/note_factory.h"
 #include "core/phrase_patterns.h"
-#include "core/style_bias.h"
 #include "core/timing_constants.h"
+#include "core/vocal_style_profile.h"
 #include <algorithm>
 #include <cmath>
 
@@ -404,8 +404,10 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
   std::vector<std::pair<std::vector<NoteEvent>, float>> candidates;
   candidates.reserve(static_cast<size_t>(candidate_count));
 
-  // Get style bias for interval weighting, adjusted for complexity
-  StyleBias bias = adjustBiasForComplexity(getStyleBias(vocal_style), melodic_complexity);
+  // Get unified style profile for consistent bias and evaluation
+  const VocalStyleProfile& profile = getVocalStyleProfile(vocal_style);
+  StyleBias bias = adjustBiasForComplexity(profile.bias, melodic_complexity);
+  const EvaluatorConfig& config = profile.evaluator;
 
   for (int i = 0; i < candidate_count; ++i) {
     // Generate a candidate melody
@@ -413,7 +415,6 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
 
     // Combine style-specific evaluation with penalty-based culling
     // Style evaluation: positive features (contour, pattern, surprise)
-    const EvaluatorConfig& config = MelodyEvaluator::getEvaluatorConfig(vocal_style);
     MelodyScore style_score = MelodyEvaluator::evaluate(melody, harmony);
     float style_total = style_score.total(config);
 

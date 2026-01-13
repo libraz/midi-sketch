@@ -7,6 +7,7 @@
 #include "core/i_harmony_context.h"
 #include "core/pitch_utils.h"
 #include "core/types.h"
+#include "core/vocal_style_profile.h"
 #include <algorithm>
 #include <cmath>
 
@@ -215,43 +216,15 @@ MelodyScore MelodyEvaluator::evaluate(const std::vector<NoteEvent>& notes,
 }
 
 // ============================================================================
-// VocalStylePreset → EvaluatorConfig Mapping Table
+// VocalStylePreset → EvaluatorConfig Mapping
 // ============================================================================
 //
-// Maps each VocalStylePreset to its appropriate EvaluatorConfig.
-// Index corresponds to VocalStylePreset enum value (0-12).
+// Now delegated to VocalStyleProfile for unified management.
+// See vocal_style_profile.h for the consolidated style definitions.
 //
-// EvaluatorConfig types:
-// - kStandardConfig:  Balanced weights for general pop
-// - kIdolConfig:      Singability + repetition focused (idol, bright)
-// - kVocaloidConfig:  Technique focused (allows difficult intervals)
-// - kBalladConfig:    Maximum singability, minimal surprise
-// - kYoasobiConfig:   Contour + surprise allowed (anime style)
-//
-namespace {
-const EvaluatorConfig* const kEvaluatorConfigMap[13] = {
-    &kStandardConfig,   // 0: Auto
-    &kStandardConfig,   // 1: Standard
-    &kVocaloidConfig,   // 2: Vocaloid
-    &kVocaloidConfig,   // 3: UltraVocaloid
-    &kIdolConfig,       // 4: Idol
-    &kBalladConfig,     // 5: Ballad
-    &kStandardConfig,   // 6: Rock
-    &kStandardConfig,   // 7: CityPop
-    &kYoasobiConfig,    // 8: Anime
-    &kIdolConfig,       // 9: BrightKira
-    &kVocaloidConfig,   // 10: CoolSynth
-    &kIdolConfig,       // 11: CuteAffected
-    &kStandardConfig,   // 12: PowerfulShout
-};
-}  // namespace
 
 const EvaluatorConfig& MelodyEvaluator::getEvaluatorConfig(VocalStylePreset style) {
-  uint8_t idx = static_cast<uint8_t>(style);
-  if (idx < sizeof(kEvaluatorConfigMap) / sizeof(kEvaluatorConfigMap[0])) {
-    return *kEvaluatorConfigMap[idx];
-  }
-  return kStandardConfig;  // fallback
+  return getVocalStyleProfile(style).evaluator;
 }
 
 // ============================================================================

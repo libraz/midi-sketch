@@ -11,6 +11,7 @@
 #include "core/harmony_context.h"
 #include "core/i_harmony_context.h"
 #include "core/types.h"
+#include "core/vocal_style_profile.h"
 #include "track/melody_designer.h"
 #include <random>
 
@@ -238,7 +239,7 @@ TEST(MelodyEvaluatorTest, TotalScoreCalculation) {
   EXPECT_GE(simple_total, 0.0f);
   EXPECT_LE(simple_total, 1.0f);
 
-  float weighted_total = score.total(kStandardConfig);
+  float weighted_total = score.total(kStandardProfile.evaluator);
   EXPECT_GE(weighted_total, 0.0f);
   EXPECT_LE(weighted_total, 1.0f);
 }

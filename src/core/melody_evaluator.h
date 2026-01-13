@@ -1,6 +1,9 @@
 /**
  * @file melody_evaluator.h
  * @brief Melody quality scoring for candidate selection.
+ *
+ * Note: Style-specific configs are now defined in vocal_style_profile.h
+ * for unified management with StyleBias. Use getVocalStyleProfile() to get both.
  */
 
 #ifndef MIDISKETCH_CORE_MELODY_EVALUATOR_H
@@ -13,24 +16,29 @@ namespace midisketch {
 
 class IHarmonyContext;
 
-// Evaluator weight configuration for different vocal styles.
+/// @brief Evaluator weight configuration for melody scoring.
+///
+/// Weights determine how much each scoring component contributes to the total.
+/// All weights should sum to approximately 1.0 for normalized scoring.
 struct EvaluatorConfig {
-  float singability_weight;    // Weight for average interval size (0.0-1.0)
-  float chord_tone_weight;     // Weight for chord tone ratio on strong beats
-  float contour_weight;        // Weight for familiar melodic contour
-  float surprise_weight;       // Weight for occasional large leaps
-  float aaab_weight;           // Weight for AAAB repetition pattern
+  float singability_weight;    ///< Weight for average interval size (0.0-1.0)
+  float chord_tone_weight;     ///< Weight for chord tone ratio on strong beats
+  float contour_weight;        ///< Weight for familiar melodic contour
+  float surprise_weight;       ///< Weight for occasional large leaps
+  float aaab_weight;           ///< Weight for AAAB repetition pattern
 };
 
-// Melody evaluation score.
+/// @brief Melody evaluation score.
+///
+/// Contains individual scores for each quality dimension.
 struct MelodyScore {
-  float singability;       // Average interval score (0.0-1.0)
-  float chord_tone_ratio;  // Strong beat chord tone ratio (0.0-1.0)
-  float contour_shape;     // Familiar contour detection (0.0-1.0)
-  float surprise_element;  // Large leap detection (0.0-1.0)
-  float aaab_pattern;      // AAAB repetition score (0.0-1.0)
+  float singability;       ///< Average interval score (0.0-1.0)
+  float chord_tone_ratio;  ///< Strong beat chord tone ratio (0.0-1.0)
+  float contour_shape;     ///< Familiar contour detection (0.0-1.0)
+  float surprise_element;  ///< Large leap detection (0.0-1.0)
+  float aaab_pattern;      ///< AAAB repetition score (0.0-1.0)
 
-  // Calculate total weighted score.
+  /// Calculate total weighted score.
   float total(const EvaluatorConfig& config) const {
     return singability * config.singability_weight +
            chord_tone_ratio * config.chord_tone_weight +
@@ -39,94 +47,49 @@ struct MelodyScore {
            aaab_pattern * config.aaab_weight;
   }
 
-  // Simple total with equal weights.
+  /// Simple total with equal weights.
   float total() const {
     return (singability + chord_tone_ratio + contour_shape +
             surprise_element + aaab_pattern) / 5.0f;
   }
 };
 
-// Style-specific evaluator configurations.
-// Idol: singability and repetition focused
-constexpr EvaluatorConfig kIdolConfig = {
-    0.30f,  // singability - emphasized
-    0.20f,  // chord_tone
-    0.15f,  // contour
-    0.10f,  // surprise
-    0.25f,  // aaab - emphasized
-};
-
-// YOASOBI style: contour and surprise allowed
-constexpr EvaluatorConfig kYoasobiConfig = {
-    0.15f,  // singability - lower (difficult melodies OK)
-    0.20f,  // chord_tone
-    0.25f,  // contour - emphasized
-    0.20f,  // surprise - allowed
-    0.20f,  // aaab
-};
-
-// Ballad: maximum singability
-constexpr EvaluatorConfig kBalladConfig = {
-    0.40f,  // singability - maximum
-    0.25f,  // chord_tone
-    0.15f,  // contour
-    0.05f,  // surprise - minimal
-    0.15f,  // aaab
-};
-
-// Standard pop: balanced weights
-constexpr EvaluatorConfig kStandardConfig = {
-    0.25f,  // singability
-    0.20f,  // chord_tone
-    0.20f,  // contour
-    0.15f,  // surprise
-    0.20f,  // aaab
-};
-
-// Vocaloid: technique focused
-constexpr EvaluatorConfig kVocaloidConfig = {
-    0.10f,  // singability - lower
-    0.25f,  // chord_tone
-    0.20f,  // contour
-    0.25f,  // surprise - higher
-    0.20f,  // aaab
-};
-
+/// @brief Melody quality evaluator for candidate selection.
 class MelodyEvaluator {
  public:
-  // Calculate singability score based on average interval size.
-  // Ideal: 2-4 semitones average -> 1.0
-  // @param notes Vector of note events
-  // @returns Score 0.0-1.0
+  /// Calculate singability score based on average interval size.
+  /// Ideal: 2-4 semitones average -> 1.0
+  /// @param notes Vector of note events
+  /// @returns Score 0.0-1.0
   static float calcSingability(const std::vector<NoteEvent>& notes);
 
-  // Calculate chord tone ratio on strong beats.
-  // Strong beat: tick % (TICKS_PER_BEAT * 2) == 0
-  // @param notes Vector of note events
-  // @param harmony Harmony context for chord info
-  // @returns Score 0.0-1.0 (ratio of chord tones on strong beats)
+  /// Calculate chord tone ratio on strong beats.
+  /// Strong beat: tick % (TICKS_PER_BEAT * 2) == 0
+  /// @param notes Vector of note events
+  /// @param harmony Harmony context for chord info
+  /// @returns Score 0.0-1.0 (ratio of chord tones on strong beats)
   static float calcChordToneRatio(const std::vector<NoteEvent>& notes,
                                   const IHarmonyContext& harmony);
 
-  // Detect familiar melodic contour (arch, wave, descending).
-  // @param notes Vector of note events
-  // @returns Score 0.0-1.0
+  /// Detect familiar melodic contour (arch, wave, descending).
+  /// @param notes Vector of note events
+  /// @returns Score 0.0-1.0
   static float calcContourShape(const std::vector<NoteEvent>& notes);
 
-  // Detect "surprise element" (1-2 large leaps of 5+ semitones).
-  // @param notes Vector of note events
-  // @returns Score 0.0-1.0
+  /// Detect "surprise element" (1-2 large leaps of 5+ semitones).
+  /// @param notes Vector of note events
+  /// @returns Score 0.0-1.0
   static float calcSurpriseElement(const std::vector<NoteEvent>& notes);
 
-  // Detect AAAB repetition pattern.
-  // @param notes Vector of note events
-  // @returns Score 0.0-1.0
+  /// Detect AAAB repetition pattern.
+  /// @param notes Vector of note events
+  /// @returns Score 0.0-1.0
   static float calcAaabPattern(const std::vector<NoteEvent>& notes);
 
-  // Evaluate melody and return all scores.
-  // @param notes Vector of note events
-  // @param harmony Harmony context for chord info
-  // @returns MelodyScore with all component scores
+  /// Evaluate melody and return all scores.
+  /// @param notes Vector of note events
+  /// @param harmony Harmony context for chord info
+  /// @returns MelodyScore with all component scores
   static MelodyScore evaluate(const std::vector<NoteEvent>& notes,
                               const IHarmonyContext& harmony);
 
