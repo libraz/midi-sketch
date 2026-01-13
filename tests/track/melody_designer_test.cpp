@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 #include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
 #include "core/melody_templates.h"
 #include "core/timing_constants.h"
 #include "track/melody_designer.h"
@@ -887,6 +888,188 @@ TEST(MelodyDesignerTest, NonDownbeatAllowsNonChordTones) {
   EXPECT_TRUE(found_non_chord_tone_on_weak_beat)
       << "No non-chord tones found on weak beats across " << seeds.size()
       << " seeds. The downbeat constraint may be over-applied.";
+}
+
+// ============================================================================
+// GlobalMotif Tests
+// ============================================================================
+
+TEST(GlobalMotifTest, ExtractFromEmptyNotes) {
+  std::vector<NoteEvent> empty_notes;
+  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(empty_notes);
+
+  EXPECT_FALSE(motif.isValid());
+  EXPECT_EQ(motif.interval_count, 0);
+}
+
+TEST(GlobalMotifTest, ExtractFromSingleNote) {
+  // NoteEvent: {start_tick, duration, note, velocity}
+  std::vector<NoteEvent> notes = {{0, 480, 60, 100}};
+  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
+
+  EXPECT_FALSE(motif.isValid());
+  EXPECT_EQ(motif.interval_count, 0);
+}
+
+TEST(GlobalMotifTest, ExtractAscendingContour) {
+  // C4 -> D4 -> E4 -> F4 (ascending pattern)
+  // NoteEvent: {start_tick, duration, note, velocity}
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},
+      {480, 480, 62, 100},
+      {960, 480, 64, 100},
+      {1440, 480, 65, 100}
+  };
+  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
+
+  EXPECT_TRUE(motif.isValid());
+  EXPECT_EQ(motif.interval_count, 3);
+  EXPECT_EQ(motif.interval_signature[0], 2);   // +2 semitones
+  EXPECT_EQ(motif.interval_signature[1], 2);   // +2 semitones
+  EXPECT_EQ(motif.interval_signature[2], 1);   // +1 semitone
+  EXPECT_EQ(motif.contour_type, ContourType::Ascending);
+}
+
+TEST(GlobalMotifTest, ExtractDescendingContour) {
+  // F4 -> E4 -> D4 -> C4 (descending pattern)
+  std::vector<NoteEvent> notes = {
+      {0, 480, 65, 100},
+      {480, 480, 64, 100},
+      {960, 480, 62, 100},
+      {1440, 480, 60, 100}
+  };
+  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
+
+  EXPECT_TRUE(motif.isValid());
+  EXPECT_EQ(motif.contour_type, ContourType::Descending);
+}
+
+TEST(GlobalMotifTest, ExtractPeakContour) {
+  // C4 -> G4 -> E4 -> C4 (clear rise then fall = peak)
+  // intervals: +7, -3, -4 → first half positive, second half negative
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},
+      {480, 480, 67, 100},
+      {960, 480, 64, 100},
+      {1440, 480, 60, 100}
+  };
+  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
+
+  EXPECT_TRUE(motif.isValid());
+  EXPECT_EQ(motif.contour_type, ContourType::Peak);
+}
+
+TEST(GlobalMotifTest, ExtractValleyContour) {
+  // G4 -> C4 -> E4 -> G4 (clear fall then rise = valley)
+  // intervals: -7, +4, +3 → first half negative, second half positive
+  std::vector<NoteEvent> notes = {
+      {0, 480, 67, 100},
+      {480, 480, 60, 100},
+      {960, 480, 64, 100},
+      {1440, 480, 67, 100}
+  };
+  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
+
+  EXPECT_TRUE(motif.isValid());
+  EXPECT_EQ(motif.contour_type, ContourType::Valley);
+}
+
+TEST(GlobalMotifTest, ExtractPlateauContour) {
+  // C4 -> C4 -> D4 -> C4 (mostly flat = plateau)
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},
+      {480, 480, 60, 100},
+      {960, 480, 62, 100},
+      {1440, 480, 60, 100}
+  };
+  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
+
+  EXPECT_TRUE(motif.isValid());
+  EXPECT_EQ(motif.contour_type, ContourType::Plateau);
+}
+
+TEST(GlobalMotifTest, ExtractRhythmSignature) {
+  // Different durations: quarter, half, quarter, whole
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},      // quarter
+      {480, 960, 62, 100},    // half
+      {1440, 480, 64, 100},   // quarter
+      {1920, 1920, 65, 100}   // whole
+  };
+  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
+
+  EXPECT_TRUE(motif.isValid());
+  EXPECT_EQ(motif.rhythm_count, 4);
+  // Whole note (1920) is longest, so it gets 8
+  EXPECT_EQ(motif.rhythm_signature[3], 8);
+  // Quarter notes (480) should be proportionally smaller
+  EXPECT_LT(motif.rhythm_signature[0], motif.rhythm_signature[3]);
+}
+
+TEST(GlobalMotifTest, EvaluateWithInvalidMotif) {
+  GlobalMotif invalid_motif;
+  std::vector<NoteEvent> candidate = {{0, 480, 60, 100}, {480, 480, 62, 100}};
+
+  float bonus = MelodyDesigner::evaluateWithGlobalMotif(candidate, invalid_motif);
+
+  EXPECT_EQ(bonus, 0.0f);
+}
+
+TEST(GlobalMotifTest, EvaluateWithIdenticalPattern) {
+  // Create a motif from ascending pattern
+  std::vector<NoteEvent> source = {
+      {0, 480, 60, 100},
+      {480, 480, 62, 100},
+      {960, 480, 64, 100}
+  };
+  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(source);
+
+  // Evaluate same pattern (should get maximum bonus)
+  float bonus = MelodyDesigner::evaluateWithGlobalMotif(source, motif);
+
+  // Max bonus is 0.1 (0.05 for contour + 0.05 for intervals)
+  EXPECT_GT(bonus, 0.05f);
+  EXPECT_LE(bonus, 0.1f);
+}
+
+TEST(GlobalMotifTest, EvaluateDifferentContour) {
+  // Create ascending motif
+  std::vector<NoteEvent> ascending = {
+      {0, 480, 60, 100},
+      {480, 480, 62, 100},
+      {960, 480, 64, 100}
+  };
+  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(ascending);
+
+  // Evaluate descending pattern (different contour)
+  std::vector<NoteEvent> descending = {
+      {0, 480, 64, 100},
+      {480, 480, 62, 100},
+      {960, 480, 60, 100}
+  };
+  float bonus = MelodyDesigner::evaluateWithGlobalMotif(descending, motif);
+
+  // Should get no contour bonus, may get partial interval bonus
+  // (intervals are [-2, -2] vs [+2, +2] - different directions)
+  EXPECT_LE(bonus, 0.05f);
+}
+
+TEST(GlobalMotifTest, CacheAndRetrieveGlobalMotif) {
+  MelodyDesigner designer;
+
+  // Initially no cached motif
+  EXPECT_FALSE(designer.getCachedGlobalMotif().has_value());
+
+  // Set a motif
+  GlobalMotif motif;
+  motif.contour_type = ContourType::Peak;
+  motif.interval_signature[0] = 4;
+  motif.interval_count = 1;
+  designer.setGlobalMotif(motif);
+
+  // Should now be cached
+  EXPECT_TRUE(designer.getCachedGlobalMotif().has_value());
+  EXPECT_EQ(designer.getCachedGlobalMotif()->contour_type, ContourType::Peak);
 }
 
 }  // namespace

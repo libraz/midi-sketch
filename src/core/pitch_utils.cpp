@@ -74,6 +74,20 @@ bool isInPassaggio(uint8_t pitch) {
   return pitch >= PASSAGGIO_LOW && pitch <= PASSAGGIO_HIGH;
 }
 
+// Dynamic passaggio calculation based on vocal range.
+// Passaggio is typically in the upper-middle portion of the range.
+bool isInPassaggioRange(uint8_t pitch, uint8_t vocal_low, uint8_t vocal_high) {
+  int range = vocal_high - vocal_low;
+  if (range <= 12) {
+    // Very narrow range: use fixed passaggio
+    return isInPassaggio(pitch);
+  }
+  // Passaggio at 55%-75% of range (upper-middle third)
+  int passaggio_low = vocal_low + range * 55 / 100;
+  int passaggio_high = vocal_low + range * 75 / 100;
+  return pitch >= passaggio_low && pitch <= passaggio_high;
+}
+
 int constrainInterval(int target_pitch, int prev_pitch, int max_interval,
                       int range_low, int range_high) {
   if (prev_pitch < 0) {
@@ -110,12 +124,20 @@ int constrainInterval(int target_pitch, int prev_pitch, int max_interval,
   return constrained;
 }
 
+// Conservative dissonance check WITHOUT chord context.
+// Treats tritone as always dissonant. Use this when:
+// - Chord degree is unknown or unavailable
+// - You want conservative avoidance (e.g., bass approach notes)
+// For context-aware checking, use isDissonantIntervalWithContext() instead.
 bool isDissonantInterval(int pc1, int pc2) {
   int interval = std::abs(pc1 - pc2);
   if (interval > 6) interval = 12 - interval;
 
   // Minor 2nd (1) = major 7th inverted - always dissonant
-  // Tritone (6) = highly dissonant, avoid in vocal against chord
+  // Tritone (6) = context-dependent but treated as dissonant here for safety
+  // Note: Tritone IS acceptable on V7 (dominant 7th) and vii° (diminished) chords
+  // where it forms a structural interval. Use isDissonantIntervalWithContext()
+  // when chord context is available.
   return interval == 1 || interval == 6;
 }
 

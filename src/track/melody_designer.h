@@ -9,6 +9,7 @@
 #include "core/chord_utils.h"
 #include "core/melody_evaluator.h"
 #include "core/melody_templates.h"
+#include "core/melody_types.h"
 #include "core/motif.h"
 #include "core/pitch_utils.h"
 #include "core/types.h"
@@ -18,7 +19,7 @@
 
 namespace midisketch {
 
-class HarmonyContext;
+class IHarmonyContext;
 
 /**
  * @brief Template-driven melody generator with music theory constraints.
@@ -39,7 +40,7 @@ class MelodyDesigner {
     Mood mood = Mood::StraightPop;     ///< Mood for harmonic rhythm
     float density_modifier = 1.0f;     ///< Section-specific note density (1.0 = default)
     float thirtysecond_ratio = 0.0f;   ///< Ratio of 32nd notes (0.0-1.0)
-    float consecutive_same_note_prob = 1.0f;  ///< Probability of allowing repeated notes
+    float consecutive_same_note_prob = 0.6f;  ///< Probability of allowing repeated notes
     bool disable_vowel_constraints = false;   ///< Allow large intervals within syllables
     bool disable_breathing_gaps = false;      ///< Remove breathing rests between phrases
     const SectionTransition* transition_to_next = nullptr;  ///< Transition to next section
@@ -67,7 +68,7 @@ class MelodyDesigner {
   std::vector<NoteEvent> generateSection(
       const MelodyTemplate& tmpl,
       const SectionContext& ctx,
-      const HarmonyContext& harmony,
+      const IHarmonyContext& harmony,
       std::mt19937& rng);
 
   /**
@@ -77,16 +78,39 @@ class MelodyDesigner {
    * @param harmony Harmony context for chord-aware generation
    * @param rng Random number generator
    * @param vocal_style Style affects evaluation weights
-   * @param candidate_count How many candidates to generate (default 3)
+   * @param candidate_count How many candidates to generate (default 100)
    * @return Best-scoring candidate's notes
    */
   std::vector<NoteEvent> generateSectionWithEvaluation(
       const MelodyTemplate& tmpl,
       const SectionContext& ctx,
-      const HarmonyContext& harmony,
+      const IHarmonyContext& harmony,
       std::mt19937& rng,
       VocalStylePreset vocal_style = VocalStylePreset::Standard,
-      int candidate_count = 3);
+      int candidate_count = 100);
+
+  /**
+   * @brief Get recommended candidate count for section type.
+   *
+   * Higher candidate counts for important sections (Chorus),
+   * lower counts for stable sections (Verse) to optimize generation time.
+   *
+   * @param type Section type
+   * @returns Recommended candidate count
+   */
+  static int getCandidateCountForSection(SectionType type) {
+    switch (type) {
+      case SectionType::Chorus:
+        return 100;  // Most important: maximum candidates
+      case SectionType::B:
+        return 50;   // Pre-chorus: moderate
+      case SectionType::Bridge:
+      case SectionType::Chant:
+        return 30;   // Variety elements: fewer OK
+      default:       // A (Verse), Intro, Outro, Interlude, MixBreak
+        return 20;   // Stability focused: fewer sufficient
+    }
+  }
 
   /**
    * @brief Generate a single melodic phrase.
@@ -107,8 +131,50 @@ class MelodyDesigner {
       const SectionContext& ctx,
       int prev_pitch,
       int direction_inertia,
-      const HarmonyContext& harmony,
+      const IHarmonyContext& harmony,
       std::mt19937& rng);
+
+  /**
+   * @brief Extract GlobalMotif from chorus hook notes.
+   *
+   * Called after generating the first chorus to establish song-wide
+   * melodic reference. Does not constrain generation, only provides
+   * evaluation bonus for similar patterns.
+   *
+   * @param notes Chorus hook notes
+   * @return Extracted GlobalMotif structure
+   */
+  static GlobalMotif extractGlobalMotif(const std::vector<NoteEvent>& notes);
+
+  /**
+   * @brief Evaluate candidate similarity to GlobalMotif.
+   *
+   * Returns a bonus score (0.0-0.1) for candidates that share
+   * similar contour or interval patterns with the global motif.
+   *
+   * @param candidate Candidate melody notes
+   * @param global_motif Reference motif from chorus
+   * @return Bonus score (0.0-0.1)
+   */
+  static float evaluateWithGlobalMotif(
+      const std::vector<NoteEvent>& candidate,
+      const GlobalMotif& global_motif);
+
+  /**
+   * @brief Get cached GlobalMotif (if any).
+   * @return Optional GlobalMotif, empty if not yet extracted
+   */
+  const std::optional<GlobalMotif>& getCachedGlobalMotif() const {
+    return cached_global_motif_;
+  }
+
+  /**
+   * @brief Set GlobalMotif for song-wide reference.
+   * @param motif GlobalMotif to cache
+   */
+  void setGlobalMotif(const GlobalMotif& motif) {
+    cached_global_motif_ = motif;
+  }
 
   /**
    * @brief Generate a hook pattern for chorus sections.
@@ -125,7 +191,7 @@ class MelodyDesigner {
       Tick hook_start,
       const SectionContext& ctx,
       int prev_pitch,
-      const HarmonyContext& harmony,
+      const IHarmonyContext& harmony,
       std::mt19937& rng);
 
   /**
@@ -213,7 +279,7 @@ class MelodyDesigner {
   void applyTransitionApproach(
       std::vector<NoteEvent>& notes,
       const SectionContext& ctx,
-      const HarmonyContext& harmony);
+      const IHarmonyContext& harmony);
 
   /**
    * @brief Generate rhythm pattern for a phrase.
@@ -243,7 +309,7 @@ class MelodyDesigner {
   void insertLeadingTone(
       std::vector<NoteEvent>& notes,
       const SectionContext& ctx,
-      const HarmonyContext& harmony);
+      const IHarmonyContext& harmony);
   // Apply pitch choice to get new pitch.
   // VocalAttitude affects candidate pitches:
   //   Clean: chord tones only (1, 3, 5)
@@ -264,12 +330,24 @@ class MelodyDesigner {
       const MelodyTemplate& tmpl,
       const SectionContext& ctx,
       int current_pitch,
-      const HarmonyContext& harmony,
+      const IHarmonyContext& harmony,
       std::mt19937& rng);
 
   // Cached chorus hook for Song-level fixation.
   // Once generated, the same hook is reused throughout the song.
   std::optional<Motif> cached_chorus_hook_;
+
+  // Cached HookSkeleton for Hybrid approach.
+  // Provides contour hint while Motif provides rhythm.
+  std::optional<HookSkeleton> cached_hook_skeleton_;
+
+  // Cached hook rhythm pattern index for Song-level fixation.
+  // Value of SIZE_MAX means not yet selected.
+  size_t cached_hook_rhythm_pattern_idx_ = SIZE_MAX;
+
+  // Cached GlobalMotif for song-wide melodic unity.
+  // Extracted from first chorus hook, used as evaluation reference.
+  std::optional<GlobalMotif> cached_global_motif_;
 };
 
 }  // namespace midisketch

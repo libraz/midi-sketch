@@ -14,7 +14,7 @@
 
 namespace midisketch {
 
-class HarmonyContext;
+class IHarmonyContext;
 
 /**
  * @brief Generate a vocal melody track with music theory-based patterns.
@@ -29,7 +29,7 @@ class HarmonyContext;
 void generateVocalTrack(MidiTrack& track, Song& song,
                         const GeneratorParams& params, std::mt19937& rng,
                         const MidiTrack* motif_track,
-                        const HarmonyContext& harmony,
+                        const IHarmonyContext& harmony,
                         bool skip_collision_avoidance = false);
 
 }  // namespace midisketch

@@ -64,6 +64,20 @@ inline uint8_t clampMotif(int pitch) {
 
 /// @name Passaggio Zone
 /// Vocal register transition zone (chest to head voice). E4-B4.
+///
+/// Music theory note on passaggio (register transition):
+/// The passaggio is where the voice shifts between registers. Values vary by voice type:
+///   - Soprano: F5-A5 (first passaggio at E5-F#5)
+///   - Alto: D5-F#5
+///   - Tenor: E4-G4 (similar to current values)
+///   - Baritone: D4-F4
+///   - Bass: C4-E4
+///
+/// Current implementation: Fixed E4-B4 range for tenor/average male voice.
+/// This is appropriate for pop music where male lead vocals are common.
+///
+/// Future enhancement: Make passaggio dynamic based on vocal_low/vocal_high range,
+/// or add voice_type parameter to select appropriate passaggio for the voice.
 /// @{
 constexpr uint8_t PASSAGGIO_LOW = 64;   ///< E4 - Lower bound of passaggio zone
 constexpr uint8_t PASSAGGIO_HIGH = 71;  ///< B4 - Upper bound of passaggio zone
@@ -124,6 +138,15 @@ float getComfortScore(uint8_t pitch, const TessituraRange& tessitura,
  * @return true if pitch is in the passaggio
  */
 bool isInPassaggio(uint8_t pitch);
+
+/**
+ * @brief Check if pitch is in dynamic passaggio zone based on vocal range.
+ * @param pitch MIDI pitch to check
+ * @param vocal_low Lower bound of vocal range
+ * @param vocal_high Upper bound of vocal range
+ * @return true if pitch is in passaggio (55-75% of range)
+ */
+bool isInPassaggioRange(uint8_t pitch, uint8_t vocal_low, uint8_t vocal_high);
 
 // ============================================================================
 // Interval Functions

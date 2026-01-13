@@ -19,7 +19,7 @@
 namespace midisketch {
 
 // Forward declarations
-class HarmonyContext;
+class IHarmonyContext;
 
 /**
  * @brief Types of non-chord tones (NCT) in melodic embellishment.
@@ -139,7 +139,7 @@ public:
   static std::vector<NoteEvent> embellish(
       const std::vector<NoteEvent>& skeleton,
       const EmbellishmentConfig& config,
-      const HarmonyContext& harmony,
+      const IHarmonyContext& harmony,
       int key_offset,
       std::mt19937& rng);
 

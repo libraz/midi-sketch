@@ -11,7 +11,7 @@
 
 namespace midisketch {
 
-class HarmonyContext;
+class IHarmonyContext;
 
 /// @brief Source phase of note generation for debugging.
 enum class NoteSource : uint8_t {
@@ -62,7 +62,7 @@ class NoteFactory {
  public:
   /// @brief Construct factory with harmony context reference.
   /// @param harmony Reference to HarmonyContext (must outlive factory)
-  explicit NoteFactory(const HarmonyContext& harmony);
+  explicit NoteFactory(const IHarmonyContext& harmony);
 
   /// @brief Create a note with automatic chord lookup.
   ///
@@ -108,10 +108,10 @@ class NoteFactory {
                                        NoteSource source = NoteSource::Unknown) const;
 
   /// @brief Access the harmony context.
-  const HarmonyContext& harmony() const { return harmony_; }
+  const IHarmonyContext& harmony() const { return harmony_; }
 
  private:
-  const HarmonyContext& harmony_;
+  const IHarmonyContext& harmony_;
 };
 
 }  // namespace midisketch

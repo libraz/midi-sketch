@@ -9,6 +9,7 @@
 #include "core/melody_evaluator.h"
 #include "core/melody_templates.h"
 #include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
 #include "core/types.h"
 #include "track/melody_designer.h"
 #include <random>

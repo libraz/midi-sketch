@@ -4,7 +4,8 @@
  */
 
 #include "core/melody_evaluator.h"
-#include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
+#include "core/pitch_utils.h"
 #include "core/types.h"
 #include <algorithm>
 #include <cmath>
@@ -46,7 +47,7 @@ float MelodyEvaluator::calcSingability(const std::vector<NoteEvent>& notes) {
 }
 
 float MelodyEvaluator::calcChordToneRatio(const std::vector<NoteEvent>& notes,
-                                          const HarmonyContext& harmony) {
+                                          const IHarmonyContext& harmony) {
   if (notes.empty()) return 0.5f;
 
   int strong_beat_notes = 0;
@@ -203,7 +204,7 @@ float MelodyEvaluator::calcAaabPattern(const std::vector<NoteEvent>& notes) {
 }
 
 MelodyScore MelodyEvaluator::evaluate(const std::vector<NoteEvent>& notes,
-                                       const HarmonyContext& harmony) {
+                                       const IHarmonyContext& harmony) {
   MelodyScore score;
   score.singability = calcSingability(notes);
   score.chord_tone_ratio = calcChordToneRatio(notes, harmony);
@@ -251,6 +252,259 @@ const EvaluatorConfig& MelodyEvaluator::getEvaluatorConfig(VocalStylePreset styl
     return *kEvaluatorConfigMap[idx];
   }
   return kStandardConfig;  // fallback
+}
+
+// ============================================================================
+// Penalty-based Evaluation
+// ============================================================================
+
+float MelodyEvaluator::calcHighRegisterPenalty(const std::vector<NoteEvent>& notes,
+                                                uint8_t high_threshold) {
+  // Default threshold (D5=74) matches vocal_helpers.h kHighRegisterThreshold.
+  // Above passaggio (E4-B4), singers need more effort. D5 and above is demanding.
+  if (notes.size() < 2) return 0.0f;
+
+  float penalty = 0.0f;
+  int consecutive_high = 0;
+  Tick high_duration = 0;
+
+  for (const auto& note : notes) {
+    if (note.note >= high_threshold) {
+      consecutive_high++;
+      high_duration += note.duration;
+
+      // Long high notes are harder to sing
+      if (note.duration > TICKS_PER_BEAT * 2) {
+        penalty += 0.1f;
+      }
+    } else {
+      // Penalize long consecutive high passages
+      if (consecutive_high > 3) {
+        penalty += 0.05f * static_cast<float>(consecutive_high - 3);
+      }
+      consecutive_high = 0;
+    }
+  }
+
+  // Overall high register density penalty
+  if (!notes.empty()) {
+    Tick total_duration = notes.back().start_tick + notes.back().duration -
+                          notes.front().start_tick;
+    if (total_duration > 0 && high_duration > total_duration / 2) {
+      penalty += 0.1f;
+    }
+  }
+
+  return std::min(penalty, 0.5f);
+}
+
+float MelodyEvaluator::calcLeapAfterHighPenalty(const std::vector<NoteEvent>& notes) {
+  if (notes.size() < 2) return 0.0f;
+
+  constexpr uint8_t kHighThreshold = 74;  // D5
+  constexpr int kLargeLeap = 7;           // 5th or more
+
+  float penalty = 0.0f;
+
+  for (size_t i = 1; i < notes.size(); ++i) {
+    int interval = std::abs(notes[i].note - notes[i - 1].note);
+    bool is_high = notes[i].note >= kHighThreshold;
+
+    // Large leap landing on high note is difficult
+    if (interval >= kLargeLeap && is_high) {
+      penalty += 0.15f;
+    }
+  }
+
+  return std::min(penalty, 0.4f);
+}
+
+float MelodyEvaluator::calcRapidDirectionChangePenalty(const std::vector<NoteEvent>& notes) {
+  if (notes.size() < 4) return 0.0f;
+
+  int rapid_changes = 0;
+  int prev_direction = 0;  // -1 down, 0 same, 1 up
+
+  for (size_t i = 1; i < notes.size(); ++i) {
+    int diff = notes[i].note - notes[i - 1].note;
+    int direction = (diff > 0) ? 1 : (diff < 0) ? -1 : 0;
+
+    if (direction != 0 && prev_direction != 0 && direction != prev_direction) {
+      // Check if notes are close together (rapid)
+      Tick gap = notes[i].start_tick - notes[i - 1].start_tick;
+      if (gap < TICKS_PER_BEAT / 2) {  // 8th note or faster
+        rapid_changes++;
+      }
+    }
+    if (direction != 0) {
+      prev_direction = direction;
+    }
+  }
+
+  // 2-3 changes = OK, 4+ = increasingly bad
+  if (rapid_changes <= 3) return 0.0f;
+  return std::min(0.05f * static_cast<float>(rapid_changes - 3), 0.3f);
+}
+
+float MelodyEvaluator::calcMonotonyPenalty(const std::vector<NoteEvent>& notes) {
+  if (notes.size() < 4) return 0.0f;
+
+  // Count unique pitches
+  std::vector<uint8_t> pitches;
+  pitches.reserve(notes.size());
+  for (const auto& note : notes) {
+    pitches.push_back(note.note);
+  }
+  std::sort(pitches.begin(), pitches.end());
+  auto last = std::unique(pitches.begin(), pitches.end());
+  size_t unique_count = static_cast<size_t>(std::distance(pitches.begin(), last));
+
+  // Very few unique pitches = monotonous
+  float ratio = static_cast<float>(unique_count) / static_cast<float>(notes.size());
+  if (ratio < 0.3f) {
+    return 0.2f;  // Severe monotony
+  } else if (ratio < 0.5f) {
+    return 0.1f;  // Moderate monotony
+  }
+  return 0.0f;
+}
+
+float MelodyEvaluator::calcClearPeakBonus(const std::vector<NoteEvent>& notes) {
+  if (notes.size() < 4) return 0.0f;
+
+  // Find highest pitch
+  uint8_t max_pitch = 0;
+  size_t max_idx = 0;
+  for (size_t i = 0; i < notes.size(); ++i) {
+    if (notes[i].note > max_pitch) {
+      max_pitch = notes[i].note;
+      max_idx = i;
+    }
+  }
+
+  // Count how many times max pitch appears
+  int peak_count = 0;
+  for (const auto& note : notes) {
+    if (note.note == max_pitch) peak_count++;
+  }
+
+  // Single clear peak in middle of phrase = good
+  float position = static_cast<float>(max_idx) / static_cast<float>(notes.size());
+  bool in_middle = position > 0.25f && position < 0.85f;
+
+  if (peak_count == 1 && in_middle) {
+    return 0.15f;
+  } else if (peak_count <= 2 && in_middle) {
+    return 0.08f;
+  }
+  return 0.0f;
+}
+
+float MelodyEvaluator::calcMotifRepeatBonus(const std::vector<NoteEvent>& notes) {
+  // Reuse existing AAAB calculation
+  float aaab_score = calcAaabPattern(notes);
+  // Convert to bonus (0-0.2 range)
+  return aaab_score * 0.2f;
+}
+
+float MelodyEvaluator::calcPhraseCohesionBonus(const std::vector<NoteEvent>& notes) {
+  if (notes.size() < 4) return 0.5f;
+
+  float stepwise_score = 0.0f;
+  float rhythm_score = 0.0f;
+  float cell_score = 0.0f;
+
+  // === 1. Stepwise motion ratio ===
+  // Count intervals that are stepwise (0-2 semitones)
+  int stepwise_count = 0;
+  for (size_t i = 1; i < notes.size(); ++i) {
+    int interval = std::abs(notes[i].note - notes[i - 1].note);
+    if (interval <= 2) {  // Unison, minor 2nd, or major 2nd
+      stepwise_count++;
+    }
+  }
+  stepwise_score = static_cast<float>(stepwise_count) /
+                   static_cast<float>(notes.size() - 1);
+
+  // === 2. Rhythm consistency ===
+  // Check if note durations cluster into similar values
+  std::vector<Tick> durations;
+  durations.reserve(notes.size());
+  for (const auto& note : notes) {
+    durations.push_back(note.duration);
+  }
+
+  // Find most common duration (quantized to 8th note)
+  constexpr Tick kQuantize = TICKS_PER_BEAT / 2;  // 8th note
+  std::vector<int> duration_counts(8, 0);  // 0-7 = 8th note multiples
+  for (Tick dur : durations) {
+    int idx = static_cast<int>(std::min(dur / kQuantize, static_cast<Tick>(7)));
+    duration_counts[static_cast<size_t>(idx)]++;
+  }
+  int max_count = *std::max_element(duration_counts.begin(), duration_counts.end());
+  rhythm_score = static_cast<float>(max_count) / static_cast<float>(notes.size());
+
+  // === 3. Short cell repetition ===
+  // Look for 2-3 note patterns that repeat
+  auto getIntervalCell = [&](size_t start, size_t len) {
+    std::vector<int8_t> cell;
+    for (size_t i = start; i < start + len && i + 1 < notes.size(); ++i) {
+      cell.push_back(static_cast<int8_t>(notes[i + 1].note - notes[i].note));
+    }
+    return cell;
+  };
+
+  int cell_matches = 0;
+  int cell_checks = 0;
+  // Check for 2-note cell repetition
+  for (size_t i = 0; i + 3 < notes.size(); i += 2) {
+    auto cell1 = getIntervalCell(i, 2);
+    auto cell2 = getIntervalCell(i + 2, 2);
+    if (cell1.size() >= 1 && cell2.size() >= 1 && cell1[0] == cell2[0]) {
+      cell_matches++;
+    }
+    cell_checks++;
+  }
+  if (cell_checks > 0) {
+    cell_score = static_cast<float>(cell_matches) / static_cast<float>(cell_checks);
+  }
+
+  // Weighted combination: stepwise is most important
+  return stepwise_score * 0.5f + rhythm_score * 0.25f + cell_score * 0.25f;
+}
+
+float MelodyEvaluator::evaluateForCulling(const std::vector<NoteEvent>& notes,
+                                           const IHarmonyContext& harmony) {
+  if (notes.empty()) return 0.5f;
+
+  float score = 1.0f;
+
+  // === Singing Difficulty Penalties ===
+  score -= calcHighRegisterPenalty(notes);
+  score -= calcLeapAfterHighPenalty(notes);
+  score -= calcRapidDirectionChangePenalty(notes);
+
+  // === Music Theory Penalties ===
+  // Non-chord tones on strong beats (reuse existing)
+  float chord_tone_ratio = calcChordToneRatio(notes, harmony);
+  if (chord_tone_ratio < 0.5f) {
+    score -= (0.5f - chord_tone_ratio) * 0.4f;  // Up to 0.2 penalty
+  }
+
+  // === Boring Melody Penalties ===
+  score -= calcMonotonyPenalty(notes);
+
+  // === Bonuses ===
+  score += calcClearPeakBonus(notes);
+  score += calcMotifRepeatBonus(notes);
+
+  // === Shape Selection Bonuses ===
+  // These actively select "good shapes" rather than just penalizing bad ones.
+  // Without these, melodies that avoid penalties but lack coherence survive.
+  score += calcPhraseCohesionBonus(notes) * 0.1f;  // Phrase unity
+  score += calcContourShape(notes) * 0.1f;         // Directional clarity
+
+  return std::clamp(score, 0.0f, 1.0f);
 }
 
 }  // namespace midisketch

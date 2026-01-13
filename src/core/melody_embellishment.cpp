@@ -10,7 +10,7 @@
 
 #include "core/melody_embellishment.h"
 #include "core/chord_utils.h"
-#include "core/harmony_context.h"
+#include "core/i_harmony_context.h"
 #include <algorithm>
 #include <cmath>
 
@@ -161,7 +161,7 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
 std::vector<NoteEvent> MelodicEmbellisher::embellish(
     const std::vector<NoteEvent>& skeleton,
     const EmbellishmentConfig& config,
-    const HarmonyContext& harmony,
+    const IHarmonyContext& harmony,
     int key_offset,
     std::mt19937& rng) {
 

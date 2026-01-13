@@ -11,7 +11,7 @@
 
 namespace midisketch {
 
-class HarmonyContext;
+class IHarmonyContext;
 
 // Evaluator weight configuration for different vocal styles.
 struct EvaluatorConfig {
@@ -106,7 +106,7 @@ class MelodyEvaluator {
   // @param harmony Harmony context for chord info
   // @returns Score 0.0-1.0 (ratio of chord tones on strong beats)
   static float calcChordToneRatio(const std::vector<NoteEvent>& notes,
-                                  const HarmonyContext& harmony);
+                                  const IHarmonyContext& harmony);
 
   // Detect familiar melodic contour (arch, wave, descending).
   // @param notes Vector of note events
@@ -128,12 +128,77 @@ class MelodyEvaluator {
   // @param harmony Harmony context for chord info
   // @returns MelodyScore with all component scores
   static MelodyScore evaluate(const std::vector<NoteEvent>& notes,
-                              const HarmonyContext& harmony);
+                              const IHarmonyContext& harmony);
 
-  // Get evaluator config for a vocal style preset.
-  // @param style Vocal style preset
-  // @returns Appropriate EvaluatorConfig
+  /// @brief Get evaluator config for a vocal style preset.
+  /// @param style Vocal style preset
+  /// @returns Appropriate EvaluatorConfig
   static const EvaluatorConfig& getEvaluatorConfig(VocalStylePreset style);
+
+  /// @name Penalty-based Evaluation (for culling bad candidates)
+  ///
+  /// These are EVALUATION penalties, not generation CONSTRAINTS.
+  /// - Constraints (vocal_helpers, melody_designer): prevent bad notes during generation
+  /// - Penalties (here): score candidates for selection among valid options
+  ///
+  /// Both use similar thresholds (passaggio, interval limits) but serve different purposes.
+  /// @{
+
+  /// @brief Calculate penalty for consecutive high register notes.
+  /// @param notes Vector of note events
+  /// @param high_threshold Pitch above which notes are "high" (default D5=74)
+  /// @returns Penalty 0.0-1.0
+  static float calcHighRegisterPenalty(const std::vector<NoteEvent>& notes,
+                                       uint8_t high_threshold = 74);
+
+  /// @brief Calculate penalty for large leap followed by high note.
+  /// @param notes Vector of note events
+  /// @returns Penalty 0.0-1.0
+  static float calcLeapAfterHighPenalty(const std::vector<NoteEvent>& notes);
+
+  /// @brief Calculate penalty for rapid direction changes.
+  /// @param notes Vector of note events
+  /// @returns Penalty 0.0-1.0
+  static float calcRapidDirectionChangePenalty(const std::vector<NoteEvent>& notes);
+
+  /// @brief Calculate penalty for monotonous melody (no variation).
+  /// @param notes Vector of note events
+  /// @returns Penalty 0.0-1.0
+  static float calcMonotonyPenalty(const std::vector<NoteEvent>& notes);
+
+  /// @brief Calculate bonus for clear melodic peak.
+  /// @param notes Vector of note events
+  /// @returns Bonus 0.0-0.2
+  static float calcClearPeakBonus(const std::vector<NoteEvent>& notes);
+
+  /// @brief Calculate bonus for motif repetition (AAAB pattern).
+  /// @param notes Vector of note events
+  /// @returns Bonus 0.0-0.2
+  static float calcMotifRepeatBonus(const std::vector<NoteEvent>& notes);
+
+  /// @brief Calculate bonus for phrase cohesion (notes forming coherent groups).
+  ///
+  /// Evaluates whether notes cluster into recognizable phrase units:
+  /// - Stepwise motion (unison/2nd intervals)
+  /// - Consistent rhythm patterns
+  /// - Short cell repetition
+  ///
+  /// @param notes Vector of note events
+  /// @returns Bonus 0.0-1.0
+  static float calcPhraseCohesionBonus(const std::vector<NoteEvent>& notes);
+
+  /// @brief Penalty-based evaluation for culling bad candidates.
+  ///
+  /// Starts at 1.0 and subtracts penalties, adds bonuses.
+  /// Used in generateSectionWithCulling() to filter out poor melodies.
+  ///
+  /// @param notes Vector of note events
+  /// @param harmony Harmony context for chord info
+  /// @returns Score 0.0-1.0 (higher = better)
+  static float evaluateForCulling(const std::vector<NoteEvent>& notes,
+                                  const IHarmonyContext& harmony);
+
+  /// @}
 };
 
 }  // namespace midisketch
