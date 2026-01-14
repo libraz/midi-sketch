@@ -1,8 +1,9 @@
 # midi-sketch
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/libraz/midi-sketch)
-[![License](https://img.shields.io/badge/License-Apache_2.0_/_Commercial-green.svg)](LICENSE)
-[![C++17](https://img.shields.io/badge/C%2B%2B-17-orange.svg)](https://isocpp.org/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/libraz/midi-sketch/blob/main/LICENSE)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WebAssembly-lightgrey)](https://github.com/libraz/midi-sketch)
 
 A C++17 library for auto-generating pop music MIDI sketches. Designed for WebAssembly deployment with zero external dependencies.
 
@@ -85,7 +86,8 @@ sketch.destroy();
 ## Documentation
 
 - [Getting Started](https://midisketch.libraz.net/docs/getting-started.html)
-- [API Reference](https://midisketch.libraz.net/docs/api.html)
+- [API Reference (JavaScript)](https://midisketch.libraz.net/docs/api-js.html)
+- [API Reference (C++)](https://midisketch.libraz.net/docs/api-cpp.html)
 - [Presets](https://midisketch.libraz.net/docs/presets.html)
 - [Track Generators](https://midisketch.libraz.net/docs/track-generators.html)
 - [Architecture](https://midisketch.libraz.net/docs/architecture.html)
