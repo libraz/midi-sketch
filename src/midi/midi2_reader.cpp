@@ -20,11 +20,6 @@ constexpr size_t kContainerMagicLen = 16;
 constexpr char kClipMagic[] = "SMF2CLIP";
 constexpr size_t kClipMagicLen = 8;
 
-// Read big-endian uint16
-uint16_t readUint16BE(const uint8_t* data) {
-  return (static_cast<uint16_t>(data[0]) << 8) | data[1];
-}
-
 // Read big-endian uint32
 uint32_t readUint32BE(const uint8_t* data) {
   return (static_cast<uint32_t>(data[0]) << 24) |

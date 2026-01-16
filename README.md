@@ -1,5 +1,7 @@
 # midi-sketch
 
+[![CI](https://github.com/libraz/midi-sketch/actions/workflows/ci.yml/badge.svg)](https://github.com/libraz/midi-sketch/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/libraz/midi-sketch/branch/main/graph/badge.svg)](https://codecov.io/gh/libraz/midi-sketch)
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/libraz/midi-sketch)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/libraz/midi-sketch/blob/main/LICENSE)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)

@@ -12,6 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(BUILD_CLI "Build CLI executable" ON)
 option(BUILD_TESTING "Build tests" ON)
 option(BUILD_WASM "Build for WebAssembly" OFF)
+option(ENABLE_COVERAGE "Enable code coverage" OFF)
 
 # 出力ディレクトリ
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -26,6 +27,19 @@ if(MSVC)
   add_compile_options(/W4)
 else()
   add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+# Code Coverage
+if(ENABLE_COVERAGE AND NOT BUILD_WASM)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    message(STATUS "Enabling code coverage")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage -O0 -g")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage -O0 -g")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --coverage")
+  else()
+    message(WARNING "Code coverage is only supported with GCC or Clang")
+  endif()
 endif()
 
 # compile_commands.json 生成
@@ -67,4 +81,62 @@ add_subdirectory(src)
 
 if(BUILD_TESTING AND NOT BUILD_WASM)
   add_subdirectory(tests)
+endif()
+
+# Code Coverage Report Targets
+if(ENABLE_COVERAGE AND NOT BUILD_WASM)
+  find_program(LCOV_PATH lcov)
+  find_program(GENHTML_PATH genhtml)
+
+  if(LCOV_PATH AND GENHTML_PATH)
+    include(ProcessorCount)
+    ProcessorCount(N)
+    if(NOT N EQUAL 0)
+      set(CTEST_PARALLEL_ARGS --parallel ${N})
+    endif()
+
+    # Detect lcov version to use appropriate options
+    execute_process(
+      COMMAND ${LCOV_PATH} --version
+      OUTPUT_VARIABLE LCOV_VERSION_OUTPUT
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    string(REGEX MATCH "[0-9]+\\.[0-9]+" LCOV_VERSION "${LCOV_VERSION_OUTPUT}")
+    message(STATUS "Found lcov version: ${LCOV_VERSION}")
+
+    if(LCOV_VERSION VERSION_GREATER_EQUAL "2.0")
+      set(LCOV_IGNORE_ERRORS --ignore-errors mismatch,gcov,source,unused)
+      set(LCOV_BRANCH_OPT --rc branch_coverage=1)
+      set(GENHTML_IGNORE_ERRORS --ignore-errors source,unmapped)
+    else()
+      set(LCOV_IGNORE_ERRORS "")
+      set(LCOV_BRANCH_OPT --rc lcov_branch_coverage=1)
+      set(GENHTML_IGNORE_ERRORS "")
+    endif()
+
+    add_custom_target(coverage
+      COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/coverage
+      COMMAND ${LCOV_PATH} --directory . --zerocounters
+      COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure ${CTEST_PARALLEL_ARGS}
+      COMMAND ${LCOV_PATH} --directory . --capture --output-file ${CMAKE_BINARY_DIR}/coverage/coverage.info ${LCOV_BRANCH_OPT} ${LCOV_IGNORE_ERRORS}
+      COMMAND ${LCOV_PATH} --remove ${CMAKE_BINARY_DIR}/coverage/coverage.info
+        '/usr/*' '*/tests/*' '*/_deps/*'
+        --output-file ${CMAKE_BINARY_DIR}/coverage/coverage_filtered.info ${LCOV_BRANCH_OPT} ${LCOV_IGNORE_ERRORS}
+      COMMAND ${GENHTML_PATH} ${CMAKE_BINARY_DIR}/coverage/coverage_filtered.info
+        --output-directory ${CMAKE_BINARY_DIR}/coverage/html ${LCOV_BRANCH_OPT} ${GENHTML_IGNORE_ERRORS}
+      COMMAND ${CMAKE_COMMAND} -E echo "Coverage report generated: ${CMAKE_BINARY_DIR}/coverage/html/index.html"
+      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+      COMMENT "Generating code coverage report"
+    )
+
+    add_custom_target(coverage-clean
+      COMMAND ${LCOV_PATH} --directory . --zerocounters
+      COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_BINARY_DIR}/coverage
+      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+      COMMENT "Cleaning coverage data"
+    )
+  else()
+    message(WARNING "lcov and genhtml not found. Coverage report target will not be available.")
+    message(WARNING "Install with: sudo apt-get install lcov (Linux)")
+  endif()
 endif()

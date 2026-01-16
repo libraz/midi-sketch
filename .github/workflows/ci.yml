@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-build-test-coverage:
+    name: Linux Build, Test and Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Cache CMake dependencies
+      uses: actions/cache@v4
+      with:
+        path: build/_deps
+        key: ${{ runner.os }}-cmake-deps-${{ hashFiles('CMakeLists.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-cmake-deps-
+
+    - name: Cache ccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ccache
+        key: ${{ runner.os }}-ccache-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          build-essential \
+          lcov \
+          ccache
+
+    - name: Setup ccache
+      run: |
+        ccache --set-config=max_size=500M
+        ccache --zero-stats
+
+    - name: Configure CMake with coverage
+      env:
+        CC: ccache gcc
+        CXX: ccache g++
+      run: |
+        mkdir -p build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=Debug \
+              -DBUILD_TESTING=ON \
+              -DENABLE_COVERAGE=ON \
+              ..
+
+    - name: Build
+      run: |
+        cd build
+        make -j$(nproc)
+
+    - name: Show ccache statistics
+      run: ccache --show-stats
+
+    - name: Run tests with coverage
+      run: |
+        cd build
+        make coverage
+
+    - name: Test CLI binary
+      run: |
+        ./build/bin/midisketch_cli --help
+        ./build/bin/midisketch_cli --seed 12345
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./build/coverage/coverage_filtered.info
+        flags: unittests
+        name: codecov-midi-sketch
+        fail_ci_if_error: false
+        verbose: true
+
+    - name: Upload coverage HTML report
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: build/coverage/html/
+
+    - name: Upload build artifacts
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs-linux
+        path: |
+          build/CMakeFiles/*.log
+          build/Testing/Temporary/
