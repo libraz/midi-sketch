@@ -4,6 +4,7 @@
  */
 
 #include <gtest/gtest.h>
+#include <set>
 #include "core/generator.h"
 #include "core/preset_data.h"
 
@@ -241,21 +242,39 @@ TEST(GeneratorTest, MotifVelocityFixed) {
   gen.generate(params);
   const auto& motif = gen.getSong().motif().notes();
 
-  // All motif notes should have the same velocity (80 by default)
+  // All motif notes should have consistent velocity when velocity_fixed=true
+  // Main notes have base velocity, octave-doubled notes have 85% of that
   if (motif.size() > 1) {
-    uint8_t first_vel = 0;
-    bool consistent = true;
+    // Find the main (highest) velocity first
+    uint8_t main_vel = 0;
     for (const auto& note : motif) {
-      // Skip octave-doubled notes (lower velocity)
-      if (first_vel == 0) {
-        first_vel = note.velocity;
-      } else if (note.velocity != first_vel &&
-                 note.velocity != static_cast<uint8_t>(first_vel * 0.85)) {
-        consistent = false;
-        break;
+      if (note.velocity > main_vel) {
+        main_vel = note.velocity;
       }
     }
-    EXPECT_TRUE(consistent);
+
+    // Verify all notes are either main velocity or 85% (octave doubles)
+    uint8_t octave_vel = static_cast<uint8_t>(main_vel * 0.85f);
+    bool consistent = true;
+    std::set<uint8_t> found_velocities;
+    for (const auto& note : motif) {
+      found_velocities.insert(note.velocity);
+      if (note.velocity != main_vel && note.velocity != octave_vel) {
+        consistent = false;
+      }
+    }
+
+    // Build string of found velocities for debugging
+    std::string vel_str;
+    for (auto v : found_velocities) {
+      if (!vel_str.empty()) vel_str += ", ";
+      vel_str += std::to_string(static_cast<int>(v));
+    }
+
+    EXPECT_TRUE(consistent)
+        << "Expected all velocities to be " << static_cast<int>(main_vel)
+        << " or " << static_cast<int>(octave_vel)
+        << " (octave doubled). Found: " << vel_str;
   }
 }
 

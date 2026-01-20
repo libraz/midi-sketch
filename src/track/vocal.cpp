@@ -171,7 +171,10 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       ctx.vocal_low = section_vocal_low;
       ctx.vocal_high = section_vocal_high;
       ctx.mood = params.mood;  // For harmonic rhythm alignment
-      ctx.density_modifier = getDensityModifier(section.type, params.melody_params);
+      // Phase 2: Apply section's density_percent to density modifier
+      float base_density = getDensityModifier(section.type, params.melody_params);
+      float density_factor = section.density_percent / 100.0f;
+      ctx.density_modifier = base_density * density_factor;
       ctx.thirtysecond_ratio = getThirtysecondRatio(section.type, params.melody_params);
       ctx.consecutive_same_note_prob = getConsecutiveSameNoteProb(section.type, params.melody_params);
       ctx.disable_vowel_constraints = params.melody_params.disable_vowel_constraints;

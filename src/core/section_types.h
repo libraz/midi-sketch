@@ -84,9 +84,49 @@ enum class GenerationParadigm : uint8_t {
 
 /// @brief Riff management policy across sections.
 enum class RiffPolicy : uint8_t {
-  Free,      ///< Free variation per section (existing behavior)
-  Locked,    ///< Same riff throughout song (Orangestar style)
-  Evolving,  ///< Gradual evolution with variations (YOASOBI style)
+  Free = 0,           ///< Free variation per section (existing behavior)
+  LockedContour = 1,  ///< Pitch contour fixed, expression variable (recommended)
+  LockedPitch = 2,    ///< Pitch completely fixed, velocity variable
+  LockedAll = 3,      ///< Completely fixed (monotonous, not recommended)
+  Evolving = 4,       ///< Gradual evolution with variations (YOASOBI style)
+  // Backward compatibility alias
+  Locked = LockedContour,  ///< Alias for LockedContour
+};
+
+// ============================================================================
+// SectionEnergy - Energy level per section (Phase 2)
+// ============================================================================
+
+/// @brief Energy level per section for A/B differentiation beyond TrackMask.
+enum class SectionEnergy : uint8_t {
+  Low = 0,     ///< Quiet (Intro, Interlude)
+  Medium = 1,  ///< Moderate (A melody)
+  High = 2,    ///< High (B melody, Bridge)
+  Peak = 3,    ///< Maximum (Chorus climax)
+};
+
+// ============================================================================
+// PeakLevel - Peak intensity level (Phase 2)
+// ============================================================================
+
+/// @brief Peak intensity level for Chorus sections.
+enum class PeakLevel : uint8_t {
+  None = 0,    ///< Normal section
+  Medium = 1,  ///< Medium peak (2nd Chorus)
+  Max = 2,     ///< Maximum peak (Last Chorus)
+};
+
+// ============================================================================
+// DrumRole - Drum track role per section (Phase 2)
+// ============================================================================
+
+/// @brief Drum track role controlling pattern generation.
+/// Addresses Orangestar Intro issue where "Drums" was assumed to mean Kick/Snare.
+enum class DrumRole : uint8_t {
+  Full = 0,     ///< Full drums (Kick/Snare/HH)
+  Ambient = 1,  ///< Atmospheric (HH/Ride center, Kick suppressed) - Orangestar Intro
+  Minimal = 2,  ///< Minimal (HH only) - Ballad
+  FXOnly = 3,   ///< FX/Fill only (hide beat feel)
 };
 
 // ============================================================================
@@ -157,6 +197,28 @@ struct Section {
   /// @brief Fill before this section (from ProductionBlueprint).
   /// If true, insert a drum fill before this section starts.
   bool fill_before = false;
+
+  // Phase 2 fields for time-based control and expressiveness
+
+  /// @brief Section energy level (from ProductionBlueprint).
+  /// Controls velocity and density beyond what TrackMask provides.
+  SectionEnergy energy = SectionEnergy::Medium;
+
+  /// @brief Peak level for intensity control (from ProductionBlueprint).
+  /// Used for Chorus climax differentiation.
+  PeakLevel peak_level = PeakLevel::None;
+
+  /// @brief Drum role for this section (from ProductionBlueprint).
+  /// Controls drum pattern generation behavior.
+  DrumRole drum_role = DrumRole::Full;
+
+  /// @brief Base velocity for this section (from ProductionBlueprint).
+  /// Range: 60-100, default 80.
+  uint8_t base_velocity = 80;
+
+  /// @brief Density percent for this section (from ProductionBlueprint).
+  /// Range: 50-100, affects note density in all tracks.
+  uint8_t density_percent = 100;
 };
 
 /// @brief Section transition parameters for smooth melodic flow.

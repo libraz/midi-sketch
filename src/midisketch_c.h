@@ -182,7 +182,7 @@ uint8_t midisketch_blueprint_weight(uint8_t id);
 
 /** @brief Get resolved blueprint ID after generation.
  *  @param handle MidiSketch handle
- *  @return Resolved blueprint ID (0-3), or 255 if not generated
+ *  @return Resolved blueprint ID (0-8), or 255 if not generated
  */
 uint8_t midisketch_get_resolved_blueprint_id(MidiSketchHandle handle);
 
@@ -203,7 +203,7 @@ typedef struct {
   uint8_t drums_enabled;      ///< 0=off, 1=on
 
   // Production blueprint
-  uint8_t blueprint_id;       ///< Blueprint ID (0=Traditional, 1=Orangestar, 2=YOASOBI, 255=random)
+  uint8_t blueprint_id;       ///< Blueprint ID (0-8, 255=random). See midisketch_blueprint_name()
 
   // Arpeggio settings
   uint8_t arpeggio_enabled;   ///< 0=off, 1=on

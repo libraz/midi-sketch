@@ -38,6 +38,7 @@ std::string generateMetadata(const GeneratorParams& params) {
       .write("key", static_cast<int>(params.key))
       .write("mood", static_cast<int>(params.mood))
       .write("style_preset_id", static_cast<int>(params.style_preset_id))
+      .write("blueprint_id", static_cast<int>(params.blueprint_id))
       .write("vocal_low", static_cast<int>(params.vocal_low))
       .write("vocal_high", static_cast<int>(params.vocal_high))
       .write("vocal_attitude", static_cast<int>(params.vocal_attitude))

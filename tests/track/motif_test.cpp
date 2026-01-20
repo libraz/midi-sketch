@@ -266,5 +266,131 @@ TEST_F(MotifDissonanceTest, BGMGenerationOrderSecondFile) {
       << "Found " << dissonant_clashes << " dissonant Motif-Bass clashes";
 }
 
+// =============================================================================
+// Rhythm Distribution Tests (Call & Response Structure)
+// =============================================================================
+// Bug: In previous implementation, all motif notes were concentrated in the
+// first half of the motif pattern, making the second half silent.
+// Fix: Distribute notes between "call" (first half) and "response" (second half)
+
+class MotifRhythmDistributionTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    params_.structure = StructurePattern::ShortForm;
+    params_.mood = Mood::IdolPop;
+    params_.chord_id = 0;
+    params_.key = Key::C;
+    params_.drums_enabled = true;
+    params_.bpm = 120;
+    params_.composition_style = CompositionStyle::BackgroundMotif;
+  }
+
+  GeneratorParams params_;
+};
+
+// Test that motif pattern notes span the full motif length, not just first half
+TEST_F(MotifRhythmDistributionTest, NotesSpanFullMotifLength) {
+  params_.seed = 42;
+  // Default motif length is 2 bars (3840 ticks)
+  // Half of motif = 1920 ticks (1 bar)
+  // Notes should appear in both halves
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& motif_pattern = gen.getSong().motifPattern();
+  if (motif_pattern.empty()) {
+    GTEST_SKIP() << "No motif pattern generated";
+  }
+
+  // Find the maximum start tick in the pattern
+  Tick max_tick = 0;
+  for (const auto& note : motif_pattern) {
+    if (note.start_tick > max_tick) {
+      max_tick = note.start_tick;
+    }
+  }
+
+  // Default motif length is 2 bars = 3840 ticks
+  // Half of that is 1920 ticks
+  // At least one note should be in the second half (>= 1920)
+  constexpr Tick HALF_TWO_BAR_MOTIF = TICKS_PER_BAR;  // 1920 ticks
+  EXPECT_GE(max_tick, HALF_TWO_BAR_MOTIF)
+      << "Motif pattern should have notes in the second half. "
+      << "Max tick: " << max_tick << ", expected >= " << HALF_TWO_BAR_MOTIF;
+}
+
+// Test call & response structure: notes distributed between both halves
+TEST_F(MotifRhythmDistributionTest, CallAndResponseDistribution) {
+  params_.seed = 12345;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& motif_pattern = gen.getSong().motifPattern();
+  if (motif_pattern.size() < 4) {
+    GTEST_SKIP() << "Not enough notes in motif pattern for distribution test";
+  }
+
+  // Count notes in first half vs second half
+  constexpr Tick HALF_MOTIF = TICKS_PER_BAR;  // 1920 ticks for 2-bar motif
+  size_t first_half_count = 0;
+  size_t second_half_count = 0;
+
+  for (const auto& note : motif_pattern) {
+    if (note.start_tick < HALF_MOTIF) {
+      first_half_count++;
+    } else {
+      second_half_count++;
+    }
+  }
+
+  // Both halves should have notes (call & response)
+  EXPECT_GT(first_half_count, 0u) << "First half (call) should have notes";
+  EXPECT_GT(second_half_count, 0u) << "Second half (response) should have notes";
+
+  // Distribution should be roughly balanced (not all in one half)
+  // Allow some imbalance but ensure both halves are represented
+  size_t total = motif_pattern.size();
+  EXPECT_GE(first_half_count, total / 4)
+      << "First half should have at least 25% of notes";
+  EXPECT_GE(second_half_count, total / 4)
+      << "Second half should have at least 25% of notes";
+}
+
+// Test robustness across multiple seeds - notes should be in second half
+TEST_F(MotifRhythmDistributionTest, DistributionConsistentAcrossSeeds) {
+  std::vector<uint32_t> test_seeds = {42, 12345, 99999, 54321, 11111};
+  int seeds_with_good_distribution = 0;
+
+  for (uint32_t seed : test_seeds) {
+    params_.seed = seed;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& motif_pattern = gen.getSong().motifPattern();
+    if (motif_pattern.size() < 2) continue;
+
+    // Check if notes span into the second half of motif
+    Tick max_tick = 0;
+    for (const auto& note : motif_pattern) {
+      if (note.start_tick > max_tick) max_tick = note.start_tick;
+    }
+
+    // Default motif is 2 bars = 3840 ticks
+    // With call & response, notes should span into second half (>= 1920)
+    // The exact span depends on note_count (4 notes = ~62% span at 2400 ticks)
+    constexpr Tick HALF_MOTIF = TICKS_PER_BAR;  // 1920 ticks
+    if (max_tick >= HALF_MOTIF) {
+      seeds_with_good_distribution++;
+    }
+  }
+
+  // All seeds should have notes in the second half (call & response structure)
+  EXPECT_EQ(seeds_with_good_distribution, static_cast<int>(test_seeds.size()))
+      << "All seeds should produce motif patterns with notes in both halves";
+}
+
 }  // namespace
 }  // namespace midisketch

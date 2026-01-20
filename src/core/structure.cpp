@@ -562,10 +562,20 @@ std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blue
     section.deviation_allowed = getAllowDeviationForType(slot.type);
     section.se_allowed = hasTrack(slot.enabled_tracks, TrackMask::SE);
 
-    // Store track control information for Phase 2.5
+    // Store track control information
     section.track_mask = slot.enabled_tracks;
     section.entry_pattern = slot.entry_pattern;
-    section.fill_before = slot.fill_before;
+
+    // Phase 2: Transfer new fields from SectionSlot to Section
+    section.energy = slot.energy;
+    section.base_velocity = slot.base_velocity;
+    section.density_percent = slot.density_percent;
+    section.peak_level = slot.peak_level;
+    section.drum_role = slot.drum_role;
+
+    // Convert PeakLevel to fill_before for backward compatibility
+    // (fill_before is true when peak_level is not None)
+    section.fill_before = (slot.peak_level != PeakLevel::None);
 
     sections.push_back(section);
 

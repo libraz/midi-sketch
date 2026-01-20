@@ -249,5 +249,107 @@ TEST(VelocityTest, VelocityRatioRange) {
   EXPECT_LE(VelocityRatio::GHOST, 1.0f);
 }
 
+// ============================================================================
+// Phase 2: New Velocity Functions Tests
+// ============================================================================
+
+TEST(VelocityTest, Phase2_GetSectionEnergyLevel) {
+  // getSectionEnergyLevel should be an alias for getSectionEnergy
+  EXPECT_EQ(getSectionEnergyLevel(SectionType::Intro), getSectionEnergy(SectionType::Intro));
+  EXPECT_EQ(getSectionEnergyLevel(SectionType::A), getSectionEnergy(SectionType::A));
+  EXPECT_EQ(getSectionEnergyLevel(SectionType::Chorus), getSectionEnergy(SectionType::Chorus));
+}
+
+TEST(VelocityTest, Phase2_GetPeakVelocityMultiplier) {
+  // None should return 1.0
+  EXPECT_FLOAT_EQ(getPeakVelocityMultiplier(PeakLevel::None), 1.0f);
+
+  // Medium should return 1.05
+  EXPECT_FLOAT_EQ(getPeakVelocityMultiplier(PeakLevel::Medium), 1.05f);
+
+  // Max should return 1.10
+  EXPECT_FLOAT_EQ(getPeakVelocityMultiplier(PeakLevel::Max), 1.10f);
+}
+
+TEST(VelocityTest, Phase2_GetEffectiveSectionEnergy) {
+  Section section;
+  section.type = SectionType::A;
+
+  // Default energy (Medium) should use SectionType fallback
+  section.energy = SectionEnergy::Medium;
+  EXPECT_EQ(getEffectiveSectionEnergy(section), SectionEnergy::Medium);
+
+  // Explicit energy should override
+  section.energy = SectionEnergy::Peak;
+  EXPECT_EQ(getEffectiveSectionEnergy(section), SectionEnergy::Peak);
+
+  section.energy = SectionEnergy::Low;
+  EXPECT_EQ(getEffectiveSectionEnergy(section), SectionEnergy::Low);
+}
+
+TEST(VelocityTest, Phase2_GetEffectiveSectionEnergyFallback) {
+  Section section;
+  section.energy = SectionEnergy::Medium;  // Default
+
+  // Chorus should fall back to Peak
+  section.type = SectionType::Chorus;
+  EXPECT_EQ(getEffectiveSectionEnergy(section), SectionEnergy::Peak);
+
+  // Intro should fall back to Low
+  section.type = SectionType::Intro;
+  EXPECT_EQ(getEffectiveSectionEnergy(section), SectionEnergy::Low);
+
+  // B section should fall back to High
+  section.type = SectionType::B;
+  EXPECT_EQ(getEffectiveSectionEnergy(section), SectionEnergy::High);
+}
+
+TEST(VelocityTest, Phase2_CalculateEffectiveVelocity) {
+  Section section;
+  section.type = SectionType::A;
+  section.energy = SectionEnergy::Medium;
+  section.peak_level = PeakLevel::None;
+  section.base_velocity = 80;
+
+  // Basic calculation should return bounded velocity
+  uint8_t vel = calculateEffectiveVelocity(section, 0, Mood::StraightPop);
+  EXPECT_GE(vel, 1);
+  EXPECT_LE(vel, 127);
+}
+
+TEST(VelocityTest, Phase2_CalculateEffectiveVelocityPeakBoost) {
+  Section section;
+  section.type = SectionType::Chorus;
+  section.energy = SectionEnergy::Peak;
+  section.base_velocity = 80;
+
+  // None peak
+  section.peak_level = PeakLevel::None;
+  uint8_t vel_none = calculateEffectiveVelocity(section, 0, Mood::StraightPop);
+
+  // Max peak should be higher
+  section.peak_level = PeakLevel::Max;
+  uint8_t vel_max = calculateEffectiveVelocity(section, 0, Mood::StraightPop);
+
+  EXPECT_GT(vel_max, vel_none);
+}
+
+TEST(VelocityTest, Phase2_CalculateEffectiveVelocityEnergyEffect) {
+  Section section;
+  section.type = SectionType::A;
+  section.peak_level = PeakLevel::None;
+  section.base_velocity = 80;
+
+  // Low energy
+  section.energy = SectionEnergy::Low;
+  uint8_t vel_low = calculateEffectiveVelocity(section, 0, Mood::StraightPop);
+
+  // Peak energy should be higher
+  section.energy = SectionEnergy::Peak;
+  uint8_t vel_peak = calculateEffectiveVelocity(section, 0, Mood::StraightPop);
+
+  EXPECT_GT(vel_peak, vel_low);
+}
+
 }  // namespace
 }  // namespace midisketch

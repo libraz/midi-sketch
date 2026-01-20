@@ -263,7 +263,17 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
         uint8_t velocity = calculateArpeggioVelocity(
             arp.base_velocity, section.type, pattern_index % current_notes.size());
 
-        track.addNote(factory.create(pos, gated_duration, note, velocity, NoteSource::Arpeggio));
+        // Phase 2: Apply density_percent to skip notes probabilistically
+        // For arpeggio, only skip when density is < 80% to maintain rhythmic feel
+        bool add_note = true;
+        if (section.density_percent < 80) {
+          std::uniform_real_distribution<float> density_dist(0.0f, 100.0f);
+          add_note = (density_dist(rng) <= section.density_percent);
+        }
+
+        if (add_note) {
+          track.addNote(factory.create(pos, gated_duration, note, velocity, NoteSource::Arpeggio));
+        }
 
         pos += note_duration;
         pattern_index++;

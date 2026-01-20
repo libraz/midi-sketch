@@ -283,6 +283,17 @@ BassPattern adjustPatternDenser(BassPattern pattern) {
 }
 
 // ============================================================================
+// RiffPolicy Cache for Locked/Evolving modes
+// ============================================================================
+
+/// Cache for RiffPolicy::Locked and RiffPolicy::Evolving modes.
+/// Stores the pattern from the first valid section to reuse across sections.
+struct BassRiffCache {
+  BassPattern pattern = BassPattern::RootFifth;
+  bool cached = false;
+};
+
+// ============================================================================
 // Pattern Selection (using Genre Master from preset_data)
 // ============================================================================
 
@@ -375,6 +386,57 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
   }
 
   return selected;
+}
+
+/// Select pattern based on RiffPolicy, using cache for Locked/Evolving modes.
+/// @param cache Riff cache to store/retrieve cached pattern
+/// @param section Current section info
+/// @param sec_idx Current section index
+/// @param params Generator parameters (contains riff_policy)
+/// @param rng Random number generator
+/// @return Selected bass pattern
+BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section,
+                                     size_t sec_idx, const GeneratorParams& params,
+                                     std::mt19937& rng) {
+  BassPattern pattern;
+
+  // Check RiffPolicy
+  RiffPolicy policy = params.riff_policy;
+
+  // Handle Locked variants (LockedContour, LockedPitch, LockedAll) as same behavior
+  bool is_locked = (policy == RiffPolicy::LockedContour ||
+                    policy == RiffPolicy::LockedPitch ||
+                    policy == RiffPolicy::LockedAll);
+
+  if (is_locked && cache.cached) {
+    // Locked: always use cached pattern
+    pattern = cache.pattern;
+  } else if (policy == RiffPolicy::Evolving && cache.cached) {
+    // Evolving: 30% chance to select new pattern every 2 sections
+    std::uniform_real_distribution<float> evolve_dist(0.0f, 1.0f);
+    if (sec_idx % 2 == 0 && evolve_dist(rng) < 0.3f) {
+      // Allow evolution - select new pattern
+      pattern = selectPattern(section.type, params.drums_enabled,
+                              params.mood, section.backing_density, rng);
+      // Update cache with evolved pattern
+      cache.pattern = pattern;
+    } else {
+      // Keep using cached pattern
+      pattern = cache.pattern;
+    }
+  } else {
+    // Free: select pattern normally (per-section)
+    pattern = selectPattern(section.type, params.drums_enabled,
+                            params.mood, section.backing_density, rng);
+  }
+
+  // Cache the first valid pattern for Locked/Evolving modes
+  if (!cache.cached) {
+    cache.pattern = pattern;
+    cache.cached = true;
+  }
+
+  return pattern;
 }
 
 // Helper to add a bass note with safety check against vocal
@@ -975,6 +1037,9 @@ void generateBassTrack(MidiTrack& track, const Song& song,
 
   NoteFactory factory(harmony);
 
+  // RiffPolicy cache for Locked/Evolving modes
+  BassRiffCache riff_cache;
+
   for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
     const auto& section = sections[sec_idx];
 
@@ -987,8 +1052,9 @@ void generateBassTrack(MidiTrack& track, const Song& song,
                                         ? sections[sec_idx + 1].type
                                         : section.type;
 
-    BassPattern pattern = selectPattern(section.type, params.drums_enabled,
-                                         params.mood, section.backing_density, rng);
+    // Use RiffPolicy-aware pattern selection
+    BassPattern pattern = selectPatternWithPolicy(riff_cache, section, sec_idx,
+                                                   params, rng);
 
     // Use same harmonic rhythm as chord_track.cpp
     bool slow_harmonic = useSlowHarmonicRhythm(section.type);
@@ -1089,6 +1155,50 @@ BassPattern selectPatternForVocalDensity(float vocal_density, SectionType sectio
   // Medium density: use section-based defaults
   bool drums_enabled = true;  // Assume drums in vocal-first mode
   return selectPattern(section, drums_enabled, mood, BackingDensity::Normal, rng);
+}
+
+/// Select pattern with RiffPolicy for vocal-aware generation.
+/// Combines vocal density consideration with RiffPolicy caching.
+BassPattern selectPatternWithPolicyForVocal(BassRiffCache& cache, const Section& section,
+                                             size_t sec_idx, const GeneratorParams& params,
+                                             float vocal_density, std::mt19937& rng) {
+  BassPattern pattern;
+
+  // Check RiffPolicy
+  RiffPolicy policy = params.riff_policy;
+
+  // Handle Locked variants as same behavior
+  bool is_locked = (policy == RiffPolicy::LockedContour ||
+                    policy == RiffPolicy::LockedPitch ||
+                    policy == RiffPolicy::LockedAll);
+
+  if (is_locked && cache.cached) {
+    // Locked: always use cached pattern
+    pattern = cache.pattern;
+  } else if (policy == RiffPolicy::Evolving && cache.cached) {
+    // Evolving: 30% chance to select new pattern every 2 sections
+    std::uniform_real_distribution<float> evolve_dist(0.0f, 1.0f);
+    if (sec_idx % 2 == 0 && evolve_dist(rng) < 0.3f) {
+      // Allow evolution - select new pattern based on vocal density
+      pattern = selectPatternForVocalDensity(vocal_density, section.type,
+                                              params.mood, rng);
+      cache.pattern = pattern;
+    } else {
+      pattern = cache.pattern;
+    }
+  } else {
+    // Free: select pattern based on vocal density
+    pattern = selectPatternForVocalDensity(vocal_density, section.type,
+                                            params.mood, rng);
+  }
+
+  // Cache the first valid pattern
+  if (!cache.cached) {
+    cache.pattern = pattern;
+    cache.cached = true;
+  }
+
+  return pattern;
 }
 
 // Helper: pitch to note name for logging
@@ -1295,6 +1405,9 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song,
 
   NoteFactory factory(harmony);
 
+  // RiffPolicy cache for Locked/Evolving modes
+  BassRiffCache riff_cache;
+
 #if BASS_DEBUG_LOG
   std::cerr << "\n=== BASS TRANSFORM LOG (chord_id=" << static_cast<int>(params.chord_id)
             << ", prog_len=" << static_cast<int>(progression.length) << ") ===\n";
@@ -1313,9 +1426,10 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song,
                                         : section.type;
 
     // Get vocal density for this section to choose pattern
+    // Use RiffPolicy-aware pattern selection
     float section_vocal_density = getVocalDensityForSection(vocal_analysis, section);
-    BassPattern pattern = selectPatternForVocalDensity(section_vocal_density,
-                                                       section.type, params.mood, rng);
+    BassPattern pattern = selectPatternWithPolicyForVocal(riff_cache, section, sec_idx,
+                                                           params, section_vocal_density, rng);
 
     bool slow_harmonic = useSlowHarmonicRhythm(section.type);
 

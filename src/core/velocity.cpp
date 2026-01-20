@@ -90,6 +90,84 @@ int getSectionEnergy(SectionType section) {
   return 2;
 }
 
+// ============================================================================
+// Phase 2: SectionEnergy and PeakLevel Functions
+// ============================================================================
+
+int getSectionEnergyLevel(SectionType section) {
+  // Alias with clearer naming - delegates to existing function
+  return getSectionEnergy(section);
+}
+
+SectionEnergy getEffectiveSectionEnergy(const Section& section) {
+  // If Blueprint explicitly sets a non-default energy, use it
+  // Default is Medium, so we only use SectionType fallback when Medium
+  if (section.energy != SectionEnergy::Medium) {
+    return section.energy;
+  }
+
+  // Backward compatibility: estimate from SectionType
+  int level = getSectionEnergyLevel(section.type);
+  // Map 1-4 to Low/Medium/High/Peak
+  switch (level) {
+    case 1: return SectionEnergy::Low;
+    case 2: return SectionEnergy::Medium;
+    case 3: return SectionEnergy::High;
+    case 4: return SectionEnergy::Peak;
+    default: return SectionEnergy::Medium;
+  }
+}
+
+float getPeakVelocityMultiplier(PeakLevel peak) {
+  switch (peak) {
+    case PeakLevel::None:
+      return 1.0f;
+    case PeakLevel::Medium:
+      return 1.05f;
+    case PeakLevel::Max:
+      return 1.10f;
+  }
+  return 1.0f;
+}
+
+uint8_t calculateEffectiveVelocity(const Section& section, uint8_t beat, Mood mood) {
+  // Use section's base_velocity if set (non-default)
+  uint8_t base = (section.base_velocity != 80) ? section.base_velocity : 80;
+
+  // Beat position adjustment
+  int8_t beat_adj = (beat == 0) ? 10 : (beat == 2) ? 5 : 0;
+
+  // Energy-based multiplier
+  SectionEnergy energy = getEffectiveSectionEnergy(section);
+  float energy_mult = 1.0f;
+  switch (energy) {
+    case SectionEnergy::Low:
+      energy_mult = 0.75f;
+      break;
+    case SectionEnergy::Medium:
+      energy_mult = 0.90f;
+      break;
+    case SectionEnergy::High:
+      energy_mult = 1.00f;
+      break;
+    case SectionEnergy::Peak:
+      energy_mult = 1.05f;
+      break;
+  }
+
+  // Peak level multiplier
+  float peak_mult = getPeakVelocityMultiplier(section.peak_level);
+
+  // Mood adjustment
+  float mood_adj = getMoodVelocityAdjustment(mood);
+
+  // Calculate final velocity
+  int velocity = static_cast<int>(
+      (base + beat_adj) * energy_mult * peak_mult * mood_adj);
+
+  return static_cast<uint8_t>(std::clamp(velocity, 0, 127));
+}
+
 float VelocityBalance::getMultiplier(TrackRole role) {
   switch (role) {
     case TrackRole::Vocal:

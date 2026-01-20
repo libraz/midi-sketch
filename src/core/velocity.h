@@ -40,6 +40,53 @@ float getMoodVelocityAdjustment(Mood mood);
  */
 int getSectionEnergy(SectionType section);
 
+// ============================================================================
+// Phase 2: SectionEnergy and PeakLevel Functions
+// ============================================================================
+
+/**
+ * @brief Get energy level for a section type (alias with clearer naming).
+ *
+ * Same as getSectionEnergy(), but with clearer naming to distinguish
+ * from the new SectionEnergy enum.
+ *
+ * @param section Section type
+ * @return Energy level (1=lowest, 4=highest)
+ */
+int getSectionEnergyLevel(SectionType section);
+
+/**
+ * @brief Get effective section energy from Section struct.
+ *
+ * Prioritizes Blueprint's explicit energy setting. Falls back to
+ * estimating from SectionType if energy is Medium (default).
+ *
+ * @param section Section struct with energy field
+ * @return SectionEnergy value
+ */
+SectionEnergy getEffectiveSectionEnergy(const Section& section);
+
+/**
+ * @brief Get velocity multiplier for PeakLevel.
+ *
+ * @param peak PeakLevel value
+ * @return Velocity multiplier (1.0 for None, up to 1.1 for Max)
+ */
+float getPeakVelocityMultiplier(PeakLevel peak);
+
+/**
+ * @brief Calculate effective velocity for a section.
+ *
+ * Combines base_velocity, energy, and peak_level into final velocity.
+ * This function integrates all Phase 2 velocity control parameters.
+ *
+ * @param section Section struct
+ * @param beat Beat position (0-3)
+ * @param mood Mood preset
+ * @return Calculated velocity (0-127)
+ */
+uint8_t calculateEffectiveVelocity(const Section& section, uint8_t beat, Mood mood);
+
 /// @brief Track-relative velocity multipliers for consistent mix balance.
 struct VelocityBalance {
   static constexpr float VOCAL = 1.0f;     ///< Lead vocal - always on top

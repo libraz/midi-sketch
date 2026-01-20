@@ -103,6 +103,14 @@ void Generator::generate(const GeneratorParams& params) {
   params_.riff_policy = blueprint_->riff_policy;
   params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
 
+  // Configure motif parameters based on paradigm
+  // RhythmSync (Orangestar-style): dense, continuous riff patterns
+  if (params_.paradigm == GenerationParadigm::RhythmSync) {
+    params_.motif.rhythm_density = MotifRhythmDensity::Driving;
+    params_.motif.note_count = 8;  // Dense eighth-note pattern
+    params_.motif.length = MotifLength::Bars2;  // 2-bar motif (shortest available)
+  }
+
   // Resolve BPM
   uint16_t bpm = params.bpm;
   if (bpm == 0) {
@@ -172,6 +180,23 @@ void Generator::generate(const GeneratorParams& params) {
     }
   }
 
+  // Generate Motif if Blueprint explicitly defines section_flow with TrackMask::Motif
+  // BackgroundMotif style already generates Motif via strategy, so skip
+  // Traditional Blueprint (section_flow == nullptr) should NOT generate Motif for backward compat
+  if (params.composition_style != CompositionStyle::BackgroundMotif &&
+      blueprint_ != nullptr && blueprint_->section_flow != nullptr) {
+    bool motif_needed = false;
+    for (const auto& section : song_.arrangement().sections()) {
+      if (hasTrack(section.track_mask, TrackMask::Motif)) {
+        motif_needed = true;
+        break;
+      }
+    }
+    if (motif_needed) {
+      generateMotif();
+    }
+  }
+
   // Generate SE track if enabled
   if (se_enabled_) {
     generateSE();
@@ -224,6 +249,14 @@ void Generator::generateVocal(const GeneratorParams& params) {
   params_.paradigm = blueprint_->paradigm;
   params_.riff_policy = blueprint_->riff_policy;
   params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
+
+  // Configure motif parameters based on paradigm
+  // RhythmSync (Orangestar-style): dense, continuous riff patterns
+  if (params_.paradigm == GenerationParadigm::RhythmSync) {
+    params_.motif.rhythm_density = MotifRhythmDensity::Driving;
+    params_.motif.note_count = 8;  // Dense eighth-note pattern
+    params_.motif.length = MotifLength::Bars2;  // 2-bar motif (shortest available)
+  }
 
   // Resolve BPM
   uint16_t bpm = params.bpm;
@@ -389,8 +422,19 @@ void Generator::generateAccompanimentForVocal() {
     generateArpeggio();
   }
 
-  // Generate Motif if BackgroundMotif style
-  if (params_.composition_style == CompositionStyle::BackgroundMotif) {
+  // Generate Motif if BackgroundMotif style OR if Blueprint explicitly defines TrackMask::Motif
+  // Traditional Blueprint (section_flow == nullptr) should NOT generate Motif for backward compat
+  bool motif_needed = (params_.composition_style == CompositionStyle::BackgroundMotif);
+  if (!motif_needed && blueprint_ != nullptr && blueprint_->section_flow != nullptr) {
+    // Check Blueprint's TrackMask for motif in any section
+    for (const auto& section : song_.arrangement().sections()) {
+      if (hasTrack(section.track_mask, TrackMask::Motif)) {
+        motif_needed = true;
+        break;
+      }
+    }
+  }
+  if (motif_needed) {
     generateMotif();
   }
 
@@ -570,6 +614,14 @@ void Generator::setVocalNotes(const GeneratorParams& params,
   params_.riff_policy = blueprint_->riff_policy;
   params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
 
+  // Configure motif parameters based on paradigm
+  // RhythmSync (Orangestar-style): dense, continuous riff patterns
+  if (params_.paradigm == GenerationParadigm::RhythmSync) {
+    params_.motif.rhythm_density = MotifRhythmDensity::Driving;
+    params_.motif.note_count = 8;  // Dense eighth-note pattern
+    params_.motif.length = MotifLength::Bars2;  // 2-bar motif (shortest available)
+  }
+
   // Resolve BPM
   uint16_t bpm = params.bpm;
   if (bpm == 0) {
@@ -660,7 +712,15 @@ void Generator::generateBass() {
 }
 
 void Generator::generateDrums() {
-  generateDrumsTrack(song_.drums(), song_, params_, rng_);
+  // Check if drums_sync_vocal is enabled and vocal track has notes
+  if (params_.drums_sync_vocal && !song_.vocal().notes().empty()) {
+    // Analyze vocal for onset positions
+    VocalAnalysis vocal_analysis = analyzeVocal(song_.vocal());
+    generateDrumsTrackWithVocal(song_.drums(), song_, params_, rng_, vocal_analysis);
+  } else {
+    // Normal drum generation
+    generateDrumsTrack(song_.drums(), song_, params_, rng_);
+  }
 }
 
 void Generator::generateArpeggio() {
@@ -783,13 +843,16 @@ void Generator::applyTransitionDynamics() {
   const auto& sections = song_.arrangement().sections();
 
   // Apply to melodic tracks (not SE or Drums)
+  // Exclude motif track when velocity_fixed=true to maintain consistent velocity
   std::vector<MidiTrack*> tracks = {
       &song_.vocal(),
       &song_.chord(),
       &song_.bass(),
-      &song_.motif(),
       &song_.arpeggio()
   };
+  if (!params_.motif.velocity_fixed) {
+    tracks.push_back(&song_.motif());
+  }
 
   // Apply transition dynamics (section endings)
   midisketch::applyAllTransitionDynamics(tracks, sections);

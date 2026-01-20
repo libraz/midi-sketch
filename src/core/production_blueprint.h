@@ -24,7 +24,13 @@ struct SectionSlot {
   uint8_t bars;                ///< Number of bars
   TrackMask enabled_tracks;    ///< Which tracks are active
   EntryPattern entry_pattern;  ///< How instruments enter
-  bool fill_before;            ///< Insert drum fill before this section
+
+  // Phase 2 fields for time-based control
+  SectionEnergy energy;        ///< Section energy level (Low/Medium/High/Peak)
+  uint8_t base_velocity;       ///< Base velocity (60-100)
+  uint8_t density_percent;     ///< Density percentage (50-100)
+  PeakLevel peak_level;        ///< Peak level (replaces fill_before bool)
+  DrumRole drum_role;          ///< Drum role (Full/Ambient/Minimal/FXOnly)
 };
 
 /// @brief Production blueprint defining how a song is generated.

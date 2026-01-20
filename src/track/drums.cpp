@@ -38,6 +38,68 @@ void addDrumNote(MidiTrack& track, Tick start, Tick duration, uint8_t note, uint
   track.addNote(event);
 }
 
+// ============================================================================
+// Phase 2: DrumRole Helper Functions
+// ============================================================================
+
+// Check if kick should be played based on DrumRole
+// Returns probability multiplier for kick (1.0 = always, 0.0 = never)
+float getDrumRoleKickProbability(DrumRole role) {
+  switch (role) {
+    case DrumRole::Full:
+      return 1.0f;      // Normal kick pattern
+    case DrumRole::Ambient:
+      return 0.25f;     // 25% chance - suppressed kick for atmospheric feel
+    case DrumRole::Minimal:
+      return 0.0f;      // No kick for minimal
+    case DrumRole::FXOnly:
+      return 0.0f;      // No kick for FX only
+  }
+  return 1.0f;
+}
+
+// Check if snare should be played based on DrumRole
+// Returns probability multiplier for snare
+float getDrumRoleSnareProbability(DrumRole role) {
+  switch (role) {
+    case DrumRole::Full:
+      return 1.0f;      // Normal snare pattern
+    case DrumRole::Ambient:
+      return 0.0f;      // No snare for atmospheric (use sidestick instead)
+    case DrumRole::Minimal:
+      return 0.0f;      // No snare for minimal
+    case DrumRole::FXOnly:
+      return 0.0f;      // No snare for FX only
+  }
+  return 1.0f;
+}
+
+// Check if hi-hat should be played based on DrumRole
+bool shouldPlayHiHat(DrumRole role) {
+  switch (role) {
+    case DrumRole::Full:
+    case DrumRole::Ambient:
+    case DrumRole::Minimal:
+      return true;      // HH allowed in these modes
+    case DrumRole::FXOnly:
+      return false;     // No regular HH in FX only
+  }
+  return true;
+}
+
+// Get preferred hi-hat instrument for DrumRole
+// Returns RIDE for Ambient (more atmospheric), CHH otherwise
+uint8_t getDrumRoleHiHatInstrument(DrumRole role, bool use_ride_override) {
+  if (use_ride_override) {
+    return RIDE;
+  }
+  // Ambient mode prefers ride cymbal for atmospheric feel
+  if (role == DrumRole::Ambient) {
+    return RIDE;
+  }
+  return CHH;
+}
+
 // Ghost note velocity multiplier
 constexpr float GHOST_VEL = 0.45f;
 
@@ -720,6 +782,10 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         }
 
         // ===== KICK DRUM =====
+        // Phase 2: Apply DrumRole-based kick probability
+        float kick_prob = getDrumRoleKickProbability(section.drum_role);
+        std::uniform_real_distribution<float> kick_dist(0.0f, 1.0f);
+
         bool play_kick_on = false;
         bool play_kick_and = false;
 
@@ -742,6 +808,16 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
             break;
         }
 
+        // Apply DrumRole probability filter
+        if (kick_prob < 1.0f) {
+          if (play_kick_on && kick_dist(rng) >= kick_prob) {
+            play_kick_on = false;
+          }
+          if (play_kick_and && kick_dist(rng) >= kick_prob) {
+            play_kick_and = false;
+          }
+        }
+
         if (play_kick_on) {
           addDrumNote(track,beat_tick, EIGHTH, BD, velocity);
         }
@@ -751,12 +827,19 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         }
 
         // ===== SNARE DRUM =====
+        // Phase 2: Apply DrumRole-based snare probability
+        float snare_prob = getDrumRoleSnareProbability(section.drum_role);
+
         bool is_intro_first = (section.type == SectionType::Intro && bar == 0);
         if ((beat == 1 || beat == 3) && !is_intro_first) {
-          if (style == DrumStyle::Sparse) {
+          // DrumRole::Ambient uses sidestick for atmospheric feel
+          if (style == DrumStyle::Sparse || section.drum_role == DrumRole::Ambient) {
             uint8_t snare_vel = static_cast<uint8_t>(velocity * 0.8f);
-            addDrumNote(track,beat_tick, EIGHTH, SIDESTICK, snare_vel);
-          } else {
+            // Only play sidestick if not FXOnly or Minimal
+            if (section.drum_role != DrumRole::FXOnly && section.drum_role != DrumRole::Minimal) {
+              addDrumNote(track,beat_tick, EIGHTH, SIDESTICK, snare_vel);
+            }
+          } else if (snare_prob >= 1.0f) {
             addDrumNote(track,beat_tick, EIGHTH, SD, velocity);
           }
         }
@@ -788,7 +871,13 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         }
 
         // ===== HI-HAT =====
-        uint8_t hh_instrument = use_ride ? RIDE : CHH;
+        // Phase 2: Skip hi-hat for FXOnly DrumRole
+        if (!shouldPlayHiHat(section.drum_role)) {
+          continue;  // Skip hi-hat generation entirely for FXOnly
+        }
+
+        // Phase 2: Use DrumRole-aware instrument selection
+        uint8_t hh_instrument = getDrumRoleHiHatInstrument(section.drum_role, use_ride);
 
         switch (hh_level) {
           case HiHatLevel::Quarter:
@@ -883,6 +972,406 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
               }
 
               addDrumNote(track,hh_tick, SIXTEENTH / 2, hh_instrument, hh_vel);
+            }
+            break;
+        }
+      }
+    }
+  }
+}
+
+// ============================================================================
+// Vocal-Synchronized Drum Generation
+// ============================================================================
+
+/// Get vocal onsets within a bar from VocalAnalysis.
+/// Returns vector of tick positions where vocal notes start.
+std::vector<Tick> getVocalOnsetsInBar(const VocalAnalysis& va, Tick bar_start, Tick bar_end) {
+  std::vector<Tick> onsets;
+
+  // Use pitch_at_tick map to find note starts
+  auto it = va.pitch_at_tick.lower_bound(bar_start);
+  while (it != va.pitch_at_tick.end() && it->first < bar_end) {
+    onsets.push_back(it->first);
+    ++it;
+  }
+
+  return onsets;
+}
+
+/// Quantize tick to nearest 16th note grid position.
+Tick quantizeTo16th(Tick tick, Tick bar_start) {
+  Tick relative = tick - bar_start;
+  Tick quantized = (relative / SIXTEENTH) * SIXTEENTH;
+  return bar_start + quantized;
+}
+
+/// Add kicks synced to vocal onsets for a bar.
+/// Returns true if any kicks were added, false if fallback to normal pattern needed.
+bool addVocalSyncedKicks(MidiTrack& track, Tick bar_start, Tick bar_end,
+                         const VocalAnalysis& va, uint8_t velocity, DrumRole role,
+                         std::mt19937& rng) {
+  // Get DrumRole-based kick probability
+  float kick_prob = getDrumRoleKickProbability(role);
+  if (kick_prob <= 0.0f) return false;
+
+  // Get vocal onsets in this bar
+  auto onsets = getVocalOnsetsInBar(va, bar_start, bar_end);
+
+  if (onsets.empty()) {
+    return false;  // No vocal in this bar, use normal pattern
+  }
+
+  std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
+
+  // Add kicks at vocal onset positions
+  for (Tick onset : onsets) {
+    // Quantize to 16th note grid
+    Tick kick_tick = quantizeTo16th(onset, bar_start);
+
+    // Apply DrumRole probability
+    if (kick_prob < 1.0f && prob_dist(rng) >= kick_prob) {
+      continue;
+    }
+
+    // Calculate velocity based on position in bar
+    Tick relative = kick_tick - bar_start;
+    int beat_in_bar = relative / TICKS_PER_BEAT;
+    uint8_t kick_vel = (beat_in_bar == 0 || beat_in_bar == 2)
+                           ? velocity
+                           : static_cast<uint8_t>(velocity * 0.85f);
+
+    addDrumNote(track, kick_tick, EIGHTH, BD, static_cast<uint8_t>(kick_vel * kick_prob));
+  }
+
+  return true;
+}
+
+void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song,
+                                  const GeneratorParams& params, std::mt19937& rng,
+                                  const VocalAnalysis& vocal_analysis) {
+  DrumStyle style = getMoodDrumStyle(params.mood);
+  const auto& sections = song.arrangement().sections();
+
+  // BackgroundMotif settings
+  const bool is_background_motif =
+      params.composition_style == CompositionStyle::BackgroundMotif;
+  const MotifDrumParams& drum_params = params.motif_drum;
+
+  // Override style for BackgroundMotif: hi-hat driven
+  if (is_background_motif && drum_params.hihat_drive) {
+    style = DrumStyle::Standard;
+  }
+
+  for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
+    const auto& section = sections[sec_idx];
+
+    // Phase 2.5: Skip sections where drums is disabled by track_mask
+    if (!hasTrack(section.track_mask, TrackMask::Drums)) {
+      continue;
+    }
+
+    bool is_last_section = (sec_idx == sections.size() - 1);
+
+    // Section-specific density for velocity
+    float density_mult = 1.0f;
+    bool add_crash_accent = false;
+    switch (section.type) {
+      case SectionType::Intro:
+      case SectionType::Interlude:
+        density_mult = 0.5f;
+        break;
+      case SectionType::Outro:
+        density_mult = 0.6f;
+        break;
+      case SectionType::A:
+        density_mult = 0.7f;
+        break;
+      case SectionType::B:
+        density_mult = 0.85f;
+        break;
+      case SectionType::Chorus:
+        density_mult = 1.00f;
+        add_crash_accent = true;
+        break;
+      case SectionType::Bridge:
+        density_mult = 0.6f;
+        break;
+      case SectionType::Chant:
+        density_mult = 0.4f;
+        break;
+      case SectionType::MixBreak:
+        density_mult = 1.2f;
+        add_crash_accent = true;
+        break;
+    }
+
+    // Adjust for backing density
+    switch (section.backing_density) {
+      case BackingDensity::Thin:
+        density_mult *= 0.75f;
+        break;
+      case BackingDensity::Normal:
+        break;
+      case BackingDensity::Thick:
+        density_mult *= 1.15f;
+        break;
+    }
+
+    // Add crash cymbal accent at the start of Chorus
+    if (add_crash_accent && sec_idx > 0) {
+      uint8_t crash_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(105 * density_mult)));
+      addDrumNote(track, section.start_tick, TICKS_PER_BEAT / 2, 49, crash_vel);
+    }
+
+    HiHatLevel hh_level = getHiHatLevel(section.type, style,
+                                         section.backing_density, params.bpm,
+                                         rng);
+
+    // BackgroundMotif: force 8th note hi-hat
+    if (is_background_motif && drum_params.hihat_drive) {
+      hh_level = HiHatLevel::Eighth;
+    }
+
+    bool use_ghost_notes =
+        (section.type == SectionType::B || section.type == SectionType::Chorus ||
+         section.type == SectionType::Bridge)
+        && style != DrumStyle::Sparse;
+
+    // Disable ghost notes for BackgroundMotif
+    if (is_background_motif) {
+      use_ghost_notes = false;
+    }
+
+    bool use_ride = (style == DrumStyle::Rock &&
+                     section.type == SectionType::Chorus);
+
+    // BackgroundMotif: prefer open hi-hat accents on off-beats
+    bool motif_open_hh = is_background_motif &&
+                         drum_params.hihat_density == HihatDensity::EighthOpen;
+
+    for (uint8_t bar = 0; bar < section.bars; ++bar) {
+      Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
+      Tick bar_end = bar_start + TICKS_PER_BAR;
+      bool is_section_last_bar = (bar == section.bars - 1);
+
+      // Crash on section starts
+      if (bar == 0) {
+        bool add_crash = false;
+        if (style == DrumStyle::Rock || style == DrumStyle::Upbeat) {
+          add_crash = (section.type == SectionType::Chorus ||
+                       section.type == SectionType::B);
+        } else if (style != DrumStyle::Sparse) {
+          add_crash = (section.type == SectionType::Chorus);
+        }
+        if (add_crash) {
+          uint8_t crash_vel = calculateVelocity(section.type, 0, params.mood);
+          addDrumNote(track, bar_start, EIGHTH, CRASH, crash_vel);
+        }
+      }
+
+      // ===== VOCAL-SYNCED KICKS =====
+      // Try to add kicks synced to vocal onsets
+      uint8_t kick_velocity = calculateVelocity(section.type, 0, params.mood);
+      bool kicks_added = addVocalSyncedKicks(track, bar_start, bar_end,
+                                              vocal_analysis, kick_velocity,
+                                              section.drum_role, rng);
+
+      // Get kick pattern for fallback and for fills
+      KickPattern kick = getKickPattern(section.type, style, bar, rng);
+
+      for (uint8_t beat = 0; beat < 4; ++beat) {
+        Tick beat_tick = bar_start + beat * TICKS_PER_BEAT;
+        uint8_t velocity = calculateVelocity(section.type, beat, params.mood);
+
+        // ===== FILLS at section ends =====
+        bool next_wants_fill = false;
+        SectionType next_section = section.type;
+        if (sec_idx + 1 < sections.size()) {
+          next_section = sections[sec_idx + 1].type;
+          next_wants_fill = sections[sec_idx + 1].fill_before;
+        }
+
+        bool should_fill = is_section_last_bar && !is_last_section && beat >= 2 &&
+                           (next_wants_fill || next_section == SectionType::Chorus);
+
+        if (should_fill) {
+          static FillType current_fill = FillType::SnareRoll;
+          if (beat == 2) {
+            current_fill = selectFillType(section.type, next_section, style, rng);
+          }
+          generateFill(track, beat_tick, beat, current_fill, velocity);
+          continue;
+        }
+
+        // ===== KICK DRUM (fallback if no vocal sync) =====
+        if (!kicks_added) {
+          // Use normal kick pattern
+          float kick_prob = getDrumRoleKickProbability(section.drum_role);
+          std::uniform_real_distribution<float> kick_dist(0.0f, 1.0f);
+
+          bool play_kick_on = false;
+          bool play_kick_and = false;
+
+          switch (beat) {
+            case 0:
+              play_kick_on = kick.beat1;
+              play_kick_and = kick.beat1_and;
+              break;
+            case 1:
+              play_kick_on = kick.beat2;
+              play_kick_and = kick.beat2_and;
+              break;
+            case 2:
+              play_kick_on = kick.beat3;
+              play_kick_and = kick.beat3_and;
+              break;
+            case 3:
+              play_kick_on = kick.beat4;
+              play_kick_and = kick.beat4_and;
+              break;
+          }
+
+          if (kick_prob < 1.0f) {
+            if (play_kick_on && kick_dist(rng) >= kick_prob) {
+              play_kick_on = false;
+            }
+            if (play_kick_and && kick_dist(rng) >= kick_prob) {
+              play_kick_and = false;
+            }
+          }
+
+          if (play_kick_on) {
+            addDrumNote(track, beat_tick, EIGHTH, BD, velocity);
+          }
+          if (play_kick_and) {
+            uint8_t and_vel = static_cast<uint8_t>(velocity * 0.85f);
+            addDrumNote(track, beat_tick + EIGHTH, EIGHTH, BD, and_vel);
+          }
+        }
+
+        // ===== SNARE DRUM =====
+        float snare_prob = getDrumRoleSnareProbability(section.drum_role);
+
+        bool is_intro_first = (section.type == SectionType::Intro && bar == 0);
+        if ((beat == 1 || beat == 3) && !is_intro_first) {
+          if (style == DrumStyle::Sparse || section.drum_role == DrumRole::Ambient) {
+            uint8_t snare_vel = static_cast<uint8_t>(velocity * 0.8f);
+            if (section.drum_role != DrumRole::FXOnly && section.drum_role != DrumRole::Minimal) {
+              addDrumNote(track, beat_tick, EIGHTH, SIDESTICK, snare_vel);
+            }
+          } else if (snare_prob >= 1.0f) {
+            addDrumNote(track, beat_tick, EIGHTH, SD, velocity);
+          }
+        }
+
+        // ===== GHOST NOTES =====
+        if (use_ghost_notes && (beat == 0 || beat == 2)) {
+          auto ghost_positions = selectGhostPositions(params.mood, rng);
+          float ghost_prob = getGhostDensity(params.mood, section.type,
+                                              section.backing_density, params.bpm);
+
+          std::uniform_real_distribution<float> ghost_dist(0.0f, 1.0f);
+
+          for (auto pos : ghost_positions) {
+            if (ghost_dist(rng) < ghost_prob) {
+              uint8_t ghost_vel = static_cast<uint8_t>(velocity * GHOST_VEL);
+              Tick ghost_offset = (pos == GhostPosition::E)
+                                      ? SIXTEENTH
+                                      : (SIXTEENTH * 3);
+
+              if (pos == GhostPosition::A) {
+                ghost_vel = static_cast<uint8_t>(ghost_vel * 0.9f);
+              }
+
+              addDrumNote(track, beat_tick + ghost_offset, SIXTEENTH, SD, ghost_vel);
+            }
+          }
+        }
+
+        // ===== HI-HAT =====
+        if (!shouldPlayHiHat(section.drum_role)) {
+          continue;
+        }
+
+        uint8_t hh_instrument = getDrumRoleHiHatInstrument(section.drum_role, use_ride);
+
+        switch (hh_level) {
+          case HiHatLevel::Quarter:
+            if (section.type != SectionType::Intro || beat == 0) {
+              uint8_t hh_vel =
+                  static_cast<uint8_t>(velocity * density_mult * 0.75f);
+              addDrumNote(track, beat_tick, EIGHTH, hh_instrument, hh_vel);
+            }
+            break;
+
+          case HiHatLevel::Eighth:
+            for (int eighth = 0; eighth < 2; ++eighth) {
+              Tick hh_tick = beat_tick + eighth * EIGHTH;
+
+              if (section.type == SectionType::Intro && eighth == 1) {
+                continue;
+              }
+
+              uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
+              hh_vel = static_cast<uint8_t>(
+                  hh_vel * (eighth == 0 ? 0.9f : 0.65f));
+
+              bool use_open = false;
+
+              if (motif_open_hh && eighth == 1) {
+                float open_prob = std::clamp(45.0f / params.bpm, 0.2f, 0.8f);
+                std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
+                use_open = (beat == 1 || beat == 3) && open_dist(rng) < open_prob;
+              } else if (style == DrumStyle::FourOnFloor && eighth == 1) {
+                float open_prob = std::clamp(45.0f / params.bpm, 0.15f, 0.8f);
+                std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
+                use_open = (beat == 1 || beat == 3) && open_dist(rng) < open_prob;
+              } else if (section.type == SectionType::Chorus && eighth == 1) {
+                float bpm_scale = std::min(1.0f, 120.0f / params.bpm);
+                std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
+                use_open = (beat == 3 && open_dist(rng) < 0.4f * bpm_scale) ||
+                           (beat == 1 && open_dist(rng) < 0.15f * bpm_scale);
+              } else if (section.type == SectionType::B && beat == 3 &&
+                         eighth == 1) {
+                float bpm_scale = std::min(1.0f, 120.0f / params.bpm);
+                std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
+                use_open = (open_dist(rng) < 0.25f * bpm_scale);
+              }
+
+              if (use_open) {
+                addDrumNote(track, hh_tick, EIGHTH, OHH,
+                              static_cast<uint8_t>(hh_vel * 1.1f));
+              } else {
+                addDrumNote(track, hh_tick, EIGHTH / 2, hh_instrument, hh_vel);
+              }
+            }
+            break;
+
+          case HiHatLevel::Sixteenth:
+            for (int sixteenth = 0; sixteenth < 4; ++sixteenth) {
+              Tick hh_tick = beat_tick + sixteenth * SIXTEENTH;
+
+              uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
+              if (sixteenth == 0) {
+                hh_vel = static_cast<uint8_t>(hh_vel * 0.9f);
+              } else if (sixteenth == 2) {
+                hh_vel = static_cast<uint8_t>(hh_vel * 0.7f);
+              } else {
+                hh_vel = static_cast<uint8_t>(hh_vel * 0.5f);
+              }
+
+              if (beat == 3 && sixteenth == 3) {
+                float open_prob = std::clamp(30.0f / params.bpm, 0.1f, 0.4f);
+                std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
+                if (open_dist(rng) < open_prob) {
+                  addDrumNote(track, hh_tick, SIXTEENTH, OHH,
+                                static_cast<uint8_t>(hh_vel * 1.2f));
+                  continue;
+                }
+              }
+
+              addDrumNote(track, hh_tick, SIXTEENTH / 2, hh_instrument, hh_vel);
             }
             break;
         }
