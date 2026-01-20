@@ -581,6 +581,12 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
 
   for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
     const auto& section = sections[sec_idx];
+
+    // Phase 2.5: Skip sections where drums is disabled by track_mask
+    if (!hasTrack(section.track_mask, TrackMask::Drums)) {
+      continue;
+    }
+
     bool is_last_section = (sec_idx == sections.size() - 1);
 
     // Section-specific density for velocity - more contrast for dynamics
@@ -688,12 +694,20 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         uint8_t velocity = calculateVelocity(section.type, beat, params.mood);
 
         // ===== FILLS at section ends =====
-        if (is_section_last_bar && !is_last_section && beat >= 2) {
-          // Determine next section for fill selection
-          SectionType next_section = (sec_idx + 1 < sections.size())
-                                         ? sections[sec_idx + 1].type
-                                         : section.type;
+        // Phase 2.8: Check next section's fill_before flag
+        bool next_wants_fill = false;
+        SectionType next_section = section.type;
+        if (sec_idx + 1 < sections.size()) {
+          next_section = sections[sec_idx + 1].type;
+          next_wants_fill = sections[sec_idx + 1].fill_before;
+        }
 
+        // Insert fill if: last bar, not last section, beat >= 2, AND
+        // either next section wants fill OR we're transitioning to Chorus
+        bool should_fill = is_section_last_bar && !is_last_section && beat >= 2 &&
+                           (next_wants_fill || next_section == SectionType::Chorus);
+
+        if (should_fill) {
           // Select fill type based on transition
           static FillType current_fill = FillType::SnareRoll;
           if (beat == 2) {

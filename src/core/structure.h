@@ -6,6 +6,7 @@
 #ifndef MIDISKETCH_CORE_STRUCTURE_H
 #define MIDISKETCH_CORE_STRUCTURE_H
 
+#include "core/production_blueprint.h"
 #include "core/types.h"
 #include <vector>
 
@@ -83,6 +84,47 @@ void insertCallSections(
  * @param sections Sections to update
  */
 void recalculateSectionTicks(std::vector<Section>& sections);
+
+/// @}
+
+/// @name ProductionBlueprint Structure Functions
+/// @{
+
+/**
+ * @brief Build sections from a ProductionBlueprint's section flow.
+ *
+ * Converts SectionSlot array to Section array with proper timing
+ * and track mask to density conversions.
+ *
+ * @param blueprint The production blueprint
+ * @return Vector of Section structs
+ */
+std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blueprint);
+
+/**
+ * @brief Convert TrackMask to VocalDensity.
+ *
+ * - If Vocal is disabled -> VocalDensity::None
+ * - If only Vocal+Drums -> VocalDensity::Sparse
+ * - Otherwise -> VocalDensity::Full
+ *
+ * @param mask Track mask
+ * @return Corresponding VocalDensity
+ */
+VocalDensity trackMaskToVocalDensity(TrackMask mask);
+
+/**
+ * @brief Convert TrackMask to BackingDensity.
+ *
+ * Based on number of enabled backing tracks (Chord, Bass, Motif, Arpeggio, Aux).
+ * - 0-1 tracks -> BackingDensity::Thin
+ * - 2-3 tracks -> BackingDensity::Normal
+ * - 4+ tracks  -> BackingDensity::Thick
+ *
+ * @param mask Track mask
+ * @return Corresponding BackingDensity
+ */
+BackingDensity trackMaskToBackingDensity(TrackMask mask);
 
 /// @}
 

@@ -10,7 +10,8 @@
 // If these tests fail, JS binding code in js/index.ts must be updated.
 
 TEST(StructLayoutTest, SongConfigSize) {
-  // SongConfig size reduced after removing deprecated params
+  // SongConfig size (added blueprint_id in Phase 4)
+  // Size stays 52 as blueprint_id uses the reserved padding byte after drums_enabled
   EXPECT_EQ(sizeof(MidiSketchSongConfig), 52);
 }
 
@@ -22,7 +23,7 @@ TEST(StructLayoutTest, SongConfigLayout) {
     EXPECT_EQ(reinterpret_cast<uintptr_t>(&c.field) - base, expected) \
         << #field " offset mismatch"
 
-  // Basic settings (offset 0-11)
+  // Basic settings (offset 0-12)
   CHECK_OFFSET(style_preset_id, 0);
   CHECK_OFFSET(key, 1);
   CHECK_OFFSET(bpm, 2);
@@ -31,37 +32,38 @@ TEST(StructLayoutTest, SongConfigLayout) {
   CHECK_OFFSET(form_id, 9);
   CHECK_OFFSET(vocal_attitude, 10);
   CHECK_OFFSET(drums_enabled, 11);
+  CHECK_OFFSET(blueprint_id, 12);  // Phase 4: Production Blueprint
 
-  // Arpeggio settings (offset 12-16)
-  CHECK_OFFSET(arpeggio_enabled, 12);
-  CHECK_OFFSET(arpeggio_pattern, 13);
-  CHECK_OFFSET(arpeggio_speed, 14);
-  CHECK_OFFSET(arpeggio_octave_range, 15);
-  CHECK_OFFSET(arpeggio_gate, 16);
+  // Arpeggio settings (offset 13-17)
+  CHECK_OFFSET(arpeggio_enabled, 13);
+  CHECK_OFFSET(arpeggio_pattern, 14);
+  CHECK_OFFSET(arpeggio_speed, 15);
+  CHECK_OFFSET(arpeggio_octave_range, 16);
+  CHECK_OFFSET(arpeggio_gate, 17);
 
-  // Vocal settings (offset 17-19)
-  CHECK_OFFSET(vocal_low, 17);
-  CHECK_OFFSET(vocal_high, 18);
-  CHECK_OFFSET(skip_vocal, 19);
+  // Vocal settings (offset 18-20)
+  CHECK_OFFSET(vocal_low, 18);
+  CHECK_OFFSET(vocal_high, 19);
+  CHECK_OFFSET(skip_vocal, 20);
 
-  // Humanization (offset 20-22)
-  CHECK_OFFSET(humanize, 20);
-  CHECK_OFFSET(humanize_timing, 21);
-  CHECK_OFFSET(humanize_velocity, 22);
+  // Humanization (offset 21-23)
+  CHECK_OFFSET(humanize, 21);
+  CHECK_OFFSET(humanize_timing, 22);
+  CHECK_OFFSET(humanize_velocity, 23);
 
-  // Chord extensions (offset 23-28)
-  CHECK_OFFSET(chord_ext_sus, 23);
-  CHECK_OFFSET(chord_ext_7th, 24);
-  CHECK_OFFSET(chord_ext_9th, 25);
-  CHECK_OFFSET(chord_ext_sus_prob, 26);
-  CHECK_OFFSET(chord_ext_7th_prob, 27);
-  CHECK_OFFSET(chord_ext_9th_prob, 28);
+  // Chord extensions (offset 24-29)
+  CHECK_OFFSET(chord_ext_sus, 24);
+  CHECK_OFFSET(chord_ext_7th, 25);
+  CHECK_OFFSET(chord_ext_9th, 26);
+  CHECK_OFFSET(chord_ext_sus_prob, 27);
+  CHECK_OFFSET(chord_ext_7th_prob, 28);
+  CHECK_OFFSET(chord_ext_9th_prob, 29);
 
-  // Composition style (offset 29)
-  CHECK_OFFSET(composition_style, 29);
+  // Composition style (offset 30)
+  CHECK_OFFSET(composition_style, 30);
 
-  // Duration (offset 30-33)
-  CHECK_OFFSET(_reserved, 30);
+  // Duration (offset 31-33)
+  CHECK_OFFSET(_reserved, 31);
   CHECK_OFFSET(target_duration_seconds, 32);
 
   // Modulation (offset 34-35)

@@ -88,8 +88,12 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
   // Process each section
   for (const auto& section : song.arrangement().sections()) {
-    // Skip sections without vocals
+    // Skip sections without vocals (by type)
     if (!sectionHasVocals(section.type)) {
+      continue;
+    }
+    // Phase 2.5: Skip sections where vocal is disabled by track_mask
+    if (!hasTrack(section.track_mask, TrackMask::Vocal)) {
       continue;
     }
 

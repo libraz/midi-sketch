@@ -240,6 +240,10 @@ void generateSETrack(
   // Generate calls if enabled
   if (call_enabled) {
     for (const auto& section : sections) {
+      // Phase 2.5: Skip sections where SE is disabled by track_mask
+      if (!hasTrack(section.track_mask, TrackMask::SE)) {
+        continue;
+      }
       generateCallsForSection(track, section, intro_chant, mix_pattern,
                               call_density, call_notes_enabled, rng);
     }

@@ -192,4 +192,69 @@ void applyAllTransitionDynamics(std::vector<MidiTrack*>& tracks,
   }
 }
 
+// ============================================================================
+// Phase 2.8: EntryPattern Dynamics Implementation
+// ============================================================================
+
+void applyEntryPatternDynamics(MidiTrack& track, Tick section_start,
+                                uint8_t bars, EntryPattern pattern) {
+  // Skip if no velocity modification needed
+  if (pattern == EntryPattern::Immediate || pattern == EntryPattern::Stagger) {
+    return;  // These patterns don't affect velocity
+  }
+
+  auto& notes = track.notes();
+  if (notes.empty()) return;
+
+  if (pattern == EntryPattern::GradualBuild) {
+    // GradualBuild: Velocity ramps from 60% to 100% over first 2 bars
+    // If section is shorter than 2 bars, use entire section
+    uint8_t ramp_bars = std::min(bars, static_cast<uint8_t>(2));
+    Tick ramp_end = section_start + ramp_bars * TICKS_PER_BAR;
+    Tick ramp_duration = ramp_bars * TICKS_PER_BAR;
+
+    constexpr float START_MULT = 0.60f;  // Start at 60% velocity
+    constexpr float END_MULT = 1.0f;     // End at 100%
+
+    for (auto& note : notes) {
+      if (note.start_tick >= section_start && note.start_tick < ramp_end) {
+        float position = static_cast<float>(note.start_tick - section_start) /
+                         static_cast<float>(ramp_duration);
+        float multiplier = START_MULT + (END_MULT - START_MULT) * position;
+        int new_vel = static_cast<int>(note.velocity * multiplier);
+        note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+      }
+    }
+  } else if (pattern == EntryPattern::DropIn) {
+    // DropIn: Slight velocity boost on first beat for impact
+    Tick first_beat_end = section_start + TICKS_PER_BEAT;
+
+    constexpr float BOOST_MULT = 1.1f;  // 10% boost on entry
+
+    for (auto& note : notes) {
+      if (note.start_tick >= section_start && note.start_tick < first_beat_end) {
+        int new_vel = static_cast<int>(note.velocity * BOOST_MULT);
+        note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+      }
+    }
+  }
+}
+
+void applyAllEntryPatternDynamics(std::vector<MidiTrack*>& tracks,
+                                   const std::vector<Section>& sections) {
+  for (const auto& section : sections) {
+    // Skip sections with Immediate pattern (no modification needed)
+    if (section.entry_pattern == EntryPattern::Immediate) {
+      continue;
+    }
+
+    for (MidiTrack* track : tracks) {
+      if (track != nullptr) {
+        applyEntryPatternDynamics(*track, section.start_tick,
+                                  section.bars, section.entry_pattern);
+      }
+    }
+  }
+}
+
 }  // namespace midisketch

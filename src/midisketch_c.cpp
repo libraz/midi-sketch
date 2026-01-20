@@ -10,6 +10,7 @@
 #include "core/structure.h"
 #include "core/chord_utils.h"
 #include "core/piano_roll_safety.h"
+#include "core/production_blueprint.h"
 #include <cstring>
 #include <cstdlib>
 #include <algorithm>
@@ -30,6 +31,7 @@ midisketch::SongConfig convertToSongConfig(const MidiSketchSongConfig* config) {
   cpp_config.form = static_cast<midisketch::StructurePattern>(config->form_id);
   cpp_config.vocal_attitude = static_cast<midisketch::VocalAttitude>(config->vocal_attitude);
   cpp_config.drums_enabled = config->drums_enabled != 0;
+  cpp_config.blueprint_id = config->blueprint_id;
 
   // Arpeggio settings
   cpp_config.arpeggio_enabled = config->arpeggio_enabled != 0;
@@ -487,6 +489,39 @@ uint16_t midisketch_mood_default_bpm(uint8_t id) {
 }
 
 // ============================================================================
+// Production Blueprint API Implementation
+// ============================================================================
+
+uint8_t midisketch_blueprint_count(void) {
+  return midisketch::getProductionBlueprintCount();
+}
+
+const char* midisketch_blueprint_name(uint8_t id) {
+  return midisketch::getProductionBlueprintName(id);
+}
+
+MidiSketchParadigm midisketch_blueprint_paradigm(uint8_t id) {
+  const auto& bp = midisketch::getProductionBlueprint(id);
+  return static_cast<MidiSketchParadigm>(bp.paradigm);
+}
+
+MidiSketchRiffPolicy midisketch_blueprint_riff_policy(uint8_t id) {
+  const auto& bp = midisketch::getProductionBlueprint(id);
+  return static_cast<MidiSketchRiffPolicy>(bp.riff_policy);
+}
+
+uint8_t midisketch_blueprint_weight(uint8_t id) {
+  const auto& bp = midisketch::getProductionBlueprint(id);
+  return bp.weight;
+}
+
+uint8_t midisketch_get_resolved_blueprint_id(MidiSketchHandle handle) {
+  if (!handle) return 255;
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  return sketch->resolvedBlueprintId();
+}
+
+// ============================================================================
 // StylePreset API Implementation
 // ============================================================================
 
@@ -581,6 +616,7 @@ MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
   s_default_config.form_id = static_cast<uint8_t>(cpp_config.form);
   s_default_config.vocal_attitude = static_cast<uint8_t>(cpp_config.vocal_attitude);
   s_default_config.drums_enabled = cpp_config.drums_enabled ? 1 : 0;
+  s_default_config.blueprint_id = cpp_config.blueprint_id;
 
   // Arpeggio settings
   s_default_config.arpeggio_enabled = cpp_config.arpeggio_enabled ? 1 : 0;
@@ -788,6 +824,7 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   cpp_config.form = static_cast<midisketch::StructurePattern>(config->form_id);
   cpp_config.vocal_attitude = static_cast<midisketch::VocalAttitude>(config->vocal_attitude);
   cpp_config.drums_enabled = config->drums_enabled != 0;
+  cpp_config.blueprint_id = config->blueprint_id;
 
   // Arpeggio settings
   cpp_config.arpeggio_enabled = config->arpeggio_enabled != 0;

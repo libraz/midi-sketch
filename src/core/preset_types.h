@@ -194,6 +194,7 @@ struct StylePreset {
 struct SongConfig {
   /// Style selection
   uint8_t style_preset_id = 0;
+  uint8_t blueprint_id = 0;     ///< Production blueprint ID (0 = Traditional, 255 = random)
   uint8_t mood = 0;             ///< Mood preset ID (0-19)
   bool mood_explicit = false;   ///< True if mood was explicitly set by user
 
@@ -273,6 +274,14 @@ struct GeneratorParams {
   uint8_t chord_id;            ///< Chord progression ID (0-15)
   Key key;                     ///< Output key
   uint8_t style_preset_id = 0; ///< Style preset ID (for metadata/regeneration)
+  uint8_t blueprint_id = 0;    ///< Production blueprint ID (0 = Traditional, 255 = random)
+  bool form_explicit = false;  ///< True if form was explicitly set (skip Blueprint section_flow)
+
+  /// Phase 2.6-2.7: Blueprint-derived generation control
+  /// These are set by Generator from the resolved blueprint
+  GenerationParadigm paradigm = GenerationParadigm::Traditional;  ///< Generation approach
+  RiffPolicy riff_policy = RiffPolicy::Free;                       ///< Riff management policy
+  bool drums_sync_vocal = false;  ///< Sync drum kicks/snares to vocal onsets
   bool drums_enabled;          ///< Enable drums track
   bool skip_vocal = false;     ///< Skip vocal track generation (for BGM-first workflow)
   /// Note: Modulation is controlled via Generator::modulation_timing_ (set from SongConfig)

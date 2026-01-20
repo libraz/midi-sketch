@@ -71,6 +71,13 @@ interface Api {
   freePianoRollData: (ptr: number) => void;
   reasonToString: (reason: number) => string;
   collisionToString: (collisionPtr: number) => string;
+  // Production Blueprint API
+  blueprintCount: () => number;
+  blueprintName: (id: number) => string;
+  blueprintParadigm: (id: number) => number;
+  blueprintRiffPolicy: (id: number) => number;
+  blueprintWeight: (id: number) => number;
+  getResolvedBlueprintId: (handle: number) => number;
 }
 
 /**
@@ -157,6 +164,8 @@ export interface SongConfig {
   vocalAttitude: number;
   /** Enable drums */
   drumsEnabled: boolean;
+  /** Blueprint ID: 0=Traditional, 1=Orangestar, 2=YOASOBI, 3=Ballad, 255=random */
+  blueprintId: number;
 
   // Arpeggio settings
   /** Enable arpeggio */
@@ -607,6 +616,54 @@ export const VocalStylePreset = {
   PowerfulShout: 12,
 } as const;
 
+// ============================================================================
+// Production Blueprint API Types
+// ============================================================================
+
+/**
+ * Generation paradigm for blueprint
+ */
+export const GenerationParadigm = {
+  /** Existing behavior */
+  Traditional: 0,
+  /** Orangestar style (rhythm-synced) */
+  RhythmSync: 1,
+  /** YOASOBI style (melody-driven) */
+  MelodyDriven: 2,
+} as const;
+
+export type GenerationParadigmType = (typeof GenerationParadigm)[keyof typeof GenerationParadigm];
+
+/**
+ * Riff policy for blueprint
+ */
+export const RiffPolicy = {
+  /** Free variation per section */
+  Free: 0,
+  /** Same riff throughout song */
+  Locked: 1,
+  /** Gradual evolution */
+  Evolving: 2,
+} as const;
+
+export type RiffPolicyType = (typeof RiffPolicy)[keyof typeof RiffPolicy];
+
+/**
+ * Blueprint information
+ */
+export interface BlueprintInfo {
+  /** Blueprint ID (0-3) */
+  id: number;
+  /** Blueprint name */
+  name: string;
+  /** Generation paradigm */
+  paradigm: GenerationParadigmType;
+  /** Riff policy */
+  riffPolicy: RiffPolicyType;
+  /** Selection weight (0-100) */
+  weight: number;
+}
+
 let moduleInstance: EmscriptenModule | null = null;
 let api: Api | null = null;
 
@@ -763,6 +820,23 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
     collisionToString: m.cwrap('midisketch_collision_to_string', 'string', ['number']) as (
       collisionPtr: number,
     ) => string,
+    // Production Blueprint API
+    blueprintCount: m.cwrap('midisketch_blueprint_count', 'number', []) as () => number,
+    blueprintName: m.cwrap('midisketch_blueprint_name', 'string', ['number']) as (
+      id: number,
+    ) => string,
+    blueprintParadigm: m.cwrap('midisketch_blueprint_paradigm', 'number', ['number']) as (
+      id: number,
+    ) => number,
+    blueprintRiffPolicy: m.cwrap('midisketch_blueprint_riff_policy', 'number', ['number']) as (
+      id: number,
+    ) => number,
+    blueprintWeight: m.cwrap('midisketch_blueprint_weight', 'number', ['number']) as (
+      id: number,
+    ) => number,
+    getResolvedBlueprintId: m.cwrap('midisketch_get_resolved_blueprint_id', 'number', [
+      'number',
+    ]) as (handle: number) => number,
   };
 }
 
@@ -870,6 +944,68 @@ export function getFormsByStyle(styleId: number): number[] {
   return result;
 }
 
+// ============================================================================
+// Production Blueprint API Functions
+// ============================================================================
+
+/**
+ * Get number of available blueprints
+ */
+export function getBlueprintCount(): number {
+  return getApi().blueprintCount();
+}
+
+/**
+ * Get blueprint name by ID
+ * @param id Blueprint ID (0-3)
+ */
+export function getBlueprintName(id: number): string {
+  return getApi().blueprintName(id);
+}
+
+/**
+ * Get blueprint paradigm by ID
+ * @param id Blueprint ID (0-3)
+ */
+export function getBlueprintParadigm(id: number): GenerationParadigmType {
+  return getApi().blueprintParadigm(id) as GenerationParadigmType;
+}
+
+/**
+ * Get blueprint riff policy by ID
+ * @param id Blueprint ID (0-3)
+ */
+export function getBlueprintRiffPolicy(id: number): RiffPolicyType {
+  return getApi().blueprintRiffPolicy(id) as RiffPolicyType;
+}
+
+/**
+ * Get blueprint weight by ID
+ * @param id Blueprint ID (0-3)
+ */
+export function getBlueprintWeight(id: number): number {
+  return getApi().blueprintWeight(id);
+}
+
+/**
+ * Get all blueprints as an array
+ */
+export function getBlueprints(): BlueprintInfo[] {
+  const a = getApi();
+  const count = a.blueprintCount();
+  const result: BlueprintInfo[] = [];
+  for (let i = 0; i < count; i++) {
+    result.push({
+      id: i,
+      name: a.blueprintName(i),
+      paradigm: a.blueprintParadigm(i) as GenerationParadigmType,
+      riffPolicy: a.blueprintRiffPolicy(i) as RiffPolicyType,
+      weight: a.blueprintWeight(i),
+    });
+  }
+  return result;
+}
+
 /**
  * Create a default song config for a style
  */
@@ -879,7 +1015,7 @@ export function createDefaultConfig(styleId: number): SongConfig {
   const retPtr = a.createDefaultConfigPtr(styleId);
   const view = new DataView(m.HEAPU8.buffer);
   return {
-    // Basic settings
+    // Basic settings (offset 0-12)
     stylePresetId: view.getUint8(retPtr + 0),
     key: view.getUint8(retPtr + 1),
     bpm: view.getUint16(retPtr + 2, true),
@@ -888,39 +1024,40 @@ export function createDefaultConfig(styleId: number): SongConfig {
     formId: view.getUint8(retPtr + 9),
     vocalAttitude: view.getUint8(retPtr + 10),
     drumsEnabled: view.getUint8(retPtr + 11) !== 0,
+    blueprintId: view.getUint8(retPtr + 12),
 
-    // Arpeggio settings
-    arpeggioEnabled: view.getUint8(retPtr + 12) !== 0,
-    arpeggioPattern: view.getUint8(retPtr + 13),
-    arpeggioSpeed: view.getUint8(retPtr + 14),
-    arpeggioOctaveRange: view.getUint8(retPtr + 15),
-    arpeggioGate: view.getUint8(retPtr + 16),
+    // Arpeggio settings (offset 13-17)
+    arpeggioEnabled: view.getUint8(retPtr + 13) !== 0,
+    arpeggioPattern: view.getUint8(retPtr + 14),
+    arpeggioSpeed: view.getUint8(retPtr + 15),
+    arpeggioOctaveRange: view.getUint8(retPtr + 16),
+    arpeggioGate: view.getUint8(retPtr + 17),
 
-    // Vocal settings
-    vocalLow: view.getUint8(retPtr + 17),
-    vocalHigh: view.getUint8(retPtr + 18),
-    skipVocal: view.getUint8(retPtr + 19) !== 0,
+    // Vocal settings (offset 18-20)
+    vocalLow: view.getUint8(retPtr + 18),
+    vocalHigh: view.getUint8(retPtr + 19),
+    skipVocal: view.getUint8(retPtr + 20) !== 0,
 
-    // Humanization
-    humanize: view.getUint8(retPtr + 20) !== 0,
-    humanizeTiming: view.getUint8(retPtr + 21),
-    humanizeVelocity: view.getUint8(retPtr + 22),
+    // Humanization (offset 21-23)
+    humanize: view.getUint8(retPtr + 21) !== 0,
+    humanizeTiming: view.getUint8(retPtr + 22),
+    humanizeVelocity: view.getUint8(retPtr + 23),
 
-    // Chord extensions
-    chordExtSus: view.getUint8(retPtr + 23) !== 0,
-    chordExt7th: view.getUint8(retPtr + 24) !== 0,
-    chordExt9th: view.getUint8(retPtr + 25) !== 0,
-    chordExtSusProb: view.getUint8(retPtr + 26),
-    chordExt7thProb: view.getUint8(retPtr + 27),
-    chordExt9thProb: view.getUint8(retPtr + 28),
+    // Chord extensions (offset 24-29)
+    chordExtSus: view.getUint8(retPtr + 24) !== 0,
+    chordExt7th: view.getUint8(retPtr + 25) !== 0,
+    chordExt9th: view.getUint8(retPtr + 26) !== 0,
+    chordExtSusProb: view.getUint8(retPtr + 27),
+    chordExt7thProb: view.getUint8(retPtr + 28),
+    chordExt9thProb: view.getUint8(retPtr + 29),
 
-    // Composition style
-    compositionStyle: view.getUint8(retPtr + 29),
+    // Composition style (offset 30)
+    compositionStyle: view.getUint8(retPtr + 30),
 
-    // Duration
+    // Duration (offset 32-33)
     targetDurationSeconds: view.getUint16(retPtr + 32, true),
 
-    // Modulation settings
+    // Modulation settings (offset 34-35)
     modulationTiming: view.getUint8(retPtr + 34),
     modulationSemitones: view.getInt8(retPtr + 35),
 
@@ -983,7 +1120,7 @@ function allocSongConfigStatic(m: EmscriptenModule, config: SongConfig): number 
   const ptr = m._malloc(52);
   const view = new DataView(m.HEAPU8.buffer);
 
-  // Basic settings (offset 0-11)
+  // Basic settings (offset 0-12)
   view.setUint8(ptr + 0, config.stylePresetId ?? 0);
   view.setUint8(ptr + 1, config.key ?? 0);
   view.setUint16(ptr + 2, config.bpm ?? 0, true);
@@ -992,37 +1129,37 @@ function allocSongConfigStatic(m: EmscriptenModule, config: SongConfig): number 
   view.setUint8(ptr + 9, config.formId ?? 0);
   view.setUint8(ptr + 10, config.vocalAttitude ?? 0);
   view.setUint8(ptr + 11, config.drumsEnabled !== false ? 1 : 0);
+  view.setUint8(ptr + 12, config.blueprintId ?? 0);
 
-  // Arpeggio settings (offset 12-16)
-  view.setUint8(ptr + 12, config.arpeggioEnabled ? 1 : 0);
-  view.setUint8(ptr + 13, config.arpeggioPattern ?? 0);
-  view.setUint8(ptr + 14, config.arpeggioSpeed ?? 1);
-  view.setUint8(ptr + 15, config.arpeggioOctaveRange ?? 2);
-  view.setUint8(ptr + 16, config.arpeggioGate ?? 80);
+  // Arpeggio settings (offset 13-17)
+  view.setUint8(ptr + 13, config.arpeggioEnabled ? 1 : 0);
+  view.setUint8(ptr + 14, config.arpeggioPattern ?? 0);
+  view.setUint8(ptr + 15, config.arpeggioSpeed ?? 1);
+  view.setUint8(ptr + 16, config.arpeggioOctaveRange ?? 2);
+  view.setUint8(ptr + 17, config.arpeggioGate ?? 80);
 
-  // Vocal settings (offset 17-19)
-  view.setUint8(ptr + 17, config.vocalLow ?? 55);
-  view.setUint8(ptr + 18, config.vocalHigh ?? 74);
-  view.setUint8(ptr + 19, config.skipVocal ? 1 : 0);
+  // Vocal settings (offset 18-20)
+  view.setUint8(ptr + 18, config.vocalLow ?? 55);
+  view.setUint8(ptr + 19, config.vocalHigh ?? 74);
+  view.setUint8(ptr + 20, config.skipVocal ? 1 : 0);
 
-  // Humanization (offset 20-22)
-  view.setUint8(ptr + 20, config.humanize ? 1 : 0);
-  view.setUint8(ptr + 21, config.humanizeTiming ?? 50);
-  view.setUint8(ptr + 22, config.humanizeVelocity ?? 50);
+  // Humanization (offset 21-23)
+  view.setUint8(ptr + 21, config.humanize ? 1 : 0);
+  view.setUint8(ptr + 22, config.humanizeTiming ?? 50);
+  view.setUint8(ptr + 23, config.humanizeVelocity ?? 50);
 
-  // Chord extensions (offset 23-28)
-  view.setUint8(ptr + 23, config.chordExtSus ? 1 : 0);
-  view.setUint8(ptr + 24, config.chordExt7th ? 1 : 0);
-  view.setUint8(ptr + 25, config.chordExt9th ? 1 : 0);
-  view.setUint8(ptr + 26, config.chordExtSusProb ?? 20);
-  view.setUint8(ptr + 27, config.chordExt7thProb ?? 30);
-  view.setUint8(ptr + 28, config.chordExt9thProb ?? 25);
+  // Chord extensions (offset 24-29)
+  view.setUint8(ptr + 24, config.chordExtSus ? 1 : 0);
+  view.setUint8(ptr + 25, config.chordExt7th ? 1 : 0);
+  view.setUint8(ptr + 26, config.chordExt9th ? 1 : 0);
+  view.setUint8(ptr + 27, config.chordExtSusProb ?? 20);
+  view.setUint8(ptr + 28, config.chordExt7thProb ?? 30);
+  view.setUint8(ptr + 29, config.chordExt9thProb ?? 25);
 
-  // Composition style (offset 29)
-  view.setUint8(ptr + 29, config.compositionStyle ?? 0);
+  // Composition style (offset 30)
+  view.setUint8(ptr + 30, config.compositionStyle ?? 0);
 
-  // Reserved + padding (offset 30-31)
-  view.setUint8(ptr + 30, 0);
+  // Reserved + padding (offset 31)
   view.setUint8(ptr + 31, 0);
 
   // Duration (offset 32-33)
@@ -1585,6 +1722,19 @@ export class MidiSketch {
   }
 
   /**
+   * Get the resolved blueprint ID after generation.
+   *
+   * Returns the actual blueprint ID used for generation.
+   * If blueprintId was set to 255 (random), this returns the selected ID.
+   *
+   * @returns Resolved blueprint ID (0-3), or 255 if not generated
+   */
+  getResolvedBlueprintId(): number {
+    const a = getApi();
+    return a.getResolvedBlueprintId(this.handle);
+  }
+
+  /**
    * Destroy the instance and free resources
    */
   destroy(): void {
@@ -1599,7 +1749,7 @@ export class MidiSketch {
     const ptr = m._malloc(52); // MidiSketchSongConfig size
     const view = new DataView(m.HEAPU8.buffer);
 
-    // Basic settings (offset 0-11)
+    // Basic settings (offset 0-12)
     view.setUint8(ptr + 0, config.stylePresetId ?? 0);
     view.setUint8(ptr + 1, config.key ?? 0);
     view.setUint16(ptr + 2, config.bpm ?? 0, true);
@@ -1608,37 +1758,37 @@ export class MidiSketch {
     view.setUint8(ptr + 9, config.formId ?? 0);
     view.setUint8(ptr + 10, config.vocalAttitude ?? 0);
     view.setUint8(ptr + 11, config.drumsEnabled !== false ? 1 : 0);
+    view.setUint8(ptr + 12, config.blueprintId ?? 0);
 
-    // Arpeggio settings (offset 12-16)
-    view.setUint8(ptr + 12, config.arpeggioEnabled ? 1 : 0);
-    view.setUint8(ptr + 13, config.arpeggioPattern ?? 0);
-    view.setUint8(ptr + 14, config.arpeggioSpeed ?? 1);
-    view.setUint8(ptr + 15, config.arpeggioOctaveRange ?? 2);
-    view.setUint8(ptr + 16, config.arpeggioGate ?? 80);
+    // Arpeggio settings (offset 13-17)
+    view.setUint8(ptr + 13, config.arpeggioEnabled ? 1 : 0);
+    view.setUint8(ptr + 14, config.arpeggioPattern ?? 0);
+    view.setUint8(ptr + 15, config.arpeggioSpeed ?? 1);
+    view.setUint8(ptr + 16, config.arpeggioOctaveRange ?? 2);
+    view.setUint8(ptr + 17, config.arpeggioGate ?? 80);
 
-    // Vocal settings (offset 17-19)
-    view.setUint8(ptr + 17, config.vocalLow ?? 55);
-    view.setUint8(ptr + 18, config.vocalHigh ?? 74);
-    view.setUint8(ptr + 19, config.skipVocal ? 1 : 0);
+    // Vocal settings (offset 18-20)
+    view.setUint8(ptr + 18, config.vocalLow ?? 55);
+    view.setUint8(ptr + 19, config.vocalHigh ?? 74);
+    view.setUint8(ptr + 20, config.skipVocal ? 1 : 0);
 
-    // Humanization (offset 20-22)
-    view.setUint8(ptr + 20, config.humanize ? 1 : 0);
-    view.setUint8(ptr + 21, config.humanizeTiming ?? 50);
-    view.setUint8(ptr + 22, config.humanizeVelocity ?? 50);
+    // Humanization (offset 21-23)
+    view.setUint8(ptr + 21, config.humanize ? 1 : 0);
+    view.setUint8(ptr + 22, config.humanizeTiming ?? 50);
+    view.setUint8(ptr + 23, config.humanizeVelocity ?? 50);
 
-    // Chord extensions (offset 23-28)
-    view.setUint8(ptr + 23, config.chordExtSus ? 1 : 0);
-    view.setUint8(ptr + 24, config.chordExt7th ? 1 : 0);
-    view.setUint8(ptr + 25, config.chordExt9th ? 1 : 0);
-    view.setUint8(ptr + 26, config.chordExtSusProb ?? 20);
-    view.setUint8(ptr + 27, config.chordExt7thProb ?? 30);
-    view.setUint8(ptr + 28, config.chordExt9thProb ?? 25);
+    // Chord extensions (offset 24-29)
+    view.setUint8(ptr + 24, config.chordExtSus ? 1 : 0);
+    view.setUint8(ptr + 25, config.chordExt7th ? 1 : 0);
+    view.setUint8(ptr + 26, config.chordExt9th ? 1 : 0);
+    view.setUint8(ptr + 27, config.chordExtSusProb ?? 20);
+    view.setUint8(ptr + 28, config.chordExt7thProb ?? 30);
+    view.setUint8(ptr + 29, config.chordExt9thProb ?? 25);
 
-    // Composition style (offset 29)
-    view.setUint8(ptr + 29, config.compositionStyle ?? 0);
+    // Composition style (offset 30)
+    view.setUint8(ptr + 30, config.compositionStyle ?? 0);
 
-    // Reserved + padding (offset 30-31)
-    view.setUint8(ptr + 30, 0);
+    // Reserved + padding (offset 31)
     view.setUint8(ptr + 31, 0);
 
     // Duration (offset 32-33)

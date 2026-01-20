@@ -498,6 +498,11 @@ void generateMotifTrack(MidiTrack& track, Song& song,
   std::map<SectionType, std::vector<NoteEvent>> section_patterns;
 
   for (const auto& section : sections) {
+    // Phase 2.5: Skip sections where motif is disabled by track_mask
+    if (!hasTrack(section.track_mask, TrackMask::Motif)) {
+      continue;
+    }
+
     Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
     bool is_chorus = (section.type == SectionType::Chorus);
 

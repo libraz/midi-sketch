@@ -186,6 +186,12 @@ class MidiSketch {
    */
   static const char* version();
 
+  /**
+   * @brief Get resolved blueprint ID after generation.
+   * @return Blueprint ID (0-3), or 255 if not generated
+   */
+  uint8_t resolvedBlueprintId() const { return generator_.resolvedBlueprintId(); }
+
  private:
   Generator generator_;
   MidiWriter midi_writer_;

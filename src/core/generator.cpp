@@ -22,6 +22,7 @@
 #include "core/pitch_utils.h"
 #include "core/post_processor.h"
 #include "core/preset_data.h"
+#include "core/production_blueprint.h"
 #include "core/structure.h"
 #include "core/velocity.h"
 #include "track/arpeggio.h"
@@ -91,6 +92,17 @@ void Generator::generate(const GeneratorParams& params) {
   song_.setMelodySeed(seed);
   song_.setMotifSeed(seed);
 
+  // Select and resolve Blueprint (Phase 2.4)
+  // Use separate RNG with derived seed to avoid disturbing main rng_ state
+  std::mt19937 blueprint_rng(seed ^ 0x424C5052);  // "BLPR" magic number
+  resolved_blueprint_id_ = selectProductionBlueprint(blueprint_rng, params_.blueprint_id);
+  blueprint_ = &getProductionBlueprint(resolved_blueprint_id_);
+
+  // Phase 2.6-2.7: Copy blueprint settings to params for track generation
+  params_.paradigm = blueprint_->paradigm;
+  params_.riff_policy = blueprint_->riff_policy;
+  params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
+
   // Resolve BPM
   uint16_t bpm = params.bpm;
   if (bpm == 0) {
@@ -98,14 +110,28 @@ void Generator::generate(const GeneratorParams& params) {
   }
   song_.setBpm(bpm);
 
-  // Build song structure (dynamic duration or fixed pattern)
+  // Build song structure (dynamic duration, blueprint, or fixed pattern)
+  // Priority: target_duration > explicit form > Blueprint section_flow > StructurePattern
   std::vector<Section> sections;
   if (params.target_duration_seconds > 0) {
     // Use the randomly selected structure pattern as base for duration scaling
     sections = buildStructureForDuration(params.target_duration_seconds, bpm,
                                           call_enabled_, intro_chant_, mix_pattern_,
                                           params.structure);
+  } else if (params_.form_explicit) {
+    // Explicit form setting takes precedence over Blueprint section_flow
+    sections = buildStructure(params.structure);
+    if (call_enabled_) {
+      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
+    }
+  } else if (blueprint_->section_flow != nullptr && blueprint_->section_count > 0) {
+    // Use Blueprint's custom section flow
+    sections = buildStructureFromBlueprint(*blueprint_);
+    if (call_enabled_) {
+      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
+    }
   } else {
+    // Use traditional StructurePattern
     sections = buildStructure(params.structure);
     if (call_enabled_) {
       insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
@@ -188,6 +214,17 @@ void Generator::generateVocal(const GeneratorParams& params) {
   song_.setMelodySeed(seed);
   song_.setMotifSeed(seed);
 
+  // Select and resolve Blueprint (Phase 2.4)
+  // Use separate RNG with derived seed to avoid disturbing main rng_ state
+  std::mt19937 blueprint_rng(seed ^ 0x424C5052);  // "BLPR" magic number
+  resolved_blueprint_id_ = selectProductionBlueprint(blueprint_rng, params_.blueprint_id);
+  blueprint_ = &getProductionBlueprint(resolved_blueprint_id_);
+
+  // Phase 2.6-2.7: Copy blueprint settings to params for track generation
+  params_.paradigm = blueprint_->paradigm;
+  params_.riff_policy = blueprint_->riff_policy;
+  params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
+
   // Resolve BPM
   uint16_t bpm = params.bpm;
   if (bpm == 0) {
@@ -196,11 +233,24 @@ void Generator::generateVocal(const GeneratorParams& params) {
   song_.setBpm(bpm);
 
   // Build song structure
+  // Priority: target_duration > explicit form > Blueprint section_flow > StructurePattern
   std::vector<Section> sections;
   if (params.target_duration_seconds > 0) {
     sections = buildStructureForDuration(params.target_duration_seconds, bpm,
                                           call_enabled_, intro_chant_, mix_pattern_,
                                           params.structure);
+  } else if (params_.form_explicit) {
+    // Explicit form setting takes precedence over Blueprint section_flow
+    sections = buildStructure(params.structure);
+    if (call_enabled_) {
+      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
+    }
+  } else if (blueprint_->section_flow != nullptr && blueprint_->section_count > 0) {
+    // Use Blueprint's custom section flow
+    sections = buildStructureFromBlueprint(*blueprint_);
+    if (call_enabled_) {
+      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
+    }
   } else {
     sections = buildStructure(params.structure);
     if (call_enabled_) {
@@ -509,6 +559,17 @@ void Generator::setVocalNotes(const GeneratorParams& params,
   song_.setMelodySeed(seed);
   song_.setMotifSeed(seed);
 
+  // Select and resolve Blueprint (Phase 2.4)
+  // Use separate RNG with derived seed to avoid disturbing main rng_ state
+  std::mt19937 blueprint_rng(seed ^ 0x424C5052);  // "BLPR" magic number
+  resolved_blueprint_id_ = selectProductionBlueprint(blueprint_rng, params_.blueprint_id);
+  blueprint_ = &getProductionBlueprint(resolved_blueprint_id_);
+
+  // Phase 2.6-2.7: Copy blueprint settings to params for track generation
+  params_.paradigm = blueprint_->paradigm;
+  params_.riff_policy = blueprint_->riff_policy;
+  params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
+
   // Resolve BPM
   uint16_t bpm = params.bpm;
   if (bpm == 0) {
@@ -517,11 +578,24 @@ void Generator::setVocalNotes(const GeneratorParams& params,
   song_.setBpm(bpm);
 
   // Build song structure
+  // Priority: target_duration > explicit form > Blueprint section_flow > StructurePattern
   std::vector<Section> sections;
   if (params.target_duration_seconds > 0) {
     sections = buildStructureForDuration(params.target_duration_seconds, bpm,
                                           call_enabled_, intro_chant_, mix_pattern_,
                                           params.structure);
+  } else if (params_.form_explicit) {
+    // Explicit form setting takes precedence over Blueprint section_flow
+    sections = buildStructure(params.structure);
+    if (call_enabled_) {
+      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
+    }
+  } else if (blueprint_->section_flow != nullptr && blueprint_->section_count > 0) {
+    // Use Blueprint's custom section flow
+    sections = buildStructureFromBlueprint(*blueprint_);
+    if (call_enabled_) {
+      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
+    }
   } else {
     sections = buildStructure(params.structure);
     if (call_enabled_) {
@@ -717,7 +791,11 @@ void Generator::applyTransitionDynamics() {
       &song_.arpeggio()
   };
 
+  // Apply transition dynamics (section endings)
   midisketch::applyAllTransitionDynamics(tracks, sections);
+
+  // Phase 2.8: Apply entry pattern dynamics (section beginnings)
+  midisketch::applyAllEntryPatternDynamics(tracks, sections);
 }
 
 void Generator::applyHumanization() {

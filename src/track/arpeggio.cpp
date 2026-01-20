@@ -152,6 +152,11 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
   int persistent_pattern_index = 0;
 
   for (const auto& section : sections) {
+    // Phase 2.5: Skip sections where arpeggio is disabled by track_mask
+    if (!hasTrack(section.track_mask, TrackMask::Arpeggio)) {
+      continue;
+    }
+
     // Intro/Outro: generate arpeggio with reduced intensity
     // Velocity is adjusted via calculateArpeggioVelocity() based on section type
 

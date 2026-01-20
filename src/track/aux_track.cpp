@@ -199,6 +199,11 @@ void AuxTrackGenerator::generateFullTrack(
 
   // Process each section
   for (const auto& section : *song_ctx.sections) {
+    // Phase 2.5: Skip sections where aux is disabled by track_mask
+    if (!hasTrack(section.track_mask, TrackMask::Aux)) {
+      continue;
+    }
+
     // Skip interlude and outro (no aux needed)
     if (section.type == SectionType::Interlude ||
         section.type == SectionType::Outro) {

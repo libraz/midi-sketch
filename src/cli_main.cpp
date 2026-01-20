@@ -7,6 +7,7 @@
 #include "analysis/dissonance.h"
 #include "core/json_helpers.h"
 #include "core/preset_data.h"
+#include "core/production_blueprint.h"
 #include "core/structure.h"
 #include "midi/midi_reader.h"
 #include "midi/midi2_reader.h"
@@ -24,6 +25,8 @@ void printUsage(const char* program) {
   std::cout << "Options:\n";
   std::cout << "  --seed N          Set random seed (0 = auto-random)\n";
   std::cout << "  --style N         Set style preset ID (0-16)\n";
+  std::cout << "  --blueprint N     Set production blueprint (0-3 or name: traditional,\n";
+  std::cout << "                    orangestar, yoasobi, ballad)\n";
   std::cout << "  --mood N          Set mood directly (0-19, overrides style mapping)\n";
   std::cout << "  --chord N         Set chord progression ID (0-19)\n";
   std::cout << "  --vocal-style N   Set vocal style (0=Auto, 1=Standard, 2=Vocaloid,\n";
@@ -432,6 +435,7 @@ int main(int argc, char* argv[]) {
   bool json_output = false;     // Output JSON to stdout
   uint32_t seed = 0;  // 0 = auto-random
   uint8_t style_id = 1;
+  uint8_t blueprint_id = 255;  // 255 = random selection
   uint8_t mood_id = 0;
   bool mood_explicit = false;
   uint8_t chord_id = 3;
@@ -458,6 +462,29 @@ int main(int argc, char* argv[]) {
       seed = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--style") == 0 && i + 1 < argc) {
       style_id = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+    } else if (std::strcmp(argv[i], "--blueprint") == 0 && i + 1 < argc) {
+      ++i;
+      // Try to parse as number first
+      char* endptr = nullptr;
+      unsigned long val = std::strtoul(argv[i], &endptr, 10);
+      if (endptr != argv[i] && *endptr == '\0') {
+        // Parsed as number
+        blueprint_id = static_cast<uint8_t>(val);
+      } else {
+        // Try to parse as name
+        uint8_t found_id = midisketch::findProductionBlueprintByName(argv[i]);
+        if (found_id != 255) {
+          blueprint_id = found_id;
+        } else {
+          std::cerr << "Unknown blueprint: " << argv[i] << "\n";
+          std::cerr << "Available blueprints:\n";
+          for (uint8_t j = 0; j < midisketch::getProductionBlueprintCount(); ++j) {
+            std::cerr << "  " << static_cast<int>(j) << ": "
+                      << midisketch::getProductionBlueprintName(j) << "\n";
+          }
+          return 1;
+        }
+      }
     } else if (std::strcmp(argv[i], "--mood") == 0 && i + 1 < argc) {
       mood_id = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
       mood_explicit = true;
@@ -765,6 +792,7 @@ int main(int argc, char* argv[]) {
 
   midisketch::SongConfig config = midisketch::createDefaultSongConfig(style_id);
   config.chord_progression_id = chord_id;
+  config.blueprint_id = blueprint_id;
   config.mood = mood_id;
   config.mood_explicit = mood_explicit;
   config.seed = seed;
@@ -796,7 +824,16 @@ int main(int argc, char* argv[]) {
 
   const auto& preset = midisketch::getStylePreset(config.style_preset_id);
 
-  std::cout << "Generating with SongConfig:\n";
+  // Print blueprint selection
+  if (blueprint_id == 255) {
+    // Will be selected randomly during generation, show "Random"
+    std::cout << "Generating with SongConfig:\n";
+    std::cout << "  Blueprint: Random (will be selected during generation)\n";
+  } else {
+    std::cout << "Generating with SongConfig:\n";
+    std::cout << "  Blueprint: " << midisketch::getProductionBlueprintName(blueprint_id)
+              << " (" << static_cast<int>(blueprint_id) << ")\n";
+  }
   std::cout << "  Style: " << preset.display_name << "\n";
   std::cout << "  Key: " << keyName(config.key) << "\n";
   std::cout << "  Chord: " << config.chord_progression_id << "\n";

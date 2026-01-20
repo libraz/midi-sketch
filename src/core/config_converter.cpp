@@ -186,6 +186,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   // Otherwise, if form matches preset default, use weighted random selection
   if (config.form_explicit) {
     params.structure = config.form;
+    params.form_explicit = true;  // Pass through for Blueprint selection
   } else if (config.form == preset.default_form && config.seed != 0) {
     params.structure = selectRandomForm(config.style_preset_id, config.seed);
   } else if (config.form == preset.default_form && config.seed == 0) {
@@ -194,7 +195,9 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
         std::chrono::system_clock::now().time_since_epoch().count());
     params.structure = selectRandomForm(config.style_preset_id, form_seed);
   } else {
+    // Form differs from preset default - treat as explicit selection
     params.structure = config.form;
+    params.form_explicit = true;  // Skip Blueprint section_flow
   }
 
   params.chord_id = config.chord_progression_id;
@@ -204,6 +207,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   params.vocal_high = config.vocal_high;
   params.seed = config.seed;
   params.style_preset_id = config.style_preset_id;
+  params.blueprint_id = config.blueprint_id;
 
   // Use config BPM if specified, otherwise use style preset default
   params.bpm = (config.bpm != 0) ? config.bpm : preset.tempo_default;

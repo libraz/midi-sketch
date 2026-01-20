@@ -148,6 +148,45 @@ const char* midisketch_chord_display(uint8_t id);
 uint16_t midisketch_mood_default_bpm(uint8_t id);
 
 // ============================================================================
+// Production Blueprint API (Phase 4)
+// ============================================================================
+
+/// @brief Generation paradigm for blueprint.
+typedef enum {
+  MIDISKETCH_PARADIGM_TRADITIONAL = 0,  ///< Existing behavior
+  MIDISKETCH_PARADIGM_RHYTHM_SYNC = 1,  ///< Orangestar style (rhythm-synced)
+  MIDISKETCH_PARADIGM_MELODY_DRIVEN = 2 ///< YOASOBI style (melody-driven)
+} MidiSketchParadigm;
+
+/// @brief Riff policy for blueprint.
+typedef enum {
+  MIDISKETCH_RIFF_FREE = 0,      ///< Free variation per section
+  MIDISKETCH_RIFF_LOCKED = 1,    ///< Same riff throughout song
+  MIDISKETCH_RIFF_EVOLVING = 2   ///< Gradual evolution
+} MidiSketchRiffPolicy;
+
+/** @brief Get number of blueprints. @return Count */
+uint8_t midisketch_blueprint_count(void);
+
+/** @brief Get blueprint name. @param id Blueprint ID @return Name */
+const char* midisketch_blueprint_name(uint8_t id);
+
+/** @brief Get blueprint paradigm. @param id Blueprint ID @return Paradigm */
+MidiSketchParadigm midisketch_blueprint_paradigm(uint8_t id);
+
+/** @brief Get blueprint riff policy. @param id Blueprint ID @return RiffPolicy */
+MidiSketchRiffPolicy midisketch_blueprint_riff_policy(uint8_t id);
+
+/** @brief Get blueprint weight (for random selection). @param id Blueprint ID @return Weight (0-100) */
+uint8_t midisketch_blueprint_weight(uint8_t id);
+
+/** @brief Get resolved blueprint ID after generation.
+ *  @param handle MidiSketch handle
+ *  @return Resolved blueprint ID (0-3), or 255 if not generated
+ */
+uint8_t midisketch_get_resolved_blueprint_id(MidiSketchHandle handle);
+
+// ============================================================================
 // StylePreset API (Phase 1)
 // ============================================================================
 
@@ -162,6 +201,9 @@ typedef struct {
   uint8_t form_id;            ///< StructurePattern ID (0-17)
   uint8_t vocal_attitude;     ///< 0=Clean, 1=Expressive, 2=Raw
   uint8_t drums_enabled;      ///< 0=off, 1=on
+
+  // Production blueprint
+  uint8_t blueprint_id;       ///< Blueprint ID (0=Traditional, 1=Orangestar, 2=YOASOBI, 255=random)
 
   // Arpeggio settings
   uint8_t arpeggio_enabled;   ///< 0=off, 1=on

@@ -43,6 +43,7 @@ set(TEST_SOURCES
   core/modulation_vocal_range_test.cpp
   core/section_utils_test.cpp
   core/json_helpers_test.cpp
+  core/production_blueprint_test.cpp
   midi/midi_writer_smf1_test.cpp
   midi/midi_reader_test.cpp
   midi/midi_validator_test.cpp

@@ -13,6 +13,86 @@
 
 namespace midisketch {
 
+// ============================================================================
+// TrackMask - Track enable/disable mask (bit field)
+// ============================================================================
+
+/// @brief Track enable mask (bit field).
+/// Used to specify which tracks are active in each section.
+enum class TrackMask : uint16_t {
+  None     = 0,
+  Vocal    = 1 << 0,
+  Chord    = 1 << 1,
+  Bass     = 1 << 2,
+  Motif    = 1 << 3,
+  Arpeggio = 1 << 4,
+  Aux      = 1 << 5,
+  Drums    = 1 << 6,
+  SE       = 1 << 7,
+
+  // Convenient combinations
+  All      = 0xFF,
+  Minimal  = Drums,
+  Sparse   = Vocal | Drums,
+  Basic    = Vocal | Chord | Bass | Drums,
+  NoVocal  = Chord | Bass | Motif | Arpeggio | Aux | Drums | SE,
+};
+
+/// @brief Bitwise OR operator for TrackMask.
+inline constexpr TrackMask operator|(TrackMask a, TrackMask b) {
+  return static_cast<TrackMask>(
+    static_cast<uint16_t>(a) | static_cast<uint16_t>(b));
+}
+
+/// @brief Bitwise AND operator for TrackMask.
+inline constexpr TrackMask operator&(TrackMask a, TrackMask b) {
+  return static_cast<TrackMask>(
+    static_cast<uint16_t>(a) & static_cast<uint16_t>(b));
+}
+
+/// @brief Check if a track is enabled in the mask.
+inline constexpr bool hasTrack(TrackMask mask, TrackMask track) {
+  return (static_cast<uint16_t>(mask) & static_cast<uint16_t>(track)) != 0;
+}
+
+// ============================================================================
+// EntryPattern - How instruments enter at section boundaries
+// ============================================================================
+
+/// @brief Instrument entry pattern for section transitions.
+enum class EntryPattern : uint8_t {
+  Immediate,      ///< Start immediately at section head
+  GradualBuild,   ///< Build up over 1-2 bars (velocity ramp)
+  DropIn,         ///< Strong entry with fill before
+  Stagger,        ///< Instruments enter one beat apart
+};
+
+// ============================================================================
+// GenerationParadigm - Overall generation approach
+// ============================================================================
+
+/// @brief Generation paradigm controlling overall generation approach.
+enum class GenerationParadigm : uint8_t {
+  Traditional,   ///< Existing behavior (backward compatible)
+  RhythmSync,    ///< Rhythm-synced (Orangestar style): vocal onsets sync to drum grid
+  MelodyDriven,  ///< Melody-driven (YOASOBI style): drums follow melody
+};
+
+// ============================================================================
+// RiffPolicy - Riff management across sections
+// ============================================================================
+
+/// @brief Riff management policy across sections.
+enum class RiffPolicy : uint8_t {
+  Free,      ///< Free variation per section (existing behavior)
+  Locked,    ///< Same riff throughout song (Orangestar style)
+  Evolving,  ///< Gradual evolution with variations (YOASOBI style)
+};
+
+// ============================================================================
+// Section Types
+// ============================================================================
+
 /// @brief Section type within a song structure.
 enum class SectionType {
   Intro,      ///< Instrumental introduction
@@ -65,6 +145,18 @@ struct Section {
   BackingDensity backing_density = BackingDensity::Normal;  ///< Backing density
   bool deviation_allowed = false;  ///< Allow raw vocal attitude
   bool se_allowed = true;          ///< Allow sound effects
+
+  /// @brief Track enable mask for this section (from ProductionBlueprint).
+  /// Default is All (0xFF) for backward compatibility.
+  TrackMask track_mask = TrackMask::All;
+
+  /// @brief Entry pattern for this section (from ProductionBlueprint).
+  /// Controls how instruments enter at section start.
+  EntryPattern entry_pattern = EntryPattern::Immediate;
+
+  /// @brief Fill before this section (from ProductionBlueprint).
+  /// If true, insert a drum fill before this section starts.
+  bool fill_before = false;
 };
 
 /// @brief Section transition parameters for smooth melodic flow.

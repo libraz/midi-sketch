@@ -489,4 +489,91 @@ std::vector<Section> buildStructureForDuration(
   return sections;
 }
 
+// ============================================================================
+// ProductionBlueprint Structure Functions
+// ============================================================================
+
+VocalDensity trackMaskToVocalDensity(TrackMask mask) {
+  // No vocal track -> None
+  if (!hasTrack(mask, TrackMask::Vocal)) {
+    return VocalDensity::None;
+  }
+
+  // Count backing tracks (Chord, Bass, Motif, Arpeggio, Aux)
+  int backing_count = 0;
+  if (hasTrack(mask, TrackMask::Chord)) backing_count++;
+  if (hasTrack(mask, TrackMask::Bass)) backing_count++;
+  if (hasTrack(mask, TrackMask::Motif)) backing_count++;
+  if (hasTrack(mask, TrackMask::Arpeggio)) backing_count++;
+  if (hasTrack(mask, TrackMask::Aux)) backing_count++;
+
+  // Sparse if minimal backing (0-1 tracks)
+  if (backing_count <= 1) {
+    return VocalDensity::Sparse;
+  }
+
+  return VocalDensity::Full;
+}
+
+BackingDensity trackMaskToBackingDensity(TrackMask mask) {
+  // Count backing tracks (Chord, Bass, Motif, Arpeggio, Aux)
+  int backing_count = 0;
+  if (hasTrack(mask, TrackMask::Chord)) backing_count++;
+  if (hasTrack(mask, TrackMask::Bass)) backing_count++;
+  if (hasTrack(mask, TrackMask::Motif)) backing_count++;
+  if (hasTrack(mask, TrackMask::Arpeggio)) backing_count++;
+  if (hasTrack(mask, TrackMask::Aux)) backing_count++;
+
+  if (backing_count <= 1) {
+    return BackingDensity::Thin;
+  } else if (backing_count <= 3) {
+    return BackingDensity::Normal;
+  } else {
+    return BackingDensity::Thick;
+  }
+}
+
+std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blueprint) {
+  std::vector<Section> sections;
+
+  // If no custom section flow, return empty (caller should use buildStructure)
+  if (blueprint.section_flow == nullptr || blueprint.section_count == 0) {
+    return sections;
+  }
+
+  Tick current_bar = 0;
+  Tick current_tick = 0;
+
+  for (uint8_t i = 0; i < blueprint.section_count; ++i) {
+    const SectionSlot& slot = blueprint.section_flow[i];
+
+    Section section;
+    section.type = slot.type;
+    section.name = sectionTypeName(slot.type);
+    section.bars = slot.bars;
+    section.start_bar = current_bar;
+    section.start_tick = current_tick;
+
+    // Convert TrackMask to densities
+    section.vocal_density = trackMaskToVocalDensity(slot.enabled_tracks);
+    section.backing_density = trackMaskToBackingDensity(slot.enabled_tracks);
+
+    // Deviation allowed in Chorus and Bridge (same as existing)
+    section.deviation_allowed = getAllowDeviationForType(slot.type);
+    section.se_allowed = hasTrack(slot.enabled_tracks, TrackMask::SE);
+
+    // Store track control information for Phase 2.5
+    section.track_mask = slot.enabled_tracks;
+    section.entry_pattern = slot.entry_pattern;
+    section.fill_before = slot.fill_before;
+
+    sections.push_back(section);
+
+    current_bar += slot.bars;
+    current_tick += slot.bars * TICKS_PER_BAR;
+  }
+
+  return sections;
+}
+
 }  // namespace midisketch

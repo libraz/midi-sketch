@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 #include <cmath>
+#include "core/production_blueprint.h"
 #include "core/structure.h"
 
 namespace midisketch {
@@ -487,6 +488,111 @@ TEST(StructureTest, AllNewPatternsProduceValidSections) {
       expected_tick += section.bars * TICKS_PER_BAR;
     }
   }
+}
+
+// ============================================================================
+// ProductionBlueprint Structure Tests
+// ============================================================================
+
+TEST(StructureTest, TrackMaskToVocalDensity_None) {
+  // No vocal -> None
+  EXPECT_EQ(trackMaskToVocalDensity(TrackMask::Drums), VocalDensity::None);
+  EXPECT_EQ(trackMaskToVocalDensity(TrackMask::Chord), VocalDensity::None);
+  EXPECT_EQ(trackMaskToVocalDensity(TrackMask::NoVocal), VocalDensity::None);
+}
+
+TEST(StructureTest, TrackMaskToVocalDensity_Sparse) {
+  // Vocal only or vocal + drums -> Sparse
+  EXPECT_EQ(trackMaskToVocalDensity(TrackMask::Vocal), VocalDensity::Sparse);
+  EXPECT_EQ(trackMaskToVocalDensity(TrackMask::Sparse), VocalDensity::Sparse);
+  EXPECT_EQ(trackMaskToVocalDensity(TrackMask::Vocal | TrackMask::Drums),
+            VocalDensity::Sparse);
+  // Vocal + 1 backing track -> Sparse
+  EXPECT_EQ(trackMaskToVocalDensity(TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass),
+            VocalDensity::Sparse);
+}
+
+TEST(StructureTest, TrackMaskToVocalDensity_Full) {
+  // Vocal + 2+ backing tracks -> Full
+  EXPECT_EQ(trackMaskToVocalDensity(TrackMask::Basic), VocalDensity::Full);
+  EXPECT_EQ(trackMaskToVocalDensity(TrackMask::All), VocalDensity::Full);
+}
+
+TEST(StructureTest, TrackMaskToBackingDensity_Thin) {
+  // 0-1 backing tracks -> Thin
+  EXPECT_EQ(trackMaskToBackingDensity(TrackMask::Drums), BackingDensity::Thin);
+  EXPECT_EQ(trackMaskToBackingDensity(TrackMask::Vocal), BackingDensity::Thin);
+  EXPECT_EQ(trackMaskToBackingDensity(TrackMask::Chord), BackingDensity::Thin);
+  EXPECT_EQ(trackMaskToBackingDensity(TrackMask::Vocal | TrackMask::Bass),
+            BackingDensity::Thin);
+}
+
+TEST(StructureTest, TrackMaskToBackingDensity_Normal) {
+  // 2-3 backing tracks -> Normal
+  EXPECT_EQ(trackMaskToBackingDensity(TrackMask::Chord | TrackMask::Bass),
+            BackingDensity::Normal);
+  EXPECT_EQ(trackMaskToBackingDensity(TrackMask::Basic), BackingDensity::Normal);
+}
+
+TEST(StructureTest, TrackMaskToBackingDensity_Thick) {
+  // 4+ backing tracks -> Thick
+  EXPECT_EQ(trackMaskToBackingDensity(TrackMask::All), BackingDensity::Thick);
+}
+
+TEST(StructureTest, BuildStructureFromBlueprint_Traditional) {
+  // Traditional blueprint has no section_flow
+  const auto& bp = getProductionBlueprint(0);
+  auto sections = buildStructureFromBlueprint(bp);
+
+  // Should return empty (caller uses buildStructure instead)
+  EXPECT_TRUE(sections.empty());
+}
+
+TEST(StructureTest, BuildStructureFromBlueprint_Orangestar) {
+  // Orangestar has a custom section flow
+  const auto& bp = getProductionBlueprint(1);
+  auto sections = buildStructureFromBlueprint(bp);
+
+  // Should have sections
+  ASSERT_GT(sections.size(), 0u);
+
+  // First section should be Intro with drums only (sparse vocal)
+  EXPECT_EQ(sections[0].type, SectionType::Intro);
+  EXPECT_EQ(sections[0].vocal_density, VocalDensity::None);
+  EXPECT_EQ(sections[0].backing_density, BackingDensity::Thin);
+
+  // Verify section ticks are sequential
+  Tick expected_tick = 0;
+  for (const auto& section : sections) {
+    EXPECT_EQ(section.start_tick, expected_tick);
+    expected_tick += section.bars * TICKS_PER_BAR;
+  }
+}
+
+TEST(StructureTest, BuildStructureFromBlueprint_YOASOBI) {
+  // YOASOBI has a custom section flow with full arrangement
+  const auto& bp = getProductionBlueprint(2);
+  auto sections = buildStructureFromBlueprint(bp);
+
+  ASSERT_GT(sections.size(), 0u);
+
+  // First section should be Intro with full arrangement
+  EXPECT_EQ(sections[0].type, SectionType::Intro);
+  EXPECT_EQ(sections[0].vocal_density, VocalDensity::Full);
+  EXPECT_EQ(sections[0].backing_density, BackingDensity::Thick);
+}
+
+TEST(StructureTest, BuildStructureFromBlueprint_Ballad) {
+  // Ballad has sparse intro (chord only)
+  const auto& bp = getProductionBlueprint(3);
+  auto sections = buildStructureFromBlueprint(bp);
+
+  ASSERT_GT(sections.size(), 0u);
+
+  // First section should be Intro with chord only
+  EXPECT_EQ(sections[0].type, SectionType::Intro);
+  EXPECT_EQ(sections[0].vocal_density, VocalDensity::None);
+  EXPECT_EQ(sections[0].backing_density, BackingDensity::Thin);
 }
 
 }  // namespace

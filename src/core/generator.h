@@ -8,6 +8,7 @@
 
 #include "core/i_harmony_context.h"
 #include "core/motif.h"
+#include "core/production_blueprint.h"
 #include "core/song.h"
 #include "core/types.h"
 #include <memory>
@@ -206,6 +207,10 @@ class Generator {
   /** @brief Invoke aux track generation. */
   void invokeGenerateAux() { generateAux(); }
 
+  /** @brief Get resolved blueprint ID after generation.
+   *  @return Blueprint ID (0-3), or 0 if not generated */
+  uint8_t resolvedBlueprintId() const { return resolved_blueprint_id_; }
+
   /// @}
 
  private:
@@ -215,6 +220,10 @@ class Generator {
   Song song_;                        ///< Generated song data
   std::mt19937 rng_;                 ///< Random number generator (Mersenne Twister)
   std::unique_ptr<IHarmonyContext> harmony_context_;  ///< Tracks notes for collision avoidance
+
+  /// Blueprint state (Phase 2.4)
+  uint8_t resolved_blueprint_id_ = 0;           ///< Resolved blueprint ID after selection
+  const ProductionBlueprint* blueprint_ = nullptr;  ///< Pointer to selected blueprint
   /// @}
 
   /// @name Call/SE System Settings

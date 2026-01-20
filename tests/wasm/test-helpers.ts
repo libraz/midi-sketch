@@ -22,6 +22,7 @@ export interface SongConfigOptions {
   formId?: number;
   vocalAttitude?: number;
   drumsEnabled?: boolean;
+  blueprintId?: number;
   arpeggioEnabled?: boolean;
   arpeggioPattern?: number;
   arpeggioSpeed?: number;
@@ -115,7 +116,7 @@ export class WasmTestContext {
     const ptr = this.module._malloc(52); // MidiSketchSongConfig size
     const view = new DataView(this.module.HEAPU8.buffer);
 
-    // Basic settings
+    // Basic settings (offset 0-12)
     view.setUint8(ptr + 0, config.stylePresetId ?? 0);
     view.setUint8(ptr + 1, config.key ?? 0);
     view.setUint16(ptr + 2, config.bpm ?? 0, true);
@@ -124,47 +125,47 @@ export class WasmTestContext {
     view.setUint8(ptr + 9, config.formId ?? 0);
     view.setUint8(ptr + 10, config.vocalAttitude ?? 0);
     view.setUint8(ptr + 11, config.drumsEnabled !== false ? 1 : 0);
+    view.setUint8(ptr + 12, config.blueprintId ?? 0);
 
-    // Arpeggio settings
-    view.setUint8(ptr + 12, config.arpeggioEnabled ? 1 : 0);
-    view.setUint8(ptr + 13, config.arpeggioPattern ?? 0);
-    view.setUint8(ptr + 14, config.arpeggioSpeed ?? 1);
-    view.setUint8(ptr + 15, config.arpeggioOctaveRange ?? 2);
-    view.setUint8(ptr + 16, config.arpeggioGate ?? 80);
+    // Arpeggio settings (offset 13-17)
+    view.setUint8(ptr + 13, config.arpeggioEnabled ? 1 : 0);
+    view.setUint8(ptr + 14, config.arpeggioPattern ?? 0);
+    view.setUint8(ptr + 15, config.arpeggioSpeed ?? 1);
+    view.setUint8(ptr + 16, config.arpeggioOctaveRange ?? 2);
+    view.setUint8(ptr + 17, config.arpeggioGate ?? 80);
 
-    // Vocal settings
-    view.setUint8(ptr + 17, config.vocalLow ?? 60);
-    view.setUint8(ptr + 18, config.vocalHigh ?? 79);
-    view.setUint8(ptr + 19, config.skipVocal ? 1 : 0);
+    // Vocal settings (offset 18-20)
+    view.setUint8(ptr + 18, config.vocalLow ?? 60);
+    view.setUint8(ptr + 19, config.vocalHigh ?? 79);
+    view.setUint8(ptr + 20, config.skipVocal ? 1 : 0);
 
-    // Humanization
-    view.setUint8(ptr + 20, config.humanize ? 1 : 0);
-    view.setUint8(ptr + 21, config.humanizeTiming ?? 50);
-    view.setUint8(ptr + 22, config.humanizeVelocity ?? 50);
+    // Humanization (offset 21-23)
+    view.setUint8(ptr + 21, config.humanize ? 1 : 0);
+    view.setUint8(ptr + 22, config.humanizeTiming ?? 50);
+    view.setUint8(ptr + 23, config.humanizeVelocity ?? 50);
 
-    // Chord extensions
-    view.setUint8(ptr + 23, config.chordExtSus ? 1 : 0);
-    view.setUint8(ptr + 24, config.chordExt7th ? 1 : 0);
-    view.setUint8(ptr + 25, config.chordExt9th ? 1 : 0);
-    view.setUint8(ptr + 26, config.chordExtSusProb ?? 20);
-    view.setUint8(ptr + 27, config.chordExt7thProb ?? 30);
-    view.setUint8(ptr + 28, config.chordExt9thProb ?? 25);
+    // Chord extensions (offset 24-29)
+    view.setUint8(ptr + 24, config.chordExtSus ? 1 : 0);
+    view.setUint8(ptr + 25, config.chordExt7th ? 1 : 0);
+    view.setUint8(ptr + 26, config.chordExt9th ? 1 : 0);
+    view.setUint8(ptr + 27, config.chordExtSusProb ?? 20);
+    view.setUint8(ptr + 28, config.chordExt7thProb ?? 30);
+    view.setUint8(ptr + 29, config.chordExt9thProb ?? 25);
 
-    // Composition style
-    view.setUint8(ptr + 29, config.compositionStyle ?? 0);
+    // Composition style (offset 30)
+    view.setUint8(ptr + 30, config.compositionStyle ?? 0);
 
-    // Reserved + padding
-    view.setUint8(ptr + 30, 0);
+    // Reserved + padding (offset 31)
     view.setUint8(ptr + 31, 0);
 
-    // Duration
+    // Duration (offset 32-33)
     view.setUint16(ptr + 32, config.targetDurationSeconds ?? 0, true);
 
-    // Modulation settings
+    // Modulation settings (offset 34-35)
     view.setUint8(ptr + 34, config.modulationTiming ?? 0);
     view.setInt8(ptr + 35, config.modulationSemitones ?? 2);
 
-    // Call settings
+    // Call settings (offset 36-41)
     view.setUint8(ptr + 36, config.seEnabled !== false ? 1 : 0);
     // CallSetting: 0=Auto, 1=Enabled, 2=Disabled
     // When callEnabled is explicitly false, use Disabled(2) to avoid validation errors

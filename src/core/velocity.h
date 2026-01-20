@@ -89,6 +89,34 @@ void applyTransitionDynamics(MidiTrack& track, Tick section_start,
 void applyAllTransitionDynamics(std::vector<MidiTrack*>& tracks,
                                  const std::vector<Section>& sections);
 
+/**
+ * @brief Apply entry pattern dynamics to notes at section start.
+ *
+ * Phase 2.8: Implements GradualBuild and DropIn entry effects.
+ * - GradualBuild: Start at 60% velocity, ramp to 100% over 2 bars
+ * - DropIn: Slight velocity boost at section start
+ * - Immediate/Stagger: No velocity adjustment
+ *
+ * @param track Track to modify (in-place)
+ * @param section_start Start tick of the section
+ * @param bars Number of bars in the section
+ * @param pattern Entry pattern type
+ */
+void applyEntryPatternDynamics(MidiTrack& track, Tick section_start,
+                                uint8_t bars, EntryPattern pattern);
+
+/**
+ * @brief Apply entry pattern dynamics to all tracks for all sections.
+ *
+ * Phase 2.8: Processes each section's entry_pattern setting and applies
+ * appropriate velocity modifications to tracks.
+ *
+ * @param tracks Vector of tracks to modify (in-place)
+ * @param sections Arrangement sections with entry_pattern settings
+ */
+void applyAllEntryPatternDynamics(std::vector<MidiTrack*>& tracks,
+                                   const std::vector<Section>& sections);
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_VELOCITY_H

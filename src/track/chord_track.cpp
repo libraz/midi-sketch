@@ -1200,6 +1200,12 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song,
 
   for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
     const auto& section = sections[sec_idx];
+
+    // Phase 2.5: Skip sections where chord is disabled by track_mask
+    if (!hasTrack(section.track_mask, TrackMask::Chord)) {
+      continue;
+    }
+
     SectionType next_section_type = (sec_idx + 1 < sections.size())
                                         ? sections[sec_idx + 1].type
                                         : section.type;
@@ -1679,6 +1685,12 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
 
   for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
     const auto& section = sections[sec_idx];
+
+    // Phase 2.5: Skip sections where chord is disabled by track_mask
+    if (!hasTrack(section.track_mask, TrackMask::Chord)) {
+      continue;
+    }
+
     SectionType next_section_type = (sec_idx + 1 < sections.size())
                                         ? sections[sec_idx + 1].type
                                         : section.type;

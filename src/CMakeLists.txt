@@ -30,6 +30,7 @@ set(MIDISKETCH_CORE_SOURCES
   core/modulation_calculator.cpp
   core/post_processor.cpp
   core/section_utils.cpp
+  core/production_blueprint.cpp
   midi/midi_writer.cpp
   track/track.cpp
   track/vocal.cpp
