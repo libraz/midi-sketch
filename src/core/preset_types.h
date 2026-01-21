@@ -49,6 +49,7 @@ enum class CompositionStyle : uint8_t {
 
 /// @brief Motif length in bars.
 enum class MotifLength : uint8_t {
+  Bars1 = 1,  ///< 1-bar motif (dense, continuous patterns)
   Bars2 = 2,
   Bars4 = 4
 };

@@ -148,7 +148,7 @@ void Generator::generate(const GeneratorParams& params) {
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
     params_.motif.rhythm_density = MotifRhythmDensity::Driving;
     params_.motif.note_count = 8;  // Dense eighth-note pattern
-    params_.motif.length = MotifLength::Bars2;  // 2-bar motif (shortest available)
+    params_.motif.length = MotifLength::Bars1;  // 1-bar motif for continuous riff
   }
 
   // Resolve BPM
@@ -325,7 +325,7 @@ void Generator::generateVocal(const GeneratorParams& params) {
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
     params_.motif.rhythm_density = MotifRhythmDensity::Driving;
     params_.motif.note_count = 8;  // Dense eighth-note pattern
-    params_.motif.length = MotifLength::Bars2;  // 2-bar motif (shortest available)
+    params_.motif.length = MotifLength::Bars1;  // 1-bar motif for continuous riff
   }
 
   // Resolve BPM
@@ -701,7 +701,7 @@ void Generator::setVocalNotes(const GeneratorParams& params,
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
     params_.motif.rhythm_density = MotifRhythmDensity::Driving;
     params_.motif.note_count = 8;  // Dense eighth-note pattern
-    params_.motif.length = MotifLength::Bars2;  // 2-bar motif (shortest available)
+    params_.motif.length = MotifLength::Bars1;  // 1-bar motif for continuous riff
   }
 
   // Resolve BPM
