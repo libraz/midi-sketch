@@ -138,26 +138,26 @@ class AuxTrackGenerator {
  public:
   /// Context for aux generation.
   struct AuxContext {
-    Tick section_start;         ///< Absolute start tick of the section
-    Tick section_end;           ///< Absolute end tick of the section
-    int8_t chord_degree;        ///< Starting chord degree (0-based scale degree)
-    int key_offset;             ///< Key offset from C major (for transposition)
-    uint8_t base_velocity;      ///< Base MIDI velocity for notes
-    TessituraRange main_tessitura;  ///< Main melody's comfortable range
-    const std::vector<NoteEvent>* main_melody;  ///< Reference to main melody notes
+    Tick section_start = 0;         ///< Absolute start tick of the section
+    Tick section_end = 0;           ///< Absolute end tick of the section
+    int8_t chord_degree = 0;        ///< Starting chord degree (0-based scale degree)
+    int key_offset = 0;             ///< Key offset from C major (for transposition)
+    uint8_t base_velocity = 100;    ///< Base MIDI velocity for notes
+    TessituraRange main_tessitura = {60, 72, 66};  ///< Main melody's comfortable range
+    const std::vector<NoteEvent>* main_melody = nullptr;  ///< Reference to main melody notes
     /// Phrase boundaries from vocal generation (for breath coordination)
-    const std::vector<PhraseBoundary>* phrase_boundaries;
-    SectionType section_type;   ///< Section type for cache key and pattern selection
+    const std::vector<PhraseBoundary>* phrase_boundaries = nullptr;
+    SectionType section_type = SectionType::A;   ///< Section type for cache key and pattern selection
   };
 
   /// Full song context for complete aux track generation.
   struct SongContext {
-    const std::vector<Section>* sections;        ///< All sections in song
-    const MidiTrack* vocal_track;                ///< Vocal track for analysis
-    const ChordProgression* progression;         ///< Chord progression
-    VocalStylePreset vocal_style;                ///< For template selection
-    uint8_t vocal_low;                           ///< Vocal range low
-    uint8_t vocal_high;                          ///< Vocal range high
+    const std::vector<Section>* sections = nullptr;        ///< All sections in song
+    const MidiTrack* vocal_track = nullptr;                ///< Vocal track for analysis
+    const ChordProgression* progression = nullptr;         ///< Chord progression
+    VocalStylePreset vocal_style = VocalStylePreset::CityPop;  ///< For template selection
+    uint8_t vocal_low = 60;                                ///< Vocal range low
+    uint8_t vocal_high = 72;                               ///< Vocal range high
   };
 
   AuxTrackGenerator() = default;

@@ -12,6 +12,7 @@
 #include "core/melody_types.h"
 #include "core/motif.h"
 #include "core/pitch_utils.h"
+#include "core/section_types.h"
 #include "core/types.h"
 #include <optional>
 #include <random>
@@ -47,6 +48,9 @@ class MelodyDesigner {
     bool enable_embellishment = true;         ///< Enable melodic embellishment (NCT insertion)
     VocalAttitude vocal_attitude = VocalAttitude::Expressive;  ///< Vocal style attitude
     HookIntensity hook_intensity = HookIntensity::Normal;  ///< Hook pattern selection intensity
+    // RhythmSync support
+    GenerationParadigm paradigm = GenerationParadigm::Traditional;  ///< Generation paradigm
+    const DrumGrid* drum_grid = nullptr;  ///< Drum grid for RhythmSync quantization
   };
 
   /// @brief Result of generating a single phrase.
@@ -295,6 +299,7 @@ class MelodyDesigner {
    * @param density_modifier Section-specific density multiplier (1.0 = default)
    * @param thirtysecond_ratio Ratio of 32nd notes (0.0-1.0)
    * @param rng Random number generator
+   * @param paradigm Generation paradigm (affects grid quantization)
    * @return Vector of rhythm positions for the phrase
    */
   std::vector<RhythmNote> generatePhraseRhythm(
@@ -302,6 +307,28 @@ class MelodyDesigner {
       uint8_t phrase_beats,
       float density_modifier,
       float thirtysecond_ratio,
+      std::mt19937& rng,
+      GenerationParadigm paradigm = GenerationParadigm::Traditional);
+
+  /**
+   * @brief Select pitch for locked rhythm generation.
+   *
+   * Used when rhythm is locked (Orangestar style) and only pitch varies.
+   * Prioritizes chord tones for harmonic consonance while maintaining
+   * melodic continuity with the previous pitch.
+   *
+   * @param prev_pitch Previous pitch for melodic continuity
+   * @param chord_degree Current chord degree (0-6)
+   * @param vocal_low Minimum allowed pitch
+   * @param vocal_high Maximum allowed pitch
+   * @param rng Random number generator
+   * @return Selected pitch (MIDI note number)
+   */
+  uint8_t selectPitchForLockedRhythm(
+      uint8_t prev_pitch,
+      int8_t chord_degree,
+      uint8_t vocal_low,
+      uint8_t vocal_high,
       std::mt19937& rng);
 
  private:

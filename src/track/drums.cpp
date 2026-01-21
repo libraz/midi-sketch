@@ -39,7 +39,7 @@ void addDrumNote(MidiTrack& track, Tick start, Tick duration, uint8_t note, uint
 }
 
 // ============================================================================
-// Phase 2: DrumRole Helper Functions
+// DrumRole Helper Functions
 // ============================================================================
 
 // Check if kick should be played based on DrumRole
@@ -533,10 +533,16 @@ constexpr uint16_t HH_16TH_BPM_THRESHOLD = 150;
 // Get hi-hat level with randomized variation
 HiHatLevel getHiHatLevel(SectionType section, DrumStyle style,
                           BackingDensity backing_density, uint16_t bpm,
-                          std::mt19937& rng) {
+                          std::mt19937& rng,
+                          GenerationParadigm paradigm = GenerationParadigm::Traditional) {
+  // RhythmSync always uses 16th note hi-hat for constant clock
+  if (paradigm == GenerationParadigm::RhythmSync) {
+    return HiHatLevel::Sixteenth;
+  }
+
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
-  // High BPM: disable 16th note hi-hat for playability
+  // High BPM: disable 16th note hi-hat for playability (Traditional only)
   bool allow_16th = (bpm < HH_16TH_BPM_THRESHOLD);
 
   HiHatLevel base_level = HiHatLevel::Eighth;
@@ -644,7 +650,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
   for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
     const auto& section = sections[sec_idx];
 
-    // Phase 2.5: Skip sections where drums is disabled by track_mask
+    // Skip sections where drums is disabled by track_mask
     if (!hasTrack(section.track_mask, TrackMask::Drums)) {
       continue;
     }
@@ -705,10 +711,12 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
 
     HiHatLevel hh_level = getHiHatLevel(section.type, style,
                                          section.backing_density, params.bpm,
-                                         rng);
+                                         rng, params.paradigm);
 
     // BackgroundMotif: force 8th note hi-hat for consistent drive
-    if (is_background_motif && drum_params.hihat_drive) {
+    // (but not in RhythmSync - constant 16th clock takes precedence)
+    if (is_background_motif && drum_params.hihat_drive &&
+        params.paradigm != GenerationParadigm::RhythmSync) {
       hh_level = HiHatLevel::Eighth;
     }
 
@@ -756,7 +764,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         uint8_t velocity = calculateVelocity(section.type, beat, params.mood);
 
         // ===== FILLS at section ends =====
-        // Phase 2.8: Check next section's fill_before flag
+        // Check next section's fill_before flag
         bool next_wants_fill = false;
         SectionType next_section = section.type;
         if (sec_idx + 1 < sections.size()) {
@@ -782,7 +790,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         }
 
         // ===== KICK DRUM =====
-        // Phase 2: Apply DrumRole-based kick probability
+        // Apply DrumRole-based kick probability
         float kick_prob = getDrumRoleKickProbability(section.drum_role);
         std::uniform_real_distribution<float> kick_dist(0.0f, 1.0f);
 
@@ -827,7 +835,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         }
 
         // ===== SNARE DRUM =====
-        // Phase 2: Apply DrumRole-based snare probability
+        // Apply DrumRole-based snare probability
         float snare_prob = getDrumRoleSnareProbability(section.drum_role);
 
         bool is_intro_first = (section.type == SectionType::Intro && bar == 0);
@@ -871,12 +879,12 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         }
 
         // ===== HI-HAT =====
-        // Phase 2: Skip hi-hat for FXOnly DrumRole
+        // Skip hi-hat for FXOnly DrumRole
         if (!shouldPlayHiHat(section.drum_role)) {
           continue;  // Skip hi-hat generation entirely for FXOnly
         }
 
-        // Phase 2: Use DrumRole-aware instrument selection
+        // Use DrumRole-aware instrument selection
         uint8_t hh_instrument = getDrumRoleHiHatInstrument(section.drum_role, use_ride);
 
         switch (hh_level) {
@@ -1066,7 +1074,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song,
   for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
     const auto& section = sections[sec_idx];
 
-    // Phase 2.5: Skip sections where drums is disabled by track_mask
+    // Skip sections where drums is disabled by track_mask
     if (!hasTrack(section.track_mask, TrackMask::Drums)) {
       continue;
     }
@@ -1126,10 +1134,12 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song,
 
     HiHatLevel hh_level = getHiHatLevel(section.type, style,
                                          section.backing_density, params.bpm,
-                                         rng);
+                                         rng, params.paradigm);
 
     // BackgroundMotif: force 8th note hi-hat
-    if (is_background_motif && drum_params.hihat_drive) {
+    // (but not in RhythmSync - constant 16th clock takes precedence)
+    if (is_background_motif && drum_params.hihat_drive &&
+        params.paradigm != GenerationParadigm::RhythmSync) {
       hh_level = HiHatLevel::Eighth;
     }
 

@@ -19,6 +19,12 @@ void MelodyLeadStrategy::generateMelodicTracks(Generator& gen) {
   const auto& params = gen.getParams();
 
   if (!params.skip_vocal) {
+    // For Orangestar style (RhythmSync + Locked), generate Motif first
+    // as the rhythmic "coordinate axis" that Vocal will follow
+    if (gen.shouldUseRhythmLock()) {
+      gen.generateMotifAsAxis();
+    }
+
     // Vocal-first for bass to avoid vocal clashes
     gen.invokeGenerateVocal();
     VocalAnalysis vocal_analysis = analyzeVocal(gen.getSong().vocal());

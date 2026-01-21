@@ -932,36 +932,8 @@ TEST(DissonanceContextTest, InternalAnalysisUsesFullContext) {
 
   auto report = analyzeDissonance(song, params);
 
-  // Track beat position distribution of issues
-  int beat1_issues = 0;
-  int beat1_low = 0;
-  int other_beat_issues = 0;
-  int other_beat_medium_or_high = 0;
-
-  for (const auto& issue : report.issues) {
-    if (issue.type == DissonanceType::SimultaneousClash) {
-      float beat_in_bar = issue.beat - 1.0f;  // 0-indexed
-      if (beat_in_bar < 1.0f) {
-        // Beat 1
-        beat1_issues++;
-        if (issue.severity == DissonanceSeverity::Low) {
-          beat1_low++;
-        }
-      } else {
-        // Other beats
-        other_beat_issues++;
-        if (issue.severity != DissonanceSeverity::Low) {
-          other_beat_medium_or_high++;
-        }
-      }
-    }
-  }
-
-  // Beat 1 issues should have fewer Low severity (due to elevation)
-  // This is a statistical check - if we have beat 1 issues, fewer should be Low
-  // compared to the base rate
-
-  // Test passes if analysis completes (severity adjustment is applied)
+  // Beat 1 issues should have higher severity due to elevation
+  // Test passes if analysis completes (severity adjustment is applied internally)
   EXPECT_GE(report.summary.total_issues, 0u);
 }
 

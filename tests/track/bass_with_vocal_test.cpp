@@ -336,7 +336,6 @@ TEST_F(BassWithVocalTest, FallsBackToRootWhenFifthClashes) {
   std::vector<uint32_t> test_seeds = {12345, 67890, 4130447576, 99999};
 
   int total_clashes = 0;
-  int total_bass_notes = 0;
 
   for (uint32_t seed : test_seeds) {
     params_.seed = seed;
@@ -346,7 +345,6 @@ TEST_F(BassWithVocalTest, FallsBackToRootWhenFifthClashes) {
 
     const auto& vocal_notes = gen.getSong().vocal().notes();
     const auto& bass_notes = gen.getSong().bass().notes();
-    total_bass_notes += bass_notes.size();
 
     for (const auto& bass_note : bass_notes) {
       Tick bass_start = bass_note.start_tick;

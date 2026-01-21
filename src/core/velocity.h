@@ -41,7 +41,7 @@ float getMoodVelocityAdjustment(Mood mood);
 int getSectionEnergy(SectionType section);
 
 // ============================================================================
-// Phase 2: SectionEnergy and PeakLevel Functions
+// SectionEnergy and PeakLevel Functions
 // ============================================================================
 
 /**
@@ -78,7 +78,7 @@ float getPeakVelocityMultiplier(PeakLevel peak);
  * @brief Calculate effective velocity for a section.
  *
  * Combines base_velocity, energy, and peak_level into final velocity.
- * This function integrates all Phase 2 velocity control parameters.
+ * This function integrates all velocity control parameters.
  *
  * @param section Section struct
  * @param beat Beat position (0-3)
@@ -139,7 +139,7 @@ void applyAllTransitionDynamics(std::vector<MidiTrack*>& tracks,
 /**
  * @brief Apply entry pattern dynamics to notes at section start.
  *
- * Phase 2.8: Implements GradualBuild and DropIn entry effects.
+ * Implements GradualBuild and DropIn entry effects.
  * - GradualBuild: Start at 60% velocity, ramp to 100% over 2 bars
  * - DropIn: Slight velocity boost at section start
  * - Immediate/Stagger: No velocity adjustment
@@ -155,7 +155,7 @@ void applyEntryPatternDynamics(MidiTrack& track, Tick section_start,
 /**
  * @brief Apply entry pattern dynamics to all tracks for all sections.
  *
- * Phase 2.8: Processes each section's entry_pattern setting and applies
+ * Processes each section's entry_pattern setting and applies
  * appropriate velocity modifications to tracks.
  *
  * @param tracks Vector of tracks to modify (in-place)

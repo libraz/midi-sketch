@@ -94,7 +94,32 @@ enum class RiffPolicy : uint8_t {
 };
 
 // ============================================================================
-// SectionEnergy - Energy level per section (Phase 2)
+// DrumGrid - Rhythm grid for RhythmSync paradigm
+// ============================================================================
+
+/// @brief Drum rhythm grid for RhythmSync paradigm.
+/// Provides quantized positions that other tracks can sync to.
+struct DrumGrid {
+  Tick grid_resolution = 0;  ///< Grid resolution (e.g., TICK_SIXTEENTH = 120)
+
+  /// @brief Get nearest grid position for a given tick.
+  /// @param tick The tick to quantize
+  /// @return The nearest grid position
+  Tick quantize(Tick tick) const {
+    if (grid_resolution == 0) return tick;
+    Tick remainder = tick % grid_resolution;
+    if (remainder == 0) return tick;
+    // Round to nearest grid position
+    if (remainder < grid_resolution / 2) {
+      return tick - remainder;
+    } else {
+      return tick - remainder + grid_resolution;
+    }
+  }
+};
+
+// ============================================================================
+// SectionEnergy - Energy level per section
 // ============================================================================
 
 /// @brief Energy level per section for A/B differentiation beyond TrackMask.
@@ -106,7 +131,7 @@ enum class SectionEnergy : uint8_t {
 };
 
 // ============================================================================
-// PeakLevel - Peak intensity level (Phase 2)
+// PeakLevel - Peak intensity level
 // ============================================================================
 
 /// @brief Peak intensity level for Chorus sections.
@@ -117,7 +142,7 @@ enum class PeakLevel : uint8_t {
 };
 
 // ============================================================================
-// DrumRole - Drum track role per section (Phase 2)
+// DrumRole - Drum track role per section
 // ============================================================================
 
 /// @brief Drum track role controlling pattern generation.
@@ -198,7 +223,7 @@ struct Section {
   /// If true, insert a drum fill before this section starts.
   bool fill_before = false;
 
-  // Phase 2 fields for time-based control and expressiveness
+  // Time-based control and expressiveness fields
 
   /// @brief Section energy level (from ProductionBlueprint).
   /// Controls velocity and density beyond what TrackMask provides.

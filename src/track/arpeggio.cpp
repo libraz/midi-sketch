@@ -152,7 +152,7 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
   int persistent_pattern_index = 0;
 
   for (const auto& section : sections) {
-    // Phase 2.5: Skip sections where arpeggio is disabled by track_mask
+    // Skip sections where arpeggio is disabled by track_mask
     if (!hasTrack(section.track_mask, TrackMask::Arpeggio)) {
       continue;
     }
@@ -263,7 +263,7 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
         uint8_t velocity = calculateArpeggioVelocity(
             arp.base_velocity, section.type, pattern_index % current_notes.size());
 
-        // Phase 2: Apply density_percent to skip notes probabilistically
+        // Apply density_percent to skip notes probabilistically
         // For arpeggio, only skip when density is < 80% to maintain rhythmic feel
         bool add_note = true;
         if (section.density_percent < 80) {

@@ -13,7 +13,7 @@ namespace midisketch {
 namespace {
 
 // ============================================================================
-// Phase 1: Chord/Bass/Voicing Randomness Tests
+// Chord/Bass/Voicing Randomness Tests
 // ============================================================================
 
 TEST(RandomnessTest, DifferentSeedsProduceDifferentChordNotes) {
@@ -99,7 +99,7 @@ TEST(RandomnessTest, SameSeedProducesSameBassOutput) {
 }
 
 // ============================================================================
-// Phase 2: Drums Randomness Tests
+// Drums Randomness Tests
 // ============================================================================
 
 TEST(RandomnessTest, DifferentSeedsProduceDifferentDrumNotes) {
@@ -138,7 +138,7 @@ TEST(RandomnessTest, SameSeedProducesSameDrumOutput) {
 }
 
 // ============================================================================
-// Phase 3: Structure Randomness Tests
+// Structure Randomness Tests
 // ============================================================================
 
 TEST(RandomnessTest, SelectRandomFormProducesDifferentForms) {

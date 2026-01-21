@@ -452,7 +452,7 @@ TEST(MotifRepeatScopeTest, SectionVsFullSongDiffers) {
 }
 
 // ============================================================================
-// Phase 12: applyVariation Integration Tests
+// applyVariation Integration Tests
 // ============================================================================
 
 TEST(IntroMotifVariationTest, IntroSectionUsesChorusMotif) {

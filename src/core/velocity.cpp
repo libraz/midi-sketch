@@ -91,7 +91,7 @@ int getSectionEnergy(SectionType section) {
 }
 
 // ============================================================================
-// Phase 2: SectionEnergy and PeakLevel Functions
+// SectionEnergy and PeakLevel Functions
 // ============================================================================
 
 int getSectionEnergyLevel(SectionType section) {
@@ -271,7 +271,7 @@ void applyAllTransitionDynamics(std::vector<MidiTrack*>& tracks,
 }
 
 // ============================================================================
-// Phase 2.8: EntryPattern Dynamics Implementation
+// EntryPattern Dynamics Implementation
 // ============================================================================
 
 void applyEntryPatternDynamics(MidiTrack& track, Tick section_start,

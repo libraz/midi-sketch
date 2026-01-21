@@ -9,9 +9,11 @@
 #include "core/i_harmony_context.h"
 #include "core/motif.h"
 #include "core/production_blueprint.h"
+#include "core/section_types.h"
 #include "core/song.h"
 #include "core/types.h"
 #include <memory>
+#include <optional>
 #include <random>
 
 namespace midisketch {
@@ -211,6 +213,40 @@ class Generator {
    *  @return Blueprint ID (0-3), or 0 if not generated */
   uint8_t resolvedBlueprintId() const { return resolved_blueprint_id_; }
 
+  /** @brief Get pre-computed drum grid for RhythmSync paradigm.
+   *  @return Pointer to DrumGrid, or nullptr if not RhythmSync */
+  const DrumGrid* getDrumGrid() const {
+    return drum_grid_.has_value() ? &drum_grid_.value() : nullptr;
+  }
+
+  // ============================================================================
+  // Rhythm Lock Support (Orangestar style)
+  // ============================================================================
+
+  /**
+   * @brief Generate Motif track and extract rhythm as coordinate axis.
+   *
+   * For Orangestar style (RhythmSync + Locked), Motif provides the
+   * rhythmic "coordinate axis" that Vocal will follow.
+   * Call this BEFORE generateVocal() when using rhythm lock.
+   */
+  void generateMotifAsAxis();
+
+  /**
+   * @brief Check if rhythm lock is active and should be used.
+   * @return True if RhythmSync paradigm with Locked policy
+   */
+  bool shouldUseRhythmLock() const;
+
+  /**
+   * @brief Apply density progression to sections for Orangestar style.
+   *
+   * For RhythmSync paradigm, increases density_percent for each
+   * occurrence of the same section type (e.g., 2nd Chorus is denser
+   * than 1st Chorus). Creates "Peak is a temporal event" effect.
+   */
+  void applyDensityProgression();
+
   /// @}
 
  private:
@@ -221,9 +257,15 @@ class Generator {
   std::mt19937 rng_;                 ///< Random number generator (Mersenne Twister)
   std::unique_ptr<IHarmonyContext> harmony_context_;  ///< Tracks notes for collision avoidance
 
-  /// Blueprint state (Phase 2.4)
+  /// Blueprint state
   uint8_t resolved_blueprint_id_ = 0;           ///< Resolved blueprint ID after selection
   const ProductionBlueprint* blueprint_ = nullptr;  ///< Pointer to selected blueprint
+
+  /// RhythmSync state
+  std::optional<DrumGrid> drum_grid_;  ///< Drum grid for RhythmSync (pre-computed)
+
+  /// Rhythm lock state (Orangestar style)
+  bool rhythm_lock_active_ = false;  ///< True when Motif rhythm is used as axis
   /// @}
 
   /// @name Call/SE System Settings
@@ -241,6 +283,15 @@ class Generator {
   /// @{
   ModulationTiming modulation_timing_ = ModulationTiming::None;
   int8_t modulation_semitones_ = 2;  ///< Key change amount (1-4 semitones)
+  /// @}
+
+  /// @name RhythmSync Methods
+  /// @{
+
+  /** @brief Pre-compute drum grid for RhythmSync paradigm.
+   *  Called before vocal generation, does NOT generate drum notes. */
+  void computeDrumGrid();
+
   /// @}
 
   /// @name Track Generation Methods

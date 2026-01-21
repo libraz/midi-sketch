@@ -148,7 +148,7 @@ const char* midisketch_chord_display(uint8_t id);
 uint16_t midisketch_mood_default_bpm(uint8_t id);
 
 // ============================================================================
-// Production Blueprint API (Phase 4)
+// Production Blueprint API
 // ============================================================================
 
 /// @brief Generation paradigm for blueprint.
@@ -187,7 +187,7 @@ uint8_t midisketch_blueprint_weight(uint8_t id);
 uint8_t midisketch_get_resolved_blueprint_id(MidiSketchHandle handle);
 
 // ============================================================================
-// StylePreset API (Phase 1)
+// StylePreset API
 // ============================================================================
 
 /// @brief Song configuration (new API, replaces MidiSketchParams).

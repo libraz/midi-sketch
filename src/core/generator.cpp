@@ -12,7 +12,9 @@
 
 #include "core/generator.h"
 #include "core/chord.h"
+#include <map>
 #include "core/harmony_context.h"
+#include "core/timing_constants.h"
 #include "core/chord_utils.h"
 #include "core/collision_resolver.h"
 #include "core/composition_strategy.h"
@@ -39,6 +41,39 @@
 #include <chrono>
 
 namespace midisketch {
+
+namespace {
+/// Apply density progression to sections for Orangestar style.
+/// "Peak is a temporal event" - density increases over time.
+void applyDensityProgressionToSections(std::vector<Section>& sections,
+                                        GenerationParadigm paradigm) {
+  if (paradigm != GenerationParadigm::RhythmSync) {
+    return;  // Only apply for Orangestar style
+  }
+
+  // Track occurrence count per section type
+  std::map<SectionType, int> occurrence_count;
+
+  for (auto& section : sections) {
+    int occurrence = occurrence_count[section.type]++;
+
+    // Increase density by 15% per occurrence (max 100%)
+    // 1st occurrence: 1.0x, 2nd: 1.15x, 3rd: 1.30x, etc.
+    float progression_factor = 1.0f + (occurrence * 0.15f);
+
+    // Apply to density_percent
+    uint8_t new_density = static_cast<uint8_t>(
+        std::min(100.0f, section.density_percent * progression_factor));
+    section.density_percent = new_density;
+
+    // Also boost base_velocity slightly for later occurrences
+    // Max increase: +10 velocity (for 3+ occurrences)
+    int velocity_boost = std::min(occurrence * 3, 10);
+    section.base_velocity = static_cast<uint8_t>(
+        std::min(100, static_cast<int>(section.base_velocity) + velocity_boost));
+  }
+}
+}  // anonymous namespace
 
 Generator::Generator()
     : rng_(42),
@@ -92,13 +127,13 @@ void Generator::generate(const GeneratorParams& params) {
   song_.setMelodySeed(seed);
   song_.setMotifSeed(seed);
 
-  // Select and resolve Blueprint (Phase 2.4)
+  // Select and resolve Blueprint
   // Use separate RNG with derived seed to avoid disturbing main rng_ state
   std::mt19937 blueprint_rng(seed ^ 0x424C5052);  // "BLPR" magic number
   resolved_blueprint_id_ = selectProductionBlueprint(blueprint_rng, params_.blueprint_id);
   blueprint_ = &getProductionBlueprint(resolved_blueprint_id_);
 
-  // Phase 2.6-2.7: Copy blueprint settings to params for track generation
+  // Copy blueprint settings to params for track generation
   params_.paradigm = blueprint_->paradigm;
   params_.riff_policy = blueprint_->riff_policy;
   params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
@@ -116,6 +151,20 @@ void Generator::generate(const GeneratorParams& params) {
   if (bpm == 0) {
     bpm = getMoodDefaultBpm(params.mood);
   }
+
+  // BPM validation for Orangestar style
+  // Orangestar works best at 160-175 BPM (half-time feel 80-88)
+  // Outside this range, the "addictive clock" effect is diminished
+  if (params_.paradigm == GenerationParadigm::RhythmSync) {
+    constexpr uint16_t kOrangestarBpmMin = 160;
+    constexpr uint16_t kOrangestarBpmMax = 175;
+    if (bpm < kOrangestarBpmMin) {
+      bpm = kOrangestarBpmMin;
+    } else if (bpm > kOrangestarBpmMax) {
+      bpm = kOrangestarBpmMax;
+    }
+  }
+
   song_.setBpm(bpm);
 
   // Build song structure (dynamic duration, blueprint, or fixed pattern)
@@ -145,6 +194,11 @@ void Generator::generate(const GeneratorParams& params) {
       insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
     }
   }
+
+  // Apply density progression for Orangestar style
+  // "Peak is a temporal event" - density increases over time
+  applyDensityProgressionToSections(sections, params_.paradigm);
+
   song_.setArrangement(Arrangement(sections));
 
   // Clear all tracks
@@ -159,6 +213,12 @@ void Generator::generate(const GeneratorParams& params) {
 
   // Use Strategy pattern for style-specific track generation
   auto strategy = createCompositionStrategy(params.composition_style);
+
+  // Pre-compute drum grid for RhythmSync paradigm
+  // This sets up the 16th note grid BEFORE vocal generation
+  if (params_.paradigm == GenerationParadigm::RhythmSync) {
+    computeDrumGrid();
+  }
 
   // Generate melodic tracks in style-specific order
   strategy->generateMelodicTracks(*this);
@@ -239,13 +299,13 @@ void Generator::generateVocal(const GeneratorParams& params) {
   song_.setMelodySeed(seed);
   song_.setMotifSeed(seed);
 
-  // Select and resolve Blueprint (Phase 2.4)
+  // Select and resolve Blueprint
   // Use separate RNG with derived seed to avoid disturbing main rng_ state
   std::mt19937 blueprint_rng(seed ^ 0x424C5052);  // "BLPR" magic number
   resolved_blueprint_id_ = selectProductionBlueprint(blueprint_rng, params_.blueprint_id);
   blueprint_ = &getProductionBlueprint(resolved_blueprint_id_);
 
-  // Phase 2.6-2.7: Copy blueprint settings to params for track generation
+  // Copy blueprint settings to params for track generation
   params_.paradigm = blueprint_->paradigm;
   params_.riff_policy = blueprint_->riff_policy;
   params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
@@ -302,13 +362,19 @@ void Generator::generateVocal(const GeneratorParams& params) {
   // Calculate modulation for all composition styles
   calculateModulation();
 
+  // Pre-compute drum grid for RhythmSync paradigm
+  if (params_.paradigm == GenerationParadigm::RhythmSync) {
+    computeDrumGrid();
+  }
+
   // Generate ONLY vocal track with collision avoidance skipped
   // (no other tracks exist yet, so collision avoidance is meaningless)
   // BUT we still pass harmony_context_ for chord-aware melody generation
   const MidiTrack* motif_track = nullptr;
   generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track,
                      *harmony_context_,  // Pass for chord-aware melody generation
-                     true);              // skip_collision_avoidance = true
+                     true,               // skip_collision_avoidance = true
+                     getDrumGrid());
 }
 
 void Generator::regenerateVocal(uint32_t new_seed) {
@@ -324,7 +390,8 @@ void Generator::regenerateVocal(uint32_t new_seed) {
   const MidiTrack* motif_track = nullptr;
   generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track,
                      *harmony_context_,  // Pass for chord-aware melody generation
-                     true);              // skip_collision_avoidance = true
+                     true,               // skip_collision_avoidance = true
+                     getDrumGrid());
 }
 
 void Generator::regenerateVocal(const VocalConfig& config) {
@@ -365,7 +432,7 @@ void Generator::regenerateVocal(const VocalConfig& config) {
   // Regenerate vocal
   const MidiTrack* motif_track = nullptr;
   generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track,
-                     *harmony_context_, true);
+                     *harmony_context_, true, getDrumGrid());
 }
 
 /**
@@ -603,13 +670,13 @@ void Generator::setVocalNotes(const GeneratorParams& params,
   song_.setMelodySeed(seed);
   song_.setMotifSeed(seed);
 
-  // Select and resolve Blueprint (Phase 2.4)
+  // Select and resolve Blueprint
   // Use separate RNG with derived seed to avoid disturbing main rng_ state
   std::mt19937 blueprint_rng(seed ^ 0x424C5052);  // "BLPR" magic number
   resolved_blueprint_id_ = selectProductionBlueprint(blueprint_rng, params_.blueprint_id);
   blueprint_ = &getProductionBlueprint(resolved_blueprint_id_);
 
-  // Phase 2.6-2.7: Copy blueprint settings to params for track generation
+  // Copy blueprint settings to params for track generation
   params_.paradigm = blueprint_->paradigm;
   params_.riff_policy = blueprint_->riff_policy;
   params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
@@ -685,7 +752,8 @@ void Generator::generateVocal() {
           ? &song_.motif()
           : nullptr;
   // Pass harmony context for dissonance avoidance
-  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track, *harmony_context_);
+  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track,
+                     *harmony_context_, false, getDrumGrid());
 }
 
 void Generator::generateChord() {
@@ -857,7 +925,7 @@ void Generator::applyTransitionDynamics() {
   // Apply transition dynamics (section endings)
   midisketch::applyAllTransitionDynamics(tracks, sections);
 
-  // Phase 2.8: Apply entry pattern dynamics (section beginnings)
+  // Apply entry pattern dynamics (section beginnings)
   midisketch::applyAllEntryPatternDynamics(tracks, sections);
 }
 
@@ -877,6 +945,47 @@ void Generator::applyHumanization() {
 
   PostProcessor::applyHumanization(tracks, humanize_params, rng_);
   PostProcessor::fixVocalOverlaps(song_.vocal());
+}
+
+// ============================================================================
+// RhythmSync Methods
+// ============================================================================
+
+void Generator::computeDrumGrid() {
+  // Pre-compute drum grid for RhythmSync paradigm
+  // This sets up the 16th note quantization resolution
+  // Does NOT generate any drum notes - just the grid for vocal to follow
+  DrumGrid grid;
+  grid.grid_resolution = TICK_SIXTEENTH;  // 120 ticks (16th note)
+  drum_grid_ = grid;
+}
+
+// ============================================================================
+// Rhythm Lock Methods
+// ============================================================================
+
+bool Generator::shouldUseRhythmLock() const {
+  // Rhythm lock is active for Orangestar style:
+  // - RhythmSync paradigm (vocal syncs to drum grid)
+  // - Locked riff policy (same rhythm throughout)
+  if (params_.paradigm != GenerationParadigm::RhythmSync) {
+    return false;
+  }
+  uint8_t policy_value = static_cast<uint8_t>(params_.riff_policy);
+  // LockedContour=1, LockedPitch=2, LockedAll=3
+  return policy_value >= 1 && policy_value <= 3;
+}
+
+void Generator::generateMotifAsAxis() {
+  // Generate Motif track first as the rhythmic "coordinate axis"
+  // This is used for Orangestar style where Motif provides consistent rhythm
+  generateMotif();
+  rhythm_lock_active_ = true;
+}
+
+void Generator::applyDensityProgression() {
+  // No-op: density progression is applied inline in generate()
+  // before setArrangement() is called. This method exists for API consistency.
 }
 
 }  // namespace midisketch

@@ -252,7 +252,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   params.humanize_timing = config.humanize_timing;
   params.humanize_velocity = config.humanize_velocity;
 
-  // Phase 2: Apply VocalAttitude, VocalStylePreset and StyleMelodyParams
+  // Apply VocalAttitude, VocalStylePreset and StyleMelodyParams
   params.vocal_attitude = config.vocal_attitude;
   params.vocal_style = config.vocal_style;
 

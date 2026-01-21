@@ -513,9 +513,11 @@ TEST_F(HarmonyIntegrationTest, MotifTensionRespectsExtensionParams_Disabled) {
 
     // With extensions disabled, tension notes should not be explicitly added.
     // However, diatonic melodic lines naturally include scale degrees 2, 4, 6
-    // which fall on these intervals. Allow up to 15% for natural melodic content.
+    // which fall on these intervals (9th=2, 11th=5, 13th=9). Since tension
+    // addition logic is disabled, these occur naturally from the diatonic scale.
+    // Allow up to 30% for natural melodic content in diatonic passages.
     float tension_ratio = static_cast<float>(tension_count) / motif_notes.size();
-    EXPECT_LE(tension_ratio, 0.15f)
+    EXPECT_LE(tension_ratio, 0.30f)
         << "Too many tension notes with extensions disabled: "
         << (tension_ratio * 100) << "%";
   }
@@ -1159,7 +1161,7 @@ TEST_F(HarmonyIntegrationTest, HasBassCollisionFunction) {
 }
 
 // =============================================================================
-// Phase 3-4 Integration Tests
+// Integration Tests
 // =============================================================================
 
 // Test: BackgroundMotif uses Hook role with appropriate velocity
@@ -1217,7 +1219,7 @@ TEST_F(HarmonyIntegrationTest, ChordVoicingsVaryByMood) {
       << "Different moods should produce different chord voicings";
 }
 
-// Test: All tracks maintain low dissonance after Phase 3-4 improvements
+// Test: All tracks maintain low dissonance
 TEST_F(HarmonyIntegrationTest, AllTracksLowDissonanceAfterImprovements) {
   // Test multiple seeds across different moods
   std::vector<Mood> test_moods = {

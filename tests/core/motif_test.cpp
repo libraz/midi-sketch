@@ -185,7 +185,7 @@ TEST_F(MotifTest, HookContourIsShort) {
       << "Hook should use only 2-3 distinct pitch degrees";
 }
 
-// === Hook Variation Restriction Tests (Phase 1.1) ===
+// === Hook Variation Restriction Tests ===
 
 TEST_F(MotifTest, SelectHookVariationReturnsOnlyAllowed) {
   // "Variation is the enemy, Exact is justice"
@@ -221,7 +221,7 @@ TEST_F(MotifTest, IsHookAppropriateVariation) {
 }
 
 // =============================================================================
-// Phase 4: M9 MotifRole Tests
+// M9 MotifRole Tests
 // =============================================================================
 
 TEST_F(MotifTest, MotifRoleEnumExists) {
@@ -464,7 +464,7 @@ TEST_F(MotifTest, PlaceMotifInAuxReducedVelocity) {
 }
 
 // ============================================================================
-// Phase 12: ScaleType Integration Tests
+// ScaleType Integration Tests
 // ============================================================================
 
 // Note: These tests verify the ScaleType functionality that is now active

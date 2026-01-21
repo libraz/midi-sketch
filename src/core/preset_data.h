@@ -132,11 +132,11 @@ BassGenre getMoodBassGenre(Mood mood);
 const BassGenrePatterns& getBassGenrePatterns(BassGenre genre);
 
 // ============================================================================
-// StylePreset API (Phase 1)
+// StylePreset API
 // ============================================================================
 
 // Returns the style preset for the given ID.
-// @param style_id Style preset ID (0-2 for Phase 1)
+// @param style_id Style preset ID
 // @returns Reference to StylePreset struct
 const StylePreset& getStylePreset(uint8_t style_id);
 

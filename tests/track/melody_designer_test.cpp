@@ -1072,5 +1072,110 @@ TEST(GlobalMotifTest, CacheAndRetrieveGlobalMotif) {
   EXPECT_EQ(designer.getCachedGlobalMotif()->contour_type, ContourType::Peak);
 }
 
+// ============================================================================
+// selectPitchForLockedRhythm Tests
+// ============================================================================
+
+TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_ReturnsInRange) {
+  MelodyDesigner designer;
+  std::mt19937 rng(42);
+
+  uint8_t vocal_low = 60;   // C4
+  uint8_t vocal_high = 72;  // C5
+  uint8_t prev_pitch = 66;  // F#4
+
+  for (int i = 0; i < 100; ++i) {
+    uint8_t pitch = designer.selectPitchForLockedRhythm(
+        prev_pitch, 0, vocal_low, vocal_high, rng);
+    EXPECT_GE(pitch, vocal_low) << "Pitch below range";
+    EXPECT_LE(pitch, vocal_high) << "Pitch above range";
+    prev_pitch = pitch;
+  }
+}
+
+TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_PrefersChordTones) {
+  MelodyDesigner designer;
+  std::mt19937 rng(42);
+
+  uint8_t vocal_low = 60;   // C4
+  uint8_t vocal_high = 72;  // C5
+  uint8_t prev_pitch = 64;  // E4 (chord tone of C major)
+
+  // Test with I chord (C major: C, E, G)
+  int chord_tone_count = 0;
+  for (int i = 0; i < 100; ++i) {
+    uint8_t pitch = designer.selectPitchForLockedRhythm(
+        prev_pitch, 0, vocal_low, vocal_high, rng);
+    int pc = pitch % 12;
+    // C=0, E=4, G=7 are chord tones of C major
+    if (pc == 0 || pc == 4 || pc == 7) {
+      chord_tone_count++;
+    }
+    prev_pitch = pitch;
+  }
+  // Should have a majority of chord tones (more than 70%)
+  EXPECT_GT(chord_tone_count, 70) << "Should prefer chord tones";
+}
+
+TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_PrefersSmallIntervals) {
+  MelodyDesigner designer;
+  std::mt19937 rng(42);
+
+  uint8_t vocal_low = 48;   // C3
+  uint8_t vocal_high = 84;  // C6 (wide range)
+  uint8_t prev_pitch = 64;  // E4
+
+  int small_interval_count = 0;
+  for (int i = 0; i < 100; ++i) {
+    uint8_t pitch = designer.selectPitchForLockedRhythm(
+        prev_pitch, 0, vocal_low, vocal_high, rng);
+    int interval = std::abs(static_cast<int>(pitch) - prev_pitch);
+    if (interval <= 5) {  // Within a 4th
+      small_interval_count++;
+    }
+    prev_pitch = pitch;
+  }
+  // Should have mostly small intervals (more than 60%)
+  EXPECT_GT(small_interval_count, 60) << "Should prefer stepwise motion";
+}
+
+TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_HandlesNarrowRange) {
+  MelodyDesigner designer;
+  std::mt19937 rng(42);
+
+  uint8_t vocal_low = 60;   // C4
+  uint8_t vocal_high = 62;  // D4 (only 3 notes possible: C, C#, D)
+  uint8_t prev_pitch = 60;
+
+  for (int i = 0; i < 50; ++i) {
+    uint8_t pitch = designer.selectPitchForLockedRhythm(
+        prev_pitch, 0, vocal_low, vocal_high, rng);
+    EXPECT_GE(pitch, vocal_low);
+    EXPECT_LE(pitch, vocal_high);
+    prev_pitch = pitch;
+  }
+}
+
+TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_DifferentChordDegrees) {
+  MelodyDesigner designer;
+  std::mt19937 rng(42);
+
+  uint8_t vocal_low = 60;
+  uint8_t vocal_high = 72;
+
+  // Test with different chord degrees
+  std::vector<int8_t> degrees = {0, 3, 4, 5};  // I, IV, V, vi
+  for (int8_t degree : degrees) {
+    uint8_t prev_pitch = 64;
+    for (int i = 0; i < 20; ++i) {
+      uint8_t pitch = designer.selectPitchForLockedRhythm(
+          prev_pitch, degree, vocal_low, vocal_high, rng);
+      EXPECT_GE(pitch, vocal_low);
+      EXPECT_LE(pitch, vocal_high);
+      prev_pitch = pitch;
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

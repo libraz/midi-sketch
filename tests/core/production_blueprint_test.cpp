@@ -11,6 +11,11 @@
 #include <random>
 #include <vector>
 
+#include "core/generator.h"
+#include "core/preset_types.h"
+#include "track/phrase_cache.h"
+#include "track/vocal.h"
+
 namespace midisketch {
 namespace {
 
@@ -371,10 +376,10 @@ TEST_F(ProductionBlueprintTest, WeightsSumTo100) {
 }
 
 // ============================================================================
-// Phase 2: SectionSlot Extended Fields Tests
+// SectionSlot Extended Fields Tests
 // ============================================================================
 
-TEST_F(ProductionBlueprintTest, Phase2_RhythmLockIntroHasAmbientDrumRole) {
+TEST_F(ProductionBlueprintTest, RhythmLockIntroHasAmbientDrumRole) {
   const auto& bp = getProductionBlueprint(1);  // RhythmLock
   ASSERT_GT(bp.section_count, 0);
 
@@ -384,7 +389,7 @@ TEST_F(ProductionBlueprintTest, Phase2_RhythmLockIntroHasAmbientDrumRole) {
   EXPECT_EQ(intro.energy, SectionEnergy::Low);
 }
 
-TEST_F(ProductionBlueprintTest, Phase2_RhythmLockLastChorusHasMaxPeak) {
+TEST_F(ProductionBlueprintTest, RhythmLockLastChorusHasMaxPeak) {
   const auto& bp = getProductionBlueprint(1);  // RhythmLock
 
   // Find the last chorus
@@ -400,7 +405,7 @@ TEST_F(ProductionBlueprintTest, Phase2_RhythmLockLastChorusHasMaxPeak) {
   EXPECT_TRUE(found_max_peak) << "RhythmLock should have a Max peak chorus";
 }
 
-TEST_F(ProductionBlueprintTest, Phase2_BalladHasMinimalDrumRole) {
+TEST_F(ProductionBlueprintTest, BalladHasMinimalDrumRole) {
   const auto& bp = getProductionBlueprint(3);  // Ballad
 
   // Find the first chorus (should have Minimal drums)
@@ -415,7 +420,7 @@ TEST_F(ProductionBlueprintTest, Phase2_BalladHasMinimalDrumRole) {
   EXPECT_TRUE(found_minimal) << "Ballad should have a chorus with Minimal drums";
 }
 
-TEST_F(ProductionBlueprintTest, Phase2_SectionSlotHasValidDensityPercent) {
+TEST_F(ProductionBlueprintTest, SectionSlotHasValidDensityPercent) {
   // Check all blueprints have valid density_percent values (50-100)
   for (uint8_t bp_id = 0; bp_id < getProductionBlueprintCount(); ++bp_id) {
     const auto& bp = getProductionBlueprint(bp_id);
@@ -431,7 +436,7 @@ TEST_F(ProductionBlueprintTest, Phase2_SectionSlotHasValidDensityPercent) {
   }
 }
 
-TEST_F(ProductionBlueprintTest, Phase2_SectionSlotHasValidBaseVelocity) {
+TEST_F(ProductionBlueprintTest, SectionSlotHasValidBaseVelocity) {
   // Check all blueprints have valid base_velocity values (55-100)
   for (uint8_t bp_id = 0; bp_id < getProductionBlueprintCount(); ++bp_id) {
     const auto& bp = getProductionBlueprint(bp_id);
@@ -448,10 +453,10 @@ TEST_F(ProductionBlueprintTest, Phase2_SectionSlotHasValidBaseVelocity) {
 }
 
 // ============================================================================
-// Phase 2: Enum Value Tests
+// Enum Value Tests
 // ============================================================================
 
-TEST_F(ProductionBlueprintTest, Phase2_SectionEnergyEnumValues) {
+TEST_F(ProductionBlueprintTest, SectionEnergyEnumValues) {
   // Verify enum values match specification
   EXPECT_EQ(static_cast<uint8_t>(SectionEnergy::Low), 0);
   EXPECT_EQ(static_cast<uint8_t>(SectionEnergy::Medium), 1);
@@ -459,14 +464,14 @@ TEST_F(ProductionBlueprintTest, Phase2_SectionEnergyEnumValues) {
   EXPECT_EQ(static_cast<uint8_t>(SectionEnergy::Peak), 3);
 }
 
-TEST_F(ProductionBlueprintTest, Phase2_PeakLevelEnumValues) {
+TEST_F(ProductionBlueprintTest, PeakLevelEnumValues) {
   // Verify enum values match specification
   EXPECT_EQ(static_cast<uint8_t>(PeakLevel::None), 0);
   EXPECT_EQ(static_cast<uint8_t>(PeakLevel::Medium), 1);
   EXPECT_EQ(static_cast<uint8_t>(PeakLevel::Max), 2);
 }
 
-TEST_F(ProductionBlueprintTest, Phase2_DrumRoleEnumValues) {
+TEST_F(ProductionBlueprintTest, DrumRoleEnumValues) {
   // Verify enum values match specification
   EXPECT_EQ(static_cast<uint8_t>(DrumRole::Full), 0);
   EXPECT_EQ(static_cast<uint8_t>(DrumRole::Ambient), 1);
@@ -474,7 +479,7 @@ TEST_F(ProductionBlueprintTest, Phase2_DrumRoleEnumValues) {
   EXPECT_EQ(static_cast<uint8_t>(DrumRole::FXOnly), 3);
 }
 
-TEST_F(ProductionBlueprintTest, Phase2_RiffPolicyExtendedValues) {
+TEST_F(ProductionBlueprintTest, RiffPolicyExtendedValues) {
   // Verify extended RiffPolicy values
   EXPECT_EQ(static_cast<uint8_t>(RiffPolicy::Free), 0);
   EXPECT_EQ(static_cast<uint8_t>(RiffPolicy::LockedContour), 1);
@@ -615,6 +620,304 @@ TEST_F(ProductionBlueprintTest, TraditionalHasNoMotifInSectionFlow) {
   EXPECT_EQ(bp.section_flow, nullptr);
   EXPECT_EQ(bp.section_count, 0);
   // Traditional relies on CompositionStyle for Motif generation, not TrackMask
+}
+
+// ============================================================================
+// RhythmSync Tests
+// ============================================================================
+
+TEST_F(ProductionBlueprintTest, DrumGridQuantize) {
+  // Test DrumGrid quantization
+  DrumGrid grid;
+  grid.grid_resolution = 120;  // 16th note = 120 ticks
+
+  // Exact grid position should stay the same
+  EXPECT_EQ(grid.quantize(0), 0);
+  EXPECT_EQ(grid.quantize(120), 120);
+  EXPECT_EQ(grid.quantize(240), 240);
+
+  // Round down (closer to previous grid)
+  EXPECT_EQ(grid.quantize(50), 0);    // 50 < 60, round to 0
+  EXPECT_EQ(grid.quantize(59), 0);    // 59 < 60, round to 0
+
+  // Round up (closer to next grid)
+  EXPECT_EQ(grid.quantize(61), 120);  // 61 > 60, round to 120
+  EXPECT_EQ(grid.quantize(100), 120); // 100 > 60, round to 120
+}
+
+TEST_F(ProductionBlueprintTest, DrumGridZeroResolutionPassthrough) {
+  // Zero resolution should pass through unchanged
+  DrumGrid grid;
+  grid.grid_resolution = 0;
+
+  EXPECT_EQ(grid.quantize(0), 0);
+  EXPECT_EQ(grid.quantize(50), 50);
+  EXPECT_EQ(grid.quantize(123), 123);
+}
+
+TEST_F(ProductionBlueprintTest, RhythmSyncBlueprintHasRhythmSyncParadigm) {
+  // RhythmLock blueprint should have RhythmSync paradigm
+  const auto& bp = getProductionBlueprint(1);  // RhythmLock
+  EXPECT_EQ(bp.paradigm, GenerationParadigm::RhythmSync);
+}
+
+TEST_F(ProductionBlueprintTest, TraditionalBlueprintHasTraditionalParadigm) {
+  // Traditional blueprint should have Traditional paradigm
+  const auto& bp = getProductionBlueprint(0);  // Traditional
+  EXPECT_EQ(bp.paradigm, GenerationParadigm::Traditional);
+}
+
+// ============================================================================
+// CachedRhythmPattern Tests
+// ============================================================================
+
+TEST_F(ProductionBlueprintTest, CachedRhythmPatternBasicStructure) {
+  CachedRhythmPattern pattern;
+  EXPECT_TRUE(pattern.onset_beats.empty());
+  EXPECT_TRUE(pattern.durations.empty());
+  EXPECT_EQ(pattern.phrase_beats, 0);
+  EXPECT_FALSE(pattern.is_locked);
+  EXPECT_FALSE(pattern.isValid());
+}
+
+TEST_F(ProductionBlueprintTest, CachedRhythmPatternIsValid) {
+  CachedRhythmPattern pattern;
+  pattern.onset_beats = {0.0f, 1.0f, 2.0f};
+  pattern.durations = {0.5f, 0.5f, 0.5f};
+  pattern.phrase_beats = 4;
+  pattern.is_locked = true;
+
+  EXPECT_TRUE(pattern.isValid());
+
+  // Not valid if not locked
+  pattern.is_locked = false;
+  EXPECT_FALSE(pattern.isValid());
+
+  // Not valid if empty
+  pattern.is_locked = true;
+  pattern.onset_beats.clear();
+  EXPECT_FALSE(pattern.isValid());
+}
+
+TEST_F(ProductionBlueprintTest, CachedRhythmPatternGetScaledOnsets) {
+  CachedRhythmPattern pattern;
+  pattern.onset_beats = {0.0f, 1.0f, 2.0f, 3.0f};
+  pattern.phrase_beats = 4;
+  pattern.is_locked = true;
+
+  // Same length - no scaling
+  auto same_scale = pattern.getScaledOnsets(4);
+  ASSERT_EQ(same_scale.size(), 4);
+  EXPECT_FLOAT_EQ(same_scale[0], 0.0f);
+  EXPECT_FLOAT_EQ(same_scale[1], 1.0f);
+  EXPECT_FLOAT_EQ(same_scale[2], 2.0f);
+  EXPECT_FLOAT_EQ(same_scale[3], 3.0f);
+
+  // Scale up to 8 beats (2x)
+  auto scaled_up = pattern.getScaledOnsets(8);
+  ASSERT_EQ(scaled_up.size(), 4);
+  EXPECT_FLOAT_EQ(scaled_up[0], 0.0f);
+  EXPECT_FLOAT_EQ(scaled_up[1], 2.0f);
+  EXPECT_FLOAT_EQ(scaled_up[2], 4.0f);
+  EXPECT_FLOAT_EQ(scaled_up[3], 6.0f);
+
+  // Scale down to 2 beats (0.5x)
+  auto scaled_down = pattern.getScaledOnsets(2);
+  ASSERT_EQ(scaled_down.size(), 4);
+  EXPECT_FLOAT_EQ(scaled_down[0], 0.0f);
+  EXPECT_FLOAT_EQ(scaled_down[1], 0.5f);
+  EXPECT_FLOAT_EQ(scaled_down[2], 1.0f);
+  EXPECT_FLOAT_EQ(scaled_down[3], 1.5f);
+}
+
+TEST_F(ProductionBlueprintTest, CachedRhythmPatternGetScaledDurations) {
+  CachedRhythmPattern pattern;
+  pattern.durations = {0.5f, 1.0f, 0.25f};
+  pattern.phrase_beats = 4;
+  pattern.is_locked = true;
+
+  // Scale up to 8 beats (2x)
+  auto scaled = pattern.getScaledDurations(8);
+  ASSERT_EQ(scaled.size(), 3);
+  EXPECT_FLOAT_EQ(scaled[0], 1.0f);
+  EXPECT_FLOAT_EQ(scaled[1], 2.0f);
+  EXPECT_FLOAT_EQ(scaled[2], 0.5f);
+}
+
+TEST_F(ProductionBlueprintTest, CachedRhythmPatternClear) {
+  CachedRhythmPattern pattern;
+  pattern.onset_beats = {0.0f, 1.0f};
+  pattern.durations = {0.5f, 0.5f};
+  pattern.phrase_beats = 4;
+  pattern.is_locked = true;
+
+  EXPECT_TRUE(pattern.isValid());
+
+  pattern.clear();
+
+  EXPECT_TRUE(pattern.onset_beats.empty());
+  EXPECT_TRUE(pattern.durations.empty());
+  EXPECT_EQ(pattern.phrase_beats, 0);
+  EXPECT_FALSE(pattern.is_locked);
+  EXPECT_FALSE(pattern.isValid());
+}
+
+TEST_F(ProductionBlueprintTest, ExtractRhythmPattern) {
+  // Create test notes
+  std::vector<NoteEvent> notes;
+  Tick section_start = 0;
+
+  // Note at beat 0, duration 0.5 beats
+  notes.push_back({0, 240, 60, 100});  // tick 0, duration 240 (half beat)
+  // Note at beat 1, duration 1 beat
+  notes.push_back({480, 480, 64, 100});  // tick 480 (beat 1), duration 480 (1 beat)
+  // Note at beat 3, duration 0.25 beats
+  notes.push_back({1440, 120, 67, 100});  // tick 1440 (beat 3), duration 120 (quarter beat)
+
+  auto pattern = extractRhythmPattern(notes, section_start, 4);
+
+  EXPECT_TRUE(pattern.is_locked);
+  EXPECT_EQ(pattern.phrase_beats, 4);
+  ASSERT_EQ(pattern.onset_beats.size(), 3);
+  ASSERT_EQ(pattern.durations.size(), 3);
+
+  EXPECT_FLOAT_EQ(pattern.onset_beats[0], 0.0f);
+  EXPECT_FLOAT_EQ(pattern.onset_beats[1], 1.0f);
+  EXPECT_FLOAT_EQ(pattern.onset_beats[2], 3.0f);
+
+  EXPECT_FLOAT_EQ(pattern.durations[0], 0.5f);
+  EXPECT_FLOAT_EQ(pattern.durations[1], 1.0f);
+  EXPECT_FLOAT_EQ(pattern.durations[2], 0.25f);
+}
+
+// ============================================================================
+// shouldLockVocalRhythm Tests
+// ============================================================================
+
+TEST_F(ProductionBlueprintTest, ShouldLockVocalRhythm_RhythmSyncLocked) {
+  GeneratorParams params;
+  params.paradigm = GenerationParadigm::RhythmSync;
+  params.riff_policy = RiffPolicy::Locked;
+
+  EXPECT_TRUE(shouldLockVocalRhythm(params));
+}
+
+TEST_F(ProductionBlueprintTest, ShouldLockVocalRhythm_RhythmSyncLockedContour) {
+  GeneratorParams params;
+  params.paradigm = GenerationParadigm::RhythmSync;
+  params.riff_policy = RiffPolicy::LockedContour;
+
+  EXPECT_TRUE(shouldLockVocalRhythm(params));
+}
+
+TEST_F(ProductionBlueprintTest, ShouldLockVocalRhythm_RhythmSyncLockedPitch) {
+  GeneratorParams params;
+  params.paradigm = GenerationParadigm::RhythmSync;
+  params.riff_policy = RiffPolicy::LockedPitch;
+
+  EXPECT_TRUE(shouldLockVocalRhythm(params));
+}
+
+TEST_F(ProductionBlueprintTest, ShouldLockVocalRhythm_RhythmSyncLockedAll) {
+  GeneratorParams params;
+  params.paradigm = GenerationParadigm::RhythmSync;
+  params.riff_policy = RiffPolicy::LockedAll;
+
+  EXPECT_TRUE(shouldLockVocalRhythm(params));
+}
+
+TEST_F(ProductionBlueprintTest, ShouldLockVocalRhythm_RhythmSyncFree) {
+  GeneratorParams params;
+  params.paradigm = GenerationParadigm::RhythmSync;
+  params.riff_policy = RiffPolicy::Free;
+
+  EXPECT_FALSE(shouldLockVocalRhythm(params));
+}
+
+TEST_F(ProductionBlueprintTest, ShouldLockVocalRhythm_RhythmSyncEvolving) {
+  GeneratorParams params;
+  params.paradigm = GenerationParadigm::RhythmSync;
+  params.riff_policy = RiffPolicy::Evolving;
+
+  EXPECT_FALSE(shouldLockVocalRhythm(params));
+}
+
+TEST_F(ProductionBlueprintTest, ShouldLockVocalRhythm_Traditional) {
+  GeneratorParams params;
+  params.paradigm = GenerationParadigm::Traditional;
+  params.riff_policy = RiffPolicy::Locked;
+
+  EXPECT_FALSE(shouldLockVocalRhythm(params));
+}
+
+TEST_F(ProductionBlueprintTest, ShouldLockVocalRhythm_MelodyDriven) {
+  GeneratorParams params;
+  params.paradigm = GenerationParadigm::MelodyDriven;
+  params.riff_policy = RiffPolicy::Locked;
+
+  EXPECT_FALSE(shouldLockVocalRhythm(params));
+}
+
+// ============================================================================
+// Generator RhythmSync Integration Tests
+// ============================================================================
+
+TEST_F(ProductionBlueprintTest, GeneratorSetsParadigmFromBlueprint) {
+  Generator gen;
+  GeneratorParams params;
+  params.blueprint_id = 1;  // RhythmLock
+  params.seed = 12345;
+
+  gen.generate(params);
+
+  // Check that the blueprint's paradigm was applied
+  const auto& applied_params = gen.getParams();
+  EXPECT_EQ(applied_params.paradigm, GenerationParadigm::RhythmSync);
+  EXPECT_EQ(applied_params.riff_policy, RiffPolicy::Locked);
+  EXPECT_TRUE(applied_params.drums_sync_vocal);
+}
+
+TEST_F(ProductionBlueprintTest, GeneratorSetsParadigmFromTraditionalBlueprint) {
+  Generator gen;
+  GeneratorParams params;
+  params.blueprint_id = 0;  // Traditional
+  params.seed = 12345;
+
+  gen.generate(params);
+
+  const auto& applied_params = gen.getParams();
+  EXPECT_EQ(applied_params.paradigm, GenerationParadigm::Traditional);
+  EXPECT_EQ(applied_params.riff_policy, RiffPolicy::Free);
+  EXPECT_FALSE(applied_params.drums_sync_vocal);
+}
+
+TEST_F(ProductionBlueprintTest, GeneratorSetsParadigmFromStoryPopBlueprint) {
+  Generator gen;
+  GeneratorParams params;
+  params.blueprint_id = 2;  // StoryPop
+  params.seed = 12345;
+
+  gen.generate(params);
+
+  const auto& applied_params = gen.getParams();
+  EXPECT_EQ(applied_params.paradigm, GenerationParadigm::MelodyDriven);
+  EXPECT_EQ(applied_params.riff_policy, RiffPolicy::Evolving);
+}
+
+TEST_F(ProductionBlueprintTest, RhythmLockBlueprintGeneratesNotes) {
+  // Verify RhythmLock blueprint generates music without crashing
+  Generator gen;
+  GeneratorParams params;
+  params.blueprint_id = 1;  // RhythmLock
+  params.seed = 54321;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  // Should have generated notes
+  EXPECT_FALSE(song.vocal().empty()) << "RhythmLock should generate vocal";
+  EXPECT_FALSE(song.chord().empty()) << "RhythmLock should generate chord";
+  EXPECT_FALSE(song.drums().empty()) << "RhythmLock should generate drums";
 }
 
 }  // namespace

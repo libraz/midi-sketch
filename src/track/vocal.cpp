@@ -22,11 +22,97 @@
 
 namespace midisketch {
 
+// ============================================================================
+// Rhythm Lock Support
+// ============================================================================
+
+bool shouldLockVocalRhythm(const GeneratorParams& params) {
+  // Rhythm lock is used for Orangestar style:
+  // - RhythmSync paradigm (vocal syncs to drum grid)
+  // - Locked riff policy (same rhythm throughout)
+  if (params.paradigm != GenerationParadigm::RhythmSync) {
+    return false;
+  }
+  // RiffPolicy::Locked is an alias for LockedContour, so check the underlying values
+  uint8_t policy_value = static_cast<uint8_t>(params.riff_policy);
+  // LockedContour=1, LockedPitch=2, LockedAll=3
+  return policy_value >= 1 && policy_value <= 3;
+}
+
+/**
+ * @brief Generate notes using locked rhythm pattern with new pitches.
+ * @param rhythm Locked rhythm pattern to use
+ * @param section Current section
+ * @param designer Melody designer for pitch selection
+ * @param harmony Harmony context
+ * @param ctx Section context
+ * @param rng Random number generator
+ * @return Generated notes with locked rhythm and new pitches
+ */
+static std::vector<NoteEvent> generateWithLockedRhythm(
+    const CachedRhythmPattern& rhythm,
+    const Section& section,
+    MelodyDesigner& designer,
+    const IHarmonyContext& harmony,
+    const MelodyDesigner::SectionContext& ctx,
+    std::mt19937& rng) {
+
+  std::vector<NoteEvent> notes;
+  uint8_t section_beats = section.bars * 4;
+
+  // Get scaled onsets and durations for this section's length
+  auto onsets = rhythm.getScaledOnsets(section_beats);
+  auto durations = rhythm.getScaledDurations(section_beats);
+
+  if (onsets.empty()) {
+    return notes;
+  }
+
+  // Ensure durations matches onsets size
+  while (durations.size() < onsets.size()) {
+    durations.push_back(0.5f);  // Default half-beat duration
+  }
+
+  uint8_t prev_pitch = (ctx.vocal_low + ctx.vocal_high) / 2;  // Start at center
+
+  for (size_t i = 0; i < onsets.size(); ++i) {
+    float beat = onsets[i];
+    float dur = durations[i];
+
+    Tick tick = section.start_tick + static_cast<Tick>(beat * TICKS_PER_BEAT);
+    Tick duration = static_cast<Tick>(dur * TICKS_PER_BEAT);
+
+    // Get chord at this position
+    int8_t chord_degree = harmony.getChordDegreeAt(tick);
+
+    // Select pitch using melody designer's pitch selection logic
+    // Use chord tones primarily for consonance
+    uint8_t pitch = designer.selectPitchForLockedRhythm(
+        prev_pitch, chord_degree, ctx.vocal_low, ctx.vocal_high, rng);
+
+    // Calculate velocity based on beat position
+    float beat_in_bar = std::fmod(beat, 4.0f);
+    uint8_t velocity = 80;
+    if (beat_in_bar < 0.1f || std::abs(beat_in_bar - 2.0f) < 0.1f) {
+      velocity = 95;  // Strong beats
+    } else if (std::abs(beat_in_bar - 1.0f) < 0.1f || std::abs(beat_in_bar - 3.0f) < 0.1f) {
+      velocity = 85;  // Medium beats
+    }
+
+    notes.push_back({tick, duration, pitch, velocity});
+    prev_pitch = pitch;
+  }
+
+  return notes;
+}
+
 void generateVocalTrack(MidiTrack& track, Song& song,
                         const GeneratorParams& params, std::mt19937& rng,
                         const MidiTrack* motif_track,
                         const IHarmonyContext& harmony,
-                        bool skip_collision_avoidance) {
+                        bool skip_collision_avoidance,
+                        const DrumGrid* drum_grid,
+                        CachedRhythmPattern* rhythm_lock) {
 
   // Determine effective vocal range
   uint8_t effective_vocal_low = params.vocal_low;
@@ -83,6 +169,12 @@ void generateVocalTrack(MidiTrack& track, Song& song,
   // Phrase cache for section repetition (V2: extended key with bars + chord_degree)
   std::unordered_map<PhraseCacheKey, CachedPhrase, PhraseCacheKeyHash> phrase_cache;
 
+  // Check if rhythm lock should be used
+  bool use_rhythm_lock = shouldLockVocalRhythm(params);
+  // Local rhythm lock cache if none provided externally
+  CachedRhythmPattern local_rhythm_lock;
+  CachedRhythmPattern* active_rhythm_lock = rhythm_lock ? rhythm_lock : &local_rhythm_lock;
+
   // Clear existing phrase boundaries for fresh generation
   song.clearPhraseBoundaries();
 
@@ -92,7 +184,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     if (!sectionHasVocals(section.type)) {
       continue;
     }
-    // Phase 2.5: Skip sections where vocal is disabled by track_mask
+    // Skip sections where vocal is disabled by track_mask
     if (!hasTrack(section.track_mask, TrackMask::Vocal)) {
       continue;
     }
@@ -171,7 +263,7 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       ctx.vocal_low = section_vocal_low;
       ctx.vocal_high = section_vocal_high;
       ctx.mood = params.mood;  // For harmonic rhythm alignment
-      // Phase 2: Apply section's density_percent to density modifier
+      // Apply section's density_percent to density modifier
       float base_density = getDensityModifier(section.type, params.melody_params);
       float density_factor = section.density_percent / 100.0f;
       ctx.density_modifier = base_density * density_factor;
@@ -181,6 +273,9 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       ctx.disable_breathing_gaps = params.melody_params.disable_breathing_gaps;
       ctx.vocal_attitude = params.vocal_attitude;
       ctx.hook_intensity = params.hook_intensity;  // For HookSkeleton selection
+      // RhythmSync support
+      ctx.paradigm = params.paradigm;
+      ctx.drum_grid = drum_grid;
 
       // Set transition info for next section (if any)
       const auto& sections = song.arrangement().sections();
@@ -191,11 +286,24 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         }
       }
 
-      // Generate melody with evaluation (candidate count varies by section importance)
-      int candidate_count = MelodyDesigner::getCandidateCountForSection(section.type);
-      section_notes = designer.generateSectionWithEvaluation(
-          section_tmpl, ctx, harmony, rng, params.vocal_style,
-          params.melodic_complexity, candidate_count);
+      // Check for rhythm lock
+      if (use_rhythm_lock && active_rhythm_lock->isValid()) {
+        // Use locked rhythm pattern with new pitches
+        section_notes = generateWithLockedRhythm(
+            *active_rhythm_lock, section, designer, harmony, ctx, rng);
+      } else {
+        // Generate melody with evaluation (candidate count varies by section importance)
+        int candidate_count = MelodyDesigner::getCandidateCountForSection(section.type);
+        section_notes = designer.generateSectionWithEvaluation(
+            section_tmpl, ctx, harmony, rng, params.vocal_style,
+            params.melodic_complexity, candidate_count);
+
+        // Cache rhythm pattern for subsequent sections
+        if (use_rhythm_lock && !active_rhythm_lock->isValid() && !section_notes.empty()) {
+          *active_rhythm_lock = extractRhythmPattern(
+              section_notes, section_start, section.bars * 4);
+        }
+      }
 
       // Apply transition approach if transition info was set
       if (ctx.transition_to_next) {

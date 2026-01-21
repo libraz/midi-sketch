@@ -269,46 +269,22 @@ TEST(ChordUtilsTest, StepwiseToTargetProbabilisticHalfStep) {
   // Run multiple trials with different seeds and count half steps
   // Use E4 (64) -> F4 (65) is a valid half step in C major (E-F is a half step in scale)
   int half_step_count = 0;
-  int whole_step_count = 0;
   const int trials = 100;
 
   for (int seed = 0; seed < trials; ++seed) {
     std::mt19937 rng(seed);
-    // E4 (64) -> target A4 (69), ascending, non-leading tone
-    // Half step = F4 (65), whole step = F#4 (66) - but F# not in scale, so G4 (67)
-    // Actually in C major from E: half=F(65), whole would skip to G(67)
-    // Let's use a position where both options are valid:
-    // A4 (69) -> target: half step = Bb (70, not in C major), whole = B (71)
-    // Better: G4 (67) -> target up: half = G# (68, not in scale), whole = A (69)
-    // Best: F4 (65) -> target up: half = F# (66, not in scale), whole = G (67)
-    // In C major, the only half steps are E-F and B-C
-    // So from E (64), half step up = F (65), which is in scale
-    // And the "whole step" would be to G (67), skipping F# which is not in scale
-    // Actually stepwiseToTarget tries step_first then step_second
-    // With prefer_half_step=true: tries 1 then 2
-    // With prefer_half_step=false: tries 2 then 1
-    // From E4 (64): +1 = F (65, in scale), +2 = F# (66, not in scale so skip to...)
-    // Wait, let me re-read the code - it tries exact steps, not scale steps
+    // E4 (64) -> target up: +1 = F (65, in scale), +2 = F# (66, NOT in scale)
+    // So whole step from E should fail and fall back to half step
     int result = stepwiseToTarget(64, 70, 0, 48, 84, 0, 0, &rng);
     int step = result - 64;
-    // E4+1 = F4 (65, in scale) - half step
-    // E4+2 = F#4 (66, NOT in scale) - should fail
-    // So whole step from E should fail and fall back to half step
     if (step == 1) {
       half_step_count++;
-    } else if (step == 2) {
-      // F# is not in C major scale, so this shouldn't happen
-      whole_step_count++;
-    } else if (step == 3) {
-      // G4 (67) if step motion failed and tried alternate
-      whole_step_count++;
     }
+    // Steps of 2 or 3 are also valid outcomes (not tracked)
   }
 
   // In C major from E, only half step (to F) is valid in scale
   // So we expect most results to be half step regardless of probability
-  // This test case is flawed - let's verify the probabilistic selection works
-  // by checking that we get consistent results (deterministic behavior already tested)
   EXPECT_GT(half_step_count, 0) << "Half step should occur when whole step is not in scale";
 }
 

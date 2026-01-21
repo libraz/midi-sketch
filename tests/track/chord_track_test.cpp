@@ -273,7 +273,7 @@ TEST_F(ChordTrackTest, SusChordNoConsecutiveSusExtensions) {
 }
 
 // ============================================================================
-// Phase 2: Anticipation Tests
+// Anticipation Tests
 // ============================================================================
 
 TEST_F(ChordTrackTest, AnticipationInChorusSection) {
@@ -352,7 +352,7 @@ TEST_F(ChordTrackTest, NoAnticipationInIntroOutro) {
 }
 
 // ============================================================================
-// Phase 3: C3 Open Voicing Diversity Tests
+// C3 Open Voicing Diversity Tests
 // ============================================================================
 
 TEST_F(ChordTrackTest, OpenVoicingSubtypeEnumExists) {
@@ -396,7 +396,7 @@ TEST_F(ChordTrackTest, DramaticMoodUsesVariedVoicings) {
 }
 
 // ============================================================================
-// Phase 3: C4 Rootless 4-Voice Tests
+// C4 Rootless 4-Voice Tests
 // ============================================================================
 
 TEST_F(ChordTrackTest, RootlessVoicingsGenerateMultipleNotes) {
@@ -419,20 +419,13 @@ TEST_F(ChordTrackTest, RootlessVoicingsGenerateMultipleNotes) {
     notes_per_tick[note.start_tick]++;
   }
 
-  int chords_with_4_voices = 0;
-  for (const auto& [tick, count] : notes_per_tick) {
-    if (count >= 4) {
-      chords_with_4_voices++;
-    }
-  }
-
   // Some chords should have 4 voices due to C4 enhancement
   // (May vary by seed and voicing selection)
   EXPECT_GT(notes_per_tick.size(), 0u) << "Should have chord events";
 }
 
 // ============================================================================
-// Phase 3: C2 Parallel Penalty Mood Dependency Tests
+// C2 Parallel Penalty Mood Dependency Tests
 // ============================================================================
 
 TEST_F(ChordTrackTest, EnergeticMoodAllowsParallelMotion) {

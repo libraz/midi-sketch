@@ -25,7 +25,7 @@ struct SectionSlot {
   TrackMask enabled_tracks;    ///< Which tracks are active
   EntryPattern entry_pattern;  ///< How instruments enter
 
-  // Phase 2 fields for time-based control
+  // Time-based control fields
   SectionEnergy energy;        ///< Section energy level (Low/Medium/High/Peak)
   uint8_t base_velocity;       ///< Base velocity (60-100)
   uint8_t density_percent;     ///< Density percentage (50-100)

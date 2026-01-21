@@ -18,7 +18,7 @@ constexpr uint8_t SNARE = 38;
 constexpr uint8_t CHH = 42;   // Closed Hi-Hat
 constexpr uint8_t OHH = 46;   // Open Hi-Hat
 constexpr uint8_t CRASH = 49;
-constexpr uint8_t RIDE = 51;
+// constexpr uint8_t RIDE = 51;  // Reserved for future tests
 constexpr uint8_t TOM_H = 50; // High Tom
 constexpr uint8_t TOM_M = 47; // Mid Tom
 constexpr uint8_t TOM_L = 45; // Low Tom
@@ -433,16 +433,13 @@ TEST_F(DrumsTest, HiHatVariation) {
   const auto& track = gen.getSong().drums();
 
   int closed_hh = 0;
-  int open_hh = 0;
 
   for (const auto& note : track.notes()) {
     if (note.note == CHH || note.note == 42) closed_hh++;
-    if (note.note == OHH || note.note == 46) open_hh++;
   }
 
   // Should have closed hi-hats
   EXPECT_GT(closed_hh, 0) << "Should have closed hi-hat notes";
-  // Open hi-hats may or may not be present depending on style
 }
 
 // ============================================================================

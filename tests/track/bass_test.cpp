@@ -514,7 +514,7 @@ TEST_F(BassTest, BassVelocityWithinBounds) {
 }
 
 // ============================================================================
-// Phase 2: Walking Bass Tests
+// Walking Bass Tests
 // ============================================================================
 
 TEST_F(BassTest, WalkingBassInCityPopMood) {
@@ -569,29 +569,6 @@ TEST_F(BassTest, WalkingBassScaleTones) {
   gen.generate(params_);
 
   const auto& bass_track = gen.getSong().bass();
-
-  // Walking bass uses scale tones: root, 2nd, 3rd, approach
-  // Intervals vary: root to 2nd = 2 semitones, 2nd to 3rd = 2-3 semitones
-  // Approach notes can be chromatic (1 semitone)
-  int scale_intervals = 0;
-  int total_intervals = 0;
-
-  for (size_t i = 1; i < bass_track.notes().size(); ++i) {
-    // Only check notes within same bar (walking bass is per-bar)
-    Tick bar1 = bass_track.notes()[i-1].start_tick / TICKS_PER_BAR;
-    Tick bar2 = bass_track.notes()[i].start_tick / TICKS_PER_BAR;
-    if (bar1 != bar2) continue;
-
-    int interval = std::abs(static_cast<int>(bass_track.notes()[i].note) -
-                            static_cast<int>(bass_track.notes()[i-1].note));
-    total_intervals++;
-
-    // Scale intervals in walking bass: 1-5 semitones (includes chromatic approach)
-    // Also allow 7 (fifth) which is common in jazz walking bass
-    if ((interval >= 1 && interval <= 5) || interval == 7) {
-      scale_intervals++;
-    }
-  }
 
   // Just verify that CityPop generates bass correctly
   // Walking bass selection is probabilistic based on random pattern selection

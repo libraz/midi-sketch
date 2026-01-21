@@ -18,7 +18,6 @@ namespace midisketch {
 namespace {
 
 // RhythmLock-style section flow: rhythm-synced, minimal intro
-// Phase 2: Added energy, velocity, density, peak_level, drum_role
 constexpr SectionSlot RHYTHMLOCK_FLOW[] = {
   // Intro: drums only, atmospheric (Ambient DrumRole hides beat feel)
   {SectionType::Intro, 4, TrackMask::Drums, EntryPattern::Immediate,
@@ -76,7 +75,6 @@ constexpr SectionSlot RHYTHMLOCK_FLOW[] = {
 };
 
 // StoryPop-style section flow: melody-driven, full arrangement
-// Phase 2: Added energy, velocity, density, peak_level, drum_role
 constexpr SectionSlot STORYPOP_FLOW[] = {
   // Intro: full arrangement
   {SectionType::Intro, 4, TrackMask::All, EntryPattern::Immediate,
@@ -122,7 +120,6 @@ constexpr SectionSlot STORYPOP_FLOW[] = {
 };
 
 // Ballad-style section flow: gradual build, sparse intro
-// Phase 2: Added energy, velocity, density, peak_level, drum_role
 constexpr SectionSlot BALLAD_FLOW[] = {
   // Intro: chord only (piano feel)
   {SectionType::Intro, 4, TrackMask::Chord, EntryPattern::Immediate,

@@ -250,17 +250,17 @@ TEST(VelocityTest, VelocityRatioRange) {
 }
 
 // ============================================================================
-// Phase 2: New Velocity Functions Tests
+// New Velocity Functions Tests
 // ============================================================================
 
-TEST(VelocityTest, Phase2_GetSectionEnergyLevel) {
+TEST(VelocityTest, GetSectionEnergyLevel) {
   // getSectionEnergyLevel should be an alias for getSectionEnergy
   EXPECT_EQ(getSectionEnergyLevel(SectionType::Intro), getSectionEnergy(SectionType::Intro));
   EXPECT_EQ(getSectionEnergyLevel(SectionType::A), getSectionEnergy(SectionType::A));
   EXPECT_EQ(getSectionEnergyLevel(SectionType::Chorus), getSectionEnergy(SectionType::Chorus));
 }
 
-TEST(VelocityTest, Phase2_GetPeakVelocityMultiplier) {
+TEST(VelocityTest, GetPeakVelocityMultiplier) {
   // None should return 1.0
   EXPECT_FLOAT_EQ(getPeakVelocityMultiplier(PeakLevel::None), 1.0f);
 
@@ -271,7 +271,7 @@ TEST(VelocityTest, Phase2_GetPeakVelocityMultiplier) {
   EXPECT_FLOAT_EQ(getPeakVelocityMultiplier(PeakLevel::Max), 1.10f);
 }
 
-TEST(VelocityTest, Phase2_GetEffectiveSectionEnergy) {
+TEST(VelocityTest, GetEffectiveSectionEnergy) {
   Section section;
   section.type = SectionType::A;
 
@@ -287,7 +287,7 @@ TEST(VelocityTest, Phase2_GetEffectiveSectionEnergy) {
   EXPECT_EQ(getEffectiveSectionEnergy(section), SectionEnergy::Low);
 }
 
-TEST(VelocityTest, Phase2_GetEffectiveSectionEnergyFallback) {
+TEST(VelocityTest, GetEffectiveSectionEnergyFallback) {
   Section section;
   section.energy = SectionEnergy::Medium;  // Default
 
@@ -304,7 +304,7 @@ TEST(VelocityTest, Phase2_GetEffectiveSectionEnergyFallback) {
   EXPECT_EQ(getEffectiveSectionEnergy(section), SectionEnergy::High);
 }
 
-TEST(VelocityTest, Phase2_CalculateEffectiveVelocity) {
+TEST(VelocityTest, CalculateEffectiveVelocity) {
   Section section;
   section.type = SectionType::A;
   section.energy = SectionEnergy::Medium;
@@ -317,7 +317,7 @@ TEST(VelocityTest, Phase2_CalculateEffectiveVelocity) {
   EXPECT_LE(vel, 127);
 }
 
-TEST(VelocityTest, Phase2_CalculateEffectiveVelocityPeakBoost) {
+TEST(VelocityTest, CalculateEffectiveVelocityPeakBoost) {
   Section section;
   section.type = SectionType::Chorus;
   section.energy = SectionEnergy::Peak;
@@ -334,7 +334,7 @@ TEST(VelocityTest, Phase2_CalculateEffectiveVelocityPeakBoost) {
   EXPECT_GT(vel_max, vel_none);
 }
 
-TEST(VelocityTest, Phase2_CalculateEffectiveVelocityEnergyEffect) {
+TEST(VelocityTest, CalculateEffectiveVelocityEnergyEffect) {
   Section section;
   section.type = SectionType::A;
   section.peak_level = PeakLevel::None;

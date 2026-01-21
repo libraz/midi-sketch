@@ -245,6 +245,34 @@ int adjustForChord(int pitch, uint8_t chord_root, bool is_minor) {
   return best_pitch;
 }
 
+// Snap pitch to nearest chord tone (root, 3rd, 5th) regardless of avoid note status.
+// Used in RhythmSync mode to constrain Motif to chord tones, leaving passing tones for Vocal.
+// @param pitch Input pitch (MIDI note number)
+// @param chord_root Root note of current chord (MIDI note number)
+// @param is_minor Whether the chord is minor
+// @returns Pitch snapped to nearest chord tone
+int snapToChordTone(int pitch, uint8_t chord_root, bool is_minor) {
+  auto chord_tones = getDiatonicChordTones(chord_root, is_minor);
+  int octave = pitch / 12;
+
+  int best_pitch = pitch;
+  int best_dist = 100;
+
+  for (int ct_pc : chord_tones) {
+    // Check same octave and adjacent octaves
+    for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
+      int candidate = (octave + oct_offset) * 12 + ct_pc;
+      int dist = std::abs(candidate - pitch);
+      if (dist < best_dist) {
+        best_dist = dist;
+        best_pitch = candidate;
+      }
+    }
+  }
+
+  return best_pitch;
+}
+
 // Check if a pitch is on the diatonic scale (C major)
 // @param pitch MIDI note number
 // @returns true if pitch is diatonic
@@ -550,15 +578,7 @@ void generateMotifTrack(MidiTrack& track, Song& song,
   NoteFactory factory(harmony);
 
   const MotifParams& motif_params = params.motif;
-  const auto& progression = getChordProgression(params.chord_id);
   Tick motif_length = static_cast<Tick>(motif_params.length) * TICKS_PER_BAR;
-
-  // Apply max_chord_count limit for BackgroundMotif style
-  uint8_t effective_prog_length = progression.length;
-  if (params.motif_chord.max_chord_count > 0 &&
-      params.motif_chord.max_chord_count < progression.length) {
-    effective_prog_length = params.motif_chord.max_chord_count;
-  }
 
   const auto& sections = song.arrangement().sections();
 
@@ -578,7 +598,7 @@ void generateMotifTrack(MidiTrack& track, Song& song,
   size_t sec_idx = 0;
 
   for (const auto& section : sections) {
-    // Phase 2.5: Skip sections where motif is disabled by track_mask
+    // Skip sections where motif is disabled by track_mask
     if (!hasTrack(section.track_mask, TrackMask::Motif)) {
       sec_idx++;
       continue;
@@ -649,14 +669,11 @@ void generateMotifTrack(MidiTrack& track, Song& song,
 
     // Repeat motif across the section
     for (Tick pos = section.start_tick; pos < section_end; pos += motif_length) {
-      // Calculate which bar we're in for chord info
-      uint32_t bar_in_section = (pos - section.start_tick) / TICKS_PER_BAR;
-
       for (const auto& note : *current_pattern) {
         Tick absolute_tick = pos + note.start_tick;
         if (absolute_tick >= section_end) continue;
 
-        // Phase 2: Apply density_percent to skip notes probabilistically
+        // Apply density_percent to skip notes probabilistically
         if (section.density_percent < 100) {
           std::uniform_real_distribution<float> density_dist(0.0f, 100.0f);
           if (density_dist(rng) > section.density_percent) {
@@ -664,11 +681,9 @@ void generateMotifTrack(MidiTrack& track, Song& song,
           }
         }
 
-        // Determine which bar this note falls in
-        uint32_t note_bar = bar_in_section + (note.start_tick / TICKS_PER_BAR);
-        // Use effective_prog_length to limit chord variety in BackgroundMotif mode
-        int chord_idx = note_bar % effective_prog_length;
-        int8_t degree = progression.at(chord_idx);
+        // Use HarmonyContext for accurate chord lookup at this tick
+        // This ensures Motif uses the same chord as Vocal/Chord/Bass tracks
+        int8_t degree = harmony.getChordDegreeAt(absolute_tick);
 
         // Get chord info (use Key::C for internal processing)
         uint8_t chord_root = degreeToRoot(degree, Key::C);
@@ -687,6 +702,14 @@ void generateMotifTrack(MidiTrack& track, Song& song,
         // Ensure result is diatonic (adjustForChord may produce non-diatonic chord tones)
         adjusted_pitch = motif_detail::adjustToDiatonic(adjusted_pitch);
         adjusted_pitch = std::clamp(adjusted_pitch, 36, 108);
+
+        // In RhythmSync mode, constrain Motif to chord tones only
+        // This leaves passing tones (2nd, 4th, 6th, 7th) available for Vocal
+        // to avoid dissonance clashes between the "coordinate axis" Motif and Vocal
+        if (params.paradigm == GenerationParadigm::RhythmSync) {
+          // Snap to nearest chord tone (root, 3rd, 5th)
+          adjusted_pitch = motif_detail::snapToChordTone(adjusted_pitch, chord_root, is_minor);
+        }
 
         // L4: Occasionally apply tension based on chord quality (9th, 11th, 13th)
         // Only apply if chord extensions are enabled to maintain Motif/Chord consistency

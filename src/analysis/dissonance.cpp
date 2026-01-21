@@ -620,7 +620,7 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
   // This prevents duplicate reports when chord track has duplicate notes
   std::set<std::tuple<Tick, uint8_t, uint8_t>> reported_clashes;
 
-  // Phase 1: Detect simultaneous clashes
+  // Detect simultaneous clashes
   // For each pair of overlapping notes from different tracks
   for (size_t i = 0; i < all_notes.size(); ++i) {
     for (size_t j = i + 1; j < all_notes.size(); ++j) {
@@ -745,7 +745,7 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
     return {false, 0, 0};
   };
 
-  // Phase 2: Detect non-chord tones
+  // Detect non-chord tones
   // Check melodic tracks and bass (bass defines harmony, so non-chord tones are serious)
   auto checkTrackForNonChordTones = [&](const MidiTrack& track, TrackRole role, bool is_bass = false) {
     for (const auto& note : track.notes()) {
@@ -864,7 +864,7 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
   checkTrackForNonChordTones(song.aux(), TrackRole::Aux);
   checkTrackForNonChordTones(song.bass(), TrackRole::Bass, true);  // Bass with higher severity
 
-  // Phase 3: Detect sustained notes over chord changes
+  // Detect sustained notes over chord changes
   // Check if notes that were chord tones at start become non-chord tones after chord change
 
   // Build chord timeline: list of (tick, degree) for each chord change
@@ -981,7 +981,7 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
   checkSustainedOverChordChange(song.arpeggio(), TrackRole::Arpeggio);
   checkSustainedOverChordChange(song.aux(), TrackRole::Aux);
 
-  // Phase 4: Detect non-diatonic notes
+  // Detect non-diatonic notes
   // Internal generation is in C major; if a note is not diatonic to C major,
   // it will produce a non-diatonic note in the target key after transposition.
   // EXCEPTION: Chord tones of borrowed chords (bVII, bVI, bIII) are intentional

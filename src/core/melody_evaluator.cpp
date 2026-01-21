@@ -566,14 +566,12 @@ float MelodyEvaluator::calcBreathlessPenalty(const std::vector<NoteEvent>& notes
 
   int consecutive_short = 0;
   int max_consecutive_short = 0;
-  Tick total_short_duration = 0;
 
   for (size_t i = 0; i < notes.size(); ++i) {
     bool is_short = notes[i].duration <= kShortNoteThreshold;
 
     if (is_short) {
       consecutive_short++;
-      total_short_duration += notes[i].duration;
 
       // Check if there's a breathing gap after this note
       if (i + 1 < notes.size()) {

@@ -546,7 +546,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   NoteFactory factory(harmony);
 
   // Generate rhythm pattern with section density modifier and 32nd note ratio
-  std::vector<RhythmNote> rhythm = generatePhraseRhythm(tmpl, phrase_beats, ctx.density_modifier, ctx.thirtysecond_ratio, rng);
+  std::vector<RhythmNote> rhythm = generatePhraseRhythm(tmpl, phrase_beats, ctx.density_modifier, ctx.thirtysecond_ratio, rng, ctx.paradigm);
 
   // Get chord degree at phrase start
   int8_t start_chord_degree = harmony.getChordDegreeAt(phrase_start);
@@ -1824,7 +1824,8 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
     uint8_t phrase_beats,
     float density_modifier,
     float thirtysecond_ratio,
-    std::mt19937& rng) {
+    std::mt19937& rng,
+    GenerationParadigm paradigm) {
 
   std::vector<RhythmNote> rhythm;
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
@@ -1898,10 +1899,16 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
 
     current_beat += eighths * 0.5f;  // Convert eighths to beats
 
-    // Quantize to 8th note grid for natural pop vocal rhythm
-    // Note duration comes from rn.eighths (not gap), so short notes still work
-    // Standard pop vocal beat positions: 0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5
-    current_beat = std::ceil(current_beat * 2.0f) / 2.0f;
+    // Quantize to grid based on paradigm
+    // RhythmSync uses 16th note grid for tighter rhythm sync
+    if (paradigm == GenerationParadigm::RhythmSync) {
+      // 16th note grid: 0, 0.25, 0.5, 0.75, 1.0, 1.25, ...
+      current_beat = std::ceil(current_beat * 4.0f) / 4.0f;
+    } else {
+      // Traditional: 8th note grid for natural pop vocal rhythm
+      // Standard pop vocal beat positions: 0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5
+      current_beat = std::ceil(current_beat * 2.0f) / 2.0f;
+    }
   }
 
   // Add final phrase-ending note on a strong beat
@@ -1924,6 +1931,72 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
   }
 
   return rhythm;
+}
+
+// === Locked Rhythm Pitch Selection ===
+
+uint8_t MelodyDesigner::selectPitchForLockedRhythm(
+    uint8_t prev_pitch,
+    int8_t chord_degree,
+    uint8_t vocal_low,
+    uint8_t vocal_high,
+    std::mt19937& rng) {
+
+  // Get chord tone pitch classes (0-11) for the current chord (prioritize consonance)
+  std::vector<int> chord_tone_pcs = getChordTonePitchClasses(chord_degree);
+
+  // Collect candidate pitches within vocal range
+  std::vector<uint8_t> candidates;
+
+  // Add chord tones in range (primary candidates)
+  // pitch_class is the pitch modulo 12 (e.g., C=0, C#=1, ..., B=11)
+  for (int pc : chord_tone_pcs) {
+    for (int octave = 3; octave <= 7; ++octave) {
+      int pitch = pc + (octave * 12);
+      if (pitch >= vocal_low && pitch <= vocal_high) {
+        candidates.push_back(static_cast<uint8_t>(pitch));
+      }
+    }
+  }
+
+  if (candidates.empty()) {
+    // Fallback: use any pitch in range
+    for (int p = vocal_low; p <= vocal_high; ++p) {
+      candidates.push_back(static_cast<uint8_t>(p));
+    }
+  }
+
+  if (candidates.empty()) {
+    return prev_pitch;  // Safety fallback
+  }
+
+  // Sort candidates by distance from prev_pitch (prefer stepwise motion)
+  std::sort(candidates.begin(), candidates.end(),
+            [prev_pitch](uint8_t a, uint8_t b) {
+              return std::abs(static_cast<int>(a) - prev_pitch) <
+                     std::abs(static_cast<int>(b) - prev_pitch);
+            });
+
+  // Weight selection: prefer close pitches but allow some variety
+  // 60% chance: closest pitch (stepwise)
+  // 30% chance: second closest
+  // 10% chance: random from top 4
+  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+  float roll = dist(rng);
+
+  size_t idx = 0;
+  if (roll < 0.6f) {
+    idx = 0;  // Closest
+  } else if (roll < 0.9f && candidates.size() > 1) {
+    idx = 1;  // Second closest
+  } else if (candidates.size() > 2) {
+    // Random from top 4
+    size_t max_idx = std::min(static_cast<size_t>(4), candidates.size());
+    std::uniform_int_distribution<size_t> idx_dist(0, max_idx - 1);
+    idx = idx_dist(rng);
+  }
+
+  return candidates[idx];
 }
 
 // === GlobalMotif Support ===

@@ -566,7 +566,7 @@ std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blue
     section.track_mask = slot.enabled_tracks;
     section.entry_pattern = slot.entry_pattern;
 
-    // Phase 2: Transfer new fields from SectionSlot to Section
+    // Transfer SectionSlot fields to Section
     section.energy = slot.energy;
     section.base_velocity = slot.base_velocity;
     section.density_percent = slot.density_percent;

@@ -10,7 +10,7 @@
 // If these tests fail, JS binding code in js/index.ts must be updated.
 
 TEST(StructLayoutTest, SongConfigSize) {
-  // SongConfig size (added blueprint_id in Phase 4)
+  // SongConfig size
   // Size stays 52 as blueprint_id uses the reserved padding byte after drums_enabled
   EXPECT_EQ(sizeof(MidiSketchSongConfig), 52);
 }
@@ -32,7 +32,7 @@ TEST(StructLayoutTest, SongConfigLayout) {
   CHECK_OFFSET(form_id, 9);
   CHECK_OFFSET(vocal_attitude, 10);
   CHECK_OFFSET(drums_enabled, 11);
-  CHECK_OFFSET(blueprint_id, 12);  // Phase 4: Production Blueprint
+  CHECK_OFFSET(blueprint_id, 12);
 
   // Arpeggio settings (offset 13-17)
   CHECK_OFFSET(arpeggio_enabled, 13);

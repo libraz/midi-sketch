@@ -146,7 +146,7 @@ struct MotifData {
 };
 
 /// ============================================================================
-/// 5-Layer Architecture Types (Phase 1)
+/// 5-Layer Architecture Types
 /// ============================================================================
 
 /// @brief Motif constraint parameters for StylePreset.
@@ -269,26 +269,26 @@ struct SongConfig {
 /// @brief Input parameters for MIDI generation.
 struct GeneratorParams {
   /// Core parameters
-  StructurePattern structure;  ///< Song structure pattern (0-4)
-  Mood mood;                   ///< Mood/groove preset (0-15)
-  uint8_t chord_id;            ///< Chord progression ID (0-15)
-  Key key;                     ///< Output key
+  StructurePattern structure = StructurePattern::StandardPop;  ///< Song structure pattern (0-4)
+  Mood mood = Mood::StraightPop;  ///< Mood/groove preset (0-15)
+  uint8_t chord_id = 0;           ///< Chord progression ID (0-15)
+  Key key = Key::C;               ///< Output key
   uint8_t style_preset_id = 0; ///< Style preset ID (for metadata/regeneration)
   uint8_t blueprint_id = 0;    ///< Production blueprint ID (0 = Traditional, 255 = random)
   bool form_explicit = false;  ///< True if form was explicitly set (skip Blueprint section_flow)
 
-  /// Phase 2.6-2.7: Blueprint-derived generation control
+  /// Blueprint-derived generation control
   /// These are set by Generator from the resolved blueprint
   GenerationParadigm paradigm = GenerationParadigm::Traditional;  ///< Generation approach
   RiffPolicy riff_policy = RiffPolicy::Free;                       ///< Riff management policy
   bool drums_sync_vocal = false;  ///< Sync drum kicks/snares to vocal onsets
-  bool drums_enabled;          ///< Enable drums track
+  bool drums_enabled = true;   ///< Enable drums track
   bool skip_vocal = false;     ///< Skip vocal track generation (for BGM-first workflow)
   /// Note: Modulation is controlled via Generator::modulation_timing_ (set from SongConfig)
-  uint8_t vocal_low;           ///< Vocal range lower bound (MIDI note)
-  uint8_t vocal_high;          ///< Vocal range upper bound (MIDI note)
-  uint16_t bpm;                ///< Tempo (0 = use mood default)
-  uint32_t seed;               ///< Random seed (0 = auto)
+  uint8_t vocal_low = 60;      ///< Vocal range lower bound (MIDI note)
+  uint8_t vocal_high = 79;     ///< Vocal range upper bound (MIDI note)
+  uint16_t bpm = 0;            ///< Tempo (0 = use mood default)
+  uint32_t seed = 0;           ///< Random seed (0 = auto)
   uint16_t target_duration_seconds = 0;  ///< 0 = use structure pattern, >0 = auto-generate
 
   /// Composition style
@@ -315,7 +315,7 @@ struct GeneratorParams {
   float humanize_timing = 0.5f;      ///< Timing variation amount (0.0-1.0)
   float humanize_velocity = 0.5f;    ///< Velocity variation amount (0.0-1.0)
 
-  /// Phase 2: Vocal expression parameters
+  /// Vocal expression parameters
   VocalAttitude vocal_attitude = VocalAttitude::Clean;
   VocalStylePreset vocal_style = VocalStylePreset::Auto;  ///< Vocal style preset
   StyleMelodyParams melody_params = {};  ///< Default: 7 semitone leap, unison ok, 0.8 resolution, 0.2 tension

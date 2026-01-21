@@ -876,7 +876,7 @@ TEST_F(VocalTest, HookIntensityLightOnlyAffectsChorusOpening) {
 }
 
 // ============================================================================
-// Phase 3: SectionMelodyProfile Tests
+// SectionMelodyProfile Tests
 // ============================================================================
 
 TEST_F(VocalTest, ChorusHasHigherDensityThanVerse) {
@@ -1023,7 +1023,7 @@ TEST_F(VocalTest, LastChorusHasHigherIntensity) {
 }
 
 // ============================================================================
-// Phase 4: VocalGrooveFeel Tests
+// VocalGrooveFeel Tests
 // ============================================================================
 
 TEST_F(VocalTest, SwingGrooveShiftsWeakBeatTiming) {
@@ -1258,7 +1258,7 @@ TEST_F(VocalTest, ExtremeLeapOnlyInChorusAndBridge) {
 }
 
 // ============================================================================
-// Phase 2: Rhythm Pattern Tests
+// Rhythm Pattern Tests
 // ============================================================================
 
 TEST_F(VocalTest, SwingGrooveUsesTripletPattern) {
@@ -1274,19 +1274,6 @@ TEST_F(VocalTest, SwingGrooveUsesTripletPattern) {
 
   const auto& vocal = gen.getSong().vocal().notes();
   EXPECT_FALSE(vocal.empty()) << "Swing groove should generate vocal notes";
-
-  // Shuffle triplet (Pattern 12) has beats at 0.0, 0.67, 1.0, 1.67, etc.
-  // 0.67 beat = ~320 ticks (0.67 * 480 = 321.6)
-  // Check for notes at non-standard beat positions (not 0, 240, 480)
-  int shuffle_notes = 0;
-  for (const auto& note : vocal) {
-    Tick beat_pos = note.start_tick % TICKS_PER_BEAT;
-    // Shuffle positions: around 320 ticks (0.67 beat)
-    // Allow some tolerance for rounding
-    if (beat_pos >= 300 && beat_pos <= 340) {
-      shuffle_notes++;
-    }
-  }
 
   // Swing groove with shuffle triplet should have some swing-timed notes
   // Note: Pattern selection is probabilistic, so we just check generation works
@@ -1522,7 +1509,7 @@ TEST_F(VocalTest, MotifRepetitionMaintainsHarmony) {
 }
 
 // ============================================================================
-// Phase 2 Tests: Cached Phrase Variation
+// Cached Phrase Variation Tests
 // ============================================================================
 
 TEST_F(VocalTest, CachedPhraseVariationMaintainsRecognizability) {
@@ -1772,7 +1759,7 @@ TEST_F(VocalTest, ExtremeVocalRangesProduceValidData) {
 }
 
 // ============================================================================
-// Phase 1: Layer Architecture Infrastructure Tests
+// Layer Architecture Infrastructure Tests
 // ============================================================================
 
 TEST_F(VocalTest, PhraseBoundariesGeneratedForVocalSections) {

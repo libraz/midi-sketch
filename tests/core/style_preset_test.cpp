@@ -417,7 +417,7 @@ TEST(GenerateFromConfigTest, CustomBpm) {
 }
 
 // ============================================================================
-// Phase 2: VocalAttitude and Density Tests
+// VocalAttitude and Density Tests
 // ============================================================================
 
 TEST(VocalAttitudeTest, VocalAttitudesGenerateNotes) {
@@ -510,7 +510,7 @@ TEST(VocalAttitudeTest, MinimalGroovePopAcceptsExpressive) {
 }
 
 // ============================================================================
-// Phase 2: Backing Density and Advanced Features Tests
+// Backing Density and Advanced Features Tests
 // ============================================================================
 
 TEST(BackingDensityTest, SectionsHaveBackingDensity) {
@@ -576,7 +576,7 @@ TEST(AllowUnisonRepeatTest, MinimalStyleAllowsUnisonRepeat) {
 }
 
 // ============================================================================
-// Phase 3: VocalAttitude Raw and Rock Shout Tests
+// VocalAttitude Raw and Rock Shout Tests
 // ============================================================================
 
 TEST(RockShoutStyleTest, PresetExists) {
