@@ -80,7 +80,7 @@ TEST(AuxChorusBehaviorTest, ChorusAuxUsesChordTones) {
     ctx.chord_degree = 0;
     ctx.key_offset = 0;
     ctx.base_velocity = 100;
-    ctx.main_tessitura = {72, 84, 78};  // High vocal tessitura (C5-C6)
+    ctx.main_tessitura = {72, 84, 78, 67, 89};  // High vocal tessitura (C5-C6)
     ctx.main_melody = &vocal_melody;
 
     // Configure as EmotionalPad (what Chorus should use)
@@ -150,7 +150,7 @@ TEST(AuxChorusBehaviorTest, ChorusAuxInLowerRegisterThanVocal) {
     ctx.chord_degree = 0;
     ctx.key_offset = 0;
     ctx.base_velocity = 100;
-    ctx.main_tessitura = {72, 84, 78};
+    ctx.main_tessitura = {72, 84, 78, 67, 89};
     ctx.main_melody = &vocal_melody;
 
     AuxConfig config;
@@ -203,7 +203,7 @@ TEST(AuxChorusBehaviorTest, ChorusAuxNoExactUnisonWithVocal) {
     ctx.chord_degree = 0;
     ctx.key_offset = 0;
     ctx.base_velocity = 100;
-    ctx.main_tessitura = {72, 84, 78};
+    ctx.main_tessitura = {72, 84, 78, 67, 89};
     ctx.main_melody = &vocal_melody;
 
     // Using EmotionalPad (correct behavior)
@@ -264,7 +264,7 @@ TEST(AuxChorusBehaviorTest, UnisonFunctionCreatesExactMatches) {
   ctx.chord_degree = 0;
   ctx.key_offset = 0;
   ctx.base_velocity = 100;
-  ctx.main_tessitura = {72, 84, 78};
+  ctx.main_tessitura = {72, 84, 78, 67, 89};
   ctx.main_melody = &vocal_melody;
 
   // Using Unison (what we want to AVOID in Chorus)
@@ -321,7 +321,7 @@ TEST(AuxChorusBehaviorTest, EmotionalPadProducesSustainedNotes) {
     ctx.chord_degree = 0;
     ctx.key_offset = 0;
     ctx.base_velocity = 100;
-    ctx.main_tessitura = {72, 84, 78};
+    ctx.main_tessitura = {72, 84, 78, 67, 89};
     ctx.main_melody = &vocal_melody;
 
     AuxConfig config;

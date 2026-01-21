@@ -134,13 +134,13 @@ class AuxTrackGenerator {
  public:
   /// Context for aux generation.
   struct AuxContext {
-    Tick section_start = 0;                        ///< Absolute start tick of the section
-    Tick section_end = 0;                          ///< Absolute end tick of the section
-    int8_t chord_degree = 0;                       ///< Starting chord degree (0-based scale degree)
-    int key_offset = 0;                            ///< Key offset from C major (for transposition)
-    uint8_t base_velocity = 100;                   ///< Base MIDI velocity for notes
-    TessituraRange main_tessitura = {60, 72, 66};  ///< Main melody's comfortable range
-    const std::vector<NoteEvent>* main_melody = nullptr;  ///< Reference to main melody notes
+    Tick section_start = 0;       ///< Absolute start tick of the section
+    Tick section_end = 0;         ///< Absolute end tick of the section
+    int8_t chord_degree = 0;      ///< Starting chord degree (0-based scale degree)
+    int key_offset = 0;           ///< Key offset from C major (for transposition)
+    uint8_t base_velocity = 100;  ///< Base MIDI velocity for notes
+    TessituraRange main_tessitura = {60, 72, 66, 55, 77};  ///< Main melody's comfortable range
+    const std::vector<NoteEvent>* main_melody = nullptr;   ///< Reference to main melody notes
     /// Phrase boundaries from vocal generation (for breath coordination)
     const std::vector<PhraseBoundary>* phrase_boundaries = nullptr;
     SectionType section_type =

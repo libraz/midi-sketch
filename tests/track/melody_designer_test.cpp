@@ -25,11 +25,11 @@ MelodyDesigner::SectionContext createTestContext() {
   ctx.section_start = 0;
   ctx.section_end = TICKS_PER_BAR * 4;  // 4 bars
   ctx.section_bars = 4;
-  ctx.chord_degree = 0;                        // I chord
-  ctx.key_offset = 0;                          // C major
-  ctx.tessitura = TessituraRange{60, 72, 66};  // C4 to C5
-  ctx.vocal_low = 55;                          // G3
-  ctx.vocal_high = 79;                         // G5
+  ctx.chord_degree = 0;                                // I chord
+  ctx.key_offset = 0;                                  // C major
+  ctx.tessitura = TessituraRange{60, 72, 66, 55, 77};  // C4 to C5
+  ctx.vocal_low = 55;                                  // G3
+  ctx.vocal_high = 79;                                 // G5
   return ctx;
 }
 
@@ -122,7 +122,7 @@ TEST(MelodyDesignerTest, ApplyDirectionInertiaInfluencesStep) {
 
 TEST(MelodyDesignerTest, EffectivePlateauRatioBasic) {
   const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
-  TessituraRange t{60, 72, 66};
+  TessituraRange t{60, 72, 66, 55, 77};
 
   float ratio = MelodyDesigner::getEffectivePlateauRatio(tmpl, 66, t);
   EXPECT_FLOAT_EQ(ratio, tmpl.plateau_ratio);
@@ -130,7 +130,7 @@ TEST(MelodyDesignerTest, EffectivePlateauRatioBasic) {
 
 TEST(MelodyDesignerTest, EffectivePlateauRatioHighRegister) {
   const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
-  TessituraRange t{60, 72, 66};
+  TessituraRange t{60, 72, 66, 55, 77};
 
   float ratio = MelodyDesigner::getEffectivePlateauRatio(tmpl, 75, t);
   // Should be boosted above tessitura
@@ -139,7 +139,7 @@ TEST(MelodyDesignerTest, EffectivePlateauRatioHighRegister) {
 
 TEST(MelodyDesignerTest, EffectivePlateauRatioCappedAt90) {
   const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
-  TessituraRange t{60, 72, 66};
+  TessituraRange t{60, 72, 66, 55, 77};
 
   float ratio = MelodyDesigner::getEffectivePlateauRatio(tmpl, 80, t);
   EXPECT_LE(ratio, 0.9f);
@@ -484,7 +484,7 @@ TEST(MelodyDesignerTest, HookDoesNotCreateOverlappingNotes) {
   ctx.section_bars = 8;
   ctx.chord_degree = 0;
   ctx.key_offset = 0;
-  ctx.tessitura = TessituraRange{60, 72, 66};
+  ctx.tessitura = TessituraRange{60, 72, 66, 55, 77};
   ctx.vocal_low = 57;
   ctx.vocal_high = 79;
   ctx.density_modifier = 1.0f;
@@ -529,7 +529,7 @@ TEST(MelodyDesignerTest, NoSameTickCollisionAcrossTemplates) {
     ctx.section_bars = 8;
     ctx.chord_degree = 0;
     ctx.key_offset = 0;
-    ctx.tessitura = TessituraRange{60, 72, 66};
+    ctx.tessitura = TessituraRange{60, 72, 66, 55, 77};
     ctx.vocal_low = 57;
     ctx.vocal_high = 79;
     ctx.density_modifier = 1.0f;
@@ -583,7 +583,7 @@ TEST(MelodyDesignerTest, PhraseGapsAreAtMostHalfBar) {
     ctx.section_bars = 8;
     ctx.chord_degree = 0;
     ctx.key_offset = 0;
-    ctx.tessitura = TessituraRange{60, 72, 66};
+    ctx.tessitura = TessituraRange{60, 72, 66, 55, 77};
     ctx.vocal_low = 55;
     ctx.vocal_high = 79;
     ctx.mood = Mood::StraightPop;
@@ -630,7 +630,7 @@ TEST(MelodyDesignerTest, PhraseGapsProvideBreathingRoom) {
   ctx.section_bars = 8;
   ctx.chord_degree = 0;
   ctx.key_offset = 0;
-  ctx.tessitura = TessituraRange{60, 72, 66};
+  ctx.tessitura = TessituraRange{60, 72, 66, 55, 77};
   ctx.vocal_low = 55;
   ctx.vocal_high = 79;
   ctx.mood = Mood::StraightPop;
@@ -702,7 +702,7 @@ TEST(MelodyDesignerTest, DownbeatNotesAreChordTones) {
       ctx.section_bars = 8;
       ctx.chord_degree = 0;  // I chord
       ctx.key_offset = 0;
-      ctx.tessitura = TessituraRange{60, 72, 66};
+      ctx.tessitura = TessituraRange{60, 72, 66, 55, 77};
       ctx.vocal_low = 55;
       ctx.vocal_high = 79;
       ctx.mood = Mood::StraightPop;
@@ -767,7 +767,7 @@ TEST(MelodyDesignerTest, DownbeatChordToneAcrossSectionTypes) {
       ctx.section_bars = 8;
       ctx.chord_degree = 0;
       ctx.key_offset = 0;
-      ctx.tessitura = TessituraRange{60, 72, 66};
+      ctx.tessitura = TessituraRange{60, 72, 66, 55, 77};
       ctx.vocal_low = 55;
       ctx.vocal_high = 79;
       ctx.mood = Mood::StraightPop;
@@ -829,7 +829,7 @@ TEST(MelodyDesignerTest, NonDownbeatAllowsNonChordTones) {
     ctx.section_bars = 8;
     ctx.chord_degree = 0;
     ctx.key_offset = 0;
-    ctx.tessitura = TessituraRange{60, 72, 66};
+    ctx.tessitura = TessituraRange{60, 72, 66, 55, 77};
     ctx.vocal_low = 55;
     ctx.vocal_high = 79;
     ctx.mood = Mood::StraightPop;

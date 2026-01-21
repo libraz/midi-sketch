@@ -92,7 +92,7 @@ std::vector<int> getAvailableTensionPitchClasses(int8_t degree) {
   // Available tensions by degree (in semitones from root):
   // I (0): 9th (+2), 13th (+9) - avoid 11th (#4 clashes with 3rd)
   // ii (1): 9th (+2), 11th (+5), 13th (+9)
-  // iii (2): 11th (+5) - avoid 9th (b9), avoid 13th (b13)
+  // iii (2): 11th (+5), b13th (+8) - avoid 9th (b9)
   // IV (3): 9th (+2), #11th (+6), 13th (+9)
   // V (4): 9th (+2), 13th (+9) - 11th only if sus4
   // vi (5): 9th (+2), 11th (+5) - avoid 13th (b13)
@@ -110,6 +110,8 @@ std::vector<int> getAvailableTensionPitchClasses(int8_t degree) {
       break;
     case 2:                                  // iii minor
       result.push_back((root_pc + 5) % 12);  // 11th
+      result.push_back((root_pc + 8) %
+                       12);  // b13th (natural 13th from scale = minor 6th from root)
       break;
     case 3:                                  // IV major
       result.push_back((root_pc + 2) % 12);  // 9th
@@ -211,7 +213,9 @@ int nearestChordToneWithinInterval(int target_pitch, int prev_pitch, int8_t chor
         if (candidate >= tessitura->low && candidate <= tessitura->high) {
           score += 15;  // Bonus for being in tessitura
         }
-        if (isInPassaggio(static_cast<uint8_t>(candidate))) {
+        // Use dynamic passaggio calculation based on vocal range
+        if (isInPassaggioRange(static_cast<uint8_t>(candidate), tessitura->vocal_low,
+                               tessitura->vocal_high)) {
           score -= 5;
         }
       }

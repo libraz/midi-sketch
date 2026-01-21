@@ -405,18 +405,25 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
   return selected;
 }
 
-/// Select pattern based on RiffPolicy, using cache for Locked/Evolving modes.
+// ============================================================================
+// RiffPolicy Pattern Selection (Generic Template)
+// ============================================================================
+
+/// Core implementation of pattern selection with RiffPolicy support.
+/// Extracts common logic for Locked/Evolving/Free mode handling.
+/// @tparam PatternSelector Callable returning BassPattern (invoked for new selection)
 /// @param cache Riff cache to store/retrieve cached pattern
-/// @param section Current section info
 /// @param sec_idx Current section index
 /// @param params Generator parameters (contains riff_policy)
 /// @param rng Random number generator
+/// @param selector Callable that returns a new pattern when selection is needed
 /// @return Selected bass pattern
-BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section, size_t sec_idx,
-                                    const GeneratorParams& params, std::mt19937& rng) {
+template <typename PatternSelector>
+BassPattern selectPatternWithPolicyCore(BassRiffCache& cache, size_t sec_idx,
+                                        const GeneratorParams& params, std::mt19937& rng,
+                                        PatternSelector&& selector) {
   BassPattern pattern;
 
-  // Check RiffPolicy
   RiffPolicy policy = params.riff_policy;
 
   // Handle Locked variants (LockedContour, LockedPitch, LockedAll) as same behavior
@@ -431,9 +438,7 @@ BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section
     std::uniform_real_distribution<float> evolve_dist(0.0f, 1.0f);
     if (sec_idx % 2 == 0 && evolve_dist(rng) < 0.3f) {
       // Allow evolution - select new pattern
-      pattern = selectPattern(section.type, params.drums_enabled, params.mood,
-                              section.backing_density, rng);
-      // Update cache with evolved pattern
+      pattern = selector();
       cache.pattern = pattern;
     } else {
       // Keep using cached pattern
@@ -441,8 +446,7 @@ BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section
     }
   } else {
     // Free: select pattern normally (per-section)
-    pattern = selectPattern(section.type, params.drums_enabled, params.mood,
-                            section.backing_density, rng);
+    pattern = selector();
   }
 
   // Cache the first valid pattern for Locked/Evolving modes
@@ -452,6 +456,21 @@ BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section
   }
 
   return pattern;
+}
+
+/// Select pattern based on RiffPolicy, using cache for Locked/Evolving modes.
+/// @param cache Riff cache to store/retrieve cached pattern
+/// @param section Current section info
+/// @param sec_idx Current section index
+/// @param params Generator parameters (contains riff_policy)
+/// @param rng Random number generator
+/// @return Selected bass pattern
+BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section, size_t sec_idx,
+                                    const GeneratorParams& params, std::mt19937& rng) {
+  return selectPatternWithPolicyCore(cache, sec_idx, params, rng, [&]() {
+    return selectPattern(section.type, params.drums_enabled, params.mood, section.backing_density,
+                         rng);
+  });
 }
 
 // Helper to add a bass note with safety check against vocal
@@ -1181,40 +1200,9 @@ BassPattern selectPatternForVocalDensity(float vocal_density, SectionType sectio
 BassPattern selectPatternWithPolicyForVocal(BassRiffCache& cache, const Section& section,
                                             size_t sec_idx, const GeneratorParams& params,
                                             float vocal_density, std::mt19937& rng) {
-  BassPattern pattern;
-
-  // Check RiffPolicy
-  RiffPolicy policy = params.riff_policy;
-
-  // Handle Locked variants as same behavior
-  bool is_locked = (policy == RiffPolicy::LockedContour || policy == RiffPolicy::LockedPitch ||
-                    policy == RiffPolicy::LockedAll);
-
-  if (is_locked && cache.cached) {
-    // Locked: always use cached pattern
-    pattern = cache.pattern;
-  } else if (policy == RiffPolicy::Evolving && cache.cached) {
-    // Evolving: 30% chance to select new pattern every 2 sections
-    std::uniform_real_distribution<float> evolve_dist(0.0f, 1.0f);
-    if (sec_idx % 2 == 0 && evolve_dist(rng) < 0.3f) {
-      // Allow evolution - select new pattern based on vocal density
-      pattern = selectPatternForVocalDensity(vocal_density, section.type, params.mood, rng);
-      cache.pattern = pattern;
-    } else {
-      pattern = cache.pattern;
-    }
-  } else {
-    // Free: select pattern based on vocal density
-    pattern = selectPatternForVocalDensity(vocal_density, section.type, params.mood, rng);
-  }
-
-  // Cache the first valid pattern
-  if (!cache.cached) {
-    cache.pattern = pattern;
-    cache.cached = true;
-  }
-
-  return pattern;
+  return selectPatternWithPolicyCore(cache, sec_idx, params, rng, [&]() {
+    return selectPatternForVocalDensity(vocal_density, section.type, params.mood, rng);
+  });
 }
 
 // Helper: motion type to string for logging

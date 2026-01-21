@@ -22,6 +22,8 @@ TessituraRange calculateTessitura(uint8_t vocal_low, uint8_t vocal_high) {
   t.low = static_cast<uint8_t>(vocal_low + margin);
   t.high = static_cast<uint8_t>(vocal_high - margin);
   t.center = static_cast<uint8_t>((t.low + t.high) / 2);
+  t.vocal_low = vocal_low;
+  t.vocal_high = vocal_high;
 
   // Ensure valid range
   if (t.low >= t.high) {
@@ -38,7 +40,7 @@ bool isInTessitura(uint8_t pitch, const TessituraRange& tessitura) {
 }
 
 float getComfortScore(uint8_t pitch, const TessituraRange& tessitura, uint8_t vocal_low,
-                      uint8_t /* vocal_high */) {
+                      uint8_t vocal_high) {
   // Perfect score for tessitura center
   if (pitch == tessitura.center) return 1.0f;
 
@@ -51,8 +53,8 @@ float getComfortScore(uint8_t pitch, const TessituraRange& tessitura, uint8_t vo
     return 0.8f + 0.2f * (1.0f - static_cast<float>(dist_from_center) / tessitura_half);
   }
 
-  // Reduced score for passaggio
-  if (isInPassaggio(pitch)) {
+  // Reduced score for passaggio (dynamically calculated based on voice range)
+  if (isInPassaggioRange(pitch, vocal_low, vocal_high)) {
     return 0.4f;
   }
 
@@ -140,7 +142,7 @@ bool isDissonantInterval(int pc1, int pc2) {
   return interval == 1 || interval == 6;
 }
 
-bool isDissonantIntervalWithContext(int pc1, int pc2, int8_t chord_degree) {
+bool isDissonantIntervalWithContext(int pc1, int pc2, int8_t chord_degree, bool simultaneous) {
   int interval = std::abs(pc1 - pc2);
   if (interval > 6) interval = 12 - interval;
 
@@ -149,10 +151,10 @@ bool isDissonantIntervalWithContext(int pc1, int pc2, int8_t chord_degree) {
     return true;
   }
 
-  // Major 2nd (2) is dissonant when tracks overlap
-  // While acceptable as passing tone or tension within a chord,
-  // it sounds harsh when Chord and Vocal play simultaneously
-  if (interval == 2) {
+  // Major 2nd (2) is dissonant only for simultaneous (vertical) intervals.
+  // In melodic (horizontal) context, it's a natural scale step and acceptable.
+  // When tracks play at the same time, M2 creates audible beating.
+  if (interval == 2 && simultaneous) {
     return true;
   }
 

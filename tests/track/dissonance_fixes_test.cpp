@@ -70,7 +70,7 @@ class MotifCounterChordAwareTest : public ::testing::Test {
     ctx_.chord_degree = 0;  // Section starts on C, but should NOT be used for all notes
     ctx_.key_offset = 0;
     ctx_.base_velocity = 100;
-    ctx_.main_tessitura = {60, 72, 66};
+    ctx_.main_tessitura = {60, 72, 66, 55, 77};
     ctx_.main_melody = &vocal_track_.notes();
     ctx_.section_type = SectionType::A;
   }

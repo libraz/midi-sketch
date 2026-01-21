@@ -24,7 +24,7 @@ AuxTrackGenerator::AuxContext createTestContext() {
   ctx.chord_degree = 0;                 // I chord
   ctx.key_offset = 0;                   // C major
   ctx.base_velocity = 100;
-  ctx.main_tessitura = {60, 72, 66};  // C4 to C5
+  ctx.main_tessitura = {60, 72, 66, 55, 77};  // C4 to C5
   ctx.main_melody = nullptr;
   return ctx;
 }
@@ -773,7 +773,7 @@ TEST(AuxTrackTest, MotifCounterUsesSeparateRegister) {
     current += midisketch::TICKS_PER_BEAT;
   }
   ctx.main_melody = &high_melody;
-  ctx.main_tessitura = {72, 84, 78};
+  ctx.main_tessitura = {72, 84, 78, 67, 89};
 
   midisketch::HarmonyContext harmony;
   std::mt19937 rng(42);

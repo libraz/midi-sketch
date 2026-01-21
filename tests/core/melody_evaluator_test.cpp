@@ -275,7 +275,7 @@ MelodyDesigner::SectionContext createTestSectionContext(SectionType type, Tick s
   ctx.section_bars = bars;
   ctx.chord_degree = 0;
   ctx.key_offset = 0;
-  ctx.tessitura = {60, 79, 69};  // C4-G5, center ~A4
+  ctx.tessitura = {60, 79, 69, 60, 79};  // C4-G5, center ~A4
   ctx.vocal_low = 60;
   ctx.vocal_high = 79;
   ctx.density_modifier = 1.0f;

@@ -185,7 +185,7 @@ TEST(ChordUtilsTest, NearestChordToneWithinIntervalNoPrev) {
 }
 
 TEST(ChordUtilsTest, NearestChordToneWithinIntervalWithTessitura) {
-  TessituraRange t{60, 72, 66};
+  TessituraRange t{60, 72, 66, 55, 77};
 
   // Target G4 (67), prev E4 (64), max interval 7, I chord
   // Both E4 and G4 are chord tones and within tessitura

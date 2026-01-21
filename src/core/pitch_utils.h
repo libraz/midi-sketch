@@ -197,9 +197,11 @@ inline uint8_t transposePitch(uint8_t pitch, Key key) {
 
 /// @brief Tessitura: The comfortable singing range within full vocal range.
 struct TessituraRange {
-  uint8_t low;     ///< Lower bound of comfortable range
-  uint8_t high;    ///< Upper bound of comfortable range
-  uint8_t center;  ///< Center of tessitura (optimal pitch)
+  uint8_t low;         ///< Lower bound of comfortable range
+  uint8_t high;        ///< Upper bound of comfortable range
+  uint8_t center;      ///< Center of tessitura (optimal pitch)
+  uint8_t vocal_low;   ///< Full vocal range lower bound (for passaggio calculation)
+  uint8_t vocal_high;  ///< Full vocal range upper bound (for passaggio calculation)
 };
 
 /**
@@ -282,14 +284,18 @@ bool isDissonantInterval(int pc1, int pc2);
 /**
  * @brief Check for dissonance with chord context awareness.
  *
- * Tritone is allowed on V chord (dominant function).
+ * - Minor 2nd (1): always dissonant (harsh beating)
+ * - Major 2nd (2): dissonant only for simultaneous (vertical) intervals
+ * - Tritone (6): allowed on V chord (dominant function) and vii° chord
  *
  * @param pc1 First pitch class (0-11)
  * @param pc2 Second pitch class (0-11)
  * @param chord_degree Current chord's scale degree (0=I, 4=V, etc.)
+ * @param simultaneous true for vertical (same-time) intervals, false for melodic
  * @return true if interval is dissonant in this harmonic context
  */
-bool isDissonantIntervalWithContext(int pc1, int pc2, int8_t chord_degree);
+bool isDissonantIntervalWithContext(int pc1, int pc2, int8_t chord_degree,
+                                    bool simultaneous = true);
 
 /**
  * @brief Check if an actual semitone interval is dissonant (Pop theory).
