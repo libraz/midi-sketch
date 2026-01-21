@@ -53,6 +53,7 @@ struct ProductionBlueprint {
   RiffPolicy riff_policy;      ///< How riffs are managed across sections
 
   bool drums_sync_vocal;       ///< Sync drum kicks/snares to vocal onsets
+  bool drums_required;         ///< Drums are required for this blueprint to work properly
 
   bool intro_kick_enabled;     ///< Enable kick in intro
   bool intro_bass_enabled;     ///< Enable bass in intro

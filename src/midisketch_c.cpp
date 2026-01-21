@@ -515,6 +515,11 @@ uint8_t midisketch_blueprint_weight(uint8_t id) {
   return bp.weight;
 }
 
+uint8_t midisketch_blueprint_drums_required(uint8_t id) {
+  const auto& bp = midisketch::getProductionBlueprint(id);
+  return bp.drums_required ? 1 : 0;
+}
+
 uint8_t midisketch_get_resolved_blueprint_id(MidiSketchHandle handle) {
   if (!handle) return 255;
   auto* sketch = static_cast<midisketch::MidiSketch*>(handle);

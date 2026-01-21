@@ -403,6 +403,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
     nullptr, 0,  // Use existing StructurePattern
     RiffPolicy::Free,
     false,  // drums_sync_vocal
+    false,  // drums_required
     true,   // intro_kick
     true,   // intro_bass
   },
@@ -416,6 +417,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
     static_cast<uint8_t>(sizeof(RHYTHMLOCK_FLOW) / sizeof(RHYTHMLOCK_FLOW[0])),
     RiffPolicy::Locked,
     true,   // drums_sync_vocal
+    true,   // drums_required (RhythmSync needs drums)
     false,  // intro_kick (no kick in intro)
     false,  // intro_bass (no bass in intro)
   },
@@ -429,6 +431,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
     static_cast<uint8_t>(sizeof(STORYPOP_FLOW) / sizeof(STORYPOP_FLOW[0])),
     RiffPolicy::Evolving,
     false,  // drums_sync_vocal
+    false,  // drums_required
     true,   // intro_kick
     true,   // intro_bass
   },
@@ -442,6 +445,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
     static_cast<uint8_t>(sizeof(BALLAD_FLOW) / sizeof(BALLAD_FLOW[0])),
     RiffPolicy::Free,
     false,  // drums_sync_vocal
+    false,  // drums_required
     false,  // intro_kick
     false,  // intro_bass
   },
@@ -455,6 +459,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
     static_cast<uint8_t>(sizeof(IDOL_STANDARD_FLOW) / sizeof(IDOL_STANDARD_FLOW[0])),
     RiffPolicy::Evolving,
     false,  // drums_sync_vocal
+    false,  // drums_required
     true,   // intro_kick
     false,  // intro_bass
   },
@@ -468,6 +473,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
     static_cast<uint8_t>(sizeof(IDOL_HYPER_FLOW) / sizeof(IDOL_HYPER_FLOW[0])),
     RiffPolicy::Locked,
     true,   // drums_sync_vocal
+    true,   // drums_required (RhythmSync needs drums)
     true,   // intro_kick
     true,   // intro_bass
   },
@@ -481,6 +487,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
     static_cast<uint8_t>(sizeof(IDOL_KAWAII_FLOW) / sizeof(IDOL_KAWAII_FLOW[0])),
     RiffPolicy::Locked,
     true,   // drums_sync_vocal
+    true,   // drums_required (drums_sync_vocal needs drums)
     false,  // intro_kick
     false,  // intro_bass
   },
@@ -494,6 +501,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
     static_cast<uint8_t>(sizeof(IDOL_COOLPOP_FLOW) / sizeof(IDOL_COOLPOP_FLOW[0])),
     RiffPolicy::Locked,
     false,  // drums_sync_vocal
+    true,   // drums_required (four-on-floor needs drums)
     true,   // intro_kick
     true,   // intro_bass
   },
@@ -507,6 +515,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
     static_cast<uint8_t>(sizeof(IDOL_EMO_FLOW) / sizeof(IDOL_EMO_FLOW[0])),
     RiffPolicy::Locked,
     false,  // drums_sync_vocal
+    false,  // drums_required
     false,  // intro_kick
     false,  // intro_bass
   },

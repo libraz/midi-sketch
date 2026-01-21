@@ -138,6 +138,11 @@ void Generator::generate(const GeneratorParams& params) {
   params_.riff_policy = blueprint_->riff_policy;
   params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
 
+  // Force drums on if blueprint requires it
+  if (blueprint_->drums_required) {
+    params_.drums_enabled = true;
+  }
+
   // Configure motif parameters based on paradigm
   // RhythmSync (Orangestar-style): dense, continuous riff patterns
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
@@ -309,6 +314,11 @@ void Generator::generateVocal(const GeneratorParams& params) {
   params_.paradigm = blueprint_->paradigm;
   params_.riff_policy = blueprint_->riff_policy;
   params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
+
+  // Force drums on if blueprint requires it
+  if (blueprint_->drums_required) {
+    params_.drums_enabled = true;
+  }
 
   // Configure motif parameters based on paradigm
   // RhythmSync (Orangestar-style): dense, continuous riff patterns
@@ -680,6 +690,11 @@ void Generator::setVocalNotes(const GeneratorParams& params,
   params_.paradigm = blueprint_->paradigm;
   params_.riff_policy = blueprint_->riff_policy;
   params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
+
+  // Force drums on if blueprint requires it
+  if (blueprint_->drums_required) {
+    params_.drums_enabled = true;
+  }
 
   // Configure motif parameters based on paradigm
   // RhythmSync (Orangestar-style): dense, continuous riff patterns

@@ -180,6 +180,9 @@ MidiSketchRiffPolicy midisketch_blueprint_riff_policy(uint8_t id);
 /** @brief Get blueprint weight (for random selection). @param id Blueprint ID @return Weight (0-100) */
 uint8_t midisketch_blueprint_weight(uint8_t id);
 
+/** @brief Check if blueprint requires drums. @param id Blueprint ID @return 1 if required, 0 otherwise */
+uint8_t midisketch_blueprint_drums_required(uint8_t id);
+
 /** @brief Get resolved blueprint ID after generation.
  *  @param handle MidiSketch handle
  *  @return Resolved blueprint ID (0-8), or 255 if not generated
