@@ -8,21 +8,13 @@
 #include <algorithm>
 #include <fstream>
 
+#include "core/pitch_utils.h"
+#include "core/timing_constants.h"
+#include "midi/midi2_format.h"
+#include "midi/track_config.h"
 #include "midi/ump.h"
 
 namespace midisketch {
-
-namespace {
-
-// ktmidi container header magic
-constexpr char kContainerMagic[] = "AAAAAAAAEEEEEEEE";
-constexpr size_t kContainerMagicLen = 16;
-
-// SMF2 Clip header magic
-constexpr char kClipMagic[] = "SMF2CLIP";
-constexpr size_t kClipMagicLen = 8;
-
-}  // namespace
 
 Midi2Writer::Midi2Writer() {}
 
@@ -58,7 +50,7 @@ void Midi2Writer::writeClipConfig(uint16_t ticksPerQuarter, uint16_t bpm) {
 
   // DCS(0) + Tempo (if bpm > 0)
   if (bpm > 0) {
-    uint32_t microsPerQuarter = 60000000 / bpm;
+    uint32_t microsPerQuarter = kMicrosecondsPerMinute / bpm;
     ump::writeDeltaClockstamp(data_, 0, 0);
     ump::writeTempo(data_, 0, microsPerQuarter);
   }
@@ -72,11 +64,7 @@ void Midi2Writer::writeClipConfig(uint16_t ticksPerQuarter, uint16_t bpm) {
   ump::writeStartOfClip(data_);
 }
 
-uint8_t Midi2Writer::transposePitch(uint8_t pitch, Key key) {
-  int offset = static_cast<int>(key);
-  int result = pitch + offset;
-  return static_cast<uint8_t>(std::clamp(result, 0, 127));
-}
+// transposePitch moved to core/pitch_utils.h
 
 void Midi2Writer::writeTrackData(const MidiTrack& track, uint8_t group, uint8_t channel,
                                  uint8_t program, Key key, Tick mod_tick, int8_t mod_amount) {
@@ -110,9 +98,15 @@ void Midi2Writer::writeTrackData(const MidiTrack& track, uint8_t group, uint8_t 
     events.push_back({note.start_tick + note.duration, 0x80, pitch, 0});
   }
 
-  // Sort events by time
-  std::sort(events.begin(), events.end(),
-            [](const Event& a, const Event& b) { return a.time < b.time; });
+  // Sort events by time, with note-off before note-on at same time.
+  // This ensures proper handling of overlapping notes with same pitch:
+  // when a note ends and another starts at the same tick, the old note
+  // is properly closed (note-off 0x80) before the new one starts (note-on 0x90).
+  std::sort(events.begin(), events.end(), [](const Event& a, const Event& b) {
+    if (a.time != b.time) return a.time < b.time;
+    // At same time: note-off (0x80) before note-on (0x90)
+    return a.type < b.type;
+  });
 
   // Write events with delta clockstamps
   Tick prevTime = 0;
@@ -141,7 +135,7 @@ void Midi2Writer::writeMarkerData(const MidiTrack& track, uint8_t group, uint16_
 
   // Write tempo
   if (bpm > 0) {
-    uint32_t microsPerQuarter = 60000000 / bpm;
+    uint32_t microsPerQuarter = kMicrosecondsPerMinute / bpm;
     ump::writeDeltaClockstamp(data_, group, 0);
     ump::writeTempo(data_, group, microsPerQuarter);
   }
@@ -199,22 +193,6 @@ void Midi2Writer::buildContainer(const Song& song, Key key, const std::string& m
 
   Tick mod_tick = song.modulationTick();
   int8_t mod_amount = song.modulationAmount();
-
-  // Channel and program assignments (matching SMF1 writer)
-  constexpr uint8_t VOCAL_CH = 0;
-  constexpr uint8_t VOCAL_PROG = 0;  // Piano
-  constexpr uint8_t CHORD_CH = 1;
-  constexpr uint8_t CHORD_PROG = 4;  // Electric Piano
-  constexpr uint8_t BASS_CH = 2;
-  constexpr uint8_t BASS_PROG = 33;  // Electric Bass
-  constexpr uint8_t MOTIF_CH = 3;
-  constexpr uint8_t MOTIF_PROG = 81;  // Synth Lead
-  constexpr uint8_t ARPEGGIO_CH = 4;
-  constexpr uint8_t ARPEGGIO_PROG = 81;  // Saw Lead
-  constexpr uint8_t AUX_CH = 5;
-  constexpr uint8_t AUX_PROG = 89;  // Pad 2 - Warm
-  constexpr uint8_t DRUMS_CH = 9;
-  constexpr uint8_t DRUMS_PROG = 0;
 
   // Helper to write a complete clip for a track
   auto writeTrackClip = [this](const MidiTrack& track, uint8_t channel, uint8_t program,

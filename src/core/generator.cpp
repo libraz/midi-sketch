@@ -45,6 +45,15 @@
 namespace midisketch {
 
 namespace {
+
+// ============================================================================
+// Density Progression Constants (Orangestar style)
+// ============================================================================
+constexpr float kDensityProgressionPerOccurrence = 0.15f;  // +15% density per section occurrence
+constexpr int kVelocityBoostPerOccurrence = 3;             // +3 velocity per occurrence
+constexpr int kMaxVelocityBoost = 10;                      // Maximum velocity boost cap
+constexpr int kMaxBaseVelocity = 100;                      // Maximum base velocity
+
 /// Apply density progression to sections for Orangestar style.
 /// "Peak is a temporal event" - density increases over time.
 void applyDensityProgressionToSections(std::vector<Section>& sections,
@@ -59,9 +68,9 @@ void applyDensityProgressionToSections(std::vector<Section>& sections,
   for (auto& section : sections) {
     int occurrence = occurrence_count[section.type]++;
 
-    // Increase density by 15% per occurrence (max 100%)
+    // Increase density per occurrence (max 100%)
     // 1st occurrence: 1.0x, 2nd: 1.15x, 3rd: 1.30x, etc.
-    float progression_factor = 1.0f + (occurrence * 0.15f);
+    float progression_factor = 1.0f + (occurrence * kDensityProgressionPerOccurrence);
 
     // Apply to density_percent
     uint8_t new_density =
@@ -69,10 +78,9 @@ void applyDensityProgressionToSections(std::vector<Section>& sections,
     section.density_percent = new_density;
 
     // Also boost base_velocity slightly for later occurrences
-    // Max increase: +10 velocity (for 3+ occurrences)
-    int velocity_boost = std::min(occurrence * 3, 10);
+    int velocity_boost = std::min(occurrence * kVelocityBoostPerOccurrence, kMaxVelocityBoost);
     section.base_velocity = static_cast<uint8_t>(
-        std::min(100, static_cast<int>(section.base_velocity) + velocity_boost));
+        std::min(kMaxBaseVelocity, static_cast<int>(section.base_velocity) + velocity_boost));
   }
 }
 }  // anonymous namespace
@@ -87,6 +95,113 @@ uint32_t Generator::resolveSeed(uint32_t seed) {
     return static_cast<uint32_t>(std::chrono::steady_clock::now().time_since_epoch().count());
   }
   return seed;
+}
+
+// ============================================================================
+// Initialization Helpers (reduce code duplication)
+// ============================================================================
+
+void Generator::initializeBlueprint(uint32_t seed) {
+  // Use separate RNG with derived seed to avoid disturbing main rng_ state
+  constexpr uint32_t kBlueprintMagic = 0x424C5052;  // "BLPR"
+  std::mt19937 blueprint_rng(seed ^ kBlueprintMagic);
+  resolved_blueprint_id_ = selectProductionBlueprint(blueprint_rng, params_.blueprint_id);
+  blueprint_ = &getProductionBlueprint(resolved_blueprint_id_);
+
+  // Copy blueprint settings to params for track generation
+  params_.paradigm = blueprint_->paradigm;
+  params_.riff_policy = blueprint_->riff_policy;
+  params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
+
+  // Force drums on if blueprint requires it
+  if (blueprint_->drums_required) {
+    params_.drums_enabled = true;
+  }
+}
+
+void Generator::configureRhythmSyncMotif() {
+  if (params_.paradigm == GenerationParadigm::RhythmSync) {
+    params_.motif.rhythm_density = MotifRhythmDensity::Driving;
+    params_.motif.note_count = 8;               // Dense eighth-note pattern
+    params_.motif.length = MotifLength::Bars1;  // 1-bar motif for continuous riff
+  }
+}
+
+void Generator::validateVocalRange() {
+  // Swap if low > high
+  if (params_.vocal_low > params_.vocal_high) {
+    std::swap(params_.vocal_low, params_.vocal_high);
+  }
+  // Clamp to valid MIDI range
+  params_.vocal_low = std::clamp(params_.vocal_low, VOCAL_LOW_MIN, VOCAL_HIGH_MAX);
+  params_.vocal_high = std::clamp(params_.vocal_high, VOCAL_LOW_MIN, VOCAL_HIGH_MAX);
+}
+
+void Generator::applyAccompanimentConfig(const AccompanimentConfig& config) {
+  params_.drums_enabled = config.drums_enabled;
+  params_.arpeggio_enabled = config.arpeggio_enabled;
+  params_.arpeggio.pattern = static_cast<ArpeggioPattern>(config.arpeggio_pattern);
+  params_.arpeggio.speed = static_cast<ArpeggioSpeed>(config.arpeggio_speed);
+  params_.arpeggio.octave_range = config.arpeggio_octave_range;
+  params_.arpeggio.gate = config.arpeggio_gate / 100.0f;
+  params_.arpeggio.sync_chord = config.arpeggio_sync_chord;
+  params_.chord_extension.enable_sus = config.chord_ext_sus;
+  params_.chord_extension.enable_7th = config.chord_ext_7th;
+  params_.chord_extension.enable_9th = config.chord_ext_9th;
+  params_.chord_extension.sus_probability = config.chord_ext_sus_prob / 100.0f;
+  params_.chord_extension.seventh_probability = config.chord_ext_7th_prob / 100.0f;
+  params_.chord_extension.ninth_probability = config.chord_ext_9th_prob / 100.0f;
+  params_.humanize = config.humanize;
+  params_.humanize_timing = config.humanize_timing / 100.0f;
+  params_.humanize_velocity = config.humanize_velocity / 100.0f;
+  se_enabled_ = config.se_enabled;
+  call_enabled_ = config.call_enabled;
+  call_density_ = static_cast<CallDensity>(config.call_density);
+  intro_chant_ = static_cast<IntroChant>(config.intro_chant);
+  mix_pattern_ = static_cast<MixPattern>(config.mix_pattern);
+  call_notes_enabled_ = config.call_notes_enabled;
+}
+
+void Generator::clearAccompanimentTracks() {
+  song_.clearTrack(TrackRole::Aux);
+  song_.clearTrack(TrackRole::Bass);
+  song_.clearTrack(TrackRole::Chord);
+  song_.clearTrack(TrackRole::Drums);
+  song_.clearTrack(TrackRole::Arpeggio);
+  song_.clearTrack(TrackRole::Motif);
+  song_.clearTrack(TrackRole::SE);
+
+  // Clear harmony context notes and re-register vocal
+  harmony_context_->clearNotes();
+  harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
+}
+
+std::vector<Section> Generator::buildSongStructure(uint16_t bpm) {
+  // Priority: target_duration > explicit form > Blueprint section_flow > StructurePattern
+  std::vector<Section> sections;
+  if (params_.target_duration_seconds > 0) {
+    sections = buildStructureForDuration(params_.target_duration_seconds, bpm, call_enabled_,
+                                         intro_chant_, mix_pattern_, params_.structure);
+  } else if (params_.form_explicit) {
+    // Explicit form setting takes precedence over Blueprint section_flow
+    sections = buildStructure(params_.structure);
+    if (call_enabled_) {
+      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
+    }
+  } else if (blueprint_->section_flow != nullptr && blueprint_->section_count > 0) {
+    // Use Blueprint's custom section flow
+    sections = buildStructureFromBlueprint(*blueprint_);
+    if (call_enabled_) {
+      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
+    }
+  } else {
+    // Use traditional StructurePattern
+    sections = buildStructure(params_.structure);
+    if (call_enabled_) {
+      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
+    }
+  }
+  return sections;
 }
 
 void Generator::generateFromConfig(const SongConfig& config) {
@@ -108,16 +223,8 @@ void Generator::generateFromConfig(const SongConfig& config) {
 
 void Generator::generate(const GeneratorParams& params) {
   params_ = params;
-
-  // Validate vocal range to prevent invalid output
-  if (params_.vocal_low > params_.vocal_high) {
-    std::swap(params_.vocal_low, params_.vocal_high);
-  }
-  // Clamp to valid MIDI range
-  params_.vocal_low =
-      std::clamp(params_.vocal_low, static_cast<uint8_t>(36), static_cast<uint8_t>(96));
-  params_.vocal_high =
-      std::clamp(params_.vocal_high, static_cast<uint8_t>(36), static_cast<uint8_t>(96));
+  warnings_.clear();  // Reset warnings for new generation
+  validateVocalRange();
 
   // Initialize seed
   uint32_t seed = resolveSeed(params.seed);
@@ -125,29 +232,9 @@ void Generator::generate(const GeneratorParams& params) {
   song_.setMelodySeed(seed);
   song_.setMotifSeed(seed);
 
-  // Select and resolve Blueprint
-  // Use separate RNG with derived seed to avoid disturbing main rng_ state
-  std::mt19937 blueprint_rng(seed ^ 0x424C5052);  // "BLPR" magic number
-  resolved_blueprint_id_ = selectProductionBlueprint(blueprint_rng, params_.blueprint_id);
-  blueprint_ = &getProductionBlueprint(resolved_blueprint_id_);
-
-  // Copy blueprint settings to params for track generation
-  params_.paradigm = blueprint_->paradigm;
-  params_.riff_policy = blueprint_->riff_policy;
-  params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
-
-  // Force drums on if blueprint requires it
-  if (blueprint_->drums_required) {
-    params_.drums_enabled = true;
-  }
-
-  // Configure motif parameters based on paradigm
-  // RhythmSync (Orangestar-style): dense, continuous riff patterns
-  if (params_.paradigm == GenerationParadigm::RhythmSync) {
-    params_.motif.rhythm_density = MotifRhythmDensity::Driving;
-    params_.motif.note_count = 8;               // Dense eighth-note pattern
-    params_.motif.length = MotifLength::Bars1;  // 1-bar motif for continuous riff
-  }
+  // Initialize blueprint and motif configuration
+  initializeBlueprint(seed);
+  configureRhythmSyncMotif();
 
   // Resolve BPM
   uint16_t bpm = params.bpm;
@@ -161,41 +248,22 @@ void Generator::generate(const GeneratorParams& params) {
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
     constexpr uint16_t kOrangestarBpmMin = 160;
     constexpr uint16_t kOrangestarBpmMax = 175;
+    uint16_t original_bpm = bpm;
     if (bpm < kOrangestarBpmMin) {
       bpm = kOrangestarBpmMin;
     } else if (bpm > kOrangestarBpmMax) {
       bpm = kOrangestarBpmMax;
     }
+    if (bpm != original_bpm) {
+      warnings_.push_back("BPM adjusted from " + std::to_string(original_bpm) + " to " +
+                          std::to_string(bpm) + " for RhythmSync paradigm (optimal: 160-175)");
+    }
   }
 
   song_.setBpm(bpm);
 
-  // Build song structure (dynamic duration, blueprint, or fixed pattern)
-  // Priority: target_duration > explicit form > Blueprint section_flow > StructurePattern
-  std::vector<Section> sections;
-  if (params.target_duration_seconds > 0) {
-    // Use the randomly selected structure pattern as base for duration scaling
-    sections = buildStructureForDuration(params.target_duration_seconds, bpm, call_enabled_,
-                                         intro_chant_, mix_pattern_, params.structure);
-  } else if (params_.form_explicit) {
-    // Explicit form setting takes precedence over Blueprint section_flow
-    sections = buildStructure(params.structure);
-    if (call_enabled_) {
-      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
-    }
-  } else if (blueprint_->section_flow != nullptr && blueprint_->section_count > 0) {
-    // Use Blueprint's custom section flow
-    sections = buildStructureFromBlueprint(*blueprint_);
-    if (call_enabled_) {
-      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
-    }
-  } else {
-    // Use traditional StructurePattern
-    sections = buildStructure(params.structure);
-    if (call_enabled_) {
-      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
-    }
-  }
+  // Build song structure
+  std::vector<Section> sections = buildSongStructure(bpm);
 
   // Apply density progression for Orangestar style
   // "Peak is a temporal event" - density increases over time
@@ -285,15 +353,8 @@ void Generator::generate(const GeneratorParams& params) {
  */
 void Generator::generateVocal(const GeneratorParams& params) {
   params_ = params;
-
-  // Validate vocal range
-  if (params_.vocal_low > params_.vocal_high) {
-    std::swap(params_.vocal_low, params_.vocal_high);
-  }
-  params_.vocal_low =
-      std::clamp(params_.vocal_low, static_cast<uint8_t>(36), static_cast<uint8_t>(96));
-  params_.vocal_high =
-      std::clamp(params_.vocal_high, static_cast<uint8_t>(36), static_cast<uint8_t>(96));
+  warnings_.clear();  // Reset warnings for new generation
+  validateVocalRange();
 
   // Initialize seed
   uint32_t seed = resolveSeed(params.seed);
@@ -301,29 +362,9 @@ void Generator::generateVocal(const GeneratorParams& params) {
   song_.setMelodySeed(seed);
   song_.setMotifSeed(seed);
 
-  // Select and resolve Blueprint
-  // Use separate RNG with derived seed to avoid disturbing main rng_ state
-  std::mt19937 blueprint_rng(seed ^ 0x424C5052);  // "BLPR" magic number
-  resolved_blueprint_id_ = selectProductionBlueprint(blueprint_rng, params_.blueprint_id);
-  blueprint_ = &getProductionBlueprint(resolved_blueprint_id_);
-
-  // Copy blueprint settings to params for track generation
-  params_.paradigm = blueprint_->paradigm;
-  params_.riff_policy = blueprint_->riff_policy;
-  params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
-
-  // Force drums on if blueprint requires it
-  if (blueprint_->drums_required) {
-    params_.drums_enabled = true;
-  }
-
-  // Configure motif parameters based on paradigm
-  // RhythmSync (Orangestar-style): dense, continuous riff patterns
-  if (params_.paradigm == GenerationParadigm::RhythmSync) {
-    params_.motif.rhythm_density = MotifRhythmDensity::Driving;
-    params_.motif.note_count = 8;               // Dense eighth-note pattern
-    params_.motif.length = MotifLength::Bars1;  // 1-bar motif for continuous riff
-  }
+  // Initialize blueprint and motif configuration
+  initializeBlueprint(seed);
+  configureRhythmSyncMotif();
 
   // Resolve BPM
   uint16_t bpm = params.bpm;
@@ -333,29 +374,7 @@ void Generator::generateVocal(const GeneratorParams& params) {
   song_.setBpm(bpm);
 
   // Build song structure
-  // Priority: target_duration > explicit form > Blueprint section_flow > StructurePattern
-  std::vector<Section> sections;
-  if (params.target_duration_seconds > 0) {
-    sections = buildStructureForDuration(params.target_duration_seconds, bpm, call_enabled_,
-                                         intro_chant_, mix_pattern_, params.structure);
-  } else if (params_.form_explicit) {
-    // Explicit form setting takes precedence over Blueprint section_flow
-    sections = buildStructure(params.structure);
-    if (call_enabled_) {
-      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
-    }
-  } else if (blueprint_->section_flow != nullptr && blueprint_->section_count > 0) {
-    // Use Blueprint's custom section flow
-    sections = buildStructureFromBlueprint(*blueprint_);
-    if (call_enabled_) {
-      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
-    }
-  } else {
-    sections = buildStructure(params.structure);
-    if (call_enabled_) {
-      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
-    }
-  }
+  std::vector<Section> sections = buildSongStructure(bpm);
   song_.setArrangement(Arrangement(sections));
 
   // Clear all tracks
@@ -448,18 +467,7 @@ void Generator::regenerateVocal(const VocalConfig& config) {
  * aux call-and-response patterns. All tracks coordinate to support melody.
  */
 void Generator::generateAccompanimentForVocal() {
-  // Clear all accompaniment tracks (keep vocal) to prevent accumulation
-  song_.clearTrack(TrackRole::Aux);
-  song_.clearTrack(TrackRole::Bass);
-  song_.clearTrack(TrackRole::Chord);
-  song_.clearTrack(TrackRole::Drums);
-  song_.clearTrack(TrackRole::Arpeggio);
-  song_.clearTrack(TrackRole::Motif);
-  song_.clearTrack(TrackRole::SE);
-
-  // Clear harmony context notes and re-register vocal
-  harmony_context_->clearNotes();
-  harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
+  clearAccompanimentTracks();
 
   // Analyze existing vocal to extract characteristics
   VocalAnalysis vocal_analysis = analyzeVocal(song_.vocal());
@@ -569,82 +577,24 @@ void Generator::regenerateAccompaniment(uint32_t new_seed) {
 }
 
 void Generator::regenerateAccompaniment(const AccompanimentConfig& config) {
-  // Apply config to params_
-  params_.drums_enabled = config.drums_enabled;
-  params_.arpeggio_enabled = config.arpeggio_enabled;
-  params_.arpeggio.pattern = static_cast<ArpeggioPattern>(config.arpeggio_pattern);
-  params_.arpeggio.speed = static_cast<ArpeggioSpeed>(config.arpeggio_speed);
-  params_.arpeggio.octave_range = config.arpeggio_octave_range;
-  params_.arpeggio.gate = config.arpeggio_gate / 100.0f;
-  params_.arpeggio.sync_chord = config.arpeggio_sync_chord;
-  params_.chord_extension.enable_sus = config.chord_ext_sus;
-  params_.chord_extension.enable_7th = config.chord_ext_7th;
-  params_.chord_extension.enable_9th = config.chord_ext_9th;
-  params_.chord_extension.sus_probability = config.chord_ext_sus_prob / 100.0f;
-  params_.chord_extension.seventh_probability = config.chord_ext_7th_prob / 100.0f;
-  params_.chord_extension.ninth_probability = config.chord_ext_9th_prob / 100.0f;
-  params_.humanize = config.humanize;
-  params_.humanize_timing = config.humanize_timing / 100.0f;
-  params_.humanize_velocity = config.humanize_velocity / 100.0f;
-  se_enabled_ = config.se_enabled;
-  call_enabled_ = config.call_enabled;
-  call_density_ = static_cast<CallDensity>(config.call_density);
-  intro_chant_ = static_cast<IntroChant>(config.intro_chant);
-  mix_pattern_ = static_cast<MixPattern>(config.mix_pattern);
-  call_notes_enabled_ = config.call_notes_enabled;
+  applyAccompanimentConfig(config);
 
   // Resolve seed (0 = auto-generate from clock)
   uint32_t seed = resolveSeed(config.seed);
   rng_.seed(seed);
 
-  // Clear all accompaniment tracks (keep vocal)
-  song_.clearTrack(TrackRole::Aux);
-  song_.clearTrack(TrackRole::Bass);
-  song_.clearTrack(TrackRole::Chord);
-  song_.clearTrack(TrackRole::Drums);
-  song_.clearTrack(TrackRole::Arpeggio);
-  song_.clearTrack(TrackRole::Motif);
-  song_.clearTrack(TrackRole::SE);
-
-  // Clear harmony context notes and re-register vocal
-  harmony_context_->clearNotes();
-  harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
-
-  // Regenerate accompaniment
+  clearAccompanimentTracks();
   generateAccompanimentForVocal();
 }
 
 void Generator::generateAccompanimentForVocal(const AccompanimentConfig& config) {
-  // Apply config to params_
-  params_.drums_enabled = config.drums_enabled;
-  params_.arpeggio_enabled = config.arpeggio_enabled;
-  params_.arpeggio.pattern = static_cast<ArpeggioPattern>(config.arpeggio_pattern);
-  params_.arpeggio.speed = static_cast<ArpeggioSpeed>(config.arpeggio_speed);
-  params_.arpeggio.octave_range = config.arpeggio_octave_range;
-  params_.arpeggio.gate = config.arpeggio_gate / 100.0f;
-  params_.arpeggio.sync_chord = config.arpeggio_sync_chord;
-  params_.chord_extension.enable_sus = config.chord_ext_sus;
-  params_.chord_extension.enable_7th = config.chord_ext_7th;
-  params_.chord_extension.enable_9th = config.chord_ext_9th;
-  params_.chord_extension.sus_probability = config.chord_ext_sus_prob / 100.0f;
-  params_.chord_extension.seventh_probability = config.chord_ext_7th_prob / 100.0f;
-  params_.chord_extension.ninth_probability = config.chord_ext_9th_prob / 100.0f;
-  params_.humanize = config.humanize;
-  params_.humanize_timing = config.humanize_timing / 100.0f;
-  params_.humanize_velocity = config.humanize_velocity / 100.0f;
-  se_enabled_ = config.se_enabled;
-  call_enabled_ = config.call_enabled;
-  call_density_ = static_cast<CallDensity>(config.call_density);
-  intro_chant_ = static_cast<IntroChant>(config.intro_chant);
-  mix_pattern_ = static_cast<MixPattern>(config.mix_pattern);
-  call_notes_enabled_ = config.call_notes_enabled;
+  applyAccompanimentConfig(config);
 
   // Seed RNG if specified
   if (config.seed != 0) {
     rng_.seed(config.seed);
   }
 
-  // Generate accompaniment
   generateAccompanimentForVocal();
 }
 
@@ -660,15 +610,7 @@ void Generator::setMelody(const MelodyData& melody) {
 
 void Generator::setVocalNotes(const GeneratorParams& params, const std::vector<NoteEvent>& notes) {
   params_ = params;
-
-  // Validate vocal range
-  if (params_.vocal_low > params_.vocal_high) {
-    std::swap(params_.vocal_low, params_.vocal_high);
-  }
-  params_.vocal_low =
-      std::clamp(params_.vocal_low, static_cast<uint8_t>(36), static_cast<uint8_t>(96));
-  params_.vocal_high =
-      std::clamp(params_.vocal_high, static_cast<uint8_t>(36), static_cast<uint8_t>(96));
+  validateVocalRange();
 
   // Initialize seed (use provided seed or generate)
   uint32_t seed = resolveSeed(params.seed);
@@ -676,29 +618,9 @@ void Generator::setVocalNotes(const GeneratorParams& params, const std::vector<N
   song_.setMelodySeed(seed);
   song_.setMotifSeed(seed);
 
-  // Select and resolve Blueprint
-  // Use separate RNG with derived seed to avoid disturbing main rng_ state
-  std::mt19937 blueprint_rng(seed ^ 0x424C5052);  // "BLPR" magic number
-  resolved_blueprint_id_ = selectProductionBlueprint(blueprint_rng, params_.blueprint_id);
-  blueprint_ = &getProductionBlueprint(resolved_blueprint_id_);
-
-  // Copy blueprint settings to params for track generation
-  params_.paradigm = blueprint_->paradigm;
-  params_.riff_policy = blueprint_->riff_policy;
-  params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
-
-  // Force drums on if blueprint requires it
-  if (blueprint_->drums_required) {
-    params_.drums_enabled = true;
-  }
-
-  // Configure motif parameters based on paradigm
-  // RhythmSync (Orangestar-style): dense, continuous riff patterns
-  if (params_.paradigm == GenerationParadigm::RhythmSync) {
-    params_.motif.rhythm_density = MotifRhythmDensity::Driving;
-    params_.motif.note_count = 8;               // Dense eighth-note pattern
-    params_.motif.length = MotifLength::Bars1;  // 1-bar motif for continuous riff
-  }
+  // Initialize blueprint and motif configuration
+  initializeBlueprint(seed);
+  configureRhythmSyncMotif();
 
   // Resolve BPM
   uint16_t bpm = params.bpm;
@@ -708,29 +630,7 @@ void Generator::setVocalNotes(const GeneratorParams& params, const std::vector<N
   song_.setBpm(bpm);
 
   // Build song structure
-  // Priority: target_duration > explicit form > Blueprint section_flow > StructurePattern
-  std::vector<Section> sections;
-  if (params.target_duration_seconds > 0) {
-    sections = buildStructureForDuration(params.target_duration_seconds, bpm, call_enabled_,
-                                         intro_chant_, mix_pattern_, params.structure);
-  } else if (params_.form_explicit) {
-    // Explicit form setting takes precedence over Blueprint section_flow
-    sections = buildStructure(params.structure);
-    if (call_enabled_) {
-      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
-    }
-  } else if (blueprint_->section_flow != nullptr && blueprint_->section_count > 0) {
-    // Use Blueprint's custom section flow
-    sections = buildStructureFromBlueprint(*blueprint_);
-    if (call_enabled_) {
-      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
-    }
-  } else {
-    sections = buildStructure(params.structure);
-    if (call_enabled_) {
-      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
-    }
-  }
+  std::vector<Section> sections = buildSongStructure(bpm);
   song_.setArrangement(Arrangement(sections));
 
   // Clear all tracks

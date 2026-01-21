@@ -25,6 +25,9 @@ constexpr uint8_t CHORD_HIGH = 84;  ///< C6 - Chord voicing upper limit
 
 constexpr uint8_t MOTIF_LOW = 36;    ///< C2 - Motif lower limit
 constexpr uint8_t MOTIF_HIGH = 108;  ///< C8 - Motif upper limit (wide for synths)
+
+constexpr uint8_t VOCAL_LOW_MIN = 36;   ///< C2 - Absolute minimum for vocal range
+constexpr uint8_t VOCAL_HIGH_MAX = 96;  ///< C7 - Absolute maximum for vocal range
 /// @}
 
 // ============================================================================
@@ -94,6 +97,59 @@ constexpr uint8_t PASSAGGIO_HIGH = 71;  ///< B4 - Upper bound of passaggio zone
 
 /// Major scale intervals from tonic: 0,2,4,5,7,9,11 (W-W-H-W-W-W-H).
 constexpr int SCALE[7] = {0, 2, 4, 5, 7, 9, 11};
+
+// ============================================================================
+// Chord Function (Harmonic Function)
+// ============================================================================
+
+/// @brief Harmonic function of a chord in the key.
+///
+/// Tonic (T): I, vi, iii - stable, resting chords
+/// Dominant (D): V, vii° - tension chords that resolve to tonic
+/// Subdominant (S): IV, ii - transitional chords between T and D
+enum class ChordFunction : uint8_t { Tonic, Dominant, Subdominant };
+
+/**
+ * @brief Get the harmonic function of a chord from its scale degree.
+ *
+ * @param degree Scale degree (0=I, 1=ii, 2=iii, 3=IV, 4=V, 5=vi, 6=vii°, 10=bVII)
+ * @return ChordFunction (Tonic, Dominant, or Subdominant)
+ */
+inline ChordFunction getChordFunction(int8_t degree) {
+  switch (degree) {
+    case 0:   // I  - tonic
+    case 2:   // iii - tonic substitute
+    case 5:   // vi - relative minor (tonic function)
+      return ChordFunction::Tonic;
+    case 4:   // V  - dominant
+    case 6:   // vii° - leading tone (dominant function)
+      return ChordFunction::Dominant;
+    case 1:   // ii - supertonic (subdominant function)
+    case 3:   // IV - subdominant
+    case 10:  // bVII - borrowed subdominant
+    default:
+      return ChordFunction::Subdominant;
+  }
+}
+
+// ============================================================================
+// Key Transposition
+// ============================================================================
+
+// Forward declaration of Key enum (defined in basic_types.h)
+enum class Key : uint8_t;
+
+/**
+ * @brief Transpose pitch by key offset.
+ * @param pitch MIDI pitch to transpose (0-127)
+ * @param key Key to transpose to (semitones from C)
+ * @return Transposed pitch clamped to MIDI range (0-127)
+ */
+inline uint8_t transposePitch(uint8_t pitch, Key key) {
+  int offset = static_cast<int>(key);
+  int result = pitch + offset;
+  return static_cast<uint8_t>(std::clamp(result, 0, 127));
+}
 
 // ============================================================================
 // TessituraRange
@@ -209,6 +265,50 @@ bool isDissonantIntervalWithContext(int pc1, int pc2, int8_t chord_degree);
  * @return true if interval is dissonant
  */
 bool isDissonantActualInterval(int actual_semitones, int8_t chord_degree);
+
+// ============================================================================
+// Avoid Note Detection
+// ============================================================================
+
+/// @name Avoid Note Intervals (semitones from chord root)
+/// @{
+constexpr int AVOID_PERFECT_4TH = 5;   ///< P4 - avoid on major tonic
+constexpr int AVOID_MINOR_6TH = 8;     ///< m6 - avoid on minor chords
+constexpr int AVOID_TRITONE = 6;       ///< TT - essential on dominant, avoid elsewhere
+constexpr int AVOID_MAJOR_7TH = 11;    ///< M7 - context-dependent
+/// @}
+
+/**
+ * @brief Check if a pitch is an avoid note for the given chord.
+ *
+ * Avoid notes are tones that create undesirable dissonance when sustained
+ * against a chord. However, this depends on the chord's harmonic function:
+ *
+ * - Dominant (V, vii°): Tritone is REQUIRED (resolution core), not avoided
+ * - Tonic (I, vi, iii): Tritone is harsh, P4 may clash with major 3rd
+ * - Subdominant (IV, ii): More lenient, P4 is acceptable
+ *
+ * @param pitch MIDI pitch to check
+ * @param chord_root Chord root pitch (any octave, uses pitch class)
+ * @param is_minor true if the chord quality is minor
+ * @param chord_degree Scale degree of the chord (0=I, 4=V, etc.)
+ * @return true if the pitch should be avoided in this harmonic context
+ */
+bool isAvoidNoteWithContext(int pitch, uint8_t chord_root, bool is_minor, int8_t chord_degree);
+
+/**
+ * @brief Simple avoid note check without harmonic context.
+ *
+ * For backward compatibility. Uses conservative rules:
+ * - P4 (5) on major, m6 (8) on minor are avoided
+ * - Tritone (6) and M7 (11) are always avoided
+ *
+ * @param pitch MIDI pitch to check
+ * @param chord_root Chord root pitch
+ * @param is_minor true if chord is minor quality
+ * @return true if pitch is a traditional avoid note
+ */
+bool isAvoidNoteSimple(int pitch, uint8_t chord_root, bool is_minor);
 
 // ============================================================================
 // Scale Functions

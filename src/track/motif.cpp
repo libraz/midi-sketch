@@ -15,6 +15,7 @@
 #include "core/i_harmony_context.h"
 #include "core/motif.h"
 #include "core/note_factory.h"
+#include "core/pitch_utils.h"
 
 namespace midisketch {
 
@@ -92,12 +93,8 @@ ScaleType selectScaleType(bool is_minor, Mood mood) {
 
 // Backward compatibility: SCALE_MAJOR is used directly via getScaleIntervals()
 
-// Avoid notes for common chords (relative to chord root in semitones)
-// These notes create dissonance when held against the chord
-constexpr int AVOID_MAJOR = 5;    // Perfect 4th above root (e.g., F over C major)
-constexpr int AVOID_MINOR = 8;    // Minor 6th above root (e.g., C over E minor - clashes with 5th)
-constexpr int AVOID_TRITONE = 6;  // Tritone above root (e.g., D# over A - highly dissonant)
-constexpr int AVOID_MAJOR_7TH = 11;  // Major 7th above root (e.g., G# over A - minor 2nd inversion)
+// Note: Avoid note constants (AVOID_PERFECT_4TH, AVOID_MINOR_6TH, AVOID_TRITONE, AVOID_MAJOR_7TH)
+// and detection functions are now in pitch_utils.h for centralized music theory handling.
 
 // Tension intervals in semitones from chord root
 constexpr int TENSION_9TH = 14;   // 9th = 2nd + octave (14 semitones from root)
@@ -167,26 +164,12 @@ int degreeToPitch(int degree, int base_note, int key_offset, ScaleType scale = S
   return base_note + oct_adjust * 12 + scale_intervals[d] + key_offset;
 }
 
-// Check if a pitch is an avoid note for the given chord
-bool isAvoidNote(int pitch, uint8_t chord_root, bool is_minor) {
-  int interval = ((pitch - chord_root) % 12 + 12) % 12;
-  // Tritone and major 7th are always dissonant against any chord root
-  if (interval == AVOID_TRITONE || interval == AVOID_MAJOR_7TH) {
-    return true;
-  }
-  if (is_minor) {
-    return interval == AVOID_MINOR;
-  }
-  return interval == AVOID_MAJOR;
-}
-
-// C major diatonic pitch classes (0-11)
-constexpr int DIATONIC_PC[] = {0, 2, 4, 5, 7, 9, 11};  // C, D, E, F, G, A, B
+// isAvoidNote is now provided by pitch_utils.h as isAvoidNoteWithContext() and isAvoidNoteSimple()
 
 // Check if pitch class is diatonic in C major
 bool isDiatonicPC(int pc) {
   pc = ((pc % 12) + 12) % 12;
-  for (int d : DIATONIC_PC) {
+  for (int d : SCALE) {  // SCALE defined in pitch_utils.h
     if (d == pc) return true;
   }
   return false;
@@ -214,8 +197,11 @@ std::vector<int> getDiatonicChordTones(uint8_t chord_root, bool is_minor) {
 }
 
 // Adjust pitch to avoid dissonance by resolving to nearest DIATONIC chord tone
-int adjustForChord(int pitch, uint8_t chord_root, bool is_minor) {
-  if (!isAvoidNote(pitch, chord_root, is_minor)) {
+// @param chord_degree Scale degree of the chord (0=I, 4=V, etc.) for context-aware avoid detection
+int adjustForChord(int pitch, uint8_t chord_root, bool is_minor, int8_t chord_degree) {
+  // Use context-aware avoid note detection from pitch_utils.h
+  // This considers chord function (Tonic/Dominant/Subdominant) for tritone handling
+  if (!isAvoidNoteWithContext(pitch, chord_root, is_minor, chord_degree)) {
     return pitch;
   }
 
@@ -692,7 +678,7 @@ void generateMotifTrack(MidiTrack& track, Song& song, const GeneratorParams& par
 
         // L3: First adjust pitch to scale, then to chord for dissonance avoidance
         int adjusted_pitch = motif_detail::adjustPitchToScale(note.note, 0, scale);  // Key::C = 0
-        adjusted_pitch = motif_detail::adjustForChord(adjusted_pitch, chord_root, is_minor);
+        adjusted_pitch = motif_detail::adjustForChord(adjusted_pitch, chord_root, is_minor, degree);
 
         // Ensure result is diatonic (adjustForChord may produce non-diatonic chord tones)
         adjusted_pitch = motif_detail::adjustToDiatonic(adjusted_pitch);

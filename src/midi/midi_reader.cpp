@@ -11,6 +11,8 @@
 #include <fstream>
 #include <map>
 
+#include "core/timing_constants.h"
+
 namespace midisketch {
 
 namespace {
@@ -322,7 +324,7 @@ bool MidiReader::parseTrack(const uint8_t* data, size_t size) {
                                     (static_cast<uint32_t>(data[offset + 1]) << 8) |
                                     data[offset + 2];
             if (microseconds > 0) {
-              midi_.bpm = static_cast<uint16_t>(60000000 / microseconds);
+              midi_.bpm = static_cast<uint16_t>(kMicrosecondsPerMinute / microseconds);
             }
           } else if (meta_type == 0x2F) {
             // End of track

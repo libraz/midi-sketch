@@ -10,17 +10,11 @@
 
 #include "core/config_converter.h"
 #include "core/json_helpers.h"
+#include "core/pitch_utils.h"
 
 namespace midisketch {
 
 namespace {
-
-// Transpose pitch by key offset
-uint8_t transposePitch(uint8_t pitch, Key key) {
-  int offset = static_cast<int>(key);
-  int result = pitch + offset;
-  return static_cast<uint8_t>(std::clamp(result, 0, 127));
-}
 
 // Metadata format version (increment when format changes incompatibly)
 constexpr int kMetadataFormatVersion = 2;

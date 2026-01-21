@@ -18,11 +18,14 @@ namespace midisketch {
 
 /// Voice leading motion type (counterpoint). Oblique ~40%, Contrary ~30%, Similar ~20%, Parallel
 /// ~10%.
+/// Note: Classical parallel 5th/octave avoidance is intentionally NOT enforced.
+/// Pop music regularly uses parallel perfect intervals (e.g., power chords, octave doubling).
+/// See bass.cpp:adjustPitchForMotion() for detailed design rationale.
 enum class MotionType : uint8_t {
   Oblique,   ///< One sustains, other moves (most common in pop)
   Contrary,  ///< Opposite directions (best independence)
   Similar,   ///< Same direction, different intervals
-  Parallel   ///< Same interval (3rds/6ths OK, avoid 5ths/octaves)
+  Parallel   ///< Same interval - 3rds/6ths sound good, P5/P8 acceptable in pop context
 };
 
 /// Phrase boundary extracted from vocal. Detected by gaps >= half bar.

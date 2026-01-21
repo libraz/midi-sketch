@@ -9,6 +9,8 @@
 #include <memory>
 #include <optional>
 #include <random>
+#include <string>
+#include <vector>
 
 #include "core/i_harmony_context.h"
 #include "core/motif.h"
@@ -190,6 +192,16 @@ class Generator {
     modulation_semitones_ = semitones;
   }
 
+  /** @brief Get warnings generated during last generation.
+   *  @return Vector of warning messages */
+  const std::vector<std::string>& getWarnings() const { return warnings_; }
+
+  /** @brief Check if there are any warnings. */
+  bool hasWarnings() const { return !warnings_.empty(); }
+
+  /** @brief Clear all warnings. */
+  void clearWarnings() { warnings_.clear(); }
+
   /// @}
   /// @name Strategy Invocation Methods
   /// Used by CompositionStrategy to invoke track generation
@@ -242,10 +254,11 @@ class Generator {
   /**
    * @brief Apply density progression to sections for Orangestar style.
    *
-   * For RhythmSync paradigm, increases density_percent for each
-   * occurrence of the same section type (e.g., 2nd Chorus is denser
-   * than 1st Chorus). Creates "Peak is a temporal event" effect.
+   * @deprecated This is a no-op. Density progression is now applied
+   * automatically in generate() via applyDensityProgressionToSections().
+   * Do not call this method.
    */
+  [[deprecated("Density progression is applied automatically in generate()")]]
   void applyDensityProgression();
 
   /// @}
@@ -286,6 +299,41 @@ class Generator {
   int8_t modulation_semitones_ = 2;  ///< Key change amount (1-4 semitones)
   /// @}
 
+  /// @name Warnings
+  /// @{
+  std::vector<std::string> warnings_;  ///< Accumulated warnings during generation
+  /// @}
+
+  /// @name Initialization Helpers (reduce code duplication)
+  /// @{
+
+  /** @brief Initialize blueprint from seed.
+   *  Selects blueprint, copies settings to params_, forces drums if required. */
+  void initializeBlueprint(uint32_t seed);
+
+  /** @brief Configure motif parameters for RhythmSync paradigm.
+   *  Sets rhythm_density=Driving, note_count=8, length=1bar. */
+  void configureRhythmSyncMotif();
+
+  /** @brief Validate and normalize vocal range parameters.
+   *  Swaps low/high if inverted, clamps to valid MIDI range. */
+  void validateVocalRange();
+
+  /** @brief Apply AccompanimentConfig to params_ and internal state.
+   *  @param config Accompaniment configuration to apply */
+  void applyAccompanimentConfig(const AccompanimentConfig& config);
+
+  /** @brief Clear all accompaniment tracks and re-register vocal.
+   *  Clears: Aux, Bass, Chord, Drums, Arpeggio, Motif, SE */
+  void clearAccompanimentTracks();
+
+  /** @brief Build song structure from params and blueprint.
+   *  Priority: target_duration > form_explicit > blueprint > pattern.
+   *  @param bpm Resolved BPM value
+   *  @return Vector of sections */
+  std::vector<Section> buildSongStructure(uint16_t bpm);
+
+  /// @}
   /// @name RhythmSync Methods
   /// @{
 

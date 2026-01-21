@@ -68,7 +68,6 @@ class MidiWriter {
                   int8_t mod_amount = 0);
   void writeMarkerTrack(const MidiTrack& track, uint16_t bpm, const std::string& metadata = "");
   static void writeVariableLength(std::vector<uint8_t>& buf, uint32_t value);
-  static uint8_t transposePitch(uint8_t pitch, Key key);
 };
 
 }  // namespace midisketch

@@ -25,6 +25,11 @@ constexpr Tick TICK_QUARTER_TRIPLET = TICKS_PER_BEAT / 3;     // 160 ticks
 constexpr Tick TICK_EIGHTH_TRIPLET = TICKS_PER_BEAT / 6;      // 80 ticks
 constexpr Tick TICK_SIXTEENTH_TRIPLET = TICKS_PER_BEAT / 12;  // 40 ticks
 
+// Tempo conversion constant
+// 1 minute = 60,000,000 microseconds
+// microseconds_per_beat = kMicrosecondsPerMinute / BPM
+constexpr uint32_t kMicrosecondsPerMinute = 60000000;
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_TIMING_CONSTANTS_H_

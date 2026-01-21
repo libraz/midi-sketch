@@ -15,6 +15,17 @@ namespace midisketch {
 
 namespace {
 
+// ============================================================================
+// Structure Building Constants
+// ============================================================================
+constexpr float kSecondsPerMinute = 60.0f;
+constexpr float kBeatsPerBar = 4.0f;
+constexpr float kSecondsToBarsDivisor = kSecondsPerMinute * kBeatsPerBar;  // 240.0f
+constexpr uint16_t kMinStructureBars = 12;   // Minimum structure length
+constexpr uint16_t kMaxStructureBars = 120;  // Maximum structure length (~4 min @120BPM)
+constexpr int kBarTolerance = 8;             // Bar tolerance for pattern matching
+constexpr int kExtensionBlockSize = 24;      // A(8) + B(8) + Chorus(8) = 24 bars
+
 std::string sectionTypeName(SectionType type) {
   switch (type) {
     case SectionType::Intro:
@@ -297,18 +308,18 @@ std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t
   // Calculate target bars from duration and BPM
   // bars = seconds * bpm / 60 / 4 (4 beats per bar)
   uint16_t target_bars =
-      static_cast<uint16_t>(std::round(static_cast<float>(target_seconds) * bpm / 240.0f));
+      static_cast<uint16_t>(std::round(static_cast<float>(target_seconds) * bpm / kSecondsToBarsDivisor));
 
-  // Minimum 12 bars (very short), maximum 120 bars (~4 min @120BPM)
-  target_bars = std::max(target_bars, static_cast<uint16_t>(12));
-  target_bars = std::min(target_bars, static_cast<uint16_t>(120));
+  // Clamp to valid range
+  target_bars = std::max(target_bars, kMinStructureBars);
+  target_bars = std::min(target_bars, kMaxStructureBars);
 
   // Get base structure from pattern
   std::vector<Section> sections = buildStructure(pattern);
   uint16_t base_bars = calculateTotalBars(sections);
 
-  // If target matches base (±8 bars tolerance), use pattern as-is
-  if (std::abs(static_cast<int>(target_bars) - static_cast<int>(base_bars)) <= 8) {
+  // If target matches base (within tolerance), use pattern as-is
+  if (std::abs(static_cast<int>(target_bars) - static_cast<int>(base_bars)) <= kBarTolerance) {
     return sections;
   }
 
@@ -333,7 +344,7 @@ std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t
   if (target_bars > base_bars) {
     // EXTEND: Add A-B-Chorus blocks before Outro
     int extra_bars = target_bars - base_bars;
-    int blocks_to_add = extra_bars / 24;  // A(8)+B(8)+Chorus(8) = 24
+    int blocks_to_add = extra_bars / kExtensionBlockSize;  // A(8)+B(8)+Chorus(8) = 24
 
     // Find Outro position (or end if no Outro)
     auto outro_it = std::find_if(sections.begin(), sections.end(),

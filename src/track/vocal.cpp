@@ -25,6 +25,19 @@
 namespace midisketch {
 
 // ============================================================================
+// Motif Collision Avoidance Constants
+// ============================================================================
+// When BackgroundMotif mode, avoid vocal range collision with motif track.
+// These MIDI note numbers define register boundaries for range separation.
+constexpr uint8_t kMotifHighRegisterThreshold = 72;  // C5 - motif considered "high" if above this
+constexpr uint8_t kMotifLowRegisterThreshold = 60;   // C4 - motif considered "low" if below this
+constexpr uint8_t kVocalAvoidHighLimit = 72;         // Limit vocal high when motif is high
+constexpr uint8_t kVocalAvoidLowLimit = 65;          // Limit vocal low when motif is low
+constexpr uint8_t kMinVocalOctaveRange = 12;         // Minimum 1 octave range required
+constexpr uint8_t kVocalRangeFloor = 48;             // C3 - absolute minimum for vocal
+constexpr uint8_t kVocalRangeCeiling = 96;           // C7 - absolute maximum for vocal
+
+// ============================================================================
 // Rhythm Lock Support
 // ============================================================================
 
@@ -127,17 +140,17 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
       !motif_track->empty()) {
     auto [motif_low, motif_high] = motif_track->analyzeRange();
 
-    if (motif_high > 72) {  // Motif in high register
-      effective_vocal_high = std::min(effective_vocal_high, static_cast<uint8_t>(72));
-      if (effective_vocal_high - effective_vocal_low < 12) {
-        effective_vocal_low =
-            std::max(static_cast<uint8_t>(48), static_cast<uint8_t>(effective_vocal_high - 12));
+    if (motif_high > kMotifHighRegisterThreshold) {  // Motif in high register
+      effective_vocal_high = std::min(effective_vocal_high, kVocalAvoidHighLimit);
+      if (effective_vocal_high - effective_vocal_low < kMinVocalOctaveRange) {
+        effective_vocal_low = std::max(kVocalRangeFloor,
+            static_cast<uint8_t>(effective_vocal_high - kMinVocalOctaveRange));
       }
-    } else if (motif_low < 60) {  // Motif in low register
-      effective_vocal_low = std::max(effective_vocal_low, static_cast<uint8_t>(65));
-      if (effective_vocal_high - effective_vocal_low < 12) {
-        effective_vocal_high =
-            std::min(static_cast<uint8_t>(96), static_cast<uint8_t>(effective_vocal_low + 12));
+    } else if (motif_low < kMotifLowRegisterThreshold) {  // Motif in low register
+      effective_vocal_low = std::max(effective_vocal_low, kVocalAvoidLowLimit);
+      if (effective_vocal_high - effective_vocal_low < kMinVocalOctaveRange) {
+        effective_vocal_high = std::min(kVocalRangeCeiling,
+            static_cast<uint8_t>(effective_vocal_low + kMinVocalOctaveRange));
       }
     }
   }

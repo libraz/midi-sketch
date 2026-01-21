@@ -234,4 +234,57 @@ int snapToNearestScaleTone(int pitch, int key_offset) {
   return octave * 12 + best_pc + key_offset;
 }
 
+bool isAvoidNoteWithContext(int pitch, uint8_t chord_root, bool is_minor, int8_t chord_degree) {
+  int interval = ((pitch - chord_root) % 12 + 12) % 12;
+  ChordFunction function = getChordFunction(chord_degree);
+
+  // Major 7th (11): generally dissonant as it clashes with root
+  // Exception: Maj7 chords exist, but for melody avoid notes this is still harsh
+  if (interval == AVOID_MAJOR_7TH) {
+    return true;
+  }
+
+  // Tritone (6): depends on chord function
+  // - Dominant: tritone is ESSENTIAL (3rd-7th of V7, root-5th of vii°)
+  // - Tonic/Subdominant: tritone creates unwanted tension
+  if (interval == AVOID_TRITONE) {
+    return function != ChordFunction::Dominant;
+  }
+
+  // Perfect 4th (5) on major chords:
+  // - Tonic (I): clashes with major 3rd (sus4 aside)
+  // - Subdominant (IV): the 4th IS the root, so it's a chord tone, not avoid
+  // - V chord: 4th = root of I, tension but resolves
+  if (!is_minor && interval == AVOID_PERFECT_4TH) {
+    // On I chord (tonic), P4 clashes with major 3rd
+    // On IV chord, the "4th" from IV's root is actually the tonic - it's fine
+    // On V chord, the "4th" creates suspension, borderline
+    return function == ChordFunction::Tonic;
+  }
+
+  // Minor 6th (8) on minor chords:
+  // - Creates tension against the 5th (only 1 semitone away)
+  // - m6 chords exist, but for melody avoid notes this is harsh on minor quality
+  if (is_minor && interval == AVOID_MINOR_6TH) {
+    return true;
+  }
+
+  return false;
+}
+
+bool isAvoidNoteSimple(int pitch, uint8_t chord_root, bool is_minor) {
+  int interval = ((pitch - chord_root) % 12 + 12) % 12;
+
+  // Conservative: tritone and major 7th are always avoided
+  if (interval == AVOID_TRITONE || interval == AVOID_MAJOR_7TH) {
+    return true;
+  }
+
+  // Quality-dependent avoid notes
+  if (is_minor) {
+    return interval == AVOID_MINOR_6TH;
+  }
+  return interval == AVOID_PERFECT_4TH;
+}
+
 }  // namespace midisketch

@@ -8,17 +8,12 @@
 #include <cstring>
 #include <fstream>
 
+#include "core/timing_constants.h"
+#include "midi/midi2_format.h"
+
 namespace midisketch {
 
 namespace {
-
-// ktmidi container header magic
-constexpr char kContainerMagic[] = "AAAAAAAAEEEEEEEE";
-constexpr size_t kContainerMagicLen = 16;
-
-// SMF2 Clip header magic
-constexpr char kClipMagic[] = "SMF2CLIP";
-constexpr size_t kClipMagicLen = 8;
 
 // Read big-endian uint32
 uint32_t readUint32BE(const uint8_t* data) {
@@ -168,7 +163,7 @@ void Midi2Reader::parseUmpMessages(const uint8_t* data, size_t size, size_t offs
         // Tempo message
         uint32_t word1 = readUint32BE(data + offset + 4);
         if (word1 > 0) {
-          midi_.bpm = static_cast<uint16_t>(60000000 / word1);
+          midi_.bpm = static_cast<uint16_t>(kMicrosecondsPerMinute / word1);
         }
       }
     }

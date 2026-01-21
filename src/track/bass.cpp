@@ -69,9 +69,6 @@ uint8_t getFifth(uint8_t root) {
   return clampBass(root + interval);
 }
 
-/// C major diatonic pitch classes.
-constexpr int C_MAJOR_DIATONIC[7] = {0, 2, 4, 5, 7, 9, 11};  // C,D,E,F,G,A,B
-
 /// Get the next diatonic note in C major, stepping from the given pitch.
 /// direction: +1 for ascending, -1 for descending
 /// This ensures Walking Bass uses key-relative diatonic motion, not chord-relative scales.
@@ -82,21 +79,21 @@ uint8_t getNextDiatonic(uint8_t pitch, int direction) {
   if (direction > 0) {
     // Find next diatonic note above
     for (int i = 0; i < 7; ++i) {
-      if (C_MAJOR_DIATONIC[i] > pc) {
-        return clampBass(oct * OCTAVE + C_MAJOR_DIATONIC[i]);
+      if (SCALE[i] > pc) {
+        return clampBass(oct * OCTAVE + SCALE[i]);
       }
     }
     // Wrap to next octave (C)
-    return clampBass((oct + 1) * OCTAVE + C_MAJOR_DIATONIC[0]);
+    return clampBass((oct + 1) * OCTAVE + SCALE[0]);
   } else {
     // Find next diatonic note below
     for (int i = 6; i >= 0; --i) {
-      if (C_MAJOR_DIATONIC[i] < pc) {
-        return clampBass(oct * OCTAVE + C_MAJOR_DIATONIC[i]);
+      if (SCALE[i] < pc) {
+        return clampBass(oct * OCTAVE + SCALE[i]);
       }
     }
     // Wrap to previous octave (B)
-    return clampBass((oct - 1) * OCTAVE + C_MAJOR_DIATONIC[6]);
+    return clampBass((oct - 1) * OCTAVE + SCALE[6]);
   }
 }
 
@@ -1354,7 +1351,21 @@ uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal
     case MotionType::Parallel:
     case MotionType::Oblique:
     default:
-      // No adjustment
+      // Parallel 5ths/Octaves: Classical music strictly forbids parallel perfect intervals
+      // (P5, P8) between outer voices because they reduce perceived voice independence.
+      // However, this project targets POP MUSIC where such "rules" are commonly violated:
+      // - Power chords (P5 parallel motion) are a cornerstone of rock/pop
+      // - Bass doubling melody at octave is standard in many genres
+      // - Modern production actively uses parallel fifths for "thick" sound
+      //
+      // DESIGN DECISION: We do NOT detect or avoid parallel 5ths/octaves because:
+      // 1. Pop music aesthetics differ from classical counterpoint
+      // 2. False positives would overly constrain bass movement
+      // 3. Other mechanisms (chord tone snapping, voice leading) provide sufficient
+      //    harmonic coherence for pop style
+      //
+      // If classical counterpoint rules are needed in the future, add a configuration
+      // option and implement parallel interval detection here.
       break;
   }
 

@@ -110,17 +110,11 @@ constexpr const char* INTERVAL_NAMES[12] = {"unison",    "minor 2nd",   "major 2
                                             "major 3rd", "perfect 4th", "tritone",   "perfect 5th",
                                             "minor 6th", "major 6th",   "minor 7th", "major 7th"};
 
-// Scale degree to pitch class offset (C major reference).
-constexpr int DEGREE_TO_PITCH_CLASS[7] = {0, 2, 4, 5, 7, 9, 11};  // C,D,E,F,G,A,B
-
-// C major diatonic pitch classes (used for non-diatonic detection).
-// Internal generation is always in C major; transpose happens at output time.
-constexpr int C_MAJOR_DIATONIC[7] = {0, 2, 4, 5, 7, 9, 11};  // C,D,E,F,G,A,B
-
 // Check if a pitch class is diatonic to C major.
+// Uses SCALE from pitch_utils.h (C major: 0,2,4,5,7,9,11)
 bool isDiatonicToCMajor(int pitch_class) {
   for (int i = 0; i < 7; ++i) {
-    if (C_MAJOR_DIATONIC[i] == pitch_class) return true;
+    if (SCALE[i] == pitch_class) return true;
   }
   return false;
 }
@@ -138,7 +132,7 @@ std::vector<std::string> getScaleTones(Key key) {
   int offset = static_cast<int>(key);
   std::vector<std::string> tones;
   for (int i = 0; i < 7; ++i) {
-    int pc = (C_MAJOR_DIATONIC[i] + offset) % 12;
+    int pc = (SCALE[i] + offset) % 12;
     tones.push_back(NOTE_NAMES[pc]);
   }
   return tones;
@@ -169,9 +163,9 @@ int getRootPitchClass(int8_t degree) {
       break;
   }
 
-  // Diatonic degrees (0-6) use DEGREE_TO_PITCH_CLASS
+  // Diatonic degrees (0-6) use SCALE
   if (degree >= 0 && degree < 7) {
-    return DEGREE_TO_PITCH_CLASS[degree];
+    return SCALE[degree];
   }
 
   return 0;
@@ -213,7 +207,7 @@ struct AvailableTensions {
 
 AvailableTensions getAvailableTensions(int8_t degree) {
   int normalized = ((degree % 7) + 7) % 7;
-  int root_pc = DEGREE_TO_PITCH_CLASS[normalized];
+  int root_pc = SCALE[normalized];
 
   AvailableTensions t{};
   t.ninth = (root_pc + 2) % 12;
@@ -274,7 +268,7 @@ bool isPitchClassChordTone(int pitch_class, int8_t degree, const ChordExtensionP
   // Check extensions if enabled
   if (ext_params.enable_7th || ext_params.enable_9th) {
     int normalized_degree = ((degree % 7) + 7) % 7;
-    int root_pc = DEGREE_TO_PITCH_CLASS[normalized_degree];
+    int root_pc = SCALE[normalized_degree];
 
     int seventh = -1;
     int ninth = (root_pc + 2) % 12;
@@ -408,7 +402,7 @@ std::string trackRoleToString(TrackRole role) {
 // Get chord name from scale degree (in C major).
 std::string getChordNameFromDegree(int8_t degree) {
   int normalized = ((degree % 7) + 7) % 7;
-  int root_pc = DEGREE_TO_PITCH_CLASS[normalized];
+  int root_pc = SCALE[normalized];
 
   // Determine chord quality suffix
   std::string suffix;

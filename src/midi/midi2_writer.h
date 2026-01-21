@@ -58,8 +58,6 @@ class Midi2Writer {
   void writeMarkerData(const MidiTrack& track, uint8_t group, uint16_t bpm,
                        const std::string& metadata);
 
-  // Transpose pitch by key
-  static uint8_t transposePitch(uint8_t pitch, Key key);
 };
 
 }  // namespace midisketch

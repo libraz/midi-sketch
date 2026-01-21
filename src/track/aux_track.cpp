@@ -53,6 +53,23 @@ constexpr std::array<AuxFunctionMeta, 8> kAuxFunctionMetaTable = {{
      0.8f, 0.2f},
 }};
 
+// ============================================================================
+// Timing Constants for Suspension/Anticipation Handling
+// ============================================================================
+
+/// Allow short suspensions before requiring resolution (1/8 beat = 240 ticks)
+constexpr Tick kSuspensionThreshold = 240;
+
+/// Notes starting this close to chord change are treated as "anticipations" (1/16 beat = 120 ticks)
+constexpr Tick kAnticipationThreshold = 120;
+
+/// Minimum note length after trimming or splitting
+constexpr Tick kMinNoteDuration = 120;
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
 // Check if two notes overlap in time
 bool notesOverlap(Tick start1, Tick end1, Tick start2, Tick end2) {
   return start1 < end2 && start2 < end1;
@@ -103,9 +120,6 @@ MidiTrack AuxTrackGenerator::generate(const AuxConfig& config, const AuxContext&
   }
 
   // Post-process: trim notes that sustain over chord changes (if non-chord tone in new chord)
-  constexpr Tick kSuspensionThreshold = 240;  // 1/8 beat - allow short suspensions
-  constexpr Tick kMinNoteDuration = 120;      // Minimum note length after trimming
-
   for (auto& note : notes) {
     Tick note_end = note.start_tick + note.duration;
     Tick chord_change = harmony.getNextChordChangeTick(note.start_tick);
@@ -311,10 +325,6 @@ void AuxTrackGenerator::generateFullTrack(MidiTrack& track, const SongContext& s
 }
 
 void AuxTrackGenerator::postProcessNotes(std::vector<NoteEvent>& notes, IHarmonyContext& harmony) {
-  constexpr Tick kAnticipationThreshold =
-      120;                                // Notes starting this close to change are "anticipations"
-  constexpr Tick kMinNoteDuration = 120;  // Minimum note length for split
-
   std::vector<NoteEvent> notes_to_add;
 
   // First pass: resolve notes that sustain over chord changes
@@ -1332,8 +1342,6 @@ std::vector<NoteEvent> AuxTrackGenerator::generateMotifCounter(const AuxContext&
       // Check for chord change during this note (anticipation handling)
       // If note starts close to chord change and extends past it, use new chord's tones
       Tick next_chord_change = harmony.getNextChordChangeTick(current_tick);
-      constexpr Tick kAnticipationThreshold =
-          120;  // 1/16 beat - notes starting this close to change are "anticipations"
 
       if (next_chord_change > 0 && next_chord_change > current_tick &&
           next_chord_change < current_tick + note_duration &&
@@ -1389,9 +1397,6 @@ std::vector<NoteEvent> AuxTrackGenerator::generateMotifCounter(const AuxContext&
 
   // Post-process: resolve notes that sustain over chord changes
   // Instead of trimming, resolve to nearest chord tone (musical suspension resolution)
-  constexpr Tick kSuspensionThreshold = 240;  // 1/8 beat - allow short suspensions
-  constexpr Tick kMinNoteDuration = 120;      // Minimum note length
-
   std::vector<NoteEvent> resolved_result;
   for (auto& note : result) {
     Tick note_end = note.start_tick + note.duration;

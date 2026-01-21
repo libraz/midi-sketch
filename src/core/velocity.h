@@ -41,6 +41,18 @@ float getMoodVelocityAdjustment(Mood mood);
  */
 int getSectionEnergy(SectionType section);
 
+/**
+ * @brief Get velocity multiplier for a section type.
+ *
+ * Centralized section-based velocity scaling to ensure consistent
+ * dynamics across all tracks. Values range from 0.6 (very quiet)
+ * to 1.1 (energetic).
+ *
+ * @param section Section type
+ * @return Velocity multiplier (0.6-1.1)
+ */
+float getSectionVelocityMultiplier(SectionType section);
+
 // ============================================================================
 // SectionEnergy and PeakLevel Functions
 // ============================================================================

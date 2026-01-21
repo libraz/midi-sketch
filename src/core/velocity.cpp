@@ -32,37 +32,40 @@ float getMoodVelocityAdjustment(Mood mood) {
   }
 }
 
+float getSectionVelocityMultiplier(SectionType section) {
+  // Centralized section-based velocity multipliers.
+  // These values ensure consistent dynamics across all tracks.
+  // Ranges from 0.60 (very quiet - Chant) to 1.05 (energetic - Chorus/MixBreak).
+  switch (section) {
+    case SectionType::Intro:
+    case SectionType::Interlude:
+      return 0.75f;  // Quiet intro/interlude
+    case SectionType::Chant:
+      return 0.60f;  // Very subdued chant section
+    case SectionType::MixBreak:
+      return 1.05f;  // High energy mix break
+    case SectionType::Outro:
+      return 0.80f;  // Fading outro
+    case SectionType::A:
+      return 0.85f;  // Subdued verse
+    case SectionType::B:
+      return 0.90f;  // Building pre-chorus (slightly less than Chorus)
+    case SectionType::Chorus:
+      return 1.05f;  // Energetic chorus
+    case SectionType::Bridge:
+      return 0.85f;  // Reflective bridge
+  }
+  return 1.0f;  // Default fallback
+}
+
 uint8_t calculateVelocity(SectionType section, uint8_t beat, Mood mood) {
   constexpr uint8_t BASE = 80;
 
   // Beat position adjustment
   int8_t beat_adj = (beat == 0) ? 10 : (beat == 2) ? 5 : 0;
 
-  // Section multiplier - larger contrast for dynamic buildup
-  float section_mult = 1.0f;
-  switch (section) {
-    case SectionType::Intro:
-    case SectionType::Interlude:
-    case SectionType::Chant:
-    case SectionType::MixBreak:
-      section_mult = 0.75f;  // Quiet intro/interlude/chant
-      break;
-    case SectionType::Outro:
-      section_mult = 0.80f;  // Fading outro
-      break;
-    case SectionType::A:
-      section_mult = 0.85f;  // Subdued verse (was 0.95)
-      break;
-    case SectionType::B:
-      section_mult = 0.95f;  // Building pre-chorus
-      break;
-    case SectionType::Chorus:
-      section_mult = 1.05f;  // Moderate chorus for DAW flexibility
-      break;
-    case SectionType::Bridge:
-      section_mult = 0.82f;  // Reflective bridge
-      break;
-  }
+  // Use centralized section multiplier
+  float section_mult = getSectionVelocityMultiplier(section);
 
   // Mood fine adjustment
   float mood_adj = getMoodVelocityAdjustment(mood);

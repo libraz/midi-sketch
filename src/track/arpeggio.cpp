@@ -85,38 +85,11 @@ std::vector<uint8_t> arrangeByPattern(const std::vector<uint8_t>& notes, Arpeggi
   return result;
 }
 
-// Calculate velocity based on section and position
+// Calculate velocity based on section and position.
+// Uses centralized getSectionVelocityMultiplier() from velocity.h for consistent dynamics.
 uint8_t calculateArpeggioVelocity(uint8_t base_velocity, SectionType section, int note_in_pattern) {
-  float section_mult = 1.0f;
-  switch (section) {
-    case SectionType::Intro:
-    case SectionType::Interlude:
-      section_mult = 0.75f;
-      break;
-    case SectionType::Outro:
-      section_mult = 0.80f;
-      break;
-    case SectionType::A:
-      section_mult = 0.85f;
-      break;
-    case SectionType::B:
-      section_mult = 0.90f;
-      break;
-    case SectionType::Chorus:
-      section_mult = 1.0f;
-      break;
-    case SectionType::Bridge:
-      section_mult = 0.85f;
-      break;
-    case SectionType::Chant:
-      // Chant section: very quiet, subdued arpeggio
-      section_mult = 0.60f;
-      break;
-    case SectionType::MixBreak:
-      // MIX section: high energy, full intensity
-      section_mult = 1.05f;
-      break;
-  }
+  // Use centralized section velocity multiplier
+  float section_mult = getSectionVelocityMultiplier(section);
 
   // Add slight accent on beat 1 notes
   float accent = (note_in_pattern == 0) ? 1.1f : 1.0f;

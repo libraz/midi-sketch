@@ -6,15 +6,26 @@
 #include "midi/midi_writer.h"
 
 #include "core/harmony_context.h"
+#include "core/pitch_utils.h"
+#include "core/timing_constants.h"
+#include "midi/track_config.h"
 
 #ifndef MIDISKETCH_WASM
 #include "midi/midi2_writer.h"
 #endif
 
 #include <algorithm>
+#include <cassert>
 #include <fstream>
 
 namespace midisketch {
+
+// ============================================================================
+// MIDI Metadata Length Limits
+// ============================================================================
+// MIDI meta events use a variable-length encoding, but track names and marker
+// texts are typically limited to 255 bytes for compatibility with most software.
+constexpr size_t kMaxMetaTextLength = 255;
 
 MidiWriter::MidiWriter() {}
 
@@ -39,11 +50,7 @@ void MidiWriter::writeVariableLength(std::vector<uint8_t>& buf, uint32_t value) 
   }
 }
 
-uint8_t MidiWriter::transposePitch(uint8_t pitch, Key key) {
-  int offset = static_cast<int>(key);
-  int result = pitch + offset;
-  return static_cast<uint8_t>(std::clamp(result, 0, 127));
-}
+// transposePitch moved to core/pitch_utils.h
 
 void MidiWriter::writeHeader(uint16_t num_tracks, uint16_t division) {
   // MThd
@@ -76,11 +83,13 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uin
                             Tick mod_tick, int8_t mod_amount) {
   std::vector<uint8_t> track_data;
 
-  // Validate BPM to prevent division by zero
+  // Defensive: BPM should be validated at buildSMF1() entry point
   if (bpm == 0) bpm = 120;
 
-  // Track name (Meta event 0x03) - truncate to 255 bytes max
-  std::string track_name = name.size() > 255 ? name.substr(0, 255) : name;
+  // Track name (Meta event 0x03) - truncate if too long
+  // NOTE: Truncation is silent; assert in debug builds to catch oversized names
+  assert(name.size() <= kMaxMetaTextLength && "Track name exceeds MIDI meta text limit");
+  std::string track_name = name.size() > kMaxMetaTextLength ? name.substr(0, kMaxMetaTextLength) : name;
   track_data.push_back(0x00);
   track_data.push_back(0xFF);
   track_data.push_back(0x03);
@@ -91,7 +100,7 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uin
 
   // Tempo (only in first track)
   if (is_first_track) {
-    uint32_t microseconds_per_beat = 60000000 / bpm;
+    uint32_t microseconds_per_beat = kMicrosecondsPerMinute / bpm;
     track_data.push_back(0x00);
     track_data.push_back(0xFF);
     track_data.push_back(0x51);
@@ -189,7 +198,7 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
                                   const std::string& metadata) {
   std::vector<uint8_t> track_data;
 
-  // Validate BPM to prevent division by zero
+  // Defensive: BPM should be validated at buildSMF1() entry point
   if (bpm == 0) bpm = 120;
 
   // Track name
@@ -214,7 +223,7 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
   }
 
   // Tempo
-  uint32_t microseconds_per_beat = 60000000 / bpm;
+  uint32_t microseconds_per_beat = kMicrosecondsPerMinute / bpm;
   track_data.push_back(0x00);
   track_data.push_back(0xFF);
   track_data.push_back(0x51);
@@ -239,8 +248,11 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
     Tick delta = marker.time - prev_time;
     prev_time = marker.time;
 
-    // Truncate marker text to 255 bytes max
-    std::string marker_text = marker.text.size() > 255 ? marker.text.substr(0, 255) : marker.text;
+    // Truncate marker text if too long
+    // NOTE: Truncation is silent; assert in debug builds to catch oversized text
+    assert(marker.text.size() <= kMaxMetaTextLength && "Marker text exceeds MIDI meta text limit");
+    std::string marker_text = marker.text.size() > kMaxMetaTextLength
+        ? marker.text.substr(0, kMaxMetaTextLength) : marker.text;
 
     writeVariableLength(track_data, delta);
     track_data.push_back(0xFF);
@@ -299,6 +311,10 @@ void MidiWriter::buildSMF2(const Song& song, Key key, const std::string& metadat
 void MidiWriter::buildSMF1(const Song& song, Key key, const std::string& metadata) {
   data_.clear();
 
+  // Validate BPM once at entry point (downstream checks are defensive only)
+  uint16_t bpm = song.bpm();
+  if (bpm == 0) bpm = 120;  // Default BPM for safety
+
   // Count non-empty tracks (SE track always included)
   uint16_t num_tracks = 1;  // SE track
   if (!song.vocal().empty()) num_tracks++;
@@ -312,58 +328,38 @@ void MidiWriter::buildSMF1(const Song& song, Key key, const std::string& metadat
   writeHeader(num_tracks, TICKS_PER_BEAT);
 
   // SE track first (contains tempo, markers, and metadata)
-  writeMarkerTrack(song.se(), song.bpm(), metadata);
+  writeMarkerTrack(song.se(), bpm, metadata);
 
   Tick mod_tick = song.modulationTick();
   int8_t mod_amount = song.modulationAmount();
 
-  // Channel and program assignments
-  constexpr uint8_t VOCAL_CH = 0;
-  constexpr uint8_t VOCAL_PROG = 0;  // Piano
-  constexpr uint8_t CHORD_CH = 1;
-  constexpr uint8_t CHORD_PROG = 4;  // Electric Piano
-  constexpr uint8_t BASS_CH = 2;
-  constexpr uint8_t BASS_PROG = 33;  // Electric Bass
-  constexpr uint8_t MOTIF_CH = 3;
-  constexpr uint8_t MOTIF_PROG = 81;  // Synth Lead
-  constexpr uint8_t ARPEGGIO_CH = 4;
-  constexpr uint8_t ARPEGGIO_PROG = 81;  // Saw Lead (Synth)
-  constexpr uint8_t AUX_CH = 5;
-  constexpr uint8_t AUX_PROG = 89;  // Pad 2 - Warm
-  constexpr uint8_t DRUMS_CH = 9;
-  constexpr uint8_t DRUMS_PROG = 0;
-
   if (!song.vocal().empty()) {
-    writeTrack(song.vocal(), "Vocal", VOCAL_CH, VOCAL_PROG, song.bpm(), key, false, mod_tick,
-               mod_amount);
+    writeTrack(song.vocal(), "Vocal", VOCAL_CH, VOCAL_PROG, bpm, key, false, mod_tick, mod_amount);
   }
 
   if (!song.chord().empty()) {
-    writeTrack(song.chord(), "Chord", CHORD_CH, CHORD_PROG, song.bpm(), key, false, mod_tick,
-               mod_amount);
+    writeTrack(song.chord(), "Chord", CHORD_CH, CHORD_PROG, bpm, key, false, mod_tick, mod_amount);
   }
 
   if (!song.bass().empty()) {
-    writeTrack(song.bass(), "Bass", BASS_CH, BASS_PROG, song.bpm(), key, false, mod_tick,
-               mod_amount);
+    writeTrack(song.bass(), "Bass", BASS_CH, BASS_PROG, bpm, key, false, mod_tick, mod_amount);
   }
 
   if (!song.motif().empty()) {
-    writeTrack(song.motif(), "Motif", MOTIF_CH, MOTIF_PROG, song.bpm(), key, false, mod_tick,
-               mod_amount);
+    writeTrack(song.motif(), "Motif", MOTIF_CH, MOTIF_PROG, bpm, key, false, mod_tick, mod_amount);
   }
 
   if (!song.arpeggio().empty()) {
-    writeTrack(song.arpeggio(), "Arpeggio", ARPEGGIO_CH, ARPEGGIO_PROG, song.bpm(), key, false,
-               mod_tick, mod_amount);
+    writeTrack(song.arpeggio(), "Arpeggio", ARPEGGIO_CH, ARPEGGIO_PROG, bpm, key, false, mod_tick,
+               mod_amount);
   }
 
   if (!song.aux().empty()) {
-    writeTrack(song.aux(), "Aux", AUX_CH, AUX_PROG, song.bpm(), key, false, mod_tick, mod_amount);
+    writeTrack(song.aux(), "Aux", AUX_CH, AUX_PROG, bpm, key, false, mod_tick, mod_amount);
   }
 
   if (!song.drums().empty()) {
-    writeTrack(song.drums(), "Drums", DRUMS_CH, DRUMS_PROG, song.bpm(), key, false, 0,
+    writeTrack(song.drums(), "Drums", DRUMS_CH, DRUMS_PROG, bpm, key, false, 0,
                0);  // No modulation for drums
   }
 }
@@ -384,8 +380,7 @@ void MidiWriter::buildVocalPreview(const Song& song, const IHarmonyContext& harm
 
   // Create root bass track from chord changes
   MidiTrack root_bass;
-  constexpr int SCALE[7] = {0, 2, 4, 5, 7, 9, 11};  // C major scale
-  constexpr uint8_t BASS_OCTAVE = 36;               // C2 base
+  constexpr uint8_t BASS_OCTAVE = 36;  // C2 base
   constexpr uint8_t BASS_VELOCITY = 80;
 
   // Get total duration from song

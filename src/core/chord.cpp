@@ -240,9 +240,8 @@ Chord getChordNotes(int8_t degree) { return buildChord(degree); }
 Chord getExtendedChord(int8_t degree, ChordExtension extension) {
   Chord base = buildChord(degree);
 
-  // Determine chord quality from base chord
-  bool is_minor = (base.intervals[1] == 3);  // Minor 3rd
-  bool is_diminished = base.is_diminished;
+  // Note: Chord quality (is_minor, is_diminished) can be derived from base.intervals
+  // if needed for future chord-quality-aware extensions.
 
   switch (extension) {
     case ChordExtension::Sus2:
@@ -312,10 +311,6 @@ Chord getExtendedChord(int8_t degree, ChordExtension extension) {
       // Keep original chord
       break;
   }
-
-  // Suppress unused variable warnings
-  (void)is_minor;
-  (void)is_diminished;
 
   return base;
 }
