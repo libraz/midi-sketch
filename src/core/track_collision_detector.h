@@ -9,8 +9,9 @@
 #ifndef MIDISKETCH_CORE_TRACK_COLLISION_DETECTOR_H
 #define MIDISKETCH_CORE_TRACK_COLLISION_DETECTOR_H
 
-#include "core/types.h"
 #include <vector>
+
+#include "core/types.h"
 
 namespace midisketch {
 
@@ -73,8 +74,7 @@ class TrackCollisionDetector {
    * @param threshold Semitone threshold for collision (default: 3)
    * @return true if collision detected (pitch is unsafe)
    */
-  bool hasBassCollision(uint8_t pitch, Tick start, Tick duration,
-                        int threshold = 3) const;
+  bool hasBassCollision(uint8_t pitch, Tick start, Tick duration, int threshold = 3) const;
 
   /**
    * @brief Get pitch classes from a specific track at a tick.

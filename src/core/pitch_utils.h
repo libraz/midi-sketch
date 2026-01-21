@@ -17,14 +17,14 @@ namespace midisketch {
 
 /// @name Track Pitch Ranges
 /// @{
-constexpr uint8_t BASS_LOW = 28;    ///< E1 - Electric bass low range
-constexpr uint8_t BASS_HIGH = 55;   ///< G3 - Bass upper limit
+constexpr uint8_t BASS_LOW = 28;   ///< E1 - Electric bass low range
+constexpr uint8_t BASS_HIGH = 55;  ///< G3 - Bass upper limit
 
 constexpr uint8_t CHORD_LOW = 48;   ///< C3 - Chord voicing lower limit
 constexpr uint8_t CHORD_HIGH = 84;  ///< C6 - Chord voicing upper limit
 
-constexpr uint8_t MOTIF_LOW = 36;   ///< C2 - Motif lower limit
-constexpr uint8_t MOTIF_HIGH = 108; ///< C8 - Motif upper limit (wide for synths)
+constexpr uint8_t MOTIF_LOW = 36;    ///< C2 - Motif lower limit
+constexpr uint8_t MOTIF_HIGH = 108;  ///< C8 - Motif upper limit (wide for synths)
 /// @}
 
 // ============================================================================
@@ -51,24 +51,17 @@ constexpr int kMaxMelodicInterval = 9;
  * @return Clamped pitch within [low, high]
  */
 inline uint8_t clampPitch(int pitch, uint8_t low, uint8_t high) {
-  return static_cast<uint8_t>(std::clamp(pitch, static_cast<int>(low),
-                                          static_cast<int>(high)));
+  return static_cast<uint8_t>(std::clamp(pitch, static_cast<int>(low), static_cast<int>(high)));
 }
 
 /// Clamp pitch to bass range (E1-G3). Bass notes outside this sound muddy.
-inline uint8_t clampBass(int pitch) {
-  return clampPitch(pitch, BASS_LOW, BASS_HIGH);
-}
+inline uint8_t clampBass(int pitch) { return clampPitch(pitch, BASS_LOW, BASS_HIGH); }
 
 /// Clamp pitch to chord voicing range (C3-C6). Keeps chords out of bass/vocal.
-inline uint8_t clampChord(int pitch) {
-  return clampPitch(pitch, CHORD_LOW, CHORD_HIGH);
-}
+inline uint8_t clampChord(int pitch) { return clampPitch(pitch, CHORD_LOW, CHORD_HIGH); }
 
 /// Clamp pitch to motif range (C2-C8). Wide range for synth flexibility.
-inline uint8_t clampMotif(int pitch) {
-  return clampPitch(pitch, MOTIF_LOW, MOTIF_HIGH);
-}
+inline uint8_t clampMotif(int pitch) { return clampPitch(pitch, MOTIF_LOW, MOTIF_HIGH); }
 
 // ============================================================================
 // Passaggio Constants
@@ -137,8 +130,8 @@ bool isInTessitura(uint8_t pitch, const TessituraRange& tessitura);
  * @param vocal_high Maximum vocal pitch
  * @return Comfort score from 0.0 (uncomfortable) to 1.0 (optimal)
  */
-float getComfortScore(uint8_t pitch, const TessituraRange& tessitura,
-                      uint8_t vocal_low, uint8_t vocal_high);
+float getComfortScore(uint8_t pitch, const TessituraRange& tessitura, uint8_t vocal_low,
+                      uint8_t vocal_high);
 
 // ============================================================================
 // Passaggio Functions
@@ -176,8 +169,8 @@ bool isInPassaggioRange(uint8_t pitch, uint8_t vocal_low, uint8_t vocal_high);
  * @param range_high Maximum allowed pitch
  * @return Constrained pitch within range and interval limit
  */
-int constrainInterval(int target_pitch, int prev_pitch, int max_interval,
-                      int range_low, int range_high);
+int constrainInterval(int target_pitch, int prev_pitch, int max_interval, int range_low,
+                      int range_high);
 
 /**
  * @brief Check if two pitch classes create a dissonant interval.

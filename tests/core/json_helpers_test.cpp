@@ -4,7 +4,9 @@
  */
 
 #include "core/json_helpers.h"
+
 #include <gtest/gtest.h>
+
 #include <sstream>
 
 namespace midisketch {
@@ -62,10 +64,7 @@ TEST(JsonWriterTest, EmptyArray) {
 TEST(JsonWriterTest, SimpleObject) {
   std::ostringstream oss;
   Writer w(oss);
-  w.beginObject()
-      .write("name", "test")
-      .write("count", 42)
-      .endObject();
+  w.beginObject().write("name", "test").write("count", 42).endObject();
   EXPECT_EQ(oss.str(), R"({"name":"test","count":42})");
 }
 
@@ -79,29 +78,21 @@ TEST(JsonWriterTest, ObjectWithAllTypes) {
       .write("bool_true", true)
       .write("bool_false", false)
       .endObject();
-  EXPECT_EQ(oss.str(), R"({"str":"hello","int":123,"double":3.14,"bool_true":true,"bool_false":false})");
+  EXPECT_EQ(oss.str(),
+            R"({"str":"hello","int":123,"double":3.14,"bool_true":true,"bool_false":false})");
 }
 
 TEST(JsonWriterTest, SimpleArray) {
   std::ostringstream oss;
   Writer w(oss);
-  w.beginArray()
-      .value(1)
-      .value(2)
-      .value(3)
-      .endArray();
+  w.beginArray().value(1).value(2).value(3).endArray();
   EXPECT_EQ(oss.str(), "[1,2,3]");
 }
 
 TEST(JsonWriterTest, ArrayWithMixedTypes) {
   std::ostringstream oss;
   Writer w(oss);
-  w.beginArray()
-      .value(42)
-      .value("hello")
-      .value(true)
-      .value(3.14)
-      .endArray();
+  w.beginArray().value(42).value("hello").value(true).value(3.14).endArray();
   EXPECT_EQ(oss.str(), R"([42,"hello",true,3.14])");
 }
 
@@ -111,7 +102,7 @@ TEST(JsonWriterTest, NestedObject) {
   w.beginObject()
       .write("name", "outer")
       .beginObject("inner")
-          .write("value", 100)
+      .write("value", 100)
       .endObject()
       .endObject();
   EXPECT_EQ(oss.str(), R"({"name":"outer","inner":{"value":100}})");
@@ -123,8 +114,8 @@ TEST(JsonWriterTest, NestedArray) {
   w.beginObject()
       .write("name", "test")
       .beginArray("items")
-          .value(1)
-          .value(2)
+      .value(1)
+      .value(2)
       .endArray()
       .endObject();
   EXPECT_EQ(oss.str(), R"({"name":"test","items":[1,2]})");
@@ -135,9 +126,9 @@ TEST(JsonWriterTest, DeeplyNested) {
   Writer w(oss);
   w.beginObject()
       .beginObject("level1")
-          .beginArray("array")
-              .rawValue(R"({"nested":true})")
-          .endArray()
+      .beginArray("array")
+      .rawValue(R"({"nested":true})")
+      .endArray()
       .endObject()
       .endObject();
   EXPECT_EQ(oss.str(), R"({"level1":{"array":[{"nested":true}]}})");
@@ -146,20 +137,14 @@ TEST(JsonWriterTest, DeeplyNested) {
 TEST(JsonWriterTest, RawJson) {
   std::ostringstream oss;
   Writer w(oss);
-  w.beginObject()
-      .raw("prebuilt", "[1,2,3]")
-      .write("after", "ok")
-      .endObject();
+  w.beginObject().raw("prebuilt", "[1,2,3]").write("after", "ok").endObject();
   EXPECT_EQ(oss.str(), R"({"prebuilt":[1,2,3],"after":"ok"})");
 }
 
 TEST(JsonWriterTest, StringEscaping) {
   std::ostringstream oss;
   Writer w(oss);
-  w.beginObject()
-      .write("quote", "say \"hi\"")
-      .write("newline", "line1\nline2")
-      .endObject();
+  w.beginObject().write("quote", "say \"hi\"").write("newline", "line1\nline2").endObject();
   EXPECT_EQ(oss.str(), R"({"quote":"say \"hi\"","newline":"line1\nline2"})");
 }
 
@@ -177,10 +162,7 @@ TEST(JsonWriterPrettyTest, EmptyObject) {
 TEST(JsonWriterPrettyTest, SimpleObject) {
   std::ostringstream oss;
   Writer w(oss, true);
-  w.beginObject()
-      .write("name", "test")
-      .write("count", 42)
-      .endObject();
+  w.beginObject().write("name", "test").write("count", 42).endObject();
 
   std::string expected = R"({
   "name": "test",
@@ -195,7 +177,7 @@ TEST(JsonWriterPrettyTest, NestedObject) {
   w.beginObject()
       .write("outer", "value")
       .beginObject("nested")
-          .write("inner", 123)
+      .write("inner", 123)
       .endObject()
       .endObject();
 
@@ -211,12 +193,7 @@ TEST(JsonWriterPrettyTest, NestedObject) {
 TEST(JsonWriterPrettyTest, ArrayInObject) {
   std::ostringstream oss;
   Writer w(oss, true);
-  w.beginObject()
-      .beginArray("items")
-          .value(1)
-          .value(2)
-      .endArray()
-      .endObject();
+  w.beginObject().beginArray("items").value(1).value(2).endArray().endObject();
 
   std::string expected = R"({
   "items": [
@@ -230,9 +207,7 @@ TEST(JsonWriterPrettyTest, ArrayInObject) {
 TEST(JsonWriterPrettyTest, CustomIndent) {
   std::ostringstream oss;
   Writer w(oss, true, 4);  // 4-space indent
-  w.beginObject()
-      .write("key", "value")
-      .endObject();
+  w.beginObject().write("key", "value").endObject();
 
   std::string expected = "{\n    \"key\": \"value\"\n}";
   EXPECT_EQ(oss.str(), expected);
@@ -300,10 +275,7 @@ TEST(JsonEdgeCaseTest, EmptyString) {
 TEST(JsonEdgeCaseTest, LargeNumber) {
   std::ostringstream oss;
   Writer w(oss);
-  w.beginObject()
-      .write("big", 9999999999LL)
-      .write("negative", -12345)
-      .endObject();
+  w.beginObject().write("big", 9999999999LL).write("negative", -12345).endObject();
   EXPECT_EQ(oss.str(), R"({"big":9999999999,"negative":-12345})");
 }
 
@@ -318,8 +290,12 @@ TEST(JsonEdgeCaseTest, MultipleArraysInObject) {
   std::ostringstream oss;
   Writer w(oss);
   w.beginObject()
-      .beginArray("first").value(1).endArray()
-      .beginArray("second").value(2).endArray()
+      .beginArray("first")
+      .value(1)
+      .endArray()
+      .beginArray("second")
+      .value(2)
+      .endArray()
       .endObject();
   EXPECT_EQ(oss.str(), R"({"first":[1],"second":[2]})");
 }

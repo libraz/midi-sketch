@@ -3,8 +3,9 @@
  * @brief Tests for section utilities.
  */
 
-#include <gtest/gtest.h>
 #include "core/section_utils.h"
+
+#include <gtest/gtest.h>
 
 namespace midisketch {
 namespace {
@@ -225,8 +226,7 @@ TEST(SectionUtilsTest, FindAllSectionTicksNone) {
 
 TEST(SectionUtilsTest, FindSectionAfterFound) {
   std::vector<Section> sections = {
-      makeSection(SectionType::A, 8, 0),
-      makeSection(SectionType::B, 8, 8 * TICKS_PER_BAR),
+      makeSection(SectionType::A, 8, 0), makeSection(SectionType::B, 8, 8 * TICKS_PER_BAR),
       makeSection(SectionType::Chorus, 8, 16 * TICKS_PER_BAR),  // After B
   };
 
@@ -243,7 +243,7 @@ TEST(SectionUtilsTest, FindSectionAfterMultiplePrecedingTypes) {
   };
 
   auto result = findSectionAfter(sections, SectionType::Chorus,
-                                  {SectionType::B, SectionType::Bridge, SectionType::Interlude});
+                                 {SectionType::B, SectionType::Bridge, SectionType::Interlude});
 
   ASSERT_TRUE(result.has_value());
   EXPECT_EQ(result->start_tick, 8u * TICKS_PER_BAR);
@@ -278,7 +278,7 @@ TEST(SectionUtilsTest, FindSectionAfterFirstPosition) {
 TEST(SectionUtilsTest, FindLastSectionAfterFound) {
   std::vector<Section> sections = {
       makeSection(SectionType::B, 8, 0),
-      makeSection(SectionType::Chorus, 8, 8 * TICKS_PER_BAR),   // After B
+      makeSection(SectionType::Chorus, 8, 8 * TICKS_PER_BAR),  // After B
       makeSection(SectionType::A, 8, 16 * TICKS_PER_BAR),
       makeSection(SectionType::B, 8, 24 * TICKS_PER_BAR),
       makeSection(SectionType::Chorus, 8, 32 * TICKS_PER_BAR),  // After B (last)

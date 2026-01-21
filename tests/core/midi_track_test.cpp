@@ -3,8 +3,9 @@
  * @brief Tests for MidiTrack operations.
  */
 
-#include <gtest/gtest.h>
 #include "core/midi_track.h"
+
+#include <gtest/gtest.h>
 
 namespace midisketch {
 namespace {
@@ -113,9 +114,9 @@ TEST(MidiTrackTest, Slice) {
 
   EXPECT_EQ(sliced.noteCount(), 2u);
   const auto& notes = sliced.notes();
-  EXPECT_EQ(notes[0].start_tick, 0u);   // Adjusted from 480
+  EXPECT_EQ(notes[0].start_tick, 0u);  // Adjusted from 480
   EXPECT_EQ(notes[0].note, 64);
-  EXPECT_EQ(notes[1].start_tick, 480u); // Adjusted from 960
+  EXPECT_EQ(notes[1].start_tick, 480u);  // Adjusted from 960
   EXPECT_EQ(notes[1].note, 67);
 }
 

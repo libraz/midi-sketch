@@ -4,7 +4,9 @@
  */
 
 #include <gtest/gtest.h>
+
 #include <cstring>
+
 #include "midisketch_c.h"
 
 namespace midisketch {

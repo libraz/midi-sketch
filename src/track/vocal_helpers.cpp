@@ -4,9 +4,11 @@
  */
 
 #include "track/vocal_helpers.h"
+
+#include <algorithm>
+
 #include "core/chord_utils.h"
 #include "core/pitch_utils.h"
-#include <algorithm>
 
 namespace midisketch {
 
@@ -28,10 +30,9 @@ std::vector<NoteEvent> shiftTiming(const std::vector<NoteEvent>& notes, Tick off
   return result;
 }
 
-std::vector<NoteEvent> adjustPitchRange(const std::vector<NoteEvent>& notes,
-                                         uint8_t orig_low, uint8_t orig_high,
-                                         uint8_t new_low, uint8_t new_high,
-                                         int key_offset) {
+std::vector<NoteEvent> adjustPitchRange(const std::vector<NoteEvent>& notes, uint8_t orig_low,
+                                        uint8_t orig_high, uint8_t new_low, uint8_t new_high,
+                                        int key_offset) {
   if (orig_low == new_low && orig_high == new_high) {
     return notes;  // No adjustment needed
   }
@@ -152,9 +153,7 @@ void removeOverlaps(std::vector<NoteEvent>& notes) {
 
   // Sort by start tick
   std::sort(notes.begin(), notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) {
-              return a.start_tick < b.start_tick;
-            });
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
   // Adjust durations to prevent overlap
   for (size_t i = 0; i + 1 < notes.size(); ++i) {
@@ -163,9 +162,8 @@ void removeOverlaps(std::vector<NoteEvent>& notes) {
 
     if (end_tick > next_start) {
       // Guard against underflow: if same startTick, use minimum duration
-      Tick max_duration = (next_start > notes[i].start_tick)
-                              ? (next_start - notes[i].start_tick)
-                              : 1;
+      Tick max_duration =
+          (next_start > notes[i].start_tick) ? (next_start - notes[i].start_tick) : 1;
       notes[i].duration = max_duration;
 
       // If still overlapping (same startTick case), shift next note forward
@@ -183,8 +181,7 @@ void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
   }
 
   // Hook points: Chorus start, B section climax
-  bool is_hook_section = (section_type == SectionType::Chorus ||
-                          section_type == SectionType::B);
+  bool is_hook_section = (section_type == SectionType::Chorus || section_type == SectionType::B);
   if (!is_hook_section && intensity != HookIntensity::Strong) {
     return;  // Only Strong applies to all sections
   }
@@ -194,8 +191,7 @@ void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
   std::vector<size_t> hook_note_indices;
 
   for (size_t i = 0; i < notes.size(); ++i) {
-    if (notes[i].start_tick >= section_start &&
-        notes[i].start_tick < section_start + hook_window) {
+    if (notes[i].start_tick >= section_start && notes[i].start_tick < section_start + hook_window) {
       hook_note_indices.push_back(i);
     }
   }
@@ -212,11 +208,11 @@ void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
       velocity_boost = 5.0f;  // Slight velocity boost
       break;
     case HookIntensity::Normal:
-      duration_mult = 1.5f;   // 50% longer
+      duration_mult = 1.5f;  // 50% longer
       velocity_boost = 10.0f;
       break;
     case HookIntensity::Strong:
-      duration_mult = 2.0f;   // Double duration
+      duration_mult = 2.0f;  // Double duration
       velocity_boost = 15.0f;
       break;
     default:
@@ -224,8 +220,9 @@ void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
   }
 
   // Apply to first few notes (depending on intensity)
-  size_t max_notes = (intensity == HookIntensity::Light) ? 1 :
-                     (intensity == HookIntensity::Normal) ? 2 : 3;
+  size_t max_notes = (intensity == HookIntensity::Light)    ? 1
+                     : (intensity == HookIntensity::Normal) ? 2
+                                                            : 3;
   size_t apply_count = std::min(hook_note_indices.size(), max_notes);
 
   for (size_t i = 0; i < apply_count; ++i) {
@@ -271,7 +268,8 @@ void applyGrooveFeel(std::vector<NoteEvent>& notes, VocalGrooveFeel groove) {
           Tick bar_pos = note.start_tick % TICKS_PER_BAR;
           // Beats 2 and 4 (at 480 and 1440 ticks)
           if ((bar_pos >= TICKS_PER_BEAT - TICK_16TH && bar_pos < TICKS_PER_BEAT + TICK_16TH) ||
-              (bar_pos >= TICKS_PER_BEAT * 3 - TICK_16TH && bar_pos < TICKS_PER_BEAT * 3 + TICK_16TH)) {
+              (bar_pos >= TICKS_PER_BEAT * 3 - TICK_16TH &&
+               bar_pos < TICKS_PER_BEAT * 3 + TICK_16TH)) {
             shift = -TICK_16TH / 2;  // Anticipate
           }
         }
@@ -309,11 +307,9 @@ void applyGrooveFeel(std::vector<NoteEvent>& notes, VocalGrooveFeel groove) {
   }
 }
 
-void applyCollisionAvoidanceWithIntervalConstraint(
-    std::vector<NoteEvent>& notes,
-    const IHarmonyContext& harmony,
-    uint8_t vocal_low,
-    uint8_t vocal_high) {
+void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes,
+                                                   const IHarmonyContext& harmony,
+                                                   uint8_t vocal_low, uint8_t vocal_high) {
   if (notes.empty()) return;
 
   // Major 6th (9 semitones) - the practical limit for singable leaps in pop music.
@@ -337,16 +333,15 @@ void applyCollisionAvoidanceWithIntervalConstraint(
     int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
 
     // Apply collision avoidance
-    uint8_t safe_pitch = harmony.getSafePitch(
-        note.note, note.start_tick, note.duration, TrackRole::Vocal,
-        vocal_low, vocal_high);
+    uint8_t safe_pitch = harmony.getSafePitch(note.note, note.start_tick, note.duration,
+                                              TrackRole::Vocal, vocal_low, vocal_high);
     // Snap to chord tone (to maintain harmonic stability)
     int snapped = nearestChordTonePitch(safe_pitch, chord_degree);
     snapped = std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
     // Re-snap to scale if clamp moved us off a chord tone
     snapped = snapToNearestScaleTone(snapped, 0);  // Always C major internally
-    note.note = static_cast<uint8_t>(std::clamp(snapped,
-        static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
+    note.note = static_cast<uint8_t>(
+        std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
 
     // CRITICAL: Clamp duration to not sustain over chord changes
     // If note extends past chord change and becomes non-chord-tone, trim it
@@ -381,9 +376,9 @@ void applyCollisionAvoidanceWithIntervalConstraint(
       int interval = std::abs(static_cast<int>(note.note) - prev_pitch);
       if (interval > MAX_VOCAL_INTERVAL) {
         // Use nearestChordToneWithinInterval to find chord tone within constraint
-        int new_pitch = nearestChordToneWithinInterval(
-            note.note, prev_pitch, chord_degree, MAX_VOCAL_INTERVAL,
-            vocal_low, vocal_high, nullptr);
+        int new_pitch =
+            nearestChordToneWithinInterval(note.note, prev_pitch, chord_degree, MAX_VOCAL_INTERVAL,
+                                           vocal_low, vocal_high, nullptr);
         note.note = static_cast<uint8_t>(new_pitch);
       }
     }
@@ -404,7 +399,8 @@ float calculateSingingEffort(const std::vector<NoteEvent>& notes) {
 
     // Large interval penalty
     if (i > 0) {
-      int interval = std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
+      int interval =
+          std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
       if (interval >= kLargeIntervalThreshold) {
         effort += kMediumEffortScore;
       }
@@ -437,9 +433,7 @@ void mergeSamePitchNotes(std::vector<NoteEvent>& notes, Tick max_gap) {
 
   // Sort by start tick
   std::sort(notes.begin(), notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) {
-              return a.start_tick < b.start_tick;
-            });
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
   // Merge same-pitch notes with short gaps
   std::vector<NoteEvent> merged;
@@ -475,16 +469,13 @@ void mergeSamePitchNotes(std::vector<NoteEvent>& notes, Tick max_gap) {
   notes = std::move(merged);
 }
 
-void resolveIsolatedShortNotes(std::vector<NoteEvent>& notes,
-                                Tick min_duration,
-                                Tick isolation_threshold) {
+void resolveIsolatedShortNotes(std::vector<NoteEvent>& notes, Tick min_duration,
+                               Tick isolation_threshold) {
   if (notes.size() < 2) return;
 
   // Sort by start tick
   std::sort(notes.begin(), notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) {
-              return a.start_tick < b.start_tick;
-            });
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
   // Process each note
   for (size_t i = 0; i < notes.size(); ++i) {
@@ -506,15 +497,13 @@ void resolveIsolatedShortNotes(std::vector<NoteEvent>& notes,
 
     if (i + 1 < notes.size()) {
       Tick note_end = note.start_tick + note.duration;
-      gap_after = (notes[i + 1].start_tick > note_end) ?
-                  (notes[i + 1].start_tick - note_end) : 0;
+      gap_after = (notes[i + 1].start_tick > note_end) ? (notes[i + 1].start_tick - note_end) : 0;
     } else {
       gap_after = isolation_threshold + 1;  // Last note: treat as isolated after
     }
 
     // Check if isolated (surrounded by rests)
-    bool is_isolated = (gap_before > isolation_threshold) &&
-                       (gap_after > isolation_threshold);
+    bool is_isolated = (gap_before > isolation_threshold) && (gap_after > isolation_threshold);
 
     if (is_isolated) {
       // Extend the note to minimum duration

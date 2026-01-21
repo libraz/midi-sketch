@@ -12,8 +12,9 @@
 #ifndef MIDISKETCH_CORE_STYLE_BIAS_H
 #define MIDISKETCH_CORE_STYLE_BIAS_H
 
-#include "core/types.h"
 #include <cstdint>
+
+#include "core/types.h"
 
 namespace midisketch {
 
@@ -23,23 +24,23 @@ namespace midisketch {
 /// Used during pitch candidate selection and rhythm generation.
 struct StyleBias {
   // === Interval Selection Weights ===
-  float stepwise_weight;       ///< 2nd intervals (1-2 semitones)
-  float skip_weight;           ///< 3rd intervals (3-4 semitones)
-  float leap_weight;           ///< 5th+ intervals (5+ semitones)
+  float stepwise_weight;  ///< 2nd intervals (1-2 semitones)
+  float skip_weight;      ///< 3rd intervals (3-4 semitones)
+  float leap_weight;      ///< 5th+ intervals (5+ semitones)
 
   // === Register Weights ===
-  float center_weight;         ///< Middle register preference
-  float high_weight;           ///< High register preference
-  float low_weight;            ///< Low register preference
+  float center_weight;  ///< Middle register preference
+  float high_weight;    ///< High register preference
+  float low_weight;     ///< Low register preference
 
   // === Rhythm Weights ===
-  float onbeat_weight;         ///< Notes on strong beats
-  float offbeat_weight;        ///< Notes on weak beats
-  float syncopation_weight;    ///< Off-grid placements
+  float onbeat_weight;       ///< Notes on strong beats
+  float offbeat_weight;      ///< Notes on weak beats
+  float syncopation_weight;  ///< Off-grid placements
 
   // === Repetition Weights ===
-  float same_pitch_weight;     ///< Same note repetition
-  float motif_repeat_weight;   ///< Pattern repetition
+  float same_pitch_weight;    ///< Same note repetition
+  float motif_repeat_weight;  ///< Pattern repetition
 };
 
 // ============================================================================
@@ -50,8 +51,7 @@ struct StyleBias {
 /// @param base Base style bias
 /// @param complexity Melodic complexity level
 /// @returns Adjusted StyleBias with complexity applied
-inline StyleBias adjustBiasForComplexity(const StyleBias& base,
-                                          MelodicComplexity complexity) {
+inline StyleBias adjustBiasForComplexity(const StyleBias& base, MelodicComplexity complexity) {
   StyleBias adjusted = base;
 
   switch (complexity) {
@@ -92,8 +92,7 @@ inline float applyIntervalBias(int interval, const StyleBias& bias) {
 /// @param range_width Width of vocal range
 /// @param bias Style bias to apply
 /// @returns Weighted score multiplier
-inline float applyRegisterBias(int pitch, int center, int range_width,
-                                const StyleBias& bias) {
+inline float applyRegisterBias(int pitch, int center, int range_width, const StyleBias& bias) {
   int distance = pitch - center;
   int quarter_range = range_width / 4;
 

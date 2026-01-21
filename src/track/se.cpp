@@ -4,6 +4,7 @@
  */
 
 #include "track/se.h"
+
 #include "core/timing_constants.h"
 
 namespace midisketch {
@@ -34,26 +35,22 @@ constexpr size_t MAX_CHANT_NOTES = 16;
 struct ChantPreset {
   const char* name;
   uint8_t note_count;
-  uint8_t rhythm[MAX_CHANT_NOTES];    // Note values (1=8th, 2=quarter)
+  uint8_t rhythm[MAX_CHANT_NOTES];  // Note values (1=8th, 2=quarter)
   uint8_t velocity[MAX_CHANT_NOTES];
 };
 
 // Tiger Fire pattern (2 bars)
 // "Ta-i-ga-a | Fa-i-ya-a"
-constexpr ChantPreset TIGER_FIRE = {
-    "TigerFire",
-    8,
-    {1, 1, 1, 2, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0},
-    {70, 72, 75, 85, 80, 82, 88, 95, 0, 0, 0, 0, 0, 0, 0, 0}
-};
+constexpr ChantPreset TIGER_FIRE = {"TigerFire",
+                                    8,
+                                    {1, 1, 1, 2, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0},
+                                    {70, 72, 75, 85, 80, 82, 88, 95, 0, 0, 0, 0, 0, 0, 0, 0}};
 
 // Standard MIX pattern (1 bar)
-constexpr ChantPreset STANDARD_MIX = {
-    "StandardMix",
-    4,
-    {1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-    {80, 85, 90, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-};
+constexpr ChantPreset STANDARD_MIX = {"StandardMix",
+                                      4,
+                                      {1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+                                      {80, 85, 90, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
 
 // Gachikoi intro phrase
 // "I-i-ta-i-ko-to-ga-a-ru-n-da-yo"
@@ -61,17 +58,14 @@ constexpr ChantPreset GACHIKOI_INTRO = {
     "GachikoiIntro",
     12,
     {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 0, 0, 0, 0},
-    {65, 68, 70, 72, 75, 78, 80, 82, 85, 88, 92, 110, 0, 0, 0, 0}
-};
+    {65, 68, 70, 72, 75, 78, 80, 82, 85, 88, 92, 110, 0, 0, 0, 0}};
 
 // PPPH: 3 claps + "hai" (B section ending, lead into Chorus)
 // "Pan-Pan-Pan-Hai!"
-constexpr ChantPreset PPPH_PATTERN = {
-    "PPPH",
-    4,
-    {1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-    {90, 95, 100, 110, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-};
+constexpr ChantPreset PPPH_PATTERN = {"PPPH",
+                                      4,
+                                      {1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+                                      {90, 95, 100, 110, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
 
 // Intro MIX pattern (extended version for Intro sections)
 // "Fu-Fu-Fu-Fu-Fu-Fuu-Fuu-Waa"
@@ -79,8 +73,7 @@ constexpr ChantPreset INTRO_MIX_PATTERN = {
     "IntroMix",
     8,
     {1, 1, 1, 1, 1, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0},
-    {80, 82, 85, 88, 90, 95, 100, 110, 0, 0, 0, 0, 0, 0, 0, 0}
-};
+    {80, 82, 85, 88, 90, 95, 100, 110, 0, 0, 0, 0, 0, 0, 0, 0}};
 
 // Add chant notes from a preset
 void addChantNotes(MidiTrack& track, Tick start_tick, const ChantPreset& preset,
@@ -90,18 +83,18 @@ void addChantNotes(MidiTrack& track, Tick start_tick, const ChantPreset& preset,
     Tick duration = preset.rhythm[i] * EIGHTH_NOTE;
     uint8_t vel = preset.velocity[i];
     if (notes_enabled) {
-      addSENote(track,current, duration, CALL_PITCH, vel);
+      addSENote(track, current, duration, CALL_PITCH, vel);
     }
     current += duration;
   }
 }
 
 // Add a simple call (HAI, FU, SORE)
-void addSimpleCall(MidiTrack& track, Tick tick, const char* tag,
-                   Tick duration, uint8_t velocity, bool notes_enabled) {
+void addSimpleCall(MidiTrack& track, Tick tick, const char* tag, Tick duration, uint8_t velocity,
+                   bool notes_enabled) {
   track.addText(tick, tag);
   if (notes_enabled) {
-    addSENote(track,tick, duration, CALL_PITCH, velocity);
+    addSENote(track, tick, duration, CALL_PITCH, velocity);
   }
 }
 
@@ -125,15 +118,9 @@ bool shouldAddCall(CallDensity density, std::mt19937& rng) {
 }
 
 // Generate calls for a specific section
-void generateCallsForSection(
-    MidiTrack& track,
-    const Section& section,
-    IntroChant intro_chant,
-    MixPattern mix_pattern,
-    CallDensity density,
-    bool notes_enabled,
-    std::mt19937& rng) {
-
+void generateCallsForSection(MidiTrack& track, const Section& section, IntroChant intro_chant,
+                             MixPattern mix_pattern, CallDensity density, bool notes_enabled,
+                             std::mt19937& rng) {
   Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
 
   switch (section.type) {
@@ -154,7 +141,7 @@ void generateCallsForSection(
         if (notes_enabled) {
           // Simple repeated shouts
           for (Tick t = section.start_tick; t < section_end; t += TICKS_PER_BAR) {
-            addSENote(track,t, QUARTER_NOTE, CALL_PITCH, 100);
+            addSENote(track, t, QUARTER_NOTE, CALL_PITCH, 100);
           }
         }
       }
@@ -214,16 +201,9 @@ void generateSETrack(MidiTrack& track, const Song& song) {
   }
 }
 
-void generateSETrack(
-    MidiTrack& track,
-    const Song& song,
-    bool call_enabled,
-    bool call_notes_enabled,
-    IntroChant intro_chant,
-    MixPattern mix_pattern,
-    CallDensity call_density,
-    std::mt19937& rng) {
-
+void generateSETrack(MidiTrack& track, const Song& song, bool call_enabled, bool call_notes_enabled,
+                     IntroChant intro_chant, MixPattern mix_pattern, CallDensity call_density,
+                     std::mt19937& rng) {
   const auto& sections = song.arrangement().sections();
 
   // Always add section markers
@@ -244,8 +224,8 @@ void generateSETrack(
       if (!hasTrack(section.track_mask, TrackMask::SE)) {
         continue;
       }
-      generateCallsForSection(track, section, intro_chant, mix_pattern,
-                              call_density, call_notes_enabled, rng);
+      generateCallsForSection(track, section, intro_chant, mix_pattern, call_density,
+                              call_notes_enabled, rng);
     }
 
     // Insert PPPH at B→Chorus transitions (Wotagei culture)
@@ -280,17 +260,12 @@ bool isCallEnabled(VocalStylePreset style) {
   }
 }
 
-void insertPPPHAtBtoChorus(
-    MidiTrack& track,
-    const std::vector<Section>& sections,
-    bool notes_enabled) {
-
+void insertPPPHAtBtoChorus(MidiTrack& track, const std::vector<Section>& sections,
+                           bool notes_enabled) {
   for (size_t i = 0; i + 1 < sections.size(); ++i) {
-    if (sections[i].type == SectionType::B &&
-        sections[i + 1].type == SectionType::Chorus) {
+    if (sections[i].type == SectionType::B && sections[i + 1].type == SectionType::Chorus) {
       // Start PPPH at the last bar of B section
-      Tick ppph_start = sections[i].start_tick +
-                        (sections[i].bars - 1) * TICKS_PER_BAR;
+      Tick ppph_start = sections[i].start_tick + (sections[i].bars - 1) * TICKS_PER_BAR;
 
       // Add text marker
       track.addText(ppph_start, "PPPH");
@@ -301,11 +276,7 @@ void insertPPPHAtBtoChorus(
   }
 }
 
-void insertMIXAtIntro(
-    MidiTrack& track,
-    const std::vector<Section>& sections,
-    bool notes_enabled) {
-
+void insertMIXAtIntro(MidiTrack& track, const std::vector<Section>& sections, bool notes_enabled) {
   for (const auto& section : sections) {
     if (section.type == SectionType::Intro) {
       // Add text marker

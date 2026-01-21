@@ -4,9 +4,11 @@
  */
 
 #include <gtest/gtest.h>
-#include "midi/midi_writer.h"
-#include "core/structure.h"
+
 #include <cstring>
+
+#include "core/structure.h"
+#include "midi/midi_writer.h"
 
 namespace midisketch {
 namespace {
@@ -82,8 +84,7 @@ TEST(MidiWriterSmf1Test, ContainsMTrkChunk) {
   // Look for MTrk
   bool found = false;
   for (size_t i = 14; i + 3 < data.size(); ++i) {
-    if (data[i] == 'M' && data[i + 1] == 'T' &&
-        data[i + 2] == 'r' && data[i + 3] == 'k') {
+    if (data[i] == 'M' && data[i + 1] == 'T' && data[i + 2] == 'r' && data[i + 3] == 'k') {
       found = true;
       break;
     }
@@ -133,8 +134,8 @@ TEST(MidiWriterSmf1Test, SETrackIsFirstTrack) {
   // Track name should be "SE" (FF 03 02 'S' 'E')
   bool found_se = false;
   for (size_t i = 22; i + 4 < data.size() && i < 40; ++i) {
-    if (data[i] == 0xFF && data[i + 1] == 0x03 &&
-        data[i + 2] == 0x02 && data[i + 3] == 'S' && data[i + 4] == 'E') {
+    if (data[i] == 0xFF && data[i + 1] == 0x03 && data[i + 2] == 0x02 && data[i + 3] == 'S' &&
+        data[i + 4] == 'E') {
       found_se = true;
       break;
     }
@@ -364,7 +365,8 @@ TEST(MidiWriterSmf1Test, MetadataEmbeddedAsTextEvent) {
   song.setBpm(120);
   song.vocal().addNote(0, 480, 60, 100);
 
-  std::string metadata = R"({"generator":"midi-sketch","format_version":1,"library_version":"1.0.0","seed":12345})";
+  std::string metadata =
+      R"({"generator":"midi-sketch","format_version":1,"library_version":"1.0.0","seed":12345})";
   writer.build(song, Key::C, metadata, MidiFormat::SMF1);
   auto data = writer.toBytes();
 

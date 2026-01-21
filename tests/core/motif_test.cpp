@@ -3,22 +3,23 @@
  * @brief Tests for motif operations.
  */
 
-#include <gtest/gtest.h>
 #include "core/motif.h"
-#include "core/generator.h"
-#include "core/types.h"
+
+#include <gtest/gtest.h>
+
 #include <map>
 #include <random>
 #include <set>
+
+#include "core/generator.h"
+#include "core/types.h"
 
 namespace midisketch {
 namespace {
 
 class MotifTest : public ::testing::Test {
  protected:
-  void SetUp() override {
-    rng_.seed(12345);
-  }
+  void SetUp() override { rng_.seed(12345); }
 
   std::mt19937 rng_;
 };
@@ -107,7 +108,7 @@ TEST_F(MotifTest, VariationAugmented) {
 
   EXPECT_EQ(augmented.rhythm[0].eighths, 4);  // 2 * 2
   EXPECT_EQ(augmented.rhythm[1].eighths, 4);  // 2 * 2
-  EXPECT_EQ(augmented.length_beats, 8);  // 4 * 2
+  EXPECT_EQ(augmented.length_beats, 8);       // 4 * 2
 }
 
 TEST_F(MotifTest, VariationDiminished) {
@@ -119,13 +120,12 @@ TEST_F(MotifTest, VariationDiminished) {
 
   EXPECT_EQ(diminished.rhythm[0].eighths, 2);  // 4 / 2
   EXPECT_EQ(diminished.rhythm[1].eighths, 2);  // 4 / 2
-  EXPECT_EQ(diminished.length_beats, 4);  // 8 / 2
+  EXPECT_EQ(diminished.length_beats, 4);       // 8 / 2
 }
 
 TEST_F(MotifTest, VariationFragmented) {
   Motif original;
-  original.rhythm = {{0.0f, 2, true}, {1.0f, 2, false},
-                     {2.0f, 2, true}, {3.0f, 2, false}};
+  original.rhythm = {{0.0f, 2, true}, {1.0f, 2, false}, {2.0f, 2, true}, {3.0f, 2, false}};
   original.contour_degrees = {0, 2, 4, 2};
   original.length_beats = 8;
 
@@ -179,10 +179,8 @@ TEST_F(MotifTest, HookContourIsShort) {
 
   // Original contour is {0, 0, 2} which gets padded to rhythm size
   // The key insight: contour values repeat (lots of 0s) for simplicity
-  std::set<int8_t> unique_values(hook.contour_degrees.begin(),
-                                  hook.contour_degrees.end());
-  EXPECT_LE(unique_values.size(), 3u)
-      << "Hook should use only 2-3 distinct pitch degrees";
+  std::set<int8_t> unique_values(hook.contour_degrees.begin(), hook.contour_degrees.end());
+  EXPECT_LE(unique_values.size(), 3u) << "Hook should use only 2-3 distinct pitch degrees";
 }
 
 // === Hook Variation Restriction Tests ===
@@ -202,8 +200,7 @@ TEST_F(MotifTest, SelectHookVariationReturnsOnlyAllowed) {
   EXPECT_GT(counts[MotifVariation::Exact], 50)
       << "Exact should be the dominant variation for hooks";
   // Fragmented should be minority
-  EXPECT_LT(counts[MotifVariation::Fragmented], 50)
-      << "Fragmented should be rare for hooks";
+  EXPECT_LT(counts[MotifVariation::Fragmented], 50) << "Fragmented should be rare for hooks";
 }
 
 TEST_F(MotifTest, IsHookAppropriateVariation) {
@@ -239,8 +236,8 @@ TEST_F(MotifTest, MotifRoleMetaHookProperties) {
 
   EXPECT_EQ(meta.role, MotifRole::Hook);
   EXPECT_GT(meta.exact_repeat_prob, 0.8f);  // High repetition
-  EXPECT_LT(meta.variation_range, 0.2f);     // Low variation
-  EXPECT_GT(meta.velocity_base, 80u);        // Prominent
+  EXPECT_LT(meta.variation_range, 0.2f);    // Low variation
+  EXPECT_GT(meta.velocity_base, 80u);       // Prominent
   EXPECT_TRUE(meta.allow_octave_layer);
 }
 
@@ -248,18 +245,18 @@ TEST_F(MotifTest, MotifRoleMetaTextureProperties) {
   MotifRoleMeta meta = getMotifRoleMeta(MotifRole::Texture);
 
   EXPECT_EQ(meta.role, MotifRole::Texture);
-  EXPECT_LT(meta.exact_repeat_prob, 0.7f);   // More variation allowed
-  EXPECT_GT(meta.variation_range, 0.3f);      // Moderate variation
-  EXPECT_LT(meta.velocity_base, 80u);         // Softer
-  EXPECT_FALSE(meta.allow_octave_layer);      // No octave for texture
+  EXPECT_LT(meta.exact_repeat_prob, 0.7f);  // More variation allowed
+  EXPECT_GT(meta.variation_range, 0.3f);    // Moderate variation
+  EXPECT_LT(meta.velocity_base, 80u);       // Softer
+  EXPECT_FALSE(meta.allow_octave_layer);    // No octave for texture
 }
 
 TEST_F(MotifTest, MotifRoleMetaCounterProperties) {
   MotifRoleMeta meta = getMotifRoleMeta(MotifRole::Counter);
 
   EXPECT_EQ(meta.role, MotifRole::Counter);
-  EXPECT_GT(meta.exact_repeat_prob, 0.5f);    // Moderate repetition
-  EXPECT_LT(meta.variation_range, 0.5f);       // Some variation
+  EXPECT_GT(meta.exact_repeat_prob, 0.5f);  // Moderate repetition
+  EXPECT_LT(meta.variation_range, 0.5f);    // Some variation
   EXPECT_TRUE(meta.allow_octave_layer);
 }
 
@@ -314,8 +311,8 @@ TEST_F(MotifTest, ExtractMotifFromChorusMaxNotes) {
   std::vector<NoteEvent> chorus_notes;
   // Create more notes than max_notes
   for (int i = 0; i < 16; ++i) {
-    chorus_notes.push_back({static_cast<Tick>(i * TICKS_PER_BEAT),
-                            TICKS_PER_BEAT, static_cast<uint8_t>(60 + i), 100});
+    chorus_notes.push_back(
+        {static_cast<Tick>(i * TICKS_PER_BEAT), TICKS_PER_BEAT, static_cast<uint8_t>(60 + i), 100});
   }
 
   // Extract with max_notes = 4
@@ -328,9 +325,9 @@ TEST_F(MotifTest, ExtractMotifFromChorusMaxNotes) {
 TEST_F(MotifTest, ExtractMotifFromChorusFindsClimax) {
   std::vector<NoteEvent> chorus_notes;
   // Create melody where highest note is in the middle
-  chorus_notes.push_back({0, TICKS_PER_BEAT, 60, 100});                    // C4
-  chorus_notes.push_back({TICKS_PER_BEAT, TICKS_PER_BEAT, 72, 100});       // C5 (highest)
-  chorus_notes.push_back({TICKS_PER_BEAT * 2, TICKS_PER_BEAT, 64, 100});   // E4
+  chorus_notes.push_back({0, TICKS_PER_BEAT, 60, 100});                   // C4
+  chorus_notes.push_back({TICKS_PER_BEAT, TICKS_PER_BEAT, 72, 100});      // C5 (highest)
+  chorus_notes.push_back({TICKS_PER_BEAT * 2, TICKS_PER_BEAT, 64, 100});  // E4
 
   Motif motif = extractMotifFromChorus(chorus_notes);
 
@@ -413,8 +410,8 @@ TEST_F(MotifTest, PlaceMotifInIntroSnapsToScale) {
   // All notes should be in C major scale
   for (const auto& note : notes) {
     EXPECT_TRUE(isInCMajorScale(note.note))
-        << "Pitch " << static_cast<int>(note.note)
-        << " (pitch class " << (note.note % 12) << ") is not in C major scale";
+        << "Pitch " << static_cast<int>(note.note) << " (pitch class " << (note.note % 12)
+        << ") is not in C major scale";
   }
 }
 
@@ -496,12 +493,24 @@ class ScaleTypeIntegrationTest : public ::testing::Test {
 
     const int* intervals;
     switch (scale) {
-      case ScaleType::Major: intervals = major; break;
-      case ScaleType::NaturalMinor: intervals = natural_minor; break;
-      case ScaleType::HarmonicMinor: intervals = harmonic_minor; break;
-      case ScaleType::Dorian: intervals = dorian; break;
-      case ScaleType::Mixolydian: intervals = mixolydian; break;
-      default: intervals = major; break;
+      case ScaleType::Major:
+        intervals = major;
+        break;
+      case ScaleType::NaturalMinor:
+        intervals = natural_minor;
+        break;
+      case ScaleType::HarmonicMinor:
+        intervals = harmonic_minor;
+        break;
+      case ScaleType::Dorian:
+        intervals = dorian;
+        break;
+      case ScaleType::Mixolydian:
+        intervals = mixolydian;
+        break;
+      default:
+        intervals = major;
+        break;
     }
 
     int pitch_class = pitch % 12;
@@ -614,7 +623,7 @@ TEST_F(MotifTest, PlaceMotifInIntroUsesAbsolutePitchesWithOctaveAdjustment) {
   // Verify that placeMotifInIntro uses absolute_pitches when available
   Motif motif;
   motif.rhythm = {{0.0f, 2, true}, {1.0f, 2, false}, {2.0f, 2, true}};
-  motif.contour_degrees = {0, 4, 7};  // These would give C, E, G
+  motif.contour_degrees = {0, 4, 7};      // These would give C, E, G
   motif.absolute_pitches = {72, 76, 79};  // C5, E5, G5 (higher octave)
   motif.length_beats = 4;
 
@@ -669,7 +678,7 @@ TEST_F(MotifTest, VariationTransposedUpdatesAbsolutePitches) {
 
 TEST_F(MotifTest, VariationInvertedUpdatesAbsolutePitches) {
   Motif original;
-  original.contour_degrees = {0, 2, 4};  // Ascending
+  original.contour_degrees = {0, 2, 4};      // Ascending
   original.absolute_pitches = {60, 62, 64};  // C4, D4, E4
 
   Motif inverted = applyVariation(original, MotifVariation::Inverted, 0, rng_);
@@ -684,8 +693,7 @@ TEST_F(MotifTest, VariationInvertedUpdatesAbsolutePitches) {
 
 TEST_F(MotifTest, VariationFragmentedTruncatesAbsolutePitches) {
   Motif original;
-  original.rhythm = {{0.0f, 2, true}, {1.0f, 2, false},
-                     {2.0f, 2, true}, {3.0f, 2, false}};
+  original.rhythm = {{0.0f, 2, true}, {1.0f, 2, false}, {2.0f, 2, true}, {3.0f, 2, false}};
   original.contour_degrees = {0, 2, 4, 2};
   original.absolute_pitches = {60, 62, 64, 62};
   original.length_beats = 8;
@@ -781,14 +789,12 @@ TEST_F(MotifTest, HookContourStartsAtZero) {
   StyleMelodyParams params_rep{};
   params_rep.hook_repetition = true;
   Motif hook_rep = designChorusHook(params_rep, rng_);
-  EXPECT_EQ(hook_rep.contour_degrees[0], 0)
-      << "Hook contour should start at 0 (root)";
+  EXPECT_EQ(hook_rep.contour_degrees[0], 0) << "Hook contour should start at 0 (root)";
 
   StyleMelodyParams params_std{};
   params_std.hook_repetition = false;
   Motif hook_std = designChorusHook(params_std, rng_);
-  EXPECT_EQ(hook_std.contour_degrees[0], 0)
-      << "Hook contour should start at 0 (root)";
+  EXPECT_EQ(hook_std.contour_degrees[0], 0) << "Hook contour should start at 0 (root)";
 }
 
 TEST_F(MotifTest, HookContourUsesSmallIntervals) {

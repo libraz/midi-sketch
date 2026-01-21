@@ -4,12 +4,14 @@
  */
 
 #include "midi/midi2_reader.h"
-#include "midi/midi2_writer.h"
-#include "midi/midi_reader.h"
+
+#include <gtest/gtest.h>
+
 #include "core/json_helpers.h"
 #include "core/preset_data.h"
+#include "midi/midi2_writer.h"
+#include "midi/midi_reader.h"
 #include "midisketch.h"
-#include <gtest/gtest.h>
 
 namespace midisketch {
 namespace {
@@ -20,8 +22,7 @@ namespace {
 
 TEST(Midi2ReaderTest, DetectKtmidiContainer) {
   // ktmidi container magic: "AAAAAAAAEEEEEEEE"
-  uint8_t data[] = {'A', 'A', 'A', 'A', 'A', 'A', 'A', 'A',
-                    'E', 'E', 'E', 'E', 'E', 'E', 'E', 'E'};
+  uint8_t data[] = {'A', 'A', 'A', 'A', 'A', 'A', 'A', 'A', 'E', 'E', 'E', 'E', 'E', 'E', 'E', 'E'};
   EXPECT_TRUE(Midi2Reader::isMidi2Format(data, sizeof(data)));
 }
 
@@ -132,9 +133,8 @@ TEST(Midi2ReaderTest, HandleInvalidData) {
 
 TEST(Midi2ReaderTest, HandleTruncatedContainer) {
   // Valid header but truncated
-  uint8_t data[] = {'A', 'A', 'A', 'A', 'A', 'A', 'A', 'A',
-                    'E', 'E', 'E', 'E', 'E', 'E', 'E', 'E',
-                    0x00, 0x00};  // Truncated delta/track info
+  uint8_t data[] = {'A', 'A', 'A', 'A', 'A', 'A', 'A', 'A',  'E',
+                    'E', 'E', 'E', 'E', 'E', 'E', 'E', 0x00, 0x00};  // Truncated delta/track info
   Midi2Reader reader;
   EXPECT_FALSE(reader.read(data, sizeof(data)));
 }
@@ -147,7 +147,7 @@ TEST(Midi2ReaderTest, RegenerationProducesSameOutput) {
   // Generate original MIDI
   MidiSketch sketch1;
   SongConfig config = createDefaultSongConfig(2);  // style_id
-  config.seed = 54321;  // explicit seed
+  config.seed = 54321;                             // explicit seed
   config.bpm = 128;
   config.chord_progression_id = 2;
   config.form = StructurePattern::StandardPop;
@@ -163,8 +163,8 @@ TEST(Midi2ReaderTest, RegenerationProducesSameOutput) {
 
   // Parse metadata and regenerate
   json::Parser p(reader.getParsedMidi().metadata);
-  uint8_t style_preset_id = p.has("style_preset_id")
-      ? static_cast<uint8_t>(p.getInt("style_preset_id")) : 0;
+  uint8_t style_preset_id =
+      p.has("style_preset_id") ? static_cast<uint8_t>(p.getInt("style_preset_id")) : 0;
   SongConfig config2 = createDefaultSongConfig(style_preset_id);
   config2.seed = p.getUint("seed");
   config2.bpm = static_cast<uint16_t>(p.getInt("bpm"));
@@ -211,7 +211,7 @@ TEST(Midi2ReaderTest, RegenerationProducesSameOutput) {
 TEST(Midi2ReaderTest, SMF1AndSMF2HaveSameMetadata) {
   // Generate same song in both formats
   SongConfig config = createDefaultSongConfig(3);  // style_id
-  config.seed = 11111;  // explicit seed
+  config.seed = 11111;                             // explicit seed
   config.bpm = 110;
   config.chord_progression_id = 4;
 

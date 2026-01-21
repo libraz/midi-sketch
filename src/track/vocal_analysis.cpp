@@ -38,8 +38,7 @@ constexpr Tick kMinPhraseLength = TICKS_PER_BAR;
  * @param[out] pitch_at_tick    Output map: start tick -> pitch
  * @param[out] note_end_at_tick Output map: start tick -> end tick
  */
-void buildPitchMap(const std::vector<NoteEvent>& notes,
-                   std::map<Tick, uint8_t>& pitch_at_tick,
+void buildPitchMap(const std::vector<NoteEvent>& notes, std::map<Tick, uint8_t>& pitch_at_tick,
                    std::map<Tick, Tick>& note_end_at_tick) {
   // Collect note coverage: for each start tick, track highest pitch
   std::map<Tick, uint8_t> coverage;
@@ -79,14 +78,13 @@ std::vector<int8_t> calculateDirections(const std::vector<NoteEvent>& notes) {
   directions.push_back(0);
 
   for (size_t i = 1; i < notes.size(); ++i) {
-    int diff = static_cast<int>(notes[i].note) -
-               static_cast<int>(notes[i - 1].note);
+    int diff = static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note);
     if (diff > 0) {
-      directions.push_back(1);   // Ascending
+      directions.push_back(1);  // Ascending
     } else if (diff < 0) {
       directions.push_back(-1);  // Descending
     } else {
-      directions.push_back(0);   // Repeated note
+      directions.push_back(0);  // Repeated note
     }
   }
 
@@ -103,8 +101,7 @@ std::vector<int8_t> calculateDirections(const std::vector<NoteEvent>& notes) {
  * @param[in]  directions        Pre-calculated directions for each note
  * @param[out] direction_at_tick Output map: start tick -> direction
  */
-void buildDirectionMap(const std::vector<NoteEvent>& notes,
-                       const std::vector<int8_t>& directions,
+void buildDirectionMap(const std::vector<NoteEvent>& notes, const std::vector<int8_t>& directions,
                        std::map<Tick, int8_t>& direction_at_tick) {
   for (size_t i = 0; i < notes.size() && i < directions.size(); ++i) {
     direction_at_tick[notes[i].start_tick] = directions[i];
@@ -123,9 +120,7 @@ std::vector<VocalPhraseInfo> extractPhrases(const std::vector<NoteEvent>& notes,
   // Sort notes chronologically for gap detection
   std::vector<NoteEvent> sorted_notes = notes;
   std::sort(sorted_notes.begin(), sorted_notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) {
-              return a.start_tick < b.start_tick;
-            });
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
   // Initialize first phrase with first note
   Tick phrase_start = sorted_notes[0].start_tick;
@@ -142,10 +137,9 @@ std::vector<VocalPhraseInfo> extractPhrases(const std::vector<NoteEvent>& notes,
       // Gap detected - finalize current phrase if long enough
       Tick phrase_length = phrase_end - phrase_start;
       if (phrase_length >= kMinPhraseLength) {
-        float density = static_cast<float>(phrase_total_duration) /
-                        static_cast<float>(phrase_length);
-        phrases.push_back({phrase_start, phrase_end, density,
-                           phrase_low, phrase_high});
+        float density =
+            static_cast<float>(phrase_total_duration) / static_cast<float>(phrase_length);
+        phrases.push_back({phrase_start, phrase_end, density, phrase_low, phrase_high});
       }
 
       // Start new phrase
@@ -166,10 +160,8 @@ std::vector<VocalPhraseInfo> extractPhrases(const std::vector<NoteEvent>& notes,
   // Finalize last phrase
   Tick phrase_length = phrase_end - phrase_start;
   if (phrase_length >= kMinPhraseLength) {
-    float density = static_cast<float>(phrase_total_duration) /
-                    static_cast<float>(phrase_length);
-    phrases.push_back({phrase_start, phrase_end, density,
-                       phrase_low, phrase_high});
+    float density = static_cast<float>(phrase_total_duration) / static_cast<float>(phrase_length);
+    phrases.push_back({phrase_start, phrase_end, density, phrase_low, phrase_high});
   }
 
   return phrases;
@@ -177,8 +169,7 @@ std::vector<VocalPhraseInfo> extractPhrases(const std::vector<NoteEvent>& notes,
 
 /// Find rest positions (gaps between notes) for bass fills, drum fills, and
 /// call-response opportunities. Includes initial rest if first note starts late.
-std::vector<Tick> findRestPositions(const std::vector<NoteEvent>& notes,
-                                    Tick /*track_end*/) {
+std::vector<Tick> findRestPositions(const std::vector<NoteEvent>& notes, Tick /*track_end*/) {
   std::vector<Tick> rests;
   if (notes.empty()) {
     return rests;
@@ -187,9 +178,7 @@ std::vector<Tick> findRestPositions(const std::vector<NoteEvent>& notes,
   // Sort notes chronologically
   std::vector<NoteEvent> sorted_notes = notes;
   std::sort(sorted_notes.begin(), sorted_notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) {
-              return a.start_tick < b.start_tick;
-            });
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
   // Check for initial rest (silence before first note)
   if (sorted_notes[0].start_tick > 0) {
@@ -241,14 +230,12 @@ VocalAnalysis analyzeVocal(const MidiTrack& vocal_track) {
     result.highest_pitch = std::max(result.highest_pitch, note.note);
   }
 
-  result.average_duration =
-      static_cast<float>(total_duration) / static_cast<float>(notes.size());
+  result.average_duration = static_cast<float>(total_duration) / static_cast<float>(notes.size());
 
   // Step 2: Calculate overall density (note coverage ratio)
   Tick track_span = vocal_track.lastTick();
   if (track_span > 0) {
-    result.density = static_cast<float>(total_duration) /
-                     static_cast<float>(track_span);
+    result.density = static_cast<float>(total_duration) / static_cast<float>(track_span);
     result.density = std::clamp(result.density, 0.0f, 1.0f);
   } else {
     result.density = 0.0f;
@@ -268,8 +255,7 @@ VocalAnalysis analyzeVocal(const MidiTrack& vocal_track) {
   return result;
 }
 
-float getVocalDensityForSection(const VocalAnalysis& va,
-                                const Section& section) {
+float getVocalDensityForSection(const VocalAnalysis& va, const Section& section) {
   Tick section_start = section.start_tick;
   Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
 
@@ -296,9 +282,8 @@ float getVocalDensityForSection(const VocalAnalysis& va,
     return 0.0f;
   }
 
-  return std::clamp(
-      static_cast<float>(covered_duration) / static_cast<float>(section_duration),
-      0.0f, 1.0f);
+  return std::clamp(static_cast<float>(covered_duration) / static_cast<float>(section_duration),
+                    0.0f, 1.0f);
 }
 
 int8_t getVocalDirectionAt(const VocalAnalysis& va, Tick tick) {
@@ -338,12 +323,9 @@ uint8_t getVocalPitchAt(const VocalAnalysis& va, Tick tick) {
   return it->second;
 }
 
-bool isVocalRestingAt(const VocalAnalysis& va, Tick tick) {
-  return getVocalPitchAt(va, tick) == 0;
-}
+bool isVocalRestingAt(const VocalAnalysis& va, Tick tick) { return getVocalPitchAt(va, tick) == 0; }
 
-MotionType selectMotionType(int8_t vocal_direction, int bar_position,
-                            std::mt19937& rng) {
+MotionType selectMotionType(int8_t vocal_direction, int bar_position, std::mt19937& rng) {
   // Stationary vocal -> bass should provide motion
   if (vocal_direction == 0) {
     return MotionType::Oblique;
@@ -360,11 +342,16 @@ MotionType selectMotionType(int8_t vocal_direction, int bar_position,
   }
 
   switch (choice) {
-    case 0: return MotionType::Oblique;
-    case 1: return MotionType::Contrary;
-    case 2: return MotionType::Similar;
-    case 3: return MotionType::Parallel;
-    default: return MotionType::Oblique;
+    case 0:
+      return MotionType::Oblique;
+    case 1:
+      return MotionType::Contrary;
+    case 2:
+      return MotionType::Similar;
+    case 3:
+      return MotionType::Parallel;
+    default:
+      return MotionType::Oblique;
   }
 }
 

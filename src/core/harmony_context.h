@@ -11,12 +11,13 @@
 #ifndef MIDISKETCH_CORE_HARMONY_CONTEXT_H
 #define MIDISKETCH_CORE_HARMONY_CONTEXT_H
 
+#include <vector>
+
 #include "core/chord_progression_tracker.h"
 #include "core/i_harmony_context.h"
 #include "core/safe_pitch_resolver.h"
 #include "core/track_collision_detector.h"
 #include "core/types.h"
-#include <vector>
 
 namespace midisketch {
 
@@ -44,24 +45,21 @@ class HarmonyContext : public IHarmonyContext {
   // IHarmonyContext interface implementation
   // =========================================================================
 
-  void initialize(const Arrangement& arrangement,
-                  const ChordProgression& progression,
+  void initialize(const Arrangement& arrangement, const ChordProgression& progression,
                   Mood mood) override;
 
   int8_t getChordDegreeAt(Tick tick) const override;
 
   std::vector<int> getChordTonesAt(Tick tick) const override;
 
-  void registerNote(Tick start, Tick duration, uint8_t pitch,
-                    TrackRole track) override;
+  void registerNote(Tick start, Tick duration, uint8_t pitch, TrackRole track) override;
 
   void registerTrack(const MidiTrack& track, TrackRole role) override;
 
-  bool isPitchSafe(uint8_t pitch, Tick start, Tick duration,
-                   TrackRole exclude) const override;
+  bool isPitchSafe(uint8_t pitch, Tick start, Tick duration, TrackRole exclude) const override;
 
-  uint8_t getSafePitch(uint8_t desired, Tick start, Tick duration,
-                       TrackRole track, uint8_t low, uint8_t high) const override;
+  uint8_t getSafePitch(uint8_t desired, Tick start, Tick duration, TrackRole track, uint8_t low,
+                       uint8_t high) const override;
 
   Tick getNextChordChangeTick(Tick after) const override;
 
@@ -69,11 +67,9 @@ class HarmonyContext : public IHarmonyContext {
 
   void clearNotesForTrack(TrackRole track) override;
 
-  bool hasBassCollision(uint8_t pitch, Tick start, Tick duration,
-                        int threshold = 3) const override;
+  bool hasBassCollision(uint8_t pitch, Tick start, Tick duration, int threshold = 3) const override;
 
-  std::vector<int> getPitchClassesFromTrackAt(Tick tick,
-                                              TrackRole role) const override;
+  std::vector<int> getPitchClassesFromTrackAt(Tick tick, TrackRole role) const override;
 
   // =========================================================================
   // Component accessors (for advanced usage)

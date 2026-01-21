@@ -3,12 +3,15 @@
  * @brief Tests for chord track generation.
  */
 
+#include "track/chord_track.h"
+
 #include <gtest/gtest.h>
+
+#include <set>
+
 #include "core/generator.h"
 #include "core/song.h"
 #include "core/types.h"
-#include "track/chord_track.h"
-#include <set>
 
 namespace midisketch {
 namespace {
@@ -70,10 +73,8 @@ TEST_F(ChordTrackTest, ChordNotesInPianoRange) {
 
   const auto& track = gen.getSong().chord();
   for (const auto& note : track.notes()) {
-    EXPECT_GE(note.note, CHORD_LOW)
-        << "Chord note " << static_cast<int>(note.note) << " below C3";
-    EXPECT_LE(note.note, CHORD_HIGH)
-        << "Chord note " << static_cast<int>(note.note) << " above C6";
+    EXPECT_GE(note.note, CHORD_LOW) << "Chord note " << static_cast<int>(note.note) << " below C3";
+    EXPECT_LE(note.note, CHORD_HIGH) << "Chord note " << static_cast<int>(note.note) << " above C6";
   }
 }
 
@@ -122,8 +123,7 @@ TEST_F(ChordTrackTest, DifferentProgressionsProduceDifferentChords) {
       break;
     }
   }
-  EXPECT_FALSE(all_same)
-      << "Different progressions produced identical chord tracks";
+  EXPECT_FALSE(all_same) << "Different progressions produced identical chord tracks";
 }
 
 TEST_F(ChordTrackTest, ChordNotesAreScaleTones) {
@@ -145,11 +145,9 @@ TEST_F(ChordTrackTest, ChordNotesAreScaleTones) {
   }
 
   // Chord notes should mostly be in scale (some alterations allowed)
-  double out_of_scale_ratio =
-      static_cast<double>(out_of_scale_count) / track.notes().size();
-  EXPECT_LT(out_of_scale_ratio, 0.1)
-      << "Too many out-of-scale chord notes: " << out_of_scale_count << " of "
-      << track.notes().size();
+  double out_of_scale_ratio = static_cast<double>(out_of_scale_count) / track.notes().size();
+  EXPECT_LT(out_of_scale_ratio, 0.1) << "Too many out-of-scale chord notes: " << out_of_scale_count
+                                     << " of " << track.notes().size();
 }
 
 TEST_F(ChordTrackTest, SameSeedProducesSameChords) {
@@ -165,8 +163,7 @@ TEST_F(ChordTrackTest, SameSeedProducesSameChords) {
       << "Same seed produced different number of chord notes";
 
   for (size_t i = 0; i < track1.notes().size(); ++i) {
-    EXPECT_EQ(track1.notes()[i].note, track2.notes()[i].note)
-        << "Note mismatch at index " << i;
+    EXPECT_EQ(track1.notes()[i].note, track2.notes()[i].note) << "Note mismatch at index " << i;
   }
 }
 
@@ -199,8 +196,8 @@ TEST_F(ChordTrackTest, TranspositionWorksCorrectly) {
   }
 
   // C major should have F (5), G major should have F# (6)
-  bool c_has_f = pcs_c.count(5) > 0;      // F natural
-  bool g_has_fsharp = pcs_g.count(6) > 0; // F#
+  bool c_has_f = pcs_c.count(5) > 0;       // F natural
+  bool g_has_fsharp = pcs_g.count(6) > 0;  // F#
 
   // At least one of these should be true to show transposition works
   EXPECT_TRUE(c_has_f || g_has_fsharp || pcs_c != pcs_g)
@@ -228,8 +225,7 @@ TEST_F(ChordTrackTest, SusChordResolutionGuarantee) {
 
   // The implementation guarantees that two consecutive sus chords won't occur
   // We can verify that chords are generated with the extension enabled
-  EXPECT_GT(chord_track.notes().size(), 10u)
-      << "Should have multiple chord notes";
+  EXPECT_GT(chord_track.notes().size(), 10u) << "Should have multiple chord notes";
 }
 
 TEST_F(ChordTrackTest, SusChordExtensionGeneratesValidNotes) {
@@ -313,8 +309,7 @@ TEST_F(ChordTrackTest, AnticipationInChorusSection) {
   }
 
   // Anticipation should be present in Chorus/B sections
-  EXPECT_GT(anticipation_notes, 0)
-      << "Chorus/B sections should have anticipation notes at beat 4&";
+  EXPECT_GT(anticipation_notes, 0) << "Chorus/B sections should have anticipation notes at beat 4&";
 }
 
 TEST_F(ChordTrackTest, NoAnticipationInIntroOutro) {
@@ -346,8 +341,7 @@ TEST_F(ChordTrackTest, NoAnticipationInIntroOutro) {
       }
     }
 
-    EXPECT_EQ(anticipation_in_section, 0)
-        << "Intro/Outro should not have anticipation notes";
+    EXPECT_EQ(anticipation_in_section, 0) << "Intro/Outro should not have anticipation notes";
   }
 }
 

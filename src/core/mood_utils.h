@@ -18,94 +18,71 @@ namespace MoodClassification {
 // @param mood Mood to check
 // @returns true if ballad-type mood
 inline bool isBallad(Mood mood) {
-  return mood == Mood::Ballad || mood == Mood::Sentimental ||
-         mood == Mood::Chill;
+  return mood == Mood::Ballad || mood == Mood::Sentimental || mood == Mood::Chill;
 }
 
 // Check if mood is in the dramatic family (intense, climactic).
 // @param mood Mood to check
 // @returns true if dramatic-type mood
-inline bool isDramatic(Mood mood) {
-  return mood == Mood::Dramatic || mood == Mood::Nostalgic;
-}
+inline bool isDramatic(Mood mood) { return mood == Mood::Dramatic || mood == Mood::Nostalgic; }
 
 // Check if mood is dance-oriented (high energy, steady pulse).
 // @param mood Mood to check
 // @returns true if dance-oriented mood
 inline bool isDanceOriented(Mood mood) {
-  return mood == Mood::EnergeticDance || mood == Mood::IdolPop ||
-         mood == Mood::FutureBass;
+  return mood == Mood::EnergeticDance || mood == Mood::IdolPop || mood == Mood::FutureBass;
 }
 
 // Check if mood is jazz-influenced (extended harmonies, swing feel).
 // @param mood Mood to check
 // @returns true if jazz-influenced mood
-inline bool isJazzInfluenced(Mood mood) {
-  return mood == Mood::CityPop;
-}
+inline bool isJazzInfluenced(Mood mood) { return mood == Mood::CityPop; }
 
 // Check if mood is rock-oriented (driving rhythm, power chords).
 // @param mood Mood to check
 // @returns true if rock-oriented mood
-inline bool isRock(Mood mood) {
-  return mood == Mood::LightRock;
-}
+inline bool isRock(Mood mood) { return mood == Mood::LightRock; }
 
 // Check if mood is synth-oriented (electronic textures, arpeggios).
 // @param mood Mood to check
 // @returns true if synth-oriented mood
 inline bool isSynthOriented(Mood mood) {
-  return mood == Mood::Yoasobi || mood == Mood::Synthwave ||
-         mood == Mood::FutureBass || mood == Mood::ElectroPop;
+  return mood == Mood::Yoasobi || mood == Mood::Synthwave || mood == Mood::FutureBass ||
+         mood == Mood::ElectroPop;
 }
 
 // Check if mood prefers sparse arrangements (fewer notes, more space).
 // @param mood Mood to check
 // @returns true if sparse arrangement preferred
-inline bool prefersSparsity(Mood mood) {
-  return isBallad(mood) || isDramatic(mood);
-}
+inline bool prefersSparsity(Mood mood) { return isBallad(mood) || isDramatic(mood); }
 
 // Check if mood is aggressive/rock-oriented (powerful, driving bass).
 // @param mood Mood to check
 // @returns true if aggressive bass patterns preferred
 inline bool isAggressive(Mood mood) {
-  return mood == Mood::LightRock || mood == Mood::Anthem ||
-         mood == Mood::Yoasobi;
+  return mood == Mood::LightRock || mood == Mood::Anthem || mood == Mood::Yoasobi;
 }
 
 // Check if mood is electronic/EDM (sidechain, pulse patterns).
 // @param mood Mood to check
 // @returns true if electronic bass patterns preferred
 inline bool isElectronic(Mood mood) {
-  return mood == Mood::EnergeticDance || mood == Mood::ElectroPop ||
-         mood == Mood::Synthwave || mood == Mood::FutureBass;
+  return mood == Mood::EnergeticDance || mood == Mood::ElectroPop || mood == Mood::Synthwave ||
+         mood == Mood::FutureBass;
 }
 
 // Check if mood is groove-oriented (smooth, funky patterns).
 // @param mood Mood to check
 // @returns true if groove bass patterns preferred
-inline bool isGrooveOriented(Mood mood) {
-  return mood == Mood::CityPop || mood == Mood::ModernPop;
-}
+inline bool isGrooveOriented(Mood mood) { return mood == Mood::CityPop || mood == Mood::ModernPop; }
 
 // Check if mood prefers high-energy idol patterns.
 // @param mood Mood to check
 // @returns true if idol bass patterns preferred
-inline bool isIdol(Mood mood) {
-  return mood == Mood::IdolPop || mood == Mood::BrightUpbeat;
-}
+inline bool isIdol(Mood mood) { return mood == Mood::IdolPop || mood == Mood::BrightUpbeat; }
 
 // Mood category for higher-level classification.
-enum class MoodCategory {
-  Ballad,
-  Dance,
-  JazzInfluenced,
-  Rock,
-  Dramatic,
-  Synth,
-  Standard
-};
+enum class MoodCategory { Ballad, Dance, JazzInfluenced, Rock, Dramatic, Synth, Standard };
 
 // Get the high-level category for a mood.
 // @param mood Mood to categorize

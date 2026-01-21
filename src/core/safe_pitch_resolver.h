@@ -9,8 +9,9 @@
 #ifndef MIDISKETCH_CORE_SAFE_PITCH_RESOLVER_H
 #define MIDISKETCH_CORE_SAFE_PITCH_RESOLVER_H
 
-#include "core/types.h"
 #include <cstdint>
+
+#include "core/types.h"
 
 namespace midisketch {
 
@@ -46,9 +47,8 @@ class SafePitchResolver {
    * @param collision_detector Collision detector with registered notes
    * @return Safe pitch within range, or desired if no safe pitch found
    */
-  uint8_t getSafePitch(uint8_t desired, Tick start, Tick duration,
-                       TrackRole track, uint8_t low, uint8_t high,
-                       const ChordProgressionTracker& chord_tracker,
+  uint8_t getSafePitch(uint8_t desired, Tick start, Tick duration, TrackRole track, uint8_t low,
+                       uint8_t high, const ChordProgressionTracker& chord_tracker,
                        const TrackCollisionDetector& collision_detector) const;
 };
 

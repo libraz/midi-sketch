@@ -9,6 +9,9 @@
  */
 
 #include <gtest/gtest.h>
+
+#include <random>
+
 #include "core/arrangement.h"
 #include "core/chord.h"
 #include "core/chord_utils.h"
@@ -18,7 +21,6 @@
 #include "core/motif.h"
 #include "core/timing_constants.h"
 #include "track/aux_track.h"
-#include <random>
 
 namespace midisketch {
 namespace {
@@ -132,8 +134,8 @@ TEST(HarmonyTimingRegression, ChordLookupMustUseActualPlacementTick) {
   // Bug: using degree_at_melody would allow A
   // Fix: using degree_at_harmony correctly identifies A as non-chord tone
 
-  ChordTones f_tones = getChordTones(degree_at_melody);  // F
-  ChordTones c_tones = getChordTones(degree_at_harmony); // C
+  ChordTones f_tones = getChordTones(degree_at_melody);   // F
+  ChordTones c_tones = getChordTones(degree_at_harmony);  // C
 
   bool a_in_f = false, a_in_c = false;
   for (uint8_t i = 0; i < f_tones.count; ++i) {
@@ -207,9 +209,8 @@ TEST(MotifSnappingRegression, MotifNotesMustBeChordTones) {
       }
     }
 
-    EXPECT_TRUE(is_chord_tone)
-        << "Snapped pitch " << snapped << " (pc " << snapped_pc
-        << ") should be chord tone in G chord";
+    EXPECT_TRUE(is_chord_tone) << "Snapped pitch " << snapped << " (pc " << snapped_pc
+                               << ") should be chord tone in G chord";
   }
 }
 

@@ -4,8 +4,10 @@
  */
 
 #include "core/piano_roll_safety.h"
-#include "core/song.h"
+
 #include <cstdlib>
+
+#include "core/song.h"
 
 namespace midisketch {
 
@@ -26,8 +28,8 @@ bool isTritone(int interval) {
 }
 
 // Check collision with a single track.
-CollisionResult checkTrackCollision(const MidiTrack& track, TrackRole role,
-                                    Tick tick, uint8_t pitch) {
+CollisionResult checkTrackCollision(const MidiTrack& track, TrackRole role, Tick tick,
+                                    uint8_t pitch) {
   CollisionResult result;
 
   for (const auto& note : track.notes()) {
@@ -58,19 +60,13 @@ CollisionResult checkTrackCollision(const MidiTrack& track, TrackRole role,
 
 }  // namespace
 
-CollisionResult checkBgmCollisionDetailed(const Song& song, Tick tick,
-                                          uint8_t pitch) {
+CollisionResult checkBgmCollisionDetailed(const Song& song, Tick tick, uint8_t pitch) {
   CollisionResult worst_result;
 
   // Check tracks in order of typical musical importance
   // Chord and Bass are most important for harmonic foundation
-  const TrackRole tracks_to_check[] = {
-      TrackRole::Chord,
-      TrackRole::Bass,
-      TrackRole::Arpeggio,
-      TrackRole::Aux,
-      TrackRole::Motif
-  };
+  const TrackRole tracks_to_check[] = {TrackRole::Chord, TrackRole::Bass, TrackRole::Arpeggio,
+                                       TrackRole::Aux, TrackRole::Motif};
 
   for (TrackRole role : tracks_to_check) {
     const MidiTrack& track = song.track(role);
@@ -80,8 +76,7 @@ CollisionResult checkBgmCollisionDetailed(const Song& song, Tick tick,
     if (result.type == CollisionType::Severe) {
       return result;  // Can't get worse than severe
     }
-    if (result.type == CollisionType::Mild &&
-        worst_result.type == CollisionType::None) {
+    if (result.type == CollisionType::Mild && worst_result.type == CollisionType::None) {
       worst_result = result;
     }
   }

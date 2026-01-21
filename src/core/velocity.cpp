@@ -4,8 +4,10 @@
  */
 
 #include "core/velocity.h"
-#include "core/midi_track.h"
+
 #include <algorithm>
+
+#include "core/midi_track.h"
 
 namespace midisketch {
 
@@ -43,22 +45,22 @@ uint8_t calculateVelocity(SectionType section, uint8_t beat, Mood mood) {
     case SectionType::Interlude:
     case SectionType::Chant:
     case SectionType::MixBreak:
-      section_mult = 0.75f;   // Quiet intro/interlude/chant
+      section_mult = 0.75f;  // Quiet intro/interlude/chant
       break;
     case SectionType::Outro:
-      section_mult = 0.80f;   // Fading outro
+      section_mult = 0.80f;  // Fading outro
       break;
     case SectionType::A:
-      section_mult = 0.85f;   // Subdued verse (was 0.95)
+      section_mult = 0.85f;  // Subdued verse (was 0.95)
       break;
     case SectionType::B:
-      section_mult = 0.95f;   // Building pre-chorus
+      section_mult = 0.95f;  // Building pre-chorus
       break;
     case SectionType::Chorus:
-      section_mult = 1.05f;   // Moderate chorus for DAW flexibility
+      section_mult = 1.05f;  // Moderate chorus for DAW flexibility
       break;
     case SectionType::Bridge:
-      section_mult = 0.82f;   // Reflective bridge
+      section_mult = 0.82f;  // Reflective bridge
       break;
   }
 
@@ -110,11 +112,16 @@ SectionEnergy getEffectiveSectionEnergy(const Section& section) {
   int level = getSectionEnergyLevel(section.type);
   // Map 1-4 to Low/Medium/High/Peak
   switch (level) {
-    case 1: return SectionEnergy::Low;
-    case 2: return SectionEnergy::Medium;
-    case 3: return SectionEnergy::High;
-    case 4: return SectionEnergy::Peak;
-    default: return SectionEnergy::Medium;
+    case 1:
+      return SectionEnergy::Low;
+    case 2:
+      return SectionEnergy::Medium;
+    case 3:
+      return SectionEnergy::High;
+    case 4:
+      return SectionEnergy::Peak;
+    default:
+      return SectionEnergy::Medium;
   }
 }
 
@@ -162,8 +169,7 @@ uint8_t calculateEffectiveVelocity(const Section& section, uint8_t beat, Mood mo
   float mood_adj = getMoodVelocityAdjustment(mood);
 
   // Calculate final velocity
-  int velocity = static_cast<int>(
-      (base + beat_adj) * energy_mult * peak_mult * mood_adj);
+  int velocity = static_cast<int>((base + beat_adj) * energy_mult * peak_mult * mood_adj);
 
   return static_cast<uint8_t>(std::clamp(velocity, 0, 127));
 }
@@ -190,8 +196,8 @@ float VelocityBalance::getMultiplier(TrackRole role) {
   }
 }
 
-void applyTransitionDynamics(MidiTrack& track, Tick section_start,
-                              Tick section_end, SectionType from, SectionType to) {
+void applyTransitionDynamics(MidiTrack& track, Tick section_start, Tick section_end,
+                             SectionType from, SectionType to) {
   int from_energy = getSectionEnergy(from);
   int to_energy = getSectionEnergy(to);
 
@@ -213,16 +219,14 @@ void applyTransitionDynamics(MidiTrack& track, Tick section_start,
     end_mult = 1.00f;    // End at normal level for DAW flexibility
   } else if (to_energy > from_energy) {
     // Normal crescendo: last bar only
-    transition_start = (section_end > TICKS_PER_BAR)
-                            ? (section_end - TICKS_PER_BAR)
-                            : section_start;
+    transition_start =
+        (section_end > TICKS_PER_BAR) ? (section_end - TICKS_PER_BAR) : section_start;
     start_mult = 0.85f;
     end_mult = 1.1f;
   } else {
     // Decrescendo: last bar only
-    transition_start = (section_end > TICKS_PER_BAR)
-                            ? (section_end - TICKS_PER_BAR)
-                            : section_start;
+    transition_start =
+        (section_end > TICKS_PER_BAR) ? (section_end - TICKS_PER_BAR) : section_start;
     start_mult = 1.0f;
     end_mult = 0.75f;
   }
@@ -236,8 +240,8 @@ void applyTransitionDynamics(MidiTrack& track, Tick section_start,
   for (auto& note : notes) {
     // Only modify notes in the transition region
     if (note.start_tick >= transition_start && note.start_tick < section_end) {
-      float position = static_cast<float>(note.start_tick - transition_start) /
-                       static_cast<float>(duration);
+      float position =
+          static_cast<float>(note.start_tick - transition_start) / static_cast<float>(duration);
 
       float multiplier = start_mult + (end_mult - start_mult) * position;
 
@@ -248,7 +252,7 @@ void applyTransitionDynamics(MidiTrack& track, Tick section_start,
 }
 
 void applyAllTransitionDynamics(std::vector<MidiTrack*>& tracks,
-                                 const std::vector<Section>& sections) {
+                                const std::vector<Section>& sections) {
   if (sections.size() < 2) {
     return;  // No transitions with only one section
   }
@@ -263,8 +267,7 @@ void applyAllTransitionDynamics(std::vector<MidiTrack*>& tracks,
 
     for (MidiTrack* track : tracks) {
       if (track != nullptr) {
-        applyTransitionDynamics(*track, section_start, section_end,
-                                current.type, next.type);
+        applyTransitionDynamics(*track, section_start, section_end, current.type, next.type);
       }
     }
   }
@@ -274,8 +277,8 @@ void applyAllTransitionDynamics(std::vector<MidiTrack*>& tracks,
 // EntryPattern Dynamics Implementation
 // ============================================================================
 
-void applyEntryPatternDynamics(MidiTrack& track, Tick section_start,
-                                uint8_t bars, EntryPattern pattern) {
+void applyEntryPatternDynamics(MidiTrack& track, Tick section_start, uint8_t bars,
+                               EntryPattern pattern) {
   // Skip if no velocity modification needed
   if (pattern == EntryPattern::Immediate || pattern == EntryPattern::Stagger) {
     return;  // These patterns don't affect velocity
@@ -296,8 +299,8 @@ void applyEntryPatternDynamics(MidiTrack& track, Tick section_start,
 
     for (auto& note : notes) {
       if (note.start_tick >= section_start && note.start_tick < ramp_end) {
-        float position = static_cast<float>(note.start_tick - section_start) /
-                         static_cast<float>(ramp_duration);
+        float position =
+            static_cast<float>(note.start_tick - section_start) / static_cast<float>(ramp_duration);
         float multiplier = START_MULT + (END_MULT - START_MULT) * position;
         int new_vel = static_cast<int>(note.velocity * multiplier);
         note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
@@ -319,7 +322,7 @@ void applyEntryPatternDynamics(MidiTrack& track, Tick section_start,
 }
 
 void applyAllEntryPatternDynamics(std::vector<MidiTrack*>& tracks,
-                                   const std::vector<Section>& sections) {
+                                  const std::vector<Section>& sections) {
   for (const auto& section : sections) {
     // Skip sections with Immediate pattern (no modification needed)
     if (section.entry_pattern == EntryPattern::Immediate) {
@@ -328,8 +331,7 @@ void applyAllEntryPatternDynamics(std::vector<MidiTrack*>& tracks,
 
     for (MidiTrack* track : tracks) {
       if (track != nullptr) {
-        applyEntryPatternDynamics(*track, section.start_tick,
-                                  section.bars, section.entry_pattern);
+        applyEntryPatternDynamics(*track, section.start_tick, section.bars, section.entry_pattern);
       }
     }
   }

@@ -4,6 +4,7 @@
  */
 
 #include "midi/midi_reader.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -21,8 +22,7 @@ uint16_t readUint16BE(const uint8_t* data) {
 
 // Helper to read big-endian uint32
 uint32_t readUint32BE(const uint8_t* data) {
-  return (static_cast<uint32_t>(data[0]) << 24) |
-         (static_cast<uint32_t>(data[1]) << 16) |
+  return (static_cast<uint32_t>(data[0]) << 24) | (static_cast<uint32_t>(data[1]) << 16) |
          (static_cast<uint32_t>(data[2]) << 8) | data[3];
 }
 
@@ -74,8 +74,7 @@ bool MidiReader::isSMF1Format(const uint8_t* data, size_t size) {
 
 bool MidiReader::isSMF2Format(const uint8_t* data, size_t size) {
   auto format = detectFormat(data, size);
-  return format == DetectedMidiFormat::SMF2_Clip ||
-         format == DetectedMidiFormat::SMF2_Container ||
+  return format == DetectedMidiFormat::SMF2_Clip || format == DetectedMidiFormat::SMF2_Container ||
          format == DetectedMidiFormat::SMF2_ktmidi;
 }
 
@@ -148,8 +147,7 @@ bool MidiReader::read(const std::vector<uint8_t>& data) {
   return true;
 }
 
-uint32_t MidiReader::readVariableLength(const uint8_t* data, size_t& offset,
-                                         size_t max_size) {
+uint32_t MidiReader::readVariableLength(const uint8_t* data, size_t& offset, size_t max_size) {
   uint32_t result = 0;
   uint8_t byte;
   int count = 0;
@@ -317,10 +315,8 @@ bool MidiReader::parseTrack(const uint8_t* data, size_t size) {
             }
           } else if (meta_type == 0x03 && meta_len > 0 && offset + meta_len <= size) {
             // Track name
-            track.name = std::string(reinterpret_cast<const char*>(data + offset),
-                                      meta_len);
-          } else if (meta_type == 0x51 && meta_len == 3 &&
-                     offset + 3 <= size) {
+            track.name = std::string(reinterpret_cast<const char*>(data + offset), meta_len);
+          } else if (meta_type == 0x51 && meta_len == 3 && offset + 3 <= size) {
             // Tempo
             uint32_t microseconds = (static_cast<uint32_t>(data[offset]) << 16) |
                                     (static_cast<uint32_t>(data[offset + 1]) << 8) |

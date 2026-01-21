@@ -6,9 +6,10 @@
 #ifndef MIDISKETCH_CORE_STRUCTURE_H
 #define MIDISKETCH_CORE_STRUCTURE_H
 
+#include <vector>
+
 #include "core/production_blueprint.h"
 #include "core/types.h"
-#include <vector>
 
 namespace midisketch {
 
@@ -27,9 +28,7 @@ std::vector<Section> buildStructure(StructurePattern pattern);
  * @return Vector of Section structs
  */
 std::vector<Section> buildStructureForDuration(
-    uint16_t target_seconds,
-    uint16_t bpm,
-    StructurePattern pattern = StructurePattern::FullPop);
+    uint16_t target_seconds, uint16_t bpm, StructurePattern pattern = StructurePattern::FullPop);
 
 /**
  * @brief Calculate total ticks for sections.
@@ -59,12 +58,8 @@ uint16_t calculateTotalBars(const std::vector<Section>& sections);
  * @return Vector of Section structs with call sections
  */
 std::vector<Section> buildStructureForDuration(
-    uint16_t target_seconds,
-    uint16_t bpm,
-    bool call_enabled,
-    IntroChant intro_chant,
-    MixPattern mix_pattern,
-    StructurePattern pattern = StructurePattern::FullPop);
+    uint16_t target_seconds, uint16_t bpm, bool call_enabled, IntroChant intro_chant,
+    MixPattern mix_pattern, StructurePattern pattern = StructurePattern::FullPop);
 
 /**
  * @brief Insert call sections into existing structure (in-place).
@@ -73,11 +68,8 @@ std::vector<Section> buildStructureForDuration(
  * @param mix_pattern MixPattern (before last Chorus)
  * @param bpm BPM for bar count calculation
  */
-void insertCallSections(
-    std::vector<Section>& sections,
-    IntroChant intro_chant,
-    MixPattern mix_pattern,
-    uint16_t bpm);
+void insertCallSections(std::vector<Section>& sections, IntroChant intro_chant,
+                        MixPattern mix_pattern, uint16_t bpm);
 
 /**
  * @brief Recalculate start_tick for all sections.

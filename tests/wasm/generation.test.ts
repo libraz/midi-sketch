@@ -94,11 +94,14 @@ describe('MidiSketch WASM - Generation', () => {
     expect(chordTrack).toBeDefined();
     expect(bassTrack).toBeDefined();
     expect(drumsTrack).toBeDefined();
+    if (!vocalTrack || !chordTrack || !bassTrack || !drumsTrack) {
+      throw new Error('unreachable');
+    }
 
-    expect(vocalTrack!.notes.length).toBeGreaterThan(0);
-    expect(chordTrack!.notes.length).toBeGreaterThan(0);
-    expect(bassTrack!.notes.length).toBeGreaterThan(0);
-    expect(drumsTrack!.notes.length).toBeGreaterThan(0);
+    expect(vocalTrack.notes.length).toBeGreaterThan(0);
+    expect(chordTrack.notes.length).toBeGreaterThan(0);
+    expect(bassTrack.notes.length).toBeGreaterThan(0);
+    expect(drumsTrack.notes.length).toBeGreaterThan(0);
 
     cleanup();
   });
@@ -123,10 +126,13 @@ describe('MidiSketch WASM - Generation', () => {
 
     const vocalTrack = tracks.find((t) => t.name === 'Vocal');
     expect(vocalTrack).toBeDefined();
-    expect(vocalTrack!.notes.length).toBeGreaterThan(0);
+    if (!vocalTrack) {
+      throw new Error('unreachable');
+    }
+    expect(vocalTrack.notes.length).toBeGreaterThan(0);
 
     // Verify note structure
-    const firstNote = vocalTrack!.notes[0];
+    const firstNote = vocalTrack.notes[0];
     expect(firstNote).toHaveProperty('start_ticks');
     expect(firstNote).toHaveProperty('duration_ticks');
     expect(firstNote).toHaveProperty('pitch');
@@ -155,7 +161,10 @@ describe('MidiSketch WASM - Generation', () => {
     // Verify Aux track exists
     const auxTrack = tracks.find((t) => t.name === 'Aux');
     expect(auxTrack).toBeDefined();
-    expect(auxTrack!.notes.length).toBeGreaterThan(0);
+    if (!auxTrack) {
+      throw new Error('unreachable');
+    }
+    expect(auxTrack.notes.length).toBeGreaterThan(0);
 
     cleanup();
   });

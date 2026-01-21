@@ -11,14 +11,17 @@
  */
 
 #include "core/generator.h"
-#include "core/chord.h"
+
+#include <algorithm>
+#include <chrono>
 #include <map>
-#include "core/harmony_context.h"
-#include "core/timing_constants.h"
+
+#include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/collision_resolver.h"
 #include "core/composition_strategy.h"
 #include "core/config_converter.h"
+#include "core/harmony_context.h"
 #include "core/modulation_calculator.h"
 #include "core/note_factory.h"
 #include "core/pitch_utils.h"
@@ -26,19 +29,18 @@
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
 #include "core/structure.h"
+#include "core/timing_constants.h"
+#include "core/track_registration_guard.h"
 #include "core/velocity.h"
 #include "track/arpeggio.h"
+#include "track/aux_track.h"
 #include "track/bass.h"
 #include "track/chord_track.h"
 #include "track/drums.h"
 #include "track/motif.h"
-#include "track/aux_track.h"
 #include "track/se.h"
-#include "core/track_registration_guard.h"
 #include "track/vocal.h"
 #include "track/vocal_analysis.h"
-#include <algorithm>
-#include <chrono>
 
 namespace midisketch {
 
@@ -46,7 +48,7 @@ namespace {
 /// Apply density progression to sections for Orangestar style.
 /// "Peak is a temporal event" - density increases over time.
 void applyDensityProgressionToSections(std::vector<Section>& sections,
-                                        GenerationParadigm paradigm) {
+                                       GenerationParadigm paradigm) {
   if (paradigm != GenerationParadigm::RhythmSync) {
     return;  // Only apply for Orangestar style
   }
@@ -62,8 +64,8 @@ void applyDensityProgressionToSections(std::vector<Section>& sections,
     float progression_factor = 1.0f + (occurrence * 0.15f);
 
     // Apply to density_percent
-    uint8_t new_density = static_cast<uint8_t>(
-        std::min(100.0f, section.density_percent * progression_factor));
+    uint8_t new_density =
+        static_cast<uint8_t>(std::min(100.0f, section.density_percent * progression_factor));
     section.density_percent = new_density;
 
     // Also boost base_velocity slightly for later occurrences
@@ -75,18 +77,14 @@ void applyDensityProgressionToSections(std::vector<Section>& sections,
 }
 }  // anonymous namespace
 
-Generator::Generator()
-    : rng_(42),
-      harmony_context_(std::make_unique<HarmonyContext>()) {}
+Generator::Generator() : rng_(42), harmony_context_(std::make_unique<HarmonyContext>()) {}
 
 Generator::Generator(std::unique_ptr<IHarmonyContext> harmony_context)
-    : rng_(42),
-      harmony_context_(std::move(harmony_context)) {}
+    : rng_(42), harmony_context_(std::move(harmony_context)) {}
 
 uint32_t Generator::resolveSeed(uint32_t seed) {
   if (seed == 0) {
-    return static_cast<uint32_t>(
-        std::chrono::steady_clock::now().time_since_epoch().count());
+    return static_cast<uint32_t>(std::chrono::steady_clock::now().time_since_epoch().count());
   }
   return seed;
 }
@@ -116,10 +114,10 @@ void Generator::generate(const GeneratorParams& params) {
     std::swap(params_.vocal_low, params_.vocal_high);
   }
   // Clamp to valid MIDI range
-  params_.vocal_low = std::clamp(params_.vocal_low, static_cast<uint8_t>(36),
-                                  static_cast<uint8_t>(96));
-  params_.vocal_high = std::clamp(params_.vocal_high, static_cast<uint8_t>(36),
-                                   static_cast<uint8_t>(96));
+  params_.vocal_low =
+      std::clamp(params_.vocal_low, static_cast<uint8_t>(36), static_cast<uint8_t>(96));
+  params_.vocal_high =
+      std::clamp(params_.vocal_high, static_cast<uint8_t>(36), static_cast<uint8_t>(96));
 
   // Initialize seed
   uint32_t seed = resolveSeed(params.seed);
@@ -147,7 +145,7 @@ void Generator::generate(const GeneratorParams& params) {
   // RhythmSync (Orangestar-style): dense, continuous riff patterns
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
     params_.motif.rhythm_density = MotifRhythmDensity::Driving;
-    params_.motif.note_count = 8;  // Dense eighth-note pattern
+    params_.motif.note_count = 8;               // Dense eighth-note pattern
     params_.motif.length = MotifLength::Bars1;  // 1-bar motif for continuous riff
   }
 
@@ -177,9 +175,8 @@ void Generator::generate(const GeneratorParams& params) {
   std::vector<Section> sections;
   if (params.target_duration_seconds > 0) {
     // Use the randomly selected structure pattern as base for duration scaling
-    sections = buildStructureForDuration(params.target_duration_seconds, bpm,
-                                          call_enabled_, intro_chant_, mix_pattern_,
-                                          params.structure);
+    sections = buildStructureForDuration(params.target_duration_seconds, bpm, call_enabled_,
+                                         intro_chant_, mix_pattern_, params.structure);
   } else if (params_.form_explicit) {
     // Explicit form setting takes precedence over Blueprint section_flow
     sections = buildStructure(params.structure);
@@ -248,8 +245,8 @@ void Generator::generate(const GeneratorParams& params) {
   // Generate Motif if Blueprint explicitly defines section_flow with TrackMask::Motif
   // BackgroundMotif style already generates Motif via strategy, so skip
   // Traditional Blueprint (section_flow == nullptr) should NOT generate Motif for backward compat
-  if (params.composition_style != CompositionStyle::BackgroundMotif &&
-      blueprint_ != nullptr && blueprint_->section_flow != nullptr) {
+  if (params.composition_style != CompositionStyle::BackgroundMotif && blueprint_ != nullptr &&
+      blueprint_->section_flow != nullptr) {
     bool motif_needed = false;
     for (const auto& section : song_.arrangement().sections()) {
       if (hasTrack(section.track_mask, TrackMask::Motif)) {
@@ -293,10 +290,10 @@ void Generator::generateVocal(const GeneratorParams& params) {
   if (params_.vocal_low > params_.vocal_high) {
     std::swap(params_.vocal_low, params_.vocal_high);
   }
-  params_.vocal_low = std::clamp(params_.vocal_low, static_cast<uint8_t>(36),
-                                  static_cast<uint8_t>(96));
-  params_.vocal_high = std::clamp(params_.vocal_high, static_cast<uint8_t>(36),
-                                   static_cast<uint8_t>(96));
+  params_.vocal_low =
+      std::clamp(params_.vocal_low, static_cast<uint8_t>(36), static_cast<uint8_t>(96));
+  params_.vocal_high =
+      std::clamp(params_.vocal_high, static_cast<uint8_t>(36), static_cast<uint8_t>(96));
 
   // Initialize seed
   uint32_t seed = resolveSeed(params.seed);
@@ -324,7 +321,7 @@ void Generator::generateVocal(const GeneratorParams& params) {
   // RhythmSync (Orangestar-style): dense, continuous riff patterns
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
     params_.motif.rhythm_density = MotifRhythmDensity::Driving;
-    params_.motif.note_count = 8;  // Dense eighth-note pattern
+    params_.motif.note_count = 8;               // Dense eighth-note pattern
     params_.motif.length = MotifLength::Bars1;  // 1-bar motif for continuous riff
   }
 
@@ -339,9 +336,8 @@ void Generator::generateVocal(const GeneratorParams& params) {
   // Priority: target_duration > explicit form > Blueprint section_flow > StructurePattern
   std::vector<Section> sections;
   if (params.target_duration_seconds > 0) {
-    sections = buildStructureForDuration(params.target_duration_seconds, bpm,
-                                          call_enabled_, intro_chant_, mix_pattern_,
-                                          params.structure);
+    sections = buildStructureForDuration(params.target_duration_seconds, bpm, call_enabled_,
+                                         intro_chant_, mix_pattern_, params.structure);
   } else if (params_.form_explicit) {
     // Explicit form setting takes precedence over Blueprint section_flow
     sections = buildStructure(params.structure);
@@ -441,8 +437,8 @@ void Generator::regenerateVocal(const VocalConfig& config) {
 
   // Regenerate vocal
   const MidiTrack* motif_track = nullptr;
-  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track,
-                     *harmony_context_, true, getDrumGrid());
+  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track, *harmony_context_, true,
+                     getDrumGrid());
 }
 
 /**
@@ -475,17 +471,18 @@ void Generator::generateAccompanimentForVocal() {
   // Uses contrary motion and respects vocal phrase boundaries
   {
     TrackRegistrationGuard guard(*harmony_context_, song_.bass(), TrackRole::Bass);
-    generateBassTrackWithVocal(song_.bass(), song_, params_, rng_, vocal_analysis, *harmony_context_);
+    generateBassTrackWithVocal(song_.bass(), song_, params_, rng_, vocal_analysis,
+                               *harmony_context_);
   }
 
   // Generate Chord voicings that avoid vocal register
   {
     TrackRegistrationGuard guard(*harmony_context_, song_.chord(), TrackRole::Chord);
     auto chord_ctx = TrackGenerationContextBuilder(song_, params_, rng_, *harmony_context_)
-        .withBassTrack(&song_.bass())
-        .withAuxTrack(&song_.aux())
-        .withVocalAnalysis(&vocal_analysis)
-        .build();
+                         .withBassTrack(&song_.bass())
+                         .withAuxTrack(&song_.aux())
+                         .withVocalAnalysis(&vocal_analysis)
+                         .build();
     generateChordTrackWithContext(song_.chord(), chord_ctx);
   }
 
@@ -494,8 +491,7 @@ void Generator::generateAccompanimentForVocal() {
     generateDrums();
   }
 
-  if (params_.arpeggio_enabled ||
-      params_.composition_style == CompositionStyle::SynthDriven) {
+  if (params_.arpeggio_enabled || params_.composition_style == CompositionStyle::SynthDriven) {
     generateArpeggio();
   }
 
@@ -556,7 +552,8 @@ void Generator::regenerateAccompaniment(uint32_t new_seed) {
   config.chord_ext_7th = params_.chord_extension.enable_7th;
   config.chord_ext_9th = params_.chord_extension.enable_9th;
   config.chord_ext_sus_prob = static_cast<uint8_t>(params_.chord_extension.sus_probability * 100);
-  config.chord_ext_7th_prob = static_cast<uint8_t>(params_.chord_extension.seventh_probability * 100);
+  config.chord_ext_7th_prob =
+      static_cast<uint8_t>(params_.chord_extension.seventh_probability * 100);
   config.chord_ext_9th_prob = static_cast<uint8_t>(params_.chord_extension.ninth_probability * 100);
   config.humanize = params_.humanize;
   config.humanize_timing = static_cast<uint8_t>(params_.humanize_timing * 100);
@@ -661,18 +658,17 @@ void Generator::setMelody(const MelodyData& melody) {
   generateAux();  // Regenerate aux based on restored vocal
 }
 
-void Generator::setVocalNotes(const GeneratorParams& params,
-                              const std::vector<NoteEvent>& notes) {
+void Generator::setVocalNotes(const GeneratorParams& params, const std::vector<NoteEvent>& notes) {
   params_ = params;
 
   // Validate vocal range
   if (params_.vocal_low > params_.vocal_high) {
     std::swap(params_.vocal_low, params_.vocal_high);
   }
-  params_.vocal_low = std::clamp(params_.vocal_low, static_cast<uint8_t>(36),
-                                  static_cast<uint8_t>(96));
-  params_.vocal_high = std::clamp(params_.vocal_high, static_cast<uint8_t>(36),
-                                   static_cast<uint8_t>(96));
+  params_.vocal_low =
+      std::clamp(params_.vocal_low, static_cast<uint8_t>(36), static_cast<uint8_t>(96));
+  params_.vocal_high =
+      std::clamp(params_.vocal_high, static_cast<uint8_t>(36), static_cast<uint8_t>(96));
 
   // Initialize seed (use provided seed or generate)
   uint32_t seed = resolveSeed(params.seed);
@@ -700,7 +696,7 @@ void Generator::setVocalNotes(const GeneratorParams& params,
   // RhythmSync (Orangestar-style): dense, continuous riff patterns
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
     params_.motif.rhythm_density = MotifRhythmDensity::Driving;
-    params_.motif.note_count = 8;  // Dense eighth-note pattern
+    params_.motif.note_count = 8;               // Dense eighth-note pattern
     params_.motif.length = MotifLength::Bars1;  // 1-bar motif for continuous riff
   }
 
@@ -715,9 +711,8 @@ void Generator::setVocalNotes(const GeneratorParams& params,
   // Priority: target_duration > explicit form > Blueprint section_flow > StructurePattern
   std::vector<Section> sections;
   if (params.target_duration_seconds > 0) {
-    sections = buildStructureForDuration(params.target_duration_seconds, bpm,
-                                          call_enabled_, intro_chant_, mix_pattern_,
-                                          params.structure);
+    sections = buildStructureForDuration(params.target_duration_seconds, bpm, call_enabled_,
+                                         intro_chant_, mix_pattern_, params.structure);
   } else if (params_.form_explicit) {
     // Explicit form setting takes precedence over Blueprint section_flow
     sections = buildStructure(params.structure);
@@ -763,12 +758,10 @@ void Generator::generateVocal() {
 
   // Pass motif track for range coordination in BackgroundMotif mode
   const MidiTrack* motif_track =
-      (params_.composition_style == CompositionStyle::BackgroundMotif)
-          ? &song_.motif()
-          : nullptr;
+      (params_.composition_style == CompositionStyle::BackgroundMotif) ? &song_.motif() : nullptr;
   // Pass harmony context for dissonance avoidance
-  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track,
-                     *harmony_context_, false, getDrumGrid());
+  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track, *harmony_context_, false,
+                     getDrumGrid());
 }
 
 void Generator::generateChord() {
@@ -780,10 +773,10 @@ void Generator::generateChord() {
   VocalAnalysis vocal_analysis = analyzeVocal(song_.vocal());
   const MidiTrack* aux_ptr = song_.aux().notes().empty() ? nullptr : &song_.aux();
   auto ctx = TrackGenerationContextBuilder(song_, params_, rng_, *harmony_context_)
-      .withBassTrack(&song_.bass())
-      .withAuxTrack(aux_ptr)
-      .withVocalAnalysis(&vocal_analysis)
-      .build();
+                 .withBassTrack(&song_.bass())
+                 .withAuxTrack(aux_ptr)
+                 .withVocalAnalysis(&vocal_analysis)
+                 .build();
   generateChordTrackWithContext(song_.chord(), ctx);
 }
 
@@ -812,8 +805,8 @@ void Generator::generateArpeggio() {
 
 void Generator::resolveArpeggioChordClashes() {
   // Delegate to CollisionResolver
-  CollisionResolver::resolveArpeggioChordClashes(
-      song_.arpeggio(), song_.chord(), *harmony_context_);
+  CollisionResolver::resolveArpeggioChordClashes(song_.arpeggio(), song_.chord(),
+                                                 *harmony_context_);
 }
 
 void Generator::generateAux() {
@@ -839,20 +832,17 @@ void Generator::generateAux() {
 
 void Generator::calculateModulation() {
   // Use ModulationCalculator for modulation calculation
-  auto result = ModulationCalculator::calculate(
-      modulation_timing_,
-      modulation_semitones_,
-      params_.structure,
-      song_.arrangement().sections(),
-      rng_);
+  auto result =
+      ModulationCalculator::calculate(modulation_timing_, modulation_semitones_, params_.structure,
+                                      song_.arrangement().sections(), rng_);
 
   song_.setModulation(result.tick, result.amount);
 }
 
 void Generator::generateSE() {
   if (call_enabled_) {
-    generateSETrack(song_.se(), song_, call_enabled_, call_notes_enabled_,
-                    intro_chant_, mix_pattern_, call_density_, rng_);
+    generateSETrack(song_.se(), song_, call_enabled_, call_notes_enabled_, intro_chant_,
+                    mix_pattern_, call_density_, rng_);
   } else {
     generateSETrack(song_.se(), song_);
   }
@@ -874,9 +864,7 @@ void Generator::regenerateMotif(uint32_t new_seed) {
   // Note: BackgroundMotif no longer generates Vocal (BGM-only mode)
 }
 
-MotifData Generator::getMotif() const {
-  return {song_.motifSeed(), song_.motifPattern()};
-}
+MotifData Generator::getMotif() const { return {song_.motifSeed(), song_.motifPattern()}; }
 
 void Generator::setMotif(const MotifData& motif) {
   song_.setMotifSeed(motif.seed);
@@ -906,15 +894,15 @@ void Generator::rebuildMotifFromPattern() {
         Tick absolute_tick = pos + note.start_tick;
         if (absolute_tick >= section_end) continue;
 
-        song_.motif().addNote(factory.create(absolute_tick, note.duration, note.note,
-                              note.velocity, NoteSource::Motif));
+        song_.motif().addNote(factory.create(absolute_tick, note.duration, note.note, note.velocity,
+                                             NoteSource::Motif));
 
         if (add_octave) {
           uint8_t octave_pitch = note.note + 12;
           if (octave_pitch <= 108) {
             uint8_t octave_vel = static_cast<uint8_t>(note.velocity * 0.85);
             song_.motif().addNote(factory.create(absolute_tick, note.duration, octave_pitch,
-                                  octave_vel, NoteSource::Motif));
+                                                 octave_vel, NoteSource::Motif));
           }
         }
       }
@@ -927,12 +915,8 @@ void Generator::applyTransitionDynamics() {
 
   // Apply to melodic tracks (not SE or Drums)
   // Exclude motif track when velocity_fixed=true to maintain consistent velocity
-  std::vector<MidiTrack*> tracks = {
-      &song_.vocal(),
-      &song_.chord(),
-      &song_.bass(),
-      &song_.arpeggio()
-  };
+  std::vector<MidiTrack*> tracks = {&song_.vocal(), &song_.chord(), &song_.bass(),
+                                    &song_.arpeggio()};
   if (!params_.motif.velocity_fixed) {
     tracks.push_back(&song_.motif());
   }
@@ -946,13 +930,8 @@ void Generator::applyTransitionDynamics() {
 
 void Generator::applyHumanization() {
   // Use PostProcessor for humanization
-  std::vector<MidiTrack*> tracks = {
-      &song_.vocal(),
-      &song_.chord(),
-      &song_.bass(),
-      &song_.motif(),
-      &song_.arpeggio()
-  };
+  std::vector<MidiTrack*> tracks = {&song_.vocal(), &song_.chord(), &song_.bass(), &song_.motif(),
+                                    &song_.arpeggio()};
 
   PostProcessor::HumanizeParams humanize_params;
   humanize_params.timing = params_.humanize_timing;

@@ -26,10 +26,8 @@ Tick ModulationCalculator::findChorusAfterBridge(const std::vector<Section>& sec
   return 0;
 }
 
-Tick ModulationCalculator::calculateLegacyModulation(
-    StructurePattern structure,
-    const std::vector<Section>& sections) {
-
+Tick ModulationCalculator::calculateLegacyModulation(StructurePattern structure,
+                                                     const std::vector<Section>& sections) {
   switch (structure) {
     case StructurePattern::RepeatChorus:
     case StructurePattern::DriveUpbeat:
@@ -91,12 +89,8 @@ Tick ModulationCalculator::calculateLegacyModulation(
 }
 
 ModulationCalculator::ModulationResult ModulationCalculator::calculate(
-    ModulationTiming timing,
-    int8_t semitones,
-    StructurePattern structure,
-    const std::vector<Section>& sections,
-    std::mt19937& rng) {
-
+    ModulationTiming timing, int8_t semitones, StructurePattern structure,
+    const std::vector<Section>& sections, std::mt19937& rng) {
   ModulationResult result;
 
   // No modulation if timing is None
@@ -105,8 +99,7 @@ ModulationCalculator::ModulationResult ModulationCalculator::calculate(
   }
 
   // Short structures don't support modulation (no meaningful modulation point)
-  if (structure == StructurePattern::DirectChorus ||
-      structure == StructurePattern::ShortForm) {
+  if (structure == StructurePattern::DirectChorus || structure == StructurePattern::ShortForm) {
     return result;
   }
 

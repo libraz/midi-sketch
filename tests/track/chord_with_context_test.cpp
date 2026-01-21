@@ -4,6 +4,10 @@
  */
 
 #include <gtest/gtest.h>
+
+#include <random>
+#include <set>
+
 #include "core/chord.h"
 #include "core/generator.h"
 #include "core/harmony_context.h"
@@ -15,8 +19,6 @@
 #include "track/motif.h"
 #include "track/vocal.h"
 #include "track/vocal_analysis.h"
-#include <random>
-#include <set>
 
 namespace midisketch {
 namespace {
@@ -57,9 +59,9 @@ TEST_F(ChordWithContextTest, GeneratesChordTrack) {
   MidiTrack chord_track;
   std::mt19937 rng2(params_.seed + 1);
   auto ctx = TrackGenerationContextBuilder(gen.getSong(), params_, rng2, harmony)
-      .withBassTrack(&bass_track)
-      .withVocalAnalysis(&va)
-      .build();
+                 .withBassTrack(&bass_track)
+                 .withVocalAnalysis(&va)
+                 .build();
   generateChordTrackWithContext(chord_track, ctx);
 
   EXPECT_FALSE(chord_track.empty()) << "Chord track should be generated";
@@ -80,9 +82,9 @@ TEST_F(ChordWithContextTest, ChordNotesInValidRange) {
   MidiTrack chord_track;
   std::mt19937 rng2(params_.seed + 1);
   auto ctx = TrackGenerationContextBuilder(gen.getSong(), params_, rng2, harmony)
-      .withBassTrack(&bass_track)
-      .withVocalAnalysis(&va)
-      .build();
+                 .withBassTrack(&bass_track)
+                 .withVocalAnalysis(&va)
+                 .build();
   generateChordTrackWithContext(chord_track, ctx);
 
   for (const auto& note : chord_track.notes()) {
@@ -106,18 +108,18 @@ TEST_F(ChordWithContextTest, DeterministicGeneration) {
   MidiTrack chord1;
   std::mt19937 rng1(params_.seed + 1);
   auto ctx1 = TrackGenerationContextBuilder(gen.getSong(), params_, rng1, harmony)
-      .withBassTrack(&bass_track)
-      .withVocalAnalysis(&va)
-      .build();
+                  .withBassTrack(&bass_track)
+                  .withVocalAnalysis(&va)
+                  .build();
   generateChordTrackWithContext(chord1, ctx1);
 
   // Second generation with same seed
   MidiTrack chord2;
   std::mt19937 rng2(params_.seed + 1);
   auto ctx2 = TrackGenerationContextBuilder(gen.getSong(), params_, rng2, harmony)
-      .withBassTrack(&bass_track)
-      .withVocalAnalysis(&va)
-      .build();
+                  .withBassTrack(&bass_track)
+                  .withVocalAnalysis(&va)
+                  .build();
   generateChordTrackWithContext(chord2, ctx2);
 
   ASSERT_EQ(chord1.noteCount(), chord2.noteCount());
@@ -143,9 +145,9 @@ TEST_F(ChordWithContextTest, AvoidsVocalDoublingWhenPossible) {
   MidiTrack chord_track;
   std::mt19937 rng(params_.seed + 1);
   auto ctx = TrackGenerationContextBuilder(gen.getSong(), params_, rng, harmony)
-      .withBassTrack(&bass_track)
-      .withVocalAnalysis(&va)
-      .build();
+                 .withBassTrack(&bass_track)
+                 .withVocalAnalysis(&va)
+                 .build();
   generateChordTrackWithContext(chord_track, ctx);
 
   const auto& vocal_notes = gen.getSong().vocal().notes();
@@ -180,8 +182,8 @@ TEST_F(ChordWithContextTest, AvoidsVocalDoublingWhenPossible) {
   // Allow some doubling (fallback case), but it should be minimized
   // Note: Close voicing increases doubling slightly vs Rootless, so threshold is 0.35
   float doubling_ratio = static_cast<float>(doubling_count) / overlap_count;
-  EXPECT_LT(doubling_ratio, 0.35f) << "Doubling ratio should be low: "
-                                    << doubling_count << "/" << overlap_count;
+  EXPECT_LT(doubling_ratio, 0.35f)
+      << "Doubling ratio should be low: " << doubling_count << "/" << overlap_count;
 }
 
 // === Aux Clash Avoidance Tests ===
@@ -199,17 +201,17 @@ TEST_F(ChordWithContextTest, GeneratesWithAuxTrack) {
 
   // Create a simple aux track
   MidiTrack aux_track;
-  aux_track.addNote(0, 480, 72, 80);      // C5
-  aux_track.addNote(1920, 480, 74, 80);   // D5
-  aux_track.addNote(3840, 480, 76, 80);   // E5
+  aux_track.addNote(0, 480, 72, 80);     // C5
+  aux_track.addNote(1920, 480, 74, 80);  // D5
+  aux_track.addNote(3840, 480, 76, 80);  // E5
 
   MidiTrack chord_track;
   std::mt19937 rng(params_.seed + 1);
   auto ctx = TrackGenerationContextBuilder(gen.getSong(), params_, rng, harmony)
-      .withBassTrack(&bass_track)
-      .withAuxTrack(&aux_track)
-      .withVocalAnalysis(&va)
-      .build();
+                 .withBassTrack(&bass_track)
+                 .withAuxTrack(&aux_track)
+                 .withVocalAnalysis(&va)
+                 .build();
   generateChordTrackWithContext(chord_track, ctx);
 
   EXPECT_FALSE(chord_track.empty()) << "Chord track should be generated with aux";
@@ -236,10 +238,10 @@ TEST_F(ChordWithContextTest, ReducesMinor2ndClashesWithAux) {
   MidiTrack chord_track;
   std::mt19937 rng(params_.seed + 1);
   auto ctx = TrackGenerationContextBuilder(gen.getSong(), params_, rng, harmony)
-      .withBassTrack(&bass_track)
-      .withAuxTrack(&aux_track)
-      .withVocalAnalysis(&va)
-      .build();
+                 .withBassTrack(&bass_track)
+                 .withAuxTrack(&aux_track)
+                 .withVocalAnalysis(&va)
+                 .build();
   generateChordTrackWithContext(chord_track, ctx);
 
   // Count minor 2nd clashes
@@ -304,10 +306,10 @@ TEST_F(ChordWithContextTest, FallbackWhenAllVoicingsFiltered) {
   MidiTrack chord_track;
   std::mt19937 rng(params_.seed + 1);
   auto ctx = TrackGenerationContextBuilder(gen.getSong(), params_, rng, harmony)
-      .withBassTrack(&bass_track)
-      .withAuxTrack(&aux_track)
-      .withVocalAnalysis(&va)
-      .build();
+                 .withBassTrack(&bass_track)
+                 .withAuxTrack(&aux_track)
+                 .withVocalAnalysis(&va)
+                 .build();
   generateChordTrackWithContext(chord_track, ctx);
 
   // Even with aggressive filtering, chord should still be generated
@@ -389,7 +391,8 @@ TEST_F(ChordWithContextTest, MotifRegisteredBeforeChordGeneration) {
 
   Tick first_note_tick = motif_track.notes()[0].start_tick;
   auto motif_pcs = harmony.getPitchClassesFromTrackAt(first_note_tick, TrackRole::Motif);
-  EXPECT_FALSE(motif_pcs.empty()) << "Motif pitch classes should be retrievable from HarmonyContext";
+  EXPECT_FALSE(motif_pcs.empty())
+      << "Motif pitch classes should be retrievable from HarmonyContext";
 
   // Chord track should also be generated
   EXPECT_GT(song.chord().noteCount(), 0u) << "Chord track should be generated";
@@ -419,7 +422,8 @@ TEST_F(ChordWithContextTest, ChordVoicingFiltersMotifPitchClasses) {
   EXPECT_TRUE(chord_pcs.empty()) << "No Chord notes registered";
 
   // Verify pitch class is NOT returned outside the note duration
-  auto motif_pcs_after = harmony.getPitchClassesFromTrackAt(note_start + note_duration + 1, TrackRole::Motif);
+  auto motif_pcs_after =
+      harmony.getPitchClassesFromTrackAt(note_start + note_duration + 1, TrackRole::Motif);
   EXPECT_TRUE(motif_pcs_after.empty()) << "No Motif notes sounding after duration";
 }
 
@@ -436,7 +440,7 @@ TEST_F(ChordWithContextTest, RegressionTestOriginalBugParameters) {
   params_.seed = 1904591157;
   params_.chord_id = 1;
   params_.composition_style = CompositionStyle::BackgroundMotif;
-  params_.key = Key::E;  // Key 4 = E major
+  params_.key = Key::E;          // Key 4 = E major
   params_.mood = Mood::IdolPop;  // Mood 14
 
   Generator gen;
@@ -527,8 +531,7 @@ TEST_F(ChordWithContextTest, AvoidsCloseIntervalsWithVocalFullGeneration) {
 
   // With the fix, close interval clashes should be minimal
   // Allow some tolerance as complete elimination may not be possible
-  EXPECT_LT(close_count, 20)
-      << "Close interval clashes between Vocal and Chord should be minimal";
+  EXPECT_LT(close_count, 20) << "Close interval clashes between Vocal and Chord should be minimal";
 }
 
 TEST_F(ChordWithContextTest, AvoidsCloseIntervalsWithVocalModulation) {
@@ -548,8 +551,7 @@ TEST_F(ChordWithContextTest, AvoidsCloseIntervalsWithVocalModulation) {
 
   int close_count = countDissonantClashes(vocal_track, chord_track);
 
-  EXPECT_LT(close_count, 20)
-      << "Close interval clashes with modulation should be minimal";
+  EXPECT_LT(close_count, 20) << "Close interval clashes with modulation should be minimal";
 }
 
 TEST_F(ChordWithContextTest, AvoidsCloseIntervalsAcrossMultipleSeeds) {
@@ -574,8 +576,8 @@ TEST_F(ChordWithContextTest, AvoidsCloseIntervalsAcrossMultipleSeeds) {
 
     int close_count = countDissonantClashes(vocal_track, chord_track);
 
-    EXPECT_LT(close_count, 30)
-        << "Seed " << seed << " has " << close_count << " close interval clashes";
+    EXPECT_LT(close_count, 30) << "Seed " << seed << " has " << close_count
+                               << " close interval clashes";
   }
 }
 
@@ -601,9 +603,8 @@ TEST_F(ChordWithContextTest, AvoidsCloseIntervalsAcrossAllChordProgressions) {
 
     int close_count = countDissonantClashes(vocal_track, chord_track);
 
-    EXPECT_LT(close_count, 30)
-        << "Chord progression " << static_cast<int>(chord_id)
-        << " has " << close_count << " close interval clashes";
+    EXPECT_LT(close_count, 30) << "Chord progression " << static_cast<int>(chord_id) << " has "
+                               << close_count << " close interval clashes";
   }
 }
 
@@ -615,7 +616,7 @@ TEST_F(ChordWithContextTest, RegressionVocalCloseIntervalOriginalBug) {
   // Note: The original MIDI had metadata bugs, so exact reproduction is
   // not possible. This test uses similar parameters to verify the fix.
 
-  params_.chord_id = 2;  // Axis progression: vi-IV-I-V
+  params_.chord_id = 2;          // Axis progression: vi-IV-I-V
   params_.mood = Mood::IdolPop;  // mood 14
   params_.bpm = 160;
   params_.seed = 12345;
@@ -650,8 +651,7 @@ TEST_F(ChordWithContextTest, RegressionVocalCloseIntervalOriginalBug) {
   }
 
   // After fix, major 2nd clashes should be minimal
-  EXPECT_LT(major_2nd_count, 10)
-      << "Major 2nd clashes between Vocal and Chord should be minimal";
+  EXPECT_LT(major_2nd_count, 10) << "Major 2nd clashes between Vocal and Chord should be minimal";
 }
 
 // === Chord-Bass Tritone Avoidance Tests ===
@@ -708,8 +708,8 @@ TEST_F(ChordWithContextTest, AvoidsTritoneCashesWithBass) {
 
     // Allow small number of tritone clashes (contextually acceptable on dominant chords)
     // Dense harmonic rhythm synchronization may produce more context-appropriate tritones
-    EXPECT_LE(tritone_clash_count, 10)
-        << "Seed " << seed << " has " << tritone_clash_count << " Chord-Bass tritone clashes (threshold: 10)";
+    EXPECT_LE(tritone_clash_count, 10) << "Seed " << seed << " has " << tritone_clash_count
+                                       << " Chord-Bass tritone clashes (threshold: 10)";
   }
 }
 

@@ -4,9 +4,11 @@
  */
 
 #include "core/config_converter.h"
+
+#include <chrono>
+
 #include "core/preset_data.h"
 #include "track/se.h"
-#include <chrono>
 
 namespace midisketch {
 
@@ -20,32 +22,32 @@ struct StylePresetMapping {
 };
 
 constexpr StylePresetMapping kStylePresetMappings[] = {
-    {Mood::StraightPop, CompositionStyle::MelodyLead},       // 0: Minimal Groove Pop
-    {Mood::EnergeticDance, CompositionStyle::MelodyLead},    // 1: Dance Pop Emotion
-    {Mood::BrightUpbeat, CompositionStyle::MelodyLead},      // 2: Bright Pop
-    {Mood::IdolPop, CompositionStyle::MelodyLead},           // 3: Idol Standard
-    {Mood::EmotionalPop, CompositionStyle::MelodyLead},      // 4: Idol Emotion
-    {Mood::IdolPop, CompositionStyle::MelodyLead},           // 5: Idol Energy
-    {Mood::IdolPop, CompositionStyle::MelodyLead},           // 6: Idol Minimal
-    {Mood::LightRock, CompositionStyle::MelodyLead},         // 7: Rock Shout
-    {Mood::EmotionalPop, CompositionStyle::MelodyLead},      // 8: Pop Emotion
-    {Mood::Dramatic, CompositionStyle::MelodyLead},          // 9: Raw Emotional
-    {Mood::Ballad, CompositionStyle::MelodyLead},            // 10: Acoustic Pop
-    {Mood::Anthem, CompositionStyle::MelodyLead},            // 11: Live Call & Response
-    {Mood::StraightPop, CompositionStyle::MelodyLead},  // 12: Background Motif (deprecated, now MelodyLead)
-    {Mood::CityPop, CompositionStyle::MelodyLead},           // 13: City Pop
-    {Mood::Yoasobi, CompositionStyle::MelodyLead},           // 14: Anime Opening
-    {Mood::FutureBass, CompositionStyle::SynthDriven},       // 15: EDM Synth Pop
-    {Mood::Ballad, CompositionStyle::MelodyLead},            // 16: Emotional Ballad
+    {Mood::StraightPop, CompositionStyle::MelodyLead},     // 0: Minimal Groove Pop
+    {Mood::EnergeticDance, CompositionStyle::MelodyLead},  // 1: Dance Pop Emotion
+    {Mood::BrightUpbeat, CompositionStyle::MelodyLead},    // 2: Bright Pop
+    {Mood::IdolPop, CompositionStyle::MelodyLead},         // 3: Idol Standard
+    {Mood::EmotionalPop, CompositionStyle::MelodyLead},    // 4: Idol Emotion
+    {Mood::IdolPop, CompositionStyle::MelodyLead},         // 5: Idol Energy
+    {Mood::IdolPop, CompositionStyle::MelodyLead},         // 6: Idol Minimal
+    {Mood::LightRock, CompositionStyle::MelodyLead},       // 7: Rock Shout
+    {Mood::EmotionalPop, CompositionStyle::MelodyLead},    // 8: Pop Emotion
+    {Mood::Dramatic, CompositionStyle::MelodyLead},        // 9: Raw Emotional
+    {Mood::Ballad, CompositionStyle::MelodyLead},          // 10: Acoustic Pop
+    {Mood::Anthem, CompositionStyle::MelodyLead},          // 11: Live Call & Response
+    {Mood::StraightPop,
+     CompositionStyle::MelodyLead},  // 12: Background Motif (deprecated, now MelodyLead)
+    {Mood::CityPop, CompositionStyle::MelodyLead},      // 13: City Pop
+    {Mood::Yoasobi, CompositionStyle::MelodyLead},      // 14: Anime Opening
+    {Mood::FutureBass, CompositionStyle::SynthDriven},  // 15: EDM Synth Pop
+    {Mood::Ballad, CompositionStyle::MelodyLead},       // 16: Emotional Ballad
 };
 
-constexpr size_t kStylePresetCount =
-    sizeof(kStylePresetMappings) / sizeof(kStylePresetMappings[0]);
+constexpr size_t kStylePresetCount = sizeof(kStylePresetMappings) / sizeof(kStylePresetMappings[0]);
 
 }  // namespace
 
 void ConfigConverter::applyVocalStylePreset(GeneratorParams& params,
-                                             const SongConfig& /* config */) {
+                                            const SongConfig& /* config */) {
   // Skip Auto and Standard - they use StylePreset defaults
   if (params.vocal_style == VocalStylePreset::Auto ||
       params.vocal_style == VocalStylePreset::Standard) {
@@ -123,8 +125,7 @@ constexpr ComplexityModifier kComplexityModifiers[] = {
      0.5f},  // syncopation: 50% (more on-beat)
 
     // Standard: no changes (multipliers = 1.0)
-    {MelodicComplexity::Standard,
-     1.0f, 1.0f, 12, false, 1.0f, 1.0f, 1.0f},
+    {MelodicComplexity::Standard, 1.0f, 1.0f, 12, false, 1.0f, 1.0f, 1.0f},
 
     // Complex: more intricate, varied melodies
     {MelodicComplexity::Complex,
@@ -159,9 +160,9 @@ void ConfigConverter::applyMelodicComplexity(GeneratorParams& params) {
   // Apply multipliers
   params.melody_params.note_density *= modifier->density_mult;
 
-  params.melody_params.max_leap_interval = std::min(
-      modifier->leap_cap,
-      static_cast<uint8_t>(params.melody_params.max_leap_interval * modifier->leap_mult));
+  params.melody_params.max_leap_interval =
+      std::min(modifier->leap_cap,
+               static_cast<uint8_t>(params.melody_params.max_leap_interval * modifier->leap_mult));
 
   if (modifier->force_hook) {
     params.melody_params.hook_repetition = true;
@@ -191,8 +192,8 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
     params.structure = selectRandomForm(config.style_preset_id, config.seed);
   } else if (config.form == preset.default_form && config.seed == 0) {
     // Seed 0 means auto-random, generate a seed first for form selection
-    uint32_t form_seed = static_cast<uint32_t>(
-        std::chrono::system_clock::now().time_since_epoch().count());
+    uint32_t form_seed =
+        static_cast<uint32_t>(std::chrono::system_clock::now().time_since_epoch().count());
     params.structure = selectRandomForm(config.style_preset_id, form_seed);
   } else {
     // Form differs from preset default - treat as explicit selection
@@ -259,9 +260,10 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   // If VocalStylePreset::Auto, select a random style based on StylePreset
   if (params.vocal_style == VocalStylePreset::Auto) {
     // Use a seed derived from the main seed for consistent selection
-    uint32_t vocal_style_seed = config.seed != 0 ? config.seed ^ 0x56534C53 : // "VSLS"
-        static_cast<uint32_t>(
-            std::chrono::system_clock::now().time_since_epoch().count() ^ 0x56534C53);
+    uint32_t vocal_style_seed =
+        config.seed != 0 ? config.seed ^ 0x56534C53 :  // "VSLS"
+            static_cast<uint32_t>(std::chrono::system_clock::now().time_since_epoch().count() ^
+                                  0x56534C53);
     params.vocal_style = selectRandomVocalStyle(config.style_preset_id, vocal_style_seed);
   }
 

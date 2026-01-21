@@ -4,8 +4,10 @@
  */
 
 #include "track/phrase_variation.h"
-#include "core/pitch_utils.h"
+
 #include <algorithm>
+
+#include "core/pitch_utils.h"
 
 namespace midisketch {
 
@@ -25,16 +27,15 @@ PhraseVariation selectPhraseVariation(int reuse_count, std::mt19937& rng) {
   // MicroRhythmChange (too random), SlurMerge (articulation loss),
   // RepeatNoteSimplify (rhythm motif destruction).
   constexpr PhraseVariation kSafeVariations[] = {
-      PhraseVariation::LastNoteShift,   // Subtle ending variation
-      PhraseVariation::LastNoteLong,    // Dramatic ending extension
-      PhraseVariation::BreathRestInsert // Natural breathing room
+      PhraseVariation::LastNoteShift,    // Subtle ending variation
+      PhraseVariation::LastNoteLong,     // Dramatic ending extension
+      PhraseVariation::BreathRestInsert  // Natural breathing room
   };
   constexpr size_t kSafeCount = sizeof(kSafeVariations) / sizeof(kSafeVariations[0]);
   return kSafeVariations[rng() % kSafeCount];
 }
 
-void applyPhraseVariation(std::vector<NoteEvent>& notes,
-                          PhraseVariation variation,
+void applyPhraseVariation(std::vector<NoteEvent>& notes, PhraseVariation variation,
                           std::mt19937& rng) {
   if (notes.empty() || variation == PhraseVariation::Exact) {
     return;
@@ -117,9 +118,9 @@ CadenceType detectCadenceType(const std::vector<NoteEvent>& notes, int8_t chord_
 
   // Check if on strong beat (beats 1 or 3 in 4/4)
   Tick beat_pos = last_note.start_tick % TICKS_PER_BAR;
-  bool is_strong_beat = (beat_pos < TICKS_PER_BEAT / 4) ||
-                        (beat_pos >= TICKS_PER_BEAT * 2 - TICKS_PER_BEAT / 4 &&
-                         beat_pos < TICKS_PER_BEAT * 2 + TICKS_PER_BEAT / 4);
+  bool is_strong_beat =
+      (beat_pos < TICKS_PER_BEAT / 4) || (beat_pos >= TICKS_PER_BEAT * 2 - TICKS_PER_BEAT / 4 &&
+                                          beat_pos < TICKS_PER_BEAT * 2 + TICKS_PER_BEAT / 4);
 
   // Long note = more stable resolution (quarter note or longer)
   bool is_long = last_note.duration >= TICKS_PER_BEAT;

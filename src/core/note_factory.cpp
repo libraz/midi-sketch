@@ -4,14 +4,15 @@
  */
 
 #include "core/note_factory.h"
+
 #include "core/i_harmony_context.h"
 
 namespace midisketch {
 
 NoteFactory::NoteFactory(const IHarmonyContext& harmony) : harmony_(harmony) {}
 
-NoteEvent NoteFactory::create(Tick start, Tick duration, uint8_t pitch,
-                              uint8_t velocity, [[maybe_unused]] NoteSource source) const {
+NoteEvent NoteFactory::create(Tick start, Tick duration, uint8_t pitch, uint8_t velocity,
+                              [[maybe_unused]] NoteSource source) const {
   NoteEvent event;
   event.start_tick = start;
   event.duration = duration;
@@ -44,8 +45,8 @@ NoteEvent NoteFactory::modify(const NoteEvent& original, uint8_t new_pitch,
 }
 
 std::optional<NoteEvent> NoteFactory::createSafe(Tick start, Tick duration, uint8_t pitch,
-                                                  uint8_t velocity, TrackRole track,
-                                                  NoteSource source) const {
+                                                 uint8_t velocity, TrackRole track,
+                                                 NoteSource source) const {
   // Check if pitch is safe against registered tracks
   if (!harmony_.isPitchSafe(pitch, start, duration, track)) {
     return std::nullopt;

@@ -3,12 +3,15 @@
  * @brief Tests for aux track generation.
  */
 
+#include "track/aux_track.h"
+
 #include <gtest/gtest.h>
+
+#include <random>
+
 #include "core/harmony_context.h"
 #include "core/i_harmony_context.h"
 #include "core/timing_constants.h"
-#include "track/aux_track.h"
-#include <random>
 
 namespace midisketch {
 namespace {
@@ -18,8 +21,8 @@ AuxTrackGenerator::AuxContext createTestContext() {
   AuxTrackGenerator::AuxContext ctx;
   ctx.section_start = 0;
   ctx.section_end = TICKS_PER_BAR * 4;  // 4 bars
-  ctx.chord_degree = 0;  // I chord
-  ctx.key_offset = 0;    // C major
+  ctx.chord_degree = 0;                 // I chord
+  ctx.key_offset = 0;                   // C major
   ctx.base_velocity = 100;
   ctx.main_tessitura = {60, 72, 66};  // C4 to C5
   ctx.main_melody = nullptr;
@@ -191,10 +194,9 @@ TEST(AuxTrackTest, GrooveAccentOnBackbeats) {
   for (const auto& note : notes) {
     // Check that notes are on beat 2 or 4 (or close)
     Tick beat_in_bar = note.start_tick % TICKS_PER_BAR;
-    bool is_beat2 = (beat_in_bar >= TICKS_PER_BEAT - 10 &&
-                     beat_in_bar <= TICKS_PER_BEAT + 10);
-    bool is_beat4 = (beat_in_bar >= TICKS_PER_BEAT * 3 - 10 &&
-                     beat_in_bar <= TICKS_PER_BEAT * 3 + 10);
+    bool is_beat2 = (beat_in_bar >= TICKS_PER_BEAT - 10 && beat_in_bar <= TICKS_PER_BEAT + 10);
+    bool is_beat4 =
+        (beat_in_bar >= TICKS_PER_BEAT * 3 - 10 && beat_in_bar <= TICKS_PER_BEAT * 3 + 10);
     EXPECT_TRUE(is_beat2 || is_beat4);
   }
 }
@@ -377,13 +379,12 @@ TEST(AuxTrackTest, AvoidsClashWithMainMelody) {
       Tick main_end = main_note.start_tick + main_note.duration;
 
       // Check if notes overlap
-      bool overlaps = (aux_note.start_tick < main_end &&
-                       main_note.start_tick < aux_end);
+      bool overlaps = (aux_note.start_tick < main_end && main_note.start_tick < aux_end);
 
       if (overlaps) {
         // If overlapping, interval should not be minor 2nd or major 7th
-        int interval = std::abs(static_cast<int>(aux_note.note) -
-                                static_cast<int>(main_note.note)) % 12;
+        int interval =
+            std::abs(static_cast<int>(aux_note.note) - static_cast<int>(main_note.note)) % 12;
         EXPECT_NE(interval, 1);   // Not minor 2nd
         EXPECT_NE(interval, 11);  // Not major 7th
       }
@@ -395,9 +396,7 @@ TEST(AuxTrackTest, AvoidsClashWithMainMelody) {
 // TrackRole::Aux Tests
 // ============================================================================
 
-TEST(AuxTrackTest, TrackRoleAuxValue) {
-  EXPECT_EQ(static_cast<uint8_t>(TrackRole::Aux), 7);
-}
+TEST(AuxTrackTest, TrackRoleAuxValue) { EXPECT_EQ(static_cast<uint8_t>(TrackRole::Aux), 7); }
 
 // ============================================================================
 // New AuxFunction Enum Tests
@@ -875,8 +874,8 @@ TEST(AuxTrackTest, MotifCounterAvoidsVocalCollision) {
       midisketch::Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
       // Check overlap
       if (counter_note.start_tick < vocal_end && vocal_note.start_tick < counter_end) {
-        int interval = std::abs(static_cast<int>(counter_note.note) -
-                                static_cast<int>(vocal_note.note)) % 12;
+        int interval =
+            std::abs(static_cast<int>(counter_note.note) - static_cast<int>(vocal_note.note)) % 12;
         if (interval == 1 || interval == 11) {
           collision_count++;
         }

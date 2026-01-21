@@ -6,9 +6,10 @@
 #ifndef MIDISKETCH_CORE_PHRASE_PATTERNS_H
 #define MIDISKETCH_CORE_PHRASE_PATTERNS_H
 
-#include "core/melody_types.h"
 #include <array>
 #include <cstdint>
+
+#include "core/melody_types.h"
 
 namespace midisketch {
 
@@ -20,9 +21,9 @@ constexpr size_t kMaxPhraseRoles = 8;
 /// Each pattern defines how melody notes should function at each beat
 /// position within a phrase. Used for template-driven generation.
 struct PhrasePattern {
-  const char* name;                              ///< Pattern identifier
-  std::array<PhraseRole, kMaxPhraseRoles> roles; ///< Role for each beat
-  uint8_t length;                                ///< Actual length (1-8 beats)
+  const char* name;                               ///< Pattern identifier
+  std::array<PhraseRole, kMaxPhraseRoles> roles;  ///< Role for each beat
+  uint8_t length;                                 ///< Actual length (1-8 beats)
 };
 
 // ============================================================================
@@ -33,36 +34,32 @@ struct PhrasePattern {
 /// Creates tension building to climax, good for pre-chorus.
 constexpr PhrasePattern kRisePeak = {
     "rise-peak",
-    {PhraseRole::Anchor, PhraseRole::Approach, PhraseRole::Peak,
-     PhraseRole::Release, PhraseRole::Anchor, PhraseRole::Anchor,
-     PhraseRole::Anchor, PhraseRole::Anchor},
+    {PhraseRole::Anchor, PhraseRole::Approach, PhraseRole::Peak, PhraseRole::Release,
+     PhraseRole::Anchor, PhraseRole::Anchor, PhraseRole::Anchor, PhraseRole::Anchor},
     4};
 
 /// @brief Flat plateau pattern.
 /// Stable, repetitive feel. Good for verses or hook repetition.
 constexpr PhrasePattern kPlateau = {
     "plateau",
-    {PhraseRole::Anchor, PhraseRole::Anchor, PhraseRole::Anchor,
-     PhraseRole::Release, PhraseRole::Anchor, PhraseRole::Anchor,
-     PhraseRole::Anchor, PhraseRole::Anchor},
+    {PhraseRole::Anchor, PhraseRole::Anchor, PhraseRole::Anchor, PhraseRole::Release,
+     PhraseRole::Anchor, PhraseRole::Anchor, PhraseRole::Anchor, PhraseRole::Anchor},
     4};
 
 /// @brief Hook-focused pattern.
 /// Strong memorability with repeated hook positions.
 constexpr PhrasePattern kHookRelease = {
     "hook-release",
-    {PhraseRole::Hook, PhraseRole::Hook, PhraseRole::Approach,
-     PhraseRole::Release, PhraseRole::Anchor, PhraseRole::Anchor,
-     PhraseRole::Anchor, PhraseRole::Anchor},
+    {PhraseRole::Hook, PhraseRole::Hook, PhraseRole::Approach, PhraseRole::Release,
+     PhraseRole::Anchor, PhraseRole::Anchor, PhraseRole::Anchor, PhraseRole::Anchor},
     4};
 
 /// @brief Question pattern (ends unresolved).
 /// Good for first half of call-and-response phrases.
 constexpr PhrasePattern kQuestion = {
     "question",
-    {PhraseRole::Anchor, PhraseRole::Approach, PhraseRole::Peak,
-     PhraseRole::Approach, PhraseRole::Anchor, PhraseRole::Anchor,
-     PhraseRole::Anchor, PhraseRole::Anchor},
+    {PhraseRole::Anchor, PhraseRole::Approach, PhraseRole::Peak, PhraseRole::Approach,
+     PhraseRole::Anchor, PhraseRole::Anchor, PhraseRole::Anchor, PhraseRole::Anchor},
     4};
 
 // ============================================================================
@@ -73,45 +70,40 @@ constexpr PhrasePattern kQuestion = {
 /// Natural storytelling contour with clear arc.
 constexpr PhrasePattern kVerseStandard = {
     "verse-standard",
-    {PhraseRole::Anchor, PhraseRole::Approach, PhraseRole::Approach,
-     PhraseRole::Peak, PhraseRole::Anchor, PhraseRole::Anchor,
-     PhraseRole::Approach, PhraseRole::Release},
+    {PhraseRole::Anchor, PhraseRole::Approach, PhraseRole::Approach, PhraseRole::Peak,
+     PhraseRole::Anchor, PhraseRole::Anchor, PhraseRole::Approach, PhraseRole::Release},
     8};
 
 /// @brief Chorus hook pattern.
 /// Double hook with climax - maximum memorability.
 constexpr PhrasePattern kChorusHook = {
     "chorus-hook",
-    {PhraseRole::Hook, PhraseRole::Hook, PhraseRole::Anchor,
-     PhraseRole::Release, PhraseRole::Hook, PhraseRole::Hook,
-     PhraseRole::Approach, PhraseRole::Peak},
+    {PhraseRole::Hook, PhraseRole::Hook, PhraseRole::Anchor, PhraseRole::Release, PhraseRole::Hook,
+     PhraseRole::Hook, PhraseRole::Approach, PhraseRole::Peak},
     8};
 
 /// @brief Building tension pattern.
 /// Gradual rise for pre-chorus or bridge sections.
 constexpr PhrasePattern kBuildTension = {
     "build-tension",
-    {PhraseRole::Anchor, PhraseRole::Approach, PhraseRole::Approach,
-     PhraseRole::Approach, PhraseRole::Approach, PhraseRole::Peak,
-     PhraseRole::Peak, PhraseRole::Release},
+    {PhraseRole::Anchor, PhraseRole::Approach, PhraseRole::Approach, PhraseRole::Approach,
+     PhraseRole::Approach, PhraseRole::Peak, PhraseRole::Peak, PhraseRole::Release},
     8};
 
 /// @brief Descending resolution pattern.
 /// Falling contour for phrase endings or outros.
 constexpr PhrasePattern kDescendResolve = {
     "descend-resolve",
-    {PhraseRole::Peak, PhraseRole::Approach, PhraseRole::Anchor,
-     PhraseRole::Approach, PhraseRole::Anchor, PhraseRole::Release,
-     PhraseRole::Release, PhraseRole::Anchor},
+    {PhraseRole::Peak, PhraseRole::Approach, PhraseRole::Anchor, PhraseRole::Approach,
+     PhraseRole::Anchor, PhraseRole::Release, PhraseRole::Release, PhraseRole::Anchor},
     8};
 
 /// @brief Wave pattern.
 /// Up-down-up contour for melodic interest.
 constexpr PhrasePattern kWave = {
     "wave",
-    {PhraseRole::Anchor, PhraseRole::Approach, PhraseRole::Peak,
-     PhraseRole::Release, PhraseRole::Approach, PhraseRole::Peak,
-     PhraseRole::Approach, PhraseRole::Release},
+    {PhraseRole::Anchor, PhraseRole::Approach, PhraseRole::Peak, PhraseRole::Release,
+     PhraseRole::Approach, PhraseRole::Peak, PhraseRole::Approach, PhraseRole::Release},
     8};
 
 // ============================================================================
@@ -134,8 +126,7 @@ constexpr const PhrasePattern* kPhrasePatterns[] = {
 };
 
 /// @brief Number of available patterns.
-constexpr size_t kPhrasePatternCount =
-    sizeof(kPhrasePatterns) / sizeof(kPhrasePatterns[0]);
+constexpr size_t kPhrasePatternCount = sizeof(kPhrasePatterns) / sizeof(kPhrasePatterns[0]);
 
 /// @brief Get phrase pattern by name.
 /// @param name Pattern name to search for
@@ -186,9 +177,8 @@ inline const PhrasePattern& getDefaultPatternForSection(SectionType type) {
 /// @param style Vocal style preset
 /// @param section Section type
 /// @returns Appropriate pattern for style/section combination
-inline const PhrasePattern& getPatternForStyleAndSection(
-    VocalStylePreset style, SectionType section) {
-
+inline const PhrasePattern& getPatternForStyleAndSection(VocalStylePreset style,
+                                                         SectionType section) {
   // Style-specific overrides for Chorus
   if (section == SectionType::Chorus) {
     switch (style) {

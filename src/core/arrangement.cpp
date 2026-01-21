@@ -7,22 +7,17 @@
 
 namespace midisketch {
 
-Arrangement::Arrangement(const std::vector<Section>& sections)
-    : sections_(sections) {}
+Arrangement::Arrangement(const std::vector<Section>& sections) : sections_(sections) {}
 
-Tick Arrangement::barToTick(uint32_t bar) const {
-  return bar * TICKS_PER_BAR;
-}
+Tick Arrangement::barToTick(uint32_t bar) const { return bar * TICKS_PER_BAR; }
 
-std::pair<Tick, Tick> Arrangement::sectionToTickRange(
-    const Section& section) const {
+std::pair<Tick, Tick> Arrangement::sectionToTickRange(const Section& section) const {
   Tick start = section.start_tick;
   Tick end = start + section.bars * TICKS_PER_BAR;
   return {start, end};
 }
 
-void Arrangement::iterateSections(
-    std::function<void(const Section&)> callback) const {
+void Arrangement::iterateSections(std::function<void(const Section&)> callback) const {
   for (const auto& section : sections_) {
     callback(section);
   }

@@ -34,7 +34,10 @@ describe('MidiSketch WASM - Call System', () => {
 
       const seTrack = tracks.find((t) => t.name === 'SE');
       expect(seTrack).toBeDefined();
-      const chantMarker = seTrack!.textEvents.find((e) => e.text === 'Gachikoi');
+      if (!seTrack) {
+        throw new Error('unreachable');
+      }
+      const chantMarker = seTrack.textEvents.find((e) => e.text === 'Gachikoi');
       expect(chantMarker).toBeDefined();
 
       cleanup();
@@ -55,15 +58,25 @@ describe('MidiSketch WASM - Call System', () => {
 
       // Find Chant section start tick from SE track
       const seTrack = tracks.find((t) => t.name === 'SE');
-      const chantEvent = seTrack!.textEvents.find((e) => e.text === 'Gachikoi');
+      expect(seTrack).toBeDefined();
+      if (!seTrack) {
+        throw new Error('unreachable');
+      }
+      const chantEvent = seTrack.textEvents.find((e) => e.text === 'Gachikoi');
       expect(chantEvent).toBeDefined();
+      if (!chantEvent) {
+        throw new Error('unreachable');
+      }
 
       // Check that there are no vocal notes at the Chant section start
       const vocalTrack = tracks.find((t) => t.name === 'Vocal');
       expect(vocalTrack).toBeDefined();
+      if (!vocalTrack) {
+        throw new Error('unreachable');
+      }
 
       // Vocal should not have notes starting exactly at chant tick
-      const vocalAtChant = vocalTrack!.notes.filter((n) => n.tick === chantEvent!.tick);
+      const vocalAtChant = vocalTrack.notes.filter((n) => n.tick === chantEvent.tick);
       expect(vocalAtChant.length).toBe(0);
 
       cleanup();
@@ -86,7 +99,10 @@ describe('MidiSketch WASM - Call System', () => {
 
       const seTrack = tracks.find((t) => t.name === 'SE');
       expect(seTrack).toBeDefined();
-      const mixMarker = seTrack!.textEvents.find((e) => e.text === 'TigerMix');
+      if (!seTrack) {
+        throw new Error('unreachable');
+      }
+      const mixMarker = seTrack.textEvents.find((e) => e.text === 'TigerMix');
       expect(mixMarker).toBeDefined();
 
       cleanup();
@@ -111,10 +127,13 @@ describe('MidiSketch WASM - Call System', () => {
       // SE track should have notes (call notes at C3=48)
       const seTrack = tracks.find((t) => t.name === 'SE');
       expect(seTrack).toBeDefined();
-      expect(seTrack!.notes.length).toBeGreaterThan(0);
+      if (!seTrack) {
+        throw new Error('unreachable');
+      }
+      expect(seTrack.notes.length).toBeGreaterThan(0);
 
       // All call notes should be C3 (48)
-      const callNotes = seTrack!.notes.filter((n) => n.pitch === 48);
+      const callNotes = seTrack.notes.filter((n) => n.pitch === 48);
       expect(callNotes.length).toBeGreaterThan(0);
 
       cleanup();
@@ -137,7 +156,10 @@ describe('MidiSketch WASM - Call System', () => {
       // SE track should not have Gachikoi or TigerMix markers
       const seTrack = tracks.find((t) => t.name === 'SE');
       expect(seTrack).toBeDefined();
-      const chantMarker = seTrack!.textEvents.find(
+      if (!seTrack) {
+        throw new Error('unreachable');
+      }
+      const chantMarker = seTrack.textEvents.find(
         (e) => e.text === 'Gachikoi' || e.text === 'TigerMix',
       );
       expect(chantMarker).toBeUndefined();
@@ -162,9 +184,15 @@ describe('MidiSketch WASM - Call System', () => {
       // Check SE track for modulation marker
       const seTrack = tracks.find((t) => t.name === 'SE');
       expect(seTrack).toBeDefined();
-      const modEvent = seTrack!.textEvents.find((e) => e.text.includes('Mod+'));
+      if (!seTrack) {
+        throw new Error('unreachable');
+      }
+      const modEvent = seTrack.textEvents.find((e) => e.text.includes('Mod+'));
       expect(modEvent).toBeDefined();
-      expect(modEvent!.text).toBe('Mod+3');
+      if (!modEvent) {
+        throw new Error('unreachable');
+      }
+      expect(modEvent.text).toBe('Mod+3');
 
       cleanup();
     });

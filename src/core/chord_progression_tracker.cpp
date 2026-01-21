@@ -4,24 +4,24 @@
  */
 
 #include "core/chord_progression_tracker.h"
+
+#include <algorithm>
+
 #include "core/arrangement.h"
 #include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/harmonic_rhythm.h"
-#include <algorithm>
 
 namespace midisketch {
 
 void ChordProgressionTracker::initialize(const Arrangement& arrangement,
-                                          const ChordProgression& progression,
-                                          Mood mood) {
+                                         const ChordProgression& progression, Mood mood) {
   chords_.clear();
 
   const auto& sections = arrangement.sections();
 
   for (const auto& section : sections) {
-    HarmonicRhythmInfo harmonic =
-        HarmonicRhythmInfo::forSection(section.type, mood);
+    HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section.type, mood);
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
@@ -41,8 +41,7 @@ void ChordProgressionTracker::initialize(const Arrangement& arrangement,
       // Check if this bar should split for phrase-end anticipation (Dense
       // rhythm) Uses same logic as chord_track for synchronization
       bool should_split =
-          shouldSplitPhraseEnd(bar, section.bars, progression.length, harmonic,
-                               section.type, mood);
+          shouldSplitPhraseEnd(bar, section.bars, progression.length, harmonic, section.type, mood);
 
       if (should_split) {
         // Dense harmonic rhythm: split bar into two chord entries
@@ -53,8 +52,7 @@ void ChordProgressionTracker::initialize(const Arrangement& arrangement,
         // Second half: next chord (anticipation)
         int next_chord_idx = (chord_idx + 1) % progression.length;
         int8_t next_degree = progression.degrees[next_chord_idx];
-        chords_.push_back(
-            {bar_start + half_bar, bar_start + TICKS_PER_BAR, next_degree});
+        chords_.push_back({bar_start + half_bar, bar_start + TICKS_PER_BAR, next_degree});
       } else {
         // Normal: one chord for the whole bar
         chords_.push_back({bar_start, bar_start + TICKS_PER_BAR, degree});
@@ -69,9 +67,8 @@ int8_t ChordProgressionTracker::getChordDegreeAt(Tick tick) const {
   }
 
   // Binary search: find first chord whose start > tick
-  auto it = std::upper_bound(
-      chords_.begin(), chords_.end(), tick,
-      [](Tick t, const ChordInfo& c) { return t < c.start; });
+  auto it = std::upper_bound(chords_.begin(), chords_.end(), tick,
+                             [](Tick t, const ChordInfo& c) { return t < c.start; });
 
   // If it's not the first element, check the previous chord
   if (it != chords_.begin()) {
@@ -94,8 +91,7 @@ Tick ChordProgressionTracker::getNextChordChangeTick(Tick after) const {
   for (size_t i = 0; i < chords_.size(); ++i) {
     if (after >= chords_[i].start && after < chords_[i].end) {
       // Check if next chord exists and has different degree
-      if (i + 1 < chords_.size() &&
-          chords_[i + 1].degree != chords_[i].degree) {
+      if (i + 1 < chords_.size() && chords_[i + 1].degree != chords_[i].degree) {
         return chords_[i + 1].start;
       }
       // Same degree continues, keep looking

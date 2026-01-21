@@ -4,16 +4,15 @@
  */
 
 #include "core/collision_resolver.h"
+
 #include <algorithm>
 #include <cmath>
 
 namespace midisketch {
 
-void CollisionResolver::resolveArpeggioChordClashes(
-    MidiTrack& arpeggio_track,
-    const MidiTrack& chord_track,
-    const IHarmonyContext& harmony) {
-
+void CollisionResolver::resolveArpeggioChordClashes(MidiTrack& arpeggio_track,
+                                                    const MidiTrack& chord_track,
+                                                    const IHarmonyContext& harmony) {
   // Dissonant intervals to resolve (in semitones)
   constexpr int MINOR_2ND = 1;
   constexpr int MAJOR_7TH = 11;

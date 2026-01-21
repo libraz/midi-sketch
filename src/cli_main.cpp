@@ -3,20 +3,21 @@
  * @brief Command-line interface for MIDI generation and analysis.
  */
 
-#include "midisketch.h"
-#include "analysis/dissonance.h"
-#include "core/json_helpers.h"
-#include "core/preset_data.h"
-#include "core/production_blueprint.h"
-#include "core/structure.h"
-#include "midi/midi_reader.h"
-#include "midi/midi2_reader.h"
-#include "midi/midi_validator.h"
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+
+#include "analysis/dissonance.h"
+#include "core/json_helpers.h"
+#include "core/preset_data.h"
+#include "core/production_blueprint.h"
+#include "core/structure.h"
+#include "midi/midi2_reader.h"
+#include "midi/midi_reader.h"
+#include "midi/midi_validator.h"
+#include "midisketch.h"
 
 namespace {
 
@@ -71,7 +72,8 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata) {
   // Core parameters from metadata
   if (p.has("seed")) config.seed = p.getUint("seed");
   if (p.has("chord_id")) config.chord_progression_id = static_cast<uint8_t>(p.getInt("chord_id"));
-  if (p.has("structure")) config.form = static_cast<midisketch::StructurePattern>(p.getInt("structure"));
+  if (p.has("structure"))
+    config.form = static_cast<midisketch::StructurePattern>(p.getInt("structure"));
   if (p.has("bpm")) config.bpm = static_cast<uint16_t>(p.getInt("bpm"));
   if (p.has("key")) config.key = static_cast<midisketch::Key>(p.getInt("key"));
   if (p.has("mood")) {
@@ -90,13 +92,15 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata) {
     config.melody_template = static_cast<midisketch::MelodyTemplateId>(p.getInt("melody_template"));
   }
   if (p.has("melodic_complexity")) {
-    config.melodic_complexity = static_cast<midisketch::MelodicComplexity>(p.getInt("melodic_complexity"));
+    config.melodic_complexity =
+        static_cast<midisketch::MelodicComplexity>(p.getInt("melodic_complexity"));
   }
   if (p.has("hook_intensity")) {
     config.hook_intensity = static_cast<midisketch::HookIntensity>(p.getInt("hook_intensity"));
   }
   if (p.has("composition_style")) {
-    config.composition_style = static_cast<midisketch::CompositionStyle>(p.getInt("composition_style"));
+    config.composition_style =
+        static_cast<midisketch::CompositionStyle>(p.getInt("composition_style"));
   }
   if (p.has("vocal_groove")) {
     config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(p.getInt("vocal_groove"));
@@ -106,7 +110,8 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata) {
   }
   if (p.has("drums_enabled")) config.drums_enabled = p.getBool("drums_enabled");
   if (p.has("modulation_timing")) {
-    config.modulation_timing = static_cast<midisketch::ModulationTiming>(p.getInt("modulation_timing"));
+    config.modulation_timing =
+        static_cast<midisketch::ModulationTiming>(p.getInt("modulation_timing"));
   }
   if (p.has("modulation_semitones")) {
     config.modulation_semitones = static_cast<int8_t>(p.getInt("modulation_semitones"));
@@ -116,9 +121,8 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata) {
   }
   if (p.has("call_enabled")) {
     // Convert bool to CallSetting enum
-    config.call_setting = p.getBool("call_enabled")
-        ? midisketch::CallSetting::Enabled
-        : midisketch::CallSetting::Disabled;
+    config.call_setting = p.getBool("call_enabled") ? midisketch::CallSetting::Enabled
+                                                    : midisketch::CallSetting::Disabled;
   }
   if (p.has("call_notes_enabled")) {
     config.call_notes_enabled = p.getBool("call_notes_enabled");
@@ -148,16 +152,26 @@ const char* keyName(midisketch::Key key) {
 
 const char* vocalStyleName(midisketch::VocalStylePreset style) {
   switch (style) {
-    case midisketch::VocalStylePreset::Auto: return "Auto";
-    case midisketch::VocalStylePreset::Standard: return "Standard";
-    case midisketch::VocalStylePreset::Vocaloid: return "Vocaloid";
-    case midisketch::VocalStylePreset::UltraVocaloid: return "UltraVocaloid";
-    case midisketch::VocalStylePreset::Idol: return "Idol";
-    case midisketch::VocalStylePreset::Ballad: return "Ballad";
-    case midisketch::VocalStylePreset::Rock: return "Rock";
-    case midisketch::VocalStylePreset::CityPop: return "CityPop";
-    case midisketch::VocalStylePreset::Anime: return "Anime";
-    default: return "Unknown";
+    case midisketch::VocalStylePreset::Auto:
+      return "Auto";
+    case midisketch::VocalStylePreset::Standard:
+      return "Standard";
+    case midisketch::VocalStylePreset::Vocaloid:
+      return "Vocaloid";
+    case midisketch::VocalStylePreset::UltraVocaloid:
+      return "UltraVocaloid";
+    case midisketch::VocalStylePreset::Idol:
+      return "Idol";
+    case midisketch::VocalStylePreset::Ballad:
+      return "Ballad";
+    case midisketch::VocalStylePreset::Rock:
+      return "Rock";
+    case midisketch::VocalStylePreset::CityPop:
+      return "CityPop";
+    case midisketch::VocalStylePreset::Anime:
+      return "Anime";
+    default:
+      return "Unknown";
   }
 }
 
@@ -170,11 +184,13 @@ ActionLevel getActionLevel(const midisketch::DissonanceIssue& issue) {
 
   // CRITICAL: Definitely wrong, needs fixing
   if (issue.type == DT::NonDiatonicNote) return ActionLevel::Critical;
-  if (issue.type == DT::SimultaneousClash && issue.severity == DS::High) return ActionLevel::Critical;
+  if (issue.type == DT::SimultaneousClash && issue.severity == DS::High)
+    return ActionLevel::Critical;
 
   // WARNING: Might be intentional but worth checking
   if (issue.type == DT::SimultaneousClash) return ActionLevel::Warning;
-  if (issue.type == DT::SustainedOverChordChange && issue.severity == DS::High) return ActionLevel::Warning;
+  if (issue.type == DT::SustainedOverChordChange && issue.severity == DS::High)
+    return ActionLevel::Warning;
 
   // INFO: Normal musical tension (passing tones, neighbor tones, etc.)
   return ActionLevel::Info;
@@ -182,18 +198,24 @@ ActionLevel getActionLevel(const midisketch::DissonanceIssue& issue) {
 
 [[maybe_unused]] const char* actionLevelName(ActionLevel level) {
   switch (level) {
-    case ActionLevel::Critical: return "CRITICAL";
-    case ActionLevel::Warning: return "WARNING";
-    case ActionLevel::Info: return "INFO";
+    case ActionLevel::Critical:
+      return "CRITICAL";
+    case ActionLevel::Warning:
+      return "WARNING";
+    case ActionLevel::Info:
+      return "INFO";
   }
   return "UNKNOWN";
 }
 
 const char* actionLevelColor(ActionLevel level) {
   switch (level) {
-    case ActionLevel::Critical: return "\033[31m";  // Red
-    case ActionLevel::Warning: return "\033[33m";   // Yellow
-    case ActionLevel::Info: return "\033[36m";      // Cyan
+    case ActionLevel::Critical:
+      return "\033[31m";  // Red
+    case ActionLevel::Warning:
+      return "\033[33m";  // Yellow
+    case ActionLevel::Info:
+      return "\033[36m";  // Cyan
   }
   return "";
 }
@@ -203,8 +225,9 @@ void printIssueWithContext(const midisketch::DissonanceIssue& issue, const char*
                            const midisketch::Song* song);
 
 // Get notes playing at a specific tick from a track
-std::vector<std::pair<std::string, uint8_t>> getNotesAtTick(
-    const midisketch::MidiTrack& track, const std::string& track_name, midisketch::Tick tick) {
+std::vector<std::pair<std::string, uint8_t>> getNotesAtTick(const midisketch::MidiTrack& track,
+                                                            const std::string& track_name,
+                                                            midisketch::Tick tick) {
   std::vector<std::pair<std::string, uint8_t>> result;
   for (const auto& note : track.notes()) {
     if (note.start_tick <= tick && note.start_tick + note.duration > tick) {
@@ -215,8 +238,8 @@ std::vector<std::pair<std::string, uint8_t>> getNotesAtTick(
 }
 
 // Get all notes playing at a specific tick from the song
-std::vector<std::pair<std::string, uint8_t>> getAllNotesAtTick(
-    const midisketch::Song& song, midisketch::Tick tick) {
+std::vector<std::pair<std::string, uint8_t>> getAllNotesAtTick(const midisketch::Song& song,
+                                                               midisketch::Tick tick) {
   std::vector<std::pair<std::string, uint8_t>> result;
 
   auto add = [&](const midisketch::MidiTrack& track, const std::string& name) {
@@ -242,9 +265,15 @@ void printDissonanceSummary(const midisketch::DissonanceReport& report,
   int critical = 0, warning = 0, info = 0;
   for (const auto& issue : report.issues) {
     switch (getActionLevel(issue)) {
-      case ActionLevel::Critical: critical++; break;
-      case ActionLevel::Warning: warning++; break;
-      case ActionLevel::Info: info++; break;
+      case ActionLevel::Critical:
+        critical++;
+        break;
+      case ActionLevel::Warning:
+        warning++;
+        break;
+      case ActionLevel::Info:
+        info++;
+        break;
     }
   }
 
@@ -268,12 +297,14 @@ void printDissonanceSummary(const midisketch::DissonanceReport& report,
   std::cout << "  Simultaneous clashes:      " << report.summary.simultaneous_clashes << "\n";
   std::cout << "  Non-chord tones:           " << report.summary.non_chord_tones
             << " (usually acceptable)\n";
-  std::cout << "  Sustained over chord:      " << report.summary.sustained_over_chord_change << "\n";
+  std::cout << "  Sustained over chord:      " << report.summary.sustained_over_chord_change
+            << "\n";
   std::cout << "  Non-diatonic notes:        " << report.summary.non_diatonic_notes << "\n";
 
   // Print CRITICAL issues with context
   if (critical > 0) {
-    std::cout << "\n" << actionLevelColor(ActionLevel::Critical)
+    std::cout << "\n"
+              << actionLevelColor(ActionLevel::Critical)
               << "=== CRITICAL Issues (require fixing) ===" << reset << "\n";
     for (const auto& issue : report.issues) {
       if (getActionLevel(issue) != ActionLevel::Critical) continue;
@@ -283,7 +314,8 @@ void printDissonanceSummary(const midisketch::DissonanceReport& report,
 
   // Print WARNING issues with context
   if (warning > 0) {
-    std::cout << "\n" << actionLevelColor(ActionLevel::Warning)
+    std::cout << "\n"
+              << actionLevelColor(ActionLevel::Warning)
               << "=== WARNING Issues (review recommended) ===" << reset << "\n";
     for (const auto& issue : report.issues) {
       if (getActionLevel(issue) != ActionLevel::Warning) continue;
@@ -358,7 +390,8 @@ void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num) {
   std::cout << "\n=== Bar " << bar_num << " (tick " << bar_start << "-" << bar_end << ") ===\n\n";
 
   // Track order for display
-  std::vector<std::string> track_order = {"Vocal", "Chord", "Bass", "Motif", "Arpeggio", "Aux", "Drums"};
+  std::vector<std::string> track_order = {"Vocal",    "Chord", "Bass", "Motif",
+                                          "Arpeggio", "Aux",   "Drums"};
 
   for (const auto& track_name : track_order) {
     const midisketch::ParsedTrack* track = midi.getTrack(track_name);
@@ -414,7 +447,8 @@ void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num) {
         if (beat == 0.0f) {
           std::cout << "  " << desc << "\n";
         } else {
-          std::cout << "  beat " << std::fixed << std::setprecision(1) << beat << ": " << desc << "\n";
+          std::cout << "  beat " << std::fixed << std::setprecision(1) << beat << ": " << desc
+                    << "\n";
         }
       }
       std::cout << "\n";
@@ -434,18 +468,18 @@ int main(int argc, char* argv[]) {
   bool use_new_seed = false;    // Use different seed when regenerating
   uint32_t new_seed = 0;        // New seed for regeneration
   bool json_output = false;     // Output JSON to stdout
-  uint32_t seed = 0;  // 0 = auto-random
+  uint32_t seed = 0;            // 0 = auto-random
   uint8_t style_id = 1;
   uint8_t blueprint_id = 255;  // 255 = random selection
   uint8_t mood_id = 0;
   bool mood_explicit = false;
   uint8_t chord_id = 3;
-  uint8_t vocal_style = 0;  // 0 = Auto
+  uint8_t vocal_style = 0;    // 0 = Auto
   float note_density = 0.0f;  // 0 = use style default
-  uint16_t bpm = 0;  // 0 = use style default
-  uint16_t duration = 0;  // 0 = use pattern default
-  int form_id = -1;  // -1 = use style default
-  int key_id = -1;   // -1 = use default (C)
+  uint16_t bpm = 0;           // 0 = use style default
+  uint16_t duration = 0;      // 0 = use pattern default
+  int form_id = -1;           // -1 = use style default
+  int key_id = -1;            // -1 = use default (C)
   uint32_t vocal_seed = 0;
   uint8_t vocal_attitude = 1;
   uint8_t vocal_low = 57;
@@ -579,7 +613,7 @@ int main(int argc, char* argv[]) {
       return 1;
     }
     std::vector<uint8_t> regen_data((std::istreambuf_iterator<char>(regen_stream)),
-                                     std::istreambuf_iterator<char>());
+                                    std::istreambuf_iterator<char>());
     regen_stream.close();
 
     original_format = midisketch::MidiReader::detectFormat(regen_data.data(), regen_data.size());
@@ -600,9 +634,9 @@ int main(int argc, char* argv[]) {
       metadata = midi2.metadata;
       const char* format_name = (original_format == midisketch::DetectedMidiFormat::SMF2_ktmidi)
                                     ? "SMF2 (ktmidi container)"
-                                    : (original_format == midisketch::DetectedMidiFormat::SMF2_Clip)
-                                          ? "SMF2 (Clip)"
-                                          : "SMF2 (Container)";
+                                : (original_format == midisketch::DetectedMidiFormat::SMF2_Clip)
+                                    ? "SMF2 (Clip)"
+                                    : "SMF2 (Container)";
       std::cout << "Format: " << format_name << "\n";
     } else if (original_format == midisketch::DetectedMidiFormat::SMF1) {
       // Standard MIDI format (SMF1)
@@ -691,7 +725,7 @@ int main(int argc, char* argv[]) {
       return 1;
     }
     std::vector<uint8_t> file_data((std::istreambuf_iterator<char>(input_stream)),
-                                    std::istreambuf_iterator<char>());
+                                   std::istreambuf_iterator<char>());
     input_stream.close();
 
     // Auto-detect format
@@ -724,8 +758,8 @@ int main(int argc, char* argv[]) {
       std::cout << "Tracks:\n";
       for (size_t i = 0; i < midi.tracks.size(); ++i) {
         const auto& track = midi.tracks[i];
-        std::cout << "  [" << i << "] " << (track.name.empty() ? "(unnamed)" : track.name)
-                  << " - " << track.notes.size() << " notes, ch " << static_cast<int>(track.channel)
+        std::cout << "  [" << i << "] " << (track.name.empty() ? "(unnamed)" : track.name) << " - "
+                  << track.notes.size() << " notes, ch " << static_cast<int>(track.channel)
                   << ", prog " << static_cast<int>(track.program) << "\n";
       }
       std::cout << "\n";
@@ -758,9 +792,9 @@ int main(int argc, char* argv[]) {
       const auto& midi2 = reader2.getParsedMidi();
       const char* format_name = (detected_format == midisketch::DetectedMidiFormat::SMF2_ktmidi)
                                     ? "SMF2 (ktmidi container)"
-                                    : (detected_format == midisketch::DetectedMidiFormat::SMF2_Clip)
-                                          ? "SMF2 (Clip)"
-                                          : "SMF2 (Container)";
+                                : (detected_format == midisketch::DetectedMidiFormat::SMF2_Clip)
+                                    ? "SMF2 (Clip)"
+                                    : "SMF2 (Container)";
 
       std::cout << "MIDI Info:\n";
       std::cout << "  Format: " << format_name << "\n";
@@ -798,7 +832,7 @@ int main(int argc, char* argv[]) {
   config.mood_explicit = mood_explicit;
   config.seed = seed;
   config.vocal_style = static_cast<midisketch::VocalStylePreset>(vocal_style);
-  config.bpm = bpm;  // 0 = use style default
+  config.bpm = bpm;                           // 0 = use style default
   config.target_duration_seconds = duration;  // 0 = use pattern default
   if (form_id >= 0 && form_id < static_cast<int>(midisketch::STRUCTURE_COUNT)) {
     config.form = static_cast<midisketch::StructurePattern>(form_id);
@@ -813,8 +847,7 @@ int main(int argc, char* argv[]) {
   // Vocal parameters
   config.skip_vocal = skip_vocal;
   if (vocal_attitude <= 2) {
-    config.vocal_attitude =
-        static_cast<midisketch::VocalAttitude>(vocal_attitude);
+    config.vocal_attitude = static_cast<midisketch::VocalAttitude>(vocal_attitude);
   }
   config.vocal_low = vocal_low;
   config.vocal_high = vocal_high;
@@ -832,8 +865,8 @@ int main(int argc, char* argv[]) {
     std::cout << "  Blueprint: Random (will be selected during generation)\n";
   } else {
     std::cout << "Generating with SongConfig:\n";
-    std::cout << "  Blueprint: " << midisketch::getProductionBlueprintName(blueprint_id)
-              << " (" << static_cast<int>(blueprint_id) << ")\n";
+    std::cout << "  Blueprint: " << midisketch::getProductionBlueprintName(blueprint_id) << " ("
+              << static_cast<int>(blueprint_id) << ")\n";
   }
   std::cout << "  Style: " << preset.display_name << "\n";
   std::cout << "  Key: " << keyName(config.key) << "\n";

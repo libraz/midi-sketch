@@ -3,9 +3,9 @@
  * @brief Tests for UMP message builders.
  */
 
-#include <gtest/gtest.h>
-
 #include "midi/ump.h"
+
+#include <gtest/gtest.h>
 
 namespace midisketch {
 namespace ump {
@@ -91,8 +91,7 @@ TEST_F(UmpTest, WriteDeltaClockstampLarge) {
 
   uint32_t word0 = (buf_[0] << 24) | (buf_[1] << 16) | (buf_[2] << 8) | buf_[3];
   uint32_t word1 = (buf_[4] << 24) | (buf_[5] << 16) | (buf_[6] << 8) | buf_[7];
-  uint32_t word2 =
-      (buf_[8] << 24) | (buf_[9] << 16) | (buf_[10] << 8) | buf_[11];
+  uint32_t word2 = (buf_[8] << 24) | (buf_[9] << 16) | (buf_[10] << 8) | buf_[11];
 
   EXPECT_EQ(word0, 0x0040FFFF);  // 65535 ticks
   EXPECT_EQ(word1, 0x0040FFFF);  // 65535 ticks
@@ -117,8 +116,8 @@ TEST_F(UmpTest, WriteStartOfClip) {
   ASSERT_EQ(buf_.size(), 16);
 
   uint32_t word0 = (buf_[0] << 24) | (buf_[1] << 16) | (buf_[2] << 8) | buf_[3];
-  EXPECT_EQ((word0 >> 28) & 0xF, 0xF);         // MT = F
-  EXPECT_EQ((word0 >> 16) & 0x3FF, 0x20);      // Status = StartOfClip
+  EXPECT_EQ((word0 >> 28) & 0xF, 0xF);     // MT = F
+  EXPECT_EQ((word0 >> 16) & 0x3FF, 0x20);  // Status = StartOfClip
 }
 
 TEST_F(UmpTest, WriteEndOfClip) {
@@ -126,8 +125,8 @@ TEST_F(UmpTest, WriteEndOfClip) {
   ASSERT_EQ(buf_.size(), 16);
 
   uint32_t word0 = (buf_[0] << 24) | (buf_[1] << 16) | (buf_[2] << 8) | buf_[3];
-  EXPECT_EQ((word0 >> 28) & 0xF, 0xF);         // MT = F
-  EXPECT_EQ((word0 >> 16) & 0x3FF, 0x21);      // Status = EndOfClip
+  EXPECT_EQ((word0 >> 28) & 0xF, 0xF);     // MT = F
+  EXPECT_EQ((word0 >> 16) & 0x3FF, 0x21);  // Status = EndOfClip
 }
 
 TEST_F(UmpTest, WriteTempo) {
@@ -152,8 +151,8 @@ TEST_F(UmpTest, WriteTimeSignature) {
   EXPECT_EQ(word0 & 0xFF, 0x01);        // Status = Time Signature
 
   uint32_t word1 = (buf_[4] << 24) | (buf_[5] << 16) | (buf_[6] << 8) | buf_[7];
-  EXPECT_EQ((word1 >> 24) & 0xFF, 4);   // Numerator = 4
-  EXPECT_EQ((word1 >> 16) & 0xFF, 2);   // Denominator power = 2 (2^2 = 4)
+  EXPECT_EQ((word1 >> 24) & 0xFF, 4);  // Numerator = 4
+  EXPECT_EQ((word1 >> 16) & 0xFF, 2);  // Denominator power = 2 (2^2 = 4)
 }
 
 TEST_F(UmpTest, ClipFileStructure) {

@@ -6,10 +6,11 @@
 #ifndef MIDISKETCH_TRACK_MOTIF_H
 #define MIDISKETCH_TRACK_MOTIF_H
 
+#include <random>
+
 #include "core/midi_track.h"
 #include "core/song.h"
 #include "core/types.h"
-#include <random>
 
 namespace midisketch {
 
@@ -22,16 +23,14 @@ class IHarmonyContext;
 // @param params Generation parameters
 // @param rng Random number generator
 // @param harmony HarmonyContext for provenance tracking (optional)
-void generateMotifTrack(MidiTrack& track, Song& song,
-                        const GeneratorParams& params, std::mt19937& rng,
-                        const IHarmonyContext& harmony);
+void generateMotifTrack(MidiTrack& track, Song& song, const GeneratorParams& params,
+                        std::mt19937& rng, const IHarmonyContext& harmony);
 
 // Generates a single motif pattern (one cycle).
 // @param params Generation parameters
 // @param rng Random number generator
 // @returns Vector of NoteEvents for one motif cycle
-std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params,
-                                             std::mt19937& rng);
+std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::mt19937& rng);
 
 }  // namespace midisketch
 

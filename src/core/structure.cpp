@@ -4,10 +4,12 @@
  */
 
 #include "core/structure.h"
-#include "core/preset_data.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+
+#include "core/preset_data.h"
 
 namespace midisketch {
 
@@ -15,15 +17,24 @@ namespace {
 
 std::string sectionTypeName(SectionType type) {
   switch (type) {
-    case SectionType::Intro: return "Intro";
-    case SectionType::A: return "A";
-    case SectionType::B: return "B";
-    case SectionType::Chorus: return "Chorus";
-    case SectionType::Bridge: return "Bridge";
-    case SectionType::Interlude: return "Interlude";
-    case SectionType::Outro: return "Outro";
-    case SectionType::Chant: return "Chant";
-    case SectionType::MixBreak: return "MixBreak";
+    case SectionType::Intro:
+      return "Intro";
+    case SectionType::A:
+      return "A";
+    case SectionType::B:
+      return "B";
+    case SectionType::Chorus:
+      return "Chorus";
+    case SectionType::Bridge:
+      return "Bridge";
+    case SectionType::Interlude:
+      return "Interlude";
+    case SectionType::Outro:
+      return "Outro";
+    case SectionType::Chant:
+      return "Chant";
+    case SectionType::MixBreak:
+      return "MixBreak";
   }
   return "";
 }
@@ -56,7 +67,7 @@ BackingDensity getBackingDensityForType(SectionType type) {
     case SectionType::Intro:
     case SectionType::Bridge:
     case SectionType::Interlude:
-    case SectionType::Chant:     // Call section - thin backing (quiet)
+    case SectionType::Chant:  // Call section - thin backing (quiet)
       return BackingDensity::Thin;
     case SectionType::Outro:
     case SectionType::A:
@@ -281,14 +292,12 @@ Tick calculateTotalTicks(const std::vector<Section>& sections) {
   return last.start_tick + (last.bars * TICKS_PER_BEAT * 4);
 }
 
-std::vector<Section> buildStructureForDuration(
-    uint16_t target_seconds,
-    uint16_t bpm,
-    StructurePattern pattern) {
+std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t bpm,
+                                               StructurePattern pattern) {
   // Calculate target bars from duration and BPM
   // bars = seconds * bpm / 60 / 4 (4 beats per bar)
-  uint16_t target_bars = static_cast<uint16_t>(
-      std::round(static_cast<float>(target_seconds) * bpm / 240.0f));
+  uint16_t target_bars =
+      static_cast<uint16_t>(std::round(static_cast<float>(target_seconds) * bpm / 240.0f));
 
   // Minimum 12 bars (very short), maximum 120 bars (~4 min @120BPM)
   target_bars = std::max(target_bars, static_cast<uint16_t>(12));
@@ -304,8 +313,7 @@ std::vector<Section> buildStructureForDuration(
   }
 
   // Helper to create a section with proper attributes
-  auto createSection = [](SectionType type, uint8_t bars,
-                          Tick& current_bar, Tick& current_tick) {
+  auto createSection = [](SectionType type, uint8_t bars, Tick& current_bar, Tick& current_tick) {
     Section section;
     section.type = type;
     section.name = sectionTypeName(type);
@@ -329,7 +337,7 @@ std::vector<Section> buildStructureForDuration(
 
     // Find Outro position (or end if no Outro)
     auto outro_it = std::find_if(sections.begin(), sections.end(),
-        [](const Section& s) { return s.type == SectionType::Outro; });
+                                 [](const Section& s) { return s.type == SectionType::Outro; });
 
     Tick insert_bar = 0;
     Tick insert_tick = 0;
@@ -417,12 +425,8 @@ void recalculateSectionTicks(std::vector<Section>& sections) {
   }
 }
 
-void insertCallSections(
-    std::vector<Section>& sections,
-    IntroChant intro_chant,
-    MixPattern mix_pattern,
-    uint16_t bpm) {
-
+void insertCallSections(std::vector<Section>& sections, IntroChant intro_chant,
+                        MixPattern mix_pattern, uint16_t bpm) {
   // 1. Insert Chant after Intro
   if (intro_chant != IntroChant::None) {
     Section chant;
@@ -436,7 +440,7 @@ void insertCallSections(
 
     // Find Intro and insert after it
     auto it = std::find_if(sections.begin(), sections.end(),
-        [](const Section& s) { return s.type == SectionType::Intro; });
+                           [](const Section& s) { return s.type == SectionType::Intro; });
     if (it != sections.end()) {
       sections.insert(it + 1, chant);
     } else {
@@ -458,7 +462,7 @@ void insertCallSections(
 
     // Find last Chorus (search from end)
     auto it = std::find_if(sections.rbegin(), sections.rend(),
-        [](const Section& s) { return s.type == SectionType::Chorus; });
+                           [](const Section& s) { return s.type == SectionType::Chorus; });
     if (it != sections.rend()) {
       // Convert reverse iterator to forward iterator and insert before
       auto fwd_it = it.base();  // Points to element after the found one
@@ -470,14 +474,9 @@ void insertCallSections(
   recalculateSectionTicks(sections);
 }
 
-std::vector<Section> buildStructureForDuration(
-    uint16_t target_seconds,
-    uint16_t bpm,
-    bool call_enabled,
-    IntroChant intro_chant,
-    MixPattern mix_pattern,
-    StructurePattern pattern) {
-
+std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t bpm,
+                                               bool call_enabled, IntroChant intro_chant,
+                                               MixPattern mix_pattern, StructurePattern pattern) {
   // First build basic structure using the pattern
   std::vector<Section> sections = buildStructureForDuration(target_seconds, bpm, pattern);
 

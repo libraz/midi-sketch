@@ -9,6 +9,9 @@
  */
 
 #include <gtest/gtest.h>
+
+#include <random>
+
 #include "core/arrangement.h"
 #include "core/chord.h"
 #include "core/generator.h"
@@ -18,7 +21,6 @@
 #include "core/timing_constants.h"
 #include "track/bass.h"
 #include "track/vocal_analysis.h"
-#include <random>
 
 namespace midisketch {
 namespace {
@@ -35,8 +37,7 @@ TEST(BassDiatonicRegression, IsDiatonicInCMajor) {
 
   auto isDiatonic = [](int pc) {
     pc = ((pc % 12) + 12) % 12;
-    return pc == 0 || pc == 2 || pc == 4 || pc == 5 ||
-           pc == 7 || pc == 9 || pc == 11;
+    return pc == 0 || pc == 2 || pc == 4 || pc == 5 || pc == 7 || pc == 9 || pc == 11;
   };
 
   // Diatonic tones
@@ -92,10 +93,8 @@ TEST(BassRootOctaveRegression, HighDegreesMustBeWithinRange) {
   // Test all degrees stay in range
   for (int8_t deg = 0; deg < 7; ++deg) {
     uint8_t root = getBassRoot(deg);
-    EXPECT_GE(root, BASS_LOW)
-        << "Degree " << (int)deg << " root must be >= BASS_LOW";
-    EXPECT_LE(root, BASS_HIGH)
-        << "Degree " << (int)deg << " root must be <= BASS_HIGH";
+    EXPECT_GE(root, BASS_LOW) << "Degree " << (int)deg << " root must be >= BASS_LOW";
+    EXPECT_LE(root, BASS_HIGH) << "Degree " << (int)deg << " root must be <= BASS_HIGH";
   }
 }
 
@@ -109,8 +108,7 @@ TEST(BassRootOctaveRegression, HighDegreesMustBeWithinRange) {
 TEST(BassAnticipationRegression, Minor2ndIntervalIsClash) {
   // Minor 2nd = 1 semitone difference (modulo octave)
   auto wouldClash = [](uint8_t bass_pc, uint8_t vocal_pc) {
-    int interval = std::abs(static_cast<int>(bass_pc) -
-                           static_cast<int>(vocal_pc));
+    int interval = std::abs(static_cast<int>(bass_pc) - static_cast<int>(vocal_pc));
     if (interval > 6) interval = 12 - interval;
     return interval == 1;
   };
@@ -139,18 +137,16 @@ TEST(BassAnticipationRegression, CheckMultiplePointsInBar) {
   Tick quarter = TICKS_PER_BEAT;
 
   std::vector<Tick> check_points = {
-      half,                      // Beat 3
-      half + quarter / 2,        // Beat 3.5
-      half + quarter,            // Beat 4
+      half,                         // Beat 3
+      half + quarter / 2,           // Beat 3.5
+      half + quarter,               // Beat 4
       half + quarter + quarter / 2  // Beat 4.5
   };
 
   // Verify the check points are in the second half of the bar
   for (Tick offset : check_points) {
-    EXPECT_GE(offset, TICKS_PER_BAR / 2)
-        << "Check point must be in second half of bar";
-    EXPECT_LT(offset, TICKS_PER_BAR)
-        << "Check point must be within the bar";
+    EXPECT_GE(offset, TICKS_PER_BAR / 2) << "Check point must be in second half of bar";
+    EXPECT_LT(offset, TICKS_PER_BAR) << "Check point must be within the bar";
   }
 
   // Verify we have multiple check points (the fix's key improvement)
@@ -174,8 +170,7 @@ TEST(BassDissonanceIntegration, GeneratedBassIsMostlyDiatonic) {
 
   auto isDiatonic = [](int pc) {
     pc = ((pc % 12) + 12) % 12;
-    return pc == 0 || pc == 2 || pc == 4 || pc == 5 ||
-           pc == 7 || pc == 9 || pc == 11;
+    return pc == 0 || pc == 2 || pc == 4 || pc == 5 || pc == 7 || pc == 9 || pc == 11;
   };
 
   // Most bass notes should be diatonic (allow chromatic passing tones)
@@ -191,8 +186,8 @@ TEST(BassDissonanceIntegration, GeneratedBassIsMostlyDiatonic) {
   // Allow up to 5% non-diatonic (chromatic passing tones are acceptable)
   float non_diatonic_ratio = total > 0 ? static_cast<float>(non_diatonic) / total : 0;
   EXPECT_LE(non_diatonic_ratio, 0.05f)
-      << "At most 5% of bass notes should be chromatic, got "
-      << (non_diatonic_ratio * 100) << "% (" << non_diatonic << "/" << total << ")";
+      << "At most 5% of bass notes should be chromatic, got " << (non_diatonic_ratio * 100) << "% ("
+      << non_diatonic << "/" << total << ")";
 }
 
 TEST(BassDissonanceIntegration, GeneratedBassInRange) {
@@ -205,8 +200,7 @@ TEST(BassDissonanceIntegration, GeneratedBassInRange) {
   const Song& song = gen.getSong();
 
   for (const auto& note : song.bass().notes()) {
-    EXPECT_GE(note.note, BASS_LOW)
-        << "Bass note at tick " << note.start_tick << " below BASS_LOW";
+    EXPECT_GE(note.note, BASS_LOW) << "Bass note at tick " << note.start_tick << " below BASS_LOW";
     EXPECT_LE(note.note, BASS_HIGH)
         << "Bass note at tick " << note.start_tick << " above BASS_HIGH";
   }
@@ -251,8 +245,7 @@ TEST(BassDissonanceIntegration, Seed11111HasNoHighSeverityIssues) {
     }
   }
 
-  EXPECT_EQ(minor_2nd_clashes, 0)
-      << "Bass should not create minor 2nd with chord on beat 1";
+  EXPECT_EQ(minor_2nd_clashes, 0) << "Bass should not create minor 2nd with chord on beat 1";
 }
 
 }  // namespace

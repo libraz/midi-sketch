@@ -5,10 +5,10 @@
 
 #include "midi/midi2_writer.h"
 
-#include "midi/ump.h"
-
 #include <algorithm>
 #include <fstream>
+
+#include "midi/ump.h"
 
 namespace midisketch {
 
@@ -26,8 +26,7 @@ constexpr size_t kClipMagicLen = 8;
 
 Midi2Writer::Midi2Writer() {}
 
-void Midi2Writer::writeContainerHeader(uint16_t numTracks,
-                                        uint16_t ticksPerQuarter) {
+void Midi2Writer::writeContainerHeader(uint16_t numTracks, uint16_t ticksPerQuarter) {
   // ktmidi container format:
   // "AAAAAAAAEEEEEEEE" (16 bytes)
   // deltaTimeSpec (i32, big-endian) - same as SMF division
@@ -79,9 +78,8 @@ uint8_t Midi2Writer::transposePitch(uint8_t pitch, Key key) {
   return static_cast<uint8_t>(std::clamp(result, 0, 127));
 }
 
-void Midi2Writer::writeTrackData(const MidiTrack& track, uint8_t group,
-                                  uint8_t channel, uint8_t program, Key key,
-                                  Tick mod_tick, int8_t mod_amount) {
+void Midi2Writer::writeTrackData(const MidiTrack& track, uint8_t group, uint8_t channel,
+                                 uint8_t program, Key key, Tick mod_tick, int8_t mod_amount) {
   // Program change at start (skip for drums channel 9)
   if (channel != 9) {
     ump::writeDeltaClockstamp(data_, group, 0);
@@ -125,18 +123,15 @@ void Midi2Writer::writeTrackData(const MidiTrack& track, uint8_t group,
     ump::writeDeltaClockstamp(data_, group, static_cast<uint32_t>(delta));
 
     if (evt.type == 0x90) {
-      ump::writeUint32BE(data_,
-                         ump::makeNoteOn(group, channel, evt.pitch, evt.velocity));
+      ump::writeUint32BE(data_, ump::makeNoteOn(group, channel, evt.pitch, evt.velocity));
     } else {
-      ump::writeUint32BE(data_,
-                         ump::makeNoteOff(group, channel, evt.pitch, evt.velocity));
+      ump::writeUint32BE(data_, ump::makeNoteOff(group, channel, evt.pitch, evt.velocity));
     }
   }
 }
 
-void Midi2Writer::writeMarkerData(const MidiTrack& track, uint8_t group,
-                                   uint16_t bpm,
-                                   const std::string& metadata) {
+void Midi2Writer::writeMarkerData(const MidiTrack& track, uint8_t group, uint16_t bpm,
+                                  const std::string& metadata) {
   // Write metadata as text event if present
   if (!metadata.empty()) {
     std::string metaText = "MIDISKETCH:" + metadata;
@@ -166,9 +161,9 @@ void Midi2Writer::writeMarkerData(const MidiTrack& track, uint8_t group,
   }
 }
 
-void Midi2Writer::buildClip(const MidiTrack& track, const std::string& name,
-                             uint8_t channel, uint8_t program, uint16_t bpm,
-                             Key key, Tick mod_tick, int8_t mod_amount) {
+void Midi2Writer::buildClip(const MidiTrack& track, const std::string& name, uint8_t channel,
+                            uint8_t program, uint16_t bpm, Key key, Tick mod_tick,
+                            int8_t mod_amount) {
   (void)name;  // Reserved for future use
   data_.clear();
 
@@ -186,8 +181,7 @@ void Midi2Writer::buildClip(const MidiTrack& track, const std::string& name,
   ump::writeEndOfClip(data_);
 }
 
-void Midi2Writer::buildContainer(const Song& song, Key key,
-                                  const std::string& metadata) {
+void Midi2Writer::buildContainer(const Song& song, Key key, const std::string& metadata) {
   data_.clear();
 
   // Count non-empty tracks
@@ -208,24 +202,23 @@ void Midi2Writer::buildContainer(const Song& song, Key key,
 
   // Channel and program assignments (matching SMF1 writer)
   constexpr uint8_t VOCAL_CH = 0;
-  constexpr uint8_t VOCAL_PROG = 0;     // Piano
+  constexpr uint8_t VOCAL_PROG = 0;  // Piano
   constexpr uint8_t CHORD_CH = 1;
-  constexpr uint8_t CHORD_PROG = 4;     // Electric Piano
+  constexpr uint8_t CHORD_PROG = 4;  // Electric Piano
   constexpr uint8_t BASS_CH = 2;
-  constexpr uint8_t BASS_PROG = 33;     // Electric Bass
+  constexpr uint8_t BASS_PROG = 33;  // Electric Bass
   constexpr uint8_t MOTIF_CH = 3;
-  constexpr uint8_t MOTIF_PROG = 81;    // Synth Lead
+  constexpr uint8_t MOTIF_PROG = 81;  // Synth Lead
   constexpr uint8_t ARPEGGIO_CH = 4;
-  constexpr uint8_t ARPEGGIO_PROG = 81; // Saw Lead
+  constexpr uint8_t ARPEGGIO_PROG = 81;  // Saw Lead
   constexpr uint8_t AUX_CH = 5;
-  constexpr uint8_t AUX_PROG = 89;      // Pad 2 - Warm
+  constexpr uint8_t AUX_PROG = 89;  // Pad 2 - Warm
   constexpr uint8_t DRUMS_CH = 9;
   constexpr uint8_t DRUMS_PROG = 0;
 
   // Helper to write a complete clip for a track
-  auto writeTrackClip = [this](const MidiTrack& track, uint8_t channel,
-                               uint8_t program, uint16_t bpm, Key key,
-                               Tick mod_tick, int8_t mod_amount) {
+  auto writeTrackClip = [this](const MidiTrack& track, uint8_t channel, uint8_t program,
+                               uint16_t bpm, Key key, Tick mod_tick, int8_t mod_amount) {
     writeClipHeader();
     writeClipConfig(TICKS_PER_BEAT, bpm);
     writeTrackData(track, 0, channel, program, key, mod_tick, mod_amount);
@@ -244,44 +237,37 @@ void Midi2Writer::buildContainer(const Song& song, Key key,
 
   // Musical tracks
   if (!song.vocal().empty()) {
-    writeTrackClip(song.vocal(), VOCAL_CH, VOCAL_PROG, song.bpm(), key,
-                   mod_tick, mod_amount);
+    writeTrackClip(song.vocal(), VOCAL_CH, VOCAL_PROG, song.bpm(), key, mod_tick, mod_amount);
   }
 
   if (!song.chord().empty()) {
-    writeTrackClip(song.chord(), CHORD_CH, CHORD_PROG, song.bpm(), key,
-                   mod_tick, mod_amount);
+    writeTrackClip(song.chord(), CHORD_CH, CHORD_PROG, song.bpm(), key, mod_tick, mod_amount);
   }
 
   if (!song.bass().empty()) {
-    writeTrackClip(song.bass(), BASS_CH, BASS_PROG, song.bpm(), key,
-                   mod_tick, mod_amount);
+    writeTrackClip(song.bass(), BASS_CH, BASS_PROG, song.bpm(), key, mod_tick, mod_amount);
   }
 
   if (!song.motif().empty()) {
-    writeTrackClip(song.motif(), MOTIF_CH, MOTIF_PROG, song.bpm(), key,
-                   mod_tick, mod_amount);
+    writeTrackClip(song.motif(), MOTIF_CH, MOTIF_PROG, song.bpm(), key, mod_tick, mod_amount);
   }
 
   if (!song.arpeggio().empty()) {
-    writeTrackClip(song.arpeggio(), ARPEGGIO_CH, ARPEGGIO_PROG, song.bpm(), key,
-                   mod_tick, mod_amount);
+    writeTrackClip(song.arpeggio(), ARPEGGIO_CH, ARPEGGIO_PROG, song.bpm(), key, mod_tick,
+                   mod_amount);
   }
 
   if (!song.aux().empty()) {
-    writeTrackClip(song.aux(), AUX_CH, AUX_PROG, song.bpm(), key,
-                   mod_tick, mod_amount);
+    writeTrackClip(song.aux(), AUX_CH, AUX_PROG, song.bpm(), key, mod_tick, mod_amount);
   }
 
   if (!song.drums().empty()) {
-    writeTrackClip(song.drums(), DRUMS_CH, DRUMS_PROG, song.bpm(), key,
-                   0, 0);  // No modulation for drums
+    writeTrackClip(song.drums(), DRUMS_CH, DRUMS_PROG, song.bpm(), key, 0,
+                   0);  // No modulation for drums
   }
 }
 
-std::vector<uint8_t> Midi2Writer::toBytes() const {
-  return data_;
-}
+std::vector<uint8_t> Midi2Writer::toBytes() const { return data_; }
 
 bool Midi2Writer::writeToFile(const std::string& path) const {
   std::ofstream file(path, std::ios::binary);

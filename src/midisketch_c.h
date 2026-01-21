@@ -6,8 +6,8 @@
 #ifndef MIDISKETCH_C_H
 #define MIDISKETCH_C_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -153,16 +153,16 @@ uint16_t midisketch_mood_default_bpm(uint8_t id);
 
 /// @brief Generation paradigm for blueprint.
 typedef enum {
-  MIDISKETCH_PARADIGM_TRADITIONAL = 0,  ///< Existing behavior
-  MIDISKETCH_PARADIGM_RHYTHM_SYNC = 1,  ///< Orangestar style (rhythm-synced)
-  MIDISKETCH_PARADIGM_MELODY_DRIVEN = 2 ///< YOASOBI style (melody-driven)
+  MIDISKETCH_PARADIGM_TRADITIONAL = 0,   ///< Existing behavior
+  MIDISKETCH_PARADIGM_RHYTHM_SYNC = 1,   ///< Orangestar style (rhythm-synced)
+  MIDISKETCH_PARADIGM_MELODY_DRIVEN = 2  ///< YOASOBI style (melody-driven)
 } MidiSketchParadigm;
 
 /// @brief Riff policy for blueprint.
 typedef enum {
-  MIDISKETCH_RIFF_FREE = 0,      ///< Free variation per section
-  MIDISKETCH_RIFF_LOCKED = 1,    ///< Same riff throughout song
-  MIDISKETCH_RIFF_EVOLVING = 2   ///< Gradual evolution
+  MIDISKETCH_RIFF_FREE = 0,     ///< Free variation per section
+  MIDISKETCH_RIFF_LOCKED = 1,   ///< Same riff throughout song
+  MIDISKETCH_RIFF_EVOLVING = 2  ///< Gradual evolution
 } MidiSketchRiffPolicy;
 
 /** @brief Get number of blueprints. @return Count */
@@ -177,10 +177,12 @@ MidiSketchParadigm midisketch_blueprint_paradigm(uint8_t id);
 /** @brief Get blueprint riff policy. @param id Blueprint ID @return RiffPolicy */
 MidiSketchRiffPolicy midisketch_blueprint_riff_policy(uint8_t id);
 
-/** @brief Get blueprint weight (for random selection). @param id Blueprint ID @return Weight (0-100) */
+/** @brief Get blueprint weight (for random selection). @param id Blueprint ID @return Weight
+ * (0-100) */
 uint8_t midisketch_blueprint_weight(uint8_t id);
 
-/** @brief Check if blueprint requires drums. @param id Blueprint ID @return 1 if required, 0 otherwise */
+/** @brief Check if blueprint requires drums. @param id Blueprint ID @return 1 if required, 0
+ * otherwise */
 uint8_t midisketch_blueprint_drums_required(uint8_t id);
 
 /** @brief Get resolved blueprint ID after generation.
@@ -196,29 +198,29 @@ uint8_t midisketch_get_resolved_blueprint_id(MidiSketchHandle handle);
 /// @brief Song configuration (new API, replaces MidiSketchParams).
 typedef struct {
   // Basic settings
-  uint8_t style_preset_id;    ///< Style preset ID (0-16)
-  uint8_t key;                ///< Key (0-11)
-  uint16_t bpm;               ///< BPM (0 = use style default)
-  uint32_t seed;              ///< Random seed (0 = random)
+  uint8_t style_preset_id;       ///< Style preset ID (0-16)
+  uint8_t key;                   ///< Key (0-11)
+  uint16_t bpm;                  ///< BPM (0 = use style default)
+  uint32_t seed;                 ///< Random seed (0 = random)
   uint8_t chord_progression_id;  ///< Chord progression ID (0-19)
-  uint8_t form_id;            ///< StructurePattern ID (0-17)
-  uint8_t vocal_attitude;     ///< 0=Clean, 1=Expressive, 2=Raw
-  uint8_t drums_enabled;      ///< 0=off, 1=on
+  uint8_t form_id;               ///< StructurePattern ID (0-17)
+  uint8_t vocal_attitude;        ///< 0=Clean, 1=Expressive, 2=Raw
+  uint8_t drums_enabled;         ///< 0=off, 1=on
 
   // Production blueprint
-  uint8_t blueprint_id;       ///< Blueprint ID (0-8, 255=random). See midisketch_blueprint_name()
+  uint8_t blueprint_id;  ///< Blueprint ID (0-8, 255=random). See midisketch_blueprint_name()
 
   // Arpeggio settings
-  uint8_t arpeggio_enabled;   ///< 0=off, 1=on
-  uint8_t arpeggio_pattern;   ///< 0=Up, 1=Down, 2=UpDown, 3=Random
-  uint8_t arpeggio_speed;     ///< 0=Eighth, 1=Sixteenth, 2=Triplet
-  uint8_t arpeggio_octave_range; ///< 1-3 octaves
-  uint8_t arpeggio_gate;      ///< Gate length (0-100)
+  uint8_t arpeggio_enabled;       ///< 0=off, 1=on
+  uint8_t arpeggio_pattern;       ///< 0=Up, 1=Down, 2=UpDown, 3=Random
+  uint8_t arpeggio_speed;         ///< 0=Eighth, 1=Sixteenth, 2=Triplet
+  uint8_t arpeggio_octave_range;  ///< 1-3 octaves
+  uint8_t arpeggio_gate;          ///< Gate length (0-100)
 
   // Vocal settings
-  uint8_t vocal_low;          ///< Vocal range lower bound (MIDI note)
-  uint8_t vocal_high;         ///< Vocal range upper bound (MIDI note)
-  uint8_t skip_vocal;         ///< Skip vocal generation (0=off, 1=on)
+  uint8_t vocal_low;   ///< Vocal range lower bound (MIDI note)
+  uint8_t vocal_high;  ///< Vocal range upper bound (MIDI note)
+  uint8_t skip_vocal;  ///< Skip vocal generation (0=off, 1=on)
 
   // Humanization
   uint8_t humanize;           ///< Enable humanization (0=off, 1=on)
@@ -226,73 +228,73 @@ typedef struct {
   uint8_t humanize_velocity;  ///< Velocity variation (0-100)
 
   // Chord extensions
-  uint8_t chord_ext_sus;      ///< Enable sus2/sus4 (0=off, 1=on)
-  uint8_t chord_ext_7th;      ///< Enable 7th chords (0=off, 1=on)
-  uint8_t chord_ext_9th;      ///< Enable 9th chords (0=off, 1=on)
-  uint8_t chord_ext_sus_prob; ///< Sus probability (0-100)
-  uint8_t chord_ext_7th_prob; ///< 7th probability (0-100)
-  uint8_t chord_ext_9th_prob; ///< 9th probability (0-100)
+  uint8_t chord_ext_sus;       ///< Enable sus2/sus4 (0=off, 1=on)
+  uint8_t chord_ext_7th;       ///< Enable 7th chords (0=off, 1=on)
+  uint8_t chord_ext_9th;       ///< Enable 9th chords (0=off, 1=on)
+  uint8_t chord_ext_sus_prob;  ///< Sus probability (0-100)
+  uint8_t chord_ext_7th_prob;  ///< 7th probability (0-100)
+  uint8_t chord_ext_9th_prob;  ///< 9th probability (0-100)
 
   // Composition style
   uint8_t composition_style;  ///< 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
 
   // Duration
-  uint8_t _reserved;          ///< Padding
+  uint8_t _reserved;                 ///< Padding
   uint16_t target_duration_seconds;  ///< Target duration (0 = use form_id)
 
   // Modulation settings
-  uint8_t modulation_timing;  ///< 0=None, 1=LastChorus, 2=AfterBridge, etc.
-  int8_t modulation_semitones; ///< Semitones (+1 to +4)
+  uint8_t modulation_timing;    ///< 0=None, 1=LastChorus, 2=AfterBridge, etc.
+  int8_t modulation_semitones;  ///< Semitones (+1 to +4)
 
   // Call settings
-  uint8_t se_enabled;         ///< Enable SE track (0=off, 1=on)
-  uint8_t call_setting;       ///< 0=Auto, 1=Enabled, 2=Disabled
-  uint8_t call_notes_enabled; ///< Output calls as notes (0=off, 1=on)
-  uint8_t intro_chant;        ///< 0=None, 1=Gachikoi, 2=Shouting
-  uint8_t mix_pattern;        ///< 0=None, 1=Standard, 2=Tiger
-  uint8_t call_density;       ///< 0=None, 1=Minimal, 2=Standard, 3=Intense
+  uint8_t se_enabled;          ///< Enable SE track (0=off, 1=on)
+  uint8_t call_setting;        ///< 0=Auto, 1=Enabled, 2=Disabled
+  uint8_t call_notes_enabled;  ///< Output calls as notes (0=off, 1=on)
+  uint8_t intro_chant;         ///< 0=None, 1=Gachikoi, 2=Shouting
+  uint8_t mix_pattern;         ///< 0=None, 1=Standard, 2=Tiger
+  uint8_t call_density;        ///< 0=None, 1=Minimal, 2=Standard, 3=Intense
 
   // Vocal style settings
-  uint8_t vocal_style;        ///< 0=Auto, 1=Standard, 2=Vocaloid, etc.
-  uint8_t melody_template;    ///< MelodyTemplateId (0=Auto, 1-7)
+  uint8_t vocal_style;      ///< 0=Auto, 1=Standard, 2=Vocaloid, etc.
+  uint8_t melody_template;  ///< MelodyTemplateId (0=Auto, 1-7)
 
   // Arrangement growth method
-  uint8_t arrangement_growth; ///< 0=LayerAdd, 1=RegisterAdd
+  uint8_t arrangement_growth;  ///< 0=LayerAdd, 1=RegisterAdd
 
   // Arpeggio sync settings
-  uint8_t arpeggio_sync_chord; ///< Sync with chord changes (0=off, 1=on)
+  uint8_t arpeggio_sync_chord;  ///< Sync with chord changes (0=off, 1=on)
 
   // Motif settings (for BackgroundMotif style)
-  uint8_t motif_repeat_scope;      ///< 0=FullSong, 1=Section
-  uint8_t motif_fixed_progression; ///< Same progression (0=off, 1=on)
-  uint8_t motif_max_chord_count;   ///< Max chord count (0=no limit, 2-8)
+  uint8_t motif_repeat_scope;       ///< 0=FullSong, 1=Section
+  uint8_t motif_fixed_progression;  ///< Same progression (0=off, 1=on)
+  uint8_t motif_max_chord_count;    ///< Max chord count (0=no limit, 2-8)
 
   // Melodic complexity and hook control
-  uint8_t melodic_complexity;      ///< 0=Simple, 1=Standard, 2=Complex
-  uint8_t hook_intensity;          ///< 0=Off, 1=Light, 2=Normal, 3=Strong
-  uint8_t vocal_groove;            ///< 0=Straight, 1=OffBeat, 2=Swing, etc.
+  uint8_t melodic_complexity;  ///< 0=Simple, 1=Standard, 2=Complex
+  uint8_t hook_intensity;      ///< 0=Off, 1=Light, 2=Normal, 3=Strong
+  uint8_t vocal_groove;        ///< 0=Straight, 1=OffBeat, 2=Swing, etc.
 } MidiSketchSongConfig;
 
 /// @brief Style preset summary for listing.
 typedef struct {
-  uint8_t id;              ///< Preset ID
-  const char* name;        ///< Internal name
-  const char* display_name; ///< Display name
-  const char* description;  ///< Description
-  uint16_t tempo_default;   ///< Default tempo
-  uint8_t allowed_attitudes; ///< Bit flags for allowed attitudes
+  uint8_t id;                 ///< Preset ID
+  const char* name;           ///< Internal name
+  const char* display_name;   ///< Display name
+  const char* description;    ///< Description
+  uint16_t tempo_default;     ///< Default tempo
+  uint8_t allowed_attitudes;  ///< Bit flags for allowed attitudes
 } MidiSketchStylePresetSummary;
 
 /// @brief Chord progression candidates by style.
 typedef struct {
-  uint8_t count;       ///< Number of candidates
-  uint8_t ids[20];     ///< Candidate IDs (max 20)
+  uint8_t count;    ///< Number of candidates
+  uint8_t ids[20];  ///< Candidate IDs (max 20)
 } MidiSketchChordCandidates;
 
 /// @brief Form candidates by style.
 typedef struct {
-  uint8_t count;       ///< Number of candidates
-  uint8_t ids[10];     ///< Candidate IDs (max 10)
+  uint8_t count;    ///< Number of candidates
+  uint8_t ids[10];  ///< Candidate IDs (max 10)
 } MidiSketchFormCandidates;
 
 /// @brief Config validation error codes.
@@ -372,10 +374,8 @@ MidiSketchConfigError midisketch_validate_config(const MidiSketchSongConfig* con
  * @param config Song configuration
  * @return MIDISKETCH_OK on success
  */
-MidiSketchError midisketch_generate_from_config(
-    MidiSketchHandle handle,
-    const MidiSketchSongConfig* config
-);
+MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
+                                                const MidiSketchSongConfig* config);
 
 // ============================================================================
 // Vocal-First Generation (Trial-and-Error Workflow)
@@ -383,41 +383,41 @@ MidiSketchError midisketch_generate_from_config(
 
 /// @brief Vocal regeneration configuration.
 typedef struct {
-  uint32_t seed;              ///< Random seed (0 = new random)
-  uint8_t vocal_low;          ///< Vocal range lower bound (MIDI note, 36-96)
-  uint8_t vocal_high;         ///< Vocal range upper bound (MIDI note, 36-96)
-  uint8_t vocal_attitude;     ///< 0=Clean, 1=Expressive, 2=Raw
-  uint8_t vocal_style;        ///< VocalStylePreset (0=Auto, 1-12)
-  uint8_t melody_template;    ///< MelodyTemplateId (0=Auto, 1-7)
-  uint8_t melodic_complexity; ///< 0=Simple, 1=Standard, 2=Complex
-  uint8_t hook_intensity;     ///< 0=Off, 1=Light, 2=Normal, 3=Strong
-  uint8_t vocal_groove;       ///< 0=Straight, 1=OffBeat, 2=Swing, etc.
-  uint8_t composition_style;  ///< 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
-  uint8_t _reserved[2];       ///< Padding for alignment (total: 16 bytes)
+  uint32_t seed;               ///< Random seed (0 = new random)
+  uint8_t vocal_low;           ///< Vocal range lower bound (MIDI note, 36-96)
+  uint8_t vocal_high;          ///< Vocal range upper bound (MIDI note, 36-96)
+  uint8_t vocal_attitude;      ///< 0=Clean, 1=Expressive, 2=Raw
+  uint8_t vocal_style;         ///< VocalStylePreset (0=Auto, 1-12)
+  uint8_t melody_template;     ///< MelodyTemplateId (0=Auto, 1-7)
+  uint8_t melodic_complexity;  ///< 0=Simple, 1=Standard, 2=Complex
+  uint8_t hook_intensity;      ///< 0=Off, 1=Light, 2=Normal, 3=Strong
+  uint8_t vocal_groove;        ///< 0=Straight, 1=OffBeat, 2=Swing, etc.
+  uint8_t composition_style;   ///< 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
+  uint8_t _reserved[2];        ///< Padding for alignment (total: 16 bytes)
 } MidiSketchVocalConfig;
 
 /// @brief Accompaniment generation/regeneration configuration.
 typedef struct {
-  uint32_t seed;              ///< Random seed for BGM (0 = auto-generate)
+  uint32_t seed;  ///< Random seed for BGM (0 = auto-generate)
 
   // Drums
-  uint8_t drums_enabled;      ///< Enable drums (0=false, 1=true)
+  uint8_t drums_enabled;  ///< Enable drums (0=false, 1=true)
 
   // Arpeggio
-  uint8_t arpeggio_enabled;   ///< Enable arpeggio (0=false, 1=true)
-  uint8_t arpeggio_pattern;   ///< 0=Up, 1=Down, 2=UpDown, 3=Random
-  uint8_t arpeggio_speed;     ///< 0=Eighth, 1=Sixteenth, 2=Triplet
-  uint8_t arpeggio_octave_range; ///< 1-3 octaves
-  uint8_t arpeggio_gate;      ///< Gate length (0-100)
-  uint8_t arpeggio_sync_chord; ///< Sync with chord changes (0=false, 1=true)
+  uint8_t arpeggio_enabled;       ///< Enable arpeggio (0=false, 1=true)
+  uint8_t arpeggio_pattern;       ///< 0=Up, 1=Down, 2=UpDown, 3=Random
+  uint8_t arpeggio_speed;         ///< 0=Eighth, 1=Sixteenth, 2=Triplet
+  uint8_t arpeggio_octave_range;  ///< 1-3 octaves
+  uint8_t arpeggio_gate;          ///< Gate length (0-100)
+  uint8_t arpeggio_sync_chord;    ///< Sync with chord changes (0=false, 1=true)
 
   // Chord Extensions
-  uint8_t chord_ext_sus;      ///< Enable sus (0=false, 1=true)
-  uint8_t chord_ext_7th;      ///< Enable 7th (0=false, 1=true)
-  uint8_t chord_ext_9th;      ///< Enable 9th (0=false, 1=true)
-  uint8_t chord_ext_sus_prob; ///< Sus probability (0-100)
-  uint8_t chord_ext_7th_prob; ///< 7th probability (0-100)
-  uint8_t chord_ext_9th_prob; ///< 9th probability (0-100)
+  uint8_t chord_ext_sus;       ///< Enable sus (0=false, 1=true)
+  uint8_t chord_ext_7th;       ///< Enable 7th (0=false, 1=true)
+  uint8_t chord_ext_9th;       ///< Enable 9th (0=false, 1=true)
+  uint8_t chord_ext_sus_prob;  ///< Sus probability (0-100)
+  uint8_t chord_ext_7th_prob;  ///< 7th probability (0-100)
+  uint8_t chord_ext_9th_prob;  ///< 9th probability (0-100)
 
   // Humanization
   uint8_t humanize;           ///< Enable humanize (0=false, 1=true)
@@ -425,16 +425,16 @@ typedef struct {
   uint8_t humanize_velocity;  ///< Velocity variation (0-100)
 
   // SE
-  uint8_t se_enabled;         ///< Enable SE track (0=false, 1=true)
+  uint8_t se_enabled;  ///< Enable SE track (0=false, 1=true)
 
   // Call System
-  uint8_t call_enabled;       ///< Enable call (0=false, 1=true)
-  uint8_t call_density;       ///< 0=Sparse, 1=Light, 2=Standard, 3=Dense
-  uint8_t intro_chant;        ///< 0=None, 1=Gachikoi, 2=Mix
-  uint8_t mix_pattern;        ///< 0=None, 1=Standard, 2=Tiger
-  uint8_t call_notes_enabled; ///< Output call as MIDI notes (0=false, 1=true)
+  uint8_t call_enabled;        ///< Enable call (0=false, 1=true)
+  uint8_t call_density;        ///< 0=Sparse, 1=Light, 2=Standard, 3=Dense
+  uint8_t intro_chant;         ///< 0=None, 1=Gachikoi, 2=Mix
+  uint8_t mix_pattern;         ///< 0=None, 1=Standard, 2=Tiger
+  uint8_t call_notes_enabled;  ///< Output call as MIDI notes (0=false, 1=true)
 
-  uint8_t _reserved[2];       ///< Padding for alignment (total: 28 bytes)
+  uint8_t _reserved[2];  ///< Padding for alignment (total: 28 bytes)
 } MidiSketchAccompanimentConfig;
 
 /**
@@ -446,10 +446,8 @@ typedef struct {
  * @param config Song configuration
  * @return MIDISKETCH_OK on success
  */
-MidiSketchError midisketch_generate_vocal(
-    MidiSketchHandle handle,
-    const MidiSketchSongConfig* config
-);
+MidiSketchError midisketch_generate_vocal(MidiSketchHandle handle,
+                                          const MidiSketchSongConfig* config);
 
 /**
  * @brief Regenerate vocal track with new configuration.
@@ -461,10 +459,8 @@ MidiSketchError midisketch_generate_vocal(
  * @param config Vocal configuration (NULL = regenerate with same settings, new seed)
  * @return MIDISKETCH_OK on success
  */
-MidiSketchError midisketch_regenerate_vocal(
-    MidiSketchHandle handle,
-    const MidiSketchVocalConfig* config
-);
+MidiSketchError midisketch_regenerate_vocal(MidiSketchHandle handle,
+                                            const MidiSketchVocalConfig* config);
 
 /**
  * @brief Generate accompaniment tracks for existing vocal.
@@ -486,9 +482,7 @@ MidiSketchError midisketch_generate_accompaniment(MidiSketchHandle handle);
  * @return MIDISKETCH_OK on success
  */
 MidiSketchError midisketch_generate_accompaniment_with_config(
-    MidiSketchHandle handle,
-    const MidiSketchAccompanimentConfig* config
-);
+    MidiSketchHandle handle, const MidiSketchAccompanimentConfig* config);
 
 /**
  * @brief Regenerate accompaniment tracks with a new seed.
@@ -501,10 +495,7 @@ MidiSketchError midisketch_generate_accompaniment_with_config(
  * @param new_seed New random seed for accompaniment (0 = auto-generate)
  * @return MIDISKETCH_OK on success
  */
-MidiSketchError midisketch_regenerate_accompaniment(
-    MidiSketchHandle handle,
-    uint32_t new_seed
-);
+MidiSketchError midisketch_regenerate_accompaniment(MidiSketchHandle handle, uint32_t new_seed);
 
 /**
  * @brief Regenerate accompaniment tracks with configuration.
@@ -518,9 +509,7 @@ MidiSketchError midisketch_regenerate_accompaniment(
  * @return MIDISKETCH_OK on success
  */
 MidiSketchError midisketch_regenerate_accompaniment_with_config(
-    MidiSketchHandle handle,
-    const MidiSketchAccompanimentConfig* config
-);
+    MidiSketchHandle handle, const MidiSketchAccompanimentConfig* config);
 
 /**
  * @brief Generate all tracks with vocal-first priority.
@@ -531,10 +520,8 @@ MidiSketchError midisketch_regenerate_accompaniment_with_config(
  * @param config Song configuration
  * @return MIDISKETCH_OK on success
  */
-MidiSketchError midisketch_generate_with_vocal(
-    MidiSketchHandle handle,
-    const MidiSketchSongConfig* config
-);
+MidiSketchError midisketch_generate_with_vocal(MidiSketchHandle handle,
+                                               const MidiSketchSongConfig* config);
 
 // ============================================================================
 // Custom Vocal Import API
@@ -542,10 +529,10 @@ MidiSketchError midisketch_generate_with_vocal(
 
 /// @brief Note input for custom vocal track.
 typedef struct {
-  uint32_t start_tick;   ///< Note start time in ticks
-  uint32_t duration;     ///< Note duration in ticks
-  uint8_t pitch;         ///< MIDI note number (0-127)
-  uint8_t velocity;      ///< Note velocity (0-127)
+  uint32_t start_tick;  ///< Note start time in ticks
+  uint32_t duration;    ///< Note duration in ticks
+  uint8_t pitch;        ///< MIDI note number (0-127)
+  uint8_t velocity;     ///< Note velocity (0-127)
 } MidiSketchNoteInput;
 
 /**
@@ -561,12 +548,9 @@ typedef struct {
  * @param count Number of notes
  * @return MIDISKETCH_OK on success
  */
-MidiSketchError midisketch_set_vocal_notes(
-    MidiSketchHandle handle,
-    const MidiSketchSongConfig* config,
-    const MidiSketchNoteInput* notes,
-    size_t count
-);
+MidiSketchError midisketch_set_vocal_notes(MidiSketchHandle handle,
+                                           const MidiSketchSongConfig* config,
+                                           const MidiSketchNoteInput* notes, size_t count);
 
 // ============================================================================
 // Piano Roll Safety API
@@ -583,18 +567,18 @@ typedef enum {
 typedef enum {
   MIDISKETCH_REASON_NONE = 0,
   // Positive reasons (green)
-  MIDISKETCH_REASON_CHORD_TONE = 1,       ///< Chord tone (root, 3rd, 5th, 7th)
-  MIDISKETCH_REASON_TENSION = 2,          ///< Tension (9th, 11th, 13th)
-  MIDISKETCH_REASON_SCALE_TONE = 4,       ///< Scale tone (not chord but in scale)
+  MIDISKETCH_REASON_CHORD_TONE = 1,  ///< Chord tone (root, 3rd, 5th, 7th)
+  MIDISKETCH_REASON_TENSION = 2,     ///< Tension (9th, 11th, 13th)
+  MIDISKETCH_REASON_SCALE_TONE = 4,  ///< Scale tone (not chord but in scale)
   // Warning reasons (yellow)
-  MIDISKETCH_REASON_LOW_REGISTER = 8,     ///< Low register (below C4), may sound muddy
-  MIDISKETCH_REASON_TRITONE = 16,         ///< Tritone interval (unstable except on V7)
-  MIDISKETCH_REASON_LARGE_LEAP = 32,      ///< Large leap (6+ semitones from prev note)
+  MIDISKETCH_REASON_LOW_REGISTER = 8,  ///< Low register (below C4), may sound muddy
+  MIDISKETCH_REASON_TRITONE = 16,      ///< Tritone interval (unstable except on V7)
+  MIDISKETCH_REASON_LARGE_LEAP = 32,   ///< Large leap (6+ semitones from prev note)
   // Dissonant reasons (red)
-  MIDISKETCH_REASON_MINOR_2ND = 64,       ///< Minor 2nd (1 semitone) collision
-  MIDISKETCH_REASON_MAJOR_7TH = 128,      ///< Major 7th (11 semitones) collision
-  MIDISKETCH_REASON_NON_SCALE = 256,      ///< Non-scale tone (chromatic)
-  MIDISKETCH_REASON_PASSING_TONE = 512,   ///< Can be used as passing tone
+  MIDISKETCH_REASON_MINOR_2ND = 64,      ///< Minor 2nd (1 semitone) collision
+  MIDISKETCH_REASON_MAJOR_7TH = 128,     ///< Major 7th (11 semitones) collision
+  MIDISKETCH_REASON_NON_SCALE = 256,     ///< Non-scale tone (chromatic)
+  MIDISKETCH_REASON_PASSING_TONE = 512,  ///< Can be used as passing tone
   // Out of range reasons (red)
   MIDISKETCH_REASON_OUT_OF_RANGE = 1024,  ///< Outside vocal range
   MIDISKETCH_REASON_TOO_HIGH = 2048,      ///< Too high to sing
@@ -603,9 +587,9 @@ typedef enum {
 
 /// @brief Collision info for a note that collides with BGM.
 typedef struct {
-  uint8_t track_role;         ///< TrackRole of colliding track (0=Vocal, 1=Chord, etc.)
-  uint8_t colliding_pitch;    ///< MIDI pitch of colliding note
-  uint8_t interval_semitones; ///< Collision interval (1, 6, or 11)
+  uint8_t track_role;          ///< TrackRole of colliding track (0=Vocal, 1=Chord, etc.)
+  uint8_t colliding_pitch;     ///< MIDI pitch of colliding note
+  uint8_t interval_semitones;  ///< Collision interval (1, 6, or 11)
 } MidiSketchCollisionInfo;
 
 /// @brief Piano roll safety info for a single tick.
@@ -634,12 +618,9 @@ typedef struct {
  * @param step Step size in ticks (e.g., 120 for 16th notes)
  * @return Pointer to batch data (must be freed with midisketch_free_piano_roll_data)
  */
-MidiSketchPianoRollData* midisketch_get_piano_roll_safety(
-    MidiSketchHandle handle,
-    uint32_t start_tick,
-    uint32_t end_tick,
-    uint32_t step
-);
+MidiSketchPianoRollData* midisketch_get_piano_roll_safety(MidiSketchHandle handle,
+                                                          uint32_t start_tick, uint32_t end_tick,
+                                                          uint32_t step);
 
 /**
  * @brief Get piano roll safety info for a single tick.
@@ -647,10 +628,8 @@ MidiSketchPianoRollData* midisketch_get_piano_roll_safety(
  * @param tick Tick position
  * @return Pointer to static info (valid until next call, do not free)
  */
-MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_at(
-    MidiSketchHandle handle,
-    uint32_t tick
-);
+MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_at(MidiSketchHandle handle,
+                                                             uint32_t tick);
 
 /**
  * @brief Get piano roll safety info with context (previous note for leap detection).
@@ -659,19 +638,19 @@ MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_at(
  * @param prev_pitch Previous note pitch (255 if none)
  * @return Pointer to static info (valid until next call, do not free)
  */
-MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_with_context(
-    MidiSketchHandle handle,
-    uint32_t tick,
-    uint8_t prev_pitch
-);
+MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_with_context(MidiSketchHandle handle,
+                                                                       uint32_t tick,
+                                                                       uint8_t prev_pitch);
 
 /** @brief Free piano roll batch data. @param data Pointer from midisketch_get_piano_roll_safety */
 void midisketch_free_piano_roll_data(MidiSketchPianoRollData* data);
 
-/** @brief Convert reason flags to string. @param reason Flags @return Static string (do not free) */
+/** @brief Convert reason flags to string. @param reason Flags @return Static string (do not free)
+ */
 const char* midisketch_reason_to_string(uint16_t reason);
 
-/** @brief Convert collision info to string. @param collision Info @return e.g., "Bass F3 minor 2nd" */
+/** @brief Convert collision info to string. @param collision Info @return e.g., "Bass F3 minor 2nd"
+ */
 const char* midisketch_collision_to_string(const MidiSketchCollisionInfo* collision);
 
 // ============================================================================

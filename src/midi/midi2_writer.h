@@ -6,12 +6,12 @@
 #ifndef MIDISKETCH_MIDI2_WRITER_H
 #define MIDISKETCH_MIDI2_WRITER_H
 
+#include <string>
+#include <vector>
+
 #include "core/midi_track.h"
 #include "core/song.h"
 #include "core/types.h"
-
-#include <string>
-#include <vector>
 
 namespace midisketch {
 
@@ -25,14 +25,12 @@ class Midi2Writer {
 
   // Build a single-track clip file from MidiTrack
   // Output format: SMF2CLIP
-  void buildClip(const MidiTrack& track, const std::string& name,
-                 uint8_t channel, uint8_t program, uint16_t bpm, Key key,
-                 Tick mod_tick = 0, int8_t mod_amount = 0);
+  void buildClip(const MidiTrack& track, const std::string& name, uint8_t channel, uint8_t program,
+                 uint16_t bpm, Key key, Tick mod_tick = 0, int8_t mod_amount = 0);
 
   // Build a multi-track container file from Song
   // Output format: ktmidi container (AAAAAAAAEEEEEEEE header)
-  void buildContainer(const Song& song, Key key,
-                      const std::string& metadata = "");
+  void buildContainer(const Song& song, Key key, const std::string& metadata = "");
 
   // Returns the MIDI 2.0 data as a byte vector
   std::vector<uint8_t> toBytes() const;
@@ -53,9 +51,8 @@ class Midi2Writer {
   void writeClipConfig(uint16_t ticksPerQuarter, uint16_t bpm);
 
   // Write track data as UMP messages with delta clockstamps
-  void writeTrackData(const MidiTrack& track, uint8_t group, uint8_t channel,
-                      uint8_t program, Key key, Tick mod_tick,
-                      int8_t mod_amount);
+  void writeTrackData(const MidiTrack& track, uint8_t group, uint8_t channel, uint8_t program,
+                      Key key, Tick mod_tick, int8_t mod_amount);
 
   // Write marker/text events (for SE track)
   void writeMarkerData(const MidiTrack& track, uint8_t group, uint16_t bpm,

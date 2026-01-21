@@ -3,11 +3,13 @@
  * @brief Tests for randomness behavior.
  */
 
+#include <gtest/gtest.h>
+
+#include <set>
+
 #include "core/generator.h"
 #include "core/preset_data.h"
 #include "midisketch.h"
-#include <gtest/gtest.h>
-#include <set>
 
 namespace midisketch {
 namespace {
@@ -49,8 +51,7 @@ TEST(RandomnessTest, DifferentSeedsProduceDifferentBassNotes) {
     bass_counts.insert(sketch.getSong().bass().noteCount());
   }
 
-  EXPECT_GE(bass_counts.size(), 2u)
-      << "Different seeds should produce different bass note counts";
+  EXPECT_GE(bass_counts.size(), 2u) << "Different seeds should produce different bass note counts";
 }
 
 TEST(RandomnessTest, SameSeedProducesSameChordOutput) {
@@ -66,8 +67,7 @@ TEST(RandomnessTest, SameSeedProducesSameChordOutput) {
   sketch1.generateFromConfig(config1);
   sketch2.generateFromConfig(config2);
 
-  EXPECT_EQ(sketch1.getSong().chord().noteCount(),
-            sketch2.getSong().chord().noteCount())
+  EXPECT_EQ(sketch1.getSong().chord().noteCount(), sketch2.getSong().chord().noteCount())
       << "Same seed should produce identical chord output";
 
   // Also check individual note values match
@@ -75,8 +75,7 @@ TEST(RandomnessTest, SameSeedProducesSameChordOutput) {
   const auto& notes2 = sketch2.getSong().chord().notes();
   ASSERT_EQ(notes1.size(), notes2.size());
   for (size_t i = 0; i < notes1.size(); ++i) {
-    EXPECT_EQ(notes1[i].note, notes2[i].note)
-        << "Chord note " << i << " should match";
+    EXPECT_EQ(notes1[i].note, notes2[i].note) << "Chord note " << i << " should match";
   }
 }
 
@@ -93,8 +92,7 @@ TEST(RandomnessTest, SameSeedProducesSameBassOutput) {
   sketch1.generateFromConfig(config1);
   sketch2.generateFromConfig(config2);
 
-  EXPECT_EQ(sketch1.getSong().bass().noteCount(),
-            sketch2.getSong().bass().noteCount())
+  EXPECT_EQ(sketch1.getSong().bass().noteCount(), sketch2.getSong().bass().noteCount())
       << "Same seed should produce identical bass output";
 }
 
@@ -115,8 +113,7 @@ TEST(RandomnessTest, DifferentSeedsProduceDifferentDrumNotes) {
     drum_counts.insert(sketch.getSong().drums().noteCount());
   }
 
-  EXPECT_GE(drum_counts.size(), 2u)
-      << "Different seeds should produce different drum note counts";
+  EXPECT_GE(drum_counts.size(), 2u) << "Different seeds should produce different drum note counts";
 }
 
 TEST(RandomnessTest, SameSeedProducesSameDrumOutput) {
@@ -132,8 +129,7 @@ TEST(RandomnessTest, SameSeedProducesSameDrumOutput) {
   sketch1.generateFromConfig(config1);
   sketch2.generateFromConfig(config2);
 
-  EXPECT_EQ(sketch1.getSong().drums().noteCount(),
-            sketch2.getSong().drums().noteCount())
+  EXPECT_EQ(sketch1.getSong().drums().noteCount(), sketch2.getSong().drums().noteCount())
       << "Same seed should produce identical drum output";
 }
 
@@ -220,14 +216,10 @@ TEST(RandomnessTest, FullGenerationReproducibility) {
   sketch2.generateFromConfig(config2);
 
   // All tracks should match
-  EXPECT_EQ(sketch1.getSong().vocal().noteCount(),
-            sketch2.getSong().vocal().noteCount());
-  EXPECT_EQ(sketch1.getSong().chord().noteCount(),
-            sketch2.getSong().chord().noteCount());
-  EXPECT_EQ(sketch1.getSong().bass().noteCount(),
-            sketch2.getSong().bass().noteCount());
-  EXPECT_EQ(sketch1.getSong().drums().noteCount(),
-            sketch2.getSong().drums().noteCount());
+  EXPECT_EQ(sketch1.getSong().vocal().noteCount(), sketch2.getSong().vocal().noteCount());
+  EXPECT_EQ(sketch1.getSong().chord().noteCount(), sketch2.getSong().chord().noteCount());
+  EXPECT_EQ(sketch1.getSong().bass().noteCount(), sketch2.getSong().bass().noteCount());
+  EXPECT_EQ(sketch1.getSong().drums().noteCount(), sketch2.getSong().drums().noteCount());
 
   // MIDI output should be identical
   EXPECT_EQ(sketch1.getMidi(), sketch2.getMidi())
@@ -250,8 +242,7 @@ TEST(RandomnessTest, FullGenerationVariation) {
   }
 
   // All outputs should be different
-  EXPECT_EQ(midi_outputs.size(), 5u)
-      << "Each seed should produce unique MIDI output";
+  EXPECT_EQ(midi_outputs.size(), 5u) << "Each seed should produce unique MIDI output";
 }
 
 TEST(RandomnessTest, AllStylesHaveRandomFormSelection) {
@@ -264,8 +255,8 @@ TEST(RandomnessTest, AllStylesHaveRandomFormSelection) {
     }
 
     // Each style should have at least 2 different forms available
-    EXPECT_GE(forms.size(), 1u)
-        << "Style " << static_cast<int>(style_id) << " should have form selection";
+    EXPECT_GE(forms.size(), 1u) << "Style " << static_cast<int>(style_id)
+                                << " should have form selection";
   }
 }
 

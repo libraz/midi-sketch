@@ -9,11 +9,12 @@
 #ifndef MIDISKETCH_TRACK_PHRASE_CACHE_H
 #define MIDISKETCH_TRACK_PHRASE_CACHE_H
 
-#include "core/section_types.h"
-#include "core/types.h"
 #include <cstdint>
 #include <functional>
 #include <vector>
+
+#include "core/section_types.h"
+#include "core/types.h"
 
 namespace midisketch {
 
@@ -24,10 +25,10 @@ namespace midisketch {
  */
 struct CachedPhrase {
   std::vector<NoteEvent> notes;  ///< Notes with timing relative to section start
-  uint8_t bars;                   ///< Section length when cached
-  uint8_t vocal_low;              ///< Vocal range when cached
+  uint8_t bars;                  ///< Section length when cached
+  uint8_t vocal_low;             ///< Vocal range when cached
   uint8_t vocal_high;
-  int reuse_count = 0;            ///< How many times this phrase has been reused
+  int reuse_count = 0;  ///< How many times this phrase has been reused
 };
 
 /**
@@ -43,8 +44,7 @@ struct PhraseCacheKey {
   int8_t chord_degree;       ///< Starting chord degree (affects melodic choices)
 
   bool operator==(const PhraseCacheKey& other) const {
-    return section_type == other.section_type &&
-           bars == other.bars &&
+    return section_type == other.section_type && bars == other.bars &&
            chord_degree == other.chord_degree;
   }
 };
@@ -55,8 +55,7 @@ struct PhraseCacheKey {
 struct PhraseCacheKeyHash {
   size_t operator()(const PhraseCacheKey& key) const {
     return std::hash<uint8_t>()(static_cast<uint8_t>(key.section_type)) ^
-           (std::hash<uint8_t>()(key.bars) << 4) ^
-           (std::hash<int8_t>()(key.chord_degree) << 8);
+           (std::hash<uint8_t>()(key.bars) << 4) ^ (std::hash<int8_t>()(key.chord_degree) << 8);
   }
 };
 
@@ -72,10 +71,10 @@ struct PhraseCacheKeyHash {
  * This creates the addictive repeating riff characteristic of Orangestar style.
  */
 struct CachedRhythmPattern {
-  std::vector<float> onset_beats;   ///< Onset positions in beats (0.0, 0.25, 0.5, ...)
-  std::vector<float> durations;     ///< Duration of each note in beats
-  uint8_t phrase_beats = 0;         ///< Original phrase length in beats
-  bool is_locked = false;           ///< True after first phrase is generated
+  std::vector<float> onset_beats;  ///< Onset positions in beats (0.0, 0.25, 0.5, ...)
+  std::vector<float> durations;    ///< Duration of each note in beats
+  uint8_t phrase_beats = 0;        ///< Original phrase length in beats
+  bool is_locked = false;          ///< True after first phrase is generated
 
   /**
    * @brief Scale rhythm pattern to a different phrase length.
@@ -119,9 +118,7 @@ struct CachedRhythmPattern {
    * @brief Check if the pattern is valid and can be used.
    * @return True if pattern has onsets and is locked
    */
-  bool isValid() const {
-    return is_locked && !onset_beats.empty() && phrase_beats > 0;
-  }
+  bool isValid() const { return is_locked && !onset_beats.empty() && phrase_beats > 0; }
 
   /**
    * @brief Clear the cached pattern.
@@ -141,10 +138,8 @@ struct CachedRhythmPattern {
  * @param phrase_beats Phrase length in beats
  * @return Extracted rhythm pattern
  */
-inline CachedRhythmPattern extractRhythmPattern(
-    const std::vector<NoteEvent>& notes,
-    Tick section_start,
-    uint8_t phrase_beats) {
+inline CachedRhythmPattern extractRhythmPattern(const std::vector<NoteEvent>& notes,
+                                                Tick section_start, uint8_t phrase_beats) {
   CachedRhythmPattern pattern;
   pattern.phrase_beats = phrase_beats;
 

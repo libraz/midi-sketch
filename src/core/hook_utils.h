@@ -9,12 +9,13 @@
 #ifndef MIDISKETCH_CORE_HOOK_UTILS_H
 #define MIDISKETCH_CORE_HOOK_UTILS_H
 
-#include "core/melody_types.h"
-#include "core/pitch_utils.h"
-#include "core/types.h"
 #include <array>
 #include <random>
 #include <vector>
+
+#include "core/melody_types.h"
+#include "core/pitch_utils.h"
+#include "core/types.h"
 
 namespace midisketch {
 
@@ -74,30 +75,30 @@ inline SkeletonPattern getSkeletonPattern(HookSkeleton skeleton) {
 
 /// @brief Weight map for hook skeleton selection.
 struct SkeletonWeights {
-  float repeat;       ///< Weight for Repeat skeleton
-  float ascending;    ///< Weight for Ascending skeleton
-  float ascend_drop;  ///< Weight for AscendDrop skeleton
-  float leap_return;  ///< Weight for LeapReturn skeleton
-  float rhythm_repeat;///< Weight for RhythmRepeat skeleton
+  float repeat;         ///< Weight for Repeat skeleton
+  float ascending;      ///< Weight for Ascending skeleton
+  float ascend_drop;    ///< Weight for AscendDrop skeleton
+  float leap_return;    ///< Weight for LeapReturn skeleton
+  float rhythm_repeat;  ///< Weight for RhythmRepeat skeleton
 };
 
 /// @brief Default weights for Chorus sections (memorability focused).
 /// Order: repeat, ascending, ascend_drop, leap_return, rhythm_repeat
 constexpr SkeletonWeights kChorusSkeletonWeights = {
-    1.5f,   // repeat - Most memorable
-    1.3f,   // ascending - Energy building
-    1.0f,   // ascend_drop - Natural arc
-    0.7f,   // leap_return - Less common
-    1.2f,   // rhythm_repeat - Catchy rhythm
+    1.5f,  // repeat - Most memorable
+    1.3f,  // ascending - Energy building
+    1.0f,  // ascend_drop - Natural arc
+    0.7f,  // leap_return - Less common
+    1.2f,  // rhythm_repeat - Catchy rhythm
 };
 
 /// @brief Default weights for non-Chorus sections.
 constexpr SkeletonWeights kDefaultSkeletonWeights = {
-    1.0f,   // repeat
-    1.0f,   // ascending
-    1.0f,   // ascend_drop
-    0.8f,   // leap_return
-    0.9f,   // rhythm_repeat
+    1.0f,  // repeat
+    1.0f,  // ascending
+    1.0f,  // ascend_drop
+    0.8f,  // leap_return
+    0.9f,  // rhythm_repeat
 };
 
 /// @brief Apply HookIntensity multiplier to skeleton weights.
@@ -111,10 +112,8 @@ constexpr SkeletonWeights kDefaultSkeletonWeights = {
 /// @param base Base weights from section type
 /// @param intensity Hook intensity level
 /// @returns Modified weights
-inline SkeletonWeights applyHookIntensityToWeights(
-    const SkeletonWeights& base,
-    HookIntensity intensity) {
-
+inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
+                                                   HookIntensity intensity) {
   SkeletonWeights result = base;
 
   switch (intensity) {
@@ -154,22 +153,17 @@ inline SkeletonWeights applyHookIntensityToWeights(
 /// @param rng Random number generator
 /// @param intensity Hook intensity (default: Normal)
 /// @returns Selected HookSkeleton
-inline HookSkeleton selectHookSkeleton(
-    SectionType type,
-    std::mt19937& rng,
-    HookIntensity intensity = HookIntensity::Normal) {
-
+inline HookSkeleton selectHookSkeleton(SectionType type, std::mt19937& rng,
+                                       HookIntensity intensity = HookIntensity::Normal) {
   // Get base weights from section type
   const SkeletonWeights& base_weights =
-      (type == SectionType::Chorus)
-          ? kChorusSkeletonWeights
-          : kDefaultSkeletonWeights;
+      (type == SectionType::Chorus) ? kChorusSkeletonWeights : kDefaultSkeletonWeights;
 
   // Apply HookIntensity modifier
   SkeletonWeights weights = applyHookIntensityToWeights(base_weights, intensity);
 
-  float total = weights.repeat + weights.ascending + weights.ascend_drop +
-                weights.leap_return + weights.rhythm_repeat;
+  float total = weights.repeat + weights.ascending + weights.ascend_drop + weights.leap_return +
+                weights.rhythm_repeat;
 
   std::uniform_real_distribution<float> dist(0.0f, total);
   float roll = dist(rng);
@@ -209,8 +203,7 @@ inline HookBetrayal selectBetrayal(int repetition_index, std::mt19937& rng) {
   constexpr float kSingleRestWeight = 0.8f;  // Breathing
   constexpr float kSingleLeapWeight = 0.5f;  // Less common
 
-  float total = kLastPitchWeight + kExtendOneWeight +
-                kSingleRestWeight + kSingleLeapWeight;
+  float total = kLastPitchWeight + kExtendOneWeight + kSingleRestWeight + kSingleLeapWeight;
 
   std::uniform_real_distribution<float> dist(0.0f, total);
   float roll = dist(rng);
@@ -234,12 +227,8 @@ inline HookBetrayal selectBetrayal(int repetition_index, std::mt19937& rng) {
 /// @param vocal_low Minimum vocal pitch
 /// @param vocal_high Maximum vocal pitch
 /// @returns Vector of MIDI pitches (-1 = rest)
-inline std::vector<int8_t> expandSkeletonToPitches(
-    HookSkeleton skeleton,
-    int base_pitch,
-    uint8_t vocal_low,
-    uint8_t vocal_high) {
-
+inline std::vector<int8_t> expandSkeletonToPitches(HookSkeleton skeleton, int base_pitch,
+                                                   uint8_t vocal_low, uint8_t vocal_high) {
   SkeletonPattern pattern = getSkeletonPattern(skeleton);
   std::vector<int8_t> pitches;
   pitches.reserve(pattern.length);
@@ -258,8 +247,7 @@ inline std::vector<int8_t> expandSkeletonToPitches(
     int pitch = base_pitch + semitones;
 
     // Clamp to vocal range
-    pitch = std::clamp(pitch, static_cast<int>(vocal_low),
-                       static_cast<int>(vocal_high));
+    pitch = std::clamp(pitch, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
 
     pitches.push_back(static_cast<int8_t>(pitch));
   }
@@ -272,10 +260,8 @@ inline std::vector<int8_t> expandSkeletonToPitches(
 /// @param durations Duration sequence to modify (in-place)
 /// @param betrayal Betrayal type to apply
 /// @param rng Random number generator
-inline void applyBetrayal(std::vector<int8_t>& pitches,
-                          std::vector<Tick>& durations,
-                          HookBetrayal betrayal,
-                          std::mt19937& rng) {
+inline void applyBetrayal(std::vector<int8_t>& pitches, std::vector<Tick>& durations,
+                          HookBetrayal betrayal, std::mt19937& rng) {
   if (pitches.empty() || betrayal == HookBetrayal::None) {
     return;
   }

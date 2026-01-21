@@ -6,10 +6,11 @@
 #ifndef MIDISKETCH_TRACK_SE_H
 #define MIDISKETCH_TRACK_SE_H
 
+#include <random>
+
 #include "core/midi_track.h"
 #include "core/song.h"
 #include "core/types.h"
-#include <random>
 
 namespace midisketch {
 
@@ -27,15 +28,9 @@ void generateSETrack(MidiTrack& track, const Song& song);
 // @param mix_pattern MixPattern
 // @param call_density CallDensity for normal sections
 // @param rng Random number generator for call timing variation
-void generateSETrack(
-    MidiTrack& track,
-    const Song& song,
-    bool call_enabled,
-    bool call_notes_enabled,
-    IntroChant intro_chant,
-    MixPattern mix_pattern,
-    CallDensity call_density,
-    std::mt19937& rng);
+void generateSETrack(MidiTrack& track, const Song& song, bool call_enabled, bool call_notes_enabled,
+                     IntroChant intro_chant, MixPattern mix_pattern, CallDensity call_density,
+                     std::mt19937& rng);
 
 // Check if call feature should be enabled for a vocal style.
 // Returns true for Idol, BrightKira, and energetic styles.
@@ -48,20 +43,15 @@ bool isCallEnabled(VocalStylePreset style);
 // @param track Target MidiTrack
 // @param sections Song sections
 // @param notes_enabled Whether to output as notes
-void insertPPPHAtBtoChorus(
-    MidiTrack& track,
-    const std::vector<Section>& sections,
-    bool notes_enabled);
+void insertPPPHAtBtoChorus(MidiTrack& track, const std::vector<Section>& sections,
+                           bool notes_enabled);
 
 // Insert MIX pattern at Intro sections.
 // Adds extended MIX call at the start of Intro sections.
 // @param track Target MidiTrack
 // @param sections Song sections
 // @param notes_enabled Whether to output as notes
-void insertMIXAtIntro(
-    MidiTrack& track,
-    const std::vector<Section>& sections,
-    bool notes_enabled);
+void insertMIXAtIntro(MidiTrack& track, const std::vector<Section>& sections, bool notes_enabled);
 
 }  // namespace midisketch
 

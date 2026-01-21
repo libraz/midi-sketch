@@ -3,12 +3,15 @@
  * @brief Tests for arpeggio track generation.
  */
 
+#include "track/arpeggio.h"
+
 #include <gtest/gtest.h>
+
+#include <random>
+
 #include "core/generator.h"
 #include "core/song.h"
 #include "core/types.h"
-#include "track/arpeggio.h"
-#include <random>
 
 namespace midisketch {
 namespace {
@@ -92,7 +95,7 @@ TEST_F(ArpeggioTest, SixteenthNoteSpeed) {
   bool found_sixteenth = false;
 
   for (size_t i = 1; i < track.notes().size() && i < 10; ++i) {
-    Tick spacing = track.notes()[i].start_tick - track.notes()[i-1].start_tick;
+    Tick spacing = track.notes()[i].start_tick - track.notes()[i - 1].start_tick;
     if (spacing == expected_duration) {
       found_sixteenth = true;
       break;
@@ -114,7 +117,7 @@ TEST_F(ArpeggioTest, EighthNoteSpeed) {
   bool found_eighth = false;
 
   for (size_t i = 1; i < track.notes().size() && i < 10; ++i) {
-    Tick spacing = track.notes()[i].start_tick - track.notes()[i-1].start_tick;
+    Tick spacing = track.notes()[i].start_tick - track.notes()[i - 1].start_tick;
     if (spacing == expected_duration) {
       found_eighth = true;
       break;
@@ -234,8 +237,7 @@ TEST_F(ArpeggioTest, SyncChordTrue) {
   gen.generate(params_);
 
   const auto& arpeggio = gen.getSong().arpeggio();
-  EXPECT_FALSE(arpeggio.empty())
-      << "Arpeggio should be generated with sync_chord=true";
+  EXPECT_FALSE(arpeggio.empty()) << "Arpeggio should be generated with sync_chord=true";
 }
 
 TEST_F(ArpeggioTest, SyncChordFalse) {
@@ -247,8 +249,7 @@ TEST_F(ArpeggioTest, SyncChordFalse) {
   gen.generate(params_);
 
   const auto& arpeggio = gen.getSong().arpeggio();
-  EXPECT_FALSE(arpeggio.empty())
-      << "Arpeggio should be generated with sync_chord=false";
+  EXPECT_FALSE(arpeggio.empty()) << "Arpeggio should be generated with sync_chord=false";
 }
 
 TEST_F(ArpeggioTest, SyncChordAffectsPattern) {
@@ -329,8 +330,7 @@ TEST_F(ArpeggioTest, SyncChordFalseRefreshesAtSectionBoundary) {
     }
   }
 
-  EXPECT_TRUE(has_notes_after_first_section)
-      << "Arpeggio should continue into second section";
+  EXPECT_TRUE(has_notes_after_first_section) << "Arpeggio should continue into second section";
 }
 
 TEST_F(ArpeggioTest, SyncChordFalsePatternRefreshedPerSection) {
@@ -343,8 +343,7 @@ TEST_F(ArpeggioTest, SyncChordFalsePatternRefreshedPerSection) {
   gen.generate(params_);
 
   const auto& arpeggio = gen.getSong().arpeggio();
-  EXPECT_FALSE(arpeggio.empty())
-      << "Arpeggio should be generated with sync_chord=false";
+  EXPECT_FALSE(arpeggio.empty()) << "Arpeggio should be generated with sync_chord=false";
 
   // The pattern should refresh at each section start
   // We can't easily verify the exact pattern, but we can verify
@@ -362,8 +361,7 @@ TEST_F(ArpeggioTest, SyncChordFalsePatternRefreshedPerSection) {
       }
     }
 
-    EXPECT_TRUE(has_notes_in_mid_section)
-        << "Arpeggio should have notes in middle sections";
+    EXPECT_TRUE(has_notes_in_mid_section) << "Arpeggio should have notes in middle sections";
   }
 }
 
@@ -372,9 +370,7 @@ TEST_F(ArpeggioTest, SyncChordFalsePatternRefreshedPerSection) {
 // ============================================================================
 
 // Helper: Get pitch class (0-11) from MIDI note
-inline int getPitchClass(uint8_t note) {
-  return note % 12;
-}
+inline int getPitchClass(uint8_t note) { return note % 12; }
 
 // Helper: Check if a note is a chord tone for a given degree
 // Degrees: I=0(C), ii=1(D), iii=2(E), IV=3(F), V=4(G), vi=5(A)
@@ -448,14 +444,12 @@ TEST_F(ArpeggioTest, HarmonicDensitySlowInIntro) {
   // degree 0 in C major = C, E, G (pitch classes 0, 4, 7)
   for (uint8_t note : bar0_notes) {
     EXPECT_TRUE(isChordTone(note, 0))
-        << "Bar 0 note " << static_cast<int>(note)
-        << " should be chord tone of I (C major)";
+        << "Bar 0 note " << static_cast<int>(note) << " should be chord tone of I (C major)";
   }
 
   for (uint8_t note : bar1_notes) {
-    EXPECT_TRUE(isChordTone(note, 0))
-        << "Bar 1 note " << static_cast<int>(note)
-        << " should be chord tone of I (C major) in Slow density";
+    EXPECT_TRUE(isChordTone(note, 0)) << "Bar 1 note " << static_cast<int>(note)
+                                      << " should be chord tone of I (C major) in Slow density";
   }
 }
 
@@ -501,16 +495,14 @@ TEST_F(ArpeggioTest, HarmonicDensityNormalInASection) {
   // Bar 0: chord I (C major) - pitch classes 0, 4, 7
   for (uint8_t note : bar0_notes) {
     EXPECT_TRUE(isChordTone(note, 0))
-        << "Bar 0 note " << static_cast<int>(note)
-        << " should be chord tone of I (C major)";
+        << "Bar 0 note " << static_cast<int>(note) << " should be chord tone of I (C major)";
   }
 
   // Bar 1: chord V (G major) - pitch classes 7, 11, 2 (G, B, D)
   // In Normal density, bar 1 should have DIFFERENT chord from bar 0
   for (uint8_t note : bar1_notes) {
-    EXPECT_TRUE(isChordTone(note, 4))
-        << "Bar 1 note " << static_cast<int>(note)
-        << " should be chord tone of V (G major) in Normal density";
+    EXPECT_TRUE(isChordTone(note, 4)) << "Bar 1 note " << static_cast<int>(note)
+                                      << " should be chord tone of V (G major) in Normal density";
   }
 }
 
@@ -559,9 +551,8 @@ TEST_F(ArpeggioTest, ChordTrackArpeggioSyncInSlowDensity) {
   // Both should be vi (A minor) - degree 5
   // A minor = A, C, E (pitch classes 9, 0, 4)
   for (uint8_t note : arp_bar0) {
-    EXPECT_TRUE(isChordTone(note, 5))
-        << "Arpeggio bar 0 note " << static_cast<int>(note)
-        << " should be chord tone of vi (A minor)";
+    EXPECT_TRUE(isChordTone(note, 5)) << "Arpeggio bar 0 note " << static_cast<int>(note)
+                                      << " should be chord tone of vi (A minor)";
   }
 
   for (uint8_t note : chord_bar0) {
@@ -571,9 +562,8 @@ TEST_F(ArpeggioTest, ChordTrackArpeggioSyncInSlowDensity) {
     bool is_am_tone = (pc == 9 || pc == 0 || pc == 4);
     // Allow 7th (G=7) for extended chords
     bool is_am7_tone = is_am_tone || (pc == 7);
-    EXPECT_TRUE(is_am7_tone)
-        << "Chord track bar 0 note " << static_cast<int>(note)
-        << " (pc=" << pc << ") should be chord tone of vi (A minor)";
+    EXPECT_TRUE(is_am7_tone) << "Chord track bar 0 note " << static_cast<int>(note) << " (pc=" << pc
+                             << ") should be chord tone of vi (A minor)";
   }
 }
 
@@ -581,7 +571,7 @@ TEST_F(ArpeggioTest, NoMinor2ndClashWithChordTrack) {
   // Test that arpeggio doesn't create minor 2nd clashes with chord track
   // This was the symptom of the HarmonicDensity bug
 
-  params_.chord_id = 2;  // Axis progression
+  params_.chord_id = 2;                           // Axis progression
   params_.structure = StructurePattern::FullPop;  // Has Intro with Slow density
   params_.arpeggio.sync_chord = true;
   params_.seed = 22222;
@@ -605,12 +595,11 @@ TEST_F(ArpeggioTest, NoMinor2ndClashWithChordTrack) {
       Tick arp_end = arp_note.start_tick + arp_note.duration;
       Tick chord_end = chord_note.start_tick + chord_note.duration;
 
-      bool overlaps = (arp_note.start_tick < chord_end) &&
-                      (chord_note.start_tick < arp_end);
+      bool overlaps = (arp_note.start_tick < chord_end) && (chord_note.start_tick < arp_end);
 
       if (overlaps) {
-        int interval = std::abs(static_cast<int>(arp_note.note) -
-                                static_cast<int>(chord_note.note)) % 12;
+        int interval =
+            std::abs(static_cast<int>(arp_note.note) - static_cast<int>(chord_note.note)) % 12;
         // Minor 2nd = 1 semitone, Major 7th = 11 semitones
         if (interval == 1 || interval == 11) {
           clash_count++;
@@ -618,8 +607,7 @@ TEST_F(ArpeggioTest, NoMinor2ndClashWithChordTrack) {
           bool is_strong_beat = (arp_note.start_tick % TICKS_PER_BAR) < TICKS_PER_BEAT;
           if (is_strong_beat) {
             ADD_FAILURE() << "Minor 2nd/Major 7th clash on strong beat at tick "
-                          << arp_note.start_tick
-                          << ": arp=" << static_cast<int>(arp_note.note)
+                          << arp_note.start_tick << ": arp=" << static_cast<int>(arp_note.note)
                           << " chord=" << static_cast<int>(chord_note.note);
           }
         }
@@ -629,8 +617,8 @@ TEST_F(ArpeggioTest, NoMinor2ndClashWithChordTrack) {
 
   // We shouldn't have many clashes overall
   // Before fix: 31 clashes, After fix: 0 clashes
-  EXPECT_LT(clash_count, 10)
-      << "Too many arpeggio-chord minor 2nd/major 7th clashes: " << clash_count;
+  EXPECT_LT(clash_count, 10) << "Too many arpeggio-chord minor 2nd/major 7th clashes: "
+                             << clash_count;
 }
 
 TEST_F(ArpeggioTest, SyncChordFalseRespectsHarmonicDensity) {
@@ -661,8 +649,8 @@ TEST_F(ArpeggioTest, SyncChordFalseRespectsHarmonicDensity) {
     if (bar >= 4) continue;  // Skip Chorus section
 
     EXPECT_TRUE(isChordTone(note.note, 0))
-        << "Note " << static_cast<int>(note.note)
-        << " at tick " << note.start_tick << " (bar " << bar << ")"
+        << "Note " << static_cast<int>(note.note) << " at tick " << note.start_tick << " (bar "
+        << bar << ")"
         << " should be chord tone of I (C major) in sync_chord=false mode";
   }
 }
@@ -679,9 +667,9 @@ TEST_F(ArpeggioTest, PhraseEndSplitMatchesChordTrack) {
 
   // Exact parameters from backup/midi-sketch-1768126658069.mid
   // that showed the phrase-end split bug
-  params_.chord_id = 0;       // Canon: I - V - vi - IV
+  params_.chord_id = 0;                           // Canon: I - V - vi - IV
   params_.structure = StructurePattern::FullPop;  // structure=5
-  params_.mood = Mood::IdolPop;  // mood=14
+  params_.mood = Mood::IdolPop;                   // mood=14
   params_.bpm = 160;
   params_.key = Key::C;
   params_.vocal_low = 57;
@@ -703,16 +691,15 @@ TEST_F(ArpeggioTest, PhraseEndSplitMatchesChordTrack) {
   // Bar 19 (tick 37440), Bar 24 (tick 47040), Bar 43 (tick 83520),
   // Bar 48 (tick 93120), Bar 67 (tick 129600), Bar 72 (tick 139200)
   // All were Chord(B3) vs Arpeggio(F5 or C5) - tritone or minor 2nd
-  constexpr std::array<Tick, 6> PROBLEM_TICKS = {
-      37440, 47040, 83520, 93120, 129600, 139200};
+  constexpr std::array<Tick, 6> PROBLEM_TICKS = {37440, 47040, 83520, 93120, 129600, 139200};
 
   int problem_clash_count = 0;
 
   for (Tick problem_tick : PROBLEM_TICKS) {
     // Find arpeggio notes near this tick
     for (const auto& arp_note : arpeggio.notes()) {
-      if (arp_note.start_tick < problem_tick - 120 ||
-          arp_note.start_tick > problem_tick + 120) continue;
+      if (arp_note.start_tick < problem_tick - 120 || arp_note.start_tick > problem_tick + 120)
+        continue;
 
       // Find chord notes at this tick
       for (const auto& chord_note : chord_track.notes()) {
@@ -721,8 +708,8 @@ TEST_F(ArpeggioTest, PhraseEndSplitMatchesChordTrack) {
         if (chord_end < problem_tick) continue;
 
         // Check interval - must be within one octave to be a real clash
-        int raw_interval = std::abs(static_cast<int>(arp_note.note) -
-                                    static_cast<int>(chord_note.note));
+        int raw_interval =
+            std::abs(static_cast<int>(arp_note.note) - static_cast<int>(chord_note.note));
         // Only count clashes within 12 semitones (same register)
         // Notes more than an octave apart don't create harsh dissonance
         if (raw_interval > 12) continue;
@@ -739,9 +726,8 @@ TEST_F(ArpeggioTest, PhraseEndSplitMatchesChordTrack) {
   // Before fix: 6 clashes at these specific positions (B3 vs F5/C5)
   // After fix: should be 0 (arpeggio now switches chord at beat 3)
   // Only count clashes within one octave (same register) as real dissonance
-  EXPECT_EQ(problem_clash_count, 0)
-      << "Phrase-end split not working: " << problem_clash_count
-      << " clashes at known problem positions";
+  EXPECT_EQ(problem_clash_count, 0) << "Phrase-end split not working: " << problem_clash_count
+                                    << " clashes at known problem positions";
 }
 
 }  // namespace

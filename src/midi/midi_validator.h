@@ -5,10 +5,11 @@
 
 #pragma once
 
-#include "midi/midi_reader.h"  // for DetectedMidiFormat
 #include <cstdint>
 #include <string>
 #include <vector>
+
+#include "midi/midi_reader.h"  // for DetectedMidiFormat
 
 namespace midisketch {
 
@@ -19,7 +20,7 @@ enum class ValidationSeverity { Info, Warning, Error };
 struct ValidationIssue {
   ValidationSeverity severity = ValidationSeverity::Info;
   std::string message;
-  size_t offset = 0;  // Byte offset in file (0 if not applicable)
+  size_t offset = 0;     // Byte offset in file (0 if not applicable)
   int track_index = -1;  // Track index (-1 if not track-specific)
 };
 
@@ -27,7 +28,7 @@ struct ValidationIssue {
 struct ValidatedTrack {
   int index = 0;
   std::string name;
-  size_t length = 0;       // Bytes
+  size_t length = 0;  // Bytes
   size_t event_count = 0;
   bool has_end_of_track = false;
 };
@@ -36,10 +37,10 @@ struct ValidatedTrack {
 struct ValidationSummary {
   size_t file_size = 0;
   DetectedMidiFormat format = DetectedMidiFormat::Unknown;
-  uint16_t midi_type = 0;      // SMF type (0, 1, 2)
+  uint16_t midi_type = 0;  // SMF type (0, 1, 2)
   uint16_t num_tracks = 0;
   uint16_t division = 0;
-  std::string timing_type;     // "PPQN" or "SMPTE"
+  std::string timing_type;  // "PPQN" or "SMPTE"
   uint16_t ticks_per_quarter = 0;
 };
 
@@ -80,41 +81,36 @@ class MidiValidator {
 
  private:
   // Validate SMF1 structure
-  bool validateSMF1(const uint8_t* data, size_t size,
-                    MidiValidationReport& report) const;
+  bool validateSMF1(const uint8_t* data, size_t size, MidiValidationReport& report) const;
 
   // Validate SMF2 Clip structure
-  bool validateSMF2Clip(const uint8_t* data, size_t size,
-                        MidiValidationReport& report) const;
+  bool validateSMF2Clip(const uint8_t* data, size_t size, MidiValidationReport& report) const;
 
   // Validate SMF2 Container (ktmidi)
-  bool validateSMF2Container(const uint8_t* data, size_t size,
-                             MidiValidationReport& report) const;
+  bool validateSMF2Container(const uint8_t* data, size_t size, MidiValidationReport& report) const;
 
   // Helper: validate SMF1 header chunk
-  bool validateSMF1Header(const uint8_t* data, size_t size,
-                          MidiValidationReport& report) const;
+  bool validateSMF1Header(const uint8_t* data, size_t size, MidiValidationReport& report) const;
 
   // Helper: validate SMF1 track chunk
   bool validateSMF1Track(const uint8_t* data, size_t size, int track_index,
-                         MidiValidationReport& report,
-                         ValidatedTrack& track_info) const;
+                         MidiValidationReport& report, ValidatedTrack& track_info) const;
 
   // Helper: read variable-length quantity
-  static bool readVariableLength(const uint8_t* data, size_t& offset,
-                                 size_t max_size, uint32_t& value);
+  static bool readVariableLength(const uint8_t* data, size_t& offset, size_t max_size,
+                                 uint32_t& value);
 
   // Helper: read big-endian integers
   static uint16_t readUint16BE(const uint8_t* data);
   static uint32_t readUint32BE(const uint8_t* data);
 
   // Helper: add issue to report
-  static void addError(MidiValidationReport& report, const std::string& msg,
-                       size_t offset = 0, int track = -1);
-  static void addWarning(MidiValidationReport& report, const std::string& msg,
-                         size_t offset = 0, int track = -1);
-  static void addInfo(MidiValidationReport& report, const std::string& msg,
-                      size_t offset = 0, int track = -1);
+  static void addError(MidiValidationReport& report, const std::string& msg, size_t offset = 0,
+                       int track = -1);
+  static void addWarning(MidiValidationReport& report, const std::string& msg, size_t offset = 0,
+                         int track = -1);
+  static void addInfo(MidiValidationReport& report, const std::string& msg, size_t offset = 0,
+                      int track = -1);
 };
 
 }  // namespace midisketch

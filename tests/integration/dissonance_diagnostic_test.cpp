@@ -10,15 +10,17 @@
  */
 
 #include <gtest/gtest.h>
+
+#include <iostream>
+#include <map>
+#include <string>
+#include <vector>
+
 #include "core/generator.h"
 #include "core/i_harmony_context.h"
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
-#include <iostream>
-#include <map>
-#include <string>
-#include <vector>
 
 namespace midisketch {
 namespace {
@@ -37,8 +39,8 @@ struct ClashInfo {
 
 // Find all dissonant clashes between two tracks using chord context
 std::vector<ClashInfo> findClashes(const MidiTrack& track_a, const std::string& name_a,
-                                    const MidiTrack& track_b, const std::string& name_b,
-                                    const IHarmonyContext& harmony) {
+                                   const MidiTrack& track_b, const std::string& name_b,
+                                   const IHarmonyContext& harmony) {
   std::vector<ClashInfo> clashes;
 
   for (const auto& note_a : track_a.notes()) {
@@ -54,8 +56,7 @@ std::vector<ClashInfo> findClashes(const MidiTrack& track_a, const std::string& 
       if (!overlap) continue;
 
       // Calculate actual interval
-      int actual_interval = std::abs(static_cast<int>(note_a.note) -
-                                     static_cast<int>(note_b.note));
+      int actual_interval = std::abs(static_cast<int>(note_a.note) - static_cast<int>(note_b.note));
 
       // Skip wide separations (perceptually not clashing)
       if (actual_interval >= MAX_CLASH_SEPARATION) continue;
@@ -65,8 +66,8 @@ std::vector<ClashInfo> findClashes(const MidiTrack& track_a, const std::string& 
       int8_t chord_degree = harmony.getChordDegreeAt(overlap_tick);
 
       if (isDissonantActualInterval(actual_interval, chord_degree)) {
-        clashes.push_back({name_a, name_b, note_a.note, note_b.note,
-                          overlap_tick, actual_interval});
+        clashes.push_back(
+            {name_a, name_b, note_a.note, note_b.note, overlap_tick, actual_interval});
       }
     }
   }
@@ -89,8 +90,8 @@ std::vector<ClashInfo> analyzeAllTrackPairs(const Song& song, const IHarmonyCont
   // Check all unique pairs
   for (size_t i = 0; i < tracks.size(); ++i) {
     for (size_t j = i + 1; j < tracks.size(); ++j) {
-      auto clashes = findClashes(*tracks[i].first, tracks[i].second,
-                                  *tracks[j].first, tracks[j].second, harmony);
+      auto clashes = findClashes(*tracks[i].first, tracks[i].second, *tracks[j].first,
+                                 tracks[j].second, harmony);
       all_clashes.insert(all_clashes.end(), clashes.begin(), clashes.end());
     }
   }
@@ -148,10 +149,12 @@ TEST_F(DiagnosticTest, DISABLED_DiagnoseClashSources) {
   std::cout << "Bass-Chord: " << bc.size() << "\n";
   std::cout << "Bass-Aux: " << ba.size() << "\n";
   std::cout << "Chord-Aux: " << ca.size() << "\n";
-  std::cout << "Total: " << (vb.size() + vc.size() + va.size() + bc.size() + ba.size() + ca.size()) << "\n\n";
+  std::cout << "Total: " << (vb.size() + vc.size() + va.size() + bc.size() + ba.size() + ca.size())
+            << "\n\n";
 
   // Print first few clashes for each pair
-  auto printClashes = [](const std::vector<ClashInfo>& clashes, const std::string& name, int max = 3) {
+  auto printClashes = [](const std::vector<ClashInfo>& clashes, const std::string& name,
+                         int max = 3) {
     if (clashes.empty()) return;
     std::cout << name << " details:\n";
     int count = 0;

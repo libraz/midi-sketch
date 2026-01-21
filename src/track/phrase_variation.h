@@ -9,10 +9,11 @@
 #ifndef MIDISKETCH_TRACK_PHRASE_VARIATION_H
 #define MIDISKETCH_TRACK_PHRASE_VARIATION_H
 
-#include "core/types.h"
 #include <cstdint>
 #include <random>
 #include <vector>
+
+#include "core/types.h"
 
 namespace midisketch {
 
@@ -73,8 +74,7 @@ PhraseVariation selectPhraseVariation(int reuse_count, std::mt19937& rng);
  * @param variation Type of variation to apply
  * @param rng Random number generator for variation parameters
  */
-void applyPhraseVariation(std::vector<NoteEvent>& notes,
-                          PhraseVariation variation,
+void applyPhraseVariation(std::vector<NoteEvent>& notes, PhraseVariation variation,
                           std::mt19937& rng);
 
 /**

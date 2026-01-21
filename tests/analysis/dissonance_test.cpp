@@ -3,12 +3,15 @@
  * @brief Tests for dissonance analysis.
  */
 
-#include <gtest/gtest.h>
 #include "analysis/dissonance.h"
-#include "core/generator.h"
-#include "core/song.h"
+
+#include <gtest/gtest.h>
+
 #include <set>
 #include <tuple>
+
+#include "core/generator.h"
+#include "core/song.h"
 
 namespace midisketch {
 namespace {
@@ -49,12 +52,12 @@ TEST(DissonanceTest, AnalyzeGeneratedSong) {
   auto report = analyzeDissonance(song, params);
 
   // Basic sanity checks
-  EXPECT_EQ(report.summary.total_issues,
-            report.summary.simultaneous_clashes + report.summary.non_chord_tones +
-            report.summary.sustained_over_chord_change);
-  EXPECT_EQ(report.summary.total_issues,
-            report.summary.high_severity + report.summary.medium_severity +
-                report.summary.low_severity);
+  EXPECT_EQ(report.summary.total_issues, report.summary.simultaneous_clashes +
+                                             report.summary.non_chord_tones +
+                                             report.summary.sustained_over_chord_change);
+  EXPECT_EQ(
+      report.summary.total_issues,
+      report.summary.high_severity + report.summary.medium_severity + report.summary.low_severity);
 
   // Issues should be sorted by tick
   for (size_t i = 1; i < report.issues.size(); ++i) {
@@ -139,9 +142,9 @@ TEST(DissonanceTest, DifferentChordProgressions) {
     auto report = analyzeDissonance(song, params);
 
     // Should not crash and should produce valid summaries
-    EXPECT_EQ(report.summary.total_issues,
-              report.summary.simultaneous_clashes + report.summary.non_chord_tones +
-              report.summary.sustained_over_chord_change);
+    EXPECT_EQ(report.summary.total_issues, report.summary.simultaneous_clashes +
+                                               report.summary.non_chord_tones +
+                                               report.summary.sustained_over_chord_change);
   }
 }
 
@@ -198,7 +201,7 @@ TEST(DissonanceTest, AvailableTensionsAccepted) {
     if (issue.type == DissonanceType::NonChordTone) {
       // Check if on beat 1 (strong beat)
       float beat_pos = issue.beat - 1.0f;  // 0-indexed beat
-      if (beat_pos < 0.5f) {  // Beat 1
+      if (beat_pos < 0.5f) {               // Beat 1
         strong_beat_nct++;
       }
     }
@@ -206,8 +209,7 @@ TEST(DissonanceTest, AvailableTensionsAccepted) {
 
   // Most strong beat notes should be chord tones or acceptable tensions
   // Allow some non-chord tones (passing tones, etc.)
-  EXPECT_LE(strong_beat_nct, 10)
-      << "Too many non-chord tones on strong beats: " << strong_beat_nct;
+  EXPECT_LE(strong_beat_nct, 10) << "Too many non-chord tones on strong beats: " << strong_beat_nct;
 }
 
 // Test: Deduplication prevents duplicate clash reports
@@ -246,8 +248,8 @@ TEST(DissonanceTest, DeduplicationWorks) {
     }
   }
 
-  EXPECT_EQ(duplicates, 0)
-      << "Deduplication should prevent duplicate clash reports: " << duplicates << " duplicates found";
+  EXPECT_EQ(duplicates, 0) << "Deduplication should prevent duplicate clash reports: " << duplicates
+                           << " duplicates found";
 }
 
 // NOTE: Tests for track-pair severity adjustment were removed as part of
@@ -340,8 +342,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiBasic) {
   // Find the clash and verify it's High severity
   bool found_clash = false;
   for (const auto& issue : report.issues) {
-    if (issue.type == DissonanceType::SimultaneousClash &&
-        issue.interval_semitones == 1) {
+    if (issue.type == DissonanceType::SimultaneousClash && issue.interval_semitones == 1) {
       found_clash = true;
       EXPECT_EQ(issue.severity, DissonanceSeverity::High);
       EXPECT_EQ(issue.interval_name, "minor 2nd");
@@ -467,8 +468,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiTritone) {
   // Should detect tritone (may be medium severity in context)
   bool found_tritone = false;
   for (const auto& issue : report.issues) {
-    if (issue.type == DissonanceType::SimultaneousClash &&
-        issue.interval_semitones == 6) {
+    if (issue.type == DissonanceType::SimultaneousClash && issue.interval_semitones == 6) {
       found_tritone = true;
       EXPECT_EQ(issue.interval_name, "tritone");
       break;
@@ -508,8 +508,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiMajor7th) {
   // is considered part of Imaj7 voicing and gets Medium severity
   bool found_major7th = false;
   for (const auto& issue : report.issues) {
-    if (issue.type == DissonanceType::SimultaneousClash &&
-        issue.interval_semitones == 11) {
+    if (issue.type == DissonanceType::SimultaneousClash && issue.interval_semitones == 11) {
       found_major7th = true;
       EXPECT_EQ(issue.interval_name, "major 7th");
       // On I chord context, major 7th is downgraded to Medium (Imaj7 voicing)
@@ -556,8 +555,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiNonOverlappingNotes) {
         if (note_info.pitch == 64) e4_involved = true;
         if (note_info.pitch == 65) f4_involved = true;
       }
-      EXPECT_FALSE(e4_involved && f4_involved)
-          << "Non-overlapping E4 and F4 should not clash";
+      EXPECT_FALSE(e4_involved && f4_involved) << "Non-overlapping E4 and F4 should not clash";
     }
   }
 }
@@ -595,17 +593,15 @@ TEST(DissonanceIntegrationTest, VocalSustainOverChordChangeTest) {
     uint32_t vocal_sustain_high = 0;
     for (const auto& issue : report.issues) {
       if (issue.type == DissonanceType::SustainedOverChordChange &&
-          issue.severity == DissonanceSeverity::High &&
-          issue.track_name == "vocal") {
+          issue.severity == DissonanceSeverity::High && issue.track_name == "vocal") {
         ++vocal_sustain_high;
       }
     }
 
     // Vocal track should have at most 1 high-severity sustained-over-chord-change issue
     // (Candidate count varies by section type, which can affect melody selection)
-    EXPECT_LE(vocal_sustain_high, 1u)
-        << "Seed " << seed << " has " << vocal_sustain_high
-        << " high-severity vocal notes sustaining over chord changes";
+    EXPECT_LE(vocal_sustain_high, 1u) << "Seed " << seed << " has " << vocal_sustain_high
+                                      << " high-severity vocal notes sustaining over chord changes";
   }
 }
 
@@ -658,15 +654,13 @@ TEST(DissonanceIntegrationTest, BassChordPhraseEndSyncNoMediumIssues) {
 // NOTE: After removing severity adjustment code, HIGH severity issues may occur.
 // This test now verifies analysis runs without crashes, not zero HIGH severity.
 TEST(DissonanceIntegrationTest, AnalysisRunsMultiSeed) {
-  std::vector<Mood> test_moods = {
-      Mood::StraightPop, Mood::Ballad, Mood::EnergeticDance,
-      Mood::IdolPop, Mood::CityPop, Mood::Yoasobi, Mood::FutureBass
-  };
+  std::vector<Mood> test_moods = {Mood::StraightPop, Mood::Ballad,  Mood::EnergeticDance,
+                                  Mood::IdolPop,     Mood::CityPop, Mood::Yoasobi,
+                                  Mood::FutureBass};
 
   std::vector<StructurePattern> test_structures = {
-      StructurePattern::StandardPop, StructurePattern::FullPop,
-      StructurePattern::DirectChorus, StructurePattern::BuildUp
-  };
+      StructurePattern::StandardPop, StructurePattern::FullPop, StructurePattern::DirectChorus,
+      StructurePattern::BuildUp};
 
   int total_tests = 0;
 
@@ -703,10 +697,8 @@ TEST(DissonanceIntegrationTest, AnalysisRunsMultiSeed) {
 
 // Test: Analysis runs correctly with random seeds
 TEST(DissonanceIntegrationTest, AnalysisRunsRandomSeeds) {
-  std::vector<uint32_t> random_seeds = {
-      1, 42, 123, 456, 789, 1000, 2000, 3000, 4000, 5000,
-      12345, 23456, 34567, 45678, 56789
-  };
+  std::vector<uint32_t> random_seeds = {1,    42,   123,   456,   789,   1000,  2000, 3000,
+                                        4000, 5000, 12345, 23456, 34567, 45678, 56789};
 
   int total_tests = 0;
 
@@ -740,10 +732,9 @@ TEST(DissonanceIntegrationTest, MediumSeverityMetrics) {
   // Track medium severity issues across random seeds
   // This is a quality metric, not a strict requirement
 
-  std::vector<uint32_t> random_seeds = {
-      1, 42, 123, 456, 789, 1000, 2000, 3000, 4000, 5000,
-      12345, 23456, 34567, 45678, 56789, 67890, 78901, 89012, 90123, 1234
-  };
+  std::vector<uint32_t> random_seeds = {1,     42,    123,   456,   789,   1000,  2000,
+                                        3000,  4000,  5000,  12345, 23456, 34567, 45678,
+                                        56789, 67890, 78901, 89012, 90123, 1234};
 
   int total_medium = 0;
   int total_tests = 0;
@@ -777,8 +768,7 @@ TEST(DissonanceIntegrationTest, MediumSeverityMetrics) {
   float pct_with_medium = static_cast<float>(seeds_with_medium) / total_tests * 100;
 
   // Quality thresholds: average < 5 medium issues per song, < 90% of seeds have issues
-  EXPECT_LT(avg_medium, 5.0f)
-      << "Average medium issues per song should be < 5, got " << avg_medium;
+  EXPECT_LT(avg_medium, 5.0f) << "Average medium issues per song should be < 5, got " << avg_medium;
   EXPECT_LT(pct_with_medium, 90.0f)
       << "Less than 90% of seeds should have medium issues, got " << pct_with_medium << "%";
 }
@@ -827,8 +817,7 @@ TEST(DissonanceContextTest, Beat1ElevatesSeverity) {
   bool found_beat3_low = false;
 
   for (const auto& issue : report.issues) {
-    if (issue.type == DissonanceType::SimultaneousClash &&
-        issue.interval_semitones == 6) {
+    if (issue.type == DissonanceType::SimultaneousClash && issue.interval_semitones == 6) {
       if (issue.tick == 0) {
         // Beat 1: should be elevated to Medium
         EXPECT_EQ(issue.severity, DissonanceSeverity::Medium)
@@ -975,8 +964,8 @@ TEST(DissonanceContextTest, RegressionOriginalBugParameters) {
   }
 
   // Regenerated song should have minimal beat 1 clashes
-  EXPECT_LE(beat1_clashes, 2)
-      << "Beat 1 clashes should be minimal after regeneration: found " << beat1_clashes;
+  EXPECT_LE(beat1_clashes, 2) << "Beat 1 clashes should be minimal after regeneration: found "
+                              << beat1_clashes;
 }
 
 }  // namespace

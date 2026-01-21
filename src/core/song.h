@@ -6,10 +6,11 @@
 #ifndef MIDISKETCH_CORE_SONG_H
 #define MIDISKETCH_CORE_SONG_H
 
+#include <array>
+
 #include "core/arrangement.h"
 #include "core/midi_track.h"
 #include "core/types.h"
-#include <array>
 
 namespace midisketch {
 
@@ -94,9 +95,7 @@ class Song {
 
   /// @name Motif Pattern
   /// @{
-  void setMotifPattern(const std::vector<NoteEvent>& pattern) {
-    motif_pattern_ = pattern;
-  }
+  void setMotifPattern(const std::vector<NoteEvent>& pattern) { motif_pattern_ = pattern; }
   const std::vector<NoteEvent>& motifPattern() const { return motif_pattern_; }
   /// @}
 
@@ -105,12 +104,8 @@ class Song {
   void setPhraseBoundaries(const std::vector<PhraseBoundary>& boundaries) {
     phrase_boundaries_ = boundaries;
   }
-  void addPhraseBoundary(const PhraseBoundary& boundary) {
-    phrase_boundaries_.push_back(boundary);
-  }
-  const std::vector<PhraseBoundary>& phraseBoundaries() const {
-    return phrase_boundaries_;
-  }
+  void addPhraseBoundary(const PhraseBoundary& boundary) { phrase_boundaries_.push_back(boundary); }
+  const std::vector<PhraseBoundary>& phraseBoundaries() const { return phrase_boundaries_; }
   void clearPhraseBoundaries() { phrase_boundaries_.clear(); }
   /// @}
 

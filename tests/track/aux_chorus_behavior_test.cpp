@@ -11,6 +11,11 @@
  */
 
 #include <gtest/gtest.h>
+
+#include <algorithm>
+#include <random>
+#include <set>
+
 #include "core/arrangement.h"
 #include "core/chord.h"
 #include "core/chord_utils.h"
@@ -19,9 +24,6 @@
 #include "core/i_harmony_context.h"
 #include "core/timing_constants.h"
 #include "track/aux_track.h"
-#include <algorithm>
-#include <random>
-#include <set>
 
 namespace midisketch {
 namespace {
@@ -108,10 +110,10 @@ TEST(AuxChorusBehaviorTest, ChorusAuxUsesChordTones) {
         }
       }
 
-      EXPECT_TRUE(is_chord_tone)
-          << "Seed " << seed << ": Aux note " << static_cast<int>(note.note)
-          << " (pc=" << pitch_class << ") at tick " << note.start_tick
-          << " should be chord tone (degree=" << static_cast<int>(chord_degree) << ")";
+      EXPECT_TRUE(is_chord_tone) << "Seed " << seed << ": Aux note " << static_cast<int>(note.note)
+                                 << " (pc=" << pitch_class << ") at tick " << note.start_tick
+                                 << " should be chord tone (degree="
+                                 << static_cast<int>(chord_degree) << ")";
     }
   }
 }
@@ -234,8 +236,8 @@ TEST(AuxChorusBehaviorTest, ChorusAuxNoExactUnisonWithVocal) {
     }
 
     // EmotionalPad should have no exact unisons (it's in a different register)
-    EXPECT_EQ(unison_count, 0)
-        << "Seed " << seed << ": EmotionalPad should not create exact unisons with vocal";
+    EXPECT_EQ(unison_count, 0) << "Seed " << seed
+                               << ": EmotionalPad should not create exact unisons with vocal";
   }
 }
 

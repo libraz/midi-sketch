@@ -6,6 +6,10 @@
 #ifndef MIDISKETCH_TRACK_MELODY_DESIGNER_H
 #define MIDISKETCH_TRACK_MELODY_DESIGNER_H
 
+#include <optional>
+#include <random>
+#include <vector>
+
 #include "core/chord_utils.h"
 #include "core/melody_evaluator.h"
 #include "core/melody_templates.h"
@@ -14,9 +18,6 @@
 #include "core/pitch_utils.h"
 #include "core/section_types.h"
 #include "core/types.h"
-#include <optional>
-#include <random>
-#include <vector>
 
 namespace midisketch {
 
@@ -29,25 +30,25 @@ class MelodyDesigner {
  public:
   /// @brief Context for melody generation within a section.
   struct SectionContext {
-    SectionType section_type;          ///< What kind of section (Verse, Chorus, etc.)
-    Tick section_start;                ///< Absolute start tick
-    Tick section_end;                  ///< Absolute end tick
-    uint8_t section_bars;              ///< Length in bars
-    int8_t chord_degree;               ///< Starting chord degree (0-6)
-    int key_offset;                    ///< Key transposition from C
-    TessituraRange tessitura;          ///< Comfortable singing range
-    uint8_t vocal_low;                 ///< Absolute minimum pitch
-    uint8_t vocal_high;                ///< Absolute maximum pitch
-    Mood mood = Mood::StraightPop;     ///< Mood for harmonic rhythm
-    float density_modifier = 1.0f;     ///< Section-specific note density (1.0 = default)
-    float thirtysecond_ratio = 0.0f;   ///< Ratio of 32nd notes (0.0-1.0)
+    SectionType section_type;                 ///< What kind of section (Verse, Chorus, etc.)
+    Tick section_start;                       ///< Absolute start tick
+    Tick section_end;                         ///< Absolute end tick
+    uint8_t section_bars;                     ///< Length in bars
+    int8_t chord_degree;                      ///< Starting chord degree (0-6)
+    int key_offset;                           ///< Key transposition from C
+    TessituraRange tessitura;                 ///< Comfortable singing range
+    uint8_t vocal_low;                        ///< Absolute minimum pitch
+    uint8_t vocal_high;                       ///< Absolute maximum pitch
+    Mood mood = Mood::StraightPop;            ///< Mood for harmonic rhythm
+    float density_modifier = 1.0f;            ///< Section-specific note density (1.0 = default)
+    float thirtysecond_ratio = 0.0f;          ///< Ratio of 32nd notes (0.0-1.0)
     float consecutive_same_note_prob = 0.6f;  ///< Probability of allowing repeated notes
     bool disable_vowel_constraints = false;   ///< Allow large intervals within syllables
     bool disable_breathing_gaps = false;      ///< Remove breathing rests between phrases
     const SectionTransition* transition_to_next = nullptr;  ///< Transition to next section
-    bool enable_embellishment = true;         ///< Enable melodic embellishment (NCT insertion)
+    bool enable_embellishment = true;  ///< Enable melodic embellishment (NCT insertion)
     VocalAttitude vocal_attitude = VocalAttitude::Expressive;  ///< Vocal style attitude
-    HookIntensity hook_intensity = HookIntensity::Normal;  ///< Hook pattern selection intensity
+    HookIntensity hook_intensity = HookIntensity::Normal;      ///< Hook pattern selection intensity
     // RhythmSync support
     GenerationParadigm paradigm = GenerationParadigm::Traditional;  ///< Generation paradigm
     const DrumGrid* drum_grid = nullptr;  ///< Drum grid for RhythmSync quantization
@@ -70,11 +71,8 @@ class MelodyDesigner {
    * @param rng Random number generator
    * @return Vector of note events for the section
    */
-  std::vector<NoteEvent> generateSection(
-      const MelodyTemplate& tmpl,
-      const SectionContext& ctx,
-      const IHarmonyContext& harmony,
-      std::mt19937& rng);
+  std::vector<NoteEvent> generateSection(const MelodyTemplate& tmpl, const SectionContext& ctx,
+                                         const IHarmonyContext& harmony, std::mt19937& rng);
 
   /**
    * @brief Generate melody with evaluation and candidate selection.
@@ -88,11 +86,8 @@ class MelodyDesigner {
    * @return Best-scoring candidate's notes
    */
   std::vector<NoteEvent> generateSectionWithEvaluation(
-      const MelodyTemplate& tmpl,
-      const SectionContext& ctx,
-      const IHarmonyContext& harmony,
-      std::mt19937& rng,
-      VocalStylePreset vocal_style = VocalStylePreset::Standard,
+      const MelodyTemplate& tmpl, const SectionContext& ctx, const IHarmonyContext& harmony,
+      std::mt19937& rng, VocalStylePreset vocal_style = VocalStylePreset::Standard,
       MelodicComplexity melodic_complexity = MelodicComplexity::Standard,
       int candidate_count = 100);
 
@@ -110,12 +105,12 @@ class MelodyDesigner {
       case SectionType::Chorus:
         return 100;  // Most important: maximum candidates
       case SectionType::B:
-        return 50;   // Pre-chorus: moderate
+        return 50;  // Pre-chorus: moderate
       case SectionType::Bridge:
       case SectionType::Chant:
-        return 30;   // Variety elements: fewer OK
-      default:       // A (Verse), Intro, Outro, Interlude, MixBreak
-        return 20;   // Stability focused: fewer sufficient
+        return 30;  // Variety elements: fewer OK
+      default:      // A (Verse), Intro, Outro, Interlude, MixBreak
+        return 20;  // Stability focused: fewer sufficient
     }
   }
 
@@ -131,15 +126,10 @@ class MelodyDesigner {
    * @param rng Random number generator
    * @return Phrase result with notes and updated state
    */
-  PhraseResult generateMelodyPhrase(
-      const MelodyTemplate& tmpl,
-      Tick phrase_start,
-      uint8_t phrase_beats,
-      const SectionContext& ctx,
-      int prev_pitch,
-      int direction_inertia,
-      const IHarmonyContext& harmony,
-      std::mt19937& rng);
+  PhraseResult generateMelodyPhrase(const MelodyTemplate& tmpl, Tick phrase_start,
+                                    uint8_t phrase_beats, const SectionContext& ctx, int prev_pitch,
+                                    int direction_inertia, const IHarmonyContext& harmony,
+                                    std::mt19937& rng);
 
   /**
    * @brief Extract GlobalMotif from chorus hook notes.
@@ -163,25 +153,20 @@ class MelodyDesigner {
    * @param global_motif Reference motif from chorus
    * @return Bonus score (0.0-0.1)
    */
-  static float evaluateWithGlobalMotif(
-      const std::vector<NoteEvent>& candidate,
-      const GlobalMotif& global_motif);
+  static float evaluateWithGlobalMotif(const std::vector<NoteEvent>& candidate,
+                                       const GlobalMotif& global_motif);
 
   /**
    * @brief Get cached GlobalMotif (if any).
    * @return Optional GlobalMotif, empty if not yet extracted
    */
-  const std::optional<GlobalMotif>& getCachedGlobalMotif() const {
-    return cached_global_motif_;
-  }
+  const std::optional<GlobalMotif>& getCachedGlobalMotif() const { return cached_global_motif_; }
 
   /**
    * @brief Set GlobalMotif for song-wide reference.
    * @param motif GlobalMotif to cache
    */
-  void setGlobalMotif(const GlobalMotif& motif) {
-    cached_global_motif_ = motif;
-  }
+  void setGlobalMotif(const GlobalMotif& motif) { cached_global_motif_ = motif; }
 
   /**
    * @brief Generate a hook pattern for chorus sections.
@@ -193,13 +178,8 @@ class MelodyDesigner {
    * @param rng Random number generator
    * @return Phrase result with hook notes
    */
-  PhraseResult generateHook(
-      const MelodyTemplate& tmpl,
-      Tick hook_start,
-      const SectionContext& ctx,
-      int prev_pitch,
-      const IHarmonyContext& harmony,
-      std::mt19937& rng);
+  PhraseResult generateHook(const MelodyTemplate& tmpl, Tick hook_start, const SectionContext& ctx,
+                            int prev_pitch, const IHarmonyContext& harmony, std::mt19937& rng);
 
   /**
    * @brief Select pitch choice based on template and phrase position.
@@ -209,11 +189,8 @@ class MelodyDesigner {
    * @param rng Random number generator
    * @return Selected pitch choice
    */
-  static PitchChoice selectPitchChoice(
-      const MelodyTemplate& tmpl,
-      float phrase_pos,
-      bool has_target,
-      std::mt19937& rng);
+  static PitchChoice selectPitchChoice(const MelodyTemplate& tmpl, float phrase_pos,
+                                       bool has_target, std::mt19937& rng);
 
   /**
    * @brief Apply direction inertia to pitch movement.
@@ -223,11 +200,8 @@ class MelodyDesigner {
    * @param rng Random number generator
    * @return Modified pitch choice (may change direction)
    */
-  static PitchChoice applyDirectionInertia(
-      PitchChoice choice,
-      int inertia,
-      const MelodyTemplate& tmpl,
-      std::mt19937& rng);
+  static PitchChoice applyDirectionInertia(PitchChoice choice, int inertia,
+                                           const MelodyTemplate& tmpl, std::mt19937& rng);
 
   /**
    * @brief Get effective plateau ratio considering register.
@@ -236,10 +210,8 @@ class MelodyDesigner {
    * @param tessitura Tessitura range for register calculation
    * @return Effective plateau ratio (may be boosted for high notes)
    */
-  static float getEffectivePlateauRatio(
-      const MelodyTemplate& tmpl,
-      int current_pitch,
-      const TessituraRange& tessitura);
+  static float getEffectivePlateauRatio(const MelodyTemplate& tmpl, int current_pitch,
+                                        const TessituraRange& tessitura);
 
   /**
    * @brief Check if a leap should occur based on trigger conditions.
@@ -248,10 +220,7 @@ class MelodyDesigner {
    * @param section_pos Position within section (0.0-1.0)
    * @return true if conditions are right for a leap
    */
-  static bool shouldLeap(
-      LeapTrigger trigger,
-      float phrase_pos,
-      float section_pos);
+  static bool shouldLeap(LeapTrigger trigger, float phrase_pos, float section_pos);
 
   /**
    * @brief Get stabilization step after a leap (leap compensation).
@@ -283,10 +252,8 @@ class MelodyDesigner {
    * @param ctx Section context with transition info
    * @param harmony Harmony context for chord-aware adjustments
    */
-  void applyTransitionApproach(
-      std::vector<NoteEvent>& notes,
-      const SectionContext& ctx,
-      const IHarmonyContext& harmony);
+  void applyTransitionApproach(std::vector<NoteEvent>& notes, const SectionContext& ctx,
+                               const IHarmonyContext& harmony);
 
   /**
    * @brief Generate rhythm pattern for a phrase.
@@ -303,11 +270,8 @@ class MelodyDesigner {
    * @return Vector of rhythm positions for the phrase
    */
   std::vector<RhythmNote> generatePhraseRhythm(
-      const MelodyTemplate& tmpl,
-      uint8_t phrase_beats,
-      float density_modifier,
-      float thirtysecond_ratio,
-      std::mt19937& rng,
+      const MelodyTemplate& tmpl, uint8_t phrase_beats, float density_modifier,
+      float thirtysecond_ratio, std::mt19937& rng,
       GenerationParadigm paradigm = GenerationParadigm::Traditional);
 
   /**
@@ -324,45 +288,28 @@ class MelodyDesigner {
    * @param rng Random number generator
    * @return Selected pitch (MIDI note number)
    */
-  uint8_t selectPitchForLockedRhythm(
-      uint8_t prev_pitch,
-      int8_t chord_degree,
-      uint8_t vocal_low,
-      uint8_t vocal_high,
-      std::mt19937& rng);
+  uint8_t selectPitchForLockedRhythm(uint8_t prev_pitch, int8_t chord_degree, uint8_t vocal_low,
+                                     uint8_t vocal_high, std::mt19937& rng);
 
  private:
   // Insert a leading tone at section boundary for smooth transition.
   // @param notes Notes to modify (in place)
   // @param ctx Section context
   // @param harmony Harmony context
-  void insertLeadingTone(
-      std::vector<NoteEvent>& notes,
-      const SectionContext& ctx,
-      const IHarmonyContext& harmony);
+  void insertLeadingTone(std::vector<NoteEvent>& notes, const SectionContext& ctx,
+                         const IHarmonyContext& harmony);
   // Apply pitch choice to get new pitch.
   // VocalAttitude affects candidate pitches:
   //   Clean: chord tones only (1, 3, 5)
   //   Expressive: chord tones + tensions (7, 9)
   //   Raw: all scale tones
-  int applyPitchChoice(
-      PitchChoice choice,
-      int current_pitch,
-      int target_pitch,
-      int8_t chord_degree,
-      int key_offset,
-      uint8_t vocal_low,
-      uint8_t vocal_high,
-      VocalAttitude attitude,
-      bool disable_singability = false);
+  int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, int8_t chord_degree,
+                       int key_offset, uint8_t vocal_low, uint8_t vocal_high,
+                       VocalAttitude attitude, bool disable_singability = false);
 
   // Calculate target pitch for phrase based on template.
-  int calculateTargetPitch(
-      const MelodyTemplate& tmpl,
-      const SectionContext& ctx,
-      int current_pitch,
-      const IHarmonyContext& harmony,
-      std::mt19937& rng);
+  int calculateTargetPitch(const MelodyTemplate& tmpl, const SectionContext& ctx, int current_pitch,
+                           const IHarmonyContext& harmony, std::mt19937& rng);
 
   // Cached chorus hook for Song-level fixation.
   // Once generated, the same hook is reused throughout the song.

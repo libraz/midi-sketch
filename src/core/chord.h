@@ -6,9 +6,10 @@
 #ifndef MIDISKETCH_CORE_CHORD_H
 #define MIDISKETCH_CORE_CHORD_H
 
-#include "core/types.h"
 #include <array>
 #include <vector>
+
+#include "core/types.h"
 
 namespace midisketch {
 
@@ -34,17 +35,13 @@ constexpr uint8_t MAX_PROGRESSION_LENGTH = 8;
  */
 struct ChordProgression {
   std::array<int8_t, MAX_PROGRESSION_LENGTH> degrees;  ///< Scale degrees (I=0, V=4, vi=5, etc.)
-  uint8_t length;  ///< Number of chords (1-8, typically 4)
+  uint8_t length;                                      ///< Number of chords (1-8, typically 4)
 
   /// Access chord at bar position (wraps around based on length).
-  constexpr int8_t at(size_t bar) const {
-    return degrees[bar % length];
-  }
+  constexpr int8_t at(size_t bar) const { return degrees[bar % length]; }
 
   /// Get next chord index (wraps around).
-  constexpr size_t nextIndex(size_t current) const {
-    return (current + 1) % length;
-  }
+  constexpr size_t nextIndex(size_t current) const { return (current + 1) % length; }
 };
 
 /**
@@ -60,11 +57,11 @@ enum class FunctionalProfile : uint8_t {
 /// @name Style Compatibility Flags
 /// Bit flags indicating which musical styles a progression suits.
 /// @{
-constexpr uint8_t STYLE_MINIMAL = 1 << 0;     ///< Minimal/ambient electronic
-constexpr uint8_t STYLE_DANCE = 1 << 1;       ///< Dance/EDM
-constexpr uint8_t STYLE_IDOL_STD = 1 << 2;    ///< Standard idol pop
-constexpr uint8_t STYLE_IDOL_ENERGY = 1 << 3; ///< High-energy idol
-constexpr uint8_t STYLE_ROCK = 1 << 4;        ///< Rock/band sound
+constexpr uint8_t STYLE_MINIMAL = 1 << 0;      ///< Minimal/ambient electronic
+constexpr uint8_t STYLE_DANCE = 1 << 1;        ///< Dance/EDM
+constexpr uint8_t STYLE_IDOL_STD = 1 << 2;     ///< Standard idol pop
+constexpr uint8_t STYLE_IDOL_ENERGY = 1 << 3;  ///< High-energy idol
+constexpr uint8_t STYLE_ROCK = 1 << 4;         ///< Rock/band sound
 /// @}
 
 /**
@@ -74,11 +71,11 @@ constexpr uint8_t STYLE_ROCK = 1 << 4;        ///< Rock/band sound
  * compatibility information for each built-in progression.
  */
 struct ChordProgressionMeta {
-  uint8_t id;                   ///< Progression index (0-21)
-  const char* name;             ///< Human-readable name (e.g., "Canon")
-  FunctionalProfile profile;    ///< Functional classification
-  uint8_t compatible_styles;    ///< Style compatibility bit flags
-  const char* tags;             ///< Comma-separated tags for search
+  uint8_t id;                 ///< Progression index (0-21)
+  const char* name;           ///< Human-readable name (e.g., "Canon")
+  FunctionalProfile profile;  ///< Functional classification
+  uint8_t compatible_styles;  ///< Style compatibility bit flags
+  const char* tags;           ///< Comma-separated tags for search
 };
 
 /**

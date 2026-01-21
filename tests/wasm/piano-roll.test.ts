@@ -125,13 +125,8 @@ describe('MidiSketch WASM - Piano Roll Safety API', () => {
       const set2 = new Set(info2.recommended);
 
       // Check if the sets are different (chord changed)
-      const sameRecommendations = set1.size === set2.size && [...set1].every((v) => set2.has(v));
-
-      // It's possible (but unlikely) that chords have same tones,
-      // so we just log rather than fail
-      if (sameRecommendations) {
-        console.log('Note: Same recommended notes at both ticks - chords may share tones');
-      }
+      // Note: It's possible (but unlikely) that chords have same tones
+      const _sameRecommendations = set1.size === set2.size && [...set1].every((v) => set2.has(v));
     });
   });
 });

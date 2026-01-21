@@ -7,6 +7,7 @@
  */
 
 #include <gtest/gtest.h>
+
 #include "analysis/dissonance.h"
 #include "core/generator.h"
 #include "core/song.h"
@@ -46,10 +47,8 @@ TEST_F(NonDiatonicDetectionTest, SummaryCountsNonDiatonicNotes) {
 
   // Total should include non-diatonic count
   EXPECT_EQ(report.summary.total_issues,
-            report.summary.simultaneous_clashes +
-            report.summary.non_chord_tones +
-            report.summary.sustained_over_chord_change +
-            report.summary.non_diatonic_notes);
+            report.summary.simultaneous_clashes + report.summary.non_chord_tones +
+                report.summary.sustained_over_chord_change + report.summary.non_diatonic_notes);
 }
 
 // Test: Non-diatonic issues have correct type
@@ -216,10 +215,8 @@ TEST_F(NonDiatonicDetectionTest, DetectsInAllMelodicTracks) {
 
   // Verify the count formula is correct
   EXPECT_EQ(report.summary.total_issues,
-            report.summary.simultaneous_clashes +
-            report.summary.non_chord_tones +
-            report.summary.sustained_over_chord_change +
-            report.summary.non_diatonic_notes);
+            report.summary.simultaneous_clashes + report.summary.non_chord_tones +
+                report.summary.sustained_over_chord_change + report.summary.non_diatonic_notes);
 }
 
 // Test: Regression test for the original bug

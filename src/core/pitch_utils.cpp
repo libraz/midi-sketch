@@ -4,6 +4,7 @@
  */
 
 #include "core/pitch_utils.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -14,7 +15,7 @@ TessituraRange calculateTessitura(uint8_t vocal_low, uint8_t vocal_high) {
 
   // Tessitura is the middle portion of the range
   // Leave ~15-20% headroom at top and bottom for climactic moments
-  int margin = range / 5;  // 20% margin
+  int margin = range / 5;        // 20% margin
   margin = std::max(margin, 3);  // At least 3 semitones margin
 
   TessituraRange t;
@@ -36,8 +37,8 @@ bool isInTessitura(uint8_t pitch, const TessituraRange& tessitura) {
   return pitch >= tessitura.low && pitch <= tessitura.high;
 }
 
-float getComfortScore(uint8_t pitch, const TessituraRange& tessitura,
-                      uint8_t vocal_low, uint8_t /* vocal_high */) {
+float getComfortScore(uint8_t pitch, const TessituraRange& tessitura, uint8_t vocal_low,
+                      uint8_t /* vocal_high */) {
   // Perfect score for tessitura center
   if (pitch == tessitura.center) return 1.0f;
 
@@ -70,9 +71,7 @@ float getComfortScore(uint8_t pitch, const TessituraRange& tessitura,
   return std::max(0.3f, 0.6f - 0.3f * extremity);
 }
 
-bool isInPassaggio(uint8_t pitch) {
-  return pitch >= PASSAGGIO_LOW && pitch <= PASSAGGIO_HIGH;
-}
+bool isInPassaggio(uint8_t pitch) { return pitch >= PASSAGGIO_LOW && pitch <= PASSAGGIO_HIGH; }
 
 // Dynamic passaggio calculation based on vocal range.
 // Passaggio is typically in the upper-middle portion of the range.
@@ -88,8 +87,8 @@ bool isInPassaggioRange(uint8_t pitch, uint8_t vocal_low, uint8_t vocal_high) {
   return pitch >= passaggio_low && pitch <= passaggio_high;
 }
 
-int constrainInterval(int target_pitch, int prev_pitch, int max_interval,
-                      int range_low, int range_high) {
+int constrainInterval(int target_pitch, int prev_pitch, int max_interval, int range_low,
+                      int range_high) {
   if (prev_pitch < 0) {
     // No previous pitch, just clamp to range
     return std::clamp(target_pitch, range_low, range_high);

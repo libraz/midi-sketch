@@ -6,11 +6,12 @@
 #ifndef MIDISKETCH_CORE_CHORD_UTILS_H
 #define MIDISKETCH_CORE_CHORD_UTILS_H
 
-#include "core/pitch_utils.h"  // For TessituraRange
 #include <array>
 #include <cstdint>
 #include <random>
 #include <vector>
+
+#include "core/pitch_utils.h"  // For TessituraRange
 
 namespace midisketch {
 
@@ -79,9 +80,8 @@ int nearestChordTonePitch(int pitch, int8_t degree);
 // @param range_high Maximum allowed pitch
 // @param tessitura Optional tessitura for preference scoring (can be nullptr)
 // @returns Closest chord tone pitch within constraints
-int nearestChordToneWithinInterval(int target_pitch, int prev_pitch,
-                                   int8_t chord_degree, int max_interval,
-                                   int range_low, int range_high,
+int nearestChordToneWithinInterval(int target_pitch, int prev_pitch, int8_t chord_degree,
+                                   int max_interval, int range_low, int range_high,
                                    const TessituraRange* tessitura = nullptr);
 
 // ============================================================================
@@ -99,9 +99,8 @@ int nearestChordToneWithinInterval(int target_pitch, int prev_pitch,
 // @param prefer_same_note Probability (0-100) to stay on same note
 // @param rng Random number generator for prefer_same_note
 // @returns New pitch moved stepwise toward target
-int stepwiseToTarget(int prev_pitch, int target_pitch,
-                     int8_t chord_degree, int range_low, int range_high,
-                     uint8_t key = 0, int prefer_same_note = 30,
+int stepwiseToTarget(int prev_pitch, int target_pitch, int8_t chord_degree, int range_low,
+                     int range_high, uint8_t key = 0, int prefer_same_note = 30,
                      std::mt19937* rng = nullptr);
 
 }  // namespace midisketch

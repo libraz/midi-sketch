@@ -4,11 +4,7 @@
  */
 
 #include "analysis/dissonance.h"
-#include "core/chord.h"
-#include "core/json_helpers.h"
-#include "core/note_factory.h"
-#include "core/pitch_utils.h"
-#include "core/song.h"
+
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
@@ -16,13 +12,19 @@
 #include <sstream>
 #include <tuple>
 
+#include "core/chord.h"
+#include "core/json_helpers.h"
+#include "core/note_factory.h"
+#include "core/pitch_utils.h"
+#include "core/song.h"
+
 namespace midisketch {
 
 namespace {
 
 // Note names for conversion.
-constexpr const char* NOTE_NAMES[12] = {"C", "C#", "D", "D#", "E", "F",
-                                        "F#", "G", "G#", "A", "A#", "B"};
+constexpr const char* NOTE_NAMES[12] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                        "F#", "G",  "G#", "A",  "A#", "B"};
 
 // Harmonic rhythm: how often chords change (mirrored from chord_track.cpp)
 enum class HarmonicDensity {
@@ -33,8 +35,7 @@ enum class HarmonicDensity {
 
 // Determines harmonic density based on section type and mood
 HarmonicDensity getHarmonicDensity(SectionType section, Mood mood) {
-  bool is_ballad = (mood == Mood::Ballad || mood == Mood::Sentimental ||
-                    mood == Mood::Chill);
+  bool is_ballad = (mood == Mood::Ballad || mood == Mood::Sentimental || mood == Mood::Chill);
 
   switch (section) {
     case SectionType::Intro:
@@ -73,8 +74,8 @@ struct ChordAtTick {
   std::string section_name;
 };
 
-ChordAtTick getChordAtTick(Tick tick, const Song& song,
-                            const ChordProgression& progression, Mood mood) {
+ChordAtTick getChordAtTick(Tick tick, const Song& song, const ChordProgression& progression,
+                           Mood mood) {
   const auto& arrangement = song.arrangement();
   uint32_t bar = tick / TICKS_PER_BAR;
 
@@ -105,9 +106,9 @@ ChordAtTick getChordAtTick(Tick tick, const Song& song,
 }
 
 // Interval names (0-11 semitones).
-constexpr const char* INTERVAL_NAMES[12] = {
-    "unison",     "minor 2nd", "major 2nd", "minor 3rd", "major 3rd", "perfect 4th",
-    "tritone",    "perfect 5th", "minor 6th", "major 6th", "minor 7th", "major 7th"};
+constexpr const char* INTERVAL_NAMES[12] = {"unison",    "minor 2nd",   "major 2nd", "minor 3rd",
+                                            "major 3rd", "perfect 4th", "tritone",   "perfect 5th",
+                                            "minor 6th", "major 6th",   "minor 7th", "major 7th"};
 
 // Scale degree to pitch class offset (C major reference).
 constexpr int DEGREE_TO_PITCH_CLASS[7] = {0, 2, 4, 5, 7, 9, 11};  // C,D,E,F,G,A,B
@@ -144,8 +145,8 @@ std::vector<std::string> getScaleTones(Key key) {
 }
 
 // Chord names for each scale degree (C major).
-constexpr const char* CHORD_NAMES[12] = {"C",  "C#", "D",  "D#/Eb", "E",  "F",
-                                         "F#", "G",  "G#/Ab", "A", "A#/Bb", "B"};
+constexpr const char* CHORD_NAMES[12] = {"C",  "C#", "D",     "D#/Eb", "E",     "F",
+                                         "F#", "G",  "G#/Ab", "A",     "A#/Bb", "B"};
 
 // Get chord tones as pitch classes for a chord built on given scale degree.
 struct ChordTones {
@@ -158,10 +159,14 @@ struct ChordTones {
 int getRootPitchClass(int8_t degree) {
   // Borrowed chords from parallel minor
   switch (degree) {
-    case 10: return 10;  // bVII = Bb (10 semitones from C)
-    case 8:  return 8;   // bVI  = Ab (8 semitones from C)
-    case 11: return 3;   // bIII = Eb (3 semitones from C)
-    default: break;
+    case 10:
+      return 10;  // bVII = Bb (10 semitones from C)
+    case 8:
+      return 8;  // bVI  = Ab (8 semitones from C)
+    case 11:
+      return 3;  // bIII = Eb (3 semitones from C)
+    default:
+      break;
   }
 
   // Diatonic degrees (0-6) use DEGREE_TO_PITCH_CLASS
@@ -198,8 +203,8 @@ ChordTones getChordTones(int8_t degree) {
 // Available tensions by chord quality (music theory standard).
 // These are notes that sound consonant even though they're not triad tones.
 struct AvailableTensions {
-  int ninth;   // 2 semitones above root (9th)
-  int eleventh;  // 5 semitones above root (11th) - only for minor
+  int ninth;       // 2 semitones above root (9th)
+  int eleventh;    // 5 semitones above root (11th) - only for minor
   int thirteenth;  // 9 semitones above root (6th/13th)
   bool has_ninth;
   bool has_eleventh;
@@ -234,7 +239,7 @@ AvailableTensions getAvailableTensions(int8_t degree) {
     case 2:  // iii (minor)
     case 5:  // vi (minor)
       t.has_ninth = true;
-      t.has_eleventh = true;  // 11th works on minor
+      t.has_eleventh = true;     // 11th works on minor
       t.has_thirteenth = false;  // 13th can clash on minor
       break;
     case 6:  // vii° (diminished)
@@ -259,8 +264,7 @@ bool isAvailableTension(int pitch_class, int8_t degree) {
 }
 
 // Check if a pitch class is a chord tone for the given degree.
-bool isPitchClassChordTone(int pitch_class, int8_t degree,
-                           const ChordExtensionParams& ext_params) {
+bool isPitchClassChordTone(int pitch_class, int8_t degree, const ChordExtensionParams& ext_params) {
   ChordTones ct = getChordTones(degree);
 
   for (uint8_t i = 0; i < ct.count; ++i) {
@@ -492,10 +496,10 @@ std::vector<TimedNote> collectPitchedNotes(const Song& song) {
 
 // Beat strength classification for severity determination.
 enum class BeatStrength {
-  Strong,    // Beat 1 (downbeat) - most important
-  Medium,    // Beat 3 (secondary strong beat)
-  Weak,      // Beats 2, 4 (weak beats)
-  Offbeat    // Subdivisions (e.g., "and" of beats)
+  Strong,  // Beat 1 (downbeat) - most important
+  Medium,  // Beat 3 (secondary strong beat)
+  Weak,    // Beats 2, 4 (weak beats)
+  Offbeat  // Subdivisions (e.g., "and" of beats)
 };
 
 BeatStrength getBeatStrength(Tick tick) {
@@ -560,8 +564,8 @@ SectionPosition getSectionPosition(Tick tick, const Song& song) {
 // Adjust severity based on musical context (beat strength and section position).
 // This makes dissonance at section starts (like B section) more severe.
 DissonanceSeverity adjustSeverityForContext(DissonanceSeverity base_severity,
-                                             BeatStrength beat_strength,
-                                             SectionPosition section_pos) {
+                                            BeatStrength beat_strength,
+                                            SectionPosition section_pos) {
   // Section start + beat 1 = most critical position
   // Any dissonance here should be elevated
   if (section_pos == SectionPosition::SectionStart) {
@@ -602,9 +606,7 @@ std::string midiNoteToName(uint8_t midi_note) {
   return std::string(NOTE_NAMES[note_class]) + std::to_string(octave);
 }
 
-std::string intervalToName(uint8_t semitones) {
-  return INTERVAL_NAMES[semitones % 12];
-}
+std::string intervalToName(uint8_t semitones) { return INTERVAL_NAMES[semitones % 12]; }
 
 DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& params) {
   DissonanceReport report{};
@@ -628,7 +630,7 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
       const auto& note_b = all_notes[j];
 
       // Check if they overlap in time
-      if (note_b.start >= note_a.end) break;  // No more overlaps possible
+      if (note_b.start >= note_a.end) break;       // No more overlaps possible
       if (note_a.track == note_b.track) continue;  // Same track, skip
 
       // Calculate actual interval (not modulo 12) for register-aware analysis
@@ -655,7 +657,8 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
         // Adjust severity based on musical context (beat strength, section position)
         BeatStrength beat_strength = getBeatStrength(note_a.start);
         SectionPosition section_pos = getSectionPosition(note_a.start, song);
-        DissonanceSeverity severity = adjustSeverityForContext(base_severity, beat_strength, section_pos);
+        DissonanceSeverity severity =
+            adjustSeverityForContext(base_severity, beat_strength, section_pos);
 
         // Mark as reported to avoid duplicates
         reported_clashes.insert(clash_key);
@@ -713,8 +716,8 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
   // Helper: Check if a melodic note creates a close interval (major 2nd or minor 2nd)
   // with any actually sounding chord note at the same time.
   // Returns: (has_close_interval, interval_semitones, clashing_chord_pitch)
-  auto checkCloseIntervalWithChord = [&](const NoteEvent& melodic_note)
-      -> std::tuple<bool, uint8_t, uint8_t> {
+  auto checkCloseIntervalWithChord =
+      [&](const NoteEvent& melodic_note) -> std::tuple<bool, uint8_t, uint8_t> {
     Tick note_start = melodic_note.start_tick;
     Tick note_end = note_start + melodic_note.duration;
 
@@ -728,13 +731,13 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
       }
 
       // Calculate interval
-      int interval = std::abs(static_cast<int>(melodic_note.note) -
-                              static_cast<int>(chord_note.note));
+      int interval =
+          std::abs(static_cast<int>(melodic_note.note) - static_cast<int>(chord_note.note));
       int interval_class = interval % 12;
 
       // Check for minor 2nd (1) or major 2nd (2)
-      if (interval_class == 1 || interval_class == 2 ||
-          interval_class == 10 || interval_class == 11) {
+      if (interval_class == 1 || interval_class == 2 || interval_class == 10 ||
+          interval_class == 11) {
         // Close interval found (including inversions: 10=minor 7th, 11=major 7th)
         // Only report for same-octave or close range (within 1 octave)
         if (interval <= 14) {  // Up to minor 9th
@@ -747,7 +750,8 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
 
   // Detect non-chord tones
   // Check melodic tracks and bass (bass defines harmony, so non-chord tones are serious)
-  auto checkTrackForNonChordTones = [&](const MidiTrack& track, TrackRole role, bool is_bass = false) {
+  auto checkTrackForNonChordTones = [&](const MidiTrack& track, TrackRole role,
+                                        bool is_bass = false) {
     for (const auto& note : track.notes()) {
       uint32_t bar = note.start_tick / TICKS_PER_BAR;
       auto chord_info = getChordAtTick(note.start_tick, song, progression, params.mood);
@@ -812,8 +816,7 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
           severity = DissonanceSeverity::High;  // Minor 2nd is always harsh
         } else if (interval_semitones == 2 || interval_semitones == 10) {
           // Major 2nd - severity depends on beat
-          if (beat_strength == BeatStrength::Strong ||
-              beat_strength == BeatStrength::Medium) {
+          if (beat_strength == BeatStrength::Strong || beat_strength == BeatStrength::Medium) {
             severity = DissonanceSeverity::High;  // Prominent position
           } else {
             severity = DissonanceSeverity::Medium;  // Weak beat, less critical
@@ -928,13 +931,11 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
           BeatStrength beat_strength = getBeatStrength(change.tick);
           DissonanceSeverity severity;
           if (role == TrackRole::Vocal) {
-            severity = (beat_strength == BeatStrength::Strong)
-                           ? DissonanceSeverity::High
-                           : DissonanceSeverity::Medium;
+            severity = (beat_strength == BeatStrength::Strong) ? DissonanceSeverity::High
+                                                               : DissonanceSeverity::Medium;
           } else {
-            severity = (beat_strength == BeatStrength::Strong)
-                           ? DissonanceSeverity::Medium
-                           : DissonanceSeverity::Low;
+            severity = (beat_strength == BeatStrength::Strong) ? DissonanceSeverity::Medium
+                                                               : DissonanceSeverity::Low;
           }
 
           uint32_t bar = change.tick / TICKS_PER_BAR;
@@ -1057,8 +1058,8 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
 
       // Calculate the transposed pitch (what the listener will hear)
       int key_offset = static_cast<int>(params.key);
-      uint8_t transposed_pitch = static_cast<uint8_t>(
-          std::clamp(static_cast<int>(note.note) + key_offset, 0, 127));
+      uint8_t transposed_pitch =
+          static_cast<uint8_t>(std::clamp(static_cast<int>(note.note) + key_offset, 0, 127));
 
       DissonanceIssue issue;
       issue.type = DissonanceType::NonDiatonicNote;
@@ -1067,7 +1068,7 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
       issue.bar = bar;
       issue.beat = 1.0f + static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
       issue.track_name = trackRoleToString(role);
-      issue.pitch = transposed_pitch;  // Show transposed pitch
+      issue.pitch = transposed_pitch;                       // Show transposed pitch
       issue.pitch_name = midiNoteToName(transposed_pitch);  // Show transposed name
       issue.key_name = getKeyName(params.key);
       issue.scale_tones = getScaleTones(params.key);
@@ -1152,9 +1153,7 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
       continue;
     }
 
-    std::string track_name = track.name.empty()
-        ? "Track" + std::to_string(track_idx)
-        : track.name;
+    std::string track_name = track.name.empty() ? "Track" + std::to_string(track_idx) : track.name;
     for (const auto& note : track.notes) {
       TimedNoteWithName timed_note;
       timed_note.start = note.start_tick;
@@ -1166,10 +1165,9 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
   }
 
   // Sort by start time
-  std::sort(all_notes.begin(), all_notes.end(),
-            [](const TimedNoteWithName& a, const TimedNoteWithName& b) {
-              return a.start < b.start;
-            });
+  std::sort(
+      all_notes.begin(), all_notes.end(),
+      [](const TimedNoteWithName& a, const TimedNoteWithName& b) { return a.start < b.start; });
 
   // Deduplication set
   std::set<std::tuple<Tick, uint8_t, uint8_t>> reported_clashes;
@@ -1181,7 +1179,7 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
       const auto& note_b = all_notes[j];
 
       // Check if they overlap in time
-      if (note_b.start >= note_a.end) break;  // No more overlaps possible
+      if (note_b.start >= note_a.end) break;                 // No more overlaps possible
       if (note_a.track_name == note_b.track_name) continue;  // Same track, skip
 
       // Calculate interval
@@ -1228,7 +1226,7 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
         Tick ticks_per_bar = midi.division * 4;  // Assuming 4/4 time
         uint32_t bar = note_a.start / ticks_per_bar;
         float beat = 1.0f + static_cast<float>(note_a.start % ticks_per_bar) /
-                               static_cast<float>(midi.division);
+                                static_cast<float>(midi.division);
 
         // Apply beat strength adjustment (limited context without song structure)
         Tick beat_pos = note_a.start % ticks_per_bar;
@@ -1302,9 +1300,12 @@ std::string dissonanceReportToJson(const DissonanceReport& report) {
 
   auto severityStr = [](DissonanceSeverity s) -> const char* {
     switch (s) {
-      case DissonanceSeverity::High: return "high";
-      case DissonanceSeverity::Medium: return "medium";
-      default: return "low";
+      case DissonanceSeverity::High:
+        return "high";
+      case DissonanceSeverity::Medium:
+        return "medium";
+      default:
+        return "low";
     }
   };
 
@@ -1334,10 +1335,14 @@ std::string dissonanceReportToJson(const DissonanceReport& report) {
 
   auto issueTypeStr = [](DissonanceType t) -> const char* {
     switch (t) {
-      case DissonanceType::SimultaneousClash: return "simultaneous_clash";
-      case DissonanceType::NonChordTone: return "non_chord_tone";
-      case DissonanceType::SustainedOverChordChange: return "sustained_over_chord_change";
-      case DissonanceType::NonDiatonicNote: return "non_diatonic_note";
+      case DissonanceType::SimultaneousClash:
+        return "simultaneous_clash";
+      case DissonanceType::NonChordTone:
+        return "non_chord_tone";
+      case DissonanceType::SustainedOverChordChange:
+        return "sustained_over_chord_change";
+      case DissonanceType::NonDiatonicNote:
+        return "non_diatonic_note";
     }
     return "unknown";
   };
@@ -1426,7 +1431,8 @@ std::string dissonanceReportToJson(const DissonanceReport& report) {
         w.beginObject("provenance")
             .write("generation_chord_degree", static_cast<int>(issue.prov_chord_degree))
             .write("generation_lookup_tick", issue.prov_lookup_tick)
-            .write("generation_source", noteSourceToString(static_cast<NoteSource>(issue.prov_source)))
+            .write("generation_source",
+                   noteSourceToString(static_cast<NoteSource>(issue.prov_source)))
             .write("original_pitch", static_cast<int>(issue.prov_original_pitch))
             .endObject();
       }

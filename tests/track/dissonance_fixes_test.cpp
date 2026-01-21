@@ -9,6 +9,10 @@
  */
 
 #include <gtest/gtest.h>
+
+#include <random>
+#include <set>
+
 #include "core/arrangement.h"
 #include "core/chord.h"
 #include "core/chord_utils.h"
@@ -20,8 +24,6 @@
 #include "track/aux_track.h"
 #include "track/bass.h"
 #include "track/vocal_analysis.h"
-#include <random>
-#include <set>
 
 namespace midisketch {
 namespace {
@@ -54,10 +56,10 @@ class MotifCounterChordAwareTest : public ::testing::Test {
     harmony_.initialize(arr, *progression_, Mood::StraightPop);
 
     // Create test vocal track
-    vocal_track_.addNote(0, TICK_HALF, 64, 100);                        // Bar 1 (C chord)
-    vocal_track_.addNote(TICKS_PER_BAR, TICK_HALF, 67, 100);            // Bar 2 (G chord)
-    vocal_track_.addNote(2 * TICKS_PER_BAR, TICK_HALF, 69, 100);        // Bar 3 (Am chord)
-    vocal_track_.addNote(3 * TICKS_PER_BAR, TICK_HALF, 65, 100);        // Bar 4 (F chord)
+    vocal_track_.addNote(0, TICK_HALF, 64, 100);                  // Bar 1 (C chord)
+    vocal_track_.addNote(TICKS_PER_BAR, TICK_HALF, 67, 100);      // Bar 2 (G chord)
+    vocal_track_.addNote(2 * TICKS_PER_BAR, TICK_HALF, 69, 100);  // Bar 3 (Am chord)
+    vocal_track_.addNote(3 * TICKS_PER_BAR, TICK_HALF, 65, 100);  // Bar 4 (F chord)
 
     // Create vocal analysis
     vocal_analysis_ = analyzeVocal(vocal_track_);
@@ -110,14 +112,13 @@ TEST_F(MotifCounterChordAwareTest, GeneratesNotesAcrossMultipleBars) {
     bars_with_notes.insert(bar);
   }
 
-  EXPECT_GE(bars_with_notes.size(), 1u)
-      << "MotifCounter should produce notes in at least 1 bar";
+  EXPECT_GE(bars_with_notes.size(), 1u) << "MotifCounter should produce notes in at least 1 bar";
 }
 
 TEST_F(MotifCounterChordAwareTest, ChordDegreeLookedUpAtNotePosition) {
   // This test verifies the key fix: the code calls harmony.getChordDegreeAt(current_tick)
   // We verify this by checking that notes in different bars potentially use different chords
-  
+
   AuxTrackGenerator generator;
   std::mt19937 rng(54321);
 
@@ -188,7 +189,7 @@ TEST_F(SuspensionResolutionTest, NonChordToneInNewChordDetected) {
   // F chord (degree 3): F-A-C = 5-9-0
   // C chord (degree 0): C-E-G = 0-4-7
   // A (pitch class 9) is in F but NOT in C
-  
+
   ChordTones f_tones = getChordTones(3);
   ChordTones c_tones = getChordTones(0);
 
@@ -207,7 +208,7 @@ TEST_F(SuspensionResolutionTest, NonChordToneInNewChordDetected) {
 TEST_F(SuspensionResolutionTest, ResolutionFindsBestChordTone) {
   // Test nearestChordTonePitch resolves A to nearest C chord tone
   // A (69) should resolve to G (67) or C (72) in C chord
-  
+
   int resolved = nearestChordTonePitch(69, 0);  // A4 on C chord
   int resolved_pc = resolved % 12;
 
@@ -244,13 +245,13 @@ TEST_F(SuspensionResolutionTest, GeneratorProducesValidAuxNotes) {
 TEST_F(SuspensionResolutionTest, SuspensionResolutionCodeExists) {
   // This test documents that the suspension resolution code exists
   // The actual fix is in generator.cpp lines 747-826 and aux_track.cpp lines 1103-1166
-  // 
+  //
   // Key implementation details:
   // 1. Notes crossing chord boundaries are detected using getNextChordChangeTick
   // 2. Non-chord tones in the new chord are identified using getChordTonesAt
   // 3. Instead of trimming, notes are split and the second part is resolved
   //    to the nearest chord tone using nearestChordTonePitch
-  
+
   // Verify the harmony context has the necessary methods
   Tick next_change = harmony_.getNextChordChangeTick(0);
   EXPECT_GT(next_change, 0u) << "getNextChordChangeTick should return valid tick";
@@ -286,8 +287,7 @@ TEST_F(BassWalkingSafeApproachTest, ApproachNoteInBassRange) {
 
   // All bass notes should be in range
   for (const auto& note : bass_notes) {
-    EXPECT_GE(note.note, BASS_LOW)
-        << "Bass note at tick " << note.start_tick << " below BASS_LOW";
+    EXPECT_GE(note.note, BASS_LOW) << "Bass note at tick " << note.start_tick << " below BASS_LOW";
     EXPECT_LE(note.note, BASS_HIGH)
         << "Bass note at tick " << note.start_tick << " above BASS_HIGH";
   }
@@ -321,8 +321,8 @@ TEST_F(BassWalkingSafeApproachTest, WalkingBassUsesSafeIntervals) {
         // Check if notes overlap
         if (chord_note.start_tick <= bass_note.start_tick &&
             chord_note.start_tick + chord_note.duration > bass_note.start_tick) {
-          int interval = std::abs(static_cast<int>(bass_note.note) -
-                                  static_cast<int>(chord_note.note)) % 12;
+          int interval =
+              std::abs(static_cast<int>(bass_note.note) - static_cast<int>(chord_note.note)) % 12;
           if (interval > 6) interval = 12 - interval;
           if (interval == 1) {
             ++minor_2nd_clashes;
@@ -333,8 +333,7 @@ TEST_F(BassWalkingSafeApproachTest, WalkingBassUsesSafeIntervals) {
   }
 
   // Should have no or very few minor 2nd clashes on beat 1
-  EXPECT_LE(minor_2nd_clashes, 2)
-      << "Bass should avoid minor 2nd with chord on beat 1";
+  EXPECT_LE(minor_2nd_clashes, 2) << "Bass should avoid minor 2nd with chord on beat 1";
 }
 
 TEST_F(BassWalkingSafeApproachTest, ApproachNotesAvoidChromaticClash) {
@@ -361,8 +360,8 @@ TEST_F(BassWalkingSafeApproachTest, ApproachNotesAvoidChromaticClash) {
   // Allow up to 5% non-diatonic (some chromatic passing is OK)
   float non_diatonic_ratio = static_cast<float>(non_diatonic) / bass_notes.size();
   EXPECT_LE(non_diatonic_ratio, 0.05f)
-      << "Bass should be mostly diatonic, got " << (non_diatonic_ratio * 100)
-      << "% non-diatonic (" << non_diatonic << "/" << bass_notes.size() << ")";
+      << "Bass should be mostly diatonic, got " << (non_diatonic_ratio * 100) << "% non-diatonic ("
+      << non_diatonic << "/" << bass_notes.size() << ")";
 }
 
 TEST_F(BassWalkingSafeApproachTest, GetApproachNoteImplementation) {
@@ -376,7 +375,7 @@ TEST_F(BassWalkingSafeApproachTest, GetApproachNoteImplementation) {
   // 4. Last resort: use the root itself
   //
   // This avoids chromatic half-step approaches that create minor 2nd clashes
-  
+
   // Verify bass notes are generated
   Generator gen;
   GeneratorParams params;
@@ -452,8 +451,8 @@ TEST(DissonanceFixesIntegration, AllFixesAppliedCorrectly) {
   if (total_notes > 0) {
     float harmonic_ratio = static_cast<float>(total_harmonic) / total_notes;
     EXPECT_GE(harmonic_ratio, 0.95f)
-        << "Combined aux and bass should be at least 95% harmonic, got "
-        << (harmonic_ratio * 100) << "% (" << total_harmonic << "/" << total_notes << ")";
+        << "Combined aux and bass should be at least 95% harmonic, got " << (harmonic_ratio * 100)
+        << "% (" << total_harmonic << "/" << total_notes << ")";
   }
 }
 
@@ -476,10 +475,8 @@ TEST(DissonanceFixesIntegration, MultipleSeeds) {
 
     // Verify bass notes in range
     for (const auto& note : song.bass().notes()) {
-      EXPECT_GE(note.note, BASS_LOW)
-          << "Seed " << seed << ": bass note below range";
-      EXPECT_LE(note.note, BASS_HIGH)
-          << "Seed " << seed << ": bass note above range";
+      EXPECT_GE(note.note, BASS_LOW) << "Seed " << seed << ": bass note below range";
+      EXPECT_LE(note.note, BASS_HIGH) << "Seed " << seed << ": bass note above range";
     }
   }
 }
@@ -575,9 +572,8 @@ TEST(BGMOnlyDissonanceTest, SynthDrivenModeZeroDissonance) {
       }
     }
 
-    EXPECT_EQ(clash_count, 0)
-        << "SynthDriven mode should have zero chord-arpeggio clashes, "
-        << "but seed " << seed << " has " << clash_count << " clashes";
+    EXPECT_EQ(clash_count, 0) << "SynthDriven mode should have zero chord-arpeggio clashes, "
+                              << "but seed " << seed << " has " << clash_count << " clashes";
   }
 }
 

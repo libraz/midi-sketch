@@ -4,6 +4,7 @@
  */
 
 #include <gtest/gtest.h>
+
 #include "core/generator.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
@@ -68,8 +69,8 @@ TEST_F(MotifDissonanceTest, AvoidsTritoneWithBassInBGMMode) {
       if (!overlap) continue;
 
       // Calculate actual semitone distance
-      int actual_interval = std::abs(static_cast<int>(motif_note.note) -
-                                     static_cast<int>(bass_note.note));
+      int actual_interval =
+          std::abs(static_cast<int>(motif_note.note) - static_cast<int>(bass_note.note));
 
       // Wide separation (2+ octaves): not a perceptual clash
       if (actual_interval >= 24) continue;
@@ -85,9 +86,8 @@ TEST_F(MotifDissonanceTest, AvoidsTritoneWithBassInBGMMode) {
 
   // Should have zero tritone clashes
   // Before fix: 12 clashes, After fix: 0
-  EXPECT_EQ(tritone_clashes, 0)
-      << "Motif should avoid tritone clashes with Bass. "
-      << "Found " << tritone_clashes << " tritone clashes";
+  EXPECT_EQ(tritone_clashes, 0) << "Motif should avoid tritone clashes with Bass. "
+                                << "Found " << tritone_clashes << " tritone clashes";
 }
 
 // Test tritone avoidance across multiple seeds
@@ -119,8 +119,8 @@ TEST_F(MotifDissonanceTest, TritoneAvoidanceRobustness) {
         bool overlap = (motif_start < bass_end) && (bass_start < motif_end);
         if (!overlap) continue;
 
-        int actual_interval = std::abs(static_cast<int>(motif_note.note) -
-                                       static_cast<int>(bass_note.note));
+        int actual_interval =
+            std::abs(static_cast<int>(motif_note.note) - static_cast<int>(bass_note.note));
         if (actual_interval >= 24) continue;
 
         if (actual_interval % 12 == 6) {
@@ -198,8 +198,8 @@ TEST_F(MotifDissonanceTest, BGMGenerationOrderAllowsClashAvoidance) {
       bool overlap = (motif_start < bass_end) && (bass_start < motif_end);
       if (!overlap) continue;
 
-      int actual_interval = std::abs(static_cast<int>(motif_note.note) -
-                                     static_cast<int>(bass_note.note));
+      int actual_interval =
+          std::abs(static_cast<int>(motif_note.note) - static_cast<int>(bass_note.note));
 
       // Skip wide separations (2+ octaves)
       if (actual_interval >= 24) continue;
@@ -207,8 +207,7 @@ TEST_F(MotifDissonanceTest, BGMGenerationOrderAllowsClashAvoidance) {
       int pitch_class_interval = actual_interval % 12;
 
       // Check for dissonant intervals: minor 2nd (1), tritone (6), major 7th (11)
-      if (pitch_class_interval == 1 || pitch_class_interval == 6 ||
-          pitch_class_interval == 11) {
+      if (pitch_class_interval == 1 || pitch_class_interval == 6 || pitch_class_interval == 11) {
         dissonant_clashes++;
       }
     }
@@ -250,20 +249,19 @@ TEST_F(MotifDissonanceTest, BGMGenerationOrderSecondFile) {
       bool overlap = (motif_start < bass_end) && (bass_start < motif_end);
       if (!overlap) continue;
 
-      int actual_interval = std::abs(static_cast<int>(motif_note.note) -
-                                     static_cast<int>(bass_note.note));
+      int actual_interval =
+          std::abs(static_cast<int>(motif_note.note) - static_cast<int>(bass_note.note));
       if (actual_interval >= 24) continue;
 
       int pitch_class_interval = actual_interval % 12;
-      if (pitch_class_interval == 1 || pitch_class_interval == 6 ||
-          pitch_class_interval == 11) {
+      if (pitch_class_interval == 1 || pitch_class_interval == 6 || pitch_class_interval == 11) {
         dissonant_clashes++;
       }
     }
   }
 
-  EXPECT_EQ(dissonant_clashes, 0)
-      << "Found " << dissonant_clashes << " dissonant Motif-Bass clashes";
+  EXPECT_EQ(dissonant_clashes, 0) << "Found " << dissonant_clashes
+                                  << " dissonant Motif-Bass clashes";
 }
 
 // =============================================================================
@@ -352,10 +350,8 @@ TEST_F(MotifRhythmDistributionTest, CallAndResponseDistribution) {
   // Distribution should be roughly balanced (not all in one half)
   // Allow some imbalance but ensure both halves are represented
   size_t total = motif_pattern.size();
-  EXPECT_GE(first_half_count, total / 4)
-      << "First half should have at least 25% of notes";
-  EXPECT_GE(second_half_count, total / 4)
-      << "Second half should have at least 25% of notes";
+  EXPECT_GE(first_half_count, total / 4) << "First half should have at least 25% of notes";
+  EXPECT_GE(second_half_count, total / 4) << "Second half should have at least 25% of notes";
 }
 
 // Test robustness across multiple seeds - notes should be in second half

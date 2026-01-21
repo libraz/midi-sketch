@@ -5,38 +5,39 @@
 
 #pragma once
 
-#include "core/types.h"
 #include <cstdint>
 #include <string>
 #include <vector>
+
+#include "core/types.h"
 
 namespace midisketch {
 
 /// @brief Detected MIDI file format.
 enum class DetectedMidiFormat {
   Unknown,
-  SMF1,           // Standard MIDI File Type 0/1/2
-  SMF2_Clip,      // SMF2CLIP (single clip)
-  SMF2_Container, // SMF2CON1 (official container)
-  SMF2_ktmidi     // AAAAAAAAEEEEEEEE (ktmidi container)
+  SMF1,            // Standard MIDI File Type 0/1/2
+  SMF2_Clip,       // SMF2CLIP (single clip)
+  SMF2_Container,  // SMF2CON1 (official container)
+  SMF2_ktmidi      // AAAAAAAAEEEEEEEE (ktmidi container)
 };
 
 /// @brief Parsed MIDI track info.
 struct ParsedTrack {
-  std::string name;               ///< Track name
-  uint8_t channel = 0;            ///< MIDI channel
-  uint8_t program = 0;            ///< Program number
-  std::vector<NoteEvent> notes;   ///< Parsed notes
+  std::string name;              ///< Track name
+  uint8_t channel = 0;           ///< MIDI channel
+  uint8_t program = 0;           ///< Program number
+  std::vector<NoteEvent> notes;  ///< Parsed notes
 };
 
 /// @brief Parsed MIDI file info.
 struct ParsedMidi {
-  uint16_t format = 0;            ///< SMF format (0, 1, or 2)
-  uint16_t num_tracks = 0;        ///< Number of tracks
-  uint16_t division = 480;        ///< Ticks per quarter note
-  uint16_t bpm = 120;             ///< Tempo
+  uint16_t format = 0;              ///< SMF format (0, 1, or 2)
+  uint16_t num_tracks = 0;          ///< Number of tracks
+  uint16_t division = 480;          ///< Ticks per quarter note
+  uint16_t bpm = 120;               ///< Tempo
   std::vector<ParsedTrack> tracks;  ///< Parsed tracks
-  std::string metadata;           ///< MIDISKETCH metadata (JSON) if present
+  std::string metadata;             ///< MIDISKETCH metadata (JSON) if present
 
   /** @brief Get track by name (case-insensitive). @return Track or nullptr */
   const ParsedTrack* getTrack(const std::string& name) const;

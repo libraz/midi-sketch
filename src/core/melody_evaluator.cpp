@@ -4,12 +4,14 @@
  */
 
 #include "core/melody_evaluator.h"
+
+#include <algorithm>
+#include <cmath>
+
 #include "core/i_harmony_context.h"
 #include "core/pitch_utils.h"
 #include "core/types.h"
 #include "core/vocal_style_profile.h"
-#include <algorithm>
-#include <cmath>
 
 namespace midisketch {
 
@@ -17,10 +19,10 @@ float MelodyEvaluator::calcSingability(const std::vector<NoteEvent>& notes) {
   if (notes.size() < 2) return 0.5f;
 
   // Count intervals by category for detailed scoring
-  int same_count = 0;       // 0 semitones
-  int step_count = 0;       // 1-2 semitones (true step motion)
-  int small_leap_count = 0; // 3-4 semitones (small leaps)
-  int large_leap_count = 0; // 5+ semitones
+  int same_count = 0;        // 0 semitones
+  int step_count = 0;        // 1-2 semitones (true step motion)
+  int small_leap_count = 0;  // 3-4 semitones (small leaps)
+  int large_leap_count = 0;  // 5+ semitones
 
   for (size_t i = 1; i < notes.size(); ++i) {
     int interval = std::abs(notes[i].note - notes[i - 1].note);
@@ -104,8 +106,7 @@ float MelodyEvaluator::calcChordToneRatio(const std::vector<NoteEvent>& notes,
 
   if (strong_beat_notes == 0) return 0.5f;
 
-  return static_cast<float>(chord_tone_hits) /
-         static_cast<float>(strong_beat_notes);
+  return static_cast<float>(chord_tone_hits) / static_cast<float>(strong_beat_notes);
 }
 
 float MelodyEvaluator::calcContourShape(const std::vector<NoteEvent>& notes) {
@@ -134,14 +135,12 @@ float MelodyEvaluator::calcContourShape(const std::vector<NoteEvent>& notes) {
     if (contour[i] < 0) ++down_count_second;
   }
   float arch_score =
-      static_cast<float>(up_count_first + down_count_second) /
-      static_cast<float>(contour.size());
+      static_cast<float>(up_count_first + down_count_second) / static_cast<float>(contour.size());
 
   // Check for Wave shape (multiple direction changes)
   int direction_changes = 0;
   for (size_t i = 1; i < contour.size(); ++i) {
-    if (contour[i] != 0 && contour[i - 1] != 0 &&
-        contour[i] != contour[i - 1]) {
+    if (contour[i] != 0 && contour[i - 1] != 0 && contour[i] != contour[i - 1]) {
       ++direction_changes;
     }
   }
@@ -160,8 +159,7 @@ float MelodyEvaluator::calcContourShape(const std::vector<NoteEvent>& notes) {
   for (const auto& dir : contour) {
     if (dir < 0) ++descend_count;
   }
-  float descend_score =
-      static_cast<float>(descend_count) / static_cast<float>(contour.size());
+  float descend_score = static_cast<float>(descend_count) / static_cast<float>(contour.size());
 
   // Return best matching contour
   return std::max({arch_score, wave_score, descend_score * 0.8f});
@@ -201,15 +199,13 @@ float MelodyEvaluator::calcAaabPattern(const std::vector<NoteEvent>& notes) {
   auto getPattern = [&](size_t start, size_t len) {
     std::vector<int8_t> pattern;
     for (size_t i = start; i < start + len && i + 1 < notes.size(); ++i) {
-      pattern.push_back(
-          static_cast<int8_t>(notes[i + 1].note - notes[i].note));
+      pattern.push_back(static_cast<int8_t>(notes[i + 1].note - notes[i].note));
     }
     return pattern;
   };
 
   // Calculate similarity between two patterns
-  auto similarity = [](const std::vector<int8_t>& a,
-                       const std::vector<int8_t>& b) {
+  auto similarity = [](const std::vector<int8_t>& a, const std::vector<int8_t>& b) {
     if (a.empty() || b.empty()) return 0.0f;
     size_t len = std::min(a.size(), b.size());
     int match = 0;
@@ -235,7 +231,7 @@ float MelodyEvaluator::calcAaabPattern(const std::vector<NoteEvent>& notes) {
 }
 
 MelodyScore MelodyEvaluator::evaluate(const std::vector<NoteEvent>& notes,
-                                       const IHarmonyContext& harmony) {
+                                      const IHarmonyContext& harmony) {
   MelodyScore score;
   score.singability = calcSingability(notes);
   score.chord_tone_ratio = calcChordToneRatio(notes, harmony);
@@ -262,7 +258,7 @@ const EvaluatorConfig& MelodyEvaluator::getEvaluatorConfig(VocalStylePreset styl
 // ============================================================================
 
 float MelodyEvaluator::calcHighRegisterPenalty(const std::vector<NoteEvent>& notes,
-                                                uint8_t high_threshold) {
+                                               uint8_t high_threshold) {
   // Default threshold (D5=74) matches vocal_helpers.h kHighRegisterThreshold.
   // Above passaggio (E4-B4), singers need more effort. D5 and above is demanding.
   if (notes.size() < 2) return 0.0f;
@@ -291,8 +287,8 @@ float MelodyEvaluator::calcHighRegisterPenalty(const std::vector<NoteEvent>& not
 
   // Overall high register density penalty
   if (!notes.empty()) {
-    Tick total_duration = notes.back().start_tick + notes.back().duration -
-                          notes.front().start_tick;
+    Tick total_duration =
+        notes.back().start_tick + notes.back().duration - notes.front().start_tick;
     if (total_duration > 0 && high_duration > total_duration / 2) {
       penalty += 0.1f;
     }
@@ -434,8 +430,8 @@ float MelodyEvaluator::calcPhraseCohesionBonus(const std::vector<NoteEvent>& not
   }
   // Score based on max run relative to phrase length
   // Ideal: at least half the notes are in one connected run
-  stepwise_score = std::min(1.0f, static_cast<float>(max_run) /
-                                      static_cast<float>(notes.size() / 2));
+  stepwise_score =
+      std::min(1.0f, static_cast<float>(max_run) / static_cast<float>(notes.size() / 2));
 
   // === 2. Rhythm pattern consistency ===
   // Check for (duration, beat_position) patterns, not just duration frequency.
@@ -447,8 +443,7 @@ float MelodyEvaluator::calcPhraseCohesionBonus(const std::vector<NoteEvent>& not
   std::vector<std::pair<int, int>> rhythm_patterns;
   rhythm_patterns.reserve(notes.size());
   for (const auto& note : notes) {
-    int dur_idx = static_cast<int>(std::min(note.duration / kQuantize,
-                                            static_cast<Tick>(7)));
+    int dur_idx = static_cast<int>(std::min(note.duration / kQuantize, static_cast<Tick>(7)));
     int beat_offset = static_cast<int>((note.start_tick % kBeatQuantize) /
                                        (kBeatQuantize / 4));  // 0-3 within beat
     rhythm_patterns.push_back({dur_idx, beat_offset});
@@ -463,19 +458,17 @@ float MelodyEvaluator::calcPhraseCohesionBonus(const std::vector<NoteEvent>& not
     }
     max_pattern_count = std::max(max_pattern_count, count);
   }
-  rhythm_score = static_cast<float>(max_pattern_count) /
-                 static_cast<float>(notes.size());
+  rhythm_score = static_cast<float>(max_pattern_count) / static_cast<float>(notes.size());
 
   // === 3. Cell repetition: 3-gram (2 intervals + 2 durations) ===
   // A "cell" is: (interval1, interval2, dur_ratio1, dur_ratio2)
   // This captures melodic+rhythmic motifs, not just pitch direction.
   struct Cell {
-    int8_t int1, int2;   // Two consecutive intervals
-    int8_t dur1, dur2;   // Duration ratios (quantized)
+    int8_t int1, int2;  // Two consecutive intervals
+    int8_t dur1, dur2;  // Duration ratios (quantized)
 
     bool operator==(const Cell& other) const {
-      return int1 == other.int1 && int2 == other.int2 &&
-             dur1 == other.dur1 && dur2 == other.dur2;
+      return int1 == other.int1 && int2 == other.int2 && dur1 == other.dur1 && dur2 == other.dur2;
     }
   };
 
@@ -484,14 +477,10 @@ float MelodyEvaluator::calcPhraseCohesionBonus(const std::vector<NoteEvent>& not
 
   for (size_t i = 0; i + 2 < notes.size(); ++i) {
     Cell c;
-    c.int1 = static_cast<int8_t>(std::clamp(
-        notes[i + 1].note - notes[i].note, -12, 12));
-    c.int2 = static_cast<int8_t>(std::clamp(
-        notes[i + 2].note - notes[i + 1].note, -12, 12));
-    c.dur1 = static_cast<int8_t>(std::min(
-        notes[i].duration / kQuantize, static_cast<Tick>(7)));
-    c.dur2 = static_cast<int8_t>(std::min(
-        notes[i + 1].duration / kQuantize, static_cast<Tick>(7)));
+    c.int1 = static_cast<int8_t>(std::clamp(notes[i + 1].note - notes[i].note, -12, 12));
+    c.int2 = static_cast<int8_t>(std::clamp(notes[i + 2].note - notes[i + 1].note, -12, 12));
+    c.dur1 = static_cast<int8_t>(std::min(notes[i].duration / kQuantize, static_cast<Tick>(7)));
+    c.dur2 = static_cast<int8_t>(std::min(notes[i + 1].duration / kQuantize, static_cast<Tick>(7)));
     cells.push_back(c);
   }
 
@@ -507,8 +496,7 @@ float MelodyEvaluator::calcPhraseCohesionBonus(const std::vector<NoteEvent>& not
   if (!cells.empty()) {
     // Need at least 2 occurrences for it to be a "repetition"
     cell_score = (max_cell_count >= 2)
-                     ? static_cast<float>(max_cell_count) /
-                           static_cast<float>(cells.size())
+                     ? static_cast<float>(max_cell_count) / static_cast<float>(cells.size())
                      : 0.0f;
   }
 
@@ -516,14 +504,12 @@ float MelodyEvaluator::calcPhraseCohesionBonus(const std::vector<NoteEvent>& not
   return stepwise_score * 0.5f + rhythm_score * 0.25f + cell_score * 0.25f;
 }
 
-float MelodyEvaluator::calcGapRatio(const std::vector<NoteEvent>& notes,
-                                     Tick phrase_duration) {
+float MelodyEvaluator::calcGapRatio(const std::vector<NoteEvent>& notes, Tick phrase_duration) {
   if (notes.empty() || phrase_duration == 0) return 1.0f;  // All gap = worst
   if (notes.size() == 1) {
     // Single note: gap = phrase - note duration
     Tick note_coverage = notes[0].duration;
-    return 1.0f - static_cast<float>(note_coverage) /
-                      static_cast<float>(phrase_duration);
+    return 1.0f - static_cast<float>(note_coverage) / static_cast<float>(phrase_duration);
   }
 
   // Calculate total sounding time
@@ -535,8 +521,7 @@ float MelodyEvaluator::calcGapRatio(const std::vector<NoteEvent>& notes,
   // Calculate gaps between consecutive notes
   Tick total_gaps = 0;
   for (size_t i = 1; i < notes.size(); ++i) {
-    Tick gap = notes[i].start_tick -
-               (notes[i - 1].start_tick + notes[i - 1].duration);
+    Tick gap = notes[i].start_tick - (notes[i - 1].start_tick + notes[i - 1].duration);
     if (gap > 0) {
       total_gaps += gap;
     }
@@ -545,12 +530,10 @@ float MelodyEvaluator::calcGapRatio(const std::vector<NoteEvent>& notes,
   // Also account for gap at the start and end of phrase
   // (assuming notes are within phrase_start to phrase_start + phrase_duration)
   // For simplicity, we use the gap-to-phrase ratio
-  float gap_ratio = static_cast<float>(total_gaps) /
-                    static_cast<float>(phrase_duration);
+  float gap_ratio = static_cast<float>(total_gaps) / static_cast<float>(phrase_duration);
 
   // Also penalize low note density (notes not filling the phrase)
-  float coverage = static_cast<float>(total_sounding) /
-                   static_cast<float>(phrase_duration);
+  float coverage = static_cast<float>(total_sounding) / static_cast<float>(phrase_duration);
   float coverage_penalty = std::max(0.0f, 1.0f - coverage);
 
   // Combine: direct gaps + low coverage
@@ -561,7 +544,7 @@ float MelodyEvaluator::calcBreathlessPenalty(const std::vector<NoteEvent>& notes
   if (notes.size() < 4) return 0.0f;
 
   // Count consecutive short notes without breathing room
-  constexpr Tick kShortNoteThreshold = TICKS_PER_BEAT / 4;  // 16th note or shorter
+  constexpr Tick kShortNoteThreshold = TICKS_PER_BEAT / 4;     // 16th note or shorter
   constexpr Tick kBreathingGapThreshold = TICKS_PER_BEAT / 2;  // 8th note gap minimum
 
   int consecutive_short = 0;
@@ -575,8 +558,7 @@ float MelodyEvaluator::calcBreathlessPenalty(const std::vector<NoteEvent>& notes
 
       // Check if there's a breathing gap after this note
       if (i + 1 < notes.size()) {
-        Tick gap = notes[i + 1].start_tick -
-                   (notes[i].start_tick + notes[i].duration);
+        Tick gap = notes[i + 1].start_tick - (notes[i].start_tick + notes[i].duration);
         if (gap >= kBreathingGapThreshold) {
           // Breathing opportunity found, reset
           max_consecutive_short = std::max(max_consecutive_short, consecutive_short);
@@ -638,9 +620,8 @@ float MelodyEvaluator::getGapThreshold(VocalStylePreset style) {
 }
 
 float MelodyEvaluator::evaluateForCulling(const std::vector<NoteEvent>& notes,
-                                           const IHarmonyContext& harmony,
-                                           Tick phrase_duration,
-                                           VocalStylePreset style) {
+                                          const IHarmonyContext& harmony, Tick phrase_duration,
+                                          VocalStylePreset style) {
   if (notes.empty()) return 0.0f;  // Empty = reject
 
   float score = 1.0f;
@@ -652,8 +633,8 @@ float MelodyEvaluator::evaluateForCulling(const std::vector<NoteEvent>& notes,
 
   // === Breathless Penalty (style-dependent) ===
   // Vocaloid styles tolerate more consecutive short notes
-  bool is_vocaloid_style = (style == VocalStylePreset::Vocaloid ||
-                            style == VocalStylePreset::UltraVocaloid);
+  bool is_vocaloid_style =
+      (style == VocalStylePreset::Vocaloid || style == VocalStylePreset::UltraVocaloid);
   if (!is_vocaloid_style) {
     score -= calcBreathlessPenalty(notes);
   }

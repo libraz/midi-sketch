@@ -3,15 +3,18 @@
  * @brief Tests for SE track generation.
  */
 
+#include "track/se.h"
+
 #include <gtest/gtest.h>
+
+#include <random>
+
 #include "core/arrangement.h"
 #include "core/generator.h"
 #include "core/midi_track.h"
 #include "core/preset_data.h"
 #include "core/song.h"
 #include "core/types.h"
-#include "track/se.h"
-#include <random>
 
 namespace midisketch {
 namespace {
@@ -103,8 +106,7 @@ TEST(SETest, InsertPPPHAtCorrectPosition) {
   // Check that the first note is at or after the expected position
   auto notes = track.notes();
   ASSERT_GT(notes.size(), 0u);
-  EXPECT_GE(notes[0].start_tick, expected_start)
-      << "PPPH should start at last bar of B section";
+  EXPECT_GE(notes[0].start_tick, expected_start) << "PPPH should start at last bar of B section";
 }
 
 TEST(SETest, InsertPPPHNotesDisabled) {
@@ -279,7 +281,8 @@ TEST(SEIntegrationTest, GenerateSETrackCallsPPPHAndMIX) {
   std::mt19937 rng(12345);
 
   // Generate with calls enabled
-  generateSETrack(track, song, true, true, IntroChant::None, MixPattern::Standard, CallDensity::Standard, rng);
+  generateSETrack(track, song, true, true, IntroChant::None, MixPattern::Standard,
+                  CallDensity::Standard, rng);
 
   // Should have text events for sections
   EXPECT_GT(track.textEvents().size(), 0u);
@@ -297,7 +300,7 @@ TEST(CallSettingTest, AutoWithIdolStyleEnablesCalls) {
   // CallSetting::Auto with Idol style should enable calls via isCallEnabled()
   Generator gen;
   SongConfig config = createDefaultSongConfig(3);  // Idol Standard
-  config.call_setting = CallSetting::Auto;  // Default
+  config.call_setting = CallSetting::Auto;         // Default
   config.vocal_style = VocalStylePreset::Idol;
   config.form = StructurePattern::FullPop;
   config.seed = 12345;
@@ -329,7 +332,7 @@ TEST(CallSettingTest, DisabledWithIdolStyleDisablesCalls) {
   // CallSetting::Disabled should disable calls even with Idol style
   Generator gen;
   SongConfig config = createDefaultSongConfig(3);  // Idol Standard
-  config.call_setting = CallSetting::Disabled;  // Force disable
+  config.call_setting = CallSetting::Disabled;     // Force disable
   config.vocal_style = VocalStylePreset::Idol;
   config.form = StructurePattern::FullPop;
   config.seed = 12345;
@@ -345,7 +348,7 @@ TEST(CallSettingTest, EnabledWithBalladStyleEnablesCalls) {
   // CallSetting::Enabled should enable calls even with Ballad style
   Generator gen;
   SongConfig config = createDefaultSongConfig(4);  // Ballad
-  config.call_setting = CallSetting::Enabled;  // Force enable
+  config.call_setting = CallSetting::Enabled;      // Force enable
   config.vocal_style = VocalStylePreset::Ballad;
   config.form = StructurePattern::FullPop;
   config.seed = 12345;

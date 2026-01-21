@@ -6,11 +6,12 @@
 #ifndef MIDISKETCH_TRACK_DRUMS_H
 #define MIDISKETCH_TRACK_DRUMS_H
 
+#include <random>
+
 #include "core/midi_track.h"
 #include "core/song.h"
 #include "core/types.h"
 #include "track/vocal_analysis.h"
-#include <random>
 
 namespace midisketch {
 
@@ -22,8 +23,8 @@ namespace midisketch {
  * @param rng Random number generator for fill variation
  * @note Drums use MIDI channel 9 (GM standard).
  */
-void generateDrumsTrack(MidiTrack& track, const Song& song,
-                        const GeneratorParams& params, std::mt19937& rng);
+void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,
+                        std::mt19937& rng);
 
 /**
  * @brief Generate drum track with vocal synchronization.
@@ -39,9 +40,8 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
  * @param vocal_analysis Pre-analyzed vocal track data
  * @note Drums use MIDI channel 9 (GM standard).
  */
-void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song,
-                                  const GeneratorParams& params, std::mt19937& rng,
-                                  const VocalAnalysis& vocal_analysis);
+void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const GeneratorParams& params,
+                                 std::mt19937& rng, const VocalAnalysis& vocal_analysis);
 
 }  // namespace midisketch
 

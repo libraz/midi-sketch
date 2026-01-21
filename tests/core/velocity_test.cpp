@@ -3,8 +3,10 @@
  * @brief Tests for velocity calculations.
  */
 
-#include <gtest/gtest.h>
 #include "core/velocity.h"
+
+#include <gtest/gtest.h>
+
 #include "core/midi_track.h"
 
 namespace midisketch {
@@ -63,8 +65,8 @@ TEST(VelocityTest, SectionEnergyAllTypes) {
 
 TEST(VelocityTest, CalculateVelocityReturnsBoundedValue) {
   // Test that all section/beat/mood combinations return valid MIDI velocity
-  for (auto section : {SectionType::Intro, SectionType::A, SectionType::B,
-                       SectionType::Chorus, SectionType::Outro}) {
+  for (auto section : {SectionType::Intro, SectionType::A, SectionType::B, SectionType::Chorus,
+                       SectionType::Outro}) {
     for (uint8_t beat = 0; beat < 4; ++beat) {
       for (auto mood : {Mood::StraightPop, Mood::Ballad, Mood::EnergeticDance}) {
         uint8_t vel = calculateVelocity(section, beat, mood);
@@ -119,8 +121,8 @@ TEST(VelocityTest, TransitionDynamicsCrescendoToChorus) {
   Tick section_end = 2 * TICKS_PER_BAR;
   Tick transition_start = section_end - TICKS_PER_BAR;
 
-  track.addNote(0, 480, 60, 80);  // Before transition
-  track.addNote(transition_start, 480, 62, 80);  // Start of transition
+  track.addNote(0, 480, 60, 80);                                     // Before transition
+  track.addNote(transition_start, 480, 62, 80);                      // Start of transition
   track.addNote(transition_start + TICKS_PER_BAR / 2, 480, 64, 80);  // Middle of transition
 
   // B to Chorus applies crescendo across entire B section

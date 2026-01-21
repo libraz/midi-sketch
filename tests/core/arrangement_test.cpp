@@ -3,8 +3,10 @@
  * @brief Tests for arrangement utilities.
  */
 
-#include <gtest/gtest.h>
 #include "core/arrangement.h"
+
+#include <gtest/gtest.h>
+
 #include "core/structure.h"
 
 namespace midisketch {

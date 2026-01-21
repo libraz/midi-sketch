@@ -3,9 +3,11 @@
  * @brief Tests for TrackRegistrationGuard RAII class.
  */
 
-#include <gtest/gtest.h>
-#include "core/midi_track.h"
 #include "core/track_registration_guard.h"
+
+#include <gtest/gtest.h>
+
+#include "core/midi_track.h"
 #include "test_support/stub_harmony_context.h"
 
 namespace midisketch {

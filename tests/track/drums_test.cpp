@@ -4,10 +4,12 @@
  */
 
 #include <gtest/gtest.h>
+
+#include <set>
+
 #include "core/generator.h"
 #include "core/song.h"
 #include "core/types.h"
-#include <set>
 
 namespace midisketch {
 namespace {
@@ -15,13 +17,13 @@ namespace {
 // GM Drum Map constants
 constexpr uint8_t KICK = 36;
 constexpr uint8_t SNARE = 38;
-constexpr uint8_t CHH = 42;   // Closed Hi-Hat
-constexpr uint8_t OHH = 46;   // Open Hi-Hat
+constexpr uint8_t CHH = 42;  // Closed Hi-Hat
+constexpr uint8_t OHH = 46;  // Open Hi-Hat
 constexpr uint8_t CRASH = 49;
 // constexpr uint8_t RIDE = 51;  // Reserved for future tests
-constexpr uint8_t TOM_H = 50; // High Tom
-constexpr uint8_t TOM_M = 47; // Mid Tom
-constexpr uint8_t TOM_L = 45; // Low Tom
+constexpr uint8_t TOM_H = 50;  // High Tom
+constexpr uint8_t TOM_M = 47;  // Mid Tom
+constexpr uint8_t TOM_L = 45;  // Low Tom
 
 class DrumsTest : public ::testing::Test {
  protected:
@@ -82,11 +84,11 @@ TEST_F(DrumsTest, DrumsNotesInValidMidiRange) {
 TEST_F(DrumsTest, DrumsUseGMDrumNotes) {
   // Valid GM drum notes (subset)
   std::set<uint8_t> valid_drums = {
-      35, 36,  // Kick drums
-      38, 40,  // Snare drums
-      42, 44, 46,  // Hi-hats
+      35, 36,                      // Kick drums
+      38, 40,                      // Snare drums
+      42, 44, 46,                  // Hi-hats
       49, 51, 52, 53, 55, 57, 59,  // Cymbals
-      41, 43, 45, 47, 48, 50  // Toms
+      41, 43, 45, 47, 48, 50       // Toms
   };
 
   Generator gen;
@@ -102,8 +104,7 @@ TEST_F(DrumsTest, DrumsUseGMDrumNotes) {
   }
 
   // All drum notes should be valid GM drums
-  EXPECT_EQ(invalid_notes, 0)
-      << "Found " << invalid_notes << " invalid drum notes";
+  EXPECT_EQ(invalid_notes, 0) << "Found " << invalid_notes << " invalid drum notes";
 }
 
 TEST_F(DrumsTest, DrumsHaveKickAndSnare) {
@@ -198,12 +199,9 @@ TEST_F(DrumsTest, GhostNotesHaveLowerVelocity) {
 
   if (snare_velocities.size() > 2) {
     // Should have variation in snare velocities (ghosts vs accents)
-    uint8_t min_vel = *std::min_element(snare_velocities.begin(),
-                                         snare_velocities.end());
-    uint8_t max_vel = *std::max_element(snare_velocities.begin(),
-                                         snare_velocities.end());
-    EXPECT_GT(max_vel - min_vel, 10)
-        << "Snare velocities lack dynamic range";
+    uint8_t min_vel = *std::min_element(snare_velocities.begin(), snare_velocities.end());
+    uint8_t max_vel = *std::max_element(snare_velocities.begin(), snare_velocities.end());
+    EXPECT_GT(max_vel - min_vel, 10) << "Snare velocities lack dynamic range";
   }
 }
 
@@ -220,8 +218,7 @@ TEST_F(DrumsTest, SameSeedProducesSameDrums) {
       << "Same seed produced different number of drum notes";
 
   for (size_t i = 0; i < track1.notes().size(); ++i) {
-    EXPECT_EQ(track1.notes()[i].note, track2.notes()[i].note)
-        << "Note mismatch at index " << i;
+    EXPECT_EQ(track1.notes()[i].note, track2.notes()[i].note) << "Note mismatch at index " << i;
     EXPECT_EQ(track1.notes()[i].start_tick, track2.notes()[i].start_tick)
         << "Timing mismatch at index " << i;
   }
@@ -248,8 +245,7 @@ TEST_F(DrumsTest, DifferentSeedsProduceDifferentDrums) {
       break;
     }
   }
-  EXPECT_TRUE(has_difference)
-      << "Different seeds produced identical drum tracks";
+  EXPECT_TRUE(has_difference) << "Different seeds produced identical drum tracks";
 }
 
 TEST_F(DrumsTest, DifferentMoodsProduceDifferentPatterns) {
@@ -315,8 +311,7 @@ TEST_F(DrumsTest, FourOnFloorKickPattern) {
   }
 
   // Four-on-the-floor should have many kicks on quarter beats
-  EXPECT_GT(kicks_on_quarters, 10)
-      << "FourOnFloor style should have kicks on quarter beats";
+  EXPECT_GT(kicks_on_quarters, 10) << "FourOnFloor style should have kicks on quarter beats";
 }
 
 TEST_F(DrumsTest, RockStyleHasAccents) {
@@ -337,13 +332,10 @@ TEST_F(DrumsTest, RockStyleHasAccents) {
   }
 
   if (kick_velocities.size() > 2) {
-    uint8_t max_vel = *std::max_element(kick_velocities.begin(),
-                                         kick_velocities.end());
-    uint8_t min_vel = *std::min_element(kick_velocities.begin(),
-                                         kick_velocities.end());
+    uint8_t max_vel = *std::max_element(kick_velocities.begin(), kick_velocities.end());
+    uint8_t min_vel = *std::min_element(kick_velocities.begin(), kick_velocities.end());
     // Should have some velocity range
-    EXPECT_GE(max_vel - min_vel, 5)
-        << "Rock drums should have velocity variation";
+    EXPECT_GE(max_vel - min_vel, 5) << "Rock drums should have velocity variation";
   }
 }
 
@@ -420,8 +412,7 @@ TEST_F(DrumsTest, CrashOnSectionStart) {
   }
 
   // Should have crashes at some section transitions
-  EXPECT_GT(crashes_at_section_start, 0)
-      << "Should have crash cymbals at section starts";
+  EXPECT_GT(crashes_at_section_start, 0) << "Should have crash cymbals at section starts";
 }
 
 TEST_F(DrumsTest, HiHatVariation) {
@@ -462,10 +453,10 @@ TEST_F(DrumsTest, FastBPMReducesDensity) {
   const auto& fast_track = gen_fast.getSong().drums();
 
   // Calculate notes per second
-  double slow_duration = gen_slow.getSong().arrangement().totalTicks() /
-                          static_cast<double>(TICKS_PER_BEAT) / 80 * 60;
+  double slow_duration =
+      gen_slow.getSong().arrangement().totalTicks() / static_cast<double>(TICKS_PER_BEAT) / 80 * 60;
   double fast_duration = gen_fast.getSong().arrangement().totalTicks() /
-                          static_cast<double>(TICKS_PER_BEAT) / 180 * 60;
+                         static_cast<double>(TICKS_PER_BEAT) / 180 * 60;
 
   double slow_density = slow_track.notes().size() / slow_duration;
   double fast_density = fast_track.notes().size() / fast_duration;
@@ -499,8 +490,7 @@ TEST_F(DrumsTest, DrumsDurationValid) {
 
   for (const auto& note : track.notes()) {
     EXPECT_GT(note.duration, 0u) << "Drum duration should be > 0";
-    EXPECT_LE(note.duration, TICKS_PER_BAR)
-        << "Drum duration should not exceed one bar";
+    EXPECT_LE(note.duration, TICKS_PER_BAR) << "Drum duration should not exceed one bar";
   }
 }
 
@@ -520,8 +510,8 @@ TEST_F(DrumsTest, FillsAtSectionBoundaries) {
   // Look for tom activity (fills typically use toms)
   int tom_notes = 0;
   for (const auto& note : track.notes()) {
-    if (note.note == TOM_H || note.note == TOM_M || note.note == TOM_L ||
-        note.note == 50 || note.note == 47 || note.note == 45) {
+    if (note.note == TOM_H || note.note == TOM_M || note.note == TOM_L || note.note == 50 ||
+        note.note == 47 || note.note == 45) {
       tom_notes++;
     }
   }

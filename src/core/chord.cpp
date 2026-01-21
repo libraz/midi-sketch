@@ -4,8 +4,10 @@
  */
 
 #include "core/chord.h"
-#include "core/pitch_utils.h"
+
 #include <algorithm>
+
+#include "core/pitch_utils.h"
 
 namespace midisketch {
 
@@ -36,17 +38,15 @@ constexpr ChordProgression PROGRESSIONS[22] = {
     {{5, 1, 4, 0, -1, -1, -1, -1}, 4},   // 18: YOASOBI2 - vi - ii - V - I
     {{0, 5, 1, 4, -1, -1, -1, -1}, 4},   // 19: CityPop - I - vi - ii - V
     // 5-chord progressions (length = 5)
-    {{0, 4, 5, 2, 3, -1, -1, -1}, 5},    // 20: Extended5 - I - V - vi - iii - IV
-    {{5, 3, 0, 4, 1, -1, -1, -1}, 5},    // 21: Emotional5 - vi - IV - I - V - ii
+    {{0, 4, 5, 2, 3, -1, -1, -1}, 5},  // 20: Extended5 - I - V - vi - iii - IV
+    {{5, 3, 0, 4, 1, -1, -1, -1}, 5},  // 21: Emotional5 - vi - IV - I - V - ii
 };
 
 // Chord progression names
 const char* PROGRESSION_NAMES[22] = {
-    "Canon",    "Pop1",    "Axis",     "Pop2",    "Classic", "Pop3",
-    "Oudou",    "Minor1",  "Minor2",   "Pop4",    "Pop5",    "Rock1",
-    "Rock2",    "Extended4", "Minor3",  "Komuro",
-    "YOASOBI1", "JazzPop", "YOASOBI2", "CityPop",
-    "Extended5", "Emotional5",
+    "Canon",    "Pop1",    "Axis",     "Pop2",    "Classic",   "Pop3",       "Oudou",  "Minor1",
+    "Minor2",   "Pop4",    "Pop5",     "Rock1",   "Rock2",     "Extended4",  "Minor3", "Komuro",
+    "YOASOBI1", "JazzPop", "YOASOBI2", "CityPop", "Extended5", "Emotional5",
 };
 
 // Chord progression display strings (Roman numeral notation)
@@ -77,32 +77,33 @@ const char* PROGRESSION_ROMAN[22] = {
 
 // Chord progression display strings (C major chord names)
 const char* PROGRESSION_CHORDS[22] = {
-    "C - G - Am - F",         // Canon
-    "C - Am - F - G",         // Pop1
-    "Am - F - C - G",         // Axis
-    "F - C - G - Am",         // Pop2
-    "C - F - G - C",          // Classic
-    "C - F - Am - G",         // Pop3
-    "F - G - Em - Am",        // Oudou (Royal Road progression)
-    "Am - G - F - G",         // Minor1
-    "Am - F - G - C",         // Minor2
-    "C - G - Em - F",         // Pop4
-    "C - Em - F - G",         // Pop5
-    "C - Bb - F - C",         // Rock1
-    "C - F - Bb - C",         // Rock2
-    "C - G - Am - Em",        // Extended4
-    "Am - C - G - F",         // Minor3
-    "Am - F - G - C",         // Komuro
-    "Am - Em - F - C",        // YOASOBI1
-    "Dm - G - C - Am",        // JazzPop
-    "Am - Dm - G - C",        // YOASOBI2
-    "C - Am - Dm - G",        // CityPop
-    "C - G - Am - Em - F",    // Extended5
-    "Am - F - C - G - Dm",    // Emotional5
+    "C - G - Am - F",       // Canon
+    "C - Am - F - G",       // Pop1
+    "Am - F - C - G",       // Axis
+    "F - C - G - Am",       // Pop2
+    "C - F - G - C",        // Classic
+    "C - F - Am - G",       // Pop3
+    "F - G - Em - Am",      // Oudou (Royal Road progression)
+    "Am - G - F - G",       // Minor1
+    "Am - F - G - C",       // Minor2
+    "C - G - Em - F",       // Pop4
+    "C - Em - F - G",       // Pop5
+    "C - Bb - F - C",       // Rock1
+    "C - F - Bb - C",       // Rock2
+    "C - G - Am - Em",      // Extended4
+    "Am - C - G - F",       // Minor3
+    "Am - F - G - C",       // Komuro
+    "Am - Em - F - C",      // YOASOBI1
+    "Dm - G - C - Am",      // JazzPop
+    "Am - Dm - G - C",      // YOASOBI2
+    "C - Am - Dm - G",      // CityPop
+    "C - G - Am - Em - F",  // Extended5
+    "Am - F - C - G - Dm",  // Emotional5
 };
 
 // Chord progression metadata with style compatibility
-// Compatible styles: STYLE_MINIMAL=1, STYLE_DANCE=2, STYLE_IDOL_STD=4, STYLE_IDOL_ENERGY=8, STYLE_ROCK=16
+// Compatible styles: STYLE_MINIMAL=1, STYLE_DANCE=2, STYLE_IDOL_STD=4, STYLE_IDOL_ENERGY=8,
+// STYLE_ROCK=16
 constexpr ChordProgressionMeta PROGRESSION_META[22] = {
     {0, "Canon", FunctionalProfile::Loop, 0b00001111, "4ch_loop,diatonic"},
     {1, "Pop1", FunctionalProfile::Loop, 0b00001111, "4ch_loop,diatonic"},
@@ -203,10 +204,14 @@ Chord buildChord(int8_t degree) {
 int degreeToSemitone(int8_t degree) {
   // Borrowed chords from parallel minor (see documentation above)
   switch (degree) {
-    case 10: return 10;  // bVII = Bb (10 semitones from C)
-    case 8:  return 8;   // bVI  = Ab (8 semitones from C)
-    case 11: return 3;   // bIII = Eb (3 semitones from C)
-    default: break;
+    case 10:
+      return 10;  // bVII = Bb (10 semitones from C)
+    case 8:
+      return 8;  // bVI  = Ab (8 semitones from C)
+    case 11:
+      return 3;  // bIII = Eb (3 semitones from C)
+    default:
+      break;
   }
 
   // Diatonic degrees (0-6) use SCALE from pitch_utils.h
@@ -230,9 +235,7 @@ uint8_t degreeToRoot(int8_t degree, Key key) {
   return static_cast<uint8_t>(root + MIDI_C4);  // C4 base
 }
 
-Chord getChordNotes(int8_t degree) {
-  return buildChord(degree);
-}
+Chord getChordNotes(int8_t degree) { return buildChord(degree); }
 
 Chord getExtendedChord(int8_t degree, ChordExtension extension) {
   Chord base = buildChord(degree);

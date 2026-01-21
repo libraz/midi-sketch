@@ -3,10 +3,12 @@
  * @brief Tests for MIDI file parser.
  */
 
-#include <gtest/gtest.h>
 #include "midi/midi_reader.h"
-#include "midi/midi_writer.h"
+
+#include <gtest/gtest.h>
+
 #include "core/song.h"
+#include "midi/midi_writer.h"
 
 namespace midisketch {
 namespace {
@@ -48,9 +50,9 @@ TEST(MidiReaderTest, RoundtripBasicSong) {
   // Create a simple song
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);      // C4
-  song.vocal().addNote(480, 480, 64, 100);    // E4
-  song.vocal().addNote(960, 480, 67, 100);    // G4
+  song.vocal().addNote(0, 480, 60, 100);    // C4
+  song.vocal().addNote(480, 480, 64, 100);  // E4
+  song.vocal().addNote(960, 480, 67, 100);  // G4
 
   // Write to MIDI
   MidiWriter writer;
@@ -209,7 +211,8 @@ TEST(MidiReaderTest, ReadMetadataFromGeneratedMidi) {
   song.vocal().addNote(0, 480, 60, 100);
 
   // Build with metadata (new format with generator identifier)
-  std::string metadata = R"({"generator":"midi-sketch","format_version":1,"library_version":"1.0.0","seed":12345})";
+  std::string metadata =
+      R"({"generator":"midi-sketch","format_version":1,"library_version":"1.0.0","seed":12345})";
   MidiWriter writer;
   writer.build(song, Key::C, metadata, MidiFormat::SMF1);
   auto midi_data = writer.toBytes();
@@ -256,9 +259,9 @@ TEST(MidiReaderTest, NotesSortedByStartTime) {
   song.setBpm(120);
 
   // Add notes in non-chronological order
-  song.vocal().addNote(960, 480, 67, 100);   // Third
-  song.vocal().addNote(0, 480, 60, 100);     // First
-  song.vocal().addNote(480, 480, 64, 100);   // Second
+  song.vocal().addNote(960, 480, 67, 100);  // Third
+  song.vocal().addNote(0, 480, 60, 100);    // First
+  song.vocal().addNote(480, 480, 64, 100);  // Second
 
   MidiWriter writer;
   writer.build(song, Key::C, "", MidiFormat::SMF1);
@@ -302,8 +305,8 @@ TEST(MidiReaderTest, VariableLengthQuantityParsing) {
   // Long notes create larger delta times that test VLQ parsing
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 960, 60, 100);       // 2 beats
-  song.vocal().addNote(15360, 480, 64, 100);   // 8 bars later
+  song.vocal().addNote(0, 960, 60, 100);      // 2 beats
+  song.vocal().addNote(15360, 480, 64, 100);  // 8 bars later
 
   MidiWriter writer;
   writer.build(song, Key::C, "", MidiFormat::SMF1);
@@ -359,10 +362,10 @@ TEST(MidiReaderTest, RunningStatusHandling) {
 TEST(MidiReaderTest, ChannelAssignment) {
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);    // Channel 0
-  song.chord().addNote(0, 480, 64, 80);     // Channel 1
-  song.bass().addNote(0, 480, 48, 90);      // Channel 2
-  song.drums().addNote(0, 240, 36, 100);    // Channel 9
+  song.vocal().addNote(0, 480, 60, 100);  // Channel 0
+  song.chord().addNote(0, 480, 64, 80);   // Channel 1
+  song.bass().addNote(0, 480, 48, 90);    // Channel 2
+  song.drums().addNote(0, 240, 36, 100);  // Channel 9
 
   MidiWriter writer;
   writer.build(song, Key::C, "", MidiFormat::SMF1);

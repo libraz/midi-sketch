@@ -4,13 +4,15 @@
  */
 
 #include "core/motif.h"
-#include "core/pitch_utils.h"
+
 #include <algorithm>
+
+#include "core/pitch_utils.h"
 
 namespace midisketch {
 
-Motif applyVariation(const Motif& original, MotifVariation variation,
-                     int8_t param, std::mt19937& rng) {
+Motif applyVariation(const Motif& original, MotifVariation variation, int8_t param,
+                     std::mt19937& rng) {
   Motif result = original;
 
   switch (variation) {
@@ -25,8 +27,7 @@ Motif applyVariation(const Motif& original, MotifVariation variation,
       }
       // Also transpose absolute pitches
       for (auto& pitch : result.absolute_pitches) {
-        pitch = static_cast<uint8_t>(std::clamp(
-            static_cast<int>(pitch) + param, 0, 127));
+        pitch = static_cast<uint8_t>(std::clamp(static_cast<int>(pitch) + param, 0, 127));
       }
       break;
 
@@ -89,8 +90,8 @@ Motif applyVariation(const Motif& original, MotifVariation variation,
       }
       for (size_t i = 0; i < result.absolute_pitches.size(); ++i) {
         int offset = static_cast<int>(i) * param / 4;
-        result.absolute_pitches[i] = static_cast<uint8_t>(std::clamp(
-            static_cast<int>(result.absolute_pitches[i]) + offset, 0, 127));
+        result.absolute_pitches[i] = static_cast<uint8_t>(
+            std::clamp(static_cast<int>(result.absolute_pitches[i]) + offset, 0, 127));
       }
       break;
 
@@ -103,8 +104,8 @@ Motif applyVariation(const Motif& original, MotifVariation variation,
             int8_t delta = static_cast<int8_t>(dist(rng));
             result.contour_degrees[i] += delta;
             if (i < result.absolute_pitches.size()) {
-              result.absolute_pitches[i] = static_cast<uint8_t>(std::clamp(
-                  static_cast<int>(result.absolute_pitches[i]) + delta, 0, 127));
+              result.absolute_pitches[i] = static_cast<uint8_t>(
+                  std::clamp(static_cast<int>(result.absolute_pitches[i]) + delta, 0, 127));
             }
           }
         }
@@ -200,8 +201,7 @@ Motif designChorusHook(const StyleMelodyParams& params, std::mt19937& rng) {
     // Second half: slight variation (-2 semitones for "answer" feel)
     int8_t varied = selected_contour[idx];
     if (hook.contour_degrees.size() >= 6) {
-      varied = std::max(static_cast<int8_t>(-2),
-                        static_cast<int8_t>(varied - 2));
+      varied = std::max(static_cast<int8_t>(-2), static_cast<int8_t>(varied - 2));
     }
     hook.contour_degrees.push_back(varied);
   }
@@ -223,12 +223,10 @@ bool isHookAppropriateVariation(MotifVariation variation) {
   // Only Exact and Fragmented preserve hook identity
   // All others (Inverted, Sequenced, Embellished, Transposed, etc.)
   // make the melody sound different and reduce memorability
-  return variation == MotifVariation::Exact ||
-         variation == MotifVariation::Fragmented;
+  return variation == MotifVariation::Exact || variation == MotifVariation::Fragmented;
 }
 
-Motif extractMotifFromChorus(const std::vector<NoteEvent>& chorus_notes,
-                              size_t max_notes) {
+Motif extractMotifFromChorus(const std::vector<NoteEvent>& chorus_notes, size_t max_notes) {
   Motif motif;
 
   if (chorus_notes.empty()) {
@@ -271,10 +269,8 @@ Motif extractMotifFromChorus(const std::vector<NoteEvent>& chorus_notes,
 
   // Find climax (highest pitch)
   if (!motif.contour_degrees.empty()) {
-    auto max_it = std::max_element(motif.contour_degrees.begin(),
-                                   motif.contour_degrees.end());
-    motif.climax_index = static_cast<uint8_t>(
-        std::distance(motif.contour_degrees.begin(), max_it));
+    auto max_it = std::max_element(motif.contour_degrees.begin(), motif.contour_degrees.end());
+    motif.climax_index = static_cast<uint8_t>(std::distance(motif.contour_degrees.begin(), max_it));
   }
 
   // Calculate total length in beats
@@ -294,11 +290,8 @@ Motif extractMotifFromChorus(const std::vector<NoteEvent>& chorus_notes,
   return motif;
 }
 
-std::vector<NoteEvent> placeMotifInIntro(const Motif& motif,
-                                          Tick intro_start,
-                                          Tick intro_end,
-                                          uint8_t base_pitch,
-                                          uint8_t velocity) {
+std::vector<NoteEvent> placeMotifInIntro(const Motif& motif, Tick intro_start, Tick intro_end,
+                                         uint8_t base_pitch, uint8_t velocity) {
   std::vector<NoteEvent> result;
 
   if (motif.rhythm.empty()) {
@@ -306,8 +299,8 @@ std::vector<NoteEvent> placeMotifInIntro(const Motif& motif,
   }
 
   // Prefer absolute pitches for faithful melodic reproduction
-  bool use_absolute = !motif.absolute_pitches.empty() &&
-                      motif.absolute_pitches.size() >= motif.rhythm.size();
+  bool use_absolute =
+      !motif.absolute_pitches.empty() && motif.absolute_pitches.size() >= motif.rhythm.size();
 
   // Calculate octave offset to transpose motif to target register
   int octave_offset = 0;
@@ -368,11 +361,8 @@ std::vector<NoteEvent> placeMotifInIntro(const Motif& motif,
   return result;
 }
 
-std::vector<NoteEvent> placeMotifInAux(const Motif& motif,
-                                        Tick section_start,
-                                        Tick section_end,
-                                        uint8_t base_pitch,
-                                        float velocity_ratio) {
+std::vector<NoteEvent> placeMotifInAux(const Motif& motif, Tick section_start, Tick section_end,
+                                       uint8_t base_pitch, float velocity_ratio) {
   // Base velocity for aux track (softer than main)
   uint8_t aux_velocity = static_cast<uint8_t>(80 * velocity_ratio);
 

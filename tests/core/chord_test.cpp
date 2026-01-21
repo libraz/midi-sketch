@@ -3,8 +3,9 @@
  * @brief Tests for chord progressions.
  */
 
-#include <gtest/gtest.h>
 #include "core/chord.h"
+
+#include <gtest/gtest.h>
 
 namespace midisketch {
 namespace {
@@ -12,38 +13,38 @@ namespace {
 TEST(ChordTest, CanonProgression) {
   const auto& prog = getChordProgression(0);
   // I – V – vi – IV
-  EXPECT_EQ(prog.degrees[0], 0);   // I
-  EXPECT_EQ(prog.degrees[1], 4);   // V
-  EXPECT_EQ(prog.degrees[2], 5);   // vi
-  EXPECT_EQ(prog.degrees[3], 3);   // IV
+  EXPECT_EQ(prog.degrees[0], 0);  // I
+  EXPECT_EQ(prog.degrees[1], 4);  // V
+  EXPECT_EQ(prog.degrees[2], 5);  // vi
+  EXPECT_EQ(prog.degrees[3], 3);  // IV
 }
 
 TEST(ChordTest, DegreeToRootC) {
   // In C major
-  EXPECT_EQ(degreeToRoot(0, Key::C), 60);   // C4
-  EXPECT_EQ(degreeToRoot(4, Key::C), 67);   // G4 (V)
-  EXPECT_EQ(degreeToRoot(5, Key::C), 69);   // A4 (vi)
+  EXPECT_EQ(degreeToRoot(0, Key::C), 60);  // C4
+  EXPECT_EQ(degreeToRoot(4, Key::C), 67);  // G4 (V)
+  EXPECT_EQ(degreeToRoot(5, Key::C), 69);  // A4 (vi)
 }
 
 TEST(ChordTest, DegreeToRootG) {
   // In G major
-  EXPECT_EQ(degreeToRoot(0, Key::G), 67);   // G4
+  EXPECT_EQ(degreeToRoot(0, Key::G), 67);  // G4
 }
 
 TEST(ChordTest, MajorChord) {
   auto chord = getChordNotes(0);  // I chord (major)
   EXPECT_EQ(chord.note_count, 3);
-  EXPECT_EQ(chord.intervals[0], 0);   // Root
-  EXPECT_EQ(chord.intervals[1], 4);   // Major 3rd
-  EXPECT_EQ(chord.intervals[2], 7);   // Perfect 5th
+  EXPECT_EQ(chord.intervals[0], 0);  // Root
+  EXPECT_EQ(chord.intervals[1], 4);  // Major 3rd
+  EXPECT_EQ(chord.intervals[2], 7);  // Perfect 5th
 }
 
 TEST(ChordTest, MinorChord) {
   auto chord = getChordNotes(5);  // vi chord (minor)
   EXPECT_EQ(chord.note_count, 3);
-  EXPECT_EQ(chord.intervals[0], 0);   // Root
-  EXPECT_EQ(chord.intervals[1], 3);   // Minor 3rd
-  EXPECT_EQ(chord.intervals[2], 7);   // Perfect 5th
+  EXPECT_EQ(chord.intervals[0], 0);  // Root
+  EXPECT_EQ(chord.intervals[1], 3);  // Minor 3rd
+  EXPECT_EQ(chord.intervals[2], 7);  // Perfect 5th
 }
 
 TEST(ChordTest, ProgressionNames) {
@@ -60,17 +61,17 @@ TEST(ChordTest, ProgressionDisplay) {
 TEST(ChordTest, ExtendedChordSus2) {
   auto chord = getExtendedChord(0, ChordExtension::Sus2);  // Isus2
   EXPECT_EQ(chord.note_count, 3);
-  EXPECT_EQ(chord.intervals[0], 0);   // Root
-  EXPECT_EQ(chord.intervals[1], 2);   // Major 2nd
-  EXPECT_EQ(chord.intervals[2], 7);   // Perfect 5th
+  EXPECT_EQ(chord.intervals[0], 0);  // Root
+  EXPECT_EQ(chord.intervals[1], 2);  // Major 2nd
+  EXPECT_EQ(chord.intervals[2], 7);  // Perfect 5th
 }
 
 TEST(ChordTest, ExtendedChordSus4) {
   auto chord = getExtendedChord(0, ChordExtension::Sus4);  // Isus4
   EXPECT_EQ(chord.note_count, 3);
-  EXPECT_EQ(chord.intervals[0], 0);   // Root
-  EXPECT_EQ(chord.intervals[1], 5);   // Perfect 4th
-  EXPECT_EQ(chord.intervals[2], 7);   // Perfect 5th
+  EXPECT_EQ(chord.intervals[0], 0);  // Root
+  EXPECT_EQ(chord.intervals[1], 5);  // Perfect 4th
+  EXPECT_EQ(chord.intervals[2], 7);  // Perfect 5th
 }
 
 TEST(ChordTest, ExtendedChordMaj7) {
@@ -115,37 +116,37 @@ TEST(ChordTest, ExtendedChordNone) {
 TEST(ChordTest, YOASOBI1Progression) {
   const auto& prog = getChordProgression(16);
   // vi – iii – IV – I
-  EXPECT_EQ(prog.degrees[0], 5);   // vi
-  EXPECT_EQ(prog.degrees[1], 2);   // iii
-  EXPECT_EQ(prog.degrees[2], 3);   // IV
-  EXPECT_EQ(prog.degrees[3], 0);   // I
+  EXPECT_EQ(prog.degrees[0], 5);  // vi
+  EXPECT_EQ(prog.degrees[1], 2);  // iii
+  EXPECT_EQ(prog.degrees[2], 3);  // IV
+  EXPECT_EQ(prog.degrees[3], 0);  // I
 }
 
 TEST(ChordTest, JazzPopProgression) {
   const auto& prog = getChordProgression(17);
   // ii – V – I – vi
-  EXPECT_EQ(prog.degrees[0], 1);   // ii
-  EXPECT_EQ(prog.degrees[1], 4);   // V
-  EXPECT_EQ(prog.degrees[2], 0);   // I
-  EXPECT_EQ(prog.degrees[3], 5);   // vi
+  EXPECT_EQ(prog.degrees[0], 1);  // ii
+  EXPECT_EQ(prog.degrees[1], 4);  // V
+  EXPECT_EQ(prog.degrees[2], 0);  // I
+  EXPECT_EQ(prog.degrees[3], 5);  // vi
 }
 
 TEST(ChordTest, YOASOBI2Progression) {
   const auto& prog = getChordProgression(18);
   // vi – ii – V – I (turnaround)
-  EXPECT_EQ(prog.degrees[0], 5);   // vi
-  EXPECT_EQ(prog.degrees[1], 1);   // ii
-  EXPECT_EQ(prog.degrees[2], 4);   // V
-  EXPECT_EQ(prog.degrees[3], 0);   // I
+  EXPECT_EQ(prog.degrees[0], 5);  // vi
+  EXPECT_EQ(prog.degrees[1], 1);  // ii
+  EXPECT_EQ(prog.degrees[2], 4);  // V
+  EXPECT_EQ(prog.degrees[3], 0);  // I
 }
 
 TEST(ChordTest, CityPopProgression) {
   const auto& prog = getChordProgression(19);
   // I – vi – ii – V
-  EXPECT_EQ(prog.degrees[0], 0);   // I
-  EXPECT_EQ(prog.degrees[1], 5);   // vi
-  EXPECT_EQ(prog.degrees[2], 1);   // ii
-  EXPECT_EQ(prog.degrees[3], 4);   // V
+  EXPECT_EQ(prog.degrees[0], 0);  // I
+  EXPECT_EQ(prog.degrees[1], 5);  // vi
+  EXPECT_EQ(prog.degrees[2], 1);  // ii
+  EXPECT_EQ(prog.degrees[3], 4);  // V
 }
 
 TEST(ChordTest, NewProgressionNames) {

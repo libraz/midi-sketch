@@ -6,20 +6,21 @@
 #ifndef MIDISKETCH_TRACK_CHORD_TRACK_H
 #define MIDISKETCH_TRACK_CHORD_TRACK_H
 
+#include <random>
+
 #include "core/midi_track.h"
 #include "core/song.h"
 #include "core/track_generation_context.h"
 #include "core/types.h"
 #include "track/vocal_analysis.h"
-#include <random>
 
 namespace midisketch {
 
 /// @brief Open voicing subtypes. Drop2=jazz, Drop3=big band, Spread=atmospheric.
 enum class OpenVoicingType : uint8_t {
-  Drop2,   ///< Drop 2nd voice from top down an octave (jazz standard)
-  Drop3,   ///< Drop 3rd voice from top down an octave (big band)
-  Spread   ///< Wide intervallic spacing (1-5-10 style, atmospheric)
+  Drop2,  ///< Drop 2nd voice from top down an octave (jazz standard)
+  Drop3,  ///< Drop 3rd voice from top down an octave (big band)
+  Spread  ///< Wide intervallic spacing (1-5-10 style, atmospheric)
 };
 
 /**
@@ -42,8 +43,7 @@ void generateChordTrack(MidiTrack& track, const TrackGenerationContext& ctx);
  * @param track Target MidiTrack to populate with chord notes
  * @param ctx Generation context (should include vocal_analysis for best results)
  */
-void generateChordTrackWithContext(MidiTrack& track,
-                                   const TrackGenerationContext& ctx);
+void generateChordTrackWithContext(MidiTrack& track, const TrackGenerationContext& ctx);
 
 }  // namespace midisketch
 

@@ -22,17 +22,17 @@ enum class VocalProminence : uint8_t {
  * Clean=chord tones only, Expressive=tensions allowed, Raw=rule-breaking.
  */
 enum class VocalAttitude : uint8_t {
-  Clean = 0,      ///< Chord tones only, on-beat (safe)
-  Expressive = 1, ///< Tensions, delayed resolution (colorful)
-  Raw = 2         ///< Non-chord tone landing, rule-breaking (edgy)
+  Clean = 0,       ///< Chord tones only, on-beat (safe)
+  Expressive = 1,  ///< Tensions, delayed resolution (colorful)
+  Raw = 2          ///< Non-chord tone landing, rule-breaking (edgy)
 };
 
 /// @name Vocal Attitude Flags
 /// Bit flags for specifying allowed vocal attitudes.
 /// @{
-constexpr uint8_t ATTITUDE_CLEAN = 1 << 0;      ///< Allow Clean attitude
-constexpr uint8_t ATTITUDE_EXPRESSIVE = 1 << 1; ///< Allow Expressive attitude
-constexpr uint8_t ATTITUDE_RAW = 1 << 2;        ///< Allow Raw attitude
+constexpr uint8_t ATTITUDE_CLEAN = 1 << 0;       ///< Allow Clean attitude
+constexpr uint8_t ATTITUDE_EXPRESSIVE = 1 << 1;  ///< Allow Expressive attitude
+constexpr uint8_t ATTITUDE_RAW = 1 << 2;         ///< Allow Raw attitude
 /// @}
 
 /// @brief Vocal style preset for melody generation.
@@ -47,10 +47,10 @@ enum class VocalStylePreset : uint8_t {
   CityPop,        ///< City pop style
   Anime,          ///< Anime song style
   // Extended styles (9-12)
-  BrightKira,     ///< Bright sparkly style
-  CoolSynth,      ///< Cool synthetic style
-  CuteAffected,   ///< Cute affected style
-  PowerfulShout   ///< Powerful shout style
+  BrightKira,    ///< Bright sparkly style
+  CoolSynth,     ///< Cool synthetic style
+  CuteAffected,  ///< Cute affected style
+  PowerfulShout  ///< Powerful shout style
 };
 
 /// Weight for random style selection.
@@ -91,22 +91,22 @@ enum class PitchChoice : uint8_t {
 
 /// @brief Conditions that trigger melodic leaps.
 enum class LeapTrigger : uint8_t {
-  None,             ///< No leap allowed
-  PhraseStart,      ///< At phrase beginning
-  EmotionalPeak,    ///< At emotional climax
-  SectionBoundary   ///< At section boundary
+  None,            ///< No leap allowed
+  PhraseStart,     ///< At phrase beginning
+  EmotionalPeak,   ///< At emotional climax
+  SectionBoundary  ///< At section boundary
 };
 
 /// @brief Aux track function types for sub-track generation.
 enum class AuxFunction : uint8_t {
-  PulseLoop = 0,      ///< Addictive repetition pattern
-  TargetHint = 1,     ///< Hints at melody destination
-  GrooveAccent = 2,   ///< Physical groove accent
-  PhraseTail = 3,     ///< Phrase ending fill
-  EmotionalPad = 4,   ///< Emotional pad/floor
-  Unison = 5,         ///< Vocal unison doubling
-  MelodicHook = 6,    ///< Melodic hook riff
-  MotifCounter = 7    ///< Counter melody (contrary motion)
+  PulseLoop = 0,     ///< Addictive repetition pattern
+  TargetHint = 1,    ///< Hints at melody destination
+  GrooveAccent = 2,  ///< Physical groove accent
+  PhraseTail = 3,    ///< Phrase ending fill
+  EmotionalPad = 4,  ///< Emotional pad/floor
+  Unison = 5,        ///< Vocal unison doubling
+  MelodicHook = 6,   ///< Melodic hook riff
+  MotifCounter = 7   ///< Counter melody (contrary motion)
 };
 
 /// @brief Melody template structure for template-driven melody generation.
@@ -115,60 +115,60 @@ struct MelodyTemplate {
 
   /// @name Pitch constraints
   /// @{
-  int8_t tessitura_range;           ///< Range from tessitura center (semitones)
-  float plateau_ratio;              ///< Same-pitch probability (0.0-1.0)
-  int8_t max_step;                  ///< Maximum step size (semitones)
+  int8_t tessitura_range;  ///< Range from tessitura center (semitones)
+  float plateau_ratio;     ///< Same-pitch probability (0.0-1.0)
+  int8_t max_step;         ///< Maximum step size (semitones)
   /// @}
 
   /// @name Target pitch
   /// @{
-  bool has_target_pitch;            ///< Whether template has target pitch
-  float target_attraction_start;    ///< Phrase position to start attraction (0.0-1.0)
-  float target_attraction_strength; ///< Attraction strength (0.0-1.0)
+  bool has_target_pitch;             ///< Whether template has target pitch
+  float target_attraction_start;     ///< Phrase position to start attraction (0.0-1.0)
+  float target_attraction_strength;  ///< Attraction strength (0.0-1.0)
   /// @}
 
   /// @name Rhythm
   /// @{
-  bool rhythm_driven;               ///< Whether rhythm-driven
-  float sixteenth_density;          ///< 16th note density (0.0-1.0)
+  bool rhythm_driven;       ///< Whether rhythm-driven
+  float sixteenth_density;  ///< 16th note density (0.0-1.0)
   /// @}
 
   /// @name Vocal constraints
   /// @{
-  bool vowel_constraint;            ///< Apply vowel section rules
-  bool leap_as_event;               ///< Leaps only at trigger points
+  bool vowel_constraint;  ///< Apply vowel section rules
+  bool leap_as_event;     ///< Leaps only at trigger points
   /// @}
 
   /// @name Phrase characteristics
   /// @{
-  float phrase_end_resolution;      ///< Resolution probability at phrase end
-  float long_note_ratio;            ///< Long note ratio
-  float tension_allowance;          ///< Allowed tension (0.0-1.0)
+  float phrase_end_resolution;  ///< Resolution probability at phrase end
+  float long_note_ratio;        ///< Long note ratio
+  float tension_allowance;      ///< Allowed tension (0.0-1.0)
   /// @}
 
   /// @name Human body constraints
   /// @{
-  uint8_t max_phrase_beats;         ///< Maximum phrase length (beats)
-  float high_register_plateau_boost; ///< Plateau boost in high register
-  uint8_t post_high_rest_beats;     ///< Rest beats after high notes
+  uint8_t max_phrase_beats;           ///< Maximum phrase length (beats)
+  float high_register_plateau_boost;  ///< Plateau boost in high register
+  uint8_t post_high_rest_beats;       ///< Rest beats after high notes
   /// @}
 
   /// @name Modern pop features
   /// @{
-  uint8_t hook_note_count;          ///< Notes in hook (2-4)
-  uint8_t hook_repeat_count;        ///< Hook repetition count (2-4)
-  bool allow_talk_sing;             ///< Allow talk-sing style
+  uint8_t hook_note_count;    ///< Notes in hook (2-4)
+  uint8_t hook_repeat_count;  ///< Hook repetition count (2-4)
+  bool allow_talk_sing;       ///< Allow talk-sing style
   /// @}
 };
 
 /// @brief Aux track configuration for sub-track generation.
 struct AuxConfig {
-  AuxFunction function;             ///< Aux track function type
-  int8_t range_offset;              ///< Offset from main melody range (negative = below)
-  int8_t range_width;               ///< Range width (semitones)
-  float velocity_ratio;             ///< Velocity ratio vs main melody (0.5-0.8)
-  float density_ratio;              ///< Density ratio vs main melody
-  bool sync_phrase_boundary;        ///< Sync with main melody phrase boundaries
+  AuxFunction function;       ///< Aux track function type
+  int8_t range_offset;        ///< Offset from main melody range (negative = below)
+  int8_t range_width;         ///< Range width (semitones)
+  float velocity_ratio;       ///< Velocity ratio vs main melody (0.5-0.8)
+  float density_ratio;        ///< Density ratio vs main melody
+  bool sync_phrase_boundary;  ///< Sync with main melody phrase boundaries
 };
 
 /// @brief Hook intensity for controlling catchiness at key positions.
@@ -277,10 +277,10 @@ enum class ContourType : uint8_t {
 /// light bonus for similar candidates.
 struct GlobalMotif {
   ContourType contour_type = ContourType::Plateau;  ///< Overall contour shape
-  int8_t interval_signature[8] = {0};  ///< Relative intervals (max 8 notes)
-  uint8_t interval_count = 0;          ///< Number of intervals in signature
-  uint8_t rhythm_signature[8] = {0};   ///< Rhythm pattern (duration ratios)
-  uint8_t rhythm_count = 0;            ///< Number of rhythm values
+  int8_t interval_signature[8] = {0};               ///< Relative intervals (max 8 notes)
+  uint8_t interval_count = 0;                       ///< Number of intervals in signature
+  uint8_t rhythm_signature[8] = {0};                ///< Rhythm pattern (duration ratios)
+  uint8_t rhythm_count = 0;                         ///< Number of rhythm values
 
   /// @brief Check if motif is initialized.
   bool isValid() const { return interval_count > 0; }
@@ -293,50 +293,51 @@ struct GlobalMotif {
 
 /// @brief Melody constraint parameters for StylePreset.
 struct StyleMelodyParams {
-  uint8_t max_leap_interval = 7;      ///< Max leap in semitones (7 = 5th)
-  bool allow_unison_repeat = true;    ///< Allow consecutive same notes
-  float phrase_end_resolution = 0.8f; ///< Probability of resolving at phrase end
-  float tension_usage = 0.2f;         ///< Probability of using tensions (0.0-1.0)
+  uint8_t max_leap_interval = 7;       ///< Max leap in semitones (7 = 5th)
+  bool allow_unison_repeat = true;     ///< Allow consecutive same notes
+  float phrase_end_resolution = 0.8f;  ///< Probability of resolving at phrase end
+  float tension_usage = 0.2f;          ///< Probability of using tensions (0.0-1.0)
 
   /// @name Vocal density parameters
   /// @{
-  float note_density = 0.7f;          ///< Base note density (0.3-2.0)
-                                      ///< 0.3=ballad, 0.7=standard, 1.0=idol
-                                      ///< 1.5=vocaloid, 2.0=ultra vocaloid
-  uint8_t min_note_division = 8;      ///< Minimum note division (4=quarter, 8=eighth, 16=16th, 32=32nd)
-  float sixteenth_note_ratio = 0.0f;  ///< Ratio of 16th notes (0.0-0.5)
+  float note_density = 0.7f;      ///< Base note density (0.3-2.0)
+                                  ///< 0.3=ballad, 0.7=standard, 1.0=idol
+                                  ///< 1.5=vocaloid, 2.0=ultra vocaloid
+  uint8_t min_note_division = 8;  ///< Minimum note division (4=quarter, 8=eighth, 16=16th, 32=32nd)
+  float sixteenth_note_ratio = 0.0f;     ///< Ratio of 16th notes (0.0-0.5)
   float thirtysecond_note_ratio = 0.0f;  ///< Base ratio of 32nd notes (0.0-1.0)
   /// @}
 
   /// @name Syncopation
   /// @{
-  float syncopation_prob = 0.15f;     ///< Probability of syncopation
-  bool allow_bar_crossing = false;    ///< Allow notes to cross bar lines
+  float syncopation_prob = 0.15f;   ///< Probability of syncopation
+  bool allow_bar_crossing = false;  ///< Allow notes to cross bar lines
   /// @}
 
   /// @name Phrase characteristics
   /// @{
-  float long_note_ratio = 0.2f;       ///< Ratio of long notes in phrases
-  uint8_t phrase_length_bars = 2;     ///< Default phrase length in bars
-  bool hook_repetition = false;       ///< Enable hook repetition in chorus
-  bool use_leading_tone = true;       ///< Use leading tone for resolution
+  float long_note_ratio = 0.2f;    ///< Ratio of long notes in phrases
+  uint8_t phrase_length_bars = 2;  ///< Default phrase length in bars
+  bool hook_repetition = false;    ///< Enable hook repetition in chorus
+  bool use_leading_tone = true;    ///< Use leading tone for resolution
   /// @}
 
   /// @name Section register shifts (semitones)
   /// @{
-  int8_t verse_register_shift = -2;      ///< A melody register shift
-  int8_t prechorus_register_shift = 2;   ///< B melody register shift
-  int8_t chorus_register_shift = 5;      ///< Chorus register shift
-  int8_t bridge_register_shift = 0;      ///< Bridge register shift
+  int8_t verse_register_shift = -2;     ///< A melody register shift
+  int8_t prechorus_register_shift = 2;  ///< B melody register shift
+  int8_t chorus_register_shift = 5;     ///< Chorus register shift
+  int8_t bridge_register_shift = 0;     ///< Bridge register shift
   /// @}
 
   /// @name Section density modifiers (multiplied with template sixteenth_density)
   /// @{
   float verse_density_modifier = 1.0f;      ///< Density modifier for verse (A)
   float prechorus_density_modifier = 1.0f;  ///< Density modifier for pre-chorus (B)
-  float chorus_density_modifier = 0.9f;     ///< Density modifier for chorus (reduced to prevent 8th note saturation)
-  float bridge_density_modifier = 1.0f;     ///< Density modifier for bridge
-  bool chorus_long_tones = false;           ///< Use long sustained tones in chorus
+  float chorus_density_modifier =
+      0.9f;  ///< Density modifier for chorus (reduced to prevent 8th note saturation)
+  float bridge_density_modifier = 1.0f;  ///< Density modifier for bridge
+  bool chorus_long_tones = false;        ///< Use long sustained tones in chorus
   /// @}
 
   /// @name Section-specific 32nd note ratios (for UltraVocaloid style)
@@ -349,21 +350,23 @@ struct StyleMelodyParams {
 
   /// @name Consecutive same note control
   /// @{
-  float consecutive_same_note_prob = 0.6f;  ///< Probability of allowing same consecutive note (0.0-1.0)
+  float consecutive_same_note_prob =
+      0.6f;  ///< Probability of allowing same consecutive note (0.0-1.0)
   /// @}
 
   /// @name Human singing constraints
   /// @{
-  bool disable_vowel_constraints = false;    ///< Disable vowel section step limits for Vocaloid styles
-  bool disable_breathing_gaps = false;       ///< Disable breathing rests between phrases (machine-like)
+  bool disable_vowel_constraints =
+      false;                            ///< Disable vowel section step limits for Vocaloid styles
+  bool disable_breathing_gaps = false;  ///< Disable breathing rests between phrases (machine-like)
   /// @}
 
   /// @name Articulation (gate values)
   /// @{
-  float legato_gate = 0.95f;          ///< Gate for legato notes
-  float normal_gate = 0.85f;          ///< Gate for normal notes
-  float staccato_gate = 0.5f;         ///< Gate for staccato notes
-  float phrase_end_gate = 0.70f;      ///< Gate for phrase-ending notes
+  float legato_gate = 0.95f;      ///< Gate for legato notes
+  float normal_gate = 0.85f;      ///< Gate for normal notes
+  float staccato_gate = 0.5f;     ///< Gate for staccato notes
+  float phrase_end_gate = 0.70f;  ///< Gate for phrase-ending notes
   /// @}
 
   /// @name Density thresholds for rhythm selection

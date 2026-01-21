@@ -15,8 +15,6 @@ void Song::clearAll() {
   phrase_boundaries_.clear();
 }
 
-void Song::setArrangement(const Arrangement& arrangement) {
-  arrangement_ = arrangement;
-}
+void Song::setArrangement(const Arrangement& arrangement) { arrangement_ = arrangement; }
 
 }  // namespace midisketch

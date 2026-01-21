@@ -4,6 +4,7 @@
  */
 
 #include <gtest/gtest.h>
+
 #include "core/chord.h"
 #include "core/generator.h"
 #include "core/preset_data.h"
@@ -126,14 +127,14 @@ TEST(ChordProgressionMetaTest, RockProgressions) {
 
 TEST(FormCandidatesTest, GetFormsByStyle) {
   auto forms = getFormsByStyle(0);  // Minimal Groove Pop
-  EXPECT_EQ(forms.size(), 8u);  // Expanded to 8 slots (including new patterns)
+  EXPECT_EQ(forms.size(), 8u);      // Expanded to 8 slots (including new patterns)
   // First form should be StandardPop
   EXPECT_EQ(forms[0], StructurePattern::StandardPop);
 }
 
 TEST(FormCandidatesTest, DancePopHasFullForms) {
   auto forms = getFormsByStyle(1);  // Dance Pop Emotion
-  EXPECT_EQ(forms.size(), 8u);  // Expanded to 8 slots (including new patterns)
+  EXPECT_EQ(forms.size(), 8u);      // Expanded to 8 slots (including new patterns)
   // First form should be FullPop
   EXPECT_EQ(forms[0], StructurePattern::FullPop);
 }
@@ -527,9 +528,15 @@ TEST(BackingDensityTest, SectionsHaveBackingDensity) {
 
   for (const auto& section : sections) {
     switch (section.backing_density) {
-      case BackingDensity::Thin: has_thin = true; break;
-      case BackingDensity::Normal: has_normal = true; break;
-      case BackingDensity::Thick: has_thick = true; break;
+      case BackingDensity::Thin:
+        has_thin = true;
+        break;
+      case BackingDensity::Normal:
+        has_normal = true;
+        break;
+      case BackingDensity::Thick:
+        has_thick = true;
+        break;
     }
   }
 
@@ -715,8 +722,7 @@ TEST(KeyTransposeTest, InternalNotesAreCMajor) {
 
   ASSERT_EQ(notesC.size(), notesD.size());
   for (size_t i = 0; i < notesC.size(); ++i) {
-    EXPECT_EQ(notesC[i].note, notesD[i].note)
-        << "Internal notes should be identical for same seed";
+    EXPECT_EQ(notesC[i].note, notesD[i].note) << "Internal notes should be identical for same seed";
     EXPECT_EQ(notesC[i].start_tick, notesD[i].start_tick);
     EXPECT_EQ(notesC[i].duration, notesD[i].duration);
   }
@@ -754,8 +760,7 @@ TEST(KeyTransposeTest, MidiOutputDiffersByKeyOffset) {
   uint8_t pitchD = findPitch(midiD);
 
   // Key::D is 2 semitones above Key::C
-  EXPECT_EQ(pitchD - pitchC, 2)
-      << "MIDI output should differ by exactly 2 semitones (C vs D)";
+  EXPECT_EQ(pitchD - pitchC, 2) << "MIDI output should differ by exactly 2 semitones (C vs D)";
 }
 
 TEST(KeyTransposeTest, AllTracksTransposed) {
@@ -813,10 +818,10 @@ TEST(KeyTransposeTest, AllTracksTransposed) {
   // (Chord voicing may reorder notes during MIDI encoding)
   if (internalChord > 0 && !midiChordPitches.empty()) {
     uint8_t expectedMidiChord = internalChord + 7;
-    bool found = std::find(midiChordPitches.begin(), midiChordPitches.end(),
-                           expectedMidiChord) != midiChordPitches.end();
-    EXPECT_TRUE(found) << "Chord root should be transposed: expected "
-                       << (int)expectedMidiChord << " in MIDI output";
+    bool found = std::find(midiChordPitches.begin(), midiChordPitches.end(), expectedMidiChord) !=
+                 midiChordPitches.end();
+    EXPECT_TRUE(found) << "Chord root should be transposed: expected " << (int)expectedMidiChord
+                       << " in MIDI output";
   }
   if (internalBass > 0 && midiBass > 0) {
     EXPECT_EQ(midiBass - internalBass, 7) << "Bass should be transposed";
@@ -876,8 +881,7 @@ TEST(ModulationTest, InternalNotesIdenticalBeforeAndAfterModulation) {
   uint8_t expected_high = 96;  // C7 (generous upper bound)
 
   for (const auto& note : after_notes) {
-    EXPECT_GE(note.note, expected_low)
-        << "Note after modulation should be within reasonable range";
+    EXPECT_GE(note.note, expected_low) << "Note after modulation should be within reasonable range";
     EXPECT_LE(note.note, expected_high)
         << "Note after modulation should be within reasonable range";
   }
@@ -921,7 +925,6 @@ TEST(ModulationTest, MidiOutputHasModulationApplied) {
   EXPECT_GT(note_ons.size(), 0u);
 }
 
-
 // ============================================================================
 // SongConfig.target_duration_seconds Tests
 // ============================================================================
@@ -932,12 +935,12 @@ TEST(TargetDurationTest, DurationOverridesFormId) {
   SongConfig config_form = createDefaultSongConfig(0);
   config_form.seed = 12345;
   config_form.form = StructurePattern::ShortForm;  // 12 bars
-  config_form.target_duration_seconds = 0;  // Use form
+  config_form.target_duration_seconds = 0;         // Use form
 
   SongConfig config_duration = createDefaultSongConfig(0);
   config_duration.seed = 12345;
   config_duration.form = StructurePattern::ShortForm;  // Would be 12 bars
-  config_duration.target_duration_seconds = 180;  // Override to ~90 bars
+  config_duration.target_duration_seconds = 180;       // Override to ~90 bars
 
   MidiSketch sketch_form;
   sketch_form.generateFromConfig(config_form);
@@ -951,10 +954,8 @@ TEST(TargetDurationTest, DurationOverridesFormId) {
   uint16_t bars_duration = sketch_duration.getSong().arrangement().totalBars();
 
   EXPECT_EQ(bars_form, 12) << "ShortForm should be 12 bars";
-  EXPECT_GT(bars_duration, bars_form)
-      << "target_duration_seconds should override form";
-  EXPECT_GE(bars_duration, 80)
-      << "180sec@120BPM should generate ~90 bars";
+  EXPECT_GT(bars_duration, bars_form) << "target_duration_seconds should override form";
+  EXPECT_GE(bars_duration, 80) << "180sec@120BPM should generate ~90 bars";
 }
 
 TEST(TargetDurationTest, DurationZeroUsesForm) {
@@ -962,7 +963,7 @@ TEST(TargetDurationTest, DurationZeroUsesForm) {
   config.seed = 12345;
   // Use FullPop (not default for style 0) to test explicit form is respected
   config.form = StructurePattern::FullPop;  // 56 bars
-  config.target_duration_seconds = 0;  // Use form
+  config.target_duration_seconds = 0;       // Use form
 
   MidiSketch sketch;
   sketch.generateFromConfig(config);
@@ -1197,27 +1198,26 @@ TEST(SongConfigValidationTest, InvalidModulationTimingRejected) {
 
 TEST(SongConfigValidationTest, AllValidEnumValuesAccepted) {
   SongConfig config = createDefaultSongConfig(0);
-  config.key = Key::B;                                      // Max valid
-  config.composition_style = CompositionStyle::SynthDriven; // Max valid (2)
-  config.arpeggio.pattern = ArpeggioPattern::Random;        // Max valid (3)
-  config.arpeggio.speed = ArpeggioSpeed::Triplet;           // Max valid (2)
-  config.vocal_style = VocalStylePreset::PowerfulShout;     // Max valid (12)
-  config.melody_template = MelodyTemplateId::JumpAccent;    // Max valid (7)
-  config.melodic_complexity = MelodicComplexity::Complex;   // Max valid (2)
-  config.hook_intensity = HookIntensity::Strong;            // Max valid (3)
-  config.vocal_groove = VocalGrooveFeel::Bouncy8th;         // Max valid (5)
-  config.call_density = CallDensity::Intense;               // Max valid (3)
-  config.intro_chant = IntroChant::Shouting;                // Max valid (2)
-  config.mix_pattern = MixPattern::Tiger;                   // Max valid (2)
-  config.motif_repeat_scope = MotifRepeatScope::Section;    // Max valid (1)
-  config.arrangement_growth = ArrangementGrowth::RegisterAdd; // Max valid (1)
-  config.modulation_timing = ModulationTiming::Random;      // Max valid (4)
-  config.modulation_semitones = 2;  // Needed when timing != None
+  config.key = Key::B;                                         // Max valid
+  config.composition_style = CompositionStyle::SynthDriven;    // Max valid (2)
+  config.arpeggio.pattern = ArpeggioPattern::Random;           // Max valid (3)
+  config.arpeggio.speed = ArpeggioSpeed::Triplet;              // Max valid (2)
+  config.vocal_style = VocalStylePreset::PowerfulShout;        // Max valid (12)
+  config.melody_template = MelodyTemplateId::JumpAccent;       // Max valid (7)
+  config.melodic_complexity = MelodicComplexity::Complex;      // Max valid (2)
+  config.hook_intensity = HookIntensity::Strong;               // Max valid (3)
+  config.vocal_groove = VocalGrooveFeel::Bouncy8th;            // Max valid (5)
+  config.call_density = CallDensity::Intense;                  // Max valid (3)
+  config.intro_chant = IntroChant::Shouting;                   // Max valid (2)
+  config.mix_pattern = MixPattern::Tiger;                      // Max valid (2)
+  config.motif_repeat_scope = MotifRepeatScope::Section;       // Max valid (1)
+  config.arrangement_growth = ArrangementGrowth::RegisterAdd;  // Max valid (1)
+  config.modulation_timing = ModulationTiming::Random;         // Max valid (4)
+  config.modulation_semitones = 2;                             // Needed when timing != None
 
   SongConfigError error = validateSongConfig(config);
   EXPECT_EQ(error, SongConfigError::OK);
 }
-
 
 }  // namespace
 }  // namespace midisketch

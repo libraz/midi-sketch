@@ -6,10 +6,11 @@
 #ifndef MIDISKETCH_TRACK_ARPEGGIO_H
 #define MIDISKETCH_TRACK_ARPEGGIO_H
 
+#include <random>
+
 #include "core/midi_track.h"
 #include "core/song.h"
 #include "core/types.h"
-#include <random>
 
 namespace midisketch {
 
@@ -24,9 +25,8 @@ class IHarmonyContext;
  * @param harmony HarmonyContext for provenance tracking (optional)
  * @note Uses GM Program 81 (Saw Lead). May be empty for some moods.
  */
-void generateArpeggioTrack(MidiTrack& track, const Song& song,
-                           const GeneratorParams& params, std::mt19937& rng,
-                           const IHarmonyContext& harmony);
+void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,
+                           std::mt19937& rng, const IHarmonyContext& harmony);
 
 }  // namespace midisketch
 

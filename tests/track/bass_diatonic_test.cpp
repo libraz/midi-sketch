@@ -10,13 +10,15 @@
  */
 
 #include <gtest/gtest.h>
-#include "core/generator.h"
-#include "core/chord.h"
-#include "core/chord_utils.h"
-#include "core/song.h"
-#include "core/types.h"
+
 #include <set>
 #include <vector>
+
+#include "core/chord.h"
+#include "core/chord_utils.h"
+#include "core/generator.h"
+#include "core/song.h"
+#include "core/types.h"
 
 namespace midisketch {
 namespace {
@@ -32,8 +34,7 @@ bool isDiatonic(int pitch) {
 
 // Helper to get pitch class name for error messages
 std::string pitchClassName(int pc) {
-  static const char* names[] = {"C", "C#", "D", "D#", "E", "F",
-                                 "F#", "G", "G#", "A", "A#", "B"};
+  static const char* names[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
   return names[pc % 12];
 }
 
@@ -82,8 +83,8 @@ TEST_F(BassDiatonicTest, AllBassNotesAreDiatonic) {
         << "Seed " << seed << " produced " << non_diatonic.size()
         << " non-diatonic bass notes. First: tick="
         << (non_diatonic.empty() ? 0 : non_diatonic[0].first)
-        << " pitch=" << (non_diatonic.empty() ? 0 : non_diatonic[0].second)
-        << " (" << (non_diatonic.empty() ? "" : pitchClassName(non_diatonic[0].second)) << ")";
+        << " pitch=" << (non_diatonic.empty() ? 0 : non_diatonic[0].second) << " ("
+        << (non_diatonic.empty() ? "" : pitchClassName(non_diatonic[0].second)) << ")";
   }
 }
 
@@ -125,10 +126,9 @@ TEST_F(BassDiatonicTest, ViiChordUsesDiminishedFifth) {
       }
     }
 
-    EXPECT_EQ(fsharp_count, 0)
-        << "Chord progression " << static_cast<int>(chord_id)
-        << " (contains vii) produced F# in bass. "
-        << "vii chord should use diminished 5th (F), not perfect 5th (F#)";
+    EXPECT_EQ(fsharp_count, 0) << "Chord progression " << static_cast<int>(chord_id)
+                               << " (contains vii) produced F# in bass. "
+                               << "vii chord should use diminished 5th (F), not perfect 5th (F#)";
   }
 }
 
@@ -136,10 +136,8 @@ TEST_F(BassDiatonicTest, ViiChordUsesDiminishedFifth) {
 TEST_F(BassDiatonicTest, ApproachNotesAreDiatonicAllMoods) {
   // Test different moods which may select different bass patterns
   // Use a diatonic chord progression (Canon = 0) to isolate bass behavior
-  std::vector<Mood> test_moods = {
-      Mood::StraightPop, Mood::ElectroPop, Mood::Ballad,
-      Mood::LightRock, Mood::EnergeticDance
-  };
+  std::vector<Mood> test_moods = {Mood::StraightPop, Mood::ElectroPop, Mood::Ballad,
+                                  Mood::LightRock, Mood::EnergeticDance};
   params_.chord_id = 0;  // Canon progression (strictly diatonic)
 
   for (Mood mood : test_moods) {
@@ -153,8 +151,8 @@ TEST_F(BassDiatonicTest, ApproachNotesAreDiatonicAllMoods) {
     auto non_diatonic = findNonDiatonicNotes(track);
 
     EXPECT_TRUE(non_diatonic.empty())
-        << "Mood " << static_cast<int>(mood) << " produced "
-        << non_diatonic.size() << " non-diatonic bass notes. First: "
+        << "Mood " << static_cast<int>(mood) << " produced " << non_diatonic.size()
+        << " non-diatonic bass notes. First: "
         << (non_diatonic.empty() ? "none" : pitchClassName(non_diatonic[0].second));
   }
 }
@@ -168,7 +166,7 @@ TEST_F(BassDiatonicTest, WalkingBassPatternIsDiatonic) {
   // Use CityPop chord progression (19) which is strictly diatonic: I-vi-ii-V
   // Test with skip_vocal to isolate bass generation behavior
   params_.mood = Mood::CityPop;
-  params_.chord_id = 19;  // CityPop progression (diatonic)
+  params_.chord_id = 19;      // CityPop progression (diatonic)
   params_.skip_vocal = true;  // Test bass pattern without vocal interaction
 
   for (uint32_t seed = 1; seed <= 10; ++seed) {
@@ -243,14 +241,12 @@ TEST_F(BassDiatonicTest, RegressionOriginalBugCase) {
   auto non_diatonic = findNonDiatonicNotes(track);
 
   // Should have zero non-diatonic notes after the fix
-  EXPECT_TRUE(non_diatonic.empty())
-      << "Original bug case (seed 1670804638) still produces "
-      << non_diatonic.size() << " non-diatonic bass notes";
+  EXPECT_TRUE(non_diatonic.empty()) << "Original bug case (seed 1670804638) still produces "
+                                    << non_diatonic.size() << " non-diatonic bass notes";
 
   // Specifically verify no F# (the original bug produced F# at bars 12 and 36)
   for (const auto& [tick, pitch] : non_diatonic) {
-    EXPECT_NE(pitch % 12, 6)
-        << "Found F# at tick " << tick << " - this was the original bug";
+    EXPECT_NE(pitch % 12, 6) << "Found F# at tick " << tick << " - this was the original bug";
   }
 }
 
@@ -260,8 +256,8 @@ TEST_F(BassDiatonicTest, RegressionOriginalBugCase) {
 TEST_F(BassDiatonicTest, DiatonicChordProgressionsProduceDiatonicBass) {
   // Chord progressions without borrowed chords (all strictly diatonic)
   std::vector<uint8_t> diatonic_progressions = {
-      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,  // Progressions using degrees 0-6 only
-      13, 14, 15, 16, 17, 18, 19         // More diatonic progressions
+      0,  1,  2,  3,  4,  5,  6, 7, 8, 9, 10,  // Progressions using degrees 0-6 only
+      13, 14, 15, 16, 17, 18, 19               // More diatonic progressions
   };
 
   for (uint8_t chord_id : diatonic_progressions) {
@@ -275,8 +271,8 @@ TEST_F(BassDiatonicTest, DiatonicChordProgressionsProduceDiatonicBass) {
     auto non_diatonic = findNonDiatonicNotes(track);
 
     EXPECT_TRUE(non_diatonic.empty())
-        << "Chord progression " << static_cast<int>(chord_id)
-        << " produced " << non_diatonic.size() << " non-diatonic bass notes";
+        << "Chord progression " << static_cast<int>(chord_id) << " produced " << non_diatonic.size()
+        << " non-diatonic bass notes";
   }
 }
 
@@ -298,8 +294,7 @@ TEST_F(BassDiatonicTest, BorrowedChordProgressionsUseCorrectRoots) {
 
     // Should have non-diatonic notes (Bb = pitch class 10)
     EXPECT_FALSE(non_diatonic.empty())
-        << "Progression " << static_cast<int>(chord_id)
-        << " with bVII should have Bb notes";
+        << "Progression " << static_cast<int>(chord_id) << " with bVII should have Bb notes";
 
     // Verify the non-diatonic notes are Bb (pitch class 10)
     for (const auto& [tick, pitch] : non_diatonic) {
@@ -319,10 +314,8 @@ TEST_F(BassDiatonicTest, BassOnBeatOneMustBeChordTone) {
   const Tick BEAT_THRESHOLD = TICKS_PER_BEAT / 4;  // Allow small timing tolerance
 
   // Test across multiple moods and seeds to ensure robustness
-  std::vector<Mood> test_moods = {
-      Mood::StraightPop, Mood::ElectroPop, Mood::Yoasobi,
-      Mood::IdolPop, Mood::CityPop
-  };
+  std::vector<Mood> test_moods = {Mood::StraightPop, Mood::ElectroPop, Mood::Yoasobi, Mood::IdolPop,
+                                  Mood::CityPop};
 
   for (Mood mood : test_moods) {
     params_.mood = mood;
@@ -363,10 +356,9 @@ TEST_F(BassDiatonicTest, BassOnBeatOneMustBeChordTone) {
         // Calculate chord degree at this bar (matching bass generation logic)
         uint32_t section_start_bar = section->start_tick / TICKS_PER_BAR;
         uint32_t bar_in_section = bar - section_start_bar;
-        bool slow_harmonic = (section->type == SectionType::Intro ||
-                              section->type == SectionType::Interlude ||
-                              section->type == SectionType::Outro ||
-                              section->type == SectionType::Chant);
+        bool slow_harmonic =
+            (section->type == SectionType::Intro || section->type == SectionType::Interlude ||
+             section->type == SectionType::Outro || section->type == SectionType::Chant);
         int chord_idx = slow_harmonic ? (bar_in_section / 2) % progression.length
                                       : bar_in_section % progression.length;
         int8_t degree = progression.degrees[chord_idx];
@@ -388,17 +380,16 @@ TEST_F(BassDiatonicTest, BassOnBeatOneMustBeChordTone) {
           non_chord_tone_count++;
           if (issues.size() < 3) {  // Limit error details
             std::string issue = "Bar " + std::to_string(bar) +
-                               ": bass=" + pitchClassName(pitch_class) +
-                               " not in chord (degree " + std::to_string(degree) + ")";
+                                ": bass=" + pitchClassName(pitch_class) + " not in chord (degree " +
+                                std::to_string(degree) + ")";
             issues.push_back(issue);
           }
         }
       }
 
       EXPECT_EQ(non_chord_tone_count, 0)
-          << "Mood " << static_cast<int>(mood) << " seed " << seed
-          << ": " << non_chord_tone_count << " bass notes on beat 1 are non-chord tones. "
-          << (issues.empty() ? "" : issues[0]);
+          << "Mood " << static_cast<int>(mood) << " seed " << seed << ": " << non_chord_tone_count
+          << " bass notes on beat 1 are non-chord tones. " << (issues.empty() ? "" : issues[0]);
     }
   }
 }

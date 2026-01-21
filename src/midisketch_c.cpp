@@ -4,17 +4,19 @@
  */
 
 #include "midisketch_c.h"
-#include "midisketch.h"
-#include "core/preset_data.h"
+
+#include <algorithm>
+#include <cstdlib>
+#include <cstring>
+#include <unordered_map>
+
 #include "core/chord.h"
-#include "core/structure.h"
 #include "core/chord_utils.h"
 #include "core/piano_roll_safety.h"
+#include "core/preset_data.h"
 #include "core/production_blueprint.h"
-#include <cstring>
-#include <cstdlib>
-#include <algorithm>
-#include <unordered_map>
+#include "core/structure.h"
+#include "midisketch.h"
 
 namespace {
 // Thread-local storage for last config error per handle
@@ -37,7 +39,8 @@ midisketch::SongConfig convertToSongConfig(const MidiSketchSongConfig* config) {
   cpp_config.arpeggio_enabled = config->arpeggio_enabled != 0;
   cpp_config.arpeggio.pattern = static_cast<midisketch::ArpeggioPattern>(config->arpeggio_pattern);
   cpp_config.arpeggio.speed = static_cast<midisketch::ArpeggioSpeed>(config->arpeggio_speed);
-  cpp_config.arpeggio.octave_range = config->arpeggio_octave_range > 0 ? config->arpeggio_octave_range : 2;
+  cpp_config.arpeggio.octave_range =
+      config->arpeggio_octave_range > 0 ? config->arpeggio_octave_range : 2;
   cpp_config.arpeggio.gate = config->arpeggio_gate / 100.0f;
   cpp_config.arpeggio.sync_chord = config->arpeggio_sync_chord != 0;
 
@@ -60,11 +63,13 @@ midisketch::SongConfig convertToSongConfig(const MidiSketchSongConfig* config) {
   cpp_config.chord_extension.ninth_probability = config->chord_ext_9th_prob / 100.0f;
 
   // Composition style
-  cpp_config.composition_style = static_cast<midisketch::CompositionStyle>(config->composition_style);
+  cpp_config.composition_style =
+      static_cast<midisketch::CompositionStyle>(config->composition_style);
   cpp_config.target_duration_seconds = config->target_duration_seconds;
 
   // Modulation settings
-  cpp_config.modulation_timing = static_cast<midisketch::ModulationTiming>(config->modulation_timing);
+  cpp_config.modulation_timing =
+      static_cast<midisketch::ModulationTiming>(config->modulation_timing);
   cpp_config.modulation_semitones = config->modulation_semitones;
 
   // Call settings
@@ -80,15 +85,18 @@ midisketch::SongConfig convertToSongConfig(const MidiSketchSongConfig* config) {
   cpp_config.melody_template = static_cast<midisketch::MelodyTemplateId>(config->melody_template);
 
   // Arrangement growth
-  cpp_config.arrangement_growth = static_cast<midisketch::ArrangementGrowth>(config->arrangement_growth);
+  cpp_config.arrangement_growth =
+      static_cast<midisketch::ArrangementGrowth>(config->arrangement_growth);
 
   // Motif settings
   cpp_config.motif_chord.fixed_progression = config->motif_fixed_progression != 0;
   cpp_config.motif_chord.max_chord_count = config->motif_max_chord_count;
-  cpp_config.motif_repeat_scope = static_cast<midisketch::MotifRepeatScope>(config->motif_repeat_scope);
+  cpp_config.motif_repeat_scope =
+      static_cast<midisketch::MotifRepeatScope>(config->motif_repeat_scope);
 
   // Melodic complexity, hook intensity, and groove
-  cpp_config.melodic_complexity = static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);
+  cpp_config.melodic_complexity =
+      static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);
   cpp_config.hook_intensity = static_cast<midisketch::HookIntensity>(config->hook_intensity);
   cpp_config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(config->vocal_groove);
 
@@ -194,9 +202,7 @@ MidiSketchConfigError midisketch_get_last_config_error(MidiSketchHandle handle) 
   return MIDISKETCH_CONFIG_OK;
 }
 
-MidiSketchHandle midisketch_create(void) {
-  return new midisketch::MidiSketch();
-}
+MidiSketchHandle midisketch_create(void) { return new midisketch::MidiSketch(); }
 
 void midisketch_destroy(MidiSketchHandle handle) {
   if (handle) {
@@ -210,7 +216,7 @@ void midisketch_destroy(MidiSketchHandle handle) {
 // ============================================================================
 
 MidiSketchError midisketch_generate_vocal(MidiSketchHandle handle,
-                                                const MidiSketchSongConfig* config) {
+                                          const MidiSketchSongConfig* config) {
   if (!handle || !config) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
@@ -247,11 +253,14 @@ MidiSketchError midisketch_regenerate_vocal(MidiSketchHandle handle,
     vocal_config.vocal_high = config->vocal_high;
     vocal_config.vocal_attitude = static_cast<midisketch::VocalAttitude>(config->vocal_attitude);
     vocal_config.vocal_style = static_cast<midisketch::VocalStylePreset>(config->vocal_style);
-    vocal_config.melody_template = static_cast<midisketch::MelodyTemplateId>(config->melody_template);
-    vocal_config.melodic_complexity = static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);
+    vocal_config.melody_template =
+        static_cast<midisketch::MelodyTemplateId>(config->melody_template);
+    vocal_config.melodic_complexity =
+        static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);
     vocal_config.hook_intensity = static_cast<midisketch::HookIntensity>(config->hook_intensity);
     vocal_config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(config->vocal_groove);
-    vocal_config.composition_style = static_cast<midisketch::CompositionStyle>(config->composition_style);
+    vocal_config.composition_style =
+        static_cast<midisketch::CompositionStyle>(config->composition_style);
     sketch->regenerateVocal(vocal_config);
   } else {
     // NULL config = regenerate with new seed only
@@ -270,8 +279,7 @@ MidiSketchError midisketch_generate_accompaniment(MidiSketchHandle handle) {
   return MIDISKETCH_OK;
 }
 
-MidiSketchError midisketch_regenerate_accompaniment(MidiSketchHandle handle,
-                                                     uint32_t new_seed) {
+MidiSketchError midisketch_regenerate_accompaniment(MidiSketchHandle handle, uint32_t new_seed) {
   if (!handle) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
@@ -282,8 +290,7 @@ MidiSketchError midisketch_regenerate_accompaniment(MidiSketchHandle handle,
 }
 
 MidiSketchError midisketch_generate_accompaniment_with_config(
-    MidiSketchHandle handle,
-    const MidiSketchAccompanimentConfig* config) {
+    MidiSketchHandle handle, const MidiSketchAccompanimentConfig* config) {
   if (!handle || !config) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
@@ -295,8 +302,7 @@ MidiSketchError midisketch_generate_accompaniment_with_config(
 }
 
 MidiSketchError midisketch_regenerate_accompaniment_with_config(
-    MidiSketchHandle handle,
-    const MidiSketchAccompanimentConfig* config) {
+    MidiSketchHandle handle, const MidiSketchAccompanimentConfig* config) {
   if (!handle || !config) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
@@ -308,7 +314,7 @@ MidiSketchError midisketch_regenerate_accompaniment_with_config(
 }
 
 MidiSketchError midisketch_generate_with_vocal(MidiSketchHandle handle,
-                                                const MidiSketchSongConfig* config) {
+                                               const MidiSketchSongConfig* config) {
   if (!handle || !config) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
@@ -331,8 +337,7 @@ MidiSketchError midisketch_generate_with_vocal(MidiSketchHandle handle,
 
 MidiSketchError midisketch_set_vocal_notes(MidiSketchHandle handle,
                                            const MidiSketchSongConfig* config,
-                                           const MidiSketchNoteInput* notes,
-                                           size_t count) {
+                                           const MidiSketchNoteInput* notes, size_t count) {
   if (!handle || !config) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
@@ -354,12 +359,8 @@ MidiSketchError midisketch_set_vocal_notes(MidiSketchHandle handle,
   std::vector<midisketch::NoteEvent> cpp_notes;
   cpp_notes.reserve(count);
   for (size_t i = 0; i < count; ++i) {
-    midisketch::NoteEvent note(
-        notes[i].start_tick,
-        notes[i].duration,
-        notes[i].pitch,
-        notes[i].velocity
-    );
+    midisketch::NoteEvent note(notes[i].start_tick, notes[i].duration, notes[i].pitch,
+                               notes[i].velocity);
     cpp_notes.push_back(note);
   }
 
@@ -456,17 +457,11 @@ MidiSketchInfo midisketch_get_info(MidiSketchHandle handle) {
   return info;
 }
 
-uint8_t midisketch_structure_count(void) {
-  return midisketch::STRUCTURE_COUNT;
-}
+uint8_t midisketch_structure_count(void) { return midisketch::STRUCTURE_COUNT; }
 
-uint8_t midisketch_mood_count(void) {
-  return midisketch::MOOD_COUNT;
-}
+uint8_t midisketch_mood_count(void) { return midisketch::MOOD_COUNT; }
 
-uint8_t midisketch_chord_count(void) {
-  return midisketch::CHORD_COUNT;
-}
+uint8_t midisketch_chord_count(void) { return midisketch::CHORD_COUNT; }
 
 const char* midisketch_structure_name(uint8_t id) {
   return midisketch::getStructureName(static_cast<midisketch::StructurePattern>(id));
@@ -476,9 +471,7 @@ const char* midisketch_mood_name(uint8_t id) {
   return midisketch::getMoodName(static_cast<midisketch::Mood>(id));
 }
 
-const char* midisketch_chord_name(uint8_t id) {
-  return midisketch::getChordProgressionName(id);
-}
+const char* midisketch_chord_name(uint8_t id) { return midisketch::getChordProgressionName(id); }
 
 const char* midisketch_chord_display(uint8_t id) {
   return midisketch::getChordProgressionDisplay(id);
@@ -492,9 +485,7 @@ uint16_t midisketch_mood_default_bpm(uint8_t id) {
 // Production Blueprint API Implementation
 // ============================================================================
 
-uint8_t midisketch_blueprint_count(void) {
-  return midisketch::getProductionBlueprintCount();
-}
+uint8_t midisketch_blueprint_count(void) { return midisketch::getProductionBlueprintCount(); }
 
 const char* midisketch_blueprint_name(uint8_t id) {
   return midisketch::getProductionBlueprintName(id);
@@ -530,9 +521,7 @@ uint8_t midisketch_get_resolved_blueprint_id(MidiSketchHandle handle) {
 // StylePreset API Implementation
 // ============================================================================
 
-uint8_t midisketch_style_preset_count(void) {
-  return midisketch::STYLE_PRESET_COUNT;
-}
+uint8_t midisketch_style_preset_count(void) { return midisketch::STYLE_PRESET_COUNT; }
 
 // Individual getters for StylePreset fields (WASM-friendly)
 const char* midisketch_style_preset_name(uint8_t id) {
@@ -644,9 +633,12 @@ MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
   s_default_config.chord_ext_sus = cpp_config.chord_extension.enable_sus ? 1 : 0;
   s_default_config.chord_ext_7th = cpp_config.chord_extension.enable_7th ? 1 : 0;
   s_default_config.chord_ext_9th = cpp_config.chord_extension.enable_9th ? 1 : 0;
-  s_default_config.chord_ext_sus_prob = static_cast<uint8_t>(cpp_config.chord_extension.sus_probability * 100);
-  s_default_config.chord_ext_7th_prob = static_cast<uint8_t>(cpp_config.chord_extension.seventh_probability * 100);
-  s_default_config.chord_ext_9th_prob = static_cast<uint8_t>(cpp_config.chord_extension.ninth_probability * 100);
+  s_default_config.chord_ext_sus_prob =
+      static_cast<uint8_t>(cpp_config.chord_extension.sus_probability * 100);
+  s_default_config.chord_ext_7th_prob =
+      static_cast<uint8_t>(cpp_config.chord_extension.seventh_probability * 100);
+  s_default_config.chord_ext_9th_prob =
+      static_cast<uint8_t>(cpp_config.chord_extension.ninth_probability * 100);
 
   // Composition style
   s_default_config.composition_style = static_cast<uint8_t>(cpp_config.composition_style);
@@ -676,7 +668,8 @@ MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
   s_default_config.arpeggio_sync_chord = cpp_config.arpeggio.sync_chord ? 1 : 0;
 
   // Motif settings
-  s_default_config.motif_repeat_scope = static_cast<uint8_t>(midisketch::MotifRepeatScope::FullSong);
+  s_default_config.motif_repeat_scope =
+      static_cast<uint8_t>(midisketch::MotifRepeatScope::FullSong);
   s_default_config.motif_fixed_progression = cpp_config.motif_chord.fixed_progression ? 1 : 0;
   s_default_config.motif_max_chord_count = cpp_config.motif_chord.max_chord_count;
 
@@ -725,24 +718,29 @@ MidiSketchConfigError midisketch_validate_config(const MidiSketchSongConfig* con
   cpp_config.target_duration_seconds = config->target_duration_seconds;
 
   // Modulation and call settings
-  cpp_config.modulation_timing = static_cast<midisketch::ModulationTiming>(config->modulation_timing);
+  cpp_config.modulation_timing =
+      static_cast<midisketch::ModulationTiming>(config->modulation_timing);
   cpp_config.modulation_semitones = config->modulation_semitones;
   cpp_config.call_setting = static_cast<midisketch::CallSetting>(config->call_setting);
   cpp_config.intro_chant = static_cast<midisketch::IntroChant>(config->intro_chant);
   cpp_config.mix_pattern = static_cast<midisketch::MixPattern>(config->mix_pattern);
 
   // Additional enum fields for validation
-  cpp_config.composition_style = static_cast<midisketch::CompositionStyle>(config->composition_style);
+  cpp_config.composition_style =
+      static_cast<midisketch::CompositionStyle>(config->composition_style);
   cpp_config.arpeggio.pattern = static_cast<midisketch::ArpeggioPattern>(config->arpeggio_pattern);
   cpp_config.arpeggio.speed = static_cast<midisketch::ArpeggioSpeed>(config->arpeggio_speed);
   cpp_config.vocal_style = static_cast<midisketch::VocalStylePreset>(config->vocal_style);
   cpp_config.melody_template = static_cast<midisketch::MelodyTemplateId>(config->melody_template);
-  cpp_config.melodic_complexity = static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);
+  cpp_config.melodic_complexity =
+      static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);
   cpp_config.hook_intensity = static_cast<midisketch::HookIntensity>(config->hook_intensity);
   cpp_config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(config->vocal_groove);
   cpp_config.call_density = static_cast<midisketch::CallDensity>(config->call_density);
-  cpp_config.motif_repeat_scope = static_cast<midisketch::MotifRepeatScope>(config->motif_repeat_scope);
-  cpp_config.arrangement_growth = static_cast<midisketch::ArrangementGrowth>(config->arrangement_growth);
+  cpp_config.motif_repeat_scope =
+      static_cast<midisketch::MotifRepeatScope>(config->motif_repeat_scope);
+  cpp_config.arrangement_growth =
+      static_cast<midisketch::ArrangementGrowth>(config->arrangement_growth);
 
   midisketch::SongConfigError error = midisketch::validateSongConfig(cpp_config);
 
@@ -801,7 +799,7 @@ MidiSketchConfigError midisketch_validate_config(const MidiSketchSongConfig* con
 }
 
 MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
-                                                 const MidiSketchSongConfig* config) {
+                                                const MidiSketchSongConfig* config) {
   if (!handle || !config) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
@@ -835,7 +833,8 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   cpp_config.arpeggio_enabled = config->arpeggio_enabled != 0;
   cpp_config.arpeggio.pattern = static_cast<midisketch::ArpeggioPattern>(config->arpeggio_pattern);
   cpp_config.arpeggio.speed = static_cast<midisketch::ArpeggioSpeed>(config->arpeggio_speed);
-  cpp_config.arpeggio.octave_range = config->arpeggio_octave_range > 0 ? config->arpeggio_octave_range : 2;
+  cpp_config.arpeggio.octave_range =
+      config->arpeggio_octave_range > 0 ? config->arpeggio_octave_range : 2;
   cpp_config.arpeggio.gate = config->arpeggio_gate / 100.0f;
 
   // Vocal settings
@@ -857,12 +856,14 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   cpp_config.chord_extension.ninth_probability = config->chord_ext_9th_prob / 100.0f;
 
   // Composition style
-  cpp_config.composition_style = static_cast<midisketch::CompositionStyle>(config->composition_style);
+  cpp_config.composition_style =
+      static_cast<midisketch::CompositionStyle>(config->composition_style);
 
   cpp_config.target_duration_seconds = config->target_duration_seconds;
 
   // Modulation settings
-  cpp_config.modulation_timing = static_cast<midisketch::ModulationTiming>(config->modulation_timing);
+  cpp_config.modulation_timing =
+      static_cast<midisketch::ModulationTiming>(config->modulation_timing);
   cpp_config.modulation_semitones = config->modulation_semitones;
 
   // Call settings
@@ -878,7 +879,8 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   cpp_config.melody_template = static_cast<midisketch::MelodyTemplateId>(config->melody_template);
 
   // Arrangement growth
-  cpp_config.arrangement_growth = static_cast<midisketch::ArrangementGrowth>(config->arrangement_growth);
+  cpp_config.arrangement_growth =
+      static_cast<midisketch::ArrangementGrowth>(config->arrangement_growth);
 
   // Arpeggio sync settings
   cpp_config.arpeggio.sync_chord = config->arpeggio_sync_chord != 0;
@@ -886,10 +888,12 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   // Motif settings
   cpp_config.motif_chord.fixed_progression = config->motif_fixed_progression != 0;
   cpp_config.motif_chord.max_chord_count = config->motif_max_chord_count;
-  cpp_config.motif_repeat_scope = static_cast<midisketch::MotifRepeatScope>(config->motif_repeat_scope);
+  cpp_config.motif_repeat_scope =
+      static_cast<midisketch::MotifRepeatScope>(config->motif_repeat_scope);
 
   // Melodic complexity, hook intensity, and groove
-  cpp_config.melodic_complexity = static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);
+  cpp_config.melodic_complexity =
+      static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);
   cpp_config.hook_intensity = static_cast<midisketch::HookIntensity>(config->hook_intensity);
   cpp_config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(config->vocal_groove);
 
@@ -897,17 +901,11 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   return MIDISKETCH_OK;
 }
 
-const char* midisketch_version(void) {
-  return midisketch::MidiSketch::version();
-}
+const char* midisketch_version(void) { return midisketch::MidiSketch::version(); }
 
-void* midisketch_malloc(size_t size) {
-  return malloc(size);
-}
+void* midisketch_malloc(size_t size) { return malloc(size); }
 
-void midisketch_free(void* ptr) {
-  free(ptr);
-}
+void midisketch_free(void* ptr) { free(ptr); }
 
 // ============================================================================
 // Piano Roll Safety API Implementation
@@ -924,21 +922,15 @@ bool containsPitchClass(const std::vector<int>& vec, int value) {
 MidiSketchPianoRollInfo s_single_info;
 
 // Note name lookup table
-const char* NOTE_NAMES[] = {
-  "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
-};
+const char* NOTE_NAMES[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 
 // Track name lookup
-const char* TRACK_NAMES[] = {
-  "Vocal", "Chord", "Bass", "Drums", "SE", "Motif", "Arpeggio", "Aux"
-};
+const char* TRACK_NAMES[] = {"Vocal", "Chord", "Bass", "Drums", "SE", "Motif", "Arpeggio", "Aux"};
 
 // Fill piano roll info for a single tick
-void fillPianoRollInfo(MidiSketchPianoRollInfo* info,
-                       const midisketch::Song& song,
+void fillPianoRollInfo(MidiSketchPianoRollInfo* info, const midisketch::Song& song,
                        const midisketch::IHarmonyContext& harmony,
-                       const midisketch::GeneratorParams& params,
-                       uint32_t tick,
+                       const midisketch::GeneratorParams& params, uint32_t tick,
                        uint8_t prev_pitch = 255) {
   info->tick = tick;
   info->chord_degree = harmony.getChordDegreeAt(tick);
@@ -980,11 +972,8 @@ void fillPianoRollInfo(MidiSketchPianoRollInfo* info,
 
     if (collision.type == midisketch::CollisionType::Severe) {
       info->safety[note] = MIDISKETCH_NOTE_DISSONANT;
-      info->collision[note] = {
-        static_cast<uint8_t>(collision.track),
-        collision.colliding_pitch,
-        collision.interval
-      };
+      info->collision[note] = {static_cast<uint8_t>(collision.track), collision.colliding_pitch,
+                               collision.interval};
       if (collision.interval == 1) {
         reason = MIDISKETCH_REASON_MINOR_2ND;
       } else if (collision.interval == 11) {
@@ -996,11 +985,8 @@ void fillPianoRollInfo(MidiSketchPianoRollInfo* info,
 
     if (collision.type == midisketch::CollisionType::Mild) {
       reason |= MIDISKETCH_REASON_TRITONE;
-      info->collision[note] = {
-        static_cast<uint8_t>(collision.track),
-        collision.colliding_pitch,
-        collision.interval
-      };
+      info->collision[note] = {static_cast<uint8_t>(collision.track), collision.colliding_pitch,
+                               collision.interval};
     }
 
     // 2. Low register check (C4 = 60)
@@ -1064,11 +1050,9 @@ void fillPianoRollInfo(MidiSketchPianoRollInfo* info,
 
 }  // namespace
 
-MidiSketchPianoRollData* midisketch_get_piano_roll_safety(
-    MidiSketchHandle handle,
-    uint32_t start_tick,
-    uint32_t end_tick,
-    uint32_t step) {
+MidiSketchPianoRollData* midisketch_get_piano_roll_safety(MidiSketchHandle handle,
+                                                          uint32_t start_tick, uint32_t end_tick,
+                                                          uint32_t step) {
   if (!handle || step == 0 || start_tick > end_tick) {
     return nullptr;
   }
@@ -1082,12 +1066,11 @@ MidiSketchPianoRollData* midisketch_get_piano_roll_safety(
   size_t count = (end_tick - start_tick) / step + 1;
 
   // Allocate result
-  auto* result = static_cast<MidiSketchPianoRollData*>(
-      malloc(sizeof(MidiSketchPianoRollData)));
+  auto* result = static_cast<MidiSketchPianoRollData*>(malloc(sizeof(MidiSketchPianoRollData)));
   if (!result) return nullptr;
 
-  result->data = static_cast<MidiSketchPianoRollInfo*>(
-      malloc(sizeof(MidiSketchPianoRollInfo) * count));
+  result->data =
+      static_cast<MidiSketchPianoRollInfo*>(malloc(sizeof(MidiSketchPianoRollInfo) * count));
   if (!result->data) {
     free(result);
     return nullptr;
@@ -1103,9 +1086,8 @@ MidiSketchPianoRollData* midisketch_get_piano_roll_safety(
   return result;
 }
 
-MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_at(
-    MidiSketchHandle handle,
-    uint32_t tick) {
+MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_at(MidiSketchHandle handle,
+                                                             uint32_t tick) {
   if (!handle) return nullptr;
 
   auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
@@ -1117,10 +1099,9 @@ MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_at(
   return &s_single_info;
 }
 
-MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_with_context(
-    MidiSketchHandle handle,
-    uint32_t tick,
-    uint8_t prev_pitch) {
+MidiSketchPianoRollInfo* midisketch_get_piano_roll_safety_with_context(MidiSketchHandle handle,
+                                                                       uint32_t tick,
+                                                                       uint8_t prev_pitch) {
   if (!handle) return nullptr;
 
   auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
@@ -1188,12 +1169,12 @@ const char* midisketch_collision_to_string(const MidiSketchCollisionInfo* collis
   int octave = collision->colliding_pitch / 12 - 1;
   const char* note_name = NOTE_NAMES[collision->colliding_pitch % 12];
 
-  const char* interval_name = (collision->interval_semitones == 1) ? "minor 2nd" :
-                              (collision->interval_semitones == 6) ? "tritone" :
-                              (collision->interval_semitones == 11) ? "major 7th" : "interval";
+  const char* interval_name = (collision->interval_semitones == 1)    ? "minor 2nd"
+                              : (collision->interval_semitones == 6)  ? "tritone"
+                              : (collision->interval_semitones == 11) ? "major 7th"
+                                                                      : "interval";
 
-  snprintf(buffer, sizeof(buffer), "%s %s%d %s",
-           track_name, note_name, octave, interval_name);
+  snprintf(buffer, sizeof(buffer), "%s %s%d %s", track_name, note_name, octave, interval_name);
   return buffer;
 }
 

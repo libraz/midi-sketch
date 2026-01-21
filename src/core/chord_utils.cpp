@@ -4,10 +4,12 @@
  */
 
 #include "core/chord_utils.h"
-#include "core/chord.h"
+
 #include <algorithm>
 #include <cmath>
 #include <random>
+
+#include "core/chord.h"
 
 namespace midisketch {
 
@@ -97,33 +99,33 @@ std::vector<int> getAvailableTensionPitchClasses(int8_t degree) {
   // vii° (6): 11th (+5) - limited use
 
   switch (normalized) {
-    case 0:  // I major
-      result.push_back((root_pc + 2) % 12);   // 9th
-      result.push_back((root_pc + 9) % 12);   // 13th
+    case 0:                                  // I major
+      result.push_back((root_pc + 2) % 12);  // 9th
+      result.push_back((root_pc + 9) % 12);  // 13th
       break;
-    case 1:  // ii minor
-      result.push_back((root_pc + 2) % 12);   // 9th
-      result.push_back((root_pc + 5) % 12);   // 11th
-      result.push_back((root_pc + 9) % 12);   // 13th
+    case 1:                                  // ii minor
+      result.push_back((root_pc + 2) % 12);  // 9th
+      result.push_back((root_pc + 5) % 12);  // 11th
+      result.push_back((root_pc + 9) % 12);  // 13th
       break;
-    case 2:  // iii minor
-      result.push_back((root_pc + 5) % 12);   // 11th
+    case 2:                                  // iii minor
+      result.push_back((root_pc + 5) % 12);  // 11th
       break;
-    case 3:  // IV major
-      result.push_back((root_pc + 2) % 12);   // 9th
-      result.push_back((root_pc + 6) % 12);   // #11th
-      result.push_back((root_pc + 9) % 12);   // 13th
+    case 3:                                  // IV major
+      result.push_back((root_pc + 2) % 12);  // 9th
+      result.push_back((root_pc + 6) % 12);  // #11th
+      result.push_back((root_pc + 9) % 12);  // 13th
       break;
-    case 4:  // V dominant
-      result.push_back((root_pc + 2) % 12);   // 9th
-      result.push_back((root_pc + 9) % 12);   // 13th
+    case 4:                                  // V dominant
+      result.push_back((root_pc + 2) % 12);  // 9th
+      result.push_back((root_pc + 9) % 12);  // 13th
       break;
-    case 5:  // vi minor
-      result.push_back((root_pc + 2) % 12);   // 9th
-      result.push_back((root_pc + 5) % 12);   // 11th
+    case 5:                                  // vi minor
+      result.push_back((root_pc + 2) % 12);  // 9th
+      result.push_back((root_pc + 5) % 12);  // 11th
       break;
-    case 6:  // vii diminished
-      result.push_back((root_pc + 5) % 12);   // 11th
+    case 6:                                  // vii diminished
+      result.push_back((root_pc + 5) % 12);  // 11th
       break;
   }
 
@@ -155,9 +157,8 @@ int nearestChordTonePitch(int pitch, int8_t degree) {
   return best_pitch;
 }
 
-int nearestChordToneWithinInterval(int target_pitch, int prev_pitch,
-                                   int8_t chord_degree, int max_interval,
-                                   int range_low, int range_high,
+int nearestChordToneWithinInterval(int target_pitch, int prev_pitch, int8_t chord_degree,
+                                   int max_interval, int range_low, int range_high,
                                    const TessituraRange* tessitura) {
   ChordTones ct = getChordTones(chord_degree);
 
@@ -169,7 +170,7 @@ int nearestChordToneWithinInterval(int target_pitch, int prev_pitch,
 
   // Default: stay on previous pitch, but clamped to range
   int best_pitch = std::clamp(prev_pitch, range_low, range_high);
-  int best_score = -1000;       // Higher is better
+  int best_score = -1000;  // Higher is better
 
   // Search for chord tones within max_interval of prev_pitch
   for (uint8_t i = 0; i < ct.count; ++i) {
@@ -200,7 +201,7 @@ int nearestChordToneWithinInterval(int target_pitch, int prev_pitch,
       } else if (dist_to_prev <= 2) {
         score += 25;  // Step motion (1-2 semitones): most singable
       } else if (dist_to_prev <= 4) {
-        score += 5;   // Small leap (3-4 semitones): acceptable
+        score += 5;  // Small leap (3-4 semitones): acceptable
       } else {
         score -= (dist_to_prev - 4) * 8;  // Large leaps: stronger penalty
       }
@@ -225,10 +226,8 @@ int nearestChordToneWithinInterval(int target_pitch, int prev_pitch,
   return best_pitch;
 }
 
-int stepwiseToTarget(int prev_pitch, int target_pitch,
-                     int8_t chord_degree, int range_low, int range_high,
-                     uint8_t key, int prefer_same_note,
-                     std::mt19937* rng) {
+int stepwiseToTarget(int prev_pitch, int target_pitch, int8_t chord_degree, int range_low,
+                     int range_high, uint8_t key, int prefer_same_note, std::mt19937* rng) {
   // Determine direction toward target
   int direction = 0;
   if (target_pitch > prev_pitch) {

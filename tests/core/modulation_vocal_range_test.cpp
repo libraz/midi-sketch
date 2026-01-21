@@ -7,6 +7,7 @@
  */
 
 #include <gtest/gtest.h>
+
 #include "core/generator.h"
 #include "core/types.h"
 #include "midi/midi_writer.h"
@@ -185,8 +186,7 @@ TEST_F(ModulationVocalRangeTest, NoModulationNoAdjustment) {
 
   // Without modulation, vocal can use full range up to vocal_high
   // (Just verify it doesn't exceed)
-  EXPECT_LE(max_pitch, params.vocal_high)
-      << "Vocal should stay within specified range";
+  EXPECT_LE(max_pitch, params.vocal_high) << "Vocal should stay within specified range";
 }
 
 // Test: BGM mode (BackgroundMotif) with modulation should also respect range

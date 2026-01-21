@@ -16,10 +16,10 @@ namespace midisketch {
  * @brief Parsed MIDI 2.0 container data.
  */
 struct ParsedMidi2 {
-  uint16_t num_tracks = 0;       ///< Number of tracks
-  uint16_t division = 480;       ///< Ticks per quarter note
-  uint16_t bpm = 120;            ///< Tempo
-  std::string metadata;          ///< MIDISKETCH metadata (JSON) if present
+  uint16_t num_tracks = 0;  ///< Number of tracks
+  uint16_t division = 480;  ///< Ticks per quarter note
+  uint16_t bpm = 120;       ///< Tempo
+  std::string metadata;     ///< MIDISKETCH metadata (JSON) if present
 
   bool hasMidiSketchMetadata() const { return !metadata.empty(); }
 };

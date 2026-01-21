@@ -4,6 +4,7 @@
  */
 
 #include <gtest/gtest.h>
+
 #include "core/generator.h"
 #include "core/velocity.h"
 
@@ -160,7 +161,7 @@ TEST(GeneratorTest, HumanizeTimingWithinBounds) {
   params.mood = Mood::StraightPop;
   params.seed = 42;
   params.humanize = true;
-  params.humanize_timing = 1.0f;  // Maximum timing variation
+  params.humanize_timing = 1.0f;    // Maximum timing variation
   params.humanize_velocity = 0.0f;  // No velocity variation
 
   gen.generate(params);
@@ -179,7 +180,7 @@ TEST(GeneratorTest, HumanizeVelocityWithinBounds) {
   params.mood = Mood::StraightPop;
   params.seed = 42;
   params.humanize = true;
-  params.humanize_timing = 0.0f;  // No timing variation
+  params.humanize_timing = 0.0f;    // No timing variation
   params.humanize_velocity = 1.0f;  // Maximum velocity variation
 
   gen.generate(params);

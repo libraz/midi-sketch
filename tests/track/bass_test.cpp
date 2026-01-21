@@ -4,10 +4,12 @@
  */
 
 #include <gtest/gtest.h>
+
+#include <set>
+
 #include "core/generator.h"
 #include "core/song.h"
 #include "core/types.h"
-#include <set>
 
 namespace midisketch {
 namespace {
@@ -77,11 +79,9 @@ TEST_F(BassTest, BassNotesInBassRange) {
   }
 
   // Most bass notes should be in the bass range
-  double out_of_range_ratio =
-      static_cast<double>(out_of_range) / track.notes().size();
+  double out_of_range_ratio = static_cast<double>(out_of_range) / track.notes().size();
   EXPECT_LT(out_of_range_ratio, 0.2)
-      << "Too many bass notes out of range: " << out_of_range << " of "
-      << track.notes().size();
+      << "Too many bass notes out of range: " << out_of_range << " of " << track.notes().size();
 }
 
 TEST_F(BassTest, BassNotesAreScaleTones) {
@@ -103,11 +103,9 @@ TEST_F(BassTest, BassNotesAreScaleTones) {
   }
 
   // Bass should mostly use scale tones (some chromatic approach allowed)
-  double out_of_scale_ratio =
-      static_cast<double>(out_of_scale_count) / track.notes().size();
-  EXPECT_LT(out_of_scale_ratio, 0.15)
-      << "Too many out-of-scale bass notes: " << out_of_scale_count << " of "
-      << track.notes().size();
+  double out_of_scale_ratio = static_cast<double>(out_of_scale_count) / track.notes().size();
+  EXPECT_LT(out_of_scale_ratio, 0.15) << "Too many out-of-scale bass notes: " << out_of_scale_count
+                                      << " of " << track.notes().size();
 }
 
 TEST_F(BassTest, BassFollowsChordProgression) {
@@ -144,8 +142,7 @@ TEST_F(BassTest, SameSeedProducesSameBass) {
       << "Same seed produced different number of bass notes";
 
   for (size_t i = 0; i < track1.notes().size(); ++i) {
-    EXPECT_EQ(track1.notes()[i].note, track2.notes()[i].note)
-        << "Note mismatch at index " << i;
+    EXPECT_EQ(track1.notes()[i].note, track2.notes()[i].note) << "Note mismatch at index " << i;
   }
 }
 
@@ -276,8 +273,7 @@ TEST_F(BassTest, BassVelocityDynamics) {
     uint8_t max_vel = *std::max_element(velocities.begin(), velocities.end());
 
     // Should have some velocity range
-    EXPECT_GE(max_vel - min_vel, 5)
-        << "Bass should have velocity dynamics";
+    EXPECT_GE(max_vel - min_vel, 5) << "Bass should have velocity dynamics";
   }
 }
 
@@ -432,8 +428,7 @@ TEST_F(BassTest, ApproachNotesUsed) {
 
     // If current note is on a bar line
     if (curr.start_tick % TICKS_PER_BAR == 0) {
-      int interval = std::abs(static_cast<int>(curr.note) -
-                              static_cast<int>(prev.note));
+      int interval = std::abs(static_cast<int>(curr.note) - static_cast<int>(prev.note));
       // Approach notes are typically 1-2 semitones or 5-7 (fourth/fifth)
       if (interval >= 1 && interval <= 7) {
         potential_approach_notes++;
@@ -442,8 +437,7 @@ TEST_F(BassTest, ApproachNotesUsed) {
   }
 
   // Should have some approach motion
-  EXPECT_GT(potential_approach_notes, 0)
-      << "Bass should use approach notes";
+  EXPECT_GT(potential_approach_notes, 0) << "Bass should use approach notes";
 }
 
 TEST_F(BassTest, BassAvoidsMajorSeventhWithChord) {
@@ -463,8 +457,8 @@ TEST_F(BassTest, BassAvoidsMajorSeventhWithChord) {
       // Check if notes overlap in time
       if (chord_note.start_tick <= bass_note.start_tick &&
           chord_note.start_tick + chord_note.duration > bass_note.start_tick) {
-        int interval = std::abs(static_cast<int>(bass_note.note) -
-                                static_cast<int>(chord_note.note)) % 12;
+        int interval =
+            std::abs(static_cast<int>(bass_note.note) - static_cast<int>(chord_note.note)) % 12;
         if (interval == 11 || interval == 1) {  // Major 7th or minor 2nd
           potential_clashes++;
         }
@@ -473,11 +467,10 @@ TEST_F(BassTest, BassAvoidsMajorSeventhWithChord) {
   }
 
   // Should have few clashes (some may occur in passing)
-  double clash_ratio = static_cast<double>(potential_clashes) /
-                       bass_track.notes().size();
-  EXPECT_LT(clash_ratio, 0.15)
-      << "Bass should avoid major 7th clashes with chord: "
-      << potential_clashes << " clashes out of " << bass_track.notes().size();
+  double clash_ratio = static_cast<double>(potential_clashes) / bass_track.notes().size();
+  EXPECT_LT(clash_ratio, 0.15) << "Bass should avoid major 7th clashes with chord: "
+                               << potential_clashes << " clashes out of "
+                               << bass_track.notes().size();
 }
 
 // ============================================================================
@@ -494,8 +487,7 @@ TEST_F(BassTest, BassDurationValid) {
 
   for (const auto& note : track.notes()) {
     EXPECT_GT(note.duration, 0u) << "Bass note duration should be > 0";
-    EXPECT_LE(note.duration, TICKS_PER_BAR * 2)
-        << "Bass note duration should not exceed 2 bars";
+    EXPECT_LE(note.duration, TICKS_PER_BAR * 2) << "Bass note duration should not exceed 2 bars";
   }
 }
 

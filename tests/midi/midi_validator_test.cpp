@@ -3,9 +3,11 @@
  * @brief Tests for MIDI file validator.
  */
 
-#include <gtest/gtest.h>
-#include "core/preset_data.h"
 #include "midi/midi_validator.h"
+
+#include <gtest/gtest.h>
+
+#include "core/preset_data.h"
 #include "midi/midi_writer.h"
 #include "midisketch.h"
 
@@ -43,8 +45,7 @@ TEST_F(MidiValidatorTest, ValidateSMF1Output) {
 
   // All tracks should have End of Track
   for (const auto& track : report.tracks) {
-    EXPECT_TRUE(track.has_end_of_track)
-        << "Track " << track.index << " missing End of Track";
+    EXPECT_TRUE(track.has_end_of_track) << "Track " << track.index << " missing End of Track";
   }
 }
 
@@ -126,10 +127,8 @@ TEST_P(MidiValidatorPresetTest, ValidateSMF2AllPresets) {
   EXPECT_FALSE(report.hasErrors());
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    StylePresets,
-    MidiValidatorPresetTest,
-    ::testing::Values(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12));
+INSTANTIATE_TEST_SUITE_P(StylePresets, MidiValidatorPresetTest,
+                         ::testing::Values(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12));
 
 // Test validation error detection
 TEST(MidiValidatorErrorTest, DetectTruncatedFile) {
@@ -145,9 +144,8 @@ TEST(MidiValidatorErrorTest, DetectTruncatedFile) {
 TEST(MidiValidatorErrorTest, DetectInvalidHeader) {
   MidiValidator validator;
 
-  std::vector<uint8_t> invalid_data = {
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+  std::vector<uint8_t> invalid_data = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
   auto report = validator.validate(invalid_data);
   EXPECT_FALSE(report.valid);
   EXPECT_EQ(report.summary.format, DetectedMidiFormat::Unknown);

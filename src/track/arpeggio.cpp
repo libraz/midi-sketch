@@ -4,14 +4,16 @@
  */
 
 #include "track/arpeggio.h"
+
+#include <algorithm>
+#include <memory>
+#include <vector>
+
 #include "core/chord.h"
 #include "core/harmonic_rhythm.h"
 #include "core/i_harmony_context.h"
 #include "core/note_factory.h"
 #include "core/velocity.h"
-#include <algorithm>
-#include <memory>
-#include <vector>
 
 namespace midisketch {
 
@@ -21,18 +23,17 @@ namespace {
 Tick getNoteDuration(ArpeggioSpeed speed) {
   switch (speed) {
     case ArpeggioSpeed::Eighth:
-      return TICKS_PER_BEAT / 2;     // 8th note = 240 ticks
+      return TICKS_PER_BEAT / 2;  // 8th note = 240 ticks
     case ArpeggioSpeed::Sixteenth:
-      return TICKS_PER_BEAT / 4;     // 16th note = 120 ticks
+      return TICKS_PER_BEAT / 4;  // 16th note = 120 ticks
     case ArpeggioSpeed::Triplet:
-      return TICKS_PER_BEAT / 3;     // Triplet = 160 ticks
+      return TICKS_PER_BEAT / 3;  // Triplet = 160 ticks
   }
   return TICKS_PER_BEAT / 4;  // Default to 16th
 }
 
 // Build chord note array from chord intervals
-std::vector<uint8_t> buildChordNotes(uint8_t root, const Chord& chord,
-                                      uint8_t octave_range) {
+std::vector<uint8_t> buildChordNotes(uint8_t root, const Chord& chord, uint8_t octave_range) {
   std::vector<uint8_t> notes;
 
   for (uint8_t octave = 0; octave < octave_range; ++octave) {
@@ -50,9 +51,8 @@ std::vector<uint8_t> buildChordNotes(uint8_t root, const Chord& chord,
 }
 
 // Arrange notes according to pattern
-std::vector<uint8_t> arrangeByPattern(const std::vector<uint8_t>& notes,
-                                       ArpeggioPattern pattern,
-                                       std::mt19937& rng) {
+std::vector<uint8_t> arrangeByPattern(const std::vector<uint8_t>& notes, ArpeggioPattern pattern,
+                                      std::mt19937& rng) {
   if (notes.empty()) return notes;
 
   std::vector<uint8_t> result = notes;
@@ -86,8 +86,7 @@ std::vector<uint8_t> arrangeByPattern(const std::vector<uint8_t>& notes,
 }
 
 // Calculate velocity based on section and position
-uint8_t calculateArpeggioVelocity(uint8_t base_velocity, SectionType section,
-                                   int note_in_pattern) {
+uint8_t calculateArpeggioVelocity(uint8_t base_velocity, SectionType section, int note_in_pattern) {
   float section_mult = 1.0f;
   switch (section) {
     case SectionType::Intro:
@@ -128,9 +127,8 @@ uint8_t calculateArpeggioVelocity(uint8_t base_velocity, SectionType section,
 
 }  // namespace
 
-void generateArpeggioTrack(MidiTrack& track, const Song& song,
-                           const GeneratorParams& params, std::mt19937& rng,
-                           const IHarmonyContext& harmony) {
+void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,
+                           std::mt19937& rng, const IHarmonyContext& harmony) {
   const auto& sections = song.arrangement().sections();
   if (sections.empty()) return;
 
@@ -164,8 +162,7 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
 
     // Get harmonic rhythm info for this section
     // This ensures arpeggio chord changes match chord_track timing
-    HarmonicRhythmInfo harmonic =
-        HarmonicRhythmInfo::forSection(section.type, params.mood);
+    HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section.type, params.mood);
 
     // === PERIODIC REFRESH FOR NON-SYNC MODE ===
     // When sync_chord is false, refresh pattern at each SECTION start
@@ -195,9 +192,8 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
       Tick bar_start = section.start_tick + (bar * TICKS_PER_BAR);
 
       // Check for phrase-end split (matches chord_track behavior)
-      bool should_split = shouldSplitPhraseEnd(
-          bar, section.bars, progression.length, harmonic,
-          section.type, params.mood);
+      bool should_split = shouldSplitPhraseEnd(bar, section.bars, progression.length, harmonic,
+                                               section.type, params.mood);
 
       std::vector<uint8_t> arp_notes;
       std::vector<uint8_t> next_arp_notes;  // For phrase-end split
@@ -237,7 +233,8 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
           while (next_root < BASE_OCTAVE) next_root += 12;
           while (next_root >= BASE_OCTAVE + 12) next_root -= 12;
           Chord next_chord = getChordNotes(next_degree);
-          std::vector<uint8_t> next_chord_notes = buildChordNotes(next_root, next_chord, arp.octave_range);
+          std::vector<uint8_t> next_chord_notes =
+              buildChordNotes(next_root, next_chord, arp.octave_range);
           next_arp_notes = arrangeByPattern(next_chord_notes, arp.pattern, rng);
         }
       } else {
@@ -255,13 +252,12 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song,
       while (pos < bar_start + TICKS_PER_BAR && pos < section_end) {
         // Select notes based on phrase-end split
         const std::vector<uint8_t>& current_notes =
-            (should_split && pos >= half_bar && !next_arp_notes.empty())
-                ? next_arp_notes
-                : arp_notes;
+            (should_split && pos >= half_bar && !next_arp_notes.empty()) ? next_arp_notes
+                                                                         : arp_notes;
 
         uint8_t note = current_notes[pattern_index % current_notes.size()];
-        uint8_t velocity = calculateArpeggioVelocity(
-            arp.base_velocity, section.type, pattern_index % current_notes.size());
+        uint8_t velocity = calculateArpeggioVelocity(arp.base_velocity, section.type,
+                                                     pattern_index % current_notes.size());
 
         // Apply density_percent to skip notes probabilistically
         // For arpeggio, only skip when density is < 80% to maintain rhythmic feel

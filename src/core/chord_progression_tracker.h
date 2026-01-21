@@ -9,8 +9,9 @@
 #ifndef MIDISKETCH_CORE_CHORD_PROGRESSION_TRACKER_H
 #define MIDISKETCH_CORE_CHORD_PROGRESSION_TRACKER_H
 
-#include "core/types.h"
 #include <vector>
+
+#include "core/types.h"
 
 namespace midisketch {
 
@@ -33,8 +34,7 @@ class ChordProgressionTracker {
    * @param progression Chord progression to use
    * @param mood Mood affects harmonic rhythm density
    */
-  void initialize(const Arrangement& arrangement,
-                  const ChordProgression& progression, Mood mood);
+  void initialize(const Arrangement& arrangement, const ChordProgression& progression, Mood mood);
 
   /**
    * @brief Get chord degree at a specific tick.

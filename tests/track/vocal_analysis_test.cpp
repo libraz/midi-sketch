@@ -3,10 +3,13 @@
  * @brief Tests for vocal analysis.
  */
 
-#include <gtest/gtest.h>
 #include "track/vocal_analysis.h"
-#include "core/midi_track.h"
+
+#include <gtest/gtest.h>
+
 #include <random>
+
+#include "core/midi_track.h"
 
 namespace midisketch {
 namespace {
@@ -19,22 +22,20 @@ MidiTrack createTestVocalTrack() {
   MidiTrack track;
   // Create a simple 4-bar melody with ascending and descending patterns
   // C4 (60) -> E4 (64) -> G4 (67) -> E4 (64) -> C4 (60)
-  track.addNote(0, TICKS_PER_BEAT, 60, 100);                      // C4
-  track.addNote(TICKS_PER_BEAT, TICKS_PER_BEAT, 64, 100);         // E4
-  track.addNote(TICKS_PER_BEAT * 2, TICKS_PER_BEAT, 67, 100);     // G4
-  track.addNote(TICKS_PER_BEAT * 3, TICKS_PER_BEAT, 64, 100);     // E4
-  track.addNote(TICKS_PER_BEAT * 4, TICKS_PER_BEAT * 2, 60, 100); // C4 (longer)
+  track.addNote(0, TICKS_PER_BEAT, 60, 100);                       // C4
+  track.addNote(TICKS_PER_BEAT, TICKS_PER_BEAT, 64, 100);          // E4
+  track.addNote(TICKS_PER_BEAT * 2, TICKS_PER_BEAT, 67, 100);      // G4
+  track.addNote(TICKS_PER_BEAT * 3, TICKS_PER_BEAT, 64, 100);      // E4
+  track.addNote(TICKS_PER_BEAT * 4, TICKS_PER_BEAT * 2, 60, 100);  // C4 (longer)
 
   // Gap (rest) then another phrase
-  track.addNote(TICKS_PER_BAR * 2, TICKS_PER_BEAT, 65, 100);      // F4
-  track.addNote(TICKS_PER_BAR * 2 + TICKS_PER_BEAT, TICKS_PER_BEAT, 67, 100); // G4
+  track.addNote(TICKS_PER_BAR * 2, TICKS_PER_BEAT, 65, 100);                   // F4
+  track.addNote(TICKS_PER_BAR * 2 + TICKS_PER_BEAT, TICKS_PER_BEAT, 67, 100);  // G4
 
   return track;
 }
 
-MidiTrack createEmptyTrack() {
-  return MidiTrack();
-}
+MidiTrack createEmptyTrack() { return MidiTrack(); }
 
 MidiTrack createSingleNoteTrack() {
   MidiTrack track;
@@ -272,10 +273,18 @@ TEST(VocalAnalysisTest, MotionTypeDistribution) {
   for (int i = 0; i < kIterations; ++i) {
     MotionType motion = selectMotionType(1, i % 4, rng);
     switch (motion) {
-      case MotionType::Oblique: oblique_count++; break;
-      case MotionType::Contrary: contrary_count++; break;
-      case MotionType::Similar: similar_count++; break;
-      case MotionType::Parallel: parallel_count++; break;
+      case MotionType::Oblique:
+        oblique_count++;
+        break;
+      case MotionType::Contrary:
+        contrary_count++;
+        break;
+      case MotionType::Similar:
+        similar_count++;
+        break;
+      case MotionType::Parallel:
+        parallel_count++;
+        break;
     }
   }
 
@@ -312,7 +321,7 @@ TEST(VocalAnalysisTest, MotionTypeDeterminism) {
 TEST(VocalAnalysisTest, OverlappingNotesHandled) {
   MidiTrack track;
   // Overlapping notes (like in a legato phrase)
-  track.addNote(0, TICKS_PER_BEAT * 2, 60, 100);  // C4 for 2 beats
+  track.addNote(0, TICKS_PER_BEAT * 2, 60, 100);               // C4 for 2 beats
   track.addNote(TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 64, 100);  // E4 overlaps
 
   VocalAnalysis va = analyzeVocal(track);
@@ -337,8 +346,7 @@ TEST(VocalAnalysisTest, RapidNotesAnalysis) {
   MidiTrack track;
   // Very rapid notes (32nd notes)
   for (int i = 0; i < 32; ++i) {
-    track.addNote(i * (TICKS_PER_BEAT / 8), TICKS_PER_BEAT / 8,
-                  60 + (i % 12), 100);
+    track.addNote(i * (TICKS_PER_BEAT / 8), TICKS_PER_BEAT / 8, 60 + (i % 12), 100);
   }
 
   VocalAnalysis va = analyzeVocal(track);

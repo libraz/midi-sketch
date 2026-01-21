@@ -4,6 +4,7 @@
  */
 
 #include "track/drums.h"
+
 #include "core/preset_data.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
@@ -13,16 +14,16 @@ namespace midisketch {
 namespace {
 
 // GM Drum Map constants
-constexpr uint8_t BD = 36;        // Bass Drum
-constexpr uint8_t SD = 38;        // Snare Drum
-constexpr uint8_t SIDESTICK = 37; // Side Stick
-constexpr uint8_t CHH = 42;       // Closed Hi-Hat
-constexpr uint8_t OHH = 46;       // Open Hi-Hat
-constexpr uint8_t CRASH = 49;     // Crash Cymbal
-constexpr uint8_t RIDE = 51;      // Ride Cymbal
-constexpr uint8_t TOM_H = 50;     // High Tom
-constexpr uint8_t TOM_M = 47;     // Mid Tom
-constexpr uint8_t TOM_L = 45;     // Low Tom
+constexpr uint8_t BD = 36;         // Bass Drum
+constexpr uint8_t SD = 38;         // Snare Drum
+constexpr uint8_t SIDESTICK = 37;  // Side Stick
+constexpr uint8_t CHH = 42;        // Closed Hi-Hat
+constexpr uint8_t OHH = 46;        // Open Hi-Hat
+constexpr uint8_t CRASH = 49;      // Crash Cymbal
+constexpr uint8_t RIDE = 51;       // Ride Cymbal
+constexpr uint8_t TOM_H = 50;      // High Tom
+constexpr uint8_t TOM_M = 47;      // Mid Tom
+constexpr uint8_t TOM_L = 45;      // Low Tom
 
 // Local aliases for timing constants
 constexpr Tick EIGHTH = TICK_EIGHTH;
@@ -47,13 +48,13 @@ void addDrumNote(MidiTrack& track, Tick start, Tick duration, uint8_t note, uint
 float getDrumRoleKickProbability(DrumRole role) {
   switch (role) {
     case DrumRole::Full:
-      return 1.0f;      // Normal kick pattern
+      return 1.0f;  // Normal kick pattern
     case DrumRole::Ambient:
-      return 0.25f;     // 25% chance - suppressed kick for atmospheric feel
+      return 0.25f;  // 25% chance - suppressed kick for atmospheric feel
     case DrumRole::Minimal:
-      return 0.0f;      // No kick for minimal
+      return 0.0f;  // No kick for minimal
     case DrumRole::FXOnly:
-      return 0.0f;      // No kick for FX only
+      return 0.0f;  // No kick for FX only
   }
   return 1.0f;
 }
@@ -63,13 +64,13 @@ float getDrumRoleKickProbability(DrumRole role) {
 float getDrumRoleSnareProbability(DrumRole role) {
   switch (role) {
     case DrumRole::Full:
-      return 1.0f;      // Normal snare pattern
+      return 1.0f;  // Normal snare pattern
     case DrumRole::Ambient:
-      return 0.0f;      // No snare for atmospheric (use sidestick instead)
+      return 0.0f;  // No snare for atmospheric (use sidestick instead)
     case DrumRole::Minimal:
-      return 0.0f;      // No snare for minimal
+      return 0.0f;  // No snare for minimal
     case DrumRole::FXOnly:
-      return 0.0f;      // No snare for FX only
+      return 0.0f;  // No snare for FX only
   }
   return 1.0f;
 }
@@ -80,9 +81,9 @@ bool shouldPlayHiHat(DrumRole role) {
     case DrumRole::Full:
     case DrumRole::Ambient:
     case DrumRole::Minimal:
-      return true;      // HH allowed in these modes
+      return true;  // HH allowed in these modes
     case DrumRole::FXOnly:
-      return false;     // No regular HH in FX only
+      return false;  // No regular HH in FX only
   }
   return true;
 }
@@ -113,8 +114,7 @@ enum class FillType {
 };
 
 // Select fill type based on section transition and style
-FillType selectFillType(SectionType from, SectionType to, DrumStyle style,
-                        std::mt19937& rng) {
+FillType selectFillType(SectionType from, SectionType to, DrumStyle style, std::mt19937& rng) {
   // Sparse style: simple crash only
   if (style == DrumStyle::Sparse) {
     return FillType::SimpleCrash;
@@ -144,10 +144,14 @@ FillType selectFillType(SectionType from, SectionType to, DrumStyle style,
   // Default: random selection weighted by style
   if (high_energy) {
     switch (choice) {
-      case 0: return FillType::TomDescend;
-      case 1: return FillType::SnareRoll;
-      case 2: return FillType::TomAscend;
-      default: return FillType::SnareTomCombo;
+      case 0:
+        return FillType::TomDescend;
+      case 1:
+        return FillType::SnareRoll;
+      case 2:
+        return FillType::TomAscend;
+      default:
+        return FillType::SnareTomCombo;
     }
   }
 
@@ -155,8 +159,8 @@ FillType selectFillType(SectionType from, SectionType to, DrumStyle style,
 }
 
 // Generate a fill at the given beat
-void generateFill(MidiTrack& track, Tick beat_tick, uint8_t beat,
-                  FillType fill_type, uint8_t velocity) {
+void generateFill(MidiTrack& track, Tick beat_tick, uint8_t beat, FillType fill_type,
+                  uint8_t velocity) {
   uint8_t fill_vel = static_cast<uint8_t>(velocity * 0.9f);
   uint8_t accent_vel = static_cast<uint8_t>(velocity * 0.95f);
 
@@ -167,76 +171,68 @@ void generateFill(MidiTrack& track, Tick beat_tick, uint8_t beat,
         // Beat 3: 4 sixteenth notes
         for (int i = 0; i < 4; ++i) {
           uint8_t vel = static_cast<uint8_t>(fill_vel * (0.6f + 0.1f * i));
-          addDrumNote(track,beat_tick + i * SIXTEENTH, SIXTEENTH, SD, vel);
+          addDrumNote(track, beat_tick + i * SIXTEENTH, SIXTEENTH, SD, vel);
         }
       } else if (beat == 3) {
         // Beat 4: crescendo to accent
         for (int i = 0; i < 3; ++i) {
           uint8_t vel = static_cast<uint8_t>(fill_vel * (0.7f + 0.1f * i));
-          addDrumNote(track,beat_tick + i * SIXTEENTH, SIXTEENTH, SD, vel);
+          addDrumNote(track, beat_tick + i * SIXTEENTH, SIXTEENTH, SD, vel);
         }
-        addDrumNote(track,beat_tick + 3 * SIXTEENTH, SIXTEENTH, SD, accent_vel);
+        addDrumNote(track, beat_tick + 3 * SIXTEENTH, SIXTEENTH, SD, accent_vel);
       }
       break;
 
     case FillType::TomDescend:
       // High -> Mid -> Low tom roll
       if (beat == 2) {
-        addDrumNote(track,beat_tick, EIGHTH, SD, fill_vel);
-        addDrumNote(track,beat_tick + EIGHTH, EIGHTH, TOM_H,
-                      static_cast<uint8_t>(fill_vel - 5));
+        addDrumNote(track, beat_tick, EIGHTH, SD, fill_vel);
+        addDrumNote(track, beat_tick + EIGHTH, EIGHTH, TOM_H, static_cast<uint8_t>(fill_vel - 5));
       } else if (beat == 3) {
-        addDrumNote(track,beat_tick, SIXTEENTH, TOM_H, fill_vel);
-        addDrumNote(track,beat_tick + SIXTEENTH, SIXTEENTH, TOM_M,
-                      static_cast<uint8_t>(fill_vel - 3));
-        addDrumNote(track,beat_tick + EIGHTH, SIXTEENTH, TOM_M,
-                      static_cast<uint8_t>(fill_vel - 5));
-        addDrumNote(track,beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, TOM_L,
-                      accent_vel);
+        addDrumNote(track, beat_tick, SIXTEENTH, TOM_H, fill_vel);
+        addDrumNote(track, beat_tick + SIXTEENTH, SIXTEENTH, TOM_M,
+                    static_cast<uint8_t>(fill_vel - 3));
+        addDrumNote(track, beat_tick + EIGHTH, SIXTEENTH, TOM_M,
+                    static_cast<uint8_t>(fill_vel - 5));
+        addDrumNote(track, beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, TOM_L, accent_vel);
       }
       break;
 
     case FillType::TomAscend:
       // Low -> Mid -> High tom roll
       if (beat == 2) {
-        addDrumNote(track,beat_tick, EIGHTH, SD, fill_vel);
-        addDrumNote(track,beat_tick + EIGHTH, EIGHTH, TOM_L,
-                      static_cast<uint8_t>(fill_vel - 5));
+        addDrumNote(track, beat_tick, EIGHTH, SD, fill_vel);
+        addDrumNote(track, beat_tick + EIGHTH, EIGHTH, TOM_L, static_cast<uint8_t>(fill_vel - 5));
       } else if (beat == 3) {
-        addDrumNote(track,beat_tick, SIXTEENTH, TOM_L, fill_vel);
-        addDrumNote(track,beat_tick + SIXTEENTH, SIXTEENTH, TOM_M,
-                      static_cast<uint8_t>(fill_vel + 3));
-        addDrumNote(track,beat_tick + EIGHTH, SIXTEENTH, TOM_M,
-                      static_cast<uint8_t>(fill_vel + 5));
-        addDrumNote(track,beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, TOM_H,
-                      accent_vel);
+        addDrumNote(track, beat_tick, SIXTEENTH, TOM_L, fill_vel);
+        addDrumNote(track, beat_tick + SIXTEENTH, SIXTEENTH, TOM_M,
+                    static_cast<uint8_t>(fill_vel + 3));
+        addDrumNote(track, beat_tick + EIGHTH, SIXTEENTH, TOM_M,
+                    static_cast<uint8_t>(fill_vel + 5));
+        addDrumNote(track, beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, TOM_H, accent_vel);
       }
       break;
 
     case FillType::SnareTomCombo:
       // Snare with tom accents
       if (beat == 2) {
-        addDrumNote(track,beat_tick, EIGHTH, SD, fill_vel);
-        addDrumNote(track,beat_tick + EIGHTH, SIXTEENTH, SD,
-                      static_cast<uint8_t>(fill_vel - 5));
-        addDrumNote(track,beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, TOM_H,
-                      fill_vel);
+        addDrumNote(track, beat_tick, EIGHTH, SD, fill_vel);
+        addDrumNote(track, beat_tick + EIGHTH, SIXTEENTH, SD, static_cast<uint8_t>(fill_vel - 5));
+        addDrumNote(track, beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, TOM_H, fill_vel);
       } else if (beat == 3) {
-        addDrumNote(track,beat_tick, SIXTEENTH, TOM_M, fill_vel);
-        addDrumNote(track,beat_tick + SIXTEENTH, SIXTEENTH, SD,
-                      static_cast<uint8_t>(fill_vel - 3));
-        addDrumNote(track,beat_tick + EIGHTH, SIXTEENTH, TOM_L,
-                      static_cast<uint8_t>(fill_vel + 2));
-        addDrumNote(track,beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, BD,
-                      accent_vel);
+        addDrumNote(track, beat_tick, SIXTEENTH, TOM_M, fill_vel);
+        addDrumNote(track, beat_tick + SIXTEENTH, SIXTEENTH, SD,
+                    static_cast<uint8_t>(fill_vel - 3));
+        addDrumNote(track, beat_tick + EIGHTH, SIXTEENTH, TOM_L,
+                    static_cast<uint8_t>(fill_vel + 2));
+        addDrumNote(track, beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, BD, accent_vel);
       }
       break;
 
     case FillType::SimpleCrash:
       // Just kick on beat 4 for minimal transition
       if (beat == 3) {
-        addDrumNote(track,beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, BD,
-                      accent_vel);
+        addDrumNote(track, beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, BD, accent_vel);
       }
       break;
   }
@@ -290,8 +286,8 @@ std::vector<GhostPosition> selectGhostPositions(Mood mood, std::mt19937& rng) {
 }
 
 // Calculate ghost note density based on mood, section, backing density, and BPM
-float getGhostDensity(Mood mood, SectionType section,
-                       BackingDensity backing_density, uint16_t bpm) {
+float getGhostDensity(Mood mood, SectionType section, BackingDensity backing_density,
+                      uint16_t bpm) {
   float base_density = 0.3f;
 
   // Section adjustment
@@ -381,8 +377,7 @@ struct KickPattern {
 
 // Get kick pattern based on section type and style
 // Uses RNG to add syncopation variation
-KickPattern getKickPattern(SectionType section, DrumStyle style, int bar,
-                            std::mt19937& rng) {
+KickPattern getKickPattern(SectionType section, DrumStyle style, int bar, std::mt19937& rng) {
   KickPattern p = {false, false, false, false, false, false, false, false};
 
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
@@ -501,17 +496,20 @@ KickPattern getKickPattern(SectionType section, DrumStyle style, int bar,
 
 // Hi-hat subdivision level
 enum class HiHatLevel {
-  Quarter,    // Quarter notes only
-  Eighth,     // 8th notes
-  Sixteenth   // 16th notes
+  Quarter,   // Quarter notes only
+  Eighth,    // 8th notes
+  Sixteenth  // 16th notes
 };
 
 // Adjust hi-hat level one step sparser
 HiHatLevel adjustHiHatSparser(HiHatLevel level) {
   switch (level) {
-    case HiHatLevel::Sixteenth: return HiHatLevel::Eighth;
-    case HiHatLevel::Eighth: return HiHatLevel::Quarter;
-    case HiHatLevel::Quarter: return HiHatLevel::Quarter;
+    case HiHatLevel::Sixteenth:
+      return HiHatLevel::Eighth;
+    case HiHatLevel::Eighth:
+      return HiHatLevel::Quarter;
+    case HiHatLevel::Quarter:
+      return HiHatLevel::Quarter;
   }
   return level;
 }
@@ -519,9 +517,12 @@ HiHatLevel adjustHiHatSparser(HiHatLevel level) {
 // Adjust hi-hat level one step denser
 HiHatLevel adjustHiHatDenser(HiHatLevel level) {
   switch (level) {
-    case HiHatLevel::Quarter: return HiHatLevel::Eighth;
-    case HiHatLevel::Eighth: return HiHatLevel::Sixteenth;
-    case HiHatLevel::Sixteenth: return HiHatLevel::Sixteenth;
+    case HiHatLevel::Quarter:
+      return HiHatLevel::Eighth;
+    case HiHatLevel::Eighth:
+      return HiHatLevel::Sixteenth;
+    case HiHatLevel::Sixteenth:
+      return HiHatLevel::Sixteenth;
   }
   return level;
 }
@@ -531,10 +532,9 @@ HiHatLevel adjustHiHatDenser(HiHatLevel level) {
 constexpr uint16_t HH_16TH_BPM_THRESHOLD = 150;
 
 // Get hi-hat level with randomized variation
-HiHatLevel getHiHatLevel(SectionType section, DrumStyle style,
-                          BackingDensity backing_density, uint16_t bpm,
-                          std::mt19937& rng,
-                          GenerationParadigm paradigm = GenerationParadigm::Traditional) {
+HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity backing_density,
+                         uint16_t bpm, std::mt19937& rng,
+                         GenerationParadigm paradigm = GenerationParadigm::Traditional) {
   // RhythmSync always uses 16th note hi-hat for constant clock
   if (paradigm == GenerationParadigm::RhythmSync) {
     return HiHatLevel::Sixteenth;
@@ -548,8 +548,7 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style,
   HiHatLevel base_level = HiHatLevel::Eighth;
 
   if (style == DrumStyle::Sparse) {
-    base_level = (section == SectionType::Chorus) ? HiHatLevel::Eighth
-                                                   : HiHatLevel::Quarter;
+    base_level = (section == SectionType::Chorus) ? HiHatLevel::Eighth : HiHatLevel::Quarter;
   } else if (style == DrumStyle::FourOnFloor) {
     // FourOnFloor: 8th notes base, but 25% chance for 16th in Chorus
     if (allow_16th && section == SectionType::Chorus && dist(rng) < 0.25f) {
@@ -632,14 +631,13 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style,
 
 }  // namespace
 
-void generateDrumsTrack(MidiTrack& track, const Song& song,
-                        const GeneratorParams& params, std::mt19937& rng) {
+void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,
+                        std::mt19937& rng) {
   DrumStyle style = getMoodDrumStyle(params.mood);
   const auto& sections = song.arrangement().sections();
 
   // BackgroundMotif settings
-  const bool is_background_motif =
-      params.composition_style == CompositionStyle::BackgroundMotif;
+  const bool is_background_motif = params.composition_style == CompositionStyle::BackgroundMotif;
   const MotifDrumParams& drum_params = params.motif_drum;
 
   // Override style for BackgroundMotif: hi-hat driven
@@ -663,29 +661,29 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
     switch (section.type) {
       case SectionType::Intro:
       case SectionType::Interlude:
-        density_mult = 0.5f;    // Very soft
+        density_mult = 0.5f;  // Very soft
         break;
       case SectionType::Outro:
         density_mult = 0.6f;
         break;
       case SectionType::A:
-        density_mult = 0.7f;    // Subdued verse
+        density_mult = 0.7f;  // Subdued verse
         break;
       case SectionType::B:
-        density_mult = 0.85f;   // Building tension
+        density_mult = 0.85f;  // Building tension
         break;
       case SectionType::Chorus:
-        density_mult = 1.00f;   // Moderate chorus for DAW flexibility
+        density_mult = 1.00f;  // Moderate chorus for DAW flexibility
         add_crash_accent = true;
         break;
       case SectionType::Bridge:
-        density_mult = 0.6f;    // Sparse bridge
+        density_mult = 0.6f;  // Sparse bridge
         break;
       case SectionType::Chant:
-        density_mult = 0.4f;    // Very quiet chant
+        density_mult = 0.4f;  // Very quiet chant
         break;
       case SectionType::MixBreak:
-        density_mult = 1.2f;    // High energy MIX
+        density_mult = 1.2f;  // High energy MIX
         add_crash_accent = true;
         break;
     }
@@ -706,12 +704,11 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
     // Add crash cymbal accent at the start of Chorus for impact
     if (add_crash_accent && sec_idx > 0) {
       uint8_t crash_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(105 * density_mult)));
-      addDrumNote(track,section.start_tick, TICKS_PER_BEAT / 2, 49, crash_vel);  // Crash cymbal
+      addDrumNote(track, section.start_tick, TICKS_PER_BEAT / 2, 49, crash_vel);  // Crash cymbal
     }
 
-    HiHatLevel hh_level = getHiHatLevel(section.type, style,
-                                         section.backing_density, params.bpm,
-                                         rng, params.paradigm);
+    HiHatLevel hh_level = getHiHatLevel(section.type, style, section.backing_density, params.bpm,
+                                        rng, params.paradigm);
 
     // BackgroundMotif: force 8th note hi-hat for consistent drive
     // (but not in RhythmSync - constant 16th clock takes precedence)
@@ -720,22 +717,20 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
       hh_level = HiHatLevel::Eighth;
     }
 
-    bool use_ghost_notes =
-        (section.type == SectionType::B || section.type == SectionType::Chorus ||
-         section.type == SectionType::Bridge)
-        && style != DrumStyle::Sparse;
+    bool use_ghost_notes = (section.type == SectionType::B || section.type == SectionType::Chorus ||
+                            section.type == SectionType::Bridge) &&
+                           style != DrumStyle::Sparse;
 
     // Disable ghost notes for BackgroundMotif to keep pattern clean
     if (is_background_motif) {
       use_ghost_notes = false;
     }
 
-    bool use_ride = (style == DrumStyle::Rock &&
-                     section.type == SectionType::Chorus);
+    bool use_ride = (style == DrumStyle::Rock && section.type == SectionType::Chorus);
 
     // BackgroundMotif: prefer open hi-hat accents on off-beats
-    bool motif_open_hh = is_background_motif &&
-                         drum_params.hihat_density == HihatDensity::EighthOpen;
+    bool motif_open_hh =
+        is_background_motif && drum_params.hihat_density == HihatDensity::EighthOpen;
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
@@ -745,14 +740,13 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
       if (bar == 0) {
         bool add_crash = false;
         if (style == DrumStyle::Rock || style == DrumStyle::Upbeat) {
-          add_crash = (section.type == SectionType::Chorus ||
-                       section.type == SectionType::B);
+          add_crash = (section.type == SectionType::Chorus || section.type == SectionType::B);
         } else if (style != DrumStyle::Sparse) {
           add_crash = (section.type == SectionType::Chorus);
         }
         if (add_crash) {
           uint8_t crash_vel = calculateVelocity(section.type, 0, params.mood);
-          addDrumNote(track,bar_start, EIGHTH, CRASH, crash_vel);
+          addDrumNote(track, bar_start, EIGHTH, CRASH, crash_vel);
         }
       }
 
@@ -827,11 +821,11 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         }
 
         if (play_kick_on) {
-          addDrumNote(track,beat_tick, EIGHTH, BD, velocity);
+          addDrumNote(track, beat_tick, EIGHTH, BD, velocity);
         }
         if (play_kick_and) {
           uint8_t and_vel = static_cast<uint8_t>(velocity * 0.85f);
-          addDrumNote(track,beat_tick + EIGHTH, EIGHTH, BD, and_vel);
+          addDrumNote(track, beat_tick + EIGHTH, EIGHTH, BD, and_vel);
         }
 
         // ===== SNARE DRUM =====
@@ -845,10 +839,10 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
             uint8_t snare_vel = static_cast<uint8_t>(velocity * 0.8f);
             // Only play sidestick if not FXOnly or Minimal
             if (section.drum_role != DrumRole::FXOnly && section.drum_role != DrumRole::Minimal) {
-              addDrumNote(track,beat_tick, EIGHTH, SIDESTICK, snare_vel);
+              addDrumNote(track, beat_tick, EIGHTH, SIDESTICK, snare_vel);
             }
           } else if (snare_prob >= 1.0f) {
-            addDrumNote(track,beat_tick, EIGHTH, SD, velocity);
+            addDrumNote(track, beat_tick, EIGHTH, SD, velocity);
           }
         }
 
@@ -856,24 +850,23 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
         if (use_ghost_notes && (beat == 0 || beat == 2)) {
           // Get ghost note positions and density based on mood
           auto ghost_positions = selectGhostPositions(params.mood, rng);
-          float ghost_prob = getGhostDensity(params.mood, section.type,
-                                              section.backing_density, params.bpm);
+          float ghost_prob =
+              getGhostDensity(params.mood, section.type, section.backing_density, params.bpm);
 
           std::uniform_real_distribution<float> ghost_dist(0.0f, 1.0f);
 
           for (auto pos : ghost_positions) {
             if (ghost_dist(rng) < ghost_prob) {
               uint8_t ghost_vel = static_cast<uint8_t>(velocity * GHOST_VEL);
-              Tick ghost_offset = (pos == GhostPosition::E)
-                                      ? SIXTEENTH            // "e" = 1st 16th
-                                      : (SIXTEENTH * 3);     // "a" = 3rd 16th
+              Tick ghost_offset = (pos == GhostPosition::E) ? SIXTEENTH         // "e" = 1st 16th
+                                                            : (SIXTEENTH * 3);  // "a" = 3rd 16th
 
               // Slight velocity variation for "a" position
               if (pos == GhostPosition::A) {
                 ghost_vel = static_cast<uint8_t>(ghost_vel * 0.9f);
               }
 
-              addDrumNote(track,beat_tick + ghost_offset, SIXTEENTH, SD, ghost_vel);
+              addDrumNote(track, beat_tick + ghost_offset, SIXTEENTH, SD, ghost_vel);
             }
           }
         }
@@ -891,9 +884,8 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
           case HiHatLevel::Quarter:
             // Quarter notes only
             if (section.type != SectionType::Intro || beat == 0) {
-              uint8_t hh_vel =
-                  static_cast<uint8_t>(velocity * density_mult * 0.75f);
-              addDrumNote(track,beat_tick, EIGHTH, hh_instrument, hh_vel);
+              uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult * 0.75f);
+              addDrumNote(track, beat_tick, EIGHTH, hh_instrument, hh_vel);
             }
             break;
 
@@ -909,8 +901,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
 
               uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
               // Accent on downbeats
-              hh_vel = static_cast<uint8_t>(
-                  hh_vel * (eighth == 0 ? 0.9f : 0.65f));
+              hh_vel = static_cast<uint8_t>(hh_vel * (eighth == 0 ? 0.9f : 0.65f));
 
               // Open hi-hat variations
               bool use_open = false;
@@ -935,8 +926,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
                 use_open = (beat == 3 && open_dist(rng) < 0.4f * bpm_scale) ||
                            (beat == 1 && open_dist(rng) < 0.15f * bpm_scale);
-              } else if (section.type == SectionType::B && beat == 3 &&
-                         eighth == 1) {
+              } else if (section.type == SectionType::B && beat == 3 && eighth == 1) {
                 // B section accent - BPM adaptive
                 float bpm_scale = std::min(1.0f, 120.0f / params.bpm);
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
@@ -944,10 +934,9 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
               }
 
               if (use_open) {
-                addDrumNote(track,hh_tick, EIGHTH, OHH,
-                              static_cast<uint8_t>(hh_vel * 1.1f));
+                addDrumNote(track, hh_tick, EIGHTH, OHH, static_cast<uint8_t>(hh_vel * 1.1f));
               } else {
-                addDrumNote(track,hh_tick, EIGHTH / 2, hh_instrument, hh_vel);
+                addDrumNote(track, hh_tick, EIGHTH / 2, hh_instrument, hh_vel);
               }
             }
             break;
@@ -973,13 +962,12 @@ void generateDrumsTrack(MidiTrack& track, const Song& song,
                 float open_prob = std::clamp(30.0f / params.bpm, 0.1f, 0.4f);
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
                 if (open_dist(rng) < open_prob) {
-                  addDrumNote(track,hh_tick, SIXTEENTH, OHH,
-                                static_cast<uint8_t>(hh_vel * 1.2f));
+                  addDrumNote(track, hh_tick, SIXTEENTH, OHH, static_cast<uint8_t>(hh_vel * 1.2f));
                   continue;
                 }
               }
 
-              addDrumNote(track,hh_tick, SIXTEENTH / 2, hh_instrument, hh_vel);
+              addDrumNote(track, hh_tick, SIXTEENTH / 2, hh_instrument, hh_vel);
             }
             break;
         }
@@ -1016,9 +1004,8 @@ Tick quantizeTo16th(Tick tick, Tick bar_start) {
 
 /// Add kicks synced to vocal onsets for a bar.
 /// Returns true if any kicks were added, false if fallback to normal pattern needed.
-bool addVocalSyncedKicks(MidiTrack& track, Tick bar_start, Tick bar_end,
-                         const VocalAnalysis& va, uint8_t velocity, DrumRole role,
-                         std::mt19937& rng) {
+bool addVocalSyncedKicks(MidiTrack& track, Tick bar_start, Tick bar_end, const VocalAnalysis& va,
+                         uint8_t velocity, DrumRole role, std::mt19937& rng) {
   // Get DrumRole-based kick probability
   float kick_prob = getDrumRoleKickProbability(role);
   if (kick_prob <= 0.0f) return false;
@@ -1045,9 +1032,8 @@ bool addVocalSyncedKicks(MidiTrack& track, Tick bar_start, Tick bar_end,
     // Calculate velocity based on position in bar
     Tick relative = kick_tick - bar_start;
     int beat_in_bar = relative / TICKS_PER_BEAT;
-    uint8_t kick_vel = (beat_in_bar == 0 || beat_in_bar == 2)
-                           ? velocity
-                           : static_cast<uint8_t>(velocity * 0.85f);
+    uint8_t kick_vel =
+        (beat_in_bar == 0 || beat_in_bar == 2) ? velocity : static_cast<uint8_t>(velocity * 0.85f);
 
     addDrumNote(track, kick_tick, EIGHTH, BD, static_cast<uint8_t>(kick_vel * kick_prob));
   }
@@ -1055,15 +1041,13 @@ bool addVocalSyncedKicks(MidiTrack& track, Tick bar_start, Tick bar_end,
   return true;
 }
 
-void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song,
-                                  const GeneratorParams& params, std::mt19937& rng,
-                                  const VocalAnalysis& vocal_analysis) {
+void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const GeneratorParams& params,
+                                 std::mt19937& rng, const VocalAnalysis& vocal_analysis) {
   DrumStyle style = getMoodDrumStyle(params.mood);
   const auto& sections = song.arrangement().sections();
 
   // BackgroundMotif settings
-  const bool is_background_motif =
-      params.composition_style == CompositionStyle::BackgroundMotif;
+  const bool is_background_motif = params.composition_style == CompositionStyle::BackgroundMotif;
   const MotifDrumParams& drum_params = params.motif_drum;
 
   // Override style for BackgroundMotif: hi-hat driven
@@ -1132,9 +1116,8 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song,
       addDrumNote(track, section.start_tick, TICKS_PER_BEAT / 2, 49, crash_vel);
     }
 
-    HiHatLevel hh_level = getHiHatLevel(section.type, style,
-                                         section.backing_density, params.bpm,
-                                         rng, params.paradigm);
+    HiHatLevel hh_level = getHiHatLevel(section.type, style, section.backing_density, params.bpm,
+                                        rng, params.paradigm);
 
     // BackgroundMotif: force 8th note hi-hat
     // (but not in RhythmSync - constant 16th clock takes precedence)
@@ -1143,22 +1126,20 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song,
       hh_level = HiHatLevel::Eighth;
     }
 
-    bool use_ghost_notes =
-        (section.type == SectionType::B || section.type == SectionType::Chorus ||
-         section.type == SectionType::Bridge)
-        && style != DrumStyle::Sparse;
+    bool use_ghost_notes = (section.type == SectionType::B || section.type == SectionType::Chorus ||
+                            section.type == SectionType::Bridge) &&
+                           style != DrumStyle::Sparse;
 
     // Disable ghost notes for BackgroundMotif
     if (is_background_motif) {
       use_ghost_notes = false;
     }
 
-    bool use_ride = (style == DrumStyle::Rock &&
-                     section.type == SectionType::Chorus);
+    bool use_ride = (style == DrumStyle::Rock && section.type == SectionType::Chorus);
 
     // BackgroundMotif: prefer open hi-hat accents on off-beats
-    bool motif_open_hh = is_background_motif &&
-                         drum_params.hihat_density == HihatDensity::EighthOpen;
+    bool motif_open_hh =
+        is_background_motif && drum_params.hihat_density == HihatDensity::EighthOpen;
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
@@ -1169,8 +1150,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song,
       if (bar == 0) {
         bool add_crash = false;
         if (style == DrumStyle::Rock || style == DrumStyle::Upbeat) {
-          add_crash = (section.type == SectionType::Chorus ||
-                       section.type == SectionType::B);
+          add_crash = (section.type == SectionType::Chorus || section.type == SectionType::B);
         } else if (style != DrumStyle::Sparse) {
           add_crash = (section.type == SectionType::Chorus);
         }
@@ -1183,9 +1163,8 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song,
       // ===== VOCAL-SYNCED KICKS =====
       // Try to add kicks synced to vocal onsets
       uint8_t kick_velocity = calculateVelocity(section.type, 0, params.mood);
-      bool kicks_added = addVocalSyncedKicks(track, bar_start, bar_end,
-                                              vocal_analysis, kick_velocity,
-                                              section.drum_role, rng);
+      bool kicks_added = addVocalSyncedKicks(track, bar_start, bar_end, vocal_analysis,
+                                             kick_velocity, section.drum_role, rng);
 
       // Get kick pattern for fallback and for fills
       KickPattern kick = getKickPattern(section.type, style, bar, rng);
@@ -1278,17 +1257,15 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song,
         // ===== GHOST NOTES =====
         if (use_ghost_notes && (beat == 0 || beat == 2)) {
           auto ghost_positions = selectGhostPositions(params.mood, rng);
-          float ghost_prob = getGhostDensity(params.mood, section.type,
-                                              section.backing_density, params.bpm);
+          float ghost_prob =
+              getGhostDensity(params.mood, section.type, section.backing_density, params.bpm);
 
           std::uniform_real_distribution<float> ghost_dist(0.0f, 1.0f);
 
           for (auto pos : ghost_positions) {
             if (ghost_dist(rng) < ghost_prob) {
               uint8_t ghost_vel = static_cast<uint8_t>(velocity * GHOST_VEL);
-              Tick ghost_offset = (pos == GhostPosition::E)
-                                      ? SIXTEENTH
-                                      : (SIXTEENTH * 3);
+              Tick ghost_offset = (pos == GhostPosition::E) ? SIXTEENTH : (SIXTEENTH * 3);
 
               if (pos == GhostPosition::A) {
                 ghost_vel = static_cast<uint8_t>(ghost_vel * 0.9f);
@@ -1309,8 +1286,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song,
         switch (hh_level) {
           case HiHatLevel::Quarter:
             if (section.type != SectionType::Intro || beat == 0) {
-              uint8_t hh_vel =
-                  static_cast<uint8_t>(velocity * density_mult * 0.75f);
+              uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult * 0.75f);
               addDrumNote(track, beat_tick, EIGHTH, hh_instrument, hh_vel);
             }
             break;
@@ -1324,8 +1300,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song,
               }
 
               uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
-              hh_vel = static_cast<uint8_t>(
-                  hh_vel * (eighth == 0 ? 0.9f : 0.65f));
+              hh_vel = static_cast<uint8_t>(hh_vel * (eighth == 0 ? 0.9f : 0.65f));
 
               bool use_open = false;
 
@@ -1342,16 +1317,14 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song,
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
                 use_open = (beat == 3 && open_dist(rng) < 0.4f * bpm_scale) ||
                            (beat == 1 && open_dist(rng) < 0.15f * bpm_scale);
-              } else if (section.type == SectionType::B && beat == 3 &&
-                         eighth == 1) {
+              } else if (section.type == SectionType::B && beat == 3 && eighth == 1) {
                 float bpm_scale = std::min(1.0f, 120.0f / params.bpm);
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
                 use_open = (open_dist(rng) < 0.25f * bpm_scale);
               }
 
               if (use_open) {
-                addDrumNote(track, hh_tick, EIGHTH, OHH,
-                              static_cast<uint8_t>(hh_vel * 1.1f));
+                addDrumNote(track, hh_tick, EIGHTH, OHH, static_cast<uint8_t>(hh_vel * 1.1f));
               } else {
                 addDrumNote(track, hh_tick, EIGHTH / 2, hh_instrument, hh_vel);
               }
@@ -1375,8 +1348,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song,
                 float open_prob = std::clamp(30.0f / params.bpm, 0.1f, 0.4f);
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
                 if (open_dist(rng) < open_prob) {
-                  addDrumNote(track, hh_tick, SIXTEENTH, OHH,
-                                static_cast<uint8_t>(hh_vel * 1.2f));
+                  addDrumNote(track, hh_tick, SIXTEENTH, OHH, static_cast<uint8_t>(hh_vel * 1.2f));
                   continue;
                 }
               }

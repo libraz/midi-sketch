@@ -71,10 +71,9 @@ void MidiWriter::writeHeader(uint16_t num_tracks, uint16_t division) {
   data_.push_back(division & 0xFF);
 }
 
-void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name,
-                            uint8_t channel, uint8_t program, uint16_t bpm,
-                            Key key, bool is_first_track, Tick mod_tick,
-                            int8_t mod_amount) {
+void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uint8_t channel,
+                            uint8_t program, uint16_t bpm, Key key, bool is_first_track,
+                            Tick mod_tick, int8_t mod_amount) {
   std::vector<uint8_t> track_data;
 
   // Validate BPM to prevent division by zero
@@ -147,12 +146,11 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name,
   // This ensures proper handling of overlapping notes with same pitch:
   // when a note ends and another starts at the same tick, the old note
   // is properly closed (note-off 0x80) before the new one starts (note-on 0x90).
-  std::sort(events.begin(), events.end(),
-            [](const Event& a, const Event& b) {
-              if (a.time != b.time) return a.time < b.time;
-              // At same time: note-off (0x80) before note-on (0x90)
-              return a.type < b.type;
-            });
+  std::sort(events.begin(), events.end(), [](const Event& a, const Event& b) {
+    if (a.time != b.time) return a.time < b.time;
+    // At same time: note-off (0x80) before note-on (0x90)
+    return a.type < b.type;
+  });
 
   // Write events with delta times
   Tick prev_time = 0;
@@ -188,7 +186,7 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name,
 }
 
 void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
-                                   const std::string& metadata) {
+                                  const std::string& metadata) {
   std::vector<uint8_t> track_data;
 
   // Validate BPM to prevent division by zero
@@ -242,9 +240,7 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
     prev_time = marker.time;
 
     // Truncate marker text to 255 bytes max
-    std::string marker_text = marker.text.size() > 255
-                                  ? marker.text.substr(0, 255)
-                                  : marker.text;
+    std::string marker_text = marker.text.size() > 255 ? marker.text.substr(0, 255) : marker.text;
 
     writeVariableLength(track_data, delta);
     track_data.push_back(0xFF);
@@ -276,8 +272,7 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
   data_.insert(data_.end(), track_data.begin(), track_data.end());
 }
 
-void MidiWriter::build(const Song& song, Key key, const std::string& metadata,
-                        MidiFormat format) {
+void MidiWriter::build(const Song& song, Key key, const std::string& metadata, MidiFormat format) {
 #ifdef MIDISKETCH_WASM
   // WASM build only supports SMF1
   (void)format;
@@ -292,8 +287,7 @@ void MidiWriter::build(const Song& song, Key key, const std::string& metadata,
 }
 
 #ifndef MIDISKETCH_WASM
-void MidiWriter::buildSMF2(const Song& song, Key key,
-                            const std::string& metadata) {
+void MidiWriter::buildSMF2(const Song& song, Key key, const std::string& metadata) {
   if (!midi2_writer_) {
     midi2_writer_ = std::make_unique<Midi2Writer>();
   }
@@ -302,8 +296,7 @@ void MidiWriter::buildSMF2(const Song& song, Key key,
 }
 #endif
 
-void MidiWriter::buildSMF1(const Song& song, Key key,
-                            const std::string& metadata) {
+void MidiWriter::buildSMF1(const Song& song, Key key, const std::string& metadata) {
   data_.clear();
 
   // Count non-empty tracks (SE track always included)
@@ -326,59 +319,56 @@ void MidiWriter::buildSMF1(const Song& song, Key key,
 
   // Channel and program assignments
   constexpr uint8_t VOCAL_CH = 0;
-  constexpr uint8_t VOCAL_PROG = 0;    // Piano
+  constexpr uint8_t VOCAL_PROG = 0;  // Piano
   constexpr uint8_t CHORD_CH = 1;
-  constexpr uint8_t CHORD_PROG = 4;    // Electric Piano
+  constexpr uint8_t CHORD_PROG = 4;  // Electric Piano
   constexpr uint8_t BASS_CH = 2;
-  constexpr uint8_t BASS_PROG = 33;    // Electric Bass
+  constexpr uint8_t BASS_PROG = 33;  // Electric Bass
   constexpr uint8_t MOTIF_CH = 3;
-  constexpr uint8_t MOTIF_PROG = 81;   // Synth Lead
+  constexpr uint8_t MOTIF_PROG = 81;  // Synth Lead
   constexpr uint8_t ARPEGGIO_CH = 4;
   constexpr uint8_t ARPEGGIO_PROG = 81;  // Saw Lead (Synth)
   constexpr uint8_t AUX_CH = 5;
-  constexpr uint8_t AUX_PROG = 89;       // Pad 2 - Warm
+  constexpr uint8_t AUX_PROG = 89;  // Pad 2 - Warm
   constexpr uint8_t DRUMS_CH = 9;
   constexpr uint8_t DRUMS_PROG = 0;
 
   if (!song.vocal().empty()) {
-    writeTrack(song.vocal(), "Vocal", VOCAL_CH, VOCAL_PROG, song.bpm(), key,
-               false, mod_tick, mod_amount);
+    writeTrack(song.vocal(), "Vocal", VOCAL_CH, VOCAL_PROG, song.bpm(), key, false, mod_tick,
+               mod_amount);
   }
 
   if (!song.chord().empty()) {
-    writeTrack(song.chord(), "Chord", CHORD_CH, CHORD_PROG, song.bpm(), key,
-               false, mod_tick, mod_amount);
+    writeTrack(song.chord(), "Chord", CHORD_CH, CHORD_PROG, song.bpm(), key, false, mod_tick,
+               mod_amount);
   }
 
   if (!song.bass().empty()) {
-    writeTrack(song.bass(), "Bass", BASS_CH, BASS_PROG, song.bpm(), key,
-               false, mod_tick, mod_amount);
+    writeTrack(song.bass(), "Bass", BASS_CH, BASS_PROG, song.bpm(), key, false, mod_tick,
+               mod_amount);
   }
 
   if (!song.motif().empty()) {
-    writeTrack(song.motif(), "Motif", MOTIF_CH, MOTIF_PROG, song.bpm(), key,
-               false, mod_tick, mod_amount);
+    writeTrack(song.motif(), "Motif", MOTIF_CH, MOTIF_PROG, song.bpm(), key, false, mod_tick,
+               mod_amount);
   }
 
   if (!song.arpeggio().empty()) {
-    writeTrack(song.arpeggio(), "Arpeggio", ARPEGGIO_CH, ARPEGGIO_PROG,
-               song.bpm(), key, false, mod_tick, mod_amount);
+    writeTrack(song.arpeggio(), "Arpeggio", ARPEGGIO_CH, ARPEGGIO_PROG, song.bpm(), key, false,
+               mod_tick, mod_amount);
   }
 
   if (!song.aux().empty()) {
-    writeTrack(song.aux(), "Aux", AUX_CH, AUX_PROG,
-               song.bpm(), key, false, mod_tick, mod_amount);
+    writeTrack(song.aux(), "Aux", AUX_CH, AUX_PROG, song.bpm(), key, false, mod_tick, mod_amount);
   }
 
   if (!song.drums().empty()) {
-    writeTrack(song.drums(), "Drums", DRUMS_CH, DRUMS_PROG, song.bpm(), key,
-               false, 0, 0);  // No modulation for drums
+    writeTrack(song.drums(), "Drums", DRUMS_CH, DRUMS_PROG, song.bpm(), key, false, 0,
+               0);  // No modulation for drums
   }
 }
 
-std::vector<uint8_t> MidiWriter::toBytes() const {
-  return data_;
-}
+std::vector<uint8_t> MidiWriter::toBytes() const { return data_; }
 
 bool MidiWriter::writeToFile(const std::string& path) const {
   std::ofstream file(path, std::ios::binary);
@@ -389,21 +379,21 @@ bool MidiWriter::writeToFile(const std::string& path) const {
   return file.good();
 }
 
-void MidiWriter::buildVocalPreview(const Song& song,
-                                    const IHarmonyContext& harmony, Key key) {
+void MidiWriter::buildVocalPreview(const Song& song, const IHarmonyContext& harmony, Key key) {
   data_.clear();
 
   // Create root bass track from chord changes
   MidiTrack root_bass;
   constexpr int SCALE[7] = {0, 2, 4, 5, 7, 9, 11};  // C major scale
-  constexpr uint8_t BASS_OCTAVE = 36;  // C2 base
+  constexpr uint8_t BASS_OCTAVE = 36;               // C2 base
   constexpr uint8_t BASS_VELOCITY = 80;
 
   // Get total duration from song
   Tick total_ticks = song.arrangement().totalTicks();
   if (total_ticks == 0) {
-    total_ticks = song.vocal().empty() ? 0 : song.vocal().notes().back().start_tick +
-                                              song.vocal().notes().back().duration;
+    total_ticks = song.vocal().empty() ? 0
+                                       : song.vocal().notes().back().start_tick +
+                                             song.vocal().notes().back().duration;
   }
 
   // Generate root notes at each chord change
@@ -441,16 +431,14 @@ void MidiWriter::buildVocalPreview(const Song& song,
   constexpr uint8_t VOCAL_CH = 0;
   constexpr uint8_t VOCAL_PROG = 0;  // Piano
   if (!song.vocal().empty()) {
-    writeTrack(song.vocal(), "Vocal", VOCAL_CH, VOCAL_PROG, song.bpm(), key,
-               false, 0, 0);
+    writeTrack(song.vocal(), "Vocal", VOCAL_CH, VOCAL_PROG, song.bpm(), key, false, 0, 0);
   }
 
   // Root bass track
   constexpr uint8_t BASS_CH = 2;
   constexpr uint8_t BASS_PROG = 33;  // Electric Bass
   if (!root_bass.empty()) {
-    writeTrack(root_bass, "Bass", BASS_CH, BASS_PROG, song.bpm(), key,
-               false, 0, 0);
+    writeTrack(root_bass, "Bass", BASS_CH, BASS_PROG, song.bpm(), key, false, 0, 0);
   }
 }
 

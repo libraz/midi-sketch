@@ -4,12 +4,12 @@
  */
 
 #include "midi/midi_validator.h"
+
 #include <cstring>
 #include <fstream>
 #include <sstream>
 
 namespace midisketch {
-
 
 // MidiValidationReport methods
 
@@ -35,8 +35,7 @@ std::string MidiValidationReport::toJson() const {
   ss << "  \"valid\": " << (valid ? "true" : "false") << ",\n";
   ss << "  \"summary\": {\n";
   ss << "    \"file_size\": " << summary.file_size << ",\n";
-  ss << "    \"format\": \"" << MidiValidator::formatName(summary.format)
-     << "\",\n";
+  ss << "    \"format\": \"" << MidiValidator::formatName(summary.format) << "\",\n";
   ss << "    \"midi_type\": " << summary.midi_type << ",\n";
   ss << "    \"num_tracks\": " << summary.num_tracks << ",\n";
   ss << "    \"division\": " << summary.division << ",\n";
@@ -55,8 +54,7 @@ std::string MidiValidationReport::toJson() const {
     ss << "      \"name\": \"" << t.name << "\",\n";
     ss << "      \"length\": " << t.length << ",\n";
     ss << "      \"event_count\": " << t.event_count << ",\n";
-    ss << "      \"has_end_of_track\": " << (t.has_end_of_track ? "true" : "false")
-       << "\n";
+    ss << "      \"has_end_of_track\": " << (t.has_end_of_track ? "true" : "false") << "\n";
     ss << "    }" << (i + 1 < tracks.size() ? "," : "") << "\n";
   }
   ss << "  ],\n";
@@ -86,8 +84,7 @@ std::string MidiValidationReport::toJson() const {
   return ss.str();
 }
 
-std::string MidiValidationReport::toTextReport(
-    const std::string& filename) const {
+std::string MidiValidationReport::toTextReport(const std::string& filename) const {
   std::ostringstream ss;
 
   ss << std::string(60, '=') << "\n";
@@ -115,9 +112,8 @@ std::string MidiValidationReport::toTextReport(
   if (!tracks.empty()) {
     ss << "--- Tracks ---\n";
     for (const auto& t : tracks) {
-      ss << "  [" << t.index << "] "
-         << (t.name.empty() ? "(unnamed)" : t.name) << ": " << t.event_count
-         << " events, " << t.length << " bytes";
+      ss << "  [" << t.index << "] " << (t.name.empty() ? "(unnamed)" : t.name) << ": "
+         << t.event_count << " events, " << t.length << " bytes";
       if (!t.has_end_of_track) {
         ss << " (missing EOT)";
       }
@@ -182,13 +178,11 @@ MidiValidationReport MidiValidator::validate(const std::string& path) const {
   return validate(data);
 }
 
-MidiValidationReport MidiValidator::validate(
-    const std::vector<uint8_t>& data) const {
+MidiValidationReport MidiValidator::validate(const std::vector<uint8_t>& data) const {
   return validate(data.data(), data.size());
 }
 
-MidiValidationReport MidiValidator::validate(const uint8_t* data,
-                                             size_t size) const {
+MidiValidationReport MidiValidator::validate(const uint8_t* data, size_t size) const {
   MidiValidationReport report;
   report.summary.file_size = size;
 
@@ -223,8 +217,7 @@ MidiValidationReport MidiValidator::validate(const uint8_t* data,
   return report;
 }
 
-DetectedMidiFormat MidiValidator::detectFormat(const uint8_t* data,
-                                               size_t size) {
+DetectedMidiFormat MidiValidator::detectFormat(const uint8_t* data, size_t size) {
   // Delegate to MidiReader's implementation
   return MidiReader::detectFormat(data, size);
 }
@@ -246,7 +239,7 @@ std::string MidiValidator::formatName(DetectedMidiFormat format) {
 }
 
 bool MidiValidator::validateSMF1(const uint8_t* data, size_t size,
-                                  MidiValidationReport& report) const {
+                                 MidiValidationReport& report) const {
   // Validate header
   if (!validateSMF1Header(data, size, report)) {
     return false;
@@ -258,15 +251,13 @@ bool MidiValidator::validateSMF1(const uint8_t* data, size_t size,
 
   while (offset < size) {
     if (offset + 8 > size) {
-      addError(report, "Unexpected end of file at track " +
-                           std::to_string(tracks_found));
+      addError(report, "Unexpected end of file at track " + std::to_string(tracks_found));
       return false;
     }
 
     // Check MTrk
     if (std::memcmp(data + offset, "MTrk", 4) != 0) {
-      addError(report,
-               "Expected MTrk chunk at offset " + std::to_string(offset));
+      addError(report, "Expected MTrk chunk at offset " + std::to_string(offset));
       return false;
     }
 
@@ -275,9 +266,8 @@ bool MidiValidator::validateSMF1(const uint8_t* data, size_t size,
     size_t track_end = track_start + track_len;
 
     if (track_end > size) {
-      addError(report, "Track " + std::to_string(tracks_found) +
-                           " extends beyond file (" + std::to_string(track_end) +
-                           " > " + std::to_string(size) + ")");
+      addError(report, "Track " + std::to_string(tracks_found) + " extends beyond file (" +
+                           std::to_string(track_end) + " > " + std::to_string(size) + ")");
       return false;
     }
 
@@ -285,18 +275,15 @@ bool MidiValidator::validateSMF1(const uint8_t* data, size_t size,
     track_info.index = tracks_found;
     track_info.length = track_len;
 
-    if (!validateSMF1Track(data + track_start, track_len, tracks_found, report,
-                           track_info)) {
+    if (!validateSMF1Track(data + track_start, track_len, tracks_found, report, track_info)) {
       return false;
     }
 
     report.tracks.push_back(track_info);
 
     if (!track_info.has_end_of_track) {
-      addWarning(report,
-                 "Track " + std::to_string(tracks_found) +
-                     " missing End of Track event",
-                 0, tracks_found);
+      addWarning(report, "Track " + std::to_string(tracks_found) + " missing End of Track event", 0,
+                 tracks_found);
     }
 
     offset = track_end;
@@ -304,8 +291,8 @@ bool MidiValidator::validateSMF1(const uint8_t* data, size_t size,
   }
 
   if (tracks_found != report.summary.num_tracks) {
-    addError(report, "Expected " + std::to_string(report.summary.num_tracks) +
-                         " tracks, found " + std::to_string(tracks_found));
+    addError(report, "Expected " + std::to_string(report.summary.num_tracks) + " tracks, found " +
+                         std::to_string(tracks_found));
     return false;
   }
 
@@ -313,7 +300,7 @@ bool MidiValidator::validateSMF1(const uint8_t* data, size_t size,
 }
 
 bool MidiValidator::validateSMF1Header(const uint8_t* data, size_t size,
-                                        MidiValidationReport& report) const {
+                                       MidiValidationReport& report) const {
   if (size < 14) {
     addError(report, "Invalid header size");
     return false;
@@ -327,15 +314,13 @@ bool MidiValidator::validateSMF1Header(const uint8_t* data, size_t size,
 
   uint32_t header_len = readUint32BE(data + 4);
   if (header_len < 6) {
-    addError(report,
-             "Invalid header length: " + std::to_string(header_len));
+    addError(report, "Invalid header length: " + std::to_string(header_len));
     return false;
   }
 
   report.summary.midi_type = readUint16BE(data + 8);
   if (report.summary.midi_type > 2) {
-    addError(report,
-             "Invalid MIDI format: " + std::to_string(report.summary.midi_type));
+    addError(report, "Invalid MIDI format: " + std::to_string(report.summary.midi_type));
     return false;
   }
 
@@ -356,10 +341,9 @@ bool MidiValidator::validateSMF1Header(const uint8_t* data, size_t size,
   return true;
 }
 
-bool MidiValidator::validateSMF1Track(const uint8_t* data, size_t size,
-                                       int track_index,
-                                       MidiValidationReport& report,
-                                       ValidatedTrack& track_info) const {
+bool MidiValidator::validateSMF1Track(const uint8_t* data, size_t size, int track_index,
+                                      MidiValidationReport& report,
+                                      ValidatedTrack& track_info) const {
   size_t pos = 0;
   size_t event_count = 0;
   uint8_t running_status = 0;
@@ -370,8 +354,8 @@ bool MidiValidator::validateSMF1Track(const uint8_t* data, size_t size,
     uint32_t delta = 0;
     if (!readVariableLength(data, pos, size, delta)) {
       addError(report,
-               "Invalid delta time at track " + std::to_string(track_index) +
-                   ", offset " + std::to_string(pos),
+               "Invalid delta time at track " + std::to_string(track_index) + ", offset " +
+                   std::to_string(pos),
                pos, track_index);
       return false;
     }
@@ -379,9 +363,8 @@ bool MidiValidator::validateSMF1Track(const uint8_t* data, size_t size,
 
     if (pos >= size) {
       addError(report,
-               "Unexpected end of track " + std::to_string(track_index) +
-                   " after delta time",
-               pos, track_index);
+               "Unexpected end of track " + std::to_string(track_index) + " after delta time", pos,
+               track_index);
       return false;
     }
 
@@ -391,8 +374,8 @@ bool MidiValidator::validateSMF1Track(const uint8_t* data, size_t size,
       // Running status
       if (running_status == 0) {
         addError(report,
-                 "Missing status byte at track " + std::to_string(track_index) +
-                     ", offset " + std::to_string(pos),
+                 "Missing status byte at track " + std::to_string(track_index) + ", offset " +
+                     std::to_string(pos),
                  pos, track_index);
         return false;
       }
@@ -409,33 +392,27 @@ bool MidiValidator::validateSMF1Track(const uint8_t* data, size_t size,
     if (status == 0xFF) {
       // Meta event
       if (pos >= size) {
-        addError(report,
-                 "Incomplete meta event at track " + std::to_string(track_index),
-                 pos, track_index);
+        addError(report, "Incomplete meta event at track " + std::to_string(track_index), pos,
+                 track_index);
         return false;
       }
       uint8_t meta_type = data[pos++];
       uint32_t meta_len = 0;
       if (!readVariableLength(data, pos, size, meta_len)) {
-        addError(report,
-                 "Invalid meta event length at track " +
-                     std::to_string(track_index),
-                 pos, track_index);
+        addError(report, "Invalid meta event length at track " + std::to_string(track_index), pos,
+                 track_index);
         return false;
       }
 
       if (pos + meta_len > size) {
-        addError(report,
-                 "Meta event data extends beyond track " +
-                     std::to_string(track_index),
-                 pos, track_index);
+        addError(report, "Meta event data extends beyond track " + std::to_string(track_index), pos,
+                 track_index);
         return false;
       }
 
       // Track name (meta type 0x03)
       if (meta_type == 0x03 && meta_len > 0) {
-        track_info.name =
-            std::string(reinterpret_cast<const char*>(data + pos), meta_len);
+        track_info.name = std::string(reinterpret_cast<const char*>(data + pos), meta_len);
       }
 
       // End of track (meta type 0x2F)
@@ -448,21 +425,17 @@ bool MidiValidator::validateSMF1Track(const uint8_t* data, size_t size,
       // SysEx
       uint32_t sysex_len = 0;
       if (!readVariableLength(data, pos, size, sysex_len)) {
-        addError(report,
-                 "Invalid SysEx length at track " + std::to_string(track_index),
-                 pos, track_index);
+        addError(report, "Invalid SysEx length at track " + std::to_string(track_index), pos,
+                 track_index);
         return false;
       }
       pos += sysex_len;
-    } else if (event_type == 0x80 || event_type == 0x90 ||
-               event_type == 0xA0 || event_type == 0xB0 ||
-               event_type == 0xE0) {
+    } else if (event_type == 0x80 || event_type == 0x90 || event_type == 0xA0 ||
+               event_type == 0xB0 || event_type == 0xE0) {
       // Two data bytes
       if (pos + 1 >= size) {
-        addError(report,
-                 "Incomplete channel message at track " +
-                     std::to_string(track_index),
-                 pos, track_index);
+        addError(report, "Incomplete channel message at track " + std::to_string(track_index), pos,
+                 track_index);
         return false;
       }
       uint8_t data1 = data[pos++];
@@ -471,32 +444,27 @@ bool MidiValidator::validateSMF1Track(const uint8_t* data, size_t size,
       // Validate data bytes (must be < 128)
       if (data1 > 127 || data2 > 127) {
         addWarning(report,
-                   "Invalid data byte in channel message at track " +
-                       std::to_string(track_index) + ", tick " +
-                       std::to_string(current_tick),
+                   "Invalid data byte in channel message at track " + std::to_string(track_index) +
+                       ", tick " + std::to_string(current_tick),
                    pos - 2, track_index);
       }
     } else if (event_type == 0xC0 || event_type == 0xD0) {
       // One data byte
       if (pos >= size) {
-        addError(report,
-                 "Incomplete channel message at track " +
-                     std::to_string(track_index),
-                 pos, track_index);
+        addError(report, "Incomplete channel message at track " + std::to_string(track_index), pos,
+                 track_index);
         return false;
       }
       uint8_t data1 = data[pos++];
       if (data1 > 127) {
         addWarning(report,
-                   "Invalid data byte in channel message at track " +
-                       std::to_string(track_index),
+                   "Invalid data byte in channel message at track " + std::to_string(track_index),
                    pos - 1, track_index);
       }
     } else {
       addWarning(report,
-                 "Unknown status byte 0x" +
-                     std::to_string(static_cast<int>(status)) + " at track " +
-                     std::to_string(track_index),
+                 "Unknown status byte 0x" + std::to_string(static_cast<int>(status)) +
+                     " at track " + std::to_string(track_index),
                  pos, track_index);
       break;
     }
@@ -509,7 +477,7 @@ bool MidiValidator::validateSMF1Track(const uint8_t* data, size_t size,
 }
 
 bool MidiValidator::validateSMF2Clip(const uint8_t* data, size_t size,
-                                      MidiValidationReport& report) const {
+                                     MidiValidationReport& report) const {
   if (size < 16) {
     addError(report, "SMF2 Clip file too small");
     return false;
@@ -532,9 +500,8 @@ bool MidiValidator::validateSMF2Clip(const uint8_t* data, size_t size,
 
   // First message should typically be utility (0x0) or stream (0xF)
   if (first_mt != 0x0 && first_mt != 0xF) {
-    addWarning(report,
-               "First UMP message type is 0x" + std::to_string(first_mt) +
-                   " (expected 0x0 or 0xF)");
+    addWarning(report, "First UMP message type is 0x" + std::to_string(first_mt) +
+                           " (expected 0x0 or 0xF)");
   }
 
   // Scan UMP messages to count events and check structure
@@ -585,7 +552,7 @@ bool MidiValidator::validateSMF2Clip(const uint8_t* data, size_t size,
 }
 
 bool MidiValidator::validateSMF2Container(const uint8_t* data, size_t size,
-                                           MidiValidationReport& report) const {
+                                          MidiValidationReport& report) const {
   // ktmidi container format:
   // 0-15: "AAAAAAAAEEEEEEEE"
   // 16-19: deltaTimeSpec (i32 BE)
@@ -597,8 +564,7 @@ bool MidiValidator::validateSMF2Container(const uint8_t* data, size_t size,
     return false;
   }
 
-  int32_t delta_time_spec =
-      static_cast<int32_t>(readUint32BE(data + 16));
+  int32_t delta_time_spec = static_cast<int32_t>(readUint32BE(data + 16));
   int32_t num_tracks = static_cast<int32_t>(readUint32BE(data + 20));
 
   report.summary.division = static_cast<uint16_t>(delta_time_spec > 0 ? delta_time_spec : 480);
@@ -607,8 +573,7 @@ bool MidiValidator::validateSMF2Container(const uint8_t* data, size_t size,
   report.summary.num_tracks = static_cast<uint16_t>(num_tracks);
 
   addInfo(report, "ktmidi container with " + std::to_string(num_tracks) +
-                      " tracks, deltaTimeSpec=" +
-                      std::to_string(delta_time_spec));
+                      " tracks, deltaTimeSpec=" + std::to_string(delta_time_spec));
 
   // Parse embedded clips
   size_t offset = 24;
@@ -620,8 +585,7 @@ bool MidiValidator::validateSMF2Container(const uint8_t* data, size_t size,
     }
 
     if (std::memcmp(data + offset, "SMF2CLIP", 8) != 0) {
-      addError(report,
-               "Expected SMF2CLIP header at clip " + std::to_string(i));
+      addError(report, "Expected SMF2CLIP header at clip " + std::to_string(i));
       return false;
     }
 
@@ -636,8 +600,7 @@ bool MidiValidator::validateSMF2Container(const uint8_t* data, size_t size,
     // Scan UMP messages
     while (offset + 4 <= size) {
       // Check for next clip header
-      if (offset + 8 <= size &&
-          std::memcmp(data + offset, "SMF2CLIP", 8) == 0) {
+      if (offset + 8 <= size && std::memcmp(data + offset, "SMF2CLIP", 8) == 0) {
         break;
       }
 
@@ -678,16 +641,15 @@ bool MidiValidator::validateSMF2Container(const uint8_t* data, size_t size,
     report.tracks.push_back(track_info);
 
     if (!has_end_of_clip) {
-      addWarning(report, "Clip " + std::to_string(i) + " missing End of Clip",
-                 0, i);
+      addWarning(report, "Clip " + std::to_string(i) + " missing End of Clip", 0, i);
     }
   }
 
   return true;
 }
 
-bool MidiValidator::readVariableLength(const uint8_t* data, size_t& offset,
-                                        size_t max_size, uint32_t& value) {
+bool MidiValidator::readVariableLength(const uint8_t* data, size_t& offset, size_t max_size,
+                                       uint32_t& value) {
   value = 0;
   size_t count = 0;
 
@@ -709,29 +671,23 @@ uint16_t MidiValidator::readUint16BE(const uint8_t* data) {
 }
 
 uint32_t MidiValidator::readUint32BE(const uint8_t* data) {
-  return (static_cast<uint32_t>(data[0]) << 24) |
-         (static_cast<uint32_t>(data[1]) << 16) |
+  return (static_cast<uint32_t>(data[0]) << 24) | (static_cast<uint32_t>(data[1]) << 16) |
          (static_cast<uint32_t>(data[2]) << 8) | data[3];
 }
 
-void MidiValidator::addError(MidiValidationReport& report,
-                              const std::string& msg, size_t offset,
-                              int track) {
-  report.issues.push_back(
-      {ValidationSeverity::Error, msg, offset, track});
+void MidiValidator::addError(MidiValidationReport& report, const std::string& msg, size_t offset,
+                             int track) {
+  report.issues.push_back({ValidationSeverity::Error, msg, offset, track});
 }
 
-void MidiValidator::addWarning(MidiValidationReport& report,
-                                const std::string& msg, size_t offset,
-                                int track) {
-  report.issues.push_back(
-      {ValidationSeverity::Warning, msg, offset, track});
+void MidiValidator::addWarning(MidiValidationReport& report, const std::string& msg, size_t offset,
+                               int track) {
+  report.issues.push_back({ValidationSeverity::Warning, msg, offset, track});
 }
 
-void MidiValidator::addInfo(MidiValidationReport& report, const std::string& msg,
-                             size_t offset, int track) {
-  report.issues.push_back(
-      {ValidationSeverity::Info, msg, offset, track});
+void MidiValidator::addInfo(MidiValidationReport& report, const std::string& msg, size_t offset,
+                            int track) {
+  report.issues.push_back({ValidationSeverity::Info, msg, offset, track});
 }
 
 }  // namespace midisketch

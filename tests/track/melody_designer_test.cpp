@@ -3,14 +3,17 @@
  * @brief Tests for melody designer.
  */
 
+#include "track/melody_designer.h"
+
 #include <gtest/gtest.h>
+
+#include <random>
+#include <set>
+
 #include "core/harmony_context.h"
 #include "core/i_harmony_context.h"
 #include "core/melody_templates.h"
 #include "core/timing_constants.h"
-#include "track/melody_designer.h"
-#include <random>
-#include <set>
 
 namespace midisketch {
 namespace {
@@ -22,11 +25,11 @@ MelodyDesigner::SectionContext createTestContext() {
   ctx.section_start = 0;
   ctx.section_end = TICKS_PER_BAR * 4;  // 4 bars
   ctx.section_bars = 4;
-  ctx.chord_degree = 0;  // I chord
-  ctx.key_offset = 0;    // C major
+  ctx.chord_degree = 0;                        // I chord
+  ctx.key_offset = 0;                          // C major
   ctx.tessitura = TessituraRange{60, 72, 66};  // C4 to C5
-  ctx.vocal_low = 55;    // G3
-  ctx.vocal_high = 79;   // G5
+  ctx.vocal_low = 55;                          // G3
+  ctx.vocal_high = 79;                         // G5
   return ctx;
 }
 
@@ -39,13 +42,10 @@ TEST(MelodyDesignerTest, SelectPitchChoiceReturnsValidChoice) {
   const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
 
   for (int i = 0; i < 100; ++i) {
-    PitchChoice choice = MelodyDesigner::selectPitchChoice(
-        tmpl, 0.5f, false, rng);
+    PitchChoice choice = MelodyDesigner::selectPitchChoice(tmpl, 0.5f, false, rng);
     // Should be one of the valid choices
-    EXPECT_TRUE(choice == PitchChoice::Same ||
-                choice == PitchChoice::StepUp ||
-                choice == PitchChoice::StepDown ||
-                choice == PitchChoice::TargetStep);
+    EXPECT_TRUE(choice == PitchChoice::Same || choice == PitchChoice::StepUp ||
+                choice == PitchChoice::StepDown || choice == PitchChoice::TargetStep);
   }
 }
 
@@ -56,8 +56,7 @@ TEST(MelodyDesignerTest, SelectPitchChoiceWithHighPlateau) {
 
   int same_count = 0;
   for (int i = 0; i < 100; ++i) {
-    PitchChoice choice = MelodyDesigner::selectPitchChoice(
-        tmpl, 0.5f, false, rng);
+    PitchChoice choice = MelodyDesigner::selectPitchChoice(tmpl, 0.5f, false, rng);
     if (choice == PitchChoice::Same) same_count++;
   }
 
@@ -73,8 +72,7 @@ TEST(MelodyDesignerTest, SelectPitchChoiceWithTarget) {
   int target_count = 0;
   // Test at phrase position > target_attraction_start
   for (int i = 0; i < 100; ++i) {
-    PitchChoice choice = MelodyDesigner::selectPitchChoice(
-        tmpl, 0.7f, true, rng);
+    PitchChoice choice = MelodyDesigner::selectPitchChoice(tmpl, 0.7f, true, rng);
     if (choice == PitchChoice::TargetStep) target_count++;
   }
 
@@ -90,8 +88,7 @@ TEST(MelodyDesignerTest, ApplyDirectionInertiaSameUnchanged) {
   std::mt19937 rng(42);
   const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
 
-  PitchChoice result = MelodyDesigner::applyDirectionInertia(
-      PitchChoice::Same, 3, tmpl, rng);
+  PitchChoice result = MelodyDesigner::applyDirectionInertia(PitchChoice::Same, 3, tmpl, rng);
   EXPECT_EQ(result, PitchChoice::Same);
 }
 
@@ -99,8 +96,8 @@ TEST(MelodyDesignerTest, ApplyDirectionInertiaTargetUnchanged) {
   std::mt19937 rng(42);
   const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
 
-  PitchChoice result = MelodyDesigner::applyDirectionInertia(
-      PitchChoice::TargetStep, -3, tmpl, rng);
+  PitchChoice result =
+      MelodyDesigner::applyDirectionInertia(PitchChoice::TargetStep, -3, tmpl, rng);
   EXPECT_EQ(result, PitchChoice::TargetStep);
 }
 
@@ -111,8 +108,7 @@ TEST(MelodyDesignerTest, ApplyDirectionInertiaInfluencesStep) {
   // With strong positive inertia, should tend toward StepUp
   int up_count = 0;
   for (int i = 0; i < 100; ++i) {
-    PitchChoice result = MelodyDesigner::applyDirectionInertia(
-        PitchChoice::StepDown, 3, tmpl, rng);
+    PitchChoice result = MelodyDesigner::applyDirectionInertia(PitchChoice::StepDown, 3, tmpl, rng);
     if (result == PitchChoice::StepUp) up_count++;
   }
 
@@ -238,8 +234,7 @@ TEST(MelodyDesignerTest, GenerateMelodyPhraseProducesNotes) {
   // Need to set up HarmonyContext
   HarmonyContext harmony;
 
-  auto result = designer.generateMelodyPhrase(
-      tmpl, 0, 8, ctx, -1, 0, harmony, rng);
+  auto result = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng);
 
   EXPECT_GT(result.notes.size(), 0u);
   EXPECT_GE(result.last_pitch, ctx.vocal_low);
@@ -253,8 +248,7 @@ TEST(MelodyDesignerTest, GenerateMelodyPhraseNotesInRange) {
   auto ctx = createTestContext();
   HarmonyContext harmony;
 
-  auto result = designer.generateMelodyPhrase(
-      tmpl, 0, 8, ctx, -1, 0, harmony, rng);
+  auto result = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng);
 
   for (const auto& note : result.notes) {
     EXPECT_GE(note.note, ctx.vocal_low);
@@ -270,14 +264,11 @@ TEST(MelodyDesignerTest, GenerateMelodyPhraseContinuity) {
   HarmonyContext harmony;
 
   // First phrase
-  auto result1 = designer.generateMelodyPhrase(
-      tmpl, 0, 8, ctx, -1, 0, harmony, rng);
+  auto result1 = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng);
 
   // Second phrase with continuity
-  auto result2 = designer.generateMelodyPhrase(
-      tmpl, TICKS_PER_BAR * 2, 8, ctx,
-      result1.last_pitch, result1.direction_inertia,
-      harmony, rng);
+  auto result2 = designer.generateMelodyPhrase(tmpl, TICKS_PER_BAR * 2, 8, ctx, result1.last_pitch,
+                                               result1.direction_inertia, harmony, rng);
 
   EXPECT_GT(result2.notes.size(), 0u);
   // First note of second phrase should be close to last note of first
@@ -362,8 +353,7 @@ TEST(MelodyDesignerTest, GenerateSectionDifferentTemplates) {
 
     auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
 
-    EXPECT_GT(notes.size(), 0u) << "Template " << static_cast<int>(id)
-                                 << " produced no notes";
+    EXPECT_GT(notes.size(), 0u) << "Template " << static_cast<int>(id) << " produced no notes";
   }
 }
 
@@ -512,9 +502,8 @@ TEST(MelodyDesignerTest, HookDoesNotCreateOverlappingNotes) {
     }
   }
 
-  EXPECT_EQ(short_notes, 0)
-      << "Found " << short_notes << " notes with duration < " << MIN_DURATION
-      << " ticks. This indicates hook overlap issue.";
+  EXPECT_EQ(short_notes, 0) << "Found " << short_notes << " notes with duration < " << MIN_DURATION
+                            << " ticks. This indicates hook overlap issue.";
 }
 
 // Test that generated notes have no same-tick collisions across templates
@@ -553,8 +542,7 @@ TEST(MelodyDesignerTest, NoSameTickCollisionAcrossTemplates) {
     for (size_t i = 0; i + 1 < notes.size(); ++i) {
       EXPECT_LT(notes[i].start_tick, notes[i + 1].start_tick)
           << "Notes at index " << i << " and " << (i + 1)
-          << " have same or reversed start_tick with template "
-          << static_cast<int>(tmpl_id);
+          << " have same or reversed start_tick with template " << static_cast<int>(tmpl_id);
     }
 
     // No notes should have extremely short duration (< 60 ticks)
@@ -563,8 +551,7 @@ TEST(MelodyDesignerTest, NoSameTickCollisionAcrossTemplates) {
     for (size_t i = 0; i < notes.size(); ++i) {
       EXPECT_GE(notes[i].duration, MIN_DURATION)
           << "Note at index " << i << " has duration " << notes[i].duration
-          << " which indicates overlap collision with template "
-          << static_cast<int>(tmpl_id);
+          << " which indicates overlap collision with template " << static_cast<int>(tmpl_id);
     }
   }
 }
@@ -581,10 +568,7 @@ TEST(MelodyDesignerTest, PhraseGapsAreAtMostHalfBar) {
 
   // Test with multiple templates
   std::vector<MelodyTemplateId> templates = {
-      MelodyTemplateId::PlateauTalk,
-      MelodyTemplateId::RunUpTarget,
-      MelodyTemplateId::SparseAnchor
-  };
+      MelodyTemplateId::PlateauTalk, MelodyTemplateId::RunUpTarget, MelodyTemplateId::SparseAnchor};
 
   for (auto tmpl_id : templates) {
     const MelodyTemplate& tmpl = getTemplate(tmpl_id);
@@ -611,7 +595,7 @@ TEST(MelodyDesignerTest, PhraseGapsAreAtMostHalfBar) {
     // Calculate gaps between consecutive notes
     // Design intent: "half-bar gaps as breath points" (commit 59b7767)
     // Allow up to 3/4 bar (3 beats) to account for phrase timing variations
-    constexpr Tick THREE_QUARTER_BAR = (TICKS_PER_BAR * 3) / 4;  // 1440 ticks = 3 beats
+    constexpr Tick THREE_QUARTER_BAR = (TICKS_PER_BAR * 3) / 4;        // 1440 ticks = 3 beats
     constexpr Tick MAX_ALLOWED_GAP = THREE_QUARTER_BAR + TICK_EIGHTH;  // 1680 ticks tolerance
 
     for (size_t i = 0; i + 1 < notes.size(); ++i) {
@@ -749,11 +733,11 @@ TEST(MelodyDesignerTest, DownbeatNotesAreChordTones) {
           }
 
           EXPECT_TRUE(is_chord_tone)
-              << "Downbeat note " << static_cast<int>(note.note)
-              << " (PC=" << pitch_class << ") at tick " << note.start_tick
-              << " is not a chord tone of degree " << static_cast<int>(chord_degree)
-              << ". Chord tones: " << chord_tones[0] << "," << chord_tones[1] << "," << chord_tones[2]
-              << ". Seed=" << seed << ", Template=" << static_cast<int>(tmpl_id);
+              << "Downbeat note " << static_cast<int>(note.note) << " (PC=" << pitch_class
+              << ") at tick " << note.start_tick << " is not a chord tone of degree "
+              << static_cast<int>(chord_degree) << ". Chord tones: " << chord_tones[0] << ","
+              << chord_tones[1] << "," << chord_tones[2] << ". Seed=" << seed
+              << ", Template=" << static_cast<int>(tmpl_id);
         }
       }
     }
@@ -766,11 +750,7 @@ TEST(MelodyDesignerTest, DownbeatChordToneAcrossSectionTypes) {
   HarmonyContext harmony;
 
   std::vector<SectionType> section_types = {
-      SectionType::Intro,
-      SectionType::A,
-      SectionType::B,
-      SectionType::Chorus,
-      SectionType::Bridge,
+      SectionType::Intro, SectionType::A, SectionType::B, SectionType::Chorus, SectionType::Bridge,
   };
 
   std::vector<uint32_t> seeds = {42, 123, 456};
@@ -815,11 +795,10 @@ TEST(MelodyDesignerTest, DownbeatChordToneAcrossSectionTypes) {
           }
 
           EXPECT_TRUE(is_chord_tone)
-              << "Downbeat note PC=" << pitch_class << " at tick " << note.start_tick
-              << " (bar " << (note.start_tick / TICKS_PER_BAR + 1) << ")"
+              << "Downbeat note PC=" << pitch_class << " at tick " << note.start_tick << " (bar "
+              << (note.start_tick / TICKS_PER_BAR + 1) << ")"
               << " is not a chord tone. Chord degree=" << static_cast<int>(chord_degree)
-              << ", SectionType=" << static_cast<int>(sec_type)
-              << ". Seed=" << seed;
+              << ", SectionType=" << static_cast<int>(sec_type) << ". Seed=" << seed;
         }
       }
     }
@@ -915,29 +894,21 @@ TEST(GlobalMotifTest, ExtractAscendingContour) {
   // C4 -> D4 -> E4 -> F4 (ascending pattern)
   // NoteEvent: {start_tick, duration, note, velocity}
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},
-      {480, 480, 62, 100},
-      {960, 480, 64, 100},
-      {1440, 480, 65, 100}
-  };
+      {0, 480, 60, 100}, {480, 480, 62, 100}, {960, 480, 64, 100}, {1440, 480, 65, 100}};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
 
   EXPECT_TRUE(motif.isValid());
   EXPECT_EQ(motif.interval_count, 3);
-  EXPECT_EQ(motif.interval_signature[0], 2);   // +2 semitones
-  EXPECT_EQ(motif.interval_signature[1], 2);   // +2 semitones
-  EXPECT_EQ(motif.interval_signature[2], 1);   // +1 semitone
+  EXPECT_EQ(motif.interval_signature[0], 2);  // +2 semitones
+  EXPECT_EQ(motif.interval_signature[1], 2);  // +2 semitones
+  EXPECT_EQ(motif.interval_signature[2], 1);  // +1 semitone
   EXPECT_EQ(motif.contour_type, ContourType::Ascending);
 }
 
 TEST(GlobalMotifTest, ExtractDescendingContour) {
   // F4 -> E4 -> D4 -> C4 (descending pattern)
   std::vector<NoteEvent> notes = {
-      {0, 480, 65, 100},
-      {480, 480, 64, 100},
-      {960, 480, 62, 100},
-      {1440, 480, 60, 100}
-  };
+      {0, 480, 65, 100}, {480, 480, 64, 100}, {960, 480, 62, 100}, {1440, 480, 60, 100}};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
 
   EXPECT_TRUE(motif.isValid());
@@ -948,11 +919,7 @@ TEST(GlobalMotifTest, ExtractPeakContour) {
   // C4 -> G4 -> E4 -> C4 (clear rise then fall = peak)
   // intervals: +7, -3, -4 → first half positive, second half negative
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},
-      {480, 480, 67, 100},
-      {960, 480, 64, 100},
-      {1440, 480, 60, 100}
-  };
+      {0, 480, 60, 100}, {480, 480, 67, 100}, {960, 480, 64, 100}, {1440, 480, 60, 100}};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
 
   EXPECT_TRUE(motif.isValid());
@@ -963,11 +930,7 @@ TEST(GlobalMotifTest, ExtractValleyContour) {
   // G4 -> C4 -> E4 -> G4 (clear fall then rise = valley)
   // intervals: -7, +4, +3 → first half negative, second half positive
   std::vector<NoteEvent> notes = {
-      {0, 480, 67, 100},
-      {480, 480, 60, 100},
-      {960, 480, 64, 100},
-      {1440, 480, 67, 100}
-  };
+      {0, 480, 67, 100}, {480, 480, 60, 100}, {960, 480, 64, 100}, {1440, 480, 67, 100}};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
 
   EXPECT_TRUE(motif.isValid());
@@ -977,11 +940,7 @@ TEST(GlobalMotifTest, ExtractValleyContour) {
 TEST(GlobalMotifTest, ExtractPlateauContour) {
   // C4 -> C4 -> D4 -> C4 (mostly flat = plateau)
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},
-      {480, 480, 60, 100},
-      {960, 480, 62, 100},
-      {1440, 480, 60, 100}
-  };
+      {0, 480, 60, 100}, {480, 480, 60, 100}, {960, 480, 62, 100}, {1440, 480, 60, 100}};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
 
   EXPECT_TRUE(motif.isValid());
@@ -991,10 +950,10 @@ TEST(GlobalMotifTest, ExtractPlateauContour) {
 TEST(GlobalMotifTest, ExtractRhythmSignature) {
   // Different durations: quarter, half, quarter, whole
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},      // quarter
-      {480, 960, 62, 100},    // half
-      {1440, 480, 64, 100},   // quarter
-      {1920, 1920, 65, 100}   // whole
+      {0, 480, 60, 100},     // quarter
+      {480, 960, 62, 100},   // half
+      {1440, 480, 64, 100},  // quarter
+      {1920, 1920, 65, 100}  // whole
   };
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
 
@@ -1017,11 +976,7 @@ TEST(GlobalMotifTest, EvaluateWithInvalidMotif) {
 
 TEST(GlobalMotifTest, EvaluateWithIdenticalPattern) {
   // Create a motif from ascending pattern
-  std::vector<NoteEvent> source = {
-      {0, 480, 60, 100},
-      {480, 480, 62, 100},
-      {960, 480, 64, 100}
-  };
+  std::vector<NoteEvent> source = {{0, 480, 60, 100}, {480, 480, 62, 100}, {960, 480, 64, 100}};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(source);
 
   // Evaluate same pattern (should get maximum bonus)
@@ -1034,19 +989,11 @@ TEST(GlobalMotifTest, EvaluateWithIdenticalPattern) {
 
 TEST(GlobalMotifTest, EvaluateDifferentContour) {
   // Create ascending motif
-  std::vector<NoteEvent> ascending = {
-      {0, 480, 60, 100},
-      {480, 480, 62, 100},
-      {960, 480, 64, 100}
-  };
+  std::vector<NoteEvent> ascending = {{0, 480, 60, 100}, {480, 480, 62, 100}, {960, 480, 64, 100}};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(ascending);
 
   // Evaluate descending pattern (different contour)
-  std::vector<NoteEvent> descending = {
-      {0, 480, 64, 100},
-      {480, 480, 62, 100},
-      {960, 480, 60, 100}
-  };
+  std::vector<NoteEvent> descending = {{0, 480, 64, 100}, {480, 480, 62, 100}, {960, 480, 60, 100}};
   float bonus = MelodyDesigner::evaluateWithGlobalMotif(descending, motif);
 
   // Should get no contour bonus, may get partial interval bonus
@@ -1085,8 +1032,7 @@ TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_ReturnsInRange) {
   uint8_t prev_pitch = 66;  // F#4
 
   for (int i = 0; i < 100; ++i) {
-    uint8_t pitch = designer.selectPitchForLockedRhythm(
-        prev_pitch, 0, vocal_low, vocal_high, rng);
+    uint8_t pitch = designer.selectPitchForLockedRhythm(prev_pitch, 0, vocal_low, vocal_high, rng);
     EXPECT_GE(pitch, vocal_low) << "Pitch below range";
     EXPECT_LE(pitch, vocal_high) << "Pitch above range";
     prev_pitch = pitch;
@@ -1104,8 +1050,7 @@ TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_PrefersChordTones) {
   // Test with I chord (C major: C, E, G)
   int chord_tone_count = 0;
   for (int i = 0; i < 100; ++i) {
-    uint8_t pitch = designer.selectPitchForLockedRhythm(
-        prev_pitch, 0, vocal_low, vocal_high, rng);
+    uint8_t pitch = designer.selectPitchForLockedRhythm(prev_pitch, 0, vocal_low, vocal_high, rng);
     int pc = pitch % 12;
     // C=0, E=4, G=7 are chord tones of C major
     if (pc == 0 || pc == 4 || pc == 7) {
@@ -1127,8 +1072,7 @@ TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_PrefersSmallIntervals) {
 
   int small_interval_count = 0;
   for (int i = 0; i < 100; ++i) {
-    uint8_t pitch = designer.selectPitchForLockedRhythm(
-        prev_pitch, 0, vocal_low, vocal_high, rng);
+    uint8_t pitch = designer.selectPitchForLockedRhythm(prev_pitch, 0, vocal_low, vocal_high, rng);
     int interval = std::abs(static_cast<int>(pitch) - prev_pitch);
     if (interval <= 5) {  // Within a 4th
       small_interval_count++;
@@ -1148,8 +1092,7 @@ TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_HandlesNarrowRange) {
   uint8_t prev_pitch = 60;
 
   for (int i = 0; i < 50; ++i) {
-    uint8_t pitch = designer.selectPitchForLockedRhythm(
-        prev_pitch, 0, vocal_low, vocal_high, rng);
+    uint8_t pitch = designer.selectPitchForLockedRhythm(prev_pitch, 0, vocal_low, vocal_high, rng);
     EXPECT_GE(pitch, vocal_low);
     EXPECT_LE(pitch, vocal_high);
     prev_pitch = pitch;
@@ -1168,8 +1111,8 @@ TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_DifferentChordDegrees) {
   for (int8_t degree : degrees) {
     uint8_t prev_pitch = 64;
     for (int i = 0; i < 20; ++i) {
-      uint8_t pitch = designer.selectPitchForLockedRhythm(
-          prev_pitch, degree, vocal_low, vocal_high, rng);
+      uint8_t pitch =
+          designer.selectPitchForLockedRhythm(prev_pitch, degree, vocal_low, vocal_high, rng);
       EXPECT_GE(pitch, vocal_low);
       EXPECT_LE(pitch, vocal_high);
       prev_pitch = pitch;

@@ -6,10 +6,11 @@
 #ifndef MIDISKETCH_CORE_POST_PROCESSOR_H
 #define MIDISKETCH_CORE_POST_PROCESSOR_H
 
-#include "core/types.h"
-#include "core/midi_track.h"
 #include <random>
 #include <vector>
+
+#include "core/midi_track.h"
+#include "core/types.h"
 
 namespace midisketch {
 
@@ -27,9 +28,8 @@ class PostProcessor {
   // @param tracks Vector of track pointers to process
   // @param params Humanization parameters
   // @param rng Random number generator
-  static void applyHumanization(std::vector<MidiTrack*>& tracks,
-                                 const HumanizeParams& params,
-                                 std::mt19937& rng);
+  static void applyHumanization(std::vector<MidiTrack*>& tracks, const HumanizeParams& params,
+                                std::mt19937& rng);
 
   // Fixes vocal overlaps that may be introduced by humanization.
   // Singers can only sing one note at a time.

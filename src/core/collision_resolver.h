@@ -30,10 +30,8 @@ class CollisionResolver {
    * @param chord_track Track containing chord voicings
    * @param harmony HarmonyContext for chord tone lookup
    */
-  static void resolveArpeggioChordClashes(
-      MidiTrack& arpeggio_track,
-      const MidiTrack& chord_track,
-      const IHarmonyContext& harmony);
+  static void resolveArpeggioChordClashes(MidiTrack& arpeggio_track, const MidiTrack& chord_track,
+                                          const IHarmonyContext& harmony);
 };
 
 }  // namespace midisketch

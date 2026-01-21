@@ -3,8 +3,9 @@
  * @brief Tests for pitch utilities.
  */
 
-#include <gtest/gtest.h>
 #include "core/pitch_utils.h"
+
+#include <gtest/gtest.h>
 
 namespace midisketch {
 namespace {
@@ -167,12 +168,12 @@ TEST(PitchUtilsTest, IsDissonantIntervalTritone) {
 }
 
 TEST(PitchUtilsTest, IsNotDissonantConsonant) {
-  EXPECT_FALSE(isDissonantInterval(0, 4));   // Major 3rd
-  EXPECT_FALSE(isDissonantInterval(0, 3));   // Minor 3rd
-  EXPECT_FALSE(isDissonantInterval(0, 7));   // Perfect 5th
-  EXPECT_FALSE(isDissonantInterval(0, 5));   // Perfect 4th
-  EXPECT_FALSE(isDissonantInterval(0, 0));   // Unison
-  EXPECT_FALSE(isDissonantInterval(0, 2));   // Major 2nd (not severely dissonant)
+  EXPECT_FALSE(isDissonantInterval(0, 4));  // Major 3rd
+  EXPECT_FALSE(isDissonantInterval(0, 3));  // Minor 3rd
+  EXPECT_FALSE(isDissonantInterval(0, 7));  // Perfect 5th
+  EXPECT_FALSE(isDissonantInterval(0, 5));  // Perfect 4th
+  EXPECT_FALSE(isDissonantInterval(0, 0));  // Unison
+  EXPECT_FALSE(isDissonantInterval(0, 2));  // Major 2nd (not severely dissonant)
 }
 
 // ============================================================================
@@ -188,8 +189,8 @@ TEST(PitchUtilsTest, IsDissonantWithContextMinor2ndAlwaysDissonant) {
 
 TEST(PitchUtilsTest, IsDissonantWithContextTritoneOnDominant) {
   // Tritone is acceptable on dominant (V) chord (degree 4)
-  EXPECT_FALSE(isDissonantIntervalWithContext(0, 6, 4));  // C-F# on V
-  EXPECT_FALSE(isDissonantIntervalWithContext(5, 11, 4)); // F-B on V
+  EXPECT_FALSE(isDissonantIntervalWithContext(0, 6, 4));   // C-F# on V
+  EXPECT_FALSE(isDissonantIntervalWithContext(5, 11, 4));  // F-B on V
 }
 
 TEST(PitchUtilsTest, IsDissonantWithContextTritoneOnNonDominant) {

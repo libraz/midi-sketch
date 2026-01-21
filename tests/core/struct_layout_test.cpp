@@ -4,6 +4,7 @@
  */
 
 #include <gtest/gtest.h>
+
 #include "midisketch_c.h"
 
 // These tests verify struct field offsets to ensure WASM/JS bindings stay in sync.
@@ -19,9 +20,8 @@ TEST(StructLayoutTest, SongConfigLayout) {
   MidiSketchSongConfig c{};
   const auto base = reinterpret_cast<uintptr_t>(&c);
 
-  #define CHECK_OFFSET(field, expected) \
-    EXPECT_EQ(reinterpret_cast<uintptr_t>(&c.field) - base, expected) \
-        << #field " offset mismatch"
+#define CHECK_OFFSET(field, expected) \
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(&c.field) - base, expected) << #field " offset mismatch"
 
   // Basic settings (offset 0-12)
   CHECK_OFFSET(style_preset_id, 0);
@@ -92,7 +92,7 @@ TEST(StructLayoutTest, SongConfigLayout) {
   CHECK_OFFSET(hook_intensity, 50);
   CHECK_OFFSET(vocal_groove, 51);
 
-  #undef CHECK_OFFSET
+#undef CHECK_OFFSET
 }
 
 // MidiSketchVocalParams tests removed - struct deprecated
@@ -108,25 +108,23 @@ TEST(StructLayoutTest, PianoRollInfoLayout) {
   MidiSketchPianoRollInfo info{};
   const auto base = reinterpret_cast<uintptr_t>(&info);
 
-  #define CHECK_OFFSET(field, expected) \
-    EXPECT_EQ(reinterpret_cast<uintptr_t>(&info.field) - base, expected) \
-        << #field " offset mismatch"
+#define CHECK_OFFSET(field, expected)                                                       \
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(&info.field) - base, expected) << #field " offset " \
+                                                                                 "mismatch"
 
-  CHECK_OFFSET(tick, 0);           // 4 bytes
-  CHECK_OFFSET(chord_degree, 4);   // 1 byte
-  CHECK_OFFSET(current_key, 5);    // 1 byte
-  CHECK_OFFSET(safety, 6);         // 128 bytes
-  CHECK_OFFSET(reason, 134);       // 256 bytes (128 * 2)
-  CHECK_OFFSET(collision, 390);    // 384 bytes (128 * 3)
-  CHECK_OFFSET(recommended, 774);  // 8 bytes
+  CHECK_OFFSET(tick, 0);                 // 4 bytes
+  CHECK_OFFSET(chord_degree, 4);         // 1 byte
+  CHECK_OFFSET(current_key, 5);          // 1 byte
+  CHECK_OFFSET(safety, 6);               // 128 bytes
+  CHECK_OFFSET(reason, 134);             // 256 bytes (128 * 2)
+  CHECK_OFFSET(collision, 390);          // 384 bytes (128 * 3)
+  CHECK_OFFSET(recommended, 774);        // 8 bytes
   CHECK_OFFSET(recommended_count, 782);  // 1 byte
 
-  #undef CHECK_OFFSET
+#undef CHECK_OFFSET
 }
 
-TEST(StructLayoutTest, CollisionInfoSize) {
-  EXPECT_EQ(sizeof(MidiSketchCollisionInfo), 3);
-}
+TEST(StructLayoutTest, CollisionInfoSize) { EXPECT_EQ(sizeof(MidiSketchCollisionInfo), 3); }
 
 TEST(StructLayoutTest, PianoRollDataSize) {
   // Pointer + size_t (both 4 bytes in WASM32)

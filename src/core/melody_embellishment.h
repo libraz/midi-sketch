@@ -10,11 +10,12 @@
 #ifndef MIDISKETCH_CORE_MELODY_EMBELLISHMENT_H
 #define MIDISKETCH_CORE_MELODY_EMBELLISHMENT_H
 
-#include "core/basic_types.h"
-#include "core/timing_constants.h"
 #include <optional>
 #include <random>
 #include <vector>
+
+#include "core/basic_types.h"
+#include "core/timing_constants.h"
 
 namespace midisketch {
 
@@ -48,10 +49,10 @@ enum class NCTType : uint8_t {
  * Weak beats allow passing tones, neighbor tones, and anticipations.
  */
 enum class BeatStrength : uint8_t {
-  Strong,    ///< Beat 1, 3 in 4/4
-  Medium,    ///< Beat 2, 4 in 4/4
-  Weak,      ///< Off-beats (8th note subdivisions)
-  VeryWeak   ///< 16th note subdivisions
+  Strong,   ///< Beat 1, 3 in 4/4
+  Medium,   ///< Beat 2, 4 in 4/4
+  Weak,     ///< Off-beats (8th note subdivisions)
+  VeryWeak  ///< 16th note subdivisions
 };
 
 /**
@@ -69,26 +70,26 @@ struct EmbellishmentConfig {
   float anticipation_ratio = 0.05f;   ///< Proportion of anticipations (syncopation)
 
   // === Tension Settings ===
-  bool enable_tensions = false;    ///< Enable 9th/11th/13th as melody tones
-  float tension_ratio = 0.0f;      ///< Ratio of tension usage (replaces some CTs)
+  bool enable_tensions = false;  ///< Enable 9th/11th/13th as melody tones
+  float tension_ratio = 0.0f;    ///< Ratio of tension usage (replaces some CTs)
 
   // === Style Modifiers ===
-  bool prefer_pentatonic = true;   ///< Prefer pentatonic scale (J-POP characteristic)
-  bool chromatic_approach = false; ///< Allow chromatic approach notes
-  float syncopation_level = 0.3f;  ///< Likelihood of syncopation (0.0-1.0)
+  bool prefer_pentatonic = true;    ///< Prefer pentatonic scale (J-POP characteristic)
+  bool chromatic_approach = false;  ///< Allow chromatic approach notes
+  float syncopation_level = 0.3f;   ///< Likelihood of syncopation (0.0-1.0)
 
   // === Safety ===
-  bool resolve_all_ncts = true;    ///< Ensure all NCTs resolve properly
-  int max_consecutive_ncts = 2;    ///< Maximum consecutive non-chord tones
+  bool resolve_all_ncts = true;  ///< Ensure all NCTs resolve properly
+  int max_consecutive_ncts = 2;  ///< Maximum consecutive non-chord tones
 };
 
 /**
  * @brief Result of embellishment with NCT type annotation.
  */
 struct EmbellishedNote {
-  NoteEvent note;                        ///< The resulting note
-  NCTType type;                          ///< Classification of this note
-  std::optional<uint8_t> resolution;     ///< Resolution pitch for NCTs (if applicable)
+  NoteEvent note;                     ///< The resulting note
+  NCTType type;                       ///< Classification of this note
+  std::optional<uint8_t> resolution;  ///< Resolution pitch for NCTs (if applicable)
 };
 
 /**
@@ -104,7 +105,7 @@ struct EmbellishedNote {
  * @endcode
  */
 class MelodicEmbellisher {
-public:
+ public:
   /**
    * @brief Get embellishment configuration for a mood.
    *
@@ -136,12 +137,10 @@ public:
    * @param rng Random number generator
    * @return Embellished melody
    */
-  static std::vector<NoteEvent> embellish(
-      const std::vector<NoteEvent>& skeleton,
-      const EmbellishmentConfig& config,
-      const IHarmonyContext& harmony,
-      int key_offset,
-      std::mt19937& rng);
+  static std::vector<NoteEvent> embellish(const std::vector<NoteEvent>& skeleton,
+                                          const EmbellishmentConfig& config,
+                                          const IHarmonyContext& harmony, int key_offset,
+                                          std::mt19937& rng);
 
   /**
    * @brief Get the beat strength at a given tick.
@@ -172,7 +171,7 @@ public:
    */
   static bool isScaleTone(int pitch_class, int key_offset = 0);
 
-private:
+ private:
   // === NCT Generation Functions ===
 
   /**
@@ -185,12 +184,9 @@ private:
    *
    * @return Generated passing tone, or nullopt if not applicable
    */
-  static std::optional<NoteEvent> tryInsertPassingTone(
-      const NoteEvent& from,
-      const NoteEvent& to,
-      int key_offset,
-      bool prefer_pentatonic,
-      std::mt19937& rng);
+  static std::optional<NoteEvent> tryInsertPassingTone(const NoteEvent& from, const NoteEvent& to,
+                                                       int key_offset, bool prefer_pentatonic,
+                                                       std::mt19937& rng);
 
   /**
    * @brief Try to add a neighbor tone decoration.
@@ -201,10 +197,7 @@ private:
    * @return Pair of notes (neighbor, return) or nullopt
    */
   static std::optional<std::pair<NoteEvent, NoteEvent>> tryAddNeighborTone(
-      const NoteEvent& chord_tone,
-      bool upper,
-      int key_offset,
-      bool prefer_pentatonic,
+      const NoteEvent& chord_tone, bool upper, int key_offset, bool prefer_pentatonic,
       std::mt19937& rng);
 
   /**
@@ -216,10 +209,7 @@ private:
    * @return Pair of notes (appoggiatura, resolution) or nullopt
    */
   static std::optional<std::pair<NoteEvent, NoteEvent>> tryConvertToAppoggiatura(
-      const NoteEvent& chord_tone,
-      bool upper,
-      int key_offset,
-      bool allow_chromatic,
+      const NoteEvent& chord_tone, bool upper, int key_offset, bool allow_chromatic,
       std::mt19937& rng);
 
   /**
@@ -229,12 +219,9 @@ private:
    *
    * @return Anticipation note or nullopt
    */
-  static std::optional<NoteEvent> tryAddAnticipation(
-      const NoteEvent& current,
-      const NoteEvent& next,
-      Tick next_chord_tick,
-      int8_t next_chord_degree,
-      std::mt19937& rng);
+  static std::optional<NoteEvent> tryAddAnticipation(const NoteEvent& current,
+                                                     const NoteEvent& next, Tick next_chord_tick,
+                                                     int8_t next_chord_degree, std::mt19937& rng);
 
   /**
    * @brief Get tension pitch for a chord degree.
@@ -243,12 +230,9 @@ private:
    *
    * @return Tension pitch or nullopt
    */
-  static std::optional<uint8_t> getTensionPitch(
-      int8_t chord_degree,
-      uint8_t base_pitch,
-      uint8_t range_low,
-      uint8_t range_high,
-      std::mt19937& rng);
+  static std::optional<uint8_t> getTensionPitch(int8_t chord_degree, uint8_t base_pitch,
+                                                uint8_t range_low, uint8_t range_high,
+                                                std::mt19937& rng);
 
   // === Utility Functions ===
 

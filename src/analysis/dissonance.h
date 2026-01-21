@@ -6,10 +6,11 @@
 #ifndef MIDISKETCH_ANALYSIS_DISSONANCE_H
 #define MIDISKETCH_ANALYSIS_DISSONANCE_H
 
-#include "core/types.h"
-#include "midi/midi_reader.h"
 #include <string>
 #include <vector>
+
+#include "core/types.h"
+#include "midi/midi_reader.h"
 
 namespace midisketch {
 
@@ -47,21 +48,21 @@ struct DissonanceNoteInfo {
 
 /// @brief A single dissonance issue.
 struct DissonanceIssue {
-  DissonanceType type;           ///< Issue type
-  DissonanceSeverity severity;   ///< Severity level
-  Tick tick;                     ///< Position in ticks
-  uint32_t bar;                  ///< Bar number (0-indexed)
-  float beat;                    ///< Beat within bar (1.0-4.0)
+  DissonanceType type;          ///< Issue type
+  DissonanceSeverity severity;  ///< Severity level
+  Tick tick;                    ///< Position in ticks
+  uint32_t bar;                 ///< Bar number (0-indexed)
+  float beat;                   ///< Beat within bar (1.0-4.0)
   // SimultaneousClash fields
-  uint8_t interval_semitones;    ///< Interval in semitones
-  std::string interval_name;     ///< "minor 2nd", "tritone", etc.
+  uint8_t interval_semitones;             ///< Interval in semitones
+  std::string interval_name;              ///< "minor 2nd", "tritone", etc.
   std::vector<DissonanceNoteInfo> notes;  ///< Notes involved
   // NonChordTone fields
-  std::string track_name;        ///< Track with offending note
-  uint8_t pitch;                 ///< MIDI note number
-  std::string pitch_name;        ///< "F#4"
-  int8_t chord_degree;           ///< Current chord degree
-  std::string chord_name;        ///< "C", "Am", etc.
+  std::string track_name;                ///< Track with offending note
+  uint8_t pitch;                         ///< MIDI note number
+  std::string pitch_name;                ///< "F#4"
+  int8_t chord_degree;                   ///< Current chord degree
+  std::string chord_name;                ///< "C", "Am", etc.
   std::vector<std::string> chord_tones;  ///< Expected chord tones
   // Provenance for single-note issues
   int8_t prov_chord_degree = -1;    ///< Chord degree at creation
@@ -70,32 +71,32 @@ struct DissonanceIssue {
   uint8_t prov_original_pitch = 0;  ///< Pitch before modification
   bool has_provenance = false;      ///< True if provenance data is valid
   // SustainedOverChordChange fields
-  Tick note_start_tick;          ///< When note started
+  Tick note_start_tick;             ///< When note started
   std::string original_chord_name;  ///< Chord when note started
   // NonDiatonicNote fields
-  std::string key_name;          ///< Current key (e.g., "E major")
+  std::string key_name;                  ///< Current key (e.g., "E major")
   std::vector<std::string> scale_tones;  ///< Expected scale tones
 };
 
 /// @brief Summary statistics.
 struct DissonanceSummary {
-  uint32_t total_issues;             ///< Total issue count
-  uint32_t simultaneous_clashes;     ///< Clash count
-  uint32_t non_chord_tones;          ///< Non-chord tone count
+  uint32_t total_issues;                 ///< Total issue count
+  uint32_t simultaneous_clashes;         ///< Clash count
+  uint32_t non_chord_tones;              ///< Non-chord tone count
   uint32_t sustained_over_chord_change;  ///< Sustained issue count
-  uint32_t non_diatonic_notes;       ///< Non-diatonic note count
-  uint32_t high_severity;            ///< High severity count
-  uint32_t medium_severity;          ///< Medium severity count
-  uint32_t low_severity;             ///< Low severity count
-  Tick modulation_tick;              ///< Modulation position
-  int8_t modulation_amount;          ///< Modulation semitones
-  uint32_t pre_modulation_issues;    ///< Issues before modulation
-  uint32_t post_modulation_issues;   ///< Issues after modulation
+  uint32_t non_diatonic_notes;           ///< Non-diatonic note count
+  uint32_t high_severity;                ///< High severity count
+  uint32_t medium_severity;              ///< Medium severity count
+  uint32_t low_severity;                 ///< Low severity count
+  Tick modulation_tick;                  ///< Modulation position
+  int8_t modulation_amount;              ///< Modulation semitones
+  uint32_t pre_modulation_issues;        ///< Issues before modulation
+  uint32_t post_modulation_issues;       ///< Issues after modulation
 };
 
 /// @brief Complete dissonance analysis report.
 struct DissonanceReport {
-  DissonanceSummary summary;         ///< Summary statistics
+  DissonanceSummary summary;            ///< Summary statistics
   std::vector<DissonanceIssue> issues;  ///< All detected issues
 };
 

@@ -6,12 +6,13 @@
 #ifndef MIDISKETCH_TRACK_VOCAL_H
 #define MIDISKETCH_TRACK_VOCAL_H
 
+#include <random>
+
 #include "core/midi_track.h"
 #include "core/section_types.h"
 #include "core/song.h"
 #include "core/track_layer.h"
 #include "core/types.h"
-#include <random>
 
 namespace midisketch {
 
@@ -31,11 +32,9 @@ struct CachedRhythmPattern;  // Forward declaration
  * @param drum_grid Optional drum grid for RhythmSync quantization
  * @param rhythm_lock Optional pre-locked rhythm pattern for Orangestar style
  */
-void generateVocalTrack(MidiTrack& track, Song& song,
-                        const GeneratorParams& params, std::mt19937& rng,
-                        const MidiTrack* motif_track,
-                        const IHarmonyContext& harmony,
-                        bool skip_collision_avoidance = false,
+void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& params,
+                        std::mt19937& rng, const MidiTrack* motif_track,
+                        const IHarmonyContext& harmony, bool skip_collision_avoidance = false,
                         const DrumGrid* drum_grid = nullptr,
                         CachedRhythmPattern* rhythm_lock = nullptr);
 

@@ -4,15 +4,17 @@
  */
 
 #include "track/motif.h"
-#include "core/chord.h"
-#include "core/i_harmony_context.h"
-#include "core/motif.h"
-#include "core/note_factory.h"
+
 #include <algorithm>
 #include <array>
 #include <map>
 #include <memory>
 #include <vector>
+
+#include "core/chord.h"
+#include "core/i_harmony_context.h"
+#include "core/motif.h"
+#include "core/note_factory.h"
 
 namespace midisketch {
 
@@ -39,11 +41,11 @@ struct MotifRiffCache {
 namespace motif_detail {
 
 // M1: Scale interval arrays for different scale types
-constexpr int SCALE_MAJOR[7] = {0, 2, 4, 5, 7, 9, 11};       // Ionian
-constexpr int SCALE_NATURAL_MINOR[7] = {0, 2, 3, 5, 7, 8, 10}; // Aeolian
-constexpr int SCALE_HARMONIC_MINOR[7] = {0, 2, 3, 5, 7, 8, 11}; // Raised 7th
-constexpr int SCALE_DORIAN[7] = {0, 2, 3, 5, 7, 9, 10};       // Minor with raised 6th
-constexpr int SCALE_MIXOLYDIAN[7] = {0, 2, 4, 5, 7, 9, 10};   // Major with lowered 7th
+constexpr int SCALE_MAJOR[7] = {0, 2, 4, 5, 7, 9, 11};           // Ionian
+constexpr int SCALE_NATURAL_MINOR[7] = {0, 2, 3, 5, 7, 8, 10};   // Aeolian
+constexpr int SCALE_HARMONIC_MINOR[7] = {0, 2, 3, 5, 7, 8, 11};  // Raised 7th
+constexpr int SCALE_DORIAN[7] = {0, 2, 3, 5, 7, 9, 10};          // Minor with raised 6th
+constexpr int SCALE_MIXOLYDIAN[7] = {0, 2, 4, 5, 7, 9, 10};      // Major with lowered 7th
 
 // M1: Get scale intervals for a given scale type
 const int* getScaleIntervals(ScaleType scale) {
@@ -92,8 +94,8 @@ ScaleType selectScaleType(bool is_minor, Mood mood) {
 
 // Avoid notes for common chords (relative to chord root in semitones)
 // These notes create dissonance when held against the chord
-constexpr int AVOID_MAJOR = 5;  // Perfect 4th above root (e.g., F over C major)
-constexpr int AVOID_MINOR = 8;  // Minor 6th above root (e.g., C over E minor - clashes with 5th)
+constexpr int AVOID_MAJOR = 5;    // Perfect 4th above root (e.g., F over C major)
+constexpr int AVOID_MINOR = 8;    // Minor 6th above root (e.g., C over E minor - clashes with 5th)
 constexpr int AVOID_TRITONE = 6;  // Tritone above root (e.g., D# over A - highly dissonant)
 constexpr int AVOID_MAJOR_7TH = 11;  // Major 7th above root (e.g., G# over A - minor 2nd inversion)
 
@@ -103,11 +105,7 @@ constexpr int TENSION_11TH = 17;  // 11th = 4th + octave (17 semitones)
 constexpr int TENSION_13TH = 21;  // 13th = 6th + octave (21 semitones)
 
 // Chord quality for tension selection
-enum class ChordQuality {
-  Major,
-  Minor,
-  Diminished
-};
+enum class ChordQuality { Major, Minor, Diminished };
 
 // Get available tensions for a chord quality
 std::vector<int> getAvailableTensions(ChordQuality quality) {
@@ -142,8 +140,7 @@ ChordQuality getChordQuality(const Chord& chord) {
 }
 
 // Apply 9th or other tension to a pitch based on chord quality
-int applyTension(int base_pitch, uint8_t chord_root, ChordQuality quality,
-                 std::mt19937& rng) {
+int applyTension(int base_pitch, uint8_t chord_root, ChordQuality quality, std::mt19937& rng) {
   auto tensions = getAvailableTensions(quality);
   if (tensions.empty()) return base_pitch;
 
@@ -162,8 +159,7 @@ int applyTension(int base_pitch, uint8_t chord_root, ChordQuality quality,
 }
 
 // M1: Convert scale degree to pitch with key offset and scale type
-int degreeToPitch(int degree, int base_note, int key_offset,
-                  ScaleType scale = ScaleType::Major) {
+int degreeToPitch(int degree, int base_note, int key_offset, ScaleType scale = ScaleType::Major) {
   const int* scale_intervals = getScaleIntervals(scale);
   int d = ((degree % 7) + 7) % 7;
   int oct_adjust = degree / 7;
@@ -279,9 +275,8 @@ int snapToChordTone(int pitch, uint8_t chord_root, bool is_minor) {
 bool isDiatonic(int pitch) {
   // C major scale: C(0), D(2), E(4), F(5), G(7), A(9), B(11)
   int pitch_class = ((pitch % 12) + 12) % 12;
-  return pitch_class == 0 || pitch_class == 2 || pitch_class == 4 ||
-         pitch_class == 5 || pitch_class == 7 || pitch_class == 9 ||
-         pitch_class == 11;
+  return pitch_class == 0 || pitch_class == 2 || pitch_class == 4 || pitch_class == 5 ||
+         pitch_class == 7 || pitch_class == 9 || pitch_class == 11;
 }
 
 // Adjust pitch to nearest diatonic scale tone (C major)
@@ -296,11 +291,21 @@ int adjustToDiatonic(int pitch) {
   int pitch_class = ((pitch % 12) + 12) % 12;
   int adjustment = 0;
   switch (pitch_class) {
-    case 1:  adjustment = -1; break;  // C# -> C
-    case 3:  adjustment = -1; break;  // D# -> D
-    case 6:  adjustment = +1; break;  // F# -> G (tritone resolution)
-    case 8:  adjustment = -1; break;  // G# -> G
-    case 10: adjustment = -1; break;  // A# -> A
+    case 1:
+      adjustment = -1;
+      break;  // C# -> C
+    case 3:
+      adjustment = -1;
+      break;  // D# -> D
+    case 6:
+      adjustment = +1;
+      break;  // F# -> G (tritone resolution)
+    case 8:
+      adjustment = -1;
+      break;  // G# -> G
+    case 10:
+      adjustment = -1;
+      break;  // A# -> A
   }
   return pitch + adjustment;
 }
@@ -357,10 +362,8 @@ int adjustPitchToScale(int pitch, uint8_t key_root, ScaleType scale) {
 // Generate rhythm positions based on density.
 // - Sparse/Medium: Call & response structure (notes distributed across both halves)
 // - Driving: Continuous fill for rhythm-focused styles (Orangestar-like)
-std::vector<Tick> generateRhythmPositions(MotifRhythmDensity density,
-                                           MotifLength length,
-                                           uint8_t note_count,
-                                           std::mt19937& /* rng */) {
+std::vector<Tick> generateRhythmPositions(MotifRhythmDensity density, MotifLength length,
+                                          uint8_t note_count, std::mt19937& /* rng */) {
   Tick motif_ticks = static_cast<Tick>(length) * TICKS_PER_BAR;
   std::vector<Tick> positions;
 
@@ -381,8 +384,7 @@ std::vector<Tick> generateRhythmPositions(MotifRhythmDensity density,
   uint8_t response_count = note_count - call_count;
 
   // Helper to fill positions within a half
-  auto fillHalf = [&positions](Tick start, Tick end, uint8_t count,
-                               MotifRhythmDensity d) {
+  auto fillHalf = [&positions](Tick start, Tick end, uint8_t count, MotifRhythmDensity d) {
     if (count == 0) return;
 
     Tick step = (d == MotifRhythmDensity::Sparse) ? TICKS_PER_BEAT : TICKS_PER_BEAT / 2;
@@ -395,15 +397,14 @@ std::vector<Tick> generateRhythmPositions(MotifRhythmDensity density,
 
     // For Medium density, prioritize downbeats
     if (d == MotifRhythmDensity::Medium) {
-      std::stable_sort(candidates.begin(), candidates.end(),
-                       [start](Tick a, Tick b) {
-                         Tick a_rel = a - start;
-                         Tick b_rel = b - start;
-                         bool a_downbeat = (a_rel % TICKS_PER_BEAT == 0);
-                         bool b_downbeat = (b_rel % TICKS_PER_BEAT == 0);
-                         if (a_downbeat != b_downbeat) return a_downbeat;
-                         return a < b;
-                       });
+      std::stable_sort(candidates.begin(), candidates.end(), [start](Tick a, Tick b) {
+        Tick a_rel = a - start;
+        Tick b_rel = b - start;
+        bool a_downbeat = (a_rel % TICKS_PER_BEAT == 0);
+        bool b_downbeat = (b_rel % TICKS_PER_BEAT == 0);
+        if (a_downbeat != b_downbeat) return a_downbeat;
+        return a < b;
+      });
     }
 
     // Add positions up to count for this half
@@ -422,9 +423,7 @@ std::vector<Tick> generateRhythmPositions(MotifRhythmDensity density,
 }
 
 // Generate pitch sequence with antecedent-consequent structure
-std::vector<int> generatePitchSequence(uint8_t note_count,
-                                        MotifMotion motion,
-                                        std::mt19937& rng) {
+std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, std::mt19937& rng) {
   std::vector<int> degrees;
 
   // Split into "question" (first half) and "answer" (second half)
@@ -493,8 +492,7 @@ std::vector<int> generatePitchSequence(uint8_t note_count,
 
 }  // namespace motif_detail
 
-std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params,
-                                             std::mt19937& rng) {
+std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::mt19937& rng) {
   const MotifParams& motif_params = params.motif;
   std::vector<NoteEvent> pattern;
 
@@ -504,12 +502,11 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params,
 
   // Generate rhythm positions
   std::vector<Tick> positions = motif_detail::generateRhythmPositions(
-      motif_params.rhythm_density, motif_params.length,
-      motif_params.note_count, rng);
+      motif_params.rhythm_density, motif_params.length, motif_params.note_count, rng);
 
   // Generate pitch sequence with structure
-  std::vector<int> degrees = motif_detail::generatePitchSequence(
-      motif_params.note_count, motif_params.motion, rng);
+  std::vector<int> degrees =
+      motif_detail::generatePitchSequence(motif_params.note_count, motif_params.motion, rng);
 
   // Calculate note duration
   Tick note_duration = TICKS_PER_BEAT / 2;
@@ -566,9 +563,8 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params,
 //
 // =============================================================================
 
-void generateMotifTrack(MidiTrack& track, Song& song,
-                        const GeneratorParams& params, std::mt19937& rng,
-                        const IHarmonyContext& harmony) {
+void generateMotifTrack(MidiTrack& track, Song& song, const GeneratorParams& params,
+                        std::mt19937& rng, const IHarmonyContext& harmony) {
   // L1: Generate base motif pattern
   std::vector<NoteEvent> pattern = generateMotifPattern(params, rng);
   song.setMotifPattern(pattern);
@@ -608,8 +604,8 @@ void generateMotifTrack(MidiTrack& track, Song& song,
     bool is_chorus = (section.type == SectionType::Chorus);
 
     // M9: Apply octave layering based on role metadata
-    bool add_octave = is_chorus && motif_params.octave_layering_chorus &&
-                      role_meta.allow_octave_layer;
+    bool add_octave =
+        is_chorus && motif_params.octave_layering_chorus && role_meta.allow_octave_layer;
 
     // L2: Determine which pattern to use based on RiffPolicy (takes precedence)
     // and MotifRepeatScope (fallback for Free policy)
@@ -620,8 +616,7 @@ void generateMotifTrack(MidiTrack& track, Song& song,
     RiffPolicy policy = params.riff_policy;
 
     // Handle Locked variants (LockedContour, LockedPitch, LockedAll) as same behavior
-    bool is_locked = (policy == RiffPolicy::LockedContour ||
-                      policy == RiffPolicy::LockedPitch ||
+    bool is_locked = (policy == RiffPolicy::LockedContour || policy == RiffPolicy::LockedPitch ||
                       policy == RiffPolicy::LockedAll);
 
     if (is_locked && riff_cache.cached) {
@@ -733,8 +728,7 @@ void generateMotifTrack(MidiTrack& track, Song& song,
         if (!motif_params.velocity_fixed) {
           if (is_chorus) {
             vel = std::min(static_cast<uint8_t>(127), static_cast<uint8_t>(vel + 10));
-          } else if (section.type == SectionType::Intro ||
-                     section.type == SectionType::Outro) {
+          } else if (section.type == SectionType::Intro || section.type == SectionType::Outro) {
             vel = static_cast<uint8_t>(vel * 0.85f);
           }
         }
@@ -750,8 +744,8 @@ void generateMotifTrack(MidiTrack& track, Song& song,
 
           if (adjusted_pitch + step_up <= 108 &&
               motif_detail::isDiatonic(adjusted_pitch + step_up) &&
-              harmony.isPitchSafe(static_cast<uint8_t>(adjusted_pitch + step_up),
-                                  absolute_tick, note.duration, TrackRole::Motif)) {
+              harmony.isPitchSafe(static_cast<uint8_t>(adjusted_pitch + step_up), absolute_tick,
+                                  note.duration, TrackRole::Motif)) {
             final_pitch = static_cast<uint8_t>(adjusted_pitch + step_up);
           }
           // Then try step down
@@ -766,17 +760,19 @@ void generateMotifTrack(MidiTrack& track, Song& song,
             continue;
           }
         }
-        track.addNote(factory.create(absolute_tick, note.duration, final_pitch, vel, NoteSource::Motif));
+        track.addNote(
+            factory.create(absolute_tick, note.duration, final_pitch, vel, NoteSource::Motif));
 
         // L4: Add octave doubling for chorus (if role allows)
         if (add_octave) {
           int octave_pitch = final_pitch + 12;
           if (octave_pitch <= 108 &&
-              harmony.isPitchSafe(static_cast<uint8_t>(octave_pitch),
-                                  absolute_tick, note.duration, TrackRole::Motif)) {
+              harmony.isPitchSafe(static_cast<uint8_t>(octave_pitch), absolute_tick, note.duration,
+                                  TrackRole::Motif)) {
             uint8_t octave_vel = static_cast<uint8_t>(vel * 0.85f);
             track.addNote(factory.create(absolute_tick, note.duration,
-                          static_cast<uint8_t>(octave_pitch), octave_vel, NoteSource::Motif));
+                                         static_cast<uint8_t>(octave_pitch), octave_vel,
+                                         NoteSource::Motif));
           }
         }
       }

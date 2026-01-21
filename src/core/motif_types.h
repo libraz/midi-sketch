@@ -6,10 +6,11 @@
 #ifndef MIDISKETCH_CORE_MOTIF_TYPES_H
 #define MIDISKETCH_CORE_MOTIF_TYPES_H
 
-#include "core/basic_types.h"  // For NoteEvent, HihatDensity
-#include "core/melody_types.h" // For VocalProminence, VocalRhythmBias
 #include <cstdint>
 #include <vector>
+
+#include "core/basic_types.h"   // For NoteEvent, HihatDensity
+#include "core/melody_types.h"  // For VocalProminence, VocalRhythmBias
 
 namespace midisketch {
 
@@ -22,15 +23,15 @@ enum class MotifLength : uint8_t {
 
 /// @brief Motif rhythm density.
 enum class MotifRhythmDensity : uint8_t {
-  Sparse,   ///< Quarter note based
-  Medium,   ///< Eighth note based
-  Driving   ///< Eighth + light 16th
+  Sparse,  ///< Quarter note based
+  Medium,  ///< Eighth note based
+  Driving  ///< Eighth + light 16th
 };
 
 /// @brief Motif melodic motion.
 enum class MotifMotion : uint8_t {
-  Stepwise,    ///< Scale steps only
-  GentleLeap   ///< Up to 3rd intervals
+  Stepwise,   ///< Scale steps only
+  GentleLeap  ///< Up to 3rd intervals
 };
 
 /// @brief Motif repetition scope.
@@ -43,13 +44,13 @@ enum class MotifRepeatScope : uint8_t {
 /// Only active when composition_style = BackgroundMotif.
 struct MotifParams {
   MotifLength length = MotifLength::Bars2;
-  uint8_t note_count = 4;  ///< 3, 4, or 5
+  uint8_t note_count = 4;      ///< 3, 4, or 5
   bool register_high = false;  ///< false=mid, true=high
   MotifRhythmDensity rhythm_density = MotifRhythmDensity::Medium;
   MotifMotion motion = MotifMotion::Stepwise;
   MotifRepeatScope repeat_scope = MotifRepeatScope::FullSong;
   bool octave_layering_chorus = true;  ///< Double at chorus
-  bool velocity_fixed = true;  ///< Fixed velocity (groove via drums)
+  bool velocity_fixed = true;          ///< Fixed velocity (groove via drums)
 };
 
 /// @brief Background motif specific chord constraints.

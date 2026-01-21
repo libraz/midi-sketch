@@ -7,6 +7,10 @@
  */
 
 #include "track/vocal.h"
+
+#include <algorithm>
+#include <unordered_map>
+
 #include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
@@ -17,8 +21,6 @@
 #include "track/phrase_cache.h"
 #include "track/phrase_variation.h"
 #include "track/vocal_helpers.h"
-#include <algorithm>
-#include <unordered_map>
 
 namespace midisketch {
 
@@ -50,13 +52,8 @@ bool shouldLockVocalRhythm(const GeneratorParams& params) {
  * @return Generated notes with locked rhythm and new pitches
  */
 static std::vector<NoteEvent> generateWithLockedRhythm(
-    const CachedRhythmPattern& rhythm,
-    const Section& section,
-    MelodyDesigner& designer,
-    const IHarmonyContext& harmony,
-    const MelodyDesigner::SectionContext& ctx,
-    std::mt19937& rng) {
-
+    const CachedRhythmPattern& rhythm, const Section& section, MelodyDesigner& designer,
+    const IHarmonyContext& harmony, const MelodyDesigner::SectionContext& ctx, std::mt19937& rng) {
   std::vector<NoteEvent> notes;
   uint8_t section_beats = section.bars * 4;
 
@@ -87,8 +84,8 @@ static std::vector<NoteEvent> generateWithLockedRhythm(
 
     // Select pitch using melody designer's pitch selection logic
     // Use chord tones primarily for consonance
-    uint8_t pitch = designer.selectPitchForLockedRhythm(
-        prev_pitch, chord_degree, ctx.vocal_low, ctx.vocal_high, rng);
+    uint8_t pitch = designer.selectPitchForLockedRhythm(prev_pitch, chord_degree, ctx.vocal_low,
+                                                        ctx.vocal_high, rng);
 
     // Calculate velocity based on beat position
     float beat_in_bar = std::fmod(beat, 4.0f);
@@ -106,14 +103,10 @@ static std::vector<NoteEvent> generateWithLockedRhythm(
   return notes;
 }
 
-void generateVocalTrack(MidiTrack& track, Song& song,
-                        const GeneratorParams& params, std::mt19937& rng,
-                        const MidiTrack* motif_track,
-                        const IHarmonyContext& harmony,
-                        bool skip_collision_avoidance,
-                        const DrumGrid* drum_grid,
-                        CachedRhythmPattern* rhythm_lock) {
-
+void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& params,
+                        std::mt19937& rng, const MidiTrack* motif_track,
+                        const IHarmonyContext& harmony, bool skip_collision_avoidance,
+                        const DrumGrid* drum_grid, CachedRhythmPattern* rhythm_lock) {
   // Determine effective vocal range
   uint8_t effective_vocal_low = params.vocal_low;
   uint8_t effective_vocal_high = params.vocal_high;
@@ -130,21 +123,21 @@ void generateVocalTrack(MidiTrack& track, Song& song,
   }
 
   // Adjust range for BackgroundMotif to avoid collision with motif
-  if (params.composition_style == CompositionStyle::BackgroundMotif &&
-      motif_track != nullptr && !motif_track->empty()) {
+  if (params.composition_style == CompositionStyle::BackgroundMotif && motif_track != nullptr &&
+      !motif_track->empty()) {
     auto [motif_low, motif_high] = motif_track->analyzeRange();
 
     if (motif_high > 72) {  // Motif in high register
       effective_vocal_high = std::min(effective_vocal_high, static_cast<uint8_t>(72));
       if (effective_vocal_high - effective_vocal_low < 12) {
-        effective_vocal_low = std::max(static_cast<uint8_t>(48),
-                                        static_cast<uint8_t>(effective_vocal_high - 12));
+        effective_vocal_low =
+            std::max(static_cast<uint8_t>(48), static_cast<uint8_t>(effective_vocal_high - 12));
       }
     } else if (motif_low < 60) {  // Motif in low register
       effective_vocal_low = std::max(effective_vocal_low, static_cast<uint8_t>(65));
       if (effective_vocal_high - effective_vocal_low < 12) {
-        effective_vocal_high = std::min(static_cast<uint8_t>(96),
-                                         static_cast<uint8_t>(effective_vocal_low + 12));
+        effective_vocal_high =
+            std::min(static_cast<uint8_t>(96), static_cast<uint8_t>(effective_vocal_low + 12));
       }
     }
   }
@@ -241,14 +234,13 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       applyPhraseVariation(section_notes, variation, rng);
 
       // Adjust pitch range if different
-      section_notes = adjustPitchRange(section_notes,
-                                        cached.vocal_low, cached.vocal_high,
-                                        section_vocal_low, section_vocal_high);
+      section_notes = adjustPitchRange(section_notes, cached.vocal_low, cached.vocal_high,
+                                       section_vocal_low, section_vocal_high);
 
       // Re-apply collision avoidance (chord context may differ)
       if (!skip_collision_avoidance) {
-        applyCollisionAvoidanceWithIntervalConstraint(
-            section_notes, harmony, section_vocal_low, section_vocal_high);
+        applyCollisionAvoidanceWithIntervalConstraint(section_notes, harmony, section_vocal_low,
+                                                      section_vocal_high);
       }
     } else {
       // Cache miss: generate new melody
@@ -268,7 +260,8 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       float density_factor = section.density_percent / 100.0f;
       ctx.density_modifier = base_density * density_factor;
       ctx.thirtysecond_ratio = getThirtysecondRatio(section.type, params.melody_params);
-      ctx.consecutive_same_note_prob = getConsecutiveSameNoteProb(section.type, params.melody_params);
+      ctx.consecutive_same_note_prob =
+          getConsecutiveSameNoteProb(section.type, params.melody_params);
       ctx.disable_vowel_constraints = params.melody_params.disable_vowel_constraints;
       ctx.disable_breathing_gaps = params.melody_params.disable_breathing_gaps;
       ctx.vocal_attitude = params.vocal_attitude;
@@ -289,19 +282,19 @@ void generateVocalTrack(MidiTrack& track, Song& song,
       // Check for rhythm lock
       if (use_rhythm_lock && active_rhythm_lock->isValid()) {
         // Use locked rhythm pattern with new pitches
-        section_notes = generateWithLockedRhythm(
-            *active_rhythm_lock, section, designer, harmony, ctx, rng);
+        section_notes =
+            generateWithLockedRhythm(*active_rhythm_lock, section, designer, harmony, ctx, rng);
       } else {
         // Generate melody with evaluation (candidate count varies by section importance)
         int candidate_count = MelodyDesigner::getCandidateCountForSection(section.type);
         section_notes = designer.generateSectionWithEvaluation(
-            section_tmpl, ctx, harmony, rng, params.vocal_style,
-            params.melodic_complexity, candidate_count);
+            section_tmpl, ctx, harmony, rng, params.vocal_style, params.melodic_complexity,
+            candidate_count);
 
         // Cache rhythm pattern for subsequent sections
         if (use_rhythm_lock && !active_rhythm_lock->isValid() && !section_notes.empty()) {
-          *active_rhythm_lock = extractRhythmPattern(
-              section_notes, section_start, section.bars * 4);
+          *active_rhythm_lock =
+              extractRhythmPattern(section_notes, section_start, section.bars * 4);
         }
       }
 
@@ -312,14 +305,13 @@ void generateVocalTrack(MidiTrack& track, Song& song,
 
       // Apply HarmonyContext collision avoidance with interval constraint
       if (!skip_collision_avoidance) {
-        applyCollisionAvoidanceWithIntervalConstraint(
-            section_notes, harmony, section_vocal_low, section_vocal_high);
+        applyCollisionAvoidanceWithIntervalConstraint(section_notes, harmony, section_vocal_low,
+                                                      section_vocal_high);
       }
 
       // Extract GlobalMotif from first Chorus for song-wide melodic unity
       // Subsequent sections will receive bonus for similar contour/intervals
-      if (section.type == SectionType::Chorus &&
-          !designer.getCachedGlobalMotif().has_value()) {
+      if (section.type == SectionType::Chorus && !designer.getCachedGlobalMotif().has_value()) {
         GlobalMotif motif = MelodyDesigner::extractGlobalMotif(section_notes);
         if (motif.isValid()) {
           designer.setGlobalMotif(motif);
@@ -364,18 +356,16 @@ void generateVocalTrack(MidiTrack& track, Song& song,
         int8_t first_note_chord_degree = harmony.getChordDegreeAt(section_notes.front().start_tick);
         // Use nearestChordToneWithinInterval to stay on chord tones
         int new_pitch = nearestChordToneWithinInterval(
-            first_note, prev_note, first_note_chord_degree, kMaxMelodicInterval,
-            section_vocal_low, section_vocal_high, nullptr);
+            first_note, prev_note, first_note_chord_degree, kMaxMelodicInterval, section_vocal_low,
+            section_vocal_high, nullptr);
         section_notes.front().note = static_cast<uint8_t>(new_pitch);
       }
     }
     for (auto& note : section_notes) {
       // ABSOLUTE CONSTRAINT: Ensure pitch is on scale (prevents chromatic notes)
       int snapped = snapToNearestScaleTone(note.note, 0);  // Always C major internally
-      note.note = static_cast<uint8_t>(
-          std::clamp(snapped,
-                     static_cast<int>(section_vocal_low),
-                     static_cast<int>(section_vocal_high)));
+      note.note = static_cast<uint8_t>(std::clamp(snapped, static_cast<int>(section_vocal_low),
+                                                  static_cast<int>(section_vocal_high)));
       all_notes.push_back(note);
     }
   }
@@ -412,9 +402,9 @@ void generateVocalTrack(MidiTrack& track, Song& song,
     if (interval > kMaxMelodicInterval) {
       // Use nearestChordToneWithinInterval to fix
       int8_t chord_degree = harmony.getChordDegreeAt(all_notes[i].start_tick);
-      int fixed_pitch = nearestChordToneWithinInterval(
-          curr_pitch, prev_pitch, chord_degree, kMaxMelodicInterval,
-          params.vocal_low, params.vocal_high, nullptr);
+      int fixed_pitch =
+          nearestChordToneWithinInterval(curr_pitch, prev_pitch, chord_degree, kMaxMelodicInterval,
+                                         params.vocal_low, params.vocal_high, nullptr);
       all_notes[i].note = static_cast<uint8_t>(fixed_pitch);
     }
   }

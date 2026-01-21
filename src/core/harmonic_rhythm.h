@@ -37,8 +37,7 @@ struct HarmonicRhythmInfo {
       case SectionType::B:
         return {HarmonicDensity::Normal, !is_ballad};
       case SectionType::Chorus:
-        return {is_ballad ? HarmonicDensity::Normal : HarmonicDensity::Dense,
-                !is_ballad};
+        return {is_ballad ? HarmonicDensity::Normal : HarmonicDensity::Dense, !is_ballad};
       case SectionType::Bridge:
         return {HarmonicDensity::Normal, false};
       case SectionType::Chant:
@@ -60,8 +59,8 @@ struct HarmonicRhythmInfo {
 // @param mood Mood for dense_extra calculation
 // @returns true if bar should be split (first half: current, second half: next)
 inline bool shouldSplitPhraseEnd(int bar, int section_bars, int prog_length,
-                                  const HarmonicRhythmInfo& harmonic,
-                                  SectionType section_type, Mood mood) {
+                                 const HarmonicRhythmInfo& harmonic, SectionType section_type,
+                                 Mood mood) {
   // Skip if harmonic rhythm is not Dense
   if (harmonic.density != HarmonicDensity::Dense) {
     return false;
@@ -71,17 +70,13 @@ inline bool shouldSplitPhraseEnd(int bar, int section_bars, int prog_length,
   bool is_4bar_phrase_end = (bar % 4 == 3);
   bool is_chord_cycle_end = (bar % prog_length == prog_length - 1);
   bool is_phrase_end = harmonic.double_at_phrase_end &&
-                       (is_4bar_phrase_end || is_chord_cycle_end) &&
-                       (bar < section_bars - 1);
+                       (is_4bar_phrase_end || is_chord_cycle_end) && (bar < section_bars - 1);
 
   // Dense harmonic rhythm: also allow mid-bar changes on even bars in Chorus
   // for energetic moods (more dynamic harmonic motion)
-  bool is_dense_extra = (section_type == SectionType::Chorus) &&
-                        (bar % 2 == 0) && (bar > 0) &&
-                        (mood == Mood::EnergeticDance ||
-                         mood == Mood::IdolPop ||
-                         mood == Mood::Yoasobi ||
-                         mood == Mood::FutureBass);
+  bool is_dense_extra = (section_type == SectionType::Chorus) && (bar % 2 == 0) && (bar > 0) &&
+                        (mood == Mood::EnergeticDance || mood == Mood::IdolPop ||
+                         mood == Mood::Yoasobi || mood == Mood::FutureBass);
 
   return is_phrase_end || is_dense_extra;
 }

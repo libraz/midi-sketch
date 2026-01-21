@@ -4,9 +4,11 @@
  */
 
 #include <gtest/gtest.h>
+
+#include <set>
+
 #include "core/generator.h"
 #include "core/types.h"
-#include <set>
 
 namespace midisketch {
 namespace {
@@ -81,8 +83,7 @@ TEST_F(GeneratorVocalFirstTest, GenerateVocalOnlyDeterministic) {
 
   for (size_t i = 0; i < vocal1.size(); ++i) {
     EXPECT_EQ(vocal1[i].note, vocal2[i].note) << "Determinism failed at note " << i;
-    EXPECT_EQ(vocal1[i].start_tick, vocal2[i].start_tick)
-        << "Determinism failed at note " << i;
+    EXPECT_EQ(vocal1[i].start_tick, vocal2[i].start_tick) << "Determinism failed at note " << i;
   }
 }
 
@@ -120,8 +121,7 @@ TEST_F(GeneratorVocalFirstTest, RegenerateVocalChangesVocal) {
     EXPECT_FALSE(new_vocal.empty()) << "Regenerated vocal should have notes";
   }
 
-  EXPECT_TRUE(found_difference)
-      << "At least one of 3 seeds should produce different vocal output";
+  EXPECT_TRUE(found_difference) << "At least one of 3 seeds should produce different vocal output";
 }
 
 TEST_F(GeneratorVocalFirstTest, RegenerateVocalPreservesStructure) {
@@ -154,8 +154,7 @@ TEST_F(GeneratorVocalFirstTest, GenerateAccompanimentAddsAllTracks) {
   const auto& song = gen.getSong();
 
   // Vocal should be preserved
-  ASSERT_EQ(song.vocal().notes().size(), original_vocal.size())
-      << "Vocal should be preserved";
+  ASSERT_EQ(song.vocal().notes().size(), original_vocal.size()) << "Vocal should be preserved";
 
   // Accompaniment should be generated
   EXPECT_FALSE(song.chord().empty()) << "Chord should be generated";
@@ -260,8 +259,7 @@ TEST_F(GeneratorVocalFirstTest, RegenerateAccompanimentChangesAccompaniment) {
     EXPECT_FALSE(new_chord.empty()) << "Regenerated chord should have notes";
   }
 
-  EXPECT_TRUE(found_difference)
-      << "At least one of 3 seeds should produce different accompaniment";
+  EXPECT_TRUE(found_difference) << "At least one of 3 seeds should produce different accompaniment";
 }
 
 TEST_F(GeneratorVocalFirstTest, RegenerateAccompanimentDeterministic) {

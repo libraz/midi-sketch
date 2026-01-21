@@ -6,9 +6,10 @@
 #ifndef MIDISKETCH_CORE_ARRANGEMENT_H
 #define MIDISKETCH_CORE_ARRANGEMENT_H
 
-#include "core/types.h"
 #include <functional>
 #include <vector>
+
+#include "core/types.h"
 
 namespace midisketch {
 

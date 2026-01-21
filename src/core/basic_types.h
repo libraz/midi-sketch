@@ -48,28 +48,37 @@ struct MidiEvent {
 /// @brief Transformation step type for pitch debugging.
 enum class TransformStepType : uint8_t {
   None = 0,
-  ChordLookup,      ///< chord_idx -> degree lookup
-  DegreeToRoot,     ///< degree -> root pitch conversion
-  OctaveAdjust,     ///< Octave adjustment (e.g., -12 for bass)
-  MotionAdjust,     ///< adjustPitchForMotion
-  VocalAvoid,       ///< Vocal pitch avoidance
-  RangeClamp,       ///< Clamp to instrument range
-  PatternOffset,    ///< Pattern-based offset (e.g., 5th, approach)
-  CollisionAvoid,   ///< Inter-track collision avoidance
+  ChordLookup,     ///< chord_idx -> degree lookup
+  DegreeToRoot,    ///< degree -> root pitch conversion
+  OctaveAdjust,    ///< Octave adjustment (e.g., -12 for bass)
+  MotionAdjust,    ///< adjustPitchForMotion
+  VocalAvoid,      ///< Vocal pitch avoidance
+  RangeClamp,      ///< Clamp to instrument range
+  PatternOffset,   ///< Pattern-based offset (e.g., 5th, approach)
+  CollisionAvoid,  ///< Inter-track collision avoidance
 };
 
 /// @brief Convert TransformStepType to string for JSON output.
 inline const char* transformStepTypeToString(TransformStepType type) {
   switch (type) {
-    case TransformStepType::None: return "none";
-    case TransformStepType::ChordLookup: return "chord_lookup";
-    case TransformStepType::DegreeToRoot: return "degree_to_root";
-    case TransformStepType::OctaveAdjust: return "octave_adjust";
-    case TransformStepType::MotionAdjust: return "motion_adjust";
-    case TransformStepType::VocalAvoid: return "vocal_avoid";
-    case TransformStepType::RangeClamp: return "range_clamp";
-    case TransformStepType::PatternOffset: return "pattern_offset";
-    case TransformStepType::CollisionAvoid: return "collision_avoid";
+    case TransformStepType::None:
+      return "none";
+    case TransformStepType::ChordLookup:
+      return "chord_lookup";
+    case TransformStepType::DegreeToRoot:
+      return "degree_to_root";
+    case TransformStepType::OctaveAdjust:
+      return "octave_adjust";
+    case TransformStepType::MotionAdjust:
+      return "motion_adjust";
+    case TransformStepType::VocalAvoid:
+      return "vocal_avoid";
+    case TransformStepType::RangeClamp:
+      return "range_clamp";
+    case TransformStepType::PatternOffset:
+      return "pattern_offset";
+    case TransformStepType::CollisionAvoid:
+      return "collision_avoid";
   }
   return "unknown";
 }
@@ -77,10 +86,10 @@ inline const char* transformStepTypeToString(TransformStepType type) {
 /// @brief Single transformation step for pitch debugging.
 struct TransformStep {
   TransformStepType type = TransformStepType::None;  ///< Step type
-  uint8_t input_pitch = 0;   ///< Pitch before this step (0-127)
-  uint8_t output_pitch = 0;  ///< Pitch after this step (0-127)
-  int8_t param1 = 0;         ///< Context param 1 (e.g., chord degree, motion type)
-  int8_t param2 = 0;         ///< Context param 2 (e.g., vocal direction)
+  uint8_t input_pitch = 0;                           ///< Pitch before this step (0-127)
+  uint8_t output_pitch = 0;                          ///< Pitch after this step (0-127)
+  int8_t param1 = 0;  ///< Context param 1 (e.g., chord degree, motion type)
+  int8_t param2 = 0;  ///< Context param 2 (e.g., vocal direction)
 
   /// @brief Check if this step is valid.
   bool isValid() const { return type != TransformStepType::None; }
@@ -107,8 +116,8 @@ struct NoteEvent {
 
   // === Transformation history for debugging ===
   TransformStep transform_steps[kMaxTransformSteps] = {};  ///< Transformation history
-  uint8_t transform_count = 0;  ///< Number of valid steps
-#endif  // MIDISKETCH_NOTE_PROVENANCE
+  uint8_t transform_count = 0;                             ///< Number of valid steps
+#endif                                                     // MIDISKETCH_NOTE_PROVENANCE
 
   /// @brief Default constructor.
   NoteEvent() = default;
@@ -123,8 +132,8 @@ struct NoteEvent {
 
   /// @brief Add a transformation step.
   /// @return true if step was added, false if history is full.
-  bool addTransformStep(TransformStepType type, uint8_t input, uint8_t output,
-                        int8_t param1 = 0, int8_t param2 = 0) {
+  bool addTransformStep(TransformStepType type, uint8_t input, uint8_t output, int8_t param1 = 0,
+                        int8_t param2 = 0) {
     if (transform_count >= kMaxTransformSteps) return false;
     transform_steps[transform_count++] = {type, input, output, param1, param2};
     return true;
@@ -153,11 +162,11 @@ enum class NonHarmonicType : uint8_t {
 
 /// @brief Cadence type for phrase endings.
 enum class CadenceType : uint8_t {
-  None,       ///< No specific cadence treatment
-  Strong,     ///< Full resolution (to tonic, on strong beat)
-  Weak,       ///< Partial resolution (stepwise motion, on weak beat)
-  Floating,   ///< Open ending (tension note, no resolution)
-  Deceptive   ///< Unexpected resolution (to vi or other)
+  None,      ///< No specific cadence treatment
+  Strong,    ///< Full resolution (to tonic, on strong beat)
+  Weak,      ///< Partial resolution (stepwise motion, on weak beat)
+  Floating,  ///< Open ending (tension note, no resolution)
+  Deceptive  ///< Unexpected resolution (to vi or other)
 };
 
 /// @brief Scale type for melodic generation.
@@ -171,17 +180,17 @@ enum class ScaleType : uint8_t {
 
 /// @brief Phrase boundary for inter-track coordination (e.g., Vocal→Aux).
 struct PhraseBoundary {
-  Tick tick;              ///< Position of boundary in ticks
-  bool is_breath;         ///< True if this is a breathing point
-  bool is_section_end;    ///< True if this is the end of a section
-  CadenceType cadence;    ///< Cadence type at this boundary
+  Tick tick;            ///< Position of boundary in ticks
+  bool is_breath;       ///< True if this is a breathing point
+  bool is_section_end;  ///< True if this is the end of a section
+  CadenceType cadence;  ///< Cadence type at this boundary
 };
 
 /// @brief Rhythm note for pattern-based melody generation.
 struct RhythmNote {
-  float beat;      ///< 0.0-7.5 (in quarter notes, 2 bars)
-  float eighths;   ///< Duration in eighth notes (supports 0.5 for 16th notes)
-  bool strong;     ///< True if on strong beat (1 or 3)
+  float beat;     ///< 0.0-7.5 (in quarter notes, 2 bars)
+  float eighths;  ///< Duration in eighth notes (supports 0.5 for 16th notes)
+  bool strong;    ///< True if on strong beat (1 or 3)
   NonHarmonicType non_harmonic = NonHarmonicType::None;  ///< Ornamentation type
 };
 
@@ -208,14 +217,12 @@ inline constexpr size_t kTrackCount = 8;
 
 /// @brief MIDI text/marker event.
 struct TextEvent {
-  Tick time;          ///< Event time in ticks
-  std::string text;   ///< Text content
+  Tick time;         ///< Event time in ticks
+  std::string text;  ///< Text content
 };
 
 /// @brief Musical key (C=0 through B=11).
-enum class Key : uint8_t {
-  C = 0, Cs, D, Eb, E, F, Fs, G, Ab, A, Bb, B
-};
+enum class Key : uint8_t { C = 0, Cs, D, Eb, E, F, Fs, G, Ab, A, Bb, B };
 
 /// @brief MIDI file format for output.
 enum class MidiFormat : uint8_t {

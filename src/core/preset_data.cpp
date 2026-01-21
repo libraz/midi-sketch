@@ -4,9 +4,11 @@
  */
 
 #include "core/preset_data.h"
-#include "core/chord.h"
+
 #include <cmath>
 #include <random>
+
+#include "core/chord.h"
 
 namespace midisketch {
 
@@ -64,419 +66,458 @@ constexpr float MOOD_DENSITY[20] = {
 
 // Structure pattern names
 const char* STRUCTURE_NAMES[18] = {
-    "StandardPop",
-    "BuildUp",
-    "DirectChorus",
-    "RepeatChorus",
-    "ShortForm",
-    "FullPop",
-    "FullWithBridge",
-    "DriveUpbeat",
-    "Ballad",
-    "AnthemStyle",
-    "ExtendedFull",
-    "ChorusFirst",
-    "ChorusFirstShort",
-    "ChorusFirstFull",
-    "ImmediateVocal",
-    "ImmediateVocalFull",
-    "AChorusB",
-    "DoubleVerse",
+    "StandardPop",      "BuildUp",         "DirectChorus",   "RepeatChorus",
+    "ShortForm",        "FullPop",         "FullWithBridge", "DriveUpbeat",
+    "Ballad",           "AnthemStyle",     "ExtendedFull",   "ChorusFirst",
+    "ChorusFirstShort", "ChorusFirstFull", "ImmediateVocal", "ImmediateVocalFull",
+    "AChorusB",         "DoubleVerse",
 };
 
 // Mood names
 const char* MOOD_NAMES[20] = {
-    "straight_pop",
-    "bright_upbeat",
-    "energetic_dance",
-    "light_rock",
-    "mid_pop",
-    "emotional_pop",
-    "sentimental",
-    "chill",
-    "ballad",
-    "dark_pop",
-    "dramatic",
-    "nostalgic",
-    "modern_pop",
-    "electro_pop",
-    "idol_pop",
-    "anthem",
-    "yoasobi",
-    "synthwave",
-    "future_bass",
-    "city_pop",
+    "straight_pop",  "bright_upbeat", "energetic_dance", "light_rock",  "mid_pop",
+    "emotional_pop", "sentimental",   "chill",           "ballad",      "dark_pop",
+    "dramatic",      "nostalgic",     "modern_pop",      "electro_pop", "idol_pop",
+    "anthem",        "yoasobi",       "synthwave",       "future_bass", "city_pop",
 };
 
 // Style preset definitions (17 presets)
 const StylePreset STYLE_PRESETS[17] = {
     // ========== Pop/Dance (0-2) ==========
     // 0: Minimal Groove Pop
-    {
-        0,
-        "minimal_groove_pop",
-        "Minimal Groove Pop",
-        "Repetitive 2-4 chord loops, simple melody",
-        StructurePattern::StandardPop,
-        118, 128, 122,
-        VocalAttitude::Clean,
-        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
-        {0, 1, 6, 13, 17, 19, 20, -1},
-        {5, true, 0.9f, 0.1f, 0.65f, 8, 0.0f},  // Standard density
-        {8, 0.7f, 0.2f},
-        {true, 2, 1},
-        1
-    },
+    {0,
+     "minimal_groove_pop",
+     "Minimal Groove Pop",
+     "Repetitive 2-4 chord loops, simple melody",
+     StructurePattern::StandardPop,
+     118,
+     128,
+     122,
+     VocalAttitude::Clean,
+     ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
+     {0, 1, 6, 13, 17, 19, 20, -1},
+     {5, true, 0.9f, 0.1f, 0.65f, 8, 0.0f},  // Standard density
+     {8, 0.7f, 0.2f},
+     {true, 2, 1},
+     1},
     // 1: Dance Pop Emotion
-    {
-        1,
-        "dance_pop_emotion",
-        "Dance Pop Emotion",
-        "Classic structure, emotional chorus release",
-        StructurePattern::FullPop,
-        120, 135, 128,
-        VocalAttitude::Expressive,
-        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
-        {0, 1, 2, 4, 5, 14, 15, -1},
-        {7, true, 0.8f, 0.3f, 0.75f, 8, 0.1f},  // Medium-high density for dance
-        {8, 0.5f, 0.4f},
-        {true, 2, 2},
-        2
-    },
+    {1,
+     "dance_pop_emotion",
+     "Dance Pop Emotion",
+     "Classic structure, emotional chorus release",
+     StructurePattern::FullPop,
+     120,
+     135,
+     128,
+     VocalAttitude::Expressive,
+     ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
+     {0, 1, 2, 4, 5, 14, 15, -1},
+     {7, true, 0.8f, 0.3f, 0.75f, 8, 0.1f},  // Medium-high density for dance
+     {8, 0.5f, 0.4f},
+     {true, 2, 2},
+     2},
     // 2: Bright Pop
-    {
-        2,
-        "bright_pop",
-        "Bright Pop",
-        "Upbeat, memorable melodies with simple structure",
-        StructurePattern::StandardPop,
-        125, 145, 135,
-        VocalAttitude::Clean,
-        ATTITUDE_CLEAN,
-        {0, 1, 3, 5, -1, -1, -1, -1},
-        {4, false, 0.95f, 0.05f, 0.80f, 8, 0.15f},  // Higher density for upbeat
-        {4, 0.85f, 0.1f},
-        {true, 2, 1},
-        1
-    },
+    {2,
+     "bright_pop",
+     "Bright Pop",
+     "Upbeat, memorable melodies with simple structure",
+     StructurePattern::StandardPop,
+     125,
+     145,
+     135,
+     VocalAttitude::Clean,
+     ATTITUDE_CLEAN,
+     {0, 1, 3, 5, -1, -1, -1, -1},
+     {4, false, 0.95f, 0.05f, 0.80f, 8, 0.15f},  // Higher density for upbeat
+     {4, 0.85f, 0.1f},
+     {true, 2, 1},
+     1},
     // ========== Idol (3-6) ==========
     // 3: Idol Standard
-    {
-        3,
-        "idol_standard",
-        "Idol Standard",
-        "Unison-friendly, memorable melodies",
-        StructurePattern::StandardPop,
-        130, 150, 140,
-        VocalAttitude::Clean,
-        ATTITUDE_CLEAN,
-        {0, 1, 3, 4, 5, 6, 9, -1},
-        {4, false, 0.95f, 0.05f, 0.85f, 8, 0.25f},  // High density idol
-        {8, 0.8f, 0.1f},
-        {true, 3, 0},
-        2
-    },
+    {3,
+     "idol_standard",
+     "Idol Standard",
+     "Unison-friendly, memorable melodies",
+     StructurePattern::StandardPop,
+     130,
+     150,
+     140,
+     VocalAttitude::Clean,
+     ATTITUDE_CLEAN,
+     {0, 1, 3, 4, 5, 6, 9, -1},
+     {4, false, 0.95f, 0.05f, 0.85f, 8, 0.25f},  // High density idol
+     {8, 0.8f, 0.1f},
+     {true, 3, 0},
+     2},
     // 4: Idol Emotion
-    {
-        4,
-        "idol_emotion",
-        "Idol Emotion",
-        "Emotional idol songs with building pre-chorus",
-        StructurePattern::FullPop,
-        120, 140, 130,
-        VocalAttitude::Expressive,
-        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
-        {0, 1, 2, 5, 15, 16, 18, 21},
-        {6, true, 0.85f, 0.25f, 0.80f, 8, 0.20f},  // Medium-high density
-        {8, 0.6f, 0.3f},
-        {true, 2, 1},
-        2
-    },
+    {4,
+     "idol_emotion",
+     "Idol Emotion",
+     "Emotional idol songs with building pre-chorus",
+     StructurePattern::FullPop,
+     120,
+     140,
+     130,
+     VocalAttitude::Expressive,
+     ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
+     {0, 1, 2, 5, 15, 16, 18, 21},
+     {6, true, 0.85f, 0.25f, 0.80f, 8, 0.20f},  // Medium-high density
+     {8, 0.6f, 0.3f},
+     {true, 2, 1},
+     2},
     // 5: Idol Energy
-    {
-        5,
-        "idol_energy",
-        "Idol Energy",
-        "High-energy idol songs for live performances",
-        StructurePattern::DriveUpbeat,
-        140, 160, 150,
-        VocalAttitude::Clean,
-        ATTITUDE_CLEAN,
-        {0, 2, 4, 6, 9, -1, -1, -1},
-        {5, false, 0.9f, 0.1f, 0.90f, 8, 0.30f},  // Very high density for energy
-        {4, 0.8f, 0.15f},
-        {true, 3, 2},
-        3
-    },
+    {5,
+     "idol_energy",
+     "Idol Energy",
+     "High-energy idol songs for live performances",
+     StructurePattern::DriveUpbeat,
+     140,
+     160,
+     150,
+     VocalAttitude::Clean,
+     ATTITUDE_CLEAN,
+     {0, 2, 4, 6, 9, -1, -1, -1},
+     {5, false, 0.9f, 0.1f, 0.90f, 8, 0.30f},  // Very high density for energy
+     {4, 0.8f, 0.15f},
+     {true, 3, 2},
+     3},
     // 6: Idol Minimal
-    {
-        6,
-        "idol_minimal",
-        "Idol Minimal",
-        "Minimal idol songs for short-form content",
-        StructurePattern::ShortForm,
-        125, 145, 135,
-        VocalAttitude::Clean,
-        ATTITUDE_CLEAN,
-        {0, 6, -1, -1, -1, -1, -1, -1},
-        {3, false, 0.95f, 0.02f, 0.75f, 8, 0.15f},  // Medium density
-        {4, 0.9f, 0.05f},
-        {true, 2, 0},
-        1
-    },
+    {6,
+     "idol_minimal",
+     "Idol Minimal",
+     "Minimal idol songs for short-form content",
+     StructurePattern::ShortForm,
+     125,
+     145,
+     135,
+     VocalAttitude::Clean,
+     ATTITUDE_CLEAN,
+     {0, 6, -1, -1, -1, -1, -1, -1},
+     {3, false, 0.95f, 0.02f, 0.75f, 8, 0.15f},  // Medium density
+     {4, 0.9f, 0.05f},
+     {true, 2, 0},
+     1},
     // ========== Rock/Emo (7-9) ==========
     // 7: Rock Shout
-    {
-        7,
-        "rock_shout",
-        "Rock Shout",
-        "Aggressive vocals with raw expression",
-        StructurePattern::FullPop,
-        115, 135, 125,
-        VocalAttitude::Expressive,
-        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE | ATTITUDE_RAW,
-        {4, 5, 6, 10, 11, 12, -1, -1},
-        {9, true, 0.6f, 0.5f, 0.70f, 8, 0.10f},  // Medium density
-        {8, 0.4f, 0.5f},
-        {true, 3, 3},
-        2
-    },
+    {7,
+     "rock_shout",
+     "Rock Shout",
+     "Aggressive vocals with raw expression",
+     StructurePattern::FullPop,
+     115,
+     135,
+     125,
+     VocalAttitude::Expressive,
+     ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE | ATTITUDE_RAW,
+     {4, 5, 6, 10, 11, 12, -1, -1},
+     {9, true, 0.6f, 0.5f, 0.70f, 8, 0.10f},  // Medium density
+     {8, 0.4f, 0.5f},
+     {true, 3, 3},
+     2},
     // 8: Pop Emotion
-    {
-        8,
-        "pop_emotion",
-        "Pop Emotion",
-        "Word-driven emotional pop with lyrical focus",
-        StructurePattern::FullPop,
-        95, 120, 108,
-        VocalAttitude::Expressive,
-        ATTITUDE_EXPRESSIVE | ATTITUDE_RAW,
-        {1, 5, 8, 15, 16, 18, -1, -1},
-        {7, true, 0.7f, 0.4f, 0.60f, 8, 0.05f},  // Lower density for emotional
-        {8, 0.4f, 0.5f},
-        {true, 1, 1},
-        1
-    },
+    {8,
+     "pop_emotion",
+     "Pop Emotion",
+     "Word-driven emotional pop with lyrical focus",
+     StructurePattern::FullPop,
+     95,
+     120,
+     108,
+     VocalAttitude::Expressive,
+     ATTITUDE_EXPRESSIVE | ATTITUDE_RAW,
+     {1, 5, 8, 15, 16, 18, -1, -1},
+     {7, true, 0.7f, 0.4f, 0.60f, 8, 0.05f},  // Lower density for emotional
+     {8, 0.4f, 0.5f},
+     {true, 1, 1},
+     1},
     // 9: Raw Emotional
-    {
-        9,
-        "raw_emotional",
-        "Raw Emotional",
-        "Intense emotional expression with boundary-breaking phrases",
-        StructurePattern::FullWithBridge,
-        90, 115, 102,
-        VocalAttitude::Expressive,
-        ATTITUDE_EXPRESSIVE | ATTITUDE_RAW,
-        {7, 8, 11, 15, 21, -1, -1, -1},
-        {9, true, 0.5f, 0.6f, 0.55f, 8, 0.0f},  // Lower density, no 16th
-        {8, 0.3f, 0.6f},
-        {true, 2, 2},
-        2
-    },
+    {9,
+     "raw_emotional",
+     "Raw Emotional",
+     "Intense emotional expression with boundary-breaking phrases",
+     StructurePattern::FullWithBridge,
+     90,
+     115,
+     102,
+     VocalAttitude::Expressive,
+     ATTITUDE_EXPRESSIVE | ATTITUDE_RAW,
+     {7, 8, 11, 15, 21, -1, -1, -1},
+     {9, true, 0.5f, 0.6f, 0.55f, 8, 0.0f},  // Lower density, no 16th
+     {8, 0.3f, 0.6f},
+     {true, 2, 2},
+     2},
     // ========== Special/Derived (10-12) ==========
     // 10: Acoustic Pop
-    {
-        10,
-        "acoustic_pop",
-        "Acoustic Pop",
-        "Clear harmony, rhythm-light, vocal-centered",
-        StructurePattern::Ballad,
-        85, 110, 95,
-        VocalAttitude::Expressive,
-        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
-        {0, 1, 4, 6, 17, -1, -1, -1},
-        {6, true, 0.85f, 0.2f, 0.50f, 4, 0.0f},  // Low density ballad
-        {8, 0.5f, 0.3f},
-        {false, 1, 0},
-        0
-    },
+    {10,
+     "acoustic_pop",
+     "Acoustic Pop",
+     "Clear harmony, rhythm-light, vocal-centered",
+     StructurePattern::Ballad,
+     85,
+     110,
+     95,
+     VocalAttitude::Expressive,
+     ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
+     {0, 1, 4, 6, 17, -1, -1, -1},
+     {6, true, 0.85f, 0.2f, 0.50f, 4, 0.0f},  // Low density ballad
+     {8, 0.5f, 0.3f},
+     {false, 1, 0},
+     0},
     // 11: Live Call & Response
-    {
-        11,
-        "live_call_response",
-        "Live Call & Response",
-        "Concert-ready with call-response structure",
-        StructurePattern::AnthemStyle,
-        130, 150, 140,
-        VocalAttitude::Clean,
-        ATTITUDE_CLEAN,
-        {0, 2, 4, -1, -1, -1, -1, -1},
-        {4, false, 0.9f, 0.05f, 0.85f, 8, 0.20f},  // High density for live
-        {4, 0.85f, 0.1f},
-        {true, 3, 1},
-        3
-    },
+    {11,
+     "live_call_response",
+     "Live Call & Response",
+     "Concert-ready with call-response structure",
+     StructurePattern::AnthemStyle,
+     130,
+     150,
+     140,
+     VocalAttitude::Clean,
+     ATTITUDE_CLEAN,
+     {0, 2, 4, -1, -1, -1, -1, -1},
+     {4, false, 0.9f, 0.05f, 0.85f, 8, 0.20f},  // High density for live
+     {4, 0.85f, 0.1f},
+     {true, 3, 1},
+     3},
     // 12: Background Motif
-    {
-        12,
-        "background_motif",
-        "Background Motif",
-        "Motif-driven with subdued vocals, ambient feel",
-        StructurePattern::StandardPop,
-        110, 130, 120,
-        VocalAttitude::Clean,
-        ATTITUDE_CLEAN,
-        {0, 6, 13, 19, -1, -1, -1, -1},
-        {4, false, 0.95f, 0.05f, 0.50f, 8, 0.0f},  // Low density, subdued
-        {8, 0.9f, 0.05f},
-        {true, 2, 0},
-        1
-    },
+    {12,
+     "background_motif",
+     "Background Motif",
+     "Motif-driven with subdued vocals, ambient feel",
+     StructurePattern::StandardPop,
+     110,
+     130,
+     120,
+     VocalAttitude::Clean,
+     ATTITUDE_CLEAN,
+     {0, 6, 13, 19, -1, -1, -1, -1},
+     {4, false, 0.95f, 0.05f, 0.50f, 8, 0.0f},  // Low density, subdued
+     {8, 0.9f, 0.05f},
+     {true, 2, 0},
+     1},
     // ========== Genre-Specific (13-16) ==========
     // 13: City Pop
-    {
-        13,
-        "city_pop",
-        "City Pop",
-        "Groovy 80s Japanese city pop with jazzy chords",
-        StructurePattern::FullPop,
-        95, 115, 105,
-        VocalAttitude::Clean,
-        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
-        {7, 8, 10, 1, 5, -1, -1, -1},
-        {7, true, 0.75f, 0.35f, 0.65f, 8, 0.05f},  // Medium density groove
-        {8, 0.5f, 0.4f},
-        {true, 2, 1},
-        2
-    },
+    {13,
+     "city_pop",
+     "City Pop",
+     "Groovy 80s Japanese city pop with jazzy chords",
+     StructurePattern::FullPop,
+     95,
+     115,
+     105,
+     VocalAttitude::Clean,
+     ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
+     {7, 8, 10, 1, 5, -1, -1, -1},
+     {7, true, 0.75f, 0.35f, 0.65f, 8, 0.05f},  // Medium density groove
+     {8, 0.5f, 0.4f},
+     {true, 2, 1},
+     2},
     // 14: Anime Opening
-    {
-        14,
-        "anime_opening",
-        "Anime Opening",
-        "Epic, dramatic anime OP style with building energy",
-        StructurePattern::BuildUp,
-        130, 155, 142,
-        VocalAttitude::Expressive,
-        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
-        {5, 2, 6, 0, 4, -1, -1, -1},
-        {6, true, 0.8f, 0.3f, 0.85f, 8, 0.25f},  // High density anime style
-        {8, 0.6f, 0.3f},
-        {true, 3, 2},
-        2
-    },
+    {14,
+     "anime_opening",
+     "Anime Opening",
+     "Epic, dramatic anime OP style with building energy",
+     StructurePattern::BuildUp,
+     130,
+     155,
+     142,
+     VocalAttitude::Expressive,
+     ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
+     {5, 2, 6, 0, 4, -1, -1, -1},
+     {6, true, 0.8f, 0.3f, 0.85f, 8, 0.25f},  // High density anime style
+     {8, 0.6f, 0.3f},
+     {true, 3, 2},
+     2},
     // 15: EDM Synth Pop
-    {
-        15,
-        "edm_synth",
-        "EDM Synth Pop",
-        "Modern electronic dance music with synth leads",
-        StructurePattern::DirectChorus,
-        125, 145, 138,
-        VocalAttitude::Clean,
-        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
-        {0, 4, 9, 1, -1, -1, -1, -1},
-        {5, false, 0.85f, 0.15f, 0.75f, 16, 0.35f},  // High 16th ratio for EDM
-        {4, 0.75f, 0.2f},
-        {true, 2, 2},
-        2
-    },
+    {15,
+     "edm_synth",
+     "EDM Synth Pop",
+     "Modern electronic dance music with synth leads",
+     StructurePattern::DirectChorus,
+     125,
+     145,
+     138,
+     VocalAttitude::Clean,
+     ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
+     {0, 4, 9, 1, -1, -1, -1, -1},
+     {5, false, 0.85f, 0.15f, 0.75f, 16, 0.35f},  // High 16th ratio for EDM
+     {4, 0.75f, 0.2f},
+     {true, 2, 2},
+     2},
     // 16: Emotional Ballad
-    {
-        16,
-        "emotional_ballad",
-        "Emotional Ballad",
-        "Slow emotional ballad with expressive vocals",
-        StructurePattern::Ballad,
-        65, 85, 72,
-        VocalAttitude::Expressive,
-        ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
-        {1, 3, 8, 11, 5, -1, -1, -1},
-        {8, true, 0.7f, 0.4f, 0.45f, 4, 0.0f},  // Very low density ballad
-        {8, 0.4f, 0.5f},
-        {false, 1, 0},
-        0
-    },
+    {16,
+     "emotional_ballad",
+     "Emotional Ballad",
+     "Slow emotional ballad with expressive vocals",
+     StructurePattern::Ballad,
+     65,
+     85,
+     72,
+     VocalAttitude::Expressive,
+     ATTITUDE_CLEAN | ATTITUDE_EXPRESSIVE,
+     {1, 3, 8, 11, 5, -1, -1, -1},
+     {8, true, 0.7f, 0.4f, 0.45f, 4, 0.0f},  // Very low density ballad
+     {8, 0.4f, 0.5f},
+     {false, 1, 0},
+     0},
 };
 
 // Form compatibility by style with weights (higher = more likely)
 // Weight guidelines: Common=40-60, Frequent=20-35, Occasional=10-20, Rare=3-10
 const FormWeight STYLE_FORMS_WEIGHTED[17][8] = {
     // 0: Minimal Groove Pop - shorter forms
-    {{StructurePattern::StandardPop, 40}, {StructurePattern::DirectChorus, 20},
-     {StructurePattern::ShortForm, 10}, {StructurePattern::RepeatChorus, 8},
-     {StructurePattern::BuildUp, 5}, {StructurePattern::ChorusFirstShort, 10},
-     {StructurePattern::ImmediateVocal, 7}, {StructurePattern::ChorusFirst, 0}},
+    {{StructurePattern::StandardPop, 40},
+     {StructurePattern::DirectChorus, 20},
+     {StructurePattern::ShortForm, 10},
+     {StructurePattern::RepeatChorus, 8},
+     {StructurePattern::BuildUp, 5},
+     {StructurePattern::ChorusFirstShort, 10},
+     {StructurePattern::ImmediateVocal, 7},
+     {StructurePattern::ChorusFirst, 0}},
     // 1: Dance Pop Emotion - full-length forms + chorus-first
-    {{StructurePattern::FullPop, 35}, {StructurePattern::FullWithBridge, 20},
-     {StructurePattern::DriveUpbeat, 12}, {StructurePattern::Ballad, 8},
-     {StructurePattern::AnthemStyle, 5}, {StructurePattern::ChorusFirst, 10},
-     {StructurePattern::ChorusFirstFull, 10}, {StructurePattern::ImmediateVocalFull, 0}},
+    {{StructurePattern::FullPop, 35},
+     {StructurePattern::FullWithBridge, 20},
+     {StructurePattern::DriveUpbeat, 12},
+     {StructurePattern::Ballad, 8},
+     {StructurePattern::AnthemStyle, 5},
+     {StructurePattern::ChorusFirst, 10},
+     {StructurePattern::ChorusFirstFull, 10},
+     {StructurePattern::ImmediateVocalFull, 0}},
     // 2: Bright Pop - standard forms
-    {{StructurePattern::StandardPop, 35}, {StructurePattern::DirectChorus, 20},
-     {StructurePattern::RepeatChorus, 12}, {StructurePattern::BuildUp, 8},
-     {StructurePattern::FullPop, 5}, {StructurePattern::ChorusFirst, 10},
-     {StructurePattern::ImmediateVocal, 10}, {StructurePattern::AChorusB, 0}},
+    {{StructurePattern::StandardPop, 35},
+     {StructurePattern::DirectChorus, 20},
+     {StructurePattern::RepeatChorus, 12},
+     {StructurePattern::BuildUp, 8},
+     {StructurePattern::FullPop, 5},
+     {StructurePattern::ChorusFirst, 10},
+     {StructurePattern::ImmediateVocal, 10},
+     {StructurePattern::AChorusB, 0}},
     // 3: Idol Standard - standard and anthem + chorus-first
-    {{StructurePattern::StandardPop, 30}, {StructurePattern::BuildUp, 18},
-     {StructurePattern::RepeatChorus, 12}, {StructurePattern::AnthemStyle, 10},
-     {StructurePattern::FullPop, 8}, {StructurePattern::ChorusFirst, 12},
-     {StructurePattern::ChorusFirstShort, 10}, {StructurePattern::AChorusB, 0}},
+    {{StructurePattern::StandardPop, 30},
+     {StructurePattern::BuildUp, 18},
+     {StructurePattern::RepeatChorus, 12},
+     {StructurePattern::AnthemStyle, 10},
+     {StructurePattern::FullPop, 8},
+     {StructurePattern::ChorusFirst, 12},
+     {StructurePattern::ChorusFirstShort, 10},
+     {StructurePattern::AChorusB, 0}},
     // 4: Idol Emotion - full-length emotional forms
-    {{StructurePattern::FullPop, 35}, {StructurePattern::FullWithBridge, 20},
-     {StructurePattern::Ballad, 12}, {StructurePattern::StandardPop, 8},
-     {StructurePattern::BuildUp, 5}, {StructurePattern::DoubleVerse, 10},
-     {StructurePattern::ChorusFirstFull, 10}, {StructurePattern::ImmediateVocalFull, 0}},
+    {{StructurePattern::FullPop, 35},
+     {StructurePattern::FullWithBridge, 20},
+     {StructurePattern::Ballad, 12},
+     {StructurePattern::StandardPop, 8},
+     {StructurePattern::BuildUp, 5},
+     {StructurePattern::DoubleVerse, 10},
+     {StructurePattern::ChorusFirstFull, 10},
+     {StructurePattern::ImmediateVocalFull, 0}},
     // 5: Idol Energy - driving high-energy + chorus-first
-    {{StructurePattern::DriveUpbeat, 30}, {StructurePattern::AnthemStyle, 22},
-     {StructurePattern::FullPop, 12}, {StructurePattern::RepeatChorus, 8},
-     {StructurePattern::DirectChorus, 5}, {StructurePattern::ChorusFirst, 13},
-     {StructurePattern::ChorusFirstShort, 10}, {StructurePattern::AChorusB, 0}},
+    {{StructurePattern::DriveUpbeat, 30},
+     {StructurePattern::AnthemStyle, 22},
+     {StructurePattern::FullPop, 12},
+     {StructurePattern::RepeatChorus, 8},
+     {StructurePattern::DirectChorus, 5},
+     {StructurePattern::ChorusFirst, 13},
+     {StructurePattern::ChorusFirstShort, 10},
+     {StructurePattern::AChorusB, 0}},
     // 6: Idol Minimal - short forms + chorus-first-short
-    {{StructurePattern::ShortForm, 30}, {StructurePattern::DirectChorus, 22},
-     {StructurePattern::StandardPop, 12}, {StructurePattern::RepeatChorus, 5},
-     {StructurePattern::BuildUp, 3}, {StructurePattern::ChorusFirstShort, 18},
-     {StructurePattern::ImmediateVocal, 10}, {StructurePattern::ChorusFirst, 0}},
+    {{StructurePattern::ShortForm, 30},
+     {StructurePattern::DirectChorus, 22},
+     {StructurePattern::StandardPop, 12},
+     {StructurePattern::RepeatChorus, 5},
+     {StructurePattern::BuildUp, 3},
+     {StructurePattern::ChorusFirstShort, 18},
+     {StructurePattern::ImmediateVocal, 10},
+     {StructurePattern::ChorusFirst, 0}},
     // 7: Rock Shout - driving forms
-    {{StructurePattern::FullPop, 32}, {StructurePattern::DriveUpbeat, 20},
-     {StructurePattern::AnthemStyle, 15}, {StructurePattern::BuildUp, 10},
-     {StructurePattern::FullWithBridge, 5}, {StructurePattern::ImmediateVocalFull, 10},
-     {StructurePattern::AChorusB, 8}, {StructurePattern::ChorusFirst, 0}},
+    {{StructurePattern::FullPop, 32},
+     {StructurePattern::DriveUpbeat, 20},
+     {StructurePattern::AnthemStyle, 15},
+     {StructurePattern::BuildUp, 10},
+     {StructurePattern::FullWithBridge, 5},
+     {StructurePattern::ImmediateVocalFull, 10},
+     {StructurePattern::AChorusB, 8},
+     {StructurePattern::ChorusFirst, 0}},
     // 8: Pop Emotion - emotional full forms
-    {{StructurePattern::FullPop, 35}, {StructurePattern::FullWithBridge, 20},
-     {StructurePattern::Ballad, 12}, {StructurePattern::StandardPop, 8},
-     {StructurePattern::BuildUp, 5}, {StructurePattern::DoubleVerse, 10},
-     {StructurePattern::ImmediateVocalFull, 10}, {StructurePattern::ChorusFirstFull, 0}},
+    {{StructurePattern::FullPop, 35},
+     {StructurePattern::FullWithBridge, 20},
+     {StructurePattern::Ballad, 12},
+     {StructurePattern::StandardPop, 8},
+     {StructurePattern::BuildUp, 5},
+     {StructurePattern::DoubleVerse, 10},
+     {StructurePattern::ImmediateVocalFull, 10},
+     {StructurePattern::ChorusFirstFull, 0}},
     // 9: Raw Emotional - varied emotional forms
-    {{StructurePattern::FullWithBridge, 32}, {StructurePattern::FullPop, 20},
-     {StructurePattern::Ballad, 15}, {StructurePattern::BuildUp, 10},
-     {StructurePattern::DriveUpbeat, 5}, {StructurePattern::DoubleVerse, 10},
-     {StructurePattern::ImmediateVocalFull, 8}, {StructurePattern::ChorusFirstFull, 0}},
+    {{StructurePattern::FullWithBridge, 32},
+     {StructurePattern::FullPop, 20},
+     {StructurePattern::Ballad, 15},
+     {StructurePattern::BuildUp, 10},
+     {StructurePattern::DriveUpbeat, 5},
+     {StructurePattern::DoubleVerse, 10},
+     {StructurePattern::ImmediateVocalFull, 8},
+     {StructurePattern::ChorusFirstFull, 0}},
     // 10: Acoustic Pop - ballad and simple forms
-    {{StructurePattern::Ballad, 40}, {StructurePattern::StandardPop, 18},
-     {StructurePattern::FullWithBridge, 12}, {StructurePattern::ShortForm, 6},
-     {StructurePattern::BuildUp, 4}, {StructurePattern::DoubleVerse, 12},
-     {StructurePattern::ImmediateVocal, 8}, {StructurePattern::AChorusB, 0}},
+    {{StructurePattern::Ballad, 40},
+     {StructurePattern::StandardPop, 18},
+     {StructurePattern::FullWithBridge, 12},
+     {StructurePattern::ShortForm, 6},
+     {StructurePattern::BuildUp, 4},
+     {StructurePattern::DoubleVerse, 12},
+     {StructurePattern::ImmediateVocal, 8},
+     {StructurePattern::AChorusB, 0}},
     // 11: Live Call & Response - anthem and driving + chorus-first
-    {{StructurePattern::AnthemStyle, 35}, {StructurePattern::DriveUpbeat, 20},
-     {StructurePattern::RepeatChorus, 12}, {StructurePattern::FullPop, 8},
-     {StructurePattern::DirectChorus, 5}, {StructurePattern::ChorusFirst, 12},
-     {StructurePattern::AChorusB, 8}, {StructurePattern::ChorusFirstShort, 0}},
+    {{StructurePattern::AnthemStyle, 35},
+     {StructurePattern::DriveUpbeat, 20},
+     {StructurePattern::RepeatChorus, 12},
+     {StructurePattern::FullPop, 8},
+     {StructurePattern::DirectChorus, 5},
+     {StructurePattern::ChorusFirst, 12},
+     {StructurePattern::AChorusB, 8},
+     {StructurePattern::ChorusFirstShort, 0}},
     // 12: Background Motif - repetitive forms
-    {{StructurePattern::StandardPop, 35}, {StructurePattern::RepeatChorus, 20},
-     {StructurePattern::ShortForm, 12}, {StructurePattern::DirectChorus, 8},
-     {StructurePattern::BuildUp, 5}, {StructurePattern::ChorusFirstShort, 10},
-     {StructurePattern::ImmediateVocal, 10}, {StructurePattern::ChorusFirst, 0}},
+    {{StructurePattern::StandardPop, 35},
+     {StructurePattern::RepeatChorus, 20},
+     {StructurePattern::ShortForm, 12},
+     {StructurePattern::DirectChorus, 8},
+     {StructurePattern::BuildUp, 5},
+     {StructurePattern::ChorusFirstShort, 10},
+     {StructurePattern::ImmediateVocal, 10},
+     {StructurePattern::ChorusFirst, 0}},
     // 13: City Pop - groovy full forms
-    {{StructurePattern::FullPop, 35}, {StructurePattern::FullWithBridge, 20},
-     {StructurePattern::StandardPop, 12}, {StructurePattern::BuildUp, 8},
-     {StructurePattern::Ballad, 5}, {StructurePattern::ImmediateVocalFull, 10},
-     {StructurePattern::DoubleVerse, 10}, {StructurePattern::AChorusB, 0}},
+    {{StructurePattern::FullPop, 35},
+     {StructurePattern::FullWithBridge, 20},
+     {StructurePattern::StandardPop, 12},
+     {StructurePattern::BuildUp, 8},
+     {StructurePattern::Ballad, 5},
+     {StructurePattern::ImmediateVocalFull, 10},
+     {StructurePattern::DoubleVerse, 10},
+     {StructurePattern::AChorusB, 0}},
     // 14: Anime Opening - build-up + immediate vocal (YOASOBI style)
-    {{StructurePattern::BuildUp, 30}, {StructurePattern::DriveUpbeat, 18},
-     {StructurePattern::FullPop, 12}, {StructurePattern::AnthemStyle, 8},
-     {StructurePattern::FullWithBridge, 4}, {StructurePattern::ImmediateVocal, 15},
-     {StructurePattern::ImmediateVocalFull, 13}, {StructurePattern::ChorusFirst, 0}},
+    {{StructurePattern::BuildUp, 30},
+     {StructurePattern::DriveUpbeat, 18},
+     {StructurePattern::FullPop, 12},
+     {StructurePattern::AnthemStyle, 8},
+     {StructurePattern::FullWithBridge, 4},
+     {StructurePattern::ImmediateVocal, 15},
+     {StructurePattern::ImmediateVocalFull, 13},
+     {StructurePattern::ChorusFirst, 0}},
     // 15: EDM Synth Pop - direct + chorus-first
-    {{StructurePattern::DirectChorus, 32}, {StructurePattern::DriveUpbeat, 18},
-     {StructurePattern::RepeatChorus, 12}, {StructurePattern::BuildUp, 8},
-     {StructurePattern::FullPop, 5}, {StructurePattern::ChorusFirst, 13},
-     {StructurePattern::ChorusFirstShort, 12}, {StructurePattern::ImmediateVocal, 0}},
+    {{StructurePattern::DirectChorus, 32},
+     {StructurePattern::DriveUpbeat, 18},
+     {StructurePattern::RepeatChorus, 12},
+     {StructurePattern::BuildUp, 8},
+     {StructurePattern::FullPop, 5},
+     {StructurePattern::ChorusFirst, 13},
+     {StructurePattern::ChorusFirstShort, 12},
+     {StructurePattern::ImmediateVocal, 0}},
     // 16: Emotional Ballad - slow emotional forms
-    {{StructurePattern::Ballad, 42}, {StructurePattern::FullWithBridge, 18},
-     {StructurePattern::StandardPop, 10}, {StructurePattern::FullPop, 6},
-     {StructurePattern::BuildUp, 3}, {StructurePattern::DoubleVerse, 12},
-     {StructurePattern::ImmediateVocalFull, 9}, {StructurePattern::AChorusB, 0}},
+    {{StructurePattern::Ballad, 42},
+     {StructurePattern::FullWithBridge, 18},
+     {StructurePattern::StandardPop, 10},
+     {StructurePattern::FullPop, 6},
+     {StructurePattern::BuildUp, 3},
+     {StructurePattern::DoubleVerse, 12},
+     {StructurePattern::ImmediateVocalFull, 9},
+     {StructurePattern::AChorusB, 0}},
 };
 
 constexpr size_t STYLE_FORM_COUNT = 8;
@@ -488,33 +529,57 @@ const VocalStyleWeight STYLE_VOCAL_STYLES[17][4] = {
     // 0: Minimal Groove Pop - simple styles
     {{VocalStylePreset::Standard, 50}, {VocalStylePreset::CoolSynth, 50}, {}, {}},
     // 1: Dance Pop Emotion - emotional dance styles
-    {{VocalStylePreset::Standard, 34}, {VocalStylePreset::Anime, 33}, {VocalStylePreset::BrightKira, 33}, {}},
+    {{VocalStylePreset::Standard, 34},
+     {VocalStylePreset::Anime, 33},
+     {VocalStylePreset::BrightKira, 33},
+     {}},
     // 2: Bright Pop - bright upbeat styles
-    {{VocalStylePreset::Standard, 34}, {VocalStylePreset::BrightKira, 33}, {VocalStylePreset::CuteAffected, 33}, {}},
+    {{VocalStylePreset::Standard, 34},
+     {VocalStylePreset::BrightKira, 33},
+     {VocalStylePreset::CuteAffected, 33},
+     {}},
     // 3: Idol Standard - idol styles
-    {{VocalStylePreset::Idol, 34}, {VocalStylePreset::BrightKira, 33}, {VocalStylePreset::CuteAffected, 33}, {}},
+    {{VocalStylePreset::Idol, 34},
+     {VocalStylePreset::BrightKira, 33},
+     {VocalStylePreset::CuteAffected, 33},
+     {}},
     // 4: Idol Emotion - emotional idol styles
-    {{VocalStylePreset::Idol, 34}, {VocalStylePreset::Anime, 33}, {VocalStylePreset::BrightKira, 33}, {}},
+    {{VocalStylePreset::Idol, 34},
+     {VocalStylePreset::Anime, 33},
+     {VocalStylePreset::BrightKira, 33},
+     {}},
     // 5: Idol Energy - high-energy idol styles
-    {{VocalStylePreset::Idol, 34}, {VocalStylePreset::BrightKira, 33}, {VocalStylePreset::PowerfulShout, 33}, {}},
+    {{VocalStylePreset::Idol, 34},
+     {VocalStylePreset::BrightKira, 33},
+     {VocalStylePreset::PowerfulShout, 33},
+     {}},
     // 6: Idol Minimal - simple idol styles
     {{VocalStylePreset::Idol, 50}, {VocalStylePreset::Standard, 50}, {}, {}},
     // 7: Rock Shout - rock styles
     {{VocalStylePreset::Rock, 50}, {VocalStylePreset::PowerfulShout, 50}, {}, {}},
     // 8: Pop Emotion - emotional pop styles
-    {{VocalStylePreset::Standard, 34}, {VocalStylePreset::Anime, 33}, {VocalStylePreset::CuteAffected, 33}, {}},
+    {{VocalStylePreset::Standard, 34},
+     {VocalStylePreset::Anime, 33},
+     {VocalStylePreset::CuteAffected, 33},
+     {}},
     // 9: Raw Emotional - intense emotional styles
     {{VocalStylePreset::Rock, 50}, {VocalStylePreset::PowerfulShout, 50}, {}, {}},
     // 10: Acoustic Pop - acoustic/ballad styles
     {{VocalStylePreset::Ballad, 50}, {VocalStylePreset::Standard, 50}, {}, {}},
     // 11: Live Call & Response - live performance styles
-    {{VocalStylePreset::Idol, 34}, {VocalStylePreset::BrightKira, 33}, {VocalStylePreset::PowerfulShout, 33}, {}},
+    {{VocalStylePreset::Idol, 34},
+     {VocalStylePreset::BrightKira, 33},
+     {VocalStylePreset::PowerfulShout, 33},
+     {}},
     // 12: Background Motif - subdued styles
     {{VocalStylePreset::Standard, 50}, {VocalStylePreset::CoolSynth, 50}, {}, {}},
     // 13: City Pop - city pop styles
     {{VocalStylePreset::CityPop, 50}, {VocalStylePreset::Standard, 50}, {}, {}},
     // 14: Anime Opening - anime styles
-    {{VocalStylePreset::Anime, 34}, {VocalStylePreset::Vocaloid, 33}, {VocalStylePreset::BrightKira, 33}, {}},
+    {{VocalStylePreset::Anime, 34},
+     {VocalStylePreset::Vocaloid, 33},
+     {VocalStylePreset::BrightKira, 33},
+     {}},
     // 15: EDM Synth Pop - synth/EDM styles
     {{VocalStylePreset::CoolSynth, 50}, {VocalStylePreset::Vocaloid, 50}, {}, {}},
     // 16: Emotional Ballad - ballad styles
@@ -558,120 +623,107 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // -------------------------------------------------------------------------
     // Auto (0) - Default values, no style-specific changes applied
     // -------------------------------------------------------------------------
-    {VocalStylePreset::Auto,
-     7, 0.15f, false,                    // leap=5th, low synco, no bar cross
-     1.0f, 1.0f, 0.9f, 1.0f,             // chorus=90% (avoid 8th note saturation)
-     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
-     1.0f, false, false, false, 5, 0.2f}, // all same-note OK, no special flags
+    {VocalStylePreset::Auto, 7, 0.15f, false,  // leap=5th, low synco, no bar cross
+     1.0f, 1.0f, 0.9f, 1.0f,                   // chorus=90% (avoid 8th note saturation)
+     0.0f, 0.0f, 0.0f, 0.0f,                   // no 32nd notes
+     1.0f, false, false, false, 5, 0.2f},      // all same-note OK, no special flags
 
     // -------------------------------------------------------------------------
     // Standard (1) - General purpose pop melody
     // -------------------------------------------------------------------------
-    {VocalStylePreset::Standard,
-     7, 0.15f, false,                    // leap=5th, low synco, no bar cross
-     1.0f, 1.0f, 0.85f, 1.0f,            // chorus=85% (room for long notes)
-     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
-     1.0f, false, false, false, 5, 0.2f}, // standard settings
+    {VocalStylePreset::Standard, 7, 0.15f, false,  // leap=5th, low synco, no bar cross
+     1.0f, 1.0f, 0.85f, 1.0f,                      // chorus=85% (room for long notes)
+     0.0f, 0.0f, 0.0f, 0.0f,                       // no 32nd notes
+     1.0f, false, false, false, 5, 0.2f},          // standard settings
 
     // -------------------------------------------------------------------------
     // Vocaloid (2) - YOASOBI style: energetic, wide leaps, singable
     // -------------------------------------------------------------------------
-    {VocalStylePreset::Vocaloid,
-     12, 0.35f, true,                    // leap=octave, high synco, bar cross OK
-     0.8f, 0.9f, 1.0f, 0.85f,            // verse sparse, chorus=100% (singable pace)
-     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes (still singable)
-     1.0f, true, false, false, 5, 0.2f}, // disable vowel limits
+    {VocalStylePreset::Vocaloid, 12, 0.35f, true,  // leap=octave, high synco, bar cross OK
+     0.8f, 0.9f, 1.0f, 0.85f,                      // verse sparse, chorus=100% (singable pace)
+     0.0f, 0.0f, 0.0f, 0.0f,                       // no 32nd notes (still singable)
+     1.0f, true, false, false, 5, 0.2f},           // disable vowel limits
 
     // -------------------------------------------------------------------------
     // UltraVocaloid (3) - Miku Disappearance style: ballad verse + barrage chorus
     // Extreme contrast between sparse intro and machine-gun chorus
     // -------------------------------------------------------------------------
-    {VocalStylePreset::UltraVocaloid,
-     14, 0.4f, true,                     // leap=9th(!), high synco, bar cross OK
-     0.3f, 0.5f, 1.4f, 0.35f,            // verse=ballad(30%), chorus=140%
-     0.3f, 0.5f, 1.0f, 0.2f,             // 32nd: verse=30%, chorus=100%(!!)
-     0.1f, true, false, false, 5, 0.2f}, // same-note=10% only, disable vowel
+    {VocalStylePreset::UltraVocaloid, 14, 0.4f, true,  // leap=9th(!), high synco, bar cross OK
+     0.3f, 0.5f, 1.4f, 0.35f,                          // verse=ballad(30%), chorus=140%
+     0.3f, 0.5f, 1.0f, 0.2f,                           // 32nd: verse=30%, chorus=100%(!!)
+     0.1f, true, false, false, 5, 0.2f},               // same-note=10% only, disable vowel
 
     // -------------------------------------------------------------------------
     // Idol (4) - Love Live/Idolmaster style: catchy, unison-friendly
     // -------------------------------------------------------------------------
-    {VocalStylePreset::Idol,
-     7, 0.15f, false,                    // leap=5th, low synco (easy to dance)
-     1.0f, 1.0f, 0.85f, 1.0f,            // chorus slightly sparser (long tones)
-     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
-     1.0f, false, true, true, 5, 0.2f},  // hook repeat + long tones in chorus
+    {VocalStylePreset::Idol, 7, 0.15f, false,  // leap=5th, low synco (easy to dance)
+     1.0f, 1.0f, 0.85f, 1.0f,                  // chorus slightly sparser (long tones)
+     0.0f, 0.0f, 0.0f, 0.0f,                   // no 32nd notes
+     1.0f, false, true, true, 5, 0.2f},        // hook repeat + long tones in chorus
 
     // -------------------------------------------------------------------------
     // Ballad (5) - Slow emotional ballad: small leaps, sustained notes
     // -------------------------------------------------------------------------
-    {VocalStylePreset::Ballad,
-     5, 0.15f, false,                    // leap=4th only, gentle movement
-     1.0f, 1.0f, 0.55f, 1.0f,            // chorus=55% (long tones, breathing room)
-     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
-     1.0f, false, false, true, 5, 0.2f}, // long tones in chorus
+    {VocalStylePreset::Ballad, 5, 0.15f, false,  // leap=4th only, gentle movement
+     1.0f, 1.0f, 0.55f, 1.0f,                    // chorus=55% (long tones, breathing room)
+     0.0f, 0.0f, 0.0f, 0.0f,                     // no 32nd notes
+     1.0f, false, false, true, 5, 0.2f},         // long tones in chorus
 
     // -------------------------------------------------------------------------
     // Rock (6) - Rock style: powerful, driving, wide chorus register
     // -------------------------------------------------------------------------
-    {VocalStylePreset::Rock,
-     9, 0.25f, true,                     // leap=6th, medium synco, bar cross OK
-     1.0f, 1.0f, 0.75f, 1.0f,            // chorus=75% (power needs sustain)
-     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
-     1.0f, false, true, true, 7, 0.2f},  // hook + long tones, chorus +7 semitones
+    {VocalStylePreset::Rock, 9, 0.25f, true,  // leap=6th, medium synco, bar cross OK
+     1.0f, 1.0f, 0.75f, 1.0f,                 // chorus=75% (power needs sustain)
+     0.0f, 0.0f, 0.0f, 0.0f,                  // no 32nd notes
+     1.0f, false, true, true, 7, 0.2f},       // hook + long tones, chorus +7 semitones
 
     // -------------------------------------------------------------------------
     // CityPop (7) - 80s Japanese city pop: groovy, jazzy tensions
     // -------------------------------------------------------------------------
-    {VocalStylePreset::CityPop,
-     7, 0.35f, true,                     // leap=5th, high synco (groovy)
-     1.0f, 1.0f, 0.75f, 1.0f,            // chorus=75% (relaxed groove)
-     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
-     1.0f, false, false, false, 5, 0.4f}, // tension=0.4 (jazzy chords)
+    {VocalStylePreset::CityPop, 7, 0.35f, true,  // leap=5th, high synco (groovy)
+     1.0f, 1.0f, 0.75f, 1.0f,                    // chorus=75% (relaxed groove)
+     0.0f, 0.0f, 0.0f, 0.0f,                     // no 32nd notes
+     1.0f, false, false, false, 5, 0.4f},        // tension=0.4 (jazzy chords)
 
     // -------------------------------------------------------------------------
     // Anime (8) - Anime OP/ED style: dramatic, wide leaps, building energy
     // -------------------------------------------------------------------------
-    {VocalStylePreset::Anime,
-     10, 0.25f, true,                    // leap=minor 7th, medium synco
-     1.0f, 1.0f, 1.0f, 1.0f,             // chorus=100% (balanced for drama)
-     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
-     1.0f, false, true, true, 5, 0.2f},  // hook repeat + long tones
+    {VocalStylePreset::Anime, 10, 0.25f, true,  // leap=minor 7th, medium synco
+     1.0f, 1.0f, 1.0f, 1.0f,                    // chorus=100% (balanced for drama)
+     0.0f, 0.0f, 0.0f, 0.0f,                    // no 32nd notes
+     1.0f, false, true, true, 5, 0.2f},         // hook repeat + long tones
 
     // -------------------------------------------------------------------------
     // BrightKira (9) - Bright sparkly idol style: energetic, high register
     // -------------------------------------------------------------------------
-    {VocalStylePreset::BrightKira,
-     10, 0.15f, false,                   // leap=minor 7th, low synco
-     1.0f, 1.0f, 1.0f, 1.0f,             // chorus=100% (bright but not rushed)
-     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
-     1.0f, false, true, true, 7, 0.2f},  // hook + long, chorus +7 semitones
+    {VocalStylePreset::BrightKira, 10, 0.15f, false,  // leap=minor 7th, low synco
+     1.0f, 1.0f, 1.0f, 1.0f,                          // chorus=100% (bright but not rushed)
+     0.0f, 0.0f, 0.0f, 0.0f,                          // no 32nd notes
+     1.0f, false, true, true, 7, 0.2f},               // hook + long, chorus +7 semitones
 
     // -------------------------------------------------------------------------
     // CoolSynth (10) - Cool synthetic style: mechanical, flowing phrases
     // -------------------------------------------------------------------------
-    {VocalStylePreset::CoolSynth,
-     7, 0.15f, true,                     // leap=5th, low synco, bar cross OK
-     1.0f, 1.0f, 0.75f, 1.0f,            // chorus=75% (cool and relaxed)
-     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
-     1.0f, false, true, false, 5, 0.2f}, // hook repeat, no long tones
+    {VocalStylePreset::CoolSynth, 7, 0.15f, true,  // leap=5th, low synco, bar cross OK
+     1.0f, 1.0f, 0.75f, 1.0f,                      // chorus=75% (cool and relaxed)
+     0.0f, 0.0f, 0.0f, 0.0f,                       // no 32nd notes
+     1.0f, false, true, false, 5, 0.2f},           // hook repeat, no long tones
 
     // -------------------------------------------------------------------------
     // CuteAffected (11) - Cute affected style: slightly wider leaps
     // -------------------------------------------------------------------------
-    {VocalStylePreset::CuteAffected,
-     8, 0.15f, false,                    // leap=minor 6th, low synco
-     1.0f, 1.0f, 0.9f, 1.0f,             // chorus=90% (cute, not frantic)
-     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
-     1.0f, false, true, true, 5, 0.2f},  // hook repeat + long tones
+    {VocalStylePreset::CuteAffected, 8, 0.15f, false,  // leap=minor 6th, low synco
+     1.0f, 1.0f, 0.9f, 1.0f,                           // chorus=90% (cute, not frantic)
+     0.0f, 0.0f, 0.0f, 0.0f,                           // no 32nd notes
+     1.0f, false, true, true, 5, 0.2f},                // hook repeat + long tones
 
     // -------------------------------------------------------------------------
     // PowerfulShout (12) - Powerful shout style: big leaps, power sustain
     // -------------------------------------------------------------------------
-    {VocalStylePreset::PowerfulShout,
-     12, 0.2f, false,                    // leap=octave, medium synco
-     1.0f, 1.0f, 0.75f, 1.0f,            // chorus=75% (power needs sustain)
-     0.0f, 0.0f, 0.0f, 0.0f,             // no 32nd notes
-     1.0f, false, true, true, 5, 0.2f},  // hook repeat + long tones
+    {VocalStylePreset::PowerfulShout, 12, 0.2f, false,  // leap=octave, medium synco
+     1.0f, 1.0f, 0.75f, 1.0f,                           // chorus=75% (power needs sustain)
+     0.0f, 0.0f, 0.0f, 0.0f,                            // no 32nd notes
+     1.0f, false, true, true, 5, 0.2f},                 // hook repeat + long tones
 };
 
 }  // namespace
@@ -779,41 +831,43 @@ DrumStyle getMoodDrumStyle(Mood mood) {
 // - Idol:       Bright, energetic (BrightUpbeat, IdolPop)
 //
 constexpr BassGenre MOOD_BASS_GENRES[20] = {
-    BassGenre::Standard,     // 0: StraightPop
-    BassGenre::Idol,         // 1: BrightUpbeat
-    BassGenre::Dance,        // 2: EnergeticDance
-    BassGenre::Rock,         // 3: LightRock
-    BassGenre::Standard,     // 4: MidPop
-    BassGenre::Standard,     // 5: EmotionalPop
-    BassGenre::Ballad,       // 6: Sentimental
-    BassGenre::Ballad,       // 7: Chill
-    BassGenre::Ballad,       // 8: Ballad
-    BassGenre::Standard,     // 9: DarkPop
-    BassGenre::Standard,     // 10: Dramatic
-    BassGenre::Standard,     // 11: Nostalgic
-    BassGenre::Jazz,         // 12: ModernPop
-    BassGenre::Electronic,   // 13: ElectroPop
-    BassGenre::Idol,         // 14: IdolPop
-    BassGenre::Rock,         // 15: Anthem
-    BassGenre::Rock,         // 16: Yoasobi
-    BassGenre::Electronic,   // 17: Synthwave
-    BassGenre::Dance,        // 18: FutureBass
-    BassGenre::Jazz,         // 19: CityPop
+    BassGenre::Standard,    // 0: StraightPop
+    BassGenre::Idol,        // 1: BrightUpbeat
+    BassGenre::Dance,       // 2: EnergeticDance
+    BassGenre::Rock,        // 3: LightRock
+    BassGenre::Standard,    // 4: MidPop
+    BassGenre::Standard,    // 5: EmotionalPop
+    BassGenre::Ballad,      // 6: Sentimental
+    BassGenre::Ballad,      // 7: Chill
+    BassGenre::Ballad,      // 8: Ballad
+    BassGenre::Standard,    // 9: DarkPop
+    BassGenre::Standard,    // 10: Dramatic
+    BassGenre::Standard,    // 11: Nostalgic
+    BassGenre::Jazz,        // 12: ModernPop
+    BassGenre::Electronic,  // 13: ElectroPop
+    BassGenre::Idol,        // 14: IdolPop
+    BassGenre::Rock,        // 15: Anthem
+    BassGenre::Rock,        // 16: Yoasobi
+    BassGenre::Electronic,  // 17: Synthwave
+    BassGenre::Dance,       // 18: FutureBass
+    BassGenre::Jazz,        // 19: CityPop
 };
 
 // ============================================================================
 // BASS GENRE PATTERN MAPPING TABLE
 // ============================================================================
 //
-// | Genre      | Intro    | A (Verse)     | B (PreCho)    | Chorus        | Bridge   | Outro    | Mix          |
+// | Genre      | Intro    | A (Verse)     | B (PreCho)    | Chorus        | Bridge   | Outro    |
+// Mix          |
 // |------------|----------|---------------|---------------|---------------|----------|----------|--------------|
-// | Standard   | WN,RF,RF | RF,WN,SY      | SY,RF,DR      | SY,DR,RF      | RF,WN,SY | RF,WN,WN | DR,SY,AG     |
-// | Ballad     | WN,RF,RF | WN,RF,RF      | RF,WN,WN      | RF,SY,SY      | WN,RF,RF | WN,RF,RF | RF,SY,SY     |
-// | Rock       | WN,RF,RF | PD,RF,SY      | PD,DR,SY      | AG,PD,DR      | RF,PD,SY | RF,WN,WN | AG,PD,DR     |
-// | Dance      | WN,RF,RF | RF,SY,OJ      | SY,DR,OJ      | AG,DR,OJ      | RF,SY,SY | RF,WN,WN | AG,OJ,DR     |
-// | Electronic | WN,RF,SP | SP,RF,OJ      | SP,DR,OJ      | AG,SP,OJ      | RF,SP,SY | SP,RF,RF | AG,OJ,DR     |
-// | Jazz       | WN,RF,RF | GR,WK,SY      | GR,WK,SY      | GR,DR,WK      | WK,GR,RF | RF,WN,WN | DR,GR,SY     |
-// | Idol       | WN,RF,RF | RF,SY,OJ      | SY,DR,OJ      | DR,OJ,AG      | RF,SY,SY | RF,WN,WN | AG,OJ,DR     |
+// | Standard   | WN,RF,RF | RF,WN,SY      | SY,RF,DR      | SY,DR,RF      | RF,WN,SY | RF,WN,WN |
+// DR,SY,AG     | | Ballad     | WN,RF,RF | WN,RF,RF      | RF,WN,WN      | RF,SY,SY      | WN,RF,RF
+// | WN,RF,RF | RF,SY,SY     | | Rock       | WN,RF,RF | PD,RF,SY      | PD,DR,SY      | AG,PD,DR |
+// RF,PD,SY | RF,WN,WN | AG,PD,DR     | | Dance      | WN,RF,RF | RF,SY,OJ      | SY,DR,OJ      |
+// AG,DR,OJ      | RF,SY,SY | RF,WN,WN | AG,OJ,DR     | | Electronic | WN,RF,SP | SP,RF,OJ      |
+// SP,DR,OJ      | AG,SP,OJ      | RF,SP,SY | SP,RF,RF | AG,OJ,DR     | | Jazz       | WN,RF,RF |
+// GR,WK,SY      | GR,WK,SY      | GR,DR,WK      | WK,GR,RF | RF,WN,WN | DR,GR,SY     | | Idol |
+// WN,RF,RF | RF,SY,OJ      | SY,DR,OJ      | DR,OJ,AG      | RF,SY,SY | RF,WN,WN | AG,OJ,DR     |
 //
 // Abbreviations:
 //   WN=WholeNote, RF=RootFifth, SY=Syncopated, DR=Driving, WK=Walking
@@ -822,76 +876,76 @@ constexpr BassGenre MOOD_BASS_GENRES[20] = {
 using BP = BassPatternId;
 
 constexpr BassGenrePatterns BASS_GENRE_PATTERNS[static_cast<int>(BassGenre::COUNT)] = {
-  // Standard (default pop)
-  {{
-    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // Intro
-    {BP::RootFifth,   BP::WholeNote,   BP::Syncopated},   // A
-    {BP::Syncopated,  BP::RootFifth,   BP::Driving},      // B
-    {BP::Syncopated,  BP::Driving,     BP::RootFifth},    // Chorus
-    {BP::RootFifth,   BP::WholeNote,   BP::Syncopated},   // Bridge
-    {BP::RootFifth,   BP::WholeNote,   BP::WholeNote},    // Outro
-    {BP::Driving,     BP::Syncopated,  BP::Aggressive},   // Mix
-  }},
-  // Ballad (slow, sustained)
-  {{
-    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // Intro
-    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // A
-    {BP::RootFifth,   BP::WholeNote,   BP::WholeNote},    // B
-    {BP::RootFifth,   BP::Syncopated,  BP::Syncopated},   // Chorus
-    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // Bridge
-    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // Outro
-    {BP::RootFifth,   BP::Syncopated,  BP::Syncopated},   // Mix
-  }},
-  // Rock (aggressive, power-driven)
-  {{
-    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // Intro
-    {BP::PowerDrive,  BP::RootFifth,   BP::Syncopated},   // A
-    {BP::PowerDrive,  BP::Driving,     BP::Syncopated},   // B
-    {BP::Aggressive,  BP::PowerDrive,  BP::Driving},      // Chorus
-    {BP::RootFifth,   BP::PowerDrive,  BP::Syncopated},   // Bridge
-    {BP::RootFifth,   BP::WholeNote,   BP::WholeNote},    // Outro
-    {BP::Aggressive,  BP::PowerDrive,  BP::Driving},      // Mix
-  }},
-  // Dance (high-energy)
-  {{
-    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // Intro
-    {BP::RootFifth,   BP::Syncopated,  BP::OctaveJump},   // A
-    {BP::Syncopated,  BP::Driving,     BP::OctaveJump},   // B
-    {BP::Aggressive,  BP::Driving,     BP::OctaveJump},   // Chorus
-    {BP::RootFifth,   BP::Syncopated,  BP::Syncopated},   // Bridge
-    {BP::RootFifth,   BP::WholeNote,   BP::WholeNote},    // Outro
-    {BP::Aggressive,  BP::OctaveJump,  BP::Driving},      // Mix
-  }},
-  // Electronic (sidechain, modern EDM)
-  {{
-    {BP::WholeNote,   BP::RootFifth,   BP::SidechainPulse}, // Intro
-    {BP::SidechainPulse, BP::RootFifth, BP::OctaveJump},  // A
-    {BP::SidechainPulse, BP::Driving,  BP::OctaveJump},   // B
-    {BP::Aggressive,  BP::SidechainPulse, BP::OctaveJump},// Chorus
-    {BP::RootFifth,   BP::SidechainPulse, BP::Syncopated},// Bridge
-    {BP::SidechainPulse, BP::RootFifth, BP::RootFifth},   // Outro
-    {BP::Aggressive,  BP::OctaveJump,  BP::Driving},      // Mix
-  }},
-  // Jazz (walking bass, groove - CityPop/ModernPop)
-  {{
-    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // Intro
-    {BP::Groove,      BP::Walking,     BP::Syncopated},   // A
-    {BP::Groove,      BP::Walking,     BP::Syncopated},   // B
-    {BP::Groove,      BP::Driving,     BP::Walking},      // Chorus
-    {BP::Walking,     BP::Groove,      BP::RootFifth},    // Bridge
-    {BP::RootFifth,   BP::WholeNote,   BP::WholeNote},    // Outro
-    {BP::Driving,     BP::Groove,      BP::Syncopated},   // Mix
-  }},
-  // Idol (bright, energetic)
-  {{
-    {BP::WholeNote,   BP::RootFifth,   BP::RootFifth},    // Intro
-    {BP::RootFifth,   BP::Syncopated,  BP::OctaveJump},   // A
-    {BP::Syncopated,  BP::Driving,     BP::OctaveJump},   // B
-    {BP::Driving,     BP::OctaveJump,  BP::Aggressive},   // Chorus
-    {BP::RootFifth,   BP::Syncopated,  BP::Syncopated},   // Bridge
-    {BP::RootFifth,   BP::WholeNote,   BP::WholeNote},    // Outro
-    {BP::Aggressive,  BP::OctaveJump,  BP::Driving},      // Mix
-  }},
+    // Standard (default pop)
+    {{
+        {BP::WholeNote, BP::RootFifth, BP::RootFifth},   // Intro
+        {BP::RootFifth, BP::WholeNote, BP::Syncopated},  // A
+        {BP::Syncopated, BP::RootFifth, BP::Driving},    // B
+        {BP::Syncopated, BP::Driving, BP::RootFifth},    // Chorus
+        {BP::RootFifth, BP::WholeNote, BP::Syncopated},  // Bridge
+        {BP::RootFifth, BP::WholeNote, BP::WholeNote},   // Outro
+        {BP::Driving, BP::Syncopated, BP::Aggressive},   // Mix
+    }},
+    // Ballad (slow, sustained)
+    {{
+        {BP::WholeNote, BP::RootFifth, BP::RootFifth},    // Intro
+        {BP::WholeNote, BP::RootFifth, BP::RootFifth},    // A
+        {BP::RootFifth, BP::WholeNote, BP::WholeNote},    // B
+        {BP::RootFifth, BP::Syncopated, BP::Syncopated},  // Chorus
+        {BP::WholeNote, BP::RootFifth, BP::RootFifth},    // Bridge
+        {BP::WholeNote, BP::RootFifth, BP::RootFifth},    // Outro
+        {BP::RootFifth, BP::Syncopated, BP::Syncopated},  // Mix
+    }},
+    // Rock (aggressive, power-driven)
+    {{
+        {BP::WholeNote, BP::RootFifth, BP::RootFifth},    // Intro
+        {BP::PowerDrive, BP::RootFifth, BP::Syncopated},  // A
+        {BP::PowerDrive, BP::Driving, BP::Syncopated},    // B
+        {BP::Aggressive, BP::PowerDrive, BP::Driving},    // Chorus
+        {BP::RootFifth, BP::PowerDrive, BP::Syncopated},  // Bridge
+        {BP::RootFifth, BP::WholeNote, BP::WholeNote},    // Outro
+        {BP::Aggressive, BP::PowerDrive, BP::Driving},    // Mix
+    }},
+    // Dance (high-energy)
+    {{
+        {BP::WholeNote, BP::RootFifth, BP::RootFifth},    // Intro
+        {BP::RootFifth, BP::Syncopated, BP::OctaveJump},  // A
+        {BP::Syncopated, BP::Driving, BP::OctaveJump},    // B
+        {BP::Aggressive, BP::Driving, BP::OctaveJump},    // Chorus
+        {BP::RootFifth, BP::Syncopated, BP::Syncopated},  // Bridge
+        {BP::RootFifth, BP::WholeNote, BP::WholeNote},    // Outro
+        {BP::Aggressive, BP::OctaveJump, BP::Driving},    // Mix
+    }},
+    // Electronic (sidechain, modern EDM)
+    {{
+        {BP::WholeNote, BP::RootFifth, BP::SidechainPulse},    // Intro
+        {BP::SidechainPulse, BP::RootFifth, BP::OctaveJump},   // A
+        {BP::SidechainPulse, BP::Driving, BP::OctaveJump},     // B
+        {BP::Aggressive, BP::SidechainPulse, BP::OctaveJump},  // Chorus
+        {BP::RootFifth, BP::SidechainPulse, BP::Syncopated},   // Bridge
+        {BP::SidechainPulse, BP::RootFifth, BP::RootFifth},    // Outro
+        {BP::Aggressive, BP::OctaveJump, BP::Driving},         // Mix
+    }},
+    // Jazz (walking bass, groove - CityPop/ModernPop)
+    {{
+        {BP::WholeNote, BP::RootFifth, BP::RootFifth},  // Intro
+        {BP::Groove, BP::Walking, BP::Syncopated},      // A
+        {BP::Groove, BP::Walking, BP::Syncopated},      // B
+        {BP::Groove, BP::Driving, BP::Walking},         // Chorus
+        {BP::Walking, BP::Groove, BP::RootFifth},       // Bridge
+        {BP::RootFifth, BP::WholeNote, BP::WholeNote},  // Outro
+        {BP::Driving, BP::Groove, BP::Syncopated},      // Mix
+    }},
+    // Idol (bright, energetic)
+    {{
+        {BP::WholeNote, BP::RootFifth, BP::RootFifth},    // Intro
+        {BP::RootFifth, BP::Syncopated, BP::OctaveJump},  // A
+        {BP::Syncopated, BP::Driving, BP::OctaveJump},    // B
+        {BP::Driving, BP::OctaveJump, BP::Aggressive},    // Chorus
+        {BP::RootFifth, BP::Syncopated, BP::Syncopated},  // Bridge
+        {BP::RootFifth, BP::WholeNote, BP::WholeNote},    // Outro
+        {BP::Aggressive, BP::OctaveJump, BP::Driving},    // Mix
+    }},
 };
 
 BassGenre getMoodBassGenre(Mood mood) {
@@ -1151,8 +1205,8 @@ SongConfigError validateSongConfig(const SongConfig& config) {
   bool calls_may_be_enabled = (config.call_setting != CallSetting::Disabled);
   if (calls_may_be_enabled && config.target_duration_seconds > 0) {
     uint16_t resolved_bpm = (config.bpm != 0) ? config.bpm : preset.tempo_default;
-    uint16_t min_seconds = getMinimumSecondsForCall(
-        config.intro_chant, config.mix_pattern, resolved_bpm);
+    uint16_t min_seconds =
+        getMinimumSecondsForCall(config.intro_chant, config.mix_pattern, resolved_bpm);
 
     if (config.target_duration_seconds < min_seconds) {
       return SongConfigError::DurationTooShortForCall;
@@ -1195,9 +1249,9 @@ uint8_t calcIntroChantBars(IntroChant chant, uint16_t bpm) {
 uint8_t calcMixPatternBars(MixPattern mix, uint16_t bpm) {
   // Required seconds for each pattern
   constexpr float REQUIRED_SECONDS[] = {
-      0.0f,   // None
-      8.0f,   // Standard (~8 sec)
-      16.0f   // Tiger (~16 sec)
+      0.0f,  // None
+      8.0f,  // Standard (~8 sec)
+      16.0f  // Tiger (~16 sec)
   };
 
   uint8_t idx = static_cast<uint8_t>(mix);

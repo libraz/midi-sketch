@@ -3,8 +3,9 @@
  * @brief Tests for melody templates.
  */
 
-#include <gtest/gtest.h>
 #include "core/melody_templates.h"
+
+#include <gtest/gtest.h>
 
 namespace midisketch {
 namespace {
@@ -24,9 +25,7 @@ TEST(MelodyTemplatesTest, TemplateIdValues) {
   EXPECT_EQ(static_cast<uint8_t>(MelodyTemplateId::JumpAccent), 7);
 }
 
-TEST(MelodyTemplatesTest, TemplateCount) {
-  EXPECT_EQ(MELODY_TEMPLATE_COUNT, 7);
-}
+TEST(MelodyTemplatesTest, TemplateCount) { EXPECT_EQ(MELODY_TEMPLATE_COUNT, 7); }
 
 // ============================================================================
 // getTemplate Tests
@@ -60,17 +59,17 @@ TEST(MelodyTemplatesTest, GetTemplateDownResolve) {
 TEST(MelodyTemplatesTest, GetTemplateHookRepeat) {
   const MelodyTemplate& t = getTemplate(MelodyTemplateId::HookRepeat);
   EXPECT_STREQ(t.name, "HookRepeat");
-  EXPECT_EQ(t.tessitura_range, 3);  // Very narrow
-  EXPECT_EQ(t.max_phrase_beats, 4);  // Very short
+  EXPECT_EQ(t.tessitura_range, 3);    // Very narrow
+  EXPECT_EQ(t.max_phrase_beats, 4);   // Very short
   EXPECT_EQ(t.hook_repeat_count, 4);  // Maximum repetition
 }
 
 TEST(MelodyTemplatesTest, GetTemplateSparseAnchor) {
   const MelodyTemplate& t = getTemplate(MelodyTemplateId::SparseAnchor);
   EXPECT_STREQ(t.name, "SparseAnchor");
-  EXPECT_EQ(t.tessitura_range, 7);  // Wide
+  EXPECT_EQ(t.tessitura_range, 7);           // Wide
   EXPECT_FLOAT_EQ(t.long_note_ratio, 0.4f);  // Many long notes
-  EXPECT_EQ(t.max_phrase_beats, 12);  // Longer phrases
+  EXPECT_EQ(t.max_phrase_beats, 12);         // Longer phrases
 }
 
 TEST(MelodyTemplatesTest, GetTemplateCallResponse) {
@@ -83,8 +82,8 @@ TEST(MelodyTemplatesTest, GetTemplateCallResponse) {
 TEST(MelodyTemplatesTest, GetTemplateJumpAccent) {
   const MelodyTemplate& t = getTemplate(MelodyTemplateId::JumpAccent);
   EXPECT_STREQ(t.name, "JumpAccent");
-  EXPECT_EQ(t.tessitura_range, 8);  // Widest
-  EXPECT_EQ(t.max_step, 5);  // Large steps for jumps
+  EXPECT_EQ(t.tessitura_range, 8);              // Widest
+  EXPECT_EQ(t.max_step, 5);                     // Large steps for jumps
   EXPECT_FLOAT_EQ(t.tension_allowance, 0.35f);  // High for drama
 }
 
@@ -105,50 +104,42 @@ TEST(MelodyTemplatesTest, GetTemplateOutOfRangeReturnsFallback) {
 // ============================================================================
 
 TEST(MelodyTemplatesTest, DefaultTemplateForVerseStandard) {
-  MelodyTemplateId id = getDefaultTemplateForStyle(
-      VocalStylePreset::Standard, SectionType::A);
+  MelodyTemplateId id = getDefaultTemplateForStyle(VocalStylePreset::Standard, SectionType::A);
   EXPECT_EQ(id, MelodyTemplateId::PlateauTalk);
 }
 
 TEST(MelodyTemplatesTest, DefaultTemplateForVerseVocaloid) {
-  MelodyTemplateId id = getDefaultTemplateForStyle(
-      VocalStylePreset::Vocaloid, SectionType::A);
+  MelodyTemplateId id = getDefaultTemplateForStyle(VocalStylePreset::Vocaloid, SectionType::A);
   EXPECT_EQ(id, MelodyTemplateId::RunUpTarget);
 }
 
 TEST(MelodyTemplatesTest, DefaultTemplateForPreChorus) {
-  MelodyTemplateId id = getDefaultTemplateForStyle(
-      VocalStylePreset::Standard, SectionType::B);
+  MelodyTemplateId id = getDefaultTemplateForStyle(VocalStylePreset::Standard, SectionType::B);
   EXPECT_EQ(id, MelodyTemplateId::DownResolve);
 }
 
 TEST(MelodyTemplatesTest, DefaultTemplateForChorusIdol) {
-  MelodyTemplateId id = getDefaultTemplateForStyle(
-      VocalStylePreset::Idol, SectionType::Chorus);
+  MelodyTemplateId id = getDefaultTemplateForStyle(VocalStylePreset::Idol, SectionType::Chorus);
   EXPECT_EQ(id, MelodyTemplateId::HookRepeat);
 }
 
 TEST(MelodyTemplatesTest, DefaultTemplateForChorusBallad) {
-  MelodyTemplateId id = getDefaultTemplateForStyle(
-      VocalStylePreset::Ballad, SectionType::Chorus);
+  MelodyTemplateId id = getDefaultTemplateForStyle(VocalStylePreset::Ballad, SectionType::Chorus);
   EXPECT_EQ(id, MelodyTemplateId::SparseAnchor);
 }
 
 TEST(MelodyTemplatesTest, DefaultTemplateForBridge) {
-  MelodyTemplateId id = getDefaultTemplateForStyle(
-      VocalStylePreset::Standard, SectionType::Bridge);
+  MelodyTemplateId id = getDefaultTemplateForStyle(VocalStylePreset::Standard, SectionType::Bridge);
   EXPECT_EQ(id, MelodyTemplateId::JumpAccent);
 }
 
 TEST(MelodyTemplatesTest, DefaultTemplateForChant) {
-  MelodyTemplateId id = getDefaultTemplateForStyle(
-      VocalStylePreset::Standard, SectionType::Chant);
+  MelodyTemplateId id = getDefaultTemplateForStyle(VocalStylePreset::Standard, SectionType::Chant);
   EXPECT_EQ(id, MelodyTemplateId::CallResponse);
 }
 
 TEST(MelodyTemplatesTest, DefaultTemplateForIntro) {
-  MelodyTemplateId id = getDefaultTemplateForStyle(
-      VocalStylePreset::Standard, SectionType::Intro);
+  MelodyTemplateId id = getDefaultTemplateForStyle(VocalStylePreset::Standard, SectionType::Intro);
   EXPECT_EQ(id, MelodyTemplateId::SparseAnchor);
 }
 

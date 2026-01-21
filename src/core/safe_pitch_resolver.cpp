@@ -4,19 +4,20 @@
  */
 
 #include "core/safe_pitch_resolver.h"
+
+#include <cmath>
+
 #include "core/chord_progression_tracker.h"
 #include "core/track_collision_detector.h"
-#include <cmath>
 
 namespace midisketch {
 
-uint8_t SafePitchResolver::getSafePitch(
-    uint8_t desired, Tick start, Tick duration, TrackRole track, uint8_t low,
-    uint8_t high, const ChordProgressionTracker& chord_tracker,
-    const TrackCollisionDetector& collision_detector) const {
+uint8_t SafePitchResolver::getSafePitch(uint8_t desired, Tick start, Tick duration, TrackRole track,
+                                        uint8_t low, uint8_t high,
+                                        const ChordProgressionTracker& chord_tracker,
+                                        const TrackCollisionDetector& collision_detector) const {
   // If desired pitch is already safe, use it
-  if (collision_detector.isPitchSafe(desired, start, duration, track,
-                                      &chord_tracker)) {
+  if (collision_detector.isPitchSafe(desired, start, duration, track, &chord_tracker)) {
     return desired;
   }
 
@@ -37,12 +38,9 @@ uint8_t SafePitchResolver::getSafePitch(
       int note_pc = note.pitch % 12;
       for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
         int candidate = (octave + oct_offset) * 12 + note_pc;
-        if (candidate < static_cast<int>(low) ||
-            candidate > static_cast<int>(high))
-          continue;
-        if (!collision_detector.isPitchSafe(static_cast<uint8_t>(candidate),
-                                             start, duration, track,
-                                             &chord_tracker))
+        if (candidate < static_cast<int>(low) || candidate > static_cast<int>(high)) continue;
+        if (!collision_detector.isPitchSafe(static_cast<uint8_t>(candidate), start, duration, track,
+                                            &chord_tracker))
           continue;
 
         int dist = std::abs(candidate - static_cast<int>(desired));
@@ -63,12 +61,9 @@ uint8_t SafePitchResolver::getSafePitch(
   for (int ct_pc : chord_tones) {
     for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
       int candidate = (octave + oct_offset) * 12 + ct_pc;
-      if (candidate < static_cast<int>(low) ||
-          candidate > static_cast<int>(high))
-        continue;
-      if (!collision_detector.isPitchSafe(static_cast<uint8_t>(candidate),
-                                           start, duration, track,
-                                           &chord_tracker))
+      if (candidate < static_cast<int>(low) || candidate > static_cast<int>(high)) continue;
+      if (!collision_detector.isPitchSafe(static_cast<uint8_t>(candidate), start, duration, track,
+                                          &chord_tracker))
         continue;
 
       int dist = std::abs(candidate - static_cast<int>(desired));
@@ -88,10 +83,9 @@ uint8_t SafePitchResolver::getSafePitch(
   int adjustments[] = {3, -3, 4, -4, 5, -5, 7, -7, 12, -12, 2, -2, 1, -1};
   for (int adj : adjustments) {
     int candidate = static_cast<int>(desired) + adj;
-    if (candidate < static_cast<int>(low) || candidate > static_cast<int>(high))
-      continue;
-    if (collision_detector.isPitchSafe(static_cast<uint8_t>(candidate), start,
-                                        duration, track, &chord_tracker)) {
+    if (candidate < static_cast<int>(low) || candidate > static_cast<int>(high)) continue;
+    if (collision_detector.isPitchSafe(static_cast<uint8_t>(candidate), start, duration, track,
+                                       &chord_tracker)) {
       return static_cast<uint8_t>(candidate);
     }
   }
@@ -100,11 +94,9 @@ uint8_t SafePitchResolver::getSafePitch(
   for (int dist = 1; dist <= 24; ++dist) {
     for (int sign = -1; sign <= 1; sign += 2) {
       int candidate = static_cast<int>(desired) + sign * dist;
-      if (candidate < static_cast<int>(low) ||
-          candidate > static_cast<int>(high))
-        continue;
-      if (collision_detector.isPitchSafe(static_cast<uint8_t>(candidate), start,
-                                          duration, track, &chord_tracker)) {
+      if (candidate < static_cast<int>(low) || candidate > static_cast<int>(high)) continue;
+      if (collision_detector.isPitchSafe(static_cast<uint8_t>(candidate), start, duration, track,
+                                         &chord_tracker)) {
         return static_cast<uint8_t>(candidate);
       }
     }

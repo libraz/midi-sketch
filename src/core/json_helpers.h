@@ -37,12 +37,24 @@ inline std::string escape(const std::string& s) {
   result.reserve(s.size());
   for (char c : s) {
     switch (c) {
-      case '"': result += "\\\""; break;
-      case '\\': result += "\\\\"; break;
-      case '\n': result += "\\n"; break;
-      case '\r': result += "\\r"; break;
-      case '\t': result += "\\t"; break;
-      default: result += c; break;
+      case '"':
+        result += "\\\"";
+        break;
+      case '\\':
+        result += "\\\\";
+        break;
+      case '\n':
+        result += "\\n";
+        break;
+      case '\r':
+        result += "\\r";
+        break;
+      case '\t':
+        result += "\\t";
+        break;
+      default:
+        result += c;
+        break;
     }
   }
   return result;
@@ -440,9 +452,7 @@ class Parser {
    * @param key The key to check.
    * @return True if key exists.
    */
-  bool has(const std::string& key) const {
-    return values_.find(key) != values_.end();
-  }
+  bool has(const std::string& key) const { return values_.find(key) != values_.end(); }
 
   /**
    * @brief Get an integer value.
@@ -494,8 +504,7 @@ class Parser {
    * @param default_val Default value if key not found.
    * @return The string value.
    */
-  std::string getString(const std::string& key,
-                        const std::string& default_val = "") const {
+  std::string getString(const std::string& key, const std::string& default_val = "") const {
     auto it = values_.find(key);
     if (it == values_.end()) return default_val;
     return it->second;
@@ -511,7 +520,10 @@ class Parser {
     while (pos < json_.size()) {
       skipWhitespace(pos);
       if (json_[pos] == '}') break;
-      if (json_[pos] == ',') { ++pos; continue; }
+      if (json_[pos] == ',') {
+        ++pos;
+        continue;
+      }
 
       // Parse key
       std::string key = parseString(pos);
@@ -530,8 +542,7 @@ class Parser {
 
   void skipWhitespace(size_t& pos) const {
     while (pos < json_.size() &&
-           (json_[pos] == ' ' || json_[pos] == '\t' ||
-            json_[pos] == '\n' || json_[pos] == '\r')) {
+           (json_[pos] == ' ' || json_[pos] == '\t' || json_[pos] == '\n' || json_[pos] == '\r')) {
       ++pos;
     }
   }
@@ -544,12 +555,24 @@ class Parser {
       if (json_[pos] == '\\' && pos + 1 < json_.size()) {
         ++pos;
         switch (json_[pos]) {
-          case 'n': result += '\n'; break;
-          case 'r': result += '\r'; break;
-          case 't': result += '\t'; break;
-          case '"': result += '"'; break;
-          case '\\': result += '\\'; break;
-          default: result += json_[pos]; break;
+          case 'n':
+            result += '\n';
+            break;
+          case 'r':
+            result += '\r';
+            break;
+          case 't':
+            result += '\t';
+            break;
+          case '"':
+            result += '"';
+            break;
+          case '\\':
+            result += '\\';
+            break;
+          default:
+            result += json_[pos];
+            break;
         }
       } else {
         result += json_[pos];
@@ -571,8 +594,8 @@ class Parser {
 
     // Number, boolean, or null
     std::string value;
-    while (pos < json_.size() && json_[pos] != ',' && json_[pos] != '}' &&
-           json_[pos] != ' ' && json_[pos] != '\t' && json_[pos] != '\n') {
+    while (pos < json_.size() && json_[pos] != ',' && json_[pos] != '}' && json_[pos] != ' ' &&
+           json_[pos] != '\t' && json_[pos] != '\n') {
       value += json_[pos];
       ++pos;
     }

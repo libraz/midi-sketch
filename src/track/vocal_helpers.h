@@ -9,12 +9,13 @@
 #ifndef MIDISKETCH_TRACK_VOCAL_HELPERS_H
 #define MIDISKETCH_TRACK_VOCAL_HELPERS_H
 
+#include <cstdint>
+#include <vector>
+
 #include "core/i_harmony_context.h"
 #include "core/preset_types.h"
 #include "core/section_types.h"
 #include "core/types.h"
-#include <cstdint>
-#include <vector>
 
 namespace midisketch {
 
@@ -48,10 +49,9 @@ std::vector<NoteEvent> shiftTiming(const std::vector<NoteEvent>& notes, Tick off
  * @param key_offset Key offset for scale snapping (default 0 = C major)
  * @return Notes with adjusted pitch range
  */
-std::vector<NoteEvent> adjustPitchRange(const std::vector<NoteEvent>& notes,
-                                         uint8_t orig_low, uint8_t orig_high,
-                                         uint8_t new_low, uint8_t new_high,
-                                         int key_offset = 0);
+std::vector<NoteEvent> adjustPitchRange(const std::vector<NoteEvent>& notes, uint8_t orig_low,
+                                        uint8_t orig_high, uint8_t new_low, uint8_t new_high,
+                                        int key_offset = 0);
 
 /**
  * @brief Convert notes to relative timing (subtract section start).
@@ -155,11 +155,9 @@ void applyGrooveFeel(std::vector<NoteEvent>& notes, VocalGrooveFeel groove);
  * @param vocal_low Vocal range low limit
  * @param vocal_high Vocal range high limit
  */
-void applyCollisionAvoidanceWithIntervalConstraint(
-    std::vector<NoteEvent>& notes,
-    const IHarmonyContext& harmony,
-    uint8_t vocal_low,
-    uint8_t vocal_high);
+void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes,
+                                                   const IHarmonyContext& harmony,
+                                                   uint8_t vocal_low, uint8_t vocal_high);
 
 /**
  * @brief Calculate singing effort score for a phrase.
@@ -201,9 +199,8 @@ void mergeSamePitchNotes(std::vector<NoteEvent>& notes, Tick max_gap = 120);
  * @param min_duration Minimum duration for isolated notes (default: 1 beat = 480 ticks)
  * @param isolation_threshold Gap size that defines "isolated" (default: 0.5 beat = 240 ticks)
  */
-void resolveIsolatedShortNotes(std::vector<NoteEvent>& notes,
-                                Tick min_duration = 480,
-                                Tick isolation_threshold = 240);
+void resolveIsolatedShortNotes(std::vector<NoteEvent>& notes, Tick min_duration = 480,
+                               Tick isolation_threshold = 240);
 
 }  // namespace midisketch
 

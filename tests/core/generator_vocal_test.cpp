@@ -4,6 +4,7 @@
  */
 
 #include <gtest/gtest.h>
+
 #include "core/generator.h"
 #include "core/preset_data.h"
 #include "core/timing_constants.h"
@@ -230,11 +231,9 @@ TEST(VocalRangeTest, AllNotesWithinSpecifiedRange) {
 
   for (const auto& note : notes) {
     EXPECT_GE(note.note, params.vocal_low)
-        << "Note pitch " << (int)note.note << " below vocal_low at tick "
-        << note.start_tick;
+        << "Note pitch " << (int)note.note << " below vocal_low at tick " << note.start_tick;
     EXPECT_LE(note.note, params.vocal_high)
-        << "Note pitch " << (int)note.note << " above vocal_high at tick "
-        << note.start_tick;
+        << "Note pitch " << (int)note.note << " above vocal_high at tick " << note.start_tick;
   }
 }
 
@@ -383,13 +382,11 @@ TEST(VocalMelodyTest, VocalIntervalConstraint) {
 
     if (crosses_boundary) continue;  // Skip section boundary checks
 
-    int interval = std::abs(static_cast<int>(notes[i].note) -
-                            static_cast<int>(notes[i - 1].note));
-    EXPECT_LE(interval, 9)
-        << "Interval of " << interval << " semitones between notes at tick "
-        << notes[i - 1].start_tick << " (pitch " << (int)notes[i - 1].note
-        << ") and tick " << notes[i].start_tick << " (pitch "
-        << (int)notes[i].note << ") exceeds 9 semitones (major 6th)";
+    int interval = std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
+    EXPECT_LE(interval, 9) << "Interval of " << interval << " semitones between notes at tick "
+                           << notes[i - 1].start_tick << " (pitch " << (int)notes[i - 1].note
+                           << ") and tick " << notes[i].start_tick << " (pitch "
+                           << (int)notes[i].note << ") exceeds 9 semitones (major 6th)";
   }
 }
 
@@ -454,9 +451,9 @@ TEST(VocalMelodyTest, ChorusHookRepetition) {
 
   // At least 50% of hook notes should match (accounting for clash avoidance)
   float match_ratio = static_cast<float>(matching_notes) / compare_count;
-  EXPECT_GE(match_ratio, 0.5f)
-      << "Chorus hook pattern matching: " << (match_ratio * 100.0f) << "% ("
-      << matching_notes << "/" << compare_count << " notes matched)";
+  EXPECT_GE(match_ratio, 0.5f) << "Chorus hook pattern matching: " << (match_ratio * 100.0f)
+                               << "% (" << matching_notes << "/" << compare_count
+                               << " notes matched)";
 }
 
 TEST(VocalMelodyTest, VocalNoteDurationMinimum) {
@@ -488,9 +485,8 @@ TEST(VocalMelodyTest, VocalNoteDurationMinimum) {
   constexpr double MIN_AVERAGE_DURATION = 300.0;  // 0.625 beats in ticks
 
   EXPECT_GE(average_duration, MIN_AVERAGE_DURATION)
-      << "Average vocal note duration " << average_duration
-      << " ticks is below minimum " << MIN_AVERAGE_DURATION
-      << " ticks (0.625 beats). Total notes: " << notes.size()
+      << "Average vocal note duration " << average_duration << " ticks is below minimum "
+      << MIN_AVERAGE_DURATION << " ticks (0.625 beats). Total notes: " << notes.size()
       << ", Total duration: " << total_duration << " ticks";
 }
 
@@ -511,14 +507,11 @@ TEST(GeneratorTest, SkipVocalGeneratesEmptyVocalTrack) {
   gen.generate(params);
 
   // Vocal track should be empty
-  EXPECT_TRUE(gen.getSong().vocal().empty())
-      << "Vocal track should be empty when skip_vocal=true";
+  EXPECT_TRUE(gen.getSong().vocal().empty()) << "Vocal track should be empty when skip_vocal=true";
 
   // Other tracks should still be generated
-  EXPECT_FALSE(gen.getSong().chord().empty())
-      << "Chord track should have notes";
-  EXPECT_FALSE(gen.getSong().bass().empty())
-      << "Bass track should have notes";
+  EXPECT_FALSE(gen.getSong().chord().empty()) << "Chord track should have notes";
+  EXPECT_FALSE(gen.getSong().bass().empty()) << "Bass track should have notes";
 }
 
 TEST(GeneratorTest, SkipVocalThenRegenerateVocal) {
@@ -532,8 +525,7 @@ TEST(GeneratorTest, SkipVocalThenRegenerateVocal) {
   params.skip_vocal = true;
 
   gen.generate(params);
-  ASSERT_TRUE(gen.getSong().vocal().empty())
-      << "Vocal track should be empty initially";
+  ASSERT_TRUE(gen.getSong().vocal().empty()) << "Vocal track should be empty initially";
 
   // Regenerate melody
   gen.regenerateVocal(54321);
@@ -550,8 +542,7 @@ TEST(GeneratorTest, SkipVocalThenRegenerateVocal) {
 TEST(GeneratorTest, SkipVocalDefaultIsFalse) {
   // Test that skip_vocal defaults to false for backward compatibility.
   GeneratorParams params{};
-  EXPECT_FALSE(params.skip_vocal)
-      << "skip_vocal should default to false";
+  EXPECT_FALSE(params.skip_vocal) << "skip_vocal should default to false";
 }
 
 // ============================================================================
@@ -561,10 +552,8 @@ TEST(GeneratorTest, SkipVocalDefaultIsFalse) {
 TEST(VocalDensityTest, StyleMelodyParamsDefaults) {
   // Test default values for new density parameters
   StyleMelodyParams params{};
-  EXPECT_FLOAT_EQ(params.note_density, 0.7f)
-      << "Default note_density should be 0.7";
-  EXPECT_EQ(params.min_note_division, 8)
-      << "Default min_note_division should be 8 (eighth notes)";
+  EXPECT_FLOAT_EQ(params.note_density, 0.7f) << "Default note_density should be 0.7";
+  EXPECT_EQ(params.min_note_division, 8) << "Default min_note_division should be 8 (eighth notes)";
   EXPECT_FLOAT_EQ(params.sixteenth_note_ratio, 0.0f)
       << "Default sixteenth_note_ratio should be 0.0";
 }
@@ -572,8 +561,7 @@ TEST(VocalDensityTest, StyleMelodyParamsDefaults) {
 TEST(VocalDensityTest, SongConfigDefaults) {
   // Test default values for SongConfig vocal parameters
   SongConfig config{};
-  EXPECT_EQ(config.vocal_style, VocalStylePreset::Auto)
-      << "vocal_style should default to Auto";
+  EXPECT_EQ(config.vocal_style, VocalStylePreset::Auto) << "vocal_style should default to Auto";
   EXPECT_EQ(config.melody_template, MelodyTemplateId::Auto)
       << "melody_template should default to Auto";
 }
@@ -766,19 +754,14 @@ TEST(GeneratorVocalTest, MelodyTemplateExplicitOverridesAuto) {
     }
   }
 
-  EXPECT_TRUE(different)
-      << "Different templates should produce different melodies";
+  EXPECT_TRUE(different) << "Different templates should produce different melodies";
 }
 
 TEST(GeneratorVocalTest, AllMelodyTemplatesGenerateNotes) {
   // Each explicit template should generate valid vocal notes
   const MelodyTemplateId templates[] = {
-      MelodyTemplateId::PlateauTalk,
-      MelodyTemplateId::RunUpTarget,
-      MelodyTemplateId::DownResolve,
-      MelodyTemplateId::HookRepeat,
-      MelodyTemplateId::SparseAnchor,
-      MelodyTemplateId::CallResponse,
+      MelodyTemplateId::PlateauTalk, MelodyTemplateId::RunUpTarget,  MelodyTemplateId::DownResolve,
+      MelodyTemplateId::HookRepeat,  MelodyTemplateId::SparseAnchor, MelodyTemplateId::CallResponse,
       MelodyTemplateId::JumpAccent,
   };
 
@@ -791,8 +774,7 @@ TEST(GeneratorVocalTest, AllMelodyTemplatesGenerateNotes) {
     gen.generateFromConfig(config);
     size_t note_count = gen.getSong().vocal().notes().size();
 
-    EXPECT_GT(note_count, 0u)
-        << "Template " << static_cast<int>(tmpl) << " should generate notes";
+    EXPECT_GT(note_count, 0u) << "Template " << static_cast<int>(tmpl) << " should generate notes";
   }
 }
 
@@ -911,18 +893,13 @@ TEST(GeneratorVocalTest, VocalGrooveSwingAffectsTiming) {
     }
   }
 
-  EXPECT_TRUE(has_timing_diff)
-      << "Swing groove should produce different note timings";
+  EXPECT_TRUE(has_timing_diff) << "Swing groove should produce different note timings";
 }
 
 TEST(GeneratorVocalTest, AllVocalGroovesGenerateNotes) {
   const VocalGrooveFeel grooves[] = {
-      VocalGrooveFeel::Straight,
-      VocalGrooveFeel::OffBeat,
-      VocalGrooveFeel::Swing,
-      VocalGrooveFeel::Syncopated,
-      VocalGrooveFeel::Driving16th,
-      VocalGrooveFeel::Bouncy8th,
+      VocalGrooveFeel::Straight,   VocalGrooveFeel::OffBeat,     VocalGrooveFeel::Swing,
+      VocalGrooveFeel::Syncopated, VocalGrooveFeel::Driving16th, VocalGrooveFeel::Bouncy8th,
   };
 
   for (auto groove : grooves) {
@@ -983,8 +960,8 @@ TEST(UltraVocaloidTest, ChorusGeneratesShortNotes) {
   if (total_chorus_notes > 0) {
     float short_note_ratio = static_cast<float>(short_notes_in_chorus) / total_chorus_notes;
     EXPECT_GE(short_note_ratio, 0.14f)
-        << "UltraVocaloid chorus should have many short notes: "
-        << (short_note_ratio * 100) << "% short notes";
+        << "UltraVocaloid chorus should have many short notes: " << (short_note_ratio * 100)
+        << "% short notes";
   }
 }
 
@@ -1006,9 +983,9 @@ TEST(UltraVocaloidTest, ReducedConsecutiveSameNotes) {
 
   for (size_t i = 1; i < notes.size(); ++i) {
     // Only count consecutive notes (within reasonable time gap)
-    if (notes[i].start_tick - notes[i-1].start_tick < TICKS_PER_BEAT * 2) {
+    if (notes[i].start_tick - notes[i - 1].start_tick < TICKS_PER_BEAT * 2) {
       total_pairs++;
-      if (notes[i].note == notes[i-1].note) {
+      if (notes[i].note == notes[i - 1].note) {
         consecutive_same++;
       }
     }
@@ -1019,9 +996,8 @@ TEST(UltraVocaloidTest, ReducedConsecutiveSameNotes) {
     // With consecutive_same_note_prob = 0.1, expect reduced same-note ratio
     // Note: Hooks in chorus are intentionally repetitive for memorability
     // so we use a higher threshold (50%) to account for hook patterns
-    EXPECT_LT(same_ratio, 0.50f)
-        << "UltraVocaloid should have reduced consecutive same notes: "
-        << (same_ratio * 100) << "% same pairs";
+    EXPECT_LT(same_ratio, 0.50f) << "UltraVocaloid should have reduced consecutive same notes: "
+                                 << (same_ratio * 100) << "% same pairs";
   }
 }
 
@@ -1131,10 +1107,10 @@ TEST(CustomVocalTest, SetVocalNotesCreatesVocalTrack) {
 
   // Create custom vocal notes
   std::vector<NoteEvent> custom_notes;
-  custom_notes.push_back(NoteEvent(0, 480, 60, 100));       // C4, beat 1
-  custom_notes.push_back(NoteEvent(480, 480, 62, 100));     // D4, beat 2
-  custom_notes.push_back(NoteEvent(960, 480, 64, 100));     // E4, beat 3
-  custom_notes.push_back(NoteEvent(1440, 480, 65, 100));    // F4, beat 4
+  custom_notes.push_back(NoteEvent(0, 480, 60, 100));     // C4, beat 1
+  custom_notes.push_back(NoteEvent(480, 480, 62, 100));   // D4, beat 2
+  custom_notes.push_back(NoteEvent(960, 480, 64, 100));   // E4, beat 3
+  custom_notes.push_back(NoteEvent(1440, 480, 65, 100));  // F4, beat 4
 
   gen.setVocalNotes(params, custom_notes);
 
@@ -1161,11 +1137,11 @@ TEST(CustomVocalTest, SetVocalNotesThenGenerateAccompaniment) {
 
   // Create a simple C major melody
   std::vector<NoteEvent> custom_notes;
-  custom_notes.push_back(NoteEvent(0, 480, 60, 100));       // C4
-  custom_notes.push_back(NoteEvent(480, 480, 64, 100));     // E4
-  custom_notes.push_back(NoteEvent(960, 480, 67, 100));     // G4
-  custom_notes.push_back(NoteEvent(1440, 480, 72, 100));    // C5
-  custom_notes.push_back(NoteEvent(1920, 960, 60, 100));    // C4 (whole note)
+  custom_notes.push_back(NoteEvent(0, 480, 60, 100));     // C4
+  custom_notes.push_back(NoteEvent(480, 480, 64, 100));   // E4
+  custom_notes.push_back(NoteEvent(960, 480, 67, 100));   // G4
+  custom_notes.push_back(NoteEvent(1440, 480, 72, 100));  // C5
+  custom_notes.push_back(NoteEvent(1920, 960, 60, 100));  // C4 (whole note)
 
   gen.setVocalNotes(params, custom_notes);
 
@@ -1176,12 +1152,9 @@ TEST(CustomVocalTest, SetVocalNotesThenGenerateAccompaniment) {
   gen.generateAccompanimentForVocal();
 
   // Verify accompaniment tracks are generated
-  EXPECT_FALSE(gen.getSong().bass().empty())
-      << "Bass track should be generated";
-  EXPECT_FALSE(gen.getSong().chord().empty())
-      << "Chord track should be generated";
-  EXPECT_FALSE(gen.getSong().drums().empty())
-      << "Drums track should be generated";
+  EXPECT_FALSE(gen.getSong().bass().empty()) << "Bass track should be generated";
+  EXPECT_FALSE(gen.getSong().chord().empty()) << "Chord track should be generated";
+  EXPECT_FALSE(gen.getSong().drums().empty()) << "Drums track should be generated";
 
   // Verify custom vocal notes are preserved
   const auto& vocal_notes = gen.getSong().vocal().notes();
@@ -1239,8 +1212,8 @@ TEST(CustomVocalTest, SetVocalNotesRegistersWithHarmonyContext) {
 
   std::vector<NoteEvent> custom_notes;
   // Create notes that span multiple ticks
-  custom_notes.push_back(NoteEvent(0, 960, 60, 100));      // C4, bar 1 first half
-  custom_notes.push_back(NoteEvent(960, 960, 64, 100));    // E4, bar 1 second half
+  custom_notes.push_back(NoteEvent(0, 960, 60, 100));    // C4, bar 1 first half
+  custom_notes.push_back(NoteEvent(960, 960, 64, 100));  // E4, bar 1 second half
 
   gen.setVocalNotes(params, custom_notes);
   gen.generateAccompanimentForVocal();
@@ -1256,11 +1229,10 @@ TEST(CustomVocalTest, SetVocalNotesRegistersWithHarmonyContext) {
     for (const auto& vocal_note : custom_notes) {
       if (bass_note.start_tick >= vocal_note.start_tick &&
           bass_note.start_tick < vocal_note.start_tick + vocal_note.duration) {
-        int interval = std::abs(static_cast<int>(bass_note.note) -
-                                static_cast<int>(vocal_note.note)) % 12;
+        int interval =
+            std::abs(static_cast<int>(bass_note.note) - static_cast<int>(vocal_note.note)) % 12;
         // Minor 2nd (1 semitone) or major 7th (11 semitones) are severe clashes
-        EXPECT_NE(interval, 1)
-            << "Bass should avoid minor 2nd clash with custom vocal";
+        EXPECT_NE(interval, 1) << "Bass should avoid minor 2nd clash with custom vocal";
       }
     }
   }
@@ -1330,7 +1302,7 @@ TEST(EmbellishmentGridTest, SixteenthNotesProbabilistic) {
     Generator gen;
     GeneratorParams params{};
     params.structure = StructurePattern::FullPop;  // Longer form = more embellishment chances
-    params.mood = Mood::DarkPop;  // This mood has higher embellishment ratios
+    params.mood = Mood::DarkPop;                   // This mood has higher embellishment ratios
     params.seed = seed;
 
     gen.generate(params);
@@ -1375,8 +1347,7 @@ TEST(EmbellishmentGridTest, DeterministicWithSameSeed) {
   gen2.generate(params);
   const auto& notes2 = gen2.getSong().vocal().notes();
 
-  ASSERT_EQ(notes1.size(), notes2.size())
-      << "Same seed should produce same number of notes";
+  ASSERT_EQ(notes1.size(), notes2.size()) << "Same seed should produce same number of notes";
 
   for (size_t i = 0; i < notes1.size(); ++i) {
     EXPECT_EQ(notes1[i].duration, notes2[i].duration)

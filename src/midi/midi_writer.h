@@ -6,12 +6,13 @@
 #ifndef MIDISKETCH_MIDI_WRITER_H
 #define MIDISKETCH_MIDI_WRITER_H
 
-#include "core/midi_track.h"
-#include "core/song.h"
-#include "core/types.h"
 #include <memory>
 #include <string>
 #include <vector>
+
+#include "core/midi_track.h"
+#include "core/song.h"
+#include "core/types.h"
 
 namespace midisketch {
 
@@ -43,8 +44,7 @@ class MidiWriter {
    * @param harmony HarmonyContext for chord root extraction
    * @param key Output key for transposition
    */
-  void buildVocalPreview(const Song& song, const IHarmonyContext& harmony,
-                         Key key);
+  void buildVocalPreview(const Song& song, const IHarmonyContext& harmony, Key key);
 
   /** @brief Get MIDI data as byte vector. @return Binary MIDI data */
   std::vector<uint8_t> toBytes() const;
@@ -63,11 +63,10 @@ class MidiWriter {
   void buildSMF2(const Song& song, Key key, const std::string& metadata);
 #endif
   void writeHeader(uint16_t num_tracks, uint16_t division);
-  void writeTrack(const MidiTrack& track, const std::string& name,
-                  uint8_t channel, uint8_t program, uint16_t bpm, Key key,
-                  bool is_first_track, Tick mod_tick = 0, int8_t mod_amount = 0);
-  void writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
-                        const std::string& metadata = "");
+  void writeTrack(const MidiTrack& track, const std::string& name, uint8_t channel, uint8_t program,
+                  uint16_t bpm, Key key, bool is_first_track, Tick mod_tick = 0,
+                  int8_t mod_amount = 0);
+  void writeMarkerTrack(const MidiTrack& track, uint16_t bpm, const std::string& metadata = "");
   static void writeVariableLength(std::vector<uint8_t>& buf, uint32_t value);
   static uint8_t transposePitch(uint8_t pitch, Key key);
 };

@@ -8,12 +8,13 @@
 #ifndef MIDISKETCH_TRACK_BASS_H
 #define MIDISKETCH_TRACK_BASS_H
 
+#include <random>
+#include <vector>
+
 #include "core/midi_track.h"
 #include "core/song.h"
 #include "core/types.h"
 #include "track/vocal_analysis.h"
-#include <random>
-#include <vector>
 
 namespace midisketch {
 
@@ -29,19 +30,16 @@ struct BassAnalysis {
   std::vector<Tick> accent_ticks;  ///< Tick positions of accented notes (vel >= 90)
 
   /// Analyze bar for root positions, 5th usage, and accents.
-  static BassAnalysis analyzeBar(const MidiTrack& track, Tick bar_start,
-                                  uint8_t expected_root);
+  static BassAnalysis analyzeBar(const MidiTrack& track, Tick bar_start, uint8_t expected_root);
 };
 
 /// Generate bass track with pattern selection based on section type.
-void generateBassTrack(MidiTrack& track, const Song& song,
-                       const GeneratorParams& params, std::mt19937& rng,
-                       const IHarmonyContext& harmony);
+void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,
+                       std::mt19937& rng, const IHarmonyContext& harmony);
 
 /// Generate bass adapted to vocal (motion type, density reciprocity, doubling avoidance).
-void generateBassTrackWithVocal(MidiTrack& track, const Song& song,
-                                const GeneratorParams& params, std::mt19937& rng,
-                                const VocalAnalysis& vocal_analysis,
+void generateBassTrackWithVocal(MidiTrack& track, const Song& song, const GeneratorParams& params,
+                                std::mt19937& rng, const VocalAnalysis& vocal_analysis,
                                 const IHarmonyContext& harmony);
 
 }  // namespace midisketch

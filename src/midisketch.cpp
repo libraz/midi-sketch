@@ -4,8 +4,10 @@
  */
 
 #include "midisketch.h"
+
 #include <algorithm>
 #include <sstream>
+
 #include "core/config_converter.h"
 #include "core/json_helpers.h"
 
@@ -70,70 +72,64 @@ MidiSketch::~MidiSketch() {}
 
 void MidiSketch::generate(const GeneratorParams& params) {
   generator_.generate(params);
-  midi_writer_.build(generator_.getSong(), params.key,
-                     generateMetadata(generator_.getParams()), midi_format_);
+  midi_writer_.build(generator_.getSong(), params.key, generateMetadata(generator_.getParams()),
+                     midi_format_);
 }
 
 void MidiSketch::generateFromConfig(const SongConfig& config) {
   generator_.generateFromConfig(config);
-  midi_writer_.build(generator_.getSong(), config.key,
-                     generateMetadata(generator_.getParams()), midi_format_);
+  midi_writer_.build(generator_.getSong(), config.key, generateMetadata(generator_.getParams()),
+                     midi_format_);
 }
 
 void MidiSketch::generateVocal(const SongConfig& config) {
   GeneratorParams params = ConfigConverter::convert(config);
   generator_.generateVocal(params);
-  midi_writer_.build(generator_.getSong(), config.key,
-                     generateMetadata(generator_.getParams()), midi_format_);
+  midi_writer_.build(generator_.getSong(), config.key, generateMetadata(generator_.getParams()),
+                     midi_format_);
 }
 
 void MidiSketch::regenerateVocal(uint32_t new_seed) {
   generator_.regenerateVocal(new_seed);
   const auto& params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), params.key,
-                     generateMetadata(params), midi_format_);
+  midi_writer_.build(generator_.getSong(), params.key, generateMetadata(params), midi_format_);
 }
 
 void MidiSketch::regenerateVocal(const VocalConfig& config) {
   generator_.regenerateVocal(config);
   const auto& params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), params.key,
-                     generateMetadata(params), midi_format_);
+  midi_writer_.build(generator_.getSong(), params.key, generateMetadata(params), midi_format_);
 }
 
 void MidiSketch::generateAccompanimentForVocal() {
   generator_.generateAccompanimentForVocal();
   const auto& params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), params.key,
-                     generateMetadata(params), midi_format_);
+  midi_writer_.build(generator_.getSong(), params.key, generateMetadata(params), midi_format_);
 }
 
 void MidiSketch::regenerateAccompaniment(uint32_t new_seed) {
   generator_.regenerateAccompaniment(new_seed);
   const auto& params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), params.key,
-                     generateMetadata(params), midi_format_);
+  midi_writer_.build(generator_.getSong(), params.key, generateMetadata(params), midi_format_);
 }
 
 void MidiSketch::regenerateAccompaniment(const AccompanimentConfig& config) {
   generator_.regenerateAccompaniment(config);
   const auto& params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), params.key,
-                     generateMetadata(params), midi_format_);
+  midi_writer_.build(generator_.getSong(), params.key, generateMetadata(params), midi_format_);
 }
 
 void MidiSketch::generateAccompanimentForVocal(const AccompanimentConfig& config) {
   generator_.generateAccompanimentForVocal(config);
   const auto& params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), params.key,
-                     generateMetadata(params), midi_format_);
+  midi_writer_.build(generator_.getSong(), params.key, generateMetadata(params), midi_format_);
 }
 
 void MidiSketch::generateWithVocal(const SongConfig& config) {
   GeneratorParams params = ConfigConverter::convert(config);
   generator_.generateWithVocal(params);
-  midi_writer_.build(generator_.getSong(), config.key,
-                     generateMetadata(generator_.getParams()), midi_format_);
+  midi_writer_.build(generator_.getSong(), config.key, generateMetadata(generator_.getParams()),
+                     midi_format_);
 }
 
 MelodyData MidiSketch::getMelody() const {
@@ -144,29 +140,21 @@ MelodyData MidiSketch::getMelody() const {
 void MidiSketch::setMelody(const MelodyData& melody) {
   generator_.setMelody(melody);
   const auto& params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), params.key,
-                     generateMetadata(params), midi_format_);
+  midi_writer_.build(generator_.getSong(), params.key, generateMetadata(params), midi_format_);
 }
 
-void MidiSketch::setVocalNotes(const SongConfig& config,
-                               const std::vector<NoteEvent>& notes) {
+void MidiSketch::setVocalNotes(const SongConfig& config, const std::vector<NoteEvent>& notes) {
   GeneratorParams params = ConfigConverter::convert(config);
   generator_.setVocalNotes(params, notes);
-  midi_writer_.build(generator_.getSong(), config.key,
-                     generateMetadata(generator_.getParams()), midi_format_);
+  midi_writer_.build(generator_.getSong(), config.key, generateMetadata(generator_.getParams()),
+                     midi_format_);
 }
 
-void MidiSketch::setMidiFormat(MidiFormat format) {
-  midi_format_ = format;
-}
+void MidiSketch::setMidiFormat(MidiFormat format) { midi_format_ = format; }
 
-MidiFormat MidiSketch::getMidiFormat() const {
-  return midi_format_;
-}
+MidiFormat MidiSketch::getMidiFormat() const { return midi_format_; }
 
-std::vector<uint8_t> MidiSketch::getMidi() const {
-  return midi_writer_.toBytes();
-}
+std::vector<uint8_t> MidiSketch::getMidi() const { return midi_writer_.toBytes(); }
 
 std::vector<uint8_t> MidiSketch::getVocalPreviewMidi() const {
   MidiWriter writer;
@@ -182,8 +170,7 @@ std::string MidiSketch::getEventsJson() const {
   json::Writer w(oss);
 
   Tick total_ticks = song.arrangement().totalTicks();
-  double duration_seconds = static_cast<double>(total_ticks) /
-                            TICKS_PER_BEAT / song.bpm() * 60.0;
+  double duration_seconds = static_cast<double>(total_ticks) / TICKS_PER_BEAT / song.bpm() * 60.0;
 
   // Get modulation info
   Tick mod_tick = song.modulationTick();
@@ -192,10 +179,9 @@ std::string MidiSketch::getEventsJson() const {
 
   // Helper to write a single note
   auto writeNote = [&](const NoteEvent& note, bool apply_transpose) {
-    double start_seconds = static_cast<double>(note.start_tick) /
-                           TICKS_PER_BEAT / song.bpm() * 60.0;
-    double duration_secs = static_cast<double>(note.duration) /
-                           TICKS_PER_BEAT / song.bpm() * 60.0;
+    double start_seconds =
+        static_cast<double>(note.start_tick) / TICKS_PER_BEAT / song.bpm() * 60.0;
+    double duration_secs = static_cast<double>(note.duration) / TICKS_PER_BEAT / song.bpm() * 60.0;
 
     uint8_t pitch = note.note;
     if (apply_transpose) {
@@ -217,8 +203,8 @@ std::string MidiSketch::getEventsJson() const {
   };
 
   // Helper to write a track
-  auto writeTrack = [&](const MidiTrack& track, const char* name,
-                        uint8_t channel, uint8_t program, bool apply_transpose) {
+  auto writeTrack = [&](const MidiTrack& track, const char* name, uint8_t channel, uint8_t program,
+                        bool apply_transpose) {
     w.beginObject()
         .write("name", name)
         .write("channel", static_cast<int>(channel))
@@ -270,8 +256,7 @@ std::string MidiSketch::getEventsJson() const {
     w.endArray().beginArray("textEvents");
 
     for (const auto& evt : se_track.textEvents()) {
-      double time_seconds = static_cast<double>(evt.time) /
-                            TICKS_PER_BEAT / song.bpm() * 60.0;
+      double time_seconds = static_cast<double>(evt.time) / TICKS_PER_BEAT / song.bpm() * 60.0;
       w.beginObject()
           .write("tick", evt.time)
           .write("time_seconds", time_seconds)
@@ -287,10 +272,9 @@ std::string MidiSketch::getEventsJson() const {
   // Sections
   for (const auto& section : song.arrangement().sections()) {
     Tick end_tick = section.start_tick + section.bars * TICKS_PER_BAR;
-    double start_seconds = static_cast<double>(section.start_tick) /
-                           TICKS_PER_BEAT / song.bpm() * 60.0;
-    double end_seconds = static_cast<double>(end_tick) /
-                         TICKS_PER_BEAT / song.bpm() * 60.0;
+    double start_seconds =
+        static_cast<double>(section.start_tick) / TICKS_PER_BEAT / song.bpm() * 60.0;
+    double end_seconds = static_cast<double>(end_tick) / TICKS_PER_BEAT / song.bpm() * 60.0;
 
     w.beginObject()
         .write("name", section.name)
@@ -311,20 +295,14 @@ std::string MidiSketch::getEventsJson() const {
   return oss.str();
 }
 
-const Song& MidiSketch::getSong() const {
-  return generator_.getSong();
-}
+const Song& MidiSketch::getSong() const { return generator_.getSong(); }
 
-const GeneratorParams& MidiSketch::getParams() const {
-  return generator_.getParams();
-}
+const GeneratorParams& MidiSketch::getParams() const { return generator_.getParams(); }
 
 const IHarmonyContext& MidiSketch::getHarmonyContext() const {
   return generator_.getHarmonyContext();
 }
 
-const char* MidiSketch::version() {
-  return "1.0.0";
-}
+const char* MidiSketch::version() { return "1.0.0"; }
 
 }  // namespace midisketch

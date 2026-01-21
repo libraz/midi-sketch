@@ -4,8 +4,9 @@
  */
 
 #include <gtest/gtest.h>
-#include "core/pitch_utils.h"
+
 #include "core/chord_utils.h"
+#include "core/pitch_utils.h"
 
 namespace midisketch {
 
@@ -42,15 +43,15 @@ class TritoneContextTest : public ::testing::Test {};
 TEST_F(TritoneContextTest, TritoneDissonantOnNonDominant) {
   // Tritone (6 semitones) should be dissonant on non-dominant chords
   // I chord (degree 0): tritone is dissonant
-  EXPECT_TRUE(isDissonantIntervalWithContext(0, 6, 0));  // C-F# on I
-  EXPECT_TRUE(isDissonantIntervalWithContext(5, 11, 0)); // F-B on I
+  EXPECT_TRUE(isDissonantIntervalWithContext(0, 6, 0));   // C-F# on I
+  EXPECT_TRUE(isDissonantIntervalWithContext(5, 11, 0));  // F-B on I
 }
 
 TEST_F(TritoneContextTest, TritoneAcceptableOnDominant) {
   // Tritone is part of V7 chord structure (3rd and 7th)
   // V chord (degree 4): tritone is acceptable
-  EXPECT_FALSE(isDissonantIntervalWithContext(0, 6, 4));  // On V chord
-  EXPECT_FALSE(isDissonantIntervalWithContext(5, 11, 4)); // B-F on V7
+  EXPECT_FALSE(isDissonantIntervalWithContext(0, 6, 4));   // On V chord
+  EXPECT_FALSE(isDissonantIntervalWithContext(5, 11, 4));  // B-F on V7
 }
 
 TEST_F(TritoneContextTest, TritoneAcceptableOnDiminished) {
@@ -171,18 +172,18 @@ TEST_F(ChordToneTest, GDominantChordTones) {
   // V chord (degree 4) in C major: G-B-D
   auto tones = getChordTonePitchClasses(4);
   ASSERT_EQ(tones.size(), 3);
-  EXPECT_EQ(tones[0], 7);  // G
-  EXPECT_EQ(tones[1], 11); // B
-  EXPECT_EQ(tones[2], 2);  // D
+  EXPECT_EQ(tones[0], 7);   // G
+  EXPECT_EQ(tones[1], 11);  // B
+  EXPECT_EQ(tones[2], 2);   // D
 }
 
 TEST_F(ChordToneTest, BDiminishedChordTones) {
   // vii° chord (degree 6) in C major: B-D-F (diminished)
   auto tones = getChordTonePitchClasses(6);
   ASSERT_EQ(tones.size(), 3);
-  EXPECT_EQ(tones[0], 11); // B
-  EXPECT_EQ(tones[1], 2);  // D
-  EXPECT_EQ(tones[2], 5);  // F (diminished 5th, tritone from B)
+  EXPECT_EQ(tones[0], 11);  // B
+  EXPECT_EQ(tones[1], 2);   // D
+  EXPECT_EQ(tones[2], 5);   // F (diminished 5th, tritone from B)
 }
 
 }  // namespace midisketch

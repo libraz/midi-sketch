@@ -4,6 +4,7 @@
  */
 
 #include "core/composition_strategy.h"
+
 #include "core/generator.h"
 #include "core/track_registration_guard.h"
 #include "track/bass.h"
@@ -31,13 +32,8 @@ void MelodyLeadStrategy::generateMelodicTracks(Generator& gen) {
     {
       // Use guard for standalone function that doesn't auto-register
       TrackRegistrationGuard guard(gen.getHarmonyContext(), gen.getSong().bass(), TrackRole::Bass);
-      generateBassTrackWithVocal(
-          gen.getSong().bass(),
-          gen.getSong(),
-          params,
-          gen.getRng(),
-          vocal_analysis,
-          gen.getHarmonyContext());
+      generateBassTrackWithVocal(gen.getSong().bass(), gen.getSong(), params, gen.getRng(),
+                                 vocal_analysis, gen.getHarmonyContext());
     }
     gen.invokeGenerateAux();
   } else {
@@ -45,9 +41,7 @@ void MelodyLeadStrategy::generateMelodicTracks(Generator& gen) {
   }
 }
 
-void MelodyLeadStrategy::generateChordTrack(Generator& gen) {
-  gen.invokeGenerateChord();
-}
+void MelodyLeadStrategy::generateChordTrack(Generator& gen) { gen.invokeGenerateChord(); }
 
 // ============================================================================
 // BackgroundMotifStrategy
@@ -72,13 +66,9 @@ void BackgroundMotifStrategy::generateChordTrack(Generator& gen) {
 // SynthDrivenStrategy
 // ============================================================================
 
-void SynthDrivenStrategy::generateMelodicTracks(Generator& gen) {
-  gen.invokeGenerateBass();
-}
+void SynthDrivenStrategy::generateMelodicTracks(Generator& gen) { gen.invokeGenerateBass(); }
 
-void SynthDrivenStrategy::generateChordTrack(Generator& gen) {
-  gen.invokeGenerateChord();
-}
+void SynthDrivenStrategy::generateChordTrack(Generator& gen) { gen.invokeGenerateChord(); }
 
 // ============================================================================
 // Factory

@@ -6,6 +6,7 @@
 #include "core/production_blueprint.h"
 
 #include <gtest/gtest.h>
+
 #include <cstring>
 #include <map>
 #include <random>
@@ -28,9 +29,7 @@ class ProductionBlueprintTest : public ::testing::Test {
 // Basic API Tests
 // ============================================================================
 
-TEST_F(ProductionBlueprintTest, GetBlueprintCount) {
-  EXPECT_EQ(getProductionBlueprintCount(), 9);
-}
+TEST_F(ProductionBlueprintTest, GetBlueprintCount) { EXPECT_EQ(getProductionBlueprintCount(), 9); }
 
 TEST_F(ProductionBlueprintTest, GetBlueprintById) {
   // Test all blueprints are accessible
@@ -218,8 +217,7 @@ TEST_F(ProductionBlueprintTest, RhythmLockSectionFlowContainsDropChorus) {
   bool has_vocal_solo = false;
   for (uint8_t i = 0; i < bp.section_count; ++i) {
     const auto& slot = bp.section_flow[i];
-    if (slot.type == SectionType::Chorus &&
-        slot.enabled_tracks == TrackMask::Vocal) {
+    if (slot.type == SectionType::Chorus && slot.enabled_tracks == TrackMask::Vocal) {
       has_vocal_solo = true;
       break;
     }
@@ -267,8 +265,7 @@ TEST_F(ProductionBlueprintTest, IdolEmoHasQuietIntro) {
   ASSERT_GT(bp.section_count, 0);
   const auto& intro = bp.section_flow[0];
   EXPECT_EQ(intro.type, SectionType::Intro);
-  EXPECT_EQ(intro.enabled_tracks, TrackMask::Chord)
-      << "IdolEmo should have chord-only intro";
+  EXPECT_EQ(intro.enabled_tracks, TrackMask::Chord) << "IdolEmo should have chord-only intro";
   EXPECT_EQ(intro.energy, SectionEnergy::Low);
 }
 
@@ -609,8 +606,7 @@ TEST_F(ProductionBlueprintTest, RhythmLockLockedRiffPolicyWithMotif) {
       break;
     }
   }
-  EXPECT_TRUE(has_motif_section)
-      << "RhythmLock should have at least one section with Motif track";
+  EXPECT_TRUE(has_motif_section) << "RhythmLock should have at least one section with Motif track";
 }
 
 TEST_F(ProductionBlueprintTest, TraditionalHasNoMotifInSectionFlow) {
@@ -637,12 +633,12 @@ TEST_F(ProductionBlueprintTest, DrumGridQuantize) {
   EXPECT_EQ(grid.quantize(240), 240);
 
   // Round down (closer to previous grid)
-  EXPECT_EQ(grid.quantize(50), 0);    // 50 < 60, round to 0
-  EXPECT_EQ(grid.quantize(59), 0);    // 59 < 60, round to 0
+  EXPECT_EQ(grid.quantize(50), 0);  // 50 < 60, round to 0
+  EXPECT_EQ(grid.quantize(59), 0);  // 59 < 60, round to 0
 
   // Round up (closer to next grid)
-  EXPECT_EQ(grid.quantize(61), 120);  // 61 > 60, round to 120
-  EXPECT_EQ(grid.quantize(100), 120); // 100 > 60, round to 120
+  EXPECT_EQ(grid.quantize(61), 120);   // 61 > 60, round to 120
+  EXPECT_EQ(grid.quantize(100), 120);  // 100 > 60, round to 120
 }
 
 TEST_F(ProductionBlueprintTest, DrumGridZeroResolutionPassthrough) {

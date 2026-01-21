@@ -9,12 +9,14 @@
  */
 
 #include <gtest/gtest.h>
+
+#include <cmath>
+#include <random>
+
 #include "core/melody_templates.h"
 #include "core/melody_types.h"
 #include "core/timing_constants.h"
 #include "track/melody_designer.h"
-#include <cmath>
-#include <random>
 
 namespace midisketch {
 namespace {
@@ -103,7 +105,7 @@ TEST(PhraseEndingTest, NoFractionalBeatAtPhraseEnd) {
 
     // Fractional part should be very small (within 0.25 for eighth notes)
     // Positions like 0.5 (half beat) are acceptable, but not 0.82
-    bool acceptable_position = (fractional < 0.01f) ||  // On the beat
+    bool acceptable_position = (fractional < 0.01f) ||                 // On the beat
                                (std::abs(fractional - 0.5f) < 0.01f);  // Half beat
 
     EXPECT_TRUE(acceptable_position)

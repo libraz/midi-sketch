@@ -3,15 +3,16 @@
  * @brief Tests for MIDI 2.0 writer.
  */
 
-#include <gtest/gtest.h>
-
-#include "core/midi_track.h"
-#include "core/song.h"
 #include "midi/midi2_writer.h"
+
+#include <gtest/gtest.h>
 
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+
+#include "core/midi_track.h"
+#include "core/song.h"
 
 namespace midisketch {
 namespace {
@@ -74,13 +75,11 @@ TEST_F(Midi2WriterTest, BuildContainerHasCorrectHeader) {
   EXPECT_EQ(std::memcmp(data.data(), "AAAAAAAAEEEEEEEE", 16), 0);
 
   // Check deltaTimeSpec (should be 480 = 0x01E0)
-  uint32_t deltaTimeSpec = (data[16] << 24) | (data[17] << 16) |
-                           (data[18] << 8) | data[19];
+  uint32_t deltaTimeSpec = (data[16] << 24) | (data[17] << 16) | (data[18] << 8) | data[19];
   EXPECT_EQ(deltaTimeSpec, 480);
 
   // Check numTracks (SE + Vocal = 2)
-  uint32_t numTracks = (data[20] << 24) | (data[21] << 16) |
-                       (data[22] << 8) | data[23];
+  uint32_t numTracks = (data[20] << 24) | (data[21] << 16) | (data[22] << 8) | data[23];
   EXPECT_EQ(numTracks, 2);
 }
 
@@ -99,8 +98,7 @@ TEST_F(Midi2WriterTest, BuildContainerWithAllTracks) {
   auto data = writer_.toBytes();
 
   // Check numTracks (SE + 7 tracks = 8)
-  uint32_t numTracks = (data[20] << 24) | (data[21] << 16) |
-                       (data[22] << 8) | data[23];
+  uint32_t numTracks = (data[20] << 24) | (data[21] << 16) | (data[22] << 8) | data[23];
   EXPECT_EQ(numTracks, 8);
 }
 

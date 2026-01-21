@@ -3,8 +3,10 @@
  * @brief Tests for generator core functionality.
  */
 
-#include <gtest/gtest.h>
 #include "core/generator.h"
+
+#include <gtest/gtest.h>
+
 #include "core/preset_data.h"
 
 namespace midisketch {
@@ -149,8 +151,8 @@ TEST(GeneratorTest, DrumStyleFourOnFloor) {
   int kick_count = 0;
   int open_hh_count = 0;
   for (const auto& note : drums) {
-    if (note.note == 36) kick_count++;      // Bass drum
-    if (note.note == 46) open_hh_count++;   // Open hi-hat
+    if (note.note == 36) kick_count++;     // Bass drum
+    if (note.note == 46) open_hh_count++;  // Open hi-hat
   }
 
   // 10 bars * 4 beats = 40 kicks minimum (some fills reduce this)
@@ -227,7 +229,7 @@ TEST(GeneratorTest, ChordExtensionGeneratesNotes) {
   params.mood = Mood::StraightPop;
   params.chord_extension.enable_sus = true;
   params.chord_extension.enable_7th = true;
-  params.chord_extension.sus_probability = 1.0f;  // Always use sus
+  params.chord_extension.sus_probability = 1.0f;      // Always use sus
   params.chord_extension.seventh_probability = 1.0f;  // Always use 7th
   params.seed = 42;
 
@@ -337,8 +339,7 @@ TEST(SEEnabledTest, SETrackDisabledWhenFalse) {
   gen.generateFromConfig(config);
 
   // SE track should be empty
-  EXPECT_TRUE(gen.getSong().se().empty())
-      << "SE track should be empty when se_enabled=false";
+  EXPECT_TRUE(gen.getSong().se().empty()) << "SE track should be empty when se_enabled=false";
 }
 
 TEST(SEEnabledTest, SETrackEnabledWhenTrue) {

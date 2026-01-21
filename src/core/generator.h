@@ -6,15 +6,16 @@
 #ifndef MIDISKETCH_CORE_GENERATOR_H
 #define MIDISKETCH_CORE_GENERATOR_H
 
+#include <memory>
+#include <optional>
+#include <random>
+
 #include "core/i_harmony_context.h"
 #include "core/motif.h"
 #include "core/production_blueprint.h"
 #include "core/section_types.h"
 #include "core/song.h"
 #include "core/types.h"
-#include <memory>
-#include <optional>
-#include <random>
 
 namespace midisketch {
 
@@ -252,13 +253,13 @@ class Generator {
  private:
   /// @name State
   /// @{
-  GeneratorParams params_;           ///< Current generation parameters
-  Song song_;                        ///< Generated song data
-  std::mt19937 rng_;                 ///< Random number generator (Mersenne Twister)
+  GeneratorParams params_;  ///< Current generation parameters
+  Song song_;               ///< Generated song data
+  std::mt19937 rng_;        ///< Random number generator (Mersenne Twister)
   std::unique_ptr<IHarmonyContext> harmony_context_;  ///< Tracks notes for collision avoidance
 
   /// Blueprint state
-  uint8_t resolved_blueprint_id_ = 0;           ///< Resolved blueprint ID after selection
+  uint8_t resolved_blueprint_id_ = 0;               ///< Resolved blueprint ID after selection
   const ProductionBlueprint* blueprint_ = nullptr;  ///< Pointer to selected blueprint
 
   /// RhythmSync state
@@ -271,11 +272,11 @@ class Generator {
   /// @name Call/SE System Settings
   /// Stored from SongConfig for SE track generation
   /// @{
-  bool se_enabled_ = true;           ///< Enable SE (sound effect) track
-  bool call_enabled_ = false;        ///< Enable call-and-response patterns
-  bool call_notes_enabled_ = true;   ///< Include pitched notes in calls
-  IntroChant intro_chant_ = IntroChant::None;  ///< Intro chant style
-  MixPattern mix_pattern_ = MixPattern::None;  ///< Mix breakdown pattern
+  bool se_enabled_ = true;                            ///< Enable SE (sound effect) track
+  bool call_enabled_ = false;                         ///< Enable call-and-response patterns
+  bool call_notes_enabled_ = true;                    ///< Include pitched notes in calls
+  IntroChant intro_chant_ = IntroChant::None;         ///< Intro chant style
+  MixPattern mix_pattern_ = MixPattern::None;         ///< Mix breakdown pattern
   CallDensity call_density_ = CallDensity::Standard;  ///< Call frequency
   /// @}
 

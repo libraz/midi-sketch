@@ -6,9 +6,10 @@
 #ifndef MIDISKETCH_CORE_MOTIF_H
 #define MIDISKETCH_CORE_MOTIF_H
 
-#include "types.h"
 #include <random>
 #include <vector>
+
+#include "types.h"
 
 namespace midisketch {
 
@@ -23,11 +24,11 @@ enum class MotifRole : uint8_t {
  * @brief Metadata defining behavior for each motif role.
  */
 struct MotifRoleMeta {
-  MotifRole role;              ///< Which role this describes
-  float exact_repeat_prob;     ///< Probability of exact repetition (0.0-1.0)
-  float variation_range;       ///< Allowed variation (0.0=none, 1.0=full)
-  uint8_t velocity_base;       ///< Base MIDI velocity for this role
-  bool allow_octave_layer;     ///< Whether octave doubling is appropriate
+  MotifRole role;           ///< Which role this describes
+  float exact_repeat_prob;  ///< Probability of exact repetition (0.0-1.0)
+  float variation_range;    ///< Allowed variation (0.0=none, 1.0=full)
+  uint8_t velocity_base;    ///< Base MIDI velocity for this role
+  bool allow_octave_layer;  ///< Whether octave doubling is appropriate
 };
 
 /**
@@ -55,25 +56,25 @@ inline MotifRoleMeta getMotifRoleMeta(MotifRole role) {
 
 /// @brief A short musical idea that can be repeated and varied.
 struct Motif {
-  std::vector<RhythmNote> rhythm;        ///< Rhythm pattern (durations)
-  std::vector<int8_t> contour_degrees;   ///< Degrees relative to chord root
-  std::vector<uint8_t> absolute_pitches; ///< Original absolute MIDI pitches
-  uint8_t climax_index = 0;              ///< Index of highest note
-  uint8_t length_beats = 8;              ///< Length in beats (default: 2 bars)
-  int8_t register_center = 0;            ///< Center register offset
-  bool ends_on_chord_tone = true;        ///< True if last note is chord tone
+  std::vector<RhythmNote> rhythm;         ///< Rhythm pattern (durations)
+  std::vector<int8_t> contour_degrees;    ///< Degrees relative to chord root
+  std::vector<uint8_t> absolute_pitches;  ///< Original absolute MIDI pitches
+  uint8_t climax_index = 0;               ///< Index of highest note
+  uint8_t length_beats = 8;               ///< Length in beats (default: 2 bars)
+  int8_t register_center = 0;             ///< Center register offset
+  bool ends_on_chord_tone = true;         ///< True if last note is chord tone
 };
 
 /// @brief Types of variation that can be applied to a motif.
 enum class MotifVariation : uint8_t {
-  Exact,        ///< Exact repetition (most common for hooks)
-  Transposed,   ///< Pitch shifted up or down
-  Inverted,     ///< Melodic inversion (mirror)
-  Augmented,    ///< Duration doubled (slower)
-  Diminished,   ///< Duration halved (faster)
-  Fragmented,   ///< Use only part of the motif
-  Sequenced,    ///< Sequential transposition
-  Embellished   ///< Add ornamental notes
+  Exact,       ///< Exact repetition (most common for hooks)
+  Transposed,  ///< Pitch shifted up or down
+  Inverted,    ///< Melodic inversion (mirror)
+  Augmented,   ///< Duration doubled (slower)
+  Diminished,  ///< Duration halved (faster)
+  Fragmented,  ///< Use only part of the motif
+  Sequenced,   ///< Sequential transposition
+  Embellished  ///< Add ornamental notes
 };
 
 /**
@@ -84,8 +85,8 @@ enum class MotifVariation : uint8_t {
  * @param rng Random number generator for stochastic variations
  * @return New Motif with the variation applied
  */
-Motif applyVariation(const Motif& original, MotifVariation variation,
-                     int8_t param, std::mt19937& rng);
+Motif applyVariation(const Motif& original, MotifVariation variation, int8_t param,
+                     std::mt19937& rng);
 
 /**
  * @brief Design a chorus hook motif from scratch.
@@ -118,8 +119,7 @@ bool isHookAppropriateVariation(MotifVariation variation);
  * @param max_notes Maximum notes to include (default 8)
  * @return Extracted motif with relative contour
  */
-Motif extractMotifFromChorus(const std::vector<NoteEvent>& chorus_notes,
-                              size_t max_notes = 8);
+Motif extractMotifFromChorus(const std::vector<NoteEvent>& chorus_notes, size_t max_notes = 8);
 
 /**
  * @brief Place a motif in the intro section.
@@ -130,11 +130,8 @@ Motif extractMotifFromChorus(const std::vector<NoteEvent>& chorus_notes,
  * @param velocity Base MIDI velocity for notes
  * @return Vector of note events for the intro
  */
-std::vector<NoteEvent> placeMotifInIntro(const Motif& motif,
-                                          Tick intro_start,
-                                          Tick intro_end,
-                                          uint8_t base_pitch,
-                                          uint8_t velocity);
+std::vector<NoteEvent> placeMotifInIntro(const Motif& motif, Tick intro_start, Tick intro_end,
+                                         uint8_t base_pitch, uint8_t velocity);
 
 /**
  * @brief Place a motif in the aux track.
@@ -145,11 +142,8 @@ std::vector<NoteEvent> placeMotifInIntro(const Motif& motif,
  * @param velocity_ratio Velocity multiplier (0.0-1.0)
  * @return Vector of note events for the aux track
  */
-std::vector<NoteEvent> placeMotifInAux(const Motif& motif,
-                                        Tick section_start,
-                                        Tick section_end,
-                                        uint8_t base_pitch,
-                                        float velocity_ratio);
+std::vector<NoteEvent> placeMotifInAux(const Motif& motif, Tick section_start, Tick section_end,
+                                       uint8_t base_pitch, float velocity_ratio);
 
 }  // namespace midisketch
 

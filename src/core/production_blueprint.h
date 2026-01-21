@@ -9,10 +9,10 @@
 #ifndef MIDISKETCH_CORE_PRODUCTION_BLUEPRINT_H
 #define MIDISKETCH_CORE_PRODUCTION_BLUEPRINT_H
 
-#include "core/section_types.h"
-
 #include <cstdint>
 #include <random>
+
+#include "core/section_types.h"
 
 namespace midisketch {
 
@@ -26,11 +26,11 @@ struct SectionSlot {
   EntryPattern entry_pattern;  ///< How instruments enter
 
   // Time-based control fields
-  SectionEnergy energy;        ///< Section energy level (Low/Medium/High/Peak)
-  uint8_t base_velocity;       ///< Base velocity (60-100)
-  uint8_t density_percent;     ///< Density percentage (50-100)
-  PeakLevel peak_level;        ///< Peak level (replaces fill_before bool)
-  DrumRole drum_role;          ///< Drum role (Full/Ambient/Minimal/FXOnly)
+  SectionEnergy energy;     ///< Section energy level (Low/Medium/High/Peak)
+  uint8_t base_velocity;    ///< Base velocity (60-100)
+  uint8_t density_percent;  ///< Density percentage (50-100)
+  PeakLevel peak_level;     ///< Peak level (replaces fill_before bool)
+  DrumRole drum_role;       ///< Drum role (Full/Ambient/Minimal/FXOnly)
 };
 
 /// @brief Production blueprint defining how a song is generated.
@@ -42,21 +42,21 @@ struct SectionSlot {
 /// - Drum-vocal synchronization
 /// - Intro arrangement
 struct ProductionBlueprint {
-  const char* name;       ///< Blueprint name (e.g., "Traditional", "Orangestar")
-  uint8_t weight;         ///< Random selection weight (0 = disabled)
+  const char* name;  ///< Blueprint name (e.g., "Traditional", "Orangestar")
+  uint8_t weight;    ///< Random selection weight (0 = disabled)
 
   GenerationParadigm paradigm;  ///< Generation approach
 
   const SectionSlot* section_flow;  ///< Section flow array (nullptr = use StructurePattern)
   uint8_t section_count;            ///< Number of sections in flow
 
-  RiffPolicy riff_policy;      ///< How riffs are managed across sections
+  RiffPolicy riff_policy;  ///< How riffs are managed across sections
 
-  bool drums_sync_vocal;       ///< Sync drum kicks/snares to vocal onsets
-  bool drums_required;         ///< Drums are required for this blueprint to work properly
+  bool drums_sync_vocal;  ///< Sync drum kicks/snares to vocal onsets
+  bool drums_required;    ///< Drums are required for this blueprint to work properly
 
-  bool intro_kick_enabled;     ///< Enable kick in intro
-  bool intro_bass_enabled;     ///< Enable bass in intro
+  bool intro_kick_enabled;  ///< Enable kick in intro
+  bool intro_bass_enabled;  ///< Enable bass in intro
 };
 
 // ============================================================================

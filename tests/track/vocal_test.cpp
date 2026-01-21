@@ -3,14 +3,17 @@
  * @brief Tests for vocal track generation.
  */
 
+#include "track/vocal.h"
+
 #include <gtest/gtest.h>
+
+#include <random>
+#include <set>
+
 #include "core/generator.h"
 #include "core/harmony_context.h"
 #include "core/song.h"
 #include "core/types.h"
-#include "track/vocal.h"
-#include <random>
-#include <set>
 
 namespace midisketch {
 namespace {
@@ -95,11 +98,9 @@ TEST_F(VocalTest, VocalNotesAreScaleTones) {
   }
 
   // Allow very few out-of-scale notes (chromatic passing tones)
-  double out_of_scale_ratio =
-      static_cast<double>(out_of_scale_count) / track.notes().size();
+  double out_of_scale_ratio = static_cast<double>(out_of_scale_count) / track.notes().size();
   EXPECT_LT(out_of_scale_ratio, 0.05)
-      << "Too many out-of-scale notes: " << out_of_scale_count << " of "
-      << track.notes().size();
+      << "Too many out-of-scale notes: " << out_of_scale_count << " of " << track.notes().size();
 }
 
 TEST_F(VocalTest, VocalIntervalConstraints) {
@@ -113,20 +114,17 @@ TEST_F(VocalTest, VocalIntervalConstraints) {
   constexpr int MAX_REASONABLE_LEAP = 12;  // One octave
 
   for (size_t i = 1; i < track.notes().size(); ++i) {
-    int interval =
-        std::abs(static_cast<int>(track.notes()[i].note) -
-                 static_cast<int>(track.notes()[i - 1].note));
+    int interval = std::abs(static_cast<int>(track.notes()[i].note) -
+                            static_cast<int>(track.notes()[i - 1].note));
     if (interval > MAX_REASONABLE_LEAP) {
       large_leaps++;
     }
   }
 
   // Very few leaps should exceed an octave
-  double large_leap_ratio =
-      static_cast<double>(large_leaps) / (track.notes().size() - 1);
+  double large_leap_ratio = static_cast<double>(large_leaps) / (track.notes().size() - 1);
   EXPECT_LT(large_leap_ratio, 0.1)
-      << "Too many large leaps: " << large_leaps << " of "
-      << track.notes().size() - 1;
+      << "Too many large leaps: " << large_leaps << " of " << track.notes().size() - 1;
 }
 
 TEST_F(VocalTest, VocalPrefersTessitura) {
@@ -143,9 +141,9 @@ TEST_F(VocalTest, VocalPrefersTessitura) {
 
   // Calculate tessitura: middle portion of range
   int range = params_.vocal_high - params_.vocal_low;  // 36 semitones
-  int margin = range / 5;  // ~7 semitones
-  int tessitura_low = params_.vocal_low + margin;   // ~55 (G3)
-  int tessitura_high = params_.vocal_high - margin; // ~77 (F5)
+  int margin = range / 5;                              // ~7 semitones
+  int tessitura_low = params_.vocal_low + margin;      // ~55 (G3)
+  int tessitura_high = params_.vocal_high - margin;    // ~77 (F5)
 
   int in_tessitura = 0;
   for (const auto& note : track.notes()) {
@@ -156,8 +154,8 @@ TEST_F(VocalTest, VocalPrefersTessitura) {
 
   // Most notes (>50%) should be in tessitura for singable melodies
   double tessitura_ratio = static_cast<double>(in_tessitura) / track.notes().size();
-  EXPECT_GT(tessitura_ratio, 0.5)
-      << "Only " << (tessitura_ratio * 100) << "% of notes in tessitura (expected >50%)";
+  EXPECT_GT(tessitura_ratio, 0.5) << "Only " << (tessitura_ratio * 100)
+                                  << "% of notes in tessitura (expected >50%)";
 }
 
 TEST_F(VocalTest, DifferentSeedsProduceDifferentMelodies) {
@@ -196,8 +194,7 @@ TEST_F(VocalTest, SameSeedProducesSameMelody) {
       << "Same seed produced different number of notes";
 
   for (size_t i = 0; i < track1.notes().size(); ++i) {
-    EXPECT_EQ(track1.notes()[i].note, track2.notes()[i].note)
-        << "Note mismatch at index " << i;
+    EXPECT_EQ(track1.notes()[i].note, track2.notes()[i].note) << "Note mismatch at index " << i;
     EXPECT_EQ(track1.notes()[i].start_tick, track2.notes()[i].start_tick)
         << "Timing mismatch at index " << i;
   }
@@ -267,7 +264,7 @@ TEST_F(VocalTest, MelodyIntervalsReasonable) {
   int large_leaps = 0;
   for (size_t i = 1; i < track.notes().size(); ++i) {
     int interval = std::abs(static_cast<int>(track.notes()[i].note) -
-                           static_cast<int>(track.notes()[i - 1].note));
+                            static_cast<int>(track.notes()[i - 1].note));
     if (interval > 12) {
       large_leaps++;
     }
@@ -290,7 +287,7 @@ TEST_F(VocalTest, IntervalsWithinReasonableRange) {
 
   for (size_t i = 1; i < track.notes().size(); ++i) {
     int interval = std::abs(static_cast<int>(track.notes()[i].note) -
-                           static_cast<int>(track.notes()[i - 1].note));
+                            static_cast<int>(track.notes()[i - 1].note));
     if (interval > 12) {
       over_octave_leaps++;
     }
@@ -298,9 +295,8 @@ TEST_F(VocalTest, IntervalsWithinReasonableRange) {
 
   // Very few intervals should exceed an octave (12 semitones)
   double over_octave_ratio =
-      track.notes().size() > 1
-          ? static_cast<double>(over_octave_leaps) / (track.notes().size() - 1)
-          : 0.0;
+      track.notes().size() > 1 ? static_cast<double>(over_octave_leaps) / (track.notes().size() - 1)
+                               : 0.0;
   EXPECT_LT(over_octave_ratio, 0.1)
       << "Even with extreme leap, octave should be the practical limit";
 }
@@ -319,9 +315,8 @@ TEST_F(VocalTest, NoOverlappingNotesWithVariousSeeds) {
     for (size_t i = 0; i + 1 < notes.size(); ++i) {
       Tick end_tick = notes[i].start_tick + notes[i].duration;
       Tick next_start = notes[i + 1].start_tick;
-      EXPECT_LE(end_tick, next_start)
-          << "Overlap at seed=" << seed << ", note " << i
-          << ": end=" << end_tick << ", next_start=" << next_start;
+      EXPECT_LE(end_tick, next_start) << "Overlap at seed=" << seed << ", note " << i
+                                      << ": end=" << end_tick << ", next_start=" << next_start;
     }
   }
 }
@@ -338,8 +333,7 @@ TEST_F(VocalTest, NoOverlapAtPhraseEndings) {
     Tick end_tick = notes[i].start_tick + notes[i].duration;
     Tick next_start = notes[i + 1].start_tick;
     EXPECT_LE(end_tick, next_start)
-        << "Overlap at note " << i << ": end=" << end_tick
-        << ", next_start=" << next_start;
+        << "Overlap at note " << i << ": end=" << end_tick << ", next_start=" << next_start;
   }
 }
 
@@ -386,10 +380,10 @@ TEST_F(VocalTest, DifferentSeedsProduceSimilarNoteCounts) {
 
   // Note counts should be within ±50% of average (reasonable variation)
   for (size_t count : note_counts) {
-    EXPECT_GT(count, avg * 0.5)
-        << "Note count " << count << " is too low compared to average " << avg;
-    EXPECT_LT(count, avg * 1.5)
-        << "Note count " << count << " is too high compared to average " << avg;
+    EXPECT_GT(count, avg * 0.5) << "Note count " << count << " is too low compared to average "
+                                << avg;
+    EXPECT_LT(count, avg * 1.5) << "Note count " << count << " is too high compared to average "
+                                << avg;
   }
 }
 
@@ -410,8 +404,7 @@ TEST_F(VocalTest, HumanizeDoesNotBreakOverlapPrevention) {
   for (size_t i = 0; i + 1 < notes.size(); ++i) {
     Tick end_tick = notes[i].start_tick + notes[i].duration;
     Tick next_start = notes[i + 1].start_tick;
-    EXPECT_LE(end_tick, next_start)
-        << "Overlap with humanize at note " << i;
+    EXPECT_LE(end_tick, next_start) << "Overlap with humanize at note " << i;
   }
 }
 
@@ -473,8 +466,7 @@ TEST_F(VocalTest, VocaloidStyleNoOverlaps) {
   for (size_t i = 0; i + 1 < notes.size(); ++i) {
     Tick end_tick = notes[i].start_tick + notes[i].duration;
     Tick next_start = notes[i + 1].start_tick;
-    EXPECT_LE(end_tick, next_start)
-        << "Overlap at note " << i;
+    EXPECT_LE(end_tick, next_start) << "Overlap at note " << i;
   }
 }
 
@@ -505,10 +497,8 @@ TEST_F(VocalTest, SectionFinalNoteIsChordTone) {
   // Find the last note of each vocal section
   for (const auto& section : sections) {
     // Skip sections without vocals (Intro, Interlude, Outro, Chant, MixBreak)
-    if (section.type == SectionType::Intro ||
-        section.type == SectionType::Interlude ||
-        section.type == SectionType::Outro ||
-        section.type == SectionType::Chant ||
+    if (section.type == SectionType::Intro || section.type == SectionType::Interlude ||
+        section.type == SectionType::Outro || section.type == SectionType::Chant ||
         section.type == SectionType::MixBreak) {
       continue;
     }
@@ -529,8 +519,8 @@ TEST_F(VocalTest, SectionFinalNoteIsChordTone) {
     if (last_note != nullptr) {
       int pc = last_note->note % 12;
       EXPECT_TRUE(c_major_pcs.count(pc) > 0)
-          << "Section final note should be a scale tone. Got pitch class: " << pc
-          << " in section " << section.name;
+          << "Section final note should be a scale tone. Got pitch class: " << pc << " in section "
+          << section.name;
     }
   }
 }
@@ -550,10 +540,8 @@ TEST_F(VocalTest, CadenceAppliedToMultipleSections) {
   const auto& sections = gen.getSong().arrangement().sections();
   int vocal_sections = 0;
   for (const auto& section : sections) {
-    if (section.type != SectionType::Intro &&
-        section.type != SectionType::Interlude &&
-        section.type != SectionType::Outro &&
-        section.type != SectionType::Chant &&
+    if (section.type != SectionType::Intro && section.type != SectionType::Interlude &&
+        section.type != SectionType::Outro && section.type != SectionType::Chant &&
         section.type != SectionType::MixBreak) {
       vocal_sections++;
     }
@@ -565,7 +553,7 @@ TEST_F(VocalTest, CadenceAppliedToMultipleSections) {
 TEST_F(VocalTest, SectionCadencePreservesRangeConstraints) {
   // Section final note should still respect vocal range
   params_.seed = 22222;
-  params_.vocal_low = 60;  // C4
+  params_.vocal_low = 60;   // C4
   params_.vocal_high = 72;  // C5 (narrow range)
 
   Generator gen;
@@ -638,7 +626,7 @@ TEST_F(VocalTest, CallResponsePhraseStructure) {
     if (!found_note) continue;
 
     bool is_root = (last_pitch % 12 == 0);  // C in C major
-    bool is_response = (pidx % 2 == 1);    // Odd phrases are responses
+    bool is_response = (pidx % 2 == 1);     // Odd phrases are responses
 
     if (is_response) {
       response_phrase_count++;
@@ -717,20 +705,17 @@ TEST_F(VocalTest, SimpleMelodicComplexityReducesLeaps) {
 
   int large_leaps = 0;
   for (size_t i = 1; i < notes.size(); ++i) {
-    int interval = std::abs(static_cast<int>(notes[i].note) -
-                            static_cast<int>(notes[i - 1].note));
+    int interval = std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
     if (interval > 5) {  // Larger than a 4th
       large_leaps++;
     }
   }
 
-  float leap_ratio =
-      static_cast<float>(large_leaps) / static_cast<float>(notes.size() - 1);
+  float leap_ratio = static_cast<float>(large_leaps) / static_cast<float>(notes.size() - 1);
 
   // With max_leap_interval=5, we expect very few large leaps
-  EXPECT_LT(leap_ratio, 0.25f)
-      << "Simple complexity should have few large leaps. "
-      << "Large leap ratio: " << (leap_ratio * 100) << "%";
+  EXPECT_LT(leap_ratio, 0.25f) << "Simple complexity should have few large leaps. "
+                               << "Large leap ratio: " << (leap_ratio * 100) << "%";
 }
 
 TEST_F(VocalTest, ComplexMelodicComplexityIncreasesNoteCount) {
@@ -816,8 +801,7 @@ TEST_F(VocalTest, HookIntensityStrongCreatesLongNotesAtChorusStart) {
   // - High velocity (100+) indicating accent/emphasis
   bool has_hook_effect = false;
   for (const auto& note : vocal) {
-    if (note.start_tick >= chorus_start &&
-        note.start_tick < chorus_start + TICKS_PER_BAR) {
+    if (note.start_tick >= chorus_start && note.start_tick < chorus_start + TICKS_PER_BAR) {
       // Check for extended duration or accent
       if (note.duration >= TICKS_PER_BEAT * 1.5 || note.velocity >= 100) {
         has_hook_effect = true;
@@ -842,8 +826,7 @@ TEST_F(VocalTest, HookIntensityOffDisablesHooks) {
   gen.generate(params_);
 
   const auto& vocal = gen.getSong().vocal().notes();
-  EXPECT_FALSE(vocal.empty())
-      << "Hook intensity Off should still generate vocal notes";
+  EXPECT_FALSE(vocal.empty()) << "Hook intensity Off should still generate vocal notes";
 
   // Verify all notes are valid
   for (const auto& note : vocal) {
@@ -865,8 +848,7 @@ TEST_F(VocalTest, HookIntensityLightOnlyAffectsChorusOpening) {
   gen.generate(params_);
 
   const auto& vocal = gen.getSong().vocal().notes();
-  EXPECT_FALSE(vocal.empty())
-      << "Light hook intensity should generate vocal notes";
+  EXPECT_FALSE(vocal.empty()) << "Light hook intensity should generate vocal notes";
 
   // Basic validation - notes should be in range
   for (const auto& note : vocal) {
@@ -1017,9 +999,8 @@ TEST_F(VocalTest, LastChorusHasHigherIntensity) {
   }
 
   // Last chorus should have similar or more notes (climactic treatment)
-  EXPECT_GE(last_notes, first_notes * 0.8f)
-      << "Last chorus should have similar or more notes. "
-      << "First: " << first_notes << ", Last: " << last_notes;
+  EXPECT_GE(last_notes, first_notes * 0.8f) << "Last chorus should have similar or more notes. "
+                                            << "First: " << first_notes << ", Last: " << last_notes;
 }
 
 // ============================================================================
@@ -1065,8 +1046,7 @@ TEST_F(VocalTest, SwingGrooveShiftsWeakBeatTiming) {
 
   // Swing should have at least some upbeats shifted (not all notes land exactly on beat)
   // This is a weak test but validates the groove is being applied
-  EXPECT_GE(swing_upbeats_shifted, 0)
-      << "Swing groove should shift some upbeat timing";
+  EXPECT_GE(swing_upbeats_shifted, 0) << "Swing groove should shift some upbeat timing";
 }
 
 TEST_F(VocalTest, OffBeatGrooveGeneratesValidOutput) {
@@ -1111,12 +1091,8 @@ TEST_F(VocalTest, SyncopatedGrooveGeneratesValidOutput) {
 TEST_F(VocalTest, AllGrooveFeelsGenerateValidOutput) {
   // Test that all groove feels generate valid output without crashing
   const std::vector<VocalGrooveFeel> grooves = {
-      VocalGrooveFeel::Straight,
-      VocalGrooveFeel::OffBeat,
-      VocalGrooveFeel::Swing,
-      VocalGrooveFeel::Syncopated,
-      VocalGrooveFeel::Driving16th,
-      VocalGrooveFeel::Bouncy8th,
+      VocalGrooveFeel::Straight,   VocalGrooveFeel::OffBeat,     VocalGrooveFeel::Swing,
+      VocalGrooveFeel::Syncopated, VocalGrooveFeel::Driving16th, VocalGrooveFeel::Bouncy8th,
   };
 
   for (auto groove : grooves) {
@@ -1127,8 +1103,8 @@ TEST_F(VocalTest, AllGrooveFeelsGenerateValidOutput) {
     gen.generate(params_);
 
     const auto& vocal = gen.getSong().vocal().notes();
-    EXPECT_FALSE(vocal.empty())
-        << "Groove " << static_cast<int>(groove) << " should generate notes";
+    EXPECT_FALSE(vocal.empty()) << "Groove " << static_cast<int>(groove)
+                                << " should generate notes";
   }
 }
 
@@ -1153,8 +1129,8 @@ TEST_F(VocalTest, AllExtendedVocalStylePresetsGenerateValidOutput) {
     gen.generate(params_);
 
     const auto& vocal = gen.getSong().vocal().notes();
-    EXPECT_FALSE(vocal.empty())
-        << "VocalStylePreset " << static_cast<int>(style) << " should generate notes";
+    EXPECT_FALSE(vocal.empty()) << "VocalStylePreset " << static_cast<int>(style)
+                                << " should generate notes";
 
     // Validate all notes are in range
     for (const auto& note : vocal) {
@@ -1237,7 +1213,7 @@ TEST_F(VocalTest, ExtremeLeapOnlyInChorusAndBridge) {
     // Count large leaps within this section
     for (size_t i = 1; i < section_notes.size(); ++i) {
       int interval = std::abs(static_cast<int>(section_notes[i]->note) -
-                              static_cast<int>(section_notes[i-1]->note));
+                              static_cast<int>(section_notes[i - 1]->note));
       if (interval > 7) {  // Larger than perfect 5th
         large_leap_counts[sec.type]++;
       }
@@ -1246,8 +1222,8 @@ TEST_F(VocalTest, ExtremeLeapOnlyInChorusAndBridge) {
 
   // Verse (A) should have few or no large leaps since extreme_leap is section-limited
   if (note_counts[SectionType::A] > 0) {
-    float verse_leap_ratio = static_cast<float>(large_leap_counts[SectionType::A]) /
-                             note_counts[SectionType::A];
+    float verse_leap_ratio =
+        static_cast<float>(large_leap_counts[SectionType::A]) / note_counts[SectionType::A];
     EXPECT_LT(verse_leap_ratio, 0.1f)
         << "Verse should have minimal large leaps. Got: " << verse_leap_ratio;
   }
@@ -1277,8 +1253,7 @@ TEST_F(VocalTest, SwingGrooveUsesTripletPattern) {
 
   // Swing groove with shuffle triplet should have some swing-timed notes
   // Note: Pattern selection is probabilistic, so we just check generation works
-  EXPECT_GT(vocal.size(), 10u)
-      << "Swing groove should generate reasonable number of notes";
+  EXPECT_GT(vocal.size(), 10u) << "Swing groove should generate reasonable number of notes";
 }
 
 TEST_F(VocalTest, BalladStyleGeneratesNotes) {
@@ -1385,8 +1360,8 @@ TEST_F(VocalTest, ChorusHookRepetitionImproved) {
           int matches = 0;
           for (size_t j = 0; j < min_size; ++j) {
             // Allow 2 semitone difference (for climax transposition)
-            if (std::abs(static_cast<int>(first_motif[j]) -
-                         static_cast<int>(later_motif[j])) <= 2) {
+            if (std::abs(static_cast<int>(first_motif[j]) - static_cast<int>(later_motif[j])) <=
+                2) {
               ++matches;
             }
           }
@@ -1400,8 +1375,7 @@ TEST_F(VocalTest, ChorusHookRepetitionImproved) {
       // Note: Post-processing (same-pitch merging) can change note counts,
       // making position-based matching less reliable. This test verifies
       // that some level of melodic repetition exists in the chorus.
-      EXPECT_GE(similar_count, 0)
-          << "Chorus should have repeated hook patterns";
+      EXPECT_GE(similar_count, 0) << "Chorus should have repeated hook patterns";
     }
   }
 }
@@ -1467,8 +1441,7 @@ TEST_F(VocalTest, SectionMotifRepetitionInVerse) {
   // At least some verses should show motif repetition
   // (probabilistic, so we check for at least 1 occurrence)
   if (verse_count > 0) {
-    EXPECT_GE(verse_with_repetition, 0)
-        << "Verse sections should have motif repetition capability";
+    EXPECT_GE(verse_with_repetition, 0) << "Verse sections should have motif repetition capability";
   }
 }
 
@@ -1493,8 +1466,7 @@ TEST_F(VocalTest, MotifRepetitionMaintainsHarmony) {
       bool overlap = (v.start_tick < c_end) && (c.start_tick < v_end);
 
       if (overlap) {
-        int interval = std::abs(static_cast<int>(v.note % 12) -
-                                static_cast<int>(c.note % 12));
+        int interval = std::abs(static_cast<int>(v.note % 12) - static_cast<int>(c.note % 12));
         if (interval == 1 || interval == 11) {
           ++clash_count;
         }
@@ -1503,9 +1475,8 @@ TEST_F(VocalTest, MotifRepetitionMaintainsHarmony) {
   }
 
   // Allow very few clashes (some may be intentional passing tones)
-  EXPECT_LT(clash_count, 5)
-      << "Motif repetition should not introduce significant dissonance. "
-      << "Found " << clash_count << " minor 2nd/major 7th clashes";
+  EXPECT_LT(clash_count, 5) << "Motif repetition should not introduce significant dissonance. "
+                            << "Found " << clash_count << " minor 2nd/major 7th clashes";
 }
 
 // ============================================================================
@@ -1551,14 +1522,12 @@ TEST_F(VocalTest, CachedPhraseVariationMaintainsRecognizability) {
     if (note_counts[0] > 0) {
       for (size_t i = 1; i < note_counts.size(); ++i) {
         float ratio = static_cast<float>(note_counts[i]) / note_counts[0];
-        EXPECT_GT(ratio, 0.5f)
-            << "Cached phrase variation should maintain similar note count. "
-            << "First instance: " << note_counts[0]
-            << ", Instance " << i << ": " << note_counts[i];
-        EXPECT_LT(ratio, 1.5f)
-            << "Cached phrase variation should not add too many notes. "
-            << "First instance: " << note_counts[0]
-            << ", Instance " << i << ": " << note_counts[i];
+        EXPECT_GT(ratio, 0.5f) << "Cached phrase variation should maintain similar note count. "
+                               << "First instance: " << note_counts[0] << ", Instance " << i << ": "
+                               << note_counts[i];
+        EXPECT_LT(ratio, 1.5f) << "Cached phrase variation should not add too many notes. "
+                               << "First instance: " << note_counts[0] << ", Instance " << i << ": "
+                               << note_counts[i];
       }
     }
   }
@@ -1602,9 +1571,8 @@ TEST_F(VocalTest, DurationTicksNeverUnderflows) {
 
     for (size_t i = 0; i < notes.size(); ++i) {
       // Check for underflow signature (0xFFFFFFFF or very large values)
-      EXPECT_LT(notes[i].duration, 100000u)
-          << "Duration appears underflowed at seed=" << seed << ", note " << i
-          << ": duration=" << notes[i].duration;
+      EXPECT_LT(notes[i].duration, 100000u) << "Duration appears underflowed at seed=" << seed
+                                            << ", note " << i << ": duration=" << notes[i].duration;
 
       // Duration must be positive
       EXPECT_GT(notes[i].duration, 0u)
@@ -1631,10 +1599,8 @@ TEST_F(VocalTest, RegenVocalDurationTicksNeverUnderflows) {
 
   for (size_t i = 0; i < notes.size(); ++i) {
     EXPECT_LT(notes[i].duration, 100000u)
-        << "Duration appears underflowed at note " << i
-        << ": duration=" << notes[i].duration;
-    EXPECT_GT(notes[i].duration, 0u)
-        << "Duration must be positive at note " << i;
+        << "Duration appears underflowed at note " << i << ": duration=" << notes[i].duration;
+    EXPECT_GT(notes[i].duration, 0u) << "Duration must be positive at note " << i;
   }
 }
 
@@ -1655,20 +1621,15 @@ TEST_F(VocalTest, AllNotesHaveValidData) {
 
     for (size_t i = 0; i < notes.size(); ++i) {
       // Pitch validation
-      EXPECT_GE(notes[i].note, 0)
-          << "Invalid pitch at seed=" << seed << ", note " << i;
-      EXPECT_LE(notes[i].note, 127)
-          << "Invalid pitch at seed=" << seed << ", note " << i;
+      EXPECT_GE(notes[i].note, 0) << "Invalid pitch at seed=" << seed << ", note " << i;
+      EXPECT_LE(notes[i].note, 127) << "Invalid pitch at seed=" << seed << ", note " << i;
 
       // Velocity validation
-      EXPECT_GT(notes[i].velocity, 0)
-          << "Invalid velocity at seed=" << seed << ", note " << i;
-      EXPECT_LE(notes[i].velocity, 127)
-          << "Invalid velocity at seed=" << seed << ", note " << i;
+      EXPECT_GT(notes[i].velocity, 0) << "Invalid velocity at seed=" << seed << ", note " << i;
+      EXPECT_LE(notes[i].velocity, 127) << "Invalid velocity at seed=" << seed << ", note " << i;
 
       // Duration validation
-      EXPECT_GT(notes[i].duration, 0u)
-          << "Invalid duration at seed=" << seed << ", note " << i;
+      EXPECT_GT(notes[i].duration, 0u) << "Invalid duration at seed=" << seed << ", note " << i;
       EXPECT_LT(notes[i].duration, 50000u)  // ~26 bars max
           << "Unreasonable duration at seed=" << seed << ", note " << i;
 
@@ -1748,12 +1709,10 @@ TEST_F(VocalTest, ExtremeVocalRangesProduceValidData) {
     const auto& notes = gen.getSong().vocal().notes();
 
     for (size_t i = 0; i < notes.size(); ++i) {
-      EXPECT_GT(notes[i].duration, 0u)
-          << "Invalid duration for range " << (int)range.low << "-" << (int)range.high
-          << ", note " << i;
-      EXPECT_LT(notes[i].duration, 100000u)
-          << "Unreasonable duration for range " << (int)range.low << "-" << (int)range.high
-          << ", note " << i;
+      EXPECT_GT(notes[i].duration, 0u) << "Invalid duration for range " << (int)range.low << "-"
+                                       << (int)range.high << ", note " << i;
+      EXPECT_LT(notes[i].duration, 100000u) << "Unreasonable duration for range " << (int)range.low
+                                            << "-" << (int)range.high << ", note " << i;
     }
   }
 }
@@ -1774,8 +1733,7 @@ TEST_F(VocalTest, PhraseBoundariesGeneratedForVocalSections) {
 
   // StandardPop has 3 vocal sections (A, B, Chorus)
   // Each should have at least one phrase boundary
-  EXPECT_GE(boundaries.size(), 3u)
-      << "Should have phrase boundaries for vocal sections";
+  EXPECT_GE(boundaries.size(), 3u) << "Should have phrase boundaries for vocal sections";
 }
 
 TEST_F(VocalTest, PhraseBoundaryHasSectionEndFlag) {
@@ -1796,8 +1754,7 @@ TEST_F(VocalTest, PhraseBoundaryHasSectionEndFlag) {
     }
   }
 
-  EXPECT_TRUE(found_section_end)
-      << "Should have at least one section-end phrase boundary";
+  EXPECT_TRUE(found_section_end) << "Should have at least one section-end phrase boundary";
 }
 
 TEST_F(VocalTest, PhraseBoundaryHasCadenceType) {
@@ -1814,10 +1771,8 @@ TEST_F(VocalTest, PhraseBoundaryHasCadenceType) {
   int valid_cadence_count = 0;
   for (const auto& boundary : boundaries) {
     // CadenceType should be one of the valid enum values
-    if (boundary.cadence == CadenceType::Strong ||
-        boundary.cadence == CadenceType::Weak ||
-        boundary.cadence == CadenceType::Floating ||
-        boundary.cadence == CadenceType::Deceptive ||
+    if (boundary.cadence == CadenceType::Strong || boundary.cadence == CadenceType::Weak ||
+        boundary.cadence == CadenceType::Floating || boundary.cadence == CadenceType::Deceptive ||
         boundary.cadence == CadenceType::None) {
       valid_cadence_count++;
     }
@@ -1840,8 +1795,8 @@ TEST_F(VocalTest, PhraseBoundaryTicksIncreasing) {
   for (size_t i = 1; i < boundaries.size(); ++i) {
     EXPECT_GT(boundaries[i].tick, boundaries[i - 1].tick)
         << "Phrase boundary ticks should be increasing. "
-        << "Boundary " << i - 1 << ": " << boundaries[i - 1].tick
-        << ", Boundary " << i << ": " << boundaries[i].tick;
+        << "Boundary " << i - 1 << ": " << boundaries[i - 1].tick << ", Boundary " << i << ": "
+        << boundaries[i].tick;
   }
 }
 
@@ -1856,8 +1811,7 @@ TEST_F(VocalTest, PhraseBoundaryBreathFlag) {
   const auto& boundaries = gen.getSong().phraseBoundaries();
 
   for (const auto& boundary : boundaries) {
-    EXPECT_TRUE(boundary.is_breath)
-        << "Section-end phrase boundaries should be breath points";
+    EXPECT_TRUE(boundary.is_breath) << "Section-end phrase boundaries should be breath points";
   }
 }
 
@@ -1900,9 +1854,9 @@ TEST_F(VocalTest, PhraseCacheReuseWithExtendedKey) {
   if (chorus_note_counts[0] > 0) {
     for (size_t i = 1; i < chorus_note_counts.size(); ++i) {
       float ratio = static_cast<float>(chorus_note_counts[i]) / chorus_note_counts[0];
-      EXPECT_GT(ratio, 0.5f)
-          << "Cached Chorus should have similar note count. "
-          << "First: " << chorus_note_counts[0] << ", Chorus " << i << ": " << chorus_note_counts[i];
+      EXPECT_GT(ratio, 0.5f) << "Cached Chorus should have similar note count. "
+                             << "First: " << chorus_note_counts[0] << ", Chorus " << i << ": "
+                             << chorus_note_counts[i];
     }
   }
 }
@@ -1946,8 +1900,7 @@ TEST_F(VocalTest, CadenceTypeStrongOnStableEndings) {
 
   // At least some boundaries should have strong cadence
   // (exact count depends on melody generation, so we check for at least 0)
-  EXPECT_GE(strong_count, 0)
-      << "CadenceType detection should identify some strong cadences";
+  EXPECT_GE(strong_count, 0) << "CadenceType detection should identify some strong cadences";
 }
 
 TEST_F(VocalTest, CadenceTypeFloatingOnTensionEndings) {
@@ -2003,8 +1956,7 @@ TEST_F(VocalTest, VocalNotesStrictlyOnScale) {
     for (const auto& note : track.notes()) {
       int pc = note.note % 12;
       EXPECT_TRUE(c_major_pcs.count(pc) > 0)
-          << "Chromatic note detected at seed=" << seed
-          << ": pitch " << static_cast<int>(note.note)
+          << "Chromatic note detected at seed=" << seed << ": pitch " << static_cast<int>(note.note)
           << " (pitch class " << pc << ") is not in C major scale. "
           << "Tick: " << note.start_tick;
     }
@@ -2031,8 +1983,8 @@ TEST_F(VocalTest, RegressionChromaticNoteFromLastNoteShift) {
     for (const auto& note : track.notes()) {
       int pc = note.note % 12;
       EXPECT_TRUE(c_major_pcs.count(pc) > 0)
-          << "LastNoteShift variation created chromatic note at seed=" << seed
-          << ": pitch class " << pc;
+          << "LastNoteShift variation created chromatic note at seed=" << seed << ": pitch class "
+          << pc;
     }
   }
 }
@@ -2045,11 +1997,8 @@ TEST_F(VocalTest, RegressionChromaticNoteFromSectionBoundary) {
 
   // Use structures with many section transitions
   std::vector<StructurePattern> patterns = {
-      StructurePattern::FullPop,
-      StructurePattern::FullWithBridge,
-      StructurePattern::ExtendedFull,
-      StructurePattern::RepeatChorus
-  };
+      StructurePattern::FullPop, StructurePattern::FullWithBridge, StructurePattern::ExtendedFull,
+      StructurePattern::RepeatChorus};
 
   for (auto pattern : patterns) {
     params_.key = Key::C;
@@ -2068,13 +2017,11 @@ TEST_F(VocalTest, RegressionChromaticNoteFromSectionBoundary) {
 
       // Find first note in this section
       for (const auto& note : track.notes()) {
-        if (note.start_tick >= section_start &&
-            note.start_tick < section_start + TICKS_PER_BAR) {
+        if (note.start_tick >= section_start && note.start_tick < section_start + TICKS_PER_BAR) {
           int pc = note.note % 12;
           EXPECT_TRUE(c_major_pcs.count(pc) > 0)
               << "Section boundary created chromatic note at structure="
-              << static_cast<int>(pattern)
-              << ", section " << s << ": pitch class " << pc;
+              << static_cast<int>(pattern) << ", section " << s << ": pitch class " << pc;
           break;  // Only check first note of section
         }
       }
@@ -2105,8 +2052,7 @@ TEST_F(VocalTest, RegressionChromaticNoteFromAdjustPitchRange) {
     for (const auto& note : track.notes()) {
       int pc = note.note % 12;
       EXPECT_TRUE(c_major_pcs.count(pc) > 0)
-          << "adjustPitchRange created chromatic note at seed=" << seed
-          << ": pitch class " << pc;
+          << "adjustPitchRange created chromatic note at seed=" << seed << ": pitch class " << pc;
     }
   }
 }
@@ -2133,8 +2079,8 @@ TEST_F(VocalTest, RegressionChromaticNoteFromCollisionAvoidance) {
     for (const auto& note : track.notes()) {
       int pc = note.note % 12;
       EXPECT_TRUE(c_major_pcs.count(pc) > 0)
-          << "Collision avoidance created chromatic note at seed=" << seed
-          << ": pitch class " << pc << " at tick " << note.start_tick;
+          << "Collision avoidance created chromatic note at seed=" << seed << ": pitch class " << pc
+          << " at tick " << note.start_tick;
     }
   }
 }
@@ -2163,15 +2109,14 @@ TEST_F(VocalTest, RegressionOriginalBugSeed1041208883) {
       break;
     }
   }
-  EXPECT_FALSE(found_d_sharp)
-      << "D#4 (pitch 63) should not appear in C major vocal track";
+  EXPECT_FALSE(found_d_sharp) << "D#4 (pitch 63) should not appear in C major vocal track";
 
   // Also verify all notes are on scale
   for (const auto& note : track.notes()) {
     int pc = note.note % 12;
     EXPECT_TRUE(c_major_pcs.count(pc) > 0)
-        << "Original bug seed produced chromatic note: pitch "
-        << static_cast<int>(note.note) << " (pitch class " << pc << ")";
+        << "Original bug seed produced chromatic note: pitch " << static_cast<int>(note.note)
+        << " (pitch class " << pc << ")";
   }
 }
 
@@ -2181,12 +2126,8 @@ TEST_F(VocalTest, VocalNotesStrictlyOnScaleMultipleStructures) {
   std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
 
   std::vector<StructurePattern> patterns = {
-      StructurePattern::StandardPop,
-      StructurePattern::ShortForm,
-      StructurePattern::RepeatChorus,
-      StructurePattern::DirectChorus,
-      StructurePattern::ExtendedFull
-  };
+      StructurePattern::StandardPop, StructurePattern::ShortForm, StructurePattern::RepeatChorus,
+      StructurePattern::DirectChorus, StructurePattern::ExtendedFull};
 
   for (auto pattern : patterns) {
     params_.key = Key::C;  // Internal generation is always C major
@@ -2201,9 +2142,8 @@ TEST_F(VocalTest, VocalNotesStrictlyOnScaleMultipleStructures) {
     for (const auto& note : track.notes()) {
       int pc = note.note % 12;
       EXPECT_TRUE(c_major_pcs.count(pc) > 0)
-          << "Chromatic note in structure " << static_cast<int>(pattern)
-          << ": pitch " << static_cast<int>(note.note)
-          << " (pitch class " << pc << ")";
+          << "Chromatic note in structure " << static_cast<int>(pattern) << ": pitch "
+          << static_cast<int>(note.note) << " (pitch class " << pc << ")";
     }
   }
 }
@@ -2234,8 +2174,7 @@ TEST_F(VocalTest, NoMinor2ndClashesWithChord) {
       bool overlap = (v.start_tick < c_end) && (c.start_tick < v_end);
 
       if (overlap) {
-        int interval = std::abs(static_cast<int>(v.note % 12) -
-                                static_cast<int>(c.note % 12));
+        int interval = std::abs(static_cast<int>(v.note % 12) - static_cast<int>(c.note % 12));
         // Normalize to smallest interval
         if (interval > 6) interval = 12 - interval;
 
@@ -2269,8 +2208,8 @@ TEST_F(VocalTest, SkipCollisionAvoidanceGeneratesVocal) {
   auto& song = const_cast<Song&>(gen.getSong());
   HarmonyContext harmony;
 
-  generateVocalTrack(vocal_track, song, params_, rng,
-                     nullptr, harmony, true);  // skip_collision_avoidance=true
+  generateVocalTrack(vocal_track, song, params_, rng, nullptr, harmony,
+                     true);  // skip_collision_avoidance=true
 
   // Should still generate notes
   EXPECT_FALSE(vocal_track.empty())
@@ -2294,8 +2233,7 @@ TEST_F(VocalTest, SkipCollisionAvoidancePreservesScaleTones) {
   auto& song = const_cast<Song&>(gen.getSong());
   HarmonyContext harmony;
 
-  generateVocalTrack(vocal_track, song, params_, rng,
-                     nullptr, harmony, true);
+  generateVocalTrack(vocal_track, song, params_, rng, nullptr, harmony, true);
 
   // All notes should still be on the C major scale
   for (const auto& note : vocal_track.notes()) {
@@ -2327,12 +2265,10 @@ TEST_F(VocalTest, SkipCollisionAvoidanceDeterminism) {
   generateVocalTrack(vocal2, song, params_, rng2, nullptr, harmony, true);
 
   // Should be identical
-  ASSERT_EQ(vocal1.noteCount(), vocal2.noteCount())
-      << "Determinism failed: different note counts";
+  ASSERT_EQ(vocal1.noteCount(), vocal2.noteCount()) << "Determinism failed: different note counts";
 
   for (size_t i = 0; i < vocal1.noteCount(); ++i) {
-    EXPECT_EQ(vocal1.notes()[i].note, vocal2.notes()[i].note)
-        << "Determinism failed at note " << i;
+    EXPECT_EQ(vocal1.notes()[i].note, vocal2.notes()[i].note) << "Determinism failed at note " << i;
     EXPECT_EQ(vocal1.notes()[i].start_tick, vocal2.notes()[i].start_tick)
         << "Determinism failed at note " << i;
   }

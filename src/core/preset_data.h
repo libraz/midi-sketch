@@ -6,9 +6,10 @@
 #ifndef MIDISKETCH_CORE_PRESET_DATA_H
 #define MIDISKETCH_CORE_PRESET_DATA_H
 
-#include "core/types.h"
 #include <cstdint>
 #include <vector>
+
+#include "core/types.h"
 
 namespace midisketch {
 
@@ -73,13 +74,13 @@ enum class BassPatternId : uint8_t {
 
 // Section indices for bass pattern table
 enum class BassSection : uint8_t {
-  Intro = 0,   // Also used for Interlude
-  A = 1,       // Verse
-  B = 2,       // Pre-chorus
+  Intro = 0,  // Also used for Interlude
+  A = 1,      // Verse
+  B = 2,      // Pre-chorus
   Chorus = 3,
   Bridge = 4,
   Outro = 5,
-  Mix = 6,     // MixBreak
+  Mix = 6,  // MixBreak
   COUNT = 7
 };
 
@@ -206,9 +207,9 @@ struct VocalStylePresetData {
   VocalStylePreset id;
 
   // Basic parameters
-  uint8_t max_leap_interval;      // Max leap in semitones (5-14)
-  float syncopation_prob;         // Syncopation probability (0.0-0.5)
-  bool allow_bar_crossing;        // Allow notes to cross bar lines
+  uint8_t max_leap_interval;  // Max leap in semitones (5-14)
+  float syncopation_prob;     // Syncopation probability (0.0-0.5)
+  bool allow_bar_crossing;    // Allow notes to cross bar lines
 
   // Section density modifiers (multiplied with template density)
   float verse_density_modifier;      // Verse (A) density modifier

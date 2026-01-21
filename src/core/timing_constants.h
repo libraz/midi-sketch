@@ -21,9 +21,9 @@ constexpr Tick TICK_SIXTEENTH = TICKS_PER_BEAT / 4;  // 120 ticks (1/4 beat)
 constexpr Tick TICK_32ND = TICKS_PER_BEAT / 8;       // 60 ticks (1/8 beat)
 
 // Triplet values
-constexpr Tick TICK_QUARTER_TRIPLET = TICKS_PER_BEAT / 3;      // 160 ticks
-constexpr Tick TICK_EIGHTH_TRIPLET = TICKS_PER_BEAT / 6;       // 80 ticks
-constexpr Tick TICK_SIXTEENTH_TRIPLET = TICKS_PER_BEAT / 12;   // 40 ticks
+constexpr Tick TICK_QUARTER_TRIPLET = TICKS_PER_BEAT / 3;     // 160 ticks
+constexpr Tick TICK_EIGHTH_TRIPLET = TICKS_PER_BEAT / 6;      // 80 ticks
+constexpr Tick TICK_SIXTEENTH_TRIPLET = TICKS_PER_BEAT / 12;  // 40 ticks
 
 }  // namespace midisketch
 

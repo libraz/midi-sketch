@@ -4,23 +4,23 @@
  */
 
 #include <gtest/gtest.h>
-#include "core/generator.h"
+
+#include <set>
+
 #include "core/chord.h"
+#include "core/generator.h"
+#include "core/harmonic_rhythm.h"
 #include "core/harmony_context.h"
 #include "core/i_harmony_context.h"
-#include "core/harmonic_rhythm.h"
 #include "core/preset_data.h"
 #include "core/song.h"
 #include "core/types.h"
-#include <set>
 
 namespace midisketch {
 namespace {
 
 // Helper: Get pitch class (0-11) from MIDI note
-int getPitchClass(uint8_t note) {
-  return note % 12;
-}
+int getPitchClass(uint8_t note) { return note % 12; }
 
 // Helper: Get chord tone pitch classes for a degree
 std::set<int> getChordTonePitchClasses(int8_t degree) {
@@ -136,8 +136,8 @@ TEST_F(HarmonyIntegrationTest, VocalNotesAreChordTonesOrExtensions) {
   // At least 60% of notes should be valid chord tones
   // (some passing tones and approach notes are acceptable)
   float valid_ratio = static_cast<float>(valid_count) / total_count;
-  EXPECT_GE(valid_ratio, 0.60f)
-      << "Only " << (valid_ratio * 100) << "% of vocal notes are chord tones";
+  EXPECT_GE(valid_ratio, 0.60f) << "Only " << (valid_ratio * 100)
+                                << "% of vocal notes are chord tones";
 }
 
 // =============================================================================
@@ -160,8 +160,7 @@ TEST(StylePresetMappingTest, AllStylePresetsMapToValidMood) {
         << "Style ID " << static_cast<int>(style_id) << " failed";
 
     const auto& song = gen.getSong();
-    EXPECT_GT(song.bpm(), 0) << "Style ID " << static_cast<int>(style_id)
-                              << " has invalid BPM";
+    EXPECT_GT(song.bpm(), 0) << "Style ID " << static_cast<int>(style_id) << " has invalid BPM";
   }
 }
 
@@ -224,9 +223,8 @@ TEST_F(HarmonyIntegrationTest, ArpeggioRegisterAboveVocalRange) {
   }
 
   // Arpeggio should be at C5 (72) or higher base
-  EXPECT_GE(min_arp_note, 72)
-      << "Arpeggio notes should start at C5 (72) or higher, found: "
-      << static_cast<int>(min_arp_note);
+  EXPECT_GE(min_arp_note, 72) << "Arpeggio notes should start at C5 (72) or higher, found: "
+                              << static_cast<int>(min_arp_note);
 }
 
 // =============================================================================
@@ -274,8 +272,7 @@ TEST_F(HarmonyIntegrationTest, FiveChordProgressionHasCadence) {
 
   for (const auto& section : sections) {
     if (section.bars < 4) continue;  // Skip short sections
-    if (section.type == SectionType::Intro ||
-        section.type == SectionType::Outro) continue;
+    if (section.type == SectionType::Intro || section.type == SectionType::Outro) continue;
 
     Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
     Tick last_bar_start = section_end - TICKS_PER_BAR;
@@ -377,9 +374,9 @@ TEST_F(HarmonyIntegrationTest, VocalRespectsChordExtensionParams_ExtensionsDisab
       if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
         // Check if on strong beat (beat 1 or 3)
         Tick position_in_bar = (note.start_tick - section.start_tick) % TICKS_PER_BAR;
-        bool is_strong_beat = (position_in_bar < TICKS_PER_BEAT ||
-                               (position_in_bar >= 2 * TICKS_PER_BEAT &&
-                                position_in_bar < 3 * TICKS_PER_BEAT));
+        bool is_strong_beat =
+            (position_in_bar < TICKS_PER_BEAT ||
+             (position_in_bar >= 2 * TICKS_PER_BEAT && position_in_bar < 3 * TICKS_PER_BEAT));
 
         if (is_strong_beat) {
           strong_beat_count++;
@@ -436,9 +433,9 @@ TEST_F(HarmonyIntegrationTest, VocalRespectsChordExtensionParams_ExtensionsEnabl
       Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
       if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
         Tick position_in_bar = (note.start_tick - section.start_tick) % TICKS_PER_BAR;
-        bool is_strong_beat = (position_in_bar < TICKS_PER_BEAT ||
-                               (position_in_bar >= 2 * TICKS_PER_BEAT &&
-                                position_in_bar < 3 * TICKS_PER_BEAT));
+        bool is_strong_beat =
+            (position_in_bar < TICKS_PER_BEAT ||
+             (position_in_bar >= 2 * TICKS_PER_BEAT && position_in_bar < 3 * TICKS_PER_BEAT));
 
         if (is_strong_beat) {
           total_strong_beat++;
@@ -459,9 +456,8 @@ TEST_F(HarmonyIntegrationTest, VocalRespectsChordExtensionParams_ExtensionsEnabl
   // Some passing tones and approach notes are acceptable
   if (total_strong_beat > 0) {
     float valid_ratio = static_cast<float>(valid_count) / total_strong_beat;
-    EXPECT_GE(valid_ratio, 0.75f)
-        << "Strong beat notes should be valid chord tones: "
-        << (valid_ratio * 100) << "%";
+    EXPECT_GE(valid_ratio, 0.75f) << "Strong beat notes should be valid chord tones: "
+                                  << (valid_ratio * 100) << "%";
   }
 }
 
@@ -518,8 +514,7 @@ TEST_F(HarmonyIntegrationTest, MotifTensionRespectsExtensionParams_Disabled) {
     // Allow up to 30% for natural melodic content in diatonic passages.
     float tension_ratio = static_cast<float>(tension_count) / motif_notes.size();
     EXPECT_LE(tension_ratio, 0.30f)
-        << "Too many tension notes with extensions disabled: "
-        << (tension_ratio * 100) << "%";
+        << "Too many tension notes with extensions disabled: " << (tension_ratio * 100) << "%";
   }
 }
 
@@ -555,9 +550,8 @@ TEST_F(HarmonyIntegrationTest, RegenerateMotifMaintainsRangeSeparation) {
     int overlap = (overlap_high > overlap_low) ? (overlap_high - overlap_low) : 0;
 
     // Overlap should be minimal (less than one octave of significant overlap)
-    EXPECT_LE(overlap, 12)
-        << "Vocal and Motif ranges overlap too much after regeneration: "
-        << static_cast<int>(overlap) << " semitones";
+    EXPECT_LE(overlap, 12) << "Vocal and Motif ranges overlap too much after regeneration: "
+                           << static_cast<int>(overlap) << " semitones";
   }
 }
 
@@ -567,7 +561,7 @@ TEST_F(HarmonyIntegrationTest, RegenerateMotifMaintainsRangeSeparation) {
 
 TEST_F(HarmonyIntegrationTest, FiveChordProgressionCadenceInsertion) {
   // Use Extended5 (5 chords) with 8-bar section
-  params_.chord_id = 20;  // Royal Road (5 chords)
+  params_.chord_id = 20;                              // Royal Road (5 chords)
   params_.structure = StructurePattern::StandardPop;  // Has 8-bar sections
 
   Generator gen;
@@ -612,7 +606,7 @@ TEST_F(HarmonyIntegrationTest, BassSyncWithDominantPreparation) {
   // Use Idol Standard style with Canon progression
   // B section should have dominant preparation before Chorus
   params_.structure = StructurePattern::StandardPop;  // A-B-Chorus
-  params_.chord_id = 0;  // Canon: I-V-vi-IV
+  params_.chord_id = 0;                               // Canon: I-V-vi-IV
   params_.mood = Mood::IdolPop;
   params_.drums_enabled = true;
 
@@ -631,8 +625,7 @@ TEST_F(HarmonyIntegrationTest, BassSyncWithDominantPreparation) {
     if (sections[i + 1].type != SectionType::Chorus) continue;
 
     // Found B -> Chorus transition
-    Tick last_bar_start = sections[i].start_tick +
-                          (sections[i].bars - 1) * TICKS_PER_BAR;
+    Tick last_bar_start = sections[i].start_tick + (sections[i].bars - 1) * TICKS_PER_BAR;
     Tick half_bar = TICKS_PER_BAR / 2;
     Tick second_half_start = last_bar_start + half_bar;
 
@@ -665,14 +658,12 @@ TEST_F(HarmonyIntegrationTest, BassSyncWithDominantPreparation) {
       // For dominant preparation, both should be G (pitch class 7)
       // or consonant interval (0, 3, 4, 5, 7 semitones)
       int interval = (bass_pc - chord_root_pc + 12) % 12;
-      bool is_consonant = (interval == 0 || interval == 3 || interval == 4 ||
-                           interval == 5 || interval == 7 || interval == 8 ||
-                           interval == 9);
-      EXPECT_TRUE(is_consonant)
-          << "Bass and chord should be consonant at pre-chorus dominant. "
-          << "Bass pitch class: " << bass_pc
-          << ", Chord root pitch class: " << chord_root_pc
-          << ", Interval: " << interval;
+      bool is_consonant = (interval == 0 || interval == 3 || interval == 4 || interval == 5 ||
+                           interval == 7 || interval == 8 || interval == 9);
+      EXPECT_TRUE(is_consonant) << "Bass and chord should be consonant at pre-chorus dominant. "
+                                << "Bass pitch class: " << bass_pc
+                                << ", Chord root pitch class: " << chord_root_pc
+                                << ", Interval: " << interval;
     }
     break;  // Only check first B->Chorus transition
   }
@@ -711,8 +702,7 @@ TEST_F(HarmonyIntegrationTest, ArpeggioIncludedInTransitionDynamics) {
     prev_velocity = note.velocity;
   }
 
-  EXPECT_TRUE(velocity_varies)
-      << "Arpeggio velocities should vary with transition dynamics";
+  EXPECT_TRUE(velocity_varies) << "Arpeggio velocities should vary with transition dynamics";
 }
 
 // =============================================================================
@@ -722,7 +712,7 @@ TEST_F(HarmonyIntegrationTest, ArpeggioIncludedInTransitionDynamics) {
 TEST_F(HarmonyIntegrationTest, BassChordMajor7thClashAvoided) {
   // Generate with multiple seeds to verify bass-chord coordination
   params_.structure = StructurePattern::FullPop;  // Longer form with more bars
-  params_.mood = Mood::EnergeticDance;  // Uses more complex voicings
+  params_.mood = Mood::EnergeticDance;            // Uses more complex voicings
   params_.drums_enabled = true;
 
   int total_clashes = 0;
@@ -749,8 +739,7 @@ TEST_F(HarmonyIntegrationTest, BassChordMajor7thClashAvoided) {
         // Get bass notes in this bar (beat 1)
         std::set<int> bass_pitch_classes;
         for (const auto& note : bass_notes) {
-          if (note.start_tick >= bar_start &&
-              note.start_tick < bar_start + TICKS_PER_BEAT) {
+          if (note.start_tick >= bar_start && note.start_tick < bar_start + TICKS_PER_BEAT) {
             bass_pitch_classes.insert(note.note % 12);
           }
         }
@@ -758,8 +747,7 @@ TEST_F(HarmonyIntegrationTest, BassChordMajor7thClashAvoided) {
         // Get chord notes in this bar (beat 1)
         std::set<int> chord_pitch_classes;
         for (const auto& note : chord_notes) {
-          if (note.start_tick >= bar_start &&
-              note.start_tick < bar_start + TICKS_PER_BEAT) {
+          if (note.start_tick >= bar_start && note.start_tick < bar_start + TICKS_PER_BEAT) {
             chord_pitch_classes.insert(note.note % 12);
           }
         }
@@ -780,9 +768,9 @@ TEST_F(HarmonyIntegrationTest, BassChordMajor7thClashAvoided) {
 
   // Allow up to 5% bass-chord clashes (very few should remain)
   float clash_ratio = static_cast<float>(total_clashes) / total_bar_checks;
-  EXPECT_LE(clash_ratio, 0.10f)
-      << "Bass-chord major 7th clashes should be < 10%: " << (clash_ratio * 100)
-      << "% (" << total_clashes << "/" << total_bar_checks << " bars)";
+  EXPECT_LE(clash_ratio, 0.10f) << "Bass-chord major 7th clashes should be < 10%: "
+                                << (clash_ratio * 100) << "% (" << total_clashes << "/"
+                                << total_bar_checks << " bars)";
 }
 
 // =============================================================================
@@ -812,8 +800,7 @@ TEST_F(HarmonyIntegrationTest, ChordVoicingFiltersBassClashes) {
       Tick chord_end = chord_note.start_tick + chord_note.duration;
       Tick bass_end = bass_note.start_tick + bass_note.duration;
 
-      bool overlap = (chord_note.start_tick < bass_end &&
-                      chord_end > bass_note.start_tick);
+      bool overlap = (chord_note.start_tick < bass_end && chord_end > bass_note.start_tick);
 
       if (overlap) {
         simultaneous_note_pairs++;
@@ -831,11 +818,9 @@ TEST_F(HarmonyIntegrationTest, ChordVoicingFiltersBassClashes) {
 
   // Most simultaneous bass-chord pairs should be consonant
   if (simultaneous_note_pairs > 0) {
-    float clash_ratio = static_cast<float>(simultaneous_clash_count) /
-                        simultaneous_note_pairs;
-    EXPECT_LE(clash_ratio, 0.05f)
-        << "Chord voicing should avoid bass clashes: " << (clash_ratio * 100)
-        << "% clashing";
+    float clash_ratio = static_cast<float>(simultaneous_clash_count) / simultaneous_note_pairs;
+    EXPECT_LE(clash_ratio, 0.05f) << "Chord voicing should avoid bass clashes: "
+                                  << (clash_ratio * 100) << "% clashing";
   }
 }
 
@@ -868,8 +853,7 @@ TEST_F(HarmonyIntegrationTest, VocalChordClashAvoided) {
       Tick chord_end = chord_note.start_tick + chord_note.duration;
 
       // Check if notes overlap in time
-      bool overlap = (vocal_note.start_tick < chord_end &&
-                      vocal_end > chord_note.start_tick);
+      bool overlap = (vocal_note.start_tick < chord_end && vocal_end > chord_note.start_tick);
 
       if (overlap) {
         overlap_count++;
@@ -889,9 +873,8 @@ TEST_F(HarmonyIntegrationTest, VocalChordClashAvoided) {
   // Allow some clashes (< 5%)
   if (overlap_count > 0) {
     float clash_ratio = static_cast<float>(clash_count) / overlap_count;
-    EXPECT_LE(clash_ratio, 0.05f)
-        << "Vocal-chord clashes should be < 5%: " << (clash_ratio * 100)
-        << "% (" << clash_count << "/" << overlap_count << " overlaps)";
+    EXPECT_LE(clash_ratio, 0.05f) << "Vocal-chord clashes should be < 5%: " << (clash_ratio * 100)
+                                  << "% (" << clash_count << "/" << overlap_count << " overlaps)";
   }
 }
 
@@ -925,8 +908,8 @@ TEST_F(HarmonyIntegrationTest, ChorusHookRepetitionAvoidsClashes) {
 
       // Check vocal notes in this chorus
       for (const auto& vocal_note : vocal_notes) {
-        if (vocal_note.start_tick < section.start_tick ||
-            vocal_note.start_tick >= section_end) continue;
+        if (vocal_note.start_tick < section.start_tick || vocal_note.start_tick >= section_end)
+          continue;
 
         Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
 
@@ -934,8 +917,7 @@ TEST_F(HarmonyIntegrationTest, ChorusHookRepetitionAvoidsClashes) {
         for (const auto& chord_note : chord_notes) {
           Tick chord_end = chord_note.start_tick + chord_note.duration;
 
-          bool overlap = (vocal_note.start_tick < chord_end &&
-                          vocal_end > chord_note.start_tick);
+          bool overlap = (vocal_note.start_tick < chord_end && vocal_end > chord_note.start_tick);
 
           if (overlap) {
             int interval = std::abs((vocal_note.note % 12) - (chord_note.note % 12));
@@ -944,9 +926,8 @@ TEST_F(HarmonyIntegrationTest, ChorusHookRepetitionAvoidsClashes) {
             // Should not have minor 2nd (major 7th) clashes
             EXPECT_NE(interval, 1)
                 << "Chorus at bar " << (vocal_note.start_tick / TICKS_PER_BAR)
-                << " has major 7th clash between vocal " << (int)vocal_note.note
-                << " and chord " << (int)chord_note.note
-                << " (seed=" << params_.seed << ")";
+                << " has major 7th clash between vocal " << (int)vocal_note.note << " and chord "
+                << (int)chord_note.note << " (seed=" << params_.seed << ")";
           }
         }
       }
@@ -982,8 +963,7 @@ TEST_F(HarmonyIntegrationTest, TritoneDetectedAsDissonant) {
     // Check against chord
     for (const auto& chord_note : chord_notes) {
       Tick chord_end = chord_note.start_tick + chord_note.duration;
-      bool overlap = (vocal_note.start_tick < chord_end &&
-                      vocal_end > chord_note.start_tick);
+      bool overlap = (vocal_note.start_tick < chord_end && vocal_end > chord_note.start_tick);
 
       if (overlap) {
         int interval = std::abs((vocal_note.note % 12) - (chord_note.note % 12));
@@ -995,8 +975,7 @@ TEST_F(HarmonyIntegrationTest, TritoneDetectedAsDissonant) {
     // Check against bass
     for (const auto& bass_note : bass_notes) {
       Tick bass_end = bass_note.start_tick + bass_note.duration;
-      bool overlap = (vocal_note.start_tick < bass_end &&
-                      vocal_end > bass_note.start_tick);
+      bool overlap = (vocal_note.start_tick < bass_end && vocal_end > bass_note.start_tick);
 
       if (overlap) {
         int interval = std::abs((vocal_note.note % 12) - (bass_note.note % 12));
@@ -1007,9 +986,8 @@ TEST_F(HarmonyIntegrationTest, TritoneDetectedAsDissonant) {
   }
 
   // Should have very few or no tritone clashes
-  EXPECT_LE(tritone_count, 5)
-      << "Tritone clashes between vocal and chord/bass should be minimal: "
-      << tritone_count;
+  EXPECT_LE(tritone_count, 5) << "Tritone clashes between vocal and chord/bass should be minimal: "
+                              << tritone_count;
 }
 
 // ============================================================================
@@ -1024,8 +1002,8 @@ TEST_F(HarmonyIntegrationTest, BassCollisionDetectedInLowRegister) {
   config.chord_progression_id = 0;  // Canon progression
   config.style_preset_id = 0;       // Pop style
   config.seed = 12345;
-  config.vocal_low = 48;    // C3 - low tenor range
-  config.vocal_high = 72;   // C5
+  config.vocal_low = 48;   // C3 - low tenor range
+  config.vocal_high = 72;  // C5
 
   Generator gen;
   gen.generateFromConfig(config);
@@ -1122,8 +1100,8 @@ TEST_F(HarmonyIntegrationTest, VocalAvoidsBassByOctaveShift) {
 
   // If there are low register vocal notes, some should have proper separation
   if (notes_in_low_register > 0) {
-    float separation_ratio = static_cast<float>(notes_with_separation) /
-                              static_cast<float>(notes_in_low_register);
+    float separation_ratio =
+        static_cast<float>(notes_with_separation) / static_cast<float>(notes_in_low_register);
     // At least 20% of low register notes should have proper separation
     EXPECT_GE(separation_ratio, 0.2f)
         << "Some low register vocal notes should maintain separation from bass";
@@ -1215,17 +1193,14 @@ TEST_F(HarmonyIntegrationTest, ChordVoicingsVaryByMood) {
       break;
     }
   }
-  EXPECT_TRUE(some_difference)
-      << "Different moods should produce different chord voicings";
+  EXPECT_TRUE(some_difference) << "Different moods should produce different chord voicings";
 }
 
 // Test: All tracks maintain low dissonance
 TEST_F(HarmonyIntegrationTest, AllTracksLowDissonanceAfterImprovements) {
   // Test multiple seeds across different moods
-  std::vector<Mood> test_moods = {
-      Mood::StraightPop, Mood::Ballad, Mood::EnergeticDance,
-      Mood::Dramatic, Mood::CityPop
-  };
+  std::vector<Mood> test_moods = {Mood::StraightPop, Mood::Ballad, Mood::EnergeticDance,
+                                  Mood::Dramatic, Mood::CityPop};
 
   for (Mood mood : test_moods) {
     params_.mood = mood;
@@ -1246,8 +1221,7 @@ TEST_F(HarmonyIntegrationTest, AllTracksLowDissonanceAfterImprovements) {
     // Check vocal-chord
     for (const auto& v : vocal) {
       for (const auto& c : chord) {
-        if (v.start_tick < c.start_tick + c.duration &&
-            v.start_tick + v.duration > c.start_tick) {
+        if (v.start_tick < c.start_tick + c.duration && v.start_tick + v.duration > c.start_tick) {
           pair_count++;
           int interval = std::abs((v.note % 12) - (c.note % 12));
           if (interval > 6) interval = 12 - interval;
@@ -1259,8 +1233,7 @@ TEST_F(HarmonyIntegrationTest, AllTracksLowDissonanceAfterImprovements) {
     // Check vocal-bass
     for (const auto& v : vocal) {
       for (const auto& b : bass) {
-        if (v.start_tick < b.start_tick + b.duration &&
-            v.start_tick + v.duration > b.start_tick) {
+        if (v.start_tick < b.start_tick + b.duration && v.start_tick + v.duration > b.start_tick) {
           pair_count++;
           int interval = std::abs((v.note % 12) - (b.note % 12));
           if (interval > 6) interval = 12 - interval;
@@ -1271,9 +1244,8 @@ TEST_F(HarmonyIntegrationTest, AllTracksLowDissonanceAfterImprovements) {
 
     if (pair_count > 0) {
       float clash_ratio = static_cast<float>(clash_count) / pair_count;
-      EXPECT_LE(clash_ratio, 0.03f)
-          << "Mood " << static_cast<int>(mood) << " has too many clashes: "
-          << (clash_ratio * 100) << "%";
+      EXPECT_LE(clash_ratio, 0.03f) << "Mood " << static_cast<int>(mood)
+                                    << " has too many clashes: " << (clash_ratio * 100) << "%";
     }
   }
 }
@@ -1291,7 +1263,7 @@ TEST_F(HarmonyIntegrationTest, BassChordPhraseEndSynchronization) {
   // played F (from F major).
 
   params_.seed = 2475149142;
-  params_.chord_id = 0;        // Canon progression
+  params_.chord_id = 0;                                  // Canon progression
   params_.structure = static_cast<StructurePattern>(5);  // form 5
   params_.bpm = 132;
   params_.mood = static_cast<Mood>(14);  // style 14
@@ -1328,9 +1300,8 @@ TEST_F(HarmonyIntegrationTest, BassChordPhraseEndSynchronization) {
 
   // With phrase-end sync fix, there should be very few or no minor 2nd clashes
   // between bass and chord. Previously this seed had 4 such clashes.
-  EXPECT_LE(critical_clashes, 2)
-      << "Bass-chord phrase-end sync should prevent minor 2nd clashes. "
-      << "Found " << critical_clashes << " clashes with seed 2475149142";
+  EXPECT_LE(critical_clashes, 2) << "Bass-chord phrase-end sync should prevent minor 2nd clashes. "
+                                 << "Found " << critical_clashes << " clashes with seed 2475149142";
 }
 
 // ============================================================================
@@ -1365,16 +1336,16 @@ TEST(HarmonyContextDenseRhythm, MidBarChordChangeInChorus) {
   harmony.initialize(arrangement, progression, Mood::EnergeticDance);
 
   // Verify Dense rhythm is used for Chorus with EnergeticDance
-  HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(SectionType::Chorus, Mood::EnergeticDance);
+  HarmonicRhythmInfo harmonic =
+      HarmonicRhythmInfo::forSection(SectionType::Chorus, Mood::EnergeticDance);
   ASSERT_EQ(harmonic.density, HarmonicDensity::Dense)
       << "Chorus with EnergeticDance should use Dense harmonic rhythm";
 
   // Find a bar where shouldSplitPhraseEnd() returns true
   // For EnergeticDance Chorus: bar % 2 == 0 && bar > 0 triggers dense_extra
   int split_bar = 2;  // Bar 2 should split (even bar, > 0)
-  bool should_split = shouldSplitPhraseEnd(
-      split_bar, 8, progression.length, harmonic,
-      SectionType::Chorus, Mood::EnergeticDance);
+  bool should_split = shouldSplitPhraseEnd(split_bar, 8, progression.length, harmonic,
+                                           SectionType::Chorus, Mood::EnergeticDance);
   ASSERT_TRUE(should_split) << "Bar " << split_bar << " should trigger mid-bar split";
 
   // Calculate tick positions
@@ -1450,9 +1421,9 @@ TEST(HarmonyContextDenseRhythm, SlowSectionsNotAffected) {
   harmony.initialize(arrangement, progression, Mood::EnergeticDance);
 
   // Verify Slow rhythm for Intro even with EnergeticDance mood
-  HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(SectionType::Intro, Mood::EnergeticDance);
-  EXPECT_EQ(harmonic.density, HarmonicDensity::Slow)
-      << "Intro should use Slow harmonic rhythm";
+  HarmonicRhythmInfo harmonic =
+      HarmonicRhythmInfo::forSection(SectionType::Intro, Mood::EnergeticDance);
+  EXPECT_EQ(harmonic.density, HarmonicDensity::Slow) << "Intro should use Slow harmonic rhythm";
 
   // Bar 0 and Bar 1 should have same chord (Slow = 2 bars per chord)
   int8_t degree_bar0 = harmony.getChordDegreeAt(0);
@@ -1463,8 +1434,7 @@ TEST(HarmonyContextDenseRhythm, SlowSectionsNotAffected) {
 
   // Bar 2 should have next chord
   int8_t degree_bar2 = harmony.getChordDegreeAt(2 * TICKS_PER_BAR);
-  EXPECT_NE(degree_bar0, degree_bar2)
-      << "Slow harmonic rhythm: chord should change after 2 bars";
+  EXPECT_NE(degree_bar0, degree_bar2) << "Slow harmonic rhythm: chord should change after 2 bars";
 }
 
 }  // namespace

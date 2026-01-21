@@ -4,9 +4,10 @@
  */
 
 #include <gtest/gtest.h>
-#include "track/bass.h"
+
 #include "core/chord.h"
 #include "core/pitch_utils.h"
+#include "track/bass.h"
 
 namespace midisketch {
 
@@ -90,13 +91,13 @@ TEST_F(ChromaticApproachTest, ChromaticApproachPitchClasses) {
   };
 
   std::vector<TestCase> cases = {
-      {0, 11},  // C -> B
-      {2, 1},   // D -> C#
-      {4, 3},   // E -> D#
-      {5, 4},   // F -> E
-      {7, 6},   // G -> F#
-      {9, 8},   // A -> G#
-      {11, 10}, // B -> A#
+      {0, 11},   // C -> B
+      {2, 1},    // D -> C#
+      {4, 3},    // E -> D#
+      {5, 4},    // F -> E
+      {7, 6},    // G -> F#
+      {9, 8},    // A -> G#
+      {11, 10},  // B -> A#
   };
 
   for (const auto& tc : cases) {
@@ -119,9 +120,9 @@ TEST_F(SeventhChordExtensionTest, MajorChordSeventhIsMajor7th) {
   // IV chord (F): root = 5, major 7th = E (4)
   // V chord (G): root = 7, major 7th = F# (6)
 
-  EXPECT_EQ((0 + 11) % 12, 11);   // CMaj7 -> B
-  EXPECT_EQ((5 + 11) % 12, 4);    // FMaj7 -> E
-  EXPECT_EQ((7 + 11) % 12, 6);    // GMaj7 -> F# (though V7 typically uses dominant 7th)
+  EXPECT_EQ((0 + 11) % 12, 11);  // CMaj7 -> B
+  EXPECT_EQ((5 + 11) % 12, 4);   // FMaj7 -> E
+  EXPECT_EQ((7 + 11) % 12, 6);   // GMaj7 -> F# (though V7 typically uses dominant 7th)
 }
 
 TEST_F(SeventhChordExtensionTest, MinorChordSeventhIsMinor7th) {
@@ -131,9 +132,9 @@ TEST_F(SeventhChordExtensionTest, MinorChordSeventhIsMinor7th) {
   // iii chord (Em): root = 4, minor 7th = D (2)
   // vi chord (Am): root = 9, minor 7th = G (7)
 
-  EXPECT_EQ((2 + 10) % 12, 0);    // Dm7 -> C
-  EXPECT_EQ((4 + 10) % 12, 2);    // Em7 -> D
-  EXPECT_EQ((9 + 10) % 12, 7);    // Am7 -> G
+  EXPECT_EQ((2 + 10) % 12, 0);  // Dm7 -> C
+  EXPECT_EQ((4 + 10) % 12, 2);  // Em7 -> D
+  EXPECT_EQ((9 + 10) % 12, 7);  // Am7 -> G
 }
 
 TEST_F(SeventhChordExtensionTest, SeventhNotesAreDiatonic) {
@@ -174,7 +175,7 @@ TEST_F(VoiceLeadingTest, WeightedDistancePrinciple) {
   int tenor_movement = 2;
   int soprano_movement = 1;
 
-  int unweighted = bass_movement + tenor_movement + soprano_movement;  // 5
+  int unweighted = bass_movement + tenor_movement + soprano_movement;            // 5
   int weighted = bass_movement * 2 + tenor_movement * 1 + soprano_movement * 2;  // 4+2+2=8
 
   EXPECT_EQ(unweighted, 5);

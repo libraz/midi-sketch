@@ -9,8 +9,9 @@
 #ifndef MIDISKETCH_CORE_MELODY_EVALUATOR_H
 #define MIDISKETCH_CORE_MELODY_EVALUATOR_H
 
-#include "core/types.h"
 #include <vector>
+
+#include "core/types.h"
 
 namespace midisketch {
 
@@ -21,11 +22,11 @@ class IHarmonyContext;
 /// Weights determine how much each scoring component contributes to the total.
 /// All weights should sum to approximately 1.0 for normalized scoring.
 struct EvaluatorConfig {
-  float singability_weight;    ///< Weight for average interval size (0.0-1.0)
-  float chord_tone_weight;     ///< Weight for chord tone ratio on strong beats
-  float contour_weight;        ///< Weight for familiar melodic contour
-  float surprise_weight;       ///< Weight for occasional large leaps
-  float aaab_weight;           ///< Weight for AAAB repetition pattern
+  float singability_weight;  ///< Weight for average interval size (0.0-1.0)
+  float chord_tone_weight;   ///< Weight for chord tone ratio on strong beats
+  float contour_weight;      ///< Weight for familiar melodic contour
+  float surprise_weight;     ///< Weight for occasional large leaps
+  float aaab_weight;         ///< Weight for AAAB repetition pattern
 };
 
 /// @brief Melody evaluation score.
@@ -40,17 +41,15 @@ struct MelodyScore {
 
   /// Calculate total weighted score.
   float total(const EvaluatorConfig& config) const {
-    return singability * config.singability_weight +
-           chord_tone_ratio * config.chord_tone_weight +
-           contour_shape * config.contour_weight +
-           surprise_element * config.surprise_weight +
+    return singability * config.singability_weight + chord_tone_ratio * config.chord_tone_weight +
+           contour_shape * config.contour_weight + surprise_element * config.surprise_weight +
            aaab_pattern * config.aaab_weight;
   }
 
   /// Simple total with equal weights.
   float total() const {
-    return (singability + chord_tone_ratio + contour_shape +
-            surprise_element + aaab_pattern) / 5.0f;
+    return (singability + chord_tone_ratio + contour_shape + surprise_element + aaab_pattern) /
+           5.0f;
   }
 };
 
@@ -91,8 +90,7 @@ class MelodyEvaluator {
   /// @param notes Vector of note events
   /// @param harmony Harmony context for chord info
   /// @returns MelodyScore with all component scores
-  static MelodyScore evaluate(const std::vector<NoteEvent>& notes,
-                              const IHarmonyContext& harmony);
+  static MelodyScore evaluate(const std::vector<NoteEvent>& notes, const IHarmonyContext& harmony);
 
   /// @brief Get evaluator config for a vocal style preset.
   /// @param style Vocal style preset
@@ -160,8 +158,7 @@ class MelodyEvaluator {
   /// @param notes Vector of note events
   /// @param phrase_duration Total duration of the phrase (ticks)
   /// @returns Gap ratio 0.0-1.0 (higher = more gaps = more scattered)
-  static float calcGapRatio(const std::vector<NoteEvent>& notes,
-                            Tick phrase_duration);
+  static float calcGapRatio(const std::vector<NoteEvent>& notes, Tick phrase_duration);
 
   /// @brief Calculate penalty for breathless singing (too many consecutive short notes).
   ///
@@ -200,8 +197,7 @@ class MelodyEvaluator {
   /// @param style Vocal style preset (for style-specific thresholds)
   /// @returns Score 0.0-1.0 (higher = better)
   static float evaluateForCulling(const std::vector<NoteEvent>& notes,
-                                  const IHarmonyContext& harmony,
-                                  Tick phrase_duration,
+                                  const IHarmonyContext& harmony, Tick phrase_duration,
                                   VocalStylePreset style = VocalStylePreset::Standard);
 
   /// @}

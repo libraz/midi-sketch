@@ -4,10 +4,11 @@
  */
 
 #include <gtest/gtest.h>
-#include "midisketch_c.h"
-#include "midisketch.h"
+
 #include "core/chord_utils.h"
 #include "core/piano_roll_safety.h"
+#include "midisketch.h"
+#include "midisketch_c.h"
 
 namespace midisketch {
 namespace {
@@ -19,15 +20,13 @@ class PianoRollTest : public ::testing::Test {
 
     // Generate a simple song for testing
     MidiSketchSongConfig config = midisketch_create_default_config(0);
-    config.seed = 12345;  // Fixed seed for reproducibility
+    config.seed = 12345;    // Fixed seed for reproducibility
     config.skip_vocal = 1;  // Skip vocal to have clean BGM
-    config.form_id = 0;  // Standard form
+    config.form_id = 0;     // Standard form
     midisketch_generate_from_config(handle_, &config);
   }
 
-  void TearDown() override {
-    midisketch_destroy(handle_);
-  }
+  void TearDown() override { midisketch_destroy(handle_); }
 
   MidiSketchHandle handle_ = nullptr;
 };
@@ -52,8 +51,8 @@ TEST_F(PianoRollTest, GetSafetyAtNullHandleReturnsNull) {
 }
 
 TEST_F(PianoRollTest, BatchGetReturnsCorrectCount) {
-  MidiSketchPianoRollData* data = midisketch_get_piano_roll_safety(
-      handle_, 0, 1920, 120);  // One bar, 16th note steps
+  MidiSketchPianoRollData* data =
+      midisketch_get_piano_roll_safety(handle_, 0, 1920, 120);  // One bar, 16th note steps
 
   ASSERT_NE(data, nullptr);
   EXPECT_EQ(data->count, 17u);  // (1920-0)/120 + 1 = 17
@@ -62,21 +61,18 @@ TEST_F(PianoRollTest, BatchGetReturnsCorrectCount) {
 }
 
 TEST_F(PianoRollTest, BatchGetNullHandleReturnsNull) {
-  MidiSketchPianoRollData* data = midisketch_get_piano_roll_safety(
-      nullptr, 0, 1920, 120);
+  MidiSketchPianoRollData* data = midisketch_get_piano_roll_safety(nullptr, 0, 1920, 120);
   EXPECT_EQ(data, nullptr);
 }
 
 TEST_F(PianoRollTest, BatchGetInvalidRangeReturnsNull) {
   // end_tick < start_tick
-  MidiSketchPianoRollData* data = midisketch_get_piano_roll_safety(
-      handle_, 1000, 500, 120);
+  MidiSketchPianoRollData* data = midisketch_get_piano_roll_safety(handle_, 1000, 500, 120);
   EXPECT_EQ(data, nullptr);
 }
 
 TEST_F(PianoRollTest, BatchGetZeroStepReturnsNull) {
-  MidiSketchPianoRollData* data = midisketch_get_piano_roll_safety(
-      handle_, 0, 1920, 0);
+  MidiSketchPianoRollData* data = midisketch_get_piano_roll_safety(handle_, 0, 1920, 0);
   EXPECT_EQ(data, nullptr);
 }
 
@@ -115,7 +111,8 @@ TEST_F(PianoRollTest, TensionsAreWarning) {
     if (note >= 60 && note <= 79) {
       // Tensions should be WARNING (unless they're also chord tones)
       auto chord_tones = getChordTonePitchClasses(info->chord_degree);
-      bool is_chord_tone = std::find(chord_tones.begin(), chord_tones.end(), pc) != chord_tones.end();
+      bool is_chord_tone =
+          std::find(chord_tones.begin(), chord_tones.end(), pc) != chord_tones.end();
 
       if (!is_chord_tone) {
         EXPECT_EQ(info->safety[note], MIDISKETCH_NOTE_WARNING)
@@ -217,7 +214,7 @@ TEST_F(PianoRollTest, NonChordScaleTonesAreWarning) {
       if (note >= 60 && note <= 79) {
         // If there's no severe collision, scale tone should be WARNING
         bool has_collision = (info->reason[note] & MIDISKETCH_REASON_MINOR_2ND) ||
-                            (info->reason[note] & MIDISKETCH_REASON_MAJOR_7TH);
+                             (info->reason[note] & MIDISKETCH_REASON_MAJOR_7TH);
         if (!has_collision) {
           EXPECT_EQ(info->safety[note], MIDISKETCH_NOTE_WARNING)
               << "Non-chord scale tone " << note << " should be WARNING (no collision)";
@@ -248,10 +245,9 @@ TEST_F(PianoRollTest, NonScaleTonesAreDissonant) {
             << "Non-scale tone " << note << " (pc=" << pc << ") should be DISSONANT";
         // Should have NON_SCALE or collision reason
         bool has_reason = (info->reason[note] & MIDISKETCH_REASON_NON_SCALE) ||
-                         (info->reason[note] & MIDISKETCH_REASON_MINOR_2ND) ||
-                         (info->reason[note] & MIDISKETCH_REASON_MAJOR_7TH);
-        EXPECT_TRUE(has_reason)
-            << "Note " << note << " should have NON_SCALE or collision reason";
+                          (info->reason[note] & MIDISKETCH_REASON_MINOR_2ND) ||
+                          (info->reason[note] & MIDISKETCH_REASON_MAJOR_7TH);
+        EXPECT_TRUE(has_reason) << "Note " << note << " should have NON_SCALE or collision reason";
       }
     }
   }
@@ -262,8 +258,8 @@ TEST_F(PianoRollTest, NonScaleTonesAreDissonant) {
 // ============================================================================
 
 TEST_F(PianoRollTest, LargeLeapAddsWarning) {
-  MidiSketchPianoRollInfo* info = midisketch_get_piano_roll_safety_with_context(
-      handle_, 0, 60);  // Previous note was C4
+  MidiSketchPianoRollInfo* info =
+      midisketch_get_piano_roll_safety_with_context(handle_, 0, 60);  // Previous note was C4
   ASSERT_NE(info, nullptr);
 
   // A jump of 9+ semitones (6th or more) should add LARGE_LEAP warning
@@ -279,8 +275,7 @@ TEST_F(PianoRollTest, LargeLeapAddsWarning) {
 
 TEST_F(PianoRollTest, NoPrevPitchNoLeapFlag) {
   // prev_pitch = 255 means no previous note
-  MidiSketchPianoRollInfo* info = midisketch_get_piano_roll_safety_with_context(
-      handle_, 0, 255);
+  MidiSketchPianoRollInfo* info = midisketch_get_piano_roll_safety_with_context(handle_, 0, 255);
   ASSERT_NE(info, nullptr);
 
   // No note should have LARGE_LEAP when there's no previous pitch
@@ -335,8 +330,7 @@ TEST_F(PianoRollTest, ReasonToStringWorks) {
   const char* str = midisketch_reason_to_string(MIDISKETCH_REASON_CHORD_TONE);
   EXPECT_STREQ(str, "Chord tone");
 
-  str = midisketch_reason_to_string(
-      MIDISKETCH_REASON_CHORD_TONE | MIDISKETCH_REASON_LOW_REGISTER);
+  str = midisketch_reason_to_string(MIDISKETCH_REASON_CHORD_TONE | MIDISKETCH_REASON_LOW_REGISTER);
   EXPECT_NE(strstr(str, "Chord tone"), nullptr);
   EXPECT_NE(strstr(str, "Low register"), nullptr);
 
@@ -382,7 +376,7 @@ TEST(ScaleHelperTest, IsScaleToneCMajor) {
 
 TEST(ScaleHelperTest, IsScaleToneGMajor) {
   // G major scale: G, A, B, C, D, E, F# (7, 9, 11, 0, 2, 4, 6)
-  uint8_t key = 7;  // G
+  uint8_t key = 7;                    // G
   EXPECT_TRUE(isScaleTone(7, key));   // G
   EXPECT_TRUE(isScaleTone(9, key));   // A
   EXPECT_TRUE(isScaleTone(11, key));  // B

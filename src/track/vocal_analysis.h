@@ -6,17 +6,18 @@
 #ifndef MIDISKETCH_TRACK_VOCAL_ANALYSIS_H
 #define MIDISKETCH_TRACK_VOCAL_ANALYSIS_H
 
-#include "core/midi_track.h"
-#include "core/section_types.h"
-
 #include <cstdint>
 #include <map>
 #include <random>
 #include <vector>
 
+#include "core/midi_track.h"
+#include "core/section_types.h"
+
 namespace midisketch {
 
-/// Voice leading motion type (counterpoint). Oblique ~40%, Contrary ~30%, Similar ~20%, Parallel ~10%.
+/// Voice leading motion type (counterpoint). Oblique ~40%, Contrary ~30%, Similar ~20%, Parallel
+/// ~10%.
 enum class MotionType : uint8_t {
   Oblique,   ///< One sustains, other moves (most common in pop)
   Contrary,  ///< Opposite directions (best independence)
@@ -26,11 +27,11 @@ enum class MotionType : uint8_t {
 
 /// Phrase boundary extracted from vocal. Detected by gaps >= half bar.
 struct VocalPhraseInfo {
-  Tick start_tick;       ///< Phrase start position in ticks
-  Tick end_tick;         ///< Phrase end position in ticks
-  float density;         ///< Note coverage ratio within phrase (0.0-1.0)
-  uint8_t lowest_pitch;  ///< Lowest MIDI pitch in phrase (0-127)
-  uint8_t highest_pitch; ///< Highest MIDI pitch in phrase (0-127)
+  Tick start_tick;        ///< Phrase start position in ticks
+  Tick end_tick;          ///< Phrase end position in ticks
+  float density;          ///< Note coverage ratio within phrase (0.0-1.0)
+  uint8_t lowest_pitch;   ///< Lowest MIDI pitch in phrase (0-127)
+  uint8_t highest_pitch;  ///< Highest MIDI pitch in phrase (0-127)
 };
 
 /// Complete vocal analysis for accompaniment adaptation (vocal-first workflow).
@@ -70,8 +71,7 @@ uint8_t getVocalPitchAt(const VocalAnalysis& va, Tick tick);
 bool isVocalRestingAt(const VocalAnalysis& va, Tick tick);
 
 /// Select bass motion type based on vocal direction (weighted random).
-MotionType selectMotionType(int8_t vocal_direction, int bar_position,
-                            std::mt19937& rng);
+MotionType selectMotionType(int8_t vocal_direction, int bar_position, std::mt19937& rng);
 
 }  // namespace midisketch
 

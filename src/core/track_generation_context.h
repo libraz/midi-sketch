@@ -9,12 +9,13 @@
 #ifndef MIDISKETCH_CORE_TRACK_GENERATION_CONTEXT_H
 #define MIDISKETCH_CORE_TRACK_GENERATION_CONTEXT_H
 
+#include <random>
+
 #include "core/i_harmony_context.h"
 #include "core/midi_track.h"
 #include "core/preset_types.h"
 #include "core/song.h"
 #include "track/vocal_analysis.h"
-#include <random>
 
 namespace midisketch {
 
@@ -101,9 +102,8 @@ struct TrackGenerationContext {
  */
 class TrackGenerationContextBuilder {
  public:
-  TrackGenerationContextBuilder(const Song& song, const GeneratorParams& params,
-                                 std::mt19937& rng,
-                                 const IHarmonyContext& harmony)
+  TrackGenerationContextBuilder(const Song& song, const GeneratorParams& params, std::mt19937& rng,
+                                const IHarmonyContext& harmony)
       : song_(song), params_(params), rng_(rng), harmony_(harmony) {}
 
   TrackGenerationContextBuilder& withBassTrack(const MidiTrack* track) {
@@ -128,9 +128,7 @@ class TrackGenerationContextBuilder {
 
   TrackGenerationContext build() const {
     return TrackGenerationContext{
-        song_,           params_,        rng_,       harmony_,
-        bass_track_,     aux_track_,     motif_track_,
-        vocal_analysis_,
+        song_, params_, rng_, harmony_, bass_track_, aux_track_, motif_track_, vocal_analysis_,
     };
   }
 

@@ -3,18 +3,18 @@
  * @brief Tests for core types.
  */
 
+#include "core/types.h"
+
 #include <gtest/gtest.h>
+
 #include "core/basic_types.h"
 #include "core/preset_data.h"
 #include "core/track_layer.h"
-#include "core/types.h"
 
 namespace midisketch {
 namespace {
 
-TEST(TypesTest, TicksPerBeat) {
-  EXPECT_EQ(TICKS_PER_BEAT, 480);
-}
+TEST(TypesTest, TicksPerBeat) { EXPECT_EQ(TICKS_PER_BEAT, 480); }
 
 TEST(TypesTest, NoteEventStructure) {
   NoteEvent note{0, 480, 60, 100};
@@ -62,9 +62,7 @@ TEST(TypesTest, StructurePatternCount) {
   EXPECT_EQ(static_cast<uint8_t>(StructurePattern::ShortForm), 4);
 }
 
-TEST(TypesTest, MoodCount) {
-  EXPECT_EQ(static_cast<uint8_t>(Mood::Anthem), 15);
-}
+TEST(TypesTest, MoodCount) { EXPECT_EQ(static_cast<uint8_t>(Mood::Anthem), 15); }
 
 TEST(TypesTest, MelodyDataStructure) {
   MelodyData melody;

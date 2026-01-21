@@ -6,9 +6,10 @@
 #ifndef MIDISKETCH_CORE_MODULATION_CALCULATOR_H
 #define MIDISKETCH_CORE_MODULATION_CALCULATOR_H
 
-#include "core/types.h"
 #include <random>
 #include <vector>
+
+#include "core/types.h"
 
 namespace midisketch {
 
@@ -28,11 +29,9 @@ class ModulationCalculator {
   // @param sections Song sections
   // @param rng Random number generator (for Random timing)
   // @returns ModulationResult with tick and amount
-  static ModulationResult calculate(ModulationTiming timing,
-                                     int8_t semitones,
-                                     StructurePattern structure,
-                                     const std::vector<Section>& sections,
-                                     std::mt19937& rng);
+  static ModulationResult calculate(ModulationTiming timing, int8_t semitones,
+                                    StructurePattern structure,
+                                    const std::vector<Section>& sections, std::mt19937& rng);
 
  private:
   // Find the last chorus section.
@@ -43,7 +42,7 @@ class ModulationCalculator {
 
   // Calculate modulation using legacy structure-based logic.
   static Tick calculateLegacyModulation(StructurePattern structure,
-                                         const std::vector<Section>& sections);
+                                        const std::vector<Section>& sections);
 };
 
 }  // namespace midisketch

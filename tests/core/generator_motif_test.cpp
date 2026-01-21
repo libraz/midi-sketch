@@ -4,7 +4,9 @@
  */
 
 #include <gtest/gtest.h>
+
 #include <set>
+
 #include "core/generator.h"
 #include "core/preset_data.h"
 
@@ -195,16 +197,14 @@ TEST(GeneratorTest, BackgroundMotifIsBGMOnly) {
   // MelodyLead should generate vocal
   params.composition_style = CompositionStyle::MelodyLead;
   gen1.generate(params);
-  EXPECT_GT(gen1.getSong().vocal().noteCount(), 0u)
-      << "MelodyLead should generate vocal notes";
+  EXPECT_GT(gen1.getSong().vocal().noteCount(), 0u) << "MelodyLead should generate vocal notes";
 
   // BackgroundMotif is BGM-only (no vocal to avoid dissonance)
   params.composition_style = CompositionStyle::BackgroundMotif;
   gen2.generate(params);
   EXPECT_EQ(gen2.getSong().vocal().noteCount(), 0u)
       << "BackgroundMotif should not generate vocal (BGM-only mode)";
-  EXPECT_GT(gen2.getSong().motif().noteCount(), 0u)
-      << "BackgroundMotif should generate motif";
+  EXPECT_GT(gen2.getSong().motif().noteCount(), 0u) << "BackgroundMotif should generate motif";
 }
 
 TEST(GeneratorTest, BackgroundMotifDrumsHiHatDriven) {
@@ -271,10 +271,9 @@ TEST(GeneratorTest, MotifVelocityFixed) {
       vel_str += std::to_string(static_cast<int>(v));
     }
 
-    EXPECT_TRUE(consistent)
-        << "Expected all velocities to be " << static_cast<int>(main_vel)
-        << " or " << static_cast<int>(octave_vel)
-        << " (octave doubled). Found: " << vel_str;
+    EXPECT_TRUE(consistent) << "Expected all velocities to be " << static_cast<int>(main_vel)
+                            << " or " << static_cast<int>(octave_vel)
+                            << " (octave doubled). Found: " << vel_str;
   }
 }
 
@@ -377,12 +376,11 @@ TEST(MotifChordTest, MaxChordCountLimitsProgression) {
   SongConfig config_limited = createDefaultSongConfig(12);
   config_limited.composition_style = CompositionStyle::BackgroundMotif;
   config_limited.motif_chord.max_chord_count = 2;  // Only 2 chords
-  config_limited.seed = 77777;  // Same seed
+  config_limited.seed = 77777;                     // Same seed
   gen_limited.generateFromConfig(config_limited);
 
   // Both should generate successfully
-  EXPECT_FALSE(gen_full.getSong().motif().empty())
-      << "Full progression motif should be generated";
+  EXPECT_FALSE(gen_full.getSong().motif().empty()) << "Full progression motif should be generated";
   EXPECT_FALSE(gen_limited.getSong().motif().empty())
       << "Limited progression motif should be generated";
 
@@ -406,8 +404,7 @@ TEST(MotifRepeatScopeTest, FullSongSamePattern) {
 
   gen.generate(params);
 
-  EXPECT_FALSE(gen.getSong().motif().empty())
-      << "Motif should be generated with FullSong scope";
+  EXPECT_FALSE(gen.getSong().motif().empty()) << "Motif should be generated with FullSong scope";
 }
 
 TEST(MotifRepeatScopeTest, SectionScopeGenerates) {
@@ -422,8 +419,7 @@ TEST(MotifRepeatScopeTest, SectionScopeGenerates) {
 
   gen.generate(params);
 
-  EXPECT_FALSE(gen.getSong().motif().empty())
-      << "Motif should be generated with Section scope";
+  EXPECT_FALSE(gen.getSong().motif().empty()) << "Motif should be generated with Section scope";
 }
 
 TEST(MotifRepeatScopeTest, SectionVsFullSongDiffers) {
@@ -560,13 +556,12 @@ TEST(GeneratorTest, BackgroundMotifNoChordMotifClash) {
       // Check if notes overlap in time
       Tick motif_end = motif_note.start_tick + motif_note.duration;
       Tick chord_end = chord_note.start_tick + chord_note.duration;
-      bool overlaps = (motif_note.start_tick < chord_end) &&
-                      (chord_note.start_tick < motif_end);
+      bool overlaps = (motif_note.start_tick < chord_end) && (chord_note.start_tick < motif_end);
 
       if (overlaps) {
         // Check for minor 2nd interval (1 semitone)
-        int interval = std::abs(static_cast<int>(motif_note.note) -
-                                static_cast<int>(chord_note.note)) % 12;
+        int interval =
+            std::abs(static_cast<int>(motif_note.note) - static_cast<int>(chord_note.note)) % 12;
         if (interval == 1 || interval == 11) {
           clash_count++;
         }

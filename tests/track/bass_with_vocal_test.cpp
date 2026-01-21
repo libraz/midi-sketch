@@ -4,6 +4,10 @@
  */
 
 #include <gtest/gtest.h>
+
+#include <random>
+#include <set>
+
 #include "core/generator.h"
 #include "core/harmony_context.h"
 #include "core/i_harmony_context.h"
@@ -12,8 +16,6 @@
 #include "track/bass.h"
 #include "track/vocal.h"
 #include "track/vocal_analysis.h"
-#include <random>
-#include <set>
 
 namespace midisketch {
 namespace {
@@ -126,14 +128,13 @@ TEST_F(BassWithVocalTest, MaintainsOctaveSeparation) {
       Tick vocal_end = vocal_note.start_tick + vocal_note.duration;
 
       // Check if notes overlap
-      bool overlap = (bass_note.start_tick < vocal_end) &&
-                     (vocal_note.start_tick < bass_end);
+      bool overlap = (bass_note.start_tick < vocal_end) && (vocal_note.start_tick < bass_end);
 
       if (overlap) {
         // Check pitch class
         if ((bass_note.note % 12) == (vocal_note.note % 12)) {
-          int separation = std::abs(static_cast<int>(bass_note.note) -
-                                    static_cast<int>(vocal_note.note));
+          int separation =
+              std::abs(static_cast<int>(bass_note.note) - static_cast<int>(vocal_note.note));
           if (separation < kMinOctaveSeparation) {
             close_doubling_count++;
           }
@@ -143,11 +144,10 @@ TEST_F(BassWithVocalTest, MaintainsOctaveSeparation) {
   }
 
   // Allow some close doublings (can't always avoid), but should be minimal
-  double doubling_ratio = static_cast<double>(close_doubling_count) /
-                          static_cast<double>(bass_notes.size());
-  EXPECT_LT(doubling_ratio, 0.2)
-      << "Too many close pitch class doublings: " << close_doubling_count
-      << " out of " << bass_notes.size() << " bass notes";
+  double doubling_ratio =
+      static_cast<double>(close_doubling_count) / static_cast<double>(bass_notes.size());
+  EXPECT_LT(doubling_ratio, 0.2) << "Too many close pitch class doublings: " << close_doubling_count
+                                 << " out of " << bass_notes.size() << " bass notes";
 }
 
 // === Rhythmic Complementation Tests ===
@@ -192,13 +192,9 @@ TEST_F(BassWithVocalTest, AdaptsToSparseVocal) {
 // === Different Moods Tests ===
 
 TEST_F(BassWithVocalTest, WorksWithDifferentMoods) {
-  std::vector<Mood> moods = {
-    Mood::ElectroPop,
-    Mood::Ballad,
-    Mood::CityPop,  // Jazz-influenced
-    Mood::LightRock,
-    Mood::Yoasobi
-  };
+  std::vector<Mood> moods = {Mood::ElectroPop, Mood::Ballad,
+                             Mood::CityPop,  // Jazz-influenced
+                             Mood::LightRock, Mood::Yoasobi};
 
   for (Mood mood : moods) {
     params_.mood = mood;
@@ -223,11 +219,8 @@ TEST_F(BassWithVocalTest, WorksWithDifferentMoods) {
 
 TEST_F(BassWithVocalTest, WorksWithDifferentStructures) {
   std::vector<StructurePattern> structures = {
-    StructurePattern::StandardPop,
-    StructurePattern::ShortForm,
-    StructurePattern::FullPop,
-    StructurePattern::DirectChorus
-  };
+      StructurePattern::StandardPop, StructurePattern::ShortForm, StructurePattern::FullPop,
+      StructurePattern::DirectChorus};
 
   for (auto structure : structures) {
     params_.structure = structure;
@@ -307,8 +300,8 @@ TEST_F(BassWithVocalTest, AvoidsFifthClashWithSustainedVocal) {
 
       // Calculate actual semitone distance (not pitch class)
       // Music theory: notes 2+ octaves apart (24+ semitones) don't clash perceptually
-      int actual_interval = std::abs(static_cast<int>(bass_note.note) -
-                                     static_cast<int>(vocal_note.note));
+      int actual_interval =
+          std::abs(static_cast<int>(bass_note.note) - static_cast<int>(vocal_note.note));
 
       // Wide separation (2+ octaves): not a clash
       if (actual_interval >= 24) continue;
@@ -358,8 +351,8 @@ TEST_F(BassWithVocalTest, FallsBackToRootWhenFifthClashes) {
         if (!overlap) continue;
 
         // Calculate actual semitone distance (music theory aware)
-        int actual_interval = std::abs(static_cast<int>(bass_note.note) -
-                                       static_cast<int>(vocal_note.note));
+        int actual_interval =
+            std::abs(static_cast<int>(bass_note.note) - static_cast<int>(vocal_note.note));
 
         // Wide separation (2+ octaves): not a perceptual clash
         if (actual_interval >= 24) continue;
@@ -373,8 +366,7 @@ TEST_F(BassWithVocalTest, FallsBackToRootWhenFifthClashes) {
   }
 
   // Should have zero or very few clashes within audible range
-  EXPECT_LE(total_clashes, 2)
-      << "Too many minor 2nd clashes across seeds: " << total_clashes;
+  EXPECT_LE(total_clashes, 2) << "Too many minor 2nd clashes across seeds: " << total_clashes;
 }
 
 // === Integration with Generator ===

@@ -9,8 +9,9 @@
 #ifndef MIDISKETCH_CORE_COMPOSITION_STRATEGY_H
 #define MIDISKETCH_CORE_COMPOSITION_STRATEGY_H
 
-#include "core/preset_types.h"
 #include <memory>
+
+#include "core/preset_types.h"
 
 namespace midisketch {
 

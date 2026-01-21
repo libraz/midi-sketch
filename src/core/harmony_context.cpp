@@ -7,15 +7,15 @@
  */
 
 #include "core/harmony_context.h"
+
 #include "core/arrangement.h"
 #include "core/chord.h"
 #include "core/midi_track.h"
 
 namespace midisketch {
 
-void HarmonyContext::initialize(const Arrangement& arrangement,
-                                 const ChordProgression& progression,
-                                 Mood mood) {
+void HarmonyContext::initialize(const Arrangement& arrangement, const ChordProgression& progression,
+                                Mood mood) {
   chord_tracker_.initialize(arrangement, progression, mood);
   collision_detector_.clearNotes();
 }
@@ -32,8 +32,7 @@ std::vector<int> HarmonyContext::getChordTonesAt(Tick tick) const {
   return chord_tracker_.getChordTonesAt(tick);
 }
 
-void HarmonyContext::registerNote(Tick start, Tick duration, uint8_t pitch,
-                                   TrackRole track) {
+void HarmonyContext::registerNote(Tick start, Tick duration, uint8_t pitch, TrackRole track) {
   collision_detector_.registerNote(start, duration, pitch, track);
 }
 
@@ -42,16 +41,14 @@ void HarmonyContext::registerTrack(const MidiTrack& track, TrackRole role) {
 }
 
 bool HarmonyContext::isPitchSafe(uint8_t pitch, Tick start, Tick duration,
-                                  TrackRole exclude) const {
-  return collision_detector_.isPitchSafe(pitch, start, duration, exclude,
-                                          &chord_tracker_);
+                                 TrackRole exclude) const {
+  return collision_detector_.isPitchSafe(pitch, start, duration, exclude, &chord_tracker_);
 }
 
-uint8_t HarmonyContext::getSafePitch(uint8_t desired, Tick start, Tick duration,
-                                      TrackRole track, uint8_t low,
-                                      uint8_t high) const {
-  return pitch_resolver_.getSafePitch(desired, start, duration, track, low,
-                                       high, chord_tracker_, collision_detector_);
+uint8_t HarmonyContext::getSafePitch(uint8_t desired, Tick start, Tick duration, TrackRole track,
+                                     uint8_t low, uint8_t high) const {
+  return pitch_resolver_.getSafePitch(desired, start, duration, track, low, high, chord_tracker_,
+                                      collision_detector_);
 }
 
 void HarmonyContext::clearNotes() { collision_detector_.clearNotes(); }
@@ -61,12 +58,11 @@ void HarmonyContext::clearNotesForTrack(TrackRole track) {
 }
 
 bool HarmonyContext::hasBassCollision(uint8_t pitch, Tick start, Tick duration,
-                                       int threshold) const {
+                                      int threshold) const {
   return collision_detector_.hasBassCollision(pitch, start, duration, threshold);
 }
 
-std::vector<int> HarmonyContext::getPitchClassesFromTrackAt(Tick tick,
-                                                            TrackRole role) const {
+std::vector<int> HarmonyContext::getPitchClassesFromTrackAt(Tick tick, TrackRole role) const {
   return collision_detector_.getPitchClassesFromTrackAt(tick, role);
 }
 

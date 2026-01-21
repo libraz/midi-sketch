@@ -19,16 +19,13 @@ const MelodyTemplate& getTemplate(MelodyTemplateId id);
 // @param style Vocal style preset
 // @param section Section type
 // @returns Recommended template ID
-MelodyTemplateId getDefaultTemplateForStyle(VocalStylePreset style,
-                                             SectionType section);
+MelodyTemplateId getDefaultTemplateForStyle(VocalStylePreset style, SectionType section);
 
 // Get aux configurations for a template.
 // @param id Template identifier
 // @param out_configs Output array of AuxConfig (max 3)
 // @param out_count Output number of configs
-void getAuxConfigsForTemplate(MelodyTemplateId id,
-                               AuxConfig* out_configs,
-                               uint8_t* out_count);
+void getAuxConfigsForTemplate(MelodyTemplateId id, AuxConfig* out_configs, uint8_t* out_count);
 
 // Template count (excluding Auto)
 constexpr uint8_t MELODY_TEMPLATE_COUNT = 7;

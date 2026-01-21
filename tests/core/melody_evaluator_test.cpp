@@ -3,24 +3,27 @@
  * @brief Tests for melody evaluator.
  */
 
+#include "core/melody_evaluator.h"
+
 #include <gtest/gtest.h>
+
+#include <random>
+
 #include "core/arrangement.h"
 #include "core/chord.h"
-#include "core/melody_evaluator.h"
-#include "core/melody_templates.h"
 #include "core/harmony_context.h"
 #include "core/i_harmony_context.h"
+#include "core/melody_templates.h"
 #include "core/types.h"
 #include "core/vocal_style_profile.h"
 #include "track/melody_designer.h"
-#include <random>
 
 namespace midisketch {
 namespace {
 
 // Helper to create a simple melody for testing
 std::vector<NoteEvent> createTestMelody(const std::vector<uint8_t>& pitches,
-                                         Tick note_duration = TICKS_PER_BEAT) {
+                                        Tick note_duration = TICKS_PER_BEAT) {
   std::vector<NoteEvent> notes;
   Tick current_tick = 0;
   for (uint8_t pitch : pitches) {
@@ -223,9 +226,8 @@ TEST(MelodyEvaluatorTest, GetEvaluatorConfigIdol) {
   EXPECT_GT(config.aaab_weight, 0.0f);
 
   // Total weights should sum to 1.0
-  float total = config.singability_weight + config.chord_tone_weight +
-                config.contour_weight + config.surprise_weight +
-                config.aaab_weight;
+  float total = config.singability_weight + config.chord_tone_weight + config.contour_weight +
+                config.surprise_weight + config.aaab_weight;
   EXPECT_NEAR(total, 1.0f, 0.01f);
 }
 
@@ -264,8 +266,8 @@ TEST(MelodyEvaluatorTest, TotalScoreCalculation) {
 // ============================================================================
 
 // Helper to create a valid SectionContext for testing
-MelodyDesigner::SectionContext createTestSectionContext(
-    SectionType type, Tick start, uint8_t bars) {
+MelodyDesigner::SectionContext createTestSectionContext(SectionType type, Tick start,
+                                                        uint8_t bars) {
   MelodyDesigner::SectionContext ctx;
   ctx.section_type = type;
   ctx.section_start = start;
@@ -302,8 +304,8 @@ TEST(MelodyEvaluatorIntegrationTest, GenerateSectionWithEvaluationProducesNotes)
 
   std::mt19937 rng(12345);
 
-  auto notes = designer.generateSectionWithEvaluation(
-      tmpl, ctx, harmony, rng, VocalStylePreset::Idol);
+  auto notes =
+      designer.generateSectionWithEvaluation(tmpl, ctx, harmony, rng, VocalStylePreset::Idol);
 
   // Should produce notes
   EXPECT_GT(notes.size(), 0u) << "generateSectionWithEvaluation should produce notes";
@@ -329,10 +331,10 @@ TEST(MelodyEvaluatorIntegrationTest, EvaluationSelectsBestCandidate) {
   std::mt19937 rng2(22222);
 
   // Generate with different seeds
-  auto notes1 = designer.generateSectionWithEvaluation(
-      tmpl, ctx, harmony, rng1, VocalStylePreset::Standard);
-  auto notes2 = designer.generateSectionWithEvaluation(
-      tmpl, ctx, harmony, rng2, VocalStylePreset::Standard);
+  auto notes1 =
+      designer.generateSectionWithEvaluation(tmpl, ctx, harmony, rng1, VocalStylePreset::Standard);
+  auto notes2 =
+      designer.generateSectionWithEvaluation(tmpl, ctx, harmony, rng2, VocalStylePreset::Standard);
 
   // Both should produce valid output
   EXPECT_GT(notes1.size(), 0u);
@@ -359,10 +361,10 @@ TEST(MelodyEvaluatorIntegrationTest, DifferentStylesProduceDifferentMelodies) {
   std::mt19937 rng1(12345);
   std::mt19937 rng2(12345);
 
-  auto idol_notes = designer.generateSectionWithEvaluation(
-      tmpl, ctx, harmony, rng1, VocalStylePreset::Idol);
-  auto ballad_notes = designer.generateSectionWithEvaluation(
-      tmpl, ctx, harmony, rng2, VocalStylePreset::Ballad);
+  auto idol_notes =
+      designer.generateSectionWithEvaluation(tmpl, ctx, harmony, rng1, VocalStylePreset::Idol);
+  auto ballad_notes =
+      designer.generateSectionWithEvaluation(tmpl, ctx, harmony, rng2, VocalStylePreset::Ballad);
 
   // Both should produce notes
   EXPECT_GT(idol_notes.size(), 0u);

@@ -6,8 +6,9 @@
 #ifndef MIDISKETCH_CORE_NOTE_FACTORY_H
 #define MIDISKETCH_CORE_NOTE_FACTORY_H
 
-#include "core/basic_types.h"
 #include <optional>
+
+#include "core/basic_types.h"
 
 namespace midisketch {
 
@@ -15,33 +16,44 @@ class IHarmonyContext;
 
 /// @brief Source phase of note generation for debugging.
 enum class NoteSource : uint8_t {
-  Unknown = 0,       ///< Legacy code (not yet migrated)
-  MelodyPhrase,      ///< MelodyDesigner::generateMelodyPhrase
-  Hook,              ///< MelodyDesigner::generateHook
-  BassPattern,       ///< Bass pattern generation
-  ChordVoicing,      ///< Chord voicing
-  Arpeggio,          ///< Arpeggio pattern
-  Aux,               ///< Aux track generation
-  Motif,             ///< Motif track
-  Drums,             ///< Drums (simplified provenance)
-  CollisionAvoid,    ///< Modified by collision avoidance
-  PostProcess,       ///< Modified by post-processing
+  Unknown = 0,     ///< Legacy code (not yet migrated)
+  MelodyPhrase,    ///< MelodyDesigner::generateMelodyPhrase
+  Hook,            ///< MelodyDesigner::generateHook
+  BassPattern,     ///< Bass pattern generation
+  ChordVoicing,    ///< Chord voicing
+  Arpeggio,        ///< Arpeggio pattern
+  Aux,             ///< Aux track generation
+  Motif,           ///< Motif track
+  Drums,           ///< Drums (simplified provenance)
+  CollisionAvoid,  ///< Modified by collision avoidance
+  PostProcess,     ///< Modified by post-processing
 };
 
 /// @brief Convert NoteSource to string for JSON output.
 inline const char* noteSourceToString(NoteSource source) {
   switch (source) {
-    case NoteSource::Unknown: return "unknown";
-    case NoteSource::MelodyPhrase: return "melody_phrase";
-    case NoteSource::Hook: return "hook";
-    case NoteSource::BassPattern: return "bass_pattern";
-    case NoteSource::ChordVoicing: return "chord_voicing";
-    case NoteSource::Arpeggio: return "arpeggio";
-    case NoteSource::Aux: return "aux";
-    case NoteSource::Motif: return "motif";
-    case NoteSource::Drums: return "drums";
-    case NoteSource::CollisionAvoid: return "collision_avoid";
-    case NoteSource::PostProcess: return "post_process";
+    case NoteSource::Unknown:
+      return "unknown";
+    case NoteSource::MelodyPhrase:
+      return "melody_phrase";
+    case NoteSource::Hook:
+      return "hook";
+    case NoteSource::BassPattern:
+      return "bass_pattern";
+    case NoteSource::ChordVoicing:
+      return "chord_voicing";
+    case NoteSource::Arpeggio:
+      return "arpeggio";
+    case NoteSource::Aux:
+      return "aux";
+    case NoteSource::Motif:
+      return "motif";
+    case NoteSource::Drums:
+      return "drums";
+    case NoteSource::CollisionAvoid:
+      return "collision_avoid";
+    case NoteSource::PostProcess:
+      return "post_process";
   }
   return "unknown";
 }
@@ -87,8 +99,7 @@ class NoteFactory {
   /// @param new_pitch Modified pitch
   /// @param new_source New source phase
   /// @return NoteEvent with updated provenance
-  NoteEvent modify(const NoteEvent& original, uint8_t new_pitch,
-                   NoteSource new_source) const;
+  NoteEvent modify(const NoteEvent& original, uint8_t new_pitch, NoteSource new_source) const;
 
   /// @brief Create a note only if it's harmonically safe.
   ///
@@ -103,9 +114,9 @@ class NoteFactory {
   /// @param track TrackRole for collision checking (exclude same track)
   /// @param source Generation phase for debugging
   /// @return NoteEvent if safe, nullopt if would create dissonance
-  std::optional<NoteEvent> createSafe(Tick start, Tick duration, uint8_t pitch,
-                                       uint8_t velocity, TrackRole track,
-                                       NoteSource source = NoteSource::Unknown) const;
+  std::optional<NoteEvent> createSafe(Tick start, Tick duration, uint8_t pitch, uint8_t velocity,
+                                      TrackRole track,
+                                      NoteSource source = NoteSource::Unknown) const;
 
   /// @brief Access the harmony context.
   const IHarmonyContext& harmony() const { return harmony_; }

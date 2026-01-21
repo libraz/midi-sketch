@@ -22,20 +22,17 @@ constexpr size_t kClipMagicLen = 8;
 
 // Read big-endian uint32
 uint32_t readUint32BE(const uint8_t* data) {
-  return (static_cast<uint32_t>(data[0]) << 24) |
-         (static_cast<uint32_t>(data[1]) << 16) |
+  return (static_cast<uint32_t>(data[0]) << 24) | (static_cast<uint32_t>(data[1]) << 16) |
          (static_cast<uint32_t>(data[2]) << 8) | data[3];
 }
 
 }  // namespace
 
 bool Midi2Reader::isMidi2Format(const uint8_t* data, size_t size) {
-  if (size >= kContainerMagicLen &&
-      std::memcmp(data, kContainerMagic, kContainerMagicLen) == 0) {
+  if (size >= kContainerMagicLen && std::memcmp(data, kContainerMagic, kContainerMagicLen) == 0) {
     return true;
   }
-  if (size >= kClipMagicLen &&
-      std::memcmp(data, kClipMagic, kClipMagicLen) == 0) {
+  if (size >= kClipMagicLen && std::memcmp(data, kClipMagic, kClipMagicLen) == 0) {
     return true;
   }
   return false;
@@ -52,8 +49,7 @@ bool Midi2Reader::read(const std::string& path) {
   file.seekg(0, std::ios::beg);
 
   std::vector<uint8_t> buffer(static_cast<size_t>(size));
-  if (!file.read(reinterpret_cast<char*>(buffer.data()),
-                 static_cast<std::streamsize>(size))) {
+  if (!file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(size))) {
     error_ = "Failed to read file: " + path;
     return false;
   }
@@ -76,8 +72,7 @@ bool Midi2Reader::read(const uint8_t* data, size_t size) {
   }
 
   // Check for SMF2 Clip
-  if (size >= kClipMagicLen &&
-      std::memcmp(data, kClipMagic, kClipMagicLen) == 0) {
+  if (size >= kClipMagicLen && std::memcmp(data, kClipMagic, kClipMagicLen) == 0) {
     return parseClip(data, size);
   }
 
@@ -123,8 +118,7 @@ bool Midi2Reader::parseClip(const uint8_t* data, size_t size) {
   return true;
 }
 
-void Midi2Reader::parseUmpMessages(const uint8_t* data, size_t size,
-                                    size_t offset) {
+void Midi2Reader::parseUmpMessages(const uint8_t* data, size_t size, size_t offset) {
   // Parse UMP messages looking for:
   // - DCTPQ (division)
   // - Tempo
@@ -215,7 +209,8 @@ void Midi2Reader::parseUmpMessages(const uint8_t* data, size_t size,
       int brace_count = 0;
       size_t json_end = json_start;
       for (size_t i = json_start; i < text_buffer.size(); ++i) {
-        if (text_buffer[i] == '{') brace_count++;
+        if (text_buffer[i] == '{')
+          brace_count++;
         else if (text_buffer[i] == '}') {
           brace_count--;
           if (brace_count == 0) {

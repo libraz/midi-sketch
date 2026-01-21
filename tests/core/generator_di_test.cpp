@@ -7,9 +7,11 @@
  */
 
 #include <gtest/gtest.h>
+
+#include <memory>
+
 #include "core/generator.h"
 #include "test_support/stub_harmony_context.h"
-#include <memory>
 
 namespace midisketch {
 namespace {

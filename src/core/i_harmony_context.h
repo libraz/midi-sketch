@@ -8,8 +8,9 @@
 #ifndef MIDISKETCH_CORE_I_HARMONY_CONTEXT_H
 #define MIDISKETCH_CORE_I_HARMONY_CONTEXT_H
 
-#include "core/types.h"
 #include <vector>
+
+#include "core/types.h"
 
 namespace midisketch {
 
@@ -33,8 +34,7 @@ class IHarmonyContext {
    * @param progression Chord progression to use
    * @param mood Mood affects harmonic rhythm
    */
-  virtual void initialize(const Arrangement& arrangement,
-                          const ChordProgression& progression,
+  virtual void initialize(const Arrangement& arrangement, const ChordProgression& progression,
                           Mood mood) = 0;
 
   /**
@@ -58,8 +58,7 @@ class IHarmonyContext {
    * @param pitch MIDI pitch
    * @param track Which track this note belongs to
    */
-  virtual void registerNote(Tick start, Tick duration, uint8_t pitch,
-                            TrackRole track) = 0;
+  virtual void registerNote(Tick start, Tick duration, uint8_t pitch, TrackRole track) = 0;
 
   /**
    * @brief Register all notes from a completed track.
@@ -79,8 +78,7 @@ class IHarmonyContext {
    * @param exclude Exclude notes from this track when checking
    * @return true if pitch doesn't clash with other tracks
    */
-  virtual bool isPitchSafe(uint8_t pitch, Tick start, Tick duration,
-                           TrackRole exclude) const = 0;
+  virtual bool isPitchSafe(uint8_t pitch, Tick start, Tick duration, TrackRole exclude) const = 0;
 
   /**
    * @brief Get a safe pitch that doesn't clash with other tracks.
@@ -95,9 +93,8 @@ class IHarmonyContext {
    * @param high Maximum allowed pitch
    * @return Safe pitch within range, or desired if no safe pitch found
    */
-  virtual uint8_t getSafePitch(uint8_t desired, Tick start, Tick duration,
-                               TrackRole track, uint8_t low,
-                               uint8_t high) const = 0;
+  virtual uint8_t getSafePitch(uint8_t desired, Tick start, Tick duration, TrackRole track,
+                               uint8_t low, uint8_t high) const = 0;
 
   /**
    * @brief Get the tick of the next chord change after the given tick.
@@ -136,8 +133,7 @@ class IHarmonyContext {
    * @param role Which track to query
    * @return Vector of pitch classes (may be empty if no notes sounding)
    */
-  virtual std::vector<int> getPitchClassesFromTrackAt(Tick tick,
-                                                      TrackRole role) const = 0;
+  virtual std::vector<int> getPitchClassesFromTrackAt(Tick tick, TrackRole role) const = 0;
 
   /// C4 (middle C) - below this, stricter low-register rules apply.
   static constexpr uint8_t LOW_REGISTER_THRESHOLD = 60;

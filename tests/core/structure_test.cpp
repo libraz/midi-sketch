@@ -3,10 +3,13 @@
  * @brief Tests for song structure builders.
  */
 
-#include <gtest/gtest.h>
-#include <cmath>
-#include "core/production_blueprint.h"
 #include "core/structure.h"
+
+#include <gtest/gtest.h>
+
+#include <cmath>
+
+#include "core/production_blueprint.h"
 
 namespace midisketch {
 namespace {
@@ -106,15 +109,32 @@ TEST(StructureTest, ExtendedFullContainsRequiredSections) {
 
   for (const auto& section : sections) {
     switch (section.type) {
-      case SectionType::Intro: has_intro = true; break;
-      case SectionType::A: has_a = true; break;
-      case SectionType::B: has_b = true; break;
-      case SectionType::Chorus: has_chorus = true; chorus_count++; break;
-      case SectionType::Interlude: has_interlude = true; break;
-      case SectionType::Bridge: has_bridge = true; break;
-      case SectionType::Outro: has_outro = true; break;
-      case SectionType::Chant: break;  // Not expected in ExtendedFull
-      case SectionType::MixBreak: break;  // Not expected in ExtendedFull
+      case SectionType::Intro:
+        has_intro = true;
+        break;
+      case SectionType::A:
+        has_a = true;
+        break;
+      case SectionType::B:
+        has_b = true;
+        break;
+      case SectionType::Chorus:
+        has_chorus = true;
+        chorus_count++;
+        break;
+      case SectionType::Interlude:
+        has_interlude = true;
+        break;
+      case SectionType::Bridge:
+        has_bridge = true;
+        break;
+      case SectionType::Outro:
+        has_outro = true;
+        break;
+      case SectionType::Chant:
+        break;  // Not expected in ExtendedFull
+      case SectionType::MixBreak:
+        break;  // Not expected in ExtendedFull
     }
   }
 
@@ -260,8 +280,7 @@ TEST(StructureTest, BuildForDurationDifferentBPM) {
   uint16_t bars_slow = calculateTotalBars(sections_slow);
   uint16_t bars_fast = calculateTotalBars(sections_fast);
 
-  EXPECT_LT(bars_slow, bars_fast)
-      << "Slower BPM should produce fewer bars for same duration";
+  EXPECT_LT(bars_slow, bars_fast) << "Slower BPM should produce fewer bars for same duration";
 }
 
 TEST(StructureTest, BuildForDurationSectionTicks) {
@@ -467,12 +486,9 @@ TEST(StructureTest, ChorusFirstChorusWithin15Seconds) {
 TEST(StructureTest, AllNewPatternsProduceValidSections) {
   // Test that all new patterns produce valid section structures
   std::vector<StructurePattern> new_patterns = {
-      StructurePattern::ChorusFirst,
-      StructurePattern::ChorusFirstShort,
-      StructurePattern::ChorusFirstFull,
-      StructurePattern::ImmediateVocal,
-      StructurePattern::ImmediateVocalFull,
-      StructurePattern::AChorusB,
+      StructurePattern::ChorusFirst,        StructurePattern::ChorusFirstShort,
+      StructurePattern::ChorusFirstFull,    StructurePattern::ImmediateVocal,
+      StructurePattern::ImmediateVocalFull, StructurePattern::AChorusB,
       StructurePattern::DoubleVerse,
   };
 
@@ -505,8 +521,7 @@ TEST(StructureTest, TrackMaskToVocalDensity_Sparse) {
   // Vocal only or vocal + drums -> Sparse
   EXPECT_EQ(trackMaskToVocalDensity(TrackMask::Vocal), VocalDensity::Sparse);
   EXPECT_EQ(trackMaskToVocalDensity(TrackMask::Sparse), VocalDensity::Sparse);
-  EXPECT_EQ(trackMaskToVocalDensity(TrackMask::Vocal | TrackMask::Drums),
-            VocalDensity::Sparse);
+  EXPECT_EQ(trackMaskToVocalDensity(TrackMask::Vocal | TrackMask::Drums), VocalDensity::Sparse);
   // Vocal + 1 backing track -> Sparse
   EXPECT_EQ(trackMaskToVocalDensity(TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass),
             VocalDensity::Sparse);
@@ -523,14 +538,12 @@ TEST(StructureTest, TrackMaskToBackingDensity_Thin) {
   EXPECT_EQ(trackMaskToBackingDensity(TrackMask::Drums), BackingDensity::Thin);
   EXPECT_EQ(trackMaskToBackingDensity(TrackMask::Vocal), BackingDensity::Thin);
   EXPECT_EQ(trackMaskToBackingDensity(TrackMask::Chord), BackingDensity::Thin);
-  EXPECT_EQ(trackMaskToBackingDensity(TrackMask::Vocal | TrackMask::Bass),
-            BackingDensity::Thin);
+  EXPECT_EQ(trackMaskToBackingDensity(TrackMask::Vocal | TrackMask::Bass), BackingDensity::Thin);
 }
 
 TEST(StructureTest, TrackMaskToBackingDensity_Normal) {
   // 2-3 backing tracks -> Normal
-  EXPECT_EQ(trackMaskToBackingDensity(TrackMask::Chord | TrackMask::Bass),
-            BackingDensity::Normal);
+  EXPECT_EQ(trackMaskToBackingDensity(TrackMask::Chord | TrackMask::Bass), BackingDensity::Normal);
   EXPECT_EQ(trackMaskToBackingDensity(TrackMask::Basic), BackingDensity::Normal);
 }
 

@@ -3,8 +3,10 @@
  * @brief Tests for Song container.
  */
 
-#include <gtest/gtest.h>
 #include "core/song.h"
+
+#include <gtest/gtest.h>
+
 #include "core/structure.h"
 
 namespace midisketch {

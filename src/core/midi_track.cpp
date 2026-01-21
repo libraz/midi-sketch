@@ -4,13 +4,12 @@
  */
 
 #include "core/midi_track.h"
+
 #include <algorithm>
 
 namespace midisketch {
 
-void MidiTrack::addNote(const NoteEvent& event) {
-  notes_.push_back(event);
-}
+void MidiTrack::addNote(const NoteEvent& event) { notes_.push_back(event); }
 
 // Suppress deprecation warning for legacy implementation
 #ifdef __clang__
@@ -21,8 +20,7 @@ void MidiTrack::addNote(const NoteEvent& event) {
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
 
-void MidiTrack::addNote(Tick startTick, Tick length, uint8_t note,
-                        uint8_t velocity) {
+void MidiTrack::addNote(Tick startTick, Tick length, uint8_t note, uint8_t velocity) {
   // Legacy API: create NoteEvent without provenance
   NoteEvent event;
   event.start_tick = startTick;
@@ -39,9 +37,7 @@ void MidiTrack::addNote(Tick startTick, Tick length, uint8_t note,
 #pragma GCC diagnostic pop
 #endif
 
-void MidiTrack::addText(Tick tick, const std::string& text) {
-  textEvents_.push_back({tick, text});
-}
+void MidiTrack::addText(Tick tick, const std::string& text) { textEvents_.push_back({tick, text}); }
 
 void MidiTrack::transpose(int8_t semitones) {
   for (auto& note : notes_) {
@@ -136,19 +132,17 @@ std::vector<MidiEvent> MidiTrack::toMidiEvents(uint8_t channel) const {
   // Convert NoteEvents to note-on/off MidiEvents
   for (const auto& note : notes_) {
     // Note on: status = 0x90 | channel
-    events.push_back({note.start_tick, static_cast<uint8_t>(0x90 | channel),
-                      note.note, note.velocity});
+    events.push_back(
+        {note.start_tick, static_cast<uint8_t>(0x90 | channel), note.note, note.velocity});
 
     // Note off: status = 0x80 | channel
-    events.push_back({note.start_tick + note.duration,
-                      static_cast<uint8_t>(0x80 | channel), note.note, 0});
+    events.push_back(
+        {note.start_tick + note.duration, static_cast<uint8_t>(0x80 | channel), note.note, 0});
   }
 
   // Sort by tick time
   std::sort(events.begin(), events.end(),
-            [](const MidiEvent& a, const MidiEvent& b) {
-              return a.tick < b.tick;
-            });
+            [](const MidiEvent& a, const MidiEvent& b) { return a.tick < b.tick; });
 
   return events;
 }

@@ -6,10 +6,11 @@
 #ifndef MIDISKETCH_CORE_MIDI_TRACK_H
 #define MIDISKETCH_CORE_MIDI_TRACK_H
 
-#include "core/types.h"
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "core/types.h"
 
 namespace midisketch {
 

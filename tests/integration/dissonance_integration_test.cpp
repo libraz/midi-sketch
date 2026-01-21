@@ -7,14 +7,16 @@
  */
 
 #include <gtest/gtest.h>
+
+#include <map>
+#include <string>
+#include <vector>
+
 #include "core/generator.h"
 #include "core/i_harmony_context.h"
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
-#include <map>
-#include <string>
-#include <vector>
 
 namespace midisketch {
 namespace {
@@ -43,8 +45,8 @@ struct ClashInfo {
 
 // Find all dissonant clashes between two tracks using chord context
 std::vector<ClashInfo> findClashes(const MidiTrack& track_a, const std::string& name_a,
-                                    const MidiTrack& track_b, const std::string& name_b,
-                                    const IHarmonyContext& harmony) {
+                                   const MidiTrack& track_b, const std::string& name_b,
+                                   const IHarmonyContext& harmony) {
   std::vector<ClashInfo> clashes;
 
   for (const auto& note_a : track_a.notes()) {
@@ -60,8 +62,7 @@ std::vector<ClashInfo> findClashes(const MidiTrack& track_a, const std::string& 
       if (!overlap) continue;
 
       // Calculate actual interval
-      int actual_interval = std::abs(static_cast<int>(note_a.note) -
-                                     static_cast<int>(note_b.note));
+      int actual_interval = std::abs(static_cast<int>(note_a.note) - static_cast<int>(note_b.note));
 
       // Skip wide separations (perceptually not clashing)
       if (actual_interval >= MAX_CLASH_SEPARATION) continue;
@@ -71,8 +72,8 @@ std::vector<ClashInfo> findClashes(const MidiTrack& track_a, const std::string& 
       int8_t chord_degree = harmony.getChordDegreeAt(overlap_tick);
 
       if (isDissonantActualInterval(actual_interval, chord_degree)) {
-        clashes.push_back({name_a, name_b, note_a.note, note_b.note,
-                          overlap_tick, actual_interval});
+        clashes.push_back(
+            {name_a, name_b, note_a.note, note_b.note, overlap_tick, actual_interval});
       }
     }
   }
@@ -95,8 +96,8 @@ std::vector<ClashInfo> analyzeAllTrackPairs(const Song& song, const IHarmonyCont
   // Check all unique pairs
   for (size_t i = 0; i < tracks.size(); ++i) {
     for (size_t j = i + 1; j < tracks.size(); ++j) {
-      auto clashes = findClashes(*tracks[i].first, tracks[i].second,
-                                  *tracks[j].first, tracks[j].second, harmony);
+      auto clashes = findClashes(*tracks[i].first, tracks[i].second, *tracks[j].first,
+                                 tracks[j].second, harmony);
       all_clashes.insert(all_clashes.end(), clashes.begin(), clashes.end());
     }
   }
@@ -140,15 +141,14 @@ TEST_F(TrackClashIntegrationTest, MelodyLeadMode_NoDissonantClashes) {
     if (!clashes.empty()) {
       std::cerr << "\n=== Seed " << seed << " clashes ===\n";
       for (const auto& c : clashes) {
-        std::cerr << c.track_a << "(" << (int)c.pitch_a << ") vs "
-                  << c.track_b << "(" << (int)c.pitch_b << ") "
+        std::cerr << c.track_a << "(" << (int)c.pitch_a << ") vs " << c.track_b << "("
+                  << (int)c.pitch_b << ") "
                   << "interval=" << c.interval << " tick=" << c.tick << "\n";
       }
     }
 
-    EXPECT_EQ(clashes.size(), 0u)
-        << "MelodyLead mode (seed " << seed << ") has " << clashes.size()
-        << " dissonant clashes";
+    EXPECT_EQ(clashes.size(), 0u) << "MelodyLead mode (seed " << seed << ") has " << clashes.size()
+                                  << " dissonant clashes";
   }
 }
 
@@ -165,9 +165,8 @@ TEST_F(TrackClashIntegrationTest, BackgroundMotifMode_NoDissonantClashes) {
 
     auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
 
-    EXPECT_EQ(clashes.size(), 0u)
-        << "BackgroundMotif mode (seed " << seed << ") has " << clashes.size()
-        << " dissonant clashes";
+    EXPECT_EQ(clashes.size(), 0u) << "BackgroundMotif mode (seed " << seed << ") has "
+                                  << clashes.size() << " dissonant clashes";
   }
 }
 
@@ -185,9 +184,8 @@ TEST_F(TrackClashIntegrationTest, SynthDrivenMode_NoDissonantClashes) {
 
     auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
 
-    EXPECT_EQ(clashes.size(), 0u)
-        << "SynthDriven mode (seed " << seed << ") has " << clashes.size()
-        << " dissonant clashes";
+    EXPECT_EQ(clashes.size(), 0u) << "SynthDriven mode (seed " << seed << ") has " << clashes.size()
+                                  << " dissonant clashes";
   }
 }
 
@@ -207,9 +205,8 @@ TEST_F(TrackClashIntegrationTest, AllChordProgressions_NoDissonantClashes) {
 
     auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
 
-    EXPECT_EQ(clashes.size(), 0u)
-        << "Chord progression " << static_cast<int>(chord_id)
-        << " has " << clashes.size() << " dissonant clashes";
+    EXPECT_EQ(clashes.size(), 0u) << "Chord progression " << static_cast<int>(chord_id) << " has "
+                                  << clashes.size() << " dissonant clashes";
   }
 }
 
@@ -225,8 +222,8 @@ TEST_F(TrackClashIntegrationTest, AllKeys_NoDissonantClashes) {
 
     auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
 
-    EXPECT_EQ(clashes.size(), 0u)
-        << "Key " << key << " has " << clashes.size() << " dissonant clashes";
+    EXPECT_EQ(clashes.size(), 0u) << "Key " << key << " has " << clashes.size()
+                                  << " dissonant clashes";
   }
 }
 
@@ -234,10 +231,9 @@ TEST_F(TrackClashIntegrationTest, AllMoods_NoDissonantClashes) {
   params_.composition_style = CompositionStyle::BackgroundMotif;
   params_.seed = 12345;
 
-  std::vector<Mood> moods = {
-    Mood::StraightPop, Mood::BrightUpbeat, Mood::EnergeticDance,
-    Mood::LightRock, Mood::Ballad, Mood::CityPop, Mood::Yoasobi
-  };
+  std::vector<Mood> moods = {Mood::StraightPop, Mood::BrightUpbeat, Mood::EnergeticDance,
+                             Mood::LightRock,   Mood::Ballad,       Mood::CityPop,
+                             Mood::Yoasobi};
 
   for (Mood mood : moods) {
     params_.mood = mood;
@@ -247,9 +243,8 @@ TEST_F(TrackClashIntegrationTest, AllMoods_NoDissonantClashes) {
 
     auto clashes = analyzeAllTrackPairs(gen.getSong(), gen.getHarmonyContext());
 
-    EXPECT_EQ(clashes.size(), 0u)
-        << "Mood " << static_cast<int>(mood) << " has " << clashes.size()
-        << " dissonant clashes";
+    EXPECT_EQ(clashes.size(), 0u) << "Mood " << static_cast<int>(mood) << " has " << clashes.size()
+                                  << " dissonant clashes";
   }
 }
 
@@ -275,8 +270,7 @@ TEST_F(TrackClashIntegrationTest, MotifBassClashes_BGMMode) {
 
     auto clashes = findClashes(motif, "Motif", bass, "Bass", gen.getHarmonyContext());
 
-    EXPECT_EQ(clashes.size(), 0u)
-        << "Motif-Bass clashes (seed " << seed << "): " << clashes.size();
+    EXPECT_EQ(clashes.size(), 0u) << "Motif-Bass clashes (seed " << seed << "): " << clashes.size();
   }
 }
 
@@ -298,8 +292,7 @@ TEST_F(TrackClashIntegrationTest, VocalBassClashes_MelodyLeadMode) {
 
     auto clashes = findClashes(vocal, "Vocal", bass, "Bass", gen.getHarmonyContext());
 
-    EXPECT_EQ(clashes.size(), 0u)
-        << "Vocal-Bass clashes (seed " << seed << "): " << clashes.size();
+    EXPECT_EQ(clashes.size(), 0u) << "Vocal-Bass clashes (seed " << seed << "): " << clashes.size();
   }
 }
 
@@ -318,8 +311,8 @@ TEST_F(TrackClashIntegrationTest, AnticipationTritoneRegression_Seed464394633) {
 
   // This seed previously caused F-B tritone clashes at bar 53
   // due to bass anticipation not checking for tritone interval
-  EXPECT_EQ(clashes.size(), 0u)
-      << "Anticipation tritone regression: " << clashes.size() << " clashes found";
+  EXPECT_EQ(clashes.size(), 0u) << "Anticipation tritone regression: " << clashes.size()
+                                << " clashes found";
 }
 
 // Regression test for chord-bass tritone clash
@@ -336,8 +329,8 @@ TEST_F(TrackClashIntegrationTest, ChordBassAnticipationRegression_Seed3263424241
 
   // This seed previously caused Chord(B) vs Bass(F) tritone clashes
   // at bars 17, 33, 41 due to phrase-end anticipation
-  EXPECT_EQ(clashes.size(), 0u)
-      << "Chord-Bass anticipation regression: " << clashes.size() << " clashes found";
+  EXPECT_EQ(clashes.size(), 0u) << "Chord-Bass anticipation regression: " << clashes.size()
+                                << " clashes found";
 }
 
 // Note: Diagnostic tests moved to dissonance_diagnostic_test.cpp

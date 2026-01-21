@@ -9,10 +9,12 @@
  */
 
 #include "core/melody_embellishment.h"
-#include "core/chord_utils.h"
-#include "core/i_harmony_context.h"
+
 #include <algorithm>
 #include <cmath>
+
+#include "core/chord_utils.h"
+#include "core/i_harmony_context.h"
 
 namespace midisketch {
 
@@ -169,13 +171,10 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
 // Main Embellishment Logic
 // ============================================================================
 
-std::vector<NoteEvent> MelodicEmbellisher::embellish(
-    const std::vector<NoteEvent>& skeleton,
-    const EmbellishmentConfig& config,
-    const IHarmonyContext& harmony,
-    int key_offset,
-    std::mt19937& rng) {
-
+std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent>& skeleton,
+                                                     const EmbellishmentConfig& config,
+                                                     const IHarmonyContext& harmony, int key_offset,
+                                                     std::mt19937& rng) {
   if (skeleton.empty()) return {};
 
   std::vector<NoteEvent> result;
@@ -204,8 +203,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(
     if (next != nullptr && roll < cumulative && consecutive_ncts < config.max_consecutive_ncts) {
       int interval = std::abs(static_cast<int>(next->note) - static_cast<int>(current.note));
       if (interval >= MIN_PT_INTERVAL) {
-        auto pt = tryInsertPassingTone(current, *next, key_offset,
-                                       config.prefer_pentatonic, rng);
+        auto pt = tryInsertPassingTone(current, *next, key_offset, config.prefer_pentatonic, rng);
         if (pt) {
           result.push_back(current);  // Original chord tone
           result.push_back(*pt);      // Passing tone
@@ -221,8 +219,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(
         current.duration >= MIN_SPLIT_DURATION * 2 &&
         consecutive_ncts < config.max_consecutive_ncts) {
       bool upper = prob_dist(rng) > 0.5f;
-      auto nt_pair = tryAddNeighborTone(current, upper, key_offset,
-                                        config.prefer_pentatonic, rng);
+      auto nt_pair = tryAddNeighborTone(current, upper, key_offset, config.prefer_pentatonic, rng);
       if (nt_pair) {
         result.push_back(nt_pair->first);   // Neighbor tone
         result.push_back(nt_pair->second);  // Return to CT
@@ -237,8 +234,8 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(
         current.duration >= MIN_SPLIT_DURATION * 2 &&
         consecutive_ncts < config.max_consecutive_ncts) {
       bool upper = prob_dist(rng) > 0.5f;
-      auto app_pair = tryConvertToAppoggiatura(current, upper, key_offset,
-                                               config.chromatic_approach, rng);
+      auto app_pair =
+          tryConvertToAppoggiatura(current, upper, key_offset, config.chromatic_approach, rng);
       if (app_pair) {
         result.push_back(app_pair->first);   // Appoggiatura
         result.push_back(app_pair->second);  // Resolution
@@ -249,14 +246,12 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(
 
     // 4. Anticipation: syncopation before chord change
     cumulative += config.anticipation_ratio;
-    if (roll < cumulative && next != nullptr &&
-        prob_dist(rng) < config.syncopation_level &&
+    if (roll < cumulative && next != nullptr && prob_dist(rng) < config.syncopation_level &&
         consecutive_ncts < config.max_consecutive_ncts) {
       // Check if chord changes between current and next
       int8_t next_chord_degree = harmony.getChordDegreeAt(next->start_tick);
       if (next_chord_degree != chord_degree) {
-        auto ant = tryAddAnticipation(current, *next, next->start_tick,
-                                      next_chord_degree, rng);
+        auto ant = tryAddAnticipation(current, *next, next->start_tick, next_chord_degree, rng);
         if (ant && ant->start_tick > current.start_tick) {
           // Shorten current note (check for underflow)
           Tick ant_offset = ant->start_tick - current.start_tick;
@@ -360,7 +355,8 @@ bool MelodicEmbellisher::isScaleTone(int pitch_class, int key_offset) {
   return false;
 }
 
-int MelodicEmbellisher::scaleStep(int pitch, int direction, int key_offset, bool prefer_pentatonic) {
+int MelodicEmbellisher::scaleStep(int pitch, int direction, int key_offset,
+                                  bool prefer_pentatonic) {
   int pc = pitch % 12;
   int octave = pitch / 12;
 
@@ -420,13 +416,11 @@ int MelodicEmbellisher::stepDirection(int from_pitch, int to_pitch) {
 // NCT Generation
 // ============================================================================
 
-std::optional<NoteEvent> MelodicEmbellisher::tryInsertPassingTone(
-    const NoteEvent& from,
-    const NoteEvent& to,
-    int key_offset,
-    bool prefer_pentatonic,
-    std::mt19937& rng) {
-
+std::optional<NoteEvent> MelodicEmbellisher::tryInsertPassingTone(const NoteEvent& from,
+                                                                  const NoteEvent& to,
+                                                                  int key_offset,
+                                                                  bool prefer_pentatonic,
+                                                                  std::mt19937& rng) {
   int interval = static_cast<int>(to.note) - static_cast<int>(from.note);
   if (std::abs(interval) < MIN_PT_INTERVAL) return std::nullopt;
 
@@ -471,12 +465,8 @@ std::optional<NoteEvent> MelodicEmbellisher::tryInsertPassingTone(
 }
 
 std::optional<std::pair<NoteEvent, NoteEvent>> MelodicEmbellisher::tryAddNeighborTone(
-    const NoteEvent& chord_tone,
-    bool upper,
-    int key_offset,
-    bool prefer_pentatonic,
+    const NoteEvent& chord_tone, bool upper, int key_offset, bool prefer_pentatonic,
     std::mt19937& rng) {
-
   if (chord_tone.duration < MIN_SPLIT_DURATION * 2) return std::nullopt;
 
   int direction = upper ? 1 : -1;
@@ -509,12 +499,8 @@ std::optional<std::pair<NoteEvent, NoteEvent>> MelodicEmbellisher::tryAddNeighbo
 }
 
 std::optional<std::pair<NoteEvent, NoteEvent>> MelodicEmbellisher::tryConvertToAppoggiatura(
-    const NoteEvent& chord_tone,
-    bool upper,
-    int key_offset,
-    bool allow_chromatic,
+    const NoteEvent& chord_tone, bool upper, int key_offset, bool allow_chromatic,
     std::mt19937& rng) {
-
   if (chord_tone.duration < MIN_SPLIT_DURATION * 2) return std::nullopt;
 
   // Verify strong beat (appoggiaturas are accented dissonances)
@@ -570,13 +556,11 @@ std::optional<std::pair<NoteEvent, NoteEvent>> MelodicEmbellisher::tryConvertToA
   return std::make_pair(app, res);
 }
 
-std::optional<NoteEvent> MelodicEmbellisher::tryAddAnticipation(
-    const NoteEvent& current,
-    const NoteEvent& next,
-    Tick next_chord_tick,
-    int8_t next_chord_degree,
-    std::mt19937& rng) {
-
+std::optional<NoteEvent> MelodicEmbellisher::tryAddAnticipation(const NoteEvent& current,
+                                                                const NoteEvent& next,
+                                                                Tick next_chord_tick,
+                                                                int8_t next_chord_degree,
+                                                                std::mt19937& rng) {
   // Anticipation window: just before chord change (probabilistic 8th/16th grid)
   Tick grid = getQuantizationGrid(rng);
   Tick ant_start = next_chord_tick - grid;
@@ -619,13 +603,9 @@ std::optional<NoteEvent> MelodicEmbellisher::tryAddAnticipation(
   return ant;
 }
 
-std::optional<uint8_t> MelodicEmbellisher::getTensionPitch(
-    int8_t chord_degree,
-    uint8_t base_pitch,
-    uint8_t range_low,
-    uint8_t range_high,
-    std::mt19937& rng) {
-
+std::optional<uint8_t> MelodicEmbellisher::getTensionPitch(int8_t chord_degree, uint8_t base_pitch,
+                                                           uint8_t range_low, uint8_t range_high,
+                                                           std::mt19937& rng) {
   auto tensions = getAvailableTensionPitchClasses(chord_degree);
   if (tensions.empty()) return std::nullopt;
 

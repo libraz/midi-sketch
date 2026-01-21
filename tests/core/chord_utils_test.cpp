@@ -3,9 +3,12 @@
  * @brief Tests for chord utilities.
  */
 
-#include <gtest/gtest.h>
-#include <random>
 #include "core/chord_utils.h"
+
+#include <gtest/gtest.h>
+
+#include <random>
+
 #include "core/pitch_utils.h"
 
 namespace midisketch {
