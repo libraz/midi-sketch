@@ -916,5 +916,71 @@ TEST_F(ProductionBlueprintTest, RhythmLockBlueprintGeneratesNotes) {
   EXPECT_FALSE(song.drums().empty()) << "RhythmLock should generate drums";
 }
 
+// ============================================================================
+// BGM-only Mode with RhythmSync Tests
+// ============================================================================
+
+TEST_F(ProductionBlueprintTest, BgmOnlyWithRhythmSyncGeneratesMotif) {
+  // Regression test: BGM-only mode (skip_vocal=true) with RhythmSync blueprint
+  // should still generate Motif track. This was a bug where MelodyLeadStrategy
+  // didn't generate Motif when skip_vocal was true.
+  Generator gen;
+  GeneratorParams params;
+  params.blueprint_id = 1;  // RhythmLock (RhythmSync paradigm)
+  params.skip_vocal = true;
+  params.composition_style = CompositionStyle::MelodyLead;  // Default style
+  params.seed = 12345;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  // Vocal should be empty (skip_vocal=true)
+  EXPECT_TRUE(song.vocal().empty()) << "Vocal should be empty when skip_vocal=true";
+
+  // Motif should be generated for RhythmSync paradigm even in BGM-only mode
+  EXPECT_FALSE(song.motif().empty())
+      << "Motif should be generated for RhythmSync paradigm in BGM-only mode";
+
+  // Bass and chord should still be generated
+  EXPECT_FALSE(song.bass().empty()) << "Bass should be generated in BGM-only mode";
+  EXPECT_FALSE(song.chord().empty()) << "Chord should be generated in BGM-only mode";
+}
+
+TEST_F(ProductionBlueprintTest, BgmOnlyWithRhythmSyncHasDrivingDensity) {
+  // Verify that RhythmSync paradigm applies Driving rhythm density to Motif
+  Generator gen;
+  GeneratorParams params;
+  params.blueprint_id = 1;  // RhythmLock (RhythmSync paradigm)
+  params.skip_vocal = true;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.seed = 12345;
+
+  gen.generate(params);
+  const auto& applied_params = gen.getParams();
+
+  // configureRhythmSyncMotif() should have set these values
+  EXPECT_EQ(applied_params.motif.rhythm_density, MotifRhythmDensity::Driving);
+  EXPECT_EQ(applied_params.motif.note_count, 8);
+  EXPECT_EQ(applied_params.motif.length, MotifLength::Bars1);
+}
+
+TEST_F(ProductionBlueprintTest, BgmOnlyWithTraditionalNoMotif) {
+  // Traditional blueprint with MelodyLead and skip_vocal should NOT generate Motif
+  // (no RhythmSync paradigm)
+  Generator gen;
+  GeneratorParams params;
+  params.blueprint_id = 0;  // Traditional
+  params.skip_vocal = true;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.seed = 12345;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  // Motif should NOT be generated for Traditional paradigm in BGM-only mode
+  EXPECT_TRUE(song.motif().empty())
+      << "Motif should NOT be generated for Traditional paradigm with MelodyLead in BGM-only mode";
+}
+
 }  // namespace
 }  // namespace midisketch

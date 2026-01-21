@@ -37,7 +37,14 @@ void MelodyLeadStrategy::generateMelodicTracks(Generator& gen) {
     }
     gen.invokeGenerateAux();
   } else {
-    gen.invokeGenerateBass();  // No vocal to avoid
+    // BGM-only mode: generate bass and optionally motif
+    gen.invokeGenerateBass();
+
+    // For RhythmSync paradigm, generate Motif even without vocal
+    // The Motif provides the rhythmic foundation that defines the style
+    if (gen.shouldUseRhythmLock()) {
+      gen.generateMotifAsAxis();
+    }
   }
 }
 
