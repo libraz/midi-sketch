@@ -143,14 +143,14 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
     if (motif_high > kMotifHighRegisterThreshold) {  // Motif in high register
       effective_vocal_high = std::min(effective_vocal_high, kVocalAvoidHighLimit);
       if (effective_vocal_high - effective_vocal_low < kMinVocalOctaveRange) {
-        effective_vocal_low = std::max(kVocalRangeFloor,
-            static_cast<uint8_t>(effective_vocal_high - kMinVocalOctaveRange));
+        effective_vocal_low = std::max(
+            kVocalRangeFloor, static_cast<uint8_t>(effective_vocal_high - kMinVocalOctaveRange));
       }
     } else if (motif_low < kMotifLowRegisterThreshold) {  // Motif in low register
       effective_vocal_low = std::max(effective_vocal_low, kVocalAvoidLowLimit);
       if (effective_vocal_high - effective_vocal_low < kMinVocalOctaveRange) {
-        effective_vocal_high = std::min(kVocalRangeCeiling,
-            static_cast<uint8_t>(effective_vocal_low + kMinVocalOctaveRange));
+        effective_vocal_high = std::min(
+            kVocalRangeCeiling, static_cast<uint8_t>(effective_vocal_low + kMinVocalOctaveRange));
       }
     }
   }

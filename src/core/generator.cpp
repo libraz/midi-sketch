@@ -128,13 +128,13 @@ void Generator::configureRhythmSyncMotif() {
 }
 
 void Generator::validateVocalRange() {
-  // Swap if low > high
+  // Clamp to valid MIDI range first
+  params_.vocal_low = std::clamp(params_.vocal_low, VOCAL_LOW_MIN, VOCAL_HIGH_MAX);
+  params_.vocal_high = std::clamp(params_.vocal_high, VOCAL_LOW_MIN, VOCAL_HIGH_MAX);
+  // Then swap if low > high (could happen after clamping extreme values)
   if (params_.vocal_low > params_.vocal_high) {
     std::swap(params_.vocal_low, params_.vocal_high);
   }
-  // Clamp to valid MIDI range
-  params_.vocal_low = std::clamp(params_.vocal_low, VOCAL_LOW_MIN, VOCAL_HIGH_MAX);
-  params_.vocal_high = std::clamp(params_.vocal_high, VOCAL_LOW_MIN, VOCAL_HIGH_MAX);
 }
 
 void Generator::applyAccompanimentConfig(const AccompanimentConfig& config) {

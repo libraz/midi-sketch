@@ -171,8 +171,10 @@ bool isDissonantIntervalWithContext(int pc1, int pc2, int8_t chord_degree) {
 }
 
 bool isDissonantActualInterval(int actual_semitones, int8_t chord_degree) {
-  // For very wide intervals (3+ octaves), perceptual harshness is reduced
-  // sufficiently that we can allow them through
+  // For very wide intervals (3+ octaves), perceptual harshness is reduced.
+  // Beyond 3 octaves, beating frequencies become too slow to perceive as dissonance,
+  // and the notes occupy different registral spaces (bass vs. soprano).
+  // This threshold allows bass-vocal combinations without false positives.
   if (actual_semitones >= 36) {
     return false;
   }

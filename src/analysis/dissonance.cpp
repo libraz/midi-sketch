@@ -22,9 +22,7 @@ namespace midisketch {
 
 namespace {
 
-// Note names for conversion.
-constexpr const char* NOTE_NAMES[12] = {"C",  "C#", "D",  "D#", "E",  "F",
-                                        "F#", "G",  "G#", "A",  "A#", "B"};
+// Note: NOTE_NAMES is now provided by pitch_utils.h
 
 // Harmonic rhythm: how often chords change (mirrored from chord_track.cpp)
 enum class HarmonicDensity {

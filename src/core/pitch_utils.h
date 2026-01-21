@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <string>
 
 namespace midisketch {
 
@@ -99,6 +100,45 @@ constexpr uint8_t PASSAGGIO_HIGH = 71;  ///< B4 - Upper bound of passaggio zone
 constexpr int SCALE[7] = {0, 2, 4, 5, 7, 9, 11};
 
 // ============================================================================
+// Interval Constants
+// ============================================================================
+
+/// @brief Common musical intervals in semitones.
+/// Use these constants instead of magic numbers for interval calculations.
+namespace Interval {
+constexpr int UNISON = 0;
+constexpr int HALF_STEP = 1;   ///< Minor 2nd / semitone
+constexpr int WHOLE_STEP = 2;  ///< Major 2nd / tone
+constexpr int MINOR_3RD = 3;
+constexpr int MAJOR_3RD = 4;
+constexpr int PERFECT_4TH = 5;
+constexpr int TRITONE = 6;  ///< Augmented 4th / Diminished 5th
+constexpr int PERFECT_5TH = 7;
+constexpr int MINOR_6TH = 8;
+constexpr int MAJOR_6TH = 9;
+constexpr int MINOR_7TH = 10;
+constexpr int MAJOR_7TH = 11;
+constexpr int OCTAVE = 12;
+constexpr int TWO_OCTAVES = 24;
+}  // namespace Interval
+
+// ============================================================================
+// Debug/Display Utilities
+// ============================================================================
+
+/// @brief Note names using sharps (for display/logging).
+constexpr const char* NOTE_NAMES[] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                      "F#", "G",  "G#", "A",  "A#", "B"};
+
+/// @brief Convert MIDI pitch to note name with octave (e.g., "C4", "F#5").
+/// @param pitch MIDI pitch (0-127)
+/// @return Note name string (e.g., "C4")
+inline std::string pitchToNoteName(uint8_t pitch) {
+  int octave = (pitch / 12) - 1;
+  return std::string(NOTE_NAMES[pitch % 12]) + std::to_string(octave);
+}
+
+// ============================================================================
 // Chord Function (Harmonic Function)
 // ============================================================================
 
@@ -117,12 +157,12 @@ enum class ChordFunction : uint8_t { Tonic, Dominant, Subdominant };
  */
 inline ChordFunction getChordFunction(int8_t degree) {
   switch (degree) {
-    case 0:   // I  - tonic
-    case 2:   // iii - tonic substitute
-    case 5:   // vi - relative minor (tonic function)
+    case 0:  // I  - tonic
+    case 2:  // iii - tonic substitute
+    case 5:  // vi - relative minor (tonic function)
       return ChordFunction::Tonic;
-    case 4:   // V  - dominant
-    case 6:   // vii° - leading tone (dominant function)
+    case 4:  // V  - dominant
+    case 6:  // vii° - leading tone (dominant function)
       return ChordFunction::Dominant;
     case 1:   // ii - supertonic (subdominant function)
     case 3:   // IV - subdominant
@@ -272,10 +312,10 @@ bool isDissonantActualInterval(int actual_semitones, int8_t chord_degree);
 
 /// @name Avoid Note Intervals (semitones from chord root)
 /// @{
-constexpr int AVOID_PERFECT_4TH = 5;   ///< P4 - avoid on major tonic
-constexpr int AVOID_MINOR_6TH = 8;     ///< m6 - avoid on minor chords
-constexpr int AVOID_TRITONE = 6;       ///< TT - essential on dominant, avoid elsewhere
-constexpr int AVOID_MAJOR_7TH = 11;    ///< M7 - context-dependent
+constexpr int AVOID_PERFECT_4TH = 5;  ///< P4 - avoid on major tonic
+constexpr int AVOID_MINOR_6TH = 8;    ///< m6 - avoid on minor chords
+constexpr int AVOID_TRITONE = 6;      ///< TT - essential on dominant, avoid elsewhere
+constexpr int AVOID_MAJOR_7TH = 11;   ///< M7 - context-dependent
 /// @}
 
 /**

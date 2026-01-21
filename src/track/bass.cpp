@@ -37,16 +37,15 @@ namespace midisketch {
 
 namespace {
 
-// Timing constants
+// Timing aliases for readability in bass patterns.
+// These short names make rhythm notation clearer (e.g., QUARTER instead of TICK_QUARTER).
 constexpr Tick HALF = TICK_HALF;
 constexpr Tick QUARTER = TICK_QUARTER;
 constexpr Tick EIGHTH = TICK_EIGHTH;
 
-// Pitch constants (semitones)
-constexpr int OCTAVE = 12;         ///< One octave in semitones
-constexpr int TWO_OCTAVES = 24;    ///< Two octaves in semitones
-constexpr int PERFECT_5TH = 7;     ///< Perfect 5th interval
-constexpr int DIMINISHED_5TH = 6;  ///< Diminished 5th interval
+// Use interval constants from pitch_utils.h
+using namespace Interval;
+constexpr int DIMINISHED_5TH = TRITONE;  ///< Alias for clarity in bass context
 
 /// Convert degree to bass root pitch, using appropriate octave.
 /// Tries one octave down first, then two octaves if still above BASS_HIGH.
@@ -96,10 +95,6 @@ uint8_t getNextDiatonic(uint8_t pitch, int direction) {
     return clampBass((oct - 1) * OCTAVE + SCALE[6]);
   }
 }
-
-// Interval constants for thirds
-constexpr int MINOR_3RD = 3;  ///< Minor 3rd interval
-constexpr int MAJOR_3RD = 4;  ///< Major 3rd interval
 
 /// Get diatonic chord tone (3rd or 5th) for the chord root in C major context.
 /// For minor chords (ii, iii, vi), returns the minor 3rd which is diatonic.
@@ -160,24 +155,20 @@ bool clashesWithAnyChordTone(int pitch_class, const std::array<int, 7>& chord_to
   return false;
 }
 
-/// Check if pitch class is diatonic in C major (helper for getApproachNote)
-bool isApproachDiatonic(int pitch_class) {
+/// Check if pitch class is diatonic in C major.
+/// Used by approach note selection and vocal-aware bass adjustments.
+bool isDiatonicInC(int pitch_class) {
   // C major scale: C(0), D(2), E(4), F(5), G(7), A(9), B(11)
-  int pc = ((pitch_class % OCTAVE) + OCTAVE) % OCTAVE;
-  return pc == 0 || pc == 2 || pc == 4 || pc == 5 || pc == 7 || pc == 9 || pc == 11;
-}
-
-/// Get chord function (Tonic/Dominant/Subdominant) for approach selection.
-enum class ChordFunction { Tonic, Dominant, Subdominant };
-
-ChordFunction getChordFunction(int8_t degree) {
-  int d = ((degree % 7) + 7) % 7;
-  if (d == 0 || d == 2 || d == 5) return ChordFunction::Tonic;  // I, iii, vi
-  if (d == 4 || d == 6) return ChordFunction::Dominant;         // V, vii°
-  return ChordFunction::Subdominant;                            // ii, IV
+  constexpr int diatonic[] = {0, 2, 4, 5, 7, 9, 11};
+  int pc = ((pitch_class % 12) + 12) % 12;  // Normalize to 0-11
+  for (int d : diatonic) {
+    if (pc == d) return true;
+  }
+  return false;
 }
 
 /// Get approach note with chord function awareness.
+/// Uses ChordFunction from pitch_utils.h which properly handles borrowed chords (e.g., bVII).
 uint8_t getApproachNote(uint8_t current_root, uint8_t next_root, int8_t target_degree) {
   int diff = static_cast<int>(next_root) - static_cast<int>(current_root);
   if (diff == 0) return current_root;
@@ -191,17 +182,13 @@ uint8_t getApproachNote(uint8_t current_root, uint8_t next_root, int8_t target_d
     if (approach < BASS_LOW) approach += OCTAVE;
     if (approach > BASS_HIGH) approach -= OCTAVE;
     int pc = approach % OCTAVE;
-    if (isApproachDiatonic(pc) && !clashesWithAnyChordTone(pc, chord_tones, target_degree)) {
+    if (isDiatonicInC(pc) && !clashesWithAnyChordTone(pc, chord_tones, target_degree)) {
       return clampBass(approach);
     }
     return std::nullopt;
   };
 
-  // Function-specific approach priorities
-  constexpr int PERFECT_4TH = 5;  // Perfect 4th interval
-  constexpr int WHOLE_STEP = 2;   // Whole step interval
-  constexpr int HALF_STEP = 1;    // Half step interval
-
+  // Function-specific approach priorities (using Interval constants)
   switch (func) {
     case ChordFunction::Tonic:
       // I/iii/vi: Fifth below (V-I) or leading tone (half-step below)
@@ -1096,9 +1083,8 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
 
       // Match chord_track.cpp: Slow = 2 bars per chord, Normal = 1 bar per chord
-      int chord_idx = slow_harmonic ? (bar / 2) % progression.length : bar % progression.length;
-      int next_chord_idx =
-          slow_harmonic ? ((bar + 1) / 2) % progression.length : (bar + 1) % progression.length;
+      int chord_idx = getChordIndexForBar(bar, slow_harmonic, progression.length);
+      int next_chord_idx = getNextChordIndexForBar(bar, slow_harmonic, progression.length);
 
       int8_t degree = progression.at(chord_idx);
       int8_t next_degree = progression.at(next_chord_idx);
@@ -1231,16 +1217,8 @@ BassPattern selectPatternWithPolicyForVocal(BassRiffCache& cache, const Section&
   return pattern;
 }
 
-// Helper: pitch to note name for logging
-const char* pitchToNoteName(uint8_t pitch) {
-  static const char* names[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
-  static char buf[8];
-  int octave = (pitch / 12) - 1;
-  snprintf(buf, sizeof(buf), "%s%d", names[pitch % 12], octave);
-  return buf;
-}
-
 // Helper: motion type to string for logging
+// Note: pitchToNoteName is now provided by pitch_utils.h
 const char* motionTypeToString(MotionType motion) {
   switch (motion) {
     case MotionType::Contrary:
@@ -1253,17 +1231,6 @@ const char* motionTypeToString(MotionType motion) {
       return "Oblique";
   }
   return "Unknown";
-}
-
-// Check if pitch class is diatonic in C major
-bool isDiatonicInC(int pitch_class) {
-  // C major scale: C(0), D(2), E(4), F(5), G(7), A(9), B(11)
-  constexpr int diatonic[] = {0, 2, 4, 5, 7, 9, 11};
-  int pc = ((pitch_class % 12) + 12) % 12;  // Normalize to 0-11
-  for (int d : diatonic) {
-    if (pc == d) return true;
-  }
-  return false;
 }
 
 // Check if bass pitch would form a minor 2nd (1 semitone) with vocal
@@ -1479,9 +1446,8 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song, const Genera
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
 
       // Get chord info
-      int chord_idx = slow_harmonic ? (bar / 2) % progression.length : bar % progression.length;
-      int next_chord_idx =
-          slow_harmonic ? ((bar + 1) / 2) % progression.length : (bar + 1) % progression.length;
+      int chord_idx = getChordIndexForBar(bar, slow_harmonic, progression.length);
+      int next_chord_idx = getNextChordIndexForBar(bar, slow_harmonic, progression.length);
 
       int8_t degree = progression.at(chord_idx);
       int8_t next_degree = progression.at(next_chord_idx);

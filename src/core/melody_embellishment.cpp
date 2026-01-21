@@ -15,15 +15,14 @@
 
 #include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
+#include "core/pitch_utils.h"
 
 namespace midisketch {
 
 namespace {
 
-// C major scale pitch classes (reference for scale steps)
-constexpr int MAJOR_SCALE[] = {0, 2, 4, 5, 7, 9, 11};  // C D E F G A B
-
 // Pentatonic scale pitch classes (yonanuki - no 4th or 7th)
+// Note: Major scale uses SCALE from pitch_utils.h
 constexpr int PENTATONIC[] = {0, 2, 4, 7, 9};  // C D E G A
 
 // Minimum interval for passing tone insertion (minor 3rd)
@@ -349,7 +348,7 @@ bool MelodicEmbellisher::isInPentatonic(int pitch_class, int key_offset) {
 bool MelodicEmbellisher::isScaleTone(int pitch_class, int key_offset) {
   int relative_pc = ((pitch_class - key_offset) % 12 + 12) % 12;
 
-  for (int pc : MAJOR_SCALE) {
+  for (int pc : SCALE) {
     if (relative_pc == pc) return true;
   }
   return false;
@@ -361,7 +360,7 @@ int MelodicEmbellisher::scaleStep(int pitch, int direction, int key_offset,
   int octave = pitch / 12;
 
   // Find current position in scale
-  const int* scale = prefer_pentatonic ? PENTATONIC : MAJOR_SCALE;
+  const int* scale = prefer_pentatonic ? PENTATONIC : SCALE;
   int scale_size = prefer_pentatonic ? 5 : 7;
 
   // Convert to relative pitch class

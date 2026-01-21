@@ -300,15 +300,15 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
 Tick calculateTotalTicks(const std::vector<Section>& sections) {
   if (sections.empty()) return 0;
   const auto& last = sections.back();
-  return last.start_tick + (last.bars * TICKS_PER_BEAT * 4);
+  return last.start_tick + (last.bars * TICKS_PER_BAR);
 }
 
 std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t bpm,
                                                StructurePattern pattern) {
   // Calculate target bars from duration and BPM
   // bars = seconds * bpm / 60 / 4 (4 beats per bar)
-  uint16_t target_bars =
-      static_cast<uint16_t>(std::round(static_cast<float>(target_seconds) * bpm / kSecondsToBarsDivisor));
+  uint16_t target_bars = static_cast<uint16_t>(
+      std::round(static_cast<float>(target_seconds) * bpm / kSecondsToBarsDivisor));
 
   // Clamp to valid range
   target_bars = std::max(target_bars, kMinStructureBars);
@@ -475,8 +475,10 @@ void insertCallSections(std::vector<Section>& sections, IntroChant intro_chant,
     auto it = std::find_if(sections.rbegin(), sections.rend(),
                            [](const Section& s) { return s.type == SectionType::Chorus; });
     if (it != sections.rend()) {
-      // Convert reverse iterator to forward iterator and insert before
-      auto fwd_it = it.base();  // Points to element after the found one
+      // Insert mix section immediately before the last Chorus.
+      // Reverse iterator semantics: it.base() points to the element AFTER *it,
+      // so (it.base() - 1) points to the found Chorus, allowing insert before it.
+      auto fwd_it = it.base();
       sections.insert(fwd_it - 1, mix);
     }
   }

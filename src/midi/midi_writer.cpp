@@ -89,7 +89,8 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uin
   // Track name (Meta event 0x03) - truncate if too long
   // NOTE: Truncation is silent; assert in debug builds to catch oversized names
   assert(name.size() <= kMaxMetaTextLength && "Track name exceeds MIDI meta text limit");
-  std::string track_name = name.size() > kMaxMetaTextLength ? name.substr(0, kMaxMetaTextLength) : name;
+  std::string track_name =
+      name.size() > kMaxMetaTextLength ? name.substr(0, kMaxMetaTextLength) : name;
   track_data.push_back(0x00);
   track_data.push_back(0xFF);
   track_data.push_back(0x03);
@@ -252,7 +253,8 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
     // NOTE: Truncation is silent; assert in debug builds to catch oversized text
     assert(marker.text.size() <= kMaxMetaTextLength && "Marker text exceeds MIDI meta text limit");
     std::string marker_text = marker.text.size() > kMaxMetaTextLength
-        ? marker.text.substr(0, kMaxMetaTextLength) : marker.text;
+                                  ? marker.text.substr(0, kMaxMetaTextLength)
+                                  : marker.text;
 
     writeVariableLength(track_data, delta);
     track_data.push_back(0xFF);

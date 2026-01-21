@@ -23,13 +23,13 @@ constexpr uint8_t DRUMS_CH = 9;
 
 /// @name Track Program Assignments (GM)
 /// @{
-constexpr uint8_t VOCAL_PROG = 0;     ///< Piano
-constexpr uint8_t CHORD_PROG = 4;     ///< Electric Piano
-constexpr uint8_t BASS_PROG = 33;     ///< Electric Bass
-constexpr uint8_t MOTIF_PROG = 81;    ///< Synth Lead
-constexpr uint8_t ARPEGGIO_PROG = 81; ///< Saw Lead (Synth)
-constexpr uint8_t AUX_PROG = 89;      ///< Pad 2 - Warm
-constexpr uint8_t DRUMS_PROG = 0;     ///< Standard Kit (ignored for ch 9)
+constexpr uint8_t VOCAL_PROG = 0;      ///< Piano
+constexpr uint8_t CHORD_PROG = 4;      ///< Electric Piano
+constexpr uint8_t BASS_PROG = 33;      ///< Electric Bass
+constexpr uint8_t MOTIF_PROG = 81;     ///< Synth Lead
+constexpr uint8_t ARPEGGIO_PROG = 81;  ///< Saw Lead (Synth)
+constexpr uint8_t AUX_PROG = 89;       ///< Pad 2 - Warm
+constexpr uint8_t DRUMS_PROG = 0;      ///< Standard Kit (ignored for ch 9)
 /// @}
 
 }  // namespace midisketch

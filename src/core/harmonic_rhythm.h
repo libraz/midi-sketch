@@ -81,6 +81,26 @@ inline bool shouldSplitPhraseEnd(int bar, int section_bars, int prog_length,
   return is_phrase_end || is_dense_extra;
 }
 
+/// @brief Get chord index for a given bar based on harmonic density.
+/// @param bar Bar number (can be absolute or within section)
+/// @param slow_harmonic True if chord changes every 2 bars (HarmonicDensity::Slow)
+/// @param progression_length Length of chord progression
+/// @return Chord index (0 to progression_length - 1)
+inline int getChordIndexForBar(int bar, bool slow_harmonic, int progression_length) {
+  if (progression_length <= 0) return 0;
+  return slow_harmonic ? (bar / 2) % progression_length : bar % progression_length;
+}
+
+/// @brief Get next chord index for anticipation/approach note calculation.
+/// @param bar Current bar number
+/// @param slow_harmonic True if chord changes every 2 bars
+/// @param progression_length Length of chord progression
+/// @return Next chord index (wraps around)
+inline int getNextChordIndexForBar(int bar, bool slow_harmonic, int progression_length) {
+  if (progression_length <= 0) return 0;
+  return slow_harmonic ? ((bar + 1) / 2) % progression_length : (bar + 1) % progression_length;
+}
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_HARMONIC_RHYTHM_H_

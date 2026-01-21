@@ -145,12 +145,9 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
       // This ensures arpeggio aligns with the chord at section start
       // Respect HarmonicDensity for consistent chord alignment with chord_track
       uint32_t total_bar = section.start_tick / TICKS_PER_BAR;
-      int chord_idx;
-      if (harmonic.density == HarmonicDensity::Slow) {
-        chord_idx = (total_bar / 2) % progression.length;
-      } else {
-        chord_idx = total_bar % progression.length;
-      }
+      bool slow_harmonic = (harmonic.density == HarmonicDensity::Slow);
+      int chord_idx =
+          getChordIndexForBar(static_cast<int>(total_bar), slow_harmonic, progression.length);
       int8_t degree = progression.at(chord_idx);
       uint8_t root = degreeToRoot(degree, Key::C);
       while (root < BASE_OCTAVE) root += 12;
@@ -175,14 +172,9 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
       if (arp.sync_chord) {
         // Sync with chord: rebuild pattern each bar
         // Use HarmonicDensity to match chord_track timing
-        int chord_idx;
-        if (harmonic.density == HarmonicDensity::Slow) {
-          // Slow: chord changes every 2 bars (matches chord_track)
-          chord_idx = (bar / 2) % progression.length;
-        } else {
-          // Normal/Dense: chord changes every bar
-          chord_idx = bar % progression.length;
-        }
+        // Slow: chord changes every 2 bars, Normal/Dense: every bar
+        bool slow = (harmonic.density == HarmonicDensity::Slow);
+        int chord_idx = getChordIndexForBar(bar, slow, progression.length);
         int8_t degree = progression.at(chord_idx);
         // Internal processing is always in C major; transpose at MIDI output time
         uint8_t root = degreeToRoot(degree, Key::C);

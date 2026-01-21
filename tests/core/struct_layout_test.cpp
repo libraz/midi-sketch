@@ -108,9 +108,10 @@ TEST(StructLayoutTest, PianoRollInfoLayout) {
   MidiSketchPianoRollInfo info{};
   const auto base = reinterpret_cast<uintptr_t>(&info);
 
-#define CHECK_OFFSET(field, expected)                                                       \
-  EXPECT_EQ(reinterpret_cast<uintptr_t>(&info.field) - base, expected) << #field " offset " \
-                                                                                 "mismatch"
+#define CHECK_OFFSET(field, expected)                                            \
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(&info.field) - base, expected) << #field \
+      " offset "                                                                 \
+      "mismatch"
 
   CHECK_OFFSET(tick, 0);                 // 4 bytes
   CHECK_OFFSET(chord_degree, 4);         // 1 byte
