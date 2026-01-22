@@ -54,8 +54,18 @@ float getComfortScore(uint8_t pitch, const TessituraRange& tessitura, uint8_t vo
   }
 
   // Reduced score for passaggio (dynamically calculated based on voice range)
+  // Use distance-based gradient: boundary notes (0.45) are better for climactic moments,
+  // while center notes (0.35) are more challenging and evaluated more strictly.
   if (isInPassaggioRange(pitch, vocal_low, vocal_high)) {
-    return 0.4f;
+    int range = vocal_high - vocal_low;
+    int passaggio_low = vocal_low + range * 55 / 100;
+    int passaggio_high = vocal_low + range * 75 / 100;
+    int passaggio_center = (passaggio_low + passaggio_high) / 2;
+    int dist_from_center = std::abs(static_cast<int>(pitch) - passaggio_center);
+    int passaggio_half_width = (passaggio_high - passaggio_low) / 2;
+    if (passaggio_half_width == 0) passaggio_half_width = 1;
+    float gradient = static_cast<float>(dist_from_center) / passaggio_half_width;
+    return 0.35f + 0.10f * gradient;  // 0.35 (center) to 0.45 (boundary)
   }
 
   // Lower score for extreme notes
@@ -124,6 +134,28 @@ int constrainInterval(int target_pitch, int prev_pitch, int max_interval, int ra
 
   return constrained;
 }
+
+// ============================================================================
+// Avoid Note vs Dissonance: Conceptual Distinction
+// ============================================================================
+//
+// AVOID NOTE (isAvoidNote*):
+//   Definition: A melodic note that creates undesirable tension when SUSTAINED
+//               against a chord, regardless of what other notes are playing.
+//   Time basis: Duration-based (held notes)
+//   Context:    Chord function matters (tritone OK on V7, avoid on I)
+//   Usage:      Melody generation - prevent bad long notes
+//   Examples:   M7 on any chord, P4 on I major, m6 on minor
+//
+// DISSONANCE (isDissonant*):
+//   Definition: Acoustic harshness from two notes sounding SIMULTANEOUSLY,
+//               based on interval roughness/beating perception.
+//   Time basis: Simultaneity-based (vertical intervals)
+//   Context:    Some functions allow dissonance (tritone in V7)
+//   Usage:      Track collision detection - polyphonic safety
+//   Examples:   m2 always, M2 in close range, M7 at any octave
+//
+// ============================================================================
 
 // Conservative dissonance check WITHOUT chord context.
 // Treats tritone as always dissonant. Use this when:

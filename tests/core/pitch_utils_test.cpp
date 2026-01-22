@@ -74,11 +74,21 @@ TEST(PitchUtilsTest, GetComfortScoreInTessitura) {
 TEST(PitchUtilsTest, GetComfortScorePassaggio) {
   // Dynamic passaggio calculation: 55%-75% of vocal range
   // For vocal_low=50, vocal_high=80: range=30, passaggio=50+16=66 to 50+22=72
+  // Passaggio center = (66+72)/2 = 69, half_width = 3
   // Create tessitura that excludes the passaggio zone
   TessituraRange t{74, 80, 77, 50, 80};  // Tessitura above passaggio (66-72)
-  // Pitch 69 is in dynamic passaggio zone (66-72) but outside tessitura
-  float score = getComfortScore(69, t, 50, 80);
-  EXPECT_FLOAT_EQ(score, 0.4f);  // Reduced score for passaggio
+
+  // Pitch 69 (center): gradient=0 -> score = 0.35
+  float score_center = getComfortScore(69, t, 50, 80);
+  EXPECT_FLOAT_EQ(score_center, 0.35f);  // Center of passaggio = minimum comfort
+
+  // Pitch 66 (boundary): dist=3, gradient=1.0 -> score = 0.45
+  float score_boundary = getComfortScore(66, t, 50, 80);
+  EXPECT_FLOAT_EQ(score_boundary, 0.45f);  // Boundary = higher comfort (climax potential)
+
+  // Pitch 72 (boundary): dist=3, gradient=1.0 -> score = 0.45
+  float score_boundary_high = getComfortScore(72, t, 50, 80);
+  EXPECT_FLOAT_EQ(score_boundary_high, 0.45f);  // Symmetric at both boundaries
 }
 
 TEST(PitchUtilsTest, GetComfortScoreExtreme) {

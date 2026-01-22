@@ -196,6 +196,13 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
     bool added_as_ct = false;
 
     // === Check for NCT opportunity ===
+    // NCT selection uses cumulative probability distribution:
+    // - passing_tone_ratio, neighbor_tone_ratio, appoggiatura_ratio, anticipation_ratio
+    //   are checked sequentially with cumulative thresholds
+    // - If roll doesn't fall into any NCT band, the note remains as a Chord Tone
+    // - Therefore: chord_tone_ratio = 1.0 - sum(all NCT ratios)
+    // - The chord_tone_ratio field in config is for DOCUMENTATION purposes only;
+    //   actual CT probability is implicitly the remaining probability mass
 
     // 1. Passing Tone: between notes with large intervals
     cumulative += config.passing_tone_ratio;
@@ -287,17 +294,15 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
     }
   }
 
-  // Safety filter: remove any chromatic notes if chromatic_approach is disabled
+  // Safety filter: snap chromatic notes to nearest scale tone if chromatic_approach is disabled
+  // This preserves melodic contour instead of silently dropping notes, which could create gaps.
   if (!config.chromatic_approach) {
-    std::vector<NoteEvent> filtered;
-    filtered.reserve(result.size());
-    for (const auto& note : result) {
-      if (isScaleTone(note.note % 12, key_offset)) {
-        filtered.push_back(note);
+    for (auto& note : result) {
+      if (!isScaleTone(note.note % 12, key_offset)) {
+        // Snap to nearest scale tone instead of dropping
+        note.note = static_cast<uint8_t>(snapToNearestScaleTone(note.note, key_offset));
       }
-      // Silently drop chromatic notes that shouldn't be there
     }
-    return filtered;
   }
 
   return result;

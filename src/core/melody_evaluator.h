@@ -170,6 +170,16 @@ class MelodyEvaluator {
   /// @returns Penalty 0.0-0.3 (higher = more breathless)
   static float calcBreathlessPenalty(const std::vector<NoteEvent>& notes);
 
+  /// @brief Get cohesion threshold for a vocal style preset.
+  ///
+  /// Different styles require different levels of melodic cohesion:
+  /// - Ballad/CityPop: higher threshold (needs smooth, connected lines)
+  /// - Vocaloid/Rock: lower threshold (tolerates angular, disconnected melodies)
+  ///
+  /// @param style Vocal style preset
+  /// @returns Cohesion threshold 0.0-1.0 (below this = penalty applied)
+  static float getCohesionThreshold(VocalStylePreset style);
+
   /// @brief Get gap threshold for a vocal style preset.
   ///
   /// Different styles have different tolerances for silence:

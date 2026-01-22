@@ -83,8 +83,11 @@ Motif applyVariation(const Motif& original, MotifVariation variation, int8_t par
       break;
 
     case MotifVariation::Sequenced:
-      // Apply sequential transposition (each repetition shifts by param)
-      // This version just applies a single step
+      // Apply sequential transposition: each note position shifts by (index * param / 4)
+      // The "/4" divisor reduces the transposition step to create gradual contour change:
+      //   - param=12 (octave): shifts 0, 3, 6, 9... semitones (gentle rise)
+      //   - param=4 (M3): shifts 0, 1, 2, 3... semitones (very subtle)
+      // Without division, param=12 would create 0, 12, 24... (too extreme for a sequence)
       for (size_t i = 0; i < result.contour_degrees.size(); ++i) {
         result.contour_degrees[i] += static_cast<int8_t>(i) * param / 4;
       }

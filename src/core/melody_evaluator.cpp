@@ -15,6 +15,28 @@
 
 namespace midisketch {
 
+// ============================================================================
+// Singability vs Culling Penalties: Role Distinction for Large Leaps
+// ============================================================================
+//
+// calcSingability (below):
+//   Role:     "Tendency evaluation" - measures interval DISTRIBUTION quality
+//   Target:   5-10% large leaps is ideal for pop vocals
+//   Effect:   Soft penalty when ratio exceeds 10%
+//   Purpose:  Guide melody toward singable contours (macro-level quality)
+//
+// evaluateForCulling penalties (calcLeapAfterHighPenalty, etc.):
+//   Role:     "Accident prevention" - catches specific DANGEROUS patterns
+//   Target:   Absolute violations (large leap TO high register, etc.)
+//   Effect:   Direct point deduction for risky combinations
+//   Purpose:  Hard gate against physically difficult passages (micro-level danger)
+//
+// Both affect large leaps, but serve different purposes:
+// - Singability = statistical preference (overall balance)
+// - Culling penalties = safety filter (specific dangerous patterns)
+//
+// ============================================================================
+
 float MelodyEvaluator::calcSingability(const std::vector<NoteEvent>& notes) {
   if (notes.size() < 2) return 0.5f;
 
@@ -586,6 +608,28 @@ float MelodyEvaluator::calcBreathlessPenalty(const std::vector<NoteEvent>& notes
   return std::min(penalty, 0.3f);
 }
 
+float MelodyEvaluator::getCohesionThreshold(VocalStylePreset style) {
+  switch (style) {
+    // High cohesion required - traditional melodic styles
+    // These styles expect smooth, connected melodic lines
+    case VocalStylePreset::Ballad:
+    case VocalStylePreset::CityPop:
+      return 0.50f;
+
+    // Low cohesion acceptable - rhythmic/mechanical styles
+    // These styles tolerate more disconnected, angular melodies
+    case VocalStylePreset::Vocaloid:
+    case VocalStylePreset::UltraVocaloid:
+    case VocalStylePreset::Rock:
+    case VocalStylePreset::PowerfulShout:
+      return 0.35f;
+
+    // Standard cohesion
+    default:
+      return 0.45f;
+  }
+}
+
 float MelodyEvaluator::getGapThreshold(VocalStylePreset style) {
   switch (style) {
     // High density styles - less silence allowed
@@ -652,11 +696,12 @@ float MelodyEvaluator::evaluateForCulling(const std::vector<NoteEvent>& notes,
   // === Phrase Cohesion Gate (penalty for low cohesion) ===
   // Convert cohesion from bonus to penalty: if below threshold, penalize.
   // This is the primary gate for "scattered note" problems.
+  // Threshold varies by style: Ballad/CityPop need high cohesion, Vocaloid/Rock tolerate less.
   float cohesion = calcPhraseCohesionBonus(notes);
-  constexpr float kCohesionThreshold = 0.45f;
-  if (cohesion < kCohesionThreshold) {
-    // Penalize lack of cohesion: max ~0.16 penalty when cohesion = 0
-    score -= (kCohesionThreshold - cohesion) * 0.35f;
+  float cohesion_threshold = getCohesionThreshold(style);
+  if (cohesion < cohesion_threshold) {
+    // Penalize lack of cohesion: max ~0.16-0.18 penalty when cohesion = 0
+    score -= (cohesion_threshold - cohesion) * 0.35f;
   }
 
   // === Gap Ratio Penalty (style-dependent threshold) ===
