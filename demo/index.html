@@ -25,6 +25,7 @@
       border-radius: 4px; font-size: 14px;
     }
     select:focus, input:focus { outline: none; border-color: #3498db; }
+    select:disabled, input:disabled { background: #ecf0f1; color: #7f8c8d; cursor: not-allowed; }
     .row { display: flex; gap: 15px; flex-wrap: wrap; }
     .row > .form-group { flex: 1; min-width: 120px; }
     .checkbox-group { display: flex; align-items: center; gap: 10px; }
@@ -59,6 +60,8 @@
     }
     .workflow-toggle button.active { background: #3498db; color: white; }
     .workflow-toggle button:not(.active):hover { background: #d5dbdb; }
+    .workflow-toggle button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .workflow-toggle button:disabled:hover { background: transparent; }
     .workflow-hint { font-size: 0.85em; color: #7f8c8d; margin-bottom: 10px; }
     .result {
       background: #ecf0f1; padding: 15px; border-radius: 4px;
@@ -121,6 +124,17 @@
     .btn-tweak { background: #fd7e14; color: white; font-size: 14px; padding: 8px 12px; }
     .btn-tweak:hover { background: #e96b02; }
     .btn-tweak.active { background: #dc3545; }
+    .mode-tabs {
+      display: flex; gap: 0; margin-bottom: 20px; background: #2c3e50;
+      border-radius: 8px; overflow: hidden;
+    }
+    .mode-tabs button {
+      flex: 1; padding: 15px 20px; font-size: 16px; font-weight: 600;
+      background: transparent; border: none; color: #95a5a6;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .mode-tabs button.active { background: #3498db; color: white; }
+    .mode-tabs button:not(.active):hover { background: #34495e; color: white; }
   </style>
 </head>
 <body>
@@ -128,117 +142,196 @@
     <h1>midi-sketch <span class="version">v{{ version }}</span></h1>
     <div :class="['status', status.type]">{{ status.text }}</div>
 
-    <!-- Style & Structure -->
-    <div class="section">
-      <h2>Style & Structure</h2>
-      <div class="form-group">
-        <label>Style Preset</label>
-        <select v-model="config.stylePresetId" @change="onStyleChange">
-          <option v-for="s in stylePresets" :value="s.id">{{ s.displayName }}</option>
-        </select>
-        <div class="hint">{{ currentPreset?.description }}</div>
-      </div>
-
-      <div class="row">
-        <div class="form-group">
-          <label>Chord Progression</label>
-          <select v-model="config.chordProgressionId" @change="updateChordDisplay">
-            <option v-for="id in chordIds" :value="id">{{ allChords[id]?.name }}</option>
-          </select>
-          <div v-if="chordDisplay" class="hint">{{ chordDisplay.roman }}</div>
-          <div v-if="chordDisplay" class="chord-key-display">
-            Key of {{ keyName }}: <strong>{{ chordDisplay.transposed }}</strong>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Form</label>
-          <select v-model="config.formId" :disabled="config.targetDurationSeconds > 0">
-            <option v-for="id in formIds" :value="id">{{ allForms[id]?.name }}</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="row">
-        <div class="form-group">
-          <label>Key</label>
-          <select v-model="config.key" @change="updateChordDisplay">
-            <option v-for="(k, i) in keyNames" :value="i">{{ k }}</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>BPM</label>
-          <input type="range" class="bpm-slider" v-model.number="config.bpm" min="60" max="180">
-          <div class="bpm-value">{{ config.bpm }} BPM</div>
-          <div class="bpm-rec" :style="{ color: bpmRecColor }">{{ bpmRec }}</div>
-        </div>
-        <div class="form-group">
-          <label>Duration (0 = Form)</label>
-          <input type="number" v-model.number="config.targetDurationSeconds" min="0" max="300" step="30">
-          <div class="hint">{{ durationHint }}</div>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label>Seed (0 = random)</label>
-        <input type="number" v-model.number="config.seed" min="0">
-      </div>
+    <!-- Mode Tabs -->
+    <div class="mode-tabs">
+      <button :class="{ active: mode === 'vocal' }" @click="mode = 'vocal'; onModeChange()">Vocal Song</button>
+      <button :class="{ active: mode === 'bgm' }" @click="mode = 'bgm'; onModeChange()">BGM</button>
     </div>
 
-    <!-- Vocal & Expression -->
-    <div class="section">
-      <h2>Vocal & Expression</h2>
-      <div class="form-group">
-        <label>Vocal Range</label>
+    <!-- ==================== VOCAL SONG MODE ==================== -->
+    <div v-if="mode === 'vocal'">
+      <!-- Style & Structure -->
+      <div class="section">
+        <h2>Style & Structure</h2>
+        <div class="form-group">
+          <label>Style Preset</label>
+          <select v-model="config.stylePresetId" @change="onStyleChange">
+            <option v-for="s in stylePresets" :value="s.id">{{ s.displayName }}</option>
+          </select>
+          <div class="hint">{{ currentPreset?.description }}</div>
+        </div>
+
         <div class="row">
           <div class="form-group">
-            <label style="font-size:0.85em">Low</label>
-            <input type="range" v-model.number="config.vocalLow" min="36" max="84" class="range-slider">
-            <div class="vocal-note">{{ midiToNote(config.vocalLow) }}</div>
+            <label>Blueprint</label>
+            <select v-model.number="config.blueprintId" @change="onBlueprintChange">
+              <option v-for="bp in allBlueprints" :value="bp.id">{{ bp.name }} ({{ bp.weight }}%)</option>
+              <option :value="255">Random</option>
+            </select>
+            <div class="hint" v-if="currentBlueprint">{{ blueprintHint }}</div>
           </div>
           <div class="form-group">
-            <label style="font-size:0.85em">High</label>
-            <input type="range" v-model.number="config.vocalHigh" min="48" max="96" class="range-slider">
-            <div class="vocal-note">{{ midiToNote(effectiveVocalHigh) }}</div>
+            <label>Chord Progression</label>
+            <select v-model="config.chordProgressionId" @change="updateChordDisplay">
+              <option v-for="id in chordIds" :value="id">{{ allChords[id]?.name }}</option>
+            </select>
+            <div v-if="chordDisplay" class="hint">{{ chordDisplay.roman }}</div>
+            <div v-if="chordDisplay" class="chord-key-display">
+              Key of {{ keyName }}: <strong>{{ chordDisplay.transposed }}</strong>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Form</label>
+            <select v-model="config.formId" :disabled="config.targetDurationSeconds > 0 || blueprintOverridesForm">
+              <option v-for="id in formIds" :value="id">{{ allForms[id]?.name }}</option>
+            </select>
+            <div v-if="blueprintOverridesForm" class="hint" style="color: #e67e22;">Overridden by Blueprint</div>
           </div>
         </div>
-        <div class="vocal-range-visual">
-          <span style="font-size:0.8em;color:#7f8c8d">C2</span>
-          <div class="piano-range">
-            <div class="piano-highlight" :style="pianoHighlightStyle"></div>
+
+        <div class="row">
+          <div class="form-group">
+            <label>Key</label>
+            <select v-model="config.key" @change="updateChordDisplay">
+              <option v-for="(k, i) in keyNames" :value="i">{{ k }}</option>
+            </select>
           </div>
-          <span style="font-size:0.8em;color:#7f8c8d">C7</span>
+          <div class="form-group">
+            <label>BPM</label>
+            <input type="range" class="bpm-slider" v-model.number="config.bpm" min="60" max="180">
+            <div class="bpm-value">{{ config.bpm }} BPM</div>
+            <div class="bpm-rec" :style="{ color: bpmRecColor }">{{ bpmRec }}</div>
+          </div>
+          <div class="form-group">
+            <label>Duration (0 = Form)</label>
+            <input type="number" v-model.number="config.targetDurationSeconds" min="0" max="300" step="30">
+            <div class="hint">{{ durationHint }}</div>
+          </div>
         </div>
-        <div class="hint" style="text-align:center;margin-top:8px">
-          {{ midiToNote(config.vocalLow) }} - {{ midiToNote(effectiveVocalHigh) }}
-          ({{ effectiveVocalHigh - config.vocalLow }} semitones)
+
+        <div class="form-group">
+          <label>Seed (0 = random)</label>
+          <input type="number" v-model.number="config.seed" min="0">
         </div>
       </div>
 
-      <div class="row">
+      <!-- Vocal & Expression -->
+      <div class="section">
+        <h2>Vocal & Expression</h2>
         <div class="form-group">
-          <label>Vocal Style</label>
-          <select v-model.number="config.vocalStyle">
-            <option v-for="vs in vocalStyles" :value="vs.value">{{ vs.text }}</option>
-          </select>
+          <label>Vocal Range</label>
+          <div class="row">
+            <div class="form-group">
+              <label style="font-size:0.85em">Low</label>
+              <input type="range" v-model.number="config.vocalLow" min="36" max="84" class="range-slider">
+              <div class="vocal-note">{{ midiToNote(config.vocalLow) }}</div>
+            </div>
+            <div class="form-group">
+              <label style="font-size:0.85em">High</label>
+              <input type="range" v-model.number="config.vocalHigh" min="48" max="96" class="range-slider">
+              <div class="vocal-note">{{ midiToNote(effectiveVocalHigh) }}</div>
+            </div>
+          </div>
+          <div class="vocal-range-visual">
+            <span style="font-size:0.8em;color:#7f8c8d">C2</span>
+            <div class="piano-range">
+              <div class="piano-highlight" :style="pianoHighlightStyle"></div>
+            </div>
+            <span style="font-size:0.8em;color:#7f8c8d">C7</span>
+          </div>
+          <div class="hint" style="text-align:center;margin-top:8px">
+            {{ midiToNote(config.vocalLow) }} - {{ midiToNote(effectiveVocalHigh) }}
+            ({{ effectiveVocalHigh - config.vocalLow }} semitones)
+          </div>
         </div>
-        <div class="form-group">
-          <label>Vocal Attitude</label>
-          <select v-model="config.vocalAttitude">
-            <option v-for="a in vocalAttitudes" :value="a.value" :disabled="a.disabled">{{ a.text }}</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Composition Style</label>
-          <select v-model="config.compositionStyle">
-            <option value="0">Melody Lead</option>
-            <option value="1">Background Motif</option>
-            <option value="2">Synth Driven</option>
-          </select>
+
+        <div class="row">
+          <div class="form-group">
+            <label>Vocal Style</label>
+            <select v-model.number="config.vocalStyle">
+              <option v-for="vs in vocalStyles" :value="vs.value">{{ vs.text }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Vocal Attitude</label>
+            <select v-model="config.vocalAttitude">
+              <option v-for="a in vocalAttitudes" :value="a.value" :disabled="a.disabled">{{ a.text }}</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Modulation & Arrangement -->
+    <!-- ==================== BGM MODE ==================== -->
+    <div v-if="mode === 'bgm'">
+      <!-- Style & Structure -->
+      <div class="section">
+        <h2>Style & Structure</h2>
+        <div class="row">
+          <div class="form-group">
+            <label>Style Preset</label>
+            <select v-model="config.stylePresetId" @change="onStyleChange">
+              <option v-for="s in stylePresets" :value="s.id">{{ s.displayName }}</option>
+            </select>
+            <div class="hint">{{ currentPreset?.description }}</div>
+          </div>
+          <div class="form-group">
+            <label>BGM Type</label>
+            <select v-model.number="config.compositionStyle" @change="onBgmTypeChange">
+              <option value="1">Background Motif</option>
+              <option value="2">Synth Driven</option>
+            </select>
+            <div class="hint">{{ bgmTypeHint }}</div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="form-group">
+            <label>Chord Progression</label>
+            <select v-model="config.chordProgressionId" @change="updateChordDisplay">
+              <option v-for="id in chordIds" :value="id">{{ allChords[id]?.name }}</option>
+            </select>
+            <div v-if="chordDisplay" class="hint">{{ chordDisplay.roman }}</div>
+            <div v-if="chordDisplay" class="chord-key-display">
+              Key of {{ keyName }}: <strong>{{ chordDisplay.transposed }}</strong>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Form</label>
+            <select v-model="config.formId" :disabled="config.targetDurationSeconds > 0">
+              <option v-for="id in formIds" :value="id">{{ allForms[id]?.name }}</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="form-group">
+            <label>Key</label>
+            <select v-model="config.key" @change="updateChordDisplay">
+              <option v-for="(k, i) in keyNames" :value="i">{{ k }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>BPM</label>
+            <input type="range" class="bpm-slider" v-model.number="config.bpm" min="60" max="180">
+            <div class="bpm-value">{{ config.bpm }} BPM</div>
+            <div class="bpm-rec" :style="{ color: bpmRecColor }">{{ bpmRec }}</div>
+          </div>
+          <div class="form-group">
+            <label>Duration (0 = Form)</label>
+            <input type="number" v-model.number="config.targetDurationSeconds" min="0" max="300" step="30">
+            <div class="hint">{{ durationHint }}</div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Seed (0 = random)</label>
+          <input type="number" v-model.number="config.seed" min="0">
+        </div>
+      </div>
+    </div>
+
+    <!-- Modulation & Arrangement (both modes) -->
     <div class="section">
       <h2 class="collapsible" :class="{ open: showAdvanced }" @click="showAdvanced = !showAdvanced">
         Modulation & Arrangement
@@ -247,7 +340,7 @@
         <div class="row">
           <div class="form-group">
             <label>Modulation Timing</label>
-            <select v-model="config.modulationTiming">
+            <select v-model.number="config.modulationTiming">
               <option value="0">None</option>
               <option value="1">Last Chorus</option>
               <option value="2">After Bridge</option>
@@ -257,7 +350,9 @@
           </div>
           <div class="form-group">
             <label>Modulation Semitones</label>
-            <input type="number" v-model.number="config.modulationSemitones" min="-6" max="6">
+            <input type="number" v-model.number="config.modulationSemitones" min="1" max="4" :disabled="!modulationEnabled">
+            <div v-if="modulationWarning" class="hint" style="color: #e74c3c;">{{ modulationWarning }}</div>
+            <div v-else-if="!modulationEnabled" class="hint">Enable modulation timing first</div>
           </div>
         </div>
         <div class="row">
@@ -268,26 +363,31 @@
               <option value="1">Register Add</option>
             </select>
           </div>
-          <div class="form-group">
+          <div class="form-group" v-if="mode === 'vocal'">
             <label>Motif Scope</label>
-            <select v-model="config.motifRepeatScope">
+            <select v-model="config.motifRepeatScope" :disabled="blueprintOverridesMotifScope">
               <option value="0">Full Song</option>
               <option value="1">Section</option>
             </select>
+            <div v-if="blueprintOverridesMotifScope" class="hint" style="color: #e67e22;">Overridden by Blueprint</div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Options -->
+    <!-- Options (mode-aware) -->
     <div class="section">
       <h2>Options</h2>
       <div class="row">
         <div class="form-group"><div class="checkbox-group">
-          <input type="checkbox" id="drums" v-model="config.drumsEnabled"><label for="drums">Drums</label>
+          <input type="checkbox" id="drums" v-model="config.drumsEnabled" :disabled="mode === 'vocal' && blueprintRequiresDrums">
+          <label for="drums">Drums</label>
+          <span v-if="mode === 'vocal' && blueprintRequiresDrums" style="font-size:0.8em;color:#7f8c8d">(required)</span>
         </div></div>
         <div class="form-group"><div class="checkbox-group">
-          <input type="checkbox" id="arpeggio" v-model="config.arpeggioEnabled"><label for="arpeggio">Arpeggio</label>
+          <input type="checkbox" id="arpeggio" v-model="config.arpeggioEnabled" :disabled="mode === 'bgm' && config.compositionStyle === 2">
+          <label for="arpeggio">Arpeggio</label>
+          <span v-if="mode === 'bgm' && config.compositionStyle === 2" style="font-size:0.8em;color:#7f8c8d">(required)</span>
         </div></div>
         <div class="form-group"><div class="checkbox-group">
           <input type="checkbox" id="humanize" v-model="config.humanize"><label for="humanize">Humanize</label>
@@ -295,7 +395,7 @@
         <div class="form-group"><div class="checkbox-group">
           <input type="checkbox" id="se" v-model="config.seEnabled"><label for="se">SE</label>
         </div></div>
-        <div class="form-group"><div class="checkbox-group">
+        <div class="form-group" v-if="mode === 'vocal'"><div class="checkbox-group">
           <input type="checkbox" id="call" v-model="config.callEnabled"><label for="call">Call</label>
         </div></div>
       </div>
@@ -330,7 +430,7 @@
         </div></div>
       </div>
 
-      <div v-if="config.callEnabled" class="slider-group row">
+      <div v-if="mode === 'vocal' && config.callEnabled" class="slider-group row">
         <div class="form-group">
           <label>Intro Chant</label>
           <select v-model.number="config.introChant">
@@ -362,98 +462,113 @@
     <!-- Actions -->
     <div class="section">
       <h2>Actions</h2>
-      <div class="workflow-toggle">
-        <button :class="{ active: workflow === 'vocalFirst' }" @click="workflow = 'vocalFirst'">Vocal First</button>
-        <button :class="{ active: workflow === 'bgmOnly' }" @click="workflow = 'bgmOnly'">BGM Only</button>
-      </div>
-      <div class="workflow-hint">{{ workflowHint }}</div>
 
-      <!-- Vocal First Workflow -->
-      <div v-if="workflow === 'vocalFirst'" class="buttons">
-        <button class="btn-vocal" :disabled="!ready" @click="generateVocal">1. Vocal Only</button>
-        <button class="btn-vocal" :disabled="!hasVocalOnly" @click="regenerateVocal">New Seed</button>
-        <button :class="['btn-tweak', { active: showVocalConfig }]" :disabled="!hasVocalOnly" @click="showVocalConfig = !showVocalConfig">Tweak</button>
-        <button class="btn-primary" :disabled="!hasVocalOnly" @click="generateAccompaniment">2. Add Accompaniment</button>
-        <button class="btn-play" :disabled="!midiData || isPlaying" @click="play">Play</button>
-        <button class="btn-stop" :disabled="!isPlaying" @click="stop">Stop</button>
-        <button class="btn-secondary" :disabled="!midiData" @click="downloadMidi">Download</button>
-      </div>
+      <!-- Vocal Song Mode -->
+      <div v-if="mode === 'vocal'">
+        <div class="workflow-toggle">
+          <button :class="{ active: workflow === 'vocalFirst' }" @click="workflow = 'vocalFirst'">Vocal First</button>
+          <button :class="{ active: workflow === 'fullGenerate' }" @click="workflow = 'fullGenerate'">Full Generate</button>
+        </div>
+        <div class="workflow-hint">{{ workflowHint }}</div>
 
-      <!-- Vocal Config Panel -->
-      <div v-if="workflow === 'vocalFirst' && hasVocalOnly && showVocalConfig" class="vocal-config-panel">
-        <h3>Vocal Regeneration Settings</h3>
-        <div class="row">
-          <div class="form-group">
-            <label>Vocal Low</label>
-            <select v-model.number="vocalConfig.vocalLow">
-              <option v-for="n in vocalNoteOptions" :value="n.value">{{ n.text }}</option>
-            </select>
+        <!-- Vocal First Workflow -->
+        <div v-if="workflow === 'vocalFirst'" class="buttons">
+          <button class="btn-vocal" :disabled="!ready" @click="generateVocal">1. Vocal Only</button>
+          <button class="btn-vocal" :disabled="!hasVocalOnly" @click="regenerateVocal">New Seed</button>
+          <button :class="['btn-tweak', { active: showVocalConfig }]" :disabled="!hasVocalOnly" @click="showVocalConfig = !showVocalConfig">Tweak</button>
+          <button class="btn-primary" :disabled="!hasVocalOnly" @click="generateAccompaniment">2. Add Accompaniment</button>
+          <button class="btn-play" :disabled="!midiData || isPlaying" @click="play">Play</button>
+          <button class="btn-stop" :disabled="!isPlaying" @click="stop">Stop</button>
+          <button class="btn-secondary" :disabled="!midiData" @click="downloadMidi">Download</button>
+        </div>
+
+        <!-- Vocal Config Panel -->
+        <div v-if="workflow === 'vocalFirst' && hasVocalOnly && showVocalConfig" class="vocal-config-panel">
+          <h3>Vocal Regeneration Settings</h3>
+          <div class="row">
+            <div class="form-group">
+              <label>Vocal Low</label>
+              <select v-model.number="vocalConfig.vocalLow">
+                <option v-for="n in vocalNoteOptions" :value="n.value">{{ n.text }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Vocal High</label>
+              <select v-model.number="vocalConfig.vocalHigh">
+                <option v-for="n in vocalNoteOptions" :value="n.value">{{ n.text }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Attitude</label>
+              <select v-model.number="vocalConfig.vocalAttitude">
+                <option value="0">Clean</option>
+                <option value="1">Expressive</option>
+                <option value="2">Raw</option>
+              </select>
+            </div>
           </div>
-          <div class="form-group">
-            <label>Vocal High</label>
-            <select v-model.number="vocalConfig.vocalHigh">
-              <option v-for="n in vocalNoteOptions" :value="n.value">{{ n.text }}</option>
-            </select>
+          <div class="row">
+            <div class="form-group">
+              <label>Vocal Style</label>
+              <select v-model.number="vocalConfig.vocalStyle">
+                <option v-for="vs in vocalStyles" :value="vs.value">{{ vs.text }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Complexity</label>
+              <select v-model.number="vocalConfig.melodicComplexity">
+                <option value="0">Simple</option>
+                <option value="1">Standard</option>
+                <option value="2">Complex</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Hook</label>
+              <select v-model.number="vocalConfig.hookIntensity">
+                <option value="0">Off</option>
+                <option value="1">Light</option>
+                <option value="2">Normal</option>
+                <option value="3">Strong</option>
+              </select>
+            </div>
           </div>
-          <div class="form-group">
-            <label>Attitude</label>
-            <select v-model.number="vocalConfig.vocalAttitude">
-              <option value="0">Clean</option>
-              <option value="1">Expressive</option>
-              <option value="2">Raw</option>
-            </select>
+          <div class="row">
+            <div class="form-group">
+              <label>Groove</label>
+              <select v-model.number="vocalConfig.vocalGroove">
+                <option value="0">Straight</option>
+                <option value="1">OffBeat</option>
+                <option value="2">Swing</option>
+                <option value="3">Syncopated</option>
+                <option value="4">Driving16th</option>
+                <option value="5">Bouncy8th</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex: 2;">
+              <label>&nbsp;</label>
+              <button class="btn-vocal" style="width: 100%;" @click="regenerateVocalWithConfig">Regenerate with Settings</button>
+            </div>
           </div>
         </div>
-        <div class="row">
-          <div class="form-group">
-            <label>Vocal Style</label>
-            <select v-model.number="vocalConfig.vocalStyle">
-              <option v-for="vs in vocalStyles" :value="vs.value">{{ vs.text }}</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Complexity</label>
-            <select v-model.number="vocalConfig.melodicComplexity">
-              <option value="0">Simple</option>
-              <option value="1">Standard</option>
-              <option value="2">Complex</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Hook</label>
-            <select v-model.number="vocalConfig.hookIntensity">
-              <option value="0">Off</option>
-              <option value="1">Light</option>
-              <option value="2">Normal</option>
-              <option value="3">Strong</option>
-            </select>
-          </div>
-        </div>
-        <div class="row">
-          <div class="form-group">
-            <label>Groove</label>
-            <select v-model.number="vocalConfig.vocalGroove">
-              <option value="0">Straight</option>
-              <option value="1">OffBeat</option>
-              <option value="2">Swing</option>
-              <option value="3">Syncopated</option>
-              <option value="4">Driving16th</option>
-              <option value="5">Bouncy8th</option>
-            </select>
-          </div>
-          <div class="form-group" style="flex: 2;">
-            <label>&nbsp;</label>
-            <button class="btn-vocal" style="width: 100%;" @click="regenerateVocalWithConfig">Regenerate with Settings</button>
-          </div>
+
+        <!-- Full Generate Workflow -->
+        <div v-if="workflow === 'fullGenerate'" class="buttons">
+          <button class="btn-primary" :disabled="!ready" @click="generateFull">Generate</button>
+          <button class="btn-play" :disabled="!midiData || isPlaying" @click="play">Play</button>
+          <button class="btn-stop" :disabled="!isPlaying" @click="stop">Stop</button>
+          <button class="btn-secondary" :disabled="!midiData" @click="downloadMidi">Download</button>
         </div>
       </div>
 
-      <!-- BGM Only Workflow -->
-      <div v-if="workflow === 'bgmOnly'" class="buttons">
-        <button class="btn-primary" :disabled="!ready" @click="generateBgmOnly">Generate BGM</button>
-        <button class="btn-play" :disabled="!midiData || isPlaying" @click="play">Play</button>
-        <button class="btn-stop" :disabled="!isPlaying" @click="stop">Stop</button>
-        <button class="btn-secondary" :disabled="!midiData" @click="downloadMidi">Download</button>
+      <!-- BGM Mode -->
+      <div v-if="mode === 'bgm'">
+        <div class="workflow-hint">Generate instrumental BGM (no vocal).</div>
+        <div class="buttons">
+          <button class="btn-primary" :disabled="!ready" @click="generateBgmOnly">Generate BGM</button>
+          <button class="btn-play" :disabled="!midiData || isPlaying" @click="play">Play</button>
+          <button class="btn-stop" :disabled="!isPlaying" @click="stop">Stop</button>
+          <button class="btn-secondary" :disabled="!midiData" @click="downloadMidi">Download</button>
+        </div>
       </div>
 
       <div v-if="midiData" class="playback-info">
@@ -570,7 +685,8 @@
         seEnabled: true, callEnabled: false, callNotesEnabled: true,
         introChant: 0, mixPattern: 0, callDensity: 2,
         arrangementGrowth: 0, motifRepeatScope: 0,
-        motifFixedProgression: true, motifMaxChordCount: 4
+        motifFixedProgression: true, motifMaxChordCount: 4,
+        blueprintId: 0
       },
       chordDisplay: null,
       sketch: null,
@@ -580,6 +696,7 @@
       playbackTime: 0,
       totalDuration: 0,
       resultText: '',
+      mode: 'vocal',  // 'vocal' or 'bgm'
       workflow: 'vocalFirst',
       hasVocalOnly: false,
       showVocalConfig: false,
@@ -604,6 +721,11 @@
         }
         return options;
       })(),
+      allBlueprints: [],
+      // Blueprints that require drums (ID: 1, 5, 6, 7) per spec
+      DRUMS_REQUIRED_BLUEPRINTS: [1, 5, 6, 7],
+      // Blueprints that override formId (non-Traditional)
+      FORM_OVERRIDE_BLUEPRINTS: [1, 2, 3, 4, 5, 6, 7, 8],
 
       // Internal (Web Audio)
       audioContext: null,
@@ -653,7 +775,56 @@
         if (this.workflow === 'vocalFirst') {
           return 'Step 1: Generate vocal only. Try different seeds. Step 2: Add accompaniment when satisfied.';
         }
-        return 'Generate instrumental BGM without vocal track.';
+        return 'Generate full song with vocal and accompaniment in one step.';
+      },
+      // Blueprint drums_required: ID 1, 5, 6, 7 require drums
+      get blueprintRequiresDrums() {
+        return this.DRUMS_REQUIRED_BLUEPRINTS.includes(this.config.blueprintId);
+      },
+      // Non-Traditional blueprints override formId with section_flow
+      get blueprintOverridesForm() {
+        return this.FORM_OVERRIDE_BLUEPRINTS.includes(this.config.blueprintId);
+      },
+      // BGM mode based on tab selection
+      get isBgmMode() {
+        return this.mode === 'bgm';
+      },
+      // BGM type hint
+      get bgmTypeHint() {
+        if (this.config.compositionStyle === 1) return 'Instrumental with background motif patterns';
+        if (this.config.compositionStyle === 2) return 'Instrumental with arpeggio-driven synth';
+        return '';
+      },
+      // Modulation enabled means timing != 0
+      get modulationEnabled() {
+        return this.config.modulationTiming !== 0;
+      },
+      // Modulation validation warning
+      get modulationWarning() {
+        if (this.modulationEnabled && (this.config.modulationSemitones < 1 || this.config.modulationSemitones > 4)) {
+          return 'Semitones should be 1-4 when modulation is enabled';
+        }
+        return '';
+      },
+      // Current blueprint info
+      get currentBlueprint() {
+        return this.allBlueprints.find(b => b.id === this.config.blueprintId);
+      },
+      get blueprintHint() {
+        const bp = this.currentBlueprint;
+        if (!bp) return 'Random selection based on weights';
+        const paradigms = ['Traditional', 'RhythmSync', 'MelodyDriven'];
+        const policies = ['Free', 'Locked', 'LockedPitch', 'LockedAll', 'Evolving'];
+        let hint = `${paradigms[bp.paradigm] || '?'}, ${policies[bp.riffPolicy] || '?'}`;
+        if (this.blueprintRequiresDrums) hint += ' (drums required)';
+        if (this.blueprintOverridesForm) hint += ' (form override)';
+        return hint;
+      },
+      // Blueprint riff policy overrides motifRepeatScope when not Free
+      get blueprintOverridesMotifScope() {
+        const bp = this.currentBlueprint;
+        // RiffPolicy: 0=Free, others are Locked/LockedPitch/LockedAll/Evolving
+        return bp && bp.riffPolicy !== 0;
       },
 
       // Methods
@@ -708,11 +879,59 @@
         this.updateChordDisplay();
       },
 
+      onBlueprintChange() {
+        // When blueprint requires drums, force drumsEnabled=true
+        if (this.blueprintRequiresDrums) {
+          this.config.drumsEnabled = true;
+        }
+      },
+
+      onModeChange() {
+        // When switching to BGM mode, set default compositionStyle and enable arpeggio for SynthDriven
+        if (this.mode === 'bgm') {
+          if (this.config.compositionStyle === 0) {
+            this.config.compositionStyle = 1; // Default to BackgroundMotif
+          }
+          if (this.config.compositionStyle === 2) {
+            this.config.arpeggioEnabled = true;
+          }
+        } else {
+          // Vocal mode uses MelodyLead
+          this.config.compositionStyle = 0;
+        }
+      },
+
+      onBgmTypeChange() {
+        // SynthDriven forces arpeggio enabled
+        if (this.config.compositionStyle === 2) {
+          this.config.arpeggioEnabled = true;
+        }
+      },
+
       initAudio() {
         if (!this.audioContext) {
           this.audioContext = new AudioContext();
         }
         this.synth = createSimpleSynth(this.audioContext);
+      },
+
+      generateFull() {
+        try {
+          this.stop();
+          if (this.sketch) this.sketch.destroy();
+          this.sketch = new midisketch.MidiSketch();
+          this.sketch.generateFromConfig(this.config);
+          this.midiData = this.sketch.getMidi();
+          this.eventData = this.sketch.getEvents();
+          this.totalDuration = this.ticksToSeconds(this.eventData.duration_ticks, this.eventData.bpm);
+          this.hasVocalOnly = false;
+          const p = this.currentPreset;
+          const c = this.allChords[this.config.chordProgressionId];
+          this.resultText = `Generated: ${this.midiData.length} bytes\nStyle: ${p?.displayName}\nChord: ${c?.display || 'N/A'}\nBPM: ${this.eventData.bpm}\nDuration: ${this.formatTime(this.totalDuration)}`;
+        } catch (e) {
+          this.resultText = `Error: ${e.message}`;
+          console.error(e);
+        }
       },
 
       generateBgmOnly() {
@@ -900,6 +1119,7 @@
           this.stylePresets = midisketch.getStylePresets();
           this.allChords = midisketch.getChords();
           this.allForms = midisketch.getStructures();
+          this.allBlueprints = midisketch.getBlueprints();
           this.onStyleChange();
           this.status = { type: 'ready', text: 'Ready' };
           this.ready = true;
