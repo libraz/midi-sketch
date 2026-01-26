@@ -10,6 +10,8 @@
 #include <random>
 #include <set>
 
+#include "core/arrangement.h"
+#include "core/chord.h"
 #include "core/harmony_context.h"
 #include "core/i_harmony_context.h"
 #include "core/melody_templates.h"
@@ -1118,6 +1120,126 @@ TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_DifferentChordDegrees) {
       prev_pitch = pitch;
     }
   }
+}
+
+// ============================================================================
+// Triplet Rhythm Grid Tests (DownResolve uses Ternary)
+// ============================================================================
+
+TEST(MelodyDesignerTest, TernaryTemplateGeneratesNotes) {
+  // DownResolve template uses Ternary rhythm grid
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+
+  std::vector<Section> sections;
+  Section b_section;
+  b_section.type = SectionType::B;
+  b_section.bars = 8;
+  b_section.start_tick = 0;
+  b_section.name = "B";
+  sections.push_back(b_section);
+  harmony.initialize(Arrangement(sections), getChordProgression(0), Mood::StraightPop);
+
+  MelodyTemplate tmpl = getTemplate(MelodyTemplateId::DownResolve);
+  EXPECT_EQ(tmpl.rhythm_grid, RhythmGrid::Ternary) << "DownResolve should use Ternary grid";
+
+  auto ctx = createTestContext();
+  ctx.section_type = SectionType::B;
+  ctx.mood = Mood::StraightPop;
+
+  std::mt19937 rng(42);
+  auto notes =
+      designer.generateSectionWithEvaluation(tmpl, ctx, harmony, rng, VocalStylePreset::Standard);
+
+  EXPECT_GT(notes.size(), 0u) << "Ternary template should generate notes";
+}
+
+TEST(MelodyDesignerTest, BinaryTemplateGeneratesNotes) {
+  // PlateauTalk template uses Binary rhythm grid
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+
+  std::vector<Section> sections;
+  Section a_section;
+  a_section.type = SectionType::A;
+  a_section.bars = 8;
+  a_section.start_tick = 0;
+  a_section.name = "A";
+  sections.push_back(a_section);
+  harmony.initialize(Arrangement(sections), getChordProgression(0), Mood::StraightPop);
+
+  MelodyTemplate tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+  EXPECT_EQ(tmpl.rhythm_grid, RhythmGrid::Binary) << "PlateauTalk should use Binary grid";
+
+  auto ctx = createTestContext();
+  ctx.section_type = SectionType::A;
+  ctx.mood = Mood::StraightPop;
+
+  std::mt19937 rng(42);
+  auto notes =
+      designer.generateSectionWithEvaluation(tmpl, ctx, harmony, rng, VocalStylePreset::Standard);
+
+  EXPECT_GT(notes.size(), 0u) << "Binary template should generate notes";
+}
+
+// ============================================================================
+// Breath Duration Tests (Variable phrase breathing)
+// ============================================================================
+
+TEST(MelodyDesignerTest, BalladMoodGeneratesNotes) {
+  // Ballad mood should use longer breath durations (tested indirectly)
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+
+  std::vector<Section> sections;
+  Section a_section;
+  a_section.type = SectionType::A;
+  a_section.bars = 8;
+  a_section.start_tick = 0;
+  a_section.name = "A";
+  sections.push_back(a_section);
+  harmony.initialize(Arrangement(sections), getChordProgression(0), Mood::Ballad);
+
+  auto ctx = createTestContext();
+  ctx.section_type = SectionType::A;
+  ctx.mood = Mood::Ballad;
+  ctx.section_end = TICKS_PER_BAR * 8;
+  ctx.section_bars = 8;
+
+  MelodyTemplate tmpl = getTemplate(MelodyTemplateId::SparseAnchor);
+  std::mt19937 rng(42);
+  auto notes =
+      designer.generateSectionWithEvaluation(tmpl, ctx, harmony, rng, VocalStylePreset::Ballad);
+
+  EXPECT_GT(notes.size(), 0u) << "Ballad mood should generate notes";
+}
+
+TEST(MelodyDesignerTest, ChorusSectionGeneratesNotes) {
+  // Chorus section should use shorter breath durations (tested indirectly)
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+
+  std::vector<Section> sections;
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.bars = 8;
+  chorus.start_tick = 0;
+  chorus.name = "CHORUS";
+  sections.push_back(chorus);
+  harmony.initialize(Arrangement(sections), getChordProgression(0), Mood::StraightPop);
+
+  auto ctx = createTestContext();
+  ctx.section_type = SectionType::Chorus;
+  ctx.mood = Mood::StraightPop;
+  ctx.section_end = TICKS_PER_BAR * 8;
+  ctx.section_bars = 8;
+
+  MelodyTemplate tmpl = getTemplate(MelodyTemplateId::HookRepeat);
+  std::mt19937 rng(42);
+  auto notes =
+      designer.generateSectionWithEvaluation(tmpl, ctx, harmony, rng, VocalStylePreset::Idol);
+
+  EXPECT_GT(notes.size(), 0u) << "Chorus section should generate notes";
 }
 
 }  // namespace

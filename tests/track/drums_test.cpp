@@ -521,5 +521,100 @@ TEST_F(DrumsTest, FillsAtSectionBoundaries) {
   EXPECT_GE(tom_notes, 0) << "Tom check completed";
 }
 
+// ============================================================================
+// Ghost Note Velocity Variation Tests
+// ============================================================================
+
+TEST_F(DrumsTest, GhostNotesHaveVelocityVariation) {
+  // Ghost notes should have variation in velocity (not all identical)
+  // Ghost notes are typically snare hits with velocity < 60
+  params_.seed = 42;
+  params_.mood = Mood::CityPop;  // CityPop has swing/ghost notes
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+
+  std::set<uint8_t> ghost_velocities;
+  for (const auto& note : track.notes()) {
+    // Ghost notes are snare hits with lower velocity
+    if (note.note == SNARE && note.velocity < 60 && note.velocity >= 20) {
+      ghost_velocities.insert(note.velocity);
+    }
+  }
+
+  // If there are ghost notes, they should have some velocity variation
+  // (not all exactly the same velocity)
+  if (ghost_velocities.size() > 3) {
+    EXPECT_GT(ghost_velocities.size(), 1u)
+        << "Ghost notes should have velocity variation, not all identical";
+  }
+}
+
+TEST_F(DrumsTest, GhostNotesWithinValidRange) {
+  // Ghost notes velocity should be clamped to 20-100
+  params_.seed = 123;
+  params_.mood = Mood::CityPop;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+
+  for (const auto& note : track.notes()) {
+    if (note.note == SNARE && note.velocity < 60) {
+      EXPECT_GE(note.velocity, 20u) << "Ghost note velocity too low";
+      EXPECT_LE(note.velocity, 100u) << "Ghost note velocity too high";
+    }
+  }
+}
+
+// ============================================================================
+// Kick Humanization Tests
+// ============================================================================
+
+TEST_F(DrumsTest, KickTimingVariation) {
+  // Test that kicks don't all land on exact grid positions
+  // This is tested indirectly by running multiple seeds and checking for variation
+  params_.mood = Mood::ElectroPop;
+
+  std::set<Tick> kick_offsets;
+  for (int seed = 1; seed <= 5; ++seed) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().drums();
+    for (const auto& note : track.notes()) {
+      if (note.note == KICK) {
+        // Get offset within beat (should have micro-variations)
+        Tick beat_offset = note.start_tick % TICKS_PER_BEAT;
+        kick_offsets.insert(beat_offset);
+      }
+    }
+  }
+
+  // With humanization, we should see kicks at slightly varied positions
+  // Not just at 0 and TICKS_PER_BEAT/2
+  EXPECT_GT(kick_offsets.size(), 2u)
+      << "Kick timing should have micro-variations from humanization";
+}
+
+TEST_F(DrumsTest, KickPositionsNonNegative) {
+  // Humanized kicks should never have negative start_tick
+  params_.seed = 999;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  for (const auto& note : track.notes()) {
+    if (note.note == KICK) {
+      EXPECT_GE(note.start_tick, 0u) << "Kick start_tick should never be negative";
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

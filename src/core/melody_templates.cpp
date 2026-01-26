@@ -29,8 +29,9 @@ constexpr MelodyTemplate kPlateauTalk = {
     0.5f,  // target_attraction_strength: moderate (preserve plateau feel)
 
     // Rhythm
-    true,  // rhythm_driven
-    0.4f,  // sixteenth_density: 40%
+    true,               // rhythm_driven
+    0.4f,               // sixteenth_density: 40%
+    RhythmGrid::Binary, // rhythm_grid: standard 8th/16th
 
     // Vocal constraints
     true,  // vowel_constraint
@@ -67,8 +68,9 @@ constexpr MelodyTemplate kRunUpTarget = {
     0.8f,  // target_attraction_strength: strong attraction
 
     // Rhythm
-    true,  // rhythm_driven
-    0.6f,  // sixteenth_density: 60%
+    true,               // rhythm_driven
+    0.6f,               // sixteenth_density: 60%
+    RhythmGrid::Binary, // rhythm_grid: standard 8th/16th
 
     // Vocal constraints
     true,  // vowel_constraint
@@ -105,8 +107,9 @@ constexpr MelodyTemplate kDownResolve = {
     0.7f,  // target_attraction_strength
 
     // Rhythm
-    false,  // rhythm_driven: melody-driven
-    0.2f,   // sixteenth_density: low
+    false,               // rhythm_driven: melody-driven
+    0.2f,                // sixteenth_density: low
+    RhythmGrid::Ternary, // rhythm_grid: triplet for flowing pre-chorus feel
 
     // Vocal constraints
     true,  // vowel_constraint
@@ -144,8 +147,9 @@ constexpr MelodyTemplate kHookRepeat = {
     0.7f,  // target_attraction_strength: strong (hook clarity)
 
     // Rhythm
-    true,  // rhythm_driven
-    0.5f,  // sixteenth_density
+    true,               // rhythm_driven
+    0.5f,               // sixteenth_density
+    RhythmGrid::Binary, // rhythm_grid: standard 8th/16th
 
     // Vocal constraints
     false,  // vowel_constraint: less strict for hooks
@@ -182,8 +186,9 @@ constexpr MelodyTemplate kSparseAnchor = {
     0.5f,  // target_attraction_strength: moderate
 
     // Rhythm
-    false,  // rhythm_driven: melody-driven
-    0.1f,   // sixteenth_density: very low
+    false,              // rhythm_driven: melody-driven
+    0.1f,               // sixteenth_density: very low
+    RhythmGrid::Binary, // rhythm_grid: standard (sparse long notes)
 
     // Vocal constraints
     true,  // vowel_constraint
@@ -220,8 +225,9 @@ constexpr MelodyTemplate kCallResponse = {
     0.6f,  // target_attraction_strength
 
     // Rhythm
-    true,  // rhythm_driven
-    0.3f,  // sixteenth_density
+    true,               // rhythm_driven
+    0.3f,               // sixteenth_density
+    RhythmGrid::Binary, // rhythm_grid: standard 8th/16th
 
     // Vocal constraints
     true,  // vowel_constraint
@@ -258,8 +264,9 @@ constexpr MelodyTemplate kJumpAccent = {
     0.9f,  // target_attraction_strength: very strong
 
     // Rhythm
-    false,  // rhythm_driven: melody-driven
-    0.15f,  // sixteenth_density: low
+    false,              // rhythm_driven: melody-driven
+    0.15f,              // sixteenth_density: low
+    RhythmGrid::Hybrid, // rhythm_grid: mixed for dramatic effect
 
     // Vocal constraints
     true,  // vowel_constraint

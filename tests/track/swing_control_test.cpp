@@ -271,5 +271,49 @@ TEST(GetSwingOffsetContinuousTest, ProgressiveSwingInASection) {
       << "A section first bar should have less swing than last bar";
 }
 
+// ============================================================================
+// Swing Override Tests (Blueprint parameterization)
+// ============================================================================
+
+TEST(CalculateSwingAmountTest, SwingOverrideUsedWhenPositive) {
+  // When swing_override >= 0, it should be used instead of section default
+  float override_value = 0.35f;
+  float result = calculateSwingAmount(SectionType::Chorus, 0, 8, override_value);
+  EXPECT_FLOAT_EQ(result, override_value) << "Override value should be used";
+}
+
+TEST(CalculateSwingAmountTest, SwingOverrideClampedToMax) {
+  // Override values > 0.7 should be clamped
+  float result = calculateSwingAmount(SectionType::A, 0, 8, 0.9f);
+  EXPECT_FLOAT_EQ(result, 0.7f) << "Override should be clamped to 0.7";
+}
+
+TEST(CalculateSwingAmountTest, SwingOverrideClampedToMin) {
+  // Override values < 0 (but >= 0) should work, values < 0 use section default
+  float result_zero = calculateSwingAmount(SectionType::A, 0, 8, 0.0f);
+  EXPECT_FLOAT_EQ(result_zero, 0.0f) << "Zero override should give zero swing";
+}
+
+TEST(CalculateSwingAmountTest, NegativeOverrideUsesSectionDefault) {
+  // -1.0 (or any negative) means use section default
+  float with_default = calculateSwingAmount(SectionType::Chorus, 0, 8, -1.0f);
+  float section_default = calculateSwingAmount(SectionType::Chorus, 0, 8);
+  EXPECT_FLOAT_EQ(with_default, section_default)
+      << "Negative override should use section default";
+}
+
+TEST(GetSwingOffsetContinuousTest, OverridePassedToSwingCalculation) {
+  // Test that override is properly passed through getSwingOffsetContinuous
+  Tick offset_with_override = getSwingOffsetContinuous(
+      DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2, SectionType::A, 0, 8, 0.5f);
+  Tick offset_section_default = getSwingOffsetContinuous(
+      DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2, SectionType::A, 0, 8, -1.0f);
+
+  // A section default at bar 0 is ~0.3, override is 0.5
+  // offset = 240 * swing_amount, so 240 * 0.5 = 120 vs 240 * 0.3 = 72
+  EXPECT_EQ(offset_with_override, 120) << "Override 0.5 should give 120 ticks";
+  EXPECT_NEAR(offset_section_default, 72, 5) << "Section default should give ~72 ticks";
+}
+
 }  // namespace
 }  // namespace midisketch

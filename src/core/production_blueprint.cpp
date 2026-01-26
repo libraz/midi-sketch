@@ -110,46 +110,49 @@ constexpr SectionSlot STORYPOP_FLOW[] = {
 };
 
 // Ballad-style section flow: gradual build, sparse intro
+// Light swing (0.15f) throughout for gentle sway feel
 constexpr SectionSlot BALLAD_FLOW[] = {
     // Intro: chord only (piano feel)
     {SectionType::Intro, 4, TrackMask::Chord, EntryPattern::Immediate, SectionEnergy::Low, 60, 60,
-     PeakLevel::None, DrumRole::Full},
+     PeakLevel::None, DrumRole::Full, 0.15f},
 
     // A melody: vocal + chord
     {SectionType::A, 8, TrackMask::Vocal | TrackMask::Chord, EntryPattern::Immediate,
-     SectionEnergy::Low, 65, 70, PeakLevel::None, DrumRole::Full},
+     SectionEnergy::Low, 65, 70, PeakLevel::None, DrumRole::Full, 0.15f},
 
     // B melody: add bass
     {SectionType::B, 8, TrackMask::Vocal | TrackMask::Chord | TrackMask::Bass,
-     EntryPattern::GradualBuild, SectionEnergy::Medium, 70, 75, PeakLevel::None, DrumRole::Full},
+     EntryPattern::GradualBuild, SectionEnergy::Medium, 70, 75, PeakLevel::None, DrumRole::Full,
+     0.15f},
 
     // Chorus: add drums (gentle, Minimal DrumRole)
     {SectionType::Chorus, 8, TrackMask::Basic, EntryPattern::GradualBuild, SectionEnergy::High, 78,
-     80, PeakLevel::None, DrumRole::Minimal},
+     80, PeakLevel::None, DrumRole::Minimal, 0.2f},
 
     // Interlude: chord only
     {SectionType::Interlude, 4, TrackMask::Chord, EntryPattern::Immediate, SectionEnergy::Low, 60,
-     55, PeakLevel::None, DrumRole::Full},
+     55, PeakLevel::None, DrumRole::Full, 0.15f},
 
     // 2nd A melody
     {SectionType::A, 8, TrackMask::Vocal | TrackMask::Chord, EntryPattern::Immediate,
-     SectionEnergy::Low, 67, 72, PeakLevel::None, DrumRole::Full},
+     SectionEnergy::Low, 67, 72, PeakLevel::None, DrumRole::Full, 0.15f},
 
     // 2nd B melody
     {SectionType::B, 8, TrackMask::Vocal | TrackMask::Chord | TrackMask::Bass,
-     EntryPattern::GradualBuild, SectionEnergy::Medium, 73, 80, PeakLevel::None, DrumRole::Full},
+     EntryPattern::GradualBuild, SectionEnergy::Medium, 73, 80, PeakLevel::None, DrumRole::Full,
+     0.2f},
 
     // 2nd Chorus: fuller (Medium peak)
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::GradualBuild, SectionEnergy::High, 82,
-     90, PeakLevel::Medium, DrumRole::Full},
+     90, PeakLevel::Medium, DrumRole::Full, 0.25f},
 
     // Last chorus: emotional peak (Maximum peak)
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 90, 100,
-     PeakLevel::Max, DrumRole::Full},
+     PeakLevel::Max, DrumRole::Full, 0.3f},
 
     // Outro: fade out with chord
     {SectionType::Outro, 8, TrackMask::Chord, EntryPattern::Immediate, SectionEnergy::Low, 55, 50,
-     PeakLevel::None, DrumRole::Full},
+     PeakLevel::None, DrumRole::Full, 0.1f},
 };
 
 // IdolStandard: Classic idol pop - memorable melody, gradual energy build
@@ -200,38 +203,39 @@ constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
 // IdolHyper: High-energy idol pop - chorus-first, high BPM, dense arrangement
 // Structure: Intro(2) -> Chorus(8) -> A(4) -> Chorus(8) -> B(4) -> Chorus(8)
 //            -> Drop(4) -> LastChorus(16) = 54 bars
+// Strong swing (0.5f) for high energy shuffle feel
 constexpr SectionSlot IDOL_HYPER_FLOW[] = {
     // Intro: immediate high energy, very short
     {SectionType::Intro, 2, TrackMask::All, EntryPattern::DropIn, SectionEnergy::High, 85, 90,
-     PeakLevel::None, DrumRole::Full},
+     PeakLevel::None, DrumRole::Full, 0.5f},
 
     // First Chorus: hook immediately (chorus-first structure)
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Peak, 90, 100,
-     PeakLevel::None, DrumRole::Full},
+     PeakLevel::None, DrumRole::Full, 0.5f},
 
     // A melody: brief verse, high density maintained
     {SectionType::A, 4, TrackMask::All, EntryPattern::Immediate, SectionEnergy::High, 82, 85,
-     PeakLevel::None, DrumRole::Full},
+     PeakLevel::None, DrumRole::Full, 0.45f},
 
     // 2nd Chorus: keep momentum
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 92, 100,
-     PeakLevel::None, DrumRole::Full},
+     PeakLevel::None, DrumRole::Full, 0.5f},
 
     // B melody: brief, building tension
     {SectionType::B, 4, TrackMask::All, EntryPattern::GradualBuild, SectionEnergy::High, 85, 90,
-     PeakLevel::None, DrumRole::Full},
+     PeakLevel::None, DrumRole::Full, 0.45f},
 
     // 3rd Chorus: pre-drop energy
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 93, 100,
-     PeakLevel::Medium, DrumRole::Full},
+     PeakLevel::Medium, DrumRole::Full, 0.55f},
 
     // Drop: tension release (MixBreak = tension pause)
     {SectionType::MixBreak, 4, TrackMask::Vocal | TrackMask::Drums, EntryPattern::Immediate,
-     SectionEnergy::High, 80, 70, PeakLevel::None, DrumRole::Ambient},
+     SectionEnergy::High, 80, 70, PeakLevel::None, DrumRole::Ambient, 0.3f},
 
     // Last Chorus: explosive finale
     {SectionType::Chorus, 16, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 95, 100,
-     PeakLevel::Max, DrumRole::Full},
+     PeakLevel::Max, DrumRole::Full, 0.55f},
 };
 
 // IdolKawaii: Sweet, bouncy idol pop - restrained dynamics, cute vibe
@@ -271,34 +275,35 @@ constexpr SectionSlot IDOL_KAWAII_FLOW[] = {
 // IdolCoolPop: Cool, stylish idol pop - four-on-floor, uniform dynamics
 // Structure: Intro(8) -> A(8) -> Chorus(8) -> B(8) -> Chorus(8) -> DanceBreak(8)
 //            -> LastChorus(16) = 64 bars
+// Straight timing (0.0f) for tight four-on-floor dance feel
 constexpr SectionSlot IDOL_COOLPOP_FLOW[] = {
     // Intro: driving four-on-floor beat
     {SectionType::Intro, 8, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Medium, 75, 80,
-     PeakLevel::None, DrumRole::Full},
+     PeakLevel::None, DrumRole::Full, 0.0f},
 
     // A melody: cool, steady groove
     {SectionType::A, 8, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Medium, 78, 85,
-     PeakLevel::None, DrumRole::Full},
+     PeakLevel::None, DrumRole::Full, 0.0f},
 
     // First Chorus: powerful but controlled
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::High, 85, 90,
-     PeakLevel::None, DrumRole::Full},
+     PeakLevel::None, DrumRole::Full, 0.0f},
 
     // B melody: variation while maintaining groove
     {SectionType::B, 8, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Medium, 80, 85,
-     PeakLevel::None, DrumRole::Full},
+     PeakLevel::None, DrumRole::Full, 0.0f},
 
     // 2nd Chorus: stronger, medium peak
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::High, 88, 95,
-     PeakLevel::Medium, DrumRole::Full},
+     PeakLevel::Medium, DrumRole::Full, 0.0f},
 
     // Dance Break: high energy instrumental (using Interlude)
     {SectionType::Interlude, 8, TrackMask::Drums | TrackMask::Bass | TrackMask::Arpeggio,
-     EntryPattern::Immediate, SectionEnergy::High, 85, 95, PeakLevel::None, DrumRole::Full},
+     EntryPattern::Immediate, SectionEnergy::High, 85, 95, PeakLevel::None, DrumRole::Full, 0.0f},
 
     // Last Chorus: climactic finish
     {SectionType::Chorus, 16, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 92, 100,
-     PeakLevel::Max, DrumRole::Full},
+     PeakLevel::Max, DrumRole::Full, 0.0f},
 };
 
 // IdolEmo: Emotional idol pop - quiet start, explosive finish

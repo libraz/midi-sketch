@@ -25,6 +25,44 @@ namespace {
 // Default velocity for melody notes
 constexpr uint8_t DEFAULT_VELOCITY = 100;
 
+// Calculate breath duration based on section type and mood.
+// Ballads and sentimental moods get longer breaths for emotional phrasing.
+// Chorus sections get shorter breaths for drive and energy.
+// @param section Section type (Verse, Chorus, etc.)
+// @param mood Current mood setting
+// @return Breath duration in ticks
+Tick getBreathDuration(SectionType section, Mood mood) {
+  // Ballad/Sentimental: longer breath (quarter note) for emotional phrasing
+  if (mood == Mood::Ballad || mood == Mood::Sentimental) {
+    return TICK_QUARTER;
+  }
+  // Chorus: shorter breath (16th note) for drive and momentum
+  if (section == SectionType::Chorus) {
+    return TICK_SIXTEENTH;
+  }
+  // Default: 8th note breath
+  return TICK_EIGHTH;
+}
+
+// Get rhythm unit based on grid type.
+// Binary grid uses 8th/16th notes, Ternary uses triplets.
+// @param grid Rhythm grid type
+// @param is_eighth Whether to use 8th note base (vs quarter)
+// @return Tick duration for the rhythm unit
+Tick getRhythmUnit(RhythmGrid grid, bool is_eighth) {
+  switch (grid) {
+    case RhythmGrid::Ternary:
+      return is_eighth ? TICK_EIGHTH_TRIPLET : TICK_QUARTER_TRIPLET;
+    case RhythmGrid::Hybrid:
+      // Hybrid uses binary as base but allows triplets in specific contexts
+      // (handled separately where needed)
+      return is_eighth ? TICK_EIGHTH : TICK_QUARTER;
+    case RhythmGrid::Binary:
+    default:
+      return is_eighth ? TICK_EIGHTH : TICK_QUARTER;
+  }
+}
+
 // Get the bass root pitch class for a given chord degree.
 // This is the note that bass will play as the harmonic foundation.
 // @param chord_degree Chord degree (0-6 for diatonic)
@@ -334,8 +372,9 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
     }
 
     // Add rest between phrases (breathing) - skip if breathing gaps disabled
+    // Breath duration varies by section type and mood for natural phrasing
     if (i < phrase_count - 1 && !ctx.disable_breathing_gaps) {
-      current_tick += TICK_EIGHTH;  // Short breath
+      current_tick += getBreathDuration(ctx.section_type, ctx.mood);
     }
 
     // Snap to next half-bar boundary (phrase_beats/2 * TICKS_PER_BEAT grid)
@@ -698,6 +737,41 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       }
     }
 
+    // Leap encouragement for long notes (pop vocal theory):
+    // After long notes (>= 1 beat), listeners expect melodic movement.
+    // Static pitches or small steps after held notes can feel anticlimactic.
+    // Encourage larger intervals (major 3rd or more) to create melodic interest.
+    // 60% chance to encourage leap to avoid deterministic behavior.
+    constexpr Tick LONG_NOTE_THRESHOLD = TICKS_PER_BEAT;  // 1 beat (quarter note)
+    constexpr int PREFERRED_LEAP_AFTER_LONG = 4;         // Major 3rd minimum
+    if (i > 0 && prev_note_duration >= LONG_NOTE_THRESHOLD) {
+      int current_interval = std::abs(new_pitch - current_pitch);
+      // If staying on same pitch or small step after long note, consider encouraging movement
+      if (current_interval < PREFERRED_LEAP_AFTER_LONG) {
+        std::uniform_real_distribution<float> leap_dist(0.0f, 1.0f);
+        if (leap_dist(rng) < 0.6f) {  // 60% chance to encourage leap
+          // Find chord tones at least PREFERRED_LEAP_AFTER_LONG semitones away
+          std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
+          std::vector<int> leap_candidates;
+          for (int pc : chord_tones) {
+            for (int oct = 4; oct <= 6; ++oct) {
+              int candidate = oct * 12 + pc;
+              int interval = std::abs(candidate - current_pitch);
+              if (candidate >= ctx.vocal_low && candidate <= ctx.vocal_high &&
+                  interval >= PREFERRED_LEAP_AFTER_LONG && interval <= kMaxMelodicInterval) {
+                leap_candidates.push_back(candidate);
+              }
+            }
+          }
+          if (!leap_candidates.empty()) {
+            // Pick random leap candidate
+            std::uniform_int_distribution<size_t> idx_dist(0, leap_candidates.size() - 1);
+            new_pitch = leap_candidates[idx_dist(rng)];
+          }
+        }
+      }
+    }
+
     // Avoid note check: melody should not form tritone/minor2nd with chord tones
     // This applies to ALL notes, not just strong beats, because bass establishes
     // the harmonic foundation throughout the bar.
@@ -829,7 +903,9 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     // Calculate duration from rhythm eighths field
     // This preserves short note durations regardless of quantized positions
     // (note_start already calculated above)
-    Tick note_duration = static_cast<Tick>(rn.eighths * TICK_EIGHTH);
+    // Use rhythm grid from template for triplet support
+    Tick eighth_unit = getRhythmUnit(tmpl.rhythm_grid, true);
+    Tick note_duration = static_cast<Tick>(rn.eighths * eighth_unit);
 
     // Cap to gap if next note is closer to prevent overlap
     if (i + 1 < rhythm.size()) {
@@ -1137,8 +1213,10 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       }
 
       // Get duration from rhythm pattern (in eighths, convert to ticks)
+      // Use rhythm grid from template for triplet support
       uint8_t eighths = rhythm_pattern.durations[i];
-      Tick note_duration = static_cast<Tick>(eighths) * TICK_EIGHTH;
+      Tick eighth_unit = getRhythmUnit(tmpl.rhythm_grid, true);
+      Tick note_duration = static_cast<Tick>(eighths) * eighth_unit;
 
       uint8_t velocity = DEFAULT_VELOCITY;
       // Accent based on note position in pattern

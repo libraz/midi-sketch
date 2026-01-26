@@ -31,6 +31,13 @@ struct SectionSlot {
   uint8_t density_percent;  ///< Density percentage (50-100)
   PeakLevel peak_level;     ///< Peak level (replaces fill_before bool)
   DrumRole drum_role;       ///< Drum role (Full/Ambient/Minimal/FXOnly)
+
+  /// @brief Swing amount override for this section.
+  ///
+  /// -1.0 = use section type default
+  /// 0.0-0.7 = override swing amount
+  /// Controls the degree of shuffle feel in drums (0 = straight, 0.7 = heavy shuffle).
+  float swing_amount = -1.0f;
 };
 
 /// @brief Production blueprint defining how a song is generated.

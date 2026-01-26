@@ -242,6 +242,10 @@ struct Section {
   /// @brief Density percent for this section (from ProductionBlueprint).
   /// Range: 50-100, affects note density in all tracks.
   uint8_t density_percent = 100;
+
+  /// @brief Swing amount override for this section (from ProductionBlueprint).
+  /// -1.0 = use section type default, 0.0-0.7 = explicit swing amount.
+  float swing_amount = -1.0f;
 };
 
 /// @brief Section transition parameters for smooth melodic flow.

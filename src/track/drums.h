@@ -57,9 +57,11 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
  * @param section Section type (A, B, Chorus, etc.)
  * @param bar_in_section Current bar index within section (0-based)
  * @param total_bars Total bars in section
+ * @param swing_override Optional explicit swing amount (-1 = use section default)
  * @return Swing amount (0.0 = straight, 0.5 = moderate swing, 0.7 = heavy)
  */
-float calculateSwingAmount(SectionType section, int bar_in_section, int total_bars);
+float calculateSwingAmount(SectionType section, int bar_in_section, int total_bars,
+                          float swing_override = -1.0f);
 
 /**
  * @brief Calculate swing offset with continuous control.
@@ -72,10 +74,12 @@ float calculateSwingAmount(SectionType section, int bar_in_section, int total_ba
  * @param section Section type
  * @param bar_in_section Current bar index within section
  * @param total_bars Total bars in section
+ * @param swing_override Optional explicit swing amount (-1 = use section default)
  * @return Tick offset to add to off-beat timing (0 for Straight groove)
  */
 Tick getSwingOffsetContinuous(DrumGrooveFeel groove, Tick subdivision, SectionType section,
-                               int bar_in_section, int total_bars);
+                               int bar_in_section, int total_bars,
+                               float swing_override = -1.0f);
 
 }  // namespace midisketch
 

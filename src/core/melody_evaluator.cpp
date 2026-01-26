@@ -252,6 +252,43 @@ float MelodyEvaluator::calcAaabPattern(const std::vector<NoteEvent>& notes) {
   return aaa_sim * 0.7f + b_diff * 0.3f;
 }
 
+float MelodyEvaluator::calcRhythmIntervalCorrelation(const std::vector<NoteEvent>& notes) {
+  // Rhythm-interval correlation: long notes should precede leaps, short notes should use steps.
+  // Based on pop vocal theory: singers need time to prepare for large pitch jumps.
+  // "Long note + leap" and "short note + step" are good correlations.
+  // "Short note + leap" is difficult to sing and should be penalized.
+  if (notes.size() < 2) return 0.5f;
+
+  int good_correlations = 0;  // long note + leap OR short note + step
+  int bad_correlations = 0;   // short note + leap
+  int total_pairs = 0;
+
+  for (size_t i = 1; i < notes.size(); ++i) {
+    Tick prev_duration = notes[i - 1].duration;
+    int interval = std::abs(notes[i].note - notes[i - 1].note);
+
+    bool is_long = prev_duration >= TICKS_PER_BEAT;       // Quarter note or longer
+    bool is_short = prev_duration < TICKS_PER_BEAT / 2;   // Less than 8th note
+    bool is_leap = interval >= 5;                          // Perfect 4th or larger
+    bool is_step = interval <= 2;                          // Major 2nd or smaller
+
+    if ((is_long && is_leap) || (is_short && is_step)) {
+      good_correlations++;  // Ideal combinations for singability
+    } else if (is_short && is_leap) {
+      bad_correlations++;   // Difficult to sing: no time to prepare for jump
+    }
+    total_pairs++;
+  }
+
+  if (total_pairs == 0) return 0.5f;
+
+  // Score calculation: good ratio - bad ratio, centered at 0.5
+  float good_ratio = static_cast<float>(good_correlations) / static_cast<float>(total_pairs);
+  float bad_ratio = static_cast<float>(bad_correlations) / static_cast<float>(total_pairs);
+
+  return std::clamp(0.5f + (good_ratio - bad_ratio) * 0.5f, 0.0f, 1.0f);
+}
+
 MelodyScore MelodyEvaluator::evaluate(const std::vector<NoteEvent>& notes,
                                       const IHarmonyContext& harmony) {
   MelodyScore score;
@@ -260,6 +297,7 @@ MelodyScore MelodyEvaluator::evaluate(const std::vector<NoteEvent>& notes,
   score.contour_shape = calcContourShape(notes);
   score.surprise_element = calcSurpriseElement(notes);
   score.aaab_pattern = calcAaabPattern(notes);
+  score.rhythm_interval_correlation = calcRhythmIntervalCorrelation(notes);
   return score;
 }
 

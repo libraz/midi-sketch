@@ -584,6 +584,7 @@ std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blue
     section.density_percent = slot.density_percent;
     section.peak_level = slot.peak_level;
     section.drum_role = slot.drum_role;
+    section.swing_amount = slot.swing_amount;
 
     // Convert PeakLevel to fill_before for backward compatibility
     // (fill_before is true when peak_level is not None)

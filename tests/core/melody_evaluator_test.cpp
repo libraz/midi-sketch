@@ -251,6 +251,7 @@ TEST(MelodyEvaluatorTest, TotalScoreCalculation) {
   score.contour_shape = 0.9f;
   score.surprise_element = 0.6f;
   score.aaab_pattern = 0.5f;
+  score.rhythm_interval_correlation = 0.75f;
 
   float simple_total = score.total();
   EXPECT_GE(simple_total, 0.0f);
@@ -372,6 +373,93 @@ TEST(MelodyEvaluatorIntegrationTest, DifferentStylesProduceDifferentMelodies) {
 
   // Styles have different weights, so selection may differ
   // (We can't guarantee difference due to randomness, but we verify both work)
+}
+
+// ============================================================================
+// Rhythm-Interval Correlation Tests
+// ============================================================================
+
+TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_EmptyNotes) {
+  std::vector<NoteEvent> empty;
+  float score = MelodyEvaluator::calcRhythmIntervalCorrelation(empty);
+  EXPECT_FLOAT_EQ(score, 0.5f) << "Empty notes should return neutral score";
+}
+
+TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_SingleNote) {
+  std::vector<NoteEvent> single = {{0, 480, 60, 100}};  // One quarter note
+  float score = MelodyEvaluator::calcRhythmIntervalCorrelation(single);
+  EXPECT_FLOAT_EQ(score, 0.5f) << "Single note should return neutral score";
+}
+
+TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_LongNoteWithLeap) {
+  // Good pattern: quarter note (480 ticks) followed by leap (5+ semitones)
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},    // C4 quarter note
+      {480, 480, 67, 100},  // G4 (7 semitones leap) after long note
+  };
+  float score = MelodyEvaluator::calcRhythmIntervalCorrelation(notes);
+  EXPECT_GT(score, 0.5f) << "Long note + leap should score above neutral";
+}
+
+TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_ShortNoteWithStep) {
+  // Good pattern: short note (< 240 ticks) followed by step (1-2 semitones)
+  std::vector<NoteEvent> notes = {
+      {0, 120, 60, 100},    // C4 eighth note
+      {120, 120, 62, 100},  // D4 (2 semitones step) after short note
+  };
+  float score = MelodyEvaluator::calcRhythmIntervalCorrelation(notes);
+  EXPECT_GT(score, 0.5f) << "Short note + step should score above neutral";
+}
+
+TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_ShortNoteWithLeap) {
+  // Bad pattern: short note followed by large leap (hard to sing)
+  std::vector<NoteEvent> notes = {
+      {0, 120, 60, 100},    // C4 eighth note
+      {120, 120, 72, 100},  // C5 (12 semitones leap) after short note
+  };
+  float score = MelodyEvaluator::calcRhythmIntervalCorrelation(notes);
+  EXPECT_LT(score, 0.5f) << "Short note + large leap should score below neutral";
+}
+
+TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_MixedPattern) {
+  // Mix of good and bad patterns
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},     // C4 quarter (long)
+      {480, 480, 67, 100},   // G4 leap (good: long+leap)
+      {960, 120, 67, 100},   // G4 short
+      {1080, 120, 72, 100},  // C5 leap (bad: short+leap)
+      {1200, 480, 72, 100},  // C5 quarter (long)
+      {1680, 480, 74, 100},  // D5 step (neutral: long+step)
+  };
+  float score = MelodyEvaluator::calcRhythmIntervalCorrelation(notes);
+  // Should be near neutral due to mix
+  EXPECT_GE(score, 0.3f);
+  EXPECT_LE(score, 0.7f);
+}
+
+TEST(MelodyEvaluatorTest, EvaluateIncludesRhythmIntervalCorrelation) {
+  // Verify that evaluate() populates rhythm_interval_correlation
+  HarmonyContext harmony;
+  std::vector<Section> sections;
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.bars = 8;
+  chorus.start_tick = 0;
+  chorus.name = "CHORUS";
+  sections.push_back(chorus);
+  harmony.initialize(Arrangement(sections), getChordProgression(0), Mood::StraightPop);
+
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},
+      {480, 480, 64, 100},
+      {960, 480, 67, 100},
+  };
+
+  MelodyScore score = MelodyEvaluator::evaluate(notes, harmony);
+
+  // rhythm_interval_correlation should be set (not NaN or uninitialized)
+  EXPECT_GE(score.rhythm_interval_correlation, 0.0f);
+  EXPECT_LE(score.rhythm_interval_correlation, 1.0f);
 }
 
 }  // namespace

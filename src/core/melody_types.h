@@ -27,6 +27,15 @@ enum class VocalAttitude : uint8_t {
   Raw = 2          ///< Non-chord tone landing, rule-breaking (edgy)
 };
 
+/// @brief Rhythm grid type for note timing.
+///
+/// Controls whether notes are quantized to binary (8th/16th) or ternary (triplet) grid.
+enum class RhythmGrid : uint8_t {
+  Binary,   ///< Standard 8th/16th note grid (most pop music)
+  Ternary,  ///< Triplet grid (ballads, jazz, shuffle feel)
+  Hybrid    ///< Mixed grid (some phrases use triplets)
+};
+
 /// @name Vocal Attitude Flags
 /// Bit flags for specifying allowed vocal attitudes.
 /// @{
@@ -131,6 +140,7 @@ struct MelodyTemplate {
   /// @{
   bool rhythm_driven;       ///< Whether rhythm-driven
   float sixteenth_density;  ///< 16th note density (0.0-1.0)
+  RhythmGrid rhythm_grid;   ///< Rhythm grid type (Binary/Ternary/Hybrid)
   /// @}
 
   /// @name Vocal constraints

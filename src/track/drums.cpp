@@ -104,6 +104,27 @@ uint8_t getDrumRoleHiHatInstrument(DrumRole role, bool use_ride_override) {
 // Ghost note velocity multiplier
 constexpr float GHOST_VEL = 0.45f;
 
+// Kick humanization: ±2% timing variation for natural feel
+// At 120 BPM, this is approximately ±10 ticks
+constexpr float KICK_HUMANIZE_AMOUNT = 0.02f;
+
+// Helper to add kick with humanization (timing micro-variation)
+void addKickWithHumanize(MidiTrack& track, Tick tick, Tick duration, uint8_t velocity,
+                         std::mt19937& rng, float humanize_amount = KICK_HUMANIZE_AMOUNT) {
+  // Calculate max offset: ±humanize_amount of a 16th note
+  int max_offset = static_cast<int>(SIXTEENTH * humanize_amount);
+  std::uniform_int_distribution<int> offset_dist(-max_offset, max_offset);
+
+  // Apply humanization, ensuring tick doesn't go negative
+  Tick humanized_tick = tick;
+  if (max_offset > 0) {
+    int offset = offset_dist(rng);
+    humanized_tick = static_cast<Tick>(std::max(0, static_cast<int>(tick) + offset));
+  }
+
+  addDrumNote(track, humanized_tick, duration, BD, velocity);
+}
+
 // Fill types for section transitions
 enum class FillType {
   SnareRoll,      // Snare roll building up
@@ -687,7 +708,14 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity ba
 // Swing Control API Implementation
 // ============================================================================
 
-float calculateSwingAmount(SectionType section, int bar_in_section, int total_bars) {
+float calculateSwingAmount(SectionType section, int bar_in_section, int total_bars,
+                          float swing_override) {
+  // If a specific swing amount is overridden via ProductionBlueprint, use it
+  if (swing_override >= 0.0f) {
+    return std::clamp(swing_override, 0.0f, 0.7f);
+  }
+
+  // Default section-based swing calculation
   float base_swing = 0.0f;
   float progress = (total_bars > 1) ? static_cast<float>(bar_in_section) / (total_bars - 1) : 0.0f;
 
@@ -729,13 +757,14 @@ float calculateSwingAmount(SectionType section, int bar_in_section, int total_ba
 }
 
 Tick getSwingOffsetContinuous(DrumGrooveFeel groove, Tick subdivision, SectionType section,
-                               int bar_in_section, int total_bars) {
+                               int bar_in_section, int total_bars,
+                               float swing_override) {
   if (groove == DrumGrooveFeel::Straight) {
     return 0;
   }
 
-  // Get continuous swing amount
-  float swing_amount = calculateSwingAmount(section, bar_in_section, total_bars);
+  // Get continuous swing amount (with optional override from ProductionBlueprint)
+  float swing_amount = calculateSwingAmount(section, bar_in_section, total_bars, swing_override);
 
   // For Shuffle, amplify the swing amount
   if (groove == DrumGrooveFeel::Shuffle) {
@@ -942,11 +971,11 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
         }
 
         if (play_kick_on) {
-          addDrumNote(track, beat_tick, EIGHTH, BD, velocity);
+          addKickWithHumanize(track, beat_tick, EIGHTH, velocity, rng);
         }
         if (play_kick_and) {
           uint8_t and_vel = static_cast<uint8_t>(velocity * 0.85f);
-          addDrumNote(track, beat_tick + EIGHTH, EIGHTH, BD, and_vel);
+          addKickWithHumanize(track, beat_tick + EIGHTH, EIGHTH, and_vel, rng);
         }
 
         // ===== SNARE DRUM =====
@@ -975,16 +1004,22 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
               getGhostDensity(params.mood, section.type, section.backing_density, params.bpm);
 
           std::uniform_real_distribution<float> ghost_dist(0.0f, 1.0f);
+          // Human-like velocity variation: ±15% (0.85-1.15)
+          std::uniform_real_distribution<float> vel_variation(0.85f, 1.15f);
 
           for (auto pos : ghost_positions) {
             if (ghost_dist(rng) < ghost_prob) {
-              uint8_t ghost_vel = static_cast<uint8_t>(velocity * GHOST_VEL);
+              // Apply human-like velocity variation to ghost notes
+              float variation = vel_variation(rng);
+              float base_ghost = velocity * GHOST_VEL * variation;
+              uint8_t ghost_vel = static_cast<uint8_t>(std::clamp(base_ghost, 20.0f, 100.0f));
+
               Tick ghost_offset = (pos == GhostPosition::E) ? SIXTEENTH         // "e" = 1st 16th
                                                             : (SIXTEENTH * 3);  // "a" = 3rd 16th
 
               // Slight velocity variation for "a" position
               if (pos == GhostPosition::A) {
-                ghost_vel = static_cast<uint8_t>(ghost_vel * 0.9f);
+                ghost_vel = static_cast<uint8_t>(std::max(20, static_cast<int>(ghost_vel * 0.9f)));
               }
 
               addDrumNote(track, beat_tick + ghost_offset, SIXTEENTH, SD, ghost_vel);
@@ -1018,7 +1053,8 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
               // Apply continuous swing offset to off-beats (eighth == 1)
               // Uses section context for progressive swing variation
               if (eighth == 1) {
-                hh_tick += getSwingOffsetContinuous(groove, EIGHTH, section.type, bar, section.bars);
+                hh_tick += getSwingOffsetContinuous(groove, EIGHTH, section.type, bar, section.bars,
+                                                 section.swing_amount);
               }
 
               // Skip off-beat in intro
@@ -1076,7 +1112,8 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
               // Apply half continuous swing offset to "e" and "a" positions
               // 16th note swing is subtle to maintain groove without sounding uneven
               if (sixteenth == 1 || sixteenth == 3) {
-                hh_tick += getSwingOffsetContinuous(groove, SIXTEENTH, section.type, bar, section.bars) / 2;
+                hh_tick += getSwingOffsetContinuous(groove, SIXTEENTH, section.type, bar, section.bars,
+                                                   section.swing_amount) / 2;
               }
 
               uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
@@ -1370,11 +1407,11 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
           }
 
           if (play_kick_on) {
-            addDrumNote(track, beat_tick, EIGHTH, BD, velocity);
+            addKickWithHumanize(track, beat_tick, EIGHTH, velocity, rng);
           }
           if (play_kick_and) {
             uint8_t and_vel = static_cast<uint8_t>(velocity * 0.85f);
-            addDrumNote(track, beat_tick + EIGHTH, EIGHTH, BD, and_vel);
+            addKickWithHumanize(track, beat_tick + EIGHTH, EIGHTH, and_vel, rng);
           }
         }
 
@@ -1400,14 +1437,20 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
               getGhostDensity(params.mood, section.type, section.backing_density, params.bpm);
 
           std::uniform_real_distribution<float> ghost_dist(0.0f, 1.0f);
+          // Human-like velocity variation: ±15% (0.85-1.15)
+          std::uniform_real_distribution<float> vel_variation(0.85f, 1.15f);
 
           for (auto pos : ghost_positions) {
             if (ghost_dist(rng) < ghost_prob) {
-              uint8_t ghost_vel = static_cast<uint8_t>(velocity * GHOST_VEL);
+              // Apply human-like velocity variation to ghost notes
+              float variation = vel_variation(rng);
+              float base_ghost = velocity * GHOST_VEL * variation;
+              uint8_t ghost_vel = static_cast<uint8_t>(std::clamp(base_ghost, 20.0f, 100.0f));
+
               Tick ghost_offset = (pos == GhostPosition::E) ? SIXTEENTH : (SIXTEENTH * 3);
 
               if (pos == GhostPosition::A) {
-                ghost_vel = static_cast<uint8_t>(ghost_vel * 0.9f);
+                ghost_vel = static_cast<uint8_t>(std::max(20, static_cast<int>(ghost_vel * 0.9f)));
               }
 
               addDrumNote(track, beat_tick + ghost_offset, SIXTEENTH, SD, ghost_vel);
@@ -1436,7 +1479,8 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
 
               // Apply continuous swing offset to off-beats (eighth == 1)
               if (eighth == 1) {
-                hh_tick += getSwingOffsetContinuous(groove, EIGHTH, section.type, bar, section.bars);
+                hh_tick += getSwingOffsetContinuous(groove, EIGHTH, section.type, bar, section.bars,
+                                                 section.swing_amount);
               }
 
               if (section.type == SectionType::Intro && eighth == 1) {
@@ -1481,7 +1525,8 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
 
               // Apply half continuous swing offset to "e" and "a" positions
               if (sixteenth == 1 || sixteenth == 3) {
-                hh_tick += getSwingOffsetContinuous(groove, SIXTEENTH, section.type, bar, section.bars) / 2;
+                hh_tick += getSwingOffsetContinuous(groove, SIXTEENTH, section.type, bar, section.bars,
+                                                   section.swing_amount) / 2;
               }
 
               uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);

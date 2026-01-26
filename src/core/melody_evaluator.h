@@ -22,34 +22,38 @@ class IHarmonyContext;
 /// Weights determine how much each scoring component contributes to the total.
 /// All weights should sum to approximately 1.0 for normalized scoring.
 struct EvaluatorConfig {
-  float singability_weight;  ///< Weight for average interval size (0.0-1.0)
-  float chord_tone_weight;   ///< Weight for chord tone ratio on strong beats
-  float contour_weight;      ///< Weight for familiar melodic contour
-  float surprise_weight;     ///< Weight for occasional large leaps
-  float aaab_weight;         ///< Weight for AAAB repetition pattern
+  float singability_weight;          ///< Weight for average interval size (0.0-1.0)
+  float chord_tone_weight;           ///< Weight for chord tone ratio on strong beats
+  float contour_weight;              ///< Weight for familiar melodic contour
+  float surprise_weight;             ///< Weight for occasional large leaps
+  float aaab_weight;                 ///< Weight for AAAB repetition pattern
+  float rhythm_interval_weight = 0.15f;  ///< Weight for rhythm-interval correlation
 };
 
 /// @brief Melody evaluation score.
 ///
 /// Contains individual scores for each quality dimension.
 struct MelodyScore {
-  float singability;       ///< Average interval score (0.0-1.0)
-  float chord_tone_ratio;  ///< Strong beat chord tone ratio (0.0-1.0)
-  float contour_shape;     ///< Familiar contour detection (0.0-1.0)
-  float surprise_element;  ///< Large leap detection (0.0-1.0)
-  float aaab_pattern;      ///< AAAB repetition score (0.0-1.0)
+  float singability;                   ///< Average interval score (0.0-1.0)
+  float chord_tone_ratio;              ///< Strong beat chord tone ratio (0.0-1.0)
+  float contour_shape;                 ///< Familiar contour detection (0.0-1.0)
+  float surprise_element;              ///< Large leap detection (0.0-1.0)
+  float aaab_pattern;                  ///< AAAB repetition score (0.0-1.0)
+  float rhythm_interval_correlation;   ///< Rhythm-interval correlation score (0.0-1.0)
 
   /// Calculate total weighted score.
   float total(const EvaluatorConfig& config) const {
     return singability * config.singability_weight + chord_tone_ratio * config.chord_tone_weight +
            contour_shape * config.contour_weight + surprise_element * config.surprise_weight +
-           aaab_pattern * config.aaab_weight;
+           aaab_pattern * config.aaab_weight +
+           rhythm_interval_correlation * config.rhythm_interval_weight;
   }
 
   /// Simple total with equal weights.
   float total() const {
-    return (singability + chord_tone_ratio + contour_shape + surprise_element + aaab_pattern) /
-           5.0f;
+    return (singability + chord_tone_ratio + contour_shape + surprise_element + aaab_pattern +
+            rhythm_interval_correlation) /
+           6.0f;
   }
 };
 
@@ -85,6 +89,14 @@ class MelodyEvaluator {
   /// @param notes Vector of note events
   /// @returns Score 0.0-1.0
   static float calcAaabPattern(const std::vector<NoteEvent>& notes);
+
+  /// Calculate rhythm-interval correlation score.
+  /// Rewards combinations: long note + leap, short note + step.
+  /// Penalizes: short note + leap (difficult to sing).
+  /// Based on pop vocal theory: singers need time for large pitch jumps.
+  /// @param notes Vector of note events
+  /// @returns Score 0.0-1.0
+  static float calcRhythmIntervalCorrelation(const std::vector<NoteEvent>& notes);
 
   /// Evaluate melody and return all scores.
   /// @param notes Vector of note events
