@@ -285,93 +285,134 @@ std::vector<GhostPosition> selectGhostPositions(Mood mood, std::mt19937& rng) {
   return positions;
 }
 
-// Calculate ghost note density based on mood, section, backing density, and BPM
-float getGhostDensity(Mood mood, SectionType section, BackingDensity backing_density,
-                      uint16_t bpm) {
-  float base_density = 0.3f;
+// ============================================================================
+// Ghost Note Density - Simplified Table Lookup
+// ============================================================================
 
-  // Section adjustment
-  switch (section) {
-    case SectionType::Intro:
-    case SectionType::Interlude:
-      base_density *= 0.3f;
-      break;
-    case SectionType::Outro:
-      base_density *= 0.5f;
-      break;
-    case SectionType::A:
-      base_density *= 0.7f;
-      break;
-    case SectionType::B:
-      base_density *= 0.9f;
-      break;
-    case SectionType::Chorus:
-      base_density *= 1.0f;  // No boost for DAW flexibility
-      break;
-    case SectionType::Bridge:
-      base_density *= 0.6f;
-      break;
-    case SectionType::Chant:
-      // Chant section: quiet, minimal drums
-      base_density *= 0.2f;
-      break;
-    case SectionType::MixBreak:
-      // MIX section: full energy
-      base_density *= 1.3f;
-      break;
-  }
+/// @brief Ghost note density level (replaces 4-layer multiplication)
+enum class GhostDensityLevel : uint8_t {
+  None = 0,    ///< No ghost notes (0%)
+  Light = 1,   ///< Light ghosts (15% - 1-2 per bar)
+  Medium = 2,  ///< Medium ghosts (30% - 3-4 per bar)
+  Heavy = 3    ///< Heavy ghosts (45% - 5-6 per bar)
+};
 
-  // Mood adjustment
+/// @brief Mood category for ghost density table lookup
+enum class MoodCategory : uint8_t {
+  Calm = 0,      ///< Ballad, Sentimental, Chill
+  Standard = 1,  ///< Most moods
+  Energetic = 2  ///< IdolPop, EnergeticDance, Anthem, Yoasobi
+};
+
+/// @brief Classify mood into category for table lookup
+MoodCategory getMoodCategory(Mood mood) {
   switch (mood) {
-    case Mood::EnergeticDance:
-    case Mood::IdolPop:
-    case Mood::Anthem:
-      base_density *= 1.3f;
-      break;
-    case Mood::LightRock:
-      base_density *= 1.1f;
-      break;
     case Mood::Ballad:
     case Mood::Sentimental:
     case Mood::Chill:
-      base_density *= 0.4f;
-      break;
+      return MoodCategory::Calm;
+    case Mood::EnergeticDance:
+    case Mood::IdolPop:
+    case Mood::Anthem:
+    case Mood::Yoasobi:
+      return MoodCategory::Energetic;
     default:
-      break;
+      return MoodCategory::Standard;
   }
+}
 
-  // Backing density adjustment
+/// @brief Section index for ghost density table
+int getSectionIndex(SectionType section) {
+  switch (section) {
+    case SectionType::Intro:
+      return 0;
+    case SectionType::A:
+      return 1;
+    case SectionType::B:
+      return 2;
+    case SectionType::Chorus:
+      return 3;
+    case SectionType::Bridge:
+      return 4;
+    case SectionType::Interlude:
+      return 5;
+    case SectionType::Outro:
+      return 6;
+    case SectionType::Chant:
+      return 7;
+    case SectionType::MixBreak:
+      return 8;
+  }
+  return 1;  // Default to A section level
+}
+
+/// @brief Ghost density table: [section][mood_category]
+/// Direct probability lookup instead of accumulated multiplication
+// clang-format off
+constexpr GhostDensityLevel GHOST_DENSITY_TABLE[9][3] = {
+  //                  Calm              Standard          Energetic
+  /* Intro     */ {GhostDensityLevel::None,   GhostDensityLevel::Light,  GhostDensityLevel::Light},
+  /* A         */ {GhostDensityLevel::None,   GhostDensityLevel::Light,  GhostDensityLevel::Medium},
+  /* B         */ {GhostDensityLevel::Light,  GhostDensityLevel::Medium, GhostDensityLevel::Medium},
+  /* Chorus    */ {GhostDensityLevel::Light,  GhostDensityLevel::Medium, GhostDensityLevel::Heavy},
+  /* Bridge    */ {GhostDensityLevel::None,   GhostDensityLevel::Light,  GhostDensityLevel::Light},
+  /* Interlude */ {GhostDensityLevel::None,   GhostDensityLevel::Light,  GhostDensityLevel::Light},
+  /* Outro     */ {GhostDensityLevel::None,   GhostDensityLevel::Light,  GhostDensityLevel::Light},
+  /* Chant     */ {GhostDensityLevel::None,   GhostDensityLevel::None,   GhostDensityLevel::Light},
+  /* MixBreak  */ {GhostDensityLevel::Light,  GhostDensityLevel::Medium, GhostDensityLevel::Heavy},
+};
+// clang-format on
+
+/// @brief Convert density level to probability
+float densityLevelToProbability(GhostDensityLevel level) {
+  switch (level) {
+    case GhostDensityLevel::None:
+      return 0.0f;
+    case GhostDensityLevel::Light:
+      return 0.15f;
+    case GhostDensityLevel::Medium:
+      return 0.30f;
+    case GhostDensityLevel::Heavy:
+      return 0.45f;
+  }
+  return 0.0f;
+}
+
+/// @brief Get ghost note density using simplified table lookup
+/// @param mood Current mood
+/// @param section Current section type
+/// @param backing_density Backing density (thin/normal/thick)
+/// @param bpm Tempo (unused - previously caused extreme value issues)
+/// @return Ghost note probability (0.0 - 0.45)
+float getGhostDensity(Mood mood, SectionType section, BackingDensity backing_density,
+                      [[maybe_unused]] uint16_t bpm) {
+  // Table lookup
+  int section_idx = getSectionIndex(section);
+  int mood_idx = static_cast<int>(getMoodCategory(mood));
+
+  GhostDensityLevel level = GHOST_DENSITY_TABLE[section_idx][mood_idx];
+  float prob = densityLevelToProbability(level);
+
+  // Simple backing density adjustment (not multiplicative)
   switch (backing_density) {
     case BackingDensity::Thin:
-      base_density *= 0.5f;  // Half the ghost notes for thin
+      // Reduce by one level
+      if (level != GhostDensityLevel::None) {
+        prob = densityLevelToProbability(static_cast<GhostDensityLevel>(static_cast<int>(level) - 1));
+      }
       break;
     case BackingDensity::Normal:
       // No adjustment
       break;
     case BackingDensity::Thick:
-      base_density *= 1.4f;  // More ghost notes for thick
+      // Increase by one level (capped at Heavy)
+      if (level != GhostDensityLevel::Heavy) {
+        prob = densityLevelToProbability(static_cast<GhostDensityLevel>(static_cast<int>(level) + 1));
+      }
       break;
   }
 
-  // BPM adjustment: reduce ghost notes at high tempos
-  // Energetic moods (IdolPop, EnergeticDance, Anthem, Yoasobi) use gentler reduction
-  // to maintain groove at their naturally high BPMs
-  bool is_energetic = (mood == Mood::EnergeticDance || mood == Mood::IdolPop ||
-                       mood == Mood::Anthem || mood == Mood::Yoasobi);
-
-  // Reference BPM for adjustment: 120 for normal, 140 for energetic
-  float reference_bpm = is_energetic ? 140.0f : 120.0f;
-  float bpm_factor = std::min(1.0f, reference_bpm / bpm);
-  base_density *= bpm_factor;
-
-  // Cap based on BPM: higher cap for energetic moods
-  float max_density;
-  if (is_energetic) {
-    max_density = (bpm > 150) ? 0.6f : 0.8f;  // Higher cap for energetic
-  } else {
-    max_density = (bpm > 130) ? 0.5f : 0.7f;
-  }
-  return std::min(max_density, base_density);
+  return prob;
 }
 
 // Section-specific kick pattern flags
@@ -640,23 +681,70 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity ba
   return base_level;
 }
 
-// Calculate swing offset for off-beat notes based on groove feel
-// Returns the tick offset to add to off-beat hi-hat timing
-Tick getSwingOffset(DrumGrooveFeel groove, Tick subdivision) {
-  switch (groove) {
-    case DrumGrooveFeel::Swing:
-      // Triplet swing: delay off-beat by ~33% of subdivision
-      return subdivision / 3;
-    case DrumGrooveFeel::Shuffle:
-      // Heavy shuffle: delay by ~50% of subdivision
-      return subdivision / 2;
-    case DrumGrooveFeel::Straight:
+}  // namespace
+
+// ============================================================================
+// Swing Control API Implementation
+// ============================================================================
+
+float calculateSwingAmount(SectionType section, int bar_in_section, int total_bars) {
+  float base_swing = 0.0f;
+  float progress = (total_bars > 1) ? static_cast<float>(bar_in_section) / (total_bars - 1) : 0.0f;
+
+  switch (section) {
+    case SectionType::A:
+      // A section: gradually increase swing (0.3 -> 0.5)
+      base_swing = 0.3f + progress * 0.2f;
+      break;
+    case SectionType::B:
+      // B section: steady moderate swing
+      base_swing = 0.4f;
+      break;
+    case SectionType::Chorus:
+      // Chorus: full, consistent swing
+      base_swing = 0.5f;
+      break;
+    case SectionType::Bridge:
+      // Bridge: lighter swing for contrast
+      base_swing = 0.2f;
+      break;
+    case SectionType::Intro:
+    case SectionType::Interlude:
+      // Intro/Interlude: start lighter, gradually increase
+      base_swing = 0.2f + progress * 0.15f;
+      break;
+    case SectionType::Outro:
+      // Outro: gradually reduce swing (0.4 -> 0.2)
+      base_swing = 0.4f - progress * 0.2f;
+      break;
+    case SectionType::MixBreak:
+      // MixBreak: energetic, medium swing
+      base_swing = 0.35f;
+      break;
     default:
-      return 0;
+      base_swing = 0.33f;  // Default triplet swing
   }
+
+  return std::clamp(base_swing, 0.0f, 0.7f);
 }
 
-}  // namespace
+Tick getSwingOffsetContinuous(DrumGrooveFeel groove, Tick subdivision, SectionType section,
+                               int bar_in_section, int total_bars) {
+  if (groove == DrumGrooveFeel::Straight) {
+    return 0;
+  }
+
+  // Get continuous swing amount
+  float swing_amount = calculateSwingAmount(section, bar_in_section, total_bars);
+
+  // For Shuffle, amplify the swing amount
+  if (groove == DrumGrooveFeel::Shuffle) {
+    swing_amount = std::min(0.7f, swing_amount * 1.5f);
+  }
+
+  // Apply swing as fraction of subdivision
+  return static_cast<Tick>(subdivision * swing_amount);
+}
 
 void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,
                         std::mt19937& rng) {
@@ -927,9 +1015,10 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
             for (int eighth = 0; eighth < 2; ++eighth) {
               Tick hh_tick = beat_tick + eighth * EIGHTH;
 
-              // Apply swing offset to off-beats (eighth == 1)
+              // Apply continuous swing offset to off-beats (eighth == 1)
+              // Uses section context for progressive swing variation
               if (eighth == 1) {
-                hh_tick += getSwingOffset(groove, EIGHTH);
+                hh_tick += getSwingOffsetContinuous(groove, EIGHTH, section.type, bar, section.bars);
               }
 
               // Skip off-beat in intro
@@ -984,10 +1073,10 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
             for (int sixteenth = 0; sixteenth < 4; ++sixteenth) {
               Tick hh_tick = beat_tick + sixteenth * SIXTEENTH;
 
-              // Apply half swing offset to "e" and "a" positions (sixteenth == 1 and 3)
+              // Apply half continuous swing offset to "e" and "a" positions
               // 16th note swing is subtle to maintain groove without sounding uneven
               if (sixteenth == 1 || sixteenth == 3) {
-                hh_tick += getSwingOffset(groove, SIXTEENTH) / 2;
+                hh_tick += getSwingOffsetContinuous(groove, SIXTEENTH, section.type, bar, section.bars) / 2;
               }
 
               uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
@@ -1345,9 +1434,9 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
             for (int eighth = 0; eighth < 2; ++eighth) {
               Tick hh_tick = beat_tick + eighth * EIGHTH;
 
-              // Apply swing offset to off-beats (eighth == 1)
+              // Apply continuous swing offset to off-beats (eighth == 1)
               if (eighth == 1) {
-                hh_tick += getSwingOffset(groove, EIGHTH);
+                hh_tick += getSwingOffsetContinuous(groove, EIGHTH, section.type, bar, section.bars);
               }
 
               if (section.type == SectionType::Intro && eighth == 1) {
@@ -1390,9 +1479,9 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
             for (int sixteenth = 0; sixteenth < 4; ++sixteenth) {
               Tick hh_tick = beat_tick + sixteenth * SIXTEENTH;
 
-              // Apply half swing offset to "e" and "a" positions (sixteenth == 1 and 3)
+              // Apply half continuous swing offset to "e" and "a" positions
               if (sixteenth == 1 || sixteenth == 3) {
-                hh_tick += getSwingOffset(groove, SIXTEENTH) / 2;
+                hh_tick += getSwingOffsetContinuous(groove, SIXTEENTH, section.type, bar, section.bars) / 2;
               }
 
               uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);

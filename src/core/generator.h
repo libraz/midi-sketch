@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "core/emotion_curve.h"
 #include "core/i_harmony_context.h"
 #include "core/motif.h"
 #include "core/production_blueprint.h"
@@ -182,6 +183,9 @@ class Generator {
   /** @brief Get random number generator (mutable, for Strategy pattern). */
   std::mt19937& getRng() { return rng_; }
 
+  /** @brief Get emotion curve (for track generation guidance). */
+  const EmotionCurve& getEmotionCurve() const { return emotion_curve_; }
+
   /**
    * @brief Set modulation timing for key change.
    * @param timing When to modulate (None, LastChorus, AfterBridge)
@@ -280,6 +284,9 @@ class Generator {
 
   /// Rhythm lock state (Orangestar style)
   bool rhythm_lock_active_ = false;  ///< True when Motif rhythm is used as axis
+
+  /// Emotion curve for song-wide emotional planning
+  EmotionCurve emotion_curve_;  ///< Planned emotional arc
   /// @}
 
   /// @name Call/SE System Settings
@@ -359,6 +366,22 @@ class Generator {
   /// @name Post-Processing Methods
   /// @{
 
+  /** @brief Apply staggered entry to intro sections.
+   *
+   * Implements gradual instrument participation by:
+   * 1. Removing notes before each track's entry bar
+   * 2. Applying velocity fade-in for smooth entry
+   *
+   * @param section The intro section to process
+   * @param config Staggered entry configuration
+   */
+  void applyStaggeredEntry(const Section& section, const StaggeredEntryConfig& config);
+
+  /** @brief Apply staggered entry to all qualifying sections.
+   *  Called automatically after track generation if EntryPattern::Stagger is used.
+   */
+  void applyStaggeredEntryToSections();
+
   /** @brief Resolve chord-arpeggio clashes for BGM-only mode. */
   void resolveArpeggioChordClashes();
 
@@ -370,6 +393,10 @@ class Generator {
 
   /** @brief Apply transition dynamics to melodic tracks. */
   void applyTransitionDynamics();
+
+  /** @brief Apply EmotionCurve-based velocity adjustments for section transitions. */
+  void applyEmotionBasedDynamics(std::vector<MidiTrack*>& tracks,
+                                  const std::vector<Section>& sections);
 
   /** @brief Apply humanization to all melodic tracks. */
   void applyHumanization();

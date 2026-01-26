@@ -434,6 +434,28 @@ std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, s
         if (step == 0) step = 1;
         break;
       }
+      case MotifMotion::WideLeap: {
+        // Up to 5th intervals (5 scale degrees)
+        std::uniform_int_distribution<int> dist(-5, 5);
+        step = dist(rng);
+        if (step == 0) step = (dist(rng) > 0) ? 2 : -2;
+        break;
+      }
+      case MotifMotion::NarrowStep: {
+        // Half-step motion (1-2 semitones in scale degree terms)
+        std::uniform_int_distribution<int> dist(-1, 1);
+        step = dist(rng);
+        if (step == 0) step = 1;
+        break;
+      }
+      case MotifMotion::Disjunct: {
+        // Irregular leaps with occasional direction changes
+        std::uniform_int_distribution<int> dist(2, 6);
+        int magnitude = dist(rng);
+        std::uniform_int_distribution<int> dir(0, 1);
+        step = dir(rng) ? magnitude : -magnitude;
+        break;
+      }
     }
     current += step;
     current = std::clamp(current, -4, 7);
@@ -460,6 +482,29 @@ std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, s
         std::uniform_int_distribution<int> dist(-3, 2);
         step = dist(rng);
         if (step == 0) step = -1;
+        break;
+      }
+      case MotifMotion::WideLeap: {
+        // Up to 5th intervals, tend toward resolution
+        std::uniform_int_distribution<int> dist(-4, 3);
+        step = dist(rng);
+        if (step == 0) step = -2;  // Tend downward
+        break;
+      }
+      case MotifMotion::NarrowStep: {
+        // Half-step motion toward resolution
+        std::uniform_int_distribution<int> dist(-1, 1);
+        step = dist(rng);
+        if (step == 0) step = -1;
+        break;
+      }
+      case MotifMotion::Disjunct: {
+        // Irregular but trending toward resolution
+        std::uniform_int_distribution<int> dist(1, 4);
+        int magnitude = dist(rng);
+        // More likely to go down for resolution
+        std::uniform_int_distribution<int> dir(0, 2);
+        step = (dir(rng) < 2) ? -magnitude : magnitude;
         break;
       }
     }

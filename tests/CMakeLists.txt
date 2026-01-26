@@ -44,6 +44,11 @@ set(TEST_SOURCES
   core/section_utils_test.cpp
   core/json_helpers_test.cpp
   core/production_blueprint_test.cpp
+  core/euclidean_rhythm_test.cpp
+  core/staggered_entry_test.cpp
+  core/emotion_curve_test.cpp
+  core/secondary_dominant_test.cpp
+  core/motif_motion_test.cpp
   midi/midi_writer_smf1_test.cpp
   midi/midi_reader_test.cpp
   midi/midi_validator_test.cpp
@@ -69,6 +74,7 @@ set(TEST_SOURCES
   track/dissonance_fixes_test.cpp
   track/se_test.cpp
   track/vocal_analysis_test.cpp
+  track/swing_control_test.cpp
   analysis/dissonance_test.cpp
   analysis/non_diatonic_detection_test.cpp
   api/c_api_test.cpp

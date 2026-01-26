@@ -274,6 +274,9 @@ void Generator::generate(const GeneratorParams& params) {
   // Clear all tracks
   song_.clearAll();
 
+  // Plan emotion curve for song-wide coherence
+  emotion_curve_.plan(sections, params.mood);
+
   // Initialize harmony context for coordinated track generation
   const auto& progression = getChordProgression(params.chord_id);
   harmony_context_->initialize(song_.arrangement(), progression, params.mood);
@@ -331,6 +334,9 @@ void Generator::generate(const GeneratorParams& params) {
   if (se_enabled_) {
     generateSE();
   }
+
+  // Apply staggered entry for intro sections
+  applyStaggeredEntryToSections();
 
   // Apply transition dynamics to melodic tracks
   applyTransitionDynamics();
@@ -826,6 +832,45 @@ void Generator::applyTransitionDynamics() {
 
   // Apply entry pattern dynamics (section beginnings)
   midisketch::applyAllEntryPatternDynamics(tracks, sections);
+
+  // Apply EmotionCurve-based velocity adjustments for section transitions
+  if (emotion_curve_.isPlanned()) {
+    applyEmotionBasedDynamics(tracks, sections);
+  }
+}
+
+void Generator::applyEmotionBasedDynamics(std::vector<MidiTrack*>& tracks,
+                                           const std::vector<Section>& sections) {
+  // Apply velocity adjustments based on EmotionCurve's transition hints
+  for (size_t i = 0; i + 1 < sections.size(); ++i) {
+    const auto& current_section = sections[i];
+    auto hint = emotion_curve_.getTransitionHint(i);
+
+    // Skip if no significant velocity change
+    if (std::abs(hint.velocity_ramp - 1.0f) < 0.05f) {
+      continue;
+    }
+
+    // Calculate the transition zone (last 2 beats of current section)
+    Tick section_end = current_section.start_tick + current_section.bars * TICKS_PER_BAR;
+    Tick transition_start = section_end - TICKS_PER_BEAT * 2;
+
+    // Apply velocity ramp to notes in the transition zone
+    for (auto* track : tracks) {
+      for (auto& note : track->notes()) {
+        if (note.start_tick >= transition_start && note.start_tick < section_end) {
+          // Calculate position within transition zone (0.0 to 1.0)
+          float progress = static_cast<float>(note.start_tick - transition_start) /
+                           static_cast<float>(section_end - transition_start);
+
+          // Apply velocity ramp progressively
+          float velocity_factor = 1.0f + (hint.velocity_ramp - 1.0f) * progress;
+          int new_velocity = static_cast<int>(note.velocity * velocity_factor);
+          note.velocity = static_cast<uint8_t>(std::clamp(new_velocity, 30, 127));
+        }
+      }
+    }
+  }
 }
 
 void Generator::applyHumanization() {
@@ -839,6 +884,84 @@ void Generator::applyHumanization() {
 
   PostProcessor::applyHumanization(tracks, humanize_params, rng_);
   PostProcessor::fixVocalOverlaps(song_.vocal());
+}
+
+// ============================================================================
+// Staggered Entry Methods
+// ============================================================================
+
+void Generator::applyStaggeredEntry(const Section& section, const StaggeredEntryConfig& config) {
+  if (section.type != SectionType::Intro || config.isEmpty()) {
+    return;
+  }
+
+  Tick section_start = section.start_tick;
+
+  // Process each track entry configuration
+  for (size_t i = 0; i < config.entry_count; ++i) {
+    const TrackEntry& entry = config.entries[i];
+    Tick entry_tick = section_start + entry.entry_bar * TICKS_PER_BAR;
+
+    // Get the target track
+    MidiTrack* track = nullptr;
+    if (hasTrack(entry.track, TrackMask::Bass)) {
+      track = &song_.bass();
+    } else if (hasTrack(entry.track, TrackMask::Chord)) {
+      track = &song_.chord();
+    } else if (hasTrack(entry.track, TrackMask::Motif)) {
+      track = &song_.motif();
+    } else if (hasTrack(entry.track, TrackMask::Arpeggio)) {
+      track = &song_.arpeggio();
+    } else if (hasTrack(entry.track, TrackMask::Aux)) {
+      track = &song_.aux();
+    }
+    // Note: Drums and Vocal are not modified by staggered entry
+    // Drums establish the beat from the start
+    // Vocal enters with A melody
+
+    if (!track) continue;
+
+    auto& notes = track->notes();
+    Tick section_end = section_start + section.bars * TICKS_PER_BAR;
+
+    // Remove notes before entry_tick within this section
+    notes.erase(
+        std::remove_if(notes.begin(), notes.end(),
+                       [section_start, section_end, entry_tick](const NoteEvent& note) {
+                         return note.start_tick >= section_start && note.start_tick < entry_tick &&
+                                note.start_tick < section_end;
+                       }),
+        notes.end());
+
+    // Apply fade-in if configured
+    if (entry.fade_in_bars > 0) {
+      Tick fade_end = entry_tick + entry.fade_in_bars * TICKS_PER_BAR;
+      Tick fade_duration = fade_end - entry_tick;
+
+      for (auto& note : notes) {
+        if (note.start_tick >= entry_tick && note.start_tick < fade_end &&
+            note.start_tick < section_end) {
+          // Linear fade from 40% to 100%
+          float progress =
+              static_cast<float>(note.start_tick - entry_tick) / static_cast<float>(fade_duration);
+          float fade_factor = 0.4f + 0.6f * progress;
+          note.velocity = static_cast<uint8_t>(note.velocity * fade_factor);
+        }
+      }
+    }
+  }
+}
+
+void Generator::applyStaggeredEntryToSections() {
+  const auto& sections = song_.arrangement().sections();
+
+  for (const auto& section : sections) {
+    // Apply staggered entry to intro sections with EntryPattern::Stagger
+    if (section.type == SectionType::Intro && section.entry_pattern == EntryPattern::Stagger) {
+      auto config = StaggeredEntryConfig::defaultIntro(section.bars);
+      applyStaggeredEntry(section, config);
+    }
+  }
 }
 
 // ============================================================================

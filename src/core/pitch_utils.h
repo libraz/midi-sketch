@@ -236,6 +236,49 @@ float getComfortScore(uint8_t pitch, const TessituraRange& tessitura, uint8_t vo
 // ============================================================================
 
 /**
+ * @brief Calculated passaggio range for a given vocal range.
+ */
+struct PassaggioRange {
+  uint8_t lower;  ///< Lower bound of passaggio zone
+  uint8_t upper;  ///< Upper bound of passaggio zone
+
+  /**
+   * @brief Check if a pitch is in this passaggio range.
+   * @param pitch MIDI pitch to check
+   * @return true if pitch is within [lower, upper]
+   */
+  bool contains(uint8_t pitch) const { return pitch >= lower && pitch <= upper; }
+
+  /**
+   * @brief Get the center of the passaggio range.
+   * @return Center pitch of passaggio
+   */
+  uint8_t center() const { return (lower + upper) / 2; }
+
+  /**
+   * @brief Get the width of the passaggio range.
+   * @return Number of semitones in passaggio zone
+   */
+  uint8_t width() const { return upper - lower; }
+};
+
+/**
+ * @brief Calculate passaggio range dynamically from vocal range.
+ *
+ * The passaggio is typically in the upper-middle portion of the vocal range,
+ * approximately at 55%-75% of the total range. This represents the "break"
+ * point where singers transition between registers.
+ *
+ * For a 12-semitone range (typical octave), passaggio is about 2-3 semitones.
+ * For larger ranges, it scales proportionally.
+ *
+ * @param vocal_low Lower bound of vocal range (MIDI note)
+ * @param vocal_high Upper bound of vocal range (MIDI note)
+ * @return PassaggioRange with calculated bounds
+ */
+PassaggioRange calculateDynamicPassaggio(uint8_t vocal_low, uint8_t vocal_high);
+
+/**
  * @brief Check if a pitch is in the passaggio zone (E4-B4).
  * @param pitch MIDI pitch to check
  * @return true if pitch is in the passaggio

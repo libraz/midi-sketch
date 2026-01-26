@@ -11,6 +11,7 @@
 
 #include "core/basic_types.h"
 #include "core/melody_types.h"
+#include "core/motif_types.h"
 #include "core/section_types.h"
 
 namespace midisketch {
@@ -47,31 +48,8 @@ enum class CompositionStyle : uint8_t {
   SynthDriven       ///< Synth/arpeggio as foreground, vocals subdued
 };
 
-/// @brief Motif length in bars.
-enum class MotifLength : uint8_t {
-  Bars1 = 1,  ///< 1-bar motif (dense, continuous patterns)
-  Bars2 = 2,
-  Bars4 = 4
-};
-
-/// @brief Motif rhythm density.
-enum class MotifRhythmDensity : uint8_t {
-  Sparse,  ///< Quarter note based
-  Medium,  ///< Eighth note based
-  Driving  ///< Eighth + light 16th
-};
-
-/// @brief Motif melodic motion.
-enum class MotifMotion : uint8_t {
-  Stepwise,   ///< Scale steps only
-  GentleLeap  ///< Up to 3rd intervals
-};
-
-/// @brief Motif repetition scope.
-enum class MotifRepeatScope : uint8_t {
-  FullSong,  ///< Same motif throughout
-  Section    ///< Regenerate per section
-};
+// Note: MotifLength, MotifRhythmDensity, MotifMotion, MotifRepeatScope
+// are defined in motif_types.h (included above)
 
 /// @brief Arpeggio pattern direction.
 enum class ArpeggioPattern : uint8_t {
@@ -98,30 +76,7 @@ struct ArpeggioParams {
   uint8_t base_velocity = 90;  ///< Base velocity for arpeggio notes
 };
 
-/// @brief Motif (background melody) configuration.
-/// Only active when composition_style = BackgroundMotif.
-struct MotifParams {
-  MotifLength length = MotifLength::Bars2;
-  uint8_t note_count = 4;      ///< 3, 4, or 5
-  bool register_high = false;  ///< false=mid, true=high
-  MotifRhythmDensity rhythm_density = MotifRhythmDensity::Medium;
-  MotifMotion motion = MotifMotion::Stepwise;
-  MotifRepeatScope repeat_scope = MotifRepeatScope::FullSong;
-  bool octave_layering_chorus = true;  ///< Double at chorus
-  bool velocity_fixed = true;          ///< Fixed velocity (groove via drums)
-};
-
-/// @brief Background motif specific chord constraints.
-struct MotifChordParams {
-  bool fixed_progression = true;  ///< Same progression all sections
-  uint8_t max_chord_count = 4;    ///< Max 4 for motif style
-};
-
-/// @brief Background motif drum configuration.
-struct MotifDrumParams {
-  bool hihat_drive = true;  ///< Hi-hat is primary driver
-  HihatDensity hihat_density = HihatDensity::Eighth;
-};
+// Note: MotifParams, MotifChordParams, MotifDrumParams are defined in motif_types.h
 
 /// @brief Chord extension configuration.
 struct ChordExtensionParams {
@@ -133,18 +88,7 @@ struct ChordExtensionParams {
   float ninth_probability = 0.25f;   ///< Probability of 9th extension (0.0-1.0)
 };
 
-/// @brief Background motif vocal suppression.
-struct MotifVocalParams {
-  VocalProminence prominence = VocalProminence::Background;
-  VocalRhythmBias rhythm_bias = VocalRhythmBias::Sparse;
-  uint8_t interval_limit = 4;  ///< Max interval in semitones (3rd=4, 5th=7)
-};
-
-/// @brief Motif data for saving/restoring motif patterns.
-struct MotifData {
-  uint32_t seed;
-  std::vector<NoteEvent> pattern;  ///< Base motif pattern (one cycle)
-};
+// Note: MotifVocalParams, MotifData are defined in motif_types.h
 
 /// ============================================================================
 /// 5-Layer Architecture Types

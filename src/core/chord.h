@@ -149,6 +149,51 @@ const ChordProgressionMeta& getChordProgressionMeta(uint8_t chord_id);
  */
 std::vector<uint8_t> getChordProgressionsByStyle(uint8_t style_mask);
 
+// ============================================================================
+// Secondary Dominant Support
+// ============================================================================
+
+/**
+ * @brief Information about a potential secondary dominant.
+ */
+struct SecondaryDominantInfo {
+  bool should_insert;       ///< Whether to insert a secondary dominant
+  int8_t dominant_degree;   ///< Scale degree of the dominant (V of the target)
+  ChordExtension extension; ///< Chord extension (typically Dom7)
+  int8_t target_degree;     ///< The degree being targeted
+};
+
+/**
+ * @brief Check if a secondary dominant should be inserted between two chords.
+ *
+ * Secondary dominants (V/x chords) create tension before resolution:
+ * - V/ii (A7 in C) before ii (Dm)
+ * - V/vi (E7 in C) before vi (Am)
+ * - V/IV (C7 in C) before IV (F) - actually I7 used as dominant
+ * - V/V (D7 in C) before V (G)
+ *
+ * @param current_degree Current chord degree
+ * @param next_degree Next chord degree
+ * @param tension_level Emotional tension level 0.0-1.0 (higher = more likely to insert)
+ * @return SecondaryDominantInfo with insertion recommendation
+ */
+SecondaryDominantInfo checkSecondaryDominant(int8_t current_degree, int8_t next_degree,
+                                              float tension_level);
+
+/**
+ * @brief Get the scale degree for V/x (secondary dominant to x).
+ *
+ * V/ii = VI (A in C major, played as A7)
+ * V/iii = VII (B in C major, played as B7)
+ * V/IV = I (C in C major, played as C7)
+ * V/V = II (D in C major, played as D7)
+ * V/vi = III (E in C major, played as E7)
+ *
+ * @param target_degree The target degree (the "x" in V/x)
+ * @return Scale degree for the secondary dominant, or -1 if invalid
+ */
+int8_t getSecondaryDominantDegree(int8_t target_degree);
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_CHORD_H

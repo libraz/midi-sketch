@@ -346,4 +346,80 @@ std::vector<uint8_t> getChordProgressionsByStyle(uint8_t style_mask) {
   return result;
 }
 
+// ============================================================================
+// Secondary Dominant Functions
+// ============================================================================
+
+int8_t getSecondaryDominantDegree(int8_t target_degree) {
+  // V/x = target_degree + 4 (a fifth above the target)
+  // In scale degrees (0-6), V/x calculation:
+  // V/ii (1) -> VI (5) = A7 in C
+  // V/iii (2) -> VII (6) = B7 in C
+  // V/IV (3) -> I (0) = C7 in C
+  // V/V (4) -> II (1) = D7 in C
+  // V/vi (5) -> III (2) = E7 in C
+  // V/vii (6) -> IV (3) = F#7 in C (rare)
+
+  switch (target_degree) {
+    case 1:  // V/ii = VI (A7 in C)
+      return 5;
+    case 2:  // V/iii = VII (B7 in C)
+      return 6;
+    case 3:  // V/IV = I (C7 in C)
+      return 0;
+    case 4:  // V/V = II (D7 in C)
+      return 1;
+    case 5:  // V/vi = III (E7 in C)
+      return 2;
+    case 6:  // V/vii = #IV (F#dim is rare, typically avoid)
+      return -1;  // Not commonly used
+    case 0:  // V/I = V (already normal dominant)
+      return 4;
+    default:
+      return -1;
+  }
+}
+
+SecondaryDominantInfo checkSecondaryDominant(int8_t current_degree, int8_t next_degree,
+                                              float tension_level) {
+  SecondaryDominantInfo info = {false, 0, ChordExtension::None, 0};
+
+  // Don't insert if tension is too low (must be > 0.5)
+  if (tension_level <= 0.5f) {
+    return info;
+  }
+
+  // Check for good secondary dominant targets
+  // Best targets: ii (1), vi (5), IV (3), V (4)
+  bool is_good_target = (next_degree == 1 ||   // ii - very common
+                         next_degree == 5 ||   // vi - common in J-POP
+                         next_degree == 3 ||   // IV - common
+                         next_degree == 4);    // V - common
+
+  if (!is_good_target) {
+    return info;
+  }
+
+  // Get the secondary dominant degree
+  int8_t sec_dom_degree = getSecondaryDominantDegree(next_degree);
+  if (sec_dom_degree < 0) {
+    return info;
+  }
+
+  // Avoid inserting if current chord is already the secondary dominant
+  if (current_degree == sec_dom_degree) {
+    return info;
+  }
+
+  // Higher probability for higher tension
+  // At tension 0.5, 30% chance; at tension 1.0, 70% chance
+  // This is evaluated outside this function; we just indicate it's possible
+  info.should_insert = true;
+  info.dominant_degree = sec_dom_degree;
+  info.extension = ChordExtension::Dom7;  // Always use dominant 7th
+  info.target_degree = next_degree;
+
+  return info;
+}
+
 }  // namespace midisketch

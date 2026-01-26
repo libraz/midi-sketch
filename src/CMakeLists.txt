@@ -31,6 +31,8 @@ set(MIDISKETCH_CORE_SOURCES
   core/post_processor.cpp
   core/section_utils.cpp
   core/production_blueprint.cpp
+  core/euclidean_rhythm.cpp
+  core/emotion_curve.cpp
   midi/midi_writer.cpp
   track/track.cpp
   track/vocal.cpp

@@ -30,8 +30,11 @@ enum class MotifRhythmDensity : uint8_t {
 
 /// @brief Motif melodic motion.
 enum class MotifMotion : uint8_t {
-  Stepwise,   ///< Scale steps only
-  GentleLeap  ///< Up to 3rd intervals
+  Stepwise,   ///< Scale steps only (2nd intervals)
+  GentleLeap, ///< Up to 3rd intervals
+  WideLeap,   ///< Up to 5th intervals (more dramatic)
+  NarrowStep, ///< Tight scale-degree motion (±1 degree, jazzy/tense feel)
+  Disjunct    ///< Irregular leaps (experimental, avant-garde)
 };
 
 /// @brief Motif repetition scope.

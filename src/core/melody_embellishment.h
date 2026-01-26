@@ -10,11 +10,13 @@
 #ifndef MIDISKETCH_CORE_MELODY_EMBELLISHMENT_H
 #define MIDISKETCH_CORE_MELODY_EMBELLISHMENT_H
 
+#include <algorithm>
 #include <optional>
 #include <random>
 #include <vector>
 
 #include "core/basic_types.h"
+#include "core/section_types.h"
 #include "core/timing_constants.h"
 
 namespace midisketch {
@@ -81,6 +83,66 @@ struct EmbellishmentConfig {
   // === Safety ===
   bool resolve_all_ncts = true;  ///< Ensure all NCTs resolve properly
   int max_consecutive_ncts = 2;  ///< Maximum consecutive non-chord tones
+
+  /**
+   * @brief Adjust NCT ratios based on section type.
+   *
+   * Different sections have different NCT preferences:
+   * - Intro: Lower NCT (more stable)
+   * - A: Lower NCT (establish tonality)
+   * - B: Higher NCT (build tension)
+   * - Chorus: Medium NCT (memorable but interesting)
+   * - Bridge: Highest NCT (exploratory)
+   *
+   * @param section Section type to adjust for
+   */
+  void adjustForSection(SectionType section) {
+    float nct_multiplier = 1.0f;
+
+    switch (section) {
+      case SectionType::Intro:
+        nct_multiplier = 0.5f;  // Very stable
+        break;
+      case SectionType::A:
+        nct_multiplier = 0.8f;  // Stable with some color
+        break;
+      case SectionType::B:
+        nct_multiplier = 1.2f;  // More NCT for tension
+        break;
+      case SectionType::Chorus:
+        nct_multiplier = 0.9f;  // Chord-focused for memorability
+        break;
+      case SectionType::Bridge:
+        nct_multiplier = 1.4f;  // Most NCT for exploration
+        break;
+      case SectionType::Interlude:
+      case SectionType::Outro:
+        nct_multiplier = 0.7f;  // Relaxed
+        break;
+      default:
+        nct_multiplier = 1.0f;
+        break;
+    }
+
+    // Scale non-chord-tone ratios (keep chord_tone_ratio as complement)
+    float total_nct = passing_tone_ratio + neighbor_tone_ratio +
+                      appoggiatura_ratio + anticipation_ratio;
+    float new_total_nct = total_nct * nct_multiplier;
+
+    // Clamp to prevent chord_tone_ratio from going below 50%
+    new_total_nct = std::min(new_total_nct, 0.5f);
+
+    if (total_nct > 0.0f) {
+      float scale = new_total_nct / total_nct;
+      passing_tone_ratio *= scale;
+      neighbor_tone_ratio *= scale;
+      appoggiatura_ratio *= scale;
+      anticipation_ratio *= scale;
+    }
+
+    // Adjust chord_tone_ratio to maintain sum ~1.0
+    chord_tone_ratio = 1.0f - new_total_nct - tension_ratio;
+  }
 };
 
 /**

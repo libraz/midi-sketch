@@ -83,20 +83,33 @@ float getComfortScore(uint8_t pitch, const TessituraRange& tessitura, uint8_t vo
   return std::max(0.3f, 0.6f - 0.3f * extremity);
 }
 
+PassaggioRange calculateDynamicPassaggio(uint8_t vocal_low, uint8_t vocal_high) {
+  int range = vocal_high - vocal_low;
+
+  if (range <= 12) {
+    // Very narrow range (octave or less): use fixed passaggio
+    return {PASSAGGIO_LOW, PASSAGGIO_HIGH};
+  }
+
+  // Passaggio at 55%-75% of range (upper-middle portion)
+  // This matches the expected behavior from music theory
+  int lower = vocal_low + range * 55 / 100;
+  int upper = vocal_low + range * 75 / 100;
+
+  // Ensure bounds are within MIDI range
+  lower = std::clamp(lower, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
+  upper = std::clamp(upper, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
+
+  return {static_cast<uint8_t>(lower), static_cast<uint8_t>(upper)};
+}
+
 bool isInPassaggio(uint8_t pitch) { return pitch >= PASSAGGIO_LOW && pitch <= PASSAGGIO_HIGH; }
 
 // Dynamic passaggio calculation based on vocal range.
 // Passaggio is typically in the upper-middle portion of the range.
 bool isInPassaggioRange(uint8_t pitch, uint8_t vocal_low, uint8_t vocal_high) {
-  int range = vocal_high - vocal_low;
-  if (range <= 12) {
-    // Very narrow range: use fixed passaggio
-    return isInPassaggio(pitch);
-  }
-  // Passaggio at 55%-75% of range (upper-middle third)
-  int passaggio_low = vocal_low + range * 55 / 100;
-  int passaggio_high = vocal_low + range * 75 / 100;
-  return pitch >= passaggio_low && pitch <= passaggio_high;
+  PassaggioRange passaggio = calculateDynamicPassaggio(vocal_low, vocal_high);
+  return passaggio.contains(pitch);
 }
 
 int constrainInterval(int target_pitch, int prev_pitch, int max_interval, int range_low,

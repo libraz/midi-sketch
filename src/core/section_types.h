@@ -343,6 +343,63 @@ enum class ModulationTiming : uint8_t {
   Random        ///< Random based on seed
 };
 
+// ============================================================================
+// Staggered Entry Configuration
+// ============================================================================
+
+/// @brief Track entry configuration for staggered intro participation.
+struct TrackEntry {
+  TrackMask track;       ///< Track to control (use TrackMask enum values)
+  uint8_t entry_bar;     ///< Bar to start playing (0-based)
+  uint8_t fade_in_bars;  ///< Fade-in duration in bars (0 = immediate 100%)
+};
+
+/// @brief Configuration for staggered instrument entry in intro sections.
+///
+/// Implements the "gradual participation" technique where instruments
+/// enter one by one to build anticipation before the main section.
+///
+/// Example (8-bar intro):
+/// - Bar 0-1: Drums only (establish beat)
+/// - Bar 2-3: + Bass (rhythm section complete)
+/// - Bar 4-5: + Chord + Motif (harmony introduction)
+/// - Bar 6-7: + Arpeggio (texture complete)
+/// - A melody: + Vocal (main melody arrives)
+struct StaggeredEntryConfig {
+  static constexpr size_t MAX_ENTRIES = 8;
+  TrackEntry entries[MAX_ENTRIES];  ///< Track entry definitions
+  uint8_t entry_count = 0;          ///< Number of entries defined
+
+  /// @brief Check if config is empty (no staggered entries)
+  bool isEmpty() const { return entry_count == 0; }
+
+  /// @brief Get default staggered entry for intro based on bar count.
+  /// @param intro_bars Number of bars in the intro section
+  /// @return Configured StaggeredEntryConfig
+  static StaggeredEntryConfig defaultIntro(uint8_t intro_bars) {
+    StaggeredEntryConfig config;
+
+    if (intro_bars >= 8) {
+      // 8+ bar intro: full staged entry
+      config.entries[0] = {TrackMask::Drums, 0, 0};
+      config.entries[1] = {TrackMask::Bass, 2, 1};
+      config.entries[2] = {TrackMask::Chord, 4, 1};
+      config.entries[3] = {TrackMask::Motif, 4, 1};
+      config.entries[4] = {TrackMask::Arpeggio, 6, 1};
+      config.entry_count = 5;
+    } else if (intro_bars >= 4) {
+      // 4-bar intro: condensed entry
+      config.entries[0] = {TrackMask::Drums, 0, 0};
+      config.entries[1] = {TrackMask::Bass, 1, 0};
+      config.entries[2] = {TrackMask::Chord, 2, 1};
+      config.entry_count = 3;
+    }
+    // Shorter intros: no staggered entry (immediate)
+
+    return config;
+  }
+};
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_SECTION_TYPES_H
