@@ -32,6 +32,33 @@ namespace midisketch {
 
 namespace {
 
+/// @brief Get tension level for secondary dominant insertion based on section type.
+/// Higher tension = more likely to insert secondary dominants.
+/// @param section Section type
+/// @return Tension level (0.0-1.0)
+float getSectionTensionForSecondary(SectionType section) {
+  switch (section) {
+    case SectionType::Chorus:
+      return 0.75f;  // High tension for dramatic effect
+    case SectionType::B:
+      return 0.65f;  // Building tension
+    case SectionType::Bridge:
+      return 0.60f;  // Moderate-high for contrast
+    case SectionType::A:
+      return 0.45f;  // Moderate tension
+    case SectionType::MixBreak:
+      return 0.55f;  // Moderate for variation
+    case SectionType::Intro:
+    case SectionType::Interlude:
+      return 0.35f;  // Lower tension
+    case SectionType::Outro:
+    case SectionType::Chant:
+      return 0.25f;  // Minimal tension
+    default:
+      return 0.40f;
+  }
+}
+
 /// @name Timing Aliases
 /// Local aliases for timing constants to improve readability.
 /// @{
@@ -1348,6 +1375,67 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         generateChordBar(track, bar_start, ii_voicing, rhythm, section.type, params.mood, harmony);
         prev_voicing = ii_voicing;
         has_prev = true;
+        continue;
+      }
+
+      // Check for secondary dominant insertion (V/x before x)
+      // Only consider if not in last 2 bars (to avoid conflict with cadence logic)
+      bool inserted_secondary_dominant = false;
+      if (bar < section.bars - 2) {
+        int next_chord_idx = (chord_idx + 1) % effective_prog_length;
+        int8_t next_degree = progression.at(next_chord_idx);
+        float tension = getSectionTensionForSecondary(section.type);
+
+        SecondaryDominantInfo sec_dom = checkSecondaryDominant(degree, next_degree, tension);
+
+        // Apply additional random check (the function returns deterministic result,
+        // so we add randomness here based on tension)
+        if (sec_dom.should_insert) {
+          std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+          bool random_check = dist(rng) < tension;
+
+          if (random_check) {
+            // Insert secondary dominant in second half of bar
+            auto isSafe = [&](uint8_t pitch, Tick start, Tick duration) -> bool {
+              return harmony.isPitchSafe(pitch, start, duration, TrackRole::Chord);
+            };
+
+            NoteFactory factory(harmony);
+            auto addChordNote = [&](Tick start, Tick duration, uint8_t pitch, uint8_t velocity) {
+              track.addNote(
+                  factory.create(start, duration, pitch, velocity, NoteSource::ChordVoicing));
+            };
+
+            uint8_t vel = calculateVelocity(section.type, 0, params.mood);
+
+            // First half: current chord
+            for (size_t idx = 0; idx < voicing.count; ++idx) {
+              if (!isSafe(voicing.pitches[idx], bar_start, HALF)) continue;
+              addChordNote(bar_start, HALF, voicing.pitches[idx], vel);
+            }
+
+            // Second half: secondary dominant (V/x)
+            uint8_t sec_dom_root = degreeToRoot(sec_dom.dominant_degree, Key::C);
+            Chord sec_dom_chord = getExtendedChord(sec_dom.dominant_degree, sec_dom.extension);
+            VoicedChord sec_dom_voicing =
+                selectVoicing(sec_dom_root, sec_dom_chord, voicing, true, voicing_type,
+                              bass_root_pc, rng, open_subtype, params.mood);
+
+            uint8_t vel_accent = static_cast<uint8_t>(std::min(127, vel + 8));
+            for (size_t idx = 0; idx < sec_dom_voicing.count; ++idx) {
+              if (!isSafe(sec_dom_voicing.pitches[idx], bar_start + HALF, HALF)) continue;
+              addChordNote(bar_start + HALF, HALF, sec_dom_voicing.pitches[idx], vel_accent);
+            }
+
+            prev_voicing = sec_dom_voicing;
+            has_prev = true;
+            inserted_secondary_dominant = true;
+          }
+        }
+      }
+
+      if (inserted_secondary_dominant) {
+        // Skip normal generation since we already generated this bar
         continue;
       }
 

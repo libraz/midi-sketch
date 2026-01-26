@@ -64,6 +64,15 @@ struct ProductionBlueprint {
 
   bool intro_kick_enabled;  ///< Enable kick in intro
   bool intro_bass_enabled;  ///< Enable bass in intro
+
+  /// @brief Probability of staggered instrument entry in intro (0-100%).
+  /// Only applies to intros with 4+ bars. 0 = never, 100 = always.
+  uint8_t intro_stagger_percent = 0;
+
+  /// @brief Probability of using Euclidean rhythm patterns for drums (0-100%).
+  /// Euclidean patterns provide mathematically-spaced, natural-feeling rhythms.
+  /// 0 = always use traditional patterns, 100 = always use Euclidean.
+  uint8_t euclidean_drums_percent = 0;
 };
 
 // ============================================================================

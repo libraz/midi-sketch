@@ -1355,5 +1355,262 @@ TEST(EmbellishmentGridTest, DeterministicWithSameSeed) {
   }
 }
 
+// ============================================================================
+// UltraVocaloid 32nd Note Machine-Gun Tests
+// ============================================================================
+
+// Helper to count notes with duration <= threshold in a section
+static size_t countShortNotesInSection(const std::vector<NoteEvent>& notes, Tick section_start,
+                                       Tick section_end, Tick threshold = 60) {
+  size_t count = 0;
+  for (const auto& note : notes) {
+    if (note.start_tick >= section_start && note.start_tick < section_end && note.duration <= threshold) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+// Helper to count total notes in a section
+static size_t countNotesInSection(const std::vector<NoteEvent>& notes, Tick section_start,
+                                  Tick section_end) {
+  size_t count = 0;
+  for (const auto& note : notes) {
+    if (note.start_tick >= section_start && note.start_tick < section_end) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+TEST(UltraVocaloidTest, ChorusHasMore32ndNotesThanVerse) {
+  // UltraVocaloid chorus should have significantly more 32nd notes than verse
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 12345;
+  config.vocal_style = VocalStylePreset::UltraVocaloid;
+  config.form = StructurePattern::FullPop;  // Has both A and Chorus sections
+
+  gen.generateFromConfig(config);
+  const auto& song = gen.getSong();
+  const auto& vocal_notes = song.vocal().notes();
+  const auto& sections = song.arrangement().sections();
+
+  ASSERT_FALSE(vocal_notes.empty()) << "Should generate vocal notes";
+  ASSERT_FALSE(sections.empty()) << "Should have sections";
+
+  // Find A and Chorus sections
+  Tick a_start = 0, a_end = 0;
+  Tick chorus_start = 0, chorus_end = 0;
+
+  for (const auto& section : sections) {
+    if (section.type == SectionType::A && a_start == 0) {
+      a_start = section.start_tick;
+      a_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    } else if (section.type == SectionType::Chorus && chorus_start == 0) {
+      chorus_start = section.start_tick;
+      chorus_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    }
+  }
+
+  ASSERT_GT(a_end, a_start) << "Should find A section";
+  ASSERT_GT(chorus_end, chorus_start) << "Should find Chorus section";
+
+  // Count 32nd notes (duration <= 60 ticks)
+  size_t a_short = countShortNotesInSection(vocal_notes, a_start, a_end);
+  size_t a_total = countNotesInSection(vocal_notes, a_start, a_end);
+  size_t chorus_short = countShortNotesInSection(vocal_notes, chorus_start, chorus_end);
+  size_t chorus_total = countNotesInSection(vocal_notes, chorus_start, chorus_end);
+
+  // Chorus should have higher 32nd note ratio than verse
+  double a_ratio = a_total > 0 ? static_cast<double>(a_short) / a_total : 0;
+  double chorus_ratio = chorus_total > 0 ? static_cast<double>(chorus_short) / chorus_total : 0;
+
+  EXPECT_GT(chorus_ratio, a_ratio)
+      << "Chorus 32nd note ratio (" << chorus_ratio << ") should exceed verse ratio (" << a_ratio
+      << ")";
+  EXPECT_GT(chorus_ratio, 0.3)
+      << "Chorus should have at least 30% 32nd notes, got " << chorus_ratio * 100 << "%";
+}
+
+TEST(UltraVocaloidTest, ChorusHasHigherNoteDensity) {
+  // UltraVocaloid chorus should have higher note density (notes per bar)
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 99999;
+  config.vocal_style = VocalStylePreset::UltraVocaloid;
+  config.form = StructurePattern::FullPop;
+
+  gen.generateFromConfig(config);
+  const auto& song = gen.getSong();
+  const auto& vocal_notes = song.vocal().notes();
+  const auto& sections = song.arrangement().sections();
+
+  // Calculate notes per bar for A and Chorus
+  double a_density = 0;
+  double chorus_density = 0;
+  int a_bars = 0, chorus_bars = 0;
+
+  for (const auto& section : sections) {
+    Tick start = section.start_tick;
+    Tick end = section.start_tick + section.bars * TICKS_PER_BAR;
+    size_t notes_in_section = countNotesInSection(vocal_notes, start, end);
+
+    if (section.type == SectionType::A) {
+      a_density += notes_in_section;
+      a_bars += section.bars;
+    } else if (section.type == SectionType::Chorus) {
+      chorus_density += notes_in_section;
+      chorus_bars += section.bars;
+    }
+  }
+
+  a_density = a_bars > 0 ? a_density / a_bars : 0;
+  chorus_density = chorus_bars > 0 ? chorus_density / chorus_bars : 0;
+
+  // Chorus should have at least 1.5x the note density of verse
+  EXPECT_GT(chorus_density, a_density * 1.5)
+      << "Chorus density (" << chorus_density << " notes/bar) should be 1.5x verse density ("
+      << a_density << " notes/bar)";
+  EXPECT_GT(chorus_density, 5.0)
+      << "Chorus should have at least 5 notes/bar, got " << chorus_density;
+}
+
+TEST(UltraVocaloidTest, StandardStyleHasFewerShortNotes) {
+  // Standard style should have significantly fewer 32nd notes than UltraVocaloid
+  Generator gen_ultra;
+  SongConfig config_ultra = createDefaultSongConfig(0);
+  config_ultra.seed = 12345;
+  config_ultra.vocal_style = VocalStylePreset::UltraVocaloid;
+  config_ultra.form = StructurePattern::FullPop;
+  gen_ultra.generateFromConfig(config_ultra);
+
+  Generator gen_standard;
+  SongConfig config_standard = createDefaultSongConfig(0);
+  config_standard.seed = 12345;
+  config_standard.vocal_style = VocalStylePreset::Standard;
+  config_standard.form = StructurePattern::FullPop;
+  gen_standard.generateFromConfig(config_standard);
+
+  const auto& ultra_notes = gen_ultra.getSong().vocal().notes();
+  const auto& standard_notes = gen_standard.getSong().vocal().notes();
+
+  // Count 32nd notes (duration <= 60 ticks)
+  size_t ultra_short = 0, standard_short = 0;
+  for (const auto& n : ultra_notes)
+    if (n.duration <= 60) ++ultra_short;
+  for (const auto& n : standard_notes)
+    if (n.duration <= 60) ++standard_short;
+
+  double ultra_ratio =
+      ultra_notes.empty() ? 0 : static_cast<double>(ultra_short) / ultra_notes.size();
+  double standard_ratio =
+      standard_notes.empty() ? 0 : static_cast<double>(standard_short) / standard_notes.size();
+
+  // UltraVocaloid should have more 32nd notes
+  EXPECT_GT(ultra_ratio, standard_ratio * 2)
+      << "UltraVocaloid 32nd ratio (" << ultra_ratio << ") should far exceed Standard ("
+      << standard_ratio << ")";
+}
+
+TEST(UltraVocaloidTest, DeterministicWithSameSeed) {
+  // Same seed should produce identical results
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 54321;
+  config.vocal_style = VocalStylePreset::UltraVocaloid;
+  config.form = StructurePattern::ShortForm;
+
+  Generator gen1;
+  gen1.generateFromConfig(config);
+
+  Generator gen2;
+  gen2.generateFromConfig(config);
+
+  const auto& notes1 = gen1.getSong().vocal().notes();
+  const auto& notes2 = gen2.getSong().vocal().notes();
+
+  ASSERT_EQ(notes1.size(), notes2.size()) << "Same seed should produce same note count";
+
+  for (size_t i = 0; i < notes1.size(); ++i) {
+    EXPECT_EQ(notes1[i].start_tick, notes2[i].start_tick) << "Note " << i << " tick mismatch";
+    EXPECT_EQ(notes1[i].duration, notes2[i].duration) << "Note " << i << " duration mismatch";
+    EXPECT_EQ(notes1[i].note, notes2[i].note) << "Note " << i << " pitch mismatch";
+  }
+}
+
+TEST(UltraVocaloidTest, MultipleSeedsGenerateValidOutput) {
+  // Test that multiple seeds all produce valid output with 32nd notes
+  const uint32_t seeds[] = {12345, 99999, 11111, 77777, 33333};
+
+  for (uint32_t seed : seeds) {
+    Generator gen;
+    SongConfig config = createDefaultSongConfig(0);
+    config.seed = seed;
+    config.vocal_style = VocalStylePreset::UltraVocaloid;
+    config.form = StructurePattern::FullPop;
+
+    gen.generateFromConfig(config);
+    const auto& notes = gen.getSong().vocal().notes();
+
+    EXPECT_GT(notes.size(), 0u) << "Seed " << seed << " should generate notes";
+
+    // Count 32nd notes
+    size_t short_count = 0;
+    for (const auto& n : notes)
+      if (n.duration <= 60) ++short_count;
+
+    double ratio = static_cast<double>(short_count) / notes.size();
+    EXPECT_GT(ratio, 0.2) << "Seed " << seed << " should have >20% 32nd notes, got " << ratio * 100
+                          << "%";
+  }
+}
+
+TEST(UltraVocaloidTest, ChorusNotesOnThirtysecondGrid) {
+  // Verify that chorus notes appear on 32nd note grid positions
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 12345;
+  config.vocal_style = VocalStylePreset::UltraVocaloid;
+  config.form = StructurePattern::FullPop;
+
+  gen.generateFromConfig(config);
+  const auto& song = gen.getSong();
+  const auto& vocal_notes = song.vocal().notes();
+  const auto& sections = song.arrangement().sections();
+
+  // Find first Chorus section
+  Tick chorus_start = 0, chorus_end = 0;
+  for (const auto& section : sections) {
+    if (section.type == SectionType::Chorus) {
+      chorus_start = section.start_tick;
+      chorus_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      break;
+    }
+  }
+
+  ASSERT_GT(chorus_end, chorus_start) << "Should find Chorus section";
+
+  // Check that some notes are on 32nd grid (60 tick intervals)
+  int notes_on_32nd_grid = 0;
+  int chorus_notes = 0;
+  constexpr Tick THIRTY_SECOND_TICK = TICKS_PER_BEAT / 8;  // 60 ticks
+
+  for (const auto& note : vocal_notes) {
+    if (note.start_tick >= chorus_start && note.start_tick < chorus_end) {
+      ++chorus_notes;
+      Tick relative_tick = note.start_tick - chorus_start;
+      // Check if on 32nd grid but not on 16th grid
+      if (relative_tick % THIRTY_SECOND_TICK == 0 && relative_tick % (THIRTY_SECOND_TICK * 2) != 0) {
+        ++notes_on_32nd_grid;
+      }
+    }
+  }
+
+  // At least some notes should be on 32nd-only grid positions
+  EXPECT_GT(notes_on_32nd_grid, 0)
+      << "Some chorus notes should be on 32nd-only grid positions (got " << notes_on_32nd_grid
+      << " out of " << chorus_notes << ")";
+}
+
 }  // namespace
 }  // namespace midisketch

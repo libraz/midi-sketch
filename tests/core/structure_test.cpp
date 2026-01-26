@@ -562,17 +562,17 @@ TEST(StructureTest, BuildStructureFromBlueprint_Traditional) {
 }
 
 TEST(StructureTest, BuildStructureFromBlueprint_Orangestar) {
-  // Orangestar has a custom section flow
+  // RhythmLock (formerly Orangestar) has a custom section flow
   const auto& bp = getProductionBlueprint(1);
   auto sections = buildStructureFromBlueprint(bp);
 
   // Should have sections
   ASSERT_GT(sections.size(), 0u);
 
-  // First section should be Intro with drums only (sparse vocal)
+  // First section should be Intro with all tracks (for staggered entry)
   EXPECT_EQ(sections[0].type, SectionType::Intro);
-  EXPECT_EQ(sections[0].vocal_density, VocalDensity::None);
-  EXPECT_EQ(sections[0].backing_density, BackingDensity::Thin);
+  EXPECT_EQ(sections[0].vocal_density, VocalDensity::Full);
+  EXPECT_EQ(sections[0].backing_density, BackingDensity::Thick);
 
   // Verify section ticks are sequential
   Tick expected_tick = 0;

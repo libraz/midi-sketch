@@ -650,7 +650,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // -------------------------------------------------------------------------
     {VocalStylePreset::UltraVocaloid, 14, 0.4f, true,  // leap=9th(!), high synco, bar cross OK
      0.3f, 0.5f, 1.4f, 0.35f,                          // verse=ballad(30%), chorus=140%
-     0.3f, 0.5f, 1.0f, 0.2f,                           // 32nd: verse=30%, chorus=100%(!!)
+     0.0f, 0.0f, 1.0f, 0.0f,                           // 32nd: verse=0%, chorus=100% (contrast!)
      0.1f, true, false, false, 5, 0.2f},               // same-note=10% only, disable vowel
 
     // -------------------------------------------------------------------------

@@ -491,5 +491,79 @@ TEST_F(ChordTrackTest, DifferentMoodsProduceDifferentChordPatterns) {
   // produce different patterns, not that one is strictly larger than the other.
 }
 
+// ============================================================================
+// Secondary Dominant Integration Tests
+// ============================================================================
+
+TEST_F(ChordTrackTest, SecondaryDominantIntegration_ChordTrackGenerated) {
+  // Test that chord track is generated correctly with secondary dominant logic
+  params_.structure = StructurePattern::BuildUp;  // Has B -> Chorus (high tension)
+  params_.seed = 98765;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& chord_track = gen.getSong().chord();
+
+  // Chord track should be generated
+  EXPECT_FALSE(chord_track.empty());
+  EXPECT_GT(chord_track.notes().size(), 10u);
+}
+
+TEST_F(ChordTrackTest, SecondaryDominantIntegration_ConsistentWithSeed) {
+  // Same seed should produce identical chord patterns
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 55555;
+
+  Generator gen1;
+  gen1.generate(params_);
+
+  Generator gen2;
+  gen2.generate(params_);
+
+  const auto& track1 = gen1.getSong().chord();
+  const auto& track2 = gen2.getSong().chord();
+
+  EXPECT_EQ(track1.notes().size(), track2.notes().size())
+      << "Same seed should produce same chord pattern";
+
+  // Verify first few notes are identical
+  size_t check_count = std::min(track1.notes().size(), static_cast<size_t>(20));
+  for (size_t i = 0; i < check_count; ++i) {
+    EXPECT_EQ(track1.notes()[i].start_tick, track2.notes()[i].start_tick)
+        << "Note " << i << " should have same start_tick";
+    EXPECT_EQ(track1.notes()[i].note, track2.notes()[i].note)
+        << "Note " << i << " should have same pitch";
+  }
+}
+
+TEST_F(ChordTrackTest, SecondaryDominantIntegration_HighTensionSections) {
+  // High tension sections (Chorus) should have more chord activity
+  // due to potential secondary dominant insertions
+  params_.structure = StructurePattern::BuildUp;
+  params_.seed = 77777;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& chord_track = gen.getSong().chord();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  // Find Chorus sections and count chord notes
+  for (const auto& section : sections) {
+    if (section.type == SectionType::Chorus) {
+      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      int chorus_notes = 0;
+      for (const auto& note : chord_track.notes()) {
+        if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
+          ++chorus_notes;
+        }
+      }
+      // Chorus should have chord notes
+      EXPECT_GT(chorus_notes, 0) << "Chorus section should have chord notes";
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

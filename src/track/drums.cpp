@@ -5,7 +5,9 @@
 
 #include "track/drums.h"
 
+#include "core/euclidean_rhythm.h"
 #include "core/preset_data.h"
+#include "core/production_blueprint.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
 
@@ -448,6 +450,21 @@ struct KickPattern {
   bool beat4_and;  // Beat 4&
 };
 
+// Convert Euclidean bitmask (16-step) to KickPattern
+// Maps: step 0,2,4,6,8,10,12,14 -> beat1, beat1_and, beat2, beat2_and, etc.
+KickPattern euclideanToKickPattern(uint16_t pattern) {
+  return {
+      EuclideanRhythm::hasHit(pattern, 0),   // beat1
+      EuclideanRhythm::hasHit(pattern, 2),   // beat1_and
+      EuclideanRhythm::hasHit(pattern, 4),   // beat2
+      EuclideanRhythm::hasHit(pattern, 6),   // beat2_and
+      EuclideanRhythm::hasHit(pattern, 8),   // beat3
+      EuclideanRhythm::hasHit(pattern, 10),  // beat3_and
+      EuclideanRhythm::hasHit(pattern, 12),  // beat4
+      EuclideanRhythm::hasHit(pattern, 14),  // beat4_and
+  };
+}
+
 // Get kick pattern based on section type and style
 // Uses RNG to add syncopation variation
 KickPattern getKickPattern(SectionType section, DrumStyle style, int bar, std::mt19937& rng) {
@@ -781,6 +798,14 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
   DrumGrooveFeel groove = getMoodDrumGrooveFeel(params.mood);
   const auto& sections = song.arrangement().sections();
 
+  // Determine if we should use Euclidean rhythm patterns
+  const auto& blueprint = getProductionBlueprint(params.blueprint_id);
+  bool use_euclidean = false;
+  if (blueprint.euclidean_drums_percent > 0) {
+    std::uniform_int_distribution<uint8_t> dist(0, 99);
+    use_euclidean = dist(rng) < blueprint.euclidean_drums_percent;
+  }
+
   // BackgroundMotif settings
   const bool is_background_motif = params.composition_style == CompositionStyle::BackgroundMotif;
   const MotifDrumParams& drum_params = params.motif_drum;
@@ -901,7 +926,13 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
       }
 
       // Get kick pattern for this bar
-      KickPattern kick = getKickPattern(section.type, style, bar, rng);
+      KickPattern kick;
+      if (use_euclidean) {
+        uint16_t eucl_kick = DrumPatternFactory::getKickPattern(section.type, style);
+        kick = euclideanToKickPattern(eucl_kick);
+      } else {
+        kick = getKickPattern(section.type, style, bar, rng);
+      }
 
       for (uint8_t beat = 0; beat < 4; ++beat) {
         Tick beat_tick = bar_start + beat * TICKS_PER_BEAT;

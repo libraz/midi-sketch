@@ -11,12 +11,8 @@
 namespace midisketch {
 
 // Default emotion for out-of-bounds access
-const SectionEmotion EmotionCurve::kDefaultEmotion = {
-    .tension = 0.5f,
-    .energy = 0.5f,
-    .resolution_need = 0.3f,
-    .pitch_tendency = 0,
-    .density_factor = 1.0f};
+// Order: tension, energy, resolution_need, pitch_tendency, density_factor
+const SectionEmotion EmotionCurve::kDefaultEmotion = {0.5f, 0.5f, 0.3f, 0, 1.0f};
 
 void EmotionCurve::plan(const std::vector<Section>& sections, Mood mood) {
   sections_ = sections;
@@ -44,12 +40,8 @@ const SectionEmotion& EmotionCurve::getEmotion(size_t section_index) const {
 }
 
 TransitionHint EmotionCurve::getTransitionHint(size_t from_index) const {
-  TransitionHint hint = {
-      .crescendo = false,
-      .use_fill = false,
-      .approach_pitch = 0,
-      .velocity_ramp = 1.0f,
-      .use_leading_tone = false};
+  // Order: crescendo, use_fill, approach_pitch, velocity_ramp, use_leading_tone
+  TransitionHint hint = {false, false, 0, 1.0f, false};
 
   if (from_index >= emotions_.size()) {
     return hint;
@@ -122,67 +114,34 @@ float EmotionCurve::getMoodIntensity(Mood mood) {
 SectionEmotion EmotionCurve::estimateBaseEmotion(SectionType type) {
   switch (type) {
     case SectionType::Intro:
-      return {.tension = 0.2f,
-              .energy = 0.3f,
-              .resolution_need = 0.1f,
-              .pitch_tendency = 0,
-              .density_factor = 0.7f};
+      // Order: tension, energy, resolution_need, pitch_tendency, density_factor
+      return {0.2f, 0.3f, 0.1f, 0, 0.7f};
 
     case SectionType::A:
-      return {.tension = 0.4f,
-              .energy = 0.5f,
-              .resolution_need = 0.3f,
-              .pitch_tendency = -1,  // Tends downward (stable)
-              .density_factor = 0.8f};
+      return {0.4f, 0.5f, 0.3f, -1, 0.8f};  // pitch_tendency=-1: downward (stable)
 
     case SectionType::B:
-      return {.tension = 0.7f,
-              .energy = 0.7f,
-              .resolution_need = 0.6f,
-              .pitch_tendency = +2,  // Rising tension
-              .density_factor = 1.0f};
+      return {0.7f, 0.7f, 0.6f, +2, 1.0f};  // pitch_tendency=+2: rising tension
 
     case SectionType::Chorus:
-      return {.tension = 0.3f,      // Resolved tension
-              .energy = 1.0f,       // Peak energy
-              .resolution_need = 0.2f,
-              .pitch_tendency = +1,  // Confident upward
-              .density_factor = 1.2f};
+      // Resolved tension, peak energy, confident upward
+      return {0.3f, 1.0f, 0.2f, +1, 1.2f};
 
     case SectionType::Bridge:
-      return {.tension = 0.5f,
-              .energy = 0.4f,
-              .resolution_need = 0.4f,
-              .pitch_tendency = -2,  // Reflective downward
-              .density_factor = 0.6f};
+      return {0.5f, 0.4f, 0.4f, -2, 0.6f};  // pitch_tendency=-2: reflective downward
 
     case SectionType::Interlude:
-      return {.tension = 0.3f,
-              .energy = 0.4f,
-              .resolution_need = 0.2f,
-              .pitch_tendency = 0,
-              .density_factor = 0.7f};
+      return {0.3f, 0.4f, 0.2f, 0, 0.7f};
 
     case SectionType::Outro:
-      return {.tension = 0.1f,
-              .energy = 0.3f,
-              .resolution_need = 0.1f,  // Resolved
-              .pitch_tendency = -1,      // Settling down
-              .density_factor = 0.6f};
+      // Resolved, settling down
+      return {0.1f, 0.3f, 0.1f, -1, 0.6f};
 
     case SectionType::Chant:
-      return {.tension = 0.4f,
-              .energy = 0.6f,
-              .resolution_need = 0.2f,
-              .pitch_tendency = 0,
-              .density_factor = 0.5f};
+      return {0.4f, 0.6f, 0.2f, 0, 0.5f};
 
     case SectionType::MixBreak:
-      return {.tension = 0.6f,
-              .energy = 0.9f,
-              .resolution_need = 0.5f,
-              .pitch_tendency = +1,
-              .density_factor = 1.3f};
+      return {0.6f, 0.9f, 0.5f, +1, 1.3f};
   }
 
   return kDefaultEmotion;

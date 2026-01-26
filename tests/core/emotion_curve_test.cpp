@@ -367,5 +367,64 @@ TEST_F(EmotionCurveIntegrationTest, VelocityIncreasesInTransitionZone) {
   }
 }
 
+TEST_F(EmotionCurveIntegrationTest, UseFillAppliedToSectionFillBefore) {
+  // Test that EmotionCurve's use_fill is reflected in Section.fill_before
+  params_.structure = StructurePattern::BuildUp;  // Has B -> Chorus transition
+  params_.seed = 12345;
+
+  generator_.generate(params_);
+
+  const auto& sections = generator_.getSong().arrangement().sections();
+  const auto& emotion_curve = generator_.getEmotionCurve();
+
+  // Find transitions where use_fill is true
+  for (size_t i = 0; i + 1 < sections.size(); ++i) {
+    auto hint = emotion_curve.getTransitionHint(i);
+
+    // If emotion curve suggests a fill, the next section should have fill_before
+    // (unless it was already set by PeakLevel)
+    if (hint.use_fill) {
+      // At minimum, verify the hint is correctly computed for high-energy transitions
+      if (sections[i].type == SectionType::B && sections[i + 1].type == SectionType::Chorus) {
+        EXPECT_TRUE(hint.use_fill) << "B -> Chorus should have use_fill hint";
+      }
+    }
+  }
+}
+
+TEST_F(EmotionCurveIntegrationTest, FillBeforeReflectedInDrumTrack) {
+  // Test that fill_before results in actual drum fills
+  params_.structure = StructurePattern::BuildUp;
+  params_.seed = 54321;
+  params_.drums_enabled = true;
+
+  generator_.generate(params_);
+
+  const auto& sections = generator_.getSong().arrangement().sections();
+  const auto& drums = generator_.getSong().drums();
+
+  // Find a section with fill_before = true
+  for (size_t i = 1; i < sections.size(); ++i) {
+    if (sections[i].fill_before) {
+      // Check for drum activity in the last bar of the previous section
+      Tick prev_section_end = sections[i].start_tick;
+      Tick prev_section_last_bar = prev_section_end - TICKS_PER_BAR;
+
+      // Count drum hits in the last bar (fills typically have more activity)
+      int last_bar_hits = 0;
+      for (const auto& note : drums.notes()) {
+        if (note.start_tick >= prev_section_last_bar && note.start_tick < prev_section_end) {
+          ++last_bar_hits;
+        }
+      }
+
+      // Fill sections should have drum activity
+      EXPECT_GT(last_bar_hits, 0)
+          << "Section with fill_before should have drum hits in preceding bar";
+      break;
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

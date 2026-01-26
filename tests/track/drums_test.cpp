@@ -616,5 +616,72 @@ TEST_F(DrumsTest, KickPositionsNonNegative) {
   }
 }
 
+// ============================================================================
+// Euclidean Rhythm Integration Tests
+// ============================================================================
+
+TEST_F(DrumsTest, EuclideanDrumsIntegration_HighProbabilityBlueprint) {
+  // IdolCoolPop has 70% euclidean_drums_percent - test that drums are generated
+  params_.blueprint_id = 7;  // IdolCoolPop
+  params_.seed = 12345;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+
+  // Verify drums are generated
+  EXPECT_GT(track.notes().size(), 0u) << "Drums should be generated with Euclidean patterns";
+
+  // Verify kick drums exist
+  bool has_kick = false;
+  for (const auto& note : track.notes()) {
+    if (note.note == KICK) {
+      has_kick = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(has_kick) << "Should have kick drums with Euclidean patterns";
+}
+
+TEST_F(DrumsTest, EuclideanDrumsIntegration_LowProbabilityBlueprint) {
+  // Ballad has 20% euclidean_drums_percent - drums should still work
+  params_.blueprint_id = 3;  // Ballad
+  params_.seed = 54321;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+
+  // Drums should be generated regardless of euclidean vs traditional
+  EXPECT_GT(track.notes().size(), 0u) << "Drums should be generated";
+}
+
+TEST_F(DrumsTest, EuclideanDrumsIntegration_ConsistentWithSeed) {
+  // Same seed + blueprint should produce identical drum patterns
+  params_.blueprint_id = 1;  // RhythmLock (50% euclidean)
+  params_.seed = 99999;
+
+  Generator gen1;
+  gen1.generate(params_);
+
+  Generator gen2;
+  gen2.generate(params_);
+
+  const auto& track1 = gen1.getSong().drums();
+  const auto& track2 = gen2.getSong().drums();
+
+  EXPECT_EQ(track1.notes().size(), track2.notes().size())
+      << "Same seed should produce same drum pattern";
+
+  // Verify first few notes are identical
+  size_t check_count = std::min(track1.notes().size(), static_cast<size_t>(10));
+  for (size_t i = 0; i < check_count; ++i) {
+    EXPECT_EQ(track1.notes()[i].start_tick, track2.notes()[i].start_tick);
+    EXPECT_EQ(track1.notes()[i].note, track2.notes()[i].note);
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

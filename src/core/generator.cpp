@@ -277,6 +277,25 @@ void Generator::generate(const GeneratorParams& params) {
   // Plan emotion curve for song-wide coherence
   emotion_curve_.plan(sections, params.mood);
 
+  // Apply emotion curve fill hints to sections
+  // EmotionCurve's use_fill suggests drum fills at section transitions
+  if (emotion_curve_.isPlanned()) {
+    bool sections_updated = false;
+    for (size_t i = 0; i + 1 < sections.size(); ++i) {
+      auto hint = emotion_curve_.getTransitionHint(i);
+      // If emotion curve suggests a fill and section doesn't already have one,
+      // enable fill_before on the next section
+      if (hint.use_fill && !sections[i + 1].fill_before) {
+        sections[i + 1].fill_before = true;
+        sections_updated = true;
+      }
+    }
+    // Update arrangement if any sections were modified
+    if (sections_updated) {
+      song_.setArrangement(Arrangement(sections));
+    }
+  }
+
   // Initialize harmony context for coordinated track generation
   const auto& progression = getChordProgression(params.chord_id);
   harmony_context_->initialize(song_.arrangement(), progression, params.mood);
@@ -956,8 +975,23 @@ void Generator::applyStaggeredEntryToSections() {
   const auto& sections = song_.arrangement().sections();
 
   for (const auto& section : sections) {
-    // Apply staggered entry to intro sections with EntryPattern::Stagger
-    if (section.type == SectionType::Intro && section.entry_pattern == EntryPattern::Stagger) {
+    if (section.type != SectionType::Intro || section.bars < 4) {
+      continue;
+    }
+
+    // Determine if staggered entry should be applied
+    bool apply_stagger = false;
+
+    if (section.entry_pattern == EntryPattern::Stagger) {
+      // Explicit Stagger pattern: always apply
+      apply_stagger = true;
+    } else if (blueprint_ != nullptr && blueprint_->intro_stagger_percent > 0) {
+      // Probabilistic application based on blueprint setting
+      std::uniform_int_distribution<uint8_t> dist(0, 99);
+      apply_stagger = dist(rng_) < blueprint_->intro_stagger_percent;
+    }
+
+    if (apply_stagger) {
       auto config = StaggeredEntryConfig::defaultIntro(section.bars);
       applyStaggeredEntry(section, config);
     }

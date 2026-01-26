@@ -310,11 +310,13 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
     if (actual_beats < 2) break;  // Too short for a phrase
 
     // Generate hook for chorus at specific positions
+    // Skip hook for UltraVocaloid (high thirtysecond_ratio) - needs continuous machine-gun passages
     bool is_hook_position =
         (ctx.section_type == SectionType::Chorus) && (i == 0 || (i == 2 && phrase_count > 3));
+    bool use_hook = is_hook_position && tmpl.hook_note_count > 0 && ctx.thirtysecond_ratio < 0.8f;
 
     PhraseResult phrase_result;
-    if (is_hook_position && tmpl.hook_note_count > 0) {
+    if (use_hook) {
       phrase_result = generateHook(tmpl, current_tick, ctx, prev_pitch, harmony, rng);
     } else {
       phrase_result = generateMelodyPhrase(tmpl, current_tick, actual_beats, ctx, prev_pitch,
@@ -1857,14 +1859,16 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
   // Clamp to valid range [0.0, 0.95]
   effective_sixteenth_density = std::min(effective_sixteenth_density, 0.95f);
 
-  // Reserve space for final phrase-ending note (at least 1 beat before end)
-  // This ensures proper cadence with a longer final note on a strong beat
-  float phrase_body_end = end_beat - 1.0f;
+  // Reserve space for final phrase-ending note
+  // UltraVocaloid: shorter reservation to maximize machine-gun notes
+  // Standard: 1 beat reservation for proper cadence
+  float phrase_body_end = (thirtysecond_ratio >= 0.8f) ? end_beat - 0.5f : end_beat - 1.0f;
 
   // Track consecutive short notes to prevent breath-difficult passages
   // Pop vocal principle: limit rapid-fire notes to maintain singability
+  // UltraVocaloid: allow machine-gun bursts (32+ consecutive short notes)
   int consecutive_short_count = 0;
-  constexpr int MAX_CONSECUTIVE_SHORT = 3;
+  int max_consecutive_short = (thirtysecond_ratio >= 0.8f) ? 32 : 3;
 
   while (current_beat < phrase_body_end) {
     // Check if current position is on a strong beat (integer beat: 0.0, 1.0, 2.0, 3.0)
@@ -1875,10 +1879,12 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
     // Determine note duration (in eighths, float to support 32nds)
     float eighths;
 
-    if (is_on_beat && !tmpl.rhythm_driven) {
-      // Strong beat (non-rhythm-driven styles): prioritize longer notes for natural vocal phrasing
+    // UltraVocaloid (thirtysecond_ratio >= 0.8): allow fast notes even on strong beats
+    bool force_long_on_beat = is_on_beat && !tmpl.rhythm_driven && thirtysecond_ratio < 0.8f;
+
+    if (force_long_on_beat) {
+      // Strong beat (non-UltraVocaloid): prioritize longer notes for natural vocal phrasing
       // Avoid 16th/32nd notes on downbeats - they break the rhythmic anchor
-      // Exception: rhythm_driven templates (like UltraVocaloid) maintain fast rhythms
       if (dist(rng) < tmpl.long_note_ratio * 2.0f) {
         eighths = 4.0f;  // Half note (doubled probability on strong beat)
       } else {
@@ -1888,7 +1894,7 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
     } else {
       // Weak beat: use existing logic for rhythmic variety
       if (thirtysecond_ratio > 0.0f && dist(rng) < thirtysecond_ratio) {
-        eighths = 0.5f;  // 32nd note (0.25 eighth = 0.125 beats)
+        eighths = 0.25f;  // 32nd note (0.25 eighth = 60 ticks)
       } else if (tmpl.rhythm_driven && dist(rng) < effective_sixteenth_density) {
         eighths = 1.0f;  // 16th note (0.5 eighth)
       } else if (dist(rng) < tmpl.long_note_ratio) {
@@ -1900,9 +1906,10 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
 
     // Enforce consecutive short note limit for singability
     // Vocal physiology: too many rapid notes without breath points causes strain
+    // UltraVocaloid: relaxed limit (32) allows machine-gun passages
     if (eighths <= 1.0f) {
       consecutive_short_count++;
-      if (consecutive_short_count >= MAX_CONSECUTIVE_SHORT) {
+      if (consecutive_short_count >= max_consecutive_short) {
         eighths = 2.0f;  // Force quarter note for breathing room
         consecutive_short_count = 0;
       }
@@ -1918,9 +1925,14 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
 
     current_beat += eighths * 0.5f;  // Convert eighths to beats
 
-    // Quantize to grid based on paradigm
+    // Quantize to grid based on paradigm and style
+    // UltraVocaloid 32nd grid takes priority (explicit vocal style choice)
     // RhythmSync uses 16th note grid for tighter rhythm sync
-    if (paradigm == GenerationParadigm::RhythmSync) {
+    if (thirtysecond_ratio >= 0.8f) {
+      // UltraVocaloid: 32nd note grid for machine-gun bursts
+      // Beat positions: 0, 0.125, 0.25, 0.375, 0.5, ...
+      current_beat = std::ceil(current_beat * 8.0f) / 8.0f;
+    } else if (paradigm == GenerationParadigm::RhythmSync) {
       // 16th note grid: 0, 0.25, 0.5, 0.75, 1.0, 1.25, ...
       current_beat = std::ceil(current_beat * 4.0f) / 4.0f;
     } else {
@@ -1942,9 +1954,13 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
     if (final_beat >= end_beat) {
       final_beat = end_beat - 1.0f;
     }
-    // Final note is at least a quarter note (2 eighths), extending to phrase end
+    // Final note duration: UltraVocaloid uses 16th note, others use quarter+
     float final_eighths = (end_beat - final_beat) * 2.0f;
-    final_eighths = std::max(final_eighths, 2.0f);  // At least quarter note
+    if (thirtysecond_ratio >= 0.8f) {
+      final_eighths = std::max(final_eighths, 1.0f);  // At least 16th note for UltraVocaloid
+    } else {
+      final_eighths = std::max(final_eighths, 2.0f);  // At least quarter note
+    }
 
     rhythm.push_back({final_beat, final_eighths, true});  // Strong beat
   }

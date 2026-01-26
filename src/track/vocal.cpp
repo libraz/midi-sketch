@@ -48,6 +48,11 @@ bool shouldLockVocalRhythm(const GeneratorParams& params) {
   if (params.paradigm != GenerationParadigm::RhythmSync) {
     return false;
   }
+  // UltraVocaloid needs different rhythms per section (ballad verse + machine-gun chorus)
+  // Rhythm lock would force verse rhythm (no 32nd notes) on chorus (should have 32nd notes)
+  if (params.vocal_style == VocalStylePreset::UltraVocaloid) {
+    return false;
+  }
   // RiffPolicy::Locked is an alias for LockedContour, so check the underlying values
   uint8_t policy_value = static_cast<uint8_t>(params.riff_policy);
   // LockedContour=1, LockedPitch=2, LockedAll=3
