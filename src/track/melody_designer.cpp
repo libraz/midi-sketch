@@ -1870,6 +1870,20 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
   int consecutive_short_count = 0;
   int max_consecutive_short = (thirtysecond_ratio >= 0.8f) ? 32 : 3;
 
+  // UltraVocaloid: Random start pattern for natural variation
+  // 0 = immediate 32nd notes, 1 = quarter accent first, 2 = gradual acceleration
+  int ultra_start_pattern = 0;
+  if (thirtysecond_ratio >= 0.8f) {
+    float r = dist(rng);
+    if (r < 0.5f) {
+      ultra_start_pattern = 0;  // 50%: immediate machine-gun
+    } else if (r < 0.8f) {
+      ultra_start_pattern = 1;  // 30%: quarter note accent first
+    } else {
+      ultra_start_pattern = 2;  // 20%: gradual acceleration
+    }
+  }
+
   while (current_beat < phrase_body_end) {
     // Check if current position is on a strong beat (integer beat: 0.0, 1.0, 2.0, 3.0)
     // Pop music principle: strong beats should have longer, more stable notes
@@ -1882,7 +1896,48 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
     // UltraVocaloid (thirtysecond_ratio >= 0.8): allow fast notes even on strong beats
     bool force_long_on_beat = is_on_beat && !tmpl.rhythm_driven && thirtysecond_ratio < 0.8f;
 
-    if (force_long_on_beat) {
+    // UltraVocaloid: Insert phrase-ending long note at the end of each phrase
+    // Creates natural breathing points in machine-gun passages
+    // Triggers when we're in the last 1 beat of the phrase
+    bool ultra_phrase_boundary = false;
+    if (thirtysecond_ratio >= 0.8f) {
+      float beats_remaining = phrase_body_end - current_beat;
+      // If we're in the last 1 beat of the phrase, insert a long note
+      if (beats_remaining <= 1.0f && beats_remaining > 0.1f) {
+        ultra_phrase_boundary = true;
+      }
+    }
+
+    // UltraVocaloid: Handle start pattern variations
+    bool ultra_start_zone = (thirtysecond_ratio >= 0.8f && current_beat < 2.0f);
+
+    if (ultra_phrase_boundary) {
+      // Phrase boundary: insert long note that extends to the 2-bar boundary
+      // Duration fills the remaining time until the boundary (quarter note)
+      eighths = 2.0f;  // Quarter note
+      consecutive_short_count = 0;
+    } else if (ultra_start_zone && ultra_start_pattern > 0) {
+      // Start pattern variations
+      if (ultra_start_pattern == 1) {
+        // Pattern 1: Quarter note accent on beat 0, then machine-gun
+        if (current_beat < 0.01f) {
+          eighths = 2.0f;  // Quarter note accent
+        } else {
+          eighths = 0.25f;  // Then 32nd notes
+        }
+      } else {
+        // Pattern 2: Gradual acceleration (quarter -> 8th -> 16th -> 32nd)
+        if (current_beat < 0.5f) {
+          eighths = 2.0f;  // Quarter note
+        } else if (current_beat < 1.0f) {
+          eighths = 1.0f;  // 8th note
+        } else if (current_beat < 1.5f) {
+          eighths = 0.5f;  // 16th note
+        } else {
+          eighths = 0.25f;  // 32nd note
+        }
+      }
+    } else if (force_long_on_beat) {
       // Strong beat (non-UltraVocaloid): prioritize longer notes for natural vocal phrasing
       // Avoid 16th/32nd notes on downbeats - they break the rhythmic anchor
       if (dist(rng) < tmpl.long_note_ratio * 2.0f) {
@@ -1928,7 +1983,10 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
     // Quantize to grid based on paradigm and style
     // UltraVocaloid 32nd grid takes priority (explicit vocal style choice)
     // RhythmSync uses 16th note grid for tighter rhythm sync
-    if (thirtysecond_ratio >= 0.8f) {
+    if (ultra_phrase_boundary) {
+      // After phrase boundary note, skip to phrase body end (exit the while loop)
+      current_beat = phrase_body_end;
+    } else if (thirtysecond_ratio >= 0.8f) {
       // UltraVocaloid: 32nd note grid for machine-gun bursts
       // Beat positions: 0, 0.125, 0.25, 0.375, 0.5, ...
       current_beat = std::ceil(current_beat * 8.0f) / 8.0f;
@@ -1954,10 +2012,10 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
     if (final_beat >= end_beat) {
       final_beat = end_beat - 1.0f;
     }
-    // Final note duration: UltraVocaloid uses 16th note, others use quarter+
+    // Final note duration: UltraVocaloid uses quarter note for phrase ending
     float final_eighths = (end_beat - final_beat) * 2.0f;
     if (thirtysecond_ratio >= 0.8f) {
-      final_eighths = std::max(final_eighths, 1.0f);  // At least 16th note for UltraVocaloid
+      final_eighths = std::max(final_eighths, 2.0f);  // At least quarter note for UltraVocaloid
     } else {
       final_eighths = std::max(final_eighths, 2.0f);  // At least quarter note
     }

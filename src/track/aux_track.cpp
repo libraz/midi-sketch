@@ -75,6 +75,21 @@ bool notesOverlap(Tick start1, Tick end1, Tick start2, Tick end2) {
   return start1 < end2 && start2 < end1;
 }
 
+// Smooth motif rhythm for Intro aux (extend short notes to minimum 8th note)
+// This prevents machine-gun style from UltraVocaloid bleeding into Intro
+Motif smoothMotifRhythm(const Motif& motif) {
+  Motif result = motif;
+  constexpr float kMinEighths = 1.0f;  // Minimum 8th note duration
+
+  for (auto& rn : result.rhythm) {
+    if (rn.eighths < kMinEighths) {
+      rn.eighths = kMinEighths;
+    }
+  }
+
+  return result;
+}
+
 }  // namespace
 
 const AuxFunctionMeta& getAuxFunctionMeta(AuxFunction func) {
@@ -246,6 +261,10 @@ void AuxTrackGenerator::generateFullTrack(MidiTrack& track, const SongContext& s
         MotifVariation variation = selectHookVariation(variation_rng);
         Motif varied_motif = applyVariation(*cached_chorus_motif_, variation, 0, variation_rng);
 
+        // Smooth rhythm for Intro (prevents machine-gun style from UltraVocaloid)
+        // Intro should be calm foreshadowing, not aggressive machine-gun
+        varied_motif = smoothMotifRhythm(varied_motif);
+
         // Place chorus motif in intro (foreshadowing the hook)
         // Center of vocal range, snapped to scale
         int center = (song_ctx.vocal_low + song_ctx.vocal_high) / 2;
@@ -287,7 +306,26 @@ void AuxTrackGenerator::generateFullTrack(MidiTrack& track, const SongContext& s
       }
       continue;  // Skip normal generation for this section
     } else if (section.type == SectionType::Chorus && section.vocal_density == VocalDensity::Full) {
-      // Chorus with full vocals: Use EmotionalPad for harmonic support
+      // UltraVocaloid Chorus: Use GrooveAccent for rhythmic counter-melody
+      // GrooveAccent provides rhythmic accents that complement the dense vocal
+      // without trying to analyze vocal phrases (which doesn't work well with machine-gun style)
+      if (song_ctx.vocal_style == VocalStylePreset::UltraVocaloid) {
+        config.function = AuxFunction::GrooveAccent;
+        config.range_offset = -6;   // Slightly below vocal
+        config.range_width = 12;
+        config.velocity_ratio = 0.75f;
+        config.density_ratio = 0.8f;  // More notes for melodic presence
+        config.sync_phrase_boundary = true;
+
+        // Generate GrooveAccent
+        MidiTrack section_aux = generate(config, ctx, harmony, rng);
+        for (const auto& note : section_aux.notes()) {
+          all_notes.push_back(note);
+        }
+        continue;  // Skip normal generation for this section
+      }
+
+      // Other styles: Use EmotionalPad for harmonic support
       // In pop music, the pad provides chord tones (root + fifth) beneath the vocal,
       // NOT melody doubling. Unison doubling should be done by backup vocals, not pad.
       config.function = AuxFunction::EmotionalPad;

@@ -48,15 +48,17 @@ bool shouldLockVocalRhythm(const GeneratorParams& params) {
   if (params.paradigm != GenerationParadigm::RhythmSync) {
     return false;
   }
-  // UltraVocaloid needs different rhythms per section (ballad verse + machine-gun chorus)
-  // Rhythm lock would force verse rhythm (no 32nd notes) on chorus (should have 32nd notes)
-  if (params.vocal_style == VocalStylePreset::UltraVocaloid) {
-    return false;
-  }
   // RiffPolicy::Locked is an alias for LockedContour, so check the underlying values
   uint8_t policy_value = static_cast<uint8_t>(params.riff_policy);
   // LockedContour=1, LockedPitch=2, LockedAll=3
   return policy_value >= 1 && policy_value <= 3;
+}
+
+// Check if rhythm lock should be per-section-type (for UltraVocaloid)
+// UltraVocaloid needs different rhythms per section type (ballad verse + machine-gun chorus)
+// but still wants consistency within the same section type
+bool shouldUsePerSectionTypeRhythmLock(const GeneratorParams& params) {
+  return params.vocal_style == VocalStylePreset::UltraVocaloid;
 }
 
 /**
@@ -182,9 +184,12 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
 
   // Check if rhythm lock should be used
   bool use_rhythm_lock = shouldLockVocalRhythm(params);
+  bool use_per_section_type_lock = shouldUsePerSectionTypeRhythmLock(params);
   // Local rhythm lock cache if none provided externally
   CachedRhythmPattern local_rhythm_lock;
   CachedRhythmPattern* active_rhythm_lock = rhythm_lock ? rhythm_lock : &local_rhythm_lock;
+  // Per-section-type rhythm lock map (for UltraVocaloid)
+  std::unordered_map<SectionType, CachedRhythmPattern> section_type_rhythm_locks;
 
   // Clear existing phrase boundaries for fresh generation
   song.clearPhraseBoundaries();
@@ -298,10 +303,26 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
       }
 
       // Check for rhythm lock
-      if (use_rhythm_lock && active_rhythm_lock->isValid()) {
+      // UltraVocaloid uses per-section-type rhythm lock (Verse->Verse, Chorus->Chorus)
+      // Other styles use global rhythm lock (first section's rhythm for all)
+      CachedRhythmPattern* current_rhythm_lock = nullptr;
+      if (use_rhythm_lock) {
+        if (use_per_section_type_lock) {
+          // Per-section-type lock: look up by section type
+          auto it = section_type_rhythm_locks.find(section.type);
+          if (it != section_type_rhythm_locks.end() && it->second.isValid()) {
+            current_rhythm_lock = &it->second;
+          }
+        } else if (active_rhythm_lock->isValid()) {
+          // Global lock: use single rhythm pattern
+          current_rhythm_lock = active_rhythm_lock;
+        }
+      }
+
+      if (current_rhythm_lock != nullptr) {
         // Use locked rhythm pattern with new pitches
         section_notes =
-            generateWithLockedRhythm(*active_rhythm_lock, section, designer, harmony, ctx, rng);
+            generateWithLockedRhythm(*current_rhythm_lock, section, designer, harmony, ctx, rng);
       } else {
         // Generate melody with evaluation (candidate count varies by section importance)
         int candidate_count = MelodyDesigner::getCandidateCountForSection(section.type);
@@ -310,9 +331,16 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
             candidate_count);
 
         // Cache rhythm pattern for subsequent sections
-        if (use_rhythm_lock && !active_rhythm_lock->isValid() && !section_notes.empty()) {
-          *active_rhythm_lock =
-              extractRhythmPattern(section_notes, section_start, section.bars * 4);
+        if (use_rhythm_lock && !section_notes.empty()) {
+          if (use_per_section_type_lock) {
+            // Cache per section type
+            section_type_rhythm_locks[section.type] =
+                extractRhythmPattern(section_notes, section_start, section.bars * 4);
+          } else if (!active_rhythm_lock->isValid()) {
+            // Cache globally
+            *active_rhythm_lock =
+                extractRhythmPattern(section_notes, section_start, section.bars * 4);
+          }
         }
       }
 
