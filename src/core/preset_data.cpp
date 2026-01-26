@@ -801,7 +801,42 @@ constexpr DrumStyle MOOD_DRUM_STYLES[20] = {
     DrumStyle::Synth,        // 16: Yoasobi
     DrumStyle::Synth,        // 17: Synthwave
     DrumStyle::Synth,        // 18: FutureBass
-    DrumStyle::Synth,        // 19: CityPop
+    DrumStyle::Standard,     // 19: CityPop (groove feel, not synth)
+};
+
+// ============================================================================
+// Mood → DrumGrooveFeel Mapping Table
+// ============================================================================
+//
+// Maps each Mood to its appropriate groove feel.
+// Swing adds a triplet feel to off-beat hi-hats, essential for:
+// - Ballads (subtle swing for warmth)
+// - CityPop (80s Japanese groove)
+// - Jazz-influenced moods
+//
+// Index corresponds to Mood enum value (0-19).
+//
+constexpr DrumGrooveFeel MOOD_DRUM_GROOVES[20] = {
+    DrumGrooveFeel::Straight,  // 0: StraightPop
+    DrumGrooveFeel::Straight,  // 1: BrightUpbeat
+    DrumGrooveFeel::Straight,  // 2: EnergeticDance
+    DrumGrooveFeel::Straight,  // 3: LightRock
+    DrumGrooveFeel::Straight,  // 4: MidPop
+    DrumGrooveFeel::Straight,  // 5: EmotionalPop
+    DrumGrooveFeel::Swing,     // 6: Sentimental (subtle swing)
+    DrumGrooveFeel::Swing,     // 7: Chill (relaxed swing)
+    DrumGrooveFeel::Swing,     // 8: Ballad (essential swing)
+    DrumGrooveFeel::Straight,  // 9: DarkPop
+    DrumGrooveFeel::Straight,  // 10: Dramatic
+    DrumGrooveFeel::Swing,     // 11: Nostalgic (retro feel)
+    DrumGrooveFeel::Straight,  // 12: ModernPop
+    DrumGrooveFeel::Straight,  // 13: ElectroPop
+    DrumGrooveFeel::Straight,  // 14: IdolPop
+    DrumGrooveFeel::Straight,  // 15: Anthem
+    DrumGrooveFeel::Straight,  // 16: Yoasobi (tight electronic)
+    DrumGrooveFeel::Straight,  // 17: Synthwave (tight electronic)
+    DrumGrooveFeel::Straight,  // 18: FutureBass (tight electronic)
+    DrumGrooveFeel::Swing,     // 19: CityPop (80s groove essential)
 };
 
 }  // namespace
@@ -812,6 +847,14 @@ DrumStyle getMoodDrumStyle(Mood mood) {
     return MOOD_DRUM_STYLES[idx];
   }
   return DrumStyle::Standard;  // fallback
+}
+
+DrumGrooveFeel getMoodDrumGrooveFeel(Mood mood) {
+  uint8_t idx = static_cast<uint8_t>(mood);
+  if (idx < sizeof(MOOD_DRUM_GROOVES) / sizeof(MOOD_DRUM_GROOVES[0])) {
+    return MOOD_DRUM_GROOVES[idx];
+  }
+  return DrumGrooveFeel::Straight;  // fallback
 }
 
 // ============================================================================

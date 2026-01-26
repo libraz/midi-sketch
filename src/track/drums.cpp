@@ -354,12 +354,23 @@ float getGhostDensity(Mood mood, SectionType section, BackingDensity backing_den
   }
 
   // BPM adjustment: reduce ghost notes at high tempos
-  // At 120 BPM: no adjustment, at 145 BPM: ~83%, at 100 BPM: capped at 100%
-  float bpm_factor = std::min(1.0f, 120.0f / bpm);
+  // Energetic moods (IdolPop, EnergeticDance, Anthem, Yoasobi) use gentler reduction
+  // to maintain groove at their naturally high BPMs
+  bool is_energetic = (mood == Mood::EnergeticDance || mood == Mood::IdolPop ||
+                       mood == Mood::Anthem || mood == Mood::Yoasobi);
+
+  // Reference BPM for adjustment: 120 for normal, 140 for energetic
+  float reference_bpm = is_energetic ? 140.0f : 120.0f;
+  float bpm_factor = std::min(1.0f, reference_bpm / bpm);
   base_density *= bpm_factor;
 
-  // Cap based on BPM: lower cap at high tempos
-  float max_density = (bpm > 130) ? 0.5f : 0.7f;
+  // Cap based on BPM: higher cap for energetic moods
+  float max_density;
+  if (is_energetic) {
+    max_density = (bpm > 150) ? 0.6f : 0.8f;  // Higher cap for energetic
+  } else {
+    max_density = (bpm > 130) ? 0.5f : 0.7f;
+  }
   return std::min(max_density, base_density);
 }
 
@@ -629,11 +640,28 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity ba
   return base_level;
 }
 
+// Calculate swing offset for off-beat notes based on groove feel
+// Returns the tick offset to add to off-beat hi-hat timing
+Tick getSwingOffset(DrumGrooveFeel groove, Tick subdivision) {
+  switch (groove) {
+    case DrumGrooveFeel::Swing:
+      // Triplet swing: delay off-beat by ~33% of subdivision
+      return subdivision / 3;
+    case DrumGrooveFeel::Shuffle:
+      // Heavy shuffle: delay by ~50% of subdivision
+      return subdivision / 2;
+    case DrumGrooveFeel::Straight:
+    default:
+      return 0;
+  }
+}
+
 }  // namespace
 
 void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,
                         std::mt19937& rng) {
   DrumStyle style = getMoodDrumStyle(params.mood);
+  DrumGrooveFeel groove = getMoodDrumGrooveFeel(params.mood);
   const auto& sections = song.arrangement().sections();
 
   // BackgroundMotif settings
@@ -643,6 +671,11 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
   // Override style for BackgroundMotif: hi-hat driven
   if (is_background_motif && drum_params.hihat_drive) {
     style = DrumStyle::Standard;  // Use standard pattern as base
+  }
+
+  // RhythmSync paradigm: use straight timing for precise synchronization
+  if (params.paradigm == GenerationParadigm::RhythmSync) {
+    groove = DrumGrooveFeel::Straight;
   }
 
   for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
@@ -894,6 +927,11 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
             for (int eighth = 0; eighth < 2; ++eighth) {
               Tick hh_tick = beat_tick + eighth * EIGHTH;
 
+              // Apply swing offset to off-beats (eighth == 1)
+              if (eighth == 1) {
+                hh_tick += getSwingOffset(groove, EIGHTH);
+              }
+
               // Skip off-beat in intro
               if (section.type == SectionType::Intro && eighth == 1) {
                 continue;
@@ -945,6 +983,12 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
             // 16th notes for high-energy sections
             for (int sixteenth = 0; sixteenth < 4; ++sixteenth) {
               Tick hh_tick = beat_tick + sixteenth * SIXTEENTH;
+
+              // Apply half swing offset to "e" and "a" positions (sixteenth == 1 and 3)
+              // 16th note swing is subtle to maintain groove without sounding uneven
+              if (sixteenth == 1 || sixteenth == 3) {
+                hh_tick += getSwingOffset(groove, SIXTEENTH) / 2;
+              }
 
               uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
               // Accent pattern: strong on beat, medium on 8th, soft on 16ths
@@ -1044,6 +1088,7 @@ bool addVocalSyncedKicks(MidiTrack& track, Tick bar_start, Tick bar_end, const V
 void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const GeneratorParams& params,
                                  std::mt19937& rng, const VocalAnalysis& vocal_analysis) {
   DrumStyle style = getMoodDrumStyle(params.mood);
+  DrumGrooveFeel groove = getMoodDrumGrooveFeel(params.mood);
   const auto& sections = song.arrangement().sections();
 
   // BackgroundMotif settings
@@ -1053,6 +1098,11 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
   // Override style for BackgroundMotif: hi-hat driven
   if (is_background_motif && drum_params.hihat_drive) {
     style = DrumStyle::Standard;
+  }
+
+  // RhythmSync paradigm: use straight timing for precise synchronization
+  if (params.paradigm == GenerationParadigm::RhythmSync) {
+    groove = DrumGrooveFeel::Straight;
   }
 
   for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
@@ -1295,6 +1345,11 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
             for (int eighth = 0; eighth < 2; ++eighth) {
               Tick hh_tick = beat_tick + eighth * EIGHTH;
 
+              // Apply swing offset to off-beats (eighth == 1)
+              if (eighth == 1) {
+                hh_tick += getSwingOffset(groove, EIGHTH);
+              }
+
               if (section.type == SectionType::Intro && eighth == 1) {
                 continue;
               }
@@ -1334,6 +1389,11 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
           case HiHatLevel::Sixteenth:
             for (int sixteenth = 0; sixteenth < 4; ++sixteenth) {
               Tick hh_tick = beat_tick + sixteenth * SIXTEENTH;
+
+              // Apply half swing offset to "e" and "a" positions (sixteenth == 1 and 3)
+              if (sixteenth == 1 || sixteenth == 3) {
+                hh_tick += getSwingOffset(groove, SIXTEENTH) / 2;
+              }
 
               uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
               if (sixteenth == 0) {

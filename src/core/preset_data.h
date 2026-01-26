@@ -38,6 +38,15 @@ enum class DrumStyle : uint8_t {
   Synth         // Synth-oriented - tight 16th hi-hats, punchy kick
 };
 
+// Drum groove feel for hi-hat timing
+// Swing delays off-beat notes by ~33% of the subdivision (triplet feel)
+// Shuffle delays by ~50% (heavy swing)
+enum class DrumGrooveFeel : uint8_t {
+  Straight,  // Default - even timing
+  Swing,     // Triplet swing (~33% delay on off-beats) - ballad, jazz, city pop
+  Shuffle    // Heavy shuffle (~50% delay) - blues, some rock
+};
+
 // ============================================================================
 // Bass Genre System
 // ============================================================================
@@ -121,6 +130,11 @@ const char* getMoodName(Mood mood);
 // @param mood Mood preset
 // @returns DrumStyle category
 DrumStyle getMoodDrumStyle(Mood mood);
+
+// Returns the drum groove feel for a given mood.
+// @param mood Mood preset
+// @returns DrumGrooveFeel (Straight, Swing, or Shuffle)
+DrumGrooveFeel getMoodDrumGrooveFeel(Mood mood);
 
 // Returns the bass genre for a given mood.
 // @param mood Mood preset

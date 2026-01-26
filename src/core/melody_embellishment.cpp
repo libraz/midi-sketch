@@ -53,14 +53,15 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
 
   switch (mood) {
     // === Bright/Upbeat moods: stable, consonant ===
+    // Slightly increased NCT ratios for more melodic interest
     case Mood::BrightUpbeat:
     case Mood::IdolPop:
     case Mood::Anthem:
-      config.chord_tone_ratio = 0.75f;
-      config.passing_tone_ratio = 0.12f;
+      config.chord_tone_ratio = 0.72f;
+      config.passing_tone_ratio = 0.13f;  // Increased from 0.12
       config.neighbor_tone_ratio = 0.08f;
-      config.appoggiatura_ratio = 0.03f;
-      config.anticipation_ratio = 0.02f;
+      config.appoggiatura_ratio = 0.04f;  // Increased from 0.03
+      config.anticipation_ratio = 0.03f;  // Increased from 0.02
       config.prefer_pentatonic = true;
       config.syncopation_level = 0.2f;
       break;
@@ -93,14 +94,15 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
       break;
 
     // === Ballad/Emotional: expressive appoggiaturas ===
+    // Increased NCT ratios for more expressive, emotional melodies
     case Mood::Ballad:
     case Mood::Sentimental:
     case Mood::EmotionalPop:
-      config.chord_tone_ratio = 0.65f;
-      config.passing_tone_ratio = 0.12f;
-      config.neighbor_tone_ratio = 0.08f;
-      config.appoggiatura_ratio = 0.10f;
-      config.anticipation_ratio = 0.05f;
+      config.chord_tone_ratio = 0.58f;
+      config.passing_tone_ratio = 0.14f;  // Increased from 0.12
+      config.neighbor_tone_ratio = 0.10f;  // Increased from 0.08
+      config.appoggiatura_ratio = 0.12f;  // Increased from 0.10 for more expression
+      config.anticipation_ratio = 0.06f;  // Slightly increased
       config.enable_tensions = true;
       config.tension_ratio = 0.03f;  // Subtle 9ths for "setsunai" sound
       config.prefer_pentatonic = true;
@@ -148,14 +150,15 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
       break;
 
     // === Default: balanced pop ===
+    // Increased NCT ratios for more musical melodies
     case Mood::StraightPop:
     case Mood::MidPop:
     case Mood::ModernPop:
     case Mood::ElectroPop:
     default:
-      config.chord_tone_ratio = 0.70f;
-      config.passing_tone_ratio = 0.12f;
-      config.neighbor_tone_ratio = 0.08f;
+      config.chord_tone_ratio = 0.65f;
+      config.passing_tone_ratio = 0.15f;  // Increased from 0.12
+      config.neighbor_tone_ratio = 0.10f;  // Increased from 0.08
       config.appoggiatura_ratio = 0.05f;
       config.anticipation_ratio = 0.05f;
       config.prefer_pentatonic = true;
