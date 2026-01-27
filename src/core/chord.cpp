@@ -130,14 +130,15 @@ constexpr ChordProgressionMeta PROGRESSION_META[22] = {
 };
 
 // Builds a chord from scale degree.
-// Degrees: I=0, ii=1, iii=2, IV=3, V=4, vi=5, vii=6, bVII=10, bVI=8, bIII=11
+// Degrees: I=0, ii=1, iii=2, IV=3, V=4, vi=5, vii=6, bVI=8, bVII=10, bIII=11,
+//          iv=12, bII=13, #IVdim=14
 Chord buildChord(int8_t degree) {
   Chord c{};
   c.note_count = 3;
   c.is_diminished = false;
 
-  // vii is diminished (0, 3, 6) - minor 3rd + diminished 5th
-  if (degree == 6) {
+  // vii and #IVdim are diminished (0, 3, 6) - minor 3rd + diminished 5th
+  if (degree == 6 || degree == 14) {
     c.intervals = {0, 3, 6, -1, -1};  // Diminished triad
     c.is_diminished = true;
     return c;
@@ -162,7 +163,15 @@ Chord buildChord(int8_t degree) {
   //     Rationale: In C natural minor, bIII is Eb-G-Bb (Eb major triad)
   //     Common use: I-bIII-IV progression, chromatic mediant relationships
   //
-  bool is_minor = (degree == 1 || degree == 2 || degree == 5);
+  //   iv (degree 12): MINOR triad - e.g., Fm in C major
+  //     Rationale: In C natural minor, iv is F-Ab-C (F minor triad)
+  //     Common use: iv-I (minor plagal cadence), iv-V-I
+  //
+  //   bII (degree 13): MAJOR triad - e.g., Db major in C major
+  //     Rationale: Neapolitan chord, always major quality
+  //     Common use: bII-V-I (Neapolitan cadence)
+  //
+  bool is_minor = (degree == 1 || degree == 2 || degree == 5 || degree == 12);
 
   if (is_minor) {
     c.intervals = {0, 3, 7, -1, -1};  // Minor triad
@@ -186,21 +195,30 @@ Chord buildChord(int8_t degree) {
 //   5 = vi  (Submediant) - Am in C major
 //   6 = vii (Leading)    - Bdim in C major
 //
-// Borrowed degrees (8, 10, 11): Chords borrowed from parallel minor
-//   8  = bVI  (Flat 6th) - Ab in C major (from C minor)
-//   10 = bVII (Flat 7th) - Bb in C major (from C minor)
-//   11 = bIII (Flat 3rd) - Eb in C major (from C minor)
+// Borrowed degrees (8, 10, 11, 12, 13, 14): Chords borrowed from parallel minor
+//   8  = bVI    (Flat 6th)      - Ab in C major (from C minor)
+//   10 = bVII   (Flat 7th)      - Bb in C major (from C minor)
+//   11 = bIII   (Flat 3rd)      - Eb in C major (from C minor)
+//   12 = iv     (Minor 4th)     - Fm in C major (from C minor)
+//   13 = bII    (Neapolitan)    - Db in C major (Neapolitan chord)
+//   14 = #IVdim (Raised 4th dim)- F#dim in C major (chromatic passing)
 //
 // The degree values 8, 10, 11 are chosen to avoid collision with diatonic
 // degrees (0-6) while providing meaningful identifiers:
 //   - 8  = Ab pitch class (8 semitones from C)
 //   - 10 = Bb pitch class (10 semitones from C)
 //   - 11 = bIII uses degree 11 as identifier, maps to Eb (3 semitones)
+//   - 12 = iv uses degree 12 as identifier, maps to F (5 semitones)
+//   - 13 = bII uses degree 13 as identifier, maps to Db (1 semitone)
+//   - 14 = #IVdim uses degree 14 as identifier, maps to F# (6 semitones)
 //
 // ============================================================================
 
+}  // namespace
+
 // Converts degree to pitch class (0-11) in C major.
 // Uses SCALE from pitch_utils.h for diatonic degrees.
+// Public API: declared in chord.h for slash chord and other external use.
 int degreeToSemitone(int8_t degree) {
   // Borrowed chords from parallel minor (see documentation above)
   switch (degree) {
@@ -210,6 +228,12 @@ int degreeToSemitone(int8_t degree) {
       return 8;  // bVI  = Ab (8 semitones from C)
     case 11:
       return 3;  // bIII = Eb (3 semitones from C)
+    case 12:
+      return 5;  // iv   = F  (5 semitones from C, minor quality)
+    case 13:
+      return 1;  // bII  = Db (1 semitone from C, Neapolitan)
+    case 14:
+      return 6;  // #IVdim = F# (6 semitones from C, diminished)
     default:
       break;
   }
@@ -221,8 +245,6 @@ int degreeToSemitone(int8_t degree) {
 
   return 0;
 }
-
-}  // namespace
 
 const ChordProgression& getChordProgression(uint8_t chord_id) {
   constexpr size_t count = sizeof(PROGRESSIONS) / sizeof(PROGRESSIONS[0]);
@@ -418,6 +440,259 @@ SecondaryDominantInfo checkSecondaryDominant(int8_t current_degree, int8_t next_
   info.dominant_degree = sec_dom_degree;
   info.extension = ChordExtension::Dom7;  // Always use dominant 7th
   info.target_degree = next_degree;
+
+  return info;
+}
+
+// ============================================================================
+// Tritone Substitution
+// ============================================================================
+
+int getTritoneSubRoot(int original_root_semitone) {
+  // A tritone is exactly 6 semitones (half an octave)
+  return (original_root_semitone + 6) % 12;
+}
+
+TritoneSubInfo checkTritoneSubstitution(int8_t degree, bool is_dominant,
+                                         float probability, float roll) {
+  TritoneSubInfo info{false, 0, {}};
+
+  // Only apply to dominant-function chords (V = degree 4)
+  // Secondary dominants also have dominant function (is_dominant flag)
+  if (!is_dominant && degree != 4) {
+    return info;
+  }
+
+  // Check probability: roll must be less than probability to substitute
+  if (roll >= probability) {
+    return info;
+  }
+
+  // Calculate the substituted root: original root + tritone (6 semitones)
+  // V (G) in C major has root at semitone 7 -> tritone sub root = (7+6)%12 = 1 (Db)
+  int original_root = degreeToSemitone(degree);
+  int sub_root = getTritoneSubRoot(original_root);
+
+  info.should_substitute = true;
+  info.sub_root_semitone = static_cast<int8_t>(sub_root);
+
+  // The substituted chord is always a dominant 7th: (0, 4, 7, 10)
+  // Major 3rd + minor 7th = dominant quality
+  info.chord.intervals = {0, 4, 7, 10, -1};
+  info.chord.note_count = 4;
+  info.chord.is_diminished = false;
+
+  return info;
+}
+
+// ============================================================================
+// Section-Based Reharmonization
+// ============================================================================
+
+ReharmonizationResult reharmonizeForSection(int8_t degree, SectionType section_type,
+                                             bool is_minor, bool is_dominant) {
+  ReharmonizationResult result{degree, ChordExtension::None, false};
+
+  switch (section_type) {
+    case SectionType::Chorus: {
+      // Chorus: auto-add extensions for richer harmony
+      // - Dominant chords (V) get Dom7
+      // - Minor chords (ii, iii, vi) get Min7
+      // - Tonic (I) gets Maj7
+      // - Subdominant (IV) gets Add9 for color
+      result.extension_overridden = true;
+      if (is_dominant) {
+        result.extension = ChordExtension::Dom7;
+      } else if (is_minor) {
+        result.extension = ChordExtension::Min7;
+      } else if (degree == 0) {
+        // I chord -> Maj7
+        result.extension = ChordExtension::Maj7;
+      } else {
+        // IV or other major chords -> Add9
+        result.extension = ChordExtension::Add9;
+      }
+      break;
+    }
+
+    case SectionType::A: {
+      // Verse: simplify IV (degree 3) to ii (degree 1) for softer feel
+      // IV (F major) -> ii (Dm) in C major: both have subdominant function
+      // but ii has a gentler, more introspective quality
+      if (degree == 3) {
+        result.degree = 1;  // IV -> ii substitution
+      }
+      break;
+    }
+
+    default:
+      // B sections and others: no degree/extension changes
+      // (B section passing diminished handled by checkPassingDiminished)
+      break;
+  }
+
+  return result;
+}
+
+PassingChordInfo checkPassingDiminished(int8_t /*current_degree*/, int8_t next_degree,
+                                         SectionType section_type) {
+  PassingChordInfo info{false, 0, {}};
+
+  // Only insert passing diminished chords in B (pre-chorus) sections
+  if (section_type != SectionType::B) {
+    return info;
+  }
+
+  // Build a diminished chord a half-step below the next chord's root.
+  // This creates chromatic approach tension (e.g., C#dim -> Dm, F#dim -> G).
+  int next_root_semitone = degreeToSemitone(next_degree);
+  int passing_root_semitone = (next_root_semitone + 11) % 12;  // One half-step below
+
+  info.should_insert = true;
+  info.root_semitone = static_cast<int8_t>(passing_root_semitone);
+
+  // Diminished triad: (0, 3, 6)
+  info.chord.intervals = {0, 3, 6, -1, -1};
+  info.chord.note_count = 3;
+  info.chord.is_diminished = true;
+
+  return info;
+}
+
+// ============================================================================
+// Slash Chord Support
+// ============================================================================
+
+SlashChordInfo checkSlashChord(int8_t current_degree, int8_t next_degree,
+                               SectionType section_type, float probability_roll) {
+  SlashChordInfo info{false, 0};
+
+  // Determine section-based probability threshold.
+  // Verse (A) and B (pre-chorus) sections prefer slash chords for smoother feel.
+  // Chorus sections use stronger root motion, so lower probability.
+  float threshold = 0.0f;
+  switch (section_type) {
+    case SectionType::A:
+      threshold = 0.50f;  // 50% chance in verses
+      break;
+    case SectionType::B:
+      threshold = 0.55f;  // 55% chance in pre-chorus
+      break;
+    case SectionType::Bridge:
+      threshold = 0.45f;  // 45% in bridge
+      break;
+    case SectionType::Chorus:
+      threshold = 0.30f;  // 30% in chorus (prefer strong roots)
+      break;
+    case SectionType::Interlude:
+      threshold = 0.40f;  // 40% in interlude
+      break;
+    case SectionType::Intro:
+    case SectionType::Outro:
+    case SectionType::MixBreak:
+    case SectionType::Chant:
+    case SectionType::Drop:  // No slash chords in drop (strong bass foundation needed)
+      threshold = 0.0f;  // No slash chords in intro/outro/special sections
+      break;
+  }
+
+  // Check probability
+  if (probability_roll >= threshold) {
+    return info;
+  }
+
+  // Get pitch classes for current and next chord roots
+  int current_root_pc = degreeToSemitone(current_degree);
+  int next_root_pc = degreeToSemitone(next_degree);
+
+  // Calculate the bass interval between adjacent roots
+  int bass_interval = ((next_root_pc - current_root_pc) + 12) % 12;
+  // Normalize to smallest interval (up or down)
+  if (bass_interval > 6) {
+    bass_interval = 12 - bass_interval;
+  }
+
+  // Only skip slash chords when bass roots are a half step apart or the same.
+  // A half step (1 semitone) already has the smoothest possible voice leading.
+  // Whole steps (2 semitones) and larger can benefit from slash chord inversions.
+  if (bass_interval <= 1) {
+    return info;
+  }
+
+  // Apply slash chord patterns based on current degree and context.
+  // These patterns are based on standard voice leading practice in pop music.
+  //
+  // Pattern rules (all in C major context):
+  // I (C) -> IV (F): use I/3 = C/E, bass walks E->F (1 semitone step)
+  // I (C) -> vi (Am): use I/3 = C/E, bass walks E to A (approach)
+  // IV (F) -> V (G): use IV/6 = F/A, bass walks A->G (2 semitone step)
+  // V (G) -> I (C): use V/7 = G/B, bass resolves B->C (1 semitone step)
+  // vi (Am) -> IV (F): use vi/3 = Am/C, bass walks C->... (variety)
+  // IV (F) -> I (C): use IV/1 = F/A, bass A walks to G or to C
+
+  // Check each slash chord pattern
+  switch (current_degree) {
+    case 0:  // I chord (C)
+      // I/3 (C/E): works before IV (F) or vi (Am)
+      // Bass E (semitone 4) -> F (semitone 5) = 1 step
+      // Bass E (semitone 4) -> A (semitone 9) = functional approach
+      if (next_degree == 3 || next_degree == 5) {
+        // Third of I chord = E = pitch class 4
+        info.has_override = true;
+        info.bass_note_semitone = (current_root_pc + 4) % 12;  // Major 3rd above root
+        return info;
+      }
+      break;
+
+    case 3:  // IV chord (F)
+      // IV/6 (F/A): works before V (G) or I (C)
+      // Bass A (semitone 9) -> G (semitone 7) = 2 steps down
+      // Bass A (semitone 9) -> C (semitone 0) = functional approach
+      if (next_degree == 4 || next_degree == 0) {
+        // Sixth of IV chord in C major = A = pitch class 9
+        // This is the major 3rd above F (first inversion)
+        info.has_override = true;
+        info.bass_note_semitone = (current_root_pc + 4) % 12;  // Major 3rd = A
+        return info;
+      }
+      break;
+
+    case 4:  // V chord (G)
+      // V/7 (G/B): works before I (C) - leading tone resolution
+      // Bass B (semitone 11) -> C (semitone 0) = 1 step
+      if (next_degree == 0) {
+        // Seventh degree = B = pitch class 11
+        // This is the major 3rd above G
+        info.has_override = true;
+        info.bass_note_semitone = (current_root_pc + 4) % 12;  // Major 3rd = B
+        return info;
+      }
+      break;
+
+    case 5:  // vi chord (Am)
+      // vi/3 (Am/C): first inversion, common voicing
+      // Bass C (semitone 0) creates smooth motion from/to nearby chords
+      if (next_degree == 3 || next_degree == 1 || next_degree == 0) {
+        // Minor 3rd above A = C = pitch class 0
+        info.has_override = true;
+        info.bass_note_semitone = (current_root_pc + 3) % 12;  // Minor 3rd = C
+        return info;
+      }
+      break;
+
+    case 1:  // ii chord (Dm)
+      // ii/3 (Dm/F): bass F before V (G) - stepwise approach
+      // Bass F (semitone 5) -> G (semitone 7) = 2 steps
+      if (next_degree == 4) {
+        info.has_override = true;
+        info.bass_note_semitone = (current_root_pc + 3) % 12;  // Minor 3rd = F
+        return info;
+      }
+      break;
+
+    default:
+      break;
+  }
 
   return info;
 }

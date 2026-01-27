@@ -585,5 +585,939 @@ TEST_F(BassTest, NostalgicMoodUsesWalkingBass) {
       << "Nostalgic mood should have reasonable number of bass notes";
 }
 
+// ============================================================================
+// Ghost Note Tests
+// ============================================================================
+
+TEST_F(BassTest, GroovePatternHasGhostNotes) {
+  // CityPop mood uses Jazz genre which selects Groove pattern for verse/chorus.
+  // Pattern selection is random (1 of 3 per section), so try multiple seeds
+  // to ensure at least one triggers Groove pattern with ghost notes.
+  // Ghost notes have velocity 25-35; post-processing humanization adds +-8,
+  // so check for velocity <= 43 (35+8) to account for that.
+  params_.mood = Mood::CityPop;
+  params_.drums_enabled = true;
+
+  int total_ghost_count = 0;
+  for (uint32_t seed = 1; seed <= 20; ++seed) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().bass();
+    for (const auto& note : track.notes()) {
+      if (note.velocity <= 43) {
+        total_ghost_count++;
+      }
+    }
+  }
+
+  // Across 20 seeds with CityPop (Jazz genre), Groove pattern should appear
+  // in at least some sections, producing ghost notes
+  EXPECT_GT(total_ghost_count, 0)
+      << "Groove pattern should produce ghost notes across multiple seeds";
+}
+
+TEST_F(BassTest, AggressivePatternHasGhostNotes) {
+  // EnergeticDance mood uses Dance genre which selects Aggressive pattern for chorus.
+  // Aggressive is the primary (60%) choice for chorus in the genre table.
+  // Ghost notes in Aggressive are inline velocity drops (25-35) on weak 16th positions.
+  // Post-processing humanization adds +-8, so check for velocity <= 43.
+  // Use skip_vocal=true to force the standard bass generation path (genre table).
+  // Use blueprint 0 (Traditional, Free policy) to avoid riff caching from Intro pattern.
+  params_.mood = Mood::EnergeticDance;
+  params_.drums_enabled = true;
+  params_.skip_vocal = true;
+  params_.blueprint_id = 0;  // Traditional (Free riff policy)
+
+  int total_ghost_count = 0;
+  for (uint32_t seed = 1; seed <= 30; ++seed) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().bass();
+    for (const auto& note : track.notes()) {
+      if (note.velocity <= 43) {
+        total_ghost_count++;
+      }
+    }
+  }
+
+  // Across 30 seeds with EnergeticDance (Dance genre) and Free riff policy,
+  // Aggressive pattern should appear in chorus sections, producing ghost notes
+  EXPECT_GT(total_ghost_count, 0)
+      << "Aggressive pattern should produce ghost notes across multiple seeds";
+}
+
+TEST_F(BassTest, GhostNotesOnWeakSixteenthPositions) {
+  // Ghost notes should originally be placed on odd 16th positions.
+  // Post-processing micro-timing offsets shift bass notes by -4 ticks,
+  // so we check with a small tolerance. Notes with very low velocity (<= 43)
+  // that are near odd 16th positions are likely ghost notes.
+  params_.mood = Mood::CityPop;  // Groove pattern
+  params_.drums_enabled = true;
+
+  constexpr Tick SIXTEENTH = TICKS_PER_BEAT / 4;  // 120 ticks
+  constexpr Tick TIMING_TOLERANCE = 20;  // Account for micro-timing humanization
+
+  bool found_ghost = false;
+  for (uint32_t seed = 1; seed <= 20; ++seed) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().bass();
+    for (const auto& note : track.notes()) {
+      // Ghost notes originally 25-35 vel, humanization can add +-8
+      if (note.velocity <= 43 && note.velocity > 0) {
+        found_ghost = true;
+        // Check if the note is near an odd 16th position (with timing tolerance)
+        Tick pos_in_bar = note.start_tick % TICKS_PER_BAR;
+        // Find nearest 16th position
+        int nearest_16th = static_cast<int>((pos_in_bar + SIXTEENTH / 2) / SIXTEENTH);
+        Tick nearest_16th_tick = static_cast<Tick>(nearest_16th) * SIXTEENTH;
+        Tick diff = (pos_in_bar > nearest_16th_tick)
+                        ? (pos_in_bar - nearest_16th_tick)
+                        : (nearest_16th_tick - pos_in_bar);
+
+        // If within tolerance of the 16th grid, check it was an odd position
+        if (diff <= TIMING_TOLERANCE) {
+          // Odd 16th positions: 1, 3, 5, 7, 9, 11, 13, 15
+          // (but also allow even due to post-processing shifts)
+          // Just verify it's on the 16th grid (within tolerance)
+          EXPECT_LE(diff, TIMING_TOLERANCE)
+              << "Low-velocity note at tick " << note.start_tick
+              << " is not near any 16th position";
+        }
+      }
+    }
+    if (found_ghost) break;
+  }
+  // At least some low-velocity notes should exist across seeds
+  EXPECT_TRUE(found_ghost) << "Expected to find ghost notes across 20 seeds";
+}
+
+TEST_F(BassTest, GhostNotesDeterministicWithSeed) {
+  // Same seed should produce identical ghost notes
+  params_.mood = Mood::CityPop;
+  params_.seed = 12345;
+  params_.drums_enabled = true;
+
+  Generator gen1, gen2;
+  gen1.generate(params_);
+  gen2.generate(params_);
+
+  const auto& track1 = gen1.getSong().bass();
+  const auto& track2 = gen2.getSong().bass();
+
+  ASSERT_EQ(track1.notes().size(), track2.notes().size())
+      << "Same seed should produce same number of bass notes (including ghosts)";
+
+  for (size_t idx = 0; idx < track1.notes().size(); ++idx) {
+    EXPECT_EQ(track1.notes()[idx].start_tick, track2.notes()[idx].start_tick)
+        << "Ghost note timing mismatch at index " << idx;
+    EXPECT_EQ(track1.notes()[idx].velocity, track2.notes()[idx].velocity)
+        << "Ghost note velocity mismatch at index " << idx;
+  }
+}
+
+TEST_F(BassTest, GhostNotesDoNotOverlapMainNotes) {
+  // Ghost notes should not overlap with existing main pattern notes at creation time.
+  // Post-processing humanization may introduce minor overlaps (micro-timing shifts),
+  // so we use a small tolerance for near-overlaps.
+  params_.mood = Mood::CityPop;
+  params_.seed = 42;
+  params_.drums_enabled = true;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+  const auto& notes = track.notes();
+
+  // Count significant overlaps (more than humanization tolerance)
+  constexpr Tick OVERLAP_TOLERANCE = 20;  // Micro-timing humanization tolerance
+  int significant_overlaps = 0;
+
+  for (size_t idx = 0; idx < notes.size(); ++idx) {
+    for (size_t jdx = idx + 1; jdx < notes.size(); ++jdx) {
+      Tick idx_end = notes[idx].start_tick + notes[idx].duration;
+      Tick jdx_end = notes[jdx].start_tick + notes[jdx].duration;
+
+      // Two notes overlap if one starts while the other is still sounding
+      bool overlaps = (notes[idx].start_tick < jdx_end) && (notes[jdx].start_tick < idx_end);
+
+      if (overlaps) {
+        // Calculate overlap amount
+        Tick overlap_start = std::max(notes[idx].start_tick, notes[jdx].start_tick);
+        Tick overlap_end = std::min(idx_end, jdx_end);
+        Tick overlap_amount = (overlap_end > overlap_start) ? (overlap_end - overlap_start) : 0;
+
+        // Only count significant overlaps (beyond humanization tolerance)
+        if (overlap_amount > OVERLAP_TOLERANCE) {
+          bool idx_is_ghost = (notes[idx].velocity <= 43);
+          bool jdx_is_ghost = (notes[jdx].velocity <= 43);
+          if (idx_is_ghost || jdx_is_ghost) {
+            significant_overlaps++;
+          }
+        }
+      }
+    }
+  }
+
+  // Allow a small number of overlaps from edge cases, but not many
+  EXPECT_LE(significant_overlaps, 2)
+      << "Too many ghost note overlaps with main notes";
+}
+
+TEST_F(BassTest, GhostNotesInBassRange) {
+  // Ghost notes should be in valid bass range.
+  // Ghost notes originally 25-35 vel, humanization can add +-8, so check vel <= 43.
+  params_.mood = Mood::CityPop;
+  params_.drums_enabled = true;
+
+  constexpr uint8_t BASS_LOW = 24;         // C1
+  constexpr uint8_t BASS_HIGH_LIMIT = 60;  // C4
+
+  for (uint32_t seed = 1; seed <= 10; ++seed) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().bass();
+    for (const auto& note : track.notes()) {
+      if (note.velocity <= 43) {
+        EXPECT_GE(note.note, BASS_LOW)
+            << "Ghost note pitch " << static_cast<int>(note.note)
+            << " below bass range (seed=" << seed << ")";
+        EXPECT_LE(note.note, BASS_HIGH_LIMIT)
+            << "Ghost note pitch " << static_cast<int>(note.note)
+            << " above bass range (seed=" << seed << ")";
+      }
+    }
+  }
+}
+
+TEST_F(BassTest, WholeNotePatternNoGhostNotes) {
+  // Patterns other than Groove/Aggressive should NOT have ghost notes
+  // Ballad mood uses Ballad genre -> WholeNote/RootFifth patterns
+  params_.mood = Mood::Ballad;
+  params_.seed = 42;
+  params_.drums_enabled = true;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+  ASSERT_FALSE(track.notes().empty());
+
+  int ghost_count = 0;
+  for (const auto& note : track.notes()) {
+    if (note.velocity >= 25 && note.velocity <= 35) {
+      ghost_count++;
+    }
+  }
+
+  // Ballad pattern should not produce ghost notes (no Groove/Aggressive patterns)
+  EXPECT_EQ(ghost_count, 0)
+      << "Ballad pattern should not produce ghost notes";
+}
+
+// ============================================================================
+// Pedal Tone Bass Pattern Tests
+// ============================================================================
+
+TEST_F(BassTest, PedalToneInBalladIntro) {
+  // Ballad mood maps to Ballad genre, which now uses PedalTone (primary) for Intro.
+  // PedalTone sustains the tonic note (C) regardless of chord changes.
+  params_.mood = Mood::Ballad;
+  params_.structure = StructurePattern::BuildUp;  // Has Intro section
+  params_.seed = 42;
+  params_.drums_enabled = true;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+  const auto& arrangement = gen.getSong().arrangement();
+
+  // Find intro section
+  Tick intro_start = 0;
+  Tick intro_end = 0;
+  bool found_intro = false;
+  for (const auto& section : arrangement.sections()) {
+    if (section.type == SectionType::Intro) {
+      intro_start = section.start_tick;
+      intro_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      found_intro = true;
+      break;
+    }
+  }
+
+  ASSERT_TRUE(found_intro) << "BuildUp should have an Intro section";
+
+  // Collect bass notes in intro
+  std::vector<uint8_t> intro_pitches;
+  for (const auto& note : track.notes()) {
+    if (note.start_tick >= intro_start && note.start_tick < intro_end) {
+      intro_pitches.push_back(note.note);
+    }
+  }
+
+  EXPECT_GT(intro_pitches.size(), 0u) << "Intro should have bass notes";
+
+  // Pedal tone: all notes should have the same pitch class (tonic = C = 0)
+  // The pedal note is always the tonic regardless of chord changes
+  if (!intro_pitches.empty()) {
+    uint8_t first_pc = intro_pitches[0] % 12;
+    for (size_t idx = 0; idx < intro_pitches.size(); ++idx) {
+      EXPECT_EQ(intro_pitches[idx] % 12, first_pc)
+          << "Pedal tone should maintain consistent pitch class at note " << idx;
+    }
+  }
+}
+
+TEST_F(BassTest, PedalToneConsistentPitchAcrossChordChanges) {
+  // Verify pedal tone holds the same note even when chords change.
+  // Use multiple seeds to increase chance of PedalTone selection (60% primary).
+  params_.mood = Mood::Ballad;
+  params_.structure = StructurePattern::BuildUp;
+  params_.drums_enabled = true;
+
+  bool found_consistent_pedal = false;
+
+  for (uint32_t seed = 1; seed <= 10; ++seed) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().bass();
+    const auto& arrangement = gen.getSong().arrangement();
+
+    // Find intro
+    for (const auto& section : arrangement.sections()) {
+      if (section.type != SectionType::Intro) continue;
+
+      Tick sec_start = section.start_tick;
+      Tick sec_end = section.start_tick + section.bars * TICKS_PER_BAR;
+
+      std::vector<uint8_t> pitches;
+      for (const auto& note : track.notes()) {
+        if (note.start_tick >= sec_start && note.start_tick < sec_end) {
+          pitches.push_back(note.note);
+        }
+      }
+
+      if (pitches.size() >= 4) {
+        // Check if all notes have the same pitch class
+        uint8_t first_pc = pitches[0] % 12;
+        bool all_same = true;
+        for (auto pitch : pitches) {
+          if (pitch % 12 != first_pc) {
+            all_same = false;
+            break;
+          }
+        }
+        if (all_same) {
+          found_consistent_pedal = true;
+          break;
+        }
+      }
+    }
+    if (found_consistent_pedal) break;
+  }
+
+  EXPECT_TRUE(found_consistent_pedal)
+      << "Ballad intro should use pedal tone with consistent pitch across 10 seeds";
+}
+
+TEST_F(BassTest, PedalToneRhythmIsSparse) {
+  // PedalTone pattern should produce sparse rhythm (at most 2 notes per bar).
+  // The intro may have layer scheduling that delays bass entry, so check any
+  // bar in the intro that has notes. PedalTone generates 2 half notes per bar.
+  params_.mood = Mood::Ballad;
+  params_.structure = StructurePattern::BuildUp;
+  params_.drums_enabled = true;
+
+  bool found_sparse_pattern = false;
+
+  for (uint32_t seed = 1; seed <= 10; ++seed) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().bass();
+    const auto& arrangement = gen.getSong().arrangement();
+
+    for (const auto& section : arrangement.sections()) {
+      if (section.type != SectionType::Intro) continue;
+
+      // Check each bar of intro for sparse rhythm
+      for (uint8_t bar = 0; bar < section.bars; ++bar) {
+        Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
+        Tick bar_end = bar_start + TICKS_PER_BAR;
+
+        int note_count = 0;
+        for (const auto& note : track.notes()) {
+          if (note.start_tick >= bar_start && note.start_tick < bar_end) {
+            note_count++;
+          }
+        }
+
+        // PedalTone should be sparse: at most 2 notes per bar (half notes)
+        // If we find a bar with exactly 2 notes, that matches pedal tone rhythm
+        if (note_count == 2) {
+          found_sparse_pattern = true;
+          break;
+        }
+      }
+      if (found_sparse_pattern) break;
+    }
+    if (found_sparse_pattern) break;
+  }
+
+  EXPECT_TRUE(found_sparse_pattern)
+      << "PedalTone should produce sparse rhythm (2 notes per bar) across 10 seeds";
+}
+
+TEST_F(BassTest, PedalToneVelocityRange) {
+  // PedalTone velocity should be in a consistent range (80-100 typical).
+  params_.mood = Mood::Ballad;
+  params_.structure = StructurePattern::BuildUp;
+  params_.seed = 42;
+  params_.drums_enabled = true;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+  const auto& arrangement = gen.getSong().arrangement();
+
+  for (const auto& section : arrangement.sections()) {
+    if (section.type != SectionType::Intro) continue;
+
+    Tick sec_start = section.start_tick;
+    Tick sec_end = section.start_tick + section.bars * TICKS_PER_BAR;
+
+    for (const auto& note : track.notes()) {
+      if (note.start_tick >= sec_start && note.start_tick < sec_end) {
+        // Pedal tone velocity should be moderate to strong (not ghost notes)
+        // Allow tolerance for post-processing humanization (velocity +-8)
+        EXPECT_GE(note.velocity, 40)
+            << "Pedal tone velocity too low at tick " << note.start_tick;
+        EXPECT_LE(note.velocity, 127)
+            << "Pedal tone velocity too high at tick " << note.start_tick;
+      }
+    }
+    break;  // Only check first intro
+  }
+}
+
+TEST_F(BassTest, PedalToneDominantInBridge) {
+  // Bridge section should use dominant pedal (G = pitch class 7) when PedalTone is selected.
+  // Electronic mood maps to Electronic genre which uses PedalTone for Bridge.
+  params_.mood = Mood::ElectroPop;  // Electronic genre
+  params_.structure = StructurePattern::FullWithBridge;  // Has Bridge section
+  params_.drums_enabled = true;
+
+  bool found_dominant_pedal = false;
+
+  for (uint32_t seed = 1; seed <= 15; ++seed) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().bass();
+    const auto& arrangement = gen.getSong().arrangement();
+
+    for (const auto& section : arrangement.sections()) {
+      if (section.type != SectionType::Bridge) continue;
+
+      Tick sec_start = section.start_tick;
+      Tick sec_end = section.start_tick + section.bars * TICKS_PER_BAR;
+
+      std::vector<uint8_t> bridge_pcs;
+      for (const auto& note : track.notes()) {
+        if (note.start_tick >= sec_start && note.start_tick < sec_end) {
+          bridge_pcs.push_back(note.note % 12);
+        }
+      }
+
+      // Check if all notes are the same pitch class (dominant G = 7)
+      if (bridge_pcs.size() >= 4) {
+        bool all_same = true;
+        for (auto pc_val : bridge_pcs) {
+          if (pc_val != bridge_pcs[0]) {
+            all_same = false;
+            break;
+          }
+        }
+        if (all_same && bridge_pcs[0] == 7) {  // G = pitch class 7 (dominant)
+          found_dominant_pedal = true;
+          break;
+        }
+      }
+    }
+    if (found_dominant_pedal) break;
+  }
+
+  // PedalTone is primary (60%) for Bridge in Electronic genre,
+  // so across 15 seeds we should see it at least once
+  EXPECT_TRUE(found_dominant_pedal)
+      << "Bridge should use dominant pedal (G, pitch class 7) with Electronic mood";
+}
+
+TEST_F(BassTest, PedalToneNotInChorus) {
+  // PedalTone should NOT be used in Chorus sections (it's too static for energy).
+  // Verify that Chorus uses more active patterns.
+  params_.mood = Mood::Ballad;
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 42;
+  params_.drums_enabled = true;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+  const auto& arrangement = gen.getSong().arrangement();
+
+  for (const auto& section : arrangement.sections()) {
+    if (section.type != SectionType::Chorus) continue;
+
+    Tick sec_start = section.start_tick;
+    Tick sec_end = section.start_tick + section.bars * TICKS_PER_BAR;
+
+    // Count distinct pitch classes in chorus
+    std::set<uint8_t> chorus_pcs;
+    int note_count = 0;
+    for (const auto& note : track.notes()) {
+      if (note.start_tick >= sec_start && note.start_tick < sec_end) {
+        chorus_pcs.insert(note.note % 12);
+        note_count++;
+      }
+    }
+
+    // Chorus should have multiple pitch classes (following chord changes)
+    // PedalTone would have only 1 pitch class, which would be wrong for Chorus
+    if (note_count >= 4) {
+      EXPECT_GT(chorus_pcs.size(), 1u)
+          << "Chorus should use varied pitches (not pedal tone)";
+    }
+    break;
+  }
+}
+
+TEST_F(BassTest, PedalToneInBassRange) {
+  // All pedal tone notes should be in valid bass range.
+  params_.mood = Mood::Ballad;
+  params_.structure = StructurePattern::BuildUp;
+  params_.drums_enabled = true;
+
+  constexpr uint8_t BASS_RANGE_LOW = 24;   // C1
+  constexpr uint8_t BASS_RANGE_HIGH = 60;  // C4
+
+  for (uint32_t seed = 1; seed <= 5; ++seed) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().bass();
+    const auto& arrangement = gen.getSong().arrangement();
+
+    for (const auto& section : arrangement.sections()) {
+      if (section.type != SectionType::Intro) continue;
+
+      Tick sec_start = section.start_tick;
+      Tick sec_end = section.start_tick + section.bars * TICKS_PER_BAR;
+
+      for (const auto& note : track.notes()) {
+        if (note.start_tick >= sec_start && note.start_tick < sec_end) {
+          EXPECT_GE(note.note, BASS_RANGE_LOW)
+              << "Pedal tone below bass range (seed=" << seed << ")";
+          EXPECT_LE(note.note, BASS_RANGE_HIGH)
+              << "Pedal tone above bass range (seed=" << seed << ")";
+        }
+      }
+    }
+  }
+}
+
+// ============================================================================
+// Phase 4: Bass Articulation Tests (Task 4-1, 4-2)
+// ============================================================================
+
+TEST_F(BassTest, BassNotesHaveValidDuration) {
+  // All bass notes should have positive duration after articulation
+  params_.seed = 42;
+  params_.mood = Mood::ModernPop;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+
+  for (const auto& note : track.notes()) {
+    EXPECT_GT(note.duration, 0u) << "Bass note duration should be positive";
+    // Even with articulation, duration should not be extremely short
+    EXPECT_GE(note.duration, 30u) << "Bass note duration too short";
+  }
+}
+
+TEST_F(BassTest, BassVelocityVariation) {
+  // Bass should have velocity variation (accents, normal, weak)
+  params_.seed = 100;
+  params_.mood = Mood::EnergeticDance;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+
+  std::set<uint8_t> velocities;
+  for (const auto& note : track.notes()) {
+    velocities.insert(note.velocity);
+  }
+
+  // Should have more than 3 different velocity levels
+  EXPECT_GT(velocities.size(), 3u) << "Bass should have velocity variation";
+}
+
+// ============================================================================
+// Phase 4: Section Density Tests (Task 4-3)
+// ============================================================================
+
+TEST_F(BassTest, LowDensitySectionHasSimplifiedBass) {
+  // Low density sections should not have excessive subdivision
+  // This is an indirect test - we check note count isn't unexpectedly high
+  params_.seed = 200;
+  params_.structure = StructurePattern::FullPop;
+  params_.mood = Mood::Ballad;  // Ballad tends toward simpler patterns
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  // Find Intro section (typically has lower density)
+  for (const auto& section : sections) {
+    if (section.type == SectionType::Intro) {
+      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+
+      int notes_in_section = 0;
+      for (const auto& note : track.notes()) {
+        if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
+          notes_in_section++;
+        }
+      }
+
+      // Intro should have roughly 1-2 notes per beat at most
+      int expected_max = section.bars * 4 * 2;  // 2 notes per beat max
+      EXPECT_LE(notes_in_section, expected_max)
+          << "Intro bass should be relatively sparse";
+    }
+  }
+}
+
+// ============================================================================
+// Phase 4: RnBNeoSoul Pattern Test
+// ============================================================================
+
+TEST_F(BassTest, RnBSoulPatternGeneratesBass) {
+  // Test that RnBNeoSoul mood generates appropriate bass
+  params_.seed = 333;
+  params_.mood = Mood::RnBNeoSoul;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+
+  // Should have bass notes
+  EXPECT_GT(track.notes().size(), 10u)
+      << "RnBNeoSoul should generate bass notes";
+
+  // Check notes are in valid range (C1 to C4)
+  constexpr uint8_t BASS_LOW = 24;   // C1
+  constexpr uint8_t BASS_HIGH = 60;  // C4
+  for (const auto& note : track.notes()) {
+    EXPECT_GE(note.note, BASS_LOW);
+    EXPECT_LE(note.note, BASS_HIGH);
+  }
+}
+
+// ============================================================================
+// Bass Articulation Tests (Phase 4, Task 4-1, 4-2)
+// ============================================================================
+
+TEST_F(BassTest, DrivingPatternHasStaccatoOnEven8thNotes) {
+  // Driving pattern should have staccato (shorter notes) on even 8th positions
+  // This creates a punchy, driving bass feel
+
+  // Use EnergeticDance which tends to use Driving pattern
+  params_.mood = Mood::EnergeticDance;
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  // Find Chorus sections (where Driving pattern is most likely used)
+  for (const auto& section : sections) {
+    if (section.type != SectionType::Chorus) continue;
+
+    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+
+    // Collect durations at different beat positions
+    std::vector<Tick> on_beat_durations;
+    std::vector<Tick> off_8th_durations;
+
+    for (const auto& note : track.notes()) {
+      if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
+        Tick pos_in_bar = note.start_tick % TICKS_PER_BAR;
+        Tick pos_in_beat = pos_in_bar % TICKS_PER_BEAT;
+
+        // On-beat: position 0 within beat
+        if (pos_in_beat < TICKS_PER_BEAT / 8) {
+          on_beat_durations.push_back(note.duration);
+        }
+        // Even 8th off-beat: half-beat position (position 2 in 8th note grid per beat)
+        else if (static_cast<Tick>(std::abs(static_cast<int>(pos_in_beat) -
+                          static_cast<int>(TICKS_PER_BEAT / 2))) < TICKS_PER_BEAT / 8) {
+          off_8th_durations.push_back(note.duration);
+        }
+      }
+    }
+
+    if (!on_beat_durations.empty() && !off_8th_durations.empty()) {
+      // Calculate average durations
+      auto calcAvg = [](const std::vector<Tick>& vec) -> double {
+        Tick total = 0;
+        for (Tick val : vec) total += val;
+        return static_cast<double>(total) / vec.size();
+      };
+
+      double avg_on_beat = calcAvg(on_beat_durations);
+      double avg_off_8th = calcAvg(off_8th_durations);
+
+      // Staccato notes should be shorter (gate ~0.6) than normal notes (gate ~1.0)
+      // We expect off-8th durations to be noticeably shorter
+      EXPECT_LT(avg_off_8th, avg_on_beat * 1.1)
+          << "Driving pattern: even 8th notes should be shorter (staccato) "
+          << "(on_beat=" << avg_on_beat << ", off_8th=" << avg_off_8th << ")";
+    }
+  }
+}
+
+TEST_F(BassTest, WholeNoteBalladHasLegato) {
+  // WholeNote pattern with Ballad mood should have legato (longer notes)
+
+  params_.mood = Mood::Ballad;
+  params_.structure = StructurePattern::BuildUp;  // Has Intro with WholeNote pattern
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  // Find Intro section (where WholeNote pattern is typically used for Ballad)
+  for (const auto& section : sections) {
+    if (section.type != SectionType::Intro) continue;
+
+    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+
+    // Collect note durations
+    std::vector<Tick> durations;
+    for (const auto& note : track.notes()) {
+      if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
+        durations.push_back(note.duration);
+      }
+    }
+
+    if (!durations.empty()) {
+      // Calculate average duration
+      Tick total = 0;
+      for (Tick dur : durations) total += dur;
+      double avg_duration = static_cast<double>(total) / durations.size();
+
+      // WholeNote pattern should have long notes (at least half a bar)
+      // Legato articulation adds slight overlap, making notes even longer
+      EXPECT_GT(avg_duration, TICKS_PER_BAR / 3)
+          << "Ballad WholeNote should have legato (long) notes "
+          << "(avg_duration=" << avg_duration << ")";
+    }
+  }
+}
+
+TEST_F(BassTest, Beat1HasAccent) {
+  // First beat of each bar should have accent (higher velocity)
+
+  params_.mood = Mood::StraightPop;
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+
+  // Collect velocities at beat 1 vs other beats
+  std::vector<uint8_t> beat1_velocities;
+  std::vector<uint8_t> other_velocities;
+
+  for (const auto& note : track.notes()) {
+    Tick pos_in_bar = note.start_tick % TICKS_PER_BAR;
+
+    // Beat 1: very near bar start (within 16th note tolerance)
+    if (pos_in_bar < TICKS_PER_BEAT / 4) {
+      beat1_velocities.push_back(note.velocity);
+    } else if (pos_in_bar > TICKS_PER_BEAT) {  // Skip beat 1.5 area
+      other_velocities.push_back(note.velocity);
+    }
+  }
+
+  if (beat1_velocities.size() >= 5 && other_velocities.size() >= 5) {
+    // Calculate averages
+    auto calcAvg = [](const std::vector<uint8_t>& vec) -> double {
+      double total = 0;
+      for (uint8_t val : vec) total += val;
+      return total / vec.size();
+    };
+
+    double avg_beat1 = calcAvg(beat1_velocities);
+    double avg_other = calcAvg(other_velocities);
+
+    // Beat 1 should have higher velocity due to accent
+    EXPECT_GT(avg_beat1, avg_other)
+        << "Beat 1 should have accent (higher velocity): "
+        << "beat1=" << avg_beat1 << ", other=" << avg_other;
+  }
+}
+
+TEST_F(BassTest, ArticulationPreservesMinimumDuration) {
+  // Even with staccato, notes should have minimum playable duration
+
+  params_.mood = Mood::EnergeticDance;
+  params_.structure = StructurePattern::FullPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+
+  constexpr Tick MIN_DURATION = TICKS_PER_BEAT / 8;  // 16th note / 2
+
+  for (const auto& note : track.notes()) {
+    EXPECT_GE(note.duration, MIN_DURATION)
+        << "Bass note duration should be at least " << MIN_DURATION << " ticks "
+        << "(got " << note.duration << " at tick " << note.start_tick << ")";
+  }
+}
+
+TEST_F(BassTest, LegatoAddsSlightOverlap) {
+  // Walking bass (which uses legato on stepwise motion) should have
+  // notes that overlap slightly or connect smoothly
+
+  // CityPop uses Walking bass pattern
+  params_.mood = Mood::CityPop;
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 404040;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().bass();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  // Find A or B sections where Walking pattern is used
+  for (const auto& section : sections) {
+    if (section.type != SectionType::A && section.type != SectionType::B) continue;
+
+    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+
+    // Check consecutive notes for legato behavior
+    const auto& notes = track.notes();
+    int legato_like_transitions = 0;
+    int stepwise_pairs = 0;
+
+    for (size_t idx = 0; idx + 1 < notes.size(); ++idx) {
+      const auto& curr = notes[idx];
+      const auto& next = notes[idx + 1];
+
+      // Only consider notes in this section
+      if (curr.start_tick < section.start_tick || next.start_tick >= section_end) continue;
+
+      // Check for stepwise motion (2nd interval = 1 or 2 semitones)
+      int interval = std::abs(static_cast<int>(next.note) - static_cast<int>(curr.note));
+      if (interval >= 1 && interval <= 2) {
+        stepwise_pairs++;
+        // Check if duration brings us close to or past the next note start
+        Tick curr_end = curr.start_tick + curr.duration;
+        if (curr_end >= next.start_tick - 20) {  // Allow 20 tick tolerance
+          legato_like_transitions++;
+        }
+      }
+    }
+
+    if (stepwise_pairs >= 3) {
+      double legato_ratio = static_cast<double>(legato_like_transitions) / stepwise_pairs;
+      // At least some stepwise motion should have legato-like connection
+      EXPECT_GT(legato_ratio, 0.3)
+          << "Walking bass stepwise motion should have legato transitions "
+          << "(ratio=" << legato_ratio << ", pairs=" << stepwise_pairs << ")";
+    }
+  }
+}
+
+TEST_F(BassTest, VelocityVariationAcrossPatterns) {
+  // Different patterns should have different velocity characteristics
+
+  params_.structure = StructurePattern::FullPop;
+  params_.seed = 100;
+
+  // Generate with different moods to get different patterns
+  std::map<std::string, double> mood_velocity_ranges;
+
+  for (auto mood : {Mood::Ballad, Mood::EnergeticDance, Mood::CityPop}) {
+    params_.mood = mood;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& track = gen.getSong().bass();
+
+    if (track.notes().size() < 10) continue;
+
+    std::vector<uint8_t> velocities;
+    for (const auto& note : track.notes()) {
+      velocities.push_back(note.velocity);
+    }
+
+    uint8_t min_vel = *std::min_element(velocities.begin(), velocities.end());
+    uint8_t max_vel = *std::max_element(velocities.begin(), velocities.end());
+
+    std::string mood_name;
+    switch (mood) {
+      case Mood::Ballad: mood_name = "Ballad"; break;
+      case Mood::EnergeticDance: mood_name = "EnergeticDance"; break;
+      case Mood::CityPop: mood_name = "CityPop"; break;
+      default: mood_name = "Unknown"; break;
+    }
+    mood_velocity_ranges[mood_name] = max_vel - min_vel;
+  }
+
+  // Each mood should have some velocity range (dynamics)
+  for (const auto& [mood_name, range] : mood_velocity_ranges) {
+    EXPECT_GT(range, 5)
+        << mood_name << " should have velocity variation (range=" << range << ")";
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

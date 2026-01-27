@@ -17,7 +17,7 @@ namespace midisketch {
 constexpr uint8_t STRUCTURE_COUNT = 18;
 
 // Number of available mood presets
-constexpr uint8_t MOOD_COUNT = 20;
+constexpr uint8_t MOOD_COUNT = 24;
 
 // Number of available chord progressions (20 x 4-chord + 2 x 5-chord)
 constexpr uint8_t CHORD_COUNT = 22;
@@ -35,7 +35,9 @@ enum class DrumStyle : uint8_t {
   FourOnFloor,  // Dance/EDM - kick on every beat
   Upbeat,       // Energetic - syncopated, driving
   Rock,         // Rock patterns - crash accents, ride cymbal
-  Synth         // Synth-oriented - tight 16th hi-hats, punchy kick
+  Synth,        // Synth-oriented - tight 16th hi-hats, punchy kick
+  Trap,         // Trap - half-time snare (beat 3), hi-hat rolls
+  Latin         // Latin - dembow rhythm (characteristic kick-snare pattern)
 };
 
 // Drum groove feel for hi-hat timing
@@ -62,6 +64,10 @@ enum class BassGenre : uint8_t {
   Electronic,  // Sidechain pulse, modern EDM (SidechainPulse)
   Jazz,        // Walking bass, groove (Groove, Walking)
   Idol,        // Bright, energetic (Driving, OctaveJump)
+  RnB,         // R&B/Neo-Soul (Groove, chromatic approach, rootless voicing)
+  Latin,       // Latin (Tresillo 3+3+2 pattern)
+  Trap808,     // Trap (long sustained 808 sub-bass)
+  Lofi,        // Lo-fi (simple patterns, heavy swing, low velocity)
   COUNT
 };
 
@@ -78,7 +84,10 @@ enum class BassPatternId : uint8_t {
   Aggressive = 7,
   SidechainPulse = 8,
   Groove = 9,
-  OctaveJump = 10
+  OctaveJump = 10,
+  PedalTone = 11,
+  Tresillo = 12,     // Latin 3+3+2 pattern
+  SubBass808 = 13    // Trap long sustained 808 sub-bass
 };
 
 // Section indices for bass pattern table

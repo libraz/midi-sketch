@@ -57,6 +57,13 @@ enum class BeatStrength : uint8_t {
   VeryWeak  ///< 16th note subdivisions
 };
 
+/// @brief Pentatonic scale mode selection.
+enum class PentatonicMode : uint8_t {
+  Major,  ///< Major pentatonic (yonanuki): C D E G A
+  Minor,  ///< Minor pentatonic: C Eb F G Bb
+  Blues    ///< Blues scale: C Eb F F# G Bb
+};
+
 /**
  * @brief Configuration for melodic embellishment.
  *
@@ -76,7 +83,8 @@ struct EmbellishmentConfig {
   float tension_ratio = 0.0f;    ///< Ratio of tension usage (replaces some CTs)
 
   // === Style Modifiers ===
-  bool prefer_pentatonic = true;    ///< Prefer pentatonic scale (J-POP characteristic)
+  bool prefer_pentatonic = true;            ///< Prefer pentatonic scale (J-POP characteristic)
+  PentatonicMode pentatonic_mode = PentatonicMode::Major;  ///< Which pentatonic scale to use
   bool chromatic_approach = false;  ///< Allow chromatic approach notes
   float syncopation_level = 0.3f;   ///< Likelihood of syncopation (0.0-1.0)
 
@@ -223,6 +231,16 @@ class MelodicEmbellisher {
    * @return true if in pentatonic scale
    */
   static bool isInPentatonic(int pitch_class, int key_offset = 0);
+
+  /**
+   * @brief Check if a pitch class is in a specific pentatonic mode.
+   *
+   * @param pitch_class Pitch class (0-11)
+   * @param key_offset Key offset from C (0=C, 2=D, etc.)
+   * @param mode Pentatonic mode (Major, Minor, or Blues)
+   * @return true if in the specified pentatonic scale
+   */
+  static bool isInPentatonicMode(int pitch_class, int key_offset, PentatonicMode mode);
 
   /**
    * @brief Check if a pitch class is a scale tone.

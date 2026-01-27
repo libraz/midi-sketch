@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include "core/emotion_curve.h"
 #include "core/midi_track.h"
 
 namespace midisketch {
@@ -359,34 +360,47 @@ TEST(VelocityTest, CalculateEffectiveVelocityEnergyEffect) {
 
 TEST(VelocityTest, BarVelocityMultiplier4BarPhrasePattern) {
   // For non-Chorus/B sections, the 4-bar phrase pattern should be:
-  // bar 0 -> 0.85, bar 1 -> 0.90, bar 2 -> 0.95, bar 3 -> 1.00
+  // bar 0 -> 0.75, bar 1 -> 0.833, bar 2 -> 0.917, bar 3 -> 1.00
   // (section_curve is 1.0 for non-Chorus/B types)
-  EXPECT_FLOAT_EQ(getBarVelocityMultiplier(0, 4, SectionType::A), 0.85f);
-  EXPECT_FLOAT_EQ(getBarVelocityMultiplier(1, 4, SectionType::A), 0.90f);
-  EXPECT_FLOAT_EQ(getBarVelocityMultiplier(2, 4, SectionType::A), 0.95f);
-  EXPECT_FLOAT_EQ(getBarVelocityMultiplier(3, 4, SectionType::A), 1.00f);
+  // Wider range (0.75→1.00) for more audible dynamic shaping
+  float bar0 = getBarVelocityMultiplier(0, 4, SectionType::A);
+  float bar1 = getBarVelocityMultiplier(1, 4, SectionType::A);
+  float bar2 = getBarVelocityMultiplier(2, 4, SectionType::A);
+  float bar3 = getBarVelocityMultiplier(3, 4, SectionType::A);
+  EXPECT_NEAR(bar0, 0.75f, 0.01f);
+  EXPECT_NEAR(bar1, 0.833f, 0.01f);
+  EXPECT_NEAR(bar2, 0.917f, 0.01f);
+  EXPECT_NEAR(bar3, 1.00f, 0.01f);
+  // Monotonically increasing
+  EXPECT_LT(bar0, bar1);
+  EXPECT_LT(bar1, bar2);
+  EXPECT_LT(bar2, bar3);
 }
 
 TEST(VelocityTest, BarVelocityMultiplier4BarPhrasePatternRepeats) {
   // The 4-bar phrase pattern should repeat for longer sections
   // Bar 4 should behave like bar 0, bar 5 like bar 1, etc.
-  EXPECT_FLOAT_EQ(getBarVelocityMultiplier(4, 8, SectionType::A), 0.85f);
-  EXPECT_FLOAT_EQ(getBarVelocityMultiplier(5, 8, SectionType::A), 0.90f);
-  EXPECT_FLOAT_EQ(getBarVelocityMultiplier(6, 8, SectionType::A), 0.95f);
-  EXPECT_FLOAT_EQ(getBarVelocityMultiplier(7, 8, SectionType::A), 1.00f);
+  float bar4 = getBarVelocityMultiplier(4, 8, SectionType::A);
+  float bar5 = getBarVelocityMultiplier(5, 8, SectionType::A);
+  float bar6 = getBarVelocityMultiplier(6, 8, SectionType::A);
+  float bar7 = getBarVelocityMultiplier(7, 8, SectionType::A);
+  EXPECT_NEAR(bar4, 0.75f, 0.01f);
+  EXPECT_NEAR(bar5, 0.833f, 0.01f);
+  EXPECT_NEAR(bar6, 0.917f, 0.01f);
+  EXPECT_NEAR(bar7, 1.00f, 0.01f);
 }
 
 TEST(VelocityTest, BarVelocityMultiplierChorusCrescendo) {
   // In an 8-bar Chorus, bar 0 should have a lower multiplier than bar 7
-  // due to section-level crescendo (0.92 + 0.16 * progress)
+  // due to section-level crescendo (0.88 + 0.24 * progress)
   int total_bars = 8;
   float mult_bar0 = getBarVelocityMultiplier(0, total_bars, SectionType::Chorus);
   float mult_bar7 = getBarVelocityMultiplier(7, total_bars, SectionType::Chorus);
   EXPECT_LT(mult_bar0, mult_bar7);
 
-  // Bar 0: phrase_curve=0.85, section_curve=0.92 -> 0.85*0.92 = 0.782
-  // Bar 7: phrase_curve=1.00, section_curve=0.92+0.16*(7/8) -> 1.00*1.06 = 1.06
-  EXPECT_LT(mult_bar0, 0.80f);
+  // Bar 0: phrase_curve=0.75, section_curve=0.88 -> 0.75*0.88 = 0.66
+  // Bar 7: phrase_curve=1.00, section_curve=0.88+0.24*(7/8) -> 1.00*1.09 = 1.09
+  EXPECT_LT(mult_bar0, 0.70f);
   EXPECT_GT(mult_bar7, 1.00f);
 }
 
@@ -466,6 +480,117 @@ TEST(VelocityTest, ApplyBarVelocityCurveEmptyTrack) {
   // Should not crash on empty track
   applyBarVelocityCurve(track, section);
   EXPECT_TRUE(track.notes().empty());
+}
+
+// ============================================================================
+// EmotionCurve Integration Tests (Task 3.5)
+// ============================================================================
+
+TEST(VelocityTest, CalculateVelocityCeilingLowTension) {
+  // Low tension (0.0-0.3) should reduce ceiling to 80-100% of base
+  uint8_t base = 100;
+  uint8_t ceiling_0 = calculateVelocityCeiling(base, 0.0f);
+  uint8_t ceiling_03 = calculateVelocityCeiling(base, 0.3f);
+
+  EXPECT_LE(ceiling_0, 80);  // At tension 0.0, ceiling is ~80%
+  EXPECT_LE(ceiling_03, 100);
+  EXPECT_GE(ceiling_03, ceiling_0);  // Ceiling increases with tension
+}
+
+TEST(VelocityTest, CalculateVelocityCeilingMediumTension) {
+  // Medium tension (0.3-0.7) should have ceiling at 100%
+  uint8_t base = 100;
+  uint8_t ceiling = calculateVelocityCeiling(base, 0.5f);
+  EXPECT_EQ(ceiling, base);
+}
+
+TEST(VelocityTest, CalculateVelocityCeilingHighTension) {
+  // High tension (0.7-1.0) allows ceiling up to 120% of base
+  uint8_t base = 100;
+  uint8_t ceiling_07 = calculateVelocityCeiling(base, 0.7f);
+  uint8_t ceiling_10 = calculateVelocityCeiling(base, 1.0f);
+
+  EXPECT_GE(ceiling_07, 100);
+  EXPECT_GT(ceiling_10, ceiling_07);  // Ceiling increases with tension
+  EXPECT_LE(ceiling_10, 127);  // Capped at MIDI max
+}
+
+TEST(VelocityTest, CalculateEnergyAdjustedVelocityLowEnergy) {
+  // Low energy should reduce velocity
+  uint8_t base = 100;
+  uint8_t adjusted_0 = calculateEnergyAdjustedVelocity(base, 0.0f);
+  uint8_t adjusted_03 = calculateEnergyAdjustedVelocity(base, 0.3f);
+
+  EXPECT_LT(adjusted_0, base);  // Low energy reduces velocity
+  EXPECT_GE(adjusted_03, adjusted_0);
+}
+
+TEST(VelocityTest, CalculateEnergyAdjustedVelocityHighEnergy) {
+  // High energy should boost velocity
+  uint8_t base = 100;
+  uint8_t adjusted_07 = calculateEnergyAdjustedVelocity(base, 0.7f);
+  uint8_t adjusted_10 = calculateEnergyAdjustedVelocity(base, 1.0f);
+
+  EXPECT_GE(adjusted_07, base);  // Starts at 100%
+  EXPECT_GT(adjusted_10, adjusted_07);  // Higher energy = higher velocity
+}
+
+TEST(VelocityTest, CalculateEnergyDensityMultiplier) {
+  // Low energy should reduce density
+  float density_low = calculateEnergyDensityMultiplier(1.0f, 0.1f);
+  EXPECT_LT(density_low, 1.0f);
+
+  // High energy should increase density
+  float density_high = calculateEnergyDensityMultiplier(1.0f, 0.9f);
+  EXPECT_GT(density_high, 1.0f);
+
+  // Results should be clamped
+  EXPECT_GE(density_low, 0.5f);
+  EXPECT_LE(density_high, 1.5f);
+}
+
+TEST(VelocityTest, GetChordTonePreferenceBoost) {
+  // Low resolution need should allow non-chord tones
+  float boost_low = getChordTonePreferenceBoost(0.1f);
+  EXPECT_FLOAT_EQ(boost_low, 0.0f);
+
+  // High resolution need should favor chord tones
+  float boost_high = getChordTonePreferenceBoost(0.9f);
+  EXPECT_GT(boost_high, 0.15f);
+  EXPECT_LE(boost_high, 0.3f);
+}
+
+TEST(VelocityTest, CalculateEmotionAwareVelocityWithoutEmotion) {
+  Section section;
+  section.type = SectionType::Chorus;
+  section.energy = SectionEnergy::High;
+  section.peak_level = PeakLevel::None;
+  section.base_velocity = 80;
+
+  // Without emotion, should match calculateEffectiveVelocity
+  uint8_t effective = calculateEffectiveVelocity(section, 0, Mood::StraightPop);
+  uint8_t emotion_aware = calculateEmotionAwareVelocity(section, 0, Mood::StraightPop, nullptr);
+
+  EXPECT_EQ(emotion_aware, effective);
+}
+
+TEST(VelocityTest, CalculateEmotionAwareVelocityWithHighTension) {
+  Section section;
+  section.type = SectionType::B;
+  section.energy = SectionEnergy::High;
+  section.peak_level = PeakLevel::None;
+  section.base_velocity = 90;
+
+  // Create high-tension emotion
+  SectionEmotion emotion;
+  emotion.tension = 0.9f;
+  emotion.energy = 0.8f;
+
+  uint8_t velocity = calculateEmotionAwareVelocity(section, 0, Mood::StraightPop, &emotion);
+
+  // Should be boosted due to high energy
+  EXPECT_GE(velocity, 80);
+  EXPECT_LE(velocity, 127);
 }
 
 }  // namespace

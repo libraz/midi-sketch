@@ -385,6 +385,14 @@ class Generator {
    */
   void applyStaggeredEntryToSections();
 
+  /** @brief Apply layer schedule to remove notes from inactive bars.
+   *
+   *  For sections with layer_events, removes notes from bars where the
+   *  corresponding track is not yet active (or has been removed).
+   *  Works as post-processing after all tracks are generated.
+   */
+  void applyLayerSchedule();
+
   /** @brief Resolve chord-arpeggio clashes for BGM-only mode. */
   void resolveArpeggioChordClashes();
 
@@ -403,6 +411,10 @@ class Generator {
 
   /** @brief Apply humanization to all melodic tracks. */
   void applyHumanization();
+
+  /** @brief Generate CC11 Expression curves for melodic tracks.
+   *  Adds section-based expression curves to vocal, bass, and chord tracks. */
+  void generateExpressionCurves();
 
   /**
    * @brief Resolve seed value (0 = generate from system clock).

@@ -235,10 +235,10 @@ TEST(GetSwingOffsetContinuousTest, StraightGrooveReturnsZero) {
 
 TEST(GetSwingOffsetContinuousTest, SwingGrooveAppliesOffset) {
   // Swing groove in Chorus (swing amount 0.5)
-  // offset = subdivision * swing_amount = 240 * 0.5 = 120
+  // Triplet-grid offset = 80 * swing_amount = 80 * 0.5 = 40
   Tick offset = getSwingOffsetContinuous(DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2,
                                           SectionType::Chorus, 0, 8);
-  EXPECT_EQ(offset, 120) << "Chorus swing offset should be 120 ticks";
+  EXPECT_EQ(offset, 40) << "Chorus swing offset should be 40 ticks (triplet grid)";
 }
 
 TEST(GetSwingOffsetContinuousTest, ShuffleAmplifiesSwing) {
@@ -310,9 +310,9 @@ TEST(GetSwingOffsetContinuousTest, OverridePassedToSwingCalculation) {
       DrumGrooveFeel::Swing, TICKS_PER_BEAT / 2, SectionType::A, 0, 8, -1.0f);
 
   // A section default at bar 0 is ~0.3, override is 0.5
-  // offset = 240 * swing_amount, so 240 * 0.5 = 120 vs 240 * 0.3 = 72
-  EXPECT_EQ(offset_with_override, 120) << "Override 0.5 should give 120 ticks";
-  EXPECT_NEAR(offset_section_default, 72, 5) << "Section default should give ~72 ticks";
+  // Triplet-grid offset = 80 * swing_amount: 80 * 0.5 = 40 vs 80 * 0.3 = 24
+  EXPECT_EQ(offset_with_override, 40) << "Override 0.5 should give 40 ticks (triplet grid)";
+  EXPECT_NEAR(offset_section_default, 24, 2) << "Section default should give ~24 ticks (triplet grid)";
 }
 
 // ============================================================================

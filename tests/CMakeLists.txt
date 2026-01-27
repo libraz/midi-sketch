@@ -36,9 +36,11 @@ set(TEST_SOURCES
   core/chord_utils_test.cpp
   core/melody_templates_test.cpp
   core/melody_evaluator_test.cpp
+  core/melody_embellishment_test.cpp
   core/piano_roll_test.cpp
   core/music_theory_test.cpp
   core/velocity_test.cpp
+  core/post_processor_test.cpp
   core/modulation_calculator_test.cpp
   core/modulation_bgm_test.cpp
   core/modulation_vocal_range_test.cpp
@@ -47,11 +49,18 @@ set(TEST_SOURCES
   core/production_blueprint_test.cpp
   core/euclidean_rhythm_test.cpp
   core/staggered_entry_test.cpp
+  core/layer_schedule_test.cpp
   core/emotion_curve_test.cpp
   core/harmonic_rhythm_test.cpp
+  core/harmonic_rhythm_subdivision_test.cpp
+  core/swing_quantize_test.cpp
+  core/exit_pattern_test.cpp
   core/secondary_dominant_test.cpp
+  core/slash_chord_test.cpp
   core/motif_motion_test.cpp
+  core/genre_expansion_test.cpp
   midi/midi_writer_smf1_test.cpp
+  midi/cc_event_test.cpp
   midi/midi_reader_test.cpp
   midi/midi_validator_test.cpp
   midi/ump_test.cpp

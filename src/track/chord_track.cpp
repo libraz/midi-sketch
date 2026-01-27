@@ -946,6 +946,7 @@ bool allowsAnticipation(SectionType section) {
     case SectionType::B:
     case SectionType::Chorus:
     case SectionType::MixBreak:
+    case SectionType::Drop:  // Drop allows anticipation for energy
       return true;
     case SectionType::A:
     case SectionType::Bridge:
@@ -1075,6 +1076,16 @@ ChordRhythm selectRhythm(SectionType section, Mood mood, BackingDensity backing_
         weights = {0.60f, 0.40f, 0.0f};
       } else {
         allowed = {ChordRhythm::Quarter, ChordRhythm::Eighth};
+        weights = {0.60f, 0.40f, 0.0f};
+      }
+      break;
+    case SectionType::Drop:
+      // Drop section: energetic patterns for EDM feel (like MixBreak but slightly denser)
+      if (is_energetic) {
+        allowed = {ChordRhythm::Eighth, ChordRhythm::Quarter};
+        weights = {0.70f, 0.30f, 0.0f};
+      } else {
+        allowed = {ChordRhythm::Quarter, ChordRhythm::Half};
         weights = {0.60f, 0.40f, 0.0f};
       }
       break;
@@ -1236,32 +1247,83 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
 
       // Harmonic rhythm: determine chord index
+      // When subdivision=2, use subdivided indexing (bar*2 for first half)
       int chord_idx;
       if (harmonic.density == HarmonicDensity::Slow) {
         // Slow: chord changes every 2 bars
         chord_idx = (bar / 2) % effective_prog_length;
+      } else if (harmonic.subdivision == 2) {
+        // Subdivided: first half uses bar*2 index
+        chord_idx = getChordIndexForSubdividedBar(bar, 0, effective_prog_length);
       } else {
         // Normal/Dense: chord changes every bar
         chord_idx = bar % effective_prog_length;
       }
 
       int8_t degree = progression.at(chord_idx);
-      // Internal processing is always in C major; transpose at MIDI output time
-      uint8_t root = degreeToRoot(degree, Key::C);
 
-      // Select chord extension based on context
-      ChordExtension extension = selectChordExtension(degree, section.type, bar, section.bars,
-                                                      params.chord_extension, rng);
+      // === SECTION-BASED REHARMONIZATION ===
+      // Apply section-aware chord substitutions before extension selection:
+      // - Chorus: richer extensions (7th/9th)
+      // - A (Verse): IV -> ii substitution for softer feel
+      bool is_minor_chord = (degree == 1 || degree == 2 || degree == 5);
+      bool is_dominant_chord = (degree == 4);
+      ReharmonizationResult reharm =
+          reharmonizeForSection(degree, section.type, is_minor_chord, is_dominant_chord);
+      degree = reharm.degree;
+      // Recalculate minor/dominant after possible degree change
+      is_minor_chord = (degree == 1 || degree == 2 || degree == 5);
+      is_dominant_chord = (degree == 4);
 
-      // === SUS RESOLUTION GUARANTEE ===
-      // If previous chord was sus, force this chord to NOT be sus
-      // This ensures sus4 resolves to 3rd (natural chord tone)
-      if ((prev_extension == ChordExtension::Sus4 || prev_extension == ChordExtension::Sus2) &&
-          (extension == ChordExtension::Sus4 || extension == ChordExtension::Sus2)) {
-        extension = ChordExtension::None;  // Force resolution to natural chord
+      // === TRITONE SUBSTITUTION ===
+      // Apply V7 -> bII7 substitution for jazz/city-pop feel.
+      // Must be applied after reharmonization but before extension selection,
+      // because it changes the root entirely (not a degree-based operation).
+      bool tritone_substituted = false;
+      uint8_t root = 0;
+      Chord chord{};
+      ChordExtension extension = ChordExtension::None;
+
+      if (params.chord_extension.tritone_sub && is_dominant_chord) {
+        std::uniform_real_distribution<float> tritone_dist(0.0f, 1.0f);
+        float tritone_roll = tritone_dist(rng);
+        TritoneSubInfo tritone_info = checkTritoneSubstitution(
+            degree, is_dominant_chord,
+            params.chord_extension.tritone_sub_probability, tritone_roll);
+
+        if (tritone_info.should_substitute) {
+          // Tritone sub: use the substituted root and Dom7 chord directly
+          root = static_cast<uint8_t>(MIDI_C4 + tritone_info.sub_root_semitone);
+          chord = tritone_info.chord;
+          extension = ChordExtension::Dom7;
+          tritone_substituted = true;
+        }
       }
 
-      Chord chord = getExtendedChord(degree, extension);
+      if (!tritone_substituted) {
+        // Internal processing is always in C major; transpose at MIDI output time
+        root = degreeToRoot(degree, Key::C);
+
+        // Select chord extension based on context
+        extension = selectChordExtension(degree, section.type, bar, section.bars,
+                                         params.chord_extension, rng);
+
+        // If reharmonization overrode the extension (e.g., Chorus enrichment),
+        // use the overridden extension instead of the randomly selected one
+        if (reharm.extension_overridden) {
+          extension = reharm.extension;
+        }
+
+        // === SUS RESOLUTION GUARANTEE ===
+        // If previous chord was sus, force this chord to NOT be sus
+        // This ensures sus4 resolves to 3rd (natural chord tone)
+        if ((prev_extension == ChordExtension::Sus4 || prev_extension == ChordExtension::Sus2) &&
+            (extension == ChordExtension::Sus4 || extension == ChordExtension::Sus2)) {
+          extension = ChordExtension::None;  // Force resolution to natural chord
+        }
+
+        chord = getExtendedChord(degree, extension);
+      }
 
       // Update prev_extension for next iteration
       prev_extension = extension;
@@ -1285,6 +1347,17 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
 
       // Select voicing type with bass coordination
       VoicingType voicing_type = selectVoicingType(section.type, params.mood, bass_has_root, &rng);
+
+      // PeakLevel enhancement: prefer Open voicing for thicker texture
+      // Medium peak and above get more open voicings for fuller sound
+      if (section.peak_level >= PeakLevel::Medium && voicing_type == VoicingType::Close) {
+        // 70% chance to use Open voicing at Medium, 90% at Max
+        float open_prob = (section.peak_level == PeakLevel::Max) ? 0.90f : 0.70f;
+        std::uniform_real_distribution<float> peak_dist(0.0f, 1.0f);
+        if (peak_dist(rng) < open_prob) {
+          voicing_type = VoicingType::Open;
+        }
+      }
 
       // C3: Select open voicing subtype based on context
       OpenVoicingType open_subtype =
@@ -1439,6 +1512,117 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         continue;
       }
 
+      // === PASSING DIMINISHED CHORD (B section only) ===
+      // Insert a diminished chord on the last beat before the next chord change.
+      // This creates chromatic tension in pre-chorus sections.
+      bool inserted_passing_dim = false;
+      if (bar < section.bars - 1 && section.type == SectionType::B) {
+        int next_bar = bar + 1;
+        int next_chord_idx_dim = (harmonic.density == HarmonicDensity::Slow)
+                                     ? (next_bar / 2) % effective_prog_length
+                                     : next_bar % effective_prog_length;
+        int8_t next_degree_dim = progression.at(next_chord_idx_dim);
+
+        // Only insert if the next chord is different from the current
+        if (next_degree_dim != degree) {
+          PassingChordInfo passing = checkPassingDiminished(degree, next_degree_dim, section.type);
+          if (passing.should_insert) {
+            auto isSafe = [&](uint8_t pitch, Tick start, Tick duration) -> bool {
+              return harmony.isPitchSafe(pitch, start, duration, TrackRole::Chord);
+            };
+
+            NoteFactory factory(harmony);
+            auto addChordNote = [&](Tick start, Tick duration, uint8_t pitch, uint8_t velocity) {
+              track.addNote(
+                  factory.create(start, duration, pitch, velocity, NoteSource::ChordVoicing));
+            };
+
+            uint8_t vel = calculateVelocity(section.type, 0, params.mood);
+
+            // First 3 beats: current chord
+            Tick three_beats = QUARTER * 3;
+            for (size_t idx = 0; idx < voicing.count; ++idx) {
+              if (!isSafe(voicing.pitches[idx], bar_start, three_beats)) continue;
+              addChordNote(bar_start, three_beats, voicing.pitches[idx], vel);
+            }
+
+            // Last beat: passing diminished chord
+            uint8_t dim_root_pitch =
+                static_cast<uint8_t>(MIDI_C4 + passing.root_semitone);
+            VoicedChord dim_voicing;
+            dim_voicing.count = passing.chord.note_count;
+            dim_voicing.type = VoicingType::Close;
+            for (size_t idx = 0; idx < dim_voicing.count; ++idx) {
+              int pitch = dim_root_pitch + passing.chord.intervals[idx];
+              // Keep within chord range
+              if (pitch > CHORD_HIGH) pitch -= 12;
+              if (pitch < CHORD_LOW) pitch += 12;
+              dim_voicing.pitches[idx] = static_cast<uint8_t>(pitch);
+            }
+
+            uint8_t vel_dim = static_cast<uint8_t>(std::min(127, vel + 5));
+            Tick last_beat_start = bar_start + three_beats;
+            for (size_t idx = 0; idx < dim_voicing.count; ++idx) {
+              if (!isSafe(dim_voicing.pitches[idx], last_beat_start, QUARTER)) continue;
+              addChordNote(last_beat_start, QUARTER, dim_voicing.pitches[idx], vel_dim);
+            }
+
+            prev_voicing = dim_voicing;
+            has_prev = true;
+            inserted_passing_dim = true;
+          }
+        }
+      }
+
+      if (inserted_passing_dim) {
+        continue;
+      }
+
+      // === HARMONIC RHYTHM SUBDIVISION ===
+      // When subdivision=2 (B sections), split each bar into two half-bar chord changes.
+      // Each half gets the next chord in the progression, creating harmonic acceleration.
+      if (harmonic.subdivision == 2) {
+        auto isSafe = [&](uint8_t pitch, Tick start, Tick duration) -> bool {
+          return harmony.isPitchSafe(pitch, start, duration, TrackRole::Chord);
+        };
+
+        NoteFactory factory(harmony);
+        auto addChordNote = [&](Tick start, Tick duration, uint8_t pitch, uint8_t velocity) {
+          track.addNote(factory.create(start, duration, pitch, velocity, NoteSource::ChordVoicing));
+        };
+
+        uint8_t vel = calculateVelocity(section.type, 0, params.mood);
+        uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
+
+        // First half: current chord (already computed as 'voicing')
+        for (size_t idx = 0; idx < voicing.count; ++idx) {
+          if (!isSafe(voicing.pitches[idx], bar_start, HALF)) continue;
+          addChordNote(bar_start, HALF, voicing.pitches[idx], vel);
+        }
+
+        // Second half: next chord in subdivided progression
+        int second_half_chord_idx = getChordIndexForSubdividedBar(bar, 1, effective_prog_length);
+        int8_t second_half_degree = progression.at(second_half_chord_idx);
+        uint8_t second_half_root = degreeToRoot(second_half_degree, Key::C);
+        ChordExtension second_half_ext = selectChordExtension(
+            second_half_degree, section.type, bar, section.bars, params.chord_extension, rng);
+        Chord second_half_chord = getExtendedChord(second_half_degree, second_half_ext);
+
+        int second_half_bass_pc = second_half_root % 12;
+        VoicedChord second_half_voicing =
+            selectVoicing(second_half_root, second_half_chord, voicing, true, voicing_type,
+                          second_half_bass_pc, rng, open_subtype, params.mood);
+
+        for (size_t idx = 0; idx < second_half_voicing.count; ++idx) {
+          if (!isSafe(second_half_voicing.pitches[idx], bar_start + HALF, HALF)) continue;
+          addChordNote(bar_start + HALF, HALF, second_half_voicing.pitches[idx], vel_weak);
+        }
+
+        prev_voicing = second_half_voicing;
+        has_prev = true;
+        continue;
+      }
+
       // Check if this bar should split for phrase-end anticipation
       // Uses shared logic with bass track for synchronization
       bool should_split = shouldSplitPhraseEnd(bar, section.bars, effective_prog_length, harmonic,
@@ -1503,6 +1687,26 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
             if (lower_pitch >= CHORD_LOW && lower_pitch <= CHORD_HIGH) {
               addChordNote(bar_start, WHOLE, static_cast<uint8_t>(lower_pitch), octave_vel);
             }
+          }
+        }
+
+        // PeakLevel::Max enhancement: add root octave-below doubling for thickest texture
+        // This creates a "wall of sound" effect for the final chorus
+        if (section.peak_level == PeakLevel::Max && voicing.count >= 1) {
+          NoteFactory factory(harmony);
+          auto addChordNote = [&](Tick start, Tick duration, uint8_t pitch, uint8_t velocity) {
+            track.addNote(
+                factory.create(start, duration, pitch, velocity, NoteSource::ChordVoicing));
+          };
+
+          uint8_t vel = calculateVelocity(section.type, 0, params.mood);
+          uint8_t doubling_vel = static_cast<uint8_t>(vel * 0.75f);  // Softer to blend
+
+          // Add root one octave below (the bass note of the voicing)
+          int root_pitch = voicing.pitches[0];  // Lowest note in voicing is typically root
+          int low_root = root_pitch - 12;
+          if (low_root >= CHORD_LOW && low_root <= CHORD_HIGH) {
+            addChordNote(bar_start, WHOLE, static_cast<uint8_t>(low_root), doubling_vel);
           }
         }
 
@@ -1762,27 +1966,69 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
 
       // Harmonic rhythm: determine chord index
+      // When subdivision=2, use subdivided indexing (bar*2 for first half)
       int chord_idx;
       if (harmonic.density == HarmonicDensity::Slow) {
         chord_idx = (bar / 2) % effective_prog_length;
+      } else if (harmonic.subdivision == 2) {
+        chord_idx = getChordIndexForSubdividedBar(bar, 0, effective_prog_length);
       } else {
         chord_idx = bar % effective_prog_length;
       }
 
       int8_t degree = progression.at(chord_idx);
-      uint8_t root = degreeToRoot(degree, Key::C);
 
-      // Select chord extension
-      ChordExtension extension = selectChordExtension(degree, section.type, bar, section.bars,
-                                                      params.chord_extension, rng);
+      // === SECTION-BASED REHARMONIZATION ===
+      bool is_minor_chord = (degree == 1 || degree == 2 || degree == 5);
+      bool is_dominant_chord = (degree == 4);
+      ReharmonizationResult reharm =
+          reharmonizeForSection(degree, section.type, is_minor_chord, is_dominant_chord);
+      degree = reharm.degree;
+      is_minor_chord = (degree == 1 || degree == 2 || degree == 5);
+      is_dominant_chord = (degree == 4);
 
-      // Sus resolution guarantee
-      if ((prev_extension == ChordExtension::Sus4 || prev_extension == ChordExtension::Sus2) &&
-          (extension == ChordExtension::Sus4 || extension == ChordExtension::Sus2)) {
-        extension = ChordExtension::None;
+      // === TRITONE SUBSTITUTION ===
+      bool tritone_substituted = false;
+      uint8_t root = 0;
+      Chord chord{};
+      ChordExtension extension = ChordExtension::None;
+
+      if (params.chord_extension.tritone_sub && is_dominant_chord) {
+        std::uniform_real_distribution<float> tritone_dist(0.0f, 1.0f);
+        float tritone_roll = tritone_dist(rng);
+        TritoneSubInfo tritone_info = checkTritoneSubstitution(
+            degree, is_dominant_chord,
+            params.chord_extension.tritone_sub_probability, tritone_roll);
+
+        if (tritone_info.should_substitute) {
+          root = static_cast<uint8_t>(MIDI_C4 + tritone_info.sub_root_semitone);
+          chord = tritone_info.chord;
+          extension = ChordExtension::Dom7;
+          tritone_substituted = true;
+        }
       }
 
-      Chord chord = getExtendedChord(degree, extension);
+      if (!tritone_substituted) {
+        root = degreeToRoot(degree, Key::C);
+
+        // Select chord extension
+        extension = selectChordExtension(degree, section.type, bar, section.bars,
+                                         params.chord_extension, rng);
+
+        // If reharmonization overrode the extension, use it
+        if (reharm.extension_overridden) {
+          extension = reharm.extension;
+        }
+
+        // Sus resolution guarantee
+        if ((prev_extension == ChordExtension::Sus4 || prev_extension == ChordExtension::Sus2) &&
+            (extension == ChordExtension::Sus4 || extension == ChordExtension::Sus2)) {
+          extension = ChordExtension::None;
+        }
+
+        chord = getExtendedChord(degree, extension);
+      }
+
       prev_extension = extension;
 
       // Get context pitch classes for this bar
@@ -1810,6 +2056,16 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
 
       // Select voicing type with bass coordination
       VoicingType voicing_type = selectVoicingType(section.type, params.mood, bass_has_root, &rng);
+
+      // PeakLevel enhancement: prefer Open voicing for thicker texture
+      if (section.peak_level >= PeakLevel::Medium && voicing_type == VoicingType::Close) {
+        float open_prob = (section.peak_level == PeakLevel::Max) ? 0.90f : 0.70f;
+        std::uniform_real_distribution<float> peak_dist(0.0f, 1.0f);
+        if (peak_dist(rng) < open_prob) {
+          voicing_type = VoicingType::Open;
+        }
+      }
+
       OpenVoicingType open_subtype =
           selectOpenVoicingSubtype(section.type, params.mood, chord, rng);
 
@@ -1972,6 +2228,116 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         continue;
       }
 
+      // === PASSING DIMINISHED CHORD (B section only) ===
+      bool inserted_passing_dim = false;
+      if (bar < section.bars - 1 && section.type == SectionType::B) {
+        int next_bar = bar + 1;
+        int next_chord_idx_dim = (harmonic.density == HarmonicDensity::Slow)
+                                     ? (next_bar / 2) % effective_prog_length
+                                     : next_bar % effective_prog_length;
+        int8_t next_degree_dim = progression.at(next_chord_idx_dim);
+
+        if (next_degree_dim != degree) {
+          PassingChordInfo passing = checkPassingDiminished(degree, next_degree_dim, section.type);
+          if (passing.should_insert) {
+            auto isSafe = [&](uint8_t pitch, Tick start, Tick duration) -> bool {
+              return harmony.isPitchSafe(pitch, start, duration, TrackRole::Chord);
+            };
+
+            NoteFactory factory(harmony);
+            auto addChordNote = [&](Tick start, Tick duration, uint8_t pitch, uint8_t velocity) {
+              track.addNote(
+                  factory.create(start, duration, pitch, velocity, NoteSource::ChordVoicing));
+            };
+
+            uint8_t vel = calculateVelocity(section.type, 0, params.mood);
+
+            // First 3 beats: current chord
+            Tick three_beats = QUARTER * 3;
+            for (size_t idx = 0; idx < voicing.count; ++idx) {
+              if (!isSafe(voicing.pitches[idx], bar_start, three_beats)) continue;
+              addChordNote(bar_start, three_beats, voicing.pitches[idx], vel);
+            }
+
+            // Last beat: passing diminished chord
+            uint8_t dim_root_pitch =
+                static_cast<uint8_t>(MIDI_C4 + passing.root_semitone);
+            VoicedChord dim_voicing;
+            dim_voicing.count = passing.chord.note_count;
+            dim_voicing.type = VoicingType::Close;
+            for (size_t idx = 0; idx < dim_voicing.count; ++idx) {
+              int pitch = dim_root_pitch + passing.chord.intervals[idx];
+              if (pitch > CHORD_HIGH) pitch -= 12;
+              if (pitch < CHORD_LOW) pitch += 12;
+              dim_voicing.pitches[idx] = static_cast<uint8_t>(pitch);
+            }
+
+            uint8_t vel_dim = static_cast<uint8_t>(std::min(127, vel + 5));
+            Tick last_beat_start = bar_start + three_beats;
+            for (size_t idx = 0; idx < dim_voicing.count; ++idx) {
+              if (!isSafe(dim_voicing.pitches[idx], last_beat_start, QUARTER)) continue;
+              addChordNote(last_beat_start, QUARTER, dim_voicing.pitches[idx], vel_dim);
+            }
+
+            prev_voicing = dim_voicing;
+            has_prev = true;
+            inserted_passing_dim = true;
+          }
+        }
+      }
+
+      if (inserted_passing_dim) {
+        continue;
+      }
+
+      // === HARMONIC RHYTHM SUBDIVISION ===
+      // When subdivision=2 (B sections), split each bar into two half-bar chord changes.
+      if (harmonic.subdivision == 2) {
+        auto isSafe = [&](uint8_t pitch, Tick start, Tick duration) -> bool {
+          return harmony.isPitchSafe(pitch, start, duration, TrackRole::Chord);
+        };
+
+        NoteFactory factory(harmony);
+        auto addChordNote = [&](Tick start, Tick duration, uint8_t pitch, uint8_t velocity) {
+          track.addNote(factory.create(start, duration, pitch, velocity, NoteSource::ChordVoicing));
+        };
+
+        uint8_t vel = calculateVelocity(section.type, 0, params.mood);
+        uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
+
+        // First half: current chord
+        for (size_t idx = 0; idx < voicing.count; ++idx) {
+          if (!isSafe(voicing.pitches[idx], bar_start, HALF)) continue;
+          addChordNote(bar_start, HALF, voicing.pitches[idx], vel);
+        }
+
+        // Second half: next chord in subdivided progression
+        int second_half_chord_idx = getChordIndexForSubdividedBar(bar, 1, effective_prog_length);
+        int8_t second_half_degree = progression.at(second_half_chord_idx);
+        uint8_t second_half_root = degreeToRoot(second_half_degree, Key::C);
+        ChordExtension second_half_ext = selectChordExtension(
+            second_half_degree, section.type, bar, section.bars, params.chord_extension, rng);
+        Chord second_half_chord = getExtendedChord(second_half_degree, second_half_ext);
+
+        int second_half_bass_pc = second_half_root % 12;
+        auto second_half_candidates = generateVoicings(second_half_root, second_half_chord,
+                                                       voicing_type, second_half_bass_pc, open_subtype);
+        VoicedChord second_half_voicing =
+            second_half_candidates.empty()
+                ? selectVoicing(second_half_root, second_half_chord, voicing, true, voicing_type,
+                                second_half_bass_pc, rng, open_subtype, params.mood)
+                : second_half_candidates[0];
+
+        for (size_t idx = 0; idx < second_half_voicing.count; ++idx) {
+          if (!isSafe(second_half_voicing.pitches[idx], bar_start + HALF, HALF)) continue;
+          addChordNote(bar_start + HALF, HALF, second_half_voicing.pitches[idx], vel_weak);
+        }
+
+        prev_voicing = second_half_voicing;
+        has_prev = true;
+        continue;
+      }
+
       // Check for phrase-end split
       bool should_split = shouldSplitPhraseEnd(bar, section.bars, effective_prog_length, harmonic,
                                                section.type, params.mood);
@@ -2035,6 +2401,24 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
             if (lower_pitch >= CHORD_LOW && lower_pitch <= CHORD_HIGH) {
               addChordNote(bar_start, WHOLE, static_cast<uint8_t>(lower_pitch), octave_vel);
             }
+          }
+        }
+
+        // PeakLevel::Max enhancement: add root octave-below doubling
+        if (section.peak_level == PeakLevel::Max && voicing.count >= 1) {
+          NoteFactory factory(harmony);
+          auto addChordNote = [&](Tick start, Tick duration, uint8_t pitch, uint8_t velocity) {
+            track.addNote(
+                factory.create(start, duration, pitch, velocity, NoteSource::ChordVoicing));
+          };
+
+          uint8_t vel = calculateVelocity(section.type, 0, params.mood);
+          uint8_t doubling_vel = static_cast<uint8_t>(vel * 0.75f);
+
+          int root_pitch = voicing.pitches[0];
+          int low_root = root_pitch - 12;
+          if (low_root >= CHORD_LOW && low_root <= CHORD_HIGH) {
+            addChordNote(bar_start, WHOLE, static_cast<uint8_t>(low_root), doubling_vel);
           }
         }
 

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 
+#include "core/emotion_curve.h"
 #include "core/midi_track.h"
 
 namespace midisketch {
@@ -43,7 +44,8 @@ float getSectionVelocityMultiplier(SectionType section) {
     case SectionType::Chant:
       return 0.60f;  // Very subdued chant section
     case SectionType::MixBreak:
-      return 1.05f;  // High energy mix break
+    case SectionType::Drop:
+      return 1.05f;  // High energy mix break / drop
     case SectionType::Outro:
       return 0.80f;  // Fading outro
     case SectionType::A:
@@ -90,6 +92,7 @@ int getSectionEnergy(SectionType section) {
     case SectionType::B:
       return 3;
     case SectionType::Chorus:
+    case SectionType::Drop:  // Drop has peak energy (same as Chorus)
       return 4;
   }
   return 2;
@@ -177,19 +180,40 @@ uint8_t calculateEffectiveVelocity(const Section& section, uint8_t beat, Mood mo
   return static_cast<uint8_t>(std::clamp(velocity, 0, 127));
 }
 
+uint8_t calculateEmotionAwareVelocity(const Section& section, uint8_t beat, Mood mood,
+                                       const SectionEmotion* emotion) {
+  // Get base velocity from section and mood
+  uint8_t base_velocity = calculateEffectiveVelocity(section, beat, mood);
+
+  // If no emotion curve, return base velocity
+  if (emotion == nullptr) {
+    return base_velocity;
+  }
+
+  // Apply EmotionCurve energy adjustment to base velocity
+  uint8_t energy_adjusted = calculateEnergyAdjustedVelocity(base_velocity, emotion->energy);
+
+  // Calculate velocity ceiling based on tension
+  uint8_t ceiling = calculateVelocityCeiling(127, emotion->tension);
+
+  // Clamp to ceiling
+  return std::min(energy_adjusted, ceiling);
+}
+
 float getBarVelocityMultiplier(int bar_in_section, int total_bars, SectionType section_type) {
   // 4-bar phrase dynamics: build→hit pattern
   // Creates natural breathing within each 4-bar phrase
+  // Wider range (0.75→1.00) for more audible dynamic shaping
   int phrase_bar = bar_in_section % 4;
-  float phrase_curve = 0.85f + 0.05f * static_cast<float>(phrase_bar);
-  // phrase_bar: 0 -> 0.85, 1 -> 0.90, 2 -> 0.95, 3 -> 1.00
+  float phrase_curve = 0.75f + (0.25f / 3.0f) * static_cast<float>(phrase_bar);
+  // phrase_bar: 0 -> 0.75, 1 -> 0.833, 2 -> 0.917, 3 -> 1.00
 
   // Section-level crescendo for Chorus (gradual build across entire section)
   float section_curve = 1.0f;
   if (section_type == SectionType::Chorus && total_bars > 0) {
     float progress = static_cast<float>(bar_in_section) / static_cast<float>(total_bars);
-    // Range: 0.92 at start to 1.08 at end (moderate crescendo)
-    section_curve = 0.92f + 0.16f * progress;
+    // Range: 0.88 at start to 1.12 at end (wider crescendo for more energy)
+    section_curve = 0.88f + 0.24f * progress;
   } else if (section_type == SectionType::B && total_bars > 0) {
     // Pre-chorus gets slight build toward chorus
     float progress = static_cast<float>(bar_in_section) / static_cast<float>(total_bars);
@@ -397,6 +421,261 @@ void applyAllBarVelocityCurves(std::vector<MidiTrack*>& tracks,
         applyBarVelocityCurve(*track, section);
       }
     }
+  }
+}
+
+// ============================================================================
+// Melody Contour Velocity
+// ============================================================================
+
+void applyMelodyContourVelocity(MidiTrack& track, const std::vector<Section>& sections) {
+  auto& notes = track.notes();
+  if (notes.size() < 2) return;
+
+  // ============================================================================
+  // Task 5-4: Melody Climax Point Clarification
+  // ============================================================================
+  // Highest note boost depends on position within section:
+  // - "Climax bars" (bar 5-6 of 8-bar section): +10 extra (peak emphasis)
+  // - Other positions: +5 (reduced from original +15)
+  // This creates a clearer emotional arc with defined climax points.
+
+  constexpr int CLIMAX_BARS_BOOST = 10;   // Extra boost for climax bars
+  constexpr int NORMAL_HIGH_BOOST = 5;    // Reduced boost elsewhere
+
+  // Process each section separately
+  for (const auto& section : sections) {
+    Tick section_start = section.start_tick;
+
+    // Process in 4-bar phrases within each section
+    for (int phrase_start_bar = 0; phrase_start_bar < section.bars; phrase_start_bar += 4) {
+      int phrase_end_bar = std::min(phrase_start_bar + 4, static_cast<int>(section.bars));
+      Tick phrase_start = section_start + phrase_start_bar * TICKS_PER_BAR;
+      Tick phrase_end = section_start + phrase_end_bar * TICKS_PER_BAR;
+
+      // Find notes in this phrase and track the highest pitch
+      uint8_t highest_pitch = 0;
+      Tick highest_tick = 0;
+      for (const auto& note : notes) {
+        if (note.start_tick >= phrase_start && note.start_tick < phrase_end) {
+          if (note.note > highest_pitch) {
+            highest_pitch = note.note;
+            highest_tick = note.start_tick;
+          }
+        }
+      }
+
+      if (highest_pitch == 0) continue;
+
+      // Determine if highest note is in "climax bars" of the section
+      // For an 8-bar section, climax bars are 5-6 (indices 4-5, 0-based)
+      // For other section lengths, scale proportionally to ~60-80% through
+      // (highest_bar_in_section calculation moved into the per-note loop for efficiency)
+
+      // Apply contour-following velocity adjustments
+      uint8_t prev_pitch = 0;
+      for (auto& note : notes) {
+        if (note.start_tick < phrase_start || note.start_tick >= phrase_end) continue;
+
+        int vel_adj = 0;
+
+        // Phrase-high note boost (Task 5-4: climax-aware)
+        if (note.note == highest_pitch) {
+          // Determine bar position for this specific note
+          int note_bar_in_section =
+              static_cast<int>((note.start_tick - section_start) / TICKS_PER_BAR);
+          bool note_in_climax = false;
+
+          if (section.bars >= 6) {
+            int climax_start = static_cast<int>(section.bars * 0.5f);
+            int climax_end = static_cast<int>(section.bars * 0.75f);
+            note_in_climax = (note_bar_in_section >= climax_start &&
+                              note_bar_in_section <= climax_end);
+          }
+
+          // Apply climax-dependent boost
+          vel_adj += NORMAL_HIGH_BOOST;  // Base boost for all highest notes
+          if (note_in_climax) {
+            vel_adj += CLIMAX_BARS_BOOST;  // Extra boost for climax position
+          }
+        }
+
+        // Ascending/descending contour adjustment
+        if (prev_pitch > 0) {
+          int interval = static_cast<int>(note.note) - static_cast<int>(prev_pitch);
+          if (interval > 0) {
+            // Ascending: boost proportional to interval size (max +8)
+            vel_adj += std::min(interval, 8);
+          } else if (interval < 0) {
+            // Descending: reduce proportional to interval size (max -6)
+            vel_adj += std::max(interval, -6);
+          }
+        }
+
+        if (vel_adj != 0) {
+          int new_vel = static_cast<int>(note.velocity) + vel_adj;
+          note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+        }
+        prev_pitch = note.note;
+      }
+    }
+  }
+}
+
+// ============================================================================
+// Musical Accent Patterns
+// ============================================================================
+
+void applyAccentPatterns(MidiTrack& track, const std::vector<Section>& sections) {
+  auto& notes = track.notes();
+  if (notes.empty()) return;
+
+  constexpr int PHRASE_HEAD_BOOST = 8;
+  constexpr int CONTOUR_BOOST = 10;
+  constexpr int AGOGIC_BOOST = 5;
+  constexpr Tick AGOGIC_THRESHOLD = TICKS_PER_BEAT;  // Quarter note threshold
+
+  for (const auto& section : sections) {
+    Tick section_start = section.start_tick;
+
+    // Process in 2-bar phrases for accent detection
+    for (int phrase_bar = 0; phrase_bar < section.bars; phrase_bar += 2) {
+      int phrase_end_bar = std::min(phrase_bar + 2, static_cast<int>(section.bars));
+      Tick phrase_start = section_start + phrase_bar * TICKS_PER_BAR;
+      Tick phrase_end = section_start + phrase_end_bar * TICKS_PER_BAR;
+
+      // Find the highest note and first note in this phrase
+      uint8_t highest_pitch = 0;
+      size_t highest_idx = 0;
+      size_t first_idx = notes.size();  // invalid sentinel
+
+      for (size_t i = 0; i < notes.size(); ++i) {
+        if (notes[i].start_tick >= phrase_start && notes[i].start_tick < phrase_end) {
+          if (first_idx == notes.size()) {
+            first_idx = i;
+          }
+          if (notes[i].note > highest_pitch) {
+            highest_pitch = notes[i].note;
+            highest_idx = i;
+          }
+        }
+      }
+
+      // Apply accents
+      for (size_t i = 0; i < notes.size(); ++i) {
+        if (notes[i].start_tick < phrase_start || notes[i].start_tick >= phrase_end) continue;
+
+        int boost = 0;
+
+        // Phrase-head accent: first note of the 2-bar phrase
+        if (i == first_idx) {
+          boost += PHRASE_HEAD_BOOST;
+        }
+
+        // Contour accent: highest note in the 2-bar phrase
+        if (i == highest_idx && highest_pitch > 0) {
+          boost += CONTOUR_BOOST;
+        }
+
+        // Agogic accent: notes longer than a quarter note
+        if (notes[i].duration >= AGOGIC_THRESHOLD) {
+          boost += AGOGIC_BOOST;
+        }
+
+        if (boost > 0) {
+          int new_vel = static_cast<int>(notes[i].velocity) + boost;
+          notes[i].velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+        }
+      }
+    }
+  }
+}
+
+// ============================================================================
+// EmotionCurve-based Velocity Calculations
+// ============================================================================
+
+uint8_t calculateVelocityCeiling(uint8_t base_velocity, float tension) {
+  // Tension affects maximum allowed velocity:
+  // - Low tension (0.0-0.3): ceiling is reduced to 80% of base
+  // - Medium tension (0.3-0.7): ceiling scales linearly
+  // - High tension (0.7-1.0): ceiling can exceed base by up to 20%
+
+  float ceiling_multiplier;
+  if (tension < 0.3f) {
+    // Low tension: limit ceiling to create softer sections
+    ceiling_multiplier = 0.8f + (tension / 0.3f) * 0.2f;  // 0.8 -> 1.0
+  } else if (tension < 0.7f) {
+    // Medium tension: normal range
+    ceiling_multiplier = 1.0f;
+  } else {
+    // High tension: allow higher ceiling for climax moments
+    ceiling_multiplier = 1.0f + ((tension - 0.7f) / 0.3f) * 0.2f;  // 1.0 -> 1.2
+  }
+
+  int ceiling = static_cast<int>(base_velocity * ceiling_multiplier);
+  return static_cast<uint8_t>(std::clamp(ceiling, 40, 127));
+}
+
+uint8_t calculateEnergyAdjustedVelocity(uint8_t section_velocity, float energy) {
+  // Energy affects base velocity:
+  // - Low energy (0.0-0.3): reduce velocity by up to 25%
+  // - Medium energy (0.3-0.7): slight adjustment
+  // - High energy (0.7-1.0): boost velocity by up to 15%
+
+  float energy_multiplier;
+  if (energy < 0.3f) {
+    // Low energy: softer dynamics
+    energy_multiplier = 0.75f + (energy / 0.3f) * 0.15f;  // 0.75 -> 0.9
+  } else if (energy < 0.7f) {
+    // Medium energy: slight adjustment
+    float progress = (energy - 0.3f) / 0.4f;
+    energy_multiplier = 0.9f + progress * 0.1f;  // 0.9 -> 1.0
+  } else {
+    // High energy: louder dynamics
+    float progress = (energy - 0.7f) / 0.3f;
+    energy_multiplier = 1.0f + progress * 0.15f;  // 1.0 -> 1.15
+  }
+
+  int adjusted = static_cast<int>(section_velocity * energy_multiplier);
+  return static_cast<uint8_t>(std::clamp(adjusted, 30, 127));
+}
+
+float calculateEnergyDensityMultiplier(float base_density, float energy) {
+  // Energy affects note density:
+  // - Low energy: reduce density to create space
+  // - High energy: increase density for fuller arrangements
+
+  float density_factor;
+  if (energy < 0.3f) {
+    // Low energy: sparser patterns (50-80% of base)
+    density_factor = 0.5f + (energy / 0.3f) * 0.3f;
+  } else if (energy < 0.7f) {
+    // Medium energy: normal density (80-100%)
+    float progress = (energy - 0.3f) / 0.4f;
+    density_factor = 0.8f + progress * 0.2f;
+  } else {
+    // High energy: denser patterns (100-130%)
+    float progress = (energy - 0.7f) / 0.3f;
+    density_factor = 1.0f + progress * 0.3f;
+  }
+
+  return std::clamp(base_density * density_factor, 0.5f, 1.5f);
+}
+
+float getChordTonePreferenceBoost(float resolution_need) {
+  // Resolution need affects chord tone preference:
+  // - Low need (0.0-0.3): allow more non-chord tones (tension)
+  // - High need (0.7-1.0): strongly prefer chord tones (stability)
+
+  if (resolution_need < 0.3f) {
+    return 0.0f;  // No boost, allow passing tones
+  } else if (resolution_need < 0.7f) {
+    // Linear interpolation
+    return (resolution_need - 0.3f) / 0.4f * 0.15f;  // 0.0 -> 0.15
+  } else {
+    // High resolution need: strong chord tone preference
+    return 0.15f + ((resolution_need - 0.7f) / 0.3f) * 0.15f;  // 0.15 -> 0.3
   }
 }
 

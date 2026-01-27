@@ -135,6 +135,8 @@ TEST(StructureTest, ExtendedFullContainsRequiredSections) {
         break;  // Not expected in ExtendedFull
       case SectionType::MixBreak:
         break;  // Not expected in ExtendedFull
+      case SectionType::Drop:
+        break;  // Not expected in ExtendedFull
     }
   }
 

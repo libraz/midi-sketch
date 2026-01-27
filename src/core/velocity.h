@@ -100,6 +100,24 @@ float getPeakVelocityMultiplier(PeakLevel peak);
  */
 uint8_t calculateEffectiveVelocity(const Section& section, uint8_t beat, Mood mood);
 
+// Forward declaration
+struct SectionEmotion;
+
+/**
+ * @brief Calculate effective velocity with EmotionCurve integration.
+ *
+ * Combines section properties, beat position, mood, and emotion curve
+ * parameters (tension affects ceiling, energy affects base level).
+ *
+ * @param section Section struct
+ * @param beat Beat position (0-3)
+ * @param mood Mood preset
+ * @param emotion EmotionCurve parameters for this section (optional)
+ * @return Calculated velocity (0-127)
+ */
+uint8_t calculateEmotionAwareVelocity(const Section& section, uint8_t beat, Mood mood,
+                                       const SectionEmotion* emotion);
+
 /// @brief Track-relative velocity multipliers for consistent mix balance.
 struct VelocityBalance {
   static constexpr float VOCAL = 1.0f;      ///< Lead vocal - always on top
@@ -126,15 +144,15 @@ struct VelocityBalance {
  * sections from sounding flat.
  *
  * The 4-bar phrase pattern:
- * - Bar 0: 0.85 (setup)
- * - Bar 1: 0.90 (build)
- * - Bar 2: 0.95 (anticipation)
+ * - Bar 0: 0.75 (setup)
+ * - Bar 1: 0.83 (build)
+ * - Bar 2: 0.92 (anticipation)
  * - Bar 3: 1.00 (hit)
  *
  * @param bar_in_section Bar number within the section (0-indexed)
  * @param total_bars Total number of bars in the section
  * @param section_type Type of section (affects curve shape)
- * @return Velocity multiplier (typically 0.85-1.08)
+ * @return Velocity multiplier (typically 0.75-1.12)
  */
 float getBarVelocityMultiplier(int bar_in_section, int total_bars, SectionType section_type);
 
@@ -220,6 +238,100 @@ void applyBarVelocityCurve(MidiTrack& track, const Section& section);
  */
 void applyAllBarVelocityCurves(std::vector<MidiTrack*>& tracks,
                                const std::vector<Section>& sections);
+
+// ============================================================================
+// Melody Contour Velocity
+// ============================================================================
+
+/**
+ * @brief Apply melody-contour-following velocity to vocal notes.
+ *
+ * Boosts velocity for phrase-high notes and creates gradual velocity changes
+ * for ascending/descending passages. This makes the melody feel more naturally
+ * performed by following the melodic contour with dynamics.
+ *
+ * Rules:
+ * - Phrase-local highest note: +15 velocity boost
+ * - Ascending passages: gradual velocity increase
+ * - Descending passages: gradual velocity decrease
+ * - Phrase boundary resets contour tracking (every 4 bars)
+ *
+ * @param track Vocal track to modify (in-place)
+ * @param sections Song sections for phrase boundary detection
+ */
+void applyMelodyContourVelocity(MidiTrack& track, const std::vector<Section>& sections);
+
+// ============================================================================
+// Musical Accent Patterns
+// ============================================================================
+
+/**
+ * @brief Apply musical accent patterns to a track.
+ *
+ * Three accent types are applied:
+ * - Phrase-head accent: +8 velocity on first note of each 2-bar phrase
+ * - Contour accent: +10 on the highest note within each 2-bar phrase
+ * - Agogic accent: +5 on notes longer than a quarter note (held notes naturally
+ *   receive more emphasis from performers)
+ *
+ * @param track Track to modify (in-place)
+ * @param sections Song sections for phrase boundary detection
+ */
+void applyAccentPatterns(MidiTrack& track, const std::vector<Section>& sections);
+
+// ============================================================================
+// EmotionCurve-based Velocity Calculations
+// ============================================================================
+
+// Forward declaration
+struct SectionEmotion;
+
+/**
+ * @brief Calculate velocity ceiling based on EmotionCurve tension.
+ *
+ * Higher tension allows higher velocity ceiling, while low tension
+ * limits the maximum velocity to maintain dynamic range.
+ *
+ * @param base_velocity Base velocity value (0-127)
+ * @param tension Tension level from EmotionCurve (0.0-1.0)
+ * @return Adjusted velocity ceiling (0-127)
+ */
+uint8_t calculateVelocityCeiling(uint8_t base_velocity, float tension);
+
+/**
+ * @brief Calculate base velocity adjusted by EmotionCurve energy.
+ *
+ * Energy level affects the starting point for velocity calculations.
+ * Higher energy means louder base velocity.
+ *
+ * @param section_velocity Section-based velocity
+ * @param energy Energy level from EmotionCurve (0.0-1.0)
+ * @return Adjusted base velocity (0-127)
+ */
+uint8_t calculateEnergyAdjustedVelocity(uint8_t section_velocity, float energy);
+
+/**
+ * @brief Get note density multiplier based on EmotionCurve energy.
+ *
+ * Energy affects how many notes are generated. Higher energy means
+ * denser patterns; lower energy means sparser, more spacious arrangements.
+ *
+ * @param base_density Base density value (0.0-1.0)
+ * @param energy Energy level from EmotionCurve (0.0-1.0)
+ * @return Adjusted density multiplier (0.5-1.5)
+ */
+float calculateEnergyDensityMultiplier(float base_density, float energy);
+
+/**
+ * @brief Get chord tone preference based on EmotionCurve resolution_need.
+ *
+ * Higher resolution_need means melody should favor chord tones over
+ * non-chord tones for more stable, resolved sound.
+ *
+ * @param resolution_need Resolution need from EmotionCurve (0.0-1.0)
+ * @return Chord tone probability boost (0.0-0.3)
+ */
+float getChordTonePreferenceBoost(float resolution_need);
 
 }  // namespace midisketch
 

@@ -17,6 +17,7 @@
 #include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/generator.h"
+#include "core/harmonic_rhythm.h"
 #include "core/song.h"
 #include "core/types.h"
 
@@ -359,8 +360,20 @@ TEST_F(BassDiatonicTest, BassOnBeatOneMustBeChordTone) {
         bool slow_harmonic =
             (section->type == SectionType::Intro || section->type == SectionType::Interlude ||
              section->type == SectionType::Outro || section->type == SectionType::Chant);
-        int chord_idx = slow_harmonic ? (bar_in_section / 2) % progression.length
-                                      : bar_in_section % progression.length;
+
+        // Check for subdivision (B sections use half-bar chord changes)
+        // Beat 1 is in the first half, so use the first-half chord index
+        auto harmonic_info = HarmonicRhythmInfo::forSection(*section, mood);
+        int chord_idx;
+        if (harmonic_info.subdivision == 2) {
+          // Subdivided: first half uses bar*2 index
+          chord_idx = getChordIndexForSubdividedBar(
+              static_cast<int>(bar_in_section), 0, progression.length);
+        } else if (slow_harmonic) {
+          chord_idx = (bar_in_section / 2) % progression.length;
+        } else {
+          chord_idx = bar_in_section % progression.length;
+        }
         int8_t degree = progression.degrees[chord_idx];
 
         // Get chord tones for this degree

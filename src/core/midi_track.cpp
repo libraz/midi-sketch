@@ -39,6 +39,10 @@ void MidiTrack::addNote(Tick startTick, Tick length, uint8_t note, uint8_t veloc
 
 void MidiTrack::addText(Tick tick, const std::string& text) { textEvents_.push_back({tick, text}); }
 
+void MidiTrack::addCC(Tick tick, uint8_t cc_number, uint8_t value) {
+  cc_events_.push_back({tick, cc_number, value});
+}
+
 void MidiTrack::transpose(int8_t semitones) {
   for (auto& note : notes_) {
     int new_pitch = note.note + semitones;
@@ -77,6 +81,13 @@ MidiTrack MidiTrack::slice(Tick fromTick, Tick toTick) const {
       result.textEvents_.push_back(sliced);
     }
   }
+  for (const auto& cc_evt : cc_events_) {
+    if (cc_evt.tick >= fromTick && cc_evt.tick < toTick) {
+      CCEvent sliced = cc_evt;
+      sliced.tick -= fromTick;
+      result.cc_events_.push_back(sliced);
+    }
+  }
   return result;
 }
 
@@ -91,11 +102,17 @@ void MidiTrack::append(const MidiTrack& other, Tick offsetTick) {
     shifted.time += offsetTick;
     textEvents_.push_back(shifted);
   }
+  for (const auto& cc_evt : other.cc_events_) {
+    CCEvent shifted = cc_evt;
+    shifted.tick += offsetTick;
+    cc_events_.push_back(shifted);
+  }
 }
 
 void MidiTrack::clear() {
   notes_.clear();
   textEvents_.clear();
+  cc_events_.clear();
 }
 
 Tick MidiTrack::lastTick() const {
@@ -106,6 +123,9 @@ Tick MidiTrack::lastTick() const {
   }
   for (const auto& text : textEvents_) {
     if (text.time > last) last = text.time;
+  }
+  for (const auto& cc_evt : cc_events_) {
+    if (cc_evt.tick > last) last = cc_evt.tick;
   }
   return last;
 }

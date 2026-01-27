@@ -8,6 +8,7 @@
 #include "core/euclidean_rhythm.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
+#include "core/swing_quantize.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
 
@@ -19,13 +20,17 @@ namespace {
 constexpr uint8_t BD = 36;         // Bass Drum
 constexpr uint8_t SD = 38;         // Snare Drum
 constexpr uint8_t SIDESTICK = 37;  // Side Stick
+constexpr uint8_t HANDCLAP = 39;   // Hand Clap
 constexpr uint8_t CHH = 42;        // Closed Hi-Hat
+constexpr uint8_t FHH = 44;        // Foot Hi-Hat (pedal)
 constexpr uint8_t OHH = 46;        // Open Hi-Hat
 constexpr uint8_t CRASH = 49;      // Crash Cymbal
 constexpr uint8_t RIDE = 51;       // Ride Cymbal
+constexpr uint8_t TAMBOURINE = 54; // Tambourine
 constexpr uint8_t TOM_H = 50;      // High Tom
 constexpr uint8_t TOM_M = 47;      // Mid Tom
 constexpr uint8_t TOM_L = 45;      // Low Tom
+constexpr uint8_t SHAKER = 70;     // Maracas/Shaker
 
 // Local aliases for timing constants
 constexpr Tick EIGHTH = TICK_EIGHTH;
@@ -103,7 +108,131 @@ uint8_t getDrumRoleHiHatInstrument(DrumRole role, bool use_ride_override) {
   return CHH;
 }
 
-// Ghost note velocity multiplier
+// Determine whether the primary timekeeping element should be ride cymbal
+// based on section type and drum style. This creates tonal contrast between
+// sections: verse uses tighter closed HH, chorus opens up with ride cymbal.
+//
+// Section mapping:
+//   Intro:     Closed HH (clean, restrained start)
+//   Verse/A:   Closed HH (standard, tight)
+//   B:         Closed HH (building tension, not yet open)
+//   Chorus:    Ride cymbal (bigger, wider sound)
+//   Bridge:    Ride cymbal (contrast, open texture)
+//   Interlude: Ride cymbal (contrast from verse sections)
+//   Outro:     Closed HH (matching intro, bookend)
+//   Chant:     Closed HH (tight, rhythmic)
+//   MixBreak:  Ride cymbal (energetic, open)
+bool shouldUseRideForSection(SectionType section, DrumStyle style) {
+  // Rock style always uses ride in Chorus (existing behavior preserved)
+  if (style == DrumStyle::Rock && section == SectionType::Chorus) {
+    return true;
+  }
+
+  // Sparse style never uses ride (keeps minimal texture)
+  if (style == DrumStyle::Sparse) {
+    return false;
+  }
+
+  // Section-based ride selection for all other styles
+  switch (section) {
+    case SectionType::Chorus:
+    case SectionType::Bridge:
+    case SectionType::Interlude:
+    case SectionType::MixBreak:
+    case SectionType::Drop:  // Drop uses ride for open, expansive sound
+      return true;
+    case SectionType::Intro:
+    case SectionType::A:
+    case SectionType::B:
+    case SectionType::Outro:
+    case SectionType::Chant:
+    default:
+      return false;
+  }
+}
+
+// Determine if this beat in a Bridge section should use cross-stick (side stick)
+// instead of the normal timekeeping instrument. Bridge sections alternate
+// between ride cymbal and cross-stick for textural interest.
+// Pattern: beats 1,3 = ride, beats 2,4 = cross-stick
+bool shouldUseBridgeCrossStick(SectionType section, uint8_t beat) {
+  if (section != SectionType::Bridge) {
+    return false;
+  }
+  // Cross-stick on beats 2 and 4 (backbeats) for rhythmic contrast
+  return (beat == 1 || beat == 3);
+}
+
+// Get the timekeeping instrument for a specific beat within a section.
+// Handles the Bridge cross-stick alternation pattern.
+uint8_t getTimekeepingInstrument(SectionType section, DrumRole role, bool use_ride,
+                                  uint8_t beat) {
+  // Bridge cross-stick pattern: alternate ride and cross-stick
+  if (use_ride && shouldUseBridgeCrossStick(section, beat)) {
+    return SIDESTICK;
+  }
+  return getDrumRoleHiHatInstrument(role, use_ride);
+}
+
+// ============================================================================
+// Context-Aware Ghost Note Velocity (Task 3-1)
+// ============================================================================
+// Ghost note velocity varies by section type and beat position.
+// - Verse: subtle 35-40% (background)
+// - Chorus: prominent 50-55% (energy boost)
+// - Bridge: very soft 25-30% (minimal texture)
+// - After snare: +10% boost for groove response
+
+/// @brief Get ghost note velocity multiplier based on section and position.
+/// @param section Current section type
+/// @param beat_position Position within beat (0-3 for 16th notes)
+/// @param is_after_snare true if this follows a snare hit (beats 2,4 + 16th)
+/// @return Velocity multiplier (0.25 - 0.65)
+float getGhostVelocity(SectionType section, int beat_position, bool is_after_snare) {
+  float base = 0.40f;  // Default ghost velocity
+
+  // Section-specific base velocity
+  switch (section) {
+    case SectionType::A:
+    case SectionType::Interlude:
+      // Verse/Interlude: subtle ghosts (35-40%)
+      base = 0.35f + (beat_position % 2 == 0 ? 0.05f : 0.0f);
+      break;
+    case SectionType::Chorus:
+    case SectionType::MixBreak:
+    case SectionType::Drop:
+      // Chorus/MixBreak/Drop: prominent ghosts (50-55%)
+      base = 0.50f + (beat_position % 2 == 0 ? 0.05f : 0.0f);
+      break;
+    case SectionType::Bridge:
+      // Bridge: very soft ghosts (25-30%)
+      base = 0.25f + (beat_position % 2 == 0 ? 0.05f : 0.0f);
+      break;
+    case SectionType::B:
+      // Pre-chorus: building ghosts (40-45%)
+      base = 0.40f + (beat_position % 2 == 0 ? 0.05f : 0.0f);
+      break;
+    case SectionType::Intro:
+    case SectionType::Outro:
+      // Intro/Outro: moderate ghosts (38%)
+      base = 0.38f;
+      break;
+    case SectionType::Chant:
+      // Chant: minimal ghosts (30%)
+      base = 0.30f;
+      break;
+  }
+
+  // After snare boost: +10% for groove response
+  // Creates the "pocket" feel where ghost notes respond to the backbeat
+  if (is_after_snare) {
+    base += 0.10f;
+  }
+
+  return std::clamp(base, 0.25f, 0.65f);
+}
+
+// Legacy constant for backward compatibility (replaced by getGhostVelocity)
 constexpr float GHOST_VEL = 0.45f;
 
 // Get hi-hat velocity multiplier for 16th note position with natural curve.
@@ -161,18 +290,68 @@ void addKickWithHumanize(MidiTrack& track, Tick tick, Tick duration, uint8_t vel
 
 // Fill types for section transitions
 enum class FillType {
-  SnareRoll,      // Snare roll building up
-  TomDescend,     // High -> Mid -> Low tom roll
-  TomAscend,      // Low -> Mid -> High tom roll
-  SnareTomCombo,  // Snare with tom accents
-  SimpleCrash     // Just a crash (for sparse styles)
+  SnareRoll,        // Snare roll building up
+  TomDescend,       // High -> Mid -> Low tom roll
+  TomAscend,        // Low -> Mid -> High tom roll
+  SnareTomCombo,    // Snare with tom accents
+  SimpleCrash,      // Just a crash (for sparse styles)
+  LinearFill,       // Linear 16ths across kit
+  GhostToAccent,    // Ghost notes building to accent
+  BDSnareAlternate, // Kick-snare alternation
+  HiHatChoke,       // Open HH choke to close
+  TomShuffle,       // Tom shuffle pattern
+  BreakdownFill,    // Sparse breakdown fill
+  FlamsAndDrags,    // Flams and drags ornament
+  HalfTimeFill      // Half-time feel fill
 };
+
+// ============================================================================
+// Fill Length Energy Linkage (Task 3-3)
+// ============================================================================
+// Fill length varies based on SectionEnergy:
+// - Low: 1 beat fill (480 ticks) - subtle transition
+// - Medium: 2 beat fill (960 ticks) - standard fill
+// - High/Peak: 1 bar fill (1920 ticks) - dramatic transition
+
+/// @brief Get fill length in ticks based on section energy.
+/// @param energy Section energy level
+/// @return Fill length in ticks (480, 960, or 1920)
+Tick getFillLengthForEnergy(SectionEnergy energy) {
+  switch (energy) {
+    case SectionEnergy::Low:
+      return TICKS_PER_BEAT;      // 1 beat (480 ticks)
+    case SectionEnergy::Medium:
+      return 2 * TICKS_PER_BEAT;  // 2 beats (960 ticks)
+    case SectionEnergy::High:
+    case SectionEnergy::Peak:
+      return TICKS_PER_BAR;       // 1 bar (1920 ticks)
+  }
+  return 2 * TICKS_PER_BEAT;  // Default: 2 beats
+}
+
+/// @brief Get fill start beat based on energy level.
+/// Higher energy allows longer fills starting earlier in the bar.
+/// @param energy Section energy level
+/// @return Beat index to start fill (0-3)
+uint8_t getFillStartBeat(SectionEnergy energy) {
+  switch (energy) {
+    case SectionEnergy::Low:
+      return 3;  // Beat 4 only (1 beat fill)
+    case SectionEnergy::Medium:
+      return 2;  // Beats 3-4 (2 beat fill)
+    case SectionEnergy::High:
+    case SectionEnergy::Peak:
+      return 0;  // Full bar fill
+  }
+  return 2;  // Default: beat 3
+}
 
 // Select fill type based on section transition and style
 FillType selectFillType(SectionType from, SectionType to, DrumStyle style, std::mt19937& rng) {
-  // Sparse style: simple crash only
+  // Sparse style: simple crash or breakdown fill
   if (style == DrumStyle::Sparse) {
-    return FillType::SimpleCrash;
+    std::uniform_int_distribution<int> sparse_dist(0, 1);
+    return sparse_dist(rng) == 0 ? FillType::SimpleCrash : FillType::BreakdownFill;
   }
 
   // Determine energy level of transition
@@ -180,37 +359,65 @@ FillType selectFillType(SectionType from, SectionType to, DrumStyle style, std::
   bool from_intro = (from == SectionType::Intro);
   bool high_energy = (style == DrumStyle::Rock || style == DrumStyle::FourOnFloor);
 
-  std::uniform_int_distribution<int> fill_dist(0, 3);
+  std::uniform_int_distribution<int> fill_dist(0, 7);
   int choice = fill_dist(rng);
 
   // Into Chorus: prefer dramatic fills
   if (to_chorus) {
     if (high_energy) {
-      return (choice < 2) ? FillType::TomDescend : FillType::SnareRoll;
+      switch (choice) {
+        case 0: case 1: return FillType::TomDescend;
+        case 2: return FillType::SnareRoll;
+        case 3: return FillType::LinearFill;
+        case 4: return FillType::BDSnareAlternate;
+        case 5: return FillType::FlamsAndDrags;
+        case 6: return FillType::TomShuffle;
+        default: return FillType::GhostToAccent;
+      }
     }
-    return (choice < 2) ? FillType::SnareTomCombo : FillType::TomDescend;
+    switch (choice) {
+      case 0: case 1: return FillType::SnareTomCombo;
+      case 2: return FillType::TomDescend;
+      case 3: return FillType::GhostToAccent;
+      case 4: return FillType::HiHatChoke;
+      case 5: return FillType::LinearFill;
+      default: return FillType::SnareRoll;
+    }
   }
 
   // From Intro: lighter fills
   if (from_intro) {
-    return (choice < 2) ? FillType::SnareRoll : FillType::SimpleCrash;
+    switch (choice) {
+      case 0: case 1: return FillType::SnareRoll;
+      case 2: return FillType::SimpleCrash;
+      case 3: return FillType::GhostToAccent;
+      case 4: return FillType::BreakdownFill;
+      default: return FillType::HalfTimeFill;
+    }
   }
 
   // Default: random selection weighted by style
   if (high_energy) {
     switch (choice) {
-      case 0:
-        return FillType::TomDescend;
-      case 1:
-        return FillType::SnareRoll;
-      case 2:
-        return FillType::TomAscend;
-      default:
-        return FillType::SnareTomCombo;
+      case 0: return FillType::TomDescend;
+      case 1: return FillType::SnareRoll;
+      case 2: return FillType::TomAscend;
+      case 3: return FillType::SnareTomCombo;
+      case 4: return FillType::LinearFill;
+      case 5: return FillType::BDSnareAlternate;
+      case 6: return FillType::FlamsAndDrags;
+      default: return FillType::TomShuffle;
     }
   }
 
-  return (choice < 2) ? FillType::SnareRoll : FillType::SnareTomCombo;
+  switch (choice) {
+    case 0: case 1: return FillType::SnareRoll;
+    case 2: return FillType::SnareTomCombo;
+    case 3: return FillType::GhostToAccent;
+    case 4: return FillType::HiHatChoke;
+    case 5: return FillType::HalfTimeFill;
+    default: return FillType::BreakdownFill;
+  }
 }
 
 // Generate a fill at the given beat
@@ -290,6 +497,106 @@ void generateFill(MidiTrack& track, Tick beat_tick, uint8_t beat, FillType fill_
         addDrumNote(track, beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, BD, accent_vel);
       }
       break;
+
+    case FillType::LinearFill:
+      // Linear 16ths: BD SD TOM_H TOM_M across beats 3-4
+      if (beat == 2) {
+        addDrumNote(track, beat_tick, SIXTEENTH, BD, fill_vel);
+        addDrumNote(track, beat_tick + SIXTEENTH, SIXTEENTH, SD, fill_vel);
+        addDrumNote(track, beat_tick + 2 * SIXTEENTH, SIXTEENTH, TOM_H, fill_vel);
+        addDrumNote(track, beat_tick + 3 * SIXTEENTH, SIXTEENTH, TOM_M, fill_vel);
+      } else if (beat == 3) {
+        addDrumNote(track, beat_tick, SIXTEENTH, TOM_L, static_cast<uint8_t>(fill_vel + 3));
+        addDrumNote(track, beat_tick + SIXTEENTH, SIXTEENTH, SD, static_cast<uint8_t>(fill_vel + 5));
+        addDrumNote(track, beat_tick + 2 * SIXTEENTH, SIXTEENTH, BD, static_cast<uint8_t>(fill_vel + 7));
+        addDrumNote(track, beat_tick + 3 * SIXTEENTH, SIXTEENTH, SD, accent_vel);
+      }
+      break;
+
+    case FillType::GhostToAccent:
+      // Ghost snare notes building to crash
+      if (beat == 2) {
+        uint8_t ghost = static_cast<uint8_t>(fill_vel * 0.4f);
+        addDrumNote(track, beat_tick, SIXTEENTH, SD, ghost);
+        addDrumNote(track, beat_tick + SIXTEENTH, SIXTEENTH, SD, static_cast<uint8_t>(ghost + 10));
+        addDrumNote(track, beat_tick + 2 * SIXTEENTH, SIXTEENTH, SD, static_cast<uint8_t>(ghost + 20));
+        addDrumNote(track, beat_tick + 3 * SIXTEENTH, SIXTEENTH, SD, static_cast<uint8_t>(ghost + 30));
+      } else if (beat == 3) {
+        addDrumNote(track, beat_tick, EIGHTH, SD, fill_vel);
+        addDrumNote(track, beat_tick + EIGHTH, EIGHTH, SD, accent_vel);
+      }
+      break;
+
+    case FillType::BDSnareAlternate:
+      // Kick-snare alternation, building energy
+      if (beat == 2) {
+        addDrumNote(track, beat_tick, SIXTEENTH, BD, fill_vel);
+        addDrumNote(track, beat_tick + SIXTEENTH, SIXTEENTH, SD, fill_vel);
+        addDrumNote(track, beat_tick + 2 * SIXTEENTH, SIXTEENTH, BD, static_cast<uint8_t>(fill_vel + 3));
+        addDrumNote(track, beat_tick + 3 * SIXTEENTH, SIXTEENTH, SD, static_cast<uint8_t>(fill_vel + 3));
+      } else if (beat == 3) {
+        addDrumNote(track, beat_tick, SIXTEENTH, BD, static_cast<uint8_t>(fill_vel + 5));
+        addDrumNote(track, beat_tick + SIXTEENTH, SIXTEENTH, SD, static_cast<uint8_t>(fill_vel + 5));
+        addDrumNote(track, beat_tick + 2 * SIXTEENTH, SIXTEENTH, BD, accent_vel);
+        addDrumNote(track, beat_tick + 3 * SIXTEENTH, SIXTEENTH, SD, accent_vel);
+      }
+      break;
+
+    case FillType::HiHatChoke:
+      // Open HH building to choke
+      if (beat == 2) {
+        addDrumNote(track, beat_tick, EIGHTH, OHH, fill_vel);
+        addDrumNote(track, beat_tick + EIGHTH, EIGHTH, OHH, static_cast<uint8_t>(fill_vel + 5));
+      } else if (beat == 3) {
+        addDrumNote(track, beat_tick, SIXTEENTH, OHH, static_cast<uint8_t>(fill_vel + 8));
+        addDrumNote(track, beat_tick + SIXTEENTH, SIXTEENTH, CHH, accent_vel);
+        addDrumNote(track, beat_tick + EIGHTH, EIGHTH, SD, accent_vel);
+      }
+      break;
+
+    case FillType::TomShuffle:
+      // Shuffled tom pattern (swing feel)
+      if (beat == 2) {
+        addDrumNote(track, beat_tick, EIGHTH, TOM_H, fill_vel);
+        addDrumNote(track, beat_tick + EIGHTH + SIXTEENTH / 2, SIXTEENTH, TOM_M, static_cast<uint8_t>(fill_vel - 5));
+      } else if (beat == 3) {
+        addDrumNote(track, beat_tick, EIGHTH, TOM_M, fill_vel);
+        addDrumNote(track, beat_tick + EIGHTH + SIXTEENTH / 2, SIXTEENTH, TOM_L, static_cast<uint8_t>(fill_vel + 5));
+      }
+      break;
+
+    case FillType::BreakdownFill:
+      // Sparse: single snare hit with space
+      if (beat == 3) {
+        addDrumNote(track, beat_tick + EIGHTH, SIXTEENTH, SD, accent_vel);
+      }
+      break;
+
+    case FillType::FlamsAndDrags:
+      // Flam (grace note + main) pattern
+      if (beat == 2) {
+        // Flam on beat 3
+        addDrumNote(track, beat_tick - SIXTEENTH / 4, SIXTEENTH / 4, SD, static_cast<uint8_t>(fill_vel * 0.5f));
+        addDrumNote(track, beat_tick, EIGHTH, SD, fill_vel);
+        // Drag on beat 3-and
+        addDrumNote(track, beat_tick + EIGHTH, SIXTEENTH / 2, SD, static_cast<uint8_t>(fill_vel * 0.6f));
+        addDrumNote(track, beat_tick + EIGHTH + SIXTEENTH / 2, SIXTEENTH / 2, SD, static_cast<uint8_t>(fill_vel * 0.6f));
+        addDrumNote(track, beat_tick + EIGHTH + SIXTEENTH, EIGHTH, SD, fill_vel);
+      } else if (beat == 3) {
+        // Flam accent
+        addDrumNote(track, beat_tick - SIXTEENTH / 4, SIXTEENTH / 4, SD, static_cast<uint8_t>(fill_vel * 0.5f));
+        addDrumNote(track, beat_tick, TICKS_PER_BEAT, SD, accent_vel);
+      }
+      break;
+
+    case FillType::HalfTimeFill:
+      // Half-time feel: snare on 3, space on 4
+      if (beat == 2) {
+        addDrumNote(track, beat_tick, TICKS_PER_BEAT, SD, accent_vel);
+        addDrumNote(track, beat_tick, TICKS_PER_BEAT, BD, fill_vel);
+      }
+      // Beat 3: silence (half-time feel = space)
+      break;
   }
 }
 
@@ -298,6 +605,61 @@ enum class GhostPosition {
   E,  // "e" - first 16th after beat (e.g., 1e)
   A   // "a" - third 16th after beat (e.g., 1a)
 };
+
+// ============================================================================
+// Ghost Note Placement Intelligence (Task 3-2)
+// ============================================================================
+// Ghost note probability varies by position relative to snare.
+// - Near snare (before/after beat 2,4): 60% chance (groove pocket)
+// - Other positions: 25% chance (fill texture)
+// - CityPop/FutureBass: beat "a" (3rd 16th) at 70% (shuffle feel)
+
+/// @brief Get ghost note probability for a specific 16th position.
+/// @param beat Beat number (0-3)
+/// @param sixteenth_in_beat Sixteenth position within beat (0-3)
+/// @param mood Current mood for style-specific adjustments
+/// @return Probability (0.0 - 1.0) of placing a ghost note
+float getGhostProbabilityAtPosition(int beat, int sixteenth_in_beat, Mood mood) {
+  // Base probabilities
+  constexpr float NEAR_SNARE_PROB = 0.60f;   // Near beats 2,4 (snare)
+  constexpr float DEFAULT_PROB = 0.25f;      // Other positions
+  constexpr float CITYPOP_A_PROB = 0.70f;    // CityPop "a" position boost
+
+  // Check if position is near snare (beats 2 and 4 = index 1 and 3)
+  // "Near snare" means the 16th immediately before or after the snare hit
+  bool near_snare = false;
+  if (beat == 0 && sixteenth_in_beat == 3) {
+    // "1a" - immediately before beat 2 snare
+    near_snare = true;
+  } else if (beat == 1 && sixteenth_in_beat == 1) {
+    // "2e" - immediately after beat 2 snare
+    near_snare = true;
+  } else if (beat == 2 && sixteenth_in_beat == 3) {
+    // "3a" - immediately before beat 4 snare
+    near_snare = true;
+  } else if (beat == 3 && sixteenth_in_beat == 1) {
+    // "4e" - immediately after beat 4 snare
+    near_snare = true;
+  }
+
+  float base_prob = near_snare ? NEAR_SNARE_PROB : DEFAULT_PROB;
+
+  // Style-specific adjustments for "a" positions (3rd 16th in each beat)
+  // CityPop and FutureBass prefer the "a" position for shuffle/groove feel
+  if (sixteenth_in_beat == 3) {
+    switch (mood) {
+      case Mood::CityPop:
+      case Mood::FutureBass:
+      case Mood::RnBNeoSoul:
+        base_prob = std::max(base_prob, CITYPOP_A_PROB);
+        break;
+      default:
+        break;
+    }
+  }
+
+  return base_prob;
+}
 
 // Select ghost note positions based on groove feel
 std::vector<GhostPosition> selectGhostPositions(Mood mood, std::mt19937& rng) {
@@ -327,6 +689,13 @@ std::vector<GhostPosition> selectGhostPositions(Mood mood, std::mt19937& rng) {
       // Soft: minimal ghosts
       prefer_e = (std::uniform_real_distribution<float>(0, 1)(rng) < 0.5f);
       prefer_a = false;
+      break;
+    case Mood::CityPop:
+    case Mood::FutureBass:
+    case Mood::RnBNeoSoul:
+      // CityPop/FutureBass/R&B: prefer "a" position for groove
+      prefer_e = (std::uniform_real_distribution<float>(0, 1)(rng) < 0.4f);
+      prefer_a = true;
       break;
     default:
       // Standard: "e" position
@@ -365,12 +734,16 @@ MoodCategory getMoodCategory(Mood mood) {
     case Mood::Ballad:
     case Mood::Sentimental:
     case Mood::Chill:
+    case Mood::Lofi:       // Lofi is calm/sparse
       return MoodCategory::Calm;
     case Mood::EnergeticDance:
     case Mood::IdolPop:
     case Mood::Anthem:
     case Mood::Yoasobi:
+    case Mood::LatinPop:   // Latin is energetic
+    case Mood::Trap:       // Trap has energetic hi-hats despite slow tempo
       return MoodCategory::Energetic;
+    case Mood::RnBNeoSoul: // R&B is standard with groove
     default:
       return MoodCategory::Standard;
   }
@@ -397,6 +770,8 @@ int getSectionIndex(SectionType section) {
       return 7;
     case SectionType::MixBreak:
       return 8;
+    case SectionType::Drop:
+      return 3;  // Drop uses Chorus-level ghost density (high energy)
   }
   return 1;  // Default to A section level
 }
@@ -508,6 +883,47 @@ struct KickPattern {
   bool beat4;      // Beat 4
   bool beat4_and;  // Beat 4&
 };
+
+// ============================================================================
+// Pre-chorus Lift Helper
+// ============================================================================
+
+/// @brief Check if this bar is in the pre-chorus lift zone.
+///
+/// Pre-chorus lift occurs in the last 2 bars of a B section that precedes
+/// a Chorus. During the lift:
+/// - Kick and snare drop out (only hi-hat remains)
+/// - Creates anticipation/buildup effect
+///
+/// @param section Current section
+/// @param bar Bar within section (0-based)
+/// @param sections All sections in song
+/// @param sec_idx Index of current section in sections vector
+/// @return true if in pre-chorus lift zone
+bool isInPreChorusLift(const Section& section, uint8_t bar,
+                       const std::vector<Section>& sections, size_t sec_idx) {
+  // Only applies to B sections
+  if (section.type != SectionType::B) {
+    return false;
+  }
+
+  // Must have a next section that is Chorus
+  if (sec_idx + 1 >= sections.size()) {
+    return false;
+  }
+  if (sections[sec_idx + 1].type != SectionType::Chorus) {
+    return false;
+  }
+
+  // Check if we're in the last 2 bars of the B section
+  if (section.bars < 3) {
+    // Section too short for lift (need at least 3 bars)
+    return false;
+  }
+
+  // Last 2 bars: bar >= (section.bars - 2)
+  return bar >= (section.bars - 2);
+}
 
 // Convert Euclidean bitmask (16-step) to KickPattern
 // Maps: step 0,2,4,6,8,10,12,14 -> beat1, beat1_and, beat2, beat2_and, etc.
@@ -623,6 +1039,28 @@ KickPattern getKickPattern(SectionType section, DrumStyle style, int bar, std::m
       }
       break;
 
+    case DrumStyle::Trap:
+      // Trap: 808 kick pattern with syncopated hits
+      // Characteristic: kick on 1, syncopated hits on off-beats
+      p.beat1 = true;
+      // Syncopated kick on beat 2-and (common trap pattern)
+      p.beat2_and = (dist(rng) < 0.80f);
+      // Beat 3: less frequent (half-time feel - snare goes here instead)
+      p.beat3 = (dist(rng) < 0.30f);
+      // Beat 4-and: push into next bar (very common in trap)
+      p.beat4_and = (dist(rng) < 0.70f);
+      break;
+
+    case DrumStyle::Latin:
+      // Latin/Dembow: characteristic kick-snare pattern
+      // Dembow rhythm: kick on 1 and 3, with syncopation on beat 2-and
+      p.beat1 = true;
+      p.beat2_and = true;  // Characteristic dembow syncopation
+      p.beat3 = true;
+      // 50% chance for beat 4-and push
+      p.beat4_and = (dist(rng) < 0.50f);
+      break;
+
     case DrumStyle::Standard:
     default:
       // Standard pop
@@ -714,6 +1152,16 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity ba
       return HiHatLevel::Eighth;
     }
     return HiHatLevel::Sixteenth;
+  } else if (style == DrumStyle::Trap) {
+    // Trap: always 16th notes for hi-hat rolls (signature sound)
+    // Even at high BPM, trap hi-hats are machine-generated so playability is not a concern
+    return HiHatLevel::Sixteenth;
+  } else if (style == DrumStyle::Latin) {
+    // Latin: 8th notes base, occasional 16th for variation
+    if (allow_16th && section == SectionType::Chorus && dist(rng) < 0.30f) {
+      return HiHatLevel::Sixteenth;
+    }
+    return HiHatLevel::Eighth;
   } else {
     switch (section) {
       case SectionType::Intro:
@@ -760,6 +1208,14 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity ba
           base_level = HiHatLevel::Eighth;
         }
         break;
+      case SectionType::Drop:
+        // Drop section: 16th notes for energy (like Chorus)
+        if (allow_16th && dist(rng) < 0.50f) {
+          base_level = HiHatLevel::Sixteenth;
+        } else {
+          base_level = HiHatLevel::Eighth;
+        }
+        break;
     }
   }
 
@@ -778,6 +1234,401 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity ba
   return base_level;
 }
 
+// ============================================================================
+// Dynamic Hi-Hat Patterns: Open HH and Foot HH placement
+// ============================================================================
+
+// Foot hi-hat velocity range (subtle timekeeping)
+constexpr uint8_t FHH_VEL_MIN = 45;
+constexpr uint8_t FHH_VEL_MAX = 60;
+
+// Open hi-hat velocity boost over closed hi-hat
+constexpr uint8_t OHH_VEL_BOOST = 7;
+
+/// @brief Determine the open hi-hat interval for a section.
+/// Returns the bar interval at which open hi-hat should appear.
+/// 0 means no open hi-hat for this section.
+/// @param section Section type
+/// @param style Drum style
+/// @return Bar interval (1 = every bar, 2 = every 2 bars, 4 = every 4 bars, 0 = none)
+int getOpenHiHatBarInterval(SectionType section, DrumStyle style) {
+  // Sparse style: very rare open HH
+  if (style == DrumStyle::Sparse) {
+    return (section == SectionType::Chorus) ? 4 : 0;
+  }
+
+  switch (section) {
+    case SectionType::Intro:
+      // Intro: very sparse open HH (every 4 bars) or none
+      return (style == DrumStyle::FourOnFloor) ? 4 : 0;
+    case SectionType::A:
+      // Verse: occasional open HH every 2-4 bars
+      return (style == DrumStyle::FourOnFloor || style == DrumStyle::Upbeat) ? 2 : 4;
+    case SectionType::B:
+      // Pre-chorus: building energy, every 2 bars
+      return 2;
+    case SectionType::Chorus:
+    case SectionType::MixBreak:
+      // Chorus/MixBreak: frequent open HH, every 1-2 bars
+      return (style == DrumStyle::Rock || style == DrumStyle::FourOnFloor) ? 1 : 2;
+    case SectionType::Bridge:
+      // Bridge: prefer foot HH, sparse open HH
+      return 0;
+    case SectionType::Interlude:
+    case SectionType::Outro:
+      // Interlude/Outro: sparse
+      return 4;
+    case SectionType::Chant:
+      return 0;
+    case SectionType::Drop:
+      // Drop: frequent open HH for energy (like Chorus)
+      return (style == DrumStyle::Rock || style == DrumStyle::FourOnFloor) ? 1 : 2;
+  }
+  return 4;
+}
+
+/// @brief Determine which beat gets the open hi-hat within a bar.
+/// Returns the beat number (0-3) where open HH should be placed.
+/// Typically beat 3 (beat 4 in musician counting) is common in pop/rock.
+/// @param section Section type
+/// @param bar Bar number within section (for variation)
+/// @param rng Random number generator
+/// @return Beat index (0-3) for open HH placement
+uint8_t getOpenHiHatBeat(SectionType section, int bar, std::mt19937& rng) {
+  // Most common: beat 4 (index 3) - standard pop/rock open HH placement
+  // Chorus sections can also use beat 2 (index 1) for more energy
+  if (section == SectionType::Chorus || section == SectionType::MixBreak) {
+    std::uniform_int_distribution<int> beat_dist(0, 3);
+    int choice = beat_dist(rng);
+    // 60% beat 4, 25% beat 2, 15% beat 3
+    if (choice < 2) return 3;       // beat 4
+    if (choice < 3) return 1;       // beat 2
+    return 2;                        // beat 3
+  }
+
+  // Most sections: beat 4 (index 3)
+  (void)bar;
+  return 3;
+}
+
+/// @brief Check if a section should use foot hi-hat.
+/// Foot hi-hat is used in sparse/ambient sections as subtle timekeeping.
+/// @param section Section type
+/// @param drum_role Current drum role
+/// @return true if foot hi-hat should be used
+bool shouldUseFootHiHat(SectionType section, DrumRole drum_role) {
+  // FXOnly: no hi-hat at all
+  if (drum_role == DrumRole::FXOnly) return false;
+
+  switch (section) {
+    case SectionType::Intro:
+    case SectionType::Bridge:
+    case SectionType::Interlude:
+      // Sparse sections benefit from foot HH
+      return true;
+    case SectionType::Outro:
+      // Outro: foot HH for gentle fade
+      return true;
+    case SectionType::Chant:
+      // Chant: very minimal
+      return (drum_role == DrumRole::Minimal || drum_role == DrumRole::Ambient);
+    default:
+      // Other sections: foot HH only for Ambient/Minimal roles
+      return (drum_role == DrumRole::Ambient || drum_role == DrumRole::Minimal);
+  }
+}
+
+// ============================================================================
+// Hi-Hat Type Expansion (Task 3-4)
+// ============================================================================
+// Section-based hi-hat instrument selection:
+// - Intro/Verse: Pedal HH (note 44) for subtle timekeeping
+// - Pre-chorus: Closed HH (note 42) for tighter feel
+// - Chorus: Open HH (note 46) mix for energy and width
+// - Bridge: Ride cymbal (note 51) for contrast
+// Half-open HH is emulated with Closed HH at 70-80% velocity.
+
+/// @brief Hi-hat type for section-aware timekeeping.
+enum class HiHatType : uint8_t {
+  Closed,     ///< Standard closed HH (GM 42)
+  Pedal,      ///< Foot/pedal HH (GM 44) - subtle, short
+  Open,       ///< Open HH (GM 46) - bright, sustaining
+  HalfOpen,   ///< Half-open: emulated with Closed HH at 70-80% velocity
+  Ride        ///< Ride cymbal (GM 51) - for Bridge/contrast
+};
+
+/// @brief Get the primary hi-hat type for a section.
+/// @param section Section type
+/// @param drum_role Drum role (affects timekeeping instrument)
+/// @return Recommended HiHatType for the section
+HiHatType getSectionHiHatType(SectionType section, DrumRole drum_role) {
+  // Ambient/Minimal roles prefer Ride or Pedal
+  if (drum_role == DrumRole::Ambient) {
+    return HiHatType::Ride;
+  }
+  if (drum_role == DrumRole::Minimal) {
+    return HiHatType::Pedal;
+  }
+
+  switch (section) {
+    case SectionType::Intro:
+    case SectionType::A:
+      // Intro/Verse: Pedal HH for subtle, restrained feel
+      return HiHatType::Pedal;
+    case SectionType::B:
+      // Pre-chorus: Closed HH for building tension
+      return HiHatType::Closed;
+    case SectionType::Chorus:
+    case SectionType::Drop:
+    case SectionType::MixBreak:
+      // Chorus/Drop/MixBreak: Open HH mix for energy
+      return HiHatType::Open;
+    case SectionType::Bridge:
+    case SectionType::Interlude:
+      // Bridge/Interlude: Ride for contrast
+      return HiHatType::Ride;
+    case SectionType::Outro:
+      // Outro: Half-open for gentle fade
+      return HiHatType::HalfOpen;
+    case SectionType::Chant:
+      // Chant: Pedal HH for minimal texture
+      return HiHatType::Pedal;
+    default:
+      return HiHatType::Closed;
+  }
+}
+
+/// @brief Get the GM note number for a hi-hat type.
+/// @param type Hi-hat type
+/// @return GM drum note number
+uint8_t getHiHatNote(HiHatType type) {
+  switch (type) {
+    case HiHatType::Pedal:
+      return FHH;   // 44 - Foot Hi-Hat
+    case HiHatType::Open:
+      return OHH;   // 46 - Open Hi-Hat
+    case HiHatType::HalfOpen:
+      return CHH;   // 42 - Closed (emulated with velocity)
+    case HiHatType::Ride:
+      return RIDE;  // 51 - Ride Cymbal
+    case HiHatType::Closed:
+    default:
+      return CHH;   // 42 - Closed Hi-Hat
+  }
+}
+
+/// @brief Get velocity multiplier for hi-hat type.
+/// Half-open is emulated by reducing Closed HH velocity to 70-80%.
+/// @param type Hi-hat type
+/// @return Velocity multiplier (0.7 - 1.0)
+float getHiHatVelocityMultiplier(HiHatType type) {
+  switch (type) {
+    case HiHatType::HalfOpen:
+      return 0.75f;  // Emulate half-open with softer closed HH
+    case HiHatType::Pedal:
+      return 0.65f;  // Pedal HH is naturally softer
+    case HiHatType::Open:
+      return 1.0f;   // Open HH full velocity
+    case HiHatType::Ride:
+      return 0.90f;  // Ride slightly softer than snare
+    case HiHatType::Closed:
+    default:
+      return 0.85f;  // Standard closed HH
+  }
+}
+
+/// @brief Check if open HH accent should be added at this beat.
+/// Open HH accents are used to punctuate the groove, typically on beat 4
+/// or beat 2 & 4 in energetic sections.
+/// @param section Section type
+/// @param beat Beat index (0-3)
+/// @param bar Bar index within section
+/// @param rng Random number generator for variation
+/// @return true if open HH accent should be added
+bool shouldAddOpenHHAccent(SectionType section, int beat, int bar, std::mt19937& rng) {
+  // Only add open HH accents in high-energy sections
+  if (section != SectionType::Chorus && section != SectionType::Drop &&
+      section != SectionType::MixBreak && section != SectionType::B) {
+    return false;
+  }
+
+  // Standard: open HH on beat 4 of every 2nd bar
+  // Chorus/Drop: open HH on beat 2 & 4 of every bar
+  bool is_high_energy = (section == SectionType::Chorus || section == SectionType::Drop ||
+                         section == SectionType::MixBreak);
+
+  if (is_high_energy) {
+    // 60% chance on beats 2 and 4
+    if (beat == 1 || beat == 3) {
+      std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+      return dist(rng) < 0.60f;
+    }
+  } else {
+    // 40% chance on beat 4 of every 2nd bar
+    if (beat == 3 && bar % 2 == 1) {
+      std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+      return dist(rng) < 0.40f;
+    }
+  }
+
+  return false;
+}
+
+/// @brief Get foot hi-hat velocity with slight humanization.
+/// @param rng Random number generator
+/// @return Velocity in range [FHH_VEL_MIN, FHH_VEL_MAX]
+uint8_t getFootHiHatVelocity(std::mt19937& rng) {
+  std::uniform_int_distribution<int> vel_dist(FHH_VEL_MIN, FHH_VEL_MAX);
+  return static_cast<uint8_t>(vel_dist(rng));
+}
+
+/// @brief Check if a crash cymbal exists at the given tick in the track.
+/// Open HH should not be placed where crash already exists.
+/// @param track MIDI track to search
+/// @param tick Tick position to check
+/// @return true if a crash exists at or near the tick
+bool hasCrashAtTick(const MidiTrack& track, Tick tick) {
+  for (const auto& note : track.notes()) {
+    if (note.note == CRASH && note.start_tick >= tick && note.start_tick < tick + SIXTEENTH) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ============================================================================
+// Percussion Expansion System
+// ============================================================================
+//
+// Auxiliary percussion elements: Tambourine (54), Shaker (70), Hand Clap (39).
+// Each element is enabled/disabled based on mood category and section type.
+//
+
+// Percussion element activation flags per section
+struct PercussionConfig {
+  bool tambourine;  // GM 54 - backbeat on 2 & 4 in energetic sections
+  bool shaker;      // GM 70 - 16th note pattern for subtle rhythm
+  bool handclap;    // GM 39 - layered with snare on 2 & 4
+};
+
+// Mood category for percussion activation table lookup.
+enum class PercMoodCategory : uint8_t {
+  Calm = 0,      // Ballad, Sentimental, Chill
+  Standard = 1,  // Most moods (Pop, Nostalgic, etc.)
+  Energetic = 2, // EnergeticDance, ElectroPop, FutureBass, Anthem, Yoasobi
+  Idol = 3,      // IdolPop, BrightUpbeat, MidPop
+  RockDark = 4   // LightRock, DarkPop, Dramatic
+};
+
+PercMoodCategory getPercMoodCategory(Mood mood) {
+  switch (mood) {
+    case Mood::Ballad:
+    case Mood::Sentimental:
+    case Mood::Chill:
+    case Mood::Lofi:       // Lofi is calm/sparse
+    case Mood::RnBNeoSoul: // R&B is calm/groove-oriented
+      return PercMoodCategory::Calm;
+    case Mood::EnergeticDance:
+    case Mood::ElectroPop:
+    case Mood::FutureBass:
+    case Mood::Anthem:
+    case Mood::Yoasobi:
+    case Mood::LatinPop:   // Latin is energetic
+      return PercMoodCategory::Energetic;
+    case Mood::IdolPop:
+    case Mood::BrightUpbeat:
+    case Mood::MidPop:
+      return PercMoodCategory::Idol;
+    case Mood::LightRock:
+    case Mood::DarkPop:
+    case Mood::Dramatic:
+    case Mood::Trap:       // Trap is dark/aggressive category
+      return PercMoodCategory::RockDark;
+    default:
+      return PercMoodCategory::Standard;
+  }
+}
+
+// Table-driven percussion activation by mood category and section.
+//
+// Design rationale:
+//   Tambourine  - Backbeat color in chorus/energetic sections
+//   Shaker      - Subtle 16th note pulse in verses for rhythmic texture
+//   Hand Clap   - Layered with snare in chorus for extra impact
+//
+// S=Shaker, T=Tambourine, C=Clap
+// clang-format off
+struct PercActivation {
+  bool tambourine;
+  bool shaker;
+  bool handclap;
+};
+
+// [mood_category][section_index]  (see getSectionIndex for mapping)
+constexpr PercActivation PERC_TABLE[5][9] = {
+  //            Intro              A                  B                  Chorus             Bridge             Inter              Outro              Chant              Mix
+  /* Calm */  {{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,false}},
+  /* Std  */  {{false,false,false},{false,true, false},{false,true, false},{true, false,true },{false,false,false},{false,false,false},{false,false,false},{false,false,false},{true, false,true }},
+  /* Ener */  {{false,false,false},{false,true, false},{false,true, false},{true, true, true },{false,false,false},{false,false,false},{false,false,false},{false,false,false},{true, true, true }},
+  /* Idol */  {{false,false,false},{false,true, false},{false,true, false},{true, true, true },{false,false,false},{false,false,false},{false,false,false},{false,false,false},{true, true, true }},
+  /* Rock */  {{false,false,false},{false,false,false},{false,false,false},{false,false,true },{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,true }},
+};
+// clang-format on
+
+PercussionConfig getPercussionConfig(Mood mood, SectionType section) {
+  int mood_idx = static_cast<int>(getPercMoodCategory(mood));
+  int section_idx = getSectionIndex(section);
+  const auto& act = PERC_TABLE[mood_idx][section_idx];
+  return {act.tambourine, act.shaker, act.handclap};
+}
+
+// Generate auxiliary percussion for one bar.
+// Called after main drum beat loop for each bar.
+void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start,
+                                  const PercussionConfig& config, DrumRole drum_role,
+                                  float density_mult, std::mt19937& rng) {
+  // Skip if drums are minimal or FX-only
+  if (drum_role == DrumRole::Minimal || drum_role == DrumRole::FXOnly) {
+    return;
+  }
+
+  std::uniform_real_distribution<float> vel_var(0.90f, 1.10f);
+
+  // --- Tambourine (GM 54): backbeat on beats 2 and 4 ---
+  if (config.tambourine) {
+    for (int beat = 1; beat <= 3; beat += 2) {
+      Tick beat_tick = bar_start + beat * TICKS_PER_BEAT;
+      float raw_vel = 70.0f * density_mult * vel_var(rng);
+      uint8_t tam_vel = static_cast<uint8_t>(std::clamp(raw_vel, 40.0f, 90.0f));
+      addDrumNote(track, beat_tick, EIGHTH, TAMBOURINE, tam_vel);
+    }
+  }
+
+  // --- Shaker (GM 70): 16th note pattern with dynamic accents ---
+  // Pattern per beat: strong-weak-medium-weak
+  if (config.shaker) {
+    constexpr float SHAKER_16TH_VEL[4] = {0.75f, 0.45f, 0.60f, 0.45f};
+    for (int beat = 0; beat < 4; ++beat) {
+      for (int sub = 0; sub < 4; ++sub) {
+        Tick sub_tick = bar_start + beat * TICKS_PER_BEAT + sub * SIXTEENTH;
+        float raw_vel = 80.0f * SHAKER_16TH_VEL[sub] * density_mult * vel_var(rng);
+        uint8_t shk_vel = static_cast<uint8_t>(std::clamp(raw_vel, 25.0f, 85.0f));
+        addDrumNote(track, sub_tick, SIXTEENTH, SHAKER, shk_vel);
+      }
+    }
+  }
+
+  // --- Hand Clap (GM 39): backbeat on beats 2 and 4, layered with snare ---
+  if (config.handclap) {
+    for (int beat = 1; beat <= 3; beat += 2) {
+      Tick beat_tick = bar_start + beat * TICKS_PER_BEAT;
+      float raw_vel = 85.0f * density_mult * vel_var(rng);
+      uint8_t clap_vel = static_cast<uint8_t>(std::clamp(raw_vel, 50.0f, 100.0f));
+      addDrumNote(track, beat_tick, EIGHTH, HANDCLAP, clap_vel);
+    }
+  }
+}
+
 }  // namespace
 
 // ============================================================================
@@ -786,8 +1637,10 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity ba
 
 float getHiHatSwingFactor(Mood mood) {
   switch (mood) {
-    // Jazz and CityPop: stronger swing feel
+    // Jazz, CityPop, R&B, Lofi: stronger swing feel
     case Mood::CityPop:
+    case Mood::RnBNeoSoul:
+    case Mood::Lofi:
       return 0.7f;
     // IdolPop and Yoasobi: lighter, more precise swing
     case Mood::IdolPop:
@@ -797,6 +1650,12 @@ float getHiHatSwingFactor(Mood mood) {
     case Mood::Ballad:
     case Mood::Sentimental:
       return 0.4f;
+    // Latin: moderate swing for groove
+    case Mood::LatinPop:
+      return 0.35f;
+    // Trap: no swing (machine-precise hi-hats)
+    case Mood::Trap:
+      return 0.0f;
     // Everything else: standard swing
     default:
       return 0.5f;
@@ -866,13 +1725,18 @@ Tick getSwingOffsetContinuous(DrumGrooveFeel groove, Tick subdivision, SectionTy
   // Get continuous swing amount (with optional override from ProductionBlueprint)
   float swing_amount = calculateSwingAmount(section, bar_in_section, total_bars, swing_override);
 
-  // For Shuffle, amplify the swing amount
+  // For Shuffle, amplify the swing amount (clamped to 1.0 for triplet grid blend)
   if (groove == DrumGrooveFeel::Shuffle) {
-    swing_amount = std::min(0.7f, swing_amount * 1.5f);
+    swing_amount = std::min(1.0f, swing_amount * 1.5f);
   }
 
-  // Apply swing as fraction of subdivision
-  return static_cast<Tick>(subdivision * swing_amount);
+  // Use triplet-grid quantization offset instead of simple linear offset.
+  // For 8th-note subdivision: offset = 80 * swing_amount (max 80 ticks at full triplet)
+  // For 16th-note subdivision: offset = 40 * swing_amount (max 40 ticks at full triplet)
+  if (subdivision <= TICK_SIXTEENTH) {
+    return swingOffsetFor16th(swing_amount);
+  }
+  return swingOffsetForEighth(swing_amount);
 }
 
 // ============================================================================
@@ -945,7 +1809,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
                         std::mt19937& rng) {
   DrumStyle style = getMoodDrumStyle(params.mood);
   DrumGrooveFeel groove = getMoodDrumGrooveFeel(params.mood);
-  const auto& sections = song.arrangement().sections();
+  const auto& all_sections = song.arrangement().sections();
 
   // Determine if we should use Euclidean rhythm patterns
   const auto& blueprint = getProductionBlueprint(params.blueprint_id);
@@ -976,15 +1840,15 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
     groove = DrumGrooveFeel::Straight;
   }
 
-  for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
-    const auto& section = sections[sec_idx];
+  for (size_t sec_idx = 0; sec_idx < all_sections.size(); ++sec_idx) {
+    const auto& section = all_sections[sec_idx];
 
     // Skip sections where drums is disabled by track_mask
     if (!hasTrack(section.track_mask, TrackMask::Drums)) {
       continue;
     }
 
-    bool is_last_section = (sec_idx == sections.size() - 1);
+    bool is_last_section = (sec_idx == all_sections.size() - 1);
 
     // Section-specific density for velocity - more contrast for dynamics
     float density_mult = 1.0f;
@@ -1015,6 +1879,10 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
         break;
       case SectionType::MixBreak:
         density_mult = 1.2f;  // High energy MIX
+        add_crash_accent = true;
+        break;
+      case SectionType::Drop:
+        density_mult = 1.1f;  // High energy Drop (similar to Chorus)
         add_crash_accent = true;
         break;
     }
@@ -1057,11 +1925,17 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
       use_ghost_notes = false;
     }
 
-    bool use_ride = (style == DrumStyle::Rock && section.type == SectionType::Chorus);
+    // Section-based timekeeping: ride cymbal for Chorus/Bridge/Interlude,
+    // closed HH for Verse/Intro/Outro (see shouldUseRideForSection)
+    bool use_ride = shouldUseRideForSection(section.type, style);
 
     // BackgroundMotif: prefer open hi-hat accents on off-beats
     bool motif_open_hh =
         is_background_motif && drum_params.hihat_density == HihatDensity::EighthOpen;
+
+    // Dynamic hi-hat: compute open HH interval and foot HH flag for this section
+    int ohh_bar_interval = getOpenHiHatBarInterval(section.type, style);
+    bool use_foot_hh = shouldUseFootHiHat(section.type, section.drum_role);
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
@@ -1079,6 +1953,36 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
           uint8_t crash_vel = calculateVelocity(section.type, 0, params.mood);
           addDrumNote(track, bar_start, EIGHTH, CRASH, crash_vel);
         }
+      }
+
+      // PeakLevel::Max: add crash at every 4-bar head for maximum intensity
+      if (section.peak_level == PeakLevel::Max && bar > 0 && bar % 4 == 0) {
+        uint8_t crash_vel = static_cast<uint8_t>(calculateVelocity(section.type, 0, params.mood) * 0.9f);
+        addDrumNote(track, bar_start, EIGHTH, CRASH, crash_vel);
+      }
+
+      // PeakLevel::Max: add tambourine on offbeats (8th note upbeats)
+      // Creates driving rhythmic texture for the climax
+      if (section.peak_level == PeakLevel::Max) {
+        for (uint8_t beat = 0; beat < 4; ++beat) {
+          Tick offbeat_tick = bar_start + beat * TICKS_PER_BEAT + EIGHTH;
+          // Cap at 90 to stay within expected range for auxiliary percussion
+          uint8_t tam_vel = static_cast<uint8_t>(std::min(90.0f, 65.0f * density_mult));
+          addDrumNote(track, offbeat_tick, EIGHTH, TAMBOURINE, tam_vel);
+        }
+      }
+
+      // PeakLevel::Medium enhancement: force open HH on beats 2,4 for fuller sound
+      bool peak_open_hh_24 = (section.peak_level >= PeakLevel::Medium);
+
+      // Dynamic hi-hat: determine if this bar gets an open HH accent
+      bool bar_has_open_hh = false;
+      uint8_t open_hh_beat = 3;  // Default: beat 4
+      if (ohh_bar_interval > 0 && (bar % ohh_bar_interval == (ohh_bar_interval - 1))) {
+        open_hh_beat = getOpenHiHatBeat(section.type, bar, rng);
+        // Check that no crash exists at the target position
+        Tick ohh_check_tick = bar_start + open_hh_beat * TICKS_PER_BEAT;
+        bar_has_open_hh = !hasCrashAtTick(track, ohh_check_tick);
       }
 
       // Get kick pattern for this bar
@@ -1104,15 +2008,49 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
         // Check next section's fill_before flag
         bool next_wants_fill = false;
         SectionType next_section = section.type;
-        if (sec_idx + 1 < sections.size()) {
-          next_section = sections[sec_idx + 1].type;
-          next_wants_fill = sections[sec_idx + 1].fill_before;
+        if (sec_idx + 1 < all_sections.size()) {
+          next_section = all_sections[sec_idx + 1].type;
+          next_wants_fill = all_sections[sec_idx + 1].fill_before;
+        }
+
+        // ===== PRE-CHORUS BUILDUP =====
+        // In the last 2 bars of B section before Chorus:
+        // Add 8th note snare pattern with velocity crescendo
+        bool in_prechorus_lift = isInPreChorusLift(section, bar, all_sections, sec_idx);
+
+        // Pre-chorus snare buildup: 8th note snares with crescendo
+        // Note: hi-hat continues for rhythmic continuity (handled after this block)
+        bool did_buildup = false;
+        if (in_prechorus_lift) {
+          // Calculate progress through the 2-bar buildup zone (0.0 to 1.0)
+          uint8_t bars_in_lift = 2;
+          uint8_t bar_in_lift = bar - (section.bars - bars_in_lift);
+          float buildup_progress = (bar_in_lift * 4.0f + beat) / (bars_in_lift * 4.0f);
+
+          // Velocity crescendo: 50% -> 100%
+          float crescendo = 0.5f + 0.5f * buildup_progress;
+          uint8_t buildup_vel = static_cast<uint8_t>(velocity * crescendo);
+
+          // Add 8th note snare pattern on every beat during buildup
+          addDrumNote(track, beat_tick, EIGHTH, SD, buildup_vel);
+          uint8_t offbeat_vel = static_cast<uint8_t>(buildup_vel * 0.85f);
+          addDrumNote(track, beat_tick + EIGHTH, EIGHTH, SD, offbeat_vel);
+
+          // Add crash on final beat of buildup (just before Chorus)
+          if (bar == section.bars - 1 && beat == 3) {
+            uint8_t crash_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(velocity * 1.1f)));
+            addDrumNote(track, beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, CRASH, crash_vel);
+          }
+          did_buildup = true;
+          // Don't continue - let hi-hat generation proceed below
         }
 
         // Insert fill if: last bar, not last section, beat >= 2, AND
         // either next section wants fill OR we're transitioning to Chorus
+        // Note: Skip fills in buildup zone (buildup pattern takes precedence)
         bool should_fill = is_section_last_bar && !is_last_section && beat >= 2 &&
-                           (next_wants_fill || next_section == SectionType::Chorus);
+                           (next_wants_fill || next_section == SectionType::Chorus) &&
+                           !did_buildup;
 
         if (should_fill) {
           // Select fill type based on transition
@@ -1129,6 +2067,11 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
         // ===== KICK DRUM =====
         // Apply DrumRole-based kick probability
         float kick_prob = getDrumRoleKickProbability(section.drum_role);
+
+        // Pre-chorus lift: suppress kick
+        if (in_prechorus_lift) {
+          kick_prob = 0.0f;
+        }
         std::uniform_real_distribution<float> kick_dist(0.0f, 1.0f);
 
         bool play_kick_on = false;
@@ -1179,6 +2122,11 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
         // ===== SNARE DRUM =====
         // Apply DrumRole-based snare probability
         float snare_prob = getDrumRoleSnareProbability(section.drum_role);
+
+        // Pre-chorus lift: suppress snare
+        if (in_prechorus_lift) {
+          snare_prob = 0.0f;
+        }
 
         bool is_intro_first = (section.type == SectionType::Intro && bar == 0);
 
@@ -1247,37 +2195,63 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
         }
 
         // ===== HI-HAT =====
-        // Skip hi-hat for FXOnly DrumRole
+        // Skip main hi-hat for FXOnly DrumRole, but add foot HH if applicable
         if (!shouldPlayHiHat(section.drum_role)) {
-          continue;  // Skip hi-hat generation entirely for FXOnly
+          if (use_foot_hh && (beat == 0 || beat == 2)) {
+            addDrumNote(track, beat_tick, EIGHTH, FHH, getFootHiHatVelocity(rng));
+          }
+          continue;
         }
 
-        // Use DrumRole-aware instrument selection
-        uint8_t hh_instrument = getDrumRoleHiHatInstrument(section.drum_role, use_ride);
+        // Use section-aware and beat-aware instrument selection
+        // (Bridge sections alternate ride + cross-stick on backbeats)
+        uint8_t hh_instrument = getTimekeepingInstrument(
+            section.type, section.drum_role, use_ride, beat);
+
+        // Dynamic open HH: replace closed HH on the designated beat
+        bool is_dynamic_open_hh_beat = bar_has_open_hh && (beat == open_hh_beat);
 
         switch (hh_level) {
-          case HiHatLevel::Quarter:
+          case HiHatLevel::Quarter: {
             // Quarter notes only
-            if (section.type != SectionType::Intro || beat == 0) {
-              uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult * 0.75f);
-              addDrumNote(track, beat_tick, EIGHTH, hh_instrument, hh_vel);
+            bool is_intro_rest = (section.type == SectionType::Intro && beat != 0);
+            if (!is_intro_rest) {
+              // Dynamic open HH replacement on designated beat
+              if (is_dynamic_open_hh_beat) {
+                uint8_t ohh_vel = static_cast<uint8_t>(
+                    std::min(127, static_cast<int>(velocity * density_mult * 0.75f) + OHH_VEL_BOOST));
+                addDrumNote(track, beat_tick, EIGHTH, OHH, ohh_vel);
+              } else {
+                uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult * 0.75f);
+                addDrumNote(track, beat_tick, EIGHTH, hh_instrument, hh_vel);
+              }
+            } else if (use_foot_hh) {
+              // Foot hi-hat on rests in quarter-note pattern (Intro, etc.)
+              addDrumNote(track, beat_tick, EIGHTH, FHH, getFootHiHatVelocity(rng));
             }
             break;
+          }
 
           case HiHatLevel::Eighth:
             // 8th notes
             for (int eighth = 0; eighth < 2; ++eighth) {
               Tick hh_tick = beat_tick + eighth * EIGHTH;
 
-              // Apply continuous swing offset to off-beats (eighth == 1)
-              // Uses section context for progressive swing variation
-              if (eighth == 1) {
-                hh_tick += getSwingOffsetContinuous(groove, EIGHTH, section.type, bar, section.bars,
-                                                 section.swing_amount);
+              // Apply triplet-grid swing quantization to off-beats (eighth == 1)
+              if (eighth == 1 && groove != DrumGrooveFeel::Straight) {
+                float swing_amt = calculateSwingAmount(section.type, bar, section.bars,
+                                                       section.swing_amount);
+                if (groove == DrumGrooveFeel::Shuffle) {
+                  swing_amt = std::min(1.0f, swing_amt * 1.5f);
+                }
+                hh_tick = quantizeToSwingGrid(hh_tick, swing_amt);
               }
 
-              // Skip off-beat in intro
+              // Skip off-beat in intro; add foot HH instead
               if (section.type == SectionType::Intro && eighth == 1) {
+                if (use_foot_hh && beat % 2 == 0) {
+                  addDrumNote(track, hh_tick, EIGHTH, FHH, getFootHiHatVelocity(rng));
+                }
                 continue;
               }
 
@@ -1285,12 +2259,25 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
               // Accent on downbeats
               hh_vel = static_cast<uint8_t>(hh_vel * (eighth == 0 ? 0.9f : 0.65f));
 
-              // Open hi-hat variations
+              // Dynamic open HH: replace closed HH on the downbeat of the
+              // designated beat with open HH at boosted velocity
+              if (is_dynamic_open_hh_beat && eighth == 0) {
+                uint8_t ohh_vel = static_cast<uint8_t>(
+                    std::min(127, static_cast<int>(hh_vel) + OHH_VEL_BOOST));
+                addDrumNote(track, hh_tick, EIGHTH, OHH, ohh_vel);
+                continue;
+              }
+
+              // Open hi-hat variations (existing probabilistic logic)
               bool use_open = false;
 
+              // PeakLevel::Medium+: force open HH on beats 2 and 4 (downbeat)
+              // Creates fuller, more energetic hi-hat pattern for peak sections
+              if (peak_open_hh_24 && (beat == 1 || beat == 3) && eighth == 0) {
+                use_open = true;
+              }
               // BackgroundMotif: BPM-adaptive open hi-hat on off-beats
-              if (motif_open_hh && eighth == 1) {
-                // Target: ~1.5 open hi-hats per second
+              else if (motif_open_hh && eighth == 1) {
                 float open_prob = std::clamp(45.0f / params.bpm, 0.2f, 0.8f);
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
                 use_open = (beat == 1 || beat == 3) && open_dist(rng) < open_prob;
@@ -1328,21 +2315,32 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
             for (int sixteenth = 0; sixteenth < 4; ++sixteenth) {
               Tick hh_tick = beat_tick + sixteenth * SIXTEENTH;
 
-              // Apply mood-dependent swing offset to "e" and "a" positions
+              // Apply triplet-grid swing quantization to off-beat 16th positions
               // Jazz/CityPop get stronger swing, IdolPop/Yoasobi get lighter swing
-              if (sixteenth == 1 || sixteenth == 3) {
-                Tick base_swing = getSwingOffsetContinuous(groove, SIXTEENTH, section.type, bar, section.bars,
-                                                           section.swing_amount);
+              if ((sixteenth == 1 || sixteenth == 3) && groove != DrumGrooveFeel::Straight) {
+                float swing_amt = calculateSwingAmount(section.type, bar, section.bars,
+                                                       section.swing_amount);
+                if (groove == DrumGrooveFeel::Shuffle) {
+                  swing_amt = std::min(1.0f, swing_amt * 1.5f);
+                }
                 float swing_factor = getHiHatSwingFactor(params.mood);
-                hh_tick += static_cast<Tick>(base_swing * swing_factor);
+                swing_amt *= swing_factor;
+                hh_tick = quantizeToSwingGrid16th(hh_tick, swing_amt);
               }
 
               uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
               // Accent pattern: natural curve with humanization
               hh_vel = static_cast<uint8_t>(hh_vel * getHiHatVelocityMultiplier(sixteenth, rng));
 
+              // Dynamic open HH: replace first 16th of designated beat with OHH
+              if (is_dynamic_open_hh_beat && sixteenth == 0) {
+                uint8_t ohh_vel = static_cast<uint8_t>(
+                    std::min(127, static_cast<int>(hh_vel) + OHH_VEL_BOOST));
+                addDrumNote(track, hh_tick, SIXTEENTH, OHH, ohh_vel);
+                continue;
+              }
+
               // Open hi-hat on beat 4's last 16th - BPM adaptive
-              // Target: ~0.5 open hi-hats per second for 16th note patterns
               if (beat == 3 && sixteenth == 3) {
                 float open_prob = std::clamp(30.0f / params.bpm, 0.1f, 0.4f);
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
@@ -1356,6 +2354,25 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
             }
             break;
         }
+      }
+
+      // ===== FOOT HI-HAT (independent pedal timekeeping) =====
+      // Foot HH is played by the left foot independently from the hi-hat stick.
+      // Added on beats 1 and 3 in sections that benefit from subtle pulse
+      // (Intro, Bridge, Interlude, Outro).
+      if (use_foot_hh && shouldPlayHiHat(section.drum_role)) {
+        for (uint8_t fhh_beat = 0; fhh_beat < 4; fhh_beat += 2) {
+          Tick fhh_tick = bar_start + fhh_beat * TICKS_PER_BEAT;
+          addDrumNote(track, fhh_tick, EIGHTH, FHH, getFootHiHatVelocity(rng));
+        }
+      }
+
+      // ===== AUXILIARY PERCUSSION (Tambourine, Shaker, Hand Clap) =====
+      // Generate after main beat loop to avoid interfering with fills
+      if (!is_background_motif) {
+        PercussionConfig perc_config = getPercussionConfig(params.mood, section.type);
+        generateAuxPercussionForBar(track, bar_start, perc_config,
+                                     section.drum_role, density_mult, rng);
       }
     }
   }
@@ -1487,6 +2504,10 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
         density_mult = 1.2f;
         add_crash_accent = true;
         break;
+      case SectionType::Drop:
+        density_mult = 1.1f;  // High energy Drop
+        add_crash_accent = true;
+        break;
     }
 
     // Adjust for backing density
@@ -1526,11 +2547,17 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
       use_ghost_notes = false;
     }
 
-    bool use_ride = (style == DrumStyle::Rock && section.type == SectionType::Chorus);
+    // Section-based timekeeping: ride cymbal for Chorus/Bridge/Interlude,
+    // closed HH for Verse/Intro/Outro (see shouldUseRideForSection)
+    bool use_ride = shouldUseRideForSection(section.type, style);
 
     // BackgroundMotif: prefer open hi-hat accents on off-beats
     bool motif_open_hh =
         is_background_motif && drum_params.hihat_density == HihatDensity::EighthOpen;
+
+    // Dynamic hi-hat: compute open HH interval and foot HH flag for this section
+    int ohh_bar_interval = getOpenHiHatBarInterval(section.type, style);
+    bool use_foot_hh = shouldUseFootHiHat(section.type, section.drum_role);
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
@@ -1549,6 +2576,33 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
           uint8_t crash_vel = calculateVelocity(section.type, 0, params.mood);
           addDrumNote(track, bar_start, EIGHTH, CRASH, crash_vel);
         }
+      }
+
+      // PeakLevel::Max: add crash at every 4-bar head for maximum intensity
+      if (section.peak_level == PeakLevel::Max && bar > 0 && bar % 4 == 0) {
+        uint8_t crash_vel = static_cast<uint8_t>(calculateVelocity(section.type, 0, params.mood) * 0.9f);
+        addDrumNote(track, bar_start, EIGHTH, CRASH, crash_vel);
+      }
+
+      // PeakLevel::Max: add tambourine on offbeats (8th note upbeats)
+      if (section.peak_level == PeakLevel::Max) {
+        for (uint8_t beat = 0; beat < 4; ++beat) {
+          Tick offbeat_tick = bar_start + beat * TICKS_PER_BEAT + EIGHTH;
+          uint8_t tam_vel = static_cast<uint8_t>(65 * density_mult);
+          addDrumNote(track, offbeat_tick, EIGHTH, TAMBOURINE, tam_vel);
+        }
+      }
+
+      // PeakLevel::Medium enhancement: force open HH on beats 2,4 for fuller sound
+      bool peak_open_hh_24 = (section.peak_level >= PeakLevel::Medium);
+
+      // Dynamic hi-hat: determine if this bar gets an open HH accent
+      bool bar_has_open_hh = false;
+      uint8_t open_hh_beat = 3;  // Default: beat 4
+      if (ohh_bar_interval > 0 && (bar % ohh_bar_interval == (ohh_bar_interval - 1))) {
+        open_hh_beat = getOpenHiHatBeat(section.type, bar, rng);
+        Tick ohh_check_tick = bar_start + open_hh_beat * TICKS_PER_BEAT;
+        bar_has_open_hh = !hasCrashAtTick(track, ohh_check_tick);
       }
 
       // ===== VOCAL-SYNCED KICKS =====
@@ -1572,8 +2626,39 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
           next_wants_fill = sections[sec_idx + 1].fill_before;
         }
 
+        // ===== PRE-CHORUS BUILDUP =====
+        // In the last 2 bars of B section before Chorus:
+        // Add 8th note snare pattern with velocity crescendo
+        bool in_prechorus_lift = isInPreChorusLift(section, bar, sections, sec_idx);
+
+        bool did_buildup = false;
+        if (in_prechorus_lift) {
+          // Calculate progress through the 2-bar buildup zone (0.0 to 1.0)
+          uint8_t bars_in_lift = 2;
+          uint8_t bar_in_lift = bar - (section.bars - bars_in_lift);
+          float buildup_progress = (bar_in_lift * 4.0f + beat) / (bars_in_lift * 4.0f);
+
+          // Velocity crescendo: 50% -> 100%
+          float crescendo = 0.5f + 0.5f * buildup_progress;
+          uint8_t buildup_vel = static_cast<uint8_t>(velocity * crescendo);
+
+          // Add 8th note snare pattern on every beat during buildup
+          addDrumNote(track, beat_tick, EIGHTH, SD, buildup_vel);
+          uint8_t offbeat_vel = static_cast<uint8_t>(buildup_vel * 0.85f);
+          addDrumNote(track, beat_tick + EIGHTH, EIGHTH, SD, offbeat_vel);
+
+          // Add crash on final beat of buildup (just before Chorus)
+          if (bar == section.bars - 1 && beat == 3) {
+            uint8_t crash_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(velocity * 1.1f)));
+            addDrumNote(track, beat_tick + EIGHTH + SIXTEENTH, SIXTEENTH, CRASH, crash_vel);
+          }
+          did_buildup = true;
+          // Don't continue - let hi-hat generation proceed below
+        }
+
         bool should_fill = is_section_last_bar && !is_last_section && beat >= 2 &&
-                           (next_wants_fill || next_section == SectionType::Chorus);
+                           (next_wants_fill || next_section == SectionType::Chorus) &&
+                           !did_buildup;
 
         if (should_fill) {
           static FillType current_fill = FillType::SnareRoll;
@@ -1674,40 +2759,80 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
         }
 
         // ===== HI-HAT =====
+        // Skip main hi-hat for FXOnly DrumRole, but add foot HH if applicable
         if (!shouldPlayHiHat(section.drum_role)) {
+          if (use_foot_hh && (beat == 0 || beat == 2)) {
+            addDrumNote(track, beat_tick, EIGHTH, FHH, getFootHiHatVelocity(rng));
+          }
           continue;
         }
 
-        uint8_t hh_instrument = getDrumRoleHiHatInstrument(section.drum_role, use_ride);
+        // Use section-aware and beat-aware instrument selection
+        // (Bridge sections alternate ride + cross-stick on backbeats)
+        uint8_t hh_instrument = getTimekeepingInstrument(
+            section.type, section.drum_role, use_ride, beat);
+
+        // Dynamic open HH: replace closed HH on the designated beat
+        bool is_dynamic_open_hh_beat = bar_has_open_hh && (beat == open_hh_beat);
 
         switch (hh_level) {
-          case HiHatLevel::Quarter:
-            if (section.type != SectionType::Intro || beat == 0) {
-              uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult * 0.75f);
-              addDrumNote(track, beat_tick, EIGHTH, hh_instrument, hh_vel);
+          case HiHatLevel::Quarter: {
+            bool is_intro_rest = (section.type == SectionType::Intro && beat != 0);
+            if (!is_intro_rest) {
+              if (is_dynamic_open_hh_beat) {
+                uint8_t ohh_vel = static_cast<uint8_t>(
+                    std::min(127, static_cast<int>(velocity * density_mult * 0.75f) + OHH_VEL_BOOST));
+                addDrumNote(track, beat_tick, EIGHTH, OHH, ohh_vel);
+              } else {
+                uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult * 0.75f);
+                addDrumNote(track, beat_tick, EIGHTH, hh_instrument, hh_vel);
+              }
+            } else if (use_foot_hh) {
+              addDrumNote(track, beat_tick, EIGHTH, FHH, getFootHiHatVelocity(rng));
             }
             break;
+          }
 
           case HiHatLevel::Eighth:
             for (int eighth = 0; eighth < 2; ++eighth) {
               Tick hh_tick = beat_tick + eighth * EIGHTH;
 
-              // Apply continuous swing offset to off-beats (eighth == 1)
-              if (eighth == 1) {
-                hh_tick += getSwingOffsetContinuous(groove, EIGHTH, section.type, bar, section.bars,
-                                                 section.swing_amount);
+              if (eighth == 1 && groove != DrumGrooveFeel::Straight) {
+                float swing_amt = calculateSwingAmount(section.type, bar, section.bars,
+                                                       section.swing_amount);
+                if (groove == DrumGrooveFeel::Shuffle) {
+                  swing_amt = std::min(1.0f, swing_amt * 1.5f);
+                }
+                hh_tick = quantizeToSwingGrid(hh_tick, swing_amt);
               }
 
+              // Skip off-beat in intro; add foot HH instead
               if (section.type == SectionType::Intro && eighth == 1) {
+                if (use_foot_hh && beat % 2 == 0) {
+                  addDrumNote(track, hh_tick, EIGHTH, FHH, getFootHiHatVelocity(rng));
+                }
                 continue;
               }
 
               uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
               hh_vel = static_cast<uint8_t>(hh_vel * (eighth == 0 ? 0.9f : 0.65f));
 
+              // Dynamic open HH: replace closed HH on the downbeat of designated beat
+              if (is_dynamic_open_hh_beat && eighth == 0) {
+                uint8_t ohh_vel = static_cast<uint8_t>(
+                    std::min(127, static_cast<int>(hh_vel) + OHH_VEL_BOOST));
+                addDrumNote(track, hh_tick, EIGHTH, OHH, ohh_vel);
+                continue;
+              }
+
               bool use_open = false;
 
-              if (motif_open_hh && eighth == 1) {
+              // PeakLevel::Medium+: force open HH on beats 2 and 4 (downbeat)
+              if (peak_open_hh_24 && (beat == 1 || beat == 3) && eighth == 0) {
+                use_open = true;
+              }
+              // BackgroundMotif: BPM-adaptive open hi-hat on off-beats
+              else if (motif_open_hh && eighth == 1) {
                 float open_prob = std::clamp(45.0f / params.bpm, 0.2f, 0.8f);
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
                 use_open = (beat == 1 || beat == 3) && open_dist(rng) < open_prob;
@@ -1738,15 +2863,27 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
             for (int sixteenth = 0; sixteenth < 4; ++sixteenth) {
               Tick hh_tick = beat_tick + sixteenth * SIXTEENTH;
 
-              // Apply half continuous swing offset to "e" and "a" positions
-              if (sixteenth == 1 || sixteenth == 3) {
-                hh_tick += getSwingOffsetContinuous(groove, SIXTEENTH, section.type, bar, section.bars,
-                                                   section.swing_amount) / 2;
+              if ((sixteenth == 1 || sixteenth == 3) && groove != DrumGrooveFeel::Straight) {
+                float swing_amt = calculateSwingAmount(section.type, bar, section.bars,
+                                                       section.swing_amount);
+                if (groove == DrumGrooveFeel::Shuffle) {
+                  swing_amt = std::min(1.0f, swing_amt * 1.5f);
+                }
+                float swing_factor = getHiHatSwingFactor(params.mood);
+                swing_amt *= swing_factor;
+                hh_tick = quantizeToSwingGrid16th(hh_tick, swing_amt);
               }
 
               uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
-              // Accent pattern: natural curve with humanization
               hh_vel = static_cast<uint8_t>(hh_vel * getHiHatVelocityMultiplier(sixteenth, rng));
+
+              // Dynamic open HH: replace first 16th of designated beat with OHH
+              if (is_dynamic_open_hh_beat && sixteenth == 0) {
+                uint8_t ohh_vel = static_cast<uint8_t>(
+                    std::min(127, static_cast<int>(hh_vel) + OHH_VEL_BOOST));
+                addDrumNote(track, hh_tick, SIXTEENTH, OHH, ohh_vel);
+                continue;
+              }
 
               if (beat == 3 && sixteenth == 3) {
                 float open_prob = std::clamp(30.0f / params.bpm, 0.1f, 0.4f);
@@ -1761,6 +2898,21 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
             }
             break;
         }
+      }
+
+      // ===== FOOT HI-HAT (independent pedal timekeeping) =====
+      if (use_foot_hh && shouldPlayHiHat(section.drum_role)) {
+        for (uint8_t fhh_beat = 0; fhh_beat < 4; fhh_beat += 2) {
+          Tick fhh_tick = bar_start + fhh_beat * TICKS_PER_BEAT;
+          addDrumNote(track, fhh_tick, EIGHTH, FHH, getFootHiHatVelocity(rng));
+        }
+      }
+
+      // ===== AUXILIARY PERCUSSION (Tambourine, Shaker, Hand Clap) =====
+      if (!is_background_motif) {
+        PercussionConfig perc_config = getPercussionConfig(params.mood, section.type);
+        generateAuxPercussionForBar(track, bar_start, perc_config,
+                                     section.drum_role, density_mult, rng);
       }
     }
   }
@@ -1795,6 +2947,12 @@ KickPatternCache computeKickPattern(const std::vector<Section>& sections, Mood m
       break;
     case DrumStyle::Synth:
       kicks_per_bar = 3.0f;  // Synth pattern with offbeat kicks
+      break;
+    case DrumStyle::Trap:
+      kicks_per_bar = 2.5f;  // Trap: kick on 1, with syncopated 808 hits
+      break;
+    case DrumStyle::Latin:
+      kicks_per_bar = 3.0f;  // Latin dembow: kick on 1, 2&, 3
       break;
   }
 

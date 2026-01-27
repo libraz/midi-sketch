@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "core/basic_types.h"
 
@@ -49,10 +50,75 @@ inline constexpr TrackMask operator&(TrackMask a, TrackMask b) {
   return static_cast<TrackMask>(static_cast<uint16_t>(a) & static_cast<uint16_t>(b));
 }
 
+/// @brief Bitwise NOT operator for TrackMask.
+inline constexpr TrackMask operator~(TrackMask a) {
+  return static_cast<TrackMask>(~static_cast<uint16_t>(a) & 0xFF);  // NOLINT(hicpp-signed-bitwise) mask to 8 track bits
+}
+
 /// @brief Check if a track is enabled in the mask.
 inline constexpr bool hasTrack(TrackMask mask, TrackMask track) {
   return (static_cast<uint16_t>(mask) & static_cast<uint16_t>(track)) != 0;
 }
+
+// ============================================================================
+// LayerEvent - Per-bar track scheduling within a section
+// ============================================================================
+
+/// @brief A scheduling event that adds or removes tracks at a specific bar
+/// within a section. Used for staggered instrument entrances and exits.
+struct LayerEvent {
+  uint8_t bar_offset;           ///< Bar within section (0-based)
+  TrackMask tracks_add_mask;    ///< Tracks to activate at this bar
+  TrackMask tracks_remove_mask; ///< Tracks to deactivate at this bar
+
+  LayerEvent() : bar_offset(0), tracks_add_mask(TrackMask::None), tracks_remove_mask(TrackMask::None) {}
+
+  LayerEvent(uint8_t offset, TrackMask add, TrackMask remove)
+      : bar_offset(offset), tracks_add_mask(add), tracks_remove_mask(remove) {}
+};
+
+/// @brief Compute the active track mask at a given bar within a section,
+/// applying layer events in order. Starts from TrackMask::None and accumulates
+/// additions/removals up to the specified bar.
+/// @param events Vector of layer events (must be sorted by bar_offset)
+/// @param bar_offset Target bar (0-based within section)
+/// @return Accumulated active track mask at the given bar
+inline TrackMask computeActiveTracksAtBar(const std::vector<LayerEvent>& events,
+                                          uint8_t bar_offset) {
+  TrackMask active = TrackMask::None;
+  for (const auto& event : events) {
+    if (event.bar_offset > bar_offset) break;
+    // Apply additions then removals
+    active = active | event.tracks_add_mask;
+    active = active & ~event.tracks_remove_mask;
+  }
+  return active;
+}
+
+/// @brief Check if a specific track is active at a given bar according to layer events.
+/// @param events Vector of layer events
+/// @param bar_offset Target bar (0-based within section)
+/// @param track Track mask to check (single track bit)
+/// @return true if the track is active at the given bar
+inline bool isTrackActiveAtBar(const std::vector<LayerEvent>& events,
+                               uint8_t bar_offset,
+                               TrackMask track) {
+  return hasTrack(computeActiveTracksAtBar(events, bar_offset), track);
+}
+
+// ============================================================================
+// ExitPattern - How tracks behave at the end of sections
+// ============================================================================
+
+/// @brief Exit pattern controlling how tracks end within a section.
+/// Provides musical endings instead of abrupt cutoffs.
+enum class ExitPattern : uint8_t {
+  None = 0,   ///< No special exit (current behavior)
+  Sustain,    ///< Last notes are extended to fill the section
+  Fadeout,    ///< Velocity gradually decreases in last 2 bars
+  FinalHit,   ///< Strong accent on the last beat
+  CutOff,     ///< All notes end 1 beat before section boundary (dramatic silence)
+};
 
 // ============================================================================
 // EntryPattern - How instruments enter at section boundaries
@@ -224,7 +290,8 @@ enum class SectionType {
   Interlude,  ///< Instrumental break
   Outro,      ///< Ending section
   Chant,      ///< Chant section (e.g., Gachikoi) - 6-12 bars
-  MixBreak    ///< MIX section (e.g., Tiger) - 4-8 bars
+  MixBreak,   ///< MIX section (e.g., Tiger) - 4-8 bars
+  Drop        ///< EDM drop section: all melodic instruments cut, kick + sub-bass only, then re-entry
 };
 
 /// @brief Extended chord types for harmonic variety.
@@ -275,6 +342,10 @@ struct Section {
   /// Controls how instruments enter at section start.
   EntryPattern entry_pattern = EntryPattern::Immediate;
 
+  /// @brief Exit pattern for this section.
+  /// Controls how tracks behave at the end of this section.
+  ExitPattern exit_pattern = ExitPattern::None;
+
   /// @brief Fill before this section (from ProductionBlueprint).
   /// If true, insert a drum fill before this section starts.
   bool fill_before = false;
@@ -316,6 +387,14 @@ struct Section {
   /// - 2.0 = two bars (1 chord per 2 bars, sparse, Intro)
   /// Default is 0.0 (auto-calculate from section type).
   float harmonic_rhythm = 0.0f;
+
+  /// @brief Layer events for per-bar track scheduling within this section.
+  /// When non-empty, controls which tracks are active at each bar.
+  /// Empty means all tracks in track_mask are active for the entire section.
+  std::vector<LayerEvent> layer_events;
+
+  /// @brief Check if layer scheduling is active for this section.
+  bool hasLayerSchedule() const { return !layer_events.empty(); }
 };
 
 /// @brief Section transition parameters for smooth melodic flow.

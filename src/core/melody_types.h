@@ -115,7 +115,8 @@ enum class AuxFunction : uint8_t {
   EmotionalPad = 4,  ///< Emotional pad/floor
   Unison = 5,        ///< Vocal unison doubling
   MelodicHook = 6,   ///< Melodic hook riff
-  MotifCounter = 7   ///< Counter melody (contrary motion)
+  MotifCounter = 7,  ///< Counter melody (contrary motion)
+  SustainPad = 8     ///< Whole-note chord tone pads (Ballad/Sentimental)
 };
 
 /// @brief Melody template structure for template-driven melody generation.
@@ -254,7 +255,13 @@ enum class HookSkeleton : uint8_t {
   Ascending,    ///< Rising scale: X X+1 X+2
   AscendDrop,   ///< Rise then fall: X X+2 X+4 X+3
   LeapReturn,   ///< Jump and resolve: X X+5 X+2
-  RhythmRepeat  ///< Rhythmic emphasis with rests: X - X - X
+  RhythmRepeat,     ///< Rhythmic emphasis with rests: X - X - X
+  PeakDrop,         ///< Peak then descend: X X+3 X+5 X+2 X
+  Pendulum,         ///< Swing between high and low: X X+3 X-1 X+2 X
+  DescentResolve,   ///< Descend to resolution: X X-1 X-2 X-1
+  CallResponse,     ///< Call and response: X X+2 X X+3
+  Syncopated,       ///< Off-beat accent: X _ X+1 X _ (with rests)
+  ChromaticSlide    ///< Half-step slide: X X X+1 X+1
 };
 
 /// @brief Betrayal patterns for hook variation.

@@ -31,6 +31,7 @@ inline HarmonicDensity harmonicRhythmToDensity(float harmonic_rhythm) {
 struct HarmonicRhythmInfo {
   HarmonicDensity density;
   bool double_at_phrase_end;  // Add extra chord change at phrase end
+  uint8_t subdivision = 1;   // 1 = full bar (default), 2 = half-bar chord changes
 
   /// @brief Get harmonic rhythm info from Section (uses explicit setting if available).
   /// @param section Section with optional harmonic_rhythm override
@@ -41,7 +42,9 @@ struct HarmonicRhythmInfo {
     if (section.harmonic_rhythm > 0.0f) {
       HarmonicDensity density = harmonicRhythmToDensity(section.harmonic_rhythm);
       bool double_end = (density == HarmonicDensity::Dense);
-      return {density, double_end};
+      // Subdivision from explicit harmonic_rhythm: 0.5 means 2 chords per bar
+      uint8_t subdiv = (section.harmonic_rhythm <= 0.5f) ? 2 : 1;
+      return {density, double_end, subdiv};
     }
     // Fall back to type-based calculation (mood-aware)
     return forSection(section.type, mood);
@@ -53,23 +56,27 @@ struct HarmonicRhythmInfo {
     switch (section) {
       case SectionType::Intro:
       case SectionType::Interlude:
-        return {HarmonicDensity::Slow, false};
+        return {HarmonicDensity::Slow, false, 1};
       case SectionType::Outro:
-        return {HarmonicDensity::Slow, false};
+        return {HarmonicDensity::Slow, false, 1};
       case SectionType::A:
-        return {HarmonicDensity::Normal, false};
+        return {HarmonicDensity::Normal, false, 1};
       case SectionType::B:
-        return {HarmonicDensity::Normal, !is_ballad};
+        // B section (pre-chorus): half-bar chord changes for harmonic acceleration
+        return {HarmonicDensity::Normal, !is_ballad, static_cast<uint8_t>(is_ballad ? 1 : 2)};
       case SectionType::Chorus:
-        return {is_ballad ? HarmonicDensity::Normal : HarmonicDensity::Dense, !is_ballad};
+        return {is_ballad ? HarmonicDensity::Normal : HarmonicDensity::Dense, !is_ballad, 1};
       case SectionType::Bridge:
-        return {HarmonicDensity::Normal, false};
+        return {HarmonicDensity::Normal, false, 1};
       case SectionType::Chant:
-        return {HarmonicDensity::Slow, false};
+        return {HarmonicDensity::Slow, false, 1};
       case SectionType::MixBreak:
-        return {HarmonicDensity::Dense, true};
+        return {HarmonicDensity::Dense, true, 1};
+      case SectionType::Drop:
+        // Drop: Dense harmonic rhythm for energy, doubling for build-up effect
+        return {HarmonicDensity::Dense, true, 1};
     }
-    return {HarmonicDensity::Normal, false};
+    return {HarmonicDensity::Normal, false, 1};
   }
 };
 
@@ -123,6 +130,18 @@ inline int getChordIndexForBar(int bar, bool slow_harmonic, int progression_leng
 inline int getNextChordIndexForBar(int bar, bool slow_harmonic, int progression_length) {
   if (progression_length <= 0) return 0;
   return slow_harmonic ? ((bar + 1) / 2) % progression_length : (bar + 1) % progression_length;
+}
+
+/// @brief Get chord index for a half-bar position within a subdivided bar.
+/// When subdivision=2, each bar has two chord slots. The chord index advances
+/// at twice the normal rate: bar*2 for first half, bar*2+1 for second half.
+/// @param bar Bar number within section (0-indexed)
+/// @param half 0 = first half (beats 1-2), 1 = second half (beats 3-4)
+/// @param progression_length Length of chord progression
+/// @return Chord index (0 to progression_length - 1)
+inline int getChordIndexForSubdividedBar(int bar, int half, int progression_length) {
+  if (progression_length <= 0) return 0;
+  return (bar * 2 + half) % progression_length;
 }
 
 }  // namespace midisketch

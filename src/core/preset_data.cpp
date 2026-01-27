@@ -15,7 +15,7 @@ namespace midisketch {
 namespace {
 
 // Mood default BPM values
-constexpr uint16_t MOOD_BPM[20] = {
+constexpr uint16_t MOOD_BPM[24] = {
     120,  // StraightPop
     130,  // BrightUpbeat
     140,  // EnergeticDance
@@ -32,15 +32,20 @@ constexpr uint16_t MOOD_BPM[20] = {
     135,  // ElectroPop
     145,  // IdolPop
     130,  // Anthem
-    // New synth-oriented moods
+    // Synth-oriented moods
     148,  // Yoasobi - fast anime-style
     118,  // Synthwave - moderate retro
     145,  // FutureBass - fast EDM
     110,  // CityPop - moderate groove
+    // Genre expansion moods
+    92,   // RnBNeoSoul - slow groove (85-100 range)
+    95,   // LatinPop - moderate dembow rhythm
+    70,   // Trap - half-time feel (140 BPM double-time = 70 half-time)
+    80,   // Lofi - slow, relaxed
 };
 
 // Mood note density values
-constexpr float MOOD_DENSITY[20] = {
+constexpr float MOOD_DENSITY[24] = {
     0.60f,  // StraightPop
     0.70f,  // BrightUpbeat
     0.80f,  // EnergeticDance
@@ -57,11 +62,16 @@ constexpr float MOOD_DENSITY[20] = {
     0.75f,  // ElectroPop
     0.80f,  // IdolPop
     0.70f,  // Anthem
-    // New synth-oriented moods
+    // Synth-oriented moods
     0.75f,  // Yoasobi - high density melody
     0.55f,  // Synthwave - moderate
     0.70f,  // FutureBass - high density
     0.60f,  // CityPop - moderate groove
+    // Genre expansion moods
+    0.50f,  // RnBNeoSoul - moderate with space for embellishment
+    0.65f,  // LatinPop - moderate-high for rhythmic drive
+    0.45f,  // Trap - sparse with space for 808 and hi-hat rolls
+    0.35f,  // Lofi - sparse, laid-back
 };
 
 // Structure pattern names
@@ -74,11 +84,12 @@ const char* STRUCTURE_NAMES[18] = {
 };
 
 // Mood names
-const char* MOOD_NAMES[20] = {
+const char* MOOD_NAMES[24] = {
     "straight_pop",  "bright_upbeat", "energetic_dance", "light_rock",  "mid_pop",
     "emotional_pop", "sentimental",   "chill",           "ballad",      "dark_pop",
     "dramatic",      "nostalgic",     "modern_pop",      "electro_pop", "idol_pop",
     "anthem",        "yoasobi",       "synthwave",       "future_bass", "city_pop",
+    "rnb_neosoul",   "latin_pop",     "trap",            "lofi",
 };
 
 // Style preset definitions (17 presets)
@@ -781,7 +792,7 @@ namespace {
 // - Rock:        Rock patterns (crash accents, ride cymbal)
 // - Synth:       Synth-oriented (tight 16th hi-hats, punchy kick)
 //
-constexpr DrumStyle MOOD_DRUM_STYLES[20] = {
+constexpr DrumStyle MOOD_DRUM_STYLES[24] = {
     DrumStyle::Standard,     // 0: StraightPop
     DrumStyle::Upbeat,       // 1: BrightUpbeat
     DrumStyle::FourOnFloor,  // 2: EnergeticDance
@@ -802,6 +813,11 @@ constexpr DrumStyle MOOD_DRUM_STYLES[20] = {
     DrumStyle::Synth,        // 17: Synthwave
     DrumStyle::Synth,        // 18: FutureBass
     DrumStyle::Standard,     // 19: CityPop (groove feel, not synth)
+    // Genre expansion moods
+    DrumStyle::Standard,     // 20: RnBNeoSoul (standard with heavy swing)
+    DrumStyle::Latin,        // 21: LatinPop (dembow rhythm)
+    DrumStyle::Trap,         // 22: Trap (half-time snare, hi-hat rolls)
+    DrumStyle::Sparse,       // 23: Lofi (sparse, laid-back)
 };
 
 // ============================================================================
@@ -816,7 +832,7 @@ constexpr DrumStyle MOOD_DRUM_STYLES[20] = {
 //
 // Index corresponds to Mood enum value (0-19).
 //
-constexpr DrumGrooveFeel MOOD_DRUM_GROOVES[20] = {
+constexpr DrumGrooveFeel MOOD_DRUM_GROOVES[24] = {
     DrumGrooveFeel::Straight,  // 0: StraightPop
     DrumGrooveFeel::Straight,  // 1: BrightUpbeat
     DrumGrooveFeel::Straight,  // 2: EnergeticDance
@@ -837,6 +853,11 @@ constexpr DrumGrooveFeel MOOD_DRUM_GROOVES[20] = {
     DrumGrooveFeel::Straight,  // 17: Synthwave (tight electronic)
     DrumGrooveFeel::Straight,  // 18: FutureBass (tight electronic)
     DrumGrooveFeel::Swing,     // 19: CityPop (80s groove essential)
+    // Genre expansion moods
+    DrumGrooveFeel::Shuffle,   // 20: RnBNeoSoul (heavy swing, almost shuffle)
+    DrumGrooveFeel::Straight,  // 21: LatinPop (straight dembow feel)
+    DrumGrooveFeel::Straight,  // 22: Trap (tight electronic half-time)
+    DrumGrooveFeel::Shuffle,   // 23: Lofi (heavy swing essential)
 };
 
 }  // namespace
@@ -873,7 +894,7 @@ DrumGrooveFeel getMoodDrumGrooveFeel(Mood mood) {
 // - Jazz:       Walking bass, groove (CityPop, ModernPop)
 // - Idol:       Bright, energetic (BrightUpbeat, IdolPop)
 //
-constexpr BassGenre MOOD_BASS_GENRES[20] = {
+constexpr BassGenre MOOD_BASS_GENRES[24] = {
     BassGenre::Standard,    // 0: StraightPop
     BassGenre::Idol,        // 1: BrightUpbeat
     BassGenre::Dance,       // 2: EnergeticDance
@@ -894,6 +915,11 @@ constexpr BassGenre MOOD_BASS_GENRES[20] = {
     BassGenre::Electronic,  // 17: Synthwave
     BassGenre::Dance,       // 18: FutureBass
     BassGenre::Jazz,        // 19: CityPop
+    // Genre expansion moods
+    BassGenre::RnB,         // 20: RnBNeoSoul (groove with chromatic approach)
+    BassGenre::Latin,       // 21: LatinPop (tresillo 3+3+2 pattern)
+    BassGenre::Trap808,     // 22: Trap (long sustained 808 sub-bass)
+    BassGenre::Lofi,        // 23: Lofi (simple patterns, pedal tone preference)
 };
 
 // ============================================================================
@@ -915,6 +941,7 @@ constexpr BassGenre MOOD_BASS_GENRES[20] = {
 // Abbreviations:
 //   WN=WholeNote, RF=RootFifth, SY=Syncopated, DR=Driving, WK=Walking
 //   PD=PowerDrive, AG=Aggressive, SP=SidechainPulse, GR=Groove, OJ=OctaveJump
+//   PT=PedalTone
 //
 using BP = BassPatternId;
 
@@ -931,12 +958,12 @@ constexpr BassGenrePatterns BASS_GENRE_PATTERNS[static_cast<int>(BassGenre::COUN
     }},
     // Ballad (slow, sustained)
     {{
-        {BP::WholeNote, BP::RootFifth, BP::RootFifth},    // Intro
+        {BP::PedalTone, BP::WholeNote, BP::RootFifth},    // Intro (tonic pedal)
         {BP::WholeNote, BP::RootFifth, BP::RootFifth},    // A
         {BP::RootFifth, BP::WholeNote, BP::WholeNote},    // B
         {BP::RootFifth, BP::Syncopated, BP::Syncopated},  // Chorus
-        {BP::WholeNote, BP::RootFifth, BP::RootFifth},    // Bridge
-        {BP::WholeNote, BP::RootFifth, BP::RootFifth},    // Outro
+        {BP::PedalTone, BP::WholeNote, BP::RootFifth},    // Bridge (dominant pedal)
+        {BP::PedalTone, BP::WholeNote, BP::RootFifth},    // Outro (tonic pedal)
         {BP::RootFifth, BP::Syncopated, BP::Syncopated},  // Mix
     }},
     // Rock (aggressive, power-driven)
@@ -961,12 +988,12 @@ constexpr BassGenrePatterns BASS_GENRE_PATTERNS[static_cast<int>(BassGenre::COUN
     }},
     // Electronic (sidechain, modern EDM)
     {{
-        {BP::WholeNote, BP::RootFifth, BP::SidechainPulse},    // Intro
+        {BP::PedalTone, BP::WholeNote, BP::SidechainPulse},    // Intro (tonic pedal)
         {BP::SidechainPulse, BP::RootFifth, BP::OctaveJump},   // A
         {BP::SidechainPulse, BP::Driving, BP::OctaveJump},     // B
         {BP::Aggressive, BP::SidechainPulse, BP::OctaveJump},  // Chorus
-        {BP::RootFifth, BP::SidechainPulse, BP::Syncopated},   // Bridge
-        {BP::SidechainPulse, BP::RootFifth, BP::RootFifth},    // Outro
+        {BP::PedalTone, BP::RootFifth, BP::SidechainPulse},    // Bridge (dominant pedal)
+        {BP::PedalTone, BP::SidechainPulse, BP::RootFifth},    // Outro (tonic pedal)
         {BP::Aggressive, BP::OctaveJump, BP::Driving},         // Mix
     }},
     // Jazz (walking bass, groove - CityPop/ModernPop)
@@ -988,6 +1015,46 @@ constexpr BassGenrePatterns BASS_GENRE_PATTERNS[static_cast<int>(BassGenre::COUN
         {BP::RootFifth, BP::Syncopated, BP::Syncopated},  // Bridge
         {BP::RootFifth, BP::WholeNote, BP::WholeNote},    // Outro
         {BP::Aggressive, BP::OctaveJump, BP::Driving},    // Mix
+    }},
+    // RnB (R&B/Neo-Soul - groove with chromatic approach, rootless voicing preference)
+    {{
+        {BP::PedalTone, BP::WholeNote, BP::RootFifth},   // Intro (tonic pedal)
+        {BP::Groove, BP::Walking, BP::Syncopated},       // A (smooth groove)
+        {BP::Groove, BP::Syncopated, BP::Walking},       // B (building groove)
+        {BP::Groove, BP::Driving, BP::Syncopated},       // Chorus (full groove)
+        {BP::PedalTone, BP::Groove, BP::RootFifth},      // Bridge (dominant pedal)
+        {BP::PedalTone, BP::WholeNote, BP::RootFifth},   // Outro (tonic pedal)
+        {BP::Groove, BP::Driving, BP::Syncopated},       // Mix
+    }},
+    // Latin (Latin Pop - tresillo 3+3+2 pattern)
+    {{
+        {BP::WholeNote, BP::RootFifth, BP::RootFifth},   // Intro
+        {BP::Tresillo, BP::Syncopated, BP::RootFifth},   // A (tresillo pattern)
+        {BP::Tresillo, BP::Syncopated, BP::Driving},     // B (tresillo + energy)
+        {BP::Tresillo, BP::OctaveJump, BP::Aggressive},  // Chorus (full tresillo)
+        {BP::RootFifth, BP::Tresillo, BP::Syncopated},   // Bridge
+        {BP::RootFifth, BP::WholeNote, BP::WholeNote},   // Outro
+        {BP::Aggressive, BP::Tresillo, BP::OctaveJump},  // Mix
+    }},
+    // Trap808 (Trap - long sustained 808 sub-bass)
+    {{
+        {BP::PedalTone, BP::SubBass808, BP::WholeNote},  // Intro (sustained 808)
+        {BP::SubBass808, BP::WholeNote, BP::RootFifth},  // A (long 808 notes)
+        {BP::SubBass808, BP::Syncopated, BP::WholeNote}, // B (808 with glide)
+        {BP::SubBass808, BP::Syncopated, BP::RootFifth}, // Chorus (808 drive)
+        {BP::PedalTone, BP::SubBass808, BP::WholeNote},  // Bridge (808 pedal)
+        {BP::PedalTone, BP::SubBass808, BP::WholeNote},  // Outro (808 fadeout)
+        {BP::SubBass808, BP::Aggressive, BP::Driving},   // Mix (808 energy)
+    }},
+    // Lofi (Lo-fi - simple patterns, pedal tone preference, low velocity)
+    {{
+        {BP::PedalTone, BP::WholeNote, BP::RootFifth},   // Intro (tonic pedal)
+        {BP::RootFifth, BP::WholeNote, BP::Walking},     // A (simple walking)
+        {BP::RootFifth, BP::Groove, BP::WholeNote},      // B (subtle groove)
+        {BP::Groove, BP::RootFifth, BP::Walking},        // Chorus (relaxed groove)
+        {BP::PedalTone, BP::WholeNote, BP::RootFifth},   // Bridge (pedal tone)
+        {BP::PedalTone, BP::WholeNote, BP::RootFifth},   // Outro (tonic pedal)
+        {BP::Groove, BP::RootFifth, BP::Walking},        // Mix
     }},
 };
 
@@ -1025,7 +1092,7 @@ BassGenre getMoodBassGenre(Mood mood) {
 //
 // Structure: {vocal, chord, bass, motif, arpeggio, aux}
 //
-constexpr MoodProgramSet MOOD_PROGRAMS[20] = {
+constexpr MoodProgramSet MOOD_PROGRAMS[24] = {
     // 0: StraightPop - Standard pop instruments
     // Structure: {vocal, chord, bass, motif, arpeggio, aux}
     // Note: arpeggio program is now managed by getArpeggioStyleForMood() (single source of truth).
@@ -1069,6 +1136,15 @@ constexpr MoodProgramSet MOOD_PROGRAMS[20] = {
     {81, 81, 38, 81, 81, 89},
     // 19: CityPop - EP, slap bass, brass
     {4, 4, 36, 61, 81, 61},
+    // Genre expansion moods
+    // 20: RnBNeoSoul - EP, finger bass, warm pad (Wurlitzer/Rhodes vibe)
+    {4, 4, 33, 89, 81, 89},
+    // 21: LatinPop - Brass, latin percussion feel, finger bass
+    {0, 4, 33, 61, 81, 61},
+    // 22: Trap - Synth lead, synth bass (808), dark pad
+    {81, 81, 38, 81, 81, 89},
+    // 23: Lofi - EP, acoustic bass, warm pad
+    {4, 4, 32, 89, 81, 89},
 };
 
 const MoodProgramSet& getMoodPrograms(Mood mood) {

@@ -13,6 +13,8 @@
 #include "core/harmonic_rhythm.h"
 #include "core/i_harmony_context.h"
 #include "core/note_factory.h"
+#include "core/swing_quantize.h"
+#include "core/timing_constants.h"
 #include "core/velocity.h"
 
 namespace midisketch {
@@ -211,8 +213,8 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
     effective_gate = arp.gate;
   }
 
-  Tick note_duration = getNoteDuration(effective_speed);
-  Tick gated_duration = static_cast<Tick>(note_duration * effective_gate);
+  // Note: note_duration and gated_duration are now calculated per-section
+  // to support PeakLevel-based speed changes (section_note_duration, section_gated_duration)
 
   // Base octave for arpeggio (higher than vocal to avoid melodic collision)
   // Apply genre-specific octave offset from style
@@ -234,6 +236,32 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
 
     // Intro/Outro: generate arpeggio with reduced intensity
     // Velocity is adjusted via calculateArpeggioVelocity() based on section type
+
+    // PeakLevel-based arpeggio enhancements for section differentiation
+    // When density > 90% AND neither user nor style specified a special speed: switch to 16th
+    // When PeakLevel::Max: increase octave_range for wider spread
+    ArpeggioSpeed section_speed = effective_speed;
+    uint8_t section_octave_range = arp.octave_range;
+
+    // Only promote to 16th if:
+    // 1. density > 90%
+    // 2. effective_speed is 8th (not already 16th or a special rhythm like Triplet)
+    // 3. user didn't explicitly set arpeggio speed (arp.speed is default Sixteenth)
+    // 4. style didn't specify a non-16th speed (style.speed is Sixteenth)
+    // This preserves both user preferences and mood-specific rhythms
+    bool user_set_speed = (arp.speed != ArpeggioSpeed::Sixteenth);
+    bool style_has_special_speed = (style.speed != ArpeggioSpeed::Sixteenth);
+    if (section.density_percent > 90 && section_speed == ArpeggioSpeed::Eighth &&
+        !user_set_speed && !style_has_special_speed) {
+      section_speed = ArpeggioSpeed::Sixteenth;
+    }
+
+    if (section.peak_level == PeakLevel::Max) {
+      section_octave_range = std::min(static_cast<uint8_t>(4), static_cast<uint8_t>(arp.octave_range + 1));
+    }
+
+    Tick section_note_duration = getNoteDuration(section_speed);
+    Tick section_gated_duration = static_cast<Tick>(section_note_duration * effective_gate);
 
     Tick section_end = section.start_tick + (section.bars * TICKS_PER_BAR);
 
@@ -257,7 +285,7 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
       while (root < base_octave) root += 12;
       while (root >= base_octave + 12) root -= 12;
       Chord chord = getChordNotes(degree);
-      std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, arp.octave_range);
+      std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, section_octave_range);
       persistent_arp_notes = arrangeByPattern(chord_notes, arp.pattern, rng);
       persistent_pattern_index = 0;  // Reset pattern index at section start
     }
@@ -277,8 +305,14 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
         // Sync with chord: rebuild pattern each bar
         // Use HarmonicDensity to match chord_track timing
         // Slow: chord changes every 2 bars, Normal/Dense: every bar
+        // When subdivision=2, use subdivided indexing for first half
         bool slow = (harmonic.density == HarmonicDensity::Slow);
-        int chord_idx = getChordIndexForBar(bar, slow, progression.length);
+        int chord_idx;
+        if (harmonic.subdivision == 2) {
+          chord_idx = getChordIndexForSubdividedBar(bar, 0, progression.length);
+        } else {
+          chord_idx = getChordIndexForBar(bar, slow, progression.length);
+        }
         int8_t degree = progression.at(chord_idx);
         // Internal processing is always in C major; transpose at MIDI output time
         uint8_t root = degreeToRoot(degree, Key::C);
@@ -290,12 +324,26 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
         Chord chord = getChordNotes(degree);
 
         // Build arpeggio notes for this chord
-        std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, arp.octave_range);
+        std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, section_octave_range);
         arp_notes = arrangeByPattern(chord_notes, arp.pattern, rng);
         pattern_index = 0;  // Reset pattern index each bar
 
+        // Harmonic rhythm subdivision: when subdivision=2, prepare second half chord
+        // This takes priority over phrase-end split for B sections
+        if (harmonic.subdivision == 2) {
+          int second_half_idx = getChordIndexForSubdividedBar(bar, 1, progression.length);
+          int8_t second_half_degree = progression.at(second_half_idx);
+          uint8_t second_half_root = degreeToRoot(second_half_degree, Key::C);
+          while (second_half_root < base_octave) second_half_root += 12;
+          while (second_half_root >= base_octave + 12) second_half_root -= 12;
+          Chord second_half_chord = getChordNotes(second_half_degree);
+          std::vector<uint8_t> second_half_notes =
+              buildChordNotes(second_half_root, second_half_chord, section_octave_range);
+          next_arp_notes = arrangeByPattern(second_half_notes, arp.pattern, rng);
+          should_split = true;  // Force split behavior for subdivision
+        }
         // If phrase-end split, prepare next chord's notes
-        if (should_split) {
+        else if (should_split) {
           int next_chord_idx = (chord_idx + 1) % progression.length;
           int8_t next_degree = progression.at(next_chord_idx);
           uint8_t next_root = degreeToRoot(next_degree, Key::C);
@@ -303,7 +351,7 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
           while (next_root >= base_octave + 12) next_root -= 12;
           Chord next_chord = getChordNotes(next_degree);
           std::vector<uint8_t> next_chord_notes =
-              buildChordNotes(next_root, next_chord, arp.octave_range);
+              buildChordNotes(next_root, next_chord, section_octave_range);
           next_arp_notes = arrangeByPattern(next_chord_notes, arp.pattern, rng);
         }
       } else {
@@ -318,9 +366,8 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
       Tick pos = bar_start;
       Tick half_bar = bar_start + (TICKS_PER_BAR / 2);
 
-      // Calculate swing offset for upbeat notes
-      // Swing shifts every other note forward in time, creating a shuffle feel
-      Tick swing_offset = static_cast<Tick>(note_duration * style.swing_amount);
+      // Swing amount for triplet-grid quantization of upbeat notes
+      float arp_swing_amount = style.swing_amount;
 
       while (pos < bar_start + TICKS_PER_BAR && pos < section_end) {
         // Select notes based on phrase-end split
@@ -342,15 +389,19 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
 
         if (add_note) {
           // Apply swing to upbeat notes (odd-indexed steps)
+          // For arpeggios, use additive offset based on note_duration and swing amount
+          // since arpeggio notes can be at any subdivision (including triplet speeds)
           Tick note_pos = pos;
-          if (swing_offset > 0 && (pattern_index % 2 == 1)) {
+          if (arp_swing_amount > 0.0f && (pattern_index % 2 == 1)) {
+            // Scale the swing offset proportional to note duration
+            Tick swing_offset = static_cast<Tick>(section_note_duration * arp_swing_amount);
             note_pos += swing_offset;
           }
           track.addNote(
-              factory.create(note_pos, gated_duration, note, velocity, NoteSource::Arpeggio));
+              factory.create(note_pos, section_gated_duration, note, velocity, NoteSource::Arpeggio));
         }
 
-        pos += note_duration;
+        pos += section_note_duration;
         pattern_index++;
       }
 

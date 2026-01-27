@@ -46,6 +46,8 @@ std::string sectionTypeName(SectionType type) {
       return "Chant";
     case SectionType::MixBreak:
       return "MixBreak";
+    case SectionType::Drop:
+      return "Drop";
   }
   return "";
 }
@@ -59,6 +61,7 @@ VocalDensity getVocalDensityForType(SectionType type) {
     case SectionType::Outro:
     case SectionType::Chant:     // Call section - Vocal rests
     case SectionType::MixBreak:  // MIX section - Vocal rests
+    case SectionType::Drop:      // Drop section - No vocals (instrumental drop)
       return VocalDensity::None;
     case SectionType::A:
     case SectionType::Bridge:
@@ -79,6 +82,7 @@ BackingDensity getBackingDensityForType(SectionType type) {
     case SectionType::Bridge:
     case SectionType::Interlude:
     case SectionType::Chant:  // Call section - thin backing (quiet)
+    case SectionType::Drop:   // Drop - minimal (kick + sub-bass only initially)
       return BackingDensity::Thin;
     case SectionType::Outro:
     case SectionType::A:
@@ -96,6 +100,40 @@ BackingDensity getBackingDensityForType(SectionType type) {
 bool getAllowDeviationForType(SectionType type) {
   // Only Chorus and Bridge sections can potentially allow raw attitude
   return type == SectionType::Chorus || type == SectionType::Bridge;
+}
+
+// Assign exit patterns based on section type and context within the song.
+// Rules:
+// - Outro sections: Fadeout (velocity decrease)
+// - B sections followed by Chorus: Sustain (holds for lift effect)
+// - Last Chorus in the song: FinalHit (strong ending)
+// - Other sections: None
+void assignExitPatterns(std::vector<Section>& sections) {
+  if (sections.empty()) return;
+
+  // Find the last Chorus index
+  size_t last_chorus_idx = sections.size();
+  for (size_t idx = sections.size(); idx > 0; --idx) {
+    if (sections[idx - 1].type == SectionType::Chorus) {
+      last_chorus_idx = idx - 1;
+      break;
+    }
+  }
+
+  for (size_t idx = 0; idx < sections.size(); ++idx) {
+    auto& section = sections[idx];
+
+    if (section.type == SectionType::Outro) {
+      section.exit_pattern = ExitPattern::Fadeout;
+    } else if (section.type == SectionType::B && idx + 1 < sections.size() &&
+               sections[idx + 1].type == SectionType::Chorus) {
+      section.exit_pattern = ExitPattern::Sustain;
+    } else if (idx == last_chorus_idx) {
+      section.exit_pattern = ExitPattern::FinalHit;
+    } else {
+      section.exit_pattern = ExitPattern::None;
+    }
+  }
 }
 
 }  // namespace
@@ -294,6 +332,9 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
       break;
   }
 
+  // Assign exit patterns based on section context
+  assignExitPatterns(sections);
+
   return sections;
 }
 
@@ -410,6 +451,9 @@ std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t
     recalculateSectionTicks(sections);
   }
 
+  // Re-assign exit patterns after structure modification
+  assignExitPatterns(sections);
+
   return sections;
 }
 
@@ -485,6 +529,9 @@ void insertCallSections(std::vector<Section>& sections, IntroChant intro_chant,
 
   // Recalculate ticks
   recalculateSectionTicks(sections);
+
+  // Re-assign exit patterns after call section insertion
+  assignExitPatterns(sections);
 }
 
 std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t bpm,
@@ -596,7 +643,137 @@ std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blue
     current_tick += slot.bars * TICKS_PER_BAR;
   }
 
+  // Assign exit patterns based on section context
+  assignExitPatterns(sections);
+
   return sections;
+}
+
+// ============================================================================
+// Layer Scheduling Functions
+// ============================================================================
+
+std::vector<LayerEvent> generateDefaultLayerEvents(const Section& section,
+                                                   size_t section_index,
+                                                   size_t /*total_sections*/) {
+  std::vector<LayerEvent> events;
+
+  // Only generate layer events for sections with 4+ bars
+  if (section.bars < 4) {
+    return events;
+  }
+
+  switch (section.type) {
+    case SectionType::Intro: {
+      // Staggered entry: Drums -> +Bass -> +Chord -> +All remaining
+      if (section.bars >= 8) {
+        // 8+ bar intro: full staged entry
+        events.emplace_back(0, TrackMask::Drums, TrackMask::None);
+        events.emplace_back(2, TrackMask::Bass, TrackMask::None);
+        events.emplace_back(4, TrackMask::Chord | TrackMask::Motif, TrackMask::None);
+        events.emplace_back(6, TrackMask::Arpeggio | TrackMask::Aux, TrackMask::None);
+      } else {
+        // 4-bar intro: condensed entry
+        events.emplace_back(0, TrackMask::Drums, TrackMask::None);
+        events.emplace_back(1, TrackMask::Bass, TrackMask::None);
+        events.emplace_back(2, TrackMask::Chord, TrackMask::None);
+        events.emplace_back(3, TrackMask::Motif | TrackMask::Arpeggio | TrackMask::Aux,
+                            TrackMask::None);
+      }
+      break;
+    }
+
+    case SectionType::A: {
+      // First verse: Vocal + minimal -> add layers at bar 2
+      // Only stagger if this is the first A section
+      bool is_first_a = true;
+      for (size_t idx = 0; idx < section_index; ++idx) {
+        // We cannot check other sections here without the full list,
+        // so we use section_index == 0 or the first section being Intro
+        // as a heuristic. For simplicity, stagger if section_index <= 1.
+      }
+      (void)is_first_a;  // Use section_index heuristic below
+
+      if (section_index <= 1 && section.bars >= 4) {
+        // First A section: gradual build
+        events.emplace_back(0, TrackMask::Vocal | TrackMask::Chord | TrackMask::Bass |
+                               TrackMask::Drums, TrackMask::None);
+        events.emplace_back(2, TrackMask::Motif | TrackMask::Arpeggio, TrackMask::None);
+      }
+      // Later A sections: all tracks immediately (no layer events needed)
+      break;
+    }
+
+    case SectionType::B:
+      // Pre-chorus: full tracks throughout (building energy)
+      // No layer events needed - all tracks active
+      break;
+
+    case SectionType::Chorus:
+      // Chorus: all tracks immediately (full energy)
+      // No layer events needed
+      break;
+
+    case SectionType::Outro: {
+      // Outro: remove tracks in the last 2 bars (reverse of intro)
+      if (section.bars >= 4) {
+        // Start with all tracks
+        events.emplace_back(0, TrackMask::All, TrackMask::None);
+        // Remove layers in the last bars
+        uint8_t wind_down_bar = static_cast<uint8_t>(section.bars - 2);
+        events.emplace_back(wind_down_bar, TrackMask::None,
+                            TrackMask::Arpeggio | TrackMask::Motif | TrackMask::Aux);
+        uint8_t final_bar = static_cast<uint8_t>(section.bars - 1);
+        events.emplace_back(final_bar, TrackMask::None,
+                            TrackMask::Chord | TrackMask::Bass);
+      }
+      break;
+    }
+
+    case SectionType::Interlude: {
+      // Interlude: thin texture similar to intro
+      if (section.bars >= 4) {
+        events.emplace_back(0, TrackMask::Drums | TrackMask::Bass | TrackMask::Chord,
+                            TrackMask::None);
+        events.emplace_back(2, TrackMask::Motif | TrackMask::Arpeggio, TrackMask::None);
+      }
+      break;
+    }
+
+    case SectionType::Bridge:
+    case SectionType::Chant:
+    case SectionType::MixBreak:
+      // No default layer scheduling for these types
+      break;
+
+    case SectionType::Drop: {
+      // EDM Drop section: minimal instruments initially, then re-entry
+      // Pattern: Kick + Sub-bass only -> gradual re-entry -> full energy
+      if (section.bars >= 4) {
+        // Start with minimal: only drums (kick) and bass (sub-bass)
+        events.emplace_back(0, TrackMask::Drums | TrackMask::Bass, TrackMask::None);
+        // Mid-section: add chord and arpeggio for build-up
+        uint8_t buildup_bar = static_cast<uint8_t>(section.bars / 2);
+        events.emplace_back(buildup_bar, TrackMask::Chord | TrackMask::Arpeggio, TrackMask::None);
+        // Final bars: full re-entry with all remaining tracks
+        uint8_t reentry_bar = static_cast<uint8_t>(section.bars - 1);
+        events.emplace_back(reentry_bar, TrackMask::Motif | TrackMask::Aux, TrackMask::None);
+      }
+      break;
+    }
+  }
+
+  return events;
+}
+
+void applyDefaultLayerSchedule(std::vector<Section>& sections) {
+  for (size_t idx = 0; idx < sections.size(); ++idx) {
+    auto& section = sections[idx];
+    // Only apply if no existing layer events and section has 4+ bars
+    if (section.layer_events.empty() && section.bars >= 4) {
+      section.layer_events = generateDefaultLayerEvents(section, idx, sections.size());
+    }
+  }
 }
 
 }  // namespace midisketch

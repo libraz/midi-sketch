@@ -48,6 +48,7 @@ HarmonicDensity getHarmonicDensity(SectionType section, Mood mood) {
     case SectionType::B:
       return HarmonicDensity::Normal;
     case SectionType::Chorus:
+    case SectionType::Drop:  // Drop has dense harmonic rhythm like Chorus
       return is_ballad ? HarmonicDensity::Normal : HarmonicDensity::Dense;
   }
   return HarmonicDensity::Normal;

@@ -236,6 +236,13 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   // Chord extensions
   params.chord_extension = config.chord_extension;
 
+  // Auto-enable tritone substitution for jazz-influenced moods
+  // CityPop (19), Sentimental (6), Nostalgic (11), Chill (7) have jazzy harmony
+  if (params.mood == Mood::CityPop || params.mood == Mood::Sentimental ||
+      params.mood == Mood::Nostalgic || params.mood == Mood::Chill) {
+    params.chord_extension.tritone_sub = true;
+  }
+
   // Composition style (override preset if explicitly set)
   if (config.composition_style != CompositionStyle::MelodyLead) {
     params.composition_style = config.composition_style;

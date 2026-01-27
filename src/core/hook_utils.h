@@ -69,17 +69,47 @@ inline SkeletonPattern getSkeletonPattern(HookSkeleton skeleton) {
     case HookSkeleton::RhythmRepeat:
       // X _ X _ X - with rests, rhythmic emphasis (-128 = rest marker)
       return {{0, -128, 0, -128, 0}, 5};
+
+    case HookSkeleton::PeakDrop:
+      // X X+3 X+5 X+2 X - Peak then descend back to start
+      return {{0, 3, 5, 2, 0}, 5};
+
+    case HookSkeleton::Pendulum:
+      // X X+3 X-1 X+2 X - Swing motion
+      return {{0, 3, -1, 2, 0}, 5};
+
+    case HookSkeleton::DescentResolve:
+      // X X-1 X-2 X-1 - Descend then resolve up
+      return {{0, -1, -2, -1, 0}, 4};
+
+    case HookSkeleton::CallResponse:
+      // X X+2 X X+3 - Question-answer pattern
+      return {{0, 2, 0, 3, 0}, 4};
+
+    case HookSkeleton::Syncopated:
+      // X _ X+1 X _ - Rhythmic with rests (-128 = rest)
+      return {{0, -128, 1, 0, -128}, 5};
+
+    case HookSkeleton::ChromaticSlide:
+      // X X X+1 X+1 - Repeat then half-step up
+      return {{0, 0, 1, 1, 0}, 4};
   }
   return {{0, 0, 0, 0, 0}, 3};  // Default: repeat
 }
 
 /// @brief Weight map for hook skeleton selection.
 struct SkeletonWeights {
-  float repeat;         ///< Weight for Repeat skeleton
-  float ascending;      ///< Weight for Ascending skeleton
-  float ascend_drop;    ///< Weight for AscendDrop skeleton
-  float leap_return;    ///< Weight for LeapReturn skeleton
-  float rhythm_repeat;  ///< Weight for RhythmRepeat skeleton
+  float repeat;           ///< Weight for Repeat skeleton
+  float ascending;        ///< Weight for Ascending skeleton
+  float ascend_drop;      ///< Weight for AscendDrop skeleton
+  float leap_return;      ///< Weight for LeapReturn skeleton
+  float rhythm_repeat;    ///< Weight for RhythmRepeat skeleton
+  float peak_drop = 0.0f;        ///< Weight for PeakDrop skeleton
+  float pendulum = 0.0f;         ///< Weight for Pendulum skeleton
+  float descent_resolve = 0.0f;  ///< Weight for DescentResolve skeleton
+  float call_response = 0.0f;    ///< Weight for CallResponse skeleton
+  float syncopated = 0.0f;       ///< Weight for Syncopated skeleton
+  float chromatic_slide = 0.0f;  ///< Weight for ChromaticSlide skeleton
 };
 
 /// @brief Default weights for Chorus sections (memorability focused).
@@ -90,6 +120,12 @@ constexpr SkeletonWeights kChorusSkeletonWeights = {
     1.0f,  // ascend_drop - Natural arc
     0.7f,  // leap_return - Less common
     1.2f,  // rhythm_repeat - Catchy rhythm
+    0.9f,  // peak_drop
+    0.6f,  // pendulum
+    0.5f,  // descent_resolve
+    0.8f,  // call_response
+    0.7f,  // syncopated
+    0.4f,  // chromatic_slide
 };
 
 /// @brief Default weights for non-Chorus sections.
@@ -99,6 +135,12 @@ constexpr SkeletonWeights kDefaultSkeletonWeights = {
     1.0f,  // ascend_drop
     0.8f,  // leap_return
     0.9f,  // rhythm_repeat
+    0.8f,  // peak_drop
+    0.7f,  // pendulum
+    0.7f,  // descent_resolve
+    0.9f,  // call_response
+    0.8f,  // syncopated
+    0.5f,  // chromatic_slide
 };
 
 /// @brief Apply HookIntensity multiplier to skeleton weights.
@@ -123,6 +165,12 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
       result.rhythm_repeat *= 0.6f;
       result.ascending *= 1.2f;
       result.leap_return *= 1.3f;
+      result.peak_drop *= 1.1f;
+      result.pendulum *= 1.2f;
+      result.descent_resolve *= 1.1f;
+      result.call_response *= 1.0f;
+      result.syncopated *= 1.1f;
+      result.chromatic_slide *= 0.8f;
       break;
 
     case HookIntensity::Light:
@@ -134,6 +182,9 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
       result.repeat *= 1.3f;
       result.rhythm_repeat *= 1.4f;
       result.ascend_drop *= 1.1f;
+      result.peak_drop *= 1.1f;
+      result.call_response *= 1.2f;
+      result.syncopated *= 1.1f;
       break;
 
     case HookIntensity::Strong:
@@ -142,6 +193,9 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
       result.ascend_drop *= 1.5f;
       result.rhythm_repeat *= 1.6f;
       result.ascending *= 1.2f;
+      result.peak_drop *= 1.3f;
+      result.call_response *= 1.4f;
+      result.chromatic_slide *= 1.2f;
       break;
   }
 
@@ -163,7 +217,9 @@ inline HookSkeleton selectHookSkeleton(SectionType type, std::mt19937& rng,
   SkeletonWeights weights = applyHookIntensityToWeights(base_weights, intensity);
 
   float total = weights.repeat + weights.ascending + weights.ascend_drop + weights.leap_return +
-                weights.rhythm_repeat;
+                weights.rhythm_repeat + weights.peak_drop + weights.pendulum +
+                weights.descent_resolve + weights.call_response + weights.syncopated +
+                weights.chromatic_slide;
 
   std::uniform_real_distribution<float> dist(0.0f, total);
   float roll = dist(rng);
@@ -181,7 +237,25 @@ inline HookSkeleton selectHookSkeleton(SectionType type, std::mt19937& rng,
   cumulative += weights.leap_return;
   if (roll < cumulative) return HookSkeleton::LeapReturn;
 
-  return HookSkeleton::RhythmRepeat;
+  cumulative += weights.rhythm_repeat;
+  if (roll < cumulative) return HookSkeleton::RhythmRepeat;
+
+  cumulative += weights.peak_drop;
+  if (roll < cumulative) return HookSkeleton::PeakDrop;
+
+  cumulative += weights.pendulum;
+  if (roll < cumulative) return HookSkeleton::Pendulum;
+
+  cumulative += weights.descent_resolve;
+  if (roll < cumulative) return HookSkeleton::DescentResolve;
+
+  cumulative += weights.call_response;
+  if (roll < cumulative) return HookSkeleton::CallResponse;
+
+  cumulative += weights.syncopated;
+  if (roll < cumulative) return HookSkeleton::Syncopated;
+
+  return HookSkeleton::ChromaticSlide;
 }
 
 /// @brief Select a betrayal type for hook variation.

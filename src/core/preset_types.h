@@ -16,7 +16,7 @@
 
 namespace midisketch {
 
-/// @brief Mood/groove preset (20 patterns available).
+/// @brief Mood/groove preset (24 patterns available).
 enum class Mood : uint8_t {
   StraightPop = 0,
   BrightUpbeat,
@@ -34,11 +34,16 @@ enum class Mood : uint8_t {
   ElectroPop,
   IdolPop,
   Anthem,
-  /// New synth-oriented moods
+  /// Synth-oriented moods
   Yoasobi,     ///< Anime-style pop (148 BPM, high density)
   Synthwave,   ///< Retro synth (118 BPM, medium density)
   FutureBass,  ///< Future bass (145 BPM, high density)
-  CityPop      ///< City pop (110 BPM, medium density)
+  CityPop,     ///< City pop (110 BPM, medium density)
+  /// Genre expansion moods
+  RnBNeoSoul,  ///< R&B/Neo-Soul (85-100 BPM, heavy swing, extended chords)
+  LatinPop,    ///< Latin Pop (95 BPM, dembow rhythm, tresillo bass)
+  Trap,        ///< Trap (70 BPM half-time, 808 sub-bass, hi-hat rolls)
+  Lofi         ///< Lo-fi (80 BPM, heavy swing, velocity ceiling max 90)
 };
 
 /// @brief Composition style determines overall musical approach.
@@ -98,9 +103,11 @@ struct ChordExtensionParams {
   bool enable_sus = false;           ///< Enable sus2/sus4 substitutions
   bool enable_7th = false;           ///< Enable 7th chord extensions
   bool enable_9th = false;           ///< Enable 9th chord extensions
+  bool tritone_sub = false;          ///< Enable tritone substitution (V7 -> bII7)
   float sus_probability = 0.2f;      ///< Probability of sus chord (0.0-1.0)
   float seventh_probability = 0.3f;  ///< Probability of 7th extension (0.0-1.0)
   float ninth_probability = 0.25f;   ///< Probability of 9th extension (0.0-1.0)
+  float tritone_sub_probability = 0.5f;  ///< Probability of tritone sub (0.0-1.0)
 };
 
 // Note: MotifVocalParams, MotifData are defined in motif_types.h
@@ -337,9 +344,11 @@ struct AccompanimentConfig {
   bool chord_ext_sus = false;
   bool chord_ext_7th = false;
   bool chord_ext_9th = false;
-  uint8_t chord_ext_sus_prob = 20;  ///< Sus probability (0-100)
-  uint8_t chord_ext_7th_prob = 30;  ///< 7th probability (0-100)
-  uint8_t chord_ext_9th_prob = 25;  ///< 9th probability (0-100)
+  bool chord_ext_tritone_sub = false;  ///< Enable tritone substitution (V7 -> bII7)
+  uint8_t chord_ext_sus_prob = 20;     ///< Sus probability (0-100)
+  uint8_t chord_ext_7th_prob = 30;     ///< 7th probability (0-100)
+  uint8_t chord_ext_9th_prob = 25;     ///< 9th probability (0-100)
+  uint8_t chord_ext_tritone_sub_prob = 50;  ///< Tritone sub probability (0-100)
 
   /// Humanization
   bool humanize = false;

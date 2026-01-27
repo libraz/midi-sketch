@@ -23,7 +23,9 @@ namespace {
 
 // Pentatonic scale pitch classes (yonanuki - no 4th or 7th)
 // Note: Major scale uses SCALE from pitch_utils.h
-constexpr int PENTATONIC[] = {0, 2, 4, 7, 9};  // C D E G A
+constexpr int PENTATONIC[] = {0, 2, 4, 7, 9};              // C D E G A (major pentatonic)
+constexpr int MINOR_PENTATONIC[] = {0, 3, 5, 7, 10};      // C Eb F G Bb
+constexpr int BLUES_SCALE[] = {0, 3, 5, 6, 7, 10};        // C Eb F F# G Bb (minor penta + blue note)
 
 // Minimum interval for passing tone insertion (minor 3rd)
 constexpr int MIN_PT_INTERVAL = 3;
@@ -76,6 +78,7 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
       config.appoggiatura_ratio = 0.12f;
       config.anticipation_ratio = 0.06f;
       config.prefer_pentatonic = false;
+      config.pentatonic_mode = PentatonicMode::Minor;
       config.chromatic_approach = true;
       config.syncopation_level = 0.4f;
       break;
@@ -90,6 +93,8 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
       config.enable_tensions = true;
       config.tension_ratio = 0.05f;
       config.prefer_pentatonic = false;
+      config.pentatonic_mode = PentatonicMode::Blues;
+      config.chromatic_approach = true;
       config.syncopation_level = 0.6f;
       break;
 
@@ -106,6 +111,7 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
       config.enable_tensions = true;
       config.tension_ratio = 0.03f;  // Subtle 9ths for "setsunai" sound
       config.prefer_pentatonic = true;
+      config.pentatonic_mode = PentatonicMode::Minor;
       config.syncopation_level = 0.3f;
       break;
 
@@ -133,6 +139,7 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
       config.enable_tensions = true;
       config.tension_ratio = 0.04f;
       config.prefer_pentatonic = true;
+      config.chromatic_approach = true;
       config.syncopation_level = 0.25f;
       break;
 
@@ -146,6 +153,7 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
       config.enable_tensions = true;
       config.tension_ratio = 0.02f;
       config.prefer_pentatonic = true;
+      config.chromatic_approach = true;
       config.syncopation_level = 0.4f;
       break;
 
@@ -347,8 +355,36 @@ BeatStrength MelodicEmbellisher::getBeatStrength(Tick tick) {
 bool MelodicEmbellisher::isInPentatonic(int pitch_class, int key_offset) {
   int relative_pc = ((pitch_class - key_offset) % 12 + 12) % 12;
 
+  // Accept notes from both major and minor pentatonic scales.
+  // This broadens the acceptance set, which is musically appropriate
+  // since embellishment already controls style through config ratios.
   for (int pc : PENTATONIC) {
     if (relative_pc == pc) return true;
+  }
+  for (int pc : MINOR_PENTATONIC) {
+    if (relative_pc == pc) return true;
+  }
+  return false;
+}
+
+bool MelodicEmbellisher::isInPentatonicMode(int pitch_class, int key_offset, PentatonicMode mode) {
+  int relative_pc = ((pitch_class - key_offset) % 12 + 12) % 12;
+  switch (mode) {
+    case PentatonicMode::Major:
+      for (int pc : PENTATONIC) {
+        if (relative_pc == pc) return true;
+      }
+      break;
+    case PentatonicMode::Minor:
+      for (int pc : MINOR_PENTATONIC) {
+        if (relative_pc == pc) return true;
+      }
+      break;
+    case PentatonicMode::Blues:
+      for (int pc : BLUES_SCALE) {
+        if (relative_pc == pc) return true;
+      }
+      break;
   }
   return false;
 }

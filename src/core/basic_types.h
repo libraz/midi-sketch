@@ -215,6 +215,22 @@ enum class TrackRole : uint8_t {
 /// @brief Number of track roles.
 inline constexpr size_t kTrackCount = 8;
 
+/// @brief MIDI Control Change event for continuous controller data.
+struct CCEvent {
+  Tick tick;       ///< Position in ticks
+  uint8_t cc;      ///< CC number (0-127)
+  uint8_t value;   ///< CC value (0-127)
+};
+
+/// @brief MIDI CC numbers for commonly used controllers.
+namespace MidiCC {
+constexpr uint8_t kModulation = 1;    ///< Modulation wheel
+constexpr uint8_t kVolume = 7;        ///< Channel volume
+constexpr uint8_t kPan = 10;          ///< Pan position
+constexpr uint8_t kExpression = 11;   ///< Expression controller
+constexpr uint8_t kSustain = 64;      ///< Sustain pedal
+}  // namespace MidiCC
+
 /// @brief MIDI text/marker event.
 struct TextEvent {
   Tick time;         ///< Event time in ticks

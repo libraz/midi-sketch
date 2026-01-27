@@ -228,12 +228,14 @@ typedef struct {
   uint8_t humanize_velocity;  ///< Velocity variation (0-100)
 
   // Chord extensions
-  uint8_t chord_ext_sus;       ///< Enable sus2/sus4 (0=off, 1=on)
-  uint8_t chord_ext_7th;       ///< Enable 7th chords (0=off, 1=on)
-  uint8_t chord_ext_9th;       ///< Enable 9th chords (0=off, 1=on)
-  uint8_t chord_ext_sus_prob;  ///< Sus probability (0-100)
-  uint8_t chord_ext_7th_prob;  ///< 7th probability (0-100)
-  uint8_t chord_ext_9th_prob;  ///< 9th probability (0-100)
+  uint8_t chord_ext_sus;              ///< Enable sus2/sus4 (0=off, 1=on)
+  uint8_t chord_ext_7th;              ///< Enable 7th chords (0=off, 1=on)
+  uint8_t chord_ext_9th;              ///< Enable 9th chords (0=off, 1=on)
+  uint8_t chord_ext_tritone_sub;      ///< Enable tritone substitution (0=off, 1=on)
+  uint8_t chord_ext_sus_prob;         ///< Sus probability (0-100)
+  uint8_t chord_ext_7th_prob;         ///< 7th probability (0-100)
+  uint8_t chord_ext_9th_prob;         ///< 9th probability (0-100)
+  uint8_t chord_ext_tritone_sub_prob; ///< Tritone sub probability (0-100)
 
   // Composition style
   uint8_t composition_style;  ///< 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
@@ -412,12 +414,14 @@ typedef struct {
   uint8_t arpeggio_sync_chord;    ///< Sync with chord changes (0=false, 1=true)
 
   // Chord Extensions
-  uint8_t chord_ext_sus;       ///< Enable sus (0=false, 1=true)
-  uint8_t chord_ext_7th;       ///< Enable 7th (0=false, 1=true)
-  uint8_t chord_ext_9th;       ///< Enable 9th (0=false, 1=true)
-  uint8_t chord_ext_sus_prob;  ///< Sus probability (0-100)
-  uint8_t chord_ext_7th_prob;  ///< 7th probability (0-100)
-  uint8_t chord_ext_9th_prob;  ///< 9th probability (0-100)
+  uint8_t chord_ext_sus;              ///< Enable sus (0=false, 1=true)
+  uint8_t chord_ext_7th;              ///< Enable 7th (0=false, 1=true)
+  uint8_t chord_ext_9th;              ///< Enable 9th (0=false, 1=true)
+  uint8_t chord_ext_tritone_sub;      ///< Enable tritone sub (0=false, 1=true)
+  uint8_t chord_ext_sus_prob;         ///< Sus probability (0-100)
+  uint8_t chord_ext_7th_prob;         ///< 7th probability (0-100)
+  uint8_t chord_ext_9th_prob;         ///< 9th probability (0-100)
+  uint8_t chord_ext_tritone_sub_prob; ///< Tritone sub probability (0-100)
 
   // Humanization
   uint8_t humanize;           ///< Enable humanize (0=false, 1=true)

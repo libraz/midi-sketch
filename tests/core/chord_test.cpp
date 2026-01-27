@@ -233,5 +233,283 @@ TEST(ChordTest, BorrowedChordQuality) {
   EXPECT_EQ(bIII.intervals[1], 4);  // Major 3rd
 }
 
+// ===== Section-Based Reharmonization Tests =====
+
+TEST(ChordTest, ReharmonizeChorusAddsExtensions) {
+  // Chorus: dominant chord (V, degree 4) should get Dom7
+  auto result_dom = reharmonizeForSection(4, SectionType::Chorus, false, true);
+  EXPECT_EQ(result_dom.degree, 4);  // Degree unchanged
+  EXPECT_TRUE(result_dom.extension_overridden);
+  EXPECT_EQ(result_dom.extension, ChordExtension::Dom7);
+
+  // Chorus: minor chord (vi, degree 5) should get Min7
+  auto result_min = reharmonizeForSection(5, SectionType::Chorus, true, false);
+  EXPECT_EQ(result_min.degree, 5);
+  EXPECT_TRUE(result_min.extension_overridden);
+  EXPECT_EQ(result_min.extension, ChordExtension::Min7);
+
+  // Chorus: tonic (I, degree 0) should get Maj7
+  auto result_tonic = reharmonizeForSection(0, SectionType::Chorus, false, false);
+  EXPECT_EQ(result_tonic.degree, 0);
+  EXPECT_TRUE(result_tonic.extension_overridden);
+  EXPECT_EQ(result_tonic.extension, ChordExtension::Maj7);
+
+  // Chorus: IV chord (degree 3) should get Add9
+  auto result_iv = reharmonizeForSection(3, SectionType::Chorus, false, false);
+  EXPECT_EQ(result_iv.degree, 3);
+  EXPECT_TRUE(result_iv.extension_overridden);
+  EXPECT_EQ(result_iv.extension, ChordExtension::Add9);
+}
+
+TEST(ChordTest, ReharmonizeVerseIVToii) {
+  // Verse (A): IV chord (degree 3) should be substituted to ii (degree 1)
+  auto result = reharmonizeForSection(3, SectionType::A, false, false);
+  EXPECT_EQ(result.degree, 1);  // IV -> ii substitution
+  EXPECT_FALSE(result.extension_overridden);
+
+  // Verse (A): other chords should be unchanged
+  auto result_tonic = reharmonizeForSection(0, SectionType::A, false, false);
+  EXPECT_EQ(result_tonic.degree, 0);  // I stays I
+  EXPECT_FALSE(result_tonic.extension_overridden);
+
+  auto result_v = reharmonizeForSection(4, SectionType::A, false, true);
+  EXPECT_EQ(result_v.degree, 4);  // V stays V
+  EXPECT_FALSE(result_v.extension_overridden);
+}
+
+TEST(ChordTest, ReharmonizeOtherSectionsUnchanged) {
+  // Bridge section: no changes
+  auto result = reharmonizeForSection(3, SectionType::Bridge, false, false);
+  EXPECT_EQ(result.degree, 3);  // IV stays IV
+  EXPECT_FALSE(result.extension_overridden);
+
+  // Intro section: no changes
+  auto result_intro = reharmonizeForSection(0, SectionType::Intro, false, false);
+  EXPECT_EQ(result_intro.degree, 0);
+  EXPECT_FALSE(result_intro.extension_overridden);
+}
+
+TEST(ChordTest, PassingDiminishedInBSection) {
+  // B section should insert passing diminished chord
+  auto info = checkPassingDiminished(0, 4, SectionType::B);  // I -> V transition
+  EXPECT_TRUE(info.should_insert);
+
+  // The diminished chord root should be a half-step below the target (V = G)
+  // G is 7 semitones from C, so half-step below is F# = 6 semitones
+  EXPECT_EQ(info.root_semitone, 6);
+
+  // Should be a diminished triad
+  EXPECT_TRUE(info.chord.is_diminished);
+  EXPECT_EQ(info.chord.note_count, 3);
+  EXPECT_EQ(info.chord.intervals[0], 0);  // Root
+  EXPECT_EQ(info.chord.intervals[1], 3);  // Minor 3rd
+  EXPECT_EQ(info.chord.intervals[2], 6);  // Diminished 5th
+}
+
+TEST(ChordTest, PassingDiminishedOnlyInBSection) {
+  // Non-B sections should not get passing diminished chords
+  auto info_chorus = checkPassingDiminished(0, 4, SectionType::Chorus);
+  EXPECT_FALSE(info_chorus.should_insert);
+
+  auto info_verse = checkPassingDiminished(0, 4, SectionType::A);
+  EXPECT_FALSE(info_verse.should_insert);
+
+  auto info_intro = checkPassingDiminished(0, 4, SectionType::Intro);
+  EXPECT_FALSE(info_intro.should_insert);
+}
+
+TEST(ChordTest, PassingDiminishedTargetChords) {
+  // Test various target chords in B section
+  // I -> IV (F): half-step below F is E = 4 semitones
+  auto info_iv = checkPassingDiminished(0, 3, SectionType::B);
+  EXPECT_TRUE(info_iv.should_insert);
+  EXPECT_EQ(info_iv.root_semitone, 4);  // E (half-step below F)
+
+  // vi -> ii (Dm): half-step below D is C# = 1 semitone
+  auto info_ii = checkPassingDiminished(5, 1, SectionType::B);
+  EXPECT_TRUE(info_ii.should_insert);
+  EXPECT_EQ(info_ii.root_semitone, 1);  // C# (half-step below D)
+}
+
+// ===== Modal Interchange Expansion Tests (iv, bII, #IVdim) =====
+
+TEST(ChordTest, BorrowedChordMinorIV) {
+  // iv (degree 12) in C major = Fm (root at F = 5 semitones from C)
+  EXPECT_EQ(degreeToRoot(12, Key::C), 65);  // F4 (MIDI 65)
+
+  // iv should be minor quality: (0, 3, 7)
+  auto chord = getChordNotes(12);
+  EXPECT_EQ(chord.note_count, 3);
+  EXPECT_EQ(chord.intervals[0], 0);  // Root
+  EXPECT_EQ(chord.intervals[1], 3);  // Minor 3rd
+  EXPECT_EQ(chord.intervals[2], 7);  // Perfect 5th
+  EXPECT_FALSE(chord.is_diminished);
+}
+
+TEST(ChordTest, BorrowedChordNeapolitan) {
+  // bII (degree 13) in C major = Db (root at Db = 1 semitone from C)
+  EXPECT_EQ(degreeToRoot(13, Key::C), 61);  // Db4 (MIDI 61)
+
+  // bII should be major quality: (0, 4, 7)
+  auto chord = getChordNotes(13);
+  EXPECT_EQ(chord.note_count, 3);
+  EXPECT_EQ(chord.intervals[0], 0);  // Root
+  EXPECT_EQ(chord.intervals[1], 4);  // Major 3rd
+  EXPECT_EQ(chord.intervals[2], 7);  // Perfect 5th
+  EXPECT_FALSE(chord.is_diminished);
+}
+
+TEST(ChordTest, BorrowedChordSharpIVDim) {
+  // #IVdim (degree 14) in C major = F#dim (root at F# = 6 semitones from C)
+  EXPECT_EQ(degreeToRoot(14, Key::C), 66);  // F#4 (MIDI 66)
+
+  // #IVdim should be diminished quality: (0, 3, 6)
+  auto chord = getChordNotes(14);
+  EXPECT_EQ(chord.note_count, 3);
+  EXPECT_EQ(chord.intervals[0], 0);  // Root
+  EXPECT_EQ(chord.intervals[1], 3);  // Minor 3rd
+  EXPECT_EQ(chord.intervals[2], 6);  // Diminished 5th
+  EXPECT_TRUE(chord.is_diminished);
+}
+
+TEST(ChordTest, BorrowedChordMinorIVInOtherKeys) {
+  // iv in G major = Cm (root at C)
+  // degreeToSemitone(12) = 5, key G = 7, (5+7) % 12 = 0 => 0 + 60 = 60 (C4)
+  EXPECT_EQ(degreeToRoot(12, Key::G), 60);  // C4
+}
+
+TEST(ChordTest, BorrowedChordNeapolitanInOtherKeys) {
+  // bII in G major = Ab (root at Ab)
+  // degreeToSemitone(13) = 1, plus key G (7) = 8 => Ab
+  // MIDI: 8 + 60 = 68 (Ab4)
+  EXPECT_EQ(degreeToRoot(13, Key::G), 68);  // Ab4
+}
+
+TEST(ChordTest, ExistingDiatonicDegreesUnaffected) {
+  // Verify all diatonic degrees still produce correct results
+  // I = C (0 semitones)
+  EXPECT_EQ(degreeToRoot(0, Key::C), 60);  // C4
+  // ii = D (2 semitones)
+  EXPECT_EQ(degreeToRoot(1, Key::C), 62);  // D4
+  // iii = E (4 semitones)
+  EXPECT_EQ(degreeToRoot(2, Key::C), 64);  // E4
+  // IV = F (5 semitones)
+  EXPECT_EQ(degreeToRoot(3, Key::C), 65);  // F4
+  // V = G (7 semitones)
+  EXPECT_EQ(degreeToRoot(4, Key::C), 67);  // G4
+  // vi = A (9 semitones)
+  EXPECT_EQ(degreeToRoot(5, Key::C), 69);  // A4
+  // vii = B (11 semitones)
+  EXPECT_EQ(degreeToRoot(6, Key::C), 71);  // B4
+
+  // Existing borrowed chords unchanged
+  EXPECT_EQ(degreeToRoot(8, Key::C), 68);   // bVI = Ab4
+  EXPECT_EQ(degreeToRoot(10, Key::C), 70);  // bVII = Bb4
+  EXPECT_EQ(degreeToRoot(11, Key::C), 63);  // bIII = Eb4
+}
+
+TEST(ChordTest, ExistingChordQualitiesUnaffected) {
+  // Major chords: I, IV, V
+  auto chord_I = getChordNotes(0);
+  EXPECT_EQ(chord_I.intervals[1], 4);  // Major 3rd
+  auto chord_IV = getChordNotes(3);
+  EXPECT_EQ(chord_IV.intervals[1], 4);  // Major 3rd
+  auto chord_V = getChordNotes(4);
+  EXPECT_EQ(chord_V.intervals[1], 4);  // Major 3rd
+
+  // Minor chords: ii, iii, vi
+  auto chord_ii = getChordNotes(1);
+  EXPECT_EQ(chord_ii.intervals[1], 3);  // Minor 3rd
+  auto chord_iii = getChordNotes(2);
+  EXPECT_EQ(chord_iii.intervals[1], 3);  // Minor 3rd
+  auto chord_vi = getChordNotes(5);
+  EXPECT_EQ(chord_vi.intervals[1], 3);  // Minor 3rd
+
+  // Diminished: vii
+  auto chord_vii = getChordNotes(6);
+  EXPECT_TRUE(chord_vii.is_diminished);
+  EXPECT_EQ(chord_vii.intervals[1], 3);  // Minor 3rd
+  EXPECT_EQ(chord_vii.intervals[2], 6);  // Diminished 5th
+}
+
+// ===== Tritone Substitution Tests =====
+
+TEST(ChordTest, TritoneSubRootCalculation) {
+  // G (7 semitones) -> Db (1 semitone): tritone is 6 semitones
+  EXPECT_EQ(getTritoneSubRoot(7), 1);   // G -> Db
+  // C (0) -> F# (6)
+  EXPECT_EQ(getTritoneSubRoot(0), 6);   // C -> F#/Gb
+  // D (2) -> Ab (8)
+  EXPECT_EQ(getTritoneSubRoot(2), 8);   // D -> Ab
+  // F (5) -> B (11)
+  EXPECT_EQ(getTritoneSubRoot(5), 11);  // F -> B
+  // Symmetry: applying tritone sub twice returns to original
+  EXPECT_EQ(getTritoneSubRoot(getTritoneSubRoot(7)), 7);
+  EXPECT_EQ(getTritoneSubRoot(getTritoneSubRoot(0)), 0);
+}
+
+TEST(ChordTest, TritoneSubOnDominantChord) {
+  // V chord (degree 4) is dominant -> should substitute when roll < probability
+  auto info = checkTritoneSubstitution(4, true, 0.5f, 0.3f);
+  EXPECT_TRUE(info.should_substitute);
+
+  // V in C major: root is G (semitone 7), tritone sub = Db (semitone 1)
+  EXPECT_EQ(info.sub_root_semitone, 1);
+
+  // The substituted chord should be a dominant 7th: (0, 4, 7, 10)
+  EXPECT_EQ(info.chord.note_count, 4);
+  EXPECT_EQ(info.chord.intervals[0], 0);   // Root
+  EXPECT_EQ(info.chord.intervals[1], 4);   // Major 3rd
+  EXPECT_EQ(info.chord.intervals[2], 7);   // Perfect 5th
+  EXPECT_EQ(info.chord.intervals[3], 10);  // Minor 7th (dominant quality)
+  EXPECT_FALSE(info.chord.is_diminished);
+}
+
+TEST(ChordTest, TritoneSubNotAppliedToNonDominant) {
+  // I chord (degree 0) is not dominant -> should not substitute
+  auto info_tonic = checkTritoneSubstitution(0, false, 1.0f, 0.0f);
+  EXPECT_FALSE(info_tonic.should_substitute);
+
+  // vi chord (degree 5) is not dominant -> should not substitute
+  auto info_minor = checkTritoneSubstitution(5, false, 1.0f, 0.0f);
+  EXPECT_FALSE(info_minor.should_substitute);
+
+  // IV chord (degree 3) is not dominant -> should not substitute
+  auto info_sub = checkTritoneSubstitution(3, false, 1.0f, 0.0f);
+  EXPECT_FALSE(info_sub.should_substitute);
+}
+
+TEST(ChordTest, TritoneSubProbabilityRejected) {
+  // Dominant chord but roll >= probability -> should not substitute
+  auto info = checkTritoneSubstitution(4, true, 0.5f, 0.5f);
+  EXPECT_FALSE(info.should_substitute);
+
+  auto info2 = checkTritoneSubstitution(4, true, 0.5f, 0.8f);
+  EXPECT_FALSE(info2.should_substitute);
+}
+
+TEST(ChordTest, TritoneSubProbabilityAccepted) {
+  // Dominant chord with roll < probability -> should substitute
+  auto info = checkTritoneSubstitution(4, true, 0.5f, 0.49f);
+  EXPECT_TRUE(info.should_substitute);
+
+  // 100% probability always substitutes
+  auto info2 = checkTritoneSubstitution(4, true, 1.0f, 0.99f);
+  EXPECT_TRUE(info2.should_substitute);
+}
+
+TEST(ChordTest, TritoneSubZeroProbability) {
+  // Zero probability never substitutes
+  auto info = checkTritoneSubstitution(4, true, 0.0f, 0.0f);
+  EXPECT_FALSE(info.should_substitute);
+}
+
+TEST(ChordTest, TritoneSubFlagDisabledByDefault) {
+  // ChordExtensionParams default should have tritone_sub disabled
+  ChordExtensionParams params;
+  EXPECT_FALSE(params.tritone_sub);
+  EXPECT_FLOAT_EQ(params.tritone_sub_probability, 0.5f);
+}
+
 }  // namespace
 }  // namespace midisketch

@@ -120,6 +120,43 @@ BackingDensity trackMaskToBackingDensity(TrackMask mask);
 
 /// @}
 
+/// @name Layer Scheduling Functions
+/// @{
+
+/**
+ * @brief Generate default layer events for a section based on its type and bar count.
+ *
+ * Only generates events for sections with 4+ bars. Short sections (1-3 bars)
+ * are left without layer events (all tracks active throughout).
+ *
+ * Section type patterns:
+ * - Intro: Staggered entry (Drums -> Bass -> Chord -> All)
+ * - Verse (A, first): Vocal+minimal -> add layers at bar 2
+ * - Pre-chorus (B): Full tracks immediately
+ * - Chorus (first): All tracks immediately
+ * - Outro: Remove tracks in last 2 bars
+ *
+ * @param section The section to generate events for
+ * @param section_index Index of this section in the song
+ * @param total_sections Total number of sections in the song
+ * @return Vector of LayerEvent sorted by bar_offset
+ */
+std::vector<LayerEvent> generateDefaultLayerEvents(const Section& section,
+                                                   size_t section_index,
+                                                   size_t total_sections);
+
+/**
+ * @brief Apply default layer events to all qualifying sections.
+ *
+ * Iterates over all sections and assigns layer_events based on section type.
+ * Only affects sections with 4+ bars and no existing layer_events.
+ *
+ * @param sections Sections to modify (in-place)
+ */
+void applyDefaultLayerSchedule(std::vector<Section>& sections);
+
+/// @}
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_STRUCTURE_H

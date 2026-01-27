@@ -984,23 +984,28 @@ TEST(GlobalMotifTest, EvaluateWithIdenticalPattern) {
   // Evaluate same pattern (should get maximum bonus)
   float bonus = MelodyDesigner::evaluateWithGlobalMotif(source, motif);
 
-  // Max bonus is 0.1 (0.05 for contour + 0.05 for intervals)
-  EXPECT_GT(bonus, 0.05f);
-  EXPECT_LE(bonus, 0.1f);
+  // Max bonus is 0.25 (0.10 contour + 0.05 intervals + 0.05 direction + 0.05 consistency)
+  EXPECT_GT(bonus, 0.15f);
+  EXPECT_LE(bonus, 0.25f);
 }
 
 TEST(GlobalMotifTest, EvaluateDifferentContour) {
-  // Create ascending motif
-  std::vector<NoteEvent> ascending = {{0, 480, 60, 100}, {480, 480, 62, 100}, {960, 480, 64, 100}};
+  // Create a clearly ascending motif (large intervals to trigger Ascending contour)
+  // Need intervals summing to >= 3 in each half to avoid Plateau classification
+  std::vector<NoteEvent> ascending = {
+      {0, 480, 55, 100}, {480, 480, 60, 100}, {960, 480, 64, 100}, {1440, 480, 69, 100}};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(ascending);
+  EXPECT_EQ(motif.contour_type, ContourType::Ascending);
 
-  // Evaluate descending pattern (different contour)
-  std::vector<NoteEvent> descending = {{0, 480, 64, 100}, {480, 480, 62, 100}, {960, 480, 60, 100}};
+  // Evaluate clearly descending pattern (different contour)
+  std::vector<NoteEvent> descending = {
+      {0, 480, 69, 100}, {480, 480, 64, 100}, {960, 480, 60, 100}, {1440, 480, 55, 100}};
   float bonus = MelodyDesigner::evaluateWithGlobalMotif(descending, motif);
 
-  // Should get no contour bonus, may get partial interval bonus
-  // (intervals are [-2, -2] vs [+2, +2] - different directions)
-  EXPECT_LE(bonus, 0.05f);
+  // No contour bonus (different contour types), no direction bonus (opposite),
+  // but may get interval similarity (magnitudes match) and consistency bonus (both leaps)
+  // Should be lower than identical pattern bonus
+  EXPECT_LT(bonus, 0.15f);
 }
 
 TEST(GlobalMotifTest, CacheAndRetrieveGlobalMotif) {
@@ -1328,6 +1333,197 @@ TEST(MelodyDesignerTest, CachedGlobalMotifIsSet) {
 
   EXPECT_TRUE(designer.getCachedGlobalMotif().has_value());
   EXPECT_EQ(designer.getCachedGlobalMotif()->contour_type, ContourType::Valley);
+}
+
+// ============================================================================
+// Melody DNA Strengthening Tests (Phase 3.12)
+// ============================================================================
+
+TEST(GlobalMotifTest, MaxBonusIsPointTwoFive) {
+  // Identical pattern should yield the maximum possible bonus of 0.25
+  // Components: 0.10 contour + 0.05 interval + 0.05 direction + 0.05 consistency
+  std::vector<NoteEvent> source = {
+      {0, 480, 60, 100},    // C4
+      {480, 480, 64, 100},  // E4 (+4, leap up)
+      {960, 480, 65, 100},  // F4 (+1, step up)
+      {1440, 480, 62, 100}, // D4 (-3, leap down)
+      {1920, 480, 64, 100}, // E4 (+2, step up)
+  };
+  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(source);
+
+  float bonus = MelodyDesigner::evaluateWithGlobalMotif(source, motif);
+
+  // Exact same pattern: all components should be at maximum
+  EXPECT_FLOAT_EQ(bonus, 0.25f);
+}
+
+TEST(GlobalMotifTest, ContourDirectionMatchingBonus) {
+  // DNA pattern: ascending (up, up)
+  std::vector<NoteEvent> dna = {
+      {0, 480, 60, 100}, {480, 480, 64, 100}, {960, 480, 67, 100}};
+  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(dna);
+
+  // Candidate also ascending (up, up) but different intervals
+  std::vector<NoteEvent> same_dir = {
+      {0, 480, 60, 100}, {480, 480, 61, 100}, {960, 480, 63, 100}};
+  float bonus_same = MelodyDesigner::evaluateWithGlobalMotif(same_dir, motif);
+
+  // Candidate descending (down, down) - opposite direction
+  std::vector<NoteEvent> opp_dir = {
+      {0, 480, 67, 100}, {480, 480, 64, 100}, {960, 480, 60, 100}};
+  float bonus_opp = MelodyDesigner::evaluateWithGlobalMotif(opp_dir, motif);
+
+  // Same direction should get higher bonus than opposite direction
+  EXPECT_GT(bonus_same, bonus_opp);
+}
+
+TEST(GlobalMotifTest, IntervalConsistencyBonusStepsMatchSteps) {
+  // DNA with all steps (1-2 semitones)
+  std::vector<NoteEvent> dna_steps = {
+      {0, 480, 60, 100}, {480, 480, 62, 100}, {960, 480, 64, 100}, {1440, 480, 65, 100}};
+  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(dna_steps);
+
+  // Candidate with all steps (different pitches but same step character)
+  std::vector<NoteEvent> cand_steps = {
+      {0, 480, 65, 100}, {480, 480, 67, 100}, {960, 480, 69, 100}, {1440, 480, 71, 100}};
+  float bonus_steps = MelodyDesigner::evaluateWithGlobalMotif(cand_steps, motif);
+
+  // Candidate with all leaps (3+ semitones) - different character
+  std::vector<NoteEvent> cand_leaps = {
+      {0, 480, 60, 100}, {480, 480, 67, 100}, {960, 480, 72, 100}, {1440, 480, 79, 100}};
+  float bonus_leaps = MelodyDesigner::evaluateWithGlobalMotif(cand_leaps, motif);
+
+  // Steps matching steps should get higher consistency bonus
+  EXPECT_GT(bonus_steps, bonus_leaps);
+}
+
+TEST(GlobalMotifTest, StrengthenedBonusImprovesCoherence) {
+  // Verify that the strengthened bonus (0.25 max) meaningfully differentiates
+  // matching vs non-matching patterns. The old 0.1 max was too small to influence
+  // candidate selection in practice.
+  std::vector<NoteEvent> dna = {
+      {0, 480, 60, 100}, {480, 480, 64, 100}, {960, 480, 67, 100},
+      {1440, 480, 65, 100}, {1920, 480, 62, 100}};
+  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(dna);
+
+  // Nearly identical pattern (transposed up 1 semitone)
+  std::vector<NoteEvent> similar = {
+      {0, 480, 61, 100}, {480, 480, 65, 100}, {960, 480, 68, 100},
+      {1440, 480, 66, 100}, {1920, 480, 63, 100}};
+  float bonus_similar = MelodyDesigner::evaluateWithGlobalMotif(similar, motif);
+
+  // Completely different pattern (static then big leap)
+  std::vector<NoteEvent> different = {
+      {0, 480, 60, 100}, {480, 480, 60, 100}, {960, 480, 60, 100},
+      {1440, 480, 72, 100}, {1920, 480, 72, 100}};
+  float bonus_different = MelodyDesigner::evaluateWithGlobalMotif(different, motif);
+
+  // The gap between similar and different should be meaningful (> 0.10)
+  // to influence candidate selection during melody evaluation
+  EXPECT_GT(bonus_similar - bonus_different, 0.10f);
+}
+
+// ============================================================================
+// Phase 5: Melody Motif Development Tests (Task 5-1, 5-2)
+// ============================================================================
+
+TEST(SectionContextTest, SubPhraseIndexHelpers) {
+  // Test the SectionContext sub-phrase helper methods
+  MelodyDesigner::SectionContext ctx;
+
+  // Test isClimaxSubPhrase
+  ctx.sub_phrase_index = 0;
+  EXPECT_FALSE(ctx.isClimaxSubPhrase());
+
+  ctx.sub_phrase_index = 2;  // Climax is sub-phrase 2 (bars 5-6)
+  EXPECT_TRUE(ctx.isClimaxSubPhrase());
+
+  // Test isResolutionSubPhrase
+  ctx.sub_phrase_index = 3;  // Resolution is sub-phrase 3 (bars 7-8)
+  EXPECT_TRUE(ctx.isResolutionSubPhrase());
+  EXPECT_FALSE(ctx.isClimaxSubPhrase());
+
+  ctx.sub_phrase_index = 1;  // Development
+  EXPECT_FALSE(ctx.isResolutionSubPhrase());
+}
+
+TEST(SectionContextTest, TessituraAdjustment) {
+  // Test tessitura adjustment for internal arc
+  MelodyDesigner::SectionContext ctx;
+
+  // Presentation: no adjustment
+  ctx.sub_phrase_index = 0;
+  EXPECT_EQ(ctx.getTessituraAdjustment(), 0);
+
+  // Development: no adjustment
+  ctx.sub_phrase_index = 1;
+  EXPECT_EQ(ctx.getTessituraAdjustment(), 0);
+
+  // Climax: shift up
+  ctx.sub_phrase_index = 2;
+  EXPECT_EQ(ctx.getTessituraAdjustment(), 2);
+
+  // Resolution: slight drop
+  ctx.sub_phrase_index = 3;
+  EXPECT_EQ(ctx.getTessituraAdjustment(), -1);
+}
+
+TEST(SectionContextTest, StepSizeMultiplier) {
+  // Test step size multiplier for internal arc
+  MelodyDesigner::SectionContext ctx;
+
+  // Presentation: normal (1.0)
+  ctx.sub_phrase_index = 0;
+  EXPECT_FLOAT_EQ(ctx.getStepSizeMultiplier(), 1.0f);
+
+  // Development: wider steps (1.3)
+  ctx.sub_phrase_index = 1;
+  EXPECT_FLOAT_EQ(ctx.getStepSizeMultiplier(), 1.3f);
+
+  // Climax: normal (1.0)
+  ctx.sub_phrase_index = 2;
+  EXPECT_FLOAT_EQ(ctx.getStepSizeMultiplier(), 1.0f);
+
+  // Resolution: smaller steps (0.8)
+  ctx.sub_phrase_index = 3;
+  EXPECT_FLOAT_EQ(ctx.getStepSizeMultiplier(), 0.8f);
+}
+
+// ============================================================================
+// Phase 5: Melody Climax Point Tests (Task 5-4)
+// ============================================================================
+
+TEST(VelocityContourTest, MelodyGeneratesWithVaryingVelocity) {
+  // Test that melody notes have velocity variation (not all the same)
+  MelodyDesigner designer;
+  HarmonyContext harmony;  // Default harmony context
+  std::mt19937 rng(12345);
+
+  MelodyDesigner::SectionContext ctx;
+  ctx.section_type = SectionType::Chorus;
+  ctx.section_start = 0;
+  ctx.section_end = 8 * TICKS_PER_BAR;
+  ctx.section_bars = 8;
+  ctx.chord_degree = 0;
+  ctx.key_offset = 0;
+  ctx.tessitura = TessituraRange{67, 77, 72, 60, 84};  // low, high, center, vocal_low, vocal_high
+  ctx.vocal_low = 60;
+  ctx.vocal_high = 84;
+  ctx.mood = Mood::ModernPop;
+
+  // Use a standard template from the library
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+
+  auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+
+  if (notes.size() > 5) {
+    std::set<uint8_t> velocities;
+    for (const auto& note : notes) {
+      velocities.insert(note.velocity);
+    }
+    // Should have some velocity variation
+    EXPECT_GT(velocities.size(), 1u) << "Melody should have velocity variation";
+  }
 }
 
 }  // namespace

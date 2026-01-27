@@ -58,9 +58,12 @@ midisketch::SongConfig convertToSongConfig(const MidiSketchSongConfig* config) {
   cpp_config.chord_extension.enable_sus = config->chord_ext_sus != 0;
   cpp_config.chord_extension.enable_7th = config->chord_ext_7th != 0;
   cpp_config.chord_extension.enable_9th = config->chord_ext_9th != 0;
+  cpp_config.chord_extension.tritone_sub = config->chord_ext_tritone_sub != 0;
   cpp_config.chord_extension.sus_probability = config->chord_ext_sus_prob / 100.0f;
   cpp_config.chord_extension.seventh_probability = config->chord_ext_7th_prob / 100.0f;
   cpp_config.chord_extension.ninth_probability = config->chord_ext_9th_prob / 100.0f;
+  cpp_config.chord_extension.tritone_sub_probability =
+      config->chord_ext_tritone_sub_prob / 100.0f;
 
   // Composition style
   cpp_config.composition_style =
@@ -633,12 +636,15 @@ MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
   s_default_config.chord_ext_sus = cpp_config.chord_extension.enable_sus ? 1 : 0;
   s_default_config.chord_ext_7th = cpp_config.chord_extension.enable_7th ? 1 : 0;
   s_default_config.chord_ext_9th = cpp_config.chord_extension.enable_9th ? 1 : 0;
+  s_default_config.chord_ext_tritone_sub = cpp_config.chord_extension.tritone_sub ? 1 : 0;
   s_default_config.chord_ext_sus_prob =
       static_cast<uint8_t>(cpp_config.chord_extension.sus_probability * 100);
   s_default_config.chord_ext_7th_prob =
       static_cast<uint8_t>(cpp_config.chord_extension.seventh_probability * 100);
   s_default_config.chord_ext_9th_prob =
       static_cast<uint8_t>(cpp_config.chord_extension.ninth_probability * 100);
+  s_default_config.chord_ext_tritone_sub_prob =
+      static_cast<uint8_t>(cpp_config.chord_extension.tritone_sub_probability * 100);
 
   // Composition style
   s_default_config.composition_style = static_cast<uint8_t>(cpp_config.composition_style);
@@ -851,9 +857,12 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   cpp_config.chord_extension.enable_sus = config->chord_ext_sus != 0;
   cpp_config.chord_extension.enable_7th = config->chord_ext_7th != 0;
   cpp_config.chord_extension.enable_9th = config->chord_ext_9th != 0;
+  cpp_config.chord_extension.tritone_sub = config->chord_ext_tritone_sub != 0;
   cpp_config.chord_extension.sus_probability = config->chord_ext_sus_prob / 100.0f;
   cpp_config.chord_extension.seventh_probability = config->chord_ext_7th_prob / 100.0f;
   cpp_config.chord_extension.ninth_probability = config->chord_ext_9th_prob / 100.0f;
+  cpp_config.chord_extension.tritone_sub_probability =
+      config->chord_ext_tritone_sub_prob / 100.0f;
 
   // Composition style
   cpp_config.composition_style =

@@ -55,6 +55,39 @@ class MelodyDesigner {
     // RhythmSync support
     GenerationParadigm paradigm = GenerationParadigm::Traditional;  ///< Generation paradigm
     const DrumGrid* drum_grid = nullptr;  ///< Drum grid for RhythmSync quantization
+
+    // ========================================================================
+    // Task 5-2: Internal 4-Stage Structure within Section
+    // ========================================================================
+    // For 8-bar sections, track internal 2-bar "sub-phrase index" (0-3):
+    // - 0 (bars 1-2): Presentation - motif initial/recap, higher plateau_ratio
+    // - 1 (bars 3-4): Development - transform motif, wider step sizes
+    // - 2 (bars 5-6): Climax - highest note placement, tessitura shift up
+    // - 3 (bars 7-8): Resolution - cadence, stronger phrase_end_resolution
+
+    uint8_t sub_phrase_index = 0;  ///< Internal arc position (0-3 for 8-bar sections)
+
+    /// @brief Check if current position is in the "climax" sub-phrase.
+    bool isClimaxSubPhrase() const { return sub_phrase_index == 2; }
+
+    /// @brief Check if current position is in the "resolution" sub-phrase.
+    bool isResolutionSubPhrase() const { return sub_phrase_index == 3; }
+
+    /// @brief Get tessitura adjustment for internal arc.
+    /// Climax sub-phrase shifts tessitura up by 2 semitones.
+    int getTessituraAdjustment() const {
+      if (isClimaxSubPhrase()) return 2;       // Shift up for climax
+      if (isResolutionSubPhrase()) return -1;  // Slight drop for resolution
+      return 0;
+    }
+
+    /// @brief Get step size multiplier for internal arc.
+    /// Development sub-phrase allows wider intervals.
+    float getStepSizeMultiplier() const {
+      if (sub_phrase_index == 1) return 1.3f;   // Development: wider steps
+      if (isResolutionSubPhrase()) return 0.8f; // Resolution: smaller steps
+      return 1.0f;
+    }
   };
 
   /// @brief Result of generating a single phrase.
@@ -154,7 +187,7 @@ class MelodyDesigner {
    *
    * @param candidate Candidate melody notes
    * @param global_motif Reference motif from chorus
-   * @return Bonus score (0.0-0.1)
+   * @return Bonus score (0.0-0.25)
    */
   static float evaluateWithGlobalMotif(const std::vector<NoteEvent>& candidate,
                                        const GlobalMotif& global_motif);

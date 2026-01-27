@@ -30,7 +30,8 @@ constexpr uint8_t MAX_PROGRESSION_LENGTH = 8;
 /**
  * @brief Chord progression pattern with scale degrees.
  *
- * Degrees: 0=I, 1=ii, 2=iii, 3=IV, 4=V, 5=vi, 6=vii, 10=bVII.
+ * Degrees: 0=I, 1=ii, 2=iii, 3=IV, 4=V, 5=vi, 6=vii, 8=bVI, 10=bVII,
+ * 11=bIII, 12=iv, 13=bII, 14=#IVdim.
  * Wraps around progression length.
  */
 struct ChordProgression {
@@ -97,8 +98,9 @@ uint8_t degreeToRoot(int8_t degree, Key key);
  * @brief Get chord intervals for a scale degree.
  *
  * I,IV,V=Major(0,4,7), ii,iii,vi=Minor(0,3,7), vii=Dim(0,3,6).
+ * Borrowed: bVI,bVII,bIII,bII=Major, iv=Minor, #IVdim=Dim.
  *
- * @param degree Scale degree (0-6)
+ * @param degree Scale degree (0-6, or borrowed: 8,10,11,12,13,14)
  * @return Chord struct with intervals and note count
  */
 Chord getChordNotes(int8_t degree);
@@ -193,6 +195,144 @@ SecondaryDominantInfo checkSecondaryDominant(int8_t current_degree, int8_t next_
  * @return Scale degree for the secondary dominant, or -1 if invalid
  */
 int8_t getSecondaryDominantDegree(int8_t target_degree);
+
+// ============================================================================
+// Tritone Substitution
+// ============================================================================
+
+/// @brief Result of tritone substitution check.
+struct TritoneSubInfo {
+  bool should_substitute;   ///< Whether to apply tritone substitution
+  int8_t sub_root_semitone; ///< Root pitch class of the substituted chord (semitones from C)
+  Chord chord;              ///< The substituted chord (dominant 7th quality)
+};
+
+/**
+ * @brief Check if a tritone substitution should be applied to a chord.
+ *
+ * In jazz harmony, a dominant chord (V7) can be replaced by a dominant 7th chord
+ * a tritone away (bII7). For example, in C major, G7 (V) becomes Db7 (bII7).
+ * Both chords share the same tritone interval (B-F), making them functionally
+ * interchangeable for dominant resolution.
+ *
+ * This also works for secondary dominants that resolve to their target chord.
+ *
+ * @param degree Scale degree of the current chord
+ * @param is_dominant Whether the chord has dominant function
+ * @param probability Probability of applying the substitution (0.0-1.0)
+ * @param roll Random value (0.0-1.0) to compare against probability
+ * @return TritoneSubInfo with substitution recommendation and chord data
+ */
+TritoneSubInfo checkTritoneSubstitution(int8_t degree, bool is_dominant,
+                                         float probability, float roll);
+
+/**
+ * @brief Get the tritone substitution root in semitones from C.
+ *
+ * The tritone substitution replaces a chord with the chord whose root is
+ * a tritone (6 semitones) away. This function calculates the substituted
+ * root pitch class.
+ *
+ * @param original_root_semitone Original root pitch class (0-11)
+ * @return Substituted root pitch class (0-11)
+ */
+int getTritoneSubRoot(int original_root_semitone);
+
+// ============================================================================
+// Section-Based Reharmonization
+// ============================================================================
+
+/// @brief Reharmonization result containing modified degree and optional extension.
+struct ReharmonizationResult {
+  int8_t degree;                                   ///< Possibly substituted scale degree
+  ChordExtension extension;                        ///< Extension to apply (may override)
+  bool extension_overridden;                       ///< True if extension was set by reharmonization
+};
+
+/// @brief Passing chord info for B section diminished insertion.
+struct PassingChordInfo {
+  bool should_insert;    ///< Whether to insert a passing chord
+  int8_t root_semitone;  ///< Root pitch class (semitones from C) for the passing chord
+  Chord chord;           ///< The passing diminished chord intervals
+};
+
+/**
+ * @brief Apply section-based reharmonization to a chord degree.
+ *
+ * Modifies chord selection based on section type:
+ * - Chorus: adds 7th/9th extensions for richer harmony
+ * - A (Verse): substitutes IV (degree 3) with ii (degree 1) for softer feel
+ * - B (Pre-chorus): no degree change (passing chords handled separately)
+ *
+ * @param degree Original scale degree from progression
+ * @param section_type Current section type
+ * @param is_minor Whether the chord is minor quality
+ * @param is_dominant Whether the chord has dominant function (degree 4 = V)
+ * @return ReharmonizationResult with possibly modified degree and extension
+ */
+ReharmonizationResult reharmonizeForSection(int8_t degree, SectionType section_type,
+                                             bool is_minor, bool is_dominant);
+
+/**
+ * @brief Check if a passing diminished chord should be inserted in B sections.
+ *
+ * In pre-chorus (B) sections, a diminished chord a half-step below the target
+ * chord can be inserted on the last beat before a chord change. This creates
+ * chromatic tension leading into the next chord.
+ *
+ * @param current_degree Current chord's scale degree
+ * @param next_degree Next chord's scale degree
+ * @param section_type Current section type (only B sections trigger this)
+ * @return PassingChordInfo with insertion recommendation and chord data
+ */
+PassingChordInfo checkPassingDiminished(int8_t current_degree, int8_t next_degree,
+                                         SectionType section_type);
+
+// ============================================================================
+// Slash Chord Support
+// ============================================================================
+
+/// @brief Slash chord information specifying a bass note override.
+///
+/// A slash chord (e.g., C/E) means the chord voicing remains normal but the
+/// bass plays a different note (the 3rd of C in this case). This enables
+/// smoother stepwise bass voice leading between chords.
+struct SlashChordInfo {
+  bool has_override;              ///< True if a bass note override is active
+  int8_t bass_note_semitone;      ///< Bass note as pitch class (0-11, semitones from C)
+                                  ///< Only valid when has_override is true
+};
+
+/**
+ * @brief Check if a slash chord should be applied for smooth bass voice leading.
+ *
+ * Analyzes the current and next chord degrees and determines if inserting a
+ * slash chord (bass note override) would create smoother stepwise bass motion.
+ * Common patterns in C major:
+ * - I/3 (C/E): bass E, when followed by IV (F) - stepwise C->E->F
+ * - IV/6 (F/A): bass A, when preceded by V or approaching vi - smooth F->A->G
+ * - V/7 (G/B): bass B, when followed by I (C) - leading tone resolution B->C
+ * - vi/3 (Am/C): bass C, common first-inversion voicing
+ *
+ * @param current_degree Current chord's scale degree
+ * @param next_degree Next chord's scale degree
+ * @param section_type Current section type (Verse/B prefer slash chords)
+ * @param probability_roll Random value 0.0-1.0 for probability check
+ * @return SlashChordInfo with bass note override if applicable
+ */
+SlashChordInfo checkSlashChord(int8_t current_degree, int8_t next_degree,
+                               SectionType section_type, float probability_roll);
+
+/**
+ * @brief Get the semitone (pitch class) for a scale degree.
+ *
+ * Converts a degree identifier to a pitch class (0-11) in C major.
+ * Handles both diatonic degrees (0-6) and borrowed degrees (8, 10-14).
+ *
+ * @param degree Scale degree (0-6 for diatonic, 8/10-14 for borrowed)
+ * @return Pitch class in semitones from C (0-11)
+ */
+int degreeToSemitone(int8_t degree);
 
 }  // namespace midisketch
 

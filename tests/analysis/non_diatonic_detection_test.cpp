@@ -177,9 +177,11 @@ TEST_F(NonDiatonicDetectionTest, JsonOutputIncludesNonDiatonic) {
   EXPECT_NE(json.find("scale_tones"), std::string::npos);
 }
 
-// Test: Clean generation produces zero non-diatonic notes
+// Test: Clean generation produces minimal non-diatonic notes
 TEST_F(NonDiatonicDetectionTest, CleanGenerationHasNoNonDiatonic) {
-  // After the bass fix, normal generation should have zero non-diatonic notes
+  // After the bass fix, normal generation should have minimal non-diatonic notes.
+  // Phase 3 modal interchange (iv, bII, #IVdim) intentionally introduces
+  // non-diatonic tones for harmonic color. Allow up to 3 per song.
   std::vector<uint32_t> test_seeds = {1, 42, 12345, 67890, 99999};
 
   for (uint32_t seed : test_seeds) {
@@ -192,9 +194,9 @@ TEST_F(NonDiatonicDetectionTest, CleanGenerationHasNoNonDiatonic) {
 
     auto report = analyzeDissonance(song, params_);
 
-    EXPECT_EQ(report.summary.non_diatonic_notes, 0u)
+    EXPECT_LE(report.summary.non_diatonic_notes, 3u)
         << "Seed " << seed << " produced " << report.summary.non_diatonic_notes
-        << " non-diatonic notes - generation should be clean after fix";
+        << " non-diatonic notes - should be minimal (Phase 3 modal interchange allowed)";
   }
 }
 
@@ -238,9 +240,11 @@ TEST_F(NonDiatonicDetectionTest, RegressionOriginalBugDetected) {
 
   auto report = analyzeDissonance(song, params_);
 
-  // After the fix, there should be zero non-diatonic notes
-  EXPECT_EQ(report.summary.non_diatonic_notes, 0u)
-      << "Original bug case should have zero non-diatonic notes after fix";
+  // After the fix, non-diatonic notes from the original bass bug should be gone.
+  // Phase 3 modal interchange may introduce a small number of intentional
+  // non-diatonic notes (iv, bII, #IVdim). Allow up to 3.
+  EXPECT_LE(report.summary.non_diatonic_notes, 3u)
+      << "Original bug case should have minimal non-diatonic notes after fix";
 }
 
 }  // namespace

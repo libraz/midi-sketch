@@ -14,6 +14,7 @@
 #include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
+#include "core/melody_embellishment.h"
 #include "core/melody_templates.h"
 #include "core/pitch_utils.h"
 #include "core/velocity.h"
@@ -222,15 +223,27 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
 
     // Apply register shift for section (clamped to original range)
     int8_t register_shift = getRegisterShift(section.type, params.melody_params);
+
+    // ========================================================================
+    // Climax Range Expansion (Task 3.11)
+    // For the last Chorus (peak_level=Max): allow vocal_high + 2 semitones
+    // This gives the vocalist room to "break out" at the climax
+    // ========================================================================
+    int climax_extension = 0;
+    if (section.type == SectionType::Chorus && section.peak_level == PeakLevel::Max) {
+      climax_extension = 2;  // +2 semitones for climax
+    }
+
     // Register shift adjusts the preferred center but must not exceed original range
+    // (except for climax extension which allows exceeding the range)
     uint8_t section_vocal_low = static_cast<uint8_t>(
         std::clamp(static_cast<int>(effective_vocal_low) + register_shift,
                    static_cast<int>(effective_vocal_low),
                    static_cast<int>(effective_vocal_high) - 6));  // At least 6 semitone range
     uint8_t section_vocal_high = static_cast<uint8_t>(
-        std::clamp(static_cast<int>(effective_vocal_high) + register_shift,
+        std::clamp(static_cast<int>(effective_vocal_high) + register_shift + climax_extension,
                    static_cast<int>(effective_vocal_low) + 6,
-                   static_cast<int>(effective_vocal_high)));  // Stay within original high
+                   static_cast<int>(effective_vocal_high) + climax_extension));
 
     // Recalculate tessitura for section
     TessituraRange section_tessitura = calculateTessitura(section_vocal_low, section_vocal_high);
@@ -407,11 +420,49 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
         section_notes.front().note = static_cast<uint8_t>(new_pitch);
       }
     }
-    for (auto& note : section_notes) {
-      // ABSOLUTE CONSTRAINT: Ensure pitch is on scale (prevents chromatic notes)
-      int snapped = snapToNearestScaleTone(note.note, 0);  // Always C major internally
-      note.note = static_cast<uint8_t>(std::clamp(snapped, static_cast<int>(section_vocal_low),
-                                                  static_cast<int>(section_vocal_high)));
+    // Determine if chromatic approach is enabled for this mood
+    EmbellishmentConfig emb_config = MelodicEmbellisher::getConfigForMood(params.mood);
+    bool allow_chromatic = emb_config.chromatic_approach;
+
+    for (size_t ni = 0; ni < section_notes.size(); ++ni) {
+      auto& note = section_notes[ni];
+
+      // Check if this note qualifies as a chromatic passing tone that should be preserved
+      bool preserve_chromatic = false;
+      if (allow_chromatic) {
+        int snapped_check = snapToNearestScaleTone(note.note, 0);
+        bool is_chromatic = (snapped_check != note.note);
+
+        if (is_chromatic) {
+          // Preserve if on a weak beat (not beats 1 or 3) and resolves by half-step
+          // to the next note (which should be a scale tone)
+          Tick pos_in_bar = note.start_tick % TICKS_PER_BAR;
+          bool is_weak = (pos_in_bar >= TICKS_PER_BEAT / 2) &&
+                         !(pos_in_bar >= 2 * TICKS_PER_BEAT &&
+                           pos_in_bar < 2 * TICKS_PER_BEAT + TICKS_PER_BEAT / 2);
+
+          if (is_weak && ni + 1 < section_notes.size()) {
+            int next_pitch = section_notes[ni + 1].note;
+            int interval = std::abs(static_cast<int>(note.note) - next_pitch);
+            // Half-step resolution to a diatonic note
+            if (interval <= 2 && snapToNearestScaleTone(next_pitch, 0) == next_pitch) {
+              preserve_chromatic = true;
+            }
+          }
+        }
+      }
+
+      if (!preserve_chromatic) {
+        // ABSOLUTE CONSTRAINT: Ensure pitch is on scale (prevents chromatic notes)
+        int snapped = snapToNearestScaleTone(note.note, 0);  // Always C major internally
+        note.note = static_cast<uint8_t>(std::clamp(snapped, static_cast<int>(section_vocal_low),
+                                                    static_cast<int>(section_vocal_high)));
+      } else {
+        // Clamp to range even for chromatic tones
+        note.note = static_cast<uint8_t>(std::clamp(static_cast<int>(note.note),
+                                                    static_cast<int>(section_vocal_low),
+                                                    static_cast<int>(section_vocal_high)));
+      }
       all_notes.push_back(note);
     }
   }

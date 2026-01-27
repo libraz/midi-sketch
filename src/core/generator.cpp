@@ -28,6 +28,7 @@
 #include "core/post_processor.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
+#include "core/swing_quantize.h"
 #include "core/structure.h"
 #include "core/timing_constants.h"
 #include "core/track_registration_guard.h"
@@ -148,9 +149,11 @@ void Generator::applyAccompanimentConfig(const AccompanimentConfig& config) {
   params_.chord_extension.enable_sus = config.chord_ext_sus;
   params_.chord_extension.enable_7th = config.chord_ext_7th;
   params_.chord_extension.enable_9th = config.chord_ext_9th;
+  params_.chord_extension.tritone_sub = config.chord_ext_tritone_sub;
   params_.chord_extension.sus_probability = config.chord_ext_sus_prob / 100.0f;
   params_.chord_extension.seventh_probability = config.chord_ext_7th_prob / 100.0f;
   params_.chord_extension.ninth_probability = config.chord_ext_9th_prob / 100.0f;
+  params_.chord_extension.tritone_sub_probability = config.chord_ext_tritone_sub_prob / 100.0f;
   params_.humanize = config.humanize;
   params_.humanize_timing = config.humanize_timing / 100.0f;
   params_.humanize_velocity = config.humanize_velocity / 100.0f;
@@ -269,6 +272,9 @@ void Generator::generate(const GeneratorParams& params) {
   // "Peak is a temporal event" - density increases over time
   applyDensityProgressionToSections(sections, params_.paradigm);
 
+  // Apply default layer scheduling for staggered track entrances/exits
+  applyDefaultLayerSchedule(sections);
+
   song_.setArrangement(Arrangement(sections));
 
   // Clear all tracks
@@ -357,8 +363,14 @@ void Generator::generate(const GeneratorParams& params) {
   // Apply staggered entry for intro sections
   applyStaggeredEntryToSections();
 
+  // Apply layer scheduling (per-bar track activation/deactivation)
+  applyLayerSchedule();
+
   // Apply transition dynamics to melodic tracks
   applyTransitionDynamics();
+
+  // Generate CC11 Expression curves for melodic tracks
+  generateExpressionCurves();
 
   // Apply humanization if enabled
   if (params.humanize) {
@@ -508,6 +520,11 @@ void Generator::generateAccompanimentForVocal() {
                                *harmony_context_);
   }
 
+  // Apply triplet-grid swing quantization to bass (only for non-straight grooves)
+  if (getMoodDrumGrooveFeel(params_.mood) != DrumGrooveFeel::Straight) {
+    applySwingToTrackBySections(song_.bass(), song_.arrangement().sections());
+  }
+
   // Generate Chord voicings that avoid vocal register
   {
     TrackRegistrationGuard guard(*harmony_context_, song_.chord(), TrackRole::Chord);
@@ -551,6 +568,7 @@ void Generator::generateAccompanimentForVocal() {
 
   // Apply post-processing
   applyTransitionDynamics();
+  generateExpressionCurves();
   if (params_.humanize) {
     applyHumanization();
   }
@@ -584,10 +602,13 @@ void Generator::regenerateAccompaniment(uint32_t new_seed) {
   config.chord_ext_sus = params_.chord_extension.enable_sus;
   config.chord_ext_7th = params_.chord_extension.enable_7th;
   config.chord_ext_9th = params_.chord_extension.enable_9th;
+  config.chord_ext_tritone_sub = params_.chord_extension.tritone_sub;
   config.chord_ext_sus_prob = static_cast<uint8_t>(params_.chord_extension.sus_probability * 100);
   config.chord_ext_7th_prob =
       static_cast<uint8_t>(params_.chord_extension.seventh_probability * 100);
   config.chord_ext_9th_prob = static_cast<uint8_t>(params_.chord_extension.ninth_probability * 100);
+  config.chord_ext_tritone_sub_prob =
+      static_cast<uint8_t>(params_.chord_extension.tritone_sub_probability * 100);
   config.humanize = params_.humanize;
   config.humanize_timing = static_cast<uint8_t>(params_.humanize_timing * 100);
   config.humanize_velocity = static_cast<uint8_t>(params_.humanize_velocity * 100);
@@ -717,6 +738,11 @@ void Generator::generateBass() {
   // Pass kick cache for bass-kick synchronization
   const KickPatternCache* cache_ptr = kick_cache_.has_value() ? &kick_cache_.value() : nullptr;
   generateBassTrack(song_.bass(), song_, params_, rng_, *harmony_context_, cache_ptr);
+
+  // Apply triplet-grid swing quantization to bass (only for non-straight grooves)
+  if (getMoodDrumGrooveFeel(params_.mood) != DrumGrooveFeel::Straight) {
+    applySwingToTrackBySections(song_.bass(), song_.arrangement().sections());
+  }
 }
 
 void Generator::generateDrums() {
@@ -853,6 +879,14 @@ void Generator::applyTransitionDynamics() {
     tracks.push_back(&song_.motif());
   }
 
+  // Apply melody contour-following velocity to vocal track
+  midisketch::applyMelodyContourVelocity(song_.vocal(), sections);
+
+  // Apply musical accent patterns (phrase-head, contour, agogic) to melodic tracks
+  for (MidiTrack* track : tracks) {
+    midisketch::applyAccentPatterns(*track, sections);
+  }
+
   // Apply bar-level velocity curves (4-bar phrase dynamics)
   midisketch::applyAllBarVelocityCurves(tracks, sections);
 
@@ -861,6 +895,27 @@ void Generator::applyTransitionDynamics() {
 
   // Apply entry pattern dynamics (section beginnings)
   midisketch::applyAllEntryPatternDynamics(tracks, sections);
+
+  // Apply exit patterns for musical section endings
+  PostProcessor::applyAllExitPatterns(tracks, sections);
+
+  // Phase 2: Section transition effects
+  // Apply chorus drop (moment of silence before chorus)
+  // Note: Vocal is excluded - it's the main melody and should continue through
+  // Only backing tracks (chord, bass, etc.) are truncated for dramatic effect
+  std::vector<MidiTrack*> backing_tracks = {&song_.chord(), &song_.bass(),
+                                             &song_.motif(), &song_.arpeggio()};
+  PostProcessor::applyChorusDrop(backing_tracks, sections, &song_.drums());
+
+  // Apply ritardando to outro sections
+  PostProcessor::applyRitardando(tracks, sections);
+
+  // Apply enhanced FinalHit for sections with that exit pattern
+  for (const auto& section : sections) {
+    if (section.exit_pattern == ExitPattern::FinalHit) {
+      PostProcessor::applyEnhancedFinalHit(&song_.bass(), &song_.drums(), &song_.chord(), section);
+    }
+  }
 
   // Apply EmotionCurve-based velocity adjustments for section transitions
   if (emotion_curve_.isPlanned()) {
@@ -912,6 +967,14 @@ void Generator::applyHumanization() {
   humanize_params.velocity = params_.humanize_velocity;
 
   PostProcessor::applyHumanization(tracks, humanize_params, rng_);
+
+  // Apply section-aware velocity humanization for more natural dynamics
+  const auto& sections = song_.arrangement().sections();
+  PostProcessor::applySectionAwareVelocityHumanization(tracks, sections, rng_);
+
+  // Apply per-instrument micro-timing offsets for groove pocket
+  PostProcessor::applyMicroTimingOffsets(song_.vocal(), song_.bass(), song_.drums());
+
   PostProcessor::fixVocalOverlaps(song_.vocal());
 }
 
@@ -1009,6 +1072,62 @@ void Generator::applyStaggeredEntryToSections() {
 }
 
 // ============================================================================
+// Layer Schedule Methods
+// ============================================================================
+
+void Generator::applyLayerSchedule() {
+  const auto& sections = song_.arrangement().sections();
+
+  // Map TrackMask bits to MidiTrack pointers
+  struct TrackMapping {
+    TrackMask mask;
+    MidiTrack* track;
+  };
+  TrackMapping track_map[] = {
+      {TrackMask::Vocal, &song_.vocal()},
+      {TrackMask::Chord, &song_.chord()},
+      {TrackMask::Bass, &song_.bass()},
+      {TrackMask::Motif, &song_.motif()},
+      {TrackMask::Arpeggio, &song_.arpeggio()},
+      {TrackMask::Aux, &song_.aux()},
+      {TrackMask::Drums, &song_.drums()},
+  };
+
+  for (const auto& section : sections) {
+    if (!section.hasLayerSchedule()) {
+      continue;
+    }
+
+    Tick section_start = section.start_tick;
+    Tick section_end = section_start + section.bars * TICKS_PER_BAR;
+
+    // For each track, check bar-by-bar activity and remove inactive notes
+    for (auto& mapping : track_map) {
+      auto& notes = mapping.track->notes();
+
+      notes.erase(
+          std::remove_if(notes.begin(), notes.end(),
+                         [&](const NoteEvent& note) {
+                           // Only process notes within this section
+                           if (note.start_tick < section_start ||
+                               note.start_tick >= section_end) {
+                             return false;
+                           }
+
+                           // Calculate which bar this note falls in (0-based)
+                           uint8_t bar_offset = static_cast<uint8_t>(
+                               (note.start_tick - section_start) / TICKS_PER_BAR);
+
+                           // Check if this track is active at this bar
+                           return !isTrackActiveAtBar(
+                               section.layer_events, bar_offset, mapping.mask);
+                         }),
+          notes.end());
+    }
+  }
+}
+
+// ============================================================================
 // RhythmSync Methods
 // ============================================================================
 
@@ -1047,6 +1166,121 @@ void Generator::generateMotifAsAxis() {
 void Generator::applyDensityProgression() {
   // No-op: density progression is applied inline in generate()
   // before setArrangement() is called. This method exists for API consistency.
+}
+
+// ============================================================================
+// Expression Curve Generation (CC11)
+// ============================================================================
+
+namespace {
+
+/// @brief Generate CC11 Expression events for a section on one track.
+/// @param track Target track to add CC events to
+/// @param section Section defining time range and type
+/// @param resolution Tick interval between CC events (default: one per beat)
+void generateSectionExpression(MidiTrack& track, const Section& section,
+                               Tick resolution = TICKS_PER_BEAT) {
+  Tick section_start = section.start_tick;
+  Tick section_end = section_start + section.bars * TICKS_PER_BAR;
+  Tick section_length = section_end - section_start;
+
+  if (section_length == 0) return;
+
+  // Define start/end expression values based on section type
+  uint8_t value_start = 90;
+  uint8_t value_mid = 100;
+  uint8_t value_end = 90;
+
+  switch (section.type) {
+    case SectionType::Intro:
+      value_start = 64;
+      value_mid = 82;
+      value_end = 100;
+      break;
+    case SectionType::A:
+      value_start = 90;
+      value_mid = 100;
+      value_end = 90;
+      break;
+    case SectionType::B:
+      value_start = 90;
+      value_mid = 105;
+      value_end = 95;
+      break;
+    case SectionType::Chorus:
+      value_start = 100;
+      value_mid = 110;
+      value_end = 100;
+      break;
+    case SectionType::Bridge:
+      value_start = 80;
+      value_mid = 100;
+      value_end = 90;
+      break;
+    case SectionType::Interlude:
+      value_start = 80;
+      value_mid = 90;
+      value_end = 80;
+      break;
+    case SectionType::Outro:
+      value_start = 100;
+      value_mid = 82;
+      value_end = 64;
+      break;
+    default:
+      // Chant, MixBreak: moderate sustained
+      value_start = 90;
+      value_mid = 95;
+      value_end = 90;
+      break;
+  }
+
+  // Clamp all values to valid MIDI range
+  value_start = std::min(value_start, static_cast<uint8_t>(127));
+  value_mid = std::min(value_mid, static_cast<uint8_t>(127));
+  value_end = std::min(value_end, static_cast<uint8_t>(127));
+
+  // Generate CC events: two-phase curve (start->mid, mid->end)
+  Tick half_length = section_length / 2;
+
+  for (Tick offset = 0; offset < section_length; offset += resolution) {
+    Tick current_tick = section_start + offset;
+    uint8_t value;
+
+    if (offset < half_length) {
+      // First half: interpolate start -> mid
+      float phase_progress = static_cast<float>(offset) / static_cast<float>(half_length);
+      value = static_cast<uint8_t>(value_start + (value_mid - value_start) * phase_progress);
+    } else {
+      // Second half: interpolate mid -> end
+      float phase_progress =
+          static_cast<float>(offset - half_length) / static_cast<float>(section_length - half_length);
+      value = static_cast<uint8_t>(value_mid + (value_end - value_mid) * phase_progress);
+    }
+
+    // Clamp to valid MIDI CC range
+    value = std::min(value, static_cast<uint8_t>(127));
+
+    track.addCC(current_tick, MidiCC::kExpression, value);
+  }
+}
+
+}  // anonymous namespace
+
+void Generator::generateExpressionCurves() {
+  const auto& sections = song_.arrangement().sections();
+  if (sections.empty()) return;
+
+  // Apply expression curves to melodic tracks (not drums or SE)
+  std::vector<MidiTrack*> melodic_tracks = {&song_.vocal(), &song_.bass(), &song_.chord()};
+
+  for (auto* track : melodic_tracks) {
+    if (track->notes().empty()) continue;
+
+    for (const auto& section : sections) {
+      generateSectionExpression(*track, section);
+    }
+  }
 }
 
 }  // namespace midisketch

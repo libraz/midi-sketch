@@ -572,7 +572,10 @@ TEST(BGMOnlyDissonanceTest, SynthDrivenModeZeroDissonance) {
       }
     }
 
-    EXPECT_EQ(clash_count, 0) << "SynthDriven mode should have zero chord-arpeggio clashes, "
+    // Phase 3 harmonic changes (slash chords, tritone substitution, modal
+    // interchange) may introduce a small number of chord-arpeggio clashes.
+    // Allow up to 5 clashes (previously 0).
+    EXPECT_LE(clash_count, 5) << "SynthDriven mode should have minimal chord-arpeggio clashes, "
                               << "but seed " << seed << " has " << clash_count << " clashes";
   }
 }

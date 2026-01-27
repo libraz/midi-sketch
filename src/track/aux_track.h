@@ -211,6 +211,20 @@ class AuxTrackGenerator {
                                               const VocalAnalysis& vocal_analysis,
                                               std::mt19937& rng);
 
+  /// I: Sustain Pad - whole-note chord tone pads for Ballad/Sentimental moods.
+  ///
+  /// Generates sustained whole-note pads using chord tones.
+  /// Designed for emotional ballad sections where a warm sustained layer
+  /// adds depth without being intrusive.
+  ///
+  /// @param ctx Section context
+  /// @param config Aux configuration
+  /// @param harmony HarmonyContext for chord information
+  /// @param rng Random number generator
+  /// @return Vector of sustained pad notes
+  std::vector<NoteEvent> generateSustainPad(const AuxContext& ctx, const AuxConfig& config,
+                                            const IHarmonyContext& harmony, std::mt19937& rng);
+
   void clearCache() { phrase_cache_.clear(); }
 
  private:

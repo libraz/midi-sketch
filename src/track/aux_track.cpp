@@ -26,7 +26,7 @@ namespace {
 
 // Meta information table for each AuxFunction.
 // Index matches AuxFunction enum value.
-constexpr std::array<AuxFunctionMeta, 8> kAuxFunctionMetaTable = {{
+constexpr std::array<AuxFunctionMeta, 9> kAuxFunctionMetaTable = {{
     // PulseLoop: Rhythmic, ChordTone, EventProbability
     {AuxTimingRole::Rhythmic, AuxHarmonicRole::ChordTone, AuxDensityBehavior::EventProbability,
      0.7f, 0.1f},
@@ -51,6 +51,9 @@ constexpr std::array<AuxFunctionMeta, 8> kAuxFunctionMetaTable = {{
     // MotifCounter: Reactive, Following, EventProbability
     {AuxTimingRole::Reactive, AuxHarmonicRole::Following, AuxDensityBehavior::EventProbability,
      0.8f, 0.2f},
+    // SustainPad: Sustained, ChordTone, VoiceCount (for Ballad/Sentimental)
+    {AuxTimingRole::Sustained, AuxHarmonicRole::ChordTone, AuxDensityBehavior::VoiceCount, 0.8f,
+     0.3f},
 }};
 
 // ============================================================================
@@ -131,6 +134,9 @@ MidiTrack AuxTrackGenerator::generate(const AuxConfig& config, const AuxContext&
     case AuxFunction::MotifCounter:
       // MotifCounter requires VocalAnalysis, must be called directly
       // with generateMotifCounter() instead of through generate()
+      break;
+    case AuxFunction::SustainPad:
+      notes = generateSustainPad(ctx, config, harmony, rng);
       break;
   }
 
@@ -1594,6 +1600,104 @@ DerivabilityScore analyzeDerivability(const std::vector<NoteEvent>& notes) {
   }
 
   return score;
+}
+
+// ============================================================================
+// I: Sustain Pad - Whole-note chord tone pads for Ballad/Sentimental
+// ============================================================================
+
+std::vector<NoteEvent> AuxTrackGenerator::generateSustainPad(const AuxContext& ctx,
+                                                              const AuxConfig& config,
+                                                              const IHarmonyContext& harmony,
+                                                              std::mt19937& rng) {
+  std::vector<NoteEvent> result;
+
+  // A1: Get function meta
+  const auto& meta = getAuxFunctionMeta(AuxFunction::SustainPad);
+
+  uint8_t aux_low, aux_high;
+  calculateAuxRange(config, ctx.main_tessitura, aux_low, aux_high);
+
+  uint8_t velocity = static_cast<uint8_t>(ctx.base_velocity * config.velocity_ratio);
+
+  // SustainPad generates whole-note (4 beats) chord tone pads
+  // Softer and more sustained than EmotionalPad
+  constexpr Tick PAD_DURATION = TICKS_PER_BAR;  // One whole note per bar
+
+  Tick current_tick = ctx.section_start;
+
+  // Voice count: typically 1-2 voices for gentle pad effect
+  int voice_count = static_cast<int>(1.5f * config.density_ratio * meta.base_density);
+  voice_count = std::clamp(voice_count, 1, 2);
+
+  // Use warm pad register (lower than EmotionalPad)
+  int octave = std::max(3, (aux_low / 12) - 1);  // One octave below aux range base
+
+  while (current_tick < ctx.section_end) {
+    Tick actual_duration = std::min(PAD_DURATION, ctx.section_end - current_tick);
+
+    // Get current chord degree for this bar
+    int8_t current_chord_degree = harmony.getChordDegreeAt(current_tick);
+    ChordTones current_ct = getChordTones(current_chord_degree);
+
+    if (current_ct.count < 1) {
+      current_tick += PAD_DURATION;
+      continue;
+    }
+
+    // Get root and third for warm pad voicing
+    int root_pc = current_ct.pitch_classes[0];
+    int third_pc = (current_ct.count >= 2) ? current_ct.pitch_classes[1] : root_pc;
+
+    uint8_t root_pitch = static_cast<uint8_t>(std::clamp(octave * 12 + root_pc, 36, 84));
+    uint8_t third_pitch = static_cast<uint8_t>(std::clamp(octave * 12 + third_pc, 36, 84));
+
+    // Ensure pitches are in valid range
+    root_pitch = std::clamp(root_pitch, aux_low, aux_high);
+    third_pitch = std::clamp(third_pitch, aux_low, aux_high);
+
+    // Root note (always play)
+    uint8_t safe_root =
+        getSafePitch(root_pitch, current_tick, actual_duration, ctx.main_melody, harmony, aux_low,
+                     aux_high, current_chord_degree, meta.dissonance_tolerance);
+
+    // Softer velocity for sustained pad effect
+    uint8_t pad_velocity = static_cast<uint8_t>(velocity * 0.7f);
+    result.push_back({current_tick, actual_duration, safe_root, pad_velocity});
+
+    // Third note (if voice_count >= 2 and not too close to root)
+    if (voice_count >= 2 &&
+        std::abs(static_cast<int>(third_pitch) - static_cast<int>(safe_root)) > 2) {
+      uint8_t safe_third =
+          getSafePitch(third_pitch, current_tick, actual_duration, ctx.main_melody, harmony,
+                       aux_low, aux_high, current_chord_degree, meta.dissonance_tolerance);
+      if (safe_third != safe_root) {
+        result.push_back(
+            {current_tick, actual_duration, safe_third, static_cast<uint8_t>(pad_velocity * 0.85f)});
+      }
+    }
+
+    // Optional: Add subtle variation every other bar
+    std::uniform_real_distribution<float> variation_dist(0.0f, 1.0f);
+    if (variation_dist(rng) < 0.3f && voice_count >= 2) {
+      // Occasionally add fifth for richer texture
+      int fifth_pc = (current_ct.count >= 3) ? current_ct.pitch_classes[2] : root_pc;
+      uint8_t fifth_pitch = static_cast<uint8_t>(std::clamp(octave * 12 + fifth_pc + 12, 48, 96));
+      fifth_pitch = std::clamp(fifth_pitch, aux_low, aux_high);
+
+      if (fifth_pitch != safe_root && fifth_pitch != third_pitch) {
+        uint8_t safe_fifth =
+            getSafePitch(fifth_pitch, current_tick, actual_duration, ctx.main_melody, harmony,
+                         aux_low, aux_high, current_chord_degree, meta.dissonance_tolerance);
+        result.push_back(
+            {current_tick, actual_duration, safe_fifth, static_cast<uint8_t>(pad_velocity * 0.75f)});
+      }
+    }
+
+    current_tick += PAD_DURATION;
+  }
+
+  return result;
 }
 
 }  // namespace midisketch

@@ -26,6 +26,54 @@ namespace {
 // Default velocity for melody notes
 constexpr uint8_t DEFAULT_VELOCITY = 100;
 
+// ============================================================================
+// GlobalMotif Weight by Section Type (Task 5-1)
+// ============================================================================
+// Adjust motif_similarity_bonus weight by section progression:
+// - A (1st): 0.10 (subtle, fragments OK)
+// - B: 0.15 (building tension, motif development)
+// - Chorus: 0.25 (maximum, hook recognition)
+// - A (2nd+): 0.20 (listener knows motif now)
+// - Bridge: 0.05 (contrast, deliberately different)
+
+/// @brief Get GlobalMotif weight multiplier for section type.
+/// @param section Section type
+/// @param section_occurrence How many times this section type has appeared (1-based)
+/// @return Weight multiplier (0.05 - 0.25)
+float getMotifWeightForSection(SectionType section, int section_occurrence = 1) {
+  switch (section) {
+    case SectionType::Chorus:
+    case SectionType::Drop:
+      // Maximum weight: hook recognition is paramount
+      return 0.25f;
+    case SectionType::B:
+    case SectionType::MixBreak:
+      // Building tension: moderate motif development
+      return 0.15f;
+    case SectionType::A:
+      // Verse: depends on occurrence
+      if (section_occurrence == 1) {
+        return 0.10f;  // First verse: subtle, introduce fragments
+      } else {
+        return 0.20f;  // Subsequent verses: listener recognizes motif
+      }
+    case SectionType::Bridge:
+      // Contrast: deliberately different, minimal motif reference
+      return 0.05f;
+    case SectionType::Intro:
+    case SectionType::Interlude:
+      // Instrumental: subtle motif reference
+      return 0.08f;
+    case SectionType::Outro:
+      // Outro: recall motif for closure
+      return 0.18f;
+    case SectionType::Chant:
+      // Chant: minimal melodic content
+      return 0.05f;
+  }
+  return 0.10f;  // Default
+}
+
 // Calculate base breath duration based on section type and mood.
 // Ballads and sentimental moods get longer breaths for emotional phrasing.
 // Chorus sections get shorter breaths for drive and energy.
@@ -560,7 +608,13 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
     // Combined score: 40% style, 40% culling, 20% bias
     float combined_score = style_total * 0.4f + culling_score * 0.4f + bias_score * 0.2f;
 
-    // GlobalMotif bonus: light reward for similar contour/intervals (0.0-0.1)
+    // GlobalMotif bonus: reward for similar contour/intervals
+    // Weight scaled by section type (Task 5-1: section-specific importance):
+    // - Chorus: 0.25 (maximum hook recognition)
+    // - A (1st): 0.10 (subtle fragments)
+    // - B: 0.15 (building tension)
+    // - A (2nd+): 0.20 (listener knows motif)
+    // - Bridge: 0.05 (contrast, deliberately different)
     // Uses section-specific variant for appropriate transformation:
     // - Chorus: original motif (strongest recognition)
     // - A section: diminished (faster feel)
@@ -569,7 +623,10 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
     // - Outro: fragmented (winding down)
     if (cached_global_motif_.has_value() && cached_global_motif_->isValid()) {
       const GlobalMotif& motif_variant = getMotifForSection(ctx.section_type);
-      float motif_bonus = evaluateWithGlobalMotif(melody, motif_variant);
+      float raw_motif_bonus = evaluateWithGlobalMotif(melody, motif_variant);
+      // Apply section-specific weight multiplier
+      float section_weight = getMotifWeightForSection(ctx.section_type);
+      float motif_bonus = raw_motif_bonus * (section_weight / 0.25f);  // Normalize to max 0.25
       combined_score += motif_bonus;
     }
 
@@ -2216,9 +2273,10 @@ float MelodyDesigner::evaluateWithGlobalMotif(const std::vector<NoteEvent>& cand
   // Extract candidate's contour
   GlobalMotif candidate_motif = extractGlobalMotif(candidate);
 
-  // Contour similarity bonus (0.0-0.05)
+  // Contour similarity bonus (0.0-0.10)
+  // Increased from 0.05 to strengthen melodic coherence across sections.
   if (candidate_motif.contour_type == global_motif.contour_type) {
-    bonus += 0.05f;
+    bonus += 0.10f;
   }
 
   // Interval pattern similarity bonus (0.0-0.05)
@@ -2240,6 +2298,54 @@ float MelodyDesigner::evaluateWithGlobalMotif(const std::vector<NoteEvent>& cand
     float max_score = static_cast<float>(compare_count * 3);
     if (max_score > 0.0f) {
       bonus += (static_cast<float>(similarity_score) / max_score) * 0.05f;
+    }
+  }
+
+  // Contour direction matching bonus (0.0-0.05)
+  // Rewards candidates whose individual interval directions match the DNA pattern.
+  // If the DNA goes up at position N, ascending intervals at that position get a bonus.
+  if (candidate_motif.interval_count > 0 && global_motif.interval_count > 0) {
+    size_t compare_count = std::min(static_cast<size_t>(candidate_motif.interval_count),
+                                    static_cast<size_t>(global_motif.interval_count));
+    int direction_matches = 0;
+    for (size_t idx = 0; idx < compare_count; ++idx) {
+      int cand_dir = (candidate_motif.interval_signature[idx] > 0)
+                         ? 1
+                         : (candidate_motif.interval_signature[idx] < 0 ? -1 : 0);
+      int motif_dir = (global_motif.interval_signature[idx] > 0)
+                          ? 1
+                          : (global_motif.interval_signature[idx] < 0 ? -1 : 0);
+      if (cand_dir == motif_dir && cand_dir != 0) {
+        direction_matches++;
+      }
+    }
+    // Normalize: each matching direction contributes proportionally
+    if (compare_count > 0) {
+      bonus +=
+          (static_cast<float>(direction_matches) / static_cast<float>(compare_count)) * 0.05f;
+    }
+  }
+
+  // Interval consistency bonus (0.0-0.05)
+  // Rewards candidates that preserve the step-vs-leap character of the DNA.
+  // Steps (1-2 semitones) matching steps, and leaps (3+) matching leaps.
+  if (candidate_motif.interval_count > 0 && global_motif.interval_count > 0) {
+    size_t compare_count = std::min(static_cast<size_t>(candidate_motif.interval_count),
+                                    static_cast<size_t>(global_motif.interval_count));
+    int consistency_matches = 0;
+    for (size_t idx = 0; idx < compare_count; ++idx) {
+      int cand_abs = std::abs(candidate_motif.interval_signature[idx]);
+      int motif_abs = std::abs(global_motif.interval_signature[idx]);
+      bool cand_is_step = (cand_abs >= 1 && cand_abs <= 2);
+      bool motif_is_step = (motif_abs >= 1 && motif_abs <= 2);
+      // Both steps or both leaps (3+ semitones)
+      if (cand_is_step == motif_is_step && (cand_abs > 0 || motif_abs > 0)) {
+        consistency_matches++;
+      }
+    }
+    if (compare_count > 0) {
+      bonus +=
+          (static_cast<float>(consistency_matches) / static_cast<float>(compare_count)) * 0.05f;
     }
   }
 

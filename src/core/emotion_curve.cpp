@@ -142,6 +142,10 @@ SectionEmotion EmotionCurve::estimateBaseEmotion(SectionType type) {
 
     case SectionType::MixBreak:
       return {0.6f, 0.9f, 0.5f, +1, 1.3f};
+
+    case SectionType::Drop:
+      // Drop: high tension release, peak energy, resolved (main hook/climax)
+      return {0.2f, 1.0f, 0.1f, +1, 1.4f};
   }
 
   return kDefaultEmotion;
