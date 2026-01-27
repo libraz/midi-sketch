@@ -239,17 +239,42 @@ void applyTransitionDynamics(MidiTrack& track, Tick section_start, Tick section_
     return;
   }
 
-  // Special case: B section leading to Chorus gets full-section crescendo
-  bool full_section_crescendo = (from == SectionType::B && to == SectionType::Chorus);
+  // Special case: B section leading to Chorus gets 2-phase dynamics
+  // Phase 1 (first half): Suppression period (0.85 -> 0.92)
+  // Phase 2 (second half): Crescendo build (0.92 -> 1.00)
+  // This creates contrast while avoiding excessive velocity reduction
+  bool full_section_dynamics = (from == SectionType::B && to == SectionType::Chorus);
 
   Tick transition_start;
   float start_mult, end_mult;
 
-  if (full_section_crescendo) {
-    // Crescendo across entire B section for moderate build-up
-    transition_start = section_start;
-    start_mult = 0.85f;  // Start slightly quieter
-    end_mult = 1.00f;    // End at normal level for DAW flexibility
+  if (full_section_dynamics) {
+    // 2-phase dynamics: suppression then crescendo
+    Tick section_duration = section_end - section_start;
+    Tick midpoint = section_start + section_duration / 2;
+
+    // Get mutable access to notes
+    auto& notes = track.notes();
+
+    for (auto& note : notes) {
+      if (note.start_tick >= section_start && note.start_tick < section_end) {
+        float multiplier;
+        if (note.start_tick < midpoint) {
+          // Phase 1: Suppression (0.85 -> 0.92)
+          float progress = static_cast<float>(note.start_tick - section_start) /
+                           static_cast<float>(midpoint - section_start);
+          multiplier = 0.85f + 0.07f * progress;
+        } else {
+          // Phase 2: Crescendo (0.92 -> 1.00)
+          float progress = static_cast<float>(note.start_tick - midpoint) /
+                           static_cast<float>(section_end - midpoint);
+          multiplier = 0.92f + 0.08f * progress;
+        }
+        int new_vel = static_cast<int>(note.velocity * multiplier);
+        note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+      }
+    }
+    return;  // Early return, we've handled all notes
   } else if (to_energy > from_energy) {
     // Normal crescendo: last bar only
     transition_start =

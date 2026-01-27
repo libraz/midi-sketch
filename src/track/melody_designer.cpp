@@ -39,23 +39,29 @@ constexpr uint8_t DEFAULT_VELOCITY = 100;
 /// @brief Get GlobalMotif weight multiplier for section type.
 /// @param section Section type
 /// @param section_occurrence How many times this section type has appeared (1-based)
-/// @return Weight multiplier (0.05 - 0.25)
+/// @return Weight multiplier (0.05 - 0.35)
+///
+/// Enhanced weights for stronger motivic consistency:
+/// - Chorus/Drop: 0.35 (maximum hook recognition)
+/// - B/MixBreak: 0.22 (strong tension building)
+/// - A (1st): 0.15 (introduce motif fragments)
+/// - A (2nd+): 0.25 (reinforce recognition)
 float getMotifWeightForSection(SectionType section, int section_occurrence = 1) {
   switch (section) {
     case SectionType::Chorus:
     case SectionType::Drop:
       // Maximum weight: hook recognition is paramount
-      return 0.25f;
+      return 0.35f;
     case SectionType::B:
     case SectionType::MixBreak:
-      // Building tension: moderate motif development
-      return 0.15f;
+      // Building tension: stronger motif development
+      return 0.22f;
     case SectionType::A:
       // Verse: depends on occurrence
       if (section_occurrence == 1) {
-        return 0.10f;  // First verse: subtle, introduce fragments
+        return 0.15f;  // First verse: introduce motif fragments
       } else {
-        return 0.20f;  // Subsequent verses: listener recognizes motif
+        return 0.25f;  // Subsequent verses: reinforce recognition
       }
     case SectionType::Bridge:
       // Contrast: deliberately different, minimal motif reference
@@ -63,15 +69,15 @@ float getMotifWeightForSection(SectionType section, int section_occurrence = 1) 
     case SectionType::Intro:
     case SectionType::Interlude:
       // Instrumental: subtle motif reference
-      return 0.08f;
+      return 0.10f;
     case SectionType::Outro:
       // Outro: recall motif for closure
-      return 0.18f;
+      return 0.20f;
     case SectionType::Chant:
       // Chant: minimal melodic content
       return 0.05f;
   }
-  return 0.10f;  // Default
+  return 0.12f;  // Default
 }
 
 // Calculate base breath duration based on section type and mood.
@@ -705,10 +711,10 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
 
     // GlobalMotif bonus: reward for similar contour/intervals
     // Weight scaled by section type (Task 5-1: section-specific importance):
-    // - Chorus: 0.25 (maximum hook recognition)
-    // - A (1st): 0.10 (subtle fragments)
-    // - B: 0.15 (building tension)
-    // - A (2nd+): 0.20 (listener knows motif)
+    // - Chorus: 0.35 (maximum hook recognition)
+    // - A (1st): 0.15 (introduce motif fragments)
+    // - B: 0.22 (strong tension building)
+    // - A (2nd+): 0.25 (reinforce recognition)
     // - Bridge: 0.05 (contrast, deliberately different)
     // Uses section-specific variant for appropriate transformation:
     // - Chorus: original motif (strongest recognition)
@@ -721,7 +727,7 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
       float raw_motif_bonus = evaluateWithGlobalMotif(melody, motif_variant);
       // Apply section-specific weight multiplier
       float section_weight = getMotifWeightForSection(ctx.section_type);
-      float motif_bonus = raw_motif_bonus * (section_weight / 0.25f);  // Normalize to max 0.25
+      float motif_bonus = raw_motif_bonus * (section_weight / 0.35f);  // Normalize to max 0.35
       combined_score += motif_bonus;
     }
 

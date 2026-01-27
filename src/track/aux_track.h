@@ -145,6 +145,8 @@ class AuxTrackGenerator {
     const std::vector<PhraseBoundary>* phrase_boundaries = nullptr;
     SectionType section_type =
         SectionType::A;  ///< Section type for cache key and pattern selection
+    /// Vocal rest positions for call-and-response patterns (optional)
+    const std::vector<Tick>* rest_positions = nullptr;
   };
 
   /// Full song context for complete aux track generation.

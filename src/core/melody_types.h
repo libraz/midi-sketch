@@ -262,7 +262,14 @@ enum class HookSkeleton : uint8_t {
   DescentResolve,   ///< Descend to resolution: X X-1 X-2 X-1
   CallResponse,     ///< Call and response: X X+2 X X+3
   Syncopated,       ///< Off-beat accent: X _ X+1 X _ (with rests)
-  ChromaticSlide    ///< Half-step slide: X X X+1 X+1
+  ChromaticSlide,   ///< Half-step slide: X X X+1 X+1
+  // Extended patterns for catchiness enhancement
+  DoubleAscend,     ///< Two-step rise: X X+1 X X+2 X
+  Staircase,        ///< Staircase pattern: X X+2 X+1 X+3 X+2
+  TripleHit,        ///< Same note emphasis: X X X Y
+  WideArch,         ///< Wide arch: X X+4 X+7 X+4 X
+  NarrowPendulum,   ///< Narrow swing: X X+1 X-1 X
+  QuestionMark      ///< Ascending question: X X+2 X+4 X+5
 };
 
 /// @brief Betrayal patterns for hook variation.

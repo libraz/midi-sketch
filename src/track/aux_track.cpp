@@ -251,6 +251,8 @@ void AuxTrackGenerator::generateFullTrack(MidiTrack& track, const SongContext& s
     ctx.main_tessitura = main_tessitura;
     ctx.main_melody = &vocal_track.notes();
     ctx.section_type = section.type;
+    // Provide rest positions for call-and-response patterns
+    ctx.rest_positions = &vocal_analysis.rest_positions;
 
     // Select aux configuration based on section type and vocal density
     AuxConfig config;
@@ -593,6 +595,45 @@ std::vector<NoteEvent> AuxTrackGenerator::generatePulseLoop(const AuxContext& ct
     pattern_idx++;
   }
 
+  // Call-and-response: Add response notes at vocal rest positions (60% probability)
+  // This creates musical conversation with the vocal line
+  if (ctx.rest_positions != nullptr && !ctx.rest_positions->empty()) {
+    std::uniform_real_distribution<float> response_dist(0.0f, 1.0f);
+    constexpr float kResponseProbability = 0.60f;
+    uint8_t response_velocity =
+        static_cast<uint8_t>(std::min(static_cast<int>(velocity * 1.1f), 127));  // Slightly louder
+
+    for (const Tick& rest_start : *ctx.rest_positions) {
+      if (rest_start < ctx.section_start || rest_start >= ctx.section_end) {
+        continue;
+      }
+
+      // 60% chance to add a response note at this rest position
+      if (response_dist(rng) > kResponseProbability) {
+        continue;
+      }
+
+      // Get chord tones at this specific tick
+      int8_t rest_chord_degree = harmony.getChordDegreeAt(rest_start);
+      ChordTones rest_ct = getChordTones(rest_chord_degree);
+      if (rest_ct.count == 0) continue;
+
+      // Choose a chord tone (prefer 5th for response)
+      int pc = (rest_ct.count > 1) ? rest_ct.pitch_classes[1] : rest_ct.pitch_classes[0];
+      if (pc < 0) continue;
+
+      uint8_t response_pitch = static_cast<uint8_t>(base_octave * 12 + pc);
+      response_pitch = std::clamp(response_pitch, aux_low, aux_high);
+
+      // Check for safety
+      response_pitch = getSafePitch(response_pitch, rest_start, TICK_QUARTER, ctx.main_melody,
+                                    harmony, aux_low, aux_high, rest_chord_degree,
+                                    meta.dissonance_tolerance);
+
+      result.push_back({rest_start, TICK_QUARTER, response_pitch, response_velocity});
+    }
+  }
+
   return result;
 }
 
@@ -722,6 +763,45 @@ std::vector<NoteEvent> AuxTrackGenerator::generateGrooveAccent(const AuxContext&
     }
 
     current_bar += bar_length;
+  }
+
+  // Call-and-response: Add accent notes at vocal rest positions (50% probability)
+  // Creates rhythmic conversation during vocal pauses
+  if (ctx.rest_positions != nullptr && !ctx.rest_positions->empty()) {
+    std::uniform_real_distribution<float> response_dist(0.0f, 1.0f);
+    constexpr float kAccentProbability = 0.50f;
+    uint8_t accent_velocity =
+        static_cast<uint8_t>(std::min(static_cast<int>(velocity * 1.15f), 127));  // Accented
+
+    for (const Tick& rest_start : *ctx.rest_positions) {
+      if (rest_start < ctx.section_start || rest_start >= ctx.section_end) {
+        continue;
+      }
+
+      // 50% chance to add an accent at this rest position
+      if (response_dist(rng) > kAccentProbability) {
+        continue;
+      }
+
+      // Get chord tones at this specific tick
+      int8_t rest_chord_degree = harmony.getChordDegreeAt(rest_start);
+      ChordTones rest_ct = getChordTones(rest_chord_degree);
+      if (rest_ct.count == 0) continue;
+
+      // Use root for strong accent
+      int pc = rest_ct.pitch_classes[0];
+      if (pc < 0) continue;
+
+      uint8_t accent_pitch = static_cast<uint8_t>(octave * 12 + pc);
+      accent_pitch = std::clamp(accent_pitch, aux_low, aux_high);
+
+      // Check for safety
+      accent_pitch = getSafePitch(accent_pitch, rest_start, TICK_EIGHTH, ctx.main_melody,
+                                  harmony, aux_low, aux_high, rest_chord_degree,
+                                  meta.dissonance_tolerance);
+
+      result.push_back({rest_start, TICK_EIGHTH, accent_pitch, accent_velocity});
+    }
   }
 
   return result;

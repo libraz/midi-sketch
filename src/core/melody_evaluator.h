@@ -28,7 +28,7 @@ struct EvaluatorConfig {
   float surprise_weight;                 ///< Weight for occasional large leaps
   float aaab_weight;                     ///< Weight for AAAB repetition pattern
   float rhythm_interval_weight = 0.15f;  ///< Weight for rhythm-interval correlation
-  float catchiness_weight = 0.0f;        ///< Weight for hook/catchiness score
+  float catchiness_weight = 0.10f;       ///< Weight for hook/catchiness score
 };
 
 /// @brief Melody evaluation score.

@@ -93,6 +93,30 @@ inline SkeletonPattern getSkeletonPattern(HookSkeleton skeleton) {
     case HookSkeleton::ChromaticSlide:
       // X X X+1 X+1 - Repeat then half-step up
       return {{0, 0, 1, 1, 0}, 4};
+
+    case HookSkeleton::DoubleAscend:
+      // X X+1 X X+2 X - Two-step rise with anchoring
+      return {{0, 1, 0, 2, 0}, 5};
+
+    case HookSkeleton::Staircase:
+      // X X+2 X+1 X+3 X+2 - Ascending staircase pattern
+      return {{0, 2, 1, 3, 2}, 5};
+
+    case HookSkeleton::TripleHit:
+      // X X X Y - Same note emphasis then resolution
+      return {{0, 0, 0, 2, 0}, 4};
+
+    case HookSkeleton::WideArch:
+      // X X+4 X+7 X+4 X - Wide arch contour
+      return {{0, 4, 7, 4, 0}, 5};
+
+    case HookSkeleton::NarrowPendulum:
+      // X X+1 X-1 X - Narrow swing motion
+      return {{0, 1, -1, 0, 0}, 4};
+
+    case HookSkeleton::QuestionMark:
+      // X X+2 X+4 X+5 - Ascending question (unresolved)
+      return {{0, 2, 4, 5, 0}, 4};
   }
   return {{0, 0, 0, 0, 0}, 3};  // Default: repeat
 }
@@ -110,6 +134,13 @@ struct SkeletonWeights {
   float call_response = 0.0f;    ///< Weight for CallResponse skeleton
   float syncopated = 0.0f;       ///< Weight for Syncopated skeleton
   float chromatic_slide = 0.0f;  ///< Weight for ChromaticSlide skeleton
+  // Extended patterns
+  float double_ascend = 0.0f;     ///< Weight for DoubleAscend skeleton
+  float staircase = 0.0f;         ///< Weight for Staircase skeleton
+  float triple_hit = 0.0f;        ///< Weight for TripleHit skeleton
+  float wide_arch = 0.0f;         ///< Weight for WideArch skeleton
+  float narrow_pendulum = 0.0f;   ///< Weight for NarrowPendulum skeleton
+  float question_mark = 0.0f;     ///< Weight for QuestionMark skeleton
 };
 
 /// @brief Default weights for Chorus sections (memorability focused).
@@ -126,6 +157,13 @@ constexpr SkeletonWeights kChorusSkeletonWeights = {
     0.8f,  // call_response
     0.7f,  // syncopated
     0.4f,  // chromatic_slide
+    // Extended patterns
+    1.1f,  // double_ascend - Good for chorus build
+    0.7f,  // staircase - Interesting variety
+    1.3f,  // triple_hit - Strong emphasis (catchy)
+    0.8f,  // wide_arch - Dramatic contour
+    0.5f,  // narrow_pendulum - Subtle motion
+    0.6f,  // question_mark - Creates tension
 };
 
 /// @brief Default weights for non-Chorus sections.
@@ -141,6 +179,13 @@ constexpr SkeletonWeights kDefaultSkeletonWeights = {
     0.9f,  // call_response
     0.8f,  // syncopated
     0.5f,  // chromatic_slide
+    // Extended patterns
+    0.9f,  // double_ascend - Good for verse development
+    0.8f,  // staircase - Adds variety
+    0.7f,  // triple_hit - Can be too repetitive for verse
+    0.6f,  // wide_arch - Save drama for chorus
+    0.8f,  // narrow_pendulum - Works well in verses
+    0.7f,  // question_mark - Good for pre-chorus
 };
 
 /// @brief Apply HookIntensity multiplier to skeleton weights.
@@ -171,6 +216,13 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
       result.call_response *= 1.0f;
       result.syncopated *= 1.1f;
       result.chromatic_slide *= 0.8f;
+      // Extended patterns: favor variety
+      result.double_ascend *= 1.2f;
+      result.staircase *= 1.3f;
+      result.triple_hit *= 0.6f;  // Less repetitive
+      result.wide_arch *= 1.2f;
+      result.narrow_pendulum *= 1.1f;
+      result.question_mark *= 1.2f;
       break;
 
     case HookIntensity::Light:
@@ -185,6 +237,10 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
       result.peak_drop *= 1.1f;
       result.call_response *= 1.2f;
       result.syncopated *= 1.1f;
+      // Extended patterns: boost catchy ones
+      result.double_ascend *= 1.2f;
+      result.triple_hit *= 1.4f;  // Emphasis is catchy
+      result.wide_arch *= 1.1f;
       break;
 
     case HookIntensity::Strong:
@@ -196,6 +252,11 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
       result.peak_drop *= 1.3f;
       result.call_response *= 1.4f;
       result.chromatic_slide *= 1.2f;
+      // Extended patterns: maximize catchiness
+      result.double_ascend *= 1.4f;
+      result.triple_hit *= 1.7f;  // Very catchy
+      result.wide_arch *= 1.3f;
+      result.staircase *= 1.1f;
       break;
   }
 
@@ -219,7 +280,9 @@ inline HookSkeleton selectHookSkeleton(SectionType type, std::mt19937& rng,
   float total = weights.repeat + weights.ascending + weights.ascend_drop + weights.leap_return +
                 weights.rhythm_repeat + weights.peak_drop + weights.pendulum +
                 weights.descent_resolve + weights.call_response + weights.syncopated +
-                weights.chromatic_slide;
+                weights.chromatic_slide + weights.double_ascend + weights.staircase +
+                weights.triple_hit + weights.wide_arch + weights.narrow_pendulum +
+                weights.question_mark;
 
   std::uniform_real_distribution<float> dist(0.0f, total);
   float roll = dist(rng);
@@ -255,7 +318,25 @@ inline HookSkeleton selectHookSkeleton(SectionType type, std::mt19937& rng,
   cumulative += weights.syncopated;
   if (roll < cumulative) return HookSkeleton::Syncopated;
 
-  return HookSkeleton::ChromaticSlide;
+  cumulative += weights.chromatic_slide;
+  if (roll < cumulative) return HookSkeleton::ChromaticSlide;
+
+  cumulative += weights.double_ascend;
+  if (roll < cumulative) return HookSkeleton::DoubleAscend;
+
+  cumulative += weights.staircase;
+  if (roll < cumulative) return HookSkeleton::Staircase;
+
+  cumulative += weights.triple_hit;
+  if (roll < cumulative) return HookSkeleton::TripleHit;
+
+  cumulative += weights.wide_arch;
+  if (roll < cumulative) return HookSkeleton::WideArch;
+
+  cumulative += weights.narrow_pendulum;
+  if (roll < cumulative) return HookSkeleton::NarrowPendulum;
+
+  return HookSkeleton::QuestionMark;
 }
 
 /// @brief Select a betrayal type for hook variation.
