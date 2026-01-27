@@ -177,6 +177,28 @@ uint8_t calculateEffectiveVelocity(const Section& section, uint8_t beat, Mood mo
   return static_cast<uint8_t>(std::clamp(velocity, 0, 127));
 }
 
+float getBarVelocityMultiplier(int bar_in_section, int total_bars, SectionType section_type) {
+  // 4-bar phrase dynamics: build→hit pattern
+  // Creates natural breathing within each 4-bar phrase
+  int phrase_bar = bar_in_section % 4;
+  float phrase_curve = 0.85f + 0.05f * static_cast<float>(phrase_bar);
+  // phrase_bar: 0 -> 0.85, 1 -> 0.90, 2 -> 0.95, 3 -> 1.00
+
+  // Section-level crescendo for Chorus (gradual build across entire section)
+  float section_curve = 1.0f;
+  if (section_type == SectionType::Chorus && total_bars > 0) {
+    float progress = static_cast<float>(bar_in_section) / static_cast<float>(total_bars);
+    // Range: 0.92 at start to 1.08 at end (moderate crescendo)
+    section_curve = 0.92f + 0.16f * progress;
+  } else if (section_type == SectionType::B && total_bars > 0) {
+    // Pre-chorus gets slight build toward chorus
+    float progress = static_cast<float>(bar_in_section) / static_cast<float>(total_bars);
+    section_curve = 0.95f + 0.05f * progress;
+  }
+
+  return phrase_curve * section_curve;
+}
+
 float VelocityBalance::getMultiplier(TrackRole role) {
   switch (role) {
     case TrackRole::Vocal:
@@ -335,6 +357,44 @@ void applyAllEntryPatternDynamics(std::vector<MidiTrack*>& tracks,
     for (MidiTrack* track : tracks) {
       if (track != nullptr) {
         applyEntryPatternDynamics(*track, section.start_tick, section.bars, section.entry_pattern);
+      }
+    }
+  }
+}
+
+// ============================================================================
+// Bar-Level Velocity Curve Implementation
+// ============================================================================
+
+void applyBarVelocityCurve(MidiTrack& track, const Section& section) {
+  auto& notes = track.notes();
+  if (notes.empty()) return;
+
+  Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+
+  for (auto& note : notes) {
+    // Only modify notes within this section
+    if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
+      // Calculate bar position within section
+      Tick relative_tick = note.start_tick - section.start_tick;
+      int bar_in_section = static_cast<int>(relative_tick / TICKS_PER_BAR);
+
+      // Get velocity multiplier for this bar position
+      float multiplier = getBarVelocityMultiplier(bar_in_section, section.bars, section.type);
+
+      // Apply multiplier
+      int new_vel = static_cast<int>(note.velocity * multiplier);
+      note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+    }
+  }
+}
+
+void applyAllBarVelocityCurves(std::vector<MidiTrack*>& tracks,
+                               const std::vector<Section>& sections) {
+  for (const auto& section : sections) {
+    for (MidiTrack* track : tracks) {
+      if (track != nullptr) {
+        applyBarVelocityCurve(*track, section);
       }
     }
   }

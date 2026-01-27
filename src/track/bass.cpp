@@ -1072,7 +1072,8 @@ bool useSlowHarmonicRhythm(SectionType section) {
 }
 
 void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,
-                       std::mt19937& rng, const IHarmonyContext& harmony) {
+                       std::mt19937& rng, const IHarmonyContext& harmony,
+                       const KickPatternCache* kick_cache) {
   const auto& progression = getChordProgression(params.chord_id);
   const auto& sections = song.arrangement().sections();
 
@@ -1129,7 +1130,7 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
       }
 
       // Phrase-end split: sync with chord_track.cpp anticipation
-      HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section.type, params.mood);
+      HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, params.mood);
       int effective_prog_length = slow_harmonic ? (progression.length + 1) / 2 : progression.length;
       if (shouldSplitPhraseEnd(bar, section.bars, effective_prog_length, harmonic, section.type,
                                params.mood)) {
@@ -1160,6 +1161,41 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
 
       generateBassBar(track, bar_start, root, next_root, next_degree, pattern, section.type,
                       params.mood, is_last_bar, factory, harmony);
+    }
+  }
+
+  // Post-processing: sync bass notes with kick positions for tighter groove
+  // Tolerance and max adjustment scale with kick density:
+  //   High density (4 kicks/bar, e.g. FourOnFloor) → tight sync (small tolerance/adjust)
+  //   Low density (1 kick/bar, e.g. Sparse) → loose sync (large tolerance/adjust)
+  if (kick_cache != nullptr && !kick_cache->isEmpty()) {
+    // Scale sync_tolerance inversely with kicks_per_bar
+    Tick sync_tolerance = static_cast<Tick>(
+        TICK_EIGHTH / std::max(kick_cache->kicks_per_bar, 1.0f));
+    sync_tolerance = std::clamp(sync_tolerance,
+                                static_cast<Tick>(TICK_SIXTEENTH / 3),
+                                static_cast<Tick>(TICK_EIGHTH));
+
+    // Scale max_adjust based on dominant_interval (musical grid constraint)
+    Tick max_adjust = std::min(
+        static_cast<Tick>(kick_cache->dominant_interval / 16),
+        static_cast<Tick>(TICK_SIXTEENTH / 2));
+
+    auto& notes = track.notes();
+    for (auto& note : notes) {
+      // Check if this note is close to a kick but not exactly on it
+      Tick nearest = kick_cache->nearestKick(note.start_tick);
+      Tick diff = (note.start_tick > nearest) ? (note.start_tick - nearest) : (nearest - note.start_tick);
+
+      // If within tolerance but not already aligned, adjust timing
+      if (diff > 0 && diff <= sync_tolerance) {
+        Tick adjust = std::min(diff, max_adjust);
+        if (note.start_tick > nearest) {
+          note.start_tick -= adjust;  // Move earlier toward kick
+        } else {
+          note.start_tick += adjust;  // Move later toward kick
+        }
+      }
     }
   }
 }
@@ -1489,7 +1525,7 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song, const Genera
       }
 
       // Handle phrase-end split
-      HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section.type, params.mood);
+      HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, params.mood);
       int effective_prog_length = slow_harmonic ? (progression.length + 1) / 2 : progression.length;
       if (shouldSplitPhraseEnd(bar, section.bars, effective_prog_length, harmonic, section.type,
                                params.mood)) {

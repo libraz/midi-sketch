@@ -120,6 +120,27 @@ Tick applyTimeFeel(Tick base_tick, TimeFeel feel, uint16_t bpm);
  */
 TimeFeel getMoodTimeFeel(Mood mood);
 
+// ============================================================================
+// Kick Pattern Pre-computation (for Bass-Kick sync)
+// ============================================================================
+
+/**
+ * @brief Compute predicted kick positions for a section.
+ *
+ * Returns a KickPatternCache containing the tick positions where kicks would
+ * likely be placed based on section type, mood, and style. This can be used
+ * by bass generation to align notes with kick hits for tighter groove.
+ *
+ * Note: This is a simplified prediction. Actual kick positions may differ
+ * due to fills, humanization, and other variations.
+ *
+ * @param sections Song sections
+ * @param mood Current mood (affects drum style)
+ * @param bpm Tempo (for density calculation)
+ * @return KickPatternCache with predicted kick positions
+ */
+KickPatternCache computeKickPattern(const std::vector<Section>& sections, Mood mood, uint16_t bpm);
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_TRACK_DRUMS_H

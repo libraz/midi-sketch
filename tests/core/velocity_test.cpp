@@ -353,5 +353,120 @@ TEST(VelocityTest, CalculateEffectiveVelocityEnergyEffect) {
   EXPECT_GT(vel_peak, vel_low);
 }
 
+// ============================================================================
+// C1: getBarVelocityMultiplier Tests
+// ============================================================================
+
+TEST(VelocityTest, BarVelocityMultiplier4BarPhrasePattern) {
+  // For non-Chorus/B sections, the 4-bar phrase pattern should be:
+  // bar 0 -> 0.85, bar 1 -> 0.90, bar 2 -> 0.95, bar 3 -> 1.00
+  // (section_curve is 1.0 for non-Chorus/B types)
+  EXPECT_FLOAT_EQ(getBarVelocityMultiplier(0, 4, SectionType::A), 0.85f);
+  EXPECT_FLOAT_EQ(getBarVelocityMultiplier(1, 4, SectionType::A), 0.90f);
+  EXPECT_FLOAT_EQ(getBarVelocityMultiplier(2, 4, SectionType::A), 0.95f);
+  EXPECT_FLOAT_EQ(getBarVelocityMultiplier(3, 4, SectionType::A), 1.00f);
+}
+
+TEST(VelocityTest, BarVelocityMultiplier4BarPhrasePatternRepeats) {
+  // The 4-bar phrase pattern should repeat for longer sections
+  // Bar 4 should behave like bar 0, bar 5 like bar 1, etc.
+  EXPECT_FLOAT_EQ(getBarVelocityMultiplier(4, 8, SectionType::A), 0.85f);
+  EXPECT_FLOAT_EQ(getBarVelocityMultiplier(5, 8, SectionType::A), 0.90f);
+  EXPECT_FLOAT_EQ(getBarVelocityMultiplier(6, 8, SectionType::A), 0.95f);
+  EXPECT_FLOAT_EQ(getBarVelocityMultiplier(7, 8, SectionType::A), 1.00f);
+}
+
+TEST(VelocityTest, BarVelocityMultiplierChorusCrescendo) {
+  // In an 8-bar Chorus, bar 0 should have a lower multiplier than bar 7
+  // due to section-level crescendo (0.92 + 0.16 * progress)
+  int total_bars = 8;
+  float mult_bar0 = getBarVelocityMultiplier(0, total_bars, SectionType::Chorus);
+  float mult_bar7 = getBarVelocityMultiplier(7, total_bars, SectionType::Chorus);
+  EXPECT_LT(mult_bar0, mult_bar7);
+
+  // Bar 0: phrase_curve=0.85, section_curve=0.92 -> 0.85*0.92 = 0.782
+  // Bar 7: phrase_curve=1.00, section_curve=0.92+0.16*(7/8) -> 1.00*1.06 = 1.06
+  EXPECT_LT(mult_bar0, 0.80f);
+  EXPECT_GT(mult_bar7, 1.00f);
+}
+
+TEST(VelocityTest, BarVelocityMultiplierBSectionCrescendo) {
+  // In an 8-bar B section, bar 0 should be less than bar 7
+  // due to pre-chorus build (0.95 + 0.05 * progress)
+  int total_bars = 8;
+  float mult_bar0 = getBarVelocityMultiplier(0, total_bars, SectionType::B);
+  float mult_bar7 = getBarVelocityMultiplier(7, total_bars, SectionType::B);
+  EXPECT_LT(mult_bar0, mult_bar7);
+}
+
+// ============================================================================
+// C7: applyBarVelocityCurve Tests
+// ============================================================================
+
+TEST(VelocityTest, ApplyBarVelocityCurveChorusCrescendo) {
+  // Create a track with notes at bar 0 and bar 3 within a Chorus section
+  MidiTrack track;
+  Section section;
+  section.type = SectionType::Chorus;
+  section.start_tick = 0;
+  section.bars = 4;
+
+  // Add notes with identical initial velocity
+  uint8_t initial_vel = 100;
+  track.addNote(0, 480, 60, initial_vel);                   // Bar 0
+  track.addNote(3 * TICKS_PER_BAR, 480, 64, initial_vel);   // Bar 3
+
+  applyBarVelocityCurve(track, section);
+
+  // Bar 0 note should have lower velocity than bar 3 note due to crescendo
+  EXPECT_LT(track.notes()[0].velocity, track.notes()[1].velocity);
+}
+
+TEST(VelocityTest, ApplyBarVelocityCurveModifiesVelocities) {
+  // Verify that the function actually modifies velocities (not a no-op)
+  MidiTrack track;
+  Section section;
+  section.type = SectionType::Chorus;
+  section.start_tick = 0;
+  section.bars = 8;
+
+  uint8_t initial_vel = 100;
+  track.addNote(0, 480, 60, initial_vel);  // Bar 0, should be reduced
+
+  applyBarVelocityCurve(track, section);
+
+  // Bar 0 in Chorus: phrase_curve=0.85, section_curve=0.92 -> ~78
+  // Velocity should be noticeably reduced from initial 100
+  EXPECT_LT(track.notes()[0].velocity, initial_vel);
+}
+
+TEST(VelocityTest, ApplyBarVelocityCurveIgnoresNotesOutsideSection) {
+  MidiTrack track;
+  Section section;
+  section.type = SectionType::Chorus;
+  section.start_tick = 4 * TICKS_PER_BAR;  // Section starts at bar 4
+  section.bars = 4;
+
+  uint8_t initial_vel = 100;
+  track.addNote(0, 480, 60, initial_vel);  // Before section - should not change
+
+  applyBarVelocityCurve(track, section);
+
+  // Note outside section should remain unchanged
+  EXPECT_EQ(track.notes()[0].velocity, initial_vel);
+}
+
+TEST(VelocityTest, ApplyBarVelocityCurveEmptyTrack) {
+  MidiTrack track;
+  Section section;
+  section.type = SectionType::Chorus;
+  section.start_tick = 0;
+  section.bars = 4;
+
+  // Should not crash on empty track
+  applyBarVelocityCurve(track, section);
+  EXPECT_TRUE(track.notes().empty());
+}
+
 }  // namespace
 }  // namespace midisketch

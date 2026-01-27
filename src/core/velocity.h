@@ -118,6 +118,26 @@ struct VelocityBalance {
   static float getMultiplier(TrackRole role);
 };
 
+/**
+ * @brief Get velocity multiplier for bar position within a section.
+ *
+ * Implements 4-bar phrase dynamics (build→hit pattern) and section-level
+ * crescendo for Chorus sections. This adds subtle dynamics that prevent
+ * sections from sounding flat.
+ *
+ * The 4-bar phrase pattern:
+ * - Bar 0: 0.85 (setup)
+ * - Bar 1: 0.90 (build)
+ * - Bar 2: 0.95 (anticipation)
+ * - Bar 3: 1.00 (hit)
+ *
+ * @param bar_in_section Bar number within the section (0-indexed)
+ * @param total_bars Total number of bars in the section
+ * @param section_type Type of section (affects curve shape)
+ * @return Velocity multiplier (typically 0.85-1.08)
+ */
+float getBarVelocityMultiplier(int bar_in_section, int total_bars, SectionType section_type);
+
 /// @brief Named velocity ratio constants for consistent dynamics.
 namespace VelocityRatio {
 constexpr float ACCENT = 0.95f;      ///< Accented notes (emphasized)
@@ -176,6 +196,30 @@ void applyEntryPatternDynamics(MidiTrack& track, Tick section_start, uint8_t bar
  */
 void applyAllEntryPatternDynamics(std::vector<MidiTrack*>& tracks,
                                   const std::vector<Section>& sections);
+
+/**
+ * @brief Apply bar-level velocity curves to a track within a section.
+ *
+ * Applies the 4-bar phrase dynamics (build→hit pattern) and section-level
+ * crescendo for Chorus sections. This adds subtle dynamics that prevent
+ * sections from sounding flat.
+ *
+ * @param track Track to modify (in-place)
+ * @param section Section containing the notes to modify
+ */
+void applyBarVelocityCurve(MidiTrack& track, const Section& section);
+
+/**
+ * @brief Apply bar-level velocity curves to all tracks for all sections.
+ *
+ * Processes each section and applies bar-level velocity curves to create
+ * natural phrase dynamics within each section.
+ *
+ * @param tracks Vector of tracks to modify (in-place)
+ * @param sections Arrangement sections
+ */
+void applyAllBarVelocityCurves(std::vector<MidiTrack*>& tracks,
+                               const std::vector<Section>& sections);
 
 }  // namespace midisketch
 

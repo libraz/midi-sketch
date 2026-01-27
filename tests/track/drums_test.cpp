@@ -1027,5 +1027,170 @@ TEST_F(DrumsTest, TimeFeelDoesNotBreakGeneration) {
   }
 }
 
+// ============================================================================
+// C2: adjustGhostDensityForBPM - Ghost density adapts to tempo
+// ============================================================================
+
+TEST_F(DrumsTest, GhostDensitySparserAtHighBPM) {
+  // At BPM >= 160, ghost notes should be sparser to prevent cluttering.
+  // CityPop has ghost notes; compare low-velocity snare counts at two tempos.
+  params_.mood = Mood::CityPop;
+  params_.structure = StructurePattern::StandardPop;
+
+  // Generate at slow tempo (80 BPM)
+  params_.bpm = 80;
+  params_.seed = 42;
+  Generator gen_slow;
+  gen_slow.generate(params_);
+
+  // Generate at fast tempo (180 BPM)
+  params_.bpm = 180;
+  params_.seed = 42;
+  Generator gen_fast;
+  gen_fast.generate(params_);
+
+  const auto& slow_track = gen_slow.getSong().drums();
+  const auto& fast_track = gen_fast.getSong().drums();
+
+  // Count low-velocity snare hits (ghost notes: velocity < 60)
+  int slow_ghosts = 0;
+  for (const auto& note : slow_track.notes()) {
+    if ((note.note == SNARE || note.note == 40) && note.velocity < 60) {
+      slow_ghosts++;
+    }
+  }
+
+  int fast_ghosts = 0;
+  for (const auto& note : fast_track.notes()) {
+    if ((note.note == SNARE || note.note == 40) && note.velocity < 60) {
+      fast_ghosts++;
+    }
+  }
+
+  // At fast BPM, ghost density should be reduced (fewer ghost notes)
+  // The adjustGhostDensityForBPM function reduces density by one level at BPM >= 160
+  EXPECT_GT(slow_ghosts, fast_ghosts)
+      << "Slow BPM (" << slow_ghosts << " ghosts) should have more ghost notes "
+      << "than fast BPM (" << fast_ghosts << " ghosts)";
+}
+
+// ============================================================================
+// C5: computeKickPattern - Standard style kick density
+// ============================================================================
+
+TEST_F(DrumsTest, StandardStyleKickDensity) {
+  // StraightPop uses Standard drum style which should have ~2 kicks per bar,
+  // significantly fewer than FourOnFloor styles.
+  params_.mood = Mood::StraightPop;
+  params_.seed = 100;
+  params_.structure = StructurePattern::StandardPop;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  // Count kicks on quarter note positions (beats 1-4)
+  int kicks_on_quarters = 0;
+  int total_bars = 0;
+
+  for (const auto& section : sections) {
+    // Skip intro/outro which may have different patterns
+    if (section.type == SectionType::Intro || section.type == SectionType::Outro) continue;
+    total_bars += section.bars;
+  }
+
+  for (const auto& note : track.notes()) {
+    if (note.note == KICK || note.note == 35) {
+      if (note.start_tick % TICKS_PER_BEAT == 0) {
+        kicks_on_quarters++;
+      }
+    }
+  }
+
+  // Standard style: roughly 2 kicks per bar on quarter positions (beats 1 and 3)
+  // Should be noticeably fewer than FourOnFloor (4 per bar)
+  if (total_bars > 0) {
+    double kicks_per_bar = static_cast<double>(kicks_on_quarters) / total_bars;
+    EXPECT_LT(kicks_per_bar, 3.5)
+        << "Standard style should have fewer than 4 kicks per bar on quarter beats "
+        << "(got " << kicks_per_bar << ")";
+    EXPECT_GT(kicks_per_bar, 0.2)
+        << "Standard style should still have some kicks on quarter beats "
+        << "(got " << kicks_per_bar << ")";
+  }
+}
+
+// ============================================================================
+// C6: getHiHatVelocityMultiplier - Hi-hat velocity metric hierarchy
+// ============================================================================
+
+TEST_F(DrumsTest, HiHatVelocityFollowsMetricHierarchy) {
+  // Hi-hat velocity should follow metric hierarchy:
+  // downbeat position (0) should have higher average velocity than off-beat positions
+  params_.mood = Mood::ElectroPop;
+  params_.seed = 42;
+  params_.structure = StructurePattern::StandardPop;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+
+  // Collect closed hi-hat velocities grouped by 16th-note position within beat
+  // Position 0 = downbeat, 1 = first 16th, 2 = 8th subdivision, 3 = second 16th
+  std::vector<uint8_t> vel_by_position[4];
+
+  for (const auto& note : track.notes()) {
+    if (note.note == CHH) {
+      // Calculate position within beat as 16th note index (0-3)
+      Tick pos_in_beat = note.start_tick % TICKS_PER_BEAT;
+      int sixteenth_idx = static_cast<int>(pos_in_beat / (TICKS_PER_BEAT / 4));
+      if (sixteenth_idx >= 0 && sixteenth_idx < 4) {
+        vel_by_position[sixteenth_idx].push_back(note.velocity);
+      }
+    }
+  }
+
+  // Need enough data points for a meaningful comparison
+  if (vel_by_position[0].size() < 3) {
+    // Not enough downbeat hi-hats to compare; skip
+    return;
+  }
+
+  // Calculate average velocity for downbeat (position 0)
+  double avg_downbeat = 0.0;
+  for (uint8_t vel : vel_by_position[0]) {
+    avg_downbeat += vel;
+  }
+  avg_downbeat /= vel_by_position[0].size();
+
+  // Calculate average velocity for off-beat positions (1 and 3)
+  std::vector<uint8_t> offbeat_vels;
+  for (int pos = 1; pos <= 3; pos += 2) {
+    for (uint8_t vel : vel_by_position[pos]) {
+      offbeat_vels.push_back(vel);
+    }
+  }
+
+  if (offbeat_vels.empty()) {
+    // No off-beat hi-hats; skip comparison
+    return;
+  }
+
+  double avg_offbeat = 0.0;
+  for (uint8_t vel : offbeat_vels) {
+    avg_offbeat += vel;
+  }
+  avg_offbeat /= offbeat_vels.size();
+
+  // Downbeat hi-hats should have higher average velocity than off-beat hi-hats
+  // The getHiHatVelocityMultiplier gives ~0.95 for downbeat vs ~0.50-0.55 for off-beats
+  EXPECT_GT(avg_downbeat, avg_offbeat)
+      << "Downbeat hi-hat velocity (" << avg_downbeat
+      << ") should be higher than off-beat velocity (" << avg_offbeat << ")";
+}
+
 }  // namespace
 }  // namespace midisketch

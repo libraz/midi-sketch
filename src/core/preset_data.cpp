@@ -1027,6 +1027,9 @@ BassGenre getMoodBassGenre(Mood mood) {
 //
 constexpr MoodProgramSet MOOD_PROGRAMS[20] = {
     // 0: StraightPop - Standard pop instruments
+    // Structure: {vocal, chord, bass, motif, arpeggio, aux}
+    // Note: arpeggio program is now managed by getArpeggioStyleForMood() (single source of truth).
+    // The arpeggio column here uses the default (81) as a fallback only.
     {0, 4, 33, 81, 81, 89},
     // 1: BrightUpbeat - Bright piano, brighter overall
     {1, 5, 33, 81, 81, 89},
@@ -1037,19 +1040,19 @@ constexpr MoodProgramSet MOOD_PROGRAMS[20] = {
     // 4: MidPop - Standard pop instruments
     {0, 4, 33, 81, 81, 89},
     // 5: EmotionalPop - Square lead, strings aux
-    {0, 4, 33, 80, 80, 49},
+    {0, 4, 33, 80, 81, 49},
     // 6: Sentimental - Vibraphone, acoustic bass, strings
-    {11, 0, 32, 80, 80, 49},
+    {11, 0, 32, 80, 81, 49},
     // 7: Chill - EP dominant, warm pad
-    {4, 4, 33, 89, 89, 89},
+    {4, 4, 33, 89, 81, 89},
     // 8: Ballad - Piano, acoustic bass, strings
-    {0, 0, 32, 48, 48, 49},
+    {0, 0, 32, 48, 81, 49},
     // 9: DarkPop - Synth bass for dark atmosphere
     {0, 4, 38, 81, 81, 89},
     // 10: Dramatic - Strings for dramatic impact
     {0, 48, 33, 81, 81, 49},
     // 11: Nostalgic - EP for retro feel
-    {4, 4, 33, 80, 80, 89},
+    {4, 4, 33, 80, 81, 89},
     // 12: ModernPop - Standard modern pop
     {0, 4, 33, 81, 81, 89},
     // 13: ElectroPop - Full synth setup

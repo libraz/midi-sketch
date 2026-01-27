@@ -282,6 +282,9 @@ class Generator {
   /// RhythmSync state
   std::optional<DrumGrid> drum_grid_;  ///< Drum grid for RhythmSync (pre-computed)
 
+  /// Bass-Kick sync state
+  std::optional<KickPatternCache> kick_cache_;  ///< Pre-computed kick positions for bass sync
+
   /// Rhythm lock state (Orangestar style)
   bool rhythm_lock_active_ = false;  ///< True when Motif rhythm is used as axis
 

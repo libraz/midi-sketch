@@ -34,8 +34,10 @@ struct BassAnalysis {
 };
 
 /// Generate bass track with pattern selection based on section type.
+/// @param kick_cache Optional pre-computed kick positions for Bass-Kick sync (can be nullptr)
 void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,
-                       std::mt19937& rng, const IHarmonyContext& harmony);
+                       std::mt19937& rng, const IHarmonyContext& harmony,
+                       const KickPatternCache* kick_cache = nullptr);
 
 /// Generate bass adapted to vocal (motion type, density reciprocity, doubling avoidance).
 void generateBassTrackWithVocal(MidiTrack& track, const Song& song, const GeneratorParams& params,

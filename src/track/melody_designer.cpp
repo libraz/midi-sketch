@@ -26,13 +26,13 @@ namespace {
 // Default velocity for melody notes
 constexpr uint8_t DEFAULT_VELOCITY = 100;
 
-// Calculate breath duration based on section type and mood.
+// Calculate base breath duration based on section type and mood.
 // Ballads and sentimental moods get longer breaths for emotional phrasing.
 // Chorus sections get shorter breaths for drive and energy.
 // @param section Section type (Verse, Chorus, etc.)
 // @param mood Current mood setting
-// @return Breath duration in ticks
-Tick getBreathDuration(SectionType section, Mood mood) {
+// @return Base breath duration in ticks
+Tick getBaseBreathDuration(SectionType section, Mood mood) {
   // Ballad/Sentimental: longer breath (quarter note) for emotional phrasing
   if (mood == Mood::Ballad || mood == Mood::Sentimental) {
     return TICK_QUARTER;
@@ -43,6 +43,36 @@ Tick getBreathDuration(SectionType section, Mood mood) {
   }
   // Default: 8th note breath
   return TICK_EIGHTH;
+}
+
+// Calculate breath duration with phrase context awareness.
+// Considers phrase density and pitch to allow appropriate recovery time.
+// High density phrases and phrases reaching high pitches get longer breaths.
+// @param section Section type (Verse, Chorus, etc.)
+// @param mood Current mood setting
+// @param phrase_density Note density of the phrase (notes per beat, 0.0-2.0+)
+// @param phrase_high_pitch Highest pitch reached in the phrase (MIDI note number)
+// @return Adjusted breath duration in ticks
+Tick getBreathDuration(SectionType section, Mood mood, float phrase_density = 0.0f,
+                       uint8_t phrase_high_pitch = 60) {
+  Tick base = getBaseBreathDuration(section, mood);
+
+  // High density phrases need more recovery time
+  // Density > 1.0 means more than one note per beat on average
+  if (phrase_density > 1.0f) {
+    base = static_cast<Tick>(base * 1.3f);
+  } else if (phrase_density > 0.7f) {
+    base = static_cast<Tick>(base * 1.15f);
+  }
+
+  // High pitch phrases (C5=72 or above) need more breath
+  // This mimics natural singing where high notes require more breath recovery
+  if (phrase_high_pitch >= 72) {  // C5 or higher
+    base = static_cast<Tick>(base * 1.2f);
+  }
+
+  // Cap at half note to avoid excessive gaps
+  return std::min(base, TICK_HALF);
 }
 
 // Get rhythm unit based on grid type.
@@ -375,9 +405,20 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
     }
 
     // Add rest between phrases (breathing) - skip if breathing gaps disabled
-    // Breath duration varies by section type and mood for natural phrasing
+    // Breath duration varies by section type, mood, and phrase characteristics
     if (i < phrase_count - 1 && !ctx.disable_breathing_gaps) {
-      current_tick += getBreathDuration(ctx.section_type, ctx.mood);
+      // Calculate phrase characteristics for context-aware breathing
+      float phrase_density = 0.0f;
+      uint8_t phrase_high_pitch = 60;  // Default: middle C
+      if (!phrase_result.notes.empty() && actual_beats > 0) {
+        phrase_density = static_cast<float>(phrase_result.notes.size()) / actual_beats;
+        for (const auto& note : phrase_result.notes) {
+          if (note.note > phrase_high_pitch) {
+            phrase_high_pitch = note.note;
+          }
+        }
+      }
+      current_tick += getBreathDuration(ctx.section_type, ctx.mood, phrase_density, phrase_high_pitch);
     }
 
     // Snap to next half-bar boundary (phrase_beats/2 * TICKS_PER_BEAT grid)

@@ -76,6 +76,21 @@ struct ArpeggioParams {
   uint8_t base_velocity = 90;  ///< Base velocity for arpeggio notes
 };
 
+/// @brief Genre-specific arpeggio style configuration.
+///
+/// Different moods/genres benefit from different arpeggio characteristics:
+/// - CityPop: Triplet feel, mid register, shuffled swing
+/// - IdolPop: Fast 16ths, low register for space
+/// - Ballad: Slow 8ths, warm electric piano sound
+/// - Rock: Driving 8ths, power chord style
+struct ArpeggioStyle {
+  ArpeggioSpeed speed = ArpeggioSpeed::Sixteenth;  ///< Note duration
+  int8_t octave_offset = 0;   ///< Octave offset from vocal center (-24, -12, 0, +12)
+  float swing_amount = 0.0f;  ///< Swing amount (0.0-0.7)
+  uint8_t gm_program = 81;    ///< GM Program number (default: Saw Lead)
+  float gate = 0.8f;          ///< Gate length (0.0-1.0)
+};
+
 // Note: MotifParams, MotifChordParams, MotifDrumParams are defined in motif_types.h
 
 /// @brief Chord extension configuration.

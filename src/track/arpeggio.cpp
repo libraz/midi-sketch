@@ -17,6 +17,90 @@
 
 namespace midisketch {
 
+ArpeggioStyle getArpeggioStyleForMood(Mood mood) {
+  ArpeggioStyle style;
+
+  switch (mood) {
+    case Mood::CityPop:
+      // CityPop: Jazzy triplet feel, high register, electric piano timbre
+      style.speed = ArpeggioSpeed::Triplet;
+      style.octave_offset = 0;   // Stay at C5
+      style.swing_amount = 0.5f;  // Shuffle feel
+      style.gm_program = 5;       // Electric Piano 1
+      style.gate = 0.75f;
+      break;
+
+    case Mood::IdolPop:
+    case Mood::Yoasobi:
+      // IdolPop/YOASOBI: Fast 16ths, slightly higher for sparkle
+      style.speed = ArpeggioSpeed::Sixteenth;
+      style.octave_offset = 0;   // Stay at C5
+      style.swing_amount = 0.2f;  // Slight swing
+      style.gm_program = 81;      // Saw Lead
+      style.gate = 0.7f;
+      break;
+
+    case Mood::Ballad:
+    case Mood::Sentimental:
+      // Ballad: Slow 8ths, warm sound, same register as vocal for intimacy
+      style.speed = ArpeggioSpeed::Eighth;
+      style.octave_offset = 0;   // Stay at C5
+      style.swing_amount = 0.0f;  // Straight timing
+      style.gm_program = 5;       // Electric Piano 1
+      style.gate = 0.9f;          // Legato
+      break;
+
+    case Mood::LightRock:
+    case Mood::Anthem:
+      // Rock/Anthem: Driving 8ths, guitar-like timbre, lower for power
+      style.speed = ArpeggioSpeed::Eighth;
+      style.octave_offset = -12;  // One octave down for bass-register power chords
+      style.swing_amount = 0.0f;
+      style.gm_program = 30;  // Distortion Guitar
+      style.gate = 0.85f;
+      break;
+
+    case Mood::EnergeticDance:
+    case Mood::FutureBass:
+      // Dance: Fast 16ths, synth lead, high register for brightness
+      style.speed = ArpeggioSpeed::Sixteenth;
+      style.octave_offset = 0;   // Stay at C5
+      style.swing_amount = 0.0f;
+      style.gm_program = 81;  // Saw Lead
+      style.gate = 0.6f;      // Staccato
+      break;
+
+    case Mood::Synthwave:
+      // Synthwave: 16ths, classic synth sound, high register
+      style.speed = ArpeggioSpeed::Sixteenth;
+      style.octave_offset = 0;   // Stay at C5
+      style.swing_amount = 0.0f;
+      style.gm_program = 81;  // Saw Lead
+      style.gate = 0.75f;
+      break;
+
+    case Mood::Chill:
+      // Chill: Slow triplets, soft pad-like
+      style.speed = ArpeggioSpeed::Triplet;
+      style.octave_offset = 0;   // Stay at C5
+      style.swing_amount = 0.3f;
+      style.gm_program = 89;  // Warm Pad
+      style.gate = 0.85f;
+      break;
+
+    default:
+      // Default: Standard synth arpeggio at C5
+      style.speed = ArpeggioSpeed::Sixteenth;
+      style.octave_offset = 0;   // Stay at C5
+      style.swing_amount = 0.3f;
+      style.gm_program = 81;  // Saw Lead
+      style.gate = 0.8f;
+      break;
+  }
+
+  return style;
+}
+
 namespace {
 
 // Get note duration based on arpeggio speed
@@ -110,12 +194,32 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
   const auto& progression = getChordProgression(params.chord_id);
   const ArpeggioParams& arp = params.arpeggio;
 
-  Tick note_duration = getNoteDuration(arp.speed);
-  Tick gated_duration = static_cast<Tick>(note_duration * arp.gate);
+  // Get genre-specific arpeggio style
+  ArpeggioStyle style = getArpeggioStyleForMood(params.mood);
+
+  // Use style's speed/gate, allowing ArpeggioParams override if explicitly set
+  ArpeggioSpeed effective_speed = style.speed;
+  float effective_gate = style.gate;
+
+  // ArpeggioParams overrides style (user configuration takes priority)
+  if (arp.speed != ArpeggioSpeed::Sixteenth) {
+    // Non-default speed means user explicitly set it
+    effective_speed = arp.speed;
+  }
+  if (arp.gate != 0.8f) {
+    // Non-default gate means user explicitly set it
+    effective_gate = arp.gate;
+  }
+
+  Tick note_duration = getNoteDuration(effective_speed);
+  Tick gated_duration = static_cast<Tick>(note_duration * effective_gate);
 
   // Base octave for arpeggio (higher than vocal to avoid melodic collision)
-  // Moved from C4(60) to C5(72) for 1-octave separation from vocal range
-  constexpr uint8_t BASE_OCTAVE = 72;  // C5
+  // Apply genre-specific octave offset from style
+  constexpr int BASE_OCTAVE_DEFAULT = 72;  // C5
+  int base_octave = BASE_OCTAVE_DEFAULT + style.octave_offset;
+  // Clamp to valid MIDI range
+  base_octave = std::clamp(base_octave, 36, 96);  // C2 to C7
 
   // When sync_chord is false, build one arpeggio pattern for section and continue
   // When sync_chord is true, rebuild pattern each bar based on current chord
@@ -135,7 +239,7 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
 
     // Get harmonic rhythm info for this section
     // This ensures arpeggio chord changes match chord_track timing
-    HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section.type, params.mood);
+    HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, params.mood);
 
     // === PERIODIC REFRESH FOR NON-SYNC MODE ===
     // When sync_chord is false, refresh pattern at each SECTION start
@@ -150,8 +254,8 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
           getChordIndexForBar(static_cast<int>(total_bar), slow_harmonic, progression.length);
       int8_t degree = progression.at(chord_idx);
       uint8_t root = degreeToRoot(degree, Key::C);
-      while (root < BASE_OCTAVE) root += 12;
-      while (root >= BASE_OCTAVE + 12) root -= 12;
+      while (root < base_octave) root += 12;
+      while (root >= base_octave + 12) root -= 12;
       Chord chord = getChordNotes(degree);
       std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, arp.octave_range);
       persistent_arp_notes = arrangeByPattern(chord_notes, arp.pattern, rng);
@@ -180,8 +284,8 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
         uint8_t root = degreeToRoot(degree, Key::C);
 
         // Adjust root to base octave
-        while (root < BASE_OCTAVE) root += 12;
-        while (root >= BASE_OCTAVE + 12) root -= 12;
+        while (root < base_octave) root += 12;
+        while (root >= base_octave + 12) root -= 12;
 
         Chord chord = getChordNotes(degree);
 
@@ -195,8 +299,8 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
           int next_chord_idx = (chord_idx + 1) % progression.length;
           int8_t next_degree = progression.at(next_chord_idx);
           uint8_t next_root = degreeToRoot(next_degree, Key::C);
-          while (next_root < BASE_OCTAVE) next_root += 12;
-          while (next_root >= BASE_OCTAVE + 12) next_root -= 12;
+          while (next_root < base_octave) next_root += 12;
+          while (next_root >= base_octave + 12) next_root -= 12;
           Chord next_chord = getChordNotes(next_degree);
           std::vector<uint8_t> next_chord_notes =
               buildChordNotes(next_root, next_chord, arp.octave_range);
@@ -213,6 +317,10 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
       // Generate arpeggio pattern for this bar
       Tick pos = bar_start;
       Tick half_bar = bar_start + (TICKS_PER_BAR / 2);
+
+      // Calculate swing offset for upbeat notes
+      // Swing shifts every other note forward in time, creating a shuffle feel
+      Tick swing_offset = static_cast<Tick>(note_duration * style.swing_amount);
 
       while (pos < bar_start + TICKS_PER_BAR && pos < section_end) {
         // Select notes based on phrase-end split
@@ -233,7 +341,13 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
         }
 
         if (add_note) {
-          track.addNote(factory.create(pos, gated_duration, note, velocity, NoteSource::Arpeggio));
+          // Apply swing to upbeat notes (odd-indexed steps)
+          Tick note_pos = pos;
+          if (swing_offset > 0 && (pattern_index % 2 == 1)) {
+            note_pos += swing_offset;
+          }
+          track.addNote(
+              factory.create(note_pos, gated_duration, note, velocity, NoteSource::Arpeggio));
         }
 
         pos += note_duration;

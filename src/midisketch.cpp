@@ -11,6 +11,8 @@
 #include "core/config_converter.h"
 #include "core/json_helpers.h"
 #include "core/pitch_utils.h"
+#include "core/preset_data.h"
+#include "track/arpeggio.h"
 
 namespace midisketch {
 
@@ -230,18 +232,20 @@ std::string MidiSketch::getEventsJson() const {
       .write("duration_seconds", duration_seconds)
       .beginArray("tracks");
 
-  // Write tracks
-  writeTrack(song.vocal(), "Vocal", 0, 0, true);
-  writeTrack(song.chord(), "Chord", 1, 4, true);
-  writeTrack(song.bass(), "Bass", 2, 33, true);
+  // Write tracks (use mood-specific program numbers)
+  const auto& progs = getMoodPrograms(params.mood);
+  writeTrack(song.vocal(), "Vocal", 0, progs.vocal, true);
+  writeTrack(song.chord(), "Chord", 1, progs.chord, true);
+  writeTrack(song.bass(), "Bass", 2, progs.bass, true);
   if (!song.motif().empty()) {
-    writeTrack(song.motif(), "Motif", 3, 81, true);
+    writeTrack(song.motif(), "Motif", 3, progs.motif, true);
   }
   if (!song.arpeggio().empty()) {
-    writeTrack(song.arpeggio(), "Arpeggio", 4, 81, true);
+    uint8_t arp_program = getArpeggioStyleForMood(params.mood).gm_program;
+    writeTrack(song.arpeggio(), "Arpeggio", 4, arp_program, true);
   }
   if (!song.aux().empty()) {
-    writeTrack(song.aux(), "Aux", 5, 89, true);
+    writeTrack(song.aux(), "Aux", 5, progs.aux, true);
   }
   writeTrack(song.drums(), "Drums", 9, 0, false);
 

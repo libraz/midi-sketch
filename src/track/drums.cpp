@@ -106,6 +106,38 @@ uint8_t getDrumRoleHiHatInstrument(DrumRole role, bool use_ride_override) {
 // Ghost note velocity multiplier
 constexpr float GHOST_VEL = 0.45f;
 
+// Get hi-hat velocity multiplier for 16th note position with natural curve.
+// Creates a more organic feel compared to step-based velocity changes.
+// sixteenth: 0-3 position within beat (0=downbeat, 2=8th subdivision, 1,3=16th subdivisions)
+// Returns multiplier in range 0.50-0.95
+float getHiHatVelocityMultiplier(int sixteenth, std::mt19937& rng) {
+  // Natural accent pattern based on metric hierarchy:
+  // - sixteenth 0: downbeat (strongest, ~95%)
+  // - sixteenth 2: 8th note subdivision (medium, ~75%)
+  // - sixteenth 1: first 16th upbeat (soft, ~55%)
+  // - sixteenth 3: second 16th upbeat (softest, ~50%)
+  float base = 0.0f;
+  switch (sixteenth) {
+    case 0:
+      base = 0.95f;  // Downbeat
+      break;
+    case 2:
+      base = 0.75f;  // 8th subdivision
+      break;
+    case 1:
+      base = 0.55f;  // First 16th upbeat
+      break;
+    case 3:
+    default:
+      base = 0.50f;  // Second 16th upbeat
+      break;
+  }
+
+  // Add ±5% random variation for humanization
+  std::uniform_real_distribution<float> variation(0.95f, 1.05f);
+  return base * variation(rng);
+}
+
 // Kick humanization: ±2% timing variation for natural feel
 // At 120 BPM, this is approximately ±10 ticks
 constexpr float KICK_HUMANIZE_AMOUNT = 0.02f;
@@ -401,19 +433,46 @@ float densityLevelToProbability(GhostDensityLevel level) {
   return 0.0f;
 }
 
+/// @brief Adjust ghost density level based on BPM.
+///
+/// At high BPM (>=160), ghost notes can become too dense and sound cluttered.
+/// At low BPM (<=90), there's more space for ghost notes.
+///
+/// @param level Base density level from table lookup
+/// @param bpm Current tempo
+/// @return Adjusted density level
+GhostDensityLevel adjustGhostDensityForBPM(GhostDensityLevel level, uint16_t bpm) {
+  if (bpm >= 160) {
+    // High BPM: reduce density by one level to prevent cluttering
+    if (level != GhostDensityLevel::None) {
+      return static_cast<GhostDensityLevel>(static_cast<int>(level) - 1);
+    }
+  } else if (bpm <= 90) {
+    // Low BPM: increase density by one level (more space for ghosts)
+    if (level != GhostDensityLevel::Heavy) {
+      return static_cast<GhostDensityLevel>(static_cast<int>(level) + 1);
+    }
+  }
+  return level;
+}
+
 /// @brief Get ghost note density using simplified table lookup
 /// @param mood Current mood
 /// @param section Current section type
 /// @param backing_density Backing density (thin/normal/thick)
-/// @param bpm Tempo (unused - previously caused extreme value issues)
+/// @param bpm Tempo (affects density at extreme tempos)
 /// @return Ghost note probability (0.0 - 0.45)
 float getGhostDensity(Mood mood, SectionType section, BackingDensity backing_density,
-                      [[maybe_unused]] uint16_t bpm) {
+                      uint16_t bpm) {
   // Table lookup
   int section_idx = getSectionIndex(section);
   int mood_idx = static_cast<int>(getMoodCategory(mood));
 
   GhostDensityLevel level = GHOST_DENSITY_TABLE[section_idx][mood_idx];
+
+  // Apply BPM adjustment first
+  level = adjustGhostDensityForBPM(level, bpm);
+
   float prob = densityLevelToProbability(level);
 
   // Simple backing density adjustment (not multiplicative)
@@ -1279,14 +1338,8 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
               }
 
               uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
-              // Accent pattern: strong on beat, medium on 8th, soft on 16ths
-              if (sixteenth == 0) {
-                hh_vel = static_cast<uint8_t>(hh_vel * 0.9f);
-              } else if (sixteenth == 2) {
-                hh_vel = static_cast<uint8_t>(hh_vel * 0.7f);
-              } else {
-                hh_vel = static_cast<uint8_t>(hh_vel * 0.5f);
-              }
+              // Accent pattern: natural curve with humanization
+              hh_vel = static_cast<uint8_t>(hh_vel * getHiHatVelocityMultiplier(sixteenth, rng));
 
               // Open hi-hat on beat 4's last 16th - BPM adaptive
               // Target: ~0.5 open hi-hats per second for 16th note patterns
@@ -1692,13 +1745,8 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
               }
 
               uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
-              if (sixteenth == 0) {
-                hh_vel = static_cast<uint8_t>(hh_vel * 0.9f);
-              } else if (sixteenth == 2) {
-                hh_vel = static_cast<uint8_t>(hh_vel * 0.7f);
-              } else {
-                hh_vel = static_cast<uint8_t>(hh_vel * 0.5f);
-              }
+              // Accent pattern: natural curve with humanization
+              hh_vel = static_cast<uint8_t>(hh_vel * getHiHatVelocityMultiplier(sixteenth, rng));
 
               if (beat == 3 && sixteenth == 3) {
                 float open_prob = std::clamp(30.0f / params.bpm, 0.1f, 0.4f);
@@ -1716,6 +1764,107 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
       }
     }
   }
+}
+
+// ============================================================================
+// Kick Pattern Pre-computation
+// ============================================================================
+
+KickPatternCache computeKickPattern(const std::vector<Section>& sections, Mood mood,
+                                    [[maybe_unused]] uint16_t bpm) {
+  KickPatternCache cache;
+
+  // Determine drum style for kick pattern
+  DrumStyle style = getMoodDrumStyle(mood);
+
+  // Estimate kicks per bar based on style
+  float kicks_per_bar = 4.0f;  // Default: 4 kicks per bar (one per beat)
+  switch (style) {
+    case DrumStyle::FourOnFloor:
+      kicks_per_bar = 4.0f;  // Kick on every beat
+      break;
+    case DrumStyle::Standard:
+    case DrumStyle::Upbeat:
+      kicks_per_bar = 2.0f;  // Kick on beats 1 and 3
+      break;
+    case DrumStyle::Sparse:
+      kicks_per_bar = 1.0f;  // Kick on beat 1 only
+      break;
+    case DrumStyle::Rock:
+      kicks_per_bar = 2.5f;  // Kick on beats 1, 3, and sometimes &
+      break;
+    case DrumStyle::Synth:
+      kicks_per_bar = 3.0f;  // Synth pattern with offbeat kicks
+      break;
+  }
+
+  cache.kicks_per_bar = kicks_per_bar;
+
+  // Calculate dominant interval
+  if (kicks_per_bar >= 4.0f) {
+    cache.dominant_interval = TICKS_PER_BEAT;  // Quarter note
+  } else if (kicks_per_bar >= 2.0f) {
+    cache.dominant_interval = TICKS_PER_BEAT * 2;  // Half note
+  } else {
+    cache.dominant_interval = TICKS_PER_BAR;  // Whole note
+  }
+
+  // Generate kick positions for each section
+  for (const auto& section : sections) {
+    // Skip sections with minimal/no drums
+    if (section.drum_role == DrumRole::Minimal || section.drum_role == DrumRole::FXOnly) {
+      continue;
+    }
+
+    Tick section_start = section.start_tick;
+
+    for (uint8_t bar = 0; bar < section.bars; ++bar) {
+      Tick bar_start = section_start + bar * TICKS_PER_BAR;
+
+      // Generate kick positions based on style
+      if (style == DrumStyle::FourOnFloor) {
+        // Kick on every beat
+        for (int beat = 0; beat < 4; ++beat) {
+          if (cache.kick_count < KickPatternCache::MAX_KICKS) {
+            cache.kick_ticks[cache.kick_count++] = bar_start + beat * TICKS_PER_BEAT;
+          }
+        }
+      } else if (style == DrumStyle::Standard || style == DrumStyle::Upbeat ||
+                 style == DrumStyle::Rock) {
+        // Kick on beats 1 and 3
+        if (cache.kick_count < KickPatternCache::MAX_KICKS) {
+          cache.kick_ticks[cache.kick_count++] = bar_start;  // Beat 1
+        }
+        if (cache.kick_count < KickPatternCache::MAX_KICKS) {
+          cache.kick_ticks[cache.kick_count++] = bar_start + 2 * TICKS_PER_BEAT;  // Beat 3
+        }
+        // Rock sometimes adds "and" of beat 4
+        if (style == DrumStyle::Rock && section.type == SectionType::Chorus) {
+          if (cache.kick_count < KickPatternCache::MAX_KICKS) {
+            cache.kick_ticks[cache.kick_count++] = bar_start + 3 * TICKS_PER_BEAT + TICK_EIGHTH;
+          }
+        }
+      } else if (style == DrumStyle::Sparse) {
+        // Kick on beat 1 only
+        if (cache.kick_count < KickPatternCache::MAX_KICKS) {
+          cache.kick_ticks[cache.kick_count++] = bar_start;
+        }
+      } else if (style == DrumStyle::Synth) {
+        // Synth: kick on 1, 2-and, 4 (punchy pattern)
+        if (cache.kick_count < KickPatternCache::MAX_KICKS) {
+          cache.kick_ticks[cache.kick_count++] = bar_start;
+        }
+        if (cache.kick_count < KickPatternCache::MAX_KICKS) {
+          cache.kick_ticks[cache.kick_count++] = bar_start + TICKS_PER_BEAT + TICK_EIGHTH;
+        }
+        if (cache.kick_count < KickPatternCache::MAX_KICKS) {
+          cache.kick_ticks[cache.kick_count++] = bar_start + 3 * TICKS_PER_BEAT;
+        }
+      }
+    }
+  }
+
+  return cache;
 }
 
 }  // namespace midisketch

@@ -10,6 +10,7 @@
 #include "core/preset_data.h"
 #include "core/timing_constants.h"
 #include "midi/track_config.h"
+#include "track/arpeggio.h"
 
 #ifndef MIDISKETCH_WASM
 #include "midi/midi2_writer.h"
@@ -355,7 +356,8 @@ void MidiWriter::buildSMF1(const Song& song, Key key, Mood mood, const std::stri
   }
 
   if (!song.arpeggio().empty()) {
-    writeTrack(song.arpeggio(), "Arpeggio", ARPEGGIO_CH, progs.arpeggio, bpm, key, false, mod_tick,
+    uint8_t arp_program = getArpeggioStyleForMood(mood).gm_program;
+    writeTrack(song.arpeggio(), "Arpeggio", ARPEGGIO_CH, arp_program, bpm, key, false, mod_tick,
                mod_amount);
   }
 

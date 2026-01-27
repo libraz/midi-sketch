@@ -28,6 +28,17 @@ class IHarmonyContext;
 void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,
                            std::mt19937& rng, const IHarmonyContext& harmony);
 
+/**
+ * @brief Get genre-specific arpeggio style based on mood.
+ *
+ * Provides appropriate timbre, rhythm, and register for each genre.
+ * This is the single source of truth for arpeggio GM program numbers.
+ *
+ * @param mood Mood preset
+ * @return ArpeggioStyle with speed, octave_offset, swing, gm_program, gate
+ */
+ArpeggioStyle getArpeggioStyleForMood(Mood mood);
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_TRACK_ARPEGGIO_H

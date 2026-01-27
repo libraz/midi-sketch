@@ -709,7 +709,14 @@ void Generator::generateBass() {
   // RAII guard ensures bass is registered when this scope ends
   TrackRegistrationGuard guard(*harmony_context_, song_.bass(), TrackRole::Bass);
 
-  generateBassTrack(song_.bass(), song_, params_, rng_, *harmony_context_);
+  // Compute kick pattern for Bass-Kick sync if not already cached
+  if (!kick_cache_.has_value()) {
+    kick_cache_ = computeKickPattern(song_.arrangement().sections(), params_.mood, params_.bpm);
+  }
+
+  // Pass kick cache for bass-kick synchronization
+  const KickPatternCache* cache_ptr = kick_cache_.has_value() ? &kick_cache_.value() : nullptr;
+  generateBassTrack(song_.bass(), song_, params_, rng_, *harmony_context_, cache_ptr);
 }
 
 void Generator::generateDrums() {
@@ -845,6 +852,9 @@ void Generator::applyTransitionDynamics() {
   if (!params_.motif.velocity_fixed) {
     tracks.push_back(&song_.motif());
   }
+
+  // Apply bar-level velocity curves (4-bar phrase dynamics)
+  midisketch::applyAllBarVelocityCurves(tracks, sections);
 
   // Apply transition dynamics (section endings)
   midisketch::applyAllTransitionDynamics(tracks, sections);

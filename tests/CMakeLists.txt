@@ -48,6 +48,7 @@ set(TEST_SOURCES
   core/euclidean_rhythm_test.cpp
   core/staggered_entry_test.cpp
   core/emotion_curve_test.cpp
+  core/harmonic_rhythm_test.cpp
   core/secondary_dominant_test.cpp
   core/motif_motion_test.cpp
   midi/midi_writer_smf1_test.cpp

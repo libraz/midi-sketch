@@ -25,15 +25,8 @@ enum class ArpeggioSpeed : uint8_t {
   Triplet     ///< Triplet feel
 };
 
-/// @brief Arpeggio track configuration.
-struct ArpeggioParams {
-  ArpeggioPattern pattern = ArpeggioPattern::Up;
-  ArpeggioSpeed speed = ArpeggioSpeed::Sixteenth;
-  uint8_t octave_range = 2;    ///< 1-3 octaves
-  float gate = 0.8f;           ///< Gate length (0.0-1.0)
-  bool sync_chord = true;      ///< Sync with chord changes
-  uint8_t base_velocity = 90;  ///< Base velocity for arpeggio notes
-};
+// Note: ArpeggioParams and ArpeggioStyle are defined in preset_types.h
+// to avoid circular dependencies.
 
 }  // namespace midisketch
 

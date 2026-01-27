@@ -18,10 +18,34 @@ enum class HarmonicDensity {
   Dense    // Chord may change mid-bar at phrase ends (B end, Chorus)
 };
 
+/// @brief Convert harmonic_rhythm float to HarmonicDensity enum.
+/// @param harmonic_rhythm Bars per chord (0.5=dense, 1.0=normal, 2.0=slow)
+/// @return Corresponding HarmonicDensity
+inline HarmonicDensity harmonicRhythmToDensity(float harmonic_rhythm) {
+  if (harmonic_rhythm <= 0.5f) return HarmonicDensity::Dense;
+  if (harmonic_rhythm >= 2.0f) return HarmonicDensity::Slow;
+  return HarmonicDensity::Normal;
+}
+
 // Determines harmonic density based on section and mood
 struct HarmonicRhythmInfo {
   HarmonicDensity density;
   bool double_at_phrase_end;  // Add extra chord change at phrase end
+
+  /// @brief Get harmonic rhythm info from Section (uses explicit setting if available).
+  /// @param section Section with optional harmonic_rhythm override
+  /// @param mood Mood for default calculation
+  /// @return HarmonicRhythmInfo with appropriate density
+  static HarmonicRhythmInfo forSection(const Section& section, Mood mood) {
+    // If section has explicit harmonic_rhythm, use float→enum conversion
+    if (section.harmonic_rhythm > 0.0f) {
+      HarmonicDensity density = harmonicRhythmToDensity(section.harmonic_rhythm);
+      bool double_end = (density == HarmonicDensity::Dense);
+      return {density, double_end};
+    }
+    // Fall back to type-based calculation (mood-aware)
+    return forSection(section.type, mood);
+  }
 
   static HarmonicRhythmInfo forSection(SectionType section, Mood mood) {
     bool is_ballad = MoodClassification::isBallad(mood);

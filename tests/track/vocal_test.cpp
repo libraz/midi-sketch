@@ -2275,5 +2275,53 @@ TEST_F(VocalTest, SkipCollisionAvoidanceDeterminism) {
   }
 }
 
+// ============================================================================
+// Breath Duration Integration Tests (C8)
+// ============================================================================
+
+TEST_F(VocalTest, BalladHasLongerBreathGapsThanEnergeticDance) {
+  // Ballad vocal phrases should have longer breath gaps between phrases
+  // than EnergeticDance, because the breath duration scales with mood.
+  auto collectMaxGap = [](const MidiTrack& track) -> Tick {
+    Tick max_gap = 0;
+    const auto& notes = track.notes();
+    for (size_t i = 1; i < notes.size(); ++i) {
+      Tick end_prev = notes[i - 1].start_tick + notes[i - 1].duration;
+      if (notes[i].start_tick > end_prev) {
+        Tick gap = notes[i].start_tick - end_prev;
+        if (gap > max_gap) max_gap = gap;
+      }
+    }
+    return max_gap;
+  };
+
+  // Generate Ballad vocal (same BPM to isolate mood effect)
+  params_.mood = Mood::Ballad;
+  params_.bpm = 120;
+  params_.seed = 100;
+  Generator gen_ballad;
+  gen_ballad.generate(params_);
+  const auto& vocal_ballad = gen_ballad.getSong().vocal();
+
+  // Generate EnergeticDance vocal (same BPM to isolate mood effect)
+  params_.mood = Mood::EnergeticDance;
+  params_.bpm = 120;
+  params_.seed = 100;
+  Generator gen_dance;
+  gen_dance.generate(params_);
+  const auto& vocal_dance = gen_dance.getSong().vocal();
+
+  ASSERT_GT(vocal_ballad.notes().size(), 2u);
+  ASSERT_GT(vocal_dance.notes().size(), 2u);
+
+  Tick max_gap_ballad = collectMaxGap(vocal_ballad);
+  Tick max_gap_dance = collectMaxGap(vocal_dance);
+
+  // Ballad breaths are quarter-note based; dance breaths are 16th-note based
+  EXPECT_GT(max_gap_ballad, max_gap_dance)
+      << "Ballad vocal should have longer breath gaps (" << max_gap_ballad
+      << " ticks) than EnergeticDance (" << max_gap_dance << " ticks)";
+}
+
 }  // namespace
 }  // namespace midisketch

@@ -6,6 +6,7 @@
 #ifndef MIDISKETCH_CORE_SECTION_TYPES_H
 #define MIDISKETCH_CORE_SECTION_TYPES_H
 
+#include <array>
 #include <cstdint>
 #include <string>
 
@@ -114,6 +115,50 @@ struct DrumGrid {
       return tick - remainder + grid_resolution;
     }
   }
+};
+
+/// @brief Pre-computed kick drum pattern for Bass-Kick synchronization.
+///
+/// Used to synchronize bass notes with kick drum hits for tighter groove.
+/// Bass notes can optionally align to kick positions for a locked-in feel.
+struct KickPatternCache {
+  static constexpr size_t MAX_KICKS = 512;  ///< Max kicks per song (~2 min at 16 per bar)
+  std::array<Tick, MAX_KICKS> kick_ticks{};  ///< Tick positions of kicks
+  size_t kick_count = 0;                     ///< Number of kicks in array
+  float kicks_per_bar = 4.0f;                ///< Average kicks per bar
+  Tick dominant_interval = 0;                ///< Most common kick interval
+
+  /// @brief Check if a tick is near a kick position.
+  /// @param t Tick to check
+  /// @param tolerance Maximum distance in ticks (default: 16th note)
+  /// @return true if within tolerance of any kick
+  bool isNearKick(Tick t, Tick tolerance = 120) const {
+    for (size_t i = 0; i < kick_count; ++i) {
+      Tick diff = (t > kick_ticks[i]) ? (t - kick_ticks[i]) : (kick_ticks[i] - t);
+      if (diff <= tolerance) return true;
+    }
+    return false;
+  }
+
+  /// @brief Get the nearest kick position to a given tick.
+  /// @param t Target tick
+  /// @return Tick of nearest kick, or t if no kicks
+  Tick nearestKick(Tick t) const {
+    if (kick_count == 0) return t;
+    Tick best = kick_ticks[0];
+    Tick best_diff = (t > best) ? (t - best) : (best - t);
+    for (size_t i = 1; i < kick_count; ++i) {
+      Tick diff = (t > kick_ticks[i]) ? (t - kick_ticks[i]) : (kick_ticks[i] - t);
+      if (diff < best_diff) {
+        best = kick_ticks[i];
+        best_diff = diff;
+      }
+    }
+    return best;
+  }
+
+  /// @brief Check if cache is empty (no pre-computed kicks).
+  bool isEmpty() const { return kick_count == 0; }
 };
 
 // ============================================================================
@@ -263,6 +308,14 @@ struct Section {
   /// @brief Time feel for this section (from ProductionBlueprint).
   /// Controls micro-timing (laid back, pushed, or on beat).
   TimeFeel time_feel = TimeFeel::OnBeat;
+
+  /// @brief Harmonic rhythm: bars per chord change.
+  /// Controls how often chords change within this section.
+  /// - 0.5 = half-bar (2 chords per bar, dense, Chorus)
+  /// - 1.0 = one bar (1 chord per bar, standard)
+  /// - 2.0 = two bars (1 chord per 2 bars, sparse, Intro)
+  /// Default is 0.0 (auto-calculate from section type).
+  float harmonic_rhythm = 0.0f;
 };
 
 /// @brief Section transition parameters for smooth melodic flow.
