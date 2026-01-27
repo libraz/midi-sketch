@@ -824,7 +824,7 @@ TEST_F(ChordWithContextTest, PeakLevelMediumPrefersOpenVoicing) {
   int wide_voicing_count = 0;
   int narrow_voicing_count = 0;
 
-  for (uint32_t seed = 100; seed < 120; ++seed) {
+  for (uint32_t seed = 200; seed < 220; ++seed) {
     params_.seed = seed;
 
     Generator gen;

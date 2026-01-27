@@ -598,8 +598,57 @@ void PostProcessor::applyRitardando(std::vector<MidiTrack*>& tracks,
 // Enhanced FinalHit Implementation (Phase 2, Task 2-4)
 // ============================================================================
 
+// Helper: Check if extending a chord note would create dissonance with vocal
+// Returns the maximum safe end tick (may be less than desired_end if clash found)
+static Tick getMaxSafeEndTick(const NoteEvent& chord_note, Tick desired_end,
+                               const MidiTrack* vocal_track) {
+  if (vocal_track == nullptr) {
+    return desired_end;  // No vocal to clash with
+  }
+
+  Tick safe_end = desired_end;
+
+  for (const auto& vocal_note : vocal_track->notes()) {
+    Tick vocal_start = vocal_note.start_tick;
+    Tick vocal_end = vocal_start + vocal_note.duration;
+
+    // Check if extended chord would overlap with this vocal note
+    if (chord_note.start_tick < vocal_end && desired_end > vocal_start) {
+      // Calculate interval
+      int actual_semitones =
+          std::abs(static_cast<int>(chord_note.note) - static_cast<int>(vocal_note.note));
+
+      // Check for dissonant intervals: minor 2nd (1), major 2nd (2), major 7th (11), minor 9th (13)
+      // Also check compound intervals within 3 octaves
+      int pc_interval = actual_semitones % 12;
+      bool is_dissonant = (pc_interval == 1) ||                     // minor 2nd
+                          (actual_semitones == 2) ||                // major 2nd (close range only)
+                          (pc_interval == 11 && actual_semitones < 36);  // major 7th
+
+      if (is_dissonant && actual_semitones < 36) {
+        // Found a clash - limit extension to just before the vocal note starts
+        // But only if vocal starts after chord's original end
+        Tick original_end = chord_note.start_tick + chord_note.duration;
+        if (vocal_start > original_end) {
+          // Safe to extend up to (but not including) vocal start
+          safe_end = std::min(safe_end, vocal_start);
+        } else if (vocal_start <= chord_note.start_tick) {
+          // Vocal already playing when chord starts - don't extend at all
+          safe_end = std::min(safe_end, original_end);
+        } else {
+          // Vocal starts during chord's original duration - no extension possible
+          safe_end = std::min(safe_end, original_end);
+        }
+      }
+    }
+  }
+
+  return safe_end;
+}
+
 void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum_track,
-                                           MidiTrack* chord_track, const Section& section) {
+                                           MidiTrack* chord_track, const MidiTrack* vocal_track,
+                                           const Section& section) {
   if (section.exit_pattern != ExitPattern::FinalHit) {
     return;
   }
@@ -692,13 +741,17 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
   }
 
   // Chord track: sustain final chord as whole note with strong velocity
+  // Check against vocal track to avoid creating dissonance from extension
   if (chord_track != nullptr) {
     auto& chord_notes = chord_track->notes();
 
     for (auto& note : chord_notes) {
       if (note.start_tick >= final_beat_start && note.start_tick < section_end) {
-        // Extend duration to fill the entire final beat (or whole note if earlier)
-        note.duration = section_end - note.start_tick;
+        // Extend duration, but check for vocal clashes first
+        Tick safe_end = getMaxSafeEndTick(note, section_end, vocal_track);
+        if (safe_end > note.start_tick) {
+          note.duration = safe_end - note.start_tick;
+        }
         note.velocity = std::max(note.velocity, FINAL_HIT_VEL);
       }
     }
@@ -707,8 +760,11 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
     Tick last_bar_start = section_end - TICKS_PER_BAR;
     for (auto& note : chord_notes) {
       if (note.start_tick >= last_bar_start && note.start_tick < final_beat_start) {
-        // Extend to section end for sustained effect
-        note.duration = section_end - note.start_tick;
+        // Extend to section end, but check for vocal clashes first
+        Tick safe_end = getMaxSafeEndTick(note, section_end, vocal_track);
+        if (safe_end > note.start_tick + note.duration) {
+          note.duration = safe_end - note.start_tick;
+        }
       }
     }
   }

@@ -311,35 +311,54 @@ void AuxTrackGenerator::generateFullTrack(MidiTrack& track, const SongContext& s
         all_notes.push_back(note);
       }
       continue;  // Skip normal generation for this section
-    } else if (section.type == SectionType::Chorus && section.vocal_density == VocalDensity::Full) {
-      // UltraVocaloid Chorus: Use GrooveAccent for rhythmic counter-melody
-      // GrooveAccent provides rhythmic accents that complement the dense vocal
-      // without trying to analyze vocal phrases (which doesn't work well with machine-gun style)
-      if (song_ctx.vocal_style == VocalStylePreset::UltraVocaloid) {
-        config.function = AuxFunction::GrooveAccent;
-        config.range_offset = -6;   // Slightly below vocal
-        config.range_width = 12;
-        config.velocity_ratio = 0.75f;
-        config.density_ratio = 0.8f;  // More notes for melodic presence
-        config.sync_phrase_boundary = true;
+    } else if (section.type == SectionType::Chorus) {
+      if (section.vocal_density == VocalDensity::Full) {
+        // UltraVocaloid Chorus: Use GrooveAccent for rhythmic counter-melody
+        // GrooveAccent provides rhythmic accents that complement the dense vocal
+        // without trying to analyze vocal phrases (which doesn't work well with machine-gun style)
+        if (song_ctx.vocal_style == VocalStylePreset::UltraVocaloid) {
+          config.function = AuxFunction::GrooveAccent;
+          config.range_offset = -6;   // Slightly below vocal
+          config.range_width = 12;
+          config.velocity_ratio = 0.75f;
+          config.density_ratio = 0.8f;  // More notes for melodic presence
+          config.sync_phrase_boundary = true;
 
-        // Generate GrooveAccent
-        MidiTrack section_aux = generate(config, ctx, harmony, rng);
-        for (const auto& note : section_aux.notes()) {
-          all_notes.push_back(note);
+          // Generate GrooveAccent
+          MidiTrack section_aux = generate(config, ctx, harmony, rng);
+          for (const auto& note : section_aux.notes()) {
+            all_notes.push_back(note);
+          }
+          continue;  // Skip normal generation for this section
         }
-        continue;  // Skip normal generation for this section
-      }
 
-      // Other styles: Use EmotionalPad for harmonic support
-      // In pop music, the pad provides chord tones (root + fifth) beneath the vocal,
-      // NOT melody doubling. Unison doubling should be done by backup vocals, not pad.
-      config.function = AuxFunction::EmotionalPad;
-      config.range_offset = -12;            // One octave below vocal for clarity
-      config.range_width = 12;              // Reasonable pad range
-      config.velocity_ratio = 0.6f;         // Softer than vocal
-      config.density_ratio = 0.8f;          // Allow some space
-      config.sync_phrase_boundary = false;  // Pad sustains independently
+        // Other styles with Full density: Use EmotionalPad for harmonic support
+        config.function = AuxFunction::EmotionalPad;
+        config.range_offset = -12;            // One octave below vocal for clarity
+        config.range_width = 12;              // Reasonable pad range
+        config.velocity_ratio = 0.6f;         // Softer than vocal
+        config.density_ratio = 0.8f;          // Allow some space
+        config.sync_phrase_boundary = false;  // Pad sustains independently
+      } else {
+        // Normal density Chorus: Try unison for powerful doubling effect
+        DerivabilityScore score = analyzeDerivability(*ctx.main_melody);
+        if (score.rhythm_stability >= 0.5f) {
+          // Rhythm stable enough for unison doubling
+          config.function = AuxFunction::Unison;
+          config.range_offset = 0;
+          config.range_width = 12;
+          config.velocity_ratio = 0.75f;  // Slightly softer than lead vocal
+          config.density_ratio = 1.0f;
+          config.sync_phrase_boundary = true;
+
+          auto unison_notes = generateUnison(ctx, config, harmony, rng);
+          for (const auto& note : unison_notes) {
+            all_notes.push_back(note);
+          }
+          continue;  // Skip normal generation for this section
+        }
+        // Rhythm unstable: fall through to default handling
+      }
     } else if (aux_count > 0) {
       // Other sections: Use default aux config
       config = aux_configs[0];

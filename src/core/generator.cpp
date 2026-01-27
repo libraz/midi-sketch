@@ -917,7 +917,8 @@ void Generator::applyTransitionDynamics() {
   // Apply enhanced FinalHit for sections with that exit pattern
   for (const auto& section : sections) {
     if (section.exit_pattern == ExitPattern::FinalHit) {
-      PostProcessor::applyEnhancedFinalHit(&song_.bass(), &song_.drums(), &song_.chord(), section);
+      PostProcessor::applyEnhancedFinalHit(&song_.bass(), &song_.drums(), &song_.chord(),
+                                            &song_.vocal(), section);
     }
   }
 

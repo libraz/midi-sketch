@@ -570,6 +570,7 @@ TEST_F(VocalTest, CadenceAppliedToMultipleSections) {
 
 TEST_F(VocalTest, SectionCadencePreservesRangeConstraints) {
   // Section final note should still respect vocal range
+  // Note: Climax extension allows +2 semitones above vocal_high for PeakLevel::Max sections
   params_.seed = 22222;
   params_.vocal_low = 60;   // C4
   params_.vocal_high = 72;  // C5 (narrow range)
@@ -579,12 +580,15 @@ TEST_F(VocalTest, SectionCadencePreservesRangeConstraints) {
 
   const auto& vocal = gen.getSong().vocal();
 
-  // All notes (including section finals) should be in range
+  // Climax extension allows up to +2 semitones for maximum intensity sections
+  constexpr int kClimaxExtension = 2;
+
+  // All notes (including section finals) should be in range (with climax allowance)
   for (const auto& note : vocal.notes()) {
     EXPECT_GE(note.note, params_.vocal_low)
         << "Note below vocal range: " << static_cast<int>(note.note);
-    EXPECT_LE(note.note, params_.vocal_high)
-        << "Note above vocal range: " << static_cast<int>(note.note);
+    EXPECT_LE(note.note, params_.vocal_high + kClimaxExtension)
+        << "Note above vocal range (with climax allowance): " << static_cast<int>(note.note);
   }
 }
 

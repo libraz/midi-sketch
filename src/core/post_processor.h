@@ -130,12 +130,16 @@ class PostProcessor {
   /// Extends the basic FinalHit to include:
   /// - Bass and drums (kick + crash) on final beat
   /// - Velocity boost to 110+
-  /// - Chord track sustains final chord as whole note
+  /// - Chord track sustains final chord as whole note (unless it would clash with vocal)
   ///
-  /// @param tracks Map of track names to track pointers
+  /// @param bass_track Bass track pointer
+  /// @param drum_track Drum track pointer
+  /// @param chord_track Chord track pointer
+  /// @param vocal_track Vocal track pointer (for dissonance avoidance during sustain)
   /// @param section The section with FinalHit exit pattern
   static void applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum_track,
-                                     MidiTrack* chord_track, const Section& section);
+                                     MidiTrack* chord_track, const MidiTrack* vocal_track,
+                                     const Section& section);
 
  private:
   // Returns true if the tick position is on a strong beat (beats 1 or 3 in 4/4).

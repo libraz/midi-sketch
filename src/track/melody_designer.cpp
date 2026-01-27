@@ -276,6 +276,38 @@ uint8_t calculatePhraseCount(uint8_t section_bars, uint8_t phrase_length_bars) {
   return (section_bars + phrase_length_bars - 1) / phrase_length_bars;
 }
 
+/// @brief Apply sequential transposition to B section phrases (Zekvenz effect).
+/// Creates ascending sequence pattern to build tension before chorus.
+/// @param notes Phrase notes to transpose (modified in-place)
+/// @param phrase_index Index of the phrase within the section (0-based)
+/// @param section_type Section type (only applies to B sections)
+/// @param key_offset Key offset for scale snapping
+/// @param vocal_low Minimum vocal pitch
+/// @param vocal_high Maximum vocal pitch
+void applySequentialTransposition(std::vector<NoteEvent>& notes, uint8_t phrase_index,
+                                  SectionType section_type, int key_offset, uint8_t vocal_low,
+                                  uint8_t vocal_high) {
+  // Only apply to B sections and non-first phrases
+  if (section_type != SectionType::B || phrase_index == 0 || notes.empty()) {
+    return;
+  }
+
+  // Sequential intervals: ascending by scale-like amounts
+  // phrase 1: +2 semitones, phrase 2: +4 semitones, phrase 3+: +5 semitones
+  constexpr int8_t kSequenceIntervals[] = {0, 2, 4, 5};
+  int transpose = (phrase_index < 4) ? kSequenceIntervals[phrase_index] : 5;
+
+  for (auto& note : notes) {
+    int new_pitch = note.note + transpose;
+    // Snap to scale to avoid chromatic notes
+    new_pitch = snapToNearestScaleTone(new_pitch, key_offset);
+    // Constrain to vocal range
+    new_pitch =
+        std::clamp(new_pitch, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
+    note.note = static_cast<uint8_t>(new_pitch);
+  }
+}
+
 // ============================================================================
 // Pop Hook Rhythm Patterns
 // ============================================================================
@@ -451,6 +483,11 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
                                            direction_inertia, harmony, rng);
     }
 
+    // Apply sequential transposition for B sections (Zekvenz effect)
+    // Creates ascending sequence: each phrase rises by 2-4-5 semitones
+    applySequentialTransposition(phrase_result.notes, i, ctx.section_type, ctx.key_offset,
+                                 ctx.vocal_low, ctx.vocal_high);
+
     // Append notes to result, enforcing interval constraint between phrases
     constexpr int MAX_PHRASE_INTERVAL = 9;  // Major 6th
     for (const auto& note : phrase_result.notes) {
@@ -476,7 +513,12 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
     }
 
     // Update state for next phrase
-    prev_pitch = phrase_result.last_pitch;
+    // Use actual last pitch after transposition and adjustment (not original)
+    if (!result.empty()) {
+      prev_pitch = result.back().note;
+    } else {
+      prev_pitch = phrase_result.last_pitch;
+    }
     direction_inertia = phrase_result.direction_inertia;
 
     // Move to next phrase position
@@ -1610,10 +1652,21 @@ PitchChoice MelodyDesigner::applyDirectionInertia(PitchChoice choice, int inerti
   }
 
   // Strong inertia can override random direction
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-  float inertia_strength = std::abs(inertia) / 3.0f;
+  // Coefficient 0.7 for better melodic continuity (was 0.5)
+  constexpr float kInertiaCoefficient = 0.7f;
 
-  if (dist(rng) < inertia_strength * 0.5f) {
+  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+  int abs_inertia = std::abs(inertia);
+
+  // Decay after 3 consecutive same-direction moves to prevent monotony
+  float decay_factor = 1.0f;
+  if (abs_inertia > 3) {
+    decay_factor = std::pow(0.8f, static_cast<float>(abs_inertia - 3));
+  }
+
+  float inertia_strength = (static_cast<float>(abs_inertia) / 3.0f) * decay_factor;
+
+  if (dist(rng) < inertia_strength * kInertiaCoefficient) {
     // Follow inertia direction
     if (inertia > 0) {
       return PitchChoice::StepUp;

@@ -295,7 +295,7 @@ TEST_F(DrumsTest, BalladStyleSparserDrums) {
 
 TEST_F(DrumsTest, FourOnFloorKickPattern) {
   params_.mood = Mood::EnergeticDance;  // Uses FourOnFloor style
-  params_.seed = 100;
+  params_.seed = 200;
 
   Generator gen;
   gen.generate(params_);

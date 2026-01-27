@@ -367,14 +367,13 @@ TEST(MelodyDesignerTest, GetTransitionBToChorus) {
   const SectionTransition* trans = getTransition(SectionType::B, SectionType::Chorus);
   ASSERT_NE(trans, nullptr);
 
-  // B→Chorus maintains melodic register (pitch_tendency=0) to preserve motif continuity.
-  // Tension is built through dynamics (velocity_growth) rather than forced pitch ascent.
-  // This allows the Chorus to bring the melodic peak naturally.
-  EXPECT_EQ(trans->pitch_tendency, 0);
-  // No forced leading tone - let melodic flow remain natural
-  EXPECT_FALSE(trans->use_leading_tone);
-  // Should have velocity growth (excitement)
-  EXPECT_GT(trans->velocity_growth, 1.0f);
+  // B→Chorus builds anticipation with ascending tendency for "waiting for it" feeling.
+  // Leading tone creates hook preparation before chorus entry.
+  EXPECT_EQ(trans->pitch_tendency, 2);
+  // Use leading tone for melodic preparation
+  EXPECT_TRUE(trans->use_leading_tone);
+  // Should have stronger velocity growth (excitement)
+  EXPECT_GE(trans->velocity_growth, 1.20f);
 }
 
 TEST(MelodyDesignerTest, GetTransitionBridgeToChorus) {

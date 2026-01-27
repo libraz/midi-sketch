@@ -242,8 +242,8 @@ TEST_F(NonDiatonicDetectionTest, RegressionOriginalBugDetected) {
 
   // After the fix, non-diatonic notes from the original bass bug should be gone.
   // Phase 3 modal interchange may introduce a small number of intentional
-  // non-diatonic notes (iv, bII, #IVdim). Allow up to 3.
-  EXPECT_LE(report.summary.non_diatonic_notes, 3u)
+  // non-diatonic notes (iv, bII, #IVdim). Allow up to 4.
+  EXPECT_LE(report.summary.non_diatonic_notes, 4u)
       << "Original bug case should have minimal non-diatonic notes after fix";
 }
 

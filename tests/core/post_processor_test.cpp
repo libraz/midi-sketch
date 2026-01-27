@@ -353,7 +353,7 @@ TEST_F(EnhancedFinalHitTest, AddsKickAndCrashOnFinalBeat) {
   drum_track.addNote(0, TICKS_PER_BEAT / 2, KICK, 80);
   drum_track.addNote(TICKS_PER_BEAT, TICKS_PER_BEAT / 2, SNARE, 85);
 
-  PostProcessor::applyEnhancedFinalHit(nullptr, &drum_track, nullptr, section_);
+  PostProcessor::applyEnhancedFinalHit(nullptr, &drum_track, nullptr, nullptr, section_);
 
   Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
 
@@ -391,7 +391,7 @@ TEST_F(EnhancedFinalHitTest, ChordTrackSustainsFinalChord) {
   chord_track.addNote(final_beat_start, original_duration, 64, 80);  // E
   chord_track.addNote(final_beat_start, original_duration, 67, 80);  // G
 
-  PostProcessor::applyEnhancedFinalHit(nullptr, nullptr, &chord_track, section_);
+  PostProcessor::applyEnhancedFinalHit(nullptr, nullptr, &chord_track, nullptr, section_);
 
   Tick section_end = 4 * TICKS_PER_BAR;
 
@@ -416,7 +416,7 @@ TEST_F(EnhancedFinalHitTest, BoostsBassVelocity) {
   // Add bass note on final beat
   bass_track.addNote(final_beat_start, TICKS_PER_BEAT, 36, 80);
 
-  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, section_);
+  PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_);
 
   for (const auto& note : bass_track.notes()) {
     if (note.start_tick >= final_beat_start) {
@@ -438,7 +438,7 @@ TEST_F(EnhancedFinalHitTest, OnlyAppliesWhenExitPatternIsFinalHit) {
   MidiTrack drum_track;
   size_t original_count = drum_track.notes().size();
 
-  PostProcessor::applyEnhancedFinalHit(nullptr, &drum_track, nullptr, other_section);
+  PostProcessor::applyEnhancedFinalHit(nullptr, &drum_track, nullptr, nullptr, other_section);
 
   EXPECT_EQ(drum_track.notes().size(), original_count)
       << "Should not add notes when exit_pattern is not FinalHit";
@@ -452,7 +452,7 @@ TEST_F(EnhancedFinalHitTest, AddsMissingKickOnFinalBeat) {
   drum_track.addNote(0, TICKS_PER_BEAT / 2, KICK, 80);
   drum_track.addNote(TICKS_PER_BAR, TICKS_PER_BEAT / 2, SNARE, 85);
 
-  PostProcessor::applyEnhancedFinalHit(nullptr, &drum_track, nullptr, section_);
+  PostProcessor::applyEnhancedFinalHit(nullptr, &drum_track, nullptr, nullptr, section_);
 
   Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
   Tick section_end = 4 * TICKS_PER_BAR;
@@ -690,7 +690,7 @@ TEST_F(EnhancedFinalHitTest, AddedNotesHavePostProcessProvenance) {
   // Add a note so drum_track is not empty (required for applyEnhancedFinalHit)
   drum_track.addNote(0, TICKS_PER_BEAT / 2, KICK, 80);
 
-  PostProcessor::applyEnhancedFinalHit(&bass_track, &drum_track, nullptr, section_);
+  PostProcessor::applyEnhancedFinalHit(&bass_track, &drum_track, nullptr, nullptr, section_);
 
   Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
 
