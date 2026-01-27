@@ -147,6 +147,26 @@ BassGenre getMoodBassGenre(Mood mood);
 const BassGenrePatterns& getBassGenrePatterns(BassGenre genre);
 
 // ============================================================================
+// Mood Program Mapping
+// ============================================================================
+
+// MIDI program numbers for each track based on mood.
+// Maps each Mood to appropriate instrument sounds for all melodic tracks.
+struct MoodProgramSet {
+  uint8_t vocal;
+  uint8_t chord;
+  uint8_t bass;
+  uint8_t motif;
+  uint8_t arpeggio;
+  uint8_t aux;
+};
+
+// Returns the MIDI programs for a given mood.
+// @param mood Mood preset
+// @returns MoodProgramSet with program numbers for each track
+const MoodProgramSet& getMoodPrograms(Mood mood);
+
+// ============================================================================
 // StylePreset API
 // ============================================================================
 

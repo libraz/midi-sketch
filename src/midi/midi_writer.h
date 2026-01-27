@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "core/midi_track.h"
+#include "core/preset_data.h"
 #include "core/song.h"
 #include "core/types.h"
 
@@ -32,10 +33,11 @@ class MidiWriter {
    * @brief Build MIDI data from a Song.
    * @param song Song containing all tracks
    * @param key Output key for transposition
+   * @param mood Mood preset for instrument selection
    * @param metadata Optional JSON metadata to embed
    * @param format MIDI format (SMF1 or SMF2)
    */
-  void build(const Song& song, Key key, const std::string& metadata = "",
+  void build(const Song& song, Key key, Mood mood, const std::string& metadata = "",
              MidiFormat format = kDefaultMidiFormat);
 
   /**
@@ -58,9 +60,9 @@ class MidiWriter {
   std::unique_ptr<Midi2Writer> midi2_writer_;
 #endif
 
-  void buildSMF1(const Song& song, Key key, const std::string& metadata);
+  void buildSMF1(const Song& song, Key key, Mood mood, const std::string& metadata);
 #ifndef MIDISKETCH_WASM
-  void buildSMF2(const Song& song, Key key, const std::string& metadata);
+  void buildSMF2(const Song& song, Key key, Mood mood, const std::string& metadata);
 #endif
   void writeHeader(uint16_t num_tracks, uint16_t division);
   void writeTrack(const MidiTrack& track, const std::string& name, uint8_t channel, uint8_t program,

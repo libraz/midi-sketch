@@ -30,6 +30,7 @@ set(TEST_SOURCES
   core/call_test.cpp
   core/randomness_test.cpp
   core/motif_test.cpp
+  core/motif_transform_test.cpp
   core/struct_layout_test.cpp
   core/pitch_utils_test.cpp
   core/chord_utils_test.cpp

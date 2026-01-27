@@ -906,7 +906,7 @@ TEST(ModulationTest, MidiOutputHasModulationApplied) {
 
   // Build MIDI
   MidiWriter writer;
-  writer.build(song, Key::C);
+  writer.build(song, Key::C, params.mood);
   auto midi = writer.toBytes();
 
   // Helper to find all Note On pitches for channel 0

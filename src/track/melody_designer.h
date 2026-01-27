@@ -10,11 +10,14 @@
 #include <random>
 #include <vector>
 
+#include <unordered_map>
+
 #include "core/chord_utils.h"
 #include "core/melody_evaluator.h"
 #include "core/melody_templates.h"
 #include "core/melody_types.h"
 #include "core/motif.h"
+#include "core/motif_transform.h"
 #include "core/pitch_utils.h"
 #include "core/section_types.h"
 #include "core/types.h"
@@ -164,9 +167,27 @@ class MelodyDesigner {
 
   /**
    * @brief Set GlobalMotif for song-wide reference.
+   *
+   * Also prepares section-specific variants using appropriate transformations:
+   * - Chorus: original motif (strongest recognition)
+   * - A section: diminished rhythm (slightly faster feel)
+   * - B section: sequenced (building tension)
+   * - Bridge: inverted (contrast)
+   * - Outro: fragmented (winding down)
+   *
    * @param motif GlobalMotif to cache
    */
-  void setGlobalMotif(const GlobalMotif& motif) { cached_global_motif_ = motif; }
+  void setGlobalMotif(const GlobalMotif& motif) {
+    cached_global_motif_ = motif;
+    prepareMotifVariants(motif);
+  }
+
+  /**
+   * @brief Get the motif variant for a specific section type.
+   * @param section_type Section type
+   * @return Appropriate motif variant (or original if no variant prepared)
+   */
+  const GlobalMotif& getMotifForSection(SectionType section_type) const;
 
   /**
    * @brief Generate a hook pattern for chorus sections.
@@ -326,6 +347,13 @@ class MelodyDesigner {
   // Cached GlobalMotif for song-wide melodic unity.
   // Extracted from first chorus hook, used as evaluation reference.
   std::optional<GlobalMotif> cached_global_motif_;
+
+  // Section-specific motif variants for development/transformation.
+  // Prepared when GlobalMotif is set, used during evaluation.
+  std::unordered_map<SectionType, GlobalMotif> motif_variants_;
+
+  // Prepare section-specific motif variants from source motif.
+  void prepareMotifVariants(const GlobalMotif& source);
 };
 
 }  // namespace midisketch

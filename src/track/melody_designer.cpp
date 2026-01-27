@@ -12,6 +12,7 @@
 #include "core/hook_utils.h"
 #include "core/i_harmony_context.h"
 #include "core/melody_embellishment.h"
+#include "core/motif_transform.h"
 #include "core/note_factory.h"
 #include "core/phrase_patterns.h"
 #include "core/pitch_utils.h"
@@ -519,9 +520,15 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
     float combined_score = style_total * 0.4f + culling_score * 0.4f + bias_score * 0.2f;
 
     // GlobalMotif bonus: light reward for similar contour/intervals (0.0-0.1)
-    // Only applied if GlobalMotif has been extracted from chorus
+    // Uses section-specific variant for appropriate transformation:
+    // - Chorus: original motif (strongest recognition)
+    // - A section: diminished (faster feel)
+    // - B section: sequenced (building tension)
+    // - Bridge: inverted (contrast)
+    // - Outro: fragmented (winding down)
     if (cached_global_motif_.has_value() && cached_global_motif_->isValid()) {
-      float motif_bonus = evaluateWithGlobalMotif(melody, *cached_global_motif_);
+      const GlobalMotif& motif_variant = getMotifForSection(ctx.section_type);
+      float motif_bonus = evaluateWithGlobalMotif(melody, motif_variant);
       combined_score += motif_bonus;
     }
 
@@ -2196,6 +2203,65 @@ float MelodyDesigner::evaluateWithGlobalMotif(const std::vector<NoteEvent>& cand
   }
 
   return bonus;
+}
+
+// ============================================================================
+// Section-Specific Motif Variants
+// ============================================================================
+
+void MelodyDesigner::prepareMotifVariants(const GlobalMotif& source) {
+  motif_variants_.clear();
+
+  if (!source.isValid()) {
+    return;
+  }
+
+  // Chorus: use original motif (strongest recognition)
+  motif_variants_[SectionType::Chorus] = source;
+
+  // A section: diminished rhythm (slightly faster feel for verses)
+  motif_variants_[SectionType::A] =
+      transformGlobalMotif(source, GlobalMotifTransform::Diminish);
+
+  // B section: sequenced up (building tension toward chorus)
+  motif_variants_[SectionType::B] =
+      transformGlobalMotif(source, GlobalMotifTransform::Sequence, 2);
+
+  // Bridge: inverted contour (maximum contrast)
+  motif_variants_[SectionType::Bridge] =
+      transformGlobalMotif(source, GlobalMotifTransform::Invert);
+
+  // Outro: fragmented (winding down, partial recall)
+  motif_variants_[SectionType::Outro] =
+      transformGlobalMotif(source, GlobalMotifTransform::Fragment);
+
+  // Intro/Interlude: retrograde (instrumental interest)
+  motif_variants_[SectionType::Intro] =
+      transformGlobalMotif(source, GlobalMotifTransform::Retrograde);
+  motif_variants_[SectionType::Interlude] =
+      transformGlobalMotif(source, GlobalMotifTransform::Retrograde);
+
+  // Chant/MixBreak: augmented rhythm (emphasized, slower feel)
+  motif_variants_[SectionType::Chant] =
+      transformGlobalMotif(source, GlobalMotifTransform::Augment);
+  motif_variants_[SectionType::MixBreak] =
+      transformGlobalMotif(source, GlobalMotifTransform::Augment);
+}
+
+const GlobalMotif& MelodyDesigner::getMotifForSection(SectionType section_type) const {
+  auto it = motif_variants_.find(section_type);
+  if (it != motif_variants_.end()) {
+    return it->second;
+  }
+
+  // Fallback to original motif if variant not found
+  if (cached_global_motif_.has_value()) {
+    return cached_global_motif_.value();
+  }
+
+  // Return a static empty motif if nothing available
+  static const GlobalMotif empty_motif;
+  return empty_motif;
 }
 
 }  // namespace midisketch

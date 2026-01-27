@@ -93,29 +93,30 @@ TEST(TypesTest, MelodyDataCopy) {
 }
 
 TEST(TypesTest, DrumStyleMapping) {
-  // Sparse moods
+  // Sparse moods (ambient, minimal)
   EXPECT_EQ(getMoodDrumStyle(Mood::Ballad), DrumStyle::Sparse);
-  EXPECT_EQ(getMoodDrumStyle(Mood::Sentimental), DrumStyle::Sparse);
-  EXPECT_EQ(getMoodDrumStyle(Mood::Chill), DrumStyle::Sparse);
+  EXPECT_EQ(getMoodDrumStyle(Mood::Chill), DrumStyle::Sparse);            // Ambient feel
+  EXPECT_EQ(getMoodDrumStyle(Mood::EmotionalPop), DrumStyle::Sparse);     // Highlight vocals
 
-  // FourOnFloor moods
+  // FourOnFloor moods (dance, dark)
   EXPECT_EQ(getMoodDrumStyle(Mood::EnergeticDance), DrumStyle::FourOnFloor);
   EXPECT_EQ(getMoodDrumStyle(Mood::ElectroPop), DrumStyle::FourOnFloor);
+  EXPECT_EQ(getMoodDrumStyle(Mood::DarkPop), DrumStyle::FourOnFloor);     // Heavy kick for dark feel
 
-  // Upbeat moods
+  // Upbeat moods (energetic, bright)
   EXPECT_EQ(getMoodDrumStyle(Mood::IdolPop), DrumStyle::Upbeat);
   EXPECT_EQ(getMoodDrumStyle(Mood::BrightUpbeat), DrumStyle::Upbeat);
   EXPECT_EQ(getMoodDrumStyle(Mood::ModernPop), DrumStyle::Upbeat);
   EXPECT_EQ(getMoodDrumStyle(Mood::Anthem), DrumStyle::Upbeat);
+  EXPECT_EQ(getMoodDrumStyle(Mood::MidPop), DrumStyle::Upbeat);           // Mid-tempo brightness
 
-  // Rock moods
+  // Rock moods (crash accents, power)
   EXPECT_EQ(getMoodDrumStyle(Mood::LightRock), DrumStyle::Rock);
+  EXPECT_EQ(getMoodDrumStyle(Mood::Dramatic), DrumStyle::Rock);           // Crash accents for drama
 
-  // Standard moods
+  // Standard moods (basic pop patterns)
   EXPECT_EQ(getMoodDrumStyle(Mood::StraightPop), DrumStyle::Standard);
-  EXPECT_EQ(getMoodDrumStyle(Mood::MidPop), DrumStyle::Standard);
-  EXPECT_EQ(getMoodDrumStyle(Mood::EmotionalPop), DrumStyle::Standard);
-  EXPECT_EQ(getMoodDrumStyle(Mood::DarkPop), DrumStyle::Standard);
+  EXPECT_EQ(getMoodDrumStyle(Mood::Sentimental), DrumStyle::Standard);    // More movement than Chill
 }
 
 // ============================================================================

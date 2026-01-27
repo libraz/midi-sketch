@@ -77,6 +77,52 @@ struct EuclideanDrumPattern {
   uint16_t open_hh;  ///< Open hi-hat pattern
 };
 
+// ============================================================================
+// Groove Template System
+// ============================================================================
+
+/**
+ * @brief Groove template types for coordinated kick/snare/hi-hat patterns.
+ *
+ * Each template defines a characteristic rhythmic feel that coordinates
+ * all drum elements into a cohesive groove.
+ */
+enum class GrooveTemplate : uint8_t {
+  Standard,   ///< Standard pop (kick on 1&3, snare on 2&4)
+  Funk,       ///< 16th note feel, syncopated ghost notes
+  Shuffle,    ///< Triplet swing feel
+  Bossa,      ///< Bossa nova pattern
+  Trap,       ///< Hi-hat roll centered, sparse kick
+  HalfTime,   ///< Half-time feel (snare on 3)
+  Breakbeat   ///< Syncopated breakbeat pattern
+};
+
+/**
+ * @brief Full groove pattern with all drum elements.
+ *
+ * All patterns are 16-step bitmasks representing one bar.
+ */
+struct FullGroovePattern {
+  uint16_t kick;          ///< Kick drum pattern
+  uint16_t snare;         ///< Snare drum pattern
+  uint16_t hihat;         ///< Hi-hat pattern
+  uint8_t ghost_density;  ///< Ghost note density (0-100%)
+};
+
+/**
+ * @brief Get the full groove pattern for a template.
+ * @param tmpl Groove template type
+ * @return Reference to pre-defined FullGroovePattern
+ */
+const FullGroovePattern& getGroovePattern(GrooveTemplate tmpl);
+
+/**
+ * @brief Get the groove template for a mood.
+ * @param mood Mood preset
+ * @return GrooveTemplate appropriate for the mood
+ */
+GrooveTemplate getMoodGrooveTemplate(Mood mood);
+
 /**
  * @brief Factory for creating drum patterns using Euclidean rhythms.
  */

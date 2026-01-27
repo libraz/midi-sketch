@@ -20,7 +20,7 @@ namespace {
 // RhythmLock-style section flow: rhythm-synced, staggered intro build
 constexpr SectionSlot RHYTHMLOCK_FLOW[] = {
     // Intro: all tracks with staggered entry, atmospheric drums
-    {SectionType::Intro, 4, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Low, 60, 50,
+    {SectionType::Intro, 4, TrackMask::All, EntryPattern::Stagger, SectionEnergy::Low, 60, 50,
      PeakLevel::None, DrumRole::Ambient},
 
     // A melody: vocal + minimal backing + motif for riff repetition
@@ -277,8 +277,8 @@ constexpr SectionSlot IDOL_KAWAII_FLOW[] = {
 //            -> LastChorus(16) = 64 bars
 // Straight timing (0.0f) for tight four-on-floor dance feel
 constexpr SectionSlot IDOL_COOLPOP_FLOW[] = {
-    // Intro: driving four-on-floor beat
-    {SectionType::Intro, 8, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Medium, 75, 80,
+    // Intro: driving four-on-floor beat with staggered entry
+    {SectionType::Intro, 8, TrackMask::All, EntryPattern::Stagger, SectionEnergy::Medium, 75, 80,
      PeakLevel::None, DrumRole::Full, 0.0f},
 
     // A melody: cool, steady groove

@@ -18,7 +18,7 @@ TEST(MidiWriterSmf1Test, EmptyResult) {
   Song song;
   song.setBpm(120);
 
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Should have at least header
@@ -42,7 +42,7 @@ TEST(MidiWriterSmf1Test, HeaderFormat) {
   // Add some notes
   song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Check header length = 6
@@ -63,7 +63,7 @@ TEST(MidiWriterSmf1Test, DivisionValue) {
 
   song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Check division = 480
@@ -78,7 +78,7 @@ TEST(MidiWriterSmf1Test, ContainsMTrkChunk) {
 
   song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Look for MTrk
@@ -99,7 +99,7 @@ TEST(MidiWriterSmf1Test, ContainsMarkerEvents) {
   song.se().addText(0, "Intro");
   song.se().addText(1920, "Verse");
 
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Look for marker meta event (FF 06)
@@ -121,7 +121,7 @@ TEST(MidiWriterSmf1Test, SETrackIsFirstTrack) {
 
   song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Find first MTrk chunk (at offset 14)
@@ -164,7 +164,7 @@ TEST(MidiWriterSmf1Test, KeyTransposeAppliedOnce) {
   songC.vocal().addNote(0, 480, 60, 100);
 
   MidiWriter writerC;
-  writerC.build(songC, Key::C, "", MidiFormat::SMF1);
+  writerC.build(songC, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto dataC = writerC.toBytes();
 
   Song songD;
@@ -173,7 +173,7 @@ TEST(MidiWriterSmf1Test, KeyTransposeAppliedOnce) {
   songD.vocal().addNote(0, 480, 60, 100);
 
   MidiWriter writerD;
-  writerD.build(songD, Key::D, "", MidiFormat::SMF1);  // Key::D = 2 semitones up
+  writerD.build(songD, Key::D, Mood::StraightPop, "", MidiFormat::SMF1);  // Key::D = 2 semitones up
   auto dataD = writerD.toBytes();
 
   // Find Note On pitches (channel 0 = vocal)
@@ -196,11 +196,11 @@ TEST(MidiWriterSmf1Test, KeyTransposeDoesNotAffectDrums) {
   song.drums().addNote(0, 480, 36, 100);
 
   MidiWriter writerC;
-  writerC.build(song, Key::C, "", MidiFormat::SMF1);
+  writerC.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto dataC = writerC.toBytes();
 
   MidiWriter writerD;
-  writerD.build(song, Key::D, "", MidiFormat::SMF1);
+  writerD.build(song, Key::D, Mood::StraightPop, "", MidiFormat::SMF1);
   auto dataD = writerD.toBytes();
 
   // Find Note On pitches (channel 9 = drums)
@@ -223,7 +223,7 @@ TEST(MidiWriterSmf1Test, BpmZeroDoesNotCrash) {
   song.vocal().addNote(0, 480, 60, 100);
 
   // Should not crash - BPM defaults to 120
-  EXPECT_NO_THROW(writer.build(song, Key::C, "", MidiFormat::SMF1));
+  EXPECT_NO_THROW(writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1));
   auto data = writer.toBytes();
   EXPECT_GT(data.size(), 0u);
 }
@@ -234,7 +234,7 @@ TEST(MidiWriterSmf1Test, BpmZeroDefaultsTo120) {
   song.setBpm(0);  // Invalid BPM
   song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Find tempo meta event (FF 51 03) and check value
@@ -257,7 +257,7 @@ TEST(MidiWriterSmf1Test, LongTrackNameTruncatedTo255) {
   song.setBpm(120);
   song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Track names in this test are short ("SE", "Vocal"), so just verify no crash
@@ -275,7 +275,7 @@ TEST(MidiWriterSmf1Test, LongMarkerTextTruncatedTo255) {
   song.se().addText(0, long_text);
 
   // Should not crash
-  EXPECT_NO_THROW(writer.build(song, Key::C, "", MidiFormat::SMF1));
+  EXPECT_NO_THROW(writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1));
   auto data = writer.toBytes();
 
   // Find marker meta event (FF 06 len) and verify length <= 255
@@ -299,7 +299,7 @@ TEST(MidiWriterSmf1Test, MarkerTextExactly255BytesNotTruncated) {
   std::string exact_text(255, 'B');
   song.se().addText(0, exact_text);
 
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Find marker meta event (FF 06 len) and verify length == 255
@@ -319,7 +319,7 @@ TEST(MidiWriterSmf1Test, AuxTrackOutputOnChannel5) {
   // Add a note to Aux track
   song.aux().addNote(0, 480, 67, 80);  // G4
 
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Find Note On on channel 5 (Aux)
@@ -342,7 +342,7 @@ TEST(MidiWriterSmf1Test, AllEightTracksOutput) {
   song.drums().addNote(0, 480, 36, 100);
   song.se().addText(0, "Test");
 
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Verify notes on each channel
@@ -367,7 +367,7 @@ TEST(MidiWriterSmf1Test, MetadataEmbeddedAsTextEvent) {
 
   std::string metadata =
       R"({"generator":"midi-sketch","format_version":1,"library_version":"1.0.0","seed":12345})";
-  writer.build(song, Key::C, metadata, MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, metadata, MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Look for Text Event (FF 01) with MIDISKETCH: prefix
@@ -400,7 +400,7 @@ TEST(MidiWriterSmf1Test, MetadataNotEmbeddedWhenEmpty) {
   song.setBpm(120);
   song.vocal().addNote(0, 480, 60, 100);
 
-  writer.build(song, Key::C, "", MidiFormat::SMF1);  // No metadata
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);  // No metadata
   auto data = writer.toBytes();
 
   // Search for MIDISKETCH: prefix
@@ -423,7 +423,7 @@ TEST(MidiWriterSmf1Test, MetadataContainsFullJson) {
   song.vocal().addNote(0, 480, 60, 100);
 
   std::string metadata = R"({"key":"value","number":42})";
-  writer.build(song, Key::C, metadata, MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, metadata, MidiFormat::SMF1);
   auto data = writer.toBytes();
 
   // Convert entire MIDI to string and search for metadata content
@@ -433,6 +433,125 @@ TEST(MidiWriterSmf1Test, MetadataContainsFullJson) {
   EXPECT_NE(data_str.find("key"), std::string::npos);
   EXPECT_NE(data_str.find("value"), std::string::npos);
   EXPECT_NE(data_str.find("42"), std::string::npos);
+}
+
+// ============================================================================
+// Mood-Specific Program Change Tests
+// ============================================================================
+
+// Helper: Find program change value for a given channel
+uint8_t findProgramChange(const std::vector<uint8_t>& data, uint8_t channel) {
+  for (size_t i = 0; i + 1 < data.size(); ++i) {
+    // Program Change: 0xCn where n is channel
+    if ((data[i] & 0xF0) == 0xC0 && (data[i] & 0x0F) == channel) {
+      return data[i + 1];  // program number
+    }
+  }
+  return 255;  // Not found
+}
+
+TEST(MidiWriterSmf1Test, MoodProgramChange_StraightPop) {
+  // StraightPop: vocal=0, chord=4, bass=33
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+  song.vocal().addNote(0, 480, 60, 100);
+  song.chord().addNote(0, 480, 64, 80);
+  song.bass().addNote(0, 480, 48, 90);
+
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+  auto data = writer.toBytes();
+
+  // Channel 0 = Vocal, should be program 0 (Acoustic Grand Piano)
+  EXPECT_EQ(findProgramChange(data, 0), 0);
+  // Channel 1 = Chord, should be program 4 (Electric Piano 1)
+  EXPECT_EQ(findProgramChange(data, 1), 4);
+  // Channel 2 = Bass, should be program 33 (Electric Bass finger)
+  EXPECT_EQ(findProgramChange(data, 2), 33);
+}
+
+TEST(MidiWriterSmf1Test, MoodProgramChange_CityPop) {
+  // CityPop: vocal=4, chord=4, bass=36, motif=61, arpeggio=81, aux=61
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+  song.vocal().addNote(0, 480, 60, 100);
+  song.chord().addNote(0, 480, 64, 80);
+  song.bass().addNote(0, 480, 48, 90);
+
+  writer.build(song, Key::C, Mood::CityPop, "", MidiFormat::SMF1);
+  auto data = writer.toBytes();
+
+  // Vocal = EP (4)
+  EXPECT_EQ(findProgramChange(data, 0), 4);
+  // Chord = EP (4)
+  EXPECT_EQ(findProgramChange(data, 1), 4);
+  // Bass = Slap Bass (36)
+  EXPECT_EQ(findProgramChange(data, 2), 36);
+}
+
+TEST(MidiWriterSmf1Test, MoodProgramChange_Yoasobi) {
+  // Yoasobi: Full synth (81, 81, 38, 81, 81, 89)
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+  song.vocal().addNote(0, 480, 60, 100);
+  song.chord().addNote(0, 480, 64, 80);
+  song.bass().addNote(0, 480, 48, 90);
+  song.motif().addNote(0, 480, 72, 70);
+
+  writer.build(song, Key::C, Mood::Yoasobi, "", MidiFormat::SMF1);
+  auto data = writer.toBytes();
+
+  // Vocal = Saw Lead (81)
+  EXPECT_EQ(findProgramChange(data, 0), 81);
+  // Chord = Saw Lead (81)
+  EXPECT_EQ(findProgramChange(data, 1), 81);
+  // Bass = Synth Bass (38)
+  EXPECT_EQ(findProgramChange(data, 2), 38);
+  // Motif = Saw Lead (81)
+  EXPECT_EQ(findProgramChange(data, 3), 81);
+}
+
+TEST(MidiWriterSmf1Test, MoodProgramChange_Ballad) {
+  // Ballad: Piano, Acoustic Bass, Strings (0, 0, 32, 48, 48, 49)
+  MidiWriter writer;
+  Song song;
+  song.setBpm(80);
+  song.vocal().addNote(0, 480, 60, 100);
+  song.chord().addNote(0, 480, 64, 80);
+  song.bass().addNote(0, 480, 48, 70);
+  song.aux().addNote(0, 480, 67, 60);
+
+  writer.build(song, Key::C, Mood::Ballad, "", MidiFormat::SMF1);
+  auto data = writer.toBytes();
+
+  // Vocal = Piano (0)
+  EXPECT_EQ(findProgramChange(data, 0), 0);
+  // Chord = Piano (0)
+  EXPECT_EQ(findProgramChange(data, 1), 0);
+  // Bass = Acoustic Bass (32)
+  EXPECT_EQ(findProgramChange(data, 2), 32);
+  // Aux = String Ensemble 2 (49)
+  EXPECT_EQ(findProgramChange(data, 5), 49);
+}
+
+TEST(MidiWriterSmf1Test, DifferentMoodsProduceDifferentPrograms) {
+  Song song;
+  song.setBpm(120);
+  song.vocal().addNote(0, 480, 60, 100);
+
+  MidiWriter writer1, writer2;
+  writer1.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+  writer2.build(song, Key::C, Mood::Yoasobi, "", MidiFormat::SMF1);
+
+  auto data1 = writer1.toBytes();
+  auto data2 = writer2.toBytes();
+
+  // StraightPop vocal = 0 (Piano), Yoasobi vocal = 81 (Saw Lead)
+  EXPECT_EQ(findProgramChange(data1, 0), 0);
+  EXPECT_EQ(findProgramChange(data2, 0), 81);
+  EXPECT_NE(findProgramChange(data1, 0), findProgramChange(data2, 0));
 }
 
 }  // namespace

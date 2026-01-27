@@ -129,6 +129,19 @@ enum class SectionEnergy : uint8_t {
 };
 
 // ============================================================================
+// TimeFeel - Timing feel for notes
+// ============================================================================
+
+/// @brief Timing feel for note placement.
+/// Controls whether notes are played early, on beat, or late relative to the grid.
+enum class TimeFeel : uint8_t {
+  OnBeat = 0,  ///< Just timing (default)
+  LaidBack,    ///< Behind the beat (+5-15ms equivalent, relaxed feel)
+  Pushed,      ///< Ahead of the beat (-5-10ms equivalent, driving feel)
+  Triplet      ///< Triplet grid quantization
+};
+
+// ============================================================================
 // PeakLevel - Peak intensity level
 // ============================================================================
 
@@ -246,6 +259,10 @@ struct Section {
   /// @brief Swing amount override for this section (from ProductionBlueprint).
   /// -1.0 = use section type default, 0.0-0.7 = explicit swing amount.
   float swing_amount = -1.0f;
+
+  /// @brief Time feel for this section (from ProductionBlueprint).
+  /// Controls micro-timing (laid back, pushed, or on beat).
+  TimeFeel time_feel = TimeFeel::OnBeat;
 };
 
 /// @brief Section transition parameters for smooth melodic flow.

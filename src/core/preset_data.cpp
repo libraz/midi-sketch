@@ -22,8 +22,8 @@ constexpr uint16_t MOOD_BPM[20] = {
     125,  // LightRock
     110,  // MidPop
     105,  // EmotionalPop
-    95,   // Sentimental
-    90,   // Chill
+    100,  // Sentimental (more movement than Chill)
+    85,   // Chill (slower, ambient feel)
     75,   // Ballad
     115,  // DarkPop
     100,  // Dramatic
@@ -786,13 +786,13 @@ constexpr DrumStyle MOOD_DRUM_STYLES[20] = {
     DrumStyle::Upbeat,       // 1: BrightUpbeat
     DrumStyle::FourOnFloor,  // 2: EnergeticDance
     DrumStyle::Rock,         // 3: LightRock
-    DrumStyle::Standard,     // 4: MidPop
-    DrumStyle::Standard,     // 5: EmotionalPop
-    DrumStyle::Sparse,       // 6: Sentimental
+    DrumStyle::Upbeat,       // 4: MidPop (mid-tempo brightness)
+    DrumStyle::Sparse,       // 5: EmotionalPop (sparse drums to highlight vocals)
+    DrumStyle::Standard,     // 6: Sentimental (more movement than Chill)
     DrumStyle::Sparse,       // 7: Chill
     DrumStyle::Sparse,       // 8: Ballad
-    DrumStyle::Standard,     // 9: DarkPop
-    DrumStyle::Standard,     // 10: Dramatic
+    DrumStyle::FourOnFloor,  // 9: DarkPop (heavy kick for dark atmosphere)
+    DrumStyle::Rock,         // 10: Dramatic (crash accents for dramatic impact)
     DrumStyle::Standard,     // 11: Nostalgic
     DrumStyle::Upbeat,       // 12: ModernPop
     DrumStyle::FourOnFloor,  // 13: ElectroPop
@@ -878,14 +878,14 @@ constexpr BassGenre MOOD_BASS_GENRES[20] = {
     BassGenre::Idol,        // 1: BrightUpbeat
     BassGenre::Dance,       // 2: EnergeticDance
     BassGenre::Rock,        // 3: LightRock
-    BassGenre::Standard,    // 4: MidPop
+    BassGenre::Idol,        // 4: MidPop (bright, energetic patterns)
     BassGenre::Standard,    // 5: EmotionalPop
     BassGenre::Ballad,      // 6: Sentimental
-    BassGenre::Ballad,      // 7: Chill
+    BassGenre::Electronic,  // 7: Chill (ambient, sidechain feel)
     BassGenre::Ballad,      // 8: Ballad
-    BassGenre::Standard,    // 9: DarkPop
-    BassGenre::Standard,    // 10: Dramatic
-    BassGenre::Standard,    // 11: Nostalgic
+    BassGenre::Electronic,  // 9: DarkPop (sidechain pulse for dark feel)
+    BassGenre::Rock,        // 10: Dramatic (power-driven for dynamics)
+    BassGenre::Jazz,        // 11: Nostalgic (walking bass for 80s retro feel)
     BassGenre::Jazz,        // 12: ModernPop
     BassGenre::Electronic,  // 13: ElectroPop
     BassGenre::Idol,        // 14: IdolPop
@@ -997,6 +997,83 @@ BassGenre getMoodBassGenre(Mood mood) {
     return MOOD_BASS_GENRES[idx];
   }
   return BassGenre::Standard;  // fallback
+}
+
+// ============================================================================
+// Mood Program Mapping Table
+// ============================================================================
+//
+// Maps each Mood to appropriate MIDI program numbers for all melodic tracks.
+// Program numbers follow General MIDI (GM) standard:
+//   0 = Acoustic Grand Piano
+//   1 = Bright Acoustic Piano
+//   4 = Electric Piano 1
+//   5 = Electric Piano 2
+//  11 = Vibraphone
+//  30 = Distortion Guitar
+//  32 = Acoustic Bass
+//  33 = Electric Bass (finger)
+//  34 = Electric Bass (pick)
+//  36 = Slap Bass 1
+//  38 = Synth Bass 1
+//  48 = String Ensemble 1
+//  49 = String Ensemble 2
+//  61 = Brass Section
+//  80 = Lead 1 (square)
+//  81 = Lead 2 (sawtooth)
+//  89 = Pad 2 (warm)
+//
+// Structure: {vocal, chord, bass, motif, arpeggio, aux}
+//
+constexpr MoodProgramSet MOOD_PROGRAMS[20] = {
+    // 0: StraightPop - Standard pop instruments
+    {0, 4, 33, 81, 81, 89},
+    // 1: BrightUpbeat - Bright piano, brighter overall
+    {1, 5, 33, 81, 81, 89},
+    // 2: EnergeticDance - Synth bass for dance energy
+    {0, 4, 38, 81, 81, 89},
+    // 3: LightRock - Distortion guitar, pick bass
+    {0, 30, 34, 81, 81, 89},
+    // 4: MidPop - Standard pop instruments
+    {0, 4, 33, 81, 81, 89},
+    // 5: EmotionalPop - Square lead, strings aux
+    {0, 4, 33, 80, 80, 49},
+    // 6: Sentimental - Vibraphone, acoustic bass, strings
+    {11, 0, 32, 80, 80, 49},
+    // 7: Chill - EP dominant, warm pad
+    {4, 4, 33, 89, 89, 89},
+    // 8: Ballad - Piano, acoustic bass, strings
+    {0, 0, 32, 48, 48, 49},
+    // 9: DarkPop - Synth bass for dark atmosphere
+    {0, 4, 38, 81, 81, 89},
+    // 10: Dramatic - Strings for dramatic impact
+    {0, 48, 33, 81, 81, 49},
+    // 11: Nostalgic - EP for retro feel
+    {4, 4, 33, 80, 80, 89},
+    // 12: ModernPop - Standard modern pop
+    {0, 4, 33, 81, 81, 89},
+    // 13: ElectroPop - Full synth setup
+    {81, 81, 38, 81, 81, 89},
+    // 14: IdolPop - Bright instruments
+    {1, 5, 33, 81, 81, 89},
+    // 15: Anthem - Strings for epic feel
+    {0, 48, 33, 81, 81, 49},
+    // 16: Yoasobi - Full synth anime style
+    {81, 81, 38, 81, 81, 89},
+    // 17: Synthwave - Synth lead, EP, synth bass
+    {81, 4, 38, 81, 81, 89},
+    // 18: FutureBass - Full synth EDM
+    {81, 81, 38, 81, 81, 89},
+    // 19: CityPop - EP, slap bass, brass
+    {4, 4, 36, 61, 81, 61},
+};
+
+const MoodProgramSet& getMoodPrograms(Mood mood) {
+  uint8_t idx = static_cast<uint8_t>(mood);
+  if (idx >= sizeof(MOOD_PROGRAMS) / sizeof(MOOD_PROGRAMS[0])) {
+    idx = 0;  // fallback to StraightPop
+  }
+  return MOOD_PROGRAMS[idx];
 }
 
 const BassGenrePatterns& getBassGenrePatterns(BassGenre genre) {

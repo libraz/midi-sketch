@@ -18,6 +18,7 @@ set(MIDISKETCH_CORE_SOURCES
   core/track_registration_guard.cpp
   core/note_factory.cpp
   core/motif.cpp
+  core/motif_transform.cpp
   core/pitch_utils.cpp
   core/chord_utils.cpp
   core/melody_templates.cpp

@@ -56,7 +56,7 @@ TEST(MidiReaderTest, RoundtripBasicSong) {
 
   // Write to MIDI
   MidiWriter writer;
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto midi_data = writer.toBytes();
 
   // Read back
@@ -80,7 +80,7 @@ TEST(MidiReaderTest, RoundtripMultipleTracks) {
   song.drums().addNote(0, 240, 36, 100);  // Kick
 
   MidiWriter writer;
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto midi_data = writer.toBytes();
 
   MidiReader reader;
@@ -101,7 +101,7 @@ TEST(MidiReaderTest, RoundtripNoteValues) {
   song.vocal().addNote(0, 480, 72, 110);  // C5, velocity 110
 
   MidiWriter writer;
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto midi_data = writer.toBytes();
 
   MidiReader reader;
@@ -132,7 +132,7 @@ TEST(MidiReaderTest, RoundtripKeyTranspose) {
 
   // Write with D major key
   MidiWriter writer;
-  writer.build(song, Key::D, "", MidiFormat::SMF1);  // Transpose +2 semitones
+  writer.build(song, Key::D, Mood::StraightPop, "", MidiFormat::SMF1);  // Transpose +2 semitones
   auto midi_data = writer.toBytes();
 
   MidiReader reader;
@@ -157,7 +157,7 @@ TEST(MidiReaderTest, GetTrackCaseInsensitive) {
   song.chord().addNote(0, 480, 64, 80);
 
   MidiWriter writer;
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto midi_data = writer.toBytes();
 
   MidiReader reader;
@@ -182,7 +182,7 @@ TEST(MidiReaderTest, GetTrackReturnsCorrectTrack) {
   song.bass().addNote(0, 480, 36, 90);
 
   MidiWriter writer;
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto midi_data = writer.toBytes();
 
   MidiReader reader;
@@ -214,7 +214,7 @@ TEST(MidiReaderTest, ReadMetadataFromGeneratedMidi) {
   std::string metadata =
       R"({"generator":"midi-sketch","format_version":1,"library_version":"1.0.0","seed":12345})";
   MidiWriter writer;
-  writer.build(song, Key::C, metadata, MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, metadata, MidiFormat::SMF1);
   auto midi_data = writer.toBytes();
 
   MidiReader reader;
@@ -237,7 +237,7 @@ TEST(MidiReaderTest, NoMetadataInPlainMidi) {
 
   // Build without metadata
   MidiWriter writer;
-  writer.build(song, Key::C, "", MidiFormat::SMF1);  // No metadata
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);  // No metadata
   auto midi_data = writer.toBytes();
 
   MidiReader reader;
@@ -264,7 +264,7 @@ TEST(MidiReaderTest, NotesSortedByStartTime) {
   song.vocal().addNote(480, 480, 64, 100);  // Second
 
   MidiWriter writer;
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto midi_data = writer.toBytes();
 
   MidiReader reader;
@@ -287,7 +287,7 @@ TEST(MidiReaderTest, DrumsNotTransposed) {
 
   // Write with transposed key
   MidiWriter writer;
-  writer.build(song, Key::G, "", MidiFormat::SMF1);  // Transpose +7 semitones
+  writer.build(song, Key::G, Mood::StraightPop, "", MidiFormat::SMF1);  // Transpose +7 semitones
   auto midi_data = writer.toBytes();
 
   MidiReader reader;
@@ -309,7 +309,7 @@ TEST(MidiReaderTest, VariableLengthQuantityParsing) {
   song.vocal().addNote(15360, 480, 64, 100);  // 8 bars later
 
   MidiWriter writer;
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto midi_data = writer.toBytes();
 
   MidiReader reader;
@@ -346,7 +346,7 @@ TEST(MidiReaderTest, RunningStatusHandling) {
   }
 
   MidiWriter writer;
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto midi_data = writer.toBytes();
 
   MidiReader reader;
@@ -368,7 +368,7 @@ TEST(MidiReaderTest, ChannelAssignment) {
   song.drums().addNote(0, 240, 36, 100);  // Channel 9
 
   MidiWriter writer;
-  writer.build(song, Key::C, "", MidiFormat::SMF1);
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto midi_data = writer.toBytes();
 
   MidiReader reader;

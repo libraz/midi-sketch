@@ -178,4 +178,88 @@ uint16_t DrumPatternFactory::getHiHatPattern(BackingDensity density, DrumStyle s
   return EuclideanRhythm::CommonPatterns::EIGHTH_NOTES;
 }
 
+// ============================================================================
+// Groove Template System Implementation
+// ============================================================================
+
+// Pre-defined groove patterns for each template type
+// Pattern format: {kick, snare, hihat, ghost_density}
+// All patterns are 16-step bitmasks (1 bar of 16th notes)
+namespace {
+
+constexpr FullGroovePattern GROOVE_PATTERNS[] = {
+    // Standard: kick on 1&3, snare on 2&4, 8th note hi-hats
+    // Common pop/rock pattern
+    {0x1001, 0x1010, 0x5555, 20},
+
+    // Funk: syncopated kick, dense ghost notes
+    // Off-beat emphasis for groove
+    {0x1011, 0x1010, 0x5555, 60},
+
+    // Shuffle: triplet-based pattern
+    // Approximate triplet feel in 16th grid
+    {0x1001, 0x1010, 0x2492, 30},
+
+    // Bossa: bossa nova rhythm
+    // Latin-influenced pattern
+    {0x2492, 0x0808, 0x5555, 10},
+
+    // Trap: sparse kick, dense hi-hat rolls
+    // Modern trap style
+    {0x1000, 0x0010, 0xFFFF, 5},
+
+    // HalfTime: snare on beat 3 only
+    // Creates slower feel at same tempo
+    {0x1000, 0x0100, 0x5555, 25},
+
+    // Breakbeat: syncopated, energetic
+    // Inspired by classic breakbeat patterns
+    {0x1221, 0x0808, 0x5555, 40}};
+
+// Mood to groove template mapping
+// clang-format off
+constexpr GrooveTemplate MOOD_GROOVE_TEMPLATES[20] = {
+    GrooveTemplate::Standard,   // 0: StraightPop
+    GrooveTemplate::Standard,   // 1: BrightUpbeat
+    GrooveTemplate::Funk,       // 2: EnergeticDance
+    GrooveTemplate::Standard,   // 3: LightRock
+    GrooveTemplate::Standard,   // 4: MidPop
+    GrooveTemplate::Standard,   // 5: EmotionalPop
+    GrooveTemplate::Shuffle,    // 6: Sentimental (jazzy swing)
+    GrooveTemplate::Shuffle,    // 7: Chill (relaxed swing)
+    GrooveTemplate::HalfTime,   // 8: Ballad (half-time feel)
+    GrooveTemplate::Funk,       // 9: DarkPop (heavy groove)
+    GrooveTemplate::Standard,   // 10: Dramatic
+    GrooveTemplate::Shuffle,    // 11: Nostalgic (retro feel)
+    GrooveTemplate::Standard,   // 12: ModernPop
+    GrooveTemplate::Funk,       // 13: ElectroPop
+    GrooveTemplate::Standard,   // 14: IdolPop
+    GrooveTemplate::Standard,   // 15: Anthem
+    GrooveTemplate::Breakbeat,  // 16: Yoasobi (energetic)
+    GrooveTemplate::Funk,       // 17: Synthwave (driving)
+    GrooveTemplate::Trap,       // 18: FutureBass (modern EDM)
+    GrooveTemplate::Shuffle,    // 19: CityPop (groove essential)
+};
+// clang-format on
+
+}  // namespace
+
+const FullGroovePattern& getGroovePattern(GrooveTemplate tmpl) {
+  uint8_t idx = static_cast<uint8_t>(tmpl);
+  constexpr size_t count = sizeof(GROOVE_PATTERNS) / sizeof(GROOVE_PATTERNS[0]);
+  if (idx >= count) {
+    idx = 0;  // fallback to Standard
+  }
+  return GROOVE_PATTERNS[idx];
+}
+
+GrooveTemplate getMoodGrooveTemplate(Mood mood) {
+  uint8_t idx = static_cast<uint8_t>(mood);
+  constexpr size_t count = sizeof(MOOD_GROOVE_TEMPLATES) / sizeof(MOOD_GROOVE_TEMPLATES[0]);
+  if (idx >= count) {
+    return GrooveTemplate::Standard;  // fallback
+  }
+  return MOOD_GROOVE_TEMPLATES[idx];
+}
+
 }  // namespace midisketch

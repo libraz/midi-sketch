@@ -228,5 +228,87 @@ TEST(DrumPatternFactoryTest, IntroHasNoOpenHiHat) {
   EXPECT_EQ(pattern.open_hh, 0);
 }
 
+// ============================================================================
+// Groove Template Tests
+// ============================================================================
+
+TEST(GrooveTemplateTest, GetGroovePatternReturnsValidPattern) {
+  const auto& standard = getGroovePattern(GrooveTemplate::Standard);
+
+  // Standard pattern should have kick on beat 1 and 4
+  EXPECT_NE(standard.kick, 0);
+  // Snare on 2 and 4
+  EXPECT_NE(standard.snare, 0);
+  // Hi-hat pattern
+  EXPECT_NE(standard.hihat, 0);
+  // Ghost density 0-100
+  EXPECT_LE(standard.ghost_density, 100);
+}
+
+TEST(GrooveTemplateTest, AllTemplatesHaveValidPatterns) {
+  const GrooveTemplate templates[] = {
+      GrooveTemplate::Standard,  GrooveTemplate::Funk,    GrooveTemplate::Shuffle,
+      GrooveTemplate::Bossa,     GrooveTemplate::Trap,    GrooveTemplate::HalfTime,
+      GrooveTemplate::Breakbeat,
+  };
+
+  for (auto tmpl : templates) {
+    const auto& pattern = getGroovePattern(tmpl);
+    // All templates should have some kick pattern
+    EXPECT_NE(pattern.kick, 0) << "Template " << static_cast<int>(tmpl) << " has no kick";
+    // Ghost density should be reasonable
+    EXPECT_LE(pattern.ghost_density, 100) << "Template " << static_cast<int>(tmpl);
+  }
+}
+
+TEST(GrooveTemplateTest, FunkHasHigherGhostDensity) {
+  const auto& funk = getGroovePattern(GrooveTemplate::Funk);
+  const auto& standard = getGroovePattern(GrooveTemplate::Standard);
+
+  // Funk should have more ghost notes
+  EXPECT_GT(funk.ghost_density, standard.ghost_density);
+}
+
+TEST(GrooveTemplateTest, TrapHasDenseHiHat) {
+  const auto& trap = getGroovePattern(GrooveTemplate::Trap);
+
+  // Trap should have dense hi-hat (many hits)
+  int count = 0;
+  for (int i = 0; i < 16; i++) {
+    if (EuclideanRhythm::hasHit(trap.hihat, i)) count++;
+  }
+  // Trap typically has 16th note rolls
+  EXPECT_GE(count, 12);
+}
+
+TEST(GrooveTemplateTest, HalfTimeHasSnareOnBeat3) {
+  const auto& halftime = getGroovePattern(GrooveTemplate::HalfTime);
+
+  // Half-time has snare on beat 3 (position 8 in 16-step pattern)
+  EXPECT_TRUE(EuclideanRhythm::hasHit(halftime.snare, 8));
+  // Should NOT have snare on beat 2 (position 4)
+  EXPECT_FALSE(EuclideanRhythm::hasHit(halftime.snare, 4));
+}
+
+TEST(GrooveTemplateTest, GetMoodGrooveTemplateReturnsValidTemplate) {
+  // Test a few moods
+  EXPECT_EQ(getMoodGrooveTemplate(Mood::StraightPop), GrooveTemplate::Standard);
+  EXPECT_EQ(getMoodGrooveTemplate(Mood::EnergeticDance), GrooveTemplate::Funk);
+  EXPECT_EQ(getMoodGrooveTemplate(Mood::Ballad), GrooveTemplate::HalfTime);
+  EXPECT_EQ(getMoodGrooveTemplate(Mood::CityPop), GrooveTemplate::Shuffle);
+  EXPECT_EQ(getMoodGrooveTemplate(Mood::FutureBass), GrooveTemplate::Trap);
+}
+
+TEST(GrooveTemplateTest, InvalidTemplateReturnsStandard) {
+  // Cast an invalid value
+  auto invalid = static_cast<GrooveTemplate>(255);
+  const auto& pattern = getGroovePattern(invalid);
+
+  // Should fallback to Standard
+  const auto& standard = getGroovePattern(GrooveTemplate::Standard);
+  EXPECT_EQ(pattern.kick, standard.kick);
+  EXPECT_EQ(pattern.snare, standard.snare);
+}
+
 }  // namespace
 }  // namespace midisketch

@@ -1242,5 +1242,93 @@ TEST(MelodyDesignerTest, ChorusSectionGeneratesNotes) {
   EXPECT_GT(notes.size(), 0u) << "Chorus section should generate notes";
 }
 
+// ============================================================================
+// Motif Variant Tests
+// ============================================================================
+
+TEST(MelodyDesignerTest, SetGlobalMotifPreparesVariants) {
+  MelodyDesigner designer;
+
+  // Create a test motif
+  GlobalMotif source;
+  source.contour_type = ContourType::Ascending;
+  source.interval_signature[0] = 2;
+  source.interval_signature[1] = 2;
+  source.interval_signature[2] = -1;
+  source.interval_count = 3;
+  source.rhythm_signature[0] = 2;
+  source.rhythm_signature[1] = 1;
+  source.rhythm_count = 2;
+
+  designer.setGlobalMotif(source);
+
+  // Chorus should return the original motif
+  const auto& chorus_motif = designer.getMotifForSection(SectionType::Chorus);
+  EXPECT_EQ(chorus_motif.contour_type, ContourType::Ascending);
+  EXPECT_EQ(chorus_motif.interval_signature[0], 2);
+
+  // Bridge should have inverted contour
+  const auto& bridge_motif = designer.getMotifForSection(SectionType::Bridge);
+  EXPECT_EQ(bridge_motif.contour_type, ContourType::Descending);
+  // Intervals should be negated
+  EXPECT_EQ(bridge_motif.interval_signature[0], -2);
+}
+
+TEST(MelodyDesignerTest, GetMotifForSectionFallsBackToOriginal) {
+  MelodyDesigner designer;
+
+  // Without setting a motif, should return empty
+  const auto& motif = designer.getMotifForSection(SectionType::Chorus);
+  EXPECT_FALSE(motif.isValid());
+}
+
+TEST(MelodyDesignerTest, MotifVariantsHaveDifferentCharacteristics) {
+  MelodyDesigner designer;
+
+  // Create a test motif
+  GlobalMotif source;
+  source.contour_type = ContourType::Peak;
+  source.interval_signature[0] = 3;
+  source.interval_signature[1] = 2;
+  source.interval_signature[2] = -2;
+  source.interval_signature[3] = -3;
+  source.interval_count = 4;
+  source.rhythm_signature[0] = 4;
+  source.rhythm_signature[1] = 2;
+  source.rhythm_signature[2] = 2;
+  source.rhythm_signature[3] = 4;
+  source.rhythm_count = 4;
+
+  designer.setGlobalMotif(source);
+
+  // A section (Diminish): rhythm should be halved
+  const auto& a_motif = designer.getMotifForSection(SectionType::A);
+  EXPECT_EQ(a_motif.rhythm_signature[0], 2);  // 4 -> 2
+  EXPECT_EQ(a_motif.rhythm_signature[1], 1);  // 2 -> 1
+
+  // Outro (Fragment): should have fewer intervals
+  const auto& outro_motif = designer.getMotifForSection(SectionType::Outro);
+  EXPECT_LT(outro_motif.interval_count, source.interval_count);
+
+  // Chant (Augment): rhythm should be doubled
+  const auto& chant_motif = designer.getMotifForSection(SectionType::Chant);
+  EXPECT_EQ(chant_motif.rhythm_signature[0], 8);  // 4 -> 8
+}
+
+TEST(MelodyDesignerTest, CachedGlobalMotifIsSet) {
+  MelodyDesigner designer;
+
+  GlobalMotif source;
+  source.contour_type = ContourType::Valley;
+  source.interval_count = 1;
+
+  EXPECT_FALSE(designer.getCachedGlobalMotif().has_value());
+
+  designer.setGlobalMotif(source);
+
+  EXPECT_TRUE(designer.getCachedGlobalMotif().has_value());
+  EXPECT_EQ(designer.getCachedGlobalMotif()->contour_type, ContourType::Valley);
+}
+
 }  // namespace
 }  // namespace midisketch

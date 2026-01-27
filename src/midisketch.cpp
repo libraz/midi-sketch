@@ -66,64 +66,73 @@ MidiSketch::~MidiSketch() {}
 
 void MidiSketch::generate(const GeneratorParams& params) {
   generator_.generate(params);
-  midi_writer_.build(generator_.getSong(), params.key, generateMetadata(generator_.getParams()),
-                     midi_format_);
+  midi_writer_.build(generator_.getSong(), params.key, params.mood,
+                     generateMetadata(generator_.getParams()), midi_format_);
 }
 
 void MidiSketch::generateFromConfig(const SongConfig& config) {
   generator_.generateFromConfig(config);
-  midi_writer_.build(generator_.getSong(), config.key, generateMetadata(generator_.getParams()),
-                     midi_format_);
+  const auto& params = generator_.getParams();
+  midi_writer_.build(generator_.getSong(), config.key, params.mood,
+                     generateMetadata(params), midi_format_);
 }
 
 void MidiSketch::generateVocal(const SongConfig& config) {
   GeneratorParams params = ConfigConverter::convert(config);
   generator_.generateVocal(params);
-  midi_writer_.build(generator_.getSong(), config.key, generateMetadata(generator_.getParams()),
-                     midi_format_);
+  const auto& gen_params = generator_.getParams();
+  midi_writer_.build(generator_.getSong(), config.key, gen_params.mood,
+                     generateMetadata(gen_params), midi_format_);
 }
 
 void MidiSketch::regenerateVocal(uint32_t new_seed) {
   generator_.regenerateVocal(new_seed);
   const auto& params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), params.key, generateMetadata(params), midi_format_);
+  midi_writer_.build(generator_.getSong(), params.key, params.mood, generateMetadata(params),
+                     midi_format_);
 }
 
 void MidiSketch::regenerateVocal(const VocalConfig& config) {
   generator_.regenerateVocal(config);
   const auto& params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), params.key, generateMetadata(params), midi_format_);
+  midi_writer_.build(generator_.getSong(), params.key, params.mood, generateMetadata(params),
+                     midi_format_);
 }
 
 void MidiSketch::generateAccompanimentForVocal() {
   generator_.generateAccompanimentForVocal();
   const auto& params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), params.key, generateMetadata(params), midi_format_);
+  midi_writer_.build(generator_.getSong(), params.key, params.mood, generateMetadata(params),
+                     midi_format_);
 }
 
 void MidiSketch::regenerateAccompaniment(uint32_t new_seed) {
   generator_.regenerateAccompaniment(new_seed);
   const auto& params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), params.key, generateMetadata(params), midi_format_);
+  midi_writer_.build(generator_.getSong(), params.key, params.mood, generateMetadata(params),
+                     midi_format_);
 }
 
 void MidiSketch::regenerateAccompaniment(const AccompanimentConfig& config) {
   generator_.regenerateAccompaniment(config);
   const auto& params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), params.key, generateMetadata(params), midi_format_);
+  midi_writer_.build(generator_.getSong(), params.key, params.mood, generateMetadata(params),
+                     midi_format_);
 }
 
 void MidiSketch::generateAccompanimentForVocal(const AccompanimentConfig& config) {
   generator_.generateAccompanimentForVocal(config);
   const auto& params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), params.key, generateMetadata(params), midi_format_);
+  midi_writer_.build(generator_.getSong(), params.key, params.mood, generateMetadata(params),
+                     midi_format_);
 }
 
 void MidiSketch::generateWithVocal(const SongConfig& config) {
   GeneratorParams params = ConfigConverter::convert(config);
   generator_.generateWithVocal(params);
-  midi_writer_.build(generator_.getSong(), config.key, generateMetadata(generator_.getParams()),
-                     midi_format_);
+  const auto& gen_params = generator_.getParams();
+  midi_writer_.build(generator_.getSong(), config.key, gen_params.mood,
+                     generateMetadata(gen_params), midi_format_);
 }
 
 MelodyData MidiSketch::getMelody() const {
@@ -134,14 +143,16 @@ MelodyData MidiSketch::getMelody() const {
 void MidiSketch::setMelody(const MelodyData& melody) {
   generator_.setMelody(melody);
   const auto& params = generator_.getParams();
-  midi_writer_.build(generator_.getSong(), params.key, generateMetadata(params), midi_format_);
+  midi_writer_.build(generator_.getSong(), params.key, params.mood, generateMetadata(params),
+                     midi_format_);
 }
 
 void MidiSketch::setVocalNotes(const SongConfig& config, const std::vector<NoteEvent>& notes) {
   GeneratorParams params = ConfigConverter::convert(config);
   generator_.setVocalNotes(params, notes);
-  midi_writer_.build(generator_.getSong(), config.key, generateMetadata(generator_.getParams()),
-                     midi_format_);
+  const auto& gen_params = generator_.getParams();
+  midi_writer_.build(generator_.getSong(), config.key, gen_params.mood,
+                     generateMetadata(gen_params), midi_format_);
 }
 
 void MidiSketch::setMidiFormat(MidiFormat format) { midi_format_ = format; }

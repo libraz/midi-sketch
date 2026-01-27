@@ -378,7 +378,7 @@ constexpr GhostDensityLevel GHOST_DENSITY_TABLE[9][3] = {
   /* A         */ {GhostDensityLevel::None,   GhostDensityLevel::Light,  GhostDensityLevel::Medium},
   /* B         */ {GhostDensityLevel::Light,  GhostDensityLevel::Medium, GhostDensityLevel::Medium},
   /* Chorus    */ {GhostDensityLevel::Light,  GhostDensityLevel::Medium, GhostDensityLevel::Heavy},
-  /* Bridge    */ {GhostDensityLevel::None,   GhostDensityLevel::Light,  GhostDensityLevel::Light},
+  /* Bridge    */ {GhostDensityLevel::Light,  GhostDensityLevel::Light,  GhostDensityLevel::Medium},
   /* Interlude */ {GhostDensityLevel::None,   GhostDensityLevel::Light,  GhostDensityLevel::Light},
   /* Outro     */ {GhostDensityLevel::None,   GhostDensityLevel::Light,  GhostDensityLevel::Light},
   /* Chant     */ {GhostDensityLevel::None,   GhostDensityLevel::None,   GhostDensityLevel::Light},
@@ -722,6 +722,29 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity ba
 }  // namespace
 
 // ============================================================================
+// Hi-Hat Swing Factor API
+// ============================================================================
+
+float getHiHatSwingFactor(Mood mood) {
+  switch (mood) {
+    // Jazz and CityPop: stronger swing feel
+    case Mood::CityPop:
+      return 0.7f;
+    // IdolPop and Yoasobi: lighter, more precise swing
+    case Mood::IdolPop:
+    case Mood::Yoasobi:
+      return 0.3f;
+    // Ballad and Sentimental: subtle swing
+    case Mood::Ballad:
+    case Mood::Sentimental:
+      return 0.4f;
+    // Everything else: standard swing
+    default:
+      return 0.5f;
+  }
+}
+
+// ============================================================================
 // Swing Control API Implementation
 // ============================================================================
 
@@ -759,8 +782,9 @@ float calculateSwingAmount(SectionType section, int bar_in_section, int total_ba
       base_swing = 0.2f + progress * 0.15f;
       break;
     case SectionType::Outro:
-      // Outro: gradually reduce swing (0.4 -> 0.2)
-      base_swing = 0.4f - progress * 0.2f;
+      // Outro: gradually reduce swing with quadratic curve (0.4 -> 0.2)
+      // Quadratic decay provides smoother, more natural landing
+      base_swing = 0.4f - 0.2f * progress * progress;
       break;
     case SectionType::MixBreak:
       // MixBreak: energetic, medium swing
@@ -792,6 +816,72 @@ Tick getSwingOffsetContinuous(DrumGrooveFeel groove, Tick subdivision, SectionTy
   return static_cast<Tick>(subdivision * swing_amount);
 }
 
+// ============================================================================
+// Time Feel Implementation
+// ============================================================================
+
+Tick applyTimeFeel(Tick base_tick, TimeFeel feel, uint16_t bpm) {
+  if (feel == TimeFeel::OnBeat) {
+    return base_tick;
+  }
+
+  // Calculate offset in ticks based on target milliseconds and BPM
+  // At 120 BPM: 1 beat = 500ms, 1 tick = 500/480 ms ≈ 1.04ms
+  // For laid back: +10ms = +9-10 ticks at 120 BPM
+  // For pushed: -7ms = -6-7 ticks at 120 BPM
+  // Scale with BPM: faster tempo means smaller tick offset for same ms
+
+  // ticks_per_ms = (TICKS_PER_BEAT * bpm) / 60000
+  // offset_ticks = offset_ms * ticks_per_ms = offset_ms * TICKS_PER_BEAT * bpm / 60000
+  // Simplified: offset_ticks = offset_ms * bpm / 125 (since 60000/480 = 125)
+
+  int offset_ticks = 0;
+  switch (feel) {
+    case TimeFeel::LaidBack:
+      // +10ms equivalent: relaxed, behind the beat
+      offset_ticks = static_cast<int>((10 * bpm) / 125);
+      break;
+    case TimeFeel::Pushed:
+      // -7ms equivalent: driving, ahead of the beat
+      offset_ticks = -static_cast<int>((7 * bpm) / 125);
+      break;
+    case TimeFeel::Triplet:
+      // Triplet feel: quantize to triplet grid (not an offset, but handled here for convenience)
+      // This would require more complex logic; for now, just return base_tick
+      return base_tick;
+    default:
+      break;
+  }
+
+  // Ensure we don't go negative
+  if (offset_ticks < 0 && static_cast<Tick>(-offset_ticks) > base_tick) {
+    return 0;
+  }
+  return base_tick + offset_ticks;
+}
+
+TimeFeel getMoodTimeFeel(Mood mood) {
+  switch (mood) {
+    // Laid back feels - relaxed, groovy
+    case Mood::Ballad:
+    case Mood::Chill:
+    case Mood::Sentimental:
+    case Mood::CityPop:  // City pop has that laid back groove
+      return TimeFeel::LaidBack;
+
+    // Pushed feels - driving, energetic
+    case Mood::EnergeticDance:
+    case Mood::Yoasobi:
+    case Mood::ElectroPop:
+    case Mood::FutureBass:
+      return TimeFeel::Pushed;
+
+    // On beat - standard timing
+    default:
+      return TimeFeel::OnBeat;
+  }
+}
+
 void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,
                         std::mt19937& rng) {
   DrumStyle style = getMoodDrumStyle(params.mood);
@@ -805,6 +895,13 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
     std::uniform_int_distribution<uint8_t> dist(0, 99);
     use_euclidean = dist(rng) < blueprint.euclidean_drums_percent;
   }
+
+  // Get groove template for this mood (used when use_euclidean is true)
+  const GrooveTemplate groove_template = getMoodGrooveTemplate(params.mood);
+  const FullGroovePattern& groove_pattern = getGroovePattern(groove_template);
+
+  // Get time feel for micro-timing adjustments
+  const TimeFeel time_feel = getMoodTimeFeel(params.mood);
 
   // BackgroundMotif settings
   const bool is_background_motif = params.composition_style == CompositionStyle::BackgroundMotif;
@@ -927,8 +1024,14 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
 
       // Get kick pattern for this bar
       KickPattern kick;
-      if (use_euclidean) {
-        uint16_t eucl_kick = DrumPatternFactory::getKickPattern(section.type, style);
+      if (use_euclidean && style != DrumStyle::FourOnFloor) {
+        // Use groove template pattern for mood-appropriate groove
+        // Exception: FourOnFloor style always uses standard four-on-floor pattern
+        uint16_t eucl_kick = groove_pattern.kick;
+        // Section-specific adjustments
+        if (section.type == SectionType::Intro || section.type == SectionType::Outro) {
+          eucl_kick = DrumPatternFactory::getKickPattern(section.type, style);
+        }
         kick = euclideanToKickPattern(eucl_kick);
       } else {
         kick = getKickPattern(section.type, style, bar, rng);
@@ -991,6 +1094,9 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
             break;
         }
 
+        // Apply time feel to beat timing for micro-timing adjustments
+        Tick adjusted_beat_tick = applyTimeFeel(beat_tick, time_feel, params.bpm);
+
         // Apply DrumRole probability filter
         if (kick_prob < 1.0f) {
           if (play_kick_on && kick_dist(rng) >= kick_prob) {
@@ -1002,11 +1108,13 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
         }
 
         if (play_kick_on) {
+          // On-beat kicks use beat_tick to maintain grid alignment
           addKickWithHumanize(track, beat_tick, EIGHTH, velocity, rng);
         }
         if (play_kick_and) {
+          // Off-beat (and) kicks can use time feel for groove
           uint8_t and_vel = static_cast<uint8_t>(velocity * 0.85f);
-          addKickWithHumanize(track, beat_tick + EIGHTH, EIGHTH, and_vel, rng);
+          addKickWithHumanize(track, adjusted_beat_tick + EIGHTH, EIGHTH, and_vel, rng);
         }
 
         // ===== SNARE DRUM =====
@@ -1014,8 +1122,24 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
         float snare_prob = getDrumRoleSnareProbability(section.drum_role);
 
         bool is_intro_first = (section.type == SectionType::Intro && bar == 0);
-        if ((beat == 1 || beat == 3) && !is_intro_first) {
+
+        // Determine snare position based on groove template
+        // HalfTime: snare on beat 3 (0x0100)
+        // Trap: snare on beat 2 (0x0010)
+        // Others: standard backbeat on beats 2 & 4 (0x1010)
+        bool use_groove_snare = use_euclidean &&
+                                (groove_template == GrooveTemplate::HalfTime ||
+                                 groove_template == GrooveTemplate::Trap);
+
+        // Check snare position: beat * 4 maps to 16th note step in bitmask
+        uint8_t step = static_cast<uint8_t>(beat * 4);
+        bool snare_on_this_beat =
+            use_groove_snare ? ((groove_pattern.snare >> step) & 1) != 0
+                             : (beat == 1 || beat == 3);  // Standard backbeat
+
+        if (snare_on_this_beat && !is_intro_first) {
           // DrumRole::Ambient uses sidestick for atmospheric feel
+          // Note: Snare uses beat_tick (not adjusted) to maintain backbeat feel
           if (style == DrumStyle::Sparse || section.drum_role == DrumRole::Ambient) {
             uint8_t snare_vel = static_cast<uint8_t>(velocity * 0.8f);
             // Only play sidestick if not FXOnly or Minimal
@@ -1033,6 +1157,11 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
           auto ghost_positions = selectGhostPositions(params.mood, rng);
           float ghost_prob =
               getGhostDensity(params.mood, section.type, section.backing_density, params.bpm);
+
+          // Apply groove template ghost density modifier when using euclidean
+          if (use_euclidean) {
+            ghost_prob *= (groove_pattern.ghost_density / 100.0f);
+          }
 
           std::uniform_real_distribution<float> ghost_dist(0.0f, 1.0f);
           // Human-like velocity variation: ±15% (0.85-1.15)
@@ -1140,11 +1269,13 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
             for (int sixteenth = 0; sixteenth < 4; ++sixteenth) {
               Tick hh_tick = beat_tick + sixteenth * SIXTEENTH;
 
-              // Apply half continuous swing offset to "e" and "a" positions
-              // 16th note swing is subtle to maintain groove without sounding uneven
+              // Apply mood-dependent swing offset to "e" and "a" positions
+              // Jazz/CityPop get stronger swing, IdolPop/Yoasobi get lighter swing
               if (sixteenth == 1 || sixteenth == 3) {
-                hh_tick += getSwingOffsetContinuous(groove, SIXTEENTH, section.type, bar, section.bars,
-                                                   section.swing_amount) / 2;
+                Tick base_swing = getSwingOffsetContinuous(groove, SIXTEENTH, section.type, bar, section.bars,
+                                                           section.swing_amount);
+                float swing_factor = getHiHatSwingFactor(params.mood);
+                hh_tick += static_cast<Tick>(base_swing * swing_factor);
               }
 
               uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);

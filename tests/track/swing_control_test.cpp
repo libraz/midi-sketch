@@ -315,5 +315,169 @@ TEST(GetSwingOffsetContinuousTest, OverridePassedToSwingCalculation) {
   EXPECT_NEAR(offset_section_default, 72, 5) << "Section default should give ~72 ticks";
 }
 
+// ============================================================================
+// Phase 1 Improvements: Outro Swing Behavior Tests
+// ============================================================================
+
+TEST(CalculateSwingAmountTest, OutroDecayIsGradual) {
+  // Outro swing should decay gradually, not abruptly
+  // The key behavior: mid-section swing should be closer to start than to end
+  // This creates a "landing" feel rather than a sudden drop
+  float start = calculateSwingAmount(SectionType::Outro, 0, 8);
+  float mid = calculateSwingAmount(SectionType::Outro, 3, 8);
+  float end = calculateSwingAmount(SectionType::Outro, 7, 8);
+
+  // Basic decay verification
+  EXPECT_GT(start, end) << "Outro swing should decrease over time";
+
+  // Gradual decay: mid should be closer to start than linear interpolation
+  // Linear midpoint at 3/7 progress would be: start - (start-end) * 3/7
+  float linear_mid = start - (start - end) * 3.0f / 7.0f;
+  EXPECT_GT(mid, linear_mid) << "Outro decay should be gradual (quadratic), not linear";
+}
+
+// ============================================================================
+// Phase 1 Improvements: Mood-Dependent Swing Behavior Tests
+// ============================================================================
+
+TEST(HiHatSwingFactorTest, CityPopHasStrongerSwingThanIdolPop) {
+  // CityPop is a groove-oriented genre that benefits from stronger swing
+  // IdolPop is precise and energetic, requiring tighter timing
+  float citypop = getHiHatSwingFactor(Mood::CityPop);
+  float idolpop = getHiHatSwingFactor(Mood::IdolPop);
+
+  EXPECT_GT(citypop, idolpop)
+      << "CityPop should have stronger swing than IdolPop for groove feel";
+}
+
+TEST(HiHatSwingFactorTest, BalladHasModerateSwing) {
+  // Ballad swing should be between tight (IdolPop) and loose (CityPop)
+  float ballad = getHiHatSwingFactor(Mood::Ballad);
+  float idolpop = getHiHatSwingFactor(Mood::IdolPop);
+  float citypop = getHiHatSwingFactor(Mood::CityPop);
+
+  EXPECT_GT(ballad, idolpop) << "Ballad should have more swing than IdolPop";
+  EXPECT_LT(ballad, citypop) << "Ballad should have less swing than CityPop";
+}
+
+TEST(HiHatSwingFactorTest, AllMoodsProduceValidSwingFactor) {
+  // All moods must produce swing factors that result in musically valid timing
+  std::vector<Mood> all_moods = {
+      Mood::StraightPop, Mood::BrightUpbeat, Mood::EnergeticDance, Mood::LightRock,
+      Mood::MidPop, Mood::EmotionalPop, Mood::Sentimental, Mood::Chill,
+      Mood::Ballad, Mood::DarkPop, Mood::Dramatic, Mood::Nostalgic,
+      Mood::ModernPop, Mood::ElectroPop, Mood::IdolPop, Mood::Anthem,
+      Mood::Yoasobi, Mood::Synthwave, Mood::FutureBass, Mood::CityPop};
+
+  for (Mood mood : all_moods) {
+    float factor = getHiHatSwingFactor(mood);
+    EXPECT_GE(factor, 0.2f) << "Swing factor too low - would sound too mechanical";
+    EXPECT_LE(factor, 0.8f) << "Swing factor too high - would sound sloppy";
+  }
+}
+
+// ============================================================================
+// Time Feel Tests
+// ============================================================================
+
+TEST(TimeFeelTest, OnBeatReturnsOriginalTick) {
+  // OnBeat should not change the tick position
+  EXPECT_EQ(applyTimeFeel(1920, TimeFeel::OnBeat, 120), 1920);
+  EXPECT_EQ(applyTimeFeel(0, TimeFeel::OnBeat, 120), 0);
+  EXPECT_EQ(applyTimeFeel(3840, TimeFeel::OnBeat, 180), 3840);
+}
+
+TEST(TimeFeelTest, LaidBackAddsPositiveOffset) {
+  // LaidBack should push notes behind the beat (positive offset)
+  Tick original = 1920;
+  Tick laid_back = applyTimeFeel(original, TimeFeel::LaidBack, 120);
+
+  EXPECT_GT(laid_back, original) << "LaidBack should push notes later";
+  // At 120 BPM, +10ms = ~10 * 120 / 125 = ~9-10 ticks
+  EXPECT_NEAR(laid_back - original, 10, 2) << "LaidBack offset should be ~10 ticks at 120 BPM";
+}
+
+TEST(TimeFeelTest, PushedSubtractsOffset) {
+  // Pushed should pull notes ahead of the beat (negative offset)
+  Tick original = 1920;
+  Tick pushed = applyTimeFeel(original, TimeFeel::Pushed, 120);
+
+  EXPECT_LT(pushed, original) << "Pushed should pull notes earlier";
+  // At 120 BPM, -7ms = ~-7 * 120 / 125 = ~-6-7 ticks
+  EXPECT_NEAR(static_cast<int>(original - pushed), 7, 2) << "Pushed offset should be ~7 ticks at 120 BPM";
+}
+
+TEST(TimeFeelTest, PushedDoesNotGoNegative) {
+  // Pushed should not result in negative tick values
+  Tick result = applyTimeFeel(0, TimeFeel::Pushed, 120);
+  EXPECT_EQ(result, 0) << "Pushed at tick 0 should stay at 0";
+
+  result = applyTimeFeel(3, TimeFeel::Pushed, 120);
+  EXPECT_EQ(result, 0) << "Pushed with small tick should clamp to 0";
+}
+
+TEST(TimeFeelTest, OffsetScalesWithBPM) {
+  // Higher BPM should result in larger tick offset for same time feel
+  Tick original = 1920;
+
+  Tick laid_back_120 = applyTimeFeel(original, TimeFeel::LaidBack, 120);
+  Tick laid_back_180 = applyTimeFeel(original, TimeFeel::LaidBack, 180);
+
+  // At 180 BPM, offset should be ~1.5x that of 120 BPM (proportional to BPM)
+  EXPECT_GT(laid_back_180 - original, laid_back_120 - original)
+      << "Higher BPM should have larger tick offset";
+}
+
+TEST(TimeFeelTest, TripletReturnsOriginalTick) {
+  // Triplet feel is not implemented as a simple offset
+  // For now, it should return the original tick
+  EXPECT_EQ(applyTimeFeel(1920, TimeFeel::Triplet, 120), 1920);
+}
+
+// ============================================================================
+// Mood Time Feel Mapping Tests
+// ============================================================================
+
+TEST(MoodTimeFeelTest, BalladIsLaidBack) {
+  EXPECT_EQ(getMoodTimeFeel(Mood::Ballad), TimeFeel::LaidBack);
+}
+
+TEST(MoodTimeFeelTest, ChillIsLaidBack) {
+  EXPECT_EQ(getMoodTimeFeel(Mood::Chill), TimeFeel::LaidBack);
+}
+
+TEST(MoodTimeFeelTest, CityPopIsLaidBack) {
+  EXPECT_EQ(getMoodTimeFeel(Mood::CityPop), TimeFeel::LaidBack);
+}
+
+TEST(MoodTimeFeelTest, EnergeticDanceIsPushed) {
+  EXPECT_EQ(getMoodTimeFeel(Mood::EnergeticDance), TimeFeel::Pushed);
+}
+
+TEST(MoodTimeFeelTest, YoasobiIsPushed) {
+  EXPECT_EQ(getMoodTimeFeel(Mood::Yoasobi), TimeFeel::Pushed);
+}
+
+TEST(MoodTimeFeelTest, StandardPopIsOnBeat) {
+  EXPECT_EQ(getMoodTimeFeel(Mood::StraightPop), TimeFeel::OnBeat);
+}
+
+TEST(MoodTimeFeelTest, AllMoodsReturnValidTimeFeel) {
+  std::vector<Mood> all_moods = {
+      Mood::StraightPop, Mood::BrightUpbeat, Mood::EnergeticDance, Mood::LightRock,
+      Mood::MidPop, Mood::EmotionalPop, Mood::Sentimental, Mood::Chill,
+      Mood::Ballad, Mood::DarkPop, Mood::Dramatic, Mood::Nostalgic,
+      Mood::ModernPop, Mood::ElectroPop, Mood::IdolPop, Mood::Anthem,
+      Mood::Yoasobi, Mood::Synthwave, Mood::FutureBass, Mood::CityPop};
+
+  for (Mood mood : all_moods) {
+    TimeFeel feel = getMoodTimeFeel(mood);
+    // All time feels should be valid enum values
+    EXPECT_TRUE(feel == TimeFeel::OnBeat || feel == TimeFeel::LaidBack ||
+                feel == TimeFeel::Pushed || feel == TimeFeel::Triplet)
+        << "Invalid TimeFeel for mood " << static_cast<int>(mood);
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

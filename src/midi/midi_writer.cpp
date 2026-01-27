@@ -7,6 +7,7 @@
 
 #include "core/harmony_context.h"
 #include "core/pitch_utils.h"
+#include "core/preset_data.h"
 #include "core/timing_constants.h"
 #include "midi/track_config.h"
 
@@ -282,36 +283,42 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
   data_.insert(data_.end(), track_data.begin(), track_data.end());
 }
 
-void MidiWriter::build(const Song& song, Key key, const std::string& metadata, MidiFormat format) {
+void MidiWriter::build(const Song& song, Key key, Mood mood, const std::string& metadata,
+                       MidiFormat format) {
 #ifdef MIDISKETCH_WASM
   // WASM build only supports SMF1
   (void)format;
-  buildSMF1(song, key, metadata);
+  buildSMF1(song, key, mood, metadata);
 #else
   if (format == MidiFormat::SMF2) {
-    buildSMF2(song, key, metadata);
+    buildSMF2(song, key, mood, metadata);
   } else {
-    buildSMF1(song, key, metadata);
+    buildSMF1(song, key, mood, metadata);
   }
 #endif
 }
 
 #ifndef MIDISKETCH_WASM
-void MidiWriter::buildSMF2(const Song& song, Key key, const std::string& metadata) {
+void MidiWriter::buildSMF2(const Song& song, Key key, Mood mood, const std::string& metadata) {
   if (!midi2_writer_) {
     midi2_writer_ = std::make_unique<Midi2Writer>();
   }
+  // TODO: Pass mood to buildContainer when MIDI 2.0 supports instrument mapping
+  (void)mood;
   midi2_writer_->buildContainer(song, key, metadata);
   data_ = midi2_writer_->toBytes();
 }
 #endif
 
-void MidiWriter::buildSMF1(const Song& song, Key key, const std::string& metadata) {
+void MidiWriter::buildSMF1(const Song& song, Key key, Mood mood, const std::string& metadata) {
   data_.clear();
 
   // Validate BPM once at entry point (downstream checks are defensive only)
   uint16_t bpm = song.bpm();
   if (bpm == 0) bpm = 120;  // Default BPM for safety
+
+  // Get mood-specific program numbers
+  const MoodProgramSet& progs = getMoodPrograms(mood);
 
   // Count non-empty tracks (SE track always included)
   uint16_t num_tracks = 1;  // SE track
@@ -332,28 +339,28 @@ void MidiWriter::buildSMF1(const Song& song, Key key, const std::string& metadat
   int8_t mod_amount = song.modulationAmount();
 
   if (!song.vocal().empty()) {
-    writeTrack(song.vocal(), "Vocal", VOCAL_CH, VOCAL_PROG, bpm, key, false, mod_tick, mod_amount);
+    writeTrack(song.vocal(), "Vocal", VOCAL_CH, progs.vocal, bpm, key, false, mod_tick, mod_amount);
   }
 
   if (!song.chord().empty()) {
-    writeTrack(song.chord(), "Chord", CHORD_CH, CHORD_PROG, bpm, key, false, mod_tick, mod_amount);
+    writeTrack(song.chord(), "Chord", CHORD_CH, progs.chord, bpm, key, false, mod_tick, mod_amount);
   }
 
   if (!song.bass().empty()) {
-    writeTrack(song.bass(), "Bass", BASS_CH, BASS_PROG, bpm, key, false, mod_tick, mod_amount);
+    writeTrack(song.bass(), "Bass", BASS_CH, progs.bass, bpm, key, false, mod_tick, mod_amount);
   }
 
   if (!song.motif().empty()) {
-    writeTrack(song.motif(), "Motif", MOTIF_CH, MOTIF_PROG, bpm, key, false, mod_tick, mod_amount);
+    writeTrack(song.motif(), "Motif", MOTIF_CH, progs.motif, bpm, key, false, mod_tick, mod_amount);
   }
 
   if (!song.arpeggio().empty()) {
-    writeTrack(song.arpeggio(), "Arpeggio", ARPEGGIO_CH, ARPEGGIO_PROG, bpm, key, false, mod_tick,
+    writeTrack(song.arpeggio(), "Arpeggio", ARPEGGIO_CH, progs.arpeggio, bpm, key, false, mod_tick,
                mod_amount);
   }
 
   if (!song.aux().empty()) {
-    writeTrack(song.aux(), "Aux", AUX_CH, AUX_PROG, bpm, key, false, mod_tick, mod_amount);
+    writeTrack(song.aux(), "Aux", AUX_CH, progs.aux, bpm, key, false, mod_tick, mod_amount);
   }
 
   if (!song.drums().empty()) {
