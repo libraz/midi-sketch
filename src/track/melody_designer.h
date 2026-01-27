@@ -6,6 +6,7 @@
 #ifndef MIDISKETCH_TRACK_MELODY_DESIGNER_H
 #define MIDISKETCH_TRACK_MELODY_DESIGNER_H
 
+#include <array>
 #include <optional>
 #include <random>
 #include <vector>
@@ -384,6 +385,16 @@ class MelodyDesigner {
   // Section-specific motif variants for development/transformation.
   // Prepared when GlobalMotif is set, used during evaluation.
   std::unordered_map<SectionType, GlobalMotif> motif_variants_;
+
+  // Hook repetition counter for betrayal strategy.
+  // Tracks how many times the hook has been generated across the song.
+  // Used to apply HookBetrayal on the 4th repetition (golden ratio: 3 then change).
+  uint8_t hook_repetition_count_ = 0;
+
+  // Cached sabi (chorus) head pitches for consistency.
+  // First 4 pitches of the chorus hook are stored and reused.
+  std::array<uint8_t, 4> cached_sabi_pitches_;
+  bool sabi_pitches_cached_ = false;
 
   // Prepare section-specific motif variants from source motif.
   void prepareMotifVariants(const GlobalMotif& source);

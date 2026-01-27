@@ -19,10 +19,12 @@ bool PostProcessor::isStrongBeat(Tick tick) {
 
 void PostProcessor::applyHumanization(std::vector<MidiTrack*>& tracks, const HumanizeParams& params,
                                       std::mt19937& rng) {
-  // Maximum timing offset in ticks (approximately 8ms at 120 BPM)
-  constexpr Tick MAX_TIMING_OFFSET = 15;
-  // Maximum velocity variation
-  constexpr int MAX_VELOCITY_VARIATION = 8;
+  // ENHANCED: Stronger humanization for more natural feel.
+  // Maximum timing offset in ticks (approximately 13ms at 120 BPM, was ~8ms)
+  // This adds more "pocket" feel without being noticeable as timing errors.
+  constexpr Tick MAX_TIMING_OFFSET = 25;  // Was 15
+  // Maximum velocity variation - more expressive dynamics
+  constexpr int MAX_VELOCITY_VARIATION = 12;  // Was 8
 
   // Scale factors from parameters
   float timing_scale = params.timing;
@@ -48,10 +50,16 @@ void PostProcessor::applyHumanization(std::vector<MidiTrack*>& tracks, const Hum
       }
 
       // Velocity humanization: less variation on strong beats
+      // Minimum velocity of 36 ensures non-ghost notes stay above ghost range (25-35)
+      // after humanization. Actual ghost notes (25-35) are intentionally created
+      // by addBassGhostNotes and should remain in that range.
       float vel_factor = isStrongBeat(note.start_tick) ? 0.5f : 1.0f;
       int vel_offset = static_cast<int>(velocity_dist(rng) * velocity_scale * vel_factor);
       int new_velocity = static_cast<int>(note.velocity) + vel_offset;
-      note.velocity = static_cast<uint8_t>(std::clamp(new_velocity, 1, 127));
+      // Preserve intentional ghost notes (25-35), but prevent non-ghost notes from
+      // falling into ghost range. Notes originally above 35 should stay above 35.
+      int min_velocity = (note.velocity <= 35) ? 1 : 36;
+      note.velocity = static_cast<uint8_t>(std::clamp(new_velocity, min_velocity, 127));
     }
   }
 }
@@ -127,7 +135,10 @@ void PostProcessor::applySectionAwareVelocityHumanization(
 
       std::uniform_real_distribution<float> dist(-max_variation, max_variation);
       int new_vel = static_cast<int>(note.velocity) + static_cast<int>(dist(rng));
-      note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+      // Preserve intentional ghost notes (25-35), but prevent non-ghost notes from
+      // falling into ghost range. Notes originally above 35 should stay above 35.
+      int min_velocity = (note.velocity <= 35) ? 1 : 36;
+      note.velocity = static_cast<uint8_t>(std::clamp(new_vel, min_velocity, 127));
     }
   }
 }
@@ -388,8 +399,15 @@ void PostProcessor::applyPreChorusLiftToTrack(MidiTrack& track, const Section& s
 
 void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
                                      const std::vector<Section>& sections,
-                                     MidiTrack* drum_track) {
-  (void)drum_track;  // Drum track is intentionally NOT truncated (fill remains)
+                                     MidiTrack* drum_track,
+                                     ChorusDropStyle style) {
+  // None style: no drop effect
+  if (style == ChorusDropStyle::None) {
+    return;
+  }
+
+  constexpr uint8_t CRASH_NOTE = 49;     // Crash cymbal
+  constexpr uint8_t CRASH_VEL = 110;     // Strong crash velocity
 
   // Find B sections followed by Chorus
   for (size_t idx = 0; idx + 1 < sections.size(); ++idx) {
@@ -404,6 +422,7 @@ void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
     // Calculate the drop zone (last 1 beat before Chorus)
     Tick section_end_tick = section.start_tick + section.bars * TICKS_PER_BAR;
     Tick drop_start_tick = section_end_tick - TICKS_PER_BEAT;
+    Tick chorus_start_tick = next_section.start_tick;
 
     // Truncate melodic tracks in the drop zone
     for (MidiTrack* track : tracks) {
@@ -425,6 +444,45 @@ void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
         Tick note_end = note.start_tick + note.duration;
         if (note.start_tick < drop_start_tick && note_end > drop_start_tick) {
           note.duration = drop_start_tick - note.start_tick;
+        }
+      }
+    }
+
+    // Dramatic/DrumHit: also truncate drum track (except fills)
+    if (style == ChorusDropStyle::Dramatic || style == ChorusDropStyle::DrumHit) {
+      if (drum_track != nullptr && !drum_track->empty()) {
+        auto& drum_notes = drum_track->notes();
+        // Remove drum notes in drop zone (fill should be added separately)
+        drum_notes.erase(
+            std::remove_if(drum_notes.begin(), drum_notes.end(),
+                           [drop_start_tick, section_end_tick](const NoteEvent& note) {
+                             return note.start_tick >= drop_start_tick &&
+                                    note.start_tick < section_end_tick;
+                           }),
+            drum_notes.end());
+      }
+    }
+
+    // DrumHit: add crash cymbal on chorus entry
+    if (style == ChorusDropStyle::DrumHit) {
+      if (drum_track != nullptr) {
+        auto& drum_notes = drum_track->notes();
+        // Check if crash already exists at chorus start
+        bool has_crash = false;
+        for (const auto& note : drum_notes) {
+          if (note.start_tick == chorus_start_tick && note.note == CRASH_NOTE) {
+            has_crash = true;
+            break;
+          }
+        }
+        // Add crash cymbal at chorus entry
+        if (!has_crash) {
+          NoteEvent crash;
+          crash.start_tick = chorus_start_tick;
+          crash.duration = TICKS_PER_BEAT;
+          crash.note = CRASH_NOTE;
+          crash.velocity = CRASH_VEL;
+          drum_notes.push_back(crash);
         }
       }
     }

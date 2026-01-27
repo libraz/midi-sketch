@@ -252,9 +252,11 @@ TEST(VocalRangeTest, NarrowRangeConstraint) {
 
   ASSERT_FALSE(notes.empty()) << "Vocal track should have notes";
 
+  // Last chorus with PeakLevel::Max allows +2 semitone climax extension
+  constexpr int CLIMAX_EXTENSION = 2;
   for (const auto& note : notes) {
     EXPECT_GE(note.note, params.vocal_low);
-    EXPECT_LE(note.note, params.vocal_high);
+    EXPECT_LE(note.note, params.vocal_high + CLIMAX_EXTENSION);
   }
 }
 
@@ -331,9 +333,11 @@ TEST(VocalRangeTest, RegenerateVocalRespectsRange) {
   ASSERT_FALSE(notes.empty());
 
   // Range should be respected (using the original params)
+  // Last chorus with PeakLevel::Max allows +2 semitone climax extension
+  constexpr int CLIMAX_EXTENSION = 2;
   for (const auto& note : notes) {
     EXPECT_GE(note.note, params.vocal_low);
-    EXPECT_LE(note.note, params.vocal_high);
+    EXPECT_LE(note.note, params.vocal_high + CLIMAX_EXTENSION);
   }
 }
 

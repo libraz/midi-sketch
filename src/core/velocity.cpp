@@ -36,26 +36,28 @@ float getMoodVelocityAdjustment(Mood mood) {
 float getSectionVelocityMultiplier(SectionType section) {
   // Centralized section-based velocity multipliers.
   // These values ensure consistent dynamics across all tracks.
-  // Ranges from 0.60 (very quiet - Chant) to 1.05 (energetic - Chorus/MixBreak).
+  // ENHANCED: Wider dynamic range for more emotional contrast.
+  // Ranges from 0.55 (very quiet - Chant) to 1.10 (energetic - Chorus/MixBreak).
+  // Previous range was 0.60-1.05, now 0.55-1.10 for more impact.
   switch (section) {
     case SectionType::Intro:
     case SectionType::Interlude:
-      return 0.75f;  // Quiet intro/interlude
+      return 0.70f;  // Quiet intro/interlude (was 0.75)
     case SectionType::Chant:
-      return 0.60f;  // Very subdued chant section
+      return 0.55f;  // Very subdued chant section (was 0.60)
     case SectionType::MixBreak:
     case SectionType::Drop:
-      return 1.05f;  // High energy mix break / drop
+      return 1.10f;  // High energy mix break / drop (was 1.05)
     case SectionType::Outro:
-      return 0.80f;  // Fading outro
+      return 0.75f;  // Fading outro (was 0.80)
     case SectionType::A:
-      return 0.85f;  // Subdued verse
+      return 0.70f;  // Subdued verse (was 0.85) - more contrast
     case SectionType::B:
-      return 0.90f;  // Building pre-chorus (slightly less than Chorus)
+      return 0.85f;  // Building pre-chorus (was 0.90) - more room to grow
     case SectionType::Chorus:
-      return 1.05f;  // Energetic chorus
+      return 1.10f;  // Energetic chorus (was 1.05) - bigger impact
     case SectionType::Bridge:
-      return 0.85f;  // Reflective bridge
+      return 0.65f;  // Reflective bridge (was 0.85) - more intimate
   }
   return 1.0f;  // Default fallback
 }

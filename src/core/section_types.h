@@ -121,6 +121,19 @@ enum class ExitPattern : uint8_t {
 };
 
 // ============================================================================
+// ChorusDropStyle - B section to Chorus drop intensity
+// ============================================================================
+
+/// @brief Controls the intensity of the "drop" before Chorus.
+/// The drop creates silence/tension before the Chorus explosion.
+enum class ChorusDropStyle : uint8_t {
+  None = 0,      ///< No drop (continuous)
+  Subtle = 1,    ///< Backing tracks only (current behavior)
+  Dramatic = 2,  ///< All tracks including vocal cut 1 beat before Chorus
+  DrumHit = 3,   ///< Dramatic drop + crash cymbal on Chorus entry
+};
+
+// ============================================================================
 // EntryPattern - How instruments enter at section boundaries
 // ============================================================================
 

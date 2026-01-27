@@ -2156,9 +2156,12 @@ void applyBassArticulation(MidiTrack& track, BassPattern pattern, Mood mood,
     }
 
     // Apply velocity modification
+    // Minimum velocity of 40 ensures muted notes stay above ghost note range (25-35)
+    // after humanization is applied (±12 ticks). This prevents false positives
+    // in ghost note detection while maintaining the softer character of muted notes.
     int vel_delta = getArticulationVelocityDelta(art);
     int new_vel = static_cast<int>(note.velocity) + vel_delta;
-    note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 30, 127));
+    note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 40, 127));
 
     prev_pitch = note.note;
   }

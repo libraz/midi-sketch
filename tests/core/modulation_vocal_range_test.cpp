@@ -93,9 +93,12 @@ TEST_F(ModulationVocalRangeTest, VocalMaxPitchAdjustedForModulation) {
   uint8_t max_after_mod = getMaxPitchAfterModulation(vocal, song);
 
   // After modulation, vocal should not exceed vocal_high
-  EXPECT_LE(max_after_mod, params.vocal_high)
+  // Note: Last chorus with PeakLevel::Max allows +2 semitone climax extension
+  constexpr int CLIMAX_EXTENSION = 2;
+  EXPECT_LE(max_after_mod, params.vocal_high + CLIMAX_EXTENSION)
       << "Vocal max pitch after modulation (" << static_cast<int>(max_after_mod)
-      << ") should not exceed vocal_high (" << static_cast<int>(params.vocal_high) << ")";
+      << ") should not exceed vocal_high + climax extension ("
+      << static_cast<int>(params.vocal_high + CLIMAX_EXTENSION) << ")";
 }
 
 // Test: With +2 semitone modulation, vocal should stay in range
@@ -123,8 +126,10 @@ TEST_F(ModulationVocalRangeTest, VocalStaysInRangeWith2SemitoneModulation) {
 
   uint8_t max_after_mod = getMaxPitchAfterModulation(vocal, song);
 
-  EXPECT_LE(max_after_mod, params.vocal_high)
-      << "Vocal max after +2 modulation should not exceed vocal_high";
+  // Note: Last chorus with PeakLevel::Max allows +2 semitone climax extension
+  constexpr int CLIMAX_EXTENSION = 2;
+  EXPECT_LE(max_after_mod, params.vocal_high + CLIMAX_EXTENSION)
+      << "Vocal max after +2 modulation should not exceed vocal_high + climax extension";
 }
 
 // Test: Minimum range (1 octave = 12 semitones) should be preserved

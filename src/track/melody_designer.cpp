@@ -297,6 +297,7 @@ struct HookRhythmPattern {
 
 // Common pop hook rhythm patterns
 // Each pattern is designed to be catchy and singable
+// ENHANCED: Added killer rhythm patterns for more variety and catchiness
 constexpr HookRhythmPattern kHookRhythmPatterns[] = {
     // Pattern 1: "Ta-Ta-Taa" (8-8-4) - Classic buildup to resolution
     // Example: "Bad Guy" chorus, most K-pop hooks
@@ -321,6 +322,50 @@ constexpr HookRhythmPattern kHookRhythmPatterns[] = {
     // Pattern 6: "Taa-Ta-Ta-Ta" (4-8-8-8) - Descending energy
     // Example: Call-and-response style hooks
     {{2, 1, 1, 1, 0, 0}, 4, TICK_SIXTEENTH, "call-response"},
+
+    // =========================================================================
+    // NEW KILLER RHYTHM PATTERNS for enhanced catchiness
+    // =========================================================================
+
+    // Pattern 7: Syncopated burst (R-8-8-16-16)
+    // Example: Funk-influenced pop, off-beat energy
+    // The rest at the start creates anticipation, 16th notes add drive
+    {{1, 1, 1, 1, 0, 0}, 4, TICK_SIXTEENTH, "synco-burst"},
+
+    // Pattern 8: Staccato syncopation (16-R-16-R-8-8)
+    // Example: Dance-pop hooks with gaps for impact
+    // The gaps between short notes create rhythmic tension
+    {{1, 1, 1, 2, 0, 0}, 4, TICK_SIXTEENTH, "staccato-synco"},
+
+    // Pattern 9: Anticipation pattern (4-16-16-4)
+    // Example: Leaning into the beat style
+    // Long-short-short-long creates urgency
+    {{2, 1, 1, 2, 0, 0}, 4, TICK_EIGHTH, "anticipation"},
+
+    // Pattern 10: Drill pattern (16-16-16-16-16-8)
+    // Example: Rapid-fire hooks, Vocaloid style
+    // Machine-gun notes ending in resolution
+    {{1, 1, 1, 1, 1, 2}, 6, TICK_SIXTEENTH, "drill"},
+
+    // Pattern 11: 2-mora ending (8-4)
+    // Example: Classic J-pop phrase endings
+    // Simple but effective for syllable-based lyrics
+    {{1, 2, 0, 0, 0, 0}, 2, TICK_EIGHTH, "mora-2"},
+
+    // Pattern 12: 3-mora pattern (8-8-4)
+    // Example: Standard J-pop hook rhythm
+    // Maps well to 3-syllable words
+    {{1, 1, 2, 0, 0, 0}, 3, TICK_EIGHTH, "mora-3"},
+
+    // Pattern 13: 3-mora start emphasis (4-8-8)
+    // Example: Emphasis on first syllable
+    // Creates forward momentum
+    {{2, 1, 1, 0, 0, 0}, 3, TICK_EIGHTH, "mora-3-start"},
+
+    // Pattern 14: 4-mora pattern (8-8-8-4)
+    // Example: Maps to 4-syllable words
+    // Builds to resolution
+    {{1, 1, 1, 2, 0, 0}, 4, TICK_EIGHTH, "mora-4"},
 };
 
 constexpr size_t kHookRhythmPatternCount =
@@ -329,16 +374,20 @@ constexpr size_t kHookRhythmPatternCount =
 // Select a hook rhythm pattern index based on template characteristics
 size_t selectHookRhythmPatternIndex(const MelodyTemplate& tmpl, std::mt19937& rng) {
   // Weight patterns based on template style
+  // ENHANCED: Include new killer patterns based on style
   std::vector<size_t> candidates;
 
   if (tmpl.rhythm_driven) {
-    // Rhythm-driven: prefer energetic patterns
-    candidates = {0, 2, 5};  // buildup, four-note, call-response
+    // Rhythm-driven: prefer energetic patterns including new syncopated ones
+    candidates = {0, 2, 5, 6, 7, 8, 9};  // buildup, four-note, call-response, synco-burst, staccato, anticipation, drill
   } else if (tmpl.long_note_ratio > 0.3f) {
-    // Sparse style: prefer simpler patterns
-    candidates = {3, 1, 4};  // powerful, syncopated, dotted
+    // Sparse style: prefer simpler patterns and mora patterns
+    candidates = {3, 1, 4, 10, 12};  // powerful, syncopated, dotted, mora-2, mora-3-start
+  } else if (tmpl.sixteenth_density > 0.3f) {
+    // High density (Vocaloid style): include drill and syncopated patterns
+    candidates = {2, 5, 6, 7, 9, 13};  // four-note, call-response, synco-burst, staccato, drill, mora-4
   } else {
-    // Balanced: use all patterns
+    // Balanced: use all patterns with slight preference for classic ones
     for (size_t i = 0; i < kHookRhythmPatternCount; ++i) {
       candidates.push_back(i);
     }
@@ -516,9 +565,10 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
                                                      ctx.vocal_high, &ctx.tessitura);
         } else {
           new_pitch = nearestChordTonePitch(note.note, chord_degree);
-          new_pitch = std::clamp(new_pitch, static_cast<int>(ctx.vocal_low),
-                                 static_cast<int>(ctx.vocal_high));
         }
+        // Defensive clamp to ensure vocal range is respected
+        new_pitch = std::clamp(new_pitch, static_cast<int>(ctx.vocal_low),
+                               static_cast<int>(ctx.vocal_high));
         note.note = static_cast<uint8_t>(new_pitch);
       }
     }
@@ -530,6 +580,9 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
         int constrained_pitch = nearestChordToneWithinInterval(
             note.note, prev_final_pitch, chord_degree, kMaxMelodicInterval, ctx.vocal_low,
             ctx.vocal_high, &ctx.tessitura);
+        // Defensive clamp to ensure vocal range is respected
+        constrained_pitch = std::clamp(constrained_pitch, static_cast<int>(ctx.vocal_low),
+                                       static_cast<int>(ctx.vocal_high));
         note.note = static_cast<uint8_t>(constrained_pitch);
       }
     }
@@ -1088,6 +1141,47 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       }
     }
 
+    // =========================================================================
+    // PHRASE END RESOLUTION: Enforce chord tone landing for singable cadences
+    // =========================================================================
+    // When phrase_end_resolution > 0, final notes should resolve to chord tones.
+    // For Chorus sections, prefer root note for maximum stability and memorability.
+    // This creates natural phrase endings that singers instinctively expect.
+    if (is_phrase_end && tmpl.phrase_end_resolution > 0.0f) {
+      std::uniform_real_distribution<float> resolve_dist(0.0f, 1.0f);
+      if (resolve_dist(rng) < tmpl.phrase_end_resolution) {
+        std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
+        int pitch_pc = new_pitch % 12;
+        bool is_chord_tone = false;
+        for (int ct : chord_tones) {
+          if (pitch_pc == ct) {
+            is_chord_tone = true;
+            break;
+          }
+        }
+        if (!is_chord_tone) {
+          // Snap to nearest chord tone
+          new_pitch = nearestChordTonePitch(new_pitch, note_chord_degree);
+          new_pitch = std::clamp(new_pitch, static_cast<int>(ctx.vocal_low),
+                                 static_cast<int>(ctx.vocal_high));
+        }
+        // For Chorus sections, prefer root note resolution for strong cadence
+        if (ctx.section_type == SectionType::Chorus && resolve_dist(rng) < 0.6f) {
+          // Find root of current chord
+          int root_pc = chord_tones.empty() ? 0 : chord_tones[0];
+          // Find nearest root in vocal range
+          int octave = new_pitch / 12;
+          int root_pitch = octave * 12 + root_pc;
+          if (root_pitch < static_cast<int>(ctx.vocal_low)) root_pitch += 12;
+          if (root_pitch > static_cast<int>(ctx.vocal_high)) root_pitch -= 12;
+          if (root_pitch >= static_cast<int>(ctx.vocal_low) &&
+              root_pitch <= static_cast<int>(ctx.vocal_high)) {
+            new_pitch = root_pitch;
+          }
+        }
+      }
+    }
+
     // Calculate velocity
     uint8_t velocity = DEFAULT_VELOCITY;
     if (rn.strong) {
@@ -1182,11 +1276,31 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   uint8_t repeat_count =
       std::clamp(tmpl.hook_repeat_count, static_cast<uint8_t>(2), static_cast<uint8_t>(4));
 
+  // =========================================================================
+  // HOOK BETRAYAL: Apply variation on 4th occurrence (golden ratio strategy)
+  // =========================================================================
+  // Track hook repetitions across the song. On the 4th occurrence, apply
+  // a subtle betrayal (modification) to create interest while maintaining
+  // recognizability. This implements the "3 times same, 4th time different" rule.
+  ++hook_repetition_count_;
+  HookBetrayal betrayal = HookBetrayal::None;
+  if (hook_repetition_count_ >= 4 && (hook_repetition_count_ % 4) == 0) {
+    // Select betrayal type for the 4th (8th, 12th, etc.) occurrence
+    betrayal = selectBetrayal(1, rng);  // 1 = non-first occurrence
+  }
+
   Tick current_tick = hook_start;
   // kMaxMelodicInterval from pitch_utils.h (Major 6th - singable leap limit)
 
   // Generate hook notes with chord-aware pitch selection
   int prev_hook_pitch = base_pitch;
+
+  // =========================================================================
+  // SABI HEAD RESTORATION: Apply cached first 4 pitches for chorus consistency
+  // =========================================================================
+  // If we have cached sabi pitches, use them for the first 4 notes.
+  // This ensures the chorus "hook head" remains consistent across the song.
+  bool use_cached_sabi = (sabi_pitches_cached_ && ctx.section_type == SectionType::Chorus);
 
   // Track consecutive same notes for J-POP style probability curve
   int consecutive_same_count = 0;
@@ -1198,13 +1312,22 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   size_t contour_limit =
       std::min(static_cast<size_t>(rhythm_pattern.note_count), hook.contour_degrees.size());
 
+  // Track overall note index across all repetitions for sabi caching
+  size_t total_note_idx = 0;
+
   for (uint8_t rep = 0; rep < repeat_count; ++rep) {
-    for (size_t i = 0; i < contour_limit; ++i) {
+    for (size_t i = 0; i < contour_limit; ++i, ++total_note_idx) {
       // Get chord at this note's position
       int8_t note_chord_degree = harmony.getChordDegreeAt(current_tick);
 
       // Calculate pitch from contour, then snap to current chord
       int pitch = base_pitch + hook.contour_degrees[i % hook.contour_degrees.size()];
+
+      // Apply cached sabi pitches for first 4 notes (if available)
+      // This ensures the chorus hook head is consistent across the song
+      if (use_cached_sabi && total_note_idx < 4) {
+        pitch = static_cast<int>(cached_sabi_pitches_[total_note_idx]);
+      }
 
       // Find nearest chord tone within vocal range and interval constraint
       pitch = nearestChordToneWithinInterval(pitch, prev_hook_pitch, note_chord_degree,
@@ -1389,6 +1512,9 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
           pitch = nearestChordToneWithinInterval(pitch, prev_hook_pitch, note_chord_degree,
                                                  kMaxMelodicInterval, ctx.vocal_low, ctx.vocal_high,
                                                  &ctx.tessitura);
+          // Defensive clamp to ensure vocal range is respected
+          pitch = std::clamp(pitch, static_cast<int>(ctx.vocal_low),
+                             static_cast<int>(ctx.vocal_high));
         }
       }
 
@@ -1402,6 +1528,48 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
 
     // Add gap after pattern (varies by pattern for natural breathing)
     current_tick += rhythm_pattern.gap_after;
+  }
+
+  // =========================================================================
+  // APPLY HOOK BETRAYAL: Modify pitches/durations for the 4th occurrence
+  // =========================================================================
+  // Apply betrayal modifications to the generated notes.
+  // This adds subtle variation while maintaining hook recognizability.
+  if (betrayal != HookBetrayal::None && !result.notes.empty()) {
+    std::vector<int8_t> pitches;
+    std::vector<Tick> durations;
+    pitches.reserve(result.notes.size());
+    durations.reserve(result.notes.size());
+    for (const auto& note : result.notes) {
+      pitches.push_back(static_cast<int8_t>(note.note));
+      durations.push_back(note.duration);
+    }
+
+    applyBetrayal(pitches, durations, betrayal, rng);
+
+    // Apply modifications back to notes (clamped to vocal range)
+    for (size_t i = 0; i < result.notes.size() && i < pitches.size(); ++i) {
+      int new_pitch = std::clamp(static_cast<int>(pitches[i]),
+                                 static_cast<int>(ctx.vocal_low),
+                                 static_cast<int>(ctx.vocal_high));
+      result.notes[i].note = static_cast<uint8_t>(new_pitch);
+      if (i < durations.size()) {
+        result.notes[i].duration = durations[i];
+      }
+    }
+  }
+
+  // =========================================================================
+  // SABI (CHORUS) HEAD CACHING: Store first 4 pitches for consistency
+  // =========================================================================
+  // Cache the first 4 pitches of the chorus hook for reuse in subsequent
+  // chorus sections. This ensures the "sabi" (hook head) is memorable.
+  if (!sabi_pitches_cached_ && ctx.section_type == SectionType::Chorus &&
+      result.notes.size() >= 4) {
+    for (size_t i = 0; i < 4; ++i) {
+      cached_sabi_pitches_[i] = result.notes[i].note;
+    }
+    sabi_pitches_cached_ = true;
   }
 
   // Return last pitch for smooth transition to next phrase

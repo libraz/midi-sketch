@@ -106,7 +106,7 @@ bool getAllowDeviationForType(SectionType type) {
 // Rules:
 // - Outro sections: Fadeout (velocity decrease)
 // - B sections followed by Chorus: Sustain (holds for lift effect)
-// - Last Chorus in the song: FinalHit (strong ending)
+// - Last Chorus in the song: FinalHit (strong ending) + PeakLevel::Max
 // - Other sections: None
 void assignExitPatterns(std::vector<Section>& sections) {
   if (sections.empty()) return;
@@ -130,6 +130,8 @@ void assignExitPatterns(std::vector<Section>& sections) {
       section.exit_pattern = ExitPattern::Sustain;
     } else if (idx == last_chorus_idx) {
       section.exit_pattern = ExitPattern::FinalHit;
+      // Last chorus gets maximum peak level for emotional climax
+      section.peak_level = PeakLevel::Max;
     } else {
       section.exit_pattern = ExitPattern::None;
     }

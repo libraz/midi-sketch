@@ -106,10 +106,12 @@ class PostProcessor {
   ///
   /// @param tracks Vector of melodic track pointers to process
   /// @param sections Song sections for B->Chorus detection
-  /// @param drum_track Drum track (not truncated - fill remains)
+  /// @param drum_track Drum track (not truncated - fill remains, crash added for DrumHit)
+  /// @param style Drop style intensity (default: Subtle)
   static void applyChorusDrop(std::vector<MidiTrack*>& tracks,
                                const std::vector<Section>& sections,
-                               MidiTrack* drum_track);
+                               MidiTrack* drum_track,
+                               ChorusDropStyle style = ChorusDropStyle::Subtle);
 
   /// @brief Apply ritardando (gradual slowdown) to outro section.
   ///
