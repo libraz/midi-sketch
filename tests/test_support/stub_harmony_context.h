@@ -81,7 +81,12 @@ class StubHarmonyContext : public IHarmonyContext {
     return {};
   }
 
+  void registerSecondaryDominant(Tick /*start*/, Tick /*end*/, int8_t /*degree*/) override {
+    ++secondary_dominant_count_;
+  }
+
   // Test inspection methods
+  int getSecondaryDominantCount() const { return secondary_dominant_count_; }
   bool wasInitialized() const { return initialized_; }
   int getRegisteredNoteCount() const { return registered_note_count_; }
   int getRegisteredTrackCount() const { return registered_track_count_; }
@@ -98,6 +103,7 @@ class StubHarmonyContext : public IHarmonyContext {
   int registered_track_count_ = 0;
   int clear_count_ = 0;
   int clear_track_count_ = 0;
+  int secondary_dominant_count_ = 0;
 };
 
 }  // namespace test

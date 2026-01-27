@@ -66,4 +66,8 @@ std::vector<int> HarmonyContext::getPitchClassesFromTrackAt(Tick tick, TrackRole
   return collision_detector_.getPitchClassesFromTrackAt(tick, role);
 }
 
+void HarmonyContext::registerSecondaryDominant(Tick start, Tick end, int8_t degree) {
+  chord_tracker_.registerSecondaryDominant(start, end, degree);
+}
+
 }  // namespace midisketch

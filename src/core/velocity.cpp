@@ -9,57 +9,57 @@
 
 #include "core/emotion_curve.h"
 #include "core/midi_track.h"
+#include "core/section_properties.h"
 
 namespace midisketch {
 
+namespace {
+
+// Mood velocity adjustment multipliers.
+// Indexed by Mood enum value (0-23).
+// Values range from 0.9 (quieter) to 1.1 (louder).
+// clang-format off
+constexpr float kMoodVelocityAdjustment[24] = {
+    1.0f,   // 0: StraightPop
+    1.0f,   // 1: BrightUpbeat
+    1.1f,   // 2: EnergeticDance
+    1.0f,   // 3: LightRock
+    1.0f,   // 4: MidPop
+    1.0f,   // 5: EmotionalPop
+    0.9f,   // 6: Sentimental
+    0.9f,   // 7: Chill
+    0.9f,   // 8: Ballad
+    1.0f,   // 9: DarkPop
+    1.05f,  // 10: Dramatic
+    1.0f,   // 11: Nostalgic
+    1.0f,   // 12: ModernPop
+    1.0f,   // 13: ElectroPop
+    1.1f,   // 14: IdolPop
+    1.0f,   // 15: Anthem
+    1.1f,   // 16: Yoasobi
+    0.95f,  // 17: Synthwave
+    1.1f,   // 18: FutureBass
+    0.95f,  // 19: CityPop
+    // Genre expansion moods
+    1.0f,   // 20: RnBNeoSoul
+    1.0f,   // 21: LatinPop
+    1.0f,   // 22: Trap
+    1.0f,   // 23: Lofi
+};
+// clang-format on
+
+}  // namespace
+
 float getMoodVelocityAdjustment(Mood mood) {
-  switch (mood) {
-    case Mood::EnergeticDance:
-    case Mood::IdolPop:
-    case Mood::Yoasobi:
-    case Mood::FutureBass:
-      return 1.1f;
-    case Mood::Ballad:
-    case Mood::Sentimental:
-    case Mood::Chill:
-      return 0.9f;
-    case Mood::Dramatic:
-      return 1.05f;
-    case Mood::Synthwave:
-    case Mood::CityPop:
-      return 0.95f;
-    default:
-      return 1.0f;
+  uint8_t idx = static_cast<uint8_t>(mood);
+  if (idx < sizeof(kMoodVelocityAdjustment) / sizeof(kMoodVelocityAdjustment[0])) {
+    return kMoodVelocityAdjustment[idx];
   }
+  return 1.0f;  // fallback
 }
 
 float getSectionVelocityMultiplier(SectionType section) {
-  // Centralized section-based velocity multipliers.
-  // These values ensure consistent dynamics across all tracks.
-  // ENHANCED: Wider dynamic range for more emotional contrast.
-  // Ranges from 0.55 (very quiet - Chant) to 1.10 (energetic - Chorus/MixBreak).
-  // Previous range was 0.60-1.05, now 0.55-1.10 for more impact.
-  switch (section) {
-    case SectionType::Intro:
-    case SectionType::Interlude:
-      return 0.70f;  // Quiet intro/interlude (was 0.75)
-    case SectionType::Chant:
-      return 0.55f;  // Very subdued chant section (was 0.60)
-    case SectionType::MixBreak:
-    case SectionType::Drop:
-      return 1.10f;  // High energy mix break / drop (was 1.05)
-    case SectionType::Outro:
-      return 0.75f;  // Fading outro (was 0.80)
-    case SectionType::A:
-      return 0.70f;  // Subdued verse (was 0.85) - more contrast
-    case SectionType::B:
-      return 0.85f;  // Building pre-chorus (was 0.90) - more room to grow
-    case SectionType::Chorus:
-      return 1.10f;  // Energetic chorus (was 1.05) - bigger impact
-    case SectionType::Bridge:
-      return 0.65f;  // Reflective bridge (was 0.85) - more intimate
-  }
-  return 1.0f;  // Default fallback
+  return getSectionProperties(section).velocity_multiplier;
 }
 
 uint8_t calculateVelocity(SectionType section, uint8_t beat, Mood mood) {
@@ -79,25 +79,7 @@ uint8_t calculateVelocity(SectionType section, uint8_t beat, Mood mood) {
 }
 
 int getSectionEnergy(SectionType section) {
-  switch (section) {
-    case SectionType::Intro:
-    case SectionType::Interlude:
-    case SectionType::Chant:
-    case SectionType::MixBreak:
-      return 1;
-    case SectionType::Outro:
-      return 2;
-    case SectionType::A:
-      return 2;
-    case SectionType::Bridge:
-      return 2;
-    case SectionType::B:
-      return 3;
-    case SectionType::Chorus:
-    case SectionType::Drop:  // Drop has peak energy (same as Chorus)
-      return 4;
-  }
-  return 2;
+  return getSectionProperties(section).energy_level;
 }
 
 // ============================================================================

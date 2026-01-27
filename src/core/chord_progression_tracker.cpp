@@ -114,4 +114,43 @@ std::vector<int> ChordProgressionTracker::getChordTonesAt(Tick tick) const {
 
 void ChordProgressionTracker::clear() { chords_.clear(); }
 
+void ChordProgressionTracker::registerSecondaryDominant(Tick start, Tick end, int8_t degree) {
+  if (chords_.empty() || start >= end) {
+    return;
+  }
+
+  // Find the chord that contains 'start'
+  for (size_t i = 0; i < chords_.size(); ++i) {
+    ChordInfo& chord = chords_[i];
+    if (start >= chord.start && start < chord.end) {
+      Tick original_end = chord.end;
+      int8_t original_degree = chord.degree;
+
+      // Shrink current chord to end at 'start'
+      chord.end = start;
+
+      // Insert secondary dominant
+      ChordInfo sec_dom_info{start, end, degree};
+
+      // If there's remaining portion after the secondary dominant, add it back
+      if (end < original_end) {
+        ChordInfo remaining{end, original_end, original_degree};
+        // Insert both after current position
+        chords_.insert(chords_.begin() + static_cast<long>(i) + 1, sec_dom_info);
+        chords_.insert(chords_.begin() + static_cast<long>(i) + 2, remaining);
+      } else {
+        // Secondary dominant extends to or beyond original end
+        chords_.insert(chords_.begin() + static_cast<long>(i) + 1, sec_dom_info);
+      }
+
+      // Remove the original chord if it became empty (start == original start)
+      if (chord.start >= chord.end) {
+        chords_.erase(chords_.begin() + static_cast<long>(i));
+      }
+
+      return;
+    }
+  }
+}
+
 }  // namespace midisketch

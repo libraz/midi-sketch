@@ -49,6 +49,10 @@ struct TrackGenerationContext {
   /// Harmony context for chord lookups and collision detection.
   const IHarmonyContext& harmony;
 
+  /// Mutable harmony context for modifications (e.g., registering secondary dominants).
+  /// May be null if no modifications are needed.
+  IHarmonyContext* mutable_harmony = nullptr;
+
   // =========================================================================
   // Optional track references (for collision avoidance)
   // =========================================================================
@@ -126,9 +130,15 @@ class TrackGenerationContextBuilder {
     return *this;
   }
 
+  TrackGenerationContextBuilder& withMutableHarmony(IHarmonyContext* harmony) {
+    mutable_harmony_ = harmony;
+    return *this;
+  }
+
   TrackGenerationContext build() const {
     return TrackGenerationContext{
-        song_, params_, rng_, harmony_, bass_track_, aux_track_, motif_track_, vocal_analysis_,
+        song_,        params_,       rng_,        harmony_,        mutable_harmony_,
+        bass_track_,  aux_track_,    motif_track_, vocal_analysis_,
     };
   }
 
@@ -137,6 +147,7 @@ class TrackGenerationContextBuilder {
   const GeneratorParams& params_;
   std::mt19937& rng_;
   const IHarmonyContext& harmony_;
+  IHarmonyContext* mutable_harmony_ = nullptr;
   const MidiTrack* bass_track_ = nullptr;
   const MidiTrack* aux_track_ = nullptr;
   const MidiTrack* motif_track_ = nullptr;

@@ -231,41 +231,29 @@ float calculateMotifSimilarity(const GlobalMotif& a, const GlobalMotif& b) {
   return std::clamp(score, 0.0f, 1.0f);
 }
 
+// Recommended motif transformation for each section type.
+// Indexed by SectionType enum value (0-9).
+// clang-format off
+constexpr GlobalMotifTransform kSectionMotifTransform[10] = {
+    GlobalMotifTransform::Retrograde,  // 0: Intro - instrumental interest
+    GlobalMotifTransform::Diminish,    // 1: A - slightly lower energy
+    GlobalMotifTransform::Sequence,    // 2: B - building tension
+    GlobalMotifTransform::None,        // 3: Chorus - original (strongest recognition)
+    GlobalMotifTransform::Invert,      // 4: Bridge - contrast
+    GlobalMotifTransform::Retrograde,  // 5: Interlude - instrumental interest
+    GlobalMotifTransform::Fragment,    // 6: Outro - winding down
+    GlobalMotifTransform::Augment,     // 7: Chant - emphasis
+    GlobalMotifTransform::Augment,     // 8: MixBreak - emphasis
+    GlobalMotifTransform::None,        // 9: Drop - original energy
+};
+// clang-format on
+
 GlobalMotifTransform getRecommendedTransformForSection(SectionType section_type) {
-  switch (section_type) {
-    case SectionType::Chorus:
-      // Chorus uses the original motif (strongest recognition)
-      return GlobalMotifTransform::None;
-
-    case SectionType::A:
-      // A section: slightly lower energy, use fragment or diminish
-      return GlobalMotifTransform::Diminish;
-
-    case SectionType::B:
-      // B section: building tension, use sequence up
-      return GlobalMotifTransform::Sequence;
-
-    case SectionType::Bridge:
-      // Bridge: contrast, use invert
-      return GlobalMotifTransform::Invert;
-
-    case SectionType::Outro:
-      // Outro: winding down, use fragment
-      return GlobalMotifTransform::Fragment;
-
-    case SectionType::Intro:
-    case SectionType::Interlude:
-      // Instrumental sections: retrograde for interest
-      return GlobalMotifTransform::Retrograde;
-
-    case SectionType::Chant:
-    case SectionType::MixBreak:
-      // Call sections: augment for emphasis
-      return GlobalMotifTransform::Augment;
-
-    default:
-      return GlobalMotifTransform::None;
+  uint8_t idx = static_cast<uint8_t>(section_type);
+  if (idx < sizeof(kSectionMotifTransform) / sizeof(kSectionMotifTransform[0])) {
+    return kSectionMotifTransform[idx];
   }
+  return GlobalMotifTransform::None;  // fallback
 }
 
 }  // namespace midisketch

@@ -20,6 +20,7 @@
 #include "core/note_factory.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
+#include "core/section_properties.h"
 #include "core/timing_constants.h"
 #include "core/track_layer.h"
 #include "core/velocity.h"
@@ -37,26 +38,7 @@ namespace {
 /// @param section Section type
 /// @return Tension level (0.0-1.0)
 float getSectionTensionForSecondary(SectionType section) {
-  switch (section) {
-    case SectionType::Chorus:
-      return 0.75f;  // High tension for dramatic effect
-    case SectionType::B:
-      return 0.65f;  // Building tension
-    case SectionType::Bridge:
-      return 0.60f;  // Moderate-high for contrast
-    case SectionType::A:
-      return 0.45f;  // Moderate tension
-    case SectionType::MixBreak:
-      return 0.55f;  // Moderate for variation
-    case SectionType::Intro:
-    case SectionType::Interlude:
-      return 0.35f;  // Lower tension
-    case SectionType::Outro:
-    case SectionType::Chant:
-      return 0.25f;  // Minimal tension
-    default:
-      return 0.40f;
-  }
+  return getSectionProperties(section).secondary_tension;
 }
 
 /// @name Timing Aliases
@@ -942,22 +924,7 @@ bool needsCadenceFix(uint8_t section_bars, uint8_t progression_length, SectionTy
 
 // Check if section type allows anticipation
 bool allowsAnticipation(SectionType section) {
-  switch (section) {
-    case SectionType::B:
-    case SectionType::Chorus:
-    case SectionType::MixBreak:
-    case SectionType::Drop:  // Drop allows anticipation for energy
-      return true;
-    case SectionType::A:
-    case SectionType::Bridge:
-      return true;  // Allow but less frequently
-    case SectionType::Intro:
-    case SectionType::Interlude:
-    case SectionType::Outro:
-    case SectionType::Chant:
-      return false;
-  }
-  return false;
+  return getSectionProperties(section).allows_anticipation;
 }
 
 // Adjust rhythm one level sparser
@@ -1206,7 +1173,8 @@ void generateChordBar(MidiTrack& track, Tick bar_start, const VoicedChord& voici
 // Internal implementation of generateChordTrack (basic version without vocal context).
 void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorParams& params,
                             std::mt19937& rng, const IHarmonyContext& harmony,
-                            const MidiTrack* bass_track, const MidiTrack* /*aux_track*/) {
+                            const MidiTrack* bass_track, const MidiTrack* /*aux_track*/,
+                            IHarmonyContext* mutable_harmony) {
   // bass_track is used for BassAnalysis (voicing selection)
   // Collision avoidance is handled via HarmonyContext.isPitchSafe()
   const auto& progression = getChordProgression(params.chord_id);
@@ -1498,6 +1466,13 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
             for (size_t idx = 0; idx < sec_dom_voicing.count; ++idx) {
               if (!isSafe(sec_dom_voicing.pitches[idx], bar_start + HALF, HALF)) continue;
               addChordNote(bar_start + HALF, HALF, sec_dom_voicing.pitches[idx], vel_accent);
+            }
+
+            // Register the secondary dominant with the chord tracker so other
+            // tracks (bass, etc.) see the correct chord degree for this range
+            if (mutable_harmony) {
+              mutable_harmony->registerSecondaryDominant(bar_start + HALF, bar_start + TICKS_PER_BAR,
+                                                         sec_dom.dominant_degree);
             }
 
             prev_voicing = sec_dom_voicing;
@@ -1930,7 +1905,8 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
                                        const GeneratorParams& params, std::mt19937& rng,
                                        const MidiTrack* bass_track,
                                        const VocalAnalysis& vocal_analysis,
-                                       const MidiTrack* aux_track, const IHarmonyContext& harmony) {
+                                       const MidiTrack* aux_track, const IHarmonyContext& harmony,
+                                       IHarmonyContext* mutable_harmony) {
   // bass_track/vocal_analysis/aux_track are used for voicing selection
   // Collision avoidance is handled via HarmonyContext.isPitchSafe()
   const auto& progression = getChordProgression(params.chord_id);
@@ -2476,7 +2452,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
 
 void generateChordTrack(MidiTrack& track, const TrackGenerationContext& ctx) {
   generateChordTrackImpl(track, ctx.song, ctx.params, ctx.rng, ctx.harmony, ctx.bass_track,
-                         ctx.aux_track);
+                         ctx.aux_track, ctx.mutable_harmony);
 }
 
 void generateChordTrackWithContext(MidiTrack& track, const TrackGenerationContext& ctx) {
@@ -2487,7 +2463,8 @@ void generateChordTrackWithContext(MidiTrack& track, const TrackGenerationContex
     return;
   }
   generateChordTrackWithContextImpl(track, ctx.song, ctx.params, ctx.rng, ctx.bass_track,
-                                    *ctx.vocal_analysis, ctx.aux_track, ctx.harmony);
+                                    *ctx.vocal_analysis, ctx.aux_track, ctx.harmony,
+                                    ctx.mutable_harmony);
 }
 
 }  // namespace midisketch

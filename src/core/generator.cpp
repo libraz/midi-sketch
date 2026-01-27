@@ -512,8 +512,22 @@ void Generator::generateAccompanimentForVocal() {
   // Generate Aux track (references vocal for call-and-response)
   generateAux();
 
+  // Generate Chord voicings first (so secondary dominants are registered for bass)
+  // Note: chord voicing uses bass track for register avoidance, but bass is empty here
+  // which is acceptable - the voicing will use default range avoidance
+  {
+    TrackRegistrationGuard guard(*harmony_context_, song_.chord(), TrackRole::Chord);
+    auto chord_ctx = TrackGenerationContextBuilder(song_, params_, rng_, *harmony_context_)
+                         .withAuxTrack(&song_.aux())
+                         .withVocalAnalysis(&vocal_analysis)
+                         .withMutableHarmony(harmony_context_.get())
+                         .build();
+    generateChordTrackWithContext(song_.chord(), chord_ctx);
+  }
+
   // Generate Bass adapted to vocal contour
   // Uses contrary motion and respects vocal phrase boundaries
+  // Now sees secondary dominant registrations from chord track
   {
     TrackRegistrationGuard guard(*harmony_context_, song_.bass(), TrackRole::Bass);
     generateBassTrackWithVocal(song_.bass(), song_, params_, rng_, vocal_analysis,
@@ -523,17 +537,6 @@ void Generator::generateAccompanimentForVocal() {
   // Apply triplet-grid swing quantization to bass (only for non-straight grooves)
   if (getMoodDrumGrooveFeel(params_.mood) != DrumGrooveFeel::Straight) {
     applySwingToTrackBySections(song_.bass(), song_.arrangement().sections());
-  }
-
-  // Generate Chord voicings that avoid vocal register
-  {
-    TrackRegistrationGuard guard(*harmony_context_, song_.chord(), TrackRole::Chord);
-    auto chord_ctx = TrackGenerationContextBuilder(song_, params_, rng_, *harmony_context_)
-                         .withBassTrack(&song_.bass())
-                         .withAuxTrack(&song_.aux())
-                         .withVocalAnalysis(&vocal_analysis)
-                         .build();
-    generateChordTrackWithContext(song_.chord(), chord_ctx);
   }
 
   // Generate optional tracks
@@ -722,6 +725,7 @@ void Generator::generateChord() {
                  .withBassTrack(&song_.bass())
                  .withAuxTrack(aux_ptr)
                  .withVocalAnalysis(&vocal_analysis)
+                 .withMutableHarmony(harmony_context_.get())
                  .build();
   generateChordTrackWithContext(song_.chord(), ctx);
 }

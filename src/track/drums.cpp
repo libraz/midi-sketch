@@ -8,6 +8,7 @@
 #include "core/euclidean_rhythm.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
+#include "core/section_properties.h"
 #include "core/swing_quantize.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
@@ -134,21 +135,7 @@ bool shouldUseRideForSection(SectionType section, DrumStyle style) {
   }
 
   // Section-based ride selection for all other styles
-  switch (section) {
-    case SectionType::Chorus:
-    case SectionType::Bridge:
-    case SectionType::Interlude:
-    case SectionType::MixBreak:
-    case SectionType::Drop:  // Drop uses ride for open, expansive sound
-      return true;
-    case SectionType::Intro:
-    case SectionType::A:
-    case SectionType::B:
-    case SectionType::Outro:
-    case SectionType::Chant:
-    default:
-      return false;
-  }
+  return getSectionProperties(section).use_ride;
 }
 
 // Determine if this beat in a Bridge section should use cross-stick (side stick)

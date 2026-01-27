@@ -342,29 +342,28 @@ BassPattern fromPatternId(BassPatternId id) {
 }
 
 // Map SectionType to BassSection
+// Indexed by SectionType enum value (0-9)
+// clang-format off
+constexpr BassSection kSectionToBassSection[10] = {
+    BassSection::Intro,   // 0: Intro
+    BassSection::A,       // 1: A
+    BassSection::B,       // 2: B
+    BassSection::Chorus,  // 3: Chorus
+    BassSection::Bridge,  // 4: Bridge
+    BassSection::Intro,   // 5: Interlude (use intro patterns)
+    BassSection::Outro,   // 6: Outro
+    BassSection::Intro,   // 7: Chant (use intro patterns - simple)
+    BassSection::Mix,     // 8: MixBreak
+    BassSection::Chorus,  // 9: Drop (use chorus-level energy patterns)
+};
+// clang-format on
+
 BassSection toBassSection(SectionType section) {
-  switch (section) {
-    case SectionType::Intro:
-    case SectionType::Interlude:
-      return BassSection::Intro;
-    case SectionType::A:
-      return BassSection::A;
-    case SectionType::B:
-      return BassSection::B;
-    case SectionType::Chorus:
-      return BassSection::Chorus;
-    case SectionType::Bridge:
-      return BassSection::Bridge;
-    case SectionType::Outro:
-      return BassSection::Outro;
-    case SectionType::MixBreak:
-      return BassSection::Mix;
-    case SectionType::Chant:
-      return BassSection::Intro;  // Use intro patterns (simple)
-    case SectionType::Drop:
-      return BassSection::Chorus;  // Drop uses chorus-level energy patterns
+  uint8_t idx = static_cast<uint8_t>(section);
+  if (idx < sizeof(kSectionToBassSection) / sizeof(kSectionToBassSection[0])) {
+    return kSectionToBassSection[idx];
   }
-  return BassSection::A;
+  return BassSection::A;  // fallback
 }
 
 // Select pattern from genre master table with weighted random
@@ -1439,23 +1438,15 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
 
     // Use same harmonic rhythm as chord_track.cpp
     bool slow_harmonic = useSlowHarmonicRhythm(section.type);
-    HarmonicRhythmInfo section_harmonic = HarmonicRhythmInfo::forSection(section, params.mood);
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
 
-      // Match chord_track.cpp: Slow = 2 bars per chord, Normal = 1 bar per chord
-      // When subdivision=2, use subdivided indexing (bar*2 for first half)
-      int chord_idx;
-      if (section_harmonic.subdivision == 2) {
-        chord_idx = getChordIndexForSubdividedBar(bar, 0, progression.length);
-      } else {
-        chord_idx = getChordIndexForBar(bar, slow_harmonic, progression.length);
-      }
-      int next_chord_idx = getNextChordIndexForBar(bar, slow_harmonic, progression.length);
-
-      int8_t degree = progression.at(chord_idx);
-      int8_t next_degree = progression.at(next_chord_idx);
+      // === Use HarmonyContext for chord degree lookup ===
+      // This ensures bass sees the same chords as registered with the tracker,
+      // including phrase-end anticipations and secondary dominants.
+      int8_t degree = harmony.getChordDegreeAt(bar_start);
+      int8_t next_degree = harmony.getChordDegreeAt(bar_start + TICKS_PER_BAR);
 
       // Internal processing is always in C major; transpose at MIDI output time
       uint8_t root = getBassRoot(degree);
@@ -1510,8 +1501,8 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
                             harmony);
 
         // Second half: next chord in subdivided progression
-        int second_half_chord_idx = getChordIndexForSubdividedBar(bar, 1, progression.length);
-        int8_t second_half_degree = progression.at(second_half_chord_idx);
+        // Use HarmonyContext to get the degree for the second half of the bar
+        int8_t second_half_degree = harmony.getChordDegreeAt(bar_start + HALF);
         uint8_t second_half_root = getBassRoot(second_half_degree);
         generateBassHalfBar(track, bar_start + HALF, second_half_root, section.type, params.mood,
                             false, factory, harmony);
@@ -1523,8 +1514,8 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
       if (shouldSplitPhraseEnd(bar, section.bars, effective_prog_length, harmonic, section.type,
                                params.mood)) {
         // Split bar: first half current root, second half next root
-        int anticipate_chord_idx = (chord_idx + 1) % progression.length;
-        int8_t anticipate_degree = progression.at(anticipate_chord_idx);
+        // Use HarmonyContext to get the anticipated degree (tracker handles phrase-end splits)
+        int8_t anticipate_degree = harmony.getChordDegreeAt(bar_start + HALF);
         uint8_t anticipate_root = getBassRoot(anticipate_degree);
 
         // Check if anticipation would clash with registered tracks (Vocal, etc.)
@@ -1873,23 +1864,15 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song, const Genera
                                                           section_vocal_density, rng);
 
     bool slow_harmonic = useSlowHarmonicRhythm(section.type);
-    HarmonicRhythmInfo section_harmonic_vocal = HarmonicRhythmInfo::forSection(section, params.mood);
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
 
-      // Get chord info
-      // When subdivision=2, use subdivided indexing (bar*2 for first half)
-      int chord_idx;
-      if (section_harmonic_vocal.subdivision == 2) {
-        chord_idx = getChordIndexForSubdividedBar(bar, 0, progression.length);
-      } else {
-        chord_idx = getChordIndexForBar(bar, slow_harmonic, progression.length);
-      }
-      int next_chord_idx = getNextChordIndexForBar(bar, slow_harmonic, progression.length);
-
-      int8_t degree = progression.at(chord_idx);
-      int8_t next_degree = progression.at(next_chord_idx);
+      // === Use HarmonyContext for chord degree lookup ===
+      // This ensures bass sees the same chords as registered with the tracker,
+      // including phrase-end anticipations and secondary dominants.
+      int8_t degree = harmony.getChordDegreeAt(bar_start);
+      int8_t next_degree = harmony.getChordDegreeAt(bar_start + TICKS_PER_BAR);
 
       uint8_t root = getBassRoot(degree);
       uint8_t next_root = getBassRoot(next_degree);
@@ -1924,7 +1907,7 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song, const Genera
 
 #if BASS_DEBUG_LOG
       std::cerr << "Bar " << static_cast<int>(bar) << " (tick=" << bar_start << "): "
-                << "chord_idx=" << chord_idx << " -> degree=" << static_cast<int>(degree)
+                << "degree=" << static_cast<int>(degree)
                 << " -> root=" << static_cast<int>(root) << "(" << pitchToNoteName(root) << ")"
                 << " | vocal=" << static_cast<int>(vocal_pitch) << "("
                 << (vocal_pitch > 0 ? pitchToNoteName(vocal_pitch) : "none") << ")"
@@ -1969,8 +1952,8 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song, const Genera
                             factory, harmony);
 
         // Second half: next chord in subdivided progression
-        int second_half_chord_idx = getChordIndexForSubdividedBar(bar, 1, progression.length);
-        int8_t second_half_degree = progression.at(second_half_chord_idx);
+        // Use HarmonyContext to get the degree for the second half of the bar
+        int8_t second_half_degree = harmony.getChordDegreeAt(bar_start + HALF);
         uint8_t second_half_root = getBassRoot(second_half_degree);
         generateBassHalfBar(track, bar_start + HALF, second_half_root, section.type, params.mood,
                             false, factory, harmony);
@@ -1981,8 +1964,8 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song, const Genera
       int effective_prog_length = slow_harmonic ? (progression.length + 1) / 2 : progression.length;
       if (shouldSplitPhraseEnd(bar, section.bars, effective_prog_length, harmonic, section.type,
                                params.mood)) {
-        int anticipate_chord_idx = (chord_idx + 1) % progression.length;
-        int8_t anticipate_degree = progression.at(anticipate_chord_idx);
+        // Use HarmonyContext to get the anticipated degree (tracker handles phrase-end splits)
+        int8_t anticipate_degree = harmony.getChordDegreeAt(bar_start + HALF);
         uint8_t anticipate_root = getBassRoot(anticipate_degree);
 
         // Check if anticipation would clash with vocal during second half of bar

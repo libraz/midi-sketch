@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "core/chord.h"
+#include "core/chord_progression_tracker.h"
 #include "core/chord_utils.h"
 #include "core/generator.h"
 #include "core/harmonic_rhythm.h"
@@ -331,7 +332,11 @@ TEST_F(BassDiatonicTest, BassOnBeatOneMustBeChordTone) {
       const auto& song = gen.getSong();
       const auto& bass_track = song.bass();
       const auto& progression = getChordProgression(params_.chord_id);
-      const auto& sections = song.arrangement().sections();
+
+      // Use ChordProgressionTracker to get chord degree at each tick
+      // This matches what the bass generation now uses (via HarmonyContext)
+      ChordProgressionTracker tracker;
+      tracker.initialize(song.arrangement(), progression, mood);
 
       int non_chord_tone_count = 0;
       std::vector<std::string> issues;
@@ -341,40 +346,11 @@ TEST_F(BassDiatonicTest, BassOnBeatOneMustBeChordTone) {
         Tick beat_position = note.start_tick % TICKS_PER_BAR;
         if (beat_position > BEAT_THRESHOLD) continue;  // Not on beat 1
 
-        // Find which section this note is in
         uint32_t bar = note.start_tick / TICKS_PER_BAR;
-        const Section* section = nullptr;
-        for (const auto& sec : sections) {
-          uint32_t sec_start_bar = sec.start_tick / TICKS_PER_BAR;
-          if (bar >= sec_start_bar && bar < sec_start_bar + sec.bars) {
-            section = &sec;
-            break;
-          }
-        }
 
-        if (!section) continue;
-
-        // Calculate chord degree at this bar (matching bass generation logic)
-        uint32_t section_start_bar = section->start_tick / TICKS_PER_BAR;
-        uint32_t bar_in_section = bar - section_start_bar;
-        bool slow_harmonic =
-            (section->type == SectionType::Intro || section->type == SectionType::Interlude ||
-             section->type == SectionType::Outro || section->type == SectionType::Chant);
-
-        // Check for subdivision (B sections use half-bar chord changes)
-        // Beat 1 is in the first half, so use the first-half chord index
-        auto harmonic_info = HarmonicRhythmInfo::forSection(*section, mood);
-        int chord_idx;
-        if (harmonic_info.subdivision == 2) {
-          // Subdivided: first half uses bar*2 index
-          chord_idx = getChordIndexForSubdividedBar(
-              static_cast<int>(bar_in_section), 0, progression.length);
-        } else if (slow_harmonic) {
-          chord_idx = (bar_in_section / 2) % progression.length;
-        } else {
-          chord_idx = bar_in_section % progression.length;
-        }
-        int8_t degree = progression.degrees[chord_idx];
+        // Use ChordProgressionTracker to get the chord degree at this tick
+        // This accounts for phrase-end anticipations and secondary dominants
+        int8_t degree = tracker.getChordDegreeAt(note.start_tick);
 
         // Get chord tones for this degree
         auto chord_tones = getChordTonePitchClasses(degree);

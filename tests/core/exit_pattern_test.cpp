@@ -252,18 +252,20 @@ TEST(ExitPatternTest, SustainExtendsNotesInLastBar) {
 
   Tick section_end = kBars * TICKS_PER_BAR;
   Tick last_bar_start = section_end - TICKS_PER_BAR;
+  Tick second_note_start = last_bar_start + TICKS_PER_BEAT * 2;
 
   // Add a note at the beginning of the last bar with short duration
   track.addNote(last_bar_start, TICKS_PER_BEAT / 2, 60, 80);
   // Add a note later in the last bar
-  track.addNote(last_bar_start + TICKS_PER_BEAT * 2, TICKS_PER_BEAT / 2, 64, 80);
+  track.addNote(second_note_start, TICKS_PER_BEAT / 2, 64, 80);
 
   PostProcessor::applyExitPattern(track, section);
 
-  // First note should extend to section end
-  EXPECT_EQ(track.notes()[0].duration, section_end - last_bar_start);
-  // Second note should extend to section end
-  EXPECT_EQ(track.notes()[1].duration, section_end - (last_bar_start + TICKS_PER_BEAT * 2));
+  // First note should extend to the start of the second note (not section end)
+  // to prevent overlap between sequential notes
+  EXPECT_EQ(track.notes()[0].duration, second_note_start - last_bar_start);
+  // Second (last) note should extend to section end
+  EXPECT_EQ(track.notes()[1].duration, section_end - second_note_start);
 }
 
 TEST(ExitPatternTest, SustainDoesNotAffectNotesBeforeLastBar) {

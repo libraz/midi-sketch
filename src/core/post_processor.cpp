@@ -7,6 +7,8 @@
 
 #include <algorithm>
 
+#include "core/note_factory.h"  // for NoteSource enum
+
 namespace midisketch {
 
 bool PostProcessor::isStrongBeat(Tick tick) {
@@ -280,14 +282,47 @@ void PostProcessor::applyExitPattern(MidiTrack& track, const Section& section) {
     }
 
     case ExitPattern::Sustain: {
-      // Extend duration of notes in the last bar to reach section boundary
+      // Extend duration of notes in the last bar to reach section boundary,
+      // but cap each note's extension at the start of the next chord to prevent overlaps
       Tick last_bar_start = section_end - TICKS_PER_BAR;
 
+      // Collect notes in the last bar
+      std::vector<NoteEvent*> last_bar_notes;
       for (auto& note : notes) {
         if (note.start_tick >= last_bar_start && note.start_tick < section_end &&
             note.start_tick >= section_start) {
-          // Extend note to section end
-          note.duration = section_end - note.start_tick;
+          last_bar_notes.push_back(&note);
+        }
+      }
+
+      if (last_bar_notes.empty()) break;
+
+      // Sort by start_tick
+      std::sort(last_bar_notes.begin(), last_bar_notes.end(),
+                [](const NoteEvent* a, const NoteEvent* b) {
+                  return a->start_tick < b->start_tick;
+                });
+
+      // Collect unique start_ticks (sorted)
+      std::vector<Tick> unique_starts;
+      for (const auto* note : last_bar_notes) {
+        if (unique_starts.empty() || unique_starts.back() != note->start_tick) {
+          unique_starts.push_back(note->start_tick);
+        }
+      }
+
+      // Extend each note, capping at the start of the next different start_tick
+      for (auto* note : last_bar_notes) {
+        Tick max_end = section_end;
+        // Find the next different start_tick after this note's start
+        for (Tick start : unique_starts) {
+          if (start > note->start_tick) {
+            max_end = start;
+            break;
+          }
+        }
+        if (max_end > note->start_tick) {
+          note->duration = max_end - note->start_tick;
         }
       }
       break;
@@ -482,6 +517,11 @@ void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
           crash.duration = TICKS_PER_BEAT;
           crash.note = CRASH_NOTE;
           crash.velocity = CRASH_VEL;
+          // Provenance tracking
+          crash.prov_chord_degree = -1;
+          crash.prov_lookup_tick = chorus_start_tick;
+          crash.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
+          crash.prov_original_pitch = CRASH_NOTE;
           drum_notes.push_back(crash);
         }
       }
@@ -591,7 +631,11 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
       final_bass.duration = TICKS_PER_BEAT;
       final_bass.note = 36;  // C2 - typical bass root
       final_bass.velocity = FINAL_HIT_VEL;
-      // Channel is determined by track, not stored in NoteEvent
+      // Provenance tracking
+      final_bass.prov_chord_degree = -1;
+      final_bass.prov_lookup_tick = final_beat_start;
+      final_bass.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
+      final_bass.prov_original_pitch = 36;
       bass_notes.push_back(final_bass);
     }
   }
@@ -623,7 +667,11 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
       kick.duration = TICKS_PER_BEAT / 2;
       kick.note = BD_NOTE;
       kick.velocity = FINAL_HIT_VEL;
-      // Channel is determined by track, not stored in NoteEvent
+      // Provenance tracking
+      kick.prov_chord_degree = -1;
+      kick.prov_lookup_tick = final_beat_start;
+      kick.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
+      kick.prov_original_pitch = BD_NOTE;
       drum_notes.push_back(kick);
     }
 
@@ -634,7 +682,11 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
       crash.duration = TICKS_PER_BEAT;
       crash.note = CRASH_NOTE;
       crash.velocity = FINAL_HIT_VEL;
-      // Channel is determined by track, not stored in NoteEvent
+      // Provenance tracking
+      crash.prov_chord_degree = -1;
+      crash.prov_lookup_tick = final_beat_start;
+      crash.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
+      crash.prov_original_pitch = CRASH_NOTE;
       drum_notes.push_back(crash);
     }
   }

@@ -10,6 +10,42 @@
 
 namespace midisketch {
 
+namespace {
+
+// Mood intensity multipliers for emotion calculations.
+// Indexed by Mood enum value (0-23).
+// clang-format off
+constexpr float kMoodIntensity[24] = {
+    1.0f,   // 0: StraightPop
+    1.0f,   // 1: BrightUpbeat
+    1.2f,   // 2: EnergeticDance
+    1.0f,   // 3: LightRock
+    1.0f,   // 4: MidPop
+    1.0f,   // 5: EmotionalPop
+    0.75f,  // 6: Sentimental
+    0.7f,   // 7: Chill
+    0.75f,  // 8: Ballad
+    1.0f,   // 9: DarkPop
+    1.15f,  // 10: Dramatic
+    1.0f,   // 11: Nostalgic
+    1.0f,   // 12: ModernPop
+    1.0f,   // 13: ElectroPop
+    1.2f,   // 14: IdolPop
+    1.2f,   // 15: Anthem
+    1.1f,   // 16: Yoasobi
+    0.95f,  // 17: Synthwave
+    1.1f,   // 18: FutureBass
+    0.95f,  // 19: CityPop
+    // Genre expansion moods
+    1.0f,   // 20: RnBNeoSoul
+    1.0f,   // 21: LatinPop
+    1.0f,   // 22: Trap
+    1.0f,   // 23: Lofi
+};
+// clang-format on
+
+}  // namespace
+
 // Default emotion for out-of-bounds access
 // Order: tension, energy, resolution_need, pitch_tendency, density_factor
 const SectionEmotion EmotionCurve::kDefaultEmotion = {0.5f, 0.5f, 0.3f, 0, 1.0f};
@@ -86,29 +122,11 @@ TransitionHint EmotionCurve::getTransitionHint(size_t from_index) const {
 }
 
 float EmotionCurve::getMoodIntensity(Mood mood) {
-  switch (mood) {
-    case Mood::EnergeticDance:
-    case Mood::IdolPop:
-    case Mood::Anthem:
-      return 1.2f;
-    case Mood::Yoasobi:
-    case Mood::FutureBass:
-      return 1.1f;
-    case Mood::Ballad:
-    case Mood::Sentimental:
-      return 0.75f;
-    case Mood::Chill:
-      return 0.7f;
-    case Mood::Dramatic:
-      return 1.15f;
-    case Mood::DarkPop:
-      return 1.0f;
-    case Mood::Synthwave:
-    case Mood::CityPop:
-      return 0.95f;
-    default:
-      return 1.0f;
+  uint8_t idx = static_cast<uint8_t>(mood);
+  if (idx < sizeof(kMoodIntensity) / sizeof(kMoodIntensity[0])) {
+    return kMoodIntensity[idx];
   }
+  return 1.0f;  // fallback
 }
 
 SectionEmotion EmotionCurve::estimateBaseEmotion(SectionType type) {

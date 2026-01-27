@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "core/midi_track.h"
+#include "core/note_factory.h"  // for NoteSource enum
 #include "core/section_types.h"
 #include "core/types.h"
 
@@ -472,6 +473,146 @@ TEST_F(EnhancedFinalHitTest, AddsMissingKickOnFinalBeat) {
 }
 
 // ============================================================================
+// SustainPatternTest Tests
+// ============================================================================
+
+class SustainPatternTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    section_.type = SectionType::B;
+    section_.start_tick = 0;
+    section_.bars = 4;
+    section_.exit_pattern = ExitPattern::Sustain;
+  }
+
+  Section section_;
+};
+
+TEST_F(SustainPatternTest, ExtendsSingleNoteToSectionEnd) {
+  // Single chord in last bar should extend to section end
+  MidiTrack track;
+  Tick section_end = 4 * TICKS_PER_BAR;
+  Tick last_bar_start = section_end - TICKS_PER_BAR;
+
+  // Add single chord at start of last bar
+  track.addNote(last_bar_start, TICKS_PER_BEAT, 60, 80);  // C
+  track.addNote(last_bar_start, TICKS_PER_BEAT, 64, 80);  // E
+  track.addNote(last_bar_start, TICKS_PER_BEAT, 67, 80);  // G
+
+  std::vector<MidiTrack*> tracks = {&track};
+  std::vector<Section> sections = {section_};
+  PostProcessor::applyAllExitPatterns(tracks, sections);
+
+  // All notes should extend to section end
+  for (const auto& note : track.notes()) {
+    Tick note_end = note.start_tick + note.duration;
+    EXPECT_EQ(note_end, section_end)
+        << "Single chord notes should extend to section end";
+  }
+}
+
+TEST_F(SustainPatternTest, PreventsSustainOverlapWithMultipleChords) {
+  // Two chords per bar (subdivision=2): G at beats 1-2, Am at beats 3-4
+  // G should NOT extend past Am's start
+  MidiTrack track;
+  Tick section_end = 4 * TICKS_PER_BAR;
+  Tick last_bar_start = section_end - TICKS_PER_BAR;
+  Tick half_bar = TICKS_PER_BAR / 2;
+
+  // First chord (G) at beat 1 of last bar
+  track.addNote(last_bar_start, half_bar, 67, 80);              // G
+  track.addNote(last_bar_start, half_bar, 71, 80);              // B
+  track.addNote(last_bar_start, half_bar, 74, 80);              // D
+
+  // Second chord (Am) at beat 3 of last bar
+  Tick second_chord_start = last_bar_start + half_bar;
+  track.addNote(second_chord_start, half_bar, 69, 80);          // A
+  track.addNote(second_chord_start, half_bar, 72, 80);          // C
+  track.addNote(second_chord_start, half_bar, 76, 80);          // E
+
+  std::vector<MidiTrack*> tracks = {&track};
+  std::vector<Section> sections = {section_};
+  PostProcessor::applyAllExitPatterns(tracks, sections);
+
+  // Check that first chord notes end at or before second chord start
+  // Check that second chord notes extend to section end
+  for (const auto& note : track.notes()) {
+    Tick note_end = note.start_tick + note.duration;
+    if (note.start_tick == last_bar_start) {
+      // First chord should NOT extend past second chord start
+      EXPECT_LE(note_end, second_chord_start)
+          << "First chord should not overlap with second chord";
+    } else if (note.start_tick == second_chord_start) {
+      // Second chord should extend to section end
+      EXPECT_EQ(note_end, section_end)
+          << "Second chord should extend to section end";
+    }
+  }
+}
+
+TEST_F(SustainPatternTest, HandlesNotesAlreadyExtendedBeyondNextNote) {
+  // Edge case: note with duration that already extends past next note's start
+  MidiTrack track;
+  Tick section_end = 4 * TICKS_PER_BAR;
+  Tick last_bar_start = section_end - TICKS_PER_BAR;
+
+  // First note with very long duration (extends past next note)
+  track.addNote(last_bar_start, TICKS_PER_BAR, 60, 80);
+
+  // Second note at half bar
+  Tick second_note_start = last_bar_start + TICKS_PER_BAR / 2;
+  track.addNote(second_note_start, TICKS_PER_BEAT, 64, 80);
+
+  std::vector<MidiTrack*> tracks = {&track};
+  std::vector<Section> sections = {section_};
+  PostProcessor::applyAllExitPatterns(tracks, sections);
+
+  // First note should be truncated to second note's start
+  // Second note should extend to section end
+  for (const auto& note : track.notes()) {
+    Tick note_end = note.start_tick + note.duration;
+    if (note.start_tick == last_bar_start) {
+      EXPECT_EQ(note_end, second_note_start)
+          << "First note should be truncated to second note's start";
+    } else if (note.start_tick == second_note_start) {
+      EXPECT_EQ(note_end, section_end)
+          << "Second note should extend to section end";
+    }
+  }
+}
+
+TEST_F(SustainPatternTest, HandlesNotesOutsideLastBar) {
+  // Notes outside the last bar should not be affected
+  MidiTrack track;
+  Tick section_end = 4 * TICKS_PER_BAR;
+  Tick last_bar_start = section_end - TICKS_PER_BAR;
+  Tick original_duration = TICKS_PER_BEAT;
+
+  // Note before last bar (should be unchanged)
+  track.addNote(last_bar_start - TICKS_PER_BAR, original_duration, 60, 80);
+
+  // Note in last bar (should be extended)
+  track.addNote(last_bar_start, original_duration, 64, 80);
+
+  std::vector<MidiTrack*> tracks = {&track};
+  std::vector<Section> sections = {section_};
+  PostProcessor::applyAllExitPatterns(tracks, sections);
+
+  for (const auto& note : track.notes()) {
+    if (note.start_tick < last_bar_start) {
+      // Note before last bar should be unchanged
+      EXPECT_EQ(note.duration, original_duration)
+          << "Notes before last bar should not be modified";
+    } else {
+      // Note in last bar should be extended to section end
+      Tick note_end = note.start_tick + note.duration;
+      EXPECT_EQ(note_end, section_end)
+          << "Notes in last bar should extend to section end";
+    }
+  }
+}
+
+// ============================================================================
 // Integration Tests
 // ============================================================================
 
@@ -534,6 +675,89 @@ TEST(PostProcessorIntegrationTest, ChorusDropAndRitardandoDoNotInterfere) {
   EXPECT_TRUE(found_truncated_b) << "B section note should be truncated by chorus drop";
   EXPECT_TRUE(found_stretched_outro) << "Outro note should be stretched by ritardando";
 }
+
+// ============================================================================
+// Provenance Tests
+// ============================================================================
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+
+TEST_F(EnhancedFinalHitTest, AddedNotesHavePostProcessProvenance) {
+  // Notes added by applyEnhancedFinalHit should have provenance set
+
+  MidiTrack bass_track;
+  MidiTrack drum_track;
+  // Add a note so drum_track is not empty (required for applyEnhancedFinalHit)
+  drum_track.addNote(0, TICKS_PER_BEAT / 2, KICK, 80);
+
+  PostProcessor::applyEnhancedFinalHit(&bass_track, &drum_track, nullptr, section_);
+
+  Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
+
+  // Check bass note provenance
+  for (const auto& note : bass_track.notes()) {
+    if (note.start_tick >= final_beat_start) {
+      EXPECT_EQ(note.prov_source, static_cast<uint8_t>(NoteSource::PostProcess))
+          << "Added bass note should have PostProcess provenance";
+      EXPECT_EQ(note.prov_lookup_tick, final_beat_start)
+          << "prov_lookup_tick should match start tick";
+      EXPECT_EQ(note.prov_original_pitch, note.note)
+          << "prov_original_pitch should match note pitch";
+      EXPECT_EQ(note.prov_chord_degree, -1)
+          << "prov_chord_degree should be -1 for PostProcessor notes";
+    }
+  }
+
+  // Check drum notes provenance (kick and crash)
+  for (const auto& note : drum_track.notes()) {
+    if (note.start_tick >= final_beat_start) {
+      EXPECT_EQ(note.prov_source, static_cast<uint8_t>(NoteSource::PostProcess))
+          << "Added drum note should have PostProcess provenance";
+      EXPECT_EQ(note.prov_lookup_tick, final_beat_start)
+          << "prov_lookup_tick should match start tick";
+      EXPECT_EQ(note.prov_original_pitch, note.note)
+          << "prov_original_pitch should match note pitch";
+    }
+  }
+}
+
+TEST_F(ChorusDropTest, DrumHitCrashHasPostProcessProvenance) {
+  // Crash cymbal added by DrumHit style should have provenance set
+
+  MidiTrack track;
+  // Add notes in B section
+  track.addNote(0, TICKS_PER_BEAT, 60, 80);
+
+  MidiTrack drum_track;
+  // Add a note so drum_track is not empty
+  drum_track.addNote(0, TICKS_PER_BEAT / 2, KICK, 80);
+
+  std::vector<MidiTrack*> tracks = {&track};
+
+  // Apply with DrumHit style to add crash at chorus entry
+  PostProcessor::applyChorusDrop(tracks, sections_, &drum_track, ChorusDropStyle::DrumHit);
+
+  Tick chorus_start = sections_[1].start_tick;
+
+  bool found_crash = false;
+  for (const auto& note : drum_track.notes()) {
+    if (note.start_tick == chorus_start && note.note == CRASH) {
+      found_crash = true;
+      EXPECT_EQ(note.prov_source, static_cast<uint8_t>(NoteSource::PostProcess))
+          << "Added crash should have PostProcess provenance";
+      EXPECT_EQ(note.prov_lookup_tick, chorus_start)
+          << "prov_lookup_tick should match chorus start";
+      EXPECT_EQ(note.prov_original_pitch, CRASH)
+          << "prov_original_pitch should be CRASH";
+      EXPECT_EQ(note.prov_chord_degree, -1)
+          << "prov_chord_degree should be -1 for PostProcessor notes";
+    }
+  }
+
+  EXPECT_TRUE(found_crash) << "DrumHit style should add crash at chorus entry";
+}
+
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 }  // namespace
 }  // namespace midisketch

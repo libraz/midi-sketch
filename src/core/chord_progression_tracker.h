@@ -57,6 +57,18 @@ class ChordProgressionTracker {
    */
   Tick getNextChordChangeTick(Tick after) const;
 
+  /**
+   * @brief Register a secondary dominant chord at a specific tick range.
+   *
+   * Splits an existing chord entry to insert a secondary dominant.
+   * Used when chord_track inserts a V/x chord in the second half of a bar.
+   *
+   * @param start Start tick of the secondary dominant
+   * @param end End tick of the secondary dominant
+   * @param degree Scale degree of the secondary dominant (e.g., 2 for V/vi = E7)
+   */
+  void registerSecondaryDominant(Tick start, Tick end, int8_t degree);
+
   /// Clear all chord data (for reinitialization).
   void clear();
 

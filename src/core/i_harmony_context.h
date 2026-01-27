@@ -135,6 +135,18 @@ class IHarmonyContext {
    */
   virtual std::vector<int> getPitchClassesFromTrackAt(Tick tick, TrackRole role) const = 0;
 
+  /**
+   * @brief Register a secondary dominant chord at a specific tick range.
+   *
+   * Used when chord_track inserts a V/x chord to update the chord progression
+   * tracker, ensuring other tracks (bass, etc.) see the correct chord.
+   *
+   * @param start Start tick of the secondary dominant
+   * @param end End tick of the secondary dominant
+   * @param degree Scale degree of the secondary dominant
+   */
+  virtual void registerSecondaryDominant(Tick start, Tick end, int8_t degree) = 0;
+
   /// C4 (middle C) - below this, stricter low-register rules apply.
   static constexpr uint8_t LOW_REGISTER_THRESHOLD = 60;
 };

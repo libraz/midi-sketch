@@ -10,6 +10,7 @@
 #include <cstddef>
 
 #include "core/preset_data.h"
+#include "core/section_properties.h"
 
 namespace midisketch {
 
@@ -55,51 +56,18 @@ std::string sectionTypeName(SectionType type) {
 // Get vocal density for a section type
 // Extracted as shared function to avoid duplicate lambda definitions
 VocalDensity getVocalDensityForType(SectionType type) {
-  switch (type) {
-    case SectionType::Intro:
-    case SectionType::Interlude:
-    case SectionType::Outro:
-    case SectionType::Chant:     // Call section - Vocal rests
-    case SectionType::MixBreak:  // MIX section - Vocal rests
-    case SectionType::Drop:      // Drop section - No vocals (instrumental drop)
-      return VocalDensity::None;
-    case SectionType::A:
-    case SectionType::Bridge:
-      return VocalDensity::Sparse;
-    case SectionType::B:
-    case SectionType::Chorus:
-      return VocalDensity::Full;
-    default:
-      return VocalDensity::Full;
-  }
+  return getSectionProperties(type).vocal_density;
 }
 
 // Get backing density for a section type
 // Extracted as shared function to avoid duplicate lambda definitions
 BackingDensity getBackingDensityForType(SectionType type) {
-  switch (type) {
-    case SectionType::Intro:
-    case SectionType::Bridge:
-    case SectionType::Interlude:
-    case SectionType::Chant:  // Call section - thin backing (quiet)
-    case SectionType::Drop:   // Drop - minimal (kick + sub-bass only initially)
-      return BackingDensity::Thin;
-    case SectionType::Outro:
-    case SectionType::A:
-    case SectionType::B:
-      return BackingDensity::Normal;
-    case SectionType::Chorus:
-    case SectionType::MixBreak:  // MIX section - full energy
-      return BackingDensity::Thick;
-    default:
-      return BackingDensity::Normal;
-  }
+  return getSectionProperties(type).backing_density;
 }
 
 // Check if section allows raw vocal deviation
 bool getAllowDeviationForType(SectionType type) {
-  // Only Chorus and Bridge sections can potentially allow raw attitude
-  return type == SectionType::Chorus || type == SectionType::Bridge;
+  return getSectionProperties(type).allow_deviation;
 }
 
 // Assign exit patterns based on section type and context within the song.

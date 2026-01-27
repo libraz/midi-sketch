@@ -8,6 +8,7 @@
 #include <algorithm>
 
 #include "core/pitch_utils.h"
+#include "core/section_properties.h"
 
 namespace midisketch {
 
@@ -570,31 +571,7 @@ SlashChordInfo checkSlashChord(int8_t current_degree, int8_t next_degree,
   // Determine section-based probability threshold.
   // Verse (A) and B (pre-chorus) sections prefer slash chords for smoother feel.
   // Chorus sections use stronger root motion, so lower probability.
-  float threshold = 0.0f;
-  switch (section_type) {
-    case SectionType::A:
-      threshold = 0.50f;  // 50% chance in verses
-      break;
-    case SectionType::B:
-      threshold = 0.55f;  // 55% chance in pre-chorus
-      break;
-    case SectionType::Bridge:
-      threshold = 0.45f;  // 45% in bridge
-      break;
-    case SectionType::Chorus:
-      threshold = 0.30f;  // 30% in chorus (prefer strong roots)
-      break;
-    case SectionType::Interlude:
-      threshold = 0.40f;  // 40% in interlude
-      break;
-    case SectionType::Intro:
-    case SectionType::Outro:
-    case SectionType::MixBreak:
-    case SectionType::Chant:
-    case SectionType::Drop:  // No slash chords in drop (strong bass foundation needed)
-      threshold = 0.0f;  // No slash chords in intro/outro/special sections
-      break;
-  }
+  float threshold = getSectionProperties(section_type).slash_chord_threshold;
 
   // Check probability
   if (probability_roll >= threshold) {

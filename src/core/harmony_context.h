@@ -71,6 +71,8 @@ class HarmonyContext : public IHarmonyContext {
 
   std::vector<int> getPitchClassesFromTrackAt(Tick tick, TrackRole role) const override;
 
+  void registerSecondaryDominant(Tick start, Tick end, int8_t degree) override;
+
   // =========================================================================
   // Component accessors (for advanced usage)
   // =========================================================================

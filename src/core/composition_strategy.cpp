@@ -26,56 +26,67 @@ void MelodyLeadStrategy::generateMelodicTracks(Generator& gen) {
       gen.generateMotifAsAxis();
     }
 
-    // Vocal-first for bass to avoid vocal clashes
+    // Vocal-first for bass/chord to avoid vocal clashes
     gen.invokeGenerateVocal();
-    VocalAnalysis vocal_analysis = analyzeVocal(gen.getSong().vocal());
-    {
-      // Use guard for standalone function that doesn't auto-register
-      TrackRegistrationGuard guard(gen.getHarmonyContext(), gen.getSong().bass(), TrackRole::Bass);
-      generateBassTrackWithVocal(gen.getSong().bass(), gen.getSong(), params, gen.getRng(),
-                                 vocal_analysis, gen.getHarmonyContext());
-    }
     gen.invokeGenerateAux();
   } else {
-    // BGM-only mode: generate bass and optionally motif
-    gen.invokeGenerateBass();
-
-    // For RhythmSync paradigm, generate Motif even without vocal
-    // The Motif provides the rhythmic foundation that defines the style
+    // BGM-only mode: For RhythmSync paradigm, generate Motif as axis
     if (gen.shouldUseRhythmLock()) {
       gen.generateMotifAsAxis();
     }
   }
 }
 
-void MelodyLeadStrategy::generateChordTrack(Generator& gen) { gen.invokeGenerateChord(); }
+void MelodyLeadStrategy::generateChordTrack(Generator& gen) {
+  // Generate Chord first so secondary dominants are registered for bass
+  gen.invokeGenerateChord();
+
+  // Generate Bass after chord so it sees secondary dominant registrations
+  const auto& params = gen.getParams();
+  if (!params.skip_vocal) {
+    VocalAnalysis vocal_analysis = analyzeVocal(gen.getSong().vocal());
+    {
+      TrackRegistrationGuard guard(gen.getHarmonyContext(), gen.getSong().bass(), TrackRole::Bass);
+      generateBassTrackWithVocal(gen.getSong().bass(), gen.getSong(), params, gen.getRng(),
+                                 vocal_analysis, gen.getHarmonyContext());
+    }
+  } else {
+    gen.invokeGenerateBass();
+  }
+}
 
 // ============================================================================
 // BackgroundMotifStrategy
 // ============================================================================
 
 void BackgroundMotifStrategy::generateMelodicTracks(Generator& gen) {
-  // Generate Bass first so Motif can avoid clashing with bass notes
-  // Note: invokeGenerateBass() -> generateBass() auto-registers via RAII guard
-  gen.invokeGenerateBass();
-
-  // Now generate Motif with Bass registered for collision avoidance
-  // Note: invokeGenerateMotif() -> generateMotif() auto-registers via RAII guard
+  // Generate Motif first as the background melodic element
   gen.invokeGenerateMotif();
 }
 
 void BackgroundMotifStrategy::generateChordTrack(Generator& gen) {
-  // Generate Chord avoiding both Bass and Motif
+  // Generate Chord first so secondary dominants are registered for bass
   gen.invokeGenerateChord();
+
+  // Generate Bass after chord so it sees secondary dominant registrations
+  gen.invokeGenerateBass();
 }
 
 // ============================================================================
 // SynthDrivenStrategy
 // ============================================================================
 
-void SynthDrivenStrategy::generateMelodicTracks(Generator& gen) { gen.invokeGenerateBass(); }
+void SynthDrivenStrategy::generateMelodicTracks(Generator& gen) {
+  // No melodic tracks in synth-driven mode
+}
 
-void SynthDrivenStrategy::generateChordTrack(Generator& gen) { gen.invokeGenerateChord(); }
+void SynthDrivenStrategy::generateChordTrack(Generator& gen) {
+  // Generate Chord first so secondary dominants are registered for bass
+  gen.invokeGenerateChord();
+
+  // Generate Bass after chord so it sees secondary dominant registrations
+  gen.invokeGenerateBass();
+}
 
 // ============================================================================
 // Factory

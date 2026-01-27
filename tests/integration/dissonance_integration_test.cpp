@@ -371,5 +371,144 @@ TEST_F(TrackClashIntegrationTest, ChordBassAnticipationRegression_Seed3263424241
 
 // Note: Diagnostic tests moved to dissonance_diagnostic_test.cpp
 
+// =============================================================================
+// Sustain pattern overlap tests
+// =============================================================================
+
+// Regression test for chord sustain overlap bug
+// Bug: ExitPattern::Sustain extended ALL notes in last bar to section end,
+// causing overlaps when B section had subdivision=2 (two chords per bar).
+// Example: G chord (beats 1-2) and Am chord (beats 3-4) both extended to bar end,
+// resulting in G and Am playing simultaneously at beats 3-4.
+//
+// Note: Chord tracks have many intentional overlaps for musical effects:
+// - Voice leading transitions
+// - Anticipation notes
+// - Arpeggio-style patterns
+// - Sustain pedal effects
+//
+// This test focuses on the specific B section last bar issue, not all overlaps.
+// See BSectionSustainNoOverlap test for the specific fix verification.
+TEST_F(TrackClashIntegrationTest, SustainPatternOverlapRegression) {
+  params_.composition_style = CompositionStyle::MelodyLead;
+
+  // Test multiple seeds to ensure the fix works broadly
+  std::vector<uint32_t> seeds = {42, 12345, 67890, 99999, 2802138756};
+
+  for (uint32_t seed : seeds) {
+    params_.seed = seed;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& chord_track = gen.getSong().chord();
+    const auto& sections = gen.getSong().arrangement().sections();
+
+    if (chord_track.empty()) continue;
+
+    // Count overlaps specifically in last bars of B sections with Sustain pattern
+    // (where the original bug manifested)
+    size_t sustain_overlaps = 0;
+
+    for (const auto& section : sections) {
+      if (section.type != SectionType::B) continue;
+      if (section.exit_pattern != ExitPattern::Sustain) continue;
+
+      Tick section_start = section.start_tick;
+      Tick section_end = section_start + section.bars * TICKS_PER_BAR;
+      Tick last_bar_start = section_end - TICKS_PER_BAR;
+
+      // Check for overlaps between notes at different start times in last bar
+      std::vector<const NoteEvent*> last_bar_notes;
+      for (const auto& note : chord_track.notes()) {
+        if (note.start_tick >= last_bar_start && note.start_tick < section_end) {
+          last_bar_notes.push_back(&note);
+        }
+      }
+
+      for (size_t i = 0; i < last_bar_notes.size(); ++i) {
+        for (size_t j = i + 1; j < last_bar_notes.size(); ++j) {
+          const auto* a = last_bar_notes[i];
+          const auto* b = last_bar_notes[j];
+
+          // Skip chord voicing (same start_tick)
+          if (a->start_tick == b->start_tick) continue;
+
+          Tick end_a = a->start_tick + a->duration;
+          Tick end_b = b->start_tick + b->duration;
+
+          if ((a->start_tick < end_b) && (b->start_tick < end_a)) {
+            sustain_overlaps++;
+          }
+        }
+      }
+    }
+
+    // B section last bars with Sustain should have minimal overlaps
+    // The fix prevents the subdivision=2 overlap issue
+    constexpr size_t kMaxSustainOverlaps = 3;
+
+    EXPECT_LE(sustain_overlaps, kMaxSustainOverlaps)
+        << "Seed " << seed << " has " << sustain_overlaps
+        << " overlaps in B section last bars (Sustain pattern issue)";
+  }
+}
+
+// Verify that sections with ExitPattern::Sustain don't create overlapping chords
+// in B sections where harmonic rhythm subdivision=2
+TEST_F(TrackClashIntegrationTest, BSectionSustainNoOverlap) {
+  params_.composition_style = CompositionStyle::MelodyLead;
+  params_.structure = StructurePattern::FullPop;  // Has B sections
+
+  // Seed 42 was specifically identified as problematic for this bug
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& chord_track = gen.getSong().chord();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  // Find B sections
+  for (const auto& section : sections) {
+    if (section.type != SectionType::B) continue;
+
+    Tick section_start = section.start_tick;
+    Tick section_end = section_start + section.bars * TICKS_PER_BAR;
+    Tick last_bar_start = section_end - TICKS_PER_BAR;
+
+    // Collect notes in the last bar of this B section
+    std::vector<const NoteEvent*> last_bar_notes;
+    for (const auto& note : chord_track.notes()) {
+      if (note.start_tick >= last_bar_start && note.start_tick < section_end) {
+        last_bar_notes.push_back(&note);
+      }
+    }
+
+    // Check for overlaps between notes at different start times
+    for (size_t i = 0; i < last_bar_notes.size(); ++i) {
+      for (size_t j = i + 1; j < last_bar_notes.size(); ++j) {
+        const auto* a = last_bar_notes[i];
+        const auto* b = last_bar_notes[j];
+
+        // Skip chord voicing (same start_tick)
+        if (a->start_tick == b->start_tick) continue;
+
+        Tick end_a = a->start_tick + a->duration;
+        Tick end_b = b->start_tick + b->duration;
+
+        // Notes at different start times should NOT overlap
+        bool overlap = (a->start_tick < end_b) && (b->start_tick < end_a);
+
+        EXPECT_FALSE(overlap)
+            << "B section last bar has overlapping chords: "
+            << "note " << (int)a->note << " @" << a->start_tick << " (ends "
+            << end_a << ") vs note " << (int)b->note << " @" << b->start_tick
+            << " (ends " << end_b << ")";
+      }
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch
