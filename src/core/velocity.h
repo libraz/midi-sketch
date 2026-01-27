@@ -280,6 +280,48 @@ void applyMelodyContourVelocity(MidiTrack& track, const std::vector<Section>& se
 void applyAccentPatterns(MidiTrack& track, const std::vector<Section>& sections);
 
 // ============================================================================
+// Micro-Dynamics (Beat-Level Velocity Curves)
+// ============================================================================
+
+/**
+ * @brief Get beat-level velocity curve multiplier.
+ *
+ * Implements subtle dynamics within each bar for natural breathing:
+ * - Beat 1: 1.08 (strongest - downbeat emphasis)
+ * - Beat 2: 0.95 (weak - natural dip)
+ * - Beat 3: 1.03 (medium-strong - secondary accent)
+ * - Beat 4: 0.92 (weakest - anticipates next downbeat)
+ *
+ * Based on pop music feel where beats 1 and 3 are naturally accented.
+ *
+ * @param beat_position Position within bar (0.0-4.0)
+ * @returns Velocity multiplier (0.92-1.08)
+ */
+float getBeatMicroCurve(float beat_position);
+
+/**
+ * @brief Apply phrase-end decay to notes.
+ *
+ * Reduces velocity in the last beat of 4-bar phrases for natural breathing.
+ * This creates a subtle exhale feeling at phrase boundaries, making the
+ * melody sound more human and less machine-generated.
+ *
+ * @param track Track to modify (in-place)
+ * @param sections Sections for phrase boundary detection
+ */
+void applyPhraseEndDecay(MidiTrack& track, const std::vector<Section>& sections);
+
+/**
+ * @brief Apply beat-level micro-dynamics to a track.
+ *
+ * Applies the subtle beat-level velocity curve to all notes in the track.
+ * This adds natural breathing and groove without being obtrusive.
+ *
+ * @param track Track to modify (in-place)
+ */
+void applyBeatMicroDynamics(MidiTrack& track);
+
+// ============================================================================
 // EmotionCurve-based Velocity Calculations
 // ============================================================================
 

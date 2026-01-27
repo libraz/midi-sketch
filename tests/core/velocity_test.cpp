@@ -593,5 +593,172 @@ TEST(VelocityTest, CalculateEmotionAwareVelocityWithHighTension) {
   EXPECT_LE(velocity, 127);
 }
 
+// ============================================================================
+// Micro-Dynamics Tests (Proposal D)
+// ============================================================================
+
+TEST(VelocityTest, GetBeatMicroCurve_Beat1Strongest) {
+  // Beat 1 (position 0.0) should be the strongest
+  float beat1 = getBeatMicroCurve(0.0f);
+  EXPECT_FLOAT_EQ(beat1, 1.08f);
+}
+
+TEST(VelocityTest, GetBeatMicroCurve_Beat2Weak) {
+  // Beat 2 (position 1.0) should be weak
+  float beat2 = getBeatMicroCurve(1.0f);
+  EXPECT_FLOAT_EQ(beat2, 0.95f);
+}
+
+TEST(VelocityTest, GetBeatMicroCurve_Beat3SecondaryAccent) {
+  // Beat 3 (position 2.0) should be medium-strong
+  float beat3 = getBeatMicroCurve(2.0f);
+  EXPECT_FLOAT_EQ(beat3, 1.03f);
+}
+
+TEST(VelocityTest, GetBeatMicroCurve_Beat4Weakest) {
+  // Beat 4 (position 3.0) should be the weakest
+  float beat4 = getBeatMicroCurve(3.0f);
+  EXPECT_FLOAT_EQ(beat4, 0.92f);
+}
+
+TEST(VelocityTest, GetBeatMicroCurve_WrapsCorrectly) {
+  // Position 4.0 should wrap to beat 1
+  float beat1_wrapped = getBeatMicroCurve(4.0f);
+  EXPECT_FLOAT_EQ(beat1_wrapped, 1.08f);
+
+  // Position 5.5 should be beat 2 (1.5 -> beat index 1)
+  float mid_beat2 = getBeatMicroCurve(5.5f);
+  EXPECT_FLOAT_EQ(mid_beat2, 0.95f);
+}
+
+TEST(VelocityTest, ApplyBeatMicroDynamics_ModifiesVelocity) {
+  MidiTrack track;
+
+  // Add notes on each beat
+  uint8_t initial_vel = 100;
+  track.addNote(0, 480, 60, initial_vel);                    // Beat 1
+  track.addNote(TICKS_PER_BEAT, 480, 62, initial_vel);       // Beat 2
+  track.addNote(2 * TICKS_PER_BEAT, 480, 64, initial_vel);   // Beat 3
+  track.addNote(3 * TICKS_PER_BEAT, 480, 65, initial_vel);   // Beat 4
+
+  applyBeatMicroDynamics(track);
+
+  // Beat 1 should be boosted (1.08 * 100 = 108)
+  EXPECT_GT(track.notes()[0].velocity, initial_vel);
+
+  // Beat 4 should be reduced (0.92 * 100 = 92)
+  EXPECT_LT(track.notes()[3].velocity, initial_vel);
+}
+
+TEST(VelocityTest, ApplyBeatMicroDynamics_PreservesMusicalRelations) {
+  MidiTrack track;
+
+  uint8_t initial_vel = 100;
+  track.addNote(0, 480, 60, initial_vel);                    // Beat 1
+  track.addNote(TICKS_PER_BEAT, 480, 62, initial_vel);       // Beat 2
+  track.addNote(2 * TICKS_PER_BEAT, 480, 64, initial_vel);   // Beat 3
+  track.addNote(3 * TICKS_PER_BEAT, 480, 65, initial_vel);   // Beat 4
+
+  applyBeatMicroDynamics(track);
+
+  // Beat 1 (strongest) > Beat 3 (secondary) > Beat 2 (weak) > Beat 4 (weakest)
+  EXPECT_GT(track.notes()[0].velocity, track.notes()[2].velocity);  // Beat 1 > Beat 3
+  EXPECT_GT(track.notes()[2].velocity, track.notes()[1].velocity);  // Beat 3 > Beat 2
+  EXPECT_GT(track.notes()[1].velocity, track.notes()[3].velocity);  // Beat 2 > Beat 4
+}
+
+TEST(VelocityTest, ApplyBeatMicroDynamics_EmptyTrack) {
+  MidiTrack track;
+  // Should not crash on empty track
+  applyBeatMicroDynamics(track);
+  EXPECT_TRUE(track.notes().empty());
+}
+
+TEST(VelocityTest, ApplyPhraseEndDecay_ReducesEndVelocity) {
+  MidiTrack track;
+  std::vector<Section> sections;
+
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 4;  // One 4-bar phrase
+  sections.push_back(section);
+
+  // Add notes throughout the section
+  uint8_t initial_vel = 100;
+  for (int bar = 0; bar < 4; ++bar) {
+    track.addNote(bar * TICKS_PER_BAR, 480, 60, initial_vel);
+  }
+  // Add note in the last beat (decay region)
+  // For 4-bar section: phrase_end = 4*1920 = 7680, decay_start = 7680 - 480 = 7200
+  // So we need a note at tick >= 7200 and < 7680
+  // Place note halfway through the decay region: 7200 + 240 = 7440
+  Tick decay_region_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
+  Tick decay_note_tick = decay_region_start + TICKS_PER_BEAT / 2;  // Middle of last beat
+  track.addNote(decay_note_tick, 240, 60, initial_vel);
+
+  applyPhraseEndDecay(track, sections);
+
+  // Notes at start should be unchanged (bar 0, beat 1 = tick 0)
+  EXPECT_EQ(track.notes()[0].velocity, initial_vel);
+
+  // Note in decay region should be reduced
+  // decay_factor = 1.0 - (1.0 - 0.85) * 0.5 = 1.0 - 0.075 = 0.925
+  // Expected velocity ≈ 100 * 0.925 = 92-93
+  EXPECT_LT(track.notes()[4].velocity, initial_vel) << "Decay note velocity: "
+      << static_cast<int>(track.notes()[4].velocity) << " at tick " << decay_note_tick
+      << " (decay_start=" << decay_region_start << ")";
+  EXPECT_GE(track.notes()[4].velocity, 85);  // Should be around 92
+}
+
+TEST(VelocityTest, ApplyPhraseEndDecay_MultiplePhrases) {
+  MidiTrack track;
+  std::vector<Section> sections;
+
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 8;  // Two 4-bar phrases
+  sections.push_back(section);
+
+  uint8_t initial_vel = 100;
+  // Add notes at phrase ends
+  track.addNote(4 * TICKS_PER_BAR - TICKS_PER_BEAT / 2, 480, 60, initial_vel);  // End of phrase 1
+  track.addNote(8 * TICKS_PER_BAR - TICKS_PER_BEAT / 2, 480, 60, initial_vel);  // End of phrase 2
+
+  applyPhraseEndDecay(track, sections);
+
+  // Both phrase-end notes should be decayed
+  EXPECT_LT(track.notes()[0].velocity, initial_vel);
+  EXPECT_LT(track.notes()[1].velocity, initial_vel);
+}
+
+TEST(VelocityTest, ApplyPhraseEndDecay_EmptyTrack) {
+  MidiTrack track;
+  std::vector<Section> sections;
+
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 4;
+  sections.push_back(section);
+
+  // Should not crash on empty track
+  applyPhraseEndDecay(track, sections);
+  EXPECT_TRUE(track.notes().empty());
+}
+
+TEST(VelocityTest, ApplyPhraseEndDecay_EmptySections) {
+  MidiTrack track;
+  track.addNote(0, 480, 60, 100);
+
+  std::vector<Section> sections;  // Empty
+
+  uint8_t initial_vel = track.notes()[0].velocity;
+  // Should not crash on empty sections
+  applyPhraseEndDecay(track, sections);
+  EXPECT_EQ(track.notes()[0].velocity, initial_vel);  // Unchanged
+}
+
 }  // namespace
 }  // namespace midisketch

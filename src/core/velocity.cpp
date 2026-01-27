@@ -663,4 +663,86 @@ float getChordTonePreferenceBoost(float resolution_need) {
   }
 }
 
+// ============================================================================
+// Micro-Dynamics Implementation
+// ============================================================================
+
+float getBeatMicroCurve(float beat_position) {
+  // Natural beat-level dynamics for pop music:
+  // Beat 1: 1.08 (downbeat - strongest)
+  // Beat 2: 0.95 (weak)
+  // Beat 3: 1.03 (secondary accent)
+  // Beat 4: 0.92 (weakest - leads into next bar)
+  //
+  // This follows the natural emphasis pattern of 4/4 pop music
+  // where beats 1 and 3 are stronger than 2 and 4.
+  constexpr float kCurve[4] = {1.08f, 0.95f, 1.03f, 0.92f};
+
+  int beat = static_cast<int>(beat_position) % 4;
+  if (beat < 0) beat += 4;  // Handle negative positions
+
+  return kCurve[beat];
+}
+
+void applyPhraseEndDecay(MidiTrack& track, const std::vector<Section>& sections) {
+  auto& notes = track.notes();
+  if (notes.empty() || sections.empty()) return;
+
+  // Decay parameters
+  constexpr float PHRASE_END_DECAY = 0.85f;  // 85% velocity at phrase end
+  constexpr int PHRASE_BARS = 4;             // 4-bar phrase structure
+
+  for (const auto& section : sections) {
+    Tick section_start = section.start_tick;
+    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+
+    // Process each 4-bar phrase within the section
+    for (int phrase_start_bar = 0; phrase_start_bar < section.bars; phrase_start_bar += PHRASE_BARS) {
+      // Calculate phrase boundaries
+      int phrase_end_bar = std::min(phrase_start_bar + PHRASE_BARS, static_cast<int>(section.bars));
+      Tick phrase_start = section_start + phrase_start_bar * TICKS_PER_BAR;
+      Tick phrase_end = section_start + phrase_end_bar * TICKS_PER_BAR;
+
+      // Find the last beat of the phrase (decay region)
+      // Decay the last beat of the last bar
+      Tick decay_start = phrase_end - TICKS_PER_BEAT;
+      if (decay_start < phrase_start) continue;
+
+      // Apply decay to notes in the last beat
+      for (auto& note : notes) {
+        if (note.start_tick >= decay_start && note.start_tick < phrase_end &&
+            note.start_tick >= section_start && note.start_tick < section_end) {
+          // Calculate decay factor based on position within the last beat
+          float position_in_decay =
+              static_cast<float>(note.start_tick - decay_start) / static_cast<float>(TICKS_PER_BEAT);
+
+          // Linear interpolation from 1.0 to PHRASE_END_DECAY
+          float decay_factor = 1.0f - (1.0f - PHRASE_END_DECAY) * position_in_decay;
+
+          int new_vel = static_cast<int>(note.velocity * decay_factor);
+          note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+        }
+      }
+    }
+  }
+}
+
+void applyBeatMicroDynamics(MidiTrack& track) {
+  auto& notes = track.notes();
+  if (notes.empty()) return;
+
+  for (auto& note : notes) {
+    // Calculate beat position within bar
+    float beat_position = static_cast<float>(note.start_tick % TICKS_PER_BAR) /
+                          static_cast<float>(TICKS_PER_BEAT);
+
+    // Get micro-curve multiplier
+    float multiplier = getBeatMicroCurve(beat_position);
+
+    // Apply multiplier
+    int new_vel = static_cast<int>(note.velocity * multiplier);
+    note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+  }
+}
+
 }  // namespace midisketch

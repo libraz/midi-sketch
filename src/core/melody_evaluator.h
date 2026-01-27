@@ -22,12 +22,13 @@ class IHarmonyContext;
 /// Weights determine how much each scoring component contributes to the total.
 /// All weights should sum to approximately 1.0 for normalized scoring.
 struct EvaluatorConfig {
-  float singability_weight;          ///< Weight for average interval size (0.0-1.0)
-  float chord_tone_weight;           ///< Weight for chord tone ratio on strong beats
-  float contour_weight;              ///< Weight for familiar melodic contour
-  float surprise_weight;             ///< Weight for occasional large leaps
-  float aaab_weight;                 ///< Weight for AAAB repetition pattern
+  float singability_weight;              ///< Weight for average interval size (0.0-1.0)
+  float chord_tone_weight;               ///< Weight for chord tone ratio on strong beats
+  float contour_weight;                  ///< Weight for familiar melodic contour
+  float surprise_weight;                 ///< Weight for occasional large leaps
+  float aaab_weight;                     ///< Weight for AAAB repetition pattern
   float rhythm_interval_weight = 0.15f;  ///< Weight for rhythm-interval correlation
+  float catchiness_weight = 0.0f;        ///< Weight for hook/catchiness score
 };
 
 /// @brief Melody evaluation score.
@@ -40,20 +41,22 @@ struct MelodyScore {
   float surprise_element;              ///< Large leap detection (0.0-1.0)
   float aaab_pattern;                  ///< AAAB repetition score (0.0-1.0)
   float rhythm_interval_correlation;   ///< Rhythm-interval correlation score (0.0-1.0)
+  float catchiness;                    ///< Hook memorability score (0.0-1.0)
 
   /// Calculate total weighted score.
   float total(const EvaluatorConfig& config) const {
     return singability * config.singability_weight + chord_tone_ratio * config.chord_tone_weight +
            contour_shape * config.contour_weight + surprise_element * config.surprise_weight +
            aaab_pattern * config.aaab_weight +
-           rhythm_interval_correlation * config.rhythm_interval_weight;
+           rhythm_interval_correlation * config.rhythm_interval_weight +
+           catchiness * config.catchiness_weight;
   }
 
   /// Simple total with equal weights.
   float total() const {
     return (singability + chord_tone_ratio + contour_shape + surprise_element + aaab_pattern +
-            rhythm_interval_correlation) /
-           6.0f;
+            rhythm_interval_correlation + catchiness) /
+           7.0f;
   }
 };
 
@@ -97,6 +100,18 @@ class MelodyEvaluator {
   /// @param notes Vector of note events
   /// @returns Score 0.0-1.0
   static float calcRhythmIntervalCorrelation(const std::vector<NoteEvent>& notes);
+
+  /// Calculate catchiness score based on hook memorability factors.
+  ///
+  /// Evaluates melody for characteristics that make it memorable/catchy:
+  /// - 2-3 note pattern repetition (30% weight)
+  /// - Rhythmic pattern consistency (25% weight)
+  /// - Simple interval usage (25% weight)
+  /// - Hook contour similarity (20% weight)
+  ///
+  /// @param notes Vector of note events
+  /// @returns Score 0.0-1.0 (higher = more catchy)
+  static float calcCatchiness(const std::vector<NoteEvent>& notes);
 
   /// Evaluate melody and return all scores.
   /// @param notes Vector of note events

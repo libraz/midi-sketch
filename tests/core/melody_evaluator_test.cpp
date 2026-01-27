@@ -225,9 +225,10 @@ TEST(MelodyEvaluatorTest, GetEvaluatorConfigIdol) {
   EXPECT_GT(config.singability_weight, 0.0f);
   EXPECT_GT(config.aaab_weight, 0.0f);
 
-  // Total weights should sum to 1.0
+  // Total weights should sum to exactly 1.0 (with new fields)
   float total = config.singability_weight + config.chord_tone_weight + config.contour_weight +
-                config.surprise_weight + config.aaab_weight;
+                config.surprise_weight + config.aaab_weight + config.rhythm_interval_weight +
+                config.catchiness_weight;
   EXPECT_NEAR(total, 1.0f, 0.01f);
 }
 
@@ -252,6 +253,7 @@ TEST(MelodyEvaluatorTest, TotalScoreCalculation) {
   score.surprise_element = 0.6f;
   score.aaab_pattern = 0.5f;
   score.rhythm_interval_correlation = 0.75f;
+  score.catchiness = 0.65f;  // Initialize catchiness field
 
   float simple_total = score.total();
   EXPECT_GE(simple_total, 0.0f);
@@ -460,6 +462,176 @@ TEST(MelodyEvaluatorTest, EvaluateIncludesRhythmIntervalCorrelation) {
   // rhythm_interval_correlation should be set (not NaN or uninitialized)
   EXPECT_GE(score.rhythm_interval_correlation, 0.0f);
   EXPECT_LE(score.rhythm_interval_correlation, 1.0f);
+}
+
+// ============================================================================
+// Catchiness Score Tests (Proposal B)
+// ============================================================================
+
+TEST(MelodyEvaluatorTest, Catchiness_EmptyNotes) {
+  std::vector<NoteEvent> empty;
+  float score = MelodyEvaluator::calcCatchiness(empty);
+  EXPECT_FLOAT_EQ(score, 0.5f) << "Empty notes should return neutral score";
+}
+
+TEST(MelodyEvaluatorTest, Catchiness_ShortMelody) {
+  // Less than 4 notes should return neutral
+  std::vector<NoteEvent> short_melody = {
+      {0, 480, 60, 100},
+      {480, 480, 62, 100},
+  };
+  float score = MelodyEvaluator::calcCatchiness(short_melody);
+  EXPECT_FLOAT_EQ(score, 0.5f) << "Short melody should return neutral score";
+}
+
+TEST(MelodyEvaluatorTest, Catchiness_RepetitivePattern) {
+  // Highly repetitive pattern: C-D-C-D (interval +2, -2, +2)
+  // Should score well due to pattern repetition
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},     // C4
+      {480, 480, 62, 100},   // D4 (+2)
+      {960, 480, 60, 100},   // C4 (-2)
+      {1440, 480, 62, 100},  // D4 (+2)
+      {1920, 480, 60, 100},  // C4 (-2)
+      {2400, 480, 62, 100},  // D4 (+2)
+  };
+  float score = MelodyEvaluator::calcCatchiness(notes);
+  EXPECT_GT(score, 0.5f) << "Repetitive pattern should score above neutral";
+}
+
+TEST(MelodyEvaluatorTest, Catchiness_RandomPattern) {
+  // Random-ish pattern: no repetition, large intervals
+  // Should score lower
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},     // C4
+      {480, 240, 67, 100},   // G4 (+7)
+      {720, 960, 55, 100},   // G3 (-12)
+      {1680, 120, 72, 100},  // C5 (+17)
+      {1800, 480, 58, 100},  // Bb3 (-14)
+  };
+  float score = MelodyEvaluator::calcCatchiness(notes);
+  EXPECT_LT(score, 0.5f) << "Random pattern should score below neutral";
+}
+
+TEST(MelodyEvaluatorTest, Catchiness_SimpleIntervals) {
+  // All simple intervals (steps): C-D-E-F-G
+  // Should score well for simple_interval_score component
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},     // C4
+      {480, 480, 62, 100},   // D4 (+2)
+      {960, 480, 64, 100},   // E4 (+2)
+      {1440, 480, 65, 100},  // F4 (+1)
+      {1920, 480, 67, 100},  // G4 (+2)
+  };
+  float score = MelodyEvaluator::calcCatchiness(notes);
+  EXPECT_GT(score, 0.4f) << "Simple intervals should contribute positively";
+}
+
+TEST(MelodyEvaluatorTest, Catchiness_AscendDrop) {
+  // Ascending then dropping: C-E-G-E-C (arch shape)
+  // Should get contour bonus
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},     // C4
+      {480, 480, 64, 100},   // E4 (+4)
+      {960, 480, 67, 100},   // G4 (+3)
+      {1440, 480, 64, 100},  // E4 (-3)
+      {1920, 480, 60, 100},  // C4 (-4)
+  };
+  float score = MelodyEvaluator::calcCatchiness(notes);
+  // This should get some contour bonus for AscendDrop pattern
+  EXPECT_GE(score, 0.3f) << "AscendDrop contour should contribute to catchiness";
+}
+
+TEST(MelodyEvaluatorTest, Catchiness_RepeatPitches) {
+  // Same pitch repeated: C-C-C-D-D-D
+  // Should get repeat bonus
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},     // C4
+      {480, 480, 60, 100},   // C4
+      {960, 480, 60, 100},   // C4
+      {1440, 480, 62, 100},  // D4
+      {1920, 480, 62, 100},  // D4
+      {2400, 480, 62, 100},  // D4
+  };
+  float score = MelodyEvaluator::calcCatchiness(notes);
+  // Should get repeat bonus for consecutive same pitches
+  EXPECT_GT(score, 0.5f) << "Pitch repetition should be catchy";
+}
+
+TEST(MelodyEvaluatorTest, Catchiness_ConsistentRhythm) {
+  // All same duration: should score well for rhythm consistency
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},
+      {480, 480, 64, 100},
+      {960, 480, 67, 100},
+      {1440, 480, 64, 100},
+      {1920, 480, 60, 100},
+  };
+  float score = MelodyEvaluator::calcCatchiness(notes);
+  EXPECT_GE(score, 0.4f) << "Consistent rhythm should contribute to catchiness";
+}
+
+TEST(MelodyEvaluatorTest, EvaluateIncludesCatchiness) {
+  // Verify that evaluate() populates catchiness
+  HarmonyContext harmony;
+  std::vector<Section> sections;
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.bars = 8;
+  chorus.start_tick = 0;
+  chorus.name = "CHORUS";
+  sections.push_back(chorus);
+  harmony.initialize(Arrangement(sections), getChordProgression(0), Mood::StraightPop);
+
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},
+      {480, 480, 64, 100},
+      {960, 480, 67, 100},
+      {1440, 480, 64, 100},
+      {1920, 480, 60, 100},
+  };
+
+  MelodyScore score = MelodyEvaluator::evaluate(notes, harmony);
+
+  // catchiness should be set (not NaN or uninitialized)
+  EXPECT_GE(score.catchiness, 0.0f);
+  EXPECT_LE(score.catchiness, 1.0f);
+}
+
+TEST(MelodyEvaluatorTest, TotalIncludesCatchiness) {
+  // Verify that total() with config includes catchiness weight
+  MelodyScore score;
+  score.singability = 0.5f;
+  score.chord_tone_ratio = 0.5f;
+  score.contour_shape = 0.5f;
+  score.surprise_element = 0.5f;
+  score.aaab_pattern = 0.5f;
+  score.rhythm_interval_correlation = 0.5f;
+  score.catchiness = 1.0f;  // High catchiness
+
+  EvaluatorConfig config_no_catchiness;
+  config_no_catchiness.singability_weight = 1.0f;
+  config_no_catchiness.chord_tone_weight = 0.0f;
+  config_no_catchiness.contour_weight = 0.0f;
+  config_no_catchiness.surprise_weight = 0.0f;
+  config_no_catchiness.aaab_weight = 0.0f;
+  config_no_catchiness.rhythm_interval_weight = 0.0f;
+  config_no_catchiness.catchiness_weight = 0.0f;
+
+  EvaluatorConfig config_with_catchiness;
+  config_with_catchiness.singability_weight = 0.5f;
+  config_with_catchiness.chord_tone_weight = 0.0f;
+  config_with_catchiness.contour_weight = 0.0f;
+  config_with_catchiness.surprise_weight = 0.0f;
+  config_with_catchiness.aaab_weight = 0.0f;
+  config_with_catchiness.rhythm_interval_weight = 0.0f;
+  config_with_catchiness.catchiness_weight = 0.5f;
+
+  float total_no_catchiness = score.total(config_no_catchiness);
+  float total_with_catchiness = score.total(config_with_catchiness);
+
+  // With catchiness weight, total should be higher (catchiness=1.0 > singability=0.5)
+  EXPECT_GT(total_with_catchiness, total_no_catchiness);
 }
 
 }  // namespace

@@ -166,9 +166,10 @@ struct MelodyTemplate {
 
   /// @name Modern pop features
   /// @{
-  uint8_t hook_note_count;    ///< Notes in hook (2-4)
-  uint8_t hook_repeat_count;  ///< Hook repetition count (2-4)
-  bool allow_talk_sing;       ///< Allow talk-sing style
+  uint8_t hook_note_count;     ///< Notes in hook (2-4)
+  uint8_t hook_repeat_count;   ///< Hook repetition count (2-4)
+  uint8_t betrayal_threshold;  ///< Repetitions before betrayal (0=never, 4=default)
+  bool allow_talk_sing;        ///< Allow talk-sing style
   /// @}
 };
 

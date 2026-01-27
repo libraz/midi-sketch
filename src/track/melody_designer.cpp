@@ -1319,15 +1319,20 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       std::clamp(tmpl.hook_repeat_count, static_cast<uint8_t>(2), static_cast<uint8_t>(4));
 
   // =========================================================================
-  // HOOK BETRAYAL: Apply variation on 4th occurrence (golden ratio strategy)
+  // HOOK BETRAYAL: Apply variation based on template threshold
   // =========================================================================
-  // Track hook repetitions across the song. On the 4th occurrence, apply
-  // a subtle betrayal (modification) to create interest while maintaining
-  // recognizability. This implements the "3 times same, 4th time different" rule.
+  // Track hook repetitions across the song. Apply betrayal when threshold is
+  // reached. Threshold is template-specific:
+  //   - threshold=3 (YOASOBI/TikTok): early variation, faster evolution
+  //   - threshold=4 (default): standard "3 times same, 4th different" rule
+  //   - threshold=5 (ballad): late variation, more consistency
+  //   - threshold=0: no betrayal (exact repetition)
   ++hook_repetition_count_;
   HookBetrayal betrayal = HookBetrayal::None;
-  if (hook_repetition_count_ >= 4 && (hook_repetition_count_ % 4) == 0) {
-    // Select betrayal type for the 4th (8th, 12th, etc.) occurrence
+  uint8_t threshold = tmpl.betrayal_threshold > 0 ? tmpl.betrayal_threshold : 4;
+  if (tmpl.betrayal_threshold > 0 && hook_repetition_count_ >= threshold &&
+      (hook_repetition_count_ % threshold) == 0) {
+    // Select betrayal type at threshold (and multiples thereof)
     betrayal = selectBetrayal(1, rng);  // 1 = non-first occurrence
   }
 

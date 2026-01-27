@@ -50,6 +50,7 @@ constexpr MelodyTemplate kPlateauTalk = {
     // Modern pop features
     3,    // hook_note_count
     3,    // hook_repeat_count
+    4,    // betrayal_threshold: default (every 4th)
     true  // allow_talk_sing
 };
 
@@ -89,6 +90,7 @@ constexpr MelodyTemplate kRunUpTarget = {
     // Modern pop features
     4,     // hook_note_count
     2,     // hook_repeat_count
+    3,     // betrayal_threshold: YOASOBI style = early variation
     false  // allow_talk_sing: not talk-sing
 };
 
@@ -128,6 +130,7 @@ constexpr MelodyTemplate kDownResolve = {
     // Modern pop features
     2,     // hook_note_count
     2,     // hook_repeat_count
+    4,     // betrayal_threshold: default
     false  // allow_talk_sing
 };
 
@@ -168,6 +171,7 @@ constexpr MelodyTemplate kHookRepeat = {
     // Modern pop features
     2,    // hook_note_count: minimum for hook
     4,    // hook_repeat_count: maximum repetition
+    3,    // betrayal_threshold: TikTok style = early variation
     true  // allow_talk_sing
 };
 
@@ -207,6 +211,7 @@ constexpr MelodyTemplate kSparseAnchor = {
     // Modern pop features
     3,     // hook_note_count
     2,     // hook_repeat_count
+    5,     // betrayal_threshold: ballad style = late variation
     false  // allow_talk_sing
 };
 
@@ -246,6 +251,7 @@ constexpr MelodyTemplate kCallResponse = {
     // Modern pop features
     3,     // hook_note_count
     2,     // hook_repeat_count
+    4,     // betrayal_threshold: default
     false  // allow_talk_sing
 };
 
@@ -285,6 +291,7 @@ constexpr MelodyTemplate kJumpAccent = {
     // Modern pop features
     3,     // hook_note_count
     2,     // hook_repeat_count
+    4,     // betrayal_threshold: default
     false  // allow_talk_sing
 };
 

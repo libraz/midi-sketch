@@ -47,13 +47,15 @@ constexpr VocalStyleProfile kIdolProfile = {
         1.2f,  // same_pitch_weight - encouraged
         1.5f,  // motif_repeat_weight - strong
     },
-    // EvaluatorConfig
+    // EvaluatorConfig (total = 1.0)
     {
-        0.30f,  // singability_weight - emphasized
-        0.20f,  // chord_tone_weight
-        0.15f,  // contour_weight
-        0.10f,  // surprise_weight
-        0.25f,  // aaab_weight - emphasized
+        0.20f,  // singability_weight - emphasized
+        0.10f,  // chord_tone_weight
+        0.10f,  // contour_weight
+        0.05f,  // surprise_weight - low (predictable hooks)
+        0.20f,  // aaab_weight - emphasized
+        0.15f,  // rhythm_interval_weight
+        0.20f,  // catchiness_weight - highest (idol hooks are crucial)
     },
 };
 
@@ -74,13 +76,15 @@ constexpr VocalStyleProfile kRockProfile = {
         0.8f,  // same_pitch_weight
         1.0f,  // motif_repeat_weight
     },
-    // EvaluatorConfig (was kStandardConfig, now custom)
+    // EvaluatorConfig (total = 1.0)
     {
-        0.20f,  // singability_weight - slightly lower
-        0.25f,  // chord_tone_weight - emphasized
-        0.20f,  // contour_weight
-        0.20f,  // surprise_weight - higher
+        0.15f,  // singability_weight - slightly lower
+        0.15f,  // chord_tone_weight
+        0.15f,  // contour_weight
+        0.20f,  // surprise_weight - higher (rock energy)
         0.15f,  // aaab_weight
+        0.10f,  // rhythm_interval_weight
+        0.10f,  // catchiness_weight - lower (raw energy over hooks)
     },
 };
 
@@ -101,13 +105,15 @@ constexpr VocalStyleProfile kBalladProfile = {
         1.0f,  // same_pitch_weight
         1.1f,  // motif_repeat_weight
     },
-    // EvaluatorConfig
+    // EvaluatorConfig (total = 1.0)
     {
-        0.40f,  // singability_weight - maximum
-        0.25f,  // chord_tone_weight
+        0.30f,  // singability_weight - maximum
+        0.15f,  // chord_tone_weight
         0.15f,  // contour_weight
         0.05f,  // surprise_weight - minimal
         0.15f,  // aaab_weight
+        0.15f,  // rhythm_interval_weight
+        0.05f,  // catchiness_weight - low (emotional depth over hooks)
     },
 };
 
@@ -128,13 +134,15 @@ constexpr VocalStyleProfile kAnimeProfile = {
         1.3f,  // same_pitch_weight - hooks
         1.4f,  // motif_repeat_weight - strong
     },
-    // EvaluatorConfig
+    // EvaluatorConfig (total = 1.0)
     {
-        0.15f,  // singability_weight - lower (difficult OK)
-        0.20f,  // chord_tone_weight
-        0.25f,  // contour_weight - emphasized
-        0.20f,  // surprise_weight - allowed
-        0.20f,  // aaab_weight
+        0.10f,  // singability_weight - lower (difficult OK)
+        0.15f,  // chord_tone_weight
+        0.20f,  // contour_weight - emphasized
+        0.15f,  // surprise_weight - allowed
+        0.15f,  // aaab_weight
+        0.10f,  // rhythm_interval_weight
+        0.15f,  // catchiness_weight - moderate
     },
 };
 
@@ -155,13 +163,15 @@ constexpr VocalStyleProfile kVocaloidProfile = {
         0.9f,  // same_pitch_weight
         1.2f,  // motif_repeat_weight
     },
-    // EvaluatorConfig
+    // EvaluatorConfig (total = 1.0)
     {
         0.10f,  // singability_weight - lower
-        0.25f,  // chord_tone_weight
-        0.20f,  // contour_weight
-        0.25f,  // surprise_weight - higher
-        0.20f,  // aaab_weight
+        0.15f,  // chord_tone_weight
+        0.15f,  // contour_weight
+        0.20f,  // surprise_weight - higher
+        0.15f,  // aaab_weight
+        0.10f,  // rhythm_interval_weight
+        0.15f,  // catchiness_weight - moderate (YOASOBI hooks matter)
     },
 };
 
@@ -182,13 +192,15 @@ constexpr VocalStyleProfile kStandardProfile = {
         1.0f,  // same_pitch_weight
         1.0f,  // motif_repeat_weight
     },
-    // EvaluatorConfig
+    // EvaluatorConfig (total = 1.0)
     {
-        0.25f,  // singability_weight
-        0.20f,  // chord_tone_weight
-        0.20f,  // contour_weight
+        0.15f,  // singability_weight
+        0.15f,  // chord_tone_weight
+        0.15f,  // contour_weight
         0.15f,  // surprise_weight
-        0.20f,  // aaab_weight
+        0.15f,  // aaab_weight
+        0.15f,  // rhythm_interval_weight
+        0.10f,  // catchiness_weight - balanced
     },
 };
 
@@ -209,13 +221,15 @@ constexpr VocalStyleProfile kCityPopProfile = {
         0.9f,  // same_pitch_weight
         1.0f,  // motif_repeat_weight
     },
-    // EvaluatorConfig (now custom, was kStandardConfig)
+    // EvaluatorConfig (total = 1.0)
     {
-        0.25f,  // singability_weight
-        0.25f,  // chord_tone_weight - jazzy harmony
-        0.20f,  // contour_weight
+        0.15f,  // singability_weight
+        0.20f,  // chord_tone_weight - jazzy harmony
+        0.15f,  // contour_weight
         0.15f,  // surprise_weight
         0.15f,  // aaab_weight
+        0.10f,  // rhythm_interval_weight
+        0.10f,  // catchiness_weight - lower (sophistication over hooks)
     },
 };
 

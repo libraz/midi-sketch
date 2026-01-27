@@ -289,6 +289,140 @@ float MelodyEvaluator::calcRhythmIntervalCorrelation(const std::vector<NoteEvent
   return std::clamp(0.5f + (good_ratio - bad_ratio) * 0.5f, 0.0f, 1.0f);
 }
 
+float MelodyEvaluator::calcCatchiness(const std::vector<NoteEvent>& notes) {
+  // Catchiness evaluates hook memorability through four factors:
+  // 1. 2-3 note pitch pattern repetition (30%)
+  // 2. Rhythmic pattern consistency (25%)
+  // 3. Simple interval usage (25%)
+  // 4. Hook contour recognition (20%)
+
+  if (notes.size() < 4) return 0.5f;
+
+  float pattern_score = 0.0f;
+  float rhythm_score = 0.0f;
+  float simple_interval_score = 0.0f;
+  float contour_score = 0.0f;
+
+  // === 1. 2-3 note pitch pattern repetition (30%) ===
+  // Count repeated 2-note and 3-note pitch patterns
+  int pattern_matches = 0;
+  int total_patterns = 0;
+
+  // 2-note patterns (intervals)
+  for (size_t i = 0; i + 1 < notes.size(); ++i) {
+    int8_t interval1 = static_cast<int8_t>(notes[i + 1].note - notes[i].note);
+    for (size_t j = i + 2; j + 1 < notes.size(); ++j) {
+      int8_t interval2 = static_cast<int8_t>(notes[j + 1].note - notes[j].note);
+      if (interval1 == interval2) {
+        pattern_matches++;
+      }
+      total_patterns++;
+    }
+  }
+
+  // 3-note patterns (two consecutive intervals)
+  for (size_t i = 0; i + 2 < notes.size(); ++i) {
+    int8_t int1a = static_cast<int8_t>(notes[i + 1].note - notes[i].note);
+    int8_t int1b = static_cast<int8_t>(notes[i + 2].note - notes[i + 1].note);
+    for (size_t j = i + 3; j + 2 < notes.size(); ++j) {
+      int8_t int2a = static_cast<int8_t>(notes[j + 1].note - notes[j].note);
+      int8_t int2b = static_cast<int8_t>(notes[j + 2].note - notes[j + 1].note);
+      if (int1a == int2a && int1b == int2b) {
+        pattern_matches += 2;  // 3-note matches count more
+      }
+      total_patterns++;
+    }
+  }
+
+  if (total_patterns > 0) {
+    pattern_score = std::min(1.0f, static_cast<float>(pattern_matches) /
+                                       static_cast<float>(total_patterns) * 2.0f);
+  }
+
+  // === 2. Rhythmic pattern consistency (25%) ===
+  // Check for repeated duration patterns
+  constexpr Tick kDurQuantize = TICKS_PER_BEAT / 4;  // 16th note quantization
+  int rhythm_matches = 0;
+  int rhythm_total = 0;
+
+  for (size_t i = 0; i < notes.size(); ++i) {
+    int dur_idx = static_cast<int>(notes[i].duration / kDurQuantize);
+    for (size_t j = i + 1; j < notes.size(); ++j) {
+      int other_dur = static_cast<int>(notes[j].duration / kDurQuantize);
+      if (dur_idx == other_dur) {
+        rhythm_matches++;
+      }
+      rhythm_total++;
+    }
+  }
+
+  if (rhythm_total > 0) {
+    rhythm_score = static_cast<float>(rhythm_matches) / static_cast<float>(rhythm_total);
+  }
+
+  // === 3. Simple interval usage (25%) ===
+  // Count intervals that are easy to sing/remember (unison, 2nd, 3rd = 0-4 semitones)
+  int simple_intervals = 0;
+  int total_intervals = 0;
+
+  for (size_t i = 1; i < notes.size(); ++i) {
+    int interval = std::abs(notes[i].note - notes[i - 1].note);
+    if (interval <= 4) {  // Unison through major 3rd
+      simple_intervals++;
+    }
+    total_intervals++;
+  }
+
+  if (total_intervals > 0) {
+    simple_interval_score = static_cast<float>(simple_intervals) / static_cast<float>(total_intervals);
+  }
+
+  // === 4. Hook contour recognition (20%) ===
+  // Check for classic hook contours: Repeat, AscendDrop, PeakDrop
+  // These are patterns that tend to be memorable in pop music
+
+  // Check for pitch repetition (Repeat pattern)
+  int consecutive_same = 0;
+  int max_consecutive_same = 0;
+  for (size_t i = 1; i < notes.size(); ++i) {
+    if (notes[i].note == notes[i - 1].note) {
+      consecutive_same++;
+      max_consecutive_same = std::max(max_consecutive_same, consecutive_same);
+    } else {
+      consecutive_same = 0;
+    }
+  }
+  float repeat_bonus = (max_consecutive_same >= 2) ? 0.5f : 0.0f;
+
+  // Check for AscendDrop (rising then falling)
+  bool has_ascend_drop = false;
+  if (notes.size() >= 4) {
+    size_t mid = notes.size() / 2;
+    int first_half_direction = 0;
+    int second_half_direction = 0;
+
+    for (size_t i = 1; i <= mid && i < notes.size(); ++i) {
+      first_half_direction += (notes[i].note > notes[i - 1].note) ? 1 : -1;
+    }
+    for (size_t i = mid + 1; i < notes.size(); ++i) {
+      second_half_direction += (notes[i].note > notes[i - 1].note) ? 1 : -1;
+    }
+
+    // AscendDrop: first half mostly ascending, second half mostly descending
+    has_ascend_drop = (first_half_direction > 0 && second_half_direction < 0);
+  }
+  float ascend_drop_bonus = has_ascend_drop ? 0.5f : 0.0f;
+
+  contour_score = repeat_bonus + ascend_drop_bonus;
+  contour_score = std::min(1.0f, contour_score);
+
+  // === Combine scores with weights ===
+  float total = pattern_score * 0.30f + rhythm_score * 0.25f + simple_interval_score * 0.25f +
+                contour_score * 0.20f;
+
+  return std::clamp(total, 0.0f, 1.0f);
+}
+
 MelodyScore MelodyEvaluator::evaluate(const std::vector<NoteEvent>& notes,
                                       const IHarmonyContext& harmony) {
   MelodyScore score;
@@ -298,6 +432,7 @@ MelodyScore MelodyEvaluator::evaluate(const std::vector<NoteEvent>& notes,
   score.surprise_element = calcSurpriseElement(notes);
   score.aaab_pattern = calcAaabPattern(notes);
   score.rhythm_interval_correlation = calcRhythmIntervalCorrelation(notes);
+  score.catchiness = calcCatchiness(notes);
   return score;
 }
 

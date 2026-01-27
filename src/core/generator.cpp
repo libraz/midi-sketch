@@ -894,6 +894,17 @@ void Generator::applyTransitionDynamics() {
   // Apply bar-level velocity curves (4-bar phrase dynamics)
   midisketch::applyAllBarVelocityCurves(tracks, sections);
 
+  // Apply micro-dynamics for natural breathing (Proposal D)
+  // Beat-level subtle velocity curves for all melodic tracks
+  // Note: Drums excluded - Beat 4 reduction (0.92x) would damage groove feel
+  for (MidiTrack* track : tracks) {
+    if (track != &song_.drums()) {
+      midisketch::applyBeatMicroDynamics(*track);
+    }
+  }
+  // Phrase-end decay for vocal track to create natural exhale at phrase boundaries
+  midisketch::applyPhraseEndDecay(song_.vocal(), sections);
+
   // Apply transition dynamics (section endings)
   midisketch::applyAllTransitionDynamics(tracks, sections);
 

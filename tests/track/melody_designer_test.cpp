@@ -1525,5 +1525,43 @@ TEST(VelocityContourTest, MelodyGeneratesWithVaryingVelocity) {
   }
 }
 
+// ============================================================================
+// Hook Betrayal Threshold Tests (Proposal C)
+// ============================================================================
+
+TEST(MelodyTemplateTest, BetrayalThresholdValuesAreDefined) {
+  // Verify all templates have betrayal_threshold defined
+  EXPECT_EQ(getTemplate(MelodyTemplateId::PlateauTalk).betrayal_threshold, 4);
+  EXPECT_EQ(getTemplate(MelodyTemplateId::RunUpTarget).betrayal_threshold, 3);  // YOASOBI = early
+  EXPECT_EQ(getTemplate(MelodyTemplateId::DownResolve).betrayal_threshold, 4);
+  EXPECT_EQ(getTemplate(MelodyTemplateId::HookRepeat).betrayal_threshold, 3);   // TikTok = early
+  EXPECT_EQ(getTemplate(MelodyTemplateId::SparseAnchor).betrayal_threshold, 5); // Ballad = late
+  EXPECT_EQ(getTemplate(MelodyTemplateId::CallResponse).betrayal_threshold, 4);
+  EXPECT_EQ(getTemplate(MelodyTemplateId::JumpAccent).betrayal_threshold, 4);
+}
+
+TEST(MelodyTemplateTest, BetrayalThresholdAffectsHookGeneration) {
+  // Test that different thresholds produce different hook patterns
+  // This is a basic smoke test - we cannot directly observe betrayal timing
+  // but we verify the system compiles and runs with the new field
+
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+  std::mt19937 rng(42);
+
+  auto ctx = createTestContext();
+  ctx.section_type = SectionType::Chorus;
+
+  // Test templates with different thresholds
+  const MelodyTemplate& tmpl_early = getTemplate(MelodyTemplateId::RunUpTarget);  // threshold=3
+  const MelodyTemplate& tmpl_late = getTemplate(MelodyTemplateId::SparseAnchor);  // threshold=5
+
+  auto notes_early = designer.generateSection(tmpl_early, ctx, harmony, rng);
+  EXPECT_GT(notes_early.size(), 0u);
+
+  auto notes_late = designer.generateSection(tmpl_late, ctx, harmony, rng);
+  EXPECT_GT(notes_late.size(), 0u);
+}
+
 }  // namespace
 }  // namespace midisketch

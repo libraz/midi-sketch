@@ -1028,9 +1028,10 @@ TEST_F(BassTest, PedalToneVelocityRange) {
     for (const auto& note : track.notes()) {
       if (note.start_tick >= sec_start && note.start_tick < sec_end) {
         // Pedal tone velocity should be moderate to strong (not ghost notes)
-        // Allow tolerance for post-processing humanization (velocity +-12) and
-        // dynamics processing (section multipliers, velocity curves)
-        EXPECT_GE(note.velocity, 36)
+        // Allow tolerance for post-processing humanization (velocity +-12),
+        // dynamics processing (section multipliers, velocity curves), and
+        // beat-level micro-dynamics (0.92 multiplier on weak beats)
+        EXPECT_GE(note.velocity, 32)
             << "Pedal tone velocity too low at tick " << note.start_tick;
         EXPECT_LE(note.velocity, 127)
             << "Pedal tone velocity too high at tick " << note.start_tick;
