@@ -129,7 +129,9 @@ float getPeakVelocityMultiplier(PeakLevel peak) {
 
 uint8_t calculateEffectiveVelocity(const Section& section, uint8_t beat, Mood mood) {
   // Use section's base_velocity if set (non-default)
-  uint8_t base = (section.base_velocity != 80) ? section.base_velocity : 80;
+  uint8_t raw_base = (section.base_velocity != 80) ? section.base_velocity : 80;
+  // Apply SectionModifier (Ochisabi, Climactic, etc.)
+  uint8_t base = section.getModifiedVelocity(raw_base);
 
   // Beat position adjustment
   int8_t beat_adj = (beat == 0) ? 10 : (beat == 2) ? 5 : 0;

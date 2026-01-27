@@ -498,7 +498,7 @@ BassPattern applyPeakLevelPromotion(BassPattern pattern, PeakLevel peak_level) {
 BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section, size_t sec_idx,
                                     const GeneratorParams& params, std::mt19937& rng) {
   BassPattern base_pattern = selectPatternWithPolicyCore(cache, sec_idx, params, rng, [&]() {
-    return selectPattern(section.type, params.drums_enabled, params.mood, section.backing_density,
+    return selectPattern(section.type, params.drums_enabled, params.mood, section.getEffectiveBackingDensity(),
                          rng);
   });
 
@@ -2158,8 +2158,11 @@ void applyBassArticulation(MidiTrack& track, BassPattern pattern, Mood mood,
 // - > 90%: increase approach note frequency
 
 void applyDensityAdjustment(MidiTrack& track, const Section& section) {
+  // Apply SectionModifier to density
+  uint8_t effective_density = section.getModifiedDensity(section.density_percent);
+
   // Skip if normal density
-  if (section.density_percent >= 70 && section.density_percent <= 90) {
+  if (effective_density >= 70 && effective_density <= 90) {
     return;
   }
 
@@ -2169,7 +2172,7 @@ void applyDensityAdjustment(MidiTrack& track, const Section& section) {
   Tick section_start = section.start_tick;
   Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
 
-  if (section.density_percent < 70) {
+  if (effective_density < 70) {
     // Low density: thin out by removing alternate 8th notes
     // Keep notes on quarter note positions (0, 480, 960, 1440 within each bar)
     std::vector<NoteEvent> filtered;

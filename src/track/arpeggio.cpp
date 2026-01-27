@@ -243,6 +243,9 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
     ArpeggioSpeed section_speed = effective_speed;
     uint8_t section_octave_range = arp.octave_range;
 
+    // Apply SectionModifier to density for this section
+    uint8_t effective_density = section.getModifiedDensity(section.density_percent);
+
     // Only promote to 16th if:
     // 1. density > 90%
     // 2. effective_speed is 8th (not already 16th or a special rhythm like Triplet)
@@ -251,7 +254,7 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
     // This preserves both user preferences and mood-specific rhythms
     bool user_set_speed = (arp.speed != ArpeggioSpeed::Sixteenth);
     bool style_has_special_speed = (style.speed != ArpeggioSpeed::Sixteenth);
-    if (section.density_percent > 90 && section_speed == ArpeggioSpeed::Eighth &&
+    if (effective_density > 90 && section_speed == ArpeggioSpeed::Eighth &&
         !user_set_speed && !style_has_special_speed) {
       section_speed = ArpeggioSpeed::Sixteenth;
     }
@@ -379,12 +382,12 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
         uint8_t velocity = calculateArpeggioVelocity(arp.base_velocity, section.type,
                                                      pattern_index % current_notes.size());
 
-        // Apply density_percent to skip notes probabilistically
+        // Apply density_percent to skip notes probabilistically (with SectionModifier)
         // For arpeggio, only skip when density is < 80% to maintain rhythmic feel
         bool add_note = true;
-        if (section.density_percent < 80) {
+        if (effective_density < 80) {
           std::uniform_real_distribution<float> density_dist(0.0f, 100.0f);
-          add_note = (density_dist(rng) <= section.density_percent);
+          add_note = (density_dist(rng) <= effective_density);
         }
 
         if (add_note) {

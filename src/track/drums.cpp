@@ -1875,7 +1875,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
     }
 
     // Adjust for backing density
-    switch (section.backing_density) {
+    switch (section.getEffectiveBackingDensity()) {
       case BackingDensity::Thin:
         density_mult *= 0.75f;  // Softer for thin
         break;
@@ -1893,7 +1893,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
       addDrumNote(track, section.start_tick, TICKS_PER_BEAT / 2, 49, crash_vel);  // Crash cymbal
     }
 
-    HiHatLevel hh_level = getHiHatLevel(section.type, style, section.backing_density, params.bpm,
+    HiHatLevel hh_level = getHiHatLevel(section.type, style, section.getEffectiveBackingDensity(), params.bpm,
                                         rng, params.paradigm);
 
     // BackgroundMotif: force 8th note hi-hat for consistent drive
@@ -1922,7 +1922,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
 
     // Dynamic hi-hat: compute open HH interval and foot HH flag for this section
     int ohh_bar_interval = getOpenHiHatBarInterval(section.type, style);
-    bool use_foot_hh = shouldUseFootHiHat(section.type, section.drum_role);
+    bool use_foot_hh = shouldUseFootHiHat(section.type, section.getEffectiveDrumRole());
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
@@ -2053,7 +2053,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
 
         // ===== KICK DRUM =====
         // Apply DrumRole-based kick probability
-        float kick_prob = getDrumRoleKickProbability(section.drum_role);
+        float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
 
         // Pre-chorus lift: suppress kick
         if (in_prechorus_lift) {
@@ -2108,7 +2108,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
 
         // ===== SNARE DRUM =====
         // Apply DrumRole-based snare probability
-        float snare_prob = getDrumRoleSnareProbability(section.drum_role);
+        float snare_prob = getDrumRoleSnareProbability(section.getEffectiveDrumRole());
 
         // Pre-chorus lift: suppress snare
         if (in_prechorus_lift) {
@@ -2134,10 +2134,10 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
         if (snare_on_this_beat && !is_intro_first) {
           // DrumRole::Ambient uses sidestick for atmospheric feel
           // Note: Snare uses beat_tick (not adjusted) to maintain backbeat feel
-          if (style == DrumStyle::Sparse || section.drum_role == DrumRole::Ambient) {
+          if (style == DrumStyle::Sparse || section.getEffectiveDrumRole() == DrumRole::Ambient) {
             uint8_t snare_vel = static_cast<uint8_t>(velocity * 0.8f);
             // Only play sidestick if not FXOnly or Minimal
-            if (section.drum_role != DrumRole::FXOnly && section.drum_role != DrumRole::Minimal) {
+            if (section.getEffectiveDrumRole() != DrumRole::FXOnly && section.getEffectiveDrumRole() != DrumRole::Minimal) {
               addDrumNote(track, beat_tick, EIGHTH, SIDESTICK, snare_vel);
             }
           } else if (snare_prob >= 1.0f) {
@@ -2150,7 +2150,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
           // Get ghost note positions and density based on mood
           auto ghost_positions = selectGhostPositions(params.mood, rng);
           float ghost_prob =
-              getGhostDensity(params.mood, section.type, section.backing_density, params.bpm);
+              getGhostDensity(params.mood, section.type, section.getEffectiveBackingDensity(), params.bpm);
 
           // Apply groove template ghost density modifier when using euclidean
           if (use_euclidean) {
@@ -2183,7 +2183,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
 
         // ===== HI-HAT =====
         // Skip main hi-hat for FXOnly DrumRole, but add foot HH if applicable
-        if (!shouldPlayHiHat(section.drum_role)) {
+        if (!shouldPlayHiHat(section.getEffectiveDrumRole())) {
           if (use_foot_hh && (beat == 0 || beat == 2)) {
             addDrumNote(track, beat_tick, EIGHTH, FHH, getFootHiHatVelocity(rng));
           }
@@ -2193,7 +2193,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
         // Use section-aware and beat-aware instrument selection
         // (Bridge sections alternate ride + cross-stick on backbeats)
         uint8_t hh_instrument = getTimekeepingInstrument(
-            section.type, section.drum_role, use_ride, beat);
+            section.type, section.getEffectiveDrumRole(), use_ride, beat);
 
         // Dynamic open HH: replace closed HH on the designated beat
         bool is_dynamic_open_hh_beat = bar_has_open_hh && (beat == open_hh_beat);
@@ -2347,7 +2347,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
       // Foot HH is played by the left foot independently from the hi-hat stick.
       // Added on beats 1 and 3 in sections that benefit from subtle pulse
       // (Intro, Bridge, Interlude, Outro).
-      if (use_foot_hh && shouldPlayHiHat(section.drum_role)) {
+      if (use_foot_hh && shouldPlayHiHat(section.getEffectiveDrumRole())) {
         for (uint8_t fhh_beat = 0; fhh_beat < 4; fhh_beat += 2) {
           Tick fhh_tick = bar_start + fhh_beat * TICKS_PER_BEAT;
           addDrumNote(track, fhh_tick, EIGHTH, FHH, getFootHiHatVelocity(rng));
@@ -2359,7 +2359,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
       if (!is_background_motif) {
         PercussionConfig perc_config = getPercussionConfig(params.mood, section.type);
         generateAuxPercussionForBar(track, bar_start, perc_config,
-                                     section.drum_role, density_mult, rng);
+                                     section.getEffectiveDrumRole(), density_mult, rng);
       }
     }
   }
@@ -2498,7 +2498,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
     }
 
     // Adjust for backing density
-    switch (section.backing_density) {
+    switch (section.getEffectiveBackingDensity()) {
       case BackingDensity::Thin:
         density_mult *= 0.75f;
         break;
@@ -2515,7 +2515,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
       addDrumNote(track, section.start_tick, TICKS_PER_BEAT / 2, 49, crash_vel);
     }
 
-    HiHatLevel hh_level = getHiHatLevel(section.type, style, section.backing_density, params.bpm,
+    HiHatLevel hh_level = getHiHatLevel(section.type, style, section.getEffectiveBackingDensity(), params.bpm,
                                         rng, params.paradigm);
 
     // BackgroundMotif: force 8th note hi-hat
@@ -2544,7 +2544,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
 
     // Dynamic hi-hat: compute open HH interval and foot HH flag for this section
     int ohh_bar_interval = getOpenHiHatBarInterval(section.type, style);
-    bool use_foot_hh = shouldUseFootHiHat(section.type, section.drum_role);
+    bool use_foot_hh = shouldUseFootHiHat(section.type, section.getEffectiveDrumRole());
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
@@ -2596,7 +2596,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
       // Try to add kicks synced to vocal onsets
       uint8_t kick_velocity = calculateVelocity(section.type, 0, params.mood);
       bool kicks_added = addVocalSyncedKicks(track, bar_start, bar_end, vocal_analysis,
-                                             kick_velocity, section.drum_role, rng);
+                                             kick_velocity, section.getEffectiveDrumRole(), rng);
 
       // Get kick pattern for fallback and for fills
       KickPattern kick = getKickPattern(section.type, style, bar, rng);
@@ -2659,7 +2659,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
         // ===== KICK DRUM (fallback if no vocal sync) =====
         if (!kicks_added) {
           // Use normal kick pattern
-          float kick_prob = getDrumRoleKickProbability(section.drum_role);
+          float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
           std::uniform_real_distribution<float> kick_dist(0.0f, 1.0f);
 
           bool play_kick_on = false;
@@ -2703,13 +2703,13 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
         }
 
         // ===== SNARE DRUM =====
-        float snare_prob = getDrumRoleSnareProbability(section.drum_role);
+        float snare_prob = getDrumRoleSnareProbability(section.getEffectiveDrumRole());
 
         bool is_intro_first = (section.type == SectionType::Intro && bar == 0);
         if ((beat == 1 || beat == 3) && !is_intro_first) {
-          if (style == DrumStyle::Sparse || section.drum_role == DrumRole::Ambient) {
+          if (style == DrumStyle::Sparse || section.getEffectiveDrumRole() == DrumRole::Ambient) {
             uint8_t snare_vel = static_cast<uint8_t>(velocity * 0.8f);
-            if (section.drum_role != DrumRole::FXOnly && section.drum_role != DrumRole::Minimal) {
+            if (section.getEffectiveDrumRole() != DrumRole::FXOnly && section.getEffectiveDrumRole() != DrumRole::Minimal) {
               addDrumNote(track, beat_tick, EIGHTH, SIDESTICK, snare_vel);
             }
           } else if (snare_prob >= 1.0f) {
@@ -2721,7 +2721,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
         if (use_ghost_notes && (beat == 0 || beat == 2)) {
           auto ghost_positions = selectGhostPositions(params.mood, rng);
           float ghost_prob =
-              getGhostDensity(params.mood, section.type, section.backing_density, params.bpm);
+              getGhostDensity(params.mood, section.type, section.getEffectiveBackingDensity(), params.bpm);
 
           std::uniform_real_distribution<float> ghost_dist(0.0f, 1.0f);
           // Human-like velocity variation: ±15% (0.85-1.15)
@@ -2747,7 +2747,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
 
         // ===== HI-HAT =====
         // Skip main hi-hat for FXOnly DrumRole, but add foot HH if applicable
-        if (!shouldPlayHiHat(section.drum_role)) {
+        if (!shouldPlayHiHat(section.getEffectiveDrumRole())) {
           if (use_foot_hh && (beat == 0 || beat == 2)) {
             addDrumNote(track, beat_tick, EIGHTH, FHH, getFootHiHatVelocity(rng));
           }
@@ -2757,7 +2757,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
         // Use section-aware and beat-aware instrument selection
         // (Bridge sections alternate ride + cross-stick on backbeats)
         uint8_t hh_instrument = getTimekeepingInstrument(
-            section.type, section.drum_role, use_ride, beat);
+            section.type, section.getEffectiveDrumRole(), use_ride, beat);
 
         // Dynamic open HH: replace closed HH on the designated beat
         bool is_dynamic_open_hh_beat = bar_has_open_hh && (beat == open_hh_beat);
@@ -2888,7 +2888,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
       }
 
       // ===== FOOT HI-HAT (independent pedal timekeeping) =====
-      if (use_foot_hh && shouldPlayHiHat(section.drum_role)) {
+      if (use_foot_hh && shouldPlayHiHat(section.getEffectiveDrumRole())) {
         for (uint8_t fhh_beat = 0; fhh_beat < 4; fhh_beat += 2) {
           Tick fhh_tick = bar_start + fhh_beat * TICKS_PER_BEAT;
           addDrumNote(track, fhh_tick, EIGHTH, FHH, getFootHiHatVelocity(rng));
@@ -2899,7 +2899,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
       if (!is_background_motif) {
         PercussionConfig perc_config = getPercussionConfig(params.mood, section.type);
         generateAuxPercussionForBar(track, bar_start, perc_config,
-                                     section.drum_role, density_mult, rng);
+                                     section.getEffectiveDrumRole(), density_mult, rng);
       }
     }
   }
@@ -2957,7 +2957,7 @@ KickPatternCache computeKickPattern(const std::vector<Section>& sections, Mood m
   // Generate kick positions for each section
   for (const auto& section : sections) {
     // Skip sections with minimal/no drums
-    if (section.drum_role == DrumRole::Minimal || section.drum_role == DrumRole::FXOnly) {
+    if (section.getEffectiveDrumRole() == DrumRole::Minimal || section.getEffectiveDrumRole() == DrumRole::FXOnly) {
       continue;
     }
 

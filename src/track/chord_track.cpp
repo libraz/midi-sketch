@@ -1208,7 +1208,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
     SectionType next_section_type =
         (sec_idx + 1 < sections.size()) ? sections[sec_idx + 1].type : section.type;
 
-    ChordRhythm rhythm = selectRhythm(section.type, params.mood, section.backing_density, rng);
+    ChordRhythm rhythm = selectRhythm(section.type, params.mood, section.getEffectiveBackingDensity(), rng);
     HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, params.mood);
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
@@ -1935,7 +1935,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
     SectionType next_section_type =
         (sec_idx + 1 < sections.size()) ? sections[sec_idx + 1].type : section.type;
 
-    ChordRhythm rhythm = selectRhythm(section.type, params.mood, section.backing_density, rng);
+    ChordRhythm rhythm = selectRhythm(section.type, params.mood, section.getEffectiveBackingDensity(), rng);
     HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, params.mood);
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {

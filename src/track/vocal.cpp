@@ -291,9 +291,10 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
       ctx.vocal_low = section_vocal_low;
       ctx.vocal_high = section_vocal_high;
       ctx.mood = params.mood;  // For harmonic rhythm alignment
-      // Apply section's density_percent to density modifier
+      // Apply section's density_percent to density modifier (with SectionModifier)
       float base_density = getDensityModifier(section.type, params.melody_params);
-      float density_factor = section.density_percent / 100.0f;
+      uint8_t effective_density = section.getModifiedDensity(section.density_percent);
+      float density_factor = effective_density / 100.0f;
       ctx.density_modifier = base_density * density_factor;
       ctx.thirtysecond_ratio = getThirtysecondRatio(section.type, params.melody_params);
       ctx.consecutive_same_note_prob =

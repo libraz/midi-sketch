@@ -96,13 +96,14 @@ constexpr SectionSlot STORYPOP_FLOW[] = {
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 92, 100,
      PeakLevel::Medium, DrumRole::Full},
 
-    // Bridge: thinner arrangement
+    // Bridge: thinner arrangement (Transitional modifier for preparation)
     {SectionType::Bridge, 8, TrackMask::Vocal | TrackMask::Chord | TrackMask::Drums,
-     EntryPattern::Immediate, SectionEnergy::High, 78, 75, PeakLevel::None, DrumRole::Minimal},
+     EntryPattern::Immediate, SectionEnergy::High, 78, 75, PeakLevel::None, DrumRole::Minimal,
+     -1.0f, SectionModifier::Transitional, 100},
 
-    // Last chorus (Maximum peak)
+    // Last chorus (Maximum peak, Climactic modifier)
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 95, 100,
-     PeakLevel::Max, DrumRole::Full},
+     PeakLevel::Max, DrumRole::Full, -1.0f, SectionModifier::Climactic, 100},
 
     // Outro
     {SectionType::Outro, 4, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Low, 65, 70,
@@ -142,13 +143,13 @@ constexpr SectionSlot BALLAD_FLOW[] = {
      EntryPattern::GradualBuild, SectionEnergy::Medium, 73, 80, PeakLevel::None, DrumRole::Full,
      0.2f},
 
-    // 2nd Chorus: fuller (Medium peak)
+    // 2nd Chorus (Ochisabi - "falling sabi"): quiet, intimate before final climax
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::GradualBuild, SectionEnergy::High, 82,
-     90, PeakLevel::Medium, DrumRole::Full, 0.25f},
+     90, PeakLevel::Medium, DrumRole::Full, 0.25f, SectionModifier::Ochisabi, 100},
 
-    // Last chorus: emotional peak (Maximum peak)
+    // Last chorus: emotional peak (Maximum peak, Climactic modifier)
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 90, 100,
-     PeakLevel::Max, DrumRole::Full, 0.3f},
+     PeakLevel::Max, DrumRole::Full, 0.3f, SectionModifier::Climactic, 100},
 
     // Outro: fade out with chord
     {SectionType::Outro, 8, TrackMask::Chord, EntryPattern::Immediate, SectionEnergy::Low, 55, 50,
@@ -187,13 +188,14 @@ constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::High, 85, 95,
      PeakLevel::Medium, DrumRole::Full},
 
-    // Bridge: emotional pause
+    // Bridge: emotional pause (Transitional modifier for preparation)
     {SectionType::Bridge, 8, TrackMask::Vocal | TrackMask::Chord | TrackMask::Drums,
-     EntryPattern::Immediate, SectionEnergy::Medium, 70, 70, PeakLevel::None, DrumRole::Minimal},
+     EntryPattern::Immediate, SectionEnergy::Medium, 70, 70, PeakLevel::None, DrumRole::Minimal,
+     -1.0f, SectionModifier::Transitional, 100},
 
-    // Last Chorus: maximum peak, extended
+    // Last Chorus: maximum peak, extended (Climactic modifier)
     {SectionType::Chorus, 16, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 95, 100,
-     PeakLevel::Max, DrumRole::Full},
+     PeakLevel::Max, DrumRole::Full, -1.0f, SectionModifier::Climactic, 100},
 
     // Outro: fade out
     {SectionType::Outro, 4, TrackMask::Drums | TrackMask::Chord, EntryPattern::Immediate,
@@ -327,17 +329,18 @@ constexpr SectionSlot IDOL_EMO_FLOW[] = {
      TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord | TrackMask::Bass, EntryPattern::DropIn,
      SectionEnergy::High, 78, 80, PeakLevel::None, DrumRole::Full},
 
-    // Quiet A: return to intimacy (lower energy/density)
+    // Quiet A (Ochisabi): return to intimacy - "falling sabi" moment
     {SectionType::A, 4, TrackMask::Vocal | TrackMask::Chord, EntryPattern::Immediate,
-     SectionEnergy::Low, 55, 50, PeakLevel::None, DrumRole::Ambient},
+     SectionEnergy::Low, 55, 50, PeakLevel::None, DrumRole::Ambient, -1.0f,
+     SectionModifier::Ochisabi, 100},
 
     // Build: tension rising (using B for GradualBuild)
     {SectionType::B, 8, TrackMask::All, EntryPattern::GradualBuild, SectionEnergy::High, 75, 85,
      PeakLevel::None, DrumRole::Full},
 
-    // Last Chorus: emotional explosion
+    // Last Chorus: emotional explosion (Climactic modifier)
     {SectionType::Chorus, 16, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 95, 100,
-     PeakLevel::Max, DrumRole::Full},
+     PeakLevel::Max, DrumRole::Full, -1.0f, SectionModifier::Climactic, 100},
 
     // Outro: lingering emotion
     {SectionType::Outro, 4, TrackMask::Chord | TrackMask::Vocal, EntryPattern::Immediate,

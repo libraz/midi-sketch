@@ -699,10 +699,11 @@ void generateMotifTrack(MidiTrack& track, Song& song, const GeneratorParams& par
         Tick absolute_tick = pos + note.start_tick;
         if (absolute_tick >= section_end) continue;
 
-        // Apply density_percent to skip notes probabilistically
-        if (section.density_percent < 100) {
+        // Apply density_percent to skip notes probabilistically (with SectionModifier)
+        uint8_t effective_density = section.getModifiedDensity(section.density_percent);
+        if (effective_density < 100) {
           std::uniform_real_distribution<float> density_dist(0.0f, 100.0f);
-          if (density_dist(rng) > section.density_percent) {
+          if (density_dist(rng) > effective_density) {
             continue;  // Skip this note based on density setting
           }
         }

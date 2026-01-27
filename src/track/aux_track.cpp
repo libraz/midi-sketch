@@ -247,7 +247,7 @@ void AuxTrackGenerator::generateFullTrack(MidiTrack& track, const SongContext& s
     ctx.section_end = section_end;
     ctx.chord_degree = chord_degree;
     ctx.key_offset = 0;  // Always C major internally
-    ctx.base_velocity = 80;
+    ctx.base_velocity = section.getModifiedVelocity(80);
     ctx.main_tessitura = main_tessitura;
     ctx.main_melody = &vocal_track.notes();
     ctx.section_type = section.type;
