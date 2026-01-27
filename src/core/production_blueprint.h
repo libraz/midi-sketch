@@ -38,6 +38,13 @@ struct SectionSlot {
   /// 0.0-0.7 = override swing amount
   /// Controls the degree of shuffle feel in drums (0 = straight, 0.7 = heavy shuffle).
   float swing_amount = -1.0f;
+
+  /// @brief Section modifier for dynamic variation (Ochisabi, Climactic, etc.)
+  /// Applied on top of base section properties for emotional dynamics.
+  SectionModifier modifier = SectionModifier::None;
+
+  /// @brief Modifier intensity (0-100%). Controls strength of modifier effect.
+  uint8_t modifier_intensity = 100;
 };
 
 /// @brief Production blueprint defining how a song is generated.
@@ -73,6 +80,10 @@ struct ProductionBlueprint {
   /// Euclidean patterns provide mathematically-spaced, natural-feeling rhythms.
   /// 0 = always use traditional patterns, 100 = always use Euclidean.
   uint8_t euclidean_drums_percent = 0;
+
+  /// @brief Enable Behavioral Loop mode (addictive generation).
+  /// Forces RiffPolicy::LockedPitch, HookIntensity::Maximum, and CutOff exit patterns.
+  bool addictive_mode = false;
 };
 
 // ============================================================================

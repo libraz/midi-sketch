@@ -320,6 +320,13 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   params.modulation_timing = config.modulation_timing;
   params.modulation_semitones = config.modulation_semitones;
 
+  // Behavioral Loop mode: force settings for addictive generation
+  params.addictive_mode = config.addictive_mode;
+  if (config.addictive_mode) {
+    params.riff_policy = RiffPolicy::LockedPitch;
+    params.hook_intensity = HookIntensity::Maximum;
+  }
+
   return params;
 }
 

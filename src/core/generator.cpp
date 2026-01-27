@@ -118,6 +118,13 @@ void Generator::initializeBlueprint(uint32_t seed) {
   if (blueprint_->drums_required) {
     params_.drums_enabled = true;
   }
+
+  // Apply addictive mode from blueprint (OR with config setting)
+  if (blueprint_->addictive_mode) {
+    params_.addictive_mode = true;
+    params_.riff_policy = RiffPolicy::LockedPitch;
+    params_.hook_intensity = HookIntensity::Maximum;
+  }
 }
 
 void Generator::configureRhythmSyncMotif() {
@@ -125,6 +132,15 @@ void Generator::configureRhythmSyncMotif() {
     params_.motif.rhythm_density = MotifRhythmDensity::Driving;
     params_.motif.note_count = 8;               // Dense eighth-note pattern
     params_.motif.length = MotifLength::Bars1;  // 1-bar motif for continuous riff
+  }
+}
+
+void Generator::configureAddictiveMotif() {
+  if (params_.addictive_mode) {
+    // Behavioral Loop: 1-bar dense pattern for maximum repetition
+    params_.motif.rhythm_density = MotifRhythmDensity::Driving;
+    params_.motif.note_count = 8;               // Dense eighth-note pattern
+    params_.motif.length = MotifLength::Bars1;  // 1-bar motif for tight loop
   }
 }
 
@@ -204,6 +220,10 @@ std::vector<Section> Generator::buildSongStructure(uint16_t bpm) {
       insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
     }
   }
+
+  // Apply Behavioral Loop exit patterns (CutOff before Chorus)
+  applyAddictiveModeExitPatterns(sections, params_.addictive_mode);
+
   return sections;
 }
 
@@ -238,6 +258,7 @@ void Generator::generate(const GeneratorParams& params) {
   // Initialize blueprint and motif configuration
   initializeBlueprint(seed);
   configureRhythmSyncMotif();
+  configureAddictiveMotif();
 
   // Resolve BPM
   uint16_t bpm = params.bpm;
@@ -402,6 +423,7 @@ void Generator::generateVocal(const GeneratorParams& params) {
   // Initialize blueprint and motif configuration
   initializeBlueprint(seed);
   configureRhythmSyncMotif();
+  configureAddictiveMotif();
 
   // Resolve BPM
   uint16_t bpm = params.bpm;
@@ -670,6 +692,7 @@ void Generator::setVocalNotes(const GeneratorParams& params, const std::vector<N
   // Initialize blueprint and motif configuration
   initializeBlueprint(seed);
   configureRhythmSyncMotif();
+  configureAddictiveMotif();
 
   // Resolve BPM
   uint16_t bpm = params.bpm;

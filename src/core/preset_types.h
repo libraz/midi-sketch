@@ -231,6 +231,9 @@ struct SongConfig {
   MelodicComplexity melodic_complexity = MelodicComplexity::Standard;
   HookIntensity hook_intensity = HookIntensity::Normal;
   VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
+
+  /// === Behavioral Loop (addictive generation) ===
+  bool addictive_mode = false;  ///< Enable Behavioral Loop mode (fixed riff, maximum hook)
 };
 
 /// @brief Input parameters for MIDI generation.
@@ -295,6 +298,9 @@ struct GeneratorParams {
   MelodicComplexity melodic_complexity = MelodicComplexity::Standard;
   HookIntensity hook_intensity = HookIntensity::Normal;
   VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
+
+  /// Behavioral Loop (addictive generation)
+  bool addictive_mode = false;  ///< Enable Behavioral Loop mode (fixed riff, maximum hook)
 
   /// Modulation settings (for metadata/regeneration determinism)
   ModulationTiming modulation_timing = ModulationTiming::None;

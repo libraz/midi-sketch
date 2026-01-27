@@ -325,6 +325,10 @@ class Generator {
    *  Sets rhythm_density=Driving, note_count=8, length=1bar. */
   void configureRhythmSyncMotif();
 
+  /** @brief Configure motif parameters for Behavioral Loop mode.
+   *  Sets rhythm_density=Driving, note_count=8, length=1bar for tight loops. */
+  void configureAddictiveMotif();
+
   /** @brief Validate and normalize vocal range parameters.
    *  Swaps low/high if inverted, clamps to valid MIDI range. */
   void validateVocalRange();

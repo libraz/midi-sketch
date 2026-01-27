@@ -53,6 +53,7 @@ void printUsage(const char* program) {
   std::cout << "  --new-seed N      Use new seed when regenerating (default: same seed)\n";
   std::cout << "  --bar N           Show notes at bar N (1-indexed) by track\n";
   std::cout << "  --json            Output JSON to stdout (with --validate or --analyze)\n";
+  std::cout << "  --addictive       Enable Behavioral Loop mode (fixed riff, maximum hook)\n";
   std::cout << "  --help            Show this help message\n";
 }
 
@@ -485,7 +486,8 @@ int main(int argc, char* argv[]) {
   uint8_t vocal_low = 57;
   uint8_t vocal_high = 79;
   midisketch::MidiFormat midi_format = midisketch::kDefaultMidiFormat;
-  int bar_num = 0;  // 0 = no bar inspection
+  int bar_num = 0;       // 0 = no bar inspection
+  bool addictive = false;  // Behavioral Loop mode
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--analyze") == 0) {
@@ -574,6 +576,8 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: --bar must be >= 1\n";
         return 1;
       }
+    } else if (std::strcmp(argv[i], "--addictive") == 0) {
+      addictive = true;
     } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
       printUsage(argv[0]);
       return 0;
@@ -851,6 +855,9 @@ int main(int argc, char* argv[]) {
   }
   config.vocal_low = vocal_low;
   config.vocal_high = vocal_high;
+
+  // Behavioral Loop mode
+  config.addictive_mode = addictive;
 
   // regenerate_vocal is handled separately (not part of initial config)
   (void)regenerate_vocal;

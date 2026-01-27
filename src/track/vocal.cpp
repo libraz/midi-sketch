@@ -305,6 +305,8 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
       // RhythmSync support
       ctx.paradigm = params.paradigm;
       ctx.drum_grid = drum_grid;
+      // Behavioral Loop support
+      ctx.addictive_mode = params.addictive_mode;
 
       // Set transition info for next section (if any)
       const auto& sections = song.arrangement().sections();

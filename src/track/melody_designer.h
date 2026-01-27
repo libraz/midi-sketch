@@ -57,6 +57,9 @@ class MelodyDesigner {
     GenerationParadigm paradigm = GenerationParadigm::Traditional;  ///< Generation paradigm
     const DrumGrid* drum_grid = nullptr;  ///< Drum grid for RhythmSync quantization
 
+    // Behavioral Loop support
+    bool addictive_mode = false;  ///< Enable Behavioral Loop mode (fixed patterns)
+
     // ========================================================================
     // Task 5-2: Internal 4-Stage Structure within Section
     // ========================================================================
@@ -397,6 +400,12 @@ class MelodyDesigner {
   // First 8 pitches of the chorus hook are stored and reused.
   std::array<uint8_t, 8> cached_sabi_pitches_;
   bool sabi_pitches_cached_ = false;
+
+  // Cached sabi (chorus) head rhythm for consistency.
+  // First 8 durations and velocities are stored alongside pitches.
+  std::array<Tick, 8> cached_sabi_durations_;
+  std::array<uint8_t, 8> cached_sabi_velocities_;
+  bool sabi_rhythm_cached_ = false;
 
   // Prepare section-specific motif variants from source motif.
   void prepareMotifVariants(const GlobalMotif& source);

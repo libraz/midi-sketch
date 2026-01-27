@@ -1382,8 +1382,10 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
 
       // Apply cached sabi pitches for first 8 notes (if available)
       // This ensures the chorus hook head is consistent across the song
+      bool use_cached_rhythm_for_note = false;
       if (use_cached_sabi && total_note_idx < 8) {
         pitch = static_cast<int>(cached_sabi_pitches_[total_note_idx]);
+        use_cached_rhythm_for_note = sabi_rhythm_cached_;
       }
 
       // Find nearest chord tone within vocal range and interval constraint
@@ -1577,12 +1579,23 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
         }
       }
 
+      // Apply cached rhythm (duration/velocity) for sabi consistency
+      Tick final_duration = actual_duration;
+      uint8_t final_velocity = velocity;
+      Tick tick_advance = note_duration;  // Default: advance by pattern duration
+      if (use_cached_rhythm_for_note) {
+        final_duration = cached_sabi_durations_[total_note_idx];
+        final_velocity = cached_sabi_velocities_[total_note_idx];
+        // For tick advancement, use cached duration to maintain timing consistency
+        tick_advance = cached_sabi_durations_[total_note_idx];
+      }
+
       result.notes.push_back(factory.create(
-          current_tick, actual_duration, static_cast<uint8_t>(pitch), velocity, NoteSource::Hook));
+          current_tick, final_duration, static_cast<uint8_t>(pitch), final_velocity, NoteSource::Hook));
 
       prev_hook_pitch = pitch;
-      prev_note_duration = actual_duration;  // Track for leap preparation
-      current_tick += note_duration;
+      prev_note_duration = final_duration;  // Track for leap preparation
+      current_tick += tick_advance;
     }
 
     // Add gap after pattern (varies by pattern for natural breathing)
@@ -1619,16 +1632,20 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   }
 
   // =========================================================================
-  // SABI (CHORUS) HEAD CACHING: Store first 8 pitches for consistency
+  // SABI (CHORUS) HEAD CACHING: Store first 8 pitches, durations, velocities
   // =========================================================================
-  // Cache the first 8 pitches of the chorus hook for reuse in subsequent
+  // Cache the first 8 notes of the chorus hook for reuse in subsequent
   // chorus sections. This ensures the "sabi" (hook head) is memorable.
+  // Rhythm (duration + velocity) is also cached for complete consistency.
   if (!sabi_pitches_cached_ && ctx.section_type == SectionType::Chorus &&
       result.notes.size() >= 8) {
     for (size_t i = 0; i < 8 && i < result.notes.size(); ++i) {
       cached_sabi_pitches_[i] = result.notes[i].note;
+      cached_sabi_durations_[i] = result.notes[i].duration;
+      cached_sabi_velocities_[i] = result.notes[i].velocity;
     }
     sabi_pitches_cached_ = true;
+    sabi_rhythm_cached_ = true;
   }
 
   // Return last pitch for smooth transition to next phrase

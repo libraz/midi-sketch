@@ -6,6 +6,7 @@
 #ifndef MIDISKETCH_CORE_SECTION_TYPES_H
 #define MIDISKETCH_CORE_SECTION_TYPES_H
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <string>
@@ -290,6 +291,23 @@ enum class DrumRole : uint8_t {
 };
 
 // ============================================================================
+// SectionModifier - Dynamic variation for sections (Ochisabi, Climactic, etc.)
+// ============================================================================
+
+/// @brief Section modifier for dynamic variation within song structure.
+///
+/// Provides emotional dynamics beyond base section type:
+/// - Ochisabi: "Falling sabi" - quiet/intimate chorus variant
+/// - Climactic: Maximum intensity for final climax
+/// - Transitional: Preparation for next section
+enum class SectionModifier : uint8_t {
+  None = 0,        ///< Standard section (no modification)
+  Ochisabi = 1,    ///< 落ちサビ: -30% velocity, drums FX only, thin backing
+  Climactic = 2,   ///< Climax: +15% velocity, maximum density
+  Transitional = 3 ///< Transition: -10% velocity, preparing for next section
+};
+
+// ============================================================================
 // Section Types
 // ============================================================================
 
@@ -334,6 +352,37 @@ enum class BackingDensity : uint8_t {
   Normal,  ///< Normal backing
   Thick    ///< Thick backing
 };
+
+/// @brief Properties for section modifiers.
+///
+/// Defines how each modifier affects generation parameters.
+struct ModifierProperties {
+  float velocity_adjust;   ///< Velocity multiplier adjustment (-0.30 to +0.15)
+  float density_adjust;    ///< Density multiplier adjustment (-0.40 to +0.25)
+  DrumRole suggested_drum_role;  ///< Recommended drum role for modifier
+  BackingDensity backing;  ///< Recommended backing density
+};
+
+/// @brief Get properties for a section modifier.
+/// @param modifier The section modifier
+/// @return Modifier properties
+inline ModifierProperties getModifierProperties(SectionModifier modifier) {
+  switch (modifier) {
+    case SectionModifier::Ochisabi:
+      // Quiet, intimate "falling sabi" - reduced energy
+      return {-0.30f, -0.40f, DrumRole::FXOnly, BackingDensity::Thin};
+    case SectionModifier::Climactic:
+      // Maximum energy climax
+      return {+0.15f, +0.25f, DrumRole::Full, BackingDensity::Thick};
+    case SectionModifier::Transitional:
+      // Preparing for next section
+      return {-0.10f, -0.15f, DrumRole::Ambient, BackingDensity::Normal};
+    case SectionModifier::None:
+    default:
+      // No modification
+      return {0.0f, 0.0f, DrumRole::Full, BackingDensity::Normal};
+  }
+}
 
 /// @brief Represents a section in the song structure.
 struct Section {
@@ -401,6 +450,14 @@ struct Section {
   /// Default is 0.0 (auto-calculate from section type).
   float harmonic_rhythm = 0.0f;
 
+  /// @brief Section modifier for dynamic variation (Ochisabi, Climactic, etc.)
+  /// Applied on top of base section properties for emotional dynamics.
+  SectionModifier modifier = SectionModifier::None;
+
+  /// @brief Modifier intensity (0-100%). Controls strength of modifier effect.
+  /// 100 = full effect, 50 = half effect, 0 = no effect.
+  uint8_t modifier_intensity = 100;
+
   /// @brief Layer events for per-bar track scheduling within this section.
   /// When non-empty, controls which tracks are active at each bar.
   /// Empty means all tracks in track_mask are active for the entire section.
@@ -408,6 +465,52 @@ struct Section {
 
   /// @brief Check if layer scheduling is active for this section.
   bool hasLayerSchedule() const { return !layer_events.empty(); }
+
+  /// @brief Apply modifier properties to adjust velocity.
+  /// @param base_vel Input base velocity
+  /// @return Adjusted velocity with modifier applied
+  uint8_t getModifiedVelocity(uint8_t base_vel) const {
+    if (modifier == SectionModifier::None || modifier_intensity == 0) {
+      return base_vel;
+    }
+    ModifierProperties props = getModifierProperties(modifier);
+    float intensity_factor = static_cast<float>(modifier_intensity) / 100.0f;
+    float adjusted = static_cast<float>(base_vel) * (1.0f + props.velocity_adjust * intensity_factor);
+    return static_cast<uint8_t>(std::clamp(adjusted, 40.0f, 127.0f));
+  }
+
+  /// @brief Apply modifier properties to adjust density.
+  /// @param base_density Input density percent
+  /// @return Adjusted density with modifier applied
+  uint8_t getModifiedDensity(uint8_t base_density) const {
+    if (modifier == SectionModifier::None || modifier_intensity == 0) {
+      return base_density;
+    }
+    ModifierProperties props = getModifierProperties(modifier);
+    float intensity_factor = static_cast<float>(modifier_intensity) / 100.0f;
+    float adjusted = static_cast<float>(base_density) * (1.0f + props.density_adjust * intensity_factor);
+    return static_cast<uint8_t>(std::clamp(adjusted, 20.0f, 100.0f));
+  }
+
+  /// @brief Get effective drum role considering modifier.
+  /// @return Drum role (modifier may override base setting)
+  DrumRole getEffectiveDrumRole() const {
+    if (modifier == SectionModifier::None || modifier_intensity < 50) {
+      return drum_role;
+    }
+    // Modifier takes over at >= 50% intensity
+    return getModifierProperties(modifier).suggested_drum_role;
+  }
+
+  /// @brief Get effective backing density considering modifier.
+  /// @return Backing density (modifier may override base setting)
+  BackingDensity getEffectiveBackingDensity() const {
+    if (modifier == SectionModifier::None || modifier_intensity < 50) {
+      return backing_density;
+    }
+    // Modifier takes over at >= 50% intensity
+    return getModifierProperties(modifier).backing;
+  }
 };
 
 /// @brief Section transition parameters for smooth melodic flow.

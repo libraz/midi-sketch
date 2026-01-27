@@ -185,10 +185,11 @@ struct AuxConfig {
 
 /// @brief Hook intensity for controlling catchiness at key positions.
 enum class HookIntensity : uint8_t {
-  Off = 0,     ///< No hook emphasis
-  Light = 1,   ///< Light emphasis (chorus start only)
-  Normal = 2,  ///< Normal emphasis (chorus start + middle)
-  Strong = 3   ///< Strong emphasis (all hook points)
+  Off = 0,      ///< No hook emphasis
+  Light = 1,    ///< Light emphasis (chorus start only)
+  Normal = 2,   ///< Normal emphasis (chorus start + middle)
+  Strong = 3,   ///< Strong emphasis (all hook points)
+  Maximum = 4   ///< Behavioral Loop: maximum repetition, simple patterns only
 };
 
 /// @brief Hook technique applied at hook points.
@@ -269,7 +270,15 @@ enum class HookSkeleton : uint8_t {
   TripleHit,        ///< Same note emphasis: X X X Y
   WideArch,         ///< Wide arch: X X+4 X+7 X+4 X
   NarrowPendulum,   ///< Narrow swing: X X+1 X-1 X
-  QuestionMark      ///< Ascending question: X X+2 X+4 X+5
+  QuestionMark,     ///< Ascending question: X X+2 X+4 X+5
+  // Phase 3: New patterns for addictiveness improvement
+  StepwiseDescent,  ///< Gradual descending steps: X X-1 X-2 X-3 (melancholic resolution)
+  OctaveLeap,       ///< Jump up octave then resolve: X X+7 X+4 (dramatic impact)
+  SuspendResolve,   ///< Suspended tension then release: X X+1 X+1 X (sus4-like)
+  SymmetricArch,    ///< Mirror/arch pattern: X X+2 X+4 X+2 X
+  AnticipationBuild,///< Rapid buildup before climax: X X X+2 X+4
+  EchoPhrasing,     ///< Echo with variation: X _ X-1 X (-128=rest)
+  StutterRepeat     ///< Rhythmic stutter: X X _ X X (modern/edgy)
 };
 
 /// @brief Betrayal patterns for hook variation.

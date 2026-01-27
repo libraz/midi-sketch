@@ -365,6 +365,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         true,   // intro_bass
         40,     // intro_stagger_percent
         30,     // euclidean_drums_percent
+        false,  // addictive_mode
     },
 
     // 1: RhythmLock (rhythm-synced, formerly Orangestar)
@@ -380,6 +381,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,  // intro_bass (no bass in intro)
         70,     // intro_stagger_percent (high chance for staggered build)
         50,     // euclidean_drums_percent (rhythm-sync benefits from euclidean)
+        false,  // addictive_mode
     },
 
     // 2: StoryPop (melody-driven, formerly YOASOBI)
@@ -395,6 +397,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         true,   // intro_bass
         50,     // intro_stagger_percent
         40,     // euclidean_drums_percent
+        false,  // addictive_mode
     },
 
     // 3: Ballad (sparse, emotional)
@@ -409,6 +412,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,  // intro_bass
         60,     // intro_stagger_percent
         20,     // euclidean_drums_percent (keep simple patterns for ballad)
+        false,  // addictive_mode
     },
 
     // 4: IdolStandard (classic idol pop: memorable melody, gradual build)
@@ -424,6 +428,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,  // intro_bass
         70,     // intro_stagger_percent (gradual build concept)
         35,     // euclidean_drums_percent
+        false,  // addictive_mode
     },
 
     // 5: IdolHyper (high BPM, chorus-first, high density)
@@ -439,6 +444,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         true,  // intro_bass
         0,     // intro_stagger_percent (2-bar intro, too short)
         60,    // euclidean_drums_percent (high energy, synth-like patterns)
+        false,  // addictive_mode
     },
 
     // 6: IdolKawaii (sweet, bouncy, restrained)
@@ -454,6 +460,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,  // intro_bass
         40,     // intro_stagger_percent
         25,     // euclidean_drums_percent (simple bouncy patterns)
+        false,  // addictive_mode
     },
 
     // 7: IdolCoolPop (cool, four-on-floor, uniform)
@@ -469,6 +476,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         true,   // intro_bass
         80,     // intro_stagger_percent (8-bar intro, full effect)
         70,     // euclidean_drums_percent (four-on-floor + euclidean = great match)
+        false,  // addictive_mode
     },
 
     // 8: IdolEmo (quiet→explosive, emotional, late peak)
@@ -483,6 +491,22 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,  // intro_bass
         50,     // intro_stagger_percent
         20,     // euclidean_drums_percent (emotional, simple patterns)
+        false,  // addictive_mode
+    },
+
+    // 9: BehavioralLoop (addictive, highly repetitive hooks)
+    {
+        "BehavioralLoop",
+        0,  // weight: 0% (explicit selection only, not random)
+        GenerationParadigm::Traditional, nullptr, 0,  // Use existing StructurePattern
+        RiffPolicy::LockedPitch,  // Fixed riff patterns
+        false,  // drums_sync_vocal
+        false,  // drums_required
+        true,   // intro_kick
+        true,   // intro_bass
+        40,     // intro_stagger_percent
+        30,     // euclidean_drums_percent
+        true,   // addictive_mode - enables Behavioral Loop
     },
 };
 

@@ -77,6 +77,18 @@ void insertCallSections(std::vector<Section>& sections, IntroChant intro_chant,
  */
 void recalculateSectionTicks(std::vector<Section>& sections);
 
+/**
+ * @brief Apply addictive mode exit patterns to sections.
+ *
+ * In addictive mode (Behavioral Loop), B sections followed by Chorus
+ * use CutOff exit pattern instead of Sustain to create a dramatic
+ * "silence before the drop" effect.
+ *
+ * @param sections Sections to modify (in-place)
+ * @param addictive_mode Whether addictive mode is enabled
+ */
+void applyAddictiveModeExitPatterns(std::vector<Section>& sections, bool addictive_mode);
+
 /// @}
 
 /// @name ProductionBlueprint Structure Functions

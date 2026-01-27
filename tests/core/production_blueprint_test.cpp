@@ -29,7 +29,7 @@ class ProductionBlueprintTest : public ::testing::Test {
 // Basic API Tests
 // ============================================================================
 
-TEST_F(ProductionBlueprintTest, GetBlueprintCount) { EXPECT_EQ(getProductionBlueprintCount(), 9); }
+TEST_F(ProductionBlueprintTest, GetBlueprintCount) { EXPECT_EQ(getProductionBlueprintCount(), 10); }
 
 TEST_F(ProductionBlueprintTest, GetBlueprintById) {
   // Test all blueprints are accessible

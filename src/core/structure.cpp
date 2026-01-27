@@ -450,6 +450,21 @@ void recalculateSectionTicks(std::vector<Section>& sections) {
   }
 }
 
+void applyAddictiveModeExitPatterns(std::vector<Section>& sections, bool addictive_mode) {
+  if (!addictive_mode || sections.empty()) return;
+
+  // In addictive mode, B sections before Chorus use CutOff for dramatic silence
+  for (size_t idx = 0; idx < sections.size(); ++idx) {
+    auto& section = sections[idx];
+
+    // B section followed by Chorus: use CutOff instead of Sustain
+    if (section.type == SectionType::B && idx + 1 < sections.size() &&
+        sections[idx + 1].type == SectionType::Chorus) {
+      section.exit_pattern = ExitPattern::CutOff;
+    }
+  }
+}
+
 void insertCallSections(std::vector<Section>& sections, IntroChant intro_chant,
                         MixPattern mix_pattern, uint16_t bpm) {
   // 1. Insert Chant after Intro
@@ -602,6 +617,8 @@ std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blue
     section.peak_level = slot.peak_level;
     section.drum_role = slot.drum_role;
     section.swing_amount = slot.swing_amount;
+    section.modifier = slot.modifier;
+    section.modifier_intensity = slot.modifier_intensity;
 
     // Convert PeakLevel to fill_before for backward compatibility
     // (fill_before is true when peak_level is not None)
