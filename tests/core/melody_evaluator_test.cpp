@@ -634,5 +634,74 @@ TEST(MelodyEvaluatorTest, TotalIncludesCatchiness) {
   EXPECT_GT(total_with_catchiness, total_no_catchiness);
 }
 
+// ============================================================================
+// Graduated Repeat Bonus Tests (Phase 1: Catchiness Enhancement)
+// ============================================================================
+
+TEST(MelodyEvaluatorTest, Catchiness_GraduatedRepeatBonus_TwoNotes) {
+  // 2 consecutive same pitches should get 0.2 bonus
+  // C-C-D pattern: 2 consecutive same notes
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},     // C4
+      {480, 480, 60, 100},   // C4 (same)
+      {960, 480, 62, 100},   // D4
+      {1440, 480, 64, 100},  // E4
+  };
+  float score = MelodyEvaluator::calcCatchiness(notes);
+  // Should get some repeat bonus but not maximum
+  EXPECT_GE(score, 0.3f) << "2 consecutive same notes should provide some catchiness";
+}
+
+TEST(MelodyEvaluatorTest, Catchiness_GraduatedRepeatBonus_FiveNotes) {
+  // 5 consecutive same pitches should get maximum 1.0 bonus (Ice Cream style)
+  // C-C-C-C-C-D pattern
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},      // C4
+      {480, 480, 60, 100},    // C4 (same)
+      {960, 480, 60, 100},    // C4 (same)
+      {1440, 480, 60, 100},   // C4 (same)
+      {1920, 480, 60, 100},   // C4 (same) - 5 consecutive!
+      {2400, 480, 62, 100},   // D4
+  };
+  float score = MelodyEvaluator::calcCatchiness(notes);
+  // Should get high catchiness due to maximum repeat bonus
+  EXPECT_GE(score, 0.5f) << "5 consecutive same notes should provide high catchiness (Ice Cream style)";
+}
+
+TEST(MelodyEvaluatorTest, Catchiness_HighIntervalRepetition) {
+  // Same interval (e.g., +2 semitones) appearing 6+ times should add bonus
+  // C-D-E-F-G-A-B pattern: all +2 intervals (whole steps)
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},      // C4
+      {480, 480, 62, 100},    // D4 (+2)
+      {960, 480, 64, 100},    // E4 (+2)
+      {1440, 480, 65, 100},   // F4 (+1) - different
+      {1920, 480, 67, 100},   // G4 (+2)
+      {2400, 480, 69, 100},   // A4 (+2)
+      {2880, 480, 71, 100},   // B4 (+2)
+      {3360, 480, 72, 100},   // C5 (+1)
+  };
+  float score = MelodyEvaluator::calcCatchiness(notes);
+  // Should get bonus for high interval repetition (5x "+2" intervals)
+  EXPECT_GE(score, 0.4f) << "High interval repetition should boost catchiness";
+}
+
+TEST(MelodyEvaluatorTest, Catchiness_SixSameIntervals) {
+  // Create 6 identical intervals (+0 = same pitch repeated)
+  // This tests the high_rep_bonus for 6+ occurrences
+  std::vector<NoteEvent> notes = {
+      {0, 480, 60, 100},      // C4
+      {480, 480, 60, 100},    // C4 (interval=0)
+      {960, 480, 60, 100},    // C4 (interval=0)
+      {1440, 480, 60, 100},   // C4 (interval=0)
+      {1920, 480, 60, 100},   // C4 (interval=0)
+      {2400, 480, 60, 100},   // C4 (interval=0)
+      {2880, 480, 60, 100},   // C4 (interval=0) - 6 consecutive 0 intervals!
+  };
+  float score = MelodyEvaluator::calcCatchiness(notes);
+  // Should get maximum high_rep_bonus (0.25) plus repeat bonus (1.0)
+  EXPECT_GE(score, 0.6f) << "6+ same intervals should maximize catchiness bonus";
+}
+
 }  // namespace
 }  // namespace midisketch

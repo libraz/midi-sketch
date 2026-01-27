@@ -278,7 +278,8 @@ enum class HookSkeleton : uint8_t {
   SymmetricArch,    ///< Mirror/arch pattern: X X+2 X+4 X+2 X
   AnticipationBuild,///< Rapid buildup before climax: X X X+2 X+4
   EchoPhrasing,     ///< Echo with variation: X _ X-1 X (-128=rest)
-  StutterRepeat     ///< Rhythmic stutter: X X _ X X (modern/edgy)
+  StutterRepeat,    ///< Rhythmic stutter: X X _ X X (modern/edgy)
+  Ostinato          ///< 6-note same-pitch repetition: X X X X X X (Ice Cream-level catchiness)
 };
 
 /// @brief Betrayal patterns for hook variation.

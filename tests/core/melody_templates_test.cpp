@@ -59,9 +59,9 @@ TEST(MelodyTemplatesTest, GetTemplateDownResolve) {
 TEST(MelodyTemplatesTest, GetTemplateHookRepeat) {
   const MelodyTemplate& t = getTemplate(MelodyTemplateId::HookRepeat);
   EXPECT_STREQ(t.name, "HookRepeat");
-  EXPECT_EQ(t.tessitura_range, 3);    // Very narrow
+  EXPECT_EQ(t.tessitura_range, 2);    // Extremely narrow for Ice Cream-style (was 3)
   EXPECT_EQ(t.max_phrase_beats, 4);   // Very short
-  EXPECT_EQ(t.hook_repeat_count, 4);  // Maximum repetition
+  EXPECT_EQ(t.hook_repeat_count, 5);  // Increased repetition for addictiveness (was 4)
 }
 
 TEST(MelodyTemplatesTest, GetTemplateSparseAnchor) {

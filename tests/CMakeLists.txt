@@ -36,6 +36,7 @@ set(TEST_SOURCES
   core/chord_utils_test.cpp
   core/melody_templates_test.cpp
   core/melody_evaluator_test.cpp
+  core/hook_utils_test.cpp
   core/melody_embellishment_test.cpp
   core/piano_roll_test.cpp
   core/music_theory_test.cpp

@@ -20,7 +20,7 @@
 namespace midisketch {
 
 /// @brief Maximum intervals in a hook skeleton.
-constexpr size_t kMaxHookIntervals = 5;
+constexpr size_t kMaxHookIntervals = 6;
 
 /// @brief Relative interval pattern for a hook skeleton.
 struct SkeletonPattern {
@@ -52,102 +52,106 @@ inline SkeletonPattern getSkeletonPattern(HookSkeleton skeleton) {
   switch (skeleton) {
     case HookSkeleton::Repeat:
       // X X X - same pitch repetition, most memorable
-      return {{0, 0, 0, 0, 0}, 3};
+      return {{0, 0, 0, 0, 0, 0}, 3};
 
     case HookSkeleton::Ascending:
       // X X+1 X+2 - stepwise rise, builds energy
-      return {{0, 1, 2, 0, 0}, 3};
+      return {{0, 1, 2, 0, 0, 0}, 3};
 
     case HookSkeleton::AscendDrop:
       // X X+2 X+4 X+3 - rise then slight fall, creates arc
-      return {{0, 2, 4, 3, 0}, 4};
+      return {{0, 2, 4, 3, 0, 0}, 4};
 
     case HookSkeleton::LeapReturn:
       // X X+4 X+1 - jump up then resolve down, dramatic
-      return {{0, 4, 1, 0, 0}, 3};
+      return {{0, 4, 1, 0, 0, 0}, 3};
 
     case HookSkeleton::RhythmRepeat:
       // X _ X _ X - with rests, rhythmic emphasis (-128 = rest marker)
-      return {{0, -128, 0, -128, 0}, 5};
+      return {{0, -128, 0, -128, 0, 0}, 5};
 
     case HookSkeleton::PeakDrop:
       // X X+3 X+5 X+2 X - Peak then descend back to start
-      return {{0, 3, 5, 2, 0}, 5};
+      return {{0, 3, 5, 2, 0, 0}, 5};
 
     case HookSkeleton::Pendulum:
       // X X+3 X-1 X+2 X - Swing motion
-      return {{0, 3, -1, 2, 0}, 5};
+      return {{0, 3, -1, 2, 0, 0}, 5};
 
     case HookSkeleton::DescentResolve:
       // X X-1 X-2 X-1 - Descend then resolve up
-      return {{0, -1, -2, -1, 0}, 4};
+      return {{0, -1, -2, -1, 0, 0}, 4};
 
     case HookSkeleton::CallResponse:
       // X X+2 X X+3 - Question-answer pattern
-      return {{0, 2, 0, 3, 0}, 4};
+      return {{0, 2, 0, 3, 0, 0}, 4};
 
     case HookSkeleton::Syncopated:
       // X _ X+1 X _ - Rhythmic with rests (-128 = rest)
-      return {{0, -128, 1, 0, -128}, 5};
+      return {{0, -128, 1, 0, -128, 0}, 5};
 
     case HookSkeleton::ChromaticSlide:
       // X X X+1 X+1 - Repeat then half-step up
-      return {{0, 0, 1, 1, 0}, 4};
+      return {{0, 0, 1, 1, 0, 0}, 4};
 
     case HookSkeleton::DoubleAscend:
       // X X+1 X X+2 X - Two-step rise with anchoring
-      return {{0, 1, 0, 2, 0}, 5};
+      return {{0, 1, 0, 2, 0, 0}, 5};
 
     case HookSkeleton::Staircase:
       // X X+2 X+1 X+3 X+2 - Ascending staircase pattern
-      return {{0, 2, 1, 3, 2}, 5};
+      return {{0, 2, 1, 3, 2, 0}, 5};
 
     case HookSkeleton::TripleHit:
       // X X X Y - Same note emphasis then resolution
-      return {{0, 0, 0, 2, 0}, 4};
+      return {{0, 0, 0, 2, 0, 0}, 4};
 
     case HookSkeleton::WideArch:
       // X X+4 X+7 X+4 X - Wide arch contour
-      return {{0, 4, 7, 4, 0}, 5};
+      return {{0, 4, 7, 4, 0, 0}, 5};
 
     case HookSkeleton::NarrowPendulum:
       // X X+1 X-1 X - Narrow swing motion
-      return {{0, 1, -1, 0, 0}, 4};
+      return {{0, 1, -1, 0, 0, 0}, 4};
 
     case HookSkeleton::QuestionMark:
       // X X+2 X+4 X+5 - Ascending question (unresolved)
-      return {{0, 2, 4, 5, 0}, 4};
+      return {{0, 2, 4, 5, 0, 0}, 4};
 
     // Phase 3: New patterns for addictiveness improvement
     case HookSkeleton::StepwiseDescent:
       // X X-1 X-2 X-3 - Gradual descent creates melancholic resolution
-      return {{0, -1, -2, -3, 0}, 4};
+      return {{0, -1, -2, -3, 0, 0}, 4};
 
     case HookSkeleton::OctaveLeap:
       // X X+7 X+4 - Octave jump is dramatic and memorable
-      return {{0, 7, 4, 0, 0}, 3};
+      return {{0, 7, 4, 0, 0, 0}, 3};
 
     case HookSkeleton::SuspendResolve:
       // X X+1 X+1 X - Sus4-like tension then release
-      return {{0, 1, 1, 0, 0}, 4};
+      return {{0, 1, 1, 0, 0, 0}, 4};
 
     case HookSkeleton::SymmetricArch:
       // X X+2 X+4 X+2 X - Mirror/arch pattern for balanced beauty
-      return {{0, 2, 4, 2, 0}, 5};
+      return {{0, 2, 4, 2, 0, 0}, 5};
 
     case HookSkeleton::AnticipationBuild:
       // X X X+2 X+4 - Buildup pattern before climax
-      return {{0, 0, 2, 4, 0}, 4};
+      return {{0, 0, 2, 4, 0, 0}, 4};
 
     case HookSkeleton::EchoPhrasing:
       // X _ X-1 X - Echo with rest and variation (-128 = rest)
-      return {{0, -128, -1, 0, 0}, 4};
+      return {{0, -128, -1, 0, 0, 0}, 4};
 
     case HookSkeleton::StutterRepeat:
       // X X _ X X - Rhythmic stutter for modern/edgy feel (-128 = rest)
-      return {{0, 0, -128, 0, 0}, 5};
+      return {{0, 0, -128, 0, 0, 0}, 5};
+
+    case HookSkeleton::Ostinato:
+      // X X X X X X - 6-note same-pitch repetition for maximum addictiveness (Ice Cream style)
+      return {{0, 0, 0, 0, 0, 0}, 6};
   }
-  return {{0, 0, 0, 0, 0}, 3};  // Default: repeat
+  return {{0, 0, 0, 0, 0, 0}, 3};  // Default: repeat
 }
 
 /// @brief Weight map for hook skeleton selection.
@@ -178,6 +182,7 @@ struct SkeletonWeights {
   float anticipation_build = 0.0f; ///< Weight for AnticipationBuild skeleton
   float echo_phrasing = 0.0f;      ///< Weight for EchoPhrasing skeleton
   float stutter_repeat = 0.0f;     ///< Weight for StutterRepeat skeleton
+  float ostinato = 0.0f;           ///< Weight for Ostinato skeleton (6-note same-pitch)
 };
 
 /// @brief Default weights for Chorus sections (memorability focused).
@@ -209,6 +214,7 @@ constexpr SkeletonWeights kChorusSkeletonWeights = {
     0.6f,  // anticipation_build - Pre-climax
     0.5f,  // echo_phrasing - Rhythmic interest
     0.7f,  // stutter_repeat - Modern feel
+    1.6f,  // ostinato - Maximum addictiveness for chorus (Ice Cream style)
 };
 
 /// @brief Default weights for non-Chorus sections.
@@ -239,6 +245,7 @@ constexpr SkeletonWeights kDefaultSkeletonWeights = {
     0.8f,  // anticipation_build - Good for pre-chorus
     0.6f,  // echo_phrasing - Adds variety
     0.5f,  // stutter_repeat - Modern sections
+    0.4f,  // ostinato - Use sparingly outside chorus
 };
 
 /// @brief Apply HookIntensity multiplier to skeleton weights.
@@ -284,6 +291,7 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
       result.anticipation_build *= 1.1f;
       result.echo_phrasing *= 1.2f;
       result.stutter_repeat *= 0.6f;  // Less repetitive
+      result.ostinato *= 0.3f;        // Suppress heavy repetition
       break;
 
     case HookIntensity::Light:
@@ -309,6 +317,7 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
       result.symmetric_arch *= 1.2f;
       result.anticipation_build *= 1.1f;
       result.stutter_repeat *= 1.3f;  // Catchy stutter
+      result.ostinato *= 1.5f;        // Moderate boost for addictiveness
       break;
 
     case HookIntensity::Strong:
@@ -332,6 +341,7 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
       result.symmetric_arch *= 1.4f;    // Satisfying balance
       result.anticipation_build *= 1.2f;
       result.stutter_repeat *= 1.6f;    // Very catchy
+      result.ostinato *= 2.0f;          // Strong boost for addictiveness
       break;
 
     case HookIntensity::Maximum:
@@ -367,6 +377,7 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
       result.anticipation_build *= 0.4f;  // Not loopable
       result.echo_phrasing *= 1.2f;       // Good for repetition
       result.stutter_repeat *= 2.0f;      // Very addictive
+      result.ostinato *= 3.5f;            // Maximum boost - most addictive pattern
       break;
   }
 
@@ -396,7 +407,7 @@ inline HookSkeleton selectHookSkeleton(SectionType type, std::mt19937& rng,
                 // Phase 3: New patterns
                 weights.stepwise_descent + weights.octave_leap + weights.suspend_resolve +
                 weights.symmetric_arch + weights.anticipation_build + weights.echo_phrasing +
-                weights.stutter_repeat;
+                weights.stutter_repeat + weights.ostinato;
 
   std::uniform_real_distribution<float> dist(0.0f, total);
   float roll = dist(rng);
@@ -472,7 +483,10 @@ inline HookSkeleton selectHookSkeleton(SectionType type, std::mt19937& rng,
   cumulative += weights.echo_phrasing;
   if (roll < cumulative) return HookSkeleton::EchoPhrasing;
 
-  return HookSkeleton::StutterRepeat;
+  cumulative += weights.stutter_repeat;
+  if (roll < cumulative) return HookSkeleton::StutterRepeat;
+
+  return HookSkeleton::Ostinato;
 }
 
 /// @brief Select a betrayal type for hook variation.

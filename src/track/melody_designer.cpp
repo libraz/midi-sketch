@@ -1086,6 +1086,61 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       }
     }
 
+    // =========================================================================
+    // LEAP-AFTER-REVERSAL RULE (singability improvement):
+    // After a large leap (4+ semitones), prefer step motion in opposite direction.
+    // This is a fundamental vocal principle: singers need to "recover" after jumps.
+    // Exception: Skip if we just chose Same pitch or are at phrase boundaries.
+    // =========================================================================
+    if (i > 0 && !result.notes.empty()) {
+      int prev_note = result.notes.back().note;
+      int prev_interval = current_pitch - prev_note;  // Signed: positive=up, negative=down
+      constexpr int kLeapThreshold = 4;               // Major 3rd or larger
+
+      if (std::abs(prev_interval) >= kLeapThreshold && new_pitch != current_pitch) {
+        // Previous move was a leap; prefer opposite direction step
+        int current_interval = new_pitch - current_pitch;
+        bool is_same_direction =
+            (prev_interval > 0 && current_interval > 0) || (prev_interval < 0 && current_interval < 0);
+
+        if (is_same_direction) {
+          // Try to find a chord tone in the opposite direction (step motion)
+          int preferred_direction = (prev_interval > 0) ? -1 : 1;  // Opposite of leap
+          std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
+
+          int best_reversal_pitch = -1;
+          int best_reversal_interval = 127;
+
+          for (int ct : chord_tones) {
+            for (int oct = 4; oct <= 6; ++oct) {
+              int candidate = oct * 12 + ct;
+              if (candidate < ctx.vocal_low || candidate > ctx.vocal_high) continue;
+
+              int interval_from_current = candidate - current_pitch;
+              int direction = (interval_from_current > 0) ? 1 : (interval_from_current < 0) ? -1 : 0;
+
+              // Must be in preferred direction and be a step (1-3 semitones)
+              if (direction == preferred_direction) {
+                int abs_interval = std::abs(interval_from_current);
+                if (abs_interval >= 1 && abs_interval <= 3 && abs_interval < best_reversal_interval) {
+                  best_reversal_interval = abs_interval;
+                  best_reversal_pitch = candidate;
+                }
+              }
+            }
+          }
+
+          // Apply reversal if found a good candidate (60% probability to allow some flexibility)
+          if (best_reversal_pitch >= 0) {
+            std::uniform_real_distribution<float> rev_dist(0.0f, 1.0f);
+            if (rev_dist(rng) < 0.6f) {
+              new_pitch = best_reversal_pitch;
+            }
+          }
+        }
+      }
+    }
+
     // FINAL SAFETY CHECK: Re-enforce max interval after all adjustments
     // Previous adjustments (avoid note, downbeat snapping) might have created
     // large intervals. This final check ensures singability is maintained.

@@ -137,12 +137,17 @@ constexpr MelodyTemplate kDownResolve = {
 // Template 4: HookRepeat (TikTok/K-POP)
 // Short repeating hook for maximum catchiness
 // Target pitch creates a "destination" even for short hooks.
+// Tuned for Ice Cream-style maximum addictiveness:
+// - Very narrow range (tessitura_range=2) for same-note repetition
+// - High plateau ratio (0.65) to encourage pitch repetition
+// - max_step=1 to only allow half-step movement when not repeating
+// - Increased hook_repeat_count (5) and delayed betrayal (4)
 constexpr MelodyTemplate kHookRepeat = {
     "HookRepeat",
     // Pitch constraints
-    3,     // tessitura_range: very narrow
-    0.5f,  // plateau_ratio: moderate
-    2,     // max_step
+    2,      // tessitura_range: extremely narrow for Ice Cream-style (was 3)
+    0.65f,  // plateau_ratio: high same-pitch probability (was 0.5f)
+    1,      // max_step: half-step only when moving (was 2)
 
     // Target pitch (mandatory for melodic direction)
     true,  // has_target_pitch: ENABLED - hook resolves to target
@@ -170,8 +175,8 @@ constexpr MelodyTemplate kHookRepeat = {
 
     // Modern pop features
     2,    // hook_note_count: minimum for hook
-    4,    // hook_repeat_count: maximum repetition
-    3,    // betrayal_threshold: TikTok style = early variation
+    5,    // hook_repeat_count: increased repetition (was 4)
+    4,    // betrayal_threshold: delay variation for pattern establishment (was 3)
     true  // allow_talk_sing
 };
 

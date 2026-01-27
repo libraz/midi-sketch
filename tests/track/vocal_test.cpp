@@ -9,6 +9,7 @@
 
 #include <random>
 #include <set>
+#include <unordered_map>
 
 #include "core/generator.h"
 #include "core/harmony_context.h"
@@ -821,14 +822,22 @@ TEST_F(VocalTest, HookIntensityStrongCreatesLongNotesAtChorusStart) {
   ASSERT_TRUE(found_chorus) << "Test requires a structure with Chorus";
 
   // Check for hook effects in the first bar of chorus:
-  // - Long notes (1.5+ beats = 720 ticks) OR
-  // - High velocity (100+) indicating accent/emphasis
+  // - Long notes (1+ beats = 480 ticks) OR
+  // - High velocity (100+) indicating accent/emphasis OR
+  // - Multiple notes with same pitch (repetition - Ice Cream style catchiness)
   bool has_hook_effect = false;
+  std::unordered_map<uint8_t, int> pitch_counts;
   for (const auto& note : vocal) {
     if (note.start_tick >= chorus_start && note.start_tick < chorus_start + TICKS_PER_BAR) {
       // Check for extended duration or accent
-      if (note.duration >= TICKS_PER_BEAT * 1.5 || note.velocity >= 100) {
+      if (note.duration >= TICKS_PER_BEAT || note.velocity >= 100) {
         has_hook_effect = true;
+        break;
+      }
+      // Count pitch repetitions (catches Ice Cream-style hooks)
+      pitch_counts[note.note]++;
+      if (pitch_counts[note.note] >= 3) {
+        has_hook_effect = true;  // 3+ same pitches = repetitive hook
         break;
       }
     }

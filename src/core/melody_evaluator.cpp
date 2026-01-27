@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_map>
 
 #include "core/i_harmony_context.h"
 #include "core/pitch_utils.h"
@@ -339,6 +340,28 @@ float MelodyEvaluator::calcCatchiness(const std::vector<NoteEvent>& notes) {
                                        static_cast<float>(total_patterns) * 2.0f);
   }
 
+  // === 1b. High repetition bonus: same interval appearing 4+ times ===
+  // Count frequency of each interval
+  std::unordered_map<int8_t, int> interval_freq;
+  for (size_t i = 0; i + 1 < notes.size(); ++i) {
+    int8_t interval = static_cast<int8_t>(notes[i + 1].note - notes[i].note);
+    interval_freq[interval]++;
+  }
+  int max_interval_freq = 0;
+  for (const auto& kv : interval_freq) {
+    max_interval_freq = std::max(max_interval_freq, kv.second);
+  }
+
+  float high_rep_bonus = 0.0f;
+  if (max_interval_freq >= 6) {
+    high_rep_bonus = 0.25f;
+  } else if (max_interval_freq >= 5) {
+    high_rep_bonus = 0.15f;
+  } else if (max_interval_freq >= 4) {
+    high_rep_bonus = 0.08f;
+  }
+  pattern_score = std::min(1.0f, pattern_score + high_rep_bonus);
+
   // === 2. Rhythmic pattern consistency (25%) ===
   // Check for repeated duration patterns
   constexpr Tick kDurQuantize = TICKS_PER_BEAT / 4;  // 16th note quantization
@@ -382,6 +405,7 @@ float MelodyEvaluator::calcCatchiness(const std::vector<NoteEvent>& notes) {
   // These are patterns that tend to be memorable in pop music
 
   // Check for pitch repetition (Repeat pattern)
+  // Graduated bonus: longer consecutive same-pitch runs = higher catchiness (Ice Cream style)
   int consecutive_same = 0;
   int max_consecutive_same = 0;
   for (size_t i = 1; i < notes.size(); ++i) {
@@ -392,7 +416,17 @@ float MelodyEvaluator::calcCatchiness(const std::vector<NoteEvent>& notes) {
       consecutive_same = 0;
     }
   }
-  float repeat_bonus = (max_consecutive_same >= 2) ? 0.5f : 0.0f;
+  // Graduated repeat bonus: 2音:0.2, 3音:0.4, 4音:0.6, 5+音:1.0
+  float repeat_bonus = 0.0f;
+  if (max_consecutive_same >= 5) {
+    repeat_bonus = 1.0f;
+  } else if (max_consecutive_same >= 4) {
+    repeat_bonus = 0.6f;
+  } else if (max_consecutive_same >= 3) {
+    repeat_bonus = 0.4f;
+  } else if (max_consecutive_same >= 2) {
+    repeat_bonus = 0.2f;
+  }
 
   // Check for AscendDrop (rising then falling)
   bool has_ascend_drop = false;

@@ -1534,7 +1534,7 @@ TEST(MelodyTemplateTest, BetrayalThresholdValuesAreDefined) {
   EXPECT_EQ(getTemplate(MelodyTemplateId::PlateauTalk).betrayal_threshold, 4);
   EXPECT_EQ(getTemplate(MelodyTemplateId::RunUpTarget).betrayal_threshold, 3);  // YOASOBI = early
   EXPECT_EQ(getTemplate(MelodyTemplateId::DownResolve).betrayal_threshold, 4);
-  EXPECT_EQ(getTemplate(MelodyTemplateId::HookRepeat).betrayal_threshold, 3);   // TikTok = early
+  EXPECT_EQ(getTemplate(MelodyTemplateId::HookRepeat).betrayal_threshold, 4);   // Delayed for pattern establishment (was 3)
   EXPECT_EQ(getTemplate(MelodyTemplateId::SparseAnchor).betrayal_threshold, 5); // Ballad = late
   EXPECT_EQ(getTemplate(MelodyTemplateId::CallResponse).betrayal_threshold, 4);
   EXPECT_EQ(getTemplate(MelodyTemplateId::JumpAccent).betrayal_threshold, 4);
