@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <string>
 
+#include "core/section_types.h"
+
 namespace midisketch {
 
 // ============================================================================
@@ -41,6 +43,33 @@ constexpr uint8_t VOCAL_HIGH_MAX = 96;  ///< C7 - Absolute maximum for vocal ran
 /// Larger intervals are difficult to sing and sound unnatural in pop melodies.
 /// Applied at multiple stages: pitch selection, adjustment, and final validation.
 constexpr int kMaxMelodicInterval = 9;
+
+/**
+ * @brief Get section-appropriate maximum melodic interval.
+ *
+ * Different sections benefit from different leap constraints:
+ * - Chorus/MixBreak/Drop: Up to octave (12) for dramatic impact
+ * - Bridge: Up to 14 semitones for maximum contrast
+ * - B (Pre-chorus): Up to 10 for tension building
+ * - Default (Verse, etc.): Standard 9 semitones for stability
+ *
+ * @param section Section type
+ * @return Maximum allowed melodic interval in semitones
+ */
+inline int getMaxMelodicIntervalForSection(SectionType section) {
+  switch (section) {
+    case SectionType::Chorus:
+    case SectionType::MixBreak:
+    case SectionType::Drop:
+      return 12;  // Octave for dramatic impact
+    case SectionType::Bridge:
+      return 14;  // Maximum contrast
+    case SectionType::B:
+      return 10;  // Tension building
+    default:
+      return kMaxMelodicInterval;  // Standard (9)
+  }
+}
 /// @}
 
 // ============================================================================

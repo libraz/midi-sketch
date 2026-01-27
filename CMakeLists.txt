@@ -3,26 +3,26 @@ cmake_policy(SET CMP0048 NEW)
 cmake_policy(SET CMP0077 NEW)
 project(midi-sketch VERSION 1.0.0 LANGUAGES CXX)
 
-# C++17 標準
+# C++17 standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# ビルドオプション
+# Build options
 option(BUILD_CLI "Build CLI executable" ON)
 option(BUILD_TESTING "Build tests" ON)
 option(BUILD_WASM "Build for WebAssembly" OFF)
 option(ENABLE_COVERAGE "Enable code coverage" OFF)
 
-# 出力ディレクトリ
+# Output directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
-# テスト有効化
+# Enable testing
 enable_testing()
 
-# コンパイラ警告
+# Compiler warnings
 if(MSVC)
   add_compile_options(/W4)
 else()
@@ -42,14 +42,14 @@ if(ENABLE_COVERAGE AND NOT BUILD_WASM)
   endif()
 endif()
 
-# compile_commands.json 生成
+# Generate compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# ソースディレクトリ
+# Source directory
 set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 include_directories(${SOURCE_DIR})
 
-# WASM 設定
+# WASM configuration
 if(BUILD_WASM)
   message(STATUS "Building for WebAssembly")
   set(CMAKE_EXECUTABLE_SUFFIX ".js")
@@ -76,7 +76,7 @@ if(BUILD_WASM)
   set(WASM_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/dist")
 endif()
 
-# サブディレクトリ
+# Subdirectories
 add_subdirectory(src)
 
 if(BUILD_TESTING AND NOT BUILD_WASM)

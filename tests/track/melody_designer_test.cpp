@@ -44,7 +44,7 @@ TEST(MelodyDesignerTest, SelectPitchChoiceReturnsValidChoice) {
   const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
 
   for (int i = 0; i < 100; ++i) {
-    PitchChoice choice = MelodyDesigner::selectPitchChoice(tmpl, 0.5f, false, rng);
+    PitchChoice choice = MelodyDesigner::selectPitchChoice(tmpl, 0.5f, false, SectionType::A, rng);
     // Should be one of the valid choices
     EXPECT_TRUE(choice == PitchChoice::Same || choice == PitchChoice::StepUp ||
                 choice == PitchChoice::StepDown || choice == PitchChoice::TargetStep);
@@ -58,7 +58,7 @@ TEST(MelodyDesignerTest, SelectPitchChoiceWithHighPlateau) {
 
   int same_count = 0;
   for (int i = 0; i < 100; ++i) {
-    PitchChoice choice = MelodyDesigner::selectPitchChoice(tmpl, 0.5f, false, rng);
+    PitchChoice choice = MelodyDesigner::selectPitchChoice(tmpl, 0.5f, false, SectionType::A, rng);
     if (choice == PitchChoice::Same) same_count++;
   }
 
@@ -74,7 +74,7 @@ TEST(MelodyDesignerTest, SelectPitchChoiceWithTarget) {
   int target_count = 0;
   // Test at phrase position > target_attraction_start
   for (int i = 0; i < 100; ++i) {
-    PitchChoice choice = MelodyDesigner::selectPitchChoice(tmpl, 0.7f, true, rng);
+    PitchChoice choice = MelodyDesigner::selectPitchChoice(tmpl, 0.7f, true, SectionType::A, rng);
     if (choice == PitchChoice::TargetStep) target_count++;
   }
 

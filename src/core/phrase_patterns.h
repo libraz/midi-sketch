@@ -107,6 +107,64 @@ constexpr PhrasePattern kWave = {
     8};
 
 // ============================================================================
+// Extended 8-Beat Patterns (Additional variety)
+// ============================================================================
+
+/// @brief Staircase pattern (ascending steps then rapid descent).
+/// Creates tension through gradual climb, releases with dramatic fall.
+/// Good for Vocaloid-style dramatic phrases.
+constexpr PhrasePattern kStaircase = {
+    "staircase",
+    {PhraseRole::Anchor, PhraseRole::Approach, PhraseRole::Approach, PhraseRole::Peak,
+     PhraseRole::Peak, PhraseRole::Release, PhraseRole::Release, PhraseRole::Anchor},
+    8};
+
+/// @brief Double arch pattern (two small arcs).
+/// Creates rhythmic symmetry with dual climaxes.
+/// Inspired by NewJeans-style K-pop phrases.
+constexpr PhrasePattern kDoubleArch = {
+    "double-arch",
+    {PhraseRole::Anchor, PhraseRole::Approach, PhraseRole::Peak, PhraseRole::Release,
+     PhraseRole::Anchor, PhraseRole::Approach, PhraseRole::Peak, PhraseRole::Release},
+    8};
+
+/// @brief Asymmetric descent pattern (starts high, descends).
+/// Creates emotional weight through falling contour.
+/// Good for ballad phrases and melancholic sections.
+constexpr PhrasePattern kAsymmetricDescent = {
+    "asymmetric-descent",
+    {PhraseRole::Peak, PhraseRole::Peak, PhraseRole::Release, PhraseRole::Approach,
+     PhraseRole::Release, PhraseRole::Release, PhraseRole::Anchor, PhraseRole::Anchor},
+    8};
+
+/// @brief Question-answer pattern (call and response).
+/// First half rises to hook, second half resolves down.
+/// Good for conversational melodies.
+constexpr PhrasePattern kQuestionAnswer = {
+    "question-answer",
+    {PhraseRole::Anchor, PhraseRole::Approach, PhraseRole::Peak, PhraseRole::Hook,
+     PhraseRole::Anchor, PhraseRole::Release, PhraseRole::Release, PhraseRole::Anchor},
+    8};
+
+/// @brief Climb-plateau pattern (ascend then sustain).
+/// Builds tension through climb, holds at peak.
+/// Good for B section (pre-chorus) tension building.
+constexpr PhrasePattern kClimbPlateau = {
+    "climb-plateau",
+    {PhraseRole::Anchor, PhraseRole::Approach, PhraseRole::Approach, PhraseRole::Peak,
+     PhraseRole::Peak, PhraseRole::Peak, PhraseRole::Peak, PhraseRole::Release},
+    8};
+
+/// @brief Drop-recover pattern (sudden fall then gradual rise).
+/// Creates surprise with drop, rebuilds momentum.
+/// Good for chorus second half or post-bridge sections.
+constexpr PhrasePattern kDropRecover = {
+    "drop-recover",
+    {PhraseRole::Peak, PhraseRole::Release, PhraseRole::Anchor, PhraseRole::Anchor,
+     PhraseRole::Approach, PhraseRole::Approach, PhraseRole::Peak, PhraseRole::Release},
+    8};
+
+// ============================================================================
 // Pattern Collection
 // ============================================================================
 
@@ -117,12 +175,19 @@ constexpr const PhrasePattern* kPhrasePatterns[] = {
     &kPlateau,
     &kHookRelease,
     &kQuestion,
-    // 8-beat patterns
+    // 8-beat patterns (standard)
     &kVerseStandard,
     &kChorusHook,
     &kBuildTension,
     &kDescendResolve,
     &kWave,
+    // 8-beat patterns (extended variety)
+    &kStaircase,
+    &kDoubleArch,
+    &kAsymmetricDescent,
+    &kQuestionAnswer,
+    &kClimbPlateau,
+    &kDropRecover,
 };
 
 /// @brief Number of available patterns.

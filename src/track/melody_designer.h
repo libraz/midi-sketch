@@ -241,11 +241,13 @@ class MelodyDesigner {
    * @param tmpl Melody template with movement probabilities
    * @param phrase_pos Position within phrase (0.0-1.0)
    * @param has_target Whether we're approaching a target pitch
+   * @param section_type Section type for directional bias
    * @param rng Random number generator
    * @return Selected pitch choice
    */
   static PitchChoice selectPitchChoice(const MelodyTemplate& tmpl, float phrase_pos,
-                                       bool has_target, std::mt19937& rng);
+                                       bool has_target, SectionType section_type,
+                                       std::mt19937& rng);
 
   /**
    * @brief Apply direction inertia to pitch movement.
@@ -392,8 +394,8 @@ class MelodyDesigner {
   uint8_t hook_repetition_count_ = 0;
 
   // Cached sabi (chorus) head pitches for consistency.
-  // First 4 pitches of the chorus hook are stored and reused.
-  std::array<uint8_t, 4> cached_sabi_pitches_;
+  // First 8 pitches of the chorus hook are stored and reused.
+  std::array<uint8_t, 8> cached_sabi_pitches_;
   bool sabi_pitches_cached_ = false;
 
   // Prepare section-specific motif variants from source motif.

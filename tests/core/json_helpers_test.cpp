@@ -282,8 +282,8 @@ TEST(JsonEdgeCaseTest, LargeNumber) {
 TEST(JsonEdgeCaseTest, UnicodePassthrough) {
   std::ostringstream oss;
   Writer w(oss);
-  w.beginObject().write("japanese", "日本語").endObject();
-  EXPECT_EQ(oss.str(), R"({"japanese":"日本語"})");
+  w.beginObject().write("unicode", "café").endObject();
+  EXPECT_EQ(oss.str(), R"({"unicode":"café"})");
 }
 
 TEST(JsonEdgeCaseTest, MultipleArraysInObject) {

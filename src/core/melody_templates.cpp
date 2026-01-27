@@ -175,7 +175,7 @@ constexpr MelodyTemplate kHookRepeat = {
     true  // allow_talk_sing
 };
 
-// Template 5: SparseAnchor (Official髭男dism style)
+// Template 5: SparseAnchor (Official HIGEDAN style)
 // Sparse anchor notes with space
 constexpr MelodyTemplate kSparseAnchor = {
     "SparseAnchor",

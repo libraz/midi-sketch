@@ -61,7 +61,7 @@ constexpr std::array<SectionProperties, 10> kSectionProperties = {{
   // Chorus: energetic, full vocal, thick backing, allows deviation
   /* 3 */ { 1.10f,    4,      VocalDensity::Full,   BackingDensity::Thick,  true,    0.30f,  0.75f,   true,   true  },
   // Bridge: reflective, sparse vocal, thin backing, allows deviation
-  /* 4 */ { 0.65f,    2,      VocalDensity::Sparse, BackingDensity::Thin,   true,    0.45f,  0.60f,   true,   true  },
+  /* 4 */ { 0.70f,    2,      VocalDensity::Sparse, BackingDensity::Thin,   true,    0.45f,  0.60f,   true,   true  },
   // Interlude: quiet, no vocal, thin backing
   /* 5 */ { 0.70f,    1,      VocalDensity::None,   BackingDensity::Thin,   false,   0.40f,  0.35f,   false,  true  },
   // Outro: fading, no vocal, normal backing

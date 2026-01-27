@@ -85,7 +85,7 @@ enum class MelodyTemplateId : uint8_t {
   RunUpTarget = 2,   ///< YOASOBI/Ado: run up to target note
   DownResolve = 3,   ///< B-melody: descending resolution
   HookRepeat = 4,    ///< TikTok/K-POP: short repeating hook
-  SparseAnchor = 5,  ///< 髭男: sparse anchor notes
+  SparseAnchor = 5,  ///< HIGEDAN: sparse anchor notes
   CallResponse = 6,  ///< Duet: call and response
   JumpAccent = 7     ///< Emotional: jump accent
 };

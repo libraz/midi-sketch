@@ -607,9 +607,10 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
       if (!is_chord_tone) {
         // Use interval-aware snapping to preserve melodic contour
         int new_pitch;
+        int max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
         if (prev_final_pitch >= 0) {
           new_pitch = nearestChordToneWithinInterval(note.note, prev_final_pitch, chord_degree,
-                                                     kMaxMelodicInterval, ctx.vocal_low,
+                                                     max_interval, ctx.vocal_low,
                                                      ctx.vocal_high, &ctx.tessitura);
         } else {
           new_pitch = nearestChordTonePitch(note.note, chord_degree);
@@ -623,10 +624,11 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
     // Enforce interval constraint between all consecutive notes
     if (prev_final_pitch >= 0) {
       int interval = std::abs(static_cast<int>(note.note) - prev_final_pitch);
-      if (interval > kMaxMelodicInterval) {
+      int max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
+      if (interval > max_interval) {
         int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
         int constrained_pitch = nearestChordToneWithinInterval(
-            note.note, prev_final_pitch, chord_degree, kMaxMelodicInterval, ctx.vocal_low,
+            note.note, prev_final_pitch, chord_degree, max_interval, ctx.vocal_low,
             ctx.vocal_high, &ctx.tessitura);
         // Defensive clamp to ensure vocal range is respected
         constrained_pitch = std::clamp(constrained_pitch, static_cast<int>(ctx.vocal_low),
@@ -823,7 +825,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     int8_t note_chord_degree = harmony.getChordDegreeAt(note_start);
 
     // Select pitch movement
-    PitchChoice choice = selectPitchChoice(tmpl, phrase_pos, target_pitch >= 0, rng);
+    PitchChoice choice = selectPitchChoice(tmpl, phrase_pos, target_pitch >= 0, ctx.section_type, rng);
 
     // Apply direction inertia
     choice = applyDirectionInertia(choice, result.direction_inertia, tmpl, rng);
@@ -919,13 +921,14 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       }
     }
 
-    // Enforce maximum interval constraint (major 6th = 9 semitones)
+    // Enforce maximum interval constraint (section-adaptive)
     // Use nearestChordToneWithinInterval to stay on chord tones
-    // kMaxMelodicInterval from pitch_utils.h
+    // getMaxMelodicIntervalForSection allows wider leaps in chorus/bridge
+    int max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
     int interval = std::abs(new_pitch - current_pitch);
-    if (interval > kMaxMelodicInterval) {
+    if (interval > max_interval) {
       new_pitch = nearestChordToneWithinInterval(new_pitch, current_pitch, note_chord_degree,
-                                                 kMaxMelodicInterval, ctx.vocal_low, ctx.vocal_high,
+                                                 max_interval, ctx.vocal_low, ctx.vocal_high,
                                                  &ctx.tessitura);
     }
 
@@ -1083,15 +1086,16 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       }
     }
 
-    // FINAL SAFETY CHECK: Re-enforce kMaxMelodicInterval after all adjustments
+    // FINAL SAFETY CHECK: Re-enforce max interval after all adjustments
     // Previous adjustments (avoid note, downbeat snapping) might have created
     // large intervals. This final check ensures singability is maintained.
     {
-      // Use shared constant from pitch_utils.h
+      // Section-adaptive max interval from pitch_utils.h
+      int section_max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
       int final_interval = std::abs(new_pitch - current_pitch);
-      if (final_interval > kMaxMelodicInterval) {
+      if (final_interval > section_max_interval) {
         new_pitch = nearestChordToneWithinInterval(new_pitch, current_pitch, note_chord_degree,
-                                                   kMaxMelodicInterval, ctx.vocal_low,
+                                                   section_max_interval, ctx.vocal_low,
                                                    ctx.vocal_high, &ctx.tessitura);
       }
     }
@@ -1376,15 +1380,16 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       // Calculate pitch from contour, then snap to current chord
       int pitch = base_pitch + hook.contour_degrees[i % hook.contour_degrees.size()];
 
-      // Apply cached sabi pitches for first 4 notes (if available)
+      // Apply cached sabi pitches for first 8 notes (if available)
       // This ensures the chorus hook head is consistent across the song
-      if (use_cached_sabi && total_note_idx < 4) {
+      if (use_cached_sabi && total_note_idx < 8) {
         pitch = static_cast<int>(cached_sabi_pitches_[total_note_idx]);
       }
 
       // Find nearest chord tone within vocal range and interval constraint
+      int max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
       pitch = nearestChordToneWithinInterval(pitch, prev_hook_pitch, note_chord_degree,
-                                             kMaxMelodicInterval, ctx.vocal_low, ctx.vocal_high,
+                                             max_interval, ctx.vocal_low, ctx.vocal_high,
                                              &ctx.tessitura);
 
       // Leap preparation principle: constrain leaps after very short notes
@@ -1557,13 +1562,14 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       pitch = snapToNearestScaleTone(pitch, ctx.key_offset);
       pitch = std::clamp(pitch, static_cast<int>(ctx.vocal_low), static_cast<int>(ctx.vocal_high));
 
-      // FINAL SAFETY CHECK: Re-enforce kMaxMelodicInterval after all adjustments
+      // FINAL SAFETY CHECK: Re-enforce max interval after all adjustments
       // Downbeat snapping and avoid note checks might have created large intervals
       {
+        int section_max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
         int final_interval = std::abs(pitch - prev_hook_pitch);
-        if (final_interval > kMaxMelodicInterval) {
+        if (final_interval > section_max_interval) {
           pitch = nearestChordToneWithinInterval(pitch, prev_hook_pitch, note_chord_degree,
-                                                 kMaxMelodicInterval, ctx.vocal_low, ctx.vocal_high,
+                                                 section_max_interval, ctx.vocal_low, ctx.vocal_high,
                                                  &ctx.tessitura);
           // Defensive clamp to ensure vocal range is respected
           pitch = std::clamp(pitch, static_cast<int>(ctx.vocal_low),
@@ -1613,13 +1619,13 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   }
 
   // =========================================================================
-  // SABI (CHORUS) HEAD CACHING: Store first 4 pitches for consistency
+  // SABI (CHORUS) HEAD CACHING: Store first 8 pitches for consistency
   // =========================================================================
-  // Cache the first 4 pitches of the chorus hook for reuse in subsequent
+  // Cache the first 8 pitches of the chorus hook for reuse in subsequent
   // chorus sections. This ensures the "sabi" (hook head) is memorable.
   if (!sabi_pitches_cached_ && ctx.section_type == SectionType::Chorus &&
-      result.notes.size() >= 4) {
-    for (size_t i = 0; i < 4; ++i) {
+      result.notes.size() >= 8) {
+    for (size_t i = 0; i < 8 && i < result.notes.size(); ++i) {
       cached_sabi_pitches_[i] = result.notes[i].note;
     }
     sabi_pitches_cached_ = true;
@@ -1633,7 +1639,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
 }
 
 PitchChoice MelodyDesigner::selectPitchChoice(const MelodyTemplate& tmpl, float phrase_pos,
-                                              bool has_target, std::mt19937& rng) {
+                                              bool has_target, SectionType section_type,
+                                              std::mt19937& rng) {
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
   // Step 1: Check for same pitch (plateau)
@@ -1650,8 +1657,31 @@ PitchChoice MelodyDesigner::selectPitchChoice(const MelodyTemplate& tmpl, float 
     }
   }
 
-  // Step 3: Random step direction
-  return (dist(rng) < 0.5f) ? PitchChoice::StepUp : PitchChoice::StepDown;
+  // Step 3: Section-aware directional bias
+  // Different sections have different melodic direction tendencies:
+  // - A (Verse): slightly ascending for storytelling momentum
+  // - B (Pre-chorus): ascending more strongly in second half for tension building
+  // - Chorus: balanced for hook memorability
+  // - Bridge: slightly descending for contrast
+  float upward_bias;
+  switch (section_type) {
+    case SectionType::A:
+      upward_bias = 0.55f;  // Slight upward tendency
+      break;
+    case SectionType::B:
+      upward_bias = phrase_pos > 0.5f ? 0.65f : 0.55f;  // Strong rise in second half
+      break;
+    case SectionType::Chorus:
+      upward_bias = 0.50f;  // Balanced
+      break;
+    case SectionType::Bridge:
+      upward_bias = 0.45f;  // Slight downward for contrast
+      break;
+    default:
+      upward_bias = 0.50f;  // Balanced for other sections
+      break;
+  }
+  return (dist(rng) < upward_bias) ? PitchChoice::StepUp : PitchChoice::StepDown;
 }
 
 PitchChoice MelodyDesigner::applyDirectionInertia(PitchChoice choice, int inertia,
@@ -1781,13 +1811,14 @@ void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
 
     // Ensure interval constraint with previous note
     if (prev_pitch >= 0) {
+      int max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
       int interval = std::abs(new_pitch - prev_pitch);
-      if (interval > kMaxMelodicInterval) {
+      if (interval > max_interval) {
         // Reduce the shift to stay within interval constraint
         if (new_pitch > prev_pitch) {
-          new_pitch = prev_pitch + kMaxMelodicInterval;
+          new_pitch = prev_pitch + max_interval;
         } else {
-          new_pitch = prev_pitch - kMaxMelodicInterval;
+          new_pitch = prev_pitch - max_interval;
         }
         // Snap to scale to prevent chromatic notes
         new_pitch = snapToNearestScaleTone(new_pitch, ctx.key_offset);
