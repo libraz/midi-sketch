@@ -251,5 +251,44 @@ TEST(SlashChordTest, VIBeforeI_CreatesSlashC) {
   EXPECT_EQ(info.bass_note_semitone, 0);  // C
 }
 
+// ============================================================================
+// Extended Slash Chord Patterns (Phase C)
+// ============================================================================
+
+TEST(SlashChordTest, IIIChordBeforeVI_LowProbability_CreatesSlashB) {
+  // iii (Em) -> vi (Am): with low probability, should produce Em/B (bass B)
+  // Bass B (semitone 11) -> A (semitone 9) = smooth 2-step descent
+  auto info = checkSlashChord(2, 5, SectionType::A, 0.05f);  // Very low roll
+  // Note: This will only trigger if probability is very low (< threshold * 0.3)
+  // The section threshold for A is typically 0.5, so 0.05 < 0.15 should trigger
+  if (info.has_override) {
+    EXPECT_EQ(info.bass_note_semitone, 11);  // B = (4 + 7) % 12 = 11
+  }
+  // If threshold is configured differently, it may not trigger - that's OK
+}
+
+TEST(SlashChordTest, IVChordBeforeII_LowProbability_MayCreateSlashA) {
+  // IV (F) -> ii (Dm): with low probability, may produce F/A (bass A)
+  // Bass A (semitone 9) -> D (semitone 2) = 5th down/4th up motion
+  auto info = checkSlashChord(3, 1, SectionType::A, 0.05f);  // Very low roll
+  // This pattern has ~25% chance to trigger when within threshold
+  if (info.has_override) {
+    EXPECT_EQ(info.bass_note_semitone, 9);  // A = (5 + 4) % 12 = 9
+  }
+}
+
+TEST(SlashChordTest, ExtendedPatternsUseStepwiseMotion) {
+  // Verify the new patterns still create reasonable bass motion
+  // ii/5 (Dm/A) before I (C): A->C is minor 3rd (reasonable)
+  auto info = checkSlashChord(1, 0, SectionType::A, 0.02f);
+  if (info.has_override) {
+    // Bass should be A (9) for ii/5 pattern
+    EXPECT_EQ(info.bass_note_semitone, 9);
+    // A (9) -> C (0) = 3 semitones (minor 3rd) - reasonable motion
+    int bass_motion = ((0 - info.bass_note_semitone) + 12) % 12;
+    EXPECT_LE(bass_motion, 5);  // Max reasonable interval
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

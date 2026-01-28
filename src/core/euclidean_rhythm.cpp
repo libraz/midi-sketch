@@ -216,9 +216,9 @@ constexpr FullGroovePattern GROOVE_PATTERNS[] = {
     // Inspired by classic breakbeat patterns
     {0x1221, 0x0808, 0x5555, 40}};
 
-// Mood to groove template mapping
+// Mood to groove template mapping (24 moods)
 // clang-format off
-constexpr GrooveTemplate MOOD_GROOVE_TEMPLATES[20] = {
+constexpr GrooveTemplate MOOD_GROOVE_TEMPLATES[24] = {
     GrooveTemplate::Standard,   // 0: StraightPop
     GrooveTemplate::Standard,   // 1: BrightUpbeat
     GrooveTemplate::Funk,       // 2: EnergeticDance
@@ -239,6 +239,10 @@ constexpr GrooveTemplate MOOD_GROOVE_TEMPLATES[20] = {
     GrooveTemplate::Funk,       // 17: Synthwave (driving)
     GrooveTemplate::Trap,       // 18: FutureBass (modern EDM)
     GrooveTemplate::Shuffle,    // 19: CityPop (groove essential)
+    GrooveTemplate::Shuffle,    // 20: RnBNeoSoul (R&B swing)
+    GrooveTemplate::Bossa,      // 21: LatinPop (Latin rhythm)
+    GrooveTemplate::HalfTime,   // 22: Trap (half-time feel)
+    GrooveTemplate::HalfTime,   // 23: Lofi (half-time chill)
 };
 // clang-format on
 

@@ -662,13 +662,39 @@ SlashChordInfo checkSlashChord(int8_t current_degree, int8_t next_degree,
       // Bass F (semitone 5) -> G (semitone 7) = 2 steps
       if (next_degree == 4) {
         info.has_override = true;
+        // Default: ii/3 (Dm/F) for standard stepwise motion
         info.bass_note_semitone = (current_root_pc + 3) % 12;  // Minor 3rd = F
+        return info;
+      }
+      // ii/5 (Dm/A): pedal point before other chords (low probability)
+      // Bass A creates smooth pedal from I/3 or vi progressions
+      if ((next_degree == 0 || next_degree == 5) && probability_roll < threshold * 0.2f) {
+        info.has_override = true;
+        info.bass_note_semitone = (current_root_pc + 7) % 12;  // 5th = A
+        return info;
+      }
+      break;
+
+    case 2:  // iii chord (Em)
+      // iii/5 (Em/B): bass B before vi (Am) - smooth descent B->A
+      // Bass B (semitone 11) -> A (semitone 9) = 2 steps down
+      if (next_degree == 5 && probability_roll < threshold * 0.3f) {
+        info.has_override = true;
+        info.bass_note_semitone = (current_root_pc + 7) % 12;  // 5th = B
         return info;
       }
       break;
 
     default:
       break;
+  }
+
+  // Additional pattern: IV/3 (F/A) when going to ii (Dm)
+  // Complements IV/6 pattern - creates A->D bass motion (5th down)
+  if (current_degree == 3 && next_degree == 1 && probability_roll < threshold * 0.25f) {
+    info.has_override = true;
+    info.bass_note_semitone = (degreeToSemitone(3) + 4) % 12;  // 3rd of IV = A
+    return info;
   }
 
   return info;

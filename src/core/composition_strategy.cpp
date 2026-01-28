@@ -76,7 +76,7 @@ void BackgroundMotifStrategy::generateChordTrack(Generator& gen) {
 // SynthDrivenStrategy
 // ============================================================================
 
-void SynthDrivenStrategy::generateMelodicTracks(Generator& gen) {
+void SynthDrivenStrategy::generateMelodicTracks([[maybe_unused]] Generator& gen) {
   // No melodic tracks in synth-driven mode
 }
 

@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <map>
 
 #include "core/chord.h"
@@ -1308,6 +1309,115 @@ void generateSectionExpression(MidiTrack& track, const Section& section,
   }
 }
 
+/// @brief Generate CC1 Modulation curve for a section on synth tracks.
+/// Creates a gentle curve peaking at section midpoint for vibrato/filter sweep.
+/// @param track Target track to add CC events to
+/// @param section Section defining time range and type
+void generateModulationCurve(MidiTrack& track, const Section& section) {
+  Tick section_start = section.start_tick;
+  Tick section_end = section_start + section.bars * TICKS_PER_BAR;
+  Tick section_length = section_end - section_start;
+
+  if (section_length == 0) return;
+
+  // Resolution: one CC event per beat
+  constexpr Tick resolution = TICKS_PER_BEAT;
+
+  // Modulation intensity varies by section type
+  // Chorus/Climactic sections have stronger modulation
+  uint8_t peak_value = 64;  // Default peak
+  switch (section.type) {
+    case SectionType::Chorus:
+    case SectionType::MixBreak:
+    case SectionType::Drop:
+      peak_value = 80;  // Stronger modulation for energy sections
+      break;
+    case SectionType::B:
+      peak_value = 70;  // Building tension
+      break;
+    case SectionType::Bridge:
+      peak_value = 60;  // Moderate
+      break;
+    case SectionType::Intro:
+    case SectionType::Outro:
+      peak_value = 50;  // Subtle
+      break;
+    default:
+      peak_value = 64;  // Standard
+      break;
+  }
+
+  // Generate bell curve: 0 -> peak -> 0
+  // Use sine-based curve for smooth modulation
+  for (Tick offset = 0; offset < section_length; offset += resolution) {
+    Tick current_tick = section_start + offset;
+
+    // Calculate position as 0.0 to 1.0 within section
+    float position = static_cast<float>(offset) / static_cast<float>(section_length);
+
+    // Sine curve: sin(pi * position) peaks at 0.5
+    float curve = std::sin(position * 3.14159265f);
+    uint8_t value = static_cast<uint8_t>(curve * peak_value);
+
+    track.addCC(current_tick, MidiCC::kModulation, value);
+  }
+
+  // Ensure we end at 0
+  track.addCC(section_end - 1, MidiCC::kModulation, 0);
+}
+
+/// @brief Generate CC7 Volume curve for fade-in (Intro) or fade-out (Outro).
+/// @param track Target track to add CC events to
+/// @param section Section defining time range and type (must be Intro or Outro)
+void generateVolumeCurve(MidiTrack& track, const Section& section) {
+  Tick section_start = section.start_tick;
+  Tick section_end = section_start + section.bars * TICKS_PER_BAR;
+  Tick section_length = section_end - section_start;
+
+  if (section_length == 0) return;
+
+  // Resolution: one CC event per half-beat for smoother fades
+  constexpr Tick resolution = TICKS_PER_BEAT / 2;
+
+  // Volume range for fades
+  constexpr uint8_t kVolumeMin = 40;   // Starting volume for fade-in
+  constexpr uint8_t kVolumeMax = 100;  // Target volume
+
+  bool is_fade_in = (section.type == SectionType::Intro);
+  bool is_fade_out = (section.type == SectionType::Outro);
+
+  if (!is_fade_in && !is_fade_out) return;
+
+  for (Tick offset = 0; offset < section_length; offset += resolution) {
+    Tick current_tick = section_start + offset;
+
+    // Calculate position as 0.0 to 1.0 within section
+    float position = static_cast<float>(offset) / static_cast<float>(section_length);
+
+    uint8_t value;
+    if (is_fade_in) {
+      // Fade-in: kVolumeMin -> kVolumeMax
+      // Use ease-out curve (faster start, slower end) for natural feel
+      float curve = 1.0f - (1.0f - position) * (1.0f - position);
+      value = static_cast<uint8_t>(kVolumeMin + (kVolumeMax - kVolumeMin) * curve);
+    } else {
+      // Fade-out: kVolumeMax -> kVolumeMin
+      // Use ease-in curve (slower start, faster end) for natural fade
+      float curve = position * position;
+      value = static_cast<uint8_t>(kVolumeMax - (kVolumeMax - kVolumeMin) * curve);
+    }
+
+    track.addCC(current_tick, MidiCC::kVolume, value);
+  }
+
+  // Ensure final value
+  if (is_fade_in) {
+    track.addCC(section_end - 1, MidiCC::kVolume, kVolumeMax);
+  } else {
+    track.addCC(section_end - 1, MidiCC::kVolume, kVolumeMin);
+  }
+}
+
 }  // anonymous namespace
 
 void Generator::generateExpressionCurves() {
@@ -1322,6 +1432,29 @@ void Generator::generateExpressionCurves() {
 
     for (const auto& section : sections) {
       generateSectionExpression(*track, section);
+    }
+  }
+
+  // Generate CC1 (Modulation) for synth tracks (Motif, Arpeggio)
+  // Modulation adds vibrato/filter sweep for expressive synth sounds
+  std::vector<MidiTrack*> synth_tracks = {&song_.motif(), &song_.arpeggio()};
+  for (auto* track : synth_tracks) {
+    if (track->notes().empty()) continue;
+    for (const auto& section : sections) {
+      generateModulationCurve(*track, section);
+    }
+  }
+
+  // Generate CC7 (Volume) for fade-in/fade-out in Intro/Outro
+  // Apply to all melodic tracks for smooth overall dynamics
+  std::vector<MidiTrack*> all_melodic = {&song_.vocal(), &song_.bass(),   &song_.chord(),
+                                         &song_.motif(), &song_.arpeggio()};
+  for (const auto& section : sections) {
+    if (section.type == SectionType::Intro || section.type == SectionType::Outro) {
+      for (auto* track : all_melodic) {
+        if (track->notes().empty()) continue;
+        generateVolumeCurve(*track, section);
+      }
     }
   }
 }

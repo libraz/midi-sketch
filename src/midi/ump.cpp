@@ -41,6 +41,12 @@ uint32_t makeProgramChange(uint8_t group, uint8_t channel, uint8_t program) {
          (0xC << 20) | ((channel & 0x0F) << 16) | ((program & 0x7F) << 8);
 }
 
+uint32_t makeControlChange(uint8_t group, uint8_t channel, uint8_t cc, uint8_t value) {
+  // [MT=2:4][Group:4][Status=B:4][Channel:4][CC#:8][Value:8]
+  return (static_cast<uint32_t>(MessageType::Midi1ChannelVoice) << 28) | ((group & 0x0F) << 24) |
+         (0xB << 20) | ((channel & 0x0F) << 16) | ((cc & 0x7F) << 8) | (value & 0x7F);
+}
+
 uint32_t makeDeltaClockstamp(uint8_t group, uint16_t ticks) {
   // [MT=0:4][Group:4][Status=4:4][0:4][Ticks:16]
   // Status 0x4 = Delta Clockstamp (JR Clock)

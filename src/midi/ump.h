@@ -60,6 +60,10 @@ uint32_t makeNoteOff(uint8_t group, uint8_t channel, uint8_t note, uint8_t veloc
 // Returns: [MT=2][Group][Status=C][Channel][Program][0]
 uint32_t makeProgramChange(uint8_t group, uint8_t channel, uint8_t program);
 
+// Build MIDI 1.0 Channel Voice Control Change message (32-bit UMP)
+// Returns: [MT=2][Group][Status=B][Channel][CC#][Value]
+uint32_t makeControlChange(uint8_t group, uint8_t channel, uint8_t cc, uint8_t value);
+
 // Build Delta Clockstamp message (32-bit UMP, utility message)
 // Returns: [MT=0][Group][Status=4][0][Ticks:16]
 // For ticks > 0xFFFF, use writeDeltaClockstampLarge

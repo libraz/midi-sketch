@@ -1906,7 +1906,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
                                        const MidiTrack* bass_track,
                                        const VocalAnalysis& vocal_analysis,
                                        const MidiTrack* aux_track, const IHarmonyContext& harmony,
-                                       IHarmonyContext* mutable_harmony) {
+                                       [[maybe_unused]] IHarmonyContext* mutable_harmony) {
   // bass_track/vocal_analysis/aux_track are used for voicing selection
   // Collision avoidance is handled via HarmonyContext.isPitchSafe()
   const auto& progression = getChordProgression(params.chord_id);

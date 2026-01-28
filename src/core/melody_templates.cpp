@@ -358,6 +358,14 @@ constexpr StyleSectionTemplate kStyleSectionOverrides[] = {
     {SectionType::Chorus, VocalStylePreset::Rock, MelodyTemplateId::JumpAccent},
     // Ballad: sparse anchor
     {SectionType::Chorus, VocalStylePreset::Ballad, MelodyTemplateId::SparseAnchor},
+
+    // -------------------------------------------------------------------------
+    // Bridge overrides - Call-and-response for live performance styles
+    // -------------------------------------------------------------------------
+    // PowerfulShout: call-and-response for dramatic buildup
+    {SectionType::Bridge, VocalStylePreset::PowerfulShout, MelodyTemplateId::CallResponse},
+    // Rock: call-and-response for live energy
+    {SectionType::Bridge, VocalStylePreset::Rock, MelodyTemplateId::CallResponse},
 };
 
 constexpr size_t kStyleSectionOverrideCount =
@@ -501,16 +509,25 @@ void getAuxConfigsForTemplate(MelodyTemplateId id, AuxConfig* out_configs, uint8
       break;
 
     case MelodyTemplateId::CallResponse:
-      // Add target hint for response parts
+      // Add motif counter for response parts (main response voice)
       out_configs[0] = {
-          AuxFunction::TargetHint,
-          0,     // range_offset
+          AuxFunction::MotifCounter,
+          0,     // range_offset: same register
           6,     // range_width
-          0.6f,  // velocity_ratio
-          0.4f,  // density_ratio
+          0.7f,  // velocity_ratio: slightly softer than vocal
+          0.5f,  // density_ratio: active response
+          true   // sync_phrase_boundary: align with vocal phrases
+      };
+      // Add target hint for harmonic support
+      out_configs[1] = {
+          AuxFunction::TargetHint,
+          -5,    // range_offset: lower register
+          5,     // range_width
+          0.5f,  // velocity_ratio: softer background
+          0.3f,  // density_ratio: sparse
           true   // sync_phrase_boundary
       };
-      *out_count = 1;
+      *out_count = 2;
       break;
 
     case MelodyTemplateId::JumpAccent:

@@ -175,7 +175,8 @@ uint8_t getTimekeepingInstrument(SectionType section, DrumRole role, bool use_ri
 /// @param beat_position Position within beat (0-3 for 16th notes)
 /// @param is_after_snare true if this follows a snare hit (beats 2,4 + 16th)
 /// @return Velocity multiplier (0.25 - 0.65)
-float getGhostVelocity(SectionType section, int beat_position, bool is_after_snare) {
+static float getGhostVelocity(SectionType section, int beat_position,
+                              bool is_after_snare) {
   float base = 0.40f;  // Default ghost velocity
 
   // Section-specific base velocity
@@ -218,9 +219,6 @@ float getGhostVelocity(SectionType section, int beat_position, bool is_after_sna
 
   return std::clamp(base, 0.25f, 0.65f);
 }
-
-// Legacy constant for backward compatibility (replaced by getGhostVelocity)
-constexpr float GHOST_VEL = 0.45f;
 
 // Get hi-hat velocity multiplier for 16th note position with natural curve.
 // Creates a more organic feel compared to step-based velocity changes.
@@ -303,7 +301,9 @@ enum class FillType {
 /// @brief Get fill length in ticks based on section energy.
 /// @param energy Section energy level
 /// @return Fill length in ticks (480, 960, or 1920)
-Tick getFillLengthForEnergy(SectionEnergy energy) {
+// Note: getFillStartBeat provides equivalent information via beat index.
+// This function is kept for potential future use in fill density calculations.
+[[maybe_unused]] static Tick getFillLengthForEnergy(SectionEnergy energy) {
   switch (energy) {
     case SectionEnergy::Low:
       return TICKS_PER_BEAT;      // 1 beat (480 ticks)
@@ -320,7 +320,7 @@ Tick getFillLengthForEnergy(SectionEnergy energy) {
 /// Higher energy allows longer fills starting earlier in the bar.
 /// @param energy Section energy level
 /// @return Beat index to start fill (0-3)
-uint8_t getFillStartBeat(SectionEnergy energy) {
+static uint8_t getFillStartBeat(SectionEnergy energy) {
   switch (energy) {
     case SectionEnergy::Low:
       return 3;  // Beat 4 only (1 beat fill)
@@ -606,7 +606,8 @@ enum class GhostPosition {
 /// @param sixteenth_in_beat Sixteenth position within beat (0-3)
 /// @param mood Current mood for style-specific adjustments
 /// @return Probability (0.0 - 1.0) of placing a ghost note
-float getGhostProbabilityAtPosition(int beat, int sixteenth_in_beat, Mood mood) {
+static float getGhostProbabilityAtPosition(int beat, int sixteenth_in_beat,
+                                           Mood mood) {
   // Base probabilities
   constexpr float NEAR_SNARE_PROB = 0.60f;   // Near beats 2,4 (snare)
   constexpr float DEFAULT_PROB = 0.25f;      // Other positions
@@ -1348,7 +1349,7 @@ enum class HiHatType : uint8_t {
 /// @param section Section type
 /// @param drum_role Drum role (affects timekeeping instrument)
 /// @return Recommended HiHatType for the section
-HiHatType getSectionHiHatType(SectionType section, DrumRole drum_role) {
+static HiHatType getSectionHiHatType(SectionType section, DrumRole drum_role) {
   // Ambient/Minimal roles prefer Ride or Pedal
   if (drum_role == DrumRole::Ambient) {
     return HiHatType::Ride;
@@ -1388,7 +1389,7 @@ HiHatType getSectionHiHatType(SectionType section, DrumRole drum_role) {
 /// @brief Get the GM note number for a hi-hat type.
 /// @param type Hi-hat type
 /// @return GM drum note number
-uint8_t getHiHatNote(HiHatType type) {
+static uint8_t getHiHatNote(HiHatType type) {
   switch (type) {
     case HiHatType::Pedal:
       return FHH;   // 44 - Foot Hi-Hat
@@ -1408,7 +1409,7 @@ uint8_t getHiHatNote(HiHatType type) {
 /// Half-open is emulated by reducing Closed HH velocity to 70-80%.
 /// @param type Hi-hat type
 /// @return Velocity multiplier (0.7 - 1.0)
-float getHiHatVelocityMultiplier(HiHatType type) {
+static float getHiHatVelocityMultiplier(HiHatType type) {
   switch (type) {
     case HiHatType::HalfOpen:
       return 0.75f;  // Emulate half-open with softer closed HH
@@ -1432,7 +1433,8 @@ float getHiHatVelocityMultiplier(HiHatType type) {
 /// @param bar Bar index within section
 /// @param rng Random number generator for variation
 /// @return true if open HH accent should be added
-bool shouldAddOpenHHAccent(SectionType section, int beat, int bar, std::mt19937& rng) {
+static bool shouldAddOpenHHAccent(SectionType section, int beat, int bar,
+                                  std::mt19937& rng) {
   // Only add open HH accents in high-energy sections
   if (section != SectionType::Chorus && section != SectionType::Drop &&
       section != SectionType::MixBreak && section != SectionType::B) {
@@ -2032,17 +2034,19 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
           // Don't continue - let hi-hat generation proceed below
         }
 
-        // Insert fill if: last bar, not last section, beat >= 2, AND
+        // Insert fill if: last bar, not last section, beat >= fill_start_beat, AND
         // either next section wants fill OR we're transitioning to Chorus
         // Note: Skip fills in buildup zone (buildup pattern takes precedence)
-        bool should_fill = is_section_last_bar && !is_last_section && beat >= 2 &&
+        // Fill start beat is determined by section energy (higher energy = earlier start)
+        uint8_t fill_start_beat = getFillStartBeat(section.energy);
+        bool should_fill = is_section_last_bar && !is_last_section && beat >= fill_start_beat &&
                            (next_wants_fill || next_section == SectionType::Chorus) &&
                            !did_buildup;
 
         if (should_fill) {
           // Select fill type based on transition
           static FillType current_fill = FillType::SnareRoll;
-          if (beat == 2) {
+          if (beat == fill_start_beat) {
             current_fill = selectFillType(section.type, next_section, style, rng);
           }
 
@@ -2161,11 +2165,21 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
           // Human-like velocity variation: ±15% (0.85-1.15)
           std::uniform_real_distribution<float> vel_variation(0.85f, 1.15f);
 
+          // Determine if this beat follows a snare (beats 1,3 in 0-indexed = beats 2,4)
+          bool is_after_snare = (beat == 1 || beat == 3);
+
           for (auto pos : ghost_positions) {
-            if (ghost_dist(rng) < ghost_prob) {
+            // Calculate sixteenth position within beat for probability lookup
+            int sixteenth_in_beat = (pos == GhostPosition::E) ? 1 : 3;
+            float pos_prob = getGhostProbabilityAtPosition(beat, sixteenth_in_beat, params.mood);
+
+            // Combine base ghost_prob with position-specific probability
+            if (ghost_dist(rng) < ghost_prob * pos_prob) {
               // Apply human-like velocity variation to ghost notes
               float variation = vel_variation(rng);
-              float base_ghost = velocity * GHOST_VEL * variation;
+              // Use section-aware ghost velocity instead of fixed GHOST_VEL
+              float ghost_base = getGhostVelocity(section.type, beat % 2, is_after_snare);
+              float base_ghost = velocity * ghost_base * variation;
               uint8_t ghost_vel = static_cast<uint8_t>(std::clamp(base_ghost, 20.0f, 100.0f));
 
               Tick ghost_offset = (pos == GhostPosition::E) ? SIXTEENTH         // "e" = 1st 16th
@@ -2195,6 +2209,10 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
         uint8_t hh_instrument = getTimekeepingInstrument(
             section.type, section.getEffectiveDrumRole(), use_ride, beat);
 
+        // Get section-based hi-hat type for velocity adjustment
+        HiHatType hh_type = getSectionHiHatType(section.type, section.getEffectiveDrumRole());
+        float hh_type_vel_mult = getHiHatVelocityMultiplier(hh_type);
+
         // Dynamic open HH: replace closed HH on the designated beat
         bool is_dynamic_open_hh_beat = bar_has_open_hh && (beat == open_hh_beat);
 
@@ -2205,11 +2223,11 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
             if (!is_intro_rest) {
               // Dynamic open HH replacement on designated beat
               if (is_dynamic_open_hh_beat) {
-                uint8_t ohh_vel = static_cast<uint8_t>(
-                    std::min(127, static_cast<int>(velocity * density_mult * 0.75f) + OHH_VEL_BOOST));
+                uint8_t ohh_vel = static_cast<uint8_t>(std::clamp(
+                    static_cast<int>(velocity * density_mult * 0.75f * hh_type_vel_mult) + OHH_VEL_BOOST, 20, 127));
                 addDrumNote(track, beat_tick, EIGHTH, OHH, ohh_vel);
               } else {
-                uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult * 0.75f);
+                uint8_t hh_vel = static_cast<uint8_t>(std::max(20.0f, velocity * density_mult * 0.75f * hh_type_vel_mult));
                 addDrumNote(track, beat_tick, EIGHTH, hh_instrument, hh_vel);
               }
             } else if (use_foot_hh) {
@@ -2242,9 +2260,9 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
                 continue;
               }
 
-              uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
-              // Accent on downbeats
-              hh_vel = static_cast<uint8_t>(hh_vel * (eighth == 0 ? 0.9f : 0.65f));
+              // Apply hi-hat type velocity multiplier and accent on downbeats, with minimum floor
+              uint8_t hh_vel = static_cast<uint8_t>(std::max(20.0f,
+                  velocity * density_mult * hh_type_vel_mult * (eighth == 0 ? 0.9f : 0.65f)));
 
               // Dynamic open HH: replace closed HH on the downbeat of the
               // designated beat with open HH at boosted velocity
@@ -2255,7 +2273,8 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
                 continue;
               }
 
-              // Open hi-hat variations (existing probabilistic logic)
+              // Open hi-hat variations - use structured shouldAddOpenHHAccent for
+              // section-aware accent placement, with existing logic as fallback
               bool use_open = false;
 
               // PeakLevel::Medium+: force open HH on beats 2 and 4 (downbeat)
@@ -2275,22 +2294,14 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
                 float open_prob = std::clamp(45.0f / params.bpm, 0.15f, 0.8f);
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
                 use_open = (beat == 1 || beat == 3) && open_dist(rng) < open_prob;
-              } else if (section.type == SectionType::Chorus && eighth == 1) {
-                // More open hi-hats in chorus - BPM adaptive
-                // Base probabilities scaled by BPM factor
-                float bpm_scale = std::min(1.0f, 120.0f / params.bpm);
-                std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
-                use_open = (beat == 3 && open_dist(rng) < 0.4f * bpm_scale) ||
-                           (beat == 1 && open_dist(rng) < 0.15f * bpm_scale);
-              } else if (section.type == SectionType::B && beat == 3 && eighth == 1) {
-                // B section accent - BPM adaptive
-                float bpm_scale = std::min(1.0f, 120.0f / params.bpm);
-                std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
-                use_open = (open_dist(rng) < 0.25f * bpm_scale);
+              } else if (eighth == 0) {
+                // Use structured open HH accent check for downbeats
+                use_open = shouldAddOpenHHAccent(section.type, beat, bar, rng);
               }
 
               if (use_open) {
-                addDrumNote(track, hh_tick, EIGHTH, OHH, static_cast<uint8_t>(hh_vel * 1.1f));
+                uint8_t open_hh_note = getHiHatNote(HiHatType::Open);
+                addDrumNote(track, hh_tick, EIGHTH, open_hh_note, static_cast<uint8_t>(std::max(20.0f, hh_vel * 1.1f)));
               } else {
                 addDrumNote(track, hh_tick, EIGHTH / 2, hh_instrument, hh_vel);
               }
@@ -2315,14 +2326,15 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
                 hh_tick = quantizeToSwingGrid16th(hh_tick, swing_amt);
               }
 
-              uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
-              // Accent pattern: natural curve with humanization
-              hh_vel = static_cast<uint8_t>(hh_vel * getHiHatVelocityMultiplier(sixteenth, rng));
+              // Accent pattern: natural curve with humanization, plus type-based velocity (with min floor)
+              float metric_vel = getHiHatVelocityMultiplier(sixteenth, rng);
+              uint8_t hh_vel = static_cast<uint8_t>(std::max(20.0f,
+                  velocity * density_mult * hh_type_vel_mult * metric_vel));
 
               // Dynamic open HH: replace first 16th of designated beat with OHH
               if (is_dynamic_open_hh_beat && sixteenth == 0) {
-                uint8_t ohh_vel = static_cast<uint8_t>(
-                    std::min(127, static_cast<int>(hh_vel) + OHH_VEL_BOOST));
+                uint8_t ohh_vel = static_cast<uint8_t>(std::clamp(
+                    static_cast<int>(hh_vel) + OHH_VEL_BOOST, 20, 127));
                 addDrumNote(track, hh_tick, SIXTEENTH, OHH, ohh_vel);
                 continue;
               }
@@ -2332,7 +2344,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
                 float open_prob = std::clamp(30.0f / params.bpm, 0.1f, 0.4f);
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
                 if (open_dist(rng) < open_prob) {
-                  addDrumNote(track, hh_tick, SIXTEENTH, OHH, static_cast<uint8_t>(hh_vel * 1.2f));
+                  addDrumNote(track, hh_tick, SIXTEENTH, OHH, static_cast<uint8_t>(std::max(20.0f, hh_vel * 1.2f)));
                   continue;
                 }
               }
@@ -2643,13 +2655,15 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
           // Don't continue - let hi-hat generation proceed below
         }
 
-        bool should_fill = is_section_last_bar && !is_last_section && beat >= 2 &&
+        // Fill start beat is determined by section energy (higher energy = earlier start)
+        uint8_t fill_start_beat = getFillStartBeat(section.energy);
+        bool should_fill = is_section_last_bar && !is_last_section && beat >= fill_start_beat &&
                            (next_wants_fill || next_section == SectionType::Chorus) &&
                            !did_buildup;
 
         if (should_fill) {
           static FillType current_fill = FillType::SnareRoll;
-          if (beat == 2) {
+          if (beat == fill_start_beat) {
             current_fill = selectFillType(section.type, next_section, style, rng);
           }
           generateFill(track, beat_tick, beat, current_fill, velocity);
@@ -2727,11 +2741,21 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
           // Human-like velocity variation: ±15% (0.85-1.15)
           std::uniform_real_distribution<float> vel_variation(0.85f, 1.15f);
 
+          // Determine if this beat follows a snare (beats 1,3 in 0-indexed = beats 2,4)
+          bool is_after_snare = (beat == 1 || beat == 3);
+
           for (auto pos : ghost_positions) {
-            if (ghost_dist(rng) < ghost_prob) {
+            // Calculate sixteenth position within beat for probability lookup
+            int sixteenth_in_beat = (pos == GhostPosition::E) ? 1 : 3;
+            float pos_prob = getGhostProbabilityAtPosition(beat, sixteenth_in_beat, params.mood);
+
+            // Combine base ghost_prob with position-specific probability
+            if (ghost_dist(rng) < ghost_prob * pos_prob) {
               // Apply human-like velocity variation to ghost notes
               float variation = vel_variation(rng);
-              float base_ghost = velocity * GHOST_VEL * variation;
+              // Use section-aware ghost velocity instead of fixed GHOST_VEL
+              float ghost_base = getGhostVelocity(section.type, beat % 2, is_after_snare);
+              float base_ghost = velocity * ghost_base * variation;
               uint8_t ghost_vel = static_cast<uint8_t>(std::clamp(base_ghost, 20.0f, 100.0f));
 
               Tick ghost_offset = (pos == GhostPosition::E) ? SIXTEENTH : (SIXTEENTH * 3);
@@ -2759,6 +2783,10 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
         uint8_t hh_instrument = getTimekeepingInstrument(
             section.type, section.getEffectiveDrumRole(), use_ride, beat);
 
+        // Get section-based hi-hat type for velocity adjustment
+        HiHatType hh_type = getSectionHiHatType(section.type, section.getEffectiveDrumRole());
+        float hh_type_vel_mult = getHiHatVelocityMultiplier(hh_type);
+
         // Dynamic open HH: replace closed HH on the designated beat
         bool is_dynamic_open_hh_beat = bar_has_open_hh && (beat == open_hh_beat);
 
@@ -2767,11 +2795,11 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
             bool is_intro_rest = (section.type == SectionType::Intro && beat != 0);
             if (!is_intro_rest) {
               if (is_dynamic_open_hh_beat) {
-                uint8_t ohh_vel = static_cast<uint8_t>(
-                    std::min(127, static_cast<int>(velocity * density_mult * 0.75f) + OHH_VEL_BOOST));
+                uint8_t ohh_vel = static_cast<uint8_t>(std::clamp(
+                    static_cast<int>(velocity * density_mult * 0.75f * hh_type_vel_mult) + OHH_VEL_BOOST, 20, 127));
                 addDrumNote(track, beat_tick, EIGHTH, OHH, ohh_vel);
               } else {
-                uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult * 0.75f);
+                uint8_t hh_vel = static_cast<uint8_t>(std::max(20.0f, velocity * density_mult * 0.75f * hh_type_vel_mult));
                 addDrumNote(track, beat_tick, EIGHTH, hh_instrument, hh_vel);
               }
             } else if (use_foot_hh) {
@@ -2801,17 +2829,20 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
                 continue;
               }
 
-              uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
-              hh_vel = static_cast<uint8_t>(hh_vel * (eighth == 0 ? 0.9f : 0.65f));
+              // Apply hi-hat type velocity multiplier and accent on downbeats, with minimum floor
+              uint8_t hh_vel = static_cast<uint8_t>(std::max(20.0f,
+                  velocity * density_mult * hh_type_vel_mult * (eighth == 0 ? 0.9f : 0.65f)));
 
               // Dynamic open HH: replace closed HH on the downbeat of designated beat
               if (is_dynamic_open_hh_beat && eighth == 0) {
-                uint8_t ohh_vel = static_cast<uint8_t>(
-                    std::min(127, static_cast<int>(hh_vel) + OHH_VEL_BOOST));
+                uint8_t ohh_vel = static_cast<uint8_t>(std::clamp(
+                    static_cast<int>(hh_vel) + OHH_VEL_BOOST, 20, 127));
                 addDrumNote(track, hh_tick, EIGHTH, OHH, ohh_vel);
                 continue;
               }
 
+              // Open hi-hat variations - use structured shouldAddOpenHHAccent for
+              // section-aware accent placement, with existing logic as fallback
               bool use_open = false;
 
               // PeakLevel::Medium+: force open HH on beats 2 and 4 (downbeat)
@@ -2827,19 +2858,14 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
                 float open_prob = std::clamp(45.0f / params.bpm, 0.15f, 0.8f);
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
                 use_open = (beat == 1 || beat == 3) && open_dist(rng) < open_prob;
-              } else if (section.type == SectionType::Chorus && eighth == 1) {
-                float bpm_scale = std::min(1.0f, 120.0f / params.bpm);
-                std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
-                use_open = (beat == 3 && open_dist(rng) < 0.4f * bpm_scale) ||
-                           (beat == 1 && open_dist(rng) < 0.15f * bpm_scale);
-              } else if (section.type == SectionType::B && beat == 3 && eighth == 1) {
-                float bpm_scale = std::min(1.0f, 120.0f / params.bpm);
-                std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
-                use_open = (open_dist(rng) < 0.25f * bpm_scale);
+              } else if (eighth == 0) {
+                // Use structured open HH accent check for downbeats
+                use_open = shouldAddOpenHHAccent(section.type, beat, bar, rng);
               }
 
               if (use_open) {
-                addDrumNote(track, hh_tick, EIGHTH, OHH, static_cast<uint8_t>(hh_vel * 1.1f));
+                uint8_t open_hh_note = getHiHatNote(HiHatType::Open);
+                addDrumNote(track, hh_tick, EIGHTH, open_hh_note, static_cast<uint8_t>(std::max(20.0f, hh_vel * 1.1f)));
               } else {
                 addDrumNote(track, hh_tick, EIGHTH / 2, hh_instrument, hh_vel);
               }
@@ -2861,13 +2887,15 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
                 hh_tick = quantizeToSwingGrid16th(hh_tick, swing_amt);
               }
 
-              uint8_t hh_vel = static_cast<uint8_t>(velocity * density_mult);
-              hh_vel = static_cast<uint8_t>(hh_vel * getHiHatVelocityMultiplier(sixteenth, rng));
+              // Accent pattern: natural curve with humanization, plus type-based velocity (with min floor)
+              float metric_vel = getHiHatVelocityMultiplier(sixteenth, rng);
+              uint8_t hh_vel = static_cast<uint8_t>(std::max(20.0f,
+                  velocity * density_mult * hh_type_vel_mult * metric_vel));
 
               // Dynamic open HH: replace first 16th of designated beat with OHH
               if (is_dynamic_open_hh_beat && sixteenth == 0) {
-                uint8_t ohh_vel = static_cast<uint8_t>(
-                    std::min(127, static_cast<int>(hh_vel) + OHH_VEL_BOOST));
+                uint8_t ohh_vel = static_cast<uint8_t>(std::clamp(
+                    static_cast<int>(hh_vel) + OHH_VEL_BOOST, 20, 127));
                 addDrumNote(track, hh_tick, SIXTEENTH, OHH, ohh_vel);
                 continue;
               }
@@ -2876,7 +2904,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
                 float open_prob = std::clamp(30.0f / params.bpm, 0.1f, 0.4f);
                 std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
                 if (open_dist(rng) < open_prob) {
-                  addDrumNote(track, hh_tick, SIXTEENTH, OHH, static_cast<uint8_t>(hh_vel * 1.2f));
+                  addDrumNote(track, hh_tick, SIXTEENTH, OHH, static_cast<uint8_t>(std::max(20.0f, hh_vel * 1.2f)));
                   continue;
                 }
               }

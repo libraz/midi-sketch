@@ -480,7 +480,7 @@ void applyMelodyContourVelocity(MidiTrack& track, const std::vector<Section>& se
 
       // Find notes in this phrase and track the highest pitch
       uint8_t highest_pitch = 0;
-      Tick highest_tick = 0;
+      [[maybe_unused]] Tick highest_tick = 0;  // Reserved for future climax positioning
       for (const auto& note : notes) {
         if (note.start_tick >= phrase_start && note.start_tick < phrase_end) {
           if (note.note > highest_pitch) {

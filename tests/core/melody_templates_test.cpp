@@ -199,6 +199,40 @@ TEST(MelodyTemplatesTest, AuxConfigsNullSafe) {
   getAuxConfigsForTemplate(MelodyTemplateId::PlateauTalk, nullptr, nullptr);
 }
 
+TEST(MelodyTemplatesTest, AuxConfigsForCallResponse) {
+  AuxConfig configs[3];
+  uint8_t count = 0;
+  getAuxConfigsForTemplate(MelodyTemplateId::CallResponse, configs, &count);
+
+  // CallResponse should have MotifCounter + TargetHint for vocal-aux interaction
+  EXPECT_EQ(count, 2);
+  EXPECT_EQ(configs[0].function, AuxFunction::MotifCounter);
+  EXPECT_TRUE(configs[0].sync_phrase_boundary);  // Should sync with vocal phrases
+  EXPECT_EQ(configs[1].function, AuxFunction::TargetHint);
+}
+
+// ============================================================================
+// CallResponse Template Selection Tests
+// ============================================================================
+
+TEST(MelodyTemplatesTest, CallResponseForBridgePowerfulShout) {
+  // PowerfulShout style should use CallResponse for Bridge sections
+  MelodyTemplateId id = getDefaultTemplateForStyle(VocalStylePreset::PowerfulShout, SectionType::Bridge);
+  EXPECT_EQ(id, MelodyTemplateId::CallResponse);
+}
+
+TEST(MelodyTemplatesTest, CallResponseForBridgeRock) {
+  // Rock style should use CallResponse for Bridge sections
+  MelodyTemplateId id = getDefaultTemplateForStyle(VocalStylePreset::Rock, SectionType::Bridge);
+  EXPECT_EQ(id, MelodyTemplateId::CallResponse);
+}
+
+TEST(MelodyTemplatesTest, CallResponseForMixBreak) {
+  // MixBreak sections should default to CallResponse regardless of style
+  MelodyTemplateId id = getDefaultTemplateForStyle(VocalStylePreset::Standard, SectionType::MixBreak);
+  EXPECT_EQ(id, MelodyTemplateId::CallResponse);
+}
+
 // ============================================================================
 // PitchChoice Tests
 // ============================================================================

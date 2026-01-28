@@ -299,6 +299,27 @@ TEST(GrooveTemplateTest, GetMoodGrooveTemplateReturnsValidTemplate) {
   EXPECT_EQ(getMoodGrooveTemplate(Mood::FutureBass), GrooveTemplate::Trap);
 }
 
+TEST(GrooveTemplateTest, TrapMoodUsesHalfTime) {
+  // Trap mood (70 BPM half-time feel) should use HalfTime groove template
+  EXPECT_EQ(getMoodGrooveTemplate(Mood::Trap), GrooveTemplate::HalfTime);
+}
+
+TEST(GrooveTemplateTest, LofiMoodUsesHalfTime) {
+  // Lofi mood (chill, laid-back) should use HalfTime groove template
+  EXPECT_EQ(getMoodGrooveTemplate(Mood::Lofi), GrooveTemplate::HalfTime);
+}
+
+TEST(GrooveTemplateTest, AllMoodsHaveValidGrooveTemplate) {
+  // Test all 24 moods have a valid groove template
+  for (uint8_t i = 0; i < 24; ++i) {
+    Mood mood = static_cast<Mood>(i);
+    GrooveTemplate tmpl = getMoodGrooveTemplate(mood);
+    // Should return a valid template (not crash or return invalid)
+    EXPECT_LE(static_cast<uint8_t>(tmpl), static_cast<uint8_t>(GrooveTemplate::Breakbeat))
+        << "Mood " << i << " returned invalid template";
+  }
+}
+
 TEST(GrooveTemplateTest, InvalidTemplateReturnsStandard) {
   // Cast an invalid value
   auto invalid = static_cast<GrooveTemplate>(255);

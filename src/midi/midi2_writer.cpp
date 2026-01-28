@@ -74,15 +74,16 @@ void Midi2Writer::writeTrackData(const MidiTrack& track, uint8_t group, uint8_t 
     ump::writeUint32BE(data_, ump::makeProgramChange(group, channel, program));
   }
 
-  // Convert NoteEvents to UMP note on/off events
+  // Convert NoteEvents and CCEvents to UMP events
   struct Event {
     Tick time;
-    uint8_t type;  // 0x90 = note on, 0x80 = note off
-    uint8_t pitch;
-    uint8_t velocity;
+    uint8_t type;   // 0x90 = note on, 0x80 = note off, 0xB0 = CC
+    uint8_t data1;  // pitch (note) or CC number
+    uint8_t data2;  // velocity (note) or CC value
   };
   std::vector<Event> events;
-  events.reserve(track.notes().size() * 2);  // 2 events per note (on + off)
+  // Reserve: 2 events per note (on + off) + CC events
+  events.reserve(track.notes().size() * 2 + track.ccEvents().size());
 
   for (const auto& note : track.notes()) {
     uint8_t pitch = note.note;
@@ -98,13 +99,19 @@ void Midi2Writer::writeTrackData(const MidiTrack& track, uint8_t group, uint8_t 
     events.push_back({note.start_tick + note.duration, 0x80, pitch, 0});
   }
 
-  // Sort events by time, with note-off before note-on at same time.
+  // Add CC events to the unified stream
+  for (const auto& cc_evt : track.ccEvents()) {
+    events.push_back({cc_evt.tick, 0xB0, cc_evt.cc, cc_evt.value});
+  }
+
+  // Sort events by time, with note-off before CC before note-on at same time.
   // This ensures proper handling of overlapping notes with same pitch:
   // when a note ends and another starts at the same tick, the old note
   // is properly closed (note-off 0x80) before the new one starts (note-on 0x90).
+  // CC events (0xB0) are placed between note-off and note-on.
   std::sort(events.begin(), events.end(), [](const Event& a, const Event& b) {
     if (a.time != b.time) return a.time < b.time;
-    // At same time: note-off (0x80) before note-on (0x90)
+    // At same time: note-off (0x80) < CC (0xB0) < note-on (0x90)
     return a.type < b.type;
   });
 
@@ -117,9 +124,11 @@ void Midi2Writer::writeTrackData(const MidiTrack& track, uint8_t group, uint8_t 
     ump::writeDeltaClockstamp(data_, group, static_cast<uint32_t>(delta));
 
     if (evt.type == 0x90) {
-      ump::writeUint32BE(data_, ump::makeNoteOn(group, channel, evt.pitch, evt.velocity));
-    } else {
-      ump::writeUint32BE(data_, ump::makeNoteOff(group, channel, evt.pitch, evt.velocity));
+      ump::writeUint32BE(data_, ump::makeNoteOn(group, channel, evt.data1, evt.data2));
+    } else if (evt.type == 0x80) {
+      ump::writeUint32BE(data_, ump::makeNoteOff(group, channel, evt.data1, evt.data2));
+    } else if (evt.type == 0xB0) {
+      ump::writeUint32BE(data_, ump::makeControlChange(group, channel, evt.data1, evt.data2));
     }
   }
 }

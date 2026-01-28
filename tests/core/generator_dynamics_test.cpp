@@ -223,5 +223,105 @@ TEST(GeneratorTest, HumanizeParametersIndependent) {
   EXPECT_EQ(notes_timing.size(), notes_base.size());
 }
 
+// ============================================================================
+// CC Expression Tests
+// ============================================================================
+
+TEST(GeneratorTest, CC11ExpressionGenerated) {
+  // Test that CC11 (Expression) is generated for melodic tracks
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::FullWithBridge;  // Has Intro/Outro
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  // CC11 should be generated for melodic tracks (Vocal, Bass, Chord)
+  bool has_cc11 = false;
+  for (const auto& cc : song.vocal().ccEvents()) {
+    if (cc.cc == MidiCC::kExpression) {
+      has_cc11 = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(has_cc11) << "Vocal track should have CC11 Expression events";
+
+  for (const auto& cc : song.bass().ccEvents()) {
+    if (cc.cc == MidiCC::kExpression) {
+      has_cc11 = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(has_cc11) << "Bass track should have CC11 Expression events";
+}
+
+TEST(GeneratorTest, CC1ModulationForSynthTracks) {
+  // Test that CC1 (Modulation) is generated for synth tracks (Motif, Arpeggio)
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::FullWithBridge;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.arpeggio_enabled = true;  // Enable arpeggio track
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  // CC1 should be generated for arpeggio track when it has notes
+  if (!song.arpeggio().notes().empty()) {
+    bool has_cc1 = false;
+    for (const auto& cc : song.arpeggio().ccEvents()) {
+      if (cc.cc == MidiCC::kModulation) {
+        has_cc1 = true;
+        break;
+      }
+    }
+    EXPECT_TRUE(has_cc1) << "Arpeggio track should have CC1 Modulation events";
+  }
+}
+
+TEST(GeneratorTest, CC7VolumeForIntroOutro) {
+  // Test that CC7 (Volume) is generated for Intro/Outro sections
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::FullWithBridge;  // Has Intro and Outro
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  // CC7 should be generated for melodic tracks with Intro/Outro
+  bool has_cc7 = false;
+  for (const auto& cc : song.vocal().ccEvents()) {
+    if (cc.cc == MidiCC::kVolume) {
+      has_cc7 = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(has_cc7) << "Vocal track should have CC7 Volume events for Intro/Outro";
+}
+
+TEST(GeneratorTest, CCEventsNotOnDrums) {
+  // Test that CC events are NOT generated for drums track
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::FullWithBridge;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  // Drums should have no CC11/CC7/CC1 events
+  for (const auto& cc : song.drums().ccEvents()) {
+    EXPECT_NE(cc.cc, MidiCC::kExpression) << "Drums should not have CC11";
+    EXPECT_NE(cc.cc, MidiCC::kVolume) << "Drums should not have CC7";
+    EXPECT_NE(cc.cc, MidiCC::kModulation) << "Drums should not have CC1";
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

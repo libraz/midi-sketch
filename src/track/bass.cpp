@@ -2104,7 +2104,7 @@ BassArticulation determineArticulation(BassPattern pattern, Mood mood, Tick note
 // ============================================================================
 
 void applyBassArticulation(MidiTrack& track, BassPattern pattern, Mood mood,
-                           const std::vector<Section>& sections) {
+                           [[maybe_unused]] const std::vector<Section>& sections) {
   auto& notes = track.notes();
   if (notes.empty()) return;
 
