@@ -219,6 +219,17 @@ enum class VocalGrooveFeel : uint8_t {
   Bouncy8th = 5     ///< Bouncy 8th notes with slight swing
 };
 
+/// @brief Anticipation rest mode for phrase breathing control.
+///
+/// Controls intentional silence before phrase starts to create "tame" (溜め) effect.
+/// This is a common technique in J-POP to build anticipation before melodic phrases.
+enum class AnticipationRestMode : uint8_t {
+  Off = 0,        ///< No anticipation rest (default behavior)
+  Subtle = 1,     ///< 16th note rest before phrase
+  Moderate = 2,   ///< 8th note rest before phrase
+  Pronounced = 3  ///< Quarter note rest before phrase
+};
+
 /// @brief Arrangement growth method.
 enum class ArrangementGrowth : uint8_t {
   LayerAdd,    ///< Add instruments/voices

@@ -476,6 +476,31 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
 
     if (actual_beats < 2) break;  // Too short for a phrase
 
+    // Apply anticipation rest before phrases (except first phrase of section)
+    // This creates "tame" (溜め) effect common in J-POP for building anticipation
+    // Skip for UltraVocaloid (high thirtysecond_ratio) which needs continuous machine-gun passages
+    if (i > 0 && ctx.anticipation_rest != AnticipationRestMode::Off && ctx.thirtysecond_ratio < 0.8f) {
+      Tick anticipation_duration = 0;
+      switch (ctx.anticipation_rest) {
+        case AnticipationRestMode::Subtle:
+          anticipation_duration = TICK_SIXTEENTH;
+          break;
+        case AnticipationRestMode::Moderate:
+          anticipation_duration = TICK_EIGHTH;
+          break;
+        case AnticipationRestMode::Pronounced:
+          anticipation_duration = TICK_QUARTER;
+          break;
+        default:
+          break;
+      }
+      current_tick += anticipation_duration;
+      // Recalculate remaining time after adding anticipation rest
+      remaining = ctx.section_end - current_tick;
+      actual_beats = std::min(actual_beats, static_cast<uint8_t>(remaining / TICKS_PER_BEAT));
+      if (actual_beats < 2) break;
+    }
+
     // Generate hook for chorus at specific positions
     // Skip hook for UltraVocaloid (high thirtysecond_ratio) - needs continuous machine-gun passages
     bool is_hook_position =
@@ -590,8 +615,13 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
   // Ensures all notes on beat 1 are chord tones, even after embellishment
   // Also enforces kMaxMelodicInterval between consecutive notes
   // Use shared constant from pitch_utils.h
+  //
+  // APPOGGIATURA EXCEPTION: Preserve non-chord tones on downbeats that resolve
+  // down by step (1-2 semitones) to the next note. Appoggiaturas create emotional
+  // tension common in expressive pop and ballad vocals.
   int prev_final_pitch = -1;
-  for (auto& note : result) {
+  for (size_t note_idx = 0; note_idx < result.size(); ++note_idx) {
+    auto& note = result[note_idx];
     Tick bar_pos = note.start_tick % TICKS_PER_BAR;
     bool is_downbeat = bar_pos < TICKS_PER_BEAT / 4;
     if (is_downbeat) {
@@ -606,20 +636,46 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
         }
       }
       if (!is_chord_tone) {
-        // Use interval-aware snapping to preserve melodic contour
-        int new_pitch;
-        int max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
-        if (prev_final_pitch >= 0) {
-          new_pitch = nearestChordToneWithinInterval(note.note, prev_final_pitch, chord_degree,
-                                                     max_interval, ctx.vocal_low,
-                                                     ctx.vocal_high, &ctx.tessitura);
-        } else {
-          new_pitch = nearestChordTonePitch(note.note, chord_degree);
+        // Check for valid appoggiatura: resolves down by step (1-2 semitones)
+        // to the next note, which should be a chord tone
+        // IMPORTANT: The appoggiatura itself must be diatonic (on scale)
+        bool is_valid_appoggiatura = false;
+        // First verify the potential appoggiatura is diatonic
+        if (isScaleTone(pitch_pc, static_cast<uint8_t>(ctx.key_offset)) && note_idx + 1 < result.size()) {
+          int next_pitch = result[note_idx + 1].note;
+          int resolution_interval = static_cast<int>(note.note) - next_pitch;
+          // Must resolve DOWN by half-step or whole-step (1-2 semitones)
+          if (resolution_interval >= 1 && resolution_interval <= 2) {
+            // Verify next note is a chord tone (proper resolution target)
+            int8_t next_chord_degree = harmony.getChordDegreeAt(result[note_idx + 1].start_tick);
+            std::vector<int> next_chord_tones = getChordTonePitchClasses(next_chord_degree);
+            int next_pc = next_pitch % 12;
+            for (int ct : next_chord_tones) {
+              if (next_pc == ct) {
+                is_valid_appoggiatura = true;
+                break;
+              }
+            }
+          }
         }
-        // Defensive clamp to ensure vocal range is respected
-        new_pitch = std::clamp(new_pitch, static_cast<int>(ctx.vocal_low),
-                               static_cast<int>(ctx.vocal_high));
-        note.note = static_cast<uint8_t>(new_pitch);
+
+        // Only enforce chord tone if NOT a valid appoggiatura
+        if (!is_valid_appoggiatura) {
+          // Use interval-aware snapping to preserve melodic contour
+          int new_pitch;
+          int max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
+          if (prev_final_pitch >= 0) {
+            new_pitch = nearestChordToneWithinInterval(note.note, prev_final_pitch, chord_degree,
+                                                       max_interval, ctx.vocal_low,
+                                                       ctx.vocal_high, &ctx.tessitura);
+          } else {
+            new_pitch = nearestChordTonePitch(note.note, chord_degree);
+          }
+          // Defensive clamp to ensure vocal range is respected
+          new_pitch = std::clamp(new_pitch, static_cast<int>(ctx.vocal_low),
+                                 static_cast<int>(ctx.vocal_high));
+          note.note = static_cast<uint8_t>(new_pitch);
+        }
       }
     }
     // Enforce interval constraint between all consecutive notes
@@ -830,8 +886,9 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     Tick note_start = phrase_start + static_cast<Tick>(rn.beat * TICKS_PER_BEAT);
     int8_t note_chord_degree = harmony.getChordDegreeAt(note_start);
 
-    // Select pitch movement
-    PitchChoice choice = selectPitchChoice(tmpl, phrase_pos, target_pitch >= 0, ctx.section_type, rng);
+    // Select pitch movement (with rhythm-melody coupling and optional contour template)
+    PitchChoice choice = selectPitchChoice(tmpl, phrase_pos, target_pitch >= 0, ctx.section_type, rng,
+                                           rn.eighths, ctx.forced_contour);
 
     // Apply direction inertia
     choice = applyDirectionInertia(choice, result.direction_inertia, tmpl, rng);
@@ -856,9 +913,11 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
 
     // Apply pitch choice - now generates chord tones directly (chord-tone-first approach)
     // Use note_chord_degree (chord at this note's position) instead of ctx.chord_degree
+    // Pass note_eighths for rhythm-melody coupling
     int new_pitch = applyPitchChoice(choice, current_pitch, target_pitch, note_chord_degree,
                                      ctx.key_offset, ctx.vocal_low, ctx.vocal_high,
-                                     ctx.vocal_attitude, ctx.disable_vowel_constraints);
+                                     ctx.vocal_attitude, ctx.disable_vowel_constraints,
+                                     rn.eighths);
 
     // Apply consecutive same note reduction with J-POP style probability curve
     // J-POP theory: rhythmic repetition is common but should taper off naturally
@@ -1725,13 +1784,53 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   return result;
 }
 
+namespace {
+/// @brief Get direction bias for explicit phrase contour template.
+/// @param contour Contour type
+/// @param phrase_pos Position within phrase (0.0-1.0)
+/// @return Upward bias (0.0 = strongly down, 1.0 = strongly up)
+float getDirectionBiasForContour(ContourType contour, float phrase_pos) {
+  switch (contour) {
+    case ContourType::Ascending:
+      // Gradually stronger upward bias toward phrase end
+      return 0.65f + phrase_pos * 0.15f;  // 0.65 -> 0.80
+    case ContourType::Descending:
+      // Gradually stronger downward bias toward phrase end
+      return 0.35f - phrase_pos * 0.15f;  // 0.35 -> 0.20
+    case ContourType::Peak:
+      // Rise in first half, fall in second half (arch shape)
+      return phrase_pos < 0.5f ? 0.70f : 0.30f;
+    case ContourType::Valley:
+      // Fall in first half, rise in second half (bowl shape)
+      return phrase_pos < 0.5f ? 0.30f : 0.70f;
+    case ContourType::Plateau:
+      // Balanced, no strong direction preference
+      return 0.50f;
+  }
+  return 0.50f;  // Default: balanced
+}
+}  // namespace
+
 PitchChoice MelodyDesigner::selectPitchChoice(const MelodyTemplate& tmpl, float phrase_pos,
                                               bool has_target, SectionType section_type,
-                                              std::mt19937& rng) {
+                                              std::mt19937& rng, float note_eighths,
+                                              std::optional<ContourType> forced_contour) {
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
+  // Rhythm-melody coupling: note duration affects plateau probability
+  // Short notes (16th or less) prefer staying on same pitch for stability
+  // Long notes (half or longer) encourage movement for melodic interest
+  float effective_plateau_ratio = tmpl.plateau_ratio;
+  if (note_eighths < 1.0f) {
+    // Very short notes: boost plateau ratio for stability
+    effective_plateau_ratio = std::min(0.8f, tmpl.plateau_ratio + 0.15f);
+  } else if (note_eighths >= 4.0f) {
+    // Long notes: reduce plateau ratio to encourage movement
+    effective_plateau_ratio = std::max(0.1f, tmpl.plateau_ratio - 0.1f);
+  }
+
   // Step 1: Check for same pitch (plateau)
-  if (dist(rng) < tmpl.plateau_ratio) {
+  if (dist(rng) < effective_plateau_ratio) {
     return PitchChoice::Same;
   }
 
@@ -1744,29 +1843,35 @@ PitchChoice MelodyDesigner::selectPitchChoice(const MelodyTemplate& tmpl, float 
     }
   }
 
-  // Step 3: Section-aware directional bias
-  // Different sections have different melodic direction tendencies:
-  // - A (Verse): slightly ascending for storytelling momentum
-  // - B (Pre-chorus): ascending more strongly in second half for tension building
-  // - Chorus: balanced for hook memorability
-  // - Bridge: slightly descending for contrast
+  // Step 3: Directional bias
+  // Use forced contour if specified, otherwise use section-aware defaults
   float upward_bias;
-  switch (section_type) {
-    case SectionType::A:
-      upward_bias = 0.55f;  // Slight upward tendency
-      break;
-    case SectionType::B:
-      upward_bias = phrase_pos > 0.5f ? 0.65f : 0.55f;  // Strong rise in second half
-      break;
-    case SectionType::Chorus:
-      upward_bias = 0.50f;  // Balanced
-      break;
-    case SectionType::Bridge:
-      upward_bias = 0.45f;  // Slight downward for contrast
-      break;
-    default:
-      upward_bias = 0.50f;  // Balanced for other sections
-      break;
+  if (forced_contour.has_value()) {
+    // Phrase contour template: explicit control over melodic shape
+    upward_bias = getDirectionBiasForContour(*forced_contour, phrase_pos);
+  } else {
+    // Section-aware directional bias (default behavior):
+    // - A (Verse): slightly ascending for storytelling momentum
+    // - B (Pre-chorus): ascending more strongly in second half for tension building
+    // - Chorus: balanced for hook memorability
+    // - Bridge: slightly descending for contrast
+    switch (section_type) {
+      case SectionType::A:
+        upward_bias = 0.55f;  // Slight upward tendency
+        break;
+      case SectionType::B:
+        upward_bias = phrase_pos > 0.5f ? 0.65f : 0.55f;  // Strong rise in second half
+        break;
+      case SectionType::Chorus:
+        upward_bias = 0.50f;  // Balanced
+        break;
+      case SectionType::Bridge:
+        upward_bias = 0.45f;  // Slight downward for contrast
+        break;
+      default:
+        upward_bias = 0.50f;  // Balanced for other sections
+        break;
+    }
   }
   return (dist(rng) < upward_bias) ? PitchChoice::StepUp : PitchChoice::StepDown;
 }
@@ -1994,18 +2099,30 @@ void MelodyDesigner::insertLeadingTone(std::vector<NoteEvent>& notes, const Sect
 int MelodyDesigner::applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
                                      int8_t chord_degree, int key_offset, uint8_t vocal_low,
                                      uint8_t vocal_high, VocalAttitude attitude,
-                                     bool disable_singability) {
+                                     bool disable_singability, float note_eighths) {
   // VocalAttitude affects candidate pitch selection:
   //   Clean: chord tones only (1, 3, 5)
   //   Expressive: chord tones + tensions (7, 9)
   //   Raw: all scale tones (more freedom)
+  //
+  // Rhythm-melody coupling: note duration modulates tension allowance
+  //   Short notes (< 1 eighth): Force chord tones for stability
+  //   Long notes (>= 4 eighths): Allow tensions if attitude permits
 
   // Get chord tones for current chord
   std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
 
+  // Determine effective attitude based on note duration
+  // Short notes should be more consonant (chord tones preferred)
+  VocalAttitude effective_attitude = attitude;
+  if (note_eighths < 1.0f && attitude != VocalAttitude::Clean) {
+    // Short notes: downgrade to Clean for stability
+    effective_attitude = VocalAttitude::Clean;
+  }
+
   // Build candidate pitch classes based on VocalAttitude
   std::vector<int> candidate_pcs;
-  switch (attitude) {
+  switch (effective_attitude) {
     case VocalAttitude::Clean:
       // Chord tones only (safe, consonant)
       candidate_pcs = chord_tones;

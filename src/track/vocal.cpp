@@ -195,6 +195,10 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
   // Clear existing phrase boundaries for fresh generation
   song.clearPhraseBoundaries();
 
+  // Track section type occurrences for progressive tessitura shift
+  // J-POP practice: later choruses are often sung higher for emotional build-up
+  std::unordered_map<SectionType, int> section_occurrence_count;
+
   // Process each section
   for (const auto& section : song.arrangement().sections()) {
     // Skip sections without vocals (by type)
@@ -221,8 +225,12 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
     int chord_idx = section.start_bar % progression.length;
     int8_t chord_degree = progression.at(chord_idx);
 
+    // Track occurrence count for this section type (1-based)
+    int occurrence = ++section_occurrence_count[section.type];
+
     // Apply register shift for section (clamped to original range)
-    int8_t register_shift = getRegisterShift(section.type, params.melody_params);
+    // Includes progressive tessitura shift for later occurrences
+    int8_t register_shift = getRegisterShift(section.type, params.melody_params, occurrence);
 
     // ========================================================================
     // Climax Range Expansion (Task 3.11)
@@ -312,6 +320,43 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
       ctx.vocal_groove = params.vocal_groove;
       // Drive feel for timing and syncopation modulation
       ctx.drive_feel = params.drive_feel;
+
+      // Set anticipation rest mode based on groove feel and drive
+      // Driving/Syncopated grooves benefit from anticipation rests for "tame" effect
+      // Higher drive_feel increases anticipation intensity
+      if (params.vocal_groove == VocalGrooveFeel::Driving16th) {
+        ctx.anticipation_rest = (params.drive_feel >= 70) ? AnticipationRestMode::Moderate
+                                                          : AnticipationRestMode::Subtle;
+      } else if (params.vocal_groove == VocalGrooveFeel::Syncopated) {
+        ctx.anticipation_rest = AnticipationRestMode::Moderate;
+      } else if (params.drive_feel >= 80) {
+        // High drive with any groove gets subtle anticipation
+        ctx.anticipation_rest = AnticipationRestMode::Subtle;
+      }
+
+      // Set phrase contour template based on section type
+      // Common J-POP practice:
+      // - Chorus: Peak (arch shape) for memorable hook contour
+      // - A (Verse): Ascending for storytelling build
+      // - B (Pre-chorus): Ascending to build tension before chorus
+      // - Bridge: Descending for contrast
+      switch (section.type) {
+        case SectionType::Chorus:
+          ctx.forced_contour = ContourType::Peak;
+          break;
+        case SectionType::A:
+          ctx.forced_contour = ContourType::Ascending;
+          break;
+        case SectionType::B:
+          ctx.forced_contour = ContourType::Ascending;
+          break;
+        case SectionType::Bridge:
+          ctx.forced_contour = ContourType::Descending;
+          break;
+        default:
+          ctx.forced_contour = std::nullopt;  // Use default section-aware bias
+          break;
+      }
 
       // Set transition info for next section (if any)
       const auto& sections = song.arrangement().sections();
@@ -510,6 +555,16 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
           nearestChordToneWithinInterval(curr_pitch, prev_pitch, chord_degree, kMaxMelodicInterval,
                                          params.vocal_low, params.vocal_high, nullptr);
       all_notes[i].note = static_cast<uint8_t>(fixed_pitch);
+    }
+  }
+
+  // FINAL SCALE ENFORCEMENT: Ensure all notes are diatonic after interval fixing
+  // The interval enforcement may have introduced non-diatonic notes
+  for (auto& note : all_notes) {
+    int snapped = snapToNearestScaleTone(note.note, 0);  // Always C major internally
+    if (snapped != note.note) {
+      note.note = static_cast<uint8_t>(
+          std::clamp(snapped, static_cast<int>(params.vocal_low), static_cast<int>(params.vocal_high)));
     }
   }
 

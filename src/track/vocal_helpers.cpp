@@ -69,19 +69,41 @@ std::vector<NoteEvent> toRelativeTiming(const std::vector<NoteEvent>& notes, Tic
   return result;
 }
 
-int8_t getRegisterShift(SectionType type, const StyleMelodyParams& params) {
+int8_t getRegisterShift(SectionType type, const StyleMelodyParams& params, int occurrence) {
+  int8_t base_shift = 0;
   switch (type) {
     case SectionType::A:
-      return params.verse_register_shift;
+      base_shift = params.verse_register_shift;
+      break;
     case SectionType::B:
-      return params.prechorus_register_shift;
+      base_shift = params.prechorus_register_shift;
+      break;
     case SectionType::Chorus:
-      return params.chorus_register_shift;
+      base_shift = params.chorus_register_shift;
+      break;
     case SectionType::Bridge:
-      return params.bridge_register_shift;
+      base_shift = params.bridge_register_shift;
+      break;
     default:
-      return 0;
+      base_shift = 0;
+      break;
   }
+
+  // Progressive tessitura shift for Chorus and A (verse) sections
+  // J-POP analysis: later occurrences of key sections are often higher
+  // This creates emotional build-up across the song
+  if (type == SectionType::Chorus || type == SectionType::A) {
+    if (occurrence == 2) {
+      // 2nd occurrence: +2 semitones for noticeable lift
+      base_shift += 2;
+    } else if (occurrence >= 3) {
+      // 3rd+ occurrence: progressive shift, capped at +4 total
+      int progressive_shift = std::min(occurrence, 4);
+      base_shift += static_cast<int8_t>(progressive_shift);
+    }
+  }
+
+  return base_shift;
 }
 
 float getDensityModifier(SectionType type, const StyleMelodyParams& params) {

@@ -712,7 +712,8 @@ TEST(MelodyDesignerTest, DownbeatNotesAreChordTones) {
       auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
 
       // Check each note on a downbeat (beat 1 of each bar)
-      for (const auto& note : notes) {
+      for (size_t note_idx = 0; note_idx < notes.size(); ++note_idx) {
+        const auto& note = notes[note_idx];
         Tick bar_pos = note.start_tick % TICKS_PER_BAR;
         bool is_downbeat = bar_pos < TICKS_PER_BEAT / 4;
 
@@ -733,9 +734,29 @@ TEST(MelodyDesignerTest, DownbeatNotesAreChordTones) {
             }
           }
 
-          EXPECT_TRUE(is_chord_tone)
+          // Check for valid appoggiatura: resolves down by 1-2 semitones to next note
+          bool is_valid_appoggiatura = false;
+          if (!is_chord_tone && note_idx + 1 < notes.size()) {
+            int next_pitch = notes[note_idx + 1].note;
+            int resolution_interval = static_cast<int>(note.note) - next_pitch;
+            if (resolution_interval >= 1 && resolution_interval <= 2) {
+              // Check if next note is a chord tone
+              int8_t next_chord_degree = harmony.getChordDegreeAt(notes[note_idx + 1].start_tick);
+              if (next_chord_degree < 0 || next_chord_degree > 6) next_chord_degree = 0;
+              std::vector<int> next_chord_tones = getChordTonePCs(next_chord_degree);
+              int next_pc = next_pitch % 12;
+              for (int ct : next_chord_tones) {
+                if (next_pc == ct) {
+                  is_valid_appoggiatura = true;
+                  break;
+                }
+              }
+            }
+          }
+
+          EXPECT_TRUE(is_chord_tone || is_valid_appoggiatura)
               << "Downbeat note " << static_cast<int>(note.note) << " (PC=" << pitch_class
-              << ") at tick " << note.start_tick << " is not a chord tone of degree "
+              << ") at tick " << note.start_tick << " is not a chord tone or valid appoggiatura of degree "
               << static_cast<int>(chord_degree) << ". Chord tones: " << chord_tones[0] << ","
               << chord_tones[1] << "," << chord_tones[2] << ". Seed=" << seed
               << ", Template=" << static_cast<int>(tmpl_id);
@@ -776,7 +797,8 @@ TEST(MelodyDesignerTest, DownbeatChordToneAcrossSectionTypes) {
 
       auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
 
-      for (const auto& note : notes) {
+      for (size_t note_idx = 0; note_idx < notes.size(); ++note_idx) {
+        const auto& note = notes[note_idx];
         Tick bar_pos = note.start_tick % TICKS_PER_BAR;
         bool is_downbeat = bar_pos < TICKS_PER_BEAT / 4;
 
@@ -795,10 +817,29 @@ TEST(MelodyDesignerTest, DownbeatChordToneAcrossSectionTypes) {
             }
           }
 
-          EXPECT_TRUE(is_chord_tone)
+          // Check for valid appoggiatura: resolves down by 1-2 semitones to next note
+          bool is_valid_appoggiatura = false;
+          if (!is_chord_tone && note_idx + 1 < notes.size()) {
+            int next_pitch = notes[note_idx + 1].note;
+            int resolution_interval = static_cast<int>(note.note) - next_pitch;
+            if (resolution_interval >= 1 && resolution_interval <= 2) {
+              int8_t next_chord_degree = harmony.getChordDegreeAt(notes[note_idx + 1].start_tick);
+              if (next_chord_degree < 0 || next_chord_degree > 6) next_chord_degree = 0;
+              std::vector<int> next_chord_tones = getChordTonePCs(next_chord_degree);
+              int next_pc = next_pitch % 12;
+              for (int ct : next_chord_tones) {
+                if (next_pc == ct) {
+                  is_valid_appoggiatura = true;
+                  break;
+                }
+              }
+            }
+          }
+
+          EXPECT_TRUE(is_chord_tone || is_valid_appoggiatura)
               << "Downbeat note PC=" << pitch_class << " at tick " << note.start_tick << " (bar "
               << (note.start_tick / TICKS_PER_BAR + 1) << ")"
-              << " is not a chord tone. Chord degree=" << static_cast<int>(chord_degree)
+              << " is not a chord tone or valid appoggiatura. Chord degree=" << static_cast<int>(chord_degree)
               << ", SectionType=" << static_cast<int>(sec_type) << ". Seed=" << seed;
         }
       }

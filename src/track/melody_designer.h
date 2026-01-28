@@ -66,6 +66,13 @@ class MelodyDesigner {
     // Drive feel for timing and syncopation modulation
     uint8_t drive_feel = 50;  ///< Drive feel (0=laid-back, 50=neutral, 100=aggressive)
 
+    // Anticipation rest mode for phrase breathing
+    AnticipationRestMode anticipation_rest = AnticipationRestMode::Off;  ///< Rest before phrases
+
+    // Phrase contour template for explicit melodic shaping
+    // When set, overrides default section-based direction bias in selectPitchChoice
+    std::optional<ContourType> forced_contour = std::nullopt;  ///< Optional forced contour
+
     // ========================================================================
     // Task 5-2: Internal 4-Stage Structure within Section
     // ========================================================================
@@ -247,16 +254,31 @@ class MelodyDesigner {
 
   /**
    * @brief Select pitch choice based on template and phrase position.
+   *
+   * Implements rhythm-melody coupling: note duration influences pitch selection.
+   * Short notes prefer chord tones for stability, long notes allow tensions.
+   *
+   * Supports phrase contour templates when forced_contour is set. Contours control
+   * the overall shape of melodic phrases:
+   * - Ascending: generally rising (builds energy)
+   * - Descending: generally falling (release)
+   * - Peak: rise then fall (arch shape, common in chorus)
+   * - Valley: fall then rise (bowl shape)
+   * - Plateau: relatively flat (stable)
+   *
    * @param tmpl Melody template with movement probabilities
    * @param phrase_pos Position within phrase (0.0-1.0)
    * @param has_target Whether we're approaching a target pitch
    * @param section_type Section type for directional bias
    * @param rng Random number generator
+   * @param note_eighths Note duration in eighths (affects movement probability)
+   * @param forced_contour Optional contour override for explicit phrase shaping
    * @return Selected pitch choice
    */
   static PitchChoice selectPitchChoice(const MelodyTemplate& tmpl, float phrase_pos,
                                        bool has_target, SectionType section_type,
-                                       std::mt19937& rng);
+                                       std::mt19937& rng, float note_eighths = 2.0f,
+                                       std::optional<ContourType> forced_contour = std::nullopt);
 
   /**
    * @brief Apply direction inertia to pitch movement.
@@ -371,9 +393,11 @@ class MelodyDesigner {
   //   Clean: chord tones only (1, 3, 5)
   //   Expressive: chord tones + tensions (7, 9)
   //   Raw: all scale tones
+  // note_eighths: Rhythm-melody coupling - short notes prefer chord tones
   int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, int8_t chord_degree,
                        int key_offset, uint8_t vocal_low, uint8_t vocal_high,
-                       VocalAttitude attitude, bool disable_singability = false);
+                       VocalAttitude attitude, bool disable_singability = false,
+                       float note_eighths = 2.0f);
 
   // Calculate target pitch for phrase based on template.
   int calculateTargetPitch(const MelodyTemplate& tmpl, const SectionContext& ctx, int current_pitch,
