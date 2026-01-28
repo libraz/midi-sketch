@@ -56,6 +56,7 @@ set(TEST_SOURCES
   core/harmonic_rhythm_subdivision_test.cpp
   core/swing_quantize_test.cpp
   core/exit_pattern_test.cpp
+  core/pitch_bend_test.cpp
   core/secondary_dominant_test.cpp
   core/slash_chord_test.cpp
   core/motif_motion_test.cpp
@@ -89,6 +90,7 @@ set(TEST_SOURCES
   track/se_test.cpp
   track/vocal_analysis_test.cpp
   track/swing_control_test.cpp
+  track/motif_vocal_coordination_test.cpp
   analysis/dissonance_test.cpp
   analysis/non_diatonic_detection_test.cpp
   api/c_api_test.cpp

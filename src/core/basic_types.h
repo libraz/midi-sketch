@@ -231,6 +231,26 @@ constexpr uint8_t kExpression = 11;   ///< Expression controller
 constexpr uint8_t kSustain = 64;      ///< Sustain pedal
 }  // namespace MidiCC
 
+/// @brief MIDI Pitch Bend event.
+/// 14-bit value where 8192 (0x2000) is center (no bend).
+/// Internal representation uses signed values (-8192 to +8191) for convenience.
+struct PitchBendEvent {
+  Tick tick;       ///< Position in ticks
+  int16_t value;   ///< Bend value (-8192 to +8191, 0=center)
+};
+
+/// @brief Pitch bend value constants.
+/// Assumes standard +/- 2 semitone bend range.
+namespace PitchBend {
+constexpr int16_t kCenter = 0;           ///< No bend (center position)
+constexpr int16_t kSemitone = 4096;      ///< One semitone (assuming +/- 2 semitone range)
+constexpr int16_t kQuarterTone = 2048;   ///< Quarter tone (50 cents)
+constexpr int16_t kCent50 = 2048;        ///< 50 cents (same as quarter tone)
+constexpr int16_t kCent25 = 1024;        ///< 25 cents
+constexpr int16_t kMax = 8191;           ///< Maximum positive bend
+constexpr int16_t kMin = -8192;          ///< Maximum negative bend
+}  // namespace PitchBend
+
 /// @brief MIDI text/marker event.
 struct TextEvent {
   Tick time;         ///< Event time in ticks

@@ -9,6 +9,7 @@
 #include <random>
 #include <vector>
 
+#include "core/melody_types.h"
 #include "core/midi_track.h"
 #include "core/section_types.h"
 #include "core/types.h"
@@ -65,9 +66,11 @@ class PostProcessor {
   // @param drum_track Drums track (per-instrument offsets)
   // @param sections Optional section info for phrase-aware vocal timing
   // @param drive_feel Drive feel value (0-100), scales timing offset intensity
+  // @param vocal_style Vocal style preset for physics parameter scaling
   static void applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass, MidiTrack& drum_track,
                                        const std::vector<Section>* sections = nullptr,
-                                       uint8_t drive_feel = 50);
+                                       uint8_t drive_feel = 50,
+                                       VocalStylePreset vocal_style = VocalStylePreset::Standard);
 
   // Fixes vocal overlaps that may be introduced by humanization.
   // Singers can only sing one note at a time.

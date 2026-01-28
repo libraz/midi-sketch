@@ -609,7 +609,8 @@ TEST_F(ChordWithContextTest, AvoidsCloseIntervalsAcrossAllChordProgressions) {
 
     // Threshold increased from 30 to 35 to accommodate PeakLevel-based chord thickness
     // (octave doubling at PeakLevel::Max can create additional close intervals)
-    EXPECT_LT(close_count, 35) << "Chord progression " << static_cast<int>(chord_id) << " has "
+    // Further increased to 40 for secondary dominant insertion at Chorus boundaries
+    EXPECT_LT(close_count, 40) << "Chord progression " << static_cast<int>(chord_id) << " has "
                                << close_count << " close interval clashes";
   }
 }

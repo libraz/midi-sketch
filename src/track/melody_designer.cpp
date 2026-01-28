@@ -27,6 +27,51 @@ namespace {
 // Default velocity for melody notes
 constexpr uint8_t DEFAULT_VELOCITY = 100;
 
+/// @brief Get effective max melodic interval considering both section type and blueprint constraints.
+/// @param section_type Section type for section-based max interval
+/// @param ctx_max_leap Blueprint constraint for max leap (from SectionContext)
+/// @return Effective max interval in semitones (minimum of section and blueprint limits)
+int getEffectiveMaxInterval(SectionType section_type, uint8_t ctx_max_leap) {
+  int section_max = getMaxMelodicIntervalForSection(section_type);
+  return std::min(section_max, static_cast<int>(ctx_max_leap));
+}
+
+/// @brief State for tracking leap resolution across notes.
+/// When a large leap occurs, we want multiple following notes to resolve
+/// by stepwise motion in the opposite direction for natural vocal flow.
+struct LeapResolutionState {
+  bool pending = false;        ///< Leap resolution in progress
+  int8_t direction = 0;        ///< Resolution direction (-1=down, +1=up)
+  uint8_t steps_remaining = 0; ///< Number of stepwise notes remaining
+
+  /// @brief Reset state after a new leap is detected.
+  void startResolution(int leap_direction) {
+    pending = true;
+    direction = (leap_direction > 0) ? -1 : 1;  // Resolve in opposite direction
+    steps_remaining = 3;  // Resolve over next 3 notes maximum
+  }
+
+  /// @brief Check if resolution should be applied and decrement counter.
+  /// @return true if stepwise motion should be preferred
+  bool shouldApplyStep() {
+    if (!pending || steps_remaining == 0) {
+      return false;
+    }
+    steps_remaining--;
+    if (steps_remaining == 0) {
+      pending = false;
+    }
+    return true;
+  }
+
+  /// @brief Clear pending resolution (e.g., at phrase boundary).
+  void clear() {
+    pending = false;
+    direction = 0;
+    steps_remaining = 0;
+  }
+};
+
 // ============================================================================
 // GlobalMotif Weight by Section Type (Task 5-1)
 // ============================================================================
@@ -107,27 +152,71 @@ Tick getBaseBreathDuration(SectionType section, Mood mood) {
 // @param mood Current mood setting
 // @param phrase_density Note density of the phrase (notes per beat, 0.0-2.0+)
 // @param phrase_high_pitch Highest pitch reached in the phrase (MIDI note number)
+// @param ctx Optional breath context for additional adjustments
+// @param vocal_style Vocal style preset (affects breath scale via VocalPhysicsParams)
 // @return Adjusted breath duration in ticks
 Tick getBreathDuration(SectionType section, Mood mood, float phrase_density = 0.0f,
-                       uint8_t phrase_high_pitch = 60) {
+                       uint8_t phrase_high_pitch = 60, const BreathContext* ctx = nullptr,
+                       VocalStylePreset vocal_style = VocalStylePreset::Standard) {
+  // Get vocal physics parameters for breath scaling
+  VocalPhysicsParams physics = getVocalPhysicsParams(vocal_style);
+
+  // If style doesn't require breath (UltraVocaloid), return minimal gap
+  if (!physics.requires_breath) {
+    return TICK_SIXTEENTH / 2;  // Minimal 32nd note gap for legato feel
+  }
+
   Tick base = getBaseBreathDuration(section, mood);
+
+  // Calculate multiplier for all adjustments
+  float mult = 1.0f;
 
   // High density phrases need more recovery time
   // Density > 1.0 means more than one note per beat on average
   if (phrase_density > 1.0f) {
-    base = static_cast<Tick>(base * 1.3f);
+    mult *= 1.3f;
   } else if (phrase_density > 0.7f) {
-    base = static_cast<Tick>(base * 1.15f);
+    mult *= 1.15f;
   }
 
   // High pitch phrases (C5=72 or above) need more breath
   // This mimics natural singing where high notes require more breath recovery
   if (phrase_high_pitch >= 72) {  // C5 or higher
-    base = static_cast<Tick>(base * 1.2f);
+    mult *= 1.2f;
   }
 
+  // Context-dependent adjustments when BreathContext is provided
+  if (ctx != nullptr) {
+    // Deep breath after high-load phrase (phrase_load > 0.7)
+    // High load indicates demanding phrase that requires more recovery
+    if (ctx->phrase_load > 0.7f) {
+      mult *= 1.2f;
+    }
+
+    // Deep breath before chorus entry at section boundary
+    // This creates dramatic pause before the hook, enhancing anticipation
+    if (ctx->next_section == SectionType::Chorus && ctx->is_section_boundary) {
+      mult *= 1.25f;
+    }
+
+    // After consecutive high phrases (G5=76 or above)
+    // Very high phrases strain the voice, requiring extra recovery
+    if (ctx->prev_phrase_high >= 76) {
+      mult *= 1.15f;
+    }
+  }
+
+  // Apply breath scale from vocal physics
+  // - Standard/Ballad: 1.0x or higher (natural human breathing)
+  // - Vocaloid: 0.3x (reduced, imitation breathing)
+  // - UltraVocaloid: 0.0x (handled above, no breath needed)
+  mult *= physics.breath_scale;
+
+  // Apply multiplier to base duration
+  Tick result = static_cast<Tick>(base * mult);
+
   // Cap at half note to avoid excessive gaps
-  return std::min(base, TICK_HALF);
+  return std::min(result, TICK_HALF);
 }
 
 // Get rhythm unit based on grid type.
@@ -589,7 +678,8 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
           }
         }
       }
-      current_tick += getBreathDuration(ctx.section_type, ctx.mood, phrase_density, phrase_high_pitch);
+      current_tick += getBreathDuration(ctx.section_type, ctx.mood, phrase_density,
+                                        phrase_high_pitch, nullptr, ctx.vocal_style);
     }
 
     // Snap to next half-bar boundary (phrase_beats/2 * TICKS_PER_BEAT grid)
@@ -877,6 +967,9 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   // Pop vocal theory: large leaps need preparation time (longer preceding note)
   Tick prev_note_duration = TICKS_PER_BEAT;  // Default to quarter note
 
+  // Phase 4: Track leap resolution state for multi-note stepwise resolution
+  LeapResolutionState leap_state;
+
   // Generate notes for each rhythm position
   for (size_t i = 0; i < rhythm.size(); ++i) {
     const RhythmNote& rn = rhythm[i];
@@ -986,15 +1079,68 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       }
     }
 
-    // Enforce maximum interval constraint (section-adaptive)
+    // Enforce maximum interval constraint (section-adaptive + blueprint constraint)
     // Use nearestChordToneWithinInterval to stay on chord tones
-    // getMaxMelodicIntervalForSection allows wider leaps in chorus/bridge
-    int max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
+    // getEffectiveMaxInterval considers both section type and blueprint limits
+    int max_interval = getEffectiveMaxInterval(ctx.section_type, ctx.max_leap_semitones);
     int interval = std::abs(new_pitch - current_pitch);
     if (interval > max_interval) {
       new_pitch = nearestChordToneWithinInterval(new_pitch, current_pitch, note_chord_degree,
                                                  max_interval, ctx.vocal_low, ctx.vocal_high,
                                                  &ctx.tessitura);
+    }
+
+    // =========================================================================
+    // PHASE 4: Multi-note leap resolution tracking
+    // =========================================================================
+    // When a large leap (5+ semitones) occurs, mark resolution as pending.
+    // Following notes should prefer stepwise motion in the opposite direction
+    // until resolution completes (max 3 notes) or another leap occurs.
+    constexpr int LEAP_THRESHOLD = 5;  // Perfect 4th or larger
+    int actual_interval = new_pitch - current_pitch;  // Signed for direction
+
+    // Check if pending resolution should override the selected pitch
+    if (leap_state.shouldApplyStep() && !result.notes.empty()) {
+      // Calculate probability based on context
+      float step_probability = ctx.prefer_stepwise ? 1.0f : 0.80f;
+      std::uniform_real_distribution<float> step_dist(0.0f, 1.0f);
+
+      if (step_dist(rng) < step_probability) {
+        // Force stepwise motion in resolution direction
+        std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
+        int best_step_pitch = -1;
+        int best_step_interval = 127;
+
+        for (int ct : chord_tones) {
+          for (int oct = 4; oct <= 6; ++oct) {
+            int candidate = oct * 12 + ct;
+            if (candidate < ctx.vocal_low || candidate > ctx.vocal_high) continue;
+
+            int candidate_interval = candidate - current_pitch;
+            int candidate_direction = (candidate_interval > 0) ? 1 : (candidate_interval < 0) ? -1 : 0;
+
+            // Must be in resolution direction and be stepwise (1-3 semitones)
+            if (candidate_direction == leap_state.direction) {
+              int abs_step = std::abs(candidate_interval);
+              if (abs_step >= 1 && abs_step <= 3 && abs_step < best_step_interval) {
+                best_step_interval = abs_step;
+                best_step_pitch = candidate;
+              }
+            }
+          }
+        }
+
+        if (best_step_pitch >= 0) {
+          new_pitch = best_step_pitch;
+          // Recalculate interval for leap detection below
+          actual_interval = new_pitch - current_pitch;
+        }
+      }
+    }
+
+    // Detect new leaps and start resolution tracking
+    if (std::abs(actual_interval) >= LEAP_THRESHOLD) {
+      leap_state.startResolution(actual_interval);
     }
 
     // Leap preparation principle (pop vocal theory):
@@ -1195,10 +1341,13 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
             }
           }
 
-          // Apply reversal if found a good candidate (60% probability to allow some flexibility)
+          // Apply reversal if found a good candidate
+          // Phase 4: Strengthen leap resolution from 60% to 80% probability
+          // If prefer_stepwise is set (IdolKawaii), force 100% stepwise motion
           if (best_reversal_pitch >= 0) {
+            float reversal_probability = ctx.prefer_stepwise ? 1.0f : 0.80f;
             std::uniform_real_distribution<float> rev_dist(0.0f, 1.0f);
-            if (rev_dist(rng) < 0.6f) {
+            if (rev_dist(rng) < reversal_probability) {
               new_pitch = best_reversal_pitch;
             }
           }
@@ -1210,12 +1359,12 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     // Previous adjustments (avoid note, downbeat snapping) might have created
     // large intervals. This final check ensures singability is maintained.
     {
-      // Section-adaptive max interval from pitch_utils.h
-      int section_max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
+      // Section-adaptive max interval + blueprint constraint
+      int effective_max_interval = getEffectiveMaxInterval(ctx.section_type, ctx.max_leap_semitones);
       int final_interval = std::abs(new_pitch - current_pitch);
-      if (final_interval > section_max_interval) {
+      if (final_interval > effective_max_interval) {
         new_pitch = nearestChordToneWithinInterval(new_pitch, current_pitch, note_chord_degree,
-                                                   section_max_interval, ctx.vocal_low,
+                                                   effective_max_interval, ctx.vocal_low,
                                                    ctx.vocal_high, &ctx.tessitura);
       }
     }

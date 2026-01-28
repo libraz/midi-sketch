@@ -27,6 +27,19 @@ namespace midisketch {
 
 class IHarmonyContext;
 
+/// @brief Context information for breath calculation.
+///
+/// Provides additional context for calculating breath duration between phrases.
+/// When provided, enables context-dependent adjustments such as deeper breaths
+/// after high-load phrases or before chorus entries.
+struct BreathContext {
+  float phrase_load = 0.5f;            ///< Previous phrase load (0.0-1.0)
+  uint8_t prev_phrase_high = 60;       ///< Highest note in previous phrase
+  float prev_phrase_density = 0.5f;    ///< Note density of previous phrase
+  SectionType next_section;            ///< Next section type
+  bool is_section_boundary = false;    ///< Whether this is a section boundary
+};
+
 /**
  * @brief Template-driven melody generator with music theory constraints.
  */
@@ -66,12 +79,19 @@ class MelodyDesigner {
     // Drive feel for timing and syncopation modulation
     uint8_t drive_feel = 50;  ///< Drive feel (0=laid-back, 50=neutral, 100=aggressive)
 
+    // Blueprint constraints for melodic leap and stepwise preference
+    uint8_t max_leap_semitones = 12;  ///< Maximum melodic leap in semitones (default: octave)
+    bool prefer_stepwise = false;      ///< Prefer stepwise motion over leaps
+
     // Anticipation rest mode for phrase breathing
     AnticipationRestMode anticipation_rest = AnticipationRestMode::Off;  ///< Rest before phrases
 
     // Phrase contour template for explicit melodic shaping
     // When set, overrides default section-based direction bias in selectPitchChoice
     std::optional<ContourType> forced_contour = std::nullopt;  ///< Optional forced contour
+
+    // Vocal style preset for style-specific physics
+    VocalStylePreset vocal_style = VocalStylePreset::Standard;  ///< Affects breath and timing
 
     // ========================================================================
     // Task 5-2: Internal 4-Stage Structure within Section

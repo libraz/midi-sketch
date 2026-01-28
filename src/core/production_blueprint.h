@@ -18,6 +18,15 @@ namespace midisketch {
 
 // TrackMask, EntryPattern, GenerationParadigm, and RiffPolicy are defined in section_types.h
 
+/// @brief Blueprint-level constraints for generation.
+/// These override default limits for specific musical characteristics.
+struct BlueprintConstraints {
+  uint8_t max_velocity = 127;       ///< Maximum note velocity (0-127)
+  uint8_t max_pitch = 108;          ///< Maximum MIDI pitch (G8)
+  uint8_t max_leap_semitones = 12;  ///< Maximum melodic leap (octave)
+  bool prefer_stepwise = false;     ///< Prefer stepwise motion over leaps
+};
+
 /// @brief Section slot definition for blueprint section flow.
 struct SectionSlot {
   SectionType type;            ///< Section type (Intro, A, B, Chorus, etc.)
@@ -84,6 +93,14 @@ struct ProductionBlueprint {
   /// @brief Enable Behavioral Loop mode (addictive generation).
   /// Forces RiffPolicy::LockedPitch, HookIntensity::Maximum, and CutOff exit patterns.
   bool addictive_mode = false;
+
+  /// @brief Mood compatibility mask.
+  /// Bit N = Mood N is compatible. 0 = all moods valid.
+  uint32_t mood_mask = 0;
+
+  /// @brief Blueprint-level generation constraints.
+  /// Controls velocity ceiling, pitch range, and melodic leap limits.
+  BlueprintConstraints constraints;
 };
 
 // ============================================================================
@@ -124,6 +141,14 @@ const char* getProductionBlueprintName(uint8_t id);
  * @return Blueprint ID, or 255 if not found
  */
 uint8_t findProductionBlueprintByName(const char* name);
+
+/**
+ * @brief Check if a mood is compatible with a blueprint.
+ * @param blueprint_id Blueprint ID
+ * @param mood Mood enum value
+ * @return true if mood is compatible (or if blueprint allows all moods)
+ */
+bool isMoodCompatible(uint8_t blueprint_id, uint8_t mood);
 
 }  // namespace midisketch
 

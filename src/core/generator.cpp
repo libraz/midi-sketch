@@ -43,6 +43,7 @@
 #include "track/se.h"
 #include "track/vocal.h"
 #include "track/vocal_analysis.h"
+#include "core/motif_types.h"
 
 namespace midisketch {
 
@@ -115,6 +116,9 @@ void Generator::initializeBlueprint(uint32_t seed) {
   params_.riff_policy = blueprint_->riff_policy;
   params_.drums_sync_vocal = blueprint_->drums_sync_vocal;
 
+  // Store blueprint reference for constraint access during generation
+  params_.blueprint_ref = blueprint_;
+
   // Force drums on if blueprint requires it
   if (blueprint_->drums_required) {
     params_.drums_enabled = true;
@@ -125,6 +129,14 @@ void Generator::initializeBlueprint(uint32_t seed) {
     params_.addictive_mode = true;
     params_.riff_policy = RiffPolicy::LockedPitch;
     params_.hook_intensity = HookIntensity::Maximum;
+  }
+
+  // Validate mood compatibility with blueprint
+  uint8_t mood_idx = static_cast<uint8_t>(params_.mood);
+  if (!isMoodCompatible(resolved_blueprint_id_, mood_idx)) {
+    // Log warning but don't block generation
+    warnings_.push_back("Mood " + std::to_string(mood_idx) +
+                        " may not be optimal for blueprint " + blueprint_->name);
   }
 }
 
@@ -838,7 +850,26 @@ void Generator::generateMotif() {
   // RAII guard ensures motif is registered when this scope ends
   TrackRegistrationGuard guard(*harmony_context_, song_.motif(), TrackRole::Motif);
 
-  generateMotifTrack(song_.motif(), song_, params_, rng_, *harmony_context_);
+  // Build vocal context for MelodyLead mode coordination
+  MotifContext ctx;
+  MotifContext* vocal_ctx = nullptr;
+  VocalAnalysis va;  // Keep in scope for pointer validity
+
+  // Only provide vocal context if:
+  // 1. Vocal track exists and has notes
+  // 2. We're in MelodyLead mode (vocal was generated first)
+  if (!params_.skip_vocal && !song_.vocal().notes().empty()) {
+    va = analyzeVocal(song_.vocal());
+    ctx.phrase_boundaries = &song_.phraseBoundaries();
+    ctx.rest_positions = &va.rest_positions;
+    ctx.vocal_low = va.lowest_pitch;
+    ctx.vocal_high = va.highest_pitch;
+    ctx.vocal_density = va.density;
+    ctx.direction_at_tick = &va.direction_at_tick;
+    vocal_ctx = &ctx;
+  }
+
+  generateMotifTrack(song_.motif(), song_, params_, rng_, *harmony_context_, vocal_ctx);
 }
 
 void Generator::regenerateMotif(uint32_t new_seed) {
@@ -962,6 +993,25 @@ void Generator::applyTransitionDynamics() {
   if (emotion_curve_.isPlanned()) {
     applyEmotionBasedDynamics(tracks, sections);
   }
+
+  // FINAL STEP: Apply blueprint constraints (e.g., IdolKawaii max_velocity=80, max_pitch=79)
+  // This MUST be the last processing step to ensure no note exceeds the limits.
+  if (blueprint_ != nullptr) {
+    std::vector<MidiTrack*> all_tracks = {&song_.vocal(), &song_.chord(), &song_.bass(),
+                                          &song_.arpeggio(), &song_.motif(), &song_.aux()};
+
+    // Clamp velocities for all tracks
+    if (blueprint_->constraints.max_velocity < 127) {
+      for (MidiTrack* track : all_tracks) {
+        midisketch::clampTrackVelocity(*track, blueprint_->constraints.max_velocity);
+      }
+    }
+
+    // Clamp vocal pitch (other tracks have different range requirements)
+    if (blueprint_->constraints.max_pitch < 127) {
+      midisketch::clampTrackPitch(song_.vocal(), blueprint_->constraints.max_pitch);
+    }
+  }
 }
 
 void Generator::applyEmotionBasedDynamics(std::vector<MidiTrack*>& tracks,
@@ -1016,8 +1066,9 @@ void Generator::applyHumanization() {
   // Apply per-instrument micro-timing offsets for groove pocket
   // Pass sections for phrase-aware vocal timing (Start: +8, Middle: +4, End: 0)
   // drive_feel scales timing offsets: laid-back = reduced, aggressive = increased
+  // vocal_style affects human timing physics (UltraVocaloid=mechanical, Human=natural)
   PostProcessor::applyMicroTimingOffsets(song_.vocal(), song_.bass(), song_.drums(), &sections,
-                                          params_.drive_feel);
+                                          params_.drive_feel, params_.vocal_style);
 
   PostProcessor::fixVocalOverlaps(song_.vocal());
 }

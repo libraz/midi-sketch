@@ -765,6 +765,7 @@ TEST_F(ChorusDropTest, DrumHitCrashHasPostProcessProvenance) {
 
 TEST(MicroTimingTest, VocalTimingVariesByPhrasePosition) {
   // Test that vocal timing offset varies by phrase position when sections provided
+  // Note: Human body timing model adds additional delays for post-breath and high-pitch notes.
   MidiTrack vocal, bass, drums;
 
   // Create 4-bar section
@@ -776,15 +777,15 @@ TEST(MicroTimingTest, VocalTimingVariesByPhrasePosition) {
   sections.push_back(section);
 
   // Add notes at different phrase positions
-  // Bar 0 (phrase start) - should get +8 offset
+  // Bar 0 (phrase start) - should get +8 phrase offset + post-breath delay
   Tick phrase_start_tick = 0;
   vocal.addNote(phrase_start_tick, TICKS_PER_BEAT, 60, 80);
 
-  // Bar 1-2 (phrase middle) - should get +4 offset
+  // Bar 1-2 (phrase middle) - should get +4 phrase offset + post-breath delay (gap > 240)
   Tick phrase_middle_tick = TICKS_PER_BAR * 2;
   vocal.addNote(phrase_middle_tick, TICKS_PER_BEAT, 62, 80);
 
-  // Bar 3 (phrase end) - should get 0 offset
+  // Bar 3 (phrase end) - should get 0 phrase offset + post-breath delay + high-pitch delay
   Tick phrase_end_tick = TICKS_PER_BAR * 3;
   vocal.addNote(phrase_end_tick, TICKS_PER_BEAT, 64, 80);
 
@@ -796,17 +797,17 @@ TEST(MicroTimingTest, VocalTimingVariesByPhrasePosition) {
   // Apply micro-timing with sections
   PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, &sections);
 
-  // Phrase start should have largest forward offset (+8)
+  // Phrase start: +8 (phrase) + 6 (post-breath, first note) = 14
   Tick new_start = vocal.notes()[0].start_tick;
-  EXPECT_EQ(new_start, orig_start + 8) << "Phrase start should have +8 offset";
+  EXPECT_EQ(new_start, orig_start + 14) << "Phrase start should have +14 offset (8 phrase + 6 post-breath)";
 
-  // Phrase middle should have medium offset (+4)
+  // Phrase middle: +4 (phrase) + 6 (post-breath, gap > 240) = 10
   Tick new_middle = vocal.notes()[1].start_tick;
-  EXPECT_EQ(new_middle, orig_middle + 4) << "Phrase middle should have +4 offset";
+  EXPECT_EQ(new_middle, orig_middle + 10) << "Phrase middle should have +10 offset (4 phrase + 6 post-breath)";
 
-  // Phrase end should have no offset (0)
+  // Phrase end: +0 (phrase) + 6 (post-breath) + 2 (high-pitch, 64 > center 62) = 8
   Tick new_end = vocal.notes()[2].start_tick;
-  EXPECT_EQ(new_end, orig_end) << "Phrase end should have 0 offset";
+  EXPECT_EQ(new_end, orig_end + 8) << "Phrase end should have +8 offset (0 phrase + 6 post-breath + 2 high-pitch)";
 }
 
 TEST(MicroTimingTest, VocalTimingUniformWithoutSections) {
@@ -921,6 +922,7 @@ TEST(MicroTimingTest, DriveFeelScalesTimingOffsets) {
 
 TEST(MicroTimingTest, DriveFeelAffectsVocalPhraseOffsets) {
   // Test that drive_feel scales vocal phrase-position offsets
+  // Note: Human body timing model adds post-breath delay (+6) for first note.
   MidiTrack vocal, bass, drums;
 
   std::vector<Section> sections;
@@ -936,11 +938,13 @@ TEST(MicroTimingTest, DriveFeelAffectsVocalPhraseOffsets) {
 
   Tick orig = vocal.notes()[0].start_tick;
 
-  // With aggressive drive (100), offset should be 1.5x: base 8 * 1.5 = 12
+  // With aggressive drive (100), phrase offset should be 1.5x: base 8 * 1.5 = 12
+  // Plus post-breath delay for first note: +6
+  // Total: 12 + 6 = 18
   PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, &sections, 100);
 
-  EXPECT_EQ(vocal.notes()[0].start_tick, orig + 12)
-      << "Aggressive drive should push phrase start ahead by 12 (1.5x of 8)";
+  EXPECT_EQ(vocal.notes()[0].start_tick, orig + 18)
+      << "Aggressive drive should push phrase start ahead by 18 (1.5x of 8 + 6 post-breath)";
 }
 
 TEST(MicroTimingTest, DefaultDriveFeelMatchesNeutral) {
@@ -960,6 +964,158 @@ TEST(MicroTimingTest, DefaultDriveFeelMatchesNeutral) {
   // Both should have same offset
   EXPECT_EQ(drums_def.notes()[0].start_tick, drums_neutral.notes()[0].start_tick)
       << "Default drive_feel should match neutral (50)";
+}
+
+// ============================================================================
+// Phase 1: Human Body Timing Model Tests
+// ============================================================================
+
+TEST(PostProcessorTest, HighPitchTimingDelay) {
+  // High notes should get additional delay for realistic human feel
+  MidiTrack vocal, bass, drums;
+
+  std::vector<Section> sections;
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 4;
+  sections.push_back(section);
+
+  // Add a low note (at center) and a high note (above center)
+  // Tessitura will be centered between them: (60+80)/2 = 70
+  Tick start = TICKS_PER_BAR;  // Phrase middle position
+  vocal.addNote(start, TICKS_PER_BEAT, 60, 80);   // Low note (C4)
+  vocal.addNote(start + TICKS_PER_BEAT, TICKS_PER_BEAT, 80, 80);  // High note (G#5)
+
+  Tick orig_low = vocal.notes()[0].start_tick;
+  Tick orig_high = vocal.notes()[1].start_tick;
+
+  PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, &sections);
+
+  // Both notes get phrase position offset (+4 for middle)
+  // Low note (60) is below center (70): no high pitch delay
+  // High note (80) is 10 semitones above center (70): +10 ticks
+
+  Tick new_low = vocal.notes()[0].start_tick;
+  Tick new_high = vocal.notes()[1].start_tick;
+
+  // High note should have larger offset than low note
+  Tick low_offset = new_low - orig_low;
+  Tick high_offset = new_high - orig_high;
+
+  EXPECT_GT(high_offset, low_offset)
+      << "High pitch notes should have larger timing delay";
+}
+
+TEST(PostProcessorTest, LeapLandingTimingDelay) {
+  // Large melodic leaps should cause additional delay on landing
+  MidiTrack vocal, bass, drums;
+
+  std::vector<Section> sections;
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 4;
+  sections.push_back(section);
+
+  // Create sequence with small step (2 semitones) and large leap (12 semitones)
+  Tick start = TICKS_PER_BAR;
+  vocal.addNote(start, TICKS_PER_BEAT, 60, 80);                    // C4
+  vocal.addNote(start + TICKS_PER_BEAT, TICKS_PER_BEAT, 62, 80);   // D4 (step of 2)
+  vocal.addNote(start + 2 * TICKS_PER_BEAT, TICKS_PER_BEAT, 74, 80);  // D5 (leap of 12)
+
+  Tick orig_step = vocal.notes()[1].start_tick;
+  Tick orig_leap = vocal.notes()[2].start_tick;
+
+  PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, &sections);
+
+  Tick new_step = vocal.notes()[1].start_tick;
+  Tick new_leap = vocal.notes()[2].start_tick;
+
+  Tick step_offset = new_step - orig_step;
+  Tick leap_offset = new_leap - orig_leap;
+
+  // Leap landing should have larger offset than step
+  // Step of 2 semitones: no leap delay (< 5)
+  // Leap of 12 semitones: 8 ticks delay (>= 7)
+  EXPECT_GT(leap_offset, step_offset)
+      << "Leap landing should have larger timing delay than stepwise motion";
+}
+
+TEST(PostProcessorTest, PostBreathSoftStart) {
+  // Notes after breath gaps should have slight delay
+  MidiTrack vocal, bass, drums;
+
+  std::vector<Section> sections;
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 4;
+  sections.push_back(section);
+
+  Tick start = TICKS_PER_BAR;
+  // First note (post-breath by definition since idx=0)
+  vocal.addNote(start, TICKS_PER_BEAT, 67, 80);
+  // Second note immediately following (no breath gap)
+  vocal.addNote(start + TICKS_PER_BEAT, TICKS_PER_BEAT, 67, 80);
+  // Third note after a long gap (breath gap > TICK_EIGHTH = 240)
+  vocal.addNote(start + 3 * TICKS_PER_BEAT, TICKS_PER_BEAT, 67, 80);
+
+  Tick orig_first = vocal.notes()[0].start_tick;
+  Tick orig_second = vocal.notes()[1].start_tick;
+  Tick orig_third = vocal.notes()[2].start_tick;
+
+  PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, &sections);
+
+  // First note: post-breath (idx=0) -> +6 delay
+  // Second note: no breath gap -> no post-breath delay
+  // Third note: breath gap (480 > 240) -> +6 delay
+
+  Tick first_offset = vocal.notes()[0].start_tick - orig_first;
+  Tick second_offset = vocal.notes()[1].start_tick - orig_second;
+  Tick third_offset = vocal.notes()[2].start_tick - orig_third;
+
+  // First and third notes should have post-breath delay
+  // Second note should not
+  EXPECT_GT(first_offset, second_offset)
+      << "First note (post-breath) should have larger delay than second";
+  EXPECT_GT(third_offset, second_offset)
+      << "Note after breath gap should have larger delay than continuous note";
+}
+
+TEST(PostProcessorTest, HumanBodyTimingCombined) {
+  // Test that all three human body timing effects combine correctly
+  MidiTrack vocal, bass, drums;
+
+  std::vector<Section> sections;
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 4;
+  sections.push_back(section);
+
+  Tick start = TICKS_PER_BAR;
+  // Low note, stepwise from nothing
+  vocal.addNote(start, TICKS_PER_BEAT, 60, 80);
+  // Very high note after gap with large leap: all three delays apply
+  vocal.addNote(start + 3 * TICKS_PER_BEAT, TICKS_PER_BEAT, 84, 80);
+
+  Tick orig_high = vocal.notes()[1].start_tick;
+
+  PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, &sections);
+
+  Tick new_high = vocal.notes()[1].start_tick;
+  Tick offset = new_high - orig_high;
+
+  // High note should have:
+  // - Phrase position offset (+4 for middle)
+  // - High pitch delay: tessitura center = (60+84)/2 = 72, pitch=84, diff=12 -> +12 (capped)
+  // - Leap delay: interval = 24 semitones -> +8
+  // - Post-breath delay: gap = 2*480 = 960 > 240 -> +6
+  // Total expected: 4 + 12 + 8 + 6 = 30 ticks
+
+  EXPECT_GE(offset, 25) << "Combined human body timing should accumulate delays";
+  EXPECT_LE(offset, 35) << "Combined offset should be reasonable";
 }
 
 }  // namespace

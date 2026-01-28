@@ -944,4 +944,31 @@ float getPhraseNoteVelocityCurve(int note_index, int total_notes, ContourType co
   return multiplier;
 }
 
+void clampTrackVelocity(MidiTrack& track, uint8_t max_velocity) {
+  if (max_velocity >= 127) {
+    return;  // No clamping needed
+  }
+
+  auto& notes = track.notes();
+  for (auto& note : notes) {
+    if (note.velocity > max_velocity) {
+      note.velocity = max_velocity;
+    }
+  }
+}
+
+void clampTrackPitch(MidiTrack& track, uint8_t max_pitch) {
+  if (max_pitch >= 127) {
+    return;  // No clamping needed
+  }
+
+  auto& notes = track.notes();
+  for (auto& note : notes) {
+    // Transpose down by octaves until within range
+    while (note.note > max_pitch && note.note >= 12) {
+      note.note -= 12;
+    }
+  }
+}
+
 }  // namespace midisketch

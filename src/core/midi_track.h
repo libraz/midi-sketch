@@ -39,6 +39,14 @@ class MidiTrack {
   /// @param cc_number CC number (0-127)
   /// @param value CC value (0-127)
   void addCC(Tick tick, uint8_t cc_number, uint8_t value);
+
+  /// @brief Add a MIDI Pitch Bend event.
+  /// @param tick Position in ticks
+  /// @param value Bend value (-8192 to +8191, 0=center)
+  void addPitchBend(Tick tick, int16_t value);
+
+  /// @brief Clear all pitch bend events from the track.
+  void clearPitchBend();
   /// @}
 
   /// @name Editing Operations
@@ -67,7 +75,11 @@ class MidiTrack {
   const std::vector<TextEvent>& textEvents() const { return textEvents_; }
   const std::vector<CCEvent>& ccEvents() const { return cc_events_; }
   std::vector<CCEvent>& ccEvents() { return cc_events_; }
-  bool empty() const { return notes_.empty() && textEvents_.empty() && cc_events_.empty(); }
+  const std::vector<PitchBendEvent>& pitchBendEvents() const { return pitch_bend_events_; }
+  std::vector<PitchBendEvent>& pitchBendEvents() { return pitch_bend_events_; }
+  bool empty() const {
+    return notes_.empty() && textEvents_.empty() && cc_events_.empty() && pitch_bend_events_.empty();
+  }
   size_t noteCount() const { return notes_.size(); }
   Tick lastTick() const;
   /// @}
@@ -80,6 +92,7 @@ class MidiTrack {
   std::vector<NoteEvent> notes_;
   std::vector<TextEvent> textEvents_;
   std::vector<CCEvent> cc_events_;
+  std::vector<PitchBendEvent> pitch_bend_events_;
 };
 
 }  // namespace midisketch

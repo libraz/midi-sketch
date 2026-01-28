@@ -554,5 +554,215 @@ TEST(MidiWriterSmf1Test, DifferentMoodsProduceDifferentPrograms) {
   EXPECT_NE(findProgramChange(data1, 0), findProgramChange(data2, 0));
 }
 
+// ============================================================================
+// Pitch Bend Event Tests
+// ============================================================================
+
+// Helper: Find pitch bend event in MIDI data for a given channel
+// Only searches within track chunks (after MTrk headers)
+bool findPitchBendEvent(const std::vector<uint8_t>& data, uint8_t channel,
+                        uint16_t* out_value = nullptr) {
+  uint8_t status_byte = 0xE0 | channel;
+  // Skip header (14 bytes for MThd) and search within MTrk chunks
+  // Look for MTrk markers and only search inside track data
+  for (size_t idx = 14; idx + 6 < data.size(); ++idx) {
+    // Find MTrk marker
+    if (data[idx] == 'M' && data[idx + 1] == 'T' && data[idx + 2] == 'r' && data[idx + 3] == 'k') {
+      // Get track length
+      uint32_t track_len = (static_cast<uint32_t>(data[idx + 4]) << 24) |
+                           (static_cast<uint32_t>(data[idx + 5]) << 16) |
+                           (static_cast<uint32_t>(data[idx + 6]) << 8) | data[idx + 7];
+      size_t track_start = idx + 8;
+      size_t track_end = track_start + track_len;
+      if (track_end > data.size()) track_end = data.size();
+
+      // Search within this track
+      for (size_t jdx = track_start; jdx + 2 < track_end; ++jdx) {
+        if (data[jdx] == status_byte) {
+          // Verify data bytes are valid (< 128)
+          if (data[jdx + 1] < 128 && data[jdx + 2] < 128) {
+            if (out_value) {
+              uint8_t lsb = data[jdx + 1];
+              uint8_t msb = data[jdx + 2];
+              *out_value = (static_cast<uint16_t>(msb) << 7) | lsb;
+            }
+            return true;
+          }
+        }
+      }
+      // Move to end of this track
+      idx = track_end - 1;
+    }
+  }
+  return false;
+}
+
+// Count pitch bend events in MIDI data for a given channel
+// Only counts within track chunks (after MTrk headers)
+size_t countPitchBendEvents(const std::vector<uint8_t>& data, uint8_t channel) {
+  uint8_t status_byte = 0xE0 | channel;
+  size_t count = 0;
+
+  for (size_t idx = 14; idx + 6 < data.size(); ++idx) {
+    if (data[idx] == 'M' && data[idx + 1] == 'T' && data[idx + 2] == 'r' && data[idx + 3] == 'k') {
+      uint32_t track_len = (static_cast<uint32_t>(data[idx + 4]) << 24) |
+                           (static_cast<uint32_t>(data[idx + 5]) << 16) |
+                           (static_cast<uint32_t>(data[idx + 6]) << 8) | data[idx + 7];
+      size_t track_start = idx + 8;
+      size_t track_end = track_start + track_len;
+      if (track_end > data.size()) track_end = data.size();
+
+      for (size_t jdx = track_start; jdx + 2 < track_end; ++jdx) {
+        if (data[jdx] == status_byte) {
+          if (data[jdx + 1] < 128 && data[jdx + 2] < 128) {
+            ++count;
+          }
+        }
+      }
+      idx = track_end - 1;
+    }
+  }
+  return count;
+}
+
+TEST(MidiWriterSmf1Test, WritePitchBendEvents) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+
+  // Add a note and pitch bend events to vocal track
+  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addPitchBend(0, 0);      // Center
+  song.vocal().addPitchBend(120, 4096);  // One semitone up
+
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+  auto data = writer.toBytes();
+
+  // Should contain pitch bend events on channel 0 (vocal)
+  EXPECT_TRUE(findPitchBendEvent(data, 0));
+}
+
+TEST(MidiWriterSmf1Test, PitchBendCenterValue) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+
+  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addPitchBend(0, 0);  // Center (internal 0 = MIDI 8192)
+
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+  auto data = writer.toBytes();
+
+  uint16_t midi_value = 0;
+  EXPECT_TRUE(findPitchBendEvent(data, 0, &midi_value));
+  EXPECT_EQ(midi_value, 8192u);  // Center value in MIDI
+}
+
+TEST(MidiWriterSmf1Test, PitchBendPositiveValue) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+
+  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addPitchBend(0, 4096);  // One semitone up (internal 4096 = MIDI 12288)
+
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+  auto data = writer.toBytes();
+
+  uint16_t midi_value = 0;
+  EXPECT_TRUE(findPitchBendEvent(data, 0, &midi_value));
+  EXPECT_EQ(midi_value, 12288u);  // 4096 + 8192
+}
+
+TEST(MidiWriterSmf1Test, PitchBendNegativeValue) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+
+  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addPitchBend(0, -4096);  // One semitone down (internal -4096 = MIDI 4096)
+
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+  auto data = writer.toBytes();
+
+  uint16_t midi_value = 0;
+  EXPECT_TRUE(findPitchBendEvent(data, 0, &midi_value));
+  EXPECT_EQ(midi_value, 4096u);  // -4096 + 8192
+}
+
+TEST(MidiWriterSmf1Test, MultiplePitchBendEventsWritten) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+
+  song.vocal().addNote(0, 1920, 60, 100);
+  song.vocal().addPitchBend(0, -2048);
+  song.vocal().addPitchBend(120, -1024);
+  song.vocal().addPitchBend(240, 0);
+  song.vocal().addPitchBend(360, 0);
+
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+  auto data = writer.toBytes();
+
+  // Should have 4 pitch bend events on channel 0
+  size_t pb_count = countPitchBendEvents(data, 0);
+  EXPECT_EQ(pb_count, 4u);
+}
+
+TEST(MidiWriterSmf1Test, PitchBendOnDifferentChannels) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+
+  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addPitchBend(0, 2048);
+
+  song.bass().addNote(0, 480, 48, 90);
+  song.bass().addPitchBend(0, -2048);
+
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+  auto data = writer.toBytes();
+
+  // Pitch bend on channel 0 (vocal)
+  uint16_t vocal_pb = 0;
+  EXPECT_TRUE(findPitchBendEvent(data, 0, &vocal_pb));
+  EXPECT_EQ(vocal_pb, 10240u);  // 2048 + 8192
+
+  // Pitch bend on channel 2 (bass)
+  uint16_t bass_pb = 0;
+  EXPECT_TRUE(findPitchBendEvent(data, 2, &bass_pb));
+  EXPECT_EQ(bass_pb, 6144u);  // -2048 + 8192
+}
+
+TEST(MidiWriterSmf1Test, NoPitchBendProducesCleanOutput) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+
+  song.vocal().addNote(0, 480, 60, 100);
+
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+  auto data = writer.toBytes();
+
+  // No pitch bend events should be present
+  EXPECT_FALSE(findPitchBendEvent(data, 0));
+}
+
+TEST(MidiWriterSmf1Test, PitchBendExtremeValues) {
+  MidiWriter writer;
+  Song song;
+  song.setBpm(120);
+
+  song.vocal().addNote(0, 960, 60, 100);
+  song.vocal().addPitchBend(0, 8191);   // Max positive
+  song.vocal().addPitchBend(480, -8192);  // Max negative
+
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+  auto data = writer.toBytes();
+
+  // Count should be 2
+  EXPECT_EQ(countPitchBendEvents(data, 0), 2u);
+}
+
 }  // namespace
 }  // namespace midisketch

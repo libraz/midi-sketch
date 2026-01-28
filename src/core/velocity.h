@@ -6,6 +6,7 @@
 #ifndef MIDISKETCH_CORE_VELOCITY_H
 #define MIDISKETCH_CORE_VELOCITY_H
 
+#include <algorithm>
 #include <vector>
 
 #include "core/types.h"
@@ -277,6 +278,29 @@ void applyMelodyContourVelocity(MidiTrack& track, const std::vector<Section>& se
  */
 void applyAccentPatterns(MidiTrack& track, const std::vector<Section>& sections);
 
+/**
+ * @brief Clamp all note velocities to a maximum value.
+ *
+ * Used to enforce blueprint constraints (e.g., IdolKawaii max_velocity=80).
+ * Should be called as the final velocity processing step.
+ *
+ * @param track Track to modify (in-place)
+ * @param max_velocity Maximum allowed velocity (1-127)
+ */
+void clampTrackVelocity(MidiTrack& track, uint8_t max_velocity);
+
+/**
+ * @brief Clamp all note pitches to a maximum value.
+ *
+ * Used to enforce blueprint constraints (e.g., IdolKawaii max_pitch=79/G5).
+ * Should be called as the final pitch processing step.
+ * Notes exceeding max_pitch are transposed down by octaves until in range.
+ *
+ * @param track Track to modify (in-place)
+ * @param max_pitch Maximum allowed MIDI pitch (0-127)
+ */
+void clampTrackPitch(MidiTrack& track, uint8_t max_pitch);
+
 // ============================================================================
 // Micro-Dynamics (Beat-Level Velocity Curves)
 // ============================================================================
@@ -421,7 +445,102 @@ inline float getPhraseEndStretch(uint8_t drive) {
   return 1.08f - drive * 0.0006f;  // 1.08 to 1.02
 }
 
+/// @brief High pitch delay (high notes need preparation -> slightly late).
+///
+/// Singers naturally take slightly longer to hit high notes because they
+/// require more breath control and preparation. This adds realism to
+/// vocal melody generation.
+///
+/// @param pitch MIDI note number
+/// @param tessitura_center Tessitura center note (typical vocal range center)
+/// @return Delay in ticks (0-12)
+inline int getHighPitchDelay(uint8_t pitch, uint8_t tessitura_center) {
+  if (pitch <= tessitura_center) return 0;
+  int diff = pitch - tessitura_center;
+  return std::min(diff, 12);  // Max 12 ticks (~6ms @120BPM)
+}
+
+/// @brief Leap landing delay (after large leap, slight delay for stability).
+///
+/// Large melodic intervals require more time to execute accurately.
+/// Singers instinctively take a moment to stabilize pitch after
+/// jumping a significant interval.
+///
+/// @param interval_semitones Absolute interval from previous note
+/// @return Delay in ticks (0-8)
+inline int getLeapLandingDelay(int interval_semitones) {
+  if (interval_semitones < 5) return 0;  // Under perfect 4th: ignore
+  if (interval_semitones < 7) return 4;  // 5-6 semitones: 4 ticks
+  return 8;                               // 7+ semitones: 8 ticks
+}
+
+/// @brief Post-breath soft start (slight delay after breathing).
+///
+/// After taking a breath, singers need a moment to begin phonation.
+/// This applies a subtle delay to notes that follow a breath gap.
+///
+/// @param is_post_breath Whether there was a breath before this note
+/// @return Delay in ticks (0-6)
+inline int getPostBreathDelay(bool is_post_breath) {
+  return is_post_breath ? 6 : 0;
+}
+
 }  // namespace DriveMapping
+
+// ============================================================================
+// Vocal Physics Parameters
+// ============================================================================
+
+/// @brief Forward declaration for VocalStylePreset.
+enum class VocalStylePreset : uint8_t;
+
+/// @brief Vocal physics scaling parameters.
+///
+/// Controls how much human singing physics are applied to vocal generation.
+/// Human singers have natural timing delays for high notes, breath pauses,
+/// and pitch instability. Vocaloid and UltraVocaloid styles reduce these
+/// effects for a more mechanical, precise sound.
+struct VocalPhysicsParams {
+  float timing_scale = 1.0f;      ///< Timing delay scale (0=mechanical, 1=human)
+  float breath_scale = 1.0f;      ///< Breath duration scale
+  float pitch_bend_scale = 1.0f;  ///< Pitch bend depth scale
+  bool requires_breath = true;    ///< Whether breath gaps are meaningful
+  uint8_t max_phrase_bars = 8;    ///< Maximum bars before forced breath
+};
+
+/// @brief Get vocal physics parameters for a given vocal style.
+///
+/// Returns appropriate physics scaling for the vocal style:
+/// - UltraVocaloid: No human physics (completely mechanical)
+/// - Vocaloid: 50% human physics (imitation level)
+/// - Ballad: Enhanced human physics (more expressive)
+/// - Idol: Slightly reduced physics (more agile)
+/// - Rock: Standard physics with stronger attack
+/// - Others (Standard, Auto, CityPop, Anime): Full human physics
+///
+/// @param style Vocal style preset
+/// @return VocalPhysicsParams with appropriate scales
+inline VocalPhysicsParams getVocalPhysicsParams(VocalStylePreset style) {
+  // Use underlying value to avoid circular dependency with melody_types.h
+  // VocalStylePreset values: Auto=0, Standard=1, Vocaloid=2, UltraVocaloid=3,
+  //                          Idol=4, Ballad=5, Rock=6, CityPop=7, Anime=8
+  uint8_t style_val = static_cast<uint8_t>(style);
+
+  switch (style_val) {
+    case 3:  // UltraVocaloid - completely mechanical, no human physics
+      return {0.0f, 0.0f, 0.0f, false, 255};
+    case 2:  // Vocaloid - 50% human physics imitation
+      return {0.5f, 0.3f, 0.5f, true, 12};
+    case 5:  // Ballad - enhanced human expression
+      return {1.2f, 1.3f, 1.1f, true, 4};
+    case 4:  // Idol - slightly more agile
+      return {0.8f, 0.8f, 0.7f, true, 6};
+    case 6:  // Rock - standard with stronger dynamics
+      return {1.0f, 0.9f, 1.2f, true, 8};
+    default:  // Standard, Auto, CityPop, Anime, extended styles
+      return {1.0f, 1.0f, 1.0f, true, 8};
+  }
+}
 
 // ============================================================================
 // EmotionCurve-based Velocity Calculations

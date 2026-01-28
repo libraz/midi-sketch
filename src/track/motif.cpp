@@ -14,6 +14,7 @@
 #include "core/chord.h"
 #include "core/i_harmony_context.h"
 #include "core/motif.h"
+#include "core/motif_types.h"
 #include "core/note_factory.h"
 #include "core/pitch_utils.h"
 
@@ -576,6 +577,94 @@ std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, s
   return degrees;
 }
 
+// =============================================================================
+// Vocal Coordination Helpers (for MelodyLead mode)
+// =============================================================================
+
+/// Check if the given tick falls within a vocal rest period.
+/// @param tick Tick position to check
+/// @param rest_positions Sorted list of rest start positions
+/// @param threshold Duration threshold to consider as "within rest"
+/// @returns true if tick is in a vocal rest
+bool isInVocalRest(Tick tick, const std::vector<Tick>* rest_positions, Tick threshold = 480) {
+  if (!rest_positions || rest_positions->empty()) return false;
+
+  for (const Tick& rest_start : *rest_positions) {
+    // Check if tick is within threshold ticks after rest start
+    if (tick >= rest_start && tick < rest_start + threshold * 2) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Calculate motif register to avoid vocal range.
+/// @param vocal_low Lowest vocal pitch
+/// @param vocal_high Highest vocal pitch
+/// @param register_high Whether to prefer high register
+/// @param register_offset Additional offset in semitones
+/// @returns Adjusted base note for motif
+uint8_t calculateMotifRegister(uint8_t vocal_low, uint8_t vocal_high, bool register_high,
+                               int8_t register_offset) {
+  // Vocal center pitch
+  uint8_t vocal_center = (vocal_low + vocal_high) / 2;
+
+  // Default motif ranges: mid (C4-C5) or high (G4-G5)
+  uint8_t base_note;
+  if (register_high) {
+    // High register: aim above vocal
+    base_note = std::max(static_cast<uint8_t>(67), static_cast<uint8_t>(vocal_high + 5));
+  } else {
+    // Mid register: aim below vocal if vocal is high, else above
+    if (vocal_center >= 66) {
+      // Vocal is high, put motif below
+      base_note = std::min(static_cast<uint8_t>(55), static_cast<uint8_t>(vocal_low - 7));
+    } else {
+      // Vocal is mid/low, put motif above
+      base_note = std::max(static_cast<uint8_t>(72), static_cast<uint8_t>(vocal_high + 5));
+    }
+  }
+
+  // Apply register offset and clamp to valid MIDI range
+  int adjusted = base_note + register_offset;
+  return static_cast<uint8_t>(std::clamp(adjusted, 36, 96));
+}
+
+/// Get vocal pitch direction at a specific tick.
+/// @param direction_at_tick Map of tick -> direction
+/// @param tick Tick to query
+/// @returns Direction: +1=up, -1=down, 0=none/static
+int8_t getVocalDirection(const std::map<Tick, int8_t>* direction_at_tick, Tick tick) {
+  if (!direction_at_tick || direction_at_tick->empty()) return 0;
+
+  // Find the latest direction at or before this tick
+  auto it = direction_at_tick->upper_bound(tick);
+  if (it == direction_at_tick->begin()) return 0;
+  --it;
+  return it->second;
+}
+
+/// Apply contrary motion to pitch based on vocal direction.
+/// When vocal goes up, motif tends to go down and vice versa.
+/// @param pitch Input pitch
+/// @param vocal_direction Vocal melodic direction (+1, -1, 0)
+/// @param strength Strength of contrary motion (0.0-1.0)
+/// @param rng Random generator
+/// @returns Adjusted pitch
+int applyContraryMotion(int pitch, int8_t vocal_direction, float strength, std::mt19937& rng) {
+  if (vocal_direction == 0 || strength <= 0.0f) return pitch;
+
+  std::uniform_real_distribution<float> prob(0.0f, 1.0f);
+  if (prob(rng) > strength) return pitch;  // Skip contrary motion based on strength
+
+  // Apply contrary motion: move opposite to vocal direction
+  // Small adjustment: 1-3 semitones in opposite direction
+  std::uniform_int_distribution<int> step(1, 3);
+  int adjustment = step(rng) * (-vocal_direction);  // Opposite direction
+
+  return pitch + adjustment;
+}
+
 }  // namespace motif_detail
 
 std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::mt19937& rng) {
@@ -650,7 +739,8 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::
 // =============================================================================
 
 void generateMotifTrack(MidiTrack& track, Song& song, const GeneratorParams& params,
-                        std::mt19937& rng, const IHarmonyContext& harmony) {
+                        std::mt19937& rng, const IHarmonyContext& harmony,
+                        const MotifContext* vocal_ctx) {
   // L1: Generate base motif pattern
   std::vector<NoteEvent> pattern = generateMotifPattern(params, rng);
   song.setMotifPattern(pattern);
@@ -661,6 +751,14 @@ void generateMotifTrack(MidiTrack& track, Song& song, const GeneratorParams& par
 
   const MotifParams& motif_params = params.motif;
   Tick motif_length = static_cast<Tick>(motif_params.length) * TICKS_PER_BAR;
+
+  // L5 (Vocal Coordination Layer): Calculate vocal-aware base note if context provided
+  uint8_t base_note_override = 0;
+  if (vocal_ctx && motif_params.dynamic_register) {
+    base_note_override = motif_detail::calculateMotifRegister(
+        vocal_ctx->vocal_low, vocal_ctx->vocal_high, motif_params.register_high,
+        motif_params.register_offset);
+  }
 
   const auto& sections = song.arrangement().sections();
 
@@ -777,6 +875,24 @@ void generateMotifTrack(MidiTrack& track, Song& song, const GeneratorParams& par
           continue;  // Skip this note based on density setting
         }
 
+        // L5: Vocal Coordination - Response Mode
+        // When vocal is active, reduce motif activity; when vocal rests, increase activity
+        if (vocal_ctx && motif_params.response_mode) {
+          bool in_rest = motif_detail::isInVocalRest(absolute_tick, vocal_ctx->rest_positions);
+          if (!in_rest) {
+            // Vocal is active - probabilistically skip notes to give space
+            // Higher vocal density = more likely to skip
+            float skip_prob = vocal_ctx->vocal_density * 0.4f;  // Max 40% skip rate
+            std::uniform_real_distribution<float> resp_dist(0.0f, 1.0f);
+            if (resp_dist(rng) < skip_prob && bar_note_count[current_bar] > 0) {
+              continue;  // Skip to give vocal space (unless bar needs a note)
+            }
+          } else {
+            // Vocal is resting - boost probability of playing (handled by not skipping)
+            // The response_probability param could be used here for additional notes
+          }
+        }
+
         // Use HarmonyContext for accurate chord lookup at this tick
         // This ensures Motif uses the same chord as Vocal/Chord/Bass tracks
         int8_t degree = harmony.getChordDegreeAt(absolute_tick);
@@ -794,6 +910,22 @@ void generateMotifTrack(MidiTrack& track, Song& song, const GeneratorParams& par
         // L3: First adjust pitch to scale, then to chord for dissonance avoidance
         int adjusted_pitch = motif_detail::adjustPitchToScale(note.note, 0, scale);  // Key::C = 0
         adjusted_pitch = motif_detail::adjustForChord(adjusted_pitch, chord_root, is_minor, degree);
+
+        // L5: Apply dynamic register adjustment to avoid vocal range
+        if (vocal_ctx && motif_params.dynamic_register && base_note_override != 0) {
+          // Shift pitch to target register while maintaining melodic contour
+          int original_base = motif_params.register_high ? 67 : 60;
+          int register_shift = static_cast<int>(base_note_override) - original_base;
+          adjusted_pitch += register_shift;
+        }
+
+        // L5: Apply contrary motion based on vocal direction
+        if (vocal_ctx && motif_params.contrary_motion) {
+          int8_t vocal_dir =
+              motif_detail::getVocalDirection(vocal_ctx->direction_at_tick, absolute_tick);
+          adjusted_pitch = motif_detail::applyContraryMotion(
+              adjusted_pitch, vocal_dir, motif_params.contrary_motion_strength, rng);
+        }
 
         // Ensure result is diatonic (adjustForChord may produce non-diatonic chord tones)
         adjusted_pitch = motif_detail::adjustToDiatonic(adjusted_pitch);

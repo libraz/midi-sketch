@@ -314,6 +314,10 @@ struct GeneratorParams {
   ModulationTiming modulation_timing = ModulationTiming::None;
   int8_t modulation_semitones = 2;  ///< Key change amount (1-4 semitones)
 
+  /// Blueprint reference for constraint access during generation.
+  /// Set by Generator after resolving blueprint. nullptr = no constraints.
+  const struct ProductionBlueprint* blueprint_ref = nullptr;
+
   /// Call/SE settings (for metadata/regeneration determinism)
   bool se_enabled = true;                            ///< SE track enabled
   bool call_enabled = false;                         ///< Call enabled

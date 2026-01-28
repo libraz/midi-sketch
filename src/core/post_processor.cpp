@@ -6,9 +6,13 @@
 #include "core/post_processor.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <vector>
 
-#include "core/note_factory.h"  // for NoteSource enum
-#include "core/velocity.h"      // for DriveMapping
+#include "core/note_factory.h"       // for NoteSource enum
+#include "core/timing_constants.h"   // for TICK_EIGHTH
+#include "core/velocity.h"           // for DriveMapping
 
 namespace midisketch {
 
@@ -177,6 +181,24 @@ PhrasePosition getPhrasePosition(Tick tick, const std::vector<Section>& sections
   return PhrasePosition::Middle;  // Default fallback
 }
 
+/// @brief Calculate tessitura center from vocal notes.
+/// @param notes Vector of vocal note events
+/// @return Center pitch of the tessitura (average of min and max)
+uint8_t calculateTessituraCenter(const std::vector<NoteEvent>& notes) {
+  if (notes.empty()) {
+    return 67;  // Default: G4 (typical vocal center)
+  }
+
+  uint8_t min_pitch = 127;
+  uint8_t max_pitch = 0;
+  for (const auto& note : notes) {
+    if (note.note < min_pitch) min_pitch = note.note;
+    if (note.note > max_pitch) max_pitch = note.note;
+  }
+
+  return static_cast<uint8_t>((min_pitch + max_pitch) / 2);
+}
+
 /// @brief Get vocal timing offset based on phrase position.
 /// @param pos Phrase position
 /// @param timing_mult Timing multiplier from drive_feel
@@ -206,7 +228,10 @@ int getVocalTimingOffset(PhrasePosition pos, float timing_mult) {
 void PostProcessor::applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass,
                                              MidiTrack& drum_track,
                                              const std::vector<Section>* sections,
-                                             uint8_t drive_feel) {
+                                             uint8_t drive_feel,
+                                             VocalStylePreset vocal_style) {
+  // Get vocal physics parameters for the style
+  VocalPhysicsParams physics = getVocalPhysicsParams(vocal_style);
   // Per-instrument timing offsets create the "pocket" feel.
   // Positive = push (ahead of beat), negative = lay back (behind beat).
   // Values in ticks (at 480 ticks/beat, 8 ticks ≈ 4ms at 120 BPM).
@@ -269,21 +294,80 @@ void PostProcessor::applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass,
   // Bass: always lays back slightly (scaled by drive_feel)
   applyOffset(bass, bass_offset);
 
-  // Vocal: phrase-position-aware timing
+  // Vocal: phrase-position-aware timing with human body model
   // When sections are provided, vary timing based on position within 4-bar phrases:
   // - Start of phrase: push ahead (+8) for energy/drive
   // - Middle of phrase: neutral (+4, original behavior)
   // - End of phrase: lay back (0) for breath/relaxation
   // All offsets are scaled by drive_feel
+  //
+  // Human body timing model adds context-dependent delays:
+  // - High pitch delay: notes above tessitura center need preparation
+  // - Leap landing delay: large intervals require stabilization time
+  // - Post-breath delay: notes after breath gaps start slightly late
   if (sections != nullptr && !sections->empty() && !vocal.empty()) {
     auto& vocal_notes = vocal.notes();
-    for (auto& note : vocal_notes) {
+
+    // Calculate tessitura center for high pitch delay calculation
+    uint8_t tessitura_center = calculateTessituraCenter(vocal_notes);
+
+    // Two-pass approach: first calculate all offsets using ORIGINAL positions,
+    // then apply them. This ensures breath gap detection uses unmodified timing.
+    std::vector<int> offsets(vocal_notes.size(), 0);
+
+    // Pass 1: Calculate all offsets based on original note positions
+    for (size_t idx = 0; idx < vocal_notes.size(); ++idx) {
+      const auto& note = vocal_notes[idx];
+
+      // Base phrase position timing
       PhrasePosition pos = getPhrasePosition(note.start_tick, *sections);
       int offset = getVocalTimingOffset(pos, timing_mult);
-      if (offset != 0) {
-        int new_tick = static_cast<int>(note.start_tick) + offset;
+
+      // Human body timing model: context-dependent delays
+      // All delays are scaled by physics.timing_scale (0=mechanical, 1=human)
+      // High pitch delay: high notes need more preparation
+      int high_pitch_delay = static_cast<int>(
+          DriveMapping::getHighPitchDelay(note.note, tessitura_center) * physics.timing_scale);
+      offset += high_pitch_delay;
+
+      // Leap landing delay: large intervals require stabilization
+      if (idx > 0) {
+        int interval = std::abs(static_cast<int>(note.note) -
+                               static_cast<int>(vocal_notes[idx - 1].note));
+        int leap_delay = static_cast<int>(
+            DriveMapping::getLeapLandingDelay(interval) * physics.timing_scale);
+        offset += leap_delay;
+      }
+
+      // Post-breath delay: notes after breath gaps start slightly late
+      // A breath gap is when there's more than an eighth note of rest
+      // Only applies if vocal style requires breath (physics.requires_breath)
+      bool is_post_breath = false;
+      if (physics.requires_breath) {
+        if (idx == 0) {
+          is_post_breath = true;
+        } else {
+          // Calculate gap using ORIGINAL positions (notes haven't been modified yet)
+          Tick prev_end = vocal_notes[idx - 1].start_tick + vocal_notes[idx - 1].duration;
+          // Use signed arithmetic to handle edge cases
+          int64_t gap = static_cast<int64_t>(note.start_tick) - static_cast<int64_t>(prev_end);
+          // A positive gap larger than TICK_EIGHTH indicates a breath
+          is_post_breath = (gap > static_cast<int64_t>(TICK_EIGHTH));
+        }
+      }
+      int breath_delay = static_cast<int>(
+          DriveMapping::getPostBreathDelay(is_post_breath) * physics.timing_scale);
+      offset += breath_delay;
+
+      offsets[idx] = offset;
+    }
+
+    // Pass 2: Apply all offsets
+    for (size_t idx = 0; idx < vocal_notes.size(); ++idx) {
+      if (offsets[idx] != 0) {
+        int new_tick = static_cast<int>(vocal_notes[idx].start_tick) + offsets[idx];
         if (new_tick > 0) {
-          note.start_tick = static_cast<Tick>(new_tick);
+          vocal_notes[idx].start_tick = static_cast<Tick>(new_tick);
         }
       }
     }

@@ -35,6 +35,7 @@ set(MIDISKETCH_CORE_SOURCES
   core/euclidean_rhythm.cpp
   core/emotion_curve.cpp
   core/swing_quantize.cpp
+  core/pitch_bend_curves.cpp
   midi/midi_writer.cpp
   track/track.cpp
   track/vocal.cpp

@@ -16,7 +16,9 @@
 #include "core/i_harmony_context.h"
 #include "core/melody_embellishment.h"
 #include "core/melody_templates.h"
+#include "core/pitch_bend_curves.h"
 #include "core/pitch_utils.h"
+#include "core/production_blueprint.h"
 #include "core/velocity.h"
 #include "track/melody_designer.h"
 #include "track/phrase_cache.h"
@@ -132,12 +134,22 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
   uint8_t effective_vocal_low = params.vocal_low;
   uint8_t effective_vocal_high = params.vocal_high;
 
+  // Apply blueprint max_pitch constraint (e.g., IdolKawaii limits to G5=79)
+  if (params.blueprint_ref != nullptr) {
+    const auto& constraints = params.blueprint_ref->constraints;
+    if (constraints.max_pitch < effective_vocal_high) {
+      effective_vocal_high = constraints.max_pitch;
+    }
+  }
+
   // Adjust vocal_high to account for modulation
   // After modulation, notes will be transposed up by modulationAmount semitones.
   // To ensure the final pitch stays within vocal_high, reduce effective_vocal_high.
+  // NOTE: Use effective_vocal_high (which already has blueprint constraint applied)
+  // to ensure modulation doesn't override blueprint limits.
   int8_t mod_amount = song.modulationAmount();
   if (mod_amount > 0) {
-    int adjusted_high = static_cast<int>(params.vocal_high) - mod_amount;
+    int adjusted_high = static_cast<int>(effective_vocal_high) - mod_amount;
     // Ensure at least 1 octave (12 semitones) range remains
     int min_high = static_cast<int>(effective_vocal_low) + 12;
     effective_vocal_high = static_cast<uint8_t>(std::max(min_high, adjusted_high));
@@ -320,6 +332,15 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
       ctx.vocal_groove = params.vocal_groove;
       // Drive feel for timing and syncopation modulation
       ctx.drive_feel = params.drive_feel;
+
+      // Vocal style for physics parameters (breath, timing, pitch bend)
+      ctx.vocal_style = params.vocal_style;
+
+      // Apply blueprint constraints for melodic leap and stepwise preference
+      if (params.blueprint_ref != nullptr) {
+        ctx.max_leap_semitones = params.blueprint_ref->constraints.max_leap_semitones;
+        ctx.prefer_stepwise = params.blueprint_ref->constraints.prefer_stepwise;
+      }
 
       // Set anticipation rest mode based on groove feel and drive
       // Driving/Syncopated grooves benefit from anticipation rests for "tame" effect
@@ -574,6 +595,80 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
   // Add notes to track (preserving provenance)
   for (const auto& note : all_notes) {
     track.addNote(note);
+  }
+
+  // Apply pitch bend expressions based on vocal attitude and vocal physics
+  // Expressive and Raw attitudes get scoop-up and fall-off effects
+  // pitch_bend_scale from VocalPhysicsParams controls the depth
+  VocalPhysicsParams physics = getVocalPhysicsParams(params.vocal_style);
+
+  // Skip pitch bend entirely if scale is 0 (UltraVocaloid)
+  if (params.vocal_attitude >= VocalAttitude::Expressive && physics.pitch_bend_scale > 0.0f) {
+    std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
+
+    // Track phrase boundaries for determining phrase starts/ends
+    // Notes after a rest of 1 beat or more are considered phrase starts
+    constexpr Tick kPhraseGapThreshold = TICKS_PER_BEAT;
+
+    for (size_t note_idx = 0; note_idx < all_notes.size(); ++note_idx) {
+      const auto& note = all_notes[note_idx];
+
+      // Determine if this is a phrase start (first note or after significant gap)
+      bool is_phrase_start = (note_idx == 0);
+      if (note_idx > 0) {
+        Tick prev_note_end = all_notes[note_idx - 1].start_tick + all_notes[note_idx - 1].duration;
+        if (note.start_tick - prev_note_end >= kPhraseGapThreshold) {
+          is_phrase_start = true;
+        }
+      }
+
+      // Determine if this is a phrase end (last note or before significant gap)
+      bool is_phrase_end = (note_idx == all_notes.size() - 1);
+      if (note_idx + 1 < all_notes.size()) {
+        Tick next_note_start = all_notes[note_idx + 1].start_tick;
+        Tick this_note_end = note.start_tick + note.duration;
+        if (next_note_start - this_note_end >= kPhraseGapThreshold) {
+          is_phrase_end = true;
+        }
+      }
+
+      // Scoop probability based on attitude (scaled by pitch_bend_scale)
+      float scoop_prob = (params.vocal_attitude == VocalAttitude::Raw) ? 0.8f : 0.5f;
+      float fall_prob = (params.vocal_attitude == VocalAttitude::Raw) ? 0.7f : 0.4f;
+      // Reduce probability for Vocaloid-style (partial physics)
+      scoop_prob *= physics.pitch_bend_scale;
+      fall_prob *= physics.pitch_bend_scale;
+
+      // Apply attack bend (scoop-up) at phrase starts
+      // Only on notes long enough to accommodate the bend
+      if (is_phrase_start && note.duration >= TICK_EIGHTH && prob_dist(rng) < scoop_prob) {
+        // Scoop depth varies by attitude (-20 to -40 cents), scaled by pitch_bend_scale
+        int base_depth = (params.vocal_attitude == VocalAttitude::Raw) ? -40 : -25;
+        int depth = static_cast<int>(base_depth * physics.pitch_bend_scale);
+        if (depth != 0) {
+          auto bends = PitchBendCurves::generateAttackBend(note.start_tick, depth, TICK_SIXTEENTH);
+          for (const auto& bend : bends) {
+            track.addPitchBend(bend.tick, bend.value);
+          }
+        }
+      }
+
+      // Apply fall-off at phrase ends on long notes
+      if (is_phrase_end && note.duration >= TICK_HALF && prob_dist(rng) < fall_prob) {
+        // Fall depth varies by attitude (-60 to -100 cents), scaled by pitch_bend_scale
+        int base_depth = (params.vocal_attitude == VocalAttitude::Raw) ? -100 : -60;
+        int depth = static_cast<int>(base_depth * physics.pitch_bend_scale);
+        if (depth != 0) {
+          Tick note_end = note.start_tick + note.duration;
+          auto bends = PitchBendCurves::generateFallOff(note_end, depth, TICK_EIGHTH);
+          for (const auto& bend : bends) {
+            track.addPitchBend(bend.tick, bend.value);
+          }
+          // Add reset bend after fall-off to prepare for next note
+          track.addPitchBend(note_end + TICK_SIXTEENTH, PitchBend::kCenter);
+        }
+      }
+    }
   }
 }
 

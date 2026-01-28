@@ -369,6 +369,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         40,     // intro_stagger_percent
         30,     // euclidean_drums_percent
         false,  // addictive_mode
+        0,      // mood_mask: all moods allowed
+        {127, 108, 12, false},  // constraints: default
     },
 
     // 1: RhythmLock (rhythm-synced, formerly Orangestar)
@@ -385,6 +387,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         70,     // intro_stagger_percent (high chance for staggered build)
         50,     // euclidean_drums_percent (rhythm-sync benefits from euclidean)
         false,  // addictive_mode
+        0,      // mood_mask: all moods allowed
+        {127, 108, 12, false},  // constraints: default
     },
 
     // 2: StoryPop (melody-driven, formerly YOASOBI)
@@ -401,6 +405,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         50,     // intro_stagger_percent
         40,     // euclidean_drums_percent
         false,  // addictive_mode
+        0,      // mood_mask: all moods allowed
+        {127, 108, 12, false},  // constraints: default
     },
 
     // 3: Ballad (sparse, emotional)
@@ -416,6 +422,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         60,     // intro_stagger_percent
         20,     // euclidean_drums_percent (keep simple patterns for ballad)
         false,  // addictive_mode
+        // mood_mask: EmotionalPop(5), Sentimental(6), Chill(7), Ballad(8), Nostalgic(11)
+        (1u << 5) | (1u << 6) | (1u << 7) | (1u << 8) | (1u << 11),
+        {100, 84, 9, false},  // constraints: max_vel=100, max_pitch=C6(84), max_leap=9
     },
 
     // 4: IdolStandard (classic idol pop: memorable melody, gradual build)
@@ -432,6 +441,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         70,     // intro_stagger_percent (gradual build concept)
         35,     // euclidean_drums_percent
         false,  // addictive_mode
+        0,      // mood_mask: all moods allowed
+        {127, 108, 12, false},  // constraints: default
     },
 
     // 5: IdolHyper (high BPM, chorus-first, high density)
@@ -448,6 +459,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         0,     // intro_stagger_percent (2-bar intro, too short)
         60,    // euclidean_drums_percent (high energy, synth-like patterns)
         false,  // addictive_mode
+        // mood_mask: EnergeticDance(2), ElectroPop(13), IdolPop(14), FutureBass(18)
+        (1u << 2) | (1u << 13) | (1u << 14) | (1u << 18),
+        {110, 96, 12, false},  // constraints: max_vel=110, max_pitch=C7(96), max_leap=12
     },
 
     // 6: IdolKawaii (sweet, bouncy, restrained)
@@ -464,6 +478,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         40,     // intro_stagger_percent
         25,     // euclidean_drums_percent (simple bouncy patterns)
         false,  // addictive_mode
+        // mood_mask: BrightUpbeat(1), IdolPop(14), Yoasobi(16)
+        (1u << 1) | (1u << 14) | (1u << 16),
+        {80, 79, 7, true},  // constraints: max_vel=80, max_pitch=G5(79), max_leap=7, prefer_stepwise
     },
 
     // 7: IdolCoolPop (cool, four-on-floor, uniform)
@@ -480,6 +497,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         80,     // intro_stagger_percent (8-bar intro, full effect)
         70,     // euclidean_drums_percent (four-on-floor + euclidean = great match)
         false,  // addictive_mode
+        0,      // mood_mask: all moods allowed
+        {127, 108, 12, false},  // constraints: default
     },
 
     // 8: IdolEmo (quiet→explosive, emotional, late peak)
@@ -495,6 +514,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         50,     // intro_stagger_percent
         20,     // euclidean_drums_percent (emotional, simple patterns)
         false,  // addictive_mode
+        // mood_mask: EmotionalPop(5), Sentimental(6), Ballad(8)
+        (1u << 5) | (1u << 6) | (1u << 8),
+        {127, 108, 12, false},  // constraints: default (emotional dynamics need full range)
     },
 
     // 9: BehavioralLoop (addictive, highly repetitive hooks)
@@ -510,6 +532,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         40,     // intro_stagger_percent
         30,     // euclidean_drums_percent
         true,   // addictive_mode - enables Behavioral Loop
+        0,      // mood_mask: all moods allowed
+        {127, 108, 12, false},  // constraints: default
     },
 };
 
@@ -598,6 +622,17 @@ uint8_t findProductionBlueprintByName(const char* name) {
   }
 
   return 255;  // Not found
+}
+
+bool isMoodCompatible(uint8_t blueprint_id, uint8_t mood) {
+  if (blueprint_id >= BLUEPRINT_COUNT) {
+    return true;  // Unknown blueprint allows all moods
+  }
+  uint32_t mask = BLUEPRINTS[blueprint_id].mood_mask;
+  if (mask == 0) {
+    return true;  // 0 = all moods valid
+  }
+  return (mask & (1u << mood)) != 0;
 }
 
 }  // namespace midisketch

@@ -43,6 +43,14 @@ void MidiTrack::addCC(Tick tick, uint8_t cc_number, uint8_t value) {
   cc_events_.push_back({tick, cc_number, value});
 }
 
+void MidiTrack::addPitchBend(Tick tick, int16_t value) {
+  // Clamp value to valid range
+  int16_t clamped = std::clamp(value, static_cast<int16_t>(-8192), static_cast<int16_t>(8191));
+  pitch_bend_events_.push_back({tick, clamped});
+}
+
+void MidiTrack::clearPitchBend() { pitch_bend_events_.clear(); }
+
 void MidiTrack::transpose(int8_t semitones) {
   for (auto& note : notes_) {
     int new_pitch = note.note + semitones;
@@ -88,6 +96,13 @@ MidiTrack MidiTrack::slice(Tick fromTick, Tick toTick) const {
       result.cc_events_.push_back(sliced);
     }
   }
+  for (const auto& pb_evt : pitch_bend_events_) {
+    if (pb_evt.tick >= fromTick && pb_evt.tick < toTick) {
+      PitchBendEvent sliced = pb_evt;
+      sliced.tick -= fromTick;
+      result.pitch_bend_events_.push_back(sliced);
+    }
+  }
   return result;
 }
 
@@ -107,12 +122,18 @@ void MidiTrack::append(const MidiTrack& other, Tick offsetTick) {
     shifted.tick += offsetTick;
     cc_events_.push_back(shifted);
   }
+  for (const auto& pb_evt : other.pitch_bend_events_) {
+    PitchBendEvent shifted = pb_evt;
+    shifted.tick += offsetTick;
+    pitch_bend_events_.push_back(shifted);
+  }
 }
 
 void MidiTrack::clear() {
   notes_.clear();
   textEvents_.clear();
   cc_events_.clear();
+  pitch_bend_events_.clear();
 }
 
 Tick MidiTrack::lastTick() const {
@@ -126,6 +147,9 @@ Tick MidiTrack::lastTick() const {
   }
   for (const auto& cc_evt : cc_events_) {
     if (cc_evt.tick > last) last = cc_evt.tick;
+  }
+  for (const auto& pb_evt : pitch_bend_events_) {
+    if (pb_evt.tick > last) last = pb_evt.tick;
   }
   return last;
 }

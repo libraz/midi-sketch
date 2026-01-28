@@ -1197,12 +1197,55 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
   // (sus4 should resolve to 3rd on the next chord)
   ChordExtension prev_extension = ChordExtension::None;
 
+  // === PREVIOUS SECTION LAST DEGREE TRACKING ===
+  // Track the last chord degree of the previous section for V/x insertion at Chorus start
+  int8_t prev_section_last_degree = 0;
+
   for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
     const auto& section = sections[sec_idx];
 
     // Skip sections where chord is disabled by track_mask
     if (!hasTrack(section.track_mask, TrackMask::Chord)) {
       continue;
+    }
+
+    // === SECONDARY DOMINANT AT CHORUS START (V/x insertion) ===
+    // Insert V/x in the last half-bar of the previous section to create tension
+    // before Chorus entry. Only applies when previous section ends on ii, IV, or vi.
+    if (sec_idx > 0 && section.type == SectionType::Chorus && mutable_harmony != nullptr) {
+      // Check if previous section's last degree is a good target for V/x
+      // ii(1), IV(3), vi(5) are appropriate targets for secondary dominants
+      bool is_good_target = (prev_section_last_degree == 1 ||   // ii
+                             prev_section_last_degree == 3 ||   // IV
+                             prev_section_last_degree == 5);    // vi
+
+      if (is_good_target) {
+        // Calculate insertion point: last half-bar of previous section
+        Tick prev_section_end = section.start_tick;
+        Tick insert_start = prev_section_end - HALF;
+
+        // Determine secondary dominant degree (V/x where x is the target)
+        // V/ii = A (major VI in C), V/IV = C7 (I7), V/vi = E (major III)
+        int8_t sec_dom_degree;
+        switch (prev_section_last_degree) {
+          case 1:  // ii -> V/ii = A (VI, the relative major's dominant)
+            sec_dom_degree = 5;  // vi position used as secondary dominant
+            break;
+          case 3:  // IV -> V/IV = C7 (I as dominant of IV)
+            sec_dom_degree = 0;  // I position used as secondary dominant
+            break;
+          case 5:  // vi -> V/vi = E (III, the relative minor's dominant)
+            sec_dom_degree = 2;  // iii position used as secondary dominant
+            break;
+          default:
+            sec_dom_degree = 4;  // Fallback to regular V
+            break;
+        }
+
+        // Register the secondary dominant with harmony context
+        // This allows bass and other tracks to see the V/x for the transition
+        mutable_harmony->registerSecondaryDominant(insert_start, prev_section_end, sec_dom_degree);
+      }
     }
 
     SectionType next_section_type =
@@ -1735,6 +1778,9 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
       }
 
       has_prev = true;
+
+      // Track last chord degree for V/x insertion at next section start
+      prev_section_last_degree = degree;
     }
   }
 }

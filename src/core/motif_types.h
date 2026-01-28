@@ -7,9 +7,10 @@
 #define MIDISKETCH_CORE_MOTIF_TYPES_H
 
 #include <cstdint>
+#include <map>
 #include <vector>
 
-#include "core/basic_types.h"   // For NoteEvent, HihatDensity
+#include "core/basic_types.h"   // For NoteEvent, HihatDensity, Tick, PhraseBoundary
 #include "core/melody_types.h"  // For VocalProminence, VocalRhythmBias
 
 namespace midisketch {
@@ -61,6 +62,31 @@ struct MotifParams {
   /// Default 0.4 allows some passing tones for melodic interest while
   /// maintaining harmonic stability appropriate for background motifs.
   float melodic_freedom = 0.4f;
+
+  // Vocal coordination parameters (MelodyLead mode)
+  bool response_mode = true;           ///< Increase activity during vocal rests
+  float response_probability = 0.6f;   ///< Probability of playing during vocal rests
+  bool contrary_motion = true;         ///< Apply contrary motion to vocal direction
+  float contrary_motion_strength = 0.5f;  ///< Strength of contrary motion adjustment
+  bool dynamic_register = true;        ///< Dynamically adjust register to avoid vocal
+  int8_t register_offset = 0;          ///< Additional register offset in semitones
+};
+
+/// @brief Context for vocal-aware motif generation in MelodyLead mode.
+/// Similar to AuxContext pattern for passing vocal analysis to track generators.
+struct MotifContext {
+  /// Phrase boundaries from vocal generation (for breath coordination).
+  const std::vector<PhraseBoundary>* phrase_boundaries = nullptr;
+  /// Tick positions where vocal rests begin (for response mode).
+  const std::vector<Tick>* rest_positions = nullptr;
+  /// Lowest MIDI pitch in vocal track.
+  uint8_t vocal_low = 60;
+  /// Highest MIDI pitch in vocal track.
+  uint8_t vocal_high = 72;
+  /// Vocal note density (0.0-1.0).
+  float vocal_density = 0.5f;
+  /// Tick-indexed vocal direction: +1=up, -1=down, 0=same.
+  const std::map<Tick, int8_t>* direction_at_tick = nullptr;
 };
 
 /// @brief Background motif specific chord constraints.

@@ -128,17 +128,18 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uin
     track_data.push_back(program);
   }
 
-  // Convert NoteEvents and CCEvents to a unified event stream.
-  // Event types: 0x80 = note off, 0x90 = note on, 0xB0 = control change
+  // Convert NoteEvents, CCEvents, and PitchBendEvents to a unified event stream.
+  // Event types: 0x80 = note off, 0x90 = note on, 0xB0 = CC, 0xE0 = pitch bend
   struct Event {
     Tick time;
-    uint8_t type;   // 0x90 = note on, 0x80 = note off, 0xB0 = CC
-    uint8_t data1;  // pitch (note) or CC number
-    uint8_t data2;  // velocity (note) or CC value
+    uint8_t type;   // 0x90 = note on, 0x80 = note off, 0xB0 = CC, 0xE0 = pitch bend
+    uint8_t data1;  // pitch (note), CC number, or pitch bend LSB
+    uint8_t data2;  // velocity (note), CC value, or pitch bend MSB
   };
   std::vector<Event> events;
-  // Reserve: 2 events per note (on + off) + CC events
-  events.reserve(track.notes().size() * 2 + track.ccEvents().size());
+  // Reserve: 2 events per note (on + off) + CC events + pitch bend events
+  events.reserve(track.notes().size() * 2 + track.ccEvents().size() +
+                 track.pitchBendEvents().size());
 
   for (const auto& note : track.notes()) {
     uint8_t pitch = note.note;
@@ -159,15 +160,36 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uin
     events.push_back({cc_evt.tick, 0xB0, cc_evt.cc, cc_evt.value});
   }
 
-  // Sort events by time, with note-off before CC before note-on at same time.
+  // Add pitch bend events to the unified stream
+  // Convert internal signed value (-8192 to +8191) to MIDI 14-bit value (0 to 16383)
+  for (const auto& pb_evt : track.pitchBendEvents()) {
+    // Convert from signed (-8192 to +8191) to unsigned (0 to 16383) with 8192 as center
+    uint16_t midi_value = static_cast<uint16_t>(pb_evt.value + 8192);
+    // Split into two 7-bit bytes (LSB first, then MSB)
+    uint8_t lsb = midi_value & 0x7F;
+    uint8_t msb = (midi_value >> 7) & 0x7F;
+    events.push_back({pb_evt.tick, 0xE0, lsb, msb});
+  }
+
+  // Sort events by time, with note-off before CC before pitch-bend before note-on at same time.
   // This ensures proper handling of overlapping notes with same pitch:
   // when a note ends and another starts at the same tick, the old note
   // is properly closed (note-off 0x80) before the new one starts (note-on 0x90).
-  // CC events (0xB0) are placed between note-off and note-on.
+  // CC events (0xB0) and pitch bend (0xE0) are placed between note-off and note-on.
   std::sort(events.begin(), events.end(), [](const Event& evt_a, const Event& evt_b) {
     if (evt_a.time != evt_b.time) return evt_a.time < evt_b.time;
-    // At same time: note-off (0x80) < CC (0xB0) < note-on (0x90)
-    return evt_a.type < evt_b.type;
+    // At same time: note-off (0x80) < CC (0xB0) < pitch-bend (0xE0) < note-on (0x90)
+    // Remap types for sorting: 0x80->0, 0xB0->1, 0xE0->2, 0x90->3
+    auto type_order = [](uint8_t type) -> int {
+      switch (type) {
+        case 0x80: return 0;  // note-off first
+        case 0xB0: return 1;  // then CC
+        case 0xE0: return 2;  // then pitch bend
+        case 0x90: return 3;  // note-on last
+        default: return 4;
+      }
+    };
+    return type_order(evt_a.type) < type_order(evt_b.type);
   });
 
   // Write events with delta times
@@ -183,6 +205,8 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uin
       track_data.push_back(evt.data2);  // velocity
     } else if (evt.type == 0x80) {
       track_data.push_back(0);  // note off velocity = 0
+    } else if (evt.type == 0xE0) {
+      track_data.push_back(evt.data2);  // pitch bend MSB
     } else {
       track_data.push_back(evt.data2);  // CC value
     }

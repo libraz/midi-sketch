@@ -936,6 +936,73 @@ TEST(VelocityTest, DriveMapping_PhraseEndStretch) {
 }
 
 // ============================================================================
+// Human Body Timing Model Tests (Phase 1)
+// ============================================================================
+
+TEST(VelocityTest, DriveMapping_HighPitchDelay_BelowCenter) {
+  // Notes at or below tessitura center should have no delay
+  uint8_t center = 67;  // G4
+  EXPECT_EQ(DriveMapping::getHighPitchDelay(60, center), 0);  // C4
+  EXPECT_EQ(DriveMapping::getHighPitchDelay(67, center), 0);  // G4 (center)
+  EXPECT_EQ(DriveMapping::getHighPitchDelay(50, center), 0);  // Below center
+}
+
+TEST(VelocityTest, DriveMapping_HighPitchDelay_AboveCenter) {
+  // Notes above tessitura center should have delay proportional to distance
+  uint8_t center = 67;  // G4
+
+  // 1 semitone above: 1 tick delay
+  EXPECT_EQ(DriveMapping::getHighPitchDelay(68, center), 1);
+
+  // 5 semitones above: 5 ticks delay
+  EXPECT_EQ(DriveMapping::getHighPitchDelay(72, center), 5);
+
+  // 10 semitones above: 10 ticks delay
+  EXPECT_EQ(DriveMapping::getHighPitchDelay(77, center), 10);
+}
+
+TEST(VelocityTest, DriveMapping_HighPitchDelay_CappedAt12) {
+  // Delay should be capped at 12 ticks maximum
+  uint8_t center = 60;  // C4
+
+  // 15 semitones above: capped at 12
+  EXPECT_EQ(DriveMapping::getHighPitchDelay(75, center), 12);
+
+  // 20 semitones above: still capped at 12
+  EXPECT_EQ(DriveMapping::getHighPitchDelay(80, center), 12);
+}
+
+TEST(VelocityTest, DriveMapping_LeapLandingDelay_SmallIntervals) {
+  // Small intervals (under perfect 4th) should have no delay
+  EXPECT_EQ(DriveMapping::getLeapLandingDelay(0), 0);  // Unison
+  EXPECT_EQ(DriveMapping::getLeapLandingDelay(2), 0);  // Major 2nd
+  EXPECT_EQ(DriveMapping::getLeapLandingDelay(4), 0);  // Major 3rd
+}
+
+TEST(VelocityTest, DriveMapping_LeapLandingDelay_MediumIntervals) {
+  // Medium intervals (5-6 semitones) should have 4 ticks delay
+  EXPECT_EQ(DriveMapping::getLeapLandingDelay(5), 4);  // Perfect 4th
+  EXPECT_EQ(DriveMapping::getLeapLandingDelay(6), 4);  // Tritone
+}
+
+TEST(VelocityTest, DriveMapping_LeapLandingDelay_LargeIntervals) {
+  // Large intervals (7+ semitones) should have 8 ticks delay
+  EXPECT_EQ(DriveMapping::getLeapLandingDelay(7), 8);   // Perfect 5th
+  EXPECT_EQ(DriveMapping::getLeapLandingDelay(12), 8);  // Octave
+  EXPECT_EQ(DriveMapping::getLeapLandingDelay(19), 8);  // Octave + 5th
+}
+
+TEST(VelocityTest, DriveMapping_PostBreathDelay_WithBreath) {
+  // Post-breath notes should have 6 ticks delay
+  EXPECT_EQ(DriveMapping::getPostBreathDelay(true), 6);
+}
+
+TEST(VelocityTest, DriveMapping_PostBreathDelay_WithoutBreath) {
+  // Notes without preceding breath should have no delay
+  EXPECT_EQ(DriveMapping::getPostBreathDelay(false), 0);
+}
+
+// ============================================================================
 // Drive Feel Integration Tests
 // ============================================================================
 
@@ -1150,6 +1217,80 @@ TEST(VelocityTest, GetPhraseNoteVelocityCurve_CrescendoDecrescendo) {
   float note11 = getPhraseNoteVelocityCurve(11, total, contour);
 
   EXPECT_GT(note9, note11) << "Should decrescendo after climax";
+}
+
+// ============================================================================
+// VocalPhysicsParams Tests
+// ============================================================================
+
+TEST(VocalPhysicsParamsTest, UltraVocaloidNoPhysics) {
+  // UltraVocaloid should have no human physics (completely mechanical)
+  auto params = getVocalPhysicsParams(VocalStylePreset::UltraVocaloid);
+  EXPECT_FLOAT_EQ(params.timing_scale, 0.0f);
+  EXPECT_FLOAT_EQ(params.breath_scale, 0.0f);
+  EXPECT_FLOAT_EQ(params.pitch_bend_scale, 0.0f);
+  EXPECT_FALSE(params.requires_breath);
+  EXPECT_EQ(params.max_phrase_bars, 255);  // Essentially no forced breath
+}
+
+TEST(VocalPhysicsParamsTest, VocaloidPartialPhysics) {
+  // Vocaloid should have partial human physics (imitation)
+  auto params = getVocalPhysicsParams(VocalStylePreset::Vocaloid);
+  EXPECT_GT(params.timing_scale, 0.0f);
+  EXPECT_LT(params.timing_scale, 1.0f);
+  EXPECT_GT(params.breath_scale, 0.0f);
+  EXPECT_LT(params.breath_scale, 1.0f);
+  EXPECT_GT(params.pitch_bend_scale, 0.0f);
+  EXPECT_LT(params.pitch_bend_scale, 1.0f);
+  EXPECT_TRUE(params.requires_breath);
+}
+
+TEST(VocalPhysicsParamsTest, StandardFullPhysics) {
+  // Standard should have full human physics
+  auto params = getVocalPhysicsParams(VocalStylePreset::Standard);
+  EXPECT_FLOAT_EQ(params.timing_scale, 1.0f);
+  EXPECT_FLOAT_EQ(params.breath_scale, 1.0f);
+  EXPECT_FLOAT_EQ(params.pitch_bend_scale, 1.0f);
+  EXPECT_TRUE(params.requires_breath);
+  EXPECT_EQ(params.max_phrase_bars, 8);
+}
+
+TEST(VocalPhysicsParamsTest, BalladEnhancedPhysics) {
+  // Ballad should have enhanced human physics (more expressive)
+  auto params = getVocalPhysicsParams(VocalStylePreset::Ballad);
+  EXPECT_GT(params.timing_scale, 1.0f);  // More timing variation
+  EXPECT_GT(params.breath_scale, 1.0f);  // Longer breaths
+  EXPECT_GT(params.pitch_bend_scale, 1.0f);  // More pitch expression
+  EXPECT_TRUE(params.requires_breath);
+  EXPECT_LT(params.max_phrase_bars, 8);  // Shorter phrases for emotional phrasing
+}
+
+TEST(VocalPhysicsParamsTest, IdolReducedPhysics) {
+  // Idol should have slightly reduced physics (more agile)
+  auto params = getVocalPhysicsParams(VocalStylePreset::Idol);
+  EXPECT_LT(params.timing_scale, 1.0f);
+  EXPECT_LT(params.breath_scale, 1.0f);
+  EXPECT_LT(params.pitch_bend_scale, 1.0f);
+  EXPECT_TRUE(params.requires_breath);
+}
+
+TEST(VocalPhysicsParamsTest, RockStandardTimingStrongerBend) {
+  // Rock should have standard timing but stronger pitch expression
+  auto params = getVocalPhysicsParams(VocalStylePreset::Rock);
+  EXPECT_FLOAT_EQ(params.timing_scale, 1.0f);
+  EXPECT_GT(params.pitch_bend_scale, 1.0f);  // More aggressive pitch expression
+  EXPECT_TRUE(params.requires_breath);
+}
+
+TEST(VocalPhysicsParamsTest, AutoAndCityPopDefaultToStandard) {
+  // Auto and CityPop should use standard human physics
+  auto auto_params = getVocalPhysicsParams(VocalStylePreset::Auto);
+  auto citypop_params = getVocalPhysicsParams(VocalStylePreset::CityPop);
+
+  EXPECT_FLOAT_EQ(auto_params.timing_scale, 1.0f);
+  EXPECT_FLOAT_EQ(citypop_params.timing_scale, 1.0f);
+  EXPECT_FLOAT_EQ(auto_params.breath_scale, 1.0f);
+  EXPECT_FLOAT_EQ(citypop_params.breath_scale, 1.0f);
 }
 
 }  // namespace
