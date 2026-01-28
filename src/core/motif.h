@@ -9,6 +9,7 @@
 #include <random>
 #include <vector>
 
+#include "core/i_harmony_context.h"
 #include "types.h"
 
 namespace midisketch {
@@ -144,6 +145,49 @@ std::vector<NoteEvent> placeMotifInIntro(const Motif& motif, Tick intro_start, T
  */
 std::vector<NoteEvent> placeMotifInAux(const Motif& motif, Tick section_start, Tick section_end,
                                        uint8_t base_pitch, float velocity_ratio);
+
+/**
+ * @brief Place a varied motif in Bridge section for thematic continuity.
+ *
+ * Uses inverted or retrograde variation to provide contrast while
+ * maintaining melodic connection to chorus motif. Notes are snapped
+ * to chord tones and checked for collisions to avoid dissonance.
+ *
+ * @param motif The chorus motif to transform
+ * @param section_start Start tick of the bridge section
+ * @param section_end End tick of the bridge section
+ * @param base_pitch Base pitch for transposition
+ * @param velocity Base MIDI velocity for notes
+ * @param rng Random number generator for variation selection
+ * @param harmony Harmony context for chord lookup and collision detection
+ * @param track Track role for collision detection (default: Motif)
+ * @return Vector of note events for the bridge
+ */
+std::vector<NoteEvent> placeMotifInBridge(const Motif& motif, Tick section_start, Tick section_end,
+                                          uint8_t base_pitch, uint8_t velocity, std::mt19937& rng,
+                                          const IHarmonyContext& harmony,
+                                          TrackRole track = TrackRole::Motif);
+
+/**
+ * @brief Place enhanced motif in FinalChorus (peak) section.
+ *
+ * Strengthens the motif with octave doubling and increased velocity
+ * for climactic impact. Notes are snapped to chord tones and checked
+ * for collisions to avoid dissonance.
+ *
+ * @param motif The chorus motif to enhance
+ * @param section_start Start tick of the final chorus section
+ * @param section_end End tick of the final chorus section
+ * @param base_pitch Base pitch for transposition
+ * @param velocity Base MIDI velocity for notes (will be boosted)
+ * @param harmony Harmony context for chord lookup and collision detection
+ * @param track Track role for collision detection (default: Motif)
+ * @return Vector of note events including octave doubles
+ */
+std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_start,
+                                                Tick section_end, uint8_t base_pitch,
+                                                uint8_t velocity, const IHarmonyContext& harmony,
+                                                TrackRole track = TrackRole::Motif);
 
 }  // namespace midisketch
 

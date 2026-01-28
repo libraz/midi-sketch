@@ -71,14 +71,18 @@ class IHarmonyContext {
    * @brief Check if a pitch is safe from collisions.
    *
    * Detects minor 2nd (1 semitone) and major 7th (11 semitones) clashes.
+   * On weak beats (is_weak_beat=true), major 2nd (2 semitones) is allowed
+   * as a passing tone.
    *
    * @param pitch MIDI pitch to check
    * @param start Start tick
    * @param duration Duration in ticks
    * @param exclude Exclude notes from this track when checking
+   * @param is_weak_beat If true, allow major 2nd as passing tone (default: false)
    * @return true if pitch doesn't clash with other tracks
    */
-  virtual bool isPitchSafe(uint8_t pitch, Tick start, Tick duration, TrackRole exclude) const = 0;
+  virtual bool isPitchSafe(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
+                           bool is_weak_beat = false) const = 0;
 
   /**
    * @brief Get a safe pitch that doesn't clash with other tracks.
@@ -134,6 +138,20 @@ class IHarmonyContext {
    * @return Vector of pitch classes (may be empty if no notes sounding)
    */
   virtual std::vector<int> getPitchClassesFromTrackAt(Tick tick, TrackRole role) const = 0;
+
+  /**
+   * @brief Get pitch classes from a specific track within a time range.
+   *
+   * Returns all pitch classes (0-11) for notes from the specified track
+   * that are sounding at any point within [start, end).
+   *
+   * @param start Start of time range
+   * @param end End of time range
+   * @param role Which track to query
+   * @return Vector of pitch classes (may be empty if no notes in range)
+   */
+  virtual std::vector<int> getPitchClassesFromTrackInRange(Tick start, Tick end,
+                                                            TrackRole role) const = 0;
 
   /**
    * @brief Register a secondary dominant chord at a specific tick range.

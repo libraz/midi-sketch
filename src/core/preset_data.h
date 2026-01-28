@@ -7,6 +7,8 @@
 #define MIDISKETCH_CORE_PRESET_DATA_H
 
 #include <cstdint>
+#include <optional>
+#include <string>
 #include <vector>
 
 #include "core/types.h"
@@ -134,6 +136,21 @@ const char* getStructureName(StructurePattern pattern);
 // @param mood Mood preset
 // @returns Mood name (e.g., "straight_pop")
 const char* getMoodName(Mood mood);
+
+// Find a mood by its name (case-insensitive).
+// @param name Mood name to search for
+// @returns Mood enum value if found, or std::nullopt if not found
+std::optional<Mood> findMoodByName(const std::string& name);
+
+// Find a structure pattern by its name (case-insensitive).
+// @param name Structure pattern name to search for
+// @returns StructurePattern enum value if found, or std::nullopt if not found
+std::optional<StructurePattern> findStructurePatternByName(const std::string& name);
+
+// Find a chord progression by its name (case-insensitive).
+// @param name Chord progression name to search for
+// @returns Chord progression ID if found, or std::nullopt if not found
+std::optional<uint8_t> findChordProgressionByName(const std::string& name);
 
 // Returns the drum style for a given mood.
 // @param mood Mood preset

@@ -93,6 +93,11 @@ class MelodyDesigner {
     // Vocal style preset for style-specific physics
     VocalStylePreset vocal_style = VocalStylePreset::Standard;  ///< Affects breath and timing
 
+    // Motif fragment enforcement for A/B sections
+    // When true, inject fragments from GlobalMotif at phrase beginnings
+    // Creates song-wide melodic unity by echoing chorus motif in verses
+    bool enforce_motif_fragments = false;  ///< Enable motif fragment injection
+
     // ========================================================================
     // Task 5-2: Internal 4-Stage Structure within Section
     // ========================================================================
@@ -431,7 +436,10 @@ class MelodyDesigner {
 
   // Cached HookSkeleton for Hybrid approach.
   // Provides contour hint while Motif provides rhythm.
+  // cached_hook_skeleton_: Used for first half of sections (stronger intensity)
+  // cached_hook_skeleton_later_: Used for second half (base intensity, more variety)
   std::optional<HookSkeleton> cached_hook_skeleton_;
+  std::optional<HookSkeleton> cached_hook_skeleton_later_;
 
   // Cached hook rhythm pattern index for Song-level fixation.
   // Value of SIZE_MAX means not yet selected.

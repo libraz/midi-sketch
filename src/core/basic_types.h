@@ -229,6 +229,7 @@ constexpr uint8_t kVolume = 7;        ///< Channel volume
 constexpr uint8_t kPan = 10;          ///< Pan position
 constexpr uint8_t kExpression = 11;   ///< Expression controller
 constexpr uint8_t kSustain = 64;      ///< Sustain pedal
+constexpr uint8_t kBrightness = 74;   ///< Brightness (filter cutoff)
 }  // namespace MidiCC
 
 /// @brief MIDI Pitch Bend event.

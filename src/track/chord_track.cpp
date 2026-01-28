@@ -1798,12 +1798,12 @@ int getAuxPitchClassAt(const MidiTrack* aux_track, Tick tick) {
   return -1;
 }
 
-// Check if a pitch class creates a minor 2nd interval with any of the given pitch classes
+// Check if a pitch class creates a minor/major 2nd interval with any of the given pitch classes
 bool clashesWithPitchClasses(int pc, const std::vector<int>& pitch_classes) {
   for (int other_pc : pitch_classes) {
     int interval = std::abs(pc - other_pc);
     if (interval > 6) interval = 12 - interval;
-    if (interval == 1) {  // Minor 2nd clash
+    if (interval == 1 || interval == 2) {  // Minor 2nd or Major 2nd clash
       return true;
     }
   }
@@ -1937,10 +1937,54 @@ std::vector<VoicedChord> filterVoicingsForContext(const std::vector<VoicedChord>
     }
   }
 
-  // Fallback: if all filtered out, return original candidates
-  // (better to have some chord than none)
+  // Fallback: if all filtered out, try to create voicings that minimize motif clashes
   if (filtered.empty()) {
-    return candidates;
+    // Try again with relaxed motif clash filtering - keep at least 2 notes even if they clash
+    for (const auto& v : candidates) {
+      VoicedChord modified = v;
+      modified.count = 0;
+
+      // First pass: collect non-clashing notes
+      for (uint8_t i = 0; i < v.count; ++i) {
+        int pc = v.pitches[i] % 12;
+        bool clashes = false;
+        if (!motif_pcs.empty() && clashesWithPitchClasses(pc, motif_pcs)) {
+          clashes = true;
+        }
+        if (!clashes) {
+          modified.pitches[modified.count] = v.pitches[i];
+          modified.count++;
+        }
+      }
+
+      // If we have at least 2 non-clashing notes, use those
+      if (modified.count >= 2) {
+        filtered.push_back(modified);
+      } else {
+        // Not enough non-clashing notes - add back some notes to get at least 2
+        // Prefer notes that don't clash, but add clashing ones if necessary
+        modified.count = 0;
+        for (uint8_t i = 0; i < v.count && modified.count < 2; ++i) {
+          int pc = v.pitches[i] % 12;
+          // Skip if clashes with vocal (highest priority)
+          if (vocal_pc >= 0) {
+            int interval = std::abs(pc - vocal_pc);
+            if (interval > 6) interval = 12 - interval;
+            if (interval <= 2) continue;
+          }
+          modified.pitches[modified.count] = v.pitches[i];
+          modified.count++;
+        }
+        if (modified.count >= 2) {
+          filtered.push_back(modified);
+        }
+      }
+    }
+
+    // If still empty, return original candidates as last resort
+    if (filtered.empty()) {
+      return candidates;
+    }
   }
 
   return filtered;
@@ -2057,8 +2101,10 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
       int vocal_pc = getVocalPitchClassAt(vocal_analysis, bar_start);
       int aux_pc = getAuxPitchClassAt(aux_track, bar_start);
 
-      // Get Motif pitch classes for this bar (critical for BGM mode)
-      std::vector<int> motif_pcs = harmony.getPitchClassesFromTrackAt(bar_start, TrackRole::Motif);
+      // Get Motif pitch classes for entire bar (chord sustains through the bar)
+      Tick bar_end = bar_start + TICKS_PER_BAR;
+      std::vector<int> motif_pcs =
+          harmony.getPitchClassesFromTrackInRange(bar_start, bar_end, TrackRole::Motif);
 
       // Get bass pitch class
       int bass_root_pc = -1;
@@ -2102,14 +2148,31 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
       // Select best voicing from filtered candidates with voice leading
       VoicedChord voicing;
       if (filtered.empty()) {
-        // Fallback to simple root position
+        // Fallback to simple root position, but still avoid motif clashes
         voicing.count = 0;
         voicing.type = VoicingType::Close;
         for (uint8_t i = 0; i < chord.note_count && i < 4; ++i) {
           if (chord.intervals[i] >= 0) {
             int pitch = std::clamp(root + chord.intervals[i], (int)CHORD_LOW, (int)CHORD_HIGH);
+            int pc = pitch % 12;
+            // Skip pitch if it clashes with motif (minor/major 2nd)
+            if (!motif_pcs.empty() && clashesWithPitchClasses(pc, motif_pcs)) {
+              continue;
+            }
             voicing.pitches[voicing.count] = static_cast<uint8_t>(pitch);
             voicing.count++;
+          }
+        }
+        // Ensure at least 2 notes for a chord
+        if (voicing.count < 2) {
+          // Desperate fallback: add notes regardless of clash
+          voicing.count = 0;
+          for (uint8_t i = 0; i < chord.note_count && i < 4 && voicing.count < 2; ++i) {
+            if (chord.intervals[i] >= 0) {
+              int pitch = std::clamp(root + chord.intervals[i], (int)CHORD_LOW, (int)CHORD_HIGH);
+              voicing.pitches[voicing.count] = static_cast<uint8_t>(pitch);
+              voicing.count++;
+            }
           }
         }
       } else if (!has_prev) {

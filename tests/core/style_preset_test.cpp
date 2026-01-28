@@ -1219,5 +1219,137 @@ TEST(SongConfigValidationTest, AllValidEnumValuesAccepted) {
   EXPECT_EQ(error, SongConfigError::OK);
 }
 
+// =============================================================================
+// P4: Name-based parameter lookup tests
+// =============================================================================
+
+TEST(NameLookupTest, FindMoodByNameExact) {
+  // Test exact case match
+  auto mood = findMoodByName("straight_pop");
+  ASSERT_TRUE(mood.has_value());
+  EXPECT_EQ(*mood, Mood::StraightPop);
+
+  mood = findMoodByName("ballad");
+  ASSERT_TRUE(mood.has_value());
+  EXPECT_EQ(*mood, Mood::Ballad);
+
+  mood = findMoodByName("yoasobi");
+  ASSERT_TRUE(mood.has_value());
+  EXPECT_EQ(*mood, Mood::Yoasobi);
+}
+
+TEST(NameLookupTest, FindMoodByNameCaseInsensitive) {
+  // Test case-insensitive match
+  auto mood = findMoodByName("BALLAD");
+  ASSERT_TRUE(mood.has_value());
+  EXPECT_EQ(*mood, Mood::Ballad);
+
+  mood = findMoodByName("Straight_Pop");
+  ASSERT_TRUE(mood.has_value());
+  EXPECT_EQ(*mood, Mood::StraightPop);
+
+  mood = findMoodByName("IDOL_POP");
+  ASSERT_TRUE(mood.has_value());
+  EXPECT_EQ(*mood, Mood::IdolPop);
+}
+
+TEST(NameLookupTest, FindMoodByNameNotFound) {
+  auto mood = findMoodByName("nonexistent_mood");
+  EXPECT_FALSE(mood.has_value());
+
+  mood = findMoodByName("");
+  EXPECT_FALSE(mood.has_value());
+
+  mood = findMoodByName("123");
+  EXPECT_FALSE(mood.has_value());
+}
+
+TEST(NameLookupTest, FindStructurePatternByNameExact) {
+  auto pattern = findStructurePatternByName("StandardPop");
+  ASSERT_TRUE(pattern.has_value());
+  EXPECT_EQ(*pattern, StructurePattern::StandardPop);
+
+  pattern = findStructurePatternByName("Ballad");
+  ASSERT_TRUE(pattern.has_value());
+  EXPECT_EQ(*pattern, StructurePattern::Ballad);
+
+  pattern = findStructurePatternByName("ChorusFirst");
+  ASSERT_TRUE(pattern.has_value());
+  EXPECT_EQ(*pattern, StructurePattern::ChorusFirst);
+}
+
+TEST(NameLookupTest, FindStructurePatternByNameCaseInsensitive) {
+  auto pattern = findStructurePatternByName("standardpop");
+  ASSERT_TRUE(pattern.has_value());
+  EXPECT_EQ(*pattern, StructurePattern::StandardPop);
+
+  pattern = findStructurePatternByName("BALLAD");
+  ASSERT_TRUE(pattern.has_value());
+  EXPECT_EQ(*pattern, StructurePattern::Ballad);
+}
+
+TEST(NameLookupTest, FindStructurePatternByNameNotFound) {
+  auto pattern = findStructurePatternByName("nonexistent");
+  EXPECT_FALSE(pattern.has_value());
+}
+
+TEST(NameLookupTest, FindChordProgressionByName) {
+  // Test common chord progression names
+  auto chord = findChordProgressionByName("pop");
+  ASSERT_TRUE(chord.has_value());
+  EXPECT_EQ(*chord, 0);  // Canonical (I-V-vi-IV)
+
+  chord = findChordProgressionByName("royal_road");
+  ASSERT_TRUE(chord.has_value());
+  EXPECT_EQ(*chord, 3);  // IV-V-iii-vi
+
+  chord = findChordProgressionByName("jazz");
+  ASSERT_TRUE(chord.has_value());
+  EXPECT_EQ(*chord, 2);  // ii-V-I-vi
+}
+
+TEST(NameLookupTest, FindChordProgressionByNameCaseInsensitive) {
+  auto chord = findChordProgressionByName("POP");
+  ASSERT_TRUE(chord.has_value());
+  EXPECT_EQ(*chord, 0);
+
+  chord = findChordProgressionByName("Royal_Road");
+  ASSERT_TRUE(chord.has_value());
+  EXPECT_EQ(*chord, 3);
+}
+
+TEST(NameLookupTest, FindChordProgressionByNameNotFound) {
+  auto chord = findChordProgressionByName("nonexistent");
+  EXPECT_FALSE(chord.has_value());
+}
+
+TEST(NameLookupTest, AllMoodsHaveNames) {
+  // Verify getMoodName returns valid names for all moods
+  for (uint8_t i = 0; i < MOOD_COUNT; ++i) {
+    const char* name = getMoodName(static_cast<Mood>(i));
+    EXPECT_NE(name, nullptr);
+    EXPECT_NE(std::string(name), "unknown") << "Mood " << static_cast<int>(i) << " has no name";
+
+    // Verify round-trip lookup works
+    auto found = findMoodByName(name);
+    ASSERT_TRUE(found.has_value()) << "Mood name '" << name << "' not found by lookup";
+    EXPECT_EQ(*found, static_cast<Mood>(i));
+  }
+}
+
+TEST(NameLookupTest, AllStructurePatternsHaveNames) {
+  // Verify getStructureName returns valid names for all patterns
+  for (uint8_t i = 0; i < STRUCTURE_COUNT; ++i) {
+    const char* name = getStructureName(static_cast<StructurePattern>(i));
+    EXPECT_NE(name, nullptr);
+    EXPECT_NE(std::string(name), "Unknown") << "Pattern " << static_cast<int>(i) << " has no name";
+
+    // Verify round-trip lookup works
+    auto found = findStructurePatternByName(name);
+    ASSERT_TRUE(found.has_value()) << "Pattern name '" << name << "' not found by lookup";
+    EXPECT_EQ(*found, static_cast<StructurePattern>(i));
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

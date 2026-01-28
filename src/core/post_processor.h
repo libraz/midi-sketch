@@ -16,6 +16,9 @@
 
 namespace midisketch {
 
+// Forward declaration
+class IHarmonyContext;
+
 /// @brief Position within a 4-bar phrase for timing adjustments.
 /// Used by applyMicroTimingOffsets to vary timing based on phrase position.
 enum class PhrasePosition {
@@ -161,6 +164,22 @@ class PostProcessor {
   static void applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum_track,
                                      MidiTrack* chord_track, const MidiTrack* vocal_track,
                                      const Section& section);
+
+  // ============================================================================
+  // Motif-Vocal Clash Resolution
+  // ============================================================================
+
+  /// @brief Fix motif-vocal clashes for RhythmSync mode.
+  ///
+  /// When motif is generated before vocal (as "coordinate axis"),
+  /// post-hoc adjustment is needed to resolve minor 2nd and major 7th clashes.
+  /// Motif notes that clash with vocal are snapped to nearest chord tone.
+  ///
+  /// @param motif Motif track to adjust (in-place)
+  /// @param vocal Vocal track (read-only reference)
+  /// @param harmony Harmony context for chord tone lookup
+  static void fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& vocal,
+                                    const IHarmonyContext& harmony);
 
  private:
   // Returns true if the tick position is on a strong beat (beats 1 or 3 in 4/4).

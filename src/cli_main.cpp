@@ -29,15 +29,15 @@ void printUsage(const char* program) {
   std::cout << "  --blueprint N     Set production blueprint (0-8, 255=random, or name)\n";
   std::cout << "                    Names: Traditional, RhythmLock, StoryPop, Ballad,\n";
   std::cout << "                    IdolStandard, IdolHyper, IdolKawaii, IdolCoolPop, IdolEmo\n";
-  std::cout << "  --mood N          Set mood directly (0-19, overrides style mapping)\n";
-  std::cout << "  --chord N         Set chord progression ID (0-19)\n";
+  std::cout << "  --mood N          Set mood (0-23 or name like straight_pop, ballad)\n";
+  std::cout << "  --chord N         Set chord progression (0-21 or name like pop, jazz, royal_road)\n";
   std::cout << "  --vocal-style N   Set vocal style (0=Auto, 1=Standard, 2=Vocaloid,\n";
   std::cout << "                    3=UltraVocaloid, 4=Idol, 5=Ballad, 6=Rock,\n";
   std::cout << "                    7=CityPop, 8=Anime)\n";
   std::cout << "  --note-density F  Set note density (0.3-2.0, default: style preset)\n";
   std::cout << "  --bpm N           Set BPM (60-200, default: style preset)\n";
   std::cout << "  --duration N      Set target duration in seconds (0 = use pattern)\n";
-  std::cout << "  --form N          Set form/structure pattern ID (0-17)\n";
+  std::cout << "  --form N          Set form/structure pattern (0-17 or name like StandardPop)\n";
   std::cout << "  --key N           Set key (0-11: C, C#, D, Eb, E, F, F#, G, Ab, A, Bb, B)\n";
   std::cout << "  --input FILE      Analyze existing MIDI file for dissonance\n";
   std::cout << "  --analyze         Analyze generated MIDI for dissonance issues\n";
@@ -523,10 +523,49 @@ int main(int argc, char* argv[]) {
         }
       }
     } else if (std::strcmp(argv[i], "--mood") == 0 && i + 1 < argc) {
-      mood_id = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+      ++i;
+      // Try to parse as number first
+      char* endptr = nullptr;
+      unsigned long val = std::strtoul(argv[i], &endptr, 10);
+      if (endptr != argv[i] && *endptr == '\0') {
+        // Parsed as number
+        mood_id = static_cast<uint8_t>(val);
+      } else {
+        // Try to parse as name
+        auto found = midisketch::findMoodByName(argv[i]);
+        if (found) {
+          mood_id = static_cast<uint8_t>(*found);
+        } else {
+          std::cerr << "Unknown mood: " << argv[i] << "\n";
+          std::cerr << "Available moods:\n";
+          for (uint8_t j = 0; j < midisketch::MOOD_COUNT; ++j) {
+            std::cerr << "  " << static_cast<int>(j) << ": "
+                      << midisketch::getMoodName(static_cast<midisketch::Mood>(j)) << "\n";
+          }
+          return 1;
+        }
+      }
       mood_explicit = true;
     } else if (std::strcmp(argv[i], "--chord") == 0 && i + 1 < argc) {
-      chord_id = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+      ++i;
+      // Try to parse as number first
+      char* endptr = nullptr;
+      unsigned long val = std::strtoul(argv[i], &endptr, 10);
+      if (endptr != argv[i] && *endptr == '\0') {
+        // Parsed as number
+        chord_id = static_cast<uint8_t>(val);
+      } else {
+        // Try to parse as name
+        auto found = midisketch::findChordProgressionByName(argv[i]);
+        if (found) {
+          chord_id = *found;
+        } else {
+          std::cerr << "Unknown chord progression: " << argv[i] << "\n";
+          std::cerr << "Use a number (0-" << (midisketch::CHORD_COUNT - 1)
+                    << ") or common name (pop, jazz, royal_road, ballad, etc.)\n";
+          return 1;
+        }
+      }
     } else if (std::strcmp(argv[i], "--vocal-style") == 0 && i + 1 < argc) {
       vocal_style = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--note-density") == 0 && i + 1 < argc) {
@@ -536,7 +575,29 @@ int main(int argc, char* argv[]) {
     } else if (std::strcmp(argv[i], "--duration") == 0 && i + 1 < argc) {
       duration = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--form") == 0 && i + 1 < argc) {
-      form_id = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
+      ++i;
+      // Try to parse as number first
+      char* endptr = nullptr;
+      long val = std::strtol(argv[i], &endptr, 10);
+      if (endptr != argv[i] && *endptr == '\0') {
+        // Parsed as number
+        form_id = static_cast<int>(val);
+      } else {
+        // Try to parse as name
+        auto found = midisketch::findStructurePatternByName(argv[i]);
+        if (found) {
+          form_id = static_cast<int>(*found);
+        } else {
+          std::cerr << "Unknown form: " << argv[i] << "\n";
+          std::cerr << "Available forms:\n";
+          for (uint8_t j = 0; j < midisketch::STRUCTURE_COUNT; ++j) {
+            std::cerr << "  " << static_cast<int>(j) << ": "
+                      << midisketch::getStructureName(static_cast<midisketch::StructurePattern>(j))
+                      << "\n";
+          }
+          return 1;
+        }
+      }
     } else if (std::strcmp(argv[i], "--key") == 0 && i + 1 < argc) {
       key_id = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--skip-vocal") == 0) {

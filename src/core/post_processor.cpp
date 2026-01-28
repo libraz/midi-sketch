@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <vector>
 
+#include "core/chord_utils.h"        // for nearestChordTonePitch
+#include "core/i_harmony_context.h"  // for IHarmonyContext
 #include "core/note_factory.h"       // for NoteSource enum
 #include "core/timing_constants.h"   // for TICK_EIGHTH
 #include "core/velocity.h"           // for DriveMapping
@@ -254,34 +256,58 @@ void PostProcessor::applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass,
     }
   };
 
-  // Drum instrument base offsets (by MIDI note number)
-  constexpr int HH_BASE_OFFSET = 8;    // Hi-hat slightly ahead (driving feel)
-  constexpr int SD_BASE_OFFSET = -8;   // Snare slightly behind (relaxed pocket)
-  constexpr int BASS_BASE_OFFSET = -4; // Bass lays back slightly
-
   // GM drum note numbers
   constexpr uint8_t BD_NOTE = 36;
   constexpr uint8_t SD_NOTE = 38;
   constexpr uint8_t HHC_NOTE = 42;
   constexpr uint8_t HHO_NOTE = 46;
   constexpr uint8_t HHF_NOTE = 44;
+  constexpr int BASS_BASE_OFFSET = -4; // Bass lays back slightly
 
-  // Scale offsets by drive_feel
-  int hh_offset = static_cast<int>(HH_BASE_OFFSET * timing_mult);
-  int sd_offset = static_cast<int>(SD_BASE_OFFSET * timing_mult);
+  // Beat-position-aware drum timing for enhanced "pocket" feel
+  // Creates a more nuanced groove by varying timing based on beat position:
+  // - Kick: -5~+3, tighter on downbeats, slightly ahead on offbeats
+  // - Snare: -8~0, maximum layback on beat 4 for anticipation
+  // - Hi-hat: +8~+15, stronger push on offbeats for drive
+  auto getDrumTimingOffset = [](uint8_t note_number, Tick tick, float timing_mult) -> int {
+    Tick pos_in_bar = tick % TICKS_PER_BAR;
+    int beat_in_bar = static_cast<int>(pos_in_bar / TICKS_PER_BEAT);
+    bool is_offbeat = (pos_in_bar % TICKS_PER_BEAT) >= (TICKS_PER_BEAT / 2);
+
+    int base_offset = 0;
+    if (note_number == BD_NOTE) {
+      // Kick: tight on downbeats (beats 0,2), slightly ahead on others
+      base_offset = (beat_in_bar == 0 || beat_in_bar == 2) ? -1 : -3;
+      if (is_offbeat) base_offset += 2;  // Push offbeat kicks slightly forward
+    } else if (note_number == SD_NOTE) {
+      // Snare: maximum layback on beat 4 for tension before downbeat
+      // Moderate layback on beat 2, less on offbeats
+      if (beat_in_bar == 3) {
+        base_offset = -8;  // Maximum layback on beat 4
+      } else if (beat_in_bar == 1) {
+        base_offset = -6;  // Backbeat layback
+      } else {
+        base_offset = -4;  // Standard layback
+      }
+      if (is_offbeat) base_offset = -3;  // Less layback on offbeat fills
+    } else if (note_number == HHC_NOTE || note_number == HHO_NOTE || note_number == HHF_NOTE) {
+      // Hi-hat: push ahead for driving feel, stronger on backbeats
+      if (is_offbeat) {
+        // Stronger push on offbeats (beat 2 and 4 offbeats)
+        base_offset = (beat_in_bar == 1 || beat_in_bar == 3) ? 15 : 12;
+      } else {
+        base_offset = 8;  // Standard push on downbeats
+      }
+    }
+    return static_cast<int>(base_offset * timing_mult);
+  };
+
   int bass_offset = static_cast<int>(BASS_BASE_OFFSET * timing_mult);
 
-  // Apply per-instrument offsets to drum track
+  // Apply beat-position-aware offsets to drum track
   auto& drum_notes = drum_track.notes();
   for (auto& note : drum_notes) {
-    int offset = 0;
-    if (note.note == HHC_NOTE || note.note == HHO_NOTE || note.note == HHF_NOTE) {
-      offset = hh_offset;
-    } else if (note.note == SD_NOTE) {
-      offset = sd_offset;
-    }
-    // BD_NOTE stays on grid (anchor)
-    (void)BD_NOTE;
+    int offset = getDrumTimingOffset(note.note, note.start_tick, timing_mult);
 
     if (offset != 0) {
       int new_tick = static_cast<int>(note.start_tick) + offset;
@@ -943,6 +969,61 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
         Tick safe_end = getMaxSafeEndTick(note, section_end, vocal_track);
         if (safe_end > note.start_tick + note.duration) {
           note.duration = safe_end - note.start_tick;
+        }
+      }
+    }
+  }
+}
+
+// ============================================================================
+// Motif-Vocal Clash Resolution Implementation
+// ============================================================================
+
+void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& vocal,
+                                          const IHarmonyContext& harmony) {
+  auto& motif_notes = motif.notes();
+  const auto& vocal_notes = vocal.notes();
+
+  if (motif_notes.empty() || vocal_notes.empty()) {
+    return;
+  }
+
+  for (auto& m_note : motif_notes) {
+    Tick m_end = m_note.start_tick + m_note.duration;
+
+    for (const auto& v_note : vocal_notes) {
+      Tick v_end = v_note.start_tick + v_note.duration;
+
+      // Check overlap: motif note and vocal note must be sounding simultaneously
+      if (m_note.start_tick < v_end && m_end > v_note.start_tick) {
+        int interval = std::abs(static_cast<int>(m_note.note) - static_cast<int>(v_note.note));
+        int interval_class = interval % 12;
+
+        // Dissonant intervals:
+        // - Minor 2nd (1): always dissonant
+        // - Major 2nd (2): dissonant in close voicing (actual interval < 12)
+        // - Major 7th (11): always dissonant
+        // - Minor 9th (13 -> 1 in interval_class): handled by minor 2nd
+        bool is_dissonant = (interval_class == 1) ||            // minor 2nd / minor 9th
+                            (interval_class == 11) ||           // major 7th
+                            (interval_class == 2 && interval < 12);  // major 2nd (close only)
+
+        if (is_dissonant) {
+          // Snap to nearest chord tone
+          int8_t degree = harmony.getChordDegreeAt(m_note.start_tick);
+          int snapped = nearestChordTonePitch(m_note.note, degree);
+
+          // Update note pitch with clamping to valid MIDI range
+          uint8_t new_pitch = static_cast<uint8_t>(std::clamp(snapped, 36, 108));
+
+          // Update provenance to indicate collision avoidance
+          m_note.prov_original_pitch = m_note.note;
+          m_note.prov_source = static_cast<uint8_t>(NoteSource::CollisionAvoid);
+          m_note.prov_lookup_tick = m_note.start_tick;
+          m_note.prov_chord_degree = degree;
+
+          m_note.note = new_pitch;
+          break;  // Fixed this motif note, move to next
         }
       }
     }

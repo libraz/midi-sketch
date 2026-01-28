@@ -52,16 +52,20 @@ class TrackCollisionDetector {
    * @brief Check if a pitch is safe from collisions.
    *
    * Detects minor 2nd (1 semitone) and major 7th (11 semitones) clashes.
+   * On weak beats (is_weak_beat=true), major 2nd (2 semitones) is allowed
+   * as a passing tone.
    *
    * @param pitch MIDI pitch to check
    * @param start Start tick
    * @param duration Duration in ticks
    * @param exclude Exclude notes from this track when checking
    * @param chord_tracker Optional chord tracker for context-aware detection
+   * @param is_weak_beat If true, allow major 2nd as passing tone (default: false)
    * @return true if pitch doesn't clash with other tracks
    */
   bool isPitchSafe(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
-                   const ChordProgressionTracker* chord_tracker = nullptr) const;
+                   const ChordProgressionTracker* chord_tracker = nullptr,
+                   bool is_weak_beat = false) const;
 
   /**
    * @brief Check for low register collision with bass.
@@ -87,6 +91,19 @@ class TrackCollisionDetector {
    * @return Vector of pitch classes (may be empty if no notes sounding)
    */
   std::vector<int> getPitchClassesFromTrackAt(Tick tick, TrackRole role) const;
+
+  /**
+   * @brief Get pitch classes from a specific track within a time range.
+   *
+   * Returns all pitch classes (0-11) for notes from the specified track
+   * that are sounding at any point within [start, end).
+   *
+   * @param start Start of time range
+   * @param end End of time range
+   * @param role Which track to query
+   * @return Vector of pitch classes (may be empty if no notes in range)
+   */
+  std::vector<int> getPitchClassesFromTrackInRange(Tick start, Tick end, TrackRole role) const;
 
   /// Clear all registered notes (useful for regeneration).
   void clearNotes();

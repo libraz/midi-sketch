@@ -935,6 +935,28 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   // Get chord degree at phrase start
   int8_t start_chord_degree = harmony.getChordDegreeAt(phrase_start);
 
+  // =========================================================================
+  // MOTIF FRAGMENT ENFORCEMENT: Inject chorus motif fragments in A/B sections
+  // =========================================================================
+  // When enforce_motif_fragments is true and we have a cached GlobalMotif,
+  // use 2-4 notes from the motif's interval_signature at phrase beginning.
+  // This creates song-wide melodic unity by echoing chorus motif in verses.
+  std::vector<int8_t> motif_fragment_intervals;
+  if (ctx.enforce_motif_fragments && cached_global_motif_.has_value() &&
+      cached_global_motif_->isValid()) {
+    // Get appropriate variant for this section type
+    const GlobalMotif& motif = getMotifForSection(ctx.section_type);
+
+    // Extract 2-4 intervals from the motif signature (random count for variety)
+    std::uniform_int_distribution<size_t> count_dist(2, std::min(static_cast<size_t>(4),
+                                                                  static_cast<size_t>(motif.interval_count)));
+    size_t fragment_length = count_dist(rng);
+
+    for (size_t i = 0; i < fragment_length && i < motif.interval_count; ++i) {
+      motif_fragment_intervals.push_back(motif.interval_signature[i]);
+    }
+  }
+
   // Calculate initial pitch if none provided
   int current_pitch;
   if (prev_pitch < 0) {
@@ -983,8 +1005,29 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     PitchChoice choice = selectPitchChoice(tmpl, phrase_pos, target_pitch >= 0, ctx.section_type, rng,
                                            rn.eighths, ctx.forced_contour);
 
-    // Apply direction inertia
-    choice = applyDirectionInertia(choice, result.direction_inertia, tmpl, rng);
+    // =========================================================================
+    // MOTIF FRAGMENT APPLICATION: Override pitch choice for first few notes
+    // =========================================================================
+    // When motif fragments are active, use the interval_signature to guide pitch.
+    // This creates a subtle echo of the chorus motif in verse/pre-chorus sections.
+    bool using_motif_fragment = false;
+    int motif_target_pitch = -1;
+    if (!motif_fragment_intervals.empty() && i > 0 && i <= motif_fragment_intervals.size()) {
+      // Get the interval for this note (i-1 because first note is base)
+      int8_t interval = motif_fragment_intervals[i - 1];
+      // Calculate target pitch from previous pitch plus interval (in semitones)
+      motif_target_pitch = current_pitch + interval;
+      // Snap to nearest chord tone for harmonic safety
+      motif_target_pitch = nearestChordTonePitch(motif_target_pitch, note_chord_degree);
+      motif_target_pitch = std::clamp(motif_target_pitch, static_cast<int>(ctx.vocal_low),
+                                       static_cast<int>(ctx.vocal_high));
+      using_motif_fragment = true;
+    }
+
+    // Apply direction inertia (only if not using motif fragment)
+    if (!using_motif_fragment) {
+      choice = applyDirectionInertia(choice, result.direction_inertia, tmpl, rng);
+    }
 
     // Check vowel section constraint (skip if vowel constraints disabled)
     if (tmpl.vowel_constraint && i > 0 && !ctx.disable_vowel_constraints) {
@@ -1007,10 +1050,16 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     // Apply pitch choice - now generates chord tones directly (chord-tone-first approach)
     // Use note_chord_degree (chord at this note's position) instead of ctx.chord_degree
     // Pass note_eighths for rhythm-melody coupling
-    int new_pitch = applyPitchChoice(choice, current_pitch, target_pitch, note_chord_degree,
-                                     ctx.key_offset, ctx.vocal_low, ctx.vocal_high,
-                                     ctx.vocal_attitude, ctx.disable_vowel_constraints,
-                                     rn.eighths);
+    int new_pitch;
+    if (using_motif_fragment && motif_target_pitch >= 0) {
+      // Use motif-guided pitch for fragment notes
+      new_pitch = motif_target_pitch;
+    } else {
+      new_pitch = applyPitchChoice(choice, current_pitch, target_pitch, note_chord_degree,
+                                   ctx.key_offset, ctx.vocal_low, ctx.vocal_high,
+                                   ctx.vocal_attitude, ctx.disable_vowel_constraints,
+                                   rn.eighths);
+    }
 
     // Apply consecutive same note reduction with J-POP style probability curve
     // J-POP theory: rhythmic repetition is common but should taper off naturally
@@ -1589,10 +1638,31 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   // Hybrid approach: blend HookSkeleton contour hint with existing Motif
   // HookSkeleton provides melodic DNA, Motif provides rhythm (maintained)
   // HookIntensity influences skeleton selection: Strong → more Repeat/AscendDrop
-  if (!cached_hook_skeleton_.has_value()) {
-    cached_hook_skeleton_ = selectHookSkeleton(ctx.section_type, rng, ctx.hook_intensity);
+  //
+  // Hook density gradient: use stronger intensity in first half of sections
+  // This makes the beginning more catchy while allowing variety later.
+  // Two cached skeletons: one for first half (boosted), one for second half (base)
+  uint8_t bar_in_section = static_cast<uint8_t>(
+      (hook_start - ctx.section_start) / TICKS_PER_BAR);
+  bool is_first_half = (bar_in_section < ctx.section_bars / 2);
+
+  HookSkeleton selected_skeleton;
+  if (is_first_half) {
+    // First half: use boosted intensity skeleton
+    if (!cached_hook_skeleton_.has_value()) {
+      HookIntensity boosted = getPositionAwareIntensity(
+          ctx.hook_intensity, bar_in_section, ctx.section_bars);
+      cached_hook_skeleton_ = selectHookSkeleton(ctx.section_type, rng, boosted);
+    }
+    selected_skeleton = *cached_hook_skeleton_;
+  } else {
+    // Second half: use base intensity skeleton (more variety)
+    if (!cached_hook_skeleton_later_.has_value()) {
+      cached_hook_skeleton_later_ = selectHookSkeleton(ctx.section_type, rng, ctx.hook_intensity);
+    }
+    selected_skeleton = *cached_hook_skeleton_later_;
   }
-  SkeletonPattern skeleton_contour = getSkeletonPattern(*cached_hook_skeleton_);
+  SkeletonPattern skeleton_contour = getSkeletonPattern(selected_skeleton);
 
   // Blend skeleton contour with Motif contour (Motif 80%, Skeleton 20%)
   // This preserves the existing system while adding HookSkeleton influence
@@ -2293,15 +2363,17 @@ int MelodyDesigner::applyPitchChoice(PitchChoice choice, int current_pitch, int 
       break;
 
     case VocalAttitude::Expressive:
-      // Chord tones + tensions (7th, 9th = 2nd)
+      // Chord tones + tensions (7th, 9th = 2nd, 11th = 4th)
       candidate_pcs = chord_tones;
-      // Add 7th (11 semitones from root for major, 10 for minor/dominant)
+      // Add color tones for expressiveness
       {
         int root_pc = chord_tones.empty() ? 0 : chord_tones[0];
-        int seventh = (root_pc + 11) % 12;  // Major 7th
-        int ninth = (root_pc + 2) % 12;     // 9th = 2nd
+        int seventh = (root_pc + 11) % 12;   // Major 7th (11 semitones from root)
+        int ninth = (root_pc + 2) % 12;      // 9th = 2nd (2 semitones)
+        int eleventh = (root_pc + 5) % 12;   // 11th = 4th (5 semitones, sus4-like)
         candidate_pcs.push_back(seventh);
         candidate_pcs.push_back(ninth);
+        candidate_pcs.push_back(eleventh);
       }
       break;
 
@@ -2607,6 +2679,12 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
   int consecutive_short_count = 0;
   int max_consecutive_short = (thirtysecond_ratio >= 0.8f) ? 32 : 3;
 
+  // Track previous note duration for "溜め→爆発" (hold→burst) pattern
+  // After a long note (>=half note), boost density to create energy release
+  float prev_note_eighths = 0.0f;
+  constexpr float kLongNoteThreshold = 4.0f;  // Half note (4 eighths)
+  constexpr float kPostLongNoteDensityBoost = 1.3f;  // 30% density increase
+
   // UltraVocaloid: Random start pattern for natural variation
   // 0 = immediate 32nd notes, 1 = quarter accent first, 2 = gradual acceleration
   int ultra_start_pattern = 0;
@@ -2713,12 +2791,18 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
       consecutive_short_count = 0;  // Reset counter on strong beat
     } else {
       // Weak beat: use existing logic for rhythmic variety
-      if (thirtysecond_ratio > 0.0f && dist(rng) < thirtysecond_ratio) {
+      // Apply "溜め→爆発" (hold→burst) pattern: boost density after long notes
+      float local_density_boost = 1.0f;
+      if (prev_note_eighths >= kLongNoteThreshold) {
+        local_density_boost = kPostLongNoteDensityBoost;
+      }
+
+      if (thirtysecond_ratio > 0.0f && dist(rng) < thirtysecond_ratio * local_density_boost) {
         eighths = 0.25f;  // 32nd note (0.25 eighth = 60 ticks)
-      } else if (tmpl.rhythm_driven && dist(rng) < effective_sixteenth_density) {
+      } else if (tmpl.rhythm_driven && dist(rng) < effective_sixteenth_density * local_density_boost) {
         eighths = 1.0f;  // 16th note (0.5 eighth)
-      } else if (dist(rng) < tmpl.long_note_ratio) {
-        eighths = 4.0f;  // Half note
+      } else if (dist(rng) < tmpl.long_note_ratio / local_density_boost) {
+        eighths = 4.0f;  // Half note (less likely after long note)
       } else {
         eighths = 2.0f;  // Quarter note (most common)
       }
@@ -2742,6 +2826,9 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
 
     // Store actual eighths value as float to preserve short note durations
     rhythm.push_back({current_beat, eighths, strong});
+
+    // Track previous note for "溜め→爆発" pattern
+    prev_note_eighths = eighths;
 
     current_beat += eighths * 0.5f;  // Convert eighths to beats
 

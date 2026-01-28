@@ -610,6 +610,14 @@ void Generator::generateAccompanimentForVocal() {
   if (params_.humanize) {
     applyHumanization();
   }
+
+  // Refine vocal to resolve any remaining clashes with accompaniment
+  int adjustments = refineVocalForAccompaniment(2);
+  if (adjustments > 0) {
+    // Re-register vocal after adjustments
+    harmony_context_->clearNotesForTrack(TrackRole::Vocal);
+    harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
+  }
 }
 
 /**
@@ -617,6 +625,7 @@ void Generator::generateAccompanimentForVocal() {
  *
  * Implements "melody is king" principle: vocal first (unconstrained),
  * then accompaniment adapts with contrary motion and register avoidance.
+ * Finally, refines vocal to resolve any remaining clashes.
  */
 void Generator::generateWithVocal(const GeneratorParams& params) {
   // Step 1: Generate vocal freely (no collision avoidance)
@@ -624,6 +633,142 @@ void Generator::generateWithVocal(const GeneratorParams& params) {
 
   // Step 2: Generate accompaniment that adapts to vocal
   generateAccompanimentForVocal();
+
+  // Step 3: Refine vocal to resolve any remaining clashes
+  int adjustments = refineVocalForAccompaniment(2);
+  if (adjustments > 0) {
+    // Re-register vocal after adjustments
+    harmony_context_->clearNotesForTrack(TrackRole::Vocal);
+    harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
+  }
+}
+
+// ============================================================================
+// Vocal-First Feedback Loop
+// ============================================================================
+
+std::vector<Generator::VocalClash> Generator::detectVocalAccompanimentClashes() const {
+  std::vector<VocalClash> clashes;
+
+  const auto& vocal_notes = song_.vocal().notes();
+  if (vocal_notes.empty()) {
+    return clashes;
+  }
+
+  // Tracks to check for clashes
+  struct TrackCheck {
+    const MidiTrack* track;
+    TrackRole role;
+  };
+  std::vector<TrackCheck> tracks_to_check = {
+      {&song_.chord(), TrackRole::Chord},
+      {&song_.bass(), TrackRole::Bass},
+      {&song_.motif(), TrackRole::Motif},
+      {&song_.arpeggio(), TrackRole::Arpeggio},
+      {&song_.aux(), TrackRole::Aux},
+  };
+
+  for (const auto& vocal_note : vocal_notes) {
+    Tick v_start = vocal_note.start_tick;
+    Tick v_end = v_start + vocal_note.duration;
+    uint8_t v_pitch = vocal_note.note;
+
+    for (const auto& tc : tracks_to_check) {
+      if (tc.track->notes().empty()) continue;
+
+      for (const auto& acc_note : tc.track->notes()) {
+        Tick a_start = acc_note.start_tick;
+        Tick a_end = a_start + acc_note.duration;
+        uint8_t a_pitch = acc_note.note;
+
+        // Check for overlap in time
+        if (v_start >= a_end || a_start >= v_end) {
+          continue;  // No overlap
+        }
+
+        // Check for dissonant interval
+        // - Minor 2nd (1): Always dissonant
+        // - Major 2nd (2): Dissonant in close voicing (within 2 octaves)
+        // - Major 7th (11): Context-dependent, treat as dissonant
+        int actual_interval = std::abs(static_cast<int>(v_pitch) - static_cast<int>(a_pitch));
+        int interval = actual_interval % 12;
+        bool is_close_voicing = (actual_interval < 24);  // Within 2 octaves
+        bool is_dissonant = (interval == 1 || interval == 11 || (interval == 2 && is_close_voicing));
+
+        if (is_dissonant) {
+          // Find a safe pitch
+          uint8_t safe_pitch = harmony_context_->getSafePitch(
+              v_pitch, v_start, vocal_note.duration, TrackRole::Vocal, params_.vocal_low,
+              params_.vocal_high);
+
+          VocalClash clash;
+          clash.tick = v_start;
+          clash.vocal_pitch = v_pitch;
+          clash.clashing_pitch = a_pitch;
+          clash.clashing_track = tc.role;
+          clash.suggested_pitch = safe_pitch;
+          clashes.push_back(clash);
+          break;  // One clash per vocal note is enough
+        }
+      }
+    }
+  }
+
+  return clashes;
+}
+
+bool Generator::adjustVocalPitchAt(Tick tick, uint8_t new_pitch) {
+  auto& notes = song_.vocal().notes();
+  for (auto& note : notes) {
+    if (note.start_tick == tick) {
+      if (note.note != new_pitch) {
+        // Record transformation if provenance is enabled
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        note.addTransformStep(TransformStepType::CollisionAvoid, note.note, new_pitch, 0, 0);
+        note.prov_original_pitch = note.note;
+#endif
+        note.note = new_pitch;
+        return true;
+      }
+      return false;  // Already correct
+    }
+  }
+  return false;  // Note not found
+}
+
+int Generator::refineVocalForAccompaniment(int max_iterations) {
+  int total_adjustments = 0;
+
+  for (int iter = 0; iter < max_iterations; ++iter) {
+    auto clashes = detectVocalAccompanimentClashes();
+    if (clashes.empty()) {
+      break;  // No more clashes
+    }
+
+    int iter_adjustments = 0;
+    for (const auto& clash : clashes) {
+      // Only adjust if suggested pitch is different
+      if (clash.suggested_pitch != clash.vocal_pitch) {
+        if (adjustVocalPitchAt(clash.tick, clash.suggested_pitch)) {
+          iter_adjustments++;
+        }
+      }
+    }
+
+    total_adjustments += iter_adjustments;
+
+    if (iter_adjustments == 0) {
+      break;  // No progress, stop iterating
+    }
+
+    // Warn if we're hitting iteration limit with remaining clashes
+    if (iter == max_iterations - 1 && !clashes.empty()) {
+      warnings_.push_back("Vocal refinement reached max iterations with " +
+                          std::to_string(clashes.size()) + " remaining clashes");
+    }
+  }
+
+  return total_adjustments;
 }
 
 void Generator::regenerateAccompaniment(uint32_t new_seed) {
@@ -980,6 +1125,13 @@ void Generator::applyTransitionDynamics() {
 
   // Apply ritardando to outro sections
   PostProcessor::applyRitardando(tracks, sections);
+
+  // Fix motif-vocal clashes for RhythmSync mode.
+  // When motif is generated as "coordinate axis" before vocal,
+  // minor 2nd and major 7th clashes need post-hoc resolution.
+  if (params_.paradigm == GenerationParadigm::RhythmSync) {
+    PostProcessor::fixMotifVocalClashes(song_.motif(), song_.vocal(), *harmony_context_);
+  }
 
   // Apply enhanced FinalHit for sections with that exit pattern
   for (const auto& section : sections) {
@@ -1469,6 +1621,103 @@ void generateVolumeCurve(MidiTrack& track, const Section& section) {
   }
 }
 
+/// @brief Generate CC74 Brightness curve for a section on synth tracks.
+/// Creates section-appropriate filter cutoff automation.
+/// Chorus: bright (80-100), Verse: darker (50-70), with smooth transitions.
+/// @param track Target track to add CC events to
+/// @param section Section defining time range and type
+void generateBrightnessCurve(MidiTrack& track, const Section& section) {
+  Tick section_start = section.start_tick;
+  Tick section_end = section_start + section.bars * TICKS_PER_BAR;
+  Tick section_length = section_end - section_start;
+
+  if (section_length == 0) return;
+
+  // Resolution: one CC event per beat
+  constexpr Tick resolution = TICKS_PER_BEAT;
+
+  // Brightness ranges by section type
+  uint8_t value_start = 70;
+  uint8_t value_mid = 80;
+  uint8_t value_end = 70;
+
+  switch (section.type) {
+    case SectionType::Chorus:
+    case SectionType::Drop:
+      // Bright and open for energy
+      value_start = 80;
+      value_mid = 100;
+      value_end = 80;
+      break;
+    case SectionType::B:
+      // Building toward chorus - gradually brighten
+      value_start = 60;
+      value_mid = 80;
+      value_end = 85;
+      break;
+    case SectionType::A:
+      // Verse - more muted/intimate
+      value_start = 55;
+      value_mid = 65;
+      value_end = 55;
+      break;
+    case SectionType::Bridge:
+      // Bridge - contrasting, more filtered
+      value_start = 50;
+      value_mid = 70;
+      value_end = 60;
+      break;
+    case SectionType::Intro:
+      // Intro - start dark, gradually open
+      value_start = 40;
+      value_mid = 60;
+      value_end = 70;
+      break;
+    case SectionType::Outro:
+      // Outro - start bright, fade to dark
+      value_start = 70;
+      value_mid = 55;
+      value_end = 40;
+      break;
+    case SectionType::Interlude:
+      // Interlude - subdued
+      value_start = 50;
+      value_mid = 60;
+      value_end = 50;
+      break;
+    default:
+      // Default: moderate
+      value_start = 60;
+      value_mid = 70;
+      value_end = 60;
+      break;
+  }
+
+  // Generate two-phase curve (start->mid, mid->end)
+  Tick half_length = section_length / 2;
+
+  for (Tick offset = 0; offset < section_length; offset += resolution) {
+    Tick current_tick = section_start + offset;
+    uint8_t value;
+
+    if (offset < half_length) {
+      // First half: interpolate start -> mid
+      float phase_progress = static_cast<float>(offset) / static_cast<float>(half_length);
+      value = static_cast<uint8_t>(value_start + (value_mid - value_start) * phase_progress);
+    } else {
+      // Second half: interpolate mid -> end
+      float phase_progress =
+          static_cast<float>(offset - half_length) / static_cast<float>(section_length - half_length);
+      value = static_cast<uint8_t>(value_mid + (value_end - value_mid) * phase_progress);
+    }
+
+    // Clamp to valid MIDI CC range
+    value = std::min(value, static_cast<uint8_t>(127));
+
+    track.addCC(current_tick, MidiCC::kBrightness, value);
+  }
+}
+
 }  // anonymous namespace
 
 void Generator::generateExpressionCurves() {
@@ -1486,13 +1735,15 @@ void Generator::generateExpressionCurves() {
     }
   }
 
-  // Generate CC1 (Modulation) for synth tracks (Motif, Arpeggio)
+  // Generate CC1 (Modulation) and CC74 (Brightness) for synth tracks (Motif, Arpeggio)
   // Modulation adds vibrato/filter sweep for expressive synth sounds
+  // Brightness adds filter cutoff automation for timbral variation
   std::vector<MidiTrack*> synth_tracks = {&song_.motif(), &song_.arpeggio()};
   for (auto* track : synth_tracks) {
     if (track->notes().empty()) continue;
     for (const auto& section : sections) {
       generateModulationCurve(*track, section);
+      generateBrightnessCurve(*track, section);
     }
   }
 

@@ -1502,4 +1502,81 @@ const VocalStylePresetData& getVocalStylePresetData(VocalStylePreset style) {
   return VOCAL_STYLE_PRESET_DATA[idx];
 }
 
+// ============================================================================
+// Name-based Lookup Functions
+// ============================================================================
+
+namespace {
+
+// Case-insensitive string comparison
+bool strcasecmpEqual(const char* a, const std::string& b) {
+  const char* p = a;
+  size_t i = 0;
+  while (*p && i < b.size()) {
+    char ac = (*p >= 'A' && *p <= 'Z') ? (*p + 32) : *p;
+    char bc = (b[i] >= 'A' && b[i] <= 'Z') ? (b[i] + 32) : b[i];
+    if (ac != bc) return false;
+    ++p;
+    ++i;
+  }
+  return (*p == '\0' && i == b.size());
+}
+
+}  // anonymous namespace
+
+std::optional<Mood> findMoodByName(const std::string& name) {
+  constexpr size_t count = sizeof(MOOD_NAMES) / sizeof(MOOD_NAMES[0]);
+  for (size_t i = 0; i < count; ++i) {
+    if (strcasecmpEqual(MOOD_NAMES[i], name)) {
+      return static_cast<Mood>(i);
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<StructurePattern> findStructurePatternByName(const std::string& name) {
+  constexpr size_t count = sizeof(STRUCTURE_NAMES) / sizeof(STRUCTURE_NAMES[0]);
+  for (size_t i = 0; i < count; ++i) {
+    if (strcasecmpEqual(STRUCTURE_NAMES[i], name)) {
+      return static_cast<StructurePattern>(i);
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<uint8_t> findChordProgressionByName(const std::string& name) {
+  // Chord progressions are referenced by their pattern string or common name
+  // For now, this is a basic implementation; extend as needed
+  // Common chord progression names
+  static const std::pair<const char*, uint8_t> CHORD_NAMES[] = {
+      {"canonical", 0},  // I-V-vi-IV
+      {"pop", 0},
+      {"fifties", 1},      // I-vi-IV-V
+      {"doo_wop", 1},
+      {"jazz", 2},         // ii-V-I-vi
+      {"royal_road", 3},   // IV-V-iii-vi (王道進行)
+      {"strong_wish", 4},  // I-IV-V-I
+      {"four_chord", 5},   // vi-IV-I-V
+      {"emotional", 6},    // I-iii-vi-IV
+      {"jpop", 7},         // IV-iii-vi-V
+      {"tsubasa", 8},      // I-V-vi-iii-IV
+      {"dramatic", 9},     // vi-V-IV-V
+      {"minor", 10},       // i-VII-VI-V
+      {"sad", 11},         // vi-IV-V-I
+      {"anthem", 12},      // I-IV-vi-V
+      {"ballad", 13},      // I-V/VII-vi-IV
+      {"pachelbel", 14},   // I-V-vi-iii-IV-I-IV-V
+      {"blues", 15},       // I-I-I-I-IV-IV-I-I-V-IV-I-V
+      {"vamp", 16},        // i-VII (2 chord)
+      {"hypnotic", 17},    // vi-V (2 chord)
+  };
+
+  for (const auto& [chord_name, id] : CHORD_NAMES) {
+    if (strcasecmpEqual(chord_name, name)) {
+      return id;
+    }
+  }
+  return std::nullopt;
+}
+
 }  // namespace midisketch

@@ -40,6 +40,7 @@ TEST(CCEventTest, MidiCCConstants) {
   EXPECT_EQ(MidiCC::kPan, 10);
   EXPECT_EQ(MidiCC::kExpression, 11);
   EXPECT_EQ(MidiCC::kSustain, 64);
+  EXPECT_EQ(MidiCC::kBrightness, 74);
 }
 
 // ============================================================================
@@ -390,6 +391,134 @@ TEST(ExpressionCurveTest, CCEventsAtBeatResolution) {
       // or a section boundary gap
       EXPECT_GE(delta, 0u);
     }
+  }
+}
+
+// ============================================================================
+// P3: CC74 Brightness curve tests
+// ============================================================================
+
+TEST(BrightnessCurveTest, SynthTracksHaveBrightnessCurves) {
+  Generator generator;
+  GeneratorParams params;
+  params.seed = 42;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;
+  params.structure = StructurePattern::StandardPop;
+  params.composition_style = CompositionStyle::BackgroundMotif;
+  params.bpm = 120;
+
+  generator.generate(params);
+  const Song& song = generator.getSong();
+
+  // Check for CC74 (Brightness) events in synth tracks
+  auto hasBrightnessCC = [](const MidiTrack& track) {
+    for (const auto& cc : track.ccEvents()) {
+      if (cc.cc == MidiCC::kBrightness) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Motif track should have brightness CC if it has notes
+  if (!song.motif().notes().empty()) {
+    EXPECT_TRUE(hasBrightnessCC(song.motif()))
+        << "Motif track should have CC74 (Brightness) events";
+  }
+
+  // Arpeggio track should have brightness CC if it has notes
+  if (!song.arpeggio().notes().empty()) {
+    EXPECT_TRUE(hasBrightnessCC(song.arpeggio()))
+        << "Arpeggio track should have CC74 (Brightness) events";
+  }
+}
+
+TEST(BrightnessCurveTest, BrightnessValuesInValidRange) {
+  Generator generator;
+  GeneratorParams params;
+  params.seed = 42;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;
+  params.structure = StructurePattern::StandardPop;
+  params.composition_style = CompositionStyle::BackgroundMotif;
+  params.bpm = 120;
+
+  generator.generate(params);
+  const Song& song = generator.getSong();
+
+  // Check all CC74 values are in valid MIDI range
+  auto checkBrightnessRange = [](const MidiTrack& track, const char* name) {
+    for (const auto& cc : track.ccEvents()) {
+      if (cc.cc == MidiCC::kBrightness) {
+        EXPECT_LE(cc.value, 127) << name << " CC74 value out of range at tick " << cc.tick;
+        EXPECT_GE(cc.value, 0) << name << " CC74 value out of range at tick " << cc.tick;
+      }
+    }
+  };
+
+  checkBrightnessRange(song.motif(), "Motif");
+  checkBrightnessRange(song.arpeggio(), "Arpeggio");
+}
+
+TEST(BrightnessCurveTest, MelodicTracksDoNotHaveBrightness) {
+  Generator generator;
+  GeneratorParams params;
+  params.seed = 42;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;
+  params.structure = StructurePattern::StandardPop;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.bpm = 120;
+
+  generator.generate(params);
+  const Song& song = generator.getSong();
+
+  // Melodic tracks (Vocal, Bass, Chord) should NOT have brightness CC
+  auto hasBrightnessCC = [](const MidiTrack& track) {
+    for (const auto& cc : track.ccEvents()) {
+      if (cc.cc == MidiCC::kBrightness) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  EXPECT_FALSE(hasBrightnessCC(song.vocal())) << "Vocal should not have CC74";
+  EXPECT_FALSE(hasBrightnessCC(song.bass())) << "Bass should not have CC74";
+  EXPECT_FALSE(hasBrightnessCC(song.chord())) << "Chord should not have CC74";
+}
+
+TEST(BrightnessCurveTest, BrightnessWrittenToMidiOutput) {
+  Generator generator;
+  GeneratorParams params;
+  params.seed = 42;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;
+  params.structure = StructurePattern::StandardPop;
+  params.composition_style = CompositionStyle::BackgroundMotif;
+  params.bpm = 120;
+
+  generator.generate(params);
+  const Song& song = generator.getSong();
+
+  MidiWriter writer;
+  writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
+  auto data = writer.toBytes();
+
+  // If motif has brightness CC events, they should appear in MIDI output
+  // Motif is on channel 3
+  bool has_motif_brightness = false;
+  for (const auto& cc : song.motif().ccEvents()) {
+    if (cc.cc == MidiCC::kBrightness) {
+      has_motif_brightness = true;
+      break;
+    }
+  }
+
+  if (has_motif_brightness) {
+    EXPECT_TRUE(findCCEvent(data, 3, MidiCC::kBrightness))
+        << "CC74 (Brightness) should be in MIDI output for Motif track";
   }
 }
 

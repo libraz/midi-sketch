@@ -555,9 +555,9 @@ void applyAccentPatterns(MidiTrack& track, const std::vector<Section>& sections)
   auto& notes = track.notes();
   if (notes.empty()) return;
 
-  constexpr int PHRASE_HEAD_BOOST = 8;
-  constexpr int CONTOUR_BOOST = 10;
-  constexpr int AGOGIC_BOOST = 5;
+  constexpr int PHRASE_HEAD_BOOST = 12;   // Increased from 8 for stronger phrase emphasis
+  constexpr int CONTOUR_BOOST = 15;       // Increased from 10 for clearer melodic peaks
+  constexpr int AGOGIC_BOOST = 8;         // Increased from 5 for more expressive long notes
   constexpr Tick AGOGIC_THRESHOLD = TICKS_PER_BEAT;  // Quarter note threshold
 
   for (const auto& section : sections) {
@@ -709,20 +709,31 @@ float getChordTonePreferenceBoost(float resolution_need) {
 // ============================================================================
 
 float getBeatMicroCurve(float beat_position) {
-  // Natural beat-level dynamics for pop music:
-  // Beat 1: 1.08 (downbeat - strongest)
-  // Beat 2: 0.95 (weak)
-  // Beat 3: 1.03 (secondary accent)
-  // Beat 4: 0.92 (weakest - leads into next bar)
+  // 16th-note resolution dynamics for pop music.
+  // Each beat subdivided into 4 positions for finer musical expression:
   //
-  // This follows the natural emphasis pattern of 4/4 pop music
-  // where beats 1 and 3 are stronger than 2 and 4.
-  constexpr float kCurve[4] = {1.08f, 0.95f, 1.03f, 0.92f};
+  // Beat 1 (16ths 0-3): 1.10→0.88→0.95→0.86  (downbeat - strongest attack, quick decay)
+  // Beat 2 (16ths 4-7): 0.97→0.90→0.93→0.88  (weak beat - subdued)
+  // Beat 3 (16ths 8-11): 1.05→0.89→0.96→0.87 (secondary accent - moderate strength)
+  // Beat 4 (16ths 12-15): 0.94→0.88→0.92→0.85 (weakest - leads into next bar)
+  //
+  // This creates a more nuanced groove with emphasis on downbeats and
+  // natural decay within each beat, enhancing the "pocket" feel.
+  // clang-format off
+  constexpr float kCurve16[16] = {
+      1.10f, 0.88f, 0.95f, 0.86f,  // Beat 1: strong→weak→medium→weak
+      0.97f, 0.90f, 0.93f, 0.88f,  // Beat 2: medium→weak→medium→weak
+      1.05f, 0.89f, 0.96f, 0.87f,  // Beat 3: medium-strong→weak→medium→weak
+      0.94f, 0.88f, 0.92f, 0.85f   // Beat 4: weak→weak→medium→weakest
+  };
+  // clang-format on
 
-  int beat = static_cast<int>(beat_position) % 4;
-  if (beat < 0) beat += 4;  // Handle negative positions
+  // Convert beat position to 16th note index (0-15)
+  // beat_position is in beats (0.0-4.0), multiply by 4 for 16ths
+  int sixteenth = static_cast<int>(beat_position * 4.0f) % 16;
+  if (sixteenth < 0) sixteenth += 16;  // Handle negative positions
 
-  return kCurve[beat];
+  return kCurve16[sixteenth];
 }
 
 void applyPhraseEndDecay(MidiTrack& track, const std::vector<Section>& sections,
@@ -878,11 +889,11 @@ float getContextualSyncopationWeight(float base_weight, float phrase_progress, i
   float adjusted = base_weight;
 
   // Phrase position boost: more syncopation in latter half of phrase
-  // Creates natural momentum building toward phrase climax
-  // Progress 0.5-1.0 maps to multiplier 1.0-1.3 (linear interpolation)
+  // Creates natural momentum building toward phrase climax ("溜め→爆発" pattern)
+  // Progress 0.5-1.0 maps to multiplier 1.0-1.5 (increased for catchier feel)
   if (phrase_progress > 0.5f) {
     float progress_factor = (phrase_progress - 0.5f) * 2.0f;  // 0.0-1.0
-    float phrase_boost = 1.0f + progress_factor * 0.3f;       // 1.0-1.3
+    float phrase_boost = 1.0f + progress_factor * 0.5f;       // 1.0-1.5 (increased from 0.3)
     adjusted *= phrase_boost;
   }
 

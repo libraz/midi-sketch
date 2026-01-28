@@ -200,6 +200,14 @@ void removeOverlaps(std::vector<NoteEvent>& notes, Tick min_duration) {
       }
     }
   }
+
+  // Final pass: ensure all notes meet minimum duration requirement
+  // This catches any notes that were already too short before overlap resolution
+  for (auto& note : notes) {
+    if (note.duration < min_duration) {
+      note.duration = min_duration;
+    }
+  }
 }
 
 void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,

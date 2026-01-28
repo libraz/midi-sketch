@@ -565,5 +565,134 @@ TEST_F(ChordTrackTest, SecondaryDominantIntegration_HighTensionSections) {
   }
 }
 
+// =============================================================================
+// Chord-Motif Major 2nd Clash Avoidance Tests
+// =============================================================================
+
+// Helper function to check for major 2nd clashes between two notes
+bool hasMajor2ndClash(uint8_t pitch1, uint8_t pitch2) {
+  int interval = std::abs(static_cast<int>(pitch1 % 12) - static_cast<int>(pitch2 % 12));
+  if (interval > 6) interval = 12 - interval;
+  return interval == 2;  // Major 2nd
+}
+
+// Helper function to check for minor 2nd clashes between two notes
+bool hasMinor2ndClash(uint8_t pitch1, uint8_t pitch2) {
+  int interval = std::abs(static_cast<int>(pitch1 % 12) - static_cast<int>(pitch2 % 12));
+  if (interval > 6) interval = 12 - interval;
+  return interval == 1;  // Minor 2nd
+}
+
+TEST_F(ChordTrackTest, ChordMotifMajor2ndClashAvoidance_Seed2802138756) {
+  // This seed previously caused chord-motif major 2nd clashes at bar 63
+  // The fix added major 2nd detection and range-based motif pitch class lookup
+  params_.seed = 2802138756;
+  params_.mood = Mood::ElectroPop;  // Same mood as the original issue
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& chord_track = gen.getSong().chord();
+  const auto& motif_track = gen.getSong().motif();
+
+  // Count simultaneous major 2nd clashes between chord and motif
+  int major_2nd_clashes = 0;
+
+  for (const auto& chord_note : chord_track.notes()) {
+    Tick chord_end = chord_note.start_tick + chord_note.duration;
+
+    for (const auto& motif_note : motif_track.notes()) {
+      Tick motif_end = motif_note.start_tick + motif_note.duration;
+
+      // Check if notes overlap in time
+      if (chord_note.start_tick < motif_end && chord_end > motif_note.start_tick) {
+        if (hasMajor2ndClash(chord_note.note, motif_note.note)) {
+          ++major_2nd_clashes;
+        }
+      }
+    }
+  }
+
+  // After the fix, there should be zero or very few major 2nd clashes
+  // (some may still occur in desperate fallback cases, but significantly reduced)
+  EXPECT_LE(major_2nd_clashes, 5)
+      << "Too many chord-motif major 2nd clashes. Expected <= 5, got " << major_2nd_clashes;
+}
+
+TEST_F(ChordTrackTest, ChordMotifClashAvoidance_RhythmSyncParadigm) {
+  // RhythmSync paradigm generates motif first, then chord
+  // Chord voicing should avoid clashing with registered motif notes
+  params_.seed = 12345;
+  params_.paradigm = GenerationParadigm::RhythmSync;
+  params_.riff_policy = RiffPolicy::LockedContour;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& chord_track = gen.getSong().chord();
+  const auto& motif_track = gen.getSong().motif();
+
+  // Count minor 2nd clashes (highest priority to avoid)
+  int minor_2nd_clashes = 0;
+
+  for (const auto& chord_note : chord_track.notes()) {
+    Tick chord_end = chord_note.start_tick + chord_note.duration;
+
+    for (const auto& motif_note : motif_track.notes()) {
+      Tick motif_end = motif_note.start_tick + motif_note.duration;
+
+      if (chord_note.start_tick < motif_end && chord_end > motif_note.start_tick) {
+        if (hasMinor2ndClash(chord_note.note, motif_note.note)) {
+          ++minor_2nd_clashes;
+        }
+      }
+    }
+  }
+
+  // Minor 2nd clashes should be very rare
+  EXPECT_LE(minor_2nd_clashes, 3)
+      << "Too many chord-motif minor 2nd clashes. Expected <= 3, got " << minor_2nd_clashes;
+}
+
+TEST_F(ChordTrackTest, ChordVoicingConsidersFullBarMotifNotes) {
+  // Chord notes sustain through the bar, so voicing should consider
+  // all motif notes that play during the chord's duration, not just at bar start
+  params_.seed = 98765;
+  params_.paradigm = GenerationParadigm::RhythmSync;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& chord_track = gen.getSong().chord();
+  const auto& motif_track = gen.getSong().motif();
+
+  // Find chord notes that sustain for a full bar or more
+  int long_chord_clashes = 0;
+
+  for (const auto& chord_note : chord_track.notes()) {
+    if (chord_note.duration < TICKS_PER_BAR / 2) continue;  // Skip short chord notes
+
+    Tick chord_end = chord_note.start_tick + chord_note.duration;
+
+    // Check for clashes with motif notes that start after the chord begins
+    for (const auto& motif_note : motif_track.notes()) {
+      // Only count motif notes that START after chord note begins
+      // (these would be missed by point-in-time lookup)
+      if (motif_note.start_tick > chord_note.start_tick &&
+          motif_note.start_tick < chord_end) {
+        if (hasMajor2ndClash(chord_note.note, motif_note.note) ||
+            hasMinor2ndClash(chord_note.note, motif_note.note)) {
+          ++long_chord_clashes;
+        }
+      }
+    }
+  }
+
+  // Should have minimal clashes even with motif notes that start mid-chord
+  // This verifies the range-based lookup is working
+  EXPECT_LE(long_chord_clashes, 10)
+      << "Long chord notes have too many clashes with mid-bar motif notes";
+}
+
 }  // namespace
 }  // namespace midisketch

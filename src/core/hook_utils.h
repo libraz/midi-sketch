@@ -384,6 +384,38 @@ inline SkeletonWeights applyHookIntensityToWeights(const SkeletonWeights& base,
   return result;
 }
 
+/// @brief Get position-aware hook intensity for first-half emphasis.
+///
+/// Creates a "hook density gradient" where the first half of sections
+/// has stronger hook intensity than the second half. This makes the
+/// beginning of each section more catchy while allowing variation later.
+///
+/// @param base Base hook intensity from context
+/// @param bar_in_section Current bar position within section (0-indexed)
+/// @param total_bars Total bars in section
+/// @returns Adjusted HookIntensity (potentially boosted for first half)
+inline HookIntensity getPositionAwareIntensity(HookIntensity base, uint8_t bar_in_section,
+                                                uint8_t total_bars) {
+  // Only apply gradient for sections with 8+ bars
+  // First half (bars 0-3): boost intensity by one level
+  // Second half (bars 4+): use base intensity
+  if (total_bars >= 8 && bar_in_section < total_bars / 2) {
+    // Boost intensity by one level (except Maximum which stays)
+    switch (base) {
+      case HookIntensity::Off:
+        return HookIntensity::Light;
+      case HookIntensity::Light:
+        return HookIntensity::Normal;
+      case HookIntensity::Normal:
+        return HookIntensity::Strong;
+      case HookIntensity::Strong:
+      case HookIntensity::Maximum:
+        return base;  // Already at or near maximum
+    }
+  }
+  return base;
+}
+
 /// @brief Select a hook skeleton based on section type and hook intensity.
 /// @param type Section type
 /// @param rng Random number generator

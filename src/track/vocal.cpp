@@ -379,6 +379,13 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
           break;
       }
 
+      // Enable motif fragment enforcement for A/B sections after first chorus
+      // This creates song-wide melodic unity by echoing chorus motif fragments
+      if (designer.getCachedGlobalMotif().has_value() &&
+          (section.type == SectionType::A || section.type == SectionType::B)) {
+        ctx.enforce_motif_fragments = true;
+      }
+
       // Set transition info for next section (if any)
       const auto& sections = song.arrangement().sections();
       for (size_t i = 0; i < sections.size(); ++i) {
@@ -666,6 +673,41 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
           }
           // Add reset bend after fall-off to prepare for next note
           track.addPitchBend(note_end + TICK_SIXTEENTH, PitchBend::kCenter);
+        }
+      }
+
+      // Apply vibrato to sustained notes (>= half beat, excluding phrase ends with fall-off)
+      // Vibrato adds natural expressiveness to held notes
+      constexpr Tick kVibratoMinDuration = TICKS_PER_BEAT / 2;  // Half beat minimum
+      constexpr Tick kVibratoDelay = TICKS_PER_BEAT / 4;         // Quarter beat delay before vibrato
+      if (note.duration >= kVibratoMinDuration && !is_phrase_end) {
+        // Vibrato probability based on attitude and style
+        float vibrato_prob = (params.vocal_attitude == VocalAttitude::Raw) ? 0.7f : 0.5f;
+        vibrato_prob *= physics.pitch_bend_scale;
+
+        if (prob_dist(rng) < vibrato_prob) {
+          // Vibrato depth: 15-25 cents based on attitude, scaled by physics
+          int base_vibrato_depth =
+              (params.vocal_attitude == VocalAttitude::Raw) ? 25 : 15;
+          int vibrato_depth = static_cast<int>(base_vibrato_depth * physics.pitch_bend_scale);
+
+          // Vibrato rate: 5.0-6.0 Hz (natural vocal vibrato range)
+          float vibrato_rate = (params.vocal_attitude == VocalAttitude::Raw) ? 5.0f : 5.5f;
+
+          if (vibrato_depth > 0) {
+            // Start vibrato after initial attack (delay from note start)
+            Tick vibrato_start = note.start_tick + kVibratoDelay;
+            Tick vibrato_duration = note.duration - kVibratoDelay;
+
+            // Only apply if remaining duration is meaningful
+            if (vibrato_duration >= TICKS_PER_BEAT / 4) {
+              auto vibrato_bends = PitchBendCurves::generateVibrato(
+                  vibrato_start, vibrato_duration, vibrato_depth, vibrato_rate, params.bpm);
+              for (const auto& bend : vibrato_bends) {
+                track.addPitchBend(bend.tick, bend.value);
+              }
+            }
+          }
         }
       }
     }

@@ -53,8 +53,8 @@ class StubHarmonyContext : public IHarmonyContext {
     ++registered_track_count_;
   }
 
-  bool isPitchSafe(uint8_t /*pitch*/, Tick /*start*/, Tick /*duration*/,
-                   TrackRole /*exclude*/) const override {
+  bool isPitchSafe(uint8_t /*pitch*/, Tick /*start*/, Tick /*duration*/, TrackRole /*exclude*/,
+                   bool /*is_weak_beat*/ = false) const override {
     return all_pitches_safe_;
   }
 
@@ -78,6 +78,11 @@ class StubHarmonyContext : public IHarmonyContext {
   }
 
   std::vector<int> getPitchClassesFromTrackAt(Tick /*tick*/, TrackRole /*role*/) const override {
+    return {};
+  }
+
+  std::vector<int> getPitchClassesFromTrackInRange(Tick /*start*/, Tick /*end*/,
+                                                    TrackRole /*role*/) const override {
     return {};
   }
 

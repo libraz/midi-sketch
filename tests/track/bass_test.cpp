@@ -822,10 +822,11 @@ TEST_F(BassTest, WholeNotePatternNoGhostNotes) {
 
   // Ballad pattern should not intentionally add ghost notes (via addBassGhostNotes).
   // However, some notes may have low velocity (25-35) due to dynamics processing
-  // (velocity curves, section multipliers, etc.). We allow a small tolerance.
-  // Note: addBassGhostNotes would add many ghost notes (40% chance per odd 16th position),
-  // so a high count would indicate intentional ghost notes.
-  EXPECT_LE(ghost_count, 20)
+  // (velocity curves, section multipliers, 16th-note micro-dynamics, etc.).
+  // We allow a tolerance. Note: addBassGhostNotes would add many ghost notes
+  // (40% chance per odd 16th position), so a very high count (50+) would indicate
+  // intentional ghost notes.
+  EXPECT_LE(ghost_count, 30)
       << "Ballad pattern should not intentionally add many ghost notes";
 }
 

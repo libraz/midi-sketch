@@ -14,6 +14,7 @@
 #include "core/note_factory.h"  // for NoteSource enum
 #include "core/section_types.h"
 #include "core/types.h"
+#include "test_support/stub_harmony_context.h"
 
 namespace midisketch {
 namespace {
@@ -849,14 +850,15 @@ TEST(MicroTimingTest, BassAlwaysLaysBack) {
 }
 
 TEST(MicroTimingTest, DrumTimingByInstrument) {
-  // Hi-hat pushes ahead, snare lays back, kick stays on grid
+  // Hi-hat pushes ahead, snare lays back, kick is tight
+  // Now with beat-position-aware timing for enhanced "pocket" feel
   MidiTrack vocal, bass, drums;
 
   constexpr uint8_t HH = 42;  // Closed hi-hat
   constexpr uint8_t SD = 38;  // Snare
   constexpr uint8_t BD = 36;  // Kick
 
-  Tick start = TICKS_PER_BAR;
+  Tick start = TICKS_PER_BAR;  // Beat 0 (downbeat)
   drums.addNote(start, 60, HH, 80);
   drums.addNote(start, 60, SD, 80);
   drums.addNote(start, 60, BD, 80);
@@ -864,13 +866,17 @@ TEST(MicroTimingTest, DrumTimingByInstrument) {
   PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, nullptr);
 
   // Find each drum note
+  // At beat 0 (downbeat), timing offsets are:
+  // - Hi-hat: +8 (standard push)
+  // - Snare: -4 (not on beat 1 or 3, so standard layback)
+  // - Kick: -1 (tight on downbeat for anchor)
   for (const auto& note : drums.notes()) {
     if (note.note == HH) {
       EXPECT_EQ(note.start_tick, start + 8) << "Hi-hat should push ahead by 8";
     } else if (note.note == SD) {
-      EXPECT_EQ(note.start_tick, start - 8) << "Snare should lay back by 8";
+      EXPECT_EQ(note.start_tick, start - 4) << "Snare should lay back by 4 on downbeat";
     } else if (note.note == BD) {
-      EXPECT_EQ(note.start_tick, start) << "Kick should stay on grid";
+      EXPECT_EQ(note.start_tick, start - 1) << "Kick should be tight (-1) on downbeat";
     }
   }
 }
@@ -1116,6 +1122,133 @@ TEST(PostProcessorTest, HumanBodyTimingCombined) {
 
   EXPECT_GE(offset, 25) << "Combined human body timing should accumulate delays";
   EXPECT_LE(offset, 35) << "Combined offset should be reasonable";
+}
+
+// ============================================================================
+// Motif-Vocal Clash Resolution Tests
+// ============================================================================
+
+TEST(PostProcessorTest, FixMotifVocalClashesResolveMinor2nd) {
+  // Motif C4 (48) clashing with Vocal B3 (47) - minor 2nd below
+  MidiTrack motif, vocal;
+  motif.addNote(0, 480, 48, 80);  // C4
+  vocal.addNote(0, 480, 47, 80);  // B3 (minor 2nd below)
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);  // C major (chord tones: C, E, G -> pitch classes 0, 4, 7)
+
+  PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
+
+  // Motif should snap to nearest chord tone (C, E, or G)
+  // From C4 (48), nearest chord tones are C4 (48), E3 (40 - far), G3 (43), E4 (52), G4 (55)
+  // The algorithm should pick a chord tone that doesn't clash
+  int pc = motif.notes()[0].note % 12;
+  EXPECT_TRUE(pc == 0 || pc == 4 || pc == 7)
+      << "Motif pitch class should be C(0), E(4), or G(7), got " << pc;
+}
+
+TEST(PostProcessorTest, FixMotifVocalClashesResolveMajor7th) {
+  // Motif C4 (60) clashing with Vocal B4 (71) - major 7th above
+  MidiTrack motif, vocal;
+  motif.addNote(0, 480, 60, 80);  // C4
+  vocal.addNote(0, 480, 71, 80);  // B4 (major 7th above)
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);  // C major
+
+  PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
+
+  // Motif C4 clashes with Vocal B4 -> should snap to chord tone
+  int pc = motif.notes()[0].note % 12;
+  EXPECT_TRUE(pc == 0 || pc == 4 || pc == 7)
+      << "Motif pitch class should be C(0), E(4), or G(7), got " << pc;
+}
+
+TEST(PostProcessorTest, FixMotifVocalClashesResolveMajor2ndClose) {
+  // Motif D4 (62) clashing with Vocal C4 (60) - major 2nd in close voicing
+  MidiTrack motif, vocal;
+  motif.addNote(0, 480, 62, 80);  // D4
+  vocal.addNote(0, 480, 60, 80);  // C4 (major 2nd below)
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);  // C major (chord tones: C, E, G)
+
+  PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
+
+  // Motif D4 clashes with Vocal C4 -> should snap to chord tone
+  int pc = motif.notes()[0].note % 12;
+  EXPECT_TRUE(pc == 0 || pc == 4 || pc == 7)
+      << "Motif pitch class should be C(0), E(4), or G(7), got " << pc;
+}
+
+TEST(PostProcessorTest, FixMotifVocalClashesIgnoresMajor9th) {
+  // Motif D5 (74) vs Vocal C4 (60) - major 9th (14 semitones)
+  // Major 2nd interval class (2), but actual interval >= 12, so OK
+  MidiTrack motif, vocal;
+  motif.addNote(0, 480, 74, 80);  // D5
+  vocal.addNote(0, 480, 60, 80);  // C4 (major 9th = 14 semitones)
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);
+
+  PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
+
+  // Major 9th is a tension, not a close-voicing clash - should not change
+  EXPECT_EQ(motif.notes()[0].note, 74)
+      << "Major 9th (wide interval) should not be modified";
+}
+
+TEST(PostProcessorTest, FixMotifVocalClashesIgnoresConsonant) {
+  // Motif C4 clashing with Vocal G4 - perfect 5th (consonant, should NOT change)
+  MidiTrack motif, vocal;
+  motif.addNote(0, 480, 60, 80);  // C4
+  vocal.addNote(0, 480, 67, 80);  // G4 (perfect 5th - consonant)
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);
+
+  PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
+
+  // No change expected for consonant interval
+  EXPECT_EQ(motif.notes()[0].note, 60)
+      << "Consonant interval should not be modified";
+}
+
+TEST(PostProcessorTest, FixMotifVocalClashesHandlesNoOverlap) {
+  // Motif and vocal don't overlap in time - no change expected
+  MidiTrack motif, vocal;
+  motif.addNote(0, 480, 60, 80);      // C4 at tick 0-480
+  vocal.addNote(960, 480, 61, 80);    // C#4 at tick 960-1440 (no overlap)
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);
+
+  PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
+
+  // No change expected - notes don't overlap
+  EXPECT_EQ(motif.notes()[0].note, 60)
+      << "Non-overlapping notes should not be modified";
+}
+
+TEST(PostProcessorTest, FixMotifVocalClashesUpdatesProvenance) {
+  // Verify provenance is updated when fixing clashes
+  MidiTrack motif, vocal;
+  motif.addNote(0, 480, 48, 80);  // C4
+  vocal.addNote(0, 480, 47, 80);  // B3 (minor 2nd clash)
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);
+
+  PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
+
+  // Check provenance was updated
+  const auto& note = motif.notes()[0];
+  EXPECT_EQ(note.prov_source, static_cast<uint8_t>(NoteSource::CollisionAvoid))
+      << "Provenance source should be CollisionAvoid";
+  EXPECT_EQ(note.prov_original_pitch, 48)
+      << "Original pitch should be preserved in provenance";
+  EXPECT_EQ(note.prov_chord_degree, 0)
+      << "Chord degree should be recorded";
 }
 
 }  // namespace

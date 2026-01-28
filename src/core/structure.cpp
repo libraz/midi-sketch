@@ -70,6 +70,65 @@ bool getAllowDeviationForType(SectionType type) {
   return getSectionProperties(type).allow_deviation;
 }
 
+// Assign density gradient across Verse→PreChorus→Chorus sequences.
+// Creates progressive energy increase within each sequence:
+// - A (Verse): 80% density - space for melody but maintains arpeggio rhythm
+// - B (PreChorus): 90% density - building tension
+// - Chorus: 100% density - full energy
+// Note: Minimum 80% for sections that might have arpeggios (arpeggio skips notes below 80%)
+// Intro/Outro/Interlude/Chant can go lower since they typically don't have active arpeggios.
+void assignDensityGradient(std::vector<Section>& sections) {
+  if (sections.empty()) return;
+
+  for (size_t idx = 0; idx < sections.size(); ++idx) {
+    auto& section = sections[idx];
+
+    switch (section.type) {
+      case SectionType::A:
+        // Verse: lower density for breathing room (min 80% for arpeggio rhythm)
+        section.density_percent = 80;
+        break;
+
+      case SectionType::B:
+        // PreChorus: building toward chorus
+        section.density_percent = 90;
+        break;
+
+      case SectionType::Chorus:
+        // Chorus: full density
+        section.density_percent = 100;
+        break;
+
+      case SectionType::Intro:
+      case SectionType::Outro:
+        // Bookend sections: moderate density (arpeggios less common here)
+        section.density_percent = 70;
+        break;
+
+      case SectionType::Bridge:
+        // Bridge: contrast section, moderate-high density
+        section.density_percent = 85;
+        break;
+
+      case SectionType::Interlude:
+        // Interlude: breathing room (no active vocals/arpeggios typically)
+        section.density_percent = 60;
+        break;
+
+      case SectionType::MixBreak:
+      case SectionType::Drop:
+        // High-energy sections
+        section.density_percent = 100;
+        break;
+
+      case SectionType::Chant:
+        // Minimal backing
+        section.density_percent = 50;
+        break;
+    }
+  }
+}
+
 // Assign exit patterns based on section type and context within the song.
 // Rules:
 // - Outro sections: Fadeout (velocity decrease)
@@ -302,6 +361,9 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
       break;
   }
 
+  // Assign density gradient for progressive energy buildup
+  assignDensityGradient(sections);
+
   // Assign exit patterns based on section context
   assignExitPatterns(sections);
 
@@ -421,7 +483,8 @@ std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t
     recalculateSectionTicks(sections);
   }
 
-  // Re-assign exit patterns after structure modification
+  // Re-assign density gradient and exit patterns after structure modification
+  assignDensityGradient(sections);
   assignExitPatterns(sections);
 
   return sections;
@@ -515,7 +578,8 @@ void insertCallSections(std::vector<Section>& sections, IntroChant intro_chant,
   // Recalculate ticks
   recalculateSectionTicks(sections);
 
-  // Re-assign exit patterns after call section insertion
+  // Re-assign density gradient and exit patterns after call section insertion
+  assignDensityGradient(sections);
   assignExitPatterns(sections);
 }
 
@@ -629,6 +693,9 @@ std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blue
     current_bar += slot.bars;
     current_tick += slot.bars * TICKS_PER_BAR;
   }
+
+  // Assign density gradient for progressive energy buildup
+  assignDensityGradient(sections);
 
   // Assign exit patterns based on section context
   assignExitPatterns(sections);

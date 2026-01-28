@@ -27,7 +27,8 @@ void TrackCollisionDetector::registerTrack(const MidiTrack& track, TrackRole rol
 
 bool TrackCollisionDetector::isPitchSafe(uint8_t pitch, Tick start, Tick duration,
                                          TrackRole exclude,
-                                         const ChordProgressionTracker* chord_tracker) const {
+                                         const ChordProgressionTracker* chord_tracker,
+                                         bool is_weak_beat) const {
   Tick end = start + duration;
 
   // Get chord context for smarter dissonance detection
@@ -42,6 +43,13 @@ bool TrackCollisionDetector::isPitchSafe(uint8_t pitch, Tick start, Tick duratio
     // Check if notes overlap in time
     if (note.start < end && note.end > start) {
       int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
+
+      // On weak beats, allow major 2nd (2 semitones) as passing tone
+      // This enables non-chord tones on off-beats without flagging them as dissonant
+      if (is_weak_beat && actual_semitones == 2) {
+        continue;  // Major 2nd OK on weak beats
+      }
+
       if (isDissonantActualInterval(actual_semitones, chord_degree)) {
         return false;
       }
@@ -94,6 +102,33 @@ std::vector<int> TrackCollisionDetector::getPitchClassesFromTrackAt(Tick tick,
 
     // Check if note is sounding at this tick
     if (note.start <= tick && note.end > tick) {
+      int pc = note.pitch % 12;
+      // Avoid duplicates
+      bool found = false;
+      for (int existing : pitch_classes) {
+        if (existing == pc) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        pitch_classes.push_back(pc);
+      }
+    }
+  }
+
+  return pitch_classes;
+}
+
+std::vector<int> TrackCollisionDetector::getPitchClassesFromTrackInRange(Tick start, Tick end,
+                                                                          TrackRole role) const {
+  std::vector<int> pitch_classes;
+
+  for (const auto& note : notes_) {
+    if (note.track != role) continue;
+
+    // Check if note overlaps with the range [start, end)
+    if (note.start < end && note.end > start) {
       int pc = note.pitch % 12;
       // Avoid duplicates
       bool found = false;

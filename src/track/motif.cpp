@@ -846,6 +846,10 @@ void generateMotifTrack(MidiTrack& track, Song& song, const GeneratorParams& par
       riff_cache.cached = true;
     }
 
+    // NOTE: Cross-section motif sharing (P2) was designed but disabled to avoid dissonance.
+    // The placeMotifInBridge/placeMotifInFinalChorus functions exist in core/motif.cpp
+    // but need integration with the pitch adjustment pipeline before use.
+
     // Repeat motif across the section
     for (Tick pos = section.start_tick; pos < section_end; pos += motif_length) {
       // Bar coverage tracking: ensure at least one note per bar to prevent full-bar silence

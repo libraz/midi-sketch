@@ -56,7 +56,8 @@ class HarmonyContext : public IHarmonyContext {
 
   void registerTrack(const MidiTrack& track, TrackRole role) override;
 
-  bool isPitchSafe(uint8_t pitch, Tick start, Tick duration, TrackRole exclude) const override;
+  bool isPitchSafe(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
+                   bool is_weak_beat = false) const override;
 
   uint8_t getSafePitch(uint8_t desired, Tick start, Tick duration, TrackRole track, uint8_t low,
                        uint8_t high) const override;
@@ -70,6 +71,9 @@ class HarmonyContext : public IHarmonyContext {
   bool hasBassCollision(uint8_t pitch, Tick start, Tick duration, int threshold = 3) const override;
 
   std::vector<int> getPitchClassesFromTrackAt(Tick tick, TrackRole role) const override;
+
+  std::vector<int> getPitchClassesFromTrackInRange(Tick start, Tick end,
+                                                    TrackRole role) const override;
 
   void registerSecondaryDominant(Tick start, Tick end, int8_t degree) override;
 

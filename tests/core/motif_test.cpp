@@ -13,6 +13,7 @@
 
 #include "core/generator.h"
 #include "core/types.h"
+#include "test_support/stub_harmony_context.h"
 
 namespace midisketch {
 namespace {
@@ -812,6 +813,115 @@ TEST_F(MotifTest, HookContourUsesSmallIntervals) {
           << "Hook contour interval should be <= 7 (perfect 5th) for singability";
     }
   }
+}
+
+// =============================================================================
+// P2: Bridge and FinalChorus Motif Sharing Tests
+// =============================================================================
+
+TEST_F(MotifTest, PlaceMotifInBridgeProducesNotes) {
+  // Create a test motif
+  std::vector<NoteEvent> chorus_notes = {
+      {0, 480, 60, 80},
+      {480, 480, 64, 80},
+      {960, 480, 67, 80},
+      {1440, 480, 72, 80},
+  };
+  Motif motif = extractMotifFromChorus(chorus_notes);
+
+  // Place in a 4-bar bridge section
+  Tick section_start = 0;
+  Tick section_end = 4 * TICKS_PER_BAR;
+  uint8_t base_pitch = 60;
+  uint8_t velocity = 80;
+
+  // Use stub harmony context
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);       // C major chord
+  harmony.setAllPitchesSafe(true);
+
+  auto bridge_notes = placeMotifInBridge(motif, section_start, section_end, base_pitch, velocity,
+                                         rng_, harmony, TrackRole::Motif);
+
+  EXPECT_FALSE(bridge_notes.empty()) << "Bridge should contain notes";
+  // Bridge velocity should be softer (85% of base)
+  for (const auto& note : bridge_notes) {
+    EXPECT_LE(note.velocity, velocity) << "Bridge notes should have reduced velocity";
+  }
+}
+
+TEST_F(MotifTest, PlaceMotifInFinalChorusProducesOctaveDoubling) {
+  // Create a test motif
+  std::vector<NoteEvent> chorus_notes = {
+      {0, 480, 60, 80},
+      {480, 480, 64, 80},
+      {960, 480, 67, 80},
+  };
+  Motif motif = extractMotifFromChorus(chorus_notes);
+
+  // Place in a 4-bar final chorus section
+  Tick section_start = 0;
+  Tick section_end = 4 * TICKS_PER_BAR;
+  uint8_t base_pitch = 60;
+  uint8_t velocity = 80;
+
+  // Use stub harmony context
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);       // C major chord
+  harmony.setAllPitchesSafe(true);
+
+  auto final_notes = placeMotifInFinalChorus(motif, section_start, section_end, base_pitch, velocity,
+                                              harmony, TrackRole::Motif);
+
+  EXPECT_FALSE(final_notes.empty()) << "FinalChorus should contain notes";
+
+  // Count notes - should have more due to octave doubling
+  // Each original note should have an octave double (if within range)
+  size_t expected_min = chorus_notes.size();  // At least original notes per repetition
+  EXPECT_GE(final_notes.size(), expected_min) << "FinalChorus should have octave doubled notes";
+
+  // Check that enhanced velocity is applied
+  bool has_enhanced = false;
+  for (const auto& note : final_notes) {
+    if (note.velocity > velocity) {
+      has_enhanced = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(has_enhanced) << "FinalChorus should have enhanced velocity";
+}
+
+TEST_F(MotifTest, PlaceMotifInBridgeUsesVariation) {
+  // Create a test motif with distinct pitches
+  std::vector<NoteEvent> chorus_notes = {
+      {0, 480, 60, 80},
+      {480, 480, 64, 80},
+      {960, 480, 67, 80},
+      {1440, 480, 72, 80},
+  };
+  Motif original = extractMotifFromChorus(chorus_notes);
+
+  // Generate bridge notes with two different seeds
+  std::mt19937 rng1(12345);
+  std::mt19937 rng2(67890);
+
+  Tick section_start = 0;
+  Tick section_end = 4 * TICKS_PER_BAR;
+
+  // Use stub harmony context
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);       // C major chord
+  harmony.setAllPitchesSafe(true);
+
+  auto bridge1 = placeMotifInBridge(original, section_start, section_end, 60, 80, rng1,
+                                    harmony, TrackRole::Motif);
+  auto bridge2 = placeMotifInBridge(original, section_start, section_end, 60, 80, rng2,
+                                    harmony, TrackRole::Motif);
+
+  // Different seeds may produce different variations (Inverted vs Fragmented)
+  // At minimum, both should produce valid notes
+  EXPECT_FALSE(bridge1.empty()) << "Bridge 1 should have notes";
+  EXPECT_FALSE(bridge2.empty()) << "Bridge 2 should have notes";
 }
 
 }  // namespace

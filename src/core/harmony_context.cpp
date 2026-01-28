@@ -40,9 +40,10 @@ void HarmonyContext::registerTrack(const MidiTrack& track, TrackRole role) {
   collision_detector_.registerTrack(track, role);
 }
 
-bool HarmonyContext::isPitchSafe(uint8_t pitch, Tick start, Tick duration,
-                                 TrackRole exclude) const {
-  return collision_detector_.isPitchSafe(pitch, start, duration, exclude, &chord_tracker_);
+bool HarmonyContext::isPitchSafe(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
+                                 bool is_weak_beat) const {
+  return collision_detector_.isPitchSafe(pitch, start, duration, exclude, &chord_tracker_,
+                                         is_weak_beat);
 }
 
 uint8_t HarmonyContext::getSafePitch(uint8_t desired, Tick start, Tick duration, TrackRole track,
@@ -64,6 +65,11 @@ bool HarmonyContext::hasBassCollision(uint8_t pitch, Tick start, Tick duration,
 
 std::vector<int> HarmonyContext::getPitchClassesFromTrackAt(Tick tick, TrackRole role) const {
   return collision_detector_.getPitchClassesFromTrackAt(tick, role);
+}
+
+std::vector<int> HarmonyContext::getPitchClassesFromTrackInRange(Tick start, Tick end,
+                                                                  TrackRole role) const {
+  return collision_detector_.getPitchClassesFromTrackInRange(start, end, role);
 }
 
 void HarmonyContext::registerSecondaryDominant(Tick start, Tick end, int8_t degree) {

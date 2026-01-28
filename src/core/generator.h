@@ -266,6 +266,35 @@ class Generator {
   void applyDensityProgression();
 
   /// @}
+  /// @name Vocal-First Refinement
+  /// @{
+
+  /**
+   * @brief Represents a clash between vocal and accompaniment tracks.
+   *
+   * Used by refineVocalForAccompaniment() to identify and resolve conflicts.
+   */
+  struct VocalClash {
+    Tick tick;               ///< Position of the clash
+    uint8_t vocal_pitch;     ///< Current vocal pitch
+    uint8_t clashing_pitch;  ///< Pitch from accompaniment track
+    TrackRole clashing_track;  ///< Which track is clashing
+    uint8_t suggested_pitch;   ///< Suggested safe pitch
+  };
+
+  /**
+   * @brief Refine vocal track after accompaniment generation.
+   *
+   * Detects clashes between vocal and accompaniment (minor 2nd, major 7th),
+   * and adjusts vocal pitches to minimize dissonance while preserving melody.
+   * Called automatically at the end of generateWithVocal().
+   *
+   * @param max_iterations Maximum refinement passes (default 2)
+   * @return Number of notes adjusted
+   */
+  int refineVocalForAccompaniment(int max_iterations = 2);
+
+  /// @}
 
  private:
   /// @name State
@@ -388,6 +417,20 @@ class Generator {
    *  Called automatically after track generation if EntryPattern::Stagger is used.
    */
   void applyStaggeredEntryToSections();
+
+  /**
+   * @brief Detect clashes between vocal and accompaniment tracks.
+   * @return Vector of VocalClash describing each clash with suggested fixes
+   */
+  std::vector<VocalClash> detectVocalAccompanimentClashes() const;
+
+  /**
+   * @brief Adjust vocal pitch at a specific tick.
+   * @param tick Position to adjust
+   * @param new_pitch New pitch value
+   * @return true if adjustment was made
+   */
+  bool adjustVocalPitchAt(Tick tick, uint8_t new_pitch);
 
   /** @brief Apply layer schedule to remove notes from inactive bars.
    *

@@ -37,6 +37,40 @@ namespace midisketch {
 
 namespace {
 
+// ============================================================================
+// Bass-Kick Sync Tolerance by Genre
+// ============================================================================
+// Different genres require different tightness of bass-kick sync:
+// - Dance/Electronic/Trap: Very tight sync for punchy grooves
+// - Jazz/RnB: Looser sync for more laid-back feel
+// - Ballad: Loose sync for rubato-like flexibility
+// - Standard: Normal sync
+
+/// Get bass-kick sync tolerance multiplier for a given bass genre.
+/// Returns multiplier for the base tolerance (1.0 = normal, <1.0 = tighter, >1.0 = looser).
+float getBassKickSyncToleranceMultiplier(BassGenre genre) {
+  switch (genre) {
+    case BassGenre::Dance:
+    case BassGenre::Electronic:
+    case BassGenre::Trap808:
+      return 0.6f;  // Tight sync for punchy grooves
+    case BassGenre::Ballad:
+      return 1.5f;  // Loose sync for expressive feel
+    case BassGenre::Jazz:
+    case BassGenre::RnB:
+    case BassGenre::Lofi:
+      return 1.3f;  // Moderately loose for laid-back grooves
+    case BassGenre::Latin:
+      return 0.8f;  // Slightly tight for rhythmic precision
+    case BassGenre::Rock:
+      return 0.9f;  // Slightly tight for driving feel
+    case BassGenre::Standard:
+    case BassGenre::Idol:
+    default:
+      return 1.0f;  // Normal sync
+  }
+}
+
 // Timing aliases for readability in bass patterns.
 // These short names make rhythm notation clearer (e.g., QUARTER instead of TICK_QUARTER).
 constexpr Tick HALF = TICK_HALF;
@@ -1550,20 +1584,26 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
   }
 
   // Post-processing: sync bass notes with kick positions for tighter groove
-  // Tolerance and max adjustment scale with kick density:
-  //   High density (4 kicks/bar, e.g. FourOnFloor) → tight sync (small tolerance/adjust)
-  //   Low density (1 kick/bar, e.g. Sparse) → loose sync (large tolerance/adjust)
+  // Tolerance and max adjustment scale with:
+  //   1. Kick density: High density → tight sync, Low density → loose sync
+  //   2. Genre: Dance/Electronic → tight, Ballad/Jazz → loose
   if (kick_cache != nullptr && !kick_cache->isEmpty()) {
-    // Scale sync_tolerance inversely with kicks_per_bar
-    Tick sync_tolerance = static_cast<Tick>(
+    // Get genre-specific tolerance multiplier
+    BassGenre genre = getMoodBassGenre(params.mood);
+    float genre_multiplier = getBassKickSyncToleranceMultiplier(genre);
+
+    // Scale sync_tolerance inversely with kicks_per_bar, then by genre
+    Tick base_tolerance = static_cast<Tick>(
         TICK_EIGHTH / std::max(kick_cache->kicks_per_bar, 1.0f));
+    Tick sync_tolerance = static_cast<Tick>(base_tolerance * genre_multiplier);
     sync_tolerance = std::clamp(sync_tolerance,
                                 static_cast<Tick>(TICK_SIXTEENTH / 3),
                                 static_cast<Tick>(TICK_EIGHTH));
 
-    // Scale max_adjust based on dominant_interval (musical grid constraint)
+    // Scale max_adjust based on dominant_interval and genre
+    // (tighter genres allow smaller adjustments for precision)
     Tick max_adjust = std::min(
-        static_cast<Tick>(kick_cache->dominant_interval / 16),
+        static_cast<Tick>(kick_cache->dominant_interval / 16 * genre_multiplier),
         static_cast<Tick>(TICK_SIXTEENTH / 2));
 
     auto& notes = track.notes();

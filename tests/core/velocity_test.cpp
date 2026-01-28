@@ -600,36 +600,42 @@ TEST(VelocityTest, CalculateEmotionAwareVelocityWithHighTension) {
 
 TEST(VelocityTest, GetBeatMicroCurve_Beat1Strongest) {
   // Beat 1 (position 0.0) should be the strongest
+  // Index = (0.0 * 4) % 16 = 0 -> kCurve16[0] = 1.10f
   float beat1 = getBeatMicroCurve(0.0f);
-  EXPECT_FLOAT_EQ(beat1, 1.08f);
+  EXPECT_FLOAT_EQ(beat1, 1.10f);
 }
 
 TEST(VelocityTest, GetBeatMicroCurve_Beat2Weak) {
   // Beat 2 (position 1.0) should be weak
+  // Index = (1.0 * 4) % 16 = 4 -> kCurve16[4] = 0.97f
   float beat2 = getBeatMicroCurve(1.0f);
-  EXPECT_FLOAT_EQ(beat2, 0.95f);
+  EXPECT_FLOAT_EQ(beat2, 0.97f);
 }
 
 TEST(VelocityTest, GetBeatMicroCurve_Beat3SecondaryAccent) {
   // Beat 3 (position 2.0) should be medium-strong
+  // Index = (2.0 * 4) % 16 = 8 -> kCurve16[8] = 1.05f
   float beat3 = getBeatMicroCurve(2.0f);
-  EXPECT_FLOAT_EQ(beat3, 1.03f);
+  EXPECT_FLOAT_EQ(beat3, 1.05f);
 }
 
 TEST(VelocityTest, GetBeatMicroCurve_Beat4Weakest) {
   // Beat 4 (position 3.0) should be the weakest
+  // Index = (3.0 * 4) % 16 = 12 -> kCurve16[12] = 0.94f
   float beat4 = getBeatMicroCurve(3.0f);
-  EXPECT_FLOAT_EQ(beat4, 0.92f);
+  EXPECT_FLOAT_EQ(beat4, 0.94f);
 }
 
 TEST(VelocityTest, GetBeatMicroCurve_WrapsCorrectly) {
   // Position 4.0 should wrap to beat 1
+  // Index = (4.0 * 4) % 16 = 16 % 16 = 0 -> kCurve16[0] = 1.10f
   float beat1_wrapped = getBeatMicroCurve(4.0f);
-  EXPECT_FLOAT_EQ(beat1_wrapped, 1.08f);
+  EXPECT_FLOAT_EQ(beat1_wrapped, 1.10f);
 
-  // Position 5.5 should be beat 2 (1.5 -> beat index 1)
+  // Position 5.5: index = (5.5 * 4) % 16 = 22 % 16 = 6 -> kCurve16[6] = 0.93f
+  // This is the 3rd 16th of beat 2 (medium position within beat 2)
   float mid_beat2 = getBeatMicroCurve(5.5f);
-  EXPECT_FLOAT_EQ(mid_beat2, 0.95f);
+  EXPECT_FLOAT_EQ(mid_beat2, 0.93f);
 }
 
 TEST(VelocityTest, ApplyBeatMicroDynamics_ModifiesVelocity) {

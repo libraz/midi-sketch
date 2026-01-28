@@ -7,6 +7,7 @@
 
 #include <algorithm>
 
+#include "core/chord_utils.h"
 #include "core/pitch_utils.h"
 
 namespace midisketch {
@@ -371,6 +372,137 @@ std::vector<NoteEvent> placeMotifInAux(const Motif& motif, Tick section_start, T
 
   // Use the same placement logic as intro
   return placeMotifInIntro(motif, section_start, section_end, base_pitch, aux_velocity);
+}
+
+std::vector<NoteEvent> placeMotifInBridge(const Motif& motif, Tick section_start, Tick section_end,
+                                          uint8_t base_pitch, uint8_t velocity, std::mt19937& rng,
+                                          const IHarmonyContext& harmony, TrackRole track) {
+  // Apply variation for Bridge: 50% Inverted, 50% Fragmented
+  // This creates contrast while maintaining thematic connection
+  std::uniform_int_distribution<int> var_dist(0, 1);
+  MotifVariation variation =
+      (var_dist(rng) == 0) ? MotifVariation::Inverted : MotifVariation::Fragmented;
+
+  Motif varied = applyVariation(motif, variation, 0, rng);
+
+  // Place the varied motif
+  // For Bridge, use slightly softer velocity for contemplative feel
+  uint8_t bridge_velocity = static_cast<uint8_t>(velocity * 0.85f);
+  auto notes = placeMotifInIntro(varied, section_start, section_end, base_pitch, bridge_velocity);
+
+  // Snap each note to chord tone and check for collisions
+  // This matches the working Intro implementation in aux_track.cpp
+  for (auto& note : notes) {
+    int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
+
+    // Step 1: Snap to nearest chord tone (same as Intro)
+    int snapped = nearestChordTonePitch(note.note, chord_degree);
+    snapped = std::clamp(snapped, 36, 108);
+
+    // Step 2: Check for collisions and find safe pitch if needed
+    uint8_t final_pitch = static_cast<uint8_t>(snapped);
+    if (!harmony.isPitchSafe(final_pitch, note.start_tick, note.duration, track)) {
+      final_pitch =
+          harmony.getSafePitch(final_pitch, note.start_tick, note.duration, track, 36, 96);
+    }
+
+    note.note = final_pitch;
+  }
+
+  return notes;
+}
+
+std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_start,
+                                                Tick section_end, uint8_t base_pitch,
+                                                uint8_t velocity, const IHarmonyContext& harmony,
+                                                TrackRole track) {
+  std::vector<NoteEvent> result;
+
+  if (motif.rhythm.empty()) {
+    return result;
+  }
+
+  // Enhanced velocity for climax (boost by 10-15%)
+  uint8_t enhanced_velocity = static_cast<uint8_t>(std::min(127, static_cast<int>(velocity) + 12));
+
+  // Prefer absolute pitches for faithful melodic reproduction
+  bool use_absolute =
+      !motif.absolute_pitches.empty() && motif.absolute_pitches.size() >= motif.rhythm.size();
+
+  // Calculate octave offset to transpose motif to target register
+  int octave_offset = 0;
+  if (use_absolute && !motif.absolute_pitches.empty()) {
+    int sum = 0;
+    for (uint8_t p : motif.absolute_pitches) {
+      sum += p;
+    }
+    int avg_pitch = sum / static_cast<int>(motif.absolute_pitches.size());
+    octave_offset = ((static_cast<int>(base_pitch) - avg_pitch) / 12) * 12;
+  }
+
+  Tick motif_length_ticks = motif.length_beats * TICKS_PER_BEAT;
+  Tick current_start = section_start;
+
+  // Repeat motif until we fill the section
+  while (current_start + motif_length_ticks <= section_end) {
+    size_t note_count = motif.rhythm.size();
+    if (!use_absolute) {
+      note_count = std::min(note_count, motif.contour_degrees.size());
+    }
+
+    for (size_t i = 0; i < note_count; ++i) {
+      const auto& rn = motif.rhythm[i];
+      Tick note_start = current_start + static_cast<Tick>(rn.beat * TICKS_PER_BEAT);
+
+      if (note_start >= section_end) break;
+
+      int raw_pitch;
+      if (use_absolute) {
+        raw_pitch = static_cast<int>(motif.absolute_pitches[i]) + octave_offset;
+      } else {
+        raw_pitch = static_cast<int>(base_pitch) + motif.contour_degrees[i];
+      }
+
+      // Snap to scale first
+      raw_pitch = snapToNearestScaleTone(raw_pitch, 0);
+      Tick duration = rn.eighths * (TICKS_PER_BEAT / 2);
+
+      // Get chord degree at this tick and snap to chord tone
+      int8_t chord_degree = harmony.getChordDegreeAt(note_start);
+      int snapped = nearestChordTonePitch(raw_pitch, chord_degree);
+      snapped = std::clamp(snapped, 36, 108);
+
+      // Check for collisions and find safe pitch if needed
+      uint8_t final_pitch = static_cast<uint8_t>(snapped);
+      if (!harmony.isPitchSafe(final_pitch, note_start, duration, track)) {
+        final_pitch = harmony.getSafePitch(final_pitch, note_start, duration, track, 36, 96);
+      }
+
+      // Primary note
+      NoteEvent note;
+      note.start_tick = note_start;
+      note.duration = duration;
+      note.note = final_pitch;
+      note.velocity = enhanced_velocity;
+      result.push_back(note);
+
+      // Octave doubling for climactic impact - only add if within range AND safe
+      int octave_pitch = final_pitch + 12;
+      if (octave_pitch <= 108 && harmony.isPitchSafe(static_cast<uint8_t>(octave_pitch), note_start,
+                                                     duration, track)) {
+        NoteEvent octave_note;
+        octave_note.start_tick = note_start;
+        octave_note.duration = duration;
+        octave_note.note = static_cast<uint8_t>(octave_pitch);
+        octave_note.velocity = static_cast<uint8_t>(enhanced_velocity * 0.85f);  // Slightly softer
+        result.push_back(octave_note);
+      }
+    }
+
+    current_start += motif_length_ticks;
+  }
+
+  return result;
 }
 
 }  // namespace midisketch
