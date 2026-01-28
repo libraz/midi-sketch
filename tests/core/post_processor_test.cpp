@@ -759,5 +759,208 @@ TEST_F(ChorusDropTest, DrumHitCrashHasPostProcessProvenance) {
 
 #endif  // MIDISKETCH_NOTE_PROVENANCE
 
+// ============================================================================
+// Phase 3: Micro-Timing Offset Tests
+// ============================================================================
+
+TEST(MicroTimingTest, VocalTimingVariesByPhrasePosition) {
+  // Test that vocal timing offset varies by phrase position when sections provided
+  MidiTrack vocal, bass, drums;
+
+  // Create 4-bar section
+  std::vector<Section> sections;
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 4;
+  sections.push_back(section);
+
+  // Add notes at different phrase positions
+  // Bar 0 (phrase start) - should get +8 offset
+  Tick phrase_start_tick = 0;
+  vocal.addNote(phrase_start_tick, TICKS_PER_BEAT, 60, 80);
+
+  // Bar 1-2 (phrase middle) - should get +4 offset
+  Tick phrase_middle_tick = TICKS_PER_BAR * 2;
+  vocal.addNote(phrase_middle_tick, TICKS_PER_BEAT, 62, 80);
+
+  // Bar 3 (phrase end) - should get 0 offset
+  Tick phrase_end_tick = TICKS_PER_BAR * 3;
+  vocal.addNote(phrase_end_tick, TICKS_PER_BEAT, 64, 80);
+
+  // Record original positions
+  Tick orig_start = vocal.notes()[0].start_tick;
+  Tick orig_middle = vocal.notes()[1].start_tick;
+  Tick orig_end = vocal.notes()[2].start_tick;
+
+  // Apply micro-timing with sections
+  PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, &sections);
+
+  // Phrase start should have largest forward offset (+8)
+  Tick new_start = vocal.notes()[0].start_tick;
+  EXPECT_EQ(new_start, orig_start + 8) << "Phrase start should have +8 offset";
+
+  // Phrase middle should have medium offset (+4)
+  Tick new_middle = vocal.notes()[1].start_tick;
+  EXPECT_EQ(new_middle, orig_middle + 4) << "Phrase middle should have +4 offset";
+
+  // Phrase end should have no offset (0)
+  Tick new_end = vocal.notes()[2].start_tick;
+  EXPECT_EQ(new_end, orig_end) << "Phrase end should have 0 offset";
+}
+
+TEST(MicroTimingTest, VocalTimingUniformWithoutSections) {
+  // Without sections, vocal should get uniform +4 offset
+  MidiTrack vocal, bass, drums;
+
+  Tick start_tick = TICKS_PER_BAR;
+  vocal.addNote(start_tick, TICKS_PER_BEAT, 60, 80);
+
+  Tick orig = vocal.notes()[0].start_tick;
+
+  // Apply without sections (nullptr)
+  PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, nullptr);
+
+  // Should have uniform +4 offset
+  EXPECT_EQ(vocal.notes()[0].start_tick, orig + 4) << "Without sections, vocal gets +4";
+}
+
+TEST(MicroTimingTest, BassAlwaysLaysBack) {
+  // Bass should always get -4 offset regardless of sections
+  MidiTrack vocal, bass, drums;
+
+  std::vector<Section> sections;
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 4;
+  sections.push_back(section);
+
+  Tick start_tick = TICKS_PER_BAR;
+  bass.addNote(start_tick, TICKS_PER_BEAT, 36, 80);
+
+  Tick orig = bass.notes()[0].start_tick;
+
+  PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, &sections);
+
+  // Bass should lay back (-4)
+  EXPECT_EQ(bass.notes()[0].start_tick, orig - 4) << "Bass should lay back by 4 ticks";
+}
+
+TEST(MicroTimingTest, DrumTimingByInstrument) {
+  // Hi-hat pushes ahead, snare lays back, kick stays on grid
+  MidiTrack vocal, bass, drums;
+
+  constexpr uint8_t HH = 42;  // Closed hi-hat
+  constexpr uint8_t SD = 38;  // Snare
+  constexpr uint8_t BD = 36;  // Kick
+
+  Tick start = TICKS_PER_BAR;
+  drums.addNote(start, 60, HH, 80);
+  drums.addNote(start, 60, SD, 80);
+  drums.addNote(start, 60, BD, 80);
+
+  PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, nullptr);
+
+  // Find each drum note
+  for (const auto& note : drums.notes()) {
+    if (note.note == HH) {
+      EXPECT_EQ(note.start_tick, start + 8) << "Hi-hat should push ahead by 8";
+    } else if (note.note == SD) {
+      EXPECT_EQ(note.start_tick, start - 8) << "Snare should lay back by 8";
+    } else if (note.note == BD) {
+      EXPECT_EQ(note.start_tick, start) << "Kick should stay on grid";
+    }
+  }
+}
+
+// ============================================================================
+// Drive Feel Integration Tests for Micro-Timing
+// ============================================================================
+
+TEST(MicroTimingTest, DriveFeelScalesTimingOffsets) {
+  // Test that drive_feel properly scales timing offsets
+  constexpr uint8_t HH = 42;
+
+  Tick start = TICKS_PER_BAR;
+
+  // Laid-back (drive=0): offsets should be halved (0.5x)
+  MidiTrack vocal_laid, bass_laid, drums_laid;
+  drums_laid.addNote(start, 60, HH, 80);
+  bass_laid.addNote(start, 60, 36, 80);
+  PostProcessor::applyMicroTimingOffsets(vocal_laid, bass_laid, drums_laid, nullptr, 0);
+
+  // Neutral (drive=50): offsets should be 1.0x
+  MidiTrack vocal_neutral, bass_neutral, drums_neutral;
+  drums_neutral.addNote(start, 60, HH, 80);
+  bass_neutral.addNote(start, 60, 36, 80);
+  PostProcessor::applyMicroTimingOffsets(vocal_neutral, bass_neutral, drums_neutral, nullptr, 50);
+
+  // Aggressive (drive=100): offsets should be 1.5x
+  MidiTrack vocal_agg, bass_agg, drums_agg;
+  drums_agg.addNote(start, 60, HH, 80);
+  bass_agg.addNote(start, 60, 36, 80);
+  PostProcessor::applyMicroTimingOffsets(vocal_agg, bass_agg, drums_agg, nullptr, 100);
+
+  // Hi-hat offsets: base=8, so laid-back=4, neutral=8, aggressive=12
+  EXPECT_EQ(drums_laid.notes()[0].start_tick, start + 4)
+      << "Laid-back hi-hat should push ahead by 4 (0.5x of 8)";
+  EXPECT_EQ(drums_neutral.notes()[0].start_tick, start + 8)
+      << "Neutral hi-hat should push ahead by 8 (1.0x)";
+  EXPECT_EQ(drums_agg.notes()[0].start_tick, start + 12)
+      << "Aggressive hi-hat should push ahead by 12 (1.5x of 8)";
+
+  // Bass offsets: base=-4, so laid-back=-2, neutral=-4, aggressive=-6
+  EXPECT_EQ(bass_laid.notes()[0].start_tick, start - 2)
+      << "Laid-back bass should lay back by 2 (0.5x of 4)";
+  EXPECT_EQ(bass_neutral.notes()[0].start_tick, start - 4)
+      << "Neutral bass should lay back by 4 (1.0x)";
+  EXPECT_EQ(bass_agg.notes()[0].start_tick, start - 6)
+      << "Aggressive bass should lay back by 6 (1.5x of 4)";
+}
+
+TEST(MicroTimingTest, DriveFeelAffectsVocalPhraseOffsets) {
+  // Test that drive_feel scales vocal phrase-position offsets
+  MidiTrack vocal, bass, drums;
+
+  std::vector<Section> sections;
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 4;
+  sections.push_back(section);
+
+  // Add note at phrase start (bar 0)
+  Tick phrase_start = 0;
+  vocal.addNote(phrase_start, TICKS_PER_BEAT, 60, 80);
+
+  Tick orig = vocal.notes()[0].start_tick;
+
+  // With aggressive drive (100), offset should be 1.5x: base 8 * 1.5 = 12
+  PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, &sections, 100);
+
+  EXPECT_EQ(vocal.notes()[0].start_tick, orig + 12)
+      << "Aggressive drive should push phrase start ahead by 12 (1.5x of 8)";
+}
+
+TEST(MicroTimingTest, DefaultDriveFeelMatchesNeutral) {
+  constexpr uint8_t HH = 42;
+  Tick start = TICKS_PER_BAR;
+
+  // Default (no drive_feel specified)
+  MidiTrack vocal_def, bass_def, drums_def;
+  drums_def.addNote(start, 60, HH, 80);
+  PostProcessor::applyMicroTimingOffsets(vocal_def, bass_def, drums_def, nullptr);
+
+  // Explicit neutral (drive_feel = 50)
+  MidiTrack vocal_neutral, bass_neutral, drums_neutral;
+  drums_neutral.addNote(start, 60, HH, 80);
+  PostProcessor::applyMicroTimingOffsets(vocal_neutral, bass_neutral, drums_neutral, nullptr, 50);
+
+  // Both should have same offset
+  EXPECT_EQ(drums_def.notes()[0].start_tick, drums_neutral.notes()[0].start_tick)
+      << "Default drive_feel should match neutral (50)";
+}
+
 }  // namespace
 }  // namespace midisketch

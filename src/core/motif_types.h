@@ -47,13 +47,20 @@ enum class MotifRepeatScope : uint8_t {
 /// Only active when composition_style = BackgroundMotif.
 struct MotifParams {
   MotifLength length = MotifLength::Bars2;
-  uint8_t note_count = 4;      ///< 3, 4, or 5
+  uint8_t note_count = 6;      ///< 3-8 notes per motif cycle
   bool register_high = false;  ///< false=mid, true=high
   MotifRhythmDensity rhythm_density = MotifRhythmDensity::Medium;
   MotifMotion motion = MotifMotion::Stepwise;
   MotifRepeatScope repeat_scope = MotifRepeatScope::FullSong;
   bool octave_layering_chorus = true;  ///< Double at chorus
   bool velocity_fixed = true;          ///< Fixed velocity (groove via drums)
+
+  /// Melodic freedom in RhythmSync mode (0.0-1.0).
+  /// 0.0 = all notes snapped to chord tones (root, 3rd, 5th)
+  /// 1.0 = all scale tones allowed (includes passing tones: 2nd, 4th, 6th, 7th)
+  /// Default 0.4 allows some passing tones for melodic interest while
+  /// maintaining harmonic stability appropriate for background motifs.
+  float melodic_freedom = 0.4f;
 };
 
 /// @brief Background motif specific chord constraints.

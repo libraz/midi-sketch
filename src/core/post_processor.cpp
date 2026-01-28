@@ -8,6 +8,7 @@
 #include <algorithm>
 
 #include "core/note_factory.h"  // for NoteSource enum
+#include "core/velocity.h"      // for DriveMapping
 
 namespace midisketch {
 
@@ -145,11 +146,76 @@ void PostProcessor::applySectionAwareVelocityHumanization(
   }
 }
 
+namespace {
+
+/// @brief Get phrase position for a given tick within sections.
+/// @param tick Note start tick
+/// @param sections Song sections for phrase boundary detection
+/// @return Phrase position (Start, Middle, or End)
+PhrasePosition getPhrasePosition(Tick tick, const std::vector<Section>& sections) {
+  constexpr int PHRASE_BARS = 4;
+
+  // Find the section containing this tick
+  for (const auto& section : sections) {
+    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    if (tick >= section.start_tick && tick < section_end) {
+      // Calculate position within 4-bar phrase
+      Tick relative = tick - section.start_tick;
+      int bar_in_section = static_cast<int>(relative / TICKS_PER_BAR);
+      int bar_in_phrase = bar_in_section % PHRASE_BARS;
+
+      if (bar_in_phrase == 0) {
+        return PhrasePosition::Start;  // First bar of phrase
+      } else if (bar_in_phrase >= PHRASE_BARS - 1) {
+        return PhrasePosition::End;    // Last bar of phrase
+      } else {
+        return PhrasePosition::Middle; // Middle bars
+      }
+    }
+  }
+
+  return PhrasePosition::Middle;  // Default fallback
+}
+
+/// @brief Get vocal timing offset based on phrase position.
+/// @param pos Phrase position
+/// @param timing_mult Timing multiplier from drive_feel
+/// @return Timing offset in ticks (positive = push ahead)
+int getVocalTimingOffset(PhrasePosition pos, float timing_mult) {
+  // Base offsets scaled by drive_feel:
+  // - Low drive (0): offsets reduced by 0.5x for laid-back feel
+  // - Neutral (50): 1.0x (default behavior)
+  // - High drive (100): offsets increased by 1.5x for driving feel
+  int base_start = 8;
+  int base_middle = 4;
+  int base_end = 0;
+
+  switch (pos) {
+    case PhrasePosition::Start:
+      return static_cast<int>(base_start * timing_mult);
+    case PhrasePosition::Middle:
+      return static_cast<int>(base_middle * timing_mult);
+    case PhrasePosition::End:
+      return base_end;  // Phrase end always at 0 regardless of drive
+  }
+  return static_cast<int>(base_middle * timing_mult);  // Default
+}
+
+}  // namespace
+
 void PostProcessor::applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass,
-                                             MidiTrack& drum_track) {
+                                             MidiTrack& drum_track,
+                                             const std::vector<Section>* sections,
+                                             uint8_t drive_feel) {
   // Per-instrument timing offsets create the "pocket" feel.
   // Positive = push (ahead of beat), negative = lay back (behind beat).
   // Values in ticks (at 480 ticks/beat, 8 ticks ≈ 4ms at 120 BPM).
+  //
+  // drive_feel scales all timing offsets:
+  // - Low drive (0): 0.5x offsets for laid-back feel
+  // - Neutral (50): 1.0x (default behavior)
+  // - High drive (100): 1.5x offsets for driving feel
+  float timing_mult = DriveMapping::getTimingMultiplier(drive_feel);
 
   // Helper to apply offset to all notes in a track
   auto applyOffset = [](MidiTrack& track, int offset) {
@@ -163,9 +229,10 @@ void PostProcessor::applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass,
     }
   };
 
-  // Drum instrument offsets (by MIDI note number)
-  constexpr int HH_OFFSET = 8;    // Hi-hat slightly ahead (driving feel)
-  constexpr int SD_OFFSET = -8;   // Snare slightly behind (relaxed pocket)
+  // Drum instrument base offsets (by MIDI note number)
+  constexpr int HH_BASE_OFFSET = 8;    // Hi-hat slightly ahead (driving feel)
+  constexpr int SD_BASE_OFFSET = -8;   // Snare slightly behind (relaxed pocket)
+  constexpr int BASS_BASE_OFFSET = -4; // Bass lays back slightly
 
   // GM drum note numbers
   constexpr uint8_t BD_NOTE = 36;
@@ -174,14 +241,19 @@ void PostProcessor::applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass,
   constexpr uint8_t HHO_NOTE = 46;
   constexpr uint8_t HHF_NOTE = 44;
 
+  // Scale offsets by drive_feel
+  int hh_offset = static_cast<int>(HH_BASE_OFFSET * timing_mult);
+  int sd_offset = static_cast<int>(SD_BASE_OFFSET * timing_mult);
+  int bass_offset = static_cast<int>(BASS_BASE_OFFSET * timing_mult);
+
   // Apply per-instrument offsets to drum track
   auto& drum_notes = drum_track.notes();
   for (auto& note : drum_notes) {
     int offset = 0;
     if (note.note == HHC_NOTE || note.note == HHO_NOTE || note.note == HHF_NOTE) {
-      offset = HH_OFFSET;
+      offset = hh_offset;
     } else if (note.note == SD_NOTE) {
-      offset = SD_OFFSET;
+      offset = sd_offset;
     }
     // BD_NOTE stays on grid (anchor)
     (void)BD_NOTE;
@@ -194,9 +266,32 @@ void PostProcessor::applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass,
     }
   }
 
-  // Melodic track offsets
-  applyOffset(vocal, 4);   // Vocal pushes slightly ahead
-  applyOffset(bass, -4);   // Bass lays back slightly
+  // Bass: always lays back slightly (scaled by drive_feel)
+  applyOffset(bass, bass_offset);
+
+  // Vocal: phrase-position-aware timing
+  // When sections are provided, vary timing based on position within 4-bar phrases:
+  // - Start of phrase: push ahead (+8) for energy/drive
+  // - Middle of phrase: neutral (+4, original behavior)
+  // - End of phrase: lay back (0) for breath/relaxation
+  // All offsets are scaled by drive_feel
+  if (sections != nullptr && !sections->empty() && !vocal.empty()) {
+    auto& vocal_notes = vocal.notes();
+    for (auto& note : vocal_notes) {
+      PhrasePosition pos = getPhrasePosition(note.start_tick, *sections);
+      int offset = getVocalTimingOffset(pos, timing_mult);
+      if (offset != 0) {
+        int new_tick = static_cast<int>(note.start_tick) + offset;
+        if (new_tick > 0) {
+          note.start_tick = static_cast<Tick>(new_tick);
+        }
+      }
+    }
+  } else {
+    // Fallback: apply uniform offset (original behavior, scaled by drive_feel)
+    int vocal_offset = static_cast<int>(4 * timing_mult);
+    applyOffset(vocal, vocal_offset);
+  }
 }
 
 // ============================================================================

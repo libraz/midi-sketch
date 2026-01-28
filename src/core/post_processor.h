@@ -15,6 +15,14 @@
 
 namespace midisketch {
 
+/// @brief Position within a 4-bar phrase for timing adjustments.
+/// Used by applyMicroTimingOffsets to vary timing based on phrase position.
+enum class PhrasePosition {
+  Start,   ///< First bar of phrase (push ahead for energy)
+  Middle,  ///< Middle bars (neutral timing)
+  End      ///< Last bar of phrase (lay back for breath)
+};
+
 // Applies post-processing effects to generated tracks.
 // Handles humanization (timing/velocity variation) and transition dynamics.
 class PostProcessor {
@@ -46,10 +54,20 @@ class PostProcessor {
   // HH pushed slightly ahead (+8 ticks), Snare slightly behind (-8 ticks),
   // Bass lays back slightly (-4 ticks), Vocal pushes ahead (+4 ticks).
   // These offsets create the "pocket" feel of a real rhythm section.
+  //
+  // When sections are provided, vocal timing varies by phrase position:
+  // - Phrase start: +8 ticks (push ahead for energy)
+  // - Phrase middle: +4 ticks (neutral)
+  // - Phrase end: 0 ticks (lay back for breath)
+  //
   // @param vocal Vocal track (push ahead)
   // @param bass Bass track (lay back)
   // @param drum_track Drums track (per-instrument offsets)
-  static void applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass, MidiTrack& drum_track);
+  // @param sections Optional section info for phrase-aware vocal timing
+  // @param drive_feel Drive feel value (0-100), scales timing offset intensity
+  static void applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass, MidiTrack& drum_track,
+                                       const std::vector<Section>* sections = nullptr,
+                                       uint8_t drive_feel = 50);
 
   // Fixes vocal overlaps that may be introduced by humanization.
   // Singers can only sing one note at a time.

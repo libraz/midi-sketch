@@ -60,6 +60,12 @@ class MelodyDesigner {
     // Behavioral Loop support
     bool addictive_mode = false;  ///< Enable Behavioral Loop mode (fixed patterns)
 
+    // Vocal groove feel for syncopation control
+    VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;  ///< Affects syncopation weight
+
+    // Drive feel for timing and syncopation modulation
+    uint8_t drive_feel = 50;  ///< Drive feel (0=laid-back, 50=neutral, 100=aggressive)
+
     // ========================================================================
     // Task 5-2: Internal 4-Stage Structure within Section
     // ========================================================================
@@ -327,12 +333,14 @@ class MelodyDesigner {
    * @param thirtysecond_ratio Ratio of 32nd notes (0.0-1.0)
    * @param rng Random number generator
    * @param paradigm Generation paradigm (affects grid quantization)
+   * @param syncopation_weight Syncopation probability (0.0-0.35, default 0.15)
    * @return Vector of rhythm positions for the phrase
    */
   std::vector<RhythmNote> generatePhraseRhythm(
       const MelodyTemplate& tmpl, uint8_t phrase_beats, float density_modifier,
       float thirtysecond_ratio, std::mt19937& rng,
-      GenerationParadigm paradigm = GenerationParadigm::Traditional);
+      GenerationParadigm paradigm = GenerationParadigm::Traditional,
+      float syncopation_weight = 0.15f);
 
   /**
    * @brief Select pitch for locked rhythm generation.

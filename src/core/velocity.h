@@ -139,15 +139,13 @@ struct VelocityBalance {
 /**
  * @brief Get velocity multiplier for bar position within a section.
  *
- * Implements 4-bar phrase dynamics (build→hit pattern) and section-level
- * crescendo for Chorus sections. This adds subtle dynamics that prevent
- * sections from sounding flat.
+ * Implements 4-bar phrase dynamics (build→hit pattern) using continuous
+ * cosine interpolation for smooth transitions. Section-level crescendo
+ * is applied for Chorus sections.
  *
- * The 4-bar phrase pattern:
- * - Bar 0: 0.75 (setup)
- * - Bar 1: 0.83 (build)
- * - Bar 2: 0.92 (anticipation)
- * - Bar 3: 1.00 (hit)
+ * The 4-bar phrase pattern (continuous curve from 0.75 to 1.00):
+ * - Uses cosine interpolation for natural S-curve acceleration
+ * - No discrete steps - velocity changes smoothly throughout phrase
  *
  * @param bar_in_section Bar number within the section (0-indexed)
  * @param total_bars Total number of bars in the section
@@ -300,16 +298,22 @@ void applyAccentPatterns(MidiTrack& track, const std::vector<Section>& sections)
 float getBeatMicroCurve(float beat_position);
 
 /**
- * @brief Apply phrase-end decay to notes.
+ * @brief Apply phrase-end decay and duration stretch to notes.
  *
- * Reduces velocity in the last beat of 4-bar phrases for natural breathing.
- * This creates a subtle exhale feeling at phrase boundaries, making the
- * melody sound more human and less machine-generated.
+ * Reduces velocity and extends duration in the last beat of 4-bar phrases
+ * for natural breathing. This creates a subtle exhale feeling at phrase
+ * boundaries, making the melody sound more human and less machine-generated.
+ *
+ * Duration stretch is section-dependent:
+ * - Bridge/Outro: 1.08x (stronger expression for emotional sections)
+ * - Other sections: 1.05x (subtle stretch)
  *
  * @param track Track to modify (in-place)
  * @param sections Sections for phrase boundary detection
+ * @param drive_feel Drive feel value (0-100), affects phrase-end duration stretch
  */
-void applyPhraseEndDecay(MidiTrack& track, const std::vector<Section>& sections);
+void applyPhraseEndDecay(MidiTrack& track, const std::vector<Section>& sections,
+                         uint8_t drive_feel = 50);
 
 /**
  * @brief Apply beat-level micro-dynamics to a track.
@@ -320,6 +324,87 @@ void applyPhraseEndDecay(MidiTrack& track, const std::vector<Section>& sections)
  * @param track Track to modify (in-place)
  */
 void applyBeatMicroDynamics(MidiTrack& track);
+
+// ============================================================================
+// Syncopation Weight
+// ============================================================================
+
+/**
+ * @brief Get syncopation weight based on vocal groove feel and section type.
+ *
+ * Combines VocalGrooveFeel with section-aware adjustments for natural
+ * rhythmic variation across the song.
+ *
+ * @param feel Vocal groove feel setting
+ * @param section Section type (B sections suppress syncopation for buildup)
+ * @param drive_feel Drive feel value (0-100), boosts syncopation at higher values
+ * @return Syncopation weight (0.0-0.35)
+ */
+float getSyncopationWeight(VocalGrooveFeel feel, SectionType section, uint8_t drive_feel = 50);
+
+// ============================================================================
+// Drive Feel Mapping
+// ============================================================================
+
+/**
+ * @brief Utility functions to map drive_feel (0-100) to various parameters.
+ *
+ * Drive controls the "forward motion" of the music:
+ * - 0 = laid-back (relaxed, behind the beat)
+ * - 50 = neutral (default)
+ * - 100 = aggressive (driving, ahead of the beat)
+ */
+namespace DriveMapping {
+
+/**
+ * @brief Get timing offset multiplier based on drive feel.
+ * @param drive Drive feel value (0-100)
+ * @return Multiplier for timing offsets (0.5-1.5)
+ *         - drive=0: 0.5 (half the push, more laid-back)
+ *         - drive=50: 1.0 (neutral)
+ *         - drive=100: 1.5 (stronger push, more driving)
+ */
+inline float getTimingMultiplier(uint8_t drive) {
+  return 0.5f + drive * 0.01f;  // 0.5 to 1.5
+}
+
+/**
+ * @brief Get velocity attack boost based on drive feel.
+ * @param drive Drive feel value (0-100)
+ * @return Multiplier for attack velocity (0.9-1.1)
+ *         - drive=0: 0.9 (softer attacks)
+ *         - drive=50: 1.0 (neutral)
+ *         - drive=100: 1.1 (harder attacks)
+ */
+inline float getVelocityAttack(uint8_t drive) {
+  return 0.9f + drive * 0.002f;  // 0.9 to 1.1
+}
+
+/**
+ * @brief Get syncopation boost based on drive feel.
+ * @param drive Drive feel value (0-100)
+ * @return Multiplier for syncopation weight (0.8-1.2)
+ *         - drive=0: 0.8 (less syncopation, more on-beat)
+ *         - drive=50: 1.0 (neutral)
+ *         - drive=100: 1.2 (more syncopation, more groove)
+ */
+inline float getSyncopationBoost(uint8_t drive) {
+  return 0.8f + drive * 0.004f;  // 0.8 to 1.2
+}
+
+/**
+ * @brief Get phrase-end duration stretch based on drive feel.
+ * @param drive Drive feel value (0-100)
+ * @return Duration stretch multiplier (1.08-1.02)
+ *         - drive=0: 1.08 (longer phrase endings, more breath)
+ *         - drive=50: 1.05 (neutral)
+ *         - drive=100: 1.02 (shorter phrase endings, more urgent)
+ */
+inline float getPhraseEndStretch(uint8_t drive) {
+  return 1.08f - drive * 0.0006f;  // 1.08 to 1.02
+}
+
+}  // namespace DriveMapping
 
 // ============================================================================
 // EmotionCurve-based Velocity Calculations

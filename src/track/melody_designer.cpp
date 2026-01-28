@@ -17,6 +17,7 @@
 #include "core/phrase_patterns.h"
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
+#include "core/velocity.h"
 #include "core/vocal_style_profile.h"
 
 namespace midisketch {
@@ -776,9 +777,14 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   // Create NoteFactory for provenance tracking
   NoteFactory factory(harmony);
 
+  // Calculate syncopation weight based on vocal groove, section type, and drive_feel
+  // drive_feel modulates syncopation: laid-back = less, aggressive = more
+  float syncopation_weight = getSyncopationWeight(ctx.vocal_groove, ctx.section_type, ctx.drive_feel);
+
   // Generate rhythm pattern with section density modifier and 32nd note ratio
-  std::vector<RhythmNote> rhythm = generatePhraseRhythm(tmpl, phrase_beats, ctx.density_modifier,
-                                                        ctx.thirtysecond_ratio, rng, ctx.paradigm);
+  std::vector<RhythmNote> rhythm = generatePhraseRhythm(
+      tmpl, phrase_beats, ctx.density_modifier, ctx.thirtysecond_ratio, rng, ctx.paradigm,
+      syncopation_weight);
 
   // Get chord degree at phrase start
   int8_t start_chord_degree = harmony.getChordDegreeAt(phrase_start);
@@ -1232,16 +1238,22 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     if (chord_change > 0 && chord_change > note_start &&
         note_start + note_duration > chord_change) {
       // Shorten note to end just before chord change
-      Tick new_duration = chord_change - note_start - 10;  // Small gap before chord change
-      if (new_duration >= TICK_SIXTEENTH) {
-        note_duration = new_duration;
+      // Guard: ensure chord_change - note_start > 10 to avoid underflow
+      if (chord_change > note_start + 10) {
+        Tick new_duration = chord_change - note_start - 10;  // Small gap before chord change
+        if (new_duration >= TICK_SIXTEENTH) {
+          note_duration = new_duration;
+        }
       }
     }
 
     // Also clamp to phrase boundary for phrase ending
     Tick phrase_end = phrase_start + phrase_beats * TICKS_PER_BEAT;
     if (note_start + note_duration > phrase_end) {
-      note_duration = phrase_end - note_start;
+      // Guard: ensure phrase_end > note_start to avoid underflow
+      if (phrase_end > note_start) {
+        note_duration = phrase_end - note_start;
+      }
       // Ensure minimum duration (16th note) for musical validity
       if (note_duration < TICK_SIXTEENTH) {
         note_duration = TICK_SIXTEENTH;
@@ -1609,9 +1621,12 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       Tick chord_change = harmony.getNextChordChangeTick(current_tick);
       if (chord_change > 0 && chord_change > current_tick &&
           current_tick + actual_duration > chord_change) {
-        Tick new_duration = chord_change - current_tick - 10;
-        if (new_duration >= TICK_SIXTEENTH) {
-          actual_duration = new_duration;
+        // Guard: ensure chord_change - current_tick > 10 to avoid underflow
+        if (chord_change > current_tick + 10) {
+          Tick new_duration = chord_change - current_tick - 10;
+          if (new_duration >= TICK_SIXTEENTH) {
+            actual_duration = new_duration;
+          }
         }
       }
 
@@ -2287,7 +2302,8 @@ int MelodyDesigner::calculateTargetPitch(const MelodyTemplate& tmpl, const Secti
 
 std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
     const MelodyTemplate& tmpl, uint8_t phrase_beats, float density_modifier,
-    float thirtysecond_ratio, std::mt19937& rng, GenerationParadigm paradigm) {
+    float thirtysecond_ratio, std::mt19937& rng, GenerationParadigm paradigm,
+    float syncopation_weight) {
   std::vector<RhythmNote> rhythm;
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
@@ -2329,6 +2345,27 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
     // Pop music principle: strong beats should have longer, more stable notes
     float frac = current_beat - std::floor(current_beat);
     bool is_on_beat = frac < 0.01f;
+
+    // Syncopation: with probability based on syncopation_weight, shift off-beat
+    // This creates rhythmic interest by placing notes on upbeats (8th note offset)
+    // Only apply at the start of each beat (not within an off-beat already)
+    // Guard: don't syncopate if it would push us past the phrase body end
+    //
+    // Note: Only consume RNG when syncopation is possible to avoid changing
+    // downstream generation for the default case (syncopation_weight = 0).
+    bool apply_syncopation = false;
+    if (is_on_beat && syncopation_weight > 0.0f &&
+        current_beat + 0.5f < phrase_body_end) {
+      float synco_roll = dist(rng);
+      if (synco_roll < syncopation_weight) {
+        // Skip this strong beat, advance to the off-beat (8th note = 0.5 beats)
+        apply_syncopation = true;
+        current_beat += 0.5f;
+        frac = 0.5f;
+        is_on_beat = false;
+      }
+    }
+    (void)apply_syncopation;  // Suppress unused variable warning
 
     // Determine note duration (in eighths, float to support 32nds)
     float eighths;

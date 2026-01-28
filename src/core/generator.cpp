@@ -926,7 +926,8 @@ void Generator::applyTransitionDynamics() {
     }
   }
   // Phrase-end decay for vocal track to create natural exhale at phrase boundaries
-  midisketch::applyPhraseEndDecay(song_.vocal(), sections);
+  // drive_feel affects duration stretch: laid-back = longer endings, aggressive = shorter
+  midisketch::applyPhraseEndDecay(song_.vocal(), sections, params_.drive_feel);
 
   // Apply transition dynamics (section endings)
   midisketch::applyAllTransitionDynamics(tracks, sections);
@@ -1012,7 +1013,10 @@ void Generator::applyHumanization() {
   PostProcessor::applySectionAwareVelocityHumanization(tracks, sections, rng_);
 
   // Apply per-instrument micro-timing offsets for groove pocket
-  PostProcessor::applyMicroTimingOffsets(song_.vocal(), song_.bass(), song_.drums());
+  // Pass sections for phrase-aware vocal timing (Start: +8, Middle: +4, End: 0)
+  // drive_feel scales timing offsets: laid-back = reduced, aggressive = increased
+  PostProcessor::applyMicroTimingOffsets(song_.vocal(), song_.bass(), song_.drums(), &sections,
+                                          params_.drive_feel);
 
   PostProcessor::fixVocalOverlaps(song_.vocal());
 }

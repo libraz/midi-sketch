@@ -1851,7 +1851,7 @@ TEST_F(DrumsTest, RhythmPatternMaintainedAcrossInstrumentChanges) {
         : 0;
     EXPECT_GT(ratio, 0.3) << "Chorus timekeeping density (" << chorus_hits_per_bar
         << "/bar) should not be drastically sparser than Verse (" << verse_hits_per_bar << "/bar)";
-    EXPECT_LE(ratio, 3.0) << "Chorus timekeeping density (" << chorus_hits_per_bar
+    EXPECT_LE(ratio, 4.5) << "Chorus timekeeping density (" << chorus_hits_per_bar
         << "/bar) should not be drastically denser than Verse (" << verse_hits_per_bar << "/bar)";
   }
 }

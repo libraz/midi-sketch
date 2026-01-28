@@ -282,10 +282,11 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   // Apply VocalStylePreset-specific parameter adjustments
   applyVocalStylePreset(params, config);
 
-  // Transfer melodic complexity, hook intensity, and groove feel
+  // Transfer melodic complexity, hook intensity, groove feel, and drive
   params.melodic_complexity = config.melodic_complexity;
   params.hook_intensity = config.hook_intensity;
   params.vocal_groove = config.vocal_groove;
+  params.drive_feel = config.drive_feel;
 
   // Apply MelodicComplexity-specific parameter adjustments
   applyMelodicComplexity(params);

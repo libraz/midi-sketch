@@ -5,6 +5,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <set>
+#include <vector>
+
 #include "core/generator.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
@@ -386,6 +390,189 @@ TEST_F(MotifRhythmDistributionTest, DistributionConsistentAcrossSeeds) {
   // All seeds should have notes in the second half (call & response structure)
   EXPECT_EQ(seeds_with_good_distribution, static_cast<int>(test_seeds.size()))
       << "All seeds should produce motif patterns with notes in both halves";
+}
+
+// =============================================================================
+// Melodic Continuity Tests (Bar Coverage and Note Distribution)
+// =============================================================================
+// Bug: Density filter and collision avoidance could create full-bar silence,
+// making the motif track sound discontinuous and broken.
+// Fix: Added bar coverage guard and getSafePitch() instead of note deletion.
+
+class MotifMelodicContinuityTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    params_.structure = StructurePattern::FullPop;
+    params_.mood = Mood::IdolPop;
+    params_.chord_id = 0;
+    params_.key = Key::C;
+    params_.drums_enabled = true;
+    params_.bpm = 132;
+    params_.composition_style = CompositionStyle::BackgroundMotif;
+  }
+
+  GeneratorParams params_;
+};
+
+// Test that consecutive bars within a motif region have notes (no full-bar gaps within patterns)
+// Note: Some sections may not have motif enabled (track_mask), so we focus on note density
+// within contiguous regions rather than checking every bar in the song.
+TEST_F(MotifMelodicContinuityTest, NoFullBarSilence) {
+  std::vector<uint32_t> test_seeds = {12345, 42, 99999, 54321, 2802138756};
+  int seeds_with_excessive_silence = 0;
+
+  for (uint32_t seed : test_seeds) {
+    params_.seed = seed;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& motif_notes = gen.getSong().motif().notes();
+    if (motif_notes.size() < 4) continue;  // Skip if too few notes
+
+    // Check that within motif regions, we don't have 2+ consecutive bars of silence
+    // Sort notes by start time
+    std::vector<Tick> note_starts;
+    for (const auto& note : motif_notes) {
+      note_starts.push_back(note.start_tick);
+    }
+    std::sort(note_starts.begin(), note_starts.end());
+
+    // Check for gaps of 2+ bars (within the same section-like region)
+    int two_bar_gaps = 0;
+    for (size_t i = 1; i < note_starts.size(); ++i) {
+      Tick gap = note_starts[i] - note_starts[i - 1];
+      if (gap >= 2 * TICKS_PER_BAR) {
+        two_bar_gaps++;
+      }
+    }
+
+    // Allow some gaps (section transitions), but not too many
+    // With the bar coverage guard, internal gaps should be minimized
+    float gap_ratio = static_cast<float>(two_bar_gaps) / note_starts.size();
+    if (gap_ratio > 0.15f) {
+      seeds_with_excessive_silence++;
+    }
+  }
+
+  // At most 1 seed should have excessive silence (some randomness allowed)
+  EXPECT_LE(seeds_with_excessive_silence, 1)
+      << "Found " << seeds_with_excessive_silence
+      << " seeds with excessive bar silence in motif track";
+}
+
+// Test that not all notes are the same pitch class (melodic variety in RhythmSync mode)
+TEST_F(MotifMelodicContinuityTest, NotAllChordTonesInRhythmSync) {
+  // Use RhythmSync paradigm (Blueprint 1, 5, or 7)
+  params_.paradigm = GenerationParadigm::RhythmSync;
+
+  // Test multiple seeds since melodic_freedom=0.4 is probabilistic
+  std::vector<uint32_t> test_seeds = {12345, 42, 99999, 54321, 11111};
+  int seeds_with_variety = 0;
+
+  for (uint32_t seed : test_seeds) {
+    params_.seed = seed;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& motif_notes = gen.getSong().motif().notes();
+    if (motif_notes.size() < 5) continue;
+
+    // Count unique pitch classes used
+    std::set<int> pitch_classes_used;
+    for (const auto& note : motif_notes) {
+      pitch_classes_used.insert(note.note % 12);
+    }
+
+    // Should use at least 3 different pitch classes (more than just root/5th)
+    // With melodic_freedom = 0.4, we expect some passing tones across multiple seeds
+    if (pitch_classes_used.size() >= 3) {
+      seeds_with_variety++;
+    }
+  }
+
+  // Most seeds should show melodic variety
+  EXPECT_GE(seeds_with_variety, 3)
+      << "RhythmSync motif should use variety of pitch classes across seeds. "
+      << "Only " << seeds_with_variety << " out of 5 seeds showed variety";
+}
+
+// Test that gaps within motif patterns are reasonable
+// Note: Section transitions naturally have gaps, so we measure median gap size
+// rather than max gap, which may be affected by section boundaries.
+TEST_F(MotifMelodicContinuityTest, MaxConsecutiveSilence) {
+  std::vector<uint32_t> test_seeds = {12345, 42, 99999, 54321};
+  // Allow gaps up to 2.5 bars (section transitions can be longer)
+  constexpr Tick MAX_MEDIAN_GAP = TICKS_PER_BAR;  // Median gap should be under 1 bar
+
+  for (uint32_t seed : test_seeds) {
+    params_.seed = seed;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& motif_notes = gen.getSong().motif().notes();
+    if (motif_notes.size() < 4) continue;
+
+    // Sort notes by start time
+    std::vector<Tick> note_starts;
+    for (const auto& note : motif_notes) {
+      note_starts.push_back(note.start_tick);
+    }
+    std::sort(note_starts.begin(), note_starts.end());
+
+    // Collect all gaps
+    std::vector<Tick> gaps;
+    for (size_t i = 1; i < note_starts.size(); ++i) {
+      gaps.push_back(note_starts[i] - note_starts[i - 1]);
+    }
+
+    // Sort to find median
+    std::sort(gaps.begin(), gaps.end());
+    Tick median_gap = gaps[gaps.size() / 2];
+
+    // Median gap should be reasonable (under 1 bar)
+    // This tests that the typical spacing is good, even if outliers exist
+    EXPECT_LE(median_gap, MAX_MEDIAN_GAP)
+        << "Seed " << seed << ": Median gap is " << median_gap
+        << " ticks, which exceeds 1 bar (" << MAX_MEDIAN_GAP << " ticks)";
+  }
+}
+
+// Test that RhythmSync with different blueprints doesn't produce all-chord-tone melodies
+TEST_F(MotifMelodicContinuityTest, RhythmSyncBlueprintsHaveMelodicVariety) {
+  params_.paradigm = GenerationParadigm::RhythmSync;
+
+  // Test multiple seeds to account for randomness
+  std::vector<uint32_t> test_seeds = {12345, 42, 99999};
+  int seeds_with_variety = 0;
+
+  for (uint32_t seed : test_seeds) {
+    params_.seed = seed;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& motif_notes = gen.getSong().motif().notes();
+    if (motif_notes.size() < 5) continue;
+
+    // Count unique pitch classes
+    std::set<int> pitch_classes;
+    for (const auto& note : motif_notes) {
+      pitch_classes.insert(note.note % 12);
+    }
+
+    // With melodic_freedom = 0.4, we should see passing tones
+    // Minimum 4 pitch classes indicates variety beyond just root/3rd/5th
+    if (pitch_classes.size() >= 4) {
+      seeds_with_variety++;
+    }
+  }
+
+  // At least 2 out of 3 seeds should show melodic variety
+  EXPECT_GE(seeds_with_variety, 2)
+      << "RhythmSync should produce melodic variety with melodic_freedom=0.4";
 }
 
 }  // namespace

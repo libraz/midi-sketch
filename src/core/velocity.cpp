@@ -187,12 +187,24 @@ uint8_t calculateEmotionAwareVelocity(const Section& section, uint8_t beat, Mood
 }
 
 float getBarVelocityMultiplier(int bar_in_section, int total_bars, SectionType section_type) {
-  // 4-bar phrase dynamics: build→hit pattern
-  // Creates natural breathing within each 4-bar phrase
-  // Wider range (0.75→1.00) for more audible dynamic shaping
-  int phrase_bar = bar_in_section % 4;
-  float phrase_curve = 0.75f + (0.25f / 3.0f) * static_cast<float>(phrase_bar);
-  // phrase_bar: 0 -> 0.75, 1 -> 0.833, 2 -> 0.917, 3 -> 1.00
+  // 4-bar phrase dynamics: build→hit pattern using continuous cosine curve.
+  // Creates natural breathing within each 4-bar phrase.
+  // Range: 0.75 at phrase start → 1.00 at phrase end (smooth interpolation).
+  //
+  // Cosine interpolation: y = min + (max - min) * (1 - cos(t * PI)) / 2
+  // where t is progress (0.0 to 1.0), giving smooth S-curve acceleration.
+  constexpr float kPhraseMin = 0.75f;
+  constexpr float kPhraseMax = 1.00f;
+  constexpr float kPi = 3.14159265358979f;
+
+  // Calculate progress within 4-bar phrase (0.0 to 1.0)
+  float phrase_progress = static_cast<float>(bar_in_section % 4) / 4.0f;
+  // Add half-bar offset for smooth mid-bar transition (0.125 = half of one bar in 4-bar phrase)
+  phrase_progress = std::min(phrase_progress + 0.125f, 1.0f);
+
+  // Cosine interpolation for smooth curve
+  float phrase_curve = kPhraseMin + (kPhraseMax - kPhraseMin) *
+                                        (1.0f - std::cos(phrase_progress * kPi)) / 2.0f;
 
   // Section-level crescendo for Chorus (gradual build across entire section)
   float section_curve = 1.0f;
@@ -711,17 +723,31 @@ float getBeatMicroCurve(float beat_position) {
   return kCurve[beat];
 }
 
-void applyPhraseEndDecay(MidiTrack& track, const std::vector<Section>& sections) {
+void applyPhraseEndDecay(MidiTrack& track, const std::vector<Section>& sections,
+                         uint8_t drive_feel) {
   auto& notes = track.notes();
   if (notes.empty() || sections.empty()) return;
 
-  // Decay parameters
+  // Base decay parameters
   constexpr float PHRASE_END_DECAY = 0.85f;  // 85% velocity at phrase end
   constexpr int PHRASE_BARS = 4;             // 4-bar phrase structure
+
+  // Duration stretch is controlled by drive_feel:
+  // - Low drive (0): longer phrase endings (1.08x) for laid-back feel
+  // - Neutral (50): moderate stretch (1.05x)
+  // - High drive (100): shorter phrase endings (1.02x) for urgency
+  float base_stretch = DriveMapping::getPhraseEndStretch(drive_feel);
 
   for (const auto& section : sections) {
     Tick section_start = section.start_tick;
     Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+
+    // Determine duration stretch factor based on section type and drive_feel
+    // Ballad-style sections (slow, emotional) get additional stretch
+    float duration_stretch = base_stretch;
+    if (section.type == SectionType::Bridge || section.type == SectionType::Outro) {
+      duration_stretch += 0.03f;  // Additional 3% stretch for emotional sections
+    }
 
     // Process each 4-bar phrase within the section
     for (int phrase_start_bar = 0; phrase_start_bar < section.bars; phrase_start_bar += PHRASE_BARS) {
@@ -735,7 +761,7 @@ void applyPhraseEndDecay(MidiTrack& track, const std::vector<Section>& sections)
       Tick decay_start = phrase_end - TICKS_PER_BEAT;
       if (decay_start < phrase_start) continue;
 
-      // Apply decay to notes in the last beat
+      // Apply decay and duration stretch to notes in the last beat
       for (auto& note : notes) {
         if (note.start_tick >= decay_start && note.start_tick < phrase_end &&
             note.start_tick >= section_start && note.start_tick < section_end) {
@@ -748,6 +774,15 @@ void applyPhraseEndDecay(MidiTrack& track, const std::vector<Section>& sections)
 
           int new_vel = static_cast<int>(note.velocity * decay_factor);
           note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+
+          // Apply duration stretch for phrase-end expression
+          // Gradual stretch: increases toward phrase end for natural "exhale" feeling
+          float stretch_progress = position_in_decay;  // 0.0 at start, 1.0 at end
+          float effective_stretch = 1.0f + (duration_stretch - 1.0f) * stretch_progress;
+          // Guard against overflow: cap stretched duration at a reasonable maximum
+          constexpr Tick MAX_DURATION = TICKS_PER_BAR * 4;  // 4 bars max
+          Tick stretched_duration = static_cast<Tick>(note.duration * effective_stretch);
+          note.duration = std::min(stretched_duration, MAX_DURATION);
         }
       }
     }
@@ -770,6 +805,65 @@ void applyBeatMicroDynamics(MidiTrack& track) {
     int new_vel = static_cast<int>(note.velocity * multiplier);
     note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
   }
+}
+
+// ============================================================================
+// Syncopation Weight (VocalGrooveFeel + SectionType)
+// ============================================================================
+
+float getSyncopationWeight(VocalGrooveFeel feel, SectionType section, uint8_t drive_feel) {
+  float base = 0.15f;  // Default 15%
+
+  switch (feel) {
+    case VocalGrooveFeel::Syncopated:
+      base = 0.30f;
+      break;
+    case VocalGrooveFeel::Driving16th:
+      base = 0.25f;
+      break;
+    case VocalGrooveFeel::OffBeat:
+      base = 0.20f;
+      break;
+    case VocalGrooveFeel::Bouncy8th:
+      base = 0.18f;
+      break;
+    case VocalGrooveFeel::Swing:
+      base = 0.12f;
+      break;
+    case VocalGrooveFeel::Straight:
+    default:
+      base = 0.08f;
+      break;
+  }
+
+  // Apply drive-based syncopation boost:
+  // - Low drive (0): less syncopation, more on-beat (0.8x)
+  // - Neutral (50): no change (1.0x)
+  // - High drive (100): more syncopation, more groove (1.2x)
+  float synco_boost = DriveMapping::getSyncopationBoost(drive_feel);
+  base *= synco_boost;
+
+  // Section-aware adjustment:
+  // - B sections: suppress syncopation for tension buildup (cleaner rhythm)
+  // - Chorus: enhance syncopation for energy and drive
+  // - Bridge: moderate reduction for contrast
+  switch (section) {
+    case SectionType::B:
+      base *= 0.7f;  // 30% reduction for cleaner buildup
+      break;
+    case SectionType::Chorus:
+    case SectionType::Drop:
+      base *= 1.2f;  // 20% boost for energy
+      break;
+    case SectionType::Bridge:
+      base *= 0.85f;  // 15% reduction for contrast
+      break;
+    default:
+      break;  // No adjustment for A, Intro, Outro, etc.
+  }
+
+  // Clamp to valid range
+  return base > 0.35f ? 0.35f : base;
 }
 
 }  // namespace midisketch

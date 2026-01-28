@@ -760,5 +760,256 @@ TEST(VelocityTest, ApplyPhraseEndDecay_EmptySections) {
   EXPECT_EQ(track.notes()[0].velocity, initial_vel);  // Unchanged
 }
 
+// ============================================================================
+// Phase 1: Continuous Velocity Curve Tests
+// ============================================================================
+
+TEST(VelocityTest, BarVelocityMultiplierContinuousCurve) {
+  // Test that velocity curve is continuous (no discrete jumps)
+  // The curve should smoothly increase from 0.75 to 1.0 across 4 bars
+  float prev_mult = 0.0f;
+  for (int bar = 0; bar < 4; ++bar) {
+    float mult = getBarVelocityMultiplier(bar, 8, SectionType::A);
+    // Each bar should be >= previous bar (monotonically increasing within phrase)
+    EXPECT_GE(mult, prev_mult) << "Bar " << bar << " should be >= bar " << (bar - 1);
+    // Should be in valid range
+    EXPECT_GE(mult, 0.75f) << "Bar " << bar << " multiplier too low";
+    EXPECT_LE(mult, 1.0f) << "Bar " << bar << " multiplier too high";
+    prev_mult = mult;
+  }
+}
+
+TEST(VelocityTest, BarVelocityMultiplierRangeCheck) {
+  // First bar should be near minimum (0.75)
+  float bar0 = getBarVelocityMultiplier(0, 8, SectionType::A);
+  EXPECT_GE(bar0, 0.75f);
+  EXPECT_LE(bar0, 0.85f);
+
+  // Last bar of phrase should be near maximum (1.0)
+  float bar3 = getBarVelocityMultiplier(3, 8, SectionType::A);
+  EXPECT_GE(bar3, 0.95f);
+  EXPECT_LE(bar3, 1.0f);
+}
+
+// ============================================================================
+// Phase 2: Phrase End Duration Stretch Tests
+// ============================================================================
+
+TEST(VelocityTest, ApplyPhraseEndDecay_DurationStretch) {
+  MidiTrack track;
+  std::vector<Section> sections;
+
+  Section section;
+  section.type = SectionType::A;  // Base stretch 1.05
+  section.start_tick = 0;
+  section.bars = 4;
+  sections.push_back(section);
+
+  Tick initial_duration = 480;
+  // Add note near end of phrase (in decay region)
+  Tick decay_note_tick = 4 * TICKS_PER_BAR - TICKS_PER_BEAT / 2;
+  track.addNote(decay_note_tick, initial_duration, 60, 100);
+
+  applyPhraseEndDecay(track, sections);
+
+  // Duration should be stretched (increased)
+  EXPECT_GT(track.notes()[0].duration, initial_duration)
+      << "Duration should be stretched at phrase end";
+  // Stretch should be moderate (1.0x to 1.1x)
+  EXPECT_LE(track.notes()[0].duration, static_cast<Tick>(initial_duration * 1.1f))
+      << "Stretch should not exceed 10%";
+}
+
+TEST(VelocityTest, ApplyPhraseEndDecay_BridgeSectionStrongerStretch) {
+  MidiTrack track;
+  std::vector<Section> sections;
+
+  Section section;
+  section.type = SectionType::Bridge;  // Stronger stretch (1.08)
+  section.start_tick = 0;
+  section.bars = 4;
+  sections.push_back(section);
+
+  Tick initial_duration = 480;
+  Tick decay_note_tick = 4 * TICKS_PER_BAR - TICKS_PER_BEAT / 2;
+  track.addNote(decay_note_tick, initial_duration, 60, 100);
+
+  applyPhraseEndDecay(track, sections);
+
+  // Duration should be stretched more for Bridge section
+  EXPECT_GT(track.notes()[0].duration, initial_duration);
+}
+
+// ============================================================================
+// Phase 4: Syncopation Weight Tests
+// ============================================================================
+
+TEST(VelocityTest, GetSyncopationWeight_BaseValues) {
+  // Syncopated groove should have highest base weight
+  EXPECT_GT(getSyncopationWeight(VocalGrooveFeel::Syncopated, SectionType::A),
+            getSyncopationWeight(VocalGrooveFeel::Straight, SectionType::A));
+
+  // Straight groove should have lowest base weight
+  float straight = getSyncopationWeight(VocalGrooveFeel::Straight, SectionType::A);
+  EXPECT_LE(straight, 0.10f);
+}
+
+TEST(VelocityTest, GetSyncopationWeight_SectionModulation) {
+  VocalGrooveFeel groove = VocalGrooveFeel::OffBeat;
+
+  // Chorus should boost syncopation
+  float chorus = getSyncopationWeight(groove, SectionType::Chorus);
+  float verse = getSyncopationWeight(groove, SectionType::A);
+  EXPECT_GT(chorus, verse) << "Chorus should have higher syncopation than verse";
+
+  // B section should suppress syncopation
+  float b_section = getSyncopationWeight(groove, SectionType::B);
+  EXPECT_LT(b_section, verse) << "B section should have lower syncopation than verse";
+}
+
+TEST(VelocityTest, GetSyncopationWeight_ClampedRange) {
+  // Even with maximum settings, should be clamped to 0.35
+  float max_synco = getSyncopationWeight(VocalGrooveFeel::Syncopated, SectionType::Chorus);
+  EXPECT_LE(max_synco, 0.36f) << "Syncopation weight should be clamped";
+  EXPECT_GE(max_synco, 0.30f) << "Maximum syncopation should be significant";
+}
+
+// ============================================================================
+// Phase 5: Drive Mapping Tests
+// ============================================================================
+
+TEST(VelocityTest, DriveMapping_TimingMultiplier) {
+  // Laid-back (0) should have low multiplier
+  float laid_back = DriveMapping::getTimingMultiplier(0);
+  EXPECT_FLOAT_EQ(laid_back, 0.5f);
+
+  // Neutral (50) should have 1.0 multiplier
+  float neutral = DriveMapping::getTimingMultiplier(50);
+  EXPECT_FLOAT_EQ(neutral, 1.0f);
+
+  // Aggressive (100) should have high multiplier
+  float aggressive = DriveMapping::getTimingMultiplier(100);
+  EXPECT_FLOAT_EQ(aggressive, 1.5f);
+}
+
+TEST(VelocityTest, DriveMapping_VelocityAttack) {
+  // Laid-back (0) should have softer attack
+  float laid_back = DriveMapping::getVelocityAttack(0);
+  EXPECT_FLOAT_EQ(laid_back, 0.9f);
+
+  // Neutral (50) should have 1.0 multiplier
+  float neutral = DriveMapping::getVelocityAttack(50);
+  EXPECT_FLOAT_EQ(neutral, 1.0f);
+
+  // Aggressive (100) should have harder attack
+  float aggressive = DriveMapping::getVelocityAttack(100);
+  EXPECT_FLOAT_EQ(aggressive, 1.1f);
+}
+
+TEST(VelocityTest, DriveMapping_SyncopationBoost) {
+  // Laid-back (0) should reduce syncopation
+  float laid_back = DriveMapping::getSyncopationBoost(0);
+  EXPECT_FLOAT_EQ(laid_back, 0.8f);
+
+  // Neutral (50) should have 1.0 multiplier
+  float neutral = DriveMapping::getSyncopationBoost(50);
+  EXPECT_FLOAT_EQ(neutral, 1.0f);
+
+  // Aggressive (100) should boost syncopation
+  float aggressive = DriveMapping::getSyncopationBoost(100);
+  EXPECT_FLOAT_EQ(aggressive, 1.2f);
+}
+
+TEST(VelocityTest, DriveMapping_PhraseEndStretch) {
+  // Laid-back (0) should have longer phrase endings
+  float laid_back = DriveMapping::getPhraseEndStretch(0);
+  EXPECT_NEAR(laid_back, 1.08f, 0.001f);
+
+  // Neutral (50) should be around 1.05
+  float neutral = DriveMapping::getPhraseEndStretch(50);
+  EXPECT_NEAR(neutral, 1.05f, 0.01f);
+
+  // Aggressive (100) should have shorter phrase endings
+  float aggressive = DriveMapping::getPhraseEndStretch(100);
+  EXPECT_NEAR(aggressive, 1.02f, 0.001f);
+}
+
+// ============================================================================
+// Drive Feel Integration Tests
+// ============================================================================
+
+TEST(VelocityTest, GetSyncopationWeight_DriveFeelModulation) {
+  VocalGrooveFeel groove = VocalGrooveFeel::OffBeat;
+  SectionType section = SectionType::A;
+
+  // Laid-back (0) should reduce syncopation by 0.8x
+  float laid_back = getSyncopationWeight(groove, section, 0);
+
+  // Neutral (50) should be baseline
+  float neutral = getSyncopationWeight(groove, section, 50);
+
+  // Aggressive (100) should boost syncopation by 1.2x
+  float aggressive = getSyncopationWeight(groove, section, 100);
+
+  EXPECT_LT(laid_back, neutral) << "Laid-back should have less syncopation than neutral";
+  EXPECT_GT(aggressive, neutral) << "Aggressive should have more syncopation than neutral";
+
+  // Verify the ratios match DriveMapping
+  EXPECT_NEAR(laid_back / neutral, 0.8f, 0.01f) << "Laid-back should be 0.8x of neutral";
+  EXPECT_NEAR(aggressive / neutral, 1.2f, 0.01f) << "Aggressive should be 1.2x of neutral";
+}
+
+TEST(VelocityTest, ApplyPhraseEndDecay_DriveFeelAffectsStretch) {
+  std::vector<Section> sections;
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 4;
+  sections.push_back(section);
+
+  Tick initial_duration = 480;
+  Tick decay_note_tick = 4 * TICKS_PER_BAR - TICKS_PER_BEAT / 2;
+
+  // Test with laid-back drive (should have longer stretch)
+  MidiTrack track_laid_back;
+  track_laid_back.addNote(decay_note_tick, initial_duration, 60, 100);
+  applyPhraseEndDecay(track_laid_back, sections, 0);  // Laid-back
+
+  // Test with aggressive drive (should have shorter stretch)
+  MidiTrack track_aggressive;
+  track_aggressive.addNote(decay_note_tick, initial_duration, 60, 100);
+  applyPhraseEndDecay(track_aggressive, sections, 100);  // Aggressive
+
+  // Laid-back should have longer duration than aggressive
+  EXPECT_GT(track_laid_back.notes()[0].duration, track_aggressive.notes()[0].duration)
+      << "Laid-back should have longer phrase-end duration than aggressive";
+}
+
+TEST(VelocityTest, ApplyPhraseEndDecay_DefaultDriveFeelMatchesNeutral) {
+  std::vector<Section> sections;
+  Section section;
+  section.type = SectionType::A;
+  section.start_tick = 0;
+  section.bars = 4;
+  sections.push_back(section);
+
+  Tick initial_duration = 480;
+  Tick decay_note_tick = 4 * TICKS_PER_BAR - TICKS_PER_BEAT / 2;
+
+  // Test with default (should be neutral = 50)
+  MidiTrack track_default;
+  track_default.addNote(decay_note_tick, initial_duration, 60, 100);
+  applyPhraseEndDecay(track_default, sections);  // Default
+
+  // Test with explicit neutral
+  MidiTrack track_neutral;
+  track_neutral.addNote(decay_note_tick, initial_duration, 60, 100);
+  applyPhraseEndDecay(track_neutral, sections, 50);  // Explicit neutral
+
+  // Both should have same duration
+  EXPECT_EQ(track_default.notes()[0].duration, track_neutral.notes()[0].duration)
+      << "Default drive_feel should match neutral (50)";
+}
+
 }  // namespace
 }  // namespace midisketch

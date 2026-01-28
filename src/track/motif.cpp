@@ -265,6 +265,61 @@ bool isDiatonic(int pitch) {
          pitch_class == 7 || pitch_class == 9 || pitch_class == 11;
 }
 
+// Check if a pitch is a passing tone (non-chord tone scale degree)
+// Passing tones: 2nd (D), 4th (F), 6th (A), 7th (B) in C major
+// @param pitch MIDI note number
+// @param chord_root Root of current chord
+// @param is_minor Whether chord is minor quality
+// @returns true if pitch is a passing tone (scale tone but not chord tone)
+bool isPassingTone(int pitch, uint8_t chord_root, bool is_minor) {
+  if (!isDiatonic(pitch)) return false;
+
+  int pitch_pc = ((pitch % 12) + 12) % 12;
+  int root_pc = chord_root % 12;
+
+  // Chord tones are root, 3rd (3 or 4 semitones), 5th (7 semitones)
+  int third_offset = is_minor ? 3 : 4;
+  int third_pc = (root_pc + third_offset) % 12;
+  int fifth_pc = (root_pc + 7) % 12;
+
+  // If it's a chord tone, it's not a passing tone
+  if (pitch_pc == root_pc || pitch_pc == third_pc || pitch_pc == fifth_pc) {
+    return false;
+  }
+
+  // It's diatonic but not a chord tone = passing tone
+  return true;
+}
+
+// Snap pitch to a safe scale tone, allowing passing tones based on melodic_freedom.
+// Used in RhythmSync mode to add melodic variety while avoiding harsh dissonance.
+// @param pitch Input pitch (MIDI note number)
+// @param chord_root Root note of current chord
+// @param is_minor Whether chord is minor quality
+// @param chord_degree Scale degree of the chord (for avoid note detection)
+// @param melodic_freedom 0.0=chord tones only, 1.0=all scale tones allowed
+// @param rng Random generator for probabilistic choices
+// @returns Pitch snapped to safe scale/chord tone
+int snapToSafeScaleTone(int pitch, uint8_t chord_root, bool is_minor, int8_t chord_degree,
+                        float melodic_freedom, std::mt19937& rng) {
+  // If already diatonic and safe (not an avoid note), consider keeping it
+  if (isDiatonic(pitch) && !isAvoidNoteWithContext(pitch, chord_root, is_minor, chord_degree)) {
+    // If it's a passing tone, keep it with probability = melodic_freedom
+    if (isPassingTone(pitch, chord_root, is_minor)) {
+      std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+      if (dist(rng) < melodic_freedom) {
+        return pitch;  // Keep the passing tone for melodic interest
+      }
+    } else {
+      // It's already a chord tone - keep it
+      return pitch;
+    }
+  }
+
+  // Fallback: snap to nearest chord tone
+  return snapToChordTone(pitch, chord_root, is_minor);
+}
+
 // Adjust pitch to nearest diatonic scale tone (C major)
 // @param pitch Input pitch (MIDI note number)
 // @returns Adjusted pitch on C major scale
@@ -695,17 +750,31 @@ void generateMotifTrack(MidiTrack& track, Song& song, const GeneratorParams& par
 
     // Repeat motif across the section
     for (Tick pos = section.start_tick; pos < section_end; pos += motif_length) {
+      // Bar coverage tracking: ensure at least one note per bar to prevent full-bar silence
+      std::map<uint8_t, size_t> bar_note_count;
+
       for (const auto& note : *current_pattern) {
         Tick absolute_tick = pos + note.start_tick;
         if (absolute_tick >= section_end) continue;
 
+        // Calculate which bar this note is in (relative to motif start)
+        uint8_t current_bar = static_cast<uint8_t>((absolute_tick - pos) / TICKS_PER_BAR);
+
         // Apply density_percent to skip notes probabilistically (with SectionModifier)
         uint8_t effective_density = section.getModifiedDensity(section.density_percent);
+        bool should_skip = false;
         if (effective_density < 100) {
           std::uniform_real_distribution<float> density_dist(0.0f, 100.0f);
-          if (density_dist(rng) > effective_density) {
-            continue;  // Skip this note based on density setting
+          should_skip = (density_dist(rng) > effective_density);
+
+          // Bar coverage guard: if this bar has no notes yet, don't skip
+          // This ensures at least one note per bar for melodic continuity
+          if (should_skip && bar_note_count[current_bar] == 0) {
+            should_skip = false;
           }
+        }
+        if (should_skip) {
+          continue;  // Skip this note based on density setting
         }
 
         // Use HarmonyContext for accurate chord lookup at this tick
@@ -730,12 +799,14 @@ void generateMotifTrack(MidiTrack& track, Song& song, const GeneratorParams& par
         adjusted_pitch = motif_detail::adjustToDiatonic(adjusted_pitch);
         adjusted_pitch = std::clamp(adjusted_pitch, 36, 108);
 
-        // In RhythmSync mode, constrain Motif to chord tones only
-        // This leaves passing tones (2nd, 4th, 6th, 7th) available for Vocal
-        // to avoid dissonance clashes between the "coordinate axis" Motif and Vocal
+        // In RhythmSync mode, constrain Motif to safe scale tones
+        // melodic_freedom controls balance between chord tones and passing tones
+        // This prevents pure chord harmonization while avoiding harsh dissonance
         if (params.paradigm == GenerationParadigm::RhythmSync) {
-          // Snap to nearest chord tone (root, 3rd, 5th)
-          adjusted_pitch = motif_detail::snapToChordTone(adjusted_pitch, chord_root, is_minor);
+          // Snap to safe scale tone with melodic_freedom controlling passing tone probability
+          adjusted_pitch = motif_detail::snapToSafeScaleTone(adjusted_pitch, chord_root, is_minor,
+                                                             degree, motif_params.melodic_freedom,
+                                                             rng);
         }
 
         // L4: Occasionally apply tension based on chord quality (9th, 11th, 13th)
@@ -769,31 +840,16 @@ void generateMotifTrack(MidiTrack& track, Song& song, const GeneratorParams& par
         // Check if pitch is safe (avoids clashing with Chord track)
         uint8_t final_pitch = static_cast<uint8_t>(adjusted_pitch);
         if (!harmony.isPitchSafe(final_pitch, absolute_tick, note.duration, TrackRole::Motif)) {
-          // Try adjusting pitch to avoid collision using diatonic steps only
-          // Try whole step up (diatonic)
-          int step_up = motif_detail::isDiatonic(adjusted_pitch + 1) ? 1 : 2;
-          int step_down = motif_detail::isDiatonic(adjusted_pitch - 1) ? 1 : 2;
-
-          if (adjusted_pitch + step_up <= 108 &&
-              motif_detail::isDiatonic(adjusted_pitch + step_up) &&
-              harmony.isPitchSafe(static_cast<uint8_t>(adjusted_pitch + step_up), absolute_tick,
-                                  note.duration, TrackRole::Motif)) {
-            final_pitch = static_cast<uint8_t>(adjusted_pitch + step_up);
-          }
-          // Then try step down
-          else if (adjusted_pitch - step_down >= 36 &&
-                   motif_detail::isDiatonic(adjusted_pitch - step_down) &&
-                   harmony.isPitchSafe(static_cast<uint8_t>(adjusted_pitch - step_down),
-                                       absolute_tick, note.duration, TrackRole::Motif)) {
-            final_pitch = static_cast<uint8_t>(adjusted_pitch - step_down);
-          }
-          // Skip note if still clashing (rare case)
-          else {
-            continue;
-          }
+          // Use SafePitchResolver via getSafePitch() - always returns a valid pitch
+          // This prevents note deletion and ensures melodic continuity
+          final_pitch = harmony.getSafePitch(static_cast<uint8_t>(adjusted_pitch), absolute_tick,
+                                             note.duration, TrackRole::Motif, MOTIF_LOW, MOTIF_HIGH);
         }
         track.addNote(
             factory.create(absolute_tick, note.duration, final_pitch, vel, NoteSource::Motif));
+
+        // Track that we added a note to this bar (for bar coverage guard)
+        bar_note_count[current_bar]++;
 
         // L4: Add octave doubling for chorus (if role allows)
         if (add_octave) {

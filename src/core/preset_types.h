@@ -182,6 +182,10 @@ struct SongConfig {
   VocalAttitude vocal_attitude = VocalAttitude::Clean;
   VocalStylePreset vocal_style = VocalStylePreset::Auto;  ///< Vocal style override
 
+  /// Drive feel (0-100): affects timing, velocity, syncopation
+  /// 0=laid-back (relaxed), 50=neutral (default), 100=aggressive (driving)
+  uint8_t drive_feel = 50;
+
   /// Options
   bool drums_enabled = true;
   bool arpeggio_enabled = false;
@@ -298,6 +302,10 @@ struct GeneratorParams {
   MelodicComplexity melodic_complexity = MelodicComplexity::Standard;
   HookIntensity hook_intensity = HookIntensity::Normal;
   VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
+
+  /// Drive feel (0-100): affects timing, velocity, syncopation
+  /// 0=laid-back (relaxed), 50=neutral (default), 100=aggressive (driving)
+  uint8_t drive_feel = 50;
 
   /// Behavioral Loop (addictive generation)
   bool addictive_mode = false;  ///< Enable Behavioral Loop mode (fixed riff, maximum hook)
