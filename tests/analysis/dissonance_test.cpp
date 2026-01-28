@@ -931,6 +931,66 @@ TEST(DissonanceContextTest, InternalAnalysisUsesFullContext) {
   EXPECT_GE(report.summary.total_issues, 0u);
 }
 
+// Test: Secondary dominant tones should not be flagged as non-diatonic
+TEST(DissonanceContextTest, SecondaryDominantTonesNotFlagged) {
+  // Secondary dominants (V/ii, V/iii, V/IV, V/V, V/vi) contain non-diatonic
+  // tones that are intentional. These should not be flagged as issues.
+  //
+  // In C major, the non-diatonic tones in secondary dominants are:
+  // - V/ii (A7): C# (pitch class 1)
+  // - V/iii (B7): D# (3), F# (6)
+  // - V/IV (C7): Bb (10)
+  // - V/V (D7): F# (6)
+  // - V/vi (E7): G# (8)
+  //
+  // This test uses multiple seeds to verify that G#, C#, F#, D#, Bb are
+  // not flagged as non-diatonic notes when they appear as secondary dominant tones.
+
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::FullPop;
+  params.mood = Mood::EnergeticDance;
+  params.chord_id = 0;  // Canon progression often triggers secondary dominants
+  params.key = Key::C;
+  params.drums_enabled = true;
+  params.vocal_low = 60;
+  params.vocal_high = 79;
+
+  // Test seeds known to generate secondary dominants
+  std::vector<uint32_t> test_seeds = {12345, 54321, 98765, 11111, 22222};
+
+  for (uint32_t seed : test_seeds) {
+    params.seed = seed;
+    gen.generate(params);
+    const auto& song = gen.getSong();
+
+    auto report = analyzeDissonance(song, params);
+
+    // Count non-diatonic issues that are secondary dominant tones
+    // These should be zero after the fix
+    int sec_dom_false_positives = 0;
+    for (const auto& issue : report.issues) {
+      if (issue.type == DissonanceType::NonDiatonicNote) {
+        // Check if the pitch class is a secondary dominant tone
+        int pitch_class = issue.pitch % 12;
+        // Non-diatonic secondary dominant tones: C# (1), D# (3), F# (6), G# (8), Bb (10)
+        if (pitch_class == 1 || pitch_class == 3 || pitch_class == 6 || pitch_class == 8 ||
+            pitch_class == 10) {
+          // This could be a secondary dominant tone - check source
+          if (issue.has_provenance && issue.track_name == "chord") {
+            // Chord track secondary dominant tones should not be flagged
+            sec_dom_false_positives++;
+          }
+        }
+      }
+    }
+
+    EXPECT_EQ(sec_dom_false_positives, 0)
+        << "Seed " << seed << " has " << sec_dom_false_positives
+        << " secondary dominant tones incorrectly flagged as non-diatonic";
+  }
+}
+
 // Test: Regression - original bug parameters should produce clean output
 TEST(DissonanceContextTest, RegressionOriginalBugParameters) {
   // The original bug: backup/midi-sketch-1768105073187.mid had

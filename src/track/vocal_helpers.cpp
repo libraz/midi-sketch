@@ -9,6 +9,7 @@
 
 #include "core/chord_utils.h"
 #include "core/pitch_utils.h"
+#include "core/timing_constants.h"
 
 namespace midisketch {
 
@@ -170,7 +171,7 @@ void applyVelocityBalance(std::vector<NoteEvent>& notes, float scale) {
   }
 }
 
-void removeOverlaps(std::vector<NoteEvent>& notes) {
+void removeOverlaps(std::vector<NoteEvent>& notes, Tick min_duration) {
   if (notes.size() < 2) return;
 
   // Sort by start tick
@@ -186,7 +187,12 @@ void removeOverlaps(std::vector<NoteEvent>& notes) {
       // Guard against underflow: if same startTick, use minimum duration
       Tick max_duration =
           (next_start > notes[i].start_tick) ? (next_start - notes[i].start_tick) : 1;
-      notes[i].duration = max_duration;
+      // Ensure minimum duration for singability
+      if (max_duration >= min_duration) {
+        notes[i].duration = max_duration;
+      }
+      // If max_duration < min_duration, keep original duration (will still overlap,
+      // but better than creating an unsingable note)
 
       // If still overlapping (same startTick case), shift next note forward
       if (notes[i].start_tick + notes[i].duration > notes[i + 1].start_tick) {
@@ -385,7 +391,7 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
         if (!is_chord_tone_after_change) {
           // Trim note to end before chord change
           Tick new_duration = chord_change - note.start_tick - kChordChangeGap;
-          if (new_duration > 0) {
+          if (new_duration >= TICK_SIXTEENTH) {
             note.duration = new_duration;
           }
         }

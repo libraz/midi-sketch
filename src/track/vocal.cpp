@@ -527,7 +527,10 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
   applyGrooveFeel(all_notes, params.vocal_groove);
 
   // Remove overlapping notes
-  removeOverlaps(all_notes);
+  // UltraVocaloid allows 32nd notes (60 ticks), standard vocals need 16th notes (120 ticks)
+  Tick min_note_duration =
+      (params.vocal_style == VocalStylePreset::UltraVocaloid) ? TICK_32ND : TICK_SIXTEENTH;
+  removeOverlaps(all_notes, min_note_duration);
 
   // Vocal-friendly post-processing:
   // Merge same-pitch notes only with very short gaps (64th note = ~30 ticks).

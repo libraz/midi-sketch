@@ -15,6 +15,7 @@
 #include "core/i_harmony_context.h"
 #include "core/preset_types.h"
 #include "core/section_types.h"
+#include "core/timing_constants.h"
 #include "core/types.h"
 
 namespace midisketch {
@@ -125,8 +126,10 @@ void applyVelocityBalance(std::vector<NoteEvent>& notes, float scale);
  *
  * Ensures end_tick <= next_start for all consecutive note pairs.
  * @param notes Notes to modify (in-place), will be sorted by start_tick
+ * @param min_duration Minimum duration to allow (default: TICK_SIXTEENTH = 120 ticks).
+ *                     For UltraVocaloid, use TICK_32ND (60 ticks) to allow 32nd notes.
  */
-void removeOverlaps(std::vector<NoteEvent>& notes);
+void removeOverlaps(std::vector<NoteEvent>& notes, Tick min_duration = TICK_SIXTEENTH);
 
 /**
  * @brief Apply hook intensity at section start.

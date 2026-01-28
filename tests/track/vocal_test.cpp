@@ -14,6 +14,7 @@
 #include "core/generator.h"
 #include "core/harmony_context.h"
 #include "core/song.h"
+#include "core/timing_constants.h"
 #include "core/types.h"
 
 namespace midisketch {
@@ -2360,6 +2361,58 @@ TEST_F(VocalTest, BalladHasLongerBreathGapsThanEnergeticDance) {
   EXPECT_GT(max_gap_ballad, max_gap_dance)
       << "Ballad vocal should have longer breath gaps (" << max_gap_ballad
       << " ticks) than EnergeticDance (" << max_gap_dance << " ticks)";
+}
+
+// ============================================================================
+// Minimum Duration Tests
+// ============================================================================
+
+// Test that standard vocal styles have no notes shorter than TICK_SIXTEENTH (120 ticks).
+// This ensures singable notes - sub-16th notes are too short for human vocalists.
+TEST_F(VocalTest, StandardVocalMinimumDurationIs16thNote) {
+  // Test multiple blueprints that use standard vocal (not UltraVocaloid)
+  std::vector<uint8_t> standard_blueprints = {0, 3, 8};  // Traditional, Ballad, IdolEmo
+
+  for (uint8_t blueprint_id : standard_blueprints) {
+    params_.blueprint_id = blueprint_id;
+    params_.seed = 42;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& vocal = gen.getSong().vocal();
+    ASSERT_FALSE(vocal.notes().empty())
+        << "Blueprint " << static_cast<int>(blueprint_id) << " should generate vocal notes";
+
+    for (const auto& note : vocal.notes()) {
+      EXPECT_GE(note.duration, TICK_SIXTEENTH)
+          << "Blueprint " << static_cast<int>(blueprint_id) << ": Note at tick "
+          << note.start_tick << " has duration " << note.duration
+          << " ticks, which is less than TICK_SIXTEENTH (120)";
+    }
+  }
+}
+
+// Test that minimum duration constraint works across multiple seeds.
+// Regression test for the bug where removeOverlaps could create sub-16th notes.
+TEST_F(VocalTest, MinimumDurationAcrossMultipleSeeds) {
+  constexpr int kNumSeeds = 10;
+  constexpr Tick kMinDuration = TICK_SIXTEENTH;
+
+  for (int seed = 1; seed <= kNumSeeds; ++seed) {
+    params_.seed = static_cast<uint32_t>(seed);
+    params_.blueprint_id = 8;  // IdolEmo - had the bug with Ochisabi section
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& vocal = gen.getSong().vocal();
+    for (const auto& note : vocal.notes()) {
+      EXPECT_GE(note.duration, kMinDuration)
+          << "Seed " << seed << ": Note at tick " << note.start_tick << " has duration "
+          << note.duration << " ticks, which is less than minimum (" << kMinDuration << ")";
+    }
+  }
 }
 
 }  // namespace

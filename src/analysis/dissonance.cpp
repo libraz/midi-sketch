@@ -118,6 +118,57 @@ bool isDiatonicToCMajor(int pitch_class) {
   return false;
 }
 
+// Check if a pitch class is part of any common secondary dominant chord.
+// Secondary dominants (V/x) are dominant 7th chords that resolve to a diatonic chord.
+// These chords intentionally contain non-diatonic tones that are musically valid.
+//
+// In C major:
+//   V/ii = A7  (A, C#, E, G)  -> non-diatonic: C# (1)
+//   V/iii = B7 (B, D#, F#, A) -> non-diatonic: D# (3), F# (6)
+//   V/IV = C7  (C, E, G, Bb)  -> non-diatonic: Bb (10)
+//   V/V = D7   (D, F#, A, C)  -> non-diatonic: F# (6)
+//   V/vi = E7  (E, G#, B, D)  -> non-diatonic: G# (8)
+//
+// Returns true if pitch_class is a chord tone of any secondary dominant.
+bool isSecondaryDominantTone(int pitch_class) {
+  // Define chord tones for each secondary dominant (root, 3rd, 5th, 7th)
+  // All intervals are pitch classes (0-11)
+
+  // V/ii = A7: root=9(A), 3rd=1(C#), 5th=4(E), 7th=7(G)
+  constexpr int V_of_ii[] = {9, 1, 4, 7};
+
+  // V/iii = B7: root=11(B), 3rd=3(D#), 5th=6(F#), 7th=9(A)
+  constexpr int V_of_iii[] = {11, 3, 6, 9};
+
+  // V/IV = C7: root=0(C), 3rd=4(E), 5th=7(G), 7th=10(Bb)
+  constexpr int V_of_IV[] = {0, 4, 7, 10};
+
+  // V/V = D7: root=2(D), 3rd=6(F#), 5th=9(A), 7th=0(C)
+  constexpr int V_of_V[] = {2, 6, 9, 0};
+
+  // V/vi = E7: root=4(E), 3rd=8(G#), 5th=11(B), 7th=2(D)
+  constexpr int V_of_vi[] = {4, 8, 11, 2};
+
+  // Check all secondary dominants
+  for (int pc : V_of_ii) {
+    if (pc == pitch_class) return true;
+  }
+  for (int pc : V_of_iii) {
+    if (pc == pitch_class) return true;
+  }
+  for (int pc : V_of_IV) {
+    if (pc == pitch_class) return true;
+  }
+  for (int pc : V_of_V) {
+    if (pc == pitch_class) return true;
+  }
+  for (int pc : V_of_vi) {
+    if (pc == pitch_class) return true;
+  }
+
+  return false;
+}
+
 // Get key name for display.
 std::string getKeyName(Key key) {
   static const char* names[] = {"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
@@ -1023,6 +1074,13 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
 
       if (is_borrowed_chord_tone) {
         // This is a chord tone of a borrowed chord - intentional, not an issue
+        continue;
+      }
+
+      // Check if this is a secondary dominant chord tone
+      // Secondary dominants (V/ii, V/iii, V/IV, V/V, V/vi) intentionally use
+      // non-diatonic notes (e.g., G# in E7 = V/vi) for harmonic tension
+      if (isSecondaryDominantTone(pitch_class)) {
         continue;
       }
 

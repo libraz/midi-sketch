@@ -1292,6 +1292,9 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     // Apply gate ratio
     note_duration = static_cast<Tick>(note_duration * gate_ratio);
 
+    // Ensure minimum duration after gate ratio (prevents sub-16th notes)
+    note_duration = std::max(note_duration, TICK_SIXTEENTH);
+
     // Clamp note duration to chord change boundary (prevents dissonance when chord changes)
     Tick chord_change = harmony.getNextChordChangeTick(note_start);
     if (chord_change > 0 && chord_change > note_start &&
@@ -1676,6 +1679,9 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
 
       Tick actual_duration = static_cast<Tick>(note_duration * gate_ratio);
 
+      // Ensure minimum duration after gate ratio (prevents sub-16th notes)
+      actual_duration = std::max(actual_duration, TICK_SIXTEENTH);
+
       // Clamp duration to chord change boundary
       Tick chord_change = harmony.getNextChordChangeTick(current_tick);
       if (chord_change > 0 && chord_change > current_tick &&
@@ -1713,7 +1719,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       uint8_t final_velocity = velocity;
       Tick tick_advance = note_duration;  // Default: advance by pattern duration
       if (use_cached_rhythm_for_note) {
-        final_duration = cached_sabi_durations_[total_note_idx];
+        final_duration = std::max(cached_sabi_durations_[total_note_idx], TICK_SIXTEENTH);
         final_velocity = cached_sabi_velocities_[total_note_idx];
         // For tick advancement, use cached duration to maintain timing consistency
         tick_advance = cached_sabi_durations_[total_note_idx];

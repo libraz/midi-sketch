@@ -70,6 +70,7 @@ set(TEST_SOURCES
   midi/midi2_reader_test.cpp
   track/arpeggio_test.cpp
   track/vocal_test.cpp
+  track/vocal_helpers_test.cpp
   track/chord_track_test.cpp
   track/bass_test.cpp
   track/bass_with_vocal_test.cpp
