@@ -6,8 +6,10 @@
 #include "core/velocity.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "core/emotion_curve.h"
+#include "core/melody_types.h"
 #include "core/midi_track.h"
 #include "core/section_properties.h"
 
@@ -864,6 +866,82 @@ float getSyncopationWeight(VocalGrooveFeel feel, SectionType section, uint8_t dr
 
   // Clamp to valid range
   return base > 0.35f ? 0.35f : base;
+}
+
+// ============================================================================
+// Contextual Syncopation Weight
+// ============================================================================
+
+float getContextualSyncopationWeight(float base_weight, float phrase_progress, int beat_in_bar,
+                                      SectionType section) {
+  // Start with base weight
+  float adjusted = base_weight;
+
+  // Phrase position boost: more syncopation in latter half of phrase
+  // Creates natural momentum building toward phrase climax
+  // Progress 0.5-1.0 maps to multiplier 1.0-1.3 (linear interpolation)
+  if (phrase_progress > 0.5f) {
+    float progress_factor = (phrase_progress - 0.5f) * 2.0f;  // 0.0-1.0
+    float phrase_boost = 1.0f + progress_factor * 0.3f;       // 1.0-1.3
+    adjusted *= phrase_boost;
+  }
+
+  // Beat position boost: emphasize backbeat positions (beat 2 and 4)
+  // In pop music, syncopation on backbeats creates groove
+  // beat_in_bar: 0=beat 1, 1=beat 2, 2=beat 3, 3=beat 4
+  if (beat_in_bar == 1 || beat_in_bar == 3) {
+    adjusted *= 1.15f;  // 15% boost for backbeat emphasis
+  }
+
+  // Section-specific adjustments (complement getSyncopationWeight)
+  // Chorus Drop gets extra syncopation boost for dance feel
+  if (section == SectionType::Drop) {
+    adjusted *= 1.1f;
+  }
+
+  // Clamp to maximum (prevent excessive syncopation)
+  constexpr float kMaxSyncopationWeight = 0.40f;
+  return std::min(adjusted, kMaxSyncopationWeight);
+}
+
+// ============================================================================
+// Phrase Note Velocity Curve
+// ============================================================================
+
+float getPhraseNoteVelocityCurve(int note_index, int total_notes, ContourType contour) {
+  // Guard: avoid division by zero
+  if (total_notes <= 1) {
+    return 1.0f;
+  }
+
+  // Calculate note progress (0.0 to 1.0)
+  float progress = static_cast<float>(note_index) / static_cast<float>(total_notes - 1);
+
+  // Determine climax position based on contour type
+  // Peak contour: climax earlier (60%) for natural arch shape
+  // Other contours: climax later (75%) for building energy
+  float climax_position = (contour == ContourType::Peak) ? 0.6f : 0.75f;
+
+  // Velocity curve parameters
+  constexpr float kPreClimaxMin = 0.88f;   // Starting velocity multiplier
+  constexpr float kClimaxMax = 1.08f;      // Peak velocity multiplier
+  constexpr float kPostClimaxMin = 0.92f;  // Ending velocity multiplier
+
+  float multiplier;
+  if (progress <= climax_position) {
+    // Pre-climax: crescendo from kPreClimaxMin to kClimaxMax
+    // Use cosine interpolation for smooth curve
+    float t = progress / climax_position;  // 0.0 to 1.0
+    float cos_factor = (1.0f - std::cos(t * 3.14159265f)) * 0.5f;  // Smooth S-curve
+    multiplier = kPreClimaxMin + (kClimaxMax - kPreClimaxMin) * cos_factor;
+  } else {
+    // Post-climax: decrescendo from kClimaxMax to kPostClimaxMin
+    float t = (progress - climax_position) / (1.0f - climax_position);  // 0.0 to 1.0
+    float cos_factor = (1.0f - std::cos(t * 3.14159265f)) * 0.5f;
+    multiplier = kClimaxMax - (kClimaxMax - kPostClimaxMin) * cos_factor;
+  }
+
+  return multiplier;
 }
 
 }  // namespace midisketch

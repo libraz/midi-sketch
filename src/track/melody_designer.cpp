@@ -840,7 +840,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   // Generate rhythm pattern with section density modifier and 32nd note ratio
   std::vector<RhythmNote> rhythm = generatePhraseRhythm(
       tmpl, phrase_beats, ctx.density_modifier, ctx.thirtysecond_ratio, rng, ctx.paradigm,
-      syncopation_weight);
+      syncopation_weight, ctx.section_type);
 
   // Get chord degree at phrase start
   int8_t start_chord_degree = harmony.getChordDegreeAt(phrase_start);
@@ -1371,6 +1371,15 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     if (is_phrase_end) {
       velocity = static_cast<uint8_t>(velocity * 0.85f);
     }
+
+    // Apply phrase-internal velocity curve for natural crescendo/decrescendo
+    // This creates expression within the phrase beyond bar-level dynamics
+    ContourType contour_for_curve =
+        ctx.forced_contour.value_or(ContourType::Plateau);
+    float phrase_curve = getPhraseNoteVelocityCurve(
+        static_cast<int>(i), static_cast<int>(rhythm.size()), contour_for_curve);
+    velocity = static_cast<uint8_t>(
+        std::clamp(static_cast<int>(velocity * phrase_curve), 1, 127));
 
     // Final clamp to ensure pitch is within vocal range
     // ABSOLUTE CONSTRAINT: Ensure pitch is on scale (prevents chromatic notes)
@@ -2426,7 +2435,7 @@ int MelodyDesigner::calculateTargetPitch(const MelodyTemplate& tmpl, const Secti
 std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
     const MelodyTemplate& tmpl, uint8_t phrase_beats, float density_modifier,
     float thirtysecond_ratio, std::mt19937& rng, GenerationParadigm paradigm,
-    float syncopation_weight) {
+    float syncopation_weight, SectionType section_type) {
   std::vector<RhythmNote> rhythm;
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
@@ -2479,8 +2488,15 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
     bool apply_syncopation = false;
     if (is_on_beat && syncopation_weight > 0.0f &&
         current_beat + 0.5f < phrase_body_end) {
+      // Calculate context-aware syncopation weight
+      // Phrase progress: 0.0 at start, 1.0 at end
+      float phrase_progress = current_beat / end_beat;
+      int beat_in_bar = static_cast<int>(current_beat) % 4;
+      float contextual_weight = getContextualSyncopationWeight(
+          syncopation_weight, phrase_progress, beat_in_bar, section_type);
+
       float synco_roll = dist(rng);
-      if (synco_roll < syncopation_weight) {
+      if (synco_roll < contextual_weight) {
         // Skip this strong beat, advance to the off-beat (8th note = 0.5 beats)
         apply_syncopation = true;
         current_beat += 0.5f;

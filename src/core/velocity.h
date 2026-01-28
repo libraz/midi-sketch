@@ -342,6 +342,23 @@ void applyBeatMicroDynamics(MidiTrack& track);
  */
 float getSyncopationWeight(VocalGrooveFeel feel, SectionType section, uint8_t drive_feel = 50);
 
+/**
+ * @brief Get context-aware syncopation weight for natural drive feel.
+ *
+ * Adjusts syncopation weight based on phrase position and beat position
+ * within the bar. Creates more natural rhythmic variation:
+ * - Phrase latter half (>0.5): Up to 1.3x boost for building momentum
+ * - Beats 2/4 backbeat positions: 1.15x boost for groove emphasis
+ *
+ * @param base_weight Base syncopation weight from getSyncopationWeight()
+ * @param phrase_progress Phrase progress (0.0-1.0)
+ * @param beat_in_bar Beat position within bar (0-3)
+ * @param section Section type for context
+ * @return Adjusted syncopation weight (clamped to 0.40 max)
+ */
+float getContextualSyncopationWeight(float base_weight, float phrase_progress, int beat_in_bar,
+                                      SectionType section);
+
 // ============================================================================
 // Drive Feel Mapping
 // ============================================================================
@@ -448,6 +465,32 @@ uint8_t calculateEnergyAdjustedVelocity(uint8_t section_velocity, float energy);
  * @return Adjusted density multiplier (0.5-1.5)
  */
 float calculateEnergyDensityMultiplier(float base_density, float energy);
+
+// ============================================================================
+// Phrase Note Velocity Curve
+// ============================================================================
+
+// Forward declaration
+enum class ContourType : uint8_t;
+
+/**
+ * @brief Get phrase-internal velocity curve multiplier.
+ *
+ * Creates natural crescendo/decrescendo within a phrase based on note position.
+ * The curve shape is adapted based on the phrase contour type:
+ * - Peak contour: climax at 60% through the phrase
+ * - Other contours: climax at 75% through the phrase
+ *
+ * Velocity curve:
+ * - Before climax: gradual crescendo (0.88 -> 1.08)
+ * - After climax: gradual decrescendo (1.08 -> 0.92)
+ *
+ * @param note_index Current note index in phrase (0-based)
+ * @param total_notes Total number of notes in the phrase
+ * @param contour Optional phrase contour type affecting climax position
+ * @return Velocity multiplier (0.85-1.10)
+ */
+float getPhraseNoteVelocityCurve(int note_index, int total_notes, ContourType contour);
 
 /**
  * @brief Get chord tone preference based on EmotionCurve resolution_need.

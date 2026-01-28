@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include "core/emotion_curve.h"
+#include "core/melody_types.h"
 #include "core/midi_track.h"
 
 namespace midisketch {
@@ -1009,6 +1010,146 @@ TEST(VelocityTest, ApplyPhraseEndDecay_DefaultDriveFeelMatchesNeutral) {
   // Both should have same duration
   EXPECT_EQ(track_default.notes()[0].duration, track_neutral.notes()[0].duration)
       << "Default drive_feel should match neutral (50)";
+}
+
+// ============================================================================
+// Contextual Syncopation Weight Tests
+// ============================================================================
+
+TEST(VelocityTest, GetContextualSyncopationWeight_BaseWeightPreserved) {
+  // At phrase start (progress=0) and beat 0, should return approximately base weight
+  float base = 0.20f;
+  float result = getContextualSyncopationWeight(base, 0.0f, 0, SectionType::A);
+  // No phrase boost at progress=0, no backbeat boost at beat 0
+  EXPECT_NEAR(result, base, 0.01f);
+}
+
+TEST(VelocityTest, GetContextualSyncopationWeight_PhraseProgressBoost) {
+  float base = 0.20f;
+
+  // Early in phrase (progress=0.3) - no boost
+  float early = getContextualSyncopationWeight(base, 0.3f, 0, SectionType::A);
+
+  // Late in phrase (progress=0.9) - should have boost
+  float late = getContextualSyncopationWeight(base, 0.9f, 0, SectionType::A);
+
+  EXPECT_GT(late, early) << "Late phrase should have higher syncopation than early";
+  // Progress 0.9 -> factor 0.8, boost 1.24x
+  EXPECT_GT(late, base * 1.2f) << "Late phrase boost should be significant";
+}
+
+TEST(VelocityTest, GetContextualSyncopationWeight_BackbeatBoost) {
+  float base = 0.20f;
+  float progress = 0.3f;  // Fixed progress to isolate beat effect
+
+  // Downbeat (beat 0) - no backbeat boost
+  float beat0 = getContextualSyncopationWeight(base, progress, 0, SectionType::A);
+
+  // Backbeat (beat 1) - should have boost
+  float beat1 = getContextualSyncopationWeight(base, progress, 1, SectionType::A);
+
+  // Downbeat (beat 2) - no backbeat boost
+  float beat2 = getContextualSyncopationWeight(base, progress, 2, SectionType::A);
+
+  // Backbeat (beat 3) - should have boost
+  float beat3 = getContextualSyncopationWeight(base, progress, 3, SectionType::A);
+
+  EXPECT_GT(beat1, beat0) << "Beat 2 (backbeat) should be higher than beat 1";
+  EXPECT_GT(beat3, beat2) << "Beat 4 (backbeat) should be higher than beat 3";
+  EXPECT_NEAR(beat1, beat3, 0.01f) << "Both backbeats should have same boost";
+}
+
+TEST(VelocityTest, GetContextualSyncopationWeight_DropSectionBoost) {
+  float base = 0.20f;
+  float progress = 0.5f;
+
+  float verse = getContextualSyncopationWeight(base, progress, 0, SectionType::A);
+  float drop = getContextualSyncopationWeight(base, progress, 0, SectionType::Drop);
+
+  EXPECT_GT(drop, verse) << "Drop section should have higher syncopation";
+}
+
+TEST(VelocityTest, GetContextualSyncopationWeight_ClampToMax) {
+  // High base weight + late phrase + backbeat should still be clamped
+  float high_base = 0.35f;
+  float result = getContextualSyncopationWeight(high_base, 0.95f, 1, SectionType::Drop);
+
+  EXPECT_LE(result, 0.40f) << "Should be clamped to maximum";
+}
+
+// ============================================================================
+// Phrase Note Velocity Curve Tests
+// ============================================================================
+
+TEST(VelocityTest, GetPhraseNoteVelocityCurve_SingleNote) {
+  // Single note should return 1.0 (no curve)
+  float result = getPhraseNoteVelocityCurve(0, 1, ContourType::Plateau);
+  EXPECT_FLOAT_EQ(result, 1.0f);
+}
+
+TEST(VelocityTest, GetPhraseNoteVelocityCurve_StartLowerThanClimax) {
+  int total = 10;
+
+  // First note should be lower than mid-phrase note
+  float first = getPhraseNoteVelocityCurve(0, total, ContourType::Plateau);
+  float mid = getPhraseNoteVelocityCurve(7, total, ContourType::Plateau);  // Near 75% climax
+
+  EXPECT_LT(first, mid) << "First note should be quieter than climax region";
+}
+
+TEST(VelocityTest, GetPhraseNoteVelocityCurve_EndLowerThanClimax) {
+  int total = 10;
+
+  // Last note should be lower than climax
+  float last = getPhraseNoteVelocityCurve(9, total, ContourType::Plateau);
+  float mid = getPhraseNoteVelocityCurve(7, total, ContourType::Plateau);
+
+  EXPECT_LT(last, mid) << "Last note should be quieter than climax region";
+}
+
+TEST(VelocityTest, GetPhraseNoteVelocityCurve_PeakContourEarlierClimax) {
+  int total = 10;
+
+  // For Peak contour, climax is at 60% (progress ~0.6)
+  // For Plateau contour, climax is at 75% (progress ~0.75)
+  // Note 5 has progress 5/9 = 0.556, closer to Peak's climax
+  float peak_at_5 = getPhraseNoteVelocityCurve(5, total, ContourType::Peak);
+  float plateau_at_5 = getPhraseNoteVelocityCurve(5, total, ContourType::Plateau);
+
+  // At progress ~0.55, Peak is near its climax while Plateau is still building
+  EXPECT_GT(peak_at_5, plateau_at_5)
+      << "Peak contour should be louder at position 5 (near its 60% climax)";
+}
+
+TEST(VelocityTest, GetPhraseNoteVelocityCurve_ValidRange) {
+  // All values should be within reasonable range
+  for (int i = 0; i < 20; ++i) {
+    for (auto contour : {ContourType::Ascending, ContourType::Descending,
+                         ContourType::Peak, ContourType::Valley, ContourType::Plateau}) {
+      float result = getPhraseNoteVelocityCurve(i, 20, contour);
+      EXPECT_GE(result, 0.85f) << "Should not go below 0.85";
+      EXPECT_LE(result, 1.10f) << "Should not exceed 1.10";
+    }
+  }
+}
+
+TEST(VelocityTest, GetPhraseNoteVelocityCurve_CrescendoDecrescendo) {
+  int total = 12;
+  ContourType contour = ContourType::Plateau;  // Climax at 75%
+
+  // Verify crescendo in first part
+  float note2 = getPhraseNoteVelocityCurve(2, total, contour);
+  float note4 = getPhraseNoteVelocityCurve(4, total, contour);
+  float note6 = getPhraseNoteVelocityCurve(6, total, contour);
+
+  EXPECT_LT(note2, note4) << "Should crescendo in early phrase";
+  EXPECT_LT(note4, note6) << "Should continue crescendo toward climax";
+
+  // Verify decrescendo in last part
+  float note9 = getPhraseNoteVelocityCurve(9, total, contour);
+  float note11 = getPhraseNoteVelocityCurve(11, total, contour);
+
+  EXPECT_GT(note9, note11) << "Should decrescendo after climax";
 }
 
 }  // namespace

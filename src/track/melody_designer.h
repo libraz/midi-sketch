@@ -355,14 +355,16 @@ class MelodyDesigner {
    * @param thirtysecond_ratio Ratio of 32nd notes (0.0-1.0)
    * @param rng Random number generator
    * @param paradigm Generation paradigm (affects grid quantization)
-   * @param syncopation_weight Syncopation probability (0.0-0.35, default 0.15)
+   * @param syncopation_weight Base syncopation probability (0.0-0.35, default 0.15)
+   * @param section_type Section type for context-aware syncopation (default Intro)
    * @return Vector of rhythm positions for the phrase
    */
   std::vector<RhythmNote> generatePhraseRhythm(
       const MelodyTemplate& tmpl, uint8_t phrase_beats, float density_modifier,
       float thirtysecond_ratio, std::mt19937& rng,
       GenerationParadigm paradigm = GenerationParadigm::Traditional,
-      float syncopation_weight = 0.15f);
+      float syncopation_weight = 0.15f,
+      SectionType section_type = SectionType::Intro);
 
   /**
    * @brief Select pitch for locked rhythm generation.
