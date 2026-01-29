@@ -100,6 +100,26 @@ constexpr size_t kMaxTransformSteps = 8;
 
 #endif  // MIDISKETCH_NOTE_PROVENANCE
 
+// Forward declarations for friend classes
+class NoteFactory;
+class FrettedNoteFactory;
+class PostProcessor;
+class MidiReader;
+class MelodicEmbellisher;
+class MidiTrack;
+class NoteEventTestHelper;
+class AuxTrackGenerator;
+
+// Helper struct for creating NoteEvents in track generators without NoteFactory.
+// This is used for drums, SE, and other contexts where harmony checking is not applicable.
+// NoteFactory should still be preferred for melody/harmony-aware note creation.
+struct NoteEventBuilder;
+
+// Forward declarations for friend functions (drums)
+namespace drums {
+inline void addDrumNote(MidiTrack& track, Tick start, Tick duration, uint8_t note, uint8_t velocity);
+}  // namespace drums
+
 /// @brief Note event (combines note-on/off for easy editing).
 struct NoteEvent {
   Tick start_tick;   ///< Start time in ticks
@@ -119,12 +139,34 @@ struct NoteEvent {
   uint8_t transform_count = 0;                             ///< Number of valid steps
 #endif                                                     // MIDISKETCH_NOTE_PROVENANCE
 
+ private:
+  // Constructors are private to enforce NoteFactory usage for dissonance checking.
+  // Use NoteFactory::create() or NoteFactory::createSafe() for production code.
+  // Copy/move constructors and assignment operators remain public (safe operations).
+
   /// @brief Default constructor.
   NoteEvent() = default;
 
-  /// @brief Constructor for basic note creation (backward compatible).
+  /// @brief Constructor for basic note creation.
   NoteEvent(Tick start, Tick dur, uint8_t n, uint8_t vel)
       : start_tick(start), duration(dur), note(n), velocity(vel) {}
+
+  // Friend declarations for classes that need direct construction
+  friend class NoteFactory;           ///< Main factory for melody/chord notes
+  friend class FrettedNoteFactory;    ///< Factory for fretted instrument notes
+  friend class PostProcessor;         ///< Post-processing (drums only, no harmony)
+  friend class MidiReader;            ///< File reading (external MIDI files)
+  friend class MelodicEmbellisher;    ///< Embellishment (intentional non-chord tones)
+  friend class MidiTrack;             ///< Legacy API (deprecated)
+  friend class NoteEventTestHelper;   ///< Test helper
+  friend class AuxTrackGenerator;     ///< Aux track generation
+  friend struct NoteEventBuilder;     ///< Track generation helper
+
+  // Friend declaration for drum note helper (no harmony context needed)
+  friend void drums::addDrumNote(MidiTrack& track, Tick start, Tick duration, uint8_t note,
+                                 uint8_t velocity);
+
+ public:
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
   /// @brief Check if provenance is valid (created via NoteFactory).
@@ -151,6 +193,26 @@ struct NoteEvent {
   /// @brief Stub: always returns false when provenance is disabled.
   bool hasTransformHistory() const { return false; }
 #endif  // MIDISKETCH_NOTE_PROVENANCE
+};
+
+/// @brief Helper struct for creating NoteEvents in track generators.
+///
+/// This struct provides static methods for creating NoteEvent objects
+/// without requiring NoteFactory. It is intended for use in contexts where:
+/// - No harmony context is available (drums, SE)
+/// - The generation logic has its own harmony handling
+/// - Quick prototyping or testing
+///
+/// For production code with melodic content, prefer NoteFactory::create()
+/// or NoteFactory::createSafe() to ensure proper dissonance checking.
+struct NoteEventBuilder {
+  /// @brief Create a NoteEvent with specified parameters.
+  static NoteEvent create(Tick start, Tick dur, uint8_t note, uint8_t vel) {
+    return NoteEvent(start, dur, note, vel);
+  }
+
+  /// @brief Create a default-initialized NoteEvent.
+  static NoteEvent createDefault() { return NoteEvent(); }
 };
 
 /// @brief Non-harmonic tone type for melodic ornamentation.
@@ -214,6 +276,21 @@ enum class TrackRole : uint8_t {
 
 /// @brief Number of track roles.
 inline constexpr size_t kTrackCount = 8;
+
+/// @brief Convert TrackRole to string for debugging/display.
+inline const char* trackRoleToString(TrackRole role) {
+  switch (role) {
+    case TrackRole::Vocal: return "vocal";
+    case TrackRole::Chord: return "chord";
+    case TrackRole::Bass: return "bass";
+    case TrackRole::Drums: return "drums";
+    case TrackRole::SE: return "se";
+    case TrackRole::Motif: return "motif";
+    case TrackRole::Arpeggio: return "arpeggio";
+    case TrackRole::Aux: return "aux";
+    default: return "unknown";
+  }
+}
 
 /// @brief MIDI Control Change event for continuous controller data.
 struct CCEvent {

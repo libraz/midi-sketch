@@ -13,6 +13,7 @@
 
 #include "core/generator.h"
 #include "core/types.h"
+#include "test_helpers/note_event_test_helper.h"
 #include "test_support/stub_harmony_context.h"
 
 namespace midisketch {
@@ -288,13 +289,13 @@ TEST_F(MotifTest, ExtractMotifFromChorusBasic) {
   std::vector<NoteEvent> chorus_notes;
   // Create a simple 4-note melody: C4, E4, G4, C5
   Tick current = 0;
-  chorus_notes.push_back({current, TICKS_PER_BEAT, 60, 100});  // C4
+  chorus_notes.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT, 60, 100));  // C4
   current += TICKS_PER_BEAT;
-  chorus_notes.push_back({current, TICKS_PER_BEAT, 64, 100});  // E4 (+4)
+  chorus_notes.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT, 64, 100));  // E4 (+4)
   current += TICKS_PER_BEAT;
-  chorus_notes.push_back({current, TICKS_PER_BEAT, 67, 100});  // G4 (+7)
+  chorus_notes.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT, 67, 100));  // G4 (+7)
   current += TICKS_PER_BEAT;
-  chorus_notes.push_back({current, TICKS_PER_BEAT, 72, 100});  // C5 (+12)
+  chorus_notes.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT, 72, 100));  // C5 (+12)
 
   Motif motif = extractMotifFromChorus(chorus_notes);
 
@@ -312,8 +313,8 @@ TEST_F(MotifTest, ExtractMotifFromChorusMaxNotes) {
   std::vector<NoteEvent> chorus_notes;
   // Create more notes than max_notes
   for (int i = 0; i < 16; ++i) {
-    chorus_notes.push_back(
-        {static_cast<Tick>(i * TICKS_PER_BEAT), TICKS_PER_BEAT, static_cast<uint8_t>(60 + i), 100});
+    chorus_notes.push_back(NoteEventTestHelper::create(
+        static_cast<Tick>(i * TICKS_PER_BEAT), TICKS_PER_BEAT, static_cast<uint8_t>(60 + i), 100));
   }
 
   // Extract with max_notes = 4
@@ -326,9 +327,9 @@ TEST_F(MotifTest, ExtractMotifFromChorusMaxNotes) {
 TEST_F(MotifTest, ExtractMotifFromChorusFindsClimax) {
   std::vector<NoteEvent> chorus_notes;
   // Create melody where highest note is in the middle
-  chorus_notes.push_back({0, TICKS_PER_BEAT, 60, 100});                   // C4
-  chorus_notes.push_back({TICKS_PER_BEAT, TICKS_PER_BEAT, 72, 100});      // C5 (highest)
-  chorus_notes.push_back({TICKS_PER_BEAT * 2, TICKS_PER_BEAT, 64, 100});  // E4
+  chorus_notes.push_back(NoteEventTestHelper::create(0, TICKS_PER_BEAT, 60, 100));                   // C4
+  chorus_notes.push_back(NoteEventTestHelper::create(TICKS_PER_BEAT, TICKS_PER_BEAT, 72, 100));      // C5 (highest)
+  chorus_notes.push_back(NoteEventTestHelper::create(TICKS_PER_BEAT * 2, TICKS_PER_BEAT, 64, 100));  // E4
 
   Motif motif = extractMotifFromChorus(chorus_notes);
 
@@ -602,13 +603,13 @@ TEST_F(MotifTest, ExtractMotifFromChorusStoresAbsolutePitches) {
   std::vector<NoteEvent> chorus_notes;
   // Create a melody: C4, E4, G4, C5
   Tick current = 0;
-  chorus_notes.push_back({current, TICKS_PER_BEAT, 60, 100});  // C4
+  chorus_notes.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT, 60, 100));  // C4
   current += TICKS_PER_BEAT;
-  chorus_notes.push_back({current, TICKS_PER_BEAT, 64, 100});  // E4
+  chorus_notes.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT, 64, 100));  // E4
   current += TICKS_PER_BEAT;
-  chorus_notes.push_back({current, TICKS_PER_BEAT, 67, 100});  // G4
+  chorus_notes.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT, 67, 100));  // G4
   current += TICKS_PER_BEAT;
-  chorus_notes.push_back({current, TICKS_PER_BEAT, 72, 100});  // C5
+  chorus_notes.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT, 72, 100));  // C5
 
   Motif motif = extractMotifFromChorus(chorus_notes);
 
@@ -713,13 +714,13 @@ TEST_F(MotifTest, AuxTrackReproducesMelodicContourFaithfully) {
   std::vector<NoteEvent> chorus_notes;
   Tick current = 0;
   // Distinctive melody: C4, G4, E4, A4 (with varied intervals)
-  chorus_notes.push_back({current, TICKS_PER_BEAT, 60, 100});  // C4
+  chorus_notes.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT, 60, 100));  // C4
   current += TICKS_PER_BEAT;
-  chorus_notes.push_back({current, TICKS_PER_BEAT, 67, 100});  // G4 (+7)
+  chorus_notes.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT, 67, 100));  // G4 (+7)
   current += TICKS_PER_BEAT;
-  chorus_notes.push_back({current, TICKS_PER_BEAT, 64, 100});  // E4 (+4)
+  chorus_notes.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT, 64, 100));  // E4 (+4)
   current += TICKS_PER_BEAT;
-  chorus_notes.push_back({current, TICKS_PER_BEAT, 69, 100});  // A4 (+9)
+  chorus_notes.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT, 69, 100));  // A4 (+9)
 
   Motif motif = extractMotifFromChorus(chorus_notes);
 
@@ -822,10 +823,10 @@ TEST_F(MotifTest, HookContourUsesSmallIntervals) {
 TEST_F(MotifTest, PlaceMotifInBridgeProducesNotes) {
   // Create a test motif
   std::vector<NoteEvent> chorus_notes = {
-      {0, 480, 60, 80},
-      {480, 480, 64, 80},
-      {960, 480, 67, 80},
-      {1440, 480, 72, 80},
+      NoteEventTestHelper::create(0, 480, 60, 80),
+      NoteEventTestHelper::create(480, 480, 64, 80),
+      NoteEventTestHelper::create(960, 480, 67, 80),
+      NoteEventTestHelper::create(1440, 480, 72, 80),
   };
   Motif motif = extractMotifFromChorus(chorus_notes);
 
@@ -853,9 +854,9 @@ TEST_F(MotifTest, PlaceMotifInBridgeProducesNotes) {
 TEST_F(MotifTest, PlaceMotifInFinalChorusProducesOctaveDoubling) {
   // Create a test motif
   std::vector<NoteEvent> chorus_notes = {
-      {0, 480, 60, 80},
-      {480, 480, 64, 80},
-      {960, 480, 67, 80},
+      NoteEventTestHelper::create(0, 480, 60, 80),
+      NoteEventTestHelper::create(480, 480, 64, 80),
+      NoteEventTestHelper::create(960, 480, 67, 80),
   };
   Motif motif = extractMotifFromChorus(chorus_notes);
 
@@ -894,10 +895,10 @@ TEST_F(MotifTest, PlaceMotifInFinalChorusProducesOctaveDoubling) {
 TEST_F(MotifTest, PlaceMotifInBridgeUsesVariation) {
   // Create a test motif with distinct pitches
   std::vector<NoteEvent> chorus_notes = {
-      {0, 480, 60, 80},
-      {480, 480, 64, 80},
-      {960, 480, 67, 80},
-      {1440, 480, 72, 80},
+      NoteEventTestHelper::create(0, 480, 60, 80),
+      NoteEventTestHelper::create(480, 480, 64, 80),
+      NoteEventTestHelper::create(960, 480, 67, 80),
+      NoteEventTestHelper::create(1440, 480, 72, 80),
   };
   Motif original = extractMotifFromChorus(chorus_notes);
 

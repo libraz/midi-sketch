@@ -6,6 +6,7 @@
 #ifndef MIDISKETCH_TEST_STUB_HARMONY_CONTEXT_H
 #define MIDISKETCH_TEST_STUB_HARMONY_CONTEXT_H
 
+#include <string>
 #include <vector>
 
 #include "core/i_harmony_context.h"
@@ -88,6 +89,15 @@ class StubHarmonyContext : public IHarmonyContext {
 
   void registerSecondaryDominant(Tick /*start*/, Tick /*end*/, int8_t /*degree*/) override {
     ++secondary_dominant_count_;
+  }
+
+  std::string dumpNotesAt(Tick tick, Tick /*range_ticks*/ = 1920) const override {
+    return "StubHarmonyContext::dumpNotesAt(" + std::to_string(tick) + ") - no real data";
+  }
+
+  Tick getMaxSafeEnd(Tick /*note_start*/, uint8_t /*pitch*/, TrackRole /*exclude*/,
+                     Tick desired_end) const override {
+    return desired_end;  // Stub always returns desired_end (no restrictions)
   }
 
   // Test inspection methods

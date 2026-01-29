@@ -34,7 +34,6 @@ void printUsage(const char* program) {
   std::cout << "  --vocal-style N   Set vocal style (0=Auto, 1=Standard, 2=Vocaloid,\n";
   std::cout << "                    3=UltraVocaloid, 4=Idol, 5=Ballad, 6=Rock,\n";
   std::cout << "                    7=CityPop, 8=Anime)\n";
-  std::cout << "  --note-density F  Set note density (0.3-2.0, default: style preset)\n";
   std::cout << "  --bpm N           Set BPM (60-200, default: style preset)\n";
   std::cout << "  --duration N      Set target duration in seconds (0 = use pattern)\n";
   std::cout << "  --form N          Set form/structure pattern (0-17 or name like StandardPop)\n";
@@ -42,9 +41,7 @@ void printUsage(const char* program) {
   std::cout << "  --input FILE      Analyze existing MIDI file for dissonance\n";
   std::cout << "  --analyze         Analyze generated MIDI for dissonance issues\n";
   std::cout << "  --skip-vocal      Skip vocal in initial generation (for BGM-first workflow)\n";
-  std::cout << "  --regenerate-vocal  Regenerate vocal after initial generation\n";
-  std::cout << "  --vocal-seed N    Seed for vocal regeneration (requires --regenerate-vocal)\n";
-  std::cout << "  --vocal-attitude N  Vocal attitude for regeneration (0-2)\n";
+  std::cout << "  --vocal-attitude N  Vocal attitude (0-2)\n";
   std::cout << "  --vocal-low N     Vocal range low (MIDI note, default 57)\n";
   std::cout << "  --vocal-high N    Vocal range high (MIDI note, default 79)\n";
   std::cout << "  --format FMT      Set MIDI format (smf1 or smf2, default: smf2)\n";
@@ -54,6 +51,14 @@ void printUsage(const char* program) {
   std::cout << "  --bar N           Show notes at bar N (1-indexed) by track\n";
   std::cout << "  --json            Output JSON to stdout (with --validate or --analyze)\n";
   std::cout << "  --addictive       Enable Behavioral Loop mode (fixed riff, maximum hook)\n";
+  std::cout << "  --arpeggio        Enable arpeggio track\n";
+  std::cout << "  --modulation N    Set modulation timing (0=None, 1=LastChorus,\n";
+  std::cout << "                    2=AfterBridge, 3=EachChorus, 4=Random)\n";
+  std::cout << "  --composition N   Set composition style (0=MelodyLead,\n";
+  std::cout << "                    1=BackgroundMotif, 2=SynthDriven)\n";
+  std::cout << "  --enable-sus      Enable sus2/sus4 chord substitutions\n";
+  std::cout << "  --enable-9th      Enable 9th chord extensions\n";
+  std::cout << "  --dump-collisions-at N  Dump collision state at tick N for debugging\n";
   std::cout << "  --help            Show this help message\n";
 }
 
@@ -450,7 +455,6 @@ void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num) {
 int main(int argc, char* argv[]) {
   bool analyze = false;
   bool skip_vocal = false;
-  bool regenerate_vocal = false;
   std::string input_file;       // Input MIDI file for analysis
   std::string validate_file;    // MIDI file for validation
   std::string regenerate_file;  // MIDI file to regenerate from metadata
@@ -464,18 +468,22 @@ int main(int argc, char* argv[]) {
   bool mood_explicit = false;
   uint8_t chord_id = 3;
   uint8_t vocal_style = 0;    // 0 = Auto
-  float note_density = 0.0f;  // 0 = use style default
   uint16_t bpm = 0;           // 0 = use style default
   uint16_t duration = 0;      // 0 = use pattern default
   int form_id = -1;           // -1 = use style default
   int key_id = -1;            // -1 = use default (C)
-  uint32_t vocal_seed = 0;
   uint8_t vocal_attitude = 1;
   uint8_t vocal_low = 57;
   uint8_t vocal_high = 79;
   midisketch::MidiFormat midi_format = midisketch::kDefaultMidiFormat;
   int bar_num = 0;       // 0 = no bar inspection
   bool addictive = false;  // Behavioral Loop mode
+  bool arpeggio_enabled = false;
+  uint8_t modulation = 0;       // 0 = None
+  uint8_t composition_style = 0;  // 0 = MelodyLead
+  bool enable_sus = false;
+  bool enable_9th = false;
+  midisketch::Tick dump_collisions_tick = 0;  // 0 = no dump
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--analyze") == 0) {
@@ -556,8 +564,6 @@ int main(int argc, char* argv[]) {
       }
     } else if (std::strcmp(argv[i], "--vocal-style") == 0 && i + 1 < argc) {
       vocal_style = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
-    } else if (std::strcmp(argv[i], "--note-density") == 0 && i + 1 < argc) {
-      note_density = static_cast<float>(std::strtod(argv[++i], nullptr));
     } else if (std::strcmp(argv[i], "--bpm") == 0 && i + 1 < argc) {
       bpm = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--duration") == 0 && i + 1 < argc) {
@@ -590,10 +596,6 @@ int main(int argc, char* argv[]) {
       key_id = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--skip-vocal") == 0) {
       skip_vocal = true;
-    } else if (std::strcmp(argv[i], "--regenerate-vocal") == 0) {
-      regenerate_vocal = true;
-    } else if (std::strcmp(argv[i], "--vocal-seed") == 0 && i + 1 < argc) {
-      vocal_seed = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--vocal-attitude") == 0 && i + 1 < argc) {
       vocal_attitude = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--vocal-low") == 0 && i + 1 < argc) {
@@ -627,6 +629,18 @@ int main(int argc, char* argv[]) {
       }
     } else if (std::strcmp(argv[i], "--addictive") == 0) {
       addictive = true;
+    } else if (std::strcmp(argv[i], "--arpeggio") == 0) {
+      arpeggio_enabled = true;
+    } else if (std::strcmp(argv[i], "--modulation") == 0 && i + 1 < argc) {
+      modulation = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+    } else if (std::strcmp(argv[i], "--composition") == 0 && i + 1 < argc) {
+      composition_style = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+    } else if (std::strcmp(argv[i], "--enable-sus") == 0) {
+      enable_sus = true;
+    } else if (std::strcmp(argv[i], "--enable-9th") == 0) {
+      enable_9th = true;
+    } else if (std::strcmp(argv[i], "--dump-collisions-at") == 0 && i + 1 < argc) {
+      dump_collisions_tick = static_cast<midisketch::Tick>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
       printUsage(argv[0]);
       return 0;
@@ -894,8 +908,6 @@ int main(int argc, char* argv[]) {
   if (key_id >= 0 && key_id <= 11) {
     config.key = static_cast<midisketch::Key>(key_id);
   }
-  // note_density is deprecated; melody_template is used instead
-  (void)note_density;
 
   // Vocal parameters
   config.skip_vocal = skip_vocal;
@@ -908,9 +920,16 @@ int main(int argc, char* argv[]) {
   // Behavioral Loop mode
   config.addictive_mode = addictive;
 
-  // regenerate_vocal is handled separately (not part of initial config)
-  (void)regenerate_vocal;
-  (void)vocal_seed;
+  // New options: arpeggio, modulation, composition style, chord extensions
+  config.arpeggio_enabled = arpeggio_enabled;
+  if (modulation <= 4) {
+    config.modulation_timing = static_cast<midisketch::ModulationTiming>(modulation);
+  }
+  if (composition_style <= 2) {
+    config.composition_style = static_cast<midisketch::CompositionStyle>(composition_style);
+  }
+  config.chord_extension.enable_sus = enable_sus;
+  config.chord_extension.enable_9th = enable_9th;
 
   const auto& preset = midisketch::getStylePreset(config.style_preset_id);
 
@@ -987,6 +1006,11 @@ int main(int argc, char* argv[]) {
   if (song.modulationTick() > 0) {
     std::cout << "  Modulation at tick: " << song.modulationTick() << " (+"
               << static_cast<int>(song.modulationAmount()) << " semitones)\n";
+  }
+
+  // Dump collision state at specific tick
+  if (dump_collisions_tick > 0) {
+    std::cout << "\n" << sketch.getHarmonyContext().dumpNotesAt(dump_collisions_tick) << "\n";
   }
 
   // Dissonance analysis

@@ -89,6 +89,20 @@ void recalculateSectionTicks(std::vector<Section>& sections);
  */
 void applyAddictiveModeExitPatterns(std::vector<Section>& sections, bool addictive_mode);
 
+/**
+ * @brief Apply energy curve to sections based on song position.
+ *
+ * Adjusts section energy levels based on the selected curve:
+ * - GradualBuild: Starts low, builds to peak at last chorus (default)
+ * - FrontLoaded: High energy throughout, slight dip in bridge
+ * - WavePattern: Alternates between low and high energy
+ * - SteadyState: Maintains consistent medium energy
+ *
+ * @param sections Sections to modify (energy levels may be adjusted)
+ * @param curve Energy curve type to apply
+ */
+void applyEnergyCurve(std::vector<Section>& sections, EnergyCurve curve);
+
 /// @}
 
 /// @name ProductionBlueprint Structure Functions

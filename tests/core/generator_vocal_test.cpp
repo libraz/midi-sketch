@@ -8,6 +8,7 @@
 #include "core/generator.h"
 #include "core/preset_data.h"
 #include "core/timing_constants.h"
+#include "test_helpers/note_event_test_helper.h"
 
 namespace midisketch {
 namespace {
@@ -1120,10 +1121,10 @@ TEST(CustomVocalTest, SetVocalNotesCreatesVocalTrack) {
 
   // Create custom vocal notes
   std::vector<NoteEvent> custom_notes;
-  custom_notes.push_back(NoteEvent(0, 480, 60, 100));     // C4, beat 1
-  custom_notes.push_back(NoteEvent(480, 480, 62, 100));   // D4, beat 2
-  custom_notes.push_back(NoteEvent(960, 480, 64, 100));   // E4, beat 3
-  custom_notes.push_back(NoteEvent(1440, 480, 65, 100));  // F4, beat 4
+  custom_notes.push_back(NoteEventTestHelper::create(0, 480, 60, 100));     // C4, beat 1
+  custom_notes.push_back(NoteEventTestHelper::create(480, 480, 62, 100));   // D4, beat 2
+  custom_notes.push_back(NoteEventTestHelper::create(960, 480, 64, 100));   // E4, beat 3
+  custom_notes.push_back(NoteEventTestHelper::create(1440, 480, 65, 100));  // F4, beat 4
 
   gen.setVocalNotes(params, custom_notes);
 
@@ -1150,11 +1151,11 @@ TEST(CustomVocalTest, SetVocalNotesThenGenerateAccompaniment) {
 
   // Create a simple C major melody
   std::vector<NoteEvent> custom_notes;
-  custom_notes.push_back(NoteEvent(0, 480, 60, 100));     // C4
-  custom_notes.push_back(NoteEvent(480, 480, 64, 100));   // E4
-  custom_notes.push_back(NoteEvent(960, 480, 67, 100));   // G4
-  custom_notes.push_back(NoteEvent(1440, 480, 72, 100));  // C5
-  custom_notes.push_back(NoteEvent(1920, 960, 60, 100));  // C4 (whole note)
+  custom_notes.push_back(NoteEventTestHelper::create(0, 480, 60, 100));     // C4
+  custom_notes.push_back(NoteEventTestHelper::create(480, 480, 64, 100));   // E4
+  custom_notes.push_back(NoteEventTestHelper::create(960, 480, 67, 100));   // G4
+  custom_notes.push_back(NoteEventTestHelper::create(1440, 480, 72, 100));  // C5
+  custom_notes.push_back(NoteEventTestHelper::create(1920, 960, 60, 100));  // C4 (whole note)
 
   gen.setVocalNotes(params, custom_notes);
 
@@ -1183,7 +1184,7 @@ TEST(CustomVocalTest, SetVocalNotesInitializesStructure) {
   params.seed = 42;
 
   std::vector<NoteEvent> custom_notes;
-  custom_notes.push_back(NoteEvent(0, 480, 60, 100));
+  custom_notes.push_back(NoteEventTestHelper::create(0, 480, 60, 100));
 
   gen.setVocalNotes(params, custom_notes);
 
@@ -1225,8 +1226,8 @@ TEST(CustomVocalTest, SetVocalNotesRegistersWithHarmonyContext) {
 
   std::vector<NoteEvent> custom_notes;
   // Create notes that span multiple ticks
-  custom_notes.push_back(NoteEvent(0, 960, 60, 100));    // C4, bar 1 first half
-  custom_notes.push_back(NoteEvent(960, 960, 64, 100));  // E4, bar 1 second half
+  custom_notes.push_back(NoteEventTestHelper::create(0, 960, 60, 100));    // C4, bar 1 first half
+  custom_notes.push_back(NoteEventTestHelper::create(960, 960, 64, 100));  // E4, bar 1 second half
 
   gen.setVocalNotes(params, custom_notes);
   gen.generateAccompanimentForVocal();
@@ -1263,23 +1264,23 @@ TEST(CustomVocalTest, SetVocalNotesLongMelody) {
   // Create a 4-bar melody (1 bar = 1920 ticks)
   std::vector<NoteEvent> custom_notes;
   // Bar 1: C E G E
-  custom_notes.push_back(NoteEvent(0, 480, 60, 100));
-  custom_notes.push_back(NoteEvent(480, 480, 64, 90));
-  custom_notes.push_back(NoteEvent(960, 480, 67, 85));
-  custom_notes.push_back(NoteEvent(1440, 480, 64, 80));
+  custom_notes.push_back(NoteEventTestHelper::create(0, 480, 60, 100));
+  custom_notes.push_back(NoteEventTestHelper::create(480, 480, 64, 90));
+  custom_notes.push_back(NoteEventTestHelper::create(960, 480, 67, 85));
+  custom_notes.push_back(NoteEventTestHelper::create(1440, 480, 64, 80));
   // Bar 2: F A G F
-  custom_notes.push_back(NoteEvent(1920, 480, 65, 100));
-  custom_notes.push_back(NoteEvent(2400, 480, 69, 90));
-  custom_notes.push_back(NoteEvent(2880, 480, 67, 85));
-  custom_notes.push_back(NoteEvent(3360, 480, 65, 80));
+  custom_notes.push_back(NoteEventTestHelper::create(1920, 480, 65, 100));
+  custom_notes.push_back(NoteEventTestHelper::create(2400, 480, 69, 90));
+  custom_notes.push_back(NoteEventTestHelper::create(2880, 480, 67, 85));
+  custom_notes.push_back(NoteEventTestHelper::create(3360, 480, 65, 80));
   // Bar 3: E G B G
-  custom_notes.push_back(NoteEvent(3840, 480, 64, 100));
-  custom_notes.push_back(NoteEvent(4320, 480, 67, 90));
-  custom_notes.push_back(NoteEvent(4800, 480, 71, 85));
-  custom_notes.push_back(NoteEvent(5280, 480, 67, 80));
+  custom_notes.push_back(NoteEventTestHelper::create(3840, 480, 64, 100));
+  custom_notes.push_back(NoteEventTestHelper::create(4320, 480, 67, 90));
+  custom_notes.push_back(NoteEventTestHelper::create(4800, 480, 71, 85));
+  custom_notes.push_back(NoteEventTestHelper::create(5280, 480, 67, 80));
   // Bar 4: D - - C (hold D, resolve to C)
-  custom_notes.push_back(NoteEvent(5760, 1440, 62, 100));  // D held
-  custom_notes.push_back(NoteEvent(7200, 480, 60, 85));    // C resolve
+  custom_notes.push_back(NoteEventTestHelper::create(5760, 1440, 62, 100));  // D held
+  custom_notes.push_back(NoteEventTestHelper::create(7200, 480, 60, 85));    // C resolve
 
   gen.setVocalNotes(params, custom_notes);
   gen.generateAccompanimentForVocal();

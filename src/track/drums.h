@@ -28,7 +28,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
                         std::mt19937& rng);
 
 /**
- * @brief Generate drum track with vocal synchronization.
+ * @brief Generate drum track with vocal synchronization (RhythmSync paradigm).
  *
  * When drums_sync_vocal is enabled, kick drums are placed to align with
  * vocal onset positions, creating a "rhythm lock" effect where the groove
@@ -43,6 +43,24 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
  */
 void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const GeneratorParams& params,
                                  std::mt19937& rng, const VocalAnalysis& vocal_analysis);
+
+/**
+ * @brief Generate drum track for MelodyDriven paradigm.
+ *
+ * MelodyDriven drums adapt to vocal phrases rather than syncing to onsets:
+ * - Fill placement at phrase boundaries (not beat-locked)
+ * - Kick density increases during dense vocal sections
+ * - Drum breaks during vocal rests
+ *
+ * @param track Target MidiTrack to populate with drum events
+ * @param song Song containing arrangement and section information
+ * @param params Generation parameters (mood affects pattern style)
+ * @param rng Random number generator for fill variation
+ * @param vocal_analysis Pre-analyzed vocal track data
+ * @note Drums use MIDI channel 9 (GM standard).
+ */
+void generateDrumsTrackMelodyDriven(MidiTrack& track, const Song& song, const GeneratorParams& params,
+                                    std::mt19937& rng, const VocalAnalysis& vocal_analysis);
 
 // ============================================================================
 // Swing Control API (for testing)

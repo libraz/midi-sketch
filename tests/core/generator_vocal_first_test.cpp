@@ -27,6 +27,8 @@ class GeneratorVocalFirstTest : public ::testing::Test {
     params_.seed = 12345;
     params_.arpeggio_enabled = false;
     params_.skip_vocal = false;
+    // Disable humanization for deterministic tests
+    params_.humanize = false;
   }
 
   GeneratorParams params_;

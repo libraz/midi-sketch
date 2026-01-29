@@ -96,6 +96,18 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
 /// @return Callback function for generateDrumsTrackImpl
 VocalSyncCallback createVocalSyncCallback(const VocalAnalysis& vocal_analysis);
 
+/// @brief Create MelodyDriven callback for phrase-aware drum generation.
+///
+/// MelodyDriven paradigm differs from RhythmSync in that drums adapt to
+/// vocal phrases rather than syncing to individual onsets:
+/// - Fill placement at phrase boundaries (not beat-locked)
+/// - Kick density increases during dense vocal sections
+/// - Drum breaks considered during vocal rests
+///
+/// @param vocal_analysis Pre-analyzed vocal track data
+/// @return Callback function for generateDrumsTrackImpl
+VocalSyncCallback createMelodyDrivenCallback(const VocalAnalysis& vocal_analysis);
+
 }  // namespace drums
 }  // namespace midisketch
 

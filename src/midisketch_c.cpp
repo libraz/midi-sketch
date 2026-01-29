@@ -362,9 +362,8 @@ MidiSketchError midisketch_set_vocal_notes(MidiSketchHandle handle,
   std::vector<midisketch::NoteEvent> cpp_notes;
   cpp_notes.reserve(count);
   for (size_t i = 0; i < count; ++i) {
-    midisketch::NoteEvent note(notes[i].start_tick, notes[i].duration, notes[i].pitch,
-                               notes[i].velocity);
-    cpp_notes.push_back(note);
+    cpp_notes.push_back(midisketch::NoteEventBuilder::create(
+        notes[i].start_tick, notes[i].duration, notes[i].pitch, notes[i].velocity));
   }
 
   sketch->setVocalNotes(cpp_config, cpp_notes);

@@ -258,7 +258,10 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
         }
 
         // Kick drum
-        if (!kicks_added) {
+        // Check intro_kick_enabled from blueprint
+        bool intro_kick_disabled = (section.type == SectionType::Intro &&
+                                    !blueprint.intro_kick_enabled);
+        if (!kicks_added && !intro_kick_disabled) {
           float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
           Tick adjusted_beat_tick = applyTimeFeel(beat_tick, time_feel, params.bpm);
           generateKickForBeat(track, beat_tick, adjusted_beat_tick, kick, beat, velocity,
@@ -350,6 +353,71 @@ VocalSyncCallback createVocalSyncCallback(const VocalAnalysis& vocal_analysis) {
     }
 
     return true;
+  };
+}
+
+VocalSyncCallback createMelodyDrivenCallback(const VocalAnalysis& vocal_analysis) {
+  return [&vocal_analysis](MidiTrack& track, Tick bar_start, Tick bar_end,
+                           const Section& section, uint8_t velocity, std::mt19937& rng) -> bool {
+    // MelodyDriven: drums adapt to vocal phrase density and boundaries
+    // Unlike RhythmSync which locks kicks to onsets, MelodyDriven adjusts
+    // kick density and timing based on vocal phrase characteristics
+
+    float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
+    if (kick_prob <= 0.0f) return false;
+
+    // Count vocal notes in this bar to determine density
+    size_t note_count = 0;
+    auto it = vocal_analysis.pitch_at_tick.lower_bound(bar_start);
+    while (it != vocal_analysis.pitch_at_tick.end() && it->first < bar_end) {
+      ++note_count;
+      ++it;
+    }
+
+    // Calculate density factor (0.0 = no vocal, 1.0 = very dense)
+    // 4 notes per bar is considered "normal", more = dense, fewer = sparse
+    float density_factor = std::min(1.0f, static_cast<float>(note_count) / 6.0f);
+
+    std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
+
+    // MelodyDriven kick pattern: standard positions with density-adjusted probability
+    // Higher vocal density = higher kick density for support
+    const Tick kick_positions[] = {
+        0,                     // Beat 1 (always)
+        TICKS_PER_BEAT * 2,    // Beat 3 (always)
+        TICKS_PER_BEAT,        // Beat 2 (density-dependent)
+        TICKS_PER_BEAT * 3,    // Beat 4 (density-dependent)
+        TICKS_PER_BEAT / 2,    // Beat 1.5 (high density only)
+        TICKS_PER_BEAT * 2 + TICKS_PER_BEAT / 2  // Beat 3.5 (high density only)
+    };
+
+    for (size_t i = 0; i < 6; ++i) {
+      Tick kick_tick = bar_start + kick_positions[i];
+      if (kick_tick >= bar_end) continue;
+
+      // Determine kick probability based on position and density
+      float pos_prob = 1.0f;
+      if (i < 2) {
+        // Beats 1 and 3: always play (standard backbeat)
+        pos_prob = kick_prob;
+      } else if (i < 4) {
+        // Beats 2 and 4: play when density is moderate or higher
+        pos_prob = kick_prob * density_factor * 0.7f;
+      } else {
+        // Off-beats: only play when density is high
+        pos_prob = kick_prob * density_factor * 0.4f;
+        if (density_factor < 0.5f) continue;  // Skip if sparse
+      }
+
+      if (prob_dist(rng) < pos_prob) {
+        uint8_t kick_vel = (i < 2) ? velocity : static_cast<uint8_t>(velocity * 0.85f);
+        addDrumNote(track, kick_tick, EIGHTH, BD, kick_vel);
+      }
+    }
+
+    // If vocal is completely absent (density_factor == 0), return false
+    // to fall back to standard pattern
+    return note_count > 0;
   };
 }
 

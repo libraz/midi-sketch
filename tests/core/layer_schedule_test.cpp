@@ -499,6 +499,8 @@ class LayerScheduleGeneratorTest : public ::testing::Test {
     params_.seed = 42;
     params_.vocal_low = 60;
     params_.vocal_high = 72;
+    // Disable humanization for deterministic tests
+    params_.humanize = false;
   }
 
   GeneratorParams params_;

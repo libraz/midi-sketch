@@ -127,15 +127,16 @@ class PostProcessor {
   ///
   /// At B->Chorus transition: truncate melodic track notes in last 1 beat (480 ticks)
   /// to create a dramatic pause before the chorus hits.
+  /// Uses per-section drop_style from the Section struct, or falls back to default_style.
   ///
   /// @param tracks Vector of melodic track pointers to process
-  /// @param sections Song sections for B->Chorus detection
+  /// @param sections Song sections for B->Chorus detection (uses section.drop_style)
   /// @param drum_track Drum track (not truncated - fill remains, crash added for DrumHit)
-  /// @param style Drop style intensity (default: Subtle)
+  /// @param default_style Default drop style if section.drop_style is None (default: Subtle)
   static void applyChorusDrop(std::vector<MidiTrack*>& tracks,
                                const std::vector<Section>& sections,
                                MidiTrack* drum_track,
-                               ChorusDropStyle style = ChorusDropStyle::Subtle);
+                               ChorusDropStyle default_style = ChorusDropStyle::Subtle);
 
   /// @brief Apply ritardando (gradual slowdown) to outro section.
   ///
@@ -154,16 +155,18 @@ class PostProcessor {
   /// Extends the basic FinalHit to include:
   /// - Bass and drums (kick + crash) on final beat
   /// - Velocity boost to 110+
-  /// - Chord track sustains final chord as whole note (unless it would clash with vocal)
+  /// - Chord track sustains final chord as whole note (with clash detection)
   ///
   /// @param bass_track Bass track pointer
   /// @param drum_track Drum track pointer
   /// @param chord_track Chord track pointer
-  /// @param vocal_track Vocal track pointer (for dissonance avoidance during sustain)
+  /// @param vocal_track Vocal track pointer (for legacy dissonance avoidance, can be nullptr)
   /// @param section The section with FinalHit exit pattern
+  /// @param harmony Harmony context for comprehensive clash detection (optional)
   static void applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum_track,
                                      MidiTrack* chord_track, const MidiTrack* vocal_track,
-                                     const Section& section);
+                                     const Section& section,
+                                     const IHarmonyContext* harmony = nullptr);
 
   // ============================================================================
   // Motif-Vocal Clash Resolution

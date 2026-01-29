@@ -12,6 +12,7 @@
 #include "core/harmony_context.h"
 #include "core/i_harmony_context.h"
 #include "core/timing_constants.h"
+#include "test_helpers/note_event_test_helper.h"
 
 namespace midisketch {
 namespace {
@@ -35,7 +36,7 @@ std::vector<NoteEvent> createTestMainMelody() {
   // Create a simple 4-bar melody
   Tick current = 0;
   for (int i = 0; i < 16; ++i) {
-    melody.push_back({current, TICKS_PER_BEAT / 2, 64, 100});  // E4
+    melody.push_back(NoteEventTestHelper::create(current, TICKS_PER_BEAT / 2, 64, 100));  // E4
     current += TICKS_PER_BEAT;
   }
   return melody;
@@ -110,8 +111,8 @@ TEST(AuxTrackTest, TargetHintWithMainMelody) {
 
   // Create main melody with phrases (gaps between notes)
   std::vector<NoteEvent> main_melody;
-  main_melody.push_back({0, TICKS_PER_BAR, 64, 100});
-  main_melody.push_back({TICKS_PER_BAR * 2, TICKS_PER_BAR, 67, 100});
+  main_melody.push_back(NoteEventTestHelper::create(0, TICKS_PER_BAR, 64, 100));
+  main_melody.push_back(NoteEventTestHelper::create(TICKS_PER_BAR * 2, TICKS_PER_BAR, 67, 100));
   ctx.main_melody = &main_melody;
 
   AuxConfig config;
@@ -213,9 +214,9 @@ TEST(AuxTrackTest, PhraseTailWithMainMelody) {
 
   // Create main melody with clear phrase endings
   std::vector<NoteEvent> main_melody;
-  main_melody.push_back({0, TICKS_PER_BEAT * 2, 64, 100});
+  main_melody.push_back(NoteEventTestHelper::create(0, TICKS_PER_BEAT * 2, 64, 100));
   // Gap of more than quarter note = phrase ending
-  main_melody.push_back({TICKS_PER_BAR * 2, TICKS_PER_BEAT * 2, 67, 100});
+  main_melody.push_back(NoteEventTestHelper::create(TICKS_PER_BAR * 2, TICKS_PER_BEAT * 2, 67, 100));
   ctx.main_melody = &main_melody;
 
   AuxConfig config;
@@ -358,7 +359,7 @@ TEST(AuxTrackTest, AvoidsClashWithMainMelody) {
   // Create main melody that covers the whole section
   std::vector<NoteEvent> main_melody;
   for (Tick t = 0; t < ctx.section_end; t += TICKS_PER_BEAT) {
-    main_melody.push_back({t, TICKS_PER_BEAT / 2, 64, 100});  // E4
+    main_melody.push_back(NoteEventTestHelper::create(t, TICKS_PER_BEAT / 2, 64, 100));  // E4
   }
   ctx.main_melody = &main_melody;
 
@@ -764,11 +765,8 @@ TEST(AuxTrackTest, MotifCounterUsesSeparateRegister) {
   std::vector<midisketch::NoteEvent> high_melody;
   midisketch::Tick current = 0;
   for (int i = 0; i < 16; ++i) {
-    midisketch::NoteEvent note;
-    note.start_tick = current;
-    note.duration = midisketch::TICKS_PER_BEAT / 2;
-    note.note = static_cast<uint8_t>(72 + (i % 8));  // C5+
-    note.velocity = 100;
+    midisketch::NoteEvent note = midisketch::NoteEventTestHelper::create(
+        current, midisketch::TICKS_PER_BEAT / 2, static_cast<uint8_t>(72 + (i % 8)), 100);  // C5+
     high_melody.push_back(note);
     current += midisketch::TICKS_PER_BEAT;
   }
@@ -806,11 +804,9 @@ TEST(AuxTrackTest, MotifCounterRhythmicComplementation) {
   midisketch::Tick current = 0;
   for (int i = 0; i < 4; ++i) {
     // One whole note per bar (very sparse)
-    midisketch::NoteEvent note;
-    note.start_tick = current;
-    note.duration = midisketch::TICKS_PER_BAR - midisketch::TICK_SIXTEENTH;
-    note.note = static_cast<uint8_t>(64 + i);
-    note.velocity = 100;
+    midisketch::NoteEvent note = midisketch::NoteEventTestHelper::create(
+        current, midisketch::TICKS_PER_BAR - midisketch::TICK_SIXTEENTH,
+        static_cast<uint8_t>(64 + i), 100);
     sparse_melody.push_back(note);
     current += midisketch::TICKS_PER_BAR;
   }

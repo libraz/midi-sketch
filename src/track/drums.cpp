@@ -224,6 +224,21 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
                                 drums::createVocalSyncCallback(vocal_analysis));
 }
 
+void generateDrumsTrackMelodyDriven(MidiTrack& track, const Song& song, const GeneratorParams& params,
+                                    std::mt19937& rng, const VocalAnalysis& vocal_analysis) {
+  // Delegate to unified implementation with MelodyDriven callback
+  drums::DrumGenerationParams drum_params;
+  drum_params.mood = params.mood;
+  drum_params.bpm = params.bpm;
+  drum_params.blueprint_id = params.blueprint_id;
+  drum_params.composition_style = params.composition_style;
+  drum_params.paradigm = params.paradigm;
+  drum_params.motif_drum = params.motif_drum;
+
+  drums::generateDrumsTrackImpl(track, song, drum_params, rng,
+                                drums::createMelodyDrivenCallback(vocal_analysis));
+}
+
 // ============================================================================
 // Kick Pattern Pre-computation
 // ============================================================================

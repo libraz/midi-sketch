@@ -16,6 +16,7 @@
 #include "core/melody_templates.h"
 #include "core/types.h"
 #include "core/vocal_style_profile.h"
+#include "test_helpers/note_event_test_helper.h"
 #include "track/melody_designer.h"
 
 namespace midisketch {
@@ -27,7 +28,7 @@ std::vector<NoteEvent> createTestMelody(const std::vector<uint8_t>& pitches,
   std::vector<NoteEvent> notes;
   Tick current_tick = 0;
   for (uint8_t pitch : pitches) {
-    notes.push_back({current_tick, note_duration, pitch, 100});
+    notes.push_back(NoteEventTestHelper::create(current_tick, note_duration, pitch, 100));
     current_tick += note_duration;
   }
   return notes;
@@ -162,15 +163,15 @@ TEST(MelodyEvaluatorTest, AaabPatternDetection) {
   Tick tick = 0;
   // A phrase (3 times)
   for (int i = 0; i < 3; ++i) {
-    melody.push_back({tick, TICKS_PER_BEAT, 60, 100});
+    melody.push_back(NoteEventTestHelper::create(tick, TICKS_PER_BEAT, 60, 100));
     tick += TICKS_PER_BEAT;
-    melody.push_back({tick, TICKS_PER_BEAT, 62, 100});
+    melody.push_back(NoteEventTestHelper::create(tick, TICKS_PER_BEAT, 62, 100));
     tick += TICKS_PER_BEAT;
   }
   // B phrase (different)
-  melody.push_back({tick, TICKS_PER_BEAT, 64, 100});
+  melody.push_back(NoteEventTestHelper::create(tick, TICKS_PER_BEAT, 64, 100));
   tick += TICKS_PER_BEAT;
-  melody.push_back({tick, TICKS_PER_BEAT, 67, 100});
+  melody.push_back(NoteEventTestHelper::create(tick, TICKS_PER_BEAT, 67, 100));
 
   float score = MelodyEvaluator::calcAaabPattern(melody);
   EXPECT_GE(score, 0.5f) << "AAAB pattern should be detected";
@@ -388,7 +389,7 @@ TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_EmptyNotes) {
 }
 
 TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_SingleNote) {
-  std::vector<NoteEvent> single = {{0, 480, 60, 100}};  // One quarter note
+  std::vector<NoteEvent> single = {NoteEventTestHelper::create(0, 480, 60, 100)};  // One quarter note
   float score = MelodyEvaluator::calcRhythmIntervalCorrelation(single);
   EXPECT_FLOAT_EQ(score, 0.5f) << "Single note should return neutral score";
 }
@@ -396,8 +397,8 @@ TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_SingleNote) {
 TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_LongNoteWithLeap) {
   // Good pattern: quarter note (480 ticks) followed by leap (5+ semitones)
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},    // C4 quarter note
-      {480, 480, 67, 100},  // G4 (7 semitones leap) after long note
+      NoteEventTestHelper::create(0, 480, 60, 100),    // C4 quarter note
+      NoteEventTestHelper::create(480, 480, 67, 100),  // G4 (7 semitones leap) after long note
   };
   float score = MelodyEvaluator::calcRhythmIntervalCorrelation(notes);
   EXPECT_GT(score, 0.5f) << "Long note + leap should score above neutral";
@@ -406,8 +407,8 @@ TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_LongNoteWithLeap) {
 TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_ShortNoteWithStep) {
   // Good pattern: short note (< 240 ticks) followed by step (1-2 semitones)
   std::vector<NoteEvent> notes = {
-      {0, 120, 60, 100},    // C4 eighth note
-      {120, 120, 62, 100},  // D4 (2 semitones step) after short note
+      NoteEventTestHelper::create(0, 120, 60, 100),    // C4 eighth note
+      NoteEventTestHelper::create(120, 120, 62, 100),  // D4 (2 semitones step) after short note
   };
   float score = MelodyEvaluator::calcRhythmIntervalCorrelation(notes);
   EXPECT_GT(score, 0.5f) << "Short note + step should score above neutral";
@@ -416,8 +417,8 @@ TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_ShortNoteWithStep) {
 TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_ShortNoteWithLeap) {
   // Bad pattern: short note followed by large leap (hard to sing)
   std::vector<NoteEvent> notes = {
-      {0, 120, 60, 100},    // C4 eighth note
-      {120, 120, 72, 100},  // C5 (12 semitones leap) after short note
+      NoteEventTestHelper::create(0, 120, 60, 100),    // C4 eighth note
+      NoteEventTestHelper::create(120, 120, 72, 100),  // C5 (12 semitones leap) after short note
   };
   float score = MelodyEvaluator::calcRhythmIntervalCorrelation(notes);
   EXPECT_LT(score, 0.5f) << "Short note + large leap should score below neutral";
@@ -426,12 +427,12 @@ TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_ShortNoteWithLeap) {
 TEST(MelodyEvaluatorTest, RhythmIntervalCorrelation_MixedPattern) {
   // Mix of good and bad patterns
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},     // C4 quarter (long)
-      {480, 480, 67, 100},   // G4 leap (good: long+leap)
-      {960, 120, 67, 100},   // G4 short
-      {1080, 120, 72, 100},  // C5 leap (bad: short+leap)
-      {1200, 480, 72, 100},  // C5 quarter (long)
-      {1680, 480, 74, 100},  // D5 step (neutral: long+step)
+      NoteEventTestHelper::create(0, 480, 60, 100),     // C4 quarter (long)
+      NoteEventTestHelper::create(480, 480, 67, 100),   // G4 leap (good: long+leap)
+      NoteEventTestHelper::create(960, 120, 67, 100),   // G4 short
+      NoteEventTestHelper::create(1080, 120, 72, 100),  // C5 leap (bad: short+leap)
+      NoteEventTestHelper::create(1200, 480, 72, 100),  // C5 quarter (long)
+      NoteEventTestHelper::create(1680, 480, 74, 100),  // D5 step (neutral: long+step)
   };
   float score = MelodyEvaluator::calcRhythmIntervalCorrelation(notes);
   // Should be near neutral due to mix
@@ -452,9 +453,9 @@ TEST(MelodyEvaluatorTest, EvaluateIncludesRhythmIntervalCorrelation) {
   harmony.initialize(Arrangement(sections), getChordProgression(0), Mood::StraightPop);
 
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},
-      {480, 480, 64, 100},
-      {960, 480, 67, 100},
+      NoteEventTestHelper::create(0, 480, 60, 100),
+      NoteEventTestHelper::create(480, 480, 64, 100),
+      NoteEventTestHelper::create(960, 480, 67, 100),
   };
 
   MelodyScore score = MelodyEvaluator::evaluate(notes, harmony);
@@ -477,8 +478,8 @@ TEST(MelodyEvaluatorTest, Catchiness_EmptyNotes) {
 TEST(MelodyEvaluatorTest, Catchiness_ShortMelody) {
   // Less than 4 notes should return neutral
   std::vector<NoteEvent> short_melody = {
-      {0, 480, 60, 100},
-      {480, 480, 62, 100},
+      NoteEventTestHelper::create(0, 480, 60, 100),
+      NoteEventTestHelper::create(480, 480, 62, 100),
   };
   float score = MelodyEvaluator::calcCatchiness(short_melody);
   EXPECT_FLOAT_EQ(score, 0.5f) << "Short melody should return neutral score";
@@ -488,12 +489,12 @@ TEST(MelodyEvaluatorTest, Catchiness_RepetitivePattern) {
   // Highly repetitive pattern: C-D-C-D (interval +2, -2, +2)
   // Should score well due to pattern repetition
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},     // C4
-      {480, 480, 62, 100},   // D4 (+2)
-      {960, 480, 60, 100},   // C4 (-2)
-      {1440, 480, 62, 100},  // D4 (+2)
-      {1920, 480, 60, 100},  // C4 (-2)
-      {2400, 480, 62, 100},  // D4 (+2)
+      NoteEventTestHelper::create(0, 480, 60, 100),     // C4
+      NoteEventTestHelper::create(480, 480, 62, 100),   // D4 (+2)
+      NoteEventTestHelper::create(960, 480, 60, 100),   // C4 (-2)
+      NoteEventTestHelper::create(1440, 480, 62, 100),  // D4 (+2)
+      NoteEventTestHelper::create(1920, 480, 60, 100),  // C4 (-2)
+      NoteEventTestHelper::create(2400, 480, 62, 100),  // D4 (+2)
   };
   float score = MelodyEvaluator::calcCatchiness(notes);
   EXPECT_GT(score, 0.5f) << "Repetitive pattern should score above neutral";
@@ -503,11 +504,11 @@ TEST(MelodyEvaluatorTest, Catchiness_RandomPattern) {
   // Random-ish pattern: no repetition, large intervals
   // Should score lower
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},     // C4
-      {480, 240, 67, 100},   // G4 (+7)
-      {720, 960, 55, 100},   // G3 (-12)
-      {1680, 120, 72, 100},  // C5 (+17)
-      {1800, 480, 58, 100},  // Bb3 (-14)
+      NoteEventTestHelper::create(0, 480, 60, 100),     // C4
+      NoteEventTestHelper::create(480, 240, 67, 100),   // G4 (+7)
+      NoteEventTestHelper::create(720, 960, 55, 100),   // G3 (-12)
+      NoteEventTestHelper::create(1680, 120, 72, 100),  // C5 (+17)
+      NoteEventTestHelper::create(1800, 480, 58, 100),  // Bb3 (-14)
   };
   float score = MelodyEvaluator::calcCatchiness(notes);
   EXPECT_LT(score, 0.5f) << "Random pattern should score below neutral";
@@ -517,11 +518,11 @@ TEST(MelodyEvaluatorTest, Catchiness_SimpleIntervals) {
   // All simple intervals (steps): C-D-E-F-G
   // Should score well for simple_interval_score component
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},     // C4
-      {480, 480, 62, 100},   // D4 (+2)
-      {960, 480, 64, 100},   // E4 (+2)
-      {1440, 480, 65, 100},  // F4 (+1)
-      {1920, 480, 67, 100},  // G4 (+2)
+      NoteEventTestHelper::create(0, 480, 60, 100),     // C4
+      NoteEventTestHelper::create(480, 480, 62, 100),   // D4 (+2)
+      NoteEventTestHelper::create(960, 480, 64, 100),   // E4 (+2)
+      NoteEventTestHelper::create(1440, 480, 65, 100),  // F4 (+1)
+      NoteEventTestHelper::create(1920, 480, 67, 100),  // G4 (+2)
   };
   float score = MelodyEvaluator::calcCatchiness(notes);
   EXPECT_GT(score, 0.4f) << "Simple intervals should contribute positively";
@@ -531,11 +532,11 @@ TEST(MelodyEvaluatorTest, Catchiness_AscendDrop) {
   // Ascending then dropping: C-E-G-E-C (arch shape)
   // Should get contour bonus
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},     // C4
-      {480, 480, 64, 100},   // E4 (+4)
-      {960, 480, 67, 100},   // G4 (+3)
-      {1440, 480, 64, 100},  // E4 (-3)
-      {1920, 480, 60, 100},  // C4 (-4)
+      NoteEventTestHelper::create(0, 480, 60, 100),     // C4
+      NoteEventTestHelper::create(480, 480, 64, 100),   // E4 (+4)
+      NoteEventTestHelper::create(960, 480, 67, 100),   // G4 (+3)
+      NoteEventTestHelper::create(1440, 480, 64, 100),  // E4 (-3)
+      NoteEventTestHelper::create(1920, 480, 60, 100),  // C4 (-4)
   };
   float score = MelodyEvaluator::calcCatchiness(notes);
   // This should get some contour bonus for AscendDrop pattern
@@ -546,12 +547,12 @@ TEST(MelodyEvaluatorTest, Catchiness_RepeatPitches) {
   // Same pitch repeated: C-C-C-D-D-D
   // Should get repeat bonus
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},     // C4
-      {480, 480, 60, 100},   // C4
-      {960, 480, 60, 100},   // C4
-      {1440, 480, 62, 100},  // D4
-      {1920, 480, 62, 100},  // D4
-      {2400, 480, 62, 100},  // D4
+      NoteEventTestHelper::create(0, 480, 60, 100),     // C4
+      NoteEventTestHelper::create(480, 480, 60, 100),   // C4
+      NoteEventTestHelper::create(960, 480, 60, 100),   // C4
+      NoteEventTestHelper::create(1440, 480, 62, 100),  // D4
+      NoteEventTestHelper::create(1920, 480, 62, 100),  // D4
+      NoteEventTestHelper::create(2400, 480, 62, 100),  // D4
   };
   float score = MelodyEvaluator::calcCatchiness(notes);
   // Should get repeat bonus for consecutive same pitches
@@ -561,11 +562,11 @@ TEST(MelodyEvaluatorTest, Catchiness_RepeatPitches) {
 TEST(MelodyEvaluatorTest, Catchiness_ConsistentRhythm) {
   // All same duration: should score well for rhythm consistency
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},
-      {480, 480, 64, 100},
-      {960, 480, 67, 100},
-      {1440, 480, 64, 100},
-      {1920, 480, 60, 100},
+      NoteEventTestHelper::create(0, 480, 60, 100),
+      NoteEventTestHelper::create(480, 480, 64, 100),
+      NoteEventTestHelper::create(960, 480, 67, 100),
+      NoteEventTestHelper::create(1440, 480, 64, 100),
+      NoteEventTestHelper::create(1920, 480, 60, 100),
   };
   float score = MelodyEvaluator::calcCatchiness(notes);
   EXPECT_GE(score, 0.4f) << "Consistent rhythm should contribute to catchiness";
@@ -584,11 +585,11 @@ TEST(MelodyEvaluatorTest, EvaluateIncludesCatchiness) {
   harmony.initialize(Arrangement(sections), getChordProgression(0), Mood::StraightPop);
 
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},
-      {480, 480, 64, 100},
-      {960, 480, 67, 100},
-      {1440, 480, 64, 100},
-      {1920, 480, 60, 100},
+      NoteEventTestHelper::create(0, 480, 60, 100),
+      NoteEventTestHelper::create(480, 480, 64, 100),
+      NoteEventTestHelper::create(960, 480, 67, 100),
+      NoteEventTestHelper::create(1440, 480, 64, 100),
+      NoteEventTestHelper::create(1920, 480, 60, 100),
   };
 
   MelodyScore score = MelodyEvaluator::evaluate(notes, harmony);
@@ -642,10 +643,10 @@ TEST(MelodyEvaluatorTest, Catchiness_GraduatedRepeatBonus_TwoNotes) {
   // 2 consecutive same pitches should get 0.2 bonus
   // C-C-D pattern: 2 consecutive same notes
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},     // C4
-      {480, 480, 60, 100},   // C4 (same)
-      {960, 480, 62, 100},   // D4
-      {1440, 480, 64, 100},  // E4
+      NoteEventTestHelper::create(0, 480, 60, 100),     // C4
+      NoteEventTestHelper::create(480, 480, 60, 100),   // C4 (same)
+      NoteEventTestHelper::create(960, 480, 62, 100),   // D4
+      NoteEventTestHelper::create(1440, 480, 64, 100),  // E4
   };
   float score = MelodyEvaluator::calcCatchiness(notes);
   // Should get some repeat bonus but not maximum
@@ -656,12 +657,12 @@ TEST(MelodyEvaluatorTest, Catchiness_GraduatedRepeatBonus_FiveNotes) {
   // 5 consecutive same pitches should get maximum 1.0 bonus (Ice Cream style)
   // C-C-C-C-C-D pattern
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},      // C4
-      {480, 480, 60, 100},    // C4 (same)
-      {960, 480, 60, 100},    // C4 (same)
-      {1440, 480, 60, 100},   // C4 (same)
-      {1920, 480, 60, 100},   // C4 (same) - 5 consecutive!
-      {2400, 480, 62, 100},   // D4
+      NoteEventTestHelper::create(0, 480, 60, 100),      // C4
+      NoteEventTestHelper::create(480, 480, 60, 100),    // C4 (same)
+      NoteEventTestHelper::create(960, 480, 60, 100),    // C4 (same)
+      NoteEventTestHelper::create(1440, 480, 60, 100),   // C4 (same)
+      NoteEventTestHelper::create(1920, 480, 60, 100),   // C4 (same) - 5 consecutive!
+      NoteEventTestHelper::create(2400, 480, 62, 100),   // D4
   };
   float score = MelodyEvaluator::calcCatchiness(notes);
   // Should get high catchiness due to maximum repeat bonus
@@ -672,14 +673,14 @@ TEST(MelodyEvaluatorTest, Catchiness_HighIntervalRepetition) {
   // Same interval (e.g., +2 semitones) appearing 6+ times should add bonus
   // C-D-E-F-G-A-B pattern: all +2 intervals (whole steps)
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},      // C4
-      {480, 480, 62, 100},    // D4 (+2)
-      {960, 480, 64, 100},    // E4 (+2)
-      {1440, 480, 65, 100},   // F4 (+1) - different
-      {1920, 480, 67, 100},   // G4 (+2)
-      {2400, 480, 69, 100},   // A4 (+2)
-      {2880, 480, 71, 100},   // B4 (+2)
-      {3360, 480, 72, 100},   // C5 (+1)
+      NoteEventTestHelper::create(0, 480, 60, 100),      // C4
+      NoteEventTestHelper::create(480, 480, 62, 100),    // D4 (+2)
+      NoteEventTestHelper::create(960, 480, 64, 100),    // E4 (+2)
+      NoteEventTestHelper::create(1440, 480, 65, 100),   // F4 (+1) - different
+      NoteEventTestHelper::create(1920, 480, 67, 100),   // G4 (+2)
+      NoteEventTestHelper::create(2400, 480, 69, 100),   // A4 (+2)
+      NoteEventTestHelper::create(2880, 480, 71, 100),   // B4 (+2)
+      NoteEventTestHelper::create(3360, 480, 72, 100),   // C5 (+1)
   };
   float score = MelodyEvaluator::calcCatchiness(notes);
   // Should get bonus for high interval repetition (5x "+2" intervals)
@@ -690,13 +691,13 @@ TEST(MelodyEvaluatorTest, Catchiness_SixSameIntervals) {
   // Create 6 identical intervals (+0 = same pitch repeated)
   // This tests the high_rep_bonus for 6+ occurrences
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},      // C4
-      {480, 480, 60, 100},    // C4 (interval=0)
-      {960, 480, 60, 100},    // C4 (interval=0)
-      {1440, 480, 60, 100},   // C4 (interval=0)
-      {1920, 480, 60, 100},   // C4 (interval=0)
-      {2400, 480, 60, 100},   // C4 (interval=0)
-      {2880, 480, 60, 100},   // C4 (interval=0) - 6 consecutive 0 intervals!
+      NoteEventTestHelper::create(0, 480, 60, 100),      // C4
+      NoteEventTestHelper::create(480, 480, 60, 100),    // C4 (interval=0)
+      NoteEventTestHelper::create(960, 480, 60, 100),    // C4 (interval=0)
+      NoteEventTestHelper::create(1440, 480, 60, 100),   // C4 (interval=0)
+      NoteEventTestHelper::create(1920, 480, 60, 100),   // C4 (interval=0)
+      NoteEventTestHelper::create(2400, 480, 60, 100),   // C4 (interval=0)
+      NoteEventTestHelper::create(2880, 480, 60, 100),   // C4 (interval=0) - 6 consecutive 0 intervals!
   };
   float score = MelodyEvaluator::calcCatchiness(notes);
   // Should get maximum high_rep_bonus (0.25) plus repeat bonus (1.0)

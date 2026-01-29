@@ -458,6 +458,11 @@ struct Section {
   /// 100 = full effect, 50 = half effect, 0 = no effect.
   uint8_t modifier_intensity = 100;
 
+  /// @brief Chorus drop style for B sections before Chorus (from ProductionBlueprint).
+  /// Controls the intensity of the "drop" (silence) before Chorus.
+  /// Default: None (no drop effect)
+  ChorusDropStyle drop_style = ChorusDropStyle::None;
+
   /// @brief Layer events for per-bar track scheduling within this section.
   /// When non-empty, controls which tracks are active at each bar.
   /// Empty means all tracks in track_mask are active for the entire section.

@@ -337,7 +337,7 @@ std::vector<NoteEvent> placeMotifInIntro(const Motif& motif, Tick intro_start, T
 
       if (note_start >= intro_end) break;
 
-      NoteEvent note;
+      NoteEvent note = NoteEventBuilder::createDefault();
       note.start_tick = note_start;
       note.duration = rn.eighths * (TICKS_PER_BEAT / 2);
 
@@ -479,7 +479,7 @@ std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_
       }
 
       // Primary note
-      NoteEvent note;
+      NoteEvent note = NoteEventBuilder::createDefault();
       note.start_tick = note_start;
       note.duration = duration;
       note.note = final_pitch;
@@ -490,7 +490,7 @@ std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_
       int octave_pitch = final_pitch + 12;
       if (octave_pitch <= 108 && harmony.isPitchSafe(static_cast<uint8_t>(octave_pitch), note_start,
                                                      duration, track)) {
-        NoteEvent octave_note;
+        NoteEvent octave_note = NoteEventBuilder::createDefault();
         octave_note.start_tick = note_start;
         octave_note.duration = duration;
         octave_note.note = static_cast<uint8_t>(octave_pitch);

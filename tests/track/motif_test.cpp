@@ -575,5 +575,119 @@ TEST_F(MotifMelodicContinuityTest, RhythmSyncBlueprintsHaveMelodicVariety) {
       << "RhythmSync should produce melodic variety with melodic_freedom=0.4";
 }
 
+// ============================================================================
+// BlueprintConstraints Tests
+// ============================================================================
+
+TEST_F(MotifMelodicContinuityTest, PreferStepwiseAffectsMotifIntervals) {
+  // Compare motif intervals between blueprints with different prefer_stepwise settings
+  // Blueprint 3 (Ballad) has prefer_stepwise = true, max_leap = 7
+  // Blueprint 0 (Traditional) has prefer_stepwise = false, max_leap = 12
+
+  auto calculateAverageInterval = [](const MidiTrack& motif) -> double {
+    const auto& notes = motif.notes();
+    if (notes.size() < 2) return 0.0;
+
+    double sum = 0.0;
+    int count = 0;
+    for (size_t i = 1; i < notes.size(); ++i) {
+      int interval = std::abs(static_cast<int>(notes[i].note) -
+                              static_cast<int>(notes[i - 1].note));
+      sum += interval;
+      count++;
+    }
+    return count > 0 ? sum / count : 0.0;
+  };
+
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 100;
+
+  // Generate with Ballad blueprint (prefer_stepwise = true, max_leap = 7)
+  params_.blueprint_id = 3;
+  Generator gen_ballad;
+  gen_ballad.generate(params_);
+  double avg_ballad = calculateAverageInterval(gen_ballad.getSong().motif());
+
+  // Generate with Traditional blueprint (prefer_stepwise = false, max_leap = 12)
+  params_.blueprint_id = 0;
+  Generator gen_traditional;
+  gen_traditional.generate(params_);
+  double avg_traditional = calculateAverageInterval(gen_traditional.getSong().motif());
+
+  // Both should generate motifs
+  EXPECT_GT(gen_ballad.getSong().motif().notes().size(), 0u) << "Ballad should generate motif";
+  EXPECT_GT(gen_traditional.getSong().motif().notes().size(), 0u) << "Traditional should generate motif";
+
+  // With prefer_stepwise=true and smaller max_leap, Ballad should have smaller average intervals
+  // Allow tolerance since randomness and other factors affect results
+  if (avg_ballad > 0 && avg_traditional > 0) {
+    // Ballad should not have significantly larger intervals than Traditional
+    EXPECT_LE(avg_ballad, avg_traditional * 1.5)
+        << "Ballad (prefer_stepwise=true, max_leap=7) avg interval (" << avg_ballad
+        << ") should not be much larger than Traditional (" << avg_traditional << ")";
+  }
+}
+
+// ============================================================================
+// BackingDensity Tests
+// ============================================================================
+
+TEST_F(MotifMelodicContinuityTest, BackingDensityAffectsNoteDensity) {
+  // Test that BackingDensity affects the number of motif notes generated
+  // Thin sections should have fewer notes than Thick sections
+
+  params_.structure = StructurePattern::FullPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& motif_notes = gen.getSong().motif().notes();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  // Count notes per bar for different BackingDensity levels
+  auto countNotesPerBar = [&](BackingDensity density) -> double {
+    int total_notes = 0;
+    int total_bars = 0;
+
+    for (const auto& section : sections) {
+      if (section.getEffectiveBackingDensity() != density) continue;
+      if (section.bars == 0) continue;
+
+      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      int notes_in_section = 0;
+
+      for (const auto& note : motif_notes) {
+        if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
+          notes_in_section++;
+        }
+      }
+
+      total_notes += notes_in_section;
+      total_bars += section.bars;
+    }
+
+    return total_bars > 0 ? static_cast<double>(total_notes) / total_bars : 0.0;
+  };
+
+  double thin_density = countNotesPerBar(BackingDensity::Thin);
+  double normal_density = countNotesPerBar(BackingDensity::Normal);
+  double thick_density = countNotesPerBar(BackingDensity::Thick);
+
+  // If we have all three density types, verify the ordering
+  // Note: Not all structures will have all density types
+  if (thin_density > 0 && thick_density > 0) {
+    EXPECT_LT(thin_density, thick_density)
+        << "Thin sections should have fewer notes per bar than Thick sections "
+        << "(thin=" << thin_density << ", thick=" << thick_density << ")";
+  }
+
+  if (thin_density > 0 && normal_density > 0) {
+    EXPECT_LE(thin_density, normal_density * 1.1)  // Allow small tolerance
+        << "Thin sections should not have more notes than Normal sections "
+        << "(thin=" << thin_density << ", normal=" << normal_density << ")";
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

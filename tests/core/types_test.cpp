@@ -10,6 +10,7 @@
 #include "core/basic_types.h"
 #include "core/preset_data.h"
 #include "core/track_layer.h"
+#include "test_helpers/note_event_test_helper.h"
 
 namespace midisketch {
 namespace {
@@ -17,7 +18,7 @@ namespace {
 TEST(TypesTest, TicksPerBeat) { EXPECT_EQ(TICKS_PER_BEAT, 480); }
 
 TEST(TypesTest, NoteEventStructure) {
-  NoteEvent note{0, 480, 60, 100};
+  NoteEvent note = NoteEventTestHelper::create(0, 480, 60, 100);
   EXPECT_EQ(note.start_tick, 0u);
   EXPECT_EQ(note.duration, 480u);
   EXPECT_EQ(note.note, 60);
@@ -67,8 +68,8 @@ TEST(TypesTest, MoodCount) { EXPECT_EQ(static_cast<uint8_t>(Mood::Anthem), 15); 
 TEST(TypesTest, MelodyDataStructure) {
   MelodyData melody;
   melody.seed = 12345;
-  melody.notes.push_back({0, 480, 60, 100});
-  melody.notes.push_back({480, 240, 62, 90});
+  melody.notes.push_back(NoteEventTestHelper::create(0, 480, 60, 100));
+  melody.notes.push_back(NoteEventTestHelper::create(480, 240, 62, 90));
 
   EXPECT_EQ(melody.seed, 12345u);
   EXPECT_EQ(melody.notes.size(), 2u);
@@ -79,7 +80,7 @@ TEST(TypesTest, MelodyDataStructure) {
 TEST(TypesTest, MelodyDataCopy) {
   MelodyData original;
   original.seed = 42;
-  original.notes.push_back({0, 480, 60, 100});
+  original.notes.push_back(NoteEventTestHelper::create(0, 480, 60, 100));
 
   MelodyData copy = original;
 

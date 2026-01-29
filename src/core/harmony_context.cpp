@@ -76,4 +76,13 @@ void HarmonyContext::registerSecondaryDominant(Tick start, Tick end, int8_t degr
   chord_tracker_.registerSecondaryDominant(start, end, degree);
 }
 
+std::string HarmonyContext::dumpNotesAt(Tick tick, Tick range_ticks) const {
+  return collision_detector_.dumpNotesAt(tick, range_ticks);
+}
+
+Tick HarmonyContext::getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude,
+                                   Tick desired_end) const {
+  return collision_detector_.getMaxSafeEnd(note_start, pitch, exclude, desired_end);
+}
+
 }  // namespace midisketch

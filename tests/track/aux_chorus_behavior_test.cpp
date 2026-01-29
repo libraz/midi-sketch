@@ -23,6 +23,7 @@
 #include "core/harmony_context.h"
 #include "core/i_harmony_context.h"
 #include "core/timing_constants.h"
+#include "test_helpers/note_event_test_helper.h"
 #include "track/aux_track.h"
 
 namespace midisketch {
@@ -47,7 +48,7 @@ std::vector<NoteEvent> createChorusVocalMelody(Tick start, Tick end) {
   Tick current = start;
   size_t idx = 0;
   while (current < end) {
-    melody.push_back({current, TICK_QUARTER, pitches[idx % pitches.size()], 100});
+    melody.push_back(NoteEventTestHelper::create(current, TICK_QUARTER, pitches[idx % pitches.size()], 100));
     current += TICK_QUARTER;
     idx++;
   }

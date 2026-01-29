@@ -12,6 +12,7 @@
 
 #include "core/generator.h"
 #include "core/song.h"
+#include "test_helpers/note_event_test_helper.h"
 
 namespace midisketch {
 namespace {
@@ -323,7 +324,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiBasic) {
   ParsedTrack vocal_track;
   vocal_track.name = "Vocal";
   vocal_track.channel = 0;
-  NoteEvent note1{0, 480, 64, 100};  // E4 at tick 0
+  NoteEvent note1 = NoteEventTestHelper::create(0, 480, 64, 100);  // E4 at tick 0
   vocal_track.notes.push_back(note1);
   midi.tracks.push_back(vocal_track);
 
@@ -331,7 +332,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiBasic) {
   ParsedTrack chord_track;
   chord_track.name = "Chord";
   chord_track.channel = 1;
-  NoteEvent note2{0, 480, 65, 80};  // F4 at tick 0
+  NoteEvent note2 = NoteEventTestHelper::create(0, 480, 65, 80);  // F4 at tick 0
   chord_track.notes.push_back(note2);
   midi.tracks.push_back(chord_track);
 
@@ -366,8 +367,8 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiNoDrums) {
   ParsedTrack drums_track;
   drums_track.name = "Drums";
   drums_track.channel = 9;
-  NoteEvent kick{0, 240, 36, 100};
-  NoteEvent snare{0, 240, 38, 100};  // Same time as kick
+  NoteEvent kick = NoteEventTestHelper::create(0, 240, 36, 100);
+  NoteEvent snare = NoteEventTestHelper::create(0, 240, 38, 100);  // Same time as kick
   drums_track.notes.push_back(kick);
   drums_track.notes.push_back(snare);
   midi.tracks.push_back(drums_track);
@@ -376,7 +377,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiNoDrums) {
   ParsedTrack melody_track;
   melody_track.name = "Melody";
   melody_track.channel = 0;
-  NoteEvent note{0, 480, 60, 100};
+  NoteEvent note = NoteEventTestHelper::create(0, 480, 60, 100);
   melody_track.notes.push_back(note);
   midi.tracks.push_back(melody_track);
 
@@ -418,7 +419,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiNoClash) {
   ParsedTrack track1;
   track1.name = "Track1";
   track1.channel = 0;
-  NoteEvent note1{0, 480, 60, 100};  // C4
+  NoteEvent note1 = NoteEventTestHelper::create(0, 480, 60, 100);  // C4
   track1.notes.push_back(note1);
   midi.tracks.push_back(track1);
 
@@ -426,7 +427,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiNoClash) {
   ParsedTrack track2;
   track2.name = "Track2";
   track2.channel = 1;
-  NoteEvent note2{0, 480, 64, 80};  // E4
+  NoteEvent note2 = NoteEventTestHelper::create(0, 480, 64, 80);  // E4
   track2.notes.push_back(note2);
   midi.tracks.push_back(track2);
 
@@ -453,7 +454,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiTritone) {
   ParsedTrack track1;
   track1.name = "Track1";
   track1.channel = 0;
-  NoteEvent note1{0, 480, 60, 100};  // C4
+  NoteEvent note1 = NoteEventTestHelper::create(0, 480, 60, 100);  // C4
   track1.notes.push_back(note1);
   midi.tracks.push_back(track1);
 
@@ -461,7 +462,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiTritone) {
   ParsedTrack track2;
   track2.name = "Track2";
   track2.channel = 1;
-  NoteEvent note2{0, 480, 66, 80};  // F#4
+  NoteEvent note2 = NoteEventTestHelper::create(0, 480, 66, 80);  // F#4
   track2.notes.push_back(note2);
   midi.tracks.push_back(track2);
 
@@ -491,7 +492,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiMajor7th) {
   ParsedTrack track1;
   track1.name = "Track1";
   track1.channel = 0;
-  NoteEvent note1{0, 480, 60, 100};  // C4
+  NoteEvent note1 = NoteEventTestHelper::create(0, 480, 60, 100);  // C4
   track1.notes.push_back(note1);
   midi.tracks.push_back(track1);
 
@@ -499,7 +500,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiMajor7th) {
   ParsedTrack track2;
   track2.name = "Track2";
   track2.channel = 1;
-  NoteEvent note2{0, 480, 71, 80};  // B4
+  NoteEvent note2 = NoteEventTestHelper::create(0, 480, 71, 80);  // B4
   track2.notes.push_back(note2);
   midi.tracks.push_back(track2);
 
@@ -533,7 +534,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiNonOverlappingNotes) {
   ParsedTrack track1;
   track1.name = "Track1";
   track1.channel = 0;
-  NoteEvent note1{0, 480, 64, 100};  // E4, ends at 480
+  NoteEvent note1 = NoteEventTestHelper::create(0, 480, 64, 100);  // E4, ends at 480
   track1.notes.push_back(note1);
   midi.tracks.push_back(track1);
 
@@ -541,7 +542,7 @@ TEST(DissonanceTest, AnalyzeFromParsedMidiNonOverlappingNotes) {
   ParsedTrack track2;
   track2.name = "Track2";
   track2.channel = 1;
-  NoteEvent note2{480, 480, 65, 80};  // F4, starts at 480
+  NoteEvent note2 = NoteEventTestHelper::create(480, 480, 65, 80);  // F4, starts at 480
   track2.notes.push_back(note2);
   midi.tracks.push_back(track2);
 
@@ -580,6 +581,8 @@ TEST(DissonanceIntegrationTest, VocalSustainOverChordChangeTest) {
   params.drums_enabled = true;
   params.vocal_low = 60;
   params.vocal_high = 79;
+  // Disable humanization for deterministic dissonance testing
+  params.humanize = false;
 
   // Test across multiple seeds to ensure robustness
   std::vector<uint32_t> test_seeds = {12345, 54321, 98765, 11111, 22222};
@@ -623,6 +626,8 @@ TEST(DissonanceIntegrationTest, BassChordPhraseEndSyncNoMediumIssues) {
   params.vocal_low = 60;
   params.vocal_high = 79;
   params.bpm = 132;
+  // Disable humanization for deterministic dissonance testing
+  params.humanize = false;
 
   gen.generate(params);
   const auto& song = gen.getSong();
@@ -797,9 +802,9 @@ TEST(DissonanceContextTest, Beat1ElevatesSeverity) {
   bass_track.name = "Bass";
   bass_track.channel = 2;
   // F3 on beat 1 of bar 1 (tick 0)
-  bass_track.notes.push_back({0, 480, 53, 100});
+  bass_track.notes.push_back(NoteEventTestHelper::create(0, 480, 53, 100));
   // F3 on beat 3 of bar 1 (tick 960)
-  bass_track.notes.push_back({960, 480, 53, 100});
+  bass_track.notes.push_back(NoteEventTestHelper::create(960, 480, 53, 100));
   midi.tracks.push_back(bass_track);
 
   // Track 2: Chord - B4 creates tritone with F3
@@ -807,9 +812,9 @@ TEST(DissonanceContextTest, Beat1ElevatesSeverity) {
   chord_track.name = "Chord";
   chord_track.channel = 1;
   // B4 on beat 1 (tick 0) - should be Medium
-  chord_track.notes.push_back({0, 480, 71, 80});
+  chord_track.notes.push_back(NoteEventTestHelper::create(0, 480, 71, 80));
   // B4 on beat 3 (tick 960) - should be Low
-  chord_track.notes.push_back({960, 480, 71, 80});
+  chord_track.notes.push_back(NoteEventTestHelper::create(960, 480, 71, 80));
   midi.tracks.push_back(chord_track);
 
   auto report = analyzeDissonanceFromParsedMidi(midi);

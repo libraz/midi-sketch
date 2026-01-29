@@ -18,6 +18,26 @@ namespace midisketch {
 
 // TrackMask, EntryPattern, GenerationParadigm, and RiffPolicy are defined in section_types.h
 
+/// @brief Instrument skill level for physical constraint modeling.
+///
+/// Controls hand span, position shift speed, and technique availability.
+enum class InstrumentSkillLevel : uint8_t {
+  Beginner,      ///< 3-fret span, simple patterns only
+  Intermediate,  ///< 4-fret span, basic techniques
+  Advanced,      ///< 5-fret span, slap/tapping enabled
+  Virtuoso       ///< 7-fret span, all techniques unlocked
+};
+
+/// @brief Instrument physical constraint mode.
+///
+/// Controls how physical playability is checked during generation.
+enum class InstrumentModelMode : uint8_t {
+  Off,              ///< No physical constraints (default, legacy behavior)
+  ConstraintsOnly,  ///< Physical constraints only (playability check)
+  TechniquesOnly,   ///< Technique patterns only (slap/pop, no constraint check)
+  Full              ///< Both constraints and techniques
+};
+
 /// @brief Blueprint-level constraints for generation.
 /// These override default limits for specific musical characteristics.
 struct BlueprintConstraints {
@@ -25,6 +45,16 @@ struct BlueprintConstraints {
   uint8_t max_pitch = 108;          ///< Maximum MIDI pitch (G8)
   uint8_t max_leap_semitones = 12;  ///< Maximum melodic leap (octave)
   bool prefer_stepwise = false;     ///< Prefer stepwise motion over leaps
+
+  // Fretted instrument constraints
+  InstrumentSkillLevel bass_skill = InstrumentSkillLevel::Intermediate;    ///< Bass skill level
+  InstrumentSkillLevel guitar_skill = InstrumentSkillLevel::Intermediate;  ///< Guitar skill level
+  InstrumentModelMode instrument_mode = InstrumentModelMode::Off;          ///< Physical constraint mode
+
+  // Technique enablement (only applies when instrument_mode includes Techniques)
+  bool enable_slap = false;       ///< Enable slap/pop technique for bass
+  bool enable_tapping = false;    ///< Enable two-hand tapping
+  bool enable_harmonics = false;  ///< Enable natural harmonics
 };
 
 /// @brief Section slot definition for blueprint section flow.
@@ -54,6 +84,57 @@ struct SectionSlot {
 
   /// @brief Modifier intensity (0-100%). Controls strength of modifier effect.
   uint8_t modifier_intensity = 100;
+
+  // ========================================================================
+  // NEW FIELDS: Section transition and timing control
+  // ========================================================================
+
+  /// @brief Exit pattern for this section.
+  /// Controls how tracks behave at the end of this section.
+  /// Default: None (auto-assigned by assignExitPatterns based on section type)
+  ExitPattern exit_pattern = ExitPattern::None;
+
+  /// @brief Time feel for this section.
+  /// Controls micro-timing (laid back, pushed, or on beat).
+  /// Default: OnBeat (use section type default)
+  TimeFeel time_feel = TimeFeel::OnBeat;
+
+  /// @brief Harmonic rhythm: bars per chord change.
+  /// - 0.5 = half-bar (2 chords per bar, dense)
+  /// - 1.0 = one bar (1 chord per bar, standard)
+  /// - 2.0 = two bars (1 chord per 2 bars, sparse)
+  /// Default: 0.0 (auto-calculate from section type)
+  float harmonic_rhythm = 0.0f;
+
+  /// @brief Chorus drop style for B sections before Chorus.
+  /// Controls intensity of the "drop" (silence) before Chorus.
+  /// Default: None (use blueprint default behavior)
+  ChorusDropStyle drop_style = ChorusDropStyle::None;
+
+  // ========================================================================
+  // Staggered Entry Control
+  // ========================================================================
+
+  /// @brief Custom stagger duration in bars for this section.
+  /// 0 = use default behavior (StaggeredEntryConfig::defaultIntro for Intro)
+  /// >0 = custom stagger duration (overrides entry_pattern to Stagger)
+  uint8_t stagger_bars = 0;
+
+  // ========================================================================
+  // Custom Layer Scheduling Control
+  // ========================================================================
+
+  /// @brief Enable custom layer scheduling for this section.
+  /// If true, use layer_add_at_mid/layer_remove_at_end instead of auto-generation.
+  bool custom_layer_schedule = false;
+
+  /// @brief Tracks to add at section midpoint (bar = bars/2).
+  /// Only used if custom_layer_schedule is true.
+  TrackMask layer_add_at_mid = TrackMask::None;
+
+  /// @brief Tracks to remove near section end (bar = bars-1).
+  /// Only used if custom_layer_schedule is true.
+  TrackMask layer_remove_at_end = TrackMask::None;
 };
 
 /// @brief Production blueprint defining how a song is generated.

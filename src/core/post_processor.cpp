@@ -623,29 +623,42 @@ void PostProcessor::applyPreChorusLiftToTrack(MidiTrack& track, const Section& s
 void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
                                      const std::vector<Section>& sections,
                                      MidiTrack* drum_track,
-                                     ChorusDropStyle style) {
-  // None style: no drop effect
-  if (style == ChorusDropStyle::None) {
-    return;
-  }
-
+                                     ChorusDropStyle default_style) {
   constexpr uint8_t CRASH_NOTE = 49;     // Crash cymbal
   constexpr uint8_t CRASH_VEL = 110;     // Strong crash velocity
 
-  // Find B sections followed by Chorus
+  // Find B sections followed by Chorus (or MixBreak/Drop sections that can also have drops)
   for (size_t idx = 0; idx + 1 < sections.size(); ++idx) {
     const Section& section = sections[idx];
     const Section& next_section = sections[idx + 1];
 
-    // Only B sections before Chorus
-    if (section.type != SectionType::B || next_section.type != SectionType::Chorus) {
+    // Only process sections before Chorus that could have a drop
+    // (B sections, MixBreak, or any section with explicit drop_style)
+    bool is_pre_chorus = (section.type == SectionType::B ||
+                          section.type == SectionType::MixBreak ||
+                          section.type == SectionType::Interlude) &&
+                         next_section.type == SectionType::Chorus;
+
+    // Use per-section drop_style if set, otherwise use default_style for B sections
+    ChorusDropStyle style = section.drop_style;
+    if (style == ChorusDropStyle::None) {
+      // Fall back to default_style only for B sections before Chorus
+      if (section.type == SectionType::B && next_section.type == SectionType::Chorus) {
+        style = default_style;
+      } else if (!is_pre_chorus) {
+        continue;  // Skip sections without explicit drop_style that aren't B->Chorus
+      }
+    }
+
+    // Skip if still None after fallback
+    if (style == ChorusDropStyle::None) {
       continue;
     }
 
-    // Calculate the drop zone (last 1 beat before Chorus)
+    // Calculate the drop zone (last 1 beat before next section)
     Tick section_end_tick = section.start_tick + section.bars * TICKS_PER_BAR;
     Tick drop_start_tick = section_end_tick - TICKS_PER_BEAT;
-    Tick chorus_start_tick = next_section.start_tick;
+    Tick next_section_start_tick = next_section.start_tick;
 
     // Truncate melodic tracks in the drop zone
     for (MidiTrack* track : tracks) {
@@ -686,28 +699,28 @@ void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
       }
     }
 
-    // DrumHit: add crash cymbal on chorus entry
+    // DrumHit: add crash cymbal on next section entry
     if (style == ChorusDropStyle::DrumHit) {
       if (drum_track != nullptr) {
         auto& drum_notes = drum_track->notes();
-        // Check if crash already exists at chorus start
+        // Check if crash already exists at next section start
         bool has_crash = false;
         for (const auto& note : drum_notes) {
-          if (note.start_tick == chorus_start_tick && note.note == CRASH_NOTE) {
+          if (note.start_tick == next_section_start_tick && note.note == CRASH_NOTE) {
             has_crash = true;
             break;
           }
         }
-        // Add crash cymbal at chorus entry
+        // Add crash cymbal at next section entry
         if (!has_crash) {
           NoteEvent crash;
-          crash.start_tick = chorus_start_tick;
+          crash.start_tick = next_section_start_tick;
           crash.duration = TICKS_PER_BEAT;
           crash.note = CRASH_NOTE;
           crash.velocity = CRASH_VEL;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           crash.prov_chord_degree = -1;
-          crash.prov_lookup_tick = chorus_start_tick;
+          crash.prov_lookup_tick = next_section_start_tick;
           crash.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
           crash.prov_original_pitch = CRASH_NOTE;
 #endif
@@ -837,7 +850,8 @@ static Tick getMaxSafeEndTick(const NoteEvent& chord_note, Tick desired_end,
 
 void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum_track,
                                            MidiTrack* chord_track, const MidiTrack* vocal_track,
-                                           const Section& section) {
+                                           const Section& section,
+                                           const IHarmonyContext* harmony) {
   if (section.exit_pattern != ExitPattern::FinalHit) {
     return;
   }
@@ -933,14 +947,21 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
   }
 
   // Chord track: sustain final chord as whole note with strong velocity
-  // Check against vocal track to avoid creating dissonance from extension
+  // Check against all tracks (via harmony) or vocal only (fallback) to avoid dissonance
   if (chord_track != nullptr) {
     auto& chord_notes = chord_track->notes();
 
     for (auto& note : chord_notes) {
       if (note.start_tick >= final_beat_start && note.start_tick < section_end) {
-        // Extend duration, but check for vocal clashes first
-        Tick safe_end = getMaxSafeEndTick(note, section_end, vocal_track);
+        // Extend duration, but check for clashes first
+        Tick safe_end;
+        if (harmony != nullptr) {
+          // Use comprehensive clash detection against all registered tracks
+          safe_end = harmony->getMaxSafeEnd(note.start_tick, note.note, TrackRole::Chord, section_end);
+        } else {
+          // Fallback: check against vocal only
+          safe_end = getMaxSafeEndTick(note, section_end, vocal_track);
+        }
         if (safe_end > note.start_tick) {
           note.duration = safe_end - note.start_tick;
         }
@@ -952,8 +973,13 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
     Tick last_bar_start = section_end - TICKS_PER_BAR;
     for (auto& note : chord_notes) {
       if (note.start_tick >= last_bar_start && note.start_tick < final_beat_start) {
-        // Extend to section end, but check for vocal clashes first
-        Tick safe_end = getMaxSafeEndTick(note, section_end, vocal_track);
+        // Extend to section end, but check for clashes first
+        Tick safe_end;
+        if (harmony != nullptr) {
+          safe_end = harmony->getMaxSafeEnd(note.start_tick, note.note, TrackRole::Chord, section_end);
+        } else {
+          safe_end = getMaxSafeEndTick(note, section_end, vocal_track);
+        }
         if (safe_end > note.start_tick + note.duration) {
           note.duration = safe_end - note.start_tick;
         }

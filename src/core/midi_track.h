@@ -29,7 +29,8 @@ class MidiTrack {
   void addNote(const NoteEvent& event);
 
   /// @brief Simple API - creates note without provenance tracking.
-  /// @note Prefer NoteFactory + addNote(NoteEvent) for production code.
+  /// @deprecated Use NoteFactory::create() + addNote(NoteEvent) for new code.
+  [[deprecated("Use NoteFactory::create() + addNote(NoteEvent) instead")]]
   void addNote(Tick startTick, Tick length, uint8_t note, uint8_t velocity);
 
   void addText(Tick tick, const std::string& text);

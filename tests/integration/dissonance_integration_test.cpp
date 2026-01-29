@@ -116,6 +116,8 @@ class TrackClashIntegrationTest : public ::testing::Test {
     params_.vocal_low = 57;
     params_.vocal_high = 79;
     params_.bpm = 120;
+    // Disable humanization for deterministic dissonance testing
+    params_.humanize = false;
   }
 
   GeneratorParams params_;

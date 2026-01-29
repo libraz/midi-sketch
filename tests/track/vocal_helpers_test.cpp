@@ -9,6 +9,7 @@
 
 #include "core/timing_constants.h"
 #include "core/types.h"
+#include "test_helpers/note_event_test_helper.h"
 
 namespace midisketch {
 namespace {
@@ -23,11 +24,7 @@ class RemoveOverlapsTest : public ::testing::Test {
       std::initializer_list<std::tuple<Tick, Tick, uint8_t>> notes_data) {
     std::vector<NoteEvent> notes;
     for (const auto& [start, duration, pitch] : notes_data) {
-      NoteEvent note;
-      note.start_tick = start;
-      note.duration = duration;
-      note.note = pitch;
-      note.velocity = 80;
+      NoteEvent note = NoteEventTestHelper::create(start, duration, pitch, 80);
       notes.push_back(note);
     }
     return notes;
@@ -145,11 +142,7 @@ class ApplyGrooveFeelTest : public ::testing::Test {
       std::initializer_list<std::tuple<Tick, Tick, uint8_t>> notes_data) {
     std::vector<NoteEvent> notes;
     for (const auto& [start, duration, pitch] : notes_data) {
-      NoteEvent note;
-      note.start_tick = start;
-      note.duration = duration;
-      note.note = pitch;
-      note.velocity = 80;
+      NoteEvent note = NoteEventTestHelper::create(start, duration, pitch, 80);
       notes.push_back(note);
     }
     return notes;

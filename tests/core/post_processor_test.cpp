@@ -1251,5 +1251,226 @@ TEST(PostProcessorTest, FixMotifVocalClashesUpdatesProvenance) {
       << "Chord degree should be recorded";
 }
 
+// ============================================================================
+// Per-Section ChorusDropStyle Tests
+// ============================================================================
+
+class PerSectionDropStyleTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    // Create B section with explicit drop_style followed by Chorus
+    b_section_.type = SectionType::B;
+    b_section_.start_tick = 0;
+    b_section_.bars = 8;
+    b_section_.name = "B";
+    b_section_.drop_style = ChorusDropStyle::None;  // Will be set per-test
+
+    chorus_.type = SectionType::Chorus;
+    chorus_.start_tick = 8 * TICKS_PER_BAR;
+    chorus_.bars = 8;
+    chorus_.name = "Chorus";
+  }
+
+  Section b_section_;
+  Section chorus_;
+};
+
+TEST_F(PerSectionDropStyleTest, UsesSectionDropStyleWhenSet) {
+  // When section has explicit drop_style, it should be used
+  b_section_.drop_style = ChorusDropStyle::Dramatic;
+  std::vector<Section> sections = {b_section_, chorus_};
+
+  MidiTrack chord_track;
+  Tick drop_zone_start = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;
+  chord_track.addNote(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 60, 80);
+
+  MidiTrack drum_track;
+  drum_track.addNote(drop_zone_start, TICKS_PER_BEAT / 4, KICK, 100);
+
+  std::vector<MidiTrack*> tracks = {&chord_track};
+
+  // Call with default_style=Subtle, but section has Dramatic
+  PostProcessor::applyChorusDrop(tracks, sections, &drum_track, ChorusDropStyle::Subtle);
+
+  // Dramatic style should truncate drum track too
+  bool drum_in_drop_zone = false;
+  for (const auto& note : drum_track.notes()) {
+    if (note.start_tick >= drop_zone_start && note.start_tick < 8 * TICKS_PER_BAR) {
+      drum_in_drop_zone = true;
+    }
+  }
+  EXPECT_FALSE(drum_in_drop_zone)
+      << "Dramatic drop_style should truncate drum track in drop zone";
+}
+
+TEST_F(PerSectionDropStyleTest, FallsBackToDefaultForBSectionWithNone) {
+  // When B section has None drop_style, default_style should be used
+  b_section_.drop_style = ChorusDropStyle::None;
+  std::vector<Section> sections = {b_section_, chorus_};
+
+  MidiTrack chord_track;
+  Tick drop_zone_start = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;
+  chord_track.addNote(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 60, 80);
+
+  MidiTrack drum_track;
+  drum_track.addNote(drop_zone_start, TICKS_PER_BEAT / 4, KICK, 100);
+  size_t orig_drum_count = drum_track.notes().size();
+
+  std::vector<MidiTrack*> tracks = {&chord_track};
+
+  // Call with default_style=Subtle (doesn't truncate drums)
+  PostProcessor::applyChorusDrop(tracks, sections, &drum_track, ChorusDropStyle::Subtle);
+
+  // Subtle style should NOT truncate drum track
+  EXPECT_EQ(drum_track.notes().size(), orig_drum_count)
+      << "Subtle (default) drop_style should NOT truncate drum track";
+
+  // But melodic tracks should still be truncated
+  bool chord_in_drop_zone = false;
+  for (const auto& note : chord_track.notes()) {
+    if (note.start_tick >= drop_zone_start && note.start_tick < 8 * TICKS_PER_BAR) {
+      chord_in_drop_zone = true;
+    }
+  }
+  EXPECT_FALSE(chord_in_drop_zone)
+      << "Chord track should be truncated in drop zone";
+}
+
+TEST_F(PerSectionDropStyleTest, DrumHitAddsCrashAtChorusEntry) {
+  // DrumHit style should add crash cymbal at chorus entry
+  b_section_.drop_style = ChorusDropStyle::DrumHit;
+  std::vector<Section> sections = {b_section_, chorus_};
+
+  MidiTrack chord_track;
+  MidiTrack drum_track;
+  drum_track.addNote(0, TICKS_PER_BEAT / 2, KICK, 80);  // Existing note
+
+  std::vector<MidiTrack*> tracks = {&chord_track};
+  PostProcessor::applyChorusDrop(tracks, sections, &drum_track, ChorusDropStyle::Subtle);
+
+  Tick chorus_start = chorus_.start_tick;
+  bool has_crash = false;
+  for (const auto& note : drum_track.notes()) {
+    if (note.start_tick == chorus_start && note.note == CRASH) {
+      has_crash = true;
+      EXPECT_GE(note.velocity, 100u)
+          << "Crash at chorus entry should have strong velocity";
+    }
+  }
+  EXPECT_TRUE(has_crash)
+      << "DrumHit style should add crash cymbal at chorus entry";
+}
+
+TEST_F(PerSectionDropStyleTest, NoneDropStyleSkipsSection) {
+  // Non-B section with explicit None drop_style should be skipped
+  Section interlude;
+  interlude.type = SectionType::Interlude;
+  interlude.start_tick = 0;
+  interlude.bars = 4;
+  interlude.drop_style = ChorusDropStyle::None;  // Explicit None
+
+  std::vector<Section> sections = {interlude, chorus_};
+
+  MidiTrack chord_track;
+  Tick section_end = 4 * TICKS_PER_BAR;
+  chord_track.addNote(section_end - TICKS_PER_BEAT, TICKS_PER_BEAT, 60, 80);
+  Tick orig_duration = chord_track.notes()[0].duration;
+
+  std::vector<MidiTrack*> tracks = {&chord_track};
+  PostProcessor::applyChorusDrop(tracks, sections, nullptr, ChorusDropStyle::Subtle);
+
+  // Note should be unchanged since Interlude has explicit None
+  EXPECT_EQ(chord_track.notes()[0].duration, orig_duration)
+      << "Interlude with None drop_style should not be processed";
+}
+
+TEST_F(PerSectionDropStyleTest, ExplicitDropStyleOnInterludeIsApplied) {
+  // Interlude with explicit Dramatic drop_style should be processed
+  Section interlude;
+  interlude.type = SectionType::Interlude;
+  interlude.start_tick = 0;
+  interlude.bars = 4;
+  interlude.drop_style = ChorusDropStyle::Dramatic;  // Explicit Dramatic
+
+  chorus_.start_tick = 4 * TICKS_PER_BAR;
+  std::vector<Section> sections = {interlude, chorus_};
+
+  MidiTrack chord_track;
+  Tick drop_zone = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
+  chord_track.addNote(drop_zone + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 60, 80);
+
+  std::vector<MidiTrack*> tracks = {&chord_track};
+  PostProcessor::applyChorusDrop(tracks, sections, nullptr, ChorusDropStyle::Subtle);
+
+  // Note in drop zone should be removed
+  bool note_in_drop_zone = false;
+  for (const auto& note : chord_track.notes()) {
+    if (note.start_tick >= drop_zone && note.start_tick < 4 * TICKS_PER_BAR) {
+      note_in_drop_zone = true;
+    }
+  }
+  EXPECT_FALSE(note_in_drop_zone)
+      << "Interlude with explicit Dramatic drop_style should process drop zone";
+}
+
+TEST_F(PerSectionDropStyleTest, MultipleSectionsWithDifferentDropStyles) {
+  // Test multiple B sections with different drop styles
+  Section b1;
+  b1.type = SectionType::B;
+  b1.start_tick = 0;
+  b1.bars = 8;
+  b1.drop_style = ChorusDropStyle::Subtle;
+
+  Section chorus1;
+  chorus1.type = SectionType::Chorus;
+  chorus1.start_tick = 8 * TICKS_PER_BAR;
+  chorus1.bars = 8;
+
+  Section b2;
+  b2.type = SectionType::B;
+  b2.start_tick = 16 * TICKS_PER_BAR;
+  b2.bars = 8;
+  b2.drop_style = ChorusDropStyle::Dramatic;
+
+  Section chorus2;
+  chorus2.type = SectionType::Chorus;
+  chorus2.start_tick = 24 * TICKS_PER_BAR;
+  chorus2.bars = 8;
+
+  std::vector<Section> sections = {b1, chorus1, b2, chorus2};
+
+  MidiTrack drum_track;
+  // Add drum notes in both drop zones
+  Tick drop1 = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;
+  Tick drop2 = 24 * TICKS_PER_BAR - TICKS_PER_BEAT;
+  drum_track.addNote(drop1, TICKS_PER_BEAT / 4, KICK, 100);
+  drum_track.addNote(drop2, TICKS_PER_BEAT / 4, KICK, 100);
+
+  MidiTrack chord_track;
+  std::vector<MidiTrack*> tracks = {&chord_track};
+
+  PostProcessor::applyChorusDrop(tracks, sections, &drum_track, ChorusDropStyle::None);
+
+  // Count drum notes in each drop zone
+  int drums_in_drop1 = 0;
+  int drums_in_drop2 = 0;
+  for (const auto& note : drum_track.notes()) {
+    if (note.start_tick >= drop1 && note.start_tick < 8 * TICKS_PER_BAR) {
+      drums_in_drop1++;
+    }
+    if (note.start_tick >= drop2 && note.start_tick < 24 * TICKS_PER_BAR) {
+      drums_in_drop2++;
+    }
+  }
+
+  // B1 has Subtle: drum notes should remain
+  EXPECT_GT(drums_in_drop1, 0)
+      << "Subtle drop_style should NOT truncate drum track";
+
+  // B2 has Dramatic: drum notes should be removed
+  EXPECT_EQ(drums_in_drop2, 0)
+      << "Dramatic drop_style should truncate drum track";
+}
+
 }  // namespace
 }  // namespace midisketch

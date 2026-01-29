@@ -77,6 +77,11 @@ class HarmonyContext : public IHarmonyContext {
 
   void registerSecondaryDominant(Tick start, Tick end, int8_t degree) override;
 
+  std::string dumpNotesAt(Tick tick, Tick range_ticks = 1920) const override;
+
+  Tick getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude,
+                     Tick desired_end) const override;
+
   // =========================================================================
   // Component accessors (for advanced usage)
   // =========================================================================

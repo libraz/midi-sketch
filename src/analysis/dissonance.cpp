@@ -426,29 +426,6 @@ std::pair<bool, DissonanceSeverity> checkIntervalDissonance(uint8_t actual_semit
   return {true, DissonanceSeverity::Medium};
 }
 
-// Convert track role to string name.
-std::string trackRoleToString(TrackRole role) {
-  switch (role) {
-    case TrackRole::Vocal:
-      return "vocal";
-    case TrackRole::Chord:
-      return "chord";
-    case TrackRole::Bass:
-      return "bass";
-    case TrackRole::Drums:
-      return "drums";
-    case TrackRole::SE:
-      return "se";
-    case TrackRole::Motif:
-      return "motif";
-    case TrackRole::Arpeggio:
-      return "arpeggio";
-    case TrackRole::Aux:
-      return "aux";
-  }
-  return "unknown";
-}
-
 // Get chord name from scale degree (in C major).
 std::string getChordNameFromDegree(int8_t degree) {
   int normalized = ((degree % 7) + 7) % 7;

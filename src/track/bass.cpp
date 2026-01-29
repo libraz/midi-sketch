@@ -15,6 +15,8 @@
 
 #include "core/chord.h"
 #include "core/chord_utils.h"
+#include "core/density_transformer.h"
+#include "core/production_blueprint.h"
 #include "core/harmonic_rhythm.h"
 #include "core/i_harmony_context.h"
 #include "core/mood_utils.h"
@@ -24,6 +26,8 @@
 #include "core/preset_data.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
+#include "track/fretted/bass_model.h"
+#include "track/fretted/fretted_note_factory.h"
 
 // Debug flag for bass transformation logging (set to 1 to enable)
 #ifndef BASS_DEBUG_LOG
@@ -37,6 +41,102 @@
 namespace midisketch {
 
 namespace {
+
+// ============================================================================
+// Density Transformer for Bass Patterns
+// ============================================================================
+// Consolidates sparser/denser transitions for maintainability.
+// Main chain: WholeNote <-> RootFifth <-> Syncopated <-> Driving <-> Aggressive
+// Genre-specific patterns (Tresillo, SubBass808, RnBNeoSoul) stay unchanged.
+
+const auto kBassTransformer = DensityTransformer<BassPattern>::builder()
+    // Main density chain (densest to sparsest)
+    .addTransition(BassPattern::Aggressive, BassPattern::Driving)
+    .addTransition(BassPattern::Driving, BassPattern::Syncopated)
+    .addTransition(BassPattern::Syncopated, BassPattern::RootFifth)
+    .addTransition(BassPattern::RootFifth, BassPattern::WholeNote)
+    // Secondary patterns link to main chain
+    .addTransition(BassPattern::RhythmicDrive, BassPattern::Syncopated)
+    .addTransition(BassPattern::OctaveJump, BassPattern::Driving)
+    .addTransition(BassPattern::Walking, BassPattern::RootFifth)
+    .addTransition(BassPattern::PowerDrive, BassPattern::RootFifth)
+    .addTransition(BassPattern::SidechainPulse, BassPattern::RootFifth)
+    .addTransition(BassPattern::Groove, BassPattern::Walking)
+    .addTransition(BassPattern::PedalTone, BassPattern::WholeNote)
+    // Genre-specific patterns stay at their level
+    .addLimit(BassPattern::WholeNote)
+    .addLimit(BassPattern::Aggressive)
+    .addLimit(BassPattern::RhythmicDrive)
+    .addLimit(BassPattern::Groove)
+    .addLimit(BassPattern::Tresillo)
+    .addLimit(BassPattern::SubBass808)
+    .addLimit(BassPattern::RnBNeoSoul)
+    .build();
+
+// ============================================================================
+// Bass Playability Checker (using FrettedNoteFactory)
+// ============================================================================
+// Provides optional physical playability checking for bass notes.
+// At high tempos, some bass lines become physically impossible to play.
+// This checker ensures generated notes are executable on a real bass.
+
+/// @brief Wrapper for bass playability checking.
+///
+/// Lazily initializes the BassModel and FrettedNoteFactory on first use.
+/// Provides pitch validation and alternative finding for unplayable notes.
+class BassPlayabilityChecker {
+ public:
+  BassPlayabilityChecker(const IHarmonyContext& harmony, uint16_t bpm)
+      : harmony_(harmony),
+        bpm_(bpm),
+        bass_model_(FrettedInstrumentType::Bass4String) {}
+
+  /// @brief Ensure a pitch is playable at the given position.
+  ///
+  /// If the pitch is not playable (e.g., too fast transition), finds an
+  /// alternative in a nearby octave or returns the original if no better option.
+  ///
+  /// @param pitch Desired MIDI pitch
+  /// @param start Start tick
+  /// @param duration Duration in ticks
+  /// @return Playable pitch (may be same as input)
+  uint8_t ensurePlayable(uint8_t pitch, Tick start, Tick duration) {
+    ensureInitialized();
+    return factory_->ensurePlayable(pitch, start, duration);
+  }
+
+  /// @brief Check if a note is playable at the current tempo.
+  ///
+  /// @param pitch MIDI pitch
+  /// @param start Start tick
+  /// @param duration Duration
+  /// @return true if the note can be played physically
+  bool isPlayable(uint8_t pitch, Tick start, Tick duration) {
+    ensureInitialized();
+    auto note = factory_->create(start, duration, pitch, 80, NoteSource::BassPattern);
+    return note.has_value();
+  }
+
+  /// @brief Reset fretboard state (call at section boundaries).
+  void resetState() {
+    if (factory_) {
+      factory_->resetState();
+    }
+  }
+
+ private:
+  void ensureInitialized() {
+    if (!factory_) {
+      factory_ = std::make_unique<FrettedNoteFactory>(harmony_, bass_model_, bpm_);
+      factory_->setMaxPlayabilityCost(0.6f);  // Allow moderate stretches
+    }
+  }
+
+  const IHarmonyContext& harmony_;
+  uint16_t bpm_;
+  BassModel bass_model_;
+  std::unique_ptr<FrettedNoteFactory> factory_;
+};
 
 // ============================================================================
 // Bass-Kick Sync Tolerance by Genre
@@ -253,77 +353,15 @@ uint8_t getApproachNote(uint8_t current_root, uint8_t next_root, int8_t target_d
 // The header definition includes all patterns and is the source of truth.
 
 // Adjust pattern one level sparser (reduce density/aggression)
+// Uses kBassTransformer for consistent transitions.
 BassPattern adjustPatternSparser(BassPattern pattern) {
-  switch (pattern) {
-    case BassPattern::Aggressive:
-      return BassPattern::Driving;
-    case BassPattern::Driving:
-      return BassPattern::Syncopated;
-    case BassPattern::Syncopated:
-      return BassPattern::RootFifth;
-    case BassPattern::RhythmicDrive:
-      return BassPattern::Syncopated;
-    case BassPattern::RootFifth:
-      return BassPattern::WholeNote;
-    case BassPattern::WholeNote:
-      return BassPattern::WholeNote;
-    case BassPattern::Walking:
-      return BassPattern::RootFifth;
-    case BassPattern::PowerDrive:
-      return BassPattern::RootFifth;
-    case BassPattern::SidechainPulse:
-      return BassPattern::RootFifth;
-    case BassPattern::Groove:
-      return BassPattern::Walking;
-    case BassPattern::OctaveJump:
-      return BassPattern::Driving;
-    case BassPattern::PedalTone:
-      return BassPattern::PedalTone;  // PedalTone is already the sparsest
-    case BassPattern::Tresillo:
-      return BassPattern::Syncopated;  // Tresillo -> Syncopated
-    case BassPattern::SubBass808:
-      return BassPattern::WholeNote;   // SubBass808 -> WholeNote
-    case BassPattern::RnBNeoSoul:
-      return BassPattern::Groove;      // RnBNeoSoul -> Groove
-  }
-  return pattern;
+  return kBassTransformer.sparser(pattern);
 }
 
 // Adjust pattern one level denser (increase density/aggression)
+// Uses kBassTransformer for consistent transitions.
 BassPattern adjustPatternDenser(BassPattern pattern) {
-  switch (pattern) {
-    case BassPattern::WholeNote:
-      return BassPattern::RootFifth;
-    case BassPattern::RootFifth:
-      return BassPattern::Syncopated;
-    case BassPattern::Syncopated:
-      return BassPattern::Driving;
-    case BassPattern::Driving:
-      return BassPattern::Aggressive;
-    case BassPattern::Aggressive:
-      return BassPattern::Aggressive;
-    case BassPattern::RhythmicDrive:
-      return BassPattern::RhythmicDrive;
-    case BassPattern::Walking:
-      return BassPattern::Groove;
-    case BassPattern::PowerDrive:
-      return BassPattern::Aggressive;
-    case BassPattern::SidechainPulse:
-      return BassPattern::Aggressive;
-    case BassPattern::Groove:
-      return BassPattern::Groove;
-    case BassPattern::OctaveJump:
-      return BassPattern::Aggressive;
-    case BassPattern::PedalTone:
-      return BassPattern::WholeNote;  // Denser: move to WholeNote (still simple)
-    case BassPattern::Tresillo:
-      return BassPattern::Tresillo;   // Tresillo stays tresillo (genre-specific)
-    case BassPattern::SubBass808:
-      return BassPattern::SubBass808; // SubBass808 stays (genre-specific)
-    case BassPattern::RnBNeoSoul:
-      return BassPattern::RnBNeoSoul; // RnBNeoSoul stays (genre-specific)
-  }
-  return pattern;
+  return kBassTransformer.denser(pattern);
 }
 
 // ============================================================================
@@ -1179,6 +1217,12 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
       continue;
     }
 
+    // Check intro_bass_enabled from blueprint
+    if (section.type == SectionType::Intro && params.blueprint_ref != nullptr &&
+        !params.blueprint_ref->intro_bass_enabled) {
+      continue;
+    }
+
     SectionType next_section_type =
         (sec_idx + 1 < sections.size()) ? sections[sec_idx + 1].type : section.type;
 
@@ -1298,7 +1342,37 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
     }
   }
 
-  // Post-processing: sync bass notes with kick positions for tighter groove
+  // Post-processing 1: Apply playability check for physical realism
+  // At high tempos, some bass lines become physically impossible to play.
+  // This ensures generated notes are executable on a real 4-string bass.
+  {
+    BassPlayabilityChecker playability_checker(harmony, params.bpm);
+    auto& notes = track.notes();
+    for (auto& note : notes) {
+      uint8_t playable_pitch = playability_checker.ensurePlayable(
+          note.note, note.start_tick, note.duration);
+      note.note = playable_pitch;
+    }
+  }
+
+  // Post-processing 2: Apply articulation (gate, velocity adjustments)
+  {
+    // Determine the dominant pattern for articulation
+    // Use the first pattern encountered (RiffPolicy cache would track this)
+    BassPattern dominant_pattern = BassPattern::RootFifth;
+    BassRiffCache temp_cache;
+    if (!sections.empty()) {
+      dominant_pattern = selectPatternWithPolicy(temp_cache, sections[0], 0, params, rng);
+    }
+    applyBassArticulation(track, dominant_pattern, params.mood, sections);
+  }
+
+  // Post-processing 3: Apply density adjustment per section
+  for (const auto& section : sections) {
+    applyDensityAdjustment(track, section);
+  }
+
+  // Post-processing 4: sync bass notes with kick positions for tighter groove
   // Tolerance and max adjustment scale with:
   //   1. Kick density: High density → tight sync, Low density → loose sync
   //   2. Genre: Dance/Electronic → tight, Ballad/Jazz → loose
@@ -1609,6 +1683,12 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song, const Genera
       continue;
     }
 
+    // Check intro_bass_enabled from blueprint
+    if (section.type == SectionType::Intro && params.blueprint_ref != nullptr &&
+        !params.blueprint_ref->intro_bass_enabled) {
+      continue;
+    }
+
     SectionType next_section_type =
         (sec_idx + 1 < sections.size()) ? sections[sec_idx + 1].type : section.type;
 
@@ -1770,6 +1850,37 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song, const Genera
         addBassGhostNotes(track, factory, bar_start, adjusted_root, rng);
       }
     }
+  }
+
+  // Post-processing 1: Apply playability check for physical realism
+  // At high tempos, some bass lines become physically impossible to play.
+  // This ensures generated notes are executable on a real 4-string bass.
+  {
+    BassPlayabilityChecker playability_checker(harmony, params.bpm);
+    auto& notes = track.notes();
+    for (auto& note : notes) {
+      uint8_t playable_pitch = playability_checker.ensurePlayable(
+          note.note, note.start_tick, note.duration);
+      note.note = playable_pitch;
+    }
+  }
+
+  // Post-processing 2: Apply articulation (gate, velocity adjustments)
+  {
+    // Determine the dominant pattern for articulation
+    BassPattern dominant_pattern = BassPattern::RootFifth;
+    BassRiffCache temp_cache;
+    if (!sections.empty()) {
+      float section_vocal_density = getVocalDensityForSection(vocal_analysis, sections[0]);
+      dominant_pattern = selectPatternWithPolicyForVocal(temp_cache, sections[0], 0, params,
+                                                         section_vocal_density, rng);
+    }
+    applyBassArticulation(track, dominant_pattern, params.mood, sections);
+  }
+
+  // Post-processing 3: Apply density adjustment per section
+  for (const auto& section : sections) {
+    applyDensityAdjustment(track, section);
   }
 }
 

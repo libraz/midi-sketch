@@ -8,6 +8,8 @@
 #include <gtest/gtest.h>
 
 #include "core/preset_data.h"
+#include "core/track_collision_detector.h"
+#include "midisketch.h"
 
 namespace midisketch {
 namespace {
@@ -210,7 +212,7 @@ TEST(GeneratorTest, DrumPatternsDifferByMood) {
 // Chord Extension Tests
 // ============================================================================
 
-TEST(GeneratorTest, ChordExtensionDisabledByDefault) {
+TEST(GeneratorTest, ChordExtensionDefaultValues) {
   Generator gen;
   GeneratorParams params{};
   params.structure = StructurePattern::ShortForm;
@@ -219,9 +221,10 @@ TEST(GeneratorTest, ChordExtensionDisabledByDefault) {
 
   gen.generate(params);
 
-  // Chord extensions should be disabled by default
+  // 7th chords enabled by default for richer harmony
+  // Sus chords disabled by default (mood-dependent activation)
   EXPECT_FALSE(gen.getParams().chord_extension.enable_sus);
-  EXPECT_FALSE(gen.getParams().chord_extension.enable_7th);
+  EXPECT_TRUE(gen.getParams().chord_extension.enable_7th);
 }
 
 TEST(GeneratorTest, ChordExtensionGeneratesNotes) {
@@ -568,6 +571,157 @@ TEST(GeneratorTest, FormNotExplicitUsesRandomSelection) {
   // The important thing is that the generator doesn't crash.
   EXPECT_TRUE(gen1.getParams().structure >= StructurePattern::StandardPop);
   EXPECT_TRUE(gen2.getParams().structure >= StructurePattern::StandardPop);
+}
+
+// ============================================================================
+// Motif-Chord Collision Detection Tests
+// ============================================================================
+
+// Direct test of TrackCollisionDetector to verify it detects the issue
+TEST(CollisionDetectorTest, DetectsMotifChordClash) {
+  // Simulate the exact scenario from Blueprint 8 + seed 12345:
+  // Chord D3 (50) from tick 105600-107520
+  // Chord F3 (53) from tick 105600-106800
+  // Motif E3 (52) at tick 106560 should clash with both
+  TrackCollisionDetector detector;
+
+  // Register Chord notes
+  detector.registerNote(105600, 1920, 50, TrackRole::Chord);  // D3
+  detector.registerNote(105600, 1200, 53, TrackRole::Chord);  // F3
+
+  // Check if E3 (52) at tick 106560 is safe for Motif
+  bool is_safe = detector.isPitchSafe(52, 106560, 240, TrackRole::Motif);
+
+  // E3 (52) should be UNSAFE because:
+  // - E3 vs D3 = 2 semitones (major 2nd) -> dissonant
+  // - E3 vs F3 = 1 semitone (minor 2nd) -> dissonant
+  EXPECT_FALSE(is_safe) << "E3 at tick 106560 should clash with sustained D3 and F3 from Chord";
+
+  // Also check that D4 (62) would be safe (octave of D3, not clashing with F3)
+  bool d4_safe = detector.isPitchSafe(62, 106560, 240, TrackRole::Motif);
+  EXPECT_TRUE(d4_safe) << "D4 should be safe (octave of D3 is doubling, 9 semitones from F3 is OK)";
+}
+
+// Test to check how many Chord notes are registered before Motif generation
+TEST(CollisionDetectorTest, ChordRegistrationBeforeMotif) {
+  // This test verifies that Chord track gets registered before Motif generation
+  // by checking the HarmonyContext state
+  MidiSketch sketch;
+  SongConfig config = createDefaultSongConfig(1);
+  config.blueprint_id = 8;  // IdolEmo
+  config.seed = 12345;
+  sketch.generateFromConfig(config);
+
+  // After generation, check if there are any minor 2nd or major 2nd clashes
+  // between Motif and Chord tracks
+  const auto& song = sketch.getSong();
+  const auto& chord_notes = song.chord().notes();
+  const auto& motif_notes = song.motif().notes();
+
+  int clash_count = 0;
+  for (const auto& motif_note : motif_notes) {
+    Tick motif_start = motif_note.start_tick;
+    Tick motif_end = motif_start + motif_note.duration;
+
+    for (const auto& chord_note : chord_notes) {
+      Tick chord_start = chord_note.start_tick;
+      Tick chord_end = chord_start + chord_note.duration;
+
+      // Check if notes overlap in time
+      if (motif_start < chord_end && chord_start < motif_end) {
+        int interval = std::abs(static_cast<int>(motif_note.note) -
+                                static_cast<int>(chord_note.note));
+        // Minor 2nd (1) or Major 2nd (2) in close range is dissonant
+        if (interval == 1 || interval == 2) {
+          clash_count++;
+        }
+      }
+    }
+  }
+
+  // We expect no close-interval clashes if collision detection is working
+  // Note: This test may fail due to CLI/test discrepancy, which is being investigated
+  EXPECT_EQ(clash_count, 0) << "Found " << clash_count
+                            << " minor/major 2nd clashes - collision detection may not be working";
+}
+
+TEST(GeneratorTest, Blueprint8MotifChordNoClash) {
+  // Blueprint 8 (IdolEmo) + seed 12345 had a known issue where Motif E3
+  // clashed with sustained Chord D3/F3 at tick 106560.
+  // This test verifies that the collision detection prevents such clashes.
+  //
+  // Match CLI defaults exactly:
+  // ./build/bin/midisketch_cli --blueprint 8 --seed 12345
+  MidiSketch sketch;
+  SongConfig config = createDefaultSongConfig(1);  // Dance Pop Emotion style (CLI default)
+  config.blueprint_id = 8;  // IdolEmo blueprint
+  config.chord_progression_id = 3;  // CLI default chord progression
+  config.seed = 12345;
+  sketch.generateFromConfig(config);
+
+  const auto& song = sketch.getSong();
+  const auto& chord_notes = song.chord().notes();
+  const auto& motif_notes = song.motif().notes();
+
+  // Print config and structure for debugging
+  std::cout << "Config: blueprint=" << static_cast<int>(config.blueprint_id)
+            << " chord=" << static_cast<int>(config.chord_progression_id)
+            << " vocal_attitude=" << static_cast<int>(config.vocal_attitude)
+            << " bpm=" << config.bpm << std::endl;
+  std::cout << "Form: " << static_cast<int>(sketch.getParams().structure) << std::endl;
+  std::cout << "Total bars: " << song.arrangement().totalBars() << std::endl;
+  std::cout << "Total ticks: " << song.arrangement().totalTicks() << std::endl;
+  std::cout << "Total motif notes: " << motif_notes.size() << std::endl;
+
+  // Print Motif notes around tick 105600-107000 for debugging
+  std::cout << "Motif notes around tick 105600-107000:" << std::endl;
+  for (const auto& note : motif_notes) {
+    if (note.start_tick >= 105000 && note.start_tick <= 108000) {
+      std::cout << "  tick=" << note.start_tick << " pitch=" << static_cast<int>(note.note)
+                << " dur=" << note.duration << std::endl;
+    }
+  }
+
+  // Print Chord notes around tick 105600-107000 for debugging
+  std::cout << "Chord notes around tick 105600-107000:" << std::endl;
+  for (const auto& note : chord_notes) {
+    if (note.start_tick >= 105000 && note.start_tick <= 108000) {
+      std::cout << "  tick=" << note.start_tick << " pitch=" << static_cast<int>(note.note)
+                << " dur=" << note.duration << std::endl;
+    }
+  }
+
+  // Check for minor 2nd (1 semitone) and major 2nd (2 semitone) clashes
+  // between Motif and sustained Chord notes
+  int clash_count = 0;
+  for (const auto& motif_note : motif_notes) {
+    Tick motif_start = motif_note.start_tick;
+    Tick motif_end = motif_start + motif_note.duration;
+
+    for (const auto& chord_note : chord_notes) {
+      Tick chord_start = chord_note.start_tick;
+      Tick chord_end = chord_start + chord_note.duration;
+
+      // Check if notes overlap in time
+      if (motif_start < chord_end && chord_start < motif_end) {
+        int interval = std::abs(static_cast<int>(motif_note.note) -
+                                static_cast<int>(chord_note.note));
+        // Minor 2nd (1) or Major 2nd (2) in close range is dissonant
+        if (interval == 1 || interval == 2) {
+          clash_count++;
+          // Log the clash for debugging
+          std::cout << "Clash at tick " << motif_start << ": "
+                    << "Motif " << static_cast<int>(motif_note.note)
+                    << " vs Chord " << static_cast<int>(chord_note.note)
+                    << " (interval: " << interval << ")" << std::endl;
+        }
+      }
+    }
+  }
+
+  // Expect no close-interval clashes between Motif and Chord
+  EXPECT_EQ(clash_count, 0) << "Found " << clash_count
+                            << " minor/major 2nd clashes between Motif and Chord";
 }
 
 }  // namespace

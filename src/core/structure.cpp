@@ -77,6 +77,11 @@ bool getAllowDeviationForType(SectionType type) {
 // - Chorus: 100% density - full energy
 // Note: Minimum 80% for sections that might have arpeggios (arpeggio skips notes below 80%)
 // Intro/Outro/Interlude/Chant can go lower since they typically don't have active arpeggios.
+//
+// NOTE: This function is for non-blueprint structures (Traditional blueprint or
+// StructurePattern-based generation). Blueprint-based structures define explicit
+// density_percent values in their SectionSlot definitions, so this function
+// should NOT be called for them.
 void assignDensityGradient(std::vector<Section>& sections) {
   if (sections.empty()) return;
 
@@ -131,6 +136,7 @@ void assignDensityGradient(std::vector<Section>& sections) {
 
 // Assign exit patterns based on section type and context within the song.
 // Rules:
+// - Skip sections that already have an explicit exit_pattern set (from blueprint)
 // - Outro sections: Fadeout (velocity decrease)
 // - B sections followed by Chorus: Sustain (holds for lift effect)
 // - Last Chorus in the song: FinalHit (strong ending) + PeakLevel::Max
@@ -150,6 +156,11 @@ void assignExitPatterns(std::vector<Section>& sections) {
   for (size_t idx = 0; idx < sections.size(); ++idx) {
     auto& section = sections[idx];
 
+    // Skip if exit_pattern was explicitly set by blueprint
+    if (section.exit_pattern != ExitPattern::None) {
+      continue;
+    }
+
     if (section.type == SectionType::Outro) {
       section.exit_pattern = ExitPattern::Fadeout;
     } else if (section.type == SectionType::B && idx + 1 < sections.size() &&
@@ -159,13 +170,82 @@ void assignExitPatterns(std::vector<Section>& sections) {
       section.exit_pattern = ExitPattern::FinalHit;
       // Last chorus gets maximum peak level for emotional climax
       section.peak_level = PeakLevel::Max;
-    } else {
-      section.exit_pattern = ExitPattern::None;
     }
+    // Otherwise leave as None (already default)
   }
 }
 
 }  // namespace
+
+void applyEnergyCurve(std::vector<Section>& sections, EnergyCurve curve) {
+  if (sections.empty()) return;
+
+  // SteadyState: Set all non-intro/outro sections to Medium energy
+  if (curve == EnergyCurve::SteadyState) {
+    for (auto& section : sections) {
+      if (section.type != SectionType::Intro && section.type != SectionType::Outro) {
+        section.energy = SectionEnergy::Medium;
+        section.base_velocity = 75;  // Consistent velocity
+      }
+    }
+    return;
+  }
+
+  // FrontLoaded: High energy from start, maintain throughout
+  if (curve == EnergyCurve::FrontLoaded) {
+    for (size_t idx = 0; idx < sections.size(); ++idx) {
+      auto& section = sections[idx];
+
+      // Bridge sections get a slight dip for contrast
+      if (section.type == SectionType::Bridge || section.type == SectionType::Interlude) {
+        section.energy = SectionEnergy::Medium;
+        section.base_velocity = std::min(section.base_velocity, static_cast<uint8_t>(75));
+      } else if (section.type != SectionType::Outro) {
+        // Everything else stays high or goes higher
+        if (section.energy == SectionEnergy::Low) {
+          section.energy = SectionEnergy::Medium;
+          section.base_velocity = std::max(section.base_velocity, static_cast<uint8_t>(75));
+        } else if (section.energy == SectionEnergy::Medium) {
+          section.energy = SectionEnergy::High;
+          section.base_velocity = std::max(section.base_velocity, static_cast<uint8_t>(82));
+        }
+      }
+    }
+    return;
+  }
+
+  // WavePattern: Alternates between low and high
+  if (curve == EnergyCurve::WavePattern) {
+    bool is_high_wave = false;  // Start with low wave
+    SectionType prev_type = SectionType::Intro;
+
+    for (auto& section : sections) {
+      // Toggle wave on major section changes
+      if (section.type == SectionType::Chorus) {
+        is_high_wave = true;  // Chorus always high
+      } else if (section.type == SectionType::A && prev_type == SectionType::Chorus) {
+        is_high_wave = false;  // Drop after chorus
+      }
+
+      // Apply wave energy
+      if (section.type == SectionType::Intro || section.type == SectionType::Outro) {
+        // Intro/Outro stay as-is
+      } else if (is_high_wave || section.type == SectionType::Chorus) {
+        section.energy = SectionEnergy::High;
+        section.base_velocity = std::max(section.base_velocity, static_cast<uint8_t>(85));
+      } else {
+        section.energy = SectionEnergy::Low;
+        section.base_velocity = std::min(section.base_velocity, static_cast<uint8_t>(68));
+      }
+
+      prev_type = section.type;
+    }
+    return;
+  }
+
+  // GradualBuild (default): No changes needed, section defaults are already gradual
+  // The blueprint's section_flow already defines gradual energy progression
+}
 
 std::vector<Section> buildStructure(StructurePattern pattern) {
   std::vector<Section> sections;
@@ -684,9 +764,54 @@ std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blue
     section.modifier = slot.modifier;
     section.modifier_intensity = slot.modifier_intensity;
 
+    // Transfer new fields (exit_pattern, time_feel, harmonic_rhythm, drop_style)
+    // Only override exit_pattern if explicitly set (not None)
+    // Otherwise let assignExitPatterns() set it based on section context
+    if (slot.exit_pattern != ExitPattern::None) {
+      section.exit_pattern = slot.exit_pattern;
+    }
+    section.time_feel = slot.time_feel;
+    section.harmonic_rhythm = slot.harmonic_rhythm;
+    section.drop_style = slot.drop_style;
+
     // Convert PeakLevel to fill_before for backward compatibility
     // (fill_before is true when peak_level is not None)
     section.fill_before = (slot.peak_level != PeakLevel::None);
+
+    // Handle custom stagger_bars from blueprint
+    // If stagger_bars > 0, override entry_pattern to Stagger and generate custom layer events
+    if (slot.stagger_bars > 0 && section.bars >= slot.stagger_bars) {
+      section.entry_pattern = EntryPattern::Stagger;
+      // Generate layer events based on stagger_bars
+      // Use the custom stagger duration instead of default
+      StaggeredEntryConfig stagger_config = StaggeredEntryConfig::defaultIntro(slot.stagger_bars);
+      for (uint8_t e = 0; e < stagger_config.entry_count; ++e) {
+        const auto& entry = stagger_config.entries[e];
+        section.layer_events.emplace_back(entry.entry_bar, entry.track, TrackMask::None);
+      }
+    }
+
+    // Handle custom layer scheduling from blueprint
+    // Allows direct control of track add/remove at specific points
+    if (slot.custom_layer_schedule) {
+      // Clear any auto-generated layer events
+      section.layer_events.clear();
+
+      // Add event at section start with all enabled tracks
+      section.layer_events.emplace_back(0, slot.enabled_tracks, TrackMask::None);
+
+      // Add tracks at midpoint if specified
+      if (slot.layer_add_at_mid != TrackMask::None && section.bars >= 2) {
+        uint8_t mid_bar = section.bars / 2;
+        section.layer_events.emplace_back(mid_bar, slot.layer_add_at_mid, TrackMask::None);
+      }
+
+      // Remove tracks near end if specified
+      if (slot.layer_remove_at_end != TrackMask::None && section.bars >= 2) {
+        uint8_t end_bar = section.bars - 1;
+        section.layer_events.emplace_back(end_bar, TrackMask::None, slot.layer_remove_at_end);
+      }
+    }
 
     sections.push_back(section);
 
@@ -694,8 +819,10 @@ std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blue
     current_tick += slot.bars * TICKS_PER_BAR;
   }
 
-  // Assign density gradient for progressive energy buildup
-  assignDensityGradient(sections);
+  // NOTE: Do NOT call assignDensityGradient() here.
+  // Blueprint-based structures have explicit density_percent values
+  // defined in their SectionSlot definitions, which were already
+  // transferred to the Section above (line 685).
 
   // Assign exit patterns based on section context
   assignExitPatterns(sections);

@@ -27,7 +27,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "core/types.h"
+#include "core/section_types.h"
 
 namespace midisketch {
 
@@ -142,9 +142,9 @@ class DensityTransformer {
    */
   PatternType adjust(PatternType pattern, BackingDensity density) const {
     switch (density) {
-      case BackingDensity::Sparse:
+      case BackingDensity::Thin:
         return sparser(pattern);
-      case BackingDensity::Dense:
+      case BackingDensity::Thick:
         return denser(pattern);
       case BackingDensity::Normal:
       default:

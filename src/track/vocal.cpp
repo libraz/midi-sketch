@@ -119,7 +119,7 @@ static std::vector<NoteEvent> generateWithLockedRhythm(
       velocity = 85;  // Medium beats
     }
 
-    notes.push_back({tick, duration, pitch, velocity});
+    notes.push_back(NoteEventBuilder::create(tick, duration, pitch, velocity));
     prev_pitch = pitch;
   }
 
@@ -179,9 +179,15 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
   const auto& progression = getChordProgression(params.chord_id);
 
   // Velocity scale for composition style
+  // Use VocalProminence to determine suppression level for BackgroundMotif
   float velocity_scale = 1.0f;
   if (params.composition_style == CompositionStyle::BackgroundMotif) {
-    velocity_scale = 0.7f;
+    // VocalProminence controls how much the vocal is subdued
+    // Foreground: 0.85 (still prominent, just reduced)
+    // Background: 0.65 (blends with arrangement)
+    velocity_scale = (params.motif_vocal.prominence == VocalProminence::Foreground)
+                         ? 0.85f
+                         : 0.65f;
   } else if (params.composition_style == CompositionStyle::SynthDriven) {
     velocity_scale = 0.75f;
   }

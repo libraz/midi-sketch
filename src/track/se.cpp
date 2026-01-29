@@ -11,22 +11,17 @@ namespace midisketch {
 
 namespace {
 
+// Helper to add SE notes (no provenance tracking needed for SE)
+void addSENote(MidiTrack& track, Tick start, Tick duration, uint8_t note, uint8_t velocity) {
+  track.addNote(NoteEventBuilder::create(start, duration, note, velocity));
+}
+
 // Fixed pitch for all calls (C3)
 constexpr uint8_t CALL_PITCH = 48;
 
 // Local aliases for timing constants
 constexpr Tick EIGHTH_NOTE = TICK_EIGHTH;
 constexpr Tick QUARTER_NOTE = TICK_QUARTER;
-
-// Helper to add SE notes (no provenance tracking needed for SE)
-void addSENote(MidiTrack& track, Tick start, Tick duration, uint8_t note, uint8_t velocity) {
-  NoteEvent event;
-  event.start_tick = start;
-  event.duration = duration;
-  event.note = note;
-  event.velocity = velocity;
-  track.addNote(event);
-}
 
 // Maximum notes in a chant preset
 constexpr size_t MAX_CHANT_NOTES = 16;

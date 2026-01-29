@@ -16,6 +16,7 @@
 #include "core/i_harmony_context.h"
 #include "core/melody_templates.h"
 #include "core/timing_constants.h"
+#include "test_helpers/note_event_test_helper.h"
 
 namespace midisketch {
 namespace {
@@ -925,7 +926,7 @@ TEST(GlobalMotifTest, ExtractFromEmptyNotes) {
 
 TEST(GlobalMotifTest, ExtractFromSingleNote) {
   // NoteEvent: {start_tick, duration, note, velocity}
-  std::vector<NoteEvent> notes = {{0, 480, 60, 100}};
+  std::vector<NoteEvent> notes = {NoteEventTestHelper::create(0, 480, 60, 100)};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
 
   EXPECT_FALSE(motif.isValid());
@@ -936,7 +937,7 @@ TEST(GlobalMotifTest, ExtractAscendingContour) {
   // C4 -> D4 -> E4 -> F4 (ascending pattern)
   // NoteEvent: {start_tick, duration, note, velocity}
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100}, {480, 480, 62, 100}, {960, 480, 64, 100}, {1440, 480, 65, 100}};
+      NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 62, 100), NoteEventTestHelper::create(960, 480, 64, 100), NoteEventTestHelper::create(1440, 480, 65, 100)};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
 
   EXPECT_TRUE(motif.isValid());
@@ -950,7 +951,7 @@ TEST(GlobalMotifTest, ExtractAscendingContour) {
 TEST(GlobalMotifTest, ExtractDescendingContour) {
   // F4 -> E4 -> D4 -> C4 (descending pattern)
   std::vector<NoteEvent> notes = {
-      {0, 480, 65, 100}, {480, 480, 64, 100}, {960, 480, 62, 100}, {1440, 480, 60, 100}};
+      NoteEventTestHelper::create(0, 480, 65, 100), NoteEventTestHelper::create(480, 480, 64, 100), NoteEventTestHelper::create(960, 480, 62, 100), NoteEventTestHelper::create(1440, 480, 60, 100)};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
 
   EXPECT_TRUE(motif.isValid());
@@ -961,7 +962,7 @@ TEST(GlobalMotifTest, ExtractPeakContour) {
   // C4 -> G4 -> E4 -> C4 (clear rise then fall = peak)
   // intervals: +7, -3, -4 → first half positive, second half negative
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100}, {480, 480, 67, 100}, {960, 480, 64, 100}, {1440, 480, 60, 100}};
+      NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 67, 100), NoteEventTestHelper::create(960, 480, 64, 100), NoteEventTestHelper::create(1440, 480, 60, 100)};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
 
   EXPECT_TRUE(motif.isValid());
@@ -972,7 +973,7 @@ TEST(GlobalMotifTest, ExtractValleyContour) {
   // G4 -> C4 -> E4 -> G4 (clear fall then rise = valley)
   // intervals: -7, +4, +3 → first half negative, second half positive
   std::vector<NoteEvent> notes = {
-      {0, 480, 67, 100}, {480, 480, 60, 100}, {960, 480, 64, 100}, {1440, 480, 67, 100}};
+      NoteEventTestHelper::create(0, 480, 67, 100), NoteEventTestHelper::create(480, 480, 60, 100), NoteEventTestHelper::create(960, 480, 64, 100), NoteEventTestHelper::create(1440, 480, 67, 100)};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
 
   EXPECT_TRUE(motif.isValid());
@@ -982,7 +983,7 @@ TEST(GlobalMotifTest, ExtractValleyContour) {
 TEST(GlobalMotifTest, ExtractPlateauContour) {
   // C4 -> C4 -> D4 -> C4 (mostly flat = plateau)
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100}, {480, 480, 60, 100}, {960, 480, 62, 100}, {1440, 480, 60, 100}};
+      NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 60, 100), NoteEventTestHelper::create(960, 480, 62, 100), NoteEventTestHelper::create(1440, 480, 60, 100)};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
 
   EXPECT_TRUE(motif.isValid());
@@ -992,10 +993,10 @@ TEST(GlobalMotifTest, ExtractPlateauContour) {
 TEST(GlobalMotifTest, ExtractRhythmSignature) {
   // Different durations: quarter, half, quarter, whole
   std::vector<NoteEvent> notes = {
-      {0, 480, 60, 100},     // quarter
-      {480, 960, 62, 100},   // half
-      {1440, 480, 64, 100},  // quarter
-      {1920, 1920, 65, 100}  // whole
+      NoteEventTestHelper::create(0, 480, 60, 100),     // quarter
+      NoteEventTestHelper::create(480, 960, 62, 100),   // half
+      NoteEventTestHelper::create(1440, 480, 64, 100),  // quarter
+      NoteEventTestHelper::create(1920, 1920, 65, 100)  // whole
   };
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
 
@@ -1009,7 +1010,7 @@ TEST(GlobalMotifTest, ExtractRhythmSignature) {
 
 TEST(GlobalMotifTest, EvaluateWithInvalidMotif) {
   GlobalMotif invalid_motif;
-  std::vector<NoteEvent> candidate = {{0, 480, 60, 100}, {480, 480, 62, 100}};
+  std::vector<NoteEvent> candidate = {NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 62, 100)};
 
   float bonus = MelodyDesigner::evaluateWithGlobalMotif(candidate, invalid_motif);
 
@@ -1018,7 +1019,7 @@ TEST(GlobalMotifTest, EvaluateWithInvalidMotif) {
 
 TEST(GlobalMotifTest, EvaluateWithIdenticalPattern) {
   // Create a motif from ascending pattern
-  std::vector<NoteEvent> source = {{0, 480, 60, 100}, {480, 480, 62, 100}, {960, 480, 64, 100}};
+  std::vector<NoteEvent> source = {NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 62, 100), NoteEventTestHelper::create(960, 480, 64, 100)};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(source);
 
   // Evaluate same pattern (should get maximum bonus)
@@ -1033,13 +1034,13 @@ TEST(GlobalMotifTest, EvaluateDifferentContour) {
   // Create a clearly ascending motif (large intervals to trigger Ascending contour)
   // Need intervals summing to >= 3 in each half to avoid Plateau classification
   std::vector<NoteEvent> ascending = {
-      {0, 480, 55, 100}, {480, 480, 60, 100}, {960, 480, 64, 100}, {1440, 480, 69, 100}};
+      NoteEventTestHelper::create(0, 480, 55, 100), NoteEventTestHelper::create(480, 480, 60, 100), NoteEventTestHelper::create(960, 480, 64, 100), NoteEventTestHelper::create(1440, 480, 69, 100)};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(ascending);
   EXPECT_EQ(motif.contour_type, ContourType::Ascending);
 
   // Evaluate clearly descending pattern (different contour)
   std::vector<NoteEvent> descending = {
-      {0, 480, 69, 100}, {480, 480, 64, 100}, {960, 480, 60, 100}, {1440, 480, 55, 100}};
+      NoteEventTestHelper::create(0, 480, 69, 100), NoteEventTestHelper::create(480, 480, 64, 100), NoteEventTestHelper::create(960, 480, 60, 100), NoteEventTestHelper::create(1440, 480, 55, 100)};
   float bonus = MelodyDesigner::evaluateWithGlobalMotif(descending, motif);
 
   // No contour bonus (different contour types), no direction bonus (opposite),
@@ -1383,11 +1384,11 @@ TEST(GlobalMotifTest, MaxBonusIsPointTwoFive) {
   // Identical pattern should yield the maximum possible bonus of 0.25
   // Components: 0.10 contour + 0.05 interval + 0.05 direction + 0.05 consistency
   std::vector<NoteEvent> source = {
-      {0, 480, 60, 100},    // C4
-      {480, 480, 64, 100},  // E4 (+4, leap up)
-      {960, 480, 65, 100},  // F4 (+1, step up)
-      {1440, 480, 62, 100}, // D4 (-3, leap down)
-      {1920, 480, 64, 100}, // E4 (+2, step up)
+      NoteEventTestHelper::create(0, 480, 60, 100),    // C4
+      NoteEventTestHelper::create(480, 480, 64, 100),  // E4 (+4, leap up)
+      NoteEventTestHelper::create(960, 480, 65, 100),  // F4 (+1, step up)
+      NoteEventTestHelper::create(1440, 480, 62, 100), // D4 (-3, leap down)
+      NoteEventTestHelper::create(1920, 480, 64, 100), // E4 (+2, step up)
   };
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(source);
 
@@ -1400,17 +1401,17 @@ TEST(GlobalMotifTest, MaxBonusIsPointTwoFive) {
 TEST(GlobalMotifTest, ContourDirectionMatchingBonus) {
   // DNA pattern: ascending (up, up)
   std::vector<NoteEvent> dna = {
-      {0, 480, 60, 100}, {480, 480, 64, 100}, {960, 480, 67, 100}};
+      NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 64, 100), NoteEventTestHelper::create(960, 480, 67, 100)};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(dna);
 
   // Candidate also ascending (up, up) but different intervals
   std::vector<NoteEvent> same_dir = {
-      {0, 480, 60, 100}, {480, 480, 61, 100}, {960, 480, 63, 100}};
+      NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 61, 100), NoteEventTestHelper::create(960, 480, 63, 100)};
   float bonus_same = MelodyDesigner::evaluateWithGlobalMotif(same_dir, motif);
 
   // Candidate descending (down, down) - opposite direction
   std::vector<NoteEvent> opp_dir = {
-      {0, 480, 67, 100}, {480, 480, 64, 100}, {960, 480, 60, 100}};
+      NoteEventTestHelper::create(0, 480, 67, 100), NoteEventTestHelper::create(480, 480, 64, 100), NoteEventTestHelper::create(960, 480, 60, 100)};
   float bonus_opp = MelodyDesigner::evaluateWithGlobalMotif(opp_dir, motif);
 
   // Same direction should get higher bonus than opposite direction
@@ -1420,17 +1421,17 @@ TEST(GlobalMotifTest, ContourDirectionMatchingBonus) {
 TEST(GlobalMotifTest, IntervalConsistencyBonusStepsMatchSteps) {
   // DNA with all steps (1-2 semitones)
   std::vector<NoteEvent> dna_steps = {
-      {0, 480, 60, 100}, {480, 480, 62, 100}, {960, 480, 64, 100}, {1440, 480, 65, 100}};
+      NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 62, 100), NoteEventTestHelper::create(960, 480, 64, 100), NoteEventTestHelper::create(1440, 480, 65, 100)};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(dna_steps);
 
   // Candidate with all steps (different pitches but same step character)
   std::vector<NoteEvent> cand_steps = {
-      {0, 480, 65, 100}, {480, 480, 67, 100}, {960, 480, 69, 100}, {1440, 480, 71, 100}};
+      NoteEventTestHelper::create(0, 480, 65, 100), NoteEventTestHelper::create(480, 480, 67, 100), NoteEventTestHelper::create(960, 480, 69, 100), NoteEventTestHelper::create(1440, 480, 71, 100)};
   float bonus_steps = MelodyDesigner::evaluateWithGlobalMotif(cand_steps, motif);
 
   // Candidate with all leaps (3+ semitones) - different character
   std::vector<NoteEvent> cand_leaps = {
-      {0, 480, 60, 100}, {480, 480, 67, 100}, {960, 480, 72, 100}, {1440, 480, 79, 100}};
+      NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 67, 100), NoteEventTestHelper::create(960, 480, 72, 100), NoteEventTestHelper::create(1440, 480, 79, 100)};
   float bonus_leaps = MelodyDesigner::evaluateWithGlobalMotif(cand_leaps, motif);
 
   // Steps matching steps should get higher consistency bonus
@@ -1442,20 +1443,20 @@ TEST(GlobalMotifTest, StrengthenedBonusImprovesCoherence) {
   // matching vs non-matching patterns. The old 0.1 max was too small to influence
   // candidate selection in practice.
   std::vector<NoteEvent> dna = {
-      {0, 480, 60, 100}, {480, 480, 64, 100}, {960, 480, 67, 100},
-      {1440, 480, 65, 100}, {1920, 480, 62, 100}};
+      NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 64, 100), NoteEventTestHelper::create(960, 480, 67, 100),
+      NoteEventTestHelper::create(1440, 480, 65, 100), NoteEventTestHelper::create(1920, 480, 62, 100)};
   GlobalMotif motif = MelodyDesigner::extractGlobalMotif(dna);
 
   // Nearly identical pattern (transposed up 1 semitone)
   std::vector<NoteEvent> similar = {
-      {0, 480, 61, 100}, {480, 480, 65, 100}, {960, 480, 68, 100},
-      {1440, 480, 66, 100}, {1920, 480, 63, 100}};
+      NoteEventTestHelper::create(0, 480, 61, 100), NoteEventTestHelper::create(480, 480, 65, 100), NoteEventTestHelper::create(960, 480, 68, 100),
+      NoteEventTestHelper::create(1440, 480, 66, 100), NoteEventTestHelper::create(1920, 480, 63, 100)};
   float bonus_similar = MelodyDesigner::evaluateWithGlobalMotif(similar, motif);
 
   // Completely different pattern (static then big leap)
   std::vector<NoteEvent> different = {
-      {0, 480, 60, 100}, {480, 480, 60, 100}, {960, 480, 60, 100},
-      {1440, 480, 72, 100}, {1920, 480, 72, 100}};
+      NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 60, 100), NoteEventTestHelper::create(960, 480, 60, 100),
+      NoteEventTestHelper::create(1440, 480, 72, 100), NoteEventTestHelper::create(1920, 480, 72, 100)};
   float bonus_different = MelodyDesigner::evaluateWithGlobalMotif(different, motif);
 
   // The gap between similar and different should be meaningful (> 0.10)

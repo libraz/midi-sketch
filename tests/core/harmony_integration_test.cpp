@@ -92,6 +92,8 @@ class HarmonyIntegrationTest : public ::testing::Test {
     params_.bpm = 120;
     params_.seed = 42;
     params_.arpeggio_enabled = false;
+    // Disable humanization for deterministic tests
+    params_.humanize = false;
   }
 
   GeneratorParams params_;

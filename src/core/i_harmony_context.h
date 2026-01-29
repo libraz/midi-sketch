@@ -8,6 +8,7 @@
 #ifndef MIDISKETCH_CORE_I_HARMONY_CONTEXT_H
 #define MIDISKETCH_CORE_I_HARMONY_CONTEXT_H
 
+#include <string>
 #include <vector>
 
 #include "core/types.h"
@@ -164,6 +165,30 @@ class IHarmonyContext {
    * @param degree Scale degree of the secondary dominant
    */
   virtual void registerSecondaryDominant(Tick start, Tick end, int8_t degree) = 0;
+
+  /**
+   * @brief Dump collision state at a specific tick for debugging.
+   *
+   * @param tick The tick to inspect
+   * @param range_ticks How many ticks around the target to include (default: 1920 = 1 bar)
+   * @return Formatted string with collision state
+   */
+  virtual std::string dumpNotesAt(Tick tick, Tick range_ticks = 1920) const = 0;
+
+  /**
+   * @brief Get the maximum safe end tick for extending a note without creating clashes.
+   *
+   * Used by PostProcessor when extending note durations. Returns the earliest tick
+   * where extending the note would create a dissonant interval with another track.
+   *
+   * @param note_start Start tick of the note being extended
+   * @param pitch MIDI pitch of the note
+   * @param exclude Track role to exclude (the track containing the note)
+   * @param desired_end The desired end tick (extension target)
+   * @return Safe end tick (may be less than desired_end if clash would occur)
+   */
+  virtual Tick getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude,
+                             Tick desired_end) const = 0;
 
   /// C4 (middle C) - below this, stricter low-register rules apply.
   static constexpr uint8_t LOW_REGISTER_THRESHOLD = 60;

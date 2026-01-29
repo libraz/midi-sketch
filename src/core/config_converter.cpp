@@ -236,11 +236,39 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   // Chord extensions
   params.chord_extension = config.chord_extension;
 
-  // Auto-enable tritone substitution for jazz-influenced moods
-  // CityPop (19), Sentimental (6), Nostalgic (11), Chill (7) have jazzy harmony
-  if (params.mood == Mood::CityPop || params.mood == Mood::Sentimental ||
-      params.mood == Mood::Nostalgic || params.mood == Mood::Chill) {
+  // Apply mood-based chord extension adjustments for richer harmony
+  // CityPop and jazz-influenced moods use extended chords
+  if (params.mood == Mood::CityPop) {
+    params.chord_extension.enable_sus = true;
+    params.chord_extension.enable_7th = true;
+    params.chord_extension.enable_9th = true;
     params.chord_extension.tritone_sub = true;
+    params.chord_extension.seventh_probability = 0.40f;
+  } else if (params.mood == Mood::RnBNeoSoul) {
+    // R&B/Neo-Soul uses heavy extended chords
+    params.chord_extension.enable_sus = true;
+    params.chord_extension.enable_7th = true;
+    params.chord_extension.enable_9th = true;
+    params.chord_extension.tritone_sub = true;
+    params.chord_extension.seventh_probability = 0.50f;
+    params.chord_extension.ninth_probability = 0.35f;
+  } else if (params.mood == Mood::Ballad || params.mood == Mood::Sentimental) {
+    // Ballad and sentimental use sus and 7ths for emotional color
+    params.chord_extension.enable_sus = true;
+    params.chord_extension.enable_7th = true;
+    params.chord_extension.seventh_probability = 0.30f;
+    params.chord_extension.sus_probability = 0.25f;
+  } else if (params.mood == Mood::Nostalgic || params.mood == Mood::Chill) {
+    // Nostalgic and chill moods use jazzy harmony
+    params.chord_extension.enable_7th = true;
+    params.chord_extension.tritone_sub = true;
+    params.chord_extension.seventh_probability = 0.25f;
+  } else if (params.mood == Mood::Lofi) {
+    // Lo-fi uses jazzy 7ths and 9ths
+    params.chord_extension.enable_7th = true;
+    params.chord_extension.enable_9th = true;
+    params.chord_extension.seventh_probability = 0.40f;
+    params.chord_extension.ninth_probability = 0.30f;
   }
 
   // Composition style (override preset if explicitly set)

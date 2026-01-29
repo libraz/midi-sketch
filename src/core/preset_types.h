@@ -100,13 +100,13 @@ struct ArpeggioStyle {
 
 /// @brief Chord extension configuration.
 struct ChordExtensionParams {
-  bool enable_sus = false;           ///< Enable sus2/sus4 substitutions
-  bool enable_7th = false;           ///< Enable 7th chord extensions
-  bool enable_9th = false;           ///< Enable 9th chord extensions
-  bool tritone_sub = false;          ///< Enable tritone substitution (V7 -> bII7)
-  float sus_probability = 0.2f;      ///< Probability of sus chord (0.0-1.0)
-  float seventh_probability = 0.3f;  ///< Probability of 7th extension (0.0-1.0)
-  float ninth_probability = 0.25f;   ///< Probability of 9th extension (0.0-1.0)
+  bool enable_sus = false;            ///< Enable sus2/sus4 substitutions
+  bool enable_7th = true;             ///< Enable 7th chord extensions
+  bool enable_9th = false;            ///< Enable 9th chord extensions
+  bool tritone_sub = false;           ///< Enable tritone substitution (V7 -> bII7)
+  float sus_probability = 0.2f;       ///< Probability of sus chord (0.0-1.0)
+  float seventh_probability = 0.15f;  ///< Probability of 7th extension (0.0-1.0)
+  float ninth_probability = 0.25f;    ///< Probability of 9th extension (0.0-1.0)
   float tritone_sub_probability = 0.5f;  ///< Probability of tritone sub (0.0-1.0)
 };
 
@@ -210,9 +210,9 @@ struct SongConfig {
   ArrangementGrowth arrangement_growth = ArrangementGrowth::LayerAdd;
 
   /// Humanization
-  bool humanize = false;
-  float humanize_timing = 0.5f;
-  float humanize_velocity = 0.5f;
+  bool humanize = true;
+  float humanize_timing = 0.4f;
+  float humanize_velocity = 0.3f;
 
   /// Modulation options (extended)
   ModulationTiming modulation_timing = ModulationTiming::None;
@@ -285,9 +285,9 @@ struct GeneratorParams {
   ArpeggioParams arpeggio;        ///< Arpeggio configuration
 
   /// Humanization options
-  bool humanize = false;           ///< Enable timing/velocity humanization
-  float humanize_timing = 0.5f;    ///< Timing variation amount (0.0-1.0)
-  float humanize_velocity = 0.5f;  ///< Velocity variation amount (0.0-1.0)
+  bool humanize = true;            ///< Enable timing/velocity humanization
+  float humanize_timing = 0.4f;    ///< Timing variation amount (0.0-1.0)
+  float humanize_velocity = 0.3f;  ///< Velocity variation amount (0.0-1.0)
 
   /// Vocal expression parameters
   VocalAttitude vocal_attitude = VocalAttitude::Clean;
@@ -309,6 +309,14 @@ struct GeneratorParams {
 
   /// Behavioral Loop (addictive generation)
   bool addictive_mode = false;  ///< Enable Behavioral Loop mode (fixed riff, maximum hook)
+
+  /// Energy curve for overall song dynamics
+  /// Controls how section energy is distributed across the song:
+  /// - GradualBuild: Standard idol song (Intro low → Chorus peak)
+  /// - FrontLoaded: High energy from the start (live-oriented)
+  /// - WavePattern: Waves between low and high (ballad style)
+  /// - SteadyState: Constant energy throughout (BGM-oriented)
+  EnergyCurve energy_curve = EnergyCurve::GradualBuild;
 
   /// Modulation settings (for metadata/regeneration determinism)
   ModulationTiming modulation_timing = ModulationTiming::None;

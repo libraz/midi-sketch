@@ -14,6 +14,8 @@
 
 #include "core/generator.h"
 #include "core/preset_types.h"
+#include "core/structure.h"
+#include "test_helpers/note_event_test_helper.h"
 #include "track/phrase_cache.h"
 #include "track/vocal.h"
 
@@ -162,7 +164,8 @@ TEST_F(ProductionBlueprintTest, IdolKawaiiBlueprint) {
   EXPECT_NE(bp.section_flow, nullptr);
   EXPECT_GT(bp.section_count, 0);
   EXPECT_EQ(bp.riff_policy, RiffPolicy::Locked);
-  EXPECT_TRUE(bp.drums_sync_vocal);
+  // MelodyDriven uses phrase-aware drums, not onset-locked drums_sync_vocal
+  EXPECT_FALSE(bp.drums_sync_vocal);
   EXPECT_FALSE(bp.intro_kick_enabled);
   EXPECT_FALSE(bp.intro_bass_enabled);
 }
@@ -529,10 +532,12 @@ TEST_F(ProductionBlueprintTest, IdolHyperBlueprintHasLockedRiffPolicy) {
   EXPECT_TRUE(bp.drums_sync_vocal);
 }
 
-TEST_F(ProductionBlueprintTest, IdolKawaiiBlueprintHasDrumsSyncVocal) {
-  // IdolKawaii blueprint should have drums_sync_vocal for rhythm lock feel
+TEST_F(ProductionBlueprintTest, IdolKawaiiBlueprintUsesMelodyDriven) {
+  // IdolKawaii blueprint uses MelodyDriven paradigm (phrase-aware drums)
+  // NOT drums_sync_vocal (which is for RhythmSync onset-locked drums)
   const auto& bp = getProductionBlueprint(6);  // IdolKawaii
-  EXPECT_TRUE(bp.drums_sync_vocal);
+  EXPECT_EQ(bp.paradigm, GenerationParadigm::MelodyDriven);
+  EXPECT_FALSE(bp.drums_sync_vocal);
 }
 
 TEST_F(ProductionBlueprintTest, BalladBlueprintNoDrumsSyncVocal) {
@@ -764,11 +769,11 @@ TEST_F(ProductionBlueprintTest, ExtractRhythmPattern) {
   Tick section_start = 0;
 
   // Note at beat 0, duration 0.5 beats
-  notes.push_back({0, 240, 60, 100});  // tick 0, duration 240 (half beat)
+  notes.push_back(NoteEventTestHelper::create(0, 240, 60, 100));  // tick 0, duration 240 (half beat)
   // Note at beat 1, duration 1 beat
-  notes.push_back({480, 480, 64, 100});  // tick 480 (beat 1), duration 480 (1 beat)
+  notes.push_back(NoteEventTestHelper::create(480, 480, 64, 100));  // tick 480 (beat 1), duration 480 (1 beat)
   // Note at beat 3, duration 0.25 beats
-  notes.push_back({1440, 120, 67, 100});  // tick 1440 (beat 3), duration 120 (quarter beat)
+  notes.push_back(NoteEventTestHelper::create(1440, 120, 67, 100));  // tick 1440 (beat 3), duration 120 (quarter beat)
 
   auto pattern = extractRhythmPattern(notes, section_start, 4);
 
@@ -980,6 +985,484 @@ TEST_F(ProductionBlueprintTest, BgmOnlyWithTraditionalNoMotif) {
   // Motif should NOT be generated for Traditional paradigm in BGM-only mode
   EXPECT_TRUE(song.motif().empty())
       << "Motif should NOT be generated for Traditional paradigm with MelodyLead in BGM-only mode";
+}
+
+// ============================================================================
+// NEW: SectionSlot Extended Fields Tests (exit_pattern, time_feel, etc.)
+// ============================================================================
+
+TEST_F(ProductionBlueprintTest, BalladHasLaidBackTimeFeel) {
+  // Ballad blueprint should have LaidBack time_feel for relaxed feel
+  const auto& bp = getProductionBlueprint(3);  // Ballad
+  ASSERT_NE(bp.section_flow, nullptr);
+
+  // Intro should have LaidBack time_feel
+  EXPECT_EQ(bp.section_flow[0].time_feel, TimeFeel::LaidBack);
+
+  // A section should have LaidBack time_feel
+  bool found_a_with_laidback = false;
+  for (uint8_t i = 0; i < bp.section_count; ++i) {
+    if (bp.section_flow[i].type == SectionType::A &&
+        bp.section_flow[i].time_feel == TimeFeel::LaidBack) {
+      found_a_with_laidback = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_a_with_laidback) << "Ballad A sections should have LaidBack time_feel";
+}
+
+TEST_F(ProductionBlueprintTest, BalladOutroHasFadeoutExitPattern) {
+  // Ballad blueprint should have explicit Fadeout exit pattern on Outro
+  const auto& bp = getProductionBlueprint(3);  // Ballad
+  ASSERT_NE(bp.section_flow, nullptr);
+
+  // Find Outro section
+  bool found_fadeout_outro = false;
+  for (uint8_t i = 0; i < bp.section_count; ++i) {
+    if (bp.section_flow[i].type == SectionType::Outro) {
+      EXPECT_EQ(bp.section_flow[i].exit_pattern, ExitPattern::Fadeout)
+          << "Ballad Outro should have Fadeout exit pattern";
+      found_fadeout_outro = true;
+    }
+  }
+  EXPECT_TRUE(found_fadeout_outro) << "Ballad should have an Outro section";
+}
+
+TEST_F(ProductionBlueprintTest, BalladHasSparseHarmonicRhythm) {
+  // Ballad blueprint should have sparse harmonic rhythm (2.0) in Intro/Interlude
+  const auto& bp = getProductionBlueprint(3);  // Ballad
+  ASSERT_NE(bp.section_flow, nullptr);
+
+  // Intro should have sparse harmonic rhythm
+  EXPECT_FLOAT_EQ(bp.section_flow[0].harmonic_rhythm, 2.0f)
+      << "Ballad Intro should have sparse harmonic_rhythm (2.0)";
+}
+
+TEST_F(ProductionBlueprintTest, BalladBSectionHasSubtleDropStyle) {
+  // Ballad B section before Chorus should have Subtle drop style
+  const auto& bp = getProductionBlueprint(3);  // Ballad
+  ASSERT_NE(bp.section_flow, nullptr);
+
+  bool found_b_with_subtle = false;
+  for (uint8_t i = 0; i < bp.section_count; ++i) {
+    if (bp.section_flow[i].type == SectionType::B &&
+        bp.section_flow[i].drop_style == ChorusDropStyle::Subtle) {
+      found_b_with_subtle = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_b_with_subtle) << "Ballad B sections should have Subtle drop_style";
+}
+
+TEST_F(ProductionBlueprintTest, IdolHyperHasPushedTimeFeel) {
+  // IdolHyper blueprint should have Pushed time_feel for driving energy
+  const auto& bp = getProductionBlueprint(5);  // IdolHyper
+  ASSERT_NE(bp.section_flow, nullptr);
+
+  int pushed_count = 0;
+  for (uint8_t i = 0; i < bp.section_count; ++i) {
+    if (bp.section_flow[i].time_feel == TimeFeel::Pushed) {
+      pushed_count++;
+    }
+  }
+  // Most sections should have Pushed time_feel
+  EXPECT_GE(pushed_count, bp.section_count / 2)
+      << "IdolHyper should have mostly Pushed time_feel";
+}
+
+TEST_F(ProductionBlueprintTest, IdolHyperBSectionHasDramaticDrop) {
+  // IdolHyper B section should have Dramatic drop style
+  const auto& bp = getProductionBlueprint(5);  // IdolHyper
+  ASSERT_NE(bp.section_flow, nullptr);
+
+  bool found_dramatic_b = false;
+  for (uint8_t i = 0; i < bp.section_count; ++i) {
+    if (bp.section_flow[i].type == SectionType::B &&
+        bp.section_flow[i].drop_style == ChorusDropStyle::Dramatic) {
+      found_dramatic_b = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_dramatic_b)
+      << "IdolHyper B section should have Dramatic drop_style";
+}
+
+TEST_F(ProductionBlueprintTest, IdolHyperBSectionHasCutOffExitPattern) {
+  // IdolHyper B section should have CutOff exit pattern
+  const auto& bp = getProductionBlueprint(5);  // IdolHyper
+  ASSERT_NE(bp.section_flow, nullptr);
+
+  bool found_cutoff_b = false;
+  for (uint8_t i = 0; i < bp.section_count; ++i) {
+    if (bp.section_flow[i].type == SectionType::B &&
+        bp.section_flow[i].exit_pattern == ExitPattern::CutOff) {
+      found_cutoff_b = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_cutoff_b)
+      << "IdolHyper B section should have CutOff exit pattern";
+}
+
+TEST_F(ProductionBlueprintTest, IdolCoolPopHasPushedTimeFeel) {
+  // IdolCoolPop blueprint should have Pushed time_feel throughout
+  const auto& bp = getProductionBlueprint(7);  // IdolCoolPop
+  ASSERT_NE(bp.section_flow, nullptr);
+
+  for (uint8_t i = 0; i < bp.section_count; ++i) {
+    EXPECT_EQ(bp.section_flow[i].time_feel, TimeFeel::Pushed)
+        << "IdolCoolPop section " << int(i) << " should have Pushed time_feel";
+  }
+}
+
+TEST_F(ProductionBlueprintTest, IdolCoolPopBSectionHasDramaticDrop) {
+  // IdolCoolPop B section should have Dramatic drop style
+  const auto& bp = getProductionBlueprint(7);  // IdolCoolPop
+  ASSERT_NE(bp.section_flow, nullptr);
+
+  bool found_dramatic_b = false;
+  for (uint8_t i = 0; i < bp.section_count; ++i) {
+    if (bp.section_flow[i].type == SectionType::B &&
+        bp.section_flow[i].drop_style == ChorusDropStyle::Dramatic) {
+      found_dramatic_b = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_dramatic_b)
+      << "IdolCoolPop B section should have Dramatic drop_style";
+}
+
+TEST_F(ProductionBlueprintTest, IdolEmoHasMixedTimeFeel) {
+  // IdolEmo should have LaidBack for intimate sections, Pushed for climax
+  const auto& bp = getProductionBlueprint(8);  // IdolEmo
+  ASSERT_NE(bp.section_flow, nullptr);
+
+  bool found_laidback = false;
+  bool found_pushed = false;
+
+  for (uint8_t i = 0; i < bp.section_count; ++i) {
+    if (bp.section_flow[i].time_feel == TimeFeel::LaidBack) {
+      found_laidback = true;
+    }
+    if (bp.section_flow[i].time_feel == TimeFeel::Pushed) {
+      found_pushed = true;
+    }
+  }
+
+  EXPECT_TRUE(found_laidback) << "IdolEmo should have LaidBack sections";
+  EXPECT_TRUE(found_pushed) << "IdolEmo should have Pushed sections (climax)";
+}
+
+TEST_F(ProductionBlueprintTest, IdolEmoOutroHasFadeout) {
+  // IdolEmo Outro should have Fadeout exit pattern
+  const auto& bp = getProductionBlueprint(8);  // IdolEmo
+  ASSERT_NE(bp.section_flow, nullptr);
+
+  bool found_fadeout_outro = false;
+  for (uint8_t i = 0; i < bp.section_count; ++i) {
+    if (bp.section_flow[i].type == SectionType::Outro &&
+        bp.section_flow[i].exit_pattern == ExitPattern::Fadeout) {
+      found_fadeout_outro = true;
+    }
+  }
+  EXPECT_TRUE(found_fadeout_outro) << "IdolEmo Outro should have Fadeout exit pattern";
+}
+
+TEST_F(ProductionBlueprintTest, LastChorusHasFinalHitExitPattern) {
+  // Blueprints with explicit section flow should have FinalHit on last chorus
+  const std::vector<uint8_t> blueprints_with_finalchorus = {3, 5, 7, 8};  // Ballad, IdolHyper, IdolCoolPop, IdolEmo
+
+  for (uint8_t bp_id : blueprints_with_finalchorus) {
+    const auto& bp = getProductionBlueprint(bp_id);
+    if (bp.section_flow == nullptr) continue;
+
+    // Find the last Chorus with Max peak level
+    bool found_final_chorus = false;
+    for (uint8_t i = 0; i < bp.section_count; ++i) {
+      if (bp.section_flow[i].type == SectionType::Chorus &&
+          bp.section_flow[i].peak_level == PeakLevel::Max &&
+          bp.section_flow[i].exit_pattern == ExitPattern::FinalHit) {
+        found_final_chorus = true;
+      }
+    }
+    EXPECT_TRUE(found_final_chorus)
+        << "Blueprint " << bp.name << " should have FinalHit on Max peak chorus";
+  }
+}
+
+// ============================================================================
+// NEW: buildStructureFromBlueprint() Transfer Tests
+// ============================================================================
+
+TEST_F(ProductionBlueprintTest, BuildStructureTransfersTimeFeel) {
+  // Verify time_feel is transferred from SectionSlot to Section
+  const auto& bp = getProductionBlueprint(3);  // Ballad (has LaidBack)
+  auto sections = buildStructureFromBlueprint(bp);
+
+  ASSERT_FALSE(sections.empty());
+
+  // First section (Intro) should have LaidBack time_feel
+  EXPECT_EQ(sections[0].time_feel, TimeFeel::LaidBack)
+      << "time_feel should be transferred from SectionSlot";
+}
+
+TEST_F(ProductionBlueprintTest, BuildStructureTransfersHarmonicRhythm) {
+  // Verify harmonic_rhythm is transferred from SectionSlot to Section
+  const auto& bp = getProductionBlueprint(3);  // Ballad (Intro has 2.0)
+  auto sections = buildStructureFromBlueprint(bp);
+
+  ASSERT_FALSE(sections.empty());
+
+  // First section (Intro) should have harmonic_rhythm = 2.0
+  EXPECT_FLOAT_EQ(sections[0].harmonic_rhythm, 2.0f)
+      << "harmonic_rhythm should be transferred from SectionSlot";
+}
+
+TEST_F(ProductionBlueprintTest, BuildStructureTransfersDropStyle) {
+  // Verify drop_style is transferred from SectionSlot to Section
+  const auto& bp = getProductionBlueprint(3);  // Ballad (B sections have Subtle)
+  auto sections = buildStructureFromBlueprint(bp);
+
+  ASSERT_FALSE(sections.empty());
+
+  // Find a B section and check drop_style
+  bool found_b = false;
+  for (const auto& section : sections) {
+    if (section.type == SectionType::B && section.drop_style == ChorusDropStyle::Subtle) {
+      found_b = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_b)
+      << "drop_style should be transferred from SectionSlot to Section";
+}
+
+TEST_F(ProductionBlueprintTest, BuildStructurePreservesExplicitExitPattern) {
+  // Verify explicitly set exit_pattern is not overwritten by assignExitPatterns
+  const auto& bp = getProductionBlueprint(3);  // Ballad (Outro has Fadeout)
+  auto sections = buildStructureFromBlueprint(bp);
+
+  ASSERT_FALSE(sections.empty());
+
+  // Find Outro section and check exit_pattern
+  bool found_fadeout = false;
+  for (const auto& section : sections) {
+    if (section.type == SectionType::Outro) {
+      EXPECT_EQ(section.exit_pattern, ExitPattern::Fadeout)
+          << "Explicit exit_pattern should be preserved";
+      found_fadeout = true;
+    }
+  }
+  EXPECT_TRUE(found_fadeout);
+}
+
+TEST_F(ProductionBlueprintTest, BuildStructureAutoAssignsExitPatternWhenNone) {
+  // Verify sections with None exit_pattern get auto-assigned by assignExitPatterns
+  const auto& bp = getProductionBlueprint(1);  // RhythmLock (no explicit exit_patterns)
+  auto sections = buildStructureFromBlueprint(bp);
+
+  ASSERT_FALSE(sections.empty());
+
+  // Find last Chorus (should get FinalHit from assignExitPatterns)
+  size_t last_chorus_idx = sections.size();
+  for (size_t i = sections.size(); i > 0; --i) {
+    if (sections[i - 1].type == SectionType::Chorus) {
+      last_chorus_idx = i - 1;
+      break;
+    }
+  }
+
+  if (last_chorus_idx < sections.size()) {
+    EXPECT_EQ(sections[last_chorus_idx].exit_pattern, ExitPattern::FinalHit)
+        << "Last chorus should get FinalHit from auto-assignment";
+  }
+}
+
+// ============================================================================
+// NEW: ChorusDropStyle Enum Tests
+// ============================================================================
+
+TEST_F(ProductionBlueprintTest, ChorusDropStyleEnumValues) {
+  // Verify enum values match specification
+  EXPECT_EQ(static_cast<uint8_t>(ChorusDropStyle::None), 0);
+  EXPECT_EQ(static_cast<uint8_t>(ChorusDropStyle::Subtle), 1);
+  EXPECT_EQ(static_cast<uint8_t>(ChorusDropStyle::Dramatic), 2);
+  EXPECT_EQ(static_cast<uint8_t>(ChorusDropStyle::DrumHit), 3);
+}
+
+TEST_F(ProductionBlueprintTest, TimeFeelEnumValues) {
+  // Verify enum values match specification
+  EXPECT_EQ(static_cast<uint8_t>(TimeFeel::OnBeat), 0);
+  EXPECT_EQ(static_cast<uint8_t>(TimeFeel::LaidBack), 1);
+  EXPECT_EQ(static_cast<uint8_t>(TimeFeel::Pushed), 2);
+  EXPECT_EQ(static_cast<uint8_t>(TimeFeel::Triplet), 3);
+}
+
+TEST_F(ProductionBlueprintTest, ExitPatternEnumValues) {
+  // Verify enum values match specification
+  EXPECT_EQ(static_cast<uint8_t>(ExitPattern::None), 0);
+  EXPECT_EQ(static_cast<uint8_t>(ExitPattern::Sustain), 1);
+  EXPECT_EQ(static_cast<uint8_t>(ExitPattern::Fadeout), 2);
+  EXPECT_EQ(static_cast<uint8_t>(ExitPattern::FinalHit), 3);
+  EXPECT_EQ(static_cast<uint8_t>(ExitPattern::CutOff), 4);
+}
+
+// ============================================================================
+// NEW: SectionSlot Default Values Tests
+// ============================================================================
+
+TEST_F(ProductionBlueprintTest, SectionSlotDefaultValues) {
+  // Verify SectionSlot has correct default values for new fields
+  SectionSlot slot{};
+  slot.type = SectionType::A;
+  slot.bars = 8;
+  slot.enabled_tracks = TrackMask::All;
+  slot.entry_pattern = EntryPattern::Immediate;
+  slot.energy = SectionEnergy::Medium;
+  slot.base_velocity = 80;
+  slot.density_percent = 100;
+  slot.peak_level = PeakLevel::None;
+  slot.drum_role = DrumRole::Full;
+  // Note: Only setting required fields, new fields should use defaults
+
+  // Verify default values
+  EXPECT_FLOAT_EQ(slot.swing_amount, -1.0f);
+  EXPECT_EQ(slot.modifier, SectionModifier::None);
+  EXPECT_EQ(slot.modifier_intensity, 100);
+  EXPECT_EQ(slot.exit_pattern, ExitPattern::None);
+  EXPECT_EQ(slot.time_feel, TimeFeel::OnBeat);
+  EXPECT_FLOAT_EQ(slot.harmonic_rhythm, 0.0f);
+  EXPECT_EQ(slot.drop_style, ChorusDropStyle::None);
+}
+
+// ============================================================================
+// NEW: Integration Tests - Full Generation with New Features
+// ============================================================================
+
+TEST_F(ProductionBlueprintTest, BalladGenerationPreservesTimeFeel) {
+  // Verify Ballad blueprint generation works with new fields
+  Generator gen;
+  GeneratorParams params;
+  params.blueprint_id = 3;  // Ballad
+  params.seed = 12345;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  // Should have generated notes
+  EXPECT_FALSE(song.vocal().empty()) << "Ballad should generate vocal";
+  EXPECT_FALSE(song.chord().empty()) << "Ballad should generate chord";
+}
+
+TEST_F(ProductionBlueprintTest, IdolHyperGenerationWithDramaticDrop) {
+  // Verify IdolHyper blueprint generation works with Dramatic drop
+  Generator gen;
+  GeneratorParams params;
+  params.blueprint_id = 5;  // IdolHyper
+  params.seed = 54321;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  // Should have generated notes
+  EXPECT_FALSE(song.vocal().empty()) << "IdolHyper should generate vocal";
+  EXPECT_FALSE(song.drums().empty()) << "IdolHyper should generate drums";
+}
+
+TEST_F(ProductionBlueprintTest, IdolCoolPopGenerationWithPushedFeel) {
+  // Verify IdolCoolPop blueprint generation works with Pushed time_feel
+  Generator gen;
+  GeneratorParams params;
+  params.blueprint_id = 7;  // IdolCoolPop
+  params.seed = 98765;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  // Should have generated notes
+  EXPECT_FALSE(song.vocal().empty()) << "IdolCoolPop should generate vocal";
+  EXPECT_FALSE(song.drums().empty()) << "IdolCoolPop should generate drums";
+}
+
+TEST_F(ProductionBlueprintTest, IdolEmoGenerationWithEmotionalDynamics) {
+  // Verify IdolEmo blueprint generation works with emotional dynamics
+  Generator gen;
+  GeneratorParams params;
+  params.blueprint_id = 8;  // IdolEmo
+  params.seed = 11111;
+
+  gen.generate(params);
+  const auto& song = gen.getSong();
+
+  // Should have generated notes
+  EXPECT_FALSE(song.vocal().empty()) << "IdolEmo should generate vocal";
+  EXPECT_FALSE(song.chord().empty()) << "IdolEmo should generate chord";
+}
+
+// ============================================================================
+// NEW: InstrumentSkillLevel and InstrumentModelMode Tests
+// ============================================================================
+
+TEST_F(ProductionBlueprintTest, InstrumentSkillLevelEnumValues) {
+  // Verify enum values match specification
+  EXPECT_EQ(static_cast<uint8_t>(InstrumentSkillLevel::Beginner), 0);
+  EXPECT_EQ(static_cast<uint8_t>(InstrumentSkillLevel::Intermediate), 1);
+  EXPECT_EQ(static_cast<uint8_t>(InstrumentSkillLevel::Advanced), 2);
+  EXPECT_EQ(static_cast<uint8_t>(InstrumentSkillLevel::Virtuoso), 3);
+}
+
+TEST_F(ProductionBlueprintTest, InstrumentModelModeEnumValues) {
+  // Verify enum values match specification
+  EXPECT_EQ(static_cast<uint8_t>(InstrumentModelMode::Off), 0);
+  EXPECT_EQ(static_cast<uint8_t>(InstrumentModelMode::ConstraintsOnly), 1);
+  EXPECT_EQ(static_cast<uint8_t>(InstrumentModelMode::TechniquesOnly), 2);
+  EXPECT_EQ(static_cast<uint8_t>(InstrumentModelMode::Full), 3);
+}
+
+TEST_F(ProductionBlueprintTest, BlueprintConstraintsDefaultValues) {
+  // Verify BlueprintConstraints has correct default values for instrument fields
+  BlueprintConstraints constraints{};
+
+  // Default constraint values
+  EXPECT_EQ(constraints.max_velocity, 127);
+  EXPECT_EQ(constraints.max_pitch, 108);
+  EXPECT_EQ(constraints.max_leap_semitones, 12);
+  EXPECT_FALSE(constraints.prefer_stepwise);
+
+  // Default instrument constraint values
+  EXPECT_EQ(constraints.bass_skill, InstrumentSkillLevel::Intermediate);
+  EXPECT_EQ(constraints.guitar_skill, InstrumentSkillLevel::Intermediate);
+  EXPECT_EQ(constraints.instrument_mode, InstrumentModelMode::Off);
+  EXPECT_FALSE(constraints.enable_slap);
+  EXPECT_FALSE(constraints.enable_tapping);
+  EXPECT_FALSE(constraints.enable_harmonics);
+}
+
+TEST_F(ProductionBlueprintTest, BlueprintConstraintsCustomValues) {
+  // Verify BlueprintConstraints can be initialized with custom values
+  BlueprintConstraints constraints{};
+  constraints.bass_skill = InstrumentSkillLevel::Advanced;
+  constraints.guitar_skill = InstrumentSkillLevel::Virtuoso;
+  constraints.instrument_mode = InstrumentModelMode::Full;
+  constraints.enable_slap = true;
+  constraints.enable_tapping = true;
+  constraints.enable_harmonics = true;
+
+  EXPECT_EQ(constraints.bass_skill, InstrumentSkillLevel::Advanced);
+  EXPECT_EQ(constraints.guitar_skill, InstrumentSkillLevel::Virtuoso);
+  EXPECT_EQ(constraints.instrument_mode, InstrumentModelMode::Full);
+  EXPECT_TRUE(constraints.enable_slap);
+  EXPECT_TRUE(constraints.enable_tapping);
+  EXPECT_TRUE(constraints.enable_harmonics);
+}
+
+TEST_F(ProductionBlueprintTest, AllBlueprintConstraintsHaveDefaultInstrumentMode) {
+  // All built-in blueprints should have default InstrumentModelMode::Off
+  for (uint8_t i = 0; i < getProductionBlueprintCount(); ++i) {
+    const auto& bp = getProductionBlueprint(i);
+    EXPECT_EQ(bp.constraints.instrument_mode, InstrumentModelMode::Off)
+        << "Blueprint " << bp.name << " should have default InstrumentModelMode::Off";
+  }
 }
 
 }  // namespace

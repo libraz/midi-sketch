@@ -9,6 +9,7 @@
 #ifndef MIDISKETCH_CORE_TRACK_COLLISION_DETECTOR_H
 #define MIDISKETCH_CORE_TRACK_COLLISION_DETECTOR_H
 
+#include <string>
 #include <vector>
 
 #include "core/types.h"
@@ -113,6 +114,33 @@ class TrackCollisionDetector {
 
   /// Get all registered notes (for SafePitchResolver).
   const auto& notes() const { return notes_; }
+
+  /**
+   * @brief Dump registered notes at a specific tick for debugging.
+   *
+   * Outputs all notes overlapping with the given tick, including their
+   * track, pitch, and time range. Also shows potential clashes.
+   *
+   * @param tick The tick to inspect
+   * @param range_ticks How many ticks around the target to include (default: 1920 = 1 bar)
+   * @return Formatted string with collision state
+   */
+  std::string dumpNotesAt(Tick tick, Tick range_ticks = 1920) const;
+
+  /**
+   * @brief Get the maximum safe end tick for extending a note.
+   *
+   * Scans registered notes to find the earliest start tick of a note that
+   * would create a dissonant interval if the given note were extended to overlap it.
+   *
+   * @param note_start Start tick of the note being extended
+   * @param pitch MIDI pitch of the note
+   * @param exclude Track role to exclude
+   * @param desired_end The desired end tick
+   * @return Safe end tick (may be less than desired_end)
+   */
+  Tick getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude,
+                     Tick desired_end) const;
 
  private:
   // Registered note from a track.

@@ -237,6 +237,9 @@ std::vector<Section> Generator::buildSongStructure(uint16_t bpm) {
   // Apply Behavioral Loop exit patterns (CutOff before Chorus)
   applyAddictiveModeExitPatterns(sections, params_.addictive_mode);
 
+  // Apply energy curve to adjust section energy levels based on song position
+  applyEnergyCurve(sections, params_.energy_curve);
+
   return sections;
 }
 
@@ -355,7 +358,29 @@ void Generator::generate(const GeneratorParams& params) {
   // Generate melodic tracks in style-specific order
   strategy->generateMelodicTracks(*this);
 
+  // Generate Motif BEFORE Chord so Chord voicing can avoid Motif notes
+  // Motif has less flexibility (specific rhythmic/melodic pattern), while
+  // Chord voicing can use inversions/spread voicing to avoid clashes
+  // BackgroundMotif style already generates Motif via strategy, so skip
+  // Traditional Blueprint (section_flow == nullptr) should NOT generate Motif for backward compat
+  if (params.composition_style != CompositionStyle::BackgroundMotif && blueprint_ != nullptr &&
+      blueprint_->section_flow != nullptr) {
+    bool motif_needed = false;
+    for (const auto& section : song_.arrangement().sections()) {
+      if (hasTrack(section.track_mask, TrackMask::Motif)) {
+        motif_needed = true;
+        break;
+      }
+    }
+    if (motif_needed) {
+      // Generate and register Motif before Chord
+      generateMotif();
+      // Motif is registered via TrackRegistrationGuard in generateMotif()
+    }
+  }
+
   // Generate chord track with style-specific voicing coordination
+  // Chord voicing should avoid Motif notes (Motif already registered above)
   strategy->generateChordTrack(*this);
 
   if (params.drums_enabled) {
@@ -369,23 +394,6 @@ void Generator::generate(const GeneratorParams& params) {
     // BGM-only mode: resolve any chord-arpeggio clashes
     if (strategy->needsArpeggioClashResolution()) {
       resolveArpeggioChordClashes();
-    }
-  }
-
-  // Generate Motif if Blueprint explicitly defines section_flow with TrackMask::Motif
-  // BackgroundMotif style already generates Motif via strategy, so skip
-  // Traditional Blueprint (section_flow == nullptr) should NOT generate Motif for backward compat
-  if (params.composition_style != CompositionStyle::BackgroundMotif && blueprint_ != nullptr &&
-      blueprint_->section_flow != nullptr) {
-    bool motif_needed = false;
-    for (const auto& section : song_.arrangement().sections()) {
-      if (hasTrack(section.track_mask, TrackMask::Motif)) {
-        motif_needed = true;
-        break;
-      }
-    }
-    if (motif_needed) {
-      generateMotif();
     }
   }
 
@@ -940,11 +948,16 @@ void Generator::generateBass() {
 void Generator::generateDrums() {
   // Check if drums_sync_vocal is enabled and vocal track has notes
   if (params_.drums_sync_vocal && !song_.vocal().notes().empty()) {
-    // Analyze vocal for onset positions
+    // RhythmSync: kicks at vocal onsets
     VocalAnalysis vocal_analysis = analyzeVocal(song_.vocal());
     generateDrumsTrackWithVocal(song_.drums(), song_, params_, rng_, vocal_analysis);
+  } else if (params_.paradigm == GenerationParadigm::MelodyDriven &&
+             !song_.vocal().notes().empty()) {
+    // MelodyDriven: drums adapt to vocal phrases (density, fill placement)
+    VocalAnalysis vocal_analysis = analyzeVocal(song_.vocal());
+    generateDrumsTrackMelodyDriven(song_.drums(), song_, params_, rng_, vocal_analysis);
   } else {
-    // Normal drum generation
+    // Traditional: normal drum generation
     generateDrumsTrack(song_.drums(), song_, params_, rng_);
   }
 }
@@ -1000,6 +1013,7 @@ void Generator::generateSE() {
 
 void Generator::generateMotif() {
   // RAII guard ensures motif is registered when this scope ends
+  // Motif is generated BEFORE Chord, so Chord voicing can avoid Motif notes
   TrackRegistrationGuard guard(*harmony_context_, song_.motif(), TrackRole::Motif);
 
   // Build vocal context for MelodyLead mode coordination
@@ -1144,7 +1158,7 @@ void Generator::applyTransitionDynamics() {
   for (const auto& section : sections) {
     if (section.exit_pattern == ExitPattern::FinalHit) {
       PostProcessor::applyEnhancedFinalHit(&song_.bass(), &song_.drums(), &song_.chord(),
-                                            &song_.vocal(), section);
+                                            &song_.vocal(), section, harmony_context_.get());
     }
   }
 

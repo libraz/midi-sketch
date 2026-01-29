@@ -13,6 +13,7 @@
 #include "core/harmonic_rhythm.h"
 #include "core/i_harmony_context.h"
 #include "core/note_factory.h"
+#include "core/production_blueprint.h"
 #include "core/swing_quantize.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
@@ -243,6 +244,11 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
     ArpeggioSpeed section_speed = effective_speed;
     uint8_t section_octave_range = arp.octave_range;
 
+    // Apply BlueprintConstraints: prefer_stepwise limits octave range for tighter voicing
+    if (params.blueprint_ref != nullptr && params.blueprint_ref->constraints.prefer_stepwise) {
+      section_octave_range = std::min(section_octave_range, static_cast<uint8_t>(1));
+    }
+
     // Apply SectionModifier to density for this section
     uint8_t effective_density = section.getModifiedDensity(section.density_percent);
 
@@ -383,9 +389,22 @@ void generateArpeggioTrack(MidiTrack& track, const Song& song, const GeneratorPa
                                                      pattern_index % current_notes.size());
 
         // Apply density_percent to skip notes probabilistically (with SectionModifier)
-        // For arpeggio, only skip when density is < 80% to maintain rhythmic feel
+        // Adjust threshold based on BackingDensity
+        // Thin: require lower density to skip (stricter), Thick: skip less often
+        int density_threshold = 80;
+        switch (section.getEffectiveBackingDensity()) {
+          case BackingDensity::Thin:
+            density_threshold = 70;  // Skip more readily in thin sections
+            break;
+          case BackingDensity::Normal:
+            density_threshold = 80;
+            break;
+          case BackingDensity::Thick:
+            density_threshold = 90;  // Keep more notes in thick sections
+            break;
+        }
         bool add_note = true;
-        if (effective_density < 80) {
+        if (effective_density < density_threshold) {
           std::uniform_real_distribution<float> density_dist(0.0f, 100.0f);
           add_note = (density_dist(rng) <= effective_density);
         }

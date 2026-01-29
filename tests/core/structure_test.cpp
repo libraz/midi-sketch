@@ -610,5 +610,136 @@ TEST(StructureTest, BuildStructureFromBlueprint_Ballad) {
   EXPECT_EQ(sections[0].backing_density, BackingDensity::Thin);
 }
 
+// ============================================================================
+// EnergyCurve Tests
+// ============================================================================
+
+TEST(EnergyCurveTest, GradualBuildDoesNotModifySections) {
+  // GradualBuild is the default and should not modify section energy
+  auto sections = buildStructure(StructurePattern::FullPop);
+
+  // Record original energy values
+  std::vector<SectionEnergy> original_energy;
+  for (const auto& section : sections) {
+    original_energy.push_back(section.energy);
+  }
+
+  applyEnergyCurve(sections, EnergyCurve::GradualBuild);
+
+  // Energy values should remain unchanged
+  for (size_t i = 0; i < sections.size(); ++i) {
+    EXPECT_EQ(sections[i].energy, original_energy[i])
+        << "GradualBuild should not modify section energy";
+  }
+}
+
+TEST(EnergyCurveTest, SteadyStateSetsAllToMedium) {
+  // SteadyState should set all non-intro/outro sections to Medium energy
+  auto sections = buildStructure(StructurePattern::FullPop);
+
+  applyEnergyCurve(sections, EnergyCurve::SteadyState);
+
+  for (const auto& section : sections) {
+    if (section.type != SectionType::Intro && section.type != SectionType::Outro) {
+      EXPECT_EQ(section.energy, SectionEnergy::Medium)
+          << "SteadyState should set non-intro/outro sections to Medium";
+      EXPECT_EQ(section.base_velocity, 75)
+          << "SteadyState should set base_velocity to 75";
+    }
+  }
+}
+
+TEST(EnergyCurveTest, FrontLoadedRaisesLowEnergySections) {
+  // FrontLoaded should raise Low energy sections to Medium or higher
+  auto sections = buildStructure(StructurePattern::FullPop);
+
+  applyEnergyCurve(sections, EnergyCurve::FrontLoaded);
+
+  // No non-outro sections should have Low energy after FrontLoaded
+  for (const auto& section : sections) {
+    if (section.type != SectionType::Outro && section.type != SectionType::Bridge &&
+        section.type != SectionType::Interlude) {
+      EXPECT_NE(section.energy, SectionEnergy::Low)
+          << "FrontLoaded should raise Low energy to Medium or higher";
+    }
+  }
+}
+
+TEST(EnergyCurveTest, FrontLoadedDipsBridgeSections) {
+  // FrontLoaded should keep Bridge/Interlude sections at Medium for contrast
+  const auto& bp = getProductionBlueprint(2);  // StoryPop has a Bridge
+  auto sections = buildStructureFromBlueprint(bp);
+
+  applyEnergyCurve(sections, EnergyCurve::FrontLoaded);
+
+  // Bridge sections should be at Medium (dip for contrast)
+  for (const auto& section : sections) {
+    if (section.type == SectionType::Bridge) {
+      EXPECT_EQ(section.energy, SectionEnergy::Medium)
+          << "FrontLoaded should dip Bridge sections to Medium";
+    }
+  }
+}
+
+TEST(EnergyCurveTest, WavePatternAlternatesEnergy) {
+  // WavePattern should create alternating high/low energy
+  auto sections = buildStructure(StructurePattern::FullPop);
+
+  applyEnergyCurve(sections, EnergyCurve::WavePattern);
+
+  // Chorus sections should always be High
+  for (const auto& section : sections) {
+    if (section.type == SectionType::Chorus) {
+      EXPECT_EQ(section.energy, SectionEnergy::High)
+          << "WavePattern should keep Chorus sections at High energy";
+    }
+  }
+
+  // Check that there's variation (not all same energy)
+  bool has_high = false;
+  for (const auto& section : sections) {
+    if (section.type != SectionType::Intro && section.type != SectionType::Outro) {
+      if (section.energy == SectionEnergy::High) has_high = true;
+    }
+  }
+  EXPECT_TRUE(has_high) << "WavePattern should have high energy sections";
+}
+
+TEST(EnergyCurveTest, WavePatternDropsAfterChorus) {
+  // A sections after Chorus should drop to Low energy
+  const auto& bp = getProductionBlueprint(4);  // IdolStandard has A -> Chorus -> A pattern
+  auto sections = buildStructureFromBlueprint(bp);
+
+  applyEnergyCurve(sections, EnergyCurve::WavePattern);
+
+  // Find A section that follows a Chorus
+  for (size_t i = 1; i < sections.size(); ++i) {
+    if (sections[i].type == SectionType::A && sections[i-1].type == SectionType::Chorus) {
+      EXPECT_EQ(sections[i].energy, SectionEnergy::Low)
+          << "WavePattern should drop A sections after Chorus to Low";
+    }
+  }
+}
+
+TEST(EnergyCurveTest, EmptySectionsHandledGracefully) {
+  // Empty section vector should not crash
+  std::vector<Section> empty_sections;
+
+  applyEnergyCurve(empty_sections, EnergyCurve::GradualBuild);
+  applyEnergyCurve(empty_sections, EnergyCurve::FrontLoaded);
+  applyEnergyCurve(empty_sections, EnergyCurve::WavePattern);
+  applyEnergyCurve(empty_sections, EnergyCurve::SteadyState);
+
+  EXPECT_TRUE(empty_sections.empty());
+}
+
+TEST(EnergyCurveTest, EnergyCurveEnumValues) {
+  // Verify enum values match specification
+  EXPECT_EQ(static_cast<uint8_t>(EnergyCurve::GradualBuild), 0);
+  EXPECT_EQ(static_cast<uint8_t>(EnergyCurve::FrontLoaded), 1);
+  EXPECT_EQ(static_cast<uint8_t>(EnergyCurve::WavePattern), 2);
+  EXPECT_EQ(static_cast<uint8_t>(EnergyCurve::SteadyState), 3);
+}
+
 }  // namespace
 }  // namespace midisketch

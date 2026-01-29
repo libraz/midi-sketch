@@ -17,6 +17,7 @@
 #include "core/motif_types.h"
 #include "core/note_factory.h"
 #include "core/pitch_utils.h"
+#include "core/production_blueprint.h"
 
 namespace midisketch {
 
@@ -465,8 +466,18 @@ std::vector<Tick> generateRhythmPositions(MotifRhythmDensity density, MotifLengt
 }
 
 // Generate pitch sequence with antecedent-consequent structure
-std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, std::mt19937& rng) {
+// max_leap_degrees: maximum step in scale degrees (derived from BlueprintConstraints.max_leap_semitones)
+// prefer_stepwise: if true, limit steps to 1-2 degrees
+std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, std::mt19937& rng,
+                                       int max_leap_degrees = 7, bool prefer_stepwise = false) {
   std::vector<int> degrees;
+
+  // Apply constraints to limit step sizes
+  // If prefer_stepwise is set, override motion to be more stepwise
+  auto constrainedStep = [max_leap_degrees, prefer_stepwise](int step) {
+    int limit = prefer_stepwise ? std::min(2, max_leap_degrees) : max_leap_degrees;
+    return std::clamp(step, -limit, limit);
+  };
 
   // Split into "question" (first half) and "answer" (second half)
   uint8_t half = note_count / 2;
@@ -479,20 +490,23 @@ std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, s
     int step = 0;
     switch (motion) {
       case MotifMotion::Stepwise: {
-        std::uniform_int_distribution<int> dist(-2, 2);
+        int limit = std::min(2, max_leap_degrees);
+        std::uniform_int_distribution<int> dist(-limit, limit);
         step = dist(rng);
         if (step == 0) step = 1;
         break;
       }
       case MotifMotion::GentleLeap: {
-        std::uniform_int_distribution<int> dist(-3, 3);
+        int limit = std::min(3, max_leap_degrees);
+        std::uniform_int_distribution<int> dist(-limit, limit);
         step = dist(rng);
         if (step == 0) step = 1;
         break;
       }
       case MotifMotion::WideLeap: {
-        // Up to 5th intervals (5 scale degrees)
-        std::uniform_int_distribution<int> dist(-5, 5);
+        // Up to 5th intervals (5 scale degrees), constrained by blueprint
+        int limit = std::min(5, max_leap_degrees);
+        std::uniform_int_distribution<int> dist(-limit, limit);
         step = dist(rng);
         if (step == 0) step = (dist(rng) > 0) ? 2 : -2;
         break;
@@ -506,13 +520,15 @@ std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, s
       }
       case MotifMotion::Disjunct: {
         // Irregular leaps with occasional direction changes
-        std::uniform_int_distribution<int> dist(2, 6);
+        int limit = std::min(6, max_leap_degrees);
+        std::uniform_int_distribution<int> dist(2, limit);
         int magnitude = dist(rng);
         std::uniform_int_distribution<int> dir(0, 1);
         step = dir(rng) ? magnitude : -magnitude;
         break;
       }
     }
+    step = constrainedStep(step);
     current += step;
     current = std::clamp(current, -4, 7);
     degrees.push_back(current);
@@ -529,20 +545,23 @@ std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, s
     int step = 0;
     switch (motion) {
       case MotifMotion::Stepwise: {
-        std::uniform_int_distribution<int> dist(-2, 2);
+        int limit = std::min(2, max_leap_degrees);
+        std::uniform_int_distribution<int> dist(-limit, limit);
         step = dist(rng);
         if (step == 0) step = -1;  // Tend downward for resolution
         break;
       }
       case MotifMotion::GentleLeap: {
-        std::uniform_int_distribution<int> dist(-3, 2);
+        int limit = std::min(3, max_leap_degrees);
+        std::uniform_int_distribution<int> dist(-limit, std::min(2, limit));
         step = dist(rng);
         if (step == 0) step = -1;
         break;
       }
       case MotifMotion::WideLeap: {
         // Up to 5th intervals, tend toward resolution
-        std::uniform_int_distribution<int> dist(-4, 3);
+        int limit = std::min(4, max_leap_degrees);
+        std::uniform_int_distribution<int> dist(-limit, std::min(3, limit));
         step = dist(rng);
         if (step == 0) step = -2;  // Tend downward
         break;
@@ -556,7 +575,8 @@ std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, s
       }
       case MotifMotion::Disjunct: {
         // Irregular but trending toward resolution
-        std::uniform_int_distribution<int> dist(1, 4);
+        int limit = std::min(4, max_leap_degrees);
+        std::uniform_int_distribution<int> dist(1, limit);
         int magnitude = dist(rng);
         // More likely to go down for resolution
         std::uniform_int_distribution<int> dir(0, 2);
@@ -564,6 +584,7 @@ std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, s
         break;
       }
     }
+    step = constrainedStep(step);
     current += step;
     current = std::clamp(current, -4, 7);
     degrees.push_back(current);
@@ -679,9 +700,18 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::
   std::vector<Tick> positions = motif_detail::generateRhythmPositions(
       motif_params.rhythm_density, motif_params.length, motif_params.note_count, rng);
 
-  // Generate pitch sequence with structure
-  std::vector<int> degrees =
-      motif_detail::generatePitchSequence(motif_params.note_count, motif_params.motion, rng);
+  // Apply BlueprintConstraints to pitch sequence generation
+  // Convert max_leap_semitones to approximate scale degrees (12 semitones ≈ 7 degrees)
+  int max_leap_degrees = 7;  // Default: full octave
+  bool prefer_stepwise = false;
+  if (params.blueprint_ref != nullptr) {
+    max_leap_degrees = (params.blueprint_ref->constraints.max_leap_semitones * 7 + 11) / 12;
+    prefer_stepwise = params.blueprint_ref->constraints.prefer_stepwise;
+  }
+
+  // Generate pitch sequence with structure and constraints
+  std::vector<int> degrees = motif_detail::generatePitchSequence(
+      motif_params.note_count, motif_params.motion, rng, max_leap_degrees, prefer_stepwise);
 
   // Calculate note duration
   Tick note_duration = TICKS_PER_BEAT / 2;
@@ -705,7 +735,7 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::
 
     pitch = std::clamp(pitch, 36, 96);
 
-    pattern.push_back({pos, note_duration, static_cast<uint8_t>(pitch), velocity});
+    pattern.push_back(NoteEventBuilder::create(pos, note_duration, static_cast<uint8_t>(pitch), velocity));
     pitch_idx++;
   }
 
@@ -864,6 +894,23 @@ void generateMotifTrack(MidiTrack& track, Song& song, const GeneratorParams& par
 
         // Apply density_percent to skip notes probabilistically (with SectionModifier)
         uint8_t effective_density = section.getModifiedDensity(section.density_percent);
+
+        // Adjust density based on BackingDensity
+        // Thin: reduce by 15%, Thick: increase by 10%
+        float density_mult = 1.0f;
+        switch (section.getEffectiveBackingDensity()) {
+          case BackingDensity::Thin:
+            density_mult = 0.85f;
+            break;
+          case BackingDensity::Normal:
+            break;
+          case BackingDensity::Thick:
+            density_mult = 1.10f;
+            break;
+        }
+        effective_density = static_cast<uint8_t>(
+            std::min(100.0f, static_cast<float>(effective_density) * density_mult));
+
         bool should_skip = false;
         if (effective_density < 100) {
           std::uniform_real_distribution<float> density_dist(0.0f, 100.0f);

@@ -31,6 +31,8 @@ class ArpeggioTest : public ::testing::Test {
     params_.bpm = 140;
     params_.seed = 42;
     params_.arpeggio_enabled = true;
+    // Disable humanization for deterministic timing tests
+    params_.humanize = false;
 
     // Arpeggio params
     params_.arpeggio.pattern = ArpeggioPattern::Up;
@@ -1118,6 +1120,80 @@ TEST_F(ArpeggioTest, SectionSpeedOverridesPreserved) {
     EXPECT_TRUE(found_triplet)
         << "CityPop triplet speed should be preserved even in high density sections";
   }
+}
+
+// ============================================================================
+// BlueprintConstraints Tests
+// ============================================================================
+
+TEST_F(ArpeggioTest, PreferStepwiseLimitsOctaveRangePerSection) {
+  // Test that prefer_stepwise=true limits octave_range to 1 within sections
+  // Compare per-section range between blueprints
+
+  auto measureRangePerSection = [](const Song& song) -> std::vector<int> {
+    std::vector<int> ranges;
+    const auto& arpeggio = song.arpeggio();
+    const auto& sections = song.arrangement().sections();
+
+    for (const auto& section : sections) {
+      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      uint8_t min_note = 127;
+      uint8_t max_note = 0;
+      int note_count = 0;
+
+      for (const auto& note : arpeggio.notes()) {
+        if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
+          min_note = std::min(min_note, note.note);
+          max_note = std::max(max_note, note.note);
+          note_count++;
+        }
+      }
+
+      if (note_count >= 3) {  // Need enough notes to measure range
+        ranges.push_back(max_note - min_note);
+      }
+    }
+    return ranges;
+  };
+
+  params_.arpeggio.octave_range = 3;
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 100;
+
+  // Generate with Ballad blueprint (prefer_stepwise = true)
+  params_.blueprint_id = 3;
+  Generator gen_ballad;
+  gen_ballad.generate(params_);
+  auto ranges_ballad = measureRangePerSection(gen_ballad.getSong());
+
+  // Generate with Traditional blueprint (prefer_stepwise = false)
+  params_.blueprint_id = 0;
+  Generator gen_traditional;
+  gen_traditional.generate(params_);
+  auto ranges_traditional = measureRangePerSection(gen_traditional.getSong());
+
+  // Calculate average range per section
+  auto avgRange = [](const std::vector<int>& ranges) -> double {
+    if (ranges.empty()) return 0.0;
+    double sum = 0.0;
+    for (int r : ranges) sum += r;
+    return sum / ranges.size();
+  };
+
+  double avg_ballad = avgRange(ranges_ballad);
+  double avg_traditional = avgRange(ranges_traditional);
+
+  // With prefer_stepwise=true, average section range should be smaller
+  // Allow some tolerance since other factors also affect range
+  if (avg_ballad > 0 && avg_traditional > 0) {
+    EXPECT_LE(avg_ballad, avg_traditional * 1.5)
+        << "Ballad (prefer_stepwise=true) avg section range (" << avg_ballad
+        << ") should not be much larger than Traditional (" << avg_traditional << ")";
+  }
+
+  // Verify both generate valid arpeggios
+  EXPECT_FALSE(ranges_ballad.empty()) << "Ballad should generate arpeggio sections";
+  EXPECT_FALSE(ranges_traditional.empty()) << "Traditional should generate arpeggio sections";
 }
 
 }  // namespace

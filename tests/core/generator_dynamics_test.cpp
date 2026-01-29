@@ -104,7 +104,7 @@ TEST(GeneratorTest, TransitionDynamicsApplied) {
 // Humanize Tests
 // ============================================================================
 
-TEST(GeneratorTest, HumanizeDisabledByDefault) {
+TEST(GeneratorTest, HumanizeEnabledByDefault) {
   Generator gen;
   GeneratorParams params{};
   params.structure = StructurePattern::ShortForm;
@@ -113,8 +113,8 @@ TEST(GeneratorTest, HumanizeDisabledByDefault) {
 
   gen.generate(params);
 
-  // Humanize should be disabled by default
-  EXPECT_FALSE(gen.getParams().humanize);
+  // Humanize should be enabled by default for more natural-sounding output
+  EXPECT_TRUE(gen.getParams().humanize);
 }
 
 TEST(GeneratorTest, HumanizeModifiesNotes) {

@@ -2372,5 +2372,72 @@ TEST_F(DrumsTest, SnareBuildupHasCrashOnFinalBeat) {
   }
 }
 
+// ============================================================================
+// Blueprint intro_kick_enabled Tests
+// ============================================================================
+
+TEST_F(DrumsTest, IntroKickEnabledFlagDifferenceTest) {
+  // Test that intro_kick_enabled flag affects kick generation in intro
+  // Compare blueprints with intro_kick_enabled=true vs intro_kick_enabled=false
+
+  auto countKickInIntro = [](const Song& song) {
+    const auto& sections = song.arrangement().sections();
+    const auto& drums = song.drums();
+
+    for (const auto& section : sections) {
+      if (section.type == SectionType::Intro) {
+        Tick intro_end = section.start_tick + section.bars * TICKS_PER_BAR;
+        int count = 0;
+        for (const auto& note : drums.notes()) {
+          if (note.note == KICK && note.start_tick >= section.start_tick &&
+              note.start_tick < intro_end) {
+            count++;
+          }
+        }
+        return count;
+      }
+    }
+    return 0;
+  };
+
+  // Test multiple seeds to find one where intro has kick when enabled
+  std::vector<uint32_t> test_seeds = {100, 200, 300, 400, 500};
+  bool found_difference = false;
+
+  for (uint32_t seed : test_seeds) {
+    params_.seed = seed;
+    params_.structure = StructurePattern::StandardPop;
+
+    // Generate with Traditional blueprint (intro_kick_enabled = true)
+    params_.blueprint_id = 0;
+    Generator gen_enabled;
+    gen_enabled.generate(params_);
+    int kick_enabled = countKickInIntro(gen_enabled.getSong());
+
+    // Generate with Ballad blueprint (intro_kick_enabled = false)
+    params_.blueprint_id = 3;
+    Generator gen_disabled;
+    gen_disabled.generate(params_);
+    int kick_disabled = countKickInIntro(gen_disabled.getSong());
+
+    // Disabled blueprint should have no kick in intro
+    EXPECT_EQ(kick_disabled, 0)
+        << "Seed " << seed << ": intro_kick_enabled=false should have no kick in intro";
+
+    // When enabled blueprint has kick in intro, verify the flag works
+    if (kick_enabled > 0) {
+      found_difference = true;
+      EXPECT_GT(kick_enabled, kick_disabled)
+          << "Seed " << seed << ": intro_kick_enabled=true should have more kick than disabled";
+    }
+  }
+
+  // If no seed produced kick in intro even with enabled flag, the test is inconclusive
+  // This could happen if the section's drum_role doesn't include kick in intro
+  if (!found_difference) {
+    SUCCEED() << "No test seed produced kick in intro - section may use ambient drums";
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

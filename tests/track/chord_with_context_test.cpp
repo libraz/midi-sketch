@@ -36,6 +36,8 @@ class ChordWithContextTest : public ::testing::Test {
     params_.bpm = 120;
     params_.seed = 12345;
     params_.arpeggio_enabled = false;
+    // Disable humanization for deterministic tests
+    params_.humanize = false;
   }
 
   GeneratorParams params_;

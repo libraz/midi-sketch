@@ -19,6 +19,7 @@ constexpr Tick TICK_QUARTER = TICKS_PER_BEAT;        // 480 ticks (1 beat)
 constexpr Tick TICK_EIGHTH = TICKS_PER_BEAT / 2;     // 240 ticks (1/2 beat)
 constexpr Tick TICK_SIXTEENTH = TICKS_PER_BEAT / 4;  // 120 ticks (1/4 beat)
 constexpr Tick TICK_32ND = TICKS_PER_BEAT / 8;       // 60 ticks (1/8 beat)
+constexpr Tick TICK_64TH = TICKS_PER_BEAT / 16;      // 30 ticks (1/16 beat)
 
 // Triplet values
 constexpr Tick TICK_QUARTER_TRIPLET = TICKS_PER_BEAT / 3;     // 160 ticks
