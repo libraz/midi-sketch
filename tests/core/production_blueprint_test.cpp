@@ -1456,12 +1456,30 @@ TEST_F(ProductionBlueprintTest, BlueprintConstraintsCustomValues) {
   EXPECT_TRUE(constraints.enable_harmonics);
 }
 
-TEST_F(ProductionBlueprintTest, AllBlueprintConstraintsHaveDefaultInstrumentMode) {
-  // All built-in blueprints should have default InstrumentModelMode::Off
+TEST_F(ProductionBlueprintTest, AllBlueprintConstraintsHaveExpectedInstrumentMode) {
+  // Each blueprint should have its expected InstrumentModelMode based on character:
+  // - RhythmLock, IdolHyper, IdolCoolPop: Full (high-energy, slap-enabled)
+  // - Others: ConstraintsOnly (physical playability without techniques)
+  const std::map<std::string, InstrumentModelMode> expected_modes = {
+      {"Traditional", InstrumentModelMode::ConstraintsOnly},
+      {"RhythmLock", InstrumentModelMode::Full},
+      {"StoryPop", InstrumentModelMode::ConstraintsOnly},
+      {"Ballad", InstrumentModelMode::ConstraintsOnly},
+      {"IdolStandard", InstrumentModelMode::ConstraintsOnly},
+      {"IdolHyper", InstrumentModelMode::Full},
+      {"IdolKawaii", InstrumentModelMode::ConstraintsOnly},
+      {"IdolCoolPop", InstrumentModelMode::Full},
+      {"IdolEmo", InstrumentModelMode::ConstraintsOnly},
+      {"BehavioralLoop", InstrumentModelMode::ConstraintsOnly},
+  };
+
   for (uint8_t i = 0; i < getProductionBlueprintCount(); ++i) {
     const auto& bp = getProductionBlueprint(i);
-    EXPECT_EQ(bp.constraints.instrument_mode, InstrumentModelMode::Off)
-        << "Blueprint " << bp.name << " should have default InstrumentModelMode::Off";
+    auto it = expected_modes.find(bp.name);
+    if (it != expected_modes.end()) {
+      EXPECT_EQ(bp.constraints.instrument_mode, it->second)
+          << "Blueprint " << bp.name << " should have expected InstrumentModelMode";
+    }
   }
 }
 

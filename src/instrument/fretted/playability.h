@@ -257,6 +257,9 @@ struct HandPhysics {
 
   /// @brief Advanced constraints (faster).
   static HandPhysics advanced() { return {40, 6, 20}; }
+
+  /// @brief Virtuoso constraints (minimal limits).
+  static HandPhysics virtuoso() { return {25, 8, 15}; }
 };
 
 /// @brief Bend constraint helper.

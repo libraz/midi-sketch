@@ -52,6 +52,7 @@ set(TEST_SOURCES
   core/staggered_entry_test.cpp
   core/layer_schedule_test.cpp
   core/emotion_curve_test.cpp
+  core/emotion_curve_velocity_test.cpp
   core/harmonic_rhythm_test.cpp
   core/harmonic_rhythm_subdivision_test.cpp
   core/swing_quantize_test.cpp
@@ -86,6 +87,7 @@ set(TEST_SOURCES
   track/phrase_ending_test.cpp
   track/bass_dissonance_regression_test.cpp
   track/bass_music_theory_test.cpp
+  track/bass_physical_model_test.cpp
   track/dissonance_fixes_test.cpp
   track/se_test.cpp
   track/vocal_analysis_test.cpp

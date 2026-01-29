@@ -27,7 +27,9 @@
 #include "core/timing_constants.h"
 #include "core/velocity.h"
 #include "instrument/fretted/bass_model.h"
+#include "instrument/fretted/fingering.h"
 #include "instrument/fretted/fretted_note_factory.h"
+#include "instrument/fretted/playability.h"
 
 // Debug flag for bass transformation logging (set to 1 to enable)
 #ifndef BASS_DEBUG_LOG
@@ -84,23 +86,41 @@ const auto kBassTransformer = DensityTransformer<BassPattern>::builder()
 ///
 /// Lazily initializes the BassModel and FrettedNoteFactory on first use.
 /// Provides pitch validation and alternative finding for unplayable notes.
+/// Supports skill-level-based constraints from ProductionBlueprint.
 class BassPlayabilityChecker {
  public:
+  /// @brief Construct with default intermediate skill level.
   BassPlayabilityChecker(const IHarmonyContext& harmony, uint16_t bpm)
       : harmony_(harmony),
         bpm_(bpm),
-        bass_model_(FrettedInstrumentType::Bass4String) {}
+        bass_model_(FrettedInstrumentType::Bass4String),
+        instrument_mode_(InstrumentModelMode::Off),
+        skill_level_(InstrumentSkillLevel::Intermediate) {}
+
+  /// @brief Construct with BlueprintConstraints for skill-level-aware playability.
+  BassPlayabilityChecker(const IHarmonyContext& harmony, uint16_t bpm,
+                         const BlueprintConstraints& constraints)
+      : harmony_(harmony),
+        bpm_(bpm),
+        bass_model_(createBassModel(constraints)),
+        instrument_mode_(constraints.instrument_mode),
+        skill_level_(constraints.bass_skill) {}
 
   /// @brief Ensure a pitch is playable at the given position.
   ///
   /// If the pitch is not playable (e.g., too fast transition), finds an
   /// alternative in a nearby octave or returns the original if no better option.
+  /// When instrument_mode is Off, returns the pitch unchanged (no physical check).
   ///
   /// @param pitch Desired MIDI pitch
   /// @param start Start tick
   /// @param duration Duration in ticks
   /// @return Playable pitch (may be same as input)
   uint8_t ensurePlayable(uint8_t pitch, Tick start, Tick duration) {
+    // Skip physical check when mode is Off (legacy behavior)
+    if (instrument_mode_ == InstrumentModelMode::Off) {
+      return pitch;
+    }
     ensureInitialized();
     return factory_->ensurePlayable(pitch, start, duration);
   }
@@ -112,6 +132,10 @@ class BassPlayabilityChecker {
   /// @param duration Duration
   /// @return true if the note can be played physically
   bool isPlayable(uint8_t pitch, Tick start, Tick duration) {
+    // Skip physical check when mode is Off
+    if (instrument_mode_ == InstrumentModelMode::Off) {
+      return true;
+    }
     ensureInitialized();
     auto note = factory_->create(start, duration, pitch, 80, NoteSource::BassPattern);
     return note.has_value();
@@ -125,16 +149,60 @@ class BassPlayabilityChecker {
   }
 
  private:
+  /// @brief Create BassModel with skill-level-appropriate constraints.
+  static BassModel createBassModel(const BlueprintConstraints& constraints) {
+    HandSpanConstraints span;
+    HandPhysics physics;
+
+    switch (constraints.bass_skill) {
+      case InstrumentSkillLevel::Beginner:
+        span = HandSpanConstraints::beginner();
+        physics = HandPhysics::beginner();
+        break;
+      case InstrumentSkillLevel::Intermediate:
+        span = HandSpanConstraints::intermediate();
+        physics = HandPhysics::intermediate();
+        break;
+      case InstrumentSkillLevel::Advanced:
+        span = HandSpanConstraints::advanced();
+        physics = HandPhysics::advanced();
+        break;
+      case InstrumentSkillLevel::Virtuoso:
+        span = HandSpanConstraints::virtuoso();
+        physics = HandPhysics::virtuoso();
+        break;
+    }
+
+    return BassModel(FrettedInstrumentType::Bass4String, span, physics);
+  }
+
   void ensureInitialized() {
     if (!factory_) {
       factory_ = std::make_unique<FrettedNoteFactory>(harmony_, bass_model_, bpm_);
-      factory_->setMaxPlayabilityCost(0.6f);  // Allow moderate stretches
+      // Adjust playability threshold based on skill level
+      float max_cost = 0.6f;  // Default for intermediate
+      switch (skill_level_) {
+        case InstrumentSkillLevel::Beginner:
+          max_cost = 0.4f;  // Stricter for beginners
+          break;
+        case InstrumentSkillLevel::Advanced:
+          max_cost = 0.75f;  // More tolerance for advanced
+          break;
+        case InstrumentSkillLevel::Virtuoso:
+          max_cost = 0.9f;  // Almost everything allowed
+          break;
+        default:
+          break;
+      }
+      factory_->setMaxPlayabilityCost(max_cost);
     }
   }
 
   const IHarmonyContext& harmony_;
   uint16_t bpm_;
   BassModel bass_model_;
+  InstrumentModelMode instrument_mode_;
+  InstrumentSkillLevel skill_level_;
   std::unique_ptr<FrettedNoteFactory> factory_;
 };
 
@@ -1345,8 +1413,12 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
   // Post-processing 1: Apply playability check for physical realism
   // At high tempos, some bass lines become physically impossible to play.
   // This ensures generated notes are executable on a real 4-string bass.
+  // Uses BlueprintConstraints for skill-level-aware playability checking.
   {
-    BassPlayabilityChecker playability_checker(harmony, params.bpm);
+    BassPlayabilityChecker playability_checker =
+        params.blueprint_ref != nullptr
+            ? BassPlayabilityChecker(harmony, params.bpm, params.blueprint_ref->constraints)
+            : BassPlayabilityChecker(harmony, params.bpm);
     auto& notes = track.notes();
     for (auto& note : notes) {
       uint8_t playable_pitch = playability_checker.ensurePlayable(
@@ -1855,8 +1927,12 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song, const Genera
   // Post-processing 1: Apply playability check for physical realism
   // At high tempos, some bass lines become physically impossible to play.
   // This ensures generated notes are executable on a real 4-string bass.
+  // Uses BlueprintConstraints for skill-level-aware playability checking.
   {
-    BassPlayabilityChecker playability_checker(harmony, params.bpm);
+    BassPlayabilityChecker playability_checker =
+        params.blueprint_ref != nullptr
+            ? BassPlayabilityChecker(harmony, params.bpm, params.blueprint_ref->constraints)
+            : BassPlayabilityChecker(harmony, params.bpm);
     auto& notes = track.notes();
     for (auto& note : notes) {
       uint8_t playable_pitch = playability_checker.ensurePlayable(

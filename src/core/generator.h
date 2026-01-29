@@ -446,6 +446,18 @@ class Generator {
   void applyEmotionBasedDynamics(std::vector<MidiTrack*>& tracks,
                                   const std::vector<Section>& sections);
 
+  /** @brief Apply emotion-based velocity adjustment to a single note.
+   *  @param base_velocity Original velocity
+   *  @param emotion SectionEmotion for the note's section
+   *  @return Adjusted velocity (clamped 30-127) */
+  uint8_t applyEmotionToVelocity(uint8_t base_velocity, const SectionEmotion& emotion);
+
+  /** @brief Find which section a tick belongs to.
+   *  @param sections Song sections
+   *  @param tick Tick position to look up
+   *  @return Section index (or sections.size() if not found) */
+  size_t findSectionIndex(const std::vector<Section>& sections, Tick tick) const;
+
   /** @brief Apply humanization to all melodic tracks. */
   void applyHumanization();
 

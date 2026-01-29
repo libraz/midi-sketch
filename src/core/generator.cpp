@@ -1187,9 +1187,50 @@ void Generator::applyTransitionDynamics() {
   }
 }
 
+size_t Generator::findSectionIndex(const std::vector<Section>& sections, Tick tick) const {
+  for (size_t i = 0; i < sections.size(); ++i) {
+    Tick section_start = sections[i].start_tick;
+    Tick section_end = section_start + sections[i].bars * TICKS_PER_BAR;
+    if (tick >= section_start && tick < section_end) {
+      return i;
+    }
+  }
+  return sections.size();  // Not found
+}
+
+uint8_t Generator::applyEmotionToVelocity(uint8_t base_velocity, const SectionEmotion& emotion) {
+  // 1. Energy adjustment: low energy = softer, high energy = louder
+  //    Range: 0.85 (energy=0) to 1.15 (energy=1)
+  float energy_factor = 0.85f + emotion.energy * 0.30f;
+
+  // 2. Tension ceiling: high tension allows higher max, low tension caps it
+  uint8_t ceiling = calculateVelocityCeiling(127, emotion.tension);
+
+  // 3. Apply energy factor and cap at tension ceiling
+  int adjusted = static_cast<int>(base_velocity * energy_factor);
+  adjusted = std::min(adjusted, static_cast<int>(ceiling));
+
+  return static_cast<uint8_t>(std::clamp(adjusted, 30, 127));
+}
+
 void Generator::applyEmotionBasedDynamics(std::vector<MidiTrack*>& tracks,
                                            const std::vector<Section>& sections) {
-  // Apply velocity adjustments based on EmotionCurve's transition hints
+  // ========== Phase 1: Section-wide velocity adjustment based on emotion ==========
+  for (auto* track : tracks) {
+    for (auto& note : track->notes()) {
+      // 1. Find which section this note belongs to
+      size_t section_idx = findSectionIndex(sections, note.start_tick);
+      if (section_idx >= sections.size()) continue;
+
+      // 2. Get the emotion for this section
+      const auto& emotion = emotion_curve_.getEmotion(section_idx);
+
+      // 3. Apply energy/tension-based velocity adjustment
+      note.velocity = applyEmotionToVelocity(note.velocity, emotion);
+    }
+  }
+
+  // ========== Phase 2: Transition velocity ramp (existing processing) ==========
   for (size_t i = 0; i + 1 < sections.size(); ++i) {
     const auto& current_section = sections[i];
     auto hint = emotion_curve_.getTransitionHint(i);

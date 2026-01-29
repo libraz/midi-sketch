@@ -461,7 +461,10 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         30,     // euclidean_drums_percent
         false,  // addictive_mode
         0,      // mood_mask: all moods allowed
-        {127, 108, 12, false},  // constraints: default
+        {127, 108, 12, false,  // max_velocity, max_pitch, max_leap, prefer_stepwise
+         InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
+         InstrumentModelMode::ConstraintsOnly,
+         false, false, false},  // enable_slap, enable_tapping, enable_harmonics
     },
 
     // 1: RhythmLock (rhythm-synced, formerly Orangestar)
@@ -479,7 +482,10 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         50,     // euclidean_drums_percent (rhythm-sync benefits from euclidean)
         false,  // addictive_mode
         0,      // mood_mask: all moods allowed
-        {127, 108, 9, false},  // constraints: max_leap=9 for smoother riff lines
+        {127, 108, 9, false,  // max_velocity, max_pitch, max_leap, prefer_stepwise
+         InstrumentSkillLevel::Advanced, InstrumentSkillLevel::Advanced,
+         InstrumentModelMode::Full,
+         true, false, false},  // enable_slap for punchy rhythm
     },
 
     // 2: StoryPop (melody-driven, formerly YOASOBI)
@@ -497,7 +503,10 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         40,     // euclidean_drums_percent
         false,  // addictive_mode
         0,      // mood_mask: all moods allowed
-        {127, 108, 12, false},  // constraints: default
+        {127, 108, 12, false,  // max_velocity, max_pitch, max_leap, prefer_stepwise
+         InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
+         InstrumentModelMode::ConstraintsOnly,
+         false, false, false},
     },
 
     // 3: Ballad (sparse, emotional)
@@ -515,7 +524,10 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,  // addictive_mode
         // mood_mask: EmotionalPop(5), Sentimental(6), Chill(7), Ballad(8), Nostalgic(11)
         (1u << 5) | (1u << 6) | (1u << 7) | (1u << 8) | (1u << 11),
-        {100, 84, 9, true},  // constraints: max_vel=100, max_pitch=C6(84), prefer_stepwise for lyrical flow
+        {100, 84, 9, true,  // max_vel=100, max_pitch=C6(84), prefer_stepwise for lyrical flow
+         InstrumentSkillLevel::Beginner, InstrumentSkillLevel::Beginner,
+         InstrumentModelMode::ConstraintsOnly,
+         false, false, false},  // no techniques for ballad simplicity
     },
 
     // 4: IdolStandard (classic idol pop: memorable melody, gradual build)
@@ -533,7 +545,10 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         35,     // euclidean_drums_percent
         false,  // addictive_mode
         0,      // mood_mask: all moods allowed
-        {127, 108, 10, false},  // constraints: max_leap=10 for memorable melodies
+        {127, 108, 10, false,  // max_leap=10 for memorable melodies
+         InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
+         InstrumentModelMode::ConstraintsOnly,
+         false, false, false},
     },
 
     // 5: IdolHyper (high BPM, chorus-first, high density)
@@ -552,7 +567,10 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,  // addictive_mode
         // mood_mask: EnergeticDance(2), ElectroPop(13), IdolPop(14), FutureBass(18)
         (1u << 2) | (1u << 13) | (1u << 14) | (1u << 18),
-        {110, 96, 12, false},  // constraints: max_vel=110, max_pitch=C7(96), max_leap=12
+        {110, 96, 12, false,  // max_vel=110, max_pitch=C7(96), max_leap=12
+         InstrumentSkillLevel::Advanced, InstrumentSkillLevel::Advanced,
+         InstrumentModelMode::Full,
+         true, false, false},  // enable_slap for high-energy punch
     },
 
     // 6: IdolKawaii (sweet, bouncy, restrained)
@@ -571,7 +589,10 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,  // addictive_mode
         // mood_mask: BrightUpbeat(1), IdolPop(14), Yoasobi(16)
         (1u << 1) | (1u << 14) | (1u << 16),
-        {80, 79, 7, true},  // constraints: max_vel=80, max_pitch=G5(79), max_leap=7, prefer_stepwise
+        {80, 79, 7, true,  // max_vel=80, max_pitch=G5(79), max_leap=7, prefer_stepwise
+         InstrumentSkillLevel::Beginner, InstrumentSkillLevel::Beginner,
+         InstrumentModelMode::ConstraintsOnly,
+         false, false, false},  // simple patterns for cute vibe
     },
 
     // 7: IdolCoolPop (cool, four-on-floor, uniform)
@@ -589,7 +610,10 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         70,     // euclidean_drums_percent (four-on-floor + euclidean = great match)
         false,  // addictive_mode
         0,      // mood_mask: all moods allowed
-        {120, 108, 9, false},  // constraints: max_vel=120, max_leap=9 for controlled coolness
+        {120, 108, 9, false,  // max_vel=120, max_leap=9 for controlled coolness
+         InstrumentSkillLevel::Advanced, InstrumentSkillLevel::Advanced,
+         InstrumentModelMode::Full,
+         true, false, false},  // enable_slap for funky grooves
     },
 
     // 8: IdolEmo (quiet→explosive, emotional, late peak)
@@ -607,7 +631,10 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,  // addictive_mode
         // mood_mask: EmotionalPop(5), Sentimental(6), Ballad(8)
         (1u << 5) | (1u << 6) | (1u << 8),
-        {127, 108, 12, false},  // constraints: default (emotional dynamics need full range)
+        {127, 108, 12, false,  // default (emotional dynamics need full range)
+         InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
+         InstrumentModelMode::ConstraintsOnly,
+         false, false, false},
     },
 
     // 9: BehavioralLoop (addictive, highly repetitive hooks)
@@ -624,7 +651,10 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         30,     // euclidean_drums_percent
         true,   // addictive_mode - enables Behavioral Loop
         0,      // mood_mask: all moods allowed
-        {127, 108, 12, false},  // constraints: default
+        {127, 108, 12, false,  // default constraints
+         InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
+         InstrumentModelMode::ConstraintsOnly,
+         false, false, false},
     },
 };
 
