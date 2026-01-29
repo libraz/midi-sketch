@@ -410,6 +410,13 @@ void Generator::generate(const GeneratorParams& params) {
   if (params.humanize) {
     applyHumanization();
   }
+
+  // Final cleanup: fix any remaining vocal overlaps
+  // Overlaps can occur from:
+  // - applyHookIntensity() extending notes
+  // - Post-processing effects
+  // - Edge cases in groove application
+  PostProcessor::fixVocalOverlaps(song_.vocal());
 }
 
 // ============================================================================

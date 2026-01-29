@@ -599,6 +599,9 @@ void generateVocalTrack(MidiTrack& track, Song& song, const GeneratorParams& par
     }
   }
 
+  // Final overlap check - ensures no overlaps after all processing
+  removeOverlaps(all_notes, min_note_duration);
+
   // Add notes to track (preserving provenance)
   for (const auto& note : all_notes) {
     track.addNote(note);

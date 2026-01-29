@@ -178,34 +178,50 @@ void removeOverlaps(std::vector<NoteEvent>& notes, Tick min_duration) {
   std::sort(notes.begin(), notes.end(),
             [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
-  // Adjust durations to prevent overlap
+  // First pass: ensure minimum duration, respecting space to next note
+  for (size_t i = 0; i < notes.size(); ++i) {
+    if (notes[i].duration < min_duration) {
+      Tick max_safe = min_duration;
+      if (i + 1 < notes.size() && notes[i + 1].start_tick > notes[i].start_tick) {
+        Tick space = notes[i + 1].start_tick - notes[i].start_tick;
+        if (space < min_duration) {
+          max_safe = space;
+        }
+      }
+      notes[i].duration = std::max(notes[i].duration, max_safe);
+    }
+  }
+
+  // Second pass: resolve any remaining overlaps by truncating duration
   for (size_t i = 0; i + 1 < notes.size(); ++i) {
     Tick end_tick = notes[i].start_tick + notes[i].duration;
     Tick next_start = notes[i + 1].start_tick;
 
     if (end_tick > next_start) {
-      // Guard against underflow: if same startTick, use minimum duration
-      Tick max_duration =
-          (next_start > notes[i].start_tick) ? (next_start - notes[i].start_tick) : 1;
-      // Ensure minimum duration for singability
-      if (max_duration >= min_duration) {
-        notes[i].duration = max_duration;
-      }
-      // If max_duration < min_duration, keep original duration (will still overlap,
-      // but better than creating an unsingable note)
-
-      // If still overlapping (same startTick case), shift next note forward
-      if (notes[i].start_tick + notes[i].duration > notes[i + 1].start_tick) {
+      // Truncate current note to end at next note's start
+      if (next_start > notes[i].start_tick) {
+        notes[i].duration = next_start - notes[i].start_tick;
+      } else {
+        // Same start tick: shift next note forward
         notes[i + 1].start_tick = notes[i].start_tick + notes[i].duration;
       }
     }
   }
 
-  // Final pass: ensure all notes meet minimum duration requirement
-  // This catches any notes that were already too short before overlap resolution
-  for (auto& note : notes) {
-    if (note.duration < min_duration) {
-      note.duration = min_duration;
+  // Re-sort in case shifts changed order, then final overlap check
+  std::sort(notes.begin(), notes.end(),
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+
+  // Final pass: ensure no overlaps remain after re-sort
+  for (size_t i = 0; i + 1 < notes.size(); ++i) {
+    Tick end_tick = notes[i].start_tick + notes[i].duration;
+    if (end_tick > notes[i + 1].start_tick) {
+      if (notes[i + 1].start_tick > notes[i].start_tick) {
+        notes[i].duration = notes[i + 1].start_tick - notes[i].start_tick;
+      } else {
+        // Last resort: set minimal duration
+        notes[i].duration = 1;
+      }
     }
   }
 }
@@ -269,76 +285,138 @@ void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
   }
 }
 
+namespace {
+
+/// @brief Calculate groove shift for a single note based on groove type.
+/// @param note The note to calculate shift for.
+/// @param groove The groove feel to apply.
+/// @return The shift amount in ticks (negative = earlier, positive = later).
+int32_t calculateGrooveShift(const NoteEvent& note, VocalGrooveFeel groove) {
+  constexpr int32_t TICK_8TH = TICKS_PER_BEAT / 2;   // 240 ticks
+  constexpr int32_t TICK_16TH = TICKS_PER_BEAT / 4;  // 120 ticks
+
+  Tick beat_pos = note.start_tick % TICKS_PER_BEAT;
+
+  switch (groove) {
+    case VocalGrooveFeel::OffBeat:
+      // Shift on-beat notes slightly late, emphasize off-beats
+      if (beat_pos < static_cast<Tick>(TICK_16TH)) {
+        return TICK_16TH / 2;  // Push on-beats late
+      }
+      break;
+
+    case VocalGrooveFeel::Swing:
+      // Swing: delay second 8th note of each beat pair
+      if (beat_pos >= static_cast<Tick>(TICK_8TH - TICK_16TH) &&
+          beat_pos < static_cast<Tick>(TICK_8TH + TICK_16TH)) {
+        return TICK_16TH / 2;
+      }
+      break;
+
+    case VocalGrooveFeel::Syncopated: {
+      Tick bar_pos = note.start_tick % TICKS_PER_BAR;
+      // Beats 2 and 4 (at 480 and 1440 ticks)
+      if ((bar_pos >= TICKS_PER_BEAT - static_cast<Tick>(TICK_16TH) &&
+           bar_pos < TICKS_PER_BEAT + static_cast<Tick>(TICK_16TH)) ||
+          (bar_pos >= TICKS_PER_BEAT * 3 - static_cast<Tick>(TICK_16TH) &&
+           bar_pos < TICKS_PER_BEAT * 3 + static_cast<Tick>(TICK_16TH))) {
+        return -TICK_16TH / 2;  // Anticipate
+      }
+    } break;
+
+    case VocalGrooveFeel::Driving16th:
+      // Slight rush on all 16th notes (energetic feel)
+      if (beat_pos % static_cast<Tick>(TICK_16TH) < static_cast<Tick>(TICK_16TH / 4)) {
+        return -TICK_16TH / 4;  // Slight rush
+      }
+      break;
+
+    case VocalGrooveFeel::Bouncy8th:
+      // Bouncy: second 8th delayed (first 8th duration is handled separately)
+      if (beat_pos >= static_cast<Tick>(TICK_8TH)) {
+        return TICK_16TH / 3;
+      }
+      break;
+
+    default:
+      break;
+  }
+
+  return 0;
+}
+
+}  // namespace
+
 void applyGrooveFeel(std::vector<NoteEvent>& notes, VocalGrooveFeel groove) {
   if (groove == VocalGrooveFeel::Straight || notes.empty()) {
     return;  // No adjustment for straight timing
   }
 
-  constexpr Tick TICK_8TH = TICKS_PER_BEAT / 2;   // 240 ticks
-  constexpr Tick TICK_16TH = TICKS_PER_BEAT / 4;  // 120 ticks
+  // Sort notes by start tick (pre-shift order)
+  std::sort(notes.begin(), notes.end(),
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
 
-  for (auto& note : notes) {
-    // Get position within beat
-    Tick beat_pos = note.start_tick % TICKS_PER_BEAT;
-    Tick shift = 0;
+  constexpr int32_t TICK_8TH = TICKS_PER_BEAT / 2;   // 240 ticks
+  constexpr Tick kMinGap = 10;                       // Minimum gap between notes
+  constexpr Tick kMinDuration = TICK_32ND;           // 60 ticks minimum duration
 
-    switch (groove) {
-      case VocalGrooveFeel::OffBeat:
-        // Shift on-beat notes slightly late, emphasize off-beats
-        if (beat_pos < TICK_16TH) {
-          shift = TICK_16TH / 2;  // Push on-beats late
-        }
-        break;
+  // Pass 1: Calculate shift amounts for all notes
+  std::vector<int32_t> shifts(notes.size(), 0);
+  for (size_t i = 0; i < notes.size(); ++i) {
+    shifts[i] = calculateGrooveShift(notes[i], groove);
 
-      case VocalGrooveFeel::Swing:
-        // Swing: delay second 8th note of each beat pair
-        if (beat_pos >= TICK_8TH - TICK_16TH && beat_pos < TICK_8TH + TICK_16TH) {
-          // Second 8th note: push later for swing feel
-          shift = TICK_16TH / 2;
-        }
-        break;
+    // Bouncy8th: also shorten first 8th note duration
+    if (groove == VocalGrooveFeel::Bouncy8th) {
+      Tick beat_pos = notes[i].start_tick % TICKS_PER_BEAT;
+      if (beat_pos < static_cast<Tick>(TICK_8TH) &&
+          notes[i].duration > static_cast<Tick>(TICK_8TH)) {
+        notes[i].duration = notes[i].duration * 85 / 100;  // 85% duration
+      }
+    }
+  }
 
-      case VocalGrooveFeel::Syncopated:
-        // Push notes on beats 2 and 4 earlier (anticipation)
-        {
-          Tick bar_pos = note.start_tick % TICKS_PER_BAR;
-          // Beats 2 and 4 (at 480 and 1440 ticks)
-          if ((bar_pos >= TICKS_PER_BEAT - TICK_16TH && bar_pos < TICKS_PER_BEAT + TICK_16TH) ||
-              (bar_pos >= TICKS_PER_BEAT * 3 - TICK_16TH &&
-               bar_pos < TICKS_PER_BEAT * 3 + TICK_16TH)) {
-            shift = -TICK_16TH / 2;  // Anticipate
-          }
-        }
-        break;
+  // Pass 2: Apply shifts and adjust previous note durations to prevent overlaps
+  for (size_t i = 0; i < notes.size(); ++i) {
+    int32_t shift = shifts[i];
 
-      case VocalGrooveFeel::Driving16th:
-        // Slight rush on all 16th notes (energetic feel)
-        if (beat_pos % TICK_16TH < TICK_16TH / 4) {
-          shift = -TICK_16TH / 4;  // Slight rush
-        }
-        break;
+    if (shift < 0 && i > 0) {
+      // Negative shift (anticipation): adjust previous note's duration to prevent overlap
+      Tick new_start = static_cast<Tick>(
+          std::max(static_cast<int64_t>(0), static_cast<int64_t>(notes[i].start_tick) + shift));
 
-      case VocalGrooveFeel::Bouncy8th:
-        // Bouncy: first 8th slightly short, second 8th delayed
-        if (beat_pos < TICK_8TH) {
-          // First 8th: no shift but make duration shorter
-          if (note.duration > TICK_8TH) {
-            note.duration = note.duration * 85 / 100;  // 85% duration
-          }
+      // Calculate the maximum safe end for the previous note
+      Tick max_prev_end = (new_start > kMinGap) ? (new_start - kMinGap) : 0;
+      Tick prev_end = notes[i - 1].start_tick + notes[i - 1].duration;
+
+      if (prev_end > max_prev_end) {
+        // Shorten the previous note's duration to fit
+        if (max_prev_end > notes[i - 1].start_tick) {
+          Tick new_prev_duration = max_prev_end - notes[i - 1].start_tick;
+          notes[i - 1].duration = std::max(new_prev_duration, kMinDuration);
         } else {
-          // Second 8th: slight delay
-          shift = TICK_16TH / 3;
+          // Can't fit: use minimum duration
+          notes[i - 1].duration = kMinDuration;
         }
-        break;
-
-      default:
-        break;
+      }
     }
 
-    // Apply shift (ensure non-negative)
+    // Apply shift
     if (shift != 0) {
-      int64_t new_tick = static_cast<int64_t>(note.start_tick) + shift;
-      note.start_tick = static_cast<Tick>(std::max(static_cast<int64_t>(0), new_tick));
+      int64_t new_tick = static_cast<int64_t>(notes[i].start_tick) + shift;
+      notes[i].start_tick = static_cast<Tick>(std::max(static_cast<int64_t>(0), new_tick));
+    }
+  }
+
+  // Final pass: ensure no overlaps remain (safety net)
+  for (size_t i = 0; i + 1 < notes.size(); ++i) {
+    Tick end_tick = notes[i].start_tick + notes[i].duration;
+    if (end_tick > notes[i + 1].start_tick) {
+      // Truncate current note
+      if (notes[i + 1].start_tick > notes[i].start_tick) {
+        notes[i].duration = notes[i + 1].start_tick - notes[i].start_tick;
+      } else {
+        notes[i].duration = kMinDuration;
+      }
     }
   }
 }
@@ -398,9 +476,12 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
         }
         if (!is_chord_tone_after_change) {
           // Trim note to end before chord change
-          Tick new_duration = chord_change - note.start_tick - kChordChangeGap;
-          if (new_duration >= TICK_SIXTEENTH) {
-            note.duration = new_duration;
+          Tick time_to_chord = chord_change - note.start_tick;
+          if (time_to_chord > kChordChangeGap) {
+            Tick new_duration = time_to_chord - kChordChangeGap;
+            if (new_duration >= TICK_SIXTEENTH) {
+              note.duration = new_duration;
+            }
           }
         }
       }
@@ -500,6 +581,17 @@ void mergeSamePitchNotes(std::vector<NoteEvent>& notes, Tick max_gap) {
 
     merged.push_back(current);
     i++;
+  }
+
+  // After merging, ensure no overlaps (merged notes may extend past next different-pitch note)
+  for (size_t j = 0; j + 1 < merged.size(); ++j) {
+    Tick end_tick = merged[j].start_tick + merged[j].duration;
+    if (end_tick > merged[j + 1].start_tick) {
+      // Truncate to avoid overlap
+      if (merged[j + 1].start_tick > merged[j].start_tick) {
+        merged[j].duration = merged[j + 1].start_tick - merged[j].start_tick;
+      }
+    }
   }
 
   notes = std::move(merged);

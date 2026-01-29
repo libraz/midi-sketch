@@ -540,10 +540,12 @@ describe('MidiSketch WASM - Exhaustive Parameter Tests', () => {
           // Timing validation
           expect(note.start_ticks).toBeGreaterThanOrEqual(0);
           expect(note.duration_ticks).toBeGreaterThan(0);
-          expect(note.duration_ticks).toBeLessThan(50000); // ~26 bars max
 
-          // No underflow check
-          expect(note.duration_ticks).not.toBe(4294967295);
+          // Underflow check - values > 0x80000000 are likely negative values interpreted as unsigned
+          // This catches -1 (0xFFFFFFFF), -5 (0xFFFFFFFB), etc.
+          expect(note.duration_ticks).toBeLessThan(0x80000000);
+          // Sanity check - reasonable max duration (~26 bars)
+          expect(note.duration_ticks).toBeLessThan(50000);
         }
 
         // For vocal track, verify no overlaps

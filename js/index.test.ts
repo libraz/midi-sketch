@@ -40,8 +40,8 @@ describe('MidiSketch JS API', () => {
 
   describe('ProductionBlueprint API', () => {
     describe('getBlueprintCount', () => {
-      it('should return 9 blueprints', () => {
-        expect(getBlueprintCount()).toBe(9);
+      it('should return 10 blueprints', () => {
+        expect(getBlueprintCount()).toBe(10);
       });
     });
 
@@ -116,7 +116,7 @@ describe('MidiSketch JS API', () => {
     describe('getBlueprints', () => {
       it('should return array of all blueprints', () => {
         const blueprints = getBlueprints();
-        expect(blueprints).toHaveLength(9);
+        expect(blueprints).toHaveLength(10);
 
         // Verify first blueprint (Traditional)
         expect(blueprints[0]).toEqual({

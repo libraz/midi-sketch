@@ -722,11 +722,12 @@ void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
           crash.duration = TICKS_PER_BEAT;
           crash.note = CRASH_NOTE;
           crash.velocity = CRASH_VEL;
-          // Provenance tracking
+#ifdef MIDISKETCH_NOTE_PROVENANCE
           crash.prov_chord_degree = -1;
           crash.prov_lookup_tick = chorus_start_tick;
           crash.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
           crash.prov_original_pitch = CRASH_NOTE;
+#endif
           drum_notes.push_back(crash);
         }
       }
@@ -885,11 +886,12 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
       final_bass.duration = TICKS_PER_BEAT;
       final_bass.note = 36;  // C2 - typical bass root
       final_bass.velocity = FINAL_HIT_VEL;
-      // Provenance tracking
+#ifdef MIDISKETCH_NOTE_PROVENANCE
       final_bass.prov_chord_degree = -1;
       final_bass.prov_lookup_tick = final_beat_start;
       final_bass.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
       final_bass.prov_original_pitch = 36;
+#endif
       bass_notes.push_back(final_bass);
     }
   }
@@ -921,11 +923,12 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
       kick.duration = TICKS_PER_BEAT / 2;
       kick.note = BD_NOTE;
       kick.velocity = FINAL_HIT_VEL;
-      // Provenance tracking
+#ifdef MIDISKETCH_NOTE_PROVENANCE
       kick.prov_chord_degree = -1;
       kick.prov_lookup_tick = final_beat_start;
       kick.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
       kick.prov_original_pitch = BD_NOTE;
+#endif
       drum_notes.push_back(kick);
     }
 
@@ -936,11 +939,12 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
       crash.duration = TICKS_PER_BEAT;
       crash.note = CRASH_NOTE;
       crash.velocity = FINAL_HIT_VEL;
-      // Provenance tracking
+#ifdef MIDISKETCH_NOTE_PROVENANCE
       crash.prov_chord_degree = -1;
       crash.prov_lookup_tick = final_beat_start;
       crash.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
       crash.prov_original_pitch = CRASH_NOTE;
+#endif
       drum_notes.push_back(crash);
     }
   }
@@ -1016,11 +1020,12 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
           // Update note pitch with clamping to valid MIDI range
           uint8_t new_pitch = static_cast<uint8_t>(std::clamp(snapped, 36, 108));
 
-          // Update provenance to indicate collision avoidance
+#ifdef MIDISKETCH_NOTE_PROVENANCE
           m_note.prov_original_pitch = m_note.note;
           m_note.prov_source = static_cast<uint8_t>(NoteSource::CollisionAvoid);
           m_note.prov_lookup_tick = m_note.start_tick;
           m_note.prov_chord_degree = degree;
+#endif
 
           m_note.note = new_pitch;
           break;  // Fixed this motif note, move to next

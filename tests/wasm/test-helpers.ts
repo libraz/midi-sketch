@@ -113,7 +113,7 @@ export class WasmTestContext {
   }
 
   allocSongConfig(config: SongConfigOptions): number {
-    const ptr = this.module._malloc(52); // MidiSketchSongConfig size
+    const ptr = this.module._malloc(54); // MidiSketchSongConfig size
     const view = new DataView(this.module.HEAPU8.buffer);
 
     // Basic settings (offset 0-12)
@@ -144,58 +144,60 @@ export class WasmTestContext {
     view.setUint8(ptr + 22, config.humanizeTiming ?? 50);
     view.setUint8(ptr + 23, config.humanizeVelocity ?? 50);
 
-    // Chord extensions (offset 24-29)
+    // Chord extensions (offset 24-31)
     view.setUint8(ptr + 24, config.chordExtSus ? 1 : 0);
     view.setUint8(ptr + 25, config.chordExt7th ? 1 : 0);
     view.setUint8(ptr + 26, config.chordExt9th ? 1 : 0);
-    view.setUint8(ptr + 27, config.chordExtSusProb ?? 20);
-    view.setUint8(ptr + 28, config.chordExt7thProb ?? 30);
-    view.setUint8(ptr + 29, config.chordExt9thProb ?? 25);
+    view.setUint8(ptr + 27, 0); // chord_ext_tritone_sub (not exposed in JS)
+    view.setUint8(ptr + 28, config.chordExtSusProb ?? 20);
+    view.setUint8(ptr + 29, config.chordExt7thProb ?? 30);
+    view.setUint8(ptr + 30, config.chordExt9thProb ?? 25);
+    view.setUint8(ptr + 31, 0); // chord_ext_tritone_sub_prob (not exposed in JS)
 
-    // Composition style (offset 30)
-    view.setUint8(ptr + 30, config.compositionStyle ?? 0);
+    // Composition style (offset 32)
+    view.setUint8(ptr + 32, config.compositionStyle ?? 0);
 
-    // Reserved + padding (offset 31)
-    view.setUint8(ptr + 31, 0);
+    // Reserved + padding (offset 33)
+    view.setUint8(ptr + 33, 0);
 
-    // Duration (offset 32-33)
-    view.setUint16(ptr + 32, config.targetDurationSeconds ?? 0, true);
+    // Duration (offset 34-35)
+    view.setUint16(ptr + 34, config.targetDurationSeconds ?? 0, true);
 
-    // Modulation settings (offset 34-35)
-    view.setUint8(ptr + 34, config.modulationTiming ?? 0);
-    view.setInt8(ptr + 35, config.modulationSemitones ?? 2);
+    // Modulation settings (offset 36-37)
+    view.setUint8(ptr + 36, config.modulationTiming ?? 0);
+    view.setInt8(ptr + 37, config.modulationSemitones ?? 2);
 
-    // Call settings (offset 36-41)
-    view.setUint8(ptr + 36, config.seEnabled !== false ? 1 : 0);
+    // Call settings (offset 38-43)
+    view.setUint8(ptr + 38, config.seEnabled !== false ? 1 : 0);
     // CallSetting: 0=Auto, 1=Enabled, 2=Disabled
     // When callEnabled is explicitly false, use Disabled(2) to avoid validation errors
     // When callEnabled is true, use Enabled(1)
     // When callEnabled is undefined, default to Disabled(2) for predictable tests
-    view.setUint8(ptr + 37, config.callEnabled === true ? 1 : 2);
-    view.setUint8(ptr + 38, config.callNotesEnabled !== false ? 1 : 0);
-    view.setUint8(ptr + 39, config.introChant ?? 0);
-    view.setUint8(ptr + 40, config.mixPattern ?? 0);
-    view.setUint8(ptr + 41, config.callDensity ?? 2);
+    view.setUint8(ptr + 39, config.callEnabled === true ? 1 : 2);
+    view.setUint8(ptr + 40, config.callNotesEnabled !== false ? 1 : 0);
+    view.setUint8(ptr + 41, config.introChant ?? 0);
+    view.setUint8(ptr + 42, config.mixPattern ?? 0);
+    view.setUint8(ptr + 43, config.callDensity ?? 2);
 
-    // Vocal style settings (offset 42-43)
-    view.setUint8(ptr + 42, config.vocalStyle ?? 0);
-    view.setUint8(ptr + 43, config.melodyTemplate ?? 0);
+    // Vocal style settings (offset 44-45)
+    view.setUint8(ptr + 44, config.vocalStyle ?? 0);
+    view.setUint8(ptr + 45, config.melodyTemplate ?? 0);
 
-    // Arrangement settings (offset 44)
-    view.setUint8(ptr + 44, config.arrangementGrowth ?? 0);
+    // Arrangement settings (offset 46)
+    view.setUint8(ptr + 46, config.arrangementGrowth ?? 0);
 
-    // Arpeggio sync settings (offset 45)
-    view.setUint8(ptr + 45, config.arpeggioSyncChord !== false ? 1 : 0);
+    // Arpeggio sync settings (offset 47)
+    view.setUint8(ptr + 47, config.arpeggioSyncChord !== false ? 1 : 0);
 
-    // Motif settings (offset 46-48)
-    view.setUint8(ptr + 46, config.motifRepeatScope ?? 0);
-    view.setUint8(ptr + 47, config.motifFixedProgression !== false ? 1 : 0);
-    view.setUint8(ptr + 48, config.motifMaxChordCount ?? 4);
+    // Motif settings (offset 48-50)
+    view.setUint8(ptr + 48, config.motifRepeatScope ?? 0);
+    view.setUint8(ptr + 49, config.motifFixedProgression !== false ? 1 : 0);
+    view.setUint8(ptr + 50, config.motifMaxChordCount ?? 4);
 
-    // Melodic complexity and hook control (offset 49-51)
-    view.setUint8(ptr + 49, config.melodicComplexity ?? 1);
-    view.setUint8(ptr + 50, config.hookIntensity ?? 2);
-    view.setUint8(ptr + 51, config.vocalGroove ?? 0);
+    // Melodic complexity and hook control (offset 51-53)
+    view.setUint8(ptr + 51, config.melodicComplexity ?? 1);
+    view.setUint8(ptr + 52, config.hookIntensity ?? 2);
+    view.setUint8(ptr + 53, config.vocalGroove ?? 0);
 
     return ptr;
   }

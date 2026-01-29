@@ -158,9 +158,13 @@ MidiTrack AuxTrackGenerator::generate(const AuxConfig& config, const AuxContext&
 
         if (!is_chord_tone) {
           // Trim note to end before chord change (with small gap for articulation)
-          Tick new_duration = chord_change - note.start_tick - 10;
-          if (new_duration >= kMinNoteDuration) {
-            note.duration = new_duration;
+          // Guard: ensure chord_change - note.start_tick > 10 to avoid underflow
+          Tick time_to_chord = chord_change - note.start_tick;
+          if (time_to_chord > 10) {
+            Tick new_duration = time_to_chord - 10;
+            if (new_duration >= kMinNoteDuration) {
+              note.duration = new_duration;
+            }
           }
         }
       }
