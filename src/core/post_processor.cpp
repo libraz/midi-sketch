@@ -10,9 +10,10 @@
 #include <cstdlib>
 #include <vector>
 
-#include "core/chord_utils.h"         // for nearestChordTonePitch, ChordToneHelper
+#include "core/chord_utils.h"         // for nearestChordTonePitch, ChordToneHelper, ChordTones
 #include "core/i_harmony_context.h"   // for IHarmonyContext
 #include "core/note_factory.h"        // for NoteSource enum
+#include "core/pitch_utils.h"         // for MOTIF_LOW, MOTIF_HIGH
 #include "core/note_timeline_utils.h" // for NoteTimeline utilities
 #include "core/timing_constants.h"    // for TICK_EIGHTH
 #include "core/velocity.h"            // for DriveMapping
@@ -992,6 +993,71 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
 // Motif-Vocal Clash Resolution Implementation
 // ============================================================================
 
+namespace {
+
+// Helper to check if a pitch clashes with vocal at a given time range
+bool clashesWithVocal(uint8_t pitch, Tick start, Tick end, const MidiTrack& vocal) {
+  for (const auto& v_note : vocal.notes()) {
+    Tick v_end = v_note.start_tick + v_note.duration;
+    // Check overlap
+    if (start < v_end && end > v_note.start_tick) {
+      int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(v_note.note));
+      int interval_class = interval % 12;
+      bool is_dissonant = (interval_class == 1) ||             // minor 2nd / minor 9th
+                          (interval_class == 11) ||            // major 7th
+                          (interval_class == 2 && interval < 12);  // major 2nd (close only)
+      if (is_dissonant) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Find a safe chord tone pitch that doesn't clash with vocal
+// Tries different octaves and different chord tones
+uint8_t findSafeChordTone(uint8_t original_pitch, int8_t degree, Tick start, Tick end,
+                          const MidiTrack& vocal) {
+  ChordTones ct = getChordTones(degree);
+  int base_octave = original_pitch / 12;
+
+  // Strategy 1: Try each chord tone at different octaves (prefer close to original)
+  struct Candidate {
+    uint8_t pitch;
+    int distance;
+  };
+  std::vector<Candidate> candidates;
+
+  for (uint8_t i = 0; i < ct.count; ++i) {
+    int ct_pc = ct.pitch_classes[i];
+    if (ct_pc < 0) continue;
+
+    // Try octaves from -2 to +2 relative to base octave
+    for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
+      int candidate_pitch = (base_octave + oct_offset) * 12 + ct_pc;
+      if (candidate_pitch < MOTIF_LOW || candidate_pitch > MOTIF_HIGH) continue;
+
+      uint8_t clamped = static_cast<uint8_t>(candidate_pitch);
+      if (!clashesWithVocal(clamped, start, end, vocal)) {
+        int dist = std::abs(candidate_pitch - static_cast<int>(original_pitch));
+        candidates.push_back({clamped, dist});
+      }
+    }
+  }
+
+  // Return closest non-clashing chord tone
+  if (!candidates.empty()) {
+    std::sort(candidates.begin(), candidates.end(),
+              [](const Candidate& a, const Candidate& b) { return a.distance < b.distance; });
+    return candidates[0].pitch;
+  }
+
+  // Fallback: no safe chord tone found, return original (clash may persist)
+  return original_pitch;
+}
+
+}  // namespace
+
 void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& vocal,
                                           const IHarmonyContext& harmony) {
   auto& motif_notes = motif.notes();
@@ -1022,15 +1088,20 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
                             (interval_class == 2 && interval < 12);  // major 2nd (close only)
 
         if (is_dissonant) {
-          // Snap to nearest chord tone
           int8_t degree = harmony.getChordDegreeAt(m_note.start_tick);
-          int snapped = nearestChordTonePitch(m_note.note, degree);
+          uint8_t original_pitch = m_note.note;
 
-          // Update note pitch with clamping to valid MIDI range
-          uint8_t new_pitch = static_cast<uint8_t>(std::clamp(snapped, 36, 108));
+          // Find a chord tone that doesn't clash with vocal
+          uint8_t new_pitch = findSafeChordTone(original_pitch, degree, m_note.start_tick, m_end, vocal);
+
+          // If still clashing, try using harmony's getSafePitch as last resort
+          if (clashesWithVocal(new_pitch, m_note.start_tick, m_end, vocal)) {
+            new_pitch = harmony.getSafePitch(original_pitch, m_note.start_tick, m_note.duration,
+                                             TrackRole::Motif, MOTIF_LOW, MOTIF_HIGH);
+          }
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-          m_note.prov_original_pitch = m_note.note;
+          m_note.prov_original_pitch = original_pitch;
           m_note.prov_source = static_cast<uint8_t>(NoteSource::CollisionAvoid);
           m_note.prov_lookup_tick = m_note.start_tick;
           m_note.prov_chord_degree = degree;

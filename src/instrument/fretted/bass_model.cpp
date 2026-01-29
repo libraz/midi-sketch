@@ -3,7 +3,7 @@
  * @brief Implementation of BassModel.
  */
 
-#include "track/fretted/bass_model.h"
+#include "instrument/fretted/bass_model.h"
 
 #include "core/timing_constants.h"
 

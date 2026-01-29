@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "core/basic_types.h"
-#include "track/fretted/fretted_types.h"
+#include "instrument/fretted/fretted_types.h"
 
 namespace midisketch {
 

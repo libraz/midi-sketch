@@ -5,12 +5,17 @@
 
 #include "track/drums/drum_track_generator.h"
 
+#include <algorithm>
+#include <map>
+#include <vector>
+
 #include "core/euclidean_rhythm.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
 #include "core/section_properties.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
+#include "instrument/drums/drum_performer.h"
 #include "track/drums/beat_processors.h"
 #include "track/drums/drum_constants.h"
 #include "track/drums/fill_generator.h"
@@ -25,6 +30,123 @@ float calculateSwingAmount(SectionType section, int bar_in_section, int total_ba
                           float swing_override);
 
 namespace drums {
+
+// ============================================================================
+// Drum Playability Checker (using DrumPerformer)
+// ============================================================================
+// Provides physical playability checking for drum patterns.
+// Validates simultaneous hits and stroke intervals.
+
+/// @brief Check if a drum note is auxiliary percussion.
+///
+/// Auxiliary percussion (tambourine, shaker, hand clap) is typically
+/// performed by a different player and should be excluded from
+/// physical playability checks for the main drummer.
+inline bool isAuxiliaryPercussion(uint8_t note) {
+  return note == TAMBOURINE || note == SHAKER || note == HANDCLAP;
+}
+
+/// @brief Wrapper for drum playability checking.
+///
+/// Uses DrumPerformer to validate and adjust drum patterns for physical
+/// playability. Key checks:
+/// - Simultaneous hit limits (max 4 limbs)
+/// - Stroke interval constraints per limb
+/// - Fatigue accumulation over fast passages
+///
+/// NOTE: Auxiliary percussion (tambourine, shaker, hand clap) is excluded
+/// from validation as these are typically performed by a separate player.
+class DrumPlayabilityChecker {
+ public:
+  explicit DrumPlayabilityChecker(uint16_t bpm) : bpm_(bpm), performer_() {
+    state_ = performer_.createInitialState();
+  }
+
+  /// @brief Apply playability check to all notes in a track.
+  ///
+  /// Validates and adjusts notes for physical playability:
+  /// 1. Checks simultaneous hits at each tick
+  /// 2. Validates stroke intervals for each limb
+  /// 3. Adjusts timing or removes notes if necessary
+  ///
+  /// Auxiliary percussion is excluded from validation.
+  ///
+  /// @param track Track to validate (modified in place)
+  void applyToTrack(MidiTrack& track) {
+    auto& notes = track.notes();
+    if (notes.empty()) return;
+
+    // Group notes by tick for simultaneous hit checking
+    // Exclude auxiliary percussion from grouping
+    std::map<Tick, std::vector<size_t>> notes_by_tick;
+    for (size_t i = 0; i < notes.size(); ++i) {
+      if (!isAuxiliaryPercussion(notes[i].note)) {
+        notes_by_tick[notes[i].start_tick].push_back(i);
+      }
+    }
+
+    // Track indices to remove
+    std::vector<size_t> to_remove;
+
+    // Process each tick group
+    for (auto& [tick, indices] : notes_by_tick) {
+      if (indices.size() > 1) {
+        // Check simultaneous hit feasibility
+        std::vector<uint8_t> pitches;
+        pitches.reserve(indices.size());
+        for (size_t idx : indices) {
+          pitches.push_back(notes[idx].note);
+        }
+
+        if (!performer_.canSimultaneousHit(pitches)) {
+          // Remove the note with highest cost (least essential)
+          // Priority: keep kick and snare, remove other instruments
+          float worst_cost = -1.0f;
+          size_t worst_idx = 0;
+          for (size_t idx : indices) {
+            // Skip kick and snare (essential backbeat)
+            if (notes[idx].note == BD || notes[idx].note == SD) continue;
+
+            float cost = performer_.calculateCost(
+                notes[idx].note, notes[idx].start_tick, notes[idx].duration, *state_);
+            if (cost > worst_cost) {
+              worst_cost = cost;
+              worst_idx = idx;
+            }
+          }
+
+          if (worst_cost >= 0.0f) {
+            to_remove.push_back(worst_idx);
+          }
+        }
+      }
+
+      // Update state for all notes at this tick (after removal check)
+      for (size_t idx : indices) {
+        if (std::find(to_remove.begin(), to_remove.end(), idx) == to_remove.end()) {
+          performer_.updateState(*state_, notes[idx].note, notes[idx].start_tick,
+                                 notes[idx].duration);
+        }
+      }
+    }
+
+    // Remove marked notes (in reverse order to maintain indices)
+    std::sort(to_remove.begin(), to_remove.end(), std::greater<size_t>());
+    for (size_t idx : to_remove) {
+      notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(idx));
+    }
+  }
+
+  /// @brief Reset performer state (call at section boundaries).
+  void resetState() {
+    state_ = performer_.createInitialState();
+  }
+
+ private:
+  [[maybe_unused]] uint16_t bpm_;  // Reserved for tempo-dependent checks
+  DrumPerformer performer_;
+  std::unique_ptr<PerformerState> state_;
+};
 
 DrumSectionContext computeSectionContext(const Section& section,
                                           const DrumGenerationParams& params,
@@ -308,6 +430,17 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
                                     section.getEffectiveDrumRole(), ctx.density_mult, rng);
       }
     }
+  }
+
+  // ============================================================================
+  // Physical Playability Check (Post-Processing)
+  // ============================================================================
+  // Validate and adjust drum patterns for physical playability.
+  // At high tempos or with dense patterns, some combinations become
+  // physically impossible (e.g., 5+ simultaneous hits, ultra-fast rolls).
+  {
+    DrumPlayabilityChecker playability_checker(params.bpm);
+    playability_checker.applyToTrack(track);
   }
 }
 

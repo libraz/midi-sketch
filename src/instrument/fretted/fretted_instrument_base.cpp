@@ -3,7 +3,7 @@
  * @brief Implementation of FrettedInstrumentBase.
  */
 
-#include "track/fretted/fretted_instrument_base.h"
+#include "instrument/fretted/fretted_instrument_base.h"
 
 #include <algorithm>
 #include <cmath>

@@ -6,10 +6,10 @@
 #include <gtest/gtest.h>
 
 #include "core/timing_constants.h"
-#include "track/fretted/bass_model.h"
-#include "track/fretted/fretted_instrument.h"
-#include "track/fretted/fretted_note_factory.h"
-#include "track/fretted/guitar_model.h"
+#include "instrument/fretted/bass_model.h"
+#include "instrument/fretted/fretted_instrument.h"
+#include "instrument/fretted/fretted_note_factory.h"
+#include "instrument/fretted/guitar_model.h"
 
 namespace midisketch {
 namespace {

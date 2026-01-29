@@ -72,10 +72,11 @@ set(MIDISKETCH_CORE_SOURCES
   track/melody/constraint_pipeline.cpp
   track/aux_track.cpp
   track/vocal_analysis.cpp
-  track/fretted/fretted_instrument_base.cpp
-  track/fretted/bass_model.cpp
-  track/fretted/guitar_model.cpp
-  track/fretted/fretted_note_factory.cpp
+  instrument/fretted/fretted_instrument_base.cpp
+  instrument/fretted/bass_model.cpp
+  instrument/fretted/guitar_model.cpp
+  instrument/fretted/fretted_note_factory.cpp
+  instrument/drums/drum_performer.cpp
 )
 
 # CLI-only sources (not needed for WASM)

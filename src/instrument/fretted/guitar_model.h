@@ -9,7 +9,7 @@
 #ifndef MIDISKETCH_TRACK_FRETTED_GUITAR_MODEL_H
 #define MIDISKETCH_TRACK_FRETTED_GUITAR_MODEL_H
 
-#include "track/fretted/fretted_instrument_base.h"
+#include "instrument/fretted/fretted_instrument_base.h"
 
 namespace midisketch {
 

@@ -1251,6 +1251,180 @@ TEST(PostProcessorTest, FixMotifVocalClashesUpdatesProvenance) {
       << "Chord degree should be recorded";
 }
 
+// Core fix test: Motif is already a chord tone but clashes with vocal
+// This was the root cause of the IdolHyper dissonance bug (seed 88888)
+TEST(PostProcessorTest, FixMotifVocalClashesWhenMotifIsChordTone) {
+  // G major chord (degree 4 = V): chord tones are G(7), B(11), D(2)
+  // Motif B3 (59) is a chord tone, but clashes with Vocal C4 (60) - minor 2nd
+  // The old code would snap B3 to nearest chord tone (B3), leaving clash unresolved
+  // The fix should move to a different chord tone (G or D) at different octave
+  MidiTrack motif, vocal;
+  motif.addNote(0, 480, 59, 80);  // B3 - chord tone of G major
+  vocal.addNote(0, 480, 60, 80);  // C4 - creates minor 2nd clash
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(4);  // G major (V chord): G-B-D
+
+  PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
+
+  // Result should NOT clash with vocal (C4 = 60)
+  // Must be chord tone (G, B, or D) and NOT create minor 2nd/major 7th/major 2nd with C4
+  uint8_t result = motif.notes()[0].note;
+  int interval = std::abs(static_cast<int>(result) - 60);
+  int interval_class = interval % 12;
+
+  // Check it's a chord tone
+  int pc = result % 12;
+  EXPECT_TRUE(pc == 7 || pc == 11 || pc == 2)
+      << "Result should be chord tone (G=7, B=11, D=2), got pc=" << pc;
+
+  // Check no dissonance with C4 (60)
+  bool is_dissonant = (interval_class == 1) ||             // minor 2nd
+                      (interval_class == 11) ||            // major 7th
+                      (interval_class == 2 && interval < 12);  // major 2nd close
+  EXPECT_FALSE(is_dissonant)
+      << "Result pitch " << static_cast<int>(result)
+      << " should not clash with vocal C4 (60), interval=" << interval;
+}
+
+// Test: When nearest chord tone would also clash, find alternative octave
+TEST(PostProcessorTest, FixMotifVocalClashesAvoidsNearestWhenItClashes) {
+  // C major chord (degree 0): chord tones are C(0), E(4), G(7)
+  // Motif D4 (62) clashes with Vocal C4 (60) - major 2nd
+  // Nearest chord tone to D4 is C4 or E4
+  // But C4 would be unison with vocal, E4 (64) creates major 3rd (ok)
+  // The fix should prefer E4 or G4 over C4 if C4 would create new issues
+  MidiTrack motif, vocal;
+  motif.addNote(0, 480, 62, 80);  // D4
+  vocal.addNote(0, 480, 60, 80);  // C4 - major 2nd clash
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);  // C major
+
+  PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
+
+  uint8_t result = motif.notes()[0].note;
+  int pc = result % 12;
+
+  // Should be chord tone
+  EXPECT_TRUE(pc == 0 || pc == 4 || pc == 7)
+      << "Result should be chord tone (C=0, E=4, G=7), got pc=" << pc;
+
+  // Check no dissonance with C4
+  int interval = std::abs(static_cast<int>(result) - 60);
+  int interval_class = interval % 12;
+  bool is_dissonant = (interval_class == 1) || (interval_class == 11) ||
+                      (interval_class == 2 && interval < 12);
+  EXPECT_FALSE(is_dissonant)
+      << "Result should not create dissonance with vocal";
+}
+
+// Test: Octave displacement to avoid clash
+TEST(PostProcessorTest, FixMotifVocalClashesUsesOctaveDisplacement) {
+  // Am chord (degree 5 = vi): chord tones are A(9), C(0), E(4)
+  // Motif B4 (71) clashes with Vocal C5 (72) - minor 2nd
+  // The fix should find a chord tone that doesn't create dissonance
+  // Note: Unison (same pitch) is musically acceptable, not dissonant
+  MidiTrack motif, vocal;
+  motif.addNote(0, 480, 71, 80);  // B4
+  vocal.addNote(0, 480, 72, 80);  // C5 - minor 2nd clash
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(5);  // Am (vi chord): A-C-E
+
+  PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
+
+  uint8_t result = motif.notes()[0].note;
+  int pc = result % 12;
+
+  // Should be chord tone (A, C, or E)
+  EXPECT_TRUE(pc == 9 || pc == 0 || pc == 4)
+      << "Result should be Am chord tone (A=9, C=0, E=4), got pc=" << pc;
+
+  // Should not create dissonance with vocal (unison is OK)
+  int interval = std::abs(static_cast<int>(result) - 72);
+  int interval_class = interval % 12;
+  bool is_dissonant = (interval_class == 1) || (interval_class == 11) ||
+                      (interval_class == 2 && interval < 12);
+  EXPECT_FALSE(is_dissonant)
+      << "Result should not create dissonance with vocal C5";
+}
+
+// Test: Multiple motif notes with different clashes in same track
+TEST(PostProcessorTest, FixMotifVocalClashesHandlesMultipleNotes) {
+  MidiTrack motif, vocal;
+  // Multiple motif notes at different times
+  motif.addNote(0, 480, 59, 80);     // B3 - will clash with vocal C4
+  motif.addNote(960, 480, 65, 80);   // F4 - will clash with vocal E4
+  motif.addNote(1920, 480, 67, 80);  // G4 - consonant, no change needed
+
+  vocal.addNote(0, 480, 60, 80);     // C4 - minor 2nd with B3
+  vocal.addNote(960, 480, 64, 80);   // E4 - minor 2nd with F4
+  vocal.addNote(1920, 480, 67, 80);  // G4 - unison with G4 (ok)
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(0);  // C major throughout
+
+  PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
+
+  // First note (B3) should be resolved
+  int interval1 = std::abs(static_cast<int>(motif.notes()[0].note) - 60);
+  int ic1 = interval1 % 12;
+  EXPECT_FALSE(ic1 == 1 || ic1 == 11 || (ic1 == 2 && interval1 < 12))
+      << "First motif note should not clash with C4";
+
+  // Second note (F4) should be resolved
+  int interval2 = std::abs(static_cast<int>(motif.notes()[1].note) - 64);
+  int ic2 = interval2 % 12;
+  EXPECT_FALSE(ic2 == 1 || ic2 == 11 || (ic2 == 2 && interval2 < 12))
+      << "Second motif note should not clash with E4";
+
+  // Third note should remain G4 (unison is ok)
+  EXPECT_EQ(motif.notes()[2].note, 67)
+      << "Third note (G4 unison) should not change";
+}
+
+// Regression test: IdolHyper seed 88888 scenario
+// This reproduces the actual bug where B3 (chord tone of G major) clashed with C4
+// The old code would not change B3 because it was already a chord tone
+TEST(PostProcessorTest, RegressionIdolHyperSeed88888) {
+  // Reproduces the clash at tick 30720 from IdolHyper seed 88888:
+  // - Chord changes from C major to G major at tick 30720
+  // - Vocal C4 is sustained across the chord change
+  // - Motif B3 is generated on G major (B is chord tone)
+  // - B3 vs C4 = minor 2nd clash
+  MidiTrack motif, vocal;
+
+  // Simulate the overlapping notes at tick 30720
+  motif.addNote(30720, 240, 59, 80);  // B3 - chord tone of G major
+  vocal.addNote(30715, 480, 60, 80);  // C4 - sustained, overlaps with motif
+
+  test::StubHarmonyContext harmony;
+  harmony.setChordDegree(4);  // G major (V chord): G-B-D
+
+  PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
+
+  uint8_t result = motif.notes()[0].note;
+
+  // Verify: result should be chord tone of G major
+  int pc = result % 12;
+  EXPECT_TRUE(pc == 7 || pc == 11 || pc == 2)
+      << "Result should be G major chord tone (G=7, B=11, D=2), got pc=" << pc;
+
+  // Verify: result should NOT clash with C4 (60)
+  int interval = std::abs(static_cast<int>(result) - 60);
+  int interval_class = interval % 12;
+  bool is_dissonant = (interval_class == 1) ||              // minor 2nd
+                      (interval_class == 11) ||             // major 7th
+                      (interval_class == 2 && interval < 12);  // major 2nd close
+  EXPECT_FALSE(is_dissonant)
+      << "B3 (59) should be moved to avoid clash with C4 (60), result=" << static_cast<int>(result);
+
+  // Verify: specifically should NOT remain B3 (59) which was the bug
+  EXPECT_NE(result, 59)
+      << "Should not remain B3 (59) which creates minor 2nd with C4 (60)";
+}
+
 // ============================================================================
 // Per-Section ChorusDropStyle Tests
 // ============================================================================

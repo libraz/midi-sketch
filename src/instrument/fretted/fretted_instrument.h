@@ -13,9 +13,9 @@
 #include <vector>
 
 #include "core/basic_types.h"
-#include "track/fretted/fingering.h"
-#include "track/fretted/fretted_types.h"
-#include "track/fretted/playability.h"
+#include "instrument/fretted/fingering.h"
+#include "instrument/fretted/fretted_types.h"
+#include "instrument/fretted/playability.h"
 
 namespace midisketch {
 

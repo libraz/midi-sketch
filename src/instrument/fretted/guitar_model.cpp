@@ -3,7 +3,7 @@
  * @brief Implementation of GuitarModel.
  */
 
-#include "track/fretted/guitar_model.h"
+#include "instrument/fretted/guitar_model.h"
 
 #include <algorithm>
 #include <limits>

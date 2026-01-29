@@ -26,8 +26,8 @@
 #include "core/preset_data.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
-#include "track/fretted/bass_model.h"
-#include "track/fretted/fretted_note_factory.h"
+#include "instrument/fretted/bass_model.h"
+#include "instrument/fretted/fretted_note_factory.h"
 
 // Debug flag for bass transformation logging (set to 1 to enable)
 #ifndef BASS_DEBUG_LOG

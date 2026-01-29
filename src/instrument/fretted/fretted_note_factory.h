@@ -16,8 +16,8 @@
 
 #include "core/basic_types.h"
 #include "core/note_factory.h"
-#include "track/fretted/fretted_instrument.h"
-#include "track/fretted/playability.h"
+#include "instrument/fretted/fretted_instrument.h"
+#include "instrument/fretted/playability.h"
 
 namespace midisketch {
 

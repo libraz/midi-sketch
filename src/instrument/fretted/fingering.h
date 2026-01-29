@@ -11,7 +11,7 @@
 
 #include <vector>
 
-#include "track/fretted/fretted_types.h"
+#include "instrument/fretted/fretted_types.h"
 
 namespace midisketch {
 

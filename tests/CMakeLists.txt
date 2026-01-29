@@ -92,6 +92,7 @@ set(TEST_SOURCES
   track/swing_control_test.cpp
   track/motif_vocal_coordination_test.cpp
   track/fretted_instrument_test.cpp
+  instrument/drum_performer_test.cpp
   analysis/dissonance_test.cpp
   analysis/non_diatonic_detection_test.cpp
   api/c_api_test.cpp

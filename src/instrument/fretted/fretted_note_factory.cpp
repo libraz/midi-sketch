@@ -3,7 +3,7 @@
  * @brief Implementation of FrettedNoteFactory.
  */
 
-#include "track/fretted/fretted_note_factory.h"
+#include "instrument/fretted/fretted_note_factory.h"
 
 #include <algorithm>
 #include <cmath>

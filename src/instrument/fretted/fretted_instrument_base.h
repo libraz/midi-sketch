@@ -12,7 +12,7 @@
 #include <algorithm>
 #include <vector>
 
-#include "track/fretted/fretted_instrument.h"
+#include "instrument/fretted/fretted_instrument.h"
 
 namespace midisketch {
 
