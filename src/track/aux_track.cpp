@@ -14,6 +14,7 @@
 #include "core/i_harmony_context.h"
 #include "core/melody_templates.h"
 #include "core/note_factory.h"
+#include "core/note_timeline_utils.h"
 #include "core/timing_constants.h"
 
 namespace midisketch {
@@ -72,11 +73,6 @@ constexpr Tick kMinNoteDuration = 120;
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-// Check if two notes overlap in time
-bool notesOverlap(Tick start1, Tick end1, Tick start2, Tick end2) {
-  return start1 < end2 && start2 < end1;
-}
 
 // Smooth motif rhythm for Intro aux (extend short notes to minimum 8th note)
 // This prevents machine-gun style from UltraVocaloid bleeding into Intro
@@ -147,24 +143,18 @@ MidiTrack AuxTrackGenerator::generate(const AuxConfig& config, const AuxContext&
 
     if (chord_change > 0 && chord_change > note.start_tick && chord_change < note_end) {
       // Note crosses chord boundary
-      Tick overlap = note_end - chord_change;
+      Tick overlap = NoteTimeline::overlapAmount(note.start_tick, note_end, chord_change);
 
       if (overlap > kSuspensionThreshold) {
-        // Check if note is a chord tone in the new chord
-        auto new_chord_tones = harmony.getChordTonesAt(chord_change);
-        int note_pc = note.note % 12;
-        bool is_chord_tone = std::find(new_chord_tones.begin(), new_chord_tones.end(), note_pc) !=
-                             new_chord_tones.end();
+        // Check if note is a chord tone in the new chord using ChordToneHelper
+        int8_t new_degree = harmony.getChordDegreeAt(chord_change);
+        ChordToneHelper helper(new_degree);
 
-        if (!is_chord_tone) {
+        if (!helper.isChordTone(note.note)) {
           // Trim note to end before chord change (with small gap for articulation)
-          // Guard: ensure chord_change - note.start_tick > 10 to avoid underflow
-          Tick time_to_chord = chord_change - note.start_tick;
-          if (time_to_chord > 10) {
-            Tick new_duration = time_to_chord - 10;
-            if (new_duration >= kMinNoteDuration) {
-              note.duration = new_duration;
-            }
+          Tick new_duration = NoteTimeline::trimToBoundary(note, chord_change, 10);
+          if (new_duration < kMinNoteDuration) {
+            note.duration = kMinNoteDuration;
           }
         }
       }
@@ -1029,7 +1019,7 @@ bool AuxTrackGenerator::isPitchSafe(uint8_t pitch, Tick start, Tick duration,
   // Check against main melody
   if (main_melody) {
     for (const auto& note : *main_melody) {
-      if (notesOverlap(start, start + duration, note.start_tick, note.start_tick + note.duration)) {
+      if (NoteTimeline::overlaps(start, start + duration, note.start_tick, note.start_tick + note.duration)) {
         int interval = std::abs(static_cast<int>(pitch) - static_cast<int>(note.note));
         interval = interval % 12;
 

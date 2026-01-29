@@ -430,20 +430,48 @@ class MelodyDesigner {
   int calculateTargetPitch(const MelodyTemplate& tmpl, const SectionContext& ctx, int current_pitch,
                            const IHarmonyContext& harmony, std::mt19937& rng);
 
-  // Cached chorus hook for Song-level fixation.
-  // Once generated, the same hook is reused throughout the song.
-  std::optional<Motif> cached_chorus_hook_;
+  /// @brief Cache for hook-related state across song generation.
+  ///
+  /// Consolidates hook caching for Song-level fixation, where the same hook
+  /// patterns are reused throughout the song for melodic consistency.
+  struct HookCache {
+    /// Cached chorus hook (Motif rhythm) for Song-level fixation.
+    std::optional<Motif> chorus_hook;
 
-  // Cached HookSkeleton for Hybrid approach.
-  // Provides contour hint while Motif provides rhythm.
-  // cached_hook_skeleton_: Used for first half of sections (stronger intensity)
-  // cached_hook_skeleton_later_: Used for second half (base intensity, more variety)
-  std::optional<HookSkeleton> cached_hook_skeleton_;
-  std::optional<HookSkeleton> cached_hook_skeleton_later_;
+    /// Cached HookSkeleton for Hybrid approach (contour hint).
+    /// skeleton: Used for first half of sections (stronger intensity)
+    /// skeleton_later: Used for second half (base intensity, more variety)
+    std::optional<HookSkeleton> skeleton;
+    std::optional<HookSkeleton> skeleton_later;
 
-  // Cached hook rhythm pattern index for Song-level fixation.
-  // Value of SIZE_MAX means not yet selected.
-  size_t cached_hook_rhythm_pattern_idx_ = SIZE_MAX;
+    /// Cached rhythm pattern index (SIZE_MAX = not yet selected).
+    size_t rhythm_pattern_idx = SIZE_MAX;
+
+    /// Hook repetition counter for betrayal strategy (golden ratio: 3 then change).
+    uint8_t repetition_count = 0;
+
+    /// Cached sabi (chorus) head pitches for consistency (first 8 notes).
+    std::array<uint8_t, 8> sabi_pitches{};
+    bool pitches_cached = false;
+
+    /// Cached sabi head rhythm (first 8 durations and velocities).
+    std::array<Tick, 8> sabi_durations{};
+    std::array<uint8_t, 8> sabi_velocities{};
+    bool rhythm_cached = false;
+
+    /// @brief Reset all cached state.
+    void reset() {
+      chorus_hook.reset();
+      skeleton.reset();
+      skeleton_later.reset();
+      rhythm_pattern_idx = SIZE_MAX;
+      repetition_count = 0;
+      pitches_cached = false;
+      rhythm_cached = false;
+    }
+  };
+
+  HookCache hook_cache_;
 
   // Cached GlobalMotif for song-wide melodic unity.
   // Extracted from first chorus hook, used as evaluation reference.
@@ -452,22 +480,6 @@ class MelodyDesigner {
   // Section-specific motif variants for development/transformation.
   // Prepared when GlobalMotif is set, used during evaluation.
   std::unordered_map<SectionType, GlobalMotif> motif_variants_;
-
-  // Hook repetition counter for betrayal strategy.
-  // Tracks how many times the hook has been generated across the song.
-  // Used to apply HookBetrayal on the 4th repetition (golden ratio: 3 then change).
-  uint8_t hook_repetition_count_ = 0;
-
-  // Cached sabi (chorus) head pitches for consistency.
-  // First 8 pitches of the chorus hook are stored and reused.
-  std::array<uint8_t, 8> cached_sabi_pitches_;
-  bool sabi_pitches_cached_ = false;
-
-  // Cached sabi (chorus) head rhythm for consistency.
-  // First 8 durations and velocities are stored alongside pitches.
-  std::array<Tick, 8> cached_sabi_durations_;
-  std::array<uint8_t, 8> cached_sabi_velocities_;
-  bool sabi_rhythm_cached_ = false;
 
   // Prepare section-specific motif variants from source motif.
   void prepareMotifVariants(const GlobalMotif& source);

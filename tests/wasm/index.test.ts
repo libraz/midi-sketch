@@ -13,11 +13,11 @@ import {
   init,
   MidiSketch,
   RiffPolicy,
-} from './index';
+} from '../../js/src/index';
 
 describe('MidiSketch JS API', () => {
   beforeAll(async () => {
-    const wasmPath = path.resolve(__dirname, '../dist/midisketch.wasm');
+    const wasmPath = path.resolve(__dirname, '../../dist/midisketch.wasm');
     await init({ wasmPath });
   });
 

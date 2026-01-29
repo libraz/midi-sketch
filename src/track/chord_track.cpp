@@ -25,21 +25,22 @@
 #include "core/track_layer.h"
 #include "core/velocity.h"
 #include "track/bass.h"
+#include "track/chord_track/bass_coordination.h"
+#include "track/chord_track/chord_rhythm.h"
+#include "track/chord_track/voice_leading.h"
+#include "track/chord_track/voicing_generator.h"
 
 namespace midisketch {
+
+// Import from chord_voicing namespace for cleaner code
+using chord_voicing::ChordRhythm;
+using chord_voicing::VoicedChord;
+using chord_voicing::VoicingType;
 
 /// L1:Structural (voicing options) → L2:Identity (voice leading) →
 /// L3:Safety (collision avoidance) → L4:Performance (rhythm/expression)
 
 namespace {
-
-/// @brief Get tension level for secondary dominant insertion based on section type.
-/// Higher tension = more likely to insert secondary dominants.
-/// @param section Section type
-/// @return Tension level (0.0-1.0)
-float getSectionTensionForSecondary(SectionType section) {
-  return getSectionProperties(section).secondary_tension;
-}
 
 /// @name Timing Aliases
 /// Local aliases for timing constants to improve readability.
@@ -50,759 +51,15 @@ constexpr Tick QUARTER = TICK_QUARTER;
 constexpr Tick EIGHTH = TICK_EIGHTH;
 /// @}
 
-/// Voicing type: Close (<1 octave, warm), Open (1.5-2 octaves, powerful),
-/// Rootless (root omitted, jazz style).
-enum class VoicingType {
-  Close,    ///< Standard close position (within one octave)
-  Open,     ///< Open voicing (wider spread for power)
-  Rootless  ///< Root omitted (bass handles it, jazz style)
-};
-
-/// A voiced chord with absolute MIDI pitches (e.g., C3-E3-G3 for close C major).
-struct VoicedChord {
-  std::array<uint8_t, 5> pitches;                         ///< MIDI pitches (up to 5 for 9th chords)
-  uint8_t count;                                          ///< Number of notes in this voicing
-  VoicingType type;                                       ///< Voicing style used
-  OpenVoicingType open_subtype = OpenVoicingType::Drop2;  ///< Open voicing variant
-};
-
-/// Calculate voice leading distance with weighted voices.
-/// Bass (index 0) and soprano (top) weighted 2x, inner voices 1x.
-int voicingDistance(const VoicedChord& prev, const VoicedChord& next) {
-  int total = 0;
-  size_t min_count = std::min(prev.count, next.count);
-  for (size_t i = 0; i < min_count; ++i) {
-    int diff = std::abs(static_cast<int>(next.pitches[i]) - static_cast<int>(prev.pitches[i]));
-    // Weight bass (i=0) and soprano (i=min_count-1) 2x
-    int weight = (i == 0 || i == min_count - 1) ? 2 : 1;
-    total += diff * weight;
-  }
-  return total;
+/// @brief Get tension level for secondary dominant insertion based on section type.
+/// Higher tension = more likely to insert secondary dominants.
+/// @param section Section type
+/// @return Tension level (0.0-1.0)
+float getSectionTensionForSecondary(SectionType section) {
+  return getSectionProperties(section).secondary_tension;
 }
 
-/// Count common tones (octave-equivalent). More = smoother progression.
-int countCommonTones(const VoicedChord& prev, const VoicedChord& next) {
-  int common = 0;
-  for (size_t i = 0; i < prev.count; ++i) {
-    for (size_t j = 0; j < next.count; ++j) {
-      // Consider octave equivalence
-      if (prev.pitches[i] % 12 == next.pitches[j] % 12) {
-        common++;
-        break;
-      }
-    }
-  }
-  return common;
-}
-
-/// Check for parallel 5ths/octaves (forbidden in classical, relaxed in pop/dance).
-///
-/// Music theory context:
-/// - Classical harmony: Parallel 5ths/octaves are forbidden because they reduce
-///   voice independence and create "hollow" sound in counterpoint
-/// - Pop/Rock: Parallel motion is common and stylistically appropriate
-///   - Power chords are intentionally parallel 5ths
-///   - Electronic/EDM uses parallel motion for effect
-///
-/// Current behavior: Always checks, but caller decides whether to avoid.
-/// Future enhancement: Genre parameter to control strictness:
-///   - Classical: strict avoidance
-///   - Pop/Rock: allow parallel motion
-///   - Jazz: intermediate (avoid in inner voices)
-bool hasParallelFifthsOrOctaves(const VoicedChord& prev, const VoicedChord& next) {
-  size_t count = std::min(prev.count, next.count);
-  if (count < 2) return false;
-
-  for (size_t i = 0; i < count; ++i) {
-    for (size_t j = i + 1; j < count; ++j) {
-      // Calculate intervals (mod 12 for octave equivalence)
-      int prev_interval =
-          std::abs(static_cast<int>(prev.pitches[i]) - static_cast<int>(prev.pitches[j])) % 12;
-      int next_interval =
-          std::abs(static_cast<int>(next.pitches[i]) - static_cast<int>(next.pitches[j])) % 12;
-
-      // Check for P5 (7 semitones) or P8/unison (0 semitones)
-      bool prev_is_perfect = (prev_interval == 7 || prev_interval == 0);
-      bool next_is_perfect = (next_interval == 7 || next_interval == 0);
-
-      if (prev_is_perfect && next_is_perfect && prev_interval == next_interval) {
-        // Both intervals are the same perfect interval
-        // Check if both voices move in the same direction (parallel motion)
-        int motion_i = static_cast<int>(next.pitches[i]) - static_cast<int>(prev.pitches[i]);
-        int motion_j = static_cast<int>(next.pitches[j]) - static_cast<int>(prev.pitches[j]);
-
-        // Parallel motion: both move same direction (and not stationary)
-        if (motion_i != 0 && motion_j != 0 && ((motion_i > 0) == (motion_j > 0))) {
-          return true;
-        }
-      }
-    }
-  }
-  return false;
-}
-
-// Generate close voicings for a chord
-std::vector<VoicedChord> generateCloseVoicings(uint8_t root, const Chord& chord) {
-  std::vector<VoicedChord> voicings;
-
-  for (int inversion = 0; inversion < chord.note_count; ++inversion) {
-    for (uint8_t base_octave = CHORD_LOW; base_octave <= CHORD_HIGH - 12; base_octave += 12) {
-      VoicedChord v{};
-      v.count = chord.note_count;
-      v.type = VoicingType::Close;
-
-      bool valid = true;
-      for (uint8_t i = 0; i < chord.note_count; ++i) {
-        if (chord.intervals[i] < 0) {
-          v.count = i;
-          break;
-        }
-
-        uint8_t voice_idx = (i + inversion) % chord.note_count;
-        int pitch = root + chord.intervals[voice_idx];
-
-        if (i == 0) {
-          pitch = base_octave + (pitch % 12);
-        } else {
-          pitch = base_octave + (pitch % 12);
-          while (pitch <= v.pitches[i - 1]) {
-            pitch += 12;
-          }
-        }
-
-        if (pitch < CHORD_LOW || pitch > CHORD_HIGH) {
-          valid = false;
-          break;
-        }
-
-        v.pitches[i] = static_cast<uint8_t>(pitch);
-      }
-
-      if (valid && v.count >= 3) {
-        voicings.push_back(v);
-      }
-    }
-  }
-
-  return voicings;
-}
-
-// Generate open voicings (wider spread, drop 2 style)
-std::vector<VoicedChord> generateOpenVoicings(uint8_t root, const Chord& chord) {
-  std::vector<VoicedChord> voicings;
-
-  for (uint8_t base_octave = CHORD_LOW; base_octave <= CHORD_HIGH - 24; base_octave += 12) {
-    // Drop 2 voicing: drop the second voice from top down an octave
-    // Result: bass-low-high pattern with wider spread
-    VoicedChord v{};
-    v.count = chord.note_count;
-    v.type = VoicingType::Open;
-
-    bool valid = true;
-    std::array<int, 4> raw_pitches{};
-
-    // First, calculate close position
-    for (uint8_t i = 0; i < chord.note_count && i < 4; ++i) {
-      if (chord.intervals[i] < 0) {
-        v.count = i;
-        break;
-      }
-      int pitch = root + chord.intervals[i];
-      raw_pitches[i] = base_octave + (pitch % 12);
-      // Stack in close position first
-      if (i > 0 && raw_pitches[i] <= raw_pitches[i - 1]) {
-        raw_pitches[i] += 12;
-      }
-    }
-
-    // Drop the second voice down an octave for open voicing
-    if (v.count >= 3) {
-      // Original: [bass, 3rd, 5th] -> Open: [bass, 5th, 3rd+8va]
-      int bass = raw_pitches[0];
-      int dropped = raw_pitches[1];  // 3rd drops down
-      int top = raw_pitches[2];      // 5th stays
-
-      // Reorder: bass, dropped-octave, top
-      v.pitches[0] = static_cast<uint8_t>(bass);
-      v.pitches[1] = static_cast<uint8_t>(dropped + 12);  // Move 3rd up instead
-      v.pitches[2] = static_cast<uint8_t>(top + 12);      // Move 5th up too
-
-      // Sort ascending
-      std::sort(v.pitches.begin(), v.pitches.begin() + v.count);
-
-      // Validate range
-      for (uint8_t i = 0; i < v.count; ++i) {
-        if (v.pitches[i] < CHORD_LOW || v.pitches[i] > CHORD_HIGH) {
-          valid = false;
-          break;
-        }
-      }
-    }
-
-    if (valid && v.count >= 3) {
-      voicings.push_back(v);
-    }
-  }
-
-  return voicings;
-}
-
-// C3: Generate Drop 3 voicings (drop 3rd voice from top down an octave)
-// Creates wider spread than Drop 2, useful for big band / orchestral contexts
-std::vector<VoicedChord> generateDrop3Voicings(uint8_t root, const Chord& chord) {
-  std::vector<VoicedChord> voicings;
-
-  if (chord.note_count < 4) {
-    // Drop3 requires at least 4 voices
-    return voicings;
-  }
-
-  for (uint8_t base_octave = CHORD_LOW; base_octave <= CHORD_HIGH - 24; base_octave += 12) {
-    VoicedChord v{};
-    v.count = std::min(chord.note_count, (uint8_t)4);
-    v.type = VoicingType::Open;
-    v.open_subtype = OpenVoicingType::Drop3;
-
-    bool valid = true;
-    std::array<int, 4> raw_pitches{};
-
-    // Build close position first
-    for (uint8_t i = 0; i < v.count; ++i) {
-      if (chord.intervals[i] < 0) {
-        v.count = i;
-        break;
-      }
-      int pitch = root + chord.intervals[i];
-      raw_pitches[i] = base_octave + 12 + (pitch % 12);  // Start octave higher
-      if (i > 0 && raw_pitches[i] <= raw_pitches[i - 1]) {
-        raw_pitches[i] += 12;
-      }
-    }
-
-    // Drop the 3rd voice from top down an octave
-    // Close: [root, 3rd, 5th, 7th] -> Drop3: [root, 5th-8va, 3rd, 7th]
-    if (v.count >= 4) {
-      int dropped = raw_pitches[1] - 12;  // Drop 3rd down
-      v.pitches[0] = static_cast<uint8_t>(std::max(static_cast<int>(CHORD_LOW), dropped));
-      v.pitches[1] = static_cast<uint8_t>(raw_pitches[0]);  // Root
-      v.pitches[2] = static_cast<uint8_t>(raw_pitches[2]);  // 5th
-      v.pitches[3] = static_cast<uint8_t>(raw_pitches[3]);  // 7th
-
-      // Sort ascending
-      std::sort(v.pitches.begin(), v.pitches.begin() + v.count);
-
-      // Validate range
-      for (uint8_t i = 0; i < v.count; ++i) {
-        if (v.pitches[i] < CHORD_LOW || v.pitches[i] > CHORD_HIGH) {
-          valid = false;
-          break;
-        }
-      }
-    } else {
-      valid = false;
-    }
-
-    if (valid && v.count >= 3) {
-      voicings.push_back(v);
-    }
-  }
-
-  return voicings;
-}
-
-// C3: Generate Spread voicings (wide intervallic spacing 1-5-10 style)
-// Creates open, transparent texture suitable for pads and atmospheric sections
-std::vector<VoicedChord> generateSpreadVoicings(uint8_t root, const Chord& chord) {
-  std::vector<VoicedChord> voicings;
-
-  for (uint8_t base_octave = CHORD_LOW; base_octave <= CHORD_HIGH - 24; base_octave += 12) {
-    VoicedChord v{};
-    v.count = std::min(chord.note_count, (uint8_t)4);
-    v.type = VoicingType::Open;
-    v.open_subtype = OpenVoicingType::Spread;
-
-    bool valid = true;
-
-    // Spread voicing: distribute across 2+ octaves
-    // Pattern: Root in bass, 5th in middle, 3rd+7th on top
-    int root_pitch = base_octave + (root % 12);
-    int fifth_pitch = root_pitch + 7 + 12;                   // 5th up an octave
-    int third_pitch = root_pitch + chord.intervals[1] + 24;  // 3rd up two octaves
-
-    v.pitches[0] = static_cast<uint8_t>(root_pitch);
-    v.pitches[1] = static_cast<uint8_t>(fifth_pitch);
-    v.pitches[2] = static_cast<uint8_t>(third_pitch);
-    v.count = 3;
-
-    // Add 7th if available
-    if (chord.note_count >= 4 && chord.intervals[3] >= 0) {
-      int seventh_pitch = root_pitch + chord.intervals[3] + 12;  // 7th one octave up
-      // Insert in correct sorted position
-      if (seventh_pitch < third_pitch) {
-        v.pitches[3] = v.pitches[2];
-        v.pitches[2] = static_cast<uint8_t>(seventh_pitch);
-      } else {
-        v.pitches[3] = static_cast<uint8_t>(seventh_pitch);
-      }
-      v.count = 4;
-    }
-
-    // Sort and validate
-    std::sort(v.pitches.begin(), v.pitches.begin() + v.count);
-    for (uint8_t i = 0; i < v.count; ++i) {
-      if (v.pitches[i] < CHORD_LOW || v.pitches[i] > CHORD_HIGH) {
-        valid = false;
-        break;
-      }
-    }
-
-    if (valid && v.count >= 3) {
-      voicings.push_back(v);
-    }
-  }
-
-  return voicings;
-}
-
-// Check if a pitch class creates a dissonant interval with bass (minor 2nd / major 7th)
-bool clashesWithBass(int pitch_class, int bass_pitch_class) {
-  int interval = std::abs(pitch_class - bass_pitch_class);
-  if (interval > 6) interval = 12 - interval;
-  // Minor 2nd (1) and Tritone (6) both clash with bass
-  // Tritone creates harsh dissonance on strong beats (e.g., B vs F)
-  return interval == 1 || interval == 6;
-}
-
-// C4: Generate rootless voicings (up to 4-voice, root omitted for bass)
-// bass_root: the bass note's pitch class (0-11), or -1 if unknown
-// Now supports 4-voice rootless with safe tension additions
-std::vector<VoicedChord> generateRootlessVoicings(uint8_t root, const Chord& chord,
-                                                  int bass_root_pc = -1) {
-  std::vector<VoicedChord> voicings;
-
-  // Rootless voicing: omit root, use 3rd + 5th + 7th + optional 9th
-  // Key principle: avoid notes that clash with bass (minor 2nd / major 7th)
-  for (uint8_t base_octave = CHORD_LOW; base_octave <= CHORD_HIGH - 12; base_octave += 12) {
-    VoicedChord v{};
-    v.type = VoicingType::Rootless;
-
-    bool is_minor = (chord.note_count >= 2 && chord.intervals[1] == 3);
-    bool is_dominant =
-        (chord.note_count >= 4 && chord.intervals[3] == 10 && chord.intervals[1] == 4);
-    int root_pc = root % 12;
-
-    // Build rootless voicing: 3rd, 5th, 7th, + optional 9th (C4 enhancement)
-    std::array<int, 5> intervals_rootless{};
-    int voice_count = 3;
-
-    if (is_dominant) {
-      // Dominant 7th: M3, P5, m7, 9th
-      intervals_rootless = {4, 7, 10, 14, -1};  // 14 = 9th (octave + 2)
-      voice_count = 4;
-    } else if (is_minor) {
-      // Minor: m3, P5, m7, optional 9th or 11th
-      int extension = 14;  // 9th (sounds natural on minor)
-      // Check if 9th clashes with bass
-      if (bass_root_pc >= 0) {
-        int ninth_pc = (root_pc + 2) % 12;
-        if (clashesWithBass(ninth_pc, bass_root_pc)) {
-          extension = 17;  // Use 11th instead (octave + 5)
-        }
-      }
-      intervals_rootless = {3, 7, 10, extension, -1};
-      voice_count = 4;
-    } else {
-      // Major: M3, P5, + choose safe 7th + optional 9th
-      // M7 (11 semitones) clashes with bass if bass is on root
-      int seventh = 9;  // Default to 6th (safe)
-      int ninth = 14;   // 9th
-
-      // If bass pitch class is known, check if M7 would clash
-      if (bass_root_pc >= 0) {
-        int m7_pc = (root_pc + 11) % 12;
-        if (!clashesWithBass(m7_pc, bass_root_pc)) {
-          seventh = 11;  // M7 is safe, use it for richer sound
-        }
-        // Check 9th clash
-        int ninth_pc = (root_pc + 2) % 12;
-        if (clashesWithBass(ninth_pc, bass_root_pc)) {
-          ninth = -1;  // Skip 9th
-        }
-      }
-
-      if (ninth > 0) {
-        intervals_rootless = {4, 7, seventh, ninth, -1};
-        voice_count = 4;
-      } else {
-        intervals_rootless = {4, 7, seventh, -1, -1};
-        voice_count = 3;
-      }
-    }
-
-    bool valid = true;
-    v.count = 0;
-    for (int i = 0; i < voice_count; ++i) {
-      if (intervals_rootless[i] < 0) {
-        break;
-      }
-      int pitch = root + intervals_rootless[i];
-      // Place note in base_octave, with higher octave for extensions >= 12
-      int octave_offset = (intervals_rootless[i] >= 12) ? 12 : 0;
-      pitch = base_octave + octave_offset + (pitch % 12);
-
-      if (v.count > 0 && pitch <= v.pitches[v.count - 1]) {
-        pitch += 12;
-      }
-
-      if (pitch < CHORD_LOW || pitch > CHORD_HIGH) {
-        // Skip this voice if out of range
-        if (v.count >= 3) break;  // We have enough voices
-        valid = false;
-        break;
-      }
-
-      // Additional check: skip voicing if this pitch clashes with bass
-      if (bass_root_pc >= 0 && clashesWithBass(pitch % 12, bass_root_pc)) {
-        // Skip this voice but continue with others
-        continue;
-      }
-
-      v.pitches[v.count] = static_cast<uint8_t>(pitch);
-      v.count++;
-    }
-
-    if (valid && v.count >= 3) {
-      voicings.push_back(v);
-    }
-  }
-
-  return voicings;
-}
-
-// C3: Select open voicing subtype based on section and chord context
-OpenVoicingType selectOpenVoicingSubtype(SectionType section, Mood mood, const Chord& chord,
-                                         std::mt19937& rng) {
-  bool is_ballad = MoodClassification::isBallad(mood);
-  bool is_dramatic = MoodClassification::isDramatic(mood) || mood == Mood::DarkPop;
-  bool has_7th = (chord.note_count >= 4 && chord.intervals[3] >= 0);
-
-  // Spread voicing for atmospheric sections (Intro, Interlude, Bridge)
-  if (is_ballad && (section == SectionType::Intro || section == SectionType::Interlude ||
-                    section == SectionType::Bridge)) {
-    return OpenVoicingType::Spread;
-  }
-
-  // Drop3 for dramatic moments with 7th chords
-  if (is_dramatic && has_7th) {
-    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-    if (dist(rng) < 0.4f) {
-      return OpenVoicingType::Drop3;
-    }
-  }
-
-  // MixBreak benefits from Spread for power
-  if (section == SectionType::MixBreak) {
-    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-    return dist(rng) < 0.3f ? OpenVoicingType::Spread : OpenVoicingType::Drop2;
-  }
-
-  // Default: Drop2 (most versatile)
-  return OpenVoicingType::Drop2;
-}
-
-// Generate all possible voicings for a chord
-// bass_root_pc: bass note pitch class (0-11) for collision avoidance, or -1 if unknown
-std::vector<VoicedChord> generateVoicings(uint8_t root, const Chord& chord,
-                                          VoicingType preferred_type, int bass_root_pc = -1,
-                                          OpenVoicingType open_subtype = OpenVoicingType::Drop2) {
-  std::vector<VoicedChord> voicings;
-
-  // Always include close voicings as fallback
-  auto close = generateCloseVoicings(root, chord);
-  voicings.insert(voicings.end(), close.begin(), close.end());
-
-  if (preferred_type == VoicingType::Open) {
-    // C3: Generate requested open voicing subtype
-    switch (open_subtype) {
-      case OpenVoicingType::Drop2: {
-        auto open = generateOpenVoicings(root, chord);
-        voicings.insert(voicings.end(), open.begin(), open.end());
-        break;
-      }
-      case OpenVoicingType::Drop3: {
-        auto drop3 = generateDrop3Voicings(root, chord);
-        voicings.insert(voicings.end(), drop3.begin(), drop3.end());
-        // Also include Drop2 as fallback
-        if (drop3.empty()) {
-          auto open = generateOpenVoicings(root, chord);
-          voicings.insert(voicings.end(), open.begin(), open.end());
-        }
-        break;
-      }
-      case OpenVoicingType::Spread: {
-        auto spread = generateSpreadVoicings(root, chord);
-        voicings.insert(voicings.end(), spread.begin(), spread.end());
-        // Also include Drop2 as fallback
-        if (spread.empty()) {
-          auto open = generateOpenVoicings(root, chord);
-          voicings.insert(voicings.end(), open.begin(), open.end());
-        }
-        break;
-      }
-    }
-  } else if (preferred_type == VoicingType::Rootless) {
-    auto rootless = generateRootlessVoicings(root, chord, bass_root_pc);
-    voicings.insert(voicings.end(), rootless.begin(), rootless.end());
-  }
-
-  return voicings;
-}
-
-// Select voicing type based on section, mood, and bass pattern
-// @param bass_has_root True if bass is playing the root note
-// @param rng Random number generator for probabilistic selection
-// Design: Express section contrast through voicing spread, not rhythm density.
-// - A section: Close (stable foundation)
-// - B section: Close-dominant (reduce "darkness", build anticipation)
-// - Chorus: Open-dominant (spacious release, room for vocals)
-// - Bridge: Mixed (introspective flexibility)
-VoicingType selectVoicingType(SectionType section, Mood mood, bool /*bass_has_root*/,
-                              std::mt19937* rng = nullptr) {
-  bool is_ballad = MoodClassification::isBallad(mood);
-
-  // Intro/Interlude/Outro/Chant: always close voicing for stability
-  if (section == SectionType::Intro || section == SectionType::Interlude ||
-      section == SectionType::Outro || section == SectionType::Chant) {
-    return VoicingType::Close;
-  }
-
-  // A section: always close voicing for stable foundation
-  if (section == SectionType::A) {
-    return VoicingType::Close;
-  }
-
-  // MixBreak: open voicing for full energy
-  if (section == SectionType::MixBreak) {
-    return VoicingType::Open;
-  }
-
-  // Helper for probabilistic selection
-  auto rollProbability = [&](float threshold) -> bool {
-    if (!rng) return false;  // Default to first option if no RNG
-    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-    return dist(*rng) < threshold;
-  };
-
-  // B section: Close 60%, Open 40% (reduce darkness from previous Rootless-heavy)
-  if (section == SectionType::B) {
-    if (is_ballad) {
-      return VoicingType::Close;  // Ballads: always close for intimacy
-    }
-    return rollProbability(0.40f) ? VoicingType::Open : VoicingType::Close;
-  }
-
-  // Chorus: Open 60%, Close 40% (spacious release, room for vocals)
-  if (section == SectionType::Chorus) {
-    if (is_ballad) {
-      return VoicingType::Open;  // Ballads: open for emotional breadth
-    }
-    return rollProbability(0.60f) ? VoicingType::Open : VoicingType::Close;
-  }
-
-  // Bridge: Close 50%, Open 50% (introspective, flexible)
-  if (section == SectionType::Bridge) {
-    if (is_ballad) {
-      return VoicingType::Close;  // Ballads: intimate bridge
-    }
-    return rollProbability(0.50f) ? VoicingType::Open : VoicingType::Close;
-  }
-
-  return VoicingType::Close;
-}
-
-// Check if a voicing has any pitch that clashes with bass
-bool voicingClashesWithBass(const VoicedChord& v, int bass_root_pc) {
-  if (bass_root_pc < 0) return false;
-  for (uint8_t i = 0; i < v.count; ++i) {
-    if (clashesWithBass(v.pitches[i] % 12, bass_root_pc)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// Remove clashing pitch from voicing (returns modified voicing with reduced count)
-VoicedChord removeClashingPitch(const VoicedChord& v, int bass_root_pc) {
-  if (bass_root_pc < 0) return v;
-
-  VoicedChord result{};
-  result.type = v.type;
-  result.count = 0;
-
-  for (uint8_t i = 0; i < v.count; ++i) {
-    if (!clashesWithBass(v.pitches[i] % 12, bass_root_pc)) {
-      result.pitches[result.count] = v.pitches[i];
-      result.count++;
-    }
-  }
-
-  return result;
-}
-
-// C2: Get mood-dependent parallel motion penalty
-// Classical/sophisticated moods enforce strict voice leading rules
-// Pop/energetic moods allow parallel motion for power and energy
-int getParallelPenalty(Mood mood) {
-  switch (mood) {
-    // Strict voice leading (classical/jazz influence)
-    case Mood::Dramatic:
-    case Mood::Nostalgic:
-    case Mood::Ballad:
-    case Mood::Sentimental:
-      return -200;  // Strong penalty
-
-    // Moderate voice leading (balanced)
-    case Mood::EmotionalPop:
-    case Mood::MidPop:
-    case Mood::CityPop:
-    case Mood::StraightPop:
-      return -100;  // Medium penalty
-
-    // Relaxed voice leading (pop/dance styles)
-    case Mood::EnergeticDance:
-    case Mood::IdolPop:
-    case Mood::ElectroPop:
-    case Mood::Yoasobi:
-    case Mood::FutureBass:
-    case Mood::Synthwave:
-    case Mood::BrightUpbeat:
-    case Mood::Anthem:
-      return -30;  // Light penalty (parallel OK for power)
-
-    // Default moderate
-    default:
-      return -100;
-  }
-}
-
-// Select best voicing considering voice leading from previous chord
-// bass_root_pc: bass note pitch class (0-11) for collision avoidance, or -1 if unknown
-// rng: random number generator for tiebreaker selection
-// open_subtype: C3 - which open voicing variant to prefer
-// mood: C2 - affects parallel motion penalty
-VoicedChord selectVoicing(uint8_t root, const Chord& chord, const VoicedChord& prev_voicing,
-                          bool has_prev, VoicingType preferred_type, int bass_root_pc,
-                          std::mt19937& rng, OpenVoicingType open_subtype = OpenVoicingType::Drop2,
-                          Mood mood = Mood::StraightPop) {
-  std::vector<VoicedChord> candidates =
-      generateVoicings(root, chord, preferred_type, bass_root_pc, open_subtype);
-
-  // Filter out voicings that clash with bass, or remove the clashing pitch
-  if (bass_root_pc >= 0) {
-    std::vector<VoicedChord> filtered;
-    for (const auto& v : candidates) {
-      if (!voicingClashesWithBass(v, bass_root_pc)) {
-        filtered.push_back(v);
-      } else {
-        // Try removing the clashing pitch
-        VoicedChord cleaned = removeClashingPitch(v, bass_root_pc);
-        if (cleaned.count >= 2) {  // Need at least 2 notes for a chord
-          filtered.push_back(cleaned);
-        }
-      }
-    }
-    if (!filtered.empty()) {
-      candidates = std::move(filtered);
-    }
-    // If all candidates clash, keep original candidates (better than nothing)
-  }
-
-  if (candidates.empty()) {
-    // Fallback: simple root position, avoiding clashing pitches
-    VoicedChord fallback{};
-    fallback.count = 0;
-    fallback.type = VoicingType::Close;
-    for (uint8_t i = 0; i < chord.note_count && i < 4; ++i) {
-      if (chord.intervals[i] >= 0) {
-        int pitch = std::clamp(root + chord.intervals[i], (int)CHORD_LOW, (int)CHORD_HIGH);
-        // Skip if clashes with bass
-        if (bass_root_pc >= 0 && clashesWithBass(pitch % 12, bass_root_pc)) {
-          continue;
-        }
-        fallback.pitches[fallback.count] = static_cast<uint8_t>(pitch);
-        fallback.count++;
-      }
-    }
-    return fallback;
-  }
-
-  if (!has_prev) {
-    // First chord: prefer the preferred type in middle register
-    // Collect tied best candidates for random selection
-    std::vector<size_t> tied_indices;
-    int best_score = -1000;
-    for (size_t i = 0; i < candidates.size(); ++i) {
-      int dist = std::abs(candidates[i].pitches[0] - MIDI_C4);  // Distance from C4
-      int type_bonus = (candidates[i].type == preferred_type) ? 50 : 0;
-      int score = type_bonus - dist;
-      if (score > best_score) {
-        tied_indices.clear();
-        tied_indices.push_back(i);
-        best_score = score;
-      } else if (score == best_score) {
-        tied_indices.push_back(i);
-      }
-    }
-    // Random selection among tied candidates
-    std::uniform_int_distribution<size_t> dist(0, tied_indices.size() - 1);
-    return candidates[tied_indices[dist(rng)]];
-  }
-
-  // Voice leading: prefer common tones, minimal movement, and preferred type
-  // Collect tied best candidates for random selection
-  std::vector<size_t> tied_indices;
-  int best_score = -1000;
-
-  for (size_t i = 0; i < candidates.size(); ++i) {
-    int common = countCommonTones(prev_voicing, candidates[i]);
-    int distance = voicingDistance(prev_voicing, candidates[i]);
-    int type_bonus = (candidates[i].type == preferred_type) ? 30 : 0;
-
-    // C2: Penalize parallel fifths/octaves based on mood
-    int parallel_penalty =
-        hasParallelFifthsOrOctaves(prev_voicing, candidates[i]) ? getParallelPenalty(mood) : 0;
-
-    // Score: prioritize type match, common tones, avoid parallels, minimize movement
-    int score = type_bonus + common * 100 + parallel_penalty - distance;
-
-    if (score > best_score) {
-      tied_indices.clear();
-      tied_indices.push_back(i);
-      best_score = score;
-    } else if (score == best_score) {
-      tied_indices.push_back(i);
-    }
-  }
-
-  // Random selection among tied candidates
-  std::uniform_int_distribution<size_t> dist(0, tied_indices.size() - 1);
-  return candidates[tied_indices[dist(rng)]];
-}
-
-// Chord rhythm pattern types
-enum class ChordRhythm {
-  Whole,    // Intro: whole note
-  Half,     // A section: half notes
-  Quarter,  // B section: quarter notes
-  Eighth    // Chorus: eighth note pulse
-};
-
-// Check if a chord degree is the dominant (V)
-bool isDominant(int8_t degree) {
-  return degree == 4;  // V chord
-}
-
-// Select appropriate chord extension based on context
+/// Select appropriate chord extension based on context
 ChordExtension selectChordExtension(int8_t degree, SectionType section, int bar_in_section,
                                     int section_bars, const ChordExtensionParams& ext_params,
                                     std::mt19937& rng) {
@@ -883,210 +140,7 @@ ChordExtension selectChordExtension(int8_t degree, SectionType section, int bar_
   return ChordExtension::None;
 }
 
-// Check if the next section is a Chorus (for cadence preparation)
-bool shouldAddDominantPreparation(SectionType current, SectionType next, int8_t current_degree,
-                                  Mood mood) {
-  // Only add dominant preparation before Chorus
-  if (next != SectionType::Chorus) return false;
-
-  // Skip for ballads (too dramatic)
-  if (MoodClassification::isBallad(mood)) return false;
-
-  // Don't add if already on dominant
-  if (isDominant(current_degree)) return false;
-
-  // Add for B -> Chorus transition
-  return current == SectionType::B;
-}
-
-// Check if section ending needs a cadence fix for irregular progression lengths
-// Returns true if the progression ends mid-cycle at section end
-bool needsCadenceFix(uint8_t section_bars, uint8_t progression_length, SectionType section,
-                     SectionType next_section) {
-  // Only apply to main content sections
-  if (section == SectionType::Intro || section == SectionType::Interlude ||
-      section == SectionType::Outro) {
-    return false;
-  }
-
-  // Check if progression divides evenly into section
-  if (section_bars % progression_length == 0) {
-    return false;  // Progression completes naturally
-  }
-
-  // Only apply before sections that need resolution (A, Chorus)
-  if (next_section == SectionType::Intro || next_section == SectionType::Outro) {
-    return false;
-  }
-
-  return true;  // Need to insert cadence
-}
-
-// Check if section type allows anticipation
-bool allowsAnticipation(SectionType section) {
-  return getSectionProperties(section).allows_anticipation;
-}
-
-// Adjust rhythm one level sparser
-ChordRhythm adjustSparser(ChordRhythm rhythm) {
-  switch (rhythm) {
-    case ChordRhythm::Eighth:
-      return ChordRhythm::Quarter;
-    case ChordRhythm::Quarter:
-      return ChordRhythm::Half;
-    case ChordRhythm::Half:
-      return ChordRhythm::Whole;
-    case ChordRhythm::Whole:
-      return ChordRhythm::Whole;
-  }
-  return rhythm;
-}
-
-// Adjust rhythm one level denser
-ChordRhythm adjustDenser(ChordRhythm rhythm) {
-  switch (rhythm) {
-    case ChordRhythm::Whole:
-      return ChordRhythm::Half;
-    case ChordRhythm::Half:
-      return ChordRhythm::Quarter;
-    case ChordRhythm::Quarter:
-      return ChordRhythm::Eighth;
-    case ChordRhythm::Eighth:
-      return ChordRhythm::Eighth;
-  }
-  return rhythm;
-}
-
-// Select rhythm pattern based on section, mood, and backing density
-// Uses RNG to add variation while respecting musical constraints
-// Design: Express energy through voicing spread, not rhythm density.
-// Keep chord rhythms relaxed to give vocals room to breathe.
-// Energy progression: Intro(static) -> A(relaxed) -> B(building) -> Chorus(release)
-ChordRhythm selectRhythm(SectionType section, Mood mood, BackingDensity backing_density,
-                         std::mt19937& rng) {
-  bool is_ballad = MoodClassification::isBallad(mood);
-  bool is_energetic = MoodClassification::isDanceOriented(mood) || mood == Mood::BrightUpbeat;
-
-  // Allowed rhythms for each section with weights (first is most likely)
-  // Weights: [0]=primary, [1]=secondary, [2]=rare
-  std::vector<ChordRhythm> allowed;
-  std::array<float, 3> weights = {0.60f, 0.30f, 0.10f};  // Default weights
-
-  switch (section) {
-    case SectionType::Intro:
-    case SectionType::Interlude:
-      // Intro/Interlude: very static (70% Whole, 30% Half)
-      allowed = {ChordRhythm::Whole, ChordRhythm::Half};
-      weights = {0.70f, 0.30f, 0.0f};
-      break;
-    case SectionType::Outro:
-      // Outro: winding down (50% Half, 50% Whole)
-      allowed = {ChordRhythm::Half, ChordRhythm::Whole};
-      weights = {0.50f, 0.50f, 0.0f};
-      break;
-    case SectionType::A:
-      // A section: relaxed foundation (40% Whole, 50% Half, 10% Quarter)
-      if (is_ballad) {
-        allowed = {ChordRhythm::Whole, ChordRhythm::Half};
-        weights = {0.60f, 0.40f, 0.0f};
-      } else {
-        allowed = {ChordRhythm::Whole, ChordRhythm::Half, ChordRhythm::Quarter};
-        weights = {0.40f, 0.50f, 0.10f};
-      }
-      break;
-    case SectionType::B:
-      // B section: building anticipation (50% Half, 40% Quarter, 10% Eighth)
-      if (is_ballad) {
-        allowed = {ChordRhythm::Half, ChordRhythm::Quarter};
-        weights = {0.70f, 0.30f, 0.0f};
-      } else {
-        allowed = {ChordRhythm::Half, ChordRhythm::Quarter, ChordRhythm::Eighth};
-        weights = {0.50f, 0.40f, 0.10f};
-      }
-      break;
-    case SectionType::Chorus:
-      // Chorus: spacious release - give vocals room to breathe
-      // Avoid excessive eighth-note strumming
-      if (is_ballad) {
-        allowed = {ChordRhythm::Half, ChordRhythm::Quarter};
-        weights = {0.65f, 0.35f, 0.0f};
-      } else if (is_energetic) {
-        // Even energetic moods: reduce eighth-note density significantly
-        // (50% Quarter, 35% Half, 15% Eighth)
-        allowed = {ChordRhythm::Quarter, ChordRhythm::Half, ChordRhythm::Eighth};
-        weights = {0.50f, 0.35f, 0.15f};
-      } else {
-        // Normal: balanced (45% Half, 45% Quarter, 10% Eighth)
-        allowed = {ChordRhythm::Half, ChordRhythm::Quarter, ChordRhythm::Eighth};
-        weights = {0.45f, 0.45f, 0.10f};
-      }
-      break;
-    case SectionType::Bridge:
-      // Bridge: introspective, static (40% Whole, 50% Half, 10% Quarter)
-      if (is_ballad) {
-        allowed = {ChordRhythm::Whole, ChordRhythm::Half};
-        weights = {0.60f, 0.40f, 0.0f};
-      } else {
-        allowed = {ChordRhythm::Whole, ChordRhythm::Half, ChordRhythm::Quarter};
-        weights = {0.40f, 0.50f, 0.10f};
-      }
-      break;
-    case SectionType::Chant:
-      // Chant section: sustained whole notes (no variation)
-      allowed = {ChordRhythm::Whole};
-      weights = {1.0f, 0.0f, 0.0f};
-      break;
-    case SectionType::MixBreak:
-      // MIX section: driving patterns (still use eighth here for EDM feel)
-      if (is_energetic) {
-        allowed = {ChordRhythm::Eighth, ChordRhythm::Quarter};
-        weights = {0.60f, 0.40f, 0.0f};
-      } else {
-        allowed = {ChordRhythm::Quarter, ChordRhythm::Eighth};
-        weights = {0.60f, 0.40f, 0.0f};
-      }
-      break;
-    case SectionType::Drop:
-      // Drop section: energetic patterns for EDM feel (like MixBreak but slightly denser)
-      if (is_energetic) {
-        allowed = {ChordRhythm::Eighth, ChordRhythm::Quarter};
-        weights = {0.70f, 0.30f, 0.0f};
-      } else {
-        allowed = {ChordRhythm::Quarter, ChordRhythm::Half};
-        weights = {0.60f, 0.40f, 0.0f};
-      }
-      break;
-  }
-
-  // Weighted random selection based on computed weights
-  ChordRhythm selected;
-  if (allowed.size() == 1) {
-    selected = allowed[0];
-  } else {
-    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-    float roll = dist(rng);
-    float cumulative = 0.0f;
-    selected = allowed[0];  // Default fallback
-    for (size_t i = 0; i < allowed.size(); ++i) {
-      cumulative += weights[i];
-      if (roll < cumulative) {
-        selected = allowed[i];
-        break;
-      }
-    }
-  }
-
-  // Adjust rhythm based on backing density
-  if (backing_density == BackingDensity::Thin) {
-    selected = adjustSparser(selected);
-  } else if (backing_density == BackingDensity::Thick) {
-    selected = adjustDenser(selected);
-  }
-
-  return selected;
-}
-
-// Generate chord notes for one bar using HarmonyContext for collision detection
+/// Generate chord notes for one bar using HarmonyContext for collision detection
 void generateChordBar(MidiTrack& track, Tick bar_start, const VoicedChord& voicing,
                       ChordRhythm rhythm, SectionType section, Mood mood,
                       const IHarmonyContext& harmony) {
@@ -1251,7 +305,8 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
     SectionType next_section_type =
         (sec_idx + 1 < sections.size()) ? sections[sec_idx + 1].type : section.type;
 
-    ChordRhythm rhythm = selectRhythm(section.type, params.mood, section.getEffectiveBackingDensity(), rng);
+    ChordRhythm rhythm = chord_voicing::selectRhythm(section.type, params.mood,
+                                                     section.getEffectiveBackingDensity(), rng);
     HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, params.mood);
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
@@ -1357,7 +412,8 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
       }
 
       // Select voicing type with bass coordination
-      VoicingType voicing_type = selectVoicingType(section.type, params.mood, bass_has_root, &rng);
+      VoicingType voicing_type =
+          chord_voicing::selectVoicingType(section.type, params.mood, bass_has_root, &rng);
 
       // PeakLevel enhancement: prefer Open voicing for thicker texture
       // Medium peak and above get more open voicings for fuller sound
@@ -1370,21 +426,23 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         }
       }
 
-      // C3: Select open voicing subtype based on context
+      // Select open voicing subtype based on context
       OpenVoicingType open_subtype =
-          selectOpenVoicingSubtype(section.type, params.mood, chord, rng);
+          chord_voicing::selectOpenVoicingSubtype(section.type, params.mood, chord, rng);
 
       // Select voicing with voice leading and type consideration
-      // Pass bass_root_pc to avoid clashes with bass, mood for C2 parallel penalty
-      VoicedChord voicing = selectVoicing(root, chord, prev_voicing, has_prev, voicing_type,
-                                          bass_root_pc, rng, open_subtype, params.mood);
+      // Pass bass_root_pc to avoid clashes with bass, mood for parallel penalty
+      VoicedChord voicing = chord_voicing::selectVoicing(root, chord, prev_voicing, has_prev,
+                                                         voicing_type, bass_root_pc, rng,
+                                                         open_subtype, params.mood);
 
       // Check if this is the last bar of the section (for cadence preparation)
       bool is_section_last_bar = (bar == section.bars - 1);
 
       // Add dominant preparation before Chorus
       if (is_section_last_bar &&
-          shouldAddDominantPreparation(section.type, next_section_type, degree, params.mood)) {
+          chord_voicing::shouldAddDominantPreparation(section.type, next_section_type,
+                                                      degree, params.mood)) {
         auto isSafe = [&](uint8_t pitch, Tick start, Tick duration) -> bool {
           return harmony.isPitchSafe(pitch, start, duration, TrackRole::Chord);
         };
@@ -1409,8 +467,9 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         ChordExtension dom_ext =
             params.chord_extension.enable_7th ? ChordExtension::Dom7 : ChordExtension::None;
         Chord dom_chord = getExtendedChord(dominant_degree, dom_ext);
-        VoicedChord dom_voicing = selectVoicing(dom_root, dom_chord, voicing, true, voicing_type,
-                                                bass_root_pc, rng, open_subtype, params.mood);
+        VoicedChord dom_voicing = chord_voicing::selectVoicing(dom_root, dom_chord, voicing, true,
+                                                               voicing_type, bass_root_pc, rng,
+                                                               open_subtype, params.mood);
 
         uint8_t vel_accent = static_cast<uint8_t>(std::min(127, vel + 5));
         for (size_t idx = 0; idx < dom_voicing.count; ++idx) {
@@ -1426,8 +485,9 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
       // Fix cadence for irregular progression lengths (e.g., 5-chord in 8-bar section)
       // Insert ii-V in last 2 bars when progression ends mid-cycle
       bool is_second_last_bar = (bar == section.bars - 2);
-      if (is_section_last_bar && !isDominant(degree) &&
-          needsCadenceFix(section.bars, progression.length, section.type, next_section_type)) {
+      if (is_section_last_bar && !chord_voicing::isDominant(degree) &&
+          chord_voicing::needsCadenceFix(section.bars, progression.length, section.type,
+                                         next_section_type)) {
         // Last bar: insert V chord
         int8_t dominant_degree = 4;  // V
         uint8_t dom_root = degreeToRoot(dominant_degree, Key::C);
@@ -1435,8 +495,8 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
             params.chord_extension.enable_7th ? ChordExtension::Dom7 : ChordExtension::None;
         Chord dom_chord = getExtendedChord(dominant_degree, dom_ext);
         VoicedChord dom_voicing =
-            selectVoicing(dom_root, dom_chord, prev_voicing, has_prev, voicing_type, bass_root_pc,
-                          rng, open_subtype, params.mood);
+            chord_voicing::selectVoicing(dom_root, dom_chord, prev_voicing, has_prev, voicing_type,
+                                         bass_root_pc, rng, open_subtype, params.mood);
 
         generateChordBar(track, bar_start, dom_voicing, rhythm, section.type, params.mood, harmony);
         prev_voicing = dom_voicing;
@@ -1445,7 +505,8 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
       }
 
       if (is_second_last_bar &&
-          needsCadenceFix(section.bars, progression.length, section.type, next_section_type)) {
+          chord_voicing::needsCadenceFix(section.bars, progression.length, section.type,
+                                         next_section_type)) {
         // Second-to-last bar: insert ii chord (subdominant preparation)
         int8_t ii_degree = 1;  // ii
         uint8_t ii_root = degreeToRoot(ii_degree, Key::C);
@@ -1453,8 +514,8 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
             params.chord_extension.enable_7th ? ChordExtension::Min7 : ChordExtension::None;
         Chord ii_chord = getExtendedChord(ii_degree, ii_ext);
         VoicedChord ii_voicing =
-            selectVoicing(ii_root, ii_chord, prev_voicing, has_prev, voicing_type, bass_root_pc,
-                          rng, open_subtype, params.mood);
+            chord_voicing::selectVoicing(ii_root, ii_chord, prev_voicing, has_prev, voicing_type,
+                                         bass_root_pc, rng, open_subtype, params.mood);
 
         generateChordBar(track, bar_start, ii_voicing, rhythm, section.type, params.mood, harmony);
         prev_voicing = ii_voicing;
@@ -1502,8 +563,9 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
             uint8_t sec_dom_root = degreeToRoot(sec_dom.dominant_degree, Key::C);
             Chord sec_dom_chord = getExtendedChord(sec_dom.dominant_degree, sec_dom.extension);
             VoicedChord sec_dom_voicing =
-                selectVoicing(sec_dom_root, sec_dom_chord, voicing, true, voicing_type,
-                              bass_root_pc, rng, open_subtype, params.mood);
+                chord_voicing::selectVoicing(sec_dom_root, sec_dom_chord, voicing, true,
+                                             voicing_type, bass_root_pc, rng, open_subtype,
+                                             params.mood);
 
             uint8_t vel_accent = static_cast<uint8_t>(std::min(127, vel + 8));
             for (size_t idx = 0; idx < sec_dom_voicing.count; ++idx) {
@@ -1628,8 +690,9 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
 
         int second_half_bass_pc = second_half_root % 12;
         VoicedChord second_half_voicing =
-            selectVoicing(second_half_root, second_half_chord, voicing, true, voicing_type,
-                          second_half_bass_pc, rng, open_subtype, params.mood);
+            chord_voicing::selectVoicing(second_half_root, second_half_chord, voicing, true,
+                                         voicing_type, second_half_bass_pc, rng, open_subtype,
+                                         params.mood);
 
         for (size_t idx = 0; idx < second_half_voicing.count; ++idx) {
           if (!isSafe(second_half_voicing.pitches[idx], bar_start + HALF, HALF)) continue;
@@ -1673,8 +736,9 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         Chord next_chord = getExtendedChord(next_degree, next_ext);
 
         int next_bass_root_pc = next_root % 12;
-        VoicedChord next_voicing = selectVoicing(next_root, next_chord, voicing, true, voicing_type,
-                                                 next_bass_root_pc, rng, open_subtype, params.mood);
+        VoicedChord next_voicing = chord_voicing::selectVoicing(next_root, next_chord, voicing,
+                                                                true, voicing_type, next_bass_root_pc,
+                                                                rng, open_subtype, params.mood);
 
         uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
         for (size_t idx = 0; idx < next_voicing.count; ++idx) {
@@ -1737,7 +801,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
       // Apply on bars 1, 3, 5 (even sections get every other bar anticipation)
       bool is_not_last_bar = (bar < section.bars - 1);
       bool deterministic_ant = (bar % 2 == 1);  // Bars 1, 3, 5, etc.
-      if (is_not_last_bar && allowsAnticipation(section.type) && deterministic_ant) {
+      if (is_not_last_bar && chord_voicing::allowsAnticipation(section.type) && deterministic_ant) {
         // Skip for A/Bridge sections to keep them more stable
         if (section.type != SectionType::A && section.type != SectionType::Bridge) {
           int next_bar = bar + 1;
@@ -1785,211 +849,6 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
   }
 }
 
-// Get Aux pitch class at a specific tick (returns -1 if no note sounding)
-int getAuxPitchClassAt(const MidiTrack* aux_track, Tick tick) {
-  if (aux_track == nullptr) return -1;
-
-  for (const auto& note : aux_track->notes()) {
-    Tick note_end = note.start_tick + note.duration;
-    if (note.start_tick <= tick && tick < note_end) {
-      return note.note % 12;
-    }
-  }
-  return -1;
-}
-
-// Check if a pitch class creates a minor/major 2nd interval with any of the given pitch classes
-bool clashesWithPitchClasses(int pc, const std::vector<int>& pitch_classes) {
-  for (int other_pc : pitch_classes) {
-    int interval = std::abs(pc - other_pc);
-    if (interval > 6) interval = 12 - interval;
-    if (interval == 1 || interval == 2) {  // Minor 2nd or Major 2nd clash
-      return true;
-    }
-  }
-  return false;
-}
-
-// Filter voicings to avoid doubling vocal pitch class and clashing with Aux/Motif
-// Returns filtered voicings, or original candidates if all are filtered
-std::vector<VoicedChord> filterVoicingsForContext(const std::vector<VoicedChord>& candidates,
-                                                  int vocal_pc, int aux_pc, int bass_root_pc,
-                                                  const std::vector<int>& motif_pcs = {}) {
-  std::vector<VoicedChord> filtered;
-
-  for (const auto& v : candidates) {
-    bool has_vocal_clash = false;
-    bool has_aux_clash = false;
-    bool has_bass_clash = false;
-    bool has_motif_clash = false;
-
-    for (uint8_t i = 0; i < v.count; ++i) {
-      int pc = v.pitches[i] % 12;
-
-      // Priority 1: Vocal close interval clash (absolute prohibition)
-      // Unison (0), minor 2nd (1), major 2nd (2) all cause harsh dissonance
-      // Major 2nd sounds particularly harsh when chord and vocal overlap
-      if (vocal_pc >= 0) {
-        int interval = std::abs(pc - vocal_pc);
-        if (interval > 6) interval = 12 - interval;
-        if (interval <= 2) {
-          has_vocal_clash = true;
-        }
-      }
-
-      // Priority 2: Bass semitone clash
-      if (bass_root_pc >= 0 && clashesWithBass(pc, bass_root_pc)) {
-        has_bass_clash = true;
-      }
-
-      // Priority 3: Aux semitone clash
-      if (aux_pc >= 0) {
-        int interval = std::abs(pc - aux_pc);
-        if (interval > 6) interval = 12 - interval;
-        if (interval == 1) {  // Minor 2nd clash
-          has_aux_clash = true;
-        }
-      }
-
-      // Priority 4: Motif semitone clash (critical for BGM mode)
-      if (!motif_pcs.empty() && clashesWithPitchClasses(pc, motif_pcs)) {
-        has_motif_clash = true;
-      }
-    }
-
-    if (!has_vocal_clash && !has_bass_clash && !has_aux_clash && !has_motif_clash) {
-      // Perfect: no issues
-      filtered.push_back(v);
-    } else if (!has_vocal_clash) {
-      // Has bass/aux/motif clash but no vocal clash - try removing clashing pitches
-      VoicedChord modified = v;
-      modified.count = 0;
-      for (uint8_t i = 0; i < v.count; ++i) {
-        int pc = v.pitches[i] % 12;
-        bool skip = false;
-
-        // Skip if clashes with bass
-        if (bass_root_pc >= 0 && clashesWithBass(pc, bass_root_pc)) {
-          skip = true;
-        }
-
-        // Skip if clashes with aux
-        if (aux_pc >= 0 && !skip) {
-          int interval = std::abs(pc - aux_pc);
-          if (interval > 6) interval = 12 - interval;
-          if (interval == 1) skip = true;
-        }
-
-        // Skip if clashes with motif
-        if (!motif_pcs.empty() && !skip) {
-          if (clashesWithPitchClasses(pc, motif_pcs)) {
-            skip = true;
-          }
-        }
-
-        if (!skip) {
-          modified.pitches[modified.count] = v.pitches[i];
-          modified.count++;
-        }
-      }
-
-      if (modified.count >= 2) {
-        filtered.push_back(modified);
-      }
-    } else {
-      // Has vocal clash - try removing clashing pitches first
-      VoicedChord modified = v;
-      modified.count = 0;
-      for (uint8_t i = 0; i < v.count; ++i) {
-        int pc = v.pitches[i] % 12;
-        bool skip = false;
-
-        // Skip if clashes with vocal (close interval)
-        if (vocal_pc >= 0) {
-          int interval = std::abs(pc - vocal_pc);
-          if (interval > 6) interval = 12 - interval;
-          if (interval <= 2) skip = true;
-        }
-
-        // Also skip other clashes
-        if (bass_root_pc >= 0 && !skip && clashesWithBass(pc, bass_root_pc)) {
-          skip = true;
-        }
-        if (aux_pc >= 0 && !skip) {
-          int interval = std::abs(pc - aux_pc);
-          if (interval > 6) interval = 12 - interval;
-          if (interval == 1) skip = true;
-        }
-        if (!motif_pcs.empty() && !skip && clashesWithPitchClasses(pc, motif_pcs)) {
-          skip = true;
-        }
-
-        if (!skip) {
-          modified.pitches[modified.count] = v.pitches[i];
-          modified.count++;
-        }
-      }
-
-      if (modified.count >= 2) {
-        filtered.push_back(modified);
-      }
-      // If modified voicing has < 2 notes, skip it entirely
-    }
-  }
-
-  // Fallback: if all filtered out, try to create voicings that minimize motif clashes
-  if (filtered.empty()) {
-    // Try again with relaxed motif clash filtering - keep at least 2 notes even if they clash
-    for (const auto& v : candidates) {
-      VoicedChord modified = v;
-      modified.count = 0;
-
-      // First pass: collect non-clashing notes
-      for (uint8_t i = 0; i < v.count; ++i) {
-        int pc = v.pitches[i] % 12;
-        bool clashes = false;
-        if (!motif_pcs.empty() && clashesWithPitchClasses(pc, motif_pcs)) {
-          clashes = true;
-        }
-        if (!clashes) {
-          modified.pitches[modified.count] = v.pitches[i];
-          modified.count++;
-        }
-      }
-
-      // If we have at least 2 non-clashing notes, use those
-      if (modified.count >= 2) {
-        filtered.push_back(modified);
-      } else {
-        // Not enough non-clashing notes - add back some notes to get at least 2
-        // Prefer notes that don't clash, but add clashing ones if necessary
-        modified.count = 0;
-        for (uint8_t i = 0; i < v.count && modified.count < 2; ++i) {
-          int pc = v.pitches[i] % 12;
-          // Skip if clashes with vocal (highest priority)
-          if (vocal_pc >= 0) {
-            int interval = std::abs(pc - vocal_pc);
-            if (interval > 6) interval = 12 - interval;
-            if (interval <= 2) continue;
-          }
-          modified.pitches[modified.count] = v.pitches[i];
-          modified.count++;
-        }
-        if (modified.count >= 2) {
-          filtered.push_back(modified);
-        }
-      }
-    }
-
-    // If still empty, return original candidates as last resort
-    if (filtered.empty()) {
-      return candidates;
-    }
-  }
-
-  return filtered;
-}
-
 // Internal implementation of generateChordTrackWithContext (with vocal context).
 void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
                                        const GeneratorParams& params, std::mt19937& rng,
@@ -2025,7 +884,8 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
     SectionType next_section_type =
         (sec_idx + 1 < sections.size()) ? sections[sec_idx + 1].type : section.type;
 
-    ChordRhythm rhythm = selectRhythm(section.type, params.mood, section.getEffectiveBackingDensity(), rng);
+    ChordRhythm rhythm = chord_voicing::selectRhythm(section.type, params.mood,
+                                                     section.getEffectiveBackingDensity(), rng);
     HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, params.mood);
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
@@ -2099,7 +959,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
 
       // Get context pitch classes for this bar
       int vocal_pc = getVocalPitchClassAt(vocal_analysis, bar_start);
-      int aux_pc = getAuxPitchClassAt(aux_track, bar_start);
+      int aux_pc = chord_voicing::getAuxPitchClassAt(aux_track, bar_start);
 
       // Get Motif pitch classes for entire bar (chord sustains through the bar)
       Tick bar_end = bar_start + TICKS_PER_BAR;
@@ -2123,7 +983,8 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
       }
 
       // Select voicing type with bass coordination
-      VoicingType voicing_type = selectVoicingType(section.type, params.mood, bass_has_root, &rng);
+      VoicingType voicing_type =
+          chord_voicing::selectVoicingType(section.type, params.mood, bass_has_root, &rng);
 
       // PeakLevel enhancement: prefer Open voicing for thicker texture
       if (section.peak_level >= PeakLevel::Medium && voicing_type == VoicingType::Close) {
@@ -2135,15 +996,16 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
       }
 
       OpenVoicingType open_subtype =
-          selectOpenVoicingSubtype(section.type, params.mood, chord, rng);
+          chord_voicing::selectOpenVoicingSubtype(section.type, params.mood, chord, rng);
 
       // Generate all candidate voicings
       std::vector<VoicedChord> candidates =
-          generateVoicings(root, chord, voicing_type, bass_root_pc, open_subtype);
+          chord_voicing::generateVoicings(root, chord, voicing_type, bass_root_pc, open_subtype);
 
       // Filter voicings for vocal/aux/bass/motif context
       std::vector<VoicedChord> filtered =
-          filterVoicingsForContext(candidates, vocal_pc, aux_pc, bass_root_pc, motif_pcs);
+          chord_voicing::filterVoicingsForContext(candidates, vocal_pc, aux_pc, bass_root_pc,
+                                                  motif_pcs);
 
       // Select best voicing from filtered candidates with voice leading
       VoicedChord voicing;
@@ -2156,7 +1018,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
             int pitch = std::clamp(root + chord.intervals[i], (int)CHORD_LOW, (int)CHORD_HIGH);
             int pc = pitch % 12;
             // Skip pitch if it clashes with motif (minor/major 2nd)
-            if (!motif_pcs.empty() && clashesWithPitchClasses(pc, motif_pcs)) {
+            if (!motif_pcs.empty() && chord_voicing::clashesWithPitchClasses(pc, motif_pcs)) {
               continue;
             }
             voicing.pitches[voicing.count] = static_cast<uint8_t>(pitch);
@@ -2198,12 +1060,13 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         std::vector<size_t> tied_indices;
         int best_score = -1000;
         for (size_t i = 0; i < filtered.size(); ++i) {
-          int common = countCommonTones(prev_voicing, filtered[i]);
-          int distance = voicingDistance(prev_voicing, filtered[i]);
+          int common = chord_voicing::countCommonTones(prev_voicing, filtered[i]);
+          int distance = chord_voicing::voicingDistance(prev_voicing, filtered[i]);
           int type_bonus = (filtered[i].type == voicing_type) ? 30 : 0;
-          int parallel_penalty = hasParallelFifthsOrOctaves(prev_voicing, filtered[i])
-                                     ? getParallelPenalty(params.mood)
-                                     : 0;
+          int parallel_penalty =
+              chord_voicing::hasParallelFifthsOrOctaves(prev_voicing, filtered[i])
+                  ? chord_voicing::getParallelPenalty(params.mood)
+                  : 0;
           int score = type_bonus + common * 100 + parallel_penalty - distance;
           if (score > best_score) {
             tied_indices.clear();
@@ -2221,7 +1084,8 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
       bool is_section_last_bar = (bar == section.bars - 1);
 
       if (is_section_last_bar &&
-          shouldAddDominantPreparation(section.type, next_section_type, degree, params.mood)) {
+          chord_voicing::shouldAddDominantPreparation(section.type, next_section_type,
+                                                      degree, params.mood)) {
         auto isSafe = [&](uint8_t pitch, Tick start, Tick duration) -> bool {
           return harmony.isPitchSafe(pitch, start, duration, TrackRole::Chord);
         };
@@ -2246,11 +1110,13 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
 
         // Generate dominant voicing
         auto dom_candidates =
-            generateVoicings(dom_root, dom_chord, voicing_type, bass_root_pc, open_subtype);
+            chord_voicing::generateVoicings(dom_root, dom_chord, voicing_type, bass_root_pc,
+                                            open_subtype);
         VoicedChord dom_voicing =
-            dom_candidates.empty() ? selectVoicing(dom_root, dom_chord, voicing, true, voicing_type,
-                                                   bass_root_pc, rng, open_subtype, params.mood)
-                                   : dom_candidates[0];
+            dom_candidates.empty()
+                ? chord_voicing::selectVoicing(dom_root, dom_chord, voicing, true, voicing_type,
+                                               bass_root_pc, rng, open_subtype, params.mood)
+                : dom_candidates[0];
 
         uint8_t vel_accent = static_cast<uint8_t>(std::min(127, vel + 5));
         for (size_t idx = 0; idx < dom_voicing.count; ++idx) {
@@ -2265,8 +1131,9 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
 
       // Cadence fix for irregular progression lengths
       bool is_second_last_bar = (bar == section.bars - 2);
-      if (is_section_last_bar && !isDominant(degree) &&
-          needsCadenceFix(section.bars, progression.length, section.type, next_section_type)) {
+      if (is_section_last_bar && !chord_voicing::isDominant(degree) &&
+          chord_voicing::needsCadenceFix(section.bars, progression.length, section.type,
+                                         next_section_type)) {
         int8_t dominant_degree = 4;
         uint8_t dom_root = degreeToRoot(dominant_degree, Key::C);
         ChordExtension dom_ext =
@@ -2274,13 +1141,16 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         Chord dom_chord = getExtendedChord(dominant_degree, dom_ext);
 
         auto dom_candidates =
-            generateVoicings(dom_root, dom_chord, voicing_type, bass_root_pc, open_subtype);
+            chord_voicing::generateVoicings(dom_root, dom_chord, voicing_type, bass_root_pc,
+                                            open_subtype);
         auto dom_filtered =
-            filterVoicingsForContext(dom_candidates, vocal_pc, aux_pc, bass_root_pc, motif_pcs);
+            chord_voicing::filterVoicingsForContext(dom_candidates, vocal_pc, aux_pc, bass_root_pc,
+                                                    motif_pcs);
         VoicedChord dom_voicing =
             dom_filtered.empty()
-                ? selectVoicing(dom_root, dom_chord, prev_voicing, has_prev, voicing_type,
-                                bass_root_pc, rng, open_subtype, params.mood)
+                ? chord_voicing::selectVoicing(dom_root, dom_chord, prev_voicing, has_prev,
+                                               voicing_type, bass_root_pc, rng, open_subtype,
+                                               params.mood)
                 : dom_filtered[0];
 
         generateChordBar(track, bar_start, dom_voicing, rhythm, section.type, params.mood, harmony);
@@ -2290,7 +1160,8 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
       }
 
       if (is_second_last_bar &&
-          needsCadenceFix(section.bars, progression.length, section.type, next_section_type)) {
+          chord_voicing::needsCadenceFix(section.bars, progression.length, section.type,
+                                         next_section_type)) {
         int8_t ii_degree = 1;
         uint8_t ii_root = degreeToRoot(ii_degree, Key::C);
         ChordExtension ii_ext =
@@ -2298,13 +1169,16 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         Chord ii_chord = getExtendedChord(ii_degree, ii_ext);
 
         auto ii_candidates =
-            generateVoicings(ii_root, ii_chord, voicing_type, bass_root_pc, open_subtype);
+            chord_voicing::generateVoicings(ii_root, ii_chord, voicing_type, bass_root_pc,
+                                            open_subtype);
         auto ii_filtered =
-            filterVoicingsForContext(ii_candidates, vocal_pc, aux_pc, bass_root_pc, motif_pcs);
+            chord_voicing::filterVoicingsForContext(ii_candidates, vocal_pc, aux_pc, bass_root_pc,
+                                                    motif_pcs);
         VoicedChord ii_voicing =
             ii_filtered.empty()
-                ? selectVoicing(ii_root, ii_chord, prev_voicing, has_prev, voicing_type,
-                                bass_root_pc, rng, open_subtype, params.mood)
+                ? chord_voicing::selectVoicing(ii_root, ii_chord, prev_voicing, has_prev,
+                                               voicing_type, bass_root_pc, rng, open_subtype,
+                                               params.mood)
                 : ii_filtered[0];
 
         generateChordBar(track, bar_start, ii_voicing, rhythm, section.type, params.mood, harmony);
@@ -2405,12 +1279,14 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         Chord second_half_chord = getExtendedChord(second_half_degree, second_half_ext);
 
         int second_half_bass_pc = second_half_root % 12;
-        auto second_half_candidates = generateVoicings(second_half_root, second_half_chord,
-                                                       voicing_type, second_half_bass_pc, open_subtype);
+        auto second_half_candidates =
+            chord_voicing::generateVoicings(second_half_root, second_half_chord, voicing_type,
+                                            second_half_bass_pc, open_subtype);
         VoicedChord second_half_voicing =
             second_half_candidates.empty()
-                ? selectVoicing(second_half_root, second_half_chord, voicing, true, voicing_type,
-                                second_half_bass_pc, rng, open_subtype, params.mood)
+                ? chord_voicing::selectVoicing(second_half_root, second_half_chord, voicing, true,
+                                               voicing_type, second_half_bass_pc, rng, open_subtype,
+                                               params.mood)
                 : second_half_candidates[0];
 
         for (size_t idx = 0; idx < second_half_voicing.count; ++idx) {
@@ -2452,11 +1328,12 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
 
         int next_bass_root_pc = next_root % 12;
         auto next_candidates =
-            generateVoicings(next_root, next_chord, voicing_type, next_bass_root_pc, open_subtype);
+            chord_voicing::generateVoicings(next_root, next_chord, voicing_type, next_bass_root_pc,
+                                            open_subtype);
         VoicedChord next_voicing =
             next_candidates.empty()
-                ? selectVoicing(next_root, next_chord, voicing, true, voicing_type,
-                                next_bass_root_pc, rng, open_subtype, params.mood)
+                ? chord_voicing::selectVoicing(next_root, next_chord, voicing, true, voicing_type,
+                                               next_bass_root_pc, rng, open_subtype, params.mood)
                 : next_candidates[0];
 
         uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
@@ -2513,7 +1390,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
       // Anticipation
       bool is_not_last_bar = (bar < section.bars - 1);
       bool deterministic_ant = (bar % 2 == 1);
-      if (is_not_last_bar && allowsAnticipation(section.type) && deterministic_ant) {
+      if (is_not_last_bar && chord_voicing::allowsAnticipation(section.type) && deterministic_ant) {
         if (section.type != SectionType::A && section.type != SectionType::Bridge) {
           int next_bar = bar + 1;
           int next_chord_idx = (harmonic.density == HarmonicDensity::Slow)

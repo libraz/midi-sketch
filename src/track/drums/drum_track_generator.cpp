@@ -1,0 +1,357 @@
+/**
+ * @file drum_track_generator.cpp
+ * @brief Implementation of unified drum track generation.
+ */
+
+#include "track/drums/drum_track_generator.h"
+
+#include "core/euclidean_rhythm.h"
+#include "core/preset_data.h"
+#include "core/production_blueprint.h"
+#include "core/section_properties.h"
+#include "core/timing_constants.h"
+#include "core/velocity.h"
+#include "track/drums/beat_processors.h"
+#include "track/drums/drum_constants.h"
+#include "track/drums/fill_generator.h"
+#include "track/drums/hihat_control.h"
+#include "track/drums/kick_patterns.h"
+#include "track/drums/percussion_generator.h"
+
+namespace midisketch {
+
+// Use the public API from drums.h
+float calculateSwingAmount(SectionType section, int bar_in_section, int total_bars,
+                          float swing_override);
+
+namespace drums {
+
+DrumSectionContext computeSectionContext(const Section& section,
+                                          const DrumGenerationParams& params,
+                                          DrumStyle style,
+                                          std::mt19937& rng) {
+  DrumSectionContext ctx;
+  ctx.style = style;
+  ctx.groove = getMoodDrumGrooveFeel(params.mood);
+  ctx.is_background_motif = params.composition_style == CompositionStyle::BackgroundMotif;
+
+  // Override style for BackgroundMotif
+  if (ctx.is_background_motif && params.motif_drum.hihat_drive) {
+    ctx.style = DrumStyle::Standard;
+  }
+
+  // RhythmSync: use straight timing
+  if (params.paradigm == GenerationParadigm::RhythmSync) {
+    ctx.groove = DrumGrooveFeel::Straight;
+  }
+
+  // Section-specific density
+  ctx.density_mult = 1.0f;
+  ctx.add_crash_accent = false;
+  switch (section.type) {
+    case SectionType::Intro:
+    case SectionType::Interlude:
+      ctx.density_mult = 0.5f;
+      break;
+    case SectionType::Outro:
+      ctx.density_mult = 0.6f;
+      break;
+    case SectionType::A:
+      ctx.density_mult = 0.7f;
+      break;
+    case SectionType::B:
+      ctx.density_mult = 0.85f;
+      break;
+    case SectionType::Chorus:
+      ctx.density_mult = 1.00f;
+      ctx.add_crash_accent = true;
+      break;
+    case SectionType::Bridge:
+      ctx.density_mult = 0.6f;
+      break;
+    case SectionType::Chant:
+      ctx.density_mult = 0.4f;
+      break;
+    case SectionType::MixBreak:
+      ctx.density_mult = 1.2f;
+      ctx.add_crash_accent = true;
+      break;
+    case SectionType::Drop:
+      ctx.density_mult = 1.1f;
+      ctx.add_crash_accent = true;
+      break;
+  }
+
+  // Adjust for backing density
+  switch (section.getEffectiveBackingDensity()) {
+    case BackingDensity::Thin:
+      ctx.density_mult *= 0.75f;
+      break;
+    case BackingDensity::Normal:
+      break;
+    case BackingDensity::Thick:
+      ctx.density_mult *= 1.15f;
+      break;
+  }
+
+  // Hi-hat level
+  ctx.hh_level = getHiHatLevel(section.type, ctx.style, section.getEffectiveBackingDensity(),
+                               params.bpm, rng, params.paradigm);
+
+  if (ctx.is_background_motif && params.motif_drum.hihat_drive &&
+      params.paradigm != GenerationParadigm::RhythmSync) {
+    ctx.hh_level = HiHatLevel::Eighth;
+  }
+
+  // Ghost notes
+  ctx.use_ghost_notes = (section.type == SectionType::B || section.type == SectionType::Chorus ||
+                         section.type == SectionType::Bridge) &&
+                        ctx.style != DrumStyle::Sparse;
+  if (ctx.is_background_motif) {
+    ctx.use_ghost_notes = false;
+  }
+
+  // Ride and hi-hat settings
+  ctx.use_ride = shouldUseRideForSection(section.type, ctx.style);
+  ctx.motif_open_hh = ctx.is_background_motif &&
+                      params.motif_drum.hihat_density == HihatDensity::EighthOpen;
+  ctx.ohh_bar_interval = getOpenHiHatBarInterval(section.type, ctx.style);
+  ctx.use_foot_hh = shouldUseFootHiHat(section.type, section.getEffectiveDrumRole());
+
+  return ctx;
+}
+
+void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
+                            const DrumGenerationParams& params,
+                            std::mt19937& rng,
+                            VocalSyncCallback vocal_sync_callback) {
+  DrumStyle style = getMoodDrumStyle(params.mood);
+  const auto& all_sections = song.arrangement().sections();
+
+  // Euclidean rhythm settings
+  const auto& blueprint = getProductionBlueprint(params.blueprint_id);
+  bool use_euclidean = false;
+  if (blueprint.euclidean_drums_percent > 0) {
+    std::uniform_int_distribution<uint8_t> dist(0, 99);
+    use_euclidean = dist(rng) < blueprint.euclidean_drums_percent;
+  }
+
+  const GrooveTemplate groove_template = getMoodGrooveTemplate(params.mood);
+  const FullGroovePattern& groove_pattern = getGroovePattern(groove_template);
+  const TimeFeel time_feel = getMoodTimeFeel(params.mood);
+
+  for (size_t sec_idx = 0; sec_idx < all_sections.size(); ++sec_idx) {
+    const auto& section = all_sections[sec_idx];
+
+    if (!hasTrack(section.track_mask, TrackMask::Drums)) {
+      continue;
+    }
+
+    bool is_last_section = (sec_idx == all_sections.size() - 1);
+    DrumSectionContext ctx = computeSectionContext(section, params, style, rng);
+
+    // Add crash cymbal accent at start of Chorus
+    if (ctx.add_crash_accent && sec_idx > 0) {
+      uint8_t crash_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(105 * ctx.density_mult)));
+      addDrumNote(track, section.start_tick, TICKS_PER_BEAT / 2, 49, crash_vel);
+    }
+
+    for (uint8_t bar = 0; bar < section.bars; ++bar) {
+      Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
+      Tick bar_end = bar_start + TICKS_PER_BAR;
+      bool is_section_last_bar = (bar == section.bars - 1);
+
+      // Crash on section starts
+      if (bar == 0) {
+        bool add_crash = false;
+        if (ctx.style == DrumStyle::Rock || ctx.style == DrumStyle::Upbeat) {
+          add_crash = (section.type == SectionType::Chorus || section.type == SectionType::B);
+        } else if (ctx.style != DrumStyle::Sparse) {
+          add_crash = (section.type == SectionType::Chorus);
+        }
+        if (add_crash) {
+          uint8_t crash_vel = calculateVelocity(section.type, 0, params.mood);
+          addDrumNote(track, bar_start, EIGHTH, CRASH, crash_vel);
+        }
+      }
+
+      // PeakLevel::Max enhancements
+      if (section.peak_level == PeakLevel::Max && bar > 0 && bar % 4 == 0) {
+        uint8_t crash_vel = static_cast<uint8_t>(calculateVelocity(section.type, 0, params.mood) * 0.9f);
+        addDrumNote(track, bar_start, EIGHTH, CRASH, crash_vel);
+      }
+
+      if (section.peak_level == PeakLevel::Max) {
+        for (uint8_t beat = 0; beat < 4; ++beat) {
+          Tick offbeat_tick = bar_start + beat * TICKS_PER_BEAT + EIGHTH;
+          uint8_t tam_vel = static_cast<uint8_t>(std::min(90.0f, 65.0f * ctx.density_mult));
+          addDrumNote(track, offbeat_tick, EIGHTH, TAMBOURINE, tam_vel);
+        }
+      }
+
+      bool peak_open_hh_24 = (section.peak_level >= PeakLevel::Medium);
+
+      // Dynamic hi-hat accent
+      bool bar_has_open_hh = false;
+      uint8_t open_hh_beat = 3;
+      if (ctx.ohh_bar_interval > 0 && (bar % ctx.ohh_bar_interval == (ctx.ohh_bar_interval - 1))) {
+        open_hh_beat = getOpenHiHatBeat(section.type, bar, rng);
+        Tick ohh_check_tick = bar_start + open_hh_beat * TICKS_PER_BEAT;
+        bar_has_open_hh = !hasCrashAtTick(track, ohh_check_tick);
+      }
+
+      // Kick pattern
+      KickPattern kick;
+      if (use_euclidean && ctx.style != DrumStyle::FourOnFloor) {
+        uint16_t eucl_kick = groove_pattern.kick;
+        if (section.type == SectionType::Intro || section.type == SectionType::Outro) {
+          eucl_kick = DrumPatternFactory::getKickPattern(section.type, ctx.style);
+        }
+        kick = euclideanToKickPattern(eucl_kick);
+      } else {
+        kick = getKickPattern(section.type, ctx.style, bar, rng);
+      }
+
+      // Vocal-synced kicks (if callback provided)
+      bool kicks_added = false;
+      if (vocal_sync_callback) {
+        uint8_t kick_velocity = calculateVelocity(section.type, 0, params.mood);
+        kicks_added = vocal_sync_callback(track, bar_start, bar_end, section, kick_velocity, rng);
+      }
+
+      // Fill type for this bar (scoped per bar, not static)
+      FillType current_fill = FillType::SnareRoll;
+
+      for (uint8_t beat = 0; beat < 4; ++beat) {
+        Tick beat_tick = bar_start + beat * TICKS_PER_BEAT;
+        uint8_t velocity = calculateVelocity(section.type, beat, params.mood);
+
+        // Check for fills
+        bool next_wants_fill = false;
+        SectionType next_section = section.type;
+        if (sec_idx + 1 < all_sections.size()) {
+          next_section = all_sections[sec_idx + 1].type;
+          next_wants_fill = all_sections[sec_idx + 1].fill_before;
+        }
+
+        // Pre-chorus buildup
+        bool in_prechorus_lift = isInPreChorusLift(section, bar, all_sections, sec_idx);
+
+        bool did_buildup = false;
+        if (in_prechorus_lift) {
+          did_buildup = generatePreChorusBuildup(track, beat_tick, beat, velocity,
+                                                  bar, section.bars, is_section_last_bar);
+        }
+
+        // Fill handling
+        uint8_t fill_start_beat = getFillStartBeat(section.energy);
+        bool should_fill = is_section_last_bar && !is_last_section && beat >= fill_start_beat &&
+                           (next_wants_fill || next_section == SectionType::Chorus) &&
+                           !did_buildup;
+
+        if (should_fill) {
+          if (beat == fill_start_beat) {
+            current_fill = selectFillType(section.type, next_section, ctx.style, rng);
+          }
+          generateFill(track, beat_tick, beat, current_fill, velocity);
+          continue;
+        }
+
+        // Kick drum
+        if (!kicks_added) {
+          float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
+          Tick adjusted_beat_tick = applyTimeFeel(beat_tick, time_feel, params.bpm);
+          generateKickForBeat(track, beat_tick, adjusted_beat_tick, kick, beat, velocity,
+                              kick_prob, in_prechorus_lift, rng);
+        }
+
+        // Snare drum
+        float snare_prob = getDrumRoleSnareProbability(section.getEffectiveDrumRole());
+        bool is_intro_first = (section.type == SectionType::Intro && bar == 0);
+        bool use_groove_snare = use_euclidean &&
+                                (groove_template == GrooveTemplate::HalfTime ||
+                                 groove_template == GrooveTemplate::Trap);
+        generateSnareForBeat(track, beat_tick, beat, velocity, section.type, ctx.style,
+                             section.getEffectiveDrumRole(), snare_prob, use_groove_snare,
+                             groove_pattern.snare, is_intro_first, in_prechorus_lift);
+
+        // Ghost notes
+        if (ctx.use_ghost_notes) {
+          generateGhostNotesForBeat(track, beat_tick, beat, velocity, section.type, params.mood,
+                                    section.getEffectiveBackingDensity(), params.bpm, use_euclidean,
+                                    groove_pattern.ghost_density / 100.0f, rng);
+        }
+
+        // Hi-hat
+        float swing_amount = calculateSwingAmount(section.type, bar, section.bars, section.swing_amount);
+        generateHiHatForBeat(track, beat_tick, beat, velocity, ctx, section.type,
+                             section.getEffectiveDrumRole(), ctx.density_mult, bar_has_open_hh,
+                             open_hh_beat, peak_open_hh_24, bar, section.bars, swing_amount,
+                             ctx.groove, params.mood, params.bpm, rng);
+      }
+
+      // Foot hi-hat (independent pedal timekeeping)
+      if (ctx.use_foot_hh && shouldPlayHiHat(section.getEffectiveDrumRole())) {
+        for (uint8_t fhh_beat = 0; fhh_beat < 4; fhh_beat += 2) {
+          Tick fhh_tick = bar_start + fhh_beat * TICKS_PER_BEAT;
+          addDrumNote(track, fhh_tick, EIGHTH, FHH, getFootHiHatVelocity(rng));
+        }
+      }
+
+      // Auxiliary percussion
+      if (!ctx.is_background_motif) {
+        PercussionConfig perc_config = getPercussionConfig(params.mood, section.type);
+        generateAuxPercussionForBar(track, bar_start, perc_config,
+                                    section.getEffectiveDrumRole(), ctx.density_mult, rng);
+      }
+    }
+  }
+}
+
+VocalSyncCallback createVocalSyncCallback(const VocalAnalysis& vocal_analysis) {
+  return [&vocal_analysis](MidiTrack& track, Tick bar_start, Tick bar_end,
+                           const Section& section, uint8_t velocity, std::mt19937& rng) -> bool {
+    // Get DrumRole-based kick probability
+    float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
+    if (kick_prob <= 0.0f) return false;
+
+    // Get vocal onsets in this bar
+    std::vector<Tick> onsets;
+    auto it = vocal_analysis.pitch_at_tick.lower_bound(bar_start);
+    while (it != vocal_analysis.pitch_at_tick.end() && it->first < bar_end) {
+      onsets.push_back(it->first);
+      ++it;
+    }
+
+    if (onsets.empty()) {
+      return false;  // No vocal in this bar, use normal pattern
+    }
+
+    std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
+
+    // Add kicks at vocal onset positions
+    for (Tick onset : onsets) {
+      // Quantize to 16th note grid
+      Tick relative = onset - bar_start;
+      Tick quantized = (relative / SIXTEENTH) * SIXTEENTH;
+      Tick kick_tick = bar_start + quantized;
+
+      // Apply DrumRole probability
+      if (kick_prob < 1.0f && prob_dist(rng) >= kick_prob) {
+        continue;
+      }
+
+      // Calculate velocity based on position in bar
+      int beat_in_bar = relative / TICKS_PER_BEAT;
+      uint8_t kick_vel =
+          (beat_in_bar == 0 || beat_in_bar == 2) ? velocity : static_cast<uint8_t>(velocity * 0.85f);
+
+      addDrumNote(track, kick_tick, EIGHTH, BD, static_cast<uint8_t>(kick_vel * kick_prob));
+    }
+
+    return true;
+  };
+}
+
+}  // namespace drums
+}  // namespace midisketch

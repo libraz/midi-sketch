@@ -134,6 +134,82 @@ std::vector<int> getAvailableTensionPitchClasses(int8_t degree) {
   return result;
 }
 
+// ============================================================================
+// ChordToneHelper Implementation
+// ============================================================================
+
+ChordToneHelper::ChordToneHelper(int8_t degree)
+    : degree_(degree),
+      root_pc_(SCALE[((degree % 7) + 7) % 7]),
+      pitch_classes_(getChordTonePitchClasses(degree)) {}
+
+bool ChordToneHelper::isChordTone(uint8_t pitch) const {
+  int pitch_class = pitch % 12;
+  return isChordTonePitchClass(pitch_class);
+}
+
+bool ChordToneHelper::isChordTonePitchClass(int pitch_class) const {
+  int normalized = ((pitch_class % 12) + 12) % 12;
+  for (int ct : pitch_classes_) {
+    if (normalized == ct) {
+      return true;
+    }
+  }
+  return false;
+}
+
+uint8_t ChordToneHelper::nearestChordTone(uint8_t pitch) const {
+  return static_cast<uint8_t>(nearestChordTonePitch(static_cast<int>(pitch), degree_));
+}
+
+uint8_t ChordToneHelper::nearestInRange(uint8_t pitch, uint8_t low, uint8_t high) const {
+  int octave = pitch / 12;
+  int best_pitch = pitch;
+  int best_dist = 1000;
+
+  for (int ct_pc : pitch_classes_) {
+    // Check multiple octaves
+    for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
+      int candidate = (octave + oct_offset) * 12 + ct_pc;
+      if (candidate < low || candidate > high) continue;
+      if (candidate < 0 || candidate > 127) continue;
+
+      int dist = std::abs(candidate - static_cast<int>(pitch));
+      if (dist < best_dist) {
+        best_dist = dist;
+        best_pitch = candidate;
+      }
+    }
+  }
+
+  return static_cast<uint8_t>(std::clamp(best_pitch, static_cast<int>(low), static_cast<int>(high)));
+}
+
+std::vector<uint8_t> ChordToneHelper::allInRange(uint8_t low, uint8_t high) const {
+  std::vector<uint8_t> result;
+
+  for (int oct = low / 12; oct <= high / 12 + 1; ++oct) {
+    for (int ct_pc : pitch_classes_) {
+      int pitch = oct * 12 + ct_pc;
+      if (pitch >= low && pitch <= high && pitch >= 0 && pitch <= 127) {
+        result.push_back(static_cast<uint8_t>(pitch));
+      }
+    }
+  }
+
+  // Sort by pitch
+  std::sort(result.begin(), result.end());
+  return result;
+}
+
+int ChordToneHelper::rootPitchClass() const {
+  return root_pc_;
+}
+
+// ============================================================================
+// Nearest Chord Tone Functions
+// ============================================================================
+
 int nearestChordTonePitch(int pitch, int8_t degree) {
   ChordTones ct = getChordTones(degree);
   int octave = pitch / 12;

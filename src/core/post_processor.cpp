@@ -10,11 +10,12 @@
 #include <cstdlib>
 #include <vector>
 
-#include "core/chord_utils.h"        // for nearestChordTonePitch
-#include "core/i_harmony_context.h"  // for IHarmonyContext
-#include "core/note_factory.h"       // for NoteSource enum
-#include "core/timing_constants.h"   // for TICK_EIGHTH
-#include "core/velocity.h"           // for DriveMapping
+#include "core/chord_utils.h"         // for nearestChordTonePitch, ChordToneHelper
+#include "core/i_harmony_context.h"   // for IHarmonyContext
+#include "core/note_factory.h"        // for NoteSource enum
+#include "core/note_timeline_utils.h" // for NoteTimeline utilities
+#include "core/timing_constants.h"    // for TICK_EIGHTH
+#include "core/velocity.h"            // for DriveMapping
 
 namespace midisketch {
 
@@ -79,27 +80,9 @@ void PostProcessor::fixVocalOverlaps(MidiTrack& vocal_track) {
     return;
   }
 
-  // Sort by startTick to ensure proper order after humanization
-  std::sort(vocal_notes.begin(), vocal_notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
-
-  for (size_t i = 0; i + 1 < vocal_notes.size(); ++i) {
-    Tick end_tick = vocal_notes[i].start_tick + vocal_notes[i].duration;
-    Tick next_start = vocal_notes[i + 1].start_tick;
-
-    // Ensure no overlap: end of current note <= start of next note
-    if (end_tick > next_start) {
-      // Guard against underflow: if same startTick, use minimum duration
-      Tick max_duration =
-          (next_start > vocal_notes[i].start_tick) ? (next_start - vocal_notes[i].start_tick) : 1;
-      vocal_notes[i].duration = max_duration;
-
-      // If still overlapping (same startTick case), shift next note
-      if (vocal_notes[i].start_tick + vocal_notes[i].duration > next_start) {
-        vocal_notes[i + 1].start_tick = vocal_notes[i].start_tick + vocal_notes[i].duration;
-      }
-    }
-  }
+  // Use NoteTimeline utilities for overlap fixing
+  NoteTimeline::sortByStartTick(vocal_notes);
+  NoteTimeline::fixOverlaps(vocal_notes);
 }
 
 SectionType PostProcessor::getSectionTypeAtTick(Tick tick, const std::vector<Section>& sections) {

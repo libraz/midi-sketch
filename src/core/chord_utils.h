@@ -85,6 +85,87 @@ int nearestChordToneWithinInterval(int target_pitch, int prev_pitch, int8_t chor
                                    const TessituraRange* tessitura = nullptr);
 
 // ============================================================================
+// ChordToneHelper - Unified chord tone operations
+// ============================================================================
+
+/**
+ * @brief Helper class for chord tone operations with a specific degree.
+ *
+ * Consolidates common chord tone checking patterns like `pitch % 12` and
+ * `std::find()` into a reusable class.
+ *
+ * Usage:
+ * @code
+ * ChordToneHelper helper(degree);
+ * if (helper.isChordTone(pitch)) { ... }
+ * uint8_t nearest = helper.nearestInRange(pitch, BASS_LOW, BASS_HIGH);
+ * @endcode
+ */
+class ChordToneHelper {
+ public:
+  /**
+   * @brief Construct helper for a specific chord degree.
+   * @param degree Scale degree (0-6 for I-vii)
+   */
+  explicit ChordToneHelper(int8_t degree);
+
+  /**
+   * @brief Check if a MIDI pitch is a chord tone.
+   * @param pitch MIDI pitch (0-127)
+   * @return true if pitch class matches any chord tone
+   */
+  bool isChordTone(uint8_t pitch) const;
+
+  /**
+   * @brief Check if a pitch class (0-11) is a chord tone.
+   * @param pitch_class Pitch class (0-11)
+   * @return true if pitch class matches any chord tone
+   */
+  bool isChordTonePitchClass(int pitch_class) const;
+
+  /**
+   * @brief Get the nearest chord tone to the given pitch.
+   * @param pitch MIDI pitch (0-127)
+   * @return Nearest chord tone pitch
+   */
+  uint8_t nearestChordTone(uint8_t pitch) const;
+
+  /**
+   * @brief Get the nearest chord tone within a pitch range.
+   * @param pitch Target MIDI pitch
+   * @param low Minimum allowed pitch
+   * @param high Maximum allowed pitch
+   * @return Nearest chord tone within range, or pitch if none found
+   */
+  uint8_t nearestInRange(uint8_t pitch, uint8_t low, uint8_t high) const;
+
+  /**
+   * @brief Get all chord tone pitches within a range.
+   * @param low Minimum pitch
+   * @param high Maximum pitch
+   * @return Vector of chord tone pitches in the range
+   */
+  std::vector<uint8_t> allInRange(uint8_t low, uint8_t high) const;
+
+  /**
+   * @brief Get the root pitch class (0-11) for this chord.
+   * @return Root pitch class
+   */
+  int rootPitchClass() const;
+
+  /**
+   * @brief Get the chord tones as pitch classes.
+   * @return Vector of pitch classes (0-11)
+   */
+  const std::vector<int>& pitchClasses() const { return pitch_classes_; }
+
+ private:
+  int8_t degree_;
+  int root_pc_;
+  std::vector<int> pitch_classes_;
+};
+
+// ============================================================================
 // Stepwise Motion Functions
 // ============================================================================
 

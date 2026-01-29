@@ -19,6 +19,7 @@
 #include "core/i_harmony_context.h"
 #include "core/mood_utils.h"
 #include "core/note_factory.h"
+#include "core/pitch_safety_builder.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
 #include "core/timing_constants.h"
@@ -545,50 +546,34 @@ BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section
 // IMPORTANT: For bass, the result must always be a chord tone to define harmony
 // VOCAL PRIORITY: If all chord tones clash with vocal, skip the note entirely
 void addSafeBassNote(MidiTrack& track, const NoteFactory& factory, Tick start, Tick duration,
-                     uint8_t pitch, uint8_t velocity, const IHarmonyContext& harmony) {
-  auto safe_note = factory.createSafe(start, duration, pitch, velocity, TrackRole::Bass,
-                                      NoteSource::BassPattern);
-  if (safe_note) {
-    track.addNote(*safe_note);
-  } else {
-    // Pitch clashes with vocal - find a safe chord tone alternative
-    // VOCAL PRIORITY: Bass must yield to vocal, but must also play chord tones
-    int8_t degree = harmony.getChordDegreeAt(start);
-    auto chord_tones = getChordTonePitchClasses(degree);
-    int octave = pitch / OCTAVE;
+                     uint8_t pitch, uint8_t velocity,
+                     [[maybe_unused]] const IHarmonyContext& harmony) {
+  // Use PitchSafetyBuilder with chord tone fallback for bass
+  // This ensures bass always plays chord tones while respecting vocal priority
+  PitchSafetyBuilder(factory)
+      .at(start, duration)
+      .withPitch(pitch)
+      .withVelocity(velocity)
+      .forTrack(TrackRole::Bass)
+      .source(NoteSource::BassPattern)
+      .fallbackToChordTone(BASS_LOW, BASS_HIGH)
+      .addTo(track);
+}
 
-    // Try each chord tone in various octaves, checking for vocal safety
-    uint8_t best_pitch = 0;
-    int best_dist = 100;
-    bool found_safe = false;
-
-    for (int ct_pc : chord_tones) {
-      // Try multiple octaves within bass range
-      for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
-        int candidate = (octave + oct_offset) * OCTAVE + ct_pc;
-        if (candidate < BASS_LOW || candidate > BASS_HIGH) continue;
-
-        // Check if this chord tone is safe (doesn't clash with vocal)
-        if (harmony.isPitchSafe(static_cast<uint8_t>(candidate), start, duration,
-                                TrackRole::Bass)) {
-          int dist = std::abs(candidate - static_cast<int>(pitch));
-          if (dist < best_dist) {
-            best_dist = dist;
-            best_pitch = static_cast<uint8_t>(candidate);
-            found_safe = true;
-          }
-        }
-      }
-    }
-
-    // If safe chord tone found, add the note
-    // Otherwise, skip the note entirely (silence is better than dissonance)
-    if (found_safe) {
-      track.addNote(factory.create(start, duration, best_pitch, velocity, NoteSource::BassPattern));
-    }
-    // Note: If no safe chord tone exists, we intentionally don't add any note.
-    // This respects vocal priority and avoids harmonic clash.
-  }
+// Helper to add a bass note with fallback when non-root pitch clashes.
+// Simplifies the common pattern: try pitch (fifth, octave, approach), fall back to chord tone.
+// Uses chord tone fallback within BASS_LOW/BASS_HIGH range for safety.
+void addBassWithRootFallback(MidiTrack& track, const NoteFactory& factory, Tick start,
+                              Tick duration, uint8_t pitch, [[maybe_unused]] uint8_t root,
+                              uint8_t velocity) {
+  PitchSafetyBuilder(factory)
+      .at(start, duration)
+      .withPitch(pitch)
+      .withVelocity(velocity)
+      .forTrack(TrackRole::Bass)
+      .source(NoteSource::BassPattern)
+      .fallbackToChordTone(BASS_LOW, BASS_HIGH)
+      .addTo(track);
 }
 
 // Add ghost notes (very quiet muted notes) on weak 16th subdivisions for rhythmic texture.
@@ -657,15 +642,8 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
         // Shorten second half, add approach on beat 4 upbeat
         addSafeBassNote(track, factory, bar_start + HALF, QUARTER + EIGHTH, root, vel_weak, harmony);
         uint8_t approach = getApproachNote(root, next_root, next_degree);
-        auto safe_approach =
-            factory.createSafe(bar_start + 3 * QUARTER + EIGHTH, EIGHTH, approach, vel_weak,
-                               TrackRole::Bass, NoteSource::BassPattern);
-        if (safe_approach) {
-          track.addNote(*safe_approach);
-        } else {
-          addSafeBassNote(track, factory, bar_start + 3 * QUARTER + EIGHTH, EIGHTH, root, vel_weak,
-                          harmony);
-        }
+        addBassWithRootFallback(track, factory, bar_start + 3 * QUARTER + EIGHTH, EIGHTH,
+                                approach, root, vel_weak);
       } else {
         addSafeBassNote(track, factory, bar_start + HALF, HALF, root, vel_weak, harmony);
       }
@@ -675,30 +653,14 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
       // A section: root on 1, fifth on 3
       addSafeBassNote(track, factory, bar_start, QUARTER, root, vel, harmony);
       addSafeBassNote(track, factory, bar_start + QUARTER, QUARTER, root, vel_weak, harmony);
-      // Fifth with safety check
-      {
-        auto safe_fifth = factory.createSafe(bar_start + 2 * QUARTER, QUARTER, fifth, vel,
-                                             TrackRole::Bass, NoteSource::BassPattern);
-        if (safe_fifth) {
-          track.addNote(*safe_fifth);
-        } else {
-          // Fallback to root if fifth clashes
-          addSafeBassNote(track, factory, bar_start + 2 * QUARTER, QUARTER, root, vel, harmony);
-        }
-      }
+      // Fifth with root fallback
+      addBassWithRootFallback(track, factory, bar_start + 2 * QUARTER, QUARTER, fifth, root, vel);
       // Beat 4: approach note when chord changes, otherwise root
       if ((is_last_bar || next_root != root) && next_root != 0) {
         addSafeBassNote(track, factory, bar_start + 3 * QUARTER, EIGHTH, root, vel_weak, harmony);
         uint8_t approach = getApproachNote(root, next_root, next_degree);
-        auto safe_approach =
-            factory.createSafe(bar_start + 3 * QUARTER + EIGHTH, EIGHTH, approach, vel_weak,
-                               TrackRole::Bass, NoteSource::BassPattern);
-        if (safe_approach) {
-          track.addNote(*safe_approach);
-        } else {
-          addSafeBassNote(track, factory, bar_start + 3 * QUARTER + EIGHTH, EIGHTH, root, vel_weak,
-                          harmony);
-        }
+        addBassWithRootFallback(track, factory, bar_start + 3 * QUARTER + EIGHTH, EIGHTH,
+                                approach, root, vel_weak);
       } else {
         addSafeBassNote(track, factory, bar_start + 3 * QUARTER, QUARTER, root, vel_weak, harmony);
       }
@@ -707,32 +669,15 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
     case BassPattern::Syncopated:
       // B section: syncopation with approach note
       addSafeBassNote(track, factory, bar_start, QUARTER, root, vel, harmony);
-      // Fifth with safety check
-      {
-        auto safe_fifth = factory.createSafe(bar_start + QUARTER, EIGHTH, fifth, vel_weak,
-                                             TrackRole::Bass, NoteSource::BassPattern);
-        if (safe_fifth) {
-          track.addNote(*safe_fifth);
-        } else {
-          // Fallback to root if fifth clashes
-          addSafeBassNote(track, factory, bar_start + QUARTER, EIGHTH, root, vel_weak, harmony);
-        }
-      }
-      addSafeBassNote(track, factory, bar_start + QUARTER + EIGHTH, EIGHTH, root, vel_weak,
-                      harmony);
+      // Fifth with root fallback
+      addBassWithRootFallback(track, factory, bar_start + QUARTER, EIGHTH, fifth, root, vel_weak);
+      addSafeBassNote(track, factory, bar_start + QUARTER + EIGHTH, EIGHTH, root, vel_weak, harmony);
       addSafeBassNote(track, factory, bar_start + 2 * QUARTER, QUARTER, root, vel, harmony);
-      // Approach note before next bar
+      // Approach note before next bar (falls back to fifth)
       if (is_last_bar || next_root != root) {
         uint8_t approach = getApproachNote(root, next_root, next_degree);
-        auto safe_note = factory.createSafe(bar_start + 3 * QUARTER + EIGHTH, EIGHTH, approach,
-                                            vel_weak, TrackRole::Bass, NoteSource::BassPattern);
-        if (safe_note) {
-          track.addNote(*safe_note);
-        } else {
-          // Fallback: use fifth with safety check
-          addSafeBassNote(track, factory, bar_start + 3 * QUARTER, QUARTER, fifth, vel_weak,
-                          harmony);
-        }
+        addBassWithRootFallback(track, factory, bar_start + 3 * QUARTER + EIGHTH, EIGHTH,
+                                approach, fifth, vel_weak);
       } else {
         addSafeBassNote(track, factory, bar_start + 3 * QUARTER, QUARTER, fifth, vel_weak, harmony);
       }
@@ -748,36 +693,15 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
         // Alternate between root and octave/fifth
         if (beat == 0) {
           addSafeBassNote(track, factory, beat_tick, EIGHTH, root, beat_vel, harmony);
-          // Octave needs safety check
-          auto safe_oct = factory.createSafe(beat_tick + EIGHTH, EIGHTH, octave, vel_weak,
-                                             TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_oct) {
-            track.addNote(*safe_oct);
-          } else {
-            addSafeBassNote(track, factory, beat_tick + EIGHTH, EIGHTH, root, vel_weak, harmony);
-          }
+          addBassWithRootFallback(track, factory, beat_tick + EIGHTH, EIGHTH, octave, root, vel_weak);
         } else if (beat == 2) {
           addSafeBassNote(track, factory, beat_tick, EIGHTH, root, beat_vel, harmony);
-          // Fifth needs safety check
-          auto safe_fifth = factory.createSafe(beat_tick + EIGHTH, EIGHTH, fifth, vel_weak,
-                                               TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_fifth) {
-            track.addNote(*safe_fifth);
-          } else {
-            addSafeBassNote(track, factory, beat_tick + EIGHTH, EIGHTH, root, vel_weak, harmony);
-          }
+          addBassWithRootFallback(track, factory, beat_tick + EIGHTH, EIGHTH, fifth, root, vel_weak);
         } else if (beat == 3 && (is_last_bar || next_root != root) && next_root != 0) {
           // Beat 4 with approach note on upbeat
           addSafeBassNote(track, factory, beat_tick, EIGHTH, root, beat_vel, harmony);
           uint8_t approach = getApproachNote(root, next_root, next_degree);
-          auto safe_approach =
-              factory.createSafe(beat_tick + EIGHTH, EIGHTH, approach, vel_weak, TrackRole::Bass,
-                                 NoteSource::BassPattern);
-          if (safe_approach) {
-            track.addNote(*safe_approach);
-          } else {
-            addSafeBassNote(track, factory, beat_tick + EIGHTH, EIGHTH, root, vel_weak, harmony);
-          }
+          addBassWithRootFallback(track, factory, beat_tick + EIGHTH, EIGHTH, approach, root, vel_weak);
         } else {
           addSafeBassNote(track, factory, beat_tick, EIGHTH, root, beat_vel, harmony);
           addSafeBassNote(track, factory, beat_tick + EIGHTH, EIGHTH, root, vel_weak, harmony);
@@ -787,55 +711,32 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
 
     case BassPattern::RhythmicDrive:
       // Drums OFF: bass provides rhythmic foundation
-      // Accented eighth notes with stronger downbeats, all with safety checks
+      // Accented eighth notes with stronger downbeats
       {
         uint8_t accent_vel = static_cast<uint8_t>(std::min(127, vel + 10));
         for (int eighth = 0; eighth < 8; ++eighth) {
           Tick tick = bar_start + eighth * EIGHTH;
           uint8_t note_vel = vel_weak;
 
-          // Beat 1: root accent
           if (eighth == 0) {
+            // Beat 1: root accent
             addSafeBassNote(track, factory, tick, EIGHTH, root, accent_vel, harmony);
-          }
-          // Beat 2&: fifth with safety check
-          else if (eighth == 3) {
-            auto safe_fifth = factory.createSafe(tick, EIGHTH, fifth, note_vel, TrackRole::Bass,
-                                                 NoteSource::BassPattern);
-            if (safe_fifth) {
-              track.addNote(*safe_fifth);
-            } else {
-              addSafeBassNote(track, factory, tick, EIGHTH, root, note_vel, harmony);
-            }
-          }
-          // Beat 3: root accent
-          else if (eighth == 4) {
+          } else if (eighth == 3) {
+            // Beat 2&: fifth with root fallback
+            addBassWithRootFallback(track, factory, tick, EIGHTH, fifth, root, note_vel);
+          } else if (eighth == 4) {
+            // Beat 3: root accent
             addSafeBassNote(track, factory, tick, EIGHTH, root, vel, harmony);
-          }
-          // Beat 4&: approach or octave with safety check
-          else if (eighth == 7) {
+          } else if (eighth == 7) {
+            // Beat 4&: approach or octave with root fallback
             if (next_root != root) {
               uint8_t approach = getApproachNote(root, next_root, next_degree);
-              auto safe_approach = factory.createSafe(tick, EIGHTH, approach, note_vel,
-                                                      TrackRole::Bass, NoteSource::BassPattern);
-              if (safe_approach) {
-                track.addNote(*safe_approach);
-              } else {
-                // Fallback to root with safety check
-                addSafeBassNote(track, factory, tick, EIGHTH, root, note_vel, harmony);
-              }
+              addBassWithRootFallback(track, factory, tick, EIGHTH, approach, root, note_vel);
             } else {
-              auto safe_oct = factory.createSafe(tick, EIGHTH, octave, note_vel, TrackRole::Bass,
-                                                 NoteSource::BassPattern);
-              if (safe_oct) {
-                track.addNote(*safe_oct);
-              } else {
-                addSafeBassNote(track, factory, tick, EIGHTH, root, note_vel, harmony);
-              }
+              addBassWithRootFallback(track, factory, tick, EIGHTH, octave, root, note_vel);
             }
-          }
-          // Other eighths: root
-          else {
+          } else {
+            // Other eighths: root
             addSafeBassNote(track, factory, tick, EIGHTH, root, note_vel, harmony);
           }
         }
@@ -869,88 +770,35 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
         addSafeBassNote(track, factory, bar_start, QUARTER, root, vel, harmony);
 
         // Beat 2: Next diatonic step up from root (key-relative, not chord-relative)
-        // E.g., on Em: E -> F (not F# which would be chord-relative 2nd)
         uint8_t second_note = getNextDiatonic(root, +1);
-        {
-          auto safe_second = factory.createSafe(bar_start + QUARTER, QUARTER, second_note, vel_weak,
-                                                TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_second) {
-            track.addNote(*safe_second);
-          } else {
-            addSafeBassNote(track, factory, bar_start + QUARTER, QUARTER, root, vel_weak, harmony);
-          }
-        }
+        addBassWithRootFallback(track, factory, bar_start + QUARTER, QUARTER, second_note, root, vel_weak);
 
         // Beat 3: Diatonic 3rd of the chord (always diatonic in C major context)
-        // E.g., on Em: G (minor 3rd), on C: E (major 3rd)
         uint8_t third_note = getDiatonicThird(root);
-        {
-          auto safe_third = factory.createSafe(bar_start + 2 * QUARTER, QUARTER, third_note, vel,
-                                               TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_third) {
-            track.addNote(*safe_third);
-          } else {
-            addSafeBassNote(track, factory, bar_start + 2 * QUARTER, QUARTER, root, vel, harmony);
-          }
-        }
+        addBassWithRootFallback(track, factory, bar_start + 2 * QUARTER, QUARTER, third_note, root, vel);
 
-        // Beat 4: Approach note with safety check
-        auto safe_approach = factory.createSafe(bar_start + 3 * QUARTER, QUARTER, approach_note,
-                                                vel_weak, TrackRole::Bass, NoteSource::BassPattern);
-        if (safe_approach) {
-          track.addNote(*safe_approach);
-        } else {
-          // Fallback: try fifth with safety check, then root with safety check
-          auto safe_fifth = factory.createSafe(bar_start + 3 * QUARTER, QUARTER, getFifth(root),
-                                               vel_weak, TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_fifth) {
-            track.addNote(*safe_fifth);
-          } else {
-            addSafeBassNote(track, factory, bar_start + 3 * QUARTER, QUARTER, root, vel_weak,
-                            harmony);
-          }
-        }
+        // Beat 4: Approach note (fallback to fifth, then root)
+        addBassWithRootFallback(track, factory, bar_start + 3 * QUARTER, QUARTER, approach_note, fifth, vel_weak);
       }
       break;
 
     case BassPattern::PowerDrive:
       // Rock-style pattern: Root-Fifth emphasis with aggressive accents
-      // Based on rock bass technique: power chord support
       {
         uint8_t accent_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(vel) + 10));
 
         // Beat 1: Root with accent (power)
         addSafeBassNote(track, factory, bar_start, QUARTER, root, accent_vel, harmony);
-
         // Beat 2: Fifth (rock feel - emphasizes power chord)
-        {
-          auto safe_fifth = factory.createSafe(bar_start + QUARTER, QUARTER, fifth, vel,
-                                               TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_fifth) {
-            track.addNote(*safe_fifth);
-          } else {
-            addSafeBassNote(track, factory, bar_start + QUARTER, QUARTER, root, vel, harmony);
-          }
-        }
-
+        addBassWithRootFallback(track, factory, bar_start + QUARTER, QUARTER, fifth, root, vel);
         // Beat 3: Root (re-establish)
         addSafeBassNote(track, factory, bar_start + 2 * QUARTER, QUARTER, root, vel, harmony);
-
         // Beat 4: Fifth or approach note
         if (is_last_bar || next_root != root) {
           uint8_t approach = getApproachNote(root, next_root, next_degree);
-          auto safe_approach =
-              factory.createSafe(bar_start + 3 * QUARTER, QUARTER, approach, vel_weak,
-                                 TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_approach) {
-            track.addNote(*safe_approach);
-          } else {
-            addSafeBassNote(track, factory, bar_start + 3 * QUARTER, QUARTER, fifth, vel_weak,
-                            harmony);
-          }
+          addBassWithRootFallback(track, factory, bar_start + 3 * QUARTER, QUARTER, approach, fifth, vel_weak);
         } else {
-          addSafeBassNote(track, factory, bar_start + 3 * QUARTER, QUARTER, fifth, vel_weak,
-                          harmony);
+          addSafeBassNote(track, factory, bar_start + 3 * QUARTER, QUARTER, fifth, vel_weak, harmony);
         }
       }
       break;
@@ -985,23 +833,11 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
             // On beat 4, last 16th: approach note if chord changes
             if (beat == 3 && sub == 3 && (is_last_bar || next_root != root)) {
               uint8_t approach = getApproachNote(root, next_root, next_degree);
-              auto safe_note = factory.createSafe(note_start, SIXTEENTH, approach, note_vel,
-                                                  TrackRole::Bass, NoteSource::BassPattern);
-              if (safe_note) {
-                track.addNote(*safe_note);
-              } else {
-                addSafeBassNote(track, factory, note_start, SIXTEENTH, root, note_vel, harmony);
-              }
+              addBassWithRootFallback(track, factory, note_start, SIXTEENTH, approach, root, note_vel);
             }
             // Sub-beat 2 (the "&"): occasionally use fifth
             else if (sub == 2 && (beat == 1 || beat == 3)) {
-              auto safe_fifth = factory.createSafe(note_start, SIXTEENTH, fifth, note_vel,
-                                                   TrackRole::Bass, NoteSource::BassPattern);
-              if (safe_fifth) {
-                track.addNote(*safe_fifth);
-              } else {
-                addSafeBassNote(track, factory, note_start, SIXTEENTH, root, note_vel, harmony);
-              }
+              addBassWithRootFallback(track, factory, note_start, SIXTEENTH, fifth, root, note_vel);
             }
             // Default: root
             else {
@@ -1029,36 +865,15 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
         if ((is_last_bar || next_root != root) && next_root != 0) {
           // Shorten second swell to make room for approach
           constexpr Tick SHORT_DUR = QUARTER;
-          auto safe_fifth =
-              factory.createSafe(bar_start + 2 * QUARTER + SIDECHAIN_OFFSET, SHORT_DUR, fifth, vel,
-                                 TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_fifth) {
-            track.addNote(*safe_fifth);
-          } else {
-            addSafeBassNote(track, factory, bar_start + 2 * QUARTER + SIDECHAIN_OFFSET, SHORT_DUR,
-                            root, vel, harmony);
-          }
+          addBassWithRootFallback(track, factory, bar_start + 2 * QUARTER + SIDECHAIN_OFFSET,
+                                  SHORT_DUR, fifth, root, vel);
           // Approach note
           uint8_t approach = getApproachNote(root, next_root, next_degree);
-          auto safe_approach =
-              factory.createSafe(bar_start + 3 * QUARTER + EIGHTH, EIGHTH, approach, vel_weak,
-                                 TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_approach) {
-            track.addNote(*safe_approach);
-          } else {
-            addSafeBassNote(track, factory, bar_start + 3 * QUARTER + EIGHTH, EIGHTH, root,
-                            vel_weak, harmony);
-          }
+          addBassWithRootFallback(track, factory, bar_start + 3 * QUARTER + EIGHTH, EIGHTH,
+                                  approach, root, vel_weak);
         } else {
-          auto safe_fifth =
-              factory.createSafe(bar_start + 2 * QUARTER + SIDECHAIN_OFFSET, SUSTAIN_DUR, fifth,
-                                 vel, TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_fifth) {
-            track.addNote(*safe_fifth);
-          } else {
-            addSafeBassNote(track, factory, bar_start + 2 * QUARTER + SIDECHAIN_OFFSET, SUSTAIN_DUR,
-                            root, vel, harmony);
-          }
+          addBassWithRootFallback(track, factory, bar_start + 2 * QUARTER + SIDECHAIN_OFFSET,
+                                  SUSTAIN_DUR, fifth, root, vel);
         }
       }
       break;
@@ -1073,50 +888,21 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
         // Beat 2: Passing tone (diatonic 2nd above root)
         {
           uint8_t passing = getNextDiatonic(root, +1);
-          auto safe_passing = factory.createSafe(bar_start + QUARTER, EIGHTH, passing, vel_weak,
-                                                 TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_passing) {
-            track.addNote(*safe_passing);
-          } else {
-            addSafeBassNote(track, factory, bar_start + QUARTER, EIGHTH, root, vel_weak, harmony);
-          }
+          addBassWithRootFallback(track, factory, bar_start + QUARTER, EIGHTH, passing, root, vel_weak);
           // Second half of beat 2: back to root or third
           uint8_t third = getDiatonicThird(root);
-          auto safe_third = factory.createSafe(bar_start + QUARTER + EIGHTH, EIGHTH, third,
-                                               vel_weak, TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_third) {
-            track.addNote(*safe_third);
-          } else {
-            addSafeBassNote(track, factory, bar_start + QUARTER + EIGHTH, EIGHTH, root, vel_weak,
-                            harmony);
-          }
+          addBassWithRootFallback(track, factory, bar_start + QUARTER + EIGHTH, EIGHTH, third, root, vel_weak);
         }
 
         // Beat 3: Fifth (groove anchor)
-        {
-          auto safe_fifth = factory.createSafe(bar_start + 2 * QUARTER, QUARTER, fifth, vel,
-                                               TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_fifth) {
-            track.addNote(*safe_fifth);
-          } else {
-            addSafeBassNote(track, factory, bar_start + 2 * QUARTER, QUARTER, root, vel, harmony);
-          }
-        }
+        addBassWithRootFallback(track, factory, bar_start + 2 * QUARTER, QUARTER, fifth, root, vel);
 
         // Beat 4: Chromatic or diatonic approach
         {
           uint8_t approach = (next_root != root)
                                  ? getApproachNote(root, next_root, next_degree)
                                  : getNextDiatonic(root, -1);  // Step below for groove
-          auto safe_approach =
-              factory.createSafe(bar_start + 3 * QUARTER, QUARTER, approach, vel_weak,
-                                 TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_approach) {
-            track.addNote(*safe_approach);
-          } else {
-            addSafeBassNote(track, factory, bar_start + 3 * QUARTER, QUARTER, root, vel_weak,
-                            harmony);
-          }
+          addBassWithRootFallback(track, factory, bar_start + 3 * QUARTER, QUARTER, approach, root, vel_weak);
         }
       }
       break;
@@ -1134,26 +920,11 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
           bool is_downbeat = (eighth_idx % 2 == 0);
           uint8_t note_vel = is_downbeat ? vel : vel_weak;
 
-          // Downbeats (0, 2, 4, 6): root
-          // Upbeats (1, 3, 5, 7): octave above
+          // Downbeats: root, Upbeats: octave (fallback to chord tone)
           if (is_downbeat) {
             addSafeBassNote(track, factory, note_start, EIGHTH, root, note_vel, harmony);
           } else {
-            // Try octave above, fallback to fifth if octave too high
-            auto safe_oct = factory.createSafe(note_start, EIGHTH, octave, note_vel,
-                                               TrackRole::Bass, NoteSource::BassPattern);
-            if (safe_oct) {
-              track.addNote(*safe_oct);
-            } else {
-              // Fallback: try fifth
-              auto safe_fifth = factory.createSafe(note_start, EIGHTH, fifth, note_vel,
-                                                   TrackRole::Bass, NoteSource::BassPattern);
-              if (safe_fifth) {
-                track.addNote(*safe_fifth);
-              } else {
-                addSafeBassNote(track, factory, note_start, EIGHTH, root, note_vel, harmony);
-              }
-            }
+            addBassWithRootFallback(track, factory, note_start, EIGHTH, octave, root, note_vel);
           }
         }
 
@@ -1161,13 +932,7 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
         if (use_approach) {
           Tick approach_start = bar_start + 7 * EIGHTH;
           uint8_t approach = getApproachNote(root, next_root, next_degree);
-          auto safe_approach = factory.createSafe(approach_start, EIGHTH, approach, vel_weak,
-                                                  TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_approach) {
-            track.addNote(*safe_approach);
-          } else {
-            addSafeBassNote(track, factory, approach_start, EIGHTH, root, vel_weak, harmony);
-          }
+          addBassWithRootFallback(track, factory, approach_start, EIGHTH, approach, root, vel_weak);
         }
       }
       break;
@@ -1215,25 +980,12 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
         // Use approach note if chord is changing
         if ((is_last_bar || next_root != root) && next_root != 0) {
           uint8_t approach = getApproachNote(root, next_root, next_degree);
-          auto safe_approach =
-              factory.createSafe(bar_start + 6 * EIGHTH, EIGHTH + EIGHTH, approach, vel_weak,
-                                 TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_approach) {
-            track.addNote(*safe_approach);
-          } else {
-            addSafeBassNote(track, factory, bar_start + 6 * EIGHTH, EIGHTH + EIGHTH, root, vel_weak,
-                            harmony);
-          }
+          addBassWithRootFallback(track, factory, bar_start + 6 * EIGHTH, EIGHTH + EIGHTH,
+                                  approach, root, vel_weak);
         } else {
           // Fifth on the "2" gives the pattern more movement
-          auto safe_fifth = factory.createSafe(bar_start + 6 * EIGHTH, EIGHTH + EIGHTH, fifth,
-                                               vel_weak, TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_fifth) {
-            track.addNote(*safe_fifth);
-          } else {
-            addSafeBassNote(track, factory, bar_start + 6 * EIGHTH, EIGHTH + EIGHTH, root, vel_weak,
-                            harmony);
-          }
+          addBassWithRootFallback(track, factory, bar_start + 6 * EIGHTH, EIGHTH + EIGHTH,
+                                  fifth, root, vel_weak);
         }
       }
       break;
@@ -1283,7 +1035,6 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
 
     case BassPattern::RnBNeoSoul:
       // R&B/Neo-soul pattern: Same as Groove with passing tones and smooth voice leading
-      // Treat as alias for Groove pattern
       {
         // Beat 1: Root (anchor)
         addSafeBassNote(track, factory, bar_start, QUARTER, root, vel, harmony);
@@ -1291,50 +1042,21 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
         // Beat 2: Passing tone (diatonic 2nd above root)
         {
           uint8_t passing = getNextDiatonic(root, +1);
-          auto safe_passing = factory.createSafe(bar_start + QUARTER, EIGHTH, passing, vel_weak,
-                                                 TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_passing) {
-            track.addNote(*safe_passing);
-          } else {
-            addSafeBassNote(track, factory, bar_start + QUARTER, EIGHTH, root, vel_weak, harmony);
-          }
+          addBassWithRootFallback(track, factory, bar_start + QUARTER, EIGHTH, passing, root, vel_weak);
           // Second half of beat 2: back to root or third
           uint8_t third = getDiatonicThird(root);
-          auto safe_third = factory.createSafe(bar_start + QUARTER + EIGHTH, EIGHTH, third,
-                                               vel_weak, TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_third) {
-            track.addNote(*safe_third);
-          } else {
-            addSafeBassNote(track, factory, bar_start + QUARTER + EIGHTH, EIGHTH, root, vel_weak,
-                            harmony);
-          }
+          addBassWithRootFallback(track, factory, bar_start + QUARTER + EIGHTH, EIGHTH, third, root, vel_weak);
         }
 
         // Beat 3: Fifth (groove anchor)
-        {
-          auto safe_fifth = factory.createSafe(bar_start + 2 * QUARTER, QUARTER, fifth, vel,
-                                               TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_fifth) {
-            track.addNote(*safe_fifth);
-          } else {
-            addSafeBassNote(track, factory, bar_start + 2 * QUARTER, QUARTER, root, vel, harmony);
-          }
-        }
+        addBassWithRootFallback(track, factory, bar_start + 2 * QUARTER, QUARTER, fifth, root, vel);
 
         // Beat 4: Chromatic or diatonic approach
         {
           uint8_t approach = (next_root != root)
                                  ? getApproachNote(root, next_root, next_degree)
                                  : getNextDiatonic(root, -1);  // Step below for groove
-          auto safe_approach =
-              factory.createSafe(bar_start + 3 * QUARTER, QUARTER, approach, vel_weak,
-                                 TrackRole::Bass, NoteSource::BassPattern);
-          if (safe_approach) {
-            track.addNote(*safe_approach);
-          } else {
-            addSafeBassNote(track, factory, bar_start + 3 * QUARTER, QUARTER, root, vel_weak,
-                            harmony);
-          }
+          addBassWithRootFallback(track, factory, bar_start + 3 * QUARTER, QUARTER, approach, root, vel_weak);
         }
       }
       break;
@@ -1423,14 +1145,7 @@ void generateBassHalfBar(MidiTrack& track, Tick half_start, uint8_t root, Sectio
   // Simple half-bar pattern: root + fifth or root, all with safety checks
   if (is_first_half) {
     addSafeBassNote(track, factory, half_start, QUARTER, root, vel, harmony);
-    // Fifth needs safety check
-    auto safe_fifth = factory.createSafe(half_start + QUARTER, QUARTER, fifth, vel_weak,
-                                         TrackRole::Bass, NoteSource::BassPattern);
-    if (safe_fifth) {
-      track.addNote(*safe_fifth);
-    } else {
-      addSafeBassNote(track, factory, half_start + QUARTER, QUARTER, root, vel_weak, harmony);
-    }
+    addBassWithRootFallback(track, factory, half_start + QUARTER, QUARTER, fifth, root, vel_weak);
   } else {
     // Second half: emphasize dominant with safety checks
     uint8_t accent_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(vel) + 5));

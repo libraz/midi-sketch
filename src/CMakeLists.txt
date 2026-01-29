@@ -36,18 +36,40 @@ set(MIDISKETCH_CORE_SOURCES
   core/emotion_curve.cpp
   core/swing_quantize.cpp
   core/pitch_bend_curves.cpp
+  core/pitch_safety_builder.cpp
+  core/note_timeline_utils.cpp
   midi/midi_writer.cpp
   track/track.cpp
   track/vocal.cpp
   track/phrase_variation.cpp
   track/vocal_helpers.cpp
   track/chord_track.cpp
+  track/chord_track/voicing_generator.cpp
+  track/chord_track/voice_leading.cpp
+  track/chord_track/bass_coordination.cpp
   track/bass.cpp
   track/drums.cpp
+  track/drums/drum_constants.h
+  track/drums/fill_generator.cpp
+  track/drums/ghost_notes.cpp
+  track/drums/kick_patterns.cpp
+  track/drums/hihat_control.cpp
+  track/drums/percussion_generator.cpp
+  track/drums/drum_track_generator.cpp
+  track/drums/beat_processors.cpp
   track/se.cpp
   track/motif.cpp
   track/arpeggio.cpp
   track/melody_designer.cpp
+  track/melody/melody_utils.cpp
+  track/melody/hook_rhythm_patterns.cpp
+  track/melody/pitch_resolver.cpp
+  track/melody/rhythm_generator.cpp
+  track/melody/motif_support.cpp
+  track/melody/contour_direction.cpp
+  track/melody/note_constraints.cpp
+  track/melody/pitch_constraints.cpp
+  track/melody/constraint_pipeline.cpp
   track/aux_track.cpp
   track/vocal_analysis.cpp
 )

@@ -546,9 +546,6 @@ inline VocalPhysicsParams getVocalPhysicsParams(VocalStylePreset style) {
 // EmotionCurve-based Velocity Calculations
 // ============================================================================
 
-// Forward declaration
-struct SectionEmotion;
-
 /**
  * @brief Calculate velocity ceiling based on EmotionCurve tension.
  *

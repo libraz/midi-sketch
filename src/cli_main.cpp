@@ -197,18 +197,6 @@ ActionLevel getActionLevel(const midisketch::DissonanceIssue& issue) {
   return ActionLevel::Info;
 }
 
-[[maybe_unused]] const char* actionLevelName(ActionLevel level) {
-  switch (level) {
-    case ActionLevel::Critical:
-      return "CRITICAL";
-    case ActionLevel::Warning:
-      return "WARNING";
-    case ActionLevel::Info:
-      return "INFO";
-  }
-  return "UNKNOWN";
-}
-
 const char* actionLevelColor(ActionLevel level) {
   switch (level) {
     case ActionLevel::Critical:

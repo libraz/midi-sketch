@@ -19,511 +19,61 @@
 #include "core/timing_constants.h"
 #include "core/velocity.h"
 #include "core/vocal_style_profile.h"
+#include "track/melody/constraint_pipeline.h"
+#include "track/melody/contour_direction.h"
+#include "track/melody/hook_rhythm_patterns.h"
+#include "track/melody/melody_utils.h"
+#include "track/melody/note_constraints.h"
+#include "track/melody/pitch_constraints.h"
+#include "track/melody/pitch_resolver.h"
+#include "track/melody/rhythm_generator.h"
+#include "track/melody/motif_support.h"
 
 namespace midisketch {
+
+// Import melody submodule symbols
+using melody::getBaseBreathDuration;
+using melody::getBreathDuration;
+using melody::getMotifWeightForSection;
+using melody::getRhythmUnit;
+using melody::LeapResolutionState;
+using melody::applyPitchChoiceImpl;
+using melody::calculateTargetPitchImpl;
+using melody::generatePhraseRhythmImpl;
+using melody::selectPitchForLockedRhythmImpl;
+using melody::extractGlobalMotifImpl;
+using melody::evaluateWithGlobalMotifImpl;
+using melody::getDirectionBiasForContour;
+using melody::selectPitchChoiceImpl;
+using melody::applyDirectionInertiaImpl;
+using melody::getEffectivePlateauRatioImpl;
+using melody::shouldLeapImpl;
+using melody::getStabilizeStepImpl;
+using melody::isInSameVowelSectionImpl;
+using melody::getMaxStepInVowelSectionImpl;
 
 namespace {
 
 // Default velocity for melody notes
 constexpr uint8_t DEFAULT_VELOCITY = 100;
 
-/// @brief Get effective max melodic interval considering both section type and blueprint constraints.
-/// @param section_type Section type for section-based max interval
-/// @param ctx_max_leap Blueprint constraint for max leap (from SectionContext)
-/// @return Effective max interval in semitones (minimum of section and blueprint limits)
+// Local wrapper - uses submodule function
 int getEffectiveMaxInterval(SectionType section_type, uint8_t ctx_max_leap) {
-  int section_max = getMaxMelodicIntervalForSection(section_type);
-  return std::min(section_max, static_cast<int>(ctx_max_leap));
+  return melody::getEffectiveMaxInterval(section_type, ctx_max_leap);
 }
 
-/// @brief State for tracking leap resolution across notes.
-/// When a large leap occurs, we want multiple following notes to resolve
-/// by stepwise motion in the opposite direction for natural vocal flow.
-struct LeapResolutionState {
-  bool pending = false;        ///< Leap resolution in progress
-  int8_t direction = 0;        ///< Resolution direction (-1=down, +1=up)
-  uint8_t steps_remaining = 0; ///< Number of stepwise notes remaining
-
-  /// @brief Reset state after a new leap is detected.
-  void startResolution(int leap_direction) {
-    pending = true;
-    direction = (leap_direction > 0) ? -1 : 1;  // Resolve in opposite direction
-    steps_remaining = 3;  // Resolve over next 3 notes maximum
-  }
-
-  /// @brief Check if resolution should be applied and decrement counter.
-  /// @return true if stepwise motion should be preferred
-  bool shouldApplyStep() {
-    if (!pending || steps_remaining == 0) {
-      return false;
-    }
-    steps_remaining--;
-    if (steps_remaining == 0) {
-      pending = false;
-    }
-    return true;
-  }
-
-  /// @brief Clear pending resolution (e.g., at phrase boundary).
-  void clear() {
-    pending = false;
-    direction = 0;
-    steps_remaining = 0;
-  }
-};
-
-// ============================================================================
-// GlobalMotif Weight by Section Type (Task 5-1)
-// ============================================================================
-// Adjust motif_similarity_bonus weight by section progression:
-// - A (1st): 0.10 (subtle, fragments OK)
-// - B: 0.15 (building tension, motif development)
-// - Chorus: 0.25 (maximum, hook recognition)
-// - A (2nd+): 0.20 (listener knows motif now)
-// - Bridge: 0.05 (contrast, deliberately different)
-
-/// @brief Get GlobalMotif weight multiplier for section type.
-/// @param section Section type
-/// @param section_occurrence How many times this section type has appeared (1-based)
-/// @return Weight multiplier (0.05 - 0.35)
-///
-/// Enhanced weights for stronger motivic consistency:
-/// - Chorus/Drop: 0.35 (maximum hook recognition)
-/// - B/MixBreak: 0.22 (strong tension building)
-/// - A (1st): 0.15 (introduce motif fragments)
-/// - A (2nd+): 0.25 (reinforce recognition)
-float getMotifWeightForSection(SectionType section, int section_occurrence = 1) {
-  switch (section) {
-    case SectionType::Chorus:
-    case SectionType::Drop:
-      // Maximum weight: hook recognition is paramount
-      return 0.35f;
-    case SectionType::B:
-    case SectionType::MixBreak:
-      // Building tension: stronger motif development
-      return 0.22f;
-    case SectionType::A:
-      // Verse: depends on occurrence
-      if (section_occurrence == 1) {
-        return 0.15f;  // First verse: introduce motif fragments
-      } else {
-        return 0.25f;  // Subsequent verses: reinforce recognition
-      }
-    case SectionType::Bridge:
-      // Contrast: deliberately different, minimal motif reference
-      return 0.05f;
-    case SectionType::Intro:
-    case SectionType::Interlude:
-      // Instrumental: subtle motif reference
-      return 0.10f;
-    case SectionType::Outro:
-      // Outro: recall motif for closure
-      return 0.20f;
-    case SectionType::Chant:
-      // Chant: minimal melodic content
-      return 0.05f;
-  }
-  return 0.12f;  // Default
-}
-
-// Calculate base breath duration based on section type and mood.
-// Ballads and sentimental moods get longer breaths for emotional phrasing.
-// Chorus sections get shorter breaths for drive and energy.
-// @param section Section type (Verse, Chorus, etc.)
-// @param mood Current mood setting
-// @return Base breath duration in ticks
-Tick getBaseBreathDuration(SectionType section, Mood mood) {
-  // Ballad/Sentimental: longer breath (quarter note) for emotional phrasing
-  if (mood == Mood::Ballad || mood == Mood::Sentimental) {
-    return TICK_QUARTER;
-  }
-  // Chorus: shorter breath (16th note) for drive and momentum
-  if (section == SectionType::Chorus) {
-    return TICK_SIXTEENTH;
-  }
-  // Default: 8th note breath
-  return TICK_EIGHTH;
-}
-
-// Calculate breath duration with phrase context awareness.
-// Considers phrase density and pitch to allow appropriate recovery time.
-// High density phrases and phrases reaching high pitches get longer breaths.
-// @param section Section type (Verse, Chorus, etc.)
-// @param mood Current mood setting
-// @param phrase_density Note density of the phrase (notes per beat, 0.0-2.0+)
-// @param phrase_high_pitch Highest pitch reached in the phrase (MIDI note number)
-// @param ctx Optional breath context for additional adjustments
-// @param vocal_style Vocal style preset (affects breath scale via VocalPhysicsParams)
-// @return Adjusted breath duration in ticks
-Tick getBreathDuration(SectionType section, Mood mood, float phrase_density = 0.0f,
-                       uint8_t phrase_high_pitch = 60, const BreathContext* ctx = nullptr,
-                       VocalStylePreset vocal_style = VocalStylePreset::Standard) {
-  // Get vocal physics parameters for breath scaling
-  VocalPhysicsParams physics = getVocalPhysicsParams(vocal_style);
-
-  // If style doesn't require breath (UltraVocaloid), return minimal gap
-  if (!physics.requires_breath) {
-    return TICK_SIXTEENTH / 2;  // Minimal 32nd note gap for legato feel
-  }
-
-  Tick base = getBaseBreathDuration(section, mood);
-
-  // Calculate multiplier for all adjustments
-  float mult = 1.0f;
-
-  // High density phrases need more recovery time
-  // Density > 1.0 means more than one note per beat on average
-  if (phrase_density > 1.0f) {
-    mult *= 1.3f;
-  } else if (phrase_density > 0.7f) {
-    mult *= 1.15f;
-  }
-
-  // High pitch phrases (C5=72 or above) need more breath
-  // This mimics natural singing where high notes require more breath recovery
-  if (phrase_high_pitch >= 72) {  // C5 or higher
-    mult *= 1.2f;
-  }
-
-  // Context-dependent adjustments when BreathContext is provided
-  if (ctx != nullptr) {
-    // Deep breath after high-load phrase (phrase_load > 0.7)
-    // High load indicates demanding phrase that requires more recovery
-    if (ctx->phrase_load > 0.7f) {
-      mult *= 1.2f;
-    }
-
-    // Deep breath before chorus entry at section boundary
-    // This creates dramatic pause before the hook, enhancing anticipation
-    if (ctx->next_section == SectionType::Chorus && ctx->is_section_boundary) {
-      mult *= 1.25f;
-    }
-
-    // After consecutive high phrases (G5=76 or above)
-    // Very high phrases strain the voice, requiring extra recovery
-    if (ctx->prev_phrase_high >= 76) {
-      mult *= 1.15f;
-    }
-  }
-
-  // Apply breath scale from vocal physics
-  // - Standard/Ballad: 1.0x or higher (natural human breathing)
-  // - Vocaloid: 0.3x (reduced, imitation breathing)
-  // - UltraVocaloid: 0.0x (handled above, no breath needed)
-  mult *= physics.breath_scale;
-
-  // Apply multiplier to base duration
-  Tick result = static_cast<Tick>(base * mult);
-
-  // Cap at half note to avoid excessive gaps
-  return std::min(result, TICK_HALF);
-}
-
-// Get rhythm unit based on grid type.
-// Binary grid uses 8th/16th notes, Ternary uses triplets.
-// @param grid Rhythm grid type
-// @param is_eighth Whether to use 8th note base (vs quarter)
-// @return Tick duration for the rhythm unit
-Tick getRhythmUnit(RhythmGrid grid, bool is_eighth) {
-  switch (grid) {
-    case RhythmGrid::Ternary:
-      return is_eighth ? TICK_EIGHTH_TRIPLET : TICK_QUARTER_TRIPLET;
-    case RhythmGrid::Hybrid:
-      // Hybrid uses binary as base but allows triplets in specific contexts
-      // (handled separately where needed)
-      return is_eighth ? TICK_EIGHTH : TICK_QUARTER;
-    case RhythmGrid::Binary:
-    default:
-      return is_eighth ? TICK_EIGHTH : TICK_QUARTER;
-  }
-}
-
-// Get the bass root pitch class for a given chord degree.
-// This is the note that bass will play as the harmonic foundation.
-// @param chord_degree Chord degree (0-6 for diatonic)
-// @return Pitch class of the bass root (0-11)
-int getBassRootPitchClass(int8_t chord_degree) {
-  // In diatonic system, bass plays the root of each chord
-  // Degree 0 = I (root = 0/C), Degree 1 = ii (root = 2/D), etc.
-  // Map: 0->0, 1->2, 2->4, 3->5, 4->7, 5->9, 6->11
-  constexpr int DEGREE_TO_ROOT[] = {0, 2, 4, 5, 7, 9, 11};
-  int normalized = ((chord_degree % 7) + 7) % 7;
-  return DEGREE_TO_ROOT[normalized];
-}
-
-// Check if a pitch creates an "avoid note" relationship with ANY chord tone.
-// Based on music theory: avoid notes are pitches that create:
-// - Minor 2nd (1 semitone) with any chord tone (creates harsh beating)
-// - Tritone (6 semitones) with chord root only (makes non-dominant chords sound dominant)
-// Examples where this matters:
-// - CMaj7: F (4th) is avoid because it's a minor 2nd from E (major 7th)
-// - Am: F# would be avoid because it's a minor 2nd from G (if G were a chord tone)
-// @param pitch_pc Pitch class of the melody note (0-11)
-// @param chord_tones Vector of chord tone pitch classes
-// @param root_pc Pitch class of the chord root (0-11) for tritone check
-// @return true if the pitch should be avoided on strong beats
-bool isAvoidNoteWithChord(int pitch_pc, const std::vector<int>& chord_tones, int root_pc) {
-  // Check minor 2nd (1 semitone) against ALL chord tones
-  for (int ct : chord_tones) {
-    int interval = std::abs(pitch_pc - ct);
-    if (interval > 6) interval = 12 - interval;
-    if (interval == 1) {
-      return true;  // Minor 2nd with any chord tone is avoid
-    }
-  }
-
-  // Check tritone (6 semitones) against ROOT only
-  // (Tritone with 5th is common in jazz voicings and often acceptable)
-  int root_interval = std::abs(pitch_pc - root_pc);
-  if (root_interval > 6) root_interval = 12 - root_interval;
-  if (root_interval == 6) {
-    return true;  // Tritone with root makes chord sound dominant
-  }
-
-  return false;
-}
-
-// Simplified version for backward compatibility - checks only against root
-// Use isAvoidNoteWithChord for more accurate checking when chord tones are available
-bool isAvoidNoteWithRoot(int pitch_pc, int root_pc) {
-  int interval = std::abs(pitch_pc - root_pc);
-  if (interval > 6) interval = 12 - interval;  // Normalize to 0-6
-  // Minor 2nd (1) = half step above root, creates harsh dissonance
-  // Tritone (6) = augmented 4th, makes chord sound like dominant
-  return interval == 1 || interval == 6;
-}
-
-// Get the nearest chord tone that is NOT an avoid note with the root.
-// @param current_pitch Current pitch to adjust
-// @param chord_degree Chord degree for getting chord tones
-// @param root_pc Root pitch class
-// @param vocal_low Minimum allowed pitch
-// @param vocal_high Maximum allowed pitch
-// @return Adjusted pitch (nearest safe chord tone)
-int getNearestSafeChordTone(int current_pitch, int8_t chord_degree, int root_pc, uint8_t vocal_low,
-                            uint8_t vocal_high) {
-  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
-  if (chord_tones.empty()) {
-    return std::clamp(current_pitch, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
-  }
-
-  // Initialize best_pitch to clamped current_pitch (fallback if no candidates found)
-  int best_pitch =
-      std::clamp(current_pitch, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
-  int best_distance = 100;
-
-  // Search in multiple octaves
-  for (int pc : chord_tones) {
-    // Skip if this pitch class is an avoid note with root
-    if (isAvoidNoteWithRoot(pc, root_pc)) continue;
-
-    for (int oct = 3; oct <= 6; ++oct) {
-      int candidate = oct * 12 + pc;
-      if (candidate < static_cast<int>(vocal_low) || candidate > static_cast<int>(vocal_high)) {
-        continue;
-      }
-      int dist = std::abs(candidate - current_pitch);
-      if (dist < best_distance) {
-        best_distance = dist;
-        best_pitch = candidate;
-      }
-    }
-  }
-
-  return best_pitch;
-}
-
-// Anchor tone pitch classes for Chorus/B sections (C major scale)
-// (Also known as "structural tones" or "arrival tones" in music theory)
-//
-// These pitch classes establish stable harmonic anchors for phrase starts:
-//   - C (0): Tonic - maximum stability, "home" feeling
-//   - G (7): Dominant - creates tension/expectation, strong pull to tonic
-//   - A (9): Relative minor (vi) - adds emotional color while staying diatonic
-//
-// Rationale for I, V, vi selection:
-//   - These are the most structurally important pitches in major key harmony
-//   - Using them at phrase starts creates memorable, singable hooks
-//   - The cycling pattern (I→V→vi) provides variety while maintaining coherence
-constexpr int8_t ANCHOR_TONE_PCS[] = {0, 7, 9};  // I(C), V(G), vi(A)
-
-// Get anchor tone (structural tone) for Chorus/B section phrase starts.
-// This creates a consistent starting point that makes hooks memorable.
-// @param chord_degree Current chord degree
-// @param tessitura_center Center of comfortable singing range
-// @param vocal_low Minimum pitch
-// @param vocal_high Maximum pitch
-// @returns A pitch that serves as a stable anchor for the phrase
-int getAnchorTonePitch(int8_t chord_degree, int tessitura_center, uint8_t vocal_low,
-                       uint8_t vocal_high) {
-  // Select target pitch class based on chord (cycles through I, V, vi)
-  int target_pc = ANCHOR_TONE_PCS[std::abs(chord_degree) % 3];
-  // Find the target pitch class in the octave containing tessitura center
-  int base = (tessitura_center / 12) * 12 + target_pc;
-  // Adjust to fit within vocal range
-  if (base < static_cast<int>(vocal_low)) base += 12;
-  if (base > static_cast<int>(vocal_high)) base -= 12;
-  return std::clamp(base, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
-}
-
-// Calculate number of phrases in a section
-uint8_t calculatePhraseCount(uint8_t section_bars, uint8_t phrase_length_bars) {
-  if (phrase_length_bars == 0) phrase_length_bars = 2;
-  return (section_bars + phrase_length_bars - 1) / phrase_length_bars;
-}
-
-/// @brief Apply sequential transposition to B section phrases (Zekvenz effect).
-/// Creates ascending sequence pattern to build tension before chorus.
-/// @param notes Phrase notes to transpose (modified in-place)
-/// @param phrase_index Index of the phrase within the section (0-based)
-/// @param section_type Section type (only applies to B sections)
-/// @param key_offset Key offset for scale snapping
-/// @param vocal_low Minimum vocal pitch
-/// @param vocal_high Maximum vocal pitch
-void applySequentialTransposition(std::vector<NoteEvent>& notes, uint8_t phrase_index,
-                                  SectionType section_type, int key_offset, uint8_t vocal_low,
-                                  uint8_t vocal_high) {
-  // Only apply to B sections and non-first phrases
-  if (section_type != SectionType::B || phrase_index == 0 || notes.empty()) {
-    return;
-  }
-
-  // Sequential intervals: ascending by scale-like amounts
-  // phrase 1: +2 semitones, phrase 2: +4 semitones, phrase 3+: +5 semitones
-  constexpr int8_t kSequenceIntervals[] = {0, 2, 4, 5};
-  int transpose = (phrase_index < 4) ? kSequenceIntervals[phrase_index] : 5;
-
-  for (auto& note : notes) {
-    int new_pitch = note.note + transpose;
-    // Snap to scale to avoid chromatic notes
-    new_pitch = snapToNearestScaleTone(new_pitch, key_offset);
-    // Constrain to vocal range
-    new_pitch =
-        std::clamp(new_pitch, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
-    note.note = static_cast<uint8_t>(new_pitch);
-  }
-}
-
-// ============================================================================
-// Pop Hook Rhythm Patterns
-// ============================================================================
-//
-// Based on pop music theory, hook phrases use specific rhythm patterns that
-// create catchiness through:
-// 1. Strong-weak beat alignment: longer notes on downbeats
-// 2. Syncopation: off-beat accents for groove
-// 3. Breath points: natural gaps for singability
-// 4. Motif closure: ending with longer note for resolution
-//
-// Duration values in eighths (1 = 8th note, 2 = quarter, 4 = half)
-struct HookRhythmPattern {
-  uint8_t durations[6];  // Note durations in eighths (0 = end marker)
-  uint8_t note_count;    // Number of notes in pattern
-  Tick gap_after;        // Gap after pattern (in ticks)
-  const char* name;      // Pattern name for debugging
-};
-
-// Common pop hook rhythm patterns
-// Each pattern is designed to be catchy and singable
-// ENHANCED: Added killer rhythm patterns for more variety and catchiness
-constexpr HookRhythmPattern kHookRhythmPatterns[] = {
-    // Pattern 1: "Ta-Ta-Taa" (8-8-4) - Classic buildup to resolution
-    // Example: "Bad Guy" chorus, most K-pop hooks
-    {{1, 1, 2, 0, 0, 0}, 3, TICK_EIGHTH, "buildup"},
-
-    // Pattern 2: "Taa-Ta-Ta" (4-8-8) - Syncopated start
-    // Example: "Shape of You" hook style
-    {{2, 1, 1, 0, 0, 0}, 3, TICK_EIGHTH, "syncopated"},
-
-    // Pattern 3: "Ta-Ta-Ta-Taa" (8-8-8-4) - Four-note energy
-    // Example: "Dynamite" style, high energy J-pop
-    {{1, 1, 1, 2, 0, 0}, 4, TICK_EIGHTH, "four-note"},
-
-    // Pattern 4: "Taa-Taa" (4-4) - Simple and powerful
-    // Example: "We Will Rock You" style, stadium anthems
-    {{2, 2, 0, 0, 0, 0}, 2, TICK_QUARTER, "powerful"},
-
-    // Pattern 5: "Ta-Taa-Ta" (8-4-8) - Dotted rhythm feel
-    // Example: Swing-influenced pop hooks
-    {{1, 2, 1, 0, 0, 0}, 3, TICK_EIGHTH, "dotted"},
-
-    // Pattern 6: "Taa-Ta-Ta-Ta" (4-8-8-8) - Descending energy
-    // Example: Call-and-response style hooks
-    {{2, 1, 1, 1, 0, 0}, 4, TICK_SIXTEENTH, "call-response"},
-
-    // =========================================================================
-    // NEW KILLER RHYTHM PATTERNS for enhanced catchiness
-    // =========================================================================
-
-    // Pattern 7: Syncopated burst (R-8-8-16-16)
-    // Example: Funk-influenced pop, off-beat energy
-    // The rest at the start creates anticipation, 16th notes add drive
-    {{1, 1, 1, 1, 0, 0}, 4, TICK_SIXTEENTH, "synco-burst"},
-
-    // Pattern 8: Staccato syncopation (16-R-16-R-8-8)
-    // Example: Dance-pop hooks with gaps for impact
-    // The gaps between short notes create rhythmic tension
-    {{1, 1, 1, 2, 0, 0}, 4, TICK_SIXTEENTH, "staccato-synco"},
-
-    // Pattern 9: Anticipation pattern (4-16-16-4)
-    // Example: Leaning into the beat style
-    // Long-short-short-long creates urgency
-    {{2, 1, 1, 2, 0, 0}, 4, TICK_EIGHTH, "anticipation"},
-
-    // Pattern 10: Drill pattern (16-16-16-16-16-8)
-    // Example: Rapid-fire hooks, Vocaloid style
-    // Machine-gun notes ending in resolution
-    {{1, 1, 1, 1, 1, 2}, 6, TICK_SIXTEENTH, "drill"},
-
-    // Pattern 11: 2-mora ending (8-4)
-    // Example: Classic J-pop phrase endings
-    // Simple but effective for syllable-based lyrics
-    {{1, 2, 0, 0, 0, 0}, 2, TICK_EIGHTH, "mora-2"},
-
-    // Pattern 12: 3-mora pattern (8-8-4)
-    // Example: Standard J-pop hook rhythm
-    // Maps well to 3-syllable words
-    {{1, 1, 2, 0, 0, 0}, 3, TICK_EIGHTH, "mora-3"},
-
-    // Pattern 13: 3-mora start emphasis (4-8-8)
-    // Example: Emphasis on first syllable
-    // Creates forward momentum
-    {{2, 1, 1, 0, 0, 0}, 3, TICK_EIGHTH, "mora-3-start"},
-
-    // Pattern 14: 4-mora pattern (8-8-8-4)
-    // Example: Maps to 4-syllable words
-    // Builds to resolution
-    {{1, 1, 1, 2, 0, 0}, 4, TICK_EIGHTH, "mora-4"},
-};
-
-constexpr size_t kHookRhythmPatternCount =
-    sizeof(kHookRhythmPatterns) / sizeof(kHookRhythmPatterns[0]);
-
-// Select a hook rhythm pattern index based on template characteristics
-size_t selectHookRhythmPatternIndex(const MelodyTemplate& tmpl, std::mt19937& rng) {
-  // Weight patterns based on template style
-  // ENHANCED: Include new killer patterns based on style
-  std::vector<size_t> candidates;
-
-  if (tmpl.rhythm_driven) {
-    // Rhythm-driven: prefer energetic patterns including new syncopated ones
-    candidates = {0, 2, 5, 6, 7, 8, 9};  // buildup, four-note, call-response, synco-burst, staccato, anticipation, drill
-  } else if (tmpl.long_note_ratio > 0.3f) {
-    // Sparse style: prefer simpler patterns and mora patterns
-    candidates = {3, 1, 4, 10, 12};  // powerful, syncopated, dotted, mora-2, mora-3-start
-  } else if (tmpl.sixteenth_density > 0.3f) {
-    // High density (Vocaloid style): include drill and syncopated patterns
-    candidates = {2, 5, 6, 7, 9, 13};  // four-note, call-response, synco-burst, staccato, drill, mora-4
-  } else {
-    // Balanced: use all patterns with slight preference for classic ones
-    for (size_t i = 0; i < kHookRhythmPatternCount; ++i) {
-      candidates.push_back(i);
-    }
-  }
-
-  std::uniform_int_distribution<size_t> dist(0, candidates.size() - 1);
-  return candidates[dist(rng)];
-}
+// Import additional submodule functions
+using melody::getBassRootPitchClass;
+using melody::isAvoidNoteWithChord;
+using melody::isAvoidNoteWithRoot;
+using melody::getNearestSafeChordTone;
+using melody::getAnchorTonePitch;
+using melody::calculatePhraseCount;
+using melody::applySequentialTransposition;
+using melody::HookRhythmPattern;
+using melody::getHookRhythmPatterns;
+using melody::getHookRhythmPatternCount;
+using melody::selectHookRhythmPatternIndex;
 
 }  // namespace
 
@@ -983,7 +533,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   }
 
   // Track consecutive same notes for J-POP style probability curve
-  int consecutive_same_count = 0;
+  melody::ConsecutiveSameNoteTracker consecutive_tracker;
 
   // Track previous note duration for leap preparation principle
   // Pop vocal theory: large leaps need preparation time (longer preceding note)
@@ -1062,71 +612,9 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     }
 
     // Apply consecutive same note reduction with J-POP style probability curve
-    // J-POP theory: rhythmic repetition is common but should taper off naturally
-    //   2 notes: 85% allow (very common in hooks)
-    //   3 notes: 50% allow (rhythmic emphasis)
-    //   4 notes: 25% allow (occasional effect)
-    //   5+ notes: 5% allow (rare, intentional)
-    bool force_move = false;
-    if (new_pitch == current_pitch) {
-      consecutive_same_count++;
-
-      // Calculate allow probability based on repetition count
-      float allow_prob;
-      switch (consecutive_same_count) {
-        case 1:
-          allow_prob = 1.0f;
-          break;  // First note always OK
-        case 2:
-          allow_prob = 0.85f;
-          break;  // 2nd repetition: 85%
-        case 3:
-          allow_prob = 0.50f;
-          break;  // 3rd repetition: 50%
-        case 4:
-          allow_prob = 0.25f;
-          break;  // 4th repetition: 25%
-        default:
-          allow_prob = 0.05f;
-          break;  // 5+: 5%
-      }
-
-      std::uniform_real_distribution<float> same_dist(0.0f, 1.0f);
-      if (same_dist(rng) > allow_prob) {
-        force_move = true;
-      }
-    } else {
-      consecutive_same_count = 0;  // Reset counter when pitch changes
-    }
-
-    if (force_move) {
-      // Force movement to a different chord tone (using note's chord degree)
-      std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
-      std::vector<int> candidates;
-      for (int pc : chord_tones) {
-        for (int oct = 4; oct <= 6; ++oct) {
-          int candidate = oct * 12 + pc;
-          if (candidate >= ctx.vocal_low && candidate <= ctx.vocal_high &&
-              candidate != current_pitch) {
-            candidates.push_back(candidate);
-          }
-        }
-      }
-      if (!candidates.empty()) {
-        // Pick closest different chord tone
-        int best = candidates[0];
-        int best_dist = std::abs(best - current_pitch);
-        for (int c : candidates) {
-          int dist = std::abs(c - current_pitch);
-          if (dist > 0 && dist < best_dist) {
-            best = c;
-            best_dist = dist;
-          }
-        }
-        new_pitch = best;
-        consecutive_same_count = 0;  // Reset after forced movement
-      }
-    }
+    melody::applyConsecutiveSameNoteConstraint(
+        new_pitch, consecutive_tracker, current_pitch, note_chord_degree,
+        ctx.vocal_low, ctx.vocal_high, 0, rng);
 
     // Enforce maximum interval constraint (section-adaptive + blueprint constraint)
     // Use nearestChordToneWithinInterval to stay on chord tones
@@ -1192,159 +680,28 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       leap_state.startResolution(actual_interval);
     }
 
-    // Leap preparation principle (pop vocal theory):
-    // Large leaps after very short notes are difficult to sing.
-    // Singers need time to prepare for large pitch jumps.
-    // After very short notes (< 0.5 beats), limit to perfect 4th (5 semitones).
-    // This prevents awkward jumps while still allowing common pop intervals (3rds, 4ths).
-    constexpr Tick VERY_SHORT_THRESHOLD = TICKS_PER_BEAT / 2;  // 0.5 beats (8th note)
-    constexpr int MAX_LEAP_AFTER_SHORT = 5;                    // Perfect 4th
-    if (i > 0 && prev_note_duration < VERY_SHORT_THRESHOLD) {
-      int leap = std::abs(new_pitch - current_pitch);
-      if (leap > MAX_LEAP_AFTER_SHORT) {
-        new_pitch = nearestChordToneWithinInterval(new_pitch, current_pitch, note_chord_degree,
-                                                   MAX_LEAP_AFTER_SHORT, ctx.vocal_low,
-                                                   ctx.vocal_high, &ctx.tessitura);
-      }
+    // Leap preparation principle: limit leaps after short notes
+    if (i > 0) {
+      new_pitch = melody::applyLeapPreparationConstraint(new_pitch, current_pitch, prev_note_duration,
+                                                          note_chord_degree, ctx.vocal_low,
+                                                          ctx.vocal_high, &ctx.tessitura);
     }
 
-    // Leap encouragement for long notes (pop vocal theory):
-    // After long notes (>= 1 beat), listeners expect melodic movement.
-    // Static pitches or small steps after held notes can feel anticlimactic.
-    // Encourage larger intervals (major 3rd or more) to create melodic interest.
-    // 60% chance to encourage leap to avoid deterministic behavior.
-    constexpr Tick LONG_NOTE_THRESHOLD = TICKS_PER_BEAT;  // 1 beat (quarter note)
-    constexpr int PREFERRED_LEAP_AFTER_LONG = 4;         // Major 3rd minimum
-    if (i > 0 && prev_note_duration >= LONG_NOTE_THRESHOLD) {
-      int current_interval = std::abs(new_pitch - current_pitch);
-      // If staying on same pitch or small step after long note, consider encouraging movement
-      if (current_interval < PREFERRED_LEAP_AFTER_LONG) {
-        std::uniform_real_distribution<float> leap_dist(0.0f, 1.0f);
-        if (leap_dist(rng) < 0.6f) {  // 60% chance to encourage leap
-          // Find chord tones at least PREFERRED_LEAP_AFTER_LONG semitones away
-          std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
-          std::vector<int> leap_candidates;
-          for (int pc : chord_tones) {
-            for (int oct = 4; oct <= 6; ++oct) {
-              int candidate = oct * 12 + pc;
-              int interval = std::abs(candidate - current_pitch);
-              if (candidate >= ctx.vocal_low && candidate <= ctx.vocal_high &&
-                  interval >= PREFERRED_LEAP_AFTER_LONG && interval <= kMaxMelodicInterval) {
-                leap_candidates.push_back(candidate);
-              }
-            }
-          }
-          if (!leap_candidates.empty()) {
-            // Pick random leap candidate
-            std::uniform_int_distribution<size_t> idx_dist(0, leap_candidates.size() - 1);
-            new_pitch = leap_candidates[idx_dist(rng)];
-          }
-        }
-      }
+    // Leap encouragement: encourage movement after long notes
+    if (i > 0) {
+      new_pitch = melody::encourageLeapAfterLongNote(new_pitch, current_pitch, prev_note_duration,
+                                                      note_chord_degree, ctx.vocal_low,
+                                                      ctx.vocal_high, rng);
     }
 
     // Avoid note check: melody should not form tritone/minor2nd with chord tones
-    // This applies to ALL notes, not just strong beats, because bass establishes
-    // the harmonic foundation throughout the bar.
-    // Based on pop music theory: the bass root defines the chord's identity.
-    // We check against ALL chord tones (not just root) to catch clashes like
-    // F against E in CMaj7 (minor 2nd with the 7th).
-    {
-      int bass_root_pc = getBassRootPitchClass(note_chord_degree);
-      std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
-      int pitch_pc = new_pitch % 12;
-      if (isAvoidNoteWithChord(pitch_pc, chord_tones, bass_root_pc)) {
-        // Adjust to nearest safe chord tone
-        new_pitch = getNearestSafeChordTone(new_pitch, note_chord_degree, bass_root_pc,
-                                            ctx.vocal_low, ctx.vocal_high);
-      }
-    }
+    new_pitch = melody::enforceAvoidNoteConstraint(new_pitch, note_chord_degree,
+                                                    ctx.vocal_low, ctx.vocal_high);
 
-    // Downbeat chord-tone constraint: beat 1 of each bar requires chord tones.
-    // In pop music theory, the downbeat (beat 1) is the strongest metric position
-    // and must establish clear harmonic grounding. Non-chord tones (tensions like
-    // 9th, 11th, 13th) on beat 1 create harmonic ambiguity and weaken the phrase.
-    // This is a fundamental principle in pop arranging - save tensions for weak
-    // beats and passing tones, use chord tones (1, 3, 5) on strong beats.
-    //
-    // Music theory exceptions (not currently implemented):
-    // - Appoggiatura: Non-chord tone on strong beat that resolves down by step
-    //   Creates emotional tension (common in classical and ballads)
-    // - Jazz: Tensions on downbeat are stylistically appropriate (9th, 11th, 13th)
-    //
-    // Current behavior: Strict enforcement for pop-style clarity.
-    // Future enhancement: Genre parameter to relax this constraint for jazz/classical.
-    {
-      Tick bar_pos = note_start % TICKS_PER_BAR;
-      bool is_downbeat = bar_pos < TICKS_PER_BEAT / 4;
-      if (is_downbeat) {
-        std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
-        int new_pc = new_pitch % 12;
-        bool is_chord_tone = false;
-        for (int ct : chord_tones) {
-          if (new_pc == ct) {
-            is_chord_tone = true;
-            break;
-          }
-        }
-        if (!is_chord_tone) {
-          // For machine-style vocals (UltraVocaloid), use simple nearest chord tone
-          // to preserve rapid-fire articulation patterns
-          if (ctx.disable_vowel_constraints) {
-            new_pitch = nearestChordTonePitch(new_pitch, note_chord_degree);
-            new_pitch = std::clamp(new_pitch, static_cast<int>(ctx.vocal_low),
-                                   static_cast<int>(ctx.vocal_high));
-          } else {
-            // SINGABILITY: Snap to chord tone that minimizes interval from previous pitch
-            // This preserves melodic contour better than snapping to nearest chord tone
-            // Music theory: preserve intended direction when avoiding same pitch
-            bool intended_movement = (new_pitch != current_pitch);
-            int intended_direction = (new_pitch > current_pitch) ? 1 : -1;
-
-            // Find best chord tone (closest to current_pitch)
-            int best_pitch = new_pitch;
-            int best_interval = 127;
-
-            // Also track best chord tone in the intended direction
-            int best_directional_pitch = -1;
-            int best_directional_interval = 127;
-
-            for (int ct : chord_tones) {
-              // Check multiple octaves around current pitch
-              for (int oct = 3; oct <= 7; ++oct) {
-                int candidate = oct * 12 + ct;
-                if (candidate < ctx.vocal_low || candidate > ctx.vocal_high) continue;
-                int interval = std::abs(candidate - current_pitch);
-
-                // Track absolute best
-                if (interval < best_interval) {
-                  best_interval = interval;
-                  best_pitch = candidate;
-                }
-
-                // Track best in intended direction (excluding same pitch)
-                if (candidate != current_pitch) {
-                  int direction = (candidate > current_pitch) ? 1 : -1;
-                  if (direction == intended_direction && interval < best_directional_interval) {
-                    best_directional_interval = interval;
-                    best_directional_pitch = candidate;
-                  }
-                }
-              }
-            }
-
-            // Decision: if movement was intended but best is same pitch,
-            // use directional best (preserves melodic contour)
-            if (intended_movement && best_pitch == current_pitch && best_directional_pitch >= 0 &&
-                best_directional_interval <= 5) {  // Allow up to P4 (5 semitones)
-              new_pitch = best_directional_pitch;
-            } else {
-              new_pitch = best_pitch;
-            }
-          }
-        }
-      }
-    }
+    // Downbeat chord-tone constraint: beat 1 requires chord tones for harmonic clarity
+    new_pitch = melody::enforceDownbeatChordTone(new_pitch, note_start, note_chord_degree,
+                                                  current_pitch, ctx.vocal_low, ctx.vocal_high,
+                                                  ctx.disable_vowel_constraints);
 
     // =========================================================================
     // LEAP-AFTER-REVERSAL RULE (singability improvement):
@@ -1444,81 +801,27 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       note_duration = std::min(note_duration, gap_duration);
     }
 
-    // Vocal-friendly gate processing based on pop vocal theory:
-    // - Phrase endings need breath preparation (shorter)
-    // - Same pitch = legato (no gap, or tie)
-    // - Step motion = smooth connection
-    // - Skip/Leap = slight articulation, leap needs preparation time
-    // - Long notes (quarter+) don't need gating
+    // Vocal-friendly gate processing using constraint_pipeline
     bool is_phrase_end = (i == rhythm.size() - 1);
     bool is_phrase_start = (i == 0);
-    float gate_ratio = 1.0f;
 
+    // Phrase ending: ensure minimum quarter note duration for proper cadence
     if (is_phrase_end) {
-      // Phrase ending: breath preparation (85%)
-      // Minimum duration is quarter note for proper cadence
       note_duration = std::max(note_duration, static_cast<Tick>(TICK_QUARTER));
-      gate_ratio = 0.85f;
-    } else if (is_phrase_start) {
-      // Phrase start: clear attack, no gate
-      gate_ratio = 1.0f;
-    } else if (note_duration >= TICK_QUARTER) {
-      // Long notes (quarter+): no gate needed for natural sustain
-      gate_ratio = 1.0f;
-    } else if (!result.notes.empty()) {
-      // Interior notes: gate based on interval to previous note
-      int prev_pitch = result.notes.back().note;
-      int interval = std::abs(new_pitch - prev_pitch);
-
-      if (interval == 0) {
-        // Same pitch: legato connection (100%)
-        // Rhythmic repetition needs slight articulation but NOT staccato
-        gate_ratio = 1.0f;
-      } else if (interval <= 2) {
-        // Step motion (1-2 semitones): smooth legato (98%)
-        gate_ratio = 0.98f;
-      } else if (interval <= 5) {
-        // Skip (3-5 semitones): slight articulation (95%)
-        gate_ratio = 0.95f;
-      } else {
-        // Leap (6+ semitones): preparation time needed
-        // Shorten previous note slightly for jump preparation
-        gate_ratio = 0.92f;
-      }
     }
 
-    // Apply gate ratio
-    note_duration = static_cast<Tick>(note_duration * gate_ratio);
+    // Build gate context for constraint pipeline
+    melody::GateContext gate_ctx;
+    gate_ctx.is_phrase_end = is_phrase_end;
+    gate_ctx.is_phrase_start = is_phrase_start;
+    gate_ctx.note_duration = note_duration;
+    gate_ctx.interval_from_prev = result.notes.empty() ? 0
+                                  : std::abs(new_pitch - result.notes.back().note);
 
-    // Ensure minimum duration after gate ratio (prevents sub-16th notes)
-    note_duration = std::max(note_duration, TICK_SIXTEENTH);
-
-    // Clamp note duration to chord change boundary (prevents dissonance when chord changes)
-    Tick chord_change = harmony.getNextChordChangeTick(note_start);
-    if (chord_change > 0 && chord_change > note_start &&
-        note_start + note_duration > chord_change) {
-      // Shorten note to end just before chord change
-      // Guard: ensure chord_change - note_start > 10 to avoid underflow
-      if (chord_change > note_start + 10) {
-        Tick new_duration = chord_change - note_start - 10;  // Small gap before chord change
-        if (new_duration >= TICK_SIXTEENTH) {
-          note_duration = new_duration;
-        }
-      }
-    }
-
-    // Also clamp to phrase boundary for phrase ending
+    // Apply all duration constraints using the pipeline
     Tick phrase_end = phrase_start + phrase_beats * TICKS_PER_BEAT;
-    if (note_start + note_duration > phrase_end) {
-      // Guard: ensure phrase_end > note_start to avoid underflow
-      if (phrase_end > note_start) {
-        note_duration = phrase_end - note_start;
-      }
-      // Ensure minimum duration (16th note) for musical validity
-      if (note_duration < TICK_SIXTEENTH) {
-        note_duration = TICK_SIXTEENTH;
-      }
-    }
+    note_duration = melody::applyAllDurationConstraints(
+        note_start, note_duration, harmony, phrase_end, gate_ctx);
 
     // =========================================================================
     // PHRASE END RESOLUTION: Enforce chord tone landing for singable cadences
@@ -1627,13 +930,13 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
 
   // Song-level hook fixation: generate and cache hook motif once
   // "Variation is the enemy, Exact is justice" - use the same hook throughout the song
-  if (!cached_chorus_hook_.has_value()) {
+  if (!hook_cache_.chorus_hook.has_value()) {
     StyleMelodyParams hook_params{};
     hook_params.hook_repetition = true;  // Use catchy repetitive style
-    cached_chorus_hook_ = designChorusHook(hook_params, rng);
+    hook_cache_.chorus_hook = designChorusHook(hook_params, rng);
   }
 
-  Motif hook = *cached_chorus_hook_;
+  Motif hook = *hook_cache_.chorus_hook;
 
   // Hybrid approach: blend HookSkeleton contour hint with existing Motif
   // HookSkeleton provides melodic DNA, Motif provides rhythm (maintained)
@@ -1649,18 +952,18 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   HookSkeleton selected_skeleton;
   if (is_first_half) {
     // First half: use boosted intensity skeleton
-    if (!cached_hook_skeleton_.has_value()) {
+    if (!hook_cache_.skeleton.has_value()) {
       HookIntensity boosted = getPositionAwareIntensity(
           ctx.hook_intensity, bar_in_section, ctx.section_bars);
-      cached_hook_skeleton_ = selectHookSkeleton(ctx.section_type, rng, boosted);
+      hook_cache_.skeleton = selectHookSkeleton(ctx.section_type, rng, boosted);
     }
-    selected_skeleton = *cached_hook_skeleton_;
+    selected_skeleton = *hook_cache_.skeleton;
   } else {
     // Second half: use base intensity skeleton (more variety)
-    if (!cached_hook_skeleton_later_.has_value()) {
-      cached_hook_skeleton_later_ = selectHookSkeleton(ctx.section_type, rng, ctx.hook_intensity);
+    if (!hook_cache_.skeleton_later.has_value()) {
+      hook_cache_.skeleton_later = selectHookSkeleton(ctx.section_type, rng, ctx.hook_intensity);
     }
-    selected_skeleton = *cached_hook_skeleton_later_;
+    selected_skeleton = *hook_cache_.skeleton_later;
   }
   SkeletonPattern skeleton_contour = getSkeletonPattern(selected_skeleton);
 
@@ -1676,10 +979,10 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   }
 
   // Select rhythm pattern based on template style (cached per song for consistency)
-  if (cached_hook_rhythm_pattern_idx_ == SIZE_MAX) {
-    cached_hook_rhythm_pattern_idx_ = selectHookRhythmPatternIndex(tmpl, rng);
+  if (hook_cache_.rhythm_pattern_idx == SIZE_MAX) {
+    hook_cache_.rhythm_pattern_idx = selectHookRhythmPatternIndex(tmpl, rng);
   }
-  const HookRhythmPattern& rhythm_pattern = kHookRhythmPatterns[cached_hook_rhythm_pattern_idx_];
+  const HookRhythmPattern& rhythm_pattern = getHookRhythmPatterns()[hook_cache_.rhythm_pattern_idx];
 
   // Use template settings for repetition count
   uint8_t repeat_count =
@@ -1694,11 +997,11 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   //   - threshold=4 (default): standard "3 times same, 4th different" rule
   //   - threshold=5 (ballad): late variation, more consistency
   //   - threshold=0: no betrayal (exact repetition)
-  ++hook_repetition_count_;
+  ++hook_cache_.repetition_count;
   HookBetrayal betrayal = HookBetrayal::None;
   uint8_t threshold = tmpl.betrayal_threshold > 0 ? tmpl.betrayal_threshold : 4;
-  if (tmpl.betrayal_threshold > 0 && hook_repetition_count_ >= threshold &&
-      (hook_repetition_count_ % threshold) == 0) {
+  if (tmpl.betrayal_threshold > 0 && hook_cache_.repetition_count >= threshold &&
+      (hook_cache_.repetition_count % threshold) == 0) {
     // Select betrayal type at threshold (and multiples thereof)
     betrayal = selectBetrayal(1, rng);  // 1 = non-first occurrence
   }
@@ -1714,10 +1017,10 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   // =========================================================================
   // If we have cached sabi pitches, use them for the first 4 notes.
   // This ensures the chorus "hook head" remains consistent across the song.
-  bool use_cached_sabi = (sabi_pitches_cached_ && ctx.section_type == SectionType::Chorus);
+  bool use_cached_sabi = (hook_cache_.pitches_cached && ctx.section_type == SectionType::Chorus);
 
   // Track consecutive same notes for J-POP style probability curve
-  int consecutive_same_count = 0;
+  melody::ConsecutiveSameNoteTracker consecutive_tracker;
 
   // Track previous note duration for leap preparation
   Tick prev_note_duration = TICKS_PER_BEAT;  // Default to quarter note
@@ -1741,8 +1044,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       // This ensures the chorus hook head is consistent across the song
       bool use_cached_rhythm_for_note = false;
       if (use_cached_sabi && total_note_idx < 8) {
-        pitch = static_cast<int>(cached_sabi_pitches_[total_note_idx]);
-        use_cached_rhythm_for_note = sabi_rhythm_cached_;
+        pitch = static_cast<int>(hook_cache_.sabi_pitches[total_note_idx]);
+        use_cached_rhythm_for_note = hook_cache_.rhythm_cached;
       }
 
       // Find nearest chord tone within vocal range and interval constraint
@@ -1765,99 +1068,17 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       }
 
       // Avoid note check: melody should not form tritone/minor2nd with chord tones
-      {
-        int bass_root_pc = getBassRootPitchClass(note_chord_degree);
-        std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
-        int pitch_pc = pitch % 12;
-        if (isAvoidNoteWithChord(pitch_pc, chord_tones, bass_root_pc)) {
-          pitch = getNearestSafeChordTone(pitch, note_chord_degree, bass_root_pc, ctx.vocal_low,
-                                          ctx.vocal_high);
-        }
-      }
+      pitch = melody::enforceAvoidNoteConstraint(pitch, note_chord_degree, ctx.vocal_low, ctx.vocal_high);
 
       // Downbeat chord-tone constraint for hooks
-      {
-        Tick bar_pos = current_tick % TICKS_PER_BAR;
-        bool is_downbeat = bar_pos < TICKS_PER_BEAT / 4;
-        if (is_downbeat) {
-          std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
-          int pitch_pc = pitch % 12;
-          bool is_chord_tone = false;
-          for (int ct : chord_tones) {
-            if (pitch_pc == ct) {
-              is_chord_tone = true;
-              break;
-            }
-          }
-          if (!is_chord_tone) {
-            pitch = nearestChordTonePitch(pitch, note_chord_degree);
-            pitch = std::clamp(pitch, static_cast<int>(ctx.vocal_low),
-                               static_cast<int>(ctx.vocal_high));
-          }
-        }
-      }
+      pitch = melody::enforceDownbeatChordTone(pitch, current_tick, note_chord_degree,
+                                                prev_hook_pitch, ctx.vocal_low, ctx.vocal_high,
+                                                true);  // disable_singability=true for hooks
 
       // Apply consecutive same note limit with J-POP probability curve
-      // Same curve as generateMelodyPhrase for consistency
-      bool force_move = false;
-      if (pitch == prev_hook_pitch) {
-        consecutive_same_count++;
-
-        float allow_prob;
-        switch (consecutive_same_count) {
-          case 1:
-            allow_prob = 1.0f;
-            break;
-          case 2:
-            allow_prob = 0.85f;
-            break;
-          case 3:
-            allow_prob = 0.50f;
-            break;
-          case 4:
-            allow_prob = 0.25f;
-            break;
-          default:
-            allow_prob = 0.05f;
-            break;
-        }
-
-        std::uniform_real_distribution<float> same_dist(0.0f, 1.0f);
-        if (same_dist(rng) > allow_prob) {
-          force_move = true;
-        }
-      } else {
-        consecutive_same_count = 0;
-      }
-
-      if (force_move) {
-        // Force movement to different chord tone
-        std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
-        std::vector<int> candidates;
-        for (int pc : chord_tones) {
-          for (int oct = 4; oct <= 6; ++oct) {
-            int candidate = oct * 12 + pc;
-            if (candidate >= ctx.vocal_low && candidate <= ctx.vocal_high &&
-                candidate != prev_hook_pitch &&
-                std::abs(candidate - prev_hook_pitch) <= kMaxMelodicInterval) {
-              candidates.push_back(candidate);
-            }
-          }
-        }
-        if (!candidates.empty()) {
-          int best = candidates[0];
-          int best_dist = std::abs(best - prev_hook_pitch);
-          for (int c : candidates) {
-            int dist = std::abs(c - prev_hook_pitch);
-            if (dist > 0 && dist < best_dist) {
-              best = c;
-              best_dist = dist;
-            }
-          }
-          pitch = best;
-          consecutive_same_count = 0;
-        }
-      }
+      melody::applyConsecutiveSameNoteConstraint(
+          pitch, consecutive_tracker, prev_hook_pitch, note_chord_degree,
+          ctx.vocal_low, ctx.vocal_high, kMaxMelodicInterval, rng);
 
       // Get duration from rhythm pattern (in eighths, convert to ticks)
       // Use rhythm grid from template for triplet support
@@ -1872,56 +1093,20 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
         velocity += 10;
       }
 
-      // Vocal-friendly gate processing for hooks
-      // Hooks are catchy phrases that need clear articulation but NOT staccato
-      float gate_ratio = 1.0f;
+      // Vocal-friendly gate processing for hooks using constraint_pipeline
       bool is_pattern_end = (i == contour_limit - 1);
       bool is_repeat_end = (rep == repeat_count - 1) && is_pattern_end;
 
-      if (is_repeat_end) {
-        // Final note of hook: breath preparation
-        gate_ratio = 0.85f;
-      } else if (i == 0 && rep == 0) {
-        // First note of hook: clear attack
-        gate_ratio = 1.0f;
-      } else if (note_duration >= TICK_QUARTER) {
-        // Long notes: no gate needed
-        gate_ratio = 1.0f;
-      } else {
-        // Interior hook notes: gate based on interval
-        int interval = std::abs(pitch - prev_hook_pitch);
-        if (interval == 0) {
-          // Same pitch in hook: legato (100%)
-          gate_ratio = 1.0f;
-        } else if (interval <= 2) {
-          // Step: smooth (98%)
-          gate_ratio = 0.98f;
-        } else if (interval <= 5) {
-          // Skip: slight articulation (95%)
-          gate_ratio = 0.95f;
-        } else {
-          // Leap: preparation (92%)
-          gate_ratio = 0.92f;
-        }
-      }
+      // Build gate context for hooks
+      melody::GateContext gate_ctx;
+      gate_ctx.is_phrase_end = is_repeat_end;
+      gate_ctx.is_phrase_start = (i == 0 && rep == 0);
+      gate_ctx.note_duration = note_duration;
+      gate_ctx.interval_from_prev = std::abs(pitch - prev_hook_pitch);
 
-      Tick actual_duration = static_cast<Tick>(note_duration * gate_ratio);
-
-      // Ensure minimum duration after gate ratio (prevents sub-16th notes)
-      actual_duration = std::max(actual_duration, TICK_SIXTEENTH);
-
-      // Clamp duration to chord change boundary
-      Tick chord_change = harmony.getNextChordChangeTick(current_tick);
-      if (chord_change > 0 && chord_change > current_tick &&
-          current_tick + actual_duration > chord_change) {
-        // Guard: ensure chord_change - current_tick > 10 to avoid underflow
-        if (chord_change > current_tick + 10) {
-          Tick new_duration = chord_change - current_tick - 10;
-          if (new_duration >= TICK_SIXTEENTH) {
-            actual_duration = new_duration;
-          }
-        }
-      }
+      // Apply gate ratio and chord boundary constraints
+      Tick actual_duration = melody::applyGateRatio(note_duration, gate_ctx);
+      actual_duration = melody::clampToChordBoundary(current_tick, actual_duration, harmony);
 
       // ABSOLUTE CONSTRAINT: Ensure pitch is on scale (prevents chromatic notes)
       pitch = snapToNearestScaleTone(pitch, ctx.key_offset);
@@ -1947,10 +1132,10 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       uint8_t final_velocity = velocity;
       Tick tick_advance = note_duration;  // Default: advance by pattern duration
       if (use_cached_rhythm_for_note) {
-        final_duration = std::max(cached_sabi_durations_[total_note_idx], TICK_SIXTEENTH);
-        final_velocity = cached_sabi_velocities_[total_note_idx];
+        final_duration = std::max(hook_cache_.sabi_durations[total_note_idx], TICK_SIXTEENTH);
+        final_velocity = hook_cache_.sabi_velocities[total_note_idx];
         // For tick advancement, use cached duration to maintain timing consistency
-        tick_advance = cached_sabi_durations_[total_note_idx];
+        tick_advance = hook_cache_.sabi_durations[total_note_idx];
       }
 
       result.notes.push_back(factory.create(
@@ -2000,15 +1185,15 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   // Cache the first 8 notes of the chorus hook for reuse in subsequent
   // chorus sections. This ensures the "sabi" (hook head) is memorable.
   // Rhythm (duration + velocity) is also cached for complete consistency.
-  if (!sabi_pitches_cached_ && ctx.section_type == SectionType::Chorus &&
+  if (!hook_cache_.pitches_cached && ctx.section_type == SectionType::Chorus &&
       result.notes.size() >= 8) {
     for (size_t i = 0; i < 8 && i < result.notes.size(); ++i) {
-      cached_sabi_pitches_[i] = result.notes[i].note;
-      cached_sabi_durations_[i] = result.notes[i].duration;
-      cached_sabi_velocities_[i] = result.notes[i].velocity;
+      hook_cache_.sabi_pitches[i] = result.notes[i].note;
+      hook_cache_.sabi_durations[i] = result.notes[i].duration;
+      hook_cache_.sabi_velocities[i] = result.notes[i].velocity;
     }
-    sabi_pitches_cached_ = true;
-    sabi_rhythm_cached_ = true;
+    hook_cache_.pitches_cached = true;
+    hook_cache_.rhythm_cached = true;
   }
 
   // Return last pitch for smooth transition to next phrase
@@ -2018,189 +1203,40 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   return result;
 }
 
-namespace {
-/// @brief Get direction bias for explicit phrase contour template.
-/// @param contour Contour type
-/// @param phrase_pos Position within phrase (0.0-1.0)
-/// @return Upward bias (0.0 = strongly down, 1.0 = strongly up)
-float getDirectionBiasForContour(ContourType contour, float phrase_pos) {
-  switch (contour) {
-    case ContourType::Ascending:
-      // Gradually stronger upward bias toward phrase end
-      return 0.65f + phrase_pos * 0.15f;  // 0.65 -> 0.80
-    case ContourType::Descending:
-      // Gradually stronger downward bias toward phrase end
-      return 0.35f - phrase_pos * 0.15f;  // 0.35 -> 0.20
-    case ContourType::Peak:
-      // Rise in first half, fall in second half (arch shape)
-      return phrase_pos < 0.5f ? 0.70f : 0.30f;
-    case ContourType::Valley:
-      // Fall in first half, rise in second half (bowl shape)
-      return phrase_pos < 0.5f ? 0.30f : 0.70f;
-    case ContourType::Plateau:
-      // Balanced, no strong direction preference
-      return 0.50f;
-  }
-  return 0.50f;  // Default: balanced
-}
-}  // namespace
+// getDirectionBiasForContour moved to contour_direction.cpp
 
 PitchChoice MelodyDesigner::selectPitchChoice(const MelodyTemplate& tmpl, float phrase_pos,
                                               bool has_target, SectionType section_type,
                                               std::mt19937& rng, float note_eighths,
                                               std::optional<ContourType> forced_contour) {
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-
-  // Rhythm-melody coupling: note duration affects plateau probability
-  // Short notes (16th or less) prefer staying on same pitch for stability
-  // Long notes (half or longer) encourage movement for melodic interest
-  float effective_plateau_ratio = tmpl.plateau_ratio;
-  if (note_eighths < 1.0f) {
-    // Very short notes: boost plateau ratio for stability
-    effective_plateau_ratio = std::min(0.8f, tmpl.plateau_ratio + 0.15f);
-  } else if (note_eighths >= 4.0f) {
-    // Long notes: reduce plateau ratio to encourage movement
-    effective_plateau_ratio = std::max(0.1f, tmpl.plateau_ratio - 0.1f);
-  }
-
-  // Step 1: Check for same pitch (plateau)
-  if (dist(rng) < effective_plateau_ratio) {
-    return PitchChoice::Same;
-  }
-
-  // Step 2: Target attraction (if applicable)
-  if (has_target && tmpl.has_target_pitch) {
-    if (phrase_pos >= tmpl.target_attraction_start) {
-      if (dist(rng) < tmpl.target_attraction_strength) {
-        return PitchChoice::TargetStep;
-      }
-    }
-  }
-
-  // Step 3: Directional bias
-  // Use forced contour if specified, otherwise use section-aware defaults
-  float upward_bias;
-  if (forced_contour.has_value()) {
-    // Phrase contour template: explicit control over melodic shape
-    upward_bias = getDirectionBiasForContour(*forced_contour, phrase_pos);
-  } else {
-    // Section-aware directional bias (default behavior):
-    // - A (Verse): slightly ascending for storytelling momentum
-    // - B (Pre-chorus): ascending more strongly in second half for tension building
-    // - Chorus: balanced for hook memorability
-    // - Bridge: slightly descending for contrast
-    switch (section_type) {
-      case SectionType::A:
-        upward_bias = 0.55f;  // Slight upward tendency
-        break;
-      case SectionType::B:
-        upward_bias = phrase_pos > 0.5f ? 0.65f : 0.55f;  // Strong rise in second half
-        break;
-      case SectionType::Chorus:
-        upward_bias = 0.50f;  // Balanced
-        break;
-      case SectionType::Bridge:
-        upward_bias = 0.45f;  // Slight downward for contrast
-        break;
-      default:
-        upward_bias = 0.50f;  // Balanced for other sections
-        break;
-    }
-  }
-  return (dist(rng) < upward_bias) ? PitchChoice::StepUp : PitchChoice::StepDown;
+  return selectPitchChoiceImpl(tmpl, phrase_pos, has_target, section_type, rng, note_eighths,
+                               forced_contour);
 }
 
 PitchChoice MelodyDesigner::applyDirectionInertia(PitchChoice choice, int inertia,
-                                                  [[maybe_unused]] const MelodyTemplate& tmpl,
-                                                  std::mt19937& rng) {
-  // Same pitch or target step - don't modify
-  if (choice == PitchChoice::Same || choice == PitchChoice::TargetStep) {
-    return choice;
-  }
-
-  // Strong inertia can override random direction
-  // Coefficient 0.7 for better melodic continuity (was 0.5)
-  constexpr float kInertiaCoefficient = 0.7f;
-
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-  int abs_inertia = std::abs(inertia);
-
-  // Decay after 3 consecutive same-direction moves to prevent monotony
-  float decay_factor = 1.0f;
-  if (abs_inertia > 3) {
-    decay_factor = std::pow(0.8f, static_cast<float>(abs_inertia - 3));
-  }
-
-  float inertia_strength = (static_cast<float>(abs_inertia) / 3.0f) * decay_factor;
-
-  if (dist(rng) < inertia_strength * kInertiaCoefficient) {
-    // Follow inertia direction
-    if (inertia > 0) {
-      return PitchChoice::StepUp;
-    } else if (inertia < 0) {
-      return PitchChoice::StepDown;
-    }
-  }
-
-  return choice;
+                                                  const MelodyTemplate& tmpl, std::mt19937& rng) {
+  return applyDirectionInertiaImpl(choice, inertia, tmpl, rng);
 }
 
 float MelodyDesigner::getEffectivePlateauRatio(const MelodyTemplate& tmpl, int current_pitch,
                                                const TessituraRange& tessitura) {
-  float base_ratio = tmpl.plateau_ratio;
-
-  // Boost plateau ratio in high register for stability
-  if (current_pitch > tessitura.high) {
-    base_ratio += tmpl.high_register_plateau_boost;
-  }
-
-  // Also boost slightly near tessitura boundaries
-  if (current_pitch <= tessitura.low + 2 || current_pitch >= tessitura.high - 2) {
-    base_ratio += 0.1f;
-  }
-
-  return std::min(base_ratio, 0.9f);  // Cap at 90%
+  return getEffectivePlateauRatioImpl(tmpl, current_pitch, tessitura);
 }
 
 bool MelodyDesigner::shouldLeap(LeapTrigger trigger, float phrase_pos, float section_pos) {
-  switch (trigger) {
-    case LeapTrigger::None:
-      return false;
-
-    case LeapTrigger::PhraseStart:
-      return phrase_pos < 0.1f;
-
-    case LeapTrigger::EmotionalPeak:
-      // Emotional peak typically around 60-80% of section
-      return section_pos >= 0.6f && section_pos <= 0.8f;
-
-    case LeapTrigger::SectionBoundary:
-      return section_pos < 0.05f || section_pos > 0.95f;
-  }
-
-  return false;
+  return shouldLeapImpl(trigger, phrase_pos, section_pos);
 }
 
 int MelodyDesigner::getStabilizeStep(int leap_direction, int max_step) {
-  // Return opposite direction, smaller magnitude
-  int stabilize = -leap_direction;
-  int magnitude = std::max(1, max_step / 2);
-  return stabilize * magnitude;
+  return getStabilizeStepImpl(leap_direction, max_step);
 }
 
-bool MelodyDesigner::isInSameVowelSection(float pos1, float pos2,
-                                          [[maybe_unused]] uint8_t phrase_length) {
-  // Simple vowel section model: divide phrase into 2-beat sections
-  constexpr float VOWEL_SECTION_BEATS = 2.0f;
-
-  int section1 = static_cast<int>(pos1 / VOWEL_SECTION_BEATS);
-  int section2 = static_cast<int>(pos2 / VOWEL_SECTION_BEATS);
-
-  return section1 == section2;
+bool MelodyDesigner::isInSameVowelSection(float pos1, float pos2, uint8_t phrase_length) {
+  return isInSameVowelSectionImpl(pos1, pos2, phrase_length);
 }
 
 int8_t MelodyDesigner::getMaxStepInVowelSection(bool in_same_vowel) {
-  return in_same_vowel ? 2 : 4;
+  return getMaxStepInVowelSectionImpl(in_same_vowel);
 }
 
 void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
@@ -2334,548 +1370,24 @@ int MelodyDesigner::applyPitchChoice(PitchChoice choice, int current_pitch, int 
                                      int8_t chord_degree, int key_offset, uint8_t vocal_low,
                                      uint8_t vocal_high, VocalAttitude attitude,
                                      bool disable_singability, float note_eighths) {
-  // VocalAttitude affects candidate pitch selection:
-  //   Clean: chord tones only (1, 3, 5)
-  //   Expressive: chord tones + tensions (7, 9)
-  //   Raw: all scale tones (more freedom)
-  //
-  // Rhythm-melody coupling: note duration modulates tension allowance
-  //   Short notes (< 1 eighth): Force chord tones for stability
-  //   Long notes (>= 4 eighths): Allow tensions if attitude permits
-
-  // Get chord tones for current chord
-  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
-
-  // Determine effective attitude based on note duration
-  // Short notes should be more consonant (chord tones preferred)
-  VocalAttitude effective_attitude = attitude;
-  if (note_eighths < 1.0f && attitude != VocalAttitude::Clean) {
-    // Short notes: downgrade to Clean for stability
-    effective_attitude = VocalAttitude::Clean;
-  }
-
-  // Build candidate pitch classes based on VocalAttitude
-  std::vector<int> candidate_pcs;
-  switch (effective_attitude) {
-    case VocalAttitude::Clean:
-      // Chord tones only (safe, consonant)
-      candidate_pcs = chord_tones;
-      break;
-
-    case VocalAttitude::Expressive:
-      // Chord tones + tensions (7th, 9th = 2nd, 11th = 4th)
-      candidate_pcs = chord_tones;
-      // Add color tones for expressiveness
-      {
-        int root_pc = chord_tones.empty() ? 0 : chord_tones[0];
-        int seventh = (root_pc + 11) % 12;   // Major 7th (11 semitones from root)
-        int ninth = (root_pc + 2) % 12;      // 9th = 2nd (2 semitones)
-        int eleventh = (root_pc + 5) % 12;   // 11th = 4th (5 semitones, sus4-like)
-        candidate_pcs.push_back(seventh);
-        candidate_pcs.push_back(ninth);
-        candidate_pcs.push_back(eleventh);
-      }
-      break;
-
-    case VocalAttitude::Raw:
-      // All scale tones (C major: 0, 2, 4, 5, 7, 9, 11)
-      candidate_pcs = {0, 2, 4, 5, 7, 9, 11};
-      break;
-  }
-
-  // Build candidate pitches within vocal range
-  std::vector<int> candidates;
-  for (int pc : candidate_pcs) {
-    // ABSOLUTE CONSTRAINT: Only allow scale tones
-    // This prevents chromatic notes from VocalAttitude::Expressive tensions
-    // that fall outside the scale (e.g., G# from Am7 in C major)
-    if (!isScaleTone(pc, static_cast<uint8_t>(key_offset))) {
-      continue;
-    }
-
-    // Check multiple octaves (4-6 covers typical vocal range)
-    for (int oct = 4; oct <= 6; ++oct) {
-      int candidate = oct * 12 + pc;
-      if (candidate >= vocal_low && candidate <= vocal_high) {
-        candidates.push_back(candidate);
-      }
-    }
-  }
-
-  // Sort candidates for easier searching
-  std::sort(candidates.begin(), candidates.end());
-
-  if (candidates.empty()) {
-    // Fallback: use nearest chord tone to current pitch
-    return std::clamp(nearestChordTonePitch(current_pitch, chord_degree),
-                      static_cast<int>(vocal_low), static_cast<int>(vocal_high));
-  }
-
-  int new_pitch = current_pitch;
-
-  switch (choice) {
-    case PitchChoice::Same:
-      // Stay on nearest chord tone to current pitch
-      new_pitch = nearestChordTonePitch(current_pitch, chord_degree);
-      break;
-
-    case PitchChoice::StepUp: {
-      int best = -1;
-      // For machine-style vocals (UltraVocaloid), use chord-tone-first approach
-      // to preserve rapid articulation patterns
-      if (disable_singability) {
-        // Find smallest chord tone above current pitch
-        for (int c : candidates) {
-          if (c > current_pitch) {
-            best = c;
-            break;  // Already sorted, first one above is smallest
-          }
-        }
-      } else {
-        // SINGABILITY: Prefer step motion while maintaining harmonic awareness
-        // Priority order:
-        //   1) Scale tone step (whole step > half step for consonance)
-        //   2) Chord tone within small interval (M3 = 4 semitones)
-        //   3) Any chord tone (fallback)
-        // Note: Downbeat chord-tone constraint ensures strong beats are harmonically correct
-
-        // Priority 1: Scale tone step (prefer whole step for more consonant motion)
-        for (int step = 2; step >= 1; --step) {
-          int candidate = current_pitch + step;
-          if (candidate <= vocal_high &&
-              isScaleTone(candidate % 12, static_cast<uint8_t>(key_offset))) {
-            best = candidate;
-            break;
-          }
-        }
-
-        // Priority 2: Chord tone within small interval
-        if (best < 0) {
-          for (int c : candidates) {
-            if (c > current_pitch && c - current_pitch <= 4) {
-              best = c;
-              break;
-            }
-          }
-        }
-
-        // Priority 3: Any chord tone (fallback)
-        if (best < 0) {
-          for (int c : candidates) {
-            if (c > current_pitch) {
-              best = c;
-              break;
-            }
-          }
-        }
-      }
-      if (best < 0) {
-        // No chord tone above, use nearest
-        best = nearestChordTonePitch(current_pitch, chord_degree);
-      }
-      // SINGABILITY: Enforce maximum interval constraint (major 6th = 9 semitones)
-      // Large leaps are difficult to sing and sound unnatural in pop melodies
-      constexpr int kMaxMelodicInterval = 9;
-      if (best >= 0 && std::abs(best - current_pitch) > kMaxMelodicInterval) {
-        // Find closest chord tone within max interval
-        int closest = -1;
-        int closest_dist = 127;
-        for (int c : candidates) {
-          int dist = std::abs(c - current_pitch);
-          if (dist <= kMaxMelodicInterval && dist < closest_dist) {
-            closest_dist = dist;
-            closest = c;
-          }
-        }
-        if (closest >= 0) {
-          best = closest;
-        } else {
-          // No chord tone within range, stay on current or use nearest
-          best = nearestChordTonePitch(current_pitch, chord_degree);
-        }
-      }
-      new_pitch = best;
-    } break;
-
-    case PitchChoice::StepDown: {
-      int best = -1;
-      // For machine-style vocals (UltraVocaloid), use chord-tone-first approach
-      if (disable_singability) {
-        // Find largest chord tone below current pitch
-        for (int i = static_cast<int>(candidates.size()) - 1; i >= 0; --i) {
-          if (candidates[i] < current_pitch) {
-            best = candidates[i];
-            break;
-          }
-        }
-      } else {
-        // SINGABILITY: Prefer step motion while maintaining harmonic awareness
-        // Same priority order as StepUp
-
-        // Priority 1: Scale tone step (prefer whole step for more consonant motion)
-        for (int step = 2; step >= 1; --step) {
-          int candidate = current_pitch - step;
-          if (candidate >= vocal_low &&
-              isScaleTone(candidate % 12, static_cast<uint8_t>(key_offset))) {
-            best = candidate;
-            break;
-          }
-        }
-
-        // Priority 2: Chord tone within small interval
-        if (best < 0) {
-          for (int i = static_cast<int>(candidates.size()) - 1; i >= 0; --i) {
-            if (candidates[i] < current_pitch && current_pitch - candidates[i] <= 4) {
-              best = candidates[i];
-              break;
-            }
-          }
-        }
-
-        // Priority 3: Any chord tone (fallback)
-        if (best < 0) {
-          for (int i = static_cast<int>(candidates.size()) - 1; i >= 0; --i) {
-            if (candidates[i] < current_pitch) {
-              best = candidates[i];
-              break;
-            }
-          }
-        }
-      }
-      if (best < 0) {
-        best = nearestChordTonePitch(current_pitch, chord_degree);
-      }
-      // SINGABILITY: Enforce maximum interval constraint (major 6th = 9 semitones)
-      constexpr int kMaxMelodicInterval = 9;
-      if (best >= 0 && std::abs(best - current_pitch) > kMaxMelodicInterval) {
-        // Find closest chord tone within max interval
-        int closest = -1;
-        int closest_dist = 127;
-        for (int c : candidates) {
-          int dist = std::abs(c - current_pitch);
-          if (dist <= kMaxMelodicInterval && dist < closest_dist) {
-            closest_dist = dist;
-            closest = c;
-          }
-        }
-        if (closest >= 0) {
-          best = closest;
-        } else {
-          best = nearestChordTonePitch(current_pitch, chord_degree);
-        }
-      }
-      new_pitch = best;
-    } break;
-
-    case PitchChoice::TargetStep:
-      // Move toward target, using nearest chord tone in that direction
-      if (target_pitch >= 0) {
-        if (target_pitch > current_pitch) {
-          // Going up toward target: find first chord tone above current
-          for (int c : candidates) {
-            if (c > current_pitch && c <= target_pitch) {
-              new_pitch = c;
-              break;
-            }
-          }
-          if (new_pitch == current_pitch) {
-            // No suitable chord tone found, use nearest above
-            for (int c : candidates) {
-              if (c > current_pitch) {
-                new_pitch = c;
-                break;
-              }
-            }
-          }
-        } else if (target_pitch < current_pitch) {
-          // Going down toward target: find first chord tone below current
-          for (int i = static_cast<int>(candidates.size()) - 1; i >= 0; --i) {
-            if (candidates[i] < current_pitch && candidates[i] >= target_pitch) {
-              new_pitch = candidates[i];
-              break;
-            }
-          }
-          if (new_pitch == current_pitch) {
-            // No suitable chord tone found, use nearest below
-            for (int i = static_cast<int>(candidates.size()) - 1; i >= 0; --i) {
-              if (candidates[i] < current_pitch) {
-                new_pitch = candidates[i];
-                break;
-              }
-            }
-          }
-        } else {
-          // Already at target
-          new_pitch = nearestChordTonePitch(current_pitch, chord_degree);
-        }
-      } else {
-        new_pitch = nearestChordTonePitch(current_pitch, chord_degree);
-      }
-      break;
-  }
-
-  // Clamp to vocal range
-  new_pitch = std::clamp(new_pitch, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
-
-  return new_pitch;
+  return applyPitchChoiceImpl(choice, current_pitch, target_pitch, chord_degree, key_offset,
+                              vocal_low, vocal_high, attitude, disable_singability, note_eighths);
 }
 
 int MelodyDesigner::calculateTargetPitch(const MelodyTemplate& tmpl, const SectionContext& ctx,
                                          [[maybe_unused]] int current_pitch,
                                          const IHarmonyContext& harmony,
                                          [[maybe_unused]] std::mt19937& rng) {
-  // Target is typically a chord tone in the upper part of tessitura
-  std::vector<int> chord_tones = harmony.getChordTonesAt(ctx.section_start);
-
-  if (chord_tones.empty()) {
-    return ctx.tessitura.center;
-  }
-
-  // Find chord tone nearest to upper tessitura
-  int target_area = ctx.tessitura.center + tmpl.tessitura_range / 2;
-  int best_pitch = target_area;
-  int best_dist = 100;
-
-  for (int pc : chord_tones) {
-    // Check multiple octaves
-    for (int oct = 4; oct <= 6; ++oct) {
-      int candidate = oct * 12 + pc;
-      if (candidate < ctx.vocal_low || candidate > ctx.vocal_high) continue;
-
-      int dist = std::abs(candidate - target_area);
-      if (dist < best_dist) {
-        best_dist = dist;
-        best_pitch = candidate;
-      }
-    }
-  }
-
-  return best_pitch;
+  return calculateTargetPitchImpl(tmpl, ctx.tessitura.center, tmpl.tessitura_range, ctx.vocal_low,
+                                  ctx.vocal_high, ctx.section_start, harmony);
 }
 
 std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
     const MelodyTemplate& tmpl, uint8_t phrase_beats, float density_modifier,
     float thirtysecond_ratio, std::mt19937& rng, GenerationParadigm paradigm,
     float syncopation_weight, SectionType section_type) {
-  std::vector<RhythmNote> rhythm;
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-
-  float current_beat = 0.0f;
-  float end_beat = static_cast<float>(phrase_beats);
-
-  // Apply section density modifier to sixteenth density
-  float effective_sixteenth_density = tmpl.sixteenth_density * density_modifier;
-  // Clamp to valid range [0.0, 0.95]
-  effective_sixteenth_density = std::min(effective_sixteenth_density, 0.95f);
-
-  // Reserve space for final phrase-ending note
-  // UltraVocaloid: shorter reservation to maximize machine-gun notes
-  // Standard: 1 beat reservation for proper cadence
-  float phrase_body_end = (thirtysecond_ratio >= 0.8f) ? end_beat - 0.5f : end_beat - 1.0f;
-
-  // Track consecutive short notes to prevent breath-difficult passages
-  // Pop vocal principle: limit rapid-fire notes to maintain singability
-  // UltraVocaloid: allow machine-gun bursts (32+ consecutive short notes)
-  int consecutive_short_count = 0;
-  int max_consecutive_short = (thirtysecond_ratio >= 0.8f) ? 32 : 3;
-
-  // Track previous note duration for "溜め→爆発" (hold→burst) pattern
-  // After a long note (>=half note), boost density to create energy release
-  float prev_note_eighths = 0.0f;
-  constexpr float kLongNoteThreshold = 4.0f;  // Half note (4 eighths)
-  constexpr float kPostLongNoteDensityBoost = 1.3f;  // 30% density increase
-
-  // UltraVocaloid: Random start pattern for natural variation
-  // 0 = immediate 32nd notes, 1 = quarter accent first, 2 = gradual acceleration
-  int ultra_start_pattern = 0;
-  if (thirtysecond_ratio >= 0.8f) {
-    float r = dist(rng);
-    if (r < 0.5f) {
-      ultra_start_pattern = 0;  // 50%: immediate machine-gun
-    } else if (r < 0.8f) {
-      ultra_start_pattern = 1;  // 30%: quarter note accent first
-    } else {
-      ultra_start_pattern = 2;  // 20%: gradual acceleration
-    }
-  }
-
-  while (current_beat < phrase_body_end) {
-    // Check if current position is on a strong beat (integer beat: 0.0, 1.0, 2.0, 3.0)
-    // Pop music principle: strong beats should have longer, more stable notes
-    float frac = current_beat - std::floor(current_beat);
-    bool is_on_beat = frac < 0.01f;
-
-    // Syncopation: with probability based on syncopation_weight, shift off-beat
-    // This creates rhythmic interest by placing notes on upbeats (8th note offset)
-    // Only apply at the start of each beat (not within an off-beat already)
-    // Guard: don't syncopate if it would push us past the phrase body end
-    //
-    // Note: Only consume RNG when syncopation is possible to avoid changing
-    // downstream generation for the default case (syncopation_weight = 0).
-    bool apply_syncopation = false;
-    if (is_on_beat && syncopation_weight > 0.0f &&
-        current_beat + 0.5f < phrase_body_end) {
-      // Calculate context-aware syncopation weight
-      // Phrase progress: 0.0 at start, 1.0 at end
-      float phrase_progress = current_beat / end_beat;
-      int beat_in_bar = static_cast<int>(current_beat) % 4;
-      float contextual_weight = getContextualSyncopationWeight(
-          syncopation_weight, phrase_progress, beat_in_bar, section_type);
-
-      float synco_roll = dist(rng);
-      if (synco_roll < contextual_weight) {
-        // Skip this strong beat, advance to the off-beat (8th note = 0.5 beats)
-        apply_syncopation = true;
-        current_beat += 0.5f;
-        frac = 0.5f;
-        is_on_beat = false;
-      }
-    }
-    (void)apply_syncopation;  // Suppress unused variable warning
-
-    // Determine note duration (in eighths, float to support 32nds)
-    float eighths;
-
-    // UltraVocaloid (thirtysecond_ratio >= 0.8): allow fast notes even on strong beats
-    bool force_long_on_beat = is_on_beat && !tmpl.rhythm_driven && thirtysecond_ratio < 0.8f;
-
-    // UltraVocaloid: Insert phrase-ending long note at the end of each phrase
-    // Creates natural breathing points in machine-gun passages
-    // Triggers when we're in the last 1 beat of the phrase
-    bool ultra_phrase_boundary = false;
-    if (thirtysecond_ratio >= 0.8f) {
-      float beats_remaining = phrase_body_end - current_beat;
-      // If we're in the last 1 beat of the phrase, insert a long note
-      if (beats_remaining <= 1.0f && beats_remaining > 0.1f) {
-        ultra_phrase_boundary = true;
-      }
-    }
-
-    // UltraVocaloid: Handle start pattern variations
-    bool ultra_start_zone = (thirtysecond_ratio >= 0.8f && current_beat < 2.0f);
-
-    if (ultra_phrase_boundary) {
-      // Phrase boundary: insert long note that extends to the 2-bar boundary
-      // Duration fills the remaining time until the boundary (quarter note)
-      eighths = 2.0f;  // Quarter note
-      consecutive_short_count = 0;
-    } else if (ultra_start_zone && ultra_start_pattern > 0) {
-      // Start pattern variations
-      if (ultra_start_pattern == 1) {
-        // Pattern 1: Quarter note accent on beat 0, then machine-gun
-        if (current_beat < 0.01f) {
-          eighths = 2.0f;  // Quarter note accent
-        } else {
-          eighths = 0.25f;  // Then 32nd notes
-        }
-      } else {
-        // Pattern 2: Gradual acceleration (quarter -> 8th -> 16th -> 32nd)
-        if (current_beat < 0.5f) {
-          eighths = 2.0f;  // Quarter note
-        } else if (current_beat < 1.0f) {
-          eighths = 1.0f;  // 8th note
-        } else if (current_beat < 1.5f) {
-          eighths = 0.5f;  // 16th note
-        } else {
-          eighths = 0.25f;  // 32nd note
-        }
-      }
-    } else if (force_long_on_beat) {
-      // Strong beat (non-UltraVocaloid): prioritize longer notes for natural vocal phrasing
-      // Avoid 16th/32nd notes on downbeats - they break the rhythmic anchor
-      if (dist(rng) < tmpl.long_note_ratio * 2.0f) {
-        eighths = 4.0f;  // Half note (doubled probability on strong beat)
-      } else {
-        eighths = 2.0f;  // Quarter note (default for strong beats)
-      }
-      consecutive_short_count = 0;  // Reset counter on strong beat
-    } else {
-      // Weak beat: use existing logic for rhythmic variety
-      // Apply "溜め→爆発" (hold→burst) pattern: boost density after long notes
-      float local_density_boost = 1.0f;
-      if (prev_note_eighths >= kLongNoteThreshold) {
-        local_density_boost = kPostLongNoteDensityBoost;
-      }
-
-      if (thirtysecond_ratio > 0.0f && dist(rng) < thirtysecond_ratio * local_density_boost) {
-        eighths = 0.25f;  // 32nd note (0.25 eighth = 60 ticks)
-      } else if (tmpl.rhythm_driven && dist(rng) < effective_sixteenth_density * local_density_boost) {
-        eighths = 1.0f;  // 16th note (0.5 eighth)
-      } else if (dist(rng) < tmpl.long_note_ratio / local_density_boost) {
-        eighths = 4.0f;  // Half note (less likely after long note)
-      } else {
-        eighths = 2.0f;  // Quarter note (most common)
-      }
-    }
-
-    // Enforce consecutive short note limit for singability
-    // Vocal physiology: too many rapid notes without breath points causes strain
-    // UltraVocaloid: relaxed limit (32) allows machine-gun passages
-    if (eighths <= 1.0f) {
-      consecutive_short_count++;
-      if (consecutive_short_count >= max_consecutive_short) {
-        eighths = 2.0f;  // Force quarter note for breathing room
-        consecutive_short_count = 0;
-      }
-    } else {
-      consecutive_short_count = 0;
-    }
-
-    // Check if strong beat
-    bool strong = (static_cast<int>(current_beat) % 2 == 0);
-
-    // Store actual eighths value as float to preserve short note durations
-    rhythm.push_back({current_beat, eighths, strong});
-
-    // Track previous note for "溜め→爆発" pattern
-    prev_note_eighths = eighths;
-
-    current_beat += eighths * 0.5f;  // Convert eighths to beats
-
-    // Quantize to grid based on paradigm and style
-    // UltraVocaloid 32nd grid takes priority (explicit vocal style choice)
-    // RhythmSync uses 16th note grid for tighter rhythm sync
-    if (ultra_phrase_boundary) {
-      // After phrase boundary note, skip to phrase body end (exit the while loop)
-      current_beat = phrase_body_end;
-    } else if (thirtysecond_ratio >= 0.8f) {
-      // UltraVocaloid: 32nd note grid for machine-gun bursts
-      // Beat positions: 0, 0.125, 0.25, 0.375, 0.5, ...
-      current_beat = std::ceil(current_beat * 8.0f) / 8.0f;
-    } else if (paradigm == GenerationParadigm::RhythmSync) {
-      // 16th note grid: 0, 0.25, 0.5, 0.75, 1.0, 1.25, ...
-      current_beat = std::ceil(current_beat * 4.0f) / 4.0f;
-    } else {
-      // Traditional: 8th note grid for natural pop vocal rhythm
-      // Standard pop vocal beat positions: 0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5
-      current_beat = std::ceil(current_beat * 2.0f) / 2.0f;
-    }
-  }
-
-  // Add final phrase-ending note on a strong beat
-  // In pop music, phrases should end on strong beats (1, 2, 3, 4) with longer notes
-  if (phrase_beats >= 2) {
-    // Snap to nearest integer beat for the final note
-    float final_beat = std::floor(current_beat);
-    if (final_beat < current_beat) {
-      final_beat = std::ceil(current_beat);
-    }
-    // Ensure we don't exceed the phrase
-    if (final_beat >= end_beat) {
-      final_beat = end_beat - 1.0f;
-    }
-    // Final note duration: UltraVocaloid uses quarter note for phrase ending
-    float final_eighths = (end_beat - final_beat) * 2.0f;
-    if (thirtysecond_ratio >= 0.8f) {
-      final_eighths = std::max(final_eighths, 2.0f);  // At least quarter note for UltraVocaloid
-    } else {
-      final_eighths = std::max(final_eighths, 2.0f);  // At least quarter note
-    }
-
-    rhythm.push_back({final_beat, final_eighths, true});  // Strong beat
-  }
-
-  return rhythm;
+  return generatePhraseRhythmImpl(tmpl, phrase_beats, density_modifier, thirtysecond_ratio, rng,
+                                  paradigm, syncopation_weight, section_type);
 }
 
 // === Locked Rhythm Pitch Selection ===
@@ -2883,220 +1395,18 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
 uint8_t MelodyDesigner::selectPitchForLockedRhythm(uint8_t prev_pitch, int8_t chord_degree,
                                                    uint8_t vocal_low, uint8_t vocal_high,
                                                    std::mt19937& rng) {
-  // Get chord tone pitch classes (0-11) for the current chord (prioritize consonance)
-  std::vector<int> chord_tone_pcs = getChordTonePitchClasses(chord_degree);
-
-  // Collect candidate pitches within vocal range
-  std::vector<uint8_t> candidates;
-
-  // Add chord tones in range (primary candidates)
-  // pitch_class is the pitch modulo 12 (e.g., C=0, C#=1, ..., B=11)
-  for (int pc : chord_tone_pcs) {
-    for (int octave = 3; octave <= 7; ++octave) {
-      int pitch = pc + (octave * 12);
-      if (pitch >= vocal_low && pitch <= vocal_high) {
-        candidates.push_back(static_cast<uint8_t>(pitch));
-      }
-    }
-  }
-
-  if (candidates.empty()) {
-    // Fallback: use any pitch in range
-    for (int p = vocal_low; p <= vocal_high; ++p) {
-      candidates.push_back(static_cast<uint8_t>(p));
-    }
-  }
-
-  if (candidates.empty()) {
-    return prev_pitch;  // Safety fallback
-  }
-
-  // Sort candidates by distance from prev_pitch (prefer stepwise motion)
-  std::sort(candidates.begin(), candidates.end(), [prev_pitch](uint8_t a, uint8_t b) {
-    return std::abs(static_cast<int>(a) - prev_pitch) < std::abs(static_cast<int>(b) - prev_pitch);
-  });
-
-  // Weight selection: prefer close pitches but allow some variety
-  // 60% chance: closest pitch (stepwise)
-  // 30% chance: second closest
-  // 10% chance: random from top 4
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-  float roll = dist(rng);
-
-  size_t idx = 0;
-  if (roll < 0.6f) {
-    idx = 0;  // Closest
-  } else if (roll < 0.9f && candidates.size() > 1) {
-    idx = 1;  // Second closest
-  } else if (candidates.size() > 2) {
-    // Random from top 4
-    size_t max_idx = std::min(static_cast<size_t>(4), candidates.size());
-    std::uniform_int_distribution<size_t> idx_dist(0, max_idx - 1);
-    idx = idx_dist(rng);
-  }
-
-  return candidates[idx];
+  return selectPitchForLockedRhythmImpl(prev_pitch, chord_degree, vocal_low, vocal_high, rng);
 }
 
 // === GlobalMotif Support ===
 
 GlobalMotif MelodyDesigner::extractGlobalMotif(const std::vector<NoteEvent>& notes) {
-  GlobalMotif motif;
-
-  if (notes.size() < 2) {
-    return motif;  // Not enough notes for meaningful analysis
-  }
-
-  // Extract interval signature (relative pitch changes)
-  size_t interval_limit = std::min(notes.size() - 1, static_cast<size_t>(8));
-  for (size_t i = 0; i < interval_limit; ++i) {
-    int interval = static_cast<int>(notes[i + 1].note) - static_cast<int>(notes[i].note);
-    motif.interval_signature[i] = static_cast<int8_t>(std::clamp(interval, -12, 12));
-  }
-  motif.interval_count = static_cast<uint8_t>(interval_limit);
-
-  // Extract rhythm signature (relative durations)
-  Tick max_duration = 0;
-  for (size_t i = 0; i < std::min(notes.size(), static_cast<size_t>(8)); ++i) {
-    if (notes[i].duration > max_duration) {
-      max_duration = notes[i].duration;
-    }
-  }
-  if (max_duration > 0) {
-    for (size_t i = 0; i < std::min(notes.size(), static_cast<size_t>(8)); ++i) {
-      // Normalize to 0-8 scale (8 = longest note)
-      uint8_t ratio = static_cast<uint8_t>((notes[i].duration * 8) / max_duration);
-      motif.rhythm_signature[i] =
-          std::clamp(ratio, static_cast<uint8_t>(1), static_cast<uint8_t>(8));
-    }
-    motif.rhythm_count = static_cast<uint8_t>(std::min(notes.size(), static_cast<size_t>(8)));
-  }
-
-  // Analyze contour type
-  if (motif.interval_count >= 2) {
-    int first_half_sum = 0, second_half_sum = 0;
-    size_t mid = motif.interval_count / 2;
-
-    for (size_t i = 0; i < mid; ++i) {
-      first_half_sum += motif.interval_signature[i];
-    }
-    for (size_t i = mid; i < motif.interval_count; ++i) {
-      second_half_sum += motif.interval_signature[i];
-    }
-
-    // Determine contour based on directional changes
-    int total_movement = first_half_sum + second_half_sum;
-    bool first_rising = first_half_sum > 0;
-    bool first_falling = first_half_sum < 0;
-    bool second_rising = second_half_sum > 0;
-    bool second_falling = second_half_sum < 0;
-
-    // Peak/Valley: significant direction reversal
-    if (first_rising && second_falling && std::abs(first_half_sum) >= 3) {
-      motif.contour_type = ContourType::Peak;
-    } else if (first_falling && second_rising && std::abs(first_half_sum) >= 3) {
-      motif.contour_type = ContourType::Valley;
-    } else if (std::abs(first_half_sum) < 3 && std::abs(second_half_sum) < 3) {
-      // Both halves have little movement = plateau
-      motif.contour_type = ContourType::Plateau;
-    } else if (total_movement > 0) {
-      motif.contour_type = ContourType::Ascending;
-    } else {
-      motif.contour_type = ContourType::Descending;
-    }
-  }
-
-  return motif;
+  return extractGlobalMotifImpl(notes);
 }
 
 float MelodyDesigner::evaluateWithGlobalMotif(const std::vector<NoteEvent>& candidate,
                                               const GlobalMotif& global_motif) {
-  if (!global_motif.isValid() || candidate.size() < 2) {
-    return 0.0f;
-  }
-
-  float bonus = 0.0f;
-
-  // Extract candidate's contour
-  GlobalMotif candidate_motif = extractGlobalMotif(candidate);
-
-  // Contour similarity bonus (0.0-0.10)
-  // Increased from 0.05 to strengthen melodic coherence across sections.
-  if (candidate_motif.contour_type == global_motif.contour_type) {
-    bonus += 0.10f;
-  }
-
-  // Interval pattern similarity bonus (0.0-0.05)
-  if (candidate_motif.interval_count > 0 && global_motif.interval_count > 0) {
-    size_t compare_count = std::min(static_cast<size_t>(candidate_motif.interval_count),
-                                    static_cast<size_t>(global_motif.interval_count));
-
-    int similarity_score = 0;
-    for (size_t i = 0; i < compare_count; ++i) {
-      int diff =
-          std::abs(candidate_motif.interval_signature[i] - global_motif.interval_signature[i]);
-      // Award points for similar intervals (within 2 semitones)
-      if (diff <= 2) {
-        similarity_score += (3 - diff);  // 3 for exact, 2 for 1 off, 1 for 2 off
-      }
-    }
-
-    // Normalize to 0.0-0.05 range
-    float max_score = static_cast<float>(compare_count * 3);
-    if (max_score > 0.0f) {
-      bonus += (static_cast<float>(similarity_score) / max_score) * 0.05f;
-    }
-  }
-
-  // Contour direction matching bonus (0.0-0.05)
-  // Rewards candidates whose individual interval directions match the DNA pattern.
-  // If the DNA goes up at position N, ascending intervals at that position get a bonus.
-  if (candidate_motif.interval_count > 0 && global_motif.interval_count > 0) {
-    size_t compare_count = std::min(static_cast<size_t>(candidate_motif.interval_count),
-                                    static_cast<size_t>(global_motif.interval_count));
-    int direction_matches = 0;
-    for (size_t idx = 0; idx < compare_count; ++idx) {
-      int cand_dir = (candidate_motif.interval_signature[idx] > 0)
-                         ? 1
-                         : (candidate_motif.interval_signature[idx] < 0 ? -1 : 0);
-      int motif_dir = (global_motif.interval_signature[idx] > 0)
-                          ? 1
-                          : (global_motif.interval_signature[idx] < 0 ? -1 : 0);
-      if (cand_dir == motif_dir && cand_dir != 0) {
-        direction_matches++;
-      }
-    }
-    // Normalize: each matching direction contributes proportionally
-    if (compare_count > 0) {
-      bonus +=
-          (static_cast<float>(direction_matches) / static_cast<float>(compare_count)) * 0.05f;
-    }
-  }
-
-  // Interval consistency bonus (0.0-0.05)
-  // Rewards candidates that preserve the step-vs-leap character of the DNA.
-  // Steps (1-2 semitones) matching steps, and leaps (3+) matching leaps.
-  if (candidate_motif.interval_count > 0 && global_motif.interval_count > 0) {
-    size_t compare_count = std::min(static_cast<size_t>(candidate_motif.interval_count),
-                                    static_cast<size_t>(global_motif.interval_count));
-    int consistency_matches = 0;
-    for (size_t idx = 0; idx < compare_count; ++idx) {
-      int cand_abs = std::abs(candidate_motif.interval_signature[idx]);
-      int motif_abs = std::abs(global_motif.interval_signature[idx]);
-      bool cand_is_step = (cand_abs >= 1 && cand_abs <= 2);
-      bool motif_is_step = (motif_abs >= 1 && motif_abs <= 2);
-      // Both steps or both leaps (3+ semitones)
-      if (cand_is_step == motif_is_step && (cand_abs > 0 || motif_abs > 0)) {
-        consistency_matches++;
-      }
-    }
-    if (compare_count > 0) {
-      bonus +=
-          (static_cast<float>(consistency_matches) / static_cast<float>(compare_count)) * 0.05f;
-    }
-  }
-
-  return bonus;
+  return evaluateWithGlobalMotifImpl(candidate, global_motif);
 }
 
 // ============================================================================

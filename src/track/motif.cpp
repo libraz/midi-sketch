@@ -945,22 +945,6 @@ void generateMotifTrack(MidiTrack& track, Song& song, const GeneratorParams& par
                                                              rng);
         }
 
-        // L4: Occasionally apply tension based on chord quality (9th, 11th, 13th)
-        // Only apply if chord extensions are enabled to maintain Motif/Chord consistency
-        // Note: Tensions are skipped to ensure diatonic output
-        // std::uniform_real_distribution<float> tension_prob(0.0f, 1.0f);
-        // bool extensions_enabled = params.chord_extension.enable_7th ||
-        //                           params.chord_extension.enable_9th;
-        // bool use_tension = extensions_enabled &&
-        //                    (section.type == SectionType::B ||
-        //                     section.type == SectionType::Chorus) &&
-        //                    tension_prob(rng) < 0.15f;  // 15% chance in B/Chorus
-        //
-        // if (use_tension) {
-        //   adjusted_pitch = motif_detail::applyTension(adjusted_pitch, chord_root, quality, rng);
-        //   adjusted_pitch = std::clamp(adjusted_pitch, 36, 108);
-        // }
-
         // M9: Apply role-based velocity adjustment
         uint8_t vel = role_meta.velocity_base;
         // Section-based velocity variation (only when not fixed)

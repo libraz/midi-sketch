@@ -255,16 +255,6 @@ class Generator {
    */
   bool shouldUseRhythmLock() const;
 
-  /**
-   * @brief Apply density progression to sections for Orangestar style.
-   *
-   * @deprecated This is a no-op. Density progression is now applied
-   * automatically in generate() via applyDensityProgressionToSections().
-   * Do not call this method.
-   */
-  [[deprecated("Density progression is applied automatically in generate()")]]
-  void applyDensityProgression();
-
   /// @}
   /// @name Vocal-First Refinement
   /// @{

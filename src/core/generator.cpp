@@ -1417,11 +1417,6 @@ void Generator::generateMotifAsAxis() {
   rhythm_lock_active_ = true;
 }
 
-void Generator::applyDensityProgression() {
-  // No-op: density progression is applied inline in generate()
-  // before setArrangement() is called. This method exists for API consistency.
-}
-
 // ============================================================================
 // Expression Curve Generation (CC11)
 // ============================================================================
