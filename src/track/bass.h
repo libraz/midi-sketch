@@ -139,8 +139,10 @@ enum class BassPattern : uint8_t {
 /// @param pattern Current bass pattern (affects articulation choices)
 /// @param mood Current mood (affects articulation for WholeNote)
 /// @param sections Song sections (for context)
+/// @param harmony Optional harmony context for collision checking during legato extension
 void applyBassArticulation(MidiTrack& track, BassPattern pattern, Mood mood,
-                           const std::vector<Section>& sections);
+                           const std::vector<Section>& sections,
+                           const IHarmonyContext* harmony = nullptr);
 
 /// @brief Adjust bass density based on section density_percent.
 ///

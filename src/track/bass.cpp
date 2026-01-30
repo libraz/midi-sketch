@@ -42,6 +42,10 @@
 
 namespace midisketch {
 
+// Forward declaration for density adjustment with collision checking
+void applyDensityAdjustmentWithHarmony(MidiTrack& track, const Section& section,
+                                        const IHarmonyContext* harmony);
+
 namespace {
 
 // ============================================================================
@@ -1436,12 +1440,12 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
     if (!sections.empty()) {
       dominant_pattern = selectPatternWithPolicy(temp_cache, sections[0], 0, params, rng);
     }
-    applyBassArticulation(track, dominant_pattern, params.mood, sections);
+    applyBassArticulation(track, dominant_pattern, params.mood, sections, &harmony);
   }
 
-  // Post-processing 3: Apply density adjustment per section
+  // Post-processing 3: Apply density adjustment per section with collision checking
   for (const auto& section : sections) {
-    applyDensityAdjustment(track, section);
+    applyDensityAdjustmentWithHarmony(track, section, &harmony);
   }
 
   // Post-processing 4: sync bass notes with kick positions for tighter groove
@@ -1951,12 +1955,12 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song, const Genera
       dominant_pattern = selectPatternWithPolicyForVocal(temp_cache, sections[0], 0, params,
                                                          section_vocal_density, rng);
     }
-    applyBassArticulation(track, dominant_pattern, params.mood, sections);
+    applyBassArticulation(track, dominant_pattern, params.mood, sections, &harmony);
   }
 
-  // Post-processing 3: Apply density adjustment per section
+  // Post-processing 3: Apply density adjustment per section with collision checking
   for (const auto& section : sections) {
-    applyDensityAdjustment(track, section);
+    applyDensityAdjustmentWithHarmony(track, section, &harmony);
   }
 }
 
@@ -2046,7 +2050,8 @@ BassArticulation determineArticulation(BassPattern pattern, Mood mood, Tick note
 // ============================================================================
 
 void applyBassArticulation(MidiTrack& track, BassPattern pattern, Mood mood,
-                           [[maybe_unused]] const std::vector<Section>& sections) {
+                           [[maybe_unused]] const std::vector<Section>& sections,
+                           const IHarmonyContext* harmony) {
   auto& notes = track.notes();
   if (notes.empty()) return;
 
@@ -2075,9 +2080,26 @@ void applyBassArticulation(MidiTrack& track, BassPattern pattern, Mood mood,
       note.duration = MIN_DURATION;
     }
 
-    // For legato, add slight overlap (10 ticks)
+    // For legato, extend duration but check for collisions with other tracks
     if (art == BassArticulation::Legato) {
-      note.duration = std::max(note.duration, original_duration + 10);
+      Tick desired_duration = std::max(note.duration, original_duration + 10);
+
+      // If harmony context available, check if extension would cause collision
+      if (harmony != nullptr) {
+        // Use getMaxSafeEnd to find the maximum safe duration
+        Tick safe_end = harmony->getMaxSafeEnd(note.start_tick, note.note, TrackRole::Bass,
+                                               note.start_tick + desired_duration);
+        Tick safe_duration = safe_end - note.start_tick;
+
+        // Only extend up to safe duration, but at least keep original
+        if (safe_duration >= original_duration) {
+          note.duration = std::min(desired_duration, safe_duration);
+        }
+        // If even original duration is unsafe, keep it (already generated as safe)
+      } else {
+        // No harmony context, apply legato without safety check
+        note.duration = desired_duration;
+      }
     }
 
     // Apply velocity modification
@@ -2099,7 +2121,8 @@ void applyBassArticulation(MidiTrack& track, BassPattern pattern, Mood mood,
 // - < 70%: simplify 8th patterns to quarter notes (thin out)
 // - > 90%: increase approach note frequency
 
-void applyDensityAdjustment(MidiTrack& track, const Section& section) {
+void applyDensityAdjustmentWithHarmony(MidiTrack& track, const Section& section,
+                                        const IHarmonyContext* harmony) {
   // Apply SectionModifier to density
   uint8_t effective_density = section.getModifiedDensity(section.density_percent);
 
@@ -2132,9 +2155,23 @@ void applyDensityAdjustment(MidiTrack& track, const Section& section) {
       bool is_quarter_pos = (pos_in_bar % TICK_QUARTER) < TICK_SIXTEENTH;
 
       if (is_quarter_pos) {
-        // Keep notes on quarter note positions, extend duration
+        // Keep notes on quarter note positions, extend duration with collision check
         NoteEvent adjusted = note;
-        adjusted.duration = std::max(adjusted.duration, TICK_QUARTER);
+        Tick desired_duration = TICK_QUARTER;
+
+        // If harmony context available, check for collisions before extending
+        if (harmony != nullptr && desired_duration > adjusted.duration) {
+          Tick safe_end = harmony->getMaxSafeEnd(adjusted.start_tick, adjusted.note,
+                                                  TrackRole::Bass,
+                                                  adjusted.start_tick + desired_duration);
+          Tick safe_duration = safe_end - adjusted.start_tick;
+          // Only extend if safe, otherwise keep original
+          if (safe_duration >= adjusted.duration) {
+            adjusted.duration = std::min(desired_duration, safe_duration);
+          }
+        } else {
+          adjusted.duration = std::max(adjusted.duration, desired_duration);
+        }
         filtered.push_back(adjusted);
       }
       // Notes on 8th positions are removed (thinned out)
@@ -2147,6 +2184,11 @@ void applyDensityAdjustment(MidiTrack& track, const Section& section) {
     }
   }
   // Note: density > 90% adjustment (more approach notes) is handled in pattern generation
+}
+
+// Legacy function for backward compatibility
+void applyDensityAdjustment(MidiTrack& track, const Section& section) {
+  applyDensityAdjustmentWithHarmony(track, section, nullptr);
 }
 
 }  // namespace midisketch

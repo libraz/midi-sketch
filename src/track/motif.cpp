@@ -177,25 +177,19 @@ bool isDiatonicPC(int pc) {
   return false;
 }
 
-// Get chord tone pitch classes for a chord, filtered to diatonic only
-// Returns root, 3rd, 5th as pitch classes (0-11), but only diatonic ones
-std::vector<int> getDiatonicChordTones(uint8_t chord_root, bool is_minor) {
+// Get chord tone pitch classes for a chord
+// Returns root, 3rd, 5th as pitch classes (0-11)
+// Note: All chord tones are valid for resolution, not just diatonic ones.
+// Previously filtered by C major diatonicism which caused tritone clashes
+// when resolving to wrong pitches.
+std::vector<int> getChordTones(uint8_t chord_root, bool is_minor) {
   int root_pc = chord_root % 12;
   int third_offset = is_minor ? 3 : 4;  // minor 3rd or major 3rd
   int third_pc = (root_pc + third_offset) % 12;
   int fifth_pc = (root_pc + 7) % 12;
 
-  std::vector<int> tones;
-  // Only include diatonic chord tones
-  if (isDiatonicPC(root_pc)) tones.push_back(root_pc);
-  if (isDiatonicPC(third_pc)) tones.push_back(third_pc);
-  if (isDiatonicPC(fifth_pc)) tones.push_back(fifth_pc);
-
-  // If no diatonic chord tones (shouldn't happen in C major), return root
-  if (tones.empty()) {
-    tones.push_back(root_pc);
-  }
-  return tones;
+  // Always include all chord tones - they are always safe for the chord
+  return {root_pc, third_pc, fifth_pc};
 }
 
 // Adjust pitch to avoid dissonance by resolving to nearest DIATONIC chord tone
@@ -207,8 +201,8 @@ int adjustForChord(int pitch, uint8_t chord_root, bool is_minor, int8_t chord_de
     return pitch;
   }
 
-  // Find nearest diatonic chord tone
-  auto chord_tones = getDiatonicChordTones(chord_root, is_minor);
+  // Find nearest chord tone
+  auto chord_tones = getChordTones(chord_root, is_minor);
   int octave = pitch / 12;
 
   int best_pitch = pitch;
@@ -236,7 +230,7 @@ int adjustForChord(int pitch, uint8_t chord_root, bool is_minor, int8_t chord_de
 // @param is_minor Whether the chord is minor
 // @returns Pitch snapped to nearest chord tone
 int snapToChordTone(int pitch, uint8_t chord_root, bool is_minor) {
-  auto chord_tones = getDiatonicChordTones(chord_root, is_minor);
+  auto chord_tones = getChordTones(chord_root, is_minor);
   int octave = pitch / 12;
 
   int best_pitch = pitch;

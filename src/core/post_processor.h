@@ -188,6 +188,34 @@ class PostProcessor {
   static void fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& vocal,
                                     const IHarmonyContext& harmony);
 
+  /// @brief Fix chord-vocal clashes that may occur after post-processing.
+  ///
+  /// Post-processing (humanization, duration extension) can create chord-vocal
+  /// clashes that weren't detected during generation. This function removes
+  /// clashing chord notes to resolve minor 2nd, major 2nd, and major 7th intervals.
+  ///
+  /// @param chord Chord track to adjust (in-place)
+  /// @param vocal Vocal track (read-only reference)
+  static void fixChordVocalClashes(MidiTrack& chord, const MidiTrack& vocal);
+
+  /// @brief Fix aux-vocal clashes that may occur after post-processing.
+  ///
+  /// Similar to fixChordVocalClashes, but for aux track. Removes clashing aux notes
+  /// to resolve minor 2nd, major 2nd, and major 7th intervals.
+  ///
+  /// @param aux Aux track to adjust (in-place)
+  /// @param vocal Vocal track (read-only reference)
+  static void fixAuxVocalClashes(MidiTrack& aux, const MidiTrack& vocal);
+
+  /// @brief Fix bass-vocal clashes that may occur after post-processing.
+  ///
+  /// Similar to fixChordVocalClashes, but for bass track. Removes clashing bass notes
+  /// to resolve minor 2nd, major 2nd, and major 7th intervals.
+  ///
+  /// @param bass Bass track to adjust (in-place)
+  /// @param vocal Vocal track (read-only reference)
+  static void fixBassVocalClashes(MidiTrack& bass, const MidiTrack& vocal);
+
  private:
   // Returns true if the tick position is on a strong beat (beats 1 or 3 in 4/4).
   static bool isStrongBeat(Tick tick);

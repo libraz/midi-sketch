@@ -556,6 +556,10 @@ void Generator::regenerateVocal(const VocalConfig& config) {
 void Generator::generateAccompanimentForVocal() {
   clearAccompanimentTracks();
 
+  // Register vocal with harmony context BEFORE generating accompaniment
+  // This enables isPitchSafe() to detect vocal collisions
+  harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
+
   // Analyze existing vocal to extract characteristics
   VocalAnalysis vocal_analysis = analyzeVocal(song_.vocal());
 
@@ -1173,8 +1177,7 @@ void Generator::applyTransitionDynamics() {
     applyEmotionBasedDynamics(tracks, sections);
   }
 
-  // FINAL STEP: Apply blueprint constraints (e.g., IdolKawaii max_velocity=80, max_pitch=79)
-  // This MUST be the last processing step to ensure no note exceeds the limits.
+  // Apply blueprint constraints (e.g., IdolKawaii max_velocity=80, max_pitch=79)
   if (blueprint_ != nullptr) {
     std::vector<MidiTrack*> all_tracks = {&song_.vocal(), &song_.chord(), &song_.bass(),
                                           &song_.arpeggio(), &song_.motif(), &song_.aux()};
@@ -1191,6 +1194,15 @@ void Generator::applyTransitionDynamics() {
       midisketch::clampTrackPitch(song_.vocal(), blueprint_->constraints.max_pitch);
     }
   }
+
+  // FINAL STEP: Fix track-vocal clashes that may occur after all post-processing.
+  // Must run AFTER:
+  // - applyEnhancedFinalHit (extends chord durations)
+  // - humanization (modifies note timing)
+  // - blueprint constraints (clamps vocal pitch, creating new intervals)
+  PostProcessor::fixChordVocalClashes(song_.chord(), song_.vocal());
+  PostProcessor::fixAuxVocalClashes(song_.aux(), song_.vocal());
+  PostProcessor::fixBassVocalClashes(song_.bass(), song_.vocal());
 }
 
 size_t Generator::findSectionIndex(const std::vector<Section>& sections, Tick tick) const {

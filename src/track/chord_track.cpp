@@ -763,10 +763,12 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
           uint8_t vel = calculateVelocity(section.type, 0, params.mood);
           uint8_t octave_vel = static_cast<uint8_t>(vel * 0.8f);  // Slightly softer
 
-          // Add lower octave doubling for fuller sound
+          // Add lower octave doubling for fuller sound (with safety check)
           for (size_t idx = 0; idx < voicing.count; ++idx) {
             int lower_pitch = static_cast<int>(voicing.pitches[idx]) - 12;
-            if (lower_pitch >= CHORD_LOW && lower_pitch <= CHORD_HIGH) {
+            if (lower_pitch >= CHORD_LOW && lower_pitch <= CHORD_HIGH &&
+                harmony.isPitchSafe(static_cast<uint8_t>(lower_pitch), bar_start, WHOLE,
+                                    TrackRole::Chord)) {
               addChordNote(bar_start, WHOLE, static_cast<uint8_t>(lower_pitch), octave_vel);
             }
           }
@@ -784,10 +786,12 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
           uint8_t vel = calculateVelocity(section.type, 0, params.mood);
           uint8_t doubling_vel = static_cast<uint8_t>(vel * 0.75f);  // Softer to blend
 
-          // Add root one octave below (the bass note of the voicing)
+          // Add root one octave below (the bass note of the voicing) with safety check
           int root_pitch = voicing.pitches[0];  // Lowest note in voicing is typically root
           int low_root = root_pitch - 12;
-          if (low_root >= CHORD_LOW && low_root <= CHORD_HIGH) {
+          if (low_root >= CHORD_LOW && low_root <= CHORD_HIGH &&
+              harmony.isPitchSafe(static_cast<uint8_t>(low_root), bar_start, WHOLE,
+                                  TrackRole::Chord)) {
             addChordNote(bar_start, WHOLE, static_cast<uint8_t>(low_root), doubling_vel);
           }
         }
@@ -1360,13 +1364,15 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
           uint8_t octave_vel = static_cast<uint8_t>(vel * 0.8f);
           for (size_t idx = 0; idx < voicing.count; ++idx) {
             int lower_pitch = static_cast<int>(voicing.pitches[idx]) - 12;
-            if (lower_pitch >= CHORD_LOW && lower_pitch <= CHORD_HIGH) {
+            if (lower_pitch >= CHORD_LOW && lower_pitch <= CHORD_HIGH &&
+                harmony.isPitchSafe(static_cast<uint8_t>(lower_pitch), bar_start, WHOLE,
+                                    TrackRole::Chord)) {
               addChordNote(bar_start, WHOLE, static_cast<uint8_t>(lower_pitch), octave_vel);
             }
           }
         }
 
-        // PeakLevel::Max enhancement: add root octave-below doubling
+        // PeakLevel::Max enhancement: add root octave-below doubling (with safety check)
         if (section.peak_level == PeakLevel::Max && voicing.count >= 1) {
           NoteFactory factory(harmony);
           auto addChordNote = [&](Tick start, Tick duration, uint8_t pitch, uint8_t velocity) {
@@ -1379,7 +1385,9 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
 
           int root_pitch = voicing.pitches[0];
           int low_root = root_pitch - 12;
-          if (low_root >= CHORD_LOW && low_root <= CHORD_HIGH) {
+          if (low_root >= CHORD_LOW && low_root <= CHORD_HIGH &&
+              harmony.isPitchSafe(static_cast<uint8_t>(low_root), bar_start, WHOLE,
+                                  TrackRole::Chord)) {
             addChordNote(bar_start, WHOLE, static_cast<uint8_t>(low_root), doubling_vel);
           }
         }

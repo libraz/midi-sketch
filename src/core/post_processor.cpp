@@ -1084,12 +1084,14 @@ bool clashesWithVocal(uint8_t pitch, Tick start, Tick end, const MidiTrack& voca
   return false;
 }
 
-// Find a safe chord tone pitch that doesn't clash with vocal
-// Tries different octaves and different chord tones
-uint8_t findSafeChordTone(uint8_t original_pitch, int8_t degree, Tick start, Tick end,
-                          const MidiTrack& vocal) {
+// Find a safe chord tone pitch that doesn't clash with vocal or any registered tracks.
+// Checks BOTH the vocal track directly AND harmony.isPitchSafe() for comprehensive checking.
+// Tries different octaves and different chord tones.
+uint8_t findSafeChordTone(uint8_t original_pitch, int8_t degree, Tick start, Tick duration,
+                          const MidiTrack& vocal, const IHarmonyContext& harmony) {
   ChordTones ct = getChordTones(degree);
   int base_octave = original_pitch / 12;
+  Tick end = start + duration;
 
   // Strategy 1: Try each chord tone at different octaves (prefer close to original)
   struct Candidate {
@@ -1108,10 +1110,13 @@ uint8_t findSafeChordTone(uint8_t original_pitch, int8_t degree, Tick start, Tic
       if (candidate_pitch < MOTIF_LOW || candidate_pitch > MOTIF_HIGH) continue;
 
       uint8_t clamped = static_cast<uint8_t>(candidate_pitch);
-      if (!clashesWithVocal(clamped, start, end, vocal)) {
-        int dist = std::abs(candidate_pitch - static_cast<int>(original_pitch));
-        candidates.push_back({clamped, dist});
-      }
+      // Check against vocal directly (for tests that don't register vocal)
+      if (clashesWithVocal(clamped, start, end, vocal)) continue;
+      // Also check against all registered tracks (chord, bass, etc.)
+      if (!harmony.isPitchSafe(clamped, start, duration, TrackRole::Motif)) continue;
+
+      int dist = std::abs(candidate_pitch - static_cast<int>(original_pitch));
+      candidates.push_back({clamped, dist});
     }
   }
 
@@ -1161,10 +1166,11 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
           int8_t degree = harmony.getChordDegreeAt(m_note.start_tick);
           uint8_t original_pitch = m_note.note;
 
-          // Find a chord tone that doesn't clash with vocal
-          uint8_t new_pitch = findSafeChordTone(original_pitch, degree, m_note.start_tick, m_end, vocal);
+          // Find a chord tone that doesn't clash with vocal or any registered track
+          uint8_t new_pitch = findSafeChordTone(original_pitch, degree, m_note.start_tick,
+                                                 m_note.duration, vocal, harmony);
 
-          // If still clashing, try using harmony's getBestAvailablePitch as last resort
+          // If still clashing with vocal, try using harmony's getBestAvailablePitch as last resort
           if (clashesWithVocal(new_pitch, m_note.start_tick, m_end, vocal)) {
             new_pitch = harmony.getBestAvailablePitch(original_pitch, m_note.start_tick, m_note.duration,
                                              TrackRole::Motif, MOTIF_LOW, MOTIF_HIGH);
@@ -1183,6 +1189,60 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
       }
     }
   }
+}
+
+namespace {
+
+// Remove notes from track that clash with vocal.
+// @param include_close_major_2nd If true, treat close major 2nd (interval < 12) as dissonant.
+//        Bass uses false (octave separation makes M2 acceptable), Chord/Aux use true.
+void removeVocalClashingNotes(MidiTrack& track, const MidiTrack& vocal,
+                               bool include_close_major_2nd) {
+  auto& notes = track.notes();
+  const auto& vocal_notes = vocal.notes();
+  if (notes.empty() || vocal_notes.empty()) return;
+
+  auto isDissonant = [include_close_major_2nd](int interval) {
+    int interval_class = interval % 12;
+    if (interval_class == 1 || interval_class == 11) return true;  // m2, M7
+    if (include_close_major_2nd && interval_class == 2 && interval < 12) return true;
+    return false;
+  };
+
+  std::vector<size_t> notes_to_remove;
+  for (size_t idx = 0; idx < notes.size(); ++idx) {
+    const auto& note = notes[idx];
+    Tick note_end = note.start_tick + note.duration;
+
+    for (const auto& v_note : vocal_notes) {
+      Tick v_end = v_note.start_tick + v_note.duration;
+      if (note.start_tick < v_end && note_end > v_note.start_tick) {
+        int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(v_note.note));
+        if (isDissonant(interval)) {
+          notes_to_remove.push_back(idx);
+          break;
+        }
+      }
+    }
+  }
+
+  for (auto it = notes_to_remove.rbegin(); it != notes_to_remove.rend(); ++it) {
+    notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(*it));
+  }
+}
+
+}  // namespace
+
+void PostProcessor::fixChordVocalClashes(MidiTrack& chord, const MidiTrack& vocal) {
+  removeVocalClashingNotes(chord, vocal, /*include_close_major_2nd=*/true);
+}
+
+void PostProcessor::fixAuxVocalClashes(MidiTrack& aux, const MidiTrack& vocal) {
+  removeVocalClashingNotes(aux, vocal, /*include_close_major_2nd=*/true);
+}
+
+void PostProcessor::fixBassVocalClashes(MidiTrack& bass, const MidiTrack& vocal) {
+  removeVocalClashingNotes(bass, vocal, /*include_close_major_2nd=*/false);
 }
 
 }  // namespace midisketch
