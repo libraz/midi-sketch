@@ -46,10 +46,10 @@ bool HarmonyContext::isPitchSafe(uint8_t pitch, Tick start, Tick duration, Track
                                          is_weak_beat);
 }
 
-uint8_t HarmonyContext::getSafePitch(uint8_t desired, Tick start, Tick duration, TrackRole track,
-                                     uint8_t low, uint8_t high) const {
-  return pitch_resolver_.getSafePitch(desired, start, duration, track, low, high, chord_tracker_,
-                                      collision_detector_);
+uint8_t HarmonyContext::getBestAvailablePitch(uint8_t desired, Tick start, Tick duration,
+                                              TrackRole track, uint8_t low, uint8_t high) const {
+  return pitch_resolver_.getBestAvailablePitch(desired, start, duration, track, low, high,
+                                               chord_tracker_, collision_detector_);
 }
 
 void HarmonyContext::clearNotes() { collision_detector_.clearNotes(); }

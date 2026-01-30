@@ -2,7 +2,7 @@
  * @file pitch_safety_builder.h
  * @brief Fluent builder for creating harmony-safe notes with fallback strategies.
  *
- * Consolidates the common pattern of createSafe + fallback logic into a chainable API.
+ * Consolidates the common pattern of createIfNoDissonance + fallback logic into a chainable API.
  * Usage:
  * @code
  * PitchSafetyBuilder(factory)
@@ -45,7 +45,7 @@ enum class PitchFallbackStrategy {
  * @brief Fluent builder for creating harmony-safe notes.
  *
  * Encapsulates the common pattern of:
- * 1. Try createSafe() with the desired pitch
+ * 1. Try createIfNoDissonance() with the desired pitch
  * 2. If unsafe, apply fallback strategy
  * 3. Add the note to the track
  */

@@ -404,7 +404,7 @@ std::vector<NoteEvent> placeMotifInBridge(const Motif& motif, Tick section_start
     uint8_t final_pitch = static_cast<uint8_t>(snapped);
     if (!harmony.isPitchSafe(final_pitch, note.start_tick, note.duration, track)) {
       final_pitch =
-          harmony.getSafePitch(final_pitch, note.start_tick, note.duration, track, 36, 96);
+          harmony.getBestAvailablePitch(final_pitch, note.start_tick, note.duration, track, 36, 96);
     }
 
     note.note = final_pitch;
@@ -476,7 +476,7 @@ std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_
       // Check for collisions and find safe pitch if needed
       uint8_t final_pitch = static_cast<uint8_t>(snapped);
       if (!harmony.isPitchSafe(final_pitch, note_start, duration, track)) {
-        final_pitch = harmony.getSafePitch(final_pitch, note_start, duration, track, 36, 96);
+        final_pitch = harmony.getBestAvailablePitch(final_pitch, note_start, duration, track, 36, 96);
       }
 
       // Use NoteFactory for provenance tracking

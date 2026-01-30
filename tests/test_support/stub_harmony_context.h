@@ -59,7 +59,7 @@ class StubHarmonyContext : public IHarmonyContext {
     return all_pitches_safe_;
   }
 
-  uint8_t getSafePitch(uint8_t desired, Tick /*start*/, Tick /*duration*/, TrackRole /*track*/,
+  uint8_t getBestAvailablePitch(uint8_t desired, Tick /*start*/, Tick /*duration*/, TrackRole /*track*/,
                        uint8_t /*low*/, uint8_t /*high*/) const override {
     return desired;  // Always return the desired pitch
   }

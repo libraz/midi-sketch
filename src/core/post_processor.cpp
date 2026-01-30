@@ -1164,9 +1164,9 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
           // Find a chord tone that doesn't clash with vocal
           uint8_t new_pitch = findSafeChordTone(original_pitch, degree, m_note.start_tick, m_end, vocal);
 
-          // If still clashing, try using harmony's getSafePitch as last resort
+          // If still clashing, try using harmony's getBestAvailablePitch as last resort
           if (clashesWithVocal(new_pitch, m_note.start_tick, m_end, vocal)) {
-            new_pitch = harmony.getSafePitch(original_pitch, m_note.start_tick, m_note.duration,
+            new_pitch = harmony.getBestAvailablePitch(original_pitch, m_note.start_tick, m_note.duration,
                                              TrackRole::Motif, MOTIF_LOW, MOTIF_HIGH);
           }
 

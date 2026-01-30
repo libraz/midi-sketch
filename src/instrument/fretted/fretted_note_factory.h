@@ -95,7 +95,7 @@ class FrettedNoteFactory {
   /// @param technique Playing technique
   /// @param source Generation phase
   /// @return NoteEvent if safe and playable, nullopt otherwise
-  std::optional<NoteEvent> createSafe(Tick start, Tick duration, uint8_t pitch,
+  std::optional<NoteEvent> createIfNoDissonance(Tick start, Tick duration, uint8_t pitch,
                                       uint8_t velocity, TrackRole track,
                                       PlayingTechnique technique, NoteSource source);
 

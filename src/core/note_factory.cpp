@@ -44,15 +44,24 @@ NoteEvent NoteFactory::modify(const NoteEvent& original, uint8_t new_pitch,
   return event;
 }
 
-std::optional<NoteEvent> NoteFactory::createSafe(Tick start, Tick duration, uint8_t pitch,
-                                                 uint8_t velocity, TrackRole track,
-                                                 NoteSource source) const {
+std::optional<NoteEvent> NoteFactory::createIfNoDissonance(Tick start, Tick duration, uint8_t pitch,
+                                                uint8_t velocity, TrackRole track,
+                                                NoteSource source) const {
   // Check if pitch is safe against registered tracks
   if (!harmony_.isPitchSafe(pitch, start, duration, track)) {
     return std::nullopt;
   }
 
   return create(start, duration, pitch, velocity, source);
+}
+
+NoteEvent NoteFactory::createWithAdjustedPitch(Tick start, Tick duration, uint8_t desired_pitch,
+                                               uint8_t velocity, TrackRole track,
+                                               uint8_t range_low, uint8_t range_high,
+                                               NoteSource source) const {
+  uint8_t adjusted = harmony_.getBestAvailablePitch(desired_pitch, start, duration, track,
+                                           range_low, range_high);
+  return create(start, duration, adjusted, velocity, source);
 }
 
 }  // namespace midisketch

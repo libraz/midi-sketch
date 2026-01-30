@@ -33,9 +33,12 @@ class SafePitchResolver {
   SafePitchResolver() = default;
 
   /**
-   * @brief Get a safe pitch that doesn't clash with other tracks.
+   * @brief Get the best available pitch that minimizes clashes with other tracks.
    *
    * Tries chord tones first, then semitone adjustments.
+   * Note: This function returns the best available pitch, but does NOT guarantee
+   * the returned pitch is collision-free. If no safe alternative exists,
+   * the original desired pitch is returned.
    *
    * @param desired Desired MIDI pitch
    * @param start Start tick
@@ -45,11 +48,12 @@ class SafePitchResolver {
    * @param high Maximum allowed pitch
    * @param chord_tracker Chord progression tracker for chord tones
    * @param collision_detector Collision detector with registered notes
-   * @return Safe pitch within range, or desired if no safe pitch found
+   * @return Best available pitch within range, or desired if no better option found
    */
-  uint8_t getSafePitch(uint8_t desired, Tick start, Tick duration, TrackRole track, uint8_t low,
-                       uint8_t high, const ChordProgressionTracker& chord_tracker,
-                       const TrackCollisionDetector& collision_detector) const;
+  uint8_t getBestAvailablePitch(uint8_t desired, Tick start, Tick duration, TrackRole track,
+                                uint8_t low, uint8_t high,
+                                const ChordProgressionTracker& chord_tracker,
+                                const TrackCollisionDetector& collision_detector) const;
 };
 
 }  // namespace midisketch

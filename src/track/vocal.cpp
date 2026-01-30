@@ -115,7 +115,7 @@ static std::vector<NoteEvent> generateWithLockedRhythm(
                                                         ctx.vocal_high, rng);
 
     // Apply pitch safety check to avoid collisions with other tracks
-    uint8_t safe_pitch = harmony.getSafePitch(pitch, tick, duration, TrackRole::Vocal,
+    uint8_t safe_pitch = harmony.getBestAvailablePitch(pitch, tick, duration, TrackRole::Vocal,
                                               ctx.vocal_low, ctx.vocal_high);
 
     // Calculate velocity based on beat position

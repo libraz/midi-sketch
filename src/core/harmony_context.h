@@ -59,8 +59,8 @@ class HarmonyContext : public IHarmonyContext {
   bool isPitchSafe(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
                    bool is_weak_beat = false) const override;
 
-  uint8_t getSafePitch(uint8_t desired, Tick start, Tick duration, TrackRole track, uint8_t low,
-                       uint8_t high) const override;
+  uint8_t getBestAvailablePitch(uint8_t desired, Tick start, Tick duration, TrackRole track,
+                                uint8_t low, uint8_t high) const override;
 
   Tick getNextChordChangeTick(Tick after) const override;
 

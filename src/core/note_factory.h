@@ -101,11 +101,10 @@ class NoteFactory {
   /// @return NoteEvent with updated provenance
   NoteEvent modify(const NoteEvent& original, uint8_t new_pitch, NoteSource new_source) const;
 
-  /// @brief Create a note only if it's harmonically safe.
+  /// @brief Create a note only if it causes no dissonance.
   ///
-  /// Checks isPitchSafe() before creating the note. Returns nullopt if
-  /// the pitch would create a dissonant interval with registered tracks.
-  /// Use for approach notes and other non-essential notes.
+  /// Returns nullopt if pitch would create dissonance with registered tracks.
+  /// Use for optional notes (approach, embellishment) where skipping is acceptable.
   ///
   /// @param start Start tick
   /// @param duration Duration in ticks
@@ -114,9 +113,29 @@ class NoteFactory {
   /// @param track TrackRole for collision checking (exclude same track)
   /// @param source Generation phase for debugging
   /// @return NoteEvent if safe, nullopt if would create dissonance
-  std::optional<NoteEvent> createSafe(Tick start, Tick duration, uint8_t pitch, uint8_t velocity,
-                                      TrackRole track,
-                                      NoteSource source = NoteSource::Unknown) const;
+  std::optional<NoteEvent> createIfNoDissonance(Tick start, Tick duration, uint8_t pitch, uint8_t velocity,
+                                     TrackRole track,
+                                     NoteSource source = NoteSource::Unknown) const;
+
+  /// @brief Create a note with pitch adjusted to avoid collisions.
+  ///
+  /// Combines getBestAvailablePitch() + create() in one call. Use for required notes
+  /// where pitch adjustment is acceptable but the note must be created.
+  /// The returned note's pitch may differ from desired_pitch.
+  ///
+  /// @param start Start tick
+  /// @param duration Duration in ticks
+  /// @param desired_pitch Desired pitch (will be adjusted if collision detected)
+  /// @param velocity MIDI velocity
+  /// @param track TrackRole for collision checking
+  /// @param range_low Minimum allowed pitch
+  /// @param range_high Maximum allowed pitch
+  /// @param source Generation phase for debugging
+  /// @return NoteEvent with adjusted pitch and provenance
+  NoteEvent createWithAdjustedPitch(Tick start, Tick duration, uint8_t desired_pitch,
+                                    uint8_t velocity, TrackRole track,
+                                    uint8_t range_low, uint8_t range_high,
+                                    NoteSource source = NoteSource::Unknown) const;
 
   /// @brief Access the harmony context.
   const IHarmonyContext& harmony() const { return harmony_; }

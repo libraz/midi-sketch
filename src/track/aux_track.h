@@ -235,7 +235,7 @@ class AuxTrackGenerator {
   bool isPitchSafe(uint8_t pitch, Tick start, Tick duration,
                    const std::vector<NoteEvent>* main_melody, const IHarmonyContext& harmony,
                    float dissonance_tolerance = 0.0f);
-  uint8_t getSafePitch(uint8_t desired, Tick start, Tick duration,
+  uint8_t getBestAvailablePitch(uint8_t desired, Tick start, Tick duration,
                        const std::vector<NoteEvent>* main_melody, const IHarmonyContext& harmony,
                        uint8_t low, uint8_t high, int8_t chord_degree,
                        float dissonance_tolerance = 0.0f);

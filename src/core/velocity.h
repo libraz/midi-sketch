@@ -59,17 +59,6 @@ float getSectionVelocityMultiplier(SectionType section);
 // ============================================================================
 
 /**
- * @brief Get energy level for a section type (alias with clearer naming).
- *
- * Same as getSectionEnergy(), but with clearer naming to distinguish
- * from the new SectionEnergy enum.
- *
- * @param section Section type
- * @return Energy level (1=lowest, 4=highest)
- */
-int getSectionEnergyLevel(SectionType section);
-
-/**
  * @brief Get effective section energy from Section struct.
  *
  * Prioritizes Blueprint's explicit energy setting. Falls back to

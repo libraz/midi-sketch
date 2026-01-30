@@ -317,13 +317,13 @@ TEST_F(BassWithVocalTest, AvoidsFifthClashWithSustainedVocal) {
   }
 
   // Should have zero minor 2nd clashes within audible range
-  // Before fix: clashes occurred, After fix: createSafe prevents them
+  // Before fix: clashes occurred, After fix: createIfNoDissonance prevents them
   EXPECT_EQ(minor_2nd_clashes, 0)
       << "Bass should avoid minor 2nd clashes with sustained vocal notes. "
       << "Found " << minor_2nd_clashes << " clashes";
 }
 
-// Test that bass createSafe fallback works correctly across multiple seeds
+// Test that bass createIfNoDissonance fallback works correctly across multiple seeds
 TEST_F(BassWithVocalTest, FallsBackToRootWhenFifthClashes) {
   // Test across multiple seeds to ensure robustness
   std::vector<uint32_t> test_seeds = {12345, 67890, 4130447576, 99999};

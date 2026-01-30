@@ -1176,7 +1176,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
                                  static_cast<int>(ctx.vocal_high));
 
       // Apply pitch safety check for modified pitch
-      uint8_t safe_pitch = harmony.getSafePitch(static_cast<uint8_t>(new_pitch),
+      uint8_t safe_pitch = harmony.getBestAvailablePitch(static_cast<uint8_t>(new_pitch),
                                                 result.notes[i].start_tick,
                                                 result.notes[i].duration,
                                                 TrackRole::Vocal, ctx.vocal_low, ctx.vocal_high);

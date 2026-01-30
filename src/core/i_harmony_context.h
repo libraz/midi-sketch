@@ -86,9 +86,12 @@ class IHarmonyContext {
                            bool is_weak_beat = false) const = 0;
 
   /**
-   * @brief Get a safe pitch that doesn't clash with other tracks.
+   * @brief Get the best available pitch that minimizes clashes with other tracks.
    *
    * Tries chord tones first, then semitone adjustments.
+   * Note: This function returns the best available pitch, but does NOT guarantee
+   * the returned pitch is collision-free. If no safe alternative exists,
+   * the original desired pitch is returned.
    *
    * @param desired Desired MIDI pitch
    * @param start Start tick
@@ -96,10 +99,10 @@ class IHarmonyContext {
    * @param track Track that will play this note
    * @param low Minimum allowed pitch
    * @param high Maximum allowed pitch
-   * @return Safe pitch within range, or desired if no safe pitch found
+   * @return Best available pitch within range, or desired if no better option found
    */
-  virtual uint8_t getSafePitch(uint8_t desired, Tick start, Tick duration, TrackRole track,
-                               uint8_t low, uint8_t high) const = 0;
+  virtual uint8_t getBestAvailablePitch(uint8_t desired, Tick start, Tick duration, TrackRole track,
+                                        uint8_t low, uint8_t high) const = 0;
 
   /**
    * @brief Get the tick of the next chord change after the given tick.

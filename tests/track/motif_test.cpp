@@ -397,7 +397,7 @@ TEST_F(MotifRhythmDistributionTest, DistributionConsistentAcrossSeeds) {
 // =============================================================================
 // Bug: Density filter and collision avoidance could create full-bar silence,
 // making the motif track sound discontinuous and broken.
-// Fix: Added bar coverage guard and getSafePitch() instead of note deletion.
+// Fix: Added bar coverage guard and getBestAvailablePitch() instead of note deletion.
 
 class MotifMelodicContinuityTest : public ::testing::Test {
  protected:

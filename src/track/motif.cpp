@@ -1007,9 +1007,9 @@ void generateMotifTrack(MidiTrack& track, Song& song, const GeneratorParams& par
         // Check if pitch is safe (avoids clashing with Chord track)
         uint8_t final_pitch = static_cast<uint8_t>(adjusted_pitch);
         if (!harmony.isPitchSafe(final_pitch, absolute_tick, note.duration, TrackRole::Motif)) {
-          // Use SafePitchResolver via getSafePitch() - always returns a valid pitch
+          // Use SafePitchResolver via getBestAvailablePitch() - always returns a valid pitch
           // This prevents note deletion and ensures melodic continuity
-          final_pitch = harmony.getSafePitch(static_cast<uint8_t>(adjusted_pitch), absolute_tick,
+          final_pitch = harmony.getBestAvailablePitch(static_cast<uint8_t>(adjusted_pitch), absolute_tick,
                                              note.duration, TrackRole::Motif, MOTIF_LOW, MOTIF_HIGH);
         }
         track.addNote(

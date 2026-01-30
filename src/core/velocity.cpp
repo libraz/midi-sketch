@@ -88,11 +88,6 @@ int getSectionEnergy(SectionType section) {
 // SectionEnergy and PeakLevel Functions
 // ============================================================================
 
-int getSectionEnergyLevel(SectionType section) {
-  // Alias with clearer naming - delegates to existing function
-  return getSectionEnergy(section);
-}
-
 SectionEnergy getEffectiveSectionEnergy(const Section& section) {
   // If Blueprint explicitly sets a non-default energy, use it
   // Default is Medium, so we only use SectionType fallback when Medium
@@ -101,7 +96,7 @@ SectionEnergy getEffectiveSectionEnergy(const Section& section) {
   }
 
   // Backward compatibility: estimate from SectionType
-  int level = getSectionEnergyLevel(section.type);
+  int level = getSectionEnergy(section.type);
   // Map 1-4 to Low/Medium/High/Peak
   switch (level) {
     case 1:

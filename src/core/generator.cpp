@@ -712,7 +712,7 @@ std::vector<Generator::VocalClash> Generator::detectVocalAccompanimentClashes() 
 
         if (is_dissonant) {
           // Find a safe pitch
-          uint8_t safe_pitch = harmony_context_->getSafePitch(
+          uint8_t safe_pitch = harmony_context_->getBestAvailablePitch(
               v_pitch, v_start, vocal_note.duration, TrackRole::Vocal, params_.vocal_low,
               params_.vocal_high);
 

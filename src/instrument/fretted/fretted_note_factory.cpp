@@ -116,7 +116,7 @@ std::optional<NoteEvent> FrettedNoteFactory::create(Tick start, Tick duration, u
   return create(start, duration, pitch, velocity, PlayingTechnique::Normal, source);
 }
 
-std::optional<NoteEvent> FrettedNoteFactory::createSafe(Tick start, Tick duration,
+std::optional<NoteEvent> FrettedNoteFactory::createIfNoDissonance(Tick start, Tick duration,
                                                          uint8_t pitch, uint8_t velocity,
                                                          TrackRole track,
                                                          PlayingTechnique technique,
@@ -125,7 +125,7 @@ std::optional<NoteEvent> FrettedNoteFactory::createSafe(Tick start, Tick duratio
   if (!harmony_.isPitchSafe(pitch, start, duration, track)) {
     // Find a safe pitch that's also playable
     uint8_t safe_pitch =
-        harmony_.getSafePitch(pitch, start, duration, track, instrument_.getLowestPitch(),
+        harmony_.getBestAvailablePitch(pitch, start, duration, track, instrument_.getLowestPitch(),
                                instrument_.getHighestPitch());
 
     // Verify it's also physically playable

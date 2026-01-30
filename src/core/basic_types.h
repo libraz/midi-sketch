@@ -141,7 +141,7 @@ struct NoteEvent {
 
  private:
   // Constructors are private to enforce NoteFactory usage for dissonance checking.
-  // Use NoteFactory::create() or NoteFactory::createSafe() for production code.
+  // Use NoteFactory::create() or NoteFactory::createIfNoDissonance() for production code.
   // Copy/move constructors and assignment operators remain public (safe operations).
 
   /// @brief Default constructor.
@@ -204,7 +204,7 @@ struct NoteEvent {
 /// - Quick prototyping or testing
 ///
 /// For production code with melodic content, prefer NoteFactory::create()
-/// or NoteFactory::createSafe() to ensure proper dissonance checking.
+/// or NoteFactory::createIfNoDissonance() to ensure proper dissonance checking.
 struct NoteEventBuilder {
   /// @brief Create a NoteEvent with specified parameters.
   static NoteEvent create(Tick start, Tick dur, uint8_t note, uint8_t vel) {

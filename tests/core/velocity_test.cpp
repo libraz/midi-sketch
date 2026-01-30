@@ -257,13 +257,6 @@ TEST(VelocityTest, VelocityRatioRange) {
 // New Velocity Functions Tests
 // ============================================================================
 
-TEST(VelocityTest, GetSectionEnergyLevel) {
-  // getSectionEnergyLevel should be an alias for getSectionEnergy
-  EXPECT_EQ(getSectionEnergyLevel(SectionType::Intro), getSectionEnergy(SectionType::Intro));
-  EXPECT_EQ(getSectionEnergyLevel(SectionType::A), getSectionEnergy(SectionType::A));
-  EXPECT_EQ(getSectionEnergyLevel(SectionType::Chorus), getSectionEnergy(SectionType::Chorus));
-}
-
 TEST(VelocityTest, GetPeakVelocityMultiplier) {
   // None should return 1.0
   EXPECT_FLOAT_EQ(getPeakVelocityMultiplier(PeakLevel::None), 1.0f);

@@ -790,15 +790,15 @@ TEST_F(FrettedNoteFactoryTest, CreateSafeChecksHarmony) {
   FrettedNoteFactory factory(*harmony_, *bass_, 120);
 
   // With all pitches safe, should succeed
-  auto note = factory.createSafe(0, TICK_QUARTER, 33, 100, TrackRole::Bass,
+  auto note = factory.createIfNoDissonance(0, TICK_QUARTER, 33, 100, TrackRole::Bass,
                                   PlayingTechnique::Normal, NoteSource::BassPattern);
   EXPECT_TRUE(note.has_value());
 
   // Set pitches to unsafe
   harmony_->setAllPitchesSafe(false);
 
-  // Now should still work because getSafePitch returns desired pitch in stub
-  auto note2 = factory.createSafe(0, TICK_QUARTER, 33, 100, TrackRole::Bass,
+  // Now should still work because getBestAvailablePitch returns desired pitch in stub
+  auto note2 = factory.createIfNoDissonance(0, TICK_QUARTER, 33, 100, TrackRole::Bass,
                                    PlayingTechnique::Normal, NoteSource::BassPattern);
   EXPECT_TRUE(note2.has_value());
 }

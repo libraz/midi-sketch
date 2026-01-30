@@ -12,10 +12,11 @@
 
 namespace midisketch {
 
-uint8_t SafePitchResolver::getSafePitch(uint8_t desired, Tick start, Tick duration, TrackRole track,
-                                        uint8_t low, uint8_t high,
-                                        const ChordProgressionTracker& chord_tracker,
-                                        const TrackCollisionDetector& collision_detector) const {
+uint8_t SafePitchResolver::getBestAvailablePitch(uint8_t desired, Tick start, Tick duration,
+                                                 TrackRole track, uint8_t low, uint8_t high,
+                                                 const ChordProgressionTracker& chord_tracker,
+                                                 const TrackCollisionDetector& collision_detector)
+    const {
   // If desired pitch is already safe, use it
   if (collision_detector.isPitchSafe(desired, start, duration, track, &chord_tracker)) {
     return desired;

@@ -708,7 +708,7 @@ void addBassGhostNotes(MidiTrack& track, const NoteFactory& factory, Tick bar_st
     uint8_t ghost_vel = static_cast<uint8_t>(vel_dist(rng));
 
     // Use root note for ghost (dead note / muted string effect)
-    auto safe_ghost = factory.createSafe(tick, SIXTEENTH, root, ghost_vel,
+    auto safe_ghost = factory.createIfNoDissonance(tick, SIXTEENTH, root, ghost_vel,
                                          TrackRole::Bass, NoteSource::BassPattern);
     if (safe_ghost) {
       // Check it does not overlap with existing notes in the track
@@ -1126,7 +1126,7 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
           }
           uint8_t slide_note = getChromaticApproach(slide_target);
           auto safe_slide =
-              factory.createSafe(bar_start + 3 * QUARTER + EIGHTH, EIGHTH, slide_note,
+              factory.createIfNoDissonance(bar_start + 3 * QUARTER + EIGHTH, EIGHTH, slide_note,
                                  static_cast<uint8_t>(sub_vel * 0.7f), TrackRole::Bass,
                                  NoteSource::BassPattern);
           if (safe_slide) {

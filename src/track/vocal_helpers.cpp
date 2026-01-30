@@ -447,7 +447,7 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
 
     // Apply collision avoidance
-    uint8_t safe_pitch = harmony.getSafePitch(note.note, note.start_tick, note.duration,
+    uint8_t safe_pitch = harmony.getBestAvailablePitch(note.note, note.start_tick, note.duration,
                                               TrackRole::Vocal, vocal_low, vocal_high);
     // Snap to chord tone (to maintain harmonic stability)
     int snapped = nearestChordTonePitch(safe_pitch, chord_degree);
@@ -487,7 +487,7 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
       }
     }
 
-    // Re-enforce interval constraint (getSafePitch may have expanded interval)
+    // Re-enforce interval constraint (getBestAvailablePitch may have expanded interval)
     if (i > 0) {
       int prev_pitch = notes[i - 1].note;
       int interval = std::abs(static_cast<int>(note.note) - prev_pitch);
