@@ -976,6 +976,13 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
           issue.note_start_tick = note_start;
           issue.original_chord_name = getChordNameFromDegree(start_degree);
 
+          // Copy provenance from NoteEvent
+          issue.has_provenance = note.hasValidProvenance();
+          issue.prov_chord_degree = note.prov_chord_degree;
+          issue.prov_lookup_tick = note.prov_lookup_tick;
+          issue.prov_source = note.prov_source;
+          issue.prov_original_pitch = note.prov_original_pitch;
+
           report.issues.push_back(issue);
           report.summary.sustained_over_chord_change++;
 
@@ -1418,6 +1425,17 @@ std::string dissonanceReportToJson(const DissonanceReport& report) {
         w.value(tone);
       }
       w.endArray();
+
+      // Add provenance if available
+      if (issue.has_provenance) {
+        w.beginObject("provenance")
+            .write("generation_chord_degree", static_cast<int>(issue.prov_chord_degree))
+            .write("generation_lookup_tick", issue.prov_lookup_tick)
+            .write("generation_source",
+                   noteSourceToString(static_cast<NoteSource>(issue.prov_source)))
+            .write("original_pitch", static_cast<int>(issue.prov_original_pitch))
+            .endObject();
+      }
     } else if (issue.type == DissonanceType::NonDiatonicNote) {
       // NonDiatonicNote
       w.write("track", issue.track_name)

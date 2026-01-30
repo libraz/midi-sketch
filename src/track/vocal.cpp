@@ -16,6 +16,7 @@
 #include "core/i_harmony_context.h"
 #include "core/melody_embellishment.h"
 #include "core/melody_templates.h"
+#include "core/note_factory.h"
 #include "core/pitch_bend_curves.h"
 #include "core/pitch_utils.h"
 #include "core/production_blueprint.h"
@@ -93,6 +94,9 @@ static std::vector<NoteEvent> generateWithLockedRhythm(
     durations.push_back(0.5f);  // Default half-beat duration
   }
 
+  // Create NoteFactory for provenance tracking and pitch safety
+  NoteFactory factory(harmony);
+
   uint8_t prev_pitch = (ctx.vocal_low + ctx.vocal_high) / 2;  // Start at center
 
   for (size_t i = 0; i < onsets.size(); ++i) {
@@ -110,6 +114,10 @@ static std::vector<NoteEvent> generateWithLockedRhythm(
     uint8_t pitch = designer.selectPitchForLockedRhythm(prev_pitch, chord_degree, ctx.vocal_low,
                                                         ctx.vocal_high, rng);
 
+    // Apply pitch safety check to avoid collisions with other tracks
+    uint8_t safe_pitch = harmony.getSafePitch(pitch, tick, duration, TrackRole::Vocal,
+                                              ctx.vocal_low, ctx.vocal_high);
+
     // Calculate velocity based on beat position
     float beat_in_bar = std::fmod(beat, 4.0f);
     uint8_t velocity = 80;
@@ -119,8 +127,8 @@ static std::vector<NoteEvent> generateWithLockedRhythm(
       velocity = 85;  // Medium beats
     }
 
-    notes.push_back(NoteEventBuilder::create(tick, duration, pitch, velocity));
-    prev_pitch = pitch;
+    notes.push_back(factory.create(tick, duration, safe_pitch, velocity, NoteSource::MelodyPhrase));
+    prev_pitch = safe_pitch;
   }
 
   return notes;

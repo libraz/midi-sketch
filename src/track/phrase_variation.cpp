@@ -45,6 +45,7 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes, PhraseVariation variati
     case PhraseVariation::LastNoteShift: {
       // Shift last note by ±1-2 scale degrees (not semitones)
       auto& last = notes.back();
+      uint8_t old_pitch = last.note;  // Record original pitch for provenance
       std::uniform_int_distribution<int> shift_dist(-2, 2);
       int shift = shift_dist(rng);
       if (shift == 0) shift = 1;
@@ -71,6 +72,13 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes, PhraseVariation variati
       }
       int new_pitch = octave * 12 + SCALE[new_scale_idx];
       last.note = static_cast<uint8_t>(std::clamp(new_pitch, 0, 127));
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      // Record original pitch before variation modification
+      if (old_pitch != last.note) {
+        last.prov_original_pitch = old_pitch;
+      }
+#endif
       break;
     }
 

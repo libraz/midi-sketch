@@ -10,7 +10,6 @@
 #include <iostream>
 #include <sstream>
 
-#include "analysis/dissonance.h"
 #include "core/chord_progression_tracker.h"
 #include "core/midi_track.h"
 #include "core/pitch_utils.h"
@@ -231,7 +230,7 @@ std::string TrackCollisionDetector::dumpNotesAt(Tick tick, Tick range_ticks) con
           has_notes = true;
         }
         result += "    pitch=" + std::to_string(note->pitch);
-        result += " (" + midiNoteToName(note->pitch) + ")";
+        result += " (" + pitchToNoteName(note->pitch) + ")";
         result += " [" + std::to_string(note->start) + "-" + std::to_string(note->end) + "]";
 
         // Mark if note is sounding at the exact tick
@@ -276,9 +275,9 @@ std::string TrackCollisionDetector::dumpNotesAt(Tick tick, Tick range_ticks) con
               (pitch_class_interval == 2) ? "major 2nd" : "?";
 
           result += "  CLASH: " + std::string(trackRoleToString(a->track));
-          result += "(" + midiNoteToName(a->pitch) + ")";
+          result += "(" + pitchToNoteName(a->pitch) + ")";
           result += " vs " + std::string(trackRoleToString(b->track));
-          result += "(" + midiNoteToName(b->pitch) + ")";
+          result += "(" + pitchToNoteName(b->pitch) + ")";
           result += " = " + std::string(interval_name);
           result += " (" + std::to_string(interval) + " semitones)\n";
         }

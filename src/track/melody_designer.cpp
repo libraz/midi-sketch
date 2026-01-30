@@ -1168,11 +1168,27 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
     applyBetrayal(pitches, durations, betrayal, rng);
 
     // Apply modifications back to notes (clamped to vocal range)
+    // Also add pitch safety check and record original pitch in provenance
     for (size_t i = 0; i < result.notes.size() && i < pitches.size(); ++i) {
+      uint8_t old_pitch = result.notes[i].note;
       int new_pitch = std::clamp(static_cast<int>(pitches[i]),
                                  static_cast<int>(ctx.vocal_low),
                                  static_cast<int>(ctx.vocal_high));
-      result.notes[i].note = static_cast<uint8_t>(new_pitch);
+
+      // Apply pitch safety check for modified pitch
+      uint8_t safe_pitch = harmony.getSafePitch(static_cast<uint8_t>(new_pitch),
+                                                result.notes[i].start_tick,
+                                                result.notes[i].duration,
+                                                TrackRole::Vocal, ctx.vocal_low, ctx.vocal_high);
+      result.notes[i].note = safe_pitch;
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      // Record original pitch before betrayal modification
+      if (old_pitch != safe_pitch) {
+        result.notes[i].prov_original_pitch = old_pitch;
+      }
+#endif
+
       if (i < durations.size()) {
         result.notes[i].duration = durations[i];
       }

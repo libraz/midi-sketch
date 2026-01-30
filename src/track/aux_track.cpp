@@ -442,12 +442,15 @@ void AuxTrackGenerator::postProcessNotes(std::vector<NoteEvent>& notes, IHarmony
           // Split note: keep first part, add resolved second part
           note.duration = time_before_change;
 
-          NoteEvent resolved_note;
-          resolved_note.start_tick = chord_change;
-          resolved_note.duration = time_after_change;
-          resolved_note.note = static_cast<uint8_t>(best_pitch);
-          resolved_note.velocity = static_cast<uint8_t>(note.velocity * 0.9f);
-          notes_to_add.push_back(resolved_note);
+          // Use NoteFactory for provenance tracking and pitch safety
+          NoteFactory factory(harmony);
+          auto safe_note = factory.createSafe(chord_change, time_after_change,
+                                              static_cast<uint8_t>(best_pitch),
+                                              static_cast<uint8_t>(note.velocity * 0.9f),
+                                              TrackRole::Aux, NoteSource::Aux);
+          if (safe_note) {
+            notes_to_add.push_back(*safe_note);
+          }
         } else {
           // Cannot split well - just change to chord tone
           note.note = static_cast<uint8_t>(best_pitch);
@@ -1305,13 +1308,13 @@ std::vector<NoteEvent> AuxTrackGenerator::generateMelodicHook(const AuxContext& 
     pitch = getSafePitch(static_cast<uint8_t>(pitch), current_tick, NOTE_DURATION, ctx.main_melody,
                          harmony, aux_low, aux_high, chord_degree, meta.dissonance_tolerance);
 
-    NoteEvent note;
-    note.start_tick = current_tick;
-    note.duration = NOTE_DURATION - TICKS_PER_BEAT / 8;  // Slight gap
-    note.note = static_cast<uint8_t>(pitch);
-    note.velocity = static_cast<uint8_t>(ctx.base_velocity * config.velocity_ratio);
-
-    base_hook.push_back(note);
+    // Use NoteFactory for provenance tracking
+    NoteFactory factory(harmony);
+    Tick note_duration = NOTE_DURATION - TICKS_PER_BEAT / 8;  // Slight gap
+    base_hook.push_back(factory.create(current_tick, note_duration,
+                                       static_cast<uint8_t>(pitch),
+                                       static_cast<uint8_t>(ctx.base_velocity * config.velocity_ratio),
+                                       NoteSource::Aux));
     current_tick += NOTE_DURATION;
   }
 
@@ -1578,13 +1581,15 @@ std::vector<NoteEvent> AuxTrackGenerator::generateMotifCounter(const AuxContext&
               }
             }
 
-            NoteEvent second_part;
-            second_part.start_tick = chord_change;
-            second_part.duration = second_duration;
-            second_part.note = static_cast<uint8_t>(best_pitch);
-            second_part.velocity =
-                static_cast<uint8_t>(note.velocity * 0.9f);  // Slightly softer resolution
-            resolved_result.push_back(second_part);
+            // Use NoteFactory for provenance tracking and pitch safety
+            NoteFactory factory(harmony);
+            auto safe_note = factory.createSafe(chord_change, second_duration,
+                                                static_cast<uint8_t>(best_pitch),
+                                                static_cast<uint8_t>(note.velocity * 0.9f),
+                                                TrackRole::Aux, NoteSource::Aux);
+            if (safe_note) {
+              resolved_result.push_back(*safe_note);
+            }
             continue;  // Skip adding original note
           }
         }

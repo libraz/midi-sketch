@@ -1145,7 +1145,13 @@ void Generator::applyTransitionDynamics() {
   PostProcessor::applyChorusDrop(backing_tracks, sections, &song_.drums());
 
   // Apply ritardando to outro sections
-  PostProcessor::applyRitardando(tracks, sections);
+  // Pass motif as collision check track (if velocity_fixed, it won't be in tracks)
+  // This ensures duration extension doesn't create Chord/Bass vs Motif clashes
+  std::vector<MidiTrack*> ritardando_collision_tracks;
+  if (params_.motif.velocity_fixed) {
+    ritardando_collision_tracks.push_back(&song_.motif());
+  }
+  PostProcessor::applyRitardando(tracks, sections, ritardando_collision_tracks);
 
   // Fix motif-vocal clashes for RhythmSync mode.
   // When motif is generated as "coordinate axis" before vocal,

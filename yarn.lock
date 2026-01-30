@@ -315,6 +315,7 @@ __metadata:
   resolution: "@libraz/midi-sketch@workspace:."
   dependencies:
     "@biomejs/biome": "npm:^2.3.10"
+    esbuild: "npm:^0.27.2"
     lint-staged: "npm:^16.2.7"
     simple-git-hooks: "npm:^2.13.1"
     typescript: "npm:^5.0.0"
@@ -784,7 +785,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"esbuild@npm:^0.27.0":
+"esbuild@npm:^0.27.0, esbuild@npm:^0.27.2":
   version: 0.27.2
   resolution: "esbuild@npm:0.27.2"
   dependencies:

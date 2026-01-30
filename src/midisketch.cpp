@@ -10,6 +10,7 @@
 
 #include "core/config_converter.h"
 #include "core/json_helpers.h"
+#include "core/note_factory.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
 #include "track/arpeggio.h"
@@ -205,8 +206,19 @@ std::string MidiSketch::getEventsJson() const {
         .write("start_ticks", note.start_tick)
         .write("duration_ticks", note.duration)
         .write("start_seconds", start_seconds)
-        .write("duration_seconds", duration_secs)
-        .endObject();
+        .write("duration_seconds", duration_secs);
+
+    // Add provenance if available (for debugging)
+    if (note.hasValidProvenance()) {
+      w.beginObject("provenance")
+          .write("source", noteSourceToString(static_cast<NoteSource>(note.prov_source)))
+          .write("chord_degree", static_cast<int>(note.prov_chord_degree))
+          .write("lookup_tick", note.prov_lookup_tick)
+          .write("original_pitch", static_cast<int>(note.prov_original_pitch))
+          .endObject();
+    }
+
+    w.endObject();
   };
 
   // Helper to write a track

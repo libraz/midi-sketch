@@ -144,11 +144,15 @@ class PostProcessor {
   /// - Extends duration by (1.0 + progress * 0.3) for gradual slowdown feel
   /// - Applies velocity decrescendo (1.0 - progress * 0.25)
   /// - Extends final note to section end (fermata effect)
+  /// - Duration extension is limited to avoid creating dissonance with other tracks
   ///
-  /// @param tracks Vector of track pointers to process
+  /// @param tracks Vector of track pointers to process (duration will be modified)
   /// @param sections Song sections for Outro detection
+  /// @param collision_check_tracks Additional tracks to check for collisions when extending
+  ///                               duration (these tracks are not modified)
   static void applyRitardando(std::vector<MidiTrack*>& tracks,
-                               const std::vector<Section>& sections);
+                               const std::vector<Section>& sections,
+                               const std::vector<MidiTrack*>& collision_check_tracks = {});
 
   /// @brief Enhanced FinalHit for stronger ending impact.
   ///

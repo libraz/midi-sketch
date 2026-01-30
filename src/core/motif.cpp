@@ -8,6 +8,7 @@
 #include <algorithm>
 
 #include "core/chord_utils.h"
+#include "core/note_factory.h"
 #include "core/pitch_utils.h"
 
 namespace midisketch {
@@ -478,24 +479,20 @@ std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_
         final_pitch = harmony.getSafePitch(final_pitch, note_start, duration, track, 36, 96);
       }
 
+      // Use NoteFactory for provenance tracking
+      NoteFactory factory(harmony);
+
       // Primary note
-      NoteEvent note = NoteEventBuilder::createDefault();
-      note.start_tick = note_start;
-      note.duration = duration;
-      note.note = final_pitch;
-      note.velocity = enhanced_velocity;
-      result.push_back(note);
+      result.push_back(factory.create(note_start, duration, final_pitch, enhanced_velocity,
+                                      NoteSource::Motif));
 
       // Octave doubling for climactic impact - only add if within range AND safe
       int octave_pitch = final_pitch + 12;
       if (octave_pitch <= 108 && harmony.isPitchSafe(static_cast<uint8_t>(octave_pitch), note_start,
                                                      duration, track)) {
-        NoteEvent octave_note = NoteEventBuilder::createDefault();
-        octave_note.start_tick = note_start;
-        octave_note.duration = duration;
-        octave_note.note = static_cast<uint8_t>(octave_pitch);
-        octave_note.velocity = static_cast<uint8_t>(enhanced_velocity * 0.85f);  // Slightly softer
-        result.push_back(octave_note);
+        result.push_back(factory.create(note_start, duration, static_cast<uint8_t>(octave_pitch),
+                                        static_cast<uint8_t>(enhanced_velocity * 0.85f),
+                                        NoteSource::Motif));
       }
     }
 

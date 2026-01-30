@@ -736,8 +736,71 @@ void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
 // Ritardando Implementation (Phase 2, Task 2-3)
 // ============================================================================
 
+namespace {
+// Helper: Check if extending note duration would create dissonance with other tracks
+// Returns the maximum safe end tick (may be less than desired_end if clash found)
+Tick getSafeEndForRitardando(const NoteEvent& note, Tick desired_end,
+                              const std::vector<MidiTrack*>& all_tracks,
+                              const MidiTrack* current_track) {
+  Tick safe_end = desired_end;
+
+  for (const MidiTrack* other_track : all_tracks) {
+    if (other_track == nullptr || other_track == current_track) continue;
+
+    for (const auto& other_note : other_track->notes()) {
+      // Skip notes that end before or at note start
+      Tick other_end = other_note.start_tick + other_note.duration;
+      if (other_end <= note.start_tick) continue;
+
+      // Skip notes that start at or after desired_end
+      if (other_note.start_tick >= desired_end) continue;
+
+      // Check if extension would create dissonance
+      int actual_semitones = std::abs(static_cast<int>(note.note) -
+                                       static_cast<int>(other_note.note));
+      int pc_interval = actual_semitones % 12;
+
+      // Dissonant intervals: minor 2nd (1), major 2nd (2 in close range), major 7th (11)
+      bool is_dissonant = (pc_interval == 1) ||
+                          (actual_semitones == 2) ||
+                          (pc_interval == 11 && actual_semitones < 36);
+
+      if (is_dissonant) {
+        // If other note starts after our note, we can extend up to (but not including) it
+        if (other_note.start_tick > note.start_tick && other_note.start_tick < safe_end) {
+          safe_end = other_note.start_tick;
+        }
+      }
+    }
+  }
+
+  return safe_end;
+}
+}  // namespace
+
 void PostProcessor::applyRitardando(std::vector<MidiTrack*>& tracks,
-                                     const std::vector<Section>& sections) {
+                                     const std::vector<Section>& sections,
+                                     const std::vector<MidiTrack*>& collision_check_tracks) {
+  // Build combined list for collision checking (tracks + collision_check_tracks)
+  std::vector<MidiTrack*> all_tracks_for_collision;
+  all_tracks_for_collision.reserve(tracks.size() + collision_check_tracks.size());
+  for (MidiTrack* t : tracks) {
+    all_tracks_for_collision.push_back(t);
+  }
+  for (MidiTrack* t : collision_check_tracks) {
+    // Avoid duplicates
+    bool found = false;
+    for (MidiTrack* existing : all_tracks_for_collision) {
+      if (existing == t) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      all_tracks_for_collision.push_back(t);
+    }
+  }
+
   // Find Outro sections (usually the last section)
   for (size_t idx = 0; idx < sections.size(); ++idx) {
     const Section& section = sections[idx];
@@ -768,7 +831,12 @@ void PostProcessor::applyRitardando(std::vector<MidiTrack*>& tracks,
 
           // Duration stretch: 1.0 -> 1.3 (30% longer at the end)
           float duration_mult = 1.0f + progress * 0.3f;
-          note.duration = static_cast<Tick>(note.duration * duration_mult);
+          Tick desired_duration = static_cast<Tick>(note.duration * duration_mult);
+          Tick desired_end = note.start_tick + desired_duration;
+
+          // Check for dissonance with other tracks and limit extension
+          Tick safe_end = getSafeEndForRitardando(note, desired_end, all_tracks_for_collision, track);
+          note.duration = safe_end - note.start_tick;
 
           // Velocity decrescendo: 1.0 -> 0.75 (25% softer at the end)
           float velocity_mult = 1.0f - progress * 0.25f;
@@ -784,12 +852,14 @@ void PostProcessor::applyRitardando(std::vector<MidiTrack*>& tracks,
       }
 
       // Fermata effect: extend final note duration to fill until section end
+      // Also check for dissonance before extending
       if (last_note_in_rit != nullptr) {
         Tick target_end = section_end_tick - TICKS_PER_BEAT / 8;  // Small release gap
         if (last_note_in_rit->start_tick < target_end) {
-          Tick new_duration = target_end - last_note_in_rit->start_tick;
-          if (new_duration > last_note_in_rit->duration) {
-            last_note_in_rit->duration = new_duration;
+          Tick safe_end = getSafeEndForRitardando(*last_note_in_rit, target_end,
+                                                   all_tracks_for_collision, track);
+          if (safe_end > last_note_in_rit->start_tick + last_note_in_rit->duration) {
+            last_note_in_rit->duration = safe_end - last_note_in_rit->start_tick;
           }
         }
       }
