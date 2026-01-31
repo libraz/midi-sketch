@@ -9,7 +9,10 @@
 
 namespace midisketch {
 
-NoteFactory::NoteFactory(const IHarmonyContext& harmony) : harmony_(harmony) {}
+NoteFactory::NoteFactory(const IHarmonyContext& harmony) : harmony_(harmony), mutable_harmony_(nullptr) {}
+
+NoteFactory::NoteFactory(IHarmonyContext& harmony)
+    : harmony_(harmony), mutable_harmony_(&harmony) {}
 
 NoteEvent NoteFactory::create(Tick start, Tick duration, uint8_t pitch, uint8_t velocity,
                               [[maybe_unused]] NoteSource source) const {
@@ -55,13 +58,46 @@ std::optional<NoteEvent> NoteFactory::createIfNoDissonance(Tick start, Tick dura
   return create(start, duration, pitch, velocity, source);
 }
 
-NoteEvent NoteFactory::createWithAdjustedPitch(Tick start, Tick duration, uint8_t desired_pitch,
-                                               uint8_t velocity, TrackRole track,
-                                               uint8_t range_low, uint8_t range_high,
-                                               NoteSource source) const {
-  uint8_t adjusted = harmony_.getBestAvailablePitch(desired_pitch, start, duration, track,
-                                           range_low, range_high);
-  return create(start, duration, adjusted, velocity, source);
+NoteEvent NoteFactory::createAndRegister(Tick start, Tick duration, uint8_t pitch, uint8_t velocity,
+                                          NoteSource source, TrackRole role) {
+  NoteEvent event = create(start, duration, pitch, velocity, source);
+
+  // Immediately register if we have mutable harmony context
+  if (mutable_harmony_) {
+    mutable_harmony_->registerNote(start, duration, pitch, role);
+  }
+
+  return event;
+}
+
+std::optional<NoteEvent> NoteFactory::createSafeAndRegister(Tick start, Tick duration,
+                                                             uint8_t desired_pitch, uint8_t velocity,
+                                                             NoteSource source, TrackRole role,
+                                                             uint8_t range_low, uint8_t range_high) {
+  // Find safe pitch using existing infrastructure
+  uint8_t safe_pitch = harmony_.getBestAvailablePitch(desired_pitch, start, duration, role,
+                                                       range_low, range_high);
+
+  // Verify the pitch is actually safe (getBestAvailablePitch may return original if no safe option)
+  if (!harmony_.isPitchSafe(safe_pitch, start, duration, role)) {
+    return std::nullopt;  // No safe pitch available
+  }
+
+  NoteEvent event = create(start, duration, safe_pitch, velocity, source);
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+  // Record original pitch if different
+  if (safe_pitch != desired_pitch) {
+    event.prov_original_pitch = desired_pitch;
+  }
+#endif
+
+  // Immediately register if we have mutable harmony context
+  if (mutable_harmony_) {
+    mutable_harmony_->registerNote(start, duration, safe_pitch, role);
+  }
+
+  return event;
 }
 
 }  // namespace midisketch

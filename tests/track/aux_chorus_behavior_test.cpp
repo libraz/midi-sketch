@@ -24,7 +24,7 @@
 #include "core/i_harmony_context.h"
 #include "core/timing_constants.h"
 #include "test_helpers/note_event_test_helper.h"
-#include "track/aux_track.h"
+#include "track/generators/aux.h"
 
 namespace midisketch {
 namespace {
@@ -74,8 +74,8 @@ TEST(AuxChorusBehaviorTest, ChorusAuxUsesChordTones) {
     // Create high-register vocal melody
     auto vocal_melody = createChorusVocalMelody(0, TICKS_PER_BAR * 4);
 
-    AuxTrackGenerator generator;
-    AuxTrackGenerator::AuxContext ctx;
+    AuxGenerator generator;
+    AuxGenerator::AuxContext ctx;
     ctx.section_start = 0;
     ctx.section_end = TICKS_PER_BAR * 4;
     ctx.chord_degree = 0;
@@ -144,8 +144,8 @@ TEST(AuxChorusBehaviorTest, ChorusAuxInLowerRegisterThanVocal) {
     }
     int vocal_avg = vocal_pitch_sum / static_cast<int>(vocal_melody.size());
 
-    AuxTrackGenerator generator;
-    AuxTrackGenerator::AuxContext ctx;
+    AuxGenerator generator;
+    AuxGenerator::AuxContext ctx;
     ctx.section_start = 0;
     ctx.section_end = TICKS_PER_BAR * 4;
     ctx.chord_degree = 0;
@@ -197,8 +197,8 @@ TEST(AuxChorusBehaviorTest, ChorusAuxNoExactUnisonWithVocal) {
 
     auto vocal_melody = createChorusVocalMelody(0, TICKS_PER_BAR * 4);
 
-    AuxTrackGenerator generator;
-    AuxTrackGenerator::AuxContext ctx;
+    AuxGenerator generator;
+    AuxGenerator::AuxContext ctx;
     ctx.section_start = 0;
     ctx.section_end = TICKS_PER_BAR * 4;
     ctx.chord_degree = 0;
@@ -258,8 +258,8 @@ TEST(AuxChorusBehaviorTest, UnisonFunctionCreatesExactMatches) {
 
   auto vocal_melody = createChorusVocalMelody(0, TICKS_PER_BAR * 4);
 
-  AuxTrackGenerator generator;
-  AuxTrackGenerator::AuxContext ctx;
+  AuxGenerator generator;
+  AuxGenerator::AuxContext ctx;
   ctx.section_start = 0;
   ctx.section_end = TICKS_PER_BAR * 4;
   ctx.chord_degree = 0;
@@ -315,8 +315,8 @@ TEST(AuxChorusBehaviorTest, EmotionalPadProducesSustainedNotes) {
 
     auto vocal_melody = createChorusVocalMelody(0, TICKS_PER_BAR * 8);
 
-    AuxTrackGenerator generator;
-    AuxTrackGenerator::AuxContext ctx;
+    AuxGenerator generator;
+    AuxGenerator::AuxContext ctx;
     ctx.section_start = 0;
     ctx.section_end = TICKS_PER_BAR * 8;
     ctx.chord_degree = 0;

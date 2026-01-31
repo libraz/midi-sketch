@@ -48,14 +48,24 @@ enum class PitchFallbackStrategy {
  * 1. Try createIfNoDissonance() with the desired pitch
  * 2. If unsafe, apply fallback strategy
  * 3. Add the note to the track
+ *
+ * When constructed with a mutable NoteFactory (from IHarmonyContext&),
+ * addTo() will immediately register the note for idempotent collision detection.
  */
 class PitchSafetyBuilder {
  public:
   /**
-   * @brief Construct with factory reference.
+   * @brief Construct with factory reference (read-only, no immediate registration).
    * @param factory NoteFactory providing harmony context
    */
   explicit PitchSafetyBuilder(const NoteFactory& factory);
+
+  /**
+   * @brief Construct with mutable factory reference (enables immediate registration).
+   * @param factory Mutable NoteFactory
+   * @param harmony Mutable harmony context for immediate note registration
+   */
+  PitchSafetyBuilder(NoteFactory& factory, IHarmonyContext& harmony);
 
   /// @name Timing setters
   /// @{
@@ -164,6 +174,7 @@ class PitchSafetyBuilder {
 
  private:
   const NoteFactory& factory_;
+  IHarmonyContext* mutable_harmony_ = nullptr;  ///< Non-null enables immediate registration
   Tick start_ = 0;
   Tick duration_ = 0;
   uint8_t pitch_ = 60;
@@ -181,6 +192,13 @@ class PitchSafetyBuilder {
 
   /// Check if a pitch is safe for this note.
   bool isSafe(uint8_t pitch) const;
+
+  /// Check if a pitch forms a tritone with chord track over the full note duration.
+  /// Used for Bass track to avoid tritone clashes that isPitchSafe() may miss.
+  bool hasTritoneWithChordInDuration(uint8_t pitch) const;
+
+  /// Register the note immediately if mutable_harmony_ is set.
+  void registerIfMutable(uint8_t pitch);
 };
 
 }  // namespace midisketch

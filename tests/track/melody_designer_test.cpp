@@ -3,7 +3,7 @@
  * @brief Tests for melody designer.
  */
 
-#include "track/melody_designer.h"
+#include "track/vocal/melody_designer.h"
 
 #include <gtest/gtest.h>
 

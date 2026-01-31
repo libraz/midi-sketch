@@ -12,7 +12,7 @@
 #include "core/preset_data.h"
 #include "core/song.h"
 #include "core/types.h"
-#include "track/vocal_analysis.h"
+#include "track/vocal/vocal_analysis.h"
 
 namespace midisketch {
 

@@ -8,7 +8,7 @@
 #include <chrono>
 
 #include "core/preset_data.h"
-#include "track/se.h"
+#include "track/generators/se.h"
 
 namespace midisketch {
 

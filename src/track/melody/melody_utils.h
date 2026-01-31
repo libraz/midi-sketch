@@ -14,7 +14,7 @@
 #include "core/timing_constants.h"
 #include "core/types.h"
 #include "core/vocal_style_profile.h"
-#include "track/melody_designer.h"
+#include "track/vocal/melody_designer.h"
 
 namespace midisketch {
 namespace melody {

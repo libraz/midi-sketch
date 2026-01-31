@@ -3,7 +3,7 @@
  * @brief Tests for aux track generation.
  */
 
-#include "track/aux_track.h"
+#include "track/generators/aux.h"
 
 #include <gtest/gtest.h>
 
@@ -18,8 +18,8 @@ namespace midisketch {
 namespace {
 
 // Helper to create a simple aux context
-AuxTrackGenerator::AuxContext createTestContext() {
-  AuxTrackGenerator::AuxContext ctx;
+AuxGenerator::AuxContext createTestContext() {
+  AuxGenerator::AuxContext ctx;
   ctx.section_start = 0;
   ctx.section_end = TICKS_PER_BAR * 4;  // 4 bars
   ctx.chord_degree = 0;                 // I chord
@@ -59,7 +59,7 @@ TEST(AuxTrackTest, AuxFunctionEnumValues) {
 // ============================================================================
 
 TEST(AuxTrackTest, PulseLoopProducesNotes) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   std::mt19937 rng(42);
   HarmonyContext harmony;
   auto ctx = createTestContext();
@@ -78,7 +78,7 @@ TEST(AuxTrackTest, PulseLoopProducesNotes) {
 }
 
 TEST(AuxTrackTest, PulseLoopNotesInRange) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   std::mt19937 rng(42);
   HarmonyContext harmony;
   auto ctx = createTestContext();
@@ -104,7 +104,7 @@ TEST(AuxTrackTest, PulseLoopNotesInRange) {
 // ============================================================================
 
 TEST(AuxTrackTest, TargetHintWithMainMelody) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   std::mt19937 rng(42);
   HarmonyContext harmony;
   auto ctx = createTestContext();
@@ -130,7 +130,7 @@ TEST(AuxTrackTest, TargetHintWithMainMelody) {
 }
 
 TEST(AuxTrackTest, TargetHintEmptyWithNoMelody) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   std::mt19937 rng(42);
   HarmonyContext harmony;
   auto ctx = createTestContext();
@@ -154,7 +154,7 @@ TEST(AuxTrackTest, TargetHintEmptyWithNoMelody) {
 // ============================================================================
 
 TEST(AuxTrackTest, GrooveAccentProducesNotes) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   std::mt19937 rng(42);
   HarmonyContext harmony;
   auto ctx = createTestContext();
@@ -173,7 +173,7 @@ TEST(AuxTrackTest, GrooveAccentProducesNotes) {
 }
 
 TEST(AuxTrackTest, GrooveAccentOnBackbeats) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   std::mt19937 rng(42);
   HarmonyContext harmony;
   auto ctx = createTestContext();
@@ -207,7 +207,7 @@ TEST(AuxTrackTest, GrooveAccentOnBackbeats) {
 // ============================================================================
 
 TEST(AuxTrackTest, PhraseTailWithMainMelody) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   std::mt19937 rng(42);
   HarmonyContext harmony;
   auto ctx = createTestContext();
@@ -234,7 +234,7 @@ TEST(AuxTrackTest, PhraseTailWithMainMelody) {
 }
 
 TEST(AuxTrackTest, PhraseTailEmptyWithNoMelody) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   std::mt19937 rng(42);
   HarmonyContext harmony;
   auto ctx = createTestContext();
@@ -258,7 +258,7 @@ TEST(AuxTrackTest, PhraseTailEmptyWithNoMelody) {
 // ============================================================================
 
 TEST(AuxTrackTest, EmotionalPadProducesLongNotes) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   std::mt19937 rng(42);
   HarmonyContext harmony;
   auto ctx = createTestContext();
@@ -282,7 +282,7 @@ TEST(AuxTrackTest, EmotionalPadProducesLongNotes) {
 }
 
 TEST(AuxTrackTest, EmotionalPadLowVelocity) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   std::mt19937 rng(42);
   HarmonyContext harmony;
   auto ctx = createTestContext();
@@ -309,7 +309,7 @@ TEST(AuxTrackTest, EmotionalPadLowVelocity) {
 // ============================================================================
 
 TEST(AuxTrackTest, GenerateDispatchesPulseLoop) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   std::mt19937 rng(42);
   HarmonyContext harmony;
   auto ctx = createTestContext();
@@ -328,7 +328,7 @@ TEST(AuxTrackTest, GenerateDispatchesPulseLoop) {
 }
 
 TEST(AuxTrackTest, GenerateDispatchesEmotionalPad) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   std::mt19937 rng(42);
   HarmonyContext harmony;
   auto ctx = createTestContext();
@@ -351,7 +351,7 @@ TEST(AuxTrackTest, GenerateDispatchesEmotionalPad) {
 // ============================================================================
 
 TEST(AuxTrackTest, AvoidsClashWithMainMelody) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   std::mt19937 rng(42);
   HarmonyContext harmony;
   auto ctx = createTestContext();
@@ -424,7 +424,7 @@ TEST(AuxTrackTest, HarmonyModeEnumValues) {
 // ============================================================================
 
 TEST(AuxTrackTest, UnisonProducesNotes) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   auto ctx = createTestContext();
   auto main_melody = createTestMainMelody();
   ctx.main_melody = &main_melody;
@@ -443,7 +443,7 @@ TEST(AuxTrackTest, UnisonProducesNotes) {
 }
 
 TEST(AuxTrackTest, UnisonMatchesMelodyPitches) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   auto ctx = createTestContext();
   auto main_melody = createTestMainMelody();
   ctx.main_melody = &main_melody;
@@ -471,7 +471,7 @@ TEST(AuxTrackTest, UnisonMatchesMelodyPitches) {
 }
 
 TEST(AuxTrackTest, UnisonHasReducedVelocity) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   auto ctx = createTestContext();
   auto main_melody = createTestMainMelody();
   ctx.main_melody = &main_melody;
@@ -491,7 +491,7 @@ TEST(AuxTrackTest, UnisonHasReducedVelocity) {
 }
 
 TEST(AuxTrackTest, UnisonEmptyWithNoMainMelody) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   auto ctx = createTestContext();
   ctx.main_melody = nullptr;  // No main melody
   HarmonyContext harmony;
@@ -510,7 +510,7 @@ TEST(AuxTrackTest, UnisonEmptyWithNoMainMelody) {
 // ============================================================================
 
 TEST(AuxTrackTest, HarmonyProducesNotes) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   auto ctx = createTestContext();
   auto main_melody = createTestMainMelody();
   ctx.main_melody = &main_melody;
@@ -527,7 +527,7 @@ TEST(AuxTrackTest, HarmonyProducesNotes) {
 }
 
 TEST(AuxTrackTest, HarmonyThirdAboveIsHigher) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   auto ctx = createTestContext();
   auto main_melody = createTestMainMelody();
   ctx.main_melody = &main_melody;
@@ -553,7 +553,7 @@ TEST(AuxTrackTest, HarmonyThirdAboveIsHigher) {
 // ============================================================================
 
 TEST(AuxTrackTest, MelodicHookProducesNotes) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   auto ctx = createTestContext();
   HarmonyContext harmony;
   std::mt19937 rng(42);
@@ -570,7 +570,7 @@ TEST(AuxTrackTest, MelodicHookProducesNotes) {
 }
 
 TEST(AuxTrackTest, MelodicHookHasRepetition) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   auto ctx = createTestContext();
   ctx.section_end = TICKS_PER_BAR * 8;  // 8 bars for multiple phrases
   HarmonyContext harmony;
@@ -587,7 +587,7 @@ TEST(AuxTrackTest, MelodicHookHasRepetition) {
 }
 
 TEST(AuxTrackTest, GenerateDispatchesUnison) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   auto ctx = createTestContext();
   auto main_melody = createTestMainMelody();
   ctx.main_melody = &main_melody;
@@ -604,7 +604,7 @@ TEST(AuxTrackTest, GenerateDispatchesUnison) {
 }
 
 TEST(AuxTrackTest, GenerateDispatchesMelodicHook) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   auto ctx = createTestContext();
   HarmonyContext harmony;
   std::mt19937 rng(42);
@@ -733,7 +733,7 @@ TEST(AuxTrackIntegrationTest, SecondChorusHasHarmonyAux) {
 // ============================================================================
 
 TEST(AuxTrackTest, MotifCounterProducesNotes) {
-  midisketch::AuxTrackGenerator generator;
+  midisketch::AuxGenerator generator;
   auto ctx = midisketch::createTestContext();
   auto main_melody = midisketch::createTestMainMelody();
   ctx.main_melody = &main_melody;
@@ -758,7 +758,7 @@ TEST(AuxTrackTest, MotifCounterProducesNotes) {
 }
 
 TEST(AuxTrackTest, MotifCounterUsesSeparateRegister) {
-  midisketch::AuxTrackGenerator generator;
+  midisketch::AuxGenerator generator;
   auto ctx = midisketch::createTestContext();
 
   // Create high-register vocal melody (C5-G5)
@@ -796,7 +796,7 @@ TEST(AuxTrackTest, MotifCounterUsesSeparateRegister) {
 }
 
 TEST(AuxTrackTest, MotifCounterRhythmicComplementation) {
-  midisketch::AuxTrackGenerator generator;
+  midisketch::AuxGenerator generator;
   auto ctx = midisketch::createTestContext();
 
   // Create sparse vocal melody (long notes)
@@ -842,7 +842,7 @@ TEST(AuxTrackTest, MotifCounterRhythmicComplementation) {
 }
 
 TEST(AuxTrackTest, MotifCounterAvoidsVocalCollision) {
-  midisketch::AuxTrackGenerator generator;
+  midisketch::AuxGenerator generator;
   auto ctx = midisketch::createTestContext();
   auto main_melody = midisketch::createTestMainMelody();
   ctx.main_melody = &main_melody;

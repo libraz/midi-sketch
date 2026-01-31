@@ -3,7 +3,7 @@
  * @brief Tests for SE track generation.
  */
 
-#include "track/se.h"
+#include "track/generators/se.h"
 
 #include <gtest/gtest.h>
 
@@ -281,8 +281,9 @@ TEST(SEIntegrationTest, GenerateSETrackCallsPPPHAndMIX) {
   std::mt19937 rng(12345);
 
   // Generate with calls enabled
-  generateSETrack(track, song, true, true, IntroChant::None, MixPattern::Standard,
-                  CallDensity::Standard, rng);
+  SEGenerator se_gen;
+  se_gen.generateWithCalls(track, song, true, true, IntroChant::None, MixPattern::Standard,
+                           CallDensity::Standard, rng);
 
   // Should have text events for sections
   EXPECT_GT(track.textEvents().size(), 0u);

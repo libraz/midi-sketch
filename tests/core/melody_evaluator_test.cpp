@@ -17,7 +17,7 @@
 #include "core/types.h"
 #include "core/vocal_style_profile.h"
 #include "test_helpers/note_event_test_helper.h"
-#include "track/melody_designer.h"
+#include "track/vocal/melody_designer.h"
 
 namespace midisketch {
 namespace {

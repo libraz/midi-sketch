@@ -7,7 +7,7 @@
 
 #include "core/chord.h"
 #include "core/pitch_utils.h"
-#include "track/bass.h"
+#include "track/generators/bass.h"
 
 namespace midisketch {
 

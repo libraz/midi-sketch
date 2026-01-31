@@ -689,5 +689,137 @@ TEST_F(MotifMelodicContinuityTest, BackingDensityAffectsNoteDensity) {
   }
 }
 
+// ============================================================================
+// RhythmLock Tests (RhythmSync + Locked policy)
+// ============================================================================
+// In RhythmLock mode:
+// - Motif is the "coordinate axis" with highest priority
+// - Pattern pitches should be preserved without adjustment
+// - Other tracks (Vocal, Chord) should avoid Motif notes instead
+
+class MotifRhythmLockTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    params_.structure = StructurePattern::StandardPop;
+    params_.mood = Mood::Yoasobi;  // Common for RhythmSync
+    params_.chord_id = 0;
+    params_.key = Key::C;
+    params_.drums_enabled = true;
+    params_.bpm = 170;
+    params_.seed = 12345;
+    params_.blueprint_id = 1;  // RhythmLock blueprint (RhythmSync + Locked)
+    params_.composition_style = CompositionStyle::BackgroundMotif;
+  }
+
+  GeneratorParams params_;
+};
+
+// Test that RhythmLock preserves pattern consistency
+// In RhythmLock mode, the pattern should have consistent pitch classes
+// (same pitch classes repeat, even if octave varies)
+TEST_F(MotifRhythmLockTest, PreservesPatternPitchesAcrossSections) {
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& motif_notes = gen.getSong().motif().notes();
+  ASSERT_GT(motif_notes.size(), 0u) << "Motif should have notes";
+
+  // Collect all pitch classes used
+  std::set<int> pitch_classes;
+  for (const auto& note : motif_notes) {
+    pitch_classes.insert(note.note % 12);
+  }
+
+  // In RhythmLock, the pattern should be consistent
+  // Check that we don't use too many different pitch classes (pattern should be limited)
+  // A typical locked pattern uses 3-6 pitch classes
+  EXPECT_LE(pitch_classes.size(), 8u)
+      << "RhythmLock pattern should use a limited set of pitch classes";
+  EXPECT_GE(pitch_classes.size(), 2u)
+      << "RhythmLock pattern should use at least 2 pitch classes for variety";
+
+  // Check that notes are evenly distributed (pattern repeats)
+  // Calculate the average gap between notes
+  std::vector<Tick> note_starts;
+  for (const auto& note : motif_notes) {
+    note_starts.push_back(note.start_tick);
+  }
+  std::sort(note_starts.begin(), note_starts.end());
+
+  if (note_starts.size() >= 4) {
+    std::vector<Tick> gaps;
+    for (size_t i = 1; i < note_starts.size(); ++i) {
+      gaps.push_back(note_starts[i] - note_starts[i - 1]);
+    }
+    std::sort(gaps.begin(), gaps.end());
+
+    // The most common gap should repeat (pattern regularity)
+    std::map<Tick, int> gap_counts;
+    for (Tick gap : gaps) {
+      // Group similar gaps (within 60 ticks = 1/8th note)
+      Tick rounded_gap = (gap / 60) * 60;
+      gap_counts[rounded_gap]++;
+    }
+
+    int max_count = 0;
+    for (const auto& [gap, count] : gap_counts) {
+      if (count > max_count) max_count = count;
+    }
+
+    // Most common gap should appear multiple times (pattern repetition)
+    EXPECT_GE(max_count, 2)
+        << "RhythmLock pattern should have repeating rhythmic intervals";
+  }
+}
+
+// Test that RhythmLock mode is detected correctly
+TEST_F(MotifRhythmLockTest, BlueprintSetsRhythmLockMode) {
+  Generator gen;
+  gen.generate(params_);
+
+  // Blueprint 1 should set RhythmSync paradigm with Locked policy
+  EXPECT_EQ(gen.getParams().paradigm, GenerationParadigm::RhythmSync);
+  EXPECT_TRUE(gen.getParams().riff_policy == RiffPolicy::LockedContour ||
+              gen.getParams().riff_policy == RiffPolicy::LockedPitch ||
+              gen.getParams().riff_policy == RiffPolicy::LockedAll)
+      << "Blueprint 1 should set a Locked riff policy";
+}
+
+// Test that Motif notes are properly registered for collision detection
+TEST_F(MotifRhythmLockTest, MotifNotesAreRegisteredForCollisionCheck) {
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& motif_notes = gen.getSong().motif().notes();
+  const auto& chord_notes = gen.getSong().chord().notes();
+
+  ASSERT_GT(motif_notes.size(), 0u) << "Motif should have notes";
+
+  // In RhythmLock mode, Chord should avoid Motif notes
+  // Check for minor 2nd (1 semitone) clashes
+  int clashes = 0;
+  for (const auto& motif : motif_notes) {
+    Tick motif_end = motif.start_tick + motif.duration;
+    for (const auto& chord : chord_notes) {
+      Tick chord_end = chord.start_tick + chord.duration;
+
+      // Check for time overlap
+      if (motif.start_tick >= chord_end || chord.start_tick >= motif_end) {
+        continue;
+      }
+
+      // Check for minor 2nd clash
+      int interval = std::abs(static_cast<int>(motif.note) - static_cast<int>(chord.note)) % 12;
+      if (interval == 1 || interval == 11) {  // Minor 2nd or Major 7th
+        clashes++;
+      }
+    }
+  }
+
+  // Should have very few (ideally zero) clashes since Chord avoids Motif
+  EXPECT_LE(clashes, 5)
+      << "RhythmLock mode should have minimal Motif-Chord clashes. Found " << clashes;
+}
+
 }  // namespace
 }  // namespace midisketch

@@ -15,7 +15,7 @@
 #include "core/midi_track.h"
 #include "core/preset_types.h"
 #include "core/song.h"
-#include "track/vocal_analysis.h"
+#include "track/vocal/vocal_analysis.h"
 
 namespace midisketch {
 

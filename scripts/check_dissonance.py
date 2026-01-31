@@ -341,6 +341,179 @@ def run_single_test(
         )
 
 
+def analyze_existing_file(
+    cli_path: str,
+    midi_path: Path,
+    work_dir: Path,
+) -> TestResult:
+    """Analyze an existing MIDI file and return the result."""
+    cmd = [cli_path, "--analyze", "--input", str(midi_path)]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=work_dir,
+        )
+
+        if result.returncode != 0:
+            return TestResult(
+                seed=0, style=0, chord=0, blueprint=0,
+                error=f"CLI error: {result.stderr[:200]}",
+            )
+
+        # Read analysis.json
+        std_analysis = work_dir / "analysis.json"
+        if not std_analysis.exists():
+            return TestResult(
+                seed=0, style=0, chord=0, blueprint=0,
+                error="analysis.json not found",
+            )
+
+        with open(std_analysis) as f:
+            analysis = json.load(f)
+
+        summary = analysis.get("summary", {})
+        all_issues = parse_issues(analysis)
+        critical = [i for i in all_issues
+                   if i.type == "simultaneous_clash" or i.severity == "high"]
+
+        # Extract metadata from MIDI if available
+        seed = 0
+        style = 0
+        chord = 0
+        blueprint = 0
+
+        # Try to parse CLI output for metadata
+        for line in result.stdout.split("\n"):
+            if "Metadata:" in line:
+                try:
+                    meta_start = line.find("{")
+                    if meta_start >= 0:
+                        meta = json.loads(line[meta_start:])
+                        seed = meta.get("seed", 0)
+                        style = meta.get("style_preset_id", 0)
+                        chord = meta.get("chord_id", 0)
+                        blueprint = meta.get("blueprint_id", 0)
+                except json.JSONDecodeError:
+                    pass
+
+        return TestResult(
+            seed=seed,
+            style=style,
+            chord=chord,
+            blueprint=blueprint,
+            simultaneous_clashes=summary.get("simultaneous_clashes", 0),
+            non_chord_tones=summary.get("non_chord_tones", 0),
+            sustained_over_chord=summary.get("sustained_over_chord_change", 0),
+            non_diatonic=summary.get("non_diatonic_notes", 0),
+            high_severity=summary.get("high_severity", 0),
+            medium_severity=summary.get("medium_severity", 0),
+            low_severity=summary.get("low_severity", 0),
+            total_issues=summary.get("total_issues", 0),
+            all_issues=all_issues,
+            critical_issues=critical,
+        )
+
+    except subprocess.TimeoutExpired:
+        return TestResult(seed=0, style=0, chord=0, blueprint=0, error="Timeout (>60s)")
+    except Exception as e:
+        return TestResult(seed=0, style=0, chord=0, blueprint=0, error=str(e)[:200])
+
+
+def run_file_analysis(
+    cli_path: str,
+    file_patterns: list[str],
+    verbose: bool = False,
+) -> list[tuple[str, TestResult]]:
+    """Analyze existing MIDI files matching the given patterns."""
+    import glob as glob_module
+
+    work_dir = Path.cwd()
+    results = []
+
+    # Expand glob patterns
+    files = []
+    for pattern in file_patterns:
+        matched = glob_module.glob(pattern, recursive=True)
+        files.extend(matched)
+
+    if not files:
+        print(f"No files matched patterns: {file_patterns}")
+        return results
+
+    files = sorted(set(files))  # Remove duplicates and sort
+    print(f"Analyzing {len(files)} MIDI file(s)...\n")
+
+    for i, filepath in enumerate(files, 1):
+        path = Path(filepath)
+        result = analyze_existing_file(cli_path, path, work_dir)
+        results.append((filepath, result))
+
+        # Progress display
+        if result.error:
+            print(f"[{i:4d}/{len(files)}] {path.name}: ERROR - {result.error}")
+        elif result.has_critical:
+            print(f"[{i:4d}/{len(files)}] {path.name}: "
+                  f"\033[31mFAIL\033[0m clashes={result.simultaneous_clashes}")
+        elif result.has_warnings:
+            print(f"[{i:4d}/{len(files)}] {path.name}: "
+                  f"\033[33mWARN\033[0m high={result.high_severity}")
+        elif verbose:
+            print(f"[{i:4d}/{len(files)}] {path.name}: OK")
+        else:
+            print(f"\r[{i:4d}/{len(files)}] Analyzing...", end="", flush=True)
+
+    if not verbose:
+        print("\r" + " " * 40 + "\r", end="")
+
+    return results
+
+
+def print_file_analysis_summary(results: list[tuple[str, TestResult]]) -> bool:
+    """Print summary for file analysis results."""
+    total = len(results)
+    errors = [(f, r) for f, r in results if r.error]
+    critical = [(f, r) for f, r in results if r.has_critical]
+    warnings = [(f, r) for f, r in results if r.has_warnings and not r.has_critical]
+
+    print("\n" + "=" * 80)
+    print("FILE ANALYSIS SUMMARY")
+    print("=" * 80)
+
+    print(f"\n{'Results':40s}")
+    print("-" * 40)
+    print(f"  Total files:             {total:>6d}")
+    print(f"  Passed:                  {total - len(errors) - len(critical) - len(warnings):>6d}")
+    print(f"  Warnings (high sev):     {len(warnings):>6d}")
+    print(f"  \033[31mFailed (clashes):        {len(critical):>6d}\033[0m")
+    print(f"  Errors:                  {len(errors):>6d}")
+
+    if critical:
+        print("\n" + "-" * 80)
+        print("\033[31mFILES WITH CLASHES:\033[0m")
+        print("-" * 80)
+        for filepath, r in critical:
+            print(f"\n  {filepath}")
+            print(f"    seed={r.seed}, style={r.style}, chord={r.chord}, bp={r.blueprint}")
+            print(f"    clashes={r.simultaneous_clashes}, high={r.high_severity}")
+            if r.critical_issues:
+                print(f"    First issue: Bar {r.critical_issues[0].bar}, "
+                      f"beat {r.critical_issues[0].beat:.1f} - {r.critical_issues[0].interval_name}")
+
+    print("\n" + "=" * 80)
+    passed = len(critical) == 0 and len(errors) == 0
+    if passed:
+        print("\033[32mRESULT: PASSED\033[0m")
+    else:
+        print("\033[31mRESULT: FAILED\033[0m")
+    print("=" * 80)
+
+    return passed
+
+
 def run_tests(
     cli_path: str,
     seeds: list[int],
@@ -839,8 +1012,14 @@ Examples:
   %(prog)s --full               # 100 seeds, all styles, all chords, all blueprints
   %(prog)s --seeds 100          # Full test with 100 seeds
   %(prog)s --seed-range 1-20    # Test seeds 1-20
+  %(prog)s --random-seeds 50    # Test 50 random large seeds (edge cases)
   %(prog)s --styles 0,5 --bp 0  # Specific style and blueprint
   %(prog)s -j 4                 # Run with 4 parallel workers
+
+Analyze existing files:
+  %(prog)s -i output.mid        # Analyze a single file
+  %(prog)s -i backup/*.mid      # Analyze all .mid files in backup/
+  %(prog)s -i "**/*.mid"        # Analyze all .mid files recursively
 
 Filters:
   %(prog)s --track vocal        # Only show issues involving vocal track
@@ -850,6 +1029,11 @@ Filters:
 
     parser.add_argument("--cli", default="./build/bin/midisketch_cli",
                         help="Path to CLI (default: ./build/bin/midisketch_cli)")
+
+    # Analyze existing MIDI files
+    parser.add_argument("--input", "-i", type=str, nargs="+",
+                        help="Analyze existing MIDI file(s) instead of generating new ones. "
+                             "Supports glob patterns (e.g., 'backup/*.mid')")
 
     # Preset modes
     mode = parser.add_mutually_exclusive_group()
@@ -867,8 +1051,10 @@ Filters:
                         help="Starting seed (default: 1)")
     parser.add_argument("--seed-range", type=str,
                         help="Seed range, e.g., '1-50'")
-    parser.add_argument("--styles", type=str, default="0",
-                        help="Styles: 'all' or comma-separated (default: 0)")
+    parser.add_argument("--random-seeds", type=int, metavar="N",
+                        help="Use N random large seeds (tests edge cases with random uint32 values)")
+    parser.add_argument("--styles", type=str, default="all",
+                        help="Styles: 'all' or comma-separated (default: all)")
     parser.add_argument("--chords", type=str, default="0",
                         help="Chords: 'all' or comma-separated (default: 0)")
     parser.add_argument("--bp", "--blueprints", type=str, default="all", dest="blueprints",
@@ -899,6 +1085,16 @@ Filters:
 
     args = parser.parse_args()
 
+    # Handle --input mode (analyze existing files)
+    if args.input:
+        results = run_file_analysis(args.cli, args.input, args.verbose)
+        if args.output:
+            # Save JSON report for file analysis
+            test_results = [r for _, r in results]
+            save_json_report(test_results, args.output)
+        passed = print_file_analysis_summary(results)
+        sys.exit(0 if passed else 1)
+
     # Parse configurations based on mode
     if args.quick:
         seeds = list(range(1, 11))
@@ -917,14 +1113,19 @@ Filters:
         blueprints = list(range(9))
     else:
         # Custom configuration
-        if args.seed_range:
+        if args.random_seeds:
+            # Generate random large seeds (like real-world usage)
+            import random
+            random.seed()  # Use system entropy
+            seeds = [random.randint(1, 2**32 - 1) for _ in range(args.random_seeds)]
+        elif args.seed_range:
             start, end = map(int, args.seed_range.split("-"))
             seeds = list(range(start, end + 1))
         else:
             seeds = list(range(args.seed_start, args.seed_start + args.seeds))
 
-        styles = list(range(13)) if args.styles == "all" else [int(x) for x in args.styles.split(",")]
-        chords = list(range(20)) if args.chords == "all" else [int(x) for x in args.chords.split(",")]
+        styles = list(range(15)) if args.styles == "all" else [int(x) for x in args.styles.split(",")]
+        chords = list(range(22)) if args.chords == "all" else [int(x) for x in args.chords.split(",")]
         blueprints = list(range(9)) if args.blueprints == "all" else [int(x) for x in args.blueprints.split(",")]
 
     # Build filters dict

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "core/basic_types.h"
+#include "core/json_helpers.h"
 #include "core/melody_types.h"
 #include "core/motif_types.h"
 #include "core/section_types.h"
@@ -79,6 +80,24 @@ struct ArpeggioParams {
   float gate = 0.8f;           ///< Gate length (0.0-1.0)
   bool sync_chord = true;      ///< Sync with chord changes
   uint8_t base_velocity = 90;  ///< Base velocity for arpeggio notes
+
+  void writeTo(json::Writer& w) const {
+    w.write("pattern", static_cast<int>(pattern))
+        .write("speed", static_cast<int>(speed))
+        .write("octave_range", static_cast<int>(octave_range))
+        .write("gate", gate)
+        .write("sync_chord", sync_chord)
+        .write("base_velocity", static_cast<int>(base_velocity));
+  }
+
+  void readFrom(const json::Parser& p) {
+    pattern = static_cast<ArpeggioPattern>(p.getInt("pattern", 0));
+    speed = static_cast<ArpeggioSpeed>(p.getInt("speed", 1));
+    octave_range = static_cast<uint8_t>(p.getInt("octave_range", 2));
+    gate = p.getFloat("gate", 0.8f);
+    sync_chord = p.getBool("sync_chord", true);
+    base_velocity = static_cast<uint8_t>(p.getInt("base_velocity", 90));
+  }
 };
 
 /// @brief Genre-specific arpeggio style configuration.
@@ -108,6 +127,28 @@ struct ChordExtensionParams {
   float seventh_probability = 0.15f;  ///< Probability of 7th extension (0.0-1.0)
   float ninth_probability = 0.25f;    ///< Probability of 9th extension (0.0-1.0)
   float tritone_sub_probability = 0.5f;  ///< Probability of tritone sub (0.0-1.0)
+
+  void writeTo(json::Writer& w) const {
+    w.write("enable_sus", enable_sus)
+        .write("enable_7th", enable_7th)
+        .write("enable_9th", enable_9th)
+        .write("tritone_sub", tritone_sub)
+        .write("sus_probability", sus_probability)
+        .write("seventh_probability", seventh_probability)
+        .write("ninth_probability", ninth_probability)
+        .write("tritone_sub_probability", tritone_sub_probability);
+  }
+
+  void readFrom(const json::Parser& p) {
+    enable_sus = p.getBool("enable_sus", false);
+    enable_7th = p.getBool("enable_7th", true);
+    enable_9th = p.getBool("enable_9th", false);
+    tritone_sub = p.getBool("tritone_sub", false);
+    sus_probability = p.getFloat("sus_probability", 0.2f);
+    seventh_probability = p.getFloat("seventh_probability", 0.15f);
+    ninth_probability = p.getFloat("ninth_probability", 0.25f);
+    tritone_sub_probability = p.getFloat("tritone_sub_probability", 0.5f);
+  }
 };
 
 // Note: MotifVocalParams, MotifData are defined in motif_types.h
@@ -333,6 +374,145 @@ struct GeneratorParams {
   IntroChant intro_chant = IntroChant::None;         ///< Intro chant pattern
   MixPattern mix_pattern = MixPattern::None;         ///< MIX pattern
   CallDensity call_density = CallDensity::Standard;  ///< Call density
+
+  void writeTo(json::Writer& w) const {
+    // Basic fields
+    w.write("seed", seed)
+        .write("chord_id", static_cast<int>(chord_id))
+        .write("structure", static_cast<int>(structure))
+        .write("bpm", bpm)
+        .write("key", static_cast<int>(key))
+        .write("mood", static_cast<int>(mood))
+        .write("style_preset_id", static_cast<int>(style_preset_id))
+        .write("blueprint_id", static_cast<int>(blueprint_id))
+        .write("form_explicit", form_explicit)
+        .write("paradigm", static_cast<int>(paradigm))
+        .write("riff_policy", static_cast<int>(riff_policy))
+        .write("drums_sync_vocal", drums_sync_vocal)
+        .write("drums_enabled", drums_enabled)
+        .write("skip_vocal", skip_vocal)
+        .write("vocal_low", static_cast<int>(vocal_low))
+        .write("vocal_high", static_cast<int>(vocal_high))
+        .write("target_duration", target_duration_seconds)
+        .write("composition_style", static_cast<int>(composition_style))
+        .write("arrangement_growth", static_cast<int>(arrangement_growth))
+        .write("arpeggio_enabled", arpeggio_enabled)
+        .write("humanize", humanize)
+        .write("humanize_timing", humanize_timing)
+        .write("humanize_velocity", humanize_velocity)
+        .write("vocal_attitude", static_cast<int>(vocal_attitude))
+        .write("vocal_style", static_cast<int>(vocal_style))
+        .write("melody_template", static_cast<int>(melody_template))
+        .write("melodic_complexity", static_cast<int>(melodic_complexity))
+        .write("hook_intensity", static_cast<int>(hook_intensity))
+        .write("vocal_groove", static_cast<int>(vocal_groove))
+        .write("drive_feel", static_cast<int>(drive_feel))
+        .write("addictive_mode", addictive_mode)
+        .write("energy_curve", static_cast<int>(energy_curve))
+        .write("modulation_timing", static_cast<int>(modulation_timing))
+        .write("modulation_semitones", static_cast<int>(modulation_semitones))
+        .write("se_enabled", se_enabled)
+        .write("call_enabled", call_enabled)
+        .write("call_notes_enabled", call_notes_enabled)
+        .write("intro_chant", static_cast<int>(intro_chant))
+        .write("mix_pattern", static_cast<int>(mix_pattern))
+        .write("call_density", static_cast<int>(call_density));
+
+    // Nested structures
+    w.beginObject("motif");
+    motif.writeTo(w);
+    w.endObject();
+
+    w.beginObject("motif_chord");
+    motif_chord.writeTo(w);
+    w.endObject();
+
+    w.beginObject("motif_drum");
+    motif_drum.writeTo(w);
+    w.endObject();
+
+    w.beginObject("motif_vocal");
+    motif_vocal.writeTo(w);
+    w.endObject();
+
+    w.beginObject("chord_extension");
+    chord_extension.writeTo(w);
+    w.endObject();
+
+    w.beginObject("arpeggio");
+    arpeggio.writeTo(w);
+    w.endObject();
+
+    w.beginObject("melody_params");
+    melody_params.writeTo(w);
+    w.endObject();
+  }
+
+  void readFrom(const json::Parser& p) {
+    seed = p.getUint("seed", 0);
+    chord_id = static_cast<uint8_t>(p.getInt("chord_id", 0));
+    structure = static_cast<StructurePattern>(p.getInt("structure", 0));
+    bpm = static_cast<uint16_t>(p.getInt("bpm", 0));
+    key = static_cast<Key>(p.getInt("key", 0));
+    mood = static_cast<Mood>(p.getInt("mood", 0));
+    style_preset_id = static_cast<uint8_t>(p.getInt("style_preset_id", 0));
+    blueprint_id = static_cast<uint8_t>(p.getInt("blueprint_id", 0));
+    form_explicit = p.getBool("form_explicit", false);
+    paradigm = static_cast<GenerationParadigm>(p.getInt("paradigm", 0));
+    riff_policy = static_cast<RiffPolicy>(p.getInt("riff_policy", 0));
+    drums_sync_vocal = p.getBool("drums_sync_vocal", false);
+    drums_enabled = p.getBool("drums_enabled", true);
+    skip_vocal = p.getBool("skip_vocal", false);
+    vocal_low = static_cast<uint8_t>(p.getInt("vocal_low", 60));
+    vocal_high = static_cast<uint8_t>(p.getInt("vocal_high", 79));
+    target_duration_seconds = static_cast<uint16_t>(p.getInt("target_duration", 0));
+    composition_style = static_cast<CompositionStyle>(p.getInt("composition_style", 0));
+    arrangement_growth = static_cast<ArrangementGrowth>(p.getInt("arrangement_growth", 0));
+    arpeggio_enabled = p.getBool("arpeggio_enabled", false);
+    humanize = p.getBool("humanize", true);
+    humanize_timing = p.getFloat("humanize_timing", 0.4f);
+    humanize_velocity = p.getFloat("humanize_velocity", 0.3f);
+    vocal_attitude = static_cast<VocalAttitude>(p.getInt("vocal_attitude", 0));
+    vocal_style = static_cast<VocalStylePreset>(p.getInt("vocal_style", 0));
+    melody_template = static_cast<MelodyTemplateId>(p.getInt("melody_template", 0));
+    melodic_complexity = static_cast<MelodicComplexity>(p.getInt("melodic_complexity", 1));
+    hook_intensity = static_cast<HookIntensity>(p.getInt("hook_intensity", 2));
+    vocal_groove = static_cast<VocalGrooveFeel>(p.getInt("vocal_groove", 0));
+    drive_feel = static_cast<uint8_t>(p.getInt("drive_feel", 50));
+    addictive_mode = p.getBool("addictive_mode", false);
+    energy_curve = static_cast<EnergyCurve>(p.getInt("energy_curve", 0));
+    modulation_timing = static_cast<ModulationTiming>(p.getInt("modulation_timing", 0));
+    modulation_semitones = p.getInt8("modulation_semitones", 2);
+    se_enabled = p.getBool("se_enabled", true);
+    call_enabled = p.getBool("call_enabled", false);
+    call_notes_enabled = p.getBool("call_notes_enabled", true);
+    intro_chant = static_cast<IntroChant>(p.getInt("intro_chant", 0));
+    mix_pattern = static_cast<MixPattern>(p.getInt("mix_pattern", 0));
+    call_density = static_cast<CallDensity>(p.getInt("call_density", 2));
+
+    // Nested structures
+    if (p.has("motif")) {
+      motif.readFrom(p.getObject("motif"));
+    }
+    if (p.has("motif_chord")) {
+      motif_chord.readFrom(p.getObject("motif_chord"));
+    }
+    if (p.has("motif_drum")) {
+      motif_drum.readFrom(p.getObject("motif_drum"));
+    }
+    if (p.has("motif_vocal")) {
+      motif_vocal.readFrom(p.getObject("motif_vocal"));
+    }
+    if (p.has("chord_extension")) {
+      chord_extension.readFrom(p.getObject("chord_extension"));
+    }
+    if (p.has("arpeggio")) {
+      arpeggio.readFrom(p.getObject("arpeggio"));
+    }
+    if (p.has("melody_params")) {
+      melody_params.readFrom(p.getObject("melody_params"));
+    }
+  }
 };
 
 /// @brief Configuration for vocal regeneration.

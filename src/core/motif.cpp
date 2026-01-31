@@ -393,6 +393,7 @@ std::vector<NoteEvent> placeMotifInBridge(const Motif& motif, Tick section_start
 
   // Snap each note to chord tone and check for collisions
   // This matches the working Intro implementation in aux_track.cpp
+  std::vector<NoteEvent> safe_notes;
   for (auto& note : notes) {
     int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
 
@@ -405,12 +406,17 @@ std::vector<NoteEvent> placeMotifInBridge(const Motif& motif, Tick section_start
     if (!harmony.isPitchSafe(final_pitch, note.start_tick, note.duration, track)) {
       final_pitch =
           harmony.getBestAvailablePitch(final_pitch, note.start_tick, note.duration, track, 36, 96);
+      // If still not safe after exhaustive search, skip this note
+      if (!harmony.isPitchSafe(final_pitch, note.start_tick, note.duration, track)) {
+        continue;
+      }
     }
 
     note.note = final_pitch;
+    safe_notes.push_back(note);
   }
 
-  return notes;
+  return safe_notes;
 }
 
 std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_start,
@@ -477,6 +483,10 @@ std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_
       uint8_t final_pitch = static_cast<uint8_t>(snapped);
       if (!harmony.isPitchSafe(final_pitch, note_start, duration, track)) {
         final_pitch = harmony.getBestAvailablePitch(final_pitch, note_start, duration, track, 36, 96);
+        // If still not safe after exhaustive search, skip this note
+        if (!harmony.isPitchSafe(final_pitch, note_start, duration, track)) {
+          continue;
+        }
       }
 
       // Use NoteFactory for provenance tracking

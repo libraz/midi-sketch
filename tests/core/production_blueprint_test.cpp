@@ -16,8 +16,8 @@
 #include "core/preset_types.h"
 #include "core/structure.h"
 #include "test_helpers/note_event_test_helper.h"
-#include "track/phrase_cache.h"
-#include "track/vocal.h"
+#include "track/vocal/phrase_cache.h"
+#include "track/generators/vocal.h"
 
 namespace midisketch {
 namespace {

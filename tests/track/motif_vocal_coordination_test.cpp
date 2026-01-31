@@ -13,7 +13,7 @@
 #include "core/motif_types.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
-#include "track/vocal_analysis.h"
+#include "track/vocal/vocal_analysis.h"
 
 namespace midisketch {
 

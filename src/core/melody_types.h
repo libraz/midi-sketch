@@ -8,6 +8,14 @@
 
 #include <cstdint>
 
+// Forward declarations to avoid circular dependency
+namespace midisketch {
+namespace json {
+class Writer;
+class Parser;
+}  // namespace json
+}  // namespace midisketch
+
 namespace midisketch {
 
 /// @brief Vocal prominence level in the mix.
@@ -422,6 +430,9 @@ struct StyleMelodyParams {
   float medium_density_threshold = 0.7f;    ///< Threshold for medium density
   float low_density_threshold = 0.5f;       ///< Threshold for low density
   /// @}
+
+  void writeTo(json::Writer& w) const;
+  void readFrom(const json::Parser& p);
 };
 
 /// @}

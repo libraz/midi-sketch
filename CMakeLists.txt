@@ -3,6 +3,28 @@ cmake_policy(SET CMP0048 NEW)
 cmake_policy(SET CMP0077 NEW)
 project(midi-sketch VERSION 1.0.0 LANGUAGES CXX)
 
+# Get git commit hash and build timestamp
+execute_process(
+  COMMAND git rev-parse --short=8 HEAD
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  OUTPUT_VARIABLE GIT_COMMIT_HASH
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+)
+if(NOT GIT_COMMIT_HASH)
+  set(GIT_COMMIT_HASH "unknown")
+endif()
+
+string(TIMESTAMP BUILD_TIMESTAMP "%Y%m%d%H%M%S" UTC)
+
+# Generate version_info.h
+configure_file(
+  ${CMAKE_SOURCE_DIR}/src/core/version_info.h.in
+  ${CMAKE_BINARY_DIR}/generated/version_info.h
+  @ONLY
+)
+include_directories(${CMAKE_BINARY_DIR}/generated)
+
 # C++17 standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

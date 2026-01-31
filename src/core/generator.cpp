@@ -3,9 +3,12 @@
  * @brief Main MIDI generator orchestrating multi-track song creation.
  *
  * Generation order varies by CompositionStyle:
- * - MelodyLead: Vocal→Bass→Aux→Chord→Drums→Arp→SE (vocal-first for harmonic coordination)
- * - BackgroundMotif: Bass→Motif→Chord→Drums→Arp→SE (BGM mode, no vocal)
+ * - MelodyLead: Vocal/Aux→Motif→Bass→Chord→Drums→Arp→SE
+ * - BackgroundMotif: Motif→Bass→Chord→Drums→Arp→SE (BGM mode, no vocal)
  * - SynthDriven: Bass→Chord→Drums→Arp→SE (synth-driven BGM)
+ *
+ * Critical: Bass is generated BEFORE Chord so that Chord voicing can see bass notes
+ * and avoid major 7th clashes via buildBassPitchMask().
  *
  * HarmonyContext tracks note placement to avoid inter-track collisions.
  */
@@ -20,9 +23,9 @@
 #include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/collision_resolver.h"
-#include "core/composition_strategy.h"
 #include "core/config_converter.h"
-#include "core/harmony_context.h"
+#include "core/coordinator.h"
+#include "core/harmony_coordinator.h"
 #include "core/modulation_calculator.h"
 #include "core/note_factory.h"
 #include "core/pitch_utils.h"
@@ -34,15 +37,16 @@
 #include "core/timing_constants.h"
 #include "core/track_registration_guard.h"
 #include "core/velocity.h"
-#include "track/arpeggio.h"
-#include "track/aux_track.h"
-#include "track/bass.h"
-#include "track/chord_track.h"
 #include "track/drums.h"
-#include "track/motif.h"
-#include "track/se.h"
-#include "track/vocal.h"
-#include "track/vocal_analysis.h"
+#include "track/generators/arpeggio.h"
+#include "track/generators/aux.h"
+#include "track/generators/bass.h"
+#include "track/generators/chord.h"
+#include "track/generators/drums.h"
+#include "track/generators/motif.h"
+#include "track/generators/se.h"
+#include "track/generators/vocal.h"
+#include "track/vocal/vocal_analysis.h"
 #include "core/motif_types.h"
 
 namespace midisketch {
@@ -88,10 +92,15 @@ void applyDensityProgressionToSections(std::vector<Section>& sections,
 }
 }  // anonymous namespace
 
-Generator::Generator() : rng_(42), harmony_context_(std::make_unique<HarmonyContext>()) {}
+Generator::Generator()
+    : rng_(42),
+      harmony_context_(std::make_unique<HarmonyCoordinator>()),
+      coordinator_(std::make_unique<Coordinator>()) {}
 
-Generator::Generator(std::unique_ptr<IHarmonyContext> harmony_context)
-    : rng_(42), harmony_context_(std::move(harmony_context)) {}
+Generator::Generator(std::unique_ptr<IHarmonyCoordinator> harmony_context)
+    : rng_(42),
+      harmony_context_(std::move(harmony_context)),
+      coordinator_(std::make_unique<Coordinator>()) {}
 
 uint32_t Generator::resolveSeed(uint32_t seed) {
   if (seed == 0) {
@@ -346,60 +355,39 @@ void Generator::generate(const GeneratorParams& params) {
   // Calculate modulation for all composition styles
   calculateModulation();
 
-  // Use Strategy pattern for style-specific track generation
-  auto strategy = createCompositionStrategy(params.composition_style);
-
   // Pre-compute drum grid for RhythmSync paradigm
   // This sets up the 16th note grid BEFORE vocal generation
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
     computeDrumGrid();
   }
 
-  // Generate melodic tracks in style-specific order
-  strategy->generateMelodicTracks(*this);
+  // =========================================================================
+  // Generate all tracks via Coordinator
+  // =========================================================================
+  // Sync internal state to params for Coordinator
+  params_.se_enabled = se_enabled_;
+  params_.call_enabled = call_enabled_;
+  params_.call_notes_enabled = call_notes_enabled_;
+  params_.intro_chant = intro_chant_;
+  params_.mix_pattern = mix_pattern_;
+  params_.call_density = call_density_;
 
-  // Generate Motif BEFORE Chord so Chord voicing can avoid Motif notes
-  // Motif has less flexibility (specific rhythmic/melodic pattern), while
-  // Chord voicing can use inversions/spread voicing to avoid clashes
-  // BackgroundMotif style already generates Motif via strategy, so skip
-  // Traditional Blueprint (section_flow == nullptr) should NOT generate Motif for backward compat
-  if (params.composition_style != CompositionStyle::BackgroundMotif && blueprint_ != nullptr &&
-      blueprint_->section_flow != nullptr) {
-    bool motif_needed = false;
-    for (const auto& section : song_.arrangement().sections()) {
-      if (hasTrack(section.track_mask, TrackMask::Motif)) {
-        motif_needed = true;
-        break;
-      }
-    }
-    if (motif_needed) {
-      // Generate and register Motif before Chord
-      generateMotif();
-      // Motif is registered via TrackRegistrationGuard in generateMotif()
-    }
-  }
+  // Initialize Coordinator with external dependencies (shared harmony context, RNG)
+  // This allows Coordinator to use Generator's prepared state
+  coordinator_->initialize(params_, song_.arrangement(), rng_, harmony_context_.get());
 
-  // Generate chord track with style-specific voicing coordination
-  // Chord voicing should avoid Motif notes (Motif already registered above)
-  strategy->generateChordTrack(*this);
+  // Generate all tracks in paradigm-determined order
+  // - RhythmSync:   Motif → Vocal → Aux → Bass → Chord → Arpeggio → Drums → SE
+  // - MelodyDriven: Vocal → Aux → Bass → Chord → Motif → Arpeggio → Drums → SE
+  // - Traditional:  Vocal → Aux → Motif → Bass → Chord → Arpeggio → Drums → SE
+  coordinator_->generateAllTracks(song_);
 
-  if (params.drums_enabled) {
-    generateDrums();
-  }
-
-  // Generate arpeggio (auto-enabled for some styles)
-  if (params.arpeggio_enabled || strategy->autoEnableArpeggio()) {
-    generateArpeggio();
-
-    // BGM-only mode: resolve any chord-arpeggio clashes
-    if (strategy->needsArpeggioClashResolution()) {
-      resolveArpeggioChordClashes();
-    }
-  }
-
-  // Generate SE track if enabled
-  if (se_enabled_) {
-    generateSE();
+  // BGM-only mode: resolve any chord-arpeggio clashes
+  bool auto_enable_arpeggio = (params.composition_style == CompositionStyle::SynthDriven);
+  if ((params.arpeggio_enabled || auto_enable_arpeggio) &&
+      (params.composition_style == CompositionStyle::BackgroundMotif ||
+       params.composition_style == CompositionStyle::SynthDriven)) {
+    resolveArpeggioChordClashes();
   }
 
   // Apply staggered entry for intro sections
@@ -482,11 +470,18 @@ void Generator::generateVocal(const GeneratorParams& params) {
   // Generate ONLY vocal track with collision avoidance skipped
   // (no other tracks exist yet, so collision avoidance is meaningless)
   // BUT we still pass harmony_context_ for chord-aware melody generation
-  const MidiTrack* motif_track = nullptr;
-  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track,
-                     *harmony_context_,  // Pass for chord-aware melody generation
-                     true,               // skip_collision_avoidance = true
-                     getDrumGrid());
+  VocalGenerator vocal_gen;
+
+  // Build FullTrackContext
+  FullTrackContext ctx;
+  ctx.song = &song_;
+  ctx.params = &params_;
+  ctx.rng = &rng_;
+  ctx.harmony = harmony_context_.get();
+  ctx.skip_collision_avoidance = true;  // Vocal-first mode
+  ctx.drum_grid = getDrumGrid();
+
+  vocal_gen.generateFullTrack(song_.vocal(), ctx);
 }
 
 void Generator::regenerateVocal(uint32_t new_seed) {
@@ -499,11 +494,18 @@ void Generator::regenerateVocal(uint32_t new_seed) {
 
   // Regenerate vocal with collision avoidance skipped
   // BUT we still pass harmony_context_ for chord-aware melody generation
-  const MidiTrack* motif_track = nullptr;
-  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track,
-                     *harmony_context_,  // Pass for chord-aware melody generation
-                     true,               // skip_collision_avoidance = true
-                     getDrumGrid());
+  VocalGenerator vocal_gen;
+
+  // Build FullTrackContext
+  FullTrackContext ctx;
+  ctx.song = &song_;
+  ctx.params = &params_;
+  ctx.rng = &rng_;
+  ctx.harmony = harmony_context_.get();
+  ctx.skip_collision_avoidance = true;  // Vocal-first mode
+  ctx.drum_grid = getDrumGrid();
+
+  vocal_gen.generateFullTrack(song_.vocal(), ctx);
 }
 
 void Generator::regenerateVocal(const VocalConfig& config) {
@@ -541,10 +543,19 @@ void Generator::regenerateVocal(const VocalConfig& config) {
   // Clear only vocal track
   song_.clearTrack(TrackRole::Vocal);
 
-  // Regenerate vocal
-  const MidiTrack* motif_track = nullptr;
-  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track, *harmony_context_, true,
-                     getDrumGrid());
+  // Regenerate vocal using VocalGenerator
+  VocalGenerator vocal_gen;
+
+  // Build FullTrackContext
+  FullTrackContext ctx;
+  ctx.song = &song_;
+  ctx.params = &params_;
+  ctx.rng = &rng_;
+  ctx.harmony = harmony_context_.get();
+  ctx.skip_collision_avoidance = true;  // Vocal-first mode
+  ctx.drum_grid = getDrumGrid();
+
+  vocal_gen.generateFullTrack(song_.vocal(), ctx);
 }
 
 /**
@@ -563,30 +574,50 @@ void Generator::generateAccompanimentForVocal() {
   // Analyze existing vocal to extract characteristics
   VocalAnalysis vocal_analysis = analyzeVocal(song_.vocal());
 
-  // Generate Aux track (references vocal for call-and-response)
-  generateAux();
-
-  // Generate Chord voicings first (so secondary dominants are registered for bass)
-  // Note: chord voicing uses bass track for register avoidance, but bass is empty here
-  // which is acceptable - the voicing will use default range avoidance
-  {
-    TrackRegistrationGuard guard(*harmony_context_, song_.chord(), TrackRole::Chord);
-    auto chord_ctx = TrackGenerationContextBuilder(song_, params_, rng_, *harmony_context_)
-                         .withAuxTrack(&song_.aux())
-                         .withVocalAnalysis(&vocal_analysis)
-                         .withMutableHarmony(harmony_context_.get())
-                         .build();
-    generateChordTrackWithContext(song_.chord(), chord_ctx);
-  }
-
-  // Generate Bass adapted to vocal contour
-  // Uses contrary motion and respects vocal phrase boundaries
-  // Now sees secondary dominant registrations from chord track
+  // Generate Bass FIRST - bass root is determined by chord progression,
+  // doesn't need chord voicing information
   {
     TrackRegistrationGuard guard(*harmony_context_, song_.bass(), TrackRole::Bass);
-    generateBassTrackWithVocal(song_.bass(), song_, params_, rng_, vocal_analysis,
-                               *harmony_context_);
+    BassGenerator bass_gen;
+
+    // Build FullTrackContext
+    FullTrackContext bass_ctx;
+    bass_ctx.song = &song_;
+    bass_ctx.params = &params_;
+    bass_ctx.rng = &rng_;
+    bass_ctx.harmony = harmony_context_.get();
+    bass_ctx.vocal_analysis = &vocal_analysis;
+
+    bass_gen.generateFullTrack(song_.bass(), bass_ctx);
   }
+
+  // Re-register Bass so Chord voicing can see bass notes via buildBassPitchMask()
+  harmony_context_->registerTrack(song_.bass(), TrackRole::Bass);
+
+  // Generate Chord AFTER Bass - buildBassPitchMask() now finds bass notes
+  // This enables major 7th clash avoidance between bass and chord
+  {
+    TrackRegistrationGuard guard(*harmony_context_, song_.chord(), TrackRole::Chord);
+    ChordGenerator chord_gen;
+
+    // Build FullTrackContext
+    FullTrackContext chord_ctx;
+    chord_ctx.song = &song_;
+    chord_ctx.params = &params_;
+    chord_ctx.rng = &rng_;
+    chord_ctx.harmony = harmony_context_.get();
+    chord_ctx.vocal_analysis = &vocal_analysis;
+
+    chord_gen.generateFullTrack(song_.chord(), chord_ctx);
+  }
+
+  // Re-register Chord for Aux collision detection
+  // (Bass is already registered, TrackRegistrationGuard unregisters Chord on scope exit)
+  harmony_context_->registerTrack(song_.chord(), TrackRole::Chord);
+
+  // Generate Aux track AFTER Chord/Bass so it can detect collisions via isPitchSafe()
+  // Aux references vocal for call-and-response patterns
+  generateAux();
 
   // Apply triplet-grid swing quantization to bass (only for non-straight grooves)
   if (getMoodDrumGrooveFeel(params_.mood) != DrumGrooveFeel::Straight) {
@@ -905,43 +936,68 @@ void Generator::generateVocal() {
   // RAII guard ensures vocal is registered when this scope ends
   TrackRegistrationGuard guard(*harmony_context_, song_.vocal(), TrackRole::Vocal);
 
-  // Pass motif track for range coordination in BackgroundMotif mode
+  // Use VocalGenerator for track generation
+  VocalGenerator vocal_gen;
   const MidiTrack* motif_track =
       (params_.composition_style == CompositionStyle::BackgroundMotif) ? &song_.motif() : nullptr;
-  // Pass harmony context for dissonance avoidance
-  generateVocalTrack(song_.vocal(), song_, params_, rng_, motif_track, *harmony_context_, false,
-                     getDrumGrid());
+  vocal_gen.setMotifTrack(motif_track);
+
+  // Build FullTrackContext
+  FullTrackContext ctx;
+  ctx.song = &song_;
+  ctx.params = &params_;
+  ctx.rng = &rng_;
+  ctx.harmony = harmony_context_.get();
+  ctx.drum_grid = getDrumGrid();
+
+  vocal_gen.generateFullTrack(song_.vocal(), ctx);
 }
 
 void Generator::generateChord() {
   // RAII guard ensures chord is registered when this scope ends
   TrackRegistrationGuard guard(*harmony_context_, song_.chord(), TrackRole::Chord);
 
-  // Use HarmonyContext for comprehensive clash avoidance
-  // VocalAnalysis kept for API compatibility but collision detection uses harmony_context_
-  VocalAnalysis vocal_analysis = analyzeVocal(song_.vocal());
-  const MidiTrack* aux_ptr = song_.aux().notes().empty() ? nullptr : &song_.aux();
-  auto ctx = TrackGenerationContextBuilder(song_, params_, rng_, *harmony_context_)
-                 .withBassTrack(&song_.bass())
-                 .withAuxTrack(aux_ptr)
-                 .withVocalAnalysis(&vocal_analysis)
-                 .withMutableHarmony(harmony_context_.get())
-                 .build();
-  generateChordTrackWithContext(song_.chord(), ctx);
+  // Use ChordGenerator with FullTrackContext
+  ChordGenerator chord_gen;
+
+  // Build FullTrackContext
+  FullTrackContext ctx;
+  ctx.song = &song_;
+  ctx.params = &params_;
+  ctx.rng = &rng_;
+  ctx.harmony = harmony_context_.get();
+
+  // Compute vocal analysis for register avoidance
+  std::optional<VocalAnalysis> vocal_analysis;
+  if (!song_.vocal().notes().empty()) {
+    vocal_analysis = analyzeVocal(song_.vocal());
+    ctx.vocal_analysis = &vocal_analysis.value();
+  }
+
+  chord_gen.generateFullTrack(song_.chord(), ctx);
 }
 
 void Generator::generateBass() {
   // RAII guard ensures bass is registered when this scope ends
   TrackRegistrationGuard guard(*harmony_context_, song_.bass(), TrackRole::Bass);
 
+  // Use BassGenerator for track generation
+  BassGenerator bass_gen;
+
   // Compute kick pattern for Bass-Kick sync if not already cached
   if (!kick_cache_.has_value()) {
     kick_cache_ = computeKickPattern(song_.arrangement().sections(), params_.mood, params_.bpm);
   }
 
-  // Pass kick cache for bass-kick synchronization
-  const KickPatternCache* cache_ptr = kick_cache_.has_value() ? &kick_cache_.value() : nullptr;
-  generateBassTrack(song_.bass(), song_, params_, rng_, *harmony_context_, cache_ptr);
+  // Build FullTrackContext
+  FullTrackContext ctx;
+  ctx.song = &song_;
+  ctx.params = &params_;
+  ctx.rng = &rng_;
+  ctx.harmony = harmony_context_.get();
+  ctx.kick_cache = kick_cache_.has_value() ? &kick_cache_.value() : nullptr;
+
+  bass_gen.generateFullTrack(song_.bass(), ctx);
 
   // Apply triplet-grid swing quantization to bass (only for non-straight grooves)
   if (getMoodDrumGrooveFeel(params_.mood) != DrumGrooveFeel::Straight) {
@@ -950,24 +1006,38 @@ void Generator::generateBass() {
 }
 
 void Generator::generateDrums() {
-  // Check if drums_sync_vocal is enabled and vocal track has notes
-  if (params_.drums_sync_vocal && !song_.vocal().notes().empty()) {
-    // RhythmSync: kicks at vocal onsets
-    VocalAnalysis vocal_analysis = analyzeVocal(song_.vocal());
-    generateDrumsTrackWithVocal(song_.drums(), song_, params_, rng_, vocal_analysis);
-  } else if (params_.paradigm == GenerationParadigm::MelodyDriven &&
-             !song_.vocal().notes().empty()) {
-    // MelodyDriven: drums adapt to vocal phrases (density, fill placement)
-    VocalAnalysis vocal_analysis = analyzeVocal(song_.vocal());
-    generateDrumsTrackMelodyDriven(song_.drums(), song_, params_, rng_, vocal_analysis);
-  } else {
-    // Traditional: normal drum generation
-    generateDrumsTrack(song_.drums(), song_, params_, rng_);
+  // Use DrumsGenerator for track generation
+  DrumsGenerator drums_gen;
+
+  // Build FullTrackContext
+  FullTrackContext ctx;
+  ctx.song = &song_;
+  ctx.params = &params_;
+  ctx.rng = &rng_;
+  ctx.harmony = harmony_context_.get();
+
+  // Pass vocal analysis if vocals exist (for RhythmSync/MelodyDriven modes)
+  std::optional<VocalAnalysis> vocal_analysis;
+  if (!song_.vocal().notes().empty()) {
+    vocal_analysis = analyzeVocal(song_.vocal());
+    ctx.vocal_analysis = &vocal_analysis.value();
   }
+
+  drums_gen.generateFullTrack(song_.drums(), ctx);
 }
 
 void Generator::generateArpeggio() {
-  generateArpeggioTrack(song_.arpeggio(), song_, params_, rng_, *harmony_context_);
+  // Use ArpeggioGenerator for track generation
+  ArpeggioGenerator arpeggio_gen;
+
+  // Build FullTrackContext
+  FullTrackContext ctx;
+  ctx.song = &song_;
+  ctx.params = &params_;
+  ctx.rng = &rng_;
+  ctx.harmony = harmony_context_.get();
+
+  arpeggio_gen.generateFullTrack(song_.arpeggio(), ctx);
 }
 
 void Generator::resolveArpeggioChordClashes() {
@@ -980,21 +1050,17 @@ void Generator::generateAux() {
   // RAII guard ensures aux is registered when this scope ends
   TrackRegistrationGuard guard(*harmony_context_, song_.aux(), TrackRole::Aux);
 
-  // Delegate to AuxTrackGenerator for full track generation
-  AuxTrackGenerator aux_generator;
+  // Use AuxGenerator for track generation
+  AuxGenerator aux_gen;
 
-  const auto& progression = getChordProgression(params_.chord_id);
-  const auto& sections = song_.arrangement().sections();
+  // Build FullTrackContext
+  FullTrackContext ctx;
+  ctx.song = &song_;
+  ctx.params = &params_;
+  ctx.rng = &rng_;
+  ctx.harmony = harmony_context_.get();
 
-  AuxTrackGenerator::SongContext song_ctx;
-  song_ctx.sections = &sections;
-  song_ctx.vocal_track = &song_.vocal();
-  song_ctx.progression = &progression;
-  song_ctx.vocal_style = params_.vocal_style;
-  song_ctx.vocal_low = params_.vocal_low;
-  song_ctx.vocal_high = params_.vocal_high;
-
-  aux_generator.generateFullTrack(song_.aux(), song_ctx, *harmony_context_, rng_);
+  aux_gen.generateFullTrack(song_.aux(), ctx);
 }
 
 void Generator::calculateModulation() {
@@ -1007,39 +1073,58 @@ void Generator::calculateModulation() {
 }
 
 void Generator::generateSE() {
-  if (call_enabled_) {
-    generateSETrack(song_.se(), song_, call_enabled_, call_notes_enabled_, intro_chant_,
-                    mix_pattern_, call_density_, rng_);
-  } else {
-    generateSETrack(song_.se(), song_);
-  }
+  // Use SEGenerator for track generation
+  SEGenerator se_gen;
+
+  // Build FullTrackContext with call system options
+  FullTrackContext ctx;
+  ctx.song = &song_;
+  ctx.params = &params_;
+  ctx.rng = &rng_;
+  ctx.harmony = harmony_context_.get();
+  ctx.call_enabled = call_enabled_;
+  ctx.call_notes_enabled = call_notes_enabled_;
+  ctx.intro_chant = static_cast<uint8_t>(intro_chant_);
+  ctx.mix_pattern = static_cast<uint8_t>(mix_pattern_);
+  ctx.call_density = static_cast<uint8_t>(call_density_);
+
+  se_gen.generateFullTrack(song_.se(), ctx);
 }
 
 void Generator::generateMotif() {
-  // RAII guard ensures motif is registered when this scope ends
-  // Motif is generated BEFORE Chord, so Chord voicing can avoid Motif notes
-  TrackRegistrationGuard guard(*harmony_context_, song_.motif(), TrackRole::Motif);
+  // Use MotifGenerator for track generation
+  MotifGenerator motif_gen;
 
   // Build vocal context for MelodyLead mode coordination
-  MotifContext ctx;
-  MotifContext* vocal_ctx = nullptr;
+  MotifContext motif_ctx;
   VocalAnalysis va;  // Keep in scope for pointer validity
+
+  // Build FullTrackContext
+  FullTrackContext ctx;
+  ctx.song = &song_;
+  ctx.params = &params_;
+  ctx.rng = &rng_;
+  ctx.harmony = harmony_context_.get();
 
   // Only provide vocal context if:
   // 1. Vocal track exists and has notes
   // 2. We're in MelodyLead mode (vocal was generated first)
   if (!params_.skip_vocal && !song_.vocal().notes().empty()) {
     va = analyzeVocal(song_.vocal());
-    ctx.phrase_boundaries = &song_.phraseBoundaries();
-    ctx.rest_positions = &va.rest_positions;
-    ctx.vocal_low = va.lowest_pitch;
-    ctx.vocal_high = va.highest_pitch;
-    ctx.vocal_density = va.density;
-    ctx.direction_at_tick = &va.direction_at_tick;
-    vocal_ctx = &ctx;
+    motif_ctx.phrase_boundaries = &song_.phraseBoundaries();
+    motif_ctx.rest_positions = &va.rest_positions;
+    motif_ctx.vocal_low = va.lowest_pitch;
+    motif_ctx.vocal_high = va.highest_pitch;
+    motif_ctx.vocal_density = va.density;
+    motif_ctx.direction_at_tick = &va.direction_at_tick;
+    ctx.vocal_ctx = &motif_ctx;
   }
 
-  generateMotifTrack(song_.motif(), song_, params_, rng_, *harmony_context_, vocal_ctx);
+  motif_gen.generateFullTrack(song_.motif(), ctx);
+
+  // Register Motif immediately after generation so Vocal can avoid Motif notes
+  // (Previously used RAII guard which only registered on scope exit)
+  harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
 }
 
 void Generator::regenerateMotif(uint32_t new_seed) {
@@ -1465,29 +1550,6 @@ void Generator::computeDrumGrid() {
   DrumGrid grid;
   grid.grid_resolution = TICK_SIXTEENTH;  // 120 ticks (16th note)
   drum_grid_ = grid;
-}
-
-// ============================================================================
-// Rhythm Lock Methods
-// ============================================================================
-
-bool Generator::shouldUseRhythmLock() const {
-  // Rhythm lock is active for Orangestar style:
-  // - RhythmSync paradigm (vocal syncs to drum grid)
-  // - Locked riff policy (same rhythm throughout)
-  if (params_.paradigm != GenerationParadigm::RhythmSync) {
-    return false;
-  }
-  uint8_t policy_value = static_cast<uint8_t>(params_.riff_policy);
-  // LockedContour=1, LockedPitch=2, LockedAll=3
-  return policy_value >= 1 && policy_value <= 3;
-}
-
-void Generator::generateMotifAsAxis() {
-  // Generate Motif track first as the rhythmic "coordinate axis"
-  // This is used for Orangestar style where Motif provides consistent rhythm
-  generateMotif();
-  rhythm_lock_active_ = true;
 }
 
 // ============================================================================

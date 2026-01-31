@@ -10,7 +10,7 @@
 #include "core/preset_data.h"
 #include "core/timing_constants.h"
 #include "midi/track_config.h"
-#include "track/arpeggio.h"
+#include "track/generators/arpeggio.h"
 
 #ifndef MIDISKETCH_WASM
 #include "midi/midi2_writer.h"
@@ -451,7 +451,7 @@ void MidiWriter::buildVocalPreview(const Song& song, const IHarmonyContext& harm
 
     // Add whole note (or duration until next chord change)
     Tick duration = next_change - current_tick;
-    root_bass.addNote(current_tick, duration, root_pitch, BASS_VELOCITY);
+    root_bass.addNote(NoteEventBuilder::create(current_tick, duration, root_pitch, BASS_VELOCITY));
 
     current_tick = next_change;
   }

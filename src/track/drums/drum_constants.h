@@ -10,6 +10,7 @@
 #include <random>
 
 #include "core/midi_track.h"
+#include "core/note_factory.h"
 #include "core/section_types.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
@@ -54,7 +55,7 @@ constexpr float KICK_HUMANIZE_AMOUNT = 0.02f;
 // Utility Functions
 // ============================================================================
 
-/// @brief Add a drum note to track (no provenance tracking for percussion).
+/// @brief Add a drum note to track with provenance tracking.
 inline void addDrumNote(MidiTrack& track, Tick start, Tick duration, uint8_t note,
                         uint8_t velocity) {
   NoteEvent event;
@@ -62,6 +63,12 @@ inline void addDrumNote(MidiTrack& track, Tick start, Tick duration, uint8_t not
   event.duration = duration;
   event.note = note;
   event.velocity = velocity;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+  event.prov_source = static_cast<uint8_t>(NoteSource::Drums);
+  event.prov_lookup_tick = start;
+  event.prov_chord_degree = -1;  // Drums don't have chord context
+  event.prov_original_pitch = note;
+#endif
   track.addNote(event);
 }
 

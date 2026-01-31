@@ -1156,9 +1156,11 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
         // Dissonant intervals:
         // - Minor 2nd (1): always dissonant
         // - Major 2nd (2): dissonant in close voicing (actual interval < 12)
+        // - Tritone (6): dissonant between harmonic tracks
         // - Major 7th (11): always dissonant
         // - Minor 9th (13 -> 1 in interval_class): handled by minor 2nd
         bool is_dissonant = (interval_class == 1) ||            // minor 2nd / minor 9th
+                            (interval_class == 6) ||            // tritone
                             (interval_class == 11) ||           // major 7th
                             (interval_class == 2 && interval < 12);  // major 2nd (close only)
 

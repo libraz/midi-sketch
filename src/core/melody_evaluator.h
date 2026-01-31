@@ -150,6 +150,19 @@ class MelodyEvaluator {
   /// @returns Penalty 0.0-1.0
   static float calcRapidDirectionChangePenalty(const std::vector<NoteEvent>& notes);
 
+  /// @brief Calculate penalty for melodically isolated notes.
+  ///
+  /// A note is "isolated" if both neighbors are >= threshold semitones away.
+  /// Such notes feel disconnected and are difficult to sing naturally.
+  ///
+  /// @param notes Vector of note events
+  /// @param prev_section_last_pitch Last pitch of previous section (-1 if none)
+  /// @param threshold Interval threshold for isolation (default: 7 = Perfect 5th)
+  /// @returns Penalty 0.0-0.3
+  static float calcIsolatedNotePenalty(const std::vector<NoteEvent>& notes,
+                                       int prev_section_last_pitch = -1,
+                                       int threshold = 7);
+
   /// @brief Calculate penalty for monotonous melody (no variation).
   /// @param notes Vector of note events
   /// @returns Penalty 0.0-1.0
@@ -222,6 +235,7 @@ class MelodyEvaluator {
   /// Starts at 1.0 and subtracts penalties for:
   /// - Singing difficulty (high register, leap after high, rapid changes)
   /// - Music theory issues (non-chord tones on strong beats)
+  /// - Melodically isolated notes (large jumps both before and after)
   /// - Low phrase cohesion (scattered notes without connection)
   /// - High gap ratio (too much silence = floating notes)
   /// - Breathless singing (too many consecutive short notes)
@@ -232,10 +246,12 @@ class MelodyEvaluator {
   /// @param harmony Harmony context for chord info
   /// @param phrase_duration Total duration of the phrase (ticks)
   /// @param style Vocal style preset (for style-specific thresholds)
+  /// @param prev_section_last_pitch Last pitch of previous section (-1 if none)
   /// @returns Score 0.0-1.0 (higher = better)
   static float evaluateForCulling(const std::vector<NoteEvent>& notes,
                                   const IHarmonyContext& harmony, Tick phrase_duration,
-                                  VocalStylePreset style = VocalStylePreset::Standard);
+                                  VocalStylePreset style = VocalStylePreset::Standard,
+                                  int prev_section_last_pitch = -1);
 
   /// @}
 };

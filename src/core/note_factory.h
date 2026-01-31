@@ -25,6 +25,7 @@ enum class NoteSource : uint8_t {
   Aux,             ///< Aux track generation
   Motif,           ///< Motif track
   Drums,           ///< Drums (simplified provenance)
+  SE,              ///< SE track (calls, chants)
   CollisionAvoid,  ///< Modified by collision avoidance
   PostProcess,     ///< Modified by post-processing
 };
@@ -50,6 +51,8 @@ inline const char* noteSourceToString(NoteSource source) {
       return "motif";
     case NoteSource::Drums:
       return "drums";
+    case NoteSource::SE:
+      return "se";
     case NoteSource::CollisionAvoid:
       return "collision_avoid";
     case NoteSource::PostProcess:
@@ -70,11 +73,23 @@ inline const char* noteSourceToString(NoteSource source) {
 ///                                 NoteSource::MelodyPhrase);
 /// track.addNote(note);
 /// @endcode
+///
+/// For idempotent collision checking (order-independent), use createSafeAndRegister():
+/// @code
+/// auto note = factory.createSafeAndRegister(start, duration, pitch, velocity,
+///                                            NoteSource::BassPattern, TrackRole::Bass,
+///                                            BASS_LOW, BASS_HIGH);
+/// if (note) track.addNote(*note);
+/// @endcode
 class NoteFactory {
  public:
-  /// @brief Construct factory with harmony context reference.
+  /// @brief Construct factory with harmony context reference (read-only).
   /// @param harmony Reference to HarmonyContext (must outlive factory)
   explicit NoteFactory(const IHarmonyContext& harmony);
+
+  /// @brief Construct factory with mutable harmony context (enables immediate registration).
+  /// @param harmony Mutable reference to HarmonyContext (must outlive factory)
+  explicit NoteFactory(IHarmonyContext& harmony);
 
   /// @brief Create a note with automatic chord lookup.
   ///
@@ -117,31 +132,56 @@ class NoteFactory {
                                      TrackRole track,
                                      NoteSource source = NoteSource::Unknown) const;
 
-  /// @brief Create a note with pitch adjusted to avoid collisions.
+  // =========================================================================
+  // Immediate registration methods (for idempotent collision detection)
+  // =========================================================================
+
+  /// @brief Create a note and immediately register it with HarmonyContext.
   ///
-  /// Combines getBestAvailablePitch() + create() in one call. Use for required notes
-  /// where pitch adjustment is acceptable but the note must be created.
-  /// The returned note's pitch may differ from desired_pitch.
+  /// Use this for required notes that must always be created. The note is
+  /// registered immediately so subsequent notes can see it for collision detection.
+  /// Requires mutable factory (constructed with non-const IHarmonyContext).
   ///
   /// @param start Start tick
   /// @param duration Duration in ticks
-  /// @param desired_pitch Desired pitch (will be adjusted if collision detected)
+  /// @param pitch MIDI pitch
   /// @param velocity MIDI velocity
-  /// @param track TrackRole for collision checking
+  /// @param source Generation phase for debugging
+  /// @param role Track role for collision detection
+  /// @return NoteEvent with provenance filled
+  NoteEvent createAndRegister(Tick start, Tick duration, uint8_t pitch, uint8_t velocity,
+                               NoteSource source, TrackRole role);
+
+  /// @brief Create a note with collision check and immediate registration.
+  ///
+  /// Checks for dissonance, adjusts pitch if needed, creates the note, and
+  /// immediately registers it. Use for notes where pitch adjustment is acceptable.
+  /// Returns nullopt only if no safe pitch exists in the given range.
+  ///
+  /// @param start Start tick
+  /// @param duration Duration in ticks
+  /// @param desired_pitch Desired MIDI pitch (will be adjusted if collision detected)
+  /// @param velocity MIDI velocity
+  /// @param source Generation phase for debugging
+  /// @param role Track role for collision detection
   /// @param range_low Minimum allowed pitch
   /// @param range_high Maximum allowed pitch
-  /// @param source Generation phase for debugging
-  /// @return NoteEvent with adjusted pitch and provenance
-  NoteEvent createWithAdjustedPitch(Tick start, Tick duration, uint8_t desired_pitch,
-                                    uint8_t velocity, TrackRole track,
-                                    uint8_t range_low, uint8_t range_high,
-                                    NoteSource source = NoteSource::Unknown) const;
+  /// @return NoteEvent with safe pitch, or nullopt if no safe pitch available
+  std::optional<NoteEvent> createSafeAndRegister(Tick start, Tick duration, uint8_t desired_pitch,
+                                                  uint8_t velocity, NoteSource source,
+                                                  TrackRole role, uint8_t range_low,
+                                                  uint8_t range_high);
 
-  /// @brief Access the harmony context.
+  /// @brief Check if this factory supports immediate registration.
+  /// @return true if constructed with mutable harmony context
+  bool canRegister() const { return mutable_harmony_ != nullptr; }
+
+  /// @brief Access the harmony context (const).
   const IHarmonyContext& harmony() const { return harmony_; }
 
  private:
   const IHarmonyContext& harmony_;
+  IHarmonyContext* mutable_harmony_ = nullptr;  ///< Non-null if mutable, enables registration
 };
 
 }  // namespace midisketch

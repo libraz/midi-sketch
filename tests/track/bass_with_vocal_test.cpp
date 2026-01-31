@@ -13,9 +13,9 @@
 #include "core/i_harmony_context.h"
 #include "core/song.h"
 #include "core/types.h"
-#include "track/bass.h"
-#include "track/vocal.h"
-#include "track/vocal_analysis.h"
+#include "track/generators/bass.h"
+#include "track/generators/vocal.h"
+#include "track/vocal/vocal_analysis.h"
 
 namespace midisketch {
 namespace {

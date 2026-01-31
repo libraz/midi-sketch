@@ -1,6 +1,6 @@
 /**
  * @file stub_harmony_context.h
- * @brief Test stub for IHarmonyContext to enable Generator testing.
+ * @brief Test stub for IHarmonyCoordinator to enable Generator testing.
  */
 
 #ifndef MIDISKETCH_TEST_STUB_HARMONY_CONTEXT_H
@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "core/i_harmony_context.h"
+#include "core/i_harmony_coordinator.h"
 
 namespace midisketch {
 namespace test {
@@ -26,7 +26,7 @@ namespace test {
  * gen.generate(params);
  * @endcode
  */
-class StubHarmonyContext : public IHarmonyContext {
+class StubHarmonyContext : public IHarmonyCoordinator {
  public:
   // Configuration methods
   void setChordDegree(int8_t degree) { chord_degree_ = degree; }
@@ -34,7 +34,10 @@ class StubHarmonyContext : public IHarmonyContext {
   void setAllPitchesSafe(bool safe) { all_pitches_safe_ = safe; }
   void setNextChordChangeTick(Tick tick) { next_chord_change_ = tick; }
 
+  // =========================================================================
   // IHarmonyContext implementation
+  // =========================================================================
+
   void initialize(const Arrangement& /*arrangement*/, const ChordProgression& /*progression*/,
                   Mood /*mood*/) override {
     initialized_ = true;
@@ -100,7 +103,57 @@ class StubHarmonyContext : public IHarmonyContext {
     return desired_end;  // Stub always returns desired_end (no restrictions)
   }
 
+  // =========================================================================
+  // IHarmonyCoordinator implementation (stub)
+  // =========================================================================
+
+  TrackPriority getTrackPriority(TrackRole /*role*/) const override {
+    return TrackPriority::Medium;
+  }
+
+  void setTrackPriority(TrackRole /*role*/, TrackPriority /*priority*/) override {
+    // No-op for stub
+  }
+
+  void markTrackGenerated(TrackRole /*track*/) override {
+    // No-op for stub
+  }
+
+  bool mustAvoid(TrackRole /*generator*/, TrackRole /*target*/) const override {
+    return false;  // Stub says no avoidance needed
+  }
+
+  void precomputeCandidatesForTrack(TrackRole /*track*/,
+                                     const std::vector<Section>& /*sections*/) override {
+    // No-op for stub
+  }
+
+  TimeSliceCandidates getCandidatesAt(Tick /*tick*/, TrackRole /*track*/) const override {
+    return {};  // Empty candidates
+  }
+
+  SafeNoteOptions getSafeNoteOptions(Tick start, Tick duration, uint8_t desired_pitch,
+                                      TrackRole /*track*/, uint8_t /*low*/,
+                                      uint8_t /*high*/) const override {
+    SafeNoteOptions options;
+    options.start = start;
+    options.duration = duration;
+    options.max_safe_duration = duration;
+    // Return the desired pitch as the only candidate with full safety
+    options.candidates.push_back({desired_pitch, 1.0f, true, true});
+    return options;
+  }
+
+  void applyMotifToSections(const std::vector<NoteEvent>& /*motif_pattern*/,
+                             const std::vector<Section>& /*targets*/,
+                             MidiTrack& /*track*/) override {
+    // No-op for stub
+  }
+
+  // =========================================================================
   // Test inspection methods
+  // =========================================================================
+
   int getSecondaryDominantCount() const { return secondary_dominant_count_; }
   bool wasInitialized() const { return initialized_; }
   int getRegisteredNoteCount() const { return registered_note_count_; }

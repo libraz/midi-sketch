@@ -3,7 +3,7 @@
  * @brief Unit tests for vocal helper functions.
  */
 
-#include "track/vocal_helpers.h"
+#include "track/vocal/vocal_helpers.h"
 
 #include <gtest/gtest.h>
 

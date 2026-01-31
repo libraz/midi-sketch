@@ -21,7 +21,7 @@
 #include "core/song.h"
 #include "core/types.h"
 #include "track/drums/hihat_control.h"
-#include "track/vocal_analysis.h"
+#include "track/vocal/vocal_analysis.h"
 
 namespace midisketch {
 namespace drums {

@@ -3,7 +3,7 @@
  * @brief Tests for vocal analysis.
  */
 
-#include "track/vocal_analysis.h"
+#include "track/vocal/vocal_analysis.h"
 
 #include <gtest/gtest.h>
 

@@ -52,6 +52,27 @@ bool TrackCollisionDetector::isPitchSafe(uint8_t pitch, Tick start, Tick duratio
         continue;  // Major 2nd OK on weak beats
       }
 
+      // Special case: Tritone between harmonic tracks is ALWAYS dissonant
+      // The chord_degree check in isDissonantActualInterval allows tritone on V/vii chords,
+      // but simultaneous tritone clashes between tracks sound harsh regardless of context.
+      // This applies to: Bass-Chord, Chord-Vocal, Chord-Motif, Chord-Aux, Motif-Vocal, Bass-Motif
+      bool is_harmonic_track_pair = false;
+      if (exclude == TrackRole::Bass || exclude == TrackRole::Chord ||
+          exclude == TrackRole::Vocal || exclude == TrackRole::Motif || exclude == TrackRole::Aux) {
+        if (note.track == TrackRole::Bass || note.track == TrackRole::Chord ||
+            note.track == TrackRole::Vocal || note.track == TrackRole::Motif ||
+            note.track == TrackRole::Aux) {
+          is_harmonic_track_pair = true;
+        }
+      }
+      if (is_harmonic_track_pair) {
+        int pc_interval = actual_semitones % 12;
+        // Tritone (6 semitones) within 3 octaves (36 semitones) sounds harsh
+        if (pc_interval == 6 && actual_semitones < 36) {
+          return false;
+        }
+      }
+
       if (isDissonantActualInterval(actual_semitones, chord_degree)) {
         return false;
       }

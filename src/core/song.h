@@ -43,6 +43,8 @@ class Song {
   /// @{
   MidiTrack& track(TrackRole role) { return tracks_[static_cast<size_t>(role)]; }
   const MidiTrack& track(TrackRole role) const { return tracks_[static_cast<size_t>(role)]; }
+  MidiTrack& getTrack(TrackRole role) { return tracks_[static_cast<size_t>(role)]; }
+  const MidiTrack& getTrack(TrackRole role) const { return tracks_[static_cast<size_t>(role)]; }
   /// @}
 
   /// @name Track Iteration

@@ -21,9 +21,9 @@
 #include "core/i_harmony_context.h"
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
-#include "track/aux_track.h"
-#include "track/bass.h"
-#include "track/vocal_analysis.h"
+#include "track/generators/aux.h"
+#include "track/generators/bass.h"
+#include "track/vocal/vocal_analysis.h"
 
 namespace midisketch {
 namespace {
@@ -80,7 +80,7 @@ class MotifCounterChordAwareTest : public ::testing::Test {
   HarmonyContext harmony_;
   MidiTrack vocal_track_;
   VocalAnalysis vocal_analysis_;
-  AuxTrackGenerator::AuxContext ctx_;
+  AuxGenerator::AuxContext ctx_;
 };
 
 TEST_F(MotifCounterChordAwareTest, UsesCorrectChordDegreeAtEachTick) {
@@ -92,7 +92,7 @@ TEST_F(MotifCounterChordAwareTest, UsesCorrectChordDegreeAtEachTick) {
 }
 
 TEST_F(MotifCounterChordAwareTest, GeneratesNotesAcrossMultipleBars) {
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   std::mt19937 rng(42);
 
   AuxConfig config;
@@ -119,7 +119,7 @@ TEST_F(MotifCounterChordAwareTest, ChordDegreeLookedUpAtNotePosition) {
   // This test verifies the key fix: the code calls harmony.getChordDegreeAt(current_tick)
   // We verify this by checking that notes in different bars potentially use different chords
 
-  AuxTrackGenerator generator;
+  AuxGenerator generator;
   std::mt19937 rng(54321);
 
   AuxConfig config;

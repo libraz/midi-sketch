@@ -574,6 +574,35 @@ float MelodyEvaluator::calcRapidDirectionChangePenalty(const std::vector<NoteEve
   return std::min(0.05f * static_cast<float>(rapid_changes - 3), 0.3f);
 }
 
+float MelodyEvaluator::calcIsolatedNotePenalty(const std::vector<NoteEvent>& notes,
+                                               int prev_section_last_pitch,
+                                               int threshold) {
+  if (notes.size() < 2) return 0.0f;
+
+  int isolated_count = 0;
+
+  // Check first note against previous section's last note
+  if (prev_section_last_pitch >= 0 && notes.size() >= 2) {
+    int interval_before = std::abs(static_cast<int>(notes[0].note) - prev_section_last_pitch);
+    int interval_after = std::abs(static_cast<int>(notes[1].note) - static_cast<int>(notes[0].note));
+    if (interval_before >= threshold && interval_after >= threshold) {
+      isolated_count++;
+    }
+  }
+
+  // Check internal notes
+  for (size_t i = 1; i + 1 < notes.size(); ++i) {
+    int interval_before = std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
+    int interval_after = std::abs(static_cast<int>(notes[i + 1].note) - static_cast<int>(notes[i].note));
+    if (interval_before >= threshold && interval_after >= threshold) {
+      isolated_count++;
+    }
+  }
+
+  // Each isolated note contributes ~0.1 penalty, max 0.3
+  return std::min(0.1f * static_cast<float>(isolated_count), 0.3f);
+}
+
 float MelodyEvaluator::calcMonotonyPenalty(const std::vector<NoteEvent>& notes) {
   if (notes.size() < 4) return 0.0f;
 
@@ -872,7 +901,8 @@ float MelodyEvaluator::getGapThreshold(VocalStylePreset style) {
 
 float MelodyEvaluator::evaluateForCulling(const std::vector<NoteEvent>& notes,
                                           const IHarmonyContext& harmony, Tick phrase_duration,
-                                          VocalStylePreset style) {
+                                          VocalStylePreset style,
+                                          int prev_section_last_pitch) {
   if (notes.empty()) return 0.0f;  // Empty = reject
 
   float score = 1.0f;
@@ -881,6 +911,10 @@ float MelodyEvaluator::evaluateForCulling(const std::vector<NoteEvent>& notes,
   score -= calcHighRegisterPenalty(notes);
   score -= calcLeapAfterHighPenalty(notes);
   score -= calcRapidDirectionChangePenalty(notes);
+
+  // === Isolated Note Penalty ===
+  // Notes with large intervals both before AND after feel disconnected
+  score -= calcIsolatedNotePenalty(notes, prev_section_last_pitch);
 
   // === Breathless Penalty (style-dependent) ===
   // Vocaloid styles tolerate more consecutive short notes

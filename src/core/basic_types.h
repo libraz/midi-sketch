@@ -108,7 +108,7 @@ class MidiReader;
 class MelodicEmbellisher;
 class MidiTrack;
 class NoteEventTestHelper;
-class AuxTrackGenerator;
+class AuxGenerator;
 
 // Helper struct for creating NoteEvents in track generators without NoteFactory.
 // This is used for drums, SE, and other contexts where harmony checking is not applicable.
@@ -159,7 +159,7 @@ struct NoteEvent {
   friend class MelodicEmbellisher;    ///< Embellishment (intentional non-chord tones)
   friend class MidiTrack;             ///< Legacy API (deprecated)
   friend class NoteEventTestHelper;   ///< Test helper
-  friend class AuxTrackGenerator;     ///< Aux track generation
+  friend class AuxGenerator;     ///< Aux track generation
   friend struct NoteEventBuilder;     ///< Track generation helper
 
   // Friend declaration for drum note helper (no harmony context needed)

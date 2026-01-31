@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "core/coordinator.h"
 #include "core/emotion_curve.h"
 #include "core/i_harmony_context.h"
 #include "core/motif.h"
@@ -37,10 +38,10 @@ class Generator {
   Generator();
 
   /**
-   * @brief Construct with injected HarmonyContext (for testing).
-   * @param harmony_context Custom harmony context implementation
+   * @brief Construct with injected HarmonyCoordinator (for testing).
+   * @param harmony_context Custom harmony coordinator implementation
    */
-  explicit Generator(std::unique_ptr<IHarmonyContext> harmony_context);
+  explicit Generator(std::unique_ptr<IHarmonyCoordinator> harmony_context);
 
   /// @name Standard Generation
   /// @{
@@ -207,24 +208,8 @@ class Generator {
   void clearWarnings() { warnings_.clear(); }
 
   /// @}
-  /// @name Strategy Invocation Methods
-  /// Used by CompositionStrategy to invoke track generation
+  /// @name Accessors
   /// @{
-
-  /** @brief Invoke vocal track generation. */
-  void invokeGenerateVocal() { generateVocal(); }
-
-  /** @brief Invoke bass track generation. */
-  void invokeGenerateBass() { generateBass(); }
-
-  /** @brief Invoke chord track generation. */
-  void invokeGenerateChord() { generateChord(); }
-
-  /** @brief Invoke motif track generation. */
-  void invokeGenerateMotif() { generateMotif(); }
-
-  /** @brief Invoke aux track generation. */
-  void invokeGenerateAux() { generateAux(); }
 
   /** @brief Get resolved blueprint ID after generation.
    *  @return Blueprint ID (0-3), or 0 if not generated */
@@ -235,25 +220,6 @@ class Generator {
   const DrumGrid* getDrumGrid() const {
     return drum_grid_.has_value() ? &drum_grid_.value() : nullptr;
   }
-
-  // ============================================================================
-  // Rhythm Lock Support (Orangestar style)
-  // ============================================================================
-
-  /**
-   * @brief Generate Motif track and extract rhythm as coordinate axis.
-   *
-   * For Orangestar style (RhythmSync + Locked), Motif provides the
-   * rhythmic "coordinate axis" that Vocal will follow.
-   * Call this BEFORE generateVocal() when using rhythm lock.
-   */
-  void generateMotifAsAxis();
-
-  /**
-   * @brief Check if rhythm lock is active and should be used.
-   * @return True if RhythmSync paradigm with Locked policy
-   */
-  bool shouldUseRhythmLock() const;
 
   /// @}
   /// @name Vocal-First Refinement
@@ -292,7 +258,7 @@ class Generator {
   GeneratorParams params_;  ///< Current generation parameters
   Song song_;               ///< Generated song data
   std::mt19937 rng_;        ///< Random number generator (Mersenne Twister)
-  std::unique_ptr<IHarmonyContext> harmony_context_;  ///< Tracks notes for collision avoidance
+  std::unique_ptr<IHarmonyCoordinator> harmony_context_;  ///< Harmony coordinator for collision avoidance
 
   /// Blueprint state
   uint8_t resolved_blueprint_id_ = 0;               ///< Resolved blueprint ID after selection
@@ -304,11 +270,11 @@ class Generator {
   /// Bass-Kick sync state
   std::optional<KickPatternCache> kick_cache_;  ///< Pre-computed kick positions for bass sync
 
-  /// Rhythm lock state (Orangestar style)
-  bool rhythm_lock_active_ = false;  ///< True when Motif rhythm is used as axis
-
   /// Emotion curve for song-wide emotional planning
   EmotionCurve emotion_curve_;  ///< Planned emotional arc
+
+  /// Coordinator for track generation
+  std::unique_ptr<Coordinator> coordinator_;
   /// @}
 
   /// @name Call/SE System Settings

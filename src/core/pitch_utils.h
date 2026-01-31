@@ -23,10 +23,10 @@ namespace midisketch {
 constexpr uint8_t BASS_LOW = 28;   ///< E1 - Electric bass low range
 constexpr uint8_t BASS_HIGH = 55;  ///< G3 - Bass upper limit
 
-constexpr uint8_t CHORD_LOW = 48;   ///< C3 - Chord voicing lower limit
+constexpr uint8_t CHORD_LOW = 60;   ///< C4 - Chord voicing lower limit (above bass)
 constexpr uint8_t CHORD_HIGH = 84;  ///< C6 - Chord voicing upper limit
 
-constexpr uint8_t MOTIF_LOW = 36;    ///< C2 - Motif lower limit
+constexpr uint8_t MOTIF_LOW = 60;    ///< C4 - Motif lower limit (above bass)
 constexpr uint8_t MOTIF_HIGH = 108;  ///< C8 - Motif upper limit (wide for synths)
 
 constexpr uint8_t VOCAL_LOW_MIN = 36;   ///< C2 - Absolute minimum for vocal range

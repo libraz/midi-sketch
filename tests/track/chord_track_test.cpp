@@ -3,7 +3,7 @@
  * @brief Tests for chord track generation.
  */
 
-#include "track/chord_track.h"
+#include "track/generators/chord.h"
 
 #include <gtest/gtest.h>
 

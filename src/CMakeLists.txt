@@ -12,6 +12,10 @@ set(MIDISKETCH_CORE_SOURCES
   core/arrangement.cpp
   core/song.cpp
   core/harmony_context.cpp
+  core/harmony_coordinator.cpp
+  core/coordinator.cpp
+  core/i_track_base.cpp
+  core/track_base.cpp
   core/chord_progression_tracker.cpp
   core/track_collision_detector.cpp
   core/safe_pitch_resolver.cpp
@@ -21,12 +25,12 @@ set(MIDISKETCH_CORE_SOURCES
   core/motif_transform.cpp
   core/pitch_utils.cpp
   core/chord_utils.cpp
+  core/melody_types.cpp
   core/melody_templates.cpp
   core/melody_evaluator.cpp
   core/melody_embellishment.cpp
   core/piano_roll_safety.cpp
   core/collision_resolver.cpp
-  core/composition_strategy.cpp
   core/config_converter.cpp
   core/modulation_calculator.cpp
   core/post_processor.cpp
@@ -40,14 +44,13 @@ set(MIDISKETCH_CORE_SOURCES
   core/note_timeline_utils.cpp
   midi/midi_writer.cpp
   track/track.cpp
-  track/vocal.cpp
-  track/phrase_variation.cpp
-  track/vocal_helpers.cpp
-  track/chord_track.cpp
-  track/chord_track/voicing_generator.cpp
-  track/chord_track/voice_leading.cpp
-  track/chord_track/bass_coordination.cpp
-  track/bass.cpp
+  track/vocal/phrase_variation.cpp
+  track/vocal/vocal_helpers.cpp
+  track/vocal/melody_designer.cpp
+  track/vocal/vocal_analysis.cpp
+  track/chord/voicing_generator.cpp
+  track/chord/voice_leading.cpp
+  track/chord/bass_coordination.cpp
   track/drums.cpp
   track/drums/drum_constants.h
   track/drums/fill_generator.cpp
@@ -57,10 +60,6 @@ set(MIDISKETCH_CORE_SOURCES
   track/drums/percussion_generator.cpp
   track/drums/drum_track_generator.cpp
   track/drums/beat_processors.cpp
-  track/se.cpp
-  track/motif.cpp
-  track/arpeggio.cpp
-  track/melody_designer.cpp
   track/melody/melody_utils.cpp
   track/melody/hook_rhythm_patterns.cpp
   track/melody/pitch_resolver.cpp
@@ -70,8 +69,14 @@ set(MIDISKETCH_CORE_SOURCES
   track/melody/note_constraints.cpp
   track/melody/pitch_constraints.cpp
   track/melody/constraint_pipeline.cpp
-  track/aux_track.cpp
-  track/vocal_analysis.cpp
+  track/generators/vocal.cpp
+  track/generators/bass.cpp
+  track/generators/chord.cpp
+  track/generators/motif.cpp
+  track/generators/aux.cpp
+  track/generators/arpeggio.cpp
+  track/generators/drums.cpp
+  track/generators/se.cpp
   instrument/fretted/fretted_instrument_base.cpp
   instrument/fretted/bass_model.cpp
   instrument/fretted/guitar_model.cpp

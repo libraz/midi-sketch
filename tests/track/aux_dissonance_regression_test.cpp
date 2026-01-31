@@ -20,7 +20,7 @@
 #include "core/i_harmony_context.h"
 #include "core/motif.h"
 #include "core/timing_constants.h"
-#include "track/aux_track.h"
+#include "track/generators/aux.h"
 
 namespace midisketch {
 namespace {

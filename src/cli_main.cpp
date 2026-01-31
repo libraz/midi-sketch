@@ -143,6 +143,79 @@ midisketch::SongConfig configFromMetadata(const std::string& metadata) {
     config.call_density = static_cast<midisketch::CallDensity>(p.getInt("call_density"));
   }
 
+  // Blueprint and generation control
+  if (p.has("blueprint_id")) {
+    config.blueprint_id = static_cast<uint8_t>(p.getInt("blueprint_id"));
+  }
+  if (p.has("drive_feel")) {
+    config.drive_feel = static_cast<uint8_t>(p.getInt("drive_feel"));
+  }
+  if (p.has("skip_vocal")) {
+    config.skip_vocal = p.getBool("skip_vocal");
+  }
+  if (p.has("arpeggio_enabled")) {
+    config.arpeggio_enabled = p.getBool("arpeggio_enabled");
+  }
+  if (p.has("addictive_mode")) {
+    config.addictive_mode = p.getBool("addictive_mode");
+  }
+  if (p.has("arrangement_growth")) {
+    config.arrangement_growth =
+        static_cast<midisketch::ArrangementGrowth>(p.getInt("arrangement_growth"));
+  }
+
+  // Humanization
+  if (p.has("humanize")) {
+    config.humanize = p.getBool("humanize");
+  }
+  if (p.has("humanize_timing")) {
+    config.humanize_timing = p.getFloat("humanize_timing");
+  }
+  if (p.has("humanize_velocity")) {
+    config.humanize_velocity = p.getFloat("humanize_velocity");
+  }
+
+  // Chord extension parameters
+  if (p.has("chord_extension")) {
+    midisketch::json::Parser ce = p.getObject("chord_extension");
+    if (ce.has("enable_sus")) config.chord_extension.enable_sus = ce.getBool("enable_sus");
+    if (ce.has("enable_7th")) config.chord_extension.enable_7th = ce.getBool("enable_7th");
+    if (ce.has("enable_9th")) config.chord_extension.enable_9th = ce.getBool("enable_9th");
+    if (ce.has("tritone_sub")) config.chord_extension.tritone_sub = ce.getBool("tritone_sub");
+    if (ce.has("sus_probability"))
+      config.chord_extension.sus_probability = ce.getFloat("sus_probability");
+    if (ce.has("seventh_probability"))
+      config.chord_extension.seventh_probability = ce.getFloat("seventh_probability");
+    if (ce.has("ninth_probability"))
+      config.chord_extension.ninth_probability = ce.getFloat("ninth_probability");
+    if (ce.has("tritone_sub_probability"))
+      config.chord_extension.tritone_sub_probability = ce.getFloat("tritone_sub_probability");
+  }
+
+  // Arpeggio parameters
+  if (p.has("arpeggio")) {
+    midisketch::json::Parser ap = p.getObject("arpeggio");
+    if (ap.has("pattern"))
+      config.arpeggio.pattern = static_cast<midisketch::ArpeggioPattern>(ap.getInt("pattern"));
+    if (ap.has("speed"))
+      config.arpeggio.speed = static_cast<midisketch::ArpeggioSpeed>(ap.getInt("speed"));
+    if (ap.has("octave_range"))
+      config.arpeggio.octave_range = static_cast<uint8_t>(ap.getInt("octave_range"));
+    if (ap.has("gate")) config.arpeggio.gate = ap.getFloat("gate");
+    if (ap.has("sync_chord")) config.arpeggio.sync_chord = ap.getBool("sync_chord");
+    if (ap.has("base_velocity"))
+      config.arpeggio.base_velocity = static_cast<uint8_t>(ap.getInt("base_velocity"));
+  }
+
+  // Motif chord parameters
+  if (p.has("motif_chord")) {
+    midisketch::json::Parser mc = p.getObject("motif_chord");
+    if (mc.has("fixed_progression"))
+      config.motif_chord.fixed_progression = mc.getBool("fixed_progression");
+    if (mc.has("max_chord_count"))
+      config.motif_chord.max_chord_count = static_cast<uint8_t>(mc.getInt("max_chord_count"));
+  }
+
   // Mark form as explicit since it was loaded from metadata
   config.form_explicit = true;
 

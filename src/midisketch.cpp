@@ -13,14 +13,17 @@
 #include "core/note_factory.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
-#include "track/arpeggio.h"
+#include "track/generators/arpeggio.h"
+#include "version_info.h"
 
 namespace midisketch {
 
 namespace {
 
 // Metadata format version (increment when format changes incompatibly)
-constexpr int kMetadataFormatVersion = 2;
+// v2: Initial flat format with ~25 fields
+// v3: Full bidirectional serialization with nested structures
+constexpr int kMetadataFormatVersion = 3;
 
 // Generate metadata JSON from generator params
 std::string generateMetadata(const GeneratorParams& params) {
@@ -29,35 +32,9 @@ std::string generateMetadata(const GeneratorParams& params) {
   w.beginObject()
       .write("generator", "midi-sketch")
       .write("format_version", kMetadataFormatVersion)
-      .write("library_version", MidiSketch::version())
-      .write("seed", params.seed)
-      .write("chord_id", static_cast<int>(params.chord_id))
-      .write("structure", static_cast<int>(params.structure))
-      .write("bpm", params.bpm)
-      .write("key", static_cast<int>(params.key))
-      .write("mood", static_cast<int>(params.mood))
-      .write("style_preset_id", static_cast<int>(params.style_preset_id))
-      .write("blueprint_id", static_cast<int>(params.blueprint_id))
-      .write("vocal_low", static_cast<int>(params.vocal_low))
-      .write("vocal_high", static_cast<int>(params.vocal_high))
-      .write("vocal_attitude", static_cast<int>(params.vocal_attitude))
-      .write("vocal_style", static_cast<int>(params.vocal_style))
-      .write("melody_template", static_cast<int>(params.melody_template))
-      .write("melodic_complexity", static_cast<int>(params.melodic_complexity))
-      .write("hook_intensity", static_cast<int>(params.hook_intensity))
-      .write("composition_style", static_cast<int>(params.composition_style))
-      .write("vocal_groove", static_cast<int>(params.vocal_groove))
-      .write("target_duration", params.target_duration_seconds)
-      .write("drums_enabled", params.drums_enabled)
-      .write("modulation_timing", static_cast<int>(params.modulation_timing))
-      .write("modulation_semitones", static_cast<int>(params.modulation_semitones))
-      .write("se_enabled", params.se_enabled)
-      .write("call_enabled", params.call_enabled)
-      .write("call_notes_enabled", params.call_notes_enabled)
-      .write("intro_chant", static_cast<int>(params.intro_chant))
-      .write("mix_pattern", static_cast<int>(params.mix_pattern))
-      .write("call_density", static_cast<int>(params.call_density))
-      .endObject();
+      .write("library_version", MidiSketch::version());
+  params.writeTo(w);
+  w.endObject();
   return oss.str();
 }
 
@@ -208,6 +185,7 @@ std::string MidiSketch::getEventsJson() const {
         .write("start_seconds", start_seconds)
         .write("duration_seconds", duration_secs);
 
+#ifdef MIDISKETCH_NOTE_PROVENANCE
     // Add provenance if available (for debugging)
     if (note.hasValidProvenance()) {
       w.beginObject("provenance")
@@ -217,6 +195,7 @@ std::string MidiSketch::getEventsJson() const {
           .write("original_pitch", static_cast<int>(note.prov_original_pitch))
           .endObject();
     }
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 
     w.endObject();
   };
@@ -324,6 +303,6 @@ const IHarmonyContext& MidiSketch::getHarmonyContext() const {
   return generator_.getHarmonyContext();
 }
 
-const char* MidiSketch::version() { return "1.0.0"; }
+const char* MidiSketch::version() { return MIDISKETCH_BUILD_ID; }
 
 }  // namespace midisketch
