@@ -798,6 +798,336 @@ void addBassGhostNotes(MidiTrack& track, IHarmonyContext& harmony,
   }
 }
 
+// ============================================================================
+// Bass Bar Generation Context
+// ============================================================================
+// Shared context for all bass pattern generation functions.
+struct BassBarContext {
+  MidiTrack& track;
+  IHarmonyContext& harmony;
+  Tick bar_start;
+  uint8_t root;
+  uint8_t next_root;
+  int8_t next_degree;
+  SectionType section;
+  Mood mood;
+  bool is_last_bar;
+  uint8_t vel;
+  uint8_t vel_weak;
+  uint8_t fifth;
+  uint8_t octave;
+  std::mt19937* rng;
+};
+
+// ============================================================================
+// Bass Pattern Implementations
+// ============================================================================
+
+void generateWholeNotePattern(const BassBarContext& ctx) {
+  addSafeBassNote(ctx.track, ctx.bar_start, HALF, ctx.root, ctx.vel, ctx.harmony);
+  if ((ctx.is_last_bar || ctx.next_root != ctx.root) && ctx.next_root != 0) {
+    addSafeBassNote(ctx.track, ctx.bar_start + HALF, QUARTER + EIGHTH, ctx.root, ctx.vel_weak,
+                    ctx.harmony);
+    uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 3 * QUARTER + EIGHTH, EIGHTH,
+                            approach, ctx.root, ctx.vel_weak);
+  } else {
+    addSafeBassNote(ctx.track, ctx.bar_start + HALF, HALF, ctx.root, ctx.vel_weak, ctx.harmony);
+  }
+}
+
+void generateRootFifthPattern(const BassBarContext& ctx) {
+  addSafeBassNote(ctx.track, ctx.bar_start, QUARTER, ctx.root, ctx.vel, ctx.harmony);
+  addSafeBassNote(ctx.track, ctx.bar_start + QUARTER, QUARTER, ctx.root, ctx.vel_weak, ctx.harmony);
+  addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 2 * QUARTER, QUARTER, ctx.fifth,
+                          ctx.root, ctx.vel);
+  if ((ctx.is_last_bar || ctx.next_root != ctx.root) && ctx.next_root != 0) {
+    addSafeBassNote(ctx.track, ctx.bar_start + 3 * QUARTER, EIGHTH, ctx.root, ctx.vel_weak,
+                    ctx.harmony);
+    uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 3 * QUARTER + EIGHTH, EIGHTH,
+                            approach, ctx.root, ctx.vel_weak);
+  } else {
+    addSafeBassNote(ctx.track, ctx.bar_start + 3 * QUARTER, QUARTER, ctx.root, ctx.vel_weak,
+                    ctx.harmony);
+  }
+}
+
+void generateSyncopatedPattern(const BassBarContext& ctx) {
+  addSafeBassNote(ctx.track, ctx.bar_start, QUARTER, ctx.root, ctx.vel, ctx.harmony);
+  addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + QUARTER, EIGHTH, ctx.fifth,
+                          ctx.root, ctx.vel_weak);
+  addSafeBassNote(ctx.track, ctx.bar_start + QUARTER + EIGHTH, EIGHTH, ctx.root, ctx.vel_weak,
+                  ctx.harmony);
+  addSafeBassNote(ctx.track, ctx.bar_start + 2 * QUARTER, QUARTER, ctx.root, ctx.vel, ctx.harmony);
+  if (ctx.is_last_bar || ctx.next_root != ctx.root) {
+    uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 3 * QUARTER + EIGHTH, EIGHTH,
+                            approach, ctx.fifth, ctx.vel_weak);
+  } else {
+    addSafeBassNote(ctx.track, ctx.bar_start + 3 * QUARTER, QUARTER, ctx.fifth, ctx.vel_weak,
+                    ctx.harmony);
+  }
+}
+
+void generateDrivingPattern(const BassBarContext& ctx) {
+  for (int beat = 0; beat < 4; ++beat) {
+    Tick beat_tick = ctx.bar_start + beat * QUARTER;
+    uint8_t beat_vel = (beat == 0 || beat == 2) ? ctx.vel : ctx.vel_weak;
+
+    if (beat == 0) {
+      addSafeBassNote(ctx.track, beat_tick, EIGHTH, ctx.root, beat_vel, ctx.harmony);
+      addBassWithRootFallback(ctx.track, ctx.harmony, beat_tick + EIGHTH, EIGHTH, ctx.octave,
+                              ctx.root, ctx.vel_weak);
+    } else if (beat == 2) {
+      addSafeBassNote(ctx.track, beat_tick, EIGHTH, ctx.root, beat_vel, ctx.harmony);
+      addBassWithRootFallback(ctx.track, ctx.harmony, beat_tick + EIGHTH, EIGHTH, ctx.fifth,
+                              ctx.root, ctx.vel_weak);
+    } else if (beat == 3 && (ctx.is_last_bar || ctx.next_root != ctx.root) && ctx.next_root != 0) {
+      addSafeBassNote(ctx.track, beat_tick, EIGHTH, ctx.root, beat_vel, ctx.harmony);
+      uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+      addBassWithRootFallback(ctx.track, ctx.harmony, beat_tick + EIGHTH, EIGHTH, approach,
+                              ctx.root, ctx.vel_weak);
+    } else {
+      addSafeBassNote(ctx.track, beat_tick, EIGHTH, ctx.root, beat_vel, ctx.harmony);
+      addSafeBassNote(ctx.track, beat_tick + EIGHTH, EIGHTH, ctx.root, ctx.vel_weak, ctx.harmony);
+    }
+  }
+}
+
+void generateRhythmicDrivePattern(const BassBarContext& ctx) {
+  uint8_t accent_vel = static_cast<uint8_t>(std::min(127, ctx.vel + 10));
+  for (int eighth = 0; eighth < 8; ++eighth) {
+    Tick tick = ctx.bar_start + eighth * EIGHTH;
+    uint8_t note_vel = ctx.vel_weak;
+
+    if (eighth == 0) {
+      addSafeBassNote(ctx.track, tick, EIGHTH, ctx.root, accent_vel, ctx.harmony);
+    } else if (eighth == 3) {
+      addBassWithRootFallback(ctx.track, ctx.harmony, tick, EIGHTH, ctx.fifth, ctx.root, note_vel);
+    } else if (eighth == 4) {
+      addSafeBassNote(ctx.track, tick, EIGHTH, ctx.root, ctx.vel, ctx.harmony);
+    } else if (eighth == 7 && (ctx.is_last_bar || ctx.next_root != ctx.root) &&
+               ctx.next_root != 0) {
+      uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+      addBassWithRootFallback(ctx.track, ctx.harmony, tick, EIGHTH, approach, ctx.root, note_vel);
+    } else {
+      addSafeBassNote(ctx.track, tick, EIGHTH, ctx.root, note_vel, ctx.harmony);
+    }
+  }
+}
+
+void generateWalkingPattern(const BassBarContext& ctx) {
+  addSafeBassNote(ctx.track, ctx.bar_start, QUARTER, ctx.root, ctx.vel, ctx.harmony);
+  uint8_t walk1 = getNextDiatonic(ctx.root, +1);
+  addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + QUARTER, QUARTER, walk1,
+                          ctx.root, ctx.vel_weak);
+  uint8_t walk2 = getNextDiatonic(walk1, +1);
+  addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 2 * QUARTER, QUARTER, walk2,
+                          ctx.root, ctx.vel_weak);
+  if ((ctx.is_last_bar || ctx.next_root != ctx.root) && ctx.next_root != 0) {
+    uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 3 * QUARTER, QUARTER, approach,
+                            ctx.root, ctx.vel_weak);
+  } else {
+    addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 3 * QUARTER, QUARTER,
+                            ctx.fifth, ctx.root, ctx.vel_weak);
+  }
+}
+
+void generatePowerDrivePattern(const BassBarContext& ctx) {
+  uint8_t power_vel = static_cast<uint8_t>(std::min(127, ctx.vel + 15));
+  addSafeBassNote(ctx.track, ctx.bar_start, EIGHTH, ctx.root, power_vel, ctx.harmony);
+  addSafeBassNote(ctx.track, ctx.bar_start + EIGHTH, EIGHTH, ctx.root, ctx.vel, ctx.harmony);
+  addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + QUARTER, EIGHTH, ctx.fifth,
+                          ctx.root, ctx.vel);
+  addSafeBassNote(ctx.track, ctx.bar_start + QUARTER + EIGHTH, EIGHTH, ctx.root, ctx.vel_weak,
+                  ctx.harmony);
+  addSafeBassNote(ctx.track, ctx.bar_start + 2 * QUARTER, EIGHTH, ctx.root, power_vel, ctx.harmony);
+  addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 2 * QUARTER + EIGHTH, EIGHTH,
+                          ctx.octave, ctx.root, ctx.vel);
+  if ((ctx.is_last_bar || ctx.next_root != ctx.root) && ctx.next_root != 0) {
+    addSafeBassNote(ctx.track, ctx.bar_start + 3 * QUARTER, EIGHTH, ctx.root, ctx.vel, ctx.harmony);
+    uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 3 * QUARTER + EIGHTH, EIGHTH,
+                            approach, ctx.root, ctx.vel_weak);
+  } else {
+    addSafeBassNote(ctx.track, ctx.bar_start + 3 * QUARTER, QUARTER, ctx.root, ctx.vel, ctx.harmony);
+  }
+}
+
+void generateAggressivePattern(const BassBarContext& ctx) {
+  constexpr Tick SIXTEENTH_NOTE = TICK_SIXTEENTH;
+  uint8_t aggro_vel = static_cast<uint8_t>(std::min(127, ctx.vel + 20));
+  for (int sixteenth = 0; sixteenth < 16; ++sixteenth) {
+    Tick tick = ctx.bar_start + sixteenth * SIXTEENTH_NOTE;
+    uint8_t note_vel = ctx.vel_weak;
+    if (sixteenth % 4 == 0) {
+      note_vel = aggro_vel;
+    } else if (sixteenth % 2 == 0) {
+      note_vel = ctx.vel;
+    }
+    if (ctx.rng) {
+      std::uniform_int_distribution<int8_t> vel_var(-5, 5);
+      int varied = note_vel + vel_var(*ctx.rng);
+      note_vel = static_cast<uint8_t>(std::clamp(varied, 40, 127));
+    }
+    uint8_t pitch = ctx.root;
+    if (sixteenth == 4 || sixteenth == 12) {
+      pitch = ctx.octave;
+    } else if (sixteenth == 8) {
+      pitch = ctx.fifth;
+    } else if (sixteenth == 15 && (ctx.is_last_bar || ctx.next_root != ctx.root) &&
+               ctx.next_root != 0) {
+      pitch = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    }
+    if (pitch == ctx.root || pitch == ctx.octave) {
+      addSafeBassNote(ctx.track, tick, SIXTEENTH_NOTE, pitch, note_vel, ctx.harmony);
+    } else {
+      addBassWithRootFallback(ctx.track, ctx.harmony, tick, SIXTEENTH_NOTE, pitch, ctx.root, note_vel);
+    }
+  }
+}
+
+void generateSidechainPulsePattern(const BassBarContext& ctx) {
+  constexpr Tick SIXTEENTH_NOTE = TICK_SIXTEENTH;
+  for (int beat = 0; beat < 4; ++beat) {
+    Tick beat_tick = ctx.bar_start + beat * QUARTER;
+    Tick sidechain_start = beat_tick + SIXTEENTH_NOTE;
+    Tick sidechain_duration = QUARTER - SIXTEENTH_NOTE - SIXTEENTH_NOTE;
+    uint8_t beat_vel = (beat == 0 || beat == 2) ? ctx.vel : ctx.vel_weak;
+    if (beat == 3 && (ctx.is_last_bar || ctx.next_root != ctx.root) && ctx.next_root != 0) {
+      sidechain_duration = EIGHTH;
+      addSafeBassNote(ctx.track, sidechain_start, sidechain_duration, ctx.root, beat_vel,
+                      ctx.harmony);
+      uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+      addBassWithRootFallback(ctx.track, ctx.harmony, beat_tick + QUARTER - EIGHTH, EIGHTH,
+                              approach, ctx.root, ctx.vel_weak);
+    } else {
+      addSafeBassNote(ctx.track, sidechain_start, sidechain_duration, ctx.root, beat_vel,
+                      ctx.harmony);
+    }
+  }
+}
+
+void generateGroovePattern(const BassBarContext& ctx) {
+  addSafeBassNote(ctx.track, ctx.bar_start, QUARTER, ctx.root, ctx.vel, ctx.harmony);
+  addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + QUARTER + EIGHTH, EIGHTH,
+                          ctx.fifth, ctx.root, ctx.vel_weak);
+  addSafeBassNote(ctx.track, ctx.bar_start + 2 * QUARTER, QUARTER, ctx.root, ctx.vel, ctx.harmony);
+  if ((ctx.is_last_bar || ctx.next_root != ctx.root) && ctx.next_root != 0) {
+    uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 3 * QUARTER + EIGHTH, EIGHTH,
+                            approach, ctx.root, ctx.vel_weak);
+  } else {
+    addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 3 * QUARTER, QUARTER,
+                            ctx.fifth, ctx.root, ctx.vel_weak);
+  }
+}
+
+void generateOctaveJumpPattern(const BassBarContext& ctx) {
+  addSafeBassNote(ctx.track, ctx.bar_start, EIGHTH, ctx.root, ctx.vel, ctx.harmony);
+  addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + EIGHTH, EIGHTH, ctx.octave,
+                          ctx.root, ctx.vel_weak);
+  addSafeBassNote(ctx.track, ctx.bar_start + QUARTER, QUARTER, ctx.root, ctx.vel_weak, ctx.harmony);
+  addSafeBassNote(ctx.track, ctx.bar_start + 2 * QUARTER, EIGHTH, ctx.root, ctx.vel, ctx.harmony);
+  addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 2 * QUARTER + EIGHTH, EIGHTH,
+                          ctx.fifth, ctx.root, ctx.vel_weak);
+  if ((ctx.is_last_bar || ctx.next_root != ctx.root) && ctx.next_root != 0) {
+    addSafeBassNote(ctx.track, ctx.bar_start + 3 * QUARTER, EIGHTH, ctx.root, ctx.vel_weak,
+                    ctx.harmony);
+    uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 3 * QUARTER + EIGHTH, EIGHTH,
+                            approach, ctx.root, ctx.vel_weak);
+  } else {
+    addSafeBassNote(ctx.track, ctx.bar_start + 3 * QUARTER, QUARTER, ctx.root, ctx.vel_weak,
+                    ctx.harmony);
+  }
+}
+
+void generatePedalTonePattern(const BassBarContext& ctx) {
+  // Pedal tone: sustained tonic or dominant note regardless of chord changes.
+  // Tonic pedal (C, degree 0) for Intro/Outro: stability and resolution.
+  // Dominant pedal (G, degree 4) for Bridge: tension before return to chorus.
+  bool use_dominant = (ctx.section == SectionType::Bridge);
+  uint8_t pedal_pitch;
+  if (use_dominant) {
+    pedal_pitch = getBassRoot(4);  // Dominant pedal: G
+  } else {
+    pedal_pitch = getBassRoot(0);  // Tonic pedal: C
+  }
+
+  // Rhythm: half notes with optional re-attack on beat 3
+  addSafeBassNote(ctx.track, ctx.bar_start, HALF, pedal_pitch, ctx.vel, ctx.harmony);
+  uint8_t beat3_vel = static_cast<uint8_t>(ctx.vel * 0.9f);
+  addSafeBassNote(ctx.track, ctx.bar_start + HALF, HALF, pedal_pitch, beat3_vel, ctx.harmony);
+}
+
+void generateTresilloPattern(const BassBarContext& ctx) {
+  addSafeBassNote(ctx.track, ctx.bar_start, QUARTER + EIGHTH, ctx.root, ctx.vel, ctx.harmony);
+  addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + QUARTER + EIGHTH,
+                          QUARTER + EIGHTH, ctx.fifth, ctx.root, ctx.vel);
+  if ((ctx.is_last_bar || ctx.next_root != ctx.root) && ctx.next_root != 0) {
+    addSafeBassNote(ctx.track, ctx.bar_start + 2 * QUARTER + 2 * EIGHTH, QUARTER, ctx.root,
+                    ctx.vel_weak, ctx.harmony);
+    uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 3 * QUARTER + 2 * EIGHTH,
+                            EIGHTH, approach, ctx.root, ctx.vel_weak);
+  } else {
+    addSafeBassNote(ctx.track, ctx.bar_start + 2 * QUARTER + 2 * EIGHTH, QUARTER + EIGHTH,
+                    ctx.root, ctx.vel, ctx.harmony);
+  }
+}
+
+void generateSubBass808Pattern(const BassBarContext& ctx) {
+  uint8_t sub_pitch = ctx.root;
+  while (sub_pitch > 40) {
+    sub_pitch -= 12;
+  }
+  uint8_t sub_vel = static_cast<uint8_t>(std::min(127, ctx.vel + 10));
+  if ((ctx.is_last_bar || ctx.next_root != ctx.root) && ctx.next_root != 0) {
+    addSafeBassNote(ctx.track, ctx.bar_start, 3 * QUARTER + EIGHTH, sub_pitch, sub_vel,
+                    ctx.harmony);
+    uint8_t next_sub = ctx.next_root;
+    while (next_sub > 40) {
+      next_sub -= 12;
+    }
+    uint8_t slide_note = (sub_pitch < next_sub) ? static_cast<uint8_t>(sub_pitch + 1)
+                                                : static_cast<uint8_t>(sub_pitch - 1);
+    NoteOptions slide_opts;
+    slide_opts.start = ctx.bar_start + 3 * QUARTER + EIGHTH;
+    slide_opts.duration = EIGHTH;
+    slide_opts.desired_pitch = slide_note;
+    slide_opts.velocity = static_cast<uint8_t>(sub_vel * 0.7f);
+    slide_opts.role = TrackRole::Bass;
+    slide_opts.preference = PitchPreference::SkipIfUnsafe;
+    slide_opts.range_low = BASS_LOW;
+    slide_opts.range_high = BASS_HIGH;
+    slide_opts.register_to_harmony = true;
+    slide_opts.source = NoteSource::BassPattern;
+    createNoteAndAdd(ctx.track, ctx.harmony, slide_opts);
+  } else {
+    addSafeBassNote(ctx.track, ctx.bar_start, TICKS_PER_BAR, sub_pitch, sub_vel, ctx.harmony);
+  }
+}
+
+void generateRnBNeoSoulPattern(const BassBarContext& ctx) {
+  addSafeBassNote(ctx.track, ctx.bar_start, QUARTER, ctx.root, ctx.vel, ctx.harmony);
+  uint8_t passing = getNextDiatonic(ctx.root, +1);
+  addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + QUARTER, EIGHTH, passing,
+                          ctx.root, ctx.vel_weak);
+  uint8_t third = getDiatonicThird(ctx.root);
+  addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + QUARTER + EIGHTH, EIGHTH, third,
+                          ctx.root, ctx.vel_weak);
+  addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 2 * QUARTER, QUARTER, ctx.fifth,
+                          ctx.root, ctx.vel);
+  uint8_t approach = (ctx.next_root != ctx.root)
+                         ? getApproachNote(ctx.root, ctx.next_root, ctx.next_degree)
+                         : getNextDiatonic(ctx.root, -1);
+  addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 3 * QUARTER, QUARTER, approach,
+                          ctx.root, ctx.vel_weak);
+}
+
 // Generate one bar of bass based on pattern
 // Uses HarmonyContext for all notes to ensure vocal priority
 // @param rng Optional random generator for ghost note velocity in Aggressive pattern
@@ -810,438 +1140,56 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
   uint8_t fifth = getFifth(root);
   uint8_t octave = getOctave(root);
 
+  // Build context for pattern functions
+  BassBarContext ctx{track,     harmony,    bar_start, root,    next_root, next_degree,
+                     section,   mood,       is_last_bar, vel,   vel_weak,  fifth,
+                     octave,    rng};
+
   switch (pattern) {
     case BassPattern::WholeNote:
-      // Intro pattern: whole note or two half notes
-      // With approach note on beat 4 when chord changes
-      addSafeBassNote(track, bar_start, HALF, root, vel, harmony);
-      if ((is_last_bar || next_root != root) && next_root != 0) {
-        // Shorten second half, add approach on beat 4 upbeat
-        addSafeBassNote(track, bar_start + HALF, QUARTER + EIGHTH, root, vel_weak, harmony);
-        uint8_t approach = getApproachNote(root, next_root, next_degree);
-        addBassWithRootFallback(track, harmony, bar_start + 3 * QUARTER + EIGHTH, EIGHTH,
-                                approach, root, vel_weak);
-      } else {
-        addSafeBassNote(track, bar_start + HALF, HALF, root, vel_weak, harmony);
-      }
+      generateWholeNotePattern(ctx);
       break;
-
     case BassPattern::RootFifth:
-      // A section: root on 1, fifth on 3
-      addSafeBassNote(track, bar_start, QUARTER, root, vel, harmony);
-      addSafeBassNote(track, bar_start + QUARTER, QUARTER, root, vel_weak, harmony);
-      // Fifth with root fallback
-      addBassWithRootFallback(track, harmony, bar_start + 2 * QUARTER, QUARTER, fifth, root, vel);
-      // Beat 4: approach note when chord changes, otherwise root
-      if ((is_last_bar || next_root != root) && next_root != 0) {
-        addSafeBassNote(track, bar_start + 3 * QUARTER, EIGHTH, root, vel_weak, harmony);
-        uint8_t approach = getApproachNote(root, next_root, next_degree);
-        addBassWithRootFallback(track, harmony, bar_start + 3 * QUARTER + EIGHTH, EIGHTH,
-                                approach, root, vel_weak);
-      } else {
-        addSafeBassNote(track, bar_start + 3 * QUARTER, QUARTER, root, vel_weak, harmony);
-      }
+      generateRootFifthPattern(ctx);
       break;
-
     case BassPattern::Syncopated:
-      // B section: syncopation with approach note
-      addSafeBassNote(track, bar_start, QUARTER, root, vel, harmony);
-      // Fifth with root fallback
-      addBassWithRootFallback(track, harmony, bar_start + QUARTER, EIGHTH, fifth, root, vel_weak);
-      addSafeBassNote(track, bar_start + QUARTER + EIGHTH, EIGHTH, root, vel_weak, harmony);
-      addSafeBassNote(track, bar_start + 2 * QUARTER, QUARTER, root, vel, harmony);
-      // Approach note before next bar (falls back to fifth)
-      if (is_last_bar || next_root != root) {
-        uint8_t approach = getApproachNote(root, next_root, next_degree);
-        addBassWithRootFallback(track, harmony, bar_start + 3 * QUARTER + EIGHTH, EIGHTH,
-                                approach, fifth, vel_weak);
-      } else {
-        addSafeBassNote(track, bar_start + 3 * QUARTER, QUARTER, fifth, vel_weak, harmony);
-      }
+      generateSyncopatedPattern(ctx);
       break;
-
     case BassPattern::Driving:
-      // Chorus: eighth note drive with octave jumps
-      // All notes use safety checks to ensure vocal priority
-      for (int beat = 0; beat < 4; ++beat) {
-        Tick beat_tick = bar_start + beat * QUARTER;
-        uint8_t beat_vel = (beat == 0 || beat == 2) ? vel : vel_weak;
-
-        // Alternate between root and octave/fifth
-        if (beat == 0) {
-          addSafeBassNote(track, beat_tick, EIGHTH, root, beat_vel, harmony);
-          addBassWithRootFallback(track, harmony, beat_tick + EIGHTH, EIGHTH, octave, root, vel_weak);
-        } else if (beat == 2) {
-          addSafeBassNote(track, beat_tick, EIGHTH, root, beat_vel, harmony);
-          addBassWithRootFallback(track, harmony, beat_tick + EIGHTH, EIGHTH, fifth, root, vel_weak);
-        } else if (beat == 3 && (is_last_bar || next_root != root) && next_root != 0) {
-          // Beat 4 with approach note on upbeat
-          addSafeBassNote(track, beat_tick, EIGHTH, root, beat_vel, harmony);
-          uint8_t approach = getApproachNote(root, next_root, next_degree);
-          addBassWithRootFallback(track, harmony, beat_tick + EIGHTH, EIGHTH, approach, root, vel_weak);
-        } else {
-          addSafeBassNote(track, beat_tick, EIGHTH, root, beat_vel, harmony);
-          addSafeBassNote(track, beat_tick + EIGHTH, EIGHTH, root, vel_weak, harmony);
-        }
-      }
+      generateDrivingPattern(ctx);
       break;
-
     case BassPattern::RhythmicDrive:
-      // Drums OFF: bass provides rhythmic foundation
-      // Accented eighth notes with stronger downbeats
-      {
-        uint8_t accent_vel = static_cast<uint8_t>(std::min(127, vel + 10));
-        for (int eighth = 0; eighth < 8; ++eighth) {
-          Tick tick = bar_start + eighth * EIGHTH;
-          uint8_t note_vel = vel_weak;
-
-          if (eighth == 0) {
-            // Beat 1: root accent
-            addSafeBassNote(track, tick, EIGHTH, root, accent_vel, harmony);
-          } else if (eighth == 3) {
-            // Beat 2&: fifth with root fallback
-            addBassWithRootFallback(track, harmony, tick, EIGHTH, fifth, root, note_vel);
-          } else if (eighth == 4) {
-            // Beat 3: root accent
-            addSafeBassNote(track, tick, EIGHTH, root, vel, harmony);
-          } else if (eighth == 7) {
-            // Beat 4&: approach or octave with root fallback
-            if (next_root != root) {
-              uint8_t approach = getApproachNote(root, next_root, next_degree);
-              addBassWithRootFallback(track, harmony, tick, EIGHTH, approach, root, note_vel);
-            } else {
-              addBassWithRootFallback(track, harmony, tick, EIGHTH, octave, root, note_vel);
-            }
-          } else {
-            // Other eighths: root
-            addSafeBassNote(track, tick, EIGHTH, root, note_vel, harmony);
-          }
-        }
-      }
+      generateRhythmicDrivePattern(ctx);
       break;
-
     case BassPattern::Walking:
-      // Jazz/swing walking bass: quarter notes walking through scale
-      // Uses KEY-RELATIVE diatonic steps (C major), not chord-relative scales.
-      // This ensures all passing tones are diatonic to the key.
-      // Walking bass: jazz-style chromatic approach (half-step below target)
-      {
-        // Beat 4: Chromatic approach (jazz) or diatonic approach (pop)
-        uint8_t approach_note;
-        if (next_root != root) {
-          // Try chromatic approach first (jazz style)
-          uint8_t chromatic = getChromaticApproach(next_root);
-          auto chord_tones = getAllPossibleChordTones(next_root);
-          int chromatic_pc = chromatic % 12;
-          // Use chromatic if it doesn't clash; otherwise diatonic
-          if (!clashesWithAnyChordTone(chromatic_pc, chord_tones, next_degree)) {
-            approach_note = chromatic;
-          } else {
-            approach_note = getApproachNote(root, next_root, next_degree);
-          }
-        } else {
-          approach_note = getFifth(root);
-        }
-
-        // Beat 1: Root (strong) with safety check
-        addSafeBassNote(track, bar_start, QUARTER, root, vel, harmony);
-
-        // Beat 2: Next diatonic step up from root (key-relative, not chord-relative)
-        uint8_t second_note = getNextDiatonic(root, +1);
-        addBassWithRootFallback(track, harmony, bar_start + QUARTER, QUARTER, second_note, root, vel_weak);
-
-        // Beat 3: Diatonic 3rd of the chord (always diatonic in C major context)
-        uint8_t third_note = getDiatonicThird(root);
-        addBassWithRootFallback(track, harmony, bar_start + 2 * QUARTER, QUARTER, third_note, root, vel);
-
-        // Beat 4: Approach note (fallback to fifth, then root)
-        addBassWithRootFallback(track, harmony, bar_start + 3 * QUARTER, QUARTER, approach_note, fifth, vel_weak);
-      }
+      generateWalkingPattern(ctx);
       break;
-
     case BassPattern::PowerDrive:
-      // Rock-style pattern: Root-Fifth emphasis with aggressive accents
-      {
-        uint8_t accent_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(vel) + 10));
-
-        // Beat 1: Root with accent (power)
-        addSafeBassNote(track, bar_start, QUARTER, root, accent_vel, harmony);
-        // Beat 2: Fifth (rock feel - emphasizes power chord)
-        addBassWithRootFallback(track, harmony, bar_start + QUARTER, QUARTER, fifth, root, vel);
-        // Beat 3: Root (re-establish)
-        addSafeBassNote(track, bar_start + 2 * QUARTER, QUARTER, root, vel, harmony);
-        // Beat 4: Fifth or approach note
-        if (is_last_bar || next_root != root) {
-          uint8_t approach = getApproachNote(root, next_root, next_degree);
-          addBassWithRootFallback(track, harmony, bar_start + 3 * QUARTER, QUARTER, approach, fifth, vel_weak);
-        } else {
-          addSafeBassNote(track, bar_start + 3 * QUARTER, QUARTER, fifth, vel_weak, harmony);
-        }
-      }
+      generatePowerDrivePattern(ctx);
       break;
-
     case BassPattern::Aggressive:
-      // High-energy 16th note pattern for dance/anime chorus
-      // Based on aggressive bass technique: fast subdivisions with ghost notes
-      // on weak 16th positions ("e" and "a") for rhythmic texture.
-      {
-        constexpr Tick SIXTEENTH = EIGHTH / 2;
-        uint8_t accent_vel = static_cast<uint8_t>(std::min(127, static_cast<int>(vel) + 10));
-
-        // Ghost note distributions (only used if rng is provided)
-        std::uniform_int_distribution<int> ghost_vel_dist(25, 35);
-        std::uniform_int_distribution<int> ghost_chance_dist(0, 99);
-
-        for (int beat = 0; beat < 4; ++beat) {
-          Tick beat_start = bar_start + beat * QUARTER;
-          uint8_t beat_vel = (beat == 0 || beat == 2) ? accent_vel : vel;
-
-          // 4 sixteenth notes per beat
-          for (int sub = 0; sub < 4; ++sub) {
-            Tick note_start = beat_start + sub * SIXTEENTH;
-            uint8_t note_vel = (sub == 0) ? beat_vel : vel_weak;
-
-            // Ghost note: on odd sub-positions (the "e" and "a"), 40% chance
-            // to drop velocity to ghost level (25-35) for rhythmic texture
-            if (rng != nullptr && (sub == 1 || sub == 3) && ghost_chance_dist(*rng) < 40) {
-              note_vel = static_cast<uint8_t>(ghost_vel_dist(*rng));
-            }
-
-            // On beat 4, last 16th: approach note if chord changes
-            if (beat == 3 && sub == 3 && (is_last_bar || next_root != root)) {
-              uint8_t approach = getApproachNote(root, next_root, next_degree);
-              addBassWithRootFallback(track, harmony, note_start, SIXTEENTH, approach, root, note_vel);
-            }
-            // Sub-beat 2 (the "&"): occasionally use fifth
-            else if (sub == 2 && (beat == 1 || beat == 3)) {
-              addBassWithRootFallback(track, harmony, note_start, SIXTEENTH, fifth, root, note_vel);
-            }
-            // Default: root
-            else {
-              addSafeBassNote(track, note_start, SIXTEENTH, root, note_vel, harmony);
-            }
-          }
-        }
-      }
+      generateAggressivePattern(ctx);
       break;
-
     case BassPattern::SidechainPulse:
-      // EDM sidechain compression style pattern
-      // Based on electronic music production: ducking effect simulation
-      {
-        // Simulate sidechain: notes start after kick attack (offset by 8th)
-        // Long sustain that "swells" back in
-        constexpr Tick SIDECHAIN_OFFSET = EIGHTH / 2;   // Start slightly after beat
-        constexpr Tick SUSTAIN_DUR = QUARTER + EIGHTH;  // Dotted quarter for swell effect
-
-        // Beats 1-2: Root with sidechain feel
-        addSafeBassNote(track, bar_start + SIDECHAIN_OFFSET, SUSTAIN_DUR, root, vel,
-                        harmony);
-
-        // Beats 3-4: Root or fifth with sidechain feel, approach note on beat 4 upbeat
-        if ((is_last_bar || next_root != root) && next_root != 0) {
-          // Shorten second swell to make room for approach
-          constexpr Tick SHORT_DUR = QUARTER;
-          addBassWithRootFallback(track, harmony, bar_start + 2 * QUARTER + SIDECHAIN_OFFSET,
-                                  SHORT_DUR, fifth, root, vel);
-          // Approach note
-          uint8_t approach = getApproachNote(root, next_root, next_degree);
-          addBassWithRootFallback(track, harmony, bar_start + 3 * QUARTER + EIGHTH, EIGHTH,
-                                  approach, root, vel_weak);
-        } else {
-          addBassWithRootFallback(track, harmony, bar_start + 2 * QUARTER + SIDECHAIN_OFFSET,
-                                  SUSTAIN_DUR, fifth, root, vel);
-        }
-      }
+      generateSidechainPulsePattern(ctx);
       break;
-
     case BassPattern::Groove:
-      // Smooth groove pattern for CityPop/R&B
-      // Based on groove bass technique: passing tones and smooth voice leading
-      {
-        // Beat 1: Root (anchor)
-        addSafeBassNote(track, bar_start, QUARTER, root, vel, harmony);
-
-        // Beat 2: Passing tone (diatonic 2nd above root)
-        {
-          uint8_t passing = getNextDiatonic(root, +1);
-          addBassWithRootFallback(track, harmony, bar_start + QUARTER, EIGHTH, passing, root, vel_weak);
-          // Second half of beat 2: back to root or third
-          uint8_t third = getDiatonicThird(root);
-          addBassWithRootFallback(track, harmony, bar_start + QUARTER + EIGHTH, EIGHTH, third, root, vel_weak);
-        }
-
-        // Beat 3: Fifth (groove anchor)
-        addBassWithRootFallback(track, harmony, bar_start + 2 * QUARTER, QUARTER, fifth, root, vel);
-
-        // Beat 4: Chromatic or diatonic approach
-        {
-          uint8_t approach = (next_root != root)
-                                 ? getApproachNote(root, next_root, next_degree)
-                                 : getNextDiatonic(root, -1);  // Step below for groove
-          addBassWithRootFallback(track, harmony, bar_start + 3 * QUARTER, QUARTER, approach, root, vel_weak);
-        }
-      }
+      generateGroovePattern(ctx);
       break;
-
     case BassPattern::OctaveJump:
-      // Dance music octave alternation pattern
-      // Based on dance bass technique: octave jumps for energy
-      {
-        bool use_approach = (is_last_bar || next_root != root) && next_root != 0;
-        int note_count = use_approach ? 7 : 8;  // Leave room for approach on last eighth
-
-        // Eighth notes alternating between root and octave above
-        for (int eighth_idx = 0; eighth_idx < note_count; ++eighth_idx) {
-          Tick note_start = bar_start + eighth_idx * EIGHTH;
-          bool is_downbeat = (eighth_idx % 2 == 0);
-          uint8_t note_vel = is_downbeat ? vel : vel_weak;
-
-          // Downbeats: root, Upbeats: octave (fallback to chord tone)
-          if (is_downbeat) {
-            addSafeBassNote(track, note_start, EIGHTH, root, note_vel, harmony);
-          } else {
-            addBassWithRootFallback(track, harmony, note_start, EIGHTH, octave, root, note_vel);
-          }
-        }
-
-        // Approach note on last eighth when chord changes
-        if (use_approach) {
-          Tick approach_start = bar_start + 7 * EIGHTH;
-          uint8_t approach = getApproachNote(root, next_root, next_degree);
-          addBassWithRootFallback(track, harmony, approach_start, EIGHTH, approach, root, vel_weak);
-        }
-      }
+      generateOctaveJumpPattern(ctx);
       break;
-
     case BassPattern::PedalTone:
-      // Pedal tone: sustained tonic or dominant note regardless of chord changes.
-      // Tonic pedal (C, degree 0) for Intro/Outro: stability and resolution.
-      // Dominant pedal (G, degree 4) for Bridge: tension before return to chorus.
-      {
-        // Determine pedal note: Bridge uses dominant (G), others use tonic (C)
-        bool use_dominant = (section == SectionType::Bridge);
-        uint8_t pedal_pitch;
-        if (use_dominant) {
-          // Dominant pedal: degree 4 = G in C major
-          pedal_pitch = getBassRoot(4);
-        } else {
-          // Tonic pedal: degree 0 = C in C major
-          pedal_pitch = getBassRoot(0);
-        }
-
-        // Rhythm: half notes with optional re-attack on beat 3
-        // Beat 1: pedal note (strong, half note duration)
-        addSafeBassNote(track, bar_start, HALF, pedal_pitch, vel, harmony);
-
-        // Beat 3: re-attack the pedal note (provides rhythmic pulse)
-        uint8_t beat3_vel = static_cast<uint8_t>(vel * 0.9f);
-        addSafeBassNote(track, bar_start + HALF, HALF, pedal_pitch, beat3_vel, harmony);
-      }
+      generatePedalTonePattern(ctx);
       break;
-
     case BassPattern::Tresillo:
-      // Latin 3+3+2 rhythmic pattern (typical of reggaeton, dembow, latin pop)
-      // Pattern: 3 eighth notes + 3 eighth notes + 2 eighth notes = 8 eighths = 1 bar
-      // Accents on positions 1, 4, 7 (where the groups start)
-      // In ticks: 0, 3*EIGHTH, 6*EIGHTH
-      {
-        // Note 1: beat 1 (position 1 of 8)
-        addSafeBassNote(track, bar_start, EIGHTH + EIGHTH + EIGHTH, root, vel, harmony);
-
-        // Note 2: beat 2.5 (position 4 of 8) - syncopated
-        addSafeBassNote(track, bar_start + 3 * EIGHTH, EIGHTH + EIGHTH + EIGHTH, root,
-                        vel_weak, harmony);
-
-        // Note 3: beat 4 (position 7 of 8) - the "2" in 3+3+2
-        // Use approach note if chord is changing
-        if ((is_last_bar || next_root != root) && next_root != 0) {
-          uint8_t approach = getApproachNote(root, next_root, next_degree);
-          addBassWithRootFallback(track, harmony, bar_start + 6 * EIGHTH, EIGHTH + EIGHTH,
-                                  approach, root, vel_weak);
-        } else {
-          // Fifth on the "2" gives the pattern more movement
-          addBassWithRootFallback(track, harmony, bar_start + 6 * EIGHTH, EIGHTH + EIGHTH,
-                                  fifth, root, vel_weak);
-        }
-      }
+      generateTresilloPattern(ctx);
       break;
-
     case BassPattern::SubBass808:
-      // Trap-style 808 sub-bass: long sustained notes with pitch slides
-      // Characteristic: very long notes that fill most of the bar, with occasional
-      // pitch "glides" simulated by a quick approach note before the next chord.
-      // Low velocity ceiling for that subwoofer feel.
-      {
-        // 808 sub-bass uses lower octave if possible for deeper sound
-        int sub_root = static_cast<int>(root);
-        if (sub_root - OCTAVE >= BASS_LOW) {
-          sub_root -= OCTAVE;  // Go one octave lower for sub-bass character
-        }
-        uint8_t sub_pitch = clampBass(sub_root);
-
-        // Lower velocity for 808 sub-bass (subwoofer feel, typically 70-85)
-        uint8_t sub_vel = static_cast<uint8_t>(std::min(static_cast<int>(vel), 85));
-
-        // Long sustained note covering most of the bar
-        if ((is_last_bar || next_root != root) && next_root != 0) {
-          // Leave room for pitch slide/approach at the end
-          addSafeBassNote(track, bar_start, 3 * QUARTER + EIGHTH, sub_pitch, sub_vel,
-                          harmony);
-
-          // Simulated pitch slide: chromatic approach note (quick note before next root)
-          // 808s often have pitch slides, simulated here with a quick approach
-          uint8_t slide_target = getBassRoot(next_degree);
-          if (slide_target - OCTAVE >= BASS_LOW) {
-            slide_target = static_cast<uint8_t>(slide_target - OCTAVE);
-          }
-          uint8_t slide_note = getChromaticApproach(slide_target);
-          // Optional slide note - skip if collision
-          NoteOptions slide_opts;
-          slide_opts.start = bar_start + 3 * QUARTER + EIGHTH;
-          slide_opts.duration = EIGHTH;
-          slide_opts.desired_pitch = slide_note;
-          slide_opts.velocity = static_cast<uint8_t>(sub_vel * 0.7f);
-          slide_opts.role = TrackRole::Bass;
-          slide_opts.preference = PitchPreference::SkipIfUnsafe;
-          slide_opts.range_low = BASS_LOW;
-          slide_opts.range_high = BASS_HIGH;
-          slide_opts.register_to_harmony = true;
-          slide_opts.source = NoteSource::BassPattern;
-          createNoteAndAdd(track, harmony, slide_opts);
-        } else {
-          // Full bar sustain when no chord change
-          addSafeBassNote(track, bar_start, TICKS_PER_BAR, sub_pitch, sub_vel, harmony);
-        }
-      }
+      generateSubBass808Pattern(ctx);
       break;
-
     case BassPattern::RnBNeoSoul:
-      // R&B/Neo-soul pattern: Same as Groove with passing tones and smooth voice leading
-      {
-        // Beat 1: Root (anchor)
-        addSafeBassNote(track, bar_start, QUARTER, root, vel, harmony);
-
-        // Beat 2: Passing tone (diatonic 2nd above root)
-        {
-          uint8_t passing = getNextDiatonic(root, +1);
-          addBassWithRootFallback(track, harmony, bar_start + QUARTER, EIGHTH, passing, root, vel_weak);
-          // Second half of beat 2: back to root or third
-          uint8_t third = getDiatonicThird(root);
-          addBassWithRootFallback(track, harmony, bar_start + QUARTER + EIGHTH, EIGHTH, third, root, vel_weak);
-        }
-
-        // Beat 3: Fifth (groove anchor)
-        addBassWithRootFallback(track, harmony, bar_start + 2 * QUARTER, QUARTER, fifth, root, vel);
-
-        // Beat 4: Chromatic or diatonic approach
-        {
-          uint8_t approach = (next_root != root)
-                                 ? getApproachNote(root, next_root, next_degree)
-                                 : getNextDiatonic(root, -1);  // Step below for groove
-          addBassWithRootFallback(track, harmony, bar_start + 3 * QUARTER, QUARTER, approach, root, vel_weak);
-        }
-      }
+      generateRnBNeoSoulPattern(ctx);
       break;
   }
 }
