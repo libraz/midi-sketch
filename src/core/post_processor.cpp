@@ -12,7 +12,8 @@
 
 #include "core/chord_utils.h"         // for nearestChordTonePitch, ChordToneHelper, ChordTones
 #include "core/i_harmony_context.h"   // for IHarmonyContext
-#include "core/note_factory.h"        // for NoteSource enum
+#include "core/note_creator.h"        // for getSafePitchCandidates
+#include "core/note_source.h"         // for NoteSource enum
 #include "core/pitch_utils.h"         // for MOTIF_LOW, MOTIF_HIGH
 #include "core/note_timeline_utils.h" // for NoteTimeline utilities
 #include "core/timing_constants.h"    // for TICK_EIGHTH
@@ -1172,15 +1173,28 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
           uint8_t new_pitch = findSafeChordTone(original_pitch, degree, m_note.start_tick,
                                                  m_note.duration, vocal, harmony);
 
-          // If still clashing with vocal, try using harmony's getBestAvailablePitch as last resort
+          // If still clashing with vocal, try using getSafePitchCandidates as last resort
           if (clashesWithVocal(new_pitch, m_note.start_tick, m_end, vocal)) {
-            new_pitch = harmony.getBestAvailablePitch(original_pitch, m_note.start_tick, m_note.duration,
-                                             TrackRole::Motif, MOTIF_LOW, MOTIF_HIGH);
+            auto candidates = getSafePitchCandidates(harmony, original_pitch, m_note.start_tick,
+                                                      m_note.duration, TrackRole::Motif,
+                                                      MOTIF_LOW, MOTIF_HIGH);
+            if (!candidates.empty()) {
+              // Select best candidate with melodic continuity preference
+              PitchSelectionHints hints;
+              hints.prev_pitch = static_cast<int8_t>(original_pitch);
+              hints.prefer_chord_tones = true;
+              hints.prefer_small_intervals = true;
+              new_pitch = selectBestCandidate(candidates, original_pitch, hints);
+            }
           }
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-          m_note.prov_original_pitch = original_pitch;
-          m_note.prov_source = static_cast<uint8_t>(NoteSource::CollisionAvoid);
+          if (new_pitch != original_pitch) {
+            m_note.addTransformStep(TransformStepType::CollisionAvoid, original_pitch, new_pitch,
+                                    static_cast<int8_t>(v_note.note), 0);
+            m_note.prov_original_pitch = original_pitch;
+            m_note.prov_source = static_cast<uint8_t>(NoteSource::CollisionAvoid);
+          }
           m_note.prov_lookup_tick = m_note.start_tick;
           m_note.prov_chord_degree = degree;
 #endif

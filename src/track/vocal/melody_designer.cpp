@@ -13,7 +13,8 @@
 #include "core/i_harmony_context.h"
 #include "core/melody_embellishment.h"
 #include "core/motif_transform.h"
-#include "core/note_factory.h"
+#include "core/note_creator.h"
+#include "core/note_source.h"
 #include "core/phrase_patterns.h"
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
@@ -170,16 +171,38 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
         if (interval > MAX_PHRASE_INTERVAL) {
           // Get chord degree at this note's position for chord tone snapping
           int8_t note_chord_degree = harmony.getChordDegreeAt(adjusted_note.start_tick);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+          uint8_t old_pitch = adjusted_note.note;
+#endif
           // Use nearestChordToneWithinInterval to stay on chord tones
           adjusted_note.note = static_cast<uint8_t>(nearestChordToneWithinInterval(
               adjusted_note.note, prev_note_pitch, note_chord_degree, MAX_PHRASE_INTERVAL,
               ctx.vocal_low, ctx.vocal_high, &ctx.tessitura));
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+          if (old_pitch != adjusted_note.note) {
+            adjusted_note.prov_original_pitch = old_pitch;
+            adjusted_note.addTransformStep(TransformStepType::IntervalFix, old_pitch,
+                                            adjusted_note.note, 0, 0);
+          }
+#endif
         }
       }
       // ABSOLUTE CONSTRAINT: Ensure pitch is on scale (prevents chromatic notes)
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      uint8_t pre_snap_pitch = adjusted_note.note;
+#endif
       int snapped = snapToNearestScaleTone(adjusted_note.note, ctx.key_offset);
       adjusted_note.note = static_cast<uint8_t>(
           std::clamp(snapped, static_cast<int>(ctx.vocal_low), static_cast<int>(ctx.vocal_high)));
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      if (pre_snap_pitch != adjusted_note.note) {
+        if (adjusted_note.prov_original_pitch == 0) {
+          adjusted_note.prov_original_pitch = pre_snap_pitch;
+        }
+        adjusted_note.addTransformStep(TransformStepType::ScaleSnap, pre_snap_pitch,
+                                        adjusted_note.note, 0, 0);
+      }
+#endif
       result.push_back(adjusted_note);
     }
 
@@ -302,6 +325,9 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
         // Only enforce chord tone if NOT a valid appoggiatura
         if (!is_valid_appoggiatura) {
           // Use interval-aware snapping to preserve melodic contour
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+          uint8_t old_pitch = note.note;
+#endif
           int new_pitch;
           int max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
           if (prev_final_pitch >= 0) {
@@ -315,6 +341,12 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
           new_pitch = std::clamp(new_pitch, static_cast<int>(ctx.vocal_low),
                                  static_cast<int>(ctx.vocal_high));
           note.note = static_cast<uint8_t>(new_pitch);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+          if (old_pitch != note.note) {
+            note.prov_original_pitch = old_pitch;
+            note.addTransformStep(TransformStepType::ChordToneSnap, old_pitch, note.note, 0, 0);
+          }
+#endif
         }
       }
     }
@@ -324,6 +356,9 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
       int max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
       if (interval > max_interval) {
         int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        uint8_t old_pitch = note.note;
+#endif
         int constrained_pitch = nearestChordToneWithinInterval(
             note.note, prev_final_pitch, chord_degree, max_interval, ctx.vocal_low,
             ctx.vocal_high, &ctx.tessitura);
@@ -331,6 +366,12 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
         constrained_pitch = std::clamp(constrained_pitch, static_cast<int>(ctx.vocal_low),
                                        static_cast<int>(ctx.vocal_high));
         note.note = static_cast<uint8_t>(constrained_pitch);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        if (old_pitch != note.note) {
+          note.prov_original_pitch = old_pitch;
+          note.addTransformStep(TransformStepType::IntervalFix, old_pitch, note.note, 0, 0);
+        }
+#endif
       }
     }
     prev_final_pitch = note.note;
@@ -469,9 +510,6 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   PhraseResult result;
   result.notes.clear();
   result.direction_inertia = direction_inertia;
-
-  // Create NoteFactory for provenance tracking
-  NoteFactory factory(harmony);
 
   // Calculate syncopation weight based on vocal groove, section type, and drive_feel
   // drive_feel modulates syncopation: laid-back = less, aggressive = more
@@ -913,24 +951,30 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
         std::clamp(new_pitch, static_cast<int>(ctx.vocal_low), static_cast<int>(ctx.vocal_high));
 
     // Apply pitch safety check to avoid collisions with other tracks (e.g., Motif tritone)
-    if (!harmony.isPitchSafe(static_cast<uint8_t>(new_pitch), note_start, note_duration,
-                             TrackRole::Vocal)) {
-      int safe_pitch = harmony.getBestAvailablePitch(static_cast<uint8_t>(new_pitch), note_start,
-                                                     note_duration, TrackRole::Vocal,
-                                                     ctx.vocal_low, ctx.vocal_high);
-      new_pitch = std::clamp(safe_pitch, static_cast<int>(ctx.vocal_low),
-                             static_cast<int>(ctx.vocal_high));
-      // Verify the new pitch is actually safe, skip if not
-      if (!harmony.isPitchSafe(static_cast<uint8_t>(new_pitch), note_start, note_duration,
-                               TrackRole::Vocal)) {
-        continue;  // No safe pitch available
-      }
+    // Use getSafePitchCandidates for unified collision resolution
+    auto candidates = getSafePitchCandidates(harmony, static_cast<uint8_t>(new_pitch), note_start,
+                                              note_duration, TrackRole::Vocal, ctx.vocal_low,
+                                              ctx.vocal_high);
+    if (candidates.empty()) {
+      continue;  // No safe pitch available
     }
+    // Select best candidate considering melodic context
+    PitchSelectionHints hints;
+    hints.prev_pitch = static_cast<int8_t>(current_pitch);
+    hints.prefer_chord_tones = true;
+    hints.prefer_small_intervals = true;
+    new_pitch = selectBestCandidate(candidates, static_cast<uint8_t>(new_pitch), hints);
 
-    // Add note with provenance tracking
-    result.notes.push_back(factory.create(note_start, note_duration,
-                                          static_cast<uint8_t>(new_pitch), velocity,
-                                          NoteSource::MelodyPhrase));
+    // Add note (registration handled by VocalGenerator)
+    NoteEvent note = createNoteWithoutHarmony(note_start, note_duration,
+                                               static_cast<uint8_t>(new_pitch), velocity);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    note.prov_source = static_cast<uint8_t>(NoteSource::MelodyPhrase);
+    note.prov_chord_degree = note_chord_degree;
+    note.prov_lookup_tick = note_start;
+    note.prov_original_pitch = static_cast<uint8_t>(new_pitch);
+#endif
+    result.notes.push_back(note);
 
     current_pitch = new_pitch;
     prev_note_duration = note_duration;  // Track for leap preparation
@@ -964,7 +1008,17 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       bool improves = (new_interval_before < interval_before || new_interval_after < interval_after);
       bool no_worse = (new_interval_before <= interval_before && new_interval_after <= interval_after);
       if (improves || (no_worse && fixed_pitch != curr_pitch)) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        uint8_t old_pitch = result.notes[i].note;
+#endif
         result.notes[i].note = static_cast<uint8_t>(fixed_pitch);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        if (old_pitch != result.notes[i].note) {
+          result.notes[i].prov_original_pitch = old_pitch;
+          result.notes[i].addTransformStep(TransformStepType::ChordToneSnap, old_pitch,
+                                            result.notes[i].note, 0, 0);
+        }
+#endif
       }
     }
   }
@@ -980,9 +1034,6 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
                                                           std::mt19937& rng) {
   PhraseResult result;
   result.notes.clear();
-
-  // Create NoteFactory for provenance tracking
-  NoteFactory factory(harmony);
 
   // Get chord degree at hook start position
   int8_t start_chord_degree = harmony.getChordDegreeAt(hook_start);
@@ -1211,23 +1262,30 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       }
 
       // Apply pitch safety check to avoid collisions with other tracks (e.g., Motif tritone)
-      if (!harmony.isPitchSafe(static_cast<uint8_t>(pitch), current_tick, final_duration,
-                               TrackRole::Vocal)) {
-        int safe_pitch = harmony.getBestAvailablePitch(static_cast<uint8_t>(pitch), current_tick,
-                                                       final_duration, TrackRole::Vocal,
-                                                       ctx.vocal_low, ctx.vocal_high);
-        pitch = std::clamp(safe_pitch, static_cast<int>(ctx.vocal_low),
-                           static_cast<int>(ctx.vocal_high));
-        // Verify the new pitch is actually safe, skip if not
-        if (!harmony.isPitchSafe(static_cast<uint8_t>(pitch), current_tick, final_duration,
-                                 TrackRole::Vocal)) {
-          current_tick += tick_advance;
-          continue;  // No safe pitch available
-        }
+      // Use getSafePitchCandidates for unified collision resolution
+      auto candidates = getSafePitchCandidates(harmony, static_cast<uint8_t>(pitch), current_tick,
+                                                final_duration, TrackRole::Vocal, ctx.vocal_low,
+                                                ctx.vocal_high);
+      if (candidates.empty()) {
+        current_tick += tick_advance;
+        continue;  // No safe pitch available
       }
+      // Select best candidate preserving hook shape
+      PitchSelectionHints hints;
+      hints.prev_pitch = static_cast<int8_t>(prev_hook_pitch);
+      hints.prefer_chord_tones = true;
+      hints.prefer_small_intervals = true;
+      pitch = selectBestCandidate(candidates, static_cast<uint8_t>(pitch), hints);
 
-      result.notes.push_back(factory.create(
-          current_tick, final_duration, static_cast<uint8_t>(pitch), final_velocity, NoteSource::Hook));
+      NoteEvent hook_note = createNoteWithoutHarmony(
+          current_tick, final_duration, static_cast<uint8_t>(pitch), final_velocity);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      hook_note.prov_source = static_cast<uint8_t>(NoteSource::Hook);
+      hook_note.prov_chord_degree = note_chord_degree;
+      hook_note.prov_lookup_tick = current_tick;
+      hook_note.prov_original_pitch = static_cast<uint8_t>(pitch);
+#endif
+      result.notes.push_back(hook_note);
 
       prev_hook_pitch = pitch;
       prev_note_duration = final_duration;  // Track for leap preparation
@@ -1264,16 +1322,29 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
                                  static_cast<int>(ctx.vocal_high));
 
       // Apply pitch safety check for modified pitch
-      uint8_t safe_pitch = harmony.getBestAvailablePitch(static_cast<uint8_t>(new_pitch),
+      // Use getSafePitchCandidates for unified collision resolution
+      auto candidates = getSafePitchCandidates(harmony, static_cast<uint8_t>(new_pitch),
                                                 result.notes[i].start_tick,
                                                 result.notes[i].duration,
                                                 TrackRole::Vocal, ctx.vocal_low, ctx.vocal_high);
-      result.notes[i].note = safe_pitch;
+      if (!candidates.empty()) {
+        // Select best candidate considering neighboring notes for melodic continuity
+        PitchSelectionHints hints;
+        if (i > 0) {
+          hints.prev_pitch = static_cast<int8_t>(result.notes[i - 1].note);
+        }
+        hints.prefer_chord_tones = true;
+        hints.prefer_small_intervals = true;
+        result.notes[i].note = selectBestCandidate(candidates, static_cast<uint8_t>(new_pitch), hints);
+      }
+      // If candidates is empty, keep the original clamped pitch (new_pitch)
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       // Record original pitch before betrayal modification
-      if (old_pitch != safe_pitch) {
+      if (old_pitch != result.notes[i].note) {
         result.notes[i].prov_original_pitch = old_pitch;
+        result.notes[i].addTransformStep(TransformStepType::MotionAdjust, old_pitch,
+                                          result.notes[i].note, 0, 0);
       }
 #endif
 
@@ -1362,6 +1433,10 @@ void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
       continue;
     }
 
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    uint8_t old_pitch = note.note;
+#endif
+
     // 1. Apply pitch tendency (creating "run-up" to next section)
     float progress = static_cast<float>(note.start_tick - approach_start) /
                      static_cast<float>(ctx.section_end - approach_start);
@@ -1395,6 +1470,12 @@ void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
     }
 
     note.note = static_cast<uint8_t>(new_pitch);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    if (old_pitch != note.note) {
+      note.prov_original_pitch = old_pitch;
+      note.addTransformStep(TransformStepType::ScaleSnap, old_pitch, note.note, 0, 0);
+    }
+#endif
     prev_pitch = new_pitch;
 
     // 2. Apply velocity gradient (crescendo/decrescendo)
@@ -1416,9 +1497,6 @@ void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
 void MelodyDesigner::insertLeadingTone(std::vector<NoteEvent>& notes, const SectionContext& ctx,
                                        const IHarmonyContext& harmony) {
   if (notes.empty()) return;
-
-  // Create NoteFactory for provenance tracking
-  NoteFactory factory(harmony);
 
   // Maximum allowed interval (major 6th = 9 semitones)
   // kMaxMelodicInterval from pitch_utils.h
@@ -1469,11 +1547,15 @@ void MelodyDesigner::insertLeadingTone(std::vector<NoteEvent>& notes, const Sect
     uint8_t velocity = static_cast<uint8_t>(
         std::min(127, static_cast<int>(last_note.velocity) + 10));  // Slightly louder
 
-    notes.push_back(
-        factory.create(leading_tone_start,
-                       leading_duration,
-                       static_cast<uint8_t>(leading_pitch), velocity,
-                       NoteSource::PostProcess));  // Leading tone is a post-processing addition
+    NoteEvent leading_note = createNoteWithoutHarmony(leading_tone_start, leading_duration,
+                                                       static_cast<uint8_t>(leading_pitch), velocity);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    leading_note.prov_source = static_cast<uint8_t>(NoteSource::MelodyPhrase);
+    leading_note.prov_chord_degree = harmony.getChordDegreeAt(leading_tone_start);
+    leading_note.prov_lookup_tick = leading_tone_start;
+    leading_note.prov_original_pitch = static_cast<uint8_t>(leading_pitch);
+#endif
+    notes.push_back(leading_note);
   }
 }
 

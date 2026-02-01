@@ -10,7 +10,7 @@
 #include <random>
 
 #include "core/midi_track.h"
-#include "core/note_factory.h"
+#include "core/note_source.h"
 #include "core/section_types.h"
 #include "core/timing_constants.h"
 #include "core/types.h"

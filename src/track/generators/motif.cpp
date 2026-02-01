@@ -17,7 +17,8 @@
 #include "core/i_harmony_context.h"
 #include "core/motif.h"
 #include "core/motif_types.h"
-#include "core/note_factory.h"
+#include "core/note_creator.h"
+#include "core/note_source.h"
 #include "core/pitch_utils.h"
 #include "core/production_blueprint.h"
 #include "core/song.h"
@@ -603,7 +604,7 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::
     pitch = std::clamp(pitch, 36, 96);
 
     pattern.push_back(
-        NoteEventBuilder::create(pos, note_duration, static_cast<uint8_t>(pitch), velocity));
+        createNoteWithoutHarmony(pos, note_duration, static_cast<uint8_t>(pitch), velocity));
     pitch_idx++;
   }
 
@@ -619,13 +620,6 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
   std::mt19937& rng = *ctx.rng;
   IHarmonyCoordinator* harmony = ctx.harmony;
   const MotifContext* vocal_ctx = static_cast<const MotifContext*>(ctx.vocal_ctx);
-
-  // Build TrackContext for createSafeNoteDeferred
-  TrackContext track_ctx;
-  track_ctx.harmony = harmony;
-  PhysicalModel model = getPhysicalModel();
-  track_ctx.model = &model;
-  track_ctx.config = config_;
 
   // L1: Generate base motif pattern
   std::vector<NoteEvent> pattern = generateMotifPattern(params, rng);
@@ -832,9 +826,19 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
 
         if (is_rhythm_lock_global) {
           // Coordinate axis mode: add note directly with registration (no collision avoidance)
-          auto motif_note = createAndRegister(absolute_tick, note.duration, final_pitch, vel,
-                                               NoteSource::Motif, track_ctx);
-          track.addNote(motif_note);
+          NoteOptions opts;
+          opts.start = absolute_tick;
+          opts.duration = note.duration;
+          opts.desired_pitch = final_pitch;
+          opts.velocity = vel;
+          opts.role = TrackRole::Motif;
+          opts.preference = PitchPreference::NoCollisionCheck;  // Coordinate axis
+          opts.range_low = MOTIF_LOW;
+          opts.range_high = MOTIF_HIGH;
+          opts.source = NoteSource::Motif;
+          opts.original_pitch = note.note;  // Track pre-adjustment pitch
+
+          createNoteAndAdd(track, *harmony, opts);
           bar_note_count[current_bar]++;
 
           // Octave doubling in RhythmLock
@@ -842,39 +846,35 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
             int octave_pitch = final_pitch + 12;
             if (octave_pitch <= 108) {
               uint8_t octave_vel = static_cast<uint8_t>(vel * 0.85f);
-              auto octave_note = createAndRegister(absolute_tick, note.duration,
-                                                    static_cast<uint8_t>(octave_pitch), octave_vel,
-                                                    NoteSource::Motif, track_ctx);
-              track.addNote(octave_note);
+              NoteOptions octave_opts = opts;
+              octave_opts.desired_pitch = static_cast<uint8_t>(octave_pitch);
+              octave_opts.velocity = octave_vel;
+              createNoteAndAdd(track, *harmony, octave_opts);
             }
           }
         } else {
-          // Standard mode: use createSafeNoteDeferred for collision avoidance
+          // Standard mode: use createNoteAndAdd with PreserveContour for collision avoidance
           constexpr Tick kSwingMargin = 120;
           Tick check_duration = note.duration + kSwingMargin;
 
-          auto motif_note = createSafeNoteDeferred(absolute_tick, check_duration, final_pitch, vel,
-                                                    NoteSource::Motif, track_ctx);
+          NoteOptions opts;
+          opts.start = absolute_tick;
+          opts.duration = check_duration;  // Include swing margin for collision check
+          opts.desired_pitch = final_pitch;
+          opts.velocity = vel;
+          opts.role = TrackRole::Motif;
+          opts.preference = PitchPreference::PreserveContour;  // Prefers octave shifts
+          opts.range_low = MOTIF_LOW;
+          opts.range_high = MOTIF_HIGH;
+          opts.source = NoteSource::Motif;
+          opts.original_pitch = note.note;  // Track pre-adjustment pitch
 
-          // If failed, try octave transpositions
-          if (!motif_note && final_pitch + 12 <= MOTIF_HIGH) {
-            motif_note =
-                createSafeNoteDeferred(absolute_tick, check_duration,
-                                        static_cast<uint8_t>(final_pitch + 12), vel,
-                                        NoteSource::Motif, track_ctx);
-          }
-          if (!motif_note && final_pitch >= MOTIF_LOW + 12) {
-            motif_note =
-                createSafeNoteDeferred(absolute_tick, check_duration,
-                                        static_cast<uint8_t>(final_pitch - 12), vel,
-                                        NoteSource::Motif, track_ctx);
-          }
+          auto motif_note = createNoteAndAdd(track, *harmony, opts);
 
           if (!motif_note) {
             continue;
           }
 
-          track.addNote(*motif_note);
           bar_note_count[current_bar]++;
 
           // L4: Add octave doubling for chorus
@@ -882,12 +882,18 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
             int octave_pitch = motif_note->note + 12;
             if (octave_pitch <= 108) {
               uint8_t octave_vel = static_cast<uint8_t>(vel * 0.85f);
-              auto octave_note = createSafeNoteDeferred(
-                  absolute_tick, note.duration, static_cast<uint8_t>(octave_pitch), octave_vel,
-                  NoteSource::Motif, track_ctx);
-              if (octave_note) {
-                track.addNote(*octave_note);
-              }
+              NoteOptions octave_opts;
+              octave_opts.start = absolute_tick;
+              octave_opts.duration = note.duration;
+              octave_opts.desired_pitch = static_cast<uint8_t>(octave_pitch);
+              octave_opts.velocity = octave_vel;
+              octave_opts.role = TrackRole::Motif;
+              octave_opts.preference = PitchPreference::SkipIfUnsafe;  // Optional layer
+              octave_opts.range_low = MOTIF_LOW;
+              octave_opts.range_high = 108;
+              octave_opts.source = NoteSource::Motif;
+
+              createNoteAndAdd(track, *harmony, octave_opts);
             }
           }
         }

@@ -108,49 +108,6 @@ class IHarmonyContext {
   }
 
   /**
-   * @brief Get the best available pitch that minimizes clashes with other tracks.
-   *
-   * Tries chord tones first, then semitone adjustments.
-   * Note: This function returns the best available pitch, but does NOT guarantee
-   * the returned pitch is collision-free. If no safe alternative exists,
-   * the original desired pitch is returned.
-   *
-   * @param desired Desired MIDI pitch
-   * @param start Start tick
-   * @param duration Duration in ticks
-   * @param track Track that will play this note
-   * @param low Minimum allowed pitch
-   * @param high Maximum allowed pitch
-   * @return Best available pitch within range, or desired if no better option found
-   */
-  virtual uint8_t getBestAvailablePitch(uint8_t desired, Tick start, Tick duration, TrackRole track,
-                                        uint8_t low, uint8_t high) const = 0;
-
-  /**
-   * @brief Resolve pitch with strategy tracking.
-   *
-   * Same as getBestAvailablePitch but also returns which strategy succeeded.
-   * Used for debugging and provenance tracking.
-   *
-   * @param desired Desired MIDI pitch
-   * @param start Start tick
-   * @param duration Duration in ticks
-   * @param track Track that will play this note
-   * @param low Minimum allowed pitch
-   * @param high Maximum allowed pitch
-   * @return PitchResolutionResult with resolved pitch and strategy used
-   */
-  virtual PitchResolutionResult resolvePitchWithStrategy(uint8_t desired, Tick start, Tick duration,
-                                                          TrackRole track, uint8_t low,
-                                                          uint8_t high) const {
-    // Default implementation: just call getBestAvailablePitch without strategy info
-    uint8_t pitch = getBestAvailablePitch(desired, start, duration, track, low, high);
-    CollisionAvoidStrategy strategy =
-        (pitch == desired) ? CollisionAvoidStrategy::None : CollisionAvoidStrategy::Failed;
-    return {pitch, strategy};
-  }
-
-  /**
    * @brief Get the tick of the next chord change after the given tick.
    * @param after Position to search from
    * @return Tick of next chord change, or 0 if none found

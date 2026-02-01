@@ -25,7 +25,6 @@ struct GeneratorParams;
 ///
 /// Generates background motif patterns following chord progressions.
 /// Supports RhythmSync paradigm where Motif acts as "coordinate axis".
-/// Uses TrackBase::createSafeNoteDeferred() for collision-safe note creation.
 class MotifGenerator : public TrackBase {
  public:
   MotifGenerator() = default;

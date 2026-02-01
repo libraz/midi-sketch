@@ -56,6 +56,9 @@ enum class TransformStepType : uint8_t {
   RangeClamp,      ///< Clamp to instrument range
   PatternOffset,   ///< Pattern-based offset (e.g., 5th, approach)
   CollisionAvoid,  ///< Inter-track collision avoidance
+  ScaleSnap,       ///< snapToNearestScaleTone()
+  IntervalFix,     ///< nearestChordToneWithinInterval()
+  ChordToneSnap,   ///< nearestChordTonePitch()
 };
 
 /// @brief Strategy used by SafePitchResolver to resolve a collision.
@@ -108,6 +111,12 @@ inline const char* transformStepTypeToString(TransformStepType type) {
       return "pattern_offset";
     case TransformStepType::CollisionAvoid:
       return "collision_avoid";
+    case TransformStepType::ScaleSnap:
+      return "scale_snap";
+    case TransformStepType::IntervalFix:
+      return "interval_fix";
+    case TransformStepType::ChordToneSnap:
+      return "chord_tone_snap";
   }
   return "unknown";
 }
@@ -130,7 +139,6 @@ constexpr size_t kMaxTransformSteps = 8;
 #endif  // MIDISKETCH_NOTE_PROVENANCE
 
 // Forward declarations for friend classes
-class NoteFactory;
 class FrettedNoteFactory;
 class PostProcessor;
 class MidiReader;
@@ -139,9 +147,9 @@ class MidiTrack;
 class NoteEventTestHelper;
 class AuxGenerator;
 
-// Helper struct for creating NoteEvents in track generators without NoteFactory.
-// This is used for drums, SE, and other contexts where harmony checking is not applicable.
-// NoteFactory should still be preferred for melody/harmony-aware note creation.
+// NoteEventBuilder: Helper for creating NoteEvents without harmony checking.
+// Use for: Drums, SE, C API interop, test fixtures.
+// For melody/harmony tracks, use createNote() from note_creator.h instead.
 struct NoteEventBuilder;
 
 // Forward declarations for friend functions (drums)
@@ -181,7 +189,6 @@ struct NoteEvent {
       : start_tick(start), duration(dur), note(n), velocity(vel) {}
 
   // Friend declarations for classes that need direct construction
-  friend class NoteFactory;           ///< Main factory for melody/chord notes
   friend class FrettedNoteFactory;    ///< Factory for fretted instrument notes
   friend class PostProcessor;         ///< Post-processing (drums only, no harmony)
   friend class MidiReader;            ///< File reading (external MIDI files)
@@ -354,6 +361,58 @@ inline const char* trackRoleToString(TrackRole role) {
     default: return "unknown";
   }
 }
+
+// ============================================================================
+// Pitch Safety Types (v2 Architecture)
+// ============================================================================
+
+/// @brief Pitch selection preference for createNote().
+///
+/// Determines how SafePitchResolver selects alternative pitches when
+/// the desired pitch causes a collision.
+enum class PitchPreference : uint8_t {
+  Default,           ///< Standard SafePitchResolver strategy
+  PreferRootFifth,   ///< Prefer root/5th (Bass)
+  PreferChordTones,  ///< Prefer chord tones (Chord, Arpeggio)
+  PreserveContour,   ///< Preserve melody contour with octave shifts (Motif)
+  SkipIfUnsafe,      ///< Skip note entirely if unsafe (optional notes)
+  NoCollisionCheck   ///< Skip collision check (coordinate axis, Drums/SE)
+};
+
+/// @brief Convert PitchPreference to string for debugging.
+inline const char* pitchPreferenceToString(PitchPreference pref) {
+  switch (pref) {
+    case PitchPreference::Default: return "default";
+    case PitchPreference::PreferRootFifth: return "prefer_root_fifth";
+    case PitchPreference::PreferChordTones: return "prefer_chord_tones";
+    case PitchPreference::PreserveContour: return "preserve_contour";
+    case PitchPreference::SkipIfUnsafe: return "skip_if_unsafe";
+    case PitchPreference::NoCollisionCheck: return "no_collision_check";
+    default: return "unknown";
+  }
+}
+
+/// @brief A safe pitch candidate returned by getSafePitchCandidates().
+struct PitchCandidate {
+  uint8_t pitch;                       ///< Candidate pitch (MIDI note number)
+  Tick max_safe_duration;              ///< Maximum duration before collision
+  CollisionAvoidStrategy strategy;     ///< How this candidate was found
+  int8_t interval_from_desired;        ///< Semitones from desired pitch
+
+  // Musical attributes
+  bool is_chord_tone;                  ///< Is a chord tone at this tick
+  bool is_scale_tone;                  ///< Is a scale tone
+  bool is_root_or_fifth;               ///< Is root or 5th (useful for Bass)
+
+  // Collision info (if this was resolved from a collision)
+  TrackRole colliding_track;           ///< Track that was colliding
+  uint8_t colliding_pitch;             ///< Pitch that was colliding
+
+  PitchCandidate()
+      : pitch(0), max_safe_duration(0), strategy(CollisionAvoidStrategy::None),
+        interval_from_desired(0), is_chord_tone(false), is_scale_tone(false),
+        is_root_or_fifth(false), colliding_track(TrackRole::Vocal), colliding_pitch(0) {}
+};
 
 /// @brief MIDI Control Change event for continuous controller data.
 struct CCEvent {

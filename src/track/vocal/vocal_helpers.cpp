@@ -8,6 +8,7 @@
 #include <algorithm>
 
 #include "core/chord_utils.h"
+#include "core/note_creator.h"
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
 
@@ -48,12 +49,21 @@ std::vector<NoteEvent> adjustPitchRange(const std::vector<NoteEvent>& notes, uin
 
   for (const auto& note : notes) {
     NoteEvent adjusted = note;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    uint8_t old_pitch = adjusted.note;
+#endif
     int new_pitch = static_cast<int>(note.note) + shift;
     // Snap to scale to prevent chromatic notes
     new_pitch = snapToNearestScaleTone(new_pitch, key_offset);
     // Clamp to new range
     new_pitch = std::clamp(new_pitch, static_cast<int>(new_low), static_cast<int>(new_high));
     adjusted.note = static_cast<uint8_t>(new_pitch);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    if (old_pitch != adjusted.note) {
+      adjusted.prov_original_pitch = old_pitch;
+      adjusted.addTransformStep(TransformStepType::ScaleSnap, old_pitch, adjusted.note, 0, 0);
+    }
+#endif
     result.push_back(adjusted);
   }
   return result;
@@ -446,9 +456,21 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     // Get chord degree at this note's position
     int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
 
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    uint8_t old_pitch = note.note;
+#endif
+
     // Apply collision avoidance
-    uint8_t safe_pitch = harmony.getBestAvailablePitch(note.note, note.start_tick, note.duration,
+    auto candidates = getSafePitchCandidates(harmony, note.note, note.start_tick, note.duration,
                                               TrackRole::Vocal, vocal_low, vocal_high);
+    // Select best candidate with preference for chord tones
+    PitchSelectionHints hints;
+    if (i > 0) {
+      hints.prev_pitch = static_cast<int8_t>(notes[i - 1].note);
+    }
+    hints.prefer_chord_tones = true;
+    hints.prefer_small_intervals = true;
+    uint8_t safe_pitch = candidates.empty() ? note.note : selectBestCandidate(candidates, note.note, hints);
     // Snap to chord tone (to maintain harmonic stability)
     int snapped = nearestChordTonePitch(safe_pitch, chord_degree);
     snapped = std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
@@ -456,6 +478,12 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     snapped = snapToNearestScaleTone(snapped, 0);  // Always C major internally
     note.note = static_cast<uint8_t>(
         std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    if (old_pitch != note.note) {
+      note.prov_original_pitch = old_pitch;
+      note.addTransformStep(TransformStepType::ChordToneSnap, old_pitch, note.note, 0, 0);
+    }
+#endif
 
     // CRITICAL: Clamp duration to not sustain over chord changes
     // If note extends past chord change and becomes non-chord-tone, trim it
@@ -493,10 +521,21 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
       int interval = std::abs(static_cast<int>(note.note) - prev_pitch);
       if (interval > MAX_VOCAL_INTERVAL) {
         // Use nearestChordToneWithinInterval to find chord tone within constraint
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        uint8_t pre_interval_pitch = note.note;
+#endif
         int new_pitch =
             nearestChordToneWithinInterval(note.note, prev_pitch, chord_degree, MAX_VOCAL_INTERVAL,
                                            vocal_low, vocal_high, nullptr);
         note.note = static_cast<uint8_t>(new_pitch);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        if (pre_interval_pitch != note.note) {
+          if (note.prov_original_pitch == 0) {
+            note.prov_original_pitch = pre_interval_pitch;
+          }
+          note.addTransformStep(TransformStepType::IntervalFix, pre_interval_pitch, note.note, 0, 0);
+        }
+#endif
       }
     }
   }

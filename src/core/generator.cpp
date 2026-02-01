@@ -27,7 +27,7 @@
 #include "core/coordinator.h"
 #include "core/harmony_coordinator.h"
 #include "core/modulation_calculator.h"
-#include "core/note_factory.h"
+#include "core/note_creator.h"
 #include "core/pitch_utils.h"
 #include "core/post_processor.h"
 #include "core/preset_data.h"
@@ -718,10 +718,14 @@ std::vector<Generator::VocalClash> Generator::detectVocalAccompanimentClashes() 
       {&song_.aux(), TrackRole::Aux},
   };
 
-  for (const auto& vocal_note : vocal_notes) {
+  for (size_t i = 0; i < vocal_notes.size(); ++i) {
+    const auto& vocal_note = vocal_notes[i];
     Tick v_start = vocal_note.start_tick;
     Tick v_end = v_start + vocal_note.duration;
     uint8_t v_pitch = vocal_note.note;
+
+    // Get previous note pitch for melodic continuity
+    uint8_t prev_pitch = (i > 0) ? vocal_notes[i - 1].note : v_pitch;
 
     for (const auto& tc : tracks_to_check) {
       if (tc.track->notes().empty()) continue;
@@ -746,10 +750,20 @@ std::vector<Generator::VocalClash> Generator::detectVocalAccompanimentClashes() 
         bool is_dissonant = (interval == 1 || interval == 11 || (interval == 2 && is_close_voicing));
 
         if (is_dissonant) {
-          // Find a safe pitch
-          uint8_t safe_pitch = harmony_context_->getBestAvailablePitch(
-              v_pitch, v_start, vocal_note.duration, TrackRole::Vocal, params_.vocal_low,
-              params_.vocal_high);
+          // Find a safe pitch using getSafePitchCandidates
+          auto candidates = getSafePitchCandidates(*harmony_context_, v_pitch, v_start,
+                                                    vocal_note.duration, TrackRole::Vocal,
+                                                    params_.vocal_low, params_.vocal_high);
+
+          // Select best candidate with musical intent (prefer small intervals for melodic continuity)
+          uint8_t safe_pitch = v_pitch;
+          if (!candidates.empty()) {
+            PitchSelectionHints hints;
+            hints.prev_pitch = static_cast<int8_t>(prev_pitch);
+            hints.prefer_chord_tones = true;
+            hints.prefer_small_intervals = true;
+            safe_pitch = selectBestCandidate(candidates, v_pitch, hints);
+          }
 
           VocalClash clash;
           clash.tick = v_start;
@@ -1154,7 +1168,6 @@ void Generator::rebuildMotifFromPattern() {
   Tick motif_length = static_cast<Tick>(motif_params.length) * TICKS_PER_BAR;
 
   const auto& sections = song_.arrangement().sections();
-  NoteFactory factory(*harmony_context_);
 
   for (const auto& section : sections) {
     Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
@@ -1166,15 +1179,21 @@ void Generator::rebuildMotifFromPattern() {
         Tick absolute_tick = pos + note.start_tick;
         if (absolute_tick >= section_end) continue;
 
-        song_.motif().addNote(factory.create(absolute_tick, note.duration, note.note, note.velocity,
-                                             NoteSource::Motif));
+        auto motif_note = createNoteWithoutHarmony(absolute_tick, note.duration, note.note, note.velocity);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        motif_note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
+#endif
+        song_.motif().addNote(motif_note);
 
         if (add_octave) {
           uint8_t octave_pitch = note.note + 12;
           if (octave_pitch <= 108) {
             uint8_t octave_vel = static_cast<uint8_t>(note.velocity * 0.85);
-            song_.motif().addNote(factory.create(absolute_tick, note.duration, octave_pitch,
-                                                 octave_vel, NoteSource::Motif));
+            auto octave_note = createNoteWithoutHarmony(absolute_tick, note.duration, octave_pitch, octave_vel);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+            octave_note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
+#endif
+            song_.motif().addNote(octave_note);
           }
         }
       }
@@ -1277,6 +1296,12 @@ void Generator::applyTransitionDynamics() {
     // Clamp vocal pitch (other tracks have different range requirements)
     if (blueprint_->constraints.max_pitch < 127) {
       midisketch::clampTrackPitch(song_.vocal(), blueprint_->constraints.max_pitch);
+
+      // Re-register vocal with updated pitches and fix motif clashes
+      // (clamp may create new clashes with motif that was generated before clamping)
+      harmony_context_->clearNotesForTrack(TrackRole::Vocal);
+      harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
+      PostProcessor::fixMotifVocalClashes(song_.motif(), song_.vocal(), *harmony_context_);
     }
   }
 

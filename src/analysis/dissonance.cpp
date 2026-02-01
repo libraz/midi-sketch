@@ -14,7 +14,7 @@
 
 #include "core/chord.h"
 #include "core/json_helpers.h"
-#include "core/note_factory.h"
+#include "core/note_source.h"
 #include "core/pitch_utils.h"
 #include "core/song.h"
 
@@ -667,17 +667,20 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
         continue;  // Already reported
       }
 
-      // Get chord at this position using harmonic rhythm
-      uint32_t bar = note_a.start / TICKS_PER_BAR;
-      auto chord_info = getChordAtTick(note_a.start, song, progression, params.mood);
+      // Calculate actual overlap start tick (when both notes are sounding)
+      Tick overlap_start = std::max(note_a.start, note_b.start);
+
+      // Get chord at overlap position using harmonic rhythm
+      uint32_t bar = overlap_start / TICKS_PER_BAR;
+      auto chord_info = getChordAtTick(overlap_start, song, progression, params.mood);
       int8_t degree = chord_info.degree;
 
       auto [is_dissonant, base_severity] = checkIntervalDissonance(actual_interval, degree);
 
       if (is_dissonant) {
         // Adjust severity based on musical context (beat strength, section position)
-        BeatStrength beat_strength = getBeatStrength(note_a.start);
-        SectionPosition section_pos = getSectionPosition(note_a.start, song);
+        BeatStrength beat_strength = getBeatStrength(overlap_start);
+        SectionPosition section_pos = getSectionPosition(overlap_start, song);
         DissonanceSeverity severity =
             adjustSeverityForContext(base_severity, beat_strength, section_pos);
 
@@ -687,9 +690,9 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
         DissonanceIssue issue;
         issue.type = DissonanceType::SimultaneousClash;
         issue.severity = severity;
-        issue.tick = note_a.start;
+        issue.tick = overlap_start;
         issue.bar = bar;
-        issue.beat = 1.0f + static_cast<float>(note_a.start % TICKS_PER_BAR) / TICKS_PER_BEAT;
+        issue.beat = 1.0f + static_cast<float>(overlap_start % TICKS_PER_BAR) / TICKS_PER_BEAT;
         issue.interval_semitones = interval;
         issue.interval_name = intervalToName(interval);
 

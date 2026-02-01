@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "core/i_harmony_context.h"
+#include "core/note_creator.h"
 #include "core/timing_constants.h"
 
 namespace midisketch {
@@ -97,9 +98,10 @@ std::optional<NoteEvent> FrettedNoteFactory::create(Tick start, Tick duration, u
     }
   }
 
-  // Create the note using the underlying NoteFactory for provenance
-  NoteFactory note_factory(harmony_);
-  NoteEvent note = note_factory.create(start, duration, pitch, velocity, source);
+  // Create the note using createNoteWithoutHarmony (no collision check here,
+  // FrettedNoteFactory handles its own safety via instrument constraints)
+  auto note = createNoteWithoutHarmony(start, duration, pitch, velocity);
+  note.prov_source = static_cast<uint8_t>(source);
 
   // Apply fingering information
   applyFingeringProvenance(note, fingering, technique);
@@ -121,19 +123,18 @@ std::optional<NoteEvent> FrettedNoteFactory::createIfNoDissonance(Tick start, Ti
                                                          TrackRole track,
                                                          PlayingTechnique technique,
                                                          NoteSource source) {
-  // First check harmony safety
-  if (!harmony_.isPitchSafe(pitch, start, duration, track)) {
-    // Find a safe pitch that's also playable
-    uint8_t safe_pitch =
-        harmony_.getBestAvailablePitch(pitch, start, duration, track, instrument_.getLowestPitch(),
-                               instrument_.getHighestPitch());
-
-    // Verify it's also physically playable
+  // First check harmony safety - get candidates and use best one if available
+  auto candidates = getSafePitchCandidates(harmony_, pitch, start, duration, track,
+                                            instrument_.getLowestPitch(), instrument_.getHighestPitch());
+  if (!candidates.empty() && candidates[0].pitch != pitch) {
+    // Found a different safe pitch - verify it's playable
+    uint8_t safe_pitch = candidates[0].pitch;
     if (!instrument_.isPitchPlayable(safe_pitch)) {
       return std::nullopt;
     }
     pitch = safe_pitch;
   }
+  // else: either original pitch is safe, or no better alternative found - proceed with original
 
   // Now create with physical constraints
   return create(start, duration, pitch, velocity, technique, source);

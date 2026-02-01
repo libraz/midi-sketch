@@ -10,7 +10,7 @@
 
 #include "core/config_converter.h"
 #include "core/json_helpers.h"
-#include "core/note_factory.h"
+#include "core/note_source.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
 #include "track/generators/arpeggio.h"

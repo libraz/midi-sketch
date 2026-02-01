@@ -51,19 +51,6 @@ CollisionInfo HarmonyContext::getCollisionInfo(uint8_t pitch, Tick start, Tick d
   return collision_detector_.getCollisionInfo(pitch, start, duration, exclude, &chord_tracker_);
 }
 
-uint8_t HarmonyContext::getBestAvailablePitch(uint8_t desired, Tick start, Tick duration,
-                                              TrackRole track, uint8_t low, uint8_t high) const {
-  return pitch_resolver_.getBestAvailablePitch(desired, start, duration, track, low, high,
-                                               chord_tracker_, collision_detector_);
-}
-
-PitchResolutionResult HarmonyContext::resolvePitchWithStrategy(uint8_t desired, Tick start,
-                                                                Tick duration, TrackRole track,
-                                                                uint8_t low, uint8_t high) const {
-  return pitch_resolver_.resolvePitchWithStrategy(desired, start, duration, track, low, high,
-                                                   chord_tracker_, collision_detector_);
-}
-
 void HarmonyContext::clearNotes() { collision_detector_.clearNotes(); }
 
 void HarmonyContext::clearNotesForTrack(TrackRole track) {

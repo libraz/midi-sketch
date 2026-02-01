@@ -15,7 +15,7 @@
 #include <vector>
 
 #include "core/basic_types.h"
-#include "core/note_factory.h"
+#include "core/note_source.h"
 #include "instrument/fretted/fretted_instrument.h"
 #include "instrument/fretted/playability.h"
 

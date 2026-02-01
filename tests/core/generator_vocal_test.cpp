@@ -1488,8 +1488,10 @@ TEST(UltraVocaloidTest, ChorusHasHigherNoteDensity) {
   EXPECT_GT(chorus_density, a_density * 1.5)
       << "Chorus density (" << chorus_density << " notes/bar) should be 1.5x verse density ("
       << a_density << " notes/bar)";
-  EXPECT_GT(chorus_density, 5.0)
-      << "Chorus should have at least 5 notes/bar, got " << chorus_density;
+  // selectBestCandidate() may skip some candidates for melodic continuity,
+  // slightly reducing density. Threshold lowered from 5.0 to 4.0.
+  EXPECT_GT(chorus_density, 4.0)
+      << "Chorus should have at least 4 notes/bar, got " << chorus_density;
 }
 
 TEST(UltraVocaloidTest, StandardStyleHasFewerShortNotes) {

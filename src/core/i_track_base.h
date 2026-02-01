@@ -201,40 +201,6 @@ class ITrackBase {
   virtual void generateSection(MidiTrack& track, const Section& section,
                                 TrackContext& ctx) = 0;
 
-  /// @brief Get safe note options for a desired pitch.
-  ///
-  /// Queries the harmony coordinator for collision-free pitches.
-  ///
-  /// @param start Start tick
-  /// @param duration Desired duration
-  /// @param desired_pitch Desired pitch
-  /// @param ctx Track context with harmony coordinator
-  /// @return Safe note options with candidates
-  virtual SafeNoteOptions getSafeOptions(Tick start, Tick duration,
-                                          uint8_t desired_pitch,
-                                          const TrackContext& ctx) const {
-    if (!ctx.harmony || !ctx.model) {
-      return {};
-    }
-    return ctx.harmony->getSafeNoteOptions(
-        start, duration, desired_pitch, getRole(),
-        ctx.model->pitch_low, ctx.model->pitch_high);
-  }
-
-  /// @brief Create a note if the pitch is safe.
-  ///
-  /// Returns nullopt if the pitch would clash with higher-priority tracks.
-  ///
-  /// @param start Start tick
-  /// @param duration Duration
-  /// @param pitch Desired pitch
-  /// @param velocity Velocity
-  /// @param ctx Track context
-  /// @return Note event if safe, nullopt otherwise
-  virtual std::optional<NoteEvent> createSafeNote(Tick start, Tick duration,
-                                                   uint8_t pitch, uint8_t velocity,
-                                                   const TrackContext& ctx) const = 0;
-
   /// @brief Clamp a pitch to the physical model range.
   /// @param pitch Input pitch
   /// @param ctx Track context

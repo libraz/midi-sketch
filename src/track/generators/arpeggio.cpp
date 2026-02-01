@@ -13,6 +13,7 @@
 #include "core/chord.h"
 #include "core/harmonic_rhythm.h"
 #include "core/i_harmony_context.h"
+#include "core/note_creator.h"
 #include "core/production_blueprint.h"
 #include "core/song.h"
 #include "core/swing_quantize.h"
@@ -204,13 +205,7 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
 
   const auto& params = *ctx.params;
   std::mt19937& rng = *ctx.rng;
-
-  // Build TrackContext for createSafeNoteDeferred
-  TrackContext track_ctx;
-  track_ctx.harmony = ctx.harmony;
-  PhysicalModel model = getPhysicalModel();
-  track_ctx.model = &model;
-  track_ctx.config = config_;
+  IHarmonyCoordinator* harmony = ctx.harmony;
 
   const auto& progression = getChordProgression(params.chord_id);
   const ArpeggioParams& arp = params.arpeggio;
@@ -407,7 +402,7 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
           // Calculate effective duration, clamping to chord change boundary
           // This prevents arpeggio notes from clashing with next chord's notes
           Tick effective_duration = section_gated_duration;
-          Tick next_chord_tick = ctx.harmony->getNextChordChangeTick(note_pos);
+          Tick next_chord_tick = harmony->getNextChordChangeTick(note_pos);
           if (next_chord_tick > 0 && note_pos + effective_duration > next_chord_tick) {
             // Clamp duration to end at chord change, with small gap for clean transition
             constexpr Tick kChordGap = 30;  // Small gap before chord change
@@ -419,11 +414,19 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
             }
           }
 
-          // Use TrackBase::createSafeNoteDeferred for safe note creation with registration
-          if (auto arp_note = createSafeNoteDeferred(note_pos, effective_duration, note,
-                                                      velocity, NoteSource::Arpeggio, track_ctx)) {
-            track.addNote(*arp_note);
-          }
+          // Use createNoteAndAdd for safe note creation with registration
+          NoteOptions opts;
+          opts.start = note_pos;
+          opts.duration = effective_duration;
+          opts.desired_pitch = note;
+          opts.velocity = velocity;
+          opts.role = TrackRole::Arpeggio;
+          opts.preference = PitchPreference::PreferChordTones;
+          opts.range_low = 48;   // C3 (from PhysicalModels::kArpeggioSynth)
+          opts.range_high = 108; // C8
+          opts.source = NoteSource::Arpeggio;
+
+          createNoteAndAdd(track, *harmony, opts);
         }
 
         pos += section_note_duration;

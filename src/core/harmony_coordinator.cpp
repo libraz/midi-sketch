@@ -78,19 +78,6 @@ CollisionInfo HarmonyCoordinator::getCollisionInfo(uint8_t pitch, Tick start, Ti
   return base_context_.getCollisionInfo(pitch, start, duration, exclude);
 }
 
-uint8_t HarmonyCoordinator::getBestAvailablePitch(uint8_t desired, Tick start, Tick duration,
-                                                   TrackRole track, uint8_t low,
-                                                   uint8_t high) const {
-  return base_context_.getBestAvailablePitch(desired, start, duration, track, low, high);
-}
-
-PitchResolutionResult HarmonyCoordinator::resolvePitchWithStrategy(uint8_t desired, Tick start,
-                                                                    Tick duration, TrackRole track,
-                                                                    uint8_t low,
-                                                                    uint8_t high) const {
-  return base_context_.resolvePitchWithStrategy(desired, start, duration, track, low, high);
-}
-
 Tick HarmonyCoordinator::getNextChordChangeTick(Tick after) const {
   return base_context_.getNextChordChangeTick(after);
 }

@@ -20,7 +20,6 @@ set(MIDISKETCH_CORE_SOURCES
   core/track_collision_detector.cpp
   core/safe_pitch_resolver.cpp
   core/track_registration_guard.cpp
-  core/note_factory.cpp
   core/motif.cpp
   core/motif_transform.cpp
   core/pitch_utils.cpp
@@ -40,7 +39,7 @@ set(MIDISKETCH_CORE_SOURCES
   core/emotion_curve.cpp
   core/swing_quantize.cpp
   core/pitch_bend_curves.cpp
-  core/pitch_safety_builder.cpp
+  core/note_creator.cpp
   core/note_timeline_utils.cpp
   midi/midi_writer.cpp
   track/track.cpp

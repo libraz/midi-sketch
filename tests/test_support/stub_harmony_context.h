@@ -62,17 +62,6 @@ class StubHarmonyContext : public IHarmonyCoordinator {
     return all_pitches_safe_;
   }
 
-  uint8_t getBestAvailablePitch(uint8_t desired, Tick /*start*/, Tick /*duration*/, TrackRole /*track*/,
-                       uint8_t /*low*/, uint8_t /*high*/) const override {
-    return desired;  // Always return the desired pitch
-  }
-
-  PitchResolutionResult resolvePitchWithStrategy(uint8_t desired, Tick /*start*/, Tick /*duration*/,
-                                                  TrackRole /*track*/, uint8_t /*low*/,
-                                                  uint8_t /*high*/) const override {
-    return {desired, CollisionAvoidStrategy::None};  // Stub: always safe
-  }
-
   Tick getNextChordChangeTick(Tick /*after*/) const override { return next_chord_change_; }
 
   void clearNotes() override {

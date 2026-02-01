@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "core/midi_track.h"
-#include "core/note_factory.h"  // for NoteSource enum
+#include "core/note_source.h"
 #include "core/section_types.h"
 #include "core/types.h"
 #include "test_support/stub_harmony_context.h"

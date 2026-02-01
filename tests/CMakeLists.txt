@@ -64,6 +64,7 @@ set(TEST_SOURCES
   core/genre_expansion_test.cpp
   core/section_modifier_test.cpp
   core/coordinator_test.cpp
+  core/note_creator_test.cpp
   midi/midi_writer_smf1_test.cpp
   midi/cc_event_test.cpp
   midi/midi_reader_test.cpp

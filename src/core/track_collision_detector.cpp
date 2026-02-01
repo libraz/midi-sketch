@@ -42,6 +42,9 @@ bool TrackCollisionDetector::isPitchSafe(uint8_t pitch, Tick start, Tick duratio
   for (const auto& note : notes_) {
     if (note.track == exclude) continue;
 
+    // Skip drums - they are non-harmonic and should not cause pitch collisions
+    if (note.track == TrackRole::Drums) continue;
+
     // Check if notes overlap in time
     if (note.start < end && note.end > start) {
       int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
@@ -95,6 +98,9 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(uint8_t pitch, Tick start
 
   for (const auto& note : notes_) {
     if (note.track == exclude) continue;
+
+    // Skip drums - they are non-harmonic and should not cause pitch collisions
+    if (note.track == TrackRole::Drums) continue;
 
     // Check if notes overlap in time
     if (note.start < end && note.end > start) {

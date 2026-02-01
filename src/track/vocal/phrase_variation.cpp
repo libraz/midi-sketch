@@ -77,6 +77,7 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes, PhraseVariation variati
       // Record original pitch before variation modification
       if (old_pitch != last.note) {
         last.prov_original_pitch = old_pitch;
+        last.addTransformStep(TransformStepType::ScaleSnap, old_pitch, last.note, 0, 0);
       }
 #endif
       break;

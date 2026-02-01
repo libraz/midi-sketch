@@ -8,7 +8,7 @@
 #include <algorithm>
 
 #include "core/chord_utils.h"
-#include "core/note_factory.h"
+#include "core/note_creator.h"
 #include "core/pitch_utils.h"
 
 namespace midisketch {
@@ -403,14 +403,12 @@ std::vector<NoteEvent> placeMotifInBridge(const Motif& motif, Tick section_start
 
     // Step 2: Check for collisions and find safe pitch if needed
     uint8_t final_pitch = static_cast<uint8_t>(snapped);
-    if (!harmony.isPitchSafe(final_pitch, note.start_tick, note.duration, track)) {
-      final_pitch =
-          harmony.getBestAvailablePitch(final_pitch, note.start_tick, note.duration, track, 36, 96);
-      // If still not safe after exhaustive search, skip this note
-      if (!harmony.isPitchSafe(final_pitch, note.start_tick, note.duration, track)) {
-        continue;
-      }
+    auto candidates = getSafePitchCandidates(harmony, final_pitch, note.start_tick, note.duration,
+                                              track, 36, 96);
+    if (candidates.empty()) {
+      continue;  // No safe pitch available
     }
+    final_pitch = candidates[0].pitch;
 
     note.note = final_pitch;
     safe_notes.push_back(note);
@@ -481,28 +479,27 @@ std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_
 
       // Check for collisions and find safe pitch if needed
       uint8_t final_pitch = static_cast<uint8_t>(snapped);
-      if (!harmony.isPitchSafe(final_pitch, note_start, duration, track)) {
-        final_pitch = harmony.getBestAvailablePitch(final_pitch, note_start, duration, track, 36, 96);
-        // If still not safe after exhaustive search, skip this note
-        if (!harmony.isPitchSafe(final_pitch, note_start, duration, track)) {
-          continue;
-        }
+      auto candidates = getSafePitchCandidates(harmony, final_pitch, note_start, duration,
+                                                track, 36, 96);
+      if (candidates.empty()) {
+        continue;  // No safe pitch available
       }
+      final_pitch = candidates[0].pitch;
 
-      // Use NoteFactory for provenance tracking
-      NoteFactory factory(harmony);
-
-      // Primary note
-      result.push_back(factory.create(note_start, duration, final_pitch, enhanced_velocity,
-                                      NoteSource::Motif));
+      // Primary note with provenance
+      auto primary_note = createNoteWithoutHarmony(note_start, duration, final_pitch, enhanced_velocity);
+      primary_note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
+      result.push_back(primary_note);
 
       // Octave doubling for climactic impact - only add if within range AND safe
       int octave_pitch = final_pitch + 12;
       if (octave_pitch <= 108 && harmony.isPitchSafe(static_cast<uint8_t>(octave_pitch), note_start,
                                                      duration, track)) {
-        result.push_back(factory.create(note_start, duration, static_cast<uint8_t>(octave_pitch),
-                                        static_cast<uint8_t>(enhanced_velocity * 0.85f),
-                                        NoteSource::Motif));
+        auto octave_note = createNoteWithoutHarmony(note_start, duration,
+                                                    static_cast<uint8_t>(octave_pitch),
+                                                    static_cast<uint8_t>(enhanced_velocity * 0.85f));
+        octave_note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
+        result.push_back(octave_note);
       }
     }
 

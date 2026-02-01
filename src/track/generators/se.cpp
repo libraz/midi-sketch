@@ -8,7 +8,7 @@
 
 #include "track/generators/se.h"
 
-#include "core/note_factory.h"
+#include "core/note_source.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
 

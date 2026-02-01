@@ -62,13 +62,6 @@ class HarmonyContext : public IHarmonyContext {
   CollisionInfo getCollisionInfo(uint8_t pitch, Tick start, Tick duration,
                                  TrackRole exclude) const override;
 
-  uint8_t getBestAvailablePitch(uint8_t desired, Tick start, Tick duration, TrackRole track,
-                                uint8_t low, uint8_t high) const override;
-
-  PitchResolutionResult resolvePitchWithStrategy(uint8_t desired, Tick start, Tick duration,
-                                                  TrackRole track, uint8_t low,
-                                                  uint8_t high) const override;
-
   Tick getNextChordChangeTick(Tick after) const override;
 
   void clearNotes() override;

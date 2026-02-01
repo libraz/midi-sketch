@@ -265,10 +265,10 @@ class AuxGenerator : public TrackBase {
   bool isPitchSafe(uint8_t pitch, Tick start, Tick duration,
                    const std::vector<NoteEvent>* main_melody, const IHarmonyContext& harmony,
                    float dissonance_tolerance = 0.0f);
-  uint8_t getBestAvailablePitch(uint8_t desired, Tick start, Tick duration,
-                       const std::vector<NoteEvent>* main_melody, const IHarmonyContext& harmony,
-                       uint8_t low, uint8_t high, int8_t chord_degree,
-                       float dissonance_tolerance = 0.0f);
+  uint8_t resolveAuxPitch(uint8_t desired, Tick start, Tick duration,
+                          const std::vector<NoteEvent>* main_melody, const IHarmonyContext& harmony,
+                          uint8_t low, uint8_t high, int8_t chord_degree,
+                          float dissonance_tolerance = 0.0f);
   std::vector<Tick> findBreathPointsInRange(const std::vector<PhraseBoundary>* boundaries,
                                             Tick start, Tick end);
 

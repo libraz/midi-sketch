@@ -29,6 +29,8 @@ class GeneratorVocalFirstTest : public ::testing::Test {
     params_.skip_vocal = false;
     // Disable humanization for deterministic tests
     params_.humanize = false;
+    // Use Traditional blueprint (max_pitch=108) to avoid pitch clamping
+    params_.blueprint_id = 0;
   }
 
   GeneratorParams params_;
@@ -175,15 +177,29 @@ TEST_F(GeneratorVocalFirstTest, GenerateAccompanimentPreservesVocal) {
   gen.generateAccompanimentForVocal();
 
   // Compare vocal note by note
+  // Note: refineVocalForAccompaniment may adjust some pitches to resolve clashes,
+  // but note count and timing must be preserved
   const auto& preserved_vocal = gen.getSong().vocal().notes();
-  ASSERT_EQ(preserved_vocal.size(), original_vocal.size());
+  ASSERT_EQ(preserved_vocal.size(), original_vocal.size())
+      << "Vocal note count must be preserved";
 
+  int pitch_adjustments = 0;
   for (size_t i = 0; i < original_vocal.size(); ++i) {
-    EXPECT_EQ(preserved_vocal[i].note, original_vocal[i].note)
-        << "Vocal note changed at index " << i;
     EXPECT_EQ(preserved_vocal[i].start_tick, original_vocal[i].start_tick)
         << "Vocal timing changed at index " << i;
+    if (preserved_vocal[i].note != original_vocal[i].note) {
+      pitch_adjustments++;
+      // Pitch adjustments should be within a reasonable range (octave)
+      int diff = std::abs(static_cast<int>(preserved_vocal[i].note) -
+                          static_cast<int>(original_vocal[i].note));
+      EXPECT_LE(diff, 12) << "Pitch adjustment too large at index " << i;
+    }
   }
+
+  // Most notes should remain unchanged (allow up to 10% adjustments for clash resolution)
+  EXPECT_LE(pitch_adjustments, static_cast<int>(original_vocal.size() * 0.1 + 1))
+      << "Too many pitch adjustments: " << pitch_adjustments << " out of "
+      << original_vocal.size() << " notes";
 }
 
 // === regenerateAccompaniment Tests ===

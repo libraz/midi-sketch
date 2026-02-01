@@ -20,7 +20,6 @@ class Song;
 /// @brief Arpeggio track generator implementing ITrackBase interface.
 ///
 /// Generates arpeggio patterns following chord progressions.
-/// Uses TrackBase::createSafeNoteDeferred() for collision-safe note creation.
 class ArpeggioGenerator : public TrackBase {
  public:
   ArpeggioGenerator() = default;
