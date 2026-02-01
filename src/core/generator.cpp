@@ -269,13 +269,12 @@ void Generator::generateFromConfig(const SongConfig& config) {
   generate(params);
 }
 
-void Generator::generate(const GeneratorParams& params) {
-  params_ = params;
-  warnings_.clear();  // Reset warnings for new generation
+uint16_t Generator::initializeGenerationState() {
+  warnings_.clear();
   validateVocalRange();
 
   // Initialize seed
-  uint32_t seed = resolveSeed(params.seed);
+  uint32_t seed = resolveSeed(params_.seed);
   rng_.seed(seed);
   song_.setMelodySeed(seed);
   song_.setMotifSeed(seed);
@@ -286,14 +285,12 @@ void Generator::generate(const GeneratorParams& params) {
   configureAddictiveMotif();
 
   // Resolve BPM
-  uint16_t bpm = params.bpm;
+  uint16_t bpm = params_.bpm;
   if (bpm == 0) {
-    bpm = getMoodDefaultBpm(params.mood);
+    bpm = getMoodDefaultBpm(params_.mood);
   }
 
   // BPM validation for Orangestar style
-  // Orangestar works best at 160-175 BPM (half-time feel 80-88)
-  // Outside this range, the "addictive clock" effect is diminished
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
     constexpr uint16_t kOrangestarBpmMin = 160;
     constexpr uint16_t kOrangestarBpmMax = 175;
@@ -315,55 +312,48 @@ void Generator::generate(const GeneratorParams& params) {
   std::vector<Section> sections = buildSongStructure(bpm);
 
   // Apply density progression for Orangestar style
-  // "Peak is a temporal event" - density increases over time
   applyDensityProgressionToSections(sections, params_.paradigm);
 
   // Apply default layer scheduling for staggered track entrances/exits
   applyDefaultLayerSchedule(sections);
 
   song_.setArrangement(Arrangement(sections));
-
-  // Clear all tracks
   song_.clearAll();
 
   // Plan emotion curve for song-wide coherence
-  emotion_curve_.plan(sections, params.mood);
+  emotion_curve_.plan(sections, params_.mood);
 
   // Apply emotion curve fill hints to sections
-  // EmotionCurve's use_fill suggests drum fills at section transitions
   if (emotion_curve_.isPlanned()) {
     bool sections_updated = false;
     for (size_t i = 0; i + 1 < sections.size(); ++i) {
       auto hint = emotion_curve_.getTransitionHint(i);
-      // If emotion curve suggests a fill and section doesn't already have one,
-      // enable fill_before on the next section
       if (hint.use_fill && !sections[i + 1].fill_before) {
         sections[i + 1].fill_before = true;
         sections_updated = true;
       }
     }
-    // Update arrangement if any sections were modified
     if (sections_updated) {
       song_.setArrangement(Arrangement(sections));
     }
   }
 
-  // Initialize harmony context for coordinated track generation
-  const auto& progression = getChordProgression(params.chord_id);
-  harmony_context_->initialize(song_.arrangement(), progression, params.mood);
+  // Initialize harmony context
+  const auto& progression = getChordProgression(params_.chord_id);
+  harmony_context_->initialize(song_.arrangement(), progression, params_.mood);
 
   // Calculate modulation for all composition styles
   calculateModulation();
 
   // Pre-compute drum grid for RhythmSync paradigm
-  // This sets up the 16th note grid BEFORE vocal generation
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
     computeDrumGrid();
   }
 
-  // =========================================================================
-  // Generate all tracks via Coordinator
-  // =========================================================================
+  return bpm;
+}
+
+void Generator::generateAllTracksViaCoordinator() {
   // Sync internal state to params for Coordinator
   params_.se_enabled = se_enabled_;
   params_.call_enabled = call_enabled_;
@@ -372,24 +362,22 @@ void Generator::generate(const GeneratorParams& params) {
   params_.mix_pattern = mix_pattern_;
   params_.call_density = call_density_;
 
-  // Initialize Coordinator with external dependencies (shared harmony context, RNG)
-  // This allows Coordinator to use Generator's prepared state
+  // Initialize Coordinator with external dependencies
   coordinator_->initialize(params_, song_.arrangement(), rng_, harmony_context_.get());
 
   // Generate all tracks in paradigm-determined order
-  // - RhythmSync:   Motif → Vocal → Aux → Bass → Chord → Arpeggio → Drums → SE
-  // - MelodyDriven: Vocal → Aux → Bass → Chord → Motif → Arpeggio → Drums → SE
-  // - Traditional:  Vocal → Aux → Motif → Bass → Chord → Arpeggio → Drums → SE
   coordinator_->generateAllTracks(song_);
 
   // BGM-only mode: resolve any chord-arpeggio clashes
-  bool auto_enable_arpeggio = (params.composition_style == CompositionStyle::SynthDriven);
-  if ((params.arpeggio_enabled || auto_enable_arpeggio) &&
-      (params.composition_style == CompositionStyle::BackgroundMotif ||
-       params.composition_style == CompositionStyle::SynthDriven)) {
+  bool auto_enable_arpeggio = (params_.composition_style == CompositionStyle::SynthDriven);
+  if ((params_.arpeggio_enabled || auto_enable_arpeggio) &&
+      (params_.composition_style == CompositionStyle::BackgroundMotif ||
+       params_.composition_style == CompositionStyle::SynthDriven)) {
     resolveArpeggioChordClashes();
   }
+}
 
+void Generator::applyPostProcessingEffects() {
   // Apply staggered entry for intro sections
   applyStaggeredEntryToSections();
 
@@ -403,16 +391,25 @@ void Generator::generate(const GeneratorParams& params) {
   generateExpressionCurves();
 
   // Apply humanization if enabled
-  if (params.humanize) {
+  if (params_.humanize) {
     applyHumanization();
   }
 
   // Final cleanup: fix any remaining vocal overlaps
-  // Overlaps can occur from:
-  // - applyHookIntensity() extending notes
-  // - Post-processing effects
-  // - Edge cases in groove application
   PostProcessor::fixVocalOverlaps(song_.vocal());
+}
+
+void Generator::generate(const GeneratorParams& params) {
+  params_ = params;
+
+  // Phase 1: Initialize all state
+  initializeGenerationState();
+
+  // Phase 2: Generate all tracks
+  generateAllTracksViaCoordinator();
+
+  // Phase 3: Apply post-processing
+  applyPostProcessingEffects();
 }
 
 // ============================================================================
@@ -1512,6 +1509,32 @@ void Generator::applyStaggeredEntryToSections() {
 // Layer Schedule Methods
 // ============================================================================
 
+namespace {
+
+/// @brief Check if a note should be removed based on layer schedule.
+/// @param note Note to check
+/// @param section_start Start tick of the section
+/// @param section_end End tick of the section
+/// @param layer_events Layer events for the section
+/// @param track_mask Track mask for the current track
+/// @return true if the note should be removed (track inactive at this bar)
+bool shouldRemoveNoteForLayerSchedule(const NoteEvent& note, Tick section_start, Tick section_end,
+                                       const std::vector<LayerEvent>& layer_events,
+                                       TrackMask track_mask) {
+  // Only process notes within this section
+  if (note.start_tick < section_start || note.start_tick >= section_end) {
+    return false;
+  }
+
+  // Calculate which bar this note falls in (0-based)
+  uint8_t bar_offset = static_cast<uint8_t>((note.start_tick - section_start) / TICKS_PER_BAR);
+
+  // Check if this track is active at this bar
+  return !isTrackActiveAtBar(layer_events, bar_offset, track_mask);
+}
+
+}  // namespace
+
 void Generator::applyLayerSchedule() {
   const auto& sections = song_.arrangement().sections();
 
@@ -1542,24 +1565,13 @@ void Generator::applyLayerSchedule() {
     for (auto& mapping : track_map) {
       auto& notes = mapping.track->notes();
 
-      notes.erase(
-          std::remove_if(notes.begin(), notes.end(),
-                         [&](const NoteEvent& note) {
-                           // Only process notes within this section
-                           if (note.start_tick < section_start ||
-                               note.start_tick >= section_end) {
-                             return false;
-                           }
-
-                           // Calculate which bar this note falls in (0-based)
-                           uint8_t bar_offset = static_cast<uint8_t>(
-                               (note.start_tick - section_start) / TICKS_PER_BAR);
-
-                           // Check if this track is active at this bar
-                           return !isTrackActiveAtBar(
-                               section.layer_events, bar_offset, mapping.mask);
-                         }),
-          notes.end());
+      notes.erase(std::remove_if(notes.begin(), notes.end(),
+                                  [&](const NoteEvent& note) {
+                                    return shouldRemoveNoteForLayerSchedule(
+                                        note, section_start, section_end, section.layer_events,
+                                        mapping.mask);
+                                  }),
+                  notes.end());
     }
   }
 }

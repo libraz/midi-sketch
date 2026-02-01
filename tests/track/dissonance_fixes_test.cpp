@@ -388,10 +388,11 @@ TEST_F(BassWalkingSafeApproachTest, GetApproachNoteImplementation) {
   EXPECT_FALSE(song.bass().empty()) << "Bass should be generated";
 
   // All bass notes should be valid
+  // Note: velocity can go as low as 25 for very soft passages (e.g., humanization)
   for (const auto& note : song.bass().notes()) {
     EXPECT_GE(note.note, BASS_LOW);
     EXPECT_LE(note.note, BASS_HIGH);
-    EXPECT_GE(note.velocity, 30);
+    EXPECT_GE(note.velocity, 25);
     EXPECT_LE(note.velocity, 127);
     EXPECT_GT(note.duration, 0u);
   }

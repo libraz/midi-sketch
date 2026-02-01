@@ -275,6 +275,16 @@ class AuxGenerator : public TrackBase {
   /// Post-process notes: resolve chord crossings, fix bass clashes.
   void postProcessNotes(std::vector<NoteEvent>& notes, IHarmonyContext& harmony);
 
+  /// First pass: resolve notes that sustain over chord changes.
+  /// Handles anticipation, note splitting, or pitch adjustment at chord boundaries.
+  void resolveNotesOverChordBoundary(std::vector<NoteEvent>& notes,
+                                     std::vector<NoteEvent>& notes_to_add,
+                                     IHarmonyContext& harmony);
+
+  /// Second pass: fix remaining clashes with other harmonic tracks.
+  /// Finds safe pitch alternatives for notes that clash with Bass, Chord, etc.
+  void resolvePitchClashes(std::vector<NoteEvent>& notes, IHarmonyContext& harmony);
+
   std::unordered_map<AuxCacheKey, CachedAuxPhrase, AuxCacheKeyHash> phrase_cache_;
   std::optional<Motif> cached_chorus_motif_;  ///< Chorus motif for intro placement
 };

@@ -44,6 +44,230 @@ constexpr uint8_t kVocalRangeFloor = 48;             // C3 - absolute minimum fo
 constexpr uint8_t kVocalRangeCeiling = 96;           // C7 - absolute maximum for vocal
 
 // ============================================================================
+// VocalRangeResult: Calculated effective vocal range
+// ============================================================================
+
+/// @brief Result of vocal range calculation.
+struct VocalRangeResult {
+  uint8_t effective_low;   ///< Effective lower bound of vocal range
+  uint8_t effective_high;  ///< Effective upper bound of vocal range
+  float velocity_scale;    ///< Velocity scaling factor for composition style
+};
+
+/// @brief Calculate effective vocal range considering constraints.
+/// @param params Generation parameters
+/// @param song Song with modulation info
+/// @param motif_track Optional motif track for range separation
+/// @return Calculated vocal range
+VocalRangeResult calculateEffectiveVocalRange(const GeneratorParams& params, const Song& song,
+                                               const MidiTrack* motif_track) {
+  VocalRangeResult result;
+  result.effective_low = params.vocal_low;
+  result.effective_high = params.vocal_high;
+  result.velocity_scale = 1.0f;
+
+  // Apply blueprint max_pitch constraint (e.g., IdolKawaii limits to G5=79)
+  if (params.blueprint_ref != nullptr) {
+    const auto& constraints = params.blueprint_ref->constraints;
+    if (constraints.max_pitch < result.effective_high) {
+      result.effective_high = constraints.max_pitch;
+    }
+  }
+
+  // Adjust vocal_high to account for modulation
+  int8_t mod_amount = song.modulationAmount();
+  if (mod_amount > 0) {
+    int adjusted_high = static_cast<int>(result.effective_high) - mod_amount;
+    int min_high = static_cast<int>(result.effective_low) + 12;  // At least 1 octave
+    result.effective_high = static_cast<uint8_t>(std::max(min_high, adjusted_high));
+  }
+
+  // Adjust range for BackgroundMotif to avoid collision with motif
+  if (params.composition_style == CompositionStyle::BackgroundMotif && motif_track != nullptr &&
+      !motif_track->empty()) {
+    auto [motif_low, motif_high] = motif_track->analyzeRange();
+
+    if (motif_high > kMotifHighRegisterThreshold) {  // Motif in high register
+      result.effective_high = std::min(result.effective_high, kVocalAvoidHighLimit);
+      if (result.effective_high - result.effective_low < kMinVocalOctaveRange) {
+        result.effective_low = std::max(
+            kVocalRangeFloor, static_cast<uint8_t>(result.effective_high - kMinVocalOctaveRange));
+      }
+    } else if (motif_low < kMotifLowRegisterThreshold) {  // Motif in low register
+      result.effective_low = std::max(result.effective_low, kVocalAvoidLowLimit);
+      if (result.effective_high - result.effective_low < kMinVocalOctaveRange) {
+        result.effective_high = std::min(
+            kVocalRangeCeiling, static_cast<uint8_t>(result.effective_low + kMinVocalOctaveRange));
+      }
+    }
+  }
+
+  // Calculate velocity scale for composition style
+  if (params.composition_style == CompositionStyle::BackgroundMotif) {
+    result.velocity_scale = (params.motif_vocal.prominence == VocalProminence::Foreground)
+                                ? 0.85f
+                                : 0.65f;
+  } else if (params.composition_style == CompositionStyle::SynthDriven) {
+    result.velocity_scale = 0.75f;
+  }
+
+  return result;
+}
+
+// ============================================================================
+// VocalPostProcessor: Post-processing helpers
+// ============================================================================
+
+/// @brief Apply pitch enforcement and interval fixes to vocal notes.
+/// @param all_notes All generated notes
+/// @param params Generation parameters
+/// @param harmony Harmony context for chord lookups
+void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes, const GeneratorParams& params,
+                                   IHarmonyContext& harmony) {
+  // FINAL INTERVAL ENFORCEMENT: Ensure no consecutive notes exceed kMaxMelodicInterval
+  for (size_t i = 1; i < all_notes.size(); ++i) {
+    int prev_pitch = all_notes[i - 1].note;
+    int curr_pitch = all_notes[i].note;
+    int interval = std::abs(curr_pitch - prev_pitch);
+    if (interval > kMaxMelodicInterval) {
+      int8_t chord_degree = harmony.getChordDegreeAt(all_notes[i].start_tick);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      uint8_t old_pitch = all_notes[i].note;
+#endif
+      int fixed_pitch =
+          nearestChordToneWithinInterval(curr_pitch, prev_pitch, chord_degree, kMaxMelodicInterval,
+                                         params.vocal_low, params.vocal_high, nullptr);
+      all_notes[i].note = static_cast<uint8_t>(fixed_pitch);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      if (old_pitch != all_notes[i].note) {
+        all_notes[i].prov_original_pitch = old_pitch;
+        all_notes[i].addTransformStep(TransformStepType::IntervalFix, old_pitch, all_notes[i].note,
+                                       0, 0);
+      }
+#endif
+    }
+  }
+
+  // FINAL SCALE ENFORCEMENT: Ensure all notes are diatonic
+  for (auto& note : all_notes) {
+    int snapped = snapToNearestScaleTone(note.note, 0);  // Always C major internally
+    if (snapped != note.note) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      uint8_t old_pitch = note.note;
+#endif
+      note.note = static_cast<uint8_t>(std::clamp(snapped, static_cast<int>(params.vocal_low),
+                                                   static_cast<int>(params.vocal_high)));
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      if (old_pitch != note.note) {
+        note.prov_original_pitch = old_pitch;
+        note.addTransformStep(TransformStepType::ScaleSnap, old_pitch, note.note, 0, 0);
+      }
+#endif
+    }
+  }
+}
+
+/// @brief Apply pitch bend expressions to vocal track.
+/// @param track Track to add pitch bends to
+/// @param all_notes All notes for pitch bend application
+/// @param params Generation parameters
+/// @param rng Random number generator
+void applyVocalPitchBendExpressions(MidiTrack& track, const std::vector<NoteEvent>& all_notes,
+                                     const GeneratorParams& params, std::mt19937& rng) {
+  VocalPhysicsParams physics = getVocalPhysicsParams(params.vocal_style);
+
+  // Skip pitch bend entirely if scale is 0 (UltraVocaloid)
+  if (params.vocal_attitude < VocalAttitude::Expressive || physics.pitch_bend_scale <= 0.0f) {
+    return;
+  }
+
+  std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
+  constexpr Tick kPhraseGapThreshold = TICKS_PER_BEAT;
+
+  for (size_t note_idx = 0; note_idx < all_notes.size(); ++note_idx) {
+    const auto& note = all_notes[note_idx];
+
+    // Determine if this is a phrase start
+    bool is_phrase_start = (note_idx == 0);
+    if (note_idx > 0) {
+      Tick prev_note_end = all_notes[note_idx - 1].start_tick + all_notes[note_idx - 1].duration;
+      if (note.start_tick - prev_note_end >= kPhraseGapThreshold) {
+        is_phrase_start = true;
+      }
+    }
+
+    // Determine if this is a phrase end
+    bool is_phrase_end = (note_idx == all_notes.size() - 1);
+    if (note_idx + 1 < all_notes.size()) {
+      Tick next_note_start = all_notes[note_idx + 1].start_tick;
+      Tick this_note_end = note.start_tick + note.duration;
+      if (next_note_start - this_note_end >= kPhraseGapThreshold) {
+        is_phrase_end = true;
+      }
+    }
+
+    // Scoop and fall probability based on attitude
+    float scoop_prob = (params.vocal_attitude == VocalAttitude::Raw) ? 0.8f : 0.5f;
+    float fall_prob = (params.vocal_attitude == VocalAttitude::Raw) ? 0.7f : 0.4f;
+    scoop_prob *= physics.pitch_bend_scale;
+    fall_prob *= physics.pitch_bend_scale;
+
+    // Apply attack bend (scoop-up) at phrase starts
+    if (is_phrase_start && note.duration >= TICK_EIGHTH && prob_dist(rng) < scoop_prob) {
+      int base_depth = (params.vocal_attitude == VocalAttitude::Raw) ? -40 : -25;
+      int depth = static_cast<int>(base_depth * physics.pitch_bend_scale);
+      if (depth != 0) {
+        auto bends = PitchBendCurves::generateAttackBend(note.start_tick, depth, TICK_SIXTEENTH);
+        for (const auto& bend : bends) {
+          track.addPitchBend(bend.tick, bend.value);
+        }
+      }
+    }
+
+    // Apply fall-off at phrase ends
+    if (is_phrase_end && note.duration >= TICK_HALF && prob_dist(rng) < fall_prob) {
+      int base_depth = (params.vocal_attitude == VocalAttitude::Raw) ? -100 : -60;
+      int depth = static_cast<int>(base_depth * physics.pitch_bend_scale);
+      if (depth != 0) {
+        Tick note_end = note.start_tick + note.duration;
+        auto bends = PitchBendCurves::generateFallOff(note_end, depth, TICK_EIGHTH);
+        for (const auto& bend : bends) {
+          track.addPitchBend(bend.tick, bend.value);
+        }
+        track.addPitchBend(note_end + TICK_SIXTEENTH, PitchBend::kCenter);
+      }
+    }
+
+    // Apply vibrato to sustained notes
+    constexpr Tick kVibratoMinDuration = TICKS_PER_BEAT / 2;
+    constexpr Tick kVibratoDelay = TICKS_PER_BEAT / 4;
+    if (note.duration >= kVibratoMinDuration && !is_phrase_end) {
+      float vibrato_prob = (params.vocal_attitude == VocalAttitude::Raw) ? 0.7f : 0.5f;
+      vibrato_prob *= physics.pitch_bend_scale;
+
+      if (prob_dist(rng) < vibrato_prob) {
+        int base_vibrato_depth = (params.vocal_attitude == VocalAttitude::Raw) ? 25 : 15;
+        int vibrato_depth = static_cast<int>(base_vibrato_depth * physics.pitch_bend_scale);
+        float vibrato_rate = (params.vocal_attitude == VocalAttitude::Raw) ? 5.0f : 5.5f;
+
+        if (vibrato_depth > 0) {
+          Tick vibrato_start = note.start_tick + kVibratoDelay;
+          Tick vibrato_duration = note.duration - kVibratoDelay;
+
+          if (vibrato_duration >= TICKS_PER_BEAT / 4) {
+            auto vibrato_bends = PitchBendCurves::generateVibrato(
+                vibrato_start, vibrato_duration, vibrato_depth, vibrato_rate, params.bpm);
+            for (const auto& bend : vibrato_bends) {
+              track.addPitchBend(bend.tick, bend.value);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// ============================================================================
 // Rhythm Lock Support
 // ============================================================================
 
@@ -157,7 +381,7 @@ void VocalGenerator::generateSection(MidiTrack& /* track */, const Section& /* s
 }
 
 void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
-  if (!ctx.song || !ctx.params || !ctx.rng || !ctx.harmony) {
+  if (!ctx.isValid()) {
     return;
   }
 
@@ -168,67 +392,14 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
   const DrumGrid* drum_grid = static_cast<const DrumGrid*>(ctx.drum_grid);
   bool skip_collision_avoidance = ctx.skip_collision_avoidance;
 
-  // Determine effective vocal range
-  uint8_t effective_vocal_low = params.vocal_low;
-  uint8_t effective_vocal_high = params.vocal_high;
-
-  // Apply blueprint max_pitch constraint (e.g., IdolKawaii limits to G5=79)
-  if (params.blueprint_ref != nullptr) {
-    const auto& constraints = params.blueprint_ref->constraints;
-    if (constraints.max_pitch < effective_vocal_high) {
-      effective_vocal_high = constraints.max_pitch;
-    }
-  }
-
-  // Adjust vocal_high to account for modulation
-  // After modulation, notes will be transposed up by modulationAmount semitones.
-  // To ensure the final pitch stays within vocal_high, reduce effective_vocal_high.
-  // NOTE: Use effective_vocal_high (which already has blueprint constraint applied)
-  // to ensure modulation doesn't override blueprint limits.
-  int8_t mod_amount = song.modulationAmount();
-  if (mod_amount > 0) {
-    int adjusted_high = static_cast<int>(effective_vocal_high) - mod_amount;
-    // Ensure at least 1 octave (12 semitones) range remains
-    int min_high = static_cast<int>(effective_vocal_low) + 12;
-    effective_vocal_high = static_cast<uint8_t>(std::max(min_high, adjusted_high));
-  }
-
-  // Adjust range for BackgroundMotif to avoid collision with motif
-  if (params.composition_style == CompositionStyle::BackgroundMotif && motif_track_ != nullptr &&
-      !motif_track_->empty()) {
-    auto [motif_low, motif_high] = motif_track_->analyzeRange();
-
-    if (motif_high > kMotifHighRegisterThreshold) {  // Motif in high register
-      effective_vocal_high = std::min(effective_vocal_high, kVocalAvoidHighLimit);
-      if (effective_vocal_high - effective_vocal_low < kMinVocalOctaveRange) {
-        effective_vocal_low = std::max(
-            kVocalRangeFloor, static_cast<uint8_t>(effective_vocal_high - kMinVocalOctaveRange));
-      }
-    } else if (motif_low < kMotifLowRegisterThreshold) {  // Motif in low register
-      effective_vocal_low = std::max(effective_vocal_low, kVocalAvoidLowLimit);
-      if (effective_vocal_high - effective_vocal_low < kMinVocalOctaveRange) {
-        effective_vocal_high = std::min(
-            kVocalRangeCeiling, static_cast<uint8_t>(effective_vocal_low + kMinVocalOctaveRange));
-      }
-    }
-  }
+  // Calculate effective vocal range (extracted helper)
+  VocalRangeResult range = calculateEffectiveVocalRange(params, song, motif_track_);
+  uint8_t effective_vocal_low = range.effective_low;
+  uint8_t effective_vocal_high = range.effective_high;
+  float velocity_scale = range.velocity_scale;
 
   // Get chord progression
   const auto& progression = getChordProgression(params.chord_id);
-
-  // Velocity scale for composition style
-  // Use VocalProminence to determine suppression level for BackgroundMotif
-  float velocity_scale = 1.0f;
-  if (params.composition_style == CompositionStyle::BackgroundMotif) {
-    // VocalProminence controls how much the vocal is subdued
-    // Foreground: 0.85 (still prominent, just reduced)
-    // Background: 0.65 (blends with arrangement)
-    velocity_scale = (params.motif_vocal.prominence == VocalProminence::Foreground)
-                         ? 0.85f
-                         : 0.65f;
-  } else if (params.composition_style == CompositionStyle::SynthDriven) {
-    velocity_scale = 0.75f;
-  }
 
   // Create MelodyDesigner
   MelodyDesigner designer;
@@ -646,51 +817,8 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
   // Apply velocity scale
   applyVelocityBalance(all_notes, velocity_scale);
 
-  // FINAL INTERVAL ENFORCEMENT: Ensure no consecutive notes exceed kMaxMelodicInterval
-  // This catches any intervals that slipped through earlier processing
-  // kMaxMelodicInterval from pitch_utils.h (Major 6th)
-  for (size_t i = 1; i < all_notes.size(); ++i) {
-    int prev_pitch = all_notes[i - 1].note;
-    int curr_pitch = all_notes[i].note;
-    int interval = std::abs(curr_pitch - prev_pitch);
-    if (interval > kMaxMelodicInterval) {
-      // Use nearestChordToneWithinInterval to fix
-      int8_t chord_degree = harmony.getChordDegreeAt(all_notes[i].start_tick);
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-      uint8_t old_pitch = all_notes[i].note;
-#endif
-      int fixed_pitch =
-          nearestChordToneWithinInterval(curr_pitch, prev_pitch, chord_degree, kMaxMelodicInterval,
-                                         params.vocal_low, params.vocal_high, nullptr);
-      all_notes[i].note = static_cast<uint8_t>(fixed_pitch);
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-      if (old_pitch != all_notes[i].note) {
-        all_notes[i].prov_original_pitch = old_pitch;
-        all_notes[i].addTransformStep(TransformStepType::IntervalFix, old_pitch,
-                                       all_notes[i].note, 0, 0);
-      }
-#endif
-    }
-  }
-
-  // FINAL SCALE ENFORCEMENT: Ensure all notes are diatonic after interval fixing
-  // The interval enforcement may have introduced non-diatonic notes
-  for (auto& note : all_notes) {
-    int snapped = snapToNearestScaleTone(note.note, 0);  // Always C major internally
-    if (snapped != note.note) {
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-      uint8_t old_pitch = note.note;
-#endif
-      note.note = static_cast<uint8_t>(
-          std::clamp(snapped, static_cast<int>(params.vocal_low), static_cast<int>(params.vocal_high)));
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-      if (old_pitch != note.note) {
-        note.prov_original_pitch = old_pitch;
-        note.addTransformStep(TransformStepType::ScaleSnap, old_pitch, note.note, 0, 0);
-      }
-#endif
-    }
-  }
+  // Enforce pitch constraints (interval limits and scale enforcement)
+  enforceVocalPitchConstraints(all_notes, params, harmony);
 
   // Final overlap check - ensures no overlaps after all processing
   removeOverlaps(all_notes, min_note_duration);
@@ -702,114 +830,8 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
     track.addNote(note);
   }
 
-  // Apply pitch bend expressions based on vocal attitude and vocal physics
-  // Expressive and Raw attitudes get scoop-up and fall-off effects
-  // pitch_bend_scale from VocalPhysicsParams controls the depth
-  VocalPhysicsParams physics = getVocalPhysicsParams(params.vocal_style);
-
-  // Skip pitch bend entirely if scale is 0 (UltraVocaloid)
-  if (params.vocal_attitude >= VocalAttitude::Expressive && physics.pitch_bend_scale > 0.0f) {
-    std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
-
-    // Track phrase boundaries for determining phrase starts/ends
-    // Notes after a rest of 1 beat or more are considered phrase starts
-    constexpr Tick kPhraseGapThreshold = TICKS_PER_BEAT;
-
-    for (size_t note_idx = 0; note_idx < all_notes.size(); ++note_idx) {
-      const auto& note = all_notes[note_idx];
-
-      // Determine if this is a phrase start (first note or after significant gap)
-      bool is_phrase_start = (note_idx == 0);
-      if (note_idx > 0) {
-        Tick prev_note_end = all_notes[note_idx - 1].start_tick + all_notes[note_idx - 1].duration;
-        if (note.start_tick - prev_note_end >= kPhraseGapThreshold) {
-          is_phrase_start = true;
-        }
-      }
-
-      // Determine if this is a phrase end (last note or before significant gap)
-      bool is_phrase_end = (note_idx == all_notes.size() - 1);
-      if (note_idx + 1 < all_notes.size()) {
-        Tick next_note_start = all_notes[note_idx + 1].start_tick;
-        Tick this_note_end = note.start_tick + note.duration;
-        if (next_note_start - this_note_end >= kPhraseGapThreshold) {
-          is_phrase_end = true;
-        }
-      }
-
-      // Scoop probability based on attitude (scaled by pitch_bend_scale)
-      float scoop_prob = (params.vocal_attitude == VocalAttitude::Raw) ? 0.8f : 0.5f;
-      float fall_prob = (params.vocal_attitude == VocalAttitude::Raw) ? 0.7f : 0.4f;
-      // Reduce probability for Vocaloid-style (partial physics)
-      scoop_prob *= physics.pitch_bend_scale;
-      fall_prob *= physics.pitch_bend_scale;
-
-      // Apply attack bend (scoop-up) at phrase starts
-      // Only on notes long enough to accommodate the bend
-      if (is_phrase_start && note.duration >= TICK_EIGHTH && prob_dist(rng) < scoop_prob) {
-        // Scoop depth varies by attitude (-20 to -40 cents), scaled by pitch_bend_scale
-        int base_depth = (params.vocal_attitude == VocalAttitude::Raw) ? -40 : -25;
-        int depth = static_cast<int>(base_depth * physics.pitch_bend_scale);
-        if (depth != 0) {
-          auto bends = PitchBendCurves::generateAttackBend(note.start_tick, depth, TICK_SIXTEENTH);
-          for (const auto& bend : bends) {
-            track.addPitchBend(bend.tick, bend.value);
-          }
-        }
-      }
-
-      // Apply fall-off at phrase ends on long notes
-      if (is_phrase_end && note.duration >= TICK_HALF && prob_dist(rng) < fall_prob) {
-        // Fall depth varies by attitude (-60 to -100 cents), scaled by pitch_bend_scale
-        int base_depth = (params.vocal_attitude == VocalAttitude::Raw) ? -100 : -60;
-        int depth = static_cast<int>(base_depth * physics.pitch_bend_scale);
-        if (depth != 0) {
-          Tick note_end = note.start_tick + note.duration;
-          auto bends = PitchBendCurves::generateFallOff(note_end, depth, TICK_EIGHTH);
-          for (const auto& bend : bends) {
-            track.addPitchBend(bend.tick, bend.value);
-          }
-          // Add reset bend after fall-off to prepare for next note
-          track.addPitchBend(note_end + TICK_SIXTEENTH, PitchBend::kCenter);
-        }
-      }
-
-      // Apply vibrato to sustained notes (>= half beat, excluding phrase ends with fall-off)
-      // Vibrato adds natural expressiveness to held notes
-      constexpr Tick kVibratoMinDuration = TICKS_PER_BEAT / 2;  // Half beat minimum
-      constexpr Tick kVibratoDelay = TICKS_PER_BEAT / 4;         // Quarter beat delay before vibrato
-      if (note.duration >= kVibratoMinDuration && !is_phrase_end) {
-        // Vibrato probability based on attitude and style
-        float vibrato_prob = (params.vocal_attitude == VocalAttitude::Raw) ? 0.7f : 0.5f;
-        vibrato_prob *= physics.pitch_bend_scale;
-
-        if (prob_dist(rng) < vibrato_prob) {
-          // Vibrato depth: 15-25 cents based on attitude, scaled by physics
-          int base_vibrato_depth =
-              (params.vocal_attitude == VocalAttitude::Raw) ? 25 : 15;
-          int vibrato_depth = static_cast<int>(base_vibrato_depth * physics.pitch_bend_scale);
-
-          // Vibrato rate: 5.0-6.0 Hz (natural vocal vibrato range)
-          float vibrato_rate = (params.vocal_attitude == VocalAttitude::Raw) ? 5.0f : 5.5f;
-
-          if (vibrato_depth > 0) {
-            // Start vibrato after initial attack (delay from note start)
-            Tick vibrato_start = note.start_tick + kVibratoDelay;
-            Tick vibrato_duration = note.duration - kVibratoDelay;
-
-            // Only apply if remaining duration is meaningful
-            if (vibrato_duration >= TICKS_PER_BEAT / 4) {
-              auto vibrato_bends = PitchBendCurves::generateVibrato(
-                  vibrato_start, vibrato_duration, vibrato_depth, vibrato_rate, params.bpm);
-              for (const auto& bend : vibrato_bends) {
-                track.addPitchBend(bend.tick, bend.value);
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+  // Apply pitch bend expressions (scoop-up, fall-off, vibrato)
+  applyVocalPitchBendExpressions(track, all_notes, params, rng);
 }
 
 }  // namespace midisketch

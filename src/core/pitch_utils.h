@@ -128,6 +128,33 @@ constexpr uint8_t PASSAGGIO_HIGH = 71;  ///< B4 - Upper bound of passaggio zone
 /// Major scale intervals from tonic: 0,2,4,5,7,9,11 (W-W-H-W-W-W-H).
 constexpr int SCALE[7] = {0, 2, 4, 5, 7, 9, 11};
 
+/// Set of diatonic pitch classes (C major scale).
+/// Used for quick lookup: 0(C), 2(D), 4(E), 5(F), 7(G), 9(A), 11(B).
+constexpr bool DIATONIC_PITCH_CLASS[12] = {
+    true,   // 0: C
+    false,  // 1: C#
+    true,   // 2: D
+    false,  // 3: D#
+    true,   // 4: E
+    true,   // 5: F
+    false,  // 6: F#
+    true,   // 7: G
+    false,  // 8: G#
+    true,   // 9: A
+    false,  // 10: A#
+    true    // 11: B
+};
+
+/**
+ * @brief Check if a pitch is on the diatonic (C major) scale.
+ * @param pitch MIDI pitch to check (any octave)
+ * @return true if pitch class is C, D, E, F, G, A, or B
+ */
+inline bool isDiatonic(int pitch) {
+  int pitch_class = ((pitch % 12) + 12) % 12;
+  return DIATONIC_PITCH_CLASS[pitch_class];
+}
+
 // ============================================================================
 // Interval Constants
 // ============================================================================

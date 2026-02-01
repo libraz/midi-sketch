@@ -169,6 +169,12 @@ struct FullTrackContext {
   uint8_t intro_chant = 0;   // IntroChant enum value
   uint8_t mix_pattern = 0;   // MixPattern enum value
   uint8_t call_density = 0;  // CallDensity enum value
+
+  /// @brief Check if all required pointers are valid.
+  /// @return true if song, params, rng, and harmony are all non-null.
+  bool isValid() const noexcept {
+    return song != nullptr && params != nullptr && rng != nullptr && harmony != nullptr;
+  }
 };
 
 /// @brief Base interface for all track generators.

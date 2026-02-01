@@ -195,8 +195,97 @@ void ArpeggioGenerator::generateSection(MidiTrack& /* track */, const Section& /
   // This method is kept for ITrackBase compliance but not used directly.
 }
 
+// ============================================================================
+// Arpeggio Generation Helpers
+// ============================================================================
+
+namespace {
+
+/// @brief Parameters for arpeggio section generation.
+struct ArpeggioSectionParams {
+  ArpeggioSpeed speed;       ///< Note speed for this section
+  float gate;                ///< Gate ratio
+  uint8_t octave_range;      ///< Octave range for chord notes
+  int base_octave;           ///< Base octave for arpeggio
+  uint8_t effective_density; ///< Effective density after modifiers
+  float swing_amount;        ///< Swing amount from style
+};
+
+/// @brief Calculate effective arpeggio parameters for a section.
+/// @param section Current section
+/// @param arp Arpeggio params
+/// @param style Arpeggio style
+/// @param params General generator params
+/// @return Section-specific arpeggio parameters
+ArpeggioSectionParams calculateArpeggioSectionParams(const Section& section,
+                                                       const ArpeggioParams& arp,
+                                                       const ArpeggioStyle& style,
+                                                       const GeneratorParams& params) {
+  ArpeggioSectionParams result;
+
+  // Start with style defaults
+  result.speed = style.speed;
+  result.gate = style.gate;
+  result.swing_amount = style.swing_amount;
+
+  // ArpeggioParams overrides style (user configuration takes priority)
+  if (arp.speed != ArpeggioSpeed::Sixteenth) {
+    result.speed = arp.speed;
+  }
+  if (arp.gate != 0.8f) {
+    result.gate = arp.gate;
+  }
+
+  // Calculate base octave
+  constexpr int BASE_OCTAVE_DEFAULT = 72;  // C5
+  result.base_octave = std::clamp(BASE_OCTAVE_DEFAULT + style.octave_offset, 36, 96);
+
+  // Calculate octave range
+  result.octave_range = arp.octave_range;
+
+  // Apply blueprint constraints
+  if (params.blueprint_ref != nullptr && params.blueprint_ref->constraints.prefer_stepwise) {
+    result.octave_range = std::min(result.octave_range, static_cast<uint8_t>(1));
+  }
+
+  // Apply section density
+  result.effective_density = section.getModifiedDensity(section.density_percent);
+
+  // Promote to 16th if density > 90% and speed is 8th
+  bool user_set_speed = (arp.speed != ArpeggioSpeed::Sixteenth);
+  bool style_has_special_speed = (style.speed != ArpeggioSpeed::Sixteenth);
+  if (result.effective_density > 90 && result.speed == ArpeggioSpeed::Eighth && !user_set_speed &&
+      !style_has_special_speed) {
+    result.speed = ArpeggioSpeed::Sixteenth;
+  }
+
+  // PeakLevel max: expand octave range
+  if (section.peak_level == PeakLevel::Max) {
+    result.octave_range =
+        std::min(static_cast<uint8_t>(4), static_cast<uint8_t>(arp.octave_range + 1));
+  }
+
+  return result;
+}
+
+/// @brief Get density threshold based on backing density.
+/// @param backing_density Backing density setting
+/// @return Density threshold for note generation
+int getDensityThreshold(BackingDensity backing_density) {
+  switch (backing_density) {
+    case BackingDensity::Thin:
+      return 70;
+    case BackingDensity::Thick:
+      return 90;
+    default:
+      return 80;
+  }
+}
+
+}  // namespace
+
 void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
-  if (!ctx.song || !ctx.params || !ctx.rng || !ctx.harmony) {
+  if (!ctx.isValid()) {
     return;
   }
 
@@ -213,27 +302,6 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
   // Get genre-specific arpeggio style
   ArpeggioStyle style = getArpeggioStyleForMood(params.mood);
 
-  // Use style's speed/gate, allowing ArpeggioParams override if explicitly set
-  ArpeggioSpeed effective_speed = style.speed;
-  float effective_gate = style.gate;
-
-  // ArpeggioParams overrides style (user configuration takes priority)
-  if (arp.speed != ArpeggioSpeed::Sixteenth) {
-    // Non-default speed means user explicitly set it
-    effective_speed = arp.speed;
-  }
-  if (arp.gate != 0.8f) {
-    // Non-default gate means user explicitly set it
-    effective_gate = arp.gate;
-  }
-
-  // Base octave for arpeggio (higher than vocal to avoid melodic collision)
-  // Apply genre-specific octave offset from style
-  constexpr int BASE_OCTAVE_DEFAULT = 72;  // C5
-  int base_octave = BASE_OCTAVE_DEFAULT + style.octave_offset;
-  // Clamp to valid MIDI range
-  base_octave = std::clamp(base_octave, 36, 96);  // C2 to C7
-
   // When sync_chord is false, build one arpeggio pattern for section and continue
   // When sync_chord is true, rebuild pattern each bar based on current chord
   std::vector<uint8_t> persistent_arp_notes;
@@ -245,33 +313,12 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
       continue;
     }
 
-    // PeakLevel-based arpeggio enhancements for section differentiation
-    ArpeggioSpeed section_speed = effective_speed;
-    uint8_t section_octave_range = arp.octave_range;
+    // Calculate section-specific arpeggio parameters using helper
+    ArpeggioSectionParams sec_params =
+        calculateArpeggioSectionParams(section, arp, style, params);
 
-    // Apply BlueprintConstraints: prefer_stepwise limits octave range for tighter voicing
-    if (params.blueprint_ref != nullptr && params.blueprint_ref->constraints.prefer_stepwise) {
-      section_octave_range = std::min(section_octave_range, static_cast<uint8_t>(1));
-    }
-
-    // Apply SectionModifier to density for this section
-    uint8_t effective_density = section.getModifiedDensity(section.density_percent);
-
-    // Only promote to 16th if density > 90%, effective_speed is 8th, and no explicit override
-    bool user_set_speed = (arp.speed != ArpeggioSpeed::Sixteenth);
-    bool style_has_special_speed = (style.speed != ArpeggioSpeed::Sixteenth);
-    if (effective_density > 90 && section_speed == ArpeggioSpeed::Eighth && !user_set_speed &&
-        !style_has_special_speed) {
-      section_speed = ArpeggioSpeed::Sixteenth;
-    }
-
-    if (section.peak_level == PeakLevel::Max) {
-      section_octave_range =
-          std::min(static_cast<uint8_t>(4), static_cast<uint8_t>(arp.octave_range + 1));
-    }
-
-    Tick section_note_duration = getNoteDuration(section_speed);
-    Tick section_gated_duration = static_cast<Tick>(section_note_duration * effective_gate);
+    Tick section_note_duration = getNoteDuration(sec_params.speed);
+    Tick section_gated_duration = static_cast<Tick>(section_note_duration * sec_params.gate);
 
     Tick section_end = section.start_tick + (section.bars * TICKS_PER_BAR);
 
@@ -286,10 +333,10 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
           getChordIndexForBar(static_cast<int>(total_bar), slow_harmonic, progression.length);
       int8_t degree = progression.at(chord_idx);
       uint8_t root = degreeToRoot(degree, Key::C);
-      while (root < base_octave) root += 12;
-      while (root >= base_octave + 12) root -= 12;
+      while (root < sec_params.base_octave) root += 12;
+      while (root >= sec_params.base_octave + 12) root -= 12;
       Chord chord = getChordNotes(degree);
-      std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, section_octave_range);
+      std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, sec_params.octave_range);
       persistent_arp_notes = arrangeByPattern(chord_notes, arp.pattern, rng);
       persistent_pattern_index = 0;
     }
@@ -317,11 +364,11 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
         int8_t degree = progression.at(chord_idx);
         uint8_t root = degreeToRoot(degree, Key::C);
 
-        while (root < base_octave) root += 12;
-        while (root >= base_octave + 12) root -= 12;
+        while (root < sec_params.base_octave) root += 12;
+        while (root >= sec_params.base_octave + 12) root -= 12;
 
         Chord chord = getChordNotes(degree);
-        std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, section_octave_range);
+        std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, sec_params.octave_range);
         arp_notes = arrangeByPattern(chord_notes, arp.pattern, rng);
         pattern_index = 0;
 
@@ -330,22 +377,22 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
           int second_half_idx = getChordIndexForSubdividedBar(bar, 1, progression.length);
           int8_t second_half_degree = progression.at(second_half_idx);
           uint8_t second_half_root = degreeToRoot(second_half_degree, Key::C);
-          while (second_half_root < base_octave) second_half_root += 12;
-          while (second_half_root >= base_octave + 12) second_half_root -= 12;
+          while (second_half_root < sec_params.base_octave) second_half_root += 12;
+          while (second_half_root >= sec_params.base_octave + 12) second_half_root -= 12;
           Chord second_half_chord = getChordNotes(second_half_degree);
           std::vector<uint8_t> second_half_notes =
-              buildChordNotes(second_half_root, second_half_chord, section_octave_range);
+              buildChordNotes(second_half_root, second_half_chord, sec_params.octave_range);
           next_arp_notes = arrangeByPattern(second_half_notes, arp.pattern, rng);
           should_split = true;
         } else if (should_split) {
           int next_chord_idx = (chord_idx + 1) % progression.length;
           int8_t next_degree = progression.at(next_chord_idx);
           uint8_t next_root = degreeToRoot(next_degree, Key::C);
-          while (next_root < base_octave) next_root += 12;
-          while (next_root >= base_octave + 12) next_root -= 12;
+          while (next_root < sec_params.base_octave) next_root += 12;
+          while (next_root >= sec_params.base_octave + 12) next_root -= 12;
           Chord next_chord = getChordNotes(next_degree);
           std::vector<uint8_t> next_chord_notes =
-              buildChordNotes(next_root, next_chord, section_octave_range);
+              buildChordNotes(next_root, next_chord, sec_params.octave_range);
           next_arp_notes = arrangeByPattern(next_chord_notes, arp.pattern, rng);
         }
       } else {
@@ -360,7 +407,7 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
       Tick pos = bar_start;
       Tick half_bar = bar_start + (TICKS_PER_BAR / 2);
 
-      float arp_swing_amount = style.swing_amount;
+      float arp_swing_amount = sec_params.swing_amount;
 
       while (pos < bar_start + TICKS_PER_BAR && pos < section_end) {
         // Select notes based on phrase-end split
@@ -373,22 +420,11 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
                                                      pattern_index % current_notes.size());
 
         // Apply density_percent to skip notes probabilistically
-        int density_threshold = 80;
-        switch (section.getEffectiveBackingDensity()) {
-          case BackingDensity::Thin:
-            density_threshold = 70;
-            break;
-          case BackingDensity::Normal:
-            density_threshold = 80;
-            break;
-          case BackingDensity::Thick:
-            density_threshold = 90;
-            break;
-        }
+        int density_threshold = getDensityThreshold(section.getEffectiveBackingDensity());
         bool add_note = true;
-        if (effective_density < density_threshold) {
+        if (sec_params.effective_density < density_threshold) {
           std::uniform_real_distribution<float> density_dist(0.0f, 100.0f);
-          add_note = (density_dist(rng) <= effective_density);
+          add_note = (density_dist(rng) <= sec_params.effective_density);
         }
 
         if (add_note) {

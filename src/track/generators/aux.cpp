@@ -113,7 +113,7 @@ void AuxGenerator::generateSection(MidiTrack& /* track */, const Section& /* sec
 }
 
 void AuxGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
-  if (!ctx.song || !ctx.params || !ctx.rng || !ctx.harmony) {
+  if (!ctx.isValid()) {
     return;
   }
   // Build SongContext from FullTrackContext
@@ -436,10 +436,9 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
   }
 }
 
-void AuxGenerator::postProcessNotes(std::vector<NoteEvent>& notes, IHarmonyContext& harmony) {
-  std::vector<NoteEvent> notes_to_add;
-
-  // First pass: resolve notes that sustain over chord changes
+void AuxGenerator::resolveNotesOverChordBoundary(std::vector<NoteEvent>& notes,
+                                                  std::vector<NoteEvent>& notes_to_add,
+                                                  IHarmonyContext& harmony) {
   for (size_t i = 0; i < notes.size(); ++i) {
     auto& note = notes[i];
     Tick note_end = note.start_tick + note.duration;
@@ -518,13 +517,10 @@ void AuxGenerator::postProcessNotes(std::vector<NoteEvent>& notes, IHarmonyConte
       }
     }
   }
+}
 
-  // Add resolved notes
-  for (const auto& note : notes_to_add) {
-    notes.push_back(note);
-  }
-
-  // Second pass: try to fix any remaining clashes with other harmonic tracks (Bass, Chord, etc.)
+void AuxGenerator::resolvePitchClashes(std::vector<NoteEvent>& notes, IHarmonyContext& harmony) {
+  // Try to fix any remaining clashes with other harmonic tracks (Bass, Chord, etc.)
   // If no safe pitch can be found, keep the original pitch and let createNoteAndAdd handle it
   for (auto& note : notes) {
     Tick note_end = note.start_tick + note.duration;
@@ -589,6 +585,21 @@ void AuxGenerator::postProcessNotes(std::vector<NoteEvent>& notes, IHarmonyConte
       // createNoteAndAdd will handle final collision resolution
     }
   }
+}
+
+void AuxGenerator::postProcessNotes(std::vector<NoteEvent>& notes, IHarmonyContext& harmony) {
+  std::vector<NoteEvent> notes_to_add;
+
+  // First pass: resolve notes that sustain over chord changes
+  resolveNotesOverChordBoundary(notes, notes_to_add, harmony);
+
+  // Add resolved notes
+  for (const auto& note : notes_to_add) {
+    notes.push_back(note);
+  }
+
+  // Second pass: fix remaining clashes
+  resolvePitchClashes(notes, harmony);
 }
 
 std::vector<NoteEvent> AuxGenerator::generatePulseLoop(const AuxContext& ctx,
@@ -1664,99 +1675,103 @@ std::vector<NoteEvent> AuxGenerator::generateMotifCounter(const AuxContext& ctx,
 // Derivability Analysis
 // ============================================================================
 
-DerivabilityScore analyzeDerivability(const std::vector<NoteEvent>& notes) {
-  DerivabilityScore score = {0.0f, 0.0f, 0.0f};
+namespace {
 
+// Analyze how consistent note durations are.
+// Low variance in duration = high stability score.
+float analyzeRhythmStability(const std::vector<NoteEvent>& notes) {
+  std::vector<Tick> durations;
+  durations.reserve(notes.size());
+  for (const auto& note : notes) {
+    durations.push_back(note.duration);
+  }
+
+  // Calculate duration variance
+  Tick sum = 0;
+  for (Tick d : durations) {
+    sum += d;
+  }
+  Tick mean = sum / static_cast<Tick>(durations.size());
+
+  float variance = 0.0f;
+  for (Tick d : durations) {
+    float diff = static_cast<float>(d - mean);
+    variance += diff * diff;
+  }
+  variance /= static_cast<float>(durations.size());
+
+  // Normalize: low variance = high stability
+  // Typical duration ~240 ticks (eighth note), variance up to 60000
+  float normalized_variance = variance / 60000.0f;
+  return std::max(0.0f, 1.0f - normalized_variance);
+}
+
+// Analyze how clear the melodic direction is.
+// Few direction changes or many consistent directions = high clarity.
+float analyzeContourClarity(const std::vector<NoteEvent>& notes) {
+  int direction_changes = 0;
+  int consistent_direction = 0;
+  int prev_direction = 0;
+
+  for (size_t i = 1; i < notes.size(); ++i) {
+    int diff = static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note);
+    int direction = (diff > 0) ? 1 : (diff < 0) ? -1 : 0;
+
+    if (direction != 0) {
+      if (prev_direction != 0 && direction != prev_direction) {
+        direction_changes++;
+      } else if (prev_direction != 0 && direction == prev_direction) {
+        consistent_direction++;
+      }
+      prev_direction = direction;
+    }
+  }
+
+  // Clear contour: few direction changes, or many consistent directions
+  float total_movements = static_cast<float>(direction_changes + consistent_direction);
+  if (total_movements > 0) {
+    float consistency_ratio = static_cast<float>(consistent_direction) / total_movements;
+    return 0.4f + consistency_ratio * 0.6f;
+  }
+  return 0.5f;
+}
+
+// Analyze how simple the pitch relationships are.
+// More simple intervals (unison, 2nd, 3rd) = higher simplicity score.
+float analyzePitchSimplicity(const std::vector<NoteEvent>& notes) {
+  int simple_intervals = 0;   // unison, 2nd, 3rd
+  int complex_intervals = 0;  // 4th and larger
+
+  for (size_t i = 1; i < notes.size(); ++i) {
+    int interval =
+        std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
+    if (interval <= 4) {
+      simple_intervals++;
+    } else {
+      complex_intervals++;
+    }
+  }
+
+  float total = static_cast<float>(simple_intervals + complex_intervals);
+  if (total > 0) {
+    return static_cast<float>(simple_intervals) / total;
+  }
+  return 0.5f;
+}
+
+}  // namespace
+
+DerivabilityScore analyzeDerivability(const std::vector<NoteEvent>& notes) {
   if (notes.size() < 4) {
     // Too few notes to analyze meaningfully
     return {0.5f, 0.5f, 0.5f};
   }
 
-  // === Rhythm Stability ===
-  // Analyze how consistent note durations are
-  {
-    std::vector<Tick> durations;
-    durations.reserve(notes.size());
-    for (const auto& note : notes) {
-      durations.push_back(note.duration);
-    }
-
-    // Calculate duration variance
-    Tick sum = 0;
-    for (Tick d : durations) {
-      sum += d;
-    }
-    Tick mean = sum / static_cast<Tick>(durations.size());
-
-    float variance = 0.0f;
-    for (Tick d : durations) {
-      float diff = static_cast<float>(d - mean);
-      variance += diff * diff;
-    }
-    variance /= static_cast<float>(durations.size());
-
-    // Normalize: low variance = high stability
-    // Typical duration ~240 ticks (eighth note), variance up to 60000
-    float normalized_variance = variance / 60000.0f;
-    score.rhythm_stability = std::max(0.0f, 1.0f - normalized_variance);
-  }
-
-  // === Contour Clarity ===
-  // Analyze how clear the melodic direction is
-  {
-    int direction_changes = 0;
-    int consistent_direction = 0;
-    int prev_direction = 0;
-
-    for (size_t i = 1; i < notes.size(); ++i) {
-      int diff = static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note);
-      int direction = (diff > 0) ? 1 : (diff < 0) ? -1 : 0;
-
-      if (direction != 0) {
-        if (prev_direction != 0 && direction != prev_direction) {
-          direction_changes++;
-        } else if (prev_direction != 0 && direction == prev_direction) {
-          consistent_direction++;
-        }
-        prev_direction = direction;
-      }
-    }
-
-    // Clear contour: few direction changes, or many consistent directions
-    float total_movements = static_cast<float>(direction_changes + consistent_direction);
-    if (total_movements > 0) {
-      float consistency_ratio = static_cast<float>(consistent_direction) / total_movements;
-      score.contour_clarity = 0.4f + consistency_ratio * 0.6f;
-    } else {
-      score.contour_clarity = 0.5f;
-    }
-  }
-
-  // === Pitch Simplicity ===
-  // Analyze how simple the pitch relationships are
-  {
-    int simple_intervals = 0;   // unison, 2nd, 3rd
-    int complex_intervals = 0;  // 4th and larger
-
-    for (size_t i = 1; i < notes.size(); ++i) {
-      int interval =
-          std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
-      if (interval <= 4) {
-        simple_intervals++;
-      } else {
-        complex_intervals++;
-      }
-    }
-
-    float total = static_cast<float>(simple_intervals + complex_intervals);
-    if (total > 0) {
-      score.pitch_simplicity = static_cast<float>(simple_intervals) / total;
-    } else {
-      score.pitch_simplicity = 0.5f;
-    }
-  }
-
-  return score;
+  return {
+      analyzeRhythmStability(notes),
+      analyzeContourClarity(notes),
+      analyzePitchSimplicity(notes)
+  };
 }
 
 // ============================================================================

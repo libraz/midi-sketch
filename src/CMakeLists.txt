@@ -41,6 +41,7 @@ set(MIDISKETCH_CORE_SOURCES
   core/pitch_bend_curves.cpp
   core/note_creator.cpp
   core/note_timeline_utils.cpp
+  core/timing_offset_calculator.cpp
   midi/midi_writer.cpp
   track/track.cpp
   track/vocal/phrase_variation.cpp
@@ -71,6 +72,7 @@ set(MIDISKETCH_CORE_SOURCES
   track/melody/leap_resolution.cpp
   track/melody/isolated_note_resolver.cpp
   track/melody/phrase_note_generator.cpp
+  track/melody/melody_generation_pipeline.cpp
   track/generators/vocal.cpp
   track/generators/bass.cpp
   track/generators/chord.cpp

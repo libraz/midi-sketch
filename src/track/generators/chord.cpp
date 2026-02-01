@@ -523,8 +523,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         // === SUS RESOLUTION GUARANTEE ===
         // If previous chord was sus, force this chord to NOT be sus
         // This ensures sus4 resolves to 3rd (natural chord tone)
-        if ((prev_extension == ChordExtension::Sus4 || prev_extension == ChordExtension::Sus2) &&
-            (extension == ChordExtension::Sus4 || extension == ChordExtension::Sus2)) {
+        if (isSusExtension(prev_extension) && isSusExtension(extension)) {
           extension = ChordExtension::None;  // Force resolution to natural chord
         }
 
@@ -1032,8 +1031,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         }
 
         // Sus resolution guarantee
-        if ((prev_extension == ChordExtension::Sus4 || prev_extension == ChordExtension::Sus2) &&
-            (extension == ChordExtension::Sus4 || extension == ChordExtension::Sus2)) {
+        if (isSusExtension(prev_extension) && isSusExtension(extension)) {
           extension = ChordExtension::None;
         }
 
@@ -1542,7 +1540,7 @@ void ChordGenerator::generateSection(MidiTrack& /* track */, const Section& /* s
 }
 
 void ChordGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
-  if (!ctx.song || !ctx.params || !ctx.rng || !ctx.harmony) {
+  if (!ctx.isValid()) {
     return;
   }
   // Build TrackGenerationContext from FullTrackContext with full context

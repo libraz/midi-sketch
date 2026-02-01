@@ -299,6 +299,22 @@ class Generator {
   std::vector<std::string> warnings_;  ///< Accumulated warnings during generation
   /// @}
 
+  /// @name Generation Phase Helpers
+  /// @{
+
+  /** @brief Initialize all generation state (seed, blueprint, BPM, structure).
+   *  @return Resolved BPM value */
+  uint16_t initializeGenerationState();
+
+  /** @brief Generate all tracks via Coordinator.
+   *  Prepares params and calls coordinator_->generateAllTracks(). */
+  void generateAllTracksViaCoordinator();
+
+  /** @brief Apply all post-processing effects.
+   *  Staggered entry, layer schedule, dynamics, expression, humanization. */
+  void applyPostProcessingEffects();
+
+  /// @}
   /// @name Initialization Helpers (reduce code duplication)
   /// @{
 

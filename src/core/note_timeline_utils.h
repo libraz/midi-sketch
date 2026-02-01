@@ -57,6 +57,19 @@ inline bool containsTick(Tick note_start, Tick note_end, Tick tick) {
 void fixOverlaps(std::vector<NoteEvent>& notes);
 
 /**
+ * @brief Fix overlaps with minimum duration enforcement.
+ *
+ * Extended version of fixOverlaps that:
+ * 1. Sorts notes by start tick
+ * 2. Ensures notes meet minimum duration (while respecting next note)
+ * 3. Resolves any remaining overlaps by trimming
+ *
+ * @param notes Vector of notes (modified in-place)
+ * @param min_duration Minimum duration to enforce for each note
+ */
+void fixOverlapsWithMinDuration(std::vector<NoteEvent>& notes, Tick min_duration);
+
+/**
  * @brief Trim a note to not extend past a boundary.
  *
  * If the note extends past the boundary, its duration is reduced.

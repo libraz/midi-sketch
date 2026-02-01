@@ -152,12 +152,10 @@ int degreeToPitch(int degree, int base_note, int key_offset, ScaleType scale = S
 }
 
 // Check if pitch class is diatonic in C major
+// Uses the shared DIATONIC_PITCH_CLASS lookup table from pitch_utils.h
 bool isDiatonicPC(int pc) {
   pc = ((pc % 12) + 12) % 12;
-  for (int d : SCALE) {
-    if (d == pc) return true;
-  }
-  return false;
+  return DIATONIC_PITCH_CLASS[pc];
 }
 
 // Get chord tone pitch classes for a chord
@@ -217,16 +215,12 @@ int snapToChordTone(int pitch, uint8_t chord_root, bool is_minor) {
   return best_pitch;
 }
 
-// Check if a pitch is on the diatonic scale
-bool isDiatonic(int pitch) {
-  int pitch_class = ((pitch % 12) + 12) % 12;
-  return pitch_class == 0 || pitch_class == 2 || pitch_class == 4 || pitch_class == 5 ||
-         pitch_class == 7 || pitch_class == 9 || pitch_class == 11;
-}
+// isDiatonic() is now provided by pitch_utils.h as midisketch::isDiatonic()
+// The function below uses it through the namespace scope.
 
 // Check if a pitch is a passing tone
 bool isPassingTone(int pitch, uint8_t chord_root, bool is_minor) {
-  if (!isDiatonic(pitch)) return false;
+  if (!midisketch::isDiatonic(pitch)) return false;
 
   int pitch_pc = ((pitch % 12) + 12) % 12;
   int root_pc = chord_root % 12;
@@ -611,6 +605,111 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::
   return pattern;
 }
 
+// ============================================================================
+// Motif Note Generation Helper
+// ============================================================================
+
+namespace {
+
+/// @brief Context for generating a single motif note.
+struct MotifNoteContext {
+  Tick absolute_tick;          ///< Absolute position in song
+  Tick section_end;            ///< End of current section
+  uint8_t current_bar;         ///< Current bar within section
+  uint8_t effective_density;   ///< Density after adjustments
+  bool is_rhythm_lock_global;  ///< Whether in RhythmSync coordinate axis mode
+  bool add_octave;             ///< Whether to add octave doubling
+  uint8_t base_velocity;       ///< Base velocity from role meta
+  MotifRole role;              ///< Motif role (Hook or Texture)
+};
+
+/// @brief Calculate adjusted pitch for a motif note.
+/// @param note Source note from pattern
+/// @param ctx Note context
+/// @param params Generator params
+/// @param motif_params Motif-specific params
+/// @param harmony Harmony context
+/// @param vocal_ctx Optional vocal coordination context
+/// @param base_note_override Base note override for vocal coordination
+/// @param rng Random number generator
+/// @return Adjusted pitch
+int calculateMotifPitch(const NoteEvent& note, const MotifNoteContext& ctx,
+                         const GeneratorParams& params, const MotifParams& motif_params,
+                         IHarmonyCoordinator* harmony, const MotifContext* vocal_ctx,
+                         uint8_t base_note_override, std::mt19937& rng) {
+  if (ctx.is_rhythm_lock_global) {
+    // Coordinate axis mode: use pattern pitch directly
+    return std::clamp(static_cast<int>(note.note), static_cast<int>(MOTIF_LOW),
+                      static_cast<int>(MOTIF_HIGH));
+  }
+
+  // Standard mode: apply pitch adjustments
+  int8_t degree = harmony->getChordDegreeAt(ctx.absolute_tick);
+  uint8_t chord_root = degreeToRoot(degree, Key::C);
+  Chord chord = getChordNotes(degree);
+  bool is_minor = (chord.intervals[1] == 3);
+
+  ScaleType scale = motif_detail::selectScaleType(is_minor, params.mood);
+  int adjusted_pitch = motif_detail::adjustPitchToScale(note.note, 0, scale);
+  adjusted_pitch = motif_detail::adjustForChord(adjusted_pitch, chord_root, is_minor, degree);
+
+  if (vocal_ctx && motif_params.dynamic_register && base_note_override != 0) {
+    int original_base = motif_params.register_high ? 67 : 60;
+    int register_shift = static_cast<int>(base_note_override) - original_base;
+    adjusted_pitch += register_shift;
+  }
+
+  if (vocal_ctx && motif_params.contrary_motion) {
+    int8_t vocal_dir =
+        motif_detail::getVocalDirection(vocal_ctx->direction_at_tick, ctx.absolute_tick);
+    adjusted_pitch = motif_detail::applyContraryMotion(
+        adjusted_pitch, vocal_dir, motif_params.contrary_motion_strength, rng);
+  }
+
+  adjusted_pitch = motif_detail::adjustToDiatonic(adjusted_pitch);
+
+  while (adjusted_pitch < static_cast<int>(MOTIF_LOW) &&
+         adjusted_pitch + 12 <= static_cast<int>(MOTIF_HIGH)) {
+    adjusted_pitch += 12;
+  }
+  adjusted_pitch =
+      std::clamp(adjusted_pitch, static_cast<int>(MOTIF_LOW), static_cast<int>(MOTIF_HIGH));
+
+  if (params.paradigm == GenerationParadigm::RhythmSync) {
+    int8_t degree_for_snap = harmony->getChordDegreeAt(ctx.absolute_tick);
+    uint8_t chord_root_for_snap = degreeToRoot(degree_for_snap, Key::C);
+    Chord chord_for_snap = getChordNotes(degree_for_snap);
+    bool is_minor_for_snap = (chord_for_snap.intervals[1] == 3);
+    adjusted_pitch = motif_detail::snapToSafeScaleTone(adjusted_pitch, chord_root_for_snap,
+                                                        is_minor_for_snap, degree_for_snap,
+                                                        motif_params.melodic_freedom, rng);
+  }
+
+  return adjusted_pitch;
+}
+
+/// @brief Calculate velocity for a motif note.
+/// @param base_vel Base velocity from role meta
+/// @param is_chorus Whether in chorus section
+/// @param section_type Current section type
+/// @param velocity_fixed Whether velocity is fixed
+/// @return Adjusted velocity
+uint8_t calculateMotifVelocity(uint8_t base_vel, bool is_chorus, SectionType section_type,
+                                bool velocity_fixed) {
+  if (velocity_fixed) {
+    return base_vel;
+  }
+
+  if (is_chorus) {
+    return std::min(static_cast<uint8_t>(127), static_cast<uint8_t>(base_vel + 10));
+  } else if (section_type == SectionType::Intro || section_type == SectionType::Outro) {
+    return static_cast<uint8_t>(base_vel * 0.85f);
+  }
+  return base_vel;
+}
+
+}  // namespace
+
 void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   if (!ctx.song || !ctx.params || !ctx.rng || !ctx.harmony) {
     return;
@@ -759,68 +858,25 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
           }
         }
 
-        int adjusted_pitch;
+        // Build note context for helper functions
+        MotifNoteContext note_ctx;
+        note_ctx.absolute_tick = absolute_tick;
+        note_ctx.section_end = section_end;
+        note_ctx.current_bar = current_bar;
+        note_ctx.effective_density = effective_density;
+        note_ctx.is_rhythm_lock_global = is_rhythm_lock_global;
+        note_ctx.add_octave = add_octave;
+        note_ctx.base_velocity = role_meta.velocity_base;
+        note_ctx.role = role;
 
-        if (is_rhythm_lock_global) {
-          // Coordinate axis mode: use pattern pitch directly
-          adjusted_pitch = note.note;
-          adjusted_pitch =
-              std::clamp(adjusted_pitch, static_cast<int>(MOTIF_LOW), static_cast<int>(MOTIF_HIGH));
-        } else {
-          // Standard mode: apply pitch adjustments
-          int8_t degree = harmony->getChordDegreeAt(absolute_tick);
-          uint8_t chord_root = degreeToRoot(degree, Key::C);
-          Chord chord = getChordNotes(degree);
-          bool is_minor = (chord.intervals[1] == 3);
+        // Calculate adjusted pitch using helper
+        int adjusted_pitch =
+            calculateMotifPitch(note, note_ctx, params, motif_params, harmony, vocal_ctx,
+                                base_note_override, rng);
 
-          ScaleType scale = motif_detail::selectScaleType(is_minor, params.mood);
-
-          adjusted_pitch = motif_detail::adjustPitchToScale(note.note, 0, scale);
-          adjusted_pitch =
-              motif_detail::adjustForChord(adjusted_pitch, chord_root, is_minor, degree);
-
-          if (vocal_ctx && motif_params.dynamic_register && base_note_override != 0) {
-            int original_base = motif_params.register_high ? 67 : 60;
-            int register_shift = static_cast<int>(base_note_override) - original_base;
-            adjusted_pitch += register_shift;
-          }
-
-          if (vocal_ctx && motif_params.contrary_motion) {
-            int8_t vocal_dir =
-                motif_detail::getVocalDirection(vocal_ctx->direction_at_tick, absolute_tick);
-            adjusted_pitch = motif_detail::applyContraryMotion(
-                adjusted_pitch, vocal_dir, motif_params.contrary_motion_strength, rng);
-          }
-
-          adjusted_pitch = motif_detail::adjustToDiatonic(adjusted_pitch);
-
-          while (adjusted_pitch < static_cast<int>(MOTIF_LOW) &&
-                 adjusted_pitch + 12 <= static_cast<int>(MOTIF_HIGH)) {
-            adjusted_pitch += 12;
-          }
-          adjusted_pitch =
-              std::clamp(adjusted_pitch, static_cast<int>(MOTIF_LOW), static_cast<int>(MOTIF_HIGH));
-
-          if (params.paradigm == GenerationParadigm::RhythmSync) {
-            int8_t degree_for_snap = harmony->getChordDegreeAt(absolute_tick);
-            uint8_t chord_root_for_snap = degreeToRoot(degree_for_snap, Key::C);
-            Chord chord_for_snap = getChordNotes(degree_for_snap);
-            bool is_minor_for_snap = (chord_for_snap.intervals[1] == 3);
-            adjusted_pitch = motif_detail::snapToSafeScaleTone(adjusted_pitch, chord_root_for_snap,
-                                                               is_minor_for_snap, degree_for_snap,
-                                                               motif_params.melodic_freedom, rng);
-          }
-        }
-
-        // M9: Apply role-based velocity adjustment
-        uint8_t vel = role_meta.velocity_base;
-        if (!motif_params.velocity_fixed) {
-          if (is_chorus) {
-            vel = std::min(static_cast<uint8_t>(127), static_cast<uint8_t>(vel + 10));
-          } else if (section.type == SectionType::Intro || section.type == SectionType::Outro) {
-            vel = static_cast<uint8_t>(vel * 0.85f);
-          }
-        }
+        // Calculate velocity using helper
+        uint8_t vel = calculateMotifVelocity(role_meta.velocity_base, is_chorus, section.type,
+                                              motif_params.velocity_fixed);
 
         uint8_t final_pitch = static_cast<uint8_t>(adjusted_pitch);
 

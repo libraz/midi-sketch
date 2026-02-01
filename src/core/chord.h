@@ -117,6 +117,19 @@ Chord getChordNotes(int8_t degree);
 Chord getExtendedChord(int8_t degree, ChordExtension extension);
 
 /**
+ * @brief Check if the extension is a suspended chord (Sus2 or Sus4).
+ *
+ * Suspended chords replace the 3rd with a 2nd or 4th, creating tension
+ * that should resolve to a natural chord (with 3rd) in the next chord.
+ *
+ * @param extension Chord extension to check
+ * @return true if extension is Sus2 or Sus4
+ */
+inline bool isSusExtension(ChordExtension extension) {
+  return extension == ChordExtension::Sus4 || extension == ChordExtension::Sus2;
+}
+
+/**
  * @brief Get human-readable name of a progression.
  * @param chord_id Progression index (0-21)
  * @return Name string (e.g., "Canon", "Pop1", "Emotional")

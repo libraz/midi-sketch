@@ -1128,6 +1128,35 @@ void generateRnBNeoSoulPattern(const BassBarContext& ctx) {
                           ctx.root, ctx.vel_weak);
 }
 
+// ============================================================================
+// Bass Pattern Dispatch Table
+// ============================================================================
+// Table-driven pattern dispatch replaces switch statement for:
+// - Cleaner code: O(1) lookup instead of linear switch
+// - Easier extension: add new pattern = add table entry
+// - Better traceability: pattern handlers are clearly enumerated
+
+using BassPatternHandler = void (*)(const BassBarContext&);
+
+// Pattern handler table indexed by BassPattern enum value
+constexpr std::array<BassPatternHandler, 15> kBassPatternHandlers = {{
+    generateWholeNotePattern,      // WholeNote = 0
+    generateRootFifthPattern,      // RootFifth = 1
+    generateSyncopatedPattern,     // Syncopated = 2
+    generateDrivingPattern,        // Driving = 3
+    generateRhythmicDrivePattern,  // RhythmicDrive = 4
+    generateWalkingPattern,        // Walking = 5
+    generatePowerDrivePattern,     // PowerDrive = 6
+    generateAggressivePattern,     // Aggressive = 7
+    generateSidechainPulsePattern, // SidechainPulse = 8
+    generateGroovePattern,         // Groove = 9
+    generateOctaveJumpPattern,     // OctaveJump = 10
+    generatePedalTonePattern,      // PedalTone = 11
+    generateTresilloPattern,       // Tresillo = 12
+    generateSubBass808Pattern,     // SubBass808 = 13
+    generateRnBNeoSoulPattern,     // RnBNeoSoul = 14
+}};
+
 // Generate one bar of bass based on pattern
 // Uses HarmonyContext for all notes to ensure vocal priority
 // @param rng Optional random generator for ghost note velocity in Aggressive pattern
@@ -1145,52 +1174,10 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
                      section,   mood,       is_last_bar, vel,   vel_weak,  fifth,
                      octave,    rng};
 
-  switch (pattern) {
-    case BassPattern::WholeNote:
-      generateWholeNotePattern(ctx);
-      break;
-    case BassPattern::RootFifth:
-      generateRootFifthPattern(ctx);
-      break;
-    case BassPattern::Syncopated:
-      generateSyncopatedPattern(ctx);
-      break;
-    case BassPattern::Driving:
-      generateDrivingPattern(ctx);
-      break;
-    case BassPattern::RhythmicDrive:
-      generateRhythmicDrivePattern(ctx);
-      break;
-    case BassPattern::Walking:
-      generateWalkingPattern(ctx);
-      break;
-    case BassPattern::PowerDrive:
-      generatePowerDrivePattern(ctx);
-      break;
-    case BassPattern::Aggressive:
-      generateAggressivePattern(ctx);
-      break;
-    case BassPattern::SidechainPulse:
-      generateSidechainPulsePattern(ctx);
-      break;
-    case BassPattern::Groove:
-      generateGroovePattern(ctx);
-      break;
-    case BassPattern::OctaveJump:
-      generateOctaveJumpPattern(ctx);
-      break;
-    case BassPattern::PedalTone:
-      generatePedalTonePattern(ctx);
-      break;
-    case BassPattern::Tresillo:
-      generateTresilloPattern(ctx);
-      break;
-    case BassPattern::SubBass808:
-      generateSubBass808Pattern(ctx);
-      break;
-    case BassPattern::RnBNeoSoul:
-      generateRnBNeoSoulPattern(ctx);
-      break;
+  // Table-driven dispatch: O(1) lookup instead of switch
+  size_t pattern_idx = static_cast<size_t>(pattern);
+  if (pattern_idx < kBassPatternHandlers.size()) {
+    kBassPatternHandlers[pattern_idx](ctx);
   }
 }
 
@@ -2241,7 +2228,7 @@ void BassGenerator::generateSection(MidiTrack& /* track */, const Section& /* se
 }
 
 void BassGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
-  if (!ctx.song || !ctx.params || !ctx.rng || !ctx.harmony) {
+  if (!ctx.isValid()) {
     return;
   }
   // Check for vocal-dependent generation (vocal analysis provides contrary motion hints)
