@@ -58,9 +58,9 @@ TEST_F(ChorusDropTest, TruncatesMelodicTracksInLastBeat) {
   MidiTrack chord_track;
   Tick drop_zone_start = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;  // Last beat of B section
   // Note starting before drop zone, extending into it
-  chord_track.addNote(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80);
+  chord_track.addNote(NoteEventBuilder::create(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80));
   // Note starting in drop zone
-  chord_track.addNote(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 64, 80);
+  chord_track.addNote(NoteEventBuilder::create(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 64, 80));
 
   MidiTrack drum_track;
   // Not processed by applyChorusDrop directly
@@ -97,10 +97,10 @@ TEST_F(ChorusDropTest, PreservesVocalTrack) {
 
   MidiTrack melodic_track;
   Tick drop_zone_start = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;
-  melodic_track.addNote(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80);
+  melodic_track.addNote(NoteEventBuilder::create(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80));
 
   MidiTrack vocal_track;
-  vocal_track.addNote(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 72, 100);
+  vocal_track.addNote(NoteEventBuilder::create(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 72, 100));
 
   // Only pass melodic track, not vocal
   std::vector<MidiTrack*> tracks = {&melodic_track};
@@ -129,12 +129,12 @@ TEST_F(ChorusDropTest, DrumTrackRemainsUnaffected) {
   MidiTrack drum_track;
   Tick drop_zone_start = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;
   // Add drum notes in the drop zone
-  drum_track.addNote(drop_zone_start, TICKS_PER_BEAT / 4, KICK, 100);
-  drum_track.addNote(drop_zone_start + TICKS_PER_BEAT / 4, TICKS_PER_BEAT / 4, SNARE, 90);
-  drum_track.addNote(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 4, SNARE, 95);
+  drum_track.addNote(NoteEventBuilder::create(drop_zone_start, TICKS_PER_BEAT / 4, KICK, 100));
+  drum_track.addNote(NoteEventBuilder::create(drop_zone_start + TICKS_PER_BEAT / 4, TICKS_PER_BEAT / 4, SNARE, 90));
+  drum_track.addNote(NoteEventBuilder::create(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 4, SNARE, 95));
 
   MidiTrack chord_track;
-  chord_track.addNote(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80);
+  chord_track.addNote(NoteEventBuilder::create(drop_zone_start - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80));
 
   size_t original_drum_count = drum_track.notes().size();
   std::vector<MidiTrack*> tracks = {&chord_track};
@@ -172,8 +172,8 @@ TEST_F(ChorusDropTest, OnlyAffectsBToChorusTransition) {
 
   MidiTrack chord_track;
   Tick b_last_beat = 16 * TICKS_PER_BAR - TICKS_PER_BEAT;
-  chord_track.addNote(b_last_beat - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80);
-  chord_track.addNote(b_last_beat + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 64, 80);
+  chord_track.addNote(NoteEventBuilder::create(b_last_beat - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80));
+  chord_track.addNote(NoteEventBuilder::create(b_last_beat + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 64, 80));
 
   size_t original_count = chord_track.notes().size();
   Tick original_duration = chord_track.notes()[0].duration;
@@ -217,9 +217,9 @@ TEST_F(RitardandoTest, StretchesDurationInLast4Bars) {
   Tick original_duration = TICKS_PER_BEAT;
 
   // Add notes throughout the ritardando zone
-  track.addNote(rit_zone_start, original_duration, 60, 80);      // Start of rit zone
-  track.addNote(rit_zone_start + 2 * TICKS_PER_BAR, original_duration, 64, 80);  // Middle
-  track.addNote(8 * TICKS_PER_BAR - TICKS_PER_BAR, original_duration, 67, 80);   // Near end
+  track.addNote(NoteEventBuilder::create(rit_zone_start, original_duration, 60, 80));      // Start of rit zone
+  track.addNote(NoteEventBuilder::create(rit_zone_start + 2 * TICKS_PER_BAR, original_duration, 64, 80));  // Middle
+  track.addNote(NoteEventBuilder::create(8 * TICKS_PER_BAR - TICKS_PER_BAR, original_duration, 67, 80));   // Near end
 
   std::vector<MidiTrack*> tracks = {&track};
   PostProcessor::applyRitardando(tracks, sections_);
@@ -249,9 +249,9 @@ TEST_F(RitardandoTest, VelocityDecrescendo) {
   uint8_t original_velocity = 100;
 
   // Add notes at different positions in the ritardando zone
-  track.addNote(rit_zone_start, TICKS_PER_BEAT, 60, original_velocity);
-  track.addNote(rit_zone_start + 2 * TICKS_PER_BAR, TICKS_PER_BEAT, 64, original_velocity);
-  track.addNote(8 * TICKS_PER_BAR - TICKS_PER_BAR, TICKS_PER_BEAT, 67, original_velocity);
+  track.addNote(NoteEventBuilder::create(rit_zone_start, TICKS_PER_BEAT, 60, original_velocity));
+  track.addNote(NoteEventBuilder::create(rit_zone_start + 2 * TICKS_PER_BAR, TICKS_PER_BEAT, 64, original_velocity));
+  track.addNote(NoteEventBuilder::create(8 * TICKS_PER_BAR - TICKS_PER_BAR, TICKS_PER_BEAT, 67, original_velocity));
 
   std::vector<MidiTrack*> tracks = {&track};
   PostProcessor::applyRitardando(tracks, sections_);
@@ -282,7 +282,7 @@ TEST_F(RitardandoTest, FinalNoteExtendedToSectionEnd) {
   Tick original_duration = TICKS_PER_BEAT;
 
   // Add the final note in the section
-  track.addNote(section_end - TICKS_PER_BAR, original_duration, 60, 80);
+  track.addNote(NoteEventBuilder::create(section_end - TICKS_PER_BAR, original_duration, 60, 80));
 
   std::vector<MidiTrack*> tracks = {&track};
   PostProcessor::applyRitardando(tracks, sections_);
@@ -314,8 +314,8 @@ TEST_F(RitardandoTest, OnlyAffectsOutroSection) {
   Tick original_duration = TICKS_PER_BEAT;
   uint8_t original_velocity = 100;
   // Add notes in the last 4 bars
-  track.addNote(4 * TICKS_PER_BAR, original_duration, 60, original_velocity);
-  track.addNote(6 * TICKS_PER_BAR, original_duration, 64, original_velocity);
+  track.addNote(NoteEventBuilder::create(4 * TICKS_PER_BAR, original_duration, 60, original_velocity));
+  track.addNote(NoteEventBuilder::create(6 * TICKS_PER_BAR, original_duration, 64, original_velocity));
 
   std::vector<MidiTrack*> tracks = {&track};
   PostProcessor::applyRitardando(tracks, non_outro_sections);
@@ -351,8 +351,8 @@ TEST_F(EnhancedFinalHitTest, AddsKickAndCrashOnFinalBeat) {
 
   MidiTrack drum_track;
   // Add some existing drum notes
-  drum_track.addNote(0, TICKS_PER_BEAT / 2, KICK, 80);
-  drum_track.addNote(TICKS_PER_BEAT, TICKS_PER_BEAT / 2, SNARE, 85);
+  drum_track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT / 2, KICK, 80));
+  drum_track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT, TICKS_PER_BEAT / 2, SNARE, 85));
 
   PostProcessor::applyEnhancedFinalHit(nullptr, &drum_track, nullptr, nullptr, section_);
 
@@ -388,9 +388,9 @@ TEST_F(EnhancedFinalHitTest, ChordTrackSustainsFinalChord) {
   Tick original_duration = TICKS_PER_BEAT / 2;
 
   // Add chord notes on final beat
-  chord_track.addNote(final_beat_start, original_duration, 60, 80);  // C
-  chord_track.addNote(final_beat_start, original_duration, 64, 80);  // E
-  chord_track.addNote(final_beat_start, original_duration, 67, 80);  // G
+  chord_track.addNote(NoteEventBuilder::create(final_beat_start, original_duration, 60, 80));  // C
+  chord_track.addNote(NoteEventBuilder::create(final_beat_start, original_duration, 64, 80));  // E
+  chord_track.addNote(NoteEventBuilder::create(final_beat_start, original_duration, 67, 80));  // G
 
   PostProcessor::applyEnhancedFinalHit(nullptr, nullptr, &chord_track, nullptr, section_);
 
@@ -415,7 +415,7 @@ TEST_F(EnhancedFinalHitTest, BoostsBassVelocity) {
   Tick final_beat_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
 
   // Add bass note on final beat
-  bass_track.addNote(final_beat_start, TICKS_PER_BEAT, 36, 80);
+  bass_track.addNote(NoteEventBuilder::create(final_beat_start, TICKS_PER_BEAT, 36, 80));
 
   PostProcessor::applyEnhancedFinalHit(&bass_track, nullptr, nullptr, nullptr, section_);
 
@@ -450,8 +450,8 @@ TEST_F(EnhancedFinalHitTest, AddsMissingKickOnFinalBeat) {
 
   MidiTrack drum_track;
   // Add notes but NOT on the final beat
-  drum_track.addNote(0, TICKS_PER_BEAT / 2, KICK, 80);
-  drum_track.addNote(TICKS_PER_BAR, TICKS_PER_BEAT / 2, SNARE, 85);
+  drum_track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT / 2, KICK, 80));
+  drum_track.addNote(NoteEventBuilder::create(TICKS_PER_BAR, TICKS_PER_BEAT / 2, SNARE, 85));
 
   PostProcessor::applyEnhancedFinalHit(nullptr, &drum_track, nullptr, nullptr, section_);
 
@@ -496,9 +496,9 @@ TEST_F(SustainPatternTest, ExtendsSingleNoteToSectionEnd) {
   Tick last_bar_start = section_end - TICKS_PER_BAR;
 
   // Add single chord at start of last bar
-  track.addNote(last_bar_start, TICKS_PER_BEAT, 60, 80);  // C
-  track.addNote(last_bar_start, TICKS_PER_BEAT, 64, 80);  // E
-  track.addNote(last_bar_start, TICKS_PER_BEAT, 67, 80);  // G
+  track.addNote(NoteEventBuilder::create(last_bar_start, TICKS_PER_BEAT, 60, 80));  // C
+  track.addNote(NoteEventBuilder::create(last_bar_start, TICKS_PER_BEAT, 64, 80));  // E
+  track.addNote(NoteEventBuilder::create(last_bar_start, TICKS_PER_BEAT, 67, 80));  // G
 
   std::vector<MidiTrack*> tracks = {&track};
   std::vector<Section> sections = {section_};
@@ -521,15 +521,15 @@ TEST_F(SustainPatternTest, PreventsSustainOverlapWithMultipleChords) {
   Tick half_bar = TICKS_PER_BAR / 2;
 
   // First chord (G) at beat 1 of last bar
-  track.addNote(last_bar_start, half_bar, 67, 80);              // G
-  track.addNote(last_bar_start, half_bar, 71, 80);              // B
-  track.addNote(last_bar_start, half_bar, 74, 80);              // D
+  track.addNote(NoteEventBuilder::create(last_bar_start, half_bar, 67, 80));              // G
+  track.addNote(NoteEventBuilder::create(last_bar_start, half_bar, 71, 80));              // B
+  track.addNote(NoteEventBuilder::create(last_bar_start, half_bar, 74, 80));              // D
 
   // Second chord (Am) at beat 3 of last bar
   Tick second_chord_start = last_bar_start + half_bar;
-  track.addNote(second_chord_start, half_bar, 69, 80);          // A
-  track.addNote(second_chord_start, half_bar, 72, 80);          // C
-  track.addNote(second_chord_start, half_bar, 76, 80);          // E
+  track.addNote(NoteEventBuilder::create(second_chord_start, half_bar, 69, 80));          // A
+  track.addNote(NoteEventBuilder::create(second_chord_start, half_bar, 72, 80));          // C
+  track.addNote(NoteEventBuilder::create(second_chord_start, half_bar, 76, 80));          // E
 
   std::vector<MidiTrack*> tracks = {&track};
   std::vector<Section> sections = {section_};
@@ -558,11 +558,11 @@ TEST_F(SustainPatternTest, HandlesNotesAlreadyExtendedBeyondNextNote) {
   Tick last_bar_start = section_end - TICKS_PER_BAR;
 
   // First note with very long duration (extends past next note)
-  track.addNote(last_bar_start, TICKS_PER_BAR, 60, 80);
+  track.addNote(NoteEventBuilder::create(last_bar_start, TICKS_PER_BAR, 60, 80));
 
   // Second note at half bar
   Tick second_note_start = last_bar_start + TICKS_PER_BAR / 2;
-  track.addNote(second_note_start, TICKS_PER_BEAT, 64, 80);
+  track.addNote(NoteEventBuilder::create(second_note_start, TICKS_PER_BEAT, 64, 80));
 
   std::vector<MidiTrack*> tracks = {&track};
   std::vector<Section> sections = {section_};
@@ -590,10 +590,10 @@ TEST_F(SustainPatternTest, HandlesNotesOutsideLastBar) {
   Tick original_duration = TICKS_PER_BEAT;
 
   // Note before last bar (should be unchanged)
-  track.addNote(last_bar_start - TICKS_PER_BAR, original_duration, 60, 80);
+  track.addNote(NoteEventBuilder::create(last_bar_start - TICKS_PER_BAR, original_duration, 60, 80));
 
   // Note in last bar (should be extended)
-  track.addNote(last_bar_start, original_duration, 64, 80);
+  track.addNote(NoteEventBuilder::create(last_bar_start, original_duration, 64, 80));
 
   std::vector<MidiTrack*> tracks = {&track};
   std::vector<Section> sections = {section_};
@@ -640,12 +640,12 @@ TEST(PostProcessorIntegrationTest, ChorusDropAndRitardandoDoNotInterfere) {
   MidiTrack track;
   // Add notes in B section (affected by chorus drop)
   Tick b_drop_zone = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;
-  track.addNote(b_drop_zone - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80);
+  track.addNote(NoteEventBuilder::create(b_drop_zone - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80));
 
   // Add notes in Outro section (affected by ritardando)
   Tick outro_rit_zone = 20 * TICKS_PER_BAR - 4 * TICKS_PER_BAR;
-  track.addNote(outro_rit_zone, TICKS_PER_BEAT, 72, 90);
-  track.addNote(19 * TICKS_PER_BAR, TICKS_PER_BEAT, 72, 90);  // Final note
+  track.addNote(NoteEventBuilder::create(outro_rit_zone, TICKS_PER_BEAT, 72, 90));
+  track.addNote(NoteEventBuilder::create(19 * TICKS_PER_BAR, TICKS_PER_BEAT, 72, 90));  // Final note
 
   std::vector<MidiTrack*> tracks = {&track};
 
@@ -689,7 +689,7 @@ TEST_F(EnhancedFinalHitTest, AddedNotesHavePostProcessProvenance) {
   MidiTrack bass_track;
   MidiTrack drum_track;
   // Add a note so drum_track is not empty (required for applyEnhancedFinalHit)
-  drum_track.addNote(0, TICKS_PER_BEAT / 2, KICK, 80);
+  drum_track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT / 2, KICK, 80));
 
   PostProcessor::applyEnhancedFinalHit(&bass_track, &drum_track, nullptr, nullptr, section_);
 
@@ -727,11 +727,11 @@ TEST_F(ChorusDropTest, DrumHitCrashHasPostProcessProvenance) {
 
   MidiTrack track;
   // Add notes in B section
-  track.addNote(0, TICKS_PER_BEAT, 60, 80);
+  track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 60, 80));
 
   MidiTrack drum_track;
   // Add a note so drum_track is not empty
-  drum_track.addNote(0, TICKS_PER_BEAT / 2, KICK, 80);
+  drum_track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT / 2, KICK, 80));
 
   std::vector<MidiTrack*> tracks = {&track};
 
@@ -780,15 +780,15 @@ TEST(MicroTimingTest, VocalTimingVariesByPhrasePosition) {
   // Add notes at different phrase positions
   // Bar 0 (phrase start) - should get +8 phrase offset + post-breath delay
   Tick phrase_start_tick = 0;
-  vocal.addNote(phrase_start_tick, TICKS_PER_BEAT, 60, 80);
+  vocal.addNote(NoteEventBuilder::create(phrase_start_tick, TICKS_PER_BEAT, 60, 80));
 
   // Bar 1-2 (phrase middle) - should get +4 phrase offset + post-breath delay (gap > 240)
   Tick phrase_middle_tick = TICKS_PER_BAR * 2;
-  vocal.addNote(phrase_middle_tick, TICKS_PER_BEAT, 62, 80);
+  vocal.addNote(NoteEventBuilder::create(phrase_middle_tick, TICKS_PER_BEAT, 62, 80));
 
   // Bar 3 (phrase end) - should get 0 phrase offset + post-breath delay + high-pitch delay
   Tick phrase_end_tick = TICKS_PER_BAR * 3;
-  vocal.addNote(phrase_end_tick, TICKS_PER_BEAT, 64, 80);
+  vocal.addNote(NoteEventBuilder::create(phrase_end_tick, TICKS_PER_BEAT, 64, 80));
 
   // Record original positions
   Tick orig_start = vocal.notes()[0].start_tick;
@@ -816,7 +816,7 @@ TEST(MicroTimingTest, VocalTimingUniformWithoutSections) {
   MidiTrack vocal, bass, drums;
 
   Tick start_tick = TICKS_PER_BAR;
-  vocal.addNote(start_tick, TICKS_PER_BEAT, 60, 80);
+  vocal.addNote(NoteEventBuilder::create(start_tick, TICKS_PER_BEAT, 60, 80));
 
   Tick orig = vocal.notes()[0].start_tick;
 
@@ -839,7 +839,7 @@ TEST(MicroTimingTest, BassAlwaysLaysBack) {
   sections.push_back(section);
 
   Tick start_tick = TICKS_PER_BAR;
-  bass.addNote(start_tick, TICKS_PER_BEAT, 36, 80);
+  bass.addNote(NoteEventBuilder::create(start_tick, TICKS_PER_BEAT, 36, 80));
 
   Tick orig = bass.notes()[0].start_tick;
 
@@ -859,9 +859,9 @@ TEST(MicroTimingTest, DrumTimingByInstrument) {
   constexpr uint8_t BD = 36;  // Kick
 
   Tick start = TICKS_PER_BAR;  // Beat 0 (downbeat)
-  drums.addNote(start, 60, HH, 80);
-  drums.addNote(start, 60, SD, 80);
-  drums.addNote(start, 60, BD, 80);
+  drums.addNote(NoteEventBuilder::create(start, 60, HH, 80));
+  drums.addNote(NoteEventBuilder::create(start, 60, SD, 80));
+  drums.addNote(NoteEventBuilder::create(start, 60, BD, 80));
 
   PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, nullptr);
 
@@ -893,20 +893,20 @@ TEST(MicroTimingTest, DriveFeelScalesTimingOffsets) {
 
   // Laid-back (drive=0): offsets should be halved (0.5x)
   MidiTrack vocal_laid, bass_laid, drums_laid;
-  drums_laid.addNote(start, 60, HH, 80);
-  bass_laid.addNote(start, 60, 36, 80);
+  drums_laid.addNote(NoteEventBuilder::create(start, 60, HH, 80));
+  bass_laid.addNote(NoteEventBuilder::create(start, 60, 36, 80));
   PostProcessor::applyMicroTimingOffsets(vocal_laid, bass_laid, drums_laid, nullptr, 0);
 
   // Neutral (drive=50): offsets should be 1.0x
   MidiTrack vocal_neutral, bass_neutral, drums_neutral;
-  drums_neutral.addNote(start, 60, HH, 80);
-  bass_neutral.addNote(start, 60, 36, 80);
+  drums_neutral.addNote(NoteEventBuilder::create(start, 60, HH, 80));
+  bass_neutral.addNote(NoteEventBuilder::create(start, 60, 36, 80));
   PostProcessor::applyMicroTimingOffsets(vocal_neutral, bass_neutral, drums_neutral, nullptr, 50);
 
   // Aggressive (drive=100): offsets should be 1.5x
   MidiTrack vocal_agg, bass_agg, drums_agg;
-  drums_agg.addNote(start, 60, HH, 80);
-  bass_agg.addNote(start, 60, 36, 80);
+  drums_agg.addNote(NoteEventBuilder::create(start, 60, HH, 80));
+  bass_agg.addNote(NoteEventBuilder::create(start, 60, 36, 80));
   PostProcessor::applyMicroTimingOffsets(vocal_agg, bass_agg, drums_agg, nullptr, 100);
 
   // Hi-hat offsets: base=8, so laid-back=4, neutral=8, aggressive=12
@@ -940,7 +940,7 @@ TEST(MicroTimingTest, DriveFeelAffectsVocalPhraseOffsets) {
 
   // Add note at phrase start (bar 0)
   Tick phrase_start = 0;
-  vocal.addNote(phrase_start, TICKS_PER_BEAT, 60, 80);
+  vocal.addNote(NoteEventBuilder::create(phrase_start, TICKS_PER_BEAT, 60, 80));
 
   Tick orig = vocal.notes()[0].start_tick;
 
@@ -959,12 +959,12 @@ TEST(MicroTimingTest, DefaultDriveFeelMatchesNeutral) {
 
   // Default (no drive_feel specified)
   MidiTrack vocal_def, bass_def, drums_def;
-  drums_def.addNote(start, 60, HH, 80);
+  drums_def.addNote(NoteEventBuilder::create(start, 60, HH, 80));
   PostProcessor::applyMicroTimingOffsets(vocal_def, bass_def, drums_def, nullptr);
 
   // Explicit neutral (drive_feel = 50)
   MidiTrack vocal_neutral, bass_neutral, drums_neutral;
-  drums_neutral.addNote(start, 60, HH, 80);
+  drums_neutral.addNote(NoteEventBuilder::create(start, 60, HH, 80));
   PostProcessor::applyMicroTimingOffsets(vocal_neutral, bass_neutral, drums_neutral, nullptr, 50);
 
   // Both should have same offset
@@ -990,8 +990,8 @@ TEST(PostProcessorTest, HighPitchTimingDelay) {
   // Add a low note (at center) and a high note (above center)
   // Tessitura will be centered between them: (60+80)/2 = 70
   Tick start = TICKS_PER_BAR;  // Phrase middle position
-  vocal.addNote(start, TICKS_PER_BEAT, 60, 80);   // Low note (C4)
-  vocal.addNote(start + TICKS_PER_BEAT, TICKS_PER_BEAT, 80, 80);  // High note (G#5)
+  vocal.addNote(NoteEventBuilder::create(start, TICKS_PER_BEAT, 60, 80));   // Low note (C4)
+  vocal.addNote(NoteEventBuilder::create(start + TICKS_PER_BEAT, TICKS_PER_BEAT, 80, 80));  // High note (G#5)
 
   Tick orig_low = vocal.notes()[0].start_tick;
   Tick orig_high = vocal.notes()[1].start_tick;
@@ -1026,9 +1026,9 @@ TEST(PostProcessorTest, LeapLandingTimingDelay) {
 
   // Create sequence with small step (2 semitones) and large leap (12 semitones)
   Tick start = TICKS_PER_BAR;
-  vocal.addNote(start, TICKS_PER_BEAT, 60, 80);                    // C4
-  vocal.addNote(start + TICKS_PER_BEAT, TICKS_PER_BEAT, 62, 80);   // D4 (step of 2)
-  vocal.addNote(start + 2 * TICKS_PER_BEAT, TICKS_PER_BEAT, 74, 80);  // D5 (leap of 12)
+  vocal.addNote(NoteEventBuilder::create(start, TICKS_PER_BEAT, 60, 80));                    // C4
+  vocal.addNote(NoteEventBuilder::create(start + TICKS_PER_BEAT, TICKS_PER_BEAT, 62, 80));   // D4 (step of 2)
+  vocal.addNote(NoteEventBuilder::create(start + 2 * TICKS_PER_BEAT, TICKS_PER_BEAT, 74, 80));  // D5 (leap of 12)
 
   Tick orig_step = vocal.notes()[1].start_tick;
   Tick orig_leap = vocal.notes()[2].start_tick;
@@ -1061,11 +1061,11 @@ TEST(PostProcessorTest, PostBreathSoftStart) {
 
   Tick start = TICKS_PER_BAR;
   // First note (post-breath by definition since idx=0)
-  vocal.addNote(start, TICKS_PER_BEAT, 67, 80);
+  vocal.addNote(NoteEventBuilder::create(start, TICKS_PER_BEAT, 67, 80));
   // Second note immediately following (no breath gap)
-  vocal.addNote(start + TICKS_PER_BEAT, TICKS_PER_BEAT, 67, 80);
+  vocal.addNote(NoteEventBuilder::create(start + TICKS_PER_BEAT, TICKS_PER_BEAT, 67, 80));
   // Third note after a long gap (breath gap > TICK_EIGHTH = 240)
-  vocal.addNote(start + 3 * TICKS_PER_BEAT, TICKS_PER_BEAT, 67, 80);
+  vocal.addNote(NoteEventBuilder::create(start + 3 * TICKS_PER_BEAT, TICKS_PER_BEAT, 67, 80));
 
   Tick orig_first = vocal.notes()[0].start_tick;
   Tick orig_second = vocal.notes()[1].start_tick;
@@ -1102,9 +1102,9 @@ TEST(PostProcessorTest, HumanBodyTimingCombined) {
 
   Tick start = TICKS_PER_BAR;
   // Low note, stepwise from nothing
-  vocal.addNote(start, TICKS_PER_BEAT, 60, 80);
+  vocal.addNote(NoteEventBuilder::create(start, TICKS_PER_BEAT, 60, 80));
   // Very high note after gap with large leap: all three delays apply
-  vocal.addNote(start + 3 * TICKS_PER_BEAT, TICKS_PER_BEAT, 84, 80);
+  vocal.addNote(NoteEventBuilder::create(start + 3 * TICKS_PER_BEAT, TICKS_PER_BEAT, 84, 80));
 
   Tick orig_high = vocal.notes()[1].start_tick;
 
@@ -1131,8 +1131,8 @@ TEST(PostProcessorTest, HumanBodyTimingCombined) {
 TEST(PostProcessorTest, FixMotifVocalClashesResolveMinor2nd) {
   // Motif C4 (48) clashing with Vocal B3 (47) - minor 2nd below
   MidiTrack motif, vocal;
-  motif.addNote(0, 480, 48, 80);  // C4
-  vocal.addNote(0, 480, 47, 80);  // B3 (minor 2nd below)
+  motif.addNote(NoteEventBuilder::create(0, 480, 48, 80));  // C4
+  vocal.addNote(NoteEventBuilder::create(0, 480, 47, 80));  // B3 (minor 2nd below)
 
   test::StubHarmonyContext harmony;
   harmony.setChordDegree(0);  // C major (chord tones: C, E, G -> pitch classes 0, 4, 7)
@@ -1150,8 +1150,8 @@ TEST(PostProcessorTest, FixMotifVocalClashesResolveMinor2nd) {
 TEST(PostProcessorTest, FixMotifVocalClashesResolveMajor7th) {
   // Motif C4 (60) clashing with Vocal B4 (71) - major 7th above
   MidiTrack motif, vocal;
-  motif.addNote(0, 480, 60, 80);  // C4
-  vocal.addNote(0, 480, 71, 80);  // B4 (major 7th above)
+  motif.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4
+  vocal.addNote(NoteEventBuilder::create(0, 480, 71, 80));  // B4 (major 7th above)
 
   test::StubHarmonyContext harmony;
   harmony.setChordDegree(0);  // C major
@@ -1167,8 +1167,8 @@ TEST(PostProcessorTest, FixMotifVocalClashesResolveMajor7th) {
 TEST(PostProcessorTest, FixMotifVocalClashesResolveMajor2ndClose) {
   // Motif D4 (62) clashing with Vocal C4 (60) - major 2nd in close voicing
   MidiTrack motif, vocal;
-  motif.addNote(0, 480, 62, 80);  // D4
-  vocal.addNote(0, 480, 60, 80);  // C4 (major 2nd below)
+  motif.addNote(NoteEventBuilder::create(0, 480, 62, 80));  // D4
+  vocal.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4 (major 2nd below)
 
   test::StubHarmonyContext harmony;
   harmony.setChordDegree(0);  // C major (chord tones: C, E, G)
@@ -1185,8 +1185,8 @@ TEST(PostProcessorTest, FixMotifVocalClashesIgnoresMajor9th) {
   // Motif D5 (74) vs Vocal C4 (60) - major 9th (14 semitones)
   // Major 2nd interval class (2), but actual interval >= 12, so OK
   MidiTrack motif, vocal;
-  motif.addNote(0, 480, 74, 80);  // D5
-  vocal.addNote(0, 480, 60, 80);  // C4 (major 9th = 14 semitones)
+  motif.addNote(NoteEventBuilder::create(0, 480, 74, 80));  // D5
+  vocal.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4 (major 9th = 14 semitones)
 
   test::StubHarmonyContext harmony;
   harmony.setChordDegree(0);
@@ -1201,8 +1201,8 @@ TEST(PostProcessorTest, FixMotifVocalClashesIgnoresMajor9th) {
 TEST(PostProcessorTest, FixMotifVocalClashesIgnoresConsonant) {
   // Motif C4 clashing with Vocal G4 - perfect 5th (consonant, should NOT change)
   MidiTrack motif, vocal;
-  motif.addNote(0, 480, 60, 80);  // C4
-  vocal.addNote(0, 480, 67, 80);  // G4 (perfect 5th - consonant)
+  motif.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4
+  vocal.addNote(NoteEventBuilder::create(0, 480, 67, 80));  // G4 (perfect 5th - consonant)
 
   test::StubHarmonyContext harmony;
   harmony.setChordDegree(0);
@@ -1217,8 +1217,8 @@ TEST(PostProcessorTest, FixMotifVocalClashesIgnoresConsonant) {
 TEST(PostProcessorTest, FixMotifVocalClashesHandlesNoOverlap) {
   // Motif and vocal don't overlap in time - no change expected
   MidiTrack motif, vocal;
-  motif.addNote(0, 480, 60, 80);      // C4 at tick 0-480
-  vocal.addNote(960, 480, 61, 80);    // C#4 at tick 960-1440 (no overlap)
+  motif.addNote(NoteEventBuilder::create(0, 480, 60, 80));      // C4 at tick 0-480
+  vocal.addNote(NoteEventBuilder::create(960, 480, 61, 80));    // C#4 at tick 960-1440 (no overlap)
 
   test::StubHarmonyContext harmony;
   harmony.setChordDegree(0);
@@ -1233,8 +1233,8 @@ TEST(PostProcessorTest, FixMotifVocalClashesHandlesNoOverlap) {
 TEST(PostProcessorTest, FixMotifVocalClashesUpdatesProvenance) {
   // Verify provenance is updated when fixing clashes
   MidiTrack motif, vocal;
-  motif.addNote(0, 480, 48, 80);  // C4
-  vocal.addNote(0, 480, 47, 80);  // B3 (minor 2nd clash)
+  motif.addNote(NoteEventBuilder::create(0, 480, 48, 80));  // C4
+  vocal.addNote(NoteEventBuilder::create(0, 480, 47, 80));  // B3 (minor 2nd clash)
 
   test::StubHarmonyContext harmony;
   harmony.setChordDegree(0);
@@ -1259,8 +1259,8 @@ TEST(PostProcessorTest, FixMotifVocalClashesWhenMotifIsChordTone) {
   // The old code would snap B3 to nearest chord tone (B3), leaving clash unresolved
   // The fix should move to a different chord tone (G or D) at different octave
   MidiTrack motif, vocal;
-  motif.addNote(0, 480, 59, 80);  // B3 - chord tone of G major
-  vocal.addNote(0, 480, 60, 80);  // C4 - creates minor 2nd clash
+  motif.addNote(NoteEventBuilder::create(0, 480, 59, 80));  // B3 - chord tone of G major
+  vocal.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4 - creates minor 2nd clash
 
   test::StubHarmonyContext harmony;
   harmony.setChordDegree(4);  // G major (V chord): G-B-D
@@ -1295,8 +1295,8 @@ TEST(PostProcessorTest, FixMotifVocalClashesAvoidsNearestWhenItClashes) {
   // But C4 would be unison with vocal, E4 (64) creates major 3rd (ok)
   // The fix should prefer E4 or G4 over C4 if C4 would create new issues
   MidiTrack motif, vocal;
-  motif.addNote(0, 480, 62, 80);  // D4
-  vocal.addNote(0, 480, 60, 80);  // C4 - major 2nd clash
+  motif.addNote(NoteEventBuilder::create(0, 480, 62, 80));  // D4
+  vocal.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4 - major 2nd clash
 
   test::StubHarmonyContext harmony;
   harmony.setChordDegree(0);  // C major
@@ -1326,8 +1326,8 @@ TEST(PostProcessorTest, FixMotifVocalClashesUsesOctaveDisplacement) {
   // The fix should find a chord tone that doesn't create dissonance
   // Note: Unison (same pitch) is musically acceptable, not dissonant
   MidiTrack motif, vocal;
-  motif.addNote(0, 480, 71, 80);  // B4
-  vocal.addNote(0, 480, 72, 80);  // C5 - minor 2nd clash
+  motif.addNote(NoteEventBuilder::create(0, 480, 71, 80));  // B4
+  vocal.addNote(NoteEventBuilder::create(0, 480, 72, 80));  // C5 - minor 2nd clash
 
   test::StubHarmonyContext harmony;
   harmony.setChordDegree(5);  // Am (vi chord): A-C-E
@@ -1354,13 +1354,13 @@ TEST(PostProcessorTest, FixMotifVocalClashesUsesOctaveDisplacement) {
 TEST(PostProcessorTest, FixMotifVocalClashesHandlesMultipleNotes) {
   MidiTrack motif, vocal;
   // Multiple motif notes at different times
-  motif.addNote(0, 480, 59, 80);     // B3 - will clash with vocal C4
-  motif.addNote(960, 480, 65, 80);   // F4 - will clash with vocal E4
-  motif.addNote(1920, 480, 67, 80);  // G4 - consonant, no change needed
+  motif.addNote(NoteEventBuilder::create(0, 480, 59, 80));     // B3 - will clash with vocal C4
+  motif.addNote(NoteEventBuilder::create(960, 480, 65, 80));   // F4 - will clash with vocal E4
+  motif.addNote(NoteEventBuilder::create(1920, 480, 67, 80));  // G4 - consonant, no change needed
 
-  vocal.addNote(0, 480, 60, 80);     // C4 - minor 2nd with B3
-  vocal.addNote(960, 480, 64, 80);   // E4 - minor 2nd with F4
-  vocal.addNote(1920, 480, 67, 80);  // G4 - unison with G4 (ok)
+  vocal.addNote(NoteEventBuilder::create(0, 480, 60, 80));     // C4 - minor 2nd with B3
+  vocal.addNote(NoteEventBuilder::create(960, 480, 64, 80));   // E4 - minor 2nd with F4
+  vocal.addNote(NoteEventBuilder::create(1920, 480, 67, 80));  // G4 - unison with G4 (ok)
 
   test::StubHarmonyContext harmony;
   harmony.setChordDegree(0);  // C major throughout
@@ -1396,8 +1396,8 @@ TEST(PostProcessorTest, RegressionIdolHyperSeed88888) {
   MidiTrack motif, vocal;
 
   // Simulate the overlapping notes at tick 30720
-  motif.addNote(30720, 240, 59, 80);  // B3 - chord tone of G major
-  vocal.addNote(30715, 480, 60, 80);  // C4 - sustained, overlaps with motif
+  motif.addNote(NoteEventBuilder::create(30720, 240, 59, 80));  // B3 - chord tone of G major
+  vocal.addNote(NoteEventBuilder::create(30715, 480, 60, 80));  // C4 - sustained, overlaps with motif
 
   test::StubHarmonyContext harmony;
   harmony.setChordDegree(4);  // G major (V chord): G-B-D
@@ -1456,10 +1456,10 @@ TEST_F(PerSectionDropStyleTest, UsesSectionDropStyleWhenSet) {
 
   MidiTrack chord_track;
   Tick drop_zone_start = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;
-  chord_track.addNote(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 60, 80);
+  chord_track.addNote(NoteEventBuilder::create(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 60, 80));
 
   MidiTrack drum_track;
-  drum_track.addNote(drop_zone_start, TICKS_PER_BEAT / 4, KICK, 100);
+  drum_track.addNote(NoteEventBuilder::create(drop_zone_start, TICKS_PER_BEAT / 4, KICK, 100));
 
   std::vector<MidiTrack*> tracks = {&chord_track};
 
@@ -1484,10 +1484,10 @@ TEST_F(PerSectionDropStyleTest, FallsBackToDefaultForBSectionWithNone) {
 
   MidiTrack chord_track;
   Tick drop_zone_start = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;
-  chord_track.addNote(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 60, 80);
+  chord_track.addNote(NoteEventBuilder::create(drop_zone_start + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 60, 80));
 
   MidiTrack drum_track;
-  drum_track.addNote(drop_zone_start, TICKS_PER_BEAT / 4, KICK, 100);
+  drum_track.addNote(NoteEventBuilder::create(drop_zone_start, TICKS_PER_BEAT / 4, KICK, 100));
   size_t orig_drum_count = drum_track.notes().size();
 
   std::vector<MidiTrack*> tracks = {&chord_track};
@@ -1517,7 +1517,7 @@ TEST_F(PerSectionDropStyleTest, DrumHitAddsCrashAtChorusEntry) {
 
   MidiTrack chord_track;
   MidiTrack drum_track;
-  drum_track.addNote(0, TICKS_PER_BEAT / 2, KICK, 80);  // Existing note
+  drum_track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT / 2, KICK, 80));  // Existing note
 
   std::vector<MidiTrack*> tracks = {&chord_track};
   PostProcessor::applyChorusDrop(tracks, sections, &drum_track, ChorusDropStyle::Subtle);
@@ -1547,7 +1547,7 @@ TEST_F(PerSectionDropStyleTest, NoneDropStyleSkipsSection) {
 
   MidiTrack chord_track;
   Tick section_end = 4 * TICKS_PER_BAR;
-  chord_track.addNote(section_end - TICKS_PER_BEAT, TICKS_PER_BEAT, 60, 80);
+  chord_track.addNote(NoteEventBuilder::create(section_end - TICKS_PER_BEAT, TICKS_PER_BEAT, 60, 80));
   Tick orig_duration = chord_track.notes()[0].duration;
 
   std::vector<MidiTrack*> tracks = {&chord_track};
@@ -1571,7 +1571,7 @@ TEST_F(PerSectionDropStyleTest, ExplicitDropStyleOnInterludeIsApplied) {
 
   MidiTrack chord_track;
   Tick drop_zone = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
-  chord_track.addNote(drop_zone + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 60, 80);
+  chord_track.addNote(NoteEventBuilder::create(drop_zone + TICKS_PER_BEAT / 2, TICKS_PER_BEAT / 2, 60, 80));
 
   std::vector<MidiTrack*> tracks = {&chord_track};
   PostProcessor::applyChorusDrop(tracks, sections, nullptr, ChorusDropStyle::Subtle);
@@ -1617,8 +1617,8 @@ TEST_F(PerSectionDropStyleTest, MultipleSectionsWithDifferentDropStyles) {
   // Add drum notes in both drop zones
   Tick drop1 = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;
   Tick drop2 = 24 * TICKS_PER_BAR - TICKS_PER_BEAT;
-  drum_track.addNote(drop1, TICKS_PER_BEAT / 4, KICK, 100);
-  drum_track.addNote(drop2, TICKS_PER_BEAT / 4, KICK, 100);
+  drum_track.addNote(NoteEventBuilder::create(drop1, TICKS_PER_BEAT / 4, KICK, 100));
+  drum_track.addNote(NoteEventBuilder::create(drop2, TICKS_PER_BEAT / 4, KICK, 100));
 
   MidiTrack chord_track;
   std::vector<MidiTrack*> tracks = {&chord_track};

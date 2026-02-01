@@ -49,8 +49,15 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
   bool isPitchSafe(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
                    bool is_weak_beat = false) const override;
 
+  CollisionInfo getCollisionInfo(uint8_t pitch, Tick start, Tick duration,
+                                 TrackRole exclude) const override;
+
   uint8_t getBestAvailablePitch(uint8_t desired, Tick start, Tick duration, TrackRole track,
                                 uint8_t low, uint8_t high) const override;
+
+  PitchResolutionResult resolvePitchWithStrategy(uint8_t desired, Tick start, Tick duration,
+                                                  TrackRole track, uint8_t low,
+                                                  uint8_t high) const override;
 
   Tick getNextChordChangeTick(Tick after) const override;
 
@@ -68,6 +75,8 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
   void registerSecondaryDominant(Tick start, Tick end, int8_t degree) override;
 
   std::string dumpNotesAt(Tick tick, Tick range_ticks = 1920) const override;
+
+  CollisionSnapshot getCollisionSnapshot(Tick tick, Tick range_ticks = 1920) const override;
 
   Tick getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude,
                      Tick desired_end) const override;

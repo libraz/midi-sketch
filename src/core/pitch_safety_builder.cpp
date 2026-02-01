@@ -103,9 +103,12 @@ std::optional<uint8_t> PitchSafetyBuilder::findSafePitch() const {
   // First, try the desired pitch
   // Bass track needs additional tritone check against chord over full duration
   bool is_safe = isSafe(pitch_);
+  bool had_tritone = false;
   if (is_safe && track_ == TrackRole::Bass && hasTritoneWithChordInDuration(pitch_)) {
     is_safe = false;  // Tritone with chord - not safe
+    had_tritone = true;
   }
+
   if (is_safe) {
     return pitch_;
   }

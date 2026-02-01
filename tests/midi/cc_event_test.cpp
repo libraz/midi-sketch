@@ -80,7 +80,7 @@ TEST(MidiTrackCCTest, EmptyWithOnlyCC) {
 
 TEST(MidiTrackCCTest, ClearRemovesCCEvents) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
   track.addCC(0, MidiCC::kExpression, 100);
 
   track.clear();
@@ -92,7 +92,7 @@ TEST(MidiTrackCCTest, ClearRemovesCCEvents) {
 
 TEST(MidiTrackCCTest, LastTickIncludesCCEvents) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
   track.addCC(1920, MidiCC::kExpression, 64);
 
   // CC event at tick 1920 is after note end (480)
@@ -101,8 +101,8 @@ TEST(MidiTrackCCTest, LastTickIncludesCCEvents) {
 
 TEST(MidiTrackCCTest, SliceIncludesCCEvents) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
-  track.addNote(960, 480, 64, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  track.addNote(NoteEventBuilder::create(960, 480, 64, 100));
   track.addCC(0, MidiCC::kExpression, 64);
   track.addCC(480, MidiCC::kExpression, 100);
   track.addCC(960, MidiCC::kExpression, 80);
@@ -186,7 +186,7 @@ TEST(MidiWriterCCTest, CCEventWrittenInSMF1) {
   song.setBpm(120);
 
   // Add a note and a CC event to vocal track
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
   song.vocal().addCC(0, MidiCC::kExpression, 100);
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -203,7 +203,7 @@ TEST(MidiWriterCCTest, MultipleCCEventsWritten) {
   Song song;
   song.setBpm(120);
 
-  song.vocal().addNote(0, 1920, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 1920, 60, 100));
   song.vocal().addCC(0, MidiCC::kExpression, 64);
   song.vocal().addCC(480, MidiCC::kExpression, 80);
   song.vocal().addCC(960, MidiCC::kExpression, 100);
@@ -222,10 +222,10 @@ TEST(MidiWriterCCTest, CCEventsOnDifferentChannels) {
   Song song;
   song.setBpm(120);
 
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
   song.vocal().addCC(0, MidiCC::kExpression, 100);
 
-  song.bass().addNote(0, 480, 48, 90);
+  song.bass().addNote(NoteEventBuilder::create(0, 480, 48, 90));
   song.bass().addCC(0, MidiCC::kExpression, 80);
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -247,7 +247,7 @@ TEST(MidiWriterCCTest, NoCCEventsProducesCleanOutput) {
   Song song;
   song.setBpm(120);
 
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
@@ -365,7 +365,7 @@ TEST(ExpressionCurveTest, ExpressionWrittenToMidiOutput) {
 TEST(ExpressionCurveTest, CCEventsAtBeatResolution) {
   // Verify CC events are generated at one-per-beat resolution
   MidiTrack track;
-  track.addNote(0, 1920, 60, 100);  // One bar note
+  track.addNote(NoteEventBuilder::create(0, 1920, 60, 100));  // One bar note
 
   // Create a minimal section to test expression generation
   // We test via the Generator which calls generateExpressionCurves()

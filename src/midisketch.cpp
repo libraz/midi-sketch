@@ -192,8 +192,35 @@ std::string MidiSketch::getEventsJson() const {
           .write("source", noteSourceToString(static_cast<NoteSource>(note.prov_source)))
           .write("chord_degree", static_cast<int>(note.prov_chord_degree))
           .write("lookup_tick", note.prov_lookup_tick)
-          .write("original_pitch", static_cast<int>(note.prov_original_pitch))
-          .endObject();
+          .write("original_pitch", static_cast<int>(note.prov_original_pitch));
+
+      // Add transform steps if any
+      if (note.transform_count > 0) {
+        w.beginArray("transforms");
+        for (uint8_t i = 0; i < note.transform_count; ++i) {
+          const auto& step = note.transform_steps[i];
+          w.beginObject()
+              .write("type", transformStepTypeToString(step.type))
+              .write("input", static_cast<int>(step.input_pitch))
+              .write("output", static_cast<int>(step.output_pitch))
+              .write("param1", static_cast<int>(step.param1));
+
+          // For collision_avoid, decode param2 into track and strategy
+          if (step.type == TransformStepType::CollisionAvoid) {
+            int8_t colliding_track = step.param2 & 0x0F;
+            int8_t strategy_value = (step.param2 >> 4) & 0x0F;
+            w.write("colliding_track", trackRoleToString(static_cast<TrackRole>(colliding_track)))
+                .write("strategy",
+                       collisionAvoidStrategyToString(static_cast<CollisionAvoidStrategy>(strategy_value)));
+          } else {
+            w.write("param2", static_cast<int>(step.param2));
+          }
+          w.endObject();
+        }
+        w.endArray();
+      }
+
+      w.endObject();
     }
 #endif  // MIDISKETCH_NOTE_PROVENANCE
 

@@ -67,6 +67,12 @@ class StubHarmonyContext : public IHarmonyCoordinator {
     return desired;  // Always return the desired pitch
   }
 
+  PitchResolutionResult resolvePitchWithStrategy(uint8_t desired, Tick /*start*/, Tick /*duration*/,
+                                                  TrackRole /*track*/, uint8_t /*low*/,
+                                                  uint8_t /*high*/) const override {
+    return {desired, CollisionAvoidStrategy::None};  // Stub: always safe
+  }
+
   Tick getNextChordChangeTick(Tick /*after*/) const override { return next_chord_change_; }
 
   void clearNotes() override {
@@ -96,6 +102,15 @@ class StubHarmonyContext : public IHarmonyCoordinator {
 
   std::string dumpNotesAt(Tick tick, Tick /*range_ticks*/ = 1920) const override {
     return "StubHarmonyContext::dumpNotesAt(" + std::to_string(tick) + ") - no real data";
+  }
+
+  CollisionSnapshot getCollisionSnapshot(Tick tick, Tick range_ticks = 1920) const override {
+    CollisionSnapshot snapshot;
+    snapshot.tick = tick;
+    snapshot.range_start = (tick > range_ticks / 2) ? (tick - range_ticks / 2) : 0;
+    snapshot.range_end = tick + range_ticks / 2;
+    // Stub returns empty data
+    return snapshot;
   }
 
   Tick getMaxSafeEnd(Tick /*note_start*/, uint8_t /*pitch*/, TrackRole /*exclude*/,

@@ -106,8 +106,8 @@ TEST(VelocityTest, VelocityBalanceAllRoles) {
 
 TEST(VelocityTest, TransitionDynamicsNoChangeOnSameEnergy) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 80);
-  track.addNote(480, 480, 62, 80);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 80));
+  track.addNote(NoteEventBuilder::create(480, 480, 62, 80));
 
   // A to A has same energy (2 -> 2), no change expected
   applyTransitionDynamics(track, 0, TICKS_PER_BAR, SectionType::A, SectionType::A);
@@ -123,9 +123,9 @@ TEST(VelocityTest, TransitionDynamicsCrescendoToChorus) {
   Tick section_end = 2 * TICKS_PER_BAR;
   Tick transition_start = section_end - TICKS_PER_BAR;
 
-  track.addNote(0, 480, 60, 80);                                     // Before transition
-  track.addNote(transition_start, 480, 62, 80);                      // Start of transition
-  track.addNote(transition_start + TICKS_PER_BAR / 2, 480, 64, 80);  // Middle of transition
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 80));                                     // Before transition
+  track.addNote(NoteEventBuilder::create(transition_start, 480, 62, 80));                      // Start of transition
+  track.addNote(NoteEventBuilder::create(transition_start + TICKS_PER_BAR / 2, 480, 64, 80));  // Middle of transition
 
   // B to Chorus applies crescendo across entire B section
   applyTransitionDynamics(track, 0, section_end, SectionType::B, SectionType::Chorus);
@@ -140,7 +140,7 @@ TEST(VelocityTest, TransitionDynamicsDecrescendo) {
   Tick section_end = TICKS_PER_BAR;
 
   // Add note in middle of the bar (not at the start where multiplier=1.0)
-  track.addNote(TICKS_PER_BAR / 2, 480, 60, 80);
+  track.addNote(NoteEventBuilder::create(TICKS_PER_BAR / 2, 480, 60, 80));
 
   // Chorus to A is decrescendo (4 -> 2)
   applyTransitionDynamics(track, 0, section_end, SectionType::Chorus, SectionType::A);
@@ -172,7 +172,7 @@ TEST(VelocityTest, AllTransitionDynamicsNoSections) {
 
 TEST(VelocityTest, AllTransitionDynamicsSingleSection) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 80);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 80));
 
   std::vector<MidiTrack*> tracks = {&track};
 
@@ -192,7 +192,7 @@ TEST(VelocityTest, AllTransitionDynamicsSingleSection) {
 TEST(VelocityTest, AllTransitionDynamicsMultipleSections) {
   MidiTrack track;
   // Note in B section (before chorus)
-  track.addNote(8 * TICKS_PER_BAR - TICKS_PER_BAR / 2, 480, 60, 80);
+  track.addNote(NoteEventBuilder::create(8 * TICKS_PER_BAR - TICKS_PER_BAR / 2, 480, 60, 80));
 
   std::vector<MidiTrack*> tracks = {&track};
 
@@ -421,8 +421,8 @@ TEST(VelocityTest, ApplyBarVelocityCurveChorusCrescendo) {
 
   // Add notes with identical initial velocity
   uint8_t initial_vel = 100;
-  track.addNote(0, 480, 60, initial_vel);                   // Bar 0
-  track.addNote(3 * TICKS_PER_BAR, 480, 64, initial_vel);   // Bar 3
+  track.addNote(NoteEventBuilder::create(0, 480, 60, initial_vel));                   // Bar 0
+  track.addNote(NoteEventBuilder::create(3 * TICKS_PER_BAR, 480, 64, initial_vel));   // Bar 3
 
   applyBarVelocityCurve(track, section);
 
@@ -439,7 +439,7 @@ TEST(VelocityTest, ApplyBarVelocityCurveModifiesVelocities) {
   section.bars = 8;
 
   uint8_t initial_vel = 100;
-  track.addNote(0, 480, 60, initial_vel);  // Bar 0, should be reduced
+  track.addNote(NoteEventBuilder::create(0, 480, 60, initial_vel));  // Bar 0, should be reduced
 
   applyBarVelocityCurve(track, section);
 
@@ -456,7 +456,7 @@ TEST(VelocityTest, ApplyBarVelocityCurveIgnoresNotesOutsideSection) {
   section.bars = 4;
 
   uint8_t initial_vel = 100;
-  track.addNote(0, 480, 60, initial_vel);  // Before section - should not change
+  track.addNote(NoteEventBuilder::create(0, 480, 60, initial_vel));  // Before section - should not change
 
   applyBarVelocityCurve(track, section);
 
@@ -636,10 +636,10 @@ TEST(VelocityTest, ApplyBeatMicroDynamics_ModifiesVelocity) {
 
   // Add notes on each beat
   uint8_t initial_vel = 100;
-  track.addNote(0, 480, 60, initial_vel);                    // Beat 1
-  track.addNote(TICKS_PER_BEAT, 480, 62, initial_vel);       // Beat 2
-  track.addNote(2 * TICKS_PER_BEAT, 480, 64, initial_vel);   // Beat 3
-  track.addNote(3 * TICKS_PER_BEAT, 480, 65, initial_vel);   // Beat 4
+  track.addNote(NoteEventBuilder::create(0, 480, 60, initial_vel));                    // Beat 1
+  track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT, 480, 62, initial_vel));       // Beat 2
+  track.addNote(NoteEventBuilder::create(2 * TICKS_PER_BEAT, 480, 64, initial_vel));   // Beat 3
+  track.addNote(NoteEventBuilder::create(3 * TICKS_PER_BEAT, 480, 65, initial_vel));   // Beat 4
 
   applyBeatMicroDynamics(track);
 
@@ -654,10 +654,10 @@ TEST(VelocityTest, ApplyBeatMicroDynamics_PreservesMusicalRelations) {
   MidiTrack track;
 
   uint8_t initial_vel = 100;
-  track.addNote(0, 480, 60, initial_vel);                    // Beat 1
-  track.addNote(TICKS_PER_BEAT, 480, 62, initial_vel);       // Beat 2
-  track.addNote(2 * TICKS_PER_BEAT, 480, 64, initial_vel);   // Beat 3
-  track.addNote(3 * TICKS_PER_BEAT, 480, 65, initial_vel);   // Beat 4
+  track.addNote(NoteEventBuilder::create(0, 480, 60, initial_vel));                    // Beat 1
+  track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT, 480, 62, initial_vel));       // Beat 2
+  track.addNote(NoteEventBuilder::create(2 * TICKS_PER_BEAT, 480, 64, initial_vel));   // Beat 3
+  track.addNote(NoteEventBuilder::create(3 * TICKS_PER_BEAT, 480, 65, initial_vel));   // Beat 4
 
   applyBeatMicroDynamics(track);
 
@@ -687,7 +687,7 @@ TEST(VelocityTest, ApplyPhraseEndDecay_ReducesEndVelocity) {
   // Add notes throughout the section
   uint8_t initial_vel = 100;
   for (int bar = 0; bar < 4; ++bar) {
-    track.addNote(bar * TICKS_PER_BAR, 480, 60, initial_vel);
+    track.addNote(NoteEventBuilder::create(bar * TICKS_PER_BAR, 480, 60, initial_vel));
   }
   // Add note in the last beat (decay region)
   // For 4-bar section: phrase_end = 4*1920 = 7680, decay_start = 7680 - 480 = 7200
@@ -695,7 +695,7 @@ TEST(VelocityTest, ApplyPhraseEndDecay_ReducesEndVelocity) {
   // Place note halfway through the decay region: 7200 + 240 = 7440
   Tick decay_region_start = 4 * TICKS_PER_BAR - TICKS_PER_BEAT;
   Tick decay_note_tick = decay_region_start + TICKS_PER_BEAT / 2;  // Middle of last beat
-  track.addNote(decay_note_tick, 240, 60, initial_vel);
+  track.addNote(NoteEventBuilder::create(decay_note_tick, 240, 60, initial_vel));
 
   applyPhraseEndDecay(track, sections);
 
@@ -723,8 +723,8 @@ TEST(VelocityTest, ApplyPhraseEndDecay_MultiplePhrases) {
 
   uint8_t initial_vel = 100;
   // Add notes at phrase ends
-  track.addNote(4 * TICKS_PER_BAR - TICKS_PER_BEAT / 2, 480, 60, initial_vel);  // End of phrase 1
-  track.addNote(8 * TICKS_PER_BAR - TICKS_PER_BEAT / 2, 480, 60, initial_vel);  // End of phrase 2
+  track.addNote(NoteEventBuilder::create(4 * TICKS_PER_BAR - TICKS_PER_BEAT / 2, 480, 60, initial_vel));  // End of phrase 1
+  track.addNote(NoteEventBuilder::create(8 * TICKS_PER_BAR - TICKS_PER_BEAT / 2, 480, 60, initial_vel));  // End of phrase 2
 
   applyPhraseEndDecay(track, sections);
 
@@ -750,7 +750,7 @@ TEST(VelocityTest, ApplyPhraseEndDecay_EmptyTrack) {
 
 TEST(VelocityTest, ApplyPhraseEndDecay_EmptySections) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   std::vector<Section> sections;  // Empty
 
@@ -808,7 +808,7 @@ TEST(VelocityTest, ApplyPhraseEndDecay_DurationStretch) {
   Tick initial_duration = 480;
   // Add note near end of phrase (in decay region)
   Tick decay_note_tick = 4 * TICKS_PER_BAR - TICKS_PER_BEAT / 2;
-  track.addNote(decay_note_tick, initial_duration, 60, 100);
+  track.addNote(NoteEventBuilder::create(decay_note_tick, initial_duration, 60, 100));
 
   applyPhraseEndDecay(track, sections);
 
@@ -832,7 +832,7 @@ TEST(VelocityTest, ApplyPhraseEndDecay_BridgeSectionStrongerStretch) {
 
   Tick initial_duration = 480;
   Tick decay_note_tick = 4 * TICKS_PER_BAR - TICKS_PER_BEAT / 2;
-  track.addNote(decay_note_tick, initial_duration, 60, 100);
+  track.addNote(NoteEventBuilder::create(decay_note_tick, initial_duration, 60, 100));
 
   applyPhraseEndDecay(track, sections);
 
@@ -1039,12 +1039,12 @@ TEST(VelocityTest, ApplyPhraseEndDecay_DriveFeelAffectsStretch) {
 
   // Test with laid-back drive (should have longer stretch)
   MidiTrack track_laid_back;
-  track_laid_back.addNote(decay_note_tick, initial_duration, 60, 100);
+  track_laid_back.addNote(NoteEventBuilder::create(decay_note_tick, initial_duration, 60, 100));
   applyPhraseEndDecay(track_laid_back, sections, 0);  // Laid-back
 
   // Test with aggressive drive (should have shorter stretch)
   MidiTrack track_aggressive;
-  track_aggressive.addNote(decay_note_tick, initial_duration, 60, 100);
+  track_aggressive.addNote(NoteEventBuilder::create(decay_note_tick, initial_duration, 60, 100));
   applyPhraseEndDecay(track_aggressive, sections, 100);  // Aggressive
 
   // Laid-back should have longer duration than aggressive
@@ -1065,12 +1065,12 @@ TEST(VelocityTest, ApplyPhraseEndDecay_DefaultDriveFeelMatchesNeutral) {
 
   // Test with default (should be neutral = 50)
   MidiTrack track_default;
-  track_default.addNote(decay_note_tick, initial_duration, 60, 100);
+  track_default.addNote(NoteEventBuilder::create(decay_note_tick, initial_duration, 60, 100));
   applyPhraseEndDecay(track_default, sections);  // Default
 
   // Test with explicit neutral
   MidiTrack track_neutral;
-  track_neutral.addNote(decay_note_tick, initial_duration, 60, 100);
+  track_neutral.addNote(NoteEventBuilder::create(decay_note_tick, initial_duration, 60, 100));
   applyPhraseEndDecay(track_neutral, sections, 50);  // Explicit neutral
 
   // Both should have same duration

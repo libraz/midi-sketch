@@ -40,7 +40,7 @@ TEST(MidiWriterSmf1Test, HeaderFormat) {
   song.setArrangement(Arrangement(sections));
 
   // Add some notes
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
@@ -61,7 +61,7 @@ TEST(MidiWriterSmf1Test, DivisionValue) {
   Song song;
   song.setBpm(120);
 
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
@@ -76,7 +76,7 @@ TEST(MidiWriterSmf1Test, ContainsMTrkChunk) {
   Song song;
   song.setBpm(120);
 
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
@@ -119,7 +119,7 @@ TEST(MidiWriterSmf1Test, SETrackIsFirstTrack) {
   song.setBpm(120);
   song.se().addText(0, "A");
 
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
@@ -161,7 +161,7 @@ TEST(MidiWriterSmf1Test, KeyTransposeAppliedOnce) {
   Song songC;
   songC.setBpm(120);
   // Add a note at C4 (MIDI note 60)
-  songC.vocal().addNote(0, 480, 60, 100);
+  songC.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   MidiWriter writerC;
   writerC.build(songC, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -170,7 +170,7 @@ TEST(MidiWriterSmf1Test, KeyTransposeAppliedOnce) {
   Song songD;
   songD.setBpm(120);
   // Add the same note at C4 (MIDI note 60) - same internal representation
-  songD.vocal().addNote(0, 480, 60, 100);
+  songD.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   MidiWriter writerD;
   writerD.build(songD, Key::D, Mood::StraightPop, "", MidiFormat::SMF1);  // Key::D = 2 semitones up
@@ -193,7 +193,7 @@ TEST(MidiWriterSmf1Test, KeyTransposeDoesNotAffectDrums) {
   Song song;
   song.setBpm(120);
   // Add a kick drum note (MIDI note 36)
-  song.drums().addNote(0, 480, 36, 100);
+  song.drums().addNote(NoteEventBuilder::create(0, 480, 36, 100));
 
   MidiWriter writerC;
   writerC.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -220,7 +220,7 @@ TEST(MidiWriterSmf1Test, BpmZeroDoesNotCrash) {
   MidiWriter writer;
   Song song;
   song.setBpm(0);  // Invalid BPM
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   // Should not crash - BPM defaults to 120
   EXPECT_NO_THROW(writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1));
@@ -232,7 +232,7 @@ TEST(MidiWriterSmf1Test, BpmZeroDefaultsTo120) {
   MidiWriter writer;
   Song song;
   song.setBpm(0);  // Invalid BPM
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
@@ -255,7 +255,7 @@ TEST(MidiWriterSmf1Test, LongTrackNameTruncatedTo255) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
@@ -317,7 +317,7 @@ TEST(MidiWriterSmf1Test, AuxTrackOutputOnChannel5) {
   song.setBpm(120);
 
   // Add a note to Aux track
-  song.aux().addNote(0, 480, 67, 80);  // G4
+  song.aux().addNote(NoteEventBuilder::create(0, 480, 67, 80));  // G4
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
@@ -333,13 +333,13 @@ TEST(MidiWriterSmf1Test, AllEightTracksOutput) {
   song.setBpm(120);
 
   // Add notes to all melodic tracks
-  song.vocal().addNote(0, 480, 60, 100);
-  song.chord().addNote(0, 480, 64, 100);
-  song.bass().addNote(0, 480, 48, 100);
-  song.motif().addNote(0, 480, 72, 100);
-  song.arpeggio().addNote(0, 480, 76, 100);
-  song.aux().addNote(0, 480, 67, 80);
-  song.drums().addNote(0, 480, 36, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  song.chord().addNote(NoteEventBuilder::create(0, 480, 64, 100));
+  song.bass().addNote(NoteEventBuilder::create(0, 480, 48, 100));
+  song.motif().addNote(NoteEventBuilder::create(0, 480, 72, 100));
+  song.arpeggio().addNote(NoteEventBuilder::create(0, 480, 76, 100));
+  song.aux().addNote(NoteEventBuilder::create(0, 480, 67, 80));
+  song.drums().addNote(NoteEventBuilder::create(0, 480, 36, 100));
   song.se().addText(0, "Test");
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -363,7 +363,7 @@ TEST(MidiWriterSmf1Test, MetadataEmbeddedAsTextEvent) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   std::string metadata =
       R"({"generator":"midi-sketch","format_version":1,"library_version":"1.0.0","seed":12345})";
@@ -398,7 +398,7 @@ TEST(MidiWriterSmf1Test, MetadataNotEmbeddedWhenEmpty) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);  // No metadata
   auto data = writer.toBytes();
@@ -420,7 +420,7 @@ TEST(MidiWriterSmf1Test, MetadataContainsFullJson) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   std::string metadata = R"({"key":"value","number":42})";
   writer.build(song, Key::C, Mood::StraightPop, metadata, MidiFormat::SMF1);
@@ -455,9 +455,9 @@ TEST(MidiWriterSmf1Test, MoodProgramChange_StraightPop) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);
-  song.chord().addNote(0, 480, 64, 80);
-  song.bass().addNote(0, 480, 48, 90);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  song.chord().addNote(NoteEventBuilder::create(0, 480, 64, 80));
+  song.bass().addNote(NoteEventBuilder::create(0, 480, 48, 90));
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
@@ -475,9 +475,9 @@ TEST(MidiWriterSmf1Test, MoodProgramChange_CityPop) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);
-  song.chord().addNote(0, 480, 64, 80);
-  song.bass().addNote(0, 480, 48, 90);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  song.chord().addNote(NoteEventBuilder::create(0, 480, 64, 80));
+  song.bass().addNote(NoteEventBuilder::create(0, 480, 48, 90));
 
   writer.build(song, Key::C, Mood::CityPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
@@ -495,10 +495,10 @@ TEST(MidiWriterSmf1Test, MoodProgramChange_Yoasobi) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);
-  song.chord().addNote(0, 480, 64, 80);
-  song.bass().addNote(0, 480, 48, 90);
-  song.motif().addNote(0, 480, 72, 70);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  song.chord().addNote(NoteEventBuilder::create(0, 480, 64, 80));
+  song.bass().addNote(NoteEventBuilder::create(0, 480, 48, 90));
+  song.motif().addNote(NoteEventBuilder::create(0, 480, 72, 70));
 
   writer.build(song, Key::C, Mood::Yoasobi, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
@@ -518,10 +518,10 @@ TEST(MidiWriterSmf1Test, MoodProgramChange_Ballad) {
   MidiWriter writer;
   Song song;
   song.setBpm(80);
-  song.vocal().addNote(0, 480, 60, 100);
-  song.chord().addNote(0, 480, 64, 80);
-  song.bass().addNote(0, 480, 48, 70);
-  song.aux().addNote(0, 480, 67, 60);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  song.chord().addNote(NoteEventBuilder::create(0, 480, 64, 80));
+  song.bass().addNote(NoteEventBuilder::create(0, 480, 48, 70));
+  song.aux().addNote(NoteEventBuilder::create(0, 480, 67, 60));
 
   writer.build(song, Key::C, Mood::Ballad, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
@@ -539,7 +539,7 @@ TEST(MidiWriterSmf1Test, MoodProgramChange_Ballad) {
 TEST(MidiWriterSmf1Test, DifferentMoodsProduceDifferentPrograms) {
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   MidiWriter writer1, writer2;
   writer1.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -631,7 +631,7 @@ TEST(MidiWriterSmf1Test, WritePitchBendEvents) {
   song.setBpm(120);
 
   // Add a note and pitch bend events to vocal track
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
   song.vocal().addPitchBend(0, 0);      // Center
   song.vocal().addPitchBend(120, 4096);  // One semitone up
 
@@ -647,7 +647,7 @@ TEST(MidiWriterSmf1Test, PitchBendCenterValue) {
   Song song;
   song.setBpm(120);
 
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
   song.vocal().addPitchBend(0, 0);  // Center (internal 0 = MIDI 8192)
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -663,7 +663,7 @@ TEST(MidiWriterSmf1Test, PitchBendPositiveValue) {
   Song song;
   song.setBpm(120);
 
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
   song.vocal().addPitchBend(0, 4096);  // One semitone up (internal 4096 = MIDI 12288)
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -679,7 +679,7 @@ TEST(MidiWriterSmf1Test, PitchBendNegativeValue) {
   Song song;
   song.setBpm(120);
 
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
   song.vocal().addPitchBend(0, -4096);  // One semitone down (internal -4096 = MIDI 4096)
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -695,7 +695,7 @@ TEST(MidiWriterSmf1Test, MultiplePitchBendEventsWritten) {
   Song song;
   song.setBpm(120);
 
-  song.vocal().addNote(0, 1920, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 1920, 60, 100));
   song.vocal().addPitchBend(0, -2048);
   song.vocal().addPitchBend(120, -1024);
   song.vocal().addPitchBend(240, 0);
@@ -714,10 +714,10 @@ TEST(MidiWriterSmf1Test, PitchBendOnDifferentChannels) {
   Song song;
   song.setBpm(120);
 
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
   song.vocal().addPitchBend(0, 2048);
 
-  song.bass().addNote(0, 480, 48, 90);
+  song.bass().addNote(NoteEventBuilder::create(0, 480, 48, 90));
   song.bass().addPitchBend(0, -2048);
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -739,7 +739,7 @@ TEST(MidiWriterSmf1Test, NoPitchBendProducesCleanOutput) {
   Song song;
   song.setBpm(120);
 
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
   auto data = writer.toBytes();
@@ -753,7 +753,7 @@ TEST(MidiWriterSmf1Test, PitchBendExtremeValues) {
   Song song;
   song.setBpm(120);
 
-  song.vocal().addNote(0, 960, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 960, 60, 100));
   song.vocal().addPitchBend(0, 8191);   // Max positive
   song.vocal().addPitchBend(480, -8192);  // Max negative
 

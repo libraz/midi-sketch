@@ -119,9 +119,9 @@ inline constexpr PhysicalModel kMotifSynth = {
     48, 84, 60, 100, 60, false, 0
 };
 
-/// Arpeggio Synth: C3 (48) to C7 (96)
+/// Arpeggio Synth: C3 (48) to C8 (108)
 inline constexpr PhysicalModel kArpeggioSynth = {
-    48, 96, 60, 100, 30, false, 0
+    48, 108, 60, 100, 30, false, 0
 };
 
 }  // namespace PhysicalModels

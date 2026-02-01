@@ -56,10 +56,10 @@ class MotifCounterChordAwareTest : public ::testing::Test {
     harmony_.initialize(arr, *progression_, Mood::StraightPop);
 
     // Create test vocal track
-    vocal_track_.addNote(0, TICK_HALF, 64, 100);                  // Bar 1 (C chord)
-    vocal_track_.addNote(TICKS_PER_BAR, TICK_HALF, 67, 100);      // Bar 2 (G chord)
-    vocal_track_.addNote(2 * TICKS_PER_BAR, TICK_HALF, 69, 100);  // Bar 3 (Am chord)
-    vocal_track_.addNote(3 * TICKS_PER_BAR, TICK_HALF, 65, 100);  // Bar 4 (F chord)
+    vocal_track_.addNote(NoteEventBuilder::create(0, TICK_HALF, 64, 100));                  // Bar 1 (C chord)
+    vocal_track_.addNote(NoteEventBuilder::create(TICKS_PER_BAR, TICK_HALF, 67, 100));      // Bar 2 (G chord)
+    vocal_track_.addNote(NoteEventBuilder::create(2 * TICKS_PER_BAR, TICK_HALF, 69, 100));  // Bar 3 (Am chord)
+    vocal_track_.addNote(NoteEventBuilder::create(3 * TICKS_PER_BAR, TICK_HALF, 65, 100));  // Bar 4 (F chord)
 
     // Create vocal analysis
     vocal_analysis_ = analyzeVocal(vocal_track_);

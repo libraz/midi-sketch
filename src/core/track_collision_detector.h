@@ -69,6 +69,22 @@ class TrackCollisionDetector {
                    bool is_weak_beat = false) const;
 
   /**
+   * @brief Get detailed collision information for a pitch.
+   *
+   * Returns information about the first collision found, including
+   * the colliding note's pitch, track, and interval.
+   *
+   * @param pitch MIDI pitch to check
+   * @param start Start tick
+   * @param duration Duration in ticks
+   * @param exclude Exclude notes from this track when checking
+   * @param chord_tracker Optional chord tracker for context-aware detection
+   * @return CollisionInfo with details about the collision (if any)
+   */
+  CollisionInfo getCollisionInfo(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
+                                 const ChordProgressionTracker* chord_tracker = nullptr) const;
+
+  /**
    * @brief Check for low register collision with bass.
    *
    * Uses stricter thresholds below C4 (intervals sound muddy in low register).
@@ -126,6 +142,18 @@ class TrackCollisionDetector {
    * @return Formatted string with collision state
    */
   std::string dumpNotesAt(Tick tick, Tick range_ticks = 1920) const;
+
+  /**
+   * @brief Get a structured snapshot of collision state at a specific tick.
+   *
+   * Returns structured data instead of a formatted string, suitable for
+   * programmatic analysis and testing.
+   *
+   * @param tick The tick to inspect
+   * @param range_ticks How many ticks around the target to include (default: 1920 = 1 bar)
+   * @return CollisionSnapshot with notes and clashes
+   */
+  CollisionSnapshot getCollisionSnapshot(Tick tick, Tick range_ticks = 1920) const;
 
   /**
    * @brief Get the maximum safe end tick for extending a note.

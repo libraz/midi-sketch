@@ -743,7 +743,7 @@ TEST(AuxTrackTest, MotifCounterProducesNotes) {
   // Create vocal analysis from main melody
   midisketch::MidiTrack vocal_track;
   for (const auto& note : main_melody) {
-    vocal_track.addNote(note.start_tick, note.duration, note.note, note.velocity);
+    vocal_track.addNote(note);
   }
   midisketch::VocalAnalysis va = midisketch::analyzeVocal(vocal_track);
 
@@ -778,7 +778,7 @@ TEST(AuxTrackTest, MotifCounterUsesSeparateRegister) {
 
   midisketch::MidiTrack vocal_track;
   for (const auto& note : high_melody) {
-    vocal_track.addNote(note.start_tick, note.duration, note.note, note.velocity);
+    vocal_track.addNote(note);
   }
   midisketch::VocalAnalysis va = midisketch::analyzeVocal(vocal_track);
 
@@ -817,7 +817,7 @@ TEST(AuxTrackTest, MotifCounterRhythmicComplementation) {
 
   midisketch::MidiTrack vocal_track;
   for (const auto& note : sparse_melody) {
-    vocal_track.addNote(note.start_tick, note.duration, note.note, note.velocity);
+    vocal_track.addNote(note);
   }
   midisketch::VocalAnalysis va = midisketch::analyzeVocal(vocal_track);
 
@@ -851,7 +851,7 @@ TEST(AuxTrackTest, MotifCounterAvoidsVocalCollision) {
 
   midisketch::MidiTrack vocal_track;
   for (const auto& note : main_melody) {
-    vocal_track.addNote(note.start_tick, note.duration, note.note, note.velocity);
+    vocal_track.addNote(note);
   }
   midisketch::VocalAnalysis va = midisketch::analyzeVocal(vocal_track);
 

@@ -12,14 +12,13 @@
 
 namespace midisketch {
 
-uint8_t SafePitchResolver::getBestAvailablePitch(uint8_t desired, Tick start, Tick duration,
-                                                 TrackRole track, uint8_t low, uint8_t high,
-                                                 const ChordProgressionTracker& chord_tracker,
-                                                 const TrackCollisionDetector& collision_detector)
-    const {
+PitchResolutionResult SafePitchResolver::resolvePitchWithStrategy(
+    uint8_t desired, Tick start, Tick duration, TrackRole track, uint8_t low, uint8_t high,
+    const ChordProgressionTracker& chord_tracker,
+    const TrackCollisionDetector& collision_detector) const {
   // If desired pitch is already safe, use it
   if (collision_detector.isPitchSafe(desired, start, duration, track, &chord_tracker)) {
-    return desired;
+    return {desired, CollisionAvoidStrategy::None};
   }
 
   int octave = desired / 12;
@@ -54,7 +53,7 @@ uint8_t SafePitchResolver::getBestAvailablePitch(uint8_t desired, Tick start, Ti
   }
 
   if (best_pitch >= 0) {
-    return static_cast<uint8_t>(best_pitch);
+    return {static_cast<uint8_t>(best_pitch), CollisionAvoidStrategy::ActualSounding};
   }
 
   // Strategy 2: Try theoretical chord tones
@@ -76,7 +75,7 @@ uint8_t SafePitchResolver::getBestAvailablePitch(uint8_t desired, Tick start, Ti
   }
 
   if (best_pitch >= 0) {
-    return static_cast<uint8_t>(best_pitch);
+    return {static_cast<uint8_t>(best_pitch), CollisionAvoidStrategy::ChordTones};
   }
 
   // Strategy 3: Try any safe pitch nearby (prioritize small adjustments)
@@ -87,7 +86,7 @@ uint8_t SafePitchResolver::getBestAvailablePitch(uint8_t desired, Tick start, Ti
     if (candidate < static_cast<int>(low) || candidate > static_cast<int>(high)) continue;
     if (collision_detector.isPitchSafe(static_cast<uint8_t>(candidate), start, duration, track,
                                        &chord_tracker)) {
-      return static_cast<uint8_t>(candidate);
+      return {static_cast<uint8_t>(candidate), CollisionAvoidStrategy::ConsonantInterval};
     }
   }
 
@@ -98,13 +97,23 @@ uint8_t SafePitchResolver::getBestAvailablePitch(uint8_t desired, Tick start, Ti
       if (candidate < static_cast<int>(low) || candidate > static_cast<int>(high)) continue;
       if (collision_detector.isPitchSafe(static_cast<uint8_t>(candidate), start, duration, track,
                                          &chord_tracker)) {
-        return static_cast<uint8_t>(candidate);
+        return {static_cast<uint8_t>(candidate), CollisionAvoidStrategy::ExhaustiveSearch};
       }
     }
   }
 
   // Last resort: return original (clashing is better than invalid pitch)
-  return desired;
+  return {desired, CollisionAvoidStrategy::Failed};
+}
+
+uint8_t SafePitchResolver::getBestAvailablePitch(uint8_t desired, Tick start, Tick duration,
+                                                 TrackRole track, uint8_t low, uint8_t high,
+                                                 const ChordProgressionTracker& chord_tracker,
+                                                 const TrackCollisionDetector& collision_detector)
+    const {
+  return resolvePitchWithStrategy(desired, start, duration, track, low, high, chord_tracker,
+                                   collision_detector)
+      .pitch;
 }
 
 }  // namespace midisketch

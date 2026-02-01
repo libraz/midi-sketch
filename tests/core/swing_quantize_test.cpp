@@ -182,9 +182,9 @@ TEST(SwingOffsetTest, OffsetClampedAboveOne) {
 
 TEST(ApplySwingToTrackTest, NoSwingLeavesNotesUnchanged) {
   MidiTrack track;
-  track.addNote(0, 240, 60, 100);      // On-beat
-  track.addNote(240, 240, 64, 90);     // Off-beat 8th
-  track.addNote(480, 240, 67, 85);     // On-beat
+  track.addNote(NoteEventBuilder::create(0, 240, 60, 100));      // On-beat
+  track.addNote(NoteEventBuilder::create(240, 240, 64, 90));     // Off-beat 8th
+  track.addNote(NoteEventBuilder::create(480, 240, 67, 85));     // On-beat
 
   applySwingToTrack(track, 0.0f);
 
@@ -195,10 +195,10 @@ TEST(ApplySwingToTrackTest, NoSwingLeavesNotesUnchanged) {
 
 TEST(ApplySwingToTrackTest, FullSwingMovesOffBeats) {
   MidiTrack track;
-  track.addNote(0, 240, 60, 100);      // On-beat - should not move
-  track.addNote(240, 240, 64, 90);     // Off-beat 8th - should move to 320
-  track.addNote(480, 240, 67, 85);     // On-beat - should not move
-  track.addNote(720, 240, 72, 80);     // Off-beat 8th - should move to 800
+  track.addNote(NoteEventBuilder::create(0, 240, 60, 100));      // On-beat - should not move
+  track.addNote(NoteEventBuilder::create(240, 240, 64, 90));     // Off-beat 8th - should move to 320
+  track.addNote(NoteEventBuilder::create(480, 240, 67, 85));     // On-beat - should not move
+  track.addNote(NoteEventBuilder::create(720, 240, 72, 80));     // Off-beat 8th - should move to 800
 
   applySwingToTrack(track, 1.0f);
 

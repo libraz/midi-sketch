@@ -24,14 +24,9 @@ class MidiTrack {
   /// @name Generation Operations
   /// @{
 
-  /// @brief Add a note (preferred API with provenance).
-  /// @param event NoteEvent created via NoteFactory
+  /// @brief Add a note.
+  /// @param event NoteEvent created via NoteFactory or NoteEventBuilder
   void addNote(const NoteEvent& event);
-
-  /// @brief Simple API - creates note without provenance tracking.
-  /// @deprecated Use NoteFactory::create() + addNote(NoteEvent) for new code.
-  [[deprecated("Use NoteFactory::create() + addNote(NoteEvent) instead")]]
-  void addNote(Tick startTick, Tick length, uint8_t note, uint8_t velocity);
 
   void addText(Tick tick, const std::string& text);
 

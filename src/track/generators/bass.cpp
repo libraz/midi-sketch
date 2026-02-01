@@ -36,9 +36,7 @@
 #define BASS_DEBUG_LOG 0
 #endif
 
-#if BASS_DEBUG_LOG
-#include <iostream>
-#endif
+#include <iostream>  // For debug output
 
 namespace midisketch {
 
@@ -646,6 +644,14 @@ BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section
     return selectPattern(section.type, params.drums_enabled, params.mood, section.getEffectiveBackingDensity(),
                          rng);
   });
+
+  // Avoid PedalTone when arpeggio is active - they conflict musically.
+  // PedalTone holds tonic while arpeggio plays chord tones, causing SafePitchResolver
+  // to double the bass note instead of playing proper chord tones.
+  if (base_pattern == BassPattern::PedalTone &&
+      hasTrack(section.track_mask, TrackMask::Arpeggio)) {
+    base_pattern = BassPattern::WholeNote;
+  }
 
   // Apply PeakLevel promotion for thicker bass in peak sections
   return applyPeakLevelPromotion(base_pattern, section.peak_level);
@@ -1301,6 +1307,12 @@ bool shouldAddDominantPreparation(SectionType current, SectionType next, int8_t 
 void generateBassHalfBar(MidiTrack& track, Tick half_start, uint8_t root, SectionType section,
                          Mood mood, bool is_first_half, NoteFactory& factory,
                          IHarmonyContext& harmony) {
+  // DEBUG: Log generateBassHalfBar call
+  if (half_start >= 3840 && half_start < 7680) {
+    std::cerr << "[HalfBar DEBUG] half_start=" << half_start << " root=" << static_cast<int>(root)
+              << " is_first_half=" << is_first_half << "\n";
+  }
+
   uint8_t vel = calculateVelocity(section, 0, mood);
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
   uint8_t fifth = getFifth(root);
@@ -1370,6 +1382,13 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
       uint8_t root = getBassRoot(degree);
       uint8_t next_root = getBassRoot(next_degree);
 
+      // DEBUG: Log root calculation
+      if (bar_start >= 3840 && bar_start < 7680) {
+        std::cerr << "[BASS DEBUG] bar_start=" << bar_start << " degree=" << static_cast<int>(degree)
+                  << " root=" << static_cast<int>(root) << " next_degree=" << static_cast<int>(next_degree)
+                  << " next_root=" << static_cast<int>(next_root) << "\n";
+      }
+
       // === SLASH CHORD BASS OVERRIDE ===
       // Check if a slash chord should override the bass root for smoother voice leading.
       // This creates stepwise bass motion (e.g., C/E before F gives E->F bass walk).
@@ -1391,6 +1410,10 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
             slash_bass += Interval::OCTAVE;
           }
           root = clampBass(slash_bass);
+          // DEBUG: Log slash chord override
+          if (bar_start >= 3840 && bar_start < 7680) {
+            std::cerr << "[BASS DEBUG] SLASH CHORD: root changed to " << static_cast<int>(root) << "\n";
+          }
         }
       }
 
@@ -1552,18 +1575,10 @@ BassPattern selectPatternForVocalDensity(float vocal_density, SectionType sectio
   }
   if (section == SectionType::Intro || section == SectionType::Outro ||
       section == SectionType::Bridge) {
-    // Check genre table for PedalTone support in these sections
+    // All special sections (Intro/Outro/Bridge) use genre table selection
     BassGenre genre = getMoodBassGenre(mood);
     BassSection bass_section = toBassSection(section);
-    BassPattern genre_pattern = selectFromGenreTable(genre, bass_section, rng);
-    // If genre table gives PedalTone, use it; otherwise default to WholeNote
-    if (genre_pattern == BassPattern::PedalTone) {
-      return BassPattern::PedalTone;
-    }
-    if (section == SectionType::Intro || section == SectionType::Outro) {
-      return BassPattern::WholeNote;
-    }
-    // Bridge falls through to normal selection below
+    return selectFromGenreTable(genre, bass_section, rng);
   }
 
   // High vocal density (>0.6) → simpler bass (whole notes, half notes)
@@ -1593,9 +1608,21 @@ BassPattern selectPatternForVocalDensity(float vocal_density, SectionType sectio
 BassPattern selectPatternWithPolicyForVocal(BassRiffCache& cache, const Section& section,
                                             size_t sec_idx, const GeneratorParams& params,
                                             float vocal_density, std::mt19937& rng) {
-  return selectPatternWithPolicyCore(cache, sec_idx, params, rng, [&]() {
+  BassPattern pattern = selectPatternWithPolicyCore(cache, sec_idx, params, rng, [&]() {
     return selectPatternForVocalDensity(vocal_density, section.type, params.mood, rng);
   });
+
+  // Avoid PedalTone when arpeggio is active in high-energy sections.
+  // PedalTone holds tonic while arpeggio plays chord tones, causing SafePitchResolver
+  // to double the bass note instead of playing proper chord tones.
+  // Exception: Bridge sections use PedalTone for tension reduction, even with arpeggio.
+  if (pattern == BassPattern::PedalTone &&
+      hasTrack(section.track_mask, TrackMask::Arpeggio) &&
+      section.type != SectionType::Bridge) {
+    pattern = BassPattern::WholeNote;
+  }
+
+  return pattern;
 }
 
 // Helper: motion type to string for logging

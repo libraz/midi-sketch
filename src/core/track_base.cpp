@@ -73,6 +73,13 @@ NoteEvent TrackBase::createNoteWithProvenance(Tick start, Tick duration, uint8_t
   if (ctx.harmony) {
     note.prov_chord_degree = ctx.harmony->getChordDegreeAt(start);
   }
+
+  // Record range clamp if pitch was modified by physical model
+  if (clamped_pitch != pitch) {
+    note.addTransformStep(TransformStepType::RangeClamp, pitch, clamped_pitch,
+                          static_cast<int8_t>(model.pitch_low),
+                          static_cast<int8_t>(model.pitch_high));
+  }
 #endif
 
   return note;
@@ -98,21 +105,25 @@ std::optional<NoteEvent> TrackBase::createSafeNoteDeferred(Tick start, Tick dura
     return std::nullopt;
   }
 
+  uint8_t original_pitch = pitch;
   uint8_t final_pitch = pitch;
+  CollisionInfo collision_info;
+  CollisionAvoidStrategy resolution_strategy = CollisionAvoidStrategy::None;
 
   // If this is the coordinate axis, skip safety check
   if (!isCoordinateAxis(ctx)) {
-    // Check if pitch is safe
-    if (!ctx.harmony->isPitchSafe(pitch, start, duration, getRole())) {
-      // Try to find a safe alternative
+    // Check if pitch is safe and get collision details
+    collision_info = ctx.harmony->getCollisionInfo(pitch, start, duration, getRole());
+    if (collision_info.has_collision) {
+      // Try to find a safe alternative with strategy tracking
       auto [low, high] = getEffectivePitchRange(ctx);
-      uint8_t safe_pitch = ctx.harmony->getBestAvailablePitch(pitch, start, duration,
-                                                               getRole(), low, high);
-      if (!ctx.harmony->isPitchSafe(safe_pitch, start, duration, getRole())) {
+      auto result = ctx.harmony->resolvePitchWithStrategy(pitch, start, duration, getRole(), low, high);
+      if (!ctx.harmony->isPitchSafe(result.pitch, start, duration, getRole())) {
         // Still not safe, return nullopt
         return std::nullopt;
       }
-      final_pitch = safe_pitch;
+      final_pitch = result.pitch;
+      resolution_strategy = result.strategy;
     }
   }
 
@@ -127,6 +138,24 @@ std::optional<NoteEvent> TrackBase::createSafeNoteDeferred(Tick start, Tick dura
   note.prov_source = static_cast<uint8_t>(source);
   note.prov_lookup_tick = start;
   note.prov_chord_degree = ctx.harmony->getChordDegreeAt(start);
+  note.prov_original_pitch = original_pitch;
+
+  // Record collision avoidance if pitch was modified for safety
+  if (collision_info.has_collision && final_pitch != original_pitch) {
+    // param1 = colliding pitch
+    // param2 = lower 4 bits: colliding track, upper 4 bits: resolution strategy
+    int8_t param2 = static_cast<int8_t>(collision_info.colliding_track) |
+                    (static_cast<int8_t>(resolution_strategy) << 4);
+    note.addTransformStep(TransformStepType::CollisionAvoid, original_pitch, final_pitch,
+                          static_cast<int8_t>(collision_info.colliding_pitch), param2);
+  }
+
+  // Record range clamp if pitch was modified by physical model
+  if (clamped_pitch != final_pitch) {
+    note.addTransformStep(TransformStepType::RangeClamp, final_pitch, clamped_pitch,
+                          static_cast<int8_t>(model.pitch_low),
+                          static_cast<int8_t>(model.pitch_high));
+  }
 #else
   (void)source;  // Suppress unused parameter warning
 #endif

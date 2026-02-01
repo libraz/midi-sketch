@@ -58,6 +58,35 @@ enum class TransformStepType : uint8_t {
   CollisionAvoid,  ///< Inter-track collision avoidance
 };
 
+/// @brief Strategy used by SafePitchResolver to resolve a collision.
+enum class CollisionAvoidStrategy : uint8_t {
+  None = 0,           ///< Pitch was already safe, no resolution needed
+  ActualSounding,     ///< Doubled an existing note from another track
+  ChordTones,         ///< Used theoretical chord tone
+  ConsonantInterval,  ///< Used consonant interval adjustment (+/-3,4,5,7,12,2,1)
+  ExhaustiveSearch,   ///< Found via exhaustive +/-1 to +/-24 search
+  Failed              ///< No safe pitch found, returned original
+};
+
+/// @brief Convert CollisionAvoidStrategy to string for JSON output.
+inline const char* collisionAvoidStrategyToString(CollisionAvoidStrategy strategy) {
+  switch (strategy) {
+    case CollisionAvoidStrategy::None:
+      return "none";
+    case CollisionAvoidStrategy::ActualSounding:
+      return "actual_sounding";
+    case CollisionAvoidStrategy::ChordTones:
+      return "chord_tones";
+    case CollisionAvoidStrategy::ConsonantInterval:
+      return "consonant_interval";
+    case CollisionAvoidStrategy::ExhaustiveSearch:
+      return "exhaustive_search";
+    case CollisionAvoidStrategy::Failed:
+      return "failed";
+  }
+  return "unknown";
+}
+
 /// @brief Convert TransformStepType to string for JSON output.
 inline const char* transformStepTypeToString(TransformStepType type) {
   switch (type) {
@@ -276,6 +305,40 @@ enum class TrackRole : uint8_t {
 
 /// @brief Number of track roles.
 inline constexpr size_t kTrackCount = 8;
+
+/// @brief Information about a pitch collision.
+struct CollisionInfo {
+  bool has_collision = false;       ///< True if a collision was found
+  uint8_t colliding_pitch = 0;      ///< Pitch of the colliding note
+  TrackRole colliding_track = TrackRole::Vocal;  ///< Track the collision is with
+  int interval_semitones = 0;       ///< Interval in semitones
+};
+
+/// @brief Information about a registered note for collision snapshot.
+struct RegisteredNoteInfo {
+  Tick start;       ///< Start tick
+  Tick end;         ///< End tick
+  uint8_t pitch;    ///< MIDI pitch
+  TrackRole track;  ///< Track role
+};
+
+/// @brief Detail of a clash between two notes.
+struct ClashDetail {
+  RegisteredNoteInfo note_a;  ///< First note in the clash
+  RegisteredNoteInfo note_b;  ///< Second note in the clash
+  int interval_semitones;     ///< Interval between the notes
+  const char* interval_name;  ///< Human-readable interval name ("minor 2nd", etc.)
+};
+
+/// @brief Snapshot of collision state at a specific tick.
+struct CollisionSnapshot {
+  Tick tick;                                     ///< Target tick for the snapshot
+  Tick range_start;                              ///< Start of range analyzed
+  Tick range_end;                                ///< End of range analyzed
+  std::vector<RegisteredNoteInfo> notes_in_range;  ///< Notes overlapping with range
+  std::vector<RegisteredNoteInfo> sounding_notes;  ///< Notes sounding at tick
+  std::vector<ClashDetail> clashes;              ///< Detected clashes at tick
+};
 
 /// @brief Convert TrackRole to string for debugging/display.
 inline const char* trackRoleToString(TrackRole role) {

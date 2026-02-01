@@ -50,9 +50,9 @@ TEST(MidiReaderTest, RoundtripBasicSong) {
   // Create a simple song
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);    // C4
-  song.vocal().addNote(480, 480, 64, 100);  // E4
-  song.vocal().addNote(960, 480, 67, 100);  // G4
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));    // C4
+  song.vocal().addNote(NoteEventBuilder::create(480, 480, 64, 100));  // E4
+  song.vocal().addNote(NoteEventBuilder::create(960, 480, 67, 100));  // G4
 
   // Write to MIDI
   MidiWriter writer;
@@ -74,10 +74,10 @@ TEST(MidiReaderTest, RoundtripBasicSong) {
 TEST(MidiReaderTest, RoundtripMultipleTracks) {
   Song song;
   song.setBpm(140);
-  song.vocal().addNote(0, 480, 60, 100);
-  song.chord().addNote(0, 480, 64, 80);
-  song.bass().addNote(0, 480, 36, 90);
-  song.drums().addNote(0, 240, 36, 100);  // Kick
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  song.chord().addNote(NoteEventBuilder::create(0, 480, 64, 80));
+  song.bass().addNote(NoteEventBuilder::create(0, 480, 36, 90));
+  song.drums().addNote(NoteEventBuilder::create(0, 240, 36, 100));  // Kick
 
   MidiWriter writer;
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -98,7 +98,7 @@ TEST(MidiReaderTest, RoundtripNoteValues) {
   song.setBpm(120);
 
   // Add a specific note
-  song.vocal().addNote(0, 480, 72, 110);  // C5, velocity 110
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 72, 110));  // C5, velocity 110
 
   MidiWriter writer;
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -128,7 +128,7 @@ TEST(MidiReaderTest, RoundtripNoteValues) {
 TEST(MidiReaderTest, RoundtripKeyTranspose) {
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);  // C4 internal
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));  // C4 internal
 
   // Write with D major key
   MidiWriter writer;
@@ -153,8 +153,8 @@ TEST(MidiReaderTest, RoundtripKeyTranspose) {
 TEST(MidiReaderTest, GetTrackCaseInsensitive) {
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);
-  song.chord().addNote(0, 480, 64, 80);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  song.chord().addNote(NoteEventBuilder::create(0, 480, 64, 80));
 
   MidiWriter writer;
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -178,8 +178,8 @@ TEST(MidiReaderTest, GetTrackCaseInsensitive) {
 TEST(MidiReaderTest, GetTrackReturnsCorrectTrack) {
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);
-  song.bass().addNote(0, 480, 36, 90);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  song.bass().addNote(NoteEventBuilder::create(0, 480, 36, 90));
 
   MidiWriter writer;
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -208,7 +208,7 @@ TEST(MidiReaderTest, GetTrackReturnsCorrectTrack) {
 TEST(MidiReaderTest, ReadMetadataFromGeneratedMidi) {
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   // Build with metadata (new format with generator identifier)
   std::string metadata =
@@ -233,7 +233,7 @@ TEST(MidiReaderTest, ReadMetadataFromGeneratedMidi) {
 TEST(MidiReaderTest, NoMetadataInPlainMidi) {
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   // Build without metadata
   MidiWriter writer;
@@ -259,9 +259,9 @@ TEST(MidiReaderTest, NotesSortedByStartTime) {
   song.setBpm(120);
 
   // Add notes in non-chronological order
-  song.vocal().addNote(960, 480, 67, 100);  // Third
-  song.vocal().addNote(0, 480, 60, 100);    // First
-  song.vocal().addNote(480, 480, 64, 100);  // Second
+  song.vocal().addNote(NoteEventBuilder::create(960, 480, 67, 100));  // Third
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));    // First
+  song.vocal().addNote(NoteEventBuilder::create(480, 480, 64, 100));  // Second
 
   MidiWriter writer;
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -283,7 +283,7 @@ TEST(MidiReaderTest, NotesSortedByStartTime) {
 TEST(MidiReaderTest, DrumsNotTransposed) {
   Song song;
   song.setBpm(120);
-  song.drums().addNote(0, 240, 36, 100);  // Kick
+  song.drums().addNote(NoteEventBuilder::create(0, 240, 36, 100));  // Kick
 
   // Write with transposed key
   MidiWriter writer;
@@ -305,8 +305,8 @@ TEST(MidiReaderTest, VariableLengthQuantityParsing) {
   // Long notes create larger delta times that test VLQ parsing
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 960, 60, 100);      // 2 beats
-  song.vocal().addNote(15360, 480, 64, 100);  // 8 bars later
+  song.vocal().addNote(NoteEventBuilder::create(0, 960, 60, 100));      // 2 beats
+  song.vocal().addNote(NoteEventBuilder::create(15360, 480, 64, 100));  // 8 bars later
 
   MidiWriter writer;
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);
@@ -342,7 +342,7 @@ TEST(MidiReaderTest, RunningStatusHandling) {
 
   // Add multiple notes consecutively
   for (int i = 0; i < 8; ++i) {
-    song.vocal().addNote(i * 120, 120, 60 + i, 100);
+    song.vocal().addNote(NoteEventBuilder::create(i * 120, 120, 60 + i, 100));
   }
 
   MidiWriter writer;
@@ -362,10 +362,10 @@ TEST(MidiReaderTest, RunningStatusHandling) {
 TEST(MidiReaderTest, ChannelAssignment) {
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);  // Channel 0
-  song.chord().addNote(0, 480, 64, 80);   // Channel 1
-  song.bass().addNote(0, 480, 48, 90);    // Channel 2
-  song.drums().addNote(0, 240, 36, 100);  // Channel 9
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));  // Channel 0
+  song.chord().addNote(NoteEventBuilder::create(0, 480, 64, 80));   // Channel 1
+  song.bass().addNote(NoteEventBuilder::create(0, 480, 48, 90));    // Channel 2
+  song.drums().addNote(NoteEventBuilder::create(0, 240, 36, 100));  // Channel 9
 
   MidiWriter writer;
   writer.build(song, Key::C, Mood::StraightPop, "", MidiFormat::SMF1);

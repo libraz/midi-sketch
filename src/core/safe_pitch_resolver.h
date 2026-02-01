@@ -11,12 +11,21 @@
 
 #include <cstdint>
 
+#include "core/basic_types.h"
 #include "core/types.h"
 
 namespace midisketch {
 
 class ChordProgressionTracker;
 class TrackCollisionDetector;
+
+/**
+ * @brief Result of pitch resolution with strategy information.
+ */
+struct PitchResolutionResult {
+  uint8_t pitch;                                        ///< Resolved pitch
+  CollisionAvoidStrategy strategy;                      ///< Strategy that succeeded
+};
 
 /**
  * @brief Resolves safe pitches that avoid collisions with other tracks.
@@ -54,6 +63,27 @@ class SafePitchResolver {
                                 uint8_t low, uint8_t high,
                                 const ChordProgressionTracker& chord_tracker,
                                 const TrackCollisionDetector& collision_detector) const;
+
+  /**
+   * @brief Resolve pitch with strategy tracking.
+   *
+   * Same as getBestAvailablePitch but also returns which strategy succeeded.
+   * Used for debugging and provenance tracking.
+   *
+   * @param desired Desired MIDI pitch
+   * @param start Start tick
+   * @param duration Duration in ticks
+   * @param track Track that will play this note
+   * @param low Minimum allowed pitch
+   * @param high Maximum allowed pitch
+   * @param chord_tracker Chord progression tracker for chord tones
+   * @param collision_detector Collision detector with registered notes
+   * @return PitchResolutionResult with resolved pitch and strategy used
+   */
+  PitchResolutionResult resolvePitchWithStrategy(uint8_t desired, Tick start, Tick duration,
+                                                  TrackRole track, uint8_t low, uint8_t high,
+                                                  const ChordProgressionTracker& chord_tracker,
+                                                  const TrackCollisionDetector& collision_detector) const;
 };
 
 }  // namespace midisketch

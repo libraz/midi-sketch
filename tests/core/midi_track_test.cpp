@@ -19,7 +19,7 @@ TEST(MidiTrackTest, EmptyTrack) {
 
 TEST(MidiTrackTest, AddNote) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   EXPECT_FALSE(track.empty());
   EXPECT_EQ(track.noteCount(), 1u);
@@ -47,8 +47,8 @@ TEST(MidiTrackTest, AddText) {
 
 TEST(MidiTrackTest, Transpose) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
-  track.addNote(480, 480, 64, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  track.addNote(NoteEventBuilder::create(480, 480, 64, 100));
 
   track.transpose(2);
 
@@ -59,7 +59,7 @@ TEST(MidiTrackTest, Transpose) {
 
 TEST(MidiTrackTest, TransposeClampHigh) {
   MidiTrack track;
-  track.addNote(0, 480, 126, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 126, 100));
 
   track.transpose(5);
 
@@ -69,7 +69,7 @@ TEST(MidiTrackTest, TransposeClampHigh) {
 
 TEST(MidiTrackTest, TransposeClampLow) {
   MidiTrack track;
-  track.addNote(0, 480, 2, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 2, 100));
 
   track.transpose(-5);
 
@@ -79,8 +79,8 @@ TEST(MidiTrackTest, TransposeClampLow) {
 
 TEST(MidiTrackTest, ScaleVelocity) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
-  track.addNote(480, 480, 64, 50);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  track.addNote(NoteEventBuilder::create(480, 480, 64, 50));
 
   track.scaleVelocity(0.5f);
 
@@ -91,9 +91,9 @@ TEST(MidiTrackTest, ScaleVelocity) {
 
 TEST(MidiTrackTest, ClampVelocity) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 120);
-  track.addNote(480, 480, 64, 30);
-  track.addNote(960, 480, 67, 80);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 120));
+  track.addNote(NoteEventBuilder::create(480, 480, 64, 30));
+  track.addNote(NoteEventBuilder::create(960, 480, 67, 80));
 
   track.clampVelocity(50, 100);
 
@@ -105,10 +105,10 @@ TEST(MidiTrackTest, ClampVelocity) {
 
 TEST(MidiTrackTest, Slice) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
-  track.addNote(480, 480, 64, 100);
-  track.addNote(960, 480, 67, 100);
-  track.addNote(1440, 480, 72, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  track.addNote(NoteEventBuilder::create(480, 480, 64, 100));
+  track.addNote(NoteEventBuilder::create(960, 480, 67, 100));
+  track.addNote(NoteEventBuilder::create(1440, 480, 72, 100));
 
   auto sliced = track.slice(480, 1440);
 
@@ -122,11 +122,11 @@ TEST(MidiTrackTest, Slice) {
 
 TEST(MidiTrackTest, Append) {
   MidiTrack track1;
-  track1.addNote(0, 480, 60, 100);
+  track1.addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   MidiTrack track2;
-  track2.addNote(0, 480, 64, 100);
-  track2.addNote(480, 480, 67, 100);
+  track2.addNote(NoteEventBuilder::create(0, 480, 64, 100));
+  track2.addNote(NoteEventBuilder::create(480, 480, 67, 100));
 
   track1.append(track2, 1920);
 
@@ -139,7 +139,7 @@ TEST(MidiTrackTest, Append) {
 
 TEST(MidiTrackTest, Clear) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
   track.addText(0, "Test");
 
   EXPECT_FALSE(track.empty());
@@ -153,7 +153,7 @@ TEST(MidiTrackTest, Clear) {
 
 TEST(MidiTrackTest, ToMidiEvents) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   auto events = track.toMidiEvents(1);
 
@@ -174,9 +174,9 @@ TEST(MidiTrackTest, ToMidiEvents) {
 
 TEST(MidiTrackTest, ToMidiEventsSorted) {
   MidiTrack track;
-  track.addNote(960, 480, 67, 100);
-  track.addNote(0, 480, 60, 100);
-  track.addNote(480, 480, 64, 100);
+  track.addNote(NoteEventBuilder::create(960, 480, 67, 100));
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  track.addNote(NoteEventBuilder::create(480, 480, 64, 100));
 
   auto events = track.toMidiEvents(0);
 
@@ -198,7 +198,7 @@ TEST(MidiTrackTest, AnalyzeRangeEmpty) {
 
 TEST(MidiTrackTest, AnalyzeRangeSingleNote) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   auto [low, high] = track.analyzeRange();
 
@@ -208,10 +208,10 @@ TEST(MidiTrackTest, AnalyzeRangeSingleNote) {
 
 TEST(MidiTrackTest, AnalyzeRangeMultipleNotes) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
-  track.addNote(480, 480, 72, 100);
-  track.addNote(960, 480, 48, 100);
-  track.addNote(1440, 480, 84, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  track.addNote(NoteEventBuilder::create(480, 480, 72, 100));
+  track.addNote(NoteEventBuilder::create(960, 480, 48, 100));
+  track.addNote(NoteEventBuilder::create(1440, 480, 84, 100));
 
   auto [low, high] = track.analyzeRange();
 

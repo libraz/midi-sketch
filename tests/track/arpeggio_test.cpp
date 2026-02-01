@@ -9,6 +9,7 @@
 
 #include <random>
 
+#include "core/chord_utils.h"
 #include "core/generator.h"
 #include "core/song.h"
 #include "core/types.h"
@@ -422,7 +423,8 @@ TEST_F(ArpeggioTest, HarmonicDensitySlowInIntro) {
   Generator gen;
   gen.generate(params_);
 
-  const auto& arpeggio = gen.getSong().arpeggio();
+  const auto& song = gen.getSong();
+  const auto& arpeggio = song.arpeggio();
   ASSERT_FALSE(arpeggio.empty()) << "Arpeggio should be generated";
 
   // Layer scheduling adds arpeggio at bar 3 of a 4-bar Intro.
@@ -443,7 +445,7 @@ TEST_F(ArpeggioTest, HarmonicDensitySlowInIntro) {
   ASSERT_FALSE(bar3_notes.empty()) << "Bar 3 should have arpeggio notes (layer schedule activates arpeggio here)";
 
   // Bar 3 should have notes from chord V (G major, degree 4)
-  // because Slow density: chord_idx = (2/2) % 4 = 1, Canon[1] = degree 4
+  // because Slow density: chord_idx = (3/2) % 4 = 1, Canon[1] = degree 4
   // G major = G, B, D (pitch classes 7, 11, 2)
   for (uint8_t note : bar3_notes) {
     EXPECT_TRUE(isChordTone(note, 4))
@@ -658,15 +660,22 @@ TEST_F(ArpeggioTest, SyncChordFalseRespectsHarmonicDensity) {
 
   // Intro section (bars 0-3) should use chord I (C major) since
   // Intro starts at bar 0 and (0 / 2) % 4 = 0 = chord I (degree 0)
+  //
+  // Note: Collision avoidance may modify the final pitch to avoid clashes with
+  // other tracks. We check the ORIGINAL pitch (before collision avoidance) to
+  // verify the correct chord was selected during pattern generation.
   for (const auto& note : arpeggio.notes()) {
     // Only check Intro section
     int bar = note.start_tick / TICKS_PER_BAR;
     if (bar >= 4) continue;  // Skip Chorus section
 
-    EXPECT_TRUE(isChordTone(note.note, 0))
-        << "Note " << static_cast<int>(note.note) << " at tick " << note.start_tick << " (bar "
-        << bar << ")"
-        << " should be chord tone of I (C major) in sync_chord=false mode";
+    // Check original pitch (before collision avoidance) is a chord tone
+    uint8_t original_pitch = note.prov_original_pitch;
+    EXPECT_TRUE(isChordTone(original_pitch, 0))
+        << "Original pitch " << static_cast<int>(original_pitch) << " at tick " << note.start_tick
+        << " (bar " << bar << ")"
+        << " should be chord tone of I (C major) in sync_chord=false mode"
+        << " (final pitch after collision avoidance: " << static_cast<int>(note.note) << ")";
   }
 }
 
@@ -1016,12 +1025,10 @@ TEST_F(ArpeggioTest, PeakLevelMaxIncreasesOctaveRange) {
     }
   }
 
-  // Peak sections should have wider or equal range due to increased octave_range.
-  // Note: With collision avoidance (TrackBase::createSafeNoteDeferred), the actual
-  // range may be constrained to avoid dissonance, resulting in equal ranges.
+  // Peak sections should have wider range due to increased octave_range
   if (max_peak_range > 0 && max_normal_range > 0) {
-    EXPECT_GE(max_peak_range, max_normal_range)
-        << "PeakLevel::Max should have wider or equal pitch range than normal sections "
+    EXPECT_GT(max_peak_range, max_normal_range)
+        << "PeakLevel::Max should have wider pitch range than normal sections "
         << "(peak_range=" << max_peak_range << ", normal_range=" << max_normal_range << ")";
   }
 }

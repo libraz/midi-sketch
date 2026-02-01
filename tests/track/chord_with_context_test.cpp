@@ -203,9 +203,9 @@ TEST_F(ChordWithContextTest, GeneratesWithAuxTrack) {
 
   // Create a simple aux track
   MidiTrack aux_track;
-  aux_track.addNote(0, 480, 72, 80);     // C5
-  aux_track.addNote(1920, 480, 74, 80);  // D5
-  aux_track.addNote(3840, 480, 76, 80);  // E5
+  aux_track.addNote(NoteEventBuilder::create(0, 480, 72, 80));     // C5
+  aux_track.addNote(NoteEventBuilder::create(1920, 480, 74, 80));  // D5
+  aux_track.addNote(NoteEventBuilder::create(3840, 480, 76, 80));  // E5
 
   MidiTrack chord_track;
   std::mt19937 rng(params_.seed + 1);
@@ -234,7 +234,7 @@ TEST_F(ChordWithContextTest, ReducesMinor2ndClashesWithAux) {
   MidiTrack aux_track;
   // Add notes that could clash (C# would clash with C or D in chord)
   for (Tick t = 0; t < 7680; t += 1920) {
-    aux_track.addNote(t, 480, 73, 80);  // C#5 (pitch class 1)
+    aux_track.addNote(NoteEventBuilder::create(t, 480, 73, 80));  // C#5 (pitch class 1)
   }
 
   MidiTrack chord_track;
@@ -302,7 +302,7 @@ TEST_F(ChordWithContextTest, FallbackWhenAllVoicingsFiltered) {
   MidiTrack aux_track;
   // Add many notes to potentially trigger fallback
   for (int pc = 0; pc < 12; pc++) {
-    aux_track.addNote(0, 1920, 60 + pc, 80);
+    aux_track.addNote(NoteEventBuilder::create(0, 1920, 60 + pc, 80));
   }
 
   MidiTrack chord_track;

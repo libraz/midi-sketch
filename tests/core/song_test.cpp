@@ -52,9 +52,9 @@ TEST(SongTest, TrackAccessors) {
 
 TEST(SongTest, TrackByRole) {
   Song song;
-  song.vocal().addNote(0, 480, 60, 100);
-  song.chord().addNote(0, 480, 64, 100);
-  song.aux().addNote(0, 480, 67, 80);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  song.chord().addNote(NoteEventBuilder::create(0, 480, 64, 100));
+  song.aux().addNote(NoteEventBuilder::create(0, 480, 67, 80));
 
   EXPECT_EQ(song.track(TrackRole::Vocal).noteCount(), 1u);
   EXPECT_EQ(song.track(TrackRole::Chord).noteCount(), 1u);
@@ -64,7 +64,7 @@ TEST(SongTest, TrackByRole) {
 
 TEST(SongTest, ClearTrack) {
   Song song;
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   EXPECT_FALSE(song.vocal().empty());
 
@@ -75,11 +75,11 @@ TEST(SongTest, ClearTrack) {
 
 TEST(SongTest, ReplaceTrack) {
   Song song;
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   MidiTrack newTrack;
-  newTrack.addNote(0, 480, 72, 100);
-  newTrack.addNote(480, 480, 74, 100);
+  newTrack.addNote(NoteEventBuilder::create(0, 480, 72, 100));
+  newTrack.addNote(NoteEventBuilder::create(480, 480, 74, 100));
 
   song.replaceTrack(TrackRole::Vocal, newTrack);
 
@@ -89,10 +89,10 @@ TEST(SongTest, ReplaceTrack) {
 
 TEST(SongTest, ClearAll) {
   Song song;
-  song.vocal().addNote(0, 480, 60, 100);
-  song.chord().addNote(0, 480, 64, 100);
-  song.bass().addNote(0, 480, 48, 100);
-  song.drums().addNote(0, 480, 36, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  song.chord().addNote(NoteEventBuilder::create(0, 480, 64, 100));
+  song.bass().addNote(NoteEventBuilder::create(0, 480, 48, 100));
+  song.drums().addNote(NoteEventBuilder::create(0, 480, 36, 100));
   song.se().addText(0, "Test");
 
   song.clearAll();

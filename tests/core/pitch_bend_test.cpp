@@ -77,7 +77,7 @@ TEST(MidiTrackPitchBendTest, EmptyWithOnlyPitchBend) {
 
 TEST(MidiTrackPitchBendTest, ClearRemovesPitchBendEvents) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
   track.addPitchBend(0, PitchBend::kSemitone);
 
   track.clear();
@@ -89,7 +89,7 @@ TEST(MidiTrackPitchBendTest, ClearRemovesPitchBendEvents) {
 
 TEST(MidiTrackPitchBendTest, ClearPitchBendOnly) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
   track.addPitchBend(0, PitchBend::kSemitone);
   track.addPitchBend(120, PitchBend::kCenter);
 
@@ -102,7 +102,7 @@ TEST(MidiTrackPitchBendTest, ClearPitchBendOnly) {
 
 TEST(MidiTrackPitchBendTest, LastTickIncludesPitchBendEvents) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
   track.addPitchBend(1920, PitchBend::kSemitone);
 
   // Pitch bend event at tick 1920 is after note end (480)
@@ -111,8 +111,8 @@ TEST(MidiTrackPitchBendTest, LastTickIncludesPitchBendEvents) {
 
 TEST(MidiTrackPitchBendTest, SliceIncludesPitchBendEvents) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
-  track.addNote(960, 480, 64, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  track.addNote(NoteEventBuilder::create(960, 480, 64, 100));
   track.addPitchBend(0, -2048);
   track.addPitchBend(480, PitchBend::kCenter);
   track.addPitchBend(960, 2048);

@@ -24,7 +24,7 @@ class Midi2WriterTest : public ::testing::Test {
 
 TEST_F(Midi2WriterTest, BuildClipHasCorrectHeader) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   writer_.buildClip(track, "Test", 0, 0, 120, Key::C);
   auto data = writer_.toBytes();
@@ -36,8 +36,8 @@ TEST_F(Midi2WriterTest, BuildClipHasCorrectHeader) {
 
 TEST_F(Midi2WriterTest, BuildClipContainsNoteEvents) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);    // C4 at tick 0
-  track.addNote(480, 480, 64, 100);  // E4 at tick 480
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));    // C4 at tick 0
+  track.addNote(NoteEventBuilder::create(480, 480, 64, 100));  // E4 at tick 480
 
   writer_.buildClip(track, "Test", 0, 0, 120, Key::C);
   auto data = writer_.toBytes();
@@ -48,7 +48,7 @@ TEST_F(Midi2WriterTest, BuildClipContainsNoteEvents) {
 
 TEST_F(Midi2WriterTest, BuildClipTransposesByKey) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);  // C4
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));  // C4
 
   // Build with key = D (transpose +2)
   writer_.buildClip(track, "Test", 0, 0, 120, Key::D);
@@ -65,7 +65,7 @@ TEST_F(Midi2WriterTest, BuildClipTransposesByKey) {
 TEST_F(Midi2WriterTest, BuildContainerHasCorrectHeader) {
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   writer_.buildContainer(song, Key::C, "");
   auto data = writer_.toBytes();
@@ -86,13 +86,13 @@ TEST_F(Midi2WriterTest, BuildContainerHasCorrectHeader) {
 TEST_F(Midi2WriterTest, BuildContainerWithAllTracks) {
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);
-  song.chord().addNote(0, 480, 48, 80);
-  song.bass().addNote(0, 480, 36, 90);
-  song.drums().addNote(0, 480, 36, 100);  // Kick
-  song.motif().addNote(0, 480, 72, 70);
-  song.arpeggio().addNote(0, 480, 67, 60);
-  song.aux().addNote(0, 480, 65, 50);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  song.chord().addNote(NoteEventBuilder::create(0, 480, 48, 80));
+  song.bass().addNote(NoteEventBuilder::create(0, 480, 36, 90));
+  song.drums().addNote(NoteEventBuilder::create(0, 480, 36, 100));  // Kick
+  song.motif().addNote(NoteEventBuilder::create(0, 480, 72, 70));
+  song.arpeggio().addNote(NoteEventBuilder::create(0, 480, 67, 60));
+  song.aux().addNote(NoteEventBuilder::create(0, 480, 65, 50));
 
   writer_.buildContainer(song, Key::C, "");
   auto data = writer_.toBytes();
@@ -105,7 +105,7 @@ TEST_F(Midi2WriterTest, BuildContainerWithAllTracks) {
 TEST_F(Midi2WriterTest, BuildContainerWithMetadata) {
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   std::string metadata = R"({"version":"1.0.0","seed":12345})";
   writer_.buildContainer(song, Key::C, metadata);
@@ -123,7 +123,7 @@ TEST_F(Midi2WriterTest, BuildContainerWithMetadata) {
 
 TEST_F(Midi2WriterTest, BuildClipEndsWithEndOfClip) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   writer_.buildClip(track, "Test", 0, 0, 120, Key::C);
   auto data = writer_.toBytes();
@@ -148,7 +148,7 @@ TEST_F(Midi2WriterTest, BuildClipEndsWithEndOfClip) {
 TEST_F(Midi2WriterTest, EmbeddedClipsHaveSMF2CLIPHeader) {
   Song song;
   song.setBpm(120);
-  song.vocal().addNote(0, 480, 60, 100);
+  song.vocal().addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   writer_.buildContainer(song, Key::C, "");
   auto data = writer_.toBytes();
@@ -160,7 +160,7 @@ TEST_F(Midi2WriterTest, EmbeddedClipsHaveSMF2CLIPHeader) {
 
 TEST_F(Midi2WriterTest, WriteToFileCreatesFile) {
   MidiTrack track;
-  track.addNote(0, 480, 60, 100);
+  track.addNote(NoteEventBuilder::create(0, 480, 60, 100));
 
   writer_.buildClip(track, "Test", 0, 0, 120, Key::C);
 

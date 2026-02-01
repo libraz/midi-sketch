@@ -404,8 +404,23 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
             note_pos += swing_offset;
           }
 
+          // Calculate effective duration, clamping to chord change boundary
+          // This prevents arpeggio notes from clashing with next chord's notes
+          Tick effective_duration = section_gated_duration;
+          Tick next_chord_tick = ctx.harmony->getNextChordChangeTick(note_pos);
+          if (next_chord_tick > 0 && note_pos + effective_duration > next_chord_tick) {
+            // Clamp duration to end at chord change, with small gap for clean transition
+            constexpr Tick kChordGap = 30;  // Small gap before chord change
+            Tick max_duration = next_chord_tick - note_pos;
+            if (max_duration > kChordGap) {
+              effective_duration = max_duration - kChordGap;
+            } else {
+              effective_duration = max_duration > 0 ? max_duration : section_gated_duration;
+            }
+          }
+
           // Use TrackBase::createSafeNoteDeferred for safe note creation with registration
-          if (auto arp_note = createSafeNoteDeferred(note_pos, section_gated_duration, note,
+          if (auto arp_note = createSafeNoteDeferred(note_pos, effective_duration, note,
                                                       velocity, NoteSource::Arpeggio, track_ctx)) {
             track.addNote(*arp_note);
           }

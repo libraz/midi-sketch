@@ -34,7 +34,7 @@ void fillTrackWithNotes(MidiTrack& track, Tick section_start, uint8_t bars,
                         uint8_t velocity = 100, Tick note_spacing = TICKS_PER_BEAT) {
   Tick section_end = section_start + bars * TICKS_PER_BAR;
   for (Tick tick = section_start; tick < section_end; tick += note_spacing) {
-    track.addNote(tick, TICKS_PER_BEAT / 2, 60, velocity);
+    track.addNote(NoteEventBuilder::create(tick, TICKS_PER_BEAT / 2, 60, velocity));
   }
 }
 
@@ -143,7 +143,7 @@ TEST(ExitPatternTest, FinalHitDoesNotExceed127) {
 
   // Add notes with already high velocity
   Tick last_beat = kBars * TICKS_PER_BAR - TICKS_PER_BEAT;
-  track.addNote(last_beat, TICKS_PER_BEAT / 2, 60, 125);
+  track.addNote(NoteEventBuilder::create(last_beat, TICKS_PER_BEAT / 2, 60, 125));
 
   PostProcessor::applyExitPattern(track, section);
 
@@ -204,7 +204,7 @@ TEST(ExitPatternTest, CutOffTruncatesNotesExtendingPastCutoff) {
   // Add a note that extends past the cutoff point
   Tick note_start = cutoff - TICKS_PER_BEAT;  // 1 beat before cutoff
   Tick long_duration = TICKS_PER_BEAT * 3;     // Extends well past cutoff
-  track.addNote(note_start, long_duration, 60, 80);
+  track.addNote(NoteEventBuilder::create(note_start, long_duration, 60, 80));
 
   PostProcessor::applyExitPattern(track, section);
 
@@ -222,8 +222,8 @@ TEST(ExitPatternTest, CutOffDoesNotAffectOtherSections) {
   Section section = makeSection(SectionType::A, kBars, section_start, ExitPattern::CutOff);
 
   // Add notes before this section (should not be affected)
-  track.addNote(0, TICKS_PER_BEAT, 60, 80);
-  track.addNote(TICKS_PER_BEAT, TICKS_PER_BEAT, 62, 80);
+  track.addNote(NoteEventBuilder::create(0, TICKS_PER_BEAT, 60, 80));
+  track.addNote(NoteEventBuilder::create(TICKS_PER_BEAT, TICKS_PER_BEAT, 62, 80));
 
   // Add notes in this section
   fillTrackWithNotes(track, section_start, kBars, 80);
@@ -255,9 +255,9 @@ TEST(ExitPatternTest, SustainExtendsNotesInLastBar) {
   Tick second_note_start = last_bar_start + TICKS_PER_BEAT * 2;
 
   // Add a note at the beginning of the last bar with short duration
-  track.addNote(last_bar_start, TICKS_PER_BEAT / 2, 60, 80);
+  track.addNote(NoteEventBuilder::create(last_bar_start, TICKS_PER_BEAT / 2, 60, 80));
   // Add a note later in the last bar
-  track.addNote(second_note_start, TICKS_PER_BEAT / 2, 64, 80);
+  track.addNote(NoteEventBuilder::create(second_note_start, TICKS_PER_BEAT / 2, 64, 80));
 
   PostProcessor::applyExitPattern(track, section);
 
@@ -275,7 +275,7 @@ TEST(ExitPatternTest, SustainDoesNotAffectNotesBeforeLastBar) {
 
   Tick original_duration = TICKS_PER_BEAT / 2;
   // Add a note in bar 1 (not last bar)
-  track.addNote(0, original_duration, 60, 80);
+  track.addNote(NoteEventBuilder::create(0, original_duration, 60, 80));
 
   PostProcessor::applyExitPattern(track, section);
 

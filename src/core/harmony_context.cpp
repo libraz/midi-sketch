@@ -46,10 +46,22 @@ bool HarmonyContext::isPitchSafe(uint8_t pitch, Tick start, Tick duration, Track
                                          is_weak_beat);
 }
 
+CollisionInfo HarmonyContext::getCollisionInfo(uint8_t pitch, Tick start, Tick duration,
+                                               TrackRole exclude) const {
+  return collision_detector_.getCollisionInfo(pitch, start, duration, exclude, &chord_tracker_);
+}
+
 uint8_t HarmonyContext::getBestAvailablePitch(uint8_t desired, Tick start, Tick duration,
                                               TrackRole track, uint8_t low, uint8_t high) const {
   return pitch_resolver_.getBestAvailablePitch(desired, start, duration, track, low, high,
                                                chord_tracker_, collision_detector_);
+}
+
+PitchResolutionResult HarmonyContext::resolvePitchWithStrategy(uint8_t desired, Tick start,
+                                                                Tick duration, TrackRole track,
+                                                                uint8_t low, uint8_t high) const {
+  return pitch_resolver_.resolvePitchWithStrategy(desired, start, duration, track, low, high,
+                                                   chord_tracker_, collision_detector_);
 }
 
 void HarmonyContext::clearNotes() { collision_detector_.clearNotes(); }
@@ -78,6 +90,10 @@ void HarmonyContext::registerSecondaryDominant(Tick start, Tick end, int8_t degr
 
 std::string HarmonyContext::dumpNotesAt(Tick tick, Tick range_ticks) const {
   return collision_detector_.dumpNotesAt(tick, range_ticks);
+}
+
+CollisionSnapshot HarmonyContext::getCollisionSnapshot(Tick tick, Tick range_ticks) const {
+  return collision_detector_.getCollisionSnapshot(tick, range_ticks);
 }
 
 Tick HarmonyContext::getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude,

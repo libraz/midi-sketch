@@ -81,6 +81,58 @@ bool TrackCollisionDetector::isPitchSafe(uint8_t pitch, Tick start, Tick duratio
   return true;
 }
 
+CollisionInfo TrackCollisionDetector::getCollisionInfo(uint8_t pitch, Tick start, Tick duration,
+                                                        TrackRole exclude,
+                                                        const ChordProgressionTracker* chord_tracker) const {
+  CollisionInfo info;
+  Tick end = start + duration;
+
+  // Get chord context for smarter dissonance detection
+  int8_t chord_degree = 0;
+  if (chord_tracker) {
+    chord_degree = chord_tracker->getChordDegreeAt(start);
+  }
+
+  for (const auto& note : notes_) {
+    if (note.track == exclude) continue;
+
+    // Check if notes overlap in time
+    if (note.start < end && note.end > start) {
+      int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
+
+      // Check for tritone between harmonic tracks
+      bool is_harmonic_track_pair = false;
+      if (exclude == TrackRole::Bass || exclude == TrackRole::Chord ||
+          exclude == TrackRole::Vocal || exclude == TrackRole::Motif || exclude == TrackRole::Aux) {
+        if (note.track == TrackRole::Bass || note.track == TrackRole::Chord ||
+            note.track == TrackRole::Vocal || note.track == TrackRole::Motif ||
+            note.track == TrackRole::Aux) {
+          is_harmonic_track_pair = true;
+        }
+      }
+      if (is_harmonic_track_pair) {
+        int pc_interval = actual_semitones % 12;
+        if (pc_interval == 6 && actual_semitones < 36) {
+          info.has_collision = true;
+          info.colliding_pitch = note.pitch;
+          info.colliding_track = note.track;
+          info.interval_semitones = actual_semitones;
+          return info;
+        }
+      }
+
+      if (isDissonantActualInterval(actual_semitones, chord_degree)) {
+        info.has_collision = true;
+        info.colliding_pitch = note.pitch;
+        info.colliding_track = note.track;
+        info.interval_semitones = actual_semitones;
+        return info;
+      }
+    }
+  }
+  return info;
+}
+
 bool TrackCollisionDetector::hasBassCollision(uint8_t pitch, Tick start, Tick duration,
                                               int threshold) const {
   // Only check if pitch is in low register
@@ -311,6 +363,58 @@ std::string TrackCollisionDetector::dumpNotesAt(Tick tick, Tick range_ticks) con
   }
 
   return result;
+}
+
+CollisionSnapshot TrackCollisionDetector::getCollisionSnapshot(Tick tick, Tick range_ticks) const {
+  CollisionSnapshot snapshot;
+  snapshot.tick = tick;
+  snapshot.range_start = (tick > range_ticks / 2) ? (tick - range_ticks / 2) : 0;
+  snapshot.range_end = tick + range_ticks / 2;
+
+  // Collect notes in range
+  for (const auto& note : notes_) {
+    if (note.start < snapshot.range_end && note.end > snapshot.range_start) {
+      RegisteredNoteInfo info;
+      info.start = note.start;
+      info.end = note.end;
+      info.pitch = note.pitch;
+      info.track = note.track;
+      snapshot.notes_in_range.push_back(info);
+
+      // Also add to sounding_notes if sounding at tick
+      if (note.start <= tick && note.end > tick) {
+        snapshot.sounding_notes.push_back(info);
+      }
+    }
+  }
+
+  // Detect clashes among sounding notes
+  for (size_t i = 0; i < snapshot.sounding_notes.size(); ++i) {
+    for (size_t j = i + 1; j < snapshot.sounding_notes.size(); ++j) {
+      const auto& a = snapshot.sounding_notes[i];
+      const auto& b = snapshot.sounding_notes[j];
+
+      int interval = std::abs(static_cast<int>(a.pitch) - static_cast<int>(b.pitch));
+      int pitch_class_interval = interval % 12;
+
+      bool is_clash = (pitch_class_interval == 1 || pitch_class_interval == 11 ||  // m2/M7
+                       pitch_class_interval == 2);                                  // M2
+
+      if (is_clash) {
+        ClashDetail detail;
+        detail.note_a = a;
+        detail.note_b = b;
+        detail.interval_semitones = interval;
+        detail.interval_name = (pitch_class_interval == 1)    ? "minor 2nd"
+                               : (pitch_class_interval == 11) ? "major 7th"
+                               : (pitch_class_interval == 2)  ? "major 2nd"
+                                                              : "unknown";
+        snapshot.clashes.push_back(detail);
+      }
+    }
+  }
+
+  return snapshot;
 }
 
 }  // namespace midisketch

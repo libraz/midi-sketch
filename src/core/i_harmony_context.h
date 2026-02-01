@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 
+#include "core/basic_types.h"
+#include "core/safe_pitch_resolver.h"
 #include "core/types.h"
 
 namespace midisketch {
@@ -86,6 +88,26 @@ class IHarmonyContext {
                            bool is_weak_beat = false) const = 0;
 
   /**
+   * @brief Get detailed collision information for a pitch.
+   *
+   * Returns information about the first collision found, including
+   * the colliding note's pitch, track, and interval.
+   *
+   * @param pitch MIDI pitch to check
+   * @param start Start tick
+   * @param duration Duration in ticks
+   * @param exclude Exclude notes from this track when checking
+   * @return CollisionInfo with details about the collision (if any)
+   */
+  virtual CollisionInfo getCollisionInfo(uint8_t pitch, Tick start, Tick duration,
+                                         TrackRole exclude) const {
+    // Default implementation: just report if collision exists
+    CollisionInfo info;
+    info.has_collision = !isPitchSafe(pitch, start, duration, exclude);
+    return info;
+  }
+
+  /**
    * @brief Get the best available pitch that minimizes clashes with other tracks.
    *
    * Tries chord tones first, then semitone adjustments.
@@ -103,6 +125,30 @@ class IHarmonyContext {
    */
   virtual uint8_t getBestAvailablePitch(uint8_t desired, Tick start, Tick duration, TrackRole track,
                                         uint8_t low, uint8_t high) const = 0;
+
+  /**
+   * @brief Resolve pitch with strategy tracking.
+   *
+   * Same as getBestAvailablePitch but also returns which strategy succeeded.
+   * Used for debugging and provenance tracking.
+   *
+   * @param desired Desired MIDI pitch
+   * @param start Start tick
+   * @param duration Duration in ticks
+   * @param track Track that will play this note
+   * @param low Minimum allowed pitch
+   * @param high Maximum allowed pitch
+   * @return PitchResolutionResult with resolved pitch and strategy used
+   */
+  virtual PitchResolutionResult resolvePitchWithStrategy(uint8_t desired, Tick start, Tick duration,
+                                                          TrackRole track, uint8_t low,
+                                                          uint8_t high) const {
+    // Default implementation: just call getBestAvailablePitch without strategy info
+    uint8_t pitch = getBestAvailablePitch(desired, start, duration, track, low, high);
+    CollisionAvoidStrategy strategy =
+        (pitch == desired) ? CollisionAvoidStrategy::None : CollisionAvoidStrategy::Failed;
+    return {pitch, strategy};
+  }
 
   /**
    * @brief Get the tick of the next chord change after the given tick.
@@ -177,6 +223,17 @@ class IHarmonyContext {
    * @return Formatted string with collision state
    */
   virtual std::string dumpNotesAt(Tick tick, Tick range_ticks = 1920) const = 0;
+
+  /**
+   * @brief Get a structured snapshot of collision state at a specific tick.
+   *
+   * Returns structured data for programmatic analysis and testing.
+   *
+   * @param tick The tick to inspect
+   * @param range_ticks How many ticks around the target to include (default: 1920 = 1 bar)
+   * @return CollisionSnapshot with notes and clashes
+   */
+  virtual CollisionSnapshot getCollisionSnapshot(Tick tick, Tick range_ticks = 1920) const = 0;
 
   /**
    * @brief Get the maximum safe end tick for extending a note without creating clashes.
