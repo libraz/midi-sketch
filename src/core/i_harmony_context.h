@@ -207,6 +207,36 @@ class IHarmonyContext {
   virtual Tick getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude,
                              Tick desired_end) const = 0;
 
+  /**
+   * @brief Get pitch classes currently sounding from all tracks except one.
+   *
+   * Used for chord voicing to find doubling candidates when no unique safe pitch exists.
+   * Returns pitch classes (0-11) for notes sounding in [start, end) from all tracks
+   * except the excluded track.
+   *
+   * @param start Start of time range
+   * @param end End of time range
+   * @param exclude Track role to exclude (typically the track being generated)
+   * @return Vector of unique pitch classes (may be empty if no notes in range)
+   */
+  virtual std::vector<int> getSoundingPitchClasses(Tick start, Tick end,
+                                                     TrackRole exclude) const = 0;
+
+  /**
+   * @brief Get actual pitches currently sounding from all tracks except one.
+   *
+   * Unlike getSoundingPitchClasses which returns pitch classes (0-11), this returns
+   * actual MIDI pitches (0-127). Used for doubling where we need the exact pitch
+   * to avoid collisions with other simultaneous notes.
+   *
+   * @param start Start of time range
+   * @param end End of time range
+   * @param exclude Track role to exclude (typically the track being generated)
+   * @return Vector of unique MIDI pitches (may be empty if no notes in range)
+   */
+  virtual std::vector<uint8_t> getSoundingPitches(Tick start, Tick end,
+                                                    TrackRole exclude) const = 0;
+
   /// C4 (middle C) - below this, stricter low-register rules apply.
   static constexpr uint8_t LOW_REGISTER_THRESHOLD = 60;
 };

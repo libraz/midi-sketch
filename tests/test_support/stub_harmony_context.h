@@ -107,6 +107,20 @@ class StubHarmonyContext : public IHarmonyCoordinator {
     return desired_end;  // Stub always returns desired_end (no restrictions)
   }
 
+  std::vector<int> getSoundingPitchClasses(Tick /*start*/, Tick /*end*/,
+                                             TrackRole /*exclude*/) const override {
+    return sounding_pitch_classes_;  // Return configured or empty
+  }
+
+  std::vector<uint8_t> getSoundingPitches(Tick /*start*/, Tick /*end*/,
+                                            TrackRole /*exclude*/) const override {
+    return sounding_pitches_;  // Return configured or empty
+  }
+
+  // Configuration for sounding pitch classes and pitches
+  void setSoundingPitchClasses(std::vector<int> pcs) { sounding_pitch_classes_ = std::move(pcs); }
+  void setSoundingPitches(std::vector<uint8_t> pitches) { sounding_pitches_ = std::move(pitches); }
+
   // =========================================================================
   // IHarmonyCoordinator implementation (stub)
   // =========================================================================
@@ -168,6 +182,8 @@ class StubHarmonyContext : public IHarmonyCoordinator {
  private:
   int8_t chord_degree_ = 0;
   std::vector<int> chord_tones_ = {0, 4, 7};  // C major triad by default
+  std::vector<int> sounding_pitch_classes_;   // Configured sounding pitch classes
+  std::vector<uint8_t> sounding_pitches_;     // Configured sounding pitches
   bool all_pitches_safe_ = true;
   Tick next_chord_change_ = 0;
   bool initialized_ = false;

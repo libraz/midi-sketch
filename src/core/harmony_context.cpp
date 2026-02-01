@@ -88,4 +88,14 @@ Tick HarmonyContext::getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exc
   return collision_detector_.getMaxSafeEnd(note_start, pitch, exclude, desired_end);
 }
 
+std::vector<int> HarmonyContext::getSoundingPitchClasses(Tick start, Tick end,
+                                                           TrackRole exclude) const {
+  return collision_detector_.getSoundingPitchClasses(start, end, exclude);
+}
+
+std::vector<uint8_t> HarmonyContext::getSoundingPitches(Tick start, Tick end,
+                                                          TrackRole exclude) const {
+  return collision_detector_.getSoundingPitches(start, end, exclude);
+}
+
 }  // namespace midisketch

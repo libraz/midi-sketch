@@ -131,6 +131,16 @@ Tick HarmonyCoordinator::getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole
   return base_context_.getMaxSafeEnd(note_start, pitch, exclude, desired_end);
 }
 
+std::vector<int> HarmonyCoordinator::getSoundingPitchClasses(Tick start, Tick end,
+                                                               TrackRole exclude) const {
+  return base_context_.getSoundingPitchClasses(start, end, exclude);
+}
+
+std::vector<uint8_t> HarmonyCoordinator::getSoundingPitches(Tick start, Tick end,
+                                                              TrackRole exclude) const {
+  return base_context_.getSoundingPitches(start, end, exclude);
+}
+
 // ============================================================================
 // Track Priority System
 // ============================================================================

@@ -74,6 +74,12 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
   Tick getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude,
                      Tick desired_end) const override;
 
+  std::vector<int> getSoundingPitchClasses(Tick start, Tick end,
+                                             TrackRole exclude) const override;
+
+  std::vector<uint8_t> getSoundingPitches(Tick start, Tick end,
+                                            TrackRole exclude) const override;
+
   // =========================================================================
   // IHarmonyCoordinator interface (new functionality)
   // =========================================================================

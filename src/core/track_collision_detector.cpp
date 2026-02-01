@@ -228,6 +228,63 @@ std::vector<int> TrackCollisionDetector::getPitchClassesFromTrackInRange(Tick st
   return pitch_classes;
 }
 
+std::vector<int> TrackCollisionDetector::getSoundingPitchClasses(Tick start, Tick end,
+                                                                   TrackRole exclude) const {
+  std::vector<int> pitch_classes;
+
+  for (const auto& note : notes_) {
+    // Skip excluded track and drums (non-harmonic)
+    if (note.track == exclude) continue;
+    if (note.track == TrackRole::Drums) continue;
+
+    // Check if note overlaps with the range [start, end)
+    if (note.start < end && note.end > start) {
+      int pc = note.pitch % 12;
+      // Avoid duplicates
+      bool found = false;
+      for (int existing : pitch_classes) {
+        if (existing == pc) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        pitch_classes.push_back(pc);
+      }
+    }
+  }
+
+  return pitch_classes;
+}
+
+std::vector<uint8_t> TrackCollisionDetector::getSoundingPitches(Tick start, Tick end,
+                                                                  TrackRole exclude) const {
+  std::vector<uint8_t> pitches;
+
+  for (const auto& note : notes_) {
+    // Skip excluded track and drums (non-harmonic)
+    if (note.track == exclude) continue;
+    if (note.track == TrackRole::Drums) continue;
+
+    // Check if note overlaps with the range [start, end)
+    if (note.start < end && note.end > start) {
+      // Avoid duplicates
+      bool found = false;
+      for (uint8_t existing : pitches) {
+        if (existing == note.pitch) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        pitches.push_back(note.pitch);
+      }
+    }
+  }
+
+  return pitches;
+}
+
 void TrackCollisionDetector::clearNotes() {
   notes_.clear();
 }
@@ -340,6 +397,9 @@ std::string TrackCollisionDetector::dumpNotesAt(Tick tick, Tick range_ticks) con
         const auto* a = sounding_notes[i];
         const auto* b = sounding_notes[j];
 
+        // Skip drums - they are non-harmonic and should not cause pitch collisions
+        if (a->track == TrackRole::Drums || b->track == TrackRole::Drums) continue;
+
         int interval = std::abs(static_cast<int>(a->pitch) - static_cast<int>(b->pitch));
         int pitch_class_interval = interval % 12;
 
@@ -399,6 +459,9 @@ CollisionSnapshot TrackCollisionDetector::getCollisionSnapshot(Tick tick, Tick r
     for (size_t j = i + 1; j < snapshot.sounding_notes.size(); ++j) {
       const auto& a = snapshot.sounding_notes[i];
       const auto& b = snapshot.sounding_notes[j];
+
+      // Skip drums - they are non-harmonic and should not cause pitch collisions
+      if (a.track == TrackRole::Drums || b.track == TrackRole::Drums) continue;
 
       int interval = std::abs(static_cast<int>(a.pitch) - static_cast<int>(b.pitch));
       int pitch_class_interval = interval % 12;

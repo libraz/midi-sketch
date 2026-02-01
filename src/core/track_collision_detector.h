@@ -122,6 +122,34 @@ class TrackCollisionDetector {
    */
   std::vector<int> getPitchClassesFromTrackInRange(Tick start, Tick end, TrackRole role) const;
 
+  /**
+   * @brief Get pitch classes from all tracks except one within a time range.
+   *
+   * Returns all pitch classes (0-11) for notes from all tracks except the excluded one
+   * that are sounding at any point within [start, end). Used for finding doubling
+   * candidates in chord voicing.
+   *
+   * @param start Start of time range
+   * @param end End of time range
+   * @param exclude Track role to exclude
+   * @return Vector of unique pitch classes (may be empty if no notes in range)
+   */
+  std::vector<int> getSoundingPitchClasses(Tick start, Tick end, TrackRole exclude) const;
+
+  /**
+   * @brief Get actual pitches from all tracks except one within a time range.
+   *
+   * Returns all MIDI pitches (0-127) for notes from all tracks except the excluded one
+   * that are sounding at any point within [start, end). Used for exact doubling
+   * where we need the actual pitch to avoid collisions.
+   *
+   * @param start Start of time range
+   * @param end End of time range
+   * @param exclude Track role to exclude
+   * @return Vector of unique MIDI pitches (may be empty if no notes in range)
+   */
+  std::vector<uint8_t> getSoundingPitches(Tick start, Tick end, TrackRole exclude) const;
+
   /// Clear all registered notes (useful for regeneration).
   void clearNotes();
 

@@ -15,6 +15,7 @@
 
 #include "core/mood_utils.h"
 #include "core/section_properties.h"
+#include "core/section_types.h"
 #include "core/types.h"
 
 namespace midisketch {
@@ -62,18 +63,55 @@ inline ChordRhythm adjustDenser(ChordRhythm rhythm) {
   return rhythm;
 }
 
-/// Select rhythm pattern based on section, mood, and backing density.
+/// Select rhythm pattern based on section, mood, backing density, and paradigm.
 /// Uses RNG to add variation while respecting musical constraints.
 /// Design: Express energy through voicing spread, not rhythm density.
 /// Keep chord rhythms relaxed to give vocals room to breathe.
 /// Energy progression: Intro(static) -> A(relaxed) -> B(building) -> Chorus(release)
+///
+/// RhythmSync paradigm: Uses denser rhythm (Quarter/Eighth) to follow Motif changes.
+/// This prevents long chord notes (Half/Whole) from clashing with moving Motif.
+///
 /// @param section Current section type
 /// @param mood Current mood
 /// @param backing_density Backing track density
+/// @param paradigm Generation paradigm (affects rhythm density for RhythmSync)
 /// @param rng Random number generator
 /// @return Selected chord rhythm
 inline ChordRhythm selectRhythm(SectionType section, Mood mood, BackingDensity backing_density,
-                                std::mt19937& rng) {
+                                GenerationParadigm paradigm, std::mt19937& rng) {
+  // RhythmSync paradigm: use denser rhythm to follow Motif changes.
+  // Motif is the "coordinate axis" in RhythmSync, so Chord must use shorter notes
+  // to avoid long notes clashing with moving Motif pitches during their sustain.
+  if (paradigm == GenerationParadigm::RhythmSync) {
+    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    float roll = dist(rng);
+
+    // Section-based weights for RhythmSync
+    // Choruses/B sections need denser rhythm to sync with fast-moving Motif.
+    // IMPORTANT: Half/Whole notes in these sections cause collisions because
+    // Motif changes every 240 ticks (Eighth) but Half sustains for 960 ticks.
+    if (section == SectionType::Chorus || section == SectionType::B ||
+        section == SectionType::MixBreak || section == SectionType::Drop) {
+      // High-energy sections: 45% Quarter, 55% Eighth (no Half)
+      // This ensures chord notes are short enough to not overlap with Motif changes
+      if (roll < 0.45f) return ChordRhythm::Quarter;
+      return ChordRhythm::Eighth;
+    } else if (section == SectionType::Intro || section == SectionType::Interlude ||
+               section == SectionType::Outro) {
+      // Transition sections: 40% Half, 40% Quarter, 20% Whole
+      if (roll < 0.40f) return ChordRhythm::Half;
+      if (roll < 0.80f) return ChordRhythm::Quarter;
+      return ChordRhythm::Whole;
+    } else {
+      // A/Bridge sections: 40% Quarter, 30% Half, 20% Eighth, 10% Whole
+      if (roll < 0.40f) return ChordRhythm::Quarter;
+      if (roll < 0.70f) return ChordRhythm::Half;
+      if (roll < 0.90f) return ChordRhythm::Eighth;
+      return ChordRhythm::Whole;
+    }
+  }
+
   bool is_ballad = MoodClassification::isBallad(mood);
   bool is_energetic = MoodClassification::isDanceOriented(mood) || mood == Mood::BrightUpbeat;
 

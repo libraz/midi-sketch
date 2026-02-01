@@ -160,7 +160,8 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
   }
 
   // Check if desired pitch is safe
-  if (harmony.isPitchSafe(opts.desired_pitch, opts.start, opts.duration, opts.role)) {
+  bool is_safe = harmony.isPitchSafe(opts.desired_pitch, opts.start, opts.duration, opts.role);
+  if (is_safe) {
     NoteEvent event = buildNoteEvent(harmony, opts.start, opts.duration,
                                       opts.desired_pitch, opts.velocity,
                                       opts.source, opts.record_provenance, true_original);
