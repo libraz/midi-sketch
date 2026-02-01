@@ -13,6 +13,7 @@
 #include <tuple>
 
 #include "core/chord.h"
+#include "core/chord_progression_tracker.h"
 #include "core/json_helpers.h"
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
@@ -23,86 +24,6 @@ namespace midisketch {
 namespace {
 
 // Note: NOTE_NAMES is now provided by pitch_utils.h
-
-// Harmonic rhythm: how often chords change (mirrored from chord_track.cpp)
-enum class HarmonicDensity {
-  Slow,    // Chord changes every 2 bars (Intro, Interlude, Outro)
-  Normal,  // Chord changes every bar (A, B, Bridge)
-  Dense    // Chord may change mid-bar at phrase ends (Chorus)
-};
-
-// Determines harmonic density based on section type and mood
-HarmonicDensity getHarmonicDensity(SectionType section, Mood mood) {
-  bool is_ballad = (mood == Mood::Ballad || mood == Mood::Sentimental || mood == Mood::Chill);
-
-  switch (section) {
-    case SectionType::Intro:
-    case SectionType::Interlude:
-    case SectionType::Outro:
-    case SectionType::Chant:
-    case SectionType::MixBreak:
-      return HarmonicDensity::Slow;
-    case SectionType::A:
-    case SectionType::Bridge:
-      return HarmonicDensity::Normal;
-    case SectionType::B:
-      return HarmonicDensity::Normal;
-    case SectionType::Chorus:
-    case SectionType::Drop:  // Drop has dense harmonic rhythm like Chorus
-      return is_ballad ? HarmonicDensity::Normal : HarmonicDensity::Dense;
-  }
-  return HarmonicDensity::Normal;
-}
-
-// Get chord index at a specific bar within a section, considering harmonic rhythm
-int getChordIndexAtBar(uint8_t bar_in_section, const ChordProgression& progression,
-                       HarmonicDensity density) {
-  if (density == HarmonicDensity::Slow) {
-    // Slow: chord changes every 2 bars
-    return (bar_in_section / 2) % progression.length;
-  }
-  // Normal/Dense: chord changes every bar
-  return bar_in_section % progression.length;
-}
-
-// Get chord degree at a specific tick using arrangement and harmonic rhythm.
-// Returns the chord degree and whether it was successfully determined.
-struct ChordAtTick {
-  int8_t degree;
-  bool found;
-  std::string section_name;
-};
-
-ChordAtTick getChordAtTick(Tick tick, const Song& song, const ChordProgression& progression,
-                           Mood mood) {
-  const auto& arrangement = song.arrangement();
-  uint32_t bar = tick / TICKS_PER_BAR;
-
-  const Section* section = arrangement.sectionAtBar(bar);
-  if (!section) {
-    // Fallback to simple bar-based lookup
-    return {progression.at(bar), false, "unknown"};
-  }
-
-  // Calculate bar within section
-  uint32_t section_start_bar = section->start_tick / TICKS_PER_BAR;
-  uint8_t bar_in_section = static_cast<uint8_t>(bar - section_start_bar);
-
-  // Get harmonic density for this section
-  HarmonicDensity density = getHarmonicDensity(section->type, mood);
-
-  // Get chord index using harmonic rhythm
-  int chord_idx = getChordIndexAtBar(bar_in_section, progression, density);
-  int8_t degree = progression.degrees[chord_idx];
-
-  // Section name for reporting
-  const char* section_names[] = {"Intro", "A", "B", "Chorus", "Bridge", "Outro", "Interlude"};
-  std::string sec_name = (static_cast<int>(section->type) < 7)
-                             ? section_names[static_cast<int>(section->type)]
-                             : "Unknown";
-
-  return {degree, true, sec_name};
-}
 
 // Interval names (0-11 semitones).
 constexpr const char* INTERVAL_NAMES[12] = {"unison",    "minor 2nd",   "major 2nd", "minor 3rd",
@@ -626,6 +547,7 @@ DissonanceSeverity adjustSeverityForContext(DissonanceSeverity base_severity,
 // Context for all detection functions
 struct DetectionContext {
   const Song& song;
+  const IChordLookup& chord_lookup;
   const ChordProgression& progression;
   const ChordExtensionParams& ext_params;
   Mood mood;
@@ -697,8 +619,7 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes,
 
       Tick overlap_start = std::max(note_a.start, note_b.start);
       uint32_t bar = overlap_start / TICKS_PER_BAR;
-      auto chord_info = getChordAtTick(overlap_start, ctx.song, ctx.progression, ctx.mood);
-      int8_t degree = chord_info.degree;
+      int8_t degree = ctx.chord_lookup.getChordDegreeAt(overlap_start);
 
       auto [is_dissonant, base_severity] = checkIntervalDissonance(actual_interval, degree);
 
@@ -757,8 +678,7 @@ void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_
                                  const DetectionContext& ctx, DissonanceReport& report) {
   for (const auto& note : track.notes()) {
     uint32_t bar = note.start_tick / TICKS_PER_BAR;
-    auto chord_info = getChordAtTick(note.start_tick, ctx.song, ctx.progression, ctx.mood);
-    int8_t degree = chord_info.degree;
+    int8_t degree = ctx.chord_lookup.getChordDegreeAt(note.start_tick);
     int pitch_class = note.note % 12;
 
     if (isPitchClassChordTone(pitch_class, degree, ctx.ext_params)) continue;
@@ -837,21 +757,21 @@ struct ChordChange {
 std::vector<ChordChange> buildChordTimeline(const DetectionContext& ctx) {
   std::vector<ChordChange> timeline;
   const auto& arrangement = ctx.song.arrangement();
+  if (arrangement.sections().empty()) return timeline;
 
-  for (const auto& section : arrangement.sections()) {
-    HarmonicDensity density = getHarmonicDensity(section.type, ctx.mood);
-    uint32_t section_start_bar = section.start_tick / TICKS_PER_BAR;
-    uint32_t section_bars = section.bars;
+  // Walk chord changes using IChordLookup (tick-accurate, handles mid-bar splits)
+  Tick song_end = arrangement.sections().back().start_tick +
+                  arrangement.sections().back().bars * TICKS_PER_BAR;
 
-    for (uint32_t bar_offset = 0; bar_offset < section_bars; ++bar_offset) {
-      Tick bar_tick = (section_start_bar + bar_offset) * TICKS_PER_BAR;
-      int chord_idx = getChordIndexAtBar(bar_offset, ctx.progression, density);
-      int8_t degree = ctx.progression.degrees[chord_idx];
-
-      if (timeline.empty() || timeline.back().degree != degree) {
-        timeline.push_back({bar_tick, degree});
-      }
+  Tick tick = 0;
+  while (tick < song_end) {
+    int8_t degree = ctx.chord_lookup.getChordDegreeAt(tick);
+    if (timeline.empty() || timeline.back().degree != degree) {
+      timeline.push_back({tick, degree});
     }
+    Tick next = ctx.chord_lookup.getNextChordChangeTick(tick);
+    if (next == 0 || next <= tick) break;
+    tick = next;
   }
   return timeline;
 }
@@ -865,8 +785,7 @@ void detectSustainedInTrack(const MidiTrack& track, TrackRole role,
     Tick note_end = note.start_tick + note.duration;
     int pitch_class = note.note % 12;
 
-    auto start_chord_info = getChordAtTick(note_start, ctx.song, ctx.progression, ctx.mood);
-    int8_t start_degree = start_chord_info.degree;
+    int8_t start_degree = ctx.chord_lookup.getChordDegreeAt(note_start);
 
     if (!isPitchClassChordTone(pitch_class, start_degree, ctx.ext_params) &&
         !isAvailableTension(pitch_class, start_degree)) {
@@ -938,8 +857,8 @@ void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
 
     if (isDiatonicToCMajor(pitch_class)) continue;
 
-    auto chord_info = getChordAtTick(note.start_tick, ctx.song, ctx.progression, ctx.mood);
-    ChordTones ct = getChordTones(chord_info.degree);
+    int8_t degree_at_tick = ctx.chord_lookup.getChordDegreeAt(note.start_tick);
+    ChordTones ct = getChordTones(degree_at_tick);
     bool is_borrowed_chord_tone = false;
     for (uint8_t i = 0; i < ct.count; ++i) {
       if (ct.pitch_classes[i] == pitch_class) {
@@ -1027,8 +946,12 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
 
   const auto& progression = getChordProgression(params.chord_id);
 
+  // Create ChordProgressionTracker (same logic as generation side)
+  ChordProgressionTracker chord_tracker;
+  chord_tracker.initialize(song.arrangement(), progression, params.mood);
+
   // Create detection context
-  DetectionContext ctx{song, progression, params.chord_extension, params.mood};
+  DetectionContext ctx{song, chord_tracker, progression, params.chord_extension, params.mood};
 
   // Collect all pitched notes
   std::vector<TimedNote> all_notes = collectPitchedNotes(song);

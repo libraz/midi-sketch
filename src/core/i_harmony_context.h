@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "core/basic_types.h"
+#include "core/i_chord_lookup.h"
 #include "core/safe_pitch_resolver.h"
 #include "core/types.h"
 
@@ -24,10 +25,11 @@ struct ChordProgression;
 /**
  * @brief Interface for harmonic context management.
  *
- * Provides chord-tone lookup and collision detection (minor 2nd, major 7th).
- * Implement this interface to create test doubles for Generator testing.
+ * Extends IChordLookup with collision detection (minor 2nd, major 7th)
+ * and note registration. Implement this interface to create test doubles
+ * for Generator testing.
  */
-class IHarmonyContext {
+class IHarmonyContext : public IChordLookup {
  public:
   virtual ~IHarmonyContext() = default;
 
@@ -39,20 +41,6 @@ class IHarmonyContext {
    */
   virtual void initialize(const Arrangement& arrangement, const ChordProgression& progression,
                           Mood mood) = 0;
-
-  /**
-   * @brief Get chord degree at a specific tick.
-   * @param tick Position in ticks
-   * @return Scale degree (0=I, 1=ii, 2=iii, 3=IV, 4=V, 5=vi, 6=vii)
-   */
-  virtual int8_t getChordDegreeAt(Tick tick) const = 0;
-
-  /**
-   * @brief Get chord tones as pitch classes at a specific tick.
-   * @param tick Position in ticks
-   * @return Vector of pitch classes (0-11) that are chord tones
-   */
-  virtual std::vector<int> getChordTonesAt(Tick tick) const = 0;
 
   /**
    * @brief Register a note from a track for collision detection.
@@ -107,12 +95,8 @@ class IHarmonyContext {
     return info;
   }
 
-  /**
-   * @brief Get the tick of the next chord change after the given tick.
-   * @param after Position to search from
-   * @return Tick of next chord change, or 0 if none found
-   */
-  virtual Tick getNextChordChangeTick(Tick after) const = 0;
+  // getChordDegreeAt(), getChordTonesAt(), getNextChordChangeTick()
+  // are inherited from IChordLookup.
 
   /// Clear all registered notes (useful for regeneration).
   virtual void clearNotes() = 0;

@@ -11,6 +11,7 @@
 
 #include <vector>
 
+#include "core/i_chord_lookup.h"
 #include "core/types.h"
 
 namespace midisketch {
@@ -24,7 +25,7 @@ struct ChordProgression;
  * Manages the mapping between song position (tick) and chord degree.
  * Supports different harmonic rhythm densities (slow, normal, dense).
  */
-class ChordProgressionTracker {
+class ChordProgressionTracker : public IChordLookup {
  public:
   ChordProgressionTracker() = default;
 
@@ -41,21 +42,21 @@ class ChordProgressionTracker {
    * @param tick Position in ticks
    * @return Scale degree (0=I, 1=ii, 2=iii, 3=IV, 4=V, 5=vi, 6=vii)
    */
-  int8_t getChordDegreeAt(Tick tick) const;
+  int8_t getChordDegreeAt(Tick tick) const override;
 
   /**
    * @brief Get chord tones as pitch classes at a specific tick.
    * @param tick Position in ticks
    * @return Vector of pitch classes (0-11) that are chord tones
    */
-  std::vector<int> getChordTonesAt(Tick tick) const;
+  std::vector<int> getChordTonesAt(Tick tick) const override;
 
   /**
    * @brief Get the tick of the next chord change after the given tick.
    * @param after Position to search from
    * @return Tick of next chord change, or 0 if none found
    */
-  Tick getNextChordChangeTick(Tick after) const;
+  Tick getNextChordChangeTick(Tick after) const override;
 
   /**
    * @brief Register a secondary dominant chord at a specific tick range.

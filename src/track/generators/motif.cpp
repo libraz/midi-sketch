@@ -167,6 +167,16 @@ std::vector<int> getChordTones(uint8_t chord_root, bool is_minor) {
   return {root_pc, third_pc, fifth_pc};
 }
 
+// Check if pitch is a chord tone
+bool isChordTone(int pitch, uint8_t chord_root, bool is_minor) {
+  auto chord_tones = getChordTones(chord_root, is_minor);
+  int pc = ((pitch % 12) + 12) % 12;
+  for (int ct : chord_tones) {
+    if (pc == ct) return true;
+  }
+  return false;
+}
+
 // Adjust pitch to avoid dissonance by resolving to nearest chord tone
 int adjustForChord(int pitch, uint8_t chord_root, bool is_minor, int8_t chord_degree) {
   if (!isAvoidNoteWithContext(pitch, chord_root, is_minor, chord_degree)) {
@@ -204,6 +214,30 @@ int snapToChordTone(int pitch, uint8_t chord_root, bool is_minor) {
   for (int ct_pc : chord_tones) {
     for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
       int candidate = (octave + oct_offset) * 12 + ct_pc;
+      int dist = std::abs(candidate - pitch);
+      if (dist < best_dist) {
+        best_dist = dist;
+        best_pitch = candidate;
+      }
+    }
+  }
+
+  return best_pitch;
+}
+
+// Snap pitch to nearest chord tone within range constraints
+int snapToChordToneInRange(int pitch, uint8_t chord_root, bool is_minor, int range_low, int range_high) {
+  auto chord_tones = getChordTones(chord_root, is_minor);
+  int octave = pitch / 12;
+
+  int best_pitch = pitch;  // fallback to original if nothing found
+  int best_dist = 100;
+
+  // Search wider octave range to find valid candidates within range
+  for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
+    for (int ct_pc : chord_tones) {
+      int candidate = (octave + oct_offset) * 12 + ct_pc;
+      if (candidate < range_low || candidate > range_high) continue;
       int dist = std::abs(candidate - pitch);
       if (dist < best_dist) {
         best_dist = dist;
@@ -638,9 +672,32 @@ int calculateMotifPitch(const NoteEvent& note, const MotifNoteContext& ctx,
                          IHarmonyCoordinator* harmony, const MotifContext* vocal_ctx,
                          uint8_t base_note_override, std::mt19937& rng) {
   if (ctx.is_rhythm_lock_global) {
-    // Coordinate axis mode: use pattern pitch directly
-    return std::clamp(static_cast<int>(note.note), static_cast<int>(MOTIF_LOW),
-                      static_cast<int>(MOTIF_HIGH));
+    // Coordinate axis mode: use pattern pitch directly, but resolve:
+    // 1. Avoid notes (always problematic)
+    // 2. Non-chord tones on strong beats (causes close interval with chord track)
+    int pitch = std::clamp(static_cast<int>(note.note), static_cast<int>(MOTIF_LOW),
+                           static_cast<int>(MOTIF_HIGH));
+
+    int8_t degree = harmony->getChordDegreeAt(ctx.absolute_tick);
+    uint8_t chord_root = degreeToRoot(degree, Key::C);
+    Chord chord = getChordNotes(degree);
+    bool is_minor = (chord.intervals[1] == 3);
+
+    bool is_avoid = isAvoidNoteWithContext(pitch, chord_root, is_minor, degree);
+    bool is_non_chord = !motif_detail::isChordTone(pitch, chord_root, is_minor);
+    bool is_strong_beat = (ctx.absolute_tick % TICKS_PER_BEAT == 0);
+
+    // Snap to chord tone if:
+    // - Pitch is an avoid note (always)
+    // - Pitch is non-chord tone AND on strong beat (causes close interval issues)
+    if (is_avoid || (is_non_chord && is_strong_beat)) {
+      // Use range-aware snap to avoid clamping back to non-chord tone
+      pitch = motif_detail::snapToChordToneInRange(pitch, chord_root, is_minor,
+                                                    static_cast<int>(MOTIF_LOW),
+                                                    static_cast<int>(MOTIF_HIGH));
+    }
+
+    return pitch;
   }
 
   // Standard mode: apply pitch adjustments
@@ -683,6 +740,17 @@ int calculateMotifPitch(const NoteEvent& note, const MotifNoteContext& ctx,
     adjusted_pitch = motif_detail::snapToSafeScaleTone(adjusted_pitch, chord_root_for_snap,
                                                         is_minor_for_snap, degree_for_snap,
                                                         motif_params.melodic_freedom, rng);
+  }
+
+  // All paradigms: snap non-chord tones on strong beats to avoid close interval issues
+  bool is_strong_beat = (ctx.absolute_tick % TICKS_PER_BEAT == 0);
+  if (is_strong_beat) {
+    bool is_non_chord = !motif_detail::isChordTone(adjusted_pitch, chord_root, is_minor);
+    if (is_non_chord) {
+      adjusted_pitch = motif_detail::snapToChordToneInRange(adjusted_pitch, chord_root, is_minor,
+                                                             static_cast<int>(MOTIF_LOW),
+                                                             static_cast<int>(MOTIF_HIGH));
+    }
   }
 
   return adjusted_pitch;

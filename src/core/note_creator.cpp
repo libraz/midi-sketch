@@ -336,6 +336,20 @@ std::vector<PitchCandidate> getSafePitchCandidates(
     }
   }
 
+  // Strategy 1.5: Try sounding pitches (doubling)
+  // If another track is playing a pitch in range, we can safely double it.
+  // This is especially important for Chord track when Motif has already placed notes.
+  {
+    auto sounding = harmony.getSoundingPitches(start, start + duration, role);
+    for (uint8_t sounding_pitch : sounding) {
+      if (sounding_pitch < range_low || sounding_pitch > range_high) continue;
+      // Prefer pitches closer to desired (skip if more than an octave away)
+      int dist = std::abs(static_cast<int>(sounding_pitch) - static_cast<int>(desired_pitch));
+      if (dist > 12) continue;
+      tryAddCandidate(sounding_pitch, CollisionAvoidStrategy::ActualSounding);
+    }
+  }
+
   // Strategy 2: Based on preference, try specific pitches
   int octave = desired_pitch / 12;
 
