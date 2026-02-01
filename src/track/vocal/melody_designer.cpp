@@ -23,6 +23,8 @@
 #include "track/melody/constraint_pipeline.h"
 #include "track/melody/contour_direction.h"
 #include "track/melody/hook_rhythm_patterns.h"
+#include "track/melody/isolated_note_resolver.h"
+#include "track/melody/leap_resolution.h"
 #include "track/melody/melody_utils.h"
 #include "track/melody/note_constraints.h"
 #include "track/melody/pitch_constraints.h"
@@ -689,56 +691,27 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
                                                  &ctx.tessitura);
     }
 
-    // =========================================================================
-    // PHASE 4: Multi-note leap resolution tracking
-    // =========================================================================
-    // When a large leap (5+ semitones) occurs, mark resolution as pending.
-    // Following notes should prefer stepwise motion in the opposite direction
-    // until resolution completes (max 3 notes) or another leap occurs.
-    constexpr int LEAP_THRESHOLD = 5;  // Perfect 4th or larger
-    int actual_interval = new_pitch - current_pitch;  // Signed for direction
+    // Multi-note leap resolution tracking
+    int actual_interval = new_pitch - current_pitch;
 
     // Check if pending resolution should override the selected pitch
     if (leap_state.shouldApplyStep() && !result.notes.empty()) {
-      // Calculate probability based on context
       float step_probability = ctx.prefer_stepwise ? 1.0f : 0.80f;
       std::uniform_real_distribution<float> step_dist(0.0f, 1.0f);
 
       if (step_dist(rng) < step_probability) {
-        // Force stepwise motion in resolution direction
         std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
-        int best_step_pitch = -1;
-        int best_step_interval = 127;
-
-        for (int ct : chord_tones) {
-          for (int oct = 4; oct <= 6; ++oct) {
-            int candidate = oct * 12 + ct;
-            if (candidate < ctx.vocal_low || candidate > ctx.vocal_high) continue;
-
-            int candidate_interval = candidate - current_pitch;
-            int candidate_direction = (candidate_interval > 0) ? 1 : (candidate_interval < 0) ? -1 : 0;
-
-            // Must be in resolution direction and be stepwise (1-3 semitones)
-            if (candidate_direction == leap_state.direction) {
-              int abs_step = std::abs(candidate_interval);
-              if (abs_step >= 1 && abs_step <= 3 && abs_step < best_step_interval) {
-                best_step_interval = abs_step;
-                best_step_pitch = candidate;
-              }
-            }
-          }
-        }
-
+        int best_step_pitch = melody::findStepwiseResolutionPitch(
+            current_pitch, chord_tones, leap_state.direction, ctx.vocal_low, ctx.vocal_high);
         if (best_step_pitch >= 0) {
           new_pitch = best_step_pitch;
-          // Recalculate interval for leap detection below
           actual_interval = new_pitch - current_pitch;
         }
       }
     }
 
     // Detect new leaps and start resolution tracking
-    if (std::abs(actual_interval) >= LEAP_THRESHOLD) {
+    if (std::abs(actual_interval) >= melody::kLeapThreshold) {
       leap_state.startResolution(actual_interval);
     }
 
@@ -765,62 +738,14 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
                                                   current_pitch, ctx.vocal_low, ctx.vocal_high,
                                                   ctx.disable_vowel_constraints);
 
-    // =========================================================================
-    // LEAP-AFTER-REVERSAL RULE (singability improvement):
-    // After a large leap (4+ semitones), prefer step motion in opposite direction.
-    // This is a fundamental vocal principle: singers need to "recover" after jumps.
-    // Exception: Skip if we just chose Same pitch or are at phrase boundaries.
-    // =========================================================================
+    // Leap-after-reversal rule: prefer step motion in opposite direction after leaps
     if (i > 0 && !result.notes.empty()) {
       int prev_note = result.notes.back().note;
-      int prev_interval = current_pitch - prev_note;  // Signed: positive=up, negative=down
-      constexpr int kLeapThreshold = 4;               // Major 3rd or larger
-
-      if (std::abs(prev_interval) >= kLeapThreshold && new_pitch != current_pitch) {
-        // Previous move was a leap; prefer opposite direction step
-        int current_interval = new_pitch - current_pitch;
-        bool is_same_direction =
-            (prev_interval > 0 && current_interval > 0) || (prev_interval < 0 && current_interval < 0);
-
-        if (is_same_direction) {
-          // Try to find a chord tone in the opposite direction (step motion)
-          int preferred_direction = (prev_interval > 0) ? -1 : 1;  // Opposite of leap
-          std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
-
-          int best_reversal_pitch = -1;
-          int best_reversal_interval = 127;
-
-          for (int ct : chord_tones) {
-            for (int oct = 4; oct <= 6; ++oct) {
-              int candidate = oct * 12 + ct;
-              if (candidate < ctx.vocal_low || candidate > ctx.vocal_high) continue;
-
-              int interval_from_current = candidate - current_pitch;
-              int direction = (interval_from_current > 0) ? 1 : (interval_from_current < 0) ? -1 : 0;
-
-              // Must be in preferred direction and be a step (1-3 semitones)
-              if (direction == preferred_direction) {
-                int abs_interval = std::abs(interval_from_current);
-                if (abs_interval >= 1 && abs_interval <= 3 && abs_interval < best_reversal_interval) {
-                  best_reversal_interval = abs_interval;
-                  best_reversal_pitch = candidate;
-                }
-              }
-            }
-          }
-
-          // Apply reversal if found a good candidate
-          // Phase 4: Strengthen leap resolution from 60% to 80% probability
-          // If prefer_stepwise is set (IdolKawaii), force 100% stepwise motion
-          if (best_reversal_pitch >= 0) {
-            float reversal_probability = ctx.prefer_stepwise ? 1.0f : 0.80f;
-            std::uniform_real_distribution<float> rev_dist(0.0f, 1.0f);
-            if (rev_dist(rng) < reversal_probability) {
-              new_pitch = best_reversal_pitch;
-            }
-          }
-        }
-      }
+      int prev_interval = current_pitch - prev_note;
+      std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
+      new_pitch = melody::applyLeapReversalRule(new_pitch, current_pitch, prev_interval,
+                                                 chord_tones, ctx.vocal_low, ctx.vocal_high,
+                                                 ctx.prefer_stepwise, rng);
     }
 
     // FINAL SAFETY CHECK: Re-enforce max interval after all adjustments
@@ -981,47 +906,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   }
 
   // POST-GENERATION: Resolve melodically isolated notes before returning
-  // A note is "melodically isolated" if both neighbors are >= kIsolationThreshold semitones away
-  // This should be done here (after candidate generation) rather than in final post-processing
-  constexpr int kIsolationThreshold = 7;  // Perfect 5th - anything beyond feels disconnected
-  for (size_t i = 1; i + 1 < result.notes.size(); ++i) {
-    int prev_pitch = result.notes[i - 1].note;
-    int curr_pitch = result.notes[i].note;
-    int next_pitch = result.notes[i + 1].note;
-
-    int interval_before = std::abs(curr_pitch - prev_pitch);
-    int interval_after = std::abs(next_pitch - curr_pitch);
-
-    if (interval_before >= kIsolationThreshold && interval_after >= kIsolationThreshold) {
-      // Find a pitch that connects better to neighbors
-      // Aim for midpoint between neighbors, then snap to chord tone
-      int midpoint = (prev_pitch + next_pitch) / 2;
-      int8_t chord_degree = harmony.getChordDegreeAt(result.notes[i].start_tick);
-      int fixed_pitch = nearestChordTonePitch(midpoint, chord_degree);
-      // Ensure within vocal range and max interval constraints
-      fixed_pitch = std::clamp(fixed_pitch, static_cast<int>(ctx.vocal_low),
-                               static_cast<int>(ctx.vocal_high));
-      // Apply fix if it improves connectivity (doesn't make intervals worse)
-      int new_interval_before = std::abs(fixed_pitch - prev_pitch);
-      int new_interval_after = std::abs(next_pitch - fixed_pitch);
-      // Accept if: any interval improves, OR both intervals stay same/better and note changes
-      bool improves = (new_interval_before < interval_before || new_interval_after < interval_after);
-      bool no_worse = (new_interval_before <= interval_before && new_interval_after <= interval_after);
-      if (improves || (no_worse && fixed_pitch != curr_pitch)) {
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-        uint8_t old_pitch = result.notes[i].note;
-#endif
-        result.notes[i].note = static_cast<uint8_t>(fixed_pitch);
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-        if (old_pitch != result.notes[i].note) {
-          result.notes[i].prov_original_pitch = old_pitch;
-          result.notes[i].addTransformStep(TransformStepType::ChordToneSnap, old_pitch,
-                                            result.notes[i].note, 0, 0);
-        }
-#endif
-      }
-    }
-  }
+  melody::resolveIsolatedNotes(result.notes, harmony, ctx.vocal_low, ctx.vocal_high);
 
   result.last_pitch = current_pitch;
   return result;

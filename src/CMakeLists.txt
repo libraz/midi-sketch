@@ -68,6 +68,9 @@ set(MIDISKETCH_CORE_SOURCES
   track/melody/note_constraints.cpp
   track/melody/pitch_constraints.cpp
   track/melody/constraint_pipeline.cpp
+  track/melody/leap_resolution.cpp
+  track/melody/isolated_note_resolver.cpp
+  track/melody/phrase_note_generator.cpp
   track/generators/vocal.cpp
   track/generators/bass.cpp
   track/generators/chord.cpp

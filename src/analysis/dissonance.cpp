@@ -619,6 +619,398 @@ DissonanceSeverity adjustSeverityForContext(DissonanceSeverity base_severity,
   return base_severity;
 }
 
+// ============================================================================
+// Dissonance Detection Helper Functions
+// ============================================================================
+
+// Context for all detection functions
+struct DetectionContext {
+  const Song& song;
+  const ChordProgression& progression;
+  const ChordExtensionParams& ext_params;
+  Mood mood;
+};
+
+// Internal version of midiNoteToName for use within anonymous namespace
+std::string midiNoteToNameInternal(uint8_t midi_note) {
+  int octave = (midi_note / 12) - 1;
+  int note_class = midi_note % 12;
+  return std::string(NOTE_NAMES[note_class]) + std::to_string(octave);
+}
+
+// Internal version of intervalToName
+std::string intervalToNameInternal(uint8_t semitones) {
+  return INTERVAL_NAMES[semitones % 12];
+}
+
+// Update summary severity counts
+void updateSeverityCounts(DissonanceSummary& summary, DissonanceSeverity severity) {
+  switch (severity) {
+    case DissonanceSeverity::High:
+      summary.high_severity++;
+      break;
+    case DissonanceSeverity::Medium:
+      summary.medium_severity++;
+      break;
+    case DissonanceSeverity::Low:
+      summary.low_severity++;
+      break;
+  }
+}
+
+// Create DissonanceNoteInfo from TimedNote
+DissonanceNoteInfo createNoteInfo(const TimedNote& note) {
+  DissonanceNoteInfo info;
+  info.track_name = trackRoleToString(note.track);
+  info.pitch = note.pitch;
+  info.pitch_name = midiNoteToNameInternal(note.pitch);
+  info.prov_chord_degree = note.prov_chord_degree;
+  info.prov_lookup_tick = note.prov_lookup_tick;
+  info.prov_source = note.prov_source;
+  info.prov_original_pitch = note.prov_original_pitch;
+  info.has_provenance = note.has_provenance;
+  return info;
+}
+
+// Detect simultaneous clashes between notes from different tracks
+void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes,
+                                const DetectionContext& ctx,
+                                DissonanceReport& report) {
+  std::set<std::tuple<Tick, uint8_t, uint8_t>> reported_clashes;
+
+  for (size_t i = 0; i < all_notes.size(); ++i) {
+    for (size_t j = i + 1; j < all_notes.size(); ++j) {
+      const auto& note_a = all_notes[i];
+      const auto& note_b = all_notes[j];
+
+      if (note_b.start >= note_a.end) break;
+      if (note_a.track == note_b.track) continue;
+
+      uint8_t actual_interval = static_cast<uint8_t>(
+          std::abs(static_cast<int>(note_a.pitch) - static_cast<int>(note_b.pitch)));
+      uint8_t interval = actual_interval % 12;
+
+      uint8_t low_pitch = std::min(note_a.pitch, note_b.pitch);
+      uint8_t high_pitch = std::max(note_a.pitch, note_b.pitch);
+      auto clash_key = std::make_tuple(note_a.start, low_pitch, high_pitch);
+      if (reported_clashes.count(clash_key) > 0) continue;
+
+      Tick overlap_start = std::max(note_a.start, note_b.start);
+      uint32_t bar = overlap_start / TICKS_PER_BAR;
+      auto chord_info = getChordAtTick(overlap_start, ctx.song, ctx.progression, ctx.mood);
+      int8_t degree = chord_info.degree;
+
+      auto [is_dissonant, base_severity] = checkIntervalDissonance(actual_interval, degree);
+
+      if (is_dissonant) {
+        BeatStrength beat_strength = getBeatStrength(overlap_start);
+        SectionPosition section_pos = getSectionPosition(overlap_start, ctx.song);
+        DissonanceSeverity severity = adjustSeverityForContext(base_severity, beat_strength, section_pos);
+
+        reported_clashes.insert(clash_key);
+
+        DissonanceIssue issue;
+        issue.type = DissonanceType::SimultaneousClash;
+        issue.severity = severity;
+        issue.tick = overlap_start;
+        issue.bar = bar;
+        issue.beat = 1.0f + static_cast<float>(overlap_start % TICKS_PER_BAR) / TICKS_PER_BEAT;
+        issue.interval_semitones = interval;
+        issue.interval_name = intervalToNameInternal(interval);
+        issue.notes.push_back(createNoteInfo(note_a));
+        issue.notes.push_back(createNoteInfo(note_b));
+
+        report.issues.push_back(issue);
+        report.summary.simultaneous_clashes++;
+        updateSeverityCounts(report.summary, severity);
+      }
+    }
+  }
+}
+
+// Check close interval with chord notes
+std::tuple<bool, uint8_t, uint8_t> checkCloseIntervalWithChord(
+    const NoteEvent& melodic_note, const Song& song) {
+  Tick note_start = melodic_note.start_tick;
+  Tick note_end = note_start + melodic_note.duration;
+
+  for (const auto& chord_note : song.chord().notes()) {
+    Tick chord_start = chord_note.start_tick;
+    Tick chord_end = chord_start + chord_note.duration;
+
+    if (note_start >= chord_end || chord_start >= note_end) continue;
+
+    int interval = std::abs(static_cast<int>(melodic_note.note) - static_cast<int>(chord_note.note));
+    int interval_class = interval % 12;
+
+    if (interval_class == 1 || interval_class == 2 || interval_class == 10 || interval_class == 11) {
+      if (interval <= 14) {
+        return {true, static_cast<uint8_t>(interval_class), chord_note.note};
+      }
+    }
+  }
+  return {false, 0, 0};
+}
+
+// Detect non-chord tones in a single track
+void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_bass,
+                                 const DetectionContext& ctx, DissonanceReport& report) {
+  for (const auto& note : track.notes()) {
+    uint32_t bar = note.start_tick / TICKS_PER_BAR;
+    auto chord_info = getChordAtTick(note.start_tick, ctx.song, ctx.progression, ctx.mood);
+    int8_t degree = chord_info.degree;
+    int pitch_class = note.note % 12;
+
+    if (isPitchClassChordTone(pitch_class, degree, ctx.ext_params)) continue;
+    if (isAvailableTension(pitch_class, degree)) continue;
+
+    BeatStrength beat_strength = getBeatStrength(note.start_tick);
+    DissonanceSeverity severity;
+
+    if (is_bass) {
+      switch (beat_strength) {
+        case BeatStrength::Strong: severity = DissonanceSeverity::High; break;
+        case BeatStrength::Medium: severity = DissonanceSeverity::Medium; break;
+        default: severity = DissonanceSeverity::Low; break;
+      }
+    } else {
+      switch (beat_strength) {
+        case BeatStrength::Strong: severity = DissonanceSeverity::Medium; break;
+        default: severity = DissonanceSeverity::Low; break;
+      }
+    }
+
+    auto [has_close_interval, interval_semitones, clashing_pitch] =
+        checkCloseIntervalWithChord(note, ctx.song);
+
+    if (has_close_interval) {
+      if (interval_semitones == 1 || interval_semitones == 11) {
+        severity = DissonanceSeverity::High;
+      } else if (interval_semitones == 2 || interval_semitones == 10) {
+        if (beat_strength == BeatStrength::Strong || beat_strength == BeatStrength::Medium) {
+          severity = DissonanceSeverity::High;
+        } else {
+          severity = DissonanceSeverity::Medium;
+        }
+      }
+    }
+
+    DissonanceIssue issue;
+    issue.type = DissonanceType::NonChordTone;
+    issue.severity = severity;
+    issue.tick = note.start_tick;
+    issue.bar = bar;
+    issue.beat = 1.0f + static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
+    issue.track_name = trackRoleToString(role);
+    issue.pitch = note.note;
+    issue.pitch_name = midiNoteToNameInternal(note.note);
+    issue.chord_degree = degree;
+    issue.chord_name = getChordNameFromDegree(degree);
+    issue.chord_tones = getChordToneNames(degree);
+    issue.has_provenance = note.hasValidProvenance();
+    issue.prov_chord_degree = note.prov_chord_degree;
+    issue.prov_lookup_tick = note.prov_lookup_tick;
+    issue.prov_source = note.prov_source;
+    issue.prov_original_pitch = note.prov_original_pitch;
+
+    report.issues.push_back(issue);
+    report.summary.non_chord_tones++;
+    updateSeverityCounts(report.summary, severity);
+  }
+}
+
+// Detect non-chord tones in all melodic tracks
+void detectNonChordTones(const DetectionContext& ctx, DissonanceReport& report) {
+  detectNonChordTonesInTrack(ctx.song.vocal(), TrackRole::Vocal, false, ctx, report);
+  detectNonChordTonesInTrack(ctx.song.motif(), TrackRole::Motif, false, ctx, report);
+  detectNonChordTonesInTrack(ctx.song.arpeggio(), TrackRole::Arpeggio, false, ctx, report);
+  detectNonChordTonesInTrack(ctx.song.aux(), TrackRole::Aux, false, ctx, report);
+  detectNonChordTonesInTrack(ctx.song.bass(), TrackRole::Bass, true, ctx, report);
+}
+
+// Build chord timeline from arrangement
+struct ChordChange {
+  Tick tick;
+  int8_t degree;
+};
+
+std::vector<ChordChange> buildChordTimeline(const DetectionContext& ctx) {
+  std::vector<ChordChange> timeline;
+  const auto& arrangement = ctx.song.arrangement();
+
+  for (const auto& section : arrangement.sections()) {
+    HarmonicDensity density = getHarmonicDensity(section.type, ctx.mood);
+    uint32_t section_start_bar = section.start_tick / TICKS_PER_BAR;
+    uint32_t section_bars = section.bars;
+
+    for (uint32_t bar_offset = 0; bar_offset < section_bars; ++bar_offset) {
+      Tick bar_tick = (section_start_bar + bar_offset) * TICKS_PER_BAR;
+      int chord_idx = getChordIndexAtBar(bar_offset, ctx.progression, density);
+      int8_t degree = ctx.progression.degrees[chord_idx];
+
+      if (timeline.empty() || timeline.back().degree != degree) {
+        timeline.push_back({bar_tick, degree});
+      }
+    }
+  }
+  return timeline;
+}
+
+// Detect sustained notes over chord changes in a single track
+void detectSustainedInTrack(const MidiTrack& track, TrackRole role,
+                             const std::vector<ChordChange>& chord_timeline,
+                             const DetectionContext& ctx, DissonanceReport& report) {
+  for (const auto& note : track.notes()) {
+    Tick note_start = note.start_tick;
+    Tick note_end = note.start_tick + note.duration;
+    int pitch_class = note.note % 12;
+
+    auto start_chord_info = getChordAtTick(note_start, ctx.song, ctx.progression, ctx.mood);
+    int8_t start_degree = start_chord_info.degree;
+
+    if (!isPitchClassChordTone(pitch_class, start_degree, ctx.ext_params) &&
+        !isAvailableTension(pitch_class, start_degree)) {
+      continue;
+    }
+
+    for (const auto& change : chord_timeline) {
+      if (change.tick <= note_start) continue;
+      if (change.tick >= note_end) break;
+
+      int8_t new_degree = change.degree;
+      if (!isPitchClassChordTone(pitch_class, new_degree, ctx.ext_params) &&
+          !isAvailableTension(pitch_class, new_degree)) {
+        BeatStrength beat_strength = getBeatStrength(change.tick);
+        DissonanceSeverity severity;
+        if (role == TrackRole::Vocal) {
+          severity = (beat_strength == BeatStrength::Strong) ? DissonanceSeverity::High
+                                                             : DissonanceSeverity::Medium;
+        } else {
+          severity = (beat_strength == BeatStrength::Strong) ? DissonanceSeverity::Medium
+                                                             : DissonanceSeverity::Low;
+        }
+
+        uint32_t bar = change.tick / TICKS_PER_BAR;
+
+        DissonanceIssue issue;
+        issue.type = DissonanceType::SustainedOverChordChange;
+        issue.severity = severity;
+        issue.tick = change.tick;
+        issue.bar = bar;
+        issue.beat = 1.0f + static_cast<float>(change.tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
+        issue.track_name = trackRoleToString(role);
+        issue.pitch = note.note;
+        issue.pitch_name = midiNoteToNameInternal(note.note);
+        issue.chord_degree = new_degree;
+        issue.chord_name = getChordNameFromDegree(new_degree);
+        issue.chord_tones = getChordToneNames(new_degree);
+        issue.note_start_tick = note_start;
+        issue.original_chord_name = getChordNameFromDegree(start_degree);
+        issue.has_provenance = note.hasValidProvenance();
+        issue.prov_chord_degree = note.prov_chord_degree;
+        issue.prov_lookup_tick = note.prov_lookup_tick;
+        issue.prov_source = note.prov_source;
+        issue.prov_original_pitch = note.prov_original_pitch;
+
+        report.issues.push_back(issue);
+        report.summary.sustained_over_chord_change++;
+        updateSeverityCounts(report.summary, severity);
+        break;
+      }
+    }
+  }
+}
+
+// Detect sustained notes over chord changes in all tracks
+void detectSustainedOverChordChange(const DetectionContext& ctx, DissonanceReport& report) {
+  std::vector<ChordChange> chord_timeline = buildChordTimeline(ctx);
+  detectSustainedInTrack(ctx.song.vocal(), TrackRole::Vocal, chord_timeline, ctx, report);
+  detectSustainedInTrack(ctx.song.motif(), TrackRole::Motif, chord_timeline, ctx, report);
+  detectSustainedInTrack(ctx.song.arpeggio(), TrackRole::Arpeggio, chord_timeline, ctx, report);
+  detectSustainedInTrack(ctx.song.aux(), TrackRole::Aux, chord_timeline, ctx, report);
+}
+
+// Detect non-diatonic notes in a single track
+void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
+                               const DetectionContext& ctx, DissonanceReport& report) {
+  for (const auto& note : track.notes()) {
+    int pitch_class = note.note % 12;
+
+    if (isDiatonicToCMajor(pitch_class)) continue;
+
+    auto chord_info = getChordAtTick(note.start_tick, ctx.song, ctx.progression, ctx.mood);
+    ChordTones ct = getChordTones(chord_info.degree);
+    bool is_borrowed_chord_tone = false;
+    for (uint8_t i = 0; i < ct.count; ++i) {
+      if (ct.pitch_classes[i] == pitch_class) {
+        is_borrowed_chord_tone = true;
+        break;
+      }
+    }
+
+    if (!is_borrowed_chord_tone) {
+      uint32_t bar = note.start_tick / TICKS_PER_BAR;
+      int bar_in_progression = bar % ctx.progression.length;
+      int next_chord_idx = (bar_in_progression + 1) % ctx.progression.length;
+      int8_t next_degree = ctx.progression.degrees[next_chord_idx];
+      ChordTones next_ct = getChordTones(next_degree);
+      for (uint8_t i = 0; i < next_ct.count; ++i) {
+        if (next_ct.pitch_classes[i] == pitch_class) {
+          is_borrowed_chord_tone = true;
+          break;
+        }
+      }
+    }
+
+    if (is_borrowed_chord_tone) continue;
+    if (isSecondaryDominantTone(pitch_class)) continue;
+
+    BeatStrength beat_strength = getBeatStrength(note.start_tick);
+    DissonanceSeverity severity;
+    switch (beat_strength) {
+      case BeatStrength::Strong: severity = DissonanceSeverity::High; break;
+      case BeatStrength::Medium: severity = DissonanceSeverity::Medium; break;
+      default: severity = DissonanceSeverity::Medium; break;
+    }
+
+    uint32_t bar = note.start_tick / TICKS_PER_BAR;
+    int key_offset = static_cast<int>(key);
+    uint8_t transposed_pitch =
+        static_cast<uint8_t>(std::clamp(static_cast<int>(note.note) + key_offset, 0, 127));
+
+    DissonanceIssue issue;
+    issue.type = DissonanceType::NonDiatonicNote;
+    issue.severity = severity;
+    issue.tick = note.start_tick;
+    issue.bar = bar;
+    issue.beat = 1.0f + static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
+    issue.track_name = trackRoleToString(role);
+    issue.pitch = transposed_pitch;
+    issue.pitch_name = midiNoteToNameInternal(transposed_pitch);
+    issue.key_name = getKeyName(key);
+    issue.scale_tones = getScaleTones(key);
+    issue.has_provenance = note.hasValidProvenance();
+    issue.prov_chord_degree = note.prov_chord_degree;
+    issue.prov_lookup_tick = note.prov_lookup_tick;
+    issue.prov_source = note.prov_source;
+    issue.prov_original_pitch = note.prov_original_pitch;
+
+    report.issues.push_back(issue);
+    report.summary.non_diatonic_notes++;
+    updateSeverityCounts(report.summary, severity);
+  }
+}
+
+// Detect non-diatonic notes in all tracks
+void detectNonDiatonicNotes(const DetectionContext& ctx, Key key, DissonanceReport& report) {
+  detectNonDiatonicInTrack(ctx.song.vocal(), TrackRole::Vocal, key, ctx, report);
+  detectNonDiatonicInTrack(ctx.song.chord(), TrackRole::Chord, key, ctx, report);
+  detectNonDiatonicInTrack(ctx.song.bass(), TrackRole::Bass, key, ctx, report);
+  detectNonDiatonicInTrack(ctx.song.motif(), TrackRole::Motif, key, ctx, report);
+  detectNonDiatonicInTrack(ctx.song.arpeggio(), TrackRole::Arpeggio, key, ctx, report);
+  detectNonDiatonicInTrack(ctx.song.aux(), TrackRole::Aux, key, ctx, report);
+}
+
 }  // namespace
 
 std::string midiNoteToName(uint8_t midi_note) {
@@ -634,513 +1026,18 @@ DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& para
   report.summary = {};
 
   const auto& progression = getChordProgression(params.chord_id);
-  const ChordExtensionParams& ext_params = params.chord_extension;
+
+  // Create detection context
+  DetectionContext ctx{song, progression, params.chord_extension, params.mood};
 
   // Collect all pitched notes
   std::vector<TimedNote> all_notes = collectPitchedNotes(song);
 
-  // Deduplication: track reported clashes as (tick, pitch1, pitch2) tuples
-  // This prevents duplicate reports when chord track has duplicate notes
-  std::set<std::tuple<Tick, uint8_t, uint8_t>> reported_clashes;
-
-  // Detect simultaneous clashes
-  // For each pair of overlapping notes from different tracks
-  for (size_t i = 0; i < all_notes.size(); ++i) {
-    for (size_t j = i + 1; j < all_notes.size(); ++j) {
-      const auto& note_a = all_notes[i];
-      const auto& note_b = all_notes[j];
-
-      // Check if they overlap in time
-      if (note_b.start >= note_a.end) break;       // No more overlaps possible
-      if (note_a.track == note_b.track) continue;  // Same track, skip
-
-      // Calculate actual interval (not modulo 12) for register-aware analysis
-      uint8_t actual_interval = static_cast<uint8_t>(
-          std::abs(static_cast<int>(note_a.pitch) - static_cast<int>(note_b.pitch)));
-      uint8_t interval = actual_interval % 12;  // For reporting
-
-      // Deduplicate: skip if this exact clash was already reported
-      uint8_t low_pitch = std::min(note_a.pitch, note_b.pitch);
-      uint8_t high_pitch = std::max(note_a.pitch, note_b.pitch);
-      auto clash_key = std::make_tuple(note_a.start, low_pitch, high_pitch);
-      if (reported_clashes.count(clash_key) > 0) {
-        continue;  // Already reported
-      }
-
-      // Calculate actual overlap start tick (when both notes are sounding)
-      Tick overlap_start = std::max(note_a.start, note_b.start);
-
-      // Get chord at overlap position using harmonic rhythm
-      uint32_t bar = overlap_start / TICKS_PER_BAR;
-      auto chord_info = getChordAtTick(overlap_start, song, progression, params.mood);
-      int8_t degree = chord_info.degree;
-
-      auto [is_dissonant, base_severity] = checkIntervalDissonance(actual_interval, degree);
-
-      if (is_dissonant) {
-        // Adjust severity based on musical context (beat strength, section position)
-        BeatStrength beat_strength = getBeatStrength(overlap_start);
-        SectionPosition section_pos = getSectionPosition(overlap_start, song);
-        DissonanceSeverity severity =
-            adjustSeverityForContext(base_severity, beat_strength, section_pos);
-
-        // Mark as reported to avoid duplicates
-        reported_clashes.insert(clash_key);
-
-        DissonanceIssue issue;
-        issue.type = DissonanceType::SimultaneousClash;
-        issue.severity = severity;
-        issue.tick = overlap_start;
-        issue.bar = bar;
-        issue.beat = 1.0f + static_cast<float>(overlap_start % TICKS_PER_BAR) / TICKS_PER_BEAT;
-        issue.interval_semitones = interval;
-        issue.interval_name = intervalToName(interval);
-
-        // Create DissonanceNoteInfo with provenance
-        DissonanceNoteInfo info_a;
-        info_a.track_name = trackRoleToString(note_a.track);
-        info_a.pitch = note_a.pitch;
-        info_a.pitch_name = midiNoteToName(note_a.pitch);
-        info_a.prov_chord_degree = note_a.prov_chord_degree;
-        info_a.prov_lookup_tick = note_a.prov_lookup_tick;
-        info_a.prov_source = note_a.prov_source;
-        info_a.prov_original_pitch = note_a.prov_original_pitch;
-        info_a.has_provenance = note_a.has_provenance;
-        issue.notes.push_back(info_a);
-
-        DissonanceNoteInfo info_b;
-        info_b.track_name = trackRoleToString(note_b.track);
-        info_b.pitch = note_b.pitch;
-        info_b.pitch_name = midiNoteToName(note_b.pitch);
-        info_b.prov_chord_degree = note_b.prov_chord_degree;
-        info_b.prov_lookup_tick = note_b.prov_lookup_tick;
-        info_b.prov_source = note_b.prov_source;
-        info_b.prov_original_pitch = note_b.prov_original_pitch;
-        info_b.has_provenance = note_b.has_provenance;
-        issue.notes.push_back(info_b);
-
-        report.issues.push_back(issue);
-        report.summary.simultaneous_clashes++;
-
-        switch (severity) {
-          case DissonanceSeverity::High:
-            report.summary.high_severity++;
-            break;
-          case DissonanceSeverity::Medium:
-            report.summary.medium_severity++;
-            break;
-          case DissonanceSeverity::Low:
-            report.summary.low_severity++;
-            break;
-        }
-      }
-    }
-  }
-
-  // Helper: Check if a melodic note creates a close interval (major 2nd or minor 2nd)
-  // with any actually sounding chord note at the same time.
-  // Returns: (has_close_interval, interval_semitones, clashing_chord_pitch)
-  auto checkCloseIntervalWithChord =
-      [&](const NoteEvent& melodic_note) -> std::tuple<bool, uint8_t, uint8_t> {
-    Tick note_start = melodic_note.start_tick;
-    Tick note_end = note_start + melodic_note.duration;
-
-    for (const auto& chord_note : song.chord().notes()) {
-      Tick chord_start = chord_note.start_tick;
-      Tick chord_end = chord_start + chord_note.duration;
-
-      // Check if they overlap in time
-      if (note_start >= chord_end || chord_start >= note_end) {
-        continue;  // No overlap
-      }
-
-      // Calculate interval
-      int interval =
-          std::abs(static_cast<int>(melodic_note.note) - static_cast<int>(chord_note.note));
-      int interval_class = interval % 12;
-
-      // Check for minor 2nd (1) or major 2nd (2)
-      if (interval_class == 1 || interval_class == 2 || interval_class == 10 ||
-          interval_class == 11) {
-        // Close interval found (including inversions: 10=minor 7th, 11=major 7th)
-        // Only report for same-octave or close range (within 1 octave)
-        if (interval <= 14) {  // Up to minor 9th
-          return {true, static_cast<uint8_t>(interval_class), chord_note.note};
-        }
-      }
-    }
-    return {false, 0, 0};
-  };
-
-  // Detect non-chord tones
-  // Check melodic tracks and bass (bass defines harmony, so non-chord tones are serious)
-  auto checkTrackForNonChordTones = [&](const MidiTrack& track, TrackRole role,
-                                        bool is_bass = false) {
-    for (const auto& note : track.notes()) {
-      uint32_t bar = note.start_tick / TICKS_PER_BAR;
-      auto chord_info = getChordAtTick(note.start_tick, song, progression, params.mood);
-      int8_t degree = chord_info.degree;
-      int pitch_class = note.note % 12;
-
-      // Skip if it's a chord tone
-      if (isPitchClassChordTone(pitch_class, degree, ext_params)) {
-        continue;
-      }
-
-      // Check if it's an available tension (9th, 11th, 13th)
-      // Available tensions are musically acceptable and don't need reporting
-      if (isAvailableTension(pitch_class, degree)) {
-        continue;  // Skip - this is a valid tension, not a problem
-      }
-
-      // Determine base severity based on beat strength
-      BeatStrength beat_strength = getBeatStrength(note.start_tick);
-      DissonanceSeverity severity;
-
-      // Bass non-chord tones are more severe because bass defines the harmony
-      if (is_bass) {
-        switch (beat_strength) {
-          case BeatStrength::Strong:
-            severity = DissonanceSeverity::High;  // Beat 1 bass non-chord tone is serious
-            break;
-          case BeatStrength::Medium:
-            severity = DissonanceSeverity::Medium;  // Beat 3 - still problematic
-            break;
-          case BeatStrength::Weak:
-          case BeatStrength::Offbeat:
-            severity = DissonanceSeverity::Low;  // Passing tones on weak beats OK
-            break;
-        }
-      } else {
-        switch (beat_strength) {
-          case BeatStrength::Strong:
-            severity = DissonanceSeverity::Medium;  // Beat 1 non-chord tone
-            break;
-          case BeatStrength::Medium:
-            severity = DissonanceSeverity::Low;  // Beat 3 - less critical
-            break;
-          case BeatStrength::Weak:
-          case BeatStrength::Offbeat:
-            severity = DissonanceSeverity::Low;  // Weak beats/offbeats are fine
-            break;
-        }
-      }
-
-      // Check if this non-chord tone creates a close interval with actual chord notes.
-      // This catches cases like F against G (major 2nd) which is theoretically a non-chord
-      // tone but sounds particularly harsh when the close interval is actually voiced.
-      auto [has_close_interval, interval_semitones, clashing_pitch] =
-          checkCloseIntervalWithChord(note);
-
-      if (has_close_interval) {
-        // Upgrade severity when a close interval is present
-        // Major 2nd (2) on medium/strong beat -> High severity
-        // Minor 2nd (1) on any beat -> High severity
-        if (interval_semitones == 1 || interval_semitones == 11) {
-          severity = DissonanceSeverity::High;  // Minor 2nd is always harsh
-        } else if (interval_semitones == 2 || interval_semitones == 10) {
-          // Major 2nd - severity depends on beat
-          if (beat_strength == BeatStrength::Strong || beat_strength == BeatStrength::Medium) {
-            severity = DissonanceSeverity::High;  // Prominent position
-          } else {
-            severity = DissonanceSeverity::Medium;  // Weak beat, less critical
-          }
-        }
-      }
-
-      DissonanceIssue issue;
-      issue.type = DissonanceType::NonChordTone;
-      issue.severity = severity;
-      issue.tick = note.start_tick;
-      issue.bar = bar;
-      issue.beat = 1.0f + static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
-      issue.track_name = trackRoleToString(role);
-      issue.pitch = note.note;
-      issue.pitch_name = midiNoteToName(note.note);
-      issue.chord_degree = degree;
-      issue.chord_name = getChordNameFromDegree(degree);
-      issue.chord_tones = getChordToneNames(degree);
-
-      // Copy provenance from NoteEvent
-      issue.has_provenance = note.hasValidProvenance();
-      issue.prov_chord_degree = note.prov_chord_degree;
-      issue.prov_lookup_tick = note.prov_lookup_tick;
-      issue.prov_source = note.prov_source;
-      issue.prov_original_pitch = note.prov_original_pitch;
-
-      report.issues.push_back(issue);
-      report.summary.non_chord_tones++;
-
-      switch (severity) {
-        case DissonanceSeverity::High:
-          report.summary.high_severity++;
-          break;
-        case DissonanceSeverity::Medium:
-          report.summary.medium_severity++;
-          break;
-        case DissonanceSeverity::Low:
-          report.summary.low_severity++;
-          break;
-      }
-    }
-  };
-
-  checkTrackForNonChordTones(song.vocal(), TrackRole::Vocal);
-  checkTrackForNonChordTones(song.motif(), TrackRole::Motif);
-  checkTrackForNonChordTones(song.arpeggio(), TrackRole::Arpeggio);
-  checkTrackForNonChordTones(song.aux(), TrackRole::Aux);
-  checkTrackForNonChordTones(song.bass(), TrackRole::Bass, true);  // Bass with higher severity
-
-  // Detect sustained notes over chord changes
-  // Check if notes that were chord tones at start become non-chord tones after chord change
-
-  // Build chord timeline: list of (tick, degree) for each chord change
-  struct ChordChange {
-    Tick tick;
-    int8_t degree;
-  };
-  std::vector<ChordChange> chord_timeline;
-
-  // Scan through arrangement to find chord changes
-  const auto& arrangement = song.arrangement();
-  for (const auto& section : arrangement.sections()) {
-    HarmonicDensity density = getHarmonicDensity(section.type, params.mood);
-    uint32_t section_start_bar = section.start_tick / TICKS_PER_BAR;
-    uint32_t section_bars = section.bars;
-
-    for (uint32_t bar_offset = 0; bar_offset < section_bars; ++bar_offset) {
-      Tick bar_tick = (section_start_bar + bar_offset) * TICKS_PER_BAR;
-      int chord_idx = getChordIndexAtBar(bar_offset, progression, density);
-      int8_t degree = progression.degrees[chord_idx];
-
-      // Only add if different from previous chord
-      if (chord_timeline.empty() || chord_timeline.back().degree != degree) {
-        chord_timeline.push_back({bar_tick, degree});
-      }
-    }
-  }
-
-  // For each melodic note, check if it spans a chord change and becomes non-chord tone
-  auto checkSustainedOverChordChange = [&](const MidiTrack& track, TrackRole role) {
-    for (const auto& note : track.notes()) {
-      Tick note_start = note.start_tick;
-      Tick note_end = note.start_tick + note.duration;
-      int pitch_class = note.note % 12;
-
-      // Get chord at note start
-      auto start_chord_info = getChordAtTick(note_start, song, progression, params.mood);
-      int8_t start_degree = start_chord_info.degree;
-
-      // Skip if note wasn't a chord tone at start (that's a NonChordTone issue)
-      if (!isPitchClassChordTone(pitch_class, start_degree, ext_params) &&
-          !isAvailableTension(pitch_class, start_degree)) {
-        continue;
-      }
-
-      // Find chord changes during note duration
-      for (const auto& change : chord_timeline) {
-        if (change.tick <= note_start) continue;  // Before note started
-        if (change.tick >= note_end) break;       // After note ended
-
-        // Chord changed while note is sustaining
-        int8_t new_degree = change.degree;
-
-        // Check if note is still a chord tone after the change
-        if (!isPitchClassChordTone(pitch_class, new_degree, ext_params) &&
-            !isAvailableTension(pitch_class, new_degree)) {
-          // Note became non-chord tone after chord change!
-
-          // Severity: High if on strong beat, Medium otherwise
-          // Vocal track is more critical (applies to all tracks equally now)
-          BeatStrength beat_strength = getBeatStrength(change.tick);
-          DissonanceSeverity severity;
-          if (role == TrackRole::Vocal) {
-            severity = (beat_strength == BeatStrength::Strong) ? DissonanceSeverity::High
-                                                               : DissonanceSeverity::Medium;
-          } else {
-            severity = (beat_strength == BeatStrength::Strong) ? DissonanceSeverity::Medium
-                                                               : DissonanceSeverity::Low;
-          }
-
-          uint32_t bar = change.tick / TICKS_PER_BAR;
-
-          DissonanceIssue issue;
-          issue.type = DissonanceType::SustainedOverChordChange;
-          issue.severity = severity;
-          issue.tick = change.tick;
-          issue.bar = bar;
-          issue.beat = 1.0f + static_cast<float>(change.tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
-          issue.track_name = trackRoleToString(role);
-          issue.pitch = note.note;
-          issue.pitch_name = midiNoteToName(note.note);
-          issue.chord_degree = new_degree;
-          issue.chord_name = getChordNameFromDegree(new_degree);
-          issue.chord_tones = getChordToneNames(new_degree);
-          issue.note_start_tick = note_start;
-          issue.original_chord_name = getChordNameFromDegree(start_degree);
-
-          // Copy provenance from NoteEvent
-          issue.has_provenance = note.hasValidProvenance();
-          issue.prov_chord_degree = note.prov_chord_degree;
-          issue.prov_lookup_tick = note.prov_lookup_tick;
-          issue.prov_source = note.prov_source;
-          issue.prov_original_pitch = note.prov_original_pitch;
-
-          report.issues.push_back(issue);
-          report.summary.sustained_over_chord_change++;
-
-          switch (severity) {
-            case DissonanceSeverity::High:
-              report.summary.high_severity++;
-              break;
-            case DissonanceSeverity::Medium:
-              report.summary.medium_severity++;
-              break;
-            case DissonanceSeverity::Low:
-              report.summary.low_severity++;
-              break;
-          }
-
-          // Only report the first chord change for this note
-          break;
-        }
-      }
-    }
-  };
-
-  checkSustainedOverChordChange(song.vocal(), TrackRole::Vocal);
-  checkSustainedOverChordChange(song.motif(), TrackRole::Motif);
-  checkSustainedOverChordChange(song.arpeggio(), TrackRole::Arpeggio);
-  checkSustainedOverChordChange(song.aux(), TrackRole::Aux);
-
-  // Detect non-diatonic notes
-  // Internal generation is in C major; if a note is not diatonic to C major,
-  // it will produce a non-diatonic note in the target key after transposition.
-  // EXCEPTION: Chord tones of borrowed chords (bVII, bVI, bIII) are intentional
-  // and should not be flagged as issues.
-  auto checkTrackForNonDiatonicNotes = [&](const MidiTrack& track, TrackRole role) {
-    for (const auto& note : track.notes()) {
-      int pitch_class = note.note % 12;
-
-      // Skip if diatonic to C major (internal key)
-      if (isDiatonicToCMajor(pitch_class)) {
-        continue;
-      }
-
-      // Check if this non-diatonic note is a chord tone of:
-      // 1. The current chord (handles borrowed chords like bVII, bVI, bIII)
-      // 2. The next chord in progression (handles phrase-end anticipation)
-      // Note: getChordAtTick returns a valid degree even when found=false (fallback)
-      auto chord_info = getChordAtTick(note.start_tick, song, progression, params.mood);
-
-      // Check current chord
-      ChordTones ct = getChordTones(chord_info.degree);
-      bool is_borrowed_chord_tone = false;
-      for (uint8_t i = 0; i < ct.count; ++i) {
-        if (ct.pitch_classes[i] == pitch_class) {
-          is_borrowed_chord_tone = true;
-          break;
-        }
-      }
-
-      // Also check next chord in progression (for anticipation)
-      // This is important because at phrase-end bars, tracks anticipate the next chord
-      if (!is_borrowed_chord_tone) {
-        uint32_t bar = note.start_tick / TICKS_PER_BAR;
-        int bar_in_progression = bar % progression.length;
-        int next_chord_idx = (bar_in_progression + 1) % progression.length;
-        int8_t next_degree = progression.degrees[next_chord_idx];
-        ChordTones next_ct = getChordTones(next_degree);
-        for (uint8_t i = 0; i < next_ct.count; ++i) {
-          if (next_ct.pitch_classes[i] == pitch_class) {
-            is_borrowed_chord_tone = true;
-            break;
-          }
-        }
-      }
-
-      if (is_borrowed_chord_tone) {
-        // This is a chord tone of a borrowed chord - intentional, not an issue
-        continue;
-      }
-
-      // Check if this is a secondary dominant chord tone
-      // Secondary dominants (V/ii, V/iii, V/IV, V/V, V/vi) intentionally use
-      // non-diatonic notes (e.g., G# in E7 = V/vi) for harmonic tension
-      if (isSecondaryDominantTone(pitch_class)) {
-        continue;
-      }
-
-      // Non-diatonic note found!
-      // Determine severity based on beat strength
-      BeatStrength beat_strength = getBeatStrength(note.start_tick);
-      DissonanceSeverity severity;
-
-      switch (beat_strength) {
-        case BeatStrength::Strong:
-          // Non-diatonic on beat 1 is very noticeable
-          severity = DissonanceSeverity::High;
-          break;
-        case BeatStrength::Medium:
-          // Beat 3 is still fairly prominent
-          severity = DissonanceSeverity::Medium;
-          break;
-        case BeatStrength::Weak:
-        case BeatStrength::Offbeat:
-          // Weak beats could be chromatic passing tones
-          severity = DissonanceSeverity::Medium;
-          break;
-      }
-
-      uint32_t bar = note.start_tick / TICKS_PER_BAR;
-
-      // Calculate the transposed pitch (what the listener will hear)
-      int key_offset = static_cast<int>(params.key);
-      uint8_t transposed_pitch =
-          static_cast<uint8_t>(std::clamp(static_cast<int>(note.note) + key_offset, 0, 127));
-
-      DissonanceIssue issue;
-      issue.type = DissonanceType::NonDiatonicNote;
-      issue.severity = severity;
-      issue.tick = note.start_tick;
-      issue.bar = bar;
-      issue.beat = 1.0f + static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
-      issue.track_name = trackRoleToString(role);
-      issue.pitch = transposed_pitch;                       // Show transposed pitch
-      issue.pitch_name = midiNoteToName(transposed_pitch);  // Show transposed name
-      issue.key_name = getKeyName(params.key);
-      issue.scale_tones = getScaleTones(params.key);
-
-      // Copy provenance
-      issue.has_provenance = note.hasValidProvenance();
-      issue.prov_chord_degree = note.prov_chord_degree;
-      issue.prov_lookup_tick = note.prov_lookup_tick;
-      issue.prov_source = note.prov_source;
-      issue.prov_original_pitch = note.prov_original_pitch;
-
-      report.issues.push_back(issue);
-      report.summary.non_diatonic_notes++;
-
-      switch (severity) {
-        case DissonanceSeverity::High:
-          report.summary.high_severity++;
-          break;
-        case DissonanceSeverity::Medium:
-          report.summary.medium_severity++;
-          break;
-        case DissonanceSeverity::Low:
-          report.summary.low_severity++;
-          break;
-      }
-    }
-  };
-
-  checkTrackForNonDiatonicNotes(song.vocal(), TrackRole::Vocal);
-  checkTrackForNonDiatonicNotes(song.chord(), TrackRole::Chord);
-  checkTrackForNonDiatonicNotes(song.bass(), TrackRole::Bass);
-  checkTrackForNonDiatonicNotes(song.motif(), TrackRole::Motif);
-  checkTrackForNonDiatonicNotes(song.arpeggio(), TrackRole::Arpeggio);
-  checkTrackForNonDiatonicNotes(song.aux(), TrackRole::Aux);
+  // Run all detection passes
+  detectSimultaneousClashes(all_notes, ctx, report);
+  detectNonChordTones(ctx, report);
+  detectSustainedOverChordChange(ctx, report);
+  detectNonDiatonicNotes(ctx, params.key, report);
 
   // Calculate total
   report.summary.total_issues =

@@ -523,498 +523,508 @@ void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num) {
   }
 }
 
-}  // namespace
-
-int main(int argc, char* argv[]) {
+// Parsed command-line arguments
+struct ParsedArgs {
   bool analyze = false;
   bool skip_vocal = false;
-  std::string input_file;       // Input MIDI file for analysis
-  std::string validate_file;    // MIDI file for validation
-  std::string regenerate_file;  // MIDI file to regenerate from metadata
-  bool use_new_seed = false;    // Use different seed when regenerating
-  uint32_t new_seed = 0;        // New seed for regeneration
-  bool json_output = false;     // Output JSON to stdout
-  uint32_t seed = 0;            // 0 = auto-random
+  std::string input_file;
+  std::string validate_file;
+  std::string regenerate_file;
+  bool use_new_seed = false;
+  uint32_t new_seed = 0;
+  bool json_output = false;
+  uint32_t seed = 0;
   uint8_t style_id = 1;
-  uint8_t blueprint_id = 255;  // 255 = random selection
+  uint8_t blueprint_id = 255;
   uint8_t mood_id = 0;
   bool mood_explicit = false;
   uint8_t chord_id = 3;
-  uint8_t vocal_style = 0;    // 0 = Auto
-  uint16_t bpm = 0;           // 0 = use style default
-  uint16_t duration = 0;      // 0 = use pattern default
-  int form_id = -1;           // -1 = use style default
-  int key_id = -1;            // -1 = use default (C)
+  uint8_t vocal_style = 0;
+  uint16_t bpm = 0;
+  uint16_t duration = 0;
+  int form_id = -1;
+  int key_id = -1;
   uint8_t vocal_attitude = 1;
   uint8_t vocal_low = 57;
   uint8_t vocal_high = 79;
   midisketch::MidiFormat midi_format = midisketch::kDefaultMidiFormat;
-  int bar_num = 0;       // 0 = no bar inspection
-  bool addictive = false;  // Behavioral Loop mode
+  int bar_num = 0;
+  bool addictive = false;
   bool arpeggio_enabled = false;
-  uint8_t modulation = 0;       // 0 = None
-  uint8_t composition_style = 0;  // 0 = MelodyLead
+  uint8_t modulation = 0;
+  uint8_t composition_style = 0;
   bool enable_sus = false;
   bool enable_9th = false;
-  midisketch::Tick dump_collisions_tick = 0;  // 0 = no dump
+  midisketch::Tick dump_collisions_tick = 0;
+  bool show_help = false;
+  bool parse_error = false;
+};
+
+// Parse a name-or-number argument for blueprint
+bool parseBlueprintArg(const char* arg, uint8_t& out) {
+  char* endptr = nullptr;
+  unsigned long val = std::strtoul(arg, &endptr, 10);
+  if (endptr != arg && *endptr == '\0') {
+    out = static_cast<uint8_t>(val);
+    return true;
+  }
+  uint8_t found_id = midisketch::findProductionBlueprintByName(arg);
+  if (found_id != 255) {
+    out = found_id;
+    return true;
+  }
+  std::cerr << "Unknown blueprint: " << arg << "\n";
+  std::cerr << "Available blueprints:\n";
+  for (uint8_t j = 0; j < midisketch::getProductionBlueprintCount(); ++j) {
+    std::cerr << "  " << static_cast<int>(j) << ": " << midisketch::getProductionBlueprintName(j)
+              << "\n";
+  }
+  return false;
+}
+
+// Parse a name-or-number argument for mood
+bool parseMoodArg(const char* arg, uint8_t& out) {
+  char* endptr = nullptr;
+  unsigned long val = std::strtoul(arg, &endptr, 10);
+  if (endptr != arg && *endptr == '\0') {
+    out = static_cast<uint8_t>(val);
+    return true;
+  }
+  auto found = midisketch::findMoodByName(arg);
+  if (found) {
+    out = static_cast<uint8_t>(*found);
+    return true;
+  }
+  std::cerr << "Unknown mood: " << arg << "\n";
+  std::cerr << "Available moods:\n";
+  for (uint8_t j = 0; j < midisketch::MOOD_COUNT; ++j) {
+    std::cerr << "  " << static_cast<int>(j) << ": "
+              << midisketch::getMoodName(static_cast<midisketch::Mood>(j)) << "\n";
+  }
+  return false;
+}
+
+// Parse a name-or-number argument for chord progression
+bool parseChordArg(const char* arg, uint8_t& out) {
+  char* endptr = nullptr;
+  unsigned long val = std::strtoul(arg, &endptr, 10);
+  if (endptr != arg && *endptr == '\0') {
+    out = static_cast<uint8_t>(val);
+    return true;
+  }
+  auto found = midisketch::findChordProgressionByName(arg);
+  if (found) {
+    out = *found;
+    return true;
+  }
+  std::cerr << "Unknown chord progression: " << arg << "\n";
+  std::cerr << "Use a number (0-" << (midisketch::CHORD_COUNT - 1)
+            << ") or common name (pop, jazz, royal_road, ballad, etc.)\n";
+  return false;
+}
+
+// Parse a name-or-number argument for form/structure
+bool parseFormArg(const char* arg, int& out) {
+  char* endptr = nullptr;
+  long val = std::strtol(arg, &endptr, 10);
+  if (endptr != arg && *endptr == '\0') {
+    out = static_cast<int>(val);
+    return true;
+  }
+  auto found = midisketch::findStructurePatternByName(arg);
+  if (found) {
+    out = static_cast<int>(*found);
+    return true;
+  }
+  std::cerr << "Unknown form: " << arg << "\n";
+  std::cerr << "Available forms:\n";
+  for (uint8_t j = 0; j < midisketch::STRUCTURE_COUNT; ++j) {
+    std::cerr << "  " << static_cast<int>(j) << ": "
+              << midisketch::getStructureName(static_cast<midisketch::StructurePattern>(j)) << "\n";
+  }
+  return false;
+}
+
+// Parse a format argument (smf1/smf2)
+bool parseFormatArg(const char* arg, midisketch::MidiFormat& out) {
+  if (std::strcmp(arg, "smf1") == 0 || std::strcmp(arg, "SMF1") == 0) {
+    out = midisketch::MidiFormat::SMF1;
+    return true;
+  }
+  if (std::strcmp(arg, "smf2") == 0 || std::strcmp(arg, "SMF2") == 0) {
+    out = midisketch::MidiFormat::SMF2;
+    return true;
+  }
+  std::cerr << "Unknown format: " << arg << " (use smf1 or smf2)\n";
+  return false;
+}
+
+// Parse command-line arguments
+ParsedArgs parseArgs(int argc, char* argv[]) {
+  ParsedArgs args;
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--analyze") == 0) {
-      analyze = true;
+      args.analyze = true;
     } else if (std::strcmp(argv[i], "--input") == 0 && i + 1 < argc) {
-      input_file = argv[++i];
-      analyze = true;  // Implicitly enable analysis for input files
+      args.input_file = argv[++i];
+      args.analyze = true;
     } else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
-      seed = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
+      args.seed = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--style") == 0 && i + 1 < argc) {
-      style_id = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+      args.style_id = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--blueprint") == 0 && i + 1 < argc) {
-      ++i;
-      // Try to parse as number first
-      char* endptr = nullptr;
-      unsigned long val = std::strtoul(argv[i], &endptr, 10);
-      if (endptr != argv[i] && *endptr == '\0') {
-        // Parsed as number
-        blueprint_id = static_cast<uint8_t>(val);
-      } else {
-        // Try to parse as name
-        uint8_t found_id = midisketch::findProductionBlueprintByName(argv[i]);
-        if (found_id != 255) {
-          blueprint_id = found_id;
-        } else {
-          std::cerr << "Unknown blueprint: " << argv[i] << "\n";
-          std::cerr << "Available blueprints:\n";
-          for (uint8_t j = 0; j < midisketch::getProductionBlueprintCount(); ++j) {
-            std::cerr << "  " << static_cast<int>(j) << ": "
-                      << midisketch::getProductionBlueprintName(j) << "\n";
-          }
-          return 1;
-        }
+      if (!parseBlueprintArg(argv[++i], args.blueprint_id)) {
+        args.parse_error = true;
+        return args;
       }
     } else if (std::strcmp(argv[i], "--mood") == 0 && i + 1 < argc) {
-      ++i;
-      // Try to parse as number first
-      char* endptr = nullptr;
-      unsigned long val = std::strtoul(argv[i], &endptr, 10);
-      if (endptr != argv[i] && *endptr == '\0') {
-        // Parsed as number
-        mood_id = static_cast<uint8_t>(val);
-      } else {
-        // Try to parse as name
-        auto found = midisketch::findMoodByName(argv[i]);
-        if (found) {
-          mood_id = static_cast<uint8_t>(*found);
-        } else {
-          std::cerr << "Unknown mood: " << argv[i] << "\n";
-          std::cerr << "Available moods:\n";
-          for (uint8_t j = 0; j < midisketch::MOOD_COUNT; ++j) {
-            std::cerr << "  " << static_cast<int>(j) << ": "
-                      << midisketch::getMoodName(static_cast<midisketch::Mood>(j)) << "\n";
-          }
-          return 1;
-        }
+      if (!parseMoodArg(argv[++i], args.mood_id)) {
+        args.parse_error = true;
+        return args;
       }
-      mood_explicit = true;
+      args.mood_explicit = true;
     } else if (std::strcmp(argv[i], "--chord") == 0 && i + 1 < argc) {
-      ++i;
-      // Try to parse as number first
-      char* endptr = nullptr;
-      unsigned long val = std::strtoul(argv[i], &endptr, 10);
-      if (endptr != argv[i] && *endptr == '\0') {
-        // Parsed as number
-        chord_id = static_cast<uint8_t>(val);
-      } else {
-        // Try to parse as name
-        auto found = midisketch::findChordProgressionByName(argv[i]);
-        if (found) {
-          chord_id = *found;
-        } else {
-          std::cerr << "Unknown chord progression: " << argv[i] << "\n";
-          std::cerr << "Use a number (0-" << (midisketch::CHORD_COUNT - 1)
-                    << ") or common name (pop, jazz, royal_road, ballad, etc.)\n";
-          return 1;
-        }
+      if (!parseChordArg(argv[++i], args.chord_id)) {
+        args.parse_error = true;
+        return args;
       }
     } else if (std::strcmp(argv[i], "--vocal-style") == 0 && i + 1 < argc) {
-      vocal_style = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+      args.vocal_style = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--bpm") == 0 && i + 1 < argc) {
-      bpm = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 10));
+      args.bpm = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--duration") == 0 && i + 1 < argc) {
-      duration = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 10));
+      args.duration = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--form") == 0 && i + 1 < argc) {
-      ++i;
-      // Try to parse as number first
-      char* endptr = nullptr;
-      long val = std::strtol(argv[i], &endptr, 10);
-      if (endptr != argv[i] && *endptr == '\0') {
-        // Parsed as number
-        form_id = static_cast<int>(val);
-      } else {
-        // Try to parse as name
-        auto found = midisketch::findStructurePatternByName(argv[i]);
-        if (found) {
-          form_id = static_cast<int>(*found);
-        } else {
-          std::cerr << "Unknown form: " << argv[i] << "\n";
-          std::cerr << "Available forms:\n";
-          for (uint8_t j = 0; j < midisketch::STRUCTURE_COUNT; ++j) {
-            std::cerr << "  " << static_cast<int>(j) << ": "
-                      << midisketch::getStructureName(static_cast<midisketch::StructurePattern>(j))
-                      << "\n";
-          }
-          return 1;
-        }
+      if (!parseFormArg(argv[++i], args.form_id)) {
+        args.parse_error = true;
+        return args;
       }
     } else if (std::strcmp(argv[i], "--key") == 0 && i + 1 < argc) {
-      key_id = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
+      args.key_id = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--skip-vocal") == 0) {
-      skip_vocal = true;
+      args.skip_vocal = true;
     } else if (std::strcmp(argv[i], "--vocal-attitude") == 0 && i + 1 < argc) {
-      vocal_attitude = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+      args.vocal_attitude = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--vocal-low") == 0 && i + 1 < argc) {
-      vocal_low = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+      args.vocal_low = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--vocal-high") == 0 && i + 1 < argc) {
-      vocal_high = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+      args.vocal_high = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
-      ++i;
-      if (std::strcmp(argv[i], "smf1") == 0 || std::strcmp(argv[i], "SMF1") == 0) {
-        midi_format = midisketch::MidiFormat::SMF1;
-      } else if (std::strcmp(argv[i], "smf2") == 0 || std::strcmp(argv[i], "SMF2") == 0) {
-        midi_format = midisketch::MidiFormat::SMF2;
-      } else {
-        std::cerr << "Unknown format: " << argv[i] << " (use smf1 or smf2)\n";
-        return 1;
+      if (!parseFormatArg(argv[++i], args.midi_format)) {
+        args.parse_error = true;
+        return args;
       }
     } else if (std::strcmp(argv[i], "--validate") == 0 && i + 1 < argc) {
-      validate_file = argv[++i];
+      args.validate_file = argv[++i];
     } else if (std::strcmp(argv[i], "--regenerate") == 0 && i + 1 < argc) {
-      regenerate_file = argv[++i];
+      args.regenerate_file = argv[++i];
     } else if (std::strcmp(argv[i], "--new-seed") == 0 && i + 1 < argc) {
-      new_seed = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
-      use_new_seed = true;
+      args.new_seed = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
+      args.use_new_seed = true;
     } else if (std::strcmp(argv[i], "--json") == 0) {
-      json_output = true;
+      args.json_output = true;
     } else if (std::strcmp(argv[i], "--bar") == 0 && i + 1 < argc) {
-      bar_num = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
-      if (bar_num < 1) {
+      args.bar_num = static_cast<int>(std::strtol(argv[++i], nullptr, 10));
+      if (args.bar_num < 1) {
         std::cerr << "Error: --bar must be >= 1\n";
-        return 1;
+        args.parse_error = true;
+        return args;
       }
     } else if (std::strcmp(argv[i], "--addictive") == 0) {
-      addictive = true;
+      args.addictive = true;
     } else if (std::strcmp(argv[i], "--arpeggio") == 0) {
-      arpeggio_enabled = true;
+      args.arpeggio_enabled = true;
     } else if (std::strcmp(argv[i], "--modulation") == 0 && i + 1 < argc) {
-      modulation = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+      args.modulation = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--composition") == 0 && i + 1 < argc) {
-      composition_style = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
+      args.composition_style = static_cast<uint8_t>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--enable-sus") == 0) {
-      enable_sus = true;
+      args.enable_sus = true;
     } else if (std::strcmp(argv[i], "--enable-9th") == 0) {
-      enable_9th = true;
+      args.enable_9th = true;
     } else if (std::strcmp(argv[i], "--dump-collisions-at") == 0 && i + 1 < argc) {
-      dump_collisions_tick = static_cast<midisketch::Tick>(std::strtoul(argv[++i], nullptr, 10));
+      args.dump_collisions_tick =
+          static_cast<midisketch::Tick>(std::strtoul(argv[++i], nullptr, 10));
     } else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
-      printUsage(argv[0]);
-      return 0;
+      args.show_help = true;
     }
   }
 
-  // Validate mode: validate MIDI file structure
-  if (!validate_file.empty()) {
-    midisketch::MidiValidator validator;
-    auto report = validator.validate(validate_file);
+  return args;
+}
 
-    if (json_output) {
-      // JSON to stdout (no version banner)
-      std::cout << report.toJson();
-    } else {
-      // Text report to stdout
-      std::cout << "midi-sketch v" << midisketch::MidiSketch::version() << "\n\n";
-      std::cout << report.toTextReport(validate_file);
-    }
+// Validate mode: validate MIDI file structure
+int runValidateMode(const ParsedArgs& args) {
+  midisketch::MidiValidator validator;
+  auto report = validator.validate(args.validate_file);
 
-    return report.valid ? 0 : 1;
+  if (args.json_output) {
+    std::cout << report.toJson();
+  } else {
+    std::cout << "midi-sketch v" << midisketch::MidiSketch::version() << "\n\n";
+    std::cout << report.toTextReport(args.validate_file);
   }
 
+  return report.valid ? 0 : 1;
+}
+
+// Regenerate mode: regenerate MIDI from embedded metadata
+int runRegenerateMode(const ParsedArgs& args) {
   std::cout << "midi-sketch v" << midisketch::MidiSketch::version() << "\n\n";
+  std::cout << "Regenerating from: " << args.regenerate_file << "\n\n";
 
-  // Regenerate mode: regenerate MIDI from embedded metadata
-  if (!regenerate_file.empty()) {
-    std::cout << "Regenerating from: " << regenerate_file << "\n\n";
+  std::string metadata;
+  midisketch::DetectedMidiFormat original_format = midisketch::DetectedMidiFormat::Unknown;
 
-    std::string metadata;
-    midisketch::DetectedMidiFormat original_format = midisketch::DetectedMidiFormat::Unknown;
+  // Read file and detect format
+  std::ifstream regen_stream(args.regenerate_file, std::ios::binary);
+  if (!regen_stream) {
+    std::cerr << "Error: Failed to open file: " << args.regenerate_file << "\n";
+    return 1;
+  }
+  std::vector<uint8_t> regen_data((std::istreambuf_iterator<char>(regen_stream)),
+                                  std::istreambuf_iterator<char>());
+  regen_stream.close();
 
-    // Read file and detect format
-    std::ifstream regen_stream(regenerate_file, std::ios::binary);
-    if (!regen_stream) {
-      std::cerr << "Error: Failed to open file: " << regenerate_file << "\n";
+  original_format = midisketch::MidiReader::detectFormat(regen_data.data(), regen_data.size());
+
+  if (midisketch::MidiReader::isSMF2Format(regen_data.data(), regen_data.size())) {
+    midisketch::Midi2Reader reader2;
+    if (!reader2.read(regen_data.data(), regen_data.size())) {
+      std::cerr << "Error: " << reader2.getError() << "\n";
       return 1;
     }
-    std::vector<uint8_t> regen_data((std::istreambuf_iterator<char>(regen_stream)),
-                                    std::istreambuf_iterator<char>());
-    regen_stream.close();
-
-    original_format = midisketch::MidiReader::detectFormat(regen_data.data(), regen_data.size());
-
-    if (midisketch::MidiReader::isSMF2Format(regen_data.data(), regen_data.size())) {
-      // MIDI 2.0 format (ktmidi container or SMF2CLIP)
-      midisketch::Midi2Reader reader2;
-      if (!reader2.read(regen_data.data(), regen_data.size())) {
-        std::cerr << "Error: " << reader2.getError() << "\n";
-        return 1;
-      }
-      const auto& midi2 = reader2.getParsedMidi();
-      if (!midi2.hasMidiSketchMetadata()) {
-        std::cerr << "Error: No midi-sketch metadata found in file.\n";
-        std::cerr << "This file was not generated by midi-sketch or metadata is missing.\n";
-        return 1;
-      }
-      metadata = midi2.metadata;
-      const char* format_name = (original_format == midisketch::DetectedMidiFormat::SMF2_ktmidi)
-                                    ? "SMF2 (ktmidi container)"
-                                : (original_format == midisketch::DetectedMidiFormat::SMF2_Clip)
-                                    ? "SMF2 (Clip)"
-                                    : "SMF2 (Container)";
-      std::cout << "Format: " << format_name << "\n";
-    } else if (original_format == midisketch::DetectedMidiFormat::SMF1) {
-      // Standard MIDI format (SMF1)
-      midisketch::MidiReader reader;
-      if (!reader.read(regen_data)) {
-        std::cerr << "Error: " << reader.getError() << "\n";
-        return 1;
-      }
-      const auto& midi = reader.getParsedMidi();
-      if (!midi.hasMidiSketchMetadata()) {
-        std::cerr << "Error: No midi-sketch metadata found in file.\n";
-        std::cerr << "This file was not generated by midi-sketch or metadata is missing.\n";
-        return 1;
-      }
-      metadata = midi.metadata;
-      std::cout << "Format: Standard MIDI (SMF1)\n";
-    } else {
-      std::cerr << "Error: Unknown or unsupported MIDI format\n";
+    const auto& midi2 = reader2.getParsedMidi();
+    if (!midi2.hasMidiSketchMetadata()) {
+      std::cerr << "Error: No midi-sketch metadata found in file.\n";
+      std::cerr << "This file was not generated by midi-sketch or metadata is missing.\n";
       return 1;
     }
-
-    std::cout << "Original metadata: " << metadata << "\n\n";
-
-    // Parse metadata and create config
-    midisketch::SongConfig config = configFromMetadata(metadata);
-
-    // Override seed if requested
-    if (use_new_seed) {
-      std::cout << "Using new seed: " << new_seed << " (original: " << config.seed << ")\n";
-      config.seed = new_seed;
+    metadata = midi2.metadata;
+    const char* format_name = (original_format == midisketch::DetectedMidiFormat::SMF2_ktmidi)
+                                  ? "SMF2 (ktmidi container)"
+                              : (original_format == midisketch::DetectedMidiFormat::SMF2_Clip)
+                                  ? "SMF2 (Clip)"
+                                  : "SMF2 (Container)";
+    std::cout << "Format: " << format_name << "\n";
+  } else if (original_format == midisketch::DetectedMidiFormat::SMF1) {
+    midisketch::MidiReader reader;
+    if (!reader.read(regen_data)) {
+      std::cerr << "Error: " << reader.getError() << "\n";
+      return 1;
     }
-
-    // Use original format unless --format was explicitly specified
-    midisketch::MidiFormat output_format = midi_format;
-    if (midi_format == midisketch::kDefaultMidiFormat &&
-        original_format == midisketch::DetectedMidiFormat::SMF1) {
-      // Default format is SMF2, but original was SMF1 - use SMF1 to match
-      output_format = midisketch::MidiFormat::SMF1;
+    const auto& midi = reader.getParsedMidi();
+    if (!midi.hasMidiSketchMetadata()) {
+      std::cerr << "Error: No midi-sketch metadata found in file.\n";
+      std::cerr << "This file was not generated by midi-sketch or metadata is missing.\n";
+      return 1;
     }
-
-    midisketch::MidiSketch sketch;
-    sketch.setMidiFormat(output_format);
-    sketch.generateFromConfig(config);
-
-    // Write regenerated MIDI
-    auto midi_data = sketch.getMidi();
-    std::ofstream file("regenerated.mid", std::ios::binary);
-    if (file) {
-      file.write(reinterpret_cast<const char*>(midi_data.data()),
-                 static_cast<std::streamsize>(midi_data.size()));
-      std::cout << "Saved: regenerated.mid (" << midi_data.size() << " bytes)\n";
-    }
-
-    // Print generation result
-    const auto& song = sketch.getSong();
-    std::cout << "\nRegeneration result:\n";
-    std::cout << "  Total bars: " << song.arrangement().totalBars() << "\n";
-    std::cout << "  Total ticks: " << song.arrangement().totalTicks() << "\n";
-    std::cout << "  BPM: " << song.bpm() << "\n";
-    std::cout << "  Seed: " << config.seed << "\n";
-
-    if (analyze) {
-      const auto& params = sketch.getParams();
-      auto report = midisketch::analyzeDissonance(song, params);
-      printDissonanceSummary(report);
-
-      auto analysis_json = midisketch::dissonanceReportToJson(report);
-      std::ofstream analysis_file("analysis.json");
-      if (analysis_file) {
-        analysis_file << analysis_json;
-        std::cout << "\nSaved: analysis.json\n";
-      }
-    }
-
-    return 0;
+    metadata = midi.metadata;
+    std::cout << "Format: Standard MIDI (SMF1)\n";
+  } else {
+    std::cerr << "Error: Unknown or unsupported MIDI format\n";
+    return 1;
   }
 
-  // Input file mode: analyze existing MIDI file
-  if (!input_file.empty()) {
-    std::cout << "Analyzing: " << input_file << "\n\n";
+  std::cout << "Original metadata: " << metadata << "\n\n";
 
-    // Read file into memory for format detection
-    std::ifstream input_stream(input_file, std::ios::binary);
-    if (!input_stream) {
-      std::cerr << "Error: Failed to open file: " << input_file << "\n";
-      return 1;
-    }
-    std::vector<uint8_t> file_data((std::istreambuf_iterator<char>(input_stream)),
-                                   std::istreambuf_iterator<char>());
-    input_stream.close();
+  midisketch::SongConfig config = configFromMetadata(metadata);
 
-    // Auto-detect format
-    auto detected_format = midisketch::MidiReader::detectFormat(file_data.data(), file_data.size());
+  if (args.use_new_seed) {
+    std::cout << "Using new seed: " << args.new_seed << " (original: " << config.seed << ")\n";
+    config.seed = args.new_seed;
+  }
 
-    if (detected_format == midisketch::DetectedMidiFormat::SMF1) {
-      // SMF1 format
-      midisketch::MidiReader reader;
-      if (!reader.read(file_data)) {
-        std::cerr << "Error: " << reader.getError() << "\n";
-        return 1;
-      }
-
-      const auto& midi = reader.getParsedMidi();
-      std::cout << "MIDI Info:\n";
-      std::cout << "  Format: SMF1 (Type " << midi.format << ")\n";
-      std::cout << "  Tracks: " << midi.num_tracks << "\n";
-      std::cout << "  Division: " << midi.division << " ticks/quarter\n";
-      std::cout << "  BPM: " << midi.bpm << "\n";
-
-      // Show generation metadata if present
-      if (midi.hasMidiSketchMetadata()) {
-        std::cout << "  Generated by: midi-sketch\n";
-        std::cout << "  Metadata: " << midi.metadata << "\n";
-      } else {
-        std::cout << "  Generated by: (unknown - no midi-sketch metadata)\n";
-      }
-      std::cout << "\n";
-
-      std::cout << "Tracks:\n";
-      for (size_t i = 0; i < midi.tracks.size(); ++i) {
-        const auto& track = midi.tracks[i];
-        std::cout << "  [" << i << "] " << (track.name.empty() ? "(unnamed)" : track.name) << " - "
-                  << track.notes.size() << " notes, ch " << static_cast<int>(track.channel)
-                  << ", prog " << static_cast<int>(track.program) << "\n";
-      }
-      std::cout << "\n";
-
-      // Perform dissonance analysis
-      auto report = midisketch::analyzeDissonanceFromParsedMidi(midi);
-
-      printDissonanceSummary(report);
-
-      // Write analysis JSON
-      auto analysis_json = midisketch::dissonanceReportToJson(report);
-      std::ofstream analysis_file("analysis.json");
-      if (analysis_file) {
-        analysis_file << analysis_json;
-        std::cout << "\nSaved: analysis.json\n";
-      }
-
-      // Bar inspection
-      if (bar_num > 0) {
-        showBarNotes(midi, bar_num);
-      }
-    } else if (midisketch::MidiReader::isSMF2Format(file_data.data(), file_data.size())) {
-      // SMF2 format (ktmidi container or SMF2CLIP)
-      midisketch::Midi2Reader reader2;
-      if (!reader2.read(file_data.data(), file_data.size())) {
-        std::cerr << "Error: " << reader2.getError() << "\n";
-        return 1;
-      }
-
-      const auto& midi2 = reader2.getParsedMidi();
-      const char* format_name = (detected_format == midisketch::DetectedMidiFormat::SMF2_ktmidi)
-                                    ? "SMF2 (ktmidi container)"
-                                : (detected_format == midisketch::DetectedMidiFormat::SMF2_Clip)
-                                    ? "SMF2 (Clip)"
-                                    : "SMF2 (Container)";
-
-      std::cout << "MIDI Info:\n";
-      std::cout << "  Format: " << format_name << "\n";
-      std::cout << "  Tracks: " << midi2.num_tracks << "\n";
-      std::cout << "  Division: " << midi2.division << " ticks/quarter\n";
-      std::cout << "  BPM: " << midi2.bpm << "\n";
-
-      // Show generation metadata if present
-      if (midi2.hasMidiSketchMetadata()) {
-        std::cout << "  Generated by: midi-sketch\n";
-        std::cout << "  Metadata: " << midi2.metadata << "\n";
-      } else {
-        std::cout << "  Generated by: (unknown - no midi-sketch metadata)\n";
-      }
-      std::cout << "\n";
-
-      // Note: SMF2 dissonance analysis not yet implemented
-      std::cout << "Note: Dissonance analysis for SMF2 is not yet implemented.\n";
-      std::cout << "Use --format smf1 when generating to enable full analysis.\n";
-    } else {
-      std::cerr << "Error: Unknown MIDI format\n";
-      return 1;
-    }
-
-    return 0;
+  midisketch::MidiFormat output_format = args.midi_format;
+  if (args.midi_format == midisketch::kDefaultMidiFormat &&
+      original_format == midisketch::DetectedMidiFormat::SMF1) {
+    output_format = midisketch::MidiFormat::SMF1;
   }
 
   midisketch::MidiSketch sketch;
-  sketch.setMidiFormat(midi_format);
+  sketch.setMidiFormat(output_format);
+  sketch.generateFromConfig(config);
 
-  midisketch::SongConfig config = midisketch::createDefaultSongConfig(style_id);
-  config.chord_progression_id = chord_id;
-  config.blueprint_id = blueprint_id;
-  config.mood = mood_id;
-  config.mood_explicit = mood_explicit;
-  config.seed = seed;
-  config.vocal_style = static_cast<midisketch::VocalStylePreset>(vocal_style);
-  config.bpm = bpm;                           // 0 = use style default
-  config.target_duration_seconds = duration;  // 0 = use pattern default
-  if (form_id >= 0 && form_id < static_cast<int>(midisketch::STRUCTURE_COUNT)) {
-    config.form = static_cast<midisketch::StructurePattern>(form_id);
+  auto midi_data = sketch.getMidi();
+  std::ofstream file("regenerated.mid", std::ios::binary);
+  if (file) {
+    file.write(reinterpret_cast<const char*>(midi_data.data()),
+               static_cast<std::streamsize>(midi_data.size()));
+    std::cout << "Saved: regenerated.mid (" << midi_data.size() << " bytes)\n";
+  }
+
+  const auto& song = sketch.getSong();
+  std::cout << "\nRegeneration result:\n";
+  std::cout << "  Total bars: " << song.arrangement().totalBars() << "\n";
+  std::cout << "  Total ticks: " << song.arrangement().totalTicks() << "\n";
+  std::cout << "  BPM: " << song.bpm() << "\n";
+  std::cout << "  Seed: " << config.seed << "\n";
+
+  if (args.analyze) {
+    const auto& params = sketch.getParams();
+    auto report = midisketch::analyzeDissonance(song, params);
+    printDissonanceSummary(report);
+
+    auto analysis_json = midisketch::dissonanceReportToJson(report);
+    std::ofstream analysis_file("analysis.json");
+    if (analysis_file) {
+      analysis_file << analysis_json;
+      std::cout << "\nSaved: analysis.json\n";
+    }
+  }
+
+  return 0;
+}
+
+// Input file mode: analyze existing MIDI file
+int runInputMode(const ParsedArgs& args) {
+  std::cout << "midi-sketch v" << midisketch::MidiSketch::version() << "\n\n";
+  std::cout << "Analyzing: " << args.input_file << "\n\n";
+
+  std::ifstream input_stream(args.input_file, std::ios::binary);
+  if (!input_stream) {
+    std::cerr << "Error: Failed to open file: " << args.input_file << "\n";
+    return 1;
+  }
+  std::vector<uint8_t> file_data((std::istreambuf_iterator<char>(input_stream)),
+                                 std::istreambuf_iterator<char>());
+  input_stream.close();
+
+  auto detected_format = midisketch::MidiReader::detectFormat(file_data.data(), file_data.size());
+
+  if (detected_format == midisketch::DetectedMidiFormat::SMF1) {
+    midisketch::MidiReader reader;
+    if (!reader.read(file_data)) {
+      std::cerr << "Error: " << reader.getError() << "\n";
+      return 1;
+    }
+
+    const auto& midi = reader.getParsedMidi();
+    std::cout << "MIDI Info:\n";
+    std::cout << "  Format: SMF1 (Type " << midi.format << ")\n";
+    std::cout << "  Tracks: " << midi.num_tracks << "\n";
+    std::cout << "  Division: " << midi.division << " ticks/quarter\n";
+    std::cout << "  BPM: " << midi.bpm << "\n";
+
+    if (midi.hasMidiSketchMetadata()) {
+      std::cout << "  Generated by: midi-sketch\n";
+      std::cout << "  Metadata: " << midi.metadata << "\n";
+    } else {
+      std::cout << "  Generated by: (unknown - no midi-sketch metadata)\n";
+    }
+    std::cout << "\n";
+
+    std::cout << "Tracks:\n";
+    for (size_t i = 0; i < midi.tracks.size(); ++i) {
+      const auto& track = midi.tracks[i];
+      std::cout << "  [" << i << "] " << (track.name.empty() ? "(unnamed)" : track.name) << " - "
+                << track.notes.size() << " notes, ch " << static_cast<int>(track.channel)
+                << ", prog " << static_cast<int>(track.program) << "\n";
+    }
+    std::cout << "\n";
+
+    auto report = midisketch::analyzeDissonanceFromParsedMidi(midi);
+    printDissonanceSummary(report);
+
+    auto analysis_json = midisketch::dissonanceReportToJson(report);
+    std::ofstream analysis_file("analysis.json");
+    if (analysis_file) {
+      analysis_file << analysis_json;
+      std::cout << "\nSaved: analysis.json\n";
+    }
+
+    if (args.bar_num > 0) {
+      showBarNotes(midi, args.bar_num);
+    }
+  } else if (midisketch::MidiReader::isSMF2Format(file_data.data(), file_data.size())) {
+    midisketch::Midi2Reader reader2;
+    if (!reader2.read(file_data.data(), file_data.size())) {
+      std::cerr << "Error: " << reader2.getError() << "\n";
+      return 1;
+    }
+
+    const auto& midi2 = reader2.getParsedMidi();
+    const char* format_name = (detected_format == midisketch::DetectedMidiFormat::SMF2_ktmidi)
+                                  ? "SMF2 (ktmidi container)"
+                              : (detected_format == midisketch::DetectedMidiFormat::SMF2_Clip)
+                                  ? "SMF2 (Clip)"
+                                  : "SMF2 (Container)";
+
+    std::cout << "MIDI Info:\n";
+    std::cout << "  Format: " << format_name << "\n";
+    std::cout << "  Tracks: " << midi2.num_tracks << "\n";
+    std::cout << "  Division: " << midi2.division << " ticks/quarter\n";
+    std::cout << "  BPM: " << midi2.bpm << "\n";
+
+    if (midi2.hasMidiSketchMetadata()) {
+      std::cout << "  Generated by: midi-sketch\n";
+      std::cout << "  Metadata: " << midi2.metadata << "\n";
+    } else {
+      std::cout << "  Generated by: (unknown - no midi-sketch metadata)\n";
+    }
+    std::cout << "\n";
+
+    std::cout << "Note: Dissonance analysis for SMF2 is not yet implemented.\n";
+    std::cout << "Use --format smf1 when generating to enable full analysis.\n";
+  } else {
+    std::cerr << "Error: Unknown MIDI format\n";
+    return 1;
+  }
+
+  return 0;
+}
+
+// Generate mode: generate new MIDI
+int runGenerateMode(const ParsedArgs& args) {
+  std::cout << "midi-sketch v" << midisketch::MidiSketch::version() << "\n\n";
+
+  midisketch::MidiSketch sketch;
+  sketch.setMidiFormat(args.midi_format);
+
+  midisketch::SongConfig config = midisketch::createDefaultSongConfig(args.style_id);
+  config.chord_progression_id = args.chord_id;
+  config.blueprint_id = args.blueprint_id;
+  config.mood = args.mood_id;
+  config.mood_explicit = args.mood_explicit;
+  config.seed = args.seed;
+  config.vocal_style = static_cast<midisketch::VocalStylePreset>(args.vocal_style);
+  config.bpm = args.bpm;
+  config.target_duration_seconds = args.duration;
+  if (args.form_id >= 0 && args.form_id < static_cast<int>(midisketch::STRUCTURE_COUNT)) {
+    config.form = static_cast<midisketch::StructurePattern>(args.form_id);
     config.form_explicit = true;
   }
-  if (key_id >= 0 && key_id <= 11) {
-    config.key = static_cast<midisketch::Key>(key_id);
+  if (args.key_id >= 0 && args.key_id <= 11) {
+    config.key = static_cast<midisketch::Key>(args.key_id);
   }
 
-  // Vocal parameters
-  config.skip_vocal = skip_vocal;
-  if (vocal_attitude <= 2) {
-    config.vocal_attitude = static_cast<midisketch::VocalAttitude>(vocal_attitude);
+  config.skip_vocal = args.skip_vocal;
+  if (args.vocal_attitude <= 2) {
+    config.vocal_attitude = static_cast<midisketch::VocalAttitude>(args.vocal_attitude);
   }
-  config.vocal_low = vocal_low;
-  config.vocal_high = vocal_high;
-
-  // Behavioral Loop mode
-  config.addictive_mode = addictive;
-
-  // New options: arpeggio, modulation, composition style, chord extensions
-  config.arpeggio_enabled = arpeggio_enabled;
-  if (modulation <= 4) {
-    config.modulation_timing = static_cast<midisketch::ModulationTiming>(modulation);
+  config.vocal_low = args.vocal_low;
+  config.vocal_high = args.vocal_high;
+  config.addictive_mode = args.addictive;
+  config.arpeggio_enabled = args.arpeggio_enabled;
+  if (args.modulation <= 4) {
+    config.modulation_timing = static_cast<midisketch::ModulationTiming>(args.modulation);
   }
-  if (composition_style <= 2) {
-    config.composition_style = static_cast<midisketch::CompositionStyle>(composition_style);
+  if (args.composition_style <= 2) {
+    config.composition_style = static_cast<midisketch::CompositionStyle>(args.composition_style);
   }
-  config.chord_extension.enable_sus = enable_sus;
-  config.chord_extension.enable_9th = enable_9th;
+  config.chord_extension.enable_sus = args.enable_sus;
+  config.chord_extension.enable_9th = args.enable_9th;
 
   const auto& preset = midisketch::getStylePreset(config.style_preset_id);
 
-  // Print blueprint selection
-  if (blueprint_id == 255) {
-    // Will be selected randomly during generation, show "Random"
+  if (args.blueprint_id == 255) {
     std::cout << "Generating with SongConfig:\n";
     std::cout << "  Blueprint: Random (will be selected during generation)\n";
   } else {
     std::cout << "Generating with SongConfig:\n";
-    std::cout << "  Blueprint: " << midisketch::getProductionBlueprintName(blueprint_id) << " ("
-              << static_cast<int>(blueprint_id) << ")\n";
+    std::cout << "  Blueprint: " << midisketch::getProductionBlueprintName(args.blueprint_id) << " ("
+              << static_cast<int>(args.blueprint_id) << ")\n";
   }
   std::cout << "  Style: " << preset.display_name << "\n";
   std::cout << "  Key: " << keyName(config.key) << "\n";
@@ -1029,11 +1039,9 @@ int main(int argc, char* argv[]) {
 
   sketch.generateFromConfig(config);
 
-  // Show actual form used (may differ from config due to random selection)
   std::cout << "  Form: " << midisketch::getStructureName(sketch.getParams().structure)
             << " (selected)\n\n";
 
-  // Write MIDI file
   auto midi_data = sketch.getMidi();
   std::ofstream file("output.mid", std::ios::binary);
   if (file) {
@@ -1042,7 +1050,6 @@ int main(int argc, char* argv[]) {
     std::cout << "Saved: output.mid (" << midi_data.size() << " bytes)\n";
   }
 
-  // Validate generated MIDI
   {
     midisketch::MidiValidator validator;
     auto report = validator.validate(midi_data);
@@ -1056,7 +1063,6 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  // Write events JSON
   auto events_json = sketch.getEventsJson();
   std::ofstream json_file("output.json");
   if (json_file) {
@@ -1064,7 +1070,6 @@ int main(int argc, char* argv[]) {
     std::cout << "Saved: output.json\n";
   }
 
-  // Print generation result
   const auto& song = sketch.getSong();
   std::cout << "\nGeneration result:\n";
   std::cout << "  Total bars: " << song.arrangement().totalBars() << "\n";
@@ -1081,19 +1086,15 @@ int main(int argc, char* argv[]) {
               << static_cast<int>(song.modulationAmount()) << " semitones)\n";
   }
 
-  // Dump collision state at specific tick
-  if (dump_collisions_tick > 0) {
-    std::cout << "\n" << sketch.getHarmonyContext().dumpNotesAt(dump_collisions_tick) << "\n";
+  if (args.dump_collisions_tick > 0) {
+    std::cout << "\n" << sketch.getHarmonyContext().dumpNotesAt(args.dump_collisions_tick) << "\n";
   }
 
-  // Dissonance analysis
-  if (analyze) {
+  if (args.analyze) {
     const auto& params = sketch.getParams();
     auto report = midisketch::analyzeDissonance(song, params);
-
     printDissonanceSummary(report, &song);
 
-    // Write analysis JSON
     auto analysis_json = midisketch::dissonanceReportToJson(report);
     std::ofstream analysis_file("analysis.json");
     if (analysis_file) {
@@ -1102,15 +1103,44 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  // Bar inspection
-  if (bar_num > 0) {
+  if (args.bar_num > 0) {
     midisketch::MidiReader reader;
     if (reader.read("output.mid")) {
-      showBarNotes(reader.getParsedMidi(), bar_num);
+      showBarNotes(reader.getParsedMidi(), args.bar_num);
     } else {
       std::cerr << "Error reading output.mid for bar inspection\n";
     }
   }
 
   return 0;
+}
+
+}  // namespace
+
+int main(int argc, char* argv[]) {
+  auto args = parseArgs(argc, argv);
+
+  if (args.parse_error) {
+    return 1;
+  }
+
+  if (args.show_help) {
+    printUsage(argv[0]);
+    return 0;
+  }
+
+  // Dispatch to appropriate mode
+  if (!args.validate_file.empty()) {
+    return runValidateMode(args);
+  }
+
+  if (!args.regenerate_file.empty()) {
+    return runRegenerateMode(args);
+  }
+
+  if (!args.input_file.empty()) {
+    return runInputMode(args);
+  }
+
+  return runGenerateMode(args);
 }
