@@ -21,11 +21,47 @@ namespace {
 // Phrase length in bars for position detection
 constexpr int kPhraseBars = 4;
 
+// Drum timing profiles indexed by DrumStyle.
+// Standard (Pop) profile uses the original hardcoded values.
+constexpr DrumTimingProfile kDrumTimingProfiles[] = {
+    // Sparse (Ballad): subtle offsets for a relaxed, airy feel
+    {-1, -2, 1, -3, -5, -2, -2, 3, 5, 6},
+    // Standard (Pop): original hardcoded values - natural pocket groove
+    {-1, -3, 2, -6, -8, -4, -3, 8, 12, 15},
+    // FourOnFloor (Dance/EDM): tight kick for metronomic pulse
+    {0, -1, 1, -5, -6, -3, -2, 8, 12, 15},
+    // Upbeat (Idol/Energetic): driving hi-hat push, snappy snare
+    {-1, -2, 3, -5, -7, -3, -2, 10, 14, 18},
+    // Rock: tighter than pop, less hi-hat push for heavier feel
+    {-2, -4, 2, -4, -6, -3, -2, 5, 8, 10},
+    // Synth: precision timing, near-zero kick, wide hi-hat push
+    {0, 0, 1, -2, -4, -1, -1, 10, 15, 20},
+    // Trap: laid-back snare, moderate hi-hat, tight kick
+    {0, -1, 2, -6, -10, -4, -2, 5, 8, 10},
+    // Latin: syncopated feel with moderate offsets
+    {-1, -2, 3, -5, -7, -3, -2, 7, 11, 14},
+};
+
+// Verify profile count matches DrumStyle enum count at compile time.
+static_assert(sizeof(kDrumTimingProfiles) / sizeof(kDrumTimingProfiles[0]) == 8,
+              "DrumTimingProfile count must match DrumStyle enum count");
+
 }  // namespace
 
-TimingOffsetCalculator::TimingOffsetCalculator(uint8_t drive_feel, VocalStylePreset vocal_style)
+const DrumTimingProfile& getDrumTimingProfile(DrumStyle style) {
+  auto idx = static_cast<uint8_t>(style);
+  if (idx >= sizeof(kDrumTimingProfiles) / sizeof(kDrumTimingProfiles[0])) {
+    // Fallback to Standard if out of range
+    return kDrumTimingProfiles[static_cast<uint8_t>(DrumStyle::Standard)];
+  }
+  return kDrumTimingProfiles[idx];
+}
+
+TimingOffsetCalculator::TimingOffsetCalculator(uint8_t drive_feel, VocalStylePreset vocal_style,
+                                               DrumStyle drum_style)
     : timing_mult_(DriveMapping::getTimingMultiplier(drive_feel)),
-      physics_(getVocalPhysicsParams(vocal_style)) {}
+      physics_(getVocalPhysicsParams(vocal_style)),
+      profile_(getDrumTimingProfile(drum_style)) {}
 
 // ============================================================================
 // Drum Timing
@@ -40,27 +76,29 @@ int TimingOffsetCalculator::getDrumTimingOffset(uint8_t note_number, Tick tick) 
 
   if (note_number == kBassNote) {
     // Kick: tight on downbeats (beats 0,2), slightly ahead on others
-    base_offset = (beat_in_bar == 0 || beat_in_bar == 2) ? -1 : -3;
-    if (is_offbeat) base_offset += 2;  // Push offbeat kicks slightly forward
+    base_offset = (beat_in_bar == 0 || beat_in_bar == 2) ? profile_.kick_downbeat
+                                                          : profile_.kick_other;
+    if (is_offbeat) base_offset += profile_.kick_offbeat_push;
   } else if (note_number == kSnareNote) {
     // Snare: maximum layback on beat 4 for tension before downbeat
     // Moderate layback on beat 2, less on offbeats
     if (beat_in_bar == 3) {
-      base_offset = -8;  // Maximum layback on beat 4
+      base_offset = profile_.snare_beat4;
     } else if (beat_in_bar == 1) {
-      base_offset = -6;  // Backbeat layback
+      base_offset = profile_.snare_backbeat;
     } else {
-      base_offset = -4;  // Standard layback
+      base_offset = profile_.snare_standard;
     }
-    if (is_offbeat) base_offset = -3;  // Less layback on offbeat fills
+    if (is_offbeat) base_offset = profile_.snare_offbeat;
   } else if (note_number == kHiHatClosed || note_number == kHiHatOpen ||
              note_number == kHiHatFoot) {
     // Hi-hat: push ahead for driving feel, stronger on backbeats
     if (is_offbeat) {
       // Stronger push on offbeats (beat 2 and 4 offbeats)
-      base_offset = (beat_in_bar == 1 || beat_in_bar == 3) ? 15 : 12;
+      base_offset = (beat_in_bar == 1 || beat_in_bar == 3) ? profile_.hh_backbeat_off
+                                                            : profile_.hh_offbeat;
     } else {
-      base_offset = 8;  // Standard push on downbeats
+      base_offset = profile_.hh_downbeat;
     }
   }
 

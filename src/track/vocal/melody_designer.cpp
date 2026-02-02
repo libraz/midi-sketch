@@ -274,6 +274,8 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
   // Apply melodic embellishment (non-chord tones) if enabled
   if (ctx.enable_embellishment && !result.empty()) {
     EmbellishmentConfig emb_config = MelodicEmbellisher::getConfigForMood(ctx.mood);
+    // Scale NCT density for later occurrences (2nd chorus gets 1.2x, 3rd+ gets 1.4x)
+    emb_config.adjustForOccurrence(ctx.section_occurrence);
     result = MelodicEmbellisher::embellish(result, emb_config, harmony, ctx.key_offset, rng);
   }
 

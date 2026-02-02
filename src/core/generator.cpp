@@ -1430,8 +1430,9 @@ void Generator::applyHumanization() {
   // Pass sections for phrase-aware vocal timing (Start: +8, Middle: +4, End: 0)
   // drive_feel scales timing offsets: laid-back = reduced, aggressive = increased
   // vocal_style affects human timing physics (UltraVocaloid=mechanical, Human=natural)
+  DrumStyle drum_style = getMoodDrumStyle(params_.mood);
   PostProcessor::applyMicroTimingOffsets(song_.vocal(), song_.bass(), song_.drums(), &sections,
-                                          params_.drive_feel, params_.vocal_style);
+                                          params_.drive_feel, params_.vocal_style, drum_style);
 
   PostProcessor::fixVocalOverlaps(song_.vocal());
 }

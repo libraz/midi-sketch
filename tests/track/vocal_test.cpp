@@ -15,9 +15,11 @@
 #include "core/harmony_context.h"
 #include "core/harmony_coordinator.h"
 #include "core/i_track_base.h"
+#include "core/melody_embellishment.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
+#include "track/vocal/phrase_variation.h"
 
 namespace midisketch {
 namespace {
@@ -2550,6 +2552,182 @@ TEST_F(VocalTest, CleanAttitudeDoesNotGeneratePitchBends) {
   EXPECT_TRUE(vocal.pitchBendEvents().empty())
       << "Clean attitude should not generate pitch bends, but found "
       << vocal.pitchBendEvents().size();
+}
+
+// ============================================================================
+// Phase 2 P4: Occurrence-dependent phrase variation and embellishment density
+// ============================================================================
+
+TEST(PhraseVariationOccurrence, Occurrence1ProducesAbout80PercentExact) {
+  // First chorus occurrence: ~80% exact probability
+  int exact_count = 0;
+  constexpr int kTrials = 1000;
+
+  for (int seed = 0; seed < kTrials; ++seed) {
+    std::mt19937 rng(seed);
+    // reuse_count=1 so it's not the first-time establishment (reuse_count==0 always Exact)
+    PhraseVariation var = selectPhraseVariation(1, /*occurrence=*/1, rng);
+    if (var == PhraseVariation::Exact) {
+      exact_count++;
+    }
+  }
+
+  float exact_ratio = static_cast<float>(exact_count) / kTrials;
+  // 80% exact with tolerance of +/-8% for statistical variance
+  EXPECT_GT(exact_ratio, 0.72f)
+      << "Occurrence 1 should produce ~80% Exact, got " << exact_ratio;
+  EXPECT_LT(exact_ratio, 0.88f)
+      << "Occurrence 1 should produce ~80% Exact, got " << exact_ratio;
+}
+
+TEST(PhraseVariationOccurrence, Occurrence2ProducesAbout60PercentExact) {
+  // Second chorus occurrence: ~60% exact probability
+  int exact_count = 0;
+  constexpr int kTrials = 1000;
+
+  for (int seed = 0; seed < kTrials; ++seed) {
+    std::mt19937 rng(seed);
+    PhraseVariation var = selectPhraseVariation(1, /*occurrence=*/2, rng);
+    if (var == PhraseVariation::Exact) {
+      exact_count++;
+    }
+  }
+
+  float exact_ratio = static_cast<float>(exact_count) / kTrials;
+  // 60% exact with tolerance of +/-8%
+  EXPECT_GT(exact_ratio, 0.52f)
+      << "Occurrence 2 should produce ~60% Exact, got " << exact_ratio;
+  EXPECT_LT(exact_ratio, 0.68f)
+      << "Occurrence 2 should produce ~60% Exact, got " << exact_ratio;
+}
+
+TEST(PhraseVariationOccurrence, Occurrence3ProducesAbout30PercentExact) {
+  // Third (or later) chorus occurrence: ~30% exact probability
+  int exact_count = 0;
+  constexpr int kTrials = 1000;
+
+  for (int seed = 0; seed < kTrials; ++seed) {
+    std::mt19937 rng(seed);
+    PhraseVariation var = selectPhraseVariation(1, /*occurrence=*/3, rng);
+    if (var == PhraseVariation::Exact) {
+      exact_count++;
+    }
+  }
+
+  float exact_ratio = static_cast<float>(exact_count) / kTrials;
+  // 30% exact with tolerance of +/-8%
+  EXPECT_GT(exact_ratio, 0.22f)
+      << "Occurrence 3+ should produce ~30% Exact, got " << exact_ratio;
+  EXPECT_LT(exact_ratio, 0.38f)
+      << "Occurrence 3+ should produce ~30% Exact, got " << exact_ratio;
+}
+
+TEST(PhraseVariationOccurrence, ReuseCountZeroAlwaysExact) {
+  // reuse_count==0 should always return Exact regardless of occurrence
+  for (int occurrence = 1; occurrence <= 5; ++occurrence) {
+    for (int seed = 0; seed < 100; ++seed) {
+      std::mt19937 rng(seed);
+      PhraseVariation var = selectPhraseVariation(0, occurrence, rng);
+      EXPECT_EQ(var, PhraseVariation::Exact)
+          << "reuse_count=0 should always be Exact (occurrence=" << occurrence
+          << ", seed=" << seed << ")";
+    }
+  }
+}
+
+TEST(PhraseVariationOccurrence, HigherOccurrenceProducesMoreVariation) {
+  // Verify monotonic decrease in exact probability: occ1 > occ2 > occ3
+  constexpr int kTrials = 2000;
+  int exact_counts[3] = {0, 0, 0};
+
+  for (int seed = 0; seed < kTrials; ++seed) {
+    for (int occ = 1; occ <= 3; ++occ) {
+      std::mt19937 rng(seed);
+      PhraseVariation var = selectPhraseVariation(1, occ, rng);
+      if (var == PhraseVariation::Exact) {
+        exact_counts[occ - 1]++;
+      }
+    }
+  }
+
+  EXPECT_GT(exact_counts[0], exact_counts[1])
+      << "Occurrence 1 should have more Exact than occurrence 2";
+  EXPECT_GT(exact_counts[1], exact_counts[2])
+      << "Occurrence 2 should have more Exact than occurrence 3";
+}
+
+TEST(EmbellishmentOccurrenceScaling, NCTRatiosScaleWithOccurrence) {
+  // Test that adjustForOccurrence scales NCT ratios correctly
+  EmbellishmentConfig base_config;
+  base_config.chord_tone_ratio = 0.70f;
+  base_config.passing_tone_ratio = 0.12f;
+  base_config.neighbor_tone_ratio = 0.08f;
+  base_config.appoggiatura_ratio = 0.05f;
+  base_config.anticipation_ratio = 0.05f;
+  base_config.tension_ratio = 0.0f;
+
+  // Occurrence 1: no change
+  EmbellishmentConfig config1 = base_config;
+  config1.adjustForOccurrence(1);
+  EXPECT_FLOAT_EQ(config1.passing_tone_ratio, 0.12f);
+  EXPECT_FLOAT_EQ(config1.neighbor_tone_ratio, 0.08f);
+  EXPECT_FLOAT_EQ(config1.appoggiatura_ratio, 0.05f);
+  EXPECT_FLOAT_EQ(config1.anticipation_ratio, 0.05f);
+
+  // Occurrence 2: 1.2x multiplier
+  EmbellishmentConfig config2 = base_config;
+  config2.adjustForOccurrence(2);
+  EXPECT_NEAR(config2.passing_tone_ratio, 0.12f * 1.2f, 0.001f);
+  EXPECT_NEAR(config2.neighbor_tone_ratio, 0.08f * 1.2f, 0.001f);
+  EXPECT_NEAR(config2.appoggiatura_ratio, 0.05f * 1.2f, 0.001f);
+  EXPECT_NEAR(config2.anticipation_ratio, 0.05f * 1.2f, 0.001f);
+
+  // Occurrence 3+: 1.4x multiplier
+  EmbellishmentConfig config3 = base_config;
+  config3.adjustForOccurrence(3);
+  EXPECT_NEAR(config3.passing_tone_ratio, 0.12f * 1.4f, 0.001f);
+  EXPECT_NEAR(config3.neighbor_tone_ratio, 0.08f * 1.4f, 0.001f);
+  EXPECT_NEAR(config3.appoggiatura_ratio, 0.05f * 1.4f, 0.001f);
+  EXPECT_NEAR(config3.anticipation_ratio, 0.05f * 1.4f, 0.001f);
+}
+
+TEST(EmbellishmentOccurrenceScaling, ChordToneRatioAdjustedToMaintainSum) {
+  // chord_tone_ratio should be recomputed as complement of NCT ratios
+  EmbellishmentConfig config;
+  config.chord_tone_ratio = 0.70f;
+  config.passing_tone_ratio = 0.12f;
+  config.neighbor_tone_ratio = 0.08f;
+  config.appoggiatura_ratio = 0.05f;
+  config.anticipation_ratio = 0.05f;
+  config.tension_ratio = 0.0f;
+
+  config.adjustForOccurrence(2);
+
+  float total_nct = config.passing_tone_ratio + config.neighbor_tone_ratio +
+                    config.appoggiatura_ratio + config.anticipation_ratio;
+  float expected_ct = 1.0f - total_nct - config.tension_ratio;
+  EXPECT_NEAR(config.chord_tone_ratio, expected_ct, 0.001f);
+}
+
+TEST(EmbellishmentOccurrenceScaling, NCTClampsAt50Percent) {
+  // If NCT ratios are already high, clamp prevents chord_tone_ratio below 50%
+  EmbellishmentConfig config;
+  config.chord_tone_ratio = 0.50f;
+  config.passing_tone_ratio = 0.20f;
+  config.neighbor_tone_ratio = 0.15f;
+  config.appoggiatura_ratio = 0.10f;
+  config.anticipation_ratio = 0.05f;
+  config.tension_ratio = 0.0f;
+
+  config.adjustForOccurrence(3);  // 1.4x multiplier
+
+  float total_nct = config.passing_tone_ratio + config.neighbor_tone_ratio +
+                    config.appoggiatura_ratio + config.anticipation_ratio;
+  // Total NCT should be clamped at 0.5
+  EXPECT_LE(total_nct, 0.50f + 0.001f)
+      << "NCT total should be clamped at 50%, got " << total_nct;
+  EXPECT_GE(config.chord_tone_ratio, 0.49f)
+      << "Chord tone ratio should not go below ~50%";
 }
 
 }  // namespace

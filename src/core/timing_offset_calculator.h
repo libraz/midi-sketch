@@ -19,11 +19,35 @@
 #include <vector>
 
 #include "core/melody_types.h"
+#include "core/preset_data.h"  // for DrumStyle
 #include "core/section_types.h"
 #include "core/types.h"
 #include "core/velocity.h"  // for VocalPhysicsParams
 
 namespace midisketch {
+
+/// @brief Per-instrument timing offsets that define a drum groove profile.
+///
+/// Each DrumStyle maps to a unique set of offsets (in ticks) that shape the
+/// rhythmic feel. Positive values push the note ahead of the grid (driving),
+/// negative values pull the note behind the grid (laid-back / layback).
+struct DrumTimingProfile {
+  int kick_downbeat;      ///< Kick on beats 0, 2 (downbeats)
+  int kick_other;         ///< Kick on other beats
+  int kick_offbeat_push;  ///< Offbeat push adjustment added to kick offset
+  int snare_backbeat;     ///< Snare on beat 2 (backbeat)
+  int snare_beat4;        ///< Snare on beat 4 (maximum tension before downbeat)
+  int snare_standard;     ///< Snare default (not on beat 2 or 4)
+  int snare_offbeat;      ///< Snare on offbeat fills
+  int hh_downbeat;        ///< Hi-hat on downbeats
+  int hh_offbeat;         ///< Hi-hat on normal offbeats
+  int hh_backbeat_off;    ///< Hi-hat on beats 2/4 offbeats (strongest push)
+};
+
+/// @brief Get the drum timing profile for a given DrumStyle.
+/// @param style DrumStyle enum value
+/// @return Reference to the corresponding DrumTimingProfile
+const DrumTimingProfile& getDrumTimingProfile(DrumStyle style);
 
 // Forward declarations
 class MidiTrack;
@@ -53,10 +77,12 @@ class TimingOffsetCalculator {
   static constexpr uint8_t kHiHatFoot = 44;
   static constexpr int kBassBaseOffset = -4;
 
-  /// @brief Construct with drive feel and vocal style.
+  /// @brief Construct with drive feel, vocal style, and drum style.
   /// @param drive_feel Drive intensity (0-100)
   /// @param vocal_style Vocal style for physics parameters
-  TimingOffsetCalculator(uint8_t drive_feel, VocalStylePreset vocal_style);
+  /// @param drum_style Drum style for timing profile selection
+  TimingOffsetCalculator(uint8_t drive_feel, VocalStylePreset vocal_style,
+                         DrumStyle drum_style = DrumStyle::Standard);
 
   // ============================================================================
   // Drum Timing
@@ -142,6 +168,7 @@ class TimingOffsetCalculator {
  private:
   float timing_mult_;                   ///< Timing multiplier from drive feel
   VocalPhysicsParams physics_;          ///< Vocal physics parameters
+  const DrumTimingProfile& profile_;    ///< Drum timing profile for selected style
 
   /// @brief Get phrase position for a tick within sections.
   static PhrasePosition getPhrasePosition(Tick tick, const std::vector<Section>& sections);

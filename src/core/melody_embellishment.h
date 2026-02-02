@@ -151,6 +151,42 @@ struct EmbellishmentConfig {
     // Adjust chord_tone_ratio to maintain sum ~1.0
     chord_tone_ratio = 1.0f - new_total_nct - tension_ratio;
   }
+
+  /**
+   * @brief Scale NCT ratios based on section occurrence number.
+   *
+   * Later occurrences of the same section type (e.g., 2nd chorus, final chorus)
+   * get denser embellishment to add progressive variation and freshness.
+   * - occurrence 1: 1.0x (no change, establish baseline)
+   * - occurrence 2: 1.2x NCT density (subtle increase)
+   * - occurrence >= 3: 1.4x NCT density (noticeable variation)
+   *
+   * @param occurrence Which occurrence of this section type (1-based)
+   */
+  void adjustForOccurrence(int occurrence) {
+    if (occurrence <= 1) return;  // No scaling for first occurrence
+
+    float multiplier = (occurrence >= 3) ? 1.4f : 1.2f;
+
+    // Scale non-chord-tone ratios
+    float total_nct = passing_tone_ratio + neighbor_tone_ratio +
+                      appoggiatura_ratio + anticipation_ratio;
+    float new_total_nct = total_nct * multiplier;
+
+    // Clamp to prevent chord_tone_ratio from going below 50%
+    new_total_nct = std::min(new_total_nct, 0.5f);
+
+    if (total_nct > 0.0f) {
+      float scale = new_total_nct / total_nct;
+      passing_tone_ratio *= scale;
+      neighbor_tone_ratio *= scale;
+      appoggiatura_ratio *= scale;
+      anticipation_ratio *= scale;
+    }
+
+    // Adjust chord_tone_ratio to maintain sum ~1.0
+    chord_tone_ratio = 1.0f - new_total_nct - tension_ratio;
+  }
 };
 
 /**

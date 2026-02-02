@@ -56,17 +56,20 @@ constexpr int kVariationTypeCount = 8;
 constexpr int kMaxExactReuse = 2;
 
 /**
- * @brief Select phrase variation based on reuse count.
+ * @brief Select phrase variation based on reuse count and chorus occurrence.
  *
  * First occurrence returns Exact (establish the phrase).
- * Early repeats: 80% exact to reinforce, 20% variation for interest.
- * Later repeats: force variation to prevent monotony.
+ * Variation probability increases with occurrence number:
+ * - occurrence 1: 80% exact, 20% variation (establish theme)
+ * - occurrence 2: 60% exact, 40% variation (developing interest)
+ * - occurrence >= 3: 30% exact, 70% variation (maximum freshness)
  *
  * @param reuse_count How many times this phrase has been used before
+ * @param occurrence Which occurrence of this section type (1-based)
  * @param rng Random number generator
  * @return Selected variation type
  */
-PhraseVariation selectPhraseVariation(int reuse_count, std::mt19937& rng);
+PhraseVariation selectPhraseVariation(int reuse_count, int occurrence, std::mt19937& rng);
 
 /**
  * @brief Apply phrase variation to notes (ending changes, timing shifts, slurs).

@@ -174,14 +174,56 @@ TEST(MotifTransformTest, FragmentHandlesSingleInterval) {
 // Sequence Transform Tests
 // ============================================================================
 
-TEST(MotifTransformTest, SequencePreservesMotif) {
+TEST(MotifTransformTest, SequenceShiftsIntervals) {
   GlobalMotif source = createTestMotif();
-  GlobalMotif result = sequenceMotif(source, 3);
+  // Store original intervals
+  int8_t original[8];
+  for (uint8_t idx = 0; idx < source.interval_count; ++idx) {
+    original[idx] = source.interval_signature[idx];
+  }
 
-  // For GlobalMotif, sequence is a conceptual operation
-  // The interval signature represents relative motion, so it stays the same
+  int8_t shift = 3;
+  GlobalMotif result = sequenceMotif(source, shift);
+
+  // Interval count preserved
   EXPECT_EQ(result.interval_count, source.interval_count);
+  // Contour type preserved
   EXPECT_EQ(result.contour_type, source.contour_type);
+  // Rhythm preserved
+  for (uint8_t idx = 0; idx < source.rhythm_count; ++idx) {
+    EXPECT_EQ(result.rhythm_signature[idx], source.rhythm_signature[idx]);
+  }
+  // Intervals shifted by degree_shift
+  for (uint8_t idx = 0; idx < result.interval_count; ++idx) {
+    int16_t expected = std::clamp(
+        static_cast<int16_t>(original[idx] + shift),
+        static_cast<int16_t>(-12), static_cast<int16_t>(12));
+    EXPECT_EQ(result.interval_signature[idx], static_cast<int8_t>(expected));
+  }
+}
+
+TEST(MotifTransformTest, SequenceClampsToRange) {
+  GlobalMotif source;
+  source.interval_count = 3;
+  source.interval_signature[0] = 10;   // Near max
+  source.interval_signature[1] = -10;  // Near min
+  source.interval_signature[2] = 0;    // Neutral
+  source.contour_type = ContourType::Ascending;
+
+  GlobalMotif result = sequenceMotif(source, 5);
+
+  EXPECT_EQ(result.interval_signature[0], 12);   // Clamped to max
+  EXPECT_EQ(result.interval_signature[1], -5);    // -10 + 5 = -5
+  EXPECT_EQ(result.interval_signature[2], 5);     // 0 + 5 = 5
+}
+
+TEST(MotifTransformTest, SequenceZeroShiftIsIdentity) {
+  GlobalMotif source = createTestMotif();
+  GlobalMotif result = sequenceMotif(source, 0);
+
+  for (uint8_t idx = 0; idx < source.interval_count; ++idx) {
+    EXPECT_EQ(result.interval_signature[idx], source.interval_signature[idx]);
+  }
 }
 
 // ============================================================================

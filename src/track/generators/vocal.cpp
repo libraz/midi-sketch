@@ -494,8 +494,9 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
       // Cache hit: reuse cached phrase with timing adjustment and optional variation
       CachedPhrase& cached = cache_it->second;
 
-      // Select variation based on reuse count (80% Exact, 20% variation)
-      PhraseVariation variation = selectPhraseVariation(cached.reuse_count, rng);
+      // Select variation based on reuse count and occurrence
+      // (later choruses get progressively more variation)
+      PhraseVariation variation = selectPhraseVariation(cached.reuse_count, occurrence, rng);
       cached.reuse_count++;
 
       // Shift timing to current section start
@@ -550,6 +551,9 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
 
       // Vocal style for physics parameters (breath, timing, pitch bend)
       sctx.vocal_style = params.vocal_style;
+
+      // Occurrence count for occurrence-dependent embellishment density
+      sctx.section_occurrence = occurrence;
 
       // Apply blueprint constraints for melodic leap and stepwise preference
       if (params.blueprint_ref != nullptr) {

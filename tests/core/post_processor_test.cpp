@@ -8,10 +8,12 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include "core/midi_track.h"
 #include "core/note_source.h"
+#include "core/preset_data.h"
 #include "core/section_types.h"
 #include "core/types.h"
 #include "test_support/stub_harmony_context.h"
@@ -1644,6 +1646,182 @@ TEST_F(PerSectionDropStyleTest, MultipleSectionsWithDifferentDropStyles) {
   // B2 has Dramatic: drum notes should be removed
   EXPECT_EQ(drums_in_drop2, 0)
       << "Dramatic drop_style should truncate drum track";
+}
+
+// ============================================================================
+// Phase 2 P2: DrumStyle-based Timing Profile Tests
+// ============================================================================
+
+TEST(DrumTimingProfileTest, StandardProfileMatchesOriginalHardcoded) {
+  // The Standard profile must produce identical offsets to the original
+  // hardcoded values to avoid behavioral regression.
+  constexpr uint8_t HH = 42;
+  constexpr uint8_t SD = 38;
+  constexpr uint8_t BD = 36;
+
+  Tick start = TICKS_PER_BAR;  // Beat 0 (downbeat)
+
+  MidiTrack vocal, bass, drums;
+  drums.addNote(NoteEventBuilder::create(start, 60, HH, 80));
+  drums.addNote(NoteEventBuilder::create(start, 60, SD, 80));
+  drums.addNote(NoteEventBuilder::create(start, 60, BD, 80));
+
+  // Explicitly pass DrumStyle::Standard
+  PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, nullptr, 50,
+                                         VocalStylePreset::Standard, DrumStyle::Standard);
+
+  for (const auto& note : drums.notes()) {
+    if (note.note == HH) {
+      EXPECT_EQ(note.start_tick, start + 8)
+          << "Standard profile: HH downbeat should be +8";
+    } else if (note.note == SD) {
+      EXPECT_EQ(note.start_tick, start - 4)
+          << "Standard profile: snare on beat 0 should be -4";
+    } else if (note.note == BD) {
+      EXPECT_EQ(note.start_tick, start - 1)
+          << "Standard profile: kick on downbeat should be -1";
+    }
+  }
+}
+
+TEST(DrumTimingProfileTest, SparseProducesSmallerOffsetsThanStandard) {
+  // Sparse (Ballad) profile should have smaller absolute offsets for
+  // a more subtle, relaxed groove feel.
+  constexpr uint8_t HH = 42;
+  constexpr uint8_t SD = 38;
+  constexpr uint8_t BD = 36;
+
+  // Use beat 1 (backbeat) for snare comparison
+  Tick beat1 = TICKS_PER_BAR + TICKS_PER_BEAT;
+
+  // Standard profile
+  MidiTrack vocal_std, bass_std, drums_std;
+  drums_std.addNote(NoteEventBuilder::create(beat1, 60, HH, 80));
+  drums_std.addNote(NoteEventBuilder::create(beat1, 60, SD, 80));
+  drums_std.addNote(NoteEventBuilder::create(beat1, 60, BD, 80));
+  PostProcessor::applyMicroTimingOffsets(vocal_std, bass_std, drums_std, nullptr, 50,
+                                         VocalStylePreset::Standard, DrumStyle::Standard);
+
+  // Sparse profile
+  MidiTrack vocal_sparse, bass_sparse, drums_sparse;
+  drums_sparse.addNote(NoteEventBuilder::create(beat1, 60, HH, 80));
+  drums_sparse.addNote(NoteEventBuilder::create(beat1, 60, SD, 80));
+  drums_sparse.addNote(NoteEventBuilder::create(beat1, 60, BD, 80));
+  PostProcessor::applyMicroTimingOffsets(vocal_sparse, bass_sparse, drums_sparse, nullptr, 50,
+                                         VocalStylePreset::Standard, DrumStyle::Sparse);
+
+  // Compare absolute offsets: Sparse should be smaller
+  for (size_t idx = 0; idx < drums_std.notes().size(); ++idx) {
+    int std_offset = static_cast<int>(drums_std.notes()[idx].start_tick) - static_cast<int>(beat1);
+    int sparse_offset = static_cast<int>(drums_sparse.notes()[idx].start_tick) - static_cast<int>(beat1);
+    EXPECT_LE(std::abs(sparse_offset), std::abs(std_offset))
+        << "Sparse offset for note " << static_cast<int>(drums_sparse.notes()[idx].note)
+        << " should be <= Standard offset in magnitude";
+  }
+}
+
+TEST(DrumTimingProfileTest, SynthProducesNearZeroKickOffsets) {
+  // Synth profile should have near-zero kick offsets for precision feel.
+  constexpr uint8_t BD = 36;
+
+  Tick downbeat = TICKS_PER_BAR;  // Beat 0
+
+  MidiTrack vocal, bass, drums;
+  drums.addNote(NoteEventBuilder::create(downbeat, 60, BD, 80));
+  PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, nullptr, 50,
+                                         VocalStylePreset::Standard, DrumStyle::Synth);
+
+  int kick_offset = static_cast<int>(drums.notes()[0].start_tick) - static_cast<int>(downbeat);
+  EXPECT_EQ(kick_offset, 0)
+      << "Synth profile: kick on downbeat should have zero offset";
+}
+
+TEST(DrumTimingProfileTest, UpbeatProducesLargerHiHatPush) {
+  // Upbeat (Idol) profile should have larger hi-hat push for driving feel.
+  constexpr uint8_t HH = 42;
+
+  // Use offbeat position on beat 2 for strongest push comparison
+  Tick offbeat = TICKS_PER_BAR + TICKS_PER_BEAT + TICKS_PER_BEAT / 2;
+
+  // Standard profile
+  MidiTrack vocal_std, bass_std, drums_std;
+  drums_std.addNote(NoteEventBuilder::create(offbeat, 60, HH, 80));
+  PostProcessor::applyMicroTimingOffsets(vocal_std, bass_std, drums_std, nullptr, 50,
+                                         VocalStylePreset::Standard, DrumStyle::Standard);
+
+  // Upbeat profile
+  MidiTrack vocal_up, bass_up, drums_up;
+  drums_up.addNote(NoteEventBuilder::create(offbeat, 60, HH, 80));
+  PostProcessor::applyMicroTimingOffsets(vocal_up, bass_up, drums_up, nullptr, 50,
+                                         VocalStylePreset::Standard, DrumStyle::Upbeat);
+
+  int std_offset = static_cast<int>(drums_std.notes()[0].start_tick) - static_cast<int>(offbeat);
+  int up_offset = static_cast<int>(drums_up.notes()[0].start_tick) - static_cast<int>(offbeat);
+
+  EXPECT_GT(up_offset, std_offset)
+      << "Upbeat profile should have larger hi-hat push than Standard";
+}
+
+TEST(DrumTimingProfileTest, AllProfilesReturnValidProfiles) {
+  // Verify that all 8 DrumStyle values produce valid profiles without crash.
+  constexpr DrumStyle all_styles[] = {
+      DrumStyle::Sparse, DrumStyle::Standard, DrumStyle::FourOnFloor, DrumStyle::Upbeat,
+      DrumStyle::Rock,   DrumStyle::Synth,    DrumStyle::Trap,        DrumStyle::Latin,
+  };
+
+  constexpr uint8_t HH = 42;
+  constexpr uint8_t SD = 38;
+  constexpr uint8_t BD = 36;
+
+  for (auto style : all_styles) {
+    MidiTrack vocal, bass, drums;
+    Tick start = TICKS_PER_BAR;
+    drums.addNote(NoteEventBuilder::create(start, 60, HH, 80));
+    drums.addNote(NoteEventBuilder::create(start, 60, SD, 80));
+    drums.addNote(NoteEventBuilder::create(start, 60, BD, 80));
+
+    // Should not crash
+    PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, nullptr, 50,
+                                           VocalStylePreset::Standard, style);
+
+    // Verify notes still exist
+    EXPECT_EQ(drums.notes().size(), 3u)
+        << "All 3 drum notes should remain for style " << static_cast<int>(style);
+
+    // Verify tick values are reasonable (within +/-50 of original)
+    for (const auto& note : drums.notes()) {
+      int offset = static_cast<int>(note.start_tick) - static_cast<int>(start);
+      EXPECT_GE(offset, -50)
+          << "Offset too negative for style " << static_cast<int>(style);
+      EXPECT_LE(offset, 50)
+          << "Offset too positive for style " << static_cast<int>(style);
+    }
+  }
+}
+
+TEST(DrumTimingProfileTest, DriveFeelAppliesOnTopOfProfile) {
+  // Verify that drive_feel multiplier is applied on top of profile values.
+  constexpr uint8_t HH = 42;
+  Tick start = TICKS_PER_BAR;
+
+  // Sparse profile with aggressive drive (1.5x)
+  MidiTrack vocal_agg, bass_agg, drums_agg;
+  drums_agg.addNote(NoteEventBuilder::create(start, 60, HH, 80));
+  PostProcessor::applyMicroTimingOffsets(vocal_agg, bass_agg, drums_agg, nullptr, 100,
+                                         VocalStylePreset::Standard, DrumStyle::Sparse);
+
+  // Sparse profile with laid-back drive (0.5x)
+  MidiTrack vocal_laid, bass_laid, drums_laid;
+  drums_laid.addNote(NoteEventBuilder::create(start, 60, HH, 80));
+  PostProcessor::applyMicroTimingOffsets(vocal_laid, bass_laid, drums_laid, nullptr, 0,
+                                         VocalStylePreset::Standard, DrumStyle::Sparse);
+
+  int agg_offset = static_cast<int>(drums_agg.notes()[0].start_tick) - static_cast<int>(start);
+  int laid_offset = static_cast<int>(drums_laid.notes()[0].start_tick) - static_cast<int>(start);
+
+  // Aggressive drive should produce larger absolute offsets than laid-back
+  EXPECT_GT(agg_offset, laid_offset)
+      << "Aggressive drive should amplify Sparse hi-hat push more than laid-back";
 }
 
 }  // namespace

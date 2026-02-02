@@ -11,18 +11,30 @@
 
 namespace midisketch {
 
-PhraseVariation selectPhraseVariation(int reuse_count, std::mt19937& rng) {
-  // First occurrence: establish the phrase exactly
+PhraseVariation selectPhraseVariation(int reuse_count, int occurrence, std::mt19937& rng) {
+  // First time seeing this phrase: establish it exactly
   if (reuse_count == 0) return PhraseVariation::Exact;
+
+  // Determine exact-repeat probability based on chorus occurrence number.
+  // Later occurrences get progressively more variation to maintain interest:
+  // - occurrence 1: 80% exact (establish the theme)
+  // - occurrence 2: 60% exact (developing interest)
+  // - occurrence >= 3: 30% exact (maximum freshness for final chorus)
+  float exact_probability = 0.8f;
+  if (occurrence >= 3) {
+    exact_probability = 0.3f;
+  } else if (occurrence == 2) {
+    exact_probability = 0.6f;
+  }
 
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
-  // Early repeats: 80% exact to reinforce, 20% variation for interest
-  if (reuse_count <= kMaxExactReuse && dist(rng) < 0.8f) {
+  // Roll for exact vs variation (kMaxExactReuse still applies for reuse_count==0 above)
+  if (reuse_count <= kMaxExactReuse && dist(rng) < exact_probability) {
     return PhraseVariation::Exact;
   }
 
-  // Later repeats: select from safe variations only.
+  // Select from safe variations only.
   // Exclude: TailSwap (direction destruction), SlightRush (wrong beat emphasis),
   // MicroRhythmChange (too random), SlurMerge (articulation loss),
   // RepeatNoteSimplify (rhythm motif destruction).

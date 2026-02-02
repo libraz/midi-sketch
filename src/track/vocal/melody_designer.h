@@ -98,6 +98,9 @@ class MelodyDesigner {
     // Creates song-wide melodic unity by echoing chorus motif in verses
     bool enforce_motif_fragments = false;  ///< Enable motif fragment injection
 
+    // Occurrence count for occurrence-dependent embellishment density
+    int section_occurrence = 1;  ///< Which occurrence of this section type (1-based)
+
     // ========================================================================
     // Task 5-2: Internal 4-Stage Structure within Section
     // ========================================================================

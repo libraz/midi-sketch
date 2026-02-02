@@ -114,21 +114,16 @@ GlobalMotif fragmentMotif(const GlobalMotif& source) {
 GlobalMotif sequenceMotif(const GlobalMotif& source, int8_t degree_shift) {
   GlobalMotif result = source;
 
-  // Add degree_shift to all intervals
-  // Note: This is a conceptual shift - in practice, the absolute pitch
-  // depends on the starting note, which is not stored in GlobalMotif
-  // This primarily affects how the evaluator compares candidates
-
-  // For interval-based comparison, we can adjust the contour type
-  // if the shift is significant
-  if (std::abs(degree_shift) >= 5) {
-    // Large shift may change perceived contour
-    // but we keep intervals relative
+  // Apply degree_shift to all intervals in the signature.
+  // This creates a melodic sequence: same contour pattern with
+  // wider or narrower intervals, preserving rhythm and contour type.
+  for (uint8_t idx = 0; idx < result.interval_count && idx < 8; ++idx) {
+    int16_t shifted =
+        static_cast<int16_t>(result.interval_signature[idx]) + degree_shift;
+    result.interval_signature[idx] = static_cast<int8_t>(
+        std::clamp(shifted, static_cast<int16_t>(-12),
+                   static_cast<int16_t>(12)));
   }
-
-  // The interval signature itself represents relative movement,
-  // so it stays the same - the sequence shift is applied at the
-  // candidate evaluation level
 
   return result;
 }

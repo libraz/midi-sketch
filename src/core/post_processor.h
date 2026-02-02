@@ -11,6 +11,7 @@
 
 #include "core/melody_types.h"
 #include "core/midi_track.h"
+#include "core/preset_data.h"  // for DrumStyle
 #include "core/section_types.h"
 #include "core/types.h"
 
@@ -76,7 +77,8 @@ class PostProcessor {
   static void applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass, MidiTrack& drum_track,
                                        const std::vector<Section>* sections = nullptr,
                                        uint8_t drive_feel = 50,
-                                       VocalStylePreset vocal_style = VocalStylePreset::Standard);
+                                       VocalStylePreset vocal_style = VocalStylePreset::Standard,
+                                       DrumStyle drum_style = DrumStyle::Standard);
 
   // Fixes vocal overlaps that may be introduced by humanization.
   // Singers can only sing one note at a time.

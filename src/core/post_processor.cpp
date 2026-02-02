@@ -147,10 +147,11 @@ void PostProcessor::applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass,
                                              MidiTrack& drum_track,
                                              const std::vector<Section>* sections,
                                              uint8_t drive_feel,
-                                             VocalStylePreset vocal_style) {
+                                             VocalStylePreset vocal_style,
+                                             DrumStyle drum_style) {
   // Use TimingOffsetCalculator for clearer code structure and traceability.
   // The calculator encapsulates all timing logic previously in inline lambdas.
-  TimingOffsetCalculator calculator(drive_feel, vocal_style);
+  TimingOffsetCalculator calculator(drive_feel, vocal_style, drum_style);
 
   // Apply drum timing (beat-position-aware offsets)
   calculator.applyDrumOffsets(drum_track);

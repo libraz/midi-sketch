@@ -847,6 +847,31 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         }
 
         prev_voicing = next_voicing;
+      } else if (isSusExtension(extension) && !tritone_substituted) {
+        // === SUS4/SUS2 WITHIN-BAR RESOLUTION ===
+        // Split the bar into two halves: first half plays sus voicing,
+        // second half resolves to the natural triad. This creates a
+        // satisfying suspension-resolution effect within a single bar.
+        uint8_t vel = calculateVelocity(section.type, 0, params.mood);
+        uint8_t vel_resolve = static_cast<uint8_t>(vel * 0.9f);
+
+        // First half: sus voicing (already computed)
+        for (size_t idx = 0; idx < voicing.count; ++idx) {
+          addSafeChordNote(track, harmony, bar_start, HALF, voicing.pitches[idx], vel);
+        }
+
+        // Second half: resolved triad (no extension)
+        Chord resolved_chord = getExtendedChord(degree, ChordExtension::None);
+        VoicedChord resolved_voicing = chord_voicing::selectVoicing(
+            root, resolved_chord, voicing, true, voicing_type, bass_pitch_mask,
+            rng, open_subtype, params.mood);
+
+        for (size_t idx = 0; idx < resolved_voicing.count; ++idx) {
+          addSafeChordNote(track, harmony, bar_start + HALF, HALF,
+                           resolved_voicing.pitches[idx], vel_resolve);
+        }
+
+        prev_voicing = resolved_voicing;
       } else {
         // Normal chord generation for this bar
         generateChordBar(track, bar_start, voicing, rhythm, section.type, params.mood, harmony);
@@ -1410,6 +1435,38 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         }
 
         prev_voicing = next_voicing;
+      } else if (isSusExtension(extension) && !tritone_substituted) {
+        // === SUS4/SUS2 WITHIN-BAR RESOLUTION ===
+        // Split the bar: first half sus voicing, second half resolved triad.
+        uint8_t vel = calculateVelocity(section.type, 0, params.mood);
+        uint8_t vel_resolve = static_cast<uint8_t>(vel * 0.9f);
+        ChordVoicingState state;
+
+        // First half: sus voicing (already computed)
+        state.reset(bar_start);
+        for (size_t idx = 0; idx < voicing.count; ++idx) {
+          addChordNoteWithState(track, harmony, bar_start, HALF,
+                                voicing.pitches[idx], vel, state);
+        }
+
+        // Second half: resolved triad (no extension)
+        Chord resolved_chord = getExtendedChord(degree, ChordExtension::None);
+        auto resolved_candidates = chord_voicing::generateVoicings(
+            root, resolved_chord, voicing_type, bass_pitch_mask, open_subtype);
+        VoicedChord resolved_voicing =
+            resolved_candidates.empty()
+                ? chord_voicing::selectVoicing(root, resolved_chord, voicing, true,
+                                               voicing_type, bass_pitch_mask, rng,
+                                               open_subtype, params.mood)
+                : resolved_candidates[0];
+
+        state.reset(bar_start + HALF);
+        for (size_t idx = 0; idx < resolved_voicing.count; ++idx) {
+          addChordNoteWithState(track, harmony, bar_start + HALF, HALF,
+                                resolved_voicing.pitches[idx], vel_resolve, state);
+        }
+
+        prev_voicing = resolved_voicing;
       } else {
         // Normal chord generation
         generateChordBar(track, bar_start, voicing, rhythm, section.type, params.mood, harmony);
