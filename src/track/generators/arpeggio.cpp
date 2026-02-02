@@ -435,25 +435,10 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
             note_pos += swing_offset;
           }
 
-          // Calculate effective duration, clamping to chord change boundary
-          // This prevents arpeggio notes from clashing with next chord's notes
-          Tick effective_duration = section_gated_duration;
-          Tick next_chord_tick = harmony->getNextChordChangeTick(note_pos);
-          if (next_chord_tick > 0 && note_pos + effective_duration > next_chord_tick) {
-            // Clamp duration to end at chord change, with small gap for clean transition
-            constexpr Tick kChordGap = 30;  // Small gap before chord change
-            Tick max_duration = next_chord_tick - note_pos;
-            if (max_duration > kChordGap) {
-              effective_duration = max_duration - kChordGap;
-            } else {
-              effective_duration = max_duration > 0 ? max_duration : section_gated_duration;
-            }
-          }
-
           // Use createNoteAndAdd for safe note creation with registration
           NoteOptions opts;
           opts.start = note_pos;
-          opts.duration = effective_duration;
+          opts.duration = section_gated_duration;
           opts.desired_pitch = note;
           opts.velocity = velocity;
           opts.role = TrackRole::Arpeggio;
@@ -461,6 +446,7 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
           opts.range_low = 48;   // C3 (from PhysicalModels::kArpeggioSynth)
           opts.range_high = 108; // C8
           opts.source = NoteSource::Arpeggio;
+          opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
 
           createNoteAndAdd(track, *harmony, opts);
         }

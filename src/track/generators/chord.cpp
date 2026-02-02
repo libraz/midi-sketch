@@ -124,6 +124,7 @@ void addSafeChordNote(MidiTrack& track, IHarmonyContext& harmony, Tick start, Ti
   opts.range_low = CHORD_LOW;
   opts.range_high = CHORD_HIGH;
   opts.source = NoteSource::ChordVoicing;
+  opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
   createNoteAndAdd(track, harmony, opts);
 }
 

@@ -64,6 +64,11 @@ class StubHarmonyContext : public IHarmonyCoordinator {
 
   Tick getNextChordChangeTick(Tick /*after*/) const override { return next_chord_change_; }
 
+  ChordBoundaryInfo analyzeChordBoundary(uint8_t /*pitch*/, Tick /*start*/,
+                                          Tick /*duration*/) const override {
+    return chord_boundary_info_;
+  }
+
   void clearNotes() override {
     registered_note_count_ = 0;
     ++clear_count_;
@@ -120,6 +125,7 @@ class StubHarmonyContext : public IHarmonyCoordinator {
   // Configuration for sounding pitch classes and pitches
   void setSoundingPitchClasses(std::vector<int> pcs) { sounding_pitch_classes_ = std::move(pcs); }
   void setSoundingPitches(std::vector<uint8_t> pitches) { sounding_pitches_ = std::move(pitches); }
+  void setChordBoundaryInfo(ChordBoundaryInfo info) { chord_boundary_info_ = info; }
 
   // =========================================================================
   // IHarmonyCoordinator implementation (stub)
@@ -186,6 +192,7 @@ class StubHarmonyContext : public IHarmonyCoordinator {
   std::vector<uint8_t> sounding_pitches_;     // Configured sounding pitches
   bool all_pitches_safe_ = true;
   Tick next_chord_change_ = 0;
+  ChordBoundaryInfo chord_boundary_info_;
   bool initialized_ = false;
   int registered_note_count_ = 0;
   int registered_track_count_ = 0;

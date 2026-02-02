@@ -70,13 +70,19 @@ NoteEvent buildNoteEvent(const IHarmonyContext& harmony, Tick start, Tick durati
 }
 
 // Rank candidates based on preference
-void rankCandidates(std::vector<PitchCandidate>& candidates, PitchPreference preference) {
+void rankCandidates(std::vector<PitchCandidate>& candidates, PitchPreference preference,
+                    bool consider_boundary = false) {
   std::stable_sort(candidates.begin(), candidates.end(),
-    [preference](const PitchCandidate& a, const PitchCandidate& b) {
+    [preference, consider_boundary](const PitchCandidate& a, const PitchCandidate& b) {
       // Primary: prefer pitches that didn't need resolution
       if (a.strategy != b.strategy) {
         if (a.strategy == CollisionAvoidStrategy::None) return true;
         if (b.strategy == CollisionAvoidStrategy::None) return false;
+      }
+
+      // Cross-boundary safety (when chord boundary policy is active)
+      if (consider_boundary && a.is_safe_across_boundary != b.is_safe_across_boundary) {
+        return a.is_safe_across_boundary;
       }
 
       // Secondary: preference-specific ranking
@@ -108,6 +114,9 @@ void rankCandidates(std::vector<PitchCandidate>& candidates, PitchPreference pre
     });
 }
 
+// Overlap threshold below which crossing a boundary is treated as a passing tone
+constexpr Tick kPassingToneThreshold = 240;  // 8th note
+
 }  // namespace
 
 // ============================================================================
@@ -129,21 +138,66 @@ std::optional<NoteEvent> createNoteAndAdd(MidiTrack& track, IHarmonyContext& har
 
 CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOptions& opts) {
   CreateNoteResult result;
+  result.original_duration = opts.duration;
 
   // Determine the true original pitch (pre-adjustment)
   uint8_t true_original = (opts.original_pitch != 0) ? opts.original_pitch : opts.desired_pitch;
 
+  // Working duration (may be shortened by chord boundary processing)
+  Tick effective_duration = opts.duration;
+
+  // Chord boundary processing (before collision check)
+  ChordBoundaryInfo boundary_info;
+  bool boundary_active = (opts.chord_boundary != ChordBoundaryPolicy::None);
+
+  if (boundary_active) {
+    boundary_info = harmony.analyzeChordBoundary(opts.desired_pitch, opts.start, opts.duration);
+
+    // Only process if there's a boundary crossing with significant overlap
+    if (boundary_info.boundary_tick > 0 && boundary_info.overlap_ticks >= kPassingToneThreshold) {
+      switch (opts.chord_boundary) {
+        case ChordBoundaryPolicy::ClipAtBoundary:
+          // Always clip at boundary
+          effective_duration = boundary_info.safe_duration;
+          result.was_chord_clipped = true;
+          break;
+
+        case ChordBoundaryPolicy::ClipIfUnsafe:
+          // Clip only for NonChordTone or AvoidNote
+          if (boundary_info.safety == CrossBoundarySafety::NonChordTone ||
+              boundary_info.safety == CrossBoundarySafety::AvoidNote) {
+            effective_duration = boundary_info.safe_duration;
+            result.was_chord_clipped = true;
+          }
+          break;
+
+        case ChordBoundaryPolicy::PreferSafe:
+          // Don't clip yet - will be used in candidate ranking
+          // Only clip as fallback after candidate selection
+          break;
+
+        case ChordBoundaryPolicy::None:
+          break;
+      }
+    }
+  }
+
   // NoCollisionCheck: skip safety check, just create the note
   if (opts.preference == PitchPreference::NoCollisionCheck) {
-    NoteEvent event = buildNoteEvent(harmony, opts.start, opts.duration,
+    NoteEvent event = buildNoteEvent(harmony, opts.start, effective_duration,
                                       opts.desired_pitch, opts.velocity,
                                       opts.source, opts.record_provenance, true_original);
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-    // Record pre-collision adjustment if original != desired
     if (opts.record_provenance && true_original != opts.desired_pitch) {
       event.addTransformStep(TransformStepType::MotionAdjust, true_original,
                              opts.desired_pitch, 0, 0);
+    }
+    if (result.was_chord_clipped && opts.record_provenance) {
+      event.addTransformStep(TransformStepType::ChordBoundaryClip,
+                             static_cast<uint8_t>(opts.duration > 255 ? 255 : opts.duration),
+                             static_cast<uint8_t>(effective_duration > 255 ? 255 : effective_duration),
+                             boundary_info.next_degree, 0);
     }
 #endif
 
@@ -153,24 +207,39 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
     result.was_adjusted = (true_original != opts.desired_pitch);
 
     if (opts.register_to_harmony) {
-      harmony.registerNote(opts.start, opts.duration, opts.desired_pitch, opts.role);
+      harmony.registerNote(opts.start, effective_duration, opts.desired_pitch, opts.role);
       result.was_registered = true;
     }
     return result;
   }
 
-  // Check if desired pitch is safe
-  bool is_safe = harmony.isPitchSafe(opts.desired_pitch, opts.start, opts.duration, opts.role);
+  // Check if desired pitch is safe (with effective duration)
+  bool is_safe = harmony.isPitchSafe(opts.desired_pitch, opts.start, effective_duration, opts.role);
   if (is_safe) {
-    NoteEvent event = buildNoteEvent(harmony, opts.start, opts.duration,
+    // For PreferSafe: check if this pitch needs boundary clip
+    if (opts.chord_boundary == ChordBoundaryPolicy::PreferSafe &&
+        boundary_info.boundary_tick > 0 && boundary_info.overlap_ticks >= kPassingToneThreshold &&
+        (boundary_info.safety == CrossBoundarySafety::NonChordTone ||
+         boundary_info.safety == CrossBoundarySafety::AvoidNote)) {
+      // Pitch is collision-safe but not boundary-safe: clip as fallback
+      effective_duration = boundary_info.safe_duration;
+      result.was_chord_clipped = true;
+    }
+
+    NoteEvent event = buildNoteEvent(harmony, opts.start, effective_duration,
                                       opts.desired_pitch, opts.velocity,
                                       opts.source, opts.record_provenance, true_original);
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-    // Record pre-collision adjustment if original != desired
     if (opts.record_provenance && true_original != opts.desired_pitch) {
       event.addTransformStep(TransformStepType::MotionAdjust, true_original,
                              opts.desired_pitch, 0, 0);
+    }
+    if (result.was_chord_clipped && opts.record_provenance) {
+      event.addTransformStep(TransformStepType::ChordBoundaryClip,
+                             static_cast<uint8_t>(opts.duration > 255 ? 255 : opts.duration),
+                             static_cast<uint8_t>(effective_duration > 255 ? 255 : effective_duration),
+                             boundary_info.next_degree, 0);
     }
 #endif
 
@@ -180,7 +249,7 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
     result.was_adjusted = (true_original != opts.desired_pitch);
 
     if (opts.register_to_harmony) {
-      harmony.registerNote(opts.start, opts.duration, opts.desired_pitch, opts.role);
+      harmony.registerNote(opts.start, effective_duration, opts.desired_pitch, opts.role);
       result.was_registered = true;
     }
     return result;
@@ -193,25 +262,46 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
   }
 
   // Get candidates and select the best one
+  bool consider_boundary = (opts.chord_boundary == ChordBoundaryPolicy::PreferSafe &&
+                            boundary_info.boundary_tick > 0 &&
+                            boundary_info.overlap_ticks >= kPassingToneThreshold);
+
   auto candidates = getSafePitchCandidates(harmony, opts.desired_pitch, opts.start,
-                                            opts.duration, opts.role, opts.range_low,
+                                            effective_duration, opts.role, opts.range_low,
                                             opts.range_high, opts.preference, 5);
+
+  // Annotate candidates with cross-boundary safety for PreferSafe
+  if (consider_boundary && !candidates.empty()) {
+    for (auto& c : candidates) {
+      auto c_boundary = harmony.analyzeChordBoundary(c.pitch, opts.start, opts.duration);
+      c.cross_boundary_safety = c_boundary.safety;
+      c.is_safe_across_boundary = (c_boundary.safety == CrossBoundarySafety::NoBoundary ||
+                                    c_boundary.safety == CrossBoundarySafety::ChordTone ||
+                                    c_boundary.safety == CrossBoundarySafety::Tension);
+    }
+    // Re-rank with boundary awareness
+    rankCandidates(candidates, opts.preference, true);
+  }
 
   if (candidates.empty()) {
     // No safe pitch found - use original as last resort
-    NoteEvent event = buildNoteEvent(harmony, opts.start, opts.duration,
+    NoteEvent event = buildNoteEvent(harmony, opts.start, effective_duration,
                                       opts.desired_pitch, opts.velocity,
                                       opts.source, opts.record_provenance, true_original);
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-    // Record pre-collision adjustment if original != desired
     if (opts.record_provenance && true_original != opts.desired_pitch) {
       event.addTransformStep(TransformStepType::MotionAdjust, true_original,
                              opts.desired_pitch, 0, 0);
     }
-    // Record that collision resolution failed
     event.addTransformStep(TransformStepType::CollisionAvoid, opts.desired_pitch,
                            opts.desired_pitch, 0, 0);
+    if (result.was_chord_clipped && opts.record_provenance) {
+      event.addTransformStep(TransformStepType::ChordBoundaryClip,
+                             static_cast<uint8_t>(opts.duration > 255 ? 255 : opts.duration),
+                             static_cast<uint8_t>(effective_duration > 255 ? 255 : effective_duration),
+                             boundary_info.next_degree, 0);
+    }
 #endif
 
     result.note = event;
@@ -220,7 +310,7 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
     result.was_adjusted = (true_original != opts.desired_pitch);
 
     if (opts.register_to_harmony) {
-      harmony.registerNote(opts.start, opts.duration, opts.desired_pitch, opts.role);
+      harmony.registerNote(opts.start, effective_duration, opts.desired_pitch, opts.role);
       result.was_registered = true;
     }
     return result;
@@ -228,21 +318,37 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
 
   // Use best candidate
   const PitchCandidate& best = candidates[0];
-  NoteEvent event = buildNoteEvent(harmony, opts.start, opts.duration,
+
+  // For PreferSafe: if best candidate is boundary-safe, use original duration
+  Tick final_duration = effective_duration;
+  if (opts.chord_boundary == ChordBoundaryPolicy::PreferSafe && best.is_safe_across_boundary) {
+    final_duration = opts.duration;
+    result.was_chord_clipped = false;  // Safe pitch found, no clip needed
+  } else if (opts.chord_boundary == ChordBoundaryPolicy::PreferSafe && !best.is_safe_across_boundary) {
+    // Fallback: clip duration for boundary-unsafe candidate
+    final_duration = boundary_info.safe_duration;
+    result.was_chord_clipped = true;
+  }
+
+  NoteEvent event = buildNoteEvent(harmony, opts.start, final_duration,
                                     best.pitch, opts.velocity,
                                     opts.source, opts.record_provenance, true_original);
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
   if (opts.record_provenance) {
-    // Record pre-collision adjustment if original != desired
     if (true_original != opts.desired_pitch) {
       event.addTransformStep(TransformStepType::MotionAdjust, true_original,
                              opts.desired_pitch, 0, 0);
     }
-    // Record collision avoidance if pitch changed
     if (best.pitch != opts.desired_pitch) {
       event.addTransformStep(TransformStepType::CollisionAvoid, opts.desired_pitch,
                              best.pitch, static_cast<int8_t>(best.colliding_pitch), 0);
+    }
+    if (result.was_chord_clipped) {
+      event.addTransformStep(TransformStepType::ChordBoundaryClip,
+                             static_cast<uint8_t>(opts.duration > 255 ? 255 : opts.duration),
+                             static_cast<uint8_t>(final_duration > 255 ? 255 : final_duration),
+                             boundary_info.next_degree, 0);
     }
   }
 #endif
@@ -253,7 +359,7 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
   result.was_adjusted = (best.pitch != true_original);
 
   if (opts.register_to_harmony) {
-    harmony.registerNote(opts.start, opts.duration, best.pitch, opts.role);
+    harmony.registerNote(opts.start, final_duration, best.pitch, opts.role);
     result.was_registered = true;
   }
 

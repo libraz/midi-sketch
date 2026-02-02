@@ -387,9 +387,6 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
   // Future enhancement: Make this configurable per style (pop=9, rock=12, ballad=7)
   constexpr int MAX_VOCAL_INTERVAL = 9;
 
-  // Minimum gap before chord change to allow articulation
-  constexpr Tick kChordChangeGap = 10;
-
   for (size_t i = 0; i < notes.size(); ++i) {
     auto& note = notes[i];
 
@@ -424,36 +421,6 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
       note.addTransformStep(TransformStepType::ChordToneSnap, old_pitch, note.note, 0, 0);
     }
 #endif
-
-    // CRITICAL: Clamp duration to not sustain over chord changes
-    // If note extends past chord change and becomes non-chord-tone, trim it
-    Tick chord_change = harmony.getNextChordChangeTick(note.start_tick);
-    if (chord_change > 0 && chord_change > note.start_tick) {
-      Tick note_end = note.start_tick + note.duration;
-      if (note_end > chord_change) {
-        // Note extends past chord change - check if still a chord tone
-        int8_t new_chord_degree = harmony.getChordDegreeAt(chord_change);
-        auto new_chord_tones = getChordTonePitchClasses(new_chord_degree);
-        int pitch_class = note.note % 12;
-        bool is_chord_tone_after_change = false;
-        for (int ct : new_chord_tones) {
-          if (ct == pitch_class) {
-            is_chord_tone_after_change = true;
-            break;
-          }
-        }
-        if (!is_chord_tone_after_change) {
-          // Trim note to end before chord change
-          Tick time_to_chord = chord_change - note.start_tick;
-          if (time_to_chord > kChordChangeGap) {
-            Tick new_duration = time_to_chord - kChordChangeGap;
-            if (new_duration >= TICK_SIXTEENTH) {
-              note.duration = new_duration;
-            }
-          }
-        }
-      }
-    }
 
     // Re-enforce interval constraint (getBestAvailablePitch may have expanded interval)
     if (i > 0) {

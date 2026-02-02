@@ -61,37 +61,11 @@ Tick applyGateRatio(Tick duration, const GateContext& ctx, Tick min_duration) {
   return std::max(gated, min_duration);
 }
 
-Tick clampToChordBoundary(Tick note_start, Tick note_duration, const IHarmonyContext& harmony,
-                          Tick gap_ticks, Tick min_duration) {
-  if (min_duration == 0) {
-    min_duration = TICK_SIXTEENTH;
-  }
-
-  Tick chord_change = harmony.getNextChordChangeTick(note_start);
-
-  // No chord change, or note doesn't extend past it
-  if (chord_change == 0 || chord_change <= note_start) {
-    return note_duration;
-  }
-
-  Tick note_end = note_start + note_duration;
-  if (note_end <= chord_change) {
-    return note_duration;
-  }
-
-  // Note extends past chord change - clamp it
-  // Guard against underflow: if not enough room for gap, keep original duration
-  // (matching original behavior: allow chord overlap rather than force minimum)
-  if (chord_change <= note_start + gap_ticks) {
-    return note_duration;
-  }
-
-  Tick new_duration = chord_change - note_start - gap_ticks;
-  // Only clamp if result is long enough; otherwise keep original
-  // (matching original behavior in melody_designer.cpp)
-  if (new_duration >= min_duration) {
-    return new_duration;
-  }
+Tick clampToChordBoundary(Tick /*note_start*/, Tick note_duration,
+                          const IHarmonyContext& /*harmony*/, Tick /*gap_ticks*/,
+                          Tick /*min_duration*/) {
+  // Chord boundary handling is now done in createNoteAndAdd() pipeline
+  // via ChordBoundaryPolicy. This function is kept for API compatibility.
   return note_duration;
 }
 

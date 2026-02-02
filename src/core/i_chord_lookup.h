@@ -9,6 +9,7 @@
 #ifndef MIDISKETCH_CORE_I_CHORD_LOOKUP_H
 #define MIDISKETCH_CORE_I_CHORD_LOOKUP_H
 
+#include <algorithm>
 #include <vector>
 
 #include "core/basic_types.h"
@@ -46,6 +47,55 @@ class IChordLookup {
    * @return Tick of next chord change, or 0 if none found
    */
   virtual Tick getNextChordChangeTick(Tick after) const = 0;
+
+  /**
+   * @brief Analyze how a note interacts with the next chord boundary.
+   *
+   * Determines whether the note crosses a chord change and classifies
+   * the pitch's safety in the next chord (ChordTone, Tension, NonChordTone, AvoidNote).
+   *
+   * @param pitch MIDI pitch (0-127)
+   * @param start Note start tick
+   * @param duration Note duration in ticks
+   * @return ChordBoundaryInfo with boundary position and safety classification
+   */
+  virtual ChordBoundaryInfo analyzeChordBoundary(uint8_t pitch, Tick start, Tick duration) const {
+    ChordBoundaryInfo info;
+    Tick note_end = start + duration;
+    Tick boundary = getNextChordChangeTick(start);
+
+    if (boundary == 0 || boundary >= note_end) {
+      // No boundary crossing
+      info.safe_duration = duration;
+      return info;
+    }
+
+    info.boundary_tick = boundary;
+    info.overlap_ticks = note_end - boundary;
+    info.next_degree = getChordDegreeAt(boundary);
+
+    // Classify pitch safety in the next chord
+    auto next_chord_tones = getChordTonesAt(boundary);
+    int pc = pitch % 12;
+    bool is_chord_tone = std::find(next_chord_tones.begin(), next_chord_tones.end(), pc)
+                         != next_chord_tones.end();
+
+    if (is_chord_tone) {
+      info.safety = CrossBoundarySafety::ChordTone;
+    } else {
+      info.safety = CrossBoundarySafety::NonChordTone;
+    }
+
+    // Safe duration: clip to boundary with small gap
+    constexpr Tick kBoundaryGap = 10;
+    if (boundary > start + kBoundaryGap) {
+      info.safe_duration = boundary - start - kBoundaryGap;
+    } else {
+      info.safe_duration = duration;  // Too close to start, don't clip
+    }
+
+    return info;
+  }
 };
 
 }  // namespace midisketch

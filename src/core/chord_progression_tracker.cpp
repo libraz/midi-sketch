@@ -112,6 +112,58 @@ std::vector<int> ChordProgressionTracker::getChordTonesAt(Tick tick) const {
   return getChordTonePitchClasses(degree);
 }
 
+ChordBoundaryInfo ChordProgressionTracker::analyzeChordBoundary(uint8_t pitch, Tick start,
+                                                                 Tick duration) const {
+  ChordBoundaryInfo info;
+  Tick note_end = start + duration;
+  Tick boundary = getNextChordChangeTick(start);
+
+  if (boundary == 0 || boundary >= note_end) {
+    info.safe_duration = duration;
+    return info;
+  }
+
+  info.boundary_tick = boundary;
+  info.overlap_ticks = note_end - boundary;
+  info.next_degree = getChordDegreeAt(boundary);
+
+  // Classify pitch safety using ChordToneHelper and tension tables
+  ChordToneHelper helper(info.next_degree);
+  int pc = pitch % 12;
+
+  if (helper.isChordTonePitchClass(pc)) {
+    info.safety = CrossBoundarySafety::ChordTone;
+  } else {
+    // Check if it's an available tension
+    auto tensions = getAvailableTensionPitchClasses(info.next_degree);
+    bool is_tension = std::find(tensions.begin(), tensions.end(), pc) != tensions.end();
+
+    if (is_tension) {
+      info.safety = CrossBoundarySafety::Tension;
+    } else {
+      // Check if it's an avoid note (half-step above a chord tone)
+      bool is_avoid = false;
+      for (int ct : helper.pitchClasses()) {
+        if (pc == (ct + 1) % 12) {
+          is_avoid = true;
+          break;
+        }
+      }
+      info.safety = is_avoid ? CrossBoundarySafety::AvoidNote : CrossBoundarySafety::NonChordTone;
+    }
+  }
+
+  // Safe duration: clip to boundary with small gap
+  constexpr Tick kBoundaryGap = 10;
+  if (boundary > start + kBoundaryGap) {
+    info.safe_duration = boundary - start - kBoundaryGap;
+  } else {
+    info.safe_duration = duration;  // Too close to start, don't clip
+  }
+
+  return info;
+}
+
 void ChordProgressionTracker::clear() { chords_.clear(); }
 
 void ChordProgressionTracker::registerSecondaryDominant(Tick start, Tick end, int8_t degree) {

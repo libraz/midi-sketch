@@ -60,17 +60,12 @@ float calculateGateRatio(const GateContext& ctx);
 Tick applyGateRatio(Tick duration, const GateContext& ctx, Tick min_duration = 0);
 
 /**
- * @brief Clamp note duration to chord change boundary.
+ * @brief Legacy: chord boundary clamping (now handled by createNoteAndAdd pipeline).
  *
- * If a note extends past the next chord change, trims it to end
- * just before the change (with a small gap for articulation).
+ * Chord boundary awareness is now unified in the note creation pipeline
+ * via ChordBoundaryPolicy. This function returns note_duration unchanged.
  *
- * @param note_start Note start tick
- * @param note_duration Current note duration
- * @param harmony Harmony context for chord change lookup
- * @param gap_ticks Gap to leave before chord change (default: 10)
- * @param min_duration Minimum allowed duration (default: TICK_SIXTEENTH)
- * @return Clamped duration
+ * @deprecated Use NoteOptions::chord_boundary instead.
  */
 Tick clampToChordBoundary(Tick note_start, Tick note_duration, const IHarmonyContext& harmony,
                           Tick gap_ticks = 10, Tick min_duration = 0);

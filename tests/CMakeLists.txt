@@ -65,6 +65,7 @@ set(TEST_SOURCES
   core/section_modifier_test.cpp
   core/coordinator_test.cpp
   core/note_creator_test.cpp
+  core/chord_boundary_test.cpp
   midi/midi_writer_smf1_test.cpp
   midi/cc_event_test.cpp
   midi/midi_reader_test.cpp

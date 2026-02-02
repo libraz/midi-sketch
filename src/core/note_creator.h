@@ -48,6 +48,9 @@ struct NoteOptions {
   NoteSource source = NoteSource::Unknown;      ///< Generation phase
   uint8_t original_pitch = 0;                   ///< Pre-adjustment pitch (0=use desired_pitch)
 
+  // Chord boundary handling
+  ChordBoundaryPolicy chord_boundary = ChordBoundaryPolicy::None;
+
   // Additional context (track-specific)
   int8_t contour_direction = 0;                 ///< -1:descending, 0:none, +1:ascending (Motif)
 };
@@ -59,6 +62,8 @@ struct CreateNoteResult {
   CollisionAvoidStrategy strategy_used;         ///< How collision was resolved
   bool was_adjusted = false;                    ///< True if pitch was changed
   bool was_registered = false;                  ///< True if registered to harmony
+  Tick original_duration = 0;                   ///< Duration before chord boundary clip
+  bool was_chord_clipped = false;               ///< True if duration was clipped at chord boundary
 
   CreateNoteResult()
       : strategy_used(CollisionAvoidStrategy::None) {}

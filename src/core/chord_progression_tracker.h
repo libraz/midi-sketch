@@ -59,6 +59,14 @@ class ChordProgressionTracker : public IChordLookup {
   Tick getNextChordChangeTick(Tick after) const override;
 
   /**
+   * @brief Analyze chord boundary with full tension/avoid classification.
+   *
+   * Overrides IChordLookup default to provide accurate classification using
+   * ChordToneHelper and getAvailableTensionPitchClasses().
+   */
+  ChordBoundaryInfo analyzeChordBoundary(uint8_t pitch, Tick start, Tick duration) const override;
+
+  /**
    * @brief Register a secondary dominant chord at a specific tick range.
    *
    * Splits an existing chord entry to insert a secondary dominant.

@@ -57,8 +57,9 @@ enum class TransformStepType : uint8_t {
   PatternOffset,   ///< Pattern-based offset (e.g., 5th, approach)
   CollisionAvoid,  ///< Inter-track collision avoidance
   ScaleSnap,       ///< snapToNearestScaleTone()
-  IntervalFix,     ///< nearestChordToneWithinInterval()
-  ChordToneSnap,   ///< nearestChordTonePitch()
+  IntervalFix,        ///< nearestChordToneWithinInterval()
+  ChordToneSnap,      ///< nearestChordTonePitch()
+  ChordBoundaryClip,  ///< Duration clipped at chord boundary
 };
 
 /// @brief Strategy used by SafePitchResolver to resolve a collision.
@@ -117,6 +118,8 @@ inline const char* transformStepTypeToString(TransformStepType type) {
       return "interval_fix";
     case TransformStepType::ChordToneSnap:
       return "chord_tone_snap";
+    case TransformStepType::ChordBoundaryClip:
+      return "chord_boundary_clip";
   }
   return "unknown";
 }
@@ -366,6 +369,32 @@ inline const char* trackRoleToString(TrackRole role) {
 // Pitch Safety Types (v2 Architecture)
 // ============================================================================
 
+/// @brief Pitch safety classification when a note crosses a chord boundary.
+enum class CrossBoundarySafety : uint8_t {
+  NoBoundary,   ///< Note does not reach a chord boundary
+  ChordTone,    ///< Pitch is a chord tone in the next chord (safe to sustain)
+  Tension,      ///< Pitch is an available tension in the next chord (9th, 11th, 13th)
+  NonChordTone, ///< Pitch is not a chord tone or tension in the next chord
+  AvoidNote     ///< Pitch is an avoid note in the next chord (resolution required)
+};
+
+/// @brief Information about a note's interaction with the next chord boundary.
+struct ChordBoundaryInfo {
+  Tick boundary_tick = 0;           ///< Next chord change tick (0 = none)
+  Tick overlap_ticks = 0;           ///< Amount of overlap past the boundary
+  int8_t next_degree = -1;         ///< Chord degree after the boundary
+  CrossBoundarySafety safety = CrossBoundarySafety::NoBoundary;
+  Tick safe_duration = 0;          ///< Duration trimmed to before boundary (with gap)
+};
+
+/// @brief Policy for handling notes that cross chord boundaries.
+enum class ChordBoundaryPolicy : uint8_t {
+  None,           ///< No boundary processing (backward-compatible default)
+  ClipAtBoundary, ///< Always clip at chord boundary (Arpeggio, Chord)
+  ClipIfUnsafe,   ///< Clip only if non-chord/avoid in next chord (Bass, Motif, Vocal)
+  PreferSafe      ///< Prefer boundary-safe pitch in candidate ranking + fallback clip (Aux)
+};
+
 /// @brief Pitch selection preference for createNote().
 ///
 /// Determines how SafePitchResolver selects alternative pitches when
@@ -408,10 +437,16 @@ struct PitchCandidate {
   TrackRole colliding_track;           ///< Track that was colliding
   uint8_t colliding_pitch;             ///< Pitch that was colliding
 
+  // Cross-boundary safety (populated when ChordBoundaryPolicy != None)
+  CrossBoundarySafety cross_boundary_safety = CrossBoundarySafety::NoBoundary;
+  bool is_safe_across_boundary = true;  ///< NoBoundary or ChordTone
+
   PitchCandidate()
       : pitch(0), max_safe_duration(0), strategy(CollisionAvoidStrategy::None),
         interval_from_desired(0), is_chord_tone(false), is_scale_tone(false),
-        is_root_or_fifth(false), colliding_track(TrackRole::Vocal), colliding_pitch(0) {}
+        is_root_or_fifth(false), colliding_track(TrackRole::Vocal), colliding_pitch(0),
+        cross_boundary_safety(CrossBoundarySafety::NoBoundary),
+        is_safe_across_boundary(true) {}
 };
 
 /// @brief MIDI Control Change event for continuous controller data.

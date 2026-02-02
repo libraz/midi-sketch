@@ -32,6 +32,11 @@ std::vector<int> HarmonyContext::getChordTonesAt(Tick tick) const {
   return chord_tracker_.getChordTonesAt(tick);
 }
 
+ChordBoundaryInfo HarmonyContext::analyzeChordBoundary(uint8_t pitch, Tick start,
+                                                        Tick duration) const {
+  return chord_tracker_.analyzeChordBoundary(pitch, start, duration);
+}
+
 void HarmonyContext::registerNote(Tick start, Tick duration, uint8_t pitch, TrackRole track) {
   collision_detector_.registerNote(start, duration, pitch, track);
 }

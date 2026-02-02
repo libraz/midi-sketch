@@ -991,6 +991,7 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
           opts.range_low = MOTIF_LOW;
           opts.range_high = MOTIF_HIGH;
           opts.source = NoteSource::Motif;
+          opts.chord_boundary = ChordBoundaryPolicy::ClipIfUnsafe;
           opts.original_pitch = note.note;  // Track pre-adjustment pitch
 
           auto motif_note = createNoteAndAdd(track, *harmony, opts);
