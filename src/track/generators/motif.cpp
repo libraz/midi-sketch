@@ -350,7 +350,7 @@ uint8_t calculateMotifRegister(uint8_t vocal_low, uint8_t vocal_high, bool regis
 
   uint8_t base_note;
   if (register_high) {
-    base_note = std::max(static_cast<uint8_t>(67), static_cast<uint8_t>(vocal_high + 5));
+    base_note = std::min(static_cast<uint8_t>(vocal_high), static_cast<uint8_t>(96));
   } else {
     if (vocal_center >= 66) {
       base_note = std::min(static_cast<uint8_t>(55), static_cast<uint8_t>(vocal_low - 7));
@@ -610,6 +610,17 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
 
   const auto& sections = ctx.song->arrangement().sections();
 
+  // Vocal ceiling: restrict motif range_high to not exceed vocal's highest pitch.
+  // Use global vocal highest (across entire song) since motif patterns repeat.
+  uint8_t motif_range_high = MOTIF_HIGH;
+  {
+    Tick song_end = ctx.song->arrangement().totalTicks();
+    uint8_t vocal_high = harmony->getHighestPitchForTrackInRange(0, song_end, TrackRole::Vocal);
+    if (vocal_high > 0) {
+      motif_range_high = std::min(static_cast<int>(MOTIF_HIGH), static_cast<int>(vocal_high));
+    }
+  }
+
   // M9: Determine motif role for this track
   MotifRole role = (params.composition_style == CompositionStyle::BackgroundMotif) ? MotifRole::Hook
                                                                                     : MotifRole::Texture;
@@ -741,6 +752,9 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
             calculateMotifPitch(note, note_ctx, params, motif_params, harmony, vocal_ctx,
                                 base_note_override, rng);
 
+        // Clamp to vocal ceiling
+        adjusted_pitch = std::min(adjusted_pitch, static_cast<int>(motif_range_high));
+
         // Calculate velocity using helper
         uint8_t vel = calculateMotifVelocity(role_meta.velocity_base, is_chorus, section.type,
                                               motif_params.velocity_fixed);
@@ -757,7 +771,7 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
           opts.role = TrackRole::Motif;
           opts.preference = PitchPreference::NoCollisionCheck;  // Coordinate axis
           opts.range_low = MOTIF_LOW;
-          opts.range_high = MOTIF_HIGH;
+          opts.range_high = motif_range_high;
           opts.source = NoteSource::Motif;
           opts.original_pitch = note.note;  // Track pre-adjustment pitch
 
@@ -788,7 +802,7 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
           opts.role = TrackRole::Motif;
           opts.preference = PitchPreference::PreserveContour;  // Prefers octave shifts
           opts.range_low = MOTIF_LOW;
-          opts.range_high = MOTIF_HIGH;
+          opts.range_high = motif_range_high;
           opts.source = NoteSource::Motif;
           opts.chord_boundary = ChordBoundaryPolicy::ClipIfUnsafe;
           opts.original_pitch = note.note;  // Track pre-adjustment pitch

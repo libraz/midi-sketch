@@ -141,6 +141,11 @@ std::vector<uint8_t> HarmonyCoordinator::getSoundingPitches(Tick start, Tick end
   return base_context_.getSoundingPitches(start, end, exclude);
 }
 
+uint8_t HarmonyCoordinator::getHighestPitchForTrackInRange(Tick start, Tick end,
+                                                            TrackRole role) const {
+  return base_context_.getHighestPitchForTrackInRange(start, end, role);
+}
+
 // ============================================================================
 // Track Priority System
 // ============================================================================

@@ -221,6 +221,20 @@ class IHarmonyContext : public IChordLookup {
   virtual std::vector<uint8_t> getSoundingPitches(Tick start, Tick end,
                                                     TrackRole exclude) const = 0;
 
+  /**
+   * @brief Get the highest MIDI pitch from a specific track within a time range.
+   *
+   * Returns the highest actual MIDI pitch (0-127) for notes from the specified
+   * track that overlap with [start, end). Returns 0 if no notes found.
+   * Used for per-bar vocal ceiling in accompaniment tracks.
+   *
+   * @param start Start of time range
+   * @param end End of time range
+   * @param role Which track to query
+   * @return Highest MIDI pitch, or 0 if no notes in range
+   */
+  virtual uint8_t getHighestPitchForTrackInRange(Tick start, Tick end, TrackRole role) const = 0;
+
   /// C4 (middle C) - below this, stricter low-register rules apply.
   static constexpr uint8_t LOW_REGISTER_THRESHOLD = 60;
 };

@@ -80,6 +80,8 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
   std::vector<uint8_t> getSoundingPitches(Tick start, Tick end,
                                             TrackRole exclude) const override;
 
+  uint8_t getHighestPitchForTrackInRange(Tick start, Tick end, TrackRole role) const override;
+
   // =========================================================================
   // IHarmonyCoordinator interface (new functionality)
   // =========================================================================

@@ -1110,9 +1110,13 @@ TEST_F(DrumsTest, StandardStyleKickDensity) {
     total_bars += section.bars;
   }
 
+  // Allow small timing tolerance for humanization (which shifts notes by a few ticks)
+  constexpr Tick kHumanizeTolerance = 10;
   for (const auto& note : track.notes()) {
     if (note.note == KICK || note.note == 35) {
-      if (note.start_tick % TICKS_PER_BEAT == 0) {
+      Tick remainder = note.start_tick % TICKS_PER_BEAT;
+      if (remainder <= kHumanizeTolerance ||
+          remainder >= TICKS_PER_BEAT - kHumanizeTolerance) {
         kicks_on_quarters++;
       }
     }

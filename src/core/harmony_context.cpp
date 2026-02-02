@@ -103,4 +103,9 @@ std::vector<uint8_t> HarmonyContext::getSoundingPitches(Tick start, Tick end,
   return collision_detector_.getSoundingPitches(start, end, exclude);
 }
 
+uint8_t HarmonyContext::getHighestPitchForTrackInRange(Tick start, Tick end,
+                                                        TrackRole role) const {
+  return collision_detector_.getHighestPitchForTrackInRange(start, end, role);
+}
+
 }  // namespace midisketch

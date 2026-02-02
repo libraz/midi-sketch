@@ -141,13 +141,17 @@ VoicedChord filterVoicingByCollision(const IHarmonyContext& harmony, const Voice
 /// @param chord Chord definition
 /// @param root Root pitch
 /// @return Voicing with raw chord-tone pitches (no collision check yet)
-VoicedChord buildFallbackVoicing(const Chord& chord, uint8_t root) {
+VoicedChord buildFallbackVoicing(const Chord& chord, uint8_t root, uint8_t vocal_high = 0) {
+  constexpr int kVocalHighMargin = 2;
+  int effective_high = (vocal_high > 0)
+      ? std::min(static_cast<int>(CHORD_HIGH), static_cast<int>(vocal_high) + kVocalHighMargin)
+      : static_cast<int>(CHORD_HIGH);
   VoicedChord fallback;
   fallback.count = 0;
   fallback.type = VoicingType::Close;
   for (uint8_t i = 0; i < chord.note_count && i < 4; ++i) {
     if (chord.intervals[i] >= 0) {
-      int raw = std::clamp(root + chord.intervals[i], (int)CHORD_LOW, (int)CHORD_HIGH);
+      int raw = std::clamp(root + chord.intervals[i], (int)CHORD_LOW, effective_high);
       fallback.pitches[fallback.count++] = static_cast<uint8_t>(raw);
     }
   }
@@ -165,8 +169,10 @@ VoicedChord buildFallbackVoicing(const Chord& chord, uint8_t root) {
 /// @param duration Duration in ticks
 /// @param pitch Desired MIDI pitch
 /// @param velocity MIDI velocity
+/// @param vocal_ceiling Per-bar vocal ceiling (0 = no restriction)
 void addSafeChordNote(MidiTrack& track, IHarmonyContext& harmony, Tick start, Tick duration,
-                      uint8_t pitch, uint8_t velocity) {
+                      uint8_t pitch, uint8_t velocity, uint8_t vocal_ceiling = 0) {
+  constexpr int kVocalHighMargin = 2;
   NoteOptions opts;
   opts.start = start;
   opts.duration = duration;
@@ -175,7 +181,9 @@ void addSafeChordNote(MidiTrack& track, IHarmonyContext& harmony, Tick start, Ti
   opts.role = TrackRole::Chord;
   opts.preference = PitchPreference::PreferChordTones;
   opts.range_low = CHORD_LOW;
-  opts.range_high = CHORD_HIGH;
+  opts.range_high = (vocal_ceiling > 0)
+      ? std::min(static_cast<int>(CHORD_HIGH), static_cast<int>(vocal_ceiling) + kVocalHighMargin)
+      : static_cast<int>(CHORD_HIGH);
   opts.source = NoteSource::ChordVoicing;
   opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
   createNoteAndAdd(track, harmony, opts);
@@ -196,16 +204,20 @@ void addSafeChordNote(MidiTrack& track, IHarmonyContext& harmony, Tick start, Ti
 /// @param pitch Desired MIDI pitch
 /// @param velocity MIDI velocity
 /// @param state Voicing state to track note count per tick
+/// @param vocal_ceiling Per-bar vocal ceiling (0 = no restriction)
 void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick start, Tick duration,
-                            uint8_t pitch, uint8_t velocity, ChordVoicingState& state) {
+                            uint8_t pitch, uint8_t velocity, ChordVoicingState& state,
+                            uint8_t vocal_ceiling = 0) {
   // Reset state if we're at a new tick
   if (start != state.current_tick) {
     state.reset(start);
   }
 
+  constexpr int kVocalHighMarginDoubling = 2;
+
   // 1. Try normal safe check first
   if (harmony.isConsonantWithOtherTracks(pitch, start, duration, TrackRole::Chord)) {
-    addSafeChordNote(track, harmony, start, duration, pitch, velocity);
+    addSafeChordNote(track, harmony, start, duration, pitch, velocity, vocal_ceiling);
     state.added();
     return;
   }
@@ -216,6 +228,9 @@ void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick star
   for (uint8_t sounding : sounding_pitches) {
     // Only use pitches within chord range
     if (sounding < CHORD_LOW || sounding > CHORD_HIGH) continue;
+
+    // Vocal ceiling check for doubling path
+    if (vocal_ceiling > 0 && sounding > vocal_ceiling + kVocalHighMarginDoubling) continue;
 
     // Prefer pitches closer to the desired pitch
     int dist = std::abs(static_cast<int>(sounding) - static_cast<int>(pitch));
@@ -234,7 +249,9 @@ void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick star
     opts.role = TrackRole::Chord;
     opts.preference = PitchPreference::NoCollisionCheck;  // Already verified safe above
     opts.range_low = CHORD_LOW;
-    opts.range_high = CHORD_HIGH;
+    opts.range_high = (vocal_ceiling > 0)
+        ? std::min(static_cast<int>(CHORD_HIGH), static_cast<int>(vocal_ceiling) + kVocalHighMarginDoubling)
+        : static_cast<int>(CHORD_HIGH);
     opts.source = NoteSource::ChordVoicing;
     opts.original_pitch = pitch;  // Record original for provenance
     createNoteAndAdd(track, harmony, opts);
@@ -246,7 +263,7 @@ void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick star
   if (state.needsMore()) {
     // Minimum not met: addSafeChordNote uses createNoteAndAdd with PreferChordTones,
     // which resolves to the best non-clashing pitch via the unified note creator.
-    addSafeChordNote(track, harmony, start, duration, pitch, velocity);
+    addSafeChordNote(track, harmony, start, duration, pitch, velocity, vocal_ceiling);
     state.added();
     return;
   }
@@ -346,7 +363,7 @@ ChordExtension selectChordExtension(int8_t degree, SectionType section, int bar_
 /// Generate chord notes for one bar using HarmonyContext for collision detection
 void generateChordBar(MidiTrack& track, Tick bar_start, const VoicedChord& voicing,
                       ChordRhythm rhythm, SectionType section, Mood mood,
-                      IHarmonyContext& harmony) {
+                      IHarmonyContext& harmony, uint8_t vocal_ceiling = 0) {
   uint8_t vel = calculateVelocity(section, 0, mood);
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.8f);
   ChordVoicingState state;
@@ -356,7 +373,7 @@ void generateChordBar(MidiTrack& track, Tick bar_start, const VoicedChord& voici
       // Whole note chord
       state.reset(bar_start);
       for (size_t idx = 0; idx < voicing.count; ++idx) {
-        addChordNoteWithState(track, harmony, bar_start, WHOLE, voicing.pitches[idx], vel, state);
+        addChordNoteWithState(track, harmony, bar_start, WHOLE, voicing.pitches[idx], vel, state, vocal_ceiling);
       }
       break;
 
@@ -365,12 +382,12 @@ void generateChordBar(MidiTrack& track, Tick bar_start, const VoicedChord& voici
       state.reset(bar_start);
       for (size_t idx = 0; idx < voicing.count; ++idx) {
         // First half
-        addChordNoteWithState(track, harmony, bar_start, HALF, voicing.pitches[idx], vel, state);
+        addChordNoteWithState(track, harmony, bar_start, HALF, voicing.pitches[idx], vel, state, vocal_ceiling);
       }
       state.reset(bar_start + HALF);
       for (size_t idx = 0; idx < voicing.count; ++idx) {
         // Second half
-        addChordNoteWithState(track, harmony, bar_start + HALF, HALF, voicing.pitches[idx], vel_weak, state);
+        addChordNoteWithState(track, harmony, bar_start + HALF, HALF, voicing.pitches[idx], vel_weak, state, vocal_ceiling);
       }
       break;
 
@@ -381,7 +398,7 @@ void generateChordBar(MidiTrack& track, Tick bar_start, const VoicedChord& voici
         uint8_t beat_vel = (beat == 0 || beat == 2) ? vel : vel_weak;
         state.reset(tick);
         for (size_t idx = 0; idx < voicing.count; ++idx) {
-          addChordNoteWithState(track, harmony, tick, QUARTER, voicing.pitches[idx], beat_vel, state);
+          addChordNoteWithState(track, harmony, tick, QUARTER, voicing.pitches[idx], beat_vel, state, vocal_ceiling);
         }
       }
       break;
@@ -404,7 +421,7 @@ void generateChordBar(MidiTrack& track, Tick bar_start, const VoicedChord& voici
 
         state.reset(tick);
         for (size_t idx = 0; idx < voicing.count; ++idx) {
-          addChordNoteWithState(track, harmony, tick, EIGHTH, voicing.pitches[idx], beat_vel, state);
+          addChordNoteWithState(track, harmony, tick, EIGHTH, voicing.pitches[idx], beat_vel, state, vocal_ceiling);
         }
       }
       break;
@@ -504,7 +521,6 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
-
       // Harmonic rhythm: determine chord index
       // When subdivision=2, use subdivided indexing (bar*2 for first half)
       int chord_idx;
@@ -589,6 +605,11 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
       bool bass_has_root = true;  // Default assumption
       // Collect ALL bass pitch classes in this bar for collision avoidance
       Tick bar_end = bar_start + TICKS_PER_BAR;
+
+      // Per-bar vocal ceiling (also applies in basic path via harmony context)
+      uint8_t bar_vocal_high = harmony.getHighestPitchForTrackInRange(
+          bar_start, bar_end, TrackRole::Vocal);
+
       uint16_t bass_pitch_mask = chord_voicing::buildBassPitchMask(bass_track, bar_start, bar_end);
       if (bass_track != nullptr && !bass_track->notes().empty()) {
         uint8_t bass_root = static_cast<uint8_t>(std::clamp(static_cast<int>(root) - 12, 28, 55));
@@ -619,11 +640,53 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
       OpenVoicingType open_subtype =
           chord_voicing::selectOpenVoicingSubtype(section.type, params.mood, chord, rng);
 
-      // Select voicing with voice leading and type consideration
-      // Pass bass_pitch_mask to avoid clashes with ALL bass notes in the bar
-      VoicedChord voicing = chord_voicing::selectVoicing(root, chord, prev_voicing, has_prev,
-                                                         voicing_type, bass_pitch_mask, rng,
-                                                         open_subtype, params.mood);
+      // Collision check duration matches chord rhythm subdivision.
+      Tick check_duration;
+      switch (rhythm) {
+        case ChordRhythm::Whole:   check_duration = WHOLE; break;
+        case ChordRhythm::Half:    check_duration = HALF; break;
+        case ChordRhythm::Quarter: check_duration = QUARTER; break;
+        case ChordRhythm::Eighth:  check_duration = EIGHTH; break;
+      }
+
+      // Generate all candidate voicings and filter by collision with registered tracks.
+      // This ensures chord voicing avoids clashes with Motif, Bass, Vocal, etc.
+      std::vector<VoicedChord> candidates =
+          chord_voicing::generateVoicings(root, chord, voicing_type, bass_pitch_mask, open_subtype);
+      std::vector<VoicedChord> filtered;
+      for (const auto& v : candidates) {
+        VoicedChord safe =
+            filterVoicingByCollision(harmony, v, bar_start, check_duration, bar_vocal_high);
+        if (safe.count >= 2) {
+          filtered.push_back(safe);
+        }
+      }
+
+      // Select best voicing from filtered candidates with voice leading
+      VoicedChord voicing;
+      if (filtered.empty()) {
+        // Fallback: use selectVoicing (collision resolution at note emission time)
+        voicing = chord_voicing::selectVoicing(root, chord, prev_voicing, has_prev,
+                                               voicing_type, bass_pitch_mask, rng,
+                                               open_subtype, params.mood);
+      } else if (!has_prev) {
+        voicing = filtered[0];
+      } else {
+        // Voice leading: prefer common tones and minimal motion
+        int best_score = -1000;
+        size_t best_idx = 0;
+        for (size_t i = 0; i < filtered.size(); ++i) {
+          int common = chord_voicing::countCommonTones(prev_voicing, filtered[i]);
+          int distance = chord_voicing::voicingDistance(prev_voicing, filtered[i]);
+          int type_bonus = (filtered[i].type == voicing_type) ? 30 : 0;
+          int score = type_bonus + common * 100 - distance;
+          if (score > best_score) {
+            best_score = score;
+            best_idx = i;
+          }
+        }
+        voicing = filtered[best_idx];
+      }
 
       // Check if this is the last bar of the section (for cadence preparation)
       bool is_section_last_bar = (bar == section.bars - 1);
@@ -637,7 +700,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
 
         // First half: current chord
         for (size_t idx = 0; idx < voicing.count; ++idx) {
-          addSafeChordNote(track, harmony, bar_start, HALF, voicing.pitches[idx], vel);
+          addSafeChordNote(track, harmony, bar_start, HALF, voicing.pitches[idx], vel, bar_vocal_high);
         }
 
         // Second half: dominant (V) chord - use Dom7 if 7th extensions enabled
@@ -652,7 +715,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
 
         uint8_t vel_accent = static_cast<uint8_t>(std::min(127, vel + 5));
         for (size_t idx = 0; idx < dom_voicing.count; ++idx) {
-          addSafeChordNote(track, harmony, bar_start + HALF, HALF, dom_voicing.pitches[idx], vel_accent);
+          addSafeChordNote(track, harmony, bar_start + HALF, HALF, dom_voicing.pitches[idx], vel_accent, bar_vocal_high);
         }
 
         prev_voicing = dom_voicing;
@@ -676,7 +739,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
             chord_voicing::selectVoicing(dom_root, dom_chord, prev_voicing, has_prev, voicing_type,
                                          bass_pitch_mask, rng, open_subtype, params.mood);
 
-        generateChordBar(track, bar_start, dom_voicing, rhythm, section.type, params.mood, harmony);
+        generateChordBar(track, bar_start, dom_voicing, rhythm, section.type, params.mood, harmony, bar_vocal_high);
         prev_voicing = dom_voicing;
         has_prev = true;
         continue;
@@ -695,7 +758,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
             chord_voicing::selectVoicing(ii_root, ii_chord, prev_voicing, has_prev, voicing_type,
                                          bass_pitch_mask, rng, open_subtype, params.mood);
 
-        generateChordBar(track, bar_start, ii_voicing, rhythm, section.type, params.mood, harmony);
+        generateChordBar(track, bar_start, ii_voicing, rhythm, section.type, params.mood, harmony, bar_vocal_high);
         prev_voicing = ii_voicing;
         has_prev = true;
         continue;
@@ -722,7 +785,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
 
             // First half: current chord
             for (size_t idx = 0; idx < voicing.count; ++idx) {
-              addSafeChordNote(track, harmony, bar_start, HALF, voicing.pitches[idx], vel);
+              addSafeChordNote(track, harmony, bar_start, HALF, voicing.pitches[idx], vel, bar_vocal_high);
             }
 
             // Second half: secondary dominant (V/x)
@@ -735,7 +798,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
 
             uint8_t vel_accent = static_cast<uint8_t>(std::min(127, vel + 8));
             for (size_t idx = 0; idx < sec_dom_voicing.count; ++idx) {
-              addSafeChordNote(track, harmony, bar_start + HALF, HALF, sec_dom_voicing.pitches[idx], vel_accent);
+              addSafeChordNote(track, harmony, bar_start + HALF, HALF, sec_dom_voicing.pitches[idx], vel_accent, bar_vocal_high);
             }
 
             // Register the secondary dominant with the chord tracker so other
@@ -775,7 +838,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
             // First 3 beats: current chord
             Tick three_beats = QUARTER * 3;
             for (size_t idx = 0; idx < voicing.count; ++idx) {
-              addSafeChordNote(track, harmony, bar_start, three_beats, voicing.pitches[idx], vel);
+              addSafeChordNote(track, harmony, bar_start, three_beats, voicing.pitches[idx], vel, bar_vocal_high);
             }
 
             // Last beat: passing diminished chord
@@ -795,7 +858,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
             uint8_t vel_dim = static_cast<uint8_t>(std::min(127, vel + 5));
             Tick last_beat_start = bar_start + three_beats;
             for (size_t idx = 0; idx < dim_voicing.count; ++idx) {
-              addSafeChordNote(track, harmony, last_beat_start, QUARTER, dim_voicing.pitches[idx], vel_dim);
+              addSafeChordNote(track, harmony, last_beat_start, QUARTER, dim_voicing.pitches[idx], vel_dim, bar_vocal_high);
             }
 
             prev_voicing = dim_voicing;
@@ -825,7 +888,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         for (int r = 0; r < subdiv_repeats; ++r) {
           Tick tick = bar_start + r * subdiv_dur;
           for (size_t idx = 0; idx < voicing.count; ++idx) {
-            addSafeChordNote(track, harmony, tick, subdiv_dur, voicing.pitches[idx], vel);
+            addSafeChordNote(track, harmony, tick, subdiv_dur, voicing.pitches[idx], vel, bar_vocal_high);
           }
         }
 
@@ -846,7 +909,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         for (int r = 0; r < subdiv_repeats; ++r) {
           Tick tick = bar_start + HALF + r * subdiv_dur;
           for (size_t idx = 0; idx < second_half_voicing.count; ++idx) {
-            addSafeChordNote(track, harmony, tick, subdiv_dur, second_half_voicing.pitches[idx], vel_weak);
+            addSafeChordNote(track, harmony, tick, subdiv_dur, second_half_voicing.pitches[idx], vel_weak, bar_vocal_high);
           }
         }
 
@@ -872,7 +935,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         for (int r = 0; r < repeats; ++r) {
           Tick tick = bar_start + r * split_dur;
           for (size_t idx = 0; idx < voicing.count; ++idx) {
-            addSafeChordNote(track, harmony, tick, split_dur, voicing.pitches[idx], vel);
+            addSafeChordNote(track, harmony, tick, split_dur, voicing.pitches[idx], vel, bar_vocal_high);
           }
         }
 
@@ -894,7 +957,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         for (int r = 0; r < repeats; ++r) {
           Tick tick = bar_start + HALF + r * split_dur;
           for (size_t idx = 0; idx < next_voicing.count; ++idx) {
-            addSafeChordNote(track, harmony, tick, split_dur, next_voicing.pitches[idx], vel_weak);
+            addSafeChordNote(track, harmony, tick, split_dur, next_voicing.pitches[idx], vel_weak, bar_vocal_high);
           }
         }
 
@@ -909,7 +972,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
 
         // First half: sus voicing (already computed)
         for (size_t idx = 0; idx < voicing.count; ++idx) {
-          addSafeChordNote(track, harmony, bar_start, HALF, voicing.pitches[idx], vel);
+          addSafeChordNote(track, harmony, bar_start, HALF, voicing.pitches[idx], vel, bar_vocal_high);
         }
 
         // Second half: resolved triad (no extension)
@@ -920,13 +983,13 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
 
         for (size_t idx = 0; idx < resolved_voicing.count; ++idx) {
           addSafeChordNote(track, harmony, bar_start + HALF, HALF,
-                           resolved_voicing.pitches[idx], vel_resolve);
+                           resolved_voicing.pitches[idx], vel_resolve, bar_vocal_high);
         }
 
         prev_voicing = resolved_voicing;
       } else {
         // Normal chord generation for this bar
-        generateChordBar(track, bar_start, voicing, rhythm, section.type, params.mood, harmony);
+        generateChordBar(track, bar_start, voicing, rhythm, section.type, params.mood, harmony, bar_vocal_high);
 
         // RegisterAdd mode: add octave doublings in Chorus for intensity buildup
         if (params.arrangement_growth == ArrangementGrowth::RegisterAdd &&
@@ -938,7 +1001,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
           for (size_t idx = 0; idx < voicing.count; ++idx) {
             int lower_pitch = static_cast<int>(voicing.pitches[idx]) - 12;
             if (lower_pitch >= CHORD_LOW && lower_pitch <= CHORD_HIGH) {
-              addSafeChordNote(track, harmony, bar_start, WHOLE, static_cast<uint8_t>(lower_pitch), octave_vel);
+              addSafeChordNote(track, harmony, bar_start, WHOLE, static_cast<uint8_t>(lower_pitch), octave_vel, bar_vocal_high);
             }
           }
         }
@@ -953,7 +1016,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
           int root_pitch = voicing.pitches[0];  // Lowest note in voicing is typically root
           int low_root = root_pitch - 12;
           if (low_root >= CHORD_LOW && low_root <= CHORD_HIGH) {
-            addSafeChordNote(track, harmony, bar_start, WHOLE, static_cast<uint8_t>(low_root), doubling_vel);
+            addSafeChordNote(track, harmony, bar_start, WHOLE, static_cast<uint8_t>(low_root), doubling_vel, bar_vocal_high);
           }
         }
 
@@ -994,7 +1057,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
             uint8_t ant_vel = static_cast<uint8_t>(vel * 0.85f);
 
             for (size_t idx = 0; idx < ant_voicing.count; ++idx) {
-              addSafeChordNote(track, harmony, ant_tick, EIGHTH, ant_voicing.pitches[idx], ant_vel);
+              addSafeChordNote(track, harmony, ant_tick, EIGHTH, ant_voicing.pitches[idx], ant_vel, bar_vocal_high);
             }
           }
         }
@@ -1012,7 +1075,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
 void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
                                        const GeneratorParams& params, std::mt19937& rng,
                                        const MidiTrack* bass_track,
-                                       const VocalAnalysis& vocal_analysis,
+                                       const VocalAnalysis& /*vocal_analysis*/,
                                        const MidiTrack* /*aux_track*/, IHarmonyContext& harmony) {
   // Collision avoidance is handled via isConsonantWithOtherTracks() which checks ALL registered
   // tracks (Vocal, Aux, Bass, Motif). aux_track parameter is retained for API
@@ -1128,6 +1191,11 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
 
       Tick bar_end = bar_start + TICKS_PER_BAR;
 
+      // Per-bar vocal ceiling: restrict chord voicing to not exceed vocal's highest
+      // pitch in THIS bar, rather than the global highest_pitch across the whole song.
+      // Returns 0 if no vocal note is sounding in this bar (no ceiling restriction).
+      uint8_t bar_vocal_high = harmony.getHighestPitchForTrackInRange(bar_start, bar_end, TrackRole::Vocal);
+
       // Bass pitch mask is used for voicing *construction* (not collision avoidance).
       // It tells generateVoicings() which bass pitch classes to avoid doubling in
       // the voicing shape. Collision avoidance is handled by isConsonantWithOtherTracks via
@@ -1170,7 +1238,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
       for (const auto& v : candidates) {
         VoicedChord safe =
             filterVoicingByCollision(harmony, v, bar_start, check_duration,
-                                     vocal_analysis.highest_pitch);
+                                     bar_vocal_high);
         if (safe.count >= 2) {
           filtered.push_back(safe);
         }
@@ -1182,7 +1250,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         // Fallback: raw chord tones. Actual collision resolution will happen
         // when notes are emitted via addChordNoteWithState → addSafeChordNote
         // → createNoteAndAdd(PreferChordTones).
-        voicing = buildFallbackVoicing(chord, root);
+        voicing = buildFallbackVoicing(chord, root, bar_vocal_high);
       } else if (!has_prev) {
         // First chord: prefer middle register
         std::vector<size_t> tied_indices;
@@ -1237,7 +1305,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         ChordVoicingState state;
         state.reset(bar_start);
         for (size_t idx = 0; idx < voicing.count; ++idx) {
-          addChordNoteWithState(track, harmony, bar_start, HALF, voicing.pitches[idx], vel, state);
+          addChordNoteWithState(track, harmony, bar_start, HALF, voicing.pitches[idx], vel, state, bar_vocal_high);
         }
 
         int8_t dominant_degree = 4;
@@ -1259,7 +1327,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         uint8_t vel_accent = static_cast<uint8_t>(std::min(127, vel + 5));
         state.reset(bar_start + HALF);
         for (size_t idx = 0; idx < dom_voicing.count; ++idx) {
-          addChordNoteWithState(track, harmony, bar_start + HALF, HALF, dom_voicing.pitches[idx], vel_accent, state);
+          addChordNoteWithState(track, harmony, bar_start + HALF, HALF, dom_voicing.pitches[idx], vel_accent, state, bar_vocal_high);
         }
 
         prev_voicing = dom_voicing;
@@ -1285,15 +1353,15 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         for (const auto& v : dom_candidates) {
           VoicedChord safe =
               filterVoicingByCollision(harmony, v, bar_start, check_duration,
-                                       vocal_analysis.highest_pitch);
+                                       bar_vocal_high);
           if (safe.count >= 2) dom_filtered.push_back(safe);
         }
         VoicedChord dom_voicing =
             dom_filtered.empty()
-                ? buildFallbackVoicing(dom_chord, dom_root)
+                ? buildFallbackVoicing(dom_chord, dom_root, bar_vocal_high)
                 : dom_filtered[0];
 
-        generateChordBar(track, bar_start, dom_voicing, rhythm, section.type, params.mood, harmony);
+        generateChordBar(track, bar_start, dom_voicing, rhythm, section.type, params.mood, harmony, bar_vocal_high);
         prev_voicing = dom_voicing;
         has_prev = true;
         continue;
@@ -1315,15 +1383,15 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         for (const auto& v : ii_candidates) {
           VoicedChord safe =
               filterVoicingByCollision(harmony, v, bar_start, check_duration,
-                                       vocal_analysis.highest_pitch);
+                                       bar_vocal_high);
           if (safe.count >= 2) ii_filtered.push_back(safe);
         }
         VoicedChord ii_voicing =
             ii_filtered.empty()
-                ? buildFallbackVoicing(ii_chord, ii_root)
+                ? buildFallbackVoicing(ii_chord, ii_root, bar_vocal_high)
                 : ii_filtered[0];
 
-        generateChordBar(track, bar_start, ii_voicing, rhythm, section.type, params.mood, harmony);
+        generateChordBar(track, bar_start, ii_voicing, rhythm, section.type, params.mood, harmony, bar_vocal_high);
         prev_voicing = ii_voicing;
         has_prev = true;
         continue;
@@ -1348,7 +1416,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
             Tick three_beats = QUARTER * 3;
             state.reset(bar_start);
             for (size_t idx = 0; idx < voicing.count; ++idx) {
-              addChordNoteWithState(track, harmony, bar_start, three_beats, voicing.pitches[idx], vel, state);
+              addChordNoteWithState(track, harmony, bar_start, three_beats, voicing.pitches[idx], vel, state, bar_vocal_high);
             }
 
             // Last beat: passing diminished chord
@@ -1368,7 +1436,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
             Tick last_beat_start = bar_start + three_beats;
             state.reset(last_beat_start);
             for (size_t idx = 0; idx < dim_voicing.count; ++idx) {
-              addChordNoteWithState(track, harmony, last_beat_start, QUARTER, dim_voicing.pitches[idx], vel_dim, state);
+              addChordNoteWithState(track, harmony, last_beat_start, QUARTER, dim_voicing.pitches[idx], vel_dim, state, bar_vocal_high);
             }
 
             prev_voicing = dim_voicing;
@@ -1399,7 +1467,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
           Tick tick = bar_start + r * subdiv_dur;
           state.reset(tick);
           for (size_t idx = 0; idx < voicing.count; ++idx) {
-            addChordNoteWithState(track, harmony, tick, subdiv_dur, voicing.pitches[idx], vel, state);
+            addChordNoteWithState(track, harmony, tick, subdiv_dur, voicing.pitches[idx], vel, state, bar_vocal_high);
           }
         }
 
@@ -1426,7 +1494,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
           Tick tick = bar_start + HALF + r * subdiv_dur;
           state.reset(tick);
           for (size_t idx = 0; idx < second_half_voicing.count; ++idx) {
-            addChordNoteWithState(track, harmony, tick, subdiv_dur, second_half_voicing.pitches[idx], vel_weak, state);
+            addChordNoteWithState(track, harmony, tick, subdiv_dur, second_half_voicing.pitches[idx], vel_weak, state, bar_vocal_high);
           }
         }
 
@@ -1451,7 +1519,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
           Tick tick = bar_start + r * split_dur;
           state.reset(tick);
           for (size_t idx = 0; idx < voicing.count; ++idx) {
-            addChordNoteWithState(track, harmony, tick, split_dur, voicing.pitches[idx], vel, state);
+            addChordNoteWithState(track, harmony, tick, split_dur, voicing.pitches[idx], vel, state, bar_vocal_high);
           }
         }
 
@@ -1478,7 +1546,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
           Tick tick = bar_start + HALF + r * split_dur;
           state.reset(tick);
           for (size_t idx = 0; idx < next_voicing.count; ++idx) {
-            addChordNoteWithState(track, harmony, tick, split_dur, next_voicing.pitches[idx], vel_weak, state);
+            addChordNoteWithState(track, harmony, tick, split_dur, next_voicing.pitches[idx], vel_weak, state, bar_vocal_high);
           }
         }
 
@@ -1494,7 +1562,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         state.reset(bar_start);
         for (size_t idx = 0; idx < voicing.count; ++idx) {
           addChordNoteWithState(track, harmony, bar_start, HALF,
-                                voicing.pitches[idx], vel, state);
+                                voicing.pitches[idx], vel, state, bar_vocal_high);
         }
 
         // Second half: resolved triad (no extension)
@@ -1511,13 +1579,13 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         state.reset(bar_start + HALF);
         for (size_t idx = 0; idx < resolved_voicing.count; ++idx) {
           addChordNoteWithState(track, harmony, bar_start + HALF, HALF,
-                                resolved_voicing.pitches[idx], vel_resolve, state);
+                                resolved_voicing.pitches[idx], vel_resolve, state, bar_vocal_high);
         }
 
         prev_voicing = resolved_voicing;
       } else {
         // Normal chord generation
-        generateChordBar(track, bar_start, voicing, rhythm, section.type, params.mood, harmony);
+        generateChordBar(track, bar_start, voicing, rhythm, section.type, params.mood, harmony, bar_vocal_high);
 
         // RegisterAdd mode - optional octave doubling (skip if unsafe)
         if (params.arrangement_growth == ArrangementGrowth::RegisterAdd &&
@@ -1529,7 +1597,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
             if (lower_pitch >= CHORD_LOW && lower_pitch <= CHORD_HIGH) {
               // Skip if this optional doubling would clash
               if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(lower_pitch), bar_start, WHOLE, TrackRole::Chord)) {
-                addSafeChordNote(track, harmony, bar_start, WHOLE, static_cast<uint8_t>(lower_pitch), octave_vel);
+                addSafeChordNote(track, harmony, bar_start, WHOLE, static_cast<uint8_t>(lower_pitch), octave_vel, bar_vocal_high);
               }
             }
           }
@@ -1545,7 +1613,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
           if (low_root >= CHORD_LOW && low_root <= CHORD_HIGH) {
             // Skip if this optional doubling would clash
             if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(low_root), bar_start, WHOLE, TrackRole::Chord)) {
-              addSafeChordNote(track, harmony, bar_start, WHOLE, static_cast<uint8_t>(low_root), doubling_vel);
+              addSafeChordNote(track, harmony, bar_start, WHOLE, static_cast<uint8_t>(low_root), doubling_vel, bar_vocal_high);
             }
           }
         }
@@ -1583,7 +1651,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
             ChordVoicingState state;
             state.reset(ant_tick);
             for (size_t idx = 0; idx < ant_voicing.count; ++idx) {
-              addChordNoteWithState(track, harmony, ant_tick, EIGHTH, ant_voicing.pitches[idx], ant_vel, state);
+              addChordNoteWithState(track, harmony, ant_tick, EIGHTH, ant_voicing.pitches[idx], ant_vel, state, bar_vocal_high);
             }
           }
         }

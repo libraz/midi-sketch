@@ -204,6 +204,12 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
   // Analyze vocal for MotifCounter generation
   VocalAnalysis vocal_analysis = analyzeVocal(vocal_track);
 
+  // Vocal ceiling: restrict aux range_high to not exceed vocal's highest pitch.
+  uint8_t aux_vocal_ceiling = 84;  // Default aux high
+  if (vocal_analysis.highest_pitch > 0) {
+    aux_vocal_ceiling = std::min(static_cast<uint8_t>(84), vocal_analysis.highest_pitch);
+  }
+
   // Extract motif from first chorus for intro placement
   cached_chorus_motif_.reset();
   for (const auto& section : *song_ctx.sections) {
@@ -403,7 +409,7 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     opts.role = TrackRole::Aux;
     opts.preference = PitchPreference::Default;
     opts.range_low = 55;
-    opts.range_high = 84;
+    opts.range_high = aux_vocal_ceiling;
     opts.source = NoteSource::Aux;
     opts.chord_boundary = ChordBoundaryPolicy::PreferSafe;
 
@@ -1348,9 +1354,11 @@ std::vector<NoteEvent> AuxGenerator::generateMotifCounter(const AuxContext& ctx,
     aux_low = 48;                   // C3
     aux_high = 67;                  // G4
   } else if (vocal_center <= 60) {  // Vocal is low (C4-)
-    // Place counter in higher register
+    // Place counter in higher register, capped by vocal highest
     aux_low = 72;   // C5
-    aux_high = 84;  // C6
+    aux_high = (vocal_analysis.highest_pitch > 0)
+        ? std::min(static_cast<uint8_t>(84), vocal_analysis.highest_pitch)
+        : static_cast<uint8_t>(84);
   } else {
     // Vocal is in middle, use config offset
     calculateAuxRange(config, ctx.main_tessitura, aux_low, aux_high);

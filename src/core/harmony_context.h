@@ -93,6 +93,8 @@ class HarmonyContext : public IHarmonyContext {
   std::vector<uint8_t> getSoundingPitches(Tick start, Tick end,
                                             TrackRole exclude) const override;
 
+  uint8_t getHighestPitchForTrackInRange(Tick start, Tick end, TrackRole role) const override;
+
   // =========================================================================
   // Component accessors (for advanced usage)
   // =========================================================================

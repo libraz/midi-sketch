@@ -150,6 +150,19 @@ class TrackCollisionDetector {
    */
   std::vector<uint8_t> getSoundingPitches(Tick start, Tick end, TrackRole exclude) const;
 
+  /**
+   * @brief Get the highest MIDI pitch from a specific track within a time range.
+   *
+   * Returns the highest actual MIDI pitch (0-127) for notes from the specified
+   * track that overlap with [start, end). Returns 0 if no notes found.
+   *
+   * @param start Start of time range
+   * @param end End of time range
+   * @param role Which track to query
+   * @return Highest MIDI pitch, or 0 if no notes in range
+   */
+  uint8_t getHighestPitchForTrackInRange(Tick start, Tick end, TrackRole role) const;
+
   /// Clear all registered notes (useful for regeneration).
   void clearNotes();
 

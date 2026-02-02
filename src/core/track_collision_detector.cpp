@@ -285,6 +285,20 @@ std::vector<uint8_t> TrackCollisionDetector::getSoundingPitches(Tick start, Tick
   return pitches;
 }
 
+uint8_t TrackCollisionDetector::getHighestPitchForTrackInRange(Tick start, Tick end,
+                                                                TrackRole role) const {
+  uint8_t highest = 0;
+  for (const auto& note : notes_) {
+    if (note.track != role) continue;
+    if (note.start < end && note.end > start) {
+      if (note.pitch > highest) {
+        highest = note.pitch;
+      }
+    }
+  }
+  return highest;
+}
+
 void TrackCollisionDetector::clearNotes() {
   notes_.clear();
 }

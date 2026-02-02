@@ -1075,9 +1075,10 @@ void PostProcessor::fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass
   auto& notes = chord.notes();
   if (notes.empty()) return;
 
-  auto isMinor2nd = [](int interval) {
+  auto isDissonantClose = [](int interval) {
     int interval_class = interval % 12;
-    return interval_class == 1 || interval_class == 11;  // m2 or M7
+    // m2 (1), M7 (11), and close-range M2 (exactly 2 semitones)
+    return interval_class == 1 || interval_class == 11 || interval == 2;
   };
 
   std::vector<size_t> notes_to_remove;
@@ -1091,7 +1092,7 @@ void PostProcessor::fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass
       Tick b_end = b_note.start_tick + b_note.duration;
       if (note.start_tick < b_end && note_end > b_note.start_tick) {
         int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(b_note.note));
-        if (isMinor2nd(interval)) {
+        if (isDissonantClose(interval)) {
           notes_to_remove.push_back(idx);
           goto next_note;
         }
@@ -1103,7 +1104,7 @@ void PostProcessor::fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass
       Tick m_end = m_note.start_tick + m_note.duration;
       if (note.start_tick < m_end && note_end > m_note.start_tick) {
         int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(m_note.note));
-        if (isMinor2nd(interval)) {
+        if (isDissonantClose(interval)) {
           notes_to_remove.push_back(idx);
           goto next_note;
         }

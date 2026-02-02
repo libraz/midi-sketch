@@ -122,7 +122,13 @@ class StubHarmonyContext : public IHarmonyCoordinator {
     return sounding_pitches_;  // Return configured or empty
   }
 
+  uint8_t getHighestPitchForTrackInRange(Tick /*start*/, Tick /*end*/,
+                                          TrackRole /*role*/) const override {
+    return highest_pitch_for_track_;  // Return configured or 0
+  }
+
   // Configuration for sounding pitch classes and pitches
+  void setHighestPitchForTrack(uint8_t pitch) { highest_pitch_for_track_ = pitch; }
   void setSoundingPitchClasses(std::vector<int> pcs) { sounding_pitch_classes_ = std::move(pcs); }
   void setSoundingPitches(std::vector<uint8_t> pitches) { sounding_pitches_ = std::move(pitches); }
   void setChordBoundaryInfo(ChordBoundaryInfo info) { chord_boundary_info_ = info; }
@@ -186,6 +192,7 @@ class StubHarmonyContext : public IHarmonyCoordinator {
   int getClearTrackCount() const { return clear_track_count_; }
 
  private:
+  uint8_t highest_pitch_for_track_ = 0;
   int8_t chord_degree_ = 0;
   std::vector<int> chord_tones_ = {0, 4, 7};  // C major triad by default
   std::vector<int> sounding_pitch_classes_;   // Configured sounding pitch classes
