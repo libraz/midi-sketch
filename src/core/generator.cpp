@@ -758,8 +758,8 @@ std::vector<Generator::VocalClash> Generator::detectVocalAccompanimentClashes() 
           if (!candidates.empty()) {
             PitchSelectionHints hints;
             hints.prev_pitch = static_cast<int8_t>(prev_pitch);
-            hints.prefer_chord_tones = true;
-            hints.prefer_small_intervals = true;
+            hints.note_duration = vocal_note.duration;
+            hints.tessitura_center = (params_.vocal_low + params_.vocal_high) / 2;
             safe_pitch = selectBestCandidate(candidates, v_pitch, hints);
           }
 

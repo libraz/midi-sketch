@@ -343,11 +343,11 @@ static std::vector<NoteEvent> generateWithLockedRhythm(
     if (candidates.empty()) {
       continue;  // No safe pitch available for this onset
     }
-    // Select best candidate with preference for chord tones (harmonic stability)
+    // Select best candidate with preference for harmonic stability
     PitchSelectionHints hints;
     hints.prev_pitch = static_cast<int8_t>(prev_pitch);
-    hints.prefer_chord_tones = true;
-    hints.prefer_small_intervals = true;
+    hints.note_duration = duration;
+    hints.tessitura_center = ctx.tessitura.center;
     uint8_t safe_pitch = selectBestCandidate(candidates, pitch, hints);
 
     // Calculate velocity based on beat position

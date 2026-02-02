@@ -250,8 +250,8 @@ int applyFinalPitchSafety(int pitch, Tick note_start, Tick note_duration, int ke
   // Select best candidate considering melodic context
   PitchSelectionHints hints;
   hints.prev_pitch = static_cast<int8_t>(prev_pitch);
-  hints.prefer_chord_tones = true;
-  hints.prefer_small_intervals = true;
+  hints.note_duration = note_duration;
+  hints.tessitura_center = (vocal_low + vocal_high) / 2;
   return selectBestCandidate(candidates, static_cast<uint8_t>(safe_pitch), hints);
 }
 

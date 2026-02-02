@@ -884,17 +884,12 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       continue;  // No safe pitch available
     }
 
-    // Annotate boundary safety for notes with meaningful duration
-    if (note_duration >= TICK_EIGHTH) {
-      annotateBoundarySafety(candidates, harmony, note_start, note_duration);
-    }
-
-    // Select best candidate considering melodic context and boundary safety
+    // Select best candidate considering melodic context
     PitchSelectionHints hints;
     hints.prev_pitch = static_cast<int8_t>(current_pitch);
-    hints.prefer_chord_tones = true;
-    hints.prefer_small_intervals = true;
-    hints.prefer_boundary_safe = (note_duration >= TICK_EIGHTH);
+    hints.note_duration = note_duration;
+    hints.phrase_position = static_cast<float>(i) / rhythm.size();
+    hints.tessitura_center = ctx.tessitura.center;
     new_pitch = selectBestCandidate(candidates, static_cast<uint8_t>(new_pitch), hints);
 
     // Add note (registration handled by VocalGenerator)
@@ -1168,17 +1163,11 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
         continue;  // No safe pitch available
       }
 
-      // Annotate boundary safety for notes with meaningful duration
-      if (final_duration >= TICK_EIGHTH) {
-        annotateBoundarySafety(candidates, harmony, current_tick, final_duration);
-      }
-
-      // Select best candidate preserving hook shape and boundary safety
+      // Select best candidate preserving hook shape
       PitchSelectionHints hints;
       hints.prev_pitch = static_cast<int8_t>(prev_hook_pitch);
-      hints.prefer_chord_tones = true;
-      hints.prefer_small_intervals = true;
-      hints.prefer_boundary_safe = (final_duration >= TICK_EIGHTH);
+      hints.note_duration = final_duration;
+      hints.tessitura_center = ctx.tessitura.center;
       pitch = selectBestCandidate(candidates, static_cast<uint8_t>(pitch), hints);
 
       NoteEvent hook_note = createNoteWithoutHarmony(
@@ -1237,8 +1226,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
         if (i > 0) {
           hints.prev_pitch = static_cast<int8_t>(result.notes[i - 1].note);
         }
-        hints.prefer_chord_tones = true;
-        hints.prefer_small_intervals = true;
+        hints.note_duration = result.notes[i].duration;
+        hints.tessitura_center = ctx.tessitura.center;
         result.notes[i].note = selectBestCandidate(candidates, static_cast<uint8_t>(new_pitch), hints);
       }
       // If candidates is empty, keep the original clamped pitch (new_pitch)

@@ -400,13 +400,13 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     // Apply collision avoidance
     auto candidates = getSafePitchCandidates(harmony, note.note, note.start_tick, note.duration,
                                               TrackRole::Vocal, vocal_low, vocal_high);
-    // Select best candidate with preference for chord tones
+    // Select best candidate considering melodic continuity
     PitchSelectionHints hints;
     if (i > 0) {
       hints.prev_pitch = static_cast<int8_t>(notes[i - 1].note);
     }
-    hints.prefer_chord_tones = true;
-    hints.prefer_small_intervals = true;
+    hints.note_duration = note.duration;
+    hints.tessitura_center = (vocal_low + vocal_high) / 2;
     uint8_t safe_pitch = candidates.empty() ? note.note : selectBestCandidate(candidates, note.note, hints);
     // Snap to chord tone (to maintain harmonic stability)
     int snapped = nearestChordTonePitch(safe_pitch, chord_degree);

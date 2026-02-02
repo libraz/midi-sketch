@@ -181,12 +181,15 @@ std::vector<PitchCandidate> getSafePitchCandidates(
 // ============================================================================
 
 /// @brief Hints for selecting the best candidate based on musical context.
+///
+/// All candidates from getSafePitchCandidates are already collision-safe and
+/// boundary-annotated. This struct controls purely musical selection criteria.
 struct PitchSelectionHints {
   int8_t prev_pitch = -1;          ///< Previous pitch (-1 = none)
   int8_t contour_direction = 0;    ///< -1:descending, 0:any, +1:ascending
-  bool prefer_chord_tones = false; ///< Prioritize chord tone candidates
-  bool prefer_small_intervals = true; ///< Prefer smaller intervals from prev_pitch
-  bool prefer_boundary_safe = false;  ///< Prefer pitches safe across chord boundaries
+  Tick note_duration = 0;          ///< Note duration (rhythm-interval coupling)
+  float phrase_position = -1.0f;   ///< Position in phrase 0.0-1.0 (-1 = unknown)
+  uint8_t tessitura_center = 67;   ///< Tessitura center (default G4)
 };
 
 /**

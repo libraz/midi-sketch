@@ -990,8 +990,8 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
               // Select best candidate with melodic continuity preference
               PitchSelectionHints hints;
               hints.prev_pitch = static_cast<int8_t>(original_pitch);
-              hints.prefer_chord_tones = true;
-              hints.prefer_small_intervals = true;
+              hints.note_duration = m_note.duration;
+              hints.tessitura_center = (MOTIF_LOW + MOTIF_HIGH) / 2;
               new_pitch = selectBestCandidate(candidates, original_pitch, hints);
             }
           }
