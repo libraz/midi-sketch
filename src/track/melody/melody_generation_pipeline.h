@@ -189,7 +189,8 @@ class MelodyGenerationPipeline {
   Tick applyDurationConstraints(Tick note_start, Tick duration,
                                 const IHarmonyContext& harmony,
                                 Tick phrase_end, bool is_phrase_end,
-                                bool is_phrase_start, int interval_from_prev) const;
+                                bool is_phrase_start, int interval_from_prev,
+                                uint8_t pitch = 0) const;
 
   // ============================================================================
   // Utility Functions

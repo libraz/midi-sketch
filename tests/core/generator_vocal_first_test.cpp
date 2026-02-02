@@ -214,16 +214,23 @@ TEST_F(GeneratorVocalFirstTest, RegenerateAccompanimentPreservesVocal) {
   // Regenerate accompaniment with different seed
   gen.regenerateAccompaniment(99999);
 
-  // Vocal should be preserved
+  // Vocal should be mostly preserved (refineVocalForAccompaniment may adjust
+  // a small number of notes to resolve clashes with the new accompaniment)
   const auto& preserved_vocal = gen.getSong().vocal().notes();
   ASSERT_EQ(preserved_vocal.size(), original_vocal.size());
 
+  int changed_count = 0;
   for (size_t i = 0; i < original_vocal.size(); ++i) {
-    EXPECT_EQ(preserved_vocal[i].note, original_vocal[i].note)
-        << "Vocal note changed at index " << i;
+    if (preserved_vocal[i].note != original_vocal[i].note) {
+      changed_count++;
+    }
     EXPECT_EQ(preserved_vocal[i].start_tick, original_vocal[i].start_tick)
         << "Vocal timing changed at index " << i;
   }
+  // Allow up to 5% of notes to change from clash refinement
+  int max_changes = std::max(2, static_cast<int>(original_vocal.size()) / 20);
+  EXPECT_LE(changed_count, max_changes)
+      << "Too many vocal notes changed (" << changed_count << " > " << max_changes << ")";
 }
 
 TEST_F(GeneratorVocalFirstTest, RegenerateAccompanimentChangesAccompaniment) {
@@ -324,12 +331,19 @@ TEST_F(GeneratorVocalFirstTest, RegenerateAccompanimentMultipleTimes) {
     gen.regenerateAccompaniment(seed);
     bass_counts.push_back(gen.getSong().bass().noteCount());
 
-    // Vocal should always be preserved
+    // Vocal should be mostly preserved (refineVocalForAccompaniment may adjust
+    // a small number of notes to resolve clashes with the new accompaniment)
     const auto& vocal = gen.getSong().vocal().notes();
     ASSERT_EQ(vocal.size(), original_vocal.size());
+    int changed_count = 0;
     for (size_t i = 0; i < original_vocal.size(); ++i) {
-      EXPECT_EQ(vocal[i].note, original_vocal[i].note);
+      if (vocal[i].note != original_vocal[i].note) {
+        changed_count++;
+      }
     }
+    int max_changes = std::max(2, static_cast<int>(original_vocal.size()) / 20);
+    EXPECT_LE(changed_count, max_changes)
+        << "Too many vocal notes changed (" << changed_count << " > " << max_changes << ")";
   }
 
   // All regenerations should produce valid bass tracks

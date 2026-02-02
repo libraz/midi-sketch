@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "core/chord_utils.h"             // for nearestChordTonePitch, ChordToneHelper, ChordTones
+#include "core/i_chord_lookup.h"          // for IChordLookup
 #include "core/i_harmony_context.h"       // for IHarmonyContext
 #include "core/note_creator.h"            // for getSafePitchCandidates
 #include "core/note_source.h"             // for NoteSource enum
@@ -238,7 +239,8 @@ void PostProcessor::applyExitCutOff(std::vector<NoteEvent>& notes, Tick section_
 }
 
 void PostProcessor::applyExitSustain(std::vector<NoteEvent>& notes, Tick section_start,
-                                     Tick section_end) {
+                                     Tick section_end,
+                                     const IChordLookup* chord_lookup) {
   // Extend duration of notes in the last bar to reach section boundary,
   // but cap each note's extension at the start of the next chord to prevent overlaps
   Tick last_bar_start = section_end - TICKS_PER_BAR;
@@ -279,7 +281,18 @@ void PostProcessor::applyExitSustain(std::vector<NoteEvent>& notes, Tick section
       }
     }
     if (max_end > note->start_tick) {
-      note->duration = max_end - note->start_tick;
+      Tick new_duration = max_end - note->start_tick;
+      // Respect chord boundaries when extending
+      if (chord_lookup != nullptr) {
+        auto info = chord_lookup->analyzeChordBoundary(note->note, note->start_tick, new_duration);
+        if (info.boundary_tick > 0 &&
+            (info.safety == CrossBoundarySafety::NonChordTone ||
+             info.safety == CrossBoundarySafety::AvoidNote) &&
+            info.safe_duration >= TICK_SIXTEENTH) {
+          new_duration = info.safe_duration;
+        }
+      }
+      note->duration = new_duration;
     }
   }
 }
@@ -288,7 +301,8 @@ void PostProcessor::applyExitSustain(std::vector<NoteEvent>& notes, Tick section
 // ExitPattern Implementation
 // ============================================================================
 
-void PostProcessor::applyExitPattern(MidiTrack& track, const Section& section) {
+void PostProcessor::applyExitPattern(MidiTrack& track, const Section& section,
+                                     const IChordLookup* chord_lookup) {
   if (section.exit_pattern == ExitPattern::None) {
     return;
   }
@@ -310,7 +324,7 @@ void PostProcessor::applyExitPattern(MidiTrack& track, const Section& section) {
       applyExitCutOff(notes, section_start, section_end);
       break;
     case ExitPattern::Sustain:
-      applyExitSustain(notes, section_start, section_end);
+      applyExitSustain(notes, section_start, section_end, chord_lookup);
       break;
     case ExitPattern::None:
       break;
@@ -318,7 +332,8 @@ void PostProcessor::applyExitPattern(MidiTrack& track, const Section& section) {
 }
 
 void PostProcessor::applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
-                                         const std::vector<Section>& sections) {
+                                         const std::vector<Section>& sections,
+                                         const IChordLookup* chord_lookup) {
   for (const auto& section : sections) {
     if (section.exit_pattern == ExitPattern::None) {
       continue;
@@ -326,7 +341,7 @@ void PostProcessor::applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
 
     for (MidiTrack* track : tracks) {
       if (track != nullptr) {
-        applyExitPattern(*track, section);
+        applyExitPattern(*track, section, chord_lookup);
       }
     }
   }

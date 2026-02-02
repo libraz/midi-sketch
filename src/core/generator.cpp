@@ -1239,8 +1239,8 @@ void Generator::applyTransitionDynamics() {
   // Apply entry pattern dynamics (section beginnings)
   midisketch::applyAllEntryPatternDynamics(tracks, sections);
 
-  // Apply exit patterns for musical section endings
-  PostProcessor::applyAllExitPatterns(tracks, sections);
+  // Apply exit patterns for musical section endings (boundary-aware sustain)
+  PostProcessor::applyAllExitPatterns(tracks, sections, harmony_context_.get());
 
   // Phase 2: Section transition effects
   // Apply chorus drop (moment of silence before chorus)
@@ -1300,6 +1300,28 @@ void Generator::applyTransitionDynamics() {
       harmony_context_->clearNotesForTrack(TrackRole::Vocal);
       harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
       PostProcessor::fixMotifVocalClashes(song_.motif(), song_.vocal(), *harmony_context_);
+    }
+  }
+
+  // Clip vocal notes that sustain over chord changes with non-chord-tone pitches.
+  // Must run AFTER all post-processing that may extend note durations
+  // (applyExitSustain, applyPreChorusLift, etc.).
+  for (auto& note : song_.vocal().notes()) {
+    auto boundary_info =
+        harmony_context_->analyzeChordBoundary(note.note, note.start_tick, note.duration);
+    constexpr Tick kMinOverlap = 20;
+    if (boundary_info.boundary_tick > 0 && boundary_info.overlap_ticks >= kMinOverlap &&
+        (boundary_info.safety == CrossBoundarySafety::NonChordTone ||
+         boundary_info.safety == CrossBoundarySafety::AvoidNote)) {
+      // Clip to safe duration, falling back to exact boundary if needed
+      Tick clipped = boundary_info.safe_duration;
+      if (clipped < TICK_SIXTEENTH && boundary_info.boundary_tick > note.start_tick) {
+        clipped = boundary_info.boundary_tick - note.start_tick;
+      }
+      if (clipped >= TICK_SIXTEENTH) {
+        note.duration = clipped;
+      }
+      // If clipped < TICK_SIXTEENTH, note starts too close to boundary — keep as-is
     }
   }
 

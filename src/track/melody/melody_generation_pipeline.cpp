@@ -138,14 +138,15 @@ Tick MelodyGenerationPipeline::applyDurationConstraints(Tick note_start, Tick du
                                                         const IHarmonyContext& harmony,
                                                         Tick phrase_end, bool is_phrase_end,
                                                         bool is_phrase_start,
-                                                        int interval_from_prev) const {
+                                                        int interval_from_prev,
+                                                        uint8_t pitch) const {
   GateContext gate_ctx;
   gate_ctx.is_phrase_end = is_phrase_end;
   gate_ctx.is_phrase_start = is_phrase_start;
   gate_ctx.note_duration = duration;
   gate_ctx.interval_from_prev = interval_from_prev;
 
-  return applyAllDurationConstraints(note_start, duration, harmony, phrase_end, gate_ctx);
+  return applyAllDurationConstraints(note_start, duration, harmony, phrase_end, gate_ctx, pitch);
 }
 
 // ============================================================================

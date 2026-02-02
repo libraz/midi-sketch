@@ -15,11 +15,25 @@
 
 #include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
+#include "core/note_source.h"
 #include "core/pitch_utils.h"
 
 namespace midisketch {
 
 namespace {
+
+// Set embellishment provenance on a note.
+inline void setEmbellishmentProv(NoteEvent& note, int8_t chord_degree) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+  note.prov_source = static_cast<uint8_t>(NoteSource::Embellishment);
+  note.prov_chord_degree = chord_degree;
+  note.prov_lookup_tick = note.start_tick;
+  note.prov_original_pitch = note.note;
+#else
+  (void)note;
+  (void)chord_degree;
+#endif
+}
 
 // Pentatonic scale pitch classes (yonanuki - no 4th or 7th)
 // Note: Major scale uses SCALE from pitch_utils.h
@@ -223,6 +237,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
         auto pt = tryInsertPassingTone(current, *next, key_offset, config.prefer_pentatonic, rng);
         if (pt) {
           result.push_back(current);  // Original chord tone
+          setEmbellishmentProv(*pt, chord_degree);
           result.push_back(*pt);      // Passing tone
           consecutive_ncts++;
           continue;
@@ -238,6 +253,8 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
       bool upper = prob_dist(rng) > 0.5f;
       auto nt_pair = tryAddNeighborTone(current, upper, key_offset, config.prefer_pentatonic, rng);
       if (nt_pair) {
+        setEmbellishmentProv(nt_pair->first, chord_degree);
+        setEmbellishmentProv(nt_pair->second, chord_degree);
         result.push_back(nt_pair->first);   // Neighbor tone
         result.push_back(nt_pair->second);  // Return to CT
         consecutive_ncts++;
@@ -254,6 +271,8 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
       auto app_pair =
           tryConvertToAppoggiatura(current, upper, key_offset, config.chromatic_approach, rng);
       if (app_pair) {
+        setEmbellishmentProv(app_pair->first, chord_degree);
+        setEmbellishmentProv(app_pair->second, chord_degree);
         result.push_back(app_pair->first);   // Appoggiatura
         result.push_back(app_pair->second);  // Resolution
         consecutive_ncts++;
@@ -276,6 +295,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
             NoteEvent shortened = current;
             shortened.duration = current.duration - ant_offset;
             result.push_back(shortened);
+            setEmbellishmentProv(*ant, next_chord_degree);
             result.push_back(*ant);  // Anticipation
             consecutive_ncts++;
             continue;
@@ -291,6 +311,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
       if (tension_pitch) {
         NoteEvent tension_note = current;
         tension_note.note = *tension_pitch;
+        setEmbellishmentProv(tension_note, chord_degree);
         result.push_back(tension_note);
         consecutive_ncts = 0;  // Tensions are "quasi-chord tones"
         continue;

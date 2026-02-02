@@ -590,6 +590,11 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
       score += 50;
     }
 
+    // Boundary safety preference
+    if (hints.prefer_boundary_safe && c.is_safe_across_boundary) {
+      score += 40;
+    }
+
     // Interval from previous pitch
     if (hints.prev_pitch >= 0) {
       int interval = static_cast<int>(c.pitch) - hints.prev_pitch;
@@ -633,6 +638,23 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
   }
 
   return candidates[static_cast<size_t>(best_index)].pitch;
+}
+
+// ============================================================================
+// Boundary safety annotation
+// ============================================================================
+
+void annotateBoundarySafety(std::vector<PitchCandidate>& candidates,
+                            const IHarmonyContext& harmony,
+                            Tick start, Tick duration) {
+  for (auto& c : candidates) {
+    auto info = harmony.analyzeChordBoundary(c.pitch, start, duration);
+    c.cross_boundary_safety = info.safety;
+    c.is_safe_across_boundary =
+        (info.safety == CrossBoundarySafety::NoBoundary ||
+         info.safety == CrossBoundarySafety::ChordTone ||
+         info.safety == CrossBoundarySafety::Tension);
+  }
 }
 
 }  // namespace midisketch

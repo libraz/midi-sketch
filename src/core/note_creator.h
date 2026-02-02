@@ -186,6 +186,7 @@ struct PitchSelectionHints {
   int8_t contour_direction = 0;    ///< -1:descending, 0:any, +1:ascending
   bool prefer_chord_tones = false; ///< Prioritize chord tone candidates
   bool prefer_small_intervals = true; ///< Prefer smaller intervals from prev_pitch
+  bool prefer_boundary_safe = false;  ///< Prefer pitches safe across chord boundaries
 };
 
 /**
@@ -205,6 +206,21 @@ struct PitchSelectionHints {
 uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
                              uint8_t fallback_pitch,
                              const PitchSelectionHints& hints = {});
+
+/**
+ * @brief Annotate pitch candidates with cross-boundary safety information.
+ *
+ * For each candidate, checks if its pitch is safe across the next chord
+ * boundary. Sets cross_boundary_safety and is_safe_across_boundary fields.
+ *
+ * @param candidates Candidates to annotate (modified in-place)
+ * @param harmony Harmony context for chord boundary analysis
+ * @param start Note start tick
+ * @param duration Note duration in ticks
+ */
+void annotateBoundarySafety(std::vector<PitchCandidate>& candidates,
+                            const IHarmonyContext& harmony,
+                            Tick start, Tick duration);
 
 }  // namespace midisketch
 

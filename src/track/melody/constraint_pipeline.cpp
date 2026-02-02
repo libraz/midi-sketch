@@ -61,11 +61,35 @@ Tick applyGateRatio(Tick duration, const GateContext& ctx, Tick min_duration) {
   return std::max(gated, min_duration);
 }
 
-Tick clampToChordBoundary(Tick /*note_start*/, Tick note_duration,
-                          const IHarmonyContext& /*harmony*/, Tick /*gap_ticks*/,
-                          Tick /*min_duration*/) {
-  // Chord boundary handling is now done in createNoteAndAdd() pipeline
-  // via ChordBoundaryPolicy. This function is kept for API compatibility.
+Tick clampToChordBoundary(Tick note_start, Tick note_duration,
+                          const IHarmonyContext& harmony, uint8_t pitch,
+                          Tick /*gap_ticks*/, Tick min_duration) {
+  if (pitch == 0) {
+    return note_duration;
+  }
+  if (min_duration == 0) {
+    min_duration = TICK_SIXTEENTH;
+  }
+
+  auto boundary_info = harmony.analyzeChordBoundary(pitch, note_start, note_duration);
+
+  // Clip if the note crosses a chord boundary with any meaningful overlap
+  constexpr Tick kMinOverlap = 20;  // Ignore tiny overlaps from rounding
+  if (boundary_info.boundary_tick > 0 && boundary_info.overlap_ticks >= kMinOverlap) {
+    if (boundary_info.safety == CrossBoundarySafety::NonChordTone ||
+        boundary_info.safety == CrossBoundarySafety::AvoidNote) {
+      // Clip to safe duration (just before chord boundary), respecting min duration
+      Tick clipped = boundary_info.safe_duration;
+      if (clipped < min_duration && boundary_info.boundary_tick > note_start) {
+        clipped = boundary_info.boundary_tick - note_start;
+      }
+      if (clipped >= min_duration) {
+        return clipped;
+      }
+      // Note is too close to boundary to clip meaningfully — keep original
+    }
+  }
+
   return note_duration;
 }
 
@@ -134,12 +158,12 @@ int findChordToneInDirection(int current_pitch, int8_t chord_degree, int directi
 
 Tick applyAllDurationConstraints(Tick note_start, Tick note_duration,
                                   const IHarmonyContext& harmony, Tick phrase_end,
-                                  const GateContext& ctx) {
+                                  const GateContext& ctx, uint8_t pitch) {
   // Apply gate ratio first
   Tick duration = applyGateRatio(note_duration, ctx);
 
-  // Clamp to chord boundary
-  duration = clampToChordBoundary(note_start, duration, harmony);
+  // Clamp to chord boundary (pitch-aware)
+  duration = clampToChordBoundary(note_start, duration, harmony, pitch);
 
   // Clamp to phrase boundary
   duration = clampToPhraseBoundary(note_start, duration, phrase_end);

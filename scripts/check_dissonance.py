@@ -28,6 +28,7 @@ SOURCE_FILES = {
     "aux": "src/track/aux.cpp",
     "motif": "src/track/motif.cpp",
     "drums": "src/track/drums.cpp",
+    "embellishment": "src/core/melody_embellishment.cpp",
     "collision_avoid": "src/core/collision_avoider.cpp",
     "post_process": "src/core/post_processor.cpp",
 }

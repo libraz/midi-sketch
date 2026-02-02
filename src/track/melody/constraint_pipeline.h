@@ -60,15 +60,22 @@ float calculateGateRatio(const GateContext& ctx);
 Tick applyGateRatio(Tick duration, const GateContext& ctx, Tick min_duration = 0);
 
 /**
- * @brief Legacy: chord boundary clamping (now handled by createNoteAndAdd pipeline).
+ * @brief Clamp note duration at chord boundary if pitch is unsafe in next chord.
  *
- * Chord boundary awareness is now unified in the note creation pipeline
- * via ChordBoundaryPolicy. This function returns note_duration unchanged.
+ * Uses analyzeChordBoundary() to determine if the pitch is a chord tone
+ * in the next chord. If it is (ChordTone/Tension/NoBoundary), the note
+ * sustains naturally. If NonChordTone or AvoidNote, clips to boundary.
  *
- * @deprecated Use NoteOptions::chord_boundary instead.
+ * @param note_start Note start tick
+ * @param note_duration Current note duration
+ * @param harmony Harmony context for chord boundary analysis
+ * @param pitch MIDI pitch to check against next chord (0 = no check, returns unchanged)
+ * @param gap_ticks Gap before boundary (default: 10 ticks)
+ * @param min_duration Minimum allowed duration
+ * @return Clamped duration
  */
 Tick clampToChordBoundary(Tick note_start, Tick note_duration, const IHarmonyContext& harmony,
-                          Tick gap_ticks = 10, Tick min_duration = 0);
+                          uint8_t pitch, Tick gap_ticks = 10, Tick min_duration = 0);
 
 /**
  * @brief Clamp note duration to phrase boundary.
@@ -114,7 +121,7 @@ int findChordToneInDirection(int current_pitch, int8_t chord_degree, int directi
  */
 Tick applyAllDurationConstraints(Tick note_start, Tick note_duration,
                                   const IHarmonyContext& harmony, Tick phrase_end,
-                                  const GateContext& ctx);
+                                  const GateContext& ctx, uint8_t pitch = 0);
 
 }  // namespace melody
 }  // namespace midisketch

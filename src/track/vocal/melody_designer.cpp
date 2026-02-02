@@ -883,11 +883,18 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     if (candidates.empty()) {
       continue;  // No safe pitch available
     }
-    // Select best candidate considering melodic context
+
+    // Annotate boundary safety for notes with meaningful duration
+    if (note_duration >= TICK_EIGHTH) {
+      annotateBoundarySafety(candidates, harmony, note_start, note_duration);
+    }
+
+    // Select best candidate considering melodic context and boundary safety
     PitchSelectionHints hints;
     hints.prev_pitch = static_cast<int8_t>(current_pitch);
     hints.prefer_chord_tones = true;
     hints.prefer_small_intervals = true;
+    hints.prefer_boundary_safe = (note_duration >= TICK_EIGHTH);
     new_pitch = selectBestCandidate(candidates, static_cast<uint8_t>(new_pitch), hints);
 
     // Add note (registration handled by VocalGenerator)
@@ -907,6 +914,12 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
 
   // POST-GENERATION: Resolve melodically isolated notes before returning
   melody::resolveIsolatedNotes(result.notes, harmony, ctx.vocal_low, ctx.vocal_high);
+
+  // Re-check chord boundaries after isolated note resolution (pitch may have changed)
+  for (auto& note : result.notes) {
+    note.duration = melody::clampToChordBoundary(note.start_tick, note.duration, harmony,
+                                                  note.note);
+  }
 
   result.last_pitch = current_pitch;
   return result;
@@ -1112,9 +1125,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       gate_ctx.note_duration = note_duration;
       gate_ctx.interval_from_prev = std::abs(pitch - prev_hook_pitch);
 
-      // Apply gate ratio and chord boundary constraints
+      // Apply gate ratio
       Tick actual_duration = melody::applyGateRatio(note_duration, gate_ctx);
-      actual_duration = melody::clampToChordBoundary(current_tick, actual_duration, harmony);
 
       // ABSOLUTE CONSTRAINT: Ensure pitch is on scale (prevents chromatic notes)
       pitch = snapToNearestScaleTone(pitch, ctx.key_offset);
@@ -1155,11 +1167,18 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
         current_tick += tick_advance;
         continue;  // No safe pitch available
       }
-      // Select best candidate preserving hook shape
+
+      // Annotate boundary safety for notes with meaningful duration
+      if (final_duration >= TICK_EIGHTH) {
+        annotateBoundarySafety(candidates, harmony, current_tick, final_duration);
+      }
+
+      // Select best candidate preserving hook shape and boundary safety
       PitchSelectionHints hints;
       hints.prev_pitch = static_cast<int8_t>(prev_hook_pitch);
       hints.prefer_chord_tones = true;
       hints.prefer_small_intervals = true;
+      hints.prefer_boundary_safe = (final_duration >= TICK_EIGHTH);
       pitch = selectBestCandidate(candidates, static_cast<uint8_t>(pitch), hints);
 
       NoteEvent hook_note = createNoteWithoutHarmony(
@@ -1235,6 +1254,17 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
 
       if (i < durations.size()) {
         result.notes[i].duration = durations[i];
+      }
+
+      // Re-check chord boundary after betrayal pitch/duration changes
+      auto boundary_info = harmony.analyzeChordBoundary(
+          result.notes[i].note, result.notes[i].start_tick, result.notes[i].duration);
+      if (boundary_info.boundary_tick > 0 &&
+          boundary_info.overlap_ticks >= TICK_EIGHTH &&
+          (boundary_info.safety == CrossBoundarySafety::NonChordTone ||
+           boundary_info.safety == CrossBoundarySafety::AvoidNote) &&
+          boundary_info.safe_duration >= TICK_SIXTEENTH) {
+        result.notes[i].duration = boundary_info.safe_duration;
       }
     }
   }

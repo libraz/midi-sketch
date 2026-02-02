@@ -14,6 +14,9 @@
 #include "core/section_types.h"
 #include "core/types.h"
 
+// Forward declaration
+namespace midisketch { class IChordLookup; }
+
 namespace midisketch {
 
 // Forward declaration
@@ -86,12 +89,14 @@ class PostProcessor {
   // @param tracks Vector of track pointers to process
   // @param sections Arrangement sections with exit_pattern settings
   static void applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
-                                   const std::vector<Section>& sections);
+                                   const std::vector<Section>& sections,
+                                   const IChordLookup* chord_lookup = nullptr);
 
   // Applies a single exit pattern to one track within a section.
   // @param track Track to modify (in-place)
   // @param section Section defining the exit pattern and time range
-  static void applyExitPattern(MidiTrack& track, const Section& section);
+  static void applyExitPattern(MidiTrack& track, const Section& section,
+                               const IChordLookup* chord_lookup = nullptr);
 
   // ============================================================================
   // Pre-chorus Lift Processing
@@ -230,7 +235,8 @@ class PostProcessor {
   static void applyExitCutOff(std::vector<NoteEvent>& notes, Tick section_start,
                               Tick section_end);
   static void applyExitSustain(std::vector<NoteEvent>& notes, Tick section_start,
-                               Tick section_end);
+                               Tick section_end,
+                               const IChordLookup* chord_lookup = nullptr);
 };
 
 }  // namespace midisketch

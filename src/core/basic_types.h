@@ -208,8 +208,8 @@ struct NoteEvent {
  public:
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE
-  /// @brief Check if provenance is valid (created via NoteFactory).
-  bool hasValidProvenance() const { return prov_chord_degree >= 0; }
+  /// @brief Check if provenance is valid (source was explicitly set).
+  bool hasValidProvenance() const { return prov_source != 0; }
 
   /// @brief Add a transformation step.
   /// @return true if step was added, false if history is full.
