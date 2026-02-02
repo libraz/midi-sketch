@@ -2866,11 +2866,9 @@ TEST(PhraseVariationNewTypes, VariationTypeCountMatchesEnum) {
 // Section-aware vibrato and portamento pitch bend tests
 // ============================================================================
 
-TEST_F(VocalTest, ChorusSectionsProduceMorePitchBendsThanVerse) {
-  // Chorus sections should have wider vibrato (1.5x depth multiplier),
-  // which may result in more or higher-amplitude pitch bend events.
-  // We test indirectly: a full song with expressive attitude should produce
-  // pitch bends, and the section-aware code path should not crash.
+TEST_F(VocalTest, ChorusVibratoWiderThanVerse) {
+  // Chorus sections get 1.5x vibrato depth, Bridge gets 1.3x.
+  // Verify that pitch bend amplitudes in Chorus are larger than in Verse.
   params_.structure = StructurePattern::FullPop;
   params_.seed = 12345;
   params_.vocal_attitude = VocalAttitude::Expressive;
@@ -2881,89 +2879,118 @@ TEST_F(VocalTest, ChorusSectionsProduceMorePitchBendsThanVerse) {
   const auto& vocal = gen.getSong().vocal();
   EXPECT_FALSE(vocal.notes().empty());
 
-  // Verify pitch bends are generated (section-aware path active)
-  // The exact count depends on RNG, but with FullPop structure we should
-  // have chorus sections that trigger the 1.5x vibrato multiplier
   const auto& bends = vocal.pitchBendEvents();
-  // With Expressive attitude and multiple sections, we expect bends
   EXPECT_FALSE(bends.empty())
-      << "Expressive attitude with section-aware vibrato should produce pitch bends";
+      << "Expressive attitude should produce pitch bends";
+
+  // Classify pitch bends by section type
+  const auto& sections = gen.getSong().arrangement().sections();
+  int16_t max_chorus_amplitude = 0;
+  int16_t max_verse_amplitude = 0;
+
+  for (const auto& bend : bends) {
+    int16_t amplitude = static_cast<int16_t>(std::abs(bend.value));
+    for (const auto& sec : sections) {
+      if (bend.tick >= sec.start_tick && bend.tick < sec.endTick()) {
+        if (sec.type == SectionType::Chorus) {
+          max_chorus_amplitude = std::max(max_chorus_amplitude, amplitude);
+        } else if (sec.type == SectionType::A) {
+          max_verse_amplitude = std::max(max_verse_amplitude, amplitude);
+        }
+        break;
+      }
+    }
+  }
+
+  // With 1.5x multiplier on Chorus vibrato, chorus max amplitude should exceed verse
+  if (max_chorus_amplitude > 0 && max_verse_amplitude > 0) {
+    EXPECT_GT(max_chorus_amplitude, max_verse_amplitude)
+        << "Chorus vibrato (1.5x) should produce larger bend amplitudes than Verse";
+  } else {
+    // At minimum, we must have bends in chorus sections
+    EXPECT_GT(max_chorus_amplitude, 0)
+        << "Chorus sections should have vibrato pitch bends";
+  }
 }
 
 TEST_F(VocalTest, RawAttitudePortamentoGeneratesPitchBends) {
   // Raw attitude has 50% portamento probability for close intervals.
-  // With enough notes, we should see portamento glide events.
-  params_.structure = StructurePattern::FullPop;
-  params_.seed = 33445;
-  params_.vocal_attitude = VocalAttitude::Raw;
+  // Try multiple seeds to find one with sufficient portamento candidates.
+  int total_portamento_candidates = 0;
+  int total_bends = 0;
 
-  Generator gen;
-  gen.generate(params_);
+  for (int seed : {33445, 12345, 55667, 77889, 99001}) {
+    params_.structure = StructurePattern::FullPop;
+    params_.seed = seed;
+    params_.vocal_attitude = VocalAttitude::Raw;
 
-  const auto& vocal = gen.getSong().vocal();
-  EXPECT_FALSE(vocal.notes().empty());
+    Generator gen;
+    gen.generate(params_);
 
-  // Count consecutive note pairs with small intervals and short gaps
-  // (candidates for portamento)
-  const auto& notes = vocal.notes();
-  int portamento_candidates = 0;
-  for (size_t idx = 0; idx + 1 < notes.size(); ++idx) {
-    Tick this_end = notes[idx].start_tick + notes[idx].duration;
-    Tick gap = (notes[idx + 1].start_tick > this_end)
-                   ? (notes[idx + 1].start_tick - this_end)
-                   : 0;
-    int abs_diff = std::abs(static_cast<int>(notes[idx + 1].note) -
-                            static_cast<int>(notes[idx].note));
-    if (abs_diff > 0 && abs_diff <= 5 && gap < TICK_EIGHTH) {
-      ++portamento_candidates;
+    const auto& vocal = gen.getSong().vocal();
+    if (vocal.notes().empty()) continue;
+
+    const auto& notes = vocal.notes();
+    for (size_t idx = 0; idx + 1 < notes.size(); ++idx) {
+      Tick this_end = notes[idx].start_tick + notes[idx].duration;
+      Tick gap = (notes[idx + 1].start_tick > this_end)
+                     ? (notes[idx + 1].start_tick - this_end)
+                     : 0;
+      int abs_diff = std::abs(static_cast<int>(notes[idx + 1].note) -
+                              static_cast<int>(notes[idx].note));
+      if (abs_diff > 0 && abs_diff <= 5 && gap < TICK_EIGHTH) {
+        ++total_portamento_candidates;
+      }
     }
+    total_bends += static_cast<int>(vocal.pitchBendEvents().size());
   }
 
-  // With Raw attitude and sufficient candidates, pitch bends should exist
-  // (combines scoop, vibrato, fall-off, and portamento)
-  const auto& bends = vocal.pitchBendEvents();
-  if (portamento_candidates >= 3) {
-    EXPECT_FALSE(bends.empty())
-        << "Raw attitude with " << portamento_candidates
-        << " portamento candidates should produce pitch bends";
-  }
-  SUCCEED() << "Found " << portamento_candidates << " portamento candidates, "
-            << bends.size() << " total pitch bends";
+  // Across 5 seeds, Raw attitude should produce portamento candidates and bends
+  EXPECT_GT(total_portamento_candidates, 0)
+      << "Raw attitude across 5 seeds should have portamento candidates";
+  EXPECT_GT(total_bends, 0)
+      << "Raw attitude with portamento candidates should produce pitch bends";
 }
 
 TEST_F(VocalTest, ExpressivePortamentoGlideHasCenterReset) {
-  // Verify that portamento glides always end with a center reset at the next
-  // note start, preventing pitch offset from leaking into subsequent notes.
-  params_.structure = StructurePattern::FullPop;
-  params_.seed = 44556;
-  params_.vocal_attitude = VocalAttitude::Expressive;
+  // Verify that portamento glides end with a center reset at the next note start,
+  // preventing pitch offset from leaking into subsequent notes.
+  // Test across multiple seeds to ensure robustness.
+  int total_center_resets = 0;
+  int total_bends = 0;
 
-  Generator gen;
-  gen.generate(params_);
+  for (int seed : {44556, 12345, 78901}) {
+    params_.structure = StructurePattern::FullPop;
+    params_.seed = seed;
+    params_.vocal_attitude = VocalAttitude::Expressive;
 
-  const auto& vocal = gen.getSong().vocal();
-  const auto& bends = vocal.pitchBendEvents();
+    Generator gen;
+    gen.generate(params_);
 
-  // Find any center-reset events (value == 0) that align with note starts
-  const auto& notes = vocal.notes();
-  std::set<Tick> note_starts;
-  for (const auto& note : notes) {
-    note_starts.insert(note.start_tick);
-  }
+    const auto& vocal = gen.getSong().vocal();
+    const auto& bends = vocal.pitchBendEvents();
+    total_bends += static_cast<int>(bends.size());
 
-  int center_resets_at_note_starts = 0;
-  for (const auto& bend : bends) {
-    if (bend.value == PitchBend::kCenter && note_starts.count(bend.tick) > 0) {
-      ++center_resets_at_note_starts;
+    const auto& notes = vocal.notes();
+    std::set<Tick> note_starts;
+    for (const auto& note : notes) {
+      note_starts.insert(note.start_tick);
+    }
+
+    for (const auto& bend : bends) {
+      if (bend.value == PitchBend::kCenter && note_starts.count(bend.tick) > 0) {
+        ++total_center_resets;
+      }
     }
   }
 
-  // We expect at least some center resets at note boundaries
-  // (from portamento resets and fall-off resets)
-  // This is a structural validity check, not a count test
-  SUCCEED() << "Found " << center_resets_at_note_starts
-            << " center resets aligned with note starts out of "
-            << bends.size() << " total bends";
+  // Expressive attitude produces scoop-up, fall-off, vibrato, and portamento.
+  // All of these insert center resets at note boundaries.
+  EXPECT_GT(total_bends, 0)
+      << "Expressive attitude should produce pitch bends across 3 seeds";
+  EXPECT_GT(total_center_resets, 0)
+      << "Pitch bend expressions should include center resets at note starts "
+      << "(from portamento/fall-off resets)";
 }
 
 TEST_F(VocalTest, CleanAttitudeNoPortamento) {

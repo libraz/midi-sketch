@@ -36,7 +36,6 @@
 #define BASS_DEBUG_LOG 0
 #endif
 
-#include <iostream>  // For debug output
 
 namespace midisketch {
 
@@ -1266,11 +1265,6 @@ bool shouldAddDominantPreparation(SectionType current, SectionType next, int8_t 
 // Uses HarmonyContext for all notes to ensure vocal priority
 void generateBassHalfBar(MidiTrack& track, Tick half_start, uint8_t root, SectionType section,
                          Mood mood, bool is_first_half, IHarmonyContext& harmony) {
-  // DEBUG: Log generateBassHalfBar call
-  if (half_start >= 3840 && half_start < 7680) {
-    std::cerr << "[HalfBar DEBUG] half_start=" << half_start << " root=" << static_cast<int>(root)
-              << " is_first_half=" << is_first_half << "\n";
-  }
 
   uint8_t vel = calculateVelocity(section, 0, mood);
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
@@ -1338,13 +1332,6 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
       uint8_t root = getBassRoot(degree);
       uint8_t next_root = getBassRoot(next_degree);
 
-      // DEBUG: Log root calculation
-      if (bar_start >= 3840 && bar_start < 7680) {
-        std::cerr << "[BASS DEBUG] bar_start=" << bar_start << " degree=" << static_cast<int>(degree)
-                  << " root=" << static_cast<int>(root) << " next_degree=" << static_cast<int>(next_degree)
-                  << " next_root=" << static_cast<int>(next_root) << "\n";
-      }
-
       // === SLASH CHORD BASS OVERRIDE ===
       // Check if a slash chord should override the bass root for smoother voice leading.
       // This creates stepwise bass motion (e.g., C/E before F gives E->F bass walk).
@@ -1366,10 +1353,6 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
             slash_bass += Interval::OCTAVE;
           }
           root = clampBass(slash_bass);
-          // DEBUG: Log slash chord override
-          if (bar_start >= 3840 && bar_start < 7680) {
-            std::cerr << "[BASS DEBUG] SLASH CHORD: root changed to " << static_cast<int>(root) << "\n";
-          }
         }
       }
 

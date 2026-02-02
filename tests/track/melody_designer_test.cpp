@@ -1792,47 +1792,125 @@ TEST(MelodyDesignerTest, HighPitchPhraseAffectsBreath) {
 // Internal Arc Activation Tests (Phase 2-2)
 // ============================================================================
 
-TEST(InternalArcActivationTest, LongSectionGetsVaryingSubPhraseIndex) {
-  // Verify that an 8-bar section generates notes with varying sub_phrase_index.
-  // This confirms that generateSection() now sets sub_phrase_index based on
-  // bar position within the section (previously always 0).
-  Generator generator;
-  GeneratorParams params;
-  params.seed = 42;
-  params.mood = Mood::StraightPop;
-  params.chord_id = 0;
-  params.structure = StructurePattern::FullPop;  // Has long sections
-  params.composition_style = CompositionStyle::MelodyLead;
-  params.bpm = 120;
+TEST(InternalArcActivationTest, EightBarSectionUsesAllArcStages) {
+  // Verify that an 8-bar section produces notes distributed across all 4 arc
+  // stages, confirming that sub_phrase_index is actually varying (0-3).
+  // Each 2-bar segment should contain notes.
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
 
-  generator.generate(params);
-  const auto& vocal = generator.getSong().vocal();
-  EXPECT_FALSE(vocal.notes().empty());
+  // Count how many seeds produce notes in all 4 segments
+  int seeds_with_all_segments = 0;
+  constexpr int kNumSeeds = 20;
 
-  // The generation path should now use non-zero sub_phrase_index values,
-  // which affects tessitura, step size, and density. We verify indirectly
-  // by confirming the generation succeeds with varied internal arc stages.
-  SUCCEED() << "Generation with internal arc activation completed successfully with "
-            << vocal.notes().size() << " vocal notes";
+  for (int seed = 0; seed < kNumSeeds; ++seed) {
+    std::mt19937 rng(seed);
+
+    MelodyDesigner::SectionContext ctx;
+    ctx.section_type = SectionType::A;
+    ctx.section_start = 0;
+    ctx.section_end = TICKS_PER_BAR * 8;  // 8 bars
+    ctx.section_bars = 8;
+    ctx.chord_degree = 0;
+    ctx.key_offset = 0;
+    ctx.tessitura = TessituraRange{60, 72, 66, 55, 77};
+    ctx.vocal_low = 55;
+    ctx.vocal_high = 79;
+    ctx.density_modifier = 1.0f;
+    ctx.mood = Mood::StraightPop;
+
+    auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+
+    // Check notes exist in each 2-bar segment
+    bool has_presentation = false, has_development = false;
+    bool has_climax = false, has_resolution = false;
+    for (const auto& note : notes) {
+      Tick bar = note.start_tick / TICKS_PER_BAR;
+      if (bar < 2) has_presentation = true;
+      else if (bar < 4) has_development = true;
+      else if (bar < 6) has_climax = true;
+      else has_resolution = true;
+    }
+
+    if (has_presentation && has_development && has_climax && has_resolution) {
+      ++seeds_with_all_segments;
+    }
+  }
+
+  // Most seeds should produce notes in all 4 segments of an 8-bar section
+  EXPECT_GT(seeds_with_all_segments, kNumSeeds / 2)
+      << "Most 8-bar sections should have notes in all 4 arc segments. "
+      << seeds_with_all_segments << "/" << kNumSeeds << " seeds had all segments";
 }
 
-TEST(InternalArcActivationTest, DensityModulationAcrossArcStages) {
-  // Verify density_modifier is modulated per arc stage by checking that
-  // different seeds with FullPop (8+ bar sections) produce valid output.
-  for (int seed = 1; seed <= 5; ++seed) {
+TEST(InternalArcActivationTest, ArcStageAffectsStepSizeMultiplier) {
+  // Verify the step size multiplier differs between arc stages.
+  // Development (index=1) has 1.3x and Resolution (index=3) has 0.8x.
+  // This should produce measurably different interval distributions.
+  MelodyDesigner::SectionContext ctx;
+
+  // Development: wider steps allowed (1.3x)
+  ctx.sub_phrase_index = 1;
+  EXPECT_FLOAT_EQ(ctx.getStepSizeMultiplier(), 1.3f);
+
+  // Resolution: smaller steps (0.8x)
+  ctx.sub_phrase_index = 3;
+  EXPECT_FLOAT_EQ(ctx.getStepSizeMultiplier(), 0.8f);
+
+  // Presentation: default
+  ctx.sub_phrase_index = 0;
+  EXPECT_FLOAT_EQ(ctx.getStepSizeMultiplier(), 1.0f);
+
+  // Climax: default with tessitura shift
+  ctx.sub_phrase_index = 2;
+  EXPECT_FLOAT_EQ(ctx.getStepSizeMultiplier(), 1.0f);
+  EXPECT_EQ(ctx.getTessituraAdjustment(), 2);
+}
+
+TEST(InternalArcActivationTest, ShortSectionSkipsArcModulation) {
+  // Sections shorter than 4 bars should not apply arc modulation.
+  // Verify that a 2-bar section still produces notes normally.
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+  std::mt19937 rng(42);
+
+  MelodyDesigner::SectionContext ctx;
+  ctx.section_type = SectionType::A;
+  ctx.section_start = 0;
+  ctx.section_end = TICKS_PER_BAR * 2;  // 2 bars (< 4, no arc)
+  ctx.section_bars = 2;
+  ctx.chord_degree = 0;
+  ctx.key_offset = 0;
+  ctx.tessitura = TessituraRange{60, 72, 66, 55, 77};
+  ctx.vocal_low = 55;
+  ctx.vocal_high = 79;
+  ctx.density_modifier = 1.0f;
+  ctx.mood = Mood::StraightPop;
+
+  auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+  EXPECT_GT(notes.size(), 0u)
+      << "Short sections (< 4 bars) should still produce notes";
+}
+
+TEST(InternalArcActivationTest, IntegrationWithFullGeneration) {
+  // Verify full generation pipeline works with arc activation across all blueprints.
+  for (int bp = 0; bp <= 8; ++bp) {
     Generator generator;
     GeneratorParams params;
-    params.seed = seed;
+    params.seed = 42;
     params.mood = Mood::StraightPop;
     params.chord_id = 0;
     params.structure = StructurePattern::FullPop;
     params.composition_style = CompositionStyle::MelodyLead;
     params.bpm = 120;
+    params.blueprint_id = bp;
 
     generator.generate(params);
     const auto& vocal = generator.getSong().vocal();
     EXPECT_FALSE(vocal.notes().empty())
-        << "Seed " << seed << " should generate vocal notes with arc density modulation";
+        << "Blueprint " << bp << " should produce vocal notes with arc modulation";
   }
 }
 
