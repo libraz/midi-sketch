@@ -67,7 +67,9 @@ enum class VocalStylePreset : uint8_t {
   BrightKira,    ///< Bright sparkly style
   CoolSynth,     ///< Cool synthetic style
   CuteAffected,  ///< Cute affected style
-  PowerfulShout  ///< Powerful shout style
+  PowerfulShout,  ///< Powerful shout style
+  // Extended styles (13+)
+  KPop            ///< K-POP style (syncopation, hooks, rap-like passages)
 };
 
 /// Weight for random style selection.

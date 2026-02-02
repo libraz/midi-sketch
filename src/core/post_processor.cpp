@@ -1070,4 +1070,201 @@ void PostProcessor::fixBassVocalClashes(MidiTrack& bass, const MidiTrack& vocal)
   removeVocalClashingNotes(bass, vocal, /*include_close_major_2nd=*/false);
 }
 
+void PostProcessor::synchronizeBassKick(MidiTrack& bass, const MidiTrack& drums,
+                                         DrumStyle drum_style) {
+  const auto& drum_notes = drums.notes();
+  if (drum_notes.empty()) return;
+
+  // Extract kick (note 36) onset ticks
+  std::vector<Tick> kick_ticks;
+  kick_ticks.reserve(256);
+  for (const auto& note : drum_notes) {
+    if (note.note == 36) {
+      kick_ticks.push_back(note.start_tick);
+    }
+  }
+  if (kick_ticks.empty()) return;
+
+  // Sort kick ticks for binary search
+  std::sort(kick_ticks.begin(), kick_ticks.end());
+
+  // Tolerance based on DrumStyle
+  Tick tolerance;
+  switch (drum_style) {
+    case DrumStyle::Sparse:
+      tolerance = 72;  // Ballad: loose sync
+      break;
+    case DrumStyle::FourOnFloor:
+    case DrumStyle::Synth:
+    case DrumStyle::Trap:
+      tolerance = 24;  // Dance/electronic: tight sync
+      break;
+    default:
+      tolerance = 48;  // Standard: moderate sync
+      break;
+  }
+
+  // Snap bass notes to nearest kick within tolerance
+  for (auto& note : bass.notes()) {
+    // Binary search for nearest kick
+    auto iter = std::lower_bound(kick_ticks.begin(), kick_ticks.end(), note.start_tick);
+
+    Tick best_kick = 0;
+    Tick best_diff = tolerance + 1;  // Start beyond tolerance
+
+    // Check the kick at or after the bass note
+    if (iter != kick_ticks.end()) {
+      Tick diff = *iter - note.start_tick;
+      if (diff < best_diff) {
+        best_diff = diff;
+        best_kick = *iter;
+      }
+    }
+    // Check the kick before the bass note
+    if (iter != kick_ticks.begin()) {
+      --iter;
+      // Safe unsigned subtraction: note.start_tick >= *iter because lower_bound
+      // returned an element after iter, so *iter <= note.start_tick
+      Tick diff = note.start_tick - *iter;
+      if (diff < best_diff) {
+        best_diff = diff;
+        best_kick = *iter;
+      }
+    }
+
+    // Snap if within tolerance and not already aligned
+    if (best_diff <= tolerance && best_diff > 0) {
+      note.start_tick = best_kick;
+    }
+  }
+}
+
+void PostProcessor::applyTrackPanning(MidiTrack& vocal, MidiTrack& chord, MidiTrack& bass,
+                                      MidiTrack& motif, MidiTrack& arpeggio, MidiTrack& aux) {
+  // Pan values: 0=hard left, 64=center, 127=hard right
+  // Only apply panning to tracks that contain notes to avoid marking empty tracks as non-empty.
+  struct PanEntry {
+    MidiTrack* track;
+    uint8_t pan_value;
+  };
+  PanEntry entries[] = {
+      {&vocal, 64},     // Center
+      {&bass, 64},      // Center
+      {&chord, 52},     // Slight left
+      {&arpeggio, 76},  // Slight right
+      {&motif, 44},     // Left
+      {&aux, 84},       // Right
+  };
+  for (const auto& entry : entries) {
+    if (!entry.track->notes().empty()) {
+      entry.track->addCC(0, MidiCC::kPan, entry.pan_value);
+    }
+  }
+}
+
+void PostProcessor::applyExpressionCurves(MidiTrack& vocal, MidiTrack& chord, MidiTrack& aux,
+                                          const std::vector<Section>& sections) {
+  constexpr uint8_t kExprDefault = 100;
+  constexpr Tick kResolution = TICKS_PER_BEAT / 2;  // 8th note resolution
+
+  // Vocal: crescendo-diminuendo on long notes (>= 2 beats)
+  constexpr Tick kLongNoteThreshold = TICKS_PER_BEAT * 2;
+  for (const auto& note : vocal.notes()) {
+    if (note.duration >= kLongNoteThreshold) {
+      Tick start = note.start_tick;
+      Tick end = start + note.duration;
+      Tick mid = start + note.duration / 2;
+
+      // Crescendo: 80 -> 110
+      for (Tick tick = start; tick < mid; tick += kResolution) {
+        float progress = static_cast<float>(tick - start) / static_cast<float>(mid - start);
+        uint8_t val = static_cast<uint8_t>(80 + 30 * progress);
+        vocal.addCC(tick, MidiCC::kExpression, val);
+      }
+      // Diminuendo: 110 -> 90
+      for (Tick tick = mid; tick < end; tick += kResolution) {
+        float progress = static_cast<float>(tick - mid) / static_cast<float>(end - mid);
+        uint8_t val = static_cast<uint8_t>(110 - 20 * progress);
+        vocal.addCC(tick, MidiCC::kExpression, val);
+      }
+      // Reset after note
+      vocal.addCC(end, MidiCC::kExpression, kExprDefault);
+    }
+  }
+
+  // Chord/Aux: section-level expression curve (80 -> 100 -> 90)
+  // Only apply to tracks that contain notes to avoid marking empty tracks as non-empty.
+  MidiTrack* section_tracks[] = {&chord, &aux};
+  for (MidiTrack* track : section_tracks) {
+    if (track->notes().empty()) continue;
+    for (const auto& section : sections) {
+      Tick sec_start = section.start_tick;
+      Tick sec_end = section.endTick();
+      Tick sec_mid = sec_start + (sec_end - sec_start) / 2;
+      Tick sec_duration = sec_end - sec_start;
+      if (sec_duration == 0) continue;
+
+      // First half: 80 -> 100
+      for (Tick tick = sec_start; tick < sec_mid; tick += kResolution) {
+        float progress = static_cast<float>(tick - sec_start) / static_cast<float>(sec_mid - sec_start);
+        uint8_t val = static_cast<uint8_t>(80 + 20 * progress);
+        track->addCC(tick, MidiCC::kExpression, val);
+      }
+      // Second half: 100 -> 90
+      for (Tick tick = sec_mid; tick < sec_end; tick += kResolution) {
+        float progress = static_cast<float>(tick - sec_mid) / static_cast<float>(sec_end - sec_mid);
+        uint8_t val = static_cast<uint8_t>(100 - 10 * progress);
+        track->addCC(tick, MidiCC::kExpression, val);
+      }
+    }
+  }
+}
+
+void PostProcessor::applyArrangementHoles(MidiTrack& motif, MidiTrack& arpeggio, MidiTrack& aux,
+                                          MidiTrack& chord, MidiTrack& bass,
+                                          const std::vector<Section>& sections) {
+  // Helper: remove notes that overlap with [hole_start, hole_end)
+  auto muteRange = [](MidiTrack& track, Tick hole_start, Tick hole_end) {
+    auto& notes = track.notes();
+    notes.erase(std::remove_if(notes.begin(), notes.end(),
+                               [hole_start, hole_end](const NoteEvent& n) {
+                                 Tick note_end = n.start_tick + n.duration;
+                                 // Remove if note overlaps with hole range
+                                 return n.start_tick < hole_end && note_end > hole_start;
+                               }),
+                notes.end());
+  };
+
+  constexpr Tick kTwoBeats = TICKS_PER_BEAT * 2;
+
+  for (size_t i = 0; i < sections.size(); ++i) {
+    const auto& section = sections[i];
+
+    // Chorus final 2 beats: mute background tracks for buildup effect
+    // Only apply to Max peak level sections
+    if (section.type == SectionType::Chorus && section.peak_level == PeakLevel::Max) {
+      Tick hole_start = section.endTick() - kTwoBeats;
+      Tick hole_end = section.endTick();
+      if (hole_start >= section.start_tick) {
+        muteRange(motif, hole_start, hole_end);
+        muteRange(arpeggio, hole_start, hole_end);
+        muteRange(aux, hole_start, hole_end);
+      }
+    }
+
+    // Bridge first 2 beats: mute non-vocal/non-drum tracks for contrast
+    if (section.type == SectionType::Bridge) {
+      Tick hole_start = section.start_tick;
+      Tick hole_end = section.start_tick + kTwoBeats;
+      if (hole_end <= section.endTick()) {
+        muteRange(motif, hole_start, hole_end);
+        muteRange(arpeggio, hole_start, hole_end);
+        muteRange(aux, hole_start, hole_end);
+        muteRange(chord, hole_start, hole_end);
+        muteRange(bass, hole_start, hole_end);
+      }
+    }
+  }
+}
+
 }  // namespace midisketch

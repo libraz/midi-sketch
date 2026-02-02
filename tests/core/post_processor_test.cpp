@@ -1824,5 +1824,242 @@ TEST(DrumTimingProfileTest, DriveFeelAppliesOnTopOfProfile) {
       << "Aggressive drive should amplify Sparse hi-hat push more than laid-back";
 }
 
+// ============================================================================
+// synchronizeBassKick Tests
+// ============================================================================
+
+class BassKickSyncTest : public ::testing::Test {
+ protected:
+  MidiTrack bass_;
+  MidiTrack drums_;
+};
+
+TEST_F(BassKickSyncTest, SnapsNearbyBassNoteToKick) {
+  // Kick at tick 480, bass note at tick 500 (20 ticks away)
+  drums_.addNote(NoteEventBuilder::create(480, 60, KICK, 100));
+  bass_.addNote(NoteEventBuilder::create(500, 240, 36, 80));
+
+  PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Standard);
+
+  // Standard tolerance is 48, so 20 ticks should snap
+  EXPECT_EQ(bass_.notes()[0].start_tick, 480u)
+      << "Bass note within tolerance should snap to kick";
+}
+
+TEST_F(BassKickSyncTest, DoesNotSnapBeyondTolerance) {
+  // Kick at tick 480, bass note at tick 580 (100 ticks away)
+  drums_.addNote(NoteEventBuilder::create(480, 60, KICK, 100));
+  bass_.addNote(NoteEventBuilder::create(580, 240, 36, 80));
+
+  PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Standard);
+
+  // 100 ticks exceeds Standard tolerance of 48
+  EXPECT_EQ(bass_.notes()[0].start_tick, 580u)
+      << "Bass note beyond tolerance should not be moved";
+}
+
+TEST_F(BassKickSyncTest, AlreadyAlignedNotMoved) {
+  // Both at tick 960
+  drums_.addNote(NoteEventBuilder::create(960, 60, KICK, 100));
+  bass_.addNote(NoteEventBuilder::create(960, 240, 36, 80));
+
+  PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Standard);
+
+  EXPECT_EQ(bass_.notes()[0].start_tick, 960u)
+      << "Already-aligned bass note should stay put";
+}
+
+TEST_F(BassKickSyncTest, SnapsToNearestKick) {
+  // Two kicks at 480 and 960, bass note at 930 (closer to 960)
+  drums_.addNote(NoteEventBuilder::create(480, 60, KICK, 100));
+  drums_.addNote(NoteEventBuilder::create(960, 60, KICK, 100));
+  bass_.addNote(NoteEventBuilder::create(930, 240, 36, 80));
+
+  PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Standard);
+
+  EXPECT_EQ(bass_.notes()[0].start_tick, 960u)
+      << "Bass note should snap to the nearest kick";
+}
+
+TEST_F(BassKickSyncTest, IgnoresNonKickDrumNotes) {
+  // Only snare at tick 480, no kick
+  drums_.addNote(NoteEventBuilder::create(480, 60, SNARE, 100));
+  bass_.addNote(NoteEventBuilder::create(500, 240, 36, 80));
+
+  PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Standard);
+
+  EXPECT_EQ(bass_.notes()[0].start_tick, 500u)
+      << "Bass note should not snap to non-kick drum notes";
+}
+
+TEST_F(BassKickSyncTest, EmptyDrumsDoesNothing) {
+  bass_.addNote(NoteEventBuilder::create(500, 240, 36, 80));
+
+  PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Standard);
+
+  EXPECT_EQ(bass_.notes()[0].start_tick, 500u)
+      << "Empty drums should leave bass unchanged";
+}
+
+TEST_F(BassKickSyncTest, SparseStyleHasLooseTolerance) {
+  // Kick at 480, bass at 540 (60 ticks away)
+  // Standard tolerance=48 would reject, but Sparse tolerance=72 should accept
+  drums_.addNote(NoteEventBuilder::create(480, 60, KICK, 100));
+  bass_.addNote(NoteEventBuilder::create(540, 240, 36, 80));
+
+  PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Sparse);
+
+  EXPECT_EQ(bass_.notes()[0].start_tick, 480u)
+      << "Sparse style should use looser tolerance (72 ticks)";
+}
+
+TEST_F(BassKickSyncTest, ElectronicStyleHasTightTolerance) {
+  // Kick at 480, bass at 510 (30 ticks away)
+  // FourOnFloor tolerance=24 should reject 30 ticks
+  drums_.addNote(NoteEventBuilder::create(480, 60, KICK, 100));
+  bass_.addNote(NoteEventBuilder::create(510, 240, 36, 80));
+
+  PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::FourOnFloor);
+
+  EXPECT_EQ(bass_.notes()[0].start_tick, 510u)
+      << "FourOnFloor style should use tight tolerance (24 ticks)";
+}
+
+TEST_F(BassKickSyncTest, ElectronicStyleSnapsWithinTightTolerance) {
+  // Kick at 480, bass at 500 (20 ticks away, within 24)
+  drums_.addNote(NoteEventBuilder::create(480, 60, KICK, 100));
+  bass_.addNote(NoteEventBuilder::create(500, 240, 36, 80));
+
+  PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::FourOnFloor);
+
+  EXPECT_EQ(bass_.notes()[0].start_tick, 480u)
+      << "FourOnFloor style should snap within tight tolerance";
+}
+
+TEST_F(BassKickSyncTest, MultipleBassNotesProcessedIndependently) {
+  // Two kicks at 480 and 1920
+  drums_.addNote(NoteEventBuilder::create(480, 60, KICK, 100));
+  drums_.addNote(NoteEventBuilder::create(1920, 60, KICK, 100));
+
+  // Bass note near first kick, another far from any kick
+  bass_.addNote(NoteEventBuilder::create(500, 240, 36, 80));
+  bass_.addNote(NoteEventBuilder::create(1200, 240, 36, 80));
+
+  PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Standard);
+
+  EXPECT_EQ(bass_.notes()[0].start_tick, 480u)
+      << "First bass note should snap to nearby kick";
+  EXPECT_EQ(bass_.notes()[1].start_tick, 1200u)
+      << "Second bass note should stay (too far from any kick)";
+}
+
+TEST_F(BassKickSyncTest, BassBeforeKickSnapsForward) {
+  // Kick at 480, bass at 460 (bass is 20 ticks before kick)
+  drums_.addNote(NoteEventBuilder::create(480, 60, KICK, 100));
+  bass_.addNote(NoteEventBuilder::create(460, 240, 36, 80));
+
+  PostProcessor::synchronizeBassKick(bass_, drums_, DrumStyle::Standard);
+
+  EXPECT_EQ(bass_.notes()[0].start_tick, 480u)
+      << "Bass note slightly before kick should snap forward to kick";
+}
+
+// ============================================================================
+// Arrangement Holes Tests (Phase 3-1)
+// ============================================================================
+
+class ArrangementHolesTest : public ::testing::Test {
+ protected:
+  MidiTrack motif_;
+  MidiTrack arpeggio_;
+  MidiTrack aux_;
+  MidiTrack chord_;
+  MidiTrack bass_;
+};
+
+TEST_F(ArrangementHolesTest, ChorusMaxPeakMutesBackgroundFinalTwoBeats) {
+  // 8-bar chorus with Max peak level
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 8;
+  chorus.peak_level = PeakLevel::Max;
+  std::vector<Section> sections = {chorus};
+
+  Tick section_end = chorus.endTick();  // 8 * 1920 = 15360
+  Tick hole_start = section_end - TICKS_PER_BEAT * 2;  // last 2 beats
+
+  // Notes in the hole zone
+  motif_.addNote(NoteEventBuilder::create(hole_start, 240, 60, 80));
+  arpeggio_.addNote(NoteEventBuilder::create(hole_start + 240, 240, 64, 80));
+  aux_.addNote(NoteEventBuilder::create(hole_start + 480, 240, 67, 80));
+
+  // Notes before the hole zone (should survive)
+  motif_.addNote(NoteEventBuilder::create(0, 480, 60, 80));
+  chord_.addNote(NoteEventBuilder::create(0, 480, 64, 80));
+
+  PostProcessor::applyArrangementHoles(motif_, arpeggio_, aux_, chord_, bass_, sections);
+
+  // Notes in hole zone should be removed
+  EXPECT_EQ(motif_.notes().size(), 1u) << "Motif should keep note before hole, remove note in hole";
+  EXPECT_EQ(arpeggio_.notes().size(), 0u) << "Arpeggio note in hole should be removed";
+  EXPECT_EQ(aux_.notes().size(), 0u) << "Aux note in hole should be removed";
+  // Chord should be unaffected (chorus holes only mute motif/arpeggio/aux)
+  EXPECT_EQ(chord_.notes().size(), 1u) << "Chord should be unaffected by chorus hole";
+}
+
+TEST_F(ArrangementHolesTest, ChorusNonMaxPeakNotAffected) {
+  Section chorus;
+  chorus.type = SectionType::Chorus;
+  chorus.start_tick = 0;
+  chorus.bars = 8;
+  chorus.peak_level = PeakLevel::None;  // Not Max
+  std::vector<Section> sections = {chorus};
+
+  Tick section_end = chorus.endTick();
+  Tick hole_start = section_end - TICKS_PER_BEAT * 2;
+
+  motif_.addNote(NoteEventBuilder::create(hole_start, 240, 60, 80));
+
+  PostProcessor::applyArrangementHoles(motif_, arpeggio_, aux_, chord_, bass_, sections);
+
+  EXPECT_EQ(motif_.notes().size(), 1u) << "Non-Max chorus should not mute notes";
+}
+
+TEST_F(ArrangementHolesTest, BridgeMutesFirstTwoBeats) {
+  Section bridge;
+  bridge.type = SectionType::Bridge;
+  bridge.start_tick = 0;
+  bridge.bars = 4;
+  std::vector<Section> sections = {bridge};
+
+  Tick hole_end = TICKS_PER_BEAT * 2;
+
+  // Notes in hole zone (bridge first 2 beats)
+  motif_.addNote(NoteEventBuilder::create(0, 480, 60, 80));
+  arpeggio_.addNote(NoteEventBuilder::create(240, 240, 64, 80));
+  chord_.addNote(NoteEventBuilder::create(0, 960, 48, 80));
+  bass_.addNote(NoteEventBuilder::create(0, 480, 36, 80));
+
+  // Notes after hole zone (should survive)
+  motif_.addNote(NoteEventBuilder::create(hole_end, 480, 60, 80));
+  bass_.addNote(NoteEventBuilder::create(hole_end, 480, 36, 80));
+
+  PostProcessor::applyArrangementHoles(motif_, arpeggio_, aux_, chord_, bass_, sections);
+
+  EXPECT_EQ(motif_.notes().size(), 1u) << "Motif: keep note after hole, remove note in hole";
+  EXPECT_EQ(arpeggio_.notes().size(), 0u) << "Arpeggio in hole should be removed";
+  EXPECT_EQ(chord_.notes().size(), 0u) << "Chord in hole should be removed (bridge)";
+  EXPECT_EQ(bass_.notes().size(), 1u) << "Bass: keep note after hole, remove note in hole";
+}
+
+TEST_F(ArrangementHolesTest, EmptySectionsDoNothing) {
+  motif_.addNote(NoteEventBuilder::create(0, 480, 60, 80));
+  std::vector<Section> sections;
+
+  PostProcessor::applyArrangementHoles(motif_, arpeggio_, aux_, chord_, bass_, sections);
+  EXPECT_EQ(motif_.notes().size(), 1u);
+}
+
 }  // namespace
 }  // namespace midisketch

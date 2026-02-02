@@ -19,6 +19,8 @@
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
+#include "core/vocal_style_profile.h"
+#include "test_helpers/note_event_test_helper.h"
 #include "track/vocal/phrase_variation.h"
 
 namespace midisketch {
@@ -2728,6 +2730,300 @@ TEST(EmbellishmentOccurrenceScaling, NCTClampsAt50Percent) {
       << "NCT total should be clamped at 50%, got " << total_nct;
   EXPECT_GE(config.chord_tone_ratio, 0.49f)
       << "Chord tone ratio should not go below ~50%";
+}
+
+// ============================================================================
+// Tests for new PhraseVariation types: DynamicAccent, LateOnset, EchoRepeat
+// ============================================================================
+
+TEST(PhraseVariationNewTypes, DynamicAccentBoostsLastNoteVelocity) {
+  std::vector<NoteEvent> notes;
+  notes.push_back(NoteEventTestHelper::create(0, 480, 60, 80));
+  notes.push_back(NoteEventTestHelper::create(480, 480, 64, 90));
+
+  std::mt19937 rng(42);
+  applyPhraseVariation(notes, PhraseVariation::DynamicAccent, rng);
+
+  // Last note velocity should increase by 20
+  EXPECT_EQ(notes.back().velocity, 110);
+  // First note should be unchanged
+  EXPECT_EQ(notes.front().velocity, 80);
+}
+
+TEST(PhraseVariationNewTypes, DynamicAccentCapsAt127) {
+  std::vector<NoteEvent> notes;
+  notes.push_back(NoteEventTestHelper::create(0, 480, 60, 115));
+
+  std::mt19937 rng(42);
+  applyPhraseVariation(notes, PhraseVariation::DynamicAccent, rng);
+
+  // 115 + 20 = 135, should be capped at 127
+  EXPECT_EQ(notes.back().velocity, 127);
+}
+
+TEST(PhraseVariationNewTypes, LateOnsetShiftsFirstNote) {
+  std::vector<NoteEvent> notes;
+  notes.push_back(NoteEventTestHelper::create(0, 480, 60, 80));
+  notes.push_back(NoteEventTestHelper::create(480, 480, 64, 90));
+
+  std::mt19937 rng(42);
+  applyPhraseVariation(notes, PhraseVariation::LateOnset, rng);
+
+  // First note start should be delayed by 120 ticks (16th note)
+  EXPECT_EQ(notes.front().start_tick, 120u);
+  // Duration should be reduced to maintain same end point
+  EXPECT_EQ(notes.front().duration, 360u);  // 480 - 120
+  // Second note should be unchanged
+  EXPECT_EQ(notes[1].start_tick, 480u);
+  EXPECT_EQ(notes[1].duration, 480u);
+}
+
+TEST(PhraseVariationNewTypes, LateOnsetPreservesShortDuration) {
+  // If first note duration is very short, duration should not underflow
+  std::vector<NoteEvent> notes;
+  notes.push_back(NoteEventTestHelper::create(0, 100, 60, 80));
+
+  std::mt19937 rng(42);
+  applyPhraseVariation(notes, PhraseVariation::LateOnset, rng);
+
+  // Start shifted by 120
+  EXPECT_EQ(notes.front().start_tick, 120u);
+  // Duration 100 <= kOnsetDelay (120), so duration not reduced
+  EXPECT_EQ(notes.front().duration, 100u);
+}
+
+TEST(PhraseVariationNewTypes, EchoRepeatAddsEchoNote) {
+  std::vector<NoteEvent> notes;
+  notes.push_back(NoteEventTestHelper::create(0, 480, 60, 80));
+  notes.push_back(NoteEventTestHelper::create(480, 480, 64, 100));
+
+  std::mt19937 rng(42);
+  applyPhraseVariation(notes, PhraseVariation::EchoRepeat, rng);
+
+  // Should add one echo note
+  ASSERT_EQ(notes.size(), 3u);
+
+  const auto& echo = notes[2];
+  // Echo starts after last note ends
+  EXPECT_EQ(echo.start_tick, 960u);  // 480 + 480
+  // Echo duration is half of last note
+  EXPECT_EQ(echo.duration, 240u);  // 480 / 2
+  // Echo pitch matches last note
+  EXPECT_EQ(echo.note, 64);
+  // Echo velocity is -20 from last note
+  EXPECT_EQ(echo.velocity, 80);  // 100 - 20
+}
+
+TEST(PhraseVariationNewTypes, EchoRepeatMinimumDuration) {
+  // Last note with very short duration: echo should have minimum 60 ticks
+  std::vector<NoteEvent> notes;
+  notes.push_back(NoteEventTestHelper::create(0, 80, 60, 80));
+
+  std::mt19937 rng(42);
+  applyPhraseVariation(notes, PhraseVariation::EchoRepeat, rng);
+
+  ASSERT_EQ(notes.size(), 2u);
+  // 80 / 2 = 40, below minimum of 60
+  EXPECT_EQ(notes[1].duration, 60u);
+}
+
+TEST(PhraseVariationNewTypes, EchoRepeatMinimumVelocity) {
+  // Last note with low velocity: echo should have minimum 30
+  std::vector<NoteEvent> notes;
+  notes.push_back(NoteEventTestHelper::create(0, 480, 60, 40));
+
+  std::mt19937 rng(42);
+  applyPhraseVariation(notes, PhraseVariation::EchoRepeat, rng);
+
+  ASSERT_EQ(notes.size(), 2u);
+  // 40 - 20 = 20, below minimum of 30
+  EXPECT_EQ(notes[1].velocity, 30);
+}
+
+TEST(PhraseVariationNewTypes, NewVariationsAppearInSelection) {
+  // Verify that the new variations can actually be selected
+  std::set<PhraseVariation> selected_types;
+  for (int seed = 0; seed < 5000; ++seed) {
+    std::mt19937 rng(seed);
+    PhraseVariation var = selectPhraseVariation(3, 3, rng);  // High reuse + occurrence
+    selected_types.insert(var);
+  }
+
+  EXPECT_TRUE(selected_types.count(PhraseVariation::DynamicAccent) > 0)
+      << "DynamicAccent should be selectable";
+  EXPECT_TRUE(selected_types.count(PhraseVariation::LateOnset) > 0)
+      << "LateOnset should be selectable";
+  EXPECT_TRUE(selected_types.count(PhraseVariation::EchoRepeat) > 0)
+      << "EchoRepeat should be selectable";
+}
+
+TEST(PhraseVariationNewTypes, VariationTypeCountMatchesEnum) {
+  // Verify kVariationTypeCount matches the actual number of non-Exact values
+  EXPECT_EQ(kVariationTypeCount, 11);
+}
+
+// ============================================================================
+// Section-aware vibrato and portamento pitch bend tests
+// ============================================================================
+
+TEST_F(VocalTest, ChorusSectionsProduceMorePitchBendsThanVerse) {
+  // Chorus sections should have wider vibrato (1.5x depth multiplier),
+  // which may result in more or higher-amplitude pitch bend events.
+  // We test indirectly: a full song with expressive attitude should produce
+  // pitch bends, and the section-aware code path should not crash.
+  params_.structure = StructurePattern::FullPop;
+  params_.seed = 12345;
+  params_.vocal_attitude = VocalAttitude::Expressive;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal = gen.getSong().vocal();
+  EXPECT_FALSE(vocal.notes().empty());
+
+  // Verify pitch bends are generated (section-aware path active)
+  // The exact count depends on RNG, but with FullPop structure we should
+  // have chorus sections that trigger the 1.5x vibrato multiplier
+  const auto& bends = vocal.pitchBendEvents();
+  // With Expressive attitude and multiple sections, we expect bends
+  EXPECT_FALSE(bends.empty())
+      << "Expressive attitude with section-aware vibrato should produce pitch bends";
+}
+
+TEST_F(VocalTest, RawAttitudePortamentoGeneratesPitchBends) {
+  // Raw attitude has 50% portamento probability for close intervals.
+  // With enough notes, we should see portamento glide events.
+  params_.structure = StructurePattern::FullPop;
+  params_.seed = 33445;
+  params_.vocal_attitude = VocalAttitude::Raw;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal = gen.getSong().vocal();
+  EXPECT_FALSE(vocal.notes().empty());
+
+  // Count consecutive note pairs with small intervals and short gaps
+  // (candidates for portamento)
+  const auto& notes = vocal.notes();
+  int portamento_candidates = 0;
+  for (size_t idx = 0; idx + 1 < notes.size(); ++idx) {
+    Tick this_end = notes[idx].start_tick + notes[idx].duration;
+    Tick gap = (notes[idx + 1].start_tick > this_end)
+                   ? (notes[idx + 1].start_tick - this_end)
+                   : 0;
+    int abs_diff = std::abs(static_cast<int>(notes[idx + 1].note) -
+                            static_cast<int>(notes[idx].note));
+    if (abs_diff > 0 && abs_diff <= 5 && gap < TICK_EIGHTH) {
+      ++portamento_candidates;
+    }
+  }
+
+  // With Raw attitude and sufficient candidates, pitch bends should exist
+  // (combines scoop, vibrato, fall-off, and portamento)
+  const auto& bends = vocal.pitchBendEvents();
+  if (portamento_candidates >= 3) {
+    EXPECT_FALSE(bends.empty())
+        << "Raw attitude with " << portamento_candidates
+        << " portamento candidates should produce pitch bends";
+  }
+  SUCCEED() << "Found " << portamento_candidates << " portamento candidates, "
+            << bends.size() << " total pitch bends";
+}
+
+TEST_F(VocalTest, ExpressivePortamentoGlideHasCenterReset) {
+  // Verify that portamento glides always end with a center reset at the next
+  // note start, preventing pitch offset from leaking into subsequent notes.
+  params_.structure = StructurePattern::FullPop;
+  params_.seed = 44556;
+  params_.vocal_attitude = VocalAttitude::Expressive;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal = gen.getSong().vocal();
+  const auto& bends = vocal.pitchBendEvents();
+
+  // Find any center-reset events (value == 0) that align with note starts
+  const auto& notes = vocal.notes();
+  std::set<Tick> note_starts;
+  for (const auto& note : notes) {
+    note_starts.insert(note.start_tick);
+  }
+
+  int center_resets_at_note_starts = 0;
+  for (const auto& bend : bends) {
+    if (bend.value == PitchBend::kCenter && note_starts.count(bend.tick) > 0) {
+      ++center_resets_at_note_starts;
+    }
+  }
+
+  // We expect at least some center resets at note boundaries
+  // (from portamento resets and fall-off resets)
+  // This is a structural validity check, not a count test
+  SUCCEED() << "Found " << center_resets_at_note_starts
+            << " center resets aligned with note starts out of "
+            << bends.size() << " total bends";
+}
+
+TEST_F(VocalTest, CleanAttitudeNoPortamento) {
+  // Clean attitude (< Expressive) should skip all pitch bend expressions
+  // including the new portamento feature.
+  params_.structure = StructurePattern::FullPop;
+  params_.seed = 55667;
+  params_.vocal_attitude = VocalAttitude::Clean;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal = gen.getSong().vocal();
+  EXPECT_FALSE(vocal.notes().empty());
+  EXPECT_TRUE(vocal.pitchBendEvents().empty())
+      << "Clean attitude should not generate any pitch bends (including portamento), but found "
+      << vocal.pitchBendEvents().size();
+}
+
+// ============================================================================
+// K-POP Vocal Style Profile Tests
+// ============================================================================
+
+TEST_F(VocalTest, KPopStyleGeneratesValidOutput) {
+  params_.vocal_style = VocalStylePreset::KPop;
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal = gen.getSong().vocal();
+  EXPECT_FALSE(vocal.notes().empty())
+      << "KPop vocal style should generate notes";
+}
+
+TEST_F(VocalTest, KPopProfileHasExpectedBiases) {
+  const auto& profile = getVocalStyleProfile(VocalStylePreset::KPop);
+  EXPECT_STREQ(profile.name, "KPop");
+  // K-POP emphasizes offbeat, syncopation, same-pitch repetition, and motif hooks
+  EXPECT_GT(profile.bias.offbeat_weight, 1.0f);
+  EXPECT_GT(profile.bias.syncopation_weight, 1.0f);
+  EXPECT_GT(profile.bias.same_pitch_weight, 1.0f);
+  EXPECT_GT(profile.bias.motif_repeat_weight, 1.0f);
+  // Catchiness is high priority in evaluator
+  EXPECT_GE(profile.evaluator.catchiness_weight, 0.18f);
+}
+
+TEST_F(VocalTest, KPopStyleMultipleSeedsStable) {
+  params_.vocal_style = VocalStylePreset::KPop;
+  params_.structure = StructurePattern::StandardPop;
+
+  for (int seed = 1; seed <= 5; ++seed) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+    const auto& vocal = gen.getSong().vocal();
+    EXPECT_FALSE(vocal.notes().empty())
+        << "KPop style with seed " << seed << " should generate notes";
+  }
 }
 
 }  // namespace

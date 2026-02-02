@@ -526,6 +526,8 @@ inline VocalPhysicsParams getVocalPhysicsParams(VocalStylePreset style) {
       return {0.8f, 0.8f, 0.7f, true, 6};
     case 6:  // Rock - standard with stronger dynamics
       return {1.0f, 0.9f, 1.2f, true, 8};
+    case 13:  // KPop - agile, moderate expression
+      return {0.9f, 0.7f, 0.8f, true, 6};
     default:  // Standard, Auto, CityPop, Anime, extended styles
       return {1.0f, 1.0f, 1.0f, true, 8};
   }

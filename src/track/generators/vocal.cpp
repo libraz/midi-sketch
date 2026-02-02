@@ -172,8 +172,10 @@ void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes, const Gener
 /// @param all_notes All notes for pitch bend application
 /// @param params Generation parameters
 /// @param rng Random number generator
+/// @param sections Song sections for section-type aware vibrato (nullptr to skip)
 void applyVocalPitchBendExpressions(MidiTrack& track, const std::vector<NoteEvent>& all_notes,
-                                     const GeneratorParams& params, std::mt19937& rng) {
+                                     const GeneratorParams& params, std::mt19937& rng,
+                                     const std::vector<Section>* sections = nullptr) {
   VocalPhysicsParams physics = getVocalPhysicsParams(params.vocal_style);
 
   // Skip pitch bend entirely if scale is 0 (UltraVocaloid)
@@ -250,6 +252,21 @@ void applyVocalPitchBendExpressions(MidiTrack& track, const std::vector<NoteEven
         int vibrato_depth = static_cast<int>(base_vibrato_depth * physics.pitch_bend_scale);
         float vibrato_rate = (params.vocal_attitude == VocalAttitude::Raw) ? 5.0f : 5.5f;
 
+        // Section-type vibrato depth scaling: Chorus and Bridge get wider vibrato
+        if (sections != nullptr) {
+          for (const auto& sec : *sections) {
+            if (note.start_tick >= sec.start_tick && note.start_tick < sec.endTick()) {
+              if (sec.type == SectionType::Chorus) {
+                vibrato_depth = static_cast<int>(vibrato_depth * 1.5f);
+              } else if (sec.type == SectionType::Bridge) {
+                vibrato_depth = static_cast<int>(vibrato_depth * 1.3f);
+              }
+              // Verse and other sections keep 1.0x depth
+              break;
+            }
+          }
+        }
+
         if (vibrato_depth > 0) {
           Tick vibrato_start = note.start_tick + kVibratoDelay;
           Tick vibrato_duration = note.duration - kVibratoDelay;
@@ -260,6 +277,44 @@ void applyVocalPitchBendExpressions(MidiTrack& track, const std::vector<NoteEven
             for (const auto& bend : vibrato_bends) {
               track.addPitchBend(bend.tick, bend.value);
             }
+          }
+        }
+      }
+    }
+
+    // Portamento: pitch glide between consecutive close notes in same phrase
+    if (note_idx + 1 < all_notes.size()) {
+      const auto& next_note = all_notes[note_idx + 1];
+      Tick this_end = note.start_tick + note.duration;
+      Tick gap = (next_note.start_tick > this_end) ? (next_note.start_tick - this_end) : 0;
+
+      int pitch_diff = static_cast<int>(next_note.note) - static_cast<int>(note.note);
+      int abs_diff = std::abs(pitch_diff);
+
+      // Conditions: interval 1-5 semitones, gap < eighth note, not a phrase boundary
+      if (abs_diff > 0 && abs_diff <= 5 && gap < TICK_EIGHTH) {
+        float portamento_prob = (params.vocal_attitude == VocalAttitude::Raw) ? 0.5f : 0.3f;
+        portamento_prob *= physics.pitch_bend_scale;
+
+        if (prob_dist(rng) < portamento_prob) {
+          // Glide from current pitch toward next pitch over last 16th of current note
+          Tick glide_start = note.start_tick + note.duration - TICK_SIXTEENTH;
+          if (glide_start > note.start_tick) {
+            // Target bend value: pitch_diff semitones worth of pitch bend
+            int16_t target_bend = static_cast<int16_t>(pitch_diff * PitchBend::kSemitone);
+            // Clamp to valid pitch bend range
+            target_bend = std::clamp(target_bend, PitchBend::kMin, PitchBend::kMax);
+
+            // Generate smooth glide (4 steps over TICK_SIXTEENTH)
+            constexpr int kGlideSteps = 4;
+            Tick step_size = TICK_SIXTEENTH / kGlideSteps;
+            for (int step = 0; step <= kGlideSteps; ++step) {
+              float ratio = static_cast<float>(step) / static_cast<float>(kGlideSteps);
+              int16_t bend_val = static_cast<int16_t>(target_bend * ratio);
+              track.addPitchBend(glide_start + step * step_size, bend_val);
+            }
+            // Reset pitch bend at next note start
+            track.addPitchBend(next_note.start_tick, PitchBend::kCenter);
           }
         }
       }
@@ -834,8 +889,9 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
     track.addNote(note);
   }
 
-  // Apply pitch bend expressions (scoop-up, fall-off, vibrato)
-  applyVocalPitchBendExpressions(track, all_notes, params, rng);
+  // Apply pitch bend expressions (scoop-up, fall-off, vibrato, portamento)
+  const auto* sections_ptr = &song.arrangement().sections();
+  applyVocalPitchBendExpressions(track, all_notes, params, rng, sections_ptr);
 }
 
 }  // namespace midisketch

@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "core/midi_track.h"
+#include "core/section_types.h"
 #include "core/swing_quantize.h"
 #include "core/timing_constants.h"
 
@@ -246,6 +247,67 @@ TEST(QuantizeToSwingGridTest, ContinuousSwingAmountRange) {
 
   // Final result at swing=1.0 should be 320
   EXPECT_EQ(previous, 320u);
+}
+
+// ============================================================================
+// Track-role swing scaling tests (Phase 3-2)
+// ============================================================================
+
+TEST(SwingRoleScalingTest, ArpeggioGetsExaggeratedSwing) {
+  float scale = getSwingScaleForRole(TrackRole::Arpeggio);
+  EXPECT_GT(scale, 1.0f) << "Arpeggio should get exaggerated swing";
+  EXPECT_FLOAT_EQ(scale, 1.2f);
+}
+
+TEST(SwingRoleScalingTest, BassGetsTighterSwing) {
+  float scale = getSwingScaleForRole(TrackRole::Bass);
+  EXPECT_LT(scale, 1.0f) << "Bass should get tighter swing";
+  EXPECT_FLOAT_EQ(scale, 0.8f);
+}
+
+TEST(SwingRoleScalingTest, VocalGetsSlightlyReducedSwing) {
+  float scale = getSwingScaleForRole(TrackRole::Vocal);
+  EXPECT_LT(scale, 1.0f) << "Vocal should get slightly reduced swing";
+  EXPECT_FLOAT_EQ(scale, 0.9f);
+}
+
+TEST(SwingRoleScalingTest, ChordIsNeutral) {
+  float scale = getSwingScaleForRole(TrackRole::Chord);
+  EXPECT_FLOAT_EQ(scale, 1.0f) << "Chord should be neutral (1.0x)";
+}
+
+TEST(SwingRoleScalingTest, DrumsIsNeutral) {
+  float scale = getSwingScaleForRole(TrackRole::Drums);
+  EXPECT_FLOAT_EQ(scale, 1.0f) << "Drums should be neutral (1.0x)";
+}
+
+TEST(SwingRoleScalingTest, RoleScalingAffectsSwingAmount) {
+  // Create a track with an off-beat 8th note
+  MidiTrack track;
+  track.addNote(NoteEventBuilder::create(240, 120, 60, 80));
+
+  // Create a section with moderate swing
+  Section section;
+  section.type = SectionType::Chorus;
+  section.start_tick = 0;
+  section.bars = 4;
+  section.swing_amount = 0.5f;
+  std::vector<Section> sections = {section};
+
+  // Apply with Bass role (0.8x scaling)
+  MidiTrack bass_track = track;
+  applySwingToTrackBySections(bass_track, sections, TrackRole::Bass);
+
+  // Apply with Arpeggio role (1.2x scaling)
+  MidiTrack arp_track = track;
+  applySwingToTrackBySections(arp_track, sections, TrackRole::Arpeggio);
+
+  // Arpeggio should swing more than Bass
+  // Both should be >= 240 (swing pushes off-beat later)
+  EXPECT_GE(bass_track.notes()[0].start_tick, 240u);
+  EXPECT_GE(arp_track.notes()[0].start_tick, 240u);
+  EXPECT_GT(arp_track.notes()[0].start_tick, bass_track.notes()[0].start_tick)
+      << "Arpeggio (1.2x) should swing more than Bass (0.8x)";
 }
 
 }  // namespace

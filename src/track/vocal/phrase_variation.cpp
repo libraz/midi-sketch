@@ -41,7 +41,10 @@ PhraseVariation selectPhraseVariation(int reuse_count, int occurrence, std::mt19
   constexpr PhraseVariation kSafeVariations[] = {
       PhraseVariation::LastNoteShift,    // Subtle ending variation
       PhraseVariation::LastNoteLong,     // Dramatic ending extension
-      PhraseVariation::BreathRestInsert  // Natural breathing room
+      PhraseVariation::BreathRestInsert, // Natural breathing room
+      PhraseVariation::DynamicAccent,    // Velocity emphasis on ending
+      PhraseVariation::LateOnset,        // Anticipation rest at start
+      PhraseVariation::EchoRepeat        // Echo effect at ending
   };
   constexpr size_t kSafeCount = sizeof(kSafeVariations) / sizeof(kSafeVariations[0]);
   return kSafeVariations[rng() % kSafeCount];
@@ -112,6 +115,54 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes, PhraseVariation variati
         if (last.duration > rest_amount + 60) {  // Keep at least 60 ticks
           last.duration -= rest_amount;
         }
+      }
+      break;
+    }
+
+    case PhraseVariation::DynamicAccent: {
+      // Boost last note velocity by +20 (cap at 127)
+      auto& last = notes.back();
+      int new_vel = static_cast<int>(last.velocity) + 20;
+      last.velocity = static_cast<uint8_t>(std::min(new_vel, 127));
+      break;
+    }
+
+    case PhraseVariation::LateOnset: {
+      // Insert 16th note rest at phrase start by shifting first note later.
+      // This creates the Japanese "tame" anticipation effect.
+      if (!notes.empty()) {
+        constexpr Tick kOnsetDelay = 120;  // 16th note = 120 ticks
+        auto& first = notes.front();
+        first.start_tick += kOnsetDelay;
+        // Reduce duration to maintain the same end point
+        if (first.duration > kOnsetDelay) {
+          first.duration -= kOnsetDelay;
+        }
+      }
+      break;
+    }
+
+    case PhraseVariation::EchoRepeat: {
+      // Echo the last note at half duration and -20 velocity
+      if (!notes.empty()) {
+        const auto& last = notes.back();
+        Tick echo_start = last.start_tick + last.duration;
+        Tick echo_duration = last.duration / 2;
+        if (echo_duration < 60) echo_duration = 60;  // Minimum 60 ticks
+        int echo_vel = static_cast<int>(last.velocity) - 20;
+        if (echo_vel < 30) echo_vel = 30;
+
+        // Create echo note using NoteEventBuilder (same pitch, reduced intensity)
+        NoteEvent echo = NoteEventBuilder::create(echo_start, echo_duration,
+                                                   last.note,
+                                                   static_cast<uint8_t>(echo_vel));
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        echo.prov_source = last.prov_source;
+        echo.prov_chord_degree = last.prov_chord_degree;
+        echo.prov_lookup_tick = echo_start;
+        echo.prov_original_pitch = last.note;
+#endif
+        notes.push_back(echo);
       }
       break;
     }

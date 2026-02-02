@@ -122,6 +122,7 @@ struct EmbellishmentConfig {
         break;
       case SectionType::Bridge:
         nct_multiplier = 1.4f;  // Most NCT for exploration
+        appoggiatura_ratio *= 1.3f;  // Extra expressive tension in bridge
         break;
       case SectionType::Interlude:
       case SectionType::Outro:

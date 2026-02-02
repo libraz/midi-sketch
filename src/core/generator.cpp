@@ -618,9 +618,15 @@ void Generator::generateAccompanimentForVocal() {
   // Aux references vocal for call-and-response patterns
   generateAux();
 
-  // Apply triplet-grid swing quantization to bass (only for non-straight grooves)
+  // Apply triplet-grid swing quantization per track role (only for non-straight grooves)
   if (getMoodDrumGrooveFeel(params_.mood) != DrumGrooveFeel::Straight) {
-    applySwingToTrackBySections(song_.bass(), song_.arrangement().sections());
+    const auto& secs = song_.arrangement().sections();
+    applySwingToTrackBySections(song_.bass(), secs, TrackRole::Bass);
+    applySwingToTrackBySections(song_.vocal(), secs, TrackRole::Vocal);
+    applySwingToTrackBySections(song_.chord(), secs, TrackRole::Chord);
+    applySwingToTrackBySections(song_.motif(), secs, TrackRole::Motif);
+    applySwingToTrackBySections(song_.arpeggio(), secs, TrackRole::Arpeggio);
+    applySwingToTrackBySections(song_.aux(), secs, TrackRole::Aux);
   }
 
   // Generate optional tracks
@@ -1014,7 +1020,7 @@ void Generator::generateBass() {
 
   // Apply triplet-grid swing quantization to bass (only for non-straight grooves)
   if (getMoodDrumGrooveFeel(params_.mood) != DrumGrooveFeel::Straight) {
-    applySwingToTrackBySections(song_.bass(), song_.arrangement().sections());
+    applySwingToTrackBySections(song_.bass(), song_.arrangement().sections(), TrackRole::Bass);
   }
 }
 
@@ -1334,6 +1340,17 @@ void Generator::applyTransitionDynamics() {
   PostProcessor::fixChordVocalClashes(song_.chord(), song_.vocal());
   PostProcessor::fixAuxVocalClashes(song_.aux(), song_.vocal());
   PostProcessor::fixBassVocalClashes(song_.bass(), song_.vocal());
+
+  // Apply arrangement holes for contrast (mute background at section boundaries)
+  PostProcessor::applyArrangementHoles(song_.motif(), song_.arpeggio(), song_.aux(),
+                                       song_.chord(), song_.bass(), sections);
+
+  // Apply stereo panning (CC#10) for spatial width
+  PostProcessor::applyTrackPanning(song_.vocal(), song_.chord(), song_.bass(),
+                                   song_.motif(), song_.arpeggio(), song_.aux());
+
+  // Apply expression curves (CC#11) for dynamic shaping
+  PostProcessor::applyExpressionCurves(song_.vocal(), song_.chord(), song_.aux(), sections);
 }
 
 size_t Generator::findSectionIndex(const std::vector<Section>& sections, Tick tick) const {
@@ -1433,6 +1450,9 @@ void Generator::applyHumanization() {
   DrumStyle drum_style = getMoodDrumStyle(params_.mood);
   PostProcessor::applyMicroTimingOffsets(song_.vocal(), song_.bass(), song_.drums(), &sections,
                                           params_.drive_feel, params_.vocal_style, drum_style);
+
+  // Synchronize bass-kick timing for tighter groove pocket
+  PostProcessor::synchronizeBassKick(song_.bass(), song_.drums(), drum_style);
 
   PostProcessor::fixVocalOverlaps(song_.vocal());
 }

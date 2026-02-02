@@ -119,12 +119,30 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
 
     if (actual_beats < 2) break;  // Too short for a phrase
 
+    // Calculate sub-phrase index (internal 4-stage arc) based on bar position
+    // For 8-bar sections: bars 1-2 → 0 (Presentation), 3-4 → 1 (Development),
+    //                     5-6 → 2 (Climax), 7-8 → 3 (Resolution)
+    // For shorter sections, compress proportionally
+    SectionContext phrase_ctx = ctx;
+    if (ctx.section_bars >= 4) {
+      Tick elapsed = current_tick - ctx.section_start;
+      uint8_t current_bar = static_cast<uint8_t>(elapsed / TICKS_PER_BAR);
+      phrase_ctx.sub_phrase_index =
+          static_cast<uint8_t>((current_bar * 4) / ctx.section_bars);
+      if (phrase_ctx.sub_phrase_index > 3) phrase_ctx.sub_phrase_index = 3;
+
+      // Modulate density by arc stage
+      // Presentation=1.0x, Development=1.15x, Climax=1.0x, Resolution=0.85x
+      constexpr float kArcDensityMultipliers[] = {1.0f, 1.15f, 1.0f, 0.85f};
+      phrase_ctx.density_modifier *= kArcDensityMultipliers[phrase_ctx.sub_phrase_index];
+    }
+
     // Apply anticipation rest before phrases (except first phrase of section)
     // This creates "tame" (溜め) effect common in J-POP for building anticipation
     // Skip for UltraVocaloid (high thirtysecond_ratio) which needs continuous machine-gun passages
-    if (i > 0 && ctx.anticipation_rest != AnticipationRestMode::Off && ctx.thirtysecond_ratio < 0.8f) {
+    if (i > 0 && phrase_ctx.anticipation_rest != AnticipationRestMode::Off && phrase_ctx.thirtysecond_ratio < 0.8f) {
       Tick anticipation_duration = 0;
-      switch (ctx.anticipation_rest) {
+      switch (phrase_ctx.anticipation_rest) {
         case AnticipationRestMode::Subtle:
           anticipation_duration = TICK_SIXTEENTH;
           break;
@@ -139,7 +157,7 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
       }
       current_tick += anticipation_duration;
       // Recalculate remaining time after adding anticipation rest
-      remaining = ctx.section_end - current_tick;
+      remaining = phrase_ctx.section_end - current_tick;
       actual_beats = std::min(actual_beats, static_cast<uint8_t>(remaining / TICKS_PER_BEAT));
       if (actual_beats < 2) break;
     }
@@ -147,14 +165,14 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
     // Generate hook for chorus at specific positions
     // Skip hook for UltraVocaloid (high thirtysecond_ratio) - needs continuous machine-gun passages
     bool is_hook_position =
-        (ctx.section_type == SectionType::Chorus) && (i == 0 || (i == 2 && phrase_count > 3));
-    bool use_hook = is_hook_position && tmpl.hook_note_count > 0 && ctx.thirtysecond_ratio < 0.8f;
+        (phrase_ctx.section_type == SectionType::Chorus) && (i == 0 || (i == 2 && phrase_count > 3));
+    bool use_hook = is_hook_position && tmpl.hook_note_count > 0 && phrase_ctx.thirtysecond_ratio < 0.8f;
 
     PhraseResult phrase_result;
     if (use_hook) {
-      phrase_result = generateHook(tmpl, current_tick, ctx, prev_pitch, harmony, rng);
+      phrase_result = generateHook(tmpl, current_tick, phrase_ctx, prev_pitch, harmony, rng);
     } else {
-      phrase_result = generateMelodyPhrase(tmpl, current_tick, actual_beats, ctx, prev_pitch,
+      phrase_result = generateMelodyPhrase(tmpl, current_tick, actual_beats, phrase_ctx, prev_pitch,
                                            direction_inertia, harmony, rng);
     }
 

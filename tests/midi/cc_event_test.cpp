@@ -305,13 +305,14 @@ TEST(ExpressionCurveTest, AllCCValuesInValidRange) {
   generator.generate(params);
   const Song& song = generator.getSong();
 
-  // Check all CC events have valid values (0-127)
+  // Check all CC events have valid values (0-127) and expected CC numbers
   auto check_cc_range = [](const MidiTrack& track, const char* track_name) {
     for (const auto& cc_evt : track.ccEvents()) {
       EXPECT_LE(cc_evt.value, 127)
           << track_name << " CC value out of range at tick " << cc_evt.tick;
-      EXPECT_EQ(cc_evt.cc, MidiCC::kExpression)
-          << track_name << " unexpected CC number at tick " << cc_evt.tick;
+      EXPECT_TRUE(cc_evt.cc == MidiCC::kExpression || cc_evt.cc == MidiCC::kPan)
+          << track_name << " unexpected CC number " << static_cast<int>(cc_evt.cc)
+          << " at tick " << cc_evt.tick;
     }
   };
 
@@ -654,6 +655,179 @@ TEST(SustainPedalTest, SustainValuesAreOnlyZeroOr127) {
     if (cc_evt.cc == MidiCC::kSustain) {
       EXPECT_TRUE(cc_evt.value == 0 || cc_evt.value == 127)
           << "Sustain pedal CC value should be 0 or 127, got " << static_cast<int>(cc_evt.value);
+    }
+  }
+}
+
+// ============================================================================
+// Track Panning (CC#10) tests
+// ============================================================================
+
+TEST(TrackPanningTest, PanValuesSetAtTickZero) {
+  Generator generator;
+  GeneratorParams params;
+  params.seed = 42;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;
+  params.structure = StructurePattern::StandardPop;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.bpm = 120;
+
+  generator.generate(params);
+  const Song& song = generator.getSong();
+
+  // Helper to find pan CC at tick 0
+  auto find_pan_at_zero = [](const MidiTrack& track) -> int {
+    for (const auto& cc_evt : track.ccEvents()) {
+      if (cc_evt.cc == MidiCC::kPan && cc_evt.tick == 0) {
+        return static_cast<int>(cc_evt.value);
+      }
+    }
+    return -1;  // Not found
+  };
+
+  // Core tracks always have notes
+  EXPECT_EQ(find_pan_at_zero(song.vocal()), 64) << "Vocal should be center";
+  EXPECT_EQ(find_pan_at_zero(song.bass()), 64) << "Bass should be center";
+  EXPECT_EQ(find_pan_at_zero(song.chord()), 52) << "Chord should be slight left";
+  EXPECT_EQ(find_pan_at_zero(song.aux()), 84) << "Aux should be right";
+
+  // Arpeggio/Motif may be empty depending on seed/blueprint; pan only applied if notes exist
+  if (!song.arpeggio().notes().empty()) {
+    EXPECT_EQ(find_pan_at_zero(song.arpeggio()), 76) << "Arpeggio should be slight right";
+  }
+  if (!song.motif().notes().empty()) {
+    EXPECT_EQ(find_pan_at_zero(song.motif()), 44) << "Motif should be left";
+  }
+}
+
+TEST(TrackPanningTest, PanValuesInValidRange) {
+  Generator generator;
+  GeneratorParams params;
+  params.seed = 99;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;
+  params.structure = StructurePattern::StandardPop;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.bpm = 120;
+
+  generator.generate(params);
+  const Song& song = generator.getSong();
+
+  // All pan CC values must be 0-127
+  auto check_pan_range = [](const MidiTrack& track, const char* track_name) {
+    for (const auto& cc_evt : track.ccEvents()) {
+      if (cc_evt.cc == MidiCC::kPan) {
+        EXPECT_LE(cc_evt.value, 127)
+            << track_name << " pan value out of range at tick " << cc_evt.tick;
+      }
+    }
+  };
+
+  check_pan_range(song.vocal(), "Vocal");
+  check_pan_range(song.bass(), "Bass");
+  check_pan_range(song.chord(), "Chord");
+  check_pan_range(song.motif(), "Motif");
+  check_pan_range(song.arpeggio(), "Arpeggio");
+  check_pan_range(song.aux(), "Aux");
+}
+
+TEST(TrackPanningTest, DrumsDoNotHavePanning) {
+  Generator generator;
+  GeneratorParams params;
+  params.seed = 42;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;
+  params.structure = StructurePattern::StandardPop;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.bpm = 120;
+
+  generator.generate(params);
+  const Song& song = generator.getSong();
+
+  // Drums should not have pan CC events from applyTrackPanning
+  bool drums_has_pan = false;
+  for (const auto& cc_evt : song.drums().ccEvents()) {
+    if (cc_evt.cc == MidiCC::kPan) {
+      drums_has_pan = true;
+      break;
+    }
+  }
+  EXPECT_FALSE(drums_has_pan) << "Drums should not receive panning CC from PostProcessor";
+}
+
+// ============================================================================
+// Expression Curves (CC#11) - PostProcessor level tests
+// ============================================================================
+
+TEST(ExpressionCurvePostProcessorTest, VocalLongNotesGetCrescendoDiminuendo) {
+  Generator generator;
+  GeneratorParams params;
+  params.seed = 42;
+  params.mood = Mood::Ballad;
+  params.chord_id = 0;
+  params.structure = StructurePattern::StandardPop;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.bpm = 90;
+
+  generator.generate(params);
+  const Song& song = generator.getSong();
+
+  // Collect expression CC events on vocal track
+  std::vector<const CCEvent*> vocal_expr;
+  for (const auto& cc_evt : song.vocal().ccEvents()) {
+    if (cc_evt.cc == MidiCC::kExpression) {
+      vocal_expr.push_back(&cc_evt);
+    }
+  }
+
+  // Ballad at BPM=90 should produce long notes that trigger expression curves
+  EXPECT_GT(vocal_expr.size(), 0u)
+      << "Vocal track should have expression CC events for long notes";
+
+  // All expression values should be in reasonable range (80-110)
+  for (const auto* evt : vocal_expr) {
+    EXPECT_GE(evt->value, 80) << "Expression too low at tick " << evt->tick;
+    EXPECT_LE(evt->value, 110) << "Expression too high at tick " << evt->tick;
+  }
+}
+
+TEST(ExpressionCurvePostProcessorTest, ChordAndAuxGetSectionCurves) {
+  Generator generator;
+  GeneratorParams params;
+  params.seed = 42;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;
+  params.structure = StructurePattern::StandardPop;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.bpm = 120;
+
+  generator.generate(params);
+  const Song& song = generator.getSong();
+
+  // Count expression CC events on chord and aux tracks
+  auto count_expression_events = [](const MidiTrack& track) -> size_t {
+    size_t count = 0;
+    for (const auto& cc_evt : track.ccEvents()) {
+      if (cc_evt.cc == MidiCC::kExpression) {
+        ++count;
+      }
+    }
+    return count;
+  };
+
+  size_t chord_expr_count = count_expression_events(song.chord());
+  size_t aux_expr_count = count_expression_events(song.aux());
+
+  // Both chord and aux should have section-level expression curves
+  EXPECT_GT(chord_expr_count, 0u) << "Chord should have expression curve events";
+  EXPECT_GT(aux_expr_count, 0u) << "Aux should have expression curve events";
+
+  // Expression values from both existing and new section curves should be in valid range
+  for (const auto& cc_evt : song.chord().ccEvents()) {
+    if (cc_evt.cc == MidiCC::kExpression) {
+      EXPECT_GE(cc_evt.value, 50) << "Chord expression too low at tick " << cc_evt.tick;
+      EXPECT_LE(cc_evt.value, 127) << "Chord expression too high at tick " << cc_evt.tick;
     }
   }
 }

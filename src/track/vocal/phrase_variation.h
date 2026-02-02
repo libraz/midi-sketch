@@ -20,7 +20,8 @@ namespace midisketch {
 /// Phrase variation types for repeated phrase interest.
 ///
 /// @note Only safe variations are selected by selectPhraseVariation():
-/// - LastNoteShift, LastNoteLong, BreathRestInsert (preserves melody identity)
+/// - LastNoteShift, LastNoteLong, BreathRestInsert, DynamicAccent,
+///   LateOnset, EchoRepeat (preserves melody identity)
 ///
 /// Deprecated variations (not selected, kept for compatibility):
 /// - TailSwap: destroys melodic direction
@@ -37,13 +38,16 @@ enum class PhraseVariation : uint8_t {
   MicroRhythmChange,  ///< [Deprecated] Subtle timing variation
   BreathRestInsert,   ///< Short rest before phrase end (breathing room)
   SlurMerge,          ///< [Deprecated] Merge short notes into longer
-  RepeatNoteSimplify  ///< [Deprecated] Reduce repeated notes
+  RepeatNoteSimplify, ///< [Deprecated] Reduce repeated notes
+  DynamicAccent,      ///< Boost last note velocity +20 (cap 127)
+  LateOnset,          ///< Insert 16th note rest at phrase start (tame effect)
+  EchoRepeat          ///< Echo last note at half duration and -20 velocity
 };
 
 /// Maximum number of variation types (excluding Exact).
 /// @note This count is for backward compatibility. selectPhraseVariation()
 /// now uses a fixed safe subset (3 types) instead of all 8.
-constexpr int kVariationTypeCount = 8;
+constexpr int kVariationTypeCount = 11;
 
 /// Maximum reuse count before variation is forced.
 /// After this many exact repetitions, variation is mandatory to prevent monotony.

@@ -223,6 +223,52 @@ class PostProcessor {
   /// @param vocal Vocal track (read-only reference)
   static void fixBassVocalClashes(MidiTrack& bass, const MidiTrack& vocal);
 
+  /// @brief Synchronize bass note onsets with kick drum hits for tighter groove.
+  ///
+  /// Adjusts bass note timing to align with nearby kick drum hits.
+  /// Only affects bass notes within tolerance distance of a kick.
+  ///
+  /// @param bass Bass track to modify (in-place)
+  /// @param drums Drums track (read-only, used to extract kick positions)
+  /// @param drum_style Drum style for tolerance calculation
+  static void synchronizeBassKick(MidiTrack& bass, const MidiTrack& drums,
+                                  DrumStyle drum_style = DrumStyle::Standard);
+
+  /// @brief Apply stereo panning to tracks via CC#10.
+  /// Sets initial pan position for each track role at tick=0.
+  /// @param vocal Vocal track (center)
+  /// @param chord Chord track (slight left)
+  /// @param bass Bass track (center)
+  /// @param motif Motif track (left)
+  /// @param arpeggio Arpeggio track (slight right)
+  /// @param aux Aux track (right)
+  static void applyTrackPanning(MidiTrack& vocal, MidiTrack& chord, MidiTrack& bass,
+                                MidiTrack& motif, MidiTrack& arpeggio, MidiTrack& aux);
+
+  /// @brief Apply CC#11 expression curves to tracks for dynamic shaping.
+  /// - Vocal long notes: crescendo->diminuendo envelope
+  /// - Chord/Aux: section-level dynamics curve
+  /// @param vocal Vocal track (long note expression envelopes)
+  /// @param chord Chord track (section-level expression curve)
+  /// @param aux Aux track (section-level expression curve)
+  /// @param sections Song sections for section-level curves
+  static void applyExpressionCurves(MidiTrack& vocal, MidiTrack& chord, MidiTrack& aux,
+                                    const std::vector<Section>& sections);
+
+  /// @brief Create arrangement holes for contrast and impact.
+  /// - Chorus final 2 beats: mute Motif/Arpeggio/Aux (pre-chorus-repeat buildup)
+  /// - Bridge first 2 beats: mute non-drum tracks except Vocal (contrast creation)
+  /// Only applies to sections with PeakLevel::Max to avoid over-application.
+  /// @param motif Motif track
+  /// @param arpeggio Arpeggio track
+  /// @param aux Aux track
+  /// @param chord Chord track
+  /// @param bass Bass track
+  /// @param sections Song sections
+  static void applyArrangementHoles(MidiTrack& motif, MidiTrack& arpeggio, MidiTrack& aux,
+                                    MidiTrack& chord, MidiTrack& bass,
+                                    const std::vector<Section>& sections);
+
  private:
   // Returns true if the tick position is on a strong beat (beats 1 or 3 in 4/4).
   static bool isStrongBeat(Tick tick);

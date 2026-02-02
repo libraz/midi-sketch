@@ -160,4 +160,52 @@ void applySwingToTrackBySections(MidiTrack& track, const std::vector<Section>& s
   }
 }
 
+float getSwingScaleForRole(TrackRole role) {
+  switch (role) {
+    case TrackRole::Arpeggio:
+      return 1.2f;  // Exaggerated swing for pattern interest
+    case TrackRole::Bass:
+      return 0.8f;  // Tight to the grid
+    case TrackRole::Vocal:
+      return 0.9f;  // Slightly reduced
+    case TrackRole::Aux:
+      return 0.95f;  // Near-neutral
+    case TrackRole::Motif:
+      return 1.1f;  // Slightly more swing
+    default:
+      return 1.0f;  // Chord, Drums, SE: reference
+  }
+}
+
+void applySwingToTrackBySections(MidiTrack& track, const std::vector<Section>& sections,
+                                 TrackRole role) {
+  if (sections.empty()) {
+    return;
+  }
+
+  float role_scale = getSwingScaleForRole(role);
+
+  for (auto& note : track.notes()) {
+    float swing_amt = 0.0f;
+    for (const auto& section : sections) {
+      Tick section_end = section.endTick();
+      if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
+        if (section.swing_amount >= 0.0f) {
+          swing_amt = section.swing_amount;
+        } else {
+          swing_amt = 0.33f;
+        }
+        break;
+      }
+    }
+
+    swing_amt *= role_scale;
+    swing_amt = std::clamp(swing_amt, 0.0f, 1.0f);
+
+    if (swing_amt > 0.0f) {
+      note.start_tick = quantizeToSwingGrid(note.start_tick, swing_amt);
+    }
+  }
+}
+
 }  // namespace midisketch

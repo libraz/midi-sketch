@@ -117,13 +117,13 @@ EmbellishmentConfig MelodicEmbellisher::getConfigForMood(Mood mood) {
     case Mood::Ballad:
     case Mood::Sentimental:
     case Mood::EmotionalPop:
-      config.chord_tone_ratio = 0.58f;
-      config.passing_tone_ratio = 0.14f;  // Increased from 0.12
-      config.neighbor_tone_ratio = 0.10f;  // Increased from 0.08
-      config.appoggiatura_ratio = 0.12f;  // Increased from 0.10 for more expression
-      config.anticipation_ratio = 0.06f;  // Slightly increased
+      config.chord_tone_ratio = 0.55f;
+      config.passing_tone_ratio = 0.14f;
+      config.neighbor_tone_ratio = 0.10f;
+      config.appoggiatura_ratio = 0.12f;  // Expressive appoggiaturas for "setsunai"
+      config.anticipation_ratio = 0.06f;
       config.enable_tensions = true;
-      config.tension_ratio = 0.03f;  // Subtle 9ths for "setsunai" sound
+      config.tension_ratio = 0.06f;  // Doubled: richer 9th/13th color for emotional depth
       config.prefer_pentatonic = true;
       config.pentatonic_mode = PentatonicMode::Minor;
       config.syncopation_level = 0.3f;

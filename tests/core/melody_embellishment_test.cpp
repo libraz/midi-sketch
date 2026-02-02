@@ -282,5 +282,45 @@ TEST(BeatStrengthTest, OffBeatIsWeak) {
   EXPECT_EQ(MelodicEmbellisher::getBeatStrength(240), BeatStrength::Weak);
 }
 
+// ============================================================================
+// "Setsunai" Expression Enhancement Tests (Phase 2-4)
+// ============================================================================
+
+TEST(SetsunaiExpressionTest, BalladMoodHasIncreasedTensionRatio) {
+  auto config = MelodicEmbellisher::getConfigForMood(Mood::Ballad);
+  EXPECT_TRUE(config.enable_tensions);
+  EXPECT_FLOAT_EQ(config.tension_ratio, 0.06f)
+      << "Ballad tension_ratio should be 0.06 for richer emotional color";
+}
+
+TEST(SetsunaiExpressionTest, SentimentalMoodHasIncreasedTensionRatio) {
+  auto config = MelodicEmbellisher::getConfigForMood(Mood::Sentimental);
+  EXPECT_TRUE(config.enable_tensions);
+  EXPECT_FLOAT_EQ(config.tension_ratio, 0.06f);
+}
+
+TEST(SetsunaiExpressionTest, BridgeSectionBoostsAppoggiatura) {
+  auto config = MelodicEmbellisher::getConfigForMood(Mood::Ballad);
+  config.adjustForSection(SectionType::Bridge);
+
+  // Bridge applies 1.3x to appoggiatura before the general NCT scaling
+  // The exact value depends on nct_multiplier (1.4x) but appoggiatura
+  // should be relatively higher than other NCTs after bridge adjustment
+  EXPECT_GT(config.appoggiatura_ratio, 0.0f)
+      << "Bridge appoggiatura should remain positive after adjustment";
+
+  // Verify bridge gives higher appoggiatura than verse
+  auto verse_config = MelodicEmbellisher::getConfigForMood(Mood::Ballad);
+  verse_config.adjustForSection(SectionType::A);
+  EXPECT_GT(config.appoggiatura_ratio, verse_config.appoggiatura_ratio)
+      << "Bridge appoggiatura should be higher than verse appoggiatura";
+}
+
+TEST(SetsunaiExpressionTest, EmotionalPopSameTensionAsBallad) {
+  auto ballad = MelodicEmbellisher::getConfigForMood(Mood::Ballad);
+  auto emotional = MelodicEmbellisher::getConfigForMood(Mood::EmotionalPop);
+  EXPECT_FLOAT_EQ(ballad.tension_ratio, emotional.tension_ratio);
+}
+
 }  // namespace
 }  // namespace midisketch

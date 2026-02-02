@@ -233,6 +233,35 @@ constexpr VocalStyleProfile kCityPopProfile = {
     },
 };
 
+/// @brief K-POP profile: syncopated, hook-driven, rap-like passages allowed.
+constexpr VocalStyleProfile kKPopProfile = {
+    "KPop",
+    // StyleBias
+    {
+        0.9f,  // stepwise_weight - slightly less (allows interval variety)
+        1.1f,  // skip_weight - moderate
+        0.6f,  // leap_weight - some allowed
+        0.9f,  // center_weight
+        1.1f,  // high_weight - moderate highs
+        1.0f,  // low_weight
+        0.8f,  // onbeat_weight - less emphasis (offbeat preferred)
+        1.3f,  // offbeat_weight - syncopation emphasis
+        1.2f,  // syncopation_weight - strong
+        1.4f,  // same_pitch_weight - rap-like repetition
+        1.5f,  // motif_repeat_weight - pattern-driven hooks
+    },
+    // EvaluatorConfig (total = 1.0)
+    {
+        0.12f,  // singability_weight - lower (rap-like passages OK)
+        0.10f,  // chord_tone_weight
+        0.10f,  // contour_weight
+        0.18f,  // surprise_weight - higher (unexpected intervals)
+        0.15f,  // aaab_weight
+        0.15f,  // rhythm_interval_weight
+        0.20f,  // catchiness_weight - high (hook-driven)
+    },
+};
+
 // ============================================================================
 // Profile Selection
 // ============================================================================
@@ -264,6 +293,9 @@ inline const VocalStyleProfile& getVocalStyleProfile(VocalStylePreset style) {
 
     case VocalStylePreset::CityPop:
       return kCityPopProfile;
+
+    case VocalStylePreset::KPop:
+      return kKPopProfile;
 
     default:  // Auto, Standard
       return kStandardProfile;
