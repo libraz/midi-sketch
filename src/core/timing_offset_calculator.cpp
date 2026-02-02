@@ -183,7 +183,7 @@ void TimingOffsetCalculator::applyUniformOffset(MidiTrack& track, int offset) {
 PhrasePosition TimingOffsetCalculator::getPhrasePosition(Tick tick,
                                                           const std::vector<Section>& sections) {
   for (const auto& section : sections) {
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     if (tick >= section.start_tick && tick < section_end) {
       Tick relative = tick - section.start_tick;
       int bar_in_section = static_cast<int>(relative / TICKS_PER_BAR);

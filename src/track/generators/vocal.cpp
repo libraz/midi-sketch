@@ -446,7 +446,7 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
 
     // Calculate section boundaries
     Tick section_start = section.start_tick;
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
 
     // Get chord for this section
     int chord_idx = section.start_bar % progression.length;

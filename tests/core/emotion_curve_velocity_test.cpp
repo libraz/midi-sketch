@@ -204,7 +204,7 @@ TEST_F(EmotionCurveVelocityIntegrationTest, TransitionVelocityRampStillWorks) {
 
       // Verify notes in transition zone have been affected
       const auto& b_section = sections[i];
-      Tick section_end = b_section.start_tick + b_section.bars * TICKS_PER_BAR;
+      Tick section_end = b_section.endTick();
       Tick transition_start = section_end - TICKS_PER_BEAT * 2;  // Last 2 beats
 
       std::vector<uint8_t> transition_velocities;

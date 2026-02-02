@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "core/emotion_curve.h"
+#include "core/velocity_helper.h"
 #include "core/melody_types.h"
 #include "core/midi_track.h"
 #include "core/section_properties.h"
@@ -78,7 +79,7 @@ uint8_t calculateVelocity(SectionType section, uint8_t beat, Mood mood) {
   float mood_adj = getMoodVelocityAdjustment(mood);
 
   int velocity = static_cast<int>((BASE + beat_adj) * section_mult * mood_adj);
-  return static_cast<uint8_t>(std::clamp(velocity, 0, 127));
+  return vel::clamp(velocity, 0, 127);
 }
 
 int getSectionEnergy(SectionType section) {
@@ -161,7 +162,7 @@ uint8_t calculateEffectiveVelocity(const Section& section, uint8_t beat, Mood mo
   // Calculate final velocity
   int velocity = static_cast<int>((base + beat_adj) * energy_mult * peak_mult * mood_adj);
 
-  return static_cast<uint8_t>(std::clamp(velocity, 0, 127));
+  return vel::clamp(velocity, 0, 127);
 }
 
 uint8_t calculateEmotionAwareVelocity(const Section& section, uint8_t beat, Mood mood,
@@ -283,7 +284,7 @@ void applyTransitionDynamics(MidiTrack& track, Tick section_start, Tick section_
               velocity::kTransitionCrescendoStart + velocity::kTransitionCrescendoRange * progress;
         }
         int new_vel = static_cast<int>(note.velocity * multiplier);
-        note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+        note.velocity = vel::clamp(new_vel);
       }
     }
     return;  // Early return, we've handled all notes
@@ -316,7 +317,7 @@ void applyTransitionDynamics(MidiTrack& track, Tick section_start, Tick section_
       float multiplier = start_mult + (end_mult - start_mult) * position;
 
       int new_vel = static_cast<int>(note.velocity * multiplier);
-      note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+      note.velocity = vel::clamp(new_vel);
     }
   }
 }
@@ -333,7 +334,7 @@ void applyAllTransitionDynamics(std::vector<MidiTrack*>& tracks,
     const Section& next = sections[i + 1];
 
     Tick section_start = current.start_tick;
-    Tick section_end = current.start_tick + current.bars * TICKS_PER_BAR;
+    Tick section_end = current.endTick();
 
     for (MidiTrack* track : tracks) {
       if (track != nullptr) {
@@ -371,7 +372,7 @@ void applyEntryPatternDynamics(MidiTrack& track, Tick section_start, uint8_t bar
         float multiplier = velocity::kGradualBuildStart +
                            (velocity::kGradualBuildEnd - velocity::kGradualBuildStart) * position;
         int new_vel = static_cast<int>(note.velocity * multiplier);
-        note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+        note.velocity = vel::clamp(new_vel);
       }
     }
   } else if (pattern == EntryPattern::DropIn) {
@@ -381,7 +382,7 @@ void applyEntryPatternDynamics(MidiTrack& track, Tick section_start, uint8_t bar
     for (auto& note : notes) {
       if (note.start_tick >= section_start && note.start_tick < first_beat_end) {
         int new_vel = static_cast<int>(note.velocity * velocity::kDropInBoost);
-        note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+        note.velocity = vel::clamp(new_vel);
       }
     }
   }
@@ -411,7 +412,7 @@ void applyBarVelocityCurve(MidiTrack& track, const Section& section) {
   auto& notes = track.notes();
   if (notes.empty()) return;
 
-  Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+  Tick section_end = section.endTick();
 
   for (auto& note : notes) {
     // Only modify notes within this section
@@ -425,7 +426,7 @@ void applyBarVelocityCurve(MidiTrack& track, const Section& section) {
 
       // Apply multiplier
       int new_vel = static_cast<int>(note.velocity * multiplier);
-      note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+      note.velocity = vel::clamp(new_vel);
     }
   }
 }
@@ -528,7 +529,7 @@ void applyMelodyContourVelocity(MidiTrack& track, const std::vector<Section>& se
 
         if (vel_adj != 0) {
           int new_vel = static_cast<int>(note.velocity) + vel_adj;
-          note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+          note.velocity = vel::clamp(new_vel);
         }
         prev_pitch = note.note;
       }
@@ -595,7 +596,7 @@ void applyAccentPatterns(MidiTrack& track, const std::vector<Section>& sections)
 
         if (boost > 0) {
           int new_vel = static_cast<int>(notes[i].velocity) + boost;
-          notes[i].velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+          notes[i].velocity = vel::clamp(new_vel);
         }
       }
     }
@@ -706,7 +707,7 @@ void applyPhraseEndDecay(MidiTrack& track, const std::vector<Section>& sections,
 
   for (const auto& section : sections) {
     Tick section_start = section.start_tick;
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
 
     // Determine duration stretch factor based on section type and drive_feel
     // Ballad-style sections (slow, emotional) get additional stretch
@@ -741,7 +742,7 @@ void applyPhraseEndDecay(MidiTrack& track, const std::vector<Section>& sections,
           float decay_factor = 1.0f - (1.0f - velocity::kPhraseEndDecay) * position_in_decay;
 
           int new_vel = static_cast<int>(note.velocity * decay_factor);
-          note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+          note.velocity = vel::clamp(new_vel);
 
           // Apply duration stretch for phrase-end expression
           // Gradual stretch: increases toward phrase end for natural "exhale" feeling
@@ -771,7 +772,7 @@ void applyBeatMicroDynamics(MidiTrack& track) {
 
     // Apply multiplier
     int new_vel = static_cast<int>(note.velocity * multiplier);
-    note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+    note.velocity = vel::clamp(new_vel);
   }
 }
 

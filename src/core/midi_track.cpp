@@ -7,6 +7,8 @@
 
 #include <algorithm>
 
+#include "core/velocity_helper.h"
+
 namespace midisketch {
 
 void MidiTrack::addNote(const NoteEvent& event) { notes_.push_back(event); }
@@ -35,7 +37,7 @@ void MidiTrack::transpose(int8_t semitones) {
 void MidiTrack::scaleVelocity(float factor) {
   for (auto& note : notes_) {
     int new_vel = static_cast<int>(note.velocity * factor);
-    note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+    note.velocity = vel::clamp(new_vel);
   }
 }
 

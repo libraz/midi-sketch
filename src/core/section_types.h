@@ -468,6 +468,9 @@ struct Section {
   /// Empty means all tracks in track_mask are active for the entire section.
   std::vector<LayerEvent> layer_events;
 
+  /// @brief Compute the end tick for this section.
+  Tick endTick() const { return start_tick + bars * TICKS_PER_BAR; }
+
   /// @brief Check if layer scheduling is active for this section.
   bool hasLayerSchedule() const { return !layer_events.empty(); }
 

@@ -6,6 +6,7 @@
 #include "track/drums/kick_patterns.h"
 
 #include "core/euclidean_rhythm.h"
+#include "core/rng_util.h"
 
 namespace midisketch {
 namespace drums {
@@ -45,8 +46,6 @@ KickPattern euclideanToKickPattern(uint16_t pattern) {
 
 KickPattern getKickPattern(SectionType section, DrumStyle style, int bar, std::mt19937& rng) {
   KickPattern p = {false, false, false, false, false, false, false, false};
-
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
   // Instrumental sections: minimal kick
   if (section == SectionType::Intro || section == SectionType::Interlude) {
@@ -89,7 +88,7 @@ KickPattern getKickPattern(SectionType section, DrumStyle style, int bar, std::m
 
     case DrumStyle::FourOnFloor:
       p.beat1 = p.beat2 = p.beat3 = p.beat4 = true;
-      if (section == SectionType::Chorus && dist(rng) < 0.20f) {
+      if (section == SectionType::Chorus && rng_util::rollProbability(rng, 0.20f)) {
         p.beat2_and = true;
       }
       break;
@@ -98,10 +97,10 @@ KickPattern getKickPattern(SectionType section, DrumStyle style, int bar, std::m
       p.beat1 = true;
       p.beat3 = true;
       if (section == SectionType::B || section == SectionType::Chorus) {
-        p.beat2_and = (dist(rng) < 0.70f);
+        p.beat2_and = rng_util::rollProbability(rng, 0.70f);
       }
       if (section == SectionType::Chorus) {
-        p.beat4_and = (dist(rng) < 0.60f);
+        p.beat4_and = rng_util::rollProbability(rng, 0.60f);
       }
       break;
 
@@ -109,10 +108,10 @@ KickPattern getKickPattern(SectionType section, DrumStyle style, int bar, std::m
       p.beat1 = true;
       p.beat3 = true;
       if (section == SectionType::Chorus) {
-        p.beat2_and = (dist(rng) < 0.65f);
-        p.beat4_and = (dist(rng) < 0.40f);
+        p.beat2_and = rng_util::rollProbability(rng, 0.65f);
+        p.beat4_and = rng_util::rollProbability(rng, 0.40f);
       } else if (section == SectionType::B) {
-        p.beat2_and = (dist(rng) < 0.30f);
+        p.beat2_and = rng_util::rollProbability(rng, 0.30f);
       }
       break;
 
@@ -120,25 +119,25 @@ KickPattern getKickPattern(SectionType section, DrumStyle style, int bar, std::m
       p.beat1 = true;
       p.beat3 = true;
       if (section == SectionType::B || section == SectionType::Chorus) {
-        p.beat2_and = (dist(rng) < 0.75f);
+        p.beat2_and = rng_util::rollProbability(rng, 0.75f);
       }
       if (section == SectionType::Chorus) {
-        p.beat4_and = (dist(rng) < 0.65f);
+        p.beat4_and = rng_util::rollProbability(rng, 0.65f);
       }
       break;
 
     case DrumStyle::Trap:
       p.beat1 = true;
-      p.beat2_and = (dist(rng) < 0.80f);
-      p.beat3 = (dist(rng) < 0.30f);
-      p.beat4_and = (dist(rng) < 0.70f);
+      p.beat2_and = rng_util::rollProbability(rng, 0.80f);
+      p.beat3 = rng_util::rollProbability(rng, 0.30f);
+      p.beat4_and = rng_util::rollProbability(rng, 0.70f);
       break;
 
     case DrumStyle::Latin:
       p.beat1 = true;
       p.beat2_and = true;
       p.beat3 = true;
-      p.beat4_and = (dist(rng) < 0.50f);
+      p.beat4_and = rng_util::rollProbability(rng, 0.50f);
       break;
 
     case DrumStyle::Standard:
@@ -146,10 +145,10 @@ KickPattern getKickPattern(SectionType section, DrumStyle style, int bar, std::m
       p.beat1 = true;
       p.beat3 = true;
       if (section == SectionType::B) {
-        p.beat2_and = (dist(rng) < 0.50f);
+        p.beat2_and = rng_util::rollProbability(rng, 0.50f);
       } else if (section == SectionType::Chorus) {
-        p.beat2_and = (dist(rng) < 0.55f);
-        p.beat4_and = (dist(rng) < 0.35f);
+        p.beat2_and = rng_util::rollProbability(rng, 0.55f);
+        p.beat4_and = rng_util::rollProbability(rng, 0.35f);
       }
       break;
   }

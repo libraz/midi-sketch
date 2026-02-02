@@ -321,7 +321,7 @@ TEST_F(BassTest, ChorusHasBassNotes) {
   for (const auto& section : arrangement.sections()) {
     if (section.type == SectionType::Chorus) {
       chorus_start = section.start_tick;
-      chorus_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      chorus_end = section.endTick();
       break;
     }
   }
@@ -353,7 +353,7 @@ TEST_F(BassTest, IntroMayHaveSparserBass) {
   for (const auto& section : arrangement.sections()) {
     if (section.type == SectionType::Intro) {
       intro_start = section.start_tick;
-      intro_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      intro_end = section.endTick();
       break;
     }
   }
@@ -534,7 +534,7 @@ TEST_F(BassTest, WalkingBassInCityPopMood) {
     int notes_in_section = 0;
     for (const auto& note : bass_track.notes()) {
       if (note.start_tick >= sec.start_tick &&
-          note.start_tick < sec.start_tick + sec.bars * TICKS_PER_BAR) {
+          note.start_tick < sec.endTick()) {
         notes_in_section++;
       }
     }
@@ -859,7 +859,7 @@ TEST_F(BassTest, PedalToneInBalladIntro) {
   for (const auto& section : arrangement.sections()) {
     if (section.type == SectionType::Intro) {
       intro_start = section.start_tick;
-      intro_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      intro_end = section.endTick();
       found_intro = true;
       break;
     }
@@ -928,7 +928,7 @@ TEST_F(BassTest, DISABLED_PedalToneConsistentPitchAcrossChordChanges) {
       if (section.type != SectionType::Intro) continue;
 
       Tick sec_start = section.start_tick;
-      Tick sec_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      Tick sec_end = section.endTick();
 
       std::vector<uint8_t> pitches;
       for (const auto& note : track.notes()) {
@@ -1028,7 +1028,7 @@ TEST_F(BassTest, PedalToneVelocityRange) {
     if (section.type != SectionType::Intro) continue;
 
     Tick sec_start = section.start_tick;
-    Tick sec_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick sec_end = section.endTick();
 
     for (const auto& note : track.notes()) {
       if (note.start_tick >= sec_start && note.start_tick < sec_end) {
@@ -1069,7 +1069,7 @@ TEST_F(BassTest, PedalToneDominantInBridge) {
       if (section.type != SectionType::Bridge) continue;
 
       Tick sec_start = section.start_tick;
-      Tick sec_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      Tick sec_end = section.endTick();
 
       std::set<uint8_t> unique_pcs;
       for (const auto& note : track.notes()) {
@@ -1118,7 +1118,7 @@ TEST_F(BassTest, PedalToneNotInChorus) {
     if (section.type != SectionType::Chorus) continue;
 
     Tick sec_start = section.start_tick;
-    Tick sec_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick sec_end = section.endTick();
 
     // Count distinct pitch classes in chorus
     std::set<uint8_t> chorus_pcs;
@@ -1161,7 +1161,7 @@ TEST_F(BassTest, PedalToneInBassRange) {
       if (section.type != SectionType::Intro) continue;
 
       Tick sec_start = section.start_tick;
-      Tick sec_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      Tick sec_end = section.endTick();
 
       for (const auto& note : track.notes()) {
         if (note.start_tick >= sec_start && note.start_tick < sec_end) {
@@ -1235,7 +1235,7 @@ TEST_F(BassTest, LowDensitySectionHasSimplifiedBass) {
   // Find Intro section (typically has lower density)
   for (const auto& section : sections) {
     if (section.type == SectionType::Intro) {
-      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      Tick section_end = section.endTick();
 
       int notes_in_section = 0;
       for (const auto& note : track.notes()) {
@@ -1302,7 +1302,7 @@ TEST_F(BassTest, DrivingPatternHasStaccatoOnEven8thNotes) {
   for (const auto& section : sections) {
     if (section.type != SectionType::Chorus) continue;
 
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
 
     // Collect durations at different beat positions
     std::vector<Tick> on_beat_durations;
@@ -1362,7 +1362,7 @@ TEST_F(BassTest, WholeNoteBalladHasLegato) {
   for (const auto& section : sections) {
     if (section.type != SectionType::Intro) continue;
 
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
 
     // Collect note durations
     std::vector<Tick> durations;
@@ -1473,7 +1473,7 @@ TEST_F(BassTest, LegatoAddsSlightOverlap) {
   for (const auto& section : sections) {
     if (section.type != SectionType::A && section.type != SectionType::B) continue;
 
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
 
     // Check consecutive notes for legato behavior
     const auto& notes = track.notes();
@@ -1568,7 +1568,7 @@ TEST_F(BassTest, IntroBassEnabledFlagDifferenceTest) {
 
     for (const auto& section : sections) {
       if (section.type == SectionType::Intro) {
-        Tick intro_end = section.start_tick + section.bars * TICKS_PER_BAR;
+        Tick intro_end = section.endTick();
         int count = 0;
         for (const auto& note : bass.notes()) {
           if (note.start_tick >= section.start_tick && note.start_tick < intro_end) {

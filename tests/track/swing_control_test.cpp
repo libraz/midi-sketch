@@ -94,7 +94,7 @@ TEST_F(SwingControlTest, DrumsGeneratedForAllSections) {
     bool has_drums_in_section = false;
     for (const auto& note : drums.notes()) {
       if (note.start_tick >= section.start_tick &&
-          note.start_tick < section.start_tick + section.bars * 1920) {
+          note.start_tick < section.endTick()) {
         has_drums_in_section = true;
         break;
       }
@@ -126,7 +126,7 @@ TEST_F(SwingControlTest, ChorusSectionHasDrums) {
       bool has_drums = false;
       for (const auto& note : drums.notes()) {
         if (note.start_tick >= section.start_tick &&
-            note.start_tick < section.start_tick + section.bars * 1920) {
+            note.start_tick < section.endTick()) {
           has_drums = true;
           break;
         }
@@ -152,7 +152,7 @@ TEST_F(SwingControlTest, IntroSectionHasDrums) {
       bool has_drums = false;
       for (const auto& note : drums.notes()) {
         if (note.start_tick >= section.start_tick &&
-            note.start_tick < section.start_tick + section.bars * 1920) {
+            note.start_tick < section.endTick()) {
           has_drums = true;
           break;
         }

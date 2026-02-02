@@ -327,7 +327,7 @@ TEST_F(ArpeggioTest, SyncChordFalseRefreshesAtSectionBoundary) {
   ASSERT_GT(sections.size(), 1u) << "Need multiple sections for this test";
 
   // Verify arpeggio spans multiple sections
-  Tick first_section_end = sections[0].start_tick + sections[0].bars * TICKS_PER_BAR;
+  Tick first_section_end = sections[0].endTick();
   bool has_notes_after_first_section = false;
 
   for (const auto& note : arpeggio.notes()) {
@@ -950,7 +950,7 @@ TEST_F(ArpeggioTest, HighDensitySwitchesTo16thNotes) {
     if (section.density_percent <= 90) continue;
     found_high_density = true;
 
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
 
     // Count notes in this section
     int notes_in_section = 0;
@@ -994,7 +994,7 @@ TEST_F(ArpeggioTest, PeakLevelMaxIncreasesOctaveRange) {
 
   // Measure pitch range in normal vs peak sections
   auto measurePitchRange = [&](const Section& section) -> int {
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     uint8_t min_pitch = 127;
     uint8_t max_pitch = 0;
     int note_count = 0;
@@ -1050,7 +1050,7 @@ TEST_F(ArpeggioTest, DensitySkipsNotesWhenLow) {
   // Compare note density in low vs high density sections
   auto countNotesPerBar = [&](const Section& section) -> double {
     if (section.bars == 0) return 0.0;
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     int count = 0;
     for (const auto& note : arpeggio.notes()) {
       if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
@@ -1145,7 +1145,7 @@ TEST_F(ArpeggioTest, PreferStepwiseLimitsOctaveRangePerSection) {
     const auto& sections = song.arrangement().sections();
 
     for (const auto& section : sections) {
-      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      Tick section_end = section.endTick();
       uint8_t min_note = 127;
       uint8_t max_note = 0;
       int note_count = 0;

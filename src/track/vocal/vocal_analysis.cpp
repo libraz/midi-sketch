@@ -257,7 +257,7 @@ VocalAnalysis analyzeVocal(const MidiTrack& vocal_track) {
 
 float getVocalDensityForSection(const VocalAnalysis& va, const Section& section) {
   Tick section_start = section.start_tick;
-  Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+  Tick section_end = section.endTick();
 
   // Sum weighted coverage from all overlapping phrases
   Tick covered_duration = 0;

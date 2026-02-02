@@ -119,7 +119,7 @@ TEST_F(HarmonyIntegrationTest, VocalNotesAreChordTonesOrExtensions) {
   for (const auto& note : vocal_notes) {
     // Find which section and bar this note is in
     for (const auto& section : sections) {
-      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      Tick section_end = section.endTick();
       if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
         // Calculate bar within section
         int bar = (note.start_tick - section.start_tick) / TICKS_PER_BAR;
@@ -276,7 +276,7 @@ TEST_F(HarmonyIntegrationTest, FiveChordProgressionHasCadence) {
     if (section.bars < 4) continue;  // Skip short sections
     if (section.type == SectionType::Intro || section.type == SectionType::Outro) continue;
 
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     Tick last_bar_start = section_end - TICKS_PER_BAR;
 
     // Check if any chord note in last bar has G as root (V chord indicator)
@@ -319,7 +319,7 @@ TEST_F(HarmonyIntegrationTest, MotifNotesAvoidDissonance) {
     for (const auto& note : motif_notes) {
       // Find the chord for this note's position
       for (const auto& section : sections) {
-        Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+        Tick section_end = section.endTick();
         if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
           int bar = (note.start_tick - section.start_tick) / TICKS_PER_BAR;
           int chord_idx = bar % progression.length;
@@ -377,7 +377,7 @@ TEST_F(HarmonyIntegrationTest, VocalRespectsChordExtensionParams_ExtensionsDisab
 
   for (const auto& note : vocal_notes) {
     for (const auto& section : sections) {
-      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      Tick section_end = section.endTick();
       if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
         // Check if on strong beat (beat 1 or 3)
         Tick position_in_bar = (note.start_tick - section.start_tick) % TICKS_PER_BAR;
@@ -437,7 +437,7 @@ TEST_F(HarmonyIntegrationTest, VocalRespectsChordExtensionParams_ExtensionsEnabl
 
   for (const auto& note : vocal_notes) {
     for (const auto& section : sections) {
-      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      Tick section_end = section.endTick();
       if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
         Tick position_in_bar = (note.start_tick - section.start_tick) % TICKS_PER_BAR;
         bool is_strong_beat =
@@ -492,7 +492,7 @@ TEST_F(HarmonyIntegrationTest, MotifTensionRespectsExtensionParams_Disabled) {
 
     for (const auto& note : motif_notes) {
       for (const auto& section : sections) {
-        Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+        Tick section_end = section.endTick();
         if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
           int bar = (note.start_tick - section.start_tick) / TICKS_PER_BAR;
           int chord_idx = bar % progression.length;
@@ -592,7 +592,7 @@ TEST_F(HarmonyIntegrationTest, FiveChordProgressionCadenceInsertion) {
     // Cadence should be inserted to fill these bars
     // The test verifies generation completes without issues
 
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     int chord_notes_in_section = 0;
 
     for (const auto& note : song.chord().notes()) {
@@ -915,7 +915,7 @@ TEST_F(HarmonyIntegrationTest, ChorusHookRepetitionAvoidsClashes) {
     for (const auto& section : sections) {
       if (section.type != SectionType::Chorus) continue;
 
-      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      Tick section_end = section.endTick();
 
       // Check vocal notes in this chorus
       for (const auto& vocal_note : vocal_notes) {

@@ -19,6 +19,7 @@
 #include "core/timing_constants.h"        // for TICK_EIGHTH
 #include "core/timing_offset_calculator.h"  // for TimingOffsetCalculator
 #include "core/velocity.h"                // for DriveMapping
+#include "core/velocity_helper.h"         // for vel::clamp
 
 namespace midisketch {
 
@@ -72,7 +73,7 @@ void PostProcessor::applyHumanization(std::vector<MidiTrack*>& tracks, const Hum
       // Preserve intentional ghost notes (25-35), but prevent non-ghost notes from
       // falling into ghost range. Notes originally above 35 should stay above 35.
       int min_velocity = (note.velocity <= 35) ? 1 : 36;
-      note.velocity = static_cast<uint8_t>(std::clamp(new_velocity, min_velocity, 127));
+      note.velocity = vel::clamp(new_velocity, min_velocity, 127);
     }
   }
 }
@@ -90,7 +91,7 @@ void PostProcessor::fixVocalOverlaps(MidiTrack& vocal_track) {
 
 SectionType PostProcessor::getSectionTypeAtTick(Tick tick, const std::vector<Section>& sections) {
   for (const auto& section : sections) {
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     if (tick >= section.start_tick && tick < section_end) {
       return section.type;
     }
@@ -133,7 +134,7 @@ void PostProcessor::applySectionAwareVelocityHumanization(
       // Preserve intentional ghost notes (25-35), but prevent non-ghost notes from
       // falling into ghost range. Notes originally above 35 should stay above 35.
       int min_velocity = (note.velocity <= 35) ? 1 : 36;
-      note.velocity = static_cast<uint8_t>(std::clamp(new_vel, min_velocity, 127));
+      note.velocity = vel::clamp(new_vel, min_velocity, 127);
     }
   }
 }
@@ -189,7 +190,7 @@ void PostProcessor::applyExitFadeout(std::vector<NoteEvent>& notes, Tick section
                        static_cast<float>(fade_duration);
       float multiplier = kFadeStartMult + (kFadeEndMult - kFadeStartMult) * progress;
       int new_vel = static_cast<int>(note.velocity * multiplier);
-      note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 1, 127));
+      note.velocity = vel::clamp(new_vel);
     }
   }
 }
@@ -353,7 +354,7 @@ void PostProcessor::applyPreChorusLift(std::vector<MidiTrack*>& tracks,
     }
 
     // Calculate lift zone (last 2 bars of B section)
-    Tick section_end_tick = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end_tick = section.endTick();
     Tick lift_start_tick = section_end_tick - 2 * TICKS_PER_BAR;
 
     // Apply lift effect to each melodic track
@@ -450,7 +451,7 @@ void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
     }
 
     // Calculate the drop zone (last 1 beat before next section)
-    Tick section_end_tick = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end_tick = section.endTick();
     Tick drop_start_tick = section_end_tick - TICKS_PER_BEAT;
     Tick next_section_start_tick = next_section.start_tick;
 
@@ -606,7 +607,7 @@ void PostProcessor::applyRitardando(std::vector<MidiTrack*>& tracks,
     uint8_t rit_bars = std::min(section.bars, static_cast<uint8_t>(4));
     if (rit_bars < 2) continue;
 
-    Tick section_end_tick = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end_tick = section.endTick();
     Tick rit_start_tick = section_end_tick - rit_bars * TICKS_PER_BAR;
     Tick rit_duration = section_end_tick - rit_start_tick;
 
@@ -634,7 +635,7 @@ void PostProcessor::applyRitardando(std::vector<MidiTrack*>& tracks,
           // Velocity decrescendo: 1.0 -> 0.75 (25% softer at the end)
           float velocity_mult = 1.0f - progress * 0.25f;
           int new_vel = static_cast<int>(note.velocity * velocity_mult);
-          note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 30, 127));
+          note.velocity = vel::clamp(new_vel, 30, 127);
 
           // Track the last note for fermata
           if (last_note_in_rit == nullptr ||

@@ -10,6 +10,7 @@
 #define MIDISKETCH_CORE_I_CHORD_LOOKUP_H
 
 #include <algorithm>
+#include <cstdlib>
 #include <vector>
 
 #include "core/basic_types.h"
@@ -47,6 +48,67 @@ class IChordLookup {
    * @return Tick of next chord change, or 0 if none found
    */
   virtual Tick getNextChordChangeTick(Tick after) const = 0;
+
+  /**
+   * @brief Snap a pitch to the nearest chord tone at a given tick.
+   *
+   * Combines getChordTonesAt() with nearest-pitch search to find the
+   * closest chord tone pitch to the desired pitch.
+   *
+   * @param pitch Target MIDI pitch
+   * @param tick Position in ticks (determines which chord is active)
+   * @return Nearest chord tone pitch (absolute MIDI pitch)
+   */
+  virtual int snapToNearestChordTone(int pitch, Tick tick) const {
+    auto chord_tones = getChordTonesAt(tick);
+    int octave = pitch / 12;
+    int best_pitch = pitch;
+    int best_dist = 100;
+
+    for (int ct_pc : chord_tones) {
+      for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
+        int candidate = (octave + oct_offset) * 12 + ct_pc;
+        int dist = std::abs(candidate - pitch);
+        if (dist < best_dist) {
+          best_dist = dist;
+          best_pitch = candidate;
+        }
+      }
+    }
+    return best_pitch;
+  }
+
+  /**
+   * @brief Snap a pitch to the nearest chord tone within a range.
+   *
+   * Like snapToNearestChordTone but restricts candidates to [range_low, range_high].
+   *
+   * @param pitch Target MIDI pitch
+   * @param tick Position in ticks (determines which chord is active)
+   * @param range_low Minimum allowed pitch
+   * @param range_high Maximum allowed pitch
+   * @return Nearest chord tone within range, or original pitch if none found
+   */
+  virtual int snapToNearestChordToneInRange(int pitch, Tick tick,
+                                             int range_low, int range_high) const {
+    auto chord_tones = getChordTonesAt(tick);
+    int octave = pitch / 12;
+    int best_pitch = pitch;
+    int best_dist = 100;
+
+    for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
+      for (int ct_pc : chord_tones) {
+        int candidate = (octave + oct_offset) * 12 + ct_pc;
+        if (candidate < range_low || candidate > range_high) continue;
+        int dist = std::abs(candidate - pitch);
+        if (dist < best_dist) {
+          best_dist = dist;
+          best_pitch = candidate;
+        }
+      }
+    }
+    return best_pitch;
+  }
 
   /**
    * @brief Analyze how a note interacts with the next chord boundary.

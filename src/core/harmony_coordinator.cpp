@@ -41,7 +41,7 @@ void HarmonyCoordinator::initialize(const Arrangement& arrangement,
   // Calculate total ticks
   total_ticks_ = 0;
   for (const auto& section : cached_sections_) {
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     if (section_end > total_ticks_) {
       total_ticks_ = section_end;
     }
@@ -316,7 +316,7 @@ void HarmonyCoordinator::applyMotifToSections(const std::vector<NoteEvent>& moti
 
   // Apply pattern to each target section
   for (const auto& section : targets) {
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
 
     for (Tick pos = section.start_tick; pos < section_end; pos += motif_length) {
       for (const auto& note : motif_pattern) {

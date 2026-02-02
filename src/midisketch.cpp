@@ -298,7 +298,7 @@ std::string MidiSketch::getEventsJson() const {
 
   // Sections
   for (const auto& section : song.arrangement().sections()) {
-    Tick end_tick = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick end_tick = section.endTick();
     double start_seconds =
         static_cast<double>(section.start_tick) / TICKS_PER_BEAT / song.bpm() * 60.0;
     double end_seconds = static_cast<double>(end_tick) / TICKS_PER_BEAT / song.bpm() * 60.0;

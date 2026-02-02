@@ -14,6 +14,7 @@
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
+#include "core/velocity_helper.h"
 #include "track/melody/constraint_pipeline.h"
 #include "track/melody/leap_resolution.h"
 #include "track/melody/melody_utils.h"
@@ -184,7 +185,7 @@ uint8_t calculateNoteVelocity(bool strong, bool is_phrase_end, size_t note_index
   // Apply phrase-internal velocity curve for natural crescendo/decrescendo
   float phrase_curve = getPhraseNoteVelocityCurve(
       static_cast<int>(note_index), static_cast<int>(total_notes), contour);
-  return static_cast<uint8_t>(std::clamp(static_cast<int>(velocity * phrase_curve), 1, 127));
+  return vel::clamp(static_cast<int>(velocity * phrase_curve));
 }
 
 int applyPhraseEndResolution(int pitch, int8_t chord_degree, SectionType section_type,

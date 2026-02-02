@@ -19,6 +19,7 @@
 #include "core/swing_quantize.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
+#include "core/velocity_helper.h"
 
 namespace midisketch {
 
@@ -184,7 +185,7 @@ uint8_t calculateArpeggioVelocity(uint8_t base_velocity, SectionType section, in
   float accent = (note_in_pattern == 0) ? 1.1f : 1.0f;
 
   int velocity = static_cast<int>(base_velocity * section_mult * accent);
-  return static_cast<uint8_t>(std::clamp(velocity, 40, 127));
+  return vel::clamp(velocity, 40, 127);
 }
 
 }  // namespace
@@ -320,7 +321,7 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
     Tick section_note_duration = getNoteDuration(sec_params.speed);
     Tick section_gated_duration = static_cast<Tick>(section_note_duration * sec_params.gate);
 
-    Tick section_end = section.start_tick + (section.bars * TICKS_PER_BAR);
+    Tick section_end = section.endTick();
 
     // Get harmonic rhythm info for this section
     HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, params.mood);

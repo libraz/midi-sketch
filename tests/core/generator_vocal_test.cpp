@@ -954,7 +954,7 @@ TEST(UltraVocaloidTest, ChorusGeneratesShortNotes) {
   for (const auto& section : sections) {
     if (section.type != SectionType::Chorus) continue;
 
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     for (const auto& note : notes) {
       if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
         total_chorus_notes++;
@@ -1034,7 +1034,7 @@ TEST(UltraVocaloidTest, VerseDensityLowerThanChorus) {
   int chorus_bars = 0;
 
   for (const auto& section : sections) {
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
 
     int section_note_count = 0;
     for (const auto& note : notes) {
@@ -1422,10 +1422,10 @@ TEST(UltraVocaloidTest, ChorusHasMore32ndNotesThanVerse) {
   for (const auto& section : sections) {
     if (section.type == SectionType::A && a_start == 0) {
       a_start = section.start_tick;
-      a_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      a_end = section.endTick();
     } else if (section.type == SectionType::Chorus && chorus_start == 0) {
       chorus_start = section.start_tick;
-      chorus_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      chorus_end = section.endTick();
     }
   }
 
@@ -1471,7 +1471,7 @@ TEST(UltraVocaloidTest, ChorusHasHigherNoteDensity) {
 
   for (const auto& section : sections) {
     Tick start = section.start_tick;
-    Tick end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick end = section.endTick();
     size_t notes_in_section = countNotesInSection(vocal_notes, start, end);
 
     if (section.type == SectionType::A) {
@@ -1605,7 +1605,7 @@ TEST(UltraVocaloidTest, ChorusNotesOnThirtysecondGrid) {
   for (const auto& section : sections) {
     if (section.type == SectionType::Chorus) {
       chorus_start = section.start_tick;
-      chorus_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      chorus_end = section.endTick();
       break;
     }
   }

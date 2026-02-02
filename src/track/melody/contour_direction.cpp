@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "core/rng_util.h"
+
 namespace midisketch {
 namespace melody {
 
@@ -35,8 +37,6 @@ float getDirectionBiasForContour(ContourType contour, float phrase_pos) {
 PitchChoice selectPitchChoiceImpl(const MelodyTemplate& tmpl, float phrase_pos, bool has_target,
                                   SectionType section_type, std::mt19937& rng, float note_eighths,
                                   std::optional<ContourType> forced_contour) {
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-
   // Rhythm-melody coupling: note duration affects plateau probability
   // Short notes (16th or less) prefer staying on same pitch for stability
   // Long notes (half or longer) encourage movement for melodic interest
@@ -50,14 +50,14 @@ PitchChoice selectPitchChoiceImpl(const MelodyTemplate& tmpl, float phrase_pos, 
   }
 
   // Step 1: Check for same pitch (plateau)
-  if (dist(rng) < effective_plateau_ratio) {
+  if (rng_util::rollProbability(rng, effective_plateau_ratio)) {
     return PitchChoice::Same;
   }
 
   // Step 2: Target attraction (if applicable)
   if (has_target && tmpl.has_target_pitch) {
     if (phrase_pos >= tmpl.target_attraction_start) {
-      if (dist(rng) < tmpl.target_attraction_strength) {
+      if (rng_util::rollProbability(rng, tmpl.target_attraction_strength)) {
         return PitchChoice::TargetStep;
       }
     }
@@ -93,7 +93,7 @@ PitchChoice selectPitchChoiceImpl(const MelodyTemplate& tmpl, float phrase_pos, 
         break;
     }
   }
-  return (dist(rng) < upward_bias) ? PitchChoice::StepUp : PitchChoice::StepDown;
+  return rng_util::rollProbability(rng, upward_bias) ? PitchChoice::StepUp : PitchChoice::StepDown;
 }
 
 PitchChoice applyDirectionInertiaImpl(PitchChoice choice, int inertia,
@@ -119,7 +119,7 @@ PitchChoice applyDirectionInertiaImpl(PitchChoice choice, int inertia,
 
   float inertia_strength = (static_cast<float>(abs_inertia) / 3.0f) * decay_factor;
 
-  if (dist(rng) < inertia_strength * kInertiaCoefficient) {
+  if (rng_util::rollFloat(rng, 0.0f, 1.0f) < inertia_strength * kInertiaCoefficient) {
     // Follow inertia direction
     if (inertia > 0) {
       return PitchChoice::StepUp;

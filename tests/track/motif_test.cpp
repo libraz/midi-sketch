@@ -654,7 +654,7 @@ TEST_F(MotifMelodicContinuityTest, BackingDensityAffectsNoteDensity) {
       if (section.getEffectiveBackingDensity() != density) continue;
       if (section.bars == 0) continue;
 
-      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      Tick section_end = section.endTick();
       int notes_in_section = 0;
 
       for (const auto& note : motif_notes) {

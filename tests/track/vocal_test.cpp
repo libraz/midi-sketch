@@ -528,7 +528,7 @@ TEST_F(VocalTest, SectionFinalNoteIsChordTone) {
     }
 
     Tick section_start = section.start_tick;
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
 
     // Find notes in this section
     const NoteEvent* last_note = nullptr;
@@ -915,7 +915,7 @@ TEST_F(VocalTest, ChorusHasHigherDensityThanVerse) {
     int notes_in_section = 0;
     for (const auto& note : vocal) {
       if (note.start_tick >= sec.start_tick &&
-          note.start_tick < sec.start_tick + sec.bars * TICKS_PER_BAR) {
+          note.start_tick < sec.endTick()) {
         notes_in_section++;
       }
     }
@@ -962,7 +962,7 @@ TEST_F(VocalTest, BridgeHasLowerDensityThanChorus) {
     int notes_in_section = 0;
     for (const auto& note : vocal) {
       if (note.start_tick >= sec.start_tick &&
-          note.start_tick < sec.start_tick + sec.bars * TICKS_PER_BAR) {
+          note.start_tick < sec.endTick()) {
         notes_in_section++;
       }
     }
@@ -1011,10 +1011,10 @@ TEST_F(VocalTest, LastChorusHasHigherIntensity) {
       chorus_count++;
       if (chorus_count == 1) {
         first_chorus_start = sec.start_tick;
-        first_chorus_end = sec.start_tick + sec.bars * TICKS_PER_BAR;
+        first_chorus_end = sec.endTick();
       }
       last_chorus_start = sec.start_tick;
-      last_chorus_end = sec.start_tick + sec.bars * TICKS_PER_BAR;
+      last_chorus_end = sec.endTick();
     }
   }
 
@@ -1241,7 +1241,7 @@ TEST_F(VocalTest, ExtremeLeapOnlyInChorusAndBridge) {
     std::vector<const NoteEvent*> section_notes;
     for (const auto& note : vocal) {
       if (note.start_tick >= sec.start_tick &&
-          note.start_tick < sec.start_tick + sec.bars * TICKS_PER_BAR) {
+          note.start_tick < sec.endTick()) {
         section_notes.push_back(&note);
       }
     }
@@ -1337,7 +1337,7 @@ TEST_F(VocalTest, ChorusHasMelodicContent) {
     if (sec.type != SectionType::Chorus) continue;
 
     Tick chorus_start = sec.start_tick;
-    Tick chorus_end = sec.start_tick + sec.bars * TICKS_PER_BAR;
+    Tick chorus_end = sec.endTick();
 
     for (const auto& note : vocal) {
       if (note.start_tick >= chorus_start && note.start_tick < chorus_end) {
@@ -1539,7 +1539,7 @@ TEST_F(VocalTest, CachedPhraseVariationMaintainsRecognizability) {
   std::map<SectionType, std::vector<std::pair<Tick, Tick>>> section_ranges;
   for (const auto& sec : sections) {
     Tick start = sec.start_tick;
-    Tick end = sec.start_tick + sec.bars * TICKS_PER_BAR;
+    Tick end = sec.endTick();
     section_ranges[sec.type].push_back({start, end});
   }
 
@@ -1876,7 +1876,7 @@ TEST_F(VocalTest, PhraseCacheReuseWithExtendedKey) {
   std::vector<std::pair<Tick, Tick>> chorus_ranges;
   for (const auto& sec : sections) {
     if (sec.type == SectionType::Chorus) {
-      chorus_ranges.push_back({sec.start_tick, sec.start_tick + sec.bars * TICKS_PER_BAR});
+      chorus_ranges.push_back({sec.start_tick, sec.endTick()});
     }
   }
 

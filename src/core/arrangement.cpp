@@ -34,7 +34,7 @@ uint32_t Arrangement::totalBars() const {
 Tick Arrangement::totalTicks() const {
   if (sections_.empty()) return 0;
   const auto& last = sections_.back();
-  return last.start_tick + last.bars * TICKS_PER_BAR;
+  return last.endTick();
 }
 
 const Section* Arrangement::sectionAtBar(uint32_t bar) const {

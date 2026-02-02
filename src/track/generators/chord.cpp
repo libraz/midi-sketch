@@ -15,6 +15,7 @@
 
 #include "core/chord.h"
 #include "core/harmonic_rhythm.h"
+#include "core/rng_util.h"
 #include "core/i_harmony_context.h"
 #include "core/mood_utils.h"
 #include "core/note_creator.h"
@@ -218,8 +219,7 @@ ChordExtension selectChordExtension(int8_t degree, SectionType section, int bar_
     return ChordExtension::None;
   }
 
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-  float roll = dist(rng);
+  float roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
 
   // Determine if chord is major or minor based on degree
   bool is_minor = (degree == 1 || degree == 2 || degree == 5);
@@ -234,7 +234,7 @@ ChordExtension selectChordExtension(int8_t degree, SectionType section, int bar_
 
     if (is_sus_context && !is_minor && roll < ext_params.sus_probability) {
       // sus4 more common than sus2
-      return (dist(rng) < 0.7f) ? ChordExtension::Sus4 : ChordExtension::Sus2;
+      return rng_util::rollProbability(rng, 0.7f) ? ChordExtension::Sus4 : ChordExtension::Sus2;
     }
   }
 
@@ -273,7 +273,7 @@ ChordExtension selectChordExtension(int8_t degree, SectionType section, int bar_
     bool is_ninth_context =
         (section == SectionType::Chorus) || (section == SectionType::B && is_dominant);
 
-    float ninth_roll = dist(rng);
+    float ninth_roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
     if (is_ninth_context && ninth_roll < ext_params.ninth_probability) {
       if (is_dominant) {
         return ChordExtension::Dom9;  // V9
@@ -492,8 +492,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
       ChordExtension extension = ChordExtension::None;
 
       if (params.chord_extension.tritone_sub && is_dominant_chord) {
-        std::uniform_real_distribution<float> tritone_dist(0.0f, 1.0f);
-        float tritone_roll = tritone_dist(rng);
+        float tritone_roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
         TritoneSubInfo tritone_info = checkTritoneSubstitution(
             degree, is_dominant_chord,
             params.chord_extension.tritone_sub_probability, tritone_roll);
@@ -559,8 +558,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
       if (section.peak_level >= PeakLevel::Medium && voicing_type == VoicingType::Close) {
         // 70% chance to use Open voicing at Medium, 90% at Max
         float open_prob = (section.peak_level == PeakLevel::Max) ? 0.90f : 0.70f;
-        std::uniform_real_distribution<float> peak_dist(0.0f, 1.0f);
-        if (peak_dist(rng) < open_prob) {
+        if (rng_util::rollProbability(rng, open_prob)) {
           voicing_type = VoicingType::Open;
         }
       }
@@ -664,8 +662,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         // Apply additional random check (the function returns deterministic result,
         // so we add randomness here based on tension)
         if (sec_dom.should_insert) {
-          std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-          bool random_check = dist(rng) < tension;
+          bool random_check = rng_util::rollProbability(rng, tension);
 
           if (random_check) {
             // Insert secondary dominant in second half of bar
@@ -1005,8 +1002,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
       ChordExtension extension = ChordExtension::None;
 
       if (params.chord_extension.tritone_sub && is_dominant_chord) {
-        std::uniform_real_distribution<float> tritone_dist(0.0f, 1.0f);
-        float tritone_roll = tritone_dist(rng);
+        float tritone_roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
         TritoneSubInfo tritone_info = checkTritoneSubstitution(
             degree, is_dominant_chord,
             params.chord_extension.tritone_sub_probability, tritone_roll);
@@ -1070,8 +1066,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
       // PeakLevel enhancement: prefer Open voicing for thicker texture
       if (section.peak_level >= PeakLevel::Medium && voicing_type == VoicingType::Close) {
         float open_prob = (section.peak_level == PeakLevel::Max) ? 0.90f : 0.70f;
-        std::uniform_real_distribution<float> peak_dist(0.0f, 1.0f);
-        if (peak_dist(rng) < open_prob) {
+        if (rng_util::rollProbability(rng, open_prob)) {
           voicing_type = VoicingType::Open;
         }
       }

@@ -25,6 +25,7 @@
 #include "core/preset_data.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
+#include "core/velocity_helper.h"
 #include "instrument/fretted/bass_model.h"
 #include "instrument/fretted/fingering.h"
 #include "instrument/fretted/fretted_note_factory.h"
@@ -2134,7 +2135,7 @@ void applyBassArticulation(MidiTrack& track, BassPattern pattern, Mood mood,
     // in ghost note detection while maintaining the softer character of muted notes.
     int vel_delta = getArticulationVelocityDelta(art);
     int new_vel = static_cast<int>(note.velocity) + vel_delta;
-    note.velocity = static_cast<uint8_t>(std::clamp(new_vel, 40, 127));
+    note.velocity = vel::clamp(new_vel, 40, 127);
 
     prev_pitch = note.note;
   }
@@ -2161,7 +2162,7 @@ void applyDensityAdjustmentWithHarmony(MidiTrack& track, const Section& section,
   if (notes.empty()) return;
 
   Tick section_start = section.start_tick;
-  Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+  Tick section_end = section.endTick();
 
   if (effective_density < 70) {
     // Low density: thin out by removing alternate 8th notes

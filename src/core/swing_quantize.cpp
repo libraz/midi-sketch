@@ -141,7 +141,7 @@ void applySwingToTrackBySections(MidiTrack& track, const std::vector<Section>& s
     // Find which section this note belongs to
     float swing_amt = 0.0f;
     for (const auto& section : sections) {
-      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      Tick section_end = section.endTick();
       if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
         // Use the section's swing_amount if set, otherwise calculate from section type
         if (section.swing_amount >= 0.0f) {

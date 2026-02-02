@@ -7,6 +7,7 @@
 
 #include <algorithm>
 
+#include "core/rng_util.h"
 #include "core/swing_quantize.h"
 #include "core/timing_constants.h"
 #include "track/drums/drum_constants.h"
@@ -96,8 +97,6 @@ void generateKickForBeat(MidiTrack& track, Tick beat_tick, Tick adjusted_beat_ti
     return;
   }
 
-  std::uniform_real_distribution<float> kick_dist(0.0f, 1.0f);
-
   bool play_kick_on = false;
   bool play_kick_and = false;
 
@@ -121,10 +120,10 @@ void generateKickForBeat(MidiTrack& track, Tick beat_tick, Tick adjusted_beat_ti
   }
 
   if (kick_prob < 1.0f) {
-    if (play_kick_on && kick_dist(rng) >= kick_prob) {
+    if (play_kick_on && !rng_util::rollProbability(rng, kick_prob)) {
       play_kick_on = false;
     }
-    if (play_kick_and && kick_dist(rng) >= kick_prob) {
+    if (play_kick_and && !rng_util::rollProbability(rng, kick_prob)) {
       play_kick_and = false;
     }
   }
@@ -176,7 +175,6 @@ void generateGhostNotesForBeat(MidiTrack& track, Tick beat_tick, uint8_t beat, u
     ghost_prob *= groove_ghost_density;
   }
 
-  std::uniform_real_distribution<float> ghost_dist(0.0f, 1.0f);
   std::uniform_real_distribution<float> vel_variation(0.85f, 1.15f);
 
   bool is_after_snare = (beat == 1 || beat == 3);
@@ -185,7 +183,7 @@ void generateGhostNotesForBeat(MidiTrack& track, Tick beat_tick, uint8_t beat, u
     int sixteenth_in_beat = (pos == GhostPosition::E) ? 1 : 3;
     float pos_prob = getGhostProbabilityAtPosition(beat, sixteenth_in_beat, mood);
 
-    if (ghost_dist(rng) < ghost_prob * pos_prob) {
+    if (rng_util::rollProbability(rng, ghost_prob * pos_prob)) {
       float variation = vel_variation(rng);
       float ghost_base = getGhostVelocity(section_type, beat % 2, is_after_snare);
       float base_ghost = velocity * ghost_base * variation;
@@ -293,12 +291,10 @@ void generateHiHatForBeat(MidiTrack& track, Tick beat_tick, uint8_t beat, uint8_
           use_open = true;
         } else if (ctx.motif_open_hh && eighth == 1) {
           float open_prob = std::clamp(45.0f / bpm, 0.2f, 0.8f);
-          std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
-          use_open = (beat == 1 || beat == 3) && open_dist(rng) < open_prob;
+          use_open = (beat == 1 || beat == 3) && rng_util::rollProbability(rng, open_prob);
         } else if (ctx.style == DrumStyle::FourOnFloor && eighth == 1) {
           float open_prob = std::clamp(45.0f / bpm, 0.15f, 0.8f);
-          std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
-          use_open = (beat == 1 || beat == 3) && open_dist(rng) < open_prob;
+          use_open = (beat == 1 || beat == 3) && rng_util::rollProbability(rng, open_prob);
         } else if (eighth == 0) {
           use_open = shouldAddOpenHHAccent(section_type, beat, bar, rng);
         }
@@ -339,8 +335,7 @@ void generateHiHatForBeat(MidiTrack& track, Tick beat_tick, uint8_t beat, uint8_
 
         if (beat == 3 && sixteenth == 3) {
           float open_prob = std::clamp(30.0f / bpm, 0.1f, 0.4f);
-          std::uniform_real_distribution<float> open_dist(0.0f, 1.0f);
-          if (open_dist(rng) < open_prob) {
+          if (rng_util::rollProbability(rng, open_prob)) {
             addDrumNote(track, hh_tick, SIXTEENTH, OHH, static_cast<uint8_t>(std::max(20.0f, hh_vel * 1.2f)));
             continue;
           }

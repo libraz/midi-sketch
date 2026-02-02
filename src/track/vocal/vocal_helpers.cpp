@@ -12,6 +12,7 @@
 #include "core/note_timeline_utils.h"
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
+#include "core/velocity_helper.h"
 
 namespace midisketch {
 
@@ -178,7 +179,7 @@ bool sectionHasVocals(SectionType type) {
 void applyVelocityBalance(std::vector<NoteEvent>& notes, float scale) {
   for (auto& note : notes) {
     int vel = static_cast<int>(note.velocity * scale);
-    note.velocity = static_cast<uint8_t>(std::clamp(vel, 1, 127));
+    note.velocity = vel::clamp(vel);
   }
 }
 
@@ -240,8 +241,7 @@ void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
   for (size_t i = 0; i < apply_count; ++i) {
     size_t idx = hook_note_indices[i];
     notes[idx].duration = static_cast<Tick>(notes[idx].duration * duration_mult);
-    notes[idx].velocity = static_cast<uint8_t>(
-        std::clamp(static_cast<int>(notes[idx].velocity + velocity_boost), 1, 127));
+    notes[idx].velocity = vel::withDelta(notes[idx].velocity, velocity_boost);
   }
 }
 

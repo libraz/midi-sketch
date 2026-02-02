@@ -788,7 +788,7 @@ TEST_F(ChordWithContextTest, PeakLevelMaxAddsOctaveBelowRoot) {
   for (const auto& section : sections) {
     if (section.peak_level != PeakLevel::Max) continue;
 
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
 
     // For each bar, collect the lowest and second-lowest pitches
     for (Tick bar_start = section.start_tick; bar_start < section_end;
@@ -844,7 +844,7 @@ TEST_F(ChordWithContextTest, PeakLevelMediumPrefersOpenVoicing) {
     for (const auto& section : sections) {
       if (section.peak_level < PeakLevel::Medium) continue;
 
-      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      Tick section_end = section.endTick();
 
       // Sample voicings from this section
       for (Tick tick = section.start_tick; tick < section_end; tick += 2 * TICKS_PER_BAR) {
@@ -900,7 +900,7 @@ TEST_F(ChordWithContextTest, ChordThicknessIncreasesWithPeakLevel) {
     const auto& chord_track = gen.getSong().chord();
 
     for (const auto& section : sections) {
-      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      Tick section_end = section.endTick();
 
       // Sample at bar boundaries
       for (Tick bar_start = section.start_tick; bar_start < section_end;

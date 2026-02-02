@@ -7,6 +7,8 @@
 
 #include <algorithm>
 
+#include "core/rng_util.h"
+
 namespace midisketch {
 namespace drums {
 
@@ -211,18 +213,18 @@ std::vector<GhostPosition> selectGhostPositions(Mood mood, std::mt19937& rng) {
     case Mood::LightRock:
     case Mood::ModernPop:
       prefer_e = true;
-      prefer_a = (std::uniform_real_distribution<float>(0, 1)(rng) < 0.3f);
+      prefer_a = rng_util::rollProbability(rng, 0.3f);
       break;
     case Mood::Ballad:
     case Mood::Sentimental:
     case Mood::Chill:
-      prefer_e = (std::uniform_real_distribution<float>(0, 1)(rng) < 0.5f);
+      prefer_e = rng_util::rollProbability(rng, 0.5f);
       prefer_a = false;
       break;
     case Mood::CityPop:
     case Mood::FutureBass:
     case Mood::RnBNeoSoul:
-      prefer_e = (std::uniform_real_distribution<float>(0, 1)(rng) < 0.4f);
+      prefer_e = rng_util::rollProbability(rng, 0.4f);
       prefer_a = true;
       break;
     default:

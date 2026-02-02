@@ -19,6 +19,7 @@
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
+#include "core/velocity_helper.h"
 #include "core/vocal_style_profile.h"
 #include "track/melody/constraint_pipeline.h"
 #include "track/melody/contour_direction.h"
@@ -866,8 +867,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
         ctx.forced_contour.value_or(ContourType::Plateau);
     float phrase_curve = getPhraseNoteVelocityCurve(
         static_cast<int>(i), static_cast<int>(rhythm.size()), contour_for_curve);
-    velocity = static_cast<uint8_t>(
-        std::clamp(static_cast<int>(velocity * phrase_curve), 1, 127));
+    velocity = vel::clamp(static_cast<int>(velocity * phrase_curve));
 
     // Final clamp to ensure pitch is within vocal range
     // ABSOLUTE CONSTRAINT: Ensure pitch is on scale (prevents chromatic notes)
@@ -1365,8 +1365,7 @@ void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
 
     // 2. Apply velocity gradient (crescendo/decrescendo)
     float vel_factor = 1.0f + (trans.velocity_growth - 1.0f) * progress;
-    note.velocity = static_cast<uint8_t>(
-        std::clamp(static_cast<float>(note.velocity) * vel_factor, 1.0f, 127.0f));
+    note.velocity = vel::scale(note.velocity, vel_factor);
   }
 
   // 3. Insert leading tone if requested (skip if it would create large interval)

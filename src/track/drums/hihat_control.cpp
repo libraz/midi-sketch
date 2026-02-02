@@ -5,6 +5,7 @@
 
 #include "track/drums/hihat_control.h"
 
+#include "core/rng_util.h"
 #include "core/section_properties.h"
 #include "track/drums/drum_constants.h"
 
@@ -42,7 +43,6 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity ba
     return HiHatLevel::Sixteenth;
   }
 
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
   bool allow_16th = (bpm < HH_16TH_BPM_THRESHOLD);
 
   HiHatLevel base_level = HiHatLevel::Eighth;
@@ -50,7 +50,7 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity ba
   if (style == DrumStyle::Sparse) {
     base_level = (section == SectionType::Chorus) ? HiHatLevel::Eighth : HiHatLevel::Quarter;
   } else if (style == DrumStyle::FourOnFloor) {
-    if (allow_16th && section == SectionType::Chorus && dist(rng) < 0.25f) {
+    if (allow_16th && section == SectionType::Chorus && rng_util::rollProbability(rng, 0.25f)) {
       return HiHatLevel::Sixteenth;
     }
     return HiHatLevel::Eighth;
@@ -58,14 +58,14 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity ba
     if (!allow_16th) {
       return HiHatLevel::Eighth;
     }
-    if (section == SectionType::A && dist(rng) < 0.20f) {
+    if (section == SectionType::A && rng_util::rollProbability(rng, 0.20f)) {
       return HiHatLevel::Eighth;
     }
     return HiHatLevel::Sixteenth;
   } else if (style == DrumStyle::Trap) {
     return HiHatLevel::Sixteenth;
   } else if (style == DrumStyle::Latin) {
-    if (allow_16th && section == SectionType::Chorus && dist(rng) < 0.30f) {
+    if (allow_16th && section == SectionType::Chorus && rng_util::rollProbability(rng, 0.30f)) {
       return HiHatLevel::Sixteenth;
     }
     return HiHatLevel::Eighth;
@@ -79,10 +79,10 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity ba
         base_level = HiHatLevel::Eighth;
         break;
       case SectionType::A:
-        base_level = (dist(rng) < 0.30f) ? HiHatLevel::Quarter : HiHatLevel::Eighth;
+        base_level = rng_util::rollProbability(rng, 0.30f) ? HiHatLevel::Quarter : HiHatLevel::Eighth;
         break;
       case SectionType::B:
-        if (allow_16th && dist(rng) < 0.25f) {
+        if (allow_16th && rng_util::rollProbability(rng, 0.25f)) {
           base_level = HiHatLevel::Sixteenth;
         } else {
           base_level = HiHatLevel::Eighth;
@@ -91,7 +91,7 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity ba
       case SectionType::Chorus:
         if (allow_16th && style == DrumStyle::Upbeat) {
           base_level = HiHatLevel::Sixteenth;
-        } else if (allow_16th && dist(rng) < 0.35f) {
+        } else if (allow_16th && rng_util::rollProbability(rng, 0.35f)) {
           base_level = HiHatLevel::Sixteenth;
         } else {
           base_level = HiHatLevel::Eighth;
@@ -104,14 +104,14 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity ba
         base_level = HiHatLevel::Quarter;
         break;
       case SectionType::MixBreak:
-        if (allow_16th && dist(rng) < 0.40f) {
+        if (allow_16th && rng_util::rollProbability(rng, 0.40f)) {
           base_level = HiHatLevel::Sixteenth;
         } else {
           base_level = HiHatLevel::Eighth;
         }
         break;
       case SectionType::Drop:
-        if (allow_16th && dist(rng) < 0.50f) {
+        if (allow_16th && rng_util::rollProbability(rng, 0.50f)) {
           base_level = HiHatLevel::Sixteenth;
         } else {
           base_level = HiHatLevel::Eighth;
@@ -288,13 +288,11 @@ bool shouldAddOpenHHAccent(SectionType section, int beat, int bar, std::mt19937&
 
   if (is_high_energy) {
     if (beat == 1 || beat == 3) {
-      std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-      return dist(rng) < 0.60f;
+      return rng_util::rollProbability(rng, 0.60f);
     }
   } else {
     if (beat == 3 && bar % 2 == 1) {
-      std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-      return dist(rng) < 0.40f;
+      return rng_util::rollProbability(rng, 0.40f);
     }
   }
 

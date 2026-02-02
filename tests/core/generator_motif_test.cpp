@@ -488,7 +488,7 @@ TEST(IntroMotifVariationTest, IntroSectionUsesChorusMotif) {
   Tick intro_end = 0;
   for (const auto& section : arrangement.sections()) {
     if (section.type == SectionType::Intro) {
-      intro_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      intro_end = section.endTick();
       break;
     }
   }

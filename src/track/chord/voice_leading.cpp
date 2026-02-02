@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "core/pitch_utils.h"
+#include "core/rng_util.h"
 #include "core/timing_constants.h"
 #include "track/chord/bass_coordination.h"
 
@@ -39,10 +40,9 @@ VoicingType selectVoicingType(SectionType section, Mood mood, bool /*bass_has_ro
   }
 
   // Helper for probabilistic selection
-  auto rollProbability = [&](float threshold) -> bool {
+  auto rollProb = [&](float threshold) -> bool {
     if (!rng) return false;  // Default to first option if no RNG
-    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-    return dist(*rng) < threshold;
+    return rng_util::rollProbability(*rng, threshold);
   };
 
   // B section: Close 60%, Open 40% (reduce darkness from previous Rootless-heavy)
@@ -50,7 +50,7 @@ VoicingType selectVoicingType(SectionType section, Mood mood, bool /*bass_has_ro
     if (is_ballad) {
       return VoicingType::Close;  // Ballads: always close for intimacy
     }
-    return rollProbability(0.40f) ? VoicingType::Open : VoicingType::Close;
+    return rollProb(0.40f) ? VoicingType::Open : VoicingType::Close;
   }
 
   // Chorus: Open 60%, Close 40% (spacious release, room for vocals)
@@ -58,7 +58,7 @@ VoicingType selectVoicingType(SectionType section, Mood mood, bool /*bass_has_ro
     if (is_ballad) {
       return VoicingType::Open;  // Ballads: open for emotional breadth
     }
-    return rollProbability(0.60f) ? VoicingType::Open : VoicingType::Close;
+    return rollProb(0.60f) ? VoicingType::Open : VoicingType::Close;
   }
 
   // Bridge: Close 50%, Open 50% (introspective, flexible)
@@ -66,7 +66,7 @@ VoicingType selectVoicingType(SectionType section, Mood mood, bool /*bass_has_ro
     if (is_ballad) {
       return VoicingType::Close;  // Ballads: intimate bridge
     }
-    return rollProbability(0.50f) ? VoicingType::Open : VoicingType::Close;
+    return rollProb(0.50f) ? VoicingType::Open : VoicingType::Close;
   }
 
   return VoicingType::Close;
@@ -86,16 +86,14 @@ OpenVoicingType selectOpenVoicingSubtype(SectionType section, Mood mood,
 
   // Drop3 for dramatic moments with 7th chords
   if (is_dramatic && has_7th) {
-    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-    if (dist(rng) < 0.4f) {
+    if (rng_util::rollProbability(rng, 0.4f)) {
       return OpenVoicingType::Drop3;
     }
   }
 
   // MixBreak benefits from Spread for power
   if (section == SectionType::MixBreak) {
-    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-    return dist(rng) < 0.3f ? OpenVoicingType::Spread : OpenVoicingType::Drop2;
+    return rng_util::rollProbability(rng, 0.3f) ? OpenVoicingType::Spread : OpenVoicingType::Drop2;
   }
 
   // Default: Drop2 (most versatile)

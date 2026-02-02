@@ -9,6 +9,7 @@
 #include "track/generators/se.h"
 
 #include "core/note_source.h"
+#include "core/rng_util.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
 
@@ -107,8 +108,7 @@ void addSimpleCall(MidiTrack& track, Tick tick, const char* tag, Tick duration, 
 
 // Check if we should add a call based on density
 bool shouldAddCall(CallDensity density, std::mt19937& rng) {
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-  float prob = dist(rng);
+  float prob = rng_util::rollFloat(rng, 0.0f, 1.0f);
 
   switch (density) {
     case CallDensity::None:
@@ -128,7 +128,7 @@ bool shouldAddCall(CallDensity density, std::mt19937& rng) {
 void generateCallsForSection(MidiTrack& track, const Section& section, IntroChant intro_chant,
                              MixPattern mix_pattern, CallDensity density, bool notes_enabled,
                              std::mt19937& rng) {
-  Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+  Tick section_end = section.endTick();
 
   switch (section.type) {
     case SectionType::Chant:

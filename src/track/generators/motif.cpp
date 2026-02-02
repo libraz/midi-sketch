@@ -832,7 +832,7 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
       continue;
     }
 
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     bool is_chorus = (section.type == SectionType::Chorus);
 
     bool add_octave =

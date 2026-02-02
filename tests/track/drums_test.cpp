@@ -367,10 +367,10 @@ TEST_F(DrumsTest, ChorusHasHigherDensity) {
   for (const auto& section : arrangement.sections()) {
     if (section.type == SectionType::A) {
       a_start = section.start_tick;
-      a_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      a_end = section.endTick();
     } else if (section.type == SectionType::Chorus) {
       chorus_start = section.start_tick;
-      chorus_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      chorus_end = section.endTick();
     }
   }
 
@@ -707,7 +707,7 @@ TEST_F(DrumsTest, BridgeSectionHasGhostNotes) {
   int ghost_notes_in_bridge = 0;
   for (const auto& section : sections) {
     if (section.type == SectionType::Bridge) {
-      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      Tick section_end = section.endTick();
       for (const auto& note : track.notes()) {
         if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
           // Ghost notes are snares (38, 40) with low velocity (< 60)
@@ -1534,7 +1534,7 @@ TEST_F(DrumsTest, FootHiHatAppearsInIntroSection) {
     const auto& sections = gen.getSong().arrangement().sections();
     for (const auto& sec : sections) {
       if (sec.type == SectionType::Intro) {
-        Tick sec_end = sec.start_tick + sec.bars * TICKS_PER_BAR;
+        Tick sec_end = sec.endTick();
         for (const auto& note : track.notes()) {
           if (note.note == FOOT_HH && note.start_tick >= sec.start_tick && note.start_tick < sec_end) {
             found_foot_hh = true; break;
@@ -1560,7 +1560,7 @@ TEST_F(DrumsTest, FootHiHatAppearsInBridgeSection) {
     const auto& sections = gen.getSong().arrangement().sections();
     for (const auto& sec : sections) {
       if (sec.type == SectionType::Bridge) {
-        Tick sec_end = sec.start_tick + sec.bars * TICKS_PER_BAR;
+        Tick sec_end = sec.endTick();
         for (const auto& note : track.notes()) {
           if (note.note == FOOT_HH && note.start_tick >= sec.start_tick && note.start_tick < sec_end) {
             found_foot_hh = true; break;
@@ -1602,7 +1602,7 @@ TEST_F(DrumsTest, ChorusHasMoreOpenHiHatThanVerse) {
   const auto& sections = gen.getSong().arrangement().sections();
   int verse_ohh = 0, chorus_ohh = 0, verse_bars = 0, chorus_bars = 0;
   for (const auto& sec : sections) {
-    Tick sec_end = sec.start_tick + sec.bars * TICKS_PER_BAR;
+    Tick sec_end = sec.endTick();
     int cnt = 0;
     for (const auto& note : track.notes()) {
       if (note.note == OHH && note.start_tick >= sec.start_tick && note.start_tick < sec_end) cnt++;
@@ -1713,7 +1713,7 @@ TEST_F(DrumsTest, VerseUsesClosedHiHat) {
 
   for (const auto& sec : sections) {
     if (sec.type == SectionType::A) {
-      Tick sec_end = sec.start_tick + sec.bars * TICKS_PER_BAR;
+      Tick sec_end = sec.endTick();
       int chh_count = countNotesInSection(track, CHH, sec.start_tick, sec_end);
       int ride_count = countNotesInSection(track, RIDE, sec.start_tick, sec_end);
 
@@ -1740,7 +1740,7 @@ TEST_F(DrumsTest, ChorusUsesRideCymbal) {
 
   for (const auto& sec : sections) {
     if (sec.type == SectionType::Chorus) {
-      Tick sec_end = sec.start_tick + sec.bars * TICKS_PER_BAR;
+      Tick sec_end = sec.endTick();
       int ride_count = countNotesInSection(track, RIDE, sec.start_tick, sec_end);
 
       // Chorus should have ride cymbal as timekeeping
@@ -1766,7 +1766,7 @@ TEST_F(DrumsTest, BridgeUsesRideAndCrossStick) {
   for (const auto& sec : sections) {
     if (sec.type == SectionType::Bridge) {
       found_bridge = true;
-      Tick sec_end = sec.start_tick + sec.bars * TICKS_PER_BAR;
+      Tick sec_end = sec.endTick();
       int ride_count = countNotesInSection(track, RIDE, sec.start_tick, sec_end);
       int sidestick_count = countNotesInSection(track, SIDESTICK_NOTE, sec.start_tick, sec_end);
 
@@ -1794,7 +1794,7 @@ TEST_F(DrumsTest, OutroUsesClosedHiHat) {
 
   for (const auto& sec : sections) {
     if (sec.type == SectionType::Outro) {
-      Tick sec_end = sec.start_tick + sec.bars * TICKS_PER_BAR;
+      Tick sec_end = sec.endTick();
       int ride_count = countNotesInSection(track, RIDE, sec.start_tick, sec_end);
 
       // Outro should not use ride (uses closed HH like intro)
@@ -1823,7 +1823,7 @@ TEST_F(DrumsTest, RhythmPatternMaintainedAcrossInstrumentChanges) {
   int chorus_bars = 0;
 
   for (const auto& sec : sections) {
-    Tick sec_end = sec.start_tick + sec.bars * TICKS_PER_BAR;
+    Tick sec_end = sec.endTick();
     int timekeeping_count = 0;
 
     for (const auto& note : track.notes()) {
@@ -1871,7 +1871,7 @@ TEST_F(DrumsTest, SparseStyleDoesNotUseRide) {
   const auto& sections = gen.getSong().arrangement().sections();
 
   for (const auto& sec : sections) {
-    Tick sec_end = sec.start_tick + sec.bars * TICKS_PER_BAR;
+    Tick sec_end = sec.endTick();
     int ride_count = countNotesInSection(track, RIDE, sec.start_tick, sec_end);
 
     // Sparse style should not use ride in any section
@@ -1926,7 +1926,7 @@ TEST_F(DrumsTest, ChorusRideVelocityInRange) {
 
   for (const auto& sec : sections) {
     if (sec.type == SectionType::Chorus) {
-      Tick sec_end = sec.start_tick + sec.bars * TICKS_PER_BAR;
+      Tick sec_end = sec.endTick();
       for (const auto& note : track.notes()) {
         if (note.note == RIDE &&
             note.start_tick >= sec.start_tick && note.start_tick < sec_end) {
@@ -1970,7 +1970,7 @@ TEST_F(DrumsTest, PreChorusLiftReducesKickSnareInLastTwoBars) {
     }
 
     // Define lift zone: last 2 bars
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     Tick lift_start = section_end - 2 * TICKS_PER_BAR;
 
     // Count kick and snare in lift zone vs earlier bars
@@ -2048,7 +2048,7 @@ TEST_F(DrumsTest, PreChorusLiftHiHatContinues) {
       continue;
     }
 
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     Tick lift_start = section_end - 2 * TICKS_PER_BAR;
 
     // Count hi-hat in lift zone
@@ -2091,7 +2091,7 @@ TEST_F(DrumsTest, GhostNotesHaveContextDependentVelocity) {
   int ghosts_in_chorus = 0;
 
   for (const auto& section : sections) {
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     for (const auto& note : track.notes()) {
       if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
         // Ghost notes are snares with low velocity (< 65)
@@ -2180,7 +2180,7 @@ TEST_F(DrumsTest, IntroVerseUsesDifferentHiHatThanChorus) {
 
   // Count hi-hat types per section
   for (const auto& section : sections) {
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
 
     int closed_hh = 0, open_hh = 0, foot_hh = 0;
     for (const auto& note : track.notes()) {
@@ -2230,7 +2230,7 @@ TEST_F(DrumsTest, SnareBuildupEveryBeatIn8thPattern) {
       continue;
     }
 
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     Tick buildup_start = section_end - 2 * TICKS_PER_BAR;
 
     // Count snares on 8th note positions in the buildup zone
@@ -2287,7 +2287,7 @@ TEST_F(DrumsTest, SnareBuildupVelocityCrescendo) {
       continue;
     }
 
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     Tick buildup_start = section_end - 2 * TICKS_PER_BAR;
     Tick buildup_mid = buildup_start + TICKS_PER_BAR;
 
@@ -2342,7 +2342,7 @@ TEST_F(DrumsTest, SnareBuildupHasCrashOnFinalBeat) {
       continue;
     }
 
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     Tick final_beat = section_end - TICKS_PER_BEAT;
 
     // Check for crash on final beat (with tolerance for timing variations)
@@ -2388,7 +2388,7 @@ TEST_F(DrumsTest, IntroKickEnabledFlagDifferenceTest) {
 
     for (const auto& section : sections) {
       if (section.type == SectionType::Intro) {
-        Tick intro_end = section.start_tick + section.bars * TICKS_PER_BAR;
+        Tick intro_end = section.endTick();
         int count = 0;
         for (const auto& note : drums.notes()) {
           if (note.note == KICK && note.start_tick >= section.start_tick &&

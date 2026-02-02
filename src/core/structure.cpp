@@ -453,7 +453,7 @@ std::vector<Section> buildStructure(StructurePattern pattern) {
 Tick calculateTotalTicks(const std::vector<Section>& sections) {
   if (sections.empty()) return 0;
   const auto& last = sections.back();
-  return last.start_tick + (last.bars * TICKS_PER_BAR);
+  return last.endTick();
 }
 
 std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t bpm,
@@ -510,7 +510,7 @@ std::vector<Section> buildStructureForDuration(uint16_t target_seconds, uint16_t
       insert_tick = outro_it->start_tick;
     } else {
       insert_bar = sections.back().start_bar + sections.back().bars;
-      insert_tick = sections.back().start_tick + sections.back().bars * TICKS_PER_BAR;
+      insert_tick = sections.back().endTick();
     }
 
     // Insert extra blocks

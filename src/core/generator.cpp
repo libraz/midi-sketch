@@ -37,6 +37,7 @@
 #include "core/timing_constants.h"
 #include "core/track_registration_guard.h"
 #include "core/velocity.h"
+#include "core/velocity_helper.h"
 #include "track/drums.h"
 #include "track/generators/arpeggio.h"
 #include "track/generators/aux.h"
@@ -1167,7 +1168,7 @@ void Generator::rebuildMotifFromPattern() {
   const auto& sections = song_.arrangement().sections();
 
   for (const auto& section : sections) {
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     bool is_chorus = (section.type == SectionType::Chorus);
     bool add_octave = is_chorus && motif_params.octave_layering_chorus;
 
@@ -1366,7 +1367,7 @@ void Generator::applyEmotionBasedDynamics(std::vector<MidiTrack*>& tracks,
     }
 
     // Calculate the transition zone (last 2 beats of current section)
-    Tick section_end = current_section.start_tick + current_section.bars * TICKS_PER_BAR;
+    Tick section_end = current_section.endTick();
     Tick transition_start = section_end - TICKS_PER_BEAT * 2;
 
     // Apply velocity ramp to notes in the transition zone
@@ -1380,7 +1381,7 @@ void Generator::applyEmotionBasedDynamics(std::vector<MidiTrack*>& tracks,
           // Apply velocity ramp progressively
           float velocity_factor = 1.0f + (hint.velocity_ramp - 1.0f) * progress;
           int new_velocity = static_cast<int>(note.velocity * velocity_factor);
-          note.velocity = static_cast<uint8_t>(std::clamp(new_velocity, 30, 127));
+          note.velocity = vel::clamp(new_velocity, 30, 127);
         }
       }
     }

@@ -298,7 +298,7 @@ TEST_F(ChordTrackTest, AnticipationInChorusSection) {
 
     for (const auto& note : chord_track.notes()) {
       if (note.start_tick < sec.start_tick) continue;
-      if (note.start_tick >= sec.start_tick + sec.bars * TICKS_PER_BAR) continue;
+      if (note.start_tick >= sec.endTick()) continue;
 
       // Check if note is at anticipation position (beat 4&)
       Tick relative = (note.start_tick - sec.start_tick) % TICKS_PER_BAR;
@@ -333,7 +333,7 @@ TEST_F(ChordTrackTest, NoAnticipationInIntroOutro) {
     int anticipation_in_section = 0;
     for (const auto& note : chord_track.notes()) {
       if (note.start_tick < sec.start_tick) continue;
-      if (note.start_tick >= sec.start_tick + sec.bars * TICKS_PER_BAR) continue;
+      if (note.start_tick >= sec.endTick()) continue;
 
       Tick relative = (note.start_tick - sec.start_tick) % TICKS_PER_BAR;
       if (relative == ANT_OFFSET) {
@@ -552,7 +552,7 @@ TEST_F(ChordTrackTest, SecondaryDominantIntegration_HighTensionSections) {
   // Find Chorus sections and count chord notes
   for (const auto& section : sections) {
     if (section.type == SectionType::Chorus) {
-      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      Tick section_end = section.endTick();
       int chorus_notes = 0;
       for (const auto& note : chord_track.notes()) {
         if (note.start_tick >= section.start_tick && note.start_tick < section_end) {

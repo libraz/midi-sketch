@@ -15,6 +15,7 @@
 #include "core/melody_templates.h"
 #include "core/note_creator.h"
 #include "core/note_source.h"
+#include "core/velocity_helper.h"
 #include "core/note_timeline_utils.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
@@ -208,7 +209,7 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
   for (const auto& section : *song_ctx.sections) {
     if (section.type == SectionType::Chorus) {
       std::vector<NoteEvent> chorus_notes;
-      Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+      Tick section_end = section.endTick();
       for (const auto& note : vocal_track.notes()) {
         if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
           chorus_notes.push_back(note);
@@ -248,7 +249,7 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
       continue;
     }
 
-    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    Tick section_end = section.endTick();
     int chord_idx = (section.start_bar % progression.length);
     int8_t chord_degree = progression.at(chord_idx);
 
@@ -288,7 +289,7 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
         // Center of vocal range, snapped to scale
         int center = (song_ctx.vocal_low + song_ctx.vocal_high) / 2;
         uint8_t base_pitch = static_cast<uint8_t>(snapToNearestScaleTone(center, 0));
-        uint8_t velocity = static_cast<uint8_t>(ctx.base_velocity * 0.8f);
+        uint8_t velocity = vel::scale(ctx.base_velocity, 0.8f);
         auto motif_notes =
             placeMotifInIntro(varied_motif, section.start_tick, section_end, base_pitch, velocity);
         for (auto note : motif_notes) {
@@ -535,7 +536,7 @@ std::vector<NoteEvent> AuxGenerator::generatePulseLoop(const AuxContext& ctx,
   if (pattern_pitches.empty()) return result;
 
   // Calculate velocity
-  uint8_t velocity = static_cast<uint8_t>(ctx.base_velocity * config.velocity_ratio);
+  uint8_t velocity = vel::scale(ctx.base_velocity, config.velocity_ratio);
 
   // Repeat pattern throughout section
   Tick note_duration = TICK_EIGHTH;
@@ -618,7 +619,7 @@ std::vector<NoteEvent> AuxGenerator::generateTargetHint(const AuxContext& ctx,
   uint8_t aux_low, aux_high;
   calculateAuxRange(config, ctx.main_tessitura, aux_low, aux_high);
 
-  uint8_t velocity = static_cast<uint8_t>(ctx.base_velocity * config.velocity_ratio);
+  uint8_t velocity = vel::scale(ctx.base_velocity, config.velocity_ratio);
 
   // A4: Use phrase boundaries from vocal if available
   std::vector<Tick> phrase_ends;
@@ -686,7 +687,7 @@ std::vector<NoteEvent> AuxGenerator::generateGrooveAccent(const AuxContext& ctx,
   uint8_t aux_low, aux_high;
   calculateAuxRange(config, ctx.main_tessitura, aux_low, aux_high);
 
-  uint8_t velocity = static_cast<uint8_t>(ctx.base_velocity * config.velocity_ratio);
+  uint8_t velocity = vel::scale(ctx.base_velocity, config.velocity_ratio);
 
   // Get root of chord for accent
   ChordTones ct = getChordTones(ctx.chord_degree);
@@ -788,7 +789,7 @@ std::vector<NoteEvent> AuxGenerator::generatePhraseTail(const AuxContext& ctx,
   uint8_t aux_low, aux_high;
   calculateAuxRange(config, ctx.main_tessitura, aux_low, aux_high);
 
-  uint8_t velocity = static_cast<uint8_t>(ctx.base_velocity * config.velocity_ratio);
+  uint8_t velocity = vel::scale(ctx.base_velocity, config.velocity_ratio);
 
   // A4: Use phrase boundaries from vocal if available
   std::vector<std::pair<Tick, uint8_t>> phrase_info;  // (end_tick, last_pitch)
@@ -869,7 +870,7 @@ std::vector<NoteEvent> AuxGenerator::generateEmotionalPad(const AuxContext& ctx,
   uint8_t aux_low, aux_high;
   calculateAuxRange(config, ctx.main_tessitura, aux_low, aux_high);
 
-  uint8_t velocity = static_cast<uint8_t>(ctx.base_velocity * config.velocity_ratio);
+  uint8_t velocity = vel::scale(ctx.base_velocity, config.velocity_ratio);
 
   // Get chord tones for sustained pad
   ChordTones ct = getChordTones(ctx.chord_degree);
@@ -1153,8 +1154,7 @@ std::vector<NoteEvent> AuxGenerator::generateUnison(
         std::max(static_cast<int>(ctx.section_start), static_cast<int>(note.start_tick) + offset));
 
     // Reduce velocity for background effect
-    unison.velocity = static_cast<uint8_t>(
-        std::clamp(static_cast<int>(note.velocity * config.velocity_ratio), 1, 127));
+    unison.velocity = vel::scale(note.velocity, config.velocity_ratio);
 
     result.push_back(unison);
   }
@@ -1224,8 +1224,7 @@ std::vector<NoteEvent> AuxGenerator::generateHarmony(const AuxContext& ctx,
     harm.note = static_cast<uint8_t>(std::clamp(new_pitch, 48, 84));
 
     // Reduce velocity
-    harm.velocity = static_cast<uint8_t>(
-        std::clamp(static_cast<int>(note.velocity * config.velocity_ratio), 1, 127));
+    harm.velocity = vel::scale(note.velocity, config.velocity_ratio);
 
     result.push_back(harm);
     ++note_count;
@@ -1282,7 +1281,7 @@ std::vector<NoteEvent> AuxGenerator::generateMelodicHook(const AuxContext& ctx,
     Tick note_duration = NOTE_DURATION - TICKS_PER_BEAT / 8;  // Slight gap
     base_hook.push_back(createNoteWithoutHarmony(
         current_tick, note_duration, static_cast<uint8_t>(pitch),
-        static_cast<uint8_t>(ctx.base_velocity * config.velocity_ratio)));
+        vel::scale(ctx.base_velocity, config.velocity_ratio)));
     current_tick += NOTE_DURATION;
   }
 
@@ -1369,7 +1368,7 @@ std::vector<NoteEvent> AuxGenerator::generateMotifCounter(const AuxContext& ctx,
     }
   }
 
-  uint8_t velocity = static_cast<uint8_t>(ctx.base_velocity * config.velocity_ratio);
+  uint8_t velocity = vel::scale(ctx.base_velocity, config.velocity_ratio);
 
   // Rhythmic complementation: Determine counter note density based on vocal density
   // Dense vocal → sparse counter, sparse vocal → dense counter
@@ -1625,7 +1624,7 @@ std::vector<NoteEvent> AuxGenerator::generateSustainPad(const AuxContext& ctx,
   uint8_t aux_low, aux_high;
   calculateAuxRange(config, ctx.main_tessitura, aux_low, aux_high);
 
-  uint8_t velocity = static_cast<uint8_t>(ctx.base_velocity * config.velocity_ratio);
+  uint8_t velocity = vel::scale(ctx.base_velocity, config.velocity_ratio);
 
   // SustainPad generates whole-note (4 beats) chord tone pads
   // Softer and more sustained than EmotionalPad

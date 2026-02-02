@@ -331,7 +331,7 @@ TEST_F(EmotionCurveIntegrationTest, VelocityIncreasesInTransitionZone) {
       const auto& b_section = sections[i];
 
       // Define transition zone: last 2 beats of B section
-      Tick section_end = b_section.start_tick + b_section.bars * 1920;
+      Tick section_end = b_section.endTick();
       Tick transition_start = section_end - 480 * 2;  // Last 2 beats
       Tick early_zone_end = b_section.start_tick + 1920;  // First bar
 
