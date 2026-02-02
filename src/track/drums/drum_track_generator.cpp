@@ -351,9 +351,11 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
         // Check for fills
         bool next_wants_fill = false;
         SectionType next_section = section.type;
+        SectionEnergy next_energy = section.energy;
         if (sec_idx + 1 < all_sections.size()) {
           next_section = all_sections[sec_idx + 1].type;
           next_wants_fill = all_sections[sec_idx + 1].fill_before;
+          next_energy = all_sections[sec_idx + 1].energy;
         }
 
         // Pre-chorus buildup
@@ -373,7 +375,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
 
         if (should_fill) {
           if (beat == fill_start_beat) {
-            current_fill = selectFillType(section.type, next_section, ctx.style, rng);
+            current_fill = selectFillType(section.type, next_section, ctx.style, next_energy, rng);
           }
           generateFill(track, beat_tick, beat, current_fill, velocity);
           continue;

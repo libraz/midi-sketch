@@ -1339,8 +1339,8 @@ SongConfigError validateSongConfig(const SongConfig& config) {
     return SongConfigError::InvalidCompositionStyle;
   }
 
-  // Validate arpeggio pattern (0-3)
-  if (static_cast<uint8_t>(config.arpeggio.pattern) > 3) {
+  // Validate arpeggio pattern (0-7)
+  if (static_cast<uint8_t>(config.arpeggio.pattern) > 7) {
     return SongConfigError::InvalidArpeggioPattern;
   }
 

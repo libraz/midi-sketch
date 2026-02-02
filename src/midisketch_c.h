@@ -212,7 +212,7 @@ typedef struct {
 
   // Arpeggio settings
   uint8_t arpeggio_enabled;       ///< 0=off, 1=on
-  uint8_t arpeggio_pattern;       ///< 0=Up, 1=Down, 2=UpDown, 3=Random
+  uint8_t arpeggio_pattern;       ///< 0=Up, 1=Down, 2=UpDown, 3=Random, 4=Pinwheel, 5=PedalRoot, 6=Alberti, 7=BrokenChord
   uint8_t arpeggio_speed;         ///< 0=Eighth, 1=Sixteenth, 2=Triplet
   uint8_t arpeggio_octave_range;  ///< 1-3 octaves
   uint8_t arpeggio_gate;          ///< Gate length (0-100)
@@ -407,7 +407,7 @@ typedef struct {
 
   // Arpeggio
   uint8_t arpeggio_enabled;       ///< Enable arpeggio (0=false, 1=true)
-  uint8_t arpeggio_pattern;       ///< 0=Up, 1=Down, 2=UpDown, 3=Random
+  uint8_t arpeggio_pattern;       ///< 0=Up, 1=Down, 2=UpDown, 3=Random, 4=Pinwheel, 5=PedalRoot, 6=Alberti, 7=BrokenChord
   uint8_t arpeggio_speed;         ///< 0=Eighth, 1=Sixteenth, 2=Triplet
   uint8_t arpeggio_octave_range;  ///< 1-3 octaves
   uint8_t arpeggio_gate;          ///< Gate length (0-100)

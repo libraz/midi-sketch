@@ -59,10 +59,14 @@ enum class CompositionStyle : uint8_t {
 
 /// @brief Arpeggio pattern direction.
 enum class ArpeggioPattern : uint8_t {
-  Up,      ///< Ascending notes
-  Down,    ///< Descending notes
-  UpDown,  ///< Ascending then descending
-  Random   ///< Random order
+  Up,          ///< Ascending notes
+  Down,        ///< Descending notes
+  UpDown,      ///< Ascending then descending
+  Random,      ///< Random order
+  Pinwheel,    ///< 1-5-3-5 center alternating expansion
+  PedalRoot,   ///< 1-3-1-5-1-7 root repetition
+  Alberti,     ///< 1-5-3-5 classical broken chord
+  BrokenChord  ///< 1-3-5-8-5-3 ascending then descending
 };
 
 /// @brief Arpeggio note speed.
@@ -113,6 +117,7 @@ struct ArpeggioStyle {
   float swing_amount = 0.0f;  ///< Swing amount (0.0-0.7)
   uint8_t gm_program = 81;    ///< GM Program number (default: Saw Lead)
   float gate = 0.8f;          ///< Gate length (0.0-1.0)
+  ArpeggioPattern pattern = ArpeggioPattern::Up;  ///< Mood-specific default pattern
 };
 
 // Note: MotifParams, MotifChordParams, MotifDrumParams are defined in motif_types.h
@@ -540,7 +545,7 @@ struct AccompanimentConfig {
 
   /// Arpeggio
   bool arpeggio_enabled = false;
-  uint8_t arpeggio_pattern = 0;       ///< 0=Up, 1=Down, 2=UpDown, 3=Random
+  uint8_t arpeggio_pattern = 0;       ///< 0=Up, 1=Down, 2=UpDown, 3=Random, 4=Pinwheel, 5=PedalRoot, 6=Alberti, 7=BrokenChord
   uint8_t arpeggio_speed = 1;         ///< 0=Eighth, 1=Sixteenth, 2=Triplet
   uint8_t arpeggio_octave_range = 2;  ///< 1-3 octaves
   uint8_t arpeggio_gate = 80;         ///< Gate length (0-100)

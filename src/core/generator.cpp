@@ -27,6 +27,7 @@
 #include "core/coordinator.h"
 #include "core/harmony_coordinator.h"
 #include "core/modulation_calculator.h"
+#include "core/mood_utils.h"
 #include "core/note_creator.h"
 #include "core/pitch_utils.h"
 #include "core/post_processor.h"
@@ -1915,6 +1916,35 @@ void generateBrightnessCurve(MidiTrack& track, const Section& section) {
   }
 }
 
+/// @brief Generate sustain pedal (CC64) for ballad-style chord accompaniment.
+/// Uses bar-length pedaling for verses, half-bar pedaling for chorus/bridge.
+/// @param track Target track to add CC events to
+/// @param sections Song sections defining time ranges and types
+void generateSustainPedal(MidiTrack& track, const std::vector<Section>& sections) {
+  for (const auto& section : sections) {
+    bool use_half_bar =
+        (section.type == SectionType::Chorus || section.type == SectionType::Bridge);
+
+    for (int bar = 0; bar < section.bars; ++bar) {
+      Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
+
+      if (use_half_bar) {
+        // Half-bar pedaling: 2 pedal cycles per bar
+        // First half
+        track.addCC(bar_start, MidiCC::kSustain, 127);
+        track.addCC(bar_start + 2 * TICKS_PER_BEAT - TICKS_PER_BEAT / 4, MidiCC::kSustain, 0);
+        // Second half
+        track.addCC(bar_start + 2 * TICKS_PER_BEAT, MidiCC::kSustain, 127);
+        track.addCC(bar_start + 4 * TICKS_PER_BEAT - TICKS_PER_BEAT / 4, MidiCC::kSustain, 0);
+      } else {
+        // Full-bar pedaling
+        track.addCC(bar_start, MidiCC::kSustain, 127);
+        track.addCC(bar_start + 4 * TICKS_PER_BEAT - TICKS_PER_BEAT / 4, MidiCC::kSustain, 0);
+      }
+    }
+  }
+}
+
 }  // anonymous namespace
 
 void Generator::generateExpressionCurves() {
@@ -1922,7 +1952,8 @@ void Generator::generateExpressionCurves() {
   if (sections.empty()) return;
 
   // Apply expression curves to melodic tracks (not drums or SE)
-  std::vector<MidiTrack*> melodic_tracks = {&song_.vocal(), &song_.bass(), &song_.chord()};
+  std::vector<MidiTrack*> melodic_tracks = {&song_.vocal(), &song_.bass(), &song_.chord(),
+                                             &song_.aux()};
 
   for (auto* track : melodic_tracks) {
     if (track->notes().empty()) continue;
@@ -1947,7 +1978,7 @@ void Generator::generateExpressionCurves() {
   // Generate CC7 (Volume) for fade-in/fade-out in Intro/Outro
   // Apply to all melodic tracks for smooth overall dynamics
   std::vector<MidiTrack*> all_melodic = {&song_.vocal(), &song_.bass(),   &song_.chord(),
-                                         &song_.motif(), &song_.arpeggio()};
+                                         &song_.motif(), &song_.arpeggio(), &song_.aux()};
   for (const auto& section : sections) {
     if (isBookendSection(section.type)) {
       for (auto* track : all_melodic) {
@@ -1955,6 +1986,11 @@ void Generator::generateExpressionCurves() {
         generateVolumeCurve(*track, section);
       }
     }
+  }
+
+  // Generate CC64 (Sustain Pedal) for Chord track in ballad-type moods
+  if (MoodClassification::isBallad(params_.mood) && !song_.chord().notes().empty()) {
+    generateSustainPedal(song_.chord(), sections);
   }
 }
 

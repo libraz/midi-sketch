@@ -522,5 +522,141 @@ TEST(BrightnessCurveTest, BrightnessWrittenToMidiOutput) {
   }
 }
 
+// ============================================================================
+// Aux track expression curve tests
+// ============================================================================
+
+TEST(ExpressionCurveTest, AuxTrackHasExpressionCurves) {
+  // Aux track should now receive CC11 expression curves
+  Generator generator;
+  GeneratorParams params;
+  params.seed = 42;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;
+  params.structure = StructurePattern::StandardPop;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.bpm = 120;
+
+  generator.generate(params);
+  const Song& song = generator.getSong();
+
+  if (song.aux().notes().empty()) {
+    SUCCEED() << "Aux track has no notes, CC generation skipped (expected)";
+    return;
+  }
+
+  bool has_expression = false;
+  for (const auto& cc_evt : song.aux().ccEvents()) {
+    if (cc_evt.cc == MidiCC::kExpression) {
+      has_expression = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(has_expression) << "Aux track should have CC11 expression curves";
+}
+
+// ============================================================================
+// CC64 Sustain pedal tests
+// ============================================================================
+
+TEST(SustainPedalTest, BalladChordHasSustainPedal) {
+  Generator generator;
+  GeneratorParams params;
+  params.seed = 42;
+  params.mood = Mood::Ballad;
+  params.chord_id = 0;
+  params.structure = StructurePattern::StandardPop;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.bpm = 90;
+
+  generator.generate(params);
+  const Song& song = generator.getSong();
+
+  ASSERT_GT(song.chord().notes().size(), 0u) << "Chord track should have notes";
+
+  int sustain_on_count = 0;
+  int sustain_off_count = 0;
+  for (const auto& cc_evt : song.chord().ccEvents()) {
+    if (cc_evt.cc == MidiCC::kSustain) {
+      if (cc_evt.value == 127) sustain_on_count++;
+      if (cc_evt.value == 0) sustain_off_count++;
+    }
+  }
+
+  EXPECT_GT(sustain_on_count, 0) << "Ballad chord should have sustain pedal ON events";
+  EXPECT_GT(sustain_off_count, 0) << "Ballad chord should have sustain pedal OFF events";
+  EXPECT_EQ(sustain_on_count, sustain_off_count)
+      << "Each sustain ON should have a matching OFF";
+}
+
+TEST(SustainPedalTest, SentimentalMoodHasSustainPedal) {
+  // Sentimental is also a ballad-type mood
+  Generator generator;
+  GeneratorParams params;
+  params.seed = 42;
+  params.mood = Mood::Sentimental;
+  params.chord_id = 0;
+  params.structure = StructurePattern::StandardPop;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.bpm = 90;
+
+  generator.generate(params);
+  const Song& song = generator.getSong();
+
+  if (song.chord().notes().empty()) {
+    SUCCEED() << "Chord track has no notes";
+    return;
+  }
+
+  bool has_sustain = false;
+  for (const auto& cc_evt : song.chord().ccEvents()) {
+    if (cc_evt.cc == MidiCC::kSustain) {
+      has_sustain = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(has_sustain) << "Sentimental mood chord should have sustain pedal";
+}
+
+TEST(SustainPedalTest, NonBalladChordHasNoSustainPedal) {
+  Generator generator;
+  GeneratorParams params;
+  params.seed = 42;
+  params.mood = Mood::EnergeticDance;  // Not a ballad
+  params.chord_id = 0;
+  params.structure = StructurePattern::StandardPop;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.bpm = 128;
+
+  generator.generate(params);
+  const Song& song = generator.getSong();
+
+  for (const auto& cc_evt : song.chord().ccEvents()) {
+    EXPECT_NE(cc_evt.cc, MidiCC::kSustain)
+        << "Non-ballad chord should not have sustain pedal events";
+  }
+}
+
+TEST(SustainPedalTest, SustainValuesAreOnlyZeroOr127) {
+  Generator generator;
+  GeneratorParams params;
+  params.seed = 42;
+  params.mood = Mood::Ballad;
+  params.chord_id = 0;
+  params.structure = StructurePattern::StandardPop;
+  params.composition_style = CompositionStyle::MelodyLead;
+  params.bpm = 90;
+
+  generator.generate(params);
+  const Song& song = generator.getSong();
+
+  for (const auto& cc_evt : song.chord().ccEvents()) {
+    if (cc_evt.cc == MidiCC::kSustain) {
+      EXPECT_TRUE(cc_evt.value == 0 || cc_evt.value == 127)
+          << "Sustain pedal CC value should be 0 or 127, got " << static_cast<int>(cc_evt.value);
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

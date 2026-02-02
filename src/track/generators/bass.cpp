@@ -928,7 +928,16 @@ void generateWalkingPattern(const BassBarContext& ctx) {
   addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 2 * QUARTER, QUARTER, walk2,
                           ctx.root, ctx.vel_weak);
   if ((ctx.is_last_bar || ctx.next_root != ctx.root) && ctx.next_root != 0) {
-    uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    // Prefer chromatic approach when interval to next root is small (M2/m3).
+    // This creates more idiomatic jazz walking bass voice leading.
+    int interval = std::abs(static_cast<int>(ctx.next_root) - static_cast<int>(ctx.root));
+    interval = interval % 12;  // Normalize to within octave
+    uint8_t approach;
+    if (interval >= 2 && interval <= 3) {
+      approach = getChromaticApproach(ctx.next_root);
+    } else {
+      approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
+    }
     addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 3 * QUARTER, QUARTER, approach,
                             ctx.root, ctx.vel_weak);
   } else {

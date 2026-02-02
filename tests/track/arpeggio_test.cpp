@@ -175,6 +175,150 @@ TEST_F(ArpeggioTest, PatternRandom) {
   EXPECT_FALSE(track.empty());
 }
 
+// ============================================================================
+// New Pattern Tests (Pinwheel, PedalRoot, Alberti, BrokenChord)
+// ============================================================================
+
+TEST_F(ArpeggioTest, PatternPinwheel) {
+  params_.arpeggio.pattern = ArpeggioPattern::Pinwheel;
+  params_.arpeggio.octave_range = 1;
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+  const auto& track = gen.getSong().arpeggio();
+  EXPECT_GT(track.notes().size(), 0u) << "Pinwheel pattern should generate notes";
+}
+
+TEST_F(ArpeggioTest, PatternPedalRoot) {
+  params_.arpeggio.pattern = ArpeggioPattern::PedalRoot;
+  params_.arpeggio.octave_range = 1;
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+  const auto& track = gen.getSong().arpeggio();
+  EXPECT_GT(track.notes().size(), 0u) << "PedalRoot pattern should generate notes";
+}
+
+TEST_F(ArpeggioTest, PatternAlberti) {
+  params_.arpeggio.pattern = ArpeggioPattern::Alberti;
+  params_.arpeggio.octave_range = 1;
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+  const auto& track = gen.getSong().arpeggio();
+  EXPECT_GT(track.notes().size(), 0u) << "Alberti pattern should generate notes";
+}
+
+TEST_F(ArpeggioTest, PatternBrokenChord) {
+  params_.arpeggio.pattern = ArpeggioPattern::BrokenChord;
+  params_.arpeggio.octave_range = 1;
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+  const auto& track = gen.getSong().arpeggio();
+  EXPECT_GT(track.notes().size(), 0u) << "BrokenChord pattern should generate notes";
+}
+
+TEST_F(ArpeggioTest, PinwheelPatternShape) {
+  // Pinwheel with sync_chord=true and a specific chord should produce
+  // a recognizable 4-note cyclic pattern: root, 5th, 3rd, 5th
+  params_.arpeggio.pattern = ArpeggioPattern::Pinwheel;
+  params_.arpeggio.octave_range = 1;
+  params_.arpeggio.sync_chord = true;
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+  const auto& track = gen.getSong().arpeggio();
+  ASSERT_GE(track.notes().size(), 4u);
+
+  // With a 4-note cycle, notes at index 0 and 4 (same position in cycle)
+  // should have the same pitch class (both are root)
+  if (track.notes().size() >= 8) {
+    // Check cyclic repetition: note[0] and note[4] should match (same pattern position)
+    uint8_t first_root = track.notes()[0].note % 12;
+    uint8_t second_root = track.notes()[4].note % 12;
+    EXPECT_EQ(first_root, second_root)
+        << "Pinwheel should cycle every 4 notes (root repeats)";
+  }
+}
+
+TEST_F(ArpeggioTest, PedalRootRepeatsRoot) {
+  // PedalRoot pattern should alternate root with upper notes.
+  // Every even-indexed note in the pattern should be the root.
+  params_.arpeggio.pattern = ArpeggioPattern::PedalRoot;
+  params_.arpeggio.octave_range = 1;
+  params_.arpeggio.sync_chord = true;
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+  const auto& track = gen.getSong().arpeggio();
+  ASSERT_GE(track.notes().size(), 6u);
+
+  // In pedal root pattern, notes at even indices (0, 2, 4) are the root
+  // and should share the same pitch class
+  uint8_t root_pc = track.notes()[0].note % 12;
+  // Check indices 2 and 4 also have the root pitch class
+  uint8_t pc2 = track.notes()[2].note % 12;
+  uint8_t pc4 = track.notes()[4].note % 12;
+  EXPECT_EQ(root_pc, pc2) << "PedalRoot index 2 should be root";
+  EXPECT_EQ(root_pc, pc4) << "PedalRoot index 4 should be root";
+}
+
+TEST_F(ArpeggioTest, BrokenChordAscendsThenDescends) {
+  // BrokenChord should go up through chord tones then back down.
+  // With a triad (3 notes) the pattern is: low, mid, high, mid (4 notes).
+  params_.arpeggio.pattern = ArpeggioPattern::BrokenChord;
+  params_.arpeggio.octave_range = 1;
+  params_.arpeggio.sync_chord = true;
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+  const auto& track = gen.getSong().arpeggio();
+  ASSERT_GE(track.notes().size(), 4u);
+
+  // With a triad and BrokenChord, the 4-note cycle should have
+  // the pattern peak at index 2 (highest note)
+  // Check that note[0] < note[2] (ascending portion)
+  // Use original pitch to avoid collision avoidance interference
+  uint8_t pitch_0 = track.notes()[0].prov_original_pitch;
+  uint8_t pitch_2 = track.notes()[2].prov_original_pitch;
+  EXPECT_LE(pitch_0, pitch_2)
+      << "BrokenChord should ascend from index 0 to index 2";
+}
+
+TEST_F(ArpeggioTest, CityPopUsesPinwheelByDefault) {
+  // CityPop mood should default to Pinwheel pattern via ArpeggioStyle
+  auto style = getArpeggioStyleForMood(Mood::CityPop);
+  EXPECT_EQ(style.pattern, ArpeggioPattern::Pinwheel)
+      << "CityPop should default to Pinwheel pattern";
+}
+
+TEST_F(ArpeggioTest, BalladUsesPedalRootByDefault) {
+  // Ballad mood should default to PedalRoot pattern via ArpeggioStyle
+  auto style = getArpeggioStyleForMood(Mood::Ballad);
+  EXPECT_EQ(style.pattern, ArpeggioPattern::PedalRoot)
+      << "Ballad should default to PedalRoot pattern";
+}
+
+TEST_F(ArpeggioTest, IdolPopUsesBrokenChordByDefault) {
+  // IdolPop mood should default to BrokenChord pattern via ArpeggioStyle
+  auto style = getArpeggioStyleForMood(Mood::IdolPop);
+  EXPECT_EQ(style.pattern, ArpeggioPattern::BrokenChord)
+      << "IdolPop should default to BrokenChord pattern";
+}
+
+TEST_F(ArpeggioTest, UserPatternOverridesMoodDefault) {
+  // When user explicitly sets a non-Up pattern, it should override mood default
+  params_.mood = Mood::CityPop;  // Default is Pinwheel
+  params_.arpeggio.pattern = ArpeggioPattern::Down;  // User override
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+  const auto& track = gen.getSong().arpeggio();
+  EXPECT_GT(track.notes().size(), 0u)
+      << "User pattern override should still generate notes";
+}
+
 TEST_F(ArpeggioTest, OctaveRange) {
   params_.arpeggio.octave_range = 3;
   Generator gen;

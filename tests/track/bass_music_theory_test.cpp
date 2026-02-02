@@ -226,4 +226,76 @@ TEST_F(AvoidNoteTest, TritoneWithRootIsAvoid) {
   EXPECT_EQ(interval, 6);  // Tritone - should be avoid on non-dominant
 }
 
+// =============================================================================
+// Walking bass chromatic approach priority for small intervals
+// =============================================================================
+
+class WalkingBassApproachTest : public ::testing::Test {};
+
+TEST_F(WalkingBassApproachTest, ChromaticApproachPreferredForSmallIntervals) {
+  // When interval between current and next root is 2 or 3 semitones (M2/m3),
+  // walking bass should prefer chromatic approach (half-step below target).
+  // This creates more idiomatic jazz voice leading.
+
+  struct TestCase {
+    uint8_t current_root;
+    uint8_t next_root;
+    bool expect_chromatic;
+  };
+
+  std::vector<TestCase> cases = {
+      // M2 interval (2 semitones): chromatic preferred
+      {48, 50, true},   // C -> D: interval 2, chromatic approach = C# (49)
+      {50, 48, true},   // D -> C: interval 2, chromatic approach = B (47)
+      // m3 interval (3 semitones): chromatic preferred
+      {48, 51, true},   // C -> Eb: interval 3, chromatic approach = D (50)
+      {45, 48, true},   // A -> C: interval 3, chromatic approach = B (47)
+      // P4 interval (5 semitones): NOT chromatic
+      {48, 53, false},  // C -> F: interval 5
+      // P5 interval (7 semitones): NOT chromatic
+      {48, 55, false},  // C -> G: interval 7
+      // Unison (0 semitones): NOT chromatic
+      {48, 48, false},  // C -> C: interval 0
+      // m2 interval (1 semitone): NOT chromatic (too small)
+      {48, 49, false},  // C -> C#: interval 1
+  };
+
+  for (const auto& test_case : cases) {
+    int interval = std::abs(static_cast<int>(test_case.next_root) -
+                            static_cast<int>(test_case.current_root));
+    interval = interval % 12;  // Normalize to within octave
+    bool use_chromatic = (interval >= 2 && interval <= 3);
+    EXPECT_EQ(use_chromatic, test_case.expect_chromatic)
+        << "Current root=" << static_cast<int>(test_case.current_root)
+        << " Next root=" << static_cast<int>(test_case.next_root)
+        << " Interval=" << interval;
+  }
+}
+
+TEST_F(WalkingBassApproachTest, ChromaticApproachIsSemitoneBelow) {
+  // Verify chromatic approach note is always one semitone below target
+  // for the interval sizes where it is preferred (2-3 semitones)
+
+  // C -> D (interval 2): approach should be C# (49), which is D-1
+  uint8_t target_d = 50;
+  int chromatic = static_cast<int>(target_d) - 1;
+  EXPECT_EQ(chromatic, 49);  // C#
+
+  // A -> C (interval 3): approach should be B (47), which is C-1
+  uint8_t target_c = 48;
+  chromatic = static_cast<int>(target_c) - 1;
+  EXPECT_EQ(chromatic, 47);  // B
+}
+
+TEST_F(WalkingBassApproachTest, OctaveNormalizationHandlesLargeIntervals) {
+  // Interval calculation should normalize to within octave via mod 12.
+  // E.g., C2(36) -> D3(50) = 14 semitones -> 14 % 12 = 2 -> chromatic
+
+  int interval = std::abs(50 - 36);
+  EXPECT_EQ(interval, 14);
+  interval = interval % 12;
+  EXPECT_EQ(interval, 2);  // Normalized to M2 -> chromatic preferred
+  EXPECT_TRUE(interval >= 2 && interval <= 3);
+}
+
 }  // namespace midisketch

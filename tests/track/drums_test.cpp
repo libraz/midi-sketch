@@ -2443,3 +2443,98 @@ TEST_F(DrumsTest, IntroKickEnabledFlagDifferenceTest) {
 
 }  // namespace
 }  // namespace midisketch
+
+// Separate namespace block for fill_generator unit tests
+#include "track/drums/fill_generator.h"
+
+namespace midisketch {
+namespace drums {
+namespace {
+
+TEST(FillTypeEnergyTest, LowEnergyProducesSubtleFills) {
+  std::set<FillType> low_fills;
+  for (int idx = 0; idx < 50; ++idx) {
+    std::mt19937 test_rng(static_cast<unsigned>(idx));
+    auto fill = selectFillType(SectionType::A, SectionType::B, DrumStyle::Standard,
+                               SectionEnergy::Low, test_rng);
+    low_fills.insert(fill);
+  }
+
+  // Low energy destination should only produce subtle fill types
+  for (auto fill : low_fills) {
+    EXPECT_TRUE(fill == FillType::SimpleCrash ||
+                fill == FillType::BreakdownFill ||
+                fill == FillType::HalfTimeFill)
+        << "Low energy fill should be subtle, got: " << static_cast<int>(fill);
+  }
+}
+
+TEST(FillTypeEnergyTest, PeakEnergyProducesDramaticFills) {
+  std::set<FillType> peak_fills;
+  for (int idx = 0; idx < 50; ++idx) {
+    std::mt19937 test_rng(static_cast<unsigned>(idx));
+    auto fill = selectFillType(SectionType::B, SectionType::Chorus, DrumStyle::Standard,
+                               SectionEnergy::Peak, test_rng);
+    peak_fills.insert(fill);
+  }
+
+  // Peak energy destination should produce dramatic fill types
+  for (auto fill : peak_fills) {
+    EXPECT_TRUE(fill == FillType::TomDescend ||
+                fill == FillType::SnareRoll ||
+                fill == FillType::LinearFill ||
+                fill == FillType::FlamsAndDrags)
+        << "Peak energy fill should be dramatic, got: " << static_cast<int>(fill);
+  }
+}
+
+TEST(FillTypeEnergyTest, MediumEnergyUsesExistingSectionLogic) {
+  // Medium energy should not be overridden by the energy bias,
+  // so it should follow section-type logic (e.g., to_chorus picks dramatic fills)
+  std::set<FillType> medium_fills;
+  for (int idx = 0; idx < 50; ++idx) {
+    std::mt19937 test_rng(static_cast<unsigned>(idx));
+    auto fill = selectFillType(SectionType::B, SectionType::Chorus, DrumStyle::Standard,
+                               SectionEnergy::Medium, test_rng);
+    medium_fills.insert(fill);
+  }
+
+  // Medium energy into Chorus: should get the existing to_chorus selection,
+  // which includes SnareTomCombo, TomDescend, GhostToAccent, HiHatChoke, etc.
+  EXPECT_GT(medium_fills.size(), 1u) << "Medium energy should produce varied fills";
+}
+
+TEST(FillTypeEnergyTest, SparseStyleOverridesEnergy) {
+  // Sparse style should always produce SimpleCrash or BreakdownFill,
+  // regardless of energy level
+  std::set<FillType> sparse_fills;
+  for (int idx = 0; idx < 50; ++idx) {
+    std::mt19937 test_rng(static_cast<unsigned>(idx));
+    auto fill = selectFillType(SectionType::B, SectionType::Chorus, DrumStyle::Sparse,
+                               SectionEnergy::Peak, test_rng);
+    sparse_fills.insert(fill);
+  }
+
+  for (auto fill : sparse_fills) {
+    EXPECT_TRUE(fill == FillType::SimpleCrash || fill == FillType::BreakdownFill)
+        << "Sparse style should override energy, got: " << static_cast<int>(fill);
+  }
+}
+
+TEST(FillTypeEnergyTest, HighEnergyUsesExistingSectionLogic) {
+  // High energy (not Peak) should use the existing section-type logic
+  std::set<FillType> high_fills;
+  for (int idx = 0; idx < 50; ++idx) {
+    std::mt19937 test_rng(static_cast<unsigned>(idx));
+    auto fill = selectFillType(SectionType::A, SectionType::B, DrumStyle::Rock,
+                               SectionEnergy::High, test_rng);
+    high_fills.insert(fill);
+  }
+
+  // High energy with Rock style should produce varied fills from default logic
+  EXPECT_GT(high_fills.size(), 1u) << "High energy should produce varied fills";
+}
+
+}  // namespace
+}  // namespace drums
+}  // namespace midisketch

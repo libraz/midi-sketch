@@ -12,10 +12,14 @@ namespace midisketch {
 
 /// @brief Arpeggio pattern direction.
 enum class ArpeggioPattern : uint8_t {
-  Up,      ///< Ascending notes
-  Down,    ///< Descending notes
-  UpDown,  ///< Ascending then descending
-  Random   ///< Random order
+  Up,          ///< Ascending notes
+  Down,        ///< Descending notes
+  UpDown,      ///< Ascending then descending
+  Random,      ///< Random order
+  Pinwheel,    ///< 1-5-3-5 center alternating expansion
+  PedalRoot,   ///< 1-3-1-5-1-7 root repetition
+  Alberti,     ///< 1-5-3-5 classical broken chord
+  BrokenChord  ///< 1-3-5-8-5-3 ascending then descending
 };
 
 /// @brief Arpeggio note speed.

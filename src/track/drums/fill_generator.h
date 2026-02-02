@@ -38,13 +38,15 @@ enum class FillType {
 /// @return Beat index to start fill (0-3)
 uint8_t getFillStartBeat(SectionEnergy energy);
 
-/// @brief Select fill type based on section transition and style.
+/// @brief Select fill type based on section transition, style, and energy.
 /// @param from Source section type
 /// @param to Target section type
 /// @param style Drum style
+/// @param next_energy Energy level of the destination section
 /// @param rng Random number generator
 /// @return Selected fill type
-FillType selectFillType(SectionType from, SectionType to, DrumStyle style, std::mt19937& rng);
+FillType selectFillType(SectionType from, SectionType to, DrumStyle style,
+                        SectionEnergy next_energy, std::mt19937& rng);
 
 /// @brief Generate a fill at the given beat.
 /// @param track Target track

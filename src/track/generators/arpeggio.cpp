@@ -34,6 +34,7 @@ ArpeggioStyle getArpeggioStyleForMood(Mood mood) {
       style.swing_amount = 0.5f;  // Shuffle feel
       style.gm_program = 5;       // Electric Piano 1
       style.gate = 0.75f;
+      style.pattern = ArpeggioPattern::Pinwheel;
       break;
 
     case Mood::IdolPop:
@@ -44,6 +45,7 @@ ArpeggioStyle getArpeggioStyleForMood(Mood mood) {
       style.swing_amount = 0.2f;  // Slight swing
       style.gm_program = 81;      // Saw Lead
       style.gate = 0.7f;
+      style.pattern = ArpeggioPattern::BrokenChord;
       break;
 
     case Mood::Ballad:
@@ -54,6 +56,7 @@ ArpeggioStyle getArpeggioStyleForMood(Mood mood) {
       style.swing_amount = 0.0f;  // Straight timing
       style.gm_program = 5;       // Electric Piano 1
       style.gate = 0.9f;          // Legato
+      style.pattern = ArpeggioPattern::PedalRoot;
       break;
 
     case Mood::LightRock:
@@ -170,6 +173,64 @@ std::vector<uint8_t> arrangeByPattern(const std::vector<uint8_t>& notes, Arpeggi
     case ArpeggioPattern::Random:
       std::shuffle(result.begin(), result.end(), rng);
       break;
+
+    case ArpeggioPattern::Pinwheel: {
+      std::sort(result.begin(), result.end());
+      if (result.size() < 3) break;
+      // Pattern: root, 5th, 3rd, 5th (indices 0, 2, 1, 2)
+      std::vector<uint8_t> pattern;
+      size_t num = result.size();
+      std::array<size_t, 4> indices = {
+          0, std::min<size_t>(2, num - 1), std::min<size_t>(1, num - 1),
+          std::min<size_t>(2, num - 1)};
+      for (size_t idx : indices) {
+        pattern.push_back(result[idx]);
+      }
+      result = pattern;
+      break;
+    }
+
+    case ArpeggioPattern::PedalRoot: {
+      std::sort(result.begin(), result.end());
+      if (result.size() < 2) break;
+      // Pedal pattern: root alternates with each upper note
+      std::vector<uint8_t> pattern;
+      size_t num = result.size();
+      for (size_t idx = 1; idx < num && idx <= 3; ++idx) {
+        pattern.push_back(result[0]);    // root (pedal)
+        pattern.push_back(result[idx]);  // upper note
+      }
+      result = pattern;
+      break;
+    }
+
+    case ArpeggioPattern::Alberti: {
+      std::sort(result.begin(), result.end());
+      if (result.size() < 3) break;
+      // Classic Alberti bass: low, high, mid, high (indices 0, 2, 1, 2)
+      std::vector<uint8_t> pattern;
+      size_t num = result.size();
+      std::array<size_t, 4> indices = {
+          0, std::min<size_t>(2, num - 1), std::min<size_t>(1, num - 1),
+          std::min<size_t>(2, num - 1)};
+      for (size_t idx : indices) {
+        pattern.push_back(result[idx]);
+      }
+      result = pattern;
+      break;
+    }
+
+    case ArpeggioPattern::BrokenChord: {
+      std::sort(result.begin(), result.end());
+      if (result.size() < 3) break;
+      // Ascending then descending (excluding endpoints to avoid duplicates)
+      std::vector<uint8_t> pattern = result;
+      for (int idx = static_cast<int>(result.size()) - 2; idx > 0; --idx) {
+        pattern.push_back(result[idx]);
+      }
+      result = pattern;
+      break;
+    }
   }
 
   return result;
@@ -204,12 +265,13 @@ namespace {
 
 /// @brief Parameters for arpeggio section generation.
 struct ArpeggioSectionParams {
-  ArpeggioSpeed speed;       ///< Note speed for this section
-  float gate;                ///< Gate ratio
-  uint8_t octave_range;      ///< Octave range for chord notes
-  int base_octave;           ///< Base octave for arpeggio
-  uint8_t effective_density; ///< Effective density after modifiers
-  float swing_amount;        ///< Swing amount from style
+  ArpeggioSpeed speed;          ///< Note speed for this section
+  ArpeggioPattern pattern;      ///< Effective pattern (user override or mood default)
+  float gate;                   ///< Gate ratio
+  uint8_t octave_range;         ///< Octave range for chord notes
+  int base_octave;              ///< Base octave for arpeggio
+  uint8_t effective_density;    ///< Effective density after modifiers
+  float swing_amount;           ///< Swing amount from style
 };
 
 /// @brief Calculate effective arpeggio parameters for a section.
@@ -228,8 +290,12 @@ ArpeggioSectionParams calculateArpeggioSectionParams(const Section& section,
   result.speed = style.speed;
   result.gate = style.gate;
   result.swing_amount = style.swing_amount;
+  result.pattern = style.pattern;
 
   // ArpeggioParams overrides style (user configuration takes priority)
+  if (arp.pattern != ArpeggioPattern::Up) {
+    result.pattern = arp.pattern;
+  }
   if (arp.speed != ArpeggioSpeed::Sixteenth) {
     result.speed = arp.speed;
   }
@@ -338,7 +404,7 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
       while (root >= sec_params.base_octave + 12) root -= 12;
       Chord chord = getChordNotes(degree);
       std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, sec_params.octave_range);
-      persistent_arp_notes = arrangeByPattern(chord_notes, arp.pattern, rng);
+      persistent_arp_notes = arrangeByPattern(chord_notes, sec_params.pattern, rng);
       persistent_pattern_index = 0;
     }
 
@@ -370,7 +436,7 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
 
         Chord chord = getChordNotes(degree);
         std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, sec_params.octave_range);
-        arp_notes = arrangeByPattern(chord_notes, arp.pattern, rng);
+        arp_notes = arrangeByPattern(chord_notes, sec_params.pattern, rng);
         pattern_index = 0;
 
         // Harmonic rhythm subdivision
@@ -383,7 +449,7 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
           Chord second_half_chord = getChordNotes(second_half_degree);
           std::vector<uint8_t> second_half_notes =
               buildChordNotes(second_half_root, second_half_chord, sec_params.octave_range);
-          next_arp_notes = arrangeByPattern(second_half_notes, arp.pattern, rng);
+          next_arp_notes = arrangeByPattern(second_half_notes, sec_params.pattern, rng);
           should_split = true;
         } else if (should_split) {
           int next_chord_idx = (chord_idx + 1) % progression.length;
@@ -394,7 +460,7 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
           Chord next_chord = getChordNotes(next_degree);
           std::vector<uint8_t> next_chord_notes =
               buildChordNotes(next_root, next_chord, sec_params.octave_range);
-          next_arp_notes = arrangeByPattern(next_chord_notes, arp.pattern, rng);
+          next_arp_notes = arrangeByPattern(next_chord_notes, sec_params.pattern, rng);
         }
       } else {
         // No sync: continue with persistent pattern
