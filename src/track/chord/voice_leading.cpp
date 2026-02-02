@@ -24,8 +24,7 @@ VoicingType selectVoicingType(SectionType section, Mood mood, bool /*bass_has_ro
   bool is_ballad = MoodClassification::isBallad(mood);
 
   // Intro/Interlude/Outro/Chant: always close voicing for stability
-  if (section == SectionType::Intro || section == SectionType::Interlude ||
-      section == SectionType::Outro || section == SectionType::Chant) {
+  if (isTransitionalSection(section)) {
     return VoicingType::Close;
   }
 
@@ -253,8 +252,7 @@ bool shouldAddDominantPreparation(SectionType current, SectionType next,
 bool needsCadenceFix(uint8_t section_bars, uint8_t progression_length,
                      SectionType section, SectionType next_section) {
   // Only apply to main content sections
-  if (section == SectionType::Intro || section == SectionType::Interlude ||
-      section == SectionType::Outro) {
+  if (isTransitionalSection(section)) {
     return false;
   }
 
@@ -264,7 +262,7 @@ bool needsCadenceFix(uint8_t section_bars, uint8_t progression_length,
   }
 
   // Only apply before sections that need resolution (A, Chorus)
-  if (next_section == SectionType::Intro || next_section == SectionType::Outro) {
+  if (isBookendSection(next_section)) {
     return false;
   }
 

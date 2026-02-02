@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "core/chord.h"
+#include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
 #include "core/motif.h"
 #include "core/motif_types.h"
@@ -21,6 +22,7 @@
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
 #include "core/production_blueprint.h"
+#include "core/rng_util.h"
 #include "core/song.h"
 
 namespace midisketch {
@@ -45,29 +47,7 @@ struct MotifRiffCache {
 // Internal implementation details for motif track generation.
 namespace motif_detail {
 
-// M1: Scale interval arrays for different scale types
-constexpr int SCALE_MAJOR[7] = {0, 2, 4, 5, 7, 9, 11};           // Ionian
-constexpr int SCALE_NATURAL_MINOR[7] = {0, 2, 3, 5, 7, 8, 10};   // Aeolian
-constexpr int SCALE_HARMONIC_MINOR[7] = {0, 2, 3, 5, 7, 8, 11};  // Raised 7th
-constexpr int SCALE_DORIAN[7] = {0, 2, 3, 5, 7, 9, 10};          // Minor with raised 6th
-constexpr int SCALE_MIXOLYDIAN[7] = {0, 2, 4, 5, 7, 9, 10};      // Major with lowered 7th
-
-// M1: Get scale intervals for a given scale type
-const int* getScaleIntervals(ScaleType scale) {
-  switch (scale) {
-    case ScaleType::Major:
-      return SCALE_MAJOR;
-    case ScaleType::NaturalMinor:
-      return SCALE_NATURAL_MINOR;
-    case ScaleType::HarmonicMinor:
-      return SCALE_HARMONIC_MINOR;
-    case ScaleType::Dorian:
-      return SCALE_DORIAN;
-    case ScaleType::Mixolydian:
-      return SCALE_MIXOLYDIAN;
-  }
-  return SCALE_MAJOR;
-}
+// Scale interval arrays and getScaleIntervals() are now in pitch_utils.h.
 
 // M1: Determine appropriate scale type based on chord quality and mood
 ScaleType selectScaleType(bool is_minor, Mood mood) {
@@ -93,189 +73,28 @@ ScaleType selectScaleType(bool is_minor, Mood mood) {
   }
 }
 
-// Tension intervals in semitones from chord root
-constexpr int TENSION_9TH = 14;
-constexpr int TENSION_11TH = 17;
-constexpr int TENSION_13TH = 21;
+// degreeToPitch() is now in pitch_utils.h.
 
-// Chord quality for tension selection
-enum class ChordQuality { Major, Minor, Diminished };
-
-// Get available tensions for a chord quality
-std::vector<int> getAvailableTensions(ChordQuality quality) {
-  switch (quality) {
-    case ChordQuality::Major:
-      return {TENSION_9TH, TENSION_13TH};
-    case ChordQuality::Minor:
-      return {TENSION_9TH, TENSION_11TH};
-    case ChordQuality::Diminished:
-      return {TENSION_9TH};
-  }
-  return {};
-}
-
-// Determine chord quality from chord info
-ChordQuality getChordQuality(const Chord& chord) {
-  if (chord.note_count >= 2) {
-    if (chord.intervals[1] == 3) {
-      if (chord.note_count >= 3 && chord.intervals[2] == 6) {
-        return ChordQuality::Diminished;
-      }
-      return ChordQuality::Minor;
-    }
-  }
-  return ChordQuality::Major;
-}
-
-// Apply tension to a pitch based on chord quality
-int applyTension(int base_pitch, uint8_t chord_root, ChordQuality quality, std::mt19937& rng) {
-  auto tensions = getAvailableTensions(quality);
-  if (tensions.empty()) return base_pitch;
-
-  std::uniform_int_distribution<size_t> dist(0, tensions.size() - 1);
-  int tension_interval = tensions[dist(rng)];
-  int tension_pitch = chord_root + tension_interval;
-
-  while (tension_pitch > base_pitch + 12) tension_pitch -= 12;
-  while (tension_pitch < base_pitch - 12) tension_pitch += 12;
-
-  return tension_pitch;
-}
-
-// M1: Convert scale degree to pitch with key offset and scale type
-int degreeToPitch(int degree, int base_note, int key_offset, ScaleType scale = ScaleType::Major) {
-  const int* scale_intervals = getScaleIntervals(scale);
-  int d = ((degree % 7) + 7) % 7;
-  int oct_adjust = degree / 7;
-  if (degree < 0 && degree % 7 != 0) oct_adjust--;
-  return base_note + oct_adjust * 12 + scale_intervals[d] + key_offset;
-}
-
-// Check if pitch class is diatonic in C major
-// Uses the shared DIATONIC_PITCH_CLASS lookup table from pitch_utils.h
-bool isDiatonicPC(int pc) {
-  pc = ((pc % 12) + 12) % 12;
-  return DIATONIC_PITCH_CLASS[pc];
-}
-
-// Get chord tone pitch classes for a chord
-std::vector<int> getChordTones(uint8_t chord_root, bool is_minor) {
-  int root_pc = chord_root % 12;
-  int third_offset = is_minor ? 3 : 4;
-  int third_pc = (root_pc + third_offset) % 12;
-  int fifth_pc = (root_pc + 7) % 12;
-  return {root_pc, third_pc, fifth_pc};
-}
-
-// Check if pitch is a chord tone
-bool isChordTone(int pitch, uint8_t chord_root, bool is_minor) {
-  auto chord_tones = getChordTones(chord_root, is_minor);
-  int pc = ((pitch % 12) + 12) % 12;
-  for (int ct : chord_tones) {
-    if (pc == ct) return true;
-  }
-  return false;
-}
-
-// Adjust pitch to avoid dissonance by resolving to nearest chord tone
+// Adjust pitch to avoid dissonance by resolving to nearest chord tone.
+// Uses ChordToneHelper from chord_utils.h for chord tone lookup.
 int adjustForChord(int pitch, uint8_t chord_root, bool is_minor, int8_t chord_degree) {
   if (!isAvoidNoteWithContext(pitch, chord_root, is_minor, chord_degree)) {
     return pitch;
   }
-
-  auto chord_tones = getChordTones(chord_root, is_minor);
-  int octave = pitch / 12;
-
-  int best_pitch = pitch;
-  int best_dist = 100;
-
-  for (int ct_pc : chord_tones) {
-    for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
-      int candidate = (octave + oct_offset) * 12 + ct_pc;
-      int dist = std::abs(candidate - pitch);
-      if (dist < best_dist) {
-        best_dist = dist;
-        best_pitch = candidate;
-      }
-    }
-  }
-
-  return best_pitch;
+  ChordToneHelper helper(chord_degree);
+  return helper.nearestChordTone(static_cast<uint8_t>(std::clamp(pitch, 0, 127)));
 }
 
-// Snap pitch to nearest chord tone
-int snapToChordTone(int pitch, uint8_t chord_root, bool is_minor) {
-  auto chord_tones = getChordTones(chord_root, is_minor);
-  int octave = pitch / 12;
-
-  int best_pitch = pitch;
-  int best_dist = 100;
-
-  for (int ct_pc : chord_tones) {
-    for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
-      int candidate = (octave + oct_offset) * 12 + ct_pc;
-      int dist = std::abs(candidate - pitch);
-      if (dist < best_dist) {
-        best_dist = dist;
-        best_pitch = candidate;
-      }
-    }
-  }
-
-  return best_pitch;
-}
-
-// Snap pitch to nearest chord tone within range constraints
-int snapToChordToneInRange(int pitch, uint8_t chord_root, bool is_minor, int range_low, int range_high) {
-  auto chord_tones = getChordTones(chord_root, is_minor);
-  int octave = pitch / 12;
-
-  int best_pitch = pitch;  // fallback to original if nothing found
-  int best_dist = 100;
-
-  // Search wider octave range to find valid candidates within range
-  for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
-    for (int ct_pc : chord_tones) {
-      int candidate = (octave + oct_offset) * 12 + ct_pc;
-      if (candidate < range_low || candidate > range_high) continue;
-      int dist = std::abs(candidate - pitch);
-      if (dist < best_dist) {
-        best_dist = dist;
-        best_pitch = candidate;
-      }
-    }
-  }
-
-  return best_pitch;
-}
-
-// isDiatonic() is now provided by pitch_utils.h as midisketch::isDiatonic()
-// The function below uses it through the namespace scope.
-
-// Check if a pitch is a passing tone
-bool isPassingTone(int pitch, uint8_t chord_root, bool is_minor) {
-  if (!midisketch::isDiatonic(pitch)) return false;
-
-  int pitch_pc = ((pitch % 12) + 12) % 12;
-  int root_pc = chord_root % 12;
-  int third_offset = is_minor ? 3 : 4;
-  int third_pc = (root_pc + third_offset) % 12;
-  int fifth_pc = (root_pc + 7) % 12;
-
-  if (pitch_pc == root_pc || pitch_pc == third_pc || pitch_pc == fifth_pc) {
-    return false;
-  }
-
-  return true;
-}
-
-// Snap pitch to a safe scale tone
+// Snap pitch to a safe scale tone using ChordToneHelper.
 int snapToSafeScaleTone(int pitch, uint8_t chord_root, bool is_minor, int8_t chord_degree,
                         float melodic_freedom, std::mt19937& rng) {
+  ChordToneHelper helper(chord_degree);
+  uint8_t clamped = static_cast<uint8_t>(std::clamp(pitch, 0, 127));
+
   if (isDiatonic(pitch) && !isAvoidNoteWithContext(pitch, chord_root, is_minor, chord_degree)) {
-    if (isPassingTone(pitch, chord_root, is_minor)) {
-      std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-      if (dist(rng) < melodic_freedom) {
+    // Passing tone: diatonic but not a chord tone
+    if (!helper.isChordTone(clamped)) {
+      if (rng_util::rollProbability(rng, melodic_freedom)) {
         return pitch;
       }
     } else {
@@ -283,7 +102,7 @@ int snapToSafeScaleTone(int pitch, uint8_t chord_root, bool is_minor, int8_t cho
     }
   }
 
-  return snapToChordTone(pitch, chord_root, is_minor);
+  return helper.nearestChordTone(clamped);
 }
 
 // Adjust pitch to nearest diatonic scale tone
@@ -427,37 +246,31 @@ std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, s
     switch (motion) {
       case MotifMotion::Stepwise: {
         int limit = std::min(2, max_leap_degrees);
-        std::uniform_int_distribution<int> dist(-limit, limit);
-        step = dist(rng);
+        step = rng_util::rollRange(rng, -limit, limit);
         if (step == 0) step = 1;
         break;
       }
       case MotifMotion::GentleLeap: {
         int limit = std::min(3, max_leap_degrees);
-        std::uniform_int_distribution<int> dist(-limit, limit);
-        step = dist(rng);
+        step = rng_util::rollRange(rng, -limit, limit);
         if (step == 0) step = 1;
         break;
       }
       case MotifMotion::WideLeap: {
         int limit = std::min(5, max_leap_degrees);
-        std::uniform_int_distribution<int> dist(-limit, limit);
-        step = dist(rng);
-        if (step == 0) step = (dist(rng) > 0) ? 2 : -2;
+        step = rng_util::rollRange(rng, -limit, limit);
+        if (step == 0) step = (rng_util::rollRange(rng, -limit, limit) > 0) ? 2 : -2;
         break;
       }
       case MotifMotion::NarrowStep: {
-        std::uniform_int_distribution<int> dist(-1, 1);
-        step = dist(rng);
+        step = rng_util::rollRange(rng, -1, 1);
         if (step == 0) step = 1;
         break;
       }
       case MotifMotion::Disjunct: {
         int limit = std::min(6, max_leap_degrees);
-        std::uniform_int_distribution<int> dist(2, limit);
-        int magnitude = dist(rng);
-        std::uniform_int_distribution<int> dir(0, 1);
-        step = dir(rng) ? magnitude : -magnitude;
+        int magnitude = rng_util::rollRange(rng, 2, limit);
+        step = rng_util::rollRange(rng, 0, 1) ? magnitude : -magnitude;
         break;
       }
     }
@@ -467,9 +280,8 @@ std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, s
     degrees.push_back(current);
   }
 
-  std::uniform_int_distribution<int> q_end(0, 1);
   int question_endings[] = {1, 3};
-  degrees.push_back(question_endings[q_end(rng)]);
+  degrees.push_back(question_endings[rng_util::rollRange(rng, 0, 1)]);
 
   current = degrees.back();
   for (uint8_t i = half + 1; i < note_count - 1; ++i) {
@@ -477,37 +289,31 @@ std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, s
     switch (motion) {
       case MotifMotion::Stepwise: {
         int limit = std::min(2, max_leap_degrees);
-        std::uniform_int_distribution<int> dist(-limit, limit);
-        step = dist(rng);
+        step = rng_util::rollRange(rng, -limit, limit);
         if (step == 0) step = -1;
         break;
       }
       case MotifMotion::GentleLeap: {
         int limit = std::min(3, max_leap_degrees);
-        std::uniform_int_distribution<int> dist(-limit, std::min(2, limit));
-        step = dist(rng);
+        step = rng_util::rollRange(rng, -limit, std::min(2, limit));
         if (step == 0) step = -1;
         break;
       }
       case MotifMotion::WideLeap: {
         int limit = std::min(4, max_leap_degrees);
-        std::uniform_int_distribution<int> dist(-limit, std::min(3, limit));
-        step = dist(rng);
+        step = rng_util::rollRange(rng, -limit, std::min(3, limit));
         if (step == 0) step = -2;
         break;
       }
       case MotifMotion::NarrowStep: {
-        std::uniform_int_distribution<int> dist(-1, 1);
-        step = dist(rng);
+        step = rng_util::rollRange(rng, -1, 1);
         if (step == 0) step = -1;
         break;
       }
       case MotifMotion::Disjunct: {
         int limit = std::min(4, max_leap_degrees);
-        std::uniform_int_distribution<int> dist(1, limit);
-        int magnitude = dist(rng);
-        std::uniform_int_distribution<int> dir(0, 2);
-        step = (dir(rng) < 2) ? -magnitude : magnitude;
+        int magnitude = rng_util::rollRange(rng, 1, limit);
+        step = (rng_util::rollRange(rng, 0, 2) < 2) ? -magnitude : magnitude;
         break;
       }
     }
@@ -517,9 +323,8 @@ std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, s
     degrees.push_back(current);
   }
 
-  std::uniform_int_distribution<int> a_end(0, 2);
   int answer_endings[] = {0, 2, 4};
-  degrees.push_back(answer_endings[a_end(rng)]);
+  degrees.push_back(answer_endings[rng_util::rollRange(rng, 0, 2)]);
 
   return degrees;
 }
@@ -570,11 +375,9 @@ int8_t getVocalDirection(const std::map<Tick, int8_t>* direction_at_tick, Tick t
 int applyContraryMotion(int pitch, int8_t vocal_direction, float strength, std::mt19937& rng) {
   if (vocal_direction == 0 || strength <= 0.0f) return pitch;
 
-  std::uniform_real_distribution<float> prob(0.0f, 1.0f);
-  if (prob(rng) > strength) return pitch;
+  if (!rng_util::rollProbability(rng, strength)) return pitch;
 
-  std::uniform_int_distribution<int> step(1, 3);
-  int adjustment = step(rng) * (-vocal_direction);
+  int adjustment = rng_util::rollRange(rng, 1, 3) * (-vocal_direction);
 
   return pitch + adjustment;
 }
@@ -627,7 +430,7 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::
   size_t pitch_idx = 0;
   for (Tick pos : positions) {
     int degree = degrees[pitch_idx % degrees.size()];
-    int pitch = motif_detail::degreeToPitch(degree, base_note, key_offset);
+    int pitch = degreeToPitch(degree, base_note, key_offset);
 
     pitch = std::clamp(pitch, 36, 96);
 
@@ -682,9 +485,11 @@ int calculateMotifPitch(const NoteEvent& note, const MotifNoteContext& ctx,
     uint8_t chord_root = degreeToRoot(degree, Key::C);
     Chord chord = getChordNotes(degree);
     bool is_minor = (chord.intervals[1] == 3);
+    ChordToneHelper ct_helper(degree);
 
     bool is_avoid = isAvoidNoteWithContext(pitch, chord_root, is_minor, degree);
-    bool is_non_chord = !motif_detail::isChordTone(pitch, chord_root, is_minor);
+    bool is_non_chord = !ct_helper.isChordTone(
+        static_cast<uint8_t>(std::clamp(pitch, 0, 127)));
     bool is_strong_beat = (ctx.absolute_tick % TICKS_PER_BEAT == 0);
 
     // Snap to chord tone if:
@@ -692,9 +497,8 @@ int calculateMotifPitch(const NoteEvent& note, const MotifNoteContext& ctx,
     // - Pitch is non-chord tone AND on strong beat (causes close interval issues)
     if (is_avoid || (is_non_chord && is_strong_beat)) {
       // Use range-aware snap to avoid clamping back to non-chord tone
-      pitch = motif_detail::snapToChordToneInRange(pitch, chord_root, is_minor,
-                                                    static_cast<int>(MOTIF_LOW),
-                                                    static_cast<int>(MOTIF_HIGH));
+      pitch = ct_helper.nearestInRange(
+          static_cast<uint8_t>(std::clamp(pitch, 0, 127)), MOTIF_LOW, MOTIF_HIGH);
     }
 
     return pitch;
@@ -745,11 +549,10 @@ int calculateMotifPitch(const NoteEvent& note, const MotifNoteContext& ctx,
   // All paradigms: snap non-chord tones on strong beats to avoid close interval issues
   bool is_strong_beat = (ctx.absolute_tick % TICKS_PER_BEAT == 0);
   if (is_strong_beat) {
-    bool is_non_chord = !motif_detail::isChordTone(adjusted_pitch, chord_root, is_minor);
-    if (is_non_chord) {
-      adjusted_pitch = motif_detail::snapToChordToneInRange(adjusted_pitch, chord_root, is_minor,
-                                                             static_cast<int>(MOTIF_LOW),
-                                                             static_cast<int>(MOTIF_HIGH));
+    ChordToneHelper ct_helper(degree);
+    uint8_t clamped = static_cast<uint8_t>(std::clamp(adjusted_pitch, 0, 127));
+    if (!ct_helper.isChordTone(clamped)) {
+      adjusted_pitch = ct_helper.nearestInRange(clamped, MOTIF_LOW, MOTIF_HIGH);
     }
   }
 
@@ -770,7 +573,7 @@ uint8_t calculateMotifVelocity(uint8_t base_vel, bool is_chorus, SectionType sec
 
   if (is_chorus) {
     return std::min(static_cast<uint8_t>(127), static_cast<uint8_t>(base_vel + 10));
-  } else if (section_type == SectionType::Intro || section_type == SectionType::Outro) {
+  } else if (isBookendSection(section_type)) {
     return static_cast<uint8_t>(base_vel * 0.85f);
   }
   return base_vel;
@@ -845,8 +648,7 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
     if (is_locked && riff_cache.cached) {
       current_pattern = &riff_cache.pattern;
     } else if (policy == RiffPolicy::Evolving && riff_cache.cached) {
-      std::uniform_real_distribution<float> evolve_dist(0.0f, 1.0f);
-      if (sec_idx % 2 == 0 && evolve_dist(rng) < 0.3f) {
+      if (sec_idx % 2 == 0 && rng_util::rollProbability(rng, 0.3f)) {
         riff_cache.pattern = generateMotifPattern(params, rng);
       }
       current_pattern = &riff_cache.pattern;
@@ -854,8 +656,7 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
       if (motif_params.repeat_scope == MotifRepeatScope::Section) {
         auto it = section_patterns.find(section.type);
         if (it == section_patterns.end()) {
-          std::uniform_real_distribution<float> var_dist(0.0f, 1.0f);
-          if (var_dist(rng) < role_meta.exact_repeat_prob) {
+          if (rng_util::rollProbability(rng, role_meta.exact_repeat_prob)) {
             section_patterns[section.type] = pattern;
           } else {
             section_pattern = generateMotifPattern(params, rng);
@@ -903,8 +704,7 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
 
         bool should_skip = false;
         if (effective_density < 100) {
-          std::uniform_real_distribution<float> density_dist(0.0f, 100.0f);
-          should_skip = (density_dist(rng) > effective_density);
+          should_skip = (rng_util::rollFloat(rng, 0.0f, 100.0f) > effective_density);
 
           if (should_skip && bar_note_count[current_bar] == 0) {
             should_skip = false;
@@ -919,8 +719,7 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
           bool in_rest = motif_detail::isInVocalRest(absolute_tick, vocal_ctx->rest_positions);
           if (!in_rest) {
             float skip_prob = vocal_ctx->vocal_density * 0.4f;
-            std::uniform_real_distribution<float> resp_dist(0.0f, 1.0f);
-            if (resp_dist(rng) < skip_prob && bar_note_count[current_bar] > 0) {
+            if (rng_util::rollProbability(rng, skip_prob) && bar_note_count[current_bar] > 0) {
               continue;
             }
           }

@@ -325,6 +325,33 @@ enum class SectionType {
   Drop        ///< EDM drop section: all melodic instruments cut, kick + sub-bass only, then re-entry
 };
 
+// ============================================================================
+// Section Type Classification Helpers
+// ============================================================================
+
+/// @brief Transitional/atmospheric sections with sparse arrangement.
+/// Intro, Interlude, Outro, Chant are low-energy framing sections.
+inline bool isTransitionalSection(SectionType t) {
+  return t == SectionType::Intro || t == SectionType::Interlude ||
+         t == SectionType::Outro || t == SectionType::Chant;
+}
+
+/// @brief Bookend sections (song start/end).
+inline bool isBookendSection(SectionType t) {
+  return t == SectionType::Intro || t == SectionType::Outro;
+}
+
+/// @brief Instrumental break sections (no vocals expected).
+inline bool isInstrumentalBreak(SectionType t) {
+  return t == SectionType::Intro || t == SectionType::Interlude;
+}
+
+/// @brief High-energy sections with active patterns.
+inline bool isHighEnergySection(SectionType t) {
+  return t == SectionType::Chorus || t == SectionType::B ||
+         t == SectionType::MixBreak || t == SectionType::Drop;
+}
+
 /// @brief Extended chord types for harmonic variety.
 enum class ChordExtension : uint8_t {
   None = 0,  ///< Basic triad

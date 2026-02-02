@@ -43,6 +43,36 @@ inline float rollFloat(std::mt19937& rng, float min, float max) {
   return dist(rng);
 }
 
+/// @brief Select a random element from a container.
+/// @param rng Random engine
+/// @param container Non-empty container with random access
+/// @return Reference to a randomly selected element
+template <typename Container>
+inline auto& selectRandom(std::mt19937& rng, Container& container) {
+  std::uniform_int_distribution<size_t> dist(0, container.size() - 1);
+  return container[dist(rng)];
+}
+
+/// @brief Select a random element from a const container.
+/// @param rng Random engine
+/// @param container Non-empty container with random access
+/// @return Const reference to a randomly selected element
+template <typename Container>
+inline const auto& selectRandom(std::mt19937& rng, const Container& container) {
+  std::uniform_int_distribution<size_t> dist(0, container.size() - 1);
+  return container[dist(rng)];
+}
+
+/// @brief Select a random index from a container.
+/// @param rng Random engine
+/// @param container Non-empty container
+/// @return Random index in [0, container.size() - 1]
+template <typename Container>
+inline size_t selectRandomIndex(std::mt19937& rng, const Container& container) {
+  std::uniform_int_distribution<size_t> dist(0, container.size() - 1);
+  return dist(rng);
+}
+
 }  // namespace rng_util
 }  // namespace midisketch
 

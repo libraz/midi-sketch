@@ -14,6 +14,7 @@
 
 #include "core/chord.h"
 #include "core/chord_progression_tracker.h"
+#include "core/chord_utils.h"
 #include "core/json_helpers.h"
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
@@ -30,14 +31,7 @@ constexpr const char* INTERVAL_NAMES[12] = {"unison",    "minor 2nd",   "major 2
                                             "major 3rd", "perfect 4th", "tritone",   "perfect 5th",
                                             "minor 6th", "major 6th",   "minor 7th", "major 7th"};
 
-// Check if a pitch class is diatonic to C major.
-// Uses SCALE from pitch_utils.h (C major: 0,2,4,5,7,9,11)
-bool isDiatonicToCMajor(int pitch_class) {
-  for (int i = 0; i < 7; ++i) {
-    if (SCALE[i] == pitch_class) return true;
-  }
-  return false;
-}
+// isDiatonicToCMajor is now replaced by isDiatonic() from pitch_utils.h
 
 // Check if a pitch class is part of any common secondary dominant chord.
 // Secondary dominants (V/x) are dominant 7th chords that resolve to a diatonic chord.
@@ -113,118 +107,16 @@ std::vector<std::string> getScaleTones(Key key) {
 constexpr const char* CHORD_NAMES[12] = {"C",  "C#", "D",     "D#/Eb", "E",     "F",
                                          "F#", "G",  "G#/Ab", "A",     "A#/Bb", "B"};
 
-// Get chord tones as pitch classes for a chord built on given scale degree.
-struct ChordTones {
-  std::array<int, 5> pitch_classes;
-  uint8_t count;
-};
-
-// Get root pitch class for a degree, handling borrowed chords correctly.
-// This mirrors the logic in chord.cpp degreeToSemitone().
-int getRootPitchClass(int8_t degree) {
-  // Borrowed chords from parallel minor
-  switch (degree) {
-    case 10:
-      return 10;  // bVII = Bb (10 semitones from C)
-    case 8:
-      return 8;  // bVI  = Ab (8 semitones from C)
-    case 11:
-      return 3;  // bIII = Eb (3 semitones from C)
-    default:
-      break;
-  }
-
-  // Diatonic degrees (0-6) use SCALE
-  if (degree >= 0 && degree < 7) {
-    return SCALE[degree];
-  }
-
-  return 0;
-}
-
-ChordTones getChordTones(int8_t degree) {
-  ChordTones ct{};
-  ct.count = 0;
-
-  // Use getRootPitchClass which correctly handles borrowed chords (bVII, bVI, bIII)
-  int root_pc = getRootPitchClass(degree);
-
-  Chord chord = getChordNotes(degree);
-
-  for (uint8_t i = 0; i < chord.note_count && i < 5; ++i) {
-    if (chord.intervals[i] >= 0) {
-      ct.pitch_classes[ct.count] = (root_pc + chord.intervals[i]) % 12;
-      ct.count++;
-    }
-  }
-
-  for (uint8_t i = ct.count; i < 5; ++i) {
-    ct.pitch_classes[i] = -1;
-  }
-
-  return ct;
-}
-
-// Available tensions by chord quality (music theory standard).
-// These are notes that sound consonant even though they're not triad tones.
-struct AvailableTensions {
-  int ninth;       // 2 semitones above root (9th)
-  int eleventh;    // 5 semitones above root (11th) - only for minor
-  int thirteenth;  // 9 semitones above root (6th/13th)
-  bool has_ninth;
-  bool has_eleventh;
-  bool has_thirteenth;
-};
-
-AvailableTensions getAvailableTensions(int8_t degree) {
-  int normalized = ((degree % 7) + 7) % 7;
-  int root_pc = SCALE[normalized];
-
-  AvailableTensions t{};
-  t.ninth = (root_pc + 2) % 12;
-  t.eleventh = (root_pc + 5) % 12;
-  t.thirteenth = (root_pc + 9) % 12;
-
-  // Major chords (I, IV, V): 9th and 13th available
-  // Minor chords (ii, iii, vi): 9th and 11th available
-  // Diminished (vii°): limited tensions
-  switch (normalized) {
-    case 0:  // I (major)
-    case 3:  // IV (major)
-      t.has_ninth = true;
-      t.has_eleventh = false;  // 11th clashes with major 3rd
-      t.has_thirteenth = true;
-      break;
-    case 4:  // V (dominant)
-      t.has_ninth = true;
-      t.has_eleventh = false;
-      t.has_thirteenth = true;
-      break;
-    case 1:  // ii (minor)
-    case 2:  // iii (minor)
-    case 5:  // vi (minor)
-      t.has_ninth = true;
-      t.has_eleventh = true;     // 11th works on minor
-      t.has_thirteenth = false;  // 13th can clash on minor
-      break;
-    case 6:  // vii° (diminished)
-      t.has_ninth = false;
-      t.has_eleventh = false;
-      t.has_thirteenth = false;
-      break;
-  }
-
-  return t;
-}
+// ChordTones struct and getChordTones() are now in chord_utils.h.
+// getRootPitchClass() logic is handled by degreeToSemitone() in chord.h.
 
 // Check if a pitch class is an available tension for the chord.
+// Delegates to getAvailableTensionPitchClasses() from chord_utils.h.
 bool isAvailableTension(int pitch_class, int8_t degree) {
-  AvailableTensions t = getAvailableTensions(degree);
-
-  if (t.has_ninth && pitch_class == t.ninth) return true;
-  if (t.has_eleventh && pitch_class == t.eleventh) return true;
-  if (t.has_thirteenth && pitch_class == t.thirteenth) return true;
-
+  auto tensions = getAvailableTensionPitchClasses(degree);
+  for (int t : tensions) {
+    if (t == pitch_class) return true;
+  }
   return false;
 }
 
@@ -855,7 +747,7 @@ void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
   for (const auto& note : track.notes()) {
     int pitch_class = note.note % 12;
 
-    if (isDiatonicToCMajor(pitch_class)) continue;
+    if (isDiatonic(pitch_class)) continue;
 
     int8_t degree_at_tick = ctx.chord_lookup.getChordDegreeAt(note.start_tick);
     ChordTones ct = getChordTones(degree_at_tick);

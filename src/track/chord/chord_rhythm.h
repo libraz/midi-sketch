@@ -91,14 +91,12 @@ inline ChordRhythm selectRhythm(SectionType section, Mood mood, BackingDensity b
     // Choruses/B sections need denser rhythm to sync with fast-moving Motif.
     // IMPORTANT: Half/Whole notes in these sections cause collisions because
     // Motif changes every 240 ticks (Eighth) but Half sustains for 960 ticks.
-    if (section == SectionType::Chorus || section == SectionType::B ||
-        section == SectionType::MixBreak || section == SectionType::Drop) {
+    if (isHighEnergySection(section)) {
       // High-energy sections: 45% Quarter, 55% Eighth (no Half)
       // This ensures chord notes are short enough to not overlap with Motif changes
       if (roll < 0.45f) return ChordRhythm::Quarter;
       return ChordRhythm::Eighth;
-    } else if (section == SectionType::Intro || section == SectionType::Interlude ||
-               section == SectionType::Outro) {
+    } else if (isInstrumentalBreak(section) || section == SectionType::Outro) {
       // Transition sections: 40% Half, 40% Quarter, 20% Whole
       if (roll < 0.40f) return ChordRhythm::Half;
       if (roll < 0.80f) return ChordRhythm::Quarter;

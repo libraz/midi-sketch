@@ -48,7 +48,7 @@ KickPattern getKickPattern(SectionType section, DrumStyle style, int bar, std::m
   KickPattern p = {false, false, false, false, false, false, false, false};
 
   // Instrumental sections: minimal kick
-  if (section == SectionType::Intro || section == SectionType::Interlude) {
+  if (isInstrumentalBreak(section)) {
     p.beat1 = true;
     if (bar % 2 == 1) {
       p.beat3 = true;

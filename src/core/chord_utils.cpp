@@ -17,8 +17,8 @@ ChordTones getChordTones(int8_t degree) {
   ChordTones ct{};
   ct.count = 0;
 
-  // Get root pitch class from degree (use SCALE from pitch_utils.h)
-  int root_pc = SCALE[((degree % 7) + 7) % 7];
+  // Get root pitch class from degree (handles borrowed chords via degreeToSemitone)
+  int root_pc = ((degreeToSemitone(degree) % 12) + 12) % 12;
 
   // Get chord intervals from the central chord definition
   Chord chord = getChordNotes(degree);
@@ -140,7 +140,7 @@ std::vector<int> getAvailableTensionPitchClasses(int8_t degree) {
 
 ChordToneHelper::ChordToneHelper(int8_t degree)
     : degree_(degree),
-      root_pc_(SCALE[((degree % 7) + 7) % 7]),
+      root_pc_(((degreeToSemitone(degree) % 12) + 12) % 12),
       pitch_classes_(getChordTonePitchClasses(degree)) {}
 
 bool ChordToneHelper::isChordTone(uint8_t pitch) const {

@@ -156,6 +156,57 @@ inline bool isDiatonic(int pitch) {
 }
 
 // ============================================================================
+// Multi-Scale Support
+// ============================================================================
+
+/// Scale interval arrays for different scale types.
+/// @{
+constexpr int SCALE_MAJOR[7] = {0, 2, 4, 5, 7, 9, 11};           ///< Ionian
+constexpr int SCALE_NATURAL_MINOR[7] = {0, 2, 3, 5, 7, 8, 10};   ///< Aeolian
+constexpr int SCALE_HARMONIC_MINOR[7] = {0, 2, 3, 5, 7, 8, 11};  ///< Raised 7th
+constexpr int SCALE_DORIAN[7] = {0, 2, 3, 5, 7, 9, 10};          ///< Minor with raised 6th
+constexpr int SCALE_MIXOLYDIAN[7] = {0, 2, 4, 5, 7, 9, 10};      ///< Major with lowered 7th
+/// @}
+
+/**
+ * @brief Get the interval array for a given scale type.
+ * @param scale Scale type
+ * @return Pointer to array of 7 scale intervals (semitones from root)
+ */
+inline const int* getScaleIntervals(ScaleType scale) {
+  switch (scale) {
+    case ScaleType::Major:
+      return SCALE_MAJOR;
+    case ScaleType::NaturalMinor:
+      return SCALE_NATURAL_MINOR;
+    case ScaleType::HarmonicMinor:
+      return SCALE_HARMONIC_MINOR;
+    case ScaleType::Dorian:
+      return SCALE_DORIAN;
+    case ScaleType::Mixolydian:
+      return SCALE_MIXOLYDIAN;
+  }
+  return SCALE_MAJOR;
+}
+
+/**
+ * @brief Convert a scale degree to MIDI pitch.
+ * @param degree Scale degree (0-6, negative wraps down, >6 wraps up)
+ * @param base_note Base MIDI pitch (root of the octave)
+ * @param key_offset Transposition offset in semitones
+ * @param scale Scale type (default: Major)
+ * @return MIDI pitch for the given degree
+ */
+inline int degreeToPitch(int degree, int base_note, int key_offset,
+                         ScaleType scale = ScaleType::Major) {
+  const int* scale_intervals = getScaleIntervals(scale);
+  int d = ((degree % 7) + 7) % 7;
+  int oct_adjust = degree / 7;
+  if (degree < 0 && degree % 7 != 0) oct_adjust--;
+  return base_note + oct_adjust * 12 + scale_intervals[d] + key_offset;
+}
+
+// ============================================================================
 // Interval Constants
 // ============================================================================
 

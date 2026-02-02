@@ -326,7 +326,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
       KickPattern kick;
       if (use_euclidean && ctx.style != DrumStyle::FourOnFloor) {
         uint16_t eucl_kick = groove_pattern.kick;
-        if (section.type == SectionType::Intro || section.type == SectionType::Outro) {
+        if (isBookendSection(section.type)) {
           eucl_kick = DrumPatternFactory::getKickPattern(section.type, ctx.style);
         }
         kick = euclideanToKickPattern(eucl_kick);

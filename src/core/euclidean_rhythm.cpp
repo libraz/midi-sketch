@@ -90,7 +90,7 @@ EuclideanDrumPattern DrumPatternFactory::createPattern(SectionType section, Drum
 
 uint16_t DrumPatternFactory::getKickPattern(SectionType section, DrumStyle style) {
   // Instrumental/minimal sections: very sparse
-  if (section == SectionType::Intro || section == SectionType::Interlude) {
+  if (isInstrumentalBreak(section)) {
     return EuclideanRhythm::generate(2, 16);  // E(2,16) - minimal
   }
 

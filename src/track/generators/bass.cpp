@@ -530,8 +530,7 @@ BassPattern selectPattern(SectionType section, bool drums_enabled, Mood mood,
                           BackingDensity backing_density, std::mt19937& rng) {
   // When drums are off, bass takes rhythmic responsibility
   if (!drums_enabled) {
-    if (section == SectionType::Intro || section == SectionType::Interlude ||
-        section == SectionType::Outro) {
+    if (isInstrumentalBreak(section) || section == SectionType::Outro) {
       return BassPattern::RootFifth;
     }
     return BassPattern::RhythmicDrive;
@@ -1282,8 +1281,7 @@ void generateBassHalfBar(MidiTrack& track, Tick half_start, uint8_t root, Sectio
 
 // Harmonic rhythm must match chord_track.cpp for bass-chord synchronization
 bool useSlowHarmonicRhythm(SectionType section) {
-  return section == SectionType::Intro || section == SectionType::Interlude ||
-         section == SectionType::Outro || section == SectionType::Chant;
+  return isTransitionalSection(section);
 }
 
 void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,

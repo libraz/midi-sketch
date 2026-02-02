@@ -1927,7 +1927,7 @@ void Generator::generateExpressionCurves() {
   std::vector<MidiTrack*> all_melodic = {&song_.vocal(), &song_.bass(),   &song_.chord(),
                                          &song_.motif(), &song_.arpeggio()};
   for (const auto& section : sections) {
-    if (section.type == SectionType::Intro || section.type == SectionType::Outro) {
+    if (isBookendSection(section.type)) {
       for (auto* track : all_melodic) {
         if (track->notes().empty()) continue;
         generateVolumeCurve(*track, section);

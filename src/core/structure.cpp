@@ -228,7 +228,7 @@ void applyEnergyCurve(std::vector<Section>& sections, EnergyCurve curve) {
       }
 
       // Apply wave energy
-      if (section.type == SectionType::Intro || section.type == SectionType::Outro) {
+      if (isBookendSection(section.type)) {
         // Intro/Outro stay as-is
       } else if (is_high_wave || section.type == SectionType::Chorus) {
         section.energy = SectionEnergy::High;
