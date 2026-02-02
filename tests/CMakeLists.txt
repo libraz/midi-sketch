@@ -66,6 +66,10 @@ set(TEST_SOURCES
   core/coordinator_test.cpp
   core/note_creator_test.cpp
   core/chord_boundary_test.cpp
+  core/select_best_candidate_test.cpp
+  core/velocity_helper_test.cpp
+  core/constraint_pipeline_test.cpp
+  core/chord_progression_tracker_test.cpp
   midi/midi_writer_smf1_test.cpp
   midi/cc_event_test.cpp
   midi/midi_reader_test.cpp

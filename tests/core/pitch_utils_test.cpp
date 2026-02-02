@@ -363,5 +363,290 @@ TEST(PitchUtilsTest, MaxMelodicIntervalIsAtLeastPerfectFifth) {
   EXPECT_GE(kMaxMelodicInterval, 7);
 }
 
+// ============================================================================
+// getMaxMelodicIntervalForSection Tests
+// ============================================================================
+
+TEST(PitchUtilsTest, MaxIntervalForSection_Chorus) {
+  EXPECT_EQ(getMaxMelodicIntervalForSection(SectionType::Chorus), 12);
+}
+
+TEST(PitchUtilsTest, MaxIntervalForSection_Bridge) {
+  EXPECT_EQ(getMaxMelodicIntervalForSection(SectionType::Bridge), 14);
+}
+
+TEST(PitchUtilsTest, MaxIntervalForSection_PreChorus) {
+  EXPECT_EQ(getMaxMelodicIntervalForSection(SectionType::B), 10);
+}
+
+TEST(PitchUtilsTest, MaxIntervalForSection_Verse) {
+  EXPECT_EQ(getMaxMelodicIntervalForSection(SectionType::A), kMaxMelodicInterval);
+}
+
+TEST(PitchUtilsTest, MaxIntervalForSection_MixBreak) {
+  EXPECT_EQ(getMaxMelodicIntervalForSection(SectionType::MixBreak), 12);
+}
+
+TEST(PitchUtilsTest, MaxIntervalForSection_Drop) {
+  EXPECT_EQ(getMaxMelodicIntervalForSection(SectionType::Drop), 12);
+}
+
+TEST(PitchUtilsTest, MaxIntervalForSection_Intro) {
+  EXPECT_EQ(getMaxMelodicIntervalForSection(SectionType::Intro), kMaxMelodicInterval);
+}
+
+// ============================================================================
+// clampPitch / clampBass / clampChord / clampMotif Tests
+// ============================================================================
+
+TEST(PitchUtilsTest, ClampPitch_WithinRange) {
+  EXPECT_EQ(clampPitch(60, 48, 84), 60);
+}
+
+TEST(PitchUtilsTest, ClampPitch_BelowRange) {
+  EXPECT_EQ(clampPitch(30, 48, 84), 48);
+}
+
+TEST(PitchUtilsTest, ClampPitch_AboveRange) {
+  EXPECT_EQ(clampPitch(100, 48, 84), 84);
+}
+
+TEST(PitchUtilsTest, ClampBass) {
+  EXPECT_EQ(clampBass(20), BASS_LOW);   // Below
+  EXPECT_EQ(clampBass(40), 40);         // Within
+  EXPECT_EQ(clampBass(70), BASS_HIGH);  // Above
+}
+
+TEST(PitchUtilsTest, ClampChord) {
+  EXPECT_EQ(clampChord(50), CHORD_LOW);
+  EXPECT_EQ(clampChord(72), 72);
+  EXPECT_EQ(clampChord(90), CHORD_HIGH);
+}
+
+TEST(PitchUtilsTest, ClampMotif) {
+  EXPECT_EQ(clampMotif(50), MOTIF_LOW);
+  EXPECT_EQ(clampMotif(80), 80);
+  EXPECT_EQ(clampMotif(120), MOTIF_HIGH);
+}
+
+// ============================================================================
+// Multi-Scale Support Tests
+// ============================================================================
+
+TEST(PitchUtilsTest, GetScaleIntervals_Major) {
+  const int* s = getScaleIntervals(ScaleType::Major);
+  EXPECT_EQ(s[0], 0);
+  EXPECT_EQ(s[3], 5);
+  EXPECT_EQ(s[6], 11);
+}
+
+TEST(PitchUtilsTest, GetScaleIntervals_NaturalMinor) {
+  const int* s = getScaleIntervals(ScaleType::NaturalMinor);
+  EXPECT_EQ(s[2], 3);  // Minor 3rd
+  EXPECT_EQ(s[5], 8);  // Minor 6th
+  EXPECT_EQ(s[6], 10); // Minor 7th
+}
+
+TEST(PitchUtilsTest, GetScaleIntervals_HarmonicMinor) {
+  const int* s = getScaleIntervals(ScaleType::HarmonicMinor);
+  EXPECT_EQ(s[2], 3);  // Minor 3rd
+  EXPECT_EQ(s[6], 11); // Major 7th (raised)
+}
+
+TEST(PitchUtilsTest, GetScaleIntervals_Dorian) {
+  const int* s = getScaleIntervals(ScaleType::Dorian);
+  EXPECT_EQ(s[2], 3);  // Minor 3rd
+  EXPECT_EQ(s[5], 9);  // Major 6th (raised)
+}
+
+TEST(PitchUtilsTest, GetScaleIntervals_Mixolydian) {
+  const int* s = getScaleIntervals(ScaleType::Mixolydian);
+  EXPECT_EQ(s[3], 5);  // Perfect 4th
+  EXPECT_EQ(s[6], 10); // Minor 7th (lowered)
+}
+
+// ============================================================================
+// degreeToPitch Tests
+// ============================================================================
+
+TEST(PitchUtilsTest, DegreeToPitch_BasicMajor) {
+  // Degree 0 in C major at C4 (60) => C4 (60)
+  EXPECT_EQ(degreeToPitch(0, 60, 0), 60);
+  // Degree 2 (E) => 60 + 4 = 64
+  EXPECT_EQ(degreeToPitch(2, 60, 0), 64);
+  // Degree 4 (G) => 60 + 7 = 67
+  EXPECT_EQ(degreeToPitch(4, 60, 0), 67);
+}
+
+TEST(PitchUtilsTest, DegreeToPitch_OctaveWrap) {
+  // Degree 7 = next octave's root
+  EXPECT_EQ(degreeToPitch(7, 60, 0), 72);  // C5
+}
+
+TEST(PitchUtilsTest, DegreeToPitch_NegativeDegree) {
+  // Degree -1 wraps to scale degree 6 (B) in the octave below:
+  // d = 6, oct_adjust = -1, result = 60 + (-12) + 11 = 59 (B3)
+  EXPECT_EQ(degreeToPitch(-1, 60, 0), 59);
+}
+
+TEST(PitchUtilsTest, DegreeToPitch_WithKeyOffset) {
+  // Degree 0 in G major (key_offset=7): C4 base + 0 + 7 = 67 (G4)
+  EXPECT_EQ(degreeToPitch(0, 60, 7), 67);
+}
+
+TEST(PitchUtilsTest, DegreeToPitch_MinorScale) {
+  // Degree 2 in natural minor = minor 3rd (3 semitones)
+  EXPECT_EQ(degreeToPitch(2, 60, 0, ScaleType::NaturalMinor), 63);
+}
+
+// ============================================================================
+// pitchToNoteName Tests
+// ============================================================================
+
+TEST(PitchUtilsTest, PitchToNoteName_MiddleC) {
+  EXPECT_EQ(pitchToNoteName(60), "C4");
+}
+
+TEST(PitchUtilsTest, PitchToNoteName_A4) {
+  EXPECT_EQ(pitchToNoteName(69), "A4");
+}
+
+TEST(PitchUtilsTest, PitchToNoteName_Sharp) {
+  EXPECT_EQ(pitchToNoteName(61), "C#4");
+}
+
+TEST(PitchUtilsTest, PitchToNoteName_Low) {
+  EXPECT_EQ(pitchToNoteName(36), "C2");
+}
+
+// ============================================================================
+// ChordFunction Tests
+// ============================================================================
+
+TEST(PitchUtilsTest, GetChordFunction_Tonic) {
+  EXPECT_EQ(getChordFunction(0), ChordFunction::Tonic);   // I
+  EXPECT_EQ(getChordFunction(2), ChordFunction::Tonic);   // iii
+  EXPECT_EQ(getChordFunction(5), ChordFunction::Tonic);   // vi
+}
+
+TEST(PitchUtilsTest, GetChordFunction_Dominant) {
+  EXPECT_EQ(getChordFunction(4), ChordFunction::Dominant); // V
+  EXPECT_EQ(getChordFunction(6), ChordFunction::Dominant); // vii
+}
+
+TEST(PitchUtilsTest, GetChordFunction_Subdominant) {
+  EXPECT_EQ(getChordFunction(1), ChordFunction::Subdominant);  // ii
+  EXPECT_EQ(getChordFunction(3), ChordFunction::Subdominant);  // IV
+  EXPECT_EQ(getChordFunction(10), ChordFunction::Subdominant); // bVII
+}
+
+// ============================================================================
+// Passaggio Dynamic Tests
+// ============================================================================
+
+TEST(PitchUtilsTest, CalculateDynamicPassaggio_StandardRange) {
+  // Vocal range: 50-80 (30 semitones)
+  // Passaggio: 55% to 75% of range = 50 + 16.5 to 50 + 22.5 => 66-72
+  PassaggioRange p = calculateDynamicPassaggio(50, 80);
+  EXPECT_GE(p.lower, 64);
+  EXPECT_LE(p.upper, 74);
+  EXPECT_LT(p.lower, p.upper);
+}
+
+TEST(PitchUtilsTest, CalculateDynamicPassaggio_NarrowRange) {
+  PassaggioRange p = calculateDynamicPassaggio(60, 72);
+  EXPECT_GE(p.lower, 60);
+  EXPECT_LE(p.upper, 72);
+}
+
+TEST(PitchUtilsTest, IsInPassaggioRange_InRange) {
+  // For range 50-80, passaggio ~66-72
+  EXPECT_TRUE(isInPassaggioRange(68, 50, 80));
+}
+
+TEST(PitchUtilsTest, IsInPassaggioRange_OutOfRange) {
+  EXPECT_FALSE(isInPassaggioRange(55, 50, 80));
+  EXPECT_FALSE(isInPassaggioRange(78, 50, 80));
+}
+
+TEST(PitchUtilsTest, PassaggioRange_Contains) {
+  PassaggioRange p{64, 71};
+  EXPECT_TRUE(p.contains(64));
+  EXPECT_TRUE(p.contains(68));
+  EXPECT_TRUE(p.contains(71));
+  EXPECT_FALSE(p.contains(63));
+  EXPECT_FALSE(p.contains(72));
+}
+
+TEST(PitchUtilsTest, PassaggioRange_Center) {
+  PassaggioRange p{64, 72};
+  EXPECT_EQ(p.center(), 68);
+}
+
+TEST(PitchUtilsTest, PassaggioRange_Width) {
+  PassaggioRange p{64, 71};
+  EXPECT_EQ(p.width(), 7);
+}
+
+// ============================================================================
+// Avoid Note Tests
+// ============================================================================
+
+TEST(PitchUtilsTest, IsAvoidNoteSimple_P4OnMajor) {
+  // F (pitch 65) over C major root (60). Interval = 5 (P4). Avoided.
+  EXPECT_TRUE(isAvoidNoteSimple(65, 60, false));
+}
+
+TEST(PitchUtilsTest, IsAvoidNoteSimple_Minor6OnMinor) {
+  // Ab (pitch 68) over C minor root (60). Interval = 8 (m6). Avoided.
+  EXPECT_TRUE(isAvoidNoteSimple(68, 60, true));
+}
+
+TEST(PitchUtilsTest, IsAvoidNoteSimple_TritoneAlways) {
+  // F# (pitch 66) over C root (60). Interval = 6 (tritone). Avoided.
+  EXPECT_TRUE(isAvoidNoteSimple(66, 60, false));
+  EXPECT_TRUE(isAvoidNoteSimple(66, 60, true));
+}
+
+TEST(PitchUtilsTest, IsAvoidNoteSimple_ChordToneNotAvoided) {
+  // E (pitch 64) over C major root (60). Interval = 4 (M3). Not avoided.
+  EXPECT_FALSE(isAvoidNoteSimple(64, 60, false));
+}
+
+TEST(PitchUtilsTest, IsAvoidNoteWithContext_TritoneOnDominant) {
+  // Tritone is REQUIRED on V chord, not avoided.
+  // F# (66) over G root (67, but we use pitch class). Actually, over C root:
+  // degree=4 (V chord). F# over C root = tritone (6). Should NOT be avoided.
+  EXPECT_FALSE(isAvoidNoteWithContext(66, 60, false, 4));
+}
+
+TEST(PitchUtilsTest, IsAvoidNoteWithContext_TritoneOnTonic) {
+  // F# over C root on I chord (degree 0). Should be avoided.
+  EXPECT_TRUE(isAvoidNoteWithContext(66, 60, false, 0));
+}
+
+// ============================================================================
+// transposePitch Tests
+// ============================================================================
+
+TEST(PitchUtilsTest, TransposePitch_NoTranspose) {
+  EXPECT_EQ(transposePitch(60, Key::C), 60);
+}
+
+TEST(PitchUtilsTest, TransposePitch_UpHalfStep) {
+  // Key::Db = 1 semitone
+  EXPECT_EQ(transposePitch(60, static_cast<Key>(1)), 61);
+}
+
+TEST(PitchUtilsTest, TransposePitch_ClampsToMax) {
+  EXPECT_EQ(transposePitch(127, static_cast<Key>(5)), 127);
+}
+
+TEST(PitchUtilsTest, TransposePitch_ClampsToMin) {
+  // Transpose down would go negative (only if key had negative value)
+  // Key is uint8_t so always positive; test boundary with max pitch
+  EXPECT_EQ(transposePitch(0, Key::C), 0);
+}
+
 }  // namespace
 }  // namespace midisketch
