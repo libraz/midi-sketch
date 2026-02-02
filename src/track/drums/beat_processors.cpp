@@ -141,6 +141,7 @@ void generateSnareForBeat(MidiTrack& track, Tick beat_tick, uint8_t beat, uint8_
                           SectionType section_type, DrumStyle style, DrumRole role,
                           float snare_prob, bool use_groove_snare, uint16_t groove_snare_pattern,
                           bool is_intro_first, bool in_prechorus_lift) {
+  (void)section_type;
   if (in_prechorus_lift) {
     return;
   }
@@ -227,6 +228,7 @@ void generateHiHatForBeat(MidiTrack& track, Tick beat_tick, uint8_t beat, uint8_
                           uint8_t open_hh_beat, bool peak_open_hh_24, uint8_t bar,
                           uint8_t section_bars, float swing_amount, DrumGrooveFeel groove,
                           Mood mood, uint16_t bpm, std::mt19937& rng) {
+  (void)section_bars;
   if (!shouldPlayHiHat(role)) {
     if (ctx.use_foot_hh && (beat == 0 || beat == 2)) {
       addDrumNote(track, beat_tick, EIGHTH, FHH, getFootHiHatVelocity(rng));

@@ -101,7 +101,11 @@ std::optional<NoteEvent> FrettedNoteFactory::create(Tick start, Tick duration, u
   // Create the note using createNoteWithoutHarmony (no collision check here,
   // FrettedNoteFactory handles its own safety via instrument constraints)
   auto note = createNoteWithoutHarmony(start, duration, pitch, velocity);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
   note.prov_source = static_cast<uint8_t>(source);
+#else
+  (void)source;
+#endif
 
   // Apply fingering information
   applyFingeringProvenance(note, fingering, technique);
@@ -142,6 +146,7 @@ std::optional<NoteEvent> FrettedNoteFactory::createIfNoDissonance(Tick start, Ti
 
 uint8_t FrettedNoteFactory::findPlayablePitch(uint8_t desired, Tick start, Tick duration,
                                                float max_cost) {
+  (void)duration;
   // If already playable and low cost, return as-is
   if (instrument_.isPitchPlayable(desired)) {
     Fingering test = instrument_.findBestFingering(desired, state_, PlayingTechnique::Normal);
@@ -248,6 +253,7 @@ void FrettedNoteFactory::resetState() {
 
 void FrettedNoteFactory::applyFingeringProvenance(NoteEvent& note, const Fingering& fingering,
                                                    PlayingTechnique technique) {
+  (void)note;
   if (fingering.assignments.empty()) return;
 
   const auto& assign = fingering.assignments[0];

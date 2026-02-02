@@ -488,7 +488,9 @@ std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_
 
       // Primary note with provenance
       auto primary_note = createNoteWithoutHarmony(note_start, duration, final_pitch, enhanced_velocity);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
       primary_note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
+#endif
       result.push_back(primary_note);
 
       // Octave doubling for climactic impact - only add if within range AND safe
@@ -498,7 +500,9 @@ std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_
         auto octave_note = createNoteWithoutHarmony(note_start, duration,
                                                     static_cast<uint8_t>(octave_pitch),
                                                     static_cast<uint8_t>(enhanced_velocity * 0.85f));
+#ifdef MIDISKETCH_NOTE_PROVENANCE
         octave_note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
+#endif
         result.push_back(octave_note);
       }
     }

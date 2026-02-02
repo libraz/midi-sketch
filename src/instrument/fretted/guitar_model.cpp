@@ -178,6 +178,7 @@ bool GuitarModel::hasLowB() const {
 PickingPattern GuitarModel::getRecommendedPickingPattern(const std::vector<uint8_t>& pitches,
                                                           const std::vector<Tick>& durations,
                                                           uint16_t bpm) const {
+  (void)durations;
   if (pitches.empty()) {
     return PickingPattern::Alternate;
   }

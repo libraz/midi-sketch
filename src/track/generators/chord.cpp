@@ -80,27 +80,6 @@ struct ChordVoicingState {
 
 /// @brief Find the nearest octave of a pitch class within a range.
 /// @param desired Desired MIDI pitch (for proximity reference)
-/// @param pc Pitch class (0-11) to find
-/// @param low Minimum pitch
-/// @param high Maximum pitch
-/// @return Pitch in [low, high] closest to desired, or 0 if none
-uint8_t findNearestOctave(uint8_t desired, int pc, uint8_t low, uint8_t high) {
-  uint8_t best = 0;
-  int best_dist = 128;
-
-  for (int octave = 0; octave <= 10; ++octave) {
-    int pitch = octave * 12 + pc;
-    if (pitch >= low && pitch <= high) {
-      int dist = std::abs(pitch - static_cast<int>(desired));
-      if (dist < best_dist) {
-        best_dist = dist;
-        best = static_cast<uint8_t>(pitch);
-      }
-    }
-  }
-
-  return best;
-}
 
 /// @brief Add a chord note using the unified createNote() API.
 ///
