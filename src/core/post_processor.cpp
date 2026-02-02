@@ -1070,6 +1070,54 @@ void PostProcessor::fixBassVocalClashes(MidiTrack& bass, const MidiTrack& vocal)
   removeVocalClashingNotes(bass, vocal, /*include_close_major_2nd=*/false);
 }
 
+void PostProcessor::fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass,
+                                          const MidiTrack& motif) {
+  auto& notes = chord.notes();
+  if (notes.empty()) return;
+
+  auto isMinor2nd = [](int interval) {
+    int interval_class = interval % 12;
+    return interval_class == 1 || interval_class == 11;  // m2 or M7
+  };
+
+  std::vector<size_t> notes_to_remove;
+
+  for (size_t idx = 0; idx < notes.size(); ++idx) {
+    const auto& note = notes[idx];
+    Tick note_end = note.start_tick + note.duration;
+
+    // Check against bass
+    for (const auto& b_note : bass.notes()) {
+      Tick b_end = b_note.start_tick + b_note.duration;
+      if (note.start_tick < b_end && note_end > b_note.start_tick) {
+        int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(b_note.note));
+        if (isMinor2nd(interval)) {
+          notes_to_remove.push_back(idx);
+          goto next_note;
+        }
+      }
+    }
+
+    // Check against motif
+    for (const auto& m_note : motif.notes()) {
+      Tick m_end = m_note.start_tick + m_note.duration;
+      if (note.start_tick < m_end && note_end > m_note.start_tick) {
+        int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(m_note.note));
+        if (isMinor2nd(interval)) {
+          notes_to_remove.push_back(idx);
+          goto next_note;
+        }
+      }
+    }
+
+    next_note:;
+  }
+
+  for (auto it = notes_to_remove.rbegin(); it != notes_to_remove.rend(); ++it) {
+    notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(*it));
+  }
+}
+
 void PostProcessor::synchronizeBassKick(MidiTrack& bass, const MidiTrack& drums,
                                          DrumStyle drum_style) {
   const auto& drum_notes = drums.notes();

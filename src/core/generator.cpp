@@ -397,6 +397,14 @@ void Generator::applyPostProcessingEffects() {
     applyHumanization();
   }
 
+  // FINAL STEP: Fix inter-track clashes that may occur after all post-processing.
+  // Must run AFTER humanization (which shifts note timing) and all duration
+  // extensions (applyEnhancedFinalHit, ritardando, etc.).
+  PostProcessor::fixChordVocalClashes(song_.chord(), song_.vocal());
+  PostProcessor::fixAuxVocalClashes(song_.aux(), song_.vocal());
+  PostProcessor::fixBassVocalClashes(song_.bass(), song_.vocal());
+  PostProcessor::fixInterTrackClashes(song_.chord(), song_.bass(), song_.motif());
+
   // Final cleanup: fix any remaining vocal overlaps
   PostProcessor::fixVocalOverlaps(song_.vocal());
 }
@@ -1332,14 +1340,9 @@ void Generator::applyTransitionDynamics() {
     }
   }
 
-  // FINAL STEP: Fix track-vocal clashes that may occur after all post-processing.
-  // Must run AFTER:
-  // - applyEnhancedFinalHit (extends chord durations)
-  // - humanization (modifies note timing)
-  // - blueprint constraints (clamps vocal pitch, creating new intervals)
-  PostProcessor::fixChordVocalClashes(song_.chord(), song_.vocal());
-  PostProcessor::fixAuxVocalClashes(song_.aux(), song_.vocal());
-  PostProcessor::fixBassVocalClashes(song_.bass(), song_.vocal());
+  // NOTE: Track-vocal clash fixes have been moved to applyPostProcessingEffects()
+  // to run AFTER humanization. They were previously here but humanize had not yet
+  // been applied, so humanize-induced clashes were missed.
 
   // Apply arrangement holes for contrast (mute background at section boundaries)
   PostProcessor::applyArrangementHoles(song_.motif(), song_.arpeggio(), song_.aux(),

@@ -223,6 +223,18 @@ class PostProcessor {
   /// @param vocal Vocal track (read-only reference)
   static void fixBassVocalClashes(MidiTrack& bass, const MidiTrack& vocal);
 
+  /// @brief Fix inter-track clashes between non-vocal tracks after humanization.
+  ///
+  /// Removes dissonant notes (minor 2nd) from chord track that clash with bass
+  /// or motif tracks. This must run after humanization because timing shifts
+  /// can create new overlaps between tracks that were safe at generation time.
+  ///
+  /// @param chord Chord track to adjust (in-place)
+  /// @param bass Bass track (read-only reference)
+  /// @param motif Motif track (read-only reference)
+  static void fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass,
+                                   const MidiTrack& motif);
+
   /// @brief Synchronize bass note onsets with kick drum hits for tighter groove.
   ///
   /// Adjusts bass note timing to align with nearby kick drum hits.
