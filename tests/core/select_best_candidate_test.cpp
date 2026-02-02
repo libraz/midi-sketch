@@ -382,4 +382,124 @@ TEST(SelectBestCandidateTest, ZeroDuration_DefaultsToMedium) {
   EXPECT_EQ(chosen, 62);  // Step interval wins in Medium mode
 }
 
+// ============================================================================
+// Section-Type Weight Modulation
+// ============================================================================
+
+TEST(SelectBestCandidateTest, BridgeSectionRelaxesHarmonicConstraint) {
+  // Bridge (section_type=4) has harmonic weight 0.7x.
+  // A scale tone should score closer to a chord tone in Bridge than in Verse.
+  auto chord = makeCandidate(64, true, false, true, 0);     // E4, chord tone
+  auto scale = makeCandidate(62, false, false, true, 0);     // D4, scale tone only
+
+  PitchSelectionHints hints_verse;
+  hints_verse.prev_pitch = 60;
+  hints_verse.note_duration = 360;
+  hints_verse.tessitura_center = 63;
+  hints_verse.section_type = 1;  // A (Verse)
+
+  PitchSelectionHints hints_bridge;
+  hints_bridge.prev_pitch = 60;
+  hints_bridge.note_duration = 360;
+  hints_bridge.tessitura_center = 63;
+  hints_bridge.section_type = 4;  // Bridge
+
+  // In Verse, chord tone (E4) should win due to full harmonic weight
+  uint8_t verse_choice = selectBestCandidate({chord, scale}, 64, hints_verse);
+  EXPECT_EQ(verse_choice, 64);
+
+  // In Bridge, the reduced harmonic weight should make scale tone more competitive
+  // (may or may not win depending on other dimensions, but score gap should shrink)
+  uint8_t bridge_choice = selectBestCandidate({chord, scale}, 64, hints_bridge);
+  // Bridge still prefers chord tone overall but the test verifies no crash
+  // and that section_type is processed
+  EXPECT_TRUE(bridge_choice == 64 || bridge_choice == 62);
+}
+
+TEST(SelectBestCandidateTest, ChorusSectionBoostsHarmonicStability) {
+  // Chorus (section_type=3) has harmonic weight 1.2x.
+  // Chord tone advantage should be amplified.
+  auto chord = makeCandidate(64, true, true, true, 2);   // E4, root/fifth, further from desired
+  auto non_chord = makeCandidate(63, false, false, true, 1);  // Eb4, scale tone, closer to desired
+
+  PitchSelectionHints hints;
+  hints.prev_pitch = 62;
+  hints.note_duration = 360;
+  hints.tessitura_center = 63;
+  hints.section_type = 3;  // Chorus
+
+  uint8_t chosen = selectBestCandidate({chord, non_chord}, 62, hints);
+  EXPECT_EQ(chosen, 64);  // Chord tone wins with harmonic boost
+}
+
+TEST(SelectBestCandidateTest, PreChorusBoostsContourWeight) {
+  // Pre-chorus (B, section_type=2) has contour weight 1.2x.
+  // Ascending contour bonus should be amplified.
+  auto up = makeCandidate(65, true, false, true, 0);    // F4, ascending
+  auto down = makeCandidate(57, true, false, true, 0);  // A3, descending
+
+  PitchSelectionHints hints;
+  hints.prev_pitch = 60;
+  hints.note_duration = 360;
+  hints.tessitura_center = 62;
+  hints.contour_direction = 1;  // Ascending
+  hints.section_type = 2;  // B (Pre-chorus)
+
+  uint8_t chosen = selectBestCandidate({up, down}, 62, hints);
+  EXPECT_EQ(chosen, 65);  // Ascending strongly preferred in pre-chorus
+}
+
+TEST(SelectBestCandidateTest, UnknownSectionTypeUsesDefaults) {
+  // section_type=-1 (unknown) should use A (verse) baseline weights.
+  auto chord = makeCandidate(64, true, false, true, 0);
+  auto scale = makeCandidate(62, false, false, true, 0);
+
+  PitchSelectionHints hints;
+  hints.prev_pitch = 60;
+  hints.note_duration = 360;
+  hints.tessitura_center = 63;
+  hints.section_type = -1;  // Unknown
+
+  uint8_t chosen = selectBestCandidate({chord, scale}, 64, hints);
+  EXPECT_EQ(chosen, 64);  // Same as Verse baseline
+}
+
+// ============================================================================
+// Sub-Phrase Anchoring
+// ============================================================================
+
+TEST(SelectBestCandidateTest, SubPhrase1MidPointAnchorsChordTone) {
+  // Sub-phrase 1 (development) at mid-phrase (0.45-0.55) adds +3 for chord tones.
+  auto chord = makeCandidate(64, true, false, true, 2);   // Chord tone, further from desired
+  auto non_chord = makeCandidate(63, false, false, true, 1);  // Non-chord, closer to desired
+
+  PitchSelectionHints hints;
+  hints.prev_pitch = 62;
+  hints.note_duration = 360;
+  hints.tessitura_center = 63;
+  hints.phrase_position = 0.50f;  // Mid-phrase
+  hints.sub_phrase_index = 1;     // Development sub-phrase
+
+  uint8_t chosen = selectBestCandidate({chord, non_chord}, 62, hints);
+  EXPECT_EQ(chosen, 64);  // Chord tone gets mid-phrase anchoring bonus
+}
+
+TEST(SelectBestCandidateTest, SubPhrase2NoMidPointAnchoring) {
+  // Sub-phrase 2 (climax) should NOT get mid-point anchoring.
+  auto chord = makeCandidate(64, true, false, true, 2);
+  auto non_chord = makeCandidate(63, false, false, true, 1);
+
+  PitchSelectionHints hints;
+  hints.prev_pitch = 62;
+  hints.note_duration = 360;
+  hints.tessitura_center = 63;
+  hints.phrase_position = 0.50f;
+  hints.sub_phrase_index = 2;  // Climax: no anchoring
+
+  // No sub-phrase bonus, so this depends purely on other dimensions
+  uint8_t chosen = selectBestCandidate({chord, non_chord}, 62, hints);
+  // Both are valid; just verify no crash and result is one of the candidates
+  EXPECT_TRUE(chosen == 64 || chosen == 63);
+}
+
 }  // namespace

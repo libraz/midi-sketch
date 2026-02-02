@@ -141,7 +141,9 @@ int applyAllPitchConstraints(int pitch, const NoteGenerationContext& ctx,
   if (ctx.note_index > 0 && ctx.prev_note_pitch >= 0) {
     new_pitch = applyLeapReversalRule(new_pitch, ctx.current_pitch, ctx.prev_interval,
                                        chord_tones, params.vocal_low, params.vocal_high,
-                                       params.prefer_stepwise, rng);
+                                       params.prefer_stepwise, rng,
+                                       static_cast<int8_t>(params.section_type),
+                                       ctx.phrase_pos);
   }
 
   // 8. Final interval enforcement (re-check after all adjustments)

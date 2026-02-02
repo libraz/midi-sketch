@@ -38,9 +38,47 @@ int findStepwiseResolutionPitch(int current_pitch, const std::vector<int>& chord
   return best_pitch;
 }
 
+// Section-type and phrase-position dependent reversal probability.
+// SectionType enum: Intro=0, A=1, B=2, Chorus=3, Bridge=4, ...
+static float getReversalProbability(int8_t section_type_int, float phrase_position) {
+  // Base probability by section type
+  float base_prob = 0.80f;  // Default
+  float phrase_end_prob = 0.80f;  // Probability at phrase end (>0.8)
+
+  // Section-specific probabilities
+  // Index: SectionType enum value
+  switch (section_type_int) {
+    case 1:  // A (Verse): stable, resolves well
+      base_prob = 0.85f;
+      phrase_end_prob = 0.95f;
+      break;
+    case 2:  // B (Pre-chorus): maintain forward momentum
+      base_prob = 0.80f;
+      phrase_end_prob = 0.70f;  // Less resolution for drive toward chorus
+      break;
+    case 3:  // Chorus: allow sustained peaks
+      base_prob = 0.75f;
+      phrase_end_prob = 0.85f;
+      break;
+    case 4:  // Bridge: exploratory then resolve
+      base_prob = 0.90f;
+      phrase_end_prob = 0.95f;
+      break;
+    default:
+      break;
+  }
+
+  // Apply phrase-end modification
+  if (phrase_position >= 0.0f && phrase_position > 0.8f) {
+    return phrase_end_prob;
+  }
+  return base_prob;
+}
+
 int applyLeapReversalRule(int new_pitch, int current_pitch, int prev_interval,
                           const std::vector<int>& chord_tones, uint8_t vocal_low, uint8_t vocal_high,
-                          bool prefer_stepwise, std::mt19937& rng) {
+                          bool prefer_stepwise, std::mt19937& rng,
+                          int8_t section_type_int, float phrase_position) {
   // Skip if no significant previous leap
   if (std::abs(prev_interval) < kLeapReversalThreshold) {
     return new_pitch;
@@ -88,7 +126,8 @@ int applyLeapReversalRule(int new_pitch, int current_pitch, int prev_interval,
   // Apply reversal if found a good candidate
   // If prefer_stepwise is set (IdolKawaii), force 100% stepwise motion
   if (best_reversal_pitch >= 0) {
-    float reversal_probability = prefer_stepwise ? 1.0f : 0.80f;
+    float reversal_probability = prefer_stepwise ? 1.0f
+        : getReversalProbability(section_type_int, phrase_position);
     std::uniform_real_distribution<float> rev_dist(0.0f, 1.0f);
     if (rev_dist(rng) < reversal_probability) {
       return best_reversal_pitch;

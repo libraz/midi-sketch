@@ -564,6 +564,48 @@ std::vector<PitchCandidate> getSafePitchCandidates(
 // Musical candidate selection
 // ============================================================================
 
+// Section-type weight multipliers for 5-dimensional scoring.
+// Rows: SectionType enum (Intro=0, A=1, B=2, Chorus=3, Bridge=4, Interlude=5, Outro=6, ...)
+// Columns: Melodic, Harmonic, Contour, Tessitura, Intent
+struct SectionWeights {
+  float melodic;    // Dimension 1
+  float harmonic;   // Dimension 2
+  float contour;    // Dimension 3
+  float tessitura;  // Dimension 4
+  float intent;     // Dimension 5
+};
+
+static const SectionWeights kSectionWeightTable[] = {
+  // Intro:      balanced
+  {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+  // A (Verse):  baseline reference
+  {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+  // B (Pre-chorus): non-chord tones permitted, contour emphasized, wider range
+  {1.0f, 0.8f, 1.2f, 0.8f, 1.0f},
+  // Chorus:     harmonic stability, relax intent constraint
+  {1.0f, 1.2f, 1.0f, 1.0f, 0.8f},
+  // Bridge:     exploratory - relax all constraints
+  {0.8f, 0.7f, 0.8f, 0.5f, 1.0f},
+  // Interlude:  balanced
+  {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+  // Outro:      stable, converge range
+  {1.0f, 1.1f, 1.0f, 1.2f, 1.0f},
+  // Chant:      balanced
+  {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+  // MixBreak:   balanced
+  {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+  // Drop:       balanced
+  {1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+};
+
+static const SectionWeights& getSectionWeights(int8_t section_type_int) {
+  if (section_type_int < 0 ||
+      section_type_int >= static_cast<int8_t>(sizeof(kSectionWeightTable) / sizeof(kSectionWeightTable[0]))) {
+    return kSectionWeightTable[1];  // Default: A (verse) baseline
+  }
+  return kSectionWeightTable[section_type_int];
+}
+
 uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
                              uint8_t fallback_pitch,
                              const PitchSelectionHints& hints) {
@@ -575,6 +617,9 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
   if (hints.prev_pitch < 0) {
     return candidates[0].pitch;
   }
+
+  // Get section-specific weight multipliers
+  const SectionWeights& sw = getSectionWeights(hints.section_type);
 
   // 5-dimensional musical scoring
   int best_index = 0;
@@ -601,40 +646,43 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
 
     // === Dimension 1: Melodic continuity (max 35) ===
     // Rhythm-interval coupling: short notes prefer steps, long notes allow leaps.
-    // interval=0 (same pitch) is separated from step (1-2):
-    //   Short: same-pitch repetition is core to pop (rap, chant, 32nd bursts)
-    //   Long: same-pitch on long notes = stagnation, discouraged
+    float melodic_score = 0.0f;
     switch (dur_cat) {
       case DurationCat::Short:
-        if (abs_interval == 0) score += 33.0f;
-        else if (abs_interval <= 2) score += 35.0f;
-        else if (abs_interval <= 4) score += 20.0f;
-        else if (abs_interval <= 7) score += 5.0f;
-        else score -= 1.5f * abs_interval;
+        if (abs_interval == 0) melodic_score = 33.0f;
+        else if (abs_interval <= 2) melodic_score = 35.0f;
+        else if (abs_interval <= 4) melodic_score = 20.0f;
+        else if (abs_interval <= 7) melodic_score = 5.0f;
+        else melodic_score = -1.5f * abs_interval;
         break;
       case DurationCat::Long:
-        if (abs_interval == 0) score += 15.0f;  // Discourage stagnation on long notes
-        else if (abs_interval <= 2) score += 25.0f;
-        else if (abs_interval <= 4) score += 30.0f;  // Sweet spot for long notes
-        else if (abs_interval <= 7) score += 25.0f;
-        else if (abs_interval <= 12) score += 15.0f;
-        else score -= 1.0f * abs_interval;
+        if (abs_interval == 0) melodic_score = 15.0f;
+        else if (abs_interval <= 2) melodic_score = 25.0f;
+        else if (abs_interval <= 4) melodic_score = 30.0f;
+        else if (abs_interval <= 7) melodic_score = 25.0f;
+        else if (abs_interval <= 12) melodic_score = 15.0f;
+        else melodic_score = -1.0f * abs_interval;
         break;
       case DurationCat::Medium:
-        if (abs_interval == 0) score += 25.0f;
-        else if (abs_interval <= 2) score += 30.0f;
-        else if (abs_interval <= 4) score += 25.0f;
-        else if (abs_interval <= 7) score += 15.0f;
-        else score -= 1.0f * abs_interval;
+        if (abs_interval == 0) melodic_score = 25.0f;
+        else if (abs_interval <= 2) melodic_score = 30.0f;
+        else if (abs_interval <= 4) melodic_score = 25.0f;
+        else if (abs_interval <= 7) melodic_score = 15.0f;
+        else melodic_score = -1.0f * abs_interval;
         break;
     }
+    score += melodic_score * sw.melodic;
 
     // === Dimension 2: Harmonic stability (max 25) ===
-    if (c.is_chord_tone) {
-      score += 20.0f;
-      if (c.is_root_or_fifth) score += 5.0f;
-    } else if (c.is_scale_tone) {
-      score += 10.0f;
+    {
+      float harmonic_score = 0.0f;
+      if (c.is_chord_tone) {
+        harmonic_score += 20.0f;
+        if (c.is_root_or_fifth) harmonic_score += 5.0f;
+      } else if (c.is_scale_tone) {
+        harmonic_score += 10.0f;
+      }
+      score += harmonic_score * sw.harmonic;
     }
 
     // === Phrase position anchoring (max 8) ===
@@ -647,34 +695,42 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
         if (c.is_root_or_fifth) score += 8.0f;  // Phrase end: resolve to root/5th
         else if (c.is_chord_tone) score += 3.0f;  // Phrase end: chord tone OK
       }
+
+      // Sub-phrase mid-point anchoring (development → climax boundary)
+      if (hints.sub_phrase_index >= 0) {
+        // Sub-phrase 1 (development): breathing point at 0.45-0.55
+        if (hints.sub_phrase_index == 1 &&
+            hints.phrase_position >= 0.45f && hints.phrase_position <= 0.55f) {
+          if (c.is_chord_tone) score += 3.0f;  // Mid-phrase chord tone anchor
+        }
+      }
     }
 
     // === Dimension 3: Contour preservation (max 20) ===
-    if (hints.contour_direction != 0) {
-      bool moving_in_preferred_direction =
-          (hints.contour_direction > 0 && interval > 0) ||
-          (hints.contour_direction < 0 && interval < 0);
-      if (moving_in_preferred_direction) {
-        score += 20.0f;
-      } else if (interval != 0) {
-        score -= 10.0f;
+    {
+      float contour_score = 0.0f;
+      if (hints.contour_direction != 0) {
+        bool moving_in_preferred_direction =
+            (hints.contour_direction > 0 && interval > 0) ||
+            (hints.contour_direction < 0 && interval < 0);
+        if (moving_in_preferred_direction) {
+          contour_score = 20.0f;
+        } else if (interval != 0) {
+          contour_score = -10.0f;
+        }
       }
+      score += contour_score * sw.contour;
     }
 
     // === Dimension 4: Tessitura gravity (max 10) ===
     {
       int dist_from_center = std::abs(static_cast<int>(c.pitch) - hints.tessitura_center);
-      // Gentle decay: lose 1 point per semitone from center, capped at 10
       float gravity = 10.0f - std::min(static_cast<float>(dist_from_center), 10.0f);
-      score += gravity;
+      score += gravity * sw.tessitura;
     }
 
     // === Dimension 5: Intent proximity (max ~15) ===
-    // Prefer pitches close to the originally desired pitch.
-    // strategy=None (desired was safe) → interval_from_desired=0 → penalty 0.
-    // Replaced explicit strategy bonus with stronger distance penalty for
-    // music-theory-based reasoning (distance from intent, not implementation detail).
-    score -= std::abs(c.interval_from_desired) * 3.0f;
+    score += (-std::abs(c.interval_from_desired) * 3.0f) * sw.intent;
 
     if (score > best_score) {
       best_score = score;

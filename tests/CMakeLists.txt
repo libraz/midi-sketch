@@ -78,6 +78,7 @@ set(TEST_SOURCES
   midi/midi2_writer_test.cpp
   midi/midi2_reader_test.cpp
   track/arpeggio_test.cpp
+  track/leap_resolution_test.cpp
   track/vocal_test.cpp
   track/vocal_helpers_test.cpp
   track/chord_track_test.cpp

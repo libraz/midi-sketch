@@ -744,9 +744,12 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       int prev_note = result.notes.back().note;
       int prev_interval = current_pitch - prev_note;
       std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
+      float phrase_pos = static_cast<float>(i) / rhythm.size();
       new_pitch = melody::applyLeapReversalRule(new_pitch, current_pitch, prev_interval,
                                                  chord_tones, ctx.vocal_low, ctx.vocal_high,
-                                                 ctx.prefer_stepwise, rng);
+                                                 ctx.prefer_stepwise, rng,
+                                                 static_cast<int8_t>(ctx.section_type),
+                                                 phrase_pos);
     }
 
     // FINAL SAFETY CHECK: Re-enforce max interval after all adjustments
@@ -890,6 +893,11 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     hints.note_duration = note_duration;
     hints.phrase_position = static_cast<float>(i) / rhythm.size();
     hints.tessitura_center = ctx.tessitura.center;
+    hints.section_type = static_cast<int8_t>(ctx.section_type);
+    hints.sub_phrase_index = static_cast<int8_t>(ctx.sub_phrase_index);
+    // Propagate contour direction from accumulated direction inertia
+    if (result.direction_inertia > 0) hints.contour_direction = 1;
+    else if (result.direction_inertia < 0) hints.contour_direction = -1;
     new_pitch = selectBestCandidate(candidates, static_cast<uint8_t>(new_pitch), hints);
 
     // Add note (registration handled by VocalGenerator)
@@ -1168,6 +1176,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       hints.prev_pitch = static_cast<int8_t>(prev_hook_pitch);
       hints.note_duration = final_duration;
       hints.tessitura_center = ctx.tessitura.center;
+      hints.section_type = static_cast<int8_t>(ctx.section_type);
+      hints.sub_phrase_index = static_cast<int8_t>(ctx.sub_phrase_index);
       pitch = selectBestCandidate(candidates, static_cast<uint8_t>(pitch), hints);
 
       NoteEvent hook_note = createNoteWithoutHarmony(
@@ -1228,6 +1238,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
         }
         hints.note_duration = result.notes[i].duration;
         hints.tessitura_center = ctx.tessitura.center;
+        hints.section_type = static_cast<int8_t>(ctx.section_type);
+        hints.sub_phrase_index = static_cast<int8_t>(ctx.sub_phrase_index);
         result.notes[i].note = selectBestCandidate(candidates, static_cast<uint8_t>(new_pitch), hints);
       }
       // If candidates is empty, keep the original clamped pitch (new_pitch)

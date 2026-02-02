@@ -48,6 +48,10 @@ int findStepwiseResolutionPitch(int current_pitch, const std::vector<int>& chord
 /// in the opposite direction. This is a fundamental vocal principle:
 /// singers need to "recover" after jumps.
 ///
+/// Reversal probability is context-dependent:
+/// - Section type: Bridge/Verse favor resolution, Chorus allows sustained peaks
+/// - Phrase position: phrase endings (>0.8) modify probability for cadence control
+///
 /// @param new_pitch Proposed new pitch
 /// @param current_pitch Current pitch
 /// @param prev_interval Interval from previous note to current note (signed)
@@ -56,10 +60,13 @@ int findStepwiseResolutionPitch(int current_pitch, const std::vector<int>& chord
 /// @param vocal_high Maximum allowed pitch
 /// @param prefer_stepwise If true, force 100% stepwise (for IdolKawaii)
 /// @param rng Random number generator
+/// @param section_type_int SectionType as int (-1 = unknown, uses default)
+/// @param phrase_position Position in phrase 0.0-1.0 (-1 = unknown)
 /// @return Adjusted pitch (may be changed to reversal pitch)
 int applyLeapReversalRule(int new_pitch, int current_pitch, int prev_interval,
                           const std::vector<int>& chord_tones, uint8_t vocal_low, uint8_t vocal_high,
-                          bool prefer_stepwise, std::mt19937& rng);
+                          bool prefer_stepwise, std::mt19937& rng,
+                          int8_t section_type_int = -1, float phrase_position = -1.0f);
 
 }  // namespace melody
 }  // namespace midisketch

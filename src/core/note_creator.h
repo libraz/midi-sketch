@@ -190,6 +190,8 @@ struct PitchSelectionHints {
   Tick note_duration = 0;          ///< Note duration (rhythm-interval coupling)
   float phrase_position = -1.0f;   ///< Position in phrase 0.0-1.0 (-1 = unknown)
   uint8_t tessitura_center = 67;   ///< Tessitura center (default G4)
+  int8_t section_type = -1;        ///< SectionType as int (-1 = unknown)
+  int8_t sub_phrase_index = -1;    ///< Sub-phrase position 0-3 (-1 = unknown)
 };
 
 /**
