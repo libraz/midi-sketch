@@ -64,9 +64,6 @@ float getVocalDensityForSection(const VocalAnalysis& va, const Section& section)
 /// Get vocal pitch direction at tick: +1=up, -1=down, 0=none.
 int8_t getVocalDirectionAt(const VocalAnalysis& va, Tick tick);
 
-/// Get vocal pitch class at tick (0-11), or -1 if silent.
-int getVocalPitchClassAt(const VocalAnalysis& va, Tick tick);
-
 /// Get vocal MIDI pitch at tick (0-127), or 0 if silent.
 uint8_t getVocalPitchAt(const VocalAnalysis& va, Tick tick);
 

@@ -1474,7 +1474,7 @@ void MelodyDesigner::insertLeadingTone(std::vector<NoteEvent>& notes, const Sect
   if (last_note_end <= leading_tone_start) {
     // Check pitch safety before adding leading tone
     Tick leading_duration = TICKS_PER_BEAT / 4;
-    if (!harmony.isPitchSafe(static_cast<uint8_t>(leading_pitch), leading_tone_start,
+    if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(leading_pitch), leading_tone_start,
                              leading_duration, TrackRole::Vocal)) {
       return;  // Skip leading tone if it would cause dissonance
     }

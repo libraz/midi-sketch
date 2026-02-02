@@ -57,7 +57,7 @@ class StubHarmonyContext : public IHarmonyCoordinator {
     ++registered_track_count_;
   }
 
-  bool isPitchSafe(uint8_t /*pitch*/, Tick /*start*/, Tick /*duration*/, TrackRole /*exclude*/,
+  bool isConsonantWithOtherTracks(uint8_t /*pitch*/, Tick /*start*/, Tick /*duration*/, TrackRole /*exclude*/,
                    bool /*is_weak_beat*/ = false) const override {
     return all_pitches_safe_;
   }

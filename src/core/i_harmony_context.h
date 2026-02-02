@@ -72,7 +72,7 @@ class IHarmonyContext : public IChordLookup {
    * @param is_weak_beat If true, allow major 2nd as passing tone (default: false)
    * @return true if pitch doesn't clash with other tracks
    */
-  virtual bool isPitchSafe(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
+  virtual bool isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
                            bool is_weak_beat = false) const = 0;
 
   /**
@@ -91,7 +91,7 @@ class IHarmonyContext : public IChordLookup {
                                          TrackRole exclude) const {
     // Default implementation: just report if collision exists
     CollisionInfo info;
-    info.has_collision = !isPitchSafe(pitch, start, duration, exclude);
+    info.has_collision = !isConsonantWithOtherTracks(pitch, start, duration, exclude);
     return info;
   }
 

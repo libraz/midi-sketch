@@ -64,7 +64,7 @@ class TrackCollisionDetector {
    * @param is_weak_beat If true, allow major 2nd as passing tone (default: false)
    * @return true if pitch doesn't clash with other tracks
    */
-  bool isPitchSafe(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
+  bool isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
                    const ChordProgressionTracker* chord_tracker = nullptr,
                    bool is_weak_beat = false) const;
 

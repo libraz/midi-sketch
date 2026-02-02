@@ -167,7 +167,7 @@ TEST_F(NoteCreatorTest, RegisterToHarmony) {
   opts2.desired_pitch = 61;  // C#4 - minor 2nd clash with C4
   opts2.role = TrackRole::Chord;
 
-  EXPECT_FALSE(harmony_.isPitchSafe(61, 0, 480, TrackRole::Chord));
+  EXPECT_FALSE(harmony_.isConsonantWithOtherTracks(61, 0, 480, TrackRole::Chord));
 }
 
 TEST_F(NoteCreatorTest, GetSafePitchCandidates) {
@@ -190,7 +190,7 @@ TEST_F(NoteCreatorTest, GetSafePitchCandidates) {
   // First candidate should be safe
   for (const auto& c : candidates) {
     EXPECT_NE(c.pitch, 61);
-    EXPECT_TRUE(harmony_.isPitchSafe(c.pitch, 0, 480, TrackRole::Bass));
+    EXPECT_TRUE(harmony_.isConsonantWithOtherTracks(c.pitch, 0, 480, TrackRole::Bass));
   }
 }
 

@@ -213,7 +213,7 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
   }
 
   // Check if desired pitch is safe (with effective duration)
-  bool is_safe = harmony.isPitchSafe(opts.desired_pitch, opts.start, effective_duration, opts.role);
+  bool is_safe = harmony.isConsonantWithOtherTracks(opts.desired_pitch, opts.start, effective_duration, opts.role);
   if (is_safe) {
     // For PreferSafe: check if this pitch needs boundary clip
     if (opts.chord_boundary == ChordBoundaryPolicy::PreferSafe &&
@@ -403,7 +403,7 @@ std::vector<PitchCandidate> getSafePitchCandidates(
   // Helper to add a candidate if safe
   auto tryAddCandidate = [&](uint8_t pitch, CollisionAvoidStrategy strategy) {
     if (pitch < range_low || pitch > range_high) return;
-    if (!harmony.isPitchSafe(pitch, start, duration, role)) return;
+    if (!harmony.isConsonantWithOtherTracks(pitch, start, duration, role)) return;
 
     PitchCandidate candidate;
     candidate.pitch = pitch;
@@ -442,7 +442,7 @@ std::vector<PitchCandidate> getSafePitchCandidates(
   };
 
   // Strategy 1: Try desired pitch first (if safe, it's the best)
-  if (harmony.isPitchSafe(desired_pitch, start, duration, role)) {
+  if (harmony.isConsonantWithOtherTracks(desired_pitch, start, duration, role)) {
     tryAddCandidate(desired_pitch, CollisionAvoidStrategy::None);
     if (candidates.size() >= max_candidates) {
       rankCandidates(candidates, preference);

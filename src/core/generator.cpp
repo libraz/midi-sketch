@@ -567,7 +567,7 @@ void Generator::generateAccompanimentForVocal() {
   clearAccompanimentTracks();
 
   // Register vocal with harmony context BEFORE generating accompaniment
-  // This enables isPitchSafe() to detect vocal collisions
+  // This enables isConsonantWithOtherTracks() to detect vocal collisions
   harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
 
   // Analyze existing vocal to extract characteristics
@@ -614,7 +614,7 @@ void Generator::generateAccompanimentForVocal() {
   // (Bass is already registered, TrackRegistrationGuard unregisters Chord on scope exit)
   harmony_context_->registerTrack(song_.chord(), TrackRole::Chord);
 
-  // Generate Aux track AFTER Chord/Bass so it can detect collisions via isPitchSafe()
+  // Generate Aux track AFTER Chord/Bass so it can detect collisions via isConsonantWithOtherTracks()
   // Aux references vocal for call-and-response patterns
   generateAux();
 

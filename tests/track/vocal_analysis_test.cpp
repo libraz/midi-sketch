@@ -219,33 +219,6 @@ TEST(VocalAnalysisTest, DirectionBeforeFirstNoteIsZero) {
 }
 
 // ============================================================================
-// getVocalPitchClassAt Tests
-// ============================================================================
-
-TEST(VocalAnalysisTest, PitchClassAt) {
-  MidiTrack track = createTestVocalTrack();
-  VocalAnalysis va = analyzeVocal(track);
-
-  // At tick 0, C4 (60) -> pitch class 0
-  int pc = getVocalPitchClassAt(va, 0);
-  EXPECT_EQ(pc, 0);
-
-  // At tick TICKS_PER_BEAT, E4 (64) -> pitch class 4
-  int pc_e = getVocalPitchClassAt(va, TICKS_PER_BEAT);
-  EXPECT_EQ(pc_e, 4);
-}
-
-TEST(VocalAnalysisTest, PitchClassAtRestReturnsNegative) {
-  MidiTrack track = createTestVocalTrack();
-  VocalAnalysis va = analyzeVocal(track);
-
-  // During rest, should return -1
-  // Use the same rest position as RestDetection test
-  int pc = getVocalPitchClassAt(va, TICKS_PER_BAR * 2 - TICKS_PER_BEAT);
-  EXPECT_EQ(pc, -1);
-}
-
-// ============================================================================
 // selectMotionType Tests
 // ============================================================================
 

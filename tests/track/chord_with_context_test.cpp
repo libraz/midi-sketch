@@ -324,8 +324,8 @@ TEST_F(ChordWithContextTest, AvoidsMinor2ndClashesWithMotif) {
   // This tests the fix for the issue where Chord voicing selection
   // didn't consider Motif pitch classes, causing minor 2nd clashes.
   //
-  // Root cause: filterVoicingsForContext() only checked Vocal/Aux/Bass
-  // but not Motif, so Chord could select voicings clashing with Motif.
+  // Root cause: Old per-track pitch-class filtering missed cross-track
+  // interactions. Now uses isConsonantWithOtherTracks() which checks ALL registered tracks.
 
   params_.composition_style = CompositionStyle::BackgroundMotif;
 
@@ -363,7 +363,7 @@ TEST_F(ChordWithContextTest, AvoidsMinor2ndClashesWithMotif) {
   }
 
   // There should be zero or very few minor 2nd clashes
-  // The fix ensures filterVoicingsForContext() filters Motif clashes
+  // The fix ensures isConsonantWithOtherTracks()-based filtering catches Motif clashes
   EXPECT_EQ(clash_count, 0) << "No minor 2nd clashes between Chord and Motif expected";
 }
 
@@ -518,9 +518,9 @@ TEST_F(ChordWithContextTest, AvoidsCloseIntervalsWithVocalFullGeneration) {
   // Test that full generation pipeline avoids close intervals between
   // Chord and Vocal tracks. Uses Generator::generate() for realistic scenario.
   //
-  // Root cause of original bug: filterVoicingsForContext() only checked
-  // for unison (vocal_pc == chord_pc) but not close intervals.
-  // Fix: Extended check to interval <= 2 semitones.
+  // Root cause of original bug: Old per-track filtering only checked
+  // for unison but not close intervals. Now uses isConsonantWithOtherTracks() which
+  // checks ALL registered tracks with proper interval detection.
 
   Generator gen;
   gen.generate(params_);

@@ -590,7 +590,7 @@ TEST(CollisionDetectorTest, DetectsMotifChordClash) {
   detector.registerNote(105600, 1200, 53, TrackRole::Chord);  // F3
 
   // Check if E3 (52) at tick 106560 is safe for Motif
-  bool is_safe = detector.isPitchSafe(52, 106560, 240, TrackRole::Motif);
+  bool is_safe = detector.isConsonantWithOtherTracks(52, 106560, 240, TrackRole::Motif);
 
   // E3 (52) should be UNSAFE because:
   // - E3 vs D3 = 2 semitones (major 2nd) -> dissonant
@@ -598,7 +598,7 @@ TEST(CollisionDetectorTest, DetectsMotifChordClash) {
   EXPECT_FALSE(is_safe) << "E3 at tick 106560 should clash with sustained D3 and F3 from Chord";
 
   // Also check that D4 (62) would be safe (octave of D3, not clashing with F3)
-  bool d4_safe = detector.isPitchSafe(62, 106560, 240, TrackRole::Motif);
+  bool d4_safe = detector.isConsonantWithOtherTracks(62, 106560, 240, TrackRole::Motif);
   EXPECT_TRUE(d4_safe) << "D4 should be safe (octave of D3 is doubling, 9 semitones from F3 is OK)";
 }
 

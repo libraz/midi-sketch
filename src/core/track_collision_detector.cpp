@@ -27,7 +27,7 @@ void TrackCollisionDetector::registerTrack(const MidiTrack& track, TrackRole rol
   }
 }
 
-bool TrackCollisionDetector::isPitchSafe(uint8_t pitch, Tick start, Tick duration,
+bool TrackCollisionDetector::isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration,
                                          TrackRole exclude,
                                          const ChordProgressionTracker* chord_tracker,
                                          bool is_weak_beat) const {

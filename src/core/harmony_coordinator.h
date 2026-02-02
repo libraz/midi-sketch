@@ -46,7 +46,7 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
 
   void registerTrack(const MidiTrack& track, TrackRole role) override;
 
-  bool isPitchSafe(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
+  bool isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
                    bool is_weak_beat = false) const override;
 
   CollisionInfo getCollisionInfo(uint8_t pitch, Tick start, Tick duration,

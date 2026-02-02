@@ -296,14 +296,6 @@ int8_t getVocalDirectionAt(const VocalAnalysis& va, Tick tick) {
   return it->second;
 }
 
-int getVocalPitchClassAt(const VocalAnalysis& va, Tick tick) {
-  uint8_t pitch = getVocalPitchAt(va, tick);
-  if (pitch == 0) {
-    return -1;  // No vocal sounding
-  }
-  return pitch % 12;  // Convert to pitch class (C=0, C#=1, ..., B=11)
-}
-
 uint8_t getVocalPitchAt(const VocalAnalysis& va, Tick tick) {
   // Find most recent note start at or before this tick
   auto it = va.pitch_at_tick.upper_bound(tick);

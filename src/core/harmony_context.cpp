@@ -45,9 +45,9 @@ void HarmonyContext::registerTrack(const MidiTrack& track, TrackRole role) {
   collision_detector_.registerTrack(track, role);
 }
 
-bool HarmonyContext::isPitchSafe(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
+bool HarmonyContext::isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
                                  bool is_weak_beat) const {
-  return collision_detector_.isPitchSafe(pitch, start, duration, exclude, &chord_tracker_,
+  return collision_detector_.isConsonantWithOtherTracks(pitch, start, duration, exclude, &chord_tracker_,
                                          is_weak_beat);
 }
 

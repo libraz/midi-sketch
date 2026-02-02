@@ -895,7 +895,7 @@ bool clashesWithVocal(uint8_t pitch, Tick start, Tick end, const MidiTrack& voca
 }
 
 // Find a safe chord tone pitch that doesn't clash with vocal or any registered tracks.
-// Checks BOTH the vocal track directly AND harmony.isPitchSafe() for comprehensive checking.
+// Checks BOTH the vocal track directly AND harmony.isConsonantWithOtherTracks() for comprehensive checking.
 // Tries different octaves and different chord tones.
 uint8_t findSafeChordTone(uint8_t original_pitch, int8_t degree, Tick start, Tick duration,
                           const MidiTrack& vocal, const IHarmonyContext& harmony) {
@@ -923,7 +923,7 @@ uint8_t findSafeChordTone(uint8_t original_pitch, int8_t degree, Tick start, Tic
       // Check against vocal directly (for tests that don't register vocal)
       if (clashesWithVocal(clamped, start, end, vocal)) continue;
       // Also check against all registered tracks (chord, bass, etc.)
-      if (!harmony.isPitchSafe(clamped, start, duration, TrackRole::Motif)) continue;
+      if (!harmony.isConsonantWithOtherTracks(clamped, start, duration, TrackRole::Motif)) continue;
 
       int dist = std::abs(candidate_pitch - static_cast<int>(original_pitch));
       candidates.push_back({clamped, dist});

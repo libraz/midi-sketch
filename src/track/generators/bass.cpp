@@ -1402,7 +1402,7 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
         bool anticipate_clashes = false;
         for (Tick offset :
              {HALF, HALF + QUARTER / 2, HALF + QUARTER, HALF + QUARTER + QUARTER / 2}) {
-          if (!harmony.isPitchSafe(anticipate_root, bar_start + offset, QUARTER, TrackRole::Bass)) {
+          if (!harmony.isConsonantWithOtherTracks(anticipate_root, bar_start + offset, QUARTER, TrackRole::Bass)) {
             anticipate_clashes = true;
             break;
           }
@@ -1903,8 +1903,8 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song, const Genera
         for (Tick offset :
              {HALF, HALF + QUARTER / 2, HALF + QUARTER, HALF + QUARTER + QUARTER / 2}) {
           Tick check_tick = bar_start + offset;
-          // Use isPitchSafe which checks against all registered tracks
-          if (!harmony.isPitchSafe(anticipate_root, check_tick, QUARTER, TrackRole::Bass)) {
+          // Use isConsonantWithOtherTracks which checks against all registered tracks
+          if (!harmony.isConsonantWithOtherTracks(anticipate_root, check_tick, QUARTER, TrackRole::Bass)) {
             anticipate_clashes = true;
             break;
           }

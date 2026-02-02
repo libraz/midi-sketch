@@ -166,7 +166,7 @@ TEST_F(MotifDissonanceTest, AdjustsAvoidNotesToChordTones) {
 // =============================================================================
 // Generation Order Test (Architecture-level fix)
 // =============================================================================
-// Bug: In BGM mode, Motif was generated BEFORE Bass, so isPitchSafe() had
+// Bug: In BGM mode, Motif was generated BEFORE Bass, so isConsonantWithOtherTracks() had
 // nothing to check against. This caused Motif-Bass clashes.
 // Fix: Changed generation order to Bass -> Motif so HarmonyContext has
 // Bass notes registered when Motif is generated.

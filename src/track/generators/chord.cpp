@@ -81,6 +81,79 @@ struct ChordVoicingState {
 /// @brief Find the nearest octave of a pitch class within a range.
 /// @param desired Desired MIDI pitch (for proximity reference)
 
+/// @brief Check if a pitch would create dissonant intervals with ANY already-registered track.
+///
+/// This is the SINGLE authoritative collision check for chord voicing selection.
+/// It queries IHarmonyContext::isConsonantWithOtherTracks(), which accumulates notes from ALL tracks
+/// (Vocal, Bass, Motif, Aux, etc.) registered before chord generation.
+///
+/// DO NOT replace this with per-track pitch-class queries (e.g. getVocalPitchClassAt,
+/// getAuxPitchClassAt, getPitchClassesFromTrackInRange). Those approaches:
+/// - Check only one track at a time, missing cross-track interactions
+/// - Use bar-level granularity, over-excluding pitches that are safe at tick level
+/// - Require manual maintenance when new tracks are added
+///
+/// @param harmony Harmony context with all tracks registered
+/// @param pitch MIDI pitch to check
+/// @param start Start tick
+/// @param duration Duration in ticks
+/// @return true if pitch would clash with another track's note
+bool wouldClashWithRegisteredTracks(const IHarmonyContext& harmony, uint8_t pitch, Tick start,
+                                    Tick duration) {
+  return !harmony.isConsonantWithOtherTracks(pitch, start, duration, TrackRole::Chord);
+}
+
+/// @brief Filter a voicing, keeping only pitches that don't clash with registered tracks.
+///
+/// Uses wouldClashWithRegisteredTracks() for each pitch in the voicing.
+/// Also enforces vocal ceiling constraint (chord should not exceed vocal's highest pitch).
+///
+/// @param harmony Harmony context with all tracks registered
+/// @param v Candidate voicing
+/// @param start Start tick for collision check
+/// @param duration Duration for collision check
+/// @param vocal_high Highest vocal pitch (0 to disable ceiling)
+/// @return Filtered voicing (may have fewer notes than input)
+VoicedChord filterVoicingByCollision(const IHarmonyContext& harmony, const VoicedChord& v,
+                                     Tick start, Tick duration, uint8_t vocal_high) {
+  constexpr int kVocalHighMargin = 2;
+  VoicedChord safe = v;
+  safe.count = 0;
+  for (uint8_t i = 0; i < v.count; ++i) {
+    // Vocal ceiling: chord should not exceed vocal's highest pitch
+    if (vocal_high > 0 && v.pitches[i] > vocal_high + kVocalHighMargin) {
+      continue;
+    }
+    if (!wouldClashWithRegisteredTracks(harmony, v.pitches[i], start, duration)) {
+      safe.pitches[safe.count++] = v.pitches[i];
+    }
+  }
+  return safe;
+}
+
+/// @brief Build a fallback voicing when all candidates are filtered out.
+///
+/// Each pitch is added via addSafeChordNote (which uses createNoteAndAdd with
+/// PreferChordTones), so collision resolution is handled by the unified note creator.
+/// This function returns a voicing with raw chord-tone pitches for voice leading;
+/// actual collision resolution happens when notes are emitted.
+///
+/// @param chord Chord definition
+/// @param root Root pitch
+/// @return Voicing with raw chord-tone pitches (no collision check yet)
+VoicedChord buildFallbackVoicing(const Chord& chord, uint8_t root) {
+  VoicedChord fallback;
+  fallback.count = 0;
+  fallback.type = VoicingType::Close;
+  for (uint8_t i = 0; i < chord.note_count && i < 4; ++i) {
+    if (chord.intervals[i] >= 0) {
+      int raw = std::clamp(root + chord.intervals[i], (int)CHORD_LOW, (int)CHORD_HIGH);
+      fallback.pitches[fallback.count++] = static_cast<uint8_t>(raw);
+    }
+  }
+  return fallback;
+}
+
 /// @brief Add a chord note using the unified createNote() API.
 ///
 /// Uses PreferChordTones preference to find safe alternatives when collision detected.
@@ -131,7 +204,7 @@ void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick star
   }
 
   // 1. Try normal safe check first
-  if (harmony.isPitchSafe(pitch, start, duration, TrackRole::Chord)) {
+  if (harmony.isConsonantWithOtherTracks(pitch, start, duration, TrackRole::Chord)) {
     addSafeChordNote(track, harmony, start, duration, pitch, velocity);
     state.added();
     return;
@@ -150,7 +223,7 @@ void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick star
 
     // Check if this doubled pitch is actually safe
     // (it might clash with OTHER notes even though it's a unison with one)
-    if (!harmony.isPitchSafe(sounding, start, duration, TrackRole::Chord)) continue;
+    if (!harmony.isConsonantWithOtherTracks(sounding, start, duration, TrackRole::Chord)) continue;
 
     // Safe to use this doubled pitch
     NoteOptions opts;
@@ -171,8 +244,8 @@ void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick star
 
   // 3. Check minimum guarantee
   if (state.needsMore()) {
-    // Minimum not met: add note even with collision to maintain functional harmony
-    // This ensures chord has at least 2 notes (3rd+7th or root+3rd)
+    // Minimum not met: addSafeChordNote uses createNoteAndAdd with PreferChordTones,
+    // which resolves to the best non-clashing pitch via the unified note creator.
     addSafeChordNote(track, harmony, start, duration, pitch, velocity);
     state.added();
     return;
@@ -349,7 +422,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
                             std::mt19937& rng, IHarmonyContext& harmony,
                             const MidiTrack* bass_track, const MidiTrack* /*aux_track*/) {
   // bass_track is used for BassAnalysis (voicing selection)
-  // Collision avoidance is handled via HarmonyContext.isPitchSafe()
+  // Collision avoidance is handled via HarmonyContext.isConsonantWithOtherTracks()
   const auto& progression = getChordProgression(params.chord_id);
   const auto& sections = song.arrangement().sections();
 
@@ -940,9 +1013,10 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
                                        const GeneratorParams& params, std::mt19937& rng,
                                        const MidiTrack* bass_track,
                                        const VocalAnalysis& vocal_analysis,
-                                       const MidiTrack* aux_track, IHarmonyContext& harmony) {
-  // bass_track/vocal_analysis/aux_track are used for voicing selection
-  // Collision avoidance is handled via HarmonyContext.isPitchSafe()
+                                       const MidiTrack* /*aux_track*/, IHarmonyContext& harmony) {
+  // Collision avoidance is handled via isConsonantWithOtherTracks() which checks ALL registered
+  // tracks (Vocal, Aux, Bass, Motif). aux_track parameter is retained for API
+  // compatibility but no longer queried directly.
   const auto& progression = getChordProgression(params.chord_id);
   const auto& sections = song.arrangement().sections();
 
@@ -1041,16 +1115,23 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
 
       prev_extension = extension;
 
-      // Get context pitch classes for this bar
-      int vocal_pc = getVocalPitchClassAt(vocal_analysis, bar_start);
-      int aux_pc = chord_voicing::getAuxPitchClassAt(aux_track, bar_start);
+      // Collision check duration matches chord rhythm subdivision (not bar-level).
+      // This ensures tick-level precision: an 8th-note chord only checks against
+      // notes actually sounding during that 8th note, not the whole bar.
+      Tick check_duration;
+      switch (rhythm) {
+        case ChordRhythm::Whole:   check_duration = WHOLE; break;
+        case ChordRhythm::Half:    check_duration = HALF; break;
+        case ChordRhythm::Quarter: check_duration = QUARTER; break;
+        case ChordRhythm::Eighth:  check_duration = EIGHTH; break;
+      }
 
-      // Get Motif pitch classes for entire bar (chord sustains through the bar)
       Tick bar_end = bar_start + TICKS_PER_BAR;
-      std::vector<int> motif_pcs =
-          harmony.getPitchClassesFromTrackInRange(bar_start, bar_end, TrackRole::Motif);
 
-      // Get ALL bass pitch classes in this bar for collision avoidance
+      // Bass pitch mask is used for voicing *construction* (not collision avoidance).
+      // It tells generateVoicings() which bass pitch classes to avoid doubling in
+      // the voicing shape. Collision avoidance is handled by isConsonantWithOtherTracks via
+      // filterVoicingByCollision() below.
       uint16_t bass_pitch_mask = chord_voicing::buildBassPitchMask(bass_track, bar_start, bar_end);
       bool bass_has_root = true;
       if (bass_track != nullptr && !bass_track->notes().empty()) {
@@ -1082,42 +1163,26 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
       std::vector<VoicedChord> candidates =
           chord_voicing::generateVoicings(root, chord, voicing_type, bass_pitch_mask, open_subtype);
 
-      // Filter voicings for vocal/aux/bass/motif context
-      // Pass vocal_high to ensure chord doesn't exceed vocal's highest pitch
-      std::vector<VoicedChord> filtered =
-          chord_voicing::filterVoicingsForContext(candidates, vocal_pc, aux_pc, bass_pitch_mask,
-                                                  motif_pcs, vocal_analysis.highest_pitch);
+      // Filter voicings using cumulative isConsonantWithOtherTracks (all registered tracks, tick-level).
+      // This replaces the old per-track pitch-class queries which had inconsistent
+      // granularity and missed cross-track interactions.
+      std::vector<VoicedChord> filtered;
+      for (const auto& v : candidates) {
+        VoicedChord safe =
+            filterVoicingByCollision(harmony, v, bar_start, check_duration,
+                                     vocal_analysis.highest_pitch);
+        if (safe.count >= 2) {
+          filtered.push_back(safe);
+        }
+      }
 
       // Select best voicing from filtered candidates with voice leading
       VoicedChord voicing;
       if (filtered.empty()) {
-        // Fallback to simple root position, but still avoid motif clashes
-        voicing.count = 0;
-        voicing.type = VoicingType::Close;
-        for (uint8_t i = 0; i < chord.note_count && i < 4; ++i) {
-          if (chord.intervals[i] >= 0) {
-            int pitch = std::clamp(root + chord.intervals[i], (int)CHORD_LOW, (int)CHORD_HIGH);
-            int pc = pitch % 12;
-            // Skip pitch if it clashes with motif (minor/major 2nd)
-            if (!motif_pcs.empty() && chord_voicing::clashesWithPitchClasses(pc, motif_pcs)) {
-              continue;
-            }
-            voicing.pitches[voicing.count] = static_cast<uint8_t>(pitch);
-            voicing.count++;
-          }
-        }
-        // Ensure at least 2 notes for a chord
-        if (voicing.count < 2) {
-          // Desperate fallback: add notes regardless of clash
-          voicing.count = 0;
-          for (uint8_t i = 0; i < chord.note_count && i < 4 && voicing.count < 2; ++i) {
-            if (chord.intervals[i] >= 0) {
-              int pitch = std::clamp(root + chord.intervals[i], (int)CHORD_LOW, (int)CHORD_HIGH);
-              voicing.pitches[voicing.count] = static_cast<uint8_t>(pitch);
-              voicing.count++;
-            }
-          }
-        }
+        // Fallback: raw chord tones. Actual collision resolution will happen
+        // when notes are emitted via addChordNoteWithState → addSafeChordNote
+        // → createNoteAndAdd(PreferChordTones).
+        voicing = buildFallbackVoicing(chord, root);
       } else if (!has_prev) {
         // First chord: prefer middle register
         std::vector<size_t> tied_indices;
@@ -1216,14 +1281,16 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         auto dom_candidates =
             chord_voicing::generateVoicings(dom_root, dom_chord, voicing_type, bass_pitch_mask,
                                             open_subtype);
-        auto dom_filtered =
-            chord_voicing::filterVoicingsForContext(dom_candidates, vocal_pc, aux_pc, bass_pitch_mask,
-                                                    motif_pcs);
+        std::vector<VoicedChord> dom_filtered;
+        for (const auto& v : dom_candidates) {
+          VoicedChord safe =
+              filterVoicingByCollision(harmony, v, bar_start, check_duration,
+                                       vocal_analysis.highest_pitch);
+          if (safe.count >= 2) dom_filtered.push_back(safe);
+        }
         VoicedChord dom_voicing =
             dom_filtered.empty()
-                ? chord_voicing::selectVoicing(dom_root, dom_chord, prev_voicing, has_prev,
-                                               voicing_type, bass_pitch_mask, rng, open_subtype,
-                                               params.mood)
+                ? buildFallbackVoicing(dom_chord, dom_root)
                 : dom_filtered[0];
 
         generateChordBar(track, bar_start, dom_voicing, rhythm, section.type, params.mood, harmony);
@@ -1244,14 +1311,16 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         auto ii_candidates =
             chord_voicing::generateVoicings(ii_root, ii_chord, voicing_type, bass_pitch_mask,
                                             open_subtype);
-        auto ii_filtered =
-            chord_voicing::filterVoicingsForContext(ii_candidates, vocal_pc, aux_pc, bass_pitch_mask,
-                                                    motif_pcs);
+        std::vector<VoicedChord> ii_filtered;
+        for (const auto& v : ii_candidates) {
+          VoicedChord safe =
+              filterVoicingByCollision(harmony, v, bar_start, check_duration,
+                                       vocal_analysis.highest_pitch);
+          if (safe.count >= 2) ii_filtered.push_back(safe);
+        }
         VoicedChord ii_voicing =
             ii_filtered.empty()
-                ? chord_voicing::selectVoicing(ii_root, ii_chord, prev_voicing, has_prev,
-                                               voicing_type, bass_pitch_mask, rng, open_subtype,
-                                               params.mood)
+                ? buildFallbackVoicing(ii_chord, ii_root)
                 : ii_filtered[0];
 
         generateChordBar(track, bar_start, ii_voicing, rhythm, section.type, params.mood, harmony);
@@ -1459,7 +1528,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
             int lower_pitch = static_cast<int>(voicing.pitches[idx]) - 12;
             if (lower_pitch >= CHORD_LOW && lower_pitch <= CHORD_HIGH) {
               // Skip if this optional doubling would clash
-              if (harmony.isPitchSafe(static_cast<uint8_t>(lower_pitch), bar_start, WHOLE, TrackRole::Chord)) {
+              if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(lower_pitch), bar_start, WHOLE, TrackRole::Chord)) {
                 addSafeChordNote(track, harmony, bar_start, WHOLE, static_cast<uint8_t>(lower_pitch), octave_vel);
               }
             }
@@ -1475,7 +1544,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
           int low_root = root_pitch - 12;
           if (low_root >= CHORD_LOW && low_root <= CHORD_HIGH) {
             // Skip if this optional doubling would clash
-            if (harmony.isPitchSafe(static_cast<uint8_t>(low_root), bar_start, WHOLE, TrackRole::Chord)) {
+            if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(low_root), bar_start, WHOLE, TrackRole::Chord)) {
               addSafeChordNote(track, harmony, bar_start, WHOLE, static_cast<uint8_t>(low_root), doubling_vel);
             }
           }

@@ -1,33 +1,23 @@
 /**
  * @file bass_coordination.h
- * @brief Bass and track collision avoidance for chord voicing.
+ * @brief Bass pitch mask utilities for chord voicing construction.
  *
- * Provides functions to avoid dissonant clashes between chord voicings
- * and bass/aux/vocal/motif tracks.
+ * Bass pitch mask tells generateVoicings() which bass pitch classes exist,
+ * so voicing shapes can avoid doubling bass notes. This is a voicing
+ * *construction* concern (not collision avoidance).
+ *
+ * Collision avoidance (checking for dissonant intervals with ALL tracks)
+ * is handled by IHarmonyContext::isConsonantWithOtherTracks(). See chord.cpp.
  */
 
 #ifndef MIDISKETCH_TRACK_CHORD_BASS_COORDINATION_H
 #define MIDISKETCH_TRACK_CHORD_BASS_COORDINATION_H
 
-#include <vector>
-
 #include "core/midi_track.h"
-#include "core/types.h"
 #include "track/chord/voicing_generator.h"
 
 namespace midisketch {
 namespace chord_voicing {
-
-/// @name Pitch Class Utilities
-/// @{
-
-/// Get Aux pitch class at a specific tick (returns -1 if no note sounding).
-/// @param aux_track Pointer to aux track (can be nullptr)
-/// @param tick Tick position to check
-/// @return Pitch class (0-11) or -1 if no note
-int getAuxPitchClassAt(const MidiTrack* aux_track, Tick tick);
-
-/// @}
 
 /// @name Bass Pitch Mask Utilities
 /// @{
@@ -70,37 +60,10 @@ VoicedChord removeClashingPitch(const VoicedChord& v, uint16_t bass_pitch_mask);
 
 /// @}
 
-/// @name Multi-Track Clash Detection
-/// @{
-
-/// Check if a pitch class creates a minor/major 2nd interval with any of the given pitch classes.
-/// @param pc Pitch class to check (0-11)
-/// @param pitch_classes Vector of pitch classes to check against
-/// @return True if clash detected
-bool clashesWithPitchClasses(int pc, const std::vector<int>& pitch_classes);
-
-/// @}
-
-/// @name Voicing Filtering
-/// @{
-
-/// Filter voicings to avoid doubling vocal pitch class and clashing with Aux/Motif.
-/// Also ensures chord voicing doesn't exceed vocal's highest pitch (plus small margin).
-/// Returns filtered voicings, or original candidates if all are filtered.
-/// @param candidates Vector of candidate voicings
-/// @param vocal_pc Vocal pitch class (0-11), or -1 if unknown
-/// @param aux_pc Aux pitch class (0-11), or -1 if unknown
-/// @param bass_pitch_mask Bitmask of bass pitch classes, or 0 if unknown
-/// @param motif_pcs Vector of motif pitch classes (can be empty)
-/// @param vocal_high Highest vocal pitch (MIDI note), or 0 to disable pitch ceiling
-/// @return Filtered voicings
-std::vector<VoicedChord> filterVoicingsForContext(
-    const std::vector<VoicedChord>& candidates,
-    int vocal_pc, int aux_pc, uint16_t bass_pitch_mask,
-    const std::vector<int>& motif_pcs = {},
-    uint8_t vocal_high = 0);
-
-/// @}
+// NOTE: Per-track collision detection APIs (filterVoicingsForContext, clashesWithPitchClasses,
+// getAuxPitchClassAt) have been removed. Chord voicing collision avoidance is now handled
+// by IHarmonyContext::isConsonantWithOtherTracks(), which checks ALL registered tracks at tick-level
+// granularity. See wouldClashWithRegisteredTracks() in chord.cpp.
 
 }  // namespace chord_voicing
 }  // namespace midisketch

@@ -424,7 +424,7 @@ void AuxGenerator::resolvePitchClashes(std::vector<NoteEvent>& notes, IHarmonyCo
     Tick note_end = note.start_tick + note.duration;
 
     // Check if this note clashes with other tracks
-    if (!harmony.isPitchSafe(note.note, note.start_tick, note.duration, TrackRole::Aux)) {
+    if (!harmony.isConsonantWithOtherTracks(note.note, note.start_tick, note.duration, TrackRole::Aux)) {
       // Check if note crosses a chord boundary - need to consider both chords
       Tick chord_change = harmony.getNextChordChangeTick(note.start_tick);
       bool crosses_chord =
@@ -465,7 +465,7 @@ void AuxGenerator::resolvePitchClashes(std::vector<NoteEvent>& notes, IHarmonyCo
           if (candidate < 36 || candidate > 96) continue;
 
           // Check if this candidate is safe (use trimmed duration if applicable)
-          if (harmony.isPitchSafe(static_cast<uint8_t>(candidate), note.start_tick, note.duration,
+          if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), note.start_tick, note.duration,
                                   TrackRole::Aux)) {
             int dist = std::abs(candidate - static_cast<int>(note.note));
             if (dist < best_dist) {
@@ -987,7 +987,7 @@ std::vector<Tick> AuxGenerator::findBreathPointsInRange(
   return result;
 }
 
-bool AuxGenerator::isPitchSafe(uint8_t pitch, Tick start, Tick duration,
+bool AuxGenerator::isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration,
                                 const std::vector<NoteEvent>* main_melody,
                                 const IHarmonyContext& harmony, float dissonance_tolerance) {
   // Check against main melody
@@ -1021,7 +1021,7 @@ bool AuxGenerator::isPitchSafe(uint8_t pitch, Tick start, Tick duration,
   }
 
   // Also check against HarmonyContext
-  return harmony.isPitchSafe(pitch, start, duration, TrackRole::Aux);
+  return harmony.isConsonantWithOtherTracks(pitch, start, duration, TrackRole::Aux);
 }
 
 uint8_t AuxGenerator::resolveAuxPitch(uint8_t desired, Tick start, Tick duration,
@@ -1054,7 +1054,7 @@ uint8_t AuxGenerator::resolveAuxPitch(uint8_t desired, Tick start, Tick duration
         int candidate = (octave + oct_offset) * 12 + pc;
         if (candidate < low || candidate > high) continue;
 
-        if (isPitchSafe(static_cast<uint8_t>(candidate), start, duration, main_melody, harmony,
+        if (isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), start, duration, main_melody, harmony,
                         dissonance_tolerance)) {
           int dist = std::abs(candidate - static_cast<int>(desired));
           if (dist < best_dist) {
@@ -1072,7 +1072,7 @@ uint8_t AuxGenerator::resolveAuxPitch(uint8_t desired, Tick start, Tick duration
   }
 
   // Weak beats or no safe chord tone found: check if desired is safe
-  if (isPitchSafe(desired, start, duration, main_melody, harmony, dissonance_tolerance)) {
+  if (isConsonantWithOtherTracks(desired, start, duration, main_melody, harmony, dissonance_tolerance)) {
     return desired;
   }
 
@@ -1102,7 +1102,7 @@ uint8_t AuxGenerator::resolveAuxPitch(uint8_t desired, Tick start, Tick duration
       }
 
       // Track nearest safe chord tone
-      if (isPitchSafe(static_cast<uint8_t>(candidate), start, duration, main_melody, harmony,
+      if (isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), start, duration, main_melody, harmony,
                       dissonance_tolerance)) {
         if (dist < best_safe_dist) {
           best_safe_dist = dist;

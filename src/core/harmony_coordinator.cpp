@@ -68,9 +68,9 @@ void HarmonyCoordinator::registerTrack(const MidiTrack& track, TrackRole role) {
   base_context_.registerTrack(track, role);
 }
 
-bool HarmonyCoordinator::isPitchSafe(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
+bool HarmonyCoordinator::isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
                                       bool is_weak_beat) const {
-  return base_context_.isPitchSafe(pitch, start, duration, exclude, is_weak_beat);
+  return base_context_.isConsonantWithOtherTracks(pitch, start, duration, exclude, is_weak_beat);
 }
 
 CollisionInfo HarmonyCoordinator::getCollisionInfo(uint8_t pitch, Tick start, Tick duration,
@@ -251,7 +251,7 @@ SafeNoteOptions HarmonyCoordinator::getSafeNoteOptions(Tick start, Tick duration
     candidate.is_scale_tone = scale_tones.count(pitch % 12) > 0;
 
     // Check if pitch is safe
-    bool safe = isPitchSafe(pitch, start, duration, track);
+    bool safe = isConsonantWithOtherTracks(pitch, start, duration, track);
     if (safe) {
       candidate.safety_score = 1.0f;
     } else {
@@ -405,8 +405,8 @@ std::vector<uint8_t> HarmonyCoordinator::getRegisteredPitchesInRange(Tick start,
 
 bool HarmonyCoordinator::hasCollisionWith(uint8_t pitch, Tick start, Tick end,
                                            TrackRole exclude) const {
-  // Use base context's isPitchSafe
-  return !isPitchSafe(pitch, start, end - start, exclude);
+  // Use base context's isConsonantWithOtherTracks
+  return !isConsonantWithOtherTracks(pitch, start, end - start, exclude);
 }
 
 }  // namespace midisketch

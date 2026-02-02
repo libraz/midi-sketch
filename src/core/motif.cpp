@@ -495,7 +495,7 @@ std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_
 
       // Octave doubling for climactic impact - only add if within range AND safe
       int octave_pitch = final_pitch + 12;
-      if (octave_pitch <= 108 && harmony.isPitchSafe(static_cast<uint8_t>(octave_pitch), note_start,
+      if (octave_pitch <= 108 && harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(octave_pitch), note_start,
                                                      duration, track)) {
         auto octave_note = createNoteWithoutHarmony(note_start, duration,
                                                     static_cast<uint8_t>(octave_pitch),
