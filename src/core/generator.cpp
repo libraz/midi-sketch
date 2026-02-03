@@ -403,6 +403,7 @@ void Generator::applyPostProcessingEffects() {
   PostProcessor::fixChordVocalClashes(song_.chord(), song_.vocal());
   PostProcessor::fixAuxVocalClashes(song_.aux(), song_.vocal());
   PostProcessor::fixBassVocalClashes(song_.bass(), song_.vocal());
+  PostProcessor::fixMotifVocalClashes(song_.motif(), song_.vocal(), *harmony_context_);
   PostProcessor::fixInterTrackClashes(song_.chord(), song_.bass(), song_.motif());
 
   // Final cleanup: fix any remaining vocal overlaps

@@ -1158,10 +1158,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
                                                 prev_hook_pitch, ctx.vocal_low, ctx.vocal_high,
                                                 true);  // disable_singability=true for hooks
 
-      // Apply consecutive same note limit with J-POP probability curve
-      melody::applyConsecutiveSameNoteConstraint(
-          pitch, consecutive_tracker, prev_hook_pitch, note_chord_degree,
-          ctx.vocal_low, ctx.vocal_high, kMaxMelodicInterval, rng);
+      // NOTE: applyConsecutiveSameNoteConstraint moved after selectBestCandidate
+      // to ensure the final pitch (after collision avoidance) is checked
 
       // Get duration from rhythm pattern (in eighths, convert to ticks)
       // Use rhythm grid from template for triplet support
@@ -1237,7 +1235,14 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       hints.tessitura_center = ctx.tessitura.center;
       hints.section_type = static_cast<int8_t>(ctx.section_type);
       hints.sub_phrase_index = static_cast<int8_t>(ctx.sub_phrase_index);
+      hints.same_pitch_streak = static_cast<int8_t>(consecutive_tracker.count);  // Pass streak
       pitch = selectBestCandidate(candidates, static_cast<uint8_t>(pitch), hints);
+
+      // Apply consecutive same note limit AFTER final pitch selection
+      // This ensures we catch cases where collision avoidance re-selected the same pitch
+      melody::applyConsecutiveSameNoteConstraint(
+          pitch, consecutive_tracker, prev_hook_pitch, note_chord_degree,
+          ctx.vocal_low, ctx.vocal_high, kMaxMelodicInterval, rng);
 
       NoteEvent hook_note = createNoteWithoutHarmony(
           current_tick, final_duration, static_cast<uint8_t>(pitch), final_velocity);
@@ -1562,7 +1567,7 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
 uint8_t MelodyDesigner::selectPitchForLockedRhythmEnhanced(
     uint8_t prev_pitch, int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
     float phrase_position, int direction_inertia, size_t note_index, std::mt19937& rng,
-    SectionType section_type, VocalAttitude vocal_attitude) {
+    SectionType section_type, VocalAttitude vocal_attitude, int same_pitch_streak) {
   // Build context for enhanced selection
   LockedRhythmContext ctx;
   ctx.phrase_position = phrase_position;
@@ -1571,6 +1576,7 @@ uint8_t MelodyDesigner::selectPitchForLockedRhythmEnhanced(
   ctx.tessitura_center = (vocal_low + vocal_high) / 2;
   ctx.section_type = section_type;
   ctx.vocal_attitude = vocal_attitude;
+  ctx.same_pitch_streak = same_pitch_streak;
 
   // Use GlobalMotif if available
   if (cached_global_motif_.has_value() && cached_global_motif_->isValid()) {

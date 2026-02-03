@@ -45,6 +45,7 @@ std::vector<RhythmNote> generatePhraseRhythmImpl(
 /// - GlobalMotif intervals for song-wide unity
 /// - Section type for context-aware thresholds
 /// - Vocal attitude for tension note allowance
+/// - Same pitch streak for consecutive note penalty
 struct LockedRhythmContext {
   float phrase_position;              ///< Position within phrase (0.0-1.0)
   int direction_inertia;              ///< Accumulated direction momentum (-3 to +3)
@@ -54,6 +55,7 @@ struct LockedRhythmContext {
   uint8_t tessitura_center;           ///< Center of comfortable singing range
   SectionType section_type = SectionType::A;  ///< Section type for direction bias thresholds
   VocalAttitude vocal_attitude = VocalAttitude::Clean;  ///< Vocal attitude for tension allowance
+  int same_pitch_streak = 0;          ///< Consecutive same pitch counter (0 = first note)
 };
 
 /// @brief Enhanced pitch selection for locked rhythm with melodic quality improvements.

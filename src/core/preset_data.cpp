@@ -1349,8 +1349,8 @@ SongConfigError validateSongConfig(const SongConfig& config) {
     return SongConfigError::InvalidArpeggioSpeed;
   }
 
-  // Validate vocal style (0-12)
-  if (static_cast<uint8_t>(config.vocal_style) > 12) {
+  // Validate vocal style (0-13)
+  if (static_cast<uint8_t>(config.vocal_style) > 13) {
     return SongConfigError::InvalidVocalStyle;
   }
 

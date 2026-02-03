@@ -401,6 +401,7 @@ class MelodyDesigner {
    * 1. Direction bias based on phrase position (ascending start, resolving end)
    * 2. Direction inertia to maintain melodic momentum
    * 3. GlobalMotif interval pattern reference for song-wide unity
+   * 4. Progressive penalty for consecutive same-pitch notes
    *
    * @param prev_pitch Previous pitch for melodic continuity
    * @param chord_degree Current chord degree (0-6)
@@ -412,6 +413,7 @@ class MelodyDesigner {
    * @param rng Random number generator
    * @param section_type Section type for context-aware thresholds
    * @param vocal_attitude Vocal attitude for tension allowance
+   * @param same_pitch_streak Consecutive same pitch counter (0 = first note)
    * @return Selected pitch (MIDI note number)
    */
   uint8_t selectPitchForLockedRhythmEnhanced(uint8_t prev_pitch, int8_t chord_degree,
@@ -419,7 +421,8 @@ class MelodyDesigner {
                                               float phrase_position, int direction_inertia,
                                               size_t note_index, std::mt19937& rng,
                                               SectionType section_type = SectionType::A,
-                                              VocalAttitude vocal_attitude = VocalAttitude::Clean);
+                                              VocalAttitude vocal_attitude = VocalAttitude::Clean,
+                                              int same_pitch_streak = 0);
 
  private:
   // Insert a leading tone at section boundary for smooth transition.

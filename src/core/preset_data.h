@@ -27,8 +27,8 @@ constexpr uint8_t CHORD_COUNT = 22;
 // Number of available style presets
 constexpr uint8_t STYLE_PRESET_COUNT = 17;
 
-// Number of available vocal style presets (Auto + 12 styles)
-constexpr uint8_t VOCAL_STYLE_PRESET_COUNT = 13;
+// Number of available vocal style presets (Auto + 13 styles)
+constexpr uint8_t VOCAL_STYLE_PRESET_COUNT = 14;
 
 // Drum pattern style categories
 enum class DrumStyle : uint8_t {

@@ -192,6 +192,7 @@ struct PitchSelectionHints {
   uint8_t tessitura_center = 67;   ///< Tessitura center (default G4)
   int8_t section_type = -1;        ///< SectionType as int (-1 = unknown)
   int8_t sub_phrase_index = -1;    ///< Sub-phrase position 0-3 (-1 = unknown)
+  int8_t same_pitch_streak = 0;    ///< Consecutive same pitch count (0=first note)
 };
 
 /**

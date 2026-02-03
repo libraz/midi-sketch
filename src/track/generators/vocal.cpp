@@ -170,6 +170,101 @@ void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes, const Gener
   }
 }
 
+/// @brief Break up excessive consecutive same-pitch notes.
+/// @param all_notes Notes to process (modified in place)
+/// @param harmony Harmony context for finding safe alternative pitches
+/// @param vocal_low Minimum vocal pitch
+/// @param vocal_high Maximum vocal pitch
+/// @param max_consecutive Maximum allowed consecutive same pitch (default: 4)
+///
+/// When more than max_consecutive notes have the same pitch, this function
+/// alternates some notes to nearby chord tones to create melodic interest.
+/// This is especially important for RhythmSync where collision avoidance
+/// can cause long runs of the same pitch.
+void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmonyContext& harmony,
+                                uint8_t vocal_low, uint8_t vocal_high, int max_consecutive = 4) {
+  if (all_notes.size() < static_cast<size_t>(max_consecutive + 1)) return;
+
+  // Sort by time first
+  std::sort(all_notes.begin(), all_notes.end(),
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+
+  size_t streak_start = 0;
+  int streak_count = 1;
+  uint8_t streak_pitch = all_notes[0].note;
+
+  for (size_t i = 1; i <= all_notes.size(); ++i) {
+    bool streak_continues = (i < all_notes.size() && all_notes[i].note == streak_pitch);
+
+    if (streak_continues) {
+      streak_count++;
+    }
+
+    // Process streak when it ends or at the last note
+    if (!streak_continues || i == all_notes.size()) {
+      if (streak_count > max_consecutive) {
+        // Break up the streak: modify every other note starting from position max_consecutive
+        for (size_t j = streak_start + static_cast<size_t>(max_consecutive); j < i; j += 2) {
+          Tick tick = all_notes[j].start_tick;
+          Tick duration = all_notes[j].duration;
+
+          // Find nearby chord tones as alternatives
+          auto chord_tones = harmony.getChordTonesAt(tick);
+          if (chord_tones.empty()) continue;
+
+          // Try to find a chord tone ±3 or ±4 semitones from streak_pitch
+          int best_alt = -1;
+          int best_dist = 100;
+          for (int interval : {3, -3, 4, -4, 5, -5, 7, -7}) {
+            int candidate = static_cast<int>(streak_pitch) + interval;
+            if (candidate < static_cast<int>(vocal_low) || candidate > static_cast<int>(vocal_high)) continue;
+
+            // Check if it's a chord tone or at least in scale
+            int pc = candidate % 12;
+            bool is_chord_tone = std::find(chord_tones.begin(), chord_tones.end(), pc) != chord_tones.end();
+            bool is_scale = (pc == 0 || pc == 2 || pc == 4 || pc == 5 || pc == 7 || pc == 9 || pc == 11);
+
+            if (is_chord_tone) {
+              // Verify no harsh collision
+              if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), tick, duration, TrackRole::Vocal)) {
+                int dist = std::abs(interval);
+                if (dist < best_dist) {
+                  best_dist = dist;
+                  best_alt = candidate;
+                }
+              }
+            } else if (is_scale && best_alt < 0) {
+              // Fallback to scale tone if no safe chord tone found
+              if (harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), tick, duration, TrackRole::Vocal)) {
+                best_alt = candidate;
+              }
+            }
+          }
+
+          if (best_alt >= 0) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+            uint8_t old_pitch = all_notes[j].note;
+#endif
+            all_notes[j].note = static_cast<uint8_t>(best_alt);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+            all_notes[j].prov_original_pitch = old_pitch;
+            all_notes[j].addTransformStep(TransformStepType::CollisionAvoid, old_pitch,
+                                          all_notes[j].note, streak_pitch, 0);
+#endif
+          }
+        }
+      }
+
+      // Reset for next potential streak
+      if (i < all_notes.size()) {
+        streak_start = i;
+        streak_count = 1;
+        streak_pitch = all_notes[i].note;
+      }
+    }
+  }
+}
+
 /// @brief Apply pitch bend expressions to vocal track.
 /// @param track Track to add pitch bends to
 /// @param all_notes All notes for pitch bend application
@@ -388,6 +483,7 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
 
   uint8_t prev_pitch = (ctx.vocal_low + ctx.vocal_high) / 2;  // Start at center
   int direction_inertia = 0;  // Track melodic direction momentum
+  int same_pitch_streak = 0;  // Track consecutive same pitch for progressive penalty
 
   for (size_t i = 0; i < onsets.size(); ++i) {
     float beat = onsets[i];
@@ -404,45 +500,92 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
     Tick tick = section.start_tick + static_cast<Tick>(beat * TICKS_PER_BEAT);
     Tick duration = static_cast<Tick>(dur * TICKS_PER_BEAT);
 
+    // Prevent overlap with next note (legato is OK, overlap is not)
+    // This ensures singability: a vocalist cannot sing two notes at once
+    if (i + 1 < onsets.size()) {
+      Tick next_start = section.start_tick + static_cast<Tick>(onsets[i + 1] * TICKS_PER_BEAT);
+      if (tick + duration > next_start) {
+        duration = next_start - tick;  // Clamp to legato (no gap, no overlap)
+      }
+    }
+
     // Get chord at this position
     int8_t chord_degree = harmony.getChordDegreeAt(tick);
 
     // Calculate phrase position for direction bias
     float phrase_position = static_cast<float>(i) / onsets.size();
 
-    // Use enhanced pitch selection with melodic quality improvements
-    // Pass section type and vocal attitude for context-aware pitch selection
-    uint8_t pitch = designer.selectPitchForLockedRhythmEnhanced(
-        prev_pitch, chord_degree, ctx.vocal_low, ctx.vocal_high,
-        phrase_position, direction_inertia, i, rng,
-        ctx.section_type, ctx.vocal_attitude);
-
     // Apply pitch safety check to avoid collisions with other tracks
-    auto candidates = getSafePitchCandidates(harmony, pitch, tick, duration, TrackRole::Vocal,
-                                              ctx.vocal_low, ctx.vocal_high);
+    // Use prev_pitch as the base to get candidates centered on current melodic position.
+    // This ensures selectBestCandidate can compare same-pitch vs movement options.
+    auto candidates = getSafePitchCandidates(harmony, prev_pitch, tick, duration, TrackRole::Vocal,
+                                              ctx.vocal_low, ctx.vocal_high,
+                                              PitchPreference::Default, 10);  // More candidates
+
     if (candidates.empty()) {
       continue;  // No safe pitch available for this onset
     }
-    // Select best candidate with preference for harmonic stability
-    PitchSelectionHints hints;
-    hints.prev_pitch = static_cast<int8_t>(prev_pitch);
-    hints.note_duration = duration;
-    hints.tessitura_center = ctx.tessitura.center;
-    // Propagate direction from inertia
-    if (direction_inertia > 0) hints.contour_direction = 1;
-    else if (direction_inertia < 0) hints.contour_direction = -1;
-    uint8_t safe_pitch = selectBestCandidate(candidates, pitch, hints);
+    // Select pitch with probabilistic element to ensure variety across candidates.
+    // For RhythmSync, consecutive same pitch is problematic so we enforce movement
+    // when streak reaches threshold.
+    uint8_t safe_pitch;
+
+    // Force movement after 3 consecutive same pitches
+    if (same_pitch_streak >= 3 && candidates.size() > 1) {
+      // Filter out prev_pitch from candidates and pick randomly
+      std::vector<uint8_t> different_pitches;
+      for (const auto& c : candidates) {
+        if (c.pitch != prev_pitch) {
+          different_pitches.push_back(c.pitch);
+        }
+      }
+      if (!different_pitches.empty()) {
+        std::uniform_int_distribution<size_t> dist(0, different_pitches.size() - 1);
+        safe_pitch = different_pitches[dist(rng)];
+      } else {
+        // Fallback: use selectBestCandidate
+        PitchSelectionHints hints;
+        hints.prev_pitch = static_cast<int8_t>(prev_pitch);
+        hints.note_duration = duration;
+        hints.tessitura_center = ctx.tessitura.center;
+        hints.same_pitch_streak = static_cast<int8_t>(same_pitch_streak);
+        if (direction_inertia > 0) hints.contour_direction = 1;
+        else if (direction_inertia < 0) hints.contour_direction = -1;
+        safe_pitch = selectBestCandidate(candidates, prev_pitch, hints);
+      }
+    } else {
+      // Normal selection with probabilistic weighting for variety
+      PitchSelectionHints hints;
+      hints.prev_pitch = static_cast<int8_t>(prev_pitch);
+      hints.note_duration = duration;
+      hints.tessitura_center = ctx.tessitura.center;
+      hints.same_pitch_streak = static_cast<int8_t>(same_pitch_streak);
+      if (direction_inertia > 0) hints.contour_direction = 1;
+      else if (direction_inertia < 0) hints.contour_direction = -1;
+
+      // Add randomness: 70% best candidate, 30% random from top 3
+      std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
+      if (candidates.size() >= 3 && prob_dist(rng) < 0.3f) {
+        std::uniform_int_distribution<size_t> idx_dist(0, std::min(static_cast<size_t>(2), candidates.size() - 1));
+        safe_pitch = candidates[idx_dist(rng)].pitch;
+      } else {
+        safe_pitch = selectBestCandidate(candidates, prev_pitch, hints);
+      }
+    }
 
     // Update direction inertia based on movement
     int movement = static_cast<int>(safe_pitch) - static_cast<int>(prev_pitch);
     if (movement > 0) {
       direction_inertia = std::min(direction_inertia + 1, 3);
+      same_pitch_streak = 0;  // Reset streak on pitch change
     } else if (movement < 0) {
       direction_inertia = std::max(direction_inertia - 1, -3);
+      same_pitch_streak = 0;  // Reset streak on pitch change
     } else {
       // Same pitch - decay inertia toward neutral
       if (direction_inertia > 0) direction_inertia--;
       if (direction_inertia < 0) direction_inertia++;
+      same_pitch_streak++;  // Increment consecutive same pitch counter
     }
 
     // Calculate velocity based on beat position
@@ -1029,8 +1172,11 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
   // Vocal-friendly post-processing:
   // Merge same-pitch notes only with very short gaps (64th note = ~30 ticks).
   // Larger gaps preserve intentional articulation (staccato, rhythmic patterns).
-  constexpr Tick kMergeMaxGap = 30;
-  mergeSamePitchNotes(all_notes, kMergeMaxGap);
+  // SKIP for RhythmSync paradigm to preserve the locked rhythm pattern
+  if (params.paradigm != GenerationParadigm::RhythmSync) {
+    constexpr Tick kMergeMaxGap = 30;
+    mergeSamePitchNotes(all_notes, kMergeMaxGap);
+  }
 
   // NOTE: resolveIsolatedShortNotes() removed - short notes are often
   // intentional articulation (staccato bursts, rhythmic motifs).
@@ -1040,6 +1186,12 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
 
   // Enforce pitch constraints (interval limits and scale enforcement)
   enforceVocalPitchConstraints(all_notes, params, harmony);
+
+  // Break up excessive consecutive same-pitch notes (RhythmSync compatibility)
+  // This addresses monotonous melody issues in RhythmSync paradigm where
+  // collision avoidance can cause long runs of the same pitch.
+  // max_consecutive=3 means 4th note onwards gets alternated for melodic interest.
+  breakConsecutiveSamePitch(all_notes, harmony, effective_vocal_low, effective_vocal_high, 3);
 
   // Final overlap check - ensures no overlaps after all processing
   removeOverlaps(all_notes, min_note_duration);

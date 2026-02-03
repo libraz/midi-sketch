@@ -405,7 +405,10 @@ float MelodyEvaluator::calcCatchiness(const std::vector<NoteEvent>& notes) {
   // These are patterns that tend to be memorable in pop music
 
   // Check for pitch repetition (Repeat pattern)
-  // Graduated bonus: longer consecutive same-pitch runs = higher catchiness (Ice Cream style)
+  // Graduated bonus for moderate repetition (Ice Cream style), but penalize excessive repetition.
+  // Pop music: 2-3 consecutive same pitch = catchy rhythmic figure
+  //            4 = acceptable maximum
+  //            5+ = monotonous, should be penalized
   int consecutive_same = 0;
   int max_consecutive_same = 0;
   for (size_t i = 1; i < notes.size(); ++i) {
@@ -416,16 +419,16 @@ float MelodyEvaluator::calcCatchiness(const std::vector<NoteEvent>& notes) {
       consecutive_same = 0;
     }
   }
-  // Graduated repeat bonus: 2音:0.2, 3音:0.4, 4音:0.6, 5+音:1.0
+  // Graduated repeat bonus/penalty: 2音:0.2, 3音:0.4, 4音:0.3, 5+音:-0.3 (penalty)
   float repeat_bonus = 0.0f;
   if (max_consecutive_same >= 5) {
-    repeat_bonus = 1.0f;
+    repeat_bonus = -0.3f;  // PENALTY for excessive repetition (5+ consecutive)
   } else if (max_consecutive_same >= 4) {
-    repeat_bonus = 0.6f;
+    repeat_bonus = 0.3f;   // Reduced bonus for 4 (borderline)
   } else if (max_consecutive_same >= 3) {
-    repeat_bonus = 0.4f;
+    repeat_bonus = 0.4f;   // Good for catchy hook
   } else if (max_consecutive_same >= 2) {
-    repeat_bonus = 0.2f;
+    repeat_bonus = 0.2f;   // Mild bonus
   }
 
   // Check for AscendDrop (rising then falling)

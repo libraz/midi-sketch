@@ -754,7 +754,7 @@ TEST(JsonRoundTripTest, BackwardCompatibility) {
   EXPECT_EQ(restored.chord_id, 0);
   EXPECT_EQ(restored.vocal_low, 60);
   EXPECT_EQ(restored.vocal_high, 79);
-  EXPECT_EQ(restored.humanize, true);  // default
+  EXPECT_EQ(restored.humanize, false);  // default (changed from true)
   EXPECT_FLOAT_EQ(restored.humanize_timing, 0.4f);
 
   // Nested structures should have defaults

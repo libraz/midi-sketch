@@ -151,14 +151,16 @@ export function allocSongConfig(m: EmscriptenModule, config: SongConfig): number
   view.setUint8(ptr + 17, config.arpeggioGate ?? 80);
 
   // Vocal settings (offset 18-20)
-  view.setUint8(ptr + 18, config.vocalLow ?? 55);
-  view.setUint8(ptr + 19, config.vocalHigh ?? 74);
+  // NOTE: Default values MUST match C++ createDefaultSongConfig() in preset_data.cpp
+  view.setUint8(ptr + 18, config.vocalLow ?? 60); // C4
+  view.setUint8(ptr + 19, config.vocalHigh ?? 79); // G5
   view.setUint8(ptr + 20, config.skipVocal ? 1 : 0);
 
   // Humanization (offset 21-23)
+  // NOTE: Default values MUST match C++ - humanize is false by default
   view.setUint8(ptr + 21, config.humanize ? 1 : 0);
-  view.setUint8(ptr + 22, config.humanizeTiming ?? 50);
-  view.setUint8(ptr + 23, config.humanizeVelocity ?? 50);
+  view.setUint8(ptr + 22, config.humanizeTiming ?? 0);
+  view.setUint8(ptr + 23, config.humanizeVelocity ?? 0);
 
   // Chord extensions (offset 24-31)
   view.setUint8(ptr + 24, config.chordExtSus ? 1 : 0);
@@ -184,12 +186,13 @@ export function allocSongConfig(m: EmscriptenModule, config: SongConfig): number
   view.setInt8(ptr + 37, config.modulationSemitones ?? 2);
 
   // SE/Call settings (offset 38-43)
+  // NOTE: Default values MUST match C++ - callNotesEnabled defaults to false
   view.setUint8(ptr + 38, config.seEnabled !== false ? 1 : 0);
   view.setUint8(ptr + 39, config.callEnabled ? 1 : 0);
-  view.setUint8(ptr + 40, config.callNotesEnabled !== false ? 1 : 0);
+  view.setUint8(ptr + 40, config.callNotesEnabled ? 1 : 0);
   view.setUint8(ptr + 41, config.introChant ?? 0);
   view.setUint8(ptr + 42, config.mixPattern ?? 0);
-  view.setUint8(ptr + 43, config.callDensity ?? 2);
+  view.setUint8(ptr + 43, config.callDensity ?? 0);
 
   // Vocal style settings (offset 44-45)
   view.setUint8(ptr + 44, config.vocalStyle ?? 0);

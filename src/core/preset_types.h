@@ -256,7 +256,7 @@ struct SongConfig {
   ArrangementGrowth arrangement_growth = ArrangementGrowth::LayerAdd;
 
   /// Humanization
-  bool humanize = true;
+  bool humanize = false;
   float humanize_timing = 0.4f;
   float humanize_velocity = 0.3f;
 
@@ -331,7 +331,7 @@ struct GeneratorParams {
   ArpeggioParams arpeggio;        ///< Arpeggio configuration
 
   /// Humanization options
-  bool humanize = true;            ///< Enable timing/velocity humanization
+  bool humanize = false;           ///< Enable timing/velocity humanization
   float humanize_timing = 0.4f;    ///< Timing variation amount (0.0-1.0)
   float humanize_velocity = 0.3f;  ///< Velocity variation amount (0.0-1.0)
 
@@ -474,7 +474,7 @@ struct GeneratorParams {
     composition_style = static_cast<CompositionStyle>(p.getInt("composition_style", 0));
     arrangement_growth = static_cast<ArrangementGrowth>(p.getInt("arrangement_growth", 0));
     arpeggio_enabled = p.getBool("arpeggio_enabled", false);
-    humanize = p.getBool("humanize", true);
+    humanize = p.getBool("humanize", false);
     humanize_timing = p.getFloat("humanize_timing", 0.4f);
     humanize_velocity = p.getFloat("humanize_velocity", 0.3f);
     vocal_attitude = static_cast<VocalAttitude>(p.getInt("vocal_attitude", 0));

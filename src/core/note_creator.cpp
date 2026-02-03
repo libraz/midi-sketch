@@ -511,9 +511,12 @@ std::vector<PitchCandidate> getSafePitchCandidates(
     auto sounding = harmony.getSoundingPitches(start, start + duration, role);
     for (uint8_t sounding_pitch : sounding) {
       if (sounding_pitch < range_low || sounding_pitch > range_high) continue;
-      // Prefer pitches closer to desired (skip if more than an octave away)
+      // Prefer pitches closer to desired
+      // Vocal: allow up to 2 octaves for melodic flexibility (RhythmSync compatibility)
+      // Other tracks: 1 octave limit for tighter voicing
       int dist = std::abs(static_cast<int>(sounding_pitch) - static_cast<int>(desired_pitch));
-      if (dist > 12) continue;
+      int max_dist = (role == TrackRole::Vocal) ? 24 : 12;
+      if (dist > max_dist) continue;
       tryAddCandidate(sounding_pitch, CollisionAvoidStrategy::ActualSounding);
     }
   }
@@ -598,6 +601,63 @@ std::vector<PitchCandidate> getSafePitchCandidates(
         int pitch = static_cast<int>(desired_pitch) + sign * dist;
         if (pitch >= static_cast<int>(range_low) && pitch <= static_cast<int>(range_high)) {
           tryAddCandidate(static_cast<uint8_t>(pitch), CollisionAvoidStrategy::ExhaustiveSearch);
+        }
+      }
+    }
+  }
+
+  // Strategy 5: Vocal diversity fallback
+  // In RhythmSync, Vocal often gets stuck on same pitch because Motif occupies
+  // nearby pitches. Add octave-separated chord tones without strict consonance check.
+  // This ensures selectBestCandidate has alternatives to penalize same-pitch streaks.
+  if (role == TrackRole::Vocal && candidates.size() <= 2) {
+    // Check if all current candidates are the same pitch
+    bool all_same_pitch = true;
+    if (!candidates.empty()) {
+      uint8_t first_pitch = candidates[0].pitch;
+      for (const auto& c : candidates) {
+        if (c.pitch != first_pitch) {
+          all_same_pitch = false;
+          break;
+        }
+      }
+    }
+
+    if (all_same_pitch || candidates.size() <= 1) {
+      // Add chord tones at octave distance from desired_pitch
+      // These are more likely to be safe even in RhythmSync
+      for (int ct : chord_tones) {
+        for (int oct_offset : {-2, 2, -1, 1}) {  // Try further octaves first
+          int oct = octave + oct_offset;
+          if (oct < 0 || oct > 10) continue;
+          uint8_t candidate_pitch = static_cast<uint8_t>(oct * 12 + ct);
+          if (candidate_pitch < range_low || candidate_pitch > range_high) continue;
+
+          // Check that this pitch is at least an octave away from any sounding note
+          auto sounding = harmony.getSoundingPitches(start, start + duration, role);
+          bool octave_safe = true;
+          for (uint8_t sp : sounding) {
+            int dist = std::abs(static_cast<int>(candidate_pitch) - static_cast<int>(sp));
+            if (dist > 0 && dist < 10) {  // Too close (less than minor 7th)
+              octave_safe = false;
+              break;
+            }
+          }
+
+          if (octave_safe) {
+            // Add without strict consonance check, but mark as fallback
+            PitchCandidate candidate;
+            candidate.pitch = candidate_pitch;
+            candidate.strategy = CollisionAvoidStrategy::ExhaustiveSearch;
+            candidate.interval_from_desired =
+                static_cast<int8_t>(candidate_pitch) - static_cast<int8_t>(desired_pitch);
+            candidate.max_safe_duration = duration;  // Assume safe for now
+            int pc = candidate_pitch % 12;
+            candidate.is_chord_tone = true;  // We know it's a chord tone
+            candidate.is_scale_tone = isScaleTone(pc);
+            candidate.is_root_or_fifth = isRootOrFifth(pc, chord_tones);
+            candidates.push_back(candidate);
+          }
         }
       }
     }
@@ -724,6 +784,21 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
         else melodic_score = -1.0f * abs_interval;
         break;
     }
+
+    // === Consecutive same pitch penalty ===
+    // Music theory: 1-2 consecutive same notes = OK (rhythmic figure)
+    //               3 consecutive = moderate penalty
+    //               4+ consecutive = strong penalty (monotonous, must avoid)
+    if (abs_interval == 0 && hints.same_pitch_streak > 0) {
+      if (hints.same_pitch_streak >= 3) {
+        melodic_score -= 60.0f;  // 4th+ note: very strong penalty (force movement)
+      } else if (hints.same_pitch_streak >= 2) {
+        melodic_score -= 40.0f;  // 3rd note: strong penalty
+      } else if (hints.same_pitch_streak >= 1) {
+        melodic_score -= 15.0f;  // 2nd note: moderate penalty
+      }
+    }
+
     score += melodic_score * sw.melodic;
 
     // === Dimension 2: Harmonic stability (max 25) ===

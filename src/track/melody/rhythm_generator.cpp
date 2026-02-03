@@ -422,9 +422,22 @@ uint8_t selectPitchForLockedRhythmEnhancedImpl(
       score -= 0.1f;   // Penalty for straying far from center
     }
 
-    // 4.5: Prevent excessive same-pitch (movement == 0 gets lower base)
+    // 4.5: Progressive penalty for consecutive same-pitch notes
+    // Music theory: 1-2 consecutive same notes = OK (rhythmic figure)
+    //               3 consecutive = moderate penalty
+    //               4+ consecutive = very strong penalty (monotonous)
+    // Penalty must be strong enough to overcome stepwise bonus (+0.4f)
+    // RhythmSync compatibility: candidates may be limited due to Motif collision,
+    // so penalty must be high enough to force movement when alternatives exist.
     if (movement == 0) {
-      score -= 0.1f;   // Slight penalty for no movement
+      if (ctx.same_pitch_streak >= 3) {
+        score -= 5.0f;  // 4th+ note: extreme penalty (force movement)
+      } else if (ctx.same_pitch_streak >= 2) {
+        score -= 2.0f;  // 3rd note: very strong penalty
+      } else if (ctx.same_pitch_streak >= 1) {
+        score -= 0.5f;  // 2nd note: moderate penalty
+      }
+      // 1st note (streak=0): no penalty - first occurrence is fine
     }
 
     scored_candidates.emplace_back(pitch, score);

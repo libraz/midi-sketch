@@ -16,18 +16,17 @@ namespace melody {
 float ConsecutiveSameNoteTracker::getAllowProbability() const {
   // J-POP style probability curve:
   // Rhythmic repetition is common but should taper off naturally
+  // Music theory: 4+ consecutive same notes is monotonous and should be avoided
   switch (count) {
     case 0:
     case 1:
       return 1.0f;   // First note always OK
     case 2:
-      return 0.85f;  // 2nd repetition: 85%
+      return 0.70f;  // 2nd repetition: 70%
     case 3:
-      return 0.50f;  // 3rd repetition: 50%
-    case 4:
-      return 0.25f;  // 4th repetition: 25%
+      return 0.30f;  // 3rd repetition: 30%
     default:
-      return 0.05f;  // 5+: 5% (rare, intentional)
+      return 0.0f;   // 4+: never allow (force movement)
   }
 }
 
@@ -50,16 +49,15 @@ bool isChordTone(int pitch_pc, int8_t chord_degree) {
 int findNearestDifferentChordTone(int current_pitch, int8_t chord_degree,
                                    uint8_t vocal_low, uint8_t vocal_high,
                                    int max_interval) {
-  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
   std::vector<int> candidates;
 
-  // Build candidates from chord tones in octaves 4-6
+  // First priority: chord tones (most harmonically stable)
+  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
   for (int pc : chord_tones) {
-    for (int oct = 4; oct <= 6; ++oct) {
+    for (int oct = 3; oct <= 6; ++oct) {
       int candidate = oct * 12 + pc;
       if (candidate >= vocal_low && candidate <= vocal_high &&
           candidate != current_pitch) {
-        // If max_interval is specified, enforce it
         if (max_interval > 0 && std::abs(candidate - current_pitch) > max_interval) {
           continue;
         }
@@ -68,11 +66,29 @@ int findNearestDifferentChordTone(int current_pitch, int8_t chord_degree,
     }
   }
 
+  // Second priority: if no chord tones found, use all diatonic scale tones
+  // C major scale: C=0, D=2, E=4, F=5, G=7, A=9, B=11
   if (candidates.empty()) {
-    return current_pitch;  // No valid candidate found
+    std::vector<int> scale_tones = {0, 2, 4, 5, 7, 9, 11};
+    for (int pc : scale_tones) {
+      for (int oct = 3; oct <= 6; ++oct) {
+        int candidate = oct * 12 + pc;
+        if (candidate >= vocal_low && candidate <= vocal_high &&
+            candidate != current_pitch) {
+          if (max_interval > 0 && std::abs(candidate - current_pitch) > max_interval) {
+            continue;
+          }
+          candidates.push_back(candidate);
+        }
+      }
+    }
   }
 
-  // Pick closest different chord tone
+  if (candidates.empty()) {
+    return current_pitch;  // No valid candidate found (should be rare)
+  }
+
+  // Pick closest different pitch (prefer stepwise motion)
   int best = candidates[0];
   int best_dist = std::abs(best - current_pitch);
   for (int c : candidates) {
