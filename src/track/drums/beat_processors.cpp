@@ -92,7 +92,8 @@ TimeFeel getMoodTimeFeel(Mood mood) {
 
 void generateKickForBeat(MidiTrack& track, Tick beat_tick, Tick adjusted_beat_tick,
                          const KickPattern& kick, uint8_t beat, uint8_t velocity,
-                         float kick_prob, bool in_prechorus_lift, std::mt19937& rng) {
+                         float kick_prob, bool in_prechorus_lift, std::mt19937& rng,
+                         float humanize_timing) {
   if (in_prechorus_lift) {
     return;
   }
@@ -129,11 +130,11 @@ void generateKickForBeat(MidiTrack& track, Tick beat_tick, Tick adjusted_beat_ti
   }
 
   if (play_kick_on) {
-    addKickWithHumanize(track, beat_tick, EIGHTH, velocity, rng);
+    addKickWithHumanize(track, beat_tick, EIGHTH, velocity, rng, KICK_HUMANIZE_AMOUNT, humanize_timing);
   }
   if (play_kick_and) {
     uint8_t and_vel = static_cast<uint8_t>(velocity * 0.85f);
-    addKickWithHumanize(track, adjusted_beat_tick + EIGHTH, EIGHTH, and_vel, rng);
+    addKickWithHumanize(track, adjusted_beat_tick + EIGHTH, EIGHTH, and_vel, rng, KICK_HUMANIZE_AMOUNT, humanize_timing);
   }
 }
 

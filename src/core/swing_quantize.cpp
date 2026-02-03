@@ -179,11 +179,18 @@ float getSwingScaleForRole(TrackRole role) {
 
 void applySwingToTrackBySections(MidiTrack& track, const std::vector<Section>& sections,
                                  TrackRole role) {
+  // Default to full humanization (1.0)
+  applySwingToTrackBySections(track, sections, role, 1.0f);
+}
+
+void applySwingToTrackBySections(MidiTrack& track, const std::vector<Section>& sections,
+                                 TrackRole role, float humanize_timing) {
   if (sections.empty()) {
     return;
   }
 
   float role_scale = getSwingScaleForRole(role);
+  float humanize_scale = std::clamp(humanize_timing, 0.0f, 1.0f);
 
   for (auto& note : track.notes()) {
     float swing_amt = 0.0f;
@@ -199,7 +206,8 @@ void applySwingToTrackBySections(MidiTrack& track, const std::vector<Section>& s
       }
     }
 
-    swing_amt *= role_scale;
+    // Scale swing by role factor and humanize_timing
+    swing_amt *= role_scale * humanize_scale;
     swing_amt = std::clamp(swing_amt, 0.0f, 1.0f);
 
     if (swing_amt > 0.0f) {

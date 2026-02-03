@@ -458,6 +458,15 @@ struct MotifNoteContext {
   bool add_octave;             ///< Whether to add octave doubling
   uint8_t base_velocity;       ///< Base velocity from role meta
   MotifRole role;              ///< Motif role (Hook or Texture)
+  SectionType section_type;    ///< Current section type for register variation
+};
+
+/// @brief Result of motif pitch calculation with transform tracking.
+struct MotifPitchResult {
+  int pitch;                    ///< Final adjusted pitch
+  int section_octave_shift;     ///< Section-based octave shift (+12, -12, or 0)
+  int range_octave_up;          ///< Octave up count for range clamping (multiples of 12)
+  bool avoid_note_snapped;      ///< Whether avoid note snap was applied
 };
 
 /// @brief Calculate adjusted pitch for a motif note.
@@ -469,39 +478,63 @@ struct MotifNoteContext {
 /// @param vocal_ctx Optional vocal coordination context
 /// @param base_note_override Base note override for vocal coordination
 /// @param rng Random number generator
-/// @return Adjusted pitch
-int calculateMotifPitch(const NoteEvent& note, const MotifNoteContext& ctx,
-                         const GeneratorParams& params, const MotifParams& motif_params,
-                         IHarmonyCoordinator* harmony, const MotifContext* vocal_ctx,
-                         uint8_t base_note_override, std::mt19937& rng) {
+/// @return MotifPitchResult with adjusted pitch and transform info
+MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteContext& ctx,
+                                      const GeneratorParams& params,
+                                      const MotifParams& motif_params,
+                                      IHarmonyCoordinator* harmony, const MotifContext* vocal_ctx,
+                                      uint8_t base_note_override, std::mt19937& rng) {
+  MotifPitchResult result = {0, 0, 0, false};
+
   if (ctx.is_rhythm_lock_global) {
-    // Coordinate axis mode: use pattern pitch directly, but resolve:
-    // 1. Avoid notes (always problematic)
-    // 2. Non-chord tones on strong beats (causes close interval with chord track)
-    int pitch = std::clamp(static_cast<int>(note.note), static_cast<int>(MOTIF_LOW),
-                           static_cast<int>(MOTIF_HIGH));
+    // Coordinate axis mode: use pattern pitch directly, but snap avoid notes.
+    // Non-chord tones (passing tones) are acceptable since Motif is the
+    // coordinate axis - other tracks adapt to it.
+    int pitch = static_cast<int>(note.note);
+
+    // Section-based register variation for melodic diversity.
+    // Chorus/Drop uses higher register, Bridge uses lower register.
+    // Use moderate intervals (P5/P4) rather than full octaves to avoid
+    // extremes that could clash with other tracks or hit ceiling.
+    int octave_shift = 0;
+    switch (ctx.section_type) {
+      case SectionType::Chorus:
+      case SectionType::Drop:
+        octave_shift = 7;  // Perfect 5th up for energy
+        break;
+      case SectionType::Bridge:
+        octave_shift = -5;  // Perfect 4th down for contrast
+        break;
+      default:
+        break;  // Verse, Intro, Outro, Interlude use original register
+    }
+    pitch += octave_shift;
+    result.section_octave_shift = octave_shift;
+
+    // Handle pitches below MOTIF_LOW by shifting up an octave.
+    // This prevents negative degrees from clamping to C4 and causing concentration.
+    int range_octave_up = 0;
+    while (pitch < static_cast<int>(MOTIF_LOW) && pitch + 12 <= static_cast<int>(MOTIF_HIGH)) {
+      pitch += 12;
+      range_octave_up += 12;
+    }
+    result.range_octave_up = range_octave_up;
+    pitch = std::clamp(pitch, static_cast<int>(MOTIF_LOW), static_cast<int>(MOTIF_HIGH));
 
     int8_t degree = harmony->getChordDegreeAt(ctx.absolute_tick);
     uint8_t chord_root = degreeToRoot(degree, Key::C);
     Chord chord = getChordNotes(degree);
     bool is_minor = (chord.intervals[1] == 3);
-    ChordToneHelper ct_helper(degree);
 
-    bool is_avoid = isAvoidNoteWithContext(pitch, chord_root, is_minor, degree);
-    bool is_non_chord = !ct_helper.isChordTone(
-        static_cast<uint8_t>(std::clamp(pitch, 0, 127)));
-    bool is_strong_beat = (ctx.absolute_tick % TICKS_PER_BEAT == 0);
-
-    // Snap to chord tone if:
-    // - Pitch is an avoid note (always)
-    // - Pitch is non-chord tone AND on strong beat (causes close interval issues)
-    if (is_avoid || (is_non_chord && is_strong_beat)) {
-      // Use range-aware snap to avoid clamping back to non-chord tone
+    if (isAvoidNoteWithContext(pitch, chord_root, is_minor, degree)) {
+      ChordToneHelper ct_helper(degree);
       pitch = ct_helper.nearestInRange(
           static_cast<uint8_t>(std::clamp(pitch, 0, 127)), MOTIF_LOW, MOTIF_HIGH);
+      result.avoid_note_snapped = true;
     }
 
-    return pitch;
+    result.pitch = pitch;
+    return result;
   }
 
   // Standard mode: apply pitch adjustments
@@ -546,9 +579,11 @@ int calculateMotifPitch(const NoteEvent& note, const MotifNoteContext& ctx,
                                                         motif_params.melodic_freedom, rng);
   }
 
-  // All paradigms: snap non-chord tones on strong beats to avoid close interval issues
+  // Snap non-chord tones on strong beats to avoid close interval issues
+  // Skip for RhythmSync: motif is the coordinate axis (generated first),
+  // so there are no other tracks to clash with yet.
   bool is_strong_beat = (ctx.absolute_tick % TICKS_PER_BEAT == 0);
-  if (is_strong_beat) {
+  if (is_strong_beat && params.paradigm != GenerationParadigm::RhythmSync) {
     ChordToneHelper ct_helper(degree);
     uint8_t clamped = static_cast<uint8_t>(std::clamp(adjusted_pitch, 0, 127));
     if (!ct_helper.isChordTone(clamped)) {
@@ -556,7 +591,8 @@ int calculateMotifPitch(const NoteEvent& note, const MotifNoteContext& ctx,
     }
   }
 
-  return adjusted_pitch;
+  result.pitch = adjusted_pitch;
+  return result;
 }
 
 /// @brief Calculate velocity for a motif note.
@@ -713,8 +749,10 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
         effective_density = static_cast<uint8_t>(
             std::min(100.0f, static_cast<float>(effective_density) * density_mult));
 
+        // In coordinate axis mode (RhythmLock), skip density/response thinning
+        // to maintain riff consistency - the motif pattern should repeat exactly.
         bool should_skip = false;
-        if (effective_density < 100) {
+        if (!is_rhythm_lock_global && effective_density < 100) {
           should_skip = (rng_util::rollFloat(rng, 0.0f, 100.0f) > effective_density);
 
           if (should_skip && bar_note_count[current_bar] == 0) {
@@ -725,8 +763,8 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
           continue;
         }
 
-        // L5: Vocal Coordination - Response Mode
-        if (vocal_ctx && motif_params.response_mode) {
+        // L5: Vocal Coordination - Response Mode (skip in coordinate axis mode)
+        if (!is_rhythm_lock_global && vocal_ctx && motif_params.response_mode) {
           bool in_rest = motif_detail::isInVocalRest(absolute_tick, vocal_ctx->rest_positions);
           if (!in_rest) {
             float skip_prob = vocal_ctx->vocal_density * 0.4f;
@@ -746,14 +784,15 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
         note_ctx.add_octave = add_octave;
         note_ctx.base_velocity = role_meta.velocity_base;
         note_ctx.role = role;
+        note_ctx.section_type = section.type;
 
         // Calculate adjusted pitch using helper
-        int adjusted_pitch =
+        MotifPitchResult pitch_result =
             calculateMotifPitch(note, note_ctx, params, motif_params, harmony, vocal_ctx,
                                 base_note_override, rng);
 
         // Clamp to vocal ceiling
-        adjusted_pitch = std::min(adjusted_pitch, static_cast<int>(motif_range_high));
+        int adjusted_pitch = std::min(pitch_result.pitch, static_cast<int>(motif_range_high));
 
         // Calculate velocity using helper
         uint8_t vel = calculateMotifVelocity(role_meta.velocity_base, is_chorus, section.type,
@@ -775,7 +814,35 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
           opts.source = NoteSource::Motif;
           opts.original_pitch = note.note;  // Track pre-adjustment pitch
 
-          createNoteAndAdd(track, *harmony, opts);
+          auto added_note_opt = createNoteAndAdd(track, *harmony, opts);
+
+          // Record transforms for provenance tracking
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+          if (added_note_opt) {
+            NoteEvent& added_note = track.notes().back();
+            if (pitch_result.section_octave_shift != 0) {
+              added_note.addTransformStep(
+                  TransformStepType::OctaveAdjust, note.note,
+                  static_cast<uint8_t>(note.note + pitch_result.section_octave_shift),
+                  static_cast<int8_t>(pitch_result.section_octave_shift / 12), 0);
+            }
+            if (pitch_result.range_octave_up != 0) {
+              uint8_t pre_range = static_cast<uint8_t>(
+                  std::clamp(note.note + pitch_result.section_octave_shift, 0, 127));
+              added_note.addTransformStep(
+                  TransformStepType::OctaveAdjust, pre_range,
+                  static_cast<uint8_t>(pre_range + pitch_result.range_octave_up),
+                  static_cast<int8_t>(pitch_result.range_octave_up / 12), 1);
+            }
+            if (pitch_result.avoid_note_snapped) {
+              uint8_t pre_snap = static_cast<uint8_t>(std::clamp(
+                  note.note + pitch_result.section_octave_shift + pitch_result.range_octave_up, 0, 127));
+              added_note.addTransformStep(TransformStepType::ChordToneSnap, pre_snap, final_pitch, 0, 0);
+            }
+          }
+#else
+          (void)added_note_opt;  // Suppress unused variable warning
+#endif
           bar_note_count[current_bar]++;
 
           // Octave doubling in RhythmLock

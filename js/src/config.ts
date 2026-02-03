@@ -90,6 +90,13 @@ export function createDefaultConfig(styleId: number): SongConfig {
     melodicComplexity: view.getUint8(retPtr + 51),
     hookIntensity: view.getUint8(retPtr + 52),
     vocalGroove: view.getUint8(retPtr + 53),
+
+    // Mood, form, drive, and addictive fields (offset 54-58)
+    mood: view.getUint8(retPtr + 54),
+    moodExplicit: view.getUint8(retPtr + 55) !== 0,
+    formExplicit: view.getUint8(retPtr + 56) !== 0,
+    driveFeel: view.getUint8(retPtr + 57),
+    addictiveMode: view.getUint8(retPtr + 58) !== 0,
   };
 }
 
@@ -122,7 +129,7 @@ export function getConfigErrorMessage(errorCode: ConfigErrorCode): string {
  * @internal
  */
 export function allocSongConfig(m: EmscriptenModule, config: SongConfig): number {
-  const ptr = m._malloc(54); // MidiSketchSongConfig size
+  const ptr = m._malloc(60); // MidiSketchSongConfig size (60 bytes)
   const view = new DataView(m.HEAPU8.buffer);
 
   // Basic settings (offset 0-12)
@@ -203,6 +210,16 @@ export function allocSongConfig(m: EmscriptenModule, config: SongConfig): number
   view.setUint8(ptr + 51, config.melodicComplexity ?? 1);
   view.setUint8(ptr + 52, config.hookIntensity ?? 2);
   view.setUint8(ptr + 53, config.vocalGroove ?? 0);
+
+  // Mood, form, drive, and addictive fields (offset 54-58)
+  view.setUint8(ptr + 54, config.mood ?? 0);
+  view.setUint8(ptr + 55, config.moodExplicit ? 1 : 0);
+  view.setUint8(ptr + 56, config.formExplicit ? 1 : 0);
+  view.setUint8(ptr + 57, config.driveFeel ?? 50);
+  view.setUint8(ptr + 58, config.addictiveMode ? 1 : 0);
+
+  // Padding (offset 59)
+  view.setUint8(ptr + 59, 0);
 
   return ptr;
 }

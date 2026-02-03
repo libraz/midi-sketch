@@ -11,8 +11,9 @@
 // If these tests fail, JS binding code in js/index.ts must be updated.
 
 TEST(StructLayoutTest, SongConfigSize) {
-  // SongConfig size: 56 bytes (was 52, +2 tritone_sub fields + 2 alignment padding)
-  EXPECT_EQ(sizeof(MidiSketchSongConfig), 56);
+  // SongConfig size: 60 bytes (was 56, +5 new fields: mood, mood_explicit,
+  // form_explicit, drive_feel, addictive_mode + 1 alignment padding)
+  EXPECT_EQ(sizeof(MidiSketchSongConfig), 60);
 }
 
 TEST(StructLayoutTest, SongConfigLayout) {
@@ -92,6 +93,13 @@ TEST(StructLayoutTest, SongConfigLayout) {
   CHECK_OFFSET(melodic_complexity, 51);
   CHECK_OFFSET(hook_intensity, 52);
   CHECK_OFFSET(vocal_groove, 53);
+
+  // Mood, form, drive, and addictive fields (offset 54-58)
+  CHECK_OFFSET(mood, 54);
+  CHECK_OFFSET(mood_explicit, 55);
+  CHECK_OFFSET(form_explicit, 56);
+  CHECK_OFFSET(drive_feel, 57);
+  CHECK_OFFSET(addictive_mode, 58);
 
 #undef CHECK_OFFSET
 }

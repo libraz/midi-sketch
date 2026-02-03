@@ -46,6 +46,7 @@ struct DrumGenerationParams {
   CompositionStyle composition_style;
   GenerationParadigm paradigm;
   MotifDrumParams motif_drum;
+  float humanize_timing = 1.0f;  ///< Global humanization scaling (0.0-1.0)
 };
 
 /// @brief Section-level context for drum generation.

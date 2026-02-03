@@ -233,21 +233,6 @@ class MelodyGenerationPipeline {
   float getMotifWeightForSection(SectionType section_type) const;
 
   // ============================================================================
-  // Locked Rhythm Support
-  // ============================================================================
-
-  /// @brief Select pitch for locked rhythm generation.
-  /// @param prev_pitch Previous pitch
-  /// @param chord_degree Current chord degree
-  /// @param vocal_low Minimum pitch
-  /// @param vocal_high Maximum pitch
-  /// @param rng Random number generator
-  /// @return Selected pitch
-  uint8_t selectPitchForLockedRhythm(uint8_t prev_pitch, int8_t chord_degree,
-                                     uint8_t vocal_low, uint8_t vocal_high,
-                                     std::mt19937& rng) const;
-
-  // ============================================================================
   // Post-processing
   // ============================================================================
 

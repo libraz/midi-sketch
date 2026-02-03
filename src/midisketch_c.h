@@ -275,6 +275,17 @@ typedef struct {
   uint8_t melodic_complexity;  ///< 0=Simple, 1=Standard, 2=Complex
   uint8_t hook_intensity;      ///< 0=Off, 1=Light, 2=Normal, 3=Strong
   uint8_t vocal_groove;        ///< 0=Straight, 1=OffBeat, 2=Swing, etc.
+
+  // Mood override
+  uint8_t mood;           ///< Mood preset override (0-23, used when mood_explicit=1)
+  uint8_t mood_explicit;  ///< 0=derive from style, 1=use mood field
+
+  // Form control
+  uint8_t form_explicit;  ///< 0=may randomize, 1=use form_id exactly
+
+  // Drive and addictive
+  uint8_t drive_feel;      ///< 0=laid-back, 50=neutral, 100=aggressive
+  uint8_t addictive_mode;  ///< Behavioral Loop mode (0=off, 1=on)
 } MidiSketchSongConfig;
 
 /// @brief Style preset summary for listing.

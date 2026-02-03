@@ -44,7 +44,8 @@ using melody::LeapResolutionState;
 using melody::applyPitchChoiceImpl;
 using melody::calculateTargetPitchImpl;
 using melody::generatePhraseRhythmImpl;
-using melody::selectPitchForLockedRhythmImpl;
+using melody::selectPitchForLockedRhythmEnhancedImpl;
+using melody::LockedRhythmContext;
 using melody::extractGlobalMotifImpl;
 using melody::evaluateWithGlobalMotifImpl;
 using melody::getDirectionBiasForContour;
@@ -142,15 +143,18 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
     // Skip for UltraVocaloid (high thirtysecond_ratio) which needs continuous machine-gun passages
     if (i > 0 && phrase_ctx.anticipation_rest != AnticipationRestMode::Off && phrase_ctx.thirtysecond_ratio < 0.8f) {
       Tick anticipation_duration = 0;
+      // Reduced anticipation durations to minimize cumulative gaps
+      // Original: Subtle=SIXTEENTH, Moderate=EIGHTH, Pronounced=QUARTER
+      // New: Subtle=32ND, Moderate=SIXTEENTH, Pronounced=EIGHTH
       switch (phrase_ctx.anticipation_rest) {
         case AnticipationRestMode::Subtle:
-          anticipation_duration = TICK_SIXTEENTH;
+          anticipation_duration = TICK_32ND;
           break;
         case AnticipationRestMode::Moderate:
-          anticipation_duration = TICK_EIGHTH;
+          anticipation_duration = TICK_SIXTEENTH;
           break;
         case AnticipationRestMode::Pronounced:
-          anticipation_duration = TICK_QUARTER;
+          anticipation_duration = TICK_EIGHTH;
           break;
         default:
           break;
@@ -279,11 +283,21 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
     // Snap to next half-bar boundary (phrase_beats/2 * TICKS_PER_BEAT grid)
     // Using half-bar intervals reduces gaps while respecting harmonic rhythm
     // This ensures phrases start at musically sensible points without large silences
+    // Cap the snap gap to 1 beat max to prevent excessive gaps between phrases
+    constexpr Tick kMaxSnapGap = TICKS_PER_BEAT;  // 1 beat max gap from snapping
     Tick half_phrase_beats = std::max(static_cast<Tick>(phrase_beats / 2), static_cast<Tick>(2));
     Tick snap_interval = half_phrase_beats * TICKS_PER_BEAT;
     Tick relative_tick = current_tick - ctx.section_start;
     Tick next_boundary = ((relative_tick + snap_interval - 1) / snap_interval) * snap_interval;
-    current_tick = ctx.section_start + next_boundary;
+    Tick proposed_snap = ctx.section_start + next_boundary;
+    // Only apply snapping if the gap is reasonable (1 beat or less)
+    if (proposed_snap > current_tick && proposed_snap - current_tick <= kMaxSnapGap) {
+      current_tick = proposed_snap;
+    } else if (proposed_snap <= current_tick) {
+      // If proposed snap is at or before current position, move to next boundary
+      current_tick = ctx.section_start + next_boundary + snap_interval;
+    }
+    // If gap > 1 beat, skip snapping and continue from current position
 
     // Ensure we don't exceed section end
     if (current_tick >= ctx.section_end) break;
@@ -398,6 +412,20 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
       }
     }
     prev_final_pitch = note.note;
+  }
+
+  // Remove duplicate notes at same tick (can happen from phrase boundary edge cases)
+  if (result.size() > 1) {
+    std::vector<NoteEvent> deduplicated;
+    deduplicated.reserve(result.size());
+    deduplicated.push_back(result[0]);
+    for (size_t i = 1; i < result.size(); ++i) {
+      if (result[i].start_tick > deduplicated.back().start_tick) {
+        deduplicated.push_back(result[i]);
+      }
+      // If same tick, keep only the first note (discard duplicate)
+    }
+    result = std::move(deduplicated);
   }
 
   return result;
@@ -542,6 +570,17 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   std::vector<RhythmNote> rhythm = generatePhraseRhythm(
       tmpl, phrase_beats, ctx.density_modifier, ctx.thirtysecond_ratio, rng, ctx.paradigm,
       syncopation_weight, ctx.section_type);
+
+  // RhythmSync density boost: if output is too sparse, regenerate with higher density
+  // Target: at least 2 notes per beat (phrase_beats * 2) for RhythmSync paradigm
+  // This ensures Orangestar-style locked rhythms maintain their characteristic density
+  if (ctx.paradigm == GenerationParadigm::RhythmSync &&
+      rhythm.size() < static_cast<size_t>(phrase_beats * 2)) {
+    float boost = std::max(1.5f, static_cast<float>(phrase_beats * 2) / rhythm.size());
+    float boosted_density = ctx.density_modifier * boost;
+    rhythm = generatePhraseRhythm(tmpl, phrase_beats, boosted_density, ctx.thirtysecond_ratio, rng,
+                                   ctx.paradigm, syncopation_weight, ctx.section_type);
+  }
 
   // Get chord degree at phrase start
   int8_t start_chord_degree = harmony.getChordDegreeAt(phrase_start);
@@ -1520,10 +1559,30 @@ std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
 
 // === Locked Rhythm Pitch Selection ===
 
-uint8_t MelodyDesigner::selectPitchForLockedRhythm(uint8_t prev_pitch, int8_t chord_degree,
-                                                   uint8_t vocal_low, uint8_t vocal_high,
-                                                   std::mt19937& rng) {
-  return selectPitchForLockedRhythmImpl(prev_pitch, chord_degree, vocal_low, vocal_high, rng);
+uint8_t MelodyDesigner::selectPitchForLockedRhythmEnhanced(
+    uint8_t prev_pitch, int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
+    float phrase_position, int direction_inertia, size_t note_index, std::mt19937& rng,
+    SectionType section_type, VocalAttitude vocal_attitude) {
+  // Build context for enhanced selection
+  LockedRhythmContext ctx;
+  ctx.phrase_position = phrase_position;
+  ctx.direction_inertia = direction_inertia;
+  ctx.note_index = note_index;
+  ctx.tessitura_center = (vocal_low + vocal_high) / 2;
+  ctx.section_type = section_type;
+  ctx.vocal_attitude = vocal_attitude;
+
+  // Use GlobalMotif if available
+  if (cached_global_motif_.has_value() && cached_global_motif_->isValid()) {
+    ctx.motif_intervals = cached_global_motif_->interval_signature;
+    ctx.motif_interval_count = cached_global_motif_->interval_count;
+  } else {
+    ctx.motif_intervals = nullptr;
+    ctx.motif_interval_count = 0;
+  }
+
+  return selectPitchForLockedRhythmEnhancedImpl(prev_pitch, chord_degree, vocal_low, vocal_high,
+                                                 ctx, rng);
 }
 
 // === GlobalMotif Support ===

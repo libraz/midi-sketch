@@ -179,17 +179,6 @@ float MelodyGenerationPipeline::getMotifWeightForSection(SectionType section_typ
 }
 
 // ============================================================================
-// Locked Rhythm Support
-// ============================================================================
-
-uint8_t MelodyGenerationPipeline::selectPitchForLockedRhythm(uint8_t prev_pitch,
-                                                             int8_t chord_degree,
-                                                             uint8_t vocal_low, uint8_t vocal_high,
-                                                             std::mt19937& rng) const {
-  return selectPitchForLockedRhythmImpl(prev_pitch, chord_degree, vocal_low, vocal_high, rng);
-}
-
-// ============================================================================
 // Post-processing
 // ============================================================================
 

@@ -9,13 +9,16 @@
 #include "track/generators/vocal.h"
 
 #include <algorithm>
+#include <set>
 #include <unordered_map>
 
 #include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
 #include "core/melody_embellishment.h"
+#include "core/melody_evaluator.h"
 #include "core/melody_templates.h"
+#include "core/mood_utils.h"
 #include "core/note_creator.h"
 #include "core/note_source.h"
 #include "core/pitch_bend_curves.h"
@@ -347,7 +350,7 @@ static bool shouldUsePerSectionTypeRhythmLock(const GeneratorParams& params) {
 }
 
 /**
- * @brief Generate notes using locked rhythm pattern with new pitches.
+ * @brief Generate a single pitch sequence candidate for locked rhythm evaluation.
  * @param rhythm Locked rhythm pattern to use
  * @param section Current section
  * @param designer Melody designer for pitch selection
@@ -356,7 +359,7 @@ static bool shouldUsePerSectionTypeRhythmLock(const GeneratorParams& params) {
  * @param rng Random number generator
  * @return Generated notes with locked rhythm and new pitches
  */
-static std::vector<NoteEvent> generateWithLockedRhythm(
+static std::vector<NoteEvent> generateLockedRhythmCandidate(
     const CachedRhythmPattern& rhythm, const Section& section, MelodyDesigner& designer,
     const IHarmonyContext& harmony, const MelodyDesigner::SectionContext& ctx, std::mt19937& rng) {
   std::vector<NoteEvent> notes;
@@ -375,11 +378,28 @@ static std::vector<NoteEvent> generateWithLockedRhythm(
     durations.push_back(0.5f);  // Default half-beat duration
   }
 
+  // Detect phrase boundaries for breath insertion
+  auto boundaries = detectPhraseBoundariesFromRhythm(rhythm);
+  std::set<float> boundary_set(boundaries.begin(), boundaries.end());
+
+  // Determine breath duration based on section type and mood
+  bool is_ballad = MoodClassification::isBallad(ctx.mood);
+  Tick breath_duration = getBreathDuration(section.type, is_ballad);
+
   uint8_t prev_pitch = (ctx.vocal_low + ctx.vocal_high) / 2;  // Start at center
+  int direction_inertia = 0;  // Track melodic direction momentum
 
   for (size_t i = 0; i < onsets.size(); ++i) {
     float beat = onsets[i];
     float dur = durations[i];
+
+    // Insert breath at phrase boundaries by shortening previous note
+    if (i > 0 && boundary_set.count(beat) > 0 && !notes.empty()) {
+      Tick min_duration = TICK_SIXTEENTH;
+      if (notes.back().duration > breath_duration + min_duration) {
+        notes.back().duration -= breath_duration;
+      }
+    }
 
     Tick tick = section.start_tick + static_cast<Tick>(beat * TICKS_PER_BEAT);
     Tick duration = static_cast<Tick>(dur * TICKS_PER_BEAT);
@@ -387,10 +407,15 @@ static std::vector<NoteEvent> generateWithLockedRhythm(
     // Get chord at this position
     int8_t chord_degree = harmony.getChordDegreeAt(tick);
 
-    // Select pitch using melody designer's pitch selection logic
-    // Use chord tones primarily for consonance
-    uint8_t pitch = designer.selectPitchForLockedRhythm(prev_pitch, chord_degree, ctx.vocal_low,
-                                                        ctx.vocal_high, rng);
+    // Calculate phrase position for direction bias
+    float phrase_position = static_cast<float>(i) / onsets.size();
+
+    // Use enhanced pitch selection with melodic quality improvements
+    // Pass section type and vocal attitude for context-aware pitch selection
+    uint8_t pitch = designer.selectPitchForLockedRhythmEnhanced(
+        prev_pitch, chord_degree, ctx.vocal_low, ctx.vocal_high,
+        phrase_position, direction_inertia, i, rng,
+        ctx.section_type, ctx.vocal_attitude);
 
     // Apply pitch safety check to avoid collisions with other tracks
     auto candidates = getSafePitchCandidates(harmony, pitch, tick, duration, TrackRole::Vocal,
@@ -403,7 +428,22 @@ static std::vector<NoteEvent> generateWithLockedRhythm(
     hints.prev_pitch = static_cast<int8_t>(prev_pitch);
     hints.note_duration = duration;
     hints.tessitura_center = ctx.tessitura.center;
+    // Propagate direction from inertia
+    if (direction_inertia > 0) hints.contour_direction = 1;
+    else if (direction_inertia < 0) hints.contour_direction = -1;
     uint8_t safe_pitch = selectBestCandidate(candidates, pitch, hints);
+
+    // Update direction inertia based on movement
+    int movement = static_cast<int>(safe_pitch) - static_cast<int>(prev_pitch);
+    if (movement > 0) {
+      direction_inertia = std::min(direction_inertia + 1, 3);
+    } else if (movement < 0) {
+      direction_inertia = std::max(direction_inertia - 1, -3);
+    } else {
+      // Same pitch - decay inertia toward neutral
+      if (direction_inertia > 0) direction_inertia--;
+      if (direction_inertia < 0) direction_inertia++;
+    }
 
     // Calculate velocity based on beat position
     float beat_in_bar = std::fmod(beat, 4.0f);
@@ -426,6 +466,99 @@ static std::vector<NoteEvent> generateWithLockedRhythm(
   }
 
   return notes;
+}
+
+/**
+ * @brief Generate notes using locked rhythm with evaluation and candidate selection.
+ *
+ * This is the improved version that addresses the melodic quality issues:
+ * 1. Generates multiple candidates (20) instead of single deterministic output
+ * 2. Evaluates each candidate using MelodyEvaluator
+ * 3. Selects best candidate probabilistically
+ *
+ * @param rhythm Locked rhythm pattern to use
+ * @param section Current section
+ * @param designer Melody designer for pitch selection
+ * @param harmony Harmony context
+ * @param ctx Section context
+ * @param rng Random number generator
+ * @return Best-scoring candidate notes
+ */
+static std::vector<NoteEvent> generateLockedRhythmWithEvaluation(
+    const CachedRhythmPattern& rhythm, const Section& section, MelodyDesigner& designer,
+    const IHarmonyContext& harmony, const MelodyDesigner::SectionContext& ctx, std::mt19937& rng) {
+
+  constexpr int kCandidateCount = 20;  // 1/5 of normal mode (100) for performance
+
+  // Generate multiple candidates
+  std::vector<std::pair<std::vector<NoteEvent>, float>> candidates;
+  candidates.reserve(static_cast<size_t>(kCandidateCount));
+
+  for (int i = 0; i < kCandidateCount; ++i) {
+    std::vector<NoteEvent> melody = generateLockedRhythmCandidate(
+        rhythm, section, designer, harmony, ctx, rng);
+
+    if (melody.empty()) {
+      continue;
+    }
+
+    // Evaluate the candidate
+    // Style evaluation: positive features
+    MelodyScore style_score = MelodyEvaluator::evaluate(melody, harmony);
+    float style_total = style_score.total();  // Use simple average
+
+    // Culling evaluation: penalty-based
+    Tick phrase_duration = section.endTick() - section.start_tick;
+    float culling_score = MelodyEvaluator::evaluateForCulling(
+        melody, harmony, phrase_duration, ctx.vocal_style);
+
+    // GlobalMotif bonus if available
+    float motif_bonus = 0.0f;
+    if (designer.getCachedGlobalMotif().has_value() &&
+        designer.getCachedGlobalMotif()->isValid()) {
+      motif_bonus = MelodyDesigner::evaluateWithGlobalMotif(
+          melody, *designer.getCachedGlobalMotif());
+    }
+
+    // Combined score: 35% style, 40% culling, 25% motif
+    // Higher motif weight strengthens RhythmSync "riff addiction" quality
+    float combined_score = style_total * 0.35f + culling_score * 0.40f + motif_bonus * 0.25f;
+
+    candidates.emplace_back(std::move(melody), combined_score);
+  }
+
+  if (candidates.empty()) {
+    // Fallback: generate single candidate without evaluation
+    return generateLockedRhythmCandidate(rhythm, section, designer, harmony, ctx, rng);
+  }
+
+  // Sort by score (highest first)
+  std::sort(candidates.begin(), candidates.end(),
+            [](const auto& a, const auto& b) { return a.second > b.second; });
+
+  // Keep top half
+  size_t keep_count = std::max(static_cast<size_t>(1), candidates.size() / 2);
+
+  // Weighted probabilistic selection from top candidates
+  float total_weight = 0.0f;
+  for (size_t i = 0; i < keep_count; ++i) {
+    total_weight += candidates[i].second;
+  }
+
+  if (total_weight > 0.0f) {
+    std::uniform_real_distribution<float> dist(0.0f, total_weight);
+    float roll = dist(rng);
+    float cumulative = 0.0f;
+    for (size_t i = 0; i < keep_count; ++i) {
+      cumulative += candidates[i].second;
+      if (roll <= cumulative) {
+        return std::move(candidates[i].first);
+      }
+    }
+  }
+
+  // Fallback: return best candidate
+  return std::move(candidates[0].first);
 }
 
 void VocalGenerator::generateSection(MidiTrack& /* track */, const Section& /* section */,
@@ -670,26 +803,48 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
       }
 
       // Check for rhythm lock
+      // RhythmSync paradigm: use Motif's rhythm pattern as coordinate axis
       // UltraVocaloid uses per-section-type rhythm lock (Verse->Verse, Chorus->Chorus)
       // Other styles use global rhythm lock (first section's rhythm for all)
       CachedRhythmPattern* current_rhythm_lock = nullptr;
+      CachedRhythmPattern motif_rhythm_pattern;  // Local storage for Motif-derived pattern
+
       if (use_rhythm_lock) {
-        if (use_per_section_type_lock) {
-          // Per-section-type lock: look up by section type
-          auto it = section_type_rhythm_locks.find(section.type);
-          if (it != section_type_rhythm_locks.end() && it->second.isValid()) {
-            current_rhythm_lock = &it->second;
+        // RhythmSync paradigm: extract rhythm from Motif track (coordinate axis)
+        // Try ctx.motif_track first (from Coordinator), then fall back to motif_track_ member
+        const MidiTrack* motif_ref = static_cast<const MidiTrack*>(ctx.motif_track);
+        if (motif_ref == nullptr) {
+          motif_ref = motif_track_;
+        }
+        if (params.paradigm == GenerationParadigm::RhythmSync && motif_ref != nullptr &&
+            !motif_ref->empty()) {
+          // Extract Motif's rhythm pattern for this section
+          motif_rhythm_pattern = extractRhythmPatternFromTrack(
+              motif_ref->notes(), section_start, section_end);
+          if (motif_rhythm_pattern.isValid()) {
+            current_rhythm_lock = &motif_rhythm_pattern;
           }
-        } else if (active_rhythm_lock->isValid()) {
-          // Global lock: use single rhythm pattern
-          current_rhythm_lock = active_rhythm_lock;
+        }
+
+        // Fallback: use cached Vocal rhythm if Motif pattern not available
+        if (current_rhythm_lock == nullptr) {
+          if (use_per_section_type_lock) {
+            // Per-section-type lock: look up by section type
+            auto it = section_type_rhythm_locks.find(section.type);
+            if (it != section_type_rhythm_locks.end() && it->second.isValid()) {
+              current_rhythm_lock = &it->second;
+            }
+          } else if (active_rhythm_lock->isValid()) {
+            // Global lock: use single rhythm pattern
+            current_rhythm_lock = active_rhythm_lock;
+          }
         }
       }
 
       if (current_rhythm_lock != nullptr) {
-        // Use locked rhythm pattern with new pitches
+        // Use locked rhythm pattern with evaluation-based pitch selection
         section_notes =
-            generateWithLockedRhythm(*current_rhythm_lock, section, designer, harmony, sctx, rng);
+            generateLockedRhythmWithEvaluation(*current_rhythm_lock, section, designer, harmony, sctx, rng);
       } else {
         // Generate melody with evaluation (candidate count varies by section importance)
         int candidate_count = MelodyDesigner::getCandidateCountForSection(section.type);
@@ -698,16 +853,23 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
             candidate_count);
 
         // Cache rhythm pattern for subsequent sections
+        // Validate density before locking to prevent sparse patterns from propagating
+        constexpr float kMinRhythmLockDensity = 3.0f;  // Minimum notes per bar
         if (use_rhythm_lock && !section_notes.empty()) {
-          if (use_per_section_type_lock) {
-            // Cache per section type
-            section_type_rhythm_locks[section.type] =
-                extractRhythmPattern(section_notes, section_start, section.bars * 4);
-          } else if (!active_rhythm_lock->isValid()) {
-            // Cache globally
-            *active_rhythm_lock =
-                extractRhythmPattern(section_notes, section_start, section.bars * 4);
+          CachedRhythmPattern candidate =
+              extractRhythmPattern(section_notes, section_start, section.bars * 4);
+          float density = calculatePatternDensity(candidate);
+
+          if (density >= kMinRhythmLockDensity) {
+            if (use_per_section_type_lock) {
+              // Cache per section type
+              section_type_rhythm_locks[section.type] = std::move(candidate);
+            } else if (!active_rhythm_lock->isValid()) {
+              // Cache globally
+              *active_rhythm_lock = std::move(candidate);
+            }
           }
+          // If density is too low, don't lock - let subsequent sections generate fresh
         }
       }
 

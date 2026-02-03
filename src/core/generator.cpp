@@ -574,110 +574,20 @@ void Generator::regenerateVocal(const VocalConfig& config) {
 void Generator::generateAccompanimentForVocal() {
   clearAccompanimentTracks();
 
-  // Register vocal with harmony context BEFORE generating accompaniment
-  // This enables isConsonantWithOtherTracks() to detect vocal collisions
-  harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
+  // clearAccompanimentTracks() resets harmony and re-registers vocal.
+  // Delegate to Coordinator with skip_vocal=true.
+  // Coordinator handles paradigm-aware ordering, precomputeCandidates,
+  // drum_grid, SE/Call context, markTrackGenerated, etc.
+  params_.skip_vocal = true;
+  generateAllTracksViaCoordinator();
+  params_.skip_vocal = false;
 
-  // Analyze existing vocal to extract characteristics
-  VocalAnalysis vocal_analysis = analyzeVocal(song_.vocal());
+  // Apply same post-processing as CLI path
+  applyPostProcessingEffects();
 
-  // Generate Bass FIRST - bass root is determined by chord progression,
-  // doesn't need chord voicing information
-  {
-    TrackRegistrationGuard guard(*harmony_context_, song_.bass(), TrackRole::Bass);
-    BassGenerator bass_gen;
-
-    // Build FullTrackContext
-    FullTrackContext bass_ctx;
-    bass_ctx.song = &song_;
-    bass_ctx.params = &params_;
-    bass_ctx.rng = &rng_;
-    bass_ctx.harmony = harmony_context_.get();
-    bass_ctx.vocal_analysis = &vocal_analysis;
-
-    bass_gen.generateFullTrack(song_.bass(), bass_ctx);
-  }
-
-  // Re-register Bass so Chord voicing can see bass notes via buildBassPitchMask()
-  harmony_context_->registerTrack(song_.bass(), TrackRole::Bass);
-
-  // Generate Chord AFTER Bass - buildBassPitchMask() now finds bass notes
-  // This enables major 7th clash avoidance between bass and chord
-  {
-    TrackRegistrationGuard guard(*harmony_context_, song_.chord(), TrackRole::Chord);
-    ChordGenerator chord_gen;
-
-    // Build FullTrackContext
-    FullTrackContext chord_ctx;
-    chord_ctx.song = &song_;
-    chord_ctx.params = &params_;
-    chord_ctx.rng = &rng_;
-    chord_ctx.harmony = harmony_context_.get();
-    chord_ctx.vocal_analysis = &vocal_analysis;
-
-    chord_gen.generateFullTrack(song_.chord(), chord_ctx);
-  }
-
-  // Re-register Chord for Aux collision detection
-  // (Bass is already registered, TrackRegistrationGuard unregisters Chord on scope exit)
-  harmony_context_->registerTrack(song_.chord(), TrackRole::Chord);
-
-  // Generate Aux track AFTER Chord/Bass so it can detect collisions via isConsonantWithOtherTracks()
-  // Aux references vocal for call-and-response patterns
-  generateAux();
-
-  // Apply triplet-grid swing quantization per track role (only for non-straight grooves)
-  if (getMoodDrumGrooveFeel(params_.mood) != DrumGrooveFeel::Straight) {
-    const auto& secs = song_.arrangement().sections();
-    applySwingToTrackBySections(song_.bass(), secs, TrackRole::Bass);
-    applySwingToTrackBySections(song_.vocal(), secs, TrackRole::Vocal);
-    applySwingToTrackBySections(song_.chord(), secs, TrackRole::Chord);
-    applySwingToTrackBySections(song_.motif(), secs, TrackRole::Motif);
-    applySwingToTrackBySections(song_.arpeggio(), secs, TrackRole::Arpeggio);
-    applySwingToTrackBySections(song_.aux(), secs, TrackRole::Aux);
-  }
-
-  // Generate optional tracks
-  if (params_.drums_enabled) {
-    generateDrums();
-  }
-
-  if (params_.arpeggio_enabled || params_.composition_style == CompositionStyle::SynthDriven) {
-    generateArpeggio();
-  }
-
-  // Generate Motif if BackgroundMotif style OR if Blueprint explicitly defines TrackMask::Motif
-  // Traditional Blueprint (section_flow == nullptr) should NOT generate Motif for backward compat
-  bool motif_needed = (params_.composition_style == CompositionStyle::BackgroundMotif);
-  if (!motif_needed && blueprint_ != nullptr && blueprint_->section_flow != nullptr) {
-    // Check Blueprint's TrackMask for motif in any section
-    for (const auto& section : song_.arrangement().sections()) {
-      if (hasTrack(section.track_mask, TrackMask::Motif)) {
-        motif_needed = true;
-        break;
-      }
-    }
-  }
-  if (motif_needed) {
-    generateMotif();
-  }
-
-  // Generate SE track if enabled
-  if (se_enabled_) {
-    generateSE();
-  }
-
-  // Apply post-processing
-  applyTransitionDynamics();
-  generateExpressionCurves();
-  if (params_.humanize) {
-    applyHumanization();
-  }
-
-  // Refine vocal to resolve any remaining clashes with accompaniment
+  // Vocal-first specific: refine vocal against accompaniment
   int adjustments = refineVocalForAccompaniment(2);
   if (adjustments > 0) {
-    // Re-register vocal after adjustments
     harmony_context_->clearNotesForTrack(TrackRole::Vocal);
     harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
   }
@@ -695,15 +605,8 @@ void Generator::generateWithVocal(const GeneratorParams& params) {
   generateVocal(params);
 
   // Step 2: Generate accompaniment that adapts to vocal
+  // Note: generateAccompanimentForVocal() already includes vocal refinement
   generateAccompanimentForVocal();
-
-  // Step 3: Refine vocal to resolve any remaining clashes
-  int adjustments = refineVocalForAccompaniment(2);
-  if (adjustments > 0) {
-    // Re-register vocal after adjustments
-    harmony_context_->clearNotesForTrack(TrackRole::Vocal);
-    harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
-  }
 }
 
 // ============================================================================
@@ -965,8 +868,14 @@ void Generator::generateVocal() {
 
   // Use VocalGenerator for track generation
   VocalGenerator vocal_gen;
-  const MidiTrack* motif_track =
-      (params_.composition_style == CompositionStyle::BackgroundMotif) ? &song_.motif() : nullptr;
+  // Set Motif track reference for:
+  // - BackgroundMotif: range separation to avoid collisions
+  // - RhythmSync: rhythm pattern synchronization (Motif is coordinate axis)
+  const MidiTrack* motif_track = nullptr;
+  if (params_.composition_style == CompositionStyle::BackgroundMotif ||
+      params_.paradigm == GenerationParadigm::RhythmSync) {
+    motif_track = &song_.motif();
+  }
   vocal_gen.setMotifTrack(motif_track);
 
   // Build FullTrackContext
@@ -1027,8 +936,10 @@ void Generator::generateBass() {
   bass_gen.generateFullTrack(song_.bass(), ctx);
 
   // Apply triplet-grid swing quantization to bass (only for non-straight grooves)
+  // Scale swing by humanize_timing for unified control of all timing variations
   if (getMoodDrumGrooveFeel(params_.mood) != DrumGrooveFeel::Straight) {
-    applySwingToTrackBySections(song_.bass(), song_.arrangement().sections(), TrackRole::Bass);
+    applySwingToTrackBySections(song_.bass(), song_.arrangement().sections(), TrackRole::Bass,
+                                params_.humanize_timing);
   }
 }
 
@@ -1450,9 +1361,11 @@ void Generator::applyHumanization() {
   // Pass sections for phrase-aware vocal timing (Start: +8, Middle: +4, End: 0)
   // drive_feel scales timing offsets: laid-back = reduced, aggressive = increased
   // vocal_style affects human timing physics (UltraVocaloid=mechanical, Human=natural)
+  // humanize_timing globally scales all timing offsets (0.0 = grid, 1.0 = full variation)
   DrumStyle drum_style = getMoodDrumStyle(params_.mood);
   PostProcessor::applyMicroTimingOffsets(song_.vocal(), song_.bass(), song_.drums(), &sections,
-                                          params_.drive_feel, params_.vocal_style, drum_style);
+                                          params_.drive_feel, params_.vocal_style, drum_style,
+                                          params_.humanize_timing);
 
   // Synchronize bass-kick timing for tighter groove pocket
   PostProcessor::synchronizeBassKick(song_.bass(), song_.drums(), drum_style);

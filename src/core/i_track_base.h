@@ -162,6 +162,7 @@ struct FullTrackContext {
   const void* kick_cache = nullptr;        ///< KickPatternCache* for bass-kick sync
   const void* vocal_ctx = nullptr;         ///< MotifContext* for motif generation
   const void* vocal_analysis = nullptr;    ///< VocalAnalysis* for adapting to vocal
+  const void* motif_track = nullptr;       ///< MidiTrack* for RhythmSync motif reference
 
   // Call system options (for SE track)
   bool call_enabled = false;

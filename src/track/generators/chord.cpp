@@ -62,6 +62,8 @@ constexpr Tick EIGHTH = TICK_EIGHTH;
 struct ChordVoicingState {
   Tick current_tick = 0;            ///< Current tick being processed
   uint8_t safe_count = 0;           ///< Number of safe notes added at current_tick
+  uint8_t added_pitches[8] = {};    ///< Pitches added at current_tick (max 8)
+  uint8_t added_pitch_count = 0;    ///< Number of entries in added_pitches
 
   static constexpr uint8_t kMinRequired = 2;  ///< Minimum notes for functional chord
 
@@ -69,13 +71,27 @@ struct ChordVoicingState {
   void reset(Tick tick) {
     current_tick = tick;
     safe_count = 0;
+    added_pitch_count = 0;
   }
 
   /// Check if more notes are needed to meet minimum.
   bool needsMore() const { return safe_count < kMinRequired; }
 
+  /// Check if pitch was already added at this tick.
+  bool hasPitch(uint8_t pitch) const {
+    for (uint8_t i = 0; i < added_pitch_count; ++i) {
+      if (added_pitches[i] == pitch) return true;
+    }
+    return false;
+  }
+
   /// Record that a note was added.
-  void added() { ++safe_count; }
+  void added(uint8_t pitch = 0) {
+    ++safe_count;
+    if (added_pitch_count < 8) {
+      added_pitches[added_pitch_count++] = pitch;
+    }
+  }
 };
 
 /// @brief Find the nearest octave of a pitch class within a range.
@@ -106,22 +122,43 @@ bool wouldClashWithRegisteredTracks(const IHarmonyContext& harmony, uint8_t pitc
 /// @brief Filter a voicing, keeping only pitches that don't clash with registered tracks.
 ///
 /// Uses wouldClashWithRegisteredTracks() for each pitch in the voicing.
-/// Also enforces vocal ceiling constraint (chord should not exceed vocal's highest pitch).
+/// Also enforces vocal ceiling constraint:
+/// - Chord should stay BELOW vocal to maintain clear register separation
+/// - Uses vocal's LOWEST pitch (minus margin) as the ceiling, not highest
+/// - This ensures chord accompaniment doesn't compete with vocal melody
 ///
 /// @param harmony Harmony context with all tracks registered
 /// @param v Candidate voicing
 /// @param start Start tick for collision check
 /// @param duration Duration for collision check
-/// @param vocal_high Highest vocal pitch (0 to disable ceiling)
+/// @param vocal_ceiling_hint Vocal ceiling from bar-level analysis (0 to disable)
 /// @return Filtered voicing (may have fewer notes than input)
 VoicedChord filterVoicingByCollision(const IHarmonyContext& harmony, const VoicedChord& v,
-                                     Tick start, Tick duration, uint8_t vocal_high) {
-  constexpr int kVocalHighMargin = 2;
+                                     Tick start, Tick duration, uint8_t vocal_ceiling_hint) {
+  // Per-onset vocal ceiling: chord should stay BELOW vocal's lowest pitch.
+  // Use vocal's LOWEST pitch in this range, minus a 3-semitone margin,
+  // to ensure clear register separation between chord and vocal.
+  uint8_t vocal_low_at_onset = harmony.getLowestPitchForTrackInRange(
+      start, start + duration, TrackRole::Vocal);
+
+  // Effective ceiling: vocal_low - 3 semitones (minor 3rd margin)
+  // If vocal_low is 0 (no vocal), use the bar-level hint or no ceiling
+  constexpr int kVocalMargin = 3;  // Minor 3rd separation
+  uint8_t effective_ceiling = 0;
+
+  if (vocal_low_at_onset > kVocalMargin + CHORD_LOW) {
+    // Vocal exists at this onset: stay below it
+    effective_ceiling = vocal_low_at_onset - kVocalMargin;
+  } else if (vocal_ceiling_hint > 0) {
+    // Fall back to bar-level hint
+    effective_ceiling = vocal_ceiling_hint;
+  }
+
   VoicedChord safe = v;
   safe.count = 0;
   for (uint8_t i = 0; i < v.count; ++i) {
-    // Vocal ceiling: chord should not exceed vocal's highest pitch
-    if (vocal_high > 0 && v.pitches[i] > vocal_high + kVocalHighMargin) {
+    // Vocal ceiling: chord should not exceed the calculated ceiling
+    if (effective_ceiling > 0 && v.pitches[i] > effective_ceiling) {
       continue;
     }
     if (!wouldClashWithRegisteredTracks(harmony, v.pitches[i], start, duration)) {
@@ -142,16 +179,18 @@ VoicedChord filterVoicingByCollision(const IHarmonyContext& harmony, const Voice
 /// @param root Root pitch
 /// @return Voicing with raw chord-tone pitches (no collision check yet)
 VoicedChord buildFallbackVoicing(const Chord& chord, uint8_t root, uint8_t vocal_high = 0) {
-  constexpr int kVocalHighMargin = 2;
-  int effective_high = (vocal_high > 0)
-      ? std::min(static_cast<int>(CHORD_HIGH), static_cast<int>(vocal_high) + kVocalHighMargin)
-      : static_cast<int>(CHORD_HIGH);
+  uint8_t effective_high = (vocal_high > 0 && vocal_high < CHORD_HIGH) ? vocal_high : CHORD_HIGH;
   VoicedChord fallback;
   fallback.count = 0;
   fallback.type = VoicingType::Close;
   for (uint8_t i = 0; i < chord.note_count && i < 4; ++i) {
     if (chord.intervals[i] >= 0) {
-      int raw = std::clamp(root + chord.intervals[i], (int)CHORD_LOW, effective_high);
+      int raw = root + chord.intervals[i];
+      // Shift down by octave if above vocal ceiling
+      while (raw > effective_high && raw - 12 >= CHORD_LOW) {
+        raw -= 12;
+      }
+      raw = std::clamp(raw, (int)CHORD_LOW, (int)effective_high);
       fallback.pitches[fallback.count++] = static_cast<uint8_t>(raw);
     }
   }
@@ -172,7 +211,11 @@ VoicedChord buildFallbackVoicing(const Chord& chord, uint8_t root, uint8_t vocal
 /// @param vocal_ceiling Per-bar vocal ceiling (0 = no restriction)
 void addSafeChordNote(MidiTrack& track, IHarmonyContext& harmony, Tick start, Tick duration,
                       uint8_t pitch, uint8_t velocity, uint8_t vocal_ceiling = 0) {
-  constexpr int kVocalHighMargin = 2;
+  // Apply vocal ceiling to range_high so SafePitchResolver stays below vocal
+  uint8_t effective_high = CHORD_HIGH;
+  if (vocal_ceiling > 0 && vocal_ceiling < CHORD_HIGH) {
+    effective_high = vocal_ceiling;
+  }
   NoteOptions opts;
   opts.start = start;
   opts.duration = duration;
@@ -181,12 +224,53 @@ void addSafeChordNote(MidiTrack& track, IHarmonyContext& harmony, Tick start, Ti
   opts.role = TrackRole::Chord;
   opts.preference = PitchPreference::PreferChordTones;
   opts.range_low = CHORD_LOW;
-  opts.range_high = (vocal_ceiling > 0)
-      ? std::min(static_cast<int>(CHORD_HIGH), static_cast<int>(vocal_ceiling) + kVocalHighMargin)
-      : static_cast<int>(CHORD_HIGH);
+  opts.range_high = static_cast<int>(effective_high);
   opts.source = NoteSource::ChordVoicing;
   opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
-  createNoteAndAdd(track, harmony, opts);
+  auto result = createNoteAndAdd(track, harmony, opts);
+  // Remove if duplicate (same tick+pitch already exists in track)
+  if (result) {
+    const auto& notes = track.notes();
+    for (size_t i = 0; i + 1 < notes.size(); ++i) {
+      if (notes[i].start_tick == result->start_tick && notes[i].note == result->note) {
+        track.notes().pop_back();  // Remove the just-added duplicate
+        return;
+      }
+    }
+  }
+}
+
+/// @brief Same as addSafeChordNote but returns the created note for dedup tracking.
+std::optional<NoteEvent> addSafeChordNoteAndReturn(MidiTrack& track, IHarmonyContext& harmony,
+                                                    Tick start, Tick duration, uint8_t pitch,
+                                                    uint8_t velocity, uint8_t vocal_ceiling = 0) {
+  uint8_t effective_high = CHORD_HIGH;
+  if (vocal_ceiling > 0 && vocal_ceiling < CHORD_HIGH) {
+    effective_high = vocal_ceiling;
+  }
+  NoteOptions opts;
+  opts.start = start;
+  opts.duration = duration;
+  opts.desired_pitch = pitch;
+  opts.velocity = velocity;
+  opts.role = TrackRole::Chord;
+  opts.preference = PitchPreference::PreferChordTones;
+  opts.range_low = CHORD_LOW;
+  opts.range_high = static_cast<int>(effective_high);
+  opts.source = NoteSource::ChordVoicing;
+  opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
+  auto result = createNoteAndAdd(track, harmony, opts);
+  // Remove if duplicate (same tick+pitch already exists in track)
+  if (result) {
+    const auto& notes = track.notes();
+    for (size_t i = 0; i + 1 < notes.size(); ++i) {
+      if (notes[i].start_tick == result->start_tick && notes[i].note == result->note) {
+        track.notes().pop_back();
+        return std::nullopt;
+      }
+    }
+  }
+  return result;
 }
 
 /// @brief Add a chord note with state tracking for minimum note guarantee.
@@ -208,17 +292,23 @@ void addSafeChordNote(MidiTrack& track, IHarmonyContext& harmony, Tick start, Ti
 void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick start, Tick duration,
                             uint8_t pitch, uint8_t velocity, ChordVoicingState& state,
                             uint8_t vocal_ceiling = 0) {
+  uint8_t effective_high = (vocal_ceiling > 0 && vocal_ceiling < CHORD_HIGH) ? vocal_ceiling : CHORD_HIGH;
+
   // Reset state if we're at a new tick
   if (start != state.current_tick) {
     state.reset(start);
   }
 
-  constexpr int kVocalHighMarginDoubling = 2;
+  // Skip if this exact pitch was already added at this tick
+  if (state.hasPitch(pitch)) return;
 
   // 1. Try normal safe check first
-  if (harmony.isConsonantWithOtherTracks(pitch, start, duration, TrackRole::Chord)) {
-    addSafeChordNote(track, harmony, start, duration, pitch, velocity, vocal_ceiling);
-    state.added();
+  if (pitch <= effective_high &&
+      harmony.isConsonantWithOtherTracks(pitch, start, duration, TrackRole::Chord)) {
+    auto result = addSafeChordNoteAndReturn(track, harmony, start, duration, pitch, velocity, vocal_ceiling);
+    if (result && !state.hasPitch(result->note)) {
+      state.added(result->note);
+    }
     return;
   }
 
@@ -226,11 +316,10 @@ void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick star
   //    Even though we're doubling one note, we must check for clashes with OTHER notes
   auto sounding_pitches = harmony.getSoundingPitches(start, start + duration, TrackRole::Chord);
   for (uint8_t sounding : sounding_pitches) {
-    // Only use pitches within chord range
-    if (sounding < CHORD_LOW || sounding > CHORD_HIGH) continue;
-
-    // Vocal ceiling check for doubling path
-    if (vocal_ceiling > 0 && sounding > vocal_ceiling + kVocalHighMarginDoubling) continue;
+    // Only use pitches within chord range and below vocal ceiling
+    if (sounding < CHORD_LOW || sounding > effective_high) continue;
+    // Skip if already added at this tick
+    if (state.hasPitch(sounding)) continue;
 
     // Prefer pitches closer to the desired pitch
     int dist = std::abs(static_cast<int>(sounding) - static_cast<int>(pitch));
@@ -249,13 +338,13 @@ void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick star
     opts.role = TrackRole::Chord;
     opts.preference = PitchPreference::NoCollisionCheck;  // Already verified safe above
     opts.range_low = CHORD_LOW;
-    opts.range_high = (vocal_ceiling > 0)
-        ? std::min(static_cast<int>(CHORD_HIGH), static_cast<int>(vocal_ceiling) + kVocalHighMarginDoubling)
-        : static_cast<int>(CHORD_HIGH);
+    opts.range_high = static_cast<int>(effective_high);
     opts.source = NoteSource::ChordVoicing;
     opts.original_pitch = pitch;  // Record original for provenance
-    createNoteAndAdd(track, harmony, opts);
-    state.added();
+    auto result = createNoteAndAdd(track, harmony, opts);
+    if (result) {
+      state.added(result->note);
+    }
     return;
   }
 
@@ -263,8 +352,10 @@ void addChordNoteWithState(MidiTrack& track, IHarmonyContext& harmony, Tick star
   if (state.needsMore()) {
     // Minimum not met: addSafeChordNote uses createNoteAndAdd with PreferChordTones,
     // which resolves to the best non-clashing pitch via the unified note creator.
-    addSafeChordNote(track, harmony, start, duration, pitch, velocity, vocal_ceiling);
-    state.added();
+    auto result = addSafeChordNoteAndReturn(track, harmony, start, duration, pitch, velocity, vocal_ceiling);
+    if (result && !state.hasPitch(result->note)) {
+      state.added(result->note);
+    }
     return;
   }
 
@@ -606,9 +697,14 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
       // Collect ALL bass pitch classes in this bar for collision avoidance
       Tick bar_end = bar_start + TICKS_PER_BAR;
 
-      // Per-bar vocal ceiling (also applies in basic path via harmony context)
-      uint8_t bar_vocal_high = harmony.getHighestPitchForTrackInRange(
+      // Per-bar vocal ceiling: chord should stay BELOW vocal's lowest pitch in this bar.
+      // Use lowest pitch minus margin to ensure clear register separation.
+      constexpr int kBarVocalMargin = 3;  // Minor 3rd separation
+      uint8_t bar_vocal_low = harmony.getLowestPitchForTrackInRange(
           bar_start, bar_end, TrackRole::Vocal);
+      uint8_t bar_vocal_high = (bar_vocal_low > kBarVocalMargin + CHORD_LOW)
+                                   ? (bar_vocal_low - kBarVocalMargin)
+                                   : 0;  // 0 = no ceiling constraint
 
       uint16_t bass_pitch_mask = chord_voicing::buildBassPitchMask(bass_track, bar_start, bar_end);
       if (bass_track != nullptr && !bass_track->notes().empty()) {
@@ -877,9 +973,8 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
       // Each half gets the next chord in the progression, creating harmonic acceleration.
       // For RhythmSync paradigm, use Quarter notes to sync with Motif changes.
       if (harmonic.subdivision == 2) {
-        // RhythmSync: use Quarter notes (2 per half-bar) instead of Half notes
-        Tick subdiv_dur = (params.paradigm == GenerationParadigm::RhythmSync) ? QUARTER : HALF;
-        int subdiv_repeats = (params.paradigm == GenerationParadigm::RhythmSync) ? 2 : 1;
+        Tick subdiv_dur = HALF;
+        int subdiv_repeats = 1;
 
         uint8_t vel = calculateVelocity(section.type, 0, params.mood);
         uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
@@ -924,11 +1019,10 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
                                                section.type, params.mood);
 
       if (should_split) {
-        // Dense harmonic rhythm at phrase end: split bar into two chords
-        // For RhythmSync paradigm, use Quarter notes to sync with Motif changes
-        // instead of Half notes which would sustain through Motif pitch changes.
-        Tick split_dur = (params.paradigm == GenerationParadigm::RhythmSync) ? QUARTER : HALF;
-        int repeats = (params.paradigm == GenerationParadigm::RhythmSync) ? 2 : 1;
+        // Dense harmonic rhythm at phrase end: split bar into two chords.
+        // Duration shortening in createNoteWithResult() handles Motif collisions.
+        Tick split_dur = HALF;
+        int repeats = 1;
 
         // First half: current chord
         uint8_t vel = calculateVelocity(section.type, 0, params.mood);
@@ -962,6 +1056,8 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         }
 
         prev_voicing = next_voicing;
+        has_prev = true;
+        continue;  // Already handled anticipation within split; skip anticipation block
       } else if (isSusExtension(extension) && !tritone_substituted) {
         // === SUS4/SUS2 WITHIN-BAR RESOLUTION ===
         // Split the bar into two halves: first half plays sus voicing,
@@ -987,6 +1083,8 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         }
 
         prev_voicing = resolved_voicing;
+        has_prev = true;
+        continue;  // Sus resolution fills entire bar; skip anticipation block
       } else {
         // Normal chord generation for this bar
         generateChordBar(track, bar_start, voicing, rhythm, section.type, params.mood, harmony, bar_vocal_high);
@@ -1191,10 +1289,14 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
 
       Tick bar_end = bar_start + TICKS_PER_BAR;
 
-      // Per-bar vocal ceiling: restrict chord voicing to not exceed vocal's highest
-      // pitch in THIS bar, rather than the global highest_pitch across the whole song.
+      // Per-bar vocal ceiling: restrict chord voicing to stay BELOW vocal's lowest
+      // pitch in THIS bar. Use lowest pitch minus margin to ensure clear register separation.
       // Returns 0 if no vocal note is sounding in this bar (no ceiling restriction).
-      uint8_t bar_vocal_high = harmony.getHighestPitchForTrackInRange(bar_start, bar_end, TrackRole::Vocal);
+      constexpr int kBarVocalMargin2 = 3;  // Minor 3rd separation
+      uint8_t bar_vocal_low = harmony.getLowestPitchForTrackInRange(bar_start, bar_end, TrackRole::Vocal);
+      uint8_t bar_vocal_high = (bar_vocal_low > kBarVocalMargin2 + CHORD_LOW)
+                                   ? (bar_vocal_low - kBarVocalMargin2)
+                                   : 0;  // 0 = no ceiling constraint
 
       // Bass pitch mask is used for voicing *construction* (not collision avoidance).
       // It tells generateVoicings() which bass pitch classes to avoid doubling in
@@ -1452,11 +1554,9 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
 
       // === HARMONIC RHYTHM SUBDIVISION ===
       // When subdivision=2 (B sections), split each bar into two half-bar chord changes.
-      // For RhythmSync paradigm, use Quarter notes to sync with Motif changes.
       if (harmonic.subdivision == 2) {
-        // RhythmSync: use Quarter notes (2 per half-bar) instead of Half notes
-        Tick subdiv_dur = (params.paradigm == GenerationParadigm::RhythmSync) ? QUARTER : HALF;
-        int subdiv_repeats = (params.paradigm == GenerationParadigm::RhythmSync) ? 2 : 1;
+        Tick subdiv_dur = HALF;
+        int subdiv_repeats = 1;
 
         uint8_t vel = calculateVelocity(section.type, 0, params.mood);
         uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
@@ -1508,10 +1608,9 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
                                                section.type, params.mood);
 
       if (should_split) {
-        // For RhythmSync paradigm, use Quarter notes to sync with Motif changes
-        // instead of Half notes which would sustain through Motif pitch changes.
-        Tick split_dur = (params.paradigm == GenerationParadigm::RhythmSync) ? QUARTER : HALF;
-        int repeats = (params.paradigm == GenerationParadigm::RhythmSync) ? 2 : 1;
+        // Duration shortening in createNoteWithResult() handles Motif collisions.
+        Tick split_dur = HALF;
+        int repeats = 1;
 
         uint8_t vel = calculateVelocity(section.type, 0, params.mood);
         ChordVoicingState state;
@@ -1551,6 +1650,8 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         }
 
         prev_voicing = next_voicing;
+        has_prev = true;
+        continue;  // Already handled anticipation within split; skip anticipation block
       } else if (isSusExtension(extension) && !tritone_substituted) {
         // === SUS4/SUS2 WITHIN-BAR RESOLUTION ===
         // Split the bar: first half sus voicing, second half resolved triad.
@@ -1583,6 +1684,8 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         }
 
         prev_voicing = resolved_voicing;
+        has_prev = true;
+        continue;  // Sus resolution fills entire bar; skip anticipation block
       } else {
         // Normal chord generation
         generateChordBar(track, bar_start, voicing, rhythm, section.type, params.mood, harmony, bar_vocal_high);

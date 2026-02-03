@@ -58,8 +58,9 @@ const DrumTimingProfile& getDrumTimingProfile(DrumStyle style) {
 }
 
 TimingOffsetCalculator::TimingOffsetCalculator(uint8_t drive_feel, VocalStylePreset vocal_style,
-                                               DrumStyle drum_style)
+                                               DrumStyle drum_style, float humanize_timing)
     : timing_mult_(DriveMapping::getTimingMultiplier(drive_feel)),
+      humanize_timing_(std::clamp(humanize_timing, 0.0f, 1.0f)),
       physics_(getVocalPhysicsParams(vocal_style)),
       profile_(getDrumTimingProfile(drum_style)) {}
 
@@ -102,7 +103,7 @@ int TimingOffsetCalculator::getDrumTimingOffset(uint8_t note_number, Tick tick) 
     }
   }
 
-  return static_cast<int>(base_offset * timing_mult_);
+  return static_cast<int>(base_offset * timing_mult_ * humanize_timing_);
 }
 
 void TimingOffsetCalculator::applyDrumOffsets(MidiTrack& drum_track) const {
@@ -123,7 +124,7 @@ void TimingOffsetCalculator::applyDrumOffsets(MidiTrack& drum_track) const {
 // ============================================================================
 
 int TimingOffsetCalculator::getBassTimingOffset() const {
-  return static_cast<int>(kBassBaseOffset * timing_mult_);
+  return static_cast<int>(kBassBaseOffset * timing_mult_ * humanize_timing_);
 }
 
 void TimingOffsetCalculator::applyBassOffset(MidiTrack& bass_track) const {
@@ -167,14 +168,15 @@ int TimingOffsetCalculator::getVocalTimingOffset(const NoteEvent& note, size_t n
     offset += breath_delay;
   }
 
-  return offset;
+  // Scale all timing offsets by humanize_timing
+  return static_cast<int>(offset * humanize_timing_);
 }
 
 void TimingOffsetCalculator::applyVocalOffsets(MidiTrack& vocal_track,
                                                 const std::vector<Section>& sections) const {
   if (vocal_track.empty() || sections.empty()) {
-    // Fallback: apply uniform offset
-    int vocal_offset = static_cast<int>(4 * timing_mult_);
+    // Fallback: apply uniform offset (also scaled by humanize_timing)
+    int vocal_offset = static_cast<int>(4 * timing_mult_ * humanize_timing_);
     applyUniformOffset(vocal_track, vocal_offset);
     return;
   }

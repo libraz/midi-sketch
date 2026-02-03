@@ -108,4 +108,9 @@ uint8_t HarmonyContext::getHighestPitchForTrackInRange(Tick start, Tick end,
   return collision_detector_.getHighestPitchForTrackInRange(start, end, role);
 }
 
+uint8_t HarmonyContext::getLowestPitchForTrackInRange(Tick start, Tick end,
+                                                        TrackRole role) const {
+  return collision_detector_.getLowestPitchForTrackInRange(start, end, role);
+}
+
 }  // namespace midisketch

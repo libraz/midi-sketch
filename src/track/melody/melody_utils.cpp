@@ -91,7 +91,9 @@ Tick getBreathDuration(SectionType section, Mood mood, float phrase_density,
   mult *= physics.breath_scale;
 
   Tick result = static_cast<Tick>(base * mult);
-  return std::min(result, TICK_HALF);
+  // Cap breath duration to 1 beat max (reduced from 2 beats/TICK_HALF)
+  // This reduces cumulative gaps between phrases while still allowing natural breathing
+  return std::min(result, TICK_QUARTER);
 }
 
 Tick getRhythmUnit(RhythmGrid grid, bool is_eighth) {

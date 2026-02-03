@@ -81,6 +81,7 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
                                             TrackRole exclude) const override;
 
   uint8_t getHighestPitchForTrackInRange(Tick start, Tick end, TrackRole role) const override;
+  uint8_t getLowestPitchForTrackInRange(Tick start, Tick end, TrackRole role) const override;
 
   // =========================================================================
   // IHarmonyCoordinator interface (new functionality)

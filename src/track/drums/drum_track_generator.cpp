@@ -389,7 +389,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
           float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
           Tick adjusted_beat_tick = applyTimeFeel(beat_tick, time_feel, params.bpm);
           generateKickForBeat(track, beat_tick, adjusted_beat_tick, kick, beat, velocity,
-                              kick_prob, in_prechorus_lift, rng);
+                              kick_prob, in_prechorus_lift, rng, params.humanize_timing);
         }
 
         // Snare drum

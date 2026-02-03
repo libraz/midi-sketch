@@ -103,6 +103,17 @@ midisketch::SongConfig convertToSongConfig(const MidiSketchSongConfig* config) {
   cpp_config.hook_intensity = static_cast<midisketch::HookIntensity>(config->hook_intensity);
   cpp_config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(config->vocal_groove);
 
+  // Mood override
+  cpp_config.mood = config->mood;
+  cpp_config.mood_explicit = config->mood_explicit != 0;
+
+  // Form control
+  cpp_config.form_explicit = config->form_explicit != 0;
+
+  // Drive and addictive
+  cpp_config.drive_feel = config->drive_feel;
+  cpp_config.addictive_mode = config->addictive_mode != 0;
+
   return cpp_config;
 }
 
@@ -683,6 +694,17 @@ MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
   s_default_config.hook_intensity = static_cast<uint8_t>(cpp_config.hook_intensity);
   s_default_config.vocal_groove = static_cast<uint8_t>(cpp_config.vocal_groove);
 
+  // Mood override
+  s_default_config.mood = cpp_config.mood;
+  s_default_config.mood_explicit = cpp_config.mood_explicit ? 1 : 0;
+
+  // Form control
+  s_default_config.form_explicit = cpp_config.form_explicit ? 1 : 0;
+
+  // Drive and addictive
+  s_default_config.drive_feel = cpp_config.drive_feel;
+  s_default_config.addictive_mode = cpp_config.addictive_mode ? 1 : 0;
+
   return &s_default_config;
 }
 
@@ -823,87 +845,7 @@ MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
   auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
 
   // Convert C config to C++ SongConfig
-  midisketch::SongConfig cpp_config;
-  cpp_config.style_preset_id = config->style_preset_id;
-  cpp_config.key = static_cast<midisketch::Key>(config->key);
-  cpp_config.bpm = config->bpm;
-  cpp_config.seed = config->seed;
-  cpp_config.chord_progression_id = config->chord_progression_id;
-  cpp_config.form = static_cast<midisketch::StructurePattern>(config->form_id);
-  cpp_config.vocal_attitude = static_cast<midisketch::VocalAttitude>(config->vocal_attitude);
-  cpp_config.drums_enabled = config->drums_enabled != 0;
-  cpp_config.blueprint_id = config->blueprint_id;
-
-  // Arpeggio settings
-  cpp_config.arpeggio_enabled = config->arpeggio_enabled != 0;
-  cpp_config.arpeggio.pattern = static_cast<midisketch::ArpeggioPattern>(config->arpeggio_pattern);
-  cpp_config.arpeggio.speed = static_cast<midisketch::ArpeggioSpeed>(config->arpeggio_speed);
-  cpp_config.arpeggio.octave_range =
-      config->arpeggio_octave_range > 0 ? config->arpeggio_octave_range : 2;
-  cpp_config.arpeggio.gate = config->arpeggio_gate / 100.0f;
-
-  // Vocal settings
-  cpp_config.vocal_low = config->vocal_low;
-  cpp_config.vocal_high = config->vocal_high;
-  cpp_config.skip_vocal = config->skip_vocal != 0;
-
-  // Humanization
-  cpp_config.humanize = config->humanize != 0;
-  cpp_config.humanize_timing = config->humanize_timing / 100.0f;
-  cpp_config.humanize_velocity = config->humanize_velocity / 100.0f;
-
-  // Chord extensions
-  cpp_config.chord_extension.enable_sus = config->chord_ext_sus != 0;
-  cpp_config.chord_extension.enable_7th = config->chord_ext_7th != 0;
-  cpp_config.chord_extension.enable_9th = config->chord_ext_9th != 0;
-  cpp_config.chord_extension.tritone_sub = config->chord_ext_tritone_sub != 0;
-  cpp_config.chord_extension.sus_probability = config->chord_ext_sus_prob / 100.0f;
-  cpp_config.chord_extension.seventh_probability = config->chord_ext_7th_prob / 100.0f;
-  cpp_config.chord_extension.ninth_probability = config->chord_ext_9th_prob / 100.0f;
-  cpp_config.chord_extension.tritone_sub_probability =
-      config->chord_ext_tritone_sub_prob / 100.0f;
-
-  // Composition style
-  cpp_config.composition_style =
-      static_cast<midisketch::CompositionStyle>(config->composition_style);
-
-  cpp_config.target_duration_seconds = config->target_duration_seconds;
-
-  // Modulation settings
-  cpp_config.modulation_timing =
-      static_cast<midisketch::ModulationTiming>(config->modulation_timing);
-  cpp_config.modulation_semitones = config->modulation_semitones;
-
-  // Call settings
-  cpp_config.se_enabled = config->se_enabled != 0;
-  cpp_config.call_setting = static_cast<midisketch::CallSetting>(config->call_setting);
-  cpp_config.call_notes_enabled = config->call_notes_enabled != 0;
-  cpp_config.intro_chant = static_cast<midisketch::IntroChant>(config->intro_chant);
-  cpp_config.mix_pattern = static_cast<midisketch::MixPattern>(config->mix_pattern);
-  cpp_config.call_density = static_cast<midisketch::CallDensity>(config->call_density);
-
-  // Vocal style settings
-  cpp_config.vocal_style = static_cast<midisketch::VocalStylePreset>(config->vocal_style);
-  cpp_config.melody_template = static_cast<midisketch::MelodyTemplateId>(config->melody_template);
-
-  // Arrangement growth
-  cpp_config.arrangement_growth =
-      static_cast<midisketch::ArrangementGrowth>(config->arrangement_growth);
-
-  // Arpeggio sync settings
-  cpp_config.arpeggio.sync_chord = config->arpeggio_sync_chord != 0;
-
-  // Motif settings
-  cpp_config.motif_chord.fixed_progression = config->motif_fixed_progression != 0;
-  cpp_config.motif_chord.max_chord_count = config->motif_max_chord_count;
-  cpp_config.motif_repeat_scope =
-      static_cast<midisketch::MotifRepeatScope>(config->motif_repeat_scope);
-
-  // Melodic complexity, hook intensity, and groove
-  cpp_config.melodic_complexity =
-      static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);
-  cpp_config.hook_intensity = static_cast<midisketch::HookIntensity>(config->hook_intensity);
-  cpp_config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(config->vocal_groove);
+  midisketch::SongConfig cpp_config = convertToSongConfig(config);
 
   sketch->generateFromConfig(cpp_config);
   return MIDISKETCH_OK;

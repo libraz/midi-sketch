@@ -89,7 +89,7 @@ export interface SongConfig {
   // SE/Call settings
   /** Enable SE track */
   seEnabled: boolean;
-  /** Enable call feature */
+  /** Enable call feature (maps to call_setting: false=Auto(0), true=Enabled(1)) */
   callEnabled: boolean;
   /** Output calls as notes */
   callNotesEnabled: boolean;
@@ -129,6 +129,22 @@ export interface SongConfig {
   hookIntensity: number;
   /** Vocal groove feel: 0=Straight, 1=OffBeat, 2=Swing, 3=Syncopated, 4=Driving16th, 5=Bouncy8th */
   vocalGroove: number;
+
+  // Mood override
+  /** Mood preset override (0-23, used when moodExplicit=true) */
+  mood: number;
+  /** 0=derive from style, 1=use mood field */
+  moodExplicit: boolean;
+
+  // Form control
+  /** 0=may randomize, 1=use formId exactly */
+  formExplicit: boolean;
+
+  // Drive and addictive
+  /** Drive feel: 0=laid-back, 50=neutral, 100=aggressive */
+  driveFeel: number;
+  /** Enable Behavioral Loop mode (fixed riff, maximum hook) */
+  addictiveMode: boolean;
 }
 
 /**

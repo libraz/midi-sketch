@@ -74,11 +74,14 @@ class PostProcessor {
   // @param sections Optional section info for phrase-aware vocal timing
   // @param drive_feel Drive feel value (0-100), scales timing offset intensity
   // @param vocal_style Vocal style preset for physics parameter scaling
+  // @param drum_style Drum style for timing profile selection
+  // @param humanize_timing Global humanization scaling (0.0-1.0, scales all timing offsets)
   static void applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass, MidiTrack& drum_track,
                                        const std::vector<Section>* sections = nullptr,
                                        uint8_t drive_feel = 50,
                                        VocalStylePreset vocal_style = VocalStylePreset::Standard,
-                                       DrumStyle drum_style = DrumStyle::Standard);
+                                       DrumStyle drum_style = DrumStyle::Standard,
+                                       float humanize_timing = 1.0f);
 
   // Fixes vocal overlaps that may be introduced by humanization.
   // Singers can only sing one note at a time.

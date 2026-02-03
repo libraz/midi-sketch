@@ -549,6 +549,43 @@ export class SongConfigBuilder {
     return this;
   }
 
+  /**
+   * Set drive feel
+   * @param feel 0=laid-back, 50=neutral, 100=aggressive
+   */
+  setDriveFeel(feel: number): this {
+    this.setField('driveFeel', feel, 'basic');
+    return this;
+  }
+
+  /**
+   * Set addictive mode (Behavioral Loop)
+   * @param enabled Enable addictive mode
+   */
+  setAddictiveMode(enabled: boolean): this {
+    this.setField('addictiveMode', enabled, 'basic');
+    return this;
+  }
+
+  /**
+   * Set mood override
+   * @param mood Mood preset ID (0-23)
+   */
+  setMood(mood: number): this {
+    this.setField('mood', mood, 'basic');
+    this.setField('moodExplicit', true, 'basic');
+    return this;
+  }
+
+  /**
+   * Set form explicit mode (use formId exactly, no randomization)
+   * @param explicit Whether formId should be used exactly
+   */
+  setFormExplicit(explicit: boolean): this {
+    this.setField('formExplicit', explicit, 'basic');
+    return this;
+  }
+
   // ============================================================================
   // Cascade Setters
   // ============================================================================

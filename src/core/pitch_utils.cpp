@@ -229,9 +229,9 @@ bool isDissonantActualInterval(int actual_semitones, int8_t chord_degree) {
   // Pitch class interval for octave-equivalent checks
   int pc_interval = actual_semitones % 12;
 
-  // Minor 2nd (pitch class 1): harsh beating at any octave
-  // Catches: 1, 13, 25 semitones (within 36 limit)
-  if (pc_interval == 1) {
+  // Minor 2nd (1 semitone) and minor 9th (13 semitones): harsh beating in close range
+  // Compound minor 2nds beyond 13 semitones (e.g. 25) are not perceptually dissonant
+  if (pc_interval == 1 && actual_semitones <= 13) {
     return true;
   }
 
@@ -241,9 +241,10 @@ bool isDissonantActualInterval(int actual_semitones, int8_t chord_degree) {
     return true;
   }
 
-  // Major 7th (pitch class 11): creates tension with root at any octave
-  // Catches: 11, 23, 35 semitones
-  if (pc_interval == 11) {
+  // Major 7th (pitch class 11): dissonant within 2 octaves
+  // Bass-upper voice M7 at 23 semitones is still perceptually harsh.
+  // Only very wide compound M7 (35+ semitones, ~3 octaves) is allowed.
+  if (pc_interval == 11 && actual_semitones <= 23) {
     return true;
   }
 

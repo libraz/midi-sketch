@@ -272,6 +272,28 @@ uint8_t getFifth(uint8_t root) {
   return clampBass(root + interval);
 }
 
+/// Get safe 5th that doesn't clash with other tracks.
+/// Falls back to root if 5th would create dissonance.
+/// @param root The chord root pitch
+/// @param harmony Harmony context for collision checking
+/// @param start Start tick for collision check
+/// @param duration Duration for collision check
+/// @return Safe pitch (5th if consonant, root otherwise)
+uint8_t getSafeFifth(uint8_t root, const IHarmonyContext& harmony, Tick start, Tick duration) {
+  uint8_t fifth = getFifth(root);
+  if (harmony.isConsonantWithOtherTracks(fifth, start, duration, TrackRole::Bass)) {
+    return fifth;
+  }
+  // 5th clashes - try octave-adjusted 5th
+  int fifth_down = static_cast<int>(fifth) - OCTAVE;
+  if (fifth_down >= BASS_LOW &&
+      harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(fifth_down), start, duration, TrackRole::Bass)) {
+    return static_cast<uint8_t>(fifth_down);
+  }
+  // Fall back to root (always safest for bass)
+  return root;
+}
+
 /// Get the next diatonic note in C major, stepping from the given pitch.
 /// direction: +1 for ascending, -1 for descending
 /// This ensures Walking Bass uses key-relative diatonic motion, not chord-relative scales.
@@ -642,6 +664,12 @@ BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section
     return selectPattern(section.type, params.drums_enabled, params.mood, section.getEffectiveBackingDensity(),
                          rng);
   });
+
+  // RhythmSync paradigm: Motif provides rhythm foundation, so bass can use simpler patterns.
+  // This prevents over-fragmented bass lines when motif already drives the rhythm.
+  if (params.paradigm == GenerationParadigm::RhythmSync) {
+    base_pattern = adjustPatternSparser(base_pattern);
+  }
 
   // Avoid PedalTone when arpeggio is active - they conflict musically.
   // PedalTone holds tonic while arpeggio plays chord tones, causing SafePitchResolver
@@ -1176,7 +1204,9 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
                      std::mt19937* rng = nullptr) {
   uint8_t vel = calculateVelocity(section, 0, mood);
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
-  uint8_t fifth = getFifth(root);
+  // Use getSafeFifth to pre-check collision with other tracks (Motif, Vocal, etc.)
+  // This prevents major 7th clashes at pattern-selection time, not just at note-creation
+  uint8_t fifth = getSafeFifth(root, harmony, bar_start, TICKS_PER_BEAT);
   uint8_t octave = getOctave(root);
 
   // Build context for pattern functions
@@ -1268,7 +1298,8 @@ void generateBassHalfBar(MidiTrack& track, Tick half_start, uint8_t root, Sectio
 
   uint8_t vel = calculateVelocity(section, 0, mood);
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
-  uint8_t fifth = getFifth(root);
+  // Pre-check 5th for collision with other tracks
+  uint8_t fifth = getSafeFifth(root, harmony, half_start, QUARTER);
 
   // Simple half-bar pattern: root + fifth or root, all with safety checks
   if (is_first_half) {
@@ -1550,6 +1581,11 @@ BassPattern selectPatternWithPolicyForVocal(BassRiffCache& cache, const Section&
   BassPattern pattern = selectPatternWithPolicyCore(cache, sec_idx, params, rng, [&]() {
     return selectPatternForVocalDensity(vocal_density, section.type, params.mood, rng);
   });
+
+  // RhythmSync paradigm: Motif provides rhythm foundation, so bass can use simpler patterns.
+  if (params.paradigm == GenerationParadigm::RhythmSync) {
+    pattern = adjustPatternSparser(pattern);
+  }
 
   // Avoid PedalTone when arpeggio is active in high-energy sections.
   // PedalTone holds tonic while arpeggio plays chord tones, causing SafePitchResolver
@@ -2118,6 +2154,20 @@ void applyBassArticulation(MidiTrack& track, BassPattern pattern, Mood mood,
         note.duration = desired_duration;
       }
     }
+
+    // Record articulation gate transform in provenance if duration changed
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    if (note.duration != original_duration) {
+      // input = original duration (clamped to 255), output = new duration
+      // param1 = articulation type, param2 = gate percentage (0-100)
+      note.addTransformStep(
+          TransformStepType::ArticulationGate,
+          static_cast<uint8_t>(original_duration > 255 ? 255 : original_duration),
+          static_cast<uint8_t>(note.duration > 255 ? 255 : note.duration),
+          static_cast<int8_t>(art),
+          static_cast<int8_t>(gate_mult * 100));
+    }
+#endif
 
     // Apply velocity modification
     // Minimum velocity of 40 ensures muted notes stay above ghost note range (25-35)

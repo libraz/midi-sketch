@@ -236,16 +236,17 @@ TEST(PitchUtilsTest, IsDissonantActualInterval_ConsonantIntervals) {
 }
 
 TEST(PitchUtilsTest, IsDissonantActualInterval_CompoundMinor2nd) {
-  // Compound minor 2nd (minor 9th and beyond) - dissonant at any octave
-  EXPECT_TRUE(isDissonantActualInterval(13, 0));  // Minor 9th (1 + 12)
-  EXPECT_TRUE(isDissonantActualInterval(25, 0));  // Minor 2nd + 2 octaves
+  // Minor 9th (13 semitones) is the perceptual limit for minor 2nd dissonance
+  EXPECT_TRUE(isDissonantActualInterval(13, 0));   // Minor 9th (1 + 12)
+  EXPECT_FALSE(isDissonantActualInterval(25, 0));  // Minor 2nd + 2 octaves: too far to clash
 }
 
 TEST(PitchUtilsTest, IsDissonantActualInterval_CompoundMajor7th) {
-  // Compound major 7th - dissonant at any octave (bass-vocal clash case)
-  // Example: F3(53) vs E5(76) = 23 semitones
-  EXPECT_TRUE(isDissonantActualInterval(23, 0));  // Major 7th + octave
-  EXPECT_TRUE(isDissonantActualInterval(35, 0));  // Major 7th + 2 octaves
+  // Major 7th is dissonant within 2 octaves (bass-upper voice M7 is still harsh)
+  // Only very wide compound M7 (35+ semitones, ~3 octaves) is allowed
+  EXPECT_TRUE(isDissonantActualInterval(11, 0));   // Major 7th: dissonant
+  EXPECT_TRUE(isDissonantActualInterval(23, 0));   // Major 7th + octave: still dissonant
+  EXPECT_FALSE(isDissonantActualInterval(35, 0));  // Major 7th + 2 octaves: allowed
 }
 
 TEST(PitchUtilsTest, IsDissonantActualInterval_CompoundTritone) {
@@ -282,7 +283,7 @@ TEST(PitchUtilsTest, IsDissonantActualInterval_RealWorldBassVocalClash) {
   EXPECT_TRUE(isDissonantActualInterval(18, 0));
 
   // Bass F3 (53) vs Vocal E5 (76) = 23 semitones (compound major 7th)
-  // Should always be dissonant
+  // Within 2 octaves: still dissonant (bass defines harmony)
   EXPECT_TRUE(isDissonantActualInterval(23, 0));
   EXPECT_TRUE(isDissonantActualInterval(23, 4));  // Even on V chord
 
@@ -418,9 +419,11 @@ TEST(PitchUtilsTest, ClampBass) {
 }
 
 TEST(PitchUtilsTest, ClampChord) {
-  EXPECT_EQ(clampChord(50), CHORD_LOW);
-  EXPECT_EQ(clampChord(72), 72);
-  EXPECT_EQ(clampChord(90), CHORD_HIGH);
+  // CHORD_LOW = 48 (C3), CHORD_HIGH = 84 (C6)
+  EXPECT_EQ(clampChord(40), CHORD_LOW);  // Below range: clamp to CHORD_LOW (48)
+  EXPECT_EQ(clampChord(50), 50);         // Within range: unchanged
+  EXPECT_EQ(clampChord(72), 72);         // Within range: unchanged
+  EXPECT_EQ(clampChord(90), CHORD_HIGH); // Above range: clamp to CHORD_HIGH (84)
 }
 
 TEST(PitchUtilsTest, ClampMotif) {

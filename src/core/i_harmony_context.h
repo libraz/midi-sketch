@@ -235,6 +235,21 @@ class IHarmonyContext : public IChordLookup {
    */
   virtual uint8_t getHighestPitchForTrackInRange(Tick start, Tick end, TrackRole role) const = 0;
 
+  /**
+   * @brief Get the lowest MIDI pitch from a specific track within a time range.
+   *
+   * Returns the lowest actual MIDI pitch (1-127) for notes from the specified
+   * track that overlap with [start, end). Returns 0 if no notes found.
+   * Used for per-onset vocal ceiling: accompaniment should not exceed the
+   * lowest concurrent vocal pitch to prevent pitch crossing at any point.
+   *
+   * @param start Start of time range
+   * @param end End of time range
+   * @param role Which track to query
+   * @return Lowest MIDI pitch, or 0 if no notes in range
+   */
+  virtual uint8_t getLowestPitchForTrackInRange(Tick start, Tick end, TrackRole role) const = 0;
+
   /// C4 (middle C) - below this, stricter low-register rules apply.
   static constexpr uint8_t LOW_REGISTER_THRESHOLD = 60;
 };

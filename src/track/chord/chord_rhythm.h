@@ -87,26 +87,24 @@ inline ChordRhythm selectRhythm(SectionType section, Mood mood, BackingDensity b
     std::uniform_real_distribution<float> dist(0.0f, 1.0f);
     float roll = dist(rng);
 
-    // Section-based weights for RhythmSync
-    // Choruses/B sections need denser rhythm to sync with fast-moving Motif.
-    // IMPORTANT: Half/Whole notes in these sections cause collisions because
-    // Motif changes every 240 ticks (Eighth) but Half sustains for 960 ticks.
+    // RhythmSync: prefer longer notes (Half/Whole). Collisions with Motif are
+    // handled reactively via duration shortening in createNoteWithResult().
     if (isHighEnergySection(section)) {
-      // High-energy sections: 45% Quarter, 55% Eighth (no Half)
-      // This ensures chord notes are short enough to not overlap with Motif changes
-      if (roll < 0.45f) return ChordRhythm::Quarter;
+      // High-energy sections: 60% Half, 30% Quarter, 10% Eighth
+      if (roll < 0.60f) return ChordRhythm::Half;
+      if (roll < 0.90f) return ChordRhythm::Quarter;
       return ChordRhythm::Eighth;
     } else if (isInstrumentalBreak(section) || section == SectionType::Outro) {
-      // Transition sections: 40% Half, 40% Quarter, 20% Whole
-      if (roll < 0.40f) return ChordRhythm::Half;
-      if (roll < 0.80f) return ChordRhythm::Quarter;
-      return ChordRhythm::Whole;
+      // Transition sections: 50% Whole, 40% Half, 10% Quarter
+      if (roll < 0.50f) return ChordRhythm::Whole;
+      if (roll < 0.90f) return ChordRhythm::Half;
+      return ChordRhythm::Quarter;
     } else {
-      // A/Bridge sections: 40% Quarter, 30% Half, 20% Eighth, 10% Whole
-      if (roll < 0.40f) return ChordRhythm::Quarter;
-      if (roll < 0.70f) return ChordRhythm::Half;
-      if (roll < 0.90f) return ChordRhythm::Eighth;
-      return ChordRhythm::Whole;
+      // A/Bridge sections: 40% Whole, 40% Half, 15% Quarter, 5% Eighth
+      if (roll < 0.40f) return ChordRhythm::Whole;
+      if (roll < 0.80f) return ChordRhythm::Half;
+      if (roll < 0.95f) return ChordRhythm::Quarter;
+      return ChordRhythm::Eighth;
     }
   }
 

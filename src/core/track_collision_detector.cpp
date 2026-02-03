@@ -299,6 +299,20 @@ uint8_t TrackCollisionDetector::getHighestPitchForTrackInRange(Tick start, Tick 
   return highest;
 }
 
+uint8_t TrackCollisionDetector::getLowestPitchForTrackInRange(Tick start, Tick end,
+                                                                TrackRole role) const {
+  uint8_t lowest = 0;
+  for (const auto& note : notes_) {
+    if (note.track != role) continue;
+    if (note.start < end && note.end > start) {
+      if (lowest == 0 || note.pitch < lowest) {
+        lowest = note.pitch;
+      }
+    }
+  }
+  return lowest;
+}
+
 void TrackCollisionDetector::clearNotes() {
   notes_.clear();
 }
@@ -326,12 +340,7 @@ Tick TrackCollisionDetector::getMaxSafeEnd(Tick note_start, uint8_t pitch, Track
     // This note could potentially overlap with the extended duration
     // Check if it would create a dissonant interval
     int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
-    int pc_interval = actual_semitones % 12;
-
-    // Check for dissonant intervals
-    bool is_dissonant = (pc_interval == 1) ||                           // minor 2nd
-                        (actual_semitones == 2) ||                      // major 2nd (close range)
-                        (pc_interval == 11 && actual_semitones < 36);   // major 7th
+    bool is_dissonant = isDissonantActualInterval(actual_semitones, 0);
 
     if (is_dissonant) {
       // If note starts after note_start, we can extend up to (but not including) note.start

@@ -77,12 +77,14 @@ class TimingOffsetCalculator {
   static constexpr uint8_t kHiHatFoot = 44;
   static constexpr int kBassBaseOffset = -4;
 
-  /// @brief Construct with drive feel, vocal style, and drum style.
+  /// @brief Construct with drive feel, vocal style, drum style, and humanize timing.
   /// @param drive_feel Drive intensity (0-100)
   /// @param vocal_style Vocal style for physics parameters
   /// @param drum_style Drum style for timing profile selection
+  /// @param humanize_timing Global humanization scaling (0.0-1.0, scales all timing offsets)
   TimingOffsetCalculator(uint8_t drive_feel, VocalStylePreset vocal_style,
-                         DrumStyle drum_style = DrumStyle::Standard);
+                         DrumStyle drum_style = DrumStyle::Standard,
+                         float humanize_timing = 1.0f);
 
   // ============================================================================
   // Drum Timing
@@ -167,6 +169,7 @@ class TimingOffsetCalculator {
 
  private:
   float timing_mult_;                   ///< Timing multiplier from drive feel
+  float humanize_timing_;               ///< Global humanization scaling (0.0-1.0)
   VocalPhysicsParams physics_;          ///< Vocal physics parameters
   const DrumTimingProfile& profile_;    ///< Drum timing profile for selected style
 

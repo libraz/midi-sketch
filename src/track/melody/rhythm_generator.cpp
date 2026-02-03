@@ -32,8 +32,8 @@ std::vector<RhythmNote> generatePhraseRhythmImpl(const MelodyTemplate& tmpl, uin
 
   // Reserve space for final phrase-ending note
   // UltraVocaloid: shorter reservation to maximize machine-gun notes
-  // Standard: 1 beat reservation for proper cadence
-  float phrase_body_end = (thirtysecond_ratio >= 0.8f) ? end_beat - 0.5f : end_beat - 1.0f;
+  // Standard: 0.5 beat reservation (reduced from 1.0 to increase density)
+  float phrase_body_end = (thirtysecond_ratio >= 0.8f) ? end_beat - 0.25f : end_beat - 0.5f;
 
   // Track consecutive short notes to prevent breath-difficult passages
   // Pop vocal principle: limit rapid-fire notes to maintain singability
@@ -142,16 +142,22 @@ std::vector<RhythmNote> generatePhraseRhythmImpl(const MelodyTemplate& tmpl, uin
         }
       }
     } else if (force_long_on_beat) {
-      // Strong beat (non-UltraVocaloid): prioritize longer notes for natural vocal phrasing
-      // Avoid 16th/32nd notes on downbeats - they break the rhythmic anchor
-      if (dist(rng) < tmpl.long_note_ratio * 2.0f) {
-        eighths = 4.0f;  // Half note (doubled probability on strong beat)
+      // Strong beat (non-UltraVocaloid): allow shorter notes for denser melodies
+      // Base 30% chance for 8th notes on strong beats, plus density bonus
+      // This creates J-POP/K-POP conversational feel with more rhythmic activity
+      float eighth_prob = 0.30f + effective_sixteenth_density * 0.3f;  // 30-60% for 8th
+      float half_prob = tmpl.long_note_ratio * 0.8f;  // Reduced half note probability
+      float roll = dist(rng);
+      if (roll < eighth_prob) {
+        eighths = 1.0f;  // 8th note
+      } else if (roll < eighth_prob + half_prob) {
+        eighths = 4.0f;  // Half note
       } else {
-        eighths = 2.0f;  // Quarter note (default for strong beats)
+        eighths = 2.0f;  // Quarter note
       }
       consecutive_short_count = 0;  // Reset counter on strong beat
     } else {
-      // Weak beat: use existing logic for rhythmic variety
+      // Weak beat: favor shorter notes for density
       // Apply "溜め→爆発" (hold→burst) pattern: boost density after long notes
       float local_density_boost = 1.0f;
       if (prev_note_eighths >= kLongNoteThreshold) {
@@ -160,13 +166,13 @@ std::vector<RhythmNote> generatePhraseRhythmImpl(const MelodyTemplate& tmpl, uin
 
       if (thirtysecond_ratio > 0.0f && dist(rng) < thirtysecond_ratio * local_density_boost) {
         eighths = 0.25f;  // 32nd note (0.25 eighth = 60 ticks)
-      } else if (tmpl.rhythm_driven &&
-                 dist(rng) < effective_sixteenth_density * local_density_boost) {
-        eighths = 1.0f;  // 16th note (0.5 eighth)
-      } else if (dist(rng) < tmpl.long_note_ratio / local_density_boost) {
-        eighths = 4.0f;  // Half note (less likely after long note)
+      } else if (dist(rng) < (0.35f + effective_sixteenth_density) * local_density_boost) {
+        // 35% base + density bonus for 8th notes (removed rhythm_driven requirement)
+        eighths = 1.0f;  // 8th note
+      } else if (dist(rng) < tmpl.long_note_ratio * 0.5f / local_density_boost) {
+        eighths = 4.0f;  // Half note (reduced probability)
       } else {
-        eighths = 2.0f;  // Quarter note (most common)
+        eighths = 2.0f;  // Quarter note
       }
     }
 
@@ -240,17 +246,68 @@ std::vector<RhythmNote> generatePhraseRhythmImpl(const MelodyTemplate& tmpl, uin
   return rhythm;
 }
 
-uint8_t selectPitchForLockedRhythmImpl(uint8_t prev_pitch, int8_t chord_degree, uint8_t vocal_low,
-                                       uint8_t vocal_high, std::mt19937& rng) {
-  // Get chord tone pitch classes (0-11) for the current chord (prioritize consonance)
-  std::vector<int> chord_tone_pcs = getChordTonePitchClasses(chord_degree);
+// ============================================================================
+// Enhanced Locked Rhythm Pitch Selection
+// ============================================================================
+// Addresses the melodic quality issues in RhythmSync paradigm:
+// 1. Direction bias based on phrase position (ascending start, resolving end)
+// 2. Direction inertia to maintain melodic momentum
+// 3. GlobalMotif interval pattern reference for song-wide unity
+
+/// @brief Section-specific direction bias thresholds.
+/// @return {ascending_end, descending_start} for phrase position.
+static std::pair<float, float> getDirectionBiasThresholds(SectionType type) {
+  switch (type) {
+    case SectionType::Chorus:
+      return {0.25f, 0.75f};  // Stronger arch shape for memorable melody
+    case SectionType::A:
+      return {0.40f, 0.60f};  // Flatter for storytelling
+    case SectionType::Bridge:
+      return {0.50f, 0.50f};  // Symmetric for contrast
+    default:
+      return {0.30f, 0.70f};  // Default
+  }
+}
+
+/// @brief Section-specific maximum direction inertia.
+/// Verse sections have lower inertia for more restrained movement.
+static int getMaxInertia(SectionType type) {
+  switch (type) {
+    case SectionType::Chorus:
+      return 3;  // Dynamic melodic movement
+    case SectionType::A:
+      return 2;  // Restrained for storytelling
+    case SectionType::Bridge:
+      return 2;  // Contrast with chorus
+    default:
+      return 3;
+  }
+}
+
+uint8_t selectPitchForLockedRhythmEnhancedImpl(
+    uint8_t prev_pitch, int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
+    const LockedRhythmContext& ctx, std::mt19937& rng) {
+  // Build candidate pitch classes based on VocalAttitude
+  std::vector<int> candidate_pcs;
+
+  if (ctx.vocal_attitude == VocalAttitude::Raw) {
+    // Raw: All diatonic scale tones allowed (rule-breaking)
+    candidate_pcs = {0, 2, 4, 5, 7, 9, 11};  // C major diatonic
+  } else {
+    // Start with chord tones
+    candidate_pcs = getChordTonePitchClasses(chord_degree);
+
+    // Expressive: Add tensions (9th, 13th) for colorful harmonies
+    if (ctx.vocal_attitude >= VocalAttitude::Expressive && !candidate_pcs.empty()) {
+      int root = candidate_pcs[0];
+      candidate_pcs.push_back((root + 2) % 12);   // 9th = root + 2
+      candidate_pcs.push_back((root + 9) % 12);   // 13th = root + 9
+    }
+  }
 
   // Collect candidate pitches within vocal range
   std::vector<uint8_t> candidates;
-
-  // Add chord tones in range (primary candidates)
-  // pitch_class is the pitch modulo 12 (e.g., C=0, C#=1, ..., B=11)
-  for (int pc : chord_tone_pcs) {
+  for (int pc : candidate_pcs) {
     for (int octave = 3; octave <= 7; ++octave) {
       int pitch = pc + (octave * 12);
       if (pitch >= vocal_low && pitch <= vocal_high) {
@@ -260,9 +317,13 @@ uint8_t selectPitchForLockedRhythmImpl(uint8_t prev_pitch, int8_t chord_degree, 
   }
 
   if (candidates.empty()) {
-    // Fallback: use any pitch in range
+    // Fallback: use diatonic scale tones
     for (int p = vocal_low; p <= vocal_high; ++p) {
-      candidates.push_back(static_cast<uint8_t>(p));
+      int pc = p % 12;
+      // C major diatonic: 0, 2, 4, 5, 7, 9, 11
+      if (pc == 0 || pc == 2 || pc == 4 || pc == 5 || pc == 7 || pc == 9 || pc == 11) {
+        candidates.push_back(static_cast<uint8_t>(p));
+      }
     }
   }
 
@@ -270,31 +331,129 @@ uint8_t selectPitchForLockedRhythmImpl(uint8_t prev_pitch, int8_t chord_degree, 
     return prev_pitch;  // Safety fallback
   }
 
-  // Sort candidates by distance from prev_pitch (prefer stepwise motion)
-  std::sort(candidates.begin(), candidates.end(), [prev_pitch](uint8_t a, uint8_t b) {
-    return std::abs(static_cast<int>(a) - prev_pitch) < std::abs(static_cast<int>(b) - prev_pitch);
-  });
+  // =========================================================================
+  // Phase 1: Apply direction bias based on phrase position
+  // =========================================================================
+  // Section-specific thresholds for melodic arch shape
+  auto [ascending_end, descending_start] = getDirectionBiasThresholds(ctx.section_type);
+  int direction_bias = 0;  // -1 = prefer down, 0 = neutral, +1 = prefer up
+  if (ctx.phrase_position < ascending_end) {
+    direction_bias = 1;   // Ascending bias at start
+  } else if (ctx.phrase_position > descending_start) {
+    direction_bias = -1;  // Descending bias at end (resolution)
+  }
 
-  // Weight selection: prefer close pitches but allow some variety
-  // 60% chance: closest pitch (stepwise)
-  // 30% chance: second closest
-  // 10% chance: random from top 4
+  // =========================================================================
+  // Phase 2: Apply direction inertia
+  // =========================================================================
+  // Direction inertia creates melodic momentum - once moving up/down,
+  // continue that direction to create smooth phrases
+  // Section-specific maximum inertia (Verse is more restrained)
+  int max_inertia = getMaxInertia(ctx.section_type);
+  int clamped_inertia = std::clamp(ctx.direction_inertia, -max_inertia, max_inertia);
+  if (clamped_inertia > 1) {
+    direction_bias = std::max(direction_bias, 1);  // Strong upward momentum
+  } else if (clamped_inertia < -1) {
+    direction_bias = std::min(direction_bias, -1); // Strong downward momentum
+  }
+
+  // =========================================================================
+  // Phase 3: Check GlobalMotif interval pattern
+  // =========================================================================
+  // If we have a cached GlobalMotif, try to follow its interval pattern
+  // This creates song-wide melodic unity
+  // Use modulo to cycle through motif when note_index exceeds motif length
+  int motif_target = -1;
+  if (ctx.motif_intervals != nullptr && ctx.motif_interval_count > 0) {
+    size_t motif_idx = ctx.note_index % ctx.motif_interval_count;
+    int8_t interval = ctx.motif_intervals[motif_idx];
+    int target = static_cast<int>(prev_pitch) + interval;
+    // Clamp to vocal range
+    target = std::clamp(target, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
+    motif_target = target;
+  }
+
+  // =========================================================================
+  // Phase 4: Score and select best candidate
+  // =========================================================================
+  std::vector<std::pair<uint8_t, float>> scored_candidates;
+  scored_candidates.reserve(candidates.size());
+
+  for (uint8_t pitch : candidates) {
+    float score = 1.0f;
+    int movement = static_cast<int>(pitch) - static_cast<int>(prev_pitch);
+    int abs_movement = std::abs(movement);
+
+    // 4.1: Stepwise preference (most important for singability)
+    // Prefer small intervals (1-2 semitones = step, 3-4 = small skip)
+    // P5 (7 semitones) is common in J-POP melodies and should not be penalized
+    if (abs_movement <= 2) {
+      score += 0.4f;  // Strong bonus for stepwise
+    } else if (abs_movement <= 4) {
+      score += 0.2f;  // Moderate bonus for small skip
+    } else if (abs_movement >= 9) {
+      score -= 0.3f;  // Penalty for large leaps (>= M6)
+    }
+
+    // 4.2: Direction bias alignment
+    if (direction_bias != 0) {
+      if ((movement > 0 && direction_bias > 0) || (movement < 0 && direction_bias < 0)) {
+        score += 0.25f;  // Bonus for matching direction preference
+      } else if ((movement > 0 && direction_bias < 0) || (movement < 0 && direction_bias > 0)) {
+        score -= 0.15f;  // Penalty for opposing direction
+      }
+    }
+
+    // 4.3: GlobalMotif target alignment
+    if (motif_target >= 0) {
+      int dist_to_motif = std::abs(static_cast<int>(pitch) - motif_target);
+      if (dist_to_motif == 0) {
+        score += 0.3f;  // Exact match with motif target
+      } else if (dist_to_motif <= 2) {
+        score += 0.15f; // Close to motif target
+      }
+    }
+
+    // 4.4: Tessitura center preference (comfortable singing range)
+    int dist_to_center = std::abs(static_cast<int>(pitch) - static_cast<int>(ctx.tessitura_center));
+    if (dist_to_center <= 6) {
+      score += 0.1f;   // Bonus for staying near tessitura center
+    } else if (dist_to_center > 12) {
+      score -= 0.1f;   // Penalty for straying far from center
+    }
+
+    // 4.5: Prevent excessive same-pitch (movement == 0 gets lower base)
+    if (movement == 0) {
+      score -= 0.1f;   // Slight penalty for no movement
+    }
+
+    scored_candidates.emplace_back(pitch, score);
+  }
+
+  // Sort by score (highest first)
+  std::sort(scored_candidates.begin(), scored_candidates.end(),
+            [](const auto& a, const auto& b) { return a.second > b.second; });
+
+  // Weighted probabilistic selection from top candidates
+  // This maintains some variety while preferring better options
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
   float roll = dist(rng);
 
-  size_t idx = 0;
-  if (roll < 0.6f) {
-    idx = 0;  // Closest
-  } else if (roll < 0.9f && candidates.size() > 1) {
-    idx = 1;  // Second closest
-  } else if (candidates.size() > 2) {
-    // Random from top 4
-    size_t max_idx = std::min(static_cast<size_t>(4), candidates.size());
-    std::uniform_int_distribution<size_t> idx_dist(0, max_idx - 1);
-    idx = idx_dist(rng);
+  // Top candidate: 55%, Second: 25%, Third: 15%, Fourth+: 5%
+  if (roll < 0.55f || scored_candidates.size() == 1) {
+    return scored_candidates[0].first;
+  } else if (roll < 0.80f && scored_candidates.size() > 1) {
+    return scored_candidates[1].first;
+  } else if (roll < 0.95f && scored_candidates.size() > 2) {
+    return scored_candidates[2].first;
+  } else if (scored_candidates.size() > 3) {
+    // Random from remaining top candidates
+    size_t max_idx = std::min(static_cast<size_t>(6), scored_candidates.size());
+    std::uniform_int_distribution<size_t> idx_dist(3, max_idx - 1);
+    return scored_candidates[idx_dist(rng)].first;
   }
 
-  return candidates[idx];
+  return scored_candidates[0].first;
 }
 
 }  // namespace melody

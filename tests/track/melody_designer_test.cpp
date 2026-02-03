@@ -1069,70 +1069,95 @@ TEST(GlobalMotifTest, CacheAndRetrieveGlobalMotif) {
 }
 
 // ============================================================================
-// selectPitchForLockedRhythm Tests
+// selectPitchForLockedRhythmEnhanced Tests
 // ============================================================================
 
-TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_ReturnsInRange) {
+TEST(MelodyDesignerTest, SelectPitchForLockedRhythmEnhanced_ReturnsInRange) {
   MelodyDesigner designer;
   std::mt19937 rng(42);
 
   uint8_t vocal_low = 60;   // C4
   uint8_t vocal_high = 72;  // C5
   uint8_t prev_pitch = 66;  // F#4
+  int direction_inertia = 0;
 
   for (int i = 0; i < 100; ++i) {
-    uint8_t pitch = designer.selectPitchForLockedRhythm(prev_pitch, 0, vocal_low, vocal_high, rng);
+    float phrase_pos = static_cast<float>(i) / 100.0f;
+    uint8_t pitch = designer.selectPitchForLockedRhythmEnhanced(
+        prev_pitch, 0, vocal_low, vocal_high, phrase_pos, direction_inertia, i, rng);
     EXPECT_GE(pitch, vocal_low) << "Pitch below range";
     EXPECT_LE(pitch, vocal_high) << "Pitch above range";
+
+    // Update direction inertia
+    int movement = static_cast<int>(pitch) - static_cast<int>(prev_pitch);
+    if (movement > 0) direction_inertia = std::min(direction_inertia + 1, 3);
+    else if (movement < 0) direction_inertia = std::max(direction_inertia - 1, -3);
+
     prev_pitch = pitch;
   }
 }
 
-TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_PrefersChordTones) {
+TEST(MelodyDesignerTest, SelectPitchForLockedRhythmEnhanced_PrefersChordTones) {
   MelodyDesigner designer;
   std::mt19937 rng(42);
 
   uint8_t vocal_low = 60;   // C4
   uint8_t vocal_high = 72;  // C5
   uint8_t prev_pitch = 64;  // E4 (chord tone of C major)
+  int direction_inertia = 0;
 
   // Test with I chord (C major: C, E, G)
   int chord_tone_count = 0;
   for (int i = 0; i < 100; ++i) {
-    uint8_t pitch = designer.selectPitchForLockedRhythm(prev_pitch, 0, vocal_low, vocal_high, rng);
+    float phrase_pos = static_cast<float>(i) / 100.0f;
+    uint8_t pitch = designer.selectPitchForLockedRhythmEnhanced(
+        prev_pitch, 0, vocal_low, vocal_high, phrase_pos, direction_inertia, i, rng);
     int pc = pitch % 12;
     // C=0, E=4, G=7 are chord tones of C major
     if (pc == 0 || pc == 4 || pc == 7) {
       chord_tone_count++;
     }
+
+    int movement = static_cast<int>(pitch) - static_cast<int>(prev_pitch);
+    if (movement > 0) direction_inertia = std::min(direction_inertia + 1, 3);
+    else if (movement < 0) direction_inertia = std::max(direction_inertia - 1, -3);
+
     prev_pitch = pitch;
   }
   // Should have a majority of chord tones (more than 70%)
   EXPECT_GT(chord_tone_count, 70) << "Should prefer chord tones";
 }
 
-TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_PrefersSmallIntervals) {
+TEST(MelodyDesignerTest, SelectPitchForLockedRhythmEnhanced_PrefersSmallIntervals) {
   MelodyDesigner designer;
   std::mt19937 rng(42);
 
   uint8_t vocal_low = 48;   // C3
   uint8_t vocal_high = 84;  // C6 (wide range)
   uint8_t prev_pitch = 64;  // E4
+  int direction_inertia = 0;
 
   int small_interval_count = 0;
   for (int i = 0; i < 100; ++i) {
-    uint8_t pitch = designer.selectPitchForLockedRhythm(prev_pitch, 0, vocal_low, vocal_high, rng);
+    float phrase_pos = static_cast<float>(i) / 100.0f;
+    uint8_t pitch = designer.selectPitchForLockedRhythmEnhanced(
+        prev_pitch, 0, vocal_low, vocal_high, phrase_pos, direction_inertia, i, rng);
     int interval = std::abs(static_cast<int>(pitch) - prev_pitch);
     if (interval <= 5) {  // Within a 4th
       small_interval_count++;
     }
+
+    int movement = static_cast<int>(pitch) - static_cast<int>(prev_pitch);
+    if (movement > 0) direction_inertia = std::min(direction_inertia + 1, 3);
+    else if (movement < 0) direction_inertia = std::max(direction_inertia - 1, -3);
+
     prev_pitch = pitch;
   }
   // Should have mostly small intervals (more than 60%)
   EXPECT_GT(small_interval_count, 60) << "Should prefer stepwise motion";
 }
 
-TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_HandlesNarrowRange) {
+TEST(MelodyDesignerTest, SelectPitchForLockedRhythmEnhanced_HandlesNarrowRange) {
   MelodyDesigner designer;
   std::mt19937 rng(42);
 
@@ -1141,14 +1166,16 @@ TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_HandlesNarrowRange) {
   uint8_t prev_pitch = 60;
 
   for (int i = 0; i < 50; ++i) {
-    uint8_t pitch = designer.selectPitchForLockedRhythm(prev_pitch, 0, vocal_low, vocal_high, rng);
+    float phrase_pos = static_cast<float>(i) / 50.0f;
+    uint8_t pitch = designer.selectPitchForLockedRhythmEnhanced(
+        prev_pitch, 0, vocal_low, vocal_high, phrase_pos, 0, i, rng);
     EXPECT_GE(pitch, vocal_low);
     EXPECT_LE(pitch, vocal_high);
     prev_pitch = pitch;
   }
 }
 
-TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_DifferentChordDegrees) {
+TEST(MelodyDesignerTest, SelectPitchForLockedRhythmEnhanced_DifferentChordDegrees) {
   MelodyDesigner designer;
   std::mt19937 rng(42);
 
@@ -1160,13 +1187,44 @@ TEST(MelodyDesignerTest, SelectPitchForLockedRhythm_DifferentChordDegrees) {
   for (int8_t degree : degrees) {
     uint8_t prev_pitch = 64;
     for (int i = 0; i < 20; ++i) {
-      uint8_t pitch =
-          designer.selectPitchForLockedRhythm(prev_pitch, degree, vocal_low, vocal_high, rng);
+      float phrase_pos = static_cast<float>(i) / 20.0f;
+      uint8_t pitch = designer.selectPitchForLockedRhythmEnhanced(
+          prev_pitch, degree, vocal_low, vocal_high, phrase_pos, 0, i, rng);
       EXPECT_GE(pitch, vocal_low);
       EXPECT_LE(pitch, vocal_high);
       prev_pitch = pitch;
     }
   }
+}
+
+TEST(MelodyDesignerTest, SelectPitchForLockedRhythmEnhanced_DirectionInertia) {
+  // Test that direction inertia creates melodic momentum
+  MelodyDesigner designer;
+  std::mt19937 rng(42);
+
+  uint8_t vocal_low = 48;
+  uint8_t vocal_high = 84;
+  uint8_t start_pitch = 66;  // Middle of range
+
+  // Test with strong upward inertia
+  int upward_count = 0;
+  for (int trial = 0; trial < 50; ++trial) {
+    uint8_t pitch = designer.selectPitchForLockedRhythmEnhanced(
+        start_pitch, 0, vocal_low, vocal_high, 0.5f, 3, 0, rng);  // inertia = +3
+    if (pitch > start_pitch) upward_count++;
+  }
+  // With strong upward inertia, should prefer ascending motion
+  EXPECT_GT(upward_count, 20) << "Strong upward inertia should favor ascending motion";
+
+  // Test with strong downward inertia
+  int downward_count = 0;
+  for (int trial = 0; trial < 50; ++trial) {
+    uint8_t pitch = designer.selectPitchForLockedRhythmEnhanced(
+        start_pitch, 0, vocal_low, vocal_high, 0.5f, -3, 0, rng);  // inertia = -3
+    if (pitch < start_pitch) downward_count++;
+  }
+  // With strong downward inertia, should prefer descending motion
+  EXPECT_GT(downward_count, 20) << "Strong downward inertia should favor descending motion";
 }
 
 // ============================================================================

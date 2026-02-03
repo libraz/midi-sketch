@@ -73,10 +73,20 @@ inline void addDrumNote(MidiTrack& track, Tick start, Tick duration, uint8_t not
 }
 
 /// @brief Add kick with humanization (timing micro-variation).
+/// @param track Target MIDI track
+/// @param tick Note start tick
+/// @param duration Note duration
+/// @param velocity Note velocity
+/// @param rng Random number generator
+/// @param humanize_amount Base humanization amount (default ±2%)
+/// @param humanize_timing Global humanization scaling (0.0-1.0, scales the offset)
 inline void addKickWithHumanize(MidiTrack& track, Tick tick, Tick duration, uint8_t velocity,
                                 std::mt19937& rng,
-                                float humanize_amount = KICK_HUMANIZE_AMOUNT) {
-  int max_offset = static_cast<int>(SIXTEENTH * humanize_amount);
+                                float humanize_amount = KICK_HUMANIZE_AMOUNT,
+                                float humanize_timing = 1.0f) {
+  // Scale humanize_amount by humanize_timing for unified control
+  float effective_amount = humanize_amount * std::clamp(humanize_timing, 0.0f, 1.0f);
+  int max_offset = static_cast<int>(SIXTEENTH * effective_amount);
   std::uniform_int_distribution<int> offset_dist(-max_offset, max_offset);
 
   Tick humanized_tick = tick;

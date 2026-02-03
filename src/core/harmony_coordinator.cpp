@@ -146,6 +146,11 @@ uint8_t HarmonyCoordinator::getHighestPitchForTrackInRange(Tick start, Tick end,
   return base_context_.getHighestPitchForTrackInRange(start, end, role);
 }
 
+uint8_t HarmonyCoordinator::getLowestPitchForTrackInRange(Tick start, Tick end,
+                                                            TrackRole role) const {
+  return base_context_.getLowestPitchForTrackInRange(start, end, role);
+}
+
 // ============================================================================
 // Track Priority System
 // ============================================================================

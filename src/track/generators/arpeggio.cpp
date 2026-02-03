@@ -503,6 +503,9 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
           }
 
           // Use createNoteAndAdd for safe note creation with registration
+          // Per-onset vocal ceiling: arpeggio should not exceed vocal at this onset
+          uint8_t vocal_at_onset = harmony->getHighestPitchForTrackInRange(
+              note_pos, note_pos + section_gated_duration, TrackRole::Vocal);
           NoteOptions opts;
           opts.start = note_pos;
           opts.duration = section_gated_duration;
@@ -511,7 +514,9 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
           opts.role = TrackRole::Arpeggio;
           opts.preference = PitchPreference::PreferChordTones;
           opts.range_low = 48;   // C3 (from PhysicalModels::kArpeggioSynth)
-          opts.range_high = 108; // C8
+          opts.range_high = (vocal_at_onset > 0)
+              ? std::min(108, static_cast<int>(vocal_at_onset))
+              : 108;
           opts.source = NoteSource::Arpeggio;
           opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
 

@@ -251,6 +251,15 @@ void Coordinator::generateAllTracks(Song& song) {
   // Used by Bass, Drums, Chord for adapting to vocal
   std::optional<VocalAnalysis> vocal_analysis;
 
+  // If vocal is pre-generated (vocal-first workflow), register and cache analysis
+  if (params_.skip_vocal && !song.vocal().notes().empty()) {
+    harmony.registerTrack(song.vocal(), TrackRole::Vocal);
+    vocal_analysis = analyzeVocal(song.vocal());
+    if (harmony_coord) {
+      harmony_coord->markTrackGenerated(TrackRole::Vocal);
+    }
+  }
+
   // Generate tracks in order
   for (TrackRole role : order) {
     // Skip disabled tracks
@@ -326,6 +335,15 @@ void Coordinator::generateAllTracks(Song& song) {
         ctx.intro_chant = static_cast<uint8_t>(params_.intro_chant);
         ctx.mix_pattern = static_cast<uint8_t>(params_.mix_pattern);
         ctx.call_density = static_cast<uint8_t>(params_.call_density);
+      }
+
+      // Pass Motif track reference for RhythmSync paradigm
+      // Vocal uses Motif's rhythm pattern as coordinate axis
+      if (role == TrackRole::Vocal && paradigm_ == GenerationParadigm::RhythmSync) {
+        const MidiTrack& motif = song.motif();
+        if (!motif.empty()) {
+          ctx.motif_track = &motif;
+        }
       }
 
       // Use generateFullTrack() pattern (section-spanning logic supported)

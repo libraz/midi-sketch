@@ -312,5 +312,101 @@ TEST(CApiTest, RegenerateAccompanimentMultipleTimesDoesNotAccumulate) {
   midisketch_destroy(handle);
 }
 
+// ============================================================================
+// Missing SongConfig Fields Tests
+// ============================================================================
+
+TEST(CApiTest, DefaultConfigHasCorrectNewFieldDefaults) {
+  MidiSketchSongConfig config = midisketch_create_default_config(0);
+
+  // mood defaults to 0, mood_explicit defaults to 0 (derive from style)
+  EXPECT_EQ(config.mood, 0);
+  EXPECT_EQ(config.mood_explicit, 0);
+
+  // form_explicit defaults to 0 (may randomize)
+  EXPECT_EQ(config.form_explicit, 0);
+
+  // drive_feel defaults to 50 (neutral)
+  EXPECT_EQ(config.drive_feel, 50);
+
+  // addictive_mode defaults to 0 (off)
+  EXPECT_EQ(config.addictive_mode, 0);
+}
+
+TEST(CApiTest, MoodFieldRoundTrips) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+
+  MidiSketchSongConfig config = midisketch_create_default_config(0);
+  config.seed = 42;
+  config.mood = 5;
+  config.mood_explicit = 1;
+
+  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  EXPECT_EQ(err, MIDISKETCH_OK);
+
+  midisketch_destroy(handle);
+}
+
+TEST(CApiTest, FormExplicitFieldRoundTrips) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+
+  MidiSketchSongConfig config = midisketch_create_default_config(0);
+  config.seed = 42;
+  config.form_explicit = 1;
+
+  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  EXPECT_EQ(err, MIDISKETCH_OK);
+
+  midisketch_destroy(handle);
+}
+
+TEST(CApiTest, DriveFeelFieldRoundTrips) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+
+  MidiSketchSongConfig config = midisketch_create_default_config(0);
+  config.seed = 42;
+  config.drive_feel = 80;
+
+  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  EXPECT_EQ(err, MIDISKETCH_OK);
+
+  midisketch_destroy(handle);
+}
+
+TEST(CApiTest, AddictiveModeFieldRoundTrips) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+
+  MidiSketchSongConfig config = midisketch_create_default_config(0);
+  config.seed = 42;
+  config.addictive_mode = 1;
+
+  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  EXPECT_EQ(err, MIDISKETCH_OK);
+
+  midisketch_destroy(handle);
+}
+
+TEST(CApiTest, AllNewFieldsTogetherRoundTrip) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+
+  MidiSketchSongConfig config = midisketch_create_default_config(0);
+  config.seed = 42;
+  config.mood = 10;
+  config.mood_explicit = 1;
+  config.form_explicit = 1;
+  config.drive_feel = 100;
+  config.addictive_mode = 1;
+
+  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  EXPECT_EQ(err, MIDISKETCH_OK);
+
+  midisketch_destroy(handle);
+}
+
 }  // namespace
 }  // namespace midisketch

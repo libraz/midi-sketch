@@ -148,10 +148,12 @@ void PostProcessor::applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass,
                                              const std::vector<Section>* sections,
                                              uint8_t drive_feel,
                                              VocalStylePreset vocal_style,
-                                             DrumStyle drum_style) {
+                                             DrumStyle drum_style,
+                                             float humanize_timing) {
   // Use TimingOffsetCalculator for clearer code structure and traceability.
   // The calculator encapsulates all timing logic previously in inline lambdas.
-  TimingOffsetCalculator calculator(drive_feel, vocal_style, drum_style);
+  // humanize_timing scales all timing offsets (0.0 = no timing variation, 1.0 = full variation)
+  TimingOffsetCalculator calculator(drive_feel, vocal_style, drum_style, humanize_timing);
 
   // Apply drum timing (beat-position-aware offsets)
   calculator.applyDrumOffsets(drum_track);
@@ -568,12 +570,7 @@ Tick getSafeEndForRitardando(const NoteEvent& note, Tick desired_end,
       // Check if extension would create dissonance
       int actual_semitones = std::abs(static_cast<int>(note.note) -
                                        static_cast<int>(other_note.note));
-      int pc_interval = actual_semitones % 12;
-
-      // Dissonant intervals: minor 2nd (1), major 2nd (2 in close range), major 7th (11)
-      bool is_dissonant = (pc_interval == 1) ||
-                          (actual_semitones == 2) ||
-                          (pc_interval == 11 && actual_semitones < 36);
+      bool is_dissonant = isDissonantActualInterval(actual_semitones, 0);
 
       if (is_dissonant) {
         // If other note starts after our note, we can extend up to (but not including) it
@@ -701,14 +698,9 @@ static Tick getMaxSafeEndTick(const NoteEvent& chord_note, Tick desired_end,
       int actual_semitones =
           std::abs(static_cast<int>(chord_note.note) - static_cast<int>(vocal_note.note));
 
-      // Check for dissonant intervals: minor 2nd (1), major 2nd (2), major 7th (11), minor 9th (13)
-      // Also check compound intervals within 3 octaves
-      int pc_interval = actual_semitones % 12;
-      bool is_dissonant = (pc_interval == 1) ||                     // minor 2nd
-                          (actual_semitones == 2) ||                // major 2nd (close range only)
-                          (pc_interval == 11 && actual_semitones < 36);  // major 7th
+      bool is_dissonant = isDissonantActualInterval(actual_semitones, 0);
 
-      if (is_dissonant && actual_semitones < 36) {
+      if (is_dissonant) {
         // Found a clash - limit extension to just before the vocal note starts
         // But only if vocal starts after chord's original end
         Tick original_end = chord_note.start_tick + chord_note.duration;

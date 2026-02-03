@@ -821,5 +821,274 @@ TEST_F(MotifRhythmLockTest, MotifNotesAreRegisteredForCollisionCheck) {
       << "RhythmLock mode should have minimal Motif-Chord clashes. Found " << clashes;
 }
 
+// ============================================================================
+// RhythmLock Riff Shape Preservation Tests
+// ============================================================================
+// When motif is coordinate axis in RhythmSync, it should:
+// 1. Preserve melodic contour (relative intervals between notes)
+// 2. Apply moderate section-based register shifts (P5/P4, not full octaves)
+// 3. Stay within valid pitch range after shifts
+
+// Test that RhythmLock motif preserves melodic contour across repetitions
+TEST_F(MotifRhythmLockTest, PreservesMelodicContourInRiff) {
+  params_.structure = StructurePattern::FullPop;  // Multiple sections for testing
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& motif_notes = gen.getSong().motif().notes();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  ASSERT_GT(motif_notes.size(), 8u) << "Need sufficient motif notes for contour test";
+
+  // Find two sections of the same type to compare contours
+  std::vector<const Section*> verse_sections;
+  std::vector<const Section*> chorus_sections;
+
+  for (const auto& section : sections) {
+    if (section.type == SectionType::A || section.type == SectionType::B) {
+      verse_sections.push_back(&section);
+    } else if (section.type == SectionType::Chorus) {
+      chorus_sections.push_back(&section);
+    }
+  }
+
+  // Helper to extract contour (sequence of interval directions) from a section
+  auto extractContour = [&](const Section* section) -> std::vector<int> {
+    std::vector<int> contour;
+    std::vector<uint8_t> pitches_in_section;
+
+    for (const auto& note : motif_notes) {
+      if (note.start_tick >= section->start_tick &&
+          note.start_tick < section->endTick()) {
+        pitches_in_section.push_back(note.note);
+      }
+    }
+
+    if (pitches_in_section.size() < 2) return contour;
+
+    // Convert to contour: +1 for up, -1 for down, 0 for same
+    for (size_t i = 1; i < pitches_in_section.size(); ++i) {
+      int diff = static_cast<int>(pitches_in_section[i]) -
+                 static_cast<int>(pitches_in_section[i - 1]);
+      if (diff > 0) contour.push_back(1);
+      else if (diff < 0) contour.push_back(-1);
+      else contour.push_back(0);
+    }
+    return contour;
+  };
+
+  // Compare contours between same section types (Locked policy should preserve shape)
+  if (verse_sections.size() >= 2) {
+    auto contour1 = extractContour(verse_sections[0]);
+    auto contour2 = extractContour(verse_sections[1]);
+
+    if (!contour1.empty() && !contour2.empty()) {
+      // Count matching directions (allow some variation due to collision avoidance)
+      size_t min_len = std::min(contour1.size(), contour2.size());
+      int matching = 0;
+      for (size_t i = 0; i < min_len; ++i) {
+        if (contour1[i] == contour2[i]) matching++;
+      }
+
+      // At least 50% of contour should match (Locked policy preserves shape)
+      float match_ratio = static_cast<float>(matching) / min_len;
+      EXPECT_GE(match_ratio, 0.5f)
+          << "Verse sections should have similar melodic contour in RhythmLock mode. "
+          << "Match ratio: " << match_ratio;
+    }
+  }
+}
+
+// Test that section-based register shifts use moderate intervals (P5/P4), not octaves
+TEST_F(MotifRhythmLockTest, SectionShiftsUseModerateIntervals) {
+  params_.structure = StructurePattern::FullPop;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& motif_notes = gen.getSong().motif().notes();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  // Calculate average pitch for each section type
+  auto avgPitchForSectionType = [&](SectionType type) -> double {
+    double sum = 0;
+    int count = 0;
+    for (const auto& section : sections) {
+      if (section.type != type) continue;
+      for (const auto& note : motif_notes) {
+        if (note.start_tick >= section.start_tick &&
+            note.start_tick < section.endTick()) {
+          sum += note.note;
+          count++;
+        }
+      }
+    }
+    return count > 0 ? sum / count : 0;
+  };
+
+  double verse_avg = avgPitchForSectionType(SectionType::A);
+  double chorus_avg = avgPitchForSectionType(SectionType::Chorus);
+  double bridge_avg = avgPitchForSectionType(SectionType::Bridge);
+
+  // Chorus should be higher than Verse (P5 = 7 semitones shift)
+  if (verse_avg > 0 && chorus_avg > 0) {
+    double shift = chorus_avg - verse_avg;
+    // Should be in the range of 0-12 semitones (P5 = 7, but variations allowed)
+    // Not a full octave (12) or more
+    EXPECT_GE(shift, -2.0) << "Chorus should not be significantly lower than Verse";
+    EXPECT_LE(shift, 14.0) << "Chorus shift should be moderate, not extreme";
+  }
+
+  // Bridge should be lower than Verse (P4 down = -5 semitones shift)
+  if (verse_avg > 0 && bridge_avg > 0) {
+    double shift = bridge_avg - verse_avg;
+    // Should be in the range of -12 to +2 semitones
+    EXPECT_LE(shift, 5.0) << "Bridge should not be significantly higher than Verse";
+    EXPECT_GE(shift, -14.0) << "Bridge shift should be moderate, not extreme";
+  }
+}
+
+// Test that all motif pitches stay within valid range after section shifts
+TEST_F(MotifRhythmLockTest, PitchesStayWithinRangeAfterShifts) {
+  constexpr uint8_t MOTIF_LOW = 60;   // C4
+  constexpr uint8_t MOTIF_HIGH = 108; // C8 (from pitch_utils.h)
+
+  std::vector<uint32_t> test_seeds = {12345, 42, 99999, 54321, 11111};
+
+  for (uint32_t seed : test_seeds) {
+    params_.seed = seed;
+    params_.structure = StructurePattern::FullPop;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& motif_notes = gen.getSong().motif().notes();
+    if (motif_notes.empty()) continue;
+
+    int out_of_range = 0;
+    for (const auto& note : motif_notes) {
+      if (note.note < MOTIF_LOW || note.note > MOTIF_HIGH) {
+        out_of_range++;
+      }
+    }
+
+    // All notes should be within range (clamping should handle edge cases)
+    EXPECT_EQ(out_of_range, 0)
+        << "Seed " << seed << ": Found " << out_of_range
+        << " motif notes outside valid range [" << (int)MOTIF_LOW
+        << ", " << (int)MOTIF_HIGH << "]";
+  }
+}
+
+// Test that RhythmLock pattern rhythm is consistent (same onset pattern repeats)
+TEST_F(MotifRhythmLockTest, RhythmPatternIsConsistent) {
+  params_.structure = StructurePattern::FullPop;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& motif_notes = gen.getSong().motif().notes();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  ASSERT_GT(motif_notes.size(), 4u) << "Need sufficient notes for rhythm test";
+
+  // Extract rhythm pattern (onset positions within each bar) for sections of same type
+  auto extractBarOnsets = [&](const Section* section) -> std::vector<Tick> {
+    std::vector<Tick> onsets;
+    for (const auto& note : motif_notes) {
+      if (note.start_tick >= section->start_tick &&
+          note.start_tick < section->endTick()) {
+        // Get position within bar
+        Tick within_bar = (note.start_tick - section->start_tick) % TICKS_PER_BAR;
+        onsets.push_back(within_bar);
+      }
+    }
+    std::sort(onsets.begin(), onsets.end());
+    return onsets;
+  };
+
+  // Find sections of the same type
+  std::vector<const Section*> verses;
+  for (const auto& section : sections) {
+    if (section.type == SectionType::A || section.type == SectionType::B) {
+      verses.push_back(&section);
+    }
+  }
+
+  if (verses.size() >= 2) {
+    auto onsets1 = extractBarOnsets(verses[0]);
+    auto onsets2 = extractBarOnsets(verses[1]);
+
+    if (onsets1.size() >= 2 && onsets2.size() >= 2) {
+      // Compare onset patterns (should have similar rhythmic positions)
+      // Count how many onsets are at similar positions (within 120 ticks = 16th note)
+      int similar_onsets = 0;
+      for (Tick o1 : onsets1) {
+        for (Tick o2 : onsets2) {
+          if (std::abs(static_cast<int>(o1) - static_cast<int>(o2)) <= 120) {
+            similar_onsets++;
+            break;
+          }
+        }
+      }
+
+      float similarity = static_cast<float>(similar_onsets) / onsets1.size();
+      EXPECT_GE(similarity, 0.4f)
+          << "RhythmLock should maintain consistent rhythm pattern across sections. "
+          << "Similarity: " << similarity;
+    }
+  }
+}
+
+// Test that different seeds produce valid riff patterns
+TEST_F(MotifRhythmLockTest, MultipleSeeedsProduceValidRiffs) {
+  std::vector<uint32_t> test_seeds = {12345, 42, 99999, 54321, 777};
+  int valid_riffs = 0;
+
+  for (uint32_t seed : test_seeds) {
+    params_.seed = seed;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& motif_notes = gen.getSong().motif().notes();
+    if (motif_notes.empty()) continue;
+
+    // A valid riff should:
+    // 1. Have multiple notes
+    bool has_notes = motif_notes.size() >= 4;
+
+    // 2. Use a limited set of pitch classes (pattern consistency)
+    std::set<int> pitch_classes;
+    for (const auto& note : motif_notes) {
+      pitch_classes.insert(note.note % 12);
+    }
+    bool limited_pitches = pitch_classes.size() >= 2 && pitch_classes.size() <= 8;
+
+    // 3. Have regular rhythm (median gap should be reasonable)
+    std::vector<Tick> note_starts;
+    for (const auto& note : motif_notes) {
+      note_starts.push_back(note.start_tick);
+    }
+    std::sort(note_starts.begin(), note_starts.end());
+
+    std::vector<Tick> gaps;
+    for (size_t i = 1; i < note_starts.size(); ++i) {
+      gaps.push_back(note_starts[i] - note_starts[i - 1]);
+    }
+    std::sort(gaps.begin(), gaps.end());
+
+    bool regular_rhythm = gaps.empty() ||
+        gaps[gaps.size() / 2] <= TICKS_PER_BAR * 2;  // Median gap <= 2 bars
+
+    if (has_notes && limited_pitches && regular_rhythm) {
+      valid_riffs++;
+    }
+  }
+
+  EXPECT_GE(valid_riffs, 4) << "At least 4 out of 5 seeds should produce valid riffs";
+}
+
 }  // namespace
 }  // namespace midisketch

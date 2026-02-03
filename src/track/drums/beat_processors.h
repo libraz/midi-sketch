@@ -32,9 +32,11 @@ namespace drums {
 /// @param kick_prob DrumRole-based kick probability
 /// @param in_prechorus_lift Whether in pre-chorus buildup zone
 /// @param rng Random number generator
+/// @param humanize_timing Global humanization scaling (0.0-1.0)
 void generateKickForBeat(MidiTrack& track, Tick beat_tick, Tick adjusted_beat_tick,
                          const KickPattern& kick, uint8_t beat, uint8_t velocity,
-                         float kick_prob, bool in_prechorus_lift, std::mt19937& rng);
+                         float kick_prob, bool in_prechorus_lift, std::mt19937& rng,
+                         float humanize_timing = 1.0f);
 
 /// @brief Generate snare drum for a single beat.
 /// @param track Target MIDI track

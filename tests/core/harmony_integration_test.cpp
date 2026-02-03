@@ -224,8 +224,9 @@ TEST_F(HarmonyIntegrationTest, ArpeggioRegisterAboveVocalRange) {
     }
   }
 
-  // Arpeggio should be at C5 (72) or higher base
-  EXPECT_GE(min_arp_note, 72) << "Arpeggio notes should start at C5 (72) or higher, found: "
+  // Arpeggio base is C5 (72), but per-onset vocal ceiling may push notes
+  // lower when vocal is in a low register. C3 (48) is the arpeggio range_low.
+  EXPECT_GE(min_arp_note, 48) << "Arpeggio notes should be within range (>= C3/48), found: "
                               << static_cast<int>(min_arp_note);
 }
 

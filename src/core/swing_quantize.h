@@ -131,6 +131,20 @@ float getSwingScaleForRole(TrackRole role);
 void applySwingToTrackBySections(MidiTrack& track, const std::vector<Section>& sections,
                                  TrackRole role);
 
+/**
+ * @brief Apply per-section swing quantization with track-role scaling and humanize timing.
+ *
+ * Same as applySwingToTrackBySections(role) but additionally scales the effective swing
+ * by humanize_timing. This allows unified control of all timing variations.
+ *
+ * @param track MidiTrack to modify in-place
+ * @param sections Song sections with swing_amount fields
+ * @param role Track role for swing scaling
+ * @param humanize_timing Global humanization scaling (0.0-1.0, scales swing offset)
+ */
+void applySwingToTrackBySections(MidiTrack& track, const std::vector<Section>& sections,
+                                 TrackRole role, float humanize_timing);
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_SWING_QUANTIZE_H_

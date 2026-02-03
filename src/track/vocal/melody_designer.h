@@ -395,21 +395,31 @@ class MelodyDesigner {
       SectionType section_type = SectionType::Intro);
 
   /**
-   * @brief Select pitch for locked rhythm generation.
+   * @brief Enhanced pitch selection for locked rhythm with melodic quality.
    *
-   * Used when rhythm is locked (Orangestar style) and only pitch varies.
-   * Prioritizes chord tones for harmonic consonance while maintaining
-   * melodic continuity with the previous pitch.
+   * Addresses melodic quality issues in RhythmSync paradigm:
+   * 1. Direction bias based on phrase position (ascending start, resolving end)
+   * 2. Direction inertia to maintain melodic momentum
+   * 3. GlobalMotif interval pattern reference for song-wide unity
    *
    * @param prev_pitch Previous pitch for melodic continuity
    * @param chord_degree Current chord degree (0-6)
    * @param vocal_low Minimum allowed pitch
    * @param vocal_high Maximum allowed pitch
+   * @param phrase_position Position within phrase (0.0-1.0)
+   * @param direction_inertia Current direction momentum (-3 to +3)
+   * @param note_index Current note index within phrase
    * @param rng Random number generator
+   * @param section_type Section type for context-aware thresholds
+   * @param vocal_attitude Vocal attitude for tension allowance
    * @return Selected pitch (MIDI note number)
    */
-  uint8_t selectPitchForLockedRhythm(uint8_t prev_pitch, int8_t chord_degree, uint8_t vocal_low,
-                                     uint8_t vocal_high, std::mt19937& rng);
+  uint8_t selectPitchForLockedRhythmEnhanced(uint8_t prev_pitch, int8_t chord_degree,
+                                              uint8_t vocal_low, uint8_t vocal_high,
+                                              float phrase_position, int direction_inertia,
+                                              size_t note_index, std::mt19937& rng,
+                                              SectionType section_type = SectionType::A,
+                                              VocalAttitude vocal_attitude = VocalAttitude::Clean);
 
  private:
   // Insert a leading tone at section boundary for smooth transition.
