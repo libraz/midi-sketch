@@ -455,7 +455,7 @@ static bool shouldUsePerSectionTypeRhythmLock(const GeneratorParams& params) {
  * @return Generated notes with locked rhythm and new pitches
  */
 static std::vector<NoteEvent> generateLockedRhythmCandidate(
-    const CachedRhythmPattern& rhythm, const Section& section, MelodyDesigner& designer,
+    const CachedRhythmPattern& rhythm, const Section& section, MelodyDesigner& /*designer*/,
     const IHarmonyContext& harmony, const MelodyDesigner::SectionContext& ctx, std::mt19937& rng) {
   std::vector<NoteEvent> notes;
   uint8_t section_beats = section.bars * 4;
@@ -509,11 +509,8 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
       }
     }
 
-    // Get chord at this position
-    int8_t chord_degree = harmony.getChordDegreeAt(tick);
-
-    // Calculate phrase position for direction bias
-    float phrase_position = static_cast<float>(i) / onsets.size();
+    // Get chord at this position for provenance tracking
+    [[maybe_unused]] int8_t chord_degree = harmony.getChordDegreeAt(tick);
 
     // Apply pitch safety check to avoid collisions with other tracks
     // Use prev_pitch as the base to get candidates centered on current melodic position.
