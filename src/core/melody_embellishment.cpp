@@ -235,7 +235,8 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
       int interval = std::abs(static_cast<int>(next->note) - static_cast<int>(current.note));
       if (interval >= MIN_PT_INTERVAL) {
         auto pt = tryInsertPassingTone(current, *next, key_offset, config.prefer_pentatonic, rng);
-        if (pt) {
+        if (pt && harmony.isConsonantWithOtherTracks(pt->note, pt->start_tick, pt->duration,
+                                                      TrackRole::Vocal)) {
           result.push_back(current);  // Original chord tone
           setEmbellishmentProv(*pt, chord_degree);
           result.push_back(*pt);      // Passing tone
@@ -252,7 +253,8 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
         consecutive_ncts < config.max_consecutive_ncts) {
       bool upper = prob_dist(rng) > 0.5f;
       auto nt_pair = tryAddNeighborTone(current, upper, key_offset, config.prefer_pentatonic, rng);
-      if (nt_pair) {
+      if (nt_pair && harmony.isConsonantWithOtherTracks(nt_pair->first.note, nt_pair->first.start_tick,
+                                                         nt_pair->first.duration, TrackRole::Vocal)) {
         setEmbellishmentProv(nt_pair->first, chord_degree);
         setEmbellishmentProv(nt_pair->second, chord_degree);
         result.push_back(nt_pair->first);   // Neighbor tone
@@ -270,7 +272,10 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
       bool upper = prob_dist(rng) > 0.5f;
       auto app_pair =
           tryConvertToAppoggiatura(current, upper, key_offset, config.chromatic_approach, rng);
-      if (app_pair) {
+      if (app_pair && harmony.isConsonantWithOtherTracks(app_pair->first.note,
+                                                          app_pair->first.start_tick,
+                                                          app_pair->first.duration, TrackRole::Vocal,
+                                                          true /* is_weak_beat: appoggiatura is intentionally dissonant */)) {
         setEmbellishmentProv(app_pair->first, chord_degree);
         setEmbellishmentProv(app_pair->second, chord_degree);
         result.push_back(app_pair->first);   // Appoggiatura
@@ -288,7 +293,9 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
       int8_t next_chord_degree = harmony.getChordDegreeAt(next->start_tick);
       if (next_chord_degree != chord_degree) {
         auto ant = tryAddAnticipation(current, *next, next->start_tick, next_chord_degree, rng);
-        if (ant && ant->start_tick > current.start_tick) {
+        if (ant && ant->start_tick > current.start_tick &&
+            harmony.isConsonantWithOtherTracks(ant->note, ant->start_tick, ant->duration,
+                                                TrackRole::Vocal)) {
           // Shorten current note (check for underflow)
           Tick ant_offset = ant->start_tick - current.start_tick;
           if (ant_offset < current.duration) {
@@ -308,7 +315,9 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
     if (config.enable_tensions && config.tension_ratio > 0.0f &&
         prob_dist(rng) < config.tension_ratio) {
       auto tension_pitch = getTensionPitch(chord_degree, current.note, 48, 84, rng);
-      if (tension_pitch) {
+      if (tension_pitch &&
+          harmony.isConsonantWithOtherTracks(*tension_pitch, current.start_tick, current.duration,
+                                              TrackRole::Vocal)) {
         NoteEvent tension_note = current;
         tension_note.note = *tension_pitch;
         setEmbellishmentProv(tension_note, chord_degree);
@@ -331,8 +340,21 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
   if (!config.chromatic_approach) {
     for (auto& note : result) {
       if (!isScaleTone(note.note % 12, key_offset)) {
-        // Snap to nearest scale tone instead of dropping
-        note.note = static_cast<uint8_t>(snapToNearestScaleTone(note.note, key_offset));
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        uint8_t old_pitch = note.note;
+#endif
+        uint8_t snapped = static_cast<uint8_t>(snapToNearestScaleTone(note.note, key_offset));
+        // Re-verify collision safety after scale snap
+        if (harmony.isConsonantWithOtherTracks(snapped, note.start_tick, note.duration,
+                                                TrackRole::Vocal)) {
+          note.note = snapped;
+        }
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        if (old_pitch != note.note) {
+          note.prov_original_pitch = old_pitch;
+          note.addTransformStep(TransformStepType::ScaleSnap, old_pitch, note.note, 0, 0);
+        }
+#endif
       }
     }
   }

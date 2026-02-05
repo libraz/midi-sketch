@@ -41,11 +41,13 @@ namespace melody {
 /// @param attitude Vocal attitude affecting tension allowance
 /// @param disable_singability Allow large intervals (for machine-style vocals)
 /// @param note_eighths Note duration in eighths (affects chord tone preference)
+/// @param tension_usage Tension note probability (0.0=chord tones only, 1.0=always add tensions)
 /// @return New pitch after applying choice
 int applyPitchChoiceImpl(PitchChoice choice, int current_pitch, int target_pitch,
                          int8_t chord_degree, int key_offset, uint8_t vocal_low,
                          uint8_t vocal_high, VocalAttitude attitude,
-                         bool disable_singability = false, float note_eighths = 2.0f);
+                         bool disable_singability = false, float note_eighths = 2.0f,
+                         float tension_usage = 0.2f);
 
 /// @brief Calculate target pitch for phrase based on template and context.
 ///

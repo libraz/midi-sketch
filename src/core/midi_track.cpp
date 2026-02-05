@@ -29,8 +29,17 @@ void MidiTrack::clearPitchBend() { pitch_bend_events_.clear(); }
 
 void MidiTrack::transpose(int8_t semitones) {
   for (auto& note : notes_) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    uint8_t old_pitch = note.note;
+#endif
     int new_pitch = note.note + semitones;
     note.note = static_cast<uint8_t>(std::clamp(new_pitch, 0, 127));
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    if (old_pitch != note.note) {
+      note.prov_original_pitch = old_pitch;
+      note.addTransformStep(TransformStepType::RangeClamp, old_pitch, note.note, 0, 0);
+    }
+#endif
   }
 }
 

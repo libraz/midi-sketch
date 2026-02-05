@@ -1383,7 +1383,25 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
           if (slash_bass < BASS_LOW) {
             slash_bass += Interval::OCTAVE;
           }
-          root = clampBass(slash_bass);
+          // Check if slash bass creates major 7th with Motif track.
+          // Major 7th (pitch class interval 11) sounds harsh even at wide range.
+          uint8_t candidate_bass = clampBass(slash_bass);
+          int bass_pc = candidate_bass % 12;
+          bool has_m7_clash = false;
+          auto motif_pcs = harmony.getPitchClassesFromTrackInRange(bar_start,
+              bar_start + TICKS_PER_BAR, TrackRole::Motif);
+          for (int motif_pc : motif_pcs) {
+            int pc_interval = std::abs(bass_pc - motif_pc);
+            if (pc_interval > 6) pc_interval = 12 - pc_interval;
+            if (pc_interval == 11 || pc_interval == 1) {  // M7 or m2
+              has_m7_clash = true;
+              break;
+            }
+          }
+          if (!has_m7_clash) {
+            root = candidate_bass;
+          }
+          // If slash bass clashes, keep original root (no assignment)
         }
       }
 
@@ -1471,9 +1489,25 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
             : BassPlayabilityChecker(harmony, params.bpm);
     auto& notes = track.notes();
     for (auto& note : notes) {
+      uint8_t original_pitch = note.note;
       uint8_t playable_pitch = playability_checker.ensurePlayable(
           note.note, note.start_tick, note.duration);
+      if (playable_pitch != original_pitch) {
+        // Re-check collision: if the playable pitch clashes with other tracks,
+        // keep the original pitch (which was already collision-safe).
+        if (!harmony.isConsonantWithOtherTracks(playable_pitch, note.start_tick,
+                                                note.duration, TrackRole::Bass)) {
+          playable_pitch = original_pitch;
+        }
+      }
       note.note = playable_pitch;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      if (note.note != original_pitch) {
+        note.prov_original_pitch = original_pitch;
+        note.addTransformStep(TransformStepType::RangeClamp, original_pitch, note.note,
+                              static_cast<int8_t>(0), static_cast<int8_t>(0));
+      }
+#endif
     }
   }
 
@@ -1858,7 +1892,25 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song, const Genera
           if (slash_bass < BASS_LOW) {
             slash_bass += Interval::OCTAVE;
           }
-          root = clampBass(slash_bass);
+          // Check if slash bass creates major 7th with Motif track.
+          // Major 7th (pitch class interval 11) sounds harsh even at wide range.
+          uint8_t candidate_bass = clampBass(slash_bass);
+          int bass_pc = candidate_bass % 12;
+          bool has_m7_clash = false;
+          auto motif_pcs = harmony.getPitchClassesFromTrackInRange(bar_start,
+              bar_start + TICKS_PER_BAR, TrackRole::Motif);
+          for (int motif_pc : motif_pcs) {
+            int pc_interval = std::abs(bass_pc - motif_pc);
+            if (pc_interval > 6) pc_interval = 12 - pc_interval;
+            if (pc_interval == 11 || pc_interval == 1) {  // M7 or m2
+              has_m7_clash = true;
+              break;
+            }
+          }
+          if (!has_m7_clash) {
+            root = candidate_bass;
+          }
+          // If slash bass clashes, keep original root (no assignment)
         }
       }
 
@@ -1992,9 +2044,25 @@ void generateBassTrackWithVocal(MidiTrack& track, const Song& song, const Genera
             : BassPlayabilityChecker(harmony, params.bpm);
     auto& notes = track.notes();
     for (auto& note : notes) {
+      uint8_t original_pitch = note.note;
       uint8_t playable_pitch = playability_checker.ensurePlayable(
           note.note, note.start_tick, note.duration);
+      if (playable_pitch != original_pitch) {
+        // Re-check collision: if the playable pitch clashes with other tracks,
+        // keep the original pitch (which was already collision-safe).
+        if (!harmony.isConsonantWithOtherTracks(playable_pitch, note.start_tick,
+                                                note.duration, TrackRole::Bass)) {
+          playable_pitch = original_pitch;
+        }
+      }
       note.note = playable_pitch;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      if (note.note != original_pitch) {
+        note.prov_original_pitch = original_pitch;
+        note.addTransformStep(TransformStepType::RangeClamp, original_pitch, note.note,
+                              static_cast<int8_t>(0), static_cast<int8_t>(0));
+      }
+#endif
     }
   }
 

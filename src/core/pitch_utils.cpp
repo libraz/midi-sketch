@@ -294,6 +294,13 @@ bool isAvoidNoteWithContext(int pitch, uint8_t chord_root, bool is_minor, int8_t
     return true;
   }
 
+  // Minor 2nd (1): harsh dissonance on non-dominant chords
+  // - Dominant (V7): b9 is a valid tension (V7b9)
+  // - Tonic/Subdominant: creates harsh clash with root (e.g., F# on F chord)
+  if (interval == AVOID_MINOR_2ND) {
+    return function != ChordFunction::Dominant;
+  }
+
   // Tritone (6): depends on chord function
   // - Dominant: tritone is ESSENTIAL (3rd-7th of V7, root-5th of vii°)
   // - Tonic/Subdominant: tritone creates unwanted tension
@@ -325,8 +332,8 @@ bool isAvoidNoteWithContext(int pitch, uint8_t chord_root, bool is_minor, int8_t
 bool isAvoidNoteSimple(int pitch, uint8_t chord_root, bool is_minor) {
   int interval = ((pitch - chord_root) % 12 + 12) % 12;
 
-  // Conservative: tritone and major 7th are always avoided
-  if (interval == AVOID_TRITONE || interval == AVOID_MAJOR_7TH) {
+  // Conservative: minor 2nd, tritone and major 7th are always avoided
+  if (interval == AVOID_MINOR_2ND || interval == AVOID_TRITONE || interval == AVOID_MAJOR_7TH) {
     return true;
   }
 

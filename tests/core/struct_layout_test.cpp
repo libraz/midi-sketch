@@ -11,9 +11,9 @@
 // If these tests fail, JS binding code in js/index.ts must be updated.
 
 TEST(StructLayoutTest, SongConfigSize) {
-  // SongConfig size: 60 bytes (was 56, +5 new fields: mood, mood_explicit,
-  // form_explicit, drive_feel, addictive_mode + 1 alignment padding)
-  EXPECT_EQ(sizeof(MidiSketchSongConfig), 60);
+  // SongConfig size: 80 bytes (was 60, +20 new fields: enable_syncopation,
+  // energy_curve, melody overrides, motif overrides, reserved)
+  EXPECT_EQ(sizeof(MidiSketchSongConfig), 80);
 }
 
 TEST(StructLayoutTest, SongConfigLayout) {
@@ -101,6 +101,31 @@ TEST(StructLayoutTest, SongConfigLayout) {
   CHECK_OFFSET(drive_feel, 57);
   CHECK_OFFSET(addictive_mode, 58);
 
+  // Syncopation (offset 59)
+  CHECK_OFFSET(enable_syncopation, 59);
+
+  // Energy curve (offset 60)
+  CHECK_OFFSET(energy_curve, 60);
+
+  // Melody overrides (offset 61-67)
+  CHECK_OFFSET(melody_max_leap, 61);
+  CHECK_OFFSET(melody_syncopation_prob, 62);
+  CHECK_OFFSET(melody_phrase_length, 63);
+  CHECK_OFFSET(melody_long_note_ratio, 64);
+  CHECK_OFFSET(melody_chorus_register_shift, 65);
+  CHECK_OFFSET(melody_hook_repetition, 66);
+  CHECK_OFFSET(melody_use_leading_tone, 67);
+
+  // Motif overrides (offset 68-72)
+  CHECK_OFFSET(motif_length, 68);
+  CHECK_OFFSET(motif_note_count, 69);
+  CHECK_OFFSET(motif_motion, 70);
+  CHECK_OFFSET(motif_register_high, 71);
+  CHECK_OFFSET(motif_rhythm_density, 72);
+
+  // Reserved (offset 73-79)
+  CHECK_OFFSET(_reserved2, 73);
+
 #undef CHECK_OFFSET
 }
 
@@ -140,3 +165,89 @@ TEST(StructLayoutTest, PianoRollDataSize) {
   // Pointer + size_t (both 4 bytes in WASM32)
   EXPECT_EQ(sizeof(MidiSketchPianoRollData), 16);  // 64-bit: 8 + 8
 }
+
+TEST(StructLayoutTest, SongConfigMotifDefaults) {
+  MidiSketchSongConfig config = midisketch_create_default_config(0);
+  EXPECT_EQ(config.motif_motion, 0xFF)
+      << "motif_motion sentinel should be 0xFF (preset default)";
+  EXPECT_EQ(config.motif_rhythm_density, 0xFF)
+      << "motif_rhythm_density sentinel should be 0xFF (preset default)";
+  EXPECT_EQ(config.motif_length, 0)
+      << "motif_length should default to 0 (auto)";
+  EXPECT_EQ(config.motif_note_count, 0)
+      << "motif_note_count should default to 0 (auto)";
+  EXPECT_EQ(config.motif_register_high, 0)
+      << "motif_register_high should default to 0 (auto)";
+}
+
+// ============================================================================
+// ConfigConverter Motif Sentinel Tests
+// ============================================================================
+
+#include "core/config_converter.h"
+#include "core/preset_data.h"
+#include "core/motif_types.h"
+
+namespace midisketch {
+
+TEST(ConfigConverterMotifTest, MotifMotionSentinelPreservesPreset) {
+  // 0xFF = sentinel → params.motif.motion stays at blueprint default (Stepwise)
+  SongConfig config = createDefaultSongConfig(0);
+  config.motif_motion = 0xFF;
+  config.seed = 12345;
+  GeneratorParams params = ConfigConverter::convert(config);
+  // Default is Stepwise (0), sentinel should NOT overwrite
+  EXPECT_EQ(params.motif.motion, MotifMotion::Stepwise);
+}
+
+TEST(ConfigConverterMotifTest, MotifMotionOverrideApplied) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.motif_motion = 2;  // WideLeap
+  config.seed = 12345;
+  GeneratorParams params = ConfigConverter::convert(config);
+  EXPECT_EQ(params.motif.motion, MotifMotion::WideLeap);
+}
+
+TEST(ConfigConverterMotifTest, MotifMotionOverrideStepwise) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.motif_motion = 0;  // Stepwise (explicit, not sentinel)
+  config.seed = 12345;
+  GeneratorParams params = ConfigConverter::convert(config);
+  EXPECT_EQ(params.motif.motion, MotifMotion::Stepwise);
+}
+
+TEST(ConfigConverterMotifTest, MotifMotionOverrideClampedToMax) {
+  // Values > 4 should be clamped to 4 (Disjunct)
+  SongConfig config = createDefaultSongConfig(0);
+  config.motif_motion = 10;  // Out of range but not sentinel
+  config.seed = 12345;
+  GeneratorParams params = ConfigConverter::convert(config);
+  EXPECT_EQ(params.motif.motion, MotifMotion::Disjunct);
+}
+
+TEST(ConfigConverterMotifTest, MotifRhythmDensitySentinelPreservesPreset) {
+  // 0xFF = sentinel → params.motif.rhythm_density stays at blueprint default (Medium)
+  SongConfig config = createDefaultSongConfig(0);
+  config.motif_rhythm_density = 0xFF;
+  config.seed = 12345;
+  GeneratorParams params = ConfigConverter::convert(config);
+  EXPECT_EQ(params.motif.rhythm_density, MotifRhythmDensity::Medium);
+}
+
+TEST(ConfigConverterMotifTest, MotifRhythmDensityOverrideApplied) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.motif_rhythm_density = 2;  // Driving
+  config.seed = 12345;
+  GeneratorParams params = ConfigConverter::convert(config);
+  EXPECT_EQ(params.motif.rhythm_density, MotifRhythmDensity::Driving);
+}
+
+TEST(ConfigConverterMotifTest, MotifRhythmDensityOverrideSparse) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.motif_rhythm_density = 0;  // Sparse (explicit)
+  config.seed = 12345;
+  GeneratorParams params = ConfigConverter::convert(config);
+  EXPECT_EQ(params.motif.rhythm_density, MotifRhythmDensity::Sparse);
+}
+
+}  // namespace midisketch

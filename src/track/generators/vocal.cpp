@@ -29,6 +29,7 @@
 #include "track/vocal/melody_designer.h"
 #include "track/vocal/phrase_cache.h"
 #include "track/vocal/phrase_variation.h"
+#include "track/generators/motif.h"
 #include "track/vocal/vocal_helpers.h"
 
 namespace midisketch {
@@ -140,6 +141,12 @@ void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes, const Gener
       int fixed_pitch =
           nearestChordToneWithinInterval(curr_pitch, prev_pitch, chord_degree, kMaxMelodicInterval,
                                          params.vocal_low, params.vocal_high, nullptr);
+      // Re-verify collision safety after interval fix
+      if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(fixed_pitch),
+                                               all_notes[i].start_tick, all_notes[i].duration,
+                                               TrackRole::Vocal)) {
+        fixed_pitch = curr_pitch;  // Keep original if fix introduces collision
+      }
       all_notes[i].note = static_cast<uint8_t>(fixed_pitch);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       if (old_pitch != all_notes[i].note) {
@@ -158,8 +165,14 @@ void enforceVocalPitchConstraints(std::vector<NoteEvent>& all_notes, const Gener
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       uint8_t old_pitch = note.note;
 #endif
-      note.note = static_cast<uint8_t>(std::clamp(snapped, static_cast<int>(params.vocal_low),
+      uint8_t snapped_clamped = static_cast<uint8_t>(std::clamp(snapped, static_cast<int>(params.vocal_low),
                                                    static_cast<int>(params.vocal_high)));
+      // Re-verify collision safety after scale snap
+      if (!harmony.isConsonantWithOtherTracks(snapped_clamped, note.start_tick, note.duration,
+                                               TrackRole::Vocal)) {
+        continue;  // Keep original pitch if snap introduces collision
+      }
+      note.note = snapped_clamped;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       if (old_pitch != note.note) {
         note.prov_original_pitch = old_pitch;
@@ -585,13 +598,44 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
       same_pitch_streak++;  // Increment consecutive same pitch counter
     }
 
-    // Calculate velocity based on beat position
-    float beat_in_bar = std::fmod(beat, 4.0f);
+    // Calculate velocity: use Motif template accent pattern if available (RhythmSync),
+    // otherwise fall back to beat-position based velocity.
     uint8_t velocity = 80;
-    if (beat_in_bar < 0.1f || std::abs(beat_in_bar - 2.0f) < 0.1f) {
-      velocity = 95;  // Strong beats
-    } else if (std::abs(beat_in_bar - 1.0f) < 0.1f || std::abs(beat_in_bar - 3.0f) < 0.1f) {
-      velocity = 85;  // Medium beats
+    bool accent_applied = false;
+    if (ctx.paradigm == GenerationParadigm::RhythmSync) {
+      // Try to get accent weight from Motif rhythm template
+      const auto& motif_params = ctx.motif_params;
+      if (motif_params != nullptr &&
+          motif_params->rhythm_template != MotifRhythmTemplate::None) {
+        const auto& tmpl_config =
+            motif_detail::getTemplateConfig(motif_params->rhythm_template);
+        // Map the note's beat position within the bar to the nearest template onset
+        float beat_in_bar = std::fmod(beat, 4.0f);
+        float best_dist = 100.0f;
+        int best_idx = -1;
+        for (uint8_t ti = 0; ti < tmpl_config.note_count; ++ti) {
+          if (tmpl_config.beat_positions[ti] < 0) break;
+          float dist = std::abs(beat_in_bar - tmpl_config.beat_positions[ti]);
+          if (dist < best_dist) {
+            best_dist = dist;
+            best_idx = static_cast<int>(ti);
+          }
+        }
+        if (best_idx >= 0 && best_dist < 0.2f) {
+          float accent = tmpl_config.accent_weights[best_idx];
+          // Vocal accent scaling: base=80, strong(1.0)=95, weak(0.5)=75
+          velocity = static_cast<uint8_t>(75 + accent * 20.0f);
+          accent_applied = true;
+        }
+      }
+    }
+    if (!accent_applied) {
+      float beat_in_bar = std::fmod(beat, 4.0f);
+      if (beat_in_bar < 0.1f || std::abs(beat_in_bar - 2.0f) < 0.1f) {
+        velocity = 95;  // Strong beats
+      } else if (std::abs(beat_in_bar - 1.0f) < 0.1f || std::abs(beat_in_bar - 3.0f) < 0.1f) {
+        velocity = 85;  // Medium beats
+      }
     }
 
     NoteEvent note = createNoteWithoutHarmony(tick, duration, safe_pitch, velocity);
@@ -865,15 +909,37 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
           getConsecutiveSameNoteProb(section.type, params.melody_params);
       sctx.disable_vowel_constraints = params.melody_params.disable_vowel_constraints;
       sctx.disable_breathing_gaps = params.melody_params.disable_breathing_gaps;
+      // Wire StyleMelodyParams zombie parameters to SectionContext
+      sctx.chorus_long_tones = params.melody_params.chorus_long_tones;
+      sctx.allow_bar_crossing = params.melody_params.allow_bar_crossing;
+      sctx.min_note_division = params.melody_params.min_note_division;
+      sctx.tension_usage = params.melody_params.tension_usage;
+      sctx.syncopation_prob = params.melody_params.syncopation_prob;
+      if (params.melody_long_note_ratio_override) {
+        sctx.long_note_ratio_override = params.melody_params.long_note_ratio;
+      }
+      sctx.phrase_length_bars = params.melody_params.phrase_length_bars;
+      // allow_unison_repeat: when false, hard-disable consecutive same notes
+      if (!params.melody_params.allow_unison_repeat) {
+        sctx.consecutive_same_note_prob = 0.0f;
+      }
+      // note_density: apply as additional multiplier to density_modifier
+      sctx.density_modifier *= params.melody_params.note_density;
       sctx.vocal_attitude = params.vocal_attitude;
       sctx.hook_intensity = params.hook_intensity;  // For HookSkeleton selection
       // RhythmSync support
       sctx.paradigm = params.paradigm;
       sctx.drum_grid = drum_grid;
+      // Motif template for accent-linked velocity (RhythmSync)
+      if (params.paradigm == GenerationParadigm::RhythmSync) {
+        sctx.motif_params = &params.motif;
+      }
       // Behavioral Loop support
       sctx.addictive_mode = params.addictive_mode;
       // Vocal groove feel for syncopation control
       sctx.vocal_groove = params.vocal_groove;
+      // Syncopation enable flag
+      sctx.enable_syncopation = params.enable_syncopation;
       // Drive feel for timing and syncopation modulation
       sctx.drive_feel = params.drive_feel;
 
@@ -883,9 +949,13 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
       // Occurrence count for occurrence-dependent embellishment density
       sctx.section_occurrence = occurrence;
 
-      // Apply blueprint constraints for melodic leap and stepwise preference
-      if (params.blueprint_ref != nullptr) {
+      // Apply melodic leap constraint: user override > blueprint > default
+      if (params.melody_max_leap_override) {
+        sctx.max_leap_semitones = params.melody_params.max_leap_interval;
+      } else if (params.blueprint_ref != nullptr) {
         sctx.max_leap_semitones = params.blueprint_ref->constraints.max_leap_semitones;
+      }
+      if (params.blueprint_ref != nullptr) {
         sctx.prefer_stepwise = params.blueprint_ref->constraints.prefer_stepwise;
       }
 
@@ -1076,6 +1146,12 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
         int new_pitch = nearestChordToneWithinInterval(
             first_note, prev_note, first_note_chord_degree, kMaxMelodicInterval, section_vocal_low,
             section_vocal_high, nullptr);
+        // Re-verify collision safety after interval fix
+        if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(new_pitch),
+                                                 section_notes.front().start_tick,
+                                                 section_notes.front().duration, TrackRole::Vocal)) {
+          new_pitch = first_note;  // Keep original if fix introduces collision
+        }
         section_notes.front().note = static_cast<uint8_t>(new_pitch);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         if (old_pitch != section_notes.front().note) {
@@ -1124,8 +1200,16 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
         uint8_t old_pitch = note.note;
 #endif
         int snapped = snapToNearestScaleTone(note.note, 0);  // Always C major internally
-        note.note = static_cast<uint8_t>(std::clamp(snapped, static_cast<int>(section_vocal_low),
+        uint8_t snapped_clamped = static_cast<uint8_t>(std::clamp(snapped, static_cast<int>(section_vocal_low),
                                                     static_cast<int>(section_vocal_high)));
+        // Re-verify collision safety after scale snap
+        if (snapped_clamped != note.note &&
+            !harmony.isConsonantWithOtherTracks(snapped_clamped, note.start_tick, note.duration,
+                                                 TrackRole::Vocal)) {
+          // Scale snap would introduce collision - keep original pitch
+          snapped_clamped = note.note;
+        }
+        note.note = snapped_clamped;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         if (old_pitch != note.note) {
           note.prov_original_pitch = old_pitch;
@@ -1137,9 +1221,17 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         uint8_t old_pitch = note.note;
 #endif
-        note.note = static_cast<uint8_t>(std::clamp(static_cast<int>(note.note),
-                                                    static_cast<int>(section_vocal_low),
-                                                    static_cast<int>(section_vocal_high)));
+        uint8_t clamped = static_cast<uint8_t>(std::clamp(static_cast<int>(note.note),
+                                                          static_cast<int>(section_vocal_low),
+                                                          static_cast<int>(section_vocal_high)));
+        // Re-verify collision safety after range clamp
+        if (clamped != note.note &&
+            !harmony.isConsonantWithOtherTracks(clamped, note.start_tick, note.duration,
+                                                 TrackRole::Vocal)) {
+          // Clamp would introduce collision - keep original pitch
+          clamped = note.note;
+        }
+        note.note = clamped;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         if (old_pitch != note.note) {
           note.prov_original_pitch = old_pitch;

@@ -149,11 +149,12 @@ void PostProcessor::applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass,
                                              uint8_t drive_feel,
                                              VocalStylePreset vocal_style,
                                              DrumStyle drum_style,
-                                             float humanize_timing) {
+                                             float humanize_timing,
+                                             GenerationParadigm paradigm) {
   // Use TimingOffsetCalculator for clearer code structure and traceability.
   // The calculator encapsulates all timing logic previously in inline lambdas.
   // humanize_timing scales all timing offsets (0.0 = no timing variation, 1.0 = full variation)
-  TimingOffsetCalculator calculator(drive_feel, vocal_style, drum_style, humanize_timing);
+  TimingOffsetCalculator calculator(drive_feel, vocal_style, drum_style, humanize_timing, paradigm);
 
   // Apply drum timing (beat-position-aware offsets)
   calculator.applyDrumOffsets(drum_track);
@@ -751,16 +752,32 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
 
     // If no bass note exists on final beat, add one (root note at bass range)
     if (!has_final_bass) {
+      constexpr uint8_t DEFAULT_BASS_ROOT = 36;  // C2
+      uint8_t bass_pitch = DEFAULT_BASS_ROOT;
+
+      // Verify pitch is safe; find alternative if collision detected
+      if (harmony != nullptr &&
+          !harmony->isConsonantWithOtherTracks(bass_pitch, final_beat_start, TICKS_PER_BEAT,
+                                                TrackRole::Bass)) {
+        auto candidates = getSafePitchCandidates(*harmony, bass_pitch, final_beat_start,
+                                                  TICKS_PER_BEAT, TrackRole::Bass,
+                                                  BASS_LOW, BASS_HIGH,
+                                                  PitchPreference::PreferRootFifth);
+        if (!candidates.empty()) {
+          bass_pitch = candidates[0].pitch;
+        }
+      }
+
       NoteEvent final_bass;
       final_bass.start_tick = final_beat_start;
       final_bass.duration = TICKS_PER_BEAT;
-      final_bass.note = 36;  // C2 - typical bass root
+      final_bass.note = bass_pitch;
       final_bass.velocity = FINAL_HIT_VEL;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       final_bass.prov_chord_degree = -1;
       final_bass.prov_lookup_tick = final_beat_start;
       final_bass.prov_source = static_cast<uint8_t>(NoteSource::PostProcess);
-      final_bass.prov_original_pitch = 36;
+      final_bass.prov_original_pitch = DEFAULT_BASS_ROOT;
 #endif
       bass_notes.push_back(final_bass);
     }

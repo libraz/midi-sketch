@@ -24,7 +24,7 @@ describe('MidiSketch JS API', () => {
   describe('getVersion', () => {
     it('should return a valid semver version string', () => {
       const version = getVersion();
-      expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(version).toMatch(/^\d+\.\d+\.\d+(\+.+)?$/);
     });
 
     it('should return consistent version across multiple calls', () => {

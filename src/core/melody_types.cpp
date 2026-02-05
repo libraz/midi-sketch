@@ -39,15 +39,7 @@ void StyleMelodyParams::writeTo(json::Writer& w) const {
       .write("bridge_thirtysecond_ratio", bridge_thirtysecond_ratio)
       .write("consecutive_same_note_prob", consecutive_same_note_prob)
       .write("disable_vowel_constraints", disable_vowel_constraints)
-      .write("disable_breathing_gaps", disable_breathing_gaps)
-      .write("legato_gate", legato_gate)
-      .write("normal_gate", normal_gate)
-      .write("staccato_gate", staccato_gate)
-      .write("phrase_end_gate", phrase_end_gate)
-      .write("vocaloid_density_threshold", vocaloid_density_threshold)
-      .write("high_density_threshold", high_density_threshold)
-      .write("medium_density_threshold", medium_density_threshold)
-      .write("low_density_threshold", low_density_threshold);
+      .write("disable_breathing_gaps", disable_breathing_gaps);
 }
 
 void StyleMelodyParams::readFrom(const json::Parser& p) {
@@ -81,14 +73,6 @@ void StyleMelodyParams::readFrom(const json::Parser& p) {
   consecutive_same_note_prob = p.getFloat("consecutive_same_note_prob", 0.6f);
   disable_vowel_constraints = p.getBool("disable_vowel_constraints", false);
   disable_breathing_gaps = p.getBool("disable_breathing_gaps", false);
-  legato_gate = p.getFloat("legato_gate", 0.95f);
-  normal_gate = p.getFloat("normal_gate", 0.85f);
-  staccato_gate = p.getFloat("staccato_gate", 0.5f);
-  phrase_end_gate = p.getFloat("phrase_end_gate", 0.70f);
-  vocaloid_density_threshold = p.getFloat("vocaloid_density_threshold", 1.0f);
-  high_density_threshold = p.getFloat("high_density_threshold", 0.85f);
-  medium_density_threshold = p.getFloat("medium_density_threshold", 0.7f);
-  low_density_threshold = p.getFloat("low_density_threshold", 0.5f);
 }
 
 }  // namespace midisketch

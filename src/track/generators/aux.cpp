@@ -70,9 +70,156 @@ constexpr Tick kAnticipationThreshold = 120;
 /// Minimum note length after trimming or splitting
 constexpr Tick kMinNoteDuration = 120;
 
+/// Maximum consecutive same pitches before forcing variation
+constexpr int kMaxConsecutiveSamePitch = 3;
+
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+/// Maximum leap in semitones before constraining (1 octave)
+constexpr int kMaxLeapSemitones = 12;
+
+/// @brief Track consecutive same pitches and large leaps, suggest variations when needed.
+///
+/// This prevents:
+/// 1. Monotonous runs of the same note (e.g., 16 consecutive G3)
+/// 2. Large melodic leaps (> 12 semitones)
+struct PitchMonotonyTracker {
+  uint8_t last_pitch = 0;
+  int consecutive_count = 0;
+
+  /// @brief Record a pitch and return suggested pitch (may differ if issues detected).
+  /// @param desired Original desired pitch
+  /// @param aux_low Lower bound of aux range
+  /// @param aux_high Upper bound of aux range
+  /// @param chord_degree Current chord degree for alternative pitch selection
+  /// @return Suggested pitch (may be different if monotony or large leap detected)
+  uint8_t trackAndSuggest(uint8_t desired, uint8_t aux_low, uint8_t aux_high, int8_t chord_degree) {
+    uint8_t result = desired;
+
+    // First check for large leap (if we have a previous pitch)
+    if (last_pitch > 0) {
+      int leap = std::abs(static_cast<int>(desired) - static_cast<int>(last_pitch));
+      if (leap > kMaxLeapSemitones) {
+        // Constrain the leap: find a pitch closer to last_pitch that's still a chord tone
+        ChordTones ct = getChordTones(chord_degree);
+        int last_octave = last_pitch / 12;
+        int best_pitch = -1;
+        int best_distance = 1000;
+
+        for (uint8_t i = 0; i < ct.count; ++i) {
+          int pc = ct.pitch_classes[i];
+          if (pc < 0) continue;
+
+          // Try pitches in nearby octaves
+          for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
+            int candidate = (last_octave + oct_offset) * 12 + pc;
+            if (candidate < aux_low || candidate > aux_high) continue;
+
+            int dist_from_last = std::abs(candidate - static_cast<int>(last_pitch));
+            int dist_from_desired = std::abs(candidate - static_cast<int>(desired));
+
+            // Must be within max leap from last pitch
+            if (dist_from_last > kMaxLeapSemitones) continue;
+
+            // Prefer pitches closer to desired (within leap constraint)
+            if (dist_from_desired < best_distance) {
+              best_distance = dist_from_desired;
+              best_pitch = candidate;
+            }
+          }
+        }
+
+        if (best_pitch >= 0) {
+          result = static_cast<uint8_t>(best_pitch);
+        } else {
+          // No chord tone found within constraint, clamp the leap
+          if (desired > last_pitch) {
+            result = static_cast<uint8_t>(std::min(static_cast<int>(last_pitch) + kMaxLeapSemitones,
+                                                    static_cast<int>(aux_high)));
+          } else {
+            result = static_cast<uint8_t>(std::max(static_cast<int>(last_pitch) - kMaxLeapSemitones,
+                                                    static_cast<int>(aux_low)));
+          }
+        }
+      }
+    }
+
+    // Now check for monotony (consecutive same pitch)
+    if (result == last_pitch) {
+      consecutive_count++;
+    } else {
+      consecutive_count = 1;
+    }
+
+    // If we've hit the monotony threshold, suggest an alternative
+    if (consecutive_count > kMaxConsecutiveSamePitch) {
+      ChordTones ct = getChordTones(chord_degree);
+      int octave = result / 12;
+
+      // Try different chord tones to find one that's different from last_pitch
+      for (uint8_t i = 0; i < ct.count; ++i) {
+        int pc = ct.pitch_classes[i];
+        if (pc < 0) continue;
+        uint8_t candidate = static_cast<uint8_t>(octave * 12 + pc);
+
+        // Check both monotony and leap constraints
+        if (candidate >= aux_low && candidate <= aux_high && candidate != last_pitch) {
+          int leap = std::abs(static_cast<int>(candidate) - static_cast<int>(last_pitch));
+          if (leap <= kMaxLeapSemitones) {
+            last_pitch = candidate;
+            consecutive_count = 1;
+            return candidate;
+          }
+        }
+        // Try octave below
+        if (octave > 0) {
+          candidate = static_cast<uint8_t>((octave - 1) * 12 + pc);
+          if (candidate >= aux_low && candidate <= aux_high && candidate != last_pitch) {
+            int leap = std::abs(static_cast<int>(candidate) - static_cast<int>(last_pitch));
+            if (leap <= kMaxLeapSemitones) {
+              last_pitch = candidate;
+              consecutive_count = 1;
+              return candidate;
+            }
+          }
+        }
+        // Try octave above
+        candidate = static_cast<uint8_t>((octave + 1) * 12 + pc);
+        if (candidate >= aux_low && candidate <= aux_high && candidate != last_pitch) {
+          int leap = std::abs(static_cast<int>(candidate) - static_cast<int>(last_pitch));
+          if (leap <= kMaxLeapSemitones) {
+            last_pitch = candidate;
+            consecutive_count = 1;
+            return candidate;
+          }
+        }
+      }
+
+      // Fallback: try step up or down (within leap constraint)
+      if (result + 2 <= aux_high && result + 2 != last_pitch) {
+        last_pitch = result + 2;
+        consecutive_count = 1;
+        return last_pitch;
+      }
+      if (result >= aux_low + 2 && result - 2 != last_pitch) {
+        last_pitch = result - 2;
+        consecutive_count = 1;
+        return last_pitch;
+      }
+    }
+
+    last_pitch = result;
+    return result;
+  }
+
+  /// Reset tracker state (e.g., at section boundary)
+  void reset() {
+    last_pitch = 0;
+    consecutive_count = 0;
+  }
+};
 
 // Smooth motif rhythm for Intro aux (extend short notes to minimum 8th note)
 // This prevents machine-gun style from UltraVocaloid bleeding into Intro
@@ -302,7 +449,16 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
           // Snap pitch to chord tone at this tick to avoid dissonance
           int8_t note_chord_degree = harmony.getChordDegreeAt(note.start_tick);
           int snapped_pitch = nearestChordTonePitch(note.note, note_chord_degree);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+          uint8_t old_pitch = note.note;
+#endif
           note.note = static_cast<uint8_t>(std::clamp(snapped_pitch, 48, 84));
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+          if (old_pitch != note.note) {
+            note.prov_original_pitch = old_pitch;
+            note.addTransformStep(TransformStepType::ChordToneSnap, old_pitch, note.note, 0, 0);
+          }
+#endif
           all_notes.push_back(note);
         }
         continue;  // Skip aux generator for this section
@@ -399,12 +555,30 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
   // Post-process all notes
   postProcessNotes(all_notes, harmony);
 
-  // Add to output track with immediate registration for idempotent collision detection
+  // Sort notes by start tick for monotony tracking
+  std::sort(all_notes.begin(), all_notes.end(),
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+
+  // Add to output track with monotony tracking and collision detection
+  // Track actual output pitches (after collision avoidance) for accurate monotony detection
+  uint8_t actual_last_pitch = 0;
+  int actual_consecutive_count = 0;
+
   for (const auto& note : all_notes) {
+    // Get chord degree for potential pitch variation
+    int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
+
+    // Use PitchMonotonyTracker to suggest initial pitch based on desired pitch
+    PitchMonotonyTracker temp_tracker;
+    temp_tracker.last_pitch = actual_last_pitch;
+    temp_tracker.consecutive_count = actual_consecutive_count;
+    uint8_t suggested_pitch = temp_tracker.trackAndSuggest(
+        note.note, 55, aux_vocal_ceiling, chord_degree);
+
     NoteOptions opts;
     opts.start = note.start_tick;
     opts.duration = note.duration;
-    opts.desired_pitch = note.note;
+    opts.desired_pitch = suggested_pitch;
     opts.velocity = note.velocity;
     opts.role = TrackRole::Aux;
     opts.preference = PitchPreference::Default;
@@ -412,8 +586,24 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     opts.range_high = aux_vocal_ceiling;
     opts.source = NoteSource::Aux;
     opts.chord_boundary = ChordBoundaryPolicy::PreferSafe;
+    // Record original pitch for provenance (before monotony tracker adjustment)
+    opts.original_pitch = note.note;
+    // Pass monotony info so collision avoidance also avoids consecutive same pitch
+    opts.prev_pitch = actual_last_pitch;
+    opts.consecutive_same_count = actual_consecutive_count;
 
-    createNoteAndAdd(track, harmony, opts);
+    auto result = createNoteWithResult(harmony, opts);
+    if (result.note) {
+      track.addNote(*result.note);
+      // Update monotony tracking with actual output pitch
+      uint8_t actual_pitch = result.final_pitch;
+      if (actual_pitch == actual_last_pitch) {
+        actual_consecutive_count++;
+      } else {
+        actual_consecutive_count = 1;
+        actual_last_pitch = actual_pitch;
+      }
+    }
   }
 }
 
@@ -483,7 +673,16 @@ void AuxGenerator::resolvePitchClashes(std::vector<NoteEvent>& notes, IHarmonyCo
       }
 
       if (best_pitch >= 0) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        uint8_t old_pitch = note.note;
+#endif
         note.note = static_cast<uint8_t>(best_pitch);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        if (old_pitch != note.note) {
+          note.prov_original_pitch = old_pitch;
+          note.addTransformStep(TransformStepType::CollisionAvoid, old_pitch, note.note, 0, 0);
+        }
+#endif
       }
       // If no safe pitch found, keep the original pitch
       // createNoteAndAdd will handle final collision resolution
@@ -1308,8 +1507,17 @@ std::vector<NoteEvent> AuxGenerator::generateMelodicHook(const AuxContext& ctx,
       if (phrase % 4 == 3) {
         int variation = variation_dist(rng);
         int new_pitch = hook_note.note + variation;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        uint8_t old_pitch = hook_note.note;
+#endif
         hook_note.note = static_cast<uint8_t>(
             std::clamp(new_pitch, static_cast<int>(aux_low), static_cast<int>(aux_high)));
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        if (old_pitch != hook_note.note) {
+          hook_note.prov_original_pitch = old_pitch;
+          hook_note.addTransformStep(TransformStepType::MotionAdjust, old_pitch, hook_note.note, 0, 0);
+        }
+#endif
       }
 
       // Skip if outside section

@@ -114,6 +114,28 @@ midisketch::SongConfig convertToSongConfig(const MidiSketchSongConfig* config) {
   cpp_config.drive_feel = config->drive_feel;
   cpp_config.addictive_mode = config->addictive_mode != 0;
 
+  // Syncopation
+  cpp_config.enable_syncopation = config->enable_syncopation != 0;
+
+  // Energy curve
+  cpp_config.energy_curve = static_cast<midisketch::EnergyCurve>(config->energy_curve);
+
+  // Melody overrides
+  cpp_config.melody_max_leap = config->melody_max_leap;
+  cpp_config.melody_syncopation_prob = config->melody_syncopation_prob;
+  cpp_config.melody_phrase_length = config->melody_phrase_length;
+  cpp_config.melody_long_note_ratio = config->melody_long_note_ratio;
+  cpp_config.melody_chorus_register_shift = config->melody_chorus_register_shift;
+  cpp_config.melody_hook_repetition = config->melody_hook_repetition;
+  cpp_config.melody_use_leading_tone = config->melody_use_leading_tone;
+
+  // Motif overrides
+  cpp_config.motif_length = config->motif_length;
+  cpp_config.motif_note_count = config->motif_note_count;
+  cpp_config.motif_motion = config->motif_motion;
+  cpp_config.motif_register_high = config->motif_register_high;
+  cpp_config.motif_rhythm_density = config->motif_rhythm_density;
+
   return cpp_config;
 }
 
@@ -704,6 +726,31 @@ MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
   // Drive and addictive
   s_default_config.drive_feel = cpp_config.drive_feel;
   s_default_config.addictive_mode = cpp_config.addictive_mode ? 1 : 0;
+
+  // Syncopation
+  s_default_config.enable_syncopation = cpp_config.enable_syncopation ? 1 : 0;
+
+  // Energy curve
+  s_default_config.energy_curve = static_cast<uint8_t>(cpp_config.energy_curve);
+
+  // Melody overrides (defaults: no override)
+  s_default_config.melody_max_leap = cpp_config.melody_max_leap;
+  s_default_config.melody_syncopation_prob = cpp_config.melody_syncopation_prob;
+  s_default_config.melody_phrase_length = cpp_config.melody_phrase_length;
+  s_default_config.melody_long_note_ratio = cpp_config.melody_long_note_ratio;
+  s_default_config.melody_chorus_register_shift = cpp_config.melody_chorus_register_shift;
+  s_default_config.melody_hook_repetition = cpp_config.melody_hook_repetition;
+  s_default_config.melody_use_leading_tone = cpp_config.melody_use_leading_tone;
+
+  // Motif overrides (defaults: no override)
+  s_default_config.motif_length = cpp_config.motif_length;
+  s_default_config.motif_note_count = cpp_config.motif_note_count;
+  s_default_config.motif_motion = cpp_config.motif_motion;
+  s_default_config.motif_register_high = cpp_config.motif_register_high;
+  s_default_config.motif_rhythm_density = cpp_config.motif_rhythm_density;
+
+  // Reserved
+  std::memset(s_default_config._reserved2, 0, sizeof(s_default_config._reserved2));
 
   return &s_default_config;
 }

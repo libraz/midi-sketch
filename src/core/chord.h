@@ -284,7 +284,8 @@ struct PassingChordInfo {
  * @return ReharmonizationResult with possibly modified degree and extension
  */
 ReharmonizationResult reharmonizeForSection(int8_t degree, SectionType section_type,
-                                             bool is_minor, bool is_dominant);
+                                             bool is_minor, bool is_dominant,
+                                             bool enable_7th = true);
 
 /**
  * @brief Check if a passing diminished chord should be inserted in B sections.

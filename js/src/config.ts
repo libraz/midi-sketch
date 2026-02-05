@@ -97,6 +97,28 @@ export function createDefaultConfig(styleId: number): SongConfig {
     formExplicit: view.getUint8(retPtr + 56) !== 0,
     driveFeel: view.getUint8(retPtr + 57),
     addictiveMode: view.getUint8(retPtr + 58) !== 0,
+
+    // Syncopation (offset 59)
+    enableSyncopation: view.getUint8(retPtr + 59) !== 0,
+
+    // Energy curve (offset 60)
+    energyCurve: view.getUint8(retPtr + 60),
+
+    // Melody overrides (offset 61-67)
+    melodyMaxLeap: view.getUint8(retPtr + 61),
+    melodySyncopationProb: view.getUint8(retPtr + 62),
+    melodyPhraseLength: view.getUint8(retPtr + 63),
+    melodyLongNoteRatio: view.getUint8(retPtr + 64),
+    melodyChorusRegisterShift: view.getInt8(retPtr + 65),
+    melodyHookRepetition: view.getUint8(retPtr + 66),
+    melodyUseLeadingTone: view.getUint8(retPtr + 67),
+
+    // Motif overrides (offset 68-72)
+    motifLength: view.getUint8(retPtr + 68),
+    motifNoteCount: view.getUint8(retPtr + 69),
+    motifMotion: view.getUint8(retPtr + 70),
+    motifRegisterHigh: view.getUint8(retPtr + 71),
+    motifRhythmDensity: view.getUint8(retPtr + 72),
   };
 }
 
@@ -129,7 +151,7 @@ export function getConfigErrorMessage(errorCode: ConfigErrorCode): string {
  * @internal
  */
 export function allocSongConfig(m: EmscriptenModule, config: SongConfig): number {
-  const ptr = m._malloc(60); // MidiSketchSongConfig size (60 bytes)
+  const ptr = m._malloc(80); // MidiSketchSongConfig size (80 bytes)
   const view = new DataView(m.HEAPU8.buffer);
 
   // Basic settings (offset 0-12)
@@ -141,7 +163,7 @@ export function allocSongConfig(m: EmscriptenModule, config: SongConfig): number
   view.setUint8(ptr + 9, config.formId ?? 0);
   view.setUint8(ptr + 10, config.vocalAttitude ?? 0);
   view.setUint8(ptr + 11, config.drumsEnabled !== false ? 1 : 0);
-  view.setUint8(ptr + 12, config.blueprintId ?? 0);
+  view.setUint8(ptr + 12, config.blueprintId ?? 255);
 
   // Arpeggio settings (offset 13-17)
   view.setUint8(ptr + 13, config.arpeggioEnabled ? 1 : 0);
@@ -157,18 +179,18 @@ export function allocSongConfig(m: EmscriptenModule, config: SongConfig): number
   view.setUint8(ptr + 20, config.skipVocal ? 1 : 0);
 
   // Humanization (offset 21-23)
-  // NOTE: Default values MUST match C++ - humanize is false by default
+  // NOTE: Default values MUST match C++ SongConfig struct defaults
   view.setUint8(ptr + 21, config.humanize ? 1 : 0);
-  view.setUint8(ptr + 22, config.humanizeTiming ?? 0);
-  view.setUint8(ptr + 23, config.humanizeVelocity ?? 0);
+  view.setUint8(ptr + 22, config.humanizeTiming ?? 40);
+  view.setUint8(ptr + 23, config.humanizeVelocity ?? 30);
 
   // Chord extensions (offset 24-31)
   view.setUint8(ptr + 24, config.chordExtSus ? 1 : 0);
-  view.setUint8(ptr + 25, config.chordExt7th ? 1 : 0);
+  view.setUint8(ptr + 25, config.chordExt7th !== false ? 1 : 0);
   view.setUint8(ptr + 26, config.chordExt9th ? 1 : 0);
   view.setUint8(ptr + 27, 0); // chord_ext_tritone_sub (not exposed in JS)
   view.setUint8(ptr + 28, config.chordExtSusProb ?? 20);
-  view.setUint8(ptr + 29, config.chordExt7thProb ?? 30);
+  view.setUint8(ptr + 29, config.chordExt7thProb ?? 15);
   view.setUint8(ptr + 30, config.chordExt9thProb ?? 25);
   view.setUint8(ptr + 31, 0); // chord_ext_tritone_sub_prob (not exposed in JS)
 
@@ -186,13 +208,13 @@ export function allocSongConfig(m: EmscriptenModule, config: SongConfig): number
   view.setInt8(ptr + 37, config.modulationSemitones ?? 2);
 
   // SE/Call settings (offset 38-43)
-  // NOTE: Default values MUST match C++ - callNotesEnabled defaults to false
+  // NOTE: Default values MUST match C++ SongConfig struct defaults
   view.setUint8(ptr + 38, config.seEnabled !== false ? 1 : 0);
   view.setUint8(ptr + 39, config.callEnabled ? 1 : 0);
-  view.setUint8(ptr + 40, config.callNotesEnabled ? 1 : 0);
+  view.setUint8(ptr + 40, config.callNotesEnabled !== false ? 1 : 0);
   view.setUint8(ptr + 41, config.introChant ?? 0);
   view.setUint8(ptr + 42, config.mixPattern ?? 0);
-  view.setUint8(ptr + 43, config.callDensity ?? 0);
+  view.setUint8(ptr + 43, config.callDensity ?? 2);
 
   // Vocal style settings (offset 44-45)
   view.setUint8(ptr + 44, config.vocalStyle ?? 0);
@@ -221,8 +243,32 @@ export function allocSongConfig(m: EmscriptenModule, config: SongConfig): number
   view.setUint8(ptr + 57, config.driveFeel ?? 50);
   view.setUint8(ptr + 58, config.addictiveMode ? 1 : 0);
 
-  // Padding (offset 59)
-  view.setUint8(ptr + 59, 0);
+  // Syncopation (offset 59)
+  view.setUint8(ptr + 59, config.enableSyncopation ? 1 : 0);
+
+  // Energy curve (offset 60)
+  view.setUint8(ptr + 60, config.energyCurve ?? 0);
+
+  // Melody overrides (offset 61-67)
+  view.setUint8(ptr + 61, config.melodyMaxLeap ?? 0);
+  view.setUint8(ptr + 62, config.melodySyncopationProb ?? 0xff);
+  view.setUint8(ptr + 63, config.melodyPhraseLength ?? 0);
+  view.setUint8(ptr + 64, config.melodyLongNoteRatio ?? 0xff);
+  view.setInt8(ptr + 65, config.melodyChorusRegisterShift ?? -128);
+  view.setUint8(ptr + 66, config.melodyHookRepetition ?? 0);
+  view.setUint8(ptr + 67, config.melodyUseLeadingTone ?? 0);
+
+  // Motif overrides (offset 68-72)
+  view.setUint8(ptr + 68, config.motifLength ?? 0);
+  view.setUint8(ptr + 69, config.motifNoteCount ?? 0);
+  view.setUint8(ptr + 70, config.motifMotion ?? 0xff);
+  view.setUint8(ptr + 71, config.motifRegisterHigh ?? 0);
+  view.setUint8(ptr + 72, config.motifRhythmDensity ?? 0xff);
+
+  // Reserved (offset 73-79)
+  for (let idx = 73; idx < 80; idx++) {
+    view.setUint8(ptr + idx, 0);
+  }
 
   return ptr;
 }

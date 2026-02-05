@@ -89,7 +89,10 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
   std::vector<NoteEvent> result;
 
   // Calculate phrase structure aligned with harmonic rhythm
-  uint8_t phrase_beats = tmpl.max_phrase_beats;
+  // SectionContext phrase_length_bars override takes priority over template
+  uint8_t phrase_beats = (ctx.phrase_length_bars > 0)
+      ? static_cast<uint8_t>(ctx.phrase_length_bars * 4)
+      : tmpl.max_phrase_beats;
 
   // Get harmonic rhythm for this section to align phrases with chord changes
   HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(ctx.section_type, ctx.mood);
@@ -200,9 +203,14 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
           uint8_t old_pitch = adjusted_note.note;
 #endif
           // Use nearestChordToneWithinInterval to stay on chord tones
-          adjusted_note.note = static_cast<uint8_t>(nearestChordToneWithinInterval(
+          uint8_t interval_fixed = static_cast<uint8_t>(nearestChordToneWithinInterval(
               adjusted_note.note, prev_note_pitch, note_chord_degree, MAX_PHRASE_INTERVAL,
               ctx.vocal_low, ctx.vocal_high, &ctx.tessitura));
+          // Re-verify collision safety after interval fix
+          if (harmony.isConsonantWithOtherTracks(interval_fixed, adjusted_note.start_tick,
+                                                  adjusted_note.duration, TrackRole::Vocal)) {
+            adjusted_note.note = interval_fixed;
+          }
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           if (old_pitch != adjusted_note.note) {
             adjusted_note.prov_original_pitch = old_pitch;
@@ -217,8 +225,15 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
       uint8_t pre_snap_pitch = adjusted_note.note;
 #endif
       int snapped = snapToNearestScaleTone(adjusted_note.note, ctx.key_offset);
-      adjusted_note.note = static_cast<uint8_t>(
+      uint8_t snapped_clamped = static_cast<uint8_t>(
           std::clamp(snapped, static_cast<int>(ctx.vocal_low), static_cast<int>(ctx.vocal_high)));
+      // Re-verify collision safety after scale snap
+      if (snapped_clamped != adjusted_note.note &&
+          !harmony.isConsonantWithOtherTracks(snapped_clamped, adjusted_note.start_tick,
+                                               adjusted_note.duration, TrackRole::Vocal)) {
+        snapped_clamped = adjusted_note.note;  // Keep original if snap introduces collision
+      }
+      adjusted_note.note = snapped_clamped;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       if (pre_snap_pitch != adjusted_note.note) {
         if (adjusted_note.prov_original_pitch == 0) {
@@ -362,9 +377,7 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
         // Only enforce chord tone if NOT a valid appoggiatura
         if (!is_valid_appoggiatura) {
           // Use interval-aware snapping to preserve melodic contour
-#ifdef MIDISKETCH_NOTE_PROVENANCE
           uint8_t old_pitch = note.note;
-#endif
           int new_pitch;
           int max_interval = getMaxMelodicIntervalForSection(ctx.section_type);
           if (prev_final_pitch >= 0) {
@@ -377,6 +390,11 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
           // Defensive clamp to ensure vocal range is respected
           new_pitch = std::clamp(new_pitch, static_cast<int>(ctx.vocal_low),
                                  static_cast<int>(ctx.vocal_high));
+          // Re-verify collision safety after chord tone snap
+          if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(new_pitch), note.start_tick,
+                                                   note.duration, TrackRole::Vocal)) {
+            new_pitch = old_pitch;  // Keep original if snap introduces collision
+          }
           note.note = static_cast<uint8_t>(new_pitch);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
           if (old_pitch != note.note) {
@@ -402,6 +420,11 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
         // Defensive clamp to ensure vocal range is respected
         constrained_pitch = std::clamp(constrained_pitch, static_cast<int>(ctx.vocal_low),
                                        static_cast<int>(ctx.vocal_high));
+        // Re-verify collision safety after interval fix
+        if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(constrained_pitch),
+                                                 note.start_tick, note.duration, TrackRole::Vocal)) {
+          constrained_pitch = note.note;  // Keep original if fix introduces collision
+        }
         note.note = static_cast<uint8_t>(constrained_pitch);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         if (old_pitch != note.note) {
@@ -564,11 +587,23 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
 
   // Calculate syncopation weight based on vocal groove, section type, and drive_feel
   // drive_feel modulates syncopation: laid-back = less, aggressive = more
-  float syncopation_weight = getSyncopationWeight(ctx.vocal_groove, ctx.section_type, ctx.drive_feel);
+  // When enable_syncopation is false, force weight to 0 (no syncopation effects)
+  // ctx.syncopation_prob scales the result (StyleMelodyParams override)
+  float syncopation_weight = ctx.enable_syncopation
+      ? getSyncopationWeight(ctx.vocal_groove, ctx.section_type, ctx.drive_feel)
+        * (ctx.syncopation_prob / 0.15f)  // Normalize: 0.15 = default, scale proportionally
+      : 0.0f;
+  syncopation_weight = std::min(syncopation_weight, 0.5f);  // Cap at 0.5
+
+  // Apply long_note_ratio override from SectionContext if user explicitly set it
+  MelodyTemplate effective_tmpl = tmpl;
+  if (ctx.long_note_ratio_override >= 0.0f) {
+    effective_tmpl.long_note_ratio = ctx.long_note_ratio_override;
+  }
 
   // Generate rhythm pattern with section density modifier and 32nd note ratio
   std::vector<RhythmNote> rhythm = generatePhraseRhythm(
-      tmpl, phrase_beats, ctx.density_modifier, ctx.thirtysecond_ratio, rng, ctx.paradigm,
+      effective_tmpl, phrase_beats, ctx.density_modifier, ctx.thirtysecond_ratio, rng, ctx.paradigm,
       syncopation_weight, ctx.section_type);
 
   // RhythmSync density boost: if output is too sparse, regenerate with higher density
@@ -578,8 +613,50 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       rhythm.size() < static_cast<size_t>(phrase_beats * 2)) {
     float boost = std::max(1.5f, static_cast<float>(phrase_beats * 2) / rhythm.size());
     float boosted_density = ctx.density_modifier * boost;
-    rhythm = generatePhraseRhythm(tmpl, phrase_beats, boosted_density, ctx.thirtysecond_ratio, rng,
+    rhythm = generatePhraseRhythm(effective_tmpl, phrase_beats, boosted_density, ctx.thirtysecond_ratio, rng,
                                    ctx.paradigm, syncopation_weight, ctx.section_type);
+  }
+
+  // =========================================================================
+  // STYLE PARAM POST-PROCESSING: Apply zombie params to generated rhythm
+  // =========================================================================
+
+  // chorus_long_tones: Extend short notes to create sustained melody in Chorus.
+  // Converts eighth-note durations to quarter notes for a more open, singable feel.
+  if (ctx.section_type == SectionType::Chorus && ctx.chorus_long_tones) {
+    for (auto& rn : rhythm) {
+      // Extend eighth notes (1.0 eighths) to quarter notes (2.0 eighths)
+      if (rn.eighths >= 0.5f && rn.eighths < 2.0f) {
+        rn.eighths = 2.0f;
+      }
+    }
+  }
+
+  // min_note_division: Filter notes shorter than the minimum allowed division.
+  // Division value maps: 4=quarter, 8=eighth, 16=sixteenth, 32=thirty-second.
+  // Expressed in eighths: quarter=2.0, eighth=1.0, sixteenth=0.5, thirty-second=0.25.
+  if (ctx.min_note_division > 0) {
+    float min_eighths = 8.0f / static_cast<float>(ctx.min_note_division);
+    for (auto& rn : rhythm) {
+      if (rn.eighths < min_eighths) {
+        rn.eighths = min_eighths;
+      }
+    }
+  }
+
+  // allow_bar_crossing: Clip notes at bar boundaries when crossing is not allowed.
+  // Prevents notes from sustaining across barlines for tighter phrasing.
+  if (!ctx.allow_bar_crossing) {
+    constexpr float kBeatsPerBar = 4.0f;  // 4/4 time
+    for (auto& rn : rhythm) {
+      float note_end_beat = rn.beat + rn.eighths * 0.5f;  // Convert eighths to beats
+      float bar_start = std::floor(rn.beat / kBeatsPerBar) * kBeatsPerBar;
+      float bar_end = bar_start + kBeatsPerBar;
+      if (note_end_beat > bar_end) {
+        float max_beats = bar_end - rn.beat;
+        rn.eighths = std::max(0.25f, max_beats * 2.0f);  // Convert beats back to eighths
+      }
+    }
   }
 
   // Get chord degree at phrase start
@@ -732,7 +809,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
       new_pitch = applyPitchChoice(choice, current_pitch, target_pitch, note_chord_degree,
                                    ctx.key_offset, ctx.vocal_low, ctx.vocal_high,
                                    ctx.vocal_attitude, ctx.disable_vowel_constraints,
-                                   rn.eighths);
+                                   rn.eighths, ctx.tension_usage);
     }
 
     // Apply consecutive same note reduction with J-POP style probability curve
@@ -1210,12 +1287,12 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
       // Apply cached rhythm (duration/velocity) for sabi consistency
       Tick final_duration = actual_duration;
       uint8_t final_velocity = velocity;
-      Tick tick_advance = note_duration;  // Default: advance by pattern duration
+      Tick tick_advance = note_duration;  // Default: advance by pattern duration (pre-gate)
       if (use_cached_rhythm_for_note) {
         final_duration = std::max(hook_cache_.sabi_durations[total_note_idx], TICK_SIXTEENTH);
         final_velocity = hook_cache_.sabi_velocities[total_note_idx];
-        // For tick advancement, use cached duration to maintain timing consistency
-        tick_advance = hook_cache_.sabi_durations[total_note_idx];
+        // For tick advancement, use pre-gate duration to maintain grid-aligned timing
+        tick_advance = hook_cache_.sabi_tick_advances[total_note_idx];
       }
 
       // Apply pitch safety check to avoid collisions with other tracks (e.g., Motif tritone)
@@ -1340,12 +1417,18 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   // Cache the first 8 notes of the chorus hook for reuse in subsequent
   // chorus sections. This ensures the "sabi" (hook head) is memorable.
   // Rhythm (duration + velocity) is also cached for complete consistency.
+  // NOTE: sabi_tick_advances stores pre-gate durations for grid-aligned timing.
   if (!hook_cache_.pitches_cached && ctx.section_type == SectionType::Chorus &&
       result.notes.size() >= 8) {
+    Tick eighth_unit = getRhythmUnit(tmpl.rhythm_grid, true);
     for (size_t i = 0; i < 8 && i < result.notes.size(); ++i) {
       hook_cache_.sabi_pitches[i] = result.notes[i].note;
       hook_cache_.sabi_durations[i] = result.notes[i].duration;
       hook_cache_.sabi_velocities[i] = result.notes[i].velocity;
+      // Store pre-gate duration (from rhythm pattern) for grid-aligned tick advancement
+      size_t pattern_idx = i % contour_limit;
+      hook_cache_.sabi_tick_advances[i] =
+          static_cast<Tick>(rhythm_pattern.durations[pattern_idx]) * eighth_unit;
     }
     hook_cache_.pitches_cached = true;
     hook_cache_.rhythm_cached = true;
@@ -1413,9 +1496,7 @@ void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
       continue;
     }
 
-#ifdef MIDISKETCH_NOTE_PROVENANCE
     uint8_t old_pitch = note.note;
-#endif
 
     // 1. Apply pitch tendency (creating "run-up" to next section)
     float progress = static_cast<float>(note.start_tick - approach_start) /
@@ -1449,6 +1530,12 @@ void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
       }
     }
 
+    // Re-verify collision safety after transition approach pitch modification
+    if (static_cast<uint8_t>(new_pitch) != old_pitch &&
+        !harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(new_pitch), note.start_tick,
+                                             note.duration, TrackRole::Vocal)) {
+      new_pitch = old_pitch;  // Keep original if transition introduces collision
+    }
     note.note = static_cast<uint8_t>(new_pitch);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
     if (old_pitch != note.note) {
@@ -1541,9 +1628,11 @@ void MelodyDesigner::insertLeadingTone(std::vector<NoteEvent>& notes, const Sect
 int MelodyDesigner::applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
                                      int8_t chord_degree, int key_offset, uint8_t vocal_low,
                                      uint8_t vocal_high, VocalAttitude attitude,
-                                     bool disable_singability, float note_eighths) {
+                                     bool disable_singability, float note_eighths,
+                                     float tension_usage) {
   return applyPitchChoiceImpl(choice, current_pitch, target_pitch, chord_degree, key_offset,
-                              vocal_low, vocal_high, attitude, disable_singability, note_eighths);
+                              vocal_low, vocal_high, attitude, disable_singability, note_eighths,
+                              tension_usage);
 }
 
 int MelodyDesigner::calculateTargetPitch(const MelodyTemplate& tmpl, const SectionContext& ctx,

@@ -153,9 +153,17 @@ void Generator::initializeBlueprint(uint32_t seed) {
 
 void Generator::configureRhythmSyncMotif() {
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
-    params_.motif.rhythm_density = MotifRhythmDensity::Driving;
-    params_.motif.note_count = 8;               // Dense eighth-note pattern
-    params_.motif.length = MotifLength::Bars1;  // 1-bar motif for continuous riff
+    // Select rhythm template based on effective BPM
+    uint16_t effective_bpm = params_.bpm > 0 ? params_.bpm : getMoodDefaultBpm(params_.mood);
+    params_.motif.rhythm_template =
+        motif_detail::selectRhythmSyncTemplate(effective_bpm, rng_);
+    const auto& tmpl = motif_detail::getTemplateConfig(params_.motif.rhythm_template);
+    params_.motif.note_count = tmpl.note_count;
+    params_.motif.rhythm_density = tmpl.effective_density;
+    // HalfNoteSparse spans 2 bars; all other templates fit in 1 bar
+    params_.motif.length = (params_.motif.rhythm_template == MotifRhythmTemplate::HalfNoteSparse)
+                               ? MotifLength::Bars2
+                               : MotifLength::Bars1;
   }
 }
 
@@ -309,6 +317,7 @@ uint16_t Generator::initializeGenerationState() {
   }
 
   song_.setBpm(bpm);
+  params_.bpm = bpm;  // Propagate clamped BPM to params for Coordinator
 
   // Build song structure
   std::vector<Section> sections = buildSongStructure(bpm);
@@ -1104,19 +1113,40 @@ void Generator::rebuildMotifFromPattern() {
         Tick absolute_tick = pos + note.start_tick;
         if (absolute_tick >= section_end) continue;
 
-        auto motif_note = createNoteWithoutHarmony(absolute_tick, note.duration, note.note, note.velocity);
+        // Check collision safety before placing motif note
+        uint8_t safe_pitch = note.note;
+        if (!harmony_context_->isConsonantWithOtherTracks(note.note, absolute_tick, note.duration,
+                                                           TrackRole::Motif)) {
+          auto candidates = getSafePitchCandidates(*harmony_context_, note.note, absolute_tick,
+                                                    note.duration, TrackRole::Motif, 36, 96);
+          if (!candidates.empty()) {
+            safe_pitch = candidates[0].pitch;
+          }
+        }
+        auto motif_note = createNoteWithoutHarmony(absolute_tick, note.duration, safe_pitch, note.velocity);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         motif_note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
+        motif_note.prov_chord_degree = harmony_context_->getChordDegreeAt(absolute_tick);
+        motif_note.prov_lookup_tick = absolute_tick;
+        motif_note.prov_original_pitch = note.note;
+        if (safe_pitch != note.note) {
+          motif_note.addTransformStep(TransformStepType::CollisionAvoid, note.note, safe_pitch, 0, 0);
+        }
 #endif
         song_.motif().addNote(motif_note);
 
         if (add_octave) {
-          uint8_t octave_pitch = note.note + 12;
-          if (octave_pitch <= 108) {
+          uint8_t octave_pitch = safe_pitch + 12;
+          if (octave_pitch <= 108 &&
+              harmony_context_->isConsonantWithOtherTracks(octave_pitch, absolute_tick,
+                                                            note.duration, TrackRole::Motif)) {
             uint8_t octave_vel = static_cast<uint8_t>(note.velocity * 0.85);
             auto octave_note = createNoteWithoutHarmony(absolute_tick, note.duration, octave_pitch, octave_vel);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
             octave_note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
+            octave_note.prov_chord_degree = harmony_context_->getChordDegreeAt(absolute_tick);
+            octave_note.prov_lookup_tick = absolute_tick;
+            octave_note.prov_original_pitch = octave_pitch;
 #endif
             song_.motif().addNote(octave_note);
           }
@@ -1366,7 +1396,7 @@ void Generator::applyHumanization() {
   DrumStyle drum_style = getMoodDrumStyle(params_.mood);
   PostProcessor::applyMicroTimingOffsets(song_.vocal(), song_.bass(), song_.drums(), &sections,
                                           params_.drive_feel, params_.vocal_style, drum_style,
-                                          params_.humanize_timing);
+                                          params_.humanize_timing, params_.paradigm);
 
   // Synchronize bass-kick timing for tighter groove pocket
   PostProcessor::synchronizeBassKick(song_.bass(), song_.drums(), drum_style);
@@ -1525,6 +1555,14 @@ void Generator::applyLayerSchedule() {
 
     // For each track, check bar-by-bar activity and remove inactive notes
     for (auto& mapping : track_map) {
+      // In RhythmSync paradigm, protect the coordinate axis track (Motif)
+      // from layer schedule removal. Motif must remain present for
+      // Vocal-Motif rhythm alignment to be audible in the output.
+      if (params_.paradigm == GenerationParadigm::RhythmSync &&
+          mapping.mask == TrackMask::Motif) {
+        continue;
+      }
+
       auto& notes = mapping.track->notes();
 
       notes.erase(std::remove_if(notes.begin(), notes.end(),

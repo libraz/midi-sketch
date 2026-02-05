@@ -17,6 +17,7 @@
 #include "core/structure.h"
 #include "test_helpers/note_event_test_helper.h"
 #include "track/vocal/phrase_cache.h"
+#include "track/generators/motif.h"
 #include "track/generators/vocal.h"
 
 namespace midisketch {
@@ -951,8 +952,8 @@ TEST_F(ProductionBlueprintTest, BgmOnlyWithRhythmSyncGeneratesMotif) {
   EXPECT_FALSE(song.chord().empty()) << "Chord should be generated in BGM-only mode";
 }
 
-TEST_F(ProductionBlueprintTest, BgmOnlyWithRhythmSyncHasDrivingDensity) {
-  // Verify that RhythmSync paradigm applies Driving rhythm density to Motif
+TEST_F(ProductionBlueprintTest, BgmOnlyWithRhythmSyncHasTemplateConsistentParams) {
+  // Verify that RhythmSync paradigm applies template-consistent params to Motif
   Generator gen;
   GeneratorParams params;
   params.blueprint_id = 1;  // RhythmLock (RhythmSync paradigm)
@@ -963,10 +964,21 @@ TEST_F(ProductionBlueprintTest, BgmOnlyWithRhythmSyncHasDrivingDensity) {
   gen.generate(params);
   const auto& applied_params = gen.getParams();
 
-  // configureRhythmSyncMotif() should have set these values
-  EXPECT_EQ(applied_params.motif.rhythm_density, MotifRhythmDensity::Driving);
-  EXPECT_EQ(applied_params.motif.note_count, 8);
-  EXPECT_EQ(applied_params.motif.length, MotifLength::Bars1);
+  // configureRhythmSyncMotif() should have set template-consistent values
+  EXPECT_NE(applied_params.motif.rhythm_template, MotifRhythmTemplate::None)
+      << "RhythmSync should select a rhythm template";
+
+  const auto& tmpl =
+      motif_detail::getTemplateConfig(applied_params.motif.rhythm_template);
+  EXPECT_EQ(applied_params.motif.note_count, tmpl.note_count);
+  EXPECT_EQ(applied_params.motif.rhythm_density, tmpl.effective_density);
+
+  // HalfNoteSparse uses 2-bar cycle; all others use 1-bar
+  if (applied_params.motif.rhythm_template == MotifRhythmTemplate::HalfNoteSparse) {
+    EXPECT_EQ(applied_params.motif.length, MotifLength::Bars2);
+  } else {
+    EXPECT_EQ(applied_params.motif.length, MotifLength::Bars1);
+  }
 }
 
 TEST_F(ProductionBlueprintTest, BgmOnlyWithTraditionalNoMotif) {

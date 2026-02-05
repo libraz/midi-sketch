@@ -76,12 +76,14 @@ class PostProcessor {
   // @param vocal_style Vocal style preset for physics parameter scaling
   // @param drum_style Drum style for timing profile selection
   // @param humanize_timing Global humanization scaling (0.0-1.0, scales all timing offsets)
+  // @param paradigm Generation paradigm (RhythmSync adds beat-strength vocal offsets)
   static void applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass, MidiTrack& drum_track,
                                        const std::vector<Section>* sections = nullptr,
                                        uint8_t drive_feel = 50,
                                        VocalStylePreset vocal_style = VocalStylePreset::Standard,
                                        DrumStyle drum_style = DrumStyle::Standard,
-                                       float humanize_timing = 1.0f);
+                                       float humanize_timing = 1.0f,
+                                       GenerationParadigm paradigm = GenerationParadigm::Traditional);
 
   // Fixes vocal overlaps that may be introduced by humanization.
   // Singers can only sing one note at a time.

@@ -356,6 +356,12 @@ std::vector<NoteEvent> placeMotifInIntro(const Motif& motif, Tick intro_start, T
       raw_pitch = snapToNearestScaleTone(raw_pitch, 0);
       note.note = static_cast<uint8_t>(std::clamp(raw_pitch, 0, 127));
       note.velocity = velocity;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
+      note.prov_chord_degree = -1;
+      note.prov_lookup_tick = note.start_tick;
+      note.prov_original_pitch = note.note;
+#endif
 
       result.push_back(note);
     }
@@ -411,6 +417,14 @@ std::vector<NoteEvent> placeMotifInBridge(const Motif& motif, Tick section_start
     final_pitch = candidates[0].pitch;
 
     note.note = final_pitch;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
+    note.prov_chord_degree = chord_degree;
+    note.prov_lookup_tick = note.start_tick;
+    if (note.prov_original_pitch == 0) {
+      note.prov_original_pitch = note.note;
+    }
+#endif
     safe_notes.push_back(note);
   }
 
@@ -490,6 +504,13 @@ std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_
       auto primary_note = createNoteWithoutHarmony(note_start, duration, final_pitch, enhanced_velocity);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       primary_note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
+      primary_note.prov_chord_degree = chord_degree;
+      primary_note.prov_lookup_tick = note_start;
+      primary_note.prov_original_pitch = static_cast<uint8_t>(snapped);
+      if (final_pitch != static_cast<uint8_t>(snapped)) {
+        primary_note.addTransformStep(TransformStepType::CollisionAvoid,
+                                       static_cast<uint8_t>(snapped), final_pitch, 0, 0);
+      }
 #endif
       result.push_back(primary_note);
 
@@ -502,6 +523,9 @@ std::vector<NoteEvent> placeMotifInFinalChorus(const Motif& motif, Tick section_
                                                     static_cast<uint8_t>(enhanced_velocity * 0.85f));
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         octave_note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
+        octave_note.prov_chord_degree = chord_degree;
+        octave_note.prov_lookup_tick = note_start;
+        octave_note.prov_original_pitch = static_cast<uint8_t>(octave_pitch);
 #endif
         result.push_back(octave_note);
       }

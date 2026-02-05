@@ -454,7 +454,21 @@ std::string midiNoteToNameInternal(uint8_t midi_note) {
 
 // Internal version of intervalToName
 std::string intervalToNameInternal(uint8_t semitones) {
-  return INTERVAL_NAMES[semitones % 12];
+  if (semitones <= 11) {
+    return INTERVAL_NAMES[semitones];
+  }
+  if (semitones == 12) return "octave";
+  // Compound intervals (13-23): use 9th/10th/11th/etc. naming
+  constexpr const char* COMPOUND_NAMES[12] = {
+      "octave",      "minor 9th",    "major 9th",  "minor 10th",
+      "major 10th",  "perfect 11th", "aug 11th",   "perfect 12th",
+      "minor 13th",  "major 13th",   "minor 14th", "major 14th"};
+  if (semitones <= 23) {
+    return COMPOUND_NAMES[semitones - 12];
+  }
+  // 2+ octaves: show as "base interval (+N oct)"
+  int octaves = semitones / 12;
+  return std::string(INTERVAL_NAMES[semitones % 12]) + " (+" + std::to_string(octaves) + " oct)";
 }
 
 // Update summary severity counts
@@ -502,7 +516,6 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes,
 
       uint8_t actual_interval = static_cast<uint8_t>(
           std::abs(static_cast<int>(note_a.pitch) - static_cast<int>(note_b.pitch)));
-      uint8_t interval = actual_interval % 12;
 
       uint8_t low_pitch = std::min(note_a.pitch, note_b.pitch);
       uint8_t high_pitch = std::max(note_a.pitch, note_b.pitch);
@@ -515,6 +528,22 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes,
 
       auto [is_dissonant, base_severity] = checkIntervalDissonance(actual_interval, degree);
 
+      // Special handling for Bass + Major 7th in low register:
+      // Even with wide separation (2+ octaves), M7 between Bass and other tracks
+      // creates problematic harmonic clashes due to low register overtone content.
+      // Bass < C3 (48) with M7 interval (pitch_class 11) should be flagged.
+      if (!is_dissonant && actual_interval > 24) {
+        uint8_t pitch_class_interval = actual_interval % 12;
+        bool involves_bass = (note_a.track == TrackRole::Bass || note_b.track == TrackRole::Bass);
+        uint8_t bass_pitch = (note_a.track == TrackRole::Bass) ? note_a.pitch : note_b.pitch;
+
+        // Major 7th (11 semitones) with bass in low register (< C3)
+        if (pitch_class_interval == 11 && involves_bass && bass_pitch < 48) {
+          is_dissonant = true;
+          base_severity = DissonanceSeverity::Medium;  // Not as harsh as close voicing, but notable
+        }
+      }
+
       if (is_dissonant) {
         BeatStrength beat_strength = getBeatStrength(overlap_start);
         SectionPosition section_pos = getSectionPosition(overlap_start, ctx.song);
@@ -526,10 +555,10 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes,
         issue.type = DissonanceType::SimultaneousClash;
         issue.severity = severity;
         issue.tick = overlap_start;
-        issue.bar = bar;
+        issue.bar = bar + 1;  // 1-indexed to match --bar command
         issue.beat = 1.0f + static_cast<float>(overlap_start % TICKS_PER_BAR) / TICKS_PER_BEAT;
-        issue.interval_semitones = interval;
-        issue.interval_name = intervalToNameInternal(interval);
+        issue.interval_semitones = actual_interval;
+        issue.interval_name = intervalToNameInternal(actual_interval);
         issue.notes.push_back(createNoteInfo(note_a));
         issue.notes.push_back(createNoteInfo(note_b));
 
@@ -611,7 +640,7 @@ void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_
     issue.type = DissonanceType::NonChordTone;
     issue.severity = severity;
     issue.tick = note.start_tick;
-    issue.bar = bar;
+    issue.bar = bar + 1;  // 1-indexed to match --bar command
     issue.beat = 1.0f + static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
     issue.track_name = trackRoleToString(role);
     issue.pitch = note.note;
@@ -707,7 +736,7 @@ void detectSustainedInTrack(const MidiTrack& track, TrackRole role,
         issue.type = DissonanceType::SustainedOverChordChange;
         issue.severity = severity;
         issue.tick = change.tick;
-        issue.bar = bar;
+        issue.bar = bar + 1;  // 1-indexed to match --bar command
         issue.beat = 1.0f + static_cast<float>(change.tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
         issue.track_name = trackRoleToString(role);
         issue.pitch = note.note;
@@ -793,7 +822,7 @@ void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
     issue.type = DissonanceType::NonDiatonicNote;
     issue.severity = severity;
     issue.tick = note.start_tick;
-    issue.bar = bar;
+    issue.bar = bar + 1;  // 1-indexed to match --bar command
     issue.beat = 1.0f + static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
     issue.track_name = trackRoleToString(role);
     issue.pitch = transposed_pitch;
@@ -830,7 +859,7 @@ std::string midiNoteToName(uint8_t midi_note) {
   return std::string(NOTE_NAMES[note_class]) + std::to_string(octave);
 }
 
-std::string intervalToName(uint8_t semitones) { return INTERVAL_NAMES[semitones % 12]; }
+std::string intervalToName(uint8_t semitones) { return intervalToNameInternal(semitones); }
 
 DissonanceReport analyzeDissonance(const Song& song, const GeneratorParams& params) {
   DissonanceReport report{};
@@ -935,7 +964,6 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
       // Calculate interval
       uint8_t actual_interval = static_cast<uint8_t>(
           std::abs(static_cast<int>(note_a.pitch) - static_cast<int>(note_b.pitch)));
-      uint8_t interval = actual_interval % 12;
 
       // Deduplicate
       uint8_t low_pitch = std::min(note_a.pitch, note_b.pitch);
@@ -1009,10 +1037,10 @@ DissonanceReport analyzeDissonanceFromParsedMidi(const ParsedMidi& midi) {
         issue.type = DissonanceType::SimultaneousClash;
         issue.severity = severity;
         issue.tick = note_a.start;
-        issue.bar = bar;
+        issue.bar = bar + 1;  // 1-indexed to match --bar command
         issue.beat = beat;
-        issue.interval_semitones = interval;
-        issue.interval_name = intervalToName(interval);
+        issue.interval_semitones = actual_interval;
+        issue.interval_name = intervalToName(actual_interval);
 
         issue.notes.push_back({note_a.track_name, note_a.pitch, midiNoteToName(note_a.pitch)});
         issue.notes.push_back({note_b.track_name, note_b.pitch, midiNoteToName(note_b.pitch)});

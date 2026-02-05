@@ -702,8 +702,6 @@ TEST(JsonRoundTripTest, StyleMelodyParams) {
   original.allow_bar_crossing = true;
   original.verse_register_shift = -5;
   original.chorus_register_shift = 8;
-  original.legato_gate = 0.98f;
-  original.staccato_gate = 0.4f;
 
   std::ostringstream oss;
   Writer w(oss);
@@ -727,8 +725,6 @@ TEST(JsonRoundTripTest, StyleMelodyParams) {
   EXPECT_EQ(restored.allow_bar_crossing, original.allow_bar_crossing);
   EXPECT_EQ(restored.verse_register_shift, original.verse_register_shift);
   EXPECT_EQ(restored.chorus_register_shift, original.chorus_register_shift);
-  EXPECT_FLOAT_EQ(restored.legato_gate, original.legato_gate);
-  EXPECT_FLOAT_EQ(restored.staccato_gate, original.staccato_gate);
 }
 
 TEST(JsonRoundTripTest, BackwardCompatibility) {
@@ -760,7 +756,7 @@ TEST(JsonRoundTripTest, BackwardCompatibility) {
   // Nested structures should have defaults
   EXPECT_EQ(restored.arpeggio.pattern, ArpeggioPattern::Up);
   EXPECT_EQ(restored.arpeggio.speed, ArpeggioSpeed::Sixteenth);
-  EXPECT_EQ(restored.chord_extension.enable_7th, true);
+  EXPECT_EQ(restored.chord_extension.enable_7th, false);
 }
 
 }  // namespace

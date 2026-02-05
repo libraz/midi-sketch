@@ -125,7 +125,7 @@ struct ArpeggioStyle {
 /// @brief Chord extension configuration.
 struct ChordExtensionParams {
   bool enable_sus = false;            ///< Enable sus2/sus4 substitutions
-  bool enable_7th = true;             ///< Enable 7th chord extensions
+  bool enable_7th = false;            ///< Enable 7th chord extensions
   bool enable_9th = false;            ///< Enable 9th chord extensions
   bool tritone_sub = false;           ///< Enable tritone substitution (V7 -> bII7)
   float sus_probability = 0.2f;       ///< Probability of sus chord (0.0-1.0)
@@ -146,7 +146,7 @@ struct ChordExtensionParams {
 
   void readFrom(const json::Parser& p) {
     enable_sus = p.getBool("enable_sus", false);
-    enable_7th = p.getBool("enable_7th", true);
+    enable_7th = p.getBool("enable_7th", false);
     enable_9th = p.getBool("enable_9th", false);
     tritone_sub = p.getBool("tritone_sub", false);
     sus_probability = p.getFloat("sus_probability", 0.2f);
@@ -161,20 +161,6 @@ struct ChordExtensionParams {
 /// ============================================================================
 /// 5-Layer Architecture Types
 /// ============================================================================
-
-/// @brief Motif constraint parameters for StylePreset.
-struct StyleMotifConstraints {
-  uint8_t motif_length_beats = 8;  ///< Motif length in beats
-  float repeat_rate = 0.6f;        ///< Probability of exact repetition
-  float variation_rate = 0.3f;     ///< Probability of variation
-};
-
-/// @brief Rhythm constraint parameters for StylePreset.
-struct StyleRhythmParams {
-  bool drums_primary = true;      ///< Drums as primary driver
-  uint8_t drum_density = 2;       ///< 0=sparse, 1=low, 2=normal, 3=high
-  uint8_t syncopation_level = 1;  ///< 0=none, 1=light, 2=medium, 3=heavy
-};
 
 /// @brief Style preset combining all constraints.
 struct StylePreset {
@@ -198,8 +184,6 @@ struct StylePreset {
 
   /// Constraint parameters
   StyleMelodyParams melody;
-  StyleMotifConstraints motif;
-  StyleRhythmParams rhythm;
   uint8_t se_density;  ///< 0=none, 1=low, 2=med, 3=high
 };
 
@@ -282,6 +266,28 @@ struct SongConfig {
   HookIntensity hook_intensity = HookIntensity::Normal;
   VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
 
+  /// Syncopation control
+  bool enable_syncopation = false;  ///< Enable syncopation effects in melody rhythm
+
+  /// Energy curve for overall song dynamics
+  EnergyCurve energy_curve = EnergyCurve::GradualBuild;
+
+  /// Melody parameter overrides (0/0xFF = use preset default)
+  uint8_t melody_max_leap = 0;           ///< 0=preset default, 1-12=override
+  uint8_t melody_syncopation_prob = 0xFF; ///< 0xFF=preset default, 0-100=override
+  uint8_t melody_phrase_length = 0;       ///< 0=preset default, 1-8 bars
+  uint8_t melody_long_note_ratio = 0xFF;  ///< 0xFF=preset default, 0-100=override
+  int8_t melody_chorus_register_shift = INT8_MIN; ///< INT8_MIN=preset default, -12 to +12
+  uint8_t melody_hook_repetition = 0;     ///< 0=preset, 1=off, 2=on
+  uint8_t melody_use_leading_tone = 0;    ///< 0=preset, 1=off, 2=on
+
+  /// Motif parameter overrides (0=auto/preset, 0xFF=preset for enum fields)
+  uint8_t motif_length = 0;          ///< 0=auto, 1/2/4 beats
+  uint8_t motif_note_count = 0;      ///< 0=auto, 3-8
+  uint8_t motif_motion = 0xFF;       ///< 0xFF=preset, 0-4=override (0=Stepwise..4=Disjunct)
+  uint8_t motif_register_high = 0;   ///< 0=auto, 1=low, 2=high
+  uint8_t motif_rhythm_density = 0xFF; ///< 0xFF=preset, 0-2=override (0=Sparse..2=Driving)
+
   /// === Behavioral Loop (addictive generation) ===
   bool addictive_mode = false;  ///< Enable Behavioral Loop mode (fixed riff, maximum hook)
 };
@@ -349,12 +355,19 @@ struct GeneratorParams {
   HookIntensity hook_intensity = HookIntensity::Normal;
   VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
 
+  /// Syncopation control
+  bool enable_syncopation = false;  ///< Enable syncopation effects in melody rhythm
+
   /// Drive feel (0-100): affects timing, velocity, syncopation
   /// 0=laid-back (relaxed), 50=neutral (default), 100=aggressive (driving)
   uint8_t drive_feel = 50;
 
   /// Behavioral Loop (addictive generation)
   bool addictive_mode = false;  ///< Enable Behavioral Loop mode (fixed riff, maximum hook)
+
+  /// Melody parameter override flags (true = user explicitly set the value)
+  bool melody_max_leap_override = false;
+  bool melody_long_note_ratio_override = false;
 
   /// Energy curve for overall song dynamics
   /// Controls how section energy is distributed across the song:
@@ -411,6 +424,7 @@ struct GeneratorParams {
         .write("melodic_complexity", static_cast<int>(melodic_complexity))
         .write("hook_intensity", static_cast<int>(hook_intensity))
         .write("vocal_groove", static_cast<int>(vocal_groove))
+        .write("enable_syncopation", enable_syncopation)
         .write("drive_feel", static_cast<int>(drive_feel))
         .write("addictive_mode", addictive_mode)
         .write("energy_curve", static_cast<int>(energy_curve))
@@ -483,6 +497,7 @@ struct GeneratorParams {
     melodic_complexity = static_cast<MelodicComplexity>(p.getInt("melodic_complexity", 1));
     hook_intensity = static_cast<HookIntensity>(p.getInt("hook_intensity", 2));
     vocal_groove = static_cast<VocalGrooveFeel>(p.getInt("vocal_groove", 0));
+    enable_syncopation = p.getBool("enable_syncopation", false);
     drive_feel = static_cast<uint8_t>(p.getInt("drive_feel", 50));
     addictive_mode = p.getBool("addictive_mode", false);
     energy_curve = static_cast<EnergyCurve>(p.getInt("energy_curve", 0));

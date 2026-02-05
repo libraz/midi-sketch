@@ -192,10 +192,19 @@ void applySequentialTransposition(std::vector<NoteEvent>& notes, uint8_t phrase_
   int transpose = (phrase_index < 4) ? kSequenceIntervals[phrase_index] : 5;
 
   for (auto& note : notes) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    uint8_t old_pitch = note.note;
+#endif
     int new_pitch = note.note + transpose;
     new_pitch = snapToNearestScaleTone(new_pitch, key_offset);
     new_pitch = std::clamp(new_pitch, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
     note.note = static_cast<uint8_t>(new_pitch);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    if (old_pitch != note.note) {
+      note.prov_original_pitch = old_pitch;
+      note.addTransformStep(TransformStepType::ScaleSnap, old_pitch, note.note, 0, 0);
+    }
+#endif
   }
 }
 

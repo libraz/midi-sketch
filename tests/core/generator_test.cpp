@@ -221,10 +221,9 @@ TEST(GeneratorTest, ChordExtensionDefaultValues) {
 
   gen.generate(params);
 
-  // 7th chords enabled by default for richer harmony
-  // Sus chords disabled by default (mood-dependent activation)
+  // Both 7th and sus chords disabled by default
   EXPECT_FALSE(gen.getParams().chord_extension.enable_sus);
-  EXPECT_TRUE(gen.getParams().chord_extension.enable_7th);
+  EXPECT_FALSE(gen.getParams().chord_extension.enable_7th);
 }
 
 TEST(GeneratorTest, ChordExtensionGeneratesNotes) {

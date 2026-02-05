@@ -18,6 +18,7 @@
 #include "core/melody_templates.h"
 #include "core/melody_types.h"
 #include "core/motif.h"
+#include "core/motif_types.h"
 #include "core/motif_transform.h"
 #include "core/pitch_utils.h"
 #include "core/section_types.h"
@@ -76,6 +77,9 @@ class MelodyDesigner {
     // Vocal groove feel for syncopation control
     VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;  ///< Affects syncopation weight
 
+    // Syncopation enable flag (must be true for syncopation effects)
+    bool enable_syncopation = false;  ///< When false, syncopation weight is forced to 0
+
     // Drive feel for timing and syncopation modulation
     uint8_t drive_feel = 50;  ///< Drive feel (0=laid-back, 50=neutral, 100=aggressive)
 
@@ -98,8 +102,20 @@ class MelodyDesigner {
     // Creates song-wide melodic unity by echoing chorus motif in verses
     bool enforce_motif_fragments = false;  ///< Enable motif fragment injection
 
+    // Motif rhythm template for RhythmSync accent-linked velocity
+    const MotifParams* motif_params = nullptr;  ///< Motif params for template accent weights
+
     // Occurrence count for occurrence-dependent embellishment density
     int section_occurrence = 1;  ///< Which occurrence of this section type (1-based)
+
+    // Style melody params wired from StyleMelodyParams (zombie param connections)
+    bool chorus_long_tones = false;   ///< Extend short notes to longer tones in chorus
+    bool allow_bar_crossing = true;   ///< Allow notes to cross bar boundaries
+    uint8_t min_note_division = 0;    ///< Minimum note division (4/8/16/32, 0=no filter)
+    float tension_usage = 0.2f;       ///< Tension note probability (0.0-1.0)
+    float syncopation_prob = 0.15f;   ///< Syncopation probability scaling (0.0-0.5)
+    float long_note_ratio_override = -1.0f;  ///< Override MelodyTemplate long_note_ratio (-1=no override)
+    uint8_t phrase_length_bars = 0;   ///< Override phrase length in bars (0=use template)
 
     // ========================================================================
     // Task 5-2: Internal 4-Stage Structure within Section
@@ -437,10 +453,11 @@ class MelodyDesigner {
   //   Expressive: chord tones + tensions (7, 9)
   //   Raw: all scale tones
   // note_eighths: Rhythm-melody coupling - short notes prefer chord tones
+  // tension_usage: Gates tension note inclusion (0.0=none, 1.0=always)
   int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, int8_t chord_degree,
                        int key_offset, uint8_t vocal_low, uint8_t vocal_high,
                        VocalAttitude attitude, bool disable_singability = false,
-                       float note_eighths = 2.0f);
+                       float note_eighths = 2.0f, float tension_usage = 0.2f);
 
   // Calculate target pitch for phrase based on template.
   int calculateTargetPitch(const MelodyTemplate& tmpl, const SectionContext& ctx, int current_pitch,
@@ -473,6 +490,8 @@ class MelodyDesigner {
     /// Cached sabi head rhythm (first 8 durations and velocities).
     std::array<Tick, 8> sabi_durations{};
     std::array<uint8_t, 8> sabi_velocities{};
+    /// Cached tick advances (pre-gate durations) for grid-aligned timing.
+    std::array<Tick, 8> sabi_tick_advances{};
     bool rhythm_cached = false;
 
     /// @brief Reset all cached state.

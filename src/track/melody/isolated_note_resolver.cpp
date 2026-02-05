@@ -66,8 +66,10 @@ void resolveIsolatedNotes(std::vector<NoteEvent>& notes, const IHarmonyContext& 
     int fixed_pitch = findConnectingPitch(prev_pitch, next_pitch, chord_degree,
                                            vocal_low, vocal_high);
 
-    // Apply fix only if it improves connectivity
-    if (doesFixImproveConnectivity(prev_pitch, curr_pitch, next_pitch, fixed_pitch)) {
+    // Apply fix only if it improves connectivity and doesn't introduce collision
+    if (doesFixImproveConnectivity(prev_pitch, curr_pitch, next_pitch, fixed_pitch) &&
+        harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(fixed_pitch), notes[i].start_tick,
+                                            notes[i].duration, TrackRole::Vocal)) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
       uint8_t old_pitch = notes[i].note;
 #endif

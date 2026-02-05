@@ -417,21 +417,6 @@ struct StyleMelodyParams {
   bool disable_breathing_gaps = false;  ///< Disable breathing rests between phrases (machine-like)
   /// @}
 
-  /// @name Articulation (gate values)
-  /// @{
-  float legato_gate = 0.95f;      ///< Gate for legato notes
-  float normal_gate = 0.85f;      ///< Gate for normal notes
-  float staccato_gate = 0.5f;     ///< Gate for staccato notes
-  float phrase_end_gate = 0.70f;  ///< Gate for phrase-ending notes
-  /// @}
-
-  /// @name Density thresholds for rhythm selection
-  /// @{
-  float vocaloid_density_threshold = 1.0f;  ///< Threshold for vocaloid patterns
-  float high_density_threshold = 0.85f;     ///< Threshold for high density
-  float medium_density_threshold = 0.7f;    ///< Threshold for medium density
-  float low_density_threshold = 0.5f;       ///< Threshold for low density
-  /// @}
 
   void writeTo(json::Writer& w) const;
   void readFrom(const json::Parser& p);

@@ -30,6 +30,22 @@ enum class MotifRhythmDensity : uint8_t {
   Driving  ///< Eighth + light 16th
 };
 
+/// @brief Motif rhythm template for RhythmSync paradigm.
+/// Each template defines a fixed rhythmic pattern (onset positions + accent weights)
+/// that repeats across all sections for riff consistency.
+enum class MotifRhythmTemplate : uint8_t {
+  None = 0,        ///< No template (use legacy generation)
+  EighthDrive,     ///< 8 notes: straight 8ths [0,.5,1,1.5,2,2.5,3,3.5]
+  GallopDrive,     ///< 12 notes: galloping 16ths [0,.25,.5,1,1.25,1.5,2,2.25,2.5,3,3.25,3.5]
+  MixedGrooveA,    ///< 6 notes: call-and-response [0,.5,1,2,2.5,3]
+  MixedGrooveB,    ///< 6 notes: front-loaded [0,.5,1,1.5,2,3]
+  MixedGrooveC,    ///< 6 notes: syncopated push [0,1,1.5,2,3,3.5]
+  PushGroove,      ///< 7 notes: anticipation [0,.5,1,1.5,2,2.5,3.5]
+  EighthPickup,    ///< 8 notes: 16th pickup [0,.5,1,1.5,2,2.5,3,3.75]
+  HalfNoteSparse,  ///< 4 notes: 2-bar half-note rhythm [0,2,4,6]
+  Count            ///< Sentinel for iteration
+};
+
 /// @brief Motif melodic motion.
 enum class MotifMotion : uint8_t {
   Stepwise,   ///< Scale steps only (2nd intervals)
@@ -56,6 +72,7 @@ struct MotifParams {
   MotifRepeatScope repeat_scope = MotifRepeatScope::FullSong;
   bool octave_layering_chorus = true;  ///< Double at chorus
   bool velocity_fixed = true;          ///< Fixed velocity (groove via drums)
+  MotifRhythmTemplate rhythm_template = MotifRhythmTemplate::None;  ///< RhythmSync template
 
   /// Melodic freedom in RhythmSync mode (0.0-1.0).
   /// 0.0 = all notes snapped to chord tones (root, 3rd, 5th)
@@ -81,6 +98,7 @@ struct MotifParams {
         .write("repeat_scope", static_cast<int>(repeat_scope))
         .write("octave_layering_chorus", octave_layering_chorus)
         .write("velocity_fixed", velocity_fixed)
+        .write("rhythm_template", static_cast<int>(rhythm_template))
         .write("melodic_freedom", melodic_freedom)
         .write("response_mode", response_mode)
         .write("response_probability", response_probability)
@@ -99,6 +117,8 @@ struct MotifParams {
     repeat_scope = static_cast<MotifRepeatScope>(p.getInt("repeat_scope", 0));
     octave_layering_chorus = p.getBool("octave_layering_chorus", true);
     velocity_fixed = p.getBool("velocity_fixed", true);
+    rhythm_template =
+        static_cast<MotifRhythmTemplate>(p.getInt("rhythm_template", 0));
     melodic_freedom = p.getFloat("melodic_freedom", 0.4f);
     response_mode = p.getBool("response_mode", true);
     response_probability = p.getFloat("response_probability", 0.6f);

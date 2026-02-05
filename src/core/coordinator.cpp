@@ -109,6 +109,7 @@ void Coordinator::initialize(const GeneratorParams& params,
   if (bpm_ == 0) {
     bpm_ = getMoodDefaultBpm(params.mood);
   }
+  validateBpm();
 
   // Store chord progression ID
   chord_id_ = params.chord_id;

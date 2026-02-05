@@ -53,6 +53,10 @@ struct NoteOptions {
 
   // Additional context (track-specific)
   int8_t contour_direction = 0;                 ///< -1:descending, 0:none, +1:ascending (Motif)
+
+  // Monotony avoidance (optional)
+  uint8_t prev_pitch = 0;                       ///< Previous note's pitch (0=ignore)
+  int consecutive_same_count = 0;               ///< How many consecutive same-pitch notes (for penalty)
 };
 
 /// @brief Result of createNote() with detailed information.

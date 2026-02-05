@@ -413,8 +413,14 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     snapped = std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
     // Re-snap to scale if clamp moved us off a chord tone
     snapped = snapToNearestScaleTone(snapped, 0);  // Always C major internally
-    note.note = static_cast<uint8_t>(
+    uint8_t snapped_pitch = static_cast<uint8_t>(
         std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
+    // Re-verify collision safety after snapping (snapping can introduce new clashes)
+    if (!harmony.isConsonantWithOtherTracks(snapped_pitch, note.start_tick, note.duration, TrackRole::Vocal)) {
+      // Snapping broke collision safety - revert to the collision-safe pitch
+      snapped_pitch = safe_pitch;
+    }
+    note.note = snapped_pitch;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
     if (old_pitch != note.note) {
       note.prov_original_pitch = old_pitch;
@@ -434,6 +440,11 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
         int new_pitch =
             nearestChordToneWithinInterval(note.note, prev_pitch, chord_degree, MAX_VOCAL_INTERVAL,
                                            vocal_low, vocal_high, nullptr);
+        // Re-verify collision safety after interval fix
+        if (!harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(new_pitch), note.start_tick,
+                                                 note.duration, TrackRole::Vocal)) {
+          new_pitch = note.note;  // Keep the collision-safe pitch
+        }
         note.note = static_cast<uint8_t>(new_pitch);
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         if (pre_interval_pitch != note.note) {

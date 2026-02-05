@@ -58,11 +58,13 @@ const DrumTimingProfile& getDrumTimingProfile(DrumStyle style) {
 }
 
 TimingOffsetCalculator::TimingOffsetCalculator(uint8_t drive_feel, VocalStylePreset vocal_style,
-                                               DrumStyle drum_style, float humanize_timing)
+                                               DrumStyle drum_style, float humanize_timing,
+                                               GenerationParadigm paradigm)
     : timing_mult_(DriveMapping::getTimingMultiplier(drive_feel)),
       humanize_timing_(std::clamp(humanize_timing, 0.0f, 1.0f)),
       physics_(getVocalPhysicsParams(vocal_style)),
-      profile_(getDrumTimingProfile(drum_style)) {}
+      profile_(getDrumTimingProfile(drum_style)),
+      paradigm_(paradigm) {}
 
 // ============================================================================
 // Drum Timing
@@ -136,6 +138,41 @@ void TimingOffsetCalculator::applyBassOffset(MidiTrack& bass_track) const {
 // Vocal Timing
 // ============================================================================
 
+int TimingOffsetCalculator::getRhythmSyncBeatOffset(Tick tick) const {
+  // Beat-strength-aware micro-timing for RhythmSync paradigm.
+  // Stronger beats anchor tighter, weaker beats add groove feel.
+  // Values are max shifts at humanize_timing=1.0; actual scaling applied in caller.
+  // Negative bias (-60%/+40%) for Orangestar's forward-leaning feel.
+  Tick pos_in_bar = tick % TICKS_PER_BAR;
+  Tick beat_pos = pos_in_bar % TICKS_PER_BEAT;
+  int beat_in_bar = static_cast<int>(pos_in_bar / TICKS_PER_BEAT);
+
+  int max_shift = 0;
+  if (beat_pos == 0) {
+    // On-beat positions
+    if (beat_in_bar == 0 || beat_in_bar == 2) {
+      max_shift = 8;    // Strong beats: tight anchor
+    } else {
+      max_shift = 15;   // Weak beats: moderate groove
+    }
+  } else if (beat_pos == TICKS_PER_BEAT / 2) {
+    // Offbeat (8th note) positions
+    max_shift = 20;     // Maximum groove feel
+  } else if (beat_pos == TICKS_PER_BEAT / 4 || beat_pos == 3 * TICKS_PER_BEAT / 4) {
+    // 16th note positions
+    max_shift = 10;     // Tight for clarity
+  } else {
+    max_shift = 12;     // Other positions: moderate
+  }
+
+  // Apply forward-lean bias: -60% / +40% (negative = ahead of grid)
+  // Use a deterministic offset based on tick position for consistency
+  // Strong beats lean slightly forward, offbeats lean more
+  int biased_offset = -static_cast<int>(max_shift * 0.6f * timing_mult_);
+
+  return biased_offset;
+}
+
 int TimingOffsetCalculator::getVocalTimingOffset(const NoteEvent& note, size_t note_idx,
                                                   const std::vector<NoteEvent>& vocal_notes,
                                                   const std::vector<Section>& sections,
@@ -168,8 +205,18 @@ int TimingOffsetCalculator::getVocalTimingOffset(const NoteEvent& note, size_t n
     offset += breath_delay;
   }
 
-  // Scale all timing offsets by humanize_timing
-  return static_cast<int>(offset * humanize_timing_);
+  // RhythmSync: vocal is rhythm-locked to motif coordinate axis.
+  // Any offset breaks the lock, so skip beat-strength offset entirely.
+  if (paradigm_ == GenerationParadigm::RhythmSync) {
+    return 0;
+  }
+
+  // Scale all timing offsets by humanize_timing, then cap to sub-threshold range.
+  // Vocal timing precision is paramount; groove comes from drums/bass layback,
+  // not melody drift. ±2 ticks ≈ 1ms at 160BPM, below auditory perception threshold.
+  constexpr int kMaxVocalOffset = 2;
+  int raw_offset = static_cast<int>(offset * humanize_timing_);
+  return std::clamp(raw_offset, -kMaxVocalOffset, kMaxVocalOffset);
 }
 
 void TimingOffsetCalculator::applyVocalOffsets(MidiTrack& vocal_track,

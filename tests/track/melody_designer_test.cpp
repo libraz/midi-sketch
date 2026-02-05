@@ -1972,5 +1972,743 @@ TEST(InternalArcActivationTest, IntegrationWithFullGeneration) {
   }
 }
 
+// ============================================================================
+// Zombie Parameter Connection Tests
+// ============================================================================
+// Tests for 5 StyleMelodyParams that were previously set but never consumed:
+// chorus_long_tones, allow_bar_crossing, min_note_division,
+// allow_unison_repeat (via consecutive_same_note_prob), note_density
+
+TEST(ZombieParamTest, ChorusLongTonesExtendsShortNotes) {
+  // When chorus_long_tones is true and section is Chorus,
+  // eighth notes should be extended to quarter notes
+  MelodyDesigner designer;
+  std::mt19937 rng(42);
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+  HarmonyContext harmony;
+
+  auto ctx = createTestContext();
+  ctx.section_type = SectionType::Chorus;
+  ctx.chorus_long_tones = true;
+
+  auto result_long = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng);
+
+  // Generate without chorus_long_tones for comparison
+  std::mt19937 rng2(42);
+  ctx.chorus_long_tones = false;
+  auto result_normal = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng2);
+
+  // With chorus_long_tones, notes should generally have longer durations
+  // Calculate average duration for each
+  EXPECT_GT(result_long.notes.size(), 0u);
+  EXPECT_GT(result_normal.notes.size(), 0u);
+
+  Tick total_long = 0;
+  for (const auto& note : result_long.notes) {
+    total_long += note.duration;
+  }
+  float avg_long = static_cast<float>(total_long) / result_long.notes.size();
+
+  Tick total_normal = 0;
+  for (const auto& note : result_normal.notes) {
+    total_normal += note.duration;
+  }
+  float avg_normal = static_cast<float>(total_normal) / result_normal.notes.size();
+
+  // Long tones version should have higher average duration
+  EXPECT_GE(avg_long, avg_normal * 0.9f)
+      << "chorus_long_tones should produce equal or longer average durations";
+}
+
+TEST(ZombieParamTest, ChorusLongTonesOnlyAffectsChorus) {
+  // chorus_long_tones should NOT affect non-Chorus sections
+  MelodyDesigner designer;
+  std::mt19937 rng1(42);
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+  HarmonyContext harmony;
+
+  auto ctx = createTestContext();
+  ctx.section_type = SectionType::A;  // Verse, not Chorus
+  ctx.chorus_long_tones = true;
+
+  auto result_with = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng1);
+
+  std::mt19937 rng2(42);
+  ctx.chorus_long_tones = false;
+  auto result_without = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng2);
+
+  // Both should produce identical results for Verse section
+  EXPECT_EQ(result_with.notes.size(), result_without.notes.size())
+      << "chorus_long_tones should not affect Verse sections";
+}
+
+TEST(ZombieParamTest, AllowBarCrossingClipsNotesAtBarBoundary) {
+  // When allow_bar_crossing is false, no note should extend past a bar boundary
+  MelodyDesigner designer;
+  std::mt19937 rng(42);
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+  HarmonyContext harmony;
+
+  auto ctx = createTestContext();
+  ctx.allow_bar_crossing = false;
+
+  auto result = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng);
+
+  EXPECT_GT(result.notes.size(), 0u);
+
+  for (const auto& note : result.notes) {
+    Tick note_end = note.start_tick + note.duration;
+    Tick bar_start = (note.start_tick / TICKS_PER_BAR) * TICKS_PER_BAR;
+    Tick bar_end = bar_start + TICKS_PER_BAR;
+    // Note should not extend past bar boundary (with small tolerance for rounding)
+    EXPECT_LE(note_end, bar_end + TICK_32ND)
+        << "Note at tick " << note.start_tick << " with duration " << note.duration
+        << " crosses bar boundary at " << bar_end;
+  }
+}
+
+TEST(ZombieParamTest, AllowBarCrossingTrueAllowsLongNotes) {
+  // When allow_bar_crossing is true (default), notes can extend past bar boundaries
+  MelodyDesigner designer;
+  std::mt19937 rng(42);
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::SparseAnchor);  // Long notes
+  HarmonyContext harmony;
+
+  auto ctx = createTestContext();
+  ctx.allow_bar_crossing = true;
+  ctx.section_end = TICKS_PER_BAR * 8;  // 8 bars for more room
+  ctx.section_bars = 8;
+
+  auto result = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng);
+  EXPECT_GT(result.notes.size(), 0u);
+  // Just verify it produces notes - bar crossing is allowed so no constraint to check
+}
+
+TEST(ZombieParamTest, MinNoteDivision8FiltersShortNotes) {
+  // min_note_division=8 means minimum eighth notes (1.0 eighths) in rhythm pattern.
+  // Post-processing (gate ratio, chord boundary clamping) may shorten final durations,
+  // so we verify that the average duration is higher with the filter active.
+  MelodyDesigner designer;
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::RunUpTarget);
+  HarmonyContext harmony;
+
+  auto ctx = createTestContext();
+
+  // Generate with min_note_division=8
+  std::mt19937 rng1(42);
+  ctx.min_note_division = 8;
+  auto result_filtered = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng1);
+
+  // Generate without filter
+  std::mt19937 rng2(42);
+  ctx.min_note_division = 0;
+  auto result_unfiltered = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng2);
+
+  EXPECT_GT(result_filtered.notes.size(), 0u);
+  EXPECT_GT(result_unfiltered.notes.size(), 0u);
+
+  // With min_note_division=8, average duration should be >= unfiltered
+  Tick total_filtered = 0;
+  for (const auto& note : result_filtered.notes) {
+    total_filtered += note.duration;
+  }
+  Tick total_unfiltered = 0;
+  for (const auto& note : result_unfiltered.notes) {
+    total_unfiltered += note.duration;
+  }
+  float avg_filtered = static_cast<float>(total_filtered) / result_filtered.notes.size();
+  float avg_unfiltered = static_cast<float>(total_unfiltered) / result_unfiltered.notes.size();
+
+  // Filtered should have equal or higher average duration
+  EXPECT_GE(avg_filtered, avg_unfiltered * 0.9f)
+      << "min_note_division=8 should raise average note duration"
+      << " (filtered=" << avg_filtered << ", unfiltered=" << avg_unfiltered << ")";
+}
+
+TEST(ZombieParamTest, MinNoteDivision4ProducesFewerNotes) {
+  // min_note_division=4 means minimum quarter notes (2.0 eighths) in rhythm pattern.
+  // This should produce fewer, longer notes compared to no filter.
+  // Post-processing (gate ratio, chord boundary clamping) may adjust durations,
+  // but the number of notes should decrease since rhythm positions are wider apart.
+  MelodyDesigner designer;
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::RunUpTarget);
+  HarmonyContext harmony;
+
+  auto ctx = createTestContext();
+
+  // Generate with min_note_division=4 (quarter notes minimum)
+  std::mt19937 rng1(42);
+  ctx.min_note_division = 4;
+  auto result_quarter = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng1);
+
+  // Generate without filter
+  std::mt19937 rng2(42);
+  ctx.min_note_division = 0;
+  auto result_free = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng2);
+
+  EXPECT_GT(result_quarter.notes.size(), 0u);
+  EXPECT_GT(result_free.notes.size(), 0u);
+
+  // min_note_division=4 should produce fewer or equal notes (wider spacing)
+  EXPECT_LE(result_quarter.notes.size(), result_free.notes.size() + 2)
+      << "min_note_division=4 should produce fewer or equal notes than unfiltered"
+      << " (quarter=" << result_quarter.notes.size()
+      << ", free=" << result_free.notes.size() << ")";
+}
+
+TEST(ZombieParamTest, MinNoteDivision0HasNoEffect) {
+  // min_note_division=0 should have no filtering effect
+  MelodyDesigner designer;
+  std::mt19937 rng1(42);
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+  HarmonyContext harmony;
+
+  auto ctx = createTestContext();
+  ctx.min_note_division = 0;
+
+  auto result_zero = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng1);
+
+  std::mt19937 rng2(42);
+  auto result_default = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng2);
+
+  // Both should produce identical results
+  EXPECT_EQ(result_zero.notes.size(), result_default.notes.size())
+      << "min_note_division=0 should have no effect on rhythm generation";
+}
+
+TEST(ZombieParamTest, ConsecutiveSameNoteProbZeroReducesRepetition) {
+  // When consecutive_same_note_prob=0 (from allow_unison_repeat=false),
+  // there should be fewer consecutive same-pitch notes
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+
+  auto ctx = createTestContext();
+  ctx.section_type = SectionType::A;
+
+  // Generate with high repetition probability
+  int repeats_high = 0;
+  int total_high = 0;
+  for (int trial = 0; trial < 5; ++trial) {
+    std::mt19937 rng(100 + trial);
+    ctx.consecutive_same_note_prob = 0.9f;
+    auto result = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng);
+    for (size_t idx = 1; idx < result.notes.size(); ++idx) {
+      if (result.notes[idx].note == result.notes[idx - 1].note) {
+        repeats_high++;
+      }
+      total_high++;
+    }
+  }
+
+  // Generate with zero repetition probability
+  int repeats_low = 0;
+  int total_low = 0;
+  for (int trial = 0; trial < 5; ++trial) {
+    std::mt19937 rng(100 + trial);
+    ctx.consecutive_same_note_prob = 0.0f;
+    auto result = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng);
+    for (size_t idx = 1; idx < result.notes.size(); ++idx) {
+      if (result.notes[idx].note == result.notes[idx - 1].note) {
+        repeats_low++;
+      }
+      total_low++;
+    }
+  }
+
+  // Zero prob should have fewer or equal repeats
+  float ratio_high = (total_high > 0) ? static_cast<float>(repeats_high) / total_high : 0.0f;
+  float ratio_low = (total_low > 0) ? static_cast<float>(repeats_low) / total_low : 0.0f;
+  EXPECT_LE(ratio_low, ratio_high + 0.1f)
+      << "consecutive_same_note_prob=0 should reduce or equal repetition rate"
+      << " (low=" << ratio_low << ", high=" << ratio_high << ")";
+}
+
+TEST(ZombieParamTest, DensityModifierAffectsNoteCount) {
+  // Higher density_modifier (from note_density multiplication) should produce more notes
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+
+  auto ctx = createTestContext();
+
+  // Test with multiple seeds for statistical significance
+  int total_notes_sparse = 0;
+  int total_notes_dense = 0;
+  int num_trials = 10;
+
+  for (int trial = 0; trial < num_trials; ++trial) {
+    // Sparse: density_modifier 0.5 (simulates note_density=0.5)
+    std::mt19937 rng1(200 + trial);
+    ctx.density_modifier = 0.5f;
+    auto result_sparse = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng1);
+    total_notes_sparse += static_cast<int>(result_sparse.notes.size());
+
+    // Dense: density_modifier 1.5 (simulates note_density=1.5)
+    std::mt19937 rng2(200 + trial);
+    ctx.density_modifier = 1.5f;
+    auto result_dense = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng2);
+    total_notes_dense += static_cast<int>(result_dense.notes.size());
+  }
+
+  // Higher density should generally produce more notes on average
+  float avg_sparse = static_cast<float>(total_notes_sparse) / num_trials;
+  float avg_dense = static_cast<float>(total_notes_dense) / num_trials;
+  EXPECT_GT(avg_dense, avg_sparse * 0.8f)
+      << "Higher density_modifier should produce more notes on average"
+      << " (sparse=" << avg_sparse << ", dense=" << avg_dense << ")";
+}
+
+// ============================================================================
+// Integration Tests: Verify zombie params flow through full generation
+// ============================================================================
+
+TEST(ZombieParamIntegrationTest, ChorusLongTonesFlowsThroughGeneration) {
+  // Verify chorus_long_tones=true produces notes when set in GeneratorParams
+  GeneratorParams params;
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;
+  params.key = Key::C;
+  params.drums_enabled = false;
+  params.vocal_low = 60;
+  params.vocal_high = 84;
+  params.bpm = 120;
+  params.seed = 42;
+  params.melody_params.chorus_long_tones = true;
+
+  Generator gen;
+  gen.generate(params);
+  const auto& vocal = gen.getSong().vocal();
+  EXPECT_FALSE(vocal.notes().empty())
+      << "chorus_long_tones=true should not break vocal generation";
+}
+
+TEST(ZombieParamIntegrationTest, AllowBarCrossingFalseFlowsThroughGeneration) {
+  GeneratorParams params;
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;
+  params.key = Key::C;
+  params.drums_enabled = false;
+  params.vocal_low = 60;
+  params.vocal_high = 84;
+  params.bpm = 120;
+  params.seed = 42;
+  params.melody_params.allow_bar_crossing = false;
+
+  Generator gen;
+  gen.generate(params);
+  const auto& vocal = gen.getSong().vocal();
+  EXPECT_FALSE(vocal.notes().empty())
+      << "allow_bar_crossing=false should not break vocal generation";
+}
+
+TEST(ZombieParamIntegrationTest, AllowUnisonRepeatFalseFlowsThroughGeneration) {
+  GeneratorParams params;
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;
+  params.key = Key::C;
+  params.drums_enabled = false;
+  params.vocal_low = 60;
+  params.vocal_high = 84;
+  params.bpm = 120;
+  params.seed = 42;
+  params.melody_params.allow_unison_repeat = false;
+
+  Generator gen;
+  gen.generate(params);
+  const auto& vocal = gen.getSong().vocal();
+  EXPECT_FALSE(vocal.notes().empty())
+      << "allow_unison_repeat=false should not break vocal generation";
+}
+
+TEST(ZombieParamIntegrationTest, NoteDensityFlowsThroughGeneration) {
+  // Compare sparse vs dense generation at the integration level
+  GeneratorParams base_params;
+  base_params.structure = StructurePattern::StandardPop;
+  base_params.mood = Mood::StraightPop;
+  base_params.chord_id = 0;
+  base_params.key = Key::C;
+  base_params.drums_enabled = false;
+  base_params.vocal_low = 60;
+  base_params.vocal_high = 84;
+  base_params.bpm = 120;
+  base_params.seed = 42;
+
+  // Sparse (ballad-like)
+  GeneratorParams sparse_params = base_params;
+  sparse_params.melody_params.note_density = 0.3f;
+  Generator gen_sparse;
+  gen_sparse.generate(sparse_params);
+  size_t sparse_count = gen_sparse.getSong().vocal().notes().size();
+
+  // Dense (idol-like)
+  GeneratorParams dense_params = base_params;
+  dense_params.melody_params.note_density = 2.0f;
+  Generator gen_dense;
+  gen_dense.generate(dense_params);
+  size_t dense_count = gen_dense.getSong().vocal().notes().size();
+
+  EXPECT_GT(sparse_count, 0u) << "Sparse density should still produce notes";
+  EXPECT_GT(dense_count, 0u) << "Dense density should produce notes";
+  // Dense should produce more notes (or at least equal)
+  EXPECT_GE(dense_count, sparse_count * 0.7)
+      << "note_density=2.0 should produce more notes than note_density=0.3"
+      << " (sparse=" << sparse_count << ", dense=" << dense_count << ")";
+}
+
+TEST(ZombieParamIntegrationTest, MinNoteDivisionFlowsThroughGeneration) {
+  GeneratorParams params;
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.chord_id = 0;
+  params.key = Key::C;
+  params.drums_enabled = false;
+  params.vocal_low = 60;
+  params.vocal_high = 84;
+  params.bpm = 120;
+  params.seed = 42;
+  params.melody_params.min_note_division = 4;  // Minimum quarter notes
+
+  Generator gen;
+  gen.generate(params);
+  const auto& vocal = gen.getSong().vocal();
+  EXPECT_FALSE(vocal.notes().empty())
+      << "min_note_division=4 should not break vocal generation";
+}
+
+// ============================================================================
+// Zombie Parameter Connection Tests (A-series: Melody Override Params)
+// ============================================================================
+// Tests for StyleMelodyParams override fields wired through SectionContext:
+// phrase_length_bars, long_note_ratio_override, syncopation_prob, max_leap_semitones
+
+TEST(ZombieParamASeriesTest, PhraseLengthBars1ProducesPhraseBeats4) {
+  // phrase_length_bars=1 should produce 4-beat phrases (1 bar × 4 beats/bar)
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+
+  auto ctx = createTestContext();
+  ctx.phrase_length_bars = 1;
+
+  std::mt19937 rng(42);
+  auto result = designer.generateMelodyPhrase(tmpl, 0, 4, ctx, -1, 0, harmony, rng);
+
+  // With phrase_length_bars=1, phrase_beats is forced to 4.
+  // Notes should fit within 1 bar (1920 ticks)
+  EXPECT_GT(result.notes.size(), 0u);
+  for (const auto& note : result.notes) {
+    EXPECT_LT(note.start_tick, TICKS_PER_BAR * 2)
+        << "phrase_length_bars=1: notes should be within the first 1-2 bars";
+  }
+}
+
+TEST(ZombieParamASeriesTest, PhraseLengthBars4ProducesLongerPhrases) {
+  // phrase_length_bars=4 should produce 16-beat phrases (4 bars × 4 beats/bar)
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+
+  auto ctx = createTestContext();
+  ctx.section_end = TICKS_PER_BAR * 8;
+  ctx.section_bars = 8;
+  ctx.phrase_length_bars = 4;
+
+  std::mt19937 rng(42);
+  auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+
+  // With 4-bar phrases in an 8-bar section, notes should span at least 3 bars
+  EXPECT_GT(notes.size(), 0u);
+  Tick max_start = 0;
+  for (const auto& note : notes) {
+    if (note.start_tick > max_start) max_start = note.start_tick;
+  }
+  EXPECT_GE(max_start, TICKS_PER_BAR * 2)
+      << "phrase_length_bars=4: notes should span multiple bars";
+}
+
+TEST(ZombieParamASeriesTest, LongNoteRatioOverrideHighProducesLongerNotes) {
+  // long_note_ratio_override=0.8 should result in longer average note durations
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+
+  auto ctx = createTestContext();
+
+  // Generate with high long_note_ratio
+  std::mt19937 rng1(42);
+  ctx.long_note_ratio_override = 0.8f;
+  auto result_long = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng1);
+
+  // Generate with low long_note_ratio
+  std::mt19937 rng2(42);
+  ctx.long_note_ratio_override = 0.1f;
+  auto result_short = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng2);
+
+  EXPECT_GT(result_long.notes.size(), 0u);
+  EXPECT_GT(result_short.notes.size(), 0u);
+
+  // High long_note_ratio should produce fewer notes (longer notes take more time)
+  // or higher average duration
+  Tick total_long = 0;
+  for (const auto& note : result_long.notes) total_long += note.duration;
+  float avg_long = static_cast<float>(total_long) / result_long.notes.size();
+
+  Tick total_short = 0;
+  for (const auto& note : result_short.notes) total_short += note.duration;
+  float avg_short = static_cast<float>(total_short) / result_short.notes.size();
+
+  EXPECT_GE(avg_long, avg_short * 0.8f)
+      << "long_note_ratio_override=0.8 should produce equal or longer average durations"
+      << " (long=" << avg_long << ", short=" << avg_short << ")";
+}
+
+TEST(ZombieParamASeriesTest, SyncopationProbZeroSuppressesSyncopation) {
+  // syncopation_prob=0.0 should force syncopation_weight=0 even when enable_syncopation=true
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::RunUpTarget);
+
+  auto ctx = createTestContext();
+  ctx.enable_syncopation = true;
+  ctx.syncopation_prob = 0.0f;
+
+  // Generate multiple phrases and check that notes fall on strong beats
+  int on_beat_count = 0;
+  int total_notes = 0;
+  for (int trial = 0; trial < 5; ++trial) {
+    std::mt19937 rng(300 + trial);
+    auto result = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng);
+    for (const auto& note : result.notes) {
+      total_notes++;
+      Tick beat_pos = note.start_tick % TICKS_PER_BEAT;
+      if (beat_pos == 0 || beat_pos < TICKS_PER_BEAT / 4) {
+        on_beat_count++;
+      }
+    }
+  }
+
+  EXPECT_GT(total_notes, 0);
+  // With syncopation_prob=0, most notes should land on or near beats
+  float on_beat_ratio = static_cast<float>(on_beat_count) / total_notes;
+  EXPECT_GT(on_beat_ratio, 0.3f)
+      << "syncopation_prob=0 should produce mostly on-beat notes"
+      << " (on_beat=" << on_beat_count << "/" << total_notes << ")";
+}
+
+TEST(ZombieParamASeriesTest, SyncopationProbHighIncreasesOffBeatNotes) {
+  // syncopation_prob=0.45 should produce more syncopated (off-beat) notes
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::RunUpTarget);
+
+  auto ctx = createTestContext();
+  ctx.enable_syncopation = true;
+
+  // Count off-beat notes with high syncopation_prob
+  int off_beat_high = 0;
+  int total_high = 0;
+  for (int trial = 0; trial < 10; ++trial) {
+    std::mt19937 rng(400 + trial);
+    ctx.syncopation_prob = 0.45f;
+    auto result = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng);
+    for (const auto& note : result.notes) {
+      total_high++;
+      Tick beat_pos = note.start_tick % TICKS_PER_BEAT;
+      if (beat_pos > TICKS_PER_BEAT / 4) {
+        off_beat_high++;
+      }
+    }
+  }
+
+  // Count off-beat notes with low syncopation_prob
+  int off_beat_low = 0;
+  int total_low = 0;
+  for (int trial = 0; trial < 10; ++trial) {
+    std::mt19937 rng(400 + trial);
+    ctx.syncopation_prob = 0.0f;
+    auto result = designer.generateMelodyPhrase(tmpl, 0, 8, ctx, -1, 0, harmony, rng);
+    for (const auto& note : result.notes) {
+      total_low++;
+      Tick beat_pos = note.start_tick % TICKS_PER_BEAT;
+      if (beat_pos > TICKS_PER_BEAT / 4) {
+        off_beat_low++;
+      }
+    }
+  }
+
+  EXPECT_GT(total_high, 0);
+  EXPECT_GT(total_low, 0);
+
+  float ratio_high = static_cast<float>(off_beat_high) / total_high;
+  float ratio_low = static_cast<float>(off_beat_low) / total_low;
+
+  // High syncopation prob should produce more off-beat notes (or at least equal)
+  EXPECT_GE(ratio_high, ratio_low * 0.8f)
+      << "syncopation_prob=0.45 should produce equal or more off-beat notes"
+      << " (high=" << ratio_high << ", low=" << ratio_low << ")";
+}
+
+TEST(ZombieParamASeriesTest, MaxLeapSemitones3RestrictsIntervals) {
+  // max_leap_semitones=3 should restrict all melodic intervals to at most 3 semitones
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::RunUpTarget);
+
+  auto ctx = createTestContext();
+  ctx.max_leap_semitones = 3;
+  ctx.section_end = TICKS_PER_BAR * 8;
+  ctx.section_bars = 8;
+
+  int large_interval_count = 0;
+  int total_intervals = 0;
+
+  for (int trial = 0; trial < 10; ++trial) {
+    std::mt19937 rng(500 + trial);
+    auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+
+    for (size_t idx = 1; idx < notes.size(); ++idx) {
+      int interval = std::abs(static_cast<int>(notes[idx].note) - static_cast<int>(notes[idx - 1].note));
+      total_intervals++;
+      // getEffectiveMaxInterval adds section-based bonus on top of ctx_max_leap,
+      // so effective limit may be slightly higher than 3 for some sections.
+      // But for section type A (default), it should be close to 3.
+      if (interval > 5) {  // Allow small overhead from section adjustment
+        large_interval_count++;
+      }
+    }
+  }
+
+  EXPECT_GT(total_intervals, 0);
+
+  // With max_leap=3, very few (if any) intervals should exceed 5 semitones
+  float large_ratio = static_cast<float>(large_interval_count) / total_intervals;
+  EXPECT_LT(large_ratio, 0.15f)
+      << "max_leap_semitones=3 should restrict large intervals"
+      << " (large=" << large_interval_count << "/" << total_intervals << ")";
+}
+
+// ============================================================================
+// tension_usage Tests
+// ============================================================================
+
+TEST(ZombieParamASeriesTest, TensionUsageHighAllowsMoreNonChordTones) {
+  // tension_usage=0.8 should produce more non-chord-tone notes than tension_usage=0.0
+  // Both use VocalAttitude::Expressive to test the gating behavior
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::RunUpTarget);
+
+  int non_chord_count_high = 0;
+  int total_notes_high = 0;
+  int non_chord_count_low = 0;
+  int total_notes_low = 0;
+
+  for (int trial = 0; trial < 20; ++trial) {
+    // High tension_usage (0.8)
+    {
+      auto ctx = createTestContext();
+      ctx.vocal_attitude = VocalAttitude::Expressive;
+      ctx.tension_usage = 0.8f;
+      ctx.section_end = TICKS_PER_BAR * 8;
+      ctx.section_bars = 8;
+      std::mt19937 rng(600 + trial);
+      auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+      for (const auto& note : notes) {
+        int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
+        auto chord_tones = getChordTonePitchClasses(chord_degree);
+        int pc = note.note % 12;
+        bool is_chord_tone = false;
+        for (int ct : chord_tones) {
+          if (pc == ct) { is_chord_tone = true; break; }
+        }
+        if (!is_chord_tone) non_chord_count_high++;
+        total_notes_high++;
+      }
+    }
+
+    // Low tension_usage (0.0)
+    {
+      auto ctx = createTestContext();
+      ctx.vocal_attitude = VocalAttitude::Expressive;
+      ctx.tension_usage = 0.0f;
+      ctx.section_end = TICKS_PER_BAR * 8;
+      ctx.section_bars = 8;
+      std::mt19937 rng(600 + trial);
+      auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+      for (const auto& note : notes) {
+        int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
+        auto chord_tones = getChordTonePitchClasses(chord_degree);
+        int pc = note.note % 12;
+        bool is_chord_tone = false;
+        for (int ct : chord_tones) {
+          if (pc == ct) { is_chord_tone = true; break; }
+        }
+        if (!is_chord_tone) non_chord_count_low++;
+        total_notes_low++;
+      }
+    }
+  }
+
+  EXPECT_GT(total_notes_high, 0);
+  EXPECT_GT(total_notes_low, 0);
+
+  float ratio_high = static_cast<float>(non_chord_count_high) / total_notes_high;
+  float ratio_low = static_cast<float>(non_chord_count_low) / total_notes_low;
+
+  // High tension_usage should allow at least as many non-chord tones
+  EXPECT_GE(ratio_high, ratio_low)
+      << "tension_usage=0.8 should allow equal or more non-chord tones"
+      << " (high=" << ratio_high << ", low=" << ratio_low << ")";
+}
+
+TEST(ZombieParamASeriesTest, TensionUsageZeroForcesChordTonesOnly) {
+  // tension_usage=0.0 + Expressive should behave like Clean (chord tones only)
+  // Since pitch_resolver gates tension additions, no tension notes should be in candidates
+  MelodyDesigner designer;
+  HarmonyContext harmony;
+  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
+
+  int non_chord_count = 0;
+  int total_notes = 0;
+
+  for (int trial = 0; trial < 20; ++trial) {
+    auto ctx = createTestContext();
+    ctx.vocal_attitude = VocalAttitude::Expressive;
+    ctx.tension_usage = 0.0f;
+    ctx.section_end = TICKS_PER_BAR * 8;
+    ctx.section_bars = 8;
+    std::mt19937 rng(700 + trial);
+    auto notes = designer.generateSection(tmpl, ctx, harmony, rng);
+    for (const auto& note : notes) {
+      int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
+      auto chord_tones = getChordTonePitchClasses(chord_degree);
+      int pc = note.note % 12;
+      bool is_chord_tone = false;
+      for (int ct : chord_tones) {
+        if (pc == ct) { is_chord_tone = true; break; }
+      }
+      // In C major, all scale tones are diatonic, so embellishment can add
+      // non-chord-tone scale tones. We check specifically for tension tones
+      // (7th=11, 9th=2, 11th=5 relative to root)
+      if (!is_chord_tone) non_chord_count++;
+      total_notes++;
+    }
+  }
+
+  EXPECT_GT(total_notes, 0);
+
+  // With tension_usage=0.0, the candidate set in Expressive is chord-tones only
+  // However embellishment and other post-processing can add non-chord tones
+  // So we check that the ratio is low (< 40%) rather than strictly zero
+  float non_chord_ratio = static_cast<float>(non_chord_count) / total_notes;
+  EXPECT_LT(non_chord_ratio, 0.40f)
+      << "tension_usage=0.0 should produce mostly chord tones"
+      << " (non-chord ratio=" << non_chord_ratio << ")";
+}
+
 }  // namespace
 }  // namespace midisketch

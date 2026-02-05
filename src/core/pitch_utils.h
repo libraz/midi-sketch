@@ -468,6 +468,7 @@ bool isDissonantActualInterval(int actual_semitones, int8_t chord_degree);
 
 /// @name Avoid Note Intervals (semitones from chord root)
 /// @{
+constexpr int AVOID_MINOR_2ND = 1;    ///< m2 - harsh on non-dominant, b9 tension on V7
 constexpr int AVOID_PERFECT_4TH = 5;  ///< P4 - avoid on major tonic
 constexpr int AVOID_MINOR_6TH = 8;    ///< m6 - avoid on minor chords
 constexpr int AVOID_TRITONE = 6;      ///< TT - essential on dominant, avoid elsewhere

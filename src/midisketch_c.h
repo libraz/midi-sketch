@@ -286,6 +286,31 @@ typedef struct {
   // Drive and addictive
   uint8_t drive_feel;      ///< 0=laid-back, 50=neutral, 100=aggressive
   uint8_t addictive_mode;  ///< Behavioral Loop mode (0=off, 1=on)
+
+  // Syncopation (offset 59)
+  uint8_t enable_syncopation;  ///< Enable syncopation effects (0=off, 1=on)
+
+  // Energy curve (offset 60)
+  uint8_t energy_curve;  ///< 0=GradualBuild, 1=FrontLoaded, 2=WavePattern, 3=SteadyState
+
+  // Melody overrides (offset 61-67)
+  uint8_t melody_max_leap;               ///< 0=preset, 1-12=override
+  uint8_t melody_syncopation_prob;       ///< 0xFF=preset, 0-100=override
+  uint8_t melody_phrase_length;          ///< 0=preset, 1-8 bars
+  uint8_t melody_long_note_ratio;        ///< 0xFF=preset, 0-100=override
+  int8_t melody_chorus_register_shift;   ///< INT8_MIN=preset, -12 to +12
+  uint8_t melody_hook_repetition;        ///< 0=preset, 1=off, 2=on
+  uint8_t melody_use_leading_tone;       ///< 0=preset, 1=off, 2=on
+
+  // Motif overrides (offset 68-72)
+  uint8_t motif_length;          ///< 0=auto, 1/2/4 beats
+  uint8_t motif_note_count;      ///< 0=auto, 3-8
+  uint8_t motif_motion;          ///< 0xFF=preset, 0-4=override (0=Stepwise..4=Disjunct)
+  uint8_t motif_register_high;   ///< 0=auto, 1=low, 2=high
+  uint8_t motif_rhythm_density;  ///< 0xFF=preset, 0-2=override (0=Sparse..2=Driving)
+
+  // Reserved (offset 73-79)
+  uint8_t _reserved2[7];  ///< Future expansion
 } MidiSketchSongConfig;
 
 /// @brief Style preset summary for listing.

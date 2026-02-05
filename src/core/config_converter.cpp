@@ -6,6 +6,7 @@
 #include "core/config_converter.h"
 
 #include <chrono>
+#include <climits>
 
 #include "core/preset_data.h"
 #include "track/generators/se.h"
@@ -236,37 +237,21 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   // Chord extensions
   params.chord_extension = config.chord_extension;
 
-  // Apply mood-based chord extension adjustments for richer harmony
-  // CityPop and jazz-influenced moods use extended chords
+  // Apply mood-based chord extension probability adjustments.
+  // NOTE: enable_* flags are NOT overridden here - they come from the user/preset config.
+  // Mood only adjusts probabilities and other style parameters when extensions are enabled.
   if (params.mood == Mood::CityPop) {
-    params.chord_extension.enable_sus = true;
-    params.chord_extension.enable_7th = true;
-    params.chord_extension.enable_9th = true;
-    params.chord_extension.tritone_sub = true;
     params.chord_extension.seventh_probability = 0.40f;
+    params.chord_extension.ninth_probability = 0.25f;
   } else if (params.mood == Mood::RnBNeoSoul) {
-    // R&B/Neo-Soul uses heavy extended chords
-    params.chord_extension.enable_sus = true;
-    params.chord_extension.enable_7th = true;
-    params.chord_extension.enable_9th = true;
-    params.chord_extension.tritone_sub = true;
     params.chord_extension.seventh_probability = 0.50f;
     params.chord_extension.ninth_probability = 0.35f;
   } else if (params.mood == Mood::Ballad || params.mood == Mood::Sentimental) {
-    // Ballad and sentimental use sus and 7ths for emotional color
-    params.chord_extension.enable_sus = true;
-    params.chord_extension.enable_7th = true;
     params.chord_extension.seventh_probability = 0.30f;
     params.chord_extension.sus_probability = 0.25f;
   } else if (params.mood == Mood::Nostalgic || params.mood == Mood::Chill) {
-    // Nostalgic and chill moods use jazzy harmony
-    params.chord_extension.enable_7th = true;
-    params.chord_extension.tritone_sub = true;
     params.chord_extension.seventh_probability = 0.25f;
   } else if (params.mood == Mood::Lofi) {
-    // Lo-fi uses jazzy 7ths and 9ths
-    params.chord_extension.enable_7th = true;
-    params.chord_extension.enable_9th = true;
     params.chord_extension.seventh_probability = 0.40f;
     params.chord_extension.ninth_probability = 0.30f;
   }
@@ -314,6 +299,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   params.melodic_complexity = config.melodic_complexity;
   params.hook_intensity = config.hook_intensity;
   params.vocal_groove = config.vocal_groove;
+  params.enable_syncopation = config.enable_syncopation;
   params.drive_feel = config.drive_feel;
 
   // Apply MelodicComplexity-specific parameter adjustments
@@ -354,6 +340,63 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   if (config.addictive_mode) {
     params.riff_policy = RiffPolicy::LockedPitch;
     params.hook_intensity = HookIntensity::Maximum;
+  }
+
+  // Energy curve
+  params.energy_curve = config.energy_curve;
+
+  // Motif parameter overrides (0xFF or 0 = use preset default)
+  if (config.motif_length != 0) {
+    switch (config.motif_length) {
+      case 1: params.motif.length = MotifLength::Bars1; break;
+      case 2: params.motif.length = MotifLength::Bars2; break;
+      case 4: params.motif.length = MotifLength::Bars4; break;
+      default: break;  // Invalid value, keep preset default
+    }
+  }
+  if (config.motif_note_count != 0) {
+    params.motif.note_count = std::clamp(config.motif_note_count, uint8_t(3), uint8_t(8));
+  }
+  if (config.motif_motion != 0xFF) {
+    params.motif.motion = static_cast<MotifMotion>(
+        std::min(config.motif_motion, uint8_t(4)));
+  }
+  if (config.motif_register_high != 0) {
+    params.motif.register_high = (config.motif_register_high == 2);
+  }
+  if (config.motif_rhythm_density != 0xFF) {
+    params.motif.rhythm_density = static_cast<MotifRhythmDensity>(
+        std::min(config.motif_rhythm_density, uint8_t(2)));
+  }
+
+  // Melody parameter overrides (applied AFTER applyMelodicComplexity and applyVocalStylePreset)
+  // so user overrides take precedence over preset defaults
+  if (config.melody_max_leap > 0) {
+    params.melody_params.max_leap_interval = config.melody_max_leap;
+    params.melody_max_leap_override = true;
+  }
+  if (config.melody_syncopation_prob != 0xFF) {
+    params.melody_params.syncopation_prob = config.melody_syncopation_prob / 100.0f;
+  }
+  if (config.melody_phrase_length > 0) {
+    params.melody_params.phrase_length_bars = config.melody_phrase_length;
+  }
+  if (config.melody_long_note_ratio != 0xFF) {
+    params.melody_params.long_note_ratio = config.melody_long_note_ratio / 100.0f;
+    params.melody_long_note_ratio_override = true;
+  }
+  if (config.melody_chorus_register_shift != INT8_MIN) {
+    params.melody_params.chorus_register_shift = config.melody_chorus_register_shift;
+  }
+  if (config.melody_hook_repetition == 1) {
+    params.melody_params.hook_repetition = false;
+  } else if (config.melody_hook_repetition == 2) {
+    params.melody_params.hook_repetition = true;
+  }
+  if (config.melody_use_leading_tone == 1) {
+    params.melody_params.use_leading_tone = false;
+  } else if (config.melody_use_leading_tone == 2) {
+    params.melody_params.use_leading_tone = true;
   }
 
   return params;

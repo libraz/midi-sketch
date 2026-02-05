@@ -145,6 +145,42 @@ export interface SongConfig {
   driveFeel: number;
   /** Enable Behavioral Loop mode (fixed riff, maximum hook) */
   addictiveMode: boolean;
+
+  // Syncopation
+  /** Enable syncopation effects (default=false) */
+  enableSyncopation: boolean;
+
+  // Energy curve
+  /** Energy curve: 0=GradualBuild, 1=FrontLoaded, 2=WavePattern, 3=SteadyState */
+  energyCurve: number;
+
+  // Melody overrides
+  /** Max leap interval: 0=preset, 1-12=override */
+  melodyMaxLeap: number;
+  /** Syncopation probability: 0xFF=preset, 0-100=override */
+  melodySyncopationProb: number;
+  /** Phrase length in bars: 0=preset, 1-8 */
+  melodyPhraseLength: number;
+  /** Long note ratio: 0xFF=preset, 0-100=override */
+  melodyLongNoteRatio: number;
+  /** Chorus register shift: -128=preset, -12 to +12 */
+  melodyChorusRegisterShift: number;
+  /** Hook repetition: 0=preset, 1=off, 2=on */
+  melodyHookRepetition: number;
+  /** Leading tone: 0=preset, 1=off, 2=on */
+  melodyUseLeadingTone: number;
+
+  // Motif overrides
+  /** Motif length: 0=auto, 1/2/4 beats */
+  motifLength: number;
+  /** Motif note count: 0=auto, 3-8 */
+  motifNoteCount: number;
+  /** Motif motion: 0xFF=preset, 0-4=override (0=Stepwise..4=Disjunct) */
+  motifMotion: number;
+  /** Motif register: 0=auto, 1=low, 2=high */
+  motifRegisterHigh: number;
+  /** Motif rhythm density: 0xFF=preset, 0-2=override (0=Sparse..2=Driving) */
+  motifRhythmDensity: number;
 }
 
 /**

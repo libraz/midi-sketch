@@ -68,11 +68,26 @@ NoteEvent buildNoteEvent(const IHarmonyContext& harmony, Tick start, Tick durati
   return event;
 }
 
-// Rank candidates based on preference
+// Rank candidates based on preference and monotony avoidance
 void rankCandidates(std::vector<PitchCandidate>& candidates, PitchPreference preference,
-                    bool consider_boundary = false) {
+                    bool consider_boundary = false,
+                    uint8_t prev_pitch = 0, int consecutive_same_count = 0) {
+  // Monotony threshold: if 3+ consecutive same pitches, strongly penalize repeating
+  constexpr int kMonotonyThreshold = 3;
+  bool avoid_same_as_prev = (prev_pitch > 0 && consecutive_same_count >= kMonotonyThreshold);
+
   std::stable_sort(candidates.begin(), candidates.end(),
-    [preference, consider_boundary](const PitchCandidate& a, const PitchCandidate& b) {
+    [preference, consider_boundary, prev_pitch, avoid_same_as_prev](
+        const PitchCandidate& a, const PitchCandidate& b) {
+      // Pre-primary: avoid consecutive same pitch when monotony threshold exceeded
+      if (avoid_same_as_prev) {
+        bool a_same = (a.pitch == prev_pitch);
+        bool b_same = (b.pitch == prev_pitch);
+        if (a_same != b_same) {
+          return !a_same;  // Prefer the one that's different
+        }
+      }
+
       // Primary: prefer pitches that didn't need resolution
       if (a.strategy != b.strategy) {
         if (a.strategy == CollisionAvoidStrategy::None) return true;
@@ -296,8 +311,13 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
                                     c_boundary.safety == CrossBoundarySafety::ChordTone ||
                                     c_boundary.safety == CrossBoundarySafety::Tension);
     }
-    // Re-rank with boundary awareness
-    rankCandidates(candidates, opts.preference, true);
+    // Re-rank with boundary awareness and monotony avoidance
+    rankCandidates(candidates, opts.preference, true,
+                   opts.prev_pitch, opts.consecutive_same_count);
+  } else if (!candidates.empty() && opts.prev_pitch > 0 && opts.consecutive_same_count >= 3) {
+    // Re-rank with monotony avoidance only (no boundary consideration)
+    rankCandidates(candidates, opts.preference, false,
+                   opts.prev_pitch, opts.consecutive_same_count);
   }
 
   if (candidates.empty()) {
@@ -661,6 +681,23 @@ std::vector<PitchCandidate> getSafePitchCandidates(
         }
       }
     }
+  }
+
+  // PreferRootFifth: filter to chord tones only (Bass must always play chord tones)
+  // This prevents collision avoidance from selecting non-chord tones like E for V chord.
+  if (preference == PitchPreference::PreferRootFifth && !candidates.empty()) {
+    std::vector<PitchCandidate> chord_tone_candidates;
+    for (const auto& c : candidates) {
+      if (c.is_chord_tone) {
+        chord_tone_candidates.push_back(c);
+      }
+    }
+    // Only use filtered list if we have chord tone candidates
+    if (!chord_tone_candidates.empty()) {
+      candidates = std::move(chord_tone_candidates);
+    }
+    // If no chord tone candidates, fall through to use original candidates
+    // (this is a fallback; ideally bass should skip the note)
   }
 
   // Rank and trim (consider boundary if notes are long enough)

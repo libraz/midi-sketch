@@ -55,6 +55,7 @@ backup/
 output.json
 output.mid
 analysis.json
+analysis_results/
 
 # Binaries (in build directory only)
 /build

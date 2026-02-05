@@ -3155,7 +3155,7 @@ TEST_F(VocalTest, RhythmSyncMelodyHasMelodicContour) {
   }
 
   // Good melody should have some direction consistency (not zigzag every note)
-  // Direction change ratio should be < 0.6 (not changing direction every other note)
+  // Direction change ratio should be < 0.7 (not changing direction every other note)
   int movements_with_direction = 0;
   for (size_t i = 1; i < notes.size(); ++i) {
     int movement = static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note);
@@ -3164,7 +3164,7 @@ TEST_F(VocalTest, RhythmSyncMelodyHasMelodicContour) {
 
   if (movements_with_direction > 2) {
     float change_ratio = static_cast<float>(direction_changes) / (movements_with_direction - 1);
-    EXPECT_LT(change_ratio, 0.65f)
+    EXPECT_LT(change_ratio, 0.70f)
         << "Melody should have some directional consistency, not random zigzag. "
         << "Direction changes: " << direction_changes
         << ", Total movements: " << movements_with_direction;

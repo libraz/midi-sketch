@@ -67,7 +67,16 @@ void CollisionResolver::resolveArpeggioChordClashes(MidiTrack& arpeggio_track,
     }
 
     if (best_dist < 100) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      uint8_t old_pitch = arp.note;
+#endif
       arp.note = static_cast<uint8_t>(best_pitch);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      if (old_pitch != arp.note) {
+        arp.prov_original_pitch = old_pitch;
+        arp.addTransformStep(TransformStepType::CollisionAvoid, old_pitch, arp.note, 0, 0);
+      }
+#endif
     }
   }
 }

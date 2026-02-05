@@ -77,14 +77,16 @@ class TimingOffsetCalculator {
   static constexpr uint8_t kHiHatFoot = 44;
   static constexpr int kBassBaseOffset = -4;
 
-  /// @brief Construct with drive feel, vocal style, drum style, and humanize timing.
+  /// @brief Construct with drive feel, vocal style, drum style, humanize timing, and paradigm.
   /// @param drive_feel Drive intensity (0-100)
   /// @param vocal_style Vocal style for physics parameters
   /// @param drum_style Drum style for timing profile selection
   /// @param humanize_timing Global humanization scaling (0.0-1.0, scales all timing offsets)
+  /// @param paradigm Generation paradigm (RhythmSync adds beat-strength-aware vocal offsets)
   TimingOffsetCalculator(uint8_t drive_feel, VocalStylePreset vocal_style,
                          DrumStyle drum_style = DrumStyle::Standard,
-                         float humanize_timing = 1.0f);
+                         float humanize_timing = 1.0f,
+                         GenerationParadigm paradigm = GenerationParadigm::Traditional);
 
   // ============================================================================
   // Drum Timing
@@ -172,6 +174,7 @@ class TimingOffsetCalculator {
   float humanize_timing_;               ///< Global humanization scaling (0.0-1.0)
   VocalPhysicsParams physics_;          ///< Vocal physics parameters
   const DrumTimingProfile& profile_;    ///< Drum timing profile for selected style
+  GenerationParadigm paradigm_;         ///< Generation paradigm for beat-strength offsets
 
   /// @brief Get phrase position for a tick within sections.
   static PhrasePosition getPhrasePosition(Tick tick, const std::vector<Section>& sections);
@@ -184,6 +187,12 @@ class TimingOffsetCalculator {
 
   /// @brief Check if a note is after a breath gap.
   bool isPostBreath(size_t note_idx, const std::vector<NoteEvent>& vocal_notes) const;
+
+  /// @brief Get RhythmSync beat-strength-aware timing offset for a vocal note.
+  /// Stronger beats get tighter timing (smaller offset), weaker beats get more groove.
+  /// @param tick Note start tick
+  /// @return Timing offset in ticks (before humanize_timing scaling)
+  int getRhythmSyncBeatOffset(Tick tick) const;
 };
 
 }  // namespace midisketch

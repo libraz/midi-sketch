@@ -56,6 +56,28 @@ class MotifGenerator : public TrackBase {
 /// @returns Vector of NoteEvents for one motif cycle
 std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::mt19937& rng);
 
+// Forward declarations for motif_detail functions used by generator.cpp
+enum class MotifRhythmTemplate : uint8_t;
+enum class MotifRhythmDensity : uint8_t;
+
+namespace motif_detail {
+
+/// @brief Configuration for a single motif rhythm template.
+struct MotifRhythmTemplateConfig {
+  float beat_positions[16];
+  float accent_weights[16];
+  uint8_t note_count;
+  MotifRhythmDensity effective_density;
+};
+
+/// @brief Select a rhythm template based on BPM.
+MotifRhythmTemplate selectRhythmSyncTemplate(uint16_t bpm, std::mt19937& rng);
+
+/// @brief Get the template config for a given template ID.
+const MotifRhythmTemplateConfig& getTemplateConfig(MotifRhythmTemplate tmpl);
+
+}  // namespace motif_detail
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_TRACK_GENERATORS_MOTIF_H

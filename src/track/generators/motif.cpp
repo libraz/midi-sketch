@@ -24,6 +24,7 @@
 #include "core/production_blueprint.h"
 #include "core/rng_util.h"
 #include "core/song.h"
+#include "core/timing_constants.h"
 
 namespace midisketch {
 
@@ -48,6 +49,220 @@ struct MotifRiffCache {
 namespace motif_detail {
 
 // Scale interval arrays and getScaleIntervals() are now in pitch_utils.h.
+
+// =============================================================================
+// Pitch Monotony Tracking
+// =============================================================================
+
+/// Maximum consecutive same pitches before forcing variation (3 = allow max 3, vary on 4th)
+constexpr int kMaxConsecutiveSamePitch = 3;
+
+/// @brief Track consecutive same pitches and suggest variation when threshold exceeded.
+///
+/// Prevents monotonous runs of the same note (e.g., 5+ consecutive G4).
+/// Uses chord tones for alternatives to avoid collision avoidance loops.
+struct MotifPitchMonotonyTracker {
+  uint8_t last_pitch = 0;
+  int consecutive_count = 0;
+
+  /// @brief Record a pitch and return suggested pitch (may differ if monotony detected).
+  /// @param desired Original desired pitch
+  /// @param motif_low Lower bound of motif range
+  /// @param motif_high Upper bound of motif range
+  /// @param chord_degree Current chord degree (-1 to use simple step logic)
+  /// @return Suggested pitch (may be different if monotony threshold exceeded)
+  uint8_t trackAndSuggest(uint8_t desired, uint8_t motif_low, uint8_t motif_high,
+                          int8_t chord_degree = -1) {
+    if (desired == last_pitch) {
+      consecutive_count++;
+    } else {
+      consecutive_count = 1;
+      last_pitch = desired;
+    }
+
+    // If we've hit the monotony threshold, suggest an alternative
+    if (consecutive_count > kMaxConsecutiveSamePitch) {
+      // Use chord tones to select alternatives (avoids collision avoidance loops)
+      if (chord_degree >= 0) {
+        ChordToneHelper helper(chord_degree);
+        auto chord_tones = helper.allInRange(motif_low, motif_high);
+
+        // Find chord tones that differ from current pitch
+        // Prefer alternatives within a reasonable interval (octave or less)
+        std::vector<uint8_t> alternatives;
+        std::vector<uint8_t> close_alternatives;  // Within 12 semitones
+        for (uint8_t ct : chord_tones) {
+          // Skip same pitch class (octave doubling won't help monotony)
+          if ((ct % 12) != (desired % 12)) {
+            alternatives.push_back(ct);
+            int dist = std::abs(static_cast<int>(ct) - static_cast<int>(desired));
+            if (dist <= 12) {
+              close_alternatives.push_back(ct);
+            }
+          }
+        }
+
+        // Prefer close alternatives to avoid large leaps
+        const auto& candidates = close_alternatives.empty() ? alternatives : close_alternatives;
+
+        // Select closest alternative that isn't the same pitch
+        if (!candidates.empty()) {
+          uint8_t best = candidates[0];
+          int best_dist = std::abs(static_cast<int>(best) - static_cast<int>(desired));
+          for (uint8_t alt : candidates) {
+            int dist = std::abs(static_cast<int>(alt) - static_cast<int>(desired));
+            if (dist < best_dist) {
+              best_dist = dist;
+              best = alt;
+            }
+          }
+          last_pitch = best;
+          consecutive_count = 1;
+          return last_pitch;
+        }
+      }
+
+      // Fallback: try step up (scale-wise, +2 semitones for whole step)
+      if (desired + 2 <= motif_high) {
+        last_pitch = desired + 2;
+        consecutive_count = 1;
+        return last_pitch;
+      }
+      // Try step down
+      if (desired >= motif_low + 2) {
+        last_pitch = desired - 2;
+        consecutive_count = 1;
+        return last_pitch;
+      }
+      // Try octave shift
+      if (desired + 12 <= motif_high) {
+        last_pitch = desired + 12;
+        consecutive_count = 1;
+        return last_pitch;
+      }
+      if (desired >= motif_low + 12) {
+        last_pitch = desired - 12;
+        consecutive_count = 1;
+        return last_pitch;
+      }
+    }
+
+    return desired;
+  }
+
+  /// Reset tracker state
+  void reset() {
+    last_pitch = 0;
+    consecutive_count = 0;
+  }
+};
+
+// =============================================================================
+// RhythmSync Motif Rhythm Template System
+// =============================================================================
+
+// Template data table indexed by (MotifRhythmTemplate - 1) since None=0.
+// Each entry defines the rhythmic skeleton for one cycle (1 or 2 bars).
+constexpr MotifRhythmTemplateConfig kRhythmTemplates[] = {
+    // EighthDrive: 8 notes, straight 8ths (1 bar)
+    {{0.0f, 0.5f, 1.0f, 1.5f, 2.0f, 2.5f, 3.0f, 3.5f, -1, -1, -1, -1, -1, -1, -1, -1},
+     {1.0f, 0.6f, 0.8f, 0.6f, 0.9f, 0.6f, 0.8f, 0.7f, -1, -1, -1, -1, -1, -1, -1, -1},
+     8, MotifRhythmDensity::Driving},
+    // GallopDrive: 12 notes, galloping 16ths (1 bar)
+    {{0.0f, 0.25f, 0.5f, 1.0f, 1.25f, 1.5f, 2.0f, 2.25f, 2.5f, 3.0f, 3.25f, 3.5f, -1, -1, -1, -1},
+     {1.0f, 0.5f, 0.7f, 0.9f, 0.5f, 0.7f, 1.0f, 0.5f, 0.7f, 0.9f, 0.5f, 0.7f, -1, -1, -1, -1},
+     12, MotifRhythmDensity::Driving},
+    // MixedGrooveA: 6 notes, call-and-response (1 bar)
+    {{0.0f, 0.5f, 1.0f, 2.0f, 2.5f, 3.0f, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+     {1.0f, 0.7f, 0.65f, 0.9f, 0.7f, 0.65f, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+     6, MotifRhythmDensity::Medium},
+    // MixedGrooveB: 6 notes, front-loaded (1 bar)
+    {{0.0f, 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+     {1.0f, 0.7f, 0.8f, 0.6f, 0.9f, 0.7f, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+     6, MotifRhythmDensity::Medium},
+    // MixedGrooveC: 6 notes, syncopated push (1 bar)
+    {{0.0f, 1.0f, 1.5f, 2.0f, 3.0f, 3.5f, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+     {0.9f, 1.0f, 0.6f, 0.85f, 0.9f, 0.7f, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+     6, MotifRhythmDensity::Medium},
+    // PushGroove: 7 notes, anticipation (1 bar)
+    {{0.0f, 0.5f, 1.0f, 1.5f, 2.0f, 2.5f, 3.5f, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+     {1.0f, 0.6f, 0.8f, 0.6f, 0.9f, 0.6f, 0.85f, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+     7, MotifRhythmDensity::Driving},
+    // EighthPickup: 8 notes, 16th pickup ending (1 bar)
+    {{0.0f, 0.5f, 1.0f, 1.5f, 2.0f, 2.5f, 3.0f, 3.75f, -1, -1, -1, -1, -1, -1, -1, -1},
+     {1.0f, 0.6f, 0.8f, 0.6f, 0.9f, 0.6f, 0.8f, 0.75f, -1, -1, -1, -1, -1, -1, -1, -1},
+     8, MotifRhythmDensity::Driving},
+    // HalfNoteSparse: 4 notes, 2-bar half-note rhythm [0,2,4,6]
+    {{0.0f, 2.0f, 4.0f, 6.0f, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+     {1.0f, 0.8f, 0.9f, 0.7f, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+     4, MotifRhythmDensity::Sparse},
+};
+
+static_assert(sizeof(kRhythmTemplates) / sizeof(kRhythmTemplates[0]) ==
+                  static_cast<size_t>(MotifRhythmTemplate::Count) - 1,
+              "kRhythmTemplates count must match MotifRhythmTemplate enum count (excluding None)");
+
+/// @brief Get the template config for a given template ID.
+const MotifRhythmTemplateConfig& getTemplateConfig(MotifRhythmTemplate tmpl) {
+  auto idx = static_cast<size_t>(tmpl);
+  if (idx == 0 || idx >= static_cast<size_t>(MotifRhythmTemplate::Count)) {
+    // Fallback to EighthDrive
+    return kRhythmTemplates[0];
+  }
+  return kRhythmTemplates[idx - 1];
+}
+
+/// @brief Select a rhythm template based on BPM using weighted probability.
+MotifRhythmTemplate selectRhythmSyncTemplate(uint16_t bpm, std::mt19937& rng) {
+  // Probability weights for each template by BPM band.
+  // Order: EighthDrive, GallopDrive, MixedGrooveA, MixedGrooveB, MixedGrooveC,
+  //        PushGroove, EighthPickup, HalfNoteSparse
+  constexpr int kTemplateCount = 8;
+  struct TemplateWeights {
+    int weights[kTemplateCount];
+  };
+
+  TemplateWeights w;
+  if (bpm >= 160) {
+    // Fast (Orangestar core): HalfNoteSparse ~25% for spacious contrast
+    w = {{22, 14, 9, 8, 8, 6, 4, 25}};
+  } else if (bpm >= 130) {
+    // Medium: half-note works well at moderate tempos
+    w = {{20, 7, 13, 10, 9, 6, 5, 25}};
+  } else {
+    // Slow: sparse patterns shine at low BPM
+    w = {{12, 4, 20, 15, 15, 8, 4, 22}};
+  }
+
+  int total = 0;
+  for (int i = 0; i < kTemplateCount; ++i) total += w.weights[i];
+
+  std::uniform_int_distribution<int> dist(0, total - 1);
+  int roll = dist(rng);
+  int cumulative = 0;
+  for (int i = 0; i < kTemplateCount; ++i) {
+    cumulative += w.weights[i];
+    if (roll < cumulative) {
+      // EighthDrive=1, GallopDrive=2, ..., EighthPickup=7
+      return static_cast<MotifRhythmTemplate>(i + 1);
+    }
+  }
+  return MotifRhythmTemplate::EighthDrive;  // Fallback
+}
+
+/// @brief Generate rhythm positions from a template.
+/// @return Vector of tick positions for one bar of the template.
+std::vector<Tick> generateRhythmPositionsFromTemplate(MotifRhythmTemplate tmpl) {
+  const auto& config = getTemplateConfig(tmpl);
+  std::vector<Tick> positions;
+  positions.reserve(config.note_count);
+  for (uint8_t i = 0; i < config.note_count; ++i) {
+    if (config.beat_positions[i] < 0) break;
+    Tick tick = static_cast<Tick>(config.beat_positions[i] * TICKS_PER_BEAT);
+    positions.push_back(tick);
+  }
+  return positions;
+}
 
 // M1: Determine appropriate scale type based on chord quality and mood
 ScaleType selectScaleType(bool is_minor, Mood mood) {
@@ -401,8 +616,21 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::
   int key_offset = 0;
   uint8_t base_note = motif_params.register_high ? 67 : 60;
 
-  std::vector<Tick> positions = motif_detail::generateRhythmPositions(
-      motif_params.rhythm_density, motif_params.length, motif_params.note_count, rng);
+  // Determine whether to use template-based or legacy rhythm generation
+  bool use_template = (motif_params.rhythm_template != MotifRhythmTemplate::None);
+
+  std::vector<Tick> positions;
+  uint8_t effective_note_count = motif_params.note_count;
+  const motif_detail::MotifRhythmTemplateConfig* tmpl_config = nullptr;
+
+  if (use_template) {
+    tmpl_config = &motif_detail::getTemplateConfig(motif_params.rhythm_template);
+    positions = motif_detail::generateRhythmPositionsFromTemplate(motif_params.rhythm_template);
+    effective_note_count = tmpl_config->note_count;
+  } else {
+    positions = motif_detail::generateRhythmPositions(
+        motif_params.rhythm_density, motif_params.length, motif_params.note_count, rng);
+  }
 
   int max_leap_degrees = 7;
   bool prefer_stepwise = false;
@@ -412,27 +640,43 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::
   }
 
   std::vector<int> degrees = motif_detail::generatePitchSequence(
-      motif_params.note_count, motif_params.motion, rng, max_leap_degrees, prefer_stepwise);
+      effective_note_count, motif_params.motion, rng, max_leap_degrees, prefer_stepwise);
 
-  Tick note_duration = TICKS_PER_BEAT / 2;
-  switch (motif_params.rhythm_density) {
-    case MotifRhythmDensity::Sparse:
-      note_duration = TICKS_PER_BEAT;
-      break;
-    case MotifRhythmDensity::Medium:
-    case MotifRhythmDensity::Driving:
-      note_duration = TICKS_PER_BEAT / 2;
-      break;
-  }
-
-  uint8_t velocity = motif_params.velocity_fixed ? 80 : 75;
+  uint8_t base_velocity = motif_params.velocity_fixed ? 80 : 75;
 
   size_t pitch_idx = 0;
-  for (Tick pos : positions) {
+  for (size_t i = 0; i < positions.size(); ++i) {
+    Tick pos = positions[i];
     int degree = degrees[pitch_idx % degrees.size()];
     int pitch = degreeToPitch(degree, base_note, key_offset);
-
     pitch = std::clamp(pitch, 36, 96);
+
+    // Calculate note duration: fill gap with articulation margin
+    Tick note_duration;
+    if (i + 1 < positions.size()) {
+      Tick gap = positions[i + 1] - pos;
+      // Fill gap with small articulation margin for natural note separation
+      constexpr Tick kArticulationGap = 30;  // ~6% of 8th note (240 ticks)
+      note_duration = (gap > kArticulationGap + TICK_SIXTEENTH)
+                          ? gap - kArticulationGap
+                          : gap;  // Very short gaps: fill completely
+    } else {
+      // Last note: fill to end of cycle with articulation
+      Tick cycle_length = static_cast<Tick>(motif_params.length) * TICKS_PER_BAR;
+      Tick gap_to_end = cycle_length - pos;
+      constexpr Tick kArticulationGap = 30;
+      note_duration = (gap_to_end > kArticulationGap + TICK_SIXTEENTH)
+                          ? gap_to_end - kArticulationGap
+                          : std::max(gap_to_end, static_cast<Tick>(TICK_SIXTEENTH));
+    }
+
+    // Calculate velocity from template accent weights
+    uint8_t velocity = base_velocity;
+    if (use_template && tmpl_config != nullptr && i < 16 && tmpl_config->accent_weights[i] >= 0) {
+      // accent=1.0 → base_vel, accent=0.5 → base_vel * 0.775
+      float accent = tmpl_config->accent_weights[i];
+      velocity = static_cast<uint8_t>(base_velocity * (0.55f + accent * 0.45f));
+    }
 
     pattern.push_back(
         createNoteWithoutHarmony(pos, note_duration, static_cast<uint8_t>(pitch), velocity));
@@ -670,6 +914,9 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
   riff_cache.pattern = pattern;
   size_t sec_idx = 0;
 
+  // Monotony tracker for consecutive same pitch avoidance
+  motif_detail::MotifPitchMonotonyTracker monotony_tracker;
+
   // Check if this is RhythmLock mode (coordinate axis)
   RiffPolicy policy = params.riff_policy;
   bool is_locked = (policy == RiffPolicy::LockedContour || policy == RiffPolicy::LockedPitch ||
@@ -794,11 +1041,26 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
         // Clamp to vocal ceiling
         int adjusted_pitch = std::min(pitch_result.pitch, static_cast<int>(motif_range_high));
 
-        // Calculate velocity using helper
-        uint8_t vel = calculateMotifVelocity(role_meta.velocity_base, is_chorus, section.type,
-                                              motif_params.velocity_fixed);
+        // Calculate velocity: use pattern velocity for template mode (has accent weights),
+        // otherwise use the standard helper.
+        uint8_t vel;
+        if (is_rhythm_lock_global &&
+            motif_params.rhythm_template != MotifRhythmTemplate::None) {
+          // Template mode: use pattern velocity (already has accent weighting)
+          vel = note.velocity;
+          if (is_chorus) {
+            vel = std::min(static_cast<uint8_t>(127), static_cast<uint8_t>(vel + 10));
+          }
+        } else {
+          vel = calculateMotifVelocity(role_meta.velocity_base, is_chorus, section.type,
+                                       motif_params.velocity_fixed);
+        }
 
-        uint8_t final_pitch = static_cast<uint8_t>(adjusted_pitch);
+        // Apply monotony tracking to avoid consecutive same pitches
+        // Pass chord degree so alternatives are selected from chord tones
+        int8_t current_degree = harmony->getChordDegreeAt(absolute_tick);
+        uint8_t final_pitch = monotony_tracker.trackAndSuggest(
+            static_cast<uint8_t>(adjusted_pitch), MOTIF_LOW, motif_range_high, current_degree);
 
         if (is_rhythm_lock_global) {
           // Coordinate axis mode: add note directly with registration (no collision avoidance)

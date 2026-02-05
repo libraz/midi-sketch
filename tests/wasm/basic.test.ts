@@ -19,7 +19,7 @@ describe('MidiSketch WASM - Basic', () => {
   it('should return version string', () => {
     const version = ctx.module.cwrap('midisketch_version', 'string', []) as () => string;
     const versionStr = version();
-    expect(versionStr).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(versionStr).toMatch(/^\d+\.\d+\.\d+(\+.+)?$/);
   });
 
   it('should return structure count', () => {

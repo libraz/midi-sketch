@@ -491,27 +491,24 @@ TritoneSubInfo checkTritoneSubstitution(int8_t degree, bool is_dominant,
 // ============================================================================
 
 ReharmonizationResult reharmonizeForSection(int8_t degree, SectionType section_type,
-                                             bool is_minor, bool is_dominant) {
+                                             bool is_minor, bool is_dominant,
+                                             bool enable_7th) {
   ReharmonizationResult result{degree, ChordExtension::None, false};
 
   switch (section_type) {
     case SectionType::Chorus: {
-      // Chorus: auto-add extensions for richer harmony
-      // - Dominant chords (V) get Dom7
-      // - Minor chords (ii, iii, vi) get Min7
-      // - Tonic (I) gets Maj7
-      // - Subdominant (IV) gets Add9 for color
-      result.extension_overridden = true;
-      if (is_dominant) {
-        result.extension = ChordExtension::Dom7;
-      } else if (is_minor) {
-        result.extension = ChordExtension::Min7;
-      } else if (degree == 0) {
-        // I chord -> Maj7
-        result.extension = ChordExtension::Maj7;
-      } else {
-        // IV or other major chords -> Add9
-        result.extension = ChordExtension::Add9;
+      // Chorus: auto-add extensions for richer harmony (only if 7th enabled)
+      if (enable_7th) {
+        result.extension_overridden = true;
+        if (is_dominant) {
+          result.extension = ChordExtension::Dom7;
+        } else if (is_minor) {
+          result.extension = ChordExtension::Min7;
+        } else if (degree == 0) {
+          result.extension = ChordExtension::Maj7;
+        } else {
+          result.extension = ChordExtension::Add9;
+        }
       }
       break;
     }
