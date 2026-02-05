@@ -197,9 +197,9 @@ std::vector<TrackRole> Coordinator::getGenerationOrder() const {
       break;
 
     case GenerationParadigm::MelodyDriven:
-      // Vocal first, drums follow melody
-      order = {TrackRole::Vocal, TrackRole::Aux, TrackRole::Bass,
-               TrackRole::Chord, TrackRole::Motif, TrackRole::Arpeggio,
+      // Vocal first, Motif before Bass to enable Bass/Motif collision avoidance
+      order = {TrackRole::Vocal, TrackRole::Aux, TrackRole::Motif,
+               TrackRole::Bass, TrackRole::Chord, TrackRole::Arpeggio,
                TrackRole::Drums, TrackRole::SE};
       break;
 

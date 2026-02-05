@@ -923,6 +923,10 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
                     policy == RiffPolicy::LockedAll);
   bool is_rhythm_lock_global = (params.paradigm == GenerationParadigm::RhythmSync) && is_locked;
 
+  // Monotony tracking for collision avoidance - persist across sections
+  uint8_t motif_prev_pitch = 0;
+  int motif_consecutive_same = 0;
+
   for (const auto& section : sections) {
     if (!hasTrack(section.track_mask, TrackMask::Motif)) {
       sec_idx++;
@@ -1135,12 +1139,22 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
           opts.source = NoteSource::Motif;
           opts.chord_boundary = ChordBoundaryPolicy::ClipIfUnsafe;
           opts.original_pitch = note.note;  // Track pre-adjustment pitch
+          opts.prev_pitch = motif_prev_pitch;
+          opts.consecutive_same_count = motif_consecutive_same;
 
           auto motif_note = createNoteAndAdd(track, *harmony, opts);
 
           if (!motif_note) {
             continue;
           }
+
+          // Update monotony tracker
+          if (motif_note->note == motif_prev_pitch) {
+            motif_consecutive_same++;
+          } else {
+            motif_consecutive_same = 1;
+          }
+          motif_prev_pitch = motif_note->note;
 
           bar_note_count[current_bar]++;
 

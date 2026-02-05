@@ -248,6 +248,25 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
   }
 
   if (is_safe) {
+    // PreserveContour: even if desired pitch is safe, check for severe monotony
+    // and try to find an alternative pitch to break the repetition.
+    if (opts.preference == PitchPreference::PreserveContour &&
+        opts.prev_pitch > 0 && opts.consecutive_same_count >= 4 &&
+        opts.desired_pitch == opts.prev_pitch) {
+      // Desired pitch would continue monotony - try to find alternative
+      is_safe = false;  // Force candidate generation
+    }
+    // PreserveContour: also check if desired pitch would cause a large leap from prev
+    if (opts.preference == PitchPreference::PreserveContour && opts.prev_pitch > 0) {
+      int leap = std::abs(static_cast<int>(opts.desired_pitch) - static_cast<int>(opts.prev_pitch));
+      if (leap > 12) {
+        // Large leap - try to find alternative
+        is_safe = false;  // Force candidate generation
+      }
+    }
+  }
+
+  if (is_safe) {
     // For PreferSafe: check if this pitch needs boundary clip
     if (opts.chord_boundary == ChordBoundaryPolicy::PreferSafe &&
         boundary_info.boundary_tick > 0 && boundary_info.overlap_ticks >= kPassingToneThreshold &&
@@ -320,6 +339,45 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
                    opts.prev_pitch, opts.consecutive_same_count);
   }
 
+  // PreserveContour: filter out candidates that would cause large leaps from prev_pitch
+  // This prevents collision avoidance from creating jarring melodic discontinuities.
+  constexpr int kMaxLeapFromPrev = 12;  // 1 octave maximum
+  if (opts.preference == PitchPreference::PreserveContour &&
+      opts.prev_pitch > 0 && !candidates.empty()) {
+    std::vector<PitchCandidate> leap_safe_candidates;
+    for (const auto& c : candidates) {
+      int leap_from_prev = std::abs(static_cast<int>(c.pitch) - static_cast<int>(opts.prev_pitch));
+      if (leap_from_prev <= kMaxLeapFromPrev) {
+        leap_safe_candidates.push_back(c);
+      }
+    }
+    if (!leap_safe_candidates.empty()) {
+      candidates = std::move(leap_safe_candidates);
+    }
+    // If no candidates within leap limit, fall through to use original candidates
+    // (some leap is better than no note in most cases)
+  }
+
+  // PreserveContour: if monotony is severe (4+ consecutive), filter out prev_pitch entirely
+  // and skip the note if no alternatives exist. This prevents long runs of repeated pitches.
+  // Note: prev_pitch is the actual output pitch from the previous note, not the desired pitch.
+  if (opts.preference == PitchPreference::PreserveContour &&
+      opts.prev_pitch > 0 && opts.consecutive_same_count >= 4 && !candidates.empty()) {
+    std::vector<PitchCandidate> different_pitch_candidates;
+    for (const auto& c : candidates) {
+      if (c.pitch != opts.prev_pitch) {
+        different_pitch_candidates.push_back(c);
+      }
+    }
+    if (!different_pitch_candidates.empty()) {
+      candidates = std::move(different_pitch_candidates);
+    } else {
+      // All candidates resolve to prev_pitch - skip this note to break monotony
+      result.strategy_used = CollisionAvoidStrategy::Failed;
+      return result;
+    }
+  }
+
   if (candidates.empty()) {
     // No safe pitch found - try octave-down if desired exceeds range_high,
     // then clamp to range_high as last resort.
@@ -355,6 +413,14 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
         result.strategy_used = CollisionAvoidStrategy::Failed;
         return result;
       }
+    }
+
+    // PreserveContour: skip if fallback would cause severe monotony
+    if (opts.preference == PitchPreference::PreserveContour &&
+        opts.prev_pitch > 0 && opts.consecutive_same_count >= 4 &&
+        fallback_pitch == opts.prev_pitch) {
+      result.strategy_used = CollisionAvoidStrategy::Failed;
+      return result;
     }
 
     NoteEvent event = buildNoteEvent(harmony, opts.start, effective_duration,
@@ -698,6 +764,24 @@ std::vector<PitchCandidate> getSafePitchCandidates(
     }
     // If no chord tone candidates, fall through to use original candidates
     // (this is a fallback; ideally bass should skip the note)
+  }
+
+  // PreserveContour: filter out candidates with large leaps (>12 semitones)
+  // This prevents Motif from making extreme jumps that break melodic contour.
+  if (preference == PitchPreference::PreserveContour && !candidates.empty()) {
+    constexpr int kMaxContourLeap = 12;  // 1 octave maximum
+    std::vector<PitchCandidate> contour_safe_candidates;
+    for (const auto& c : candidates) {
+      if (std::abs(c.interval_from_desired) <= kMaxContourLeap) {
+        contour_safe_candidates.push_back(c);
+      }
+    }
+    // Only use filtered list if we have candidates within the leap limit
+    if (!contour_safe_candidates.empty()) {
+      candidates = std::move(contour_safe_candidates);
+    }
+    // If all candidates exceed the leap limit, the caller should skip the note
+    // by checking if the returned candidate has a large interval
   }
 
   // Rank and trim (consider boundary if notes are long enough)

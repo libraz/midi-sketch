@@ -549,6 +549,42 @@ void ensureMinVoicesAtTick(MidiTrack& track, IHarmonyContext& harmony, Tick tick
       }
     }
   }
+
+  // Final fallback: if still need at least 2 voices, add chord tones without collision check.
+  // Doubling another track's pitch is acceptable to maintain functional harmony.
+  constexpr uint8_t kMinFallbackVoices = 2;
+  if (state.safe_count < kMinFallbackVoices) {
+    int8_t degree = harmony.getChordDegreeAt(tick);
+    ChordTones ct = getChordTones(degree);
+    int octave = root / 12;
+
+    for (uint8_t i = 0; i < ct.count && state.safe_count < kMinFallbackVoices; ++i) {
+      int pc = ct.pitch_classes[i];
+      if (pc < 0) continue;
+
+      for (int oct_offset = 0; oct_offset <= 1 && state.safe_count < kMinFallbackVoices; ++oct_offset) {
+        int pitch = (octave + oct_offset) * 12 + pc;
+        if (pitch < CHORD_LOW || pitch > effective_high) continue;
+        if (state.hasPitch(static_cast<uint8_t>(pitch))) continue;
+
+        // Add note without collision check (doubling is acceptable for chord fill)
+        NoteOptions opts;
+        opts.start = tick;
+        opts.duration = duration;
+        opts.desired_pitch = static_cast<uint8_t>(pitch);
+        opts.velocity = velocity;
+        opts.role = TrackRole::Chord;
+        opts.preference = PitchPreference::NoCollisionCheck;
+        opts.range_low = CHORD_LOW;
+        opts.range_high = static_cast<int>(effective_high);
+        opts.source = NoteSource::ChordVoicing;
+        auto result = createNoteAndAdd(track, harmony, opts);
+        if (result) {
+          state.added(result->note);
+        }
+      }
+    }
+  }
 }
 
 void generateChordBar(MidiTrack& track, Tick bar_start, const VoicedChord& voicing,
@@ -1687,6 +1723,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         for (size_t idx = 0; idx < voicing.count; ++idx) {
           addChordNoteWithState(track, harmony, bar_start, HALF, voicing.pitches[idx], vel, state, bar_vocal_high);
         }
+        ensureMinVoicesAtTick(track, harmony, bar_start, HALF, vel, state, bar_vocal_high, root);
 
         int8_t dominant_degree = 4;
         uint8_t dom_root = degreeToRoot(dominant_degree, Key::C);
@@ -1709,6 +1746,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         for (size_t idx = 0; idx < dom_voicing.count; ++idx) {
           addChordNoteWithState(track, harmony, bar_start + HALF, HALF, dom_voicing.pitches[idx], vel_accent, state, bar_vocal_high);
         }
+        ensureMinVoicesAtTick(track, harmony, bar_start + HALF, HALF, vel_accent, state, bar_vocal_high, dom_root);
 
         prev_voicing = dom_voicing;
         has_prev = true;
@@ -1798,6 +1836,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
             for (size_t idx = 0; idx < voicing.count; ++idx) {
               addChordNoteWithState(track, harmony, bar_start, three_beats, voicing.pitches[idx], vel, state, bar_vocal_high);
             }
+            ensureMinVoicesAtTick(track, harmony, bar_start, three_beats, vel, state, bar_vocal_high, root);
 
             // Last beat: passing diminished chord
             // Use bar_vocal_high as upper limit to avoid crossing vocal melody
@@ -1864,6 +1903,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
           for (size_t idx = 0; idx < voicing.count; ++idx) {
             addChordNoteWithState(track, harmony, tick, subdiv_dur, voicing.pitches[idx], vel, state, bar_vocal_high);
           }
+          ensureMinVoicesAtTick(track, harmony, tick, subdiv_dur, vel, state, bar_vocal_high, root);
         }
 
         // Second half: get chord from HarmonyContext for consistency with Bass
@@ -1891,6 +1931,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
           for (size_t idx = 0; idx < second_half_voicing.count; ++idx) {
             addChordNoteWithState(track, harmony, tick, subdiv_dur, second_half_voicing.pitches[idx], vel_weak, state, bar_vocal_high);
           }
+          ensureMinVoicesAtTick(track, harmony, tick, subdiv_dur, vel_weak, state, bar_vocal_high, second_half_root);
         }
 
         prev_voicing = second_half_voicing;
@@ -1915,6 +1956,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
           for (size_t idx = 0; idx < voicing.count; ++idx) {
             addChordNoteWithState(track, harmony, tick, split_dur, voicing.pitches[idx], vel, state, bar_vocal_high);
           }
+          ensureMinVoicesAtTick(track, harmony, tick, split_dur, vel, state, bar_vocal_high, root);
         }
 
         int next_chord_idx = (chord_idx + 1) % effective_prog_length;
@@ -1942,6 +1984,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
           for (size_t idx = 0; idx < next_voicing.count; ++idx) {
             addChordNoteWithState(track, harmony, tick, split_dur, next_voicing.pitches[idx], vel_weak, state, bar_vocal_high);
           }
+          ensureMinVoicesAtTick(track, harmony, tick, split_dur, vel_weak, state, bar_vocal_high, next_root);
         }
 
         prev_voicing = next_voicing;
@@ -1960,6 +2003,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
           addChordNoteWithState(track, harmony, bar_start, HALF,
                                 voicing.pitches[idx], vel, state, bar_vocal_high);
         }
+        ensureMinVoicesAtTick(track, harmony, bar_start, HALF, vel, state, bar_vocal_high, root);
 
         // Second half: resolved triad (no extension)
         Chord resolved_chord = getExtendedChord(degree, ChordExtension::None);
@@ -1977,6 +2021,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
           addChordNoteWithState(track, harmony, bar_start + HALF, HALF,
                                 resolved_voicing.pitches[idx], vel_resolve, state, bar_vocal_high);
         }
+        ensureMinVoicesAtTick(track, harmony, bar_start + HALF, HALF, vel_resolve, state, bar_vocal_high, root);
 
         prev_voicing = resolved_voicing;
         has_prev = true;

@@ -242,8 +242,7 @@ bool isDissonantActualInterval(int actual_semitones, int8_t chord_degree) {
   }
 
   // Major 7th (pitch class 11): dissonant within 2 octaves
-  // Bass-upper voice M7 at 23 semitones is still perceptually harsh.
-  // Only very wide compound M7 (35+ semitones, ~3 octaves) is allowed.
+  // Wider compound M7 (24+ semitones) is less harsh and handled by analyzer as warning.
   if (pc_interval == 11 && actual_semitones <= 23) {
     return true;
   }

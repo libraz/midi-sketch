@@ -525,8 +525,18 @@ class MusicAnalyzer:
                         continue
 
                     if interval in DISSONANT_INTERVALS:
-                        is_bass_collision = (ch1 == 2 or ch2 == 2) and min(p1, p2) < 60
-                        severity = Severity.ERROR if is_bass_collision else Severity.WARNING
+                        # Major 7th: wider voicings (24+ semitones) are less harsh
+                        if interval == 11:
+                            if raw_interval >= 36:
+                                continue  # 3+ octaves: not perceptually dissonant
+                            elif raw_interval > 23:
+                                severity = Severity.INFO  # 2-3 octaves: notable but acceptable
+                            else:
+                                is_bass_collision = (ch1 == 2 or ch2 == 2) and min(p1, p2) < 60
+                                severity = Severity.ERROR if is_bass_collision else Severity.WARNING
+                        else:
+                            is_bass_collision = (ch1 == 2 or ch2 == 2) and min(p1, p2) < 60
+                            severity = Severity.ERROR if is_bass_collision else Severity.WARNING
 
                         track1 = TRACK_NAMES.get(ch1, f"Ch{ch1}")
                         track2 = TRACK_NAMES.get(ch2, f"Ch{ch2}")
