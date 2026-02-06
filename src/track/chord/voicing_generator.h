@@ -36,6 +36,16 @@ struct VoicedChord {
   OpenVoicingType open_subtype = OpenVoicingType::Drop2;   ///< Open voicing variant
 };
 
+/// Check if two voiced chords have identical pitches (count and pitch values).
+/// Does NOT compare voicing type or open subtype.
+inline bool areVoicingsIdentical(const VoicedChord& a, const VoicedChord& b) {
+  if (a.count != b.count) return false;
+  for (uint8_t i = 0; i < a.count; ++i) {
+    if (a.pitches[i] != b.pitches[i]) return false;
+  }
+  return true;
+}
+
 /// @name Voice Leading Metrics
 /// @{
 

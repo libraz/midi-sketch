@@ -690,6 +690,12 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
 
   VoicedChord prev_voicing{};
   bool has_prev = false;
+  int consecutive_same_voicing = 0;
+
+  auto updateConsecutiveVoicing = [&](const VoicedChord& new_voicing) {
+    chord_voicing::updateConsecutiveVoicingCount(new_voicing, prev_voicing, has_prev,
+                                                  consecutive_same_voicing);
+  };
 
   // === SUS RESOLUTION TRACKING ===
   // Track previous chord extension to ensure sus chords resolve properly
@@ -917,7 +923,8 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         // Fallback: use selectVoicing (collision resolution at note emission time)
         voicing = chord_voicing::selectVoicing(root, chord, prev_voicing, has_prev,
                                                voicing_type, bass_pitch_mask, rng,
-                                               open_subtype, params.mood);
+                                               open_subtype, params.mood,
+                                               consecutive_same_voicing);
       } else if (!has_prev) {
         voicing = filtered[0];
       } else {
@@ -931,6 +938,9 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
           // Bonus for 3+ note voicings
           int fullness_bonus = (filtered[i].count >= 3) ? 50 : 0;
           int score = type_bonus + fullness_bonus + common * 100 - distance;
+          // Penalize identical voicing when repeated 3+ times consecutively
+          score += chord_voicing::voicingRepetitionPenalty(filtered[i], prev_voicing,
+                                                           has_prev, consecutive_same_voicing);
           if (score > best_score) {
             best_score = score;
             best_idx = i;
@@ -1023,13 +1033,15 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         Chord dom_chord = getExtendedChord(dominant_degree, dom_ext);
         VoicedChord dom_voicing = chord_voicing::selectVoicing(dom_root, dom_chord, voicing, true,
                                                                voicing_type, bass_pitch_mask, rng,
-                                                               open_subtype, params.mood);
+                                                               open_subtype, params.mood,
+                                                               consecutive_same_voicing);
 
         uint8_t vel_accent = static_cast<uint8_t>(std::min(127, vel + 5));
         for (size_t idx = 0; idx < dom_voicing.count; ++idx) {
           addSafeChordNote(track, harmony, bar_start + HALF, HALF, dom_voicing.pitches[idx], vel_accent, bar_vocal_high);
         }
 
+        updateConsecutiveVoicing(dom_voicing);
         prev_voicing = dom_voicing;
         has_prev = true;
         continue;  // Skip normal generation for this bar
@@ -1049,9 +1061,11 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         Chord dom_chord = getExtendedChord(dominant_degree, dom_ext);
         VoicedChord dom_voicing =
             chord_voicing::selectVoicing(dom_root, dom_chord, prev_voicing, has_prev, voicing_type,
-                                         bass_pitch_mask, rng, open_subtype, params.mood);
+                                         bass_pitch_mask, rng, open_subtype, params.mood,
+                                         consecutive_same_voicing);
 
         generateChordBar(track, bar_start, dom_voicing, rhythm, section.type, params.mood, harmony, bar_vocal_high);
+        updateConsecutiveVoicing(dom_voicing);
         prev_voicing = dom_voicing;
         has_prev = true;
         continue;
@@ -1068,9 +1082,11 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         Chord ii_chord = getExtendedChord(ii_degree, ii_ext);
         VoicedChord ii_voicing =
             chord_voicing::selectVoicing(ii_root, ii_chord, prev_voicing, has_prev, voicing_type,
-                                         bass_pitch_mask, rng, open_subtype, params.mood);
+                                         bass_pitch_mask, rng, open_subtype, params.mood,
+                                         consecutive_same_voicing);
 
         generateChordBar(track, bar_start, ii_voicing, rhythm, section.type, params.mood, harmony, bar_vocal_high);
+        updateConsecutiveVoicing(ii_voicing);
         prev_voicing = ii_voicing;
         has_prev = true;
         continue;
@@ -1110,7 +1126,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
             VoicedChord sec_dom_voicing =
                 chord_voicing::selectVoicing(sec_dom_root, sec_dom_chord, voicing, true,
                                              voicing_type, bass_pitch_mask, rng, open_subtype,
-                                             params.mood);
+                                             params.mood, consecutive_same_voicing);
 
             uint8_t vel_accent = static_cast<uint8_t>(std::min(127, vel + 8));
             for (size_t idx = 0; idx < sec_dom_voicing.count; ++idx) {
@@ -1122,6 +1138,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
             harmony.registerSecondaryDominant(bar_start + HALF, bar_start + TICKS_PER_BAR,
                                                sec_dom.dominant_degree);
 
+            updateConsecutiveVoicing(sec_dom_voicing);
             prev_voicing = sec_dom_voicing;
             has_prev = true;
             inserted_secondary_dominant = true;
@@ -1206,6 +1223,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
                                     dim_voicing.pitches[idx], vel_dim, dim_state, bar_vocal_high);
             }
 
+            updateConsecutiveVoicing(dim_voicing);
             prev_voicing = dim_voicing;
             has_prev = true;
             inserted_passing_dim = true;
@@ -1250,7 +1268,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         VoicedChord second_half_voicing =
             chord_voicing::selectVoicing(second_half_root, second_half_chord, voicing, true,
                                          voicing_type, second_half_bass_pc, rng, open_subtype,
-                                         params.mood);
+                                         params.mood, consecutive_same_voicing);
 
         // Augment second half voicing if < 3 notes (same logic as first half)
         if (second_half_voicing.count < 3 && second_half_voicing.count > 0) {
@@ -1321,6 +1339,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
           }
         }
 
+        updateConsecutiveVoicing(second_half_voicing);
         prev_voicing = second_half_voicing;
         has_prev = true;
         continue;
@@ -1358,7 +1377,8 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         uint16_t next_bass_pitch_mask = static_cast<uint16_t>(1 << (next_root % 12));
         VoicedChord next_voicing = chord_voicing::selectVoicing(next_root, next_chord, voicing,
                                                                 true, voicing_type, next_bass_pitch_mask,
-                                                                rng, open_subtype, params.mood);
+                                                                rng, open_subtype, params.mood,
+                                                                consecutive_same_voicing);
 
         uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
         for (int r = 0; r < repeats; ++r) {
@@ -1368,6 +1388,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
           }
         }
 
+        updateConsecutiveVoicing(next_voicing);
         prev_voicing = next_voicing;
         has_prev = true;
         continue;  // Already handled anticipation within split; skip anticipation block
@@ -1388,13 +1409,14 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
         Chord resolved_chord = getExtendedChord(degree, ChordExtension::None);
         VoicedChord resolved_voicing = chord_voicing::selectVoicing(
             root, resolved_chord, voicing, true, voicing_type, bass_pitch_mask,
-            rng, open_subtype, params.mood);
+            rng, open_subtype, params.mood, consecutive_same_voicing);
 
         for (size_t idx = 0; idx < resolved_voicing.count; ++idx) {
           addSafeChordNote(track, harmony, bar_start + HALF, HALF,
                            resolved_voicing.pitches[idx], vel_resolve, bar_vocal_high);
         }
 
+        updateConsecutiveVoicing(resolved_voicing);
         prev_voicing = resolved_voicing;
         has_prev = true;
         continue;  // Sus resolution fills entire bar; skip anticipation block
@@ -1431,6 +1453,7 @@ void generateChordTrackImpl(MidiTrack& track, const Song& song, const GeneratorP
           }
         }
 
+        updateConsecutiveVoicing(voicing);
         prev_voicing = voicing;
       }
 
@@ -1504,7 +1527,13 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
 
   VoicedChord prev_voicing{};
   bool has_prev = false;
+  int consecutive_same_voicing = 0;
   ChordExtension prev_extension = ChordExtension::None;
+
+  auto updateConsecutiveVoicing = [&](const VoicedChord& new_voicing) {
+    chord_voicing::updateConsecutiveVoicingCount(new_voicing, prev_voicing, has_prev,
+                                                  consecutive_same_voicing);
+  };
 
   for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
     const auto& section = sections[sec_idx];
@@ -1698,6 +1727,9 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
                   ? chord_voicing::getParallelPenalty(params.mood)
                   : 0;
           int score = type_bonus + common * 100 + parallel_penalty - distance;
+          // Penalize identical voicing when repeated 3+ times consecutively
+          score += chord_voicing::voicingRepetitionPenalty(filtered[i], prev_voicing,
+                                                           has_prev, consecutive_same_voicing);
           if (score > best_score) {
             tied_indices.clear();
             tied_indices.push_back(i);
@@ -1738,7 +1770,8 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         VoicedChord dom_voicing =
             dom_candidates.empty()
                 ? chord_voicing::selectVoicing(dom_root, dom_chord, voicing, true, voicing_type,
-                                               bass_pitch_mask, rng, open_subtype, params.mood)
+                                               bass_pitch_mask, rng, open_subtype, params.mood,
+                                               consecutive_same_voicing)
                 : dom_candidates[0];
 
         uint8_t vel_accent = static_cast<uint8_t>(std::min(127, vel + 5));
@@ -1748,6 +1781,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         }
         ensureMinVoicesAtTick(track, harmony, bar_start + HALF, HALF, vel_accent, state, bar_vocal_high, dom_root);
 
+        updateConsecutiveVoicing(dom_voicing);
         prev_voicing = dom_voicing;
         has_prev = true;
         continue;
@@ -1780,6 +1814,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
                 : dom_filtered[0];
 
         generateChordBar(track, bar_start, dom_voicing, rhythm, section.type, params.mood, harmony, bar_vocal_high);
+        updateConsecutiveVoicing(dom_voicing);
         prev_voicing = dom_voicing;
         has_prev = true;
         continue;
@@ -1810,6 +1845,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
                 : ii_filtered[0];
 
         generateChordBar(track, bar_start, ii_voicing, rhythm, section.type, params.mood, harmony, bar_vocal_high);
+        updateConsecutiveVoicing(ii_voicing);
         prev_voicing = ii_voicing;
         has_prev = true;
         continue;
@@ -1875,6 +1911,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
             // Ensure minimum voices for diminished chord
             ensureMinVoicesAtTick(track, harmony, last_beat_start, QUARTER, vel_dim, state, bar_vocal_high, dim_root_pitch);
 
+            updateConsecutiveVoicing(dim_voicing);
             prev_voicing = dim_voicing;
             has_prev = true;
             inserted_passing_dim = true;
@@ -1922,7 +1959,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
             second_half_candidates.empty()
                 ? chord_voicing::selectVoicing(second_half_root, second_half_chord, voicing, true,
                                                voicing_type, second_half_bass_pc, rng, open_subtype,
-                                               params.mood)
+                                               params.mood, consecutive_same_voicing)
                 : second_half_candidates[0];
 
         for (int r = 0; r < subdiv_repeats; ++r) {
@@ -1934,6 +1971,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
           ensureMinVoicesAtTick(track, harmony, tick, subdiv_dur, vel_weak, state, bar_vocal_high, second_half_root);
         }
 
+        updateConsecutiveVoicing(second_half_voicing);
         prev_voicing = second_half_voicing;
         has_prev = true;
         continue;
@@ -1974,7 +2012,8 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         VoicedChord next_voicing =
             next_candidates.empty()
                 ? chord_voicing::selectVoicing(next_root, next_chord, voicing, true, voicing_type,
-                                               next_bass_pitch_mask, rng, open_subtype, params.mood)
+                                               next_bass_pitch_mask, rng, open_subtype, params.mood,
+                                               consecutive_same_voicing)
                 : next_candidates[0];
 
         uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
@@ -1987,6 +2026,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
           ensureMinVoicesAtTick(track, harmony, tick, split_dur, vel_weak, state, bar_vocal_high, next_root);
         }
 
+        updateConsecutiveVoicing(next_voicing);
         prev_voicing = next_voicing;
         has_prev = true;
         continue;  // Already handled anticipation within split; skip anticipation block
@@ -2013,7 +2053,8 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
             resolved_candidates.empty()
                 ? chord_voicing::selectVoicing(root, resolved_chord, voicing, true,
                                                voicing_type, bass_pitch_mask, rng,
-                                               open_subtype, params.mood)
+                                               open_subtype, params.mood,
+                                               consecutive_same_voicing)
                 : resolved_candidates[0];
 
         state.reset(bar_start + HALF);
@@ -2023,6 +2064,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
         }
         ensureMinVoicesAtTick(track, harmony, bar_start + HALF, HALF, vel_resolve, state, bar_vocal_high, root);
 
+        updateConsecutiveVoicing(resolved_voicing);
         prev_voicing = resolved_voicing;
         has_prev = true;
         continue;  // Sus resolution fills entire bar; skip anticipation block
@@ -2061,6 +2103,7 @@ void generateChordTrackWithContextImpl(MidiTrack& track, const Song& song,
           }
         }
 
+        updateConsecutiveVoicing(voicing);
         prev_voicing = voicing;
       }
 

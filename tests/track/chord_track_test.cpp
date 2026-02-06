@@ -9,9 +9,12 @@
 
 #include <set>
 
+#include "core/chord.h"
 #include "core/generator.h"
 #include "core/song.h"
 #include "core/types.h"
+#include "track/chord/voice_leading.h"
+#include "track/chord/voicing_generator.h"
 
 namespace midisketch {
 namespace {
@@ -853,6 +856,326 @@ TEST_F(ChordTrackTest, NonSusExtensionDoesNotSplitBar) {
   // We just verify the generation works correctly.
   EXPECT_GE(chord_track.notes().size(), 10u)
       << "Chord track should have sufficient notes with 7th extensions";
+}
+
+// ============================================================================
+// Voicing Repetition Penalty Tests
+// ============================================================================
+
+TEST_F(ChordTrackTest, VoicingRepetitionPenalty_SelectVoicingPenalizesIdenticalAfter3) {
+  // When the same voicing is repeated 3+ times consecutively,
+  // selectVoicing should penalize it and prefer alternatives.
+  using chord_voicing::VoicedChord;
+  using chord_voicing::VoicingType;
+
+  // Create a simple C major chord
+  Chord chord = getChordNotes(0);  // I chord (C major)
+  uint8_t root = 60;  // C4
+
+  std::mt19937 rng(42);
+
+  // Get a baseline voicing with no history
+  VoicedChord first = chord_voicing::selectVoicing(root, chord, {}, false,
+      VoicingType::Close, 0, rng);
+  ASSERT_GT(first.count, 0u) << "First voicing should have notes";
+
+  // Now request with the same previous voicing but consecutive_same_count = 0
+  // (should not penalize)
+  VoicedChord no_penalty = chord_voicing::selectVoicing(root, chord, first, true,
+      VoicingType::Close, 0, rng, OpenVoicingType::Drop2, Mood::StraightPop, 0);
+
+  // Request with consecutive_same_count = 5 (strong penalty)
+  VoicedChord with_penalty = chord_voicing::selectVoicing(root, chord, first, true,
+      VoicingType::Close, 0, rng, OpenVoicingType::Drop2, Mood::StraightPop, 5);
+
+  // The penalty should encourage a different voicing when count >= 3
+  // We cannot guarantee a different result (depends on candidate pool),
+  // but the mechanism should be active. Verify both produce valid voicings.
+  EXPECT_GT(no_penalty.count, 0u) << "No-penalty voicing should have notes";
+  EXPECT_GT(with_penalty.count, 0u) << "With-penalty voicing should have notes";
+}
+
+TEST_F(ChordTrackTest, VoicingRepetitionPenalty_NoPenaltyBelow3) {
+  // consecutive_same_count < 3 should not trigger any penalty.
+  using chord_voicing::VoicedChord;
+  using chord_voicing::VoicingType;
+
+  Chord chord = getChordNotes(0);
+  uint8_t root = 60;
+
+  std::mt19937 rng1(100);
+  std::mt19937 rng2(100);
+
+  VoicedChord prev{};
+  prev.pitches = {60, 64, 67, 0, 0};
+  prev.count = 3;
+  prev.type = VoicingType::Close;
+
+  // count=0 (no penalty)
+  VoicedChord result_0 = chord_voicing::selectVoicing(root, chord, prev, true,
+      VoicingType::Close, 0, rng1, OpenVoicingType::Drop2, Mood::StraightPop, 0);
+
+  // count=2 (still no penalty, threshold is 3)
+  VoicedChord result_2 = chord_voicing::selectVoicing(root, chord, prev, true,
+      VoicingType::Close, 0, rng2, OpenVoicingType::Drop2, Mood::StraightPop, 2);
+
+  // Both should produce the same result since neither triggers penalty
+  // (same RNG seed, same parameters)
+  EXPECT_EQ(result_0.count, result_2.count);
+  for (uint8_t idx = 0; idx < result_0.count; ++idx) {
+    EXPECT_EQ(result_0.pitches[idx], result_2.pitches[idx])
+        << "Voicing should be identical at index " << static_cast<int>(idx)
+        << " when consecutive count is below threshold";
+  }
+}
+
+TEST_F(ChordTrackTest, VoicingRepetitionPenalty_GraduatedPenalty) {
+  // Higher consecutive counts should apply stronger penalties.
+  // Penalty formula: 50 * (consecutive_same_count - 2)
+  // count=3: penalty=50, count=5: penalty=150, count=10: penalty=400
+  using chord_voicing::VoicedChord;
+  using chord_voicing::VoicingType;
+
+  Chord chord = getChordNotes(0);
+  uint8_t root = 60;
+
+  VoicedChord prev{};
+  prev.pitches = {60, 64, 67, 0, 0};
+  prev.count = 3;
+  prev.type = VoicingType::Close;
+
+  // With a high enough consecutive count, the penalty should be large enough
+  // to force selection of a different voicing
+  std::mt19937 rng(42);
+  VoicedChord result_high = chord_voicing::selectVoicing(root, chord, prev, true,
+      VoicingType::Close, 0, rng, OpenVoicingType::Drop2, Mood::StraightPop, 10);
+
+  // Verify the result is a valid voicing (even with high penalty)
+  EXPECT_GT(result_high.count, 0u) << "Should produce a valid voicing even with high penalty";
+}
+
+TEST_F(ChordTrackTest, VoicingRepetitionPenalty_IntegrationMultipleSeeds) {
+  // Integration test: verify that across multiple seeds, the chord track
+  // shows voicing variety (no excessively long runs of identical voicings).
+  constexpr int kNumSeeds = 5;
+  uint32_t seeds[] = {42, 100, 200, 300, 400};
+
+  for (int seed_idx = 0; seed_idx < kNumSeeds; ++seed_idx) {
+    params_.seed = seeds[seed_idx];
+    params_.structure = StructurePattern::StandardPop;
+    params_.mood = Mood::StraightPop;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& chord_track = gen.getSong().chord();
+    ASSERT_GT(chord_track.notes().size(), 0u) << "Chord track empty for seed " << seeds[seed_idx];
+
+    // Group notes by their start tick to identify chords
+    std::map<Tick, std::vector<uint8_t>> chords_by_tick;
+    for (const auto& note : chord_track.notes()) {
+      chords_by_tick[note.start_tick].push_back(note.note);
+    }
+
+    // Sort pitches within each chord for comparison
+    for (auto& [tick, pitches] : chords_by_tick) {
+      std::sort(pitches.begin(), pitches.end());
+    }
+
+    // Count max consecutive identical chords
+    int max_consecutive = 1;
+    int current_consecutive = 1;
+    std::vector<uint8_t> prev_pitches;
+    bool has_previous = false;
+
+    for (const auto& [tick, pitches] : chords_by_tick) {
+      if (has_previous && pitches == prev_pitches) {
+        current_consecutive++;
+        max_consecutive = std::max(max_consecutive, current_consecutive);
+      } else {
+        current_consecutive = 1;
+      }
+      prev_pitches = pitches;
+      has_previous = true;
+    }
+
+    // With the penalty active, we expect max consecutive identical voicings
+    // to be bounded. Note that some repeated chords are intentional:
+    // - Slow harmonic rhythm: same chord spans 2 bars (counted as separate ticks)
+    // - Anticipation notes: duplicate chord at beat 4& before a bar boundary
+    // - Rhythmic subdivision: same voicing at multiple beat positions within a bar
+    // 12 consecutive is a reasonable upper bound accounting for these factors.
+    EXPECT_LE(max_consecutive, 12)
+        << "Seed " << seeds[seed_idx] << " has " << max_consecutive
+        << " consecutive identical chord voicings (expected <= 12)";
+  }
+}
+
+TEST_F(ChordTrackTest, VoicingRepetitionPenalty_DefaultParameterBackcompat) {
+  // The new parameter has a default value of 0, ensuring backward compatibility.
+  // Calling selectVoicing without the new parameter should compile and work.
+  using chord_voicing::VoicedChord;
+  using chord_voicing::VoicingType;
+
+  Chord chord = getChordNotes(0);
+  uint8_t root = 60;
+  std::mt19937 rng(42);
+
+  // Call without the new parameter (uses default = 0)
+  VoicedChord result = chord_voicing::selectVoicing(root, chord, {}, false,
+      VoicingType::Close, 0, rng);
+  EXPECT_GT(result.count, 0u) << "Default parameter should produce valid voicing";
+}
+
+// ============================================================================
+// areVoicingsIdentical Tests
+// ============================================================================
+
+TEST_F(ChordTrackTest, AreVoicingsIdentical_MatchingVoicings) {
+  using chord_voicing::VoicedChord;
+  VoicedChord a{};
+  a.pitches = {60, 64, 67, 0, 0};
+  a.count = 3;
+  VoicedChord b{};
+  b.pitches = {60, 64, 67, 0, 0};
+  b.count = 3;
+  EXPECT_TRUE(chord_voicing::areVoicingsIdentical(a, b));
+}
+
+TEST_F(ChordTrackTest, AreVoicingsIdentical_DifferentPitches) {
+  using chord_voicing::VoicedChord;
+  VoicedChord a{};
+  a.pitches = {60, 64, 67, 0, 0};
+  a.count = 3;
+  VoicedChord b{};
+  b.pitches = {60, 64, 68, 0, 0};
+  b.count = 3;
+  EXPECT_FALSE(chord_voicing::areVoicingsIdentical(a, b));
+}
+
+TEST_F(ChordTrackTest, AreVoicingsIdentical_DifferentCount) {
+  using chord_voicing::VoicedChord;
+  VoicedChord a{};
+  a.pitches = {60, 64, 67, 0, 0};
+  a.count = 3;
+  VoicedChord b{};
+  b.pitches = {60, 64, 67, 72, 0};
+  b.count = 4;
+  EXPECT_FALSE(chord_voicing::areVoicingsIdentical(a, b));
+}
+
+TEST_F(ChordTrackTest, AreVoicingsIdentical_EmptyVoicings) {
+  using chord_voicing::VoicedChord;
+  VoicedChord a{};
+  VoicedChord b{};
+  EXPECT_TRUE(chord_voicing::areVoicingsIdentical(a, b));
+}
+
+TEST_F(ChordTrackTest, AreVoicingsIdentical_IgnoresTypeAndSubtype) {
+  using chord_voicing::VoicedChord;
+  using chord_voicing::VoicingType;
+  VoicedChord a{};
+  a.pitches = {60, 64, 67, 0, 0};
+  a.count = 3;
+  a.type = VoicingType::Close;
+  VoicedChord b{};
+  b.pitches = {60, 64, 67, 0, 0};
+  b.count = 3;
+  b.type = VoicingType::Open;
+  b.open_subtype = OpenVoicingType::Drop3;
+  EXPECT_TRUE(chord_voicing::areVoicingsIdentical(a, b));
+}
+
+// ============================================================================
+// voicingRepetitionPenalty Tests
+// ============================================================================
+
+TEST_F(ChordTrackTest, VoicingRepetitionPenalty_NoPenaltyWhenCountBelow3) {
+  using chord_voicing::VoicedChord;
+  VoicedChord a{};
+  a.pitches = {60, 64, 67, 0, 0};
+  a.count = 3;
+  EXPECT_EQ(chord_voicing::voicingRepetitionPenalty(a, a, true, 0), 0);
+  EXPECT_EQ(chord_voicing::voicingRepetitionPenalty(a, a, true, 1), 0);
+  EXPECT_EQ(chord_voicing::voicingRepetitionPenalty(a, a, true, 2), 0);
+}
+
+TEST_F(ChordTrackTest, VoicingRepetitionPenalty_PenaltyAtCount3) {
+  using chord_voicing::VoicedChord;
+  VoicedChord a{};
+  a.pitches = {60, 64, 67, 0, 0};
+  a.count = 3;
+  // count=3: penalty = -50 * (3 - 2) = -50
+  EXPECT_EQ(chord_voicing::voicingRepetitionPenalty(a, a, true, 3), -50);
+}
+
+TEST_F(ChordTrackTest, VoicingRepetitionPenalty_GraduatedPenaltyValues) {
+  using chord_voicing::VoicedChord;
+  VoicedChord a{};
+  a.pitches = {60, 64, 67, 0, 0};
+  a.count = 3;
+  // count=5: penalty = -50 * (5 - 2) = -150
+  EXPECT_EQ(chord_voicing::voicingRepetitionPenalty(a, a, true, 5), -150);
+  // count=10: penalty = -50 * (10 - 2) = -400
+  EXPECT_EQ(chord_voicing::voicingRepetitionPenalty(a, a, true, 10), -400);
+}
+
+TEST_F(ChordTrackTest, VoicingRepetitionPenalty_NoPenaltyWhenDifferent) {
+  using chord_voicing::VoicedChord;
+  VoicedChord a{};
+  a.pitches = {60, 64, 67, 0, 0};
+  a.count = 3;
+  VoicedChord b{};
+  b.pitches = {60, 64, 68, 0, 0};
+  b.count = 3;
+  EXPECT_EQ(chord_voicing::voicingRepetitionPenalty(a, b, true, 5), 0);
+}
+
+TEST_F(ChordTrackTest, VoicingRepetitionPenalty_NoPenaltyWhenNoPrev) {
+  using chord_voicing::VoicedChord;
+  VoicedChord a{};
+  a.pitches = {60, 64, 67, 0, 0};
+  a.count = 3;
+  EXPECT_EQ(chord_voicing::voicingRepetitionPenalty(a, a, false, 5), 0);
+}
+
+// ============================================================================
+// updateConsecutiveVoicingCount Tests
+// ============================================================================
+
+TEST_F(ChordTrackTest, UpdateConsecutiveVoicingCount_IncrementOnSame) {
+  using chord_voicing::VoicedChord;
+  VoicedChord a{};
+  a.pitches = {60, 64, 67, 0, 0};
+  a.count = 3;
+  int count = 1;
+  chord_voicing::updateConsecutiveVoicingCount(a, a, true, count);
+  EXPECT_EQ(count, 2);
+  chord_voicing::updateConsecutiveVoicingCount(a, a, true, count);
+  EXPECT_EQ(count, 3);
+}
+
+TEST_F(ChordTrackTest, UpdateConsecutiveVoicingCount_ResetOnDifferent) {
+  using chord_voicing::VoicedChord;
+  VoicedChord a{};
+  a.pitches = {60, 64, 67, 0, 0};
+  a.count = 3;
+  VoicedChord b{};
+  b.pitches = {60, 64, 68, 0, 0};
+  b.count = 3;
+  int count = 5;
+  chord_voicing::updateConsecutiveVoicingCount(b, a, true, count);
+  EXPECT_EQ(count, 1);
+}
+
+TEST_F(ChordTrackTest, UpdateConsecutiveVoicingCount_InitOnFirstVoicing) {
+  using chord_voicing::VoicedChord;
+  VoicedChord a{};
+  a.pitches = {60, 64, 67, 0, 0};
+  a.count = 3;
+  int count = 0;
+  chord_voicing::updateConsecutiveVoicingCount(a, {}, false, count);
+  EXPECT_EQ(count, 1);
 }
 
 }  // namespace

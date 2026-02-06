@@ -76,7 +76,32 @@ int getParallelPenalty(Mood mood);
 VoicedChord selectVoicing(uint8_t root, const Chord& chord, const VoicedChord& prev_voicing,
                           bool has_prev, VoicingType preferred_type, uint16_t bass_pitch_mask,
                           std::mt19937& rng, OpenVoicingType open_subtype = OpenVoicingType::Drop2,
-                          Mood mood = Mood::StraightPop);
+                          Mood mood = Mood::StraightPop,
+                          int consecutive_same_count = 0);
+
+/// @}
+
+/// @name Voicing Repetition Helpers
+/// @{
+
+/// Calculate penalty for consecutive identical voicings.
+/// Returns negative penalty if candidate is identical to prev and count >= 3.
+/// @param candidate The voicing candidate to evaluate
+/// @param prev Previous voicing
+/// @param has_prev Whether there is a previous voicing
+/// @param consecutive_count Current consecutive identical count
+/// @return Penalty to add to score (0 or negative)
+int voicingRepetitionPenalty(const VoicedChord& candidate, const VoicedChord& prev,
+                             bool has_prev, int consecutive_count);
+
+/// Update consecutive identical voicing counter.
+/// Call BEFORE assigning new_voicing to prev_voicing.
+/// @param new_voicing The newly selected voicing
+/// @param prev Previous voicing
+/// @param has_prev Whether there is a previous voicing
+/// @param consecutive_count Counter to update (in/out)
+void updateConsecutiveVoicingCount(const VoicedChord& new_voicing, const VoicedChord& prev,
+                                   bool has_prev, int& consecutive_count);
 
 /// @}
 

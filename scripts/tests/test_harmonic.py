@@ -89,7 +89,7 @@ class TestChordTrackAnalysis(unittest.TestCase):
         self.assertIn("exceeds vocal ceiling", above_issues[0].message)
 
     def test_consecutive_same_voicing(self):
-        """5+ consecutive same voicing should be flagged."""
+        """4+ consecutive bars with same voicing should be flagged."""
         notes = []
         voicing = [60, 64, 67]
         for bar in range(6):
@@ -99,7 +99,24 @@ class TestChordTrackAnalysis(unittest.TestCase):
 
         rep_issues = [i for i in result.issues if i.subcategory == "chord_repetition"]
         self.assertEqual(len(rep_issues), 1)
-        self.assertIn("consecutive same voicing", rep_issues[0].message)
+        self.assertIn("consecutive bars", rep_issues[0].message)
+        self.assertIn("same voicing", rep_issues[0].message)
+
+    def test_quarter_note_rhythm_not_counted_as_repetition(self):
+        """Same voicing hit 4x per bar should count as 1 bar, not 4 repeats."""
+        notes = []
+        voicing = [60, 64, 67]
+        # 3 bars with quarter-note rhythm (4 hits per bar)
+        for bar in range(3):
+            for beat in range(4):
+                tick = bar * TICKS_PER_BAR + beat * TICKS_PER_BEAT
+                notes.extend(make_chord_notes(tick, voicing, duration=TICKS_PER_BEAT))
+
+        result = MusicAnalyzer(notes).analyze_all()
+
+        # 3 bars is below threshold (need 4+ consecutive bars), so no repetition issue
+        rep_issues = [i for i in result.issues if i.subcategory == "chord_repetition"]
+        self.assertEqual(len(rep_issues), 0)
 
     def test_no_consecutive_when_voicing_changes(self):
         """Different voicings should not trigger repetition warning."""

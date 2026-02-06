@@ -417,6 +417,10 @@ void Generator::applyPostProcessingEffects() {
 
   // Final cleanup: fix any remaining vocal overlaps
   PostProcessor::fixVocalOverlaps(song_.vocal());
+
+  // Smooth large leaps in Aux track caused by note removal in earlier passes
+  // (fixAuxVocalClashes, applyArrangementHoles, etc.)
+  PostProcessor::smoothLargeLeaps(song_.aux());
 }
 
 void Generator::generate(const GeneratorParams& params) {

@@ -286,6 +286,17 @@ class PostProcessor {
                                     MidiTrack& chord, MidiTrack& bass,
                                     const std::vector<Section>& sections);
 
+  /// @brief Remove notes that create large melodic leaps (> max_semitones).
+  ///
+  /// After all post-processing (clash removal, arrangement holes, etc.)
+  /// new note adjacencies may appear that produce jarring pitch jumps.
+  /// This pass removes the offending notes to keep the line smooth.
+  /// Intended for non-essential melodic tracks like Aux.
+  ///
+  /// @param track Track to smooth (in-place)
+  /// @param max_semitones Maximum allowed leap between consecutive notes
+  static void smoothLargeLeaps(MidiTrack& track, int max_semitones = 12);
+
  private:
   // Returns true if the tick position is on a strong beat (beats 1 or 3 in 4/4).
   static bool isStrongBeat(Tick tick);

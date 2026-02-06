@@ -2126,5 +2126,148 @@ TEST_F(ArrangementHolesTest, EmptySectionsDoNothing) {
   EXPECT_EQ(motif_.notes().size(), 1u);
 }
 
+// ============================================================================
+// smoothLargeLeaps Tests
+// ============================================================================
+
+class SmoothLargeLeapsTest : public ::testing::Test {
+ protected:
+  MidiTrack track_;
+};
+
+TEST_F(SmoothLargeLeapsTest, NoNotesDoesNothing) {
+  PostProcessor::smoothLargeLeaps(track_);
+  EXPECT_TRUE(track_.notes().empty());
+}
+
+TEST_F(SmoothLargeLeapsTest, SingleNoteDoesNothing) {
+  track_.addNote(NoteEventBuilder::create(0, 480, 60, 80));
+  PostProcessor::smoothLargeLeaps(track_);
+  EXPECT_EQ(track_.notes().size(), 1u);
+}
+
+TEST_F(SmoothLargeLeapsTest, SmallLeapsPreserved) {
+  // C4 -> E4 -> G4 (4st, 3st) - all within 12 semitones
+  track_.addNote(NoteEventBuilder::create(0, 480, 60, 80));
+  track_.addNote(NoteEventBuilder::create(480, 480, 64, 80));
+  track_.addNote(NoteEventBuilder::create(960, 480, 67, 80));
+  PostProcessor::smoothLargeLeaps(track_);
+  EXPECT_EQ(track_.notes().size(), 3u);
+}
+
+TEST_F(SmoothLargeLeapsTest, ExactOctavePreserved) {
+  // C4 -> C5 (12 semitones exactly) - at the boundary, preserved
+  track_.addNote(NoteEventBuilder::create(0, 480, 60, 80));
+  track_.addNote(NoteEventBuilder::create(480, 480, 72, 80));
+  PostProcessor::smoothLargeLeaps(track_);
+  EXPECT_EQ(track_.notes().size(), 2u);
+}
+
+TEST_F(SmoothLargeLeapsTest, LargeLeapNoteRemoved) {
+  // C4 -> C4+2oct (24 semitones) - too large, second note removed
+  track_.addNote(NoteEventBuilder::create(0, 480, 60, 80));
+  track_.addNote(NoteEventBuilder::create(480, 480, 84, 80));
+  PostProcessor::smoothLargeLeaps(track_);
+  EXPECT_EQ(track_.notes().size(), 1u);
+  EXPECT_EQ(track_.notes()[0].note, 60);
+}
+
+TEST_F(SmoothLargeLeapsTest, DownwardLargeLeapRemoved) {
+  // G5 -> G3 (-24 semitones) - too large
+  track_.addNote(NoteEventBuilder::create(0, 480, 79, 80));
+  track_.addNote(NoteEventBuilder::create(480, 480, 55, 80));
+  PostProcessor::smoothLargeLeaps(track_);
+  EXPECT_EQ(track_.notes().size(), 1u);
+  EXPECT_EQ(track_.notes()[0].note, 79);
+}
+
+TEST_F(SmoothLargeLeapsTest, CascadingRemovalHandled) {
+  // A(60) -> B(62) -> C(86) -> D(64)
+  // First pass: B->C (24st) removes C, creating B(62)->D(64) which is fine
+  track_.addNote(NoteEventBuilder::create(0, 480, 60, 80));
+  track_.addNote(NoteEventBuilder::create(480, 480, 62, 80));
+  track_.addNote(NoteEventBuilder::create(960, 480, 86, 80));
+  track_.addNote(NoteEventBuilder::create(1440, 480, 64, 80));
+  PostProcessor::smoothLargeLeaps(track_);
+  EXPECT_EQ(track_.notes().size(), 3u);
+  EXPECT_EQ(track_.notes()[0].note, 60);
+  EXPECT_EQ(track_.notes()[1].note, 62);
+  EXPECT_EQ(track_.notes()[2].note, 64);
+}
+
+TEST_F(SmoothLargeLeapsTest, CascadingRemovalWithNewLeap) {
+  // A(60) -> B(80) -> C(55) - removing B creates A(60)->C(55) which is 5st (ok)
+  // But if A(60) -> B(80) -> C(40), removing B creates A(60)->C(40) = 20st -> C removed too
+  track_.addNote(NoteEventBuilder::create(0, 480, 60, 80));
+  track_.addNote(NoteEventBuilder::create(480, 480, 80, 80));
+  track_.addNote(NoteEventBuilder::create(960, 480, 40, 80));
+  PostProcessor::smoothLargeLeaps(track_);
+  EXPECT_EQ(track_.notes().size(), 1u);  // Only A remains
+  EXPECT_EQ(track_.notes()[0].note, 60);
+}
+
+TEST_F(SmoothLargeLeapsTest, UnsortedNotesGetSorted) {
+  // Notes added out of order should be sorted first
+  track_.addNote(NoteEventBuilder::create(960, 480, 67, 80));  // G4
+  track_.addNote(NoteEventBuilder::create(0, 480, 60, 80));    // C4
+  track_.addNote(NoteEventBuilder::create(480, 480, 64, 80));  // E4
+  PostProcessor::smoothLargeLeaps(track_);
+  EXPECT_EQ(track_.notes().size(), 3u);
+  // Should be sorted by tick
+  EXPECT_EQ(track_.notes()[0].start_tick, 0u);
+  EXPECT_EQ(track_.notes()[1].start_tick, 480u);
+  EXPECT_EQ(track_.notes()[2].start_tick, 960u);
+}
+
+TEST_F(SmoothLargeLeapsTest, CustomMaxSemitones) {
+  // With max_semitones=6, even a 7st leap should be removed
+  track_.addNote(NoteEventBuilder::create(0, 480, 60, 80));     // C4
+  track_.addNote(NoteEventBuilder::create(480, 480, 67, 80));   // G4 (7st)
+  PostProcessor::smoothLargeLeaps(track_, 6);
+  EXPECT_EQ(track_.notes().size(), 1u);
+}
+
+// ============================================================================
+// Regression: Aux Large Leap at Section Boundaries (seed=17, bp=5)
+// ============================================================================
+
+TEST_F(SmoothLargeLeapsTest, SectionBoundaryLeapRegression) {
+  // Simulates the case where post-processing removes notes between sections,
+  // creating new adjacencies with large leaps.
+  // Before fix: pitch 76 -> 57 (19 semitones) at bar 3 (Intro->Chorus boundary)
+  // After fix: the 57 note should be removed
+
+  // Intro notes (high register ~72-76)
+  track_.addNote(NoteEventBuilder::create(0, 240, 72, 70));
+  track_.addNote(NoteEventBuilder::create(240, 240, 72, 70));
+  track_.addNote(NoteEventBuilder::create(480, 240, 76, 70));
+  track_.addNote(NoteEventBuilder::create(960, 240, 72, 70));
+  track_.addNote(NoteEventBuilder::create(1440, 240, 76, 70));
+
+  // Gap (simulating removed notes from fixAuxVocalClashes)
+
+  // Chorus notes (low register ~55-57)
+  track_.addNote(NoteEventBuilder::create(3840, 1920, 57, 60));
+  track_.addNote(NoteEventBuilder::create(5760, 1920, 55, 60));
+  track_.addNote(NoteEventBuilder::create(7680, 1920, 57, 60));
+
+  PostProcessor::smoothLargeLeaps(track_);
+
+  // The 57 at tick 3840 creates a leap of |57-76| = 19 > 12, so removed.
+  // Then 55 at tick 5760 creates a leap of |55-76| = 21 > 12, so also removed.
+  // Then 57 at tick 7680 creates a leap of |57-76| = 19 > 12, so also removed.
+  // Only intro notes remain.
+  EXPECT_EQ(track_.notes().size(), 5u);
+
+  // Verify all remaining notes have no large leaps
+  for (size_t idx = 1; idx < track_.notes().size(); ++idx) {
+    int leap = std::abs(static_cast<int>(track_.notes()[idx].note) -
+                        static_cast<int>(track_.notes()[idx - 1].note));
+    EXPECT_LE(leap, 12) << "Large leap at index " << idx
+                         << ": " << static_cast<int>(track_.notes()[idx - 1].note)
+                         << " -> " << static_cast<int>(track_.notes()[idx].note);
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

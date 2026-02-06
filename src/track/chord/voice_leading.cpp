@@ -134,7 +134,8 @@ int getParallelPenalty(Mood mood) {
 
 VoicedChord selectVoicing(uint8_t root, const Chord& chord, const VoicedChord& prev_voicing,
                           bool has_prev, VoicingType preferred_type, uint16_t bass_pitch_mask,
-                          std::mt19937& rng, OpenVoicingType open_subtype, Mood mood) {
+                          std::mt19937& rng, OpenVoicingType open_subtype, Mood mood,
+                          int consecutive_same_count) {
   std::vector<VoicedChord> candidates =
       generateVoicings(root, chord, preferred_type, bass_pitch_mask, open_subtype);
 
@@ -216,6 +217,10 @@ VoicedChord selectVoicing(uint8_t root, const Chord& chord, const VoicedChord& p
     // Score: prioritize type match, common tones, avoid parallels, minimize movement
     int score = type_bonus + common * 100 + parallel_penalty - distance;
 
+    // Penalize identical voicing when repeated 3+ times consecutively
+    score += voicingRepetitionPenalty(candidates[i], prev_voicing, has_prev,
+                                      consecutive_same_count);
+
     if (score > best_score) {
       tied_indices.clear();
       tied_indices.push_back(i);
@@ -228,6 +233,23 @@ VoicedChord selectVoicing(uint8_t root, const Chord& chord, const VoicedChord& p
   // Random selection among tied candidates
   std::uniform_int_distribution<size_t> dist(0, tied_indices.size() - 1);
   return candidates[tied_indices[dist(rng)]];
+}
+
+int voicingRepetitionPenalty(const VoicedChord& candidate, const VoicedChord& prev,
+                             bool has_prev, int consecutive_count) {
+  if (consecutive_count >= 3 && has_prev && areVoicingsIdentical(candidate, prev)) {
+    return -50 * (consecutive_count - 2);
+  }
+  return 0;
+}
+
+void updateConsecutiveVoicingCount(const VoicedChord& new_voicing, const VoicedChord& prev,
+                                   bool has_prev, int& consecutive_count) {
+  if (has_prev && areVoicingsIdentical(new_voicing, prev)) {
+    consecutive_count++;
+  } else {
+    consecutive_count = 1;
+  }
 }
 
 bool isDominant(int8_t degree) {

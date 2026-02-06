@@ -148,10 +148,8 @@ class HarmonicAnalyzer(BaseAnalyzer):
             chords_by_time[note.start].append(note)
 
         sorted_ticks = sorted(chords_by_time.keys())
-        prev_pitches = None
-        consecutive_same_count = 0
-        consecutive_same_start = 0
 
+        # --- Per-onset voicing analysis (thin/dense/register/ceiling) ---
         for tick in sorted_ticks:
             chord = chords_by_time[tick]
             pitches = tuple(sorted([note.pitch for note in chord]))
@@ -228,37 +226,56 @@ class HarmonicAnalyzer(BaseAnalyzer):
                                  "vocal_ceiling": vocal_ceiling},
                     )
 
-            if pitches == prev_pitches:
+        # --- Bar-level voicing repetition detection ---
+        chords_by_bar = defaultdict(set)
+        for note in chord_notes:
+            bar_idx = note.start // TICKS_PER_BAR
+            chords_by_bar[bar_idx].add(note.pitch)
+
+        sorted_bars = sorted(chords_by_bar.keys())
+        prev_bar_pitches = None
+        consecutive_same_count = 0
+        consecutive_same_start = 0
+
+        for bar_idx in sorted_bars:
+            bar_pitches = tuple(sorted(chords_by_bar[bar_idx]))
+
+            if bar_pitches == prev_bar_pitches:
                 if consecutive_same_count == 0:
-                    consecutive_same_start = tick
+                    consecutive_same_start = bar_idx * TICKS_PER_BAR
                 consecutive_same_count += 1
             else:
-                if consecutive_same_count >= 4:
+                if consecutive_same_count >= 3:
                     self.add_issue(
-                        severity=(Severity.WARNING if consecutive_same_count >= 6
+                        severity=(Severity.WARNING if consecutive_same_count >= 5
                                   else Severity.INFO),
                         category=Category.HARMONIC,
                         subcategory="chord_repetition",
-                        message=f"{consecutive_same_count + 1} consecutive same voicing",
+                        message=(f"{consecutive_same_count + 1} consecutive bars "
+                                 f"same voicing"),
                         tick=consecutive_same_start,
                         track="Chord",
                         details={"count": consecutive_same_count + 1,
-                                 "pitches": list(prev_pitches) if prev_pitches else []},
+                                 "pitches": list(prev_bar_pitches)
+                                 if prev_bar_pitches else []},
                     )
                 consecutive_same_count = 0
-                prev_pitches = pitches
+                prev_bar_pitches = bar_pitches
 
-        if consecutive_same_count >= 4:
+        # Final flush
+        if consecutive_same_count >= 3:
             self.add_issue(
-                severity=(Severity.WARNING if consecutive_same_count >= 6
+                severity=(Severity.WARNING if consecutive_same_count >= 5
                           else Severity.INFO),
                 category=Category.HARMONIC,
                 subcategory="chord_repetition",
-                message=f"{consecutive_same_count + 1} consecutive same voicing",
+                message=(f"{consecutive_same_count + 1} consecutive bars "
+                         f"same voicing"),
                 tick=consecutive_same_start,
                 track="Chord",
                 details={"count": consecutive_same_count + 1,
-                         "pitches": list(prev_pitches) if prev_pitches else []},
+                         "pitches": list(prev_bar_pitches)
+                         if prev_bar_pitches else []},
             )
 
     def _analyze_bass_line(self):

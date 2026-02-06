@@ -581,7 +581,12 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     opts.desired_pitch = suggested_pitch;
     opts.velocity = note.velocity;
     opts.role = TrackRole::Aux;
-    opts.preference = PitchPreference::Default;
+    // Use PreserveContour so collision avoidance also respects the
+    // max-leap constraint from PitchMonotonyTracker.  Without this,
+    // collision avoidance can push a pitch far from prev_pitch,
+    // creating leaps of 20+ semitones across section boundaries.
+    opts.preference = (actual_last_pitch > 0) ? PitchPreference::PreserveContour
+                                              : PitchPreference::Default;
     opts.range_low = 55;
     opts.range_high = aux_vocal_ceiling;
     opts.source = NoteSource::Aux;
@@ -592,8 +597,26 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     opts.prev_pitch = actual_last_pitch;
     opts.consecutive_same_count = actual_consecutive_count;
 
+    // Prevent harmony registration for notes that may be skipped by
+    // the leap guard.  We defer registration until after the check.
+    opts.register_to_harmony = false;
     auto result = createNoteWithResult(harmony, opts);
     if (result.note) {
+      // Final leap guard: if collision avoidance pushed the pitch beyond the
+      // max-leap constraint, skip this note instead of introducing a jarring
+      // jump (e.g. 20+ semitones at a section boundary).  Aux notes are
+      // non-essential, so dropping one is preferable to a large leap.
+      if (actual_last_pitch > 0) {
+        int final_leap = std::abs(static_cast<int>(result.final_pitch) -
+                                  static_cast<int>(actual_last_pitch));
+        if (final_leap > kMaxLeapSemitones) {
+          continue;  // Skip this note
+        }
+      }
+
+      // Register to harmony now that the note passed the leap guard
+      harmony.registerNote(opts.start, result.note->duration, result.final_pitch, opts.role);
+
       track.addNote(*result.note);
       // Update monotony tracking with actual output pitch
       uint8_t actual_pitch = result.final_pitch;

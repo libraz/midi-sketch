@@ -927,10 +927,60 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
   uint8_t motif_prev_pitch = 0;
   int motif_consecutive_same = 0;
 
+  // Locked mode: cache actual output notes per section type for exact replay.
+  // When is_locked && !is_rhythm_lock_global, density skipping, pitch
+  // adjustments, monotony tracker state, and collision avoidance cause
+  // different pitches in repeat sections. Caching the first occurrence's
+  // output notes and replaying them verbatim ensures consistency.
+  struct LockedNoteEntry {
+    Tick relative_tick;  // Offset from section start
+    Tick duration;
+    uint8_t pitch;
+    uint8_t velocity;
+  };
+  std::map<SectionType, std::vector<LockedNoteEntry>> locked_note_cache;
+
   for (const auto& section : sections) {
     if (!hasTrack(section.track_mask, TrackMask::Motif)) {
       sec_idx++;
       continue;
+    }
+
+    // Locked mode: replay cached notes for repeat section types
+    if (is_locked && !is_rhythm_lock_global) {
+      auto cache_it = locked_note_cache.find(section.type);
+      if (cache_it != locked_note_cache.end()) {
+        // Replay cached notes with tick offset
+        for (const auto& entry : cache_it->second) {
+          Tick absolute_tick = section.start_tick + entry.relative_tick;
+          if (absolute_tick >= section.endTick()) continue;
+
+          NoteOptions opts;
+          opts.start = absolute_tick;
+          opts.duration = entry.duration;
+          opts.desired_pitch = entry.pitch;
+          opts.velocity = entry.velocity;
+          opts.role = TrackRole::Motif;
+          opts.preference = PitchPreference::PreserveContour;
+          opts.range_low = MOTIF_LOW;
+          opts.range_high = motif_range_high;
+          opts.source = NoteSource::Motif;
+          opts.prev_pitch = motif_prev_pitch;
+          opts.consecutive_same_count = motif_consecutive_same;
+
+          auto result = createNoteAndAdd(track, *harmony, opts);
+          if (result) {
+            if (result->note == motif_prev_pitch) {
+              motif_consecutive_same++;
+            } else {
+              motif_consecutive_same = 1;
+            }
+            motif_prev_pitch = result->note;
+          }
+        }
+        sec_idx++;
+        continue;
+      }
     }
 
     Tick section_end = section.endTick();
@@ -1180,6 +1230,26 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
         }
       }
     }
+
+    // Locked mode: cache output notes for this section type
+    if (is_locked && !is_rhythm_lock_global &&
+        locked_note_cache.find(section.type) == locked_note_cache.end()) {
+      std::vector<LockedNoteEntry> entries;
+      for (const auto& evt : track.notes()) {
+        if (evt.start_tick >= section.start_tick && evt.start_tick < section.endTick()) {
+          entries.push_back({
+            evt.start_tick - section.start_tick,
+            evt.duration,
+            evt.note,
+            evt.velocity
+          });
+        }
+      }
+      if (!entries.empty()) {
+        locked_note_cache[section.type] = std::move(entries);
+      }
+    }
+
     sec_idx++;
   }
 }

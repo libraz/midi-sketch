@@ -1090,5 +1090,194 @@ TEST_F(MotifRhythmLockTest, MultipleSeeedsProduceValidRiffs) {
   EXPECT_GE(valid_riffs, 4) << "At least 4 out of 5 seeds should produce valid riffs";
 }
 
+// =============================================================================
+// Locked Note Caching Test (non-axis / MelodyDriven)
+// =============================================================================
+// When RiffPolicy::Locked is active but motif is NOT the coordinate axis
+// (i.e., MelodyDriven paradigm), the note cache should ensure that repeat
+// sections of the same SectionType produce identical note sequences (relative
+// timing, duration, pitch, velocity).
+
+class MotifLockedCacheTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    // Use IdolKawaii (BP 6): MelodyDriven + Locked riff policy.
+    // Its flow has 3 Chorus sections: 1st without Motif, 2nd and 3rd with
+    // TrackMask::All. The 2nd chorus (8 bars) gets cached and the 3rd
+    // (12 bars, Climactic) replays the cache, truncated to fit.
+    params_.structure = StructurePattern::FullPop;  // Overridden by BP flow
+    params_.mood = Mood::IdolPop;
+    params_.chord_id = 0;
+    params_.key = Key::C;
+    params_.drums_enabled = true;
+    params_.bpm = 132;
+    params_.seed = 42;
+    params_.blueprint_id = 6;  // IdolKawaii: MelodyDriven + Locked
+    params_.composition_style = CompositionStyle::BackgroundMotif;
+  }
+
+  GeneratorParams params_;
+};
+
+TEST_F(MotifLockedCacheTest, SameSectionTypeHasConsistentNotes) {
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& motif_notes = gen.getSong().motif().notes();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  if (motif_notes.empty()) {
+    GTEST_SKIP() << "No motif notes generated";
+  }
+
+  // Group motif-enabled sections by type, collecting notes per section instance
+  struct RelativeNote {
+    Tick relative_tick;
+    Tick duration;
+    uint8_t pitch;
+    uint8_t velocity;
+  };
+
+  std::map<SectionType, std::vector<std::vector<RelativeNote>>> sections_by_type;
+
+  for (const auto& section : sections) {
+    // Only consider sections where motif is enabled
+    if (!hasTrack(section.track_mask, TrackMask::Motif)) continue;
+
+    std::vector<RelativeNote> section_notes;
+    for (const auto& note : motif_notes) {
+      if (note.start_tick >= section.start_tick &&
+          note.start_tick < section.endTick()) {
+        section_notes.push_back({
+          note.start_tick - section.start_tick,
+          note.duration,
+          note.note,
+          note.velocity
+        });
+      }
+    }
+    if (!section_notes.empty()) {
+      sections_by_type[section.type].push_back(std::move(section_notes));
+    }
+  }
+
+  // Find section types that appear more than once with motif notes
+  int tested_types = 0;
+  for (const auto& [sec_type, instances] : sections_by_type) {
+    if (instances.size() < 2) continue;
+
+    tested_types++;
+    const auto& first = instances[0];
+
+    for (size_t idx = 1; idx < instances.size(); ++idx) {
+      const auto& other = instances[idx];
+
+      // Note counts should be close. The cache replays the same relative
+      // notes, but collision avoidance can reject some during replay.
+      // Also, if the repeat section is longer, all cached notes still fit.
+      int count_diff = std::abs(static_cast<int>(first.size()) -
+                                static_cast<int>(other.size()));
+      int max_count = static_cast<int>(std::max(first.size(), other.size()));
+      EXPECT_LE(count_diff, std::max(2, max_count / 5))
+          << "Section type " << static_cast<int>(sec_type)
+          << " instance " << idx
+          << " note count diverges too much from first instance"
+          << " (first=" << first.size() << ", other=" << other.size() << ")";
+
+      // Check relative timing and pitch similarity for matching notes
+      size_t min_count = std::min(first.size(), other.size());
+      for (size_t nidx = 0; nidx < min_count; ++nidx) {
+        EXPECT_EQ(first[nidx].relative_tick, other[nidx].relative_tick)
+            << "Section type " << static_cast<int>(sec_type)
+            << " note " << nidx << " relative_tick mismatch";
+        // Pitch may differ due to collision avoidance (PreserveContour),
+        // but should be within an octave
+        int pitch_diff = std::abs(
+            static_cast<int>(first[nidx].pitch) -
+            static_cast<int>(other[nidx].pitch));
+        EXPECT_LE(pitch_diff, 12)
+            << "Section type " << static_cast<int>(sec_type)
+            << " note " << nidx << " pitch differs by more than an octave"
+            << " (first=" << static_cast<int>(first[nidx].pitch)
+            << ", other=" << static_cast<int>(other[nidx].pitch) << ")";
+      }
+    }
+  }
+
+  // We should have tested at least one section type with repeats
+  EXPECT_GE(tested_types, 1)
+      << "Expected at least one section type with multiple motif occurrences";
+}
+
+TEST_F(MotifLockedCacheTest, MultiSeedProducesSimilarRepeatSections) {
+  // Verify across multiple seeds that repeat sections of the same type
+  // (both with motif enabled) have similar note counts due to caching.
+  std::vector<uint32_t> test_seeds = {42, 12345, 99999, 54321, 777};
+  int consistent_count = 0;
+  int testable_count = 0;
+
+  for (uint32_t seed : test_seeds) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& motif_notes = gen.getSong().motif().notes();
+    const auto& sections = gen.getSong().arrangement().sections();
+
+    if (motif_notes.empty()) continue;
+
+    // Group motif-enabled sections by type
+    std::map<SectionType, std::vector<const Section*>> sections_by_type;
+    for (const auto& sec : sections) {
+      if (!hasTrack(sec.track_mask, TrackMask::Motif)) continue;
+      sections_by_type[sec.type].push_back(&sec);
+    }
+
+    for (const auto& [sec_type, sec_list] : sections_by_type) {
+      if (sec_list.size() < 2) continue;
+
+      auto countNotesInSection = [&motif_notes](const Section* sec) {
+        int count = 0;
+        for (const auto& note : motif_notes) {
+          if (note.start_tick >= sec->start_tick &&
+              note.start_tick < sec->endTick()) {
+            count++;
+          }
+        }
+        return count;
+      };
+
+      int count1 = countNotesInSection(sec_list[0]);
+      int count2 = countNotesInSection(sec_list[1]);
+
+      if (count1 == 0 && count2 == 0) continue;
+
+      testable_count++;
+
+      // The cache replays the same notes. For sections of different
+      // lengths, the longer section will have all cached notes (they fit).
+      // Collision avoidance can reject some during replay.
+      // Allow a small margin for collision rejection.
+      int max_count = std::max(count1, count2);
+      int diff = std::abs(count1 - count2);
+      if (diff <= std::max(2, max_count / 5)) {
+        consistent_count++;
+      }
+    }
+  }
+
+  // With IdolKawaii flow, chorus sections 2 and 3 both have motif enabled.
+  // We should find testable pairs in at least some seeds.
+  if (testable_count > 0) {
+    double consistency_rate =
+        static_cast<double>(consistent_count) / testable_count;
+    EXPECT_GE(consistency_rate, 0.5)
+        << "Locked mode note caching should produce consistent repeat sections "
+        << "in at least 50% of testable cases"
+        << " (consistent=" << consistent_count
+        << ", testable=" << testable_count << ")";
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

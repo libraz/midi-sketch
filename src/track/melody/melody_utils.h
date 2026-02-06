@@ -142,6 +142,15 @@ void applySequentialTransposition(std::vector<NoteEvent>& notes, uint8_t phrase_
                                   SectionType section_type, int key_offset, uint8_t vocal_low,
                                   uint8_t vocal_high);
 
+/// @brief Enforce maximum phrase duration by inserting breath gaps.
+/// Scans notes for continuous sounding spans and shortens notes to create
+/// breath gaps when the span exceeds max_phrase_bars.
+/// @param notes Notes to modify (in-place), must be sorted by start_tick
+/// @param max_phrase_bars Maximum bars before forced breath
+/// @param breath_ticks Duration of breath gap to insert (default: TICK_EIGHTH = 240)
+void enforceMaxPhraseDuration(std::vector<NoteEvent>& notes, uint8_t max_phrase_bars,
+                               Tick breath_ticks = 240);
+
 }  // namespace melody
 }  // namespace midisketch
 

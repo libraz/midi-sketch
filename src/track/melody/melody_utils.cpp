@@ -208,5 +208,60 @@ void applySequentialTransposition(std::vector<NoteEvent>& notes, uint8_t phrase_
   }
 }
 
+void enforceMaxPhraseDuration(std::vector<NoteEvent>& notes, uint8_t max_phrase_bars,
+                               Tick breath_ticks) {
+  if (notes.empty() || max_phrase_bars == 0 || max_phrase_bars >= 255) return;
+
+  Tick max_phrase_ticks = static_cast<Tick>(max_phrase_bars) * TICKS_PER_BAR;
+  constexpr Tick kMinNoteDuration = TICK_SIXTEENTH;  // Don't shorten below 16th note
+
+  Tick phrase_start = notes[0].start_tick;
+
+  for (size_t idx = 1; idx < notes.size(); ++idx) {
+    Tick prev_end = notes[idx - 1].start_tick + notes[idx - 1].duration;
+    Tick gap = (notes[idx].start_tick > prev_end) ? (notes[idx].start_tick - prev_end) : 0;
+
+    // Existing gap >= breath_ticks counts as a breath
+    if (gap >= breath_ticks) {
+      phrase_start = notes[idx].start_tick;
+      continue;
+    }
+
+    // Check if current phrase exceeds limit
+    Tick phrase_end = notes[idx].start_tick + notes[idx].duration;
+    if (phrase_end - phrase_start > max_phrase_ticks) {
+      // Create a breath gap before notes[idx].
+      // Use extra margin to survive PostProcessor ritardando (up to 30% duration stretch).
+      // The analyzer detects breath at gap >= breath_ticks, so we need the gap to
+      // remain >= breath_ticks even after ritardando extends the preceding note.
+      constexpr Tick kRitMargin = 60;  // ~30% of TICK_SIXTEENTH (120 * 0.3 ≈ 36, rounded up)
+      Tick target_gap = breath_ticks + kRitMargin;
+      Tick last_kept_end = notes[idx].start_tick - target_gap;
+
+      // Walk backward, truncating/removing notes until the gap is sufficient
+      size_t cur = idx - 1;
+      while (true) {
+        if (notes[cur].start_tick + kMinNoteDuration <= last_kept_end) {
+          // This note can be kept; truncate its duration
+          notes[cur].duration = std::min(notes[cur].duration,
+                                         last_kept_end - notes[cur].start_tick);
+          break;
+        }
+        // Note starts too late to keep; mark for removal
+        notes[cur].duration = 0;
+        if (cur == 0) break;
+        --cur;
+      }
+
+      phrase_start = notes[idx].start_tick;
+    }
+  }
+
+  // Remove zero-duration notes
+  notes.erase(std::remove_if(notes.begin(), notes.end(),
+                              [](const NoteEvent& evt) { return evt.duration == 0; }),
+              notes.end());
+}
+
 }  // namespace melody
 }  // namespace midisketch

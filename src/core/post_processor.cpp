@@ -1325,4 +1325,33 @@ void PostProcessor::applyArrangementHoles(MidiTrack& motif, MidiTrack& arpeggio,
   }
 }
 
+void PostProcessor::smoothLargeLeaps(MidiTrack& track, int max_semitones) {
+  auto& notes = track.notes();
+  if (notes.size() < 2) return;
+
+  // Sort by start tick to ensure correct adjacency
+  std::sort(notes.begin(), notes.end(),
+            [](const NoteEvent& lhs, const NoteEvent& rhs) {
+              return lhs.start_tick < rhs.start_tick;
+            });
+
+  // Iterative removal: each pass removes at most one note per large leap,
+  // then re-checks.  This avoids over-removal when the note AFTER a
+  // removed note would have been fine (e.g. A->B->C where B is removed
+  // and A->C turns out to be small).
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (size_t idx = 1; idx < notes.size(); ++idx) {
+      int leap = std::abs(static_cast<int>(notes[idx].note) -
+                          static_cast<int>(notes[idx - 1].note));
+      if (leap > max_semitones) {
+        notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(idx));
+        changed = true;
+        break;  // Restart scan after each removal
+      }
+    }
+  }
+}
+
 }  // namespace midisketch

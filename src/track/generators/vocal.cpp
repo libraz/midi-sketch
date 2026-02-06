@@ -30,6 +30,7 @@
 #include "track/vocal/phrase_cache.h"
 #include "track/vocal/phrase_variation.h"
 #include "track/generators/motif.h"
+#include "track/melody/melody_utils.h"
 #include "track/vocal/vocal_helpers.h"
 
 namespace midisketch {
@@ -1257,6 +1258,12 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
   Tick min_note_duration =
       (params.vocal_style == VocalStylePreset::UltraVocaloid) ? TICK_32ND : TICK_SIXTEENTH;
   removeOverlaps(all_notes, min_note_duration);
+
+  // Enforce maximum phrase duration with breath gaps
+  VocalPhysicsParams physics = getVocalPhysicsParams(params.vocal_style);
+  if (physics.requires_breath && physics.max_phrase_bars < 255) {
+    melody::enforceMaxPhraseDuration(all_notes, physics.max_phrase_bars);
+  }
 
   // Vocal-friendly post-processing:
   // Merge same-pitch notes only with very short gaps (64th note = ~30 ticks).
