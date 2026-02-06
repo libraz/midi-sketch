@@ -293,6 +293,9 @@ class MusicAnalyzer:
                 'grid_strictness': {
                     Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.3,
                 },
+                'drive_deficit': {
+                    Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.2,
+                },
             },
             Category.ARRANGEMENT: {
                 'register_overlap': {
@@ -345,11 +348,19 @@ class MusicAnalyzer:
                 'section_density': {
                     Severity.ERROR: 0.5, Severity.WARNING: 0.3, Severity.INFO: 0.1,
                 },
+                'chorus_density_inversion': {
+                    Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
+                },
             },
         }
 
         category_penalties = defaultdict(float)
+        subcategory_penalties = defaultdict(float)
         subcategory_counts = defaultdict(int)
+
+        # Cap per subcategory: max penalty = single_penalty × 5
+        # Prevents a single subcategory from destroying the entire category score
+        _SUBCATEGORY_CAP_MULTIPLIER = 5
 
         for issue in self.issues:
             cat = issue.category
@@ -364,8 +375,13 @@ class MusicAnalyzer:
             else:
                 continue
 
-            category_penalties[cat] += penalty
-            subcategory_counts[f"{cat.value}.{subcat}"] += 1
+            subcat_key = f"{cat.value}.{subcat}"
+            max_penalty = penalty * _SUBCATEGORY_CAP_MULTIPLIER
+            if subcategory_penalties[subcat_key] < max_penalty:
+                effective = min(penalty, max_penalty - subcategory_penalties[subcat_key])
+                category_penalties[cat] += effective
+                subcategory_penalties[subcat_key] += effective
+            subcategory_counts[subcat_key] += 1
 
         total_notes = len(self.notes)
         note_factor = max(1, total_notes / 500)

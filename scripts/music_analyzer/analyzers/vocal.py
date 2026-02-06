@@ -34,20 +34,25 @@ class VocalAnalyzer(BaseAnalyzer):
         return self.issues
 
     def _analyze_vocal_breathability(self):
-        """Check phrase lengths against human breathing limits."""
+        """Check phrase lengths against human breathing limits.
+
+        A phrase boundary is detected when the gap between notes is at
+        least half a beat (240 ticks). Phrases longer than 16 beats
+        (4 bars) are INFO, longer than 24 beats (6 bars) are WARNING.
+        """
         vocal = self.notes_by_channel.get(0, [])
         if len(vocal) < 4:
             return
 
-        phrase_gap = TICKS_PER_BEAT  # 1 beat gap = new phrase
+        phrase_gap = TICKS_PER_BEAT // 2  # Half-beat gap = breath opportunity
         current_start = vocal[0].start
         current_end = vocal[0].end
 
         for idx in range(1, len(vocal)):
             if vocal[idx].start - vocal[idx - 1].end >= phrase_gap:
                 phrase_beats = (current_end - current_start) / TICKS_PER_BEAT
-                if phrase_beats > 12:
-                    sev = Severity.WARNING if phrase_beats > 16 else Severity.INFO
+                if phrase_beats > 16:
+                    sev = Severity.WARNING if phrase_beats > 24 else Severity.INFO
                     self.add_issue(
                         severity=sev,
                         category=Category.MELODIC,
@@ -62,8 +67,8 @@ class VocalAnalyzer(BaseAnalyzer):
 
         # Check last phrase
         phrase_beats = (current_end - current_start) / TICKS_PER_BEAT
-        if phrase_beats > 12:
-            sev = Severity.WARNING if phrase_beats > 16 else Severity.INFO
+        if phrase_beats > 16:
+            sev = Severity.WARNING if phrase_beats > 24 else Severity.INFO
             self.add_issue(
                 severity=sev,
                 category=Category.MELODIC,

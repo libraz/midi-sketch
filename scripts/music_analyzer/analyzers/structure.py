@@ -26,6 +26,7 @@ class StructureAnalyzer(BaseAnalyzer):
         self._analyze_track_balance()
         self._analyze_energy_contrast()
         self._analyze_section_density()
+        self._analyze_chorus_density_inversion()
         return self.issues
 
     # -----------------------------------------------------------------
@@ -205,5 +206,123 @@ class StructureAnalyzer(BaseAnalyzer):
                         "active_tracks": active_count,
                         "start_bar": section['start_bar'],
                         "end_bar": section['end_bar'],
+                    },
+                )
+
+    def _analyze_chorus_density_inversion(self):
+        """Detect when chorus has lower note density than A or B sections.
+
+        In pop music the chorus should be the most energetic section. This
+        check flags cases where non-drum note density per bar in the chorus
+        is lower than in A or B sections, which suggests an arrangement
+        imbalance.
+
+        Uses explicit metadata sections when available. When only estimated
+        sections exist the estimation already handles basic energy contrast,
+        so this check is skipped.
+        """
+        explicit_sections = self.metadata.get('sections', [])
+        if not explicit_sections:
+            return
+
+        # Calculate non-drum note density per bar for each section
+        section_densities = []
+        for section in explicit_sections:
+            start_tick = section.get('start_ticks', 0)
+            end_tick = section.get('end_ticks', 0)
+            if end_tick <= start_tick:
+                continue
+
+            note_count = 0
+            for channel, notes in self.notes_by_channel.items():
+                if channel == 9:
+                    continue
+                for note in notes:
+                    if start_tick <= note.start < end_tick:
+                        note_count += 1
+
+            num_bars = max(1, (end_tick - start_tick) / TICKS_PER_BAR)
+            density = note_count / num_bars
+
+            section_type = section.get('type', '').upper()
+            section_densities.append({
+                'type': section_type,
+                'name': section.get('name', section_type),
+                'density': density,
+                'start_tick': start_tick,
+                'num_bars': num_bars,
+                'note_count': note_count,
+            })
+
+        # Collect average densities by section type
+        densities_by_type = defaultdict(list)
+        for entry in section_densities:
+            densities_by_type[entry['type']].append(entry['density'])
+
+        chorus_densities = densities_by_type.get('CHORUS', [])
+        a_densities = densities_by_type.get('A', [])
+        b_densities = densities_by_type.get('B', [])
+
+        if not chorus_densities:
+            return
+
+        avg_chorus = sum(chorus_densities) / len(chorus_densities)
+        avg_a = (sum(a_densities) / len(a_densities)) if a_densities else 0.0
+        avg_b = (sum(b_densities) / len(b_densities)) if b_densities else 0.0
+
+        # Check WARNING: chorus thinner than A-section (threshold 0.9)
+        if avg_a > 0 and avg_chorus < avg_a * 0.9:
+            self.add_issue(
+                severity=Severity.WARNING, category=Category.STRUCTURE,
+                subcategory="chorus_density_inversion",
+                message=(f"Chorus thinner than A-section "
+                         f"(chorus: {avg_chorus:.1f} notes/bar, "
+                         f"A: {avg_a:.1f} notes/bar)"),
+                tick=0, track="",
+                details={
+                    "chorus_density": round(avg_chorus, 2),
+                    "a_density": round(avg_a, 2),
+                    "ratio": round(avg_chorus / avg_a, 3) if avg_a > 0 else 0,
+                    "comparison": "chorus_vs_a",
+                },
+            )
+
+        # Check WARNING: chorus thinner than B-section (tighter threshold 0.85)
+        if avg_b > 0 and avg_chorus < avg_b * 0.85:
+            self.add_issue(
+                severity=Severity.WARNING, category=Category.STRUCTURE,
+                subcategory="chorus_density_inversion",
+                message=(f"Chorus thinner than B-section "
+                         f"(chorus: {avg_chorus:.1f} notes/bar, "
+                         f"B: {avg_b:.1f} notes/bar)"),
+                tick=0, track="",
+                details={
+                    "chorus_density": round(avg_chorus, 2),
+                    "b_density": round(avg_b, 2),
+                    "ratio": round(avg_chorus / avg_b, 3) if avg_b > 0 else 0,
+                    "comparison": "chorus_vs_b",
+                },
+            )
+
+        # Check INFO: mild inversion vs max(A, B) with 0.95 threshold
+        max_ab = max(avg_a, avg_b)
+        if max_ab > 0 and avg_chorus < max_ab * 0.95:
+            # Only emit INFO if no WARNING was already raised for this pair
+            already_warned_a = (avg_a > 0 and avg_chorus < avg_a * 0.9)
+            already_warned_b = (avg_b > 0 and avg_chorus < avg_b * 0.85)
+            if not already_warned_a and not already_warned_b:
+                compared_section = "A" if avg_a >= avg_b else "B"
+                self.add_issue(
+                    severity=Severity.INFO, category=Category.STRUCTURE,
+                    subcategory="chorus_density_inversion",
+                    message=(f"Chorus slightly thinner than {compared_section}-section "
+                             f"(chorus: {avg_chorus:.1f} notes/bar, "
+                             f"{compared_section}: {max_ab:.1f} notes/bar)"),
+                    tick=0, track="",
+                    details={
+                        "chorus_density": round(avg_chorus, 2),
+                        "max_ab_density": round(max_ab, 2),
+                        "ratio": round(avg_chorus / max_ab, 3),
+                        "comparison": f"chorus_vs_{compared_section.lower()}",
                     },
                 )

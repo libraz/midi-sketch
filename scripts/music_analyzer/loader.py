@@ -55,10 +55,11 @@ def load_json_metadata(filepath: str) -> dict:
     try:
         with open(filepath, 'r') as file_handle:
             data = json.load(file_handle)
+        meta = data.get('metadata', {})
         return {
-            'blueprint': data.get('metadata', {}).get('blueprint'),
-            'style': data.get('metadata', {}).get('style'),
-            'bpm': data.get('metadata', {}).get('bpm'),
+            'blueprint': meta.get('blueprint'),
+            'style': meta.get('style'),
+            'bpm': data.get('bpm') or meta.get('bpm'),
             'sections': data.get('sections', []),
         }
     except Exception:

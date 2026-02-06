@@ -39,7 +39,7 @@ Examples:
   %(prog)s output.json --category harmonic # Category filter
 
   %(prog)s --generate --seed 42 --bp 1    # Generate + analyze
-  %(prog)s --batch --seeds 20 --bp all    # Batch test
+  %(prog)s --batch --seeds 20              # Batch test (all blueprints)
   %(prog)s --batch --quick -j 4           # Quick batch, 4 workers
         """,
     )
@@ -231,13 +231,13 @@ Examples:
         print(f"Error: Invalid JSON: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    # Determine blueprint and metadata for single-file analysis
-    if not args.batch and not args.generate:
-        metadata = load_json_metadata(input_file)
-        bp_value = metadata.get('blueprint', args.blueprint_single)
-        analyzer = MusicAnalyzer(notes, blueprint=bp_value, metadata=metadata)
+    # Determine blueprint and metadata for analysis
+    metadata = load_json_metadata(input_file)
+    if args.generate:
+        bp_value = args.blueprint
     else:
-        analyzer = MusicAnalyzer(notes)
+        bp_value = metadata.get('blueprint', args.blueprint_single)
+    analyzer = MusicAnalyzer(notes, blueprint=bp_value, metadata=metadata)
 
     result = analyzer.analyze_all()
 

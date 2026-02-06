@@ -4,7 +4,10 @@ Provides parallel batch testing across parameter combinations,
 progress tracking, and summary reporting.
 """
 
+import os
+import shutil
 import subprocess
+import tempfile
 import threading
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -13,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .constants import BLUEPRINT_NAMES, Severity
 from .models import TestResult, QualityScore
-from .loader import load_json_output
+from .loader import load_json_output, load_json_metadata
 from .analyzer import MusicAnalyzer
 
 
@@ -51,7 +54,8 @@ def run_single_test(
     """Run a single generation and analysis.
 
     Invokes the CLI to generate a MIDI file, then loads the JSON output
-    and runs MusicAnalyzer with blueprint-aware scoring.
+    and runs MusicAnalyzer with blueprint-aware scoring. Uses a unique
+    temporary directory to avoid file collisions in parallel mode.
 
     Args:
         cli_path: Path to the midisketch_cli binary.
@@ -59,13 +63,16 @@ def run_single_test(
         style: Style preset index.
         chord: Chord progression index.
         blueprint: Blueprint index.
-        work_dir: Working directory for CLI execution.
+        work_dir: Working directory (used to resolve relative cli_path).
 
     Returns:
         TestResult with scores and issue counts.
     """
+    # Resolve CLI path to absolute before changing work dir
+    cli_abs = str((work_dir / cli_path).resolve()) if not os.path.isabs(cli_path) else cli_path
+
     cmd = [
-        cli_path,
+        cli_abs,
         "--analyze",
         "--json",
         "--seed", str(seed),
@@ -74,13 +81,17 @@ def run_single_test(
         "--blueprint", str(blueprint),
     ]
 
+    tmp_dir = None
     try:
+        # Each worker gets its own temp directory to avoid file collisions
+        tmp_dir = tempfile.mkdtemp(prefix="midisketch_batch_")
+
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=60,
-            cwd=work_dir,
+            cwd=tmp_dir,
         )
 
         if result.returncode != 0:
@@ -89,8 +100,8 @@ def run_single_test(
                 error=f"CLI error: {result.stderr[:200]}",
             )
 
-        # Load output.json
-        output_file = work_dir / "output.json"
+        # Load output.json from the temp directory
+        output_file = Path(tmp_dir) / "output.json"
         if not output_file.exists():
             return TestResult(
                 seed=seed, style=style, chord=chord, blueprint=blueprint,
@@ -98,7 +109,8 @@ def run_single_test(
             )
 
         notes = load_json_output(str(output_file))
-        analyzer = MusicAnalyzer(notes, blueprint=blueprint)
+        metadata = load_json_metadata(str(output_file))
+        analyzer = MusicAnalyzer(notes, blueprint=blueprint, metadata=metadata)
         analysis = analyzer.analyze_all()
 
         error_count = sum(
@@ -132,6 +144,9 @@ def run_single_test(
             seed=seed, style=style, chord=chord, blueprint=blueprint,
             error=str(exc)[:200],
         )
+    finally:
+        if tmp_dir and os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def run_batch_tests(

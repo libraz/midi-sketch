@@ -10,7 +10,7 @@ from collections import defaultdict
 from typing import List
 
 from ..constants import TICKS_PER_BEAT, TICKS_PER_BAR, TRACK_NAMES, Severity, Category
-from ..helpers import tick_to_bar, _pattern_similarity, _ioi_entropy
+from ..helpers import tick_to_bar, note_name, _pattern_similarity, _ioi_entropy
 from ..models import Issue
 from .base import BaseAnalyzer
 
@@ -34,6 +34,7 @@ class ArrangementAnalyzer(BaseAnalyzer):
         self._analyze_motif_contour_preservation()
         self._analyze_motif_rhythm_preservation()
         self._analyze_blueprint_paradigm()
+        self._analyze_submelody_vocal_crossing()
         return self.issues
 
     # -----------------------------------------------------------------
@@ -199,6 +200,131 @@ class ArrangementAnalyzer(BaseAnalyzer):
                 tick=0, track="Motif/Vocal",
                 details={"both_dense_bars": both_dense, "overlap_bars": total_both},
             )
+
+    # -----------------------------------------------------------------
+    # Sub-melody vocal crossing
+    # -----------------------------------------------------------------
+
+    def _analyze_submelody_vocal_crossing(self):
+        """Detect sub-melody tracks (Aux, Motif) sounding above the vocal.
+
+        In pop music, sub-melodies should stay below the vocal to maintain
+        clarity. This checks beat-by-beat overlap and overall range
+        encroachment.
+        """
+        vocal = self.notes_by_channel.get(0, [])
+        if not vocal:
+            return
+
+        max_tick = max(n.end for n in self.notes)
+
+        # Compute vocal median pitch for range encroachment check
+        vocal_pitches = [n.pitch for n in vocal]
+        sorted_pitches = sorted(vocal_pitches)
+        mid_idx = len(sorted_pitches) // 2
+        if len(sorted_pitches) % 2 == 0:
+            vocal_median = (sorted_pitches[mid_idx - 1] + sorted_pitches[mid_idx]) / 2.0
+        else:
+            vocal_median = sorted_pitches[mid_idx]
+
+        # Check each sub-melody track (Aux=ch5, Motif=ch3)
+        submelody_configs = [
+            {
+                'channel': 5,
+                'name': 'Aux',
+                'track_label': 'Aux/Vocal',
+                'warn_threshold': 0.10,
+                'info_threshold': 0.05,
+            },
+            {
+                'channel': 3,
+                'name': 'Motif',
+                'track_label': 'Motif/Vocal',
+                'warn_threshold': 0.15,
+                'info_threshold': 0.08,
+            },
+        ]
+
+        for config in submelody_configs:
+            sub_notes = self.notes_by_channel.get(config['channel'], [])
+            if not sub_notes:
+                continue
+
+            above_count = 0
+            overlap_beats = 0
+
+            for tick in range(0, max_tick, TICKS_PER_BEAT):
+                active_vocal = [n for n in vocal if n.start <= tick < n.end]
+                active_sub = [n for n in sub_notes if n.start <= tick < n.end]
+                if not active_vocal or not active_sub:
+                    continue
+
+                overlap_beats += 1
+                vocal_max = max(n.pitch for n in active_vocal)
+                sub_max = max(n.pitch for n in active_sub)
+
+                if sub_max > vocal_max:
+                    above_count += 1
+
+            # Beat-level crossing check
+            if overlap_beats > 0:
+                crossing_ratio = above_count / overlap_beats
+                if crossing_ratio > config['warn_threshold']:
+                    self.add_issue(
+                        severity=Severity.WARNING,
+                        category=Category.ARRANGEMENT,
+                        subcategory="submelody_vocal_crossing",
+                        message=(
+                            f"{config['name']} sounds above vocal "
+                            f"({crossing_ratio:.0%} of overlapping beats)"
+                        ),
+                        tick=0,
+                        track=config['track_label'],
+                        details={
+                            "crossing_ratio": crossing_ratio,
+                            "above_beats": above_count,
+                            "overlap_beats": overlap_beats,
+                        },
+                    )
+                elif crossing_ratio > config['info_threshold']:
+                    self.add_issue(
+                        severity=Severity.INFO,
+                        category=Category.ARRANGEMENT,
+                        subcategory="submelody_vocal_crossing",
+                        message=(
+                            f"{config['name']} sounds above vocal "
+                            f"({crossing_ratio:.0%} of overlapping beats)"
+                        ),
+                        tick=0,
+                        track=config['track_label'],
+                        details={
+                            "crossing_ratio": crossing_ratio,
+                            "above_beats": above_count,
+                            "overlap_beats": overlap_beats,
+                        },
+                    )
+
+            # Overall range encroachment check
+            if sub_notes:
+                sub_max_pitch = max(n.pitch for n in sub_notes)
+                if sub_max_pitch >= vocal_median:
+                    self.add_issue(
+                        severity=Severity.INFO,
+                        category=Category.ARRANGEMENT,
+                        subcategory="submelody_vocal_crossing",
+                        message=(
+                            f"{config['name']} range encroaches vocal "
+                            f"tessitura ({config['name']} max: "
+                            f"{note_name(sub_max_pitch)}, vocal median: "
+                            f"{note_name(int(vocal_median))})"
+                        ),
+                        tick=0,
+                        track=config['track_label'],
+                        details={
+                            "sub_max_pitch": sub_max_pitch,
+                            "vocal_median": vocal_median,
+                        },
+                    )
 
     # -----------------------------------------------------------------
     # Blueprint compliance

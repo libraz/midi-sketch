@@ -36,6 +36,7 @@ class RhythmAnalyzer(BaseAnalyzer):
         self._analyze_rhythm_variety()
         self._analyze_beat_content()
         self._analyze_grid_by_blueprint()
+        self._analyze_drive_metrics()
         return self.issues
 
     # -----------------------------------------------------------------
@@ -102,18 +103,24 @@ class RhythmAnalyzer(BaseAnalyzer):
                     )
 
     def _analyze_rhythmic_monotony(self):
-        """Detect repetitive rhythmic patterns (8+ same IOI)."""
+        """Detect repetitive rhythmic patterns (12+ same IOI).
+
+        In pop music, 8-note runs of equal spacing (e.g., 8th notes)
+        are common. Only flag 12+ consecutive same-spacing notes as
+        rhythmically monotonous.
+        """
         melodic_channels = [0, 3]
+        monotony_threshold = 12
         for ch in melodic_channels:
             notes = self.notes_by_channel.get(ch, [])
-            if len(notes) < 8:
+            if len(notes) < monotony_threshold:
                 continue
             track_name = TRACK_NAMES.get(ch, f"Ch{ch}")
             ioi_list = []
             for idx in range(1, len(notes)):
                 ioi = notes[idx].start - notes[idx - 1].start
                 ioi_list.append(ioi)
-            if len(ioi_list) >= 8:
+            if len(ioi_list) >= monotony_threshold:
                 quantized = [round(ioi / (TICKS_PER_BEAT / 4)) for ioi in ioi_list]
                 same_ioi_count = 1
                 current_ioi = quantized[0]
@@ -121,7 +128,7 @@ class RhythmAnalyzer(BaseAnalyzer):
                     if quantized[idx] == current_ioi:
                         same_ioi_count += 1
                     else:
-                        if same_ioi_count >= 8:
+                        if same_ioi_count >= monotony_threshold:
                             self.add_issue(
                                 severity=Severity.WARNING,
                                 category=Category.RHYTHM,
@@ -138,9 +145,19 @@ class RhythmAnalyzer(BaseAnalyzer):
                         current_ioi = quantized[idx]
 
     def _analyze_beat_alignment(self):
-        """Detect notes off the 16th-note beat grid."""
+        """Detect notes off the 16th-note beat grid.
+
+        Checks against both straight 16th grid and shuffle/swing grid
+        (2/3 position within each 8th note). Uses a tolerance of 30
+        ticks to allow for intentional humanization offsets.
+        """
         melodic_channels = [0, 1, 2, 3, 5]
-        grid_resolution = TICKS_PER_BEAT // 4
+        grid_16th = TICKS_PER_BEAT // 4  # 120 ticks
+        tolerance = 30
+        # Shuffle position: 2/3 of an 8th note = 160 ticks from beat
+        # Within each 16th cell, shuffle falls at ~67% (80 ticks into 120)
+        shuffle_offset = TICKS_PER_BEAT // 6  # 80 ticks (triplet 16th)
+
         for ch in melodic_channels:
             notes = self.notes_by_channel.get(ch, [])
             if not notes:
@@ -148,20 +165,24 @@ class RhythmAnalyzer(BaseAnalyzer):
             track_name = TRACK_NAMES.get(ch, f"Ch{ch}")
             off_grid_notes = []
             for note in notes:
-                remainder = note.start % grid_resolution
-                tolerance = 10
-                if remainder > tolerance and remainder < grid_resolution - tolerance:
+                remainder = note.start % grid_16th
+                # Check straight 16th grid (near 0 or near grid_16th)
+                on_straight = (remainder <= tolerance or
+                               remainder >= grid_16th - tolerance)
+                # Check shuffle grid (near shuffle_offset)
+                on_shuffle = abs(remainder - shuffle_offset) <= tolerance
+                if not on_straight and not on_shuffle:
                     off_grid_notes.append(note)
             if len(off_grid_notes) > 5:
                 off_grid_ratio = len(off_grid_notes) / len(notes)
-                if off_grid_ratio > 0.1:
+                if off_grid_ratio > 0.2:
                     self.add_issue(
                         severity=Severity.WARNING,
                         category=Category.RHYTHM,
                         subcategory="beat_misalignment",
                         message=(
                             f"{len(off_grid_notes)} notes "
-                            f"({off_grid_ratio * 100:.1f}%) off 16th grid"
+                            f"({off_grid_ratio * 100:.1f}%) off grid"
                         ),
                         tick=off_grid_notes[0].start,
                         track=track_name,
@@ -410,3 +431,197 @@ class RhythmAnalyzer(BaseAnalyzer):
                     "on_grid_notes": on_grid_notes,
                 },
             )
+
+    def _analyze_drive_metrics(self):
+        """Detect lack of forward momentum in uptempo songs (BPM >= 140).
+
+        For high-BPM songs (typically RhythmSync blueprints), checks whether
+        bass, chord, and kick drum provide sufficient rhythmic drive in the
+        chorus. Flags issues when bass has no syncopation or 8th notes, chord
+        is pad-like with mostly long notes, or kick is too sparse or lacks
+        offbeat patterns.
+        """
+        bpm = self.metadata.get('bpm') or 120
+        if bpm < 140:
+            return
+
+        # Find the first Chorus section tick range
+        chorus_start = None
+        chorus_end = None
+
+        # Try metadata sections first
+        meta_sections = self.metadata.get('sections', [])
+        for sec in meta_sections:
+            sec_type = sec.get('type', '').lower()
+            if sec_type == 'chorus':
+                chorus_start = sec.get('start_ticks', sec.get('start_tick'))
+                chorus_end = sec.get('end_ticks', sec.get('end_tick'))
+                # Convert bar-based sections if tick values are missing
+                if chorus_start is None and 'start_bar' in sec:
+                    chorus_start = (sec['start_bar'] - 1) * TICKS_PER_BAR
+                if chorus_end is None and 'end_bar' in sec:
+                    chorus_end = sec['end_bar'] * TICKS_PER_BAR
+                break
+
+        # Fall back to estimated sections
+        if chorus_start is None:
+            for sec in self.sections:
+                if sec.get('type') == 'chorus':
+                    chorus_start = (sec['start_bar'] - 1) * TICKS_PER_BAR
+                    chorus_end = sec['end_bar'] * TICKS_PER_BAR
+                    break
+
+        if chorus_start is None or chorus_end is None:
+            return
+
+        chorus_bars = max(1, (chorus_end - chorus_start) / TICKS_PER_BAR)
+
+        # --- Bass (channel 2) drive check ---
+        bass_notes = [
+            note for note in self.notes_by_channel.get(2, [])
+            if chorus_start <= note.start < chorus_end
+        ]
+        if bass_notes:
+            bass_syncopated = sum(
+                1 for note in bass_notes
+                if note.start % TICKS_PER_BEAT != 0
+            )
+            bass_syncopation_rate = bass_syncopated / len(bass_notes)
+
+            eighth_note_max = TICKS_PER_BEAT // 2 + 10
+            bass_eighth = sum(
+                1 for note in bass_notes
+                if note.duration <= eighth_note_max
+            )
+            bass_eighth_ratio = bass_eighth / len(bass_notes)
+
+            if bass_syncopation_rate < 0.05 and bass_eighth_ratio < 0.10:
+                self.add_issue(
+                    severity=Severity.WARNING,
+                    category=Category.RHYTHM,
+                    subcategory="drive_deficit",
+                    message=(
+                        "Bass lacks drive "
+                        "(no syncopation, no 8th notes)"
+                    ),
+                    tick=chorus_start,
+                    track="Bass",
+                    details={
+                        "syncopation_rate": bass_syncopation_rate,
+                        "eighth_note_ratio": bass_eighth_ratio,
+                        "bpm": bpm,
+                    },
+                )
+            elif bass_syncopation_rate < 0.10:
+                self.add_issue(
+                    severity=Severity.INFO,
+                    category=Category.RHYTHM,
+                    subcategory="drive_deficit",
+                    message=(
+                        f"Bass has low syncopation "
+                        f"({bass_syncopation_rate:.0%})"
+                    ),
+                    tick=chorus_start,
+                    track="Bass",
+                    details={
+                        "syncopation_rate": bass_syncopation_rate,
+                        "bpm": bpm,
+                    },
+                )
+
+        # --- Chord (channel 1) drive check ---
+        chord_notes = [
+            note for note in self.notes_by_channel.get(1, [])
+            if chorus_start <= note.start < chorus_end
+        ]
+        if chord_notes:
+            long_notes = sum(
+                1 for note in chord_notes
+                if note.duration > TICKS_PER_BEAT
+            )
+            long_ratio = long_notes / len(chord_notes)
+
+            if long_ratio > 0.80:
+                self.add_issue(
+                    severity=Severity.INFO,
+                    category=Category.RHYTHM,
+                    subcategory="drive_deficit",
+                    message=(
+                        f"Chord is pad-like "
+                        f"(rhythmic activity low, {long_ratio:.0%} long notes)"
+                    ),
+                    tick=chorus_start,
+                    track="Chord",
+                    details={
+                        "long_note_ratio": long_ratio,
+                        "bpm": bpm,
+                    },
+                )
+
+        # --- Drums (channel 9) kick drive check ---
+        drum_notes = [
+            note for note in self.notes_by_channel.get(9, [])
+            if chorus_start <= note.start < chorus_end
+        ]
+        if drum_notes:
+            kick_notes = [
+                note for note in drum_notes if note.pitch == 36
+            ]
+            if kick_notes:
+                kick_density = len(kick_notes) / chorus_bars
+
+                if kick_density < 2.0:
+                    self.add_issue(
+                        severity=Severity.WARNING,
+                        category=Category.RHYTHM,
+                        subcategory="drive_deficit",
+                        message=(
+                            f"Kick too sparse for uptempo song "
+                            f"({kick_density:.1f}/bar)"
+                        ),
+                        tick=chorus_start,
+                        track="Drums",
+                        details={
+                            "kick_per_bar": kick_density,
+                            "bpm": bpm,
+                        },
+                    )
+                elif kick_density < 3.0:
+                    self.add_issue(
+                        severity=Severity.INFO,
+                        category=Category.RHYTHM,
+                        subcategory="drive_deficit",
+                        message=(
+                            f"Kick density low for uptempo "
+                            f"({kick_density:.1f}/bar)"
+                        ),
+                        tick=chorus_start,
+                        track="Drums",
+                        details={
+                            "kick_per_bar": kick_density,
+                            "bpm": bpm,
+                        },
+                    )
+
+                kick_syncopated = sum(
+                    1 for note in kick_notes
+                    if note.start % TICKS_PER_BEAT != 0
+                )
+                kick_syncopation_rate = kick_syncopated / len(kick_notes)
+
+                if kick_syncopation_rate < 0.10 and bpm >= 150:
+                    self.add_issue(
+                        severity=Severity.INFO,
+                        category=Category.RHYTHM,
+                        subcategory="drive_deficit",
+                        message=(
+                            f"Kick lacks offbeat drive "
+                            f"({kick_syncopation_rate:.0%} syncopation)"
+                        ),
+                        tick=chorus_start,
+                        track="Drums",
+                        details={
+                            "kick_syncopation_rate": kick_syncopation_rate,
+                            "bpm": bpm,
+                        },
+                    )

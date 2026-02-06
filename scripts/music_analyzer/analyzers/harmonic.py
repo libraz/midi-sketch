@@ -13,6 +13,7 @@ from typing import List
 from ..constants import (
     TICKS_PER_BEAT, TICKS_PER_BAR, TRACK_NAMES, TRACK_CHANNELS,
     DISSONANT_INTERVALS, BASS_PREFERRED_DEGREES, BASS_ACCEPTABLE_DEGREES,
+    DEGREE_TO_ROOT_PC, DEGREE_TO_CHORD_TONES,
     Severity, Category,
 )
 from ..helpers import note_name, tick_to_bar
@@ -520,90 +521,105 @@ class HarmonicAnalyzer(BaseAnalyzer):
     # -----------------------------------------------------------------
 
     def _analyze_bass_chord_degrees(self):
-        """Analyze bass note chord degree usage via provenance data.
+        """Analyze whether bass notes use chord tones (root, 3rd, 5th).
 
-        Checks whether bass notes predominantly use root (0) and 5th (4)
-        degrees. Flags individual non-preferred degree usage and warns
-        if the overall ratio of non-preferred degrees exceeds 30%.
+        Uses provenance chord_degree (the active chord's scale degree: 0=I,
+        3=IV, etc.) to derive the expected chord tones, then checks if the
+        bass pitch is a chord tone. Issues a single aggregate warning if the
+        ratio of non-chord-tone bass notes is too high.
         """
         bass_notes = self.notes_by_channel.get(2, [])
         if not bass_notes:
             return
 
-        degree_counts = defaultdict(int)
-        total_with_degree = 0
-        non_preferred_count = 0
+        total_checked = 0
+        root_count = 0
+        fifth_count = 0
+        third_count = 0
+        non_chord_tone_count = 0
 
         for note in bass_notes:
             if not note.provenance or 'chord_degree' not in note.provenance:
                 continue
 
             degree = note.provenance['chord_degree']
-            if degree < 0:
+            if degree < 0 or degree not in DEGREE_TO_ROOT_PC:
                 continue
 
-            degree_counts[degree] += 1
-            total_with_degree += 1
+            total_checked += 1
+            bass_pc = note.pitch % 12
+            root_pc = DEGREE_TO_ROOT_PC[degree]
+            chord_tones = DEGREE_TO_CHORD_TONES.get(degree, set())
 
-            if degree not in BASS_PREFERRED_DEGREES:
-                non_preferred_count += 1
-                if degree == 2:  # 3rd degree
-                    self.add_issue(
-                        severity=Severity.INFO,
-                        category=Category.HARMONIC,
-                        subcategory="bass_chord_degrees",
-                        message=(f"Bass uses 3rd degree at "
-                                 f"{note_name(note.pitch)}"),
-                        tick=note.start,
-                        track="Bass",
-                        details={"degree": degree, "pitch": note.pitch},
-                    )
+            if bass_pc == root_pc:
+                root_count += 1
+            elif bass_pc in chord_tones:
+                # Identify 3rd vs 5th
+                # 5th is 7 semitones above root (or tritone for vii)
+                fifth_pc = (root_pc + 7) % 12
+                if degree == 6:
+                    fifth_pc = (root_pc + 6) % 12  # diminished 5th for vii
+                if bass_pc == fifth_pc:
+                    fifth_count += 1
                 else:
-                    self.add_issue(
-                        severity=Severity.WARNING,
-                        category=Category.HARMONIC,
-                        subcategory="bass_chord_degrees",
-                        message=(f"Bass uses non-root/5th degree "
-                                 f"({degree}) at {note_name(note.pitch)}"),
-                        tick=note.start,
-                        track="Bass",
-                        details={"degree": degree, "pitch": note.pitch},
-                    )
+                    third_count += 1
+            else:
+                non_chord_tone_count += 1
 
-        # Overall ratio check
-        if total_with_degree > 0:
-            ratio = non_preferred_count / total_with_degree
-            if ratio > 0.3:
-                self.add_issue(
-                    severity=Severity.WARNING,
-                    category=Category.HARMONIC,
-                    subcategory="bass_chord_degrees",
-                    message=f"Bass uses non-root/5th degrees {ratio:.0%}",
-                    tick=0,
-                    track="Bass",
-                    details={"non_preferred_ratio": ratio,
-                             "non_preferred_count": non_preferred_count,
-                             "total_with_degree": total_with_degree,
-                             "degree_counts": dict(degree_counts)},
-                )
+        if total_checked == 0:
+            return
+
+        non_chord_tone_ratio = non_chord_tone_count / total_checked
+        root_fifth_ratio = (root_count + fifth_count) / total_checked
+
+        if non_chord_tone_ratio > 0.3:
+            self.add_issue(
+                severity=Severity.WARNING,
+                category=Category.HARMONIC,
+                subcategory="bass_chord_degrees",
+                message=(f"Bass uses non-chord-tones "
+                         f"{non_chord_tone_ratio:.0%} of the time"),
+                tick=0,
+                track="Bass",
+                details={"non_chord_tone_ratio": non_chord_tone_ratio,
+                         "root_ratio": root_count / total_checked,
+                         "fifth_ratio": fifth_count / total_checked,
+                         "third_ratio": third_count / total_checked,
+                         "total_checked": total_checked},
+            )
+        elif root_fifth_ratio < 0.5:
+            self.add_issue(
+                severity=Severity.INFO,
+                category=Category.HARMONIC,
+                subcategory="bass_chord_degrees",
+                message=(f"Bass root+5th usage low "
+                         f"({root_fifth_ratio:.0%})"),
+                tick=0,
+                track="Bass",
+                details={"root_fifth_ratio": root_fifth_ratio,
+                         "root_ratio": root_count / total_checked,
+                         "fifth_ratio": fifth_count / total_checked,
+                         "third_ratio": third_count / total_checked,
+                         "total_checked": total_checked},
+            )
 
     def _analyze_bass_downbeat_root(self):
-        """Check if bass notes on beat 1 use the root degree.
+        """Check if bass notes on beat 1 play the chord root.
 
         Bass notes on the downbeat should typically play the root of the
-        chord for harmonic stability. Flags non-root bass notes on beat 1
-        using provenance chord_degree data. Limited to first 10 issues.
+        active chord for harmonic stability. Compares actual bass pitch
+        against the chord root derived from provenance chord_degree.
+        Issues a single aggregate warning based on the non-root ratio.
         """
         bass_notes = self.notes_by_channel.get(2, [])
         if not bass_notes:
             return
 
-        issue_count = 0
+        total_beat1 = 0
+        root_count = 0
+        fifth_count = 0
 
         for note in bass_notes:
-            if issue_count >= 10:
-                break
-
             beat, offset = self.get_beat_position(note.start)
             if beat != 1:
                 continue
@@ -612,29 +628,62 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 continue
 
             degree = note.provenance['chord_degree']
-            if degree < 0:
+            if degree < 0 or degree not in DEGREE_TO_ROOT_PC:
                 continue
 
-            if degree != 0:
-                self.add_issue(
-                    severity=Severity.WARNING,
-                    category=Category.HARMONIC,
-                    subcategory="bass_downbeat_root",
-                    message=(f"Bass on beat 1 is not root "
-                             f"(degree={degree})"),
-                    tick=note.start,
-                    track="Bass",
-                    details={"degree": degree, "pitch": note.pitch,
-                             "beat": beat},
-                )
-                issue_count += 1
+            total_beat1 += 1
+            bass_pc = note.pitch % 12
+            root_pc = DEGREE_TO_ROOT_PC[degree]
+            fifth_pc = (root_pc + 7) % 12
+            if degree == 6:
+                fifth_pc = (root_pc + 6) % 12
+
+            if bass_pc == root_pc:
+                root_count += 1
+            elif bass_pc == fifth_pc:
+                fifth_count += 1
+
+        if total_beat1 == 0:
+            return
+
+        non_root_ratio = 1.0 - root_count / total_beat1
+        non_root_fifth_ratio = 1.0 - (root_count + fifth_count) / total_beat1
+
+        if non_root_fifth_ratio > 0.6:
+            self.add_issue(
+                severity=Severity.WARNING,
+                category=Category.HARMONIC,
+                subcategory="bass_downbeat_root",
+                message=(f"Bass on beat 1 is not root/5th "
+                         f"{non_root_fifth_ratio:.0%} of the time"),
+                tick=0,
+                track="Bass",
+                details={"non_root_fifth_ratio": non_root_fifth_ratio,
+                         "root_ratio": root_count / total_beat1,
+                         "fifth_ratio": fifth_count / total_beat1,
+                         "total_beat1": total_beat1},
+            )
+        elif non_root_ratio > 0.5:
+            self.add_issue(
+                severity=Severity.INFO,
+                category=Category.HARMONIC,
+                subcategory="bass_downbeat_root",
+                message=(f"Bass on beat 1 is not root "
+                         f"{non_root_ratio:.0%} of the time"),
+                tick=0,
+                track="Bass",
+                details={"non_root_ratio": non_root_ratio,
+                         "root_ratio": root_count / total_beat1,
+                         "fifth_ratio": fifth_count / total_beat1,
+                         "total_beat1": total_beat1},
+            )
 
     def _analyze_bass_contour(self):
         """Analyze bass motion patterns over 4-bar windows.
 
         Classifies each window as pedal (same pitch >75%), walking
-        (stepwise >60%), arpeggiated (intervals 3-5 semitones >50%),
-        or random. Warns if >50% of windows are random.
+        (stepwise >60%), arpeggiated (intervals 3-7 semitones or octave
+        >50%), or random. Warns if >50% of windows are random.
         """
         bass_notes = self.notes_by_channel.get(2, [])
         if len(bass_notes) < 4:
@@ -678,7 +727,8 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 total_intervals += 1
                 if interval <= 2:
                     stepwise_count += 1
-                elif 3 <= interval <= 5:
+                elif 3 <= interval <= 7 or interval == 12:
+                    # Include P4(5), P5(7), and octave(12) as structured motion
                     arpeggiated_count += 1
 
             if total_intervals == 0:
@@ -738,25 +788,20 @@ class HarmonicAnalyzer(BaseAnalyzer):
         """Check interval between bass and lowest chord note.
 
         Flags cases where both bass and chord notes are below C4 (MIDI 60)
-        and the interval between them is less than a perfect 5th (7 semitones),
-        which creates muddy low-register voicing. Limited to first 10 issues.
+        and the interval between them is less than a perfect 4th (5 semitones),
+        which creates muddy low-register voicing. Unisons (interval 0) are
+        excluded as they represent intentional doubling. Issues a single
+        aggregate warning based on the close-spacing ratio.
         """
         bass_notes = self.notes_by_channel.get(2, [])
         chord_notes = self.notes_by_channel.get(1, [])
         if not bass_notes or not chord_notes:
             return
 
-        # Build a mapping of chord notes by start tick for efficient lookup
-        chords_by_time = defaultdict(list)
-        for note in chord_notes:
-            chords_by_time[note.start].append(note)
-
-        issue_count = 0
+        total_checked = 0
+        close_count = 0
 
         for bass_note in bass_notes:
-            if issue_count >= 10:
-                break
-
             # Find chord notes sounding at the bass note's start tick
             sounding_chord_notes = []
             for chord_note in chord_notes:
@@ -773,17 +818,42 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 continue
 
             interval = abs(bass_note.pitch - lowest_chord_pitch)
-            if interval < 7:
-                self.add_issue(
-                    severity=Severity.WARNING,
-                    category=Category.HARMONIC,
-                    subcategory="bass_chord_spacing",
-                    message=(f"Bass-chord spacing too close "
-                             f"({interval} st)"),
-                    tick=bass_note.start,
-                    track="Bass/Chord",
-                    details={"interval": interval,
-                             "bass_pitch": bass_note.pitch,
-                             "chord_lowest_pitch": lowest_chord_pitch},
-                )
-                issue_count += 1
+
+            # Skip unisons (interval 0) — intentional doubling is fine
+            if interval == 0:
+                continue
+
+            total_checked += 1
+            if interval < 5:  # Less than perfect 4th
+                close_count += 1
+
+        if total_checked == 0:
+            return
+
+        close_ratio = close_count / total_checked
+        if close_ratio > 0.5:
+            self.add_issue(
+                severity=Severity.WARNING,
+                category=Category.HARMONIC,
+                subcategory="bass_chord_spacing",
+                message=(f"Bass-chord spacing too close "
+                         f"{close_ratio:.0%} of the time"),
+                tick=0,
+                track="Bass/Chord",
+                details={"close_ratio": close_ratio,
+                         "close_count": close_count,
+                         "total_checked": total_checked},
+            )
+        elif close_ratio > 0.3:
+            self.add_issue(
+                severity=Severity.INFO,
+                category=Category.HARMONIC,
+                subcategory="bass_chord_spacing",
+                message=(f"Bass-chord spacing somewhat close "
+                         f"{close_ratio:.0%} of the time"),
+                tick=0,
+                track="Bass/Chord",
+                details={"close_ratio": close_ratio,
+                         "close_count": close_count,
+                         "total_checked": total_checked},
+            )

@@ -82,13 +82,19 @@ class MelodicAnalyzer(BaseAnalyzer):
                     )
 
     def _analyze_consecutive_same_pitch(self):
-        """Detect consecutive same-pitch notes (4+ warning, 6+ error)."""
+        """Detect consecutive same-pitch notes (6+ warning, 8+ error).
+
+        In pop music, 4-5 repeated notes are common for rhythmic delivery
+        (e.g., rap-style or syllabic passages). Only flag 6+ as WARNING
+        and 8+ as ERROR.
+        """
         melodic_channels = [0, 3, 5]
-        threshold = 4
+        warn_threshold = 6
+        error_threshold = 8
 
         for channel in melodic_channels:
             notes = self.notes_by_channel.get(channel, [])
-            if len(notes) < threshold:
+            if len(notes) < warn_threshold:
                 continue
 
             track_name = TRACK_NAMES.get(channel, f"Ch{channel}")
@@ -101,8 +107,9 @@ class MelodicAnalyzer(BaseAnalyzer):
                 if notes[idx].pitch == current_pitch and gap < TICKS_PER_BEAT * 2:
                     consecutive_count += 1
                 else:
-                    if consecutive_count >= threshold:
-                        severity = Severity.ERROR if consecutive_count >= 6 else Severity.WARNING
+                    if consecutive_count >= warn_threshold:
+                        severity = (Severity.ERROR if consecutive_count >= error_threshold
+                                    else Severity.WARNING)
                         self.add_issue(
                             severity=severity,
                             category=Category.MELODIC,
@@ -117,8 +124,9 @@ class MelodicAnalyzer(BaseAnalyzer):
                     start_tick = notes[idx].start
 
             # Check last sequence
-            if consecutive_count >= threshold:
-                severity = Severity.ERROR if consecutive_count >= 6 else Severity.WARNING
+            if consecutive_count >= warn_threshold:
+                severity = (Severity.ERROR if consecutive_count >= error_threshold
+                            else Severity.WARNING)
                 self.add_issue(
                     severity=severity,
                     category=Category.MELODIC,
@@ -295,6 +303,20 @@ class MelodicAnalyzer(BaseAnalyzer):
                     direction_count = 1
                     current_direction = direction
                     start_tick = notes[idx - 1].start
+
+            # Check last sequence
+            if direction_count >= monotonous_threshold:
+                dir_name = "ascending" if current_direction > 0 else "descending"
+                self.add_issue(
+                    severity=Severity.INFO,
+                    category=Category.MELODIC,
+                    subcategory="monotonous_contour",
+                    message=f"{direction_count} notes continuously {dir_name}",
+                    tick=start_tick,
+                    track=track_name,
+                    details={"count": direction_count,
+                             "direction": dir_name},
+                )
 
     # -----------------------------------------------------------------
     # New analyses

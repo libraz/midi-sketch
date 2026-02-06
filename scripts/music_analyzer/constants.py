@@ -68,9 +68,25 @@ TRACK_RANGES = {
 # Estimated section length for structural analysis
 SECTION_LENGTH_BARS = 8
 
-# Bass preferred chord degrees
+# Bass preferred chord degrees (legacy, kept for compatibility)
 BASS_PREFERRED_DEGREES = {0, 4}  # Root, 5th
 BASS_ACCEPTABLE_DEGREES = {0, 2, 4}  # Root, 3rd, 5th
+
+# Chord degree to root pitch class mapping (C major, 0-indexed degrees)
+# degree 0=I(C), 1=ii(D), 2=iii(E), 3=IV(F), 4=V(G), 5=vi(A), 6=vii(B)
+DEGREE_TO_ROOT_PC = {0: 0, 1: 2, 2: 4, 3: 5, 4: 7, 5: 9, 6: 11}
+
+# Chord degree to chord tones (pitch classes in C major)
+# Each chord has root, 3rd, 5th as diatonic chord tones
+DEGREE_TO_CHORD_TONES = {
+    0: {0, 4, 7},    # I:   C, E, G
+    1: {2, 5, 9},    # ii:  D, F, A
+    2: {4, 7, 11},   # iii: E, G, B
+    3: {5, 9, 0},    # IV:  F, A, C
+    4: {7, 11, 2},   # V:   G, B, D
+    5: {9, 0, 4},    # vi:  A, C, E
+    6: {11, 2, 5},   # vii: B, D, F
+}
 
 # Beat strength weights (1-indexed beat positions in 4/4)
 BEAT_STRENGTH = {1: 1.0, 2: 0.4, 3: 0.7, 4: 0.4}
