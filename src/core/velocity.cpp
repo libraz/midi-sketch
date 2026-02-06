@@ -221,7 +221,7 @@ float getBarVelocityMultiplier(int bar_in_section, int total_bars, SectionType s
 
 float VelocityBalance::getMultiplier(TrackRole role) {
   // Lookup table indexed by TrackRole enum value:
-  // Vocal=0, Chord=1, Bass=2, Drums=3, SE=4, Motif=5, Arpeggio=6, Aux=7
+  // Vocal=0, Chord=1, Bass=2, Drums=3, SE=4, Motif=5, Arpeggio=6, Aux=7, Guitar=8
   static constexpr std::array<float, kTrackCount> kMultipliers = {{
       VOCAL,     // 0: Vocal
       CHORD,     // 1: Chord
@@ -230,7 +230,8 @@ float VelocityBalance::getMultiplier(TrackRole role) {
       1.0f,      // 4: SE (no balance adjustment)
       MOTIF,     // 5: Motif
       ARPEGGIO,  // 6: Arpeggio
-      AUX        // 7: Aux
+      AUX,       // 7: Aux
+      0.70f      // 8: Guitar (similar to Chord level)
   }};
 
   size_t idx = static_cast<size_t>(role);

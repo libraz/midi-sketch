@@ -347,11 +347,12 @@ enum class TrackRole : uint8_t {
   SE,         ///< Sound effects (calls, chants)
   Motif,      ///< Background motif track
   Arpeggio,   ///< Synth arpeggio track
-  Aux         ///< Auxiliary vocal track (sub-melody)
+  Aux,        ///< Auxiliary vocal track (sub-melody)
+  Guitar      ///< Electric guitar track (rhythm/lead)
 };
 
 /// @brief Number of track roles.
-inline constexpr size_t kTrackCount = 8;
+inline constexpr size_t kTrackCount = 9;
 
 /// @brief Information about a pitch collision.
 struct CollisionInfo {
@@ -398,6 +399,7 @@ inline const char* trackRoleToString(TrackRole role) {
     case TrackRole::Motif: return "motif";
     case TrackRole::Arpeggio: return "arpeggio";
     case TrackRole::Aux: return "aux";
+    case TrackRole::Guitar: return "guitar";
     default: return "unknown";
   }
 }

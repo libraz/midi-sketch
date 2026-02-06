@@ -32,13 +32,14 @@ enum class TrackMask : uint16_t {
   Aux = 1 << 5,
   Drums = 1 << 6,
   SE = 1 << 7,
+  Guitar = 1 << 8,
 
   // Convenient combinations
-  All = 0xFF,
+  All = 0x1FF,
   Minimal = Drums,
   Sparse = Vocal | Drums,
   Basic = Vocal | Chord | Bass | Drums,
-  NoVocal = Chord | Bass | Motif | Arpeggio | Aux | Drums | SE,
+  NoVocal = Chord | Bass | Motif | Arpeggio | Aux | Drums | SE | Guitar,
 };
 
 /// @brief Bitwise OR operator for TrackMask.
@@ -53,7 +54,7 @@ inline constexpr TrackMask operator&(TrackMask a, TrackMask b) {
 
 /// @brief Bitwise NOT operator for TrackMask.
 inline constexpr TrackMask operator~(TrackMask a) {
-  return static_cast<TrackMask>(~static_cast<uint16_t>(a) & 0xFF);  // NOLINT(hicpp-signed-bitwise) mask to 8 track bits
+  return static_cast<TrackMask>(~static_cast<uint16_t>(a) & 0x1FF);  // NOLINT(hicpp-signed-bitwise) mask to 9 track bits
 }
 
 /// @brief Check if a track is enabled in the mask.

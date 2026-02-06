@@ -368,6 +368,7 @@ void MidiWriter::buildSMF1(const Song& song, Key key, Mood mood, const std::stri
   if (!song.motif().empty()) num_tracks++;
   if (!song.arpeggio().empty()) num_tracks++;
   if (!song.aux().empty()) num_tracks++;
+  if (!song.guitar().empty()) num_tracks++;
 
   writeHeader(num_tracks, TICKS_PER_BEAT);
 
@@ -401,6 +402,12 @@ void MidiWriter::buildSMF1(const Song& song, Key key, Mood mood, const std::stri
 
   if (!song.aux().empty()) {
     writeTrack(song.aux(), "Aux", AUX_CH, progs.aux, bpm, key, false, mod_tick, mod_amount);
+  }
+
+  if (!song.guitar().empty()) {
+    uint8_t guitar_prog = progs.guitar != 0xFF ? progs.guitar : GUITAR_PROG;
+    writeTrack(song.guitar(), "Guitar", GUITAR_CH, guitar_prog, bpm, key, false, mod_tick,
+               mod_amount);
   }
 
   if (!song.drums().empty()) {

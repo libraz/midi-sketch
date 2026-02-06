@@ -21,11 +21,17 @@ TRACK_NAMES = {
     3: "Motif",
     4: "Arpeggio",
     5: "Aux",
+    6: "Guitar",
     9: "Drums",
     15: "SE"
 }
 
 TRACK_CHANNELS = {v: k for k, v in TRACK_NAMES.items()}
+
+# Guitar analysis constants
+GUITAR_CHANNEL = 6
+GUITAR_BASS_MUD_THRESHOLD = 52   # E3: below this overlaps bass register
+GUITAR_STRUM_MIN_VOICES = 3      # Minimum voices for proper strum chord
 
 NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
@@ -65,6 +71,7 @@ TRACK_RANGES = {
     3: (48, 84),   # Motif: C3-C6
     4: (48, 84),   # Arpeggio: C3-C6
     5: (48, 84),   # Aux: C3-C6
+    6: (40, 88),   # Guitar: E2-E6
     2: (28, 60),   # Bass: E1-C4
 }
 

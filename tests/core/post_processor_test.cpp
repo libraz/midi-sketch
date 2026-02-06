@@ -2040,6 +2040,7 @@ class ArrangementHolesTest : public ::testing::Test {
   MidiTrack aux_;
   MidiTrack chord_;
   MidiTrack bass_;
+  MidiTrack guitar_;
 };
 
 TEST_F(ArrangementHolesTest, ChorusMaxPeakMutesBackgroundFinalTwoBeats) {
@@ -2063,7 +2064,7 @@ TEST_F(ArrangementHolesTest, ChorusMaxPeakMutesBackgroundFinalTwoBeats) {
   motif_.addNote(NoteEventBuilder::create(0, 480, 60, 80));
   chord_.addNote(NoteEventBuilder::create(0, 480, 64, 80));
 
-  PostProcessor::applyArrangementHoles(motif_, arpeggio_, aux_, chord_, bass_, sections);
+  PostProcessor::applyArrangementHoles(motif_, arpeggio_, aux_, chord_, bass_, guitar_, sections);
 
   // Notes in hole zone should be removed
   EXPECT_EQ(motif_.notes().size(), 1u) << "Motif should keep note before hole, remove note in hole";
@@ -2086,7 +2087,7 @@ TEST_F(ArrangementHolesTest, ChorusNonMaxPeakNotAffected) {
 
   motif_.addNote(NoteEventBuilder::create(hole_start, 240, 60, 80));
 
-  PostProcessor::applyArrangementHoles(motif_, arpeggio_, aux_, chord_, bass_, sections);
+  PostProcessor::applyArrangementHoles(motif_, arpeggio_, aux_, chord_, bass_, guitar_, sections);
 
   EXPECT_EQ(motif_.notes().size(), 1u) << "Non-Max chorus should not mute notes";
 }
@@ -2110,7 +2111,7 @@ TEST_F(ArrangementHolesTest, BridgeMutesFirstTwoBeats) {
   motif_.addNote(NoteEventBuilder::create(hole_end, 480, 60, 80));
   bass_.addNote(NoteEventBuilder::create(hole_end, 480, 36, 80));
 
-  PostProcessor::applyArrangementHoles(motif_, arpeggio_, aux_, chord_, bass_, sections);
+  PostProcessor::applyArrangementHoles(motif_, arpeggio_, aux_, chord_, bass_, guitar_, sections);
 
   EXPECT_EQ(motif_.notes().size(), 1u) << "Motif: keep note after hole, remove note in hole";
   EXPECT_EQ(arpeggio_.notes().size(), 0u) << "Arpeggio in hole should be removed";
@@ -2122,7 +2123,7 @@ TEST_F(ArrangementHolesTest, EmptySectionsDoNothing) {
   motif_.addNote(NoteEventBuilder::create(0, 480, 60, 80));
   std::vector<Section> sections;
 
-  PostProcessor::applyArrangementHoles(motif_, arpeggio_, aux_, chord_, bass_, sections);
+  PostProcessor::applyArrangementHoles(motif_, arpeggio_, aux_, chord_, bass_, guitar_, sections);
   EXPECT_EQ(motif_.notes().size(), 1u);
 }
 

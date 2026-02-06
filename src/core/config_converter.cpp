@@ -241,6 +241,9 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   params.arpeggio_enabled = config.arpeggio_enabled;
   params.arpeggio = config.arpeggio;
 
+  // Guitar settings
+  params.guitar_enabled = config.guitar_enabled;
+
   // Chord extensions
   params.chord_extension = config.chord_extension;
 

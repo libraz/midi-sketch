@@ -320,6 +320,7 @@ std::vector<TimedNote> collectPitchedNotes(const Song& song) {
   addTrackNotes(song.motif(), TrackRole::Motif);
   addTrackNotes(song.arpeggio(), TrackRole::Arpeggio);
   addTrackNotes(song.aux(), TrackRole::Aux);
+  addTrackNotes(song.guitar(), TrackRole::Guitar);
 
   // Sort by start time
   std::sort(notes.begin(), notes.end(),
@@ -667,6 +668,7 @@ void detectNonChordTones(const DetectionContext& ctx, DissonanceReport& report) 
   detectNonChordTonesInTrack(ctx.song.arpeggio(), TrackRole::Arpeggio, false, ctx, report);
   detectNonChordTonesInTrack(ctx.song.aux(), TrackRole::Aux, false, ctx, report);
   detectNonChordTonesInTrack(ctx.song.bass(), TrackRole::Bass, true, ctx, report);
+  detectNonChordTonesInTrack(ctx.song.guitar(), TrackRole::Guitar, false, ctx, report);
 }
 
 // Build chord timeline from arrangement
@@ -768,6 +770,7 @@ void detectSustainedOverChordChange(const DetectionContext& ctx, DissonanceRepor
   detectSustainedInTrack(ctx.song.motif(), TrackRole::Motif, chord_timeline, ctx, report);
   detectSustainedInTrack(ctx.song.arpeggio(), TrackRole::Arpeggio, chord_timeline, ctx, report);
   detectSustainedInTrack(ctx.song.aux(), TrackRole::Aux, chord_timeline, ctx, report);
+  detectSustainedInTrack(ctx.song.guitar(), TrackRole::Guitar, chord_timeline, ctx, report);
 }
 
 // Detect non-diatonic notes in a single track
@@ -849,6 +852,7 @@ void detectNonDiatonicNotes(const DetectionContext& ctx, Key key, DissonanceRepo
   detectNonDiatonicInTrack(ctx.song.motif(), TrackRole::Motif, key, ctx, report);
   detectNonDiatonicInTrack(ctx.song.arpeggio(), TrackRole::Arpeggio, key, ctx, report);
   detectNonDiatonicInTrack(ctx.song.aux(), TrackRole::Aux, key, ctx, report);
+  detectNonDiatonicInTrack(ctx.song.guitar(), TrackRole::Guitar, key, ctx, report);
 }
 
 }  // namespace

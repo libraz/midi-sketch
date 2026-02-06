@@ -25,6 +25,7 @@ enum class NoteSource : uint8_t {
   Motif,           ///< Motif track
   Drums,           ///< Drums (simplified provenance)
   SE,              ///< SE track (calls, chants)
+  Guitar,          ///< Guitar track generation
   Embellishment,   ///< Melodic embellishment (passing/neighbor/appoggiatura/anticipation)
   CollisionAvoid,  ///< Modified by collision avoidance
   PostProcess,     ///< Modified by post-processing
@@ -53,6 +54,8 @@ inline const char* noteSourceToString(NoteSource source) {
       return "drums";
     case NoteSource::SE:
       return "se";
+    case NoteSource::Guitar:
+      return "guitar";
     case NoteSource::Embellishment:
       return "embellishment";
     case NoteSource::CollisionAvoid:

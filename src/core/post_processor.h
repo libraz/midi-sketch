@@ -94,16 +94,25 @@ class PostProcessor {
   // Processes each section's exit_pattern setting and applies
   // appropriate modifications (velocity, duration, truncation).
   // @param tracks Vector of track pointers to process
+  // @param roles TrackRole for each track (parallel to tracks vector)
   // @param sections Arrangement sections with exit_pattern settings
+  // @param harmony Harmony context for inter-track collision checking during sustain
   static void applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
                                    const std::vector<Section>& sections,
-                                   const IChordLookup* chord_lookup = nullptr);
+                                   IHarmonyContext* harmony = nullptr);
+  static void applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
+                                   const std::vector<TrackRole>& roles,
+                                   const std::vector<Section>& sections,
+                                   IHarmonyContext* harmony = nullptr);
 
   // Applies a single exit pattern to one track within a section.
   // @param track Track to modify (in-place)
   // @param section Section defining the exit pattern and time range
+  // @param harmony Harmony context for inter-track collision checking
+  // @param track_role TrackRole for collision checking
   static void applyExitPattern(MidiTrack& track, const Section& section,
-                               const IChordLookup* chord_lookup = nullptr);
+                               IHarmonyContext* harmony = nullptr,
+                               TrackRole track_role = TrackRole::Vocal);
 
   // ============================================================================
   // Pre-chorus Lift Processing
@@ -228,6 +237,15 @@ class PostProcessor {
   /// @param vocal Vocal track (read-only reference)
   static void fixBassVocalClashes(MidiTrack& bass, const MidiTrack& vocal);
 
+  /// @brief Fix guitar-vocal clashes that may occur after post-processing.
+  ///
+  /// Similar to fixChordVocalClashes, but for guitar track. Removes clashing guitar notes
+  /// to resolve minor 2nd, major 2nd, and major 7th intervals.
+  ///
+  /// @param guitar Guitar track to adjust (in-place)
+  /// @param vocal Vocal track (read-only reference)
+  static void fixGuitarVocalClashes(MidiTrack& guitar, const MidiTrack& vocal);
+
   /// @brief Fix inter-track clashes between non-vocal tracks after humanization.
   ///
   /// Removes dissonant notes (minor 2nd) from chord track that clash with bass
@@ -260,7 +278,8 @@ class PostProcessor {
   /// @param arpeggio Arpeggio track (slight right)
   /// @param aux Aux track (right)
   static void applyTrackPanning(MidiTrack& vocal, MidiTrack& chord, MidiTrack& bass,
-                                MidiTrack& motif, MidiTrack& arpeggio, MidiTrack& aux);
+                                MidiTrack& motif, MidiTrack& arpeggio, MidiTrack& aux,
+                                MidiTrack& guitar);
 
   /// @brief Apply CC#11 expression curves to tracks for dynamic shaping.
   /// - Vocal long notes: crescendo->diminuendo envelope
@@ -283,7 +302,7 @@ class PostProcessor {
   /// @param bass Bass track
   /// @param sections Song sections
   static void applyArrangementHoles(MidiTrack& motif, MidiTrack& arpeggio, MidiTrack& aux,
-                                    MidiTrack& chord, MidiTrack& bass,
+                                    MidiTrack& chord, MidiTrack& bass, MidiTrack& guitar,
                                     const std::vector<Section>& sections);
 
   /// @brief Remove notes that create large melodic leaps (> max_semitones).
@@ -312,7 +331,9 @@ class PostProcessor {
                               Tick section_end);
   static void applyExitSustain(std::vector<NoteEvent>& notes, Tick section_start,
                                Tick section_end,
-                               const IChordLookup* chord_lookup = nullptr);
+                               const IChordLookup* chord_lookup = nullptr,
+                               const IHarmonyContext* harmony = nullptr,
+                               TrackRole track_role = TrackRole::Vocal);
 };
 
 }  // namespace midisketch

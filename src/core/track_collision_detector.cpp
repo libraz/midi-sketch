@@ -61,10 +61,11 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(uint8_t pitch, Tick star
       // This applies to: Bass-Chord, Chord-Vocal, Chord-Motif, Chord-Aux, Motif-Vocal, Bass-Motif
       bool is_harmonic_track_pair = false;
       if (exclude == TrackRole::Bass || exclude == TrackRole::Chord ||
-          exclude == TrackRole::Vocal || exclude == TrackRole::Motif || exclude == TrackRole::Aux) {
+          exclude == TrackRole::Vocal || exclude == TrackRole::Motif ||
+          exclude == TrackRole::Aux || exclude == TrackRole::Guitar) {
         if (note.track == TrackRole::Bass || note.track == TrackRole::Chord ||
             note.track == TrackRole::Vocal || note.track == TrackRole::Motif ||
-            note.track == TrackRole::Aux) {
+            note.track == TrackRole::Aux || note.track == TrackRole::Guitar) {
           is_harmonic_track_pair = true;
         }
       }
@@ -109,10 +110,11 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(uint8_t pitch, Tick start
       // Check for tritone between harmonic tracks
       bool is_harmonic_track_pair = false;
       if (exclude == TrackRole::Bass || exclude == TrackRole::Chord ||
-          exclude == TrackRole::Vocal || exclude == TrackRole::Motif || exclude == TrackRole::Aux) {
+          exclude == TrackRole::Vocal || exclude == TrackRole::Motif ||
+          exclude == TrackRole::Aux || exclude == TrackRole::Guitar) {
         if (note.track == TrackRole::Bass || note.track == TrackRole::Chord ||
             note.track == TrackRole::Vocal || note.track == TrackRole::Motif ||
-            note.track == TrackRole::Aux) {
+            note.track == TrackRole::Aux || note.track == TrackRole::Guitar) {
           is_harmonic_track_pair = true;
         }
       }

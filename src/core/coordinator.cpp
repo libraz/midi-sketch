@@ -21,6 +21,7 @@
 #include "track/generators/chord.h"
 #include "track/generators/drums.h"
 #include "track/generators/motif.h"
+#include "track/generators/guitar.h"
 #include "track/generators/se.h"
 #include "track/generators/vocal.h"
 #include "track/vocal/vocal_analysis.h"
@@ -192,23 +193,23 @@ std::vector<TrackRole> Coordinator::getGenerationOrder() const {
     case GenerationParadigm::RhythmSync:
       // Motif first as coordinate axis
       order = {TrackRole::Motif, TrackRole::Vocal, TrackRole::Aux,
-               TrackRole::Bass, TrackRole::Chord, TrackRole::Arpeggio,
-               TrackRole::Drums, TrackRole::SE};
+               TrackRole::Bass, TrackRole::Chord, TrackRole::Guitar,
+               TrackRole::Arpeggio, TrackRole::Drums, TrackRole::SE};
       break;
 
     case GenerationParadigm::MelodyDriven:
       // Vocal first, Motif before Bass to enable Bass/Motif collision avoidance
       order = {TrackRole::Vocal, TrackRole::Aux, TrackRole::Motif,
-               TrackRole::Bass, TrackRole::Chord, TrackRole::Arpeggio,
-               TrackRole::Drums, TrackRole::SE};
+               TrackRole::Bass, TrackRole::Chord, TrackRole::Guitar,
+               TrackRole::Arpeggio, TrackRole::Drums, TrackRole::SE};
       break;
 
     case GenerationParadigm::Traditional:
     default:
       // Vocal first, standard order
       order = {TrackRole::Vocal, TrackRole::Aux, TrackRole::Motif,
-               TrackRole::Bass, TrackRole::Chord, TrackRole::Arpeggio,
-               TrackRole::Drums, TrackRole::SE};
+               TrackRole::Bass, TrackRole::Chord, TrackRole::Guitar,
+               TrackRole::Arpeggio, TrackRole::Drums, TrackRole::SE};
       break;
   }
 
@@ -268,6 +269,11 @@ void Coordinator::generateAllTracks(Song& song) {
     if (role == TrackRole::Vocal && params_.skip_vocal) continue;
     if (role == TrackRole::Arpeggio && !params_.arpeggio_enabled) continue;
     if (role == TrackRole::SE && !params_.se_enabled) continue;
+    if (role == TrackRole::Guitar) {
+      if (!params_.guitar_enabled) continue;
+      const auto& progs = getMoodPrograms(params_.mood);
+      if (progs.guitar == 0xFF) continue;  // Mood has no guitar
+    }
 
     // Skip tracks based on composition style
     // BackgroundMotif and SynthDriven are BGM-only modes (no vocal)
@@ -466,6 +472,7 @@ void Coordinator::initializePriorities() {
       priorities_[TrackRole::Aux] = TrackPriority::Medium;
       priorities_[TrackRole::Bass] = TrackPriority::Low;
       priorities_[TrackRole::Chord] = TrackPriority::Lower;
+      priorities_[TrackRole::Guitar] = TrackPriority::Lower;
       priorities_[TrackRole::Arpeggio] = TrackPriority::Lowest;
       break;
 
@@ -476,6 +483,7 @@ void Coordinator::initializePriorities() {
       priorities_[TrackRole::Bass] = TrackPriority::Medium;
       priorities_[TrackRole::Chord] = TrackPriority::Low;
       priorities_[TrackRole::Motif] = TrackPriority::Lower;
+      priorities_[TrackRole::Guitar] = TrackPriority::Lower;
       priorities_[TrackRole::Arpeggio] = TrackPriority::Lowest;
       break;
 
@@ -487,6 +495,7 @@ void Coordinator::initializePriorities() {
       priorities_[TrackRole::Motif] = TrackPriority::Medium;
       priorities_[TrackRole::Bass] = TrackPriority::Low;
       priorities_[TrackRole::Chord] = TrackPriority::Lower;
+      priorities_[TrackRole::Guitar] = TrackPriority::Lower;
       priorities_[TrackRole::Arpeggio] = TrackPriority::Lowest;
       break;
   }
@@ -540,7 +549,7 @@ void Coordinator::validateBpm() {
 }
 
 void Coordinator::registerTrackGenerators() {
-  // Register all 8 track generators
+  // Register all 9 track generators
   track_generators_[TrackRole::Vocal] = std::make_unique<VocalGenerator>();
   track_generators_[TrackRole::Bass] = std::make_unique<BassGenerator>();
   track_generators_[TrackRole::Chord] = std::make_unique<ChordGenerator>();
@@ -549,6 +558,7 @@ void Coordinator::registerTrackGenerators() {
   track_generators_[TrackRole::Arpeggio] = std::make_unique<ArpeggioGenerator>();
   track_generators_[TrackRole::Drums] = std::make_unique<DrumsGenerator>();
   track_generators_[TrackRole::SE] = std::make_unique<SEGenerator>();
+  track_generators_[TrackRole::Guitar] = std::make_unique<GuitarGenerator>();
 }
 
 ITrackBase* Coordinator::getTrackGenerator(TrackRole role) {

@@ -13,6 +13,7 @@
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
+#include "midi/track_config.h"
 #include "track/generators/arpeggio.h"
 #include "version_info.h"
 
@@ -283,6 +284,10 @@ std::string MidiSketch::getEventsJson() const {
   }
   if (!song.aux().empty()) {
     writeTrack(song.aux(), "Aux", 5, progs.aux, true);
+  }
+  if (!song.guitar().empty()) {
+    uint8_t guitar_prog = progs.guitar != 0xFF ? progs.guitar : GUITAR_PROG;
+    writeTrack(song.guitar(), "Guitar", 6, guitar_prog, true);
   }
   writeTrack(song.drums(), "Drums", 9, 0, false);
 

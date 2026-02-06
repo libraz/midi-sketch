@@ -1059,58 +1059,59 @@ BassGenre getMoodBassGenre(Mood mood) {
 // Structure: {vocal, chord, bass, motif, arpeggio, aux}
 //
 constexpr MoodProgramSet MOOD_PROGRAMS[24] = {
-    // 0: StraightPop - Standard pop instruments
-    // Structure: {vocal, chord, bass, motif, arpeggio, aux}
+    // 0: StraightPop - Standard pop instruments + cutting guitar
+    // Structure: {vocal, chord, bass, motif, arpeggio, aux, guitar}
     // Note: arpeggio program is now managed by getArpeggioStyleForMood() (single source of truth).
     // The arpeggio column here uses the default (81) as a fallback only.
-    {0, 4, 33, 81, 81, 89},
+    // guitar: 0xFF = Silent (disabled), 25 = Nylon Guitar, 27 = Clean Guitar, 29 = Overdriven
+    {0, 4, 33, 81, 81, 89, 27},
     // 1: BrightUpbeat - Bright piano, brighter overall
-    {1, 5, 33, 81, 81, 89},
+    {1, 5, 33, 81, 81, 89, 0xFF},
     // 2: EnergeticDance - Synth bass for dance energy
-    {0, 4, 38, 81, 81, 89},
+    {0, 4, 38, 81, 81, 89, 0xFF},
     // 3: LightRock - Distortion guitar, pick bass
-    {0, 30, 34, 81, 81, 89},
+    {0, 30, 34, 81, 81, 89, 27},
     // 4: MidPop - Standard pop instruments
-    {0, 4, 33, 81, 81, 89},
-    // 5: EmotionalPop - Square lead, strings aux
-    {0, 4, 33, 80, 81, 49},
+    {0, 4, 33, 81, 81, 89, 0xFF},
+    // 5: EmotionalPop - Square lead, strings aux, nylon guitar
+    {0, 4, 33, 80, 81, 49, 25},
     // 6: Sentimental - Vibraphone, acoustic bass, strings
-    {11, 0, 32, 80, 81, 49},
+    {11, 0, 32, 80, 81, 49, 0xFF},
     // 7: Chill - EP dominant, warm pad
-    {4, 4, 33, 89, 81, 89},
+    {4, 4, 33, 89, 81, 89, 0xFF},
     // 8: Ballad - Piano, acoustic bass, strings
-    {0, 0, 32, 48, 81, 49},
+    {0, 0, 32, 48, 81, 49, 25},
     // 9: DarkPop - Synth bass for dark atmosphere
-    {0, 4, 38, 81, 81, 89},
+    {0, 4, 38, 81, 81, 89, 0xFF},
     // 10: Dramatic - Strings for dramatic impact
-    {0, 48, 33, 81, 81, 49},
-    // 11: Nostalgic - EP for retro feel
-    {4, 4, 33, 80, 81, 89},
+    {0, 48, 33, 81, 81, 49, 0xFF},
+    // 11: Nostalgic - EP for retro feel, nylon guitar
+    {4, 4, 33, 80, 81, 89, 25},
     // 12: ModernPop - Standard modern pop
-    {0, 4, 33, 81, 81, 89},
+    {0, 4, 33, 81, 81, 89, 0xFF},
     // 13: ElectroPop - Full synth setup
-    {81, 81, 38, 81, 81, 89},
+    {81, 81, 38, 81, 81, 89, 0xFF},
     // 14: IdolPop - Bright instruments
-    {1, 5, 33, 81, 81, 89},
+    {1, 5, 33, 81, 81, 89, 0xFF},
     // 15: Anthem - Strings for epic feel
-    {0, 48, 33, 81, 81, 49},
-    // 16: Yoasobi - Full synth anime style
-    {81, 81, 38, 81, 81, 89},
+    {0, 48, 33, 81, 81, 49, 29},
+    // 16: Yoasobi - Piano chord + synth anime style (Ayase piano riff)
+    {81, 0, 38, 81, 81, 89, 0xFF},
     // 17: Synthwave - Synth lead, EP, synth bass
-    {81, 4, 38, 81, 81, 89},
-    // 18: FutureBass - Full synth EDM
-    {81, 81, 38, 81, 81, 89},
-    // 19: CityPop - EP, slap bass, brass
-    {4, 4, 36, 61, 81, 61},
+    {81, 4, 38, 81, 81, 89, 0xFF},
+    // 18: FutureBass - Pad chord + synth EDM (supersaw pad)
+    {81, 89, 38, 81, 81, 89, 0xFF},
+    // 19: CityPop - EP, slap bass, brass, clean guitar (cutting)
+    {4, 4, 36, 61, 81, 61, 27},
     // Genre expansion moods
-    // 20: RnBNeoSoul - EP, finger bass, warm pad (Wurlitzer/Rhodes vibe)
-    {4, 4, 33, 89, 81, 89},
+    // 20: RnBNeoSoul - EP, finger bass, warm pad, nylon guitar (neo-soul)
+    {4, 4, 33, 89, 81, 89, 25},
     // 21: LatinPop - Brass, latin percussion feel, finger bass
-    {0, 4, 33, 61, 81, 61},
-    // 22: Trap - Synth lead, synth bass (808), dark pad
-    {81, 81, 38, 81, 81, 89},
-    // 23: Lofi - EP, acoustic bass, warm pad
-    {4, 4, 32, 89, 81, 89},
+    {0, 4, 33, 61, 81, 61, 25},
+    // 22: Trap - Pad chord, square motif, synth bass (808), dark pluck
+    {81, 89, 38, 80, 81, 89, 0xFF},
+    // 23: Lofi - EP, acoustic bass, warm pad, nylon guitar
+    {4, 4, 32, 89, 81, 89, 25},
 };
 
 const MoodProgramSet& getMoodPrograms(Mood mood) {

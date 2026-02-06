@@ -185,6 +185,7 @@ struct MoodProgramSet {
   uint8_t motif;
   uint8_t arpeggio;
   uint8_t aux;
+  uint8_t guitar;  ///< 0xFF = Silent (guitar disabled for this mood)
 };
 
 // Returns the MIDI programs for a given mood.

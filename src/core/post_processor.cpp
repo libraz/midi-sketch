@@ -244,7 +244,9 @@ void PostProcessor::applyExitCutOff(std::vector<NoteEvent>& notes, Tick section_
 
 void PostProcessor::applyExitSustain(std::vector<NoteEvent>& notes, Tick section_start,
                                      Tick section_end,
-                                     const IChordLookup* chord_lookup) {
+                                     const IChordLookup* chord_lookup,
+                                     const IHarmonyContext* harmony,
+                                     TrackRole track_role) {
   // Extend duration of notes in the last bar to reach section boundary,
   // but cap each note's extension at the start of the next chord to prevent overlaps
   Tick last_bar_start = section_end - TICKS_PER_BAR;
@@ -296,6 +298,15 @@ void PostProcessor::applyExitSustain(std::vector<NoteEvent>& notes, Tick section
           new_duration = info.safe_duration;
         }
       }
+      // Inter-track collision check: limit extension to avoid dissonance with other tracks
+      if (harmony != nullptr) {
+        Tick safe_end = harmony->getMaxSafeEnd(
+            note->start_tick, note->note, track_role,
+            note->start_tick + new_duration);
+        if (safe_end > note->start_tick) {
+          new_duration = safe_end - note->start_tick;
+        }
+      }
       note->duration = new_duration;
     }
   }
@@ -306,7 +317,8 @@ void PostProcessor::applyExitSustain(std::vector<NoteEvent>& notes, Tick section
 // ============================================================================
 
 void PostProcessor::applyExitPattern(MidiTrack& track, const Section& section,
-                                     const IChordLookup* chord_lookup) {
+                                     IHarmonyContext* harmony,
+                                     TrackRole track_role) {
   if (section.exit_pattern == ExitPattern::None) {
     return;
   }
@@ -328,7 +340,7 @@ void PostProcessor::applyExitPattern(MidiTrack& track, const Section& section,
       applyExitCutOff(notes, section_start, section_end);
       break;
     case ExitPattern::Sustain:
-      applyExitSustain(notes, section_start, section_end, chord_lookup);
+      applyExitSustain(notes, section_start, section_end, harmony, harmony, track_role);
       break;
     case ExitPattern::None:
       break;
@@ -337,15 +349,24 @@ void PostProcessor::applyExitPattern(MidiTrack& track, const Section& section,
 
 void PostProcessor::applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
                                          const std::vector<Section>& sections,
-                                         const IChordLookup* chord_lookup) {
+                                         IHarmonyContext* harmony) {
+  std::vector<TrackRole> empty_roles;
+  applyAllExitPatterns(tracks, empty_roles, sections, harmony);
+}
+
+void PostProcessor::applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
+                                         const std::vector<TrackRole>& roles,
+                                         const std::vector<Section>& sections,
+                                         IHarmonyContext* harmony) {
   for (const auto& section : sections) {
     if (section.exit_pattern == ExitPattern::None) {
       continue;
     }
 
-    for (MidiTrack* track : tracks) {
-      if (track != nullptr) {
-        applyExitPattern(*track, section, chord_lookup);
+    for (size_t i = 0; i < tracks.size(); ++i) {
+      if (tracks[i] != nullptr) {
+        TrackRole role = (i < roles.size()) ? roles[i] : TrackRole::Vocal;
+        applyExitPattern(*tracks[i], section, harmony, role);
       }
     }
   }
@@ -1079,6 +1100,10 @@ void PostProcessor::fixBassVocalClashes(MidiTrack& bass, const MidiTrack& vocal)
   removeVocalClashingNotes(bass, vocal, /*include_close_major_2nd=*/false);
 }
 
+void PostProcessor::fixGuitarVocalClashes(MidiTrack& guitar, const MidiTrack& vocal) {
+  removeVocalClashingNotes(guitar, vocal, /*include_close_major_2nd=*/true);
+}
+
 void PostProcessor::fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass,
                                           const MidiTrack& motif) {
   auto& notes = chord.notes();
@@ -1198,7 +1223,8 @@ void PostProcessor::synchronizeBassKick(MidiTrack& bass, const MidiTrack& drums,
 }
 
 void PostProcessor::applyTrackPanning(MidiTrack& vocal, MidiTrack& chord, MidiTrack& bass,
-                                      MidiTrack& motif, MidiTrack& arpeggio, MidiTrack& aux) {
+                                      MidiTrack& motif, MidiTrack& arpeggio, MidiTrack& aux,
+                                      MidiTrack& guitar) {
   // Pan values: 0=hard left, 64=center, 127=hard right
   // Only apply panning to tracks that contain notes to avoid marking empty tracks as non-empty.
   struct PanEntry {
@@ -1212,6 +1238,7 @@ void PostProcessor::applyTrackPanning(MidiTrack& vocal, MidiTrack& chord, MidiTr
       {&arpeggio, 76},  // Slight right
       {&motif, 44},     // Left
       {&aux, 84},       // Right
+      {&guitar, 38},    // Slight left (symmetric with Chord)
   };
   for (const auto& entry : entries) {
     if (!entry.track->notes().empty()) {
@@ -1279,7 +1306,7 @@ void PostProcessor::applyExpressionCurves(MidiTrack& vocal, MidiTrack& chord, Mi
 }
 
 void PostProcessor::applyArrangementHoles(MidiTrack& motif, MidiTrack& arpeggio, MidiTrack& aux,
-                                          MidiTrack& chord, MidiTrack& bass,
+                                          MidiTrack& chord, MidiTrack& bass, MidiTrack& guitar,
                                           const std::vector<Section>& sections) {
   // Helper: remove notes that overlap with [hole_start, hole_end)
   auto muteRange = [](MidiTrack& track, Tick hole_start, Tick hole_end) {
@@ -1307,6 +1334,7 @@ void PostProcessor::applyArrangementHoles(MidiTrack& motif, MidiTrack& arpeggio,
         muteRange(motif, hole_start, hole_end);
         muteRange(arpeggio, hole_start, hole_end);
         muteRange(aux, hole_start, hole_end);
+        muteRange(guitar, hole_start, hole_end);
       }
     }
 
@@ -1320,6 +1348,7 @@ void PostProcessor::applyArrangementHoles(MidiTrack& motif, MidiTrack& arpeggio,
         muteRange(aux, hole_start, hole_end);
         muteRange(chord, hole_start, hole_end);
         muteRange(bass, hole_start, hole_end);
+        muteRange(guitar, hole_start, hole_end);
       }
     }
   }

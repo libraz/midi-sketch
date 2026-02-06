@@ -219,6 +219,7 @@ struct SongConfig {
   /// Options
   bool drums_enabled = true;
   bool arpeggio_enabled = false;
+  bool guitar_enabled = true;    ///< Enable guitar track
   bool skip_vocal = false;  ///< Skip vocal generation (for BGM-first workflow)
   uint8_t vocal_low = 60;   ///< C4
   uint8_t vocal_high = 79;  ///< G5
@@ -311,6 +312,7 @@ struct SongConfig {
     v("drive_feel", self.drive_feel);
     v("drums_enabled", self.drums_enabled);
     v("arpeggio_enabled", self.arpeggio_enabled);
+    v("guitar_enabled", self.guitar_enabled);
     v("skip_vocal", self.skip_vocal);
     v("vocal_low", self.vocal_low);
     v("vocal_high", self.vocal_high);
@@ -410,6 +412,9 @@ struct GeneratorParams {
   bool arpeggio_enabled = false;  ///< Enable arpeggio track
   ArpeggioParams arpeggio;        ///< Arpeggio configuration
 
+  /// Guitar track
+  bool guitar_enabled = true;   ///< Enable guitar track
+
   /// Humanization options
   bool humanize = false;           ///< Enable timing/velocity humanization
   float humanize_timing = 0.4f;    ///< Timing variation amount (0.0-1.0)
@@ -489,6 +494,7 @@ struct GeneratorParams {
         .write("composition_style", static_cast<int>(composition_style))
         .write("arrangement_growth", static_cast<int>(arrangement_growth))
         .write("arpeggio_enabled", arpeggio_enabled)
+        .write("guitar_enabled", guitar_enabled)
         .write("humanize", humanize)
         .write("humanize_timing", humanize_timing)
         .write("humanize_velocity", humanize_velocity)
@@ -562,6 +568,7 @@ struct GeneratorParams {
     composition_style = static_cast<CompositionStyle>(p.getInt("composition_style", 0));
     arrangement_growth = static_cast<ArrangementGrowth>(p.getInt("arrangement_growth", 0));
     arpeggio_enabled = p.getBool("arpeggio_enabled", false);
+    guitar_enabled = p.getBool("guitar_enabled", true);
     humanize = p.getBool("humanize", false);
     humanize_timing = p.getFloat("humanize_timing", 0.4f);
     humanize_velocity = p.getFloat("humanize_velocity", 0.3f);
@@ -658,6 +665,10 @@ struct AccompanimentConfig {
 
   /// Arpeggio
   bool arpeggio_enabled = false;
+
+  /// Guitar
+  bool guitar_enabled = true;
+
   uint8_t arpeggio_pattern = 0;       ///< 0=Up, 1=Down, 2=UpDown, 3=Random, 4=Pinwheel, 5=PedalRoot, 6=Alberti, 7=BrokenChord
   uint8_t arpeggio_speed = 1;         ///< 0=Eighth, 1=Sixteenth, 2=Triplet
   uint8_t arpeggio_octave_range = 2;  ///< 1-3 octaves
@@ -694,6 +705,7 @@ struct AccompanimentConfig {
     v("seed", self.seed);
     v("drums_enabled", self.drums_enabled);
     v("arpeggio_enabled", self.arpeggio_enabled);
+    v("guitar_enabled", self.guitar_enabled);
     v("arpeggio_pattern", self.arpeggio_pattern);
     v("arpeggio_speed", self.arpeggio_speed);
     v("arpeggio_octave_range", self.arpeggio_octave_range);

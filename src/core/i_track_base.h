@@ -94,6 +94,11 @@ inline constexpr PhysicalModel kAcousticGuitar = {
     40, 83, 30, 100, 120, true, 3  // 3 semitones above vocal low
 };
 
+/// Electric Guitar: E2 (40) to E6 (88)
+inline constexpr PhysicalModel kElectricGuitar = {
+    40, 88, 40, 110, 60, true, 2  // 2 semitones above vocal low (reduce overlap)
+};
+
 /// Synth Pad: C2 (36) to C7 (96)
 inline constexpr PhysicalModel kSynthPad = {
     36, 96, 40, 100, 480, true, 0

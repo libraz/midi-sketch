@@ -8,8 +8,8 @@ rhythm variety, beat content, and grid strictness by blueprint paradigm.
 from collections import defaultdict
 from typing import List
 
-from ..constants import (TICKS_PER_BEAT, TICKS_PER_BAR, TRACK_NAMES, Severity, Category,
-                         VOCAL_STYLE_ULTRA_VOCALOID)
+from ..constants import (TICKS_PER_BEAT, TICKS_PER_BAR, TRACK_NAMES, GUITAR_CHANNEL,
+                         Severity, Category, VOCAL_STYLE_ULTRA_VOCALOID)
 from ..helpers import tick_to_bar, _ioi_entropy
 from ..models import Issue
 from .base import BaseAnalyzer
@@ -38,6 +38,8 @@ class RhythmAnalyzer(BaseAnalyzer):
         self._analyze_beat_content()
         self._analyze_grid_by_blueprint()
         self._analyze_drive_metrics()
+        self._analyze_guitar_rhythm_consistency()
+        self._analyze_guitar_fingerpick_monotony()
         return self.issues
 
     # -----------------------------------------------------------------
@@ -178,7 +180,7 @@ class RhythmAnalyzer(BaseAnalyzer):
         if vocal_style == VOCAL_STYLE_ULTRA_VOCALOID:
             return
 
-        melodic_channels = [0, 1, 2, 3, 5]
+        melodic_channels = [0, 1, 2, 3, 5, 6]
         grid_unit = TICKS_PER_BEAT // 4
         tolerance = 30
         # Shuffle position: 2/3 of an 8th note = 160 ticks from beat
@@ -652,3 +654,153 @@ class RhythmAnalyzer(BaseAnalyzer):
                             "bpm": bpm,
                         },
                     )
+
+    # -----------------------------------------------------------------
+    # Guitar analyses
+    # -----------------------------------------------------------------
+
+    def _analyze_guitar_rhythm_consistency(self):
+        """Check guitar attack pattern consistency within sections.
+
+        Quantizes bar-level attack positions to 8th-note grid and checks
+        whether a dominant pattern exists within each section. Random
+        attack patterns indicate generation issues.
+        """
+        guitar_notes = self.notes_by_channel.get(GUITAR_CHANNEL, [])
+        if len(guitar_notes) < 8:
+            return
+
+        eighth = TICKS_PER_BEAT // 2
+
+        inconsistent_sections = 0
+        total_sections = 0
+
+        for sec in self.sections:
+            st = (sec['start_bar'] - 1) * TICKS_PER_BAR
+            et = sec['end_bar'] * TICKS_PER_BAR
+            sec_notes = [n for n in guitar_notes if st <= n.start < et]
+            if len(sec_notes) < 4:
+                continue
+
+            # Group notes by bar and quantize attack positions to 8th grid
+            bar_patterns = defaultdict(list)
+            for note in sec_notes:
+                bar = note.start // TICKS_PER_BAR
+                pos_in_bar = note.start % TICKS_PER_BAR
+                quantized = round(pos_in_bar / eighth)
+                bar_patterns[bar].append(quantized)
+
+            if len(bar_patterns) < 2:
+                continue
+
+            total_sections += 1
+
+            # Normalize patterns to tuples for comparison
+            pattern_strs = []
+            for bar in sorted(bar_patterns.keys()):
+                pattern_strs.append(tuple(sorted(bar_patterns[bar])))
+
+            # Count most common pattern
+            pattern_counts = defaultdict(int)
+            for pat in pattern_strs:
+                pattern_counts[pat] += 1
+
+            most_common_count = max(pattern_counts.values())
+            consistency = most_common_count / len(pattern_strs)
+
+            if consistency < 0.3:
+                inconsistent_sections += 1
+
+        if total_sections == 0:
+            return
+
+        if inconsistent_sections > 0:
+            ratio = inconsistent_sections / total_sections
+            severity = Severity.WARNING if ratio > 0.5 else Severity.INFO
+            self.add_issue(
+                severity=severity,
+                category=Category.RHYTHM,
+                subcategory="guitar_rhythm_inconsistency",
+                message=(f"Guitar has inconsistent rhythm patterns "
+                         f"({inconsistent_sections}/{total_sections} sections)"),
+                tick=0,
+                track="Guitar",
+                details={"inconsistent_sections": inconsistent_sections,
+                         "total_sections": total_sections,
+                         "ratio": ratio},
+            )
+
+    def _analyze_guitar_fingerpick_monotony(self):
+        """Detect repetitive fingerpick patterns over 8+ consecutive bars.
+
+        Only runs on fingerpick-style tracks (>70% single-note onsets).
+        Compares bar-level pitch sequences for consecutive identical bars.
+        """
+        guitar_notes = self.notes_by_channel.get(GUITAR_CHANNEL, [])
+        if len(guitar_notes) < 16:
+            return
+
+        # Detect fingerpick style: >70% single-note onsets
+        onsets = defaultdict(list)
+        for note in guitar_notes:
+            onsets[note.start].append(note)
+
+        total_onsets = len(onsets)
+        if total_onsets == 0:
+            return
+
+        single_note_onsets = sum(
+            1 for notes in onsets.values() if len(notes) == 1
+        )
+        single_ratio = single_note_onsets / total_onsets
+
+        if single_ratio < 0.7:
+            return  # Not fingerpick style
+
+        # Group pitch sequences by bar
+        bar_sequences = defaultdict(list)
+        for note in guitar_notes:
+            bar = note.start // TICKS_PER_BAR
+            bar_sequences[bar].append(note.pitch)
+
+        sorted_bars = sorted(bar_sequences.keys())
+        if len(sorted_bars) < 8:
+            return
+
+        # Find consecutive identical bar patterns
+        prev_seq = None
+        consecutive_count = 0
+        consecutive_start = 0
+
+        for bar in sorted_bars:
+            seq = tuple(bar_sequences[bar])
+            if seq == prev_seq:
+                consecutive_count += 1
+            else:
+                if consecutive_count >= 8:
+                    self.add_issue(
+                        severity=Severity.INFO,
+                        category=Category.RHYTHM,
+                        subcategory="guitar_fingerpick_monotony",
+                        message=(f"Identical fingerpick pattern for "
+                                 f"{consecutive_count + 1} bars"),
+                        tick=consecutive_start * TICKS_PER_BAR,
+                        track="Guitar",
+                        details={"bar_count": consecutive_count + 1},
+                    )
+                consecutive_count = 1
+                consecutive_start = bar
+                prev_seq = seq
+
+        # Final flush
+        if consecutive_count >= 8:
+            self.add_issue(
+                severity=Severity.INFO,
+                category=Category.RHYTHM,
+                subcategory="guitar_fingerpick_monotony",
+                message=(f"Identical fingerpick pattern for "
+                         f"{consecutive_count + 1} bars"),
+                tick=consecutive_start * TICKS_PER_BAR,
+                track="Guitar",
+                details={"bar_count": consecutive_count + 1},
+            )

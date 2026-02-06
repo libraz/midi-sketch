@@ -29,3 +29,16 @@ def make_bass_note(tick: int, pitch: int, duration: int = 480) -> Note:
 def make_vocal_note(tick: int, pitch: int, duration: int = 480) -> Note:
     """Create vocal note."""
     return Note(start=tick, duration=duration, pitch=pitch, velocity=100, channel=0)
+
+
+def make_guitar_note(tick: int, pitch: int, duration: int = 480, velocity: int = 80) -> Note:
+    """Create guitar note (channel 6)."""
+    return Note(start=tick, duration=duration, pitch=pitch, velocity=velocity, channel=6)
+
+
+def make_guitar_strum(tick: int, pitches: List[int], duration: int = 180) -> List[Note]:
+    """Create guitar strum (multiple notes at same tick on channel 6)."""
+    return [
+        Note(start=tick, duration=duration, pitch=p, velocity=80, channel=6)
+        for p in pitches
+    ]

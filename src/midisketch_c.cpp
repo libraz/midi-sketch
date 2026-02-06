@@ -210,7 +210,7 @@ MidiSketchInfo midisketch_get_info(MidiSketchHandle handle) {
   info.total_bars = song.arrangement().totalBars();
   info.total_ticks = song.arrangement().totalTicks();
   info.bpm = song.bpm();
-  info.track_count = 7;  // Vocal, Chord, Bass, Drums, SE, Motif, Arpeggio
+  info.track_count = 8;  // Vocal, Chord, Bass, Drums, SE, Motif, Arpeggio, Aux, Guitar
 
   return info;
 }
@@ -677,7 +677,7 @@ MidiSketchPianoRollInfo s_single_info;
 const char* NOTE_NAMES[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 
 // Track name lookup
-const char* TRACK_NAMES[] = {"Vocal", "Chord", "Bass", "Drums", "SE", "Motif", "Arpeggio", "Aux"};
+const char* TRACK_NAMES[] = {"Vocal", "Chord", "Bass", "Drums", "SE", "Motif", "Arpeggio", "Aux", "Guitar"};
 
 // Fill piano roll info for a single tick
 void fillPianoRollInfo(MidiSketchPianoRollInfo* info, const midisketch::Song& song,
@@ -914,7 +914,7 @@ const char* midisketch_collision_to_string(const MidiSketchCollisionInfo* collis
   static char buffer[64];
 
   const char* track_name = "Unknown";
-  if (collision->track_role < 8) {
+  if (collision->track_role < 9) {
     track_name = TRACK_NAMES[collision->track_role];
   }
 

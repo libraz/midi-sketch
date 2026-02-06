@@ -196,6 +196,7 @@ void Midi2Writer::buildContainer(const Song& song, Key key, const std::string& m
   if (!song.motif().empty()) numTracks++;
   if (!song.arpeggio().empty()) numTracks++;
   if (!song.aux().empty()) numTracks++;
+  if (!song.guitar().empty()) numTracks++;
 
   // Container header
   writeContainerHeader(numTracks, TICKS_PER_BEAT);
@@ -246,6 +247,10 @@ void Midi2Writer::buildContainer(const Song& song, Key key, const std::string& m
 
   if (!song.aux().empty()) {
     writeTrackClip(song.aux(), AUX_CH, AUX_PROG, song.bpm(), key, mod_tick, mod_amount);
+  }
+
+  if (!song.guitar().empty()) {
+    writeTrackClip(song.guitar(), GUITAR_CH, GUITAR_PROG, song.bpm(), key, mod_tick, mod_amount);
   }
 
   if (!song.drums().empty()) {

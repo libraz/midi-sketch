@@ -81,6 +81,7 @@ set(MIDISKETCH_CORE_SOURCES
   track/generators/arpeggio.cpp
   track/generators/drums.cpp
   track/generators/se.cpp
+  track/generators/guitar.cpp
   instrument/fretted/fretted_instrument_base.cpp
   instrument/fretted/bass_model.cpp
   instrument/fretted/guitar_model.cpp

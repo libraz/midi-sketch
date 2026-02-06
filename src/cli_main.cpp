@@ -391,6 +391,7 @@ std::vector<std::pair<std::string, uint8_t>> getAllNotesAtTick(const midisketch:
   add(song.motif(), "motif");
   add(song.arpeggio(), "arp");
   add(song.aux(), "aux");
+  add(song.guitar(), "guitar");
 
   return result;
 }
@@ -528,8 +529,8 @@ void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num) {
   std::cout << "\n=== Bar " << bar_num << " (tick " << bar_start << "-" << bar_end << ") ===\n\n";
 
   // Track order for display
-  std::vector<std::string> track_order = {"Vocal",    "Chord", "Bass", "Motif",
-                                          "Arpeggio", "Aux",   "Drums"};
+  std::vector<std::string> track_order = {"Vocal",    "Chord", "Bass",   "Motif",
+                                          "Arpeggio", "Aux",   "Guitar", "Drums"};
 
   for (const auto& track_name : track_order) {
     const midisketch::ParsedTrack* track = midi.getTrack(track_name);
@@ -1421,6 +1422,7 @@ int runGenerateMode(const ParsedArgs& args) {
   std::cout << "  Chord notes: " << song.chord().noteCount() << "\n";
   std::cout << "  Bass notes: " << song.bass().noteCount() << "\n";
   std::cout << "  Drums notes: " << song.drums().noteCount() << "\n";
+  std::cout << "  Guitar notes: " << song.guitar().noteCount() << "\n";
   if (song.modulationTick() > 0) {
     std::cout << "  Modulation at tick: " << song.modulationTick() << " (+"
               << static_cast<int>(song.modulationAmount()) << " semitones)\n";

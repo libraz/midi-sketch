@@ -189,6 +189,7 @@ void Generator::validateVocalRange() {
 void Generator::applyAccompanimentConfig(const AccompanimentConfig& config) {
   params_.drums_enabled = config.drums_enabled;
   params_.arpeggio_enabled = config.arpeggio_enabled;
+  params_.guitar_enabled = config.guitar_enabled;
   params_.arpeggio.pattern = static_cast<ArpeggioPattern>(config.arpeggio_pattern);
   params_.arpeggio.speed = static_cast<ArpeggioSpeed>(config.arpeggio_speed);
   params_.arpeggio.octave_range = config.arpeggio_octave_range;
@@ -221,6 +222,7 @@ void Generator::clearAccompanimentTracks() {
   song_.clearTrack(TrackRole::Arpeggio);
   song_.clearTrack(TrackRole::Motif);
   song_.clearTrack(TrackRole::SE);
+  song_.clearTrack(TrackRole::Guitar);
 
   // Clear harmony context notes and re-register vocal
   harmony_context_->clearNotes();
@@ -412,6 +414,7 @@ void Generator::applyPostProcessingEffects() {
   PostProcessor::fixChordVocalClashes(song_.chord(), song_.vocal());
   PostProcessor::fixAuxVocalClashes(song_.aux(), song_.vocal());
   PostProcessor::fixBassVocalClashes(song_.bass(), song_.vocal());
+  PostProcessor::fixGuitarVocalClashes(song_.guitar(), song_.vocal());
   PostProcessor::fixMotifVocalClashes(song_.motif(), song_.vocal(), *harmony_context_);
   PostProcessor::fixInterTrackClashes(song_.chord(), song_.bass(), song_.motif());
 
@@ -646,6 +649,7 @@ std::vector<Generator::VocalClash> Generator::detectVocalAccompanimentClashes() 
       {&song_.motif(), TrackRole::Motif},
       {&song_.arpeggio(), TrackRole::Arpeggio},
       {&song_.aux(), TrackRole::Aux},
+      {&song_.guitar(), TrackRole::Guitar},
   };
 
   for (size_t i = 0; i < vocal_notes.size(); ++i) {
@@ -771,6 +775,7 @@ void Generator::regenerateAccompaniment(uint32_t new_seed) {
   // Use current params_ values as defaults
   config.drums_enabled = params_.drums_enabled;
   config.arpeggio_enabled = params_.arpeggio_enabled;
+  config.guitar_enabled = params_.guitar_enabled;
   config.arpeggio_pattern = static_cast<uint8_t>(params_.arpeggio.pattern);
   config.arpeggio_speed = static_cast<uint8_t>(params_.arpeggio.speed);
   config.arpeggio_octave_range = params_.arpeggio.octave_range;
@@ -1166,9 +1171,12 @@ void Generator::applyTransitionDynamics() {
   // Apply to melodic tracks (not SE or Drums)
   // Exclude motif track when velocity_fixed=true to maintain consistent velocity
   std::vector<MidiTrack*> tracks = {&song_.vocal(), &song_.chord(), &song_.bass(),
-                                    &song_.arpeggio()};
+                                    &song_.arpeggio(), &song_.guitar()};
+  std::vector<TrackRole> track_roles = {TrackRole::Vocal, TrackRole::Chord, TrackRole::Bass,
+                                        TrackRole::Arpeggio, TrackRole::Guitar};
   if (!params_.motif.velocity_fixed) {
     tracks.push_back(&song_.motif());
+    track_roles.push_back(TrackRole::Motif);
   }
 
   // Apply melody contour-following velocity to vocal track
@@ -1201,7 +1209,7 @@ void Generator::applyTransitionDynamics() {
   midisketch::applyAllEntryPatternDynamics(tracks, sections);
 
   // Apply exit patterns for musical section endings (boundary-aware sustain)
-  PostProcessor::applyAllExitPatterns(tracks, sections, harmony_context_.get());
+  PostProcessor::applyAllExitPatterns(tracks, track_roles, sections, harmony_context_.get());
 
   // Phase 2: Section transition effects
   // Apply chorus drop (moment of silence before chorus)
@@ -1209,14 +1217,20 @@ void Generator::applyTransitionDynamics() {
   // Only backing tracks (chord, bass, etc.) are truncated for dramatic effect
   std::vector<MidiTrack*> backing_tracks = {&song_.chord(), &song_.bass(),
                                              &song_.motif(), &song_.arpeggio()};
+  if (params_.guitar_enabled) {
+    backing_tracks.push_back(&song_.guitar());
+  }
   PostProcessor::applyChorusDrop(backing_tracks, sections, &song_.drums());
 
   // Apply ritardando to outro sections
-  // Pass motif as collision check track (if velocity_fixed, it won't be in tracks)
-  // This ensures duration extension doesn't create Chord/Bass vs Motif clashes
+  // Pass motif and guitar as collision check tracks so duration extension
+  // doesn't create Chord/Bass vs Motif/Guitar clashes
   std::vector<MidiTrack*> ritardando_collision_tracks;
   if (params_.motif.velocity_fixed) {
     ritardando_collision_tracks.push_back(&song_.motif());
+  }
+  if (params_.guitar_enabled) {
+    ritardando_collision_tracks.push_back(&song_.guitar());
   }
   PostProcessor::applyRitardando(tracks, sections, ritardando_collision_tracks);
 
@@ -1243,7 +1257,8 @@ void Generator::applyTransitionDynamics() {
   // Apply blueprint constraints (e.g., IdolKawaii max_velocity=80, max_pitch=79)
   if (blueprint_ != nullptr) {
     std::vector<MidiTrack*> all_tracks = {&song_.vocal(), &song_.chord(), &song_.bass(),
-                                          &song_.arpeggio(), &song_.motif(), &song_.aux()};
+                                          &song_.arpeggio(), &song_.motif(), &song_.aux(),
+                                          &song_.guitar()};
 
     // Clamp velocities for all tracks
     if (blueprint_->constraints.max_velocity < 127) {
@@ -1292,11 +1307,12 @@ void Generator::applyTransitionDynamics() {
 
   // Apply arrangement holes for contrast (mute background at section boundaries)
   PostProcessor::applyArrangementHoles(song_.motif(), song_.arpeggio(), song_.aux(),
-                                       song_.chord(), song_.bass(), sections);
+                                       song_.chord(), song_.bass(), song_.guitar(), sections);
 
   // Apply stereo panning (CC#10) for spatial width
   PostProcessor::applyTrackPanning(song_.vocal(), song_.chord(), song_.bass(),
-                                   song_.motif(), song_.arpeggio(), song_.aux());
+                                   song_.motif(), song_.arpeggio(), song_.aux(),
+                                   song_.guitar());
 
   // Apply expression curves (CC#11) for dynamic shaping
   PostProcessor::applyExpressionCurves(song_.vocal(), song_.chord(), song_.aux(), sections);
@@ -1380,7 +1396,7 @@ void Generator::applyEmotionBasedDynamics(std::vector<MidiTrack*>& tracks,
 void Generator::applyHumanization() {
   // Use PostProcessor for humanization
   std::vector<MidiTrack*> tracks = {&song_.vocal(), &song_.chord(), &song_.bass(), &song_.motif(),
-                                    &song_.arpeggio()};
+                                    &song_.arpeggio(), &song_.guitar()};
 
   PostProcessor::HumanizeParams humanize_params;
   humanize_params.timing = params_.humanize_timing;
@@ -1436,6 +1452,8 @@ void Generator::applyStaggeredEntry(const Section& section, const StaggeredEntry
       track = &song_.arpeggio();
     } else if (hasTrack(entry.track, TrackMask::Aux)) {
       track = &song_.aux();
+    } else if (hasTrack(entry.track, TrackMask::Guitar)) {
+      track = &song_.guitar();
     }
     // Note: Drums and Vocal are not modified by staggered entry
     // Drums establish the beat from the start
@@ -1547,6 +1565,7 @@ void Generator::applyLayerSchedule() {
       {TrackMask::Arpeggio, &song_.arpeggio()},
       {TrackMask::Aux, &song_.aux()},
       {TrackMask::Drums, &song_.drums()},
+      {TrackMask::Guitar, &song_.guitar()},
   };
 
   for (const auto& section : sections) {
@@ -1933,7 +1952,7 @@ void Generator::generateExpressionCurves() {
 
   // Apply expression curves to melodic tracks (not drums or SE)
   std::vector<MidiTrack*> melodic_tracks = {&song_.vocal(), &song_.bass(), &song_.chord(),
-                                             &song_.aux()};
+                                             &song_.aux(), &song_.guitar()};
 
   for (auto* track : melodic_tracks) {
     if (track->notes().empty()) continue;
@@ -1958,7 +1977,8 @@ void Generator::generateExpressionCurves() {
   // Generate CC7 (Volume) for fade-in/fade-out in Intro/Outro
   // Apply to all melodic tracks for smooth overall dynamics
   std::vector<MidiTrack*> all_melodic = {&song_.vocal(), &song_.bass(),   &song_.chord(),
-                                         &song_.motif(), &song_.arpeggio(), &song_.aux()};
+                                         &song_.motif(), &song_.arpeggio(), &song_.aux(),
+                                         &song_.guitar()};
   for (const auto& section : sections) {
     if (isBookendSection(section.type)) {
       for (auto* track : all_melodic) {

@@ -322,6 +322,18 @@ class MusicAnalyzer:
                 'bass_stepwise_rate': {
                     Severity.ERROR: 0.5, Severity.WARNING: 0.3, Severity.INFO: 0.1,
                 },
+                'guitar_thin_voicing': {
+                    Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
+                },
+                'guitar_above_vocal': {
+                    Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
+                },
+                'guitar_voicing_repetition': {
+                    Severity.ERROR: 1.0, Severity.WARNING: 0.5, Severity.INFO: 0.1,
+                },
+                'guitar_bass_mud': {
+                    Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
+                },
             },
             Category.RHYTHM: {
                 'low_sync': {
@@ -357,6 +369,12 @@ class MusicAnalyzer:
                 'drive_deficit': {
                     Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.2,
                 },
+                'guitar_rhythm_inconsistency': {
+                    Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
+                },
+                'guitar_fingerpick_monotony': {
+                    Severity.ERROR: 0.5, Severity.WARNING: 0.3, Severity.INFO: 0.1,
+                },
             },
             Category.ARRANGEMENT: {
                 'register_overlap': {
@@ -388,6 +406,12 @@ class MusicAnalyzer:
                 },
                 'blueprint_paradigm': {
                     Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
+                },
+                'guitar_chord_redundancy': {
+                    Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.3,
+                },
+                'guitar_dynamic_variation': {
+                    Severity.ERROR: 0.5, Severity.WARNING: 0.3, Severity.INFO: 0.1,
                 },
             },
             Category.STRUCTURE: {

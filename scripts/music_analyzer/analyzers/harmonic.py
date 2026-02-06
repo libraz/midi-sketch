@@ -14,6 +14,7 @@ from ..constants import (
     TICKS_PER_BEAT, TICKS_PER_BAR, TRACK_NAMES, TRACK_CHANNELS,
     DISSONANT_INTERVALS, BASS_PREFERRED_DEGREES, BASS_ACCEPTABLE_DEGREES,
     DEGREE_TO_ROOT_PC, DEGREE_TO_CHORD_TONES,
+    GUITAR_CHANNEL, GUITAR_BASS_MUD_THRESHOLD, GUITAR_STRUM_MIN_VOICES,
     Severity, Category,
 )
 from ..helpers import note_name, tick_to_bar
@@ -43,6 +44,8 @@ class HarmonicAnalyzer(BaseAnalyzer):
         self._analyze_bass_contour()
         self._analyze_dissonance_by_beat()
         self._analyze_bass_chord_spacing()
+        self._analyze_guitar_voicing()
+        self._analyze_guitar_bass_spacing()
         return self.issues
 
     # -----------------------------------------------------------------
@@ -877,5 +880,233 @@ class HarmonicAnalyzer(BaseAnalyzer):
                 track="Bass/Chord",
                 details={"close_ratio": close_ratio,
                          "close_count": close_count,
+                         "total_checked": total_checked},
+            )
+
+    # -----------------------------------------------------------------
+    # Guitar analyses
+    # -----------------------------------------------------------------
+
+    def _analyze_guitar_voicing(self):
+        """Analyze guitar track for voicing issues.
+
+        Checks for thin strum voicing (<3 voices), guitar above vocal
+        ceiling, and consecutive bar-level voicing repetition.
+        PowerChord style (mostly 2-note onsets, no 3+ note onsets) is
+        excluded from thin voicing checks.
+        """
+        guitar_notes = self.notes_by_channel.get(GUITAR_CHANNEL, [])
+        if not guitar_notes:
+            return
+
+        # Get vocal ceiling for comparison
+        vocal_notes = self.notes_by_channel.get(0, [])
+        vocal_ceiling = (max((note.pitch for note in vocal_notes), default=84)
+                         if vocal_notes else 84)
+
+        # Group notes by onset
+        onsets = defaultdict(list)
+        for note in guitar_notes:
+            onsets[note.start].append(note)
+
+        sorted_ticks = sorted(onsets.keys())
+        total_onsets = len(sorted_ticks)
+        if total_onsets == 0:
+            return
+
+        # Classify style: count multi-note onsets
+        multi_note_onsets = 0
+        three_plus_onsets = 0
+        thin_strum_count = 0
+        above_vocal_count = 0
+
+        for tick in sorted_ticks:
+            chord = onsets[tick]
+            pitches = sorted(set(note.pitch for note in chord))
+            voice_count = len(pitches)
+
+            if voice_count >= 2:
+                multi_note_onsets += 1
+            if voice_count >= 3:
+                three_plus_onsets += 1
+
+            # Thin voicing check (will be gated by strum detection below)
+            if voice_count >= 2 and voice_count < GUITAR_STRUM_MIN_VOICES:
+                thin_strum_count += 1
+
+            # Above vocal ceiling check
+            if pitches and max(pitches) > vocal_ceiling + 2:
+                above_vocal_count += 1
+
+        multi_ratio = multi_note_onsets / total_onsets if total_onsets > 0 else 0
+
+        # --- Thin voicing (strum style only) ---
+        # Detect strum style: >30% multi-note onsets
+        is_strum = multi_ratio > 0.3
+        # Exclude PowerChord: mostly 2-note onsets with no 3+ note onsets
+        is_power_chord = (multi_note_onsets > 0
+                          and three_plus_onsets == 0)
+
+        if is_strum and not is_power_chord and multi_note_onsets > 0:
+            thin_ratio = thin_strum_count / multi_note_onsets
+            if thin_ratio > 0.5:
+                self.add_issue(
+                    severity=Severity.WARNING,
+                    category=Category.HARMONIC,
+                    subcategory="guitar_thin_voicing",
+                    message=(f"Guitar strum voicing thin "
+                             f"({thin_ratio:.0%} of strums < {GUITAR_STRUM_MIN_VOICES} voices)"),
+                    tick=0,
+                    track="Guitar",
+                    details={"thin_ratio": thin_ratio,
+                             "thin_count": thin_strum_count,
+                             "multi_note_onsets": multi_note_onsets},
+                )
+
+        # --- Above vocal ceiling ---
+        if total_onsets > 0:
+            above_ratio = above_vocal_count / total_onsets
+            if above_ratio > 0.15:
+                self.add_issue(
+                    severity=Severity.WARNING,
+                    category=Category.HARMONIC,
+                    subcategory="guitar_above_vocal",
+                    message=(f"Guitar exceeds vocal ceiling "
+                             f"({above_ratio:.0%} of onsets)"),
+                    tick=0,
+                    track="Guitar",
+                    details={"above_ratio": above_ratio,
+                             "above_count": above_vocal_count,
+                             "vocal_ceiling": vocal_ceiling},
+                )
+            elif above_ratio > 0.05:
+                self.add_issue(
+                    severity=Severity.INFO,
+                    category=Category.HARMONIC,
+                    subcategory="guitar_above_vocal",
+                    message=(f"Guitar occasionally exceeds vocal ceiling "
+                             f"({above_ratio:.0%} of onsets)"),
+                    tick=0,
+                    track="Guitar",
+                    details={"above_ratio": above_ratio,
+                             "above_count": above_vocal_count,
+                             "vocal_ceiling": vocal_ceiling},
+                )
+
+        # --- Bar-level voicing repetition ---
+        guitar_by_bar = defaultdict(set)
+        for note in guitar_notes:
+            bar_idx = note.start // TICKS_PER_BAR
+            guitar_by_bar[bar_idx].add(note.pitch)
+
+        sorted_bars = sorted(guitar_by_bar.keys())
+        prev_bar_pitches = None
+        prev_bar_idx = None
+        consecutive_same_count = 0
+        consecutive_same_start = 0
+
+        for bar_idx in sorted_bars:
+            bar_pitches = tuple(sorted(guitar_by_bar[bar_idx]))
+
+            if bar_pitches == prev_bar_pitches:
+                if consecutive_same_count == 0:
+                    consecutive_same_start = prev_bar_idx * TICKS_PER_BAR
+                consecutive_same_count += 1
+            else:
+                if consecutive_same_count >= 6:
+                    self.add_issue(
+                        severity=(Severity.WARNING if consecutive_same_count >= 9
+                                  else Severity.INFO),
+                        category=Category.HARMONIC,
+                        subcategory="guitar_voicing_repetition",
+                        message=(f"{consecutive_same_count + 1} consecutive bars "
+                                 f"same guitar voicing"),
+                        tick=consecutive_same_start,
+                        track="Guitar",
+                        details={"count": consecutive_same_count + 1,
+                                 "pitches": list(prev_bar_pitches)
+                                 if prev_bar_pitches else []},
+                    )
+                consecutive_same_count = 0
+                prev_bar_pitches = bar_pitches
+            prev_bar_idx = bar_idx
+
+        # Final flush
+        if consecutive_same_count >= 6:
+            self.add_issue(
+                severity=(Severity.WARNING if consecutive_same_count >= 9
+                          else Severity.INFO),
+                category=Category.HARMONIC,
+                subcategory="guitar_voicing_repetition",
+                message=(f"{consecutive_same_count + 1} consecutive bars "
+                         f"same guitar voicing"),
+                tick=consecutive_same_start,
+                track="Guitar",
+                details={"count": consecutive_same_count + 1,
+                         "pitches": list(prev_bar_pitches)
+                         if prev_bar_pitches else []},
+            )
+
+    def _analyze_guitar_bass_spacing(self):
+        """Check low-register guitar-bass muddiness.
+
+        Flags guitar notes below E3 (52) that are within a P5 (7 semitones)
+        of concurrent bass notes. Unisons are excluded as intentional doubling.
+        """
+        guitar_notes = self.notes_by_channel.get(GUITAR_CHANNEL, [])
+        bass_notes = self.notes_by_channel.get(2, [])
+        if not guitar_notes or not bass_notes:
+            return
+
+        total_checked = 0
+        muddy_count = 0
+
+        for guitar_note in guitar_notes:
+            if guitar_note.pitch >= GUITAR_BASS_MUD_THRESHOLD:
+                continue
+
+            # Find bass notes sounding at this guitar note's start
+            sounding_bass = [
+                bn for bn in bass_notes
+                if bn.start <= guitar_note.start < bn.end
+            ]
+            if not sounding_bass:
+                continue
+
+            total_checked += 1
+            for bass_note in sounding_bass:
+                interval = abs(guitar_note.pitch - bass_note.pitch)
+                if 0 < interval < 7:  # Exclude unisons, flag < P5
+                    muddy_count += 1
+                    break
+
+        if total_checked == 0:
+            return
+
+        muddy_ratio = muddy_count / total_checked
+        if muddy_ratio > 0.4:
+            self.add_issue(
+                severity=Severity.WARNING,
+                category=Category.HARMONIC,
+                subcategory="guitar_bass_mud",
+                message=(f"Guitar-bass low register muddiness "
+                         f"({muddy_ratio:.0%} of low guitar notes)"),
+                tick=0,
+                track="Guitar/Bass",
+                details={"muddy_ratio": muddy_ratio,
+                         "muddy_count": muddy_count,
+                         "total_checked": total_checked},
+            )
+        elif muddy_ratio > 0.2:
+            self.add_issue(
+                severity=Severity.INFO,
+                category=Category.HARMONIC,
+                subcategory="guitar_bass_mud",
+                message=(f"Guitar-bass low register somewhat muddy "
+                         f"({muddy_ratio:.0%} of low guitar notes)"),
+                tick=0,
+                track="Guitar/Bass",
+                details={"muddy_ratio": muddy_ratio,
+                         "muddy_count": muddy_count,
                          "total_checked": total_checked},
             )

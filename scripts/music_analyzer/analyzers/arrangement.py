@@ -9,7 +9,10 @@ and blueprint paradigm conformance.
 from collections import defaultdict
 from typing import List
 
-from ..constants import TICKS_PER_BEAT, TICKS_PER_BAR, TRACK_NAMES, Severity, Category
+from ..constants import (
+    TICKS_PER_BEAT, TICKS_PER_BAR, TRACK_NAMES, GUITAR_CHANNEL,
+    Severity, Category,
+)
 from ..helpers import tick_to_bar, note_name, _pattern_similarity, _ioi_entropy
 from ..models import Issue
 from .base import BaseAnalyzer
@@ -35,6 +38,8 @@ class ArrangementAnalyzer(BaseAnalyzer):
         self._analyze_motif_rhythm_preservation()
         self._analyze_blueprint_paradigm()
         self._analyze_submelody_vocal_crossing()
+        self._analyze_guitar_chord_redundancy()
+        self._analyze_guitar_dynamic_variation()
         return self.issues
 
     # -----------------------------------------------------------------
@@ -43,7 +48,7 @@ class ArrangementAnalyzer(BaseAnalyzer):
 
     def _analyze_register_overlap(self):
         """Detect tracks fighting for same register (masking risk)."""
-        track_pairs = [(0, 3), (0, 5), (0, 1), (3, 5), (1, 4)]
+        track_pairs = [(0, 3), (0, 5), (0, 1), (3, 5), (1, 4), (1, 6), (6, 4)]
         for ch_a, ch_b in track_pairs:
             notes_a = self.notes_by_channel.get(ch_a, [])
             notes_b = self.notes_by_channel.get(ch_b, [])
@@ -681,4 +686,118 @@ class ArrangementAnalyzer(BaseAnalyzer):
                     "density_tolerance": self.profile.density_tolerance,
                     "paradigm": self.profile.paradigm,
                 },
+            )
+
+    # -----------------------------------------------------------------
+    # Guitar analyses
+    # -----------------------------------------------------------------
+
+    def _analyze_guitar_chord_redundancy(self):
+        """Detect guitar duplicating chord track pitch classes.
+
+        Compares guitar and chord pitch-class sets (mod 12) at each beat.
+        Flags when guitar wastes sonic space by duplicating chord voicing.
+        """
+        guitar_notes = self.notes_by_channel.get(GUITAR_CHANNEL, [])
+        chord_notes = self.notes_by_channel.get(1, [])
+        if not guitar_notes or not chord_notes:
+            return
+
+        max_tick = max(n.end for n in self.notes)
+        identical_count = 0
+        total_checked = 0
+
+        for tick in range(0, max_tick, TICKS_PER_BEAT):
+            guitar_active = [
+                n for n in guitar_notes if n.start <= tick < n.end
+            ]
+            chord_active = [
+                n for n in chord_notes if n.start <= tick < n.end
+            ]
+            if not guitar_active or not chord_active:
+                continue
+
+            total_checked += 1
+            guitar_pcs = {n.pitch % 12 for n in guitar_active}
+            chord_pcs = {n.pitch % 12 for n in chord_active}
+
+            if guitar_pcs == chord_pcs:
+                identical_count += 1
+
+        if total_checked == 0:
+            return
+
+        identical_ratio = identical_count / total_checked
+        if identical_ratio > 0.7:
+            self.add_issue(
+                severity=Severity.WARNING,
+                category=Category.ARRANGEMENT,
+                subcategory="guitar_chord_redundancy",
+                message=(f"Guitar duplicates chord pitch classes "
+                         f"({identical_ratio:.0%} of beats)"),
+                tick=0,
+                track="Guitar/Chord",
+                details={"identical_ratio": identical_ratio,
+                         "identical_count": identical_count,
+                         "total_checked": total_checked},
+            )
+        elif identical_ratio > 0.5:
+            self.add_issue(
+                severity=Severity.INFO,
+                category=Category.ARRANGEMENT,
+                subcategory="guitar_chord_redundancy",
+                message=(f"Guitar partially duplicates chord pitch classes "
+                         f"({identical_ratio:.0%} of beats)"),
+                tick=0,
+                track="Guitar/Chord",
+                details={"identical_ratio": identical_ratio,
+                         "identical_count": identical_count,
+                         "total_checked": total_checked},
+            )
+
+    def _analyze_guitar_dynamic_variation(self):
+        """Check guitar velocity contrast between verse and chorus.
+
+        Compares average guitar velocity in verse vs chorus sections.
+        In pop music, chorus should typically be louder than verse.
+        """
+        guitar_notes = self.notes_by_channel.get(GUITAR_CHANNEL, [])
+        if not guitar_notes:
+            return
+
+        verse_vels = []
+        chorus_vels = []
+
+        for sec in self.sections:
+            st = (sec['start_bar'] - 1) * TICKS_PER_BAR
+            et = sec['end_bar'] * TICKS_PER_BAR
+            sec_guitar = [
+                n for n in guitar_notes if st <= n.start < et
+            ]
+            if not sec_guitar:
+                continue
+
+            avg_vel = sum(n.velocity for n in sec_guitar) / len(sec_guitar)
+            if sec['type'] == 'verse':
+                verse_vels.append(avg_vel)
+            elif sec['type'] == 'chorus':
+                chorus_vels.append(avg_vel)
+
+        if not verse_vels or not chorus_vels:
+            return
+
+        avg_verse = sum(verse_vels) / len(verse_vels)
+        avg_chorus = sum(chorus_vels) / len(chorus_vels)
+
+        if avg_verse >= avg_chorus:
+            self.add_issue(
+                severity=Severity.INFO,
+                category=Category.ARRANGEMENT,
+                subcategory="guitar_dynamic_variation",
+                message=(f"Guitar has no dynamic contrast "
+                         f"(verse: {avg_verse:.0f}, chorus: {avg_chorus:.0f})"),
+                tick=0,
+                track="Guitar",
+                details={"avg_verse_velocity": avg_verse,
+                         "avg_chorus_velocity": avg_chorus},
             )

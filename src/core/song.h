@@ -29,6 +29,7 @@ class Song {
   MidiTrack& motif() { return tracks_[static_cast<size_t>(TrackRole::Motif)]; }
   MidiTrack& arpeggio() { return tracks_[static_cast<size_t>(TrackRole::Arpeggio)]; }
   MidiTrack& aux() { return tracks_[static_cast<size_t>(TrackRole::Aux)]; }
+  MidiTrack& guitar() { return tracks_[static_cast<size_t>(TrackRole::Guitar)]; }
   const MidiTrack& vocal() const { return tracks_[static_cast<size_t>(TrackRole::Vocal)]; }
   const MidiTrack& chord() const { return tracks_[static_cast<size_t>(TrackRole::Chord)]; }
   const MidiTrack& bass() const { return tracks_[static_cast<size_t>(TrackRole::Bass)]; }
@@ -37,6 +38,7 @@ class Song {
   const MidiTrack& motif() const { return tracks_[static_cast<size_t>(TrackRole::Motif)]; }
   const MidiTrack& arpeggio() const { return tracks_[static_cast<size_t>(TrackRole::Arpeggio)]; }
   const MidiTrack& aux() const { return tracks_[static_cast<size_t>(TrackRole::Aux)]; }
+  const MidiTrack& guitar() const { return tracks_[static_cast<size_t>(TrackRole::Guitar)]; }
   /// @}
 
   /// @name Role-Based Access

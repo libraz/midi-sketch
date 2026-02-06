@@ -327,7 +327,7 @@ TEST(MidiWriterSmf1Test, AuxTrackOutputOnChannel5) {
   EXPECT_EQ(pitch, 67);  // G4
 }
 
-TEST(MidiWriterSmf1Test, AllEightTracksOutput) {
+TEST(MidiWriterSmf1Test, AllNineTracksOutput) {
   MidiWriter writer;
   Song song;
   song.setBpm(120);
@@ -339,6 +339,7 @@ TEST(MidiWriterSmf1Test, AllEightTracksOutput) {
   song.motif().addNote(NoteEventBuilder::create(0, 480, 72, 100));
   song.arpeggio().addNote(NoteEventBuilder::create(0, 480, 76, 100));
   song.aux().addNote(NoteEventBuilder::create(0, 480, 67, 80));
+  song.guitar().addNote(NoteEventBuilder::create(0, 480, 55, 90));
   song.drums().addNote(NoteEventBuilder::create(0, 480, 36, 100));
   song.se().addText(0, "Test");
 
@@ -352,6 +353,7 @@ TEST(MidiWriterSmf1Test, AllEightTracksOutput) {
   EXPECT_EQ(findFirstNoteOnPitch(data, 3), 72);  // Motif Ch3
   EXPECT_EQ(findFirstNoteOnPitch(data, 4), 76);  // Arpeggio Ch4
   EXPECT_EQ(findFirstNoteOnPitch(data, 5), 67);  // Aux Ch5
+  EXPECT_EQ(findFirstNoteOnPitch(data, 6), 55);  // Guitar Ch6
   EXPECT_EQ(findFirstNoteOnPitch(data, 9), 36);  // Drums Ch9
 }
 
@@ -491,7 +493,7 @@ TEST(MidiWriterSmf1Test, MoodProgramChange_CityPop) {
 }
 
 TEST(MidiWriterSmf1Test, MoodProgramChange_Yoasobi) {
-  // Yoasobi: Full synth (81, 81, 38, 81, 81, 89)
+  // Yoasobi: Piano chord + synth (81, 0, 38, 81, 81, 89)
   MidiWriter writer;
   Song song;
   song.setBpm(120);
@@ -505,8 +507,8 @@ TEST(MidiWriterSmf1Test, MoodProgramChange_Yoasobi) {
 
   // Vocal = Saw Lead (81)
   EXPECT_EQ(findProgramChange(data, 0), 81);
-  // Chord = Saw Lead (81)
-  EXPECT_EQ(findProgramChange(data, 1), 81);
+  // Chord = Piano (0) — Ayase piano riff style
+  EXPECT_EQ(findProgramChange(data, 1), 0);
   // Bass = Synth Bass (38)
   EXPECT_EQ(findProgramChange(data, 2), 38);
   // Motif = Saw Lead (81)

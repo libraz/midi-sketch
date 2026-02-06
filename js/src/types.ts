@@ -33,6 +33,8 @@ export interface SongConfig {
   // Arpeggio settings
   /** Enable arpeggio */
   arpeggioEnabled: boolean;
+  /** Enable guitar track */
+  guitarEnabled: boolean;
   /** Arpeggio pattern: 0=Up, 1=Down, 2=UpDown, 3=Random */
   arpeggioPattern: number;
   /** Arpeggio speed: 0=Eighth, 1=Sixteenth, 2=Triplet */
@@ -241,6 +243,8 @@ export interface AccompanimentConfig {
   // Arpeggio
   /** Enable arpeggio */
   arpeggioEnabled?: boolean;
+  /** Enable guitar track */
+  guitarEnabled?: boolean;
   /** Arpeggio pattern: 0=Up, 1=Down, 2=UpDown, 3=Random */
   arpeggioPattern?: number;
   /** Arpeggio speed: 0=Eighth, 1=Sixteenth, 2=Triplet */
