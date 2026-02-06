@@ -93,6 +93,271 @@ export interface AccompanimentConfigOptions {
   callNotesEnabled?: boolean;
 }
 
+/**
+ * Serialize a SongConfigOptions object to a C++ SongConfig JSON string.
+ *
+ * Maps JS camelCase field names to C++ snake_case field names.
+ * Handles nested structs (arpeggio, chord_extension, motif_chord) and
+ * value conversions (gate/probability from 0-100 integer to 0-1 float,
+ * humanize timing/velocity from 0-100 integer to 0-1 float).
+ */
+function serializeSongConfig(config: SongConfigOptions): string {
+  const obj: Record<string, unknown> = {};
+
+  // Top-level flat fields
+  if (config.stylePresetId !== undefined) {
+    obj.style_preset_id = config.stylePresetId;
+  }
+  if (config.key !== undefined) {
+    obj.key = config.key;
+  }
+  if (config.bpm !== undefined) {
+    obj.bpm = config.bpm;
+  }
+  if (config.seed !== undefined) {
+    obj.seed = config.seed;
+  }
+  if (config.chordProgressionId !== undefined) {
+    obj.chord_progression_id = config.chordProgressionId;
+  }
+  if (config.formId !== undefined) {
+    obj.form = config.formId;
+  }
+  if (config.vocalAttitude !== undefined) {
+    obj.vocal_attitude = config.vocalAttitude;
+  }
+  if (config.drumsEnabled !== undefined) {
+    obj.drums_enabled = config.drumsEnabled;
+  }
+  if (config.blueprintId !== undefined) {
+    obj.blueprint_id = config.blueprintId;
+  }
+  if (config.arpeggioEnabled !== undefined) {
+    obj.arpeggio_enabled = config.arpeggioEnabled;
+  }
+  if (config.vocalLow !== undefined) {
+    obj.vocal_low = config.vocalLow;
+  }
+  if (config.vocalHigh !== undefined) {
+    obj.vocal_high = config.vocalHigh;
+  }
+  if (config.skipVocal !== undefined) {
+    obj.skip_vocal = config.skipVocal;
+  }
+  if (config.humanize !== undefined) {
+    obj.humanize = config.humanize;
+  }
+  if (config.compositionStyle !== undefined) {
+    obj.composition_style = config.compositionStyle;
+  }
+  if (config.targetDurationSeconds !== undefined) {
+    obj.target_duration_seconds = config.targetDurationSeconds;
+  }
+  if (config.modulationTiming !== undefined) {
+    obj.modulation_timing = config.modulationTiming;
+  }
+  if (config.modulationSemitones !== undefined) {
+    obj.modulation_semitones = config.modulationSemitones;
+  }
+  if (config.seEnabled !== undefined) {
+    obj.se_enabled = config.seEnabled;
+  }
+  if (config.callNotesEnabled !== undefined) {
+    obj.call_notes_enabled = config.callNotesEnabled;
+  }
+  if (config.introChant !== undefined) {
+    obj.intro_chant = config.introChant;
+  }
+  if (config.mixPattern !== undefined) {
+    obj.mix_pattern = config.mixPattern;
+  }
+  if (config.callDensity !== undefined) {
+    obj.call_density = config.callDensity;
+  }
+  if (config.vocalStyle !== undefined) {
+    obj.vocal_style = config.vocalStyle;
+  }
+  if (config.melodyTemplate !== undefined) {
+    obj.melody_template = config.melodyTemplate;
+  }
+  if (config.arrangementGrowth !== undefined) {
+    obj.arrangement_growth = config.arrangementGrowth;
+  }
+  if (config.motifRepeatScope !== undefined) {
+    obj.motif_repeat_scope = config.motifRepeatScope;
+  }
+  if (config.melodicComplexity !== undefined) {
+    obj.melodic_complexity = config.melodicComplexity;
+  }
+  if (config.hookIntensity !== undefined) {
+    obj.hook_intensity = config.hookIntensity;
+  }
+  if (config.vocalGroove !== undefined) {
+    obj.vocal_groove = config.vocalGroove;
+  }
+
+  // Special mapping: callEnabled (bool) -> call_setting (enum)
+  // CallSetting: 0=Auto, 1=Enabled, 2=Disabled
+  // For predictable tests: true -> Enabled(1), false/undefined -> Disabled(2)
+  if (config.callEnabled !== undefined) {
+    obj.call_setting = config.callEnabled === true ? 1 : 2;
+  } else {
+    obj.call_setting = 2; // Disabled for predictable tests
+  }
+
+  // Humanize timing/velocity: test uses 0-100 integer, SongConfig uses 0-1 float
+  if (config.humanizeTiming !== undefined) {
+    obj.humanize_timing = config.humanizeTiming / 100;
+  }
+  if (config.humanizeVelocity !== undefined) {
+    obj.humanize_velocity = config.humanizeVelocity / 100;
+  }
+
+  // Nested struct: arpeggio
+  const arpeggio: Record<string, unknown> = {};
+  if (config.arpeggioPattern !== undefined) {
+    arpeggio.pattern = config.arpeggioPattern;
+  }
+  if (config.arpeggioSpeed !== undefined) {
+    arpeggio.speed = config.arpeggioSpeed;
+  }
+  if (config.arpeggioOctaveRange !== undefined) {
+    arpeggio.octave_range = config.arpeggioOctaveRange;
+  }
+  if (config.arpeggioSyncChord !== undefined) {
+    arpeggio.sync_chord = config.arpeggioSyncChord;
+  }
+  // Gate: test uses 0-100 integer, SongConfig arpeggio.gate is 0-1 float
+  if (config.arpeggioGate !== undefined) {
+    arpeggio.gate = config.arpeggioGate / 100;
+  }
+  if (Object.keys(arpeggio).length > 0) {
+    obj.arpeggio = arpeggio;
+  }
+
+  // Nested struct: chord_extension
+  const chordExt: Record<string, unknown> = {};
+  if (config.chordExtSus !== undefined) {
+    chordExt.enable_sus = config.chordExtSus;
+  }
+  if (config.chordExt7th !== undefined) {
+    chordExt.enable_7th = config.chordExt7th;
+  }
+  if (config.chordExt9th !== undefined) {
+    chordExt.enable_9th = config.chordExt9th;
+  }
+  // Probabilities: test uses 0-100 integer, SongConfig uses 0-1 float
+  if (config.chordExtSusProb !== undefined) {
+    chordExt.sus_probability = config.chordExtSusProb / 100;
+  }
+  if (config.chordExt7thProb !== undefined) {
+    chordExt.seventh_probability = config.chordExt7thProb / 100;
+  }
+  if (config.chordExt9thProb !== undefined) {
+    chordExt.ninth_probability = config.chordExt9thProb / 100;
+  }
+  if (Object.keys(chordExt).length > 0) {
+    obj.chord_extension = chordExt;
+  }
+
+  // Nested struct: motif_chord
+  const motifChord: Record<string, unknown> = {};
+  if (config.motifFixedProgression !== undefined) {
+    motifChord.fixed_progression = config.motifFixedProgression;
+  }
+  if (config.motifMaxChordCount !== undefined) {
+    motifChord.max_chord_count = config.motifMaxChordCount;
+  }
+  if (Object.keys(motifChord).length > 0) {
+    obj.motif_chord = motifChord;
+  }
+
+  return JSON.stringify(obj);
+}
+
+/**
+ * Serialize an AccompanimentConfigOptions object to C++ AccompanimentConfig JSON string.
+ *
+ * Maps JS camelCase field names to C++ snake_case field names.
+ * AccompanimentConfig uses uint8_t for timing/gate/probability values (0-100),
+ * so no float conversion is needed.
+ */
+function serializeAccompanimentConfig(config: AccompanimentConfigOptions): string {
+  const obj: Record<string, unknown> = {};
+
+  if (config.seed !== undefined) {
+    obj.seed = config.seed;
+  }
+  if (config.drumsEnabled !== undefined) {
+    obj.drums_enabled = config.drumsEnabled;
+  }
+  if (config.arpeggioEnabled !== undefined) {
+    obj.arpeggio_enabled = config.arpeggioEnabled;
+  }
+  if (config.arpeggioPattern !== undefined) {
+    obj.arpeggio_pattern = config.arpeggioPattern;
+  }
+  if (config.arpeggioSpeed !== undefined) {
+    obj.arpeggio_speed = config.arpeggioSpeed;
+  }
+  if (config.arpeggioOctaveRange !== undefined) {
+    obj.arpeggio_octave_range = config.arpeggioOctaveRange;
+  }
+  if (config.arpeggioGate !== undefined) {
+    obj.arpeggio_gate = config.arpeggioGate;
+  }
+  if (config.arpeggioSyncChord !== undefined) {
+    obj.arpeggio_sync_chord = config.arpeggioSyncChord;
+  }
+  if (config.chordExtSus !== undefined) {
+    obj.chord_ext_sus = config.chordExtSus;
+  }
+  if (config.chordExt7th !== undefined) {
+    obj.chord_ext_7th = config.chordExt7th;
+  }
+  if (config.chordExt9th !== undefined) {
+    obj.chord_ext_9th = config.chordExt9th;
+  }
+  if (config.chordExtSusProb !== undefined) {
+    obj.chord_ext_sus_prob = config.chordExtSusProb;
+  }
+  if (config.chordExt7thProb !== undefined) {
+    obj.chord_ext_7th_prob = config.chordExt7thProb;
+  }
+  if (config.chordExt9thProb !== undefined) {
+    obj.chord_ext_9th_prob = config.chordExt9thProb;
+  }
+  if (config.humanize !== undefined) {
+    obj.humanize = config.humanize;
+  }
+  if (config.humanizeTiming !== undefined) {
+    obj.humanize_timing = config.humanizeTiming;
+  }
+  if (config.humanizeVelocity !== undefined) {
+    obj.humanize_velocity = config.humanizeVelocity;
+  }
+  if (config.seEnabled !== undefined) {
+    obj.se_enabled = config.seEnabled;
+  }
+  if (config.callEnabled !== undefined) {
+    obj.call_enabled = config.callEnabled;
+  }
+  if (config.callDensity !== undefined) {
+    obj.call_density = config.callDensity;
+  }
+  if (config.introChant !== undefined) {
+    obj.intro_chant = config.introChant;
+  }
+  if (config.mixPattern !== undefined) {
+    obj.mix_pattern = config.mixPattern;
+  }
+  if (config.callNotesEnabled !== undefined) {
+    obj.call_notes_enabled = config.callNotesEnabled;
+  }
+
+  return JSON.stringify(obj);
+}
+
 export class WasmTestContext {
   module!: WasmModule;
   handle!: number;
@@ -112,141 +377,49 @@ export class WasmTestContext {
     }
   }
 
-  allocSongConfig(config: SongConfigOptions): number {
-    const ptr = this.module._malloc(54); // MidiSketchSongConfig size
-    const view = new DataView(this.module.HEAPU8.buffer);
-
-    // Basic settings (offset 0-12)
-    view.setUint8(ptr + 0, config.stylePresetId ?? 0);
-    view.setUint8(ptr + 1, config.key ?? 0);
-    view.setUint16(ptr + 2, config.bpm ?? 0, true);
-    view.setUint32(ptr + 4, config.seed ?? 0, true);
-    view.setUint8(ptr + 8, config.chordProgressionId ?? 0);
-    view.setUint8(ptr + 9, config.formId ?? 0);
-    view.setUint8(ptr + 10, config.vocalAttitude ?? 0);
-    view.setUint8(ptr + 11, config.drumsEnabled !== false ? 1 : 0);
-    view.setUint8(ptr + 12, config.blueprintId ?? 0);
-
-    // Arpeggio settings (offset 13-17)
-    view.setUint8(ptr + 13, config.arpeggioEnabled ? 1 : 0);
-    view.setUint8(ptr + 14, config.arpeggioPattern ?? 0);
-    view.setUint8(ptr + 15, config.arpeggioSpeed ?? 1);
-    view.setUint8(ptr + 16, config.arpeggioOctaveRange ?? 2);
-    view.setUint8(ptr + 17, config.arpeggioGate ?? 80);
-
-    // Vocal settings (offset 18-20)
-    view.setUint8(ptr + 18, config.vocalLow ?? 60);
-    view.setUint8(ptr + 19, config.vocalHigh ?? 79);
-    view.setUint8(ptr + 20, config.skipVocal ? 1 : 0);
-
-    // Humanization (offset 21-23)
-    view.setUint8(ptr + 21, config.humanize ? 1 : 0);
-    view.setUint8(ptr + 22, config.humanizeTiming ?? 50);
-    view.setUint8(ptr + 23, config.humanizeVelocity ?? 50);
-
-    // Chord extensions (offset 24-31)
-    view.setUint8(ptr + 24, config.chordExtSus ? 1 : 0);
-    view.setUint8(ptr + 25, config.chordExt7th ? 1 : 0);
-    view.setUint8(ptr + 26, config.chordExt9th ? 1 : 0);
-    view.setUint8(ptr + 27, 0); // chord_ext_tritone_sub (not exposed in JS)
-    view.setUint8(ptr + 28, config.chordExtSusProb ?? 20);
-    view.setUint8(ptr + 29, config.chordExt7thProb ?? 30);
-    view.setUint8(ptr + 30, config.chordExt9thProb ?? 25);
-    view.setUint8(ptr + 31, 0); // chord_ext_tritone_sub_prob (not exposed in JS)
-
-    // Composition style (offset 32)
-    view.setUint8(ptr + 32, config.compositionStyle ?? 0);
-
-    // Reserved + padding (offset 33)
-    view.setUint8(ptr + 33, 0);
-
-    // Duration (offset 34-35)
-    view.setUint16(ptr + 34, config.targetDurationSeconds ?? 0, true);
-
-    // Modulation settings (offset 36-37)
-    view.setUint8(ptr + 36, config.modulationTiming ?? 0);
-    view.setInt8(ptr + 37, config.modulationSemitones ?? 2);
-
-    // Call settings (offset 38-43)
-    view.setUint8(ptr + 38, config.seEnabled !== false ? 1 : 0);
-    // CallSetting: 0=Auto, 1=Enabled, 2=Disabled
-    // When callEnabled is explicitly false, use Disabled(2) to avoid validation errors
-    // When callEnabled is true, use Enabled(1)
-    // When callEnabled is undefined, default to Disabled(2) for predictable tests
-    view.setUint8(ptr + 39, config.callEnabled === true ? 1 : 2);
-    view.setUint8(ptr + 40, config.callNotesEnabled !== false ? 1 : 0);
-    view.setUint8(ptr + 41, config.introChant ?? 0);
-    view.setUint8(ptr + 42, config.mixPattern ?? 0);
-    view.setUint8(ptr + 43, config.callDensity ?? 2);
-
-    // Vocal style settings (offset 44-45)
-    view.setUint8(ptr + 44, config.vocalStyle ?? 0);
-    view.setUint8(ptr + 45, config.melodyTemplate ?? 0);
-
-    // Arrangement settings (offset 46)
-    view.setUint8(ptr + 46, config.arrangementGrowth ?? 0);
-
-    // Arpeggio sync settings (offset 47)
-    view.setUint8(ptr + 47, config.arpeggioSyncChord !== false ? 1 : 0);
-
-    // Motif settings (offset 48-50)
-    view.setUint8(ptr + 48, config.motifRepeatScope ?? 0);
-    view.setUint8(ptr + 49, config.motifFixedProgression !== false ? 1 : 0);
-    view.setUint8(ptr + 50, config.motifMaxChordCount ?? 4);
-
-    // Melodic complexity and hook control (offset 51-53)
-    view.setUint8(ptr + 51, config.melodicComplexity ?? 1);
-    view.setUint8(ptr + 52, config.hookIntensity ?? 2);
-    view.setUint8(ptr + 53, config.vocalGroove ?? 0);
-
-    return ptr;
-  }
-
   generateFromConfig(config: SongConfigOptions): number {
-    const generateFn = this.module.cwrap('midisketch_generate_from_config', 'number', [
+    const generateFn = this.module.cwrap('midisketch_generate_from_json', 'number', [
       'number',
+      'string',
       'number',
-    ]) as (h: number, configPtr: number) => number;
+    ]) as (h: number, json: string, len: number) => number;
 
-    const configPtr = this.allocSongConfig(config);
-    const result = generateFn(this.handle, configPtr);
-    this.module._free(configPtr);
-    return result;
+    const json = serializeSongConfig(config);
+    return generateFn(this.handle, json, json.length);
   }
 
   generateVocal(config: SongConfigOptions): number {
-    const generateFn = this.module.cwrap('midisketch_generate_vocal', 'number', [
+    const generateFn = this.module.cwrap('midisketch_generate_vocal_from_json', 'number', [
       'number',
+      'string',
       'number',
-    ]) as (h: number, configPtr: number) => number;
+    ]) as (h: number, json: string, len: number) => number;
 
-    const configPtr = this.allocSongConfig(config);
-    const result = generateFn(this.handle, configPtr);
-    this.module._free(configPtr);
-    return result;
+    const json = serializeSongConfig(config);
+    return generateFn(this.handle, json, json.length);
   }
 
   regenerateVocal(newSeed: number): number {
-    const regenerateFn = this.module.cwrap('midisketch_regenerate_vocal', 'number', [
+    const regenerateFn = this.module.cwrap('midisketch_regenerate_vocal_from_json', 'number', [
       'number',
+      'string',
       'number',
-    ]) as (h: number, seed: number) => number;
+    ]) as (h: number, json: string, len: number) => number;
 
-    return regenerateFn(this.handle, newSeed);
+    const json = JSON.stringify({ seed: newSeed });
+    return regenerateFn(this.handle, json, json.length);
   }
 
   generateAccompaniment(config?: AccompanimentConfigOptions): number {
     if (config) {
       const generateFn = this.module.cwrap(
-        'midisketch_generate_accompaniment_with_config',
+        'midisketch_generate_accompaniment_from_json',
         'number',
-        ['number', 'number'],
-      ) as (h: number, configPtr: number) => number;
+        ['number', 'string', 'number'],
+      ) as (h: number, json: string, len: number) => number;
 
-      const configPtr = this.allocAccompanimentConfig(config);
-      const result = generateFn(this.handle, configPtr);
-      this.module._free(configPtr);
-      return result;
+      const json = serializeAccompanimentConfig(config);
+      return generateFn(this.handle, json, json.length);
     } else {
       const generateFn = this.module.cwrap('midisketch_generate_accompaniment', 'number', [
         'number',
@@ -258,15 +431,13 @@ export class WasmTestContext {
   regenerateAccompaniment(seedOrConfig?: number | AccompanimentConfigOptions): number {
     if (typeof seedOrConfig === 'object') {
       const regenerateFn = this.module.cwrap(
-        'midisketch_regenerate_accompaniment_with_config',
+        'midisketch_regenerate_accompaniment_from_json',
         'number',
-        ['number', 'number'],
-      ) as (h: number, configPtr: number) => number;
+        ['number', 'string', 'number'],
+      ) as (h: number, json: string, len: number) => number;
 
-      const configPtr = this.allocAccompanimentConfig(seedOrConfig);
-      const result = regenerateFn(this.handle, configPtr);
-      this.module._free(configPtr);
-      return result;
+      const json = serializeAccompanimentConfig(seedOrConfig);
+      return regenerateFn(this.handle, json, json.length);
     } else {
       const regenerateFn = this.module.cwrap('midisketch_regenerate_accompaniment', 'number', [
         'number',
@@ -276,89 +447,38 @@ export class WasmTestContext {
     }
   }
 
-  allocAccompanimentConfig(config: AccompanimentConfigOptions): number {
-    const ptr = this.module._malloc(28); // MidiSketchAccompanimentConfig size
-    const view = new DataView(this.module.HEAPU8.buffer, ptr, 28);
-
-    view.setUint32(0, config.seed ?? 0, true); // seed
-    view.setUint8(4, config.drumsEnabled ? 1 : 0);
-    view.setUint8(5, config.arpeggioEnabled ? 1 : 0);
-    view.setUint8(6, config.arpeggioPattern ?? 0);
-    view.setUint8(7, config.arpeggioSpeed ?? 0);
-    view.setUint8(8, config.arpeggioOctaveRange ?? 2);
-    view.setUint8(9, config.arpeggioGate ?? 80);
-    view.setUint8(10, config.arpeggioSyncChord ? 1 : 0);
-    view.setUint8(11, config.chordExtSus ? 1 : 0);
-    view.setUint8(12, config.chordExt7th ? 1 : 0);
-    view.setUint8(13, config.chordExt9th ? 1 : 0);
-    view.setUint8(14, config.chordExtSusProb ?? 30);
-    view.setUint8(15, config.chordExt7thProb ?? 20);
-    view.setUint8(16, config.chordExt9thProb ?? 10);
-    view.setUint8(17, config.humanize ? 1 : 0);
-    view.setUint8(18, config.humanizeTiming ?? 20);
-    view.setUint8(19, config.humanizeVelocity ?? 10);
-    view.setUint8(20, config.seEnabled !== false ? 1 : 0);
-    view.setUint8(21, config.callEnabled ? 1 : 0);
-    view.setUint8(22, config.callDensity ?? 2);
-    view.setUint8(23, config.introChant ?? 0);
-    view.setUint8(24, config.mixPattern ?? 0);
-    view.setUint8(25, config.callNotesEnabled ? 1 : 0);
-    // _reserved[2] at offset 26-27
-
-    return ptr;
-  }
-
   generateWithVocal(config: SongConfigOptions): number {
-    const generateFn = this.module.cwrap('midisketch_generate_with_vocal', 'number', [
+    const generateFn = this.module.cwrap('midisketch_generate_with_vocal_from_json', 'number', [
       'number',
+      'string',
       'number',
-    ]) as (h: number, configPtr: number) => number;
+    ]) as (h: number, json: string, len: number) => number;
 
-    const configPtr = this.allocSongConfig(config);
-    const result = generateFn(this.handle, configPtr);
-    this.module._free(configPtr);
-    return result;
+    const json = serializeSongConfig(config);
+    return generateFn(this.handle, json, json.length);
   }
 
   setVocalNotes(
     config: SongConfigOptions,
     notes: { startTick: number; duration: number; pitch: number; velocity: number }[],
   ): number {
-    const setNotesFn = this.module.cwrap('midisketch_set_vocal_notes', 'number', [
+    const setNotesFn = this.module.cwrap('midisketch_set_vocal_notes_from_json', 'number', [
       'number',
+      'string',
       'number',
-      'number',
-      'number',
-    ]) as (h: number, configPtr: number, notesPtr: number, count: number) => number;
+    ]) as (h: number, json: string, len: number) => number;
 
-    const configPtr = this.allocSongConfig(config);
-    const notesPtr = this.allocNoteInputArray(notes);
+    // Build the combined JSON: {"config": {...SongConfig...}, "notes": [...]}
+    const configObj = JSON.parse(serializeSongConfig(config));
+    const notesArr = notes.map((note) => ({
+      start_tick: note.startTick,
+      duration: note.duration,
+      pitch: note.pitch,
+      velocity: note.velocity,
+    }));
 
-    const result = setNotesFn(this.handle, configPtr, notesPtr, notes.length);
-
-    this.module._free(configPtr);
-    this.module._free(notesPtr);
-    return result;
-  }
-
-  private allocNoteInputArray(
-    notes: { startTick: number; duration: number; pitch: number; velocity: number }[],
-  ): number {
-    // MidiSketchNoteInput struct size: 12 bytes (uint32 + uint32 + uint8 + uint8 + 2 padding)
-    const structSize = 12;
-    const ptr = this.module._malloc(notes.length * structSize);
-    const view = new DataView(this.module.HEAPU8.buffer);
-
-    for (let i = 0; i < notes.length; i++) {
-      const offset = ptr + i * structSize;
-      view.setUint32(offset + 0, notes[i].startTick, true);
-      view.setUint32(offset + 4, notes[i].duration, true);
-      view.setUint8(offset + 8, notes[i].pitch);
-      view.setUint8(offset + 9, notes[i].velocity);
-      // 2 bytes padding (10-11)
-    }
-
-    return ptr;
+    const json = JSON.stringify({ config: configObj, notes: notesArr });
+    return setNotesFn(this.handle, json, json.length);
   }
 
   getEventsJson(): { data: unknown; cleanup: () => void } {
@@ -434,8 +554,8 @@ export class WasmTestContext {
       const results: PianoRollInfo[] = [];
       const infoSize = 784; // sizeof(MidiSketchPianoRollInfo)
 
-      for (let i = 0; i < count; i++) {
-        const infoPtr = infoArrayPtr + i * infoSize;
+      for (let idx = 0; idx < count; idx++) {
+        const infoPtr = infoArrayPtr + idx * infoSize;
         results.push(this.parsePianoRollInfo(infoPtr));
       }
 
@@ -453,18 +573,18 @@ export class WasmTestContext {
     const currentKey = view.getUint8(ptr + 5);
 
     const safety: number[] = [];
-    for (let i = 0; i < 128; i++) {
-      safety.push(view.getUint8(ptr + 6 + i));
+    for (let idx = 0; idx < 128; idx++) {
+      safety.push(view.getUint8(ptr + 6 + idx));
     }
 
     const reason: number[] = [];
-    for (let i = 0; i < 128; i++) {
-      reason.push(view.getUint16(ptr + 134 + i * 2, true));
+    for (let idx = 0; idx < 128; idx++) {
+      reason.push(view.getUint16(ptr + 134 + idx * 2, true));
     }
 
     const collision: CollisionInfo[] = [];
-    for (let i = 0; i < 128; i++) {
-      const offset = ptr + 390 + i * 3;
+    for (let idx = 0; idx < 128; idx++) {
+      const offset = ptr + 390 + idx * 3;
       collision.push({
         trackRole: view.getUint8(offset),
         collidingPitch: view.getUint8(offset + 1),
@@ -474,8 +594,8 @@ export class WasmTestContext {
 
     const recommendedCount = view.getUint8(ptr + 782);
     const recommended: number[] = [];
-    for (let i = 0; i < recommendedCount && i < 8; i++) {
-      recommended.push(view.getUint8(ptr + 774 + i));
+    for (let idx = 0; idx < recommendedCount && idx < 8; idx++) {
+      recommended.push(view.getUint8(ptr + 774 + idx));
     }
 
     return { tick, chordDegree, currentKey, safety, reason, collision, recommended };

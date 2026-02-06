@@ -44,19 +44,10 @@ export interface Api {
   stylePresetAllowedAttitudes: (id: number) => number;
   getProgressionsByStylePtr: (styleId: number) => number;
   getFormsByStylePtr: (styleId: number) => number;
-  createDefaultConfigPtr: (styleId: number) => number;
-  validateConfig: (configPtr: number) => number;
-  generateFromConfig: (handle: number, configPtr: number) => number;
   configErrorString: (error: number) => string;
-  // Vocal-first generation APIs
-  generateVocal: (handle: number, configPtr: number) => number;
-  regenerateVocal: (handle: number, configPtr: number) => number;
+  // Vocal-first generation APIs (no-config versions)
   generateAccompaniment: (handle: number) => number;
-  generateAccompanimentWithConfig: (handle: number, configPtr: number) => number;
   regenerateAccompaniment: (handle: number, seed: number) => number;
-  regenerateAccompanimentWithConfig: (handle: number, configPtr: number) => number;
-  generateWithVocal: (handle: number, configPtr: number) => number;
-  setVocalNotes: (handle: number, configPtr: number, notesPtr: number, count: number) => number;
   // Piano Roll Safety API
   getPianoRollSafety: (handle: number, startTick: number, endTick: number, step: number) => number;
   getPianoRollSafetyAt: (handle: number, tick: number) => number;
@@ -64,6 +55,16 @@ export interface Api {
   freePianoRollData: (ptr: number) => void;
   reasonToString: (reason: number) => string;
   collisionToString: (collisionPtr: number) => string;
+  // JSON Config API
+  generateFromJson: (handle: number, json: string, length: number) => number;
+  createDefaultConfigJson: (styleId: number) => string;
+  validateConfigJson: (json: string, length: number) => number;
+  generateVocalFromJson: (handle: number, json: string, length: number) => number;
+  generateWithVocalFromJson: (handle: number, json: string, length: number) => number;
+  regenerateVocalFromJson: (handle: number, json: string, length: number) => number;
+  generateAccompanimentFromJson: (handle: number, json: string, length: number) => number;
+  regenerateAccompanimentFromJson: (handle: number, json: string, length: number) => number;
+  setVocalNotesFromJson: (handle: number, json: string, length: number) => number;
   // Production Blueprint API
   blueprintCount: () => number;
   blueprintName: (id: number) => string;
@@ -181,55 +182,17 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
     getFormsByStylePtr: m.cwrap('midisketch_get_forms_by_style_ptr', 'number', ['number']) as (
       styleId: number,
     ) => number,
-    createDefaultConfigPtr: m.cwrap('midisketch_create_default_config_ptr', 'number', [
-      'number',
-    ]) as (styleId: number) => number,
-    validateConfig: m.cwrap('midisketch_validate_config', 'number', ['number']) as (
-      configPtr: number,
-    ) => number,
-    generateFromConfig: m.cwrap('midisketch_generate_from_config', 'number', [
-      'number',
-      'number',
-    ]) as (handle: number, configPtr: number) => number,
     configErrorString: m.cwrap('midisketch_config_error_string', 'string', ['number']) as (
       error: number,
     ) => string,
-    // Vocal-first generation APIs
-    generateVocal: m.cwrap('midisketch_generate_vocal', 'number', ['number', 'number']) as (
-      handle: number,
-      configPtr: number,
-    ) => number,
-    regenerateVocal: m.cwrap('midisketch_regenerate_vocal', 'number', ['number', 'number']) as (
-      handle: number,
-      configPtr: number,
-    ) => number,
+    // Vocal-first generation APIs (no-config versions)
     generateAccompaniment: m.cwrap('midisketch_generate_accompaniment', 'number', ['number']) as (
       handle: number,
     ) => number,
-    generateAccompanimentWithConfig: m.cwrap(
-      'midisketch_generate_accompaniment_with_config',
-      'number',
-      ['number', 'number'],
-    ) as (handle: number, configPtr: number) => number,
     regenerateAccompaniment: m.cwrap('midisketch_regenerate_accompaniment', 'number', [
       'number',
       'number',
     ]) as (handle: number, seed: number) => number,
-    regenerateAccompanimentWithConfig: m.cwrap(
-      'midisketch_regenerate_accompaniment_with_config',
-      'number',
-      ['number', 'number'],
-    ) as (handle: number, configPtr: number) => number,
-    generateWithVocal: m.cwrap('midisketch_generate_with_vocal', 'number', [
-      'number',
-      'number',
-    ]) as (handle: number, configPtr: number) => number,
-    setVocalNotes: m.cwrap('midisketch_set_vocal_notes', 'number', [
-      'number',
-      'number',
-      'number',
-      'number',
-    ]) as (handle: number, configPtr: number, notesPtr: number, count: number) => number,
     // Piano Roll Safety API
     getPianoRollSafety: m.cwrap('midisketch_get_piano_roll_safety', 'number', [
       'number',
@@ -255,6 +218,49 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
     collisionToString: m.cwrap('midisketch_collision_to_string', 'string', ['number']) as (
       collisionPtr: number,
     ) => string,
+    // JSON Config API
+    generateFromJson: m.cwrap('midisketch_generate_from_json', 'number', [
+      'number',
+      'string',
+      'number',
+    ]) as (handle: number, json: string, length: number) => number,
+    createDefaultConfigJson: m.cwrap('midisketch_create_default_config_json', 'string', [
+      'number',
+    ]) as (styleId: number) => string,
+    validateConfigJson: m.cwrap('midisketch_validate_config_json', 'number', [
+      'string',
+      'number',
+    ]) as (json: string, length: number) => number,
+    generateVocalFromJson: m.cwrap('midisketch_generate_vocal_from_json', 'number', [
+      'number',
+      'string',
+      'number',
+    ]) as (handle: number, json: string, length: number) => number,
+    generateWithVocalFromJson: m.cwrap('midisketch_generate_with_vocal_from_json', 'number', [
+      'number',
+      'string',
+      'number',
+    ]) as (handle: number, json: string, length: number) => number,
+    regenerateVocalFromJson: m.cwrap('midisketch_regenerate_vocal_from_json', 'number', [
+      'number',
+      'string',
+      'number',
+    ]) as (handle: number, json: string, length: number) => number,
+    generateAccompanimentFromJson: m.cwrap(
+      'midisketch_generate_accompaniment_from_json',
+      'number',
+      ['number', 'string', 'number'],
+    ) as (handle: number, json: string, length: number) => number,
+    regenerateAccompanimentFromJson: m.cwrap(
+      'midisketch_regenerate_accompaniment_from_json',
+      'number',
+      ['number', 'string', 'number'],
+    ) as (handle: number, json: string, length: number) => number,
+    setVocalNotesFromJson: m.cwrap('midisketch_set_vocal_notes_from_json', 'number', [
+      'number',
+      'string',
+      'number',
+    ]) as (handle: number, json: string, length: number) => number,
     // Production Blueprint API
     blueprintCount: m.cwrap('midisketch_blueprint_count', 'number', []) as () => number,
     blueprintName: m.cwrap('midisketch_blueprint_name', 'string', ['number']) as (

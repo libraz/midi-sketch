@@ -92,10 +92,31 @@ class OutputFormatter:
         lines = []
         s = result.score
         lines.append(f"=== MUSIC ANALYSIS: {filepath} ===")
+
+        # Build score line with bonus indicators
+        bonus_parts = []
+        if s.melodic_bonus > 0:
+            bonus_parts.append(f"M:{s.melodic:.0f}(+{s.melodic_bonus:.0f})")
+        else:
+            bonus_parts.append(f"M:{s.melodic:.0f}")
+        if s.harmonic_bonus > 0:
+            bonus_parts.append(f"H:{s.harmonic:.0f}(+{s.harmonic_bonus:.0f})")
+        else:
+            bonus_parts.append(f"H:{s.harmonic:.0f}")
+        if s.rhythm_bonus > 0:
+            bonus_parts.append(f"R:{s.rhythm:.0f}(+{s.rhythm_bonus:.0f})")
+        else:
+            bonus_parts.append(f"R:{s.rhythm:.0f}")
+        bonus_parts.append(f"A:{s.arrangement:.0f}")
+        if s.structure_bonus > 0:
+            bonus_parts.append(f"S:{s.structure:.0f}(+{s.structure_bonus:.0f})")
+        else:
+            bonus_parts.append(f"S:{s.structure:.0f}")
+
+        bonus_tag = f" +B:{s.total_bonus:.1f}" if s.total_bonus > 0 else ""
         lines.append(
-            f"Score: {s.overall:.1f} ({s.grade}) | "
-            f"M:{s.melodic:.0f} H:{s.harmonic:.0f} R:{s.rhythm:.0f} "
-            f"A:{s.arrangement:.0f} S:{s.structure:.0f}"
+            f"Score: {s.overall:.1f} ({s.grade}){bonus_tag} | "
+            + " ".join(bonus_parts)
         )
         lines.append("")
 
@@ -206,11 +227,29 @@ class OutputFormatter:
         lines.append(f"  {score_bar(s.overall)}")
         lines.append("")
         lines.append("  Category Scores:")
-        lines.append(f"    Melodic:     {s.melodic:5.1f} {score_bar(s.melodic)}")
-        lines.append(f"    Harmonic:    {s.harmonic:5.1f} {score_bar(s.harmonic)}")
-        lines.append(f"    Rhythm:      {s.rhythm:5.1f} {score_bar(s.rhythm)}")
-        lines.append(f"    Arrangement: {s.arrangement:5.1f} {score_bar(s.arrangement)}")
-        lines.append(f"    Structure:   {s.structure:5.1f} {score_bar(s.structure)}")
+
+        def bonus_tag(val: float) -> str:
+            return f" (+{val:.1f})" if val > 0 else ""
+
+        lines.append(
+            f"    Melodic:     {s.melodic:5.1f} {score_bar(s.melodic)}"
+            f"{bonus_tag(s.melodic_bonus)}"
+        )
+        lines.append(
+            f"    Harmonic:    {s.harmonic:5.1f} {score_bar(s.harmonic)}"
+            f"{bonus_tag(s.harmonic_bonus)}"
+        )
+        lines.append(
+            f"    Rhythm:      {s.rhythm:5.1f} {score_bar(s.rhythm)}"
+            f"{bonus_tag(s.rhythm_bonus)}"
+        )
+        lines.append(
+            f"    Arrangement: {s.arrangement:5.1f} {score_bar(s.arrangement)}"
+        )
+        lines.append(
+            f"    Structure:   {s.structure:5.1f} {score_bar(s.structure)}"
+            f"{bonus_tag(s.structure_bonus)}"
+        )
 
         # Issue summary
         error_count = sum(
@@ -263,6 +302,33 @@ class OutputFormatter:
                     )
                 if len(subissues) > 15:
                     lines.append(f"  ... and {len(subissues) - 15} more")
+
+        # Quality bonuses
+        if result.bonuses:
+            lines.append("")
+            lines.append("=" * 40)
+            lines.append("  QUALITY BONUSES")
+            lines.append("=" * 40)
+
+            # Group by category
+            bonus_by_cat = defaultdict(list)
+            for bonus in result.bonuses:
+                bonus_by_cat[bonus.category.value].append(bonus)
+
+            for cat_name in ["melodic", "harmonic", "rhythm", "structure"]:
+                cat_bonuses = bonus_by_cat.get(cat_name, [])
+                if not cat_bonuses:
+                    continue
+                cat_total = sum(bonus.score for bonus in cat_bonuses)
+                lines.append(f"")
+                lines.append(
+                    f"  {cat_name.title()} Bonuses (+{cat_total:.1f}):"
+                )
+                for bonus in cat_bonuses:
+                    lines.append(
+                        f"    +{bonus.score:.1f}/{bonus.max_score:.0f} "
+                        f"{bonus.name}: {bonus.description}"
+                    )
 
         # Hook analysis
         if result.hooks:
@@ -325,6 +391,23 @@ class OutputFormatter:
                 }
                 for idx in result.issues
             ],
+            'bonuses': {
+                'total': round(result.score.total_bonus, 2),
+                'melodic': round(result.score.melodic_bonus, 2),
+                'harmonic': round(result.score.harmonic_bonus, 2),
+                'rhythm': round(result.score.rhythm_bonus, 2),
+                'structure': round(result.score.structure_bonus, 2),
+                'items': [
+                    {
+                        'category': bonus.category.value,
+                        'name': bonus.name,
+                        'score': round(bonus.score, 2),
+                        'max_score': bonus.max_score,
+                        'description': bonus.description,
+                    }
+                    for bonus in result.bonuses
+                ],
+            },
             'hooks': [
                 {
                     'start_bar': hook.start_bar,
@@ -340,8 +423,9 @@ class OutputFormatter:
     def format_score_only(result: AnalysisResult) -> str:
         """Format score only (one line) with arrangement score."""
         s = result.score
+        bonus_tag = f" +B:{s.total_bonus:.1f}" if s.total_bonus > 0 else ""
         return (
-            f"{s.overall:.1f} ({s.grade}) "
+            f"{s.overall:.1f} ({s.grade}){bonus_tag} "
             f"M:{s.melodic:.0f} H:{s.harmonic:.0f} R:{s.rhythm:.0f} "
             f"A:{s.arrangement:.0f} S:{s.structure:.0f}"
         )

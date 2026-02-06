@@ -36,6 +36,12 @@ export {
 } from './builder';
 // Config
 export { createDefaultConfig, getConfigErrorMessage, validateConfig } from './config';
+export {
+  deserializeConfig,
+  serializeAccompanimentConfig,
+  serializeConfig,
+  serializeVocalConfig,
+} from './config-fields';
 // Constants
 export {
   ArrangementGrowth,

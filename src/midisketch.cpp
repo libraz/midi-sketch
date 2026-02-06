@@ -23,16 +23,34 @@ namespace {
 // Metadata format version (increment when format changes incompatibly)
 // v2: Initial flat format with ~25 fields
 // v3: Full bidirectional serialization with nested structures
-constexpr int kMetadataFormatVersion = 3;
+// v4: Added SongConfig serialization for deterministic regeneration
+constexpr int kMetadataFormatVersionLegacy = 3;
+constexpr int kMetadataFormatVersionWithConfig = 4;
 
-// Generate metadata JSON from generator params
+// Generate metadata JSON from generator params (v3 legacy)
 std::string generateMetadata(const GeneratorParams& params) {
   std::ostringstream oss;
   json::Writer w(oss);
   w.beginObject()
       .write("generator", "midi-sketch")
-      .write("format_version", kMetadataFormatVersion)
+      .write("format_version", kMetadataFormatVersionLegacy)
       .write("library_version", MidiSketch::version());
+  params.writeTo(w);
+  w.endObject();
+  return oss.str();
+}
+
+// Generate metadata JSON with SongConfig (v4: deterministic regeneration)
+std::string generateMetadata(const GeneratorParams& params, const SongConfig& config) {
+  std::ostringstream oss;
+  json::Writer w(oss);
+  w.beginObject()
+      .write("generator", "midi-sketch")
+      .write("format_version", kMetadataFormatVersionWithConfig)
+      .write("library_version", MidiSketch::version());
+  w.beginObject("config");
+  config.writeTo(w);
+  w.endObject();
   params.writeTo(w);
   w.endObject();
   return oss.str();
@@ -54,7 +72,7 @@ void MidiSketch::generateFromConfig(const SongConfig& config) {
   generator_.generateFromConfig(config);
   const auto& params = generator_.getParams();
   midi_writer_.build(generator_.getSong(), config.key, params.mood,
-                     generateMetadata(params), midi_format_);
+                     generateMetadata(params, config), midi_format_);
 }
 
 void MidiSketch::generateVocal(const SongConfig& config) {
@@ -62,7 +80,7 @@ void MidiSketch::generateVocal(const SongConfig& config) {
   generator_.generateVocal(params);
   const auto& gen_params = generator_.getParams();
   midi_writer_.build(generator_.getSong(), config.key, gen_params.mood,
-                     generateMetadata(gen_params), midi_format_);
+                     generateMetadata(gen_params, config), midi_format_);
 }
 
 void MidiSketch::regenerateVocal(uint32_t new_seed) {
@@ -112,7 +130,7 @@ void MidiSketch::generateWithVocal(const SongConfig& config) {
   generator_.generateWithVocal(params);
   const auto& gen_params = generator_.getParams();
   midi_writer_.build(generator_.getSong(), config.key, gen_params.mood,
-                     generateMetadata(gen_params), midi_format_);
+                     generateMetadata(gen_params, config), midi_format_);
 }
 
 MelodyData MidiSketch::getMelody() const {
@@ -132,7 +150,7 @@ void MidiSketch::setVocalNotes(const SongConfig& config, const std::vector<NoteE
   generator_.setVocalNotes(params, notes);
   const auto& gen_params = generator_.getParams();
   midi_writer_.build(generator_.getSong(), config.key, gen_params.mood,
-                     generateMetadata(gen_params), midi_format_);
+                     generateMetadata(gen_params, config), midi_format_);
 }
 
 void MidiSketch::setMidiFormat(MidiFormat format) { midi_format_ = format; }

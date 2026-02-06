@@ -449,6 +449,18 @@ BassPattern adjustPatternSparser(BassPattern pattern) {
   return kBassTransformer.sparser(pattern);
 }
 
+// RhythmSync-aware sparsification: at high BPM (>=140), prevent over-sparsification
+// that kills rhythmic drive. Keeps Driving/Syncopated patterns instead of degrading
+// to RootFifth/WholeNote which lack 8th notes and syncopation.
+BassPattern applyRhythmSyncSparsification(BassPattern pattern, uint16_t bpm) {
+  BassPattern candidate = adjustPatternSparser(pattern);
+  if (bpm >= 140 &&
+      (candidate == BassPattern::RootFifth || candidate == BassPattern::WholeNote)) {
+    return pattern;  // High BPM: preserve rhythmic drive
+  }
+  return candidate;
+}
+
 // Adjust pattern one level denser (increase density/aggression)
 // Uses kBassTransformer for consistent transitions.
 BassPattern adjustPatternDenser(BassPattern pattern) {
@@ -667,8 +679,9 @@ BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section
 
   // RhythmSync paradigm: Motif provides rhythm foundation, so bass can use simpler patterns.
   // This prevents over-fragmented bass lines when motif already drives the rhythm.
+  // At high BPM (>=140), avoid degrading to RootFifth/WholeNote to preserve drive.
   if (params.paradigm == GenerationParadigm::RhythmSync) {
-    base_pattern = adjustPatternSparser(base_pattern);
+    base_pattern = applyRhythmSyncSparsification(base_pattern, params.bpm);
   }
 
   // Avoid PedalTone when arpeggio is active - they conflict musically.
@@ -1617,8 +1630,9 @@ BassPattern selectPatternWithPolicyForVocal(BassRiffCache& cache, const Section&
   });
 
   // RhythmSync paradigm: Motif provides rhythm foundation, so bass can use simpler patterns.
+  // At high BPM (>=140), avoid degrading to RootFifth/WholeNote to preserve drive.
   if (params.paradigm == GenerationParadigm::RhythmSync) {
-    pattern = adjustPatternSparser(pattern);
+    pattern = applyRhythmSyncSparsification(pattern, params.bpm);
   }
 
   // Avoid PedalTone when arpeggio is active in high-energy sections.

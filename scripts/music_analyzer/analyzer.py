@@ -12,12 +12,14 @@ from .constants import (
     TICKS_PER_BEAT, TICKS_PER_BAR, TRACK_NAMES,
     Severity, Category,
 )
-from .models import Note, Issue, QualityScore, HookPattern, AnalysisResult
+from .models import Note, Issue, Bonus, QualityScore, HookPattern, AnalysisResult
 from .blueprints import BLUEPRINT_PROFILES
 from .helpers import tick_to_bar
 from .analyzers import (
     MelodicAnalyzer, VocalAnalyzer, HarmonicAnalyzer,
     RhythmAnalyzer, ArrangementAnalyzer, StructureAnalyzer,
+    BonusMelodicAnalyzer, BonusHarmonicAnalyzer,
+    BonusRhythmAnalyzer, BonusStructureAnalyzer,
 )
 
 
@@ -66,8 +68,11 @@ class MusicAnalyzer:
         hooks = self._detect_hooks()
         energy_curve = self._calculate_energy_curve()
 
-        # Calculate scores
-        score = self._calculate_scores()
+        # Bonus scoring
+        bonuses = self._calculate_bonuses(hooks, energy_curve)
+
+        # Calculate scores (includes bonus application)
+        score = self._calculate_scores(bonuses)
 
         return AnalysisResult(
             notes=self.notes,
@@ -76,6 +81,7 @@ class MusicAnalyzer:
             hooks=hooks,
             energy_curve=energy_curve,
             metadata=self.metadata,
+            bonuses=bonuses,
         )
 
     # =========================================================================
@@ -161,15 +167,61 @@ class MusicAnalyzer:
         return energy_curve
 
     # =========================================================================
+    # BONUS SCORING
+    # =========================================================================
+
+    def _calculate_bonuses(
+        self, hooks: list, energy_curve: list
+    ) -> list:
+        """Run bonus analyzers and collect all bonuses.
+
+        Args:
+            hooks: Detected hook patterns from _detect_hooks().
+            energy_curve: Energy curve data from _calculate_energy_curve().
+
+        Returns:
+            List of Bonus objects from all bonus analyzers.
+        """
+        common_args = dict(
+            notes=self.notes,
+            notes_by_channel=self.notes_by_channel,
+            profile=self.profile,
+            metadata=self.metadata,
+            hooks=hooks,
+            energy_curve=energy_curve,
+        )
+
+        bonus_analyzers = [
+            BonusMelodicAnalyzer(**common_args),
+            BonusHarmonicAnalyzer(**common_args),
+            BonusRhythmAnalyzer(**common_args),
+            BonusStructureAnalyzer(**common_args),
+        ]
+
+        all_bonuses = []
+        for analyzer in bonus_analyzers:
+            all_bonuses.extend(analyzer.analyze())
+
+        return all_bonuses
+
+    # =========================================================================
     # SCORING
     # =========================================================================
+
+    # Default bonus caps per category (used when no profile is set).
+    _DEFAULT_BONUS_CAPS = {
+        Category.MELODIC: 15.0,
+        Category.HARMONIC: 10.0,
+        Category.RHYTHM: 10.0,
+        Category.STRUCTURE: 10.0,
+    }
 
     # Default penalty for new subcategories not explicitly listed
     _DEFAULT_PENALTY = {
         Severity.ERROR: 1.0, Severity.WARNING: 0.5, Severity.INFO: 0.1,
     }
 
-    def _calculate_scores(self) -> QualityScore:
+    def _calculate_scores(self, bonuses: list = None) -> QualityScore:
         """Calculate quality scores based on issues with blueprint-aware weighting."""
         score = QualityScore()
 
@@ -398,20 +450,59 @@ class MusicAnalyzer:
         total_notes = len(self.notes)
         note_factor = max(1, total_notes / 500)
 
-        score.melodic = max(
+        # Calculate base scores (penalty only)
+        melodic_base = max(
             0, 100 - category_penalties[Category.MELODIC] / note_factor * 5
         )
-        score.harmonic = max(
+        harmonic_base = max(
             0, 100 - category_penalties[Category.HARMONIC] / note_factor * 8
         )
-        score.rhythm = max(
+        rhythm_base = max(
             0, 100 - category_penalties[Category.RHYTHM] / note_factor * 10
         )
-        score.arrangement = max(
+        arrangement_base = max(
             0, 100 - category_penalties[Category.ARRANGEMENT] / note_factor * 8
         )
-        score.structure = max(
+        structure_base = max(
             0, 100 - category_penalties[Category.STRUCTURE] / note_factor * 15
+        )
+
+        # Apply bonus layer
+        bonus_by_cat = defaultdict(float)
+        if bonuses:
+            for bonus in bonuses:
+                bonus_by_cat[bonus.category] += bonus.score
+
+        # Get bonus caps
+        if self.profile:
+            caps = {
+                Category.MELODIC: self.profile.bonus_cap_melodic,
+                Category.HARMONIC: self.profile.bonus_cap_harmonic,
+                Category.RHYTHM: self.profile.bonus_cap_rhythm,
+                Category.STRUCTURE: self.profile.bonus_cap_structure,
+            }
+        else:
+            caps = self._DEFAULT_BONUS_CAPS
+
+        melodic_bonus = min(caps[Category.MELODIC], bonus_by_cat[Category.MELODIC])
+        harmonic_bonus = min(caps[Category.HARMONIC], bonus_by_cat[Category.HARMONIC])
+        rhythm_bonus = min(caps[Category.RHYTHM], bonus_by_cat[Category.RHYTHM])
+        structure_bonus = min(caps[Category.STRUCTURE], bonus_by_cat[Category.STRUCTURE])
+
+        # Final scores: base + bonus, capped at 100
+        score.melodic = min(100, melodic_base + melodic_bonus)
+        score.harmonic = min(100, harmonic_base + harmonic_bonus)
+        score.rhythm = min(100, rhythm_base + rhythm_bonus)
+        score.arrangement = arrangement_base  # No bonus for arrangement
+        score.structure = min(100, structure_base + structure_bonus)
+
+        # Store bonus breakdown
+        score.melodic_bonus = round(melodic_bonus, 2)
+        score.harmonic_bonus = round(harmonic_bonus, 2)
+        score.rhythm_bonus = round(rhythm_bonus, 2)
+        score.structure_bonus = round(structure_bonus, 2)
+        score.total_bonus = round(
+            melodic_bonus + harmonic_bonus + rhythm_bonus + structure_bonus, 2
         )
 
         score.details = {
@@ -420,6 +511,11 @@ class MusicAnalyzer:
             'rhythm_penalty': category_penalties[Category.RHYTHM],
             'arrangement_penalty': category_penalties[Category.ARRANGEMENT],
             'structure_penalty': category_penalties[Category.STRUCTURE],
+            'melodic_base': round(melodic_base, 2),
+            'harmonic_base': round(harmonic_base, 2),
+            'rhythm_base': round(rhythm_base, 2),
+            'arrangement_base': round(arrangement_base, 2),
+            'structure_base': round(structure_base, 2),
             'total_notes': total_notes,
             'note_factor': note_factor,
         }

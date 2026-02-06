@@ -89,6 +89,51 @@ def _pattern_similarity(pat_a: list, pat_b: list) -> float:
     return 1.0 - dist / max_len
 
 
+def contour_direction_changes(pitches: list) -> int:
+    """Count number of direction changes in a pitch sequence.
+
+    A direction change occurs when consecutive intervals switch between
+    ascending and descending. More changes = more interesting contour.
+
+    Args:
+        pitches: List of MIDI pitch values.
+
+    Returns:
+        Number of direction changes. Zero if fewer than 3 pitches.
+    """
+    if len(pitches) < 3:
+        return 0
+    changes = 0
+    prev_dir = 0
+    for i in range(1, len(pitches)):
+        diff = pitches[i] - pitches[i - 1]
+        if diff > 0:
+            cur_dir = 1
+        elif diff < 0:
+            cur_dir = -1
+        else:
+            continue
+        if prev_dir != 0 and cur_dir != prev_dir:
+            changes += 1
+        prev_dir = cur_dir
+    return changes
+
+
+def quantize_rhythm(ioi_list: list, grid: int = 120) -> list:
+    """Quantize IOI values to a grid for pattern matching.
+
+    Args:
+        ioi_list: List of inter-onset intervals in ticks.
+        grid: Quantization grid in ticks (default 120 = 16th note).
+
+    Returns:
+        List of quantized IOI values (multiples of grid).
+    """
+    if not ioi_list:
+        return []
+    return [max(grid, round(ioi / grid) * grid) for ioi in ioi_list]
+
+
 def _ioi_entropy(ioi_list: list) -> float:
     """Shannon entropy of inter-onset-interval distribution.
 

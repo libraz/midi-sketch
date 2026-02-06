@@ -41,6 +41,16 @@ class Note:
 
 
 @dataclass
+class Bonus:
+    """Represents a positive quality bonus."""
+    category: Category
+    name: str
+    score: float  # Actual bonus points awarded
+    max_score: float  # Maximum possible for this check
+    description: str = ""
+
+
+@dataclass
 class Issue:
     """Represents an analysis issue."""
     severity: Severity
@@ -66,6 +76,12 @@ class QualityScore:
     structure: float = 100.0
     overall: float = 100.0
     details: Dict[str, float] = field(default_factory=dict)
+    # Bonus fields (added to base scores, capped per category)
+    melodic_bonus: float = 0.0
+    harmonic_bonus: float = 0.0
+    rhythm_bonus: float = 0.0
+    structure_bonus: float = 0.0
+    total_bonus: float = 0.0
 
     def calculate_overall(self, weights=None):
         """Calculate weighted overall score.
@@ -121,6 +137,7 @@ class AnalysisResult:
     hooks: List[HookPattern] = field(default_factory=list)
     energy_curve: List[Tuple[int, float]] = field(default_factory=list)  # (bar, energy)
     metadata: dict = field(default_factory=dict)
+    bonuses: List[Bonus] = field(default_factory=list)
 
 
 @dataclass

@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cstring>
+
 #include "core/chord_utils.h"
 #include "core/piano_roll_safety.h"
 #include "midisketch.h"
@@ -19,11 +21,9 @@ class PianoRollTest : public ::testing::Test {
     handle_ = midisketch_create();
 
     // Generate a simple song for testing
-    MidiSketchSongConfig config = midisketch_create_default_config(0);
-    config.seed = 12345;    // Fixed seed for reproducibility
-    config.skip_vocal = 1;  // Skip vocal to have clean BGM
-    config.form_id = 0;     // Standard form
-    midisketch_generate_from_config(handle_, &config);
+    const char* json =
+        R"({"style_preset_id":0,"seed":12345,"skip_vocal":true,"form":0})";
+    midisketch_generate_from_json(handle_, json, strlen(json));
   }
 
   void TearDown() override { midisketch_destroy(handle_); }
@@ -167,12 +167,9 @@ TEST_F(PianoRollTest, LowRegisterChordTonesAreWarning) {
   midisketch_destroy(handle_);
   handle_ = midisketch_create();
 
-  MidiSketchSongConfig config = midisketch_create_default_config(0);
-  config.seed = 12345;
-  config.skip_vocal = 1;
-  config.vocal_low = 48;  // C3
-  config.vocal_high = 79;
-  midisketch_generate_from_config(handle_, &config);
+  const char* json =
+      R"({"style_preset_id":0,"seed":12345,"skip_vocal":true,"vocal_low":48,"vocal_high":79})";
+  midisketch_generate_from_json(handle_, json, strlen(json));
 
   MidiSketchPianoRollInfo* info = midisketch_get_piano_roll_safety_at(handle_, 0);
   ASSERT_NE(info, nullptr);

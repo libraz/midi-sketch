@@ -3,9 +3,13 @@
  */
 
 import type { SongConfigBuilder } from './builder';
-import { allocSongConfig } from './config';
+import {
+  serializeAccompanimentConfig,
+  serializeConfig,
+  serializeVocalConfig,
+} from './config-fields';
 import { MidiSketchConfigError, MidiSketchGenerationError } from './constants';
-import { type EmscriptenModule, getApi, getModule } from './internal';
+import { type EmscriptenModule, getApi, getModule } from './internal'; // getModule still needed for getMidi/getEvents/PianoRoll
 import type {
   AccompanimentConfig,
   CollisionInfo,
@@ -39,26 +43,18 @@ export class MidiSketch {
    */
   generateFromConfig(config: SongConfig): void {
     const a = getApi();
-    const m = getModule();
-    const configPtr = allocSongConfig(m, config);
-    try {
-      const result = a.generateFromConfig(this.handle, configPtr);
-      if (result !== 0) {
-        // Error code 1 = INVALID_PARAM, which includes config validation errors
-        // Try to get detailed error message
-        const errorMessage = a.configErrorString(result);
-        if (result === 1) {
-          // Config validation error - get more specific error from validation
-          const validationResult = a.validateConfig(configPtr);
-          if (validationResult !== 0) {
-            const validationMessage = a.configErrorString(validationResult);
-            throw new MidiSketchConfigError(validationResult, validationMessage);
-          }
+    const json = serializeConfig(config);
+    const result = a.generateFromJson(this.handle, json, json.length);
+    if (result !== 0) {
+      if (result === 1) {
+        const validationResult = a.validateConfigJson(json, json.length);
+        if (validationResult !== 0) {
+          const validationMessage = a.configErrorString(validationResult);
+          throw new MidiSketchConfigError(validationResult, validationMessage);
         }
-        throw new MidiSketchGenerationError(result, `Generation failed: ${errorMessage}`);
       }
-    } finally {
-      m._free(configPtr);
+      const errorMessage = a.configErrorString(result);
+      throw new MidiSketchGenerationError(result, `Generation failed: ${errorMessage}`);
     }
   }
 
@@ -92,23 +88,20 @@ export class MidiSketch {
    */
   generateVocal(config: SongConfig): void {
     const a = getApi();
-    const m = getModule();
-    const configPtr = allocSongConfig(m, config);
-    try {
-      const result = a.generateVocal(this.handle, configPtr);
-      if (result !== 0) {
-        const validationResult = a.validateConfig(configPtr);
+    const json = serializeConfig(config);
+    const result = a.generateVocalFromJson(this.handle, json, json.length);
+    if (result !== 0) {
+      if (result === 1) {
+        const validationResult = a.validateConfigJson(json, json.length);
         if (validationResult !== 0) {
           const validationMessage = a.configErrorString(validationResult);
           throw new MidiSketchConfigError(validationResult, validationMessage);
         }
-        throw new MidiSketchGenerationError(
-          result,
-          `Vocal generation failed with error code: ${result}`,
-        );
       }
-    } finally {
-      m._free(configPtr);
+      throw new MidiSketchGenerationError(
+        result,
+        `Vocal generation failed with error code: ${result}`,
+      );
     }
   }
 
@@ -120,27 +113,17 @@ export class MidiSketch {
    */
   regenerateVocal(configOrSeed: VocalConfig | number = 0): void {
     const a = getApi();
-    const m = getModule();
 
-    let configPtr = 0;
-    if (typeof configOrSeed === 'number') {
-      // Seed only - create minimal config with just seed
-      configPtr = this.allocVocalConfig(m, { seed: configOrSeed });
-    } else {
-      // Full config
-      configPtr = this.allocVocalConfig(m, configOrSeed);
-    }
+    const vocalConfig: VocalConfig =
+      typeof configOrSeed === 'number' ? { seed: configOrSeed } : configOrSeed;
 
-    try {
-      const result = a.regenerateVocal(this.handle, configPtr);
-      if (result !== 0) {
-        throw new MidiSketchGenerationError(
-          result,
-          `Vocal regeneration failed with error code: ${result}`,
-        );
-      }
-    } finally {
-      m._free(configPtr);
+    const json = serializeVocalConfig(vocalConfig);
+    const result = a.regenerateVocalFromJson(this.handle, json, json.length);
+    if (result !== 0) {
+      throw new MidiSketchGenerationError(
+        result,
+        `Vocal regeneration failed with error code: ${result}`,
+      );
     }
   }
 
@@ -162,18 +145,13 @@ export class MidiSketch {
         );
       }
     } else {
-      const m = getModule();
-      const configPtr = this.allocAccompanimentConfig(m, config);
-      try {
-        const result = a.generateAccompanimentWithConfig(this.handle, configPtr);
-        if (result !== 0) {
-          throw new MidiSketchGenerationError(
-            result,
-            `Accompaniment generation failed with error code: ${result}`,
-          );
-        }
-      } finally {
-        m._free(configPtr);
+      const json = serializeAccompanimentConfig(config);
+      const result = a.generateAccompanimentFromJson(this.handle, json, json.length);
+      if (result !== 0) {
+        throw new MidiSketchGenerationError(
+          result,
+          `Accompaniment generation failed with error code: ${result}`,
+        );
       }
     }
   }
@@ -197,65 +175,15 @@ export class MidiSketch {
         );
       }
     } else {
-      const m = getModule();
-      const configPtr = this.allocAccompanimentConfig(m, seedOrConfig);
-      try {
-        const result = a.regenerateAccompanimentWithConfig(this.handle, configPtr);
-        if (result !== 0) {
-          throw new MidiSketchGenerationError(
-            result,
-            `Accompaniment regeneration failed with error code: ${result}`,
-          );
-        }
-      } finally {
-        m._free(configPtr);
+      const json = serializeAccompanimentConfig(seedOrConfig);
+      const result = a.regenerateAccompanimentFromJson(this.handle, json, json.length);
+      if (result !== 0) {
+        throw new MidiSketchGenerationError(
+          result,
+          `Accompaniment regeneration failed with error code: ${result}`,
+        );
       }
     }
-  }
-
-  /**
-   * Allocate and populate AccompanimentConfig in WASM memory.
-   */
-  private allocAccompanimentConfig(m: EmscriptenModule, config: AccompanimentConfig): number {
-    // MidiSketchAccompanimentConfig struct size: 28 bytes
-    const configPtr = m._malloc(28);
-    const view = new DataView(m.HEAPU8.buffer, configPtr, 28);
-
-    view.setUint32(0, config.seed ?? 0, true); // seed
-
-    view.setUint8(4, config.drumsEnabled !== false ? 1 : 0); // drums_enabled
-
-    view.setUint8(5, config.arpeggioEnabled ? 1 : 0); // arpeggio_enabled
-    view.setUint8(6, config.arpeggioPattern ?? 0); // arpeggio_pattern
-    view.setUint8(7, config.arpeggioSpeed ?? 1); // arpeggio_speed
-    view.setUint8(8, config.arpeggioOctaveRange ?? 2); // arpeggio_octave_range
-    view.setUint8(9, config.arpeggioGate ?? 80); // arpeggio_gate
-    view.setUint8(10, config.arpeggioSyncChord !== false ? 1 : 0); // arpeggio_sync_chord
-
-    view.setUint8(11, config.chordExtSus ? 1 : 0); // chord_ext_sus
-    view.setUint8(12, config.chordExt7th ? 1 : 0); // chord_ext_7th
-    view.setUint8(13, config.chordExt9th ? 1 : 0); // chord_ext_9th
-    view.setUint8(14, config.chordExtSusProb ?? 20); // chord_ext_sus_prob
-    view.setUint8(15, config.chordExt7thProb ?? 30); // chord_ext_7th_prob
-    view.setUint8(16, config.chordExt9thProb ?? 25); // chord_ext_9th_prob
-
-    view.setUint8(17, config.humanize ? 1 : 0); // humanize
-    view.setUint8(18, config.humanizeTiming ?? 50); // humanize_timing
-    view.setUint8(19, config.humanizeVelocity ?? 50); // humanize_velocity
-
-    view.setUint8(20, config.seEnabled !== false ? 1 : 0); // se_enabled
-
-    view.setUint8(21, config.callEnabled ? 1 : 0); // call_enabled
-    view.setUint8(22, config.callDensity ?? 2); // call_density
-    view.setUint8(23, config.introChant ?? 0); // intro_chant
-    view.setUint8(24, config.mixPattern ?? 0); // mix_pattern
-    view.setUint8(25, config.callNotesEnabled !== false ? 1 : 0); // call_notes_enabled
-
-    // Reserved padding
-    view.setUint8(26, 0);
-    view.setUint8(27, 0);
-
-    return configPtr;
   }
 
   /**
@@ -267,20 +195,17 @@ export class MidiSketch {
    */
   generateWithVocal(config: SongConfig): void {
     const a = getApi();
-    const m = getModule();
-    const configPtr = allocSongConfig(m, config);
-    try {
-      const result = a.generateWithVocal(this.handle, configPtr);
-      if (result !== 0) {
-        const validationResult = a.validateConfig(configPtr);
+    const json = serializeConfig(config);
+    const result = a.generateWithVocalFromJson(this.handle, json, json.length);
+    if (result !== 0) {
+      if (result === 1) {
+        const validationResult = a.validateConfigJson(json, json.length);
         if (validationResult !== 0) {
           const validationMessage = a.configErrorString(validationResult);
           throw new MidiSketchConfigError(validationResult, validationMessage);
         }
-        throw new MidiSketchGenerationError(result, `Generation failed with error code: ${result}`);
       }
-    } finally {
-      m._free(configPtr);
+      throw new MidiSketchGenerationError(result, `Generation failed with error code: ${result}`);
     }
   }
 
@@ -314,48 +239,32 @@ export class MidiSketch {
    */
   setVocalNotes(config: SongConfig, notes: NoteInput[]): void {
     const a = getApi();
-    const m = getModule();
-    const configPtr = allocSongConfig(m, config);
-    const notesPtr = this.allocNoteInputArray(m, notes);
 
-    try {
-      const result = a.setVocalNotes(this.handle, configPtr, notesPtr, notes.length);
-      if (result !== 0) {
-        const validationResult = a.validateConfig(configPtr);
+    // Build combined JSON with config and notes
+    const configJson = serializeConfig(config);
+    const configObj = JSON.parse(configJson);
+    const notesArray = notes.map((note) => ({
+      start_tick: note.startTick,
+      duration: note.duration,
+      pitch: note.pitch,
+      velocity: note.velocity,
+    }));
+    const combined = JSON.stringify({ config: configObj, notes: notesArray });
+
+    const result = a.setVocalNotesFromJson(this.handle, combined, combined.length);
+    if (result !== 0) {
+      if (result === 1) {
+        const validationResult = a.validateConfigJson(configJson, configJson.length);
         if (validationResult !== 0) {
           const validationMessage = a.configErrorString(validationResult);
           throw new MidiSketchConfigError(validationResult, validationMessage);
         }
-        throw new MidiSketchGenerationError(
-          result,
-          `Set vocal notes failed with error code: ${result}`,
-        );
       }
-    } finally {
-      m._free(configPtr);
-      m._free(notesPtr);
+      throw new MidiSketchGenerationError(
+        result,
+        `Set vocal notes failed with error code: ${result}`,
+      );
     }
-  }
-
-  /**
-   * Allocate and populate NoteInput array in WASM memory.
-   */
-  private allocNoteInputArray(m: EmscriptenModule, notes: NoteInput[]): number {
-    // MidiSketchNoteInput struct size: 12 bytes (uint32 + uint32 + uint8 + uint8 + 2 padding)
-    const structSize = 12;
-    const ptr = m._malloc(notes.length * structSize);
-    const view = new DataView(m.HEAPU8.buffer);
-
-    for (let i = 0; i < notes.length; i++) {
-      const offset = ptr + i * structSize;
-      view.setUint32(offset + 0, notes[i].startTick, true); // start_tick
-      view.setUint32(offset + 4, notes[i].duration, true); // duration
-      view.setUint8(offset + 8, notes[i].pitch); // pitch
-      view.setUint8(offset + 9, notes[i].velocity); // velocity
-      // 2 bytes padding (10-11)
-    }
-
-    return ptr;
   }
 
   /**
@@ -582,31 +491,6 @@ export class MidiSketch {
       a.destroy(this.handle);
       this.handle = 0;
     }
-  }
-
-  private allocVocalConfig(m: EmscriptenModule, config: VocalConfig): number {
-    const ptr = m._malloc(16); // MidiSketchVocalConfig size (16 bytes with padding)
-    const view = new DataView(m.HEAPU8.buffer);
-
-    // Layout: seed(4) + vocal_low(1) + vocal_high(1) + vocal_attitude(1)
-    //         + vocal_style(1) + melody_template(1) + melodic_complexity(1)
-    //         + hook_intensity(1) + vocal_groove(1) + composition_style(1)
-    //         + reserved(2) = 16 bytes
-    view.setUint32(ptr + 0, config.seed ?? 0, true);
-    view.setUint8(ptr + 4, config.vocalLow ?? 60);
-    view.setUint8(ptr + 5, config.vocalHigh ?? 79);
-    view.setUint8(ptr + 6, config.vocalAttitude ?? 0);
-    view.setUint8(ptr + 7, config.vocalStyle ?? 0);
-    view.setUint8(ptr + 8, config.melodyTemplate ?? 0);
-    view.setUint8(ptr + 9, config.melodicComplexity ?? 1); // Default: Standard
-    view.setUint8(ptr + 10, config.hookIntensity ?? 2); // Default: Normal
-    view.setUint8(ptr + 11, config.vocalGroove ?? 0); // Default: Straight
-    view.setUint8(ptr + 12, config.compositionStyle ?? 0);
-    view.setUint8(ptr + 13, 0); // Reserved
-    view.setUint8(ptr + 14, 0); // Reserved
-    view.setUint8(ptr + 15, 0); // Padding (explicit for clarity)
-
-    return ptr;
   }
 }
 

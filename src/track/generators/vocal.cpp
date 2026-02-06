@@ -1262,7 +1262,14 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
   // Enforce maximum phrase duration with breath gaps
   VocalPhysicsParams physics = getVocalPhysicsParams(params.vocal_style);
   if (physics.requires_breath && physics.max_phrase_bars < 255) {
-    melody::enforceMaxPhraseDuration(all_notes, physics.max_phrase_bars);
+    uint8_t effective_max_bars = physics.max_phrase_bars;
+    // RhythmSync: tighter breath enforcement (4 bars = 16 beats)
+    // Dense note generation in RhythmSync rarely produces natural phrase gaps,
+    // so shorter max phrase prevents 30+ beat continuous phrases.
+    if (params.paradigm == GenerationParadigm::RhythmSync && effective_max_bars > 4) {
+      effective_max_bars = 4;
+    }
+    melody::enforceMaxPhraseDuration(all_notes, effective_max_bars);
   }
 
   // Vocal-friendly post-processing:

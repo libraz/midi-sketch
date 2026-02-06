@@ -290,6 +290,80 @@ struct SongConfig {
 
   /// === Behavioral Loop (addictive generation) ===
   bool addictive_mode = false;  ///< Enable Behavioral Loop mode (fixed riff, maximum hook)
+
+  /// Visitor-based JSON serialization for config interchange (WASM/CLI/metadata)
+  /// Field list is defined once in visitFields; writeTo/readFrom delegate to visitors.
+  template <typename Self, typename V>
+  static void visitFields(Self&& self, V&& v) {
+    v("style_preset_id", self.style_preset_id);
+    v("blueprint_id", self.blueprint_id);
+    v("mood", self.mood);
+    v("mood_explicit", self.mood_explicit);
+    v("key", self.key);
+    v("bpm", self.bpm);
+    v("seed", self.seed);
+    v("chord_progression_id", self.chord_progression_id);
+    v("form", self.form);
+    v("form_explicit", self.form_explicit);
+    v("target_duration_seconds", self.target_duration_seconds);
+    v("vocal_attitude", self.vocal_attitude);
+    v("vocal_style", self.vocal_style);
+    v("drive_feel", self.drive_feel);
+    v("drums_enabled", self.drums_enabled);
+    v("arpeggio_enabled", self.arpeggio_enabled);
+    v("skip_vocal", self.skip_vocal);
+    v("vocal_low", self.vocal_low);
+    v("vocal_high", self.vocal_high);
+    v("composition_style", self.composition_style);
+    v("motif_repeat_scope", self.motif_repeat_scope);
+    v("arrangement_growth", self.arrangement_growth);
+    v("humanize", self.humanize);
+    v("humanize_timing", self.humanize_timing);
+    v("humanize_velocity", self.humanize_velocity);
+    v("modulation_timing", self.modulation_timing);
+    v("modulation_semitones", self.modulation_semitones);
+    v("se_enabled", self.se_enabled);
+    v("call_setting", self.call_setting);
+    v("call_notes_enabled", self.call_notes_enabled);
+    v("intro_chant", self.intro_chant);
+    v("mix_pattern", self.mix_pattern);
+    v("call_density", self.call_density);
+    v("melody_template", self.melody_template);
+    v("melodic_complexity", self.melodic_complexity);
+    v("hook_intensity", self.hook_intensity);
+    v("vocal_groove", self.vocal_groove);
+    v("enable_syncopation", self.enable_syncopation);
+    v("energy_curve", self.energy_curve);
+    v("addictive_mode", self.addictive_mode);
+    // Melody overrides
+    v("melody_max_leap", self.melody_max_leap);
+    v("melody_syncopation_prob", self.melody_syncopation_prob);
+    v("melody_phrase_length", self.melody_phrase_length);
+    v("melody_long_note_ratio", self.melody_long_note_ratio);
+    v("melody_chorus_register_shift", self.melody_chorus_register_shift);
+    v("melody_hook_repetition", self.melody_hook_repetition);
+    v("melody_use_leading_tone", self.melody_use_leading_tone);
+    // Motif overrides
+    v("motif_length", self.motif_length);
+    v("motif_note_count", self.motif_note_count);
+    v("motif_motion", self.motif_motion);
+    v("motif_register_high", self.motif_register_high);
+    v("motif_rhythm_density", self.motif_rhythm_density);
+    // Nested structs
+    v.nested("arpeggio", self.arpeggio);
+    v.nested("chord_extension", self.chord_extension);
+    v.nested("motif_chord", self.motif_chord);
+  }
+
+  void writeTo(json::Writer& w) const {
+    json::WriteVisitor v{w};
+    visitFields(*this, v);
+  }
+
+  void readFrom(const json::Parser& p) {
+    json::ReadVisitor v{p};
+    visitFields(*this, v);
+  }
 };
 
 /// @brief Input parameters for MIDI generation.
@@ -548,6 +622,30 @@ struct VocalConfig {
   HookIntensity hook_intensity = HookIntensity::Normal;
   VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
   CompositionStyle composition_style = CompositionStyle::MelodyLead;
+
+  template <typename Self, typename V>
+  static void visitFields(Self&& self, V&& v) {
+    v("seed", self.seed);
+    v("vocal_low", self.vocal_low);
+    v("vocal_high", self.vocal_high);
+    v("vocal_attitude", self.vocal_attitude);
+    v("vocal_style", self.vocal_style);
+    v("melody_template", self.melody_template);
+    v("melodic_complexity", self.melodic_complexity);
+    v("hook_intensity", self.hook_intensity);
+    v("vocal_groove", self.vocal_groove);
+    v("composition_style", self.composition_style);
+  }
+
+  void writeTo(json::Writer& w) const {
+    json::WriteVisitor v{w};
+    visitFields(*this, v);
+  }
+
+  void readFrom(const json::Parser& p) {
+    json::ReadVisitor v{p};
+    visitFields(*this, v);
+  }
 };
 
 /// @brief Configuration for accompaniment generation/regeneration.
@@ -590,6 +688,45 @@ struct AccompanimentConfig {
   uint8_t intro_chant = 0;         ///< 0=None, 1=Gachikoi, 2=Mix
   uint8_t mix_pattern = 0;         ///< 0=None, 1=Standard, 2=Tiger
   bool call_notes_enabled = true;  ///< Output call as MIDI notes
+
+  template <typename Self, typename V>
+  static void visitFields(Self&& self, V&& v) {
+    v("seed", self.seed);
+    v("drums_enabled", self.drums_enabled);
+    v("arpeggio_enabled", self.arpeggio_enabled);
+    v("arpeggio_pattern", self.arpeggio_pattern);
+    v("arpeggio_speed", self.arpeggio_speed);
+    v("arpeggio_octave_range", self.arpeggio_octave_range);
+    v("arpeggio_gate", self.arpeggio_gate);
+    v("arpeggio_sync_chord", self.arpeggio_sync_chord);
+    v("chord_ext_sus", self.chord_ext_sus);
+    v("chord_ext_7th", self.chord_ext_7th);
+    v("chord_ext_9th", self.chord_ext_9th);
+    v("chord_ext_tritone_sub", self.chord_ext_tritone_sub);
+    v("chord_ext_sus_prob", self.chord_ext_sus_prob);
+    v("chord_ext_7th_prob", self.chord_ext_7th_prob);
+    v("chord_ext_9th_prob", self.chord_ext_9th_prob);
+    v("chord_ext_tritone_sub_prob", self.chord_ext_tritone_sub_prob);
+    v("humanize", self.humanize);
+    v("humanize_timing", self.humanize_timing);
+    v("humanize_velocity", self.humanize_velocity);
+    v("se_enabled", self.se_enabled);
+    v("call_enabled", self.call_enabled);
+    v("call_density", self.call_density);
+    v("intro_chant", self.intro_chant);
+    v("mix_pattern", self.mix_pattern);
+    v("call_notes_enabled", self.call_notes_enabled);
+  }
+
+  void writeTo(json::Writer& w) const {
+    json::WriteVisitor v{w};
+    visitFields(*this, v);
+  }
+
+  void readFrom(const json::Parser& p) {
+    json::ReadVisitor v{p};
+    visitFields(*this, v);
+  }
 };
 
 }  // namespace midisketch

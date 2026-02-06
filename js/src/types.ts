@@ -259,12 +259,16 @@ export interface AccompanimentConfig {
   chordExt7th?: boolean;
   /** Enable 9th chord extension */
   chordExt9th?: boolean;
+  /** Enable tritone substitution (V7 -> bII7) */
+  chordExtTritoneSub?: boolean;
   /** Sus probability: 0-100 */
   chordExtSusProb?: number;
   /** 7th probability: 0-100 */
   chordExt7thProb?: number;
   /** 9th probability: 0-100 */
   chordExt9thProb?: number;
+  /** Tritone substitution probability: 0-100 */
+  chordExtTritoneSubProb?: number;
 
   // Humanization
   /** Enable humanization */

@@ -939,6 +939,9 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
     uint8_t velocity;
   };
   std::map<SectionType, std::vector<LockedNoteEntry>> locked_note_cache;
+  // Separate cache for RhythmSync coordinate axis mode (is_rhythm_lock_global)
+  // Uses NoCollisionCheck so cached pitches are replayed exactly as generated.
+  std::map<SectionType, std::vector<LockedNoteEntry>> coord_axis_note_cache;
 
   for (const auto& section : sections) {
     if (!hasTrack(section.track_mask, TrackMask::Motif)) {
@@ -981,6 +984,35 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
         sec_idx++;
         continue;
       }
+    }
+
+    // RhythmSync coordinate axis + Locked: replay cached notes verbatim
+    // Uses NoCollisionCheck since coordinate axis tracks skip collision avoidance.
+    if (is_rhythm_lock_global) {
+      auto cache_it = coord_axis_note_cache.find(section.type);
+      if (cache_it != coord_axis_note_cache.end()) {
+        for (const auto& entry : cache_it->second) {
+          Tick absolute_tick = section.start_tick + entry.relative_tick;
+          if (absolute_tick >= section.endTick()) continue;
+
+          NoteOptions opts;
+          opts.start = absolute_tick;
+          opts.duration = entry.duration;
+          opts.desired_pitch = entry.pitch;
+          opts.velocity = entry.velocity;
+          opts.role = TrackRole::Motif;
+          opts.preference = PitchPreference::NoCollisionCheck;
+          opts.range_low = MOTIF_LOW;
+          opts.range_high = motif_range_high;
+          opts.source = NoteSource::Motif;
+          createNoteAndAdd(track, *harmony, opts);
+        }
+        sec_idx++;
+        continue;
+      }
+      // Reset monotony tracker at section boundary to prevent state leaking
+      // between sections, which causes different pitches for same patterns.
+      monotony_tracker.reset();
     }
 
     Tick section_end = section.endTick();
@@ -1247,6 +1279,25 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
       }
       if (!entries.empty()) {
         locked_note_cache[section.type] = std::move(entries);
+      }
+    }
+
+    // RhythmSync coordinate axis + Locked: cache output notes for replay
+    if (is_rhythm_lock_global &&
+        coord_axis_note_cache.find(section.type) == coord_axis_note_cache.end()) {
+      std::vector<LockedNoteEntry> entries;
+      for (const auto& evt : track.notes()) {
+        if (evt.start_tick >= section.start_tick && evt.start_tick < section.endTick()) {
+          entries.push_back({
+            evt.start_tick - section.start_tick,
+            evt.duration,
+            evt.note,
+            evt.velocity
+          });
+        }
+      }
+      if (!entries.empty()) {
+        coord_axis_note_cache[section.type] = std::move(entries);
       }
     }
 

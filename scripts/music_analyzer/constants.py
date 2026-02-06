@@ -91,6 +91,10 @@ DEGREE_TO_CHORD_TONES = {
     6: {11, 2, 5},   # vii: B, D, F
 }
 
+# Chord function mapping: root pitch class -> harmonic function
+# T=Tonic, S=Subdominant, D=Dominant
+CHORD_FUNCTION_MAP = {0: 'T', 2: 'S', 4: 'S', 5: 'T', 7: 'D', 9: 'T', 11: 'D'}
+
 # Beat strength weights (1-indexed beat positions in 4/4)
 BEAT_STRENGTH = {1: 1.0, 2: 0.4, 3: 0.7, 4: 0.4}
 

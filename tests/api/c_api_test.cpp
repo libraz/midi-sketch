@@ -1,12 +1,14 @@
 /**
  * @file c_api_test.cpp
- * @brief Tests for C API bindings.
+ * @brief Tests for C API bindings (JSON API).
  */
 
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <string>
 
+#include "core/json_helpers.h"
 #include "midisketch_c.h"
 
 namespace midisketch {
@@ -26,13 +28,10 @@ TEST(CApiTest, GetInfoReturnsCorrectTrackCount) {
   MidiSketchHandle handle = midisketch_create();
   ASSERT_NE(handle, nullptr);
 
-  // Generate with default config
-  MidiSketchSongConfig config = midisketch_create_default_config(0);
-  config.drums_enabled = 1;
-  config.arpeggio_enabled = 1;
-  config.seed = 12345;
-
-  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  // Generate with drums and arpeggio enabled
+  const char* json =
+      R"({"style_preset_id":0,"drums_enabled":true,"arpeggio_enabled":true,"seed":12345})";
+  MidiSketchError err = midisketch_generate_from_json(handle, json, strlen(json));
   EXPECT_EQ(err, MIDISKETCH_OK);
 
   MidiSketchInfo info = midisketch_get_info(handle);
@@ -48,12 +47,9 @@ TEST(CApiTest, GetInfoWithMinimalGeneration) {
   ASSERT_NE(handle, nullptr);
 
   // Generate without drums or arpeggio
-  MidiSketchSongConfig config = midisketch_create_default_config(0);
-  config.drums_enabled = 0;
-  config.arpeggio_enabled = 0;
-  config.seed = 12345;
-
-  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  const char* json =
+      R"({"style_preset_id":0,"drums_enabled":false,"arpeggio_enabled":false,"seed":12345})";
+  MidiSketchError err = midisketch_generate_from_json(handle, json, strlen(json));
   EXPECT_EQ(err, MIDISKETCH_OK);
 
   MidiSketchInfo info = midisketch_get_info(handle);
@@ -68,11 +64,8 @@ TEST(CApiTest, GetInfoBpmCorrect) {
   MidiSketchHandle handle = midisketch_create();
   ASSERT_NE(handle, nullptr);
 
-  MidiSketchSongConfig config = midisketch_create_default_config(0);
-  config.bpm = 140;
-  config.seed = 12345;
-
-  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  const char* json = R"({"style_preset_id":0,"bpm":140,"seed":12345})";
+  MidiSketchError err = midisketch_generate_from_json(handle, json, strlen(json));
   EXPECT_EQ(err, MIDISKETCH_OK);
 
   MidiSketchInfo info = midisketch_get_info(handle);
@@ -114,10 +107,8 @@ TEST(CApiTest, GetLastConfigErrorAfterValidGeneration) {
   MidiSketchHandle handle = midisketch_create();
   ASSERT_NE(handle, nullptr);
 
-  MidiSketchSongConfig config = midisketch_create_default_config(0);
-  config.seed = 12345;
-
-  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  const char* json = R"({"style_preset_id":0,"seed":12345})";
+  MidiSketchError err = midisketch_generate_from_json(handle, json, strlen(json));
   EXPECT_EQ(err, MIDISKETCH_OK);
 
   // After successful generation, last config error should be OK
@@ -131,11 +122,9 @@ TEST(CApiTest, GetLastConfigErrorAfterInvalidStyle) {
   MidiSketchHandle handle = midisketch_create();
   ASSERT_NE(handle, nullptr);
 
-  MidiSketchSongConfig config = midisketch_create_default_config(0);
-  config.style_preset_id = 255;  // Invalid style ID
-  config.seed = 12345;
-
-  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  // Invalid style_preset_id = 255
+  const char* json = R"({"style_preset_id":255,"seed":12345})";
+  MidiSketchError err = midisketch_generate_from_json(handle, json, strlen(json));
   EXPECT_EQ(err, MIDISKETCH_ERROR_INVALID_PARAM);
 
   // Should be able to retrieve the specific error
@@ -153,11 +142,9 @@ TEST(CApiTest, GetLastConfigErrorAfterInvalidBPM) {
   MidiSketchHandle handle = midisketch_create();
   ASSERT_NE(handle, nullptr);
 
-  MidiSketchSongConfig config = midisketch_create_default_config(0);
-  config.bpm = 500;  // Invalid BPM (max is 240)
-  config.seed = 12345;
-
-  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  // Invalid BPM = 500 (max is 240)
+  const char* json = R"({"style_preset_id":0,"bpm":500,"seed":12345})";
+  MidiSketchError err = midisketch_generate_from_json(handle, json, strlen(json));
   EXPECT_EQ(err, MIDISKETCH_ERROR_INVALID_PARAM);
 
   MidiSketchConfigError last_err = midisketch_get_last_config_error(handle);
@@ -180,10 +167,8 @@ TEST(CApiTest, GetVocalPreviewMidi) {
   MidiSketchHandle handle = midisketch_create();
   ASSERT_NE(handle, nullptr);
 
-  MidiSketchSongConfig config = midisketch_create_default_config(0);
-  config.seed = 12345;
-
-  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  const char* json = R"({"style_preset_id":0,"seed":12345})";
+  MidiSketchError err = midisketch_generate_from_json(handle, json, strlen(json));
   EXPECT_EQ(err, MIDISKETCH_OK);
 
   // Get vocal preview MIDI
@@ -226,11 +211,8 @@ TEST(CApiTest, GenerateAccompanimentMultipleTimesDoesNotAccumulate) {
   ASSERT_NE(handle, nullptr);
 
   // Step 1: Generate vocal only
-  MidiSketchSongConfig config = midisketch_create_default_config(0);
-  config.seed = 12345;
-  config.skip_vocal = 0;
-
-  MidiSketchError err = midisketch_generate_vocal(handle, &config);
+  const char* json = R"({"style_preset_id":0,"seed":12345,"skip_vocal":false})";
+  MidiSketchError err = midisketch_generate_vocal_from_json(handle, json, strlen(json));
   EXPECT_EQ(err, MIDISKETCH_OK);
 
   // Step 2: Generate accompaniment first time
@@ -279,10 +261,8 @@ TEST(CApiTest, RegenerateAccompanimentMultipleTimesDoesNotAccumulate) {
   ASSERT_NE(handle, nullptr);
 
   // Generate vocal
-  MidiSketchSongConfig config = midisketch_create_default_config(0);
-  config.seed = 12345;
-
-  MidiSketchError err = midisketch_generate_vocal(handle, &config);
+  const char* json = R"({"style_preset_id":0,"seed":12345})";
+  MidiSketchError err = midisketch_generate_vocal_from_json(handle, json, strlen(json));
   EXPECT_EQ(err, MIDISKETCH_OK);
 
   // First accompaniment
@@ -294,8 +274,8 @@ TEST(CApiTest, RegenerateAccompanimentMultipleTimesDoesNotAccumulate) {
   midisketch_free_midi(midi1);
 
   // Regenerate with different seeds multiple times
-  for (int i = 0; i < 5; ++i) {
-    err = midisketch_regenerate_accompaniment(handle, 100000 + i);
+  for (int idx = 0; idx < 5; ++idx) {
+    err = midisketch_regenerate_accompaniment(handle, 100000 + idx);
     EXPECT_EQ(err, MIDISKETCH_OK);
   }
 
@@ -317,32 +297,31 @@ TEST(CApiTest, RegenerateAccompanimentMultipleTimesDoesNotAccumulate) {
 // ============================================================================
 
 TEST(CApiTest, DefaultConfigHasCorrectNewFieldDefaults) {
-  MidiSketchSongConfig config = midisketch_create_default_config(0);
+  const char* json_str = midisketch_create_default_config_json(0);
+  ASSERT_NE(json_str, nullptr);
 
-  // mood defaults to 0, mood_explicit defaults to 0 (derive from style)
-  EXPECT_EQ(config.mood, 0);
-  EXPECT_EQ(config.mood_explicit, 0);
+  json::Parser parser{std::string(json_str)};
 
-  // form_explicit defaults to 0 (may randomize)
-  EXPECT_EQ(config.form_explicit, 0);
+  // mood defaults to 0, mood_explicit defaults to false (derive from style)
+  EXPECT_EQ(parser.getInt("mood", -1), 0);
+  EXPECT_EQ(parser.getBool("mood_explicit", true), false);
+
+  // form_explicit defaults to false (may randomize)
+  EXPECT_EQ(parser.getBool("form_explicit", true), false);
 
   // drive_feel defaults to 50 (neutral)
-  EXPECT_EQ(config.drive_feel, 50);
+  EXPECT_EQ(parser.getInt("drive_feel", -1), 50);
 
-  // addictive_mode defaults to 0 (off)
-  EXPECT_EQ(config.addictive_mode, 0);
+  // addictive_mode defaults to false (off)
+  EXPECT_EQ(parser.getBool("addictive_mode", true), false);
 }
 
 TEST(CApiTest, MoodFieldRoundTrips) {
   MidiSketchHandle handle = midisketch_create();
   ASSERT_NE(handle, nullptr);
 
-  MidiSketchSongConfig config = midisketch_create_default_config(0);
-  config.seed = 42;
-  config.mood = 5;
-  config.mood_explicit = 1;
-
-  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  const char* json = R"({"style_preset_id":0,"seed":42,"mood":5,"mood_explicit":true})";
+  MidiSketchError err = midisketch_generate_from_json(handle, json, strlen(json));
   EXPECT_EQ(err, MIDISKETCH_OK);
 
   midisketch_destroy(handle);
@@ -352,11 +331,8 @@ TEST(CApiTest, FormExplicitFieldRoundTrips) {
   MidiSketchHandle handle = midisketch_create();
   ASSERT_NE(handle, nullptr);
 
-  MidiSketchSongConfig config = midisketch_create_default_config(0);
-  config.seed = 42;
-  config.form_explicit = 1;
-
-  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  const char* json = R"({"style_preset_id":0,"seed":42,"form_explicit":true})";
+  MidiSketchError err = midisketch_generate_from_json(handle, json, strlen(json));
   EXPECT_EQ(err, MIDISKETCH_OK);
 
   midisketch_destroy(handle);
@@ -366,11 +342,8 @@ TEST(CApiTest, DriveFeelFieldRoundTrips) {
   MidiSketchHandle handle = midisketch_create();
   ASSERT_NE(handle, nullptr);
 
-  MidiSketchSongConfig config = midisketch_create_default_config(0);
-  config.seed = 42;
-  config.drive_feel = 80;
-
-  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  const char* json = R"({"style_preset_id":0,"seed":42,"drive_feel":80})";
+  MidiSketchError err = midisketch_generate_from_json(handle, json, strlen(json));
   EXPECT_EQ(err, MIDISKETCH_OK);
 
   midisketch_destroy(handle);
@@ -380,11 +353,8 @@ TEST(CApiTest, AddictiveModeFieldRoundTrips) {
   MidiSketchHandle handle = midisketch_create();
   ASSERT_NE(handle, nullptr);
 
-  MidiSketchSongConfig config = midisketch_create_default_config(0);
-  config.seed = 42;
-  config.addictive_mode = 1;
-
-  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  const char* json = R"({"style_preset_id":0,"seed":42,"addictive_mode":true})";
+  MidiSketchError err = midisketch_generate_from_json(handle, json, strlen(json));
   EXPECT_EQ(err, MIDISKETCH_OK);
 
   midisketch_destroy(handle);
@@ -394,15 +364,9 @@ TEST(CApiTest, AllNewFieldsTogetherRoundTrip) {
   MidiSketchHandle handle = midisketch_create();
   ASSERT_NE(handle, nullptr);
 
-  MidiSketchSongConfig config = midisketch_create_default_config(0);
-  config.seed = 42;
-  config.mood = 10;
-  config.mood_explicit = 1;
-  config.form_explicit = 1;
-  config.drive_feel = 100;
-  config.addictive_mode = 1;
-
-  MidiSketchError err = midisketch_generate_from_config(handle, &config);
+  const char* json =
+      R"({"style_preset_id":0,"seed":42,"mood":10,"mood_explicit":true,"form_explicit":true,"drive_feel":100,"addictive_mode":true})";
+  MidiSketchError err = midisketch_generate_from_json(handle, json, strlen(json));
   EXPECT_EQ(err, MIDISKETCH_OK);
 
   midisketch_destroy(handle);

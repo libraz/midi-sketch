@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <sstream>
 #include <unordered_map>
 
 #include "core/chord.h"
@@ -22,152 +23,6 @@ namespace {
 // Thread-local storage for last config error per handle
 // Using void* as key to avoid issues with opaque handle
 std::unordered_map<void*, MidiSketchConfigError> g_last_config_errors;
-// Helper to convert C config to C++ SongConfig
-midisketch::SongConfig convertToSongConfig(const MidiSketchSongConfig* config) {
-  midisketch::SongConfig cpp_config;
-  cpp_config.style_preset_id = config->style_preset_id;
-  cpp_config.key = static_cast<midisketch::Key>(config->key);
-  cpp_config.bpm = config->bpm;
-  cpp_config.seed = config->seed;
-  cpp_config.chord_progression_id = config->chord_progression_id;
-  cpp_config.form = static_cast<midisketch::StructurePattern>(config->form_id);
-  cpp_config.vocal_attitude = static_cast<midisketch::VocalAttitude>(config->vocal_attitude);
-  cpp_config.drums_enabled = config->drums_enabled != 0;
-  cpp_config.blueprint_id = config->blueprint_id;
-
-  // Arpeggio settings
-  cpp_config.arpeggio_enabled = config->arpeggio_enabled != 0;
-  cpp_config.arpeggio.pattern = static_cast<midisketch::ArpeggioPattern>(config->arpeggio_pattern);
-  cpp_config.arpeggio.speed = static_cast<midisketch::ArpeggioSpeed>(config->arpeggio_speed);
-  cpp_config.arpeggio.octave_range =
-      config->arpeggio_octave_range > 0 ? config->arpeggio_octave_range : 2;
-  cpp_config.arpeggio.gate = config->arpeggio_gate / 100.0f;
-  cpp_config.arpeggio.sync_chord = config->arpeggio_sync_chord != 0;
-
-  // Vocal settings
-  cpp_config.vocal_low = config->vocal_low;
-  cpp_config.vocal_high = config->vocal_high;
-  cpp_config.skip_vocal = config->skip_vocal != 0;
-
-  // Humanization
-  cpp_config.humanize = config->humanize != 0;
-  cpp_config.humanize_timing = config->humanize_timing / 100.0f;
-  cpp_config.humanize_velocity = config->humanize_velocity / 100.0f;
-
-  // Chord extensions
-  cpp_config.chord_extension.enable_sus = config->chord_ext_sus != 0;
-  cpp_config.chord_extension.enable_7th = config->chord_ext_7th != 0;
-  cpp_config.chord_extension.enable_9th = config->chord_ext_9th != 0;
-  cpp_config.chord_extension.tritone_sub = config->chord_ext_tritone_sub != 0;
-  cpp_config.chord_extension.sus_probability = config->chord_ext_sus_prob / 100.0f;
-  cpp_config.chord_extension.seventh_probability = config->chord_ext_7th_prob / 100.0f;
-  cpp_config.chord_extension.ninth_probability = config->chord_ext_9th_prob / 100.0f;
-  cpp_config.chord_extension.tritone_sub_probability =
-      config->chord_ext_tritone_sub_prob / 100.0f;
-
-  // Composition style
-  cpp_config.composition_style =
-      static_cast<midisketch::CompositionStyle>(config->composition_style);
-  cpp_config.target_duration_seconds = config->target_duration_seconds;
-
-  // Modulation settings
-  cpp_config.modulation_timing =
-      static_cast<midisketch::ModulationTiming>(config->modulation_timing);
-  cpp_config.modulation_semitones = config->modulation_semitones;
-
-  // Call settings
-  cpp_config.se_enabled = config->se_enabled != 0;
-  cpp_config.call_setting = static_cast<midisketch::CallSetting>(config->call_setting);
-  cpp_config.call_notes_enabled = config->call_notes_enabled != 0;
-  cpp_config.intro_chant = static_cast<midisketch::IntroChant>(config->intro_chant);
-  cpp_config.mix_pattern = static_cast<midisketch::MixPattern>(config->mix_pattern);
-  cpp_config.call_density = static_cast<midisketch::CallDensity>(config->call_density);
-
-  // Vocal style settings
-  cpp_config.vocal_style = static_cast<midisketch::VocalStylePreset>(config->vocal_style);
-  cpp_config.melody_template = static_cast<midisketch::MelodyTemplateId>(config->melody_template);
-
-  // Arrangement growth
-  cpp_config.arrangement_growth =
-      static_cast<midisketch::ArrangementGrowth>(config->arrangement_growth);
-
-  // Motif settings
-  cpp_config.motif_chord.fixed_progression = config->motif_fixed_progression != 0;
-  cpp_config.motif_chord.max_chord_count = config->motif_max_chord_count;
-  cpp_config.motif_repeat_scope =
-      static_cast<midisketch::MotifRepeatScope>(config->motif_repeat_scope);
-
-  // Melodic complexity, hook intensity, and groove
-  cpp_config.melodic_complexity =
-      static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);
-  cpp_config.hook_intensity = static_cast<midisketch::HookIntensity>(config->hook_intensity);
-  cpp_config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(config->vocal_groove);
-
-  // Mood override
-  cpp_config.mood = config->mood;
-  cpp_config.mood_explicit = config->mood_explicit != 0;
-
-  // Form control
-  cpp_config.form_explicit = config->form_explicit != 0;
-
-  // Drive and addictive
-  cpp_config.drive_feel = config->drive_feel;
-  cpp_config.addictive_mode = config->addictive_mode != 0;
-
-  // Syncopation
-  cpp_config.enable_syncopation = config->enable_syncopation != 0;
-
-  // Energy curve
-  cpp_config.energy_curve = static_cast<midisketch::EnergyCurve>(config->energy_curve);
-
-  // Melody overrides
-  cpp_config.melody_max_leap = config->melody_max_leap;
-  cpp_config.melody_syncopation_prob = config->melody_syncopation_prob;
-  cpp_config.melody_phrase_length = config->melody_phrase_length;
-  cpp_config.melody_long_note_ratio = config->melody_long_note_ratio;
-  cpp_config.melody_chorus_register_shift = config->melody_chorus_register_shift;
-  cpp_config.melody_hook_repetition = config->melody_hook_repetition;
-  cpp_config.melody_use_leading_tone = config->melody_use_leading_tone;
-
-  // Motif overrides
-  cpp_config.motif_length = config->motif_length;
-  cpp_config.motif_note_count = config->motif_note_count;
-  cpp_config.motif_motion = config->motif_motion;
-  cpp_config.motif_register_high = config->motif_register_high;
-  cpp_config.motif_rhythm_density = config->motif_rhythm_density;
-
-  return cpp_config;
-}
-
-midisketch::AccompanimentConfig convertToAccompanimentConfig(
-    const MidiSketchAccompanimentConfig* config) {
-  midisketch::AccompanimentConfig cpp_config;
-  cpp_config.seed = config->seed;
-  cpp_config.drums_enabled = config->drums_enabled != 0;
-  cpp_config.arpeggio_enabled = config->arpeggio_enabled != 0;
-  cpp_config.arpeggio_pattern = config->arpeggio_pattern;
-  cpp_config.arpeggio_speed = config->arpeggio_speed;
-  cpp_config.arpeggio_octave_range = config->arpeggio_octave_range;
-  cpp_config.arpeggio_gate = config->arpeggio_gate;
-  cpp_config.arpeggio_sync_chord = config->arpeggio_sync_chord != 0;
-  cpp_config.chord_ext_sus = config->chord_ext_sus != 0;
-  cpp_config.chord_ext_7th = config->chord_ext_7th != 0;
-  cpp_config.chord_ext_9th = config->chord_ext_9th != 0;
-  cpp_config.chord_ext_sus_prob = config->chord_ext_sus_prob;
-  cpp_config.chord_ext_7th_prob = config->chord_ext_7th_prob;
-  cpp_config.chord_ext_9th_prob = config->chord_ext_9th_prob;
-  cpp_config.humanize = config->humanize != 0;
-  cpp_config.humanize_timing = config->humanize_timing;
-  cpp_config.humanize_velocity = config->humanize_velocity;
-  cpp_config.se_enabled = config->se_enabled != 0;
-  cpp_config.call_enabled = config->call_enabled != 0;
-  cpp_config.call_density = config->call_density;
-  cpp_config.intro_chant = config->intro_chant;
-  cpp_config.mix_pattern = config->mix_pattern;
-  cpp_config.call_notes_enabled = config->call_notes_enabled != 0;
-  return cpp_config;
-}
-
 }  // namespace
 
 extern "C" {
@@ -251,60 +106,6 @@ void midisketch_destroy(MidiSketchHandle handle) {
 // Vocal-First Generation API Implementation
 // ============================================================================
 
-MidiSketchError midisketch_generate_vocal(MidiSketchHandle handle,
-                                          const MidiSketchSongConfig* config) {
-  if (!handle || !config) {
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  // Clear previous config error
-  g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
-
-  // Validate config first
-  MidiSketchConfigError validation = midisketch_validate_config(config);
-  if (validation != MIDISKETCH_CONFIG_OK) {
-    g_last_config_errors[handle] = validation;
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
-  midisketch::SongConfig cpp_config = convertToSongConfig(config);
-  sketch->generateVocal(cpp_config);
-  return MIDISKETCH_OK;
-}
-
-MidiSketchError midisketch_regenerate_vocal(MidiSketchHandle handle,
-                                            const MidiSketchVocalConfig* config) {
-  if (!handle) {
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
-
-  if (config) {
-    // Apply vocal config parameters
-    midisketch::VocalConfig vocal_config;
-    vocal_config.seed = config->seed;
-    vocal_config.vocal_low = config->vocal_low;
-    vocal_config.vocal_high = config->vocal_high;
-    vocal_config.vocal_attitude = static_cast<midisketch::VocalAttitude>(config->vocal_attitude);
-    vocal_config.vocal_style = static_cast<midisketch::VocalStylePreset>(config->vocal_style);
-    vocal_config.melody_template =
-        static_cast<midisketch::MelodyTemplateId>(config->melody_template);
-    vocal_config.melodic_complexity =
-        static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);
-    vocal_config.hook_intensity = static_cast<midisketch::HookIntensity>(config->hook_intensity);
-    vocal_config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(config->vocal_groove);
-    vocal_config.composition_style =
-        static_cast<midisketch::CompositionStyle>(config->composition_style);
-    sketch->regenerateVocal(vocal_config);
-  } else {
-    // NULL config = regenerate with new seed only
-    sketch->regenerateVocal(0);
-  }
-  return MIDISKETCH_OK;
-}
-
 MidiSketchError midisketch_generate_accompaniment(MidiSketchHandle handle) {
   if (!handle) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
@@ -322,84 +123,6 @@ MidiSketchError midisketch_regenerate_accompaniment(MidiSketchHandle handle, uin
 
   auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
   sketch->regenerateAccompaniment(new_seed);
-  return MIDISKETCH_OK;
-}
-
-MidiSketchError midisketch_generate_accompaniment_with_config(
-    MidiSketchHandle handle, const MidiSketchAccompanimentConfig* config) {
-  if (!handle || !config) {
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
-  midisketch::AccompanimentConfig cpp_config = convertToAccompanimentConfig(config);
-  sketch->generateAccompanimentForVocal(cpp_config);
-  return MIDISKETCH_OK;
-}
-
-MidiSketchError midisketch_regenerate_accompaniment_with_config(
-    MidiSketchHandle handle, const MidiSketchAccompanimentConfig* config) {
-  if (!handle || !config) {
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
-  midisketch::AccompanimentConfig cpp_config = convertToAccompanimentConfig(config);
-  sketch->regenerateAccompaniment(cpp_config);
-  return MIDISKETCH_OK;
-}
-
-MidiSketchError midisketch_generate_with_vocal(MidiSketchHandle handle,
-                                               const MidiSketchSongConfig* config) {
-  if (!handle || !config) {
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  // Clear previous config error
-  g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
-
-  // Validate config first
-  MidiSketchConfigError validation = midisketch_validate_config(config);
-  if (validation != MIDISKETCH_CONFIG_OK) {
-    g_last_config_errors[handle] = validation;
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
-  midisketch::SongConfig cpp_config = convertToSongConfig(config);
-  sketch->generateWithVocal(cpp_config);
-  return MIDISKETCH_OK;
-}
-
-MidiSketchError midisketch_set_vocal_notes(MidiSketchHandle handle,
-                                           const MidiSketchSongConfig* config,
-                                           const MidiSketchNoteInput* notes, size_t count) {
-  if (!handle || !config) {
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  // Clear previous config error
-  g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
-
-  // Validate config first
-  MidiSketchConfigError validation = midisketch_validate_config(config);
-  if (validation != MIDISKETCH_CONFIG_OK) {
-    g_last_config_errors[handle] = validation;
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
-  midisketch::SongConfig cpp_config = convertToSongConfig(config);
-
-  // Convert C notes to C++ NoteEvents
-  std::vector<midisketch::NoteEvent> cpp_notes;
-  cpp_notes.reserve(count);
-  for (size_t i = 0; i < count; ++i) {
-    cpp_notes.push_back(midisketch::NoteEventBuilder::create(
-        notes[i].start_tick, notes[i].duration, notes[i].pitch, notes[i].velocity));
-  }
-
-  sketch->setVocalNotes(cpp_config, cpp_notes);
   return MIDISKETCH_OK;
 }
 
@@ -605,7 +328,6 @@ MidiSketchStylePresetSummary midisketch_get_style_preset(uint8_t id) {
 // ensure that these functions are not called concurrently.
 static MidiSketchChordCandidates s_chord_candidates;
 static MidiSketchFormCandidates s_form_candidates;
-static MidiSketchSongConfig s_default_config;
 
 MidiSketchChordCandidates* midisketch_get_progressions_by_style_ptr(uint8_t style_id) {
   // Get recommended progressions from StylePreset
@@ -633,128 +355,6 @@ MidiSketchFormCandidates* midisketch_get_forms_by_style_ptr(uint8_t style_id) {
   return &s_form_candidates;
 }
 
-MidiSketchSongConfig* midisketch_create_default_config_ptr(uint8_t style_id) {
-  midisketch::SongConfig cpp_config = midisketch::createDefaultSongConfig(style_id);
-
-  // Basic settings
-  s_default_config.style_preset_id = cpp_config.style_preset_id;
-  s_default_config.key = static_cast<uint8_t>(cpp_config.key);
-  s_default_config.bpm = cpp_config.bpm;
-  s_default_config.seed = cpp_config.seed;
-  s_default_config.chord_progression_id = cpp_config.chord_progression_id;
-  s_default_config.form_id = static_cast<uint8_t>(cpp_config.form);
-  s_default_config.vocal_attitude = static_cast<uint8_t>(cpp_config.vocal_attitude);
-  s_default_config.drums_enabled = cpp_config.drums_enabled ? 1 : 0;
-  s_default_config.blueprint_id = cpp_config.blueprint_id;
-
-  // Arpeggio settings
-  s_default_config.arpeggio_enabled = cpp_config.arpeggio_enabled ? 1 : 0;
-  s_default_config.arpeggio_pattern = static_cast<uint8_t>(cpp_config.arpeggio.pattern);
-  s_default_config.arpeggio_speed = static_cast<uint8_t>(cpp_config.arpeggio.speed);
-  s_default_config.arpeggio_octave_range = cpp_config.arpeggio.octave_range;
-  s_default_config.arpeggio_gate = static_cast<uint8_t>(cpp_config.arpeggio.gate * 100);
-
-  // Vocal settings
-  s_default_config.vocal_low = cpp_config.vocal_low;
-  s_default_config.vocal_high = cpp_config.vocal_high;
-  s_default_config.skip_vocal = cpp_config.skip_vocal ? 1 : 0;
-
-  // Humanization
-  s_default_config.humanize = cpp_config.humanize ? 1 : 0;
-  s_default_config.humanize_timing = static_cast<uint8_t>(cpp_config.humanize_timing * 100);
-  s_default_config.humanize_velocity = static_cast<uint8_t>(cpp_config.humanize_velocity * 100);
-
-  // Chord extensions
-  s_default_config.chord_ext_sus = cpp_config.chord_extension.enable_sus ? 1 : 0;
-  s_default_config.chord_ext_7th = cpp_config.chord_extension.enable_7th ? 1 : 0;
-  s_default_config.chord_ext_9th = cpp_config.chord_extension.enable_9th ? 1 : 0;
-  s_default_config.chord_ext_tritone_sub = cpp_config.chord_extension.tritone_sub ? 1 : 0;
-  s_default_config.chord_ext_sus_prob =
-      static_cast<uint8_t>(cpp_config.chord_extension.sus_probability * 100);
-  s_default_config.chord_ext_7th_prob =
-      static_cast<uint8_t>(cpp_config.chord_extension.seventh_probability * 100);
-  s_default_config.chord_ext_9th_prob =
-      static_cast<uint8_t>(cpp_config.chord_extension.ninth_probability * 100);
-  s_default_config.chord_ext_tritone_sub_prob =
-      static_cast<uint8_t>(cpp_config.chord_extension.tritone_sub_probability * 100);
-
-  // Composition style
-  s_default_config.composition_style = static_cast<uint8_t>(cpp_config.composition_style);
-
-  s_default_config.target_duration_seconds = cpp_config.target_duration_seconds;
-
-  // Modulation settings
-  s_default_config.modulation_timing = static_cast<uint8_t>(cpp_config.modulation_timing);
-  s_default_config.modulation_semitones = cpp_config.modulation_semitones;
-
-  // Call settings
-  s_default_config.se_enabled = cpp_config.se_enabled ? 1 : 0;
-  s_default_config.call_setting = static_cast<uint8_t>(cpp_config.call_setting);
-  s_default_config.call_notes_enabled = cpp_config.call_notes_enabled ? 1 : 0;
-  s_default_config.intro_chant = static_cast<uint8_t>(cpp_config.intro_chant);
-  s_default_config.mix_pattern = static_cast<uint8_t>(cpp_config.mix_pattern);
-  s_default_config.call_density = static_cast<uint8_t>(cpp_config.call_density);
-
-  // Vocal style settings
-  s_default_config.vocal_style = static_cast<uint8_t>(cpp_config.vocal_style);
-  s_default_config.melody_template = static_cast<uint8_t>(cpp_config.melody_template);
-
-  // Arrangement growth
-  s_default_config.arrangement_growth = static_cast<uint8_t>(cpp_config.arrangement_growth);
-
-  // Arpeggio sync settings
-  s_default_config.arpeggio_sync_chord = cpp_config.arpeggio.sync_chord ? 1 : 0;
-
-  // Motif settings
-  s_default_config.motif_repeat_scope =
-      static_cast<uint8_t>(midisketch::MotifRepeatScope::FullSong);
-  s_default_config.motif_fixed_progression = cpp_config.motif_chord.fixed_progression ? 1 : 0;
-  s_default_config.motif_max_chord_count = cpp_config.motif_chord.max_chord_count;
-
-  // Melodic complexity, hook intensity, and groove
-  s_default_config.melodic_complexity = static_cast<uint8_t>(cpp_config.melodic_complexity);
-  s_default_config.hook_intensity = static_cast<uint8_t>(cpp_config.hook_intensity);
-  s_default_config.vocal_groove = static_cast<uint8_t>(cpp_config.vocal_groove);
-
-  // Mood override
-  s_default_config.mood = cpp_config.mood;
-  s_default_config.mood_explicit = cpp_config.mood_explicit ? 1 : 0;
-
-  // Form control
-  s_default_config.form_explicit = cpp_config.form_explicit ? 1 : 0;
-
-  // Drive and addictive
-  s_default_config.drive_feel = cpp_config.drive_feel;
-  s_default_config.addictive_mode = cpp_config.addictive_mode ? 1 : 0;
-
-  // Syncopation
-  s_default_config.enable_syncopation = cpp_config.enable_syncopation ? 1 : 0;
-
-  // Energy curve
-  s_default_config.energy_curve = static_cast<uint8_t>(cpp_config.energy_curve);
-
-  // Melody overrides (defaults: no override)
-  s_default_config.melody_max_leap = cpp_config.melody_max_leap;
-  s_default_config.melody_syncopation_prob = cpp_config.melody_syncopation_prob;
-  s_default_config.melody_phrase_length = cpp_config.melody_phrase_length;
-  s_default_config.melody_long_note_ratio = cpp_config.melody_long_note_ratio;
-  s_default_config.melody_chorus_register_shift = cpp_config.melody_chorus_register_shift;
-  s_default_config.melody_hook_repetition = cpp_config.melody_hook_repetition;
-  s_default_config.melody_use_leading_tone = cpp_config.melody_use_leading_tone;
-
-  // Motif overrides (defaults: no override)
-  s_default_config.motif_length = cpp_config.motif_length;
-  s_default_config.motif_note_count = cpp_config.motif_note_count;
-  s_default_config.motif_motion = cpp_config.motif_motion;
-  s_default_config.motif_register_high = cpp_config.motif_register_high;
-  s_default_config.motif_rhythm_density = cpp_config.motif_rhythm_density;
-
-  // Reserved
-  std::memset(s_default_config._reserved2, 0, sizeof(s_default_config._reserved2));
-
-  return &s_default_config;
-}
-
 // Legacy struct-returning functions (for non-WASM use)
 MidiSketchChordCandidates midisketch_get_progressions_by_style(uint8_t style_id) {
   midisketch_get_progressions_by_style_ptr(style_id);
@@ -766,58 +366,13 @@ MidiSketchFormCandidates midisketch_get_forms_by_style(uint8_t style_id) {
   return s_form_candidates;
 }
 
-MidiSketchSongConfig midisketch_create_default_config(uint8_t style_id) {
-  midisketch_create_default_config_ptr(style_id);
-  return s_default_config;
-}
+// ============================================================================
+// JSON Config API Implementation
+// ============================================================================
 
-MidiSketchConfigError midisketch_validate_config(const MidiSketchSongConfig* config) {
-  if (!config) {
-    return MIDISKETCH_CONFIG_INVALID_STYLE;
-  }
+namespace {
 
-  // Convert to C++ config for validation
-  midisketch::SongConfig cpp_config;
-  cpp_config.style_preset_id = config->style_preset_id;
-  cpp_config.key = static_cast<midisketch::Key>(config->key);
-  cpp_config.bpm = config->bpm;
-  cpp_config.seed = config->seed;
-  cpp_config.chord_progression_id = config->chord_progression_id;
-  cpp_config.form = static_cast<midisketch::StructurePattern>(config->form_id);
-  cpp_config.vocal_attitude = static_cast<midisketch::VocalAttitude>(config->vocal_attitude);
-  cpp_config.drums_enabled = config->drums_enabled != 0;
-  cpp_config.arpeggio_enabled = config->arpeggio_enabled != 0;
-  cpp_config.vocal_low = config->vocal_low;
-  cpp_config.vocal_high = config->vocal_high;
-  cpp_config.target_duration_seconds = config->target_duration_seconds;
-
-  // Modulation and call settings
-  cpp_config.modulation_timing =
-      static_cast<midisketch::ModulationTiming>(config->modulation_timing);
-  cpp_config.modulation_semitones = config->modulation_semitones;
-  cpp_config.call_setting = static_cast<midisketch::CallSetting>(config->call_setting);
-  cpp_config.intro_chant = static_cast<midisketch::IntroChant>(config->intro_chant);
-  cpp_config.mix_pattern = static_cast<midisketch::MixPattern>(config->mix_pattern);
-
-  // Additional enum fields for validation
-  cpp_config.composition_style =
-      static_cast<midisketch::CompositionStyle>(config->composition_style);
-  cpp_config.arpeggio.pattern = static_cast<midisketch::ArpeggioPattern>(config->arpeggio_pattern);
-  cpp_config.arpeggio.speed = static_cast<midisketch::ArpeggioSpeed>(config->arpeggio_speed);
-  cpp_config.vocal_style = static_cast<midisketch::VocalStylePreset>(config->vocal_style);
-  cpp_config.melody_template = static_cast<midisketch::MelodyTemplateId>(config->melody_template);
-  cpp_config.melodic_complexity =
-      static_cast<midisketch::MelodicComplexity>(config->melodic_complexity);
-  cpp_config.hook_intensity = static_cast<midisketch::HookIntensity>(config->hook_intensity);
-  cpp_config.vocal_groove = static_cast<midisketch::VocalGrooveFeel>(config->vocal_groove);
-  cpp_config.call_density = static_cast<midisketch::CallDensity>(config->call_density);
-  cpp_config.motif_repeat_scope =
-      static_cast<midisketch::MotifRepeatScope>(config->motif_repeat_scope);
-  cpp_config.arrangement_growth =
-      static_cast<midisketch::ArrangementGrowth>(config->arrangement_growth);
-
-  midisketch::SongConfigError error = midisketch::validateSongConfig(cpp_config);
-
+MidiSketchConfigError mapConfigError(midisketch::SongConfigError error) {
   switch (error) {
     case midisketch::SongConfigError::OK:
       return MIDISKETCH_CONFIG_OK;
@@ -872,29 +427,229 @@ MidiSketchConfigError midisketch_validate_config(const MidiSketchSongConfig* con
   }
 }
 
-MidiSketchError midisketch_generate_from_config(MidiSketchHandle handle,
-                                                const MidiSketchSongConfig* config) {
-  if (!handle || !config) {
+// Static buffer for JSON config output
+std::string s_json_config_buffer;
+
+}  // namespace
+
+MidiSketchError midisketch_generate_from_json(MidiSketchHandle handle, const char* config_json,
+                                               size_t json_length) {
+  if (!handle || !config_json) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  // Clear previous config error
   g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
 
-  // Validate config first
-  MidiSketchConfigError validation = midisketch_validate_config(config);
-  if (validation != MIDISKETCH_CONFIG_OK) {
-    // Store detailed error for later retrieval
-    g_last_config_errors[handle] = validation;
+  midisketch::json::Parser p(std::string(config_json, json_length));
+  midisketch::SongConfig config;
+  config.readFrom(p);
+
+  auto validation = midisketch::validateSongConfig(config);
+  if (validation != midisketch::SongConfigError::OK) {
+    g_last_config_errors[handle] = mapConfigError(validation);
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  sketch->generateFromConfig(config);
+  return MIDISKETCH_OK;
+}
+
+const char* midisketch_create_default_config_json(uint8_t style_id) {
+  midisketch::SongConfig config = midisketch::createDefaultSongConfig(style_id);
+
+  std::ostringstream oss;
+  midisketch::json::Writer w(oss);
+  w.beginObject();
+  config.writeTo(w);
+  w.endObject();
+
+  s_json_config_buffer = oss.str();
+  return s_json_config_buffer.c_str();
+}
+
+MidiSketchConfigError midisketch_validate_config_json(const char* config_json, size_t json_length) {
+  if (!config_json) {
+    return MIDISKETCH_CONFIG_INVALID_STYLE;
+  }
+
+  midisketch::json::Parser p(std::string(config_json, json_length));
+  midisketch::SongConfig config;
+  config.readFrom(p);
+
+  return mapConfigError(midisketch::validateSongConfig(config));
+}
+
+MidiSketchError midisketch_generate_vocal_from_json(MidiSketchHandle handle,
+                                                     const char* config_json, size_t json_length) {
+  if (!handle || !config_json) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
+
+  midisketch::json::Parser p(std::string(config_json, json_length));
+  midisketch::SongConfig config;
+  config.readFrom(p);
+
+  auto validation = midisketch::validateSongConfig(config);
+  if (validation != midisketch::SongConfigError::OK) {
+    g_last_config_errors[handle] = mapConfigError(validation);
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  sketch->generateVocal(config);
+  return MIDISKETCH_OK;
+}
+
+MidiSketchError midisketch_generate_with_vocal_from_json(MidiSketchHandle handle,
+                                                          const char* config_json,
+                                                          size_t json_length) {
+  if (!handle || !config_json) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
+
+  midisketch::json::Parser p(std::string(config_json, json_length));
+  midisketch::SongConfig config;
+  config.readFrom(p);
+
+  auto validation = midisketch::validateSongConfig(config);
+  if (validation != midisketch::SongConfigError::OK) {
+    g_last_config_errors[handle] = mapConfigError(validation);
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  sketch->generateWithVocal(config);
+  return MIDISKETCH_OK;
+}
+
+MidiSketchError midisketch_regenerate_vocal_from_json(MidiSketchHandle handle,
+                                                       const char* config_json,
+                                                       size_t json_length) {
+  if (!handle) {
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
   auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
 
-  // Convert C config to C++ SongConfig
-  midisketch::SongConfig cpp_config = convertToSongConfig(config);
+  if (!config_json || json_length == 0) {
+    // NULL/empty config = regenerate with new seed only
+    sketch->regenerateVocal(0);
+  } else {
+    midisketch::json::Parser p(std::string(config_json, json_length));
+    midisketch::VocalConfig config;
+    config.readFrom(p);
+    sketch->regenerateVocal(config);
+  }
+  return MIDISKETCH_OK;
+}
 
-  sketch->generateFromConfig(cpp_config);
+MidiSketchError midisketch_generate_accompaniment_from_json(MidiSketchHandle handle,
+                                                              const char* config_json,
+                                                              size_t json_length) {
+  if (!handle || !config_json) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  midisketch::json::Parser p(std::string(config_json, json_length));
+  midisketch::AccompanimentConfig config;
+  config.readFrom(p);
+  sketch->generateAccompanimentForVocal(config);
+  return MIDISKETCH_OK;
+}
+
+MidiSketchError midisketch_regenerate_accompaniment_from_json(MidiSketchHandle handle,
+                                                                const char* config_json,
+                                                                size_t json_length) {
+  if (!handle || !config_json) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  midisketch::json::Parser p(std::string(config_json, json_length));
+  midisketch::AccompanimentConfig config;
+  config.readFrom(p);
+  sketch->regenerateAccompaniment(config);
+  return MIDISKETCH_OK;
+}
+
+MidiSketchError midisketch_set_vocal_notes_from_json(MidiSketchHandle handle, const char* json,
+                                                       size_t json_length) {
+  if (!handle || !json) {
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
+
+  midisketch::json::Parser p(std::string(json, json_length));
+
+  // Parse SongConfig from "config" nested object
+  midisketch::SongConfig config;
+  if (p.has("config")) {
+    config.readFrom(p.getObject("config"));
+  }
+
+  auto validation = midisketch::validateSongConfig(config);
+  if (validation != midisketch::SongConfigError::OK) {
+    g_last_config_errors[handle] = mapConfigError(validation);
+    return MIDISKETCH_ERROR_INVALID_PARAM;
+  }
+
+  // Parse notes from "notes" array
+  // The JSON parser doesn't natively support arrays, so we parse manually
+  std::string json_str(json, json_length);
+  std::vector<midisketch::NoteEvent> notes;
+
+  // Find the "notes" array in the JSON
+  std::string notes_key = "\"notes\"";
+  size_t notes_pos = json_str.find(notes_key);
+  if (notes_pos != std::string::npos) {
+    size_t arr_start = json_str.find('[', notes_pos);
+    if (arr_start != std::string::npos) {
+      size_t pos = arr_start + 1;
+      while (pos < json_str.size()) {
+        // Skip whitespace
+        while (pos < json_str.size() && (json_str[pos] == ' ' || json_str[pos] == '\n' ||
+                                         json_str[pos] == '\r' || json_str[pos] == '\t' ||
+                                         json_str[pos] == ',')) {
+          ++pos;
+        }
+        if (pos >= json_str.size() || json_str[pos] == ']') break;
+
+        if (json_str[pos] == '{') {
+          // Find matching closing brace
+          size_t obj_start = pos;
+          int depth = 1;
+          ++pos;
+          while (pos < json_str.size() && depth > 0) {
+            if (json_str[pos] == '{')
+              ++depth;
+            else if (json_str[pos] == '}')
+              --depth;
+            ++pos;
+          }
+          std::string note_json = json_str.substr(obj_start, pos - obj_start);
+          midisketch::json::Parser np(note_json);
+          uint32_t start_tick = np.getUint("start_tick", 0);
+          uint32_t duration = np.getUint("duration", 0);
+          uint8_t pitch = static_cast<uint8_t>(np.getInt("pitch", 60));
+          uint8_t velocity = static_cast<uint8_t>(np.getInt("velocity", 100));
+          notes.push_back(
+              midisketch::NoteEventBuilder::create(start_tick, duration, pitch, velocity));
+        } else {
+          ++pos;
+        }
+      }
+    }
+  }
+
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  sketch->setVocalNotes(config, notes);
   return MIDISKETCH_OK;
 }
 

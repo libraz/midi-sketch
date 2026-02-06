@@ -126,7 +126,15 @@ void printUsage(const char* program) {
 midisketch::SongConfig configFromMetadata(const std::string& metadata) {
   midisketch::json::Parser p(metadata);
 
-  // Get style_preset_id first (defaults to 0 for backward compatibility)
+  // v4+: Direct SongConfig restoration from "config" field
+  int version = p.getInt("format_version", 2);
+  if (version >= 4 && p.has("config")) {
+    midisketch::SongConfig config;
+    config.readFrom(p.getObject("config"));
+    return config;
+  }
+
+  // v3 and earlier: Manual field-by-field restoration (backward compat)
   uint8_t style_preset_id = 0;
   if (p.has("style_preset_id")) {
     style_preset_id = static_cast<uint8_t>(p.getInt("style_preset_id"));

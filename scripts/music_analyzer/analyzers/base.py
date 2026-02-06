@@ -12,7 +12,7 @@ from ..constants import (
     SECTION_LENGTH_BARS, BEAT_STRENGTH,
     Severity, Category,
 )
-from ..models import Note, Issue
+from ..models import Note, Issue, Bonus, HookPattern
 from ..blueprints import BlueprintProfile
 from ..helpers import tick_to_bar
 
@@ -155,3 +155,48 @@ class BaseAnalyzer:
             track=track,
             details=details or {},
         ))
+
+
+class BaseBonusAnalyzer(BaseAnalyzer):
+    """Base class for bonus scoring analyzers.
+
+    Extends BaseAnalyzer with bonus tracking, hook patterns,
+    and energy curve data for positive quality evaluation.
+    """
+
+    def __init__(
+        self,
+        notes: List[Note],
+        notes_by_channel: dict,
+        profile: Optional[BlueprintProfile] = None,
+        metadata: Optional[dict] = None,
+        hooks: Optional[List[HookPattern]] = None,
+        energy_curve: Optional[list] = None,
+    ):
+        super().__init__(notes, notes_by_channel, profile, metadata)
+        self.hooks = hooks or []
+        self.energy_curve = energy_curve or []
+        self.bonuses: List[Bonus] = []
+
+    def analyze(self) -> List[Bonus]:
+        """Run bonus analysis. Override in subclasses."""
+        raise NotImplementedError
+
+    def add_bonus(
+        self,
+        category: Category,
+        name: str,
+        score: float,
+        max_score: float,
+        description: str = "",
+    ):
+        """Add a bonus with clamping to [0, max_score]."""
+        clamped = max(0.0, min(score, max_score))
+        if clamped > 0:
+            self.bonuses.append(Bonus(
+                category=category,
+                name=name,
+                score=round(clamped, 2),
+                max_score=max_score,
+                description=description,
+            ))

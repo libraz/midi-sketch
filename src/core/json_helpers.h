@@ -9,6 +9,7 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <type_traits>
 
 namespace midisketch {
 namespace json {
@@ -773,6 +774,48 @@ class Parser {
 
   std::string json_;
   std::map<std::string, std::string> values_;
+};
+
+// ============================================================================
+// Visitor-based serialization helpers
+// ============================================================================
+
+struct WriteVisitor {
+  Writer& w;
+  void operator()(const char* k, uint8_t v) { w.write(k, static_cast<int>(v)); }
+  void operator()(const char* k, int8_t v) { w.write(k, static_cast<int>(v)); }
+  void operator()(const char* k, uint16_t v) { w.write(k, v); }
+  void operator()(const char* k, uint32_t v) { w.write(k, v); }
+  void operator()(const char* k, bool v) { w.write(k, v); }
+  void operator()(const char* k, float v) { w.write(k, v); }
+  template <typename E, std::enable_if_t<std::is_enum_v<E>, int> = 0>
+  void operator()(const char* k, E v) {
+    w.write(k, static_cast<int>(v));
+  }
+  template <typename T>
+  void nested(const char* k, const T& obj) {
+    w.beginObject(k);
+    obj.writeTo(w);
+    w.endObject();
+  }
+};
+
+struct ReadVisitor {
+  const Parser& p;
+  void operator()(const char* k, uint8_t& v) { v = static_cast<uint8_t>(p.getInt(k, v)); }
+  void operator()(const char* k, int8_t& v) { v = p.getInt8(k, v); }
+  void operator()(const char* k, uint16_t& v) { v = static_cast<uint16_t>(p.getInt(k, v)); }
+  void operator()(const char* k, uint32_t& v) { v = p.getUint(k, v); }
+  void operator()(const char* k, bool& v) { v = p.getBool(k, v); }
+  void operator()(const char* k, float& v) { v = p.getFloat(k, v); }
+  template <typename E, std::enable_if_t<std::is_enum_v<E>, int> = 0>
+  void operator()(const char* k, E& v) {
+    v = static_cast<E>(p.getInt(k, static_cast<int>(v)));
+  }
+  template <typename T>
+  void nested(const char* k, T& obj) {
+    if (p.has(k)) obj.readFrom(p.getObject(k));
+  }
 };
 
 }  // namespace json

@@ -161,42 +161,11 @@ TEST(Midi2ReaderTest, RegenerationProducesSameOutput) {
   ASSERT_TRUE(reader.read(original_data.data(), original_data.size()));
   ASSERT_TRUE(reader.getParsedMidi().hasMidiSketchMetadata());
 
-  // Parse metadata and regenerate
+  // Parse metadata and regenerate (v4+ only — legacy v3 path removed)
   json::Parser p(reader.getParsedMidi().metadata);
-  uint8_t style_preset_id =
-      p.has("style_preset_id") ? static_cast<uint8_t>(p.getInt("style_preset_id")) : 0;
-  SongConfig config2 = createDefaultSongConfig(style_preset_id);
-  config2.seed = p.getUint("seed");
-  config2.bpm = static_cast<uint16_t>(p.getInt("bpm"));
-  config2.chord_progression_id = static_cast<uint8_t>(p.getInt("chord_id"));
-  config2.form = static_cast<StructurePattern>(p.getInt("structure"));
-  config2.form_explicit = true;
-  config2.key = static_cast<Key>(p.getInt("key"));
-  config2.mood = static_cast<uint8_t>(p.getInt("mood"));
-  config2.mood_explicit = true;
-  config2.vocal_low = static_cast<uint8_t>(p.getInt("vocal_low"));
-  config2.vocal_high = static_cast<uint8_t>(p.getInt("vocal_high"));
-  config2.vocal_attitude = static_cast<VocalAttitude>(p.getInt("vocal_attitude"));
-  config2.vocal_style = static_cast<VocalStylePreset>(p.getInt("vocal_style"));
-  config2.drums_enabled = p.getBool("drums_enabled");
-  if (p.has("vocal_groove")) {
-    config2.vocal_groove = static_cast<VocalGrooveFeel>(p.getInt("vocal_groove"));
-  }
-  if (p.has("target_duration")) {
-    config2.target_duration_seconds = static_cast<uint16_t>(p.getInt("target_duration"));
-  }
-  if (p.has("melody_template")) {
-    config2.melody_template = static_cast<MelodyTemplateId>(p.getInt("melody_template"));
-  }
-  if (p.has("melodic_complexity")) {
-    config2.melodic_complexity = static_cast<MelodicComplexity>(p.getInt("melodic_complexity"));
-  }
-  if (p.has("hook_intensity")) {
-    config2.hook_intensity = static_cast<HookIntensity>(p.getInt("hook_intensity"));
-  }
-  if (p.has("composition_style")) {
-    config2.composition_style = static_cast<CompositionStyle>(p.getInt("composition_style"));
-  }
+  ASSERT_TRUE(p.has("config")) << "Metadata must have v4+ config object";
+  SongConfig config2;
+  config2.readFrom(p.getObject("config"));
 
   MidiSketch sketch2;
   sketch2.setMidiFormat(MidiFormat::SMF2);
