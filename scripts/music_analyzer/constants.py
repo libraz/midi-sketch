@@ -29,6 +29,9 @@ TRACK_CHANNELS = {v: k for k, v in TRACK_NAMES.items()}
 
 NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
+# VocalStylePreset IDs (from melody_types.h)
+VOCAL_STYLE_ULTRA_VOCALOID = 3
+
 BLUEPRINT_NAMES = {
     0: "Traditional",
     1: "RhythmLock",

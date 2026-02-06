@@ -234,6 +234,7 @@ class HarmonicAnalyzer(BaseAnalyzer):
 
         sorted_bars = sorted(chords_by_bar.keys())
         prev_bar_pitches = None
+        prev_bar_idx = None
         consecutive_same_count = 0
         consecutive_same_start = 0
 
@@ -242,7 +243,8 @@ class HarmonicAnalyzer(BaseAnalyzer):
 
             if bar_pitches == prev_bar_pitches:
                 if consecutive_same_count == 0:
-                    consecutive_same_start = bar_idx * TICKS_PER_BAR
+                    # Start tick is the first bar of the repetition
+                    consecutive_same_start = prev_bar_idx * TICKS_PER_BAR
                 consecutive_same_count += 1
             else:
                 if consecutive_same_count >= 3:
@@ -261,6 +263,7 @@ class HarmonicAnalyzer(BaseAnalyzer):
                     )
                 consecutive_same_count = 0
                 prev_bar_pitches = bar_pitches
+            prev_bar_idx = bar_idx
 
         # Final flush
         if consecutive_same_count >= 3:
@@ -418,7 +421,7 @@ class HarmonicAnalyzer(BaseAnalyzer):
         bass_by_bar = defaultdict(list)
         for note in bass_notes:
             bar = tick_to_bar(note.start)
-            bass_by_bar[bar].append(note.pitch % 12)
+            bass_by_bar[bar].append(note)
 
         def get_function(root: int) -> str:
             if root in [0, 9, 4]:
@@ -432,10 +435,12 @@ class HarmonicAnalyzer(BaseAnalyzer):
         bars = sorted(bass_by_bar.keys())
         prev_func = None
         for bar in bars:
-            roots = bass_by_bar[bar]
-            if not roots:
+            bar_notes = bass_by_bar[bar]
+            if not bar_notes:
                 continue
-            root = min(roots)
+            # Use the pitch class of the note closest to beat 1
+            first_note = min(bar_notes, key=lambda n: n.start)
+            root = first_note.pitch % 12
             func = get_function(root)
 
             if prev_func == "D" and func == "S":

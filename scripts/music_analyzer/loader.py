@@ -59,8 +59,9 @@ def load_json_metadata(filepath: str) -> dict:
         return {
             'blueprint': meta.get('blueprint'),
             'style': meta.get('style'),
-            'bpm': data.get('bpm') or meta.get('bpm'),
+            'bpm': data.get('bpm') if data.get('bpm') is not None else meta.get('bpm'),
             'sections': data.get('sections', []),
+            'vocal_style': data.get('vocal_style') if data.get('vocal_style') is not None else meta.get('vocal_style'),
         }
     except Exception:
         return {}

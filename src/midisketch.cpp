@@ -248,6 +248,7 @@ std::string MidiSketch::getEventsJson() const {
       .write("division", TICKS_PER_BEAT)
       .write("duration_ticks", total_ticks)
       .write("duration_seconds", duration_seconds)
+      .write("vocal_style", static_cast<int>(params.vocal_style))
       .beginArray("tracks");
 
   // Write tracks (use mood-specific program numbers)

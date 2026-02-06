@@ -8,7 +8,8 @@ and phrase repetition balance.
 from collections import Counter
 from typing import List
 
-from ..constants import TICKS_PER_BEAT, TICKS_PER_BAR, Severity, Category
+from ..constants import (TICKS_PER_BEAT, TICKS_PER_BAR, Severity, Category,
+                         VOCAL_STYLE_ULTRA_VOCALOID)
 from ..helpers import note_name, tick_to_bar
 from ..models import Issue
 from .base import BaseAnalyzer
@@ -39,7 +40,13 @@ class VocalAnalyzer(BaseAnalyzer):
         A phrase boundary is detected when the gap between notes is at
         least half a beat (240 ticks). Phrases longer than 16 beats
         (4 bars) are INFO, longer than 24 beats (6 bars) are WARNING.
+
+        UltraVocaloid: Machine-like singing with no breathing constraints,
+        so this check is skipped entirely.
         """
+        vocal_style = self.metadata.get('vocal_style')
+        if vocal_style == VOCAL_STYLE_ULTRA_VOCALOID:
+            return
         vocal = self.notes_by_channel.get(0, [])
         if len(vocal) < 4:
             return

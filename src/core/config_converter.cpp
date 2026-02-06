@@ -75,6 +75,13 @@ void ConfigConverter::applyVocalStylePreset(GeneratorParams& params,
   params.melody_params.chorus_thirtysecond_ratio = data.chorus_thirtysecond_ratio;
   params.melody_params.bridge_thirtysecond_ratio = data.bridge_thirtysecond_ratio;
 
+  // Override min_note_division to allow 32nd notes when thirtysecond_ratio is high.
+  // Without this, the default min_note_division=8 (eighth note) clamps all 32nd notes
+  // to eighth notes, defeating UltraVocaloid's machine-gun chorus.
+  if (data.chorus_thirtysecond_ratio >= 0.8f || data.verse_thirtysecond_ratio >= 0.8f) {
+    params.melody_params.min_note_division = 32;
+  }
+
   // Apply additional parameters
   params.melody_params.consecutive_same_note_prob = data.consecutive_same_note_prob;
   params.melody_params.disable_vowel_constraints = data.disable_vowel_constraints;

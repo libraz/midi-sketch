@@ -1269,7 +1269,9 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
   // Merge same-pitch notes only with very short gaps (64th note = ~30 ticks).
   // Larger gaps preserve intentional articulation (staccato, rhythmic patterns).
   // SKIP for RhythmSync paradigm to preserve the locked rhythm pattern
-  if (params.paradigm != GenerationParadigm::RhythmSync) {
+  // SKIP for UltraVocaloid: same-pitch rapid-fire is intentional (machine-gun style)
+  if (params.paradigm != GenerationParadigm::RhythmSync &&
+      params.vocal_style != VocalStylePreset::UltraVocaloid) {
     constexpr Tick kMergeMaxGap = 30;
     mergeSamePitchNotes(all_notes, kMergeMaxGap);
   }

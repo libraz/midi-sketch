@@ -58,6 +58,15 @@ class StructureAnalyzer(BaseAnalyzer):
             else:
                 current_phrase_notes += 1
 
+        # Append the final phrase
+        if current_phrase_notes > 0:
+            phrase_duration = vocal_notes[-1].end - current_phrase_start
+            phrases.append({
+                'start': current_phrase_start,
+                'duration': phrase_duration,
+                'note_count': current_phrase_notes,
+            })
+
         for phrase in phrases:
             if phrase['note_count'] <= 2 and phrase['duration'] < TICKS_PER_BEAT * 2:
                 self.add_issue(

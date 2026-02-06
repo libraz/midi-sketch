@@ -8,7 +8,8 @@ rhythm variety, beat content, and grid strictness by blueprint paradigm.
 from collections import defaultdict
 from typing import List
 
-from ..constants import TICKS_PER_BEAT, TICKS_PER_BAR, TRACK_NAMES, Severity, Category
+from ..constants import (TICKS_PER_BEAT, TICKS_PER_BAR, TRACK_NAMES, Severity, Category,
+                         VOCAL_STYLE_ULTRA_VOCALOID)
 from ..helpers import tick_to_bar, _ioi_entropy
 from ..models import Issue
 from .base import BaseAnalyzer
@@ -70,7 +71,7 @@ class RhythmAnalyzer(BaseAnalyzer):
                             category=Category.RHYTHM,
                             subcategory="low_sync",
                             message=f"Low Motif/Vocal sync (ratio: {sync_ratio:.2f})",
-                            tick=bar * TICKS_PER_BAR,
+                            tick=(bar - 1) * TICKS_PER_BAR,
                             track="Motif/Vocal",
                             details={"bar": bar, "sync_ratio": sync_ratio},
                         )
@@ -97,7 +98,7 @@ class RhythmAnalyzer(BaseAnalyzer):
                         category=Category.RHYTHM,
                         subcategory="high_density",
                         message=f"High density ({count} notes, avg: {avg_density:.1f})",
-                        tick=bar * TICKS_PER_BAR,
+                        tick=(bar - 1) * TICKS_PER_BAR,
                         track=track_name,
                         details={"bar": bar, "count": count, "average": avg_density},
                     )
@@ -108,9 +109,14 @@ class RhythmAnalyzer(BaseAnalyzer):
         In pop music, 8-note runs of equal spacing (e.g., 8th notes)
         are common. Only flag 12+ consecutive same-spacing notes as
         rhythmically monotonous.
+
+        UltraVocaloid: Machine-gun 32nd note runs are intentional,
+        so the threshold is raised to 64 to avoid false positives.
         """
         melodic_channels = [0, 3]
-        monotony_threshold = 12
+        vocal_style = self.metadata.get('vocal_style')
+        is_ultra = (vocal_style == VOCAL_STYLE_ULTRA_VOCALOID)
+        monotony_threshold = 64 if is_ultra else 12
         for ch in melodic_channels:
             notes = self.notes_by_channel.get(ch, [])
             if len(notes) < monotony_threshold:
@@ -143,16 +149,37 @@ class RhythmAnalyzer(BaseAnalyzer):
                             )
                         same_ioi_count = 1
                         current_ioi = quantized[idx]
+                # Final flush: check last run
+                if same_ioi_count >= monotony_threshold:
+                    self.add_issue(
+                        severity=Severity.WARNING,
+                        category=Category.RHYTHM,
+                        subcategory="rhythmic_monotony",
+                        message=f"{same_ioi_count} notes with same spacing",
+                        tick=notes[len(quantized) - same_ioi_count].start,
+                        track=track_name,
+                        details={
+                            "count": same_ioi_count,
+                            "ioi": current_ioi,
+                        },
+                    )
 
     def _analyze_beat_alignment(self):
-        """Detect notes off the 16th-note beat grid.
+        """Detect notes off the beat grid.
 
         Checks against both straight 16th grid and shuffle/swing grid
         (2/3 position within each 8th note). Uses a tolerance of 30
         ticks to allow for intentional humanization offsets.
+
+        UltraVocaloid: Skipped. Machine-gun 32nd-note runs are
+        intentional and don't benefit from grid alignment analysis.
         """
+        vocal_style = self.metadata.get('vocal_style')
+        if vocal_style == VOCAL_STYLE_ULTRA_VOCALOID:
+            return
+
         melodic_channels = [0, 1, 2, 3, 5]
-        grid_16th = TICKS_PER_BEAT // 4  # 120 ticks
+        grid_unit = TICKS_PER_BEAT // 4
         tolerance = 30
         # Shuffle position: 2/3 of an 8th note = 160 ticks from beat
         # Within each 16th cell, shuffle falls at ~67% (80 ticks into 120)
@@ -165,10 +192,10 @@ class RhythmAnalyzer(BaseAnalyzer):
             track_name = TRACK_NAMES.get(ch, f"Ch{ch}")
             off_grid_notes = []
             for note in notes:
-                remainder = note.start % grid_16th
-                # Check straight 16th grid (near 0 or near grid_16th)
+                remainder = note.start % grid_unit
+                # Check straight 16th grid (near 0 or near grid_unit)
                 on_straight = (remainder <= tolerance or
-                               remainder >= grid_16th - tolerance)
+                               remainder >= grid_unit - tolerance)
                 # Check shuffle grid (near shuffle_offset)
                 on_shuffle = abs(remainder - shuffle_offset) <= tolerance
                 if not on_straight and not on_shuffle:

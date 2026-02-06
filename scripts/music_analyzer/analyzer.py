@@ -261,6 +261,15 @@ class MusicAnalyzer:
                 'bass_chord_spacing': {
                     Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.2,
                 },
+                'bass_kick_sync': {
+                    Severity.ERROR: 1.0, Severity.WARNING: 0.5, Severity.INFO: 0.1,
+                },
+                'bass_empty_bars': {
+                    Severity.ERROR: 1.0, Severity.WARNING: 0.5, Severity.INFO: 0.1,
+                },
+                'bass_stepwise_rate': {
+                    Severity.ERROR: 0.5, Severity.WARNING: 0.3, Severity.INFO: 0.1,
+                },
             },
             Category.RHYTHM: {
                 'low_sync': {
@@ -316,8 +325,8 @@ class MusicAnalyzer:
                 'rhythm_sync': {
                     Severity.ERROR: 3.0, Severity.WARNING: 1.5, Severity.INFO: 0.3,
                 },
-                'section_contrast': {
-                    Severity.ERROR: 0.5, Severity.WARNING: 0.3, Severity.INFO: 0.1,
+                'submelody_vocal_crossing': {
+                    Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
                 },
                 'motif_contour_preservation': {
                     Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
@@ -350,6 +359,9 @@ class MusicAnalyzer:
                 },
                 'chorus_density_inversion': {
                     Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
+                },
+                'section_contrast': {
+                    Severity.ERROR: 0.5, Severity.WARNING: 0.3, Severity.INFO: 0.1,
                 },
             },
         }
