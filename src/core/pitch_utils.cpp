@@ -241,9 +241,11 @@ bool isDissonantActualInterval(int actual_semitones, int8_t chord_degree) {
     return true;
   }
 
-  // Major 7th (pitch class 11): dissonant within 2 octaves
-  // Wider compound M7 (24+ semitones) is less harsh and handled by analyzer as warning.
-  if (pc_interval == 11 && actual_semitones <= 23) {
+  // Major 7th (pitch class 11): dissonant under 3 octaves (< 36 semitones)
+  // Compound M7 (e.g. bass C2 vs motif B4 = 35 semitones) creates audible beating
+  // even across registers, unlike consonant intervals at the same distance.
+  // Beyond 3 octaves the beating is no longer perceptible in a pop mix.
+  if (pc_interval == 11 && actual_semitones < 36) {
     return true;
   }
 

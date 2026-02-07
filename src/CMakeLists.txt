@@ -128,4 +128,8 @@ elseif(BUILD_CLI)
   # CLI executable for testing
   add_executable(midisketch_cli cli_main.cpp)
   target_link_libraries(midisketch_cli PRIVATE midisketch_lib)
+
+  # Benchmark executable for profiling
+  add_executable(bench_generate ${CMAKE_SOURCE_DIR}/tools/bench_generate.cpp)
+  target_link_libraries(bench_generate PRIVATE midisketch_lib)
 endif()

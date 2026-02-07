@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "core/basic_types.h"
 #include "core/types.h"
 
 namespace midisketch {
@@ -233,7 +234,17 @@ class TrackCollisionDetector {
     TrackRole track;
   };
 
+  // Collect note indices overlapping [start, end) using beat index.
+  // Caller must handle potential duplicate indices (when notes span multiple beats).
+  void collectNoteIndices(Tick start, Tick end, std::vector<size_t>& out) const;
+
+  // Rebuild beat_index_ from scratch (used after clearNotesForTrack).
+  void rebuildBeatIndex();
+
   std::vector<RegisteredNote> notes_;
+
+  // Beat-indexed note lookup: beat_index_[beat_number] = {note indices in notes_}
+  std::vector<std::vector<size_t>> beat_index_;
 };
 
 }  // namespace midisketch

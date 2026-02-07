@@ -308,11 +308,6 @@ void Coordinator::generateAllTracks(Song& song) {
       continue;
     }
 
-    // Pre-compute candidates for this track
-    if (harmony_coord) {
-      harmony_coord->precomputeCandidatesForTrack(role, arrangement_.sections());
-    }
-
     // Get track generator (if registered)
     auto it = track_generators_.find(role);
     if (it != track_generators_.end()) {

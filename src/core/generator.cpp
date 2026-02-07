@@ -424,6 +424,11 @@ void Generator::applyPostProcessingEffects() {
   // Smooth large leaps in Aux track caused by note removal in earlier passes
   // (fixAuxVocalClashes, applyArrangementHoles, etc.)
   PostProcessor::smoothLargeLeaps(song_.aux());
+
+  // Align chord note durations: ensure all notes at the same onset have
+  // identical duration. Post-processing (final hit extension, clash fixes)
+  // can shorten individual notes differently within a chord voicing.
+  PostProcessor::alignChordNoteDurations(song_.chord());
 }
 
 void Generator::generate(const GeneratorParams& params) {

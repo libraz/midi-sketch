@@ -94,6 +94,7 @@ set(TEST_SOURCES
   track/aux_chorus_behavior_test.cpp
   track/phrase_ending_test.cpp
   track/bass_dissonance_regression_test.cpp
+  track/bass_chord_tone_test.cpp
   track/bass_music_theory_test.cpp
   track/bass_physical_model_test.cpp
   track/dissonance_fixes_test.cpp

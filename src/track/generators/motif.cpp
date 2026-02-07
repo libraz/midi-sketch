@@ -765,17 +765,9 @@ MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteConte
     result.range_octave_up = range_octave_up;
     pitch = std::clamp(pitch, static_cast<int>(MOTIF_LOW), static_cast<int>(MOTIF_HIGH));
 
-    int8_t degree = harmony->getChordDegreeAt(ctx.absolute_tick);
-    uint8_t chord_root = degreeToRoot(degree, Key::C);
-    Chord chord = getChordNotes(degree);
-    bool is_minor = (chord.intervals[1] == 3);
-
-    if (isAvoidNoteWithContext(pitch, chord_root, is_minor, degree)) {
-      ChordToneHelper ct_helper(degree);
-      pitch = ct_helper.nearestInRange(
-          static_cast<uint8_t>(std::clamp(pitch, 0, 127)), MOTIF_LOW, MOTIF_HIGH);
-      result.avoid_note_snapped = true;
-    }
+    // Coordinate axis: skip avoid note snapping.
+    // Motif is generated first in RhythmSync - other tracks adapt to it.
+    // Avoid snapping changes pitches per chord, breaking Locked riff consistency.
 
     result.pitch = pitch;
     return result;
@@ -1010,9 +1002,11 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
         sec_idx++;
         continue;
       }
-      // Reset monotony tracker at section boundary to prevent state leaking
-      // between sections, which causes different pitches for same patterns.
-      monotony_tracker.reset();
+      if (!is_rhythm_lock_global) {
+        // Reset monotony tracker at section boundary (not needed in coordinate axis
+        // mode where monotony tracking is skipped entirely).
+        monotony_tracker.reset();
+      }
     }
 
     Tick section_end = section.endTick();
@@ -1142,11 +1136,18 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
                                        motif_params.velocity_fixed);
         }
 
-        // Apply monotony tracking to avoid consecutive same pitches
-        // Pass chord degree so alternatives are selected from chord tones
-        int8_t current_degree = harmony->getChordDegreeAt(absolute_tick);
-        uint8_t final_pitch = monotony_tracker.trackAndSuggest(
-            static_cast<uint8_t>(adjusted_pitch), MOTIF_LOW, motif_range_high, current_degree);
+        uint8_t final_pitch;
+        if (is_rhythm_lock_global) {
+          // Coordinate axis + Locked: use pitch as-is from pattern + section shift.
+          // Monotony tracking would alter the locked pattern.
+          final_pitch = static_cast<uint8_t>(adjusted_pitch);
+        } else {
+          // Apply monotony tracking to avoid consecutive same pitches
+          // Pass chord degree so alternatives are selected from chord tones
+          int8_t current_degree = harmony->getChordDegreeAt(absolute_tick);
+          final_pitch = monotony_tracker.trackAndSuggest(
+              static_cast<uint8_t>(adjusted_pitch), MOTIF_LOW, motif_range_high, current_degree);
+        }
 
         if (is_rhythm_lock_global) {
           // Coordinate axis mode: add note directly with registration (no collision avoidance)

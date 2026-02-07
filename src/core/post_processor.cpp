@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <unordered_map>
 #include <vector>
 
 #include "core/chord_utils.h"             // for nearestChordTonePitch, ChordToneHelper, ChordTones
@@ -1379,6 +1380,34 @@ void PostProcessor::smoothLargeLeaps(MidiTrack& track, int max_semitones) {
         changed = true;
         break;  // Restart scan after each removal
       }
+    }
+  }
+}
+
+void PostProcessor::alignChordNoteDurations(MidiTrack& track) {
+  auto& notes = track.notes();
+  if (notes.size() < 2) return;
+
+  // First pass: find minimum duration per start_tick
+  std::unordered_map<Tick, Tick> min_dur;
+  std::unordered_map<Tick, int> count;
+  for (const auto& n : notes) {
+    auto it = min_dur.find(n.start_tick);
+    if (it == min_dur.end()) {
+      min_dur[n.start_tick] = n.duration;
+      count[n.start_tick] = 1;
+    } else {
+      if (n.duration < it->second) {
+        it->second = n.duration;
+      }
+      count[n.start_tick]++;
+    }
+  }
+
+  // Second pass: apply minimum duration to all notes at ticks with 2+ notes
+  for (auto& n : notes) {
+    if (count[n.start_tick] > 1) {
+      n.duration = min_dur[n.start_tick];
     }
   }
 }

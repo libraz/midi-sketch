@@ -219,40 +219,40 @@ class TestBlueprintDifferentiation(unittest.TestCase):
 class TestBonusCaps(unittest.TestCase):
     """Test per-category bonus caps from blueprints and defaults."""
 
-    def test_melodic_cap_15(self):
-        """Default melodic bonus cap is 15."""
+    def test_melodic_cap_10(self):
+        """Default melodic bonus cap is 10."""
         notes = _make_song(bars=64, with_patterns=True)
         result = MusicAnalyzer(notes, blueprint=None).analyze_all()
 
         self.assertLessEqual(
-            result.score.melodic_bonus, 15.0,
-            "Default melodic bonus should not exceed cap of 15",
+            result.score.melodic_bonus, 10.0,
+            "Default melodic bonus should not exceed cap of 10",
         )
 
-    def test_blueprint_melodic_cap_18(self):
-        """Blueprint 2 (StoryPop) has bonus_cap_melodic=18."""
+    def test_blueprint_melodic_cap_12(self):
+        """Blueprint 2 (StoryPop) has bonus_cap_melodic=12."""
         profile = BLUEPRINT_PROFILES[2]
-        self.assertEqual(profile.bonus_cap_melodic, 18.0)
+        self.assertEqual(profile.bonus_cap_melodic, 12.0)
 
         notes = _make_song(bars=64, with_patterns=True)
         result = MusicAnalyzer(notes, blueprint=2).analyze_all()
 
         self.assertLessEqual(
-            result.score.melodic_bonus, 18.0,
-            "StoryPop melodic bonus should not exceed cap of 18",
+            result.score.melodic_bonus, 12.0,
+            "StoryPop melodic bonus should not exceed cap of 12",
         )
 
-    def test_blueprint_melodic_cap_12(self):
-        """Blueprint 1 (RhythmLock) has bonus_cap_melodic=12."""
+    def test_blueprint_melodic_cap_8(self):
+        """Blueprint 1 (RhythmLock) has bonus_cap_melodic=8."""
         profile = BLUEPRINT_PROFILES[1]
-        self.assertEqual(profile.bonus_cap_melodic, 12.0)
+        self.assertEqual(profile.bonus_cap_melodic, 8.0)
 
         notes = _make_song(bars=64, with_patterns=True)
         result = MusicAnalyzer(notes, blueprint=1).analyze_all()
 
         self.assertLessEqual(
-            result.score.melodic_bonus, 12.0,
-            "RhythmLock melodic bonus should not exceed cap of 12",
+            result.score.melodic_bonus, 8.0,
+            "RhythmLock melodic bonus should not exceed cap of 8",
         )
 
 

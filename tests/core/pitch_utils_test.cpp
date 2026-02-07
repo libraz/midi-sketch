@@ -242,12 +242,12 @@ TEST(PitchUtilsTest, IsDissonantActualInterval_CompoundMinor2nd) {
 }
 
 TEST(PitchUtilsTest, IsDissonantActualInterval_CompoundMajor7th) {
-  // Major 7th is dissonant within 2 octaves (close voicing is harsh)
-  // Wider compound M7 (24+ semitones) is handled by analyzer as warning/info
+  // Major 7th is dissonant at any distance under 3 octaves.
+  // Compound M7 (e.g. bass C2 vs motif B4 = 35 semitones) creates audible beating.
   EXPECT_TRUE(isDissonantActualInterval(11, 0));   // Major 7th: dissonant
-  EXPECT_TRUE(isDissonantActualInterval(23, 0));   // Major 7th + octave: still dissonant
-  EXPECT_FALSE(isDissonantActualInterval(35, 0));  // Major 7th + 2 octaves: allowed (analyzer reports as info)
-  EXPECT_FALSE(isDissonantActualInterval(47, 0));  // Major 7th + 3 octaves: allowed
+  EXPECT_TRUE(isDissonantActualInterval(23, 0));   // Major 7th + octave: dissonant
+  EXPECT_TRUE(isDissonantActualInterval(35, 0));   // Major 7th + 2 oct: dissonant (bass vs upper)
+  EXPECT_FALSE(isDissonantActualInterval(47, 0));  // Major 7th + 3 oct: allowed (wide separation)
 }
 
 TEST(PitchUtilsTest, IsDissonantActualInterval_CompoundTritone) {

@@ -5,7 +5,7 @@ beat alignment problems, weak downbeats, backbeat strength, velocity emphasis,
 rhythm variety, beat content, and grid strictness by blueprint paradigm.
 """
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import List
 
 from ..constants import (TICKS_PER_BEAT, TICKS_PER_BAR, TRACK_NAMES, GUITAR_CHANNEL,
@@ -40,6 +40,7 @@ class RhythmAnalyzer(BaseAnalyzer):
         self._analyze_drive_metrics()
         self._analyze_guitar_rhythm_consistency()
         self._analyze_guitar_fingerpick_monotony()
+        self._analyze_vocal_harmonic_rhythm_alignment()
         return self.issues
 
     # -----------------------------------------------------------------
@@ -138,7 +139,7 @@ class RhythmAnalyzer(BaseAnalyzer):
                     else:
                         if same_ioi_count >= monotony_threshold:
                             self.add_issue(
-                                severity=Severity.WARNING,
+                                severity=Severity.ERROR if same_ioi_count >= 30 else Severity.WARNING,
                                 category=Category.RHYTHM,
                                 subcategory="rhythmic_monotony",
                                 message=f"{same_ioi_count} notes with same spacing",
@@ -154,7 +155,7 @@ class RhythmAnalyzer(BaseAnalyzer):
                 # Final flush: check last run
                 if same_ioi_count >= monotony_threshold:
                     self.add_issue(
-                        severity=Severity.WARNING,
+                        severity=Severity.ERROR if same_ioi_count >= 30 else Severity.WARNING,
                         category=Category.RHYTHM,
                         subcategory="rhythmic_monotony",
                         message=f"{same_ioi_count} notes with same spacing",
@@ -655,6 +656,40 @@ class RhythmAnalyzer(BaseAnalyzer):
                         },
                     )
 
+                # Kick excess density check
+                if kick_density > 7.0:
+                    self.add_issue(
+                        severity=Severity.ERROR,
+                        category=Category.RHYTHM,
+                        subcategory="kick_excess_density",
+                        message=(
+                            f"Kick drum excessive "
+                            f"({kick_density:.1f}/bar, typical pop: 2-4)"
+                        ),
+                        tick=chorus_start,
+                        track="Drums",
+                        details={
+                            "kick_per_bar": kick_density,
+                            "bpm": bpm,
+                        },
+                    )
+                elif kick_density > 6.0:
+                    self.add_issue(
+                        severity=Severity.WARNING,
+                        category=Category.RHYTHM,
+                        subcategory="kick_excess_density",
+                        message=(
+                            f"Kick drum density high "
+                            f"({kick_density:.1f}/bar, typical pop: 2-4)"
+                        ),
+                        tick=chorus_start,
+                        track="Drums",
+                        details={
+                            "kick_per_bar": kick_density,
+                            "bpm": bpm,
+                        },
+                    )
+
     # -----------------------------------------------------------------
     # Guitar analyses
     # -----------------------------------------------------------------
@@ -803,4 +838,89 @@ class RhythmAnalyzer(BaseAnalyzer):
                 tick=consecutive_start * TICKS_PER_BAR,
                 track="Guitar",
                 details={"bar_count": consecutive_count + 1},
+            )
+
+    def _analyze_vocal_harmonic_rhythm_alignment(self):
+        """Check if vocal rhythm responds to chord changes.
+
+        When vocal IOI is highly uniform (>80% same spacing), checks whether
+        the vocal provides emphasis (longer notes) at chord change points.
+        Overly mechanical vocal rhythm that ignores harmonic rhythm suggests
+        a lack of musical phrasing.
+
+        Skipped for UltraVocaloid which intentionally uses machine-like rhythm.
+        """
+        vocal_style = self.metadata.get('vocal_style')
+        if vocal_style == VOCAL_STYLE_ULTRA_VOCALOID:
+            return
+
+        vocal = self.notes_by_channel.get(0, [])
+        if len(vocal) < 16:
+            return
+
+        # Calculate IOI uniformity
+        ioi_list = []
+        for idx in range(1, len(vocal)):
+            ioi = vocal[idx].start - vocal[idx - 1].start
+            ioi_list.append(ioi)
+
+        if len(ioi_list) < 12:
+            return
+
+        quantized = [round(ioi / (TICKS_PER_BEAT // 4)) for ioi in ioi_list]
+        ioi_counter = Counter(quantized)
+        most_common_count = ioi_counter.most_common(1)[0][1]
+        uniformity = most_common_count / len(quantized)
+
+        if uniformity <= 0.80:
+            return
+
+        # Find chord change onsets
+        chord_notes = self.notes_by_channel.get(1, [])
+        if not chord_notes:
+            return
+
+        chord_onsets = sorted(set(n.start for n in chord_notes))
+        if len(chord_onsets) < 2:
+            return
+
+        # Check if vocal has emphasis (>= 1 beat) at chord change points
+        emphasis_count = 0
+        checked_changes = 0
+
+        for onset in chord_onsets:
+            # Find vocal notes within a quarter-beat tolerance of chord onset
+            tolerance = TICKS_PER_BEAT // 4
+            nearby_vocal = [
+                n for n in vocal
+                if abs(n.start - onset) <= tolerance
+            ]
+            if not nearby_vocal:
+                continue
+            checked_changes += 1
+            if any(n.duration >= TICKS_PER_BEAT for n in nearby_vocal):
+                emphasis_count += 1
+
+        if checked_changes == 0:
+            return
+
+        emphasis_ratio = emphasis_count / checked_changes
+
+        if uniformity > 0.90 and emphasis_ratio < 0.10:
+            sev = Severity.ERROR if uniformity > 0.95 else Severity.WARNING
+            self.add_issue(
+                severity=sev,
+                category=Category.RHYTHM,
+                subcategory="vocal_harmonic_misalign",
+                message=(f"Vocal rhythm ignores harmonic changes "
+                         f"(IOI uniformity {uniformity:.0%}, "
+                         f"emphasis at chord changes {emphasis_ratio:.0%})"),
+                tick=0,
+                track="Vocal",
+                details={
+                    "uniformity": uniformity,
+                    "emphasis_ratio": emphasis_ratio,
+                    "emphasis_count": emphasis_count,
+                    "checked_changes": checked_changes,
+                },
             )

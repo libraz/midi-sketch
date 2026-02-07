@@ -197,6 +197,38 @@ float calculateSingingEffort(const std::vector<NoteEvent>& notes);
 void mergeSamePitchNotes(std::vector<NoteEvent>& notes, Tick max_gap = 120);
 
 /**
+ * @brief Extend the last note of each section for "sustain" (歌い上げ) effect.
+ *
+ * Pop vocal practice: section-ending notes are held longer for emotional impact.
+ * Chorus endings get whole notes, pre-chorus gets dotted half, etc.
+ *
+ * Constraints:
+ * - Does not cross section boundaries
+ * - Checks chord boundary dissonance (clips to safe_duration if needed)
+ * - Maintains breath gap before next section's first note
+ * - Uses getMaxSafeEnd() to avoid collision with other tracks
+ *
+ * @param notes All vocal notes (modified in-place)
+ * @param sections Song sections for boundary detection
+ * @param harmony Harmony context for chord/collision checks
+ */
+void applySectionEndSustain(std::vector<NoteEvent>& notes, const std::vector<Section>& sections,
+                            IHarmonyContext& harmony);
+
+/**
+ * @brief Merge same-pitch notes near section ends (last 2 bars) for RhythmSync.
+ *
+ * RhythmSync normally skips mergeSamePitchNotes() to preserve locked rhythm.
+ * This variant only merges near section endings where sustain is desired.
+ *
+ * @param notes All vocal notes (modified in-place)
+ * @param sections Song sections for boundary detection
+ * @param max_gap Maximum gap in ticks to merge
+ */
+void mergeSamePitchNotesNearSectionEnds(std::vector<NoteEvent>& notes,
+                                         const std::vector<Section>& sections, Tick max_gap);
+
+/**
  * @brief Resolve isolated short notes by extending or merging.
  *
  * In pop vocals, isolated short notes (surrounded by rests) are difficult

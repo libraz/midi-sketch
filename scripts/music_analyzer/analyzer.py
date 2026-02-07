@@ -210,10 +210,10 @@ class MusicAnalyzer:
 
     # Default bonus caps per category (used when no profile is set).
     _DEFAULT_BONUS_CAPS = {
-        Category.MELODIC: 15.0,
-        Category.HARMONIC: 10.0,
-        Category.RHYTHM: 10.0,
-        Category.STRUCTURE: 10.0,
+        Category.MELODIC: 10.0,
+        Category.HARMONIC: 8.0,
+        Category.RHYTHM: 8.0,
+        Category.STRUCTURE: 8.0,
     }
 
     # Default penalty for new subcategories not explicitly listed
@@ -269,6 +269,15 @@ class MusicAnalyzer:
                 'repetition_balance': {
                     Severity.ERROR: 0.5, Severity.WARNING: 0.3, Severity.INFO: 0.1,
                 },
+                'phrase_end_short': {
+                    Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
+                },
+                'section_range_inversion': {
+                    Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
+                },
+                'pitch_repetition_rate': {
+                    Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.2,
+                },
             },
             Category.HARMONIC: {
                 'dissonance': {
@@ -322,6 +331,9 @@ class MusicAnalyzer:
                 'bass_stepwise_rate': {
                     Severity.ERROR: 0.5, Severity.WARNING: 0.3, Severity.INFO: 0.1,
                 },
+                'chord_duration_mismatch': {
+                    Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.2,
+                },
                 'guitar_thin_voicing': {
                     Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
                 },
@@ -343,7 +355,7 @@ class MusicAnalyzer:
                     Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.3,
                 },
                 'rhythmic_monotony': {
-                    Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.3,
+                    Severity.ERROR: 3.0, Severity.WARNING: 1.0, Severity.INFO: 0.3,
                 },
                 'beat_misalignment': {
                     Severity.ERROR: 3.0, Severity.WARNING: 1.5, Severity.INFO: 0.3,
@@ -375,13 +387,19 @@ class MusicAnalyzer:
                 'guitar_fingerpick_monotony': {
                     Severity.ERROR: 0.5, Severity.WARNING: 0.3, Severity.INFO: 0.1,
                 },
+                'vocal_harmonic_misalign': {
+                    Severity.ERROR: 2.0, Severity.WARNING: 1.5, Severity.INFO: 0.3,
+                },
+                'kick_excess_density': {
+                    Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.3,
+                },
             },
             Category.ARRANGEMENT: {
                 'register_overlap': {
                     Severity.ERROR: 3.0, Severity.WARNING: 1.5, Severity.INFO: 0.3,
                 },
                 'track_separation': {
-                    Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.3,
+                    Severity.ERROR: 2.0, Severity.WARNING: 2.0, Severity.INFO: 0.3,
                 },
                 'motif_degradation': {
                     Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.3,
@@ -469,26 +487,31 @@ class MusicAnalyzer:
                 effective = min(penalty, max_penalty - subcategory_penalties[subcat_key])
                 category_penalties[cat] += effective
                 subcategory_penalties[subcat_key] += effective
+            else:
+                overflow_penalty = penalty * 0.15
+                category_penalties[cat] += overflow_penalty
+                subcategory_penalties[subcat_key] += overflow_penalty
             subcategory_counts[subcat_key] += 1
 
         total_notes = len(self.notes)
-        note_factor = max(1, total_notes / 500)
+        melodic_notes = sum(1 for n in self.notes if n.channel != 9)
+        note_factor = max(1, melodic_notes / 500)
 
         # Calculate base scores (penalty only)
         melodic_base = max(
             0, 100 - category_penalties[Category.MELODIC] / note_factor * 5
         )
         harmonic_base = max(
-            0, 100 - category_penalties[Category.HARMONIC] / note_factor * 8
+            0, 100 - category_penalties[Category.HARMONIC] / note_factor * 5
         )
         rhythm_base = max(
-            0, 100 - category_penalties[Category.RHYTHM] / note_factor * 10
+            0, 100 - category_penalties[Category.RHYTHM] / note_factor * 6
         )
         arrangement_base = max(
-            0, 100 - category_penalties[Category.ARRANGEMENT] / note_factor * 8
+            0, 100 - category_penalties[Category.ARRANGEMENT] / note_factor * 5
         )
         structure_base = max(
-            0, 100 - category_penalties[Category.STRUCTURE] / note_factor * 15
+            0, 100 - category_penalties[Category.STRUCTURE] / note_factor * 9
         )
 
         # Apply bonus layer
@@ -506,7 +529,28 @@ class MusicAnalyzer:
                 Category.STRUCTURE: self.profile.bonus_cap_structure,
             }
         else:
-            caps = self._DEFAULT_BONUS_CAPS
+            caps = dict(self._DEFAULT_BONUS_CAPS)
+
+        # C1: Reduce bonus caps when ERRORs/WARNINGs are present in a category
+        error_counts = defaultdict(int)
+        warning_counts = defaultdict(int)
+        for issue in self.issues:
+            if issue.severity == Severity.ERROR:
+                error_counts[issue.category] += 1
+            elif issue.severity == Severity.WARNING:
+                warning_counts[issue.category] += 1
+
+        for cat in [Category.MELODIC, Category.HARMONIC, Category.RHYTHM, Category.STRUCTURE]:
+            ec = error_counts.get(cat, 0)
+            wc = warning_counts.get(cat, 0)
+            if ec >= 3:
+                caps[cat] = 0.0
+            elif ec >= 1:
+                caps[cat] *= 0.3
+            if ec == 0 and wc >= 5:
+                caps[cat] *= 0.3
+            elif ec == 0 and wc >= 3:
+                caps[cat] *= 0.5
 
         melodic_bonus = min(caps[Category.MELODIC], bonus_by_cat[Category.MELODIC])
         harmonic_bonus = min(caps[Category.HARMONIC], bonus_by_cat[Category.HARMONIC])
@@ -541,6 +585,7 @@ class MusicAnalyzer:
             'arrangement_base': round(arrangement_base, 2),
             'structure_base': round(structure_base, 2),
             'total_notes': total_notes,
+            'melodic_notes': melodic_notes,
             'note_factor': note_factor,
         }
         for key, count in subcategory_counts.items():

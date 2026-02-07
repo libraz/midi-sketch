@@ -701,6 +701,14 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
      1.0f, 1.0f, 0.75f, 1.0f,                           // chorus=75% (power needs sustain)
      0.0f, 0.0f, 0.0f, 0.0f,                            // no 32nd notes
      1.0f, false, true, true, 5, 0.2f},                 // hook repeat + long tones
+
+    // -------------------------------------------------------------------------
+    // KPop (13) - K-POP style: syncopated hooks, rap-like repetition, offbeat
+    // -------------------------------------------------------------------------
+    {VocalStylePreset::KPop, 9, 0.35f, true,  // leap=6th, high synco, bar cross OK
+     1.0f, 1.0f, 1.0f, 1.0f,                  // chorus=100% (dense hook-driven)
+     0.0f, 0.0f, 0.0f, 0.0f,                  // no 32nd notes
+     1.0f, true, true, false, 5, 0.2f},       // disable vowel, hook repeat, no long tones
 };
 
 }  // namespace

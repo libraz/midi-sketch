@@ -431,4 +431,64 @@ TEST(JsonApiTest, SetVocalNotesFromJson) {
   midisketch_destroy(handle);
 }
 
+// ============================================================================
+// Syncopation Master Switch Tests
+// ============================================================================
+
+TEST(ConfigConverterSyncopationTest, MasterSwitchOffZerosSyncopationParams) {
+  // VocalStylePreset::Vocaloid sets syncopation_prob=0.35, allow_bar_crossing=true
+  // Master switch (enable_syncopation=false) should override these to zero
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 42;
+  config.vocal_style = VocalStylePreset::Vocaloid;
+  config.enable_syncopation = false;
+
+  GeneratorParams params = ConfigConverter::convert(config);
+
+  EXPECT_FLOAT_EQ(params.melody_params.syncopation_prob, 0.0f);
+  EXPECT_FALSE(params.melody_params.allow_bar_crossing);
+}
+
+TEST(ConfigConverterSyncopationTest, MasterSwitchOnPreservesPresetValues) {
+  // When syncopation is enabled, VocalStylePreset values should be preserved
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 42;
+  config.vocal_style = VocalStylePreset::Vocaloid;
+  config.enable_syncopation = true;
+
+  GeneratorParams params = ConfigConverter::convert(config);
+
+  EXPECT_FLOAT_EQ(params.melody_params.syncopation_prob, 0.35f);
+  EXPECT_TRUE(params.melody_params.allow_bar_crossing);
+}
+
+TEST(ConfigConverterSyncopationTest, MasterSwitchOffOverridesUserSyncopationProb) {
+  // Even if user explicitly sets syncopation_prob via melody override,
+  // master switch should zero it
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 42;
+  config.melody_syncopation_prob = 50;  // User override: 50%
+  config.enable_syncopation = false;
+
+  GeneratorParams params = ConfigConverter::convert(config);
+
+  EXPECT_FLOAT_EQ(params.melody_params.syncopation_prob, 0.0f);
+  EXPECT_FALSE(params.melody_params.allow_bar_crossing);
+}
+
+TEST(ConfigConverterSyncopationTest, MasterSwitchOffOverridesMelodicComplexity) {
+  // MelodicComplexity::Complex multiplies syncopation_prob by 1.5x
+  // Master switch should still zero it
+  SongConfig config = createDefaultSongConfig(0);
+  config.seed = 42;
+  config.vocal_style = VocalStylePreset::Vocaloid;
+  config.melodic_complexity = MelodicComplexity::Complex;
+  config.enable_syncopation = false;
+
+  GeneratorParams params = ConfigConverter::convert(config);
+
+  EXPECT_FLOAT_EQ(params.melody_params.syncopation_prob, 0.0f);
+  EXPECT_FALSE(params.melody_params.allow_bar_crossing);
+}
+
 }  // namespace midisketch

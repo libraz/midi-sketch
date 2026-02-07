@@ -264,32 +264,74 @@ uint8_t getBassRoot(int8_t degree, Key key = Key::C) {
 
 /// Get diatonic 5th above root (in C major context).
 /// Returns perfect 5th for most roots, but diminished 5th for B (vii chord).
+/// When the 5th exceeds BASS_HIGH, shifts down an octave to preserve pitch class.
 uint8_t getFifth(uint8_t root) {
   int pitch_class = root % OCTAVE;
   // B (pitch class 11) has a diminished 5th in C major (B->F)
   // All other diatonic roots have perfect 5th
   int interval = (pitch_class == 11) ? DIMINISHED_5TH : PERFECT_5TH;
-  return clampBass(root + interval);
+  int fifth = root + interval;
+  // Shift octave down if above bass range (preserves pitch class)
+  if (fifth > BASS_HIGH) {
+    fifth -= OCTAVE;
+  }
+  return clampBass(fifth);
 }
 
-/// Get safe 5th that doesn't clash with other tracks.
-/// Falls back to root if 5th would create dissonance.
-/// @param root The chord root pitch
-/// @param harmony Harmony context for collision checking
+/// Get safe 5th that doesn't clash with other tracks and is a chord tone.
+/// When slash chords change the bass root, the diatonic 5th of that root may not
+/// be a chord tone. In such cases, falls back to the chord's actual 5th or 3rd.
+/// @param root The chord root pitch (may be slash chord bass note)
+/// @param harmony Harmony context for collision and chord degree lookup
 /// @param start Start tick for collision check
 /// @param duration Duration for collision check
-/// @return Safe pitch (5th if consonant, root otherwise)
+/// @return Safe pitch that is a chord tone and consonant, or root as fallback
 uint8_t getSafeFifth(uint8_t root, const IHarmonyContext& harmony, Tick start, Tick duration) {
+  int8_t degree = harmony.getChordDegreeAt(start);
+  auto chord_pcs = getChordTonePitchClasses(degree);
+
+  // Helper: check if pitch class is a chord tone
+  auto isChordTone = [&](int pc) {
+    for (int ct : chord_pcs) {
+      if (ct == pc) return true;
+    }
+    return false;
+  };
+
+  // Helper: find pitch in bass range near root and check consonance
+  auto tryPitch = [&](int pitch_class) -> int {
+    int root_oct = root / OCTAVE;
+    // Try same octave as root, then octave above, then below
+    for (int oct_offset : {0, 1, -1}) {
+      int candidate = (root_oct + oct_offset) * OCTAVE + pitch_class;
+      if (candidate >= BASS_LOW && candidate <= BASS_HIGH && candidate != root &&
+          harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), start, duration,
+                                             TrackRole::Bass)) {
+        return candidate;
+      }
+    }
+    return -1;
+  };
+
+  // First try: diatonic 5th of root (most common case, works when root is actual chord root)
   uint8_t fifth = getFifth(root);
-  if (harmony.isConsonantWithOtherTracks(fifth, start, duration, TrackRole::Bass)) {
-    return fifth;
+  if (isChordTone(fifth % OCTAVE)) {
+    int result = tryPitch(fifth % OCTAVE);
+    if (result >= 0) return static_cast<uint8_t>(result);
   }
-  // 5th clashes - try octave-adjusted 5th
-  int fifth_down = static_cast<int>(fifth) - OCTAVE;
-  if (fifth_down >= BASS_LOW &&
-      harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(fifth_down), start, duration, TrackRole::Bass)) {
-    return static_cast<uint8_t>(fifth_down);
+
+  // Second try: chord's actual 5th (for slash chord cases)
+  if (chord_pcs.size() >= 3) {
+    int result = tryPitch(chord_pcs[2]);
+    if (result >= 0) return static_cast<uint8_t>(result);
   }
+
+  // Third try: chord's 3rd
+  if (chord_pcs.size() >= 2) {
+    int result = tryPitch(chord_pcs[1]);
+    if (result >= 0) return static_cast<uint8_t>(result);
+  }
+
   // Fall back to root (always safest for bass)
   return root;
 }
@@ -905,7 +947,7 @@ void generateSyncopatedPattern(const BassBarContext& ctx) {
   if (ctx.is_last_bar || ctx.next_root != ctx.root) {
     uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
     addBassWithRootFallback(ctx.track, ctx.harmony, ctx.bar_start + 3 * QUARTER + EIGHTH, EIGHTH,
-                            approach, ctx.fifth, ctx.vel_weak);
+                            approach, ctx.root, ctx.vel_weak);
   } else {
     addSafeBassNote(ctx.track, ctx.bar_start + 3 * QUARTER, QUARTER, ctx.fifth, ctx.vel_weak,
                     ctx.harmony);

@@ -9,11 +9,13 @@
 #ifndef MIDISKETCH_TRACK_VOCAL_PHRASE_CACHE_H
 #define MIDISKETCH_TRACK_VOCAL_PHRASE_CACHE_H
 
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <vector>
 
 #include "core/section_types.h"
+#include "core/timing_constants.h"
 #include "core/types.h"
 
 namespace midisketch {
@@ -207,22 +209,54 @@ inline CachedRhythmPattern extractRhythmPatternFromTrack(const std::vector<NoteE
 // ============================================================================
 
 /**
+ * @brief Get max notes per phrase based on section type.
+ *
+ * Section-type dependent phrasing length:
+ * - Chorus: 12 (shorter phrases for open, breathable feel)
+ * - Verse: 16 (longer phrases for storytelling density)
+ * - Bridge: 8 (open, spacious phrasing)
+ * - Others: 12 (reasonable default)
+ *
+ * @param section_type Section type
+ * @return Maximum notes before forced breath
+ */
+inline int getMaxNotesPerPhrase(SectionType section_type) {
+  switch (section_type) {
+    case SectionType::A:
+      return 16;
+    case SectionType::B:
+      return 12;
+    case SectionType::Chorus:
+    case SectionType::Drop:
+      return 12;
+    case SectionType::Bridge:
+      return 8;
+    default:
+      return 12;
+  }
+}
+
+/**
  * @brief Detect phrase boundaries from rhythm pattern for breath insertion.
  *
  * Analyzes gaps between notes to find natural breathing points.
  * Ensures vocally singable passages by enforcing maximum phrase length.
+ * Section-type aware: Chorus uses shorter phrases, Bridge is more open.
+ * Barline positions (beat 4 boundaries) are preferred as breath candidates.
  *
  * @param pattern Rhythm pattern to analyze
+ * @param section_type Section type for phrase length control (default: A)
  * @return Vector of phrase boundary beats (positions where breath can occur)
  */
-inline std::vector<float> detectPhraseBoundariesFromRhythm(const CachedRhythmPattern& pattern) {
+inline std::vector<float> detectPhraseBoundariesFromRhythm(
+    const CachedRhythmPattern& pattern, SectionType section_type = SectionType::A) {
   std::vector<float> boundaries;
   if (pattern.onset_beats.size() <= 1) {
     return boundaries;
   }
 
   constexpr float kMinGapForBreath = 0.5f;  // Half-beat gap = natural breath point
-  constexpr int kMaxNotesPerPhrase = 16;    // Force breath after 16 notes
+  int max_notes = getMaxNotesPerPhrase(section_type);
 
   int notes_since_boundary = 0;
   for (size_t i = 1; i < pattern.onset_beats.size(); ++i) {
@@ -230,8 +264,18 @@ inline std::vector<float> detectPhraseBoundariesFromRhythm(const CachedRhythmPat
     float gap = pattern.onset_beats[i] - prev_end;
     notes_since_boundary++;
 
-    // Phrase boundary when: sufficient gap OR too many consecutive notes
-    if (gap >= kMinGapForBreath || notes_since_boundary >= kMaxNotesPerPhrase) {
+    // Check if this onset is near a barline (beat 0 of a bar)
+    float beat_in_bar = std::fmod(pattern.onset_beats[i], 4.0f);
+    bool is_barline = (beat_in_bar < 0.25f);
+
+    // Phrase boundary when:
+    // 1. Sufficient gap between notes (natural breath point)
+    // 2. Too many consecutive notes (forced breath)
+    // 3. Barline position when approaching max (prefer musically natural break)
+    bool force_breath = notes_since_boundary >= max_notes;
+    bool near_limit_at_barline = is_barline && notes_since_boundary >= (max_notes * 3 / 4);
+
+    if (gap >= kMinGapForBreath || force_breath || near_limit_at_barline) {
       boundaries.push_back(pattern.onset_beats[i]);
       notes_since_boundary = 0;
     }
@@ -240,19 +284,41 @@ inline std::vector<float> detectPhraseBoundariesFromRhythm(const CachedRhythmPat
 }
 
 /**
- * @brief Get breath duration based on section type and mood.
+ * @brief Get breath duration based on section type and context.
+ *
+ * Context-dependent breath durations:
+ * - Sub-phrase (within a phrase): minimal gap (32nd note)
+ * - Phrase boundary (same section): standard gap (8th note)
+ * - Section boundary: larger gap (quarter note) for dramatic pause
+ * - Ballad: longer breaths for expressiveness
+ *
  * @param section_type Current section type
  * @param is_ballad True if slow/ballad mood
+ * @param is_section_boundary True if this is a section boundary (default: false)
  * @return Breath duration in ticks
  */
-inline Tick getBreathDuration(SectionType section_type, bool is_ballad) {
-  // Base breath duration: 16th note (120 ticks)
-  Tick base = 120;
-
-  // Chorus: shorter breaths for energy
-  if (section_type == SectionType::Chorus) {
-    base = 90;
+inline Tick getBreathDuration(SectionType section_type, bool is_ballad,
+                               bool is_section_boundary = false) {
+  Tick base;
+  if (is_section_boundary) {
+    // Section boundary: larger breath for dramatic pause
+    base = TICK_QUARTER;  // 480 ticks
+  } else {
+    // Phrase boundary: standard breath
+    switch (section_type) {
+      case SectionType::Chorus:
+      case SectionType::Drop:
+        base = TICK_SIXTEENTH;  // 120 ticks - minimal breath for energy
+        break;
+      case SectionType::Bridge:
+        base = TICK_EIGHTH;     // 240 ticks - spacious
+        break;
+      default:
+        base = TICK_SIXTEENTH;  // 120 ticks
+        break;
+    }
   }
+
   // Ballads: longer breaths for expressiveness
   if (is_ballad) {
     base = static_cast<Tick>(base * 1.5f);

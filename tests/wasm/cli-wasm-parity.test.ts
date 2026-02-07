@@ -41,6 +41,9 @@ interface ParityTestCase {
   bpm?: number;
   formId?: number;
   key?: number;
+  vocalStyle?: number;
+  vocalLow?: number;
+  vocalHigh?: number;
 }
 
 interface NoteData {
@@ -167,6 +170,15 @@ describe('CLI/WASM Parity', () => {
     if (tc.key !== undefined) {
       args.push(`--key ${tc.key}`);
     }
+    if (tc.vocalStyle !== undefined) {
+      args.push(`--vocal-style ${tc.vocalStyle}`);
+    }
+    if (tc.vocalLow !== undefined) {
+      args.push(`--vocal-low ${tc.vocalLow}`);
+    }
+    if (tc.vocalHigh !== undefined) {
+      args.push(`--vocal-high ${tc.vocalHigh}`);
+    }
 
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'midisketch-parity-'));
     try {
@@ -204,6 +216,15 @@ describe('CLI/WASM Parity', () => {
     }
     if (tc.key !== undefined) {
       config.key = tc.key;
+    }
+    if (tc.vocalStyle !== undefined) {
+      config.vocal_style = tc.vocalStyle;
+    }
+    if (tc.vocalLow !== undefined) {
+      config.vocal_low = tc.vocalLow;
+    }
+    if (tc.vocalHigh !== undefined) {
+      config.vocal_high = tc.vocalHigh;
     }
 
     return JSON.stringify(config);
@@ -254,8 +275,8 @@ describe('CLI/WASM Parity', () => {
 
   const testCases: ParityTestCase[] = [];
 
-  // All 13 styles
-  for (let s = 0; s <= 12; s++) {
+  // All 15 styles (0-14)
+  for (let s = 0; s <= 14; s++) {
     testCases.push({ name: `style=${s}`, stylePresetId: s, seed: 42 });
   }
 
@@ -293,6 +314,55 @@ describe('CLI/WASM Parity', () => {
   for (const seed of [1, 999, 12345, 99999, 1000000]) {
     testCases.push({ name: `seed=${seed}`, stylePresetId: 0, seed });
   }
+
+  // Vocal styles (explicit)
+  for (const vs of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]) {
+    testCases.push({ name: `vocal_style=${vs}`, stylePresetId: 0, seed: 42, vocalStyle: vs });
+  }
+
+  // Vocal range overrides
+  testCases.push({
+    name: 'vocal_low=57',
+    stylePresetId: 0,
+    seed: 42,
+    vocalLow: 57,
+  });
+  testCases.push({
+    name: 'vocal_range=55-84',
+    stylePresetId: 0,
+    seed: 42,
+    vocalLow: 55,
+    vocalHigh: 84,
+  });
+
+  // Style 13-14 with various blueprints
+  for (let b = 0; b <= 8; b++) {
+    testCases.push({
+      name: `style=13,bp=${b}`,
+      stylePresetId: 13,
+      seed: 42,
+      blueprintId: b,
+    });
+    testCases.push({
+      name: `style=14,bp=${b}`,
+      stylePresetId: 14,
+      seed: 42,
+      blueprintId: b,
+    });
+  }
+
+  // WASM crash reproduction: exact config from backup metadata
+  testCases.push({
+    name: 'wasm-crash-repro: style=14 bp=1 vs=9 low=57',
+    stylePresetId: 14,
+    seed: 3072680300,
+    blueprintId: 1,
+    chordProgressionId: 2,
+    bpm: 170,
+    formId: 5,
+    vocalStyle: 9,
+    vocalLow: 57,
+  });
 
   // Multi-parameter combinations
   testCases.push({
@@ -339,6 +409,32 @@ describe('CLI/WASM Parity', () => {
     key: 9,
   });
 
+  // Vocal style + style combos
+  testCases.push({
+    name: 'combo: style=13 vs=9 bp=5 bpm=160',
+    stylePresetId: 13,
+    seed: 88888,
+    vocalStyle: 9,
+    blueprintId: 5,
+    bpm: 160,
+  });
+  testCases.push({
+    name: 'combo: style=14 vs=3 bp=7 key=3',
+    stylePresetId: 14,
+    seed: 55555,
+    vocalStyle: 3,
+    blueprintId: 7,
+    key: 3,
+  });
+  testCases.push({
+    name: 'combo: style=0 vs=13 bpm=130 form=10',
+    stylePresetId: 0,
+    seed: 11111,
+    vocalStyle: 13,
+    bpm: 130,
+    formId: 10,
+  });
+
   // Run all test cases
   describe.each(testCases)('$name', (tc) => {
     it('WASM and CLI produce identical output', () => {
@@ -346,6 +442,6 @@ describe('CLI/WASM Parity', () => {
       const wasmData = generateViaWasm(configJson);
       const cliData = generateViaCli(tc);
       compareEvents(wasmData, cliData, tc.name);
-    });
+    }, 60_000);
   });
 });

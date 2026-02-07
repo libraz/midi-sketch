@@ -38,10 +38,10 @@ class BlueprintProfile:
     dynamics_bonus_weight: float = 1.0
     simplicity_bonus_weight: float = 1.0
     # Per-category bonus caps
-    bonus_cap_melodic: float = 15.0
-    bonus_cap_harmonic: float = 10.0
-    bonus_cap_rhythm: float = 10.0
-    bonus_cap_structure: float = 10.0
+    bonus_cap_melodic: float = 10.0
+    bonus_cap_harmonic: float = 8.0
+    bonus_cap_rhythm: float = 8.0
+    bonus_cap_structure: float = 8.0
 
 
 BLUEPRINT_PROFILES = {
@@ -54,7 +54,7 @@ BLUEPRINT_PROFILES = {
         hook_bonus_weight=1.0, groove_bonus_weight=1.0,
         tension_bonus_weight=1.0, dynamics_bonus_weight=1.0,
         simplicity_bonus_weight=1.0,
-        bonus_cap_melodic=15.0,
+        bonus_cap_melodic=10.0,
     ),
     1: BlueprintProfile(
         "RhythmLock", "RhythmSync", "Locked",
@@ -64,7 +64,7 @@ BLUEPRINT_PROFILES = {
         hook_bonus_weight=0.8, groove_bonus_weight=1.5,
         tension_bonus_weight=0.8, dynamics_bonus_weight=0.8,
         simplicity_bonus_weight=1.0,
-        bonus_cap_melodic=12.0,
+        bonus_cap_melodic=8.0,
     ),
     2: BlueprintProfile(
         "StoryPop", "MelodyDriven", "Evolving",
@@ -74,7 +74,7 @@ BLUEPRINT_PROFILES = {
         hook_bonus_weight=1.3, groove_bonus_weight=0.8,
         tension_bonus_weight=1.3, dynamics_bonus_weight=1.2,
         simplicity_bonus_weight=0.8,
-        bonus_cap_melodic=18.0,
+        bonus_cap_melodic=12.0,
     ),
     3: BlueprintProfile(
         "Ballad", "MelodyDriven", "Free",
@@ -84,7 +84,7 @@ BLUEPRINT_PROFILES = {
         hook_bonus_weight=1.0, groove_bonus_weight=0.5,
         tension_bonus_weight=1.5, dynamics_bonus_weight=1.5,
         simplicity_bonus_weight=1.2,
-        bonus_cap_melodic=15.0,
+        bonus_cap_melodic=10.0,
     ),
     4: BlueprintProfile(
         "IdolStandard", "MelodyDriven", "Evolving",
@@ -94,7 +94,7 @@ BLUEPRINT_PROFILES = {
         hook_bonus_weight=1.5, groove_bonus_weight=1.0,
         tension_bonus_weight=1.0, dynamics_bonus_weight=1.0,
         simplicity_bonus_weight=1.0,
-        bonus_cap_melodic=18.0,
+        bonus_cap_melodic=12.0,
     ),
     5: BlueprintProfile(
         "IdolHyper", "RhythmSync", "Locked",
@@ -105,7 +105,7 @@ BLUEPRINT_PROFILES = {
         hook_bonus_weight=0.8, groove_bonus_weight=1.5,
         tension_bonus_weight=0.5, dynamics_bonus_weight=0.5,
         simplicity_bonus_weight=0.8,
-        bonus_cap_melodic=12.0,
+        bonus_cap_melodic=8.0,
     ),
     6: BlueprintProfile(
         "IdolKawaii", "MelodyDriven", "Locked",
@@ -115,7 +115,7 @@ BLUEPRINT_PROFILES = {
         hook_bonus_weight=1.2, groove_bonus_weight=0.8,
         tension_bonus_weight=0.8, dynamics_bonus_weight=0.5,
         simplicity_bonus_weight=1.5,
-        bonus_cap_melodic=15.0,
+        bonus_cap_melodic=10.0,
     ),
     7: BlueprintProfile(
         "IdolCoolPop", "RhythmSync", "Locked",
@@ -126,7 +126,7 @@ BLUEPRINT_PROFILES = {
         hook_bonus_weight=1.0, groove_bonus_weight=1.5,
         tension_bonus_weight=1.0, dynamics_bonus_weight=1.2,
         simplicity_bonus_weight=0.8,
-        bonus_cap_melodic=12.0,
+        bonus_cap_melodic=8.0,
     ),
     8: BlueprintProfile(
         "IdolEmo", "MelodyDriven", "Locked",
@@ -137,6 +137,6 @@ BLUEPRINT_PROFILES = {
         hook_bonus_weight=1.2, groove_bonus_weight=0.5,
         tension_bonus_weight=1.5, dynamics_bonus_weight=1.5,
         simplicity_bonus_weight=1.0,
-        bonus_cap_melodic=18.0,
+        bonus_cap_melodic=12.0,
     ),
 }

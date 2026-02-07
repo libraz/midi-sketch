@@ -316,6 +316,11 @@ class PostProcessor {
   /// @param max_semitones Maximum allowed leap between consecutive notes
   static void smoothLargeLeaps(MidiTrack& track, int max_semitones = 12);
 
+  /// Align durations of simultaneous chord notes to the minimum at each onset.
+  /// Post-processing may shorten individual note durations differently,
+  /// causing notes within the same chord voicing to have mismatched durations.
+  static void alignChordNoteDurations(MidiTrack& track);
+
  private:
   // Returns true if the tick position is on a strong beat (beats 1 or 3 in 4/4).
   static bool isStrongBeat(Tick tick);

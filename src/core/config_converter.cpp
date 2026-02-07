@@ -409,6 +409,14 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
     params.melody_params.use_leading_tone = true;
   }
 
+  // Master switch: when syncopation is off, zero all syncopation params.
+  // This overrides VocalStylePreset and MelodicComplexity settings.
+  // Priority: VocalStylePreset → MelodicComplexity → User Override → Master Switch
+  if (!params.enable_syncopation) {
+    params.melody_params.syncopation_prob = 0.0f;
+    params.melody_params.allow_bar_crossing = false;
+  }
+
   return params;
 }
 

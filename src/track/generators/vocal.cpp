@@ -458,6 +458,204 @@ static bool shouldUsePerSectionTypeRhythmLock(const GeneratorParams& params) {
   return params.vocal_style == VocalStylePreset::UltraVocaloid;
 }
 
+// ============================================================================
+// Inline Harmony-Aware Onset Skip Helpers
+// ============================================================================
+
+/// @brief Describes the desire for a long note at a given onset position.
+struct LongNoteDesire {
+  int max_skip;       ///< Maximum onsets to skip (0=normal 8th, 1-3=long note)
+  float probability;  ///< Probability of attempting the skip (0.0-1.0)
+};
+
+/// @brief Evaluate how much we want a long note at the current onset position.
+///
+/// Considers section type, phrase/section boundaries, bar alignment, and cooldown.
+/// This replaces the pre-computed skip_indices approach, enabling pitch-aware decisions.
+static LongNoteDesire evaluateLongNoteDesire(size_t i, const std::vector<float>& onsets,
+                                              const Section& section,
+                                              const std::set<float>& boundary_set,
+                                              int onsets_since_long) {
+  LongNoteDesire desire{0, 0.0f};
+  size_t remaining = onsets.size() - i;
+
+  // Cooldown: prevent consecutive long notes from destroying rhythmic feel.
+  // Chorus/Drop allow shorter cooldown since they benefit from more sustained singing.
+  int cooldown_threshold = (section.type == SectionType::Chorus ||
+                            section.type == SectionType::Drop ||
+                            section.type == SectionType::Bridge) ? 1 : 2;
+  if (onsets_since_long < cooldown_threshold) {
+    return desire;
+  }
+
+  // Short sections (< 4 onsets): only allow section-end skip
+  if (onsets.size() < 4 && remaining > 1) {
+    return desire;
+  }
+
+  // Section-dependent base parameters
+  float base_prob = 0.0f;
+  int base_max_skip = 0;
+  int bar_interval = 4;
+
+  switch (section.type) {
+    case SectionType::Chorus:
+    case SectionType::Drop:
+      base_prob = 0.55f;
+      base_max_skip = 3;
+      bar_interval = 2;
+      break;
+    case SectionType::Bridge:
+      base_prob = 0.50f;
+      base_max_skip = 3;
+      bar_interval = 2;
+      break;
+    case SectionType::B:
+      base_prob = 0.35f;
+      base_max_skip = 2;
+      bar_interval = 2;
+      break;
+    case SectionType::A:
+    default:
+      base_prob = 0.25f;
+      base_max_skip = 2;
+      bar_interval = 3;
+      break;
+  }
+
+  desire.max_skip = base_max_skip;
+  desire.probability = base_prob;
+
+  // Cap max_skip to not consume all remaining onsets (keep at least 1 after)
+  if (desire.max_skip >= static_cast<int>(remaining)) {
+    desire.max_skip = static_cast<int>(remaining) - 1;
+  }
+
+  float beat = onsets[i];
+
+  // Position-dependent overrides (highest priority first)
+
+  // (1) Section-end: last 3 onsets get high skip desire
+  if (remaining <= 3) {
+    int section_end_skip = (section.type == SectionType::Chorus ||
+                            section.type == SectionType::Drop) ? 3 : 2;
+    desire.max_skip = std::max(desire.max_skip, section_end_skip);
+    desire.probability = 0.95f;
+    // Cap again
+    if (desire.max_skip >= static_cast<int>(remaining)) {
+      desire.max_skip = static_cast<int>(remaining) - 1;
+    }
+    return desire;
+  }
+
+  // (2) Near phrase boundary: 1 or 2 onsets before a boundary → always sustain.
+  // Probability is 1.0 because phrase-end notes MUST be longer to avoid
+  // "short note at phrase end" artifacts. If harmony rejects the skip, the note
+  // stays short as a last resort, but we always attempt.
+  bool near_boundary = false;
+  if (i + 1 < onsets.size() && boundary_set.count(onsets[i + 1]) > 0) {
+    near_boundary = true;
+  } else if (i + 2 < onsets.size() && boundary_set.count(onsets[i + 2]) > 0) {
+    near_boundary = true;
+  }
+  if (near_boundary) {
+    desire.max_skip = std::max(desire.max_skip, 2);
+    desire.probability = 1.0f;  // Always attempt at phrase boundaries
+    if (desire.max_skip >= static_cast<int>(remaining)) {
+      desire.max_skip = static_cast<int>(remaining) - 1;
+    }
+    return desire;
+  }
+
+  // (3) Bar-aligned long tones: near beat 3.0-3.5 at bar_interval spacing
+  float beat_in_bar = std::fmod(beat, 4.0f);
+  int bar_index = static_cast<int>(beat / 4.0f);
+  if (beat_in_bar >= 2.5f && beat_in_bar <= 3.6f &&
+      (bar_index % bar_interval == (bar_interval - 1) || bar_index % 2 == 1)) {
+    desire.max_skip = std::max(desire.max_skip, 2);
+    desire.probability = std::min(base_prob * 1.5f, 0.85f);
+    return desire;
+  }
+
+  // (4) Before natural rhythm gap: if a natural gap (>= 1 beat) exists in the
+  // onset pattern within the next 4 onsets, create a long note to sustain into
+  // the gap. This addresses phrase-end resolution regardless of boundary alignment.
+  // Evaluated before strong-beat/spacing conditions since gap proximity is the
+  // strongest indicator of where a long note is needed.
+  for (size_t j = i + 1; j < std::min(i + 5, onsets.size()); ++j) {
+    float gap = onsets[j] - onsets[j - 1];
+    if (gap >= 1.0f) {  // Natural gap >= 1 beat in onset pattern
+      desire.max_skip = std::max(desire.max_skip, static_cast<int>(j - i - 1) + 1);
+      desire.probability = 0.95f;
+      if (desire.max_skip >= static_cast<int>(remaining)) {
+        desire.max_skip = static_cast<int>(remaining) - 1;
+      }
+      return desire;
+    }
+  }
+
+  // (5) Strong beat positions (beat 0 or 2) with interval check
+  if ((beat_in_bar < 0.1f || std::abs(beat_in_bar - 2.0f) < 0.1f) &&
+      bar_index % bar_interval == 0 && onsets_since_long >= 3) {
+    desire.max_skip = std::max(desire.max_skip, 1);
+    desire.probability = base_prob;
+    return desire;
+  }
+
+  // (6) Spacing-based fallback: if too many consecutive short notes,
+  // force a long note attempt. Threshold: 5 onsets (~2.5 beats).
+  if (onsets_since_long >= 5) {
+    desire.max_skip = std::max(desire.max_skip, 1);
+    desire.probability = 0.85f;
+    return desire;
+  }
+
+  return desire;
+}
+
+/// @brief Compute the maximum safe skip count given a chosen pitch.
+///
+/// Only checks chord boundary safety (not track collisions). In RhythmSync,
+/// the Motif plays dense 8th-note patterns and brief passing dissonance with
+/// a sustained vocal note is musically acceptable. The pitch was already
+/// verified safe at the base duration by getSafePitchCandidates().
+static int computeSafeSkipCount(uint8_t pitch, Tick tick, const std::vector<float>& onsets,
+                                size_t i, int max_desired, const Section& section,
+                                const IHarmonyContext& harmony) {
+  Tick section_end = section.endTick();
+
+  for (int skip = max_desired; skip >= 1; --skip) {
+    size_t next_active = i + 1 + static_cast<size_t>(skip);
+    Tick extended_end;
+    if (next_active < onsets.size()) {
+      extended_end = section.start_tick +
+                     static_cast<Tick>(onsets[next_active] * TICKS_PER_BEAT);
+    } else {
+      extended_end = section_end;
+    }
+    if (extended_end <= tick) continue;
+    Tick extended_dur = extended_end - tick;
+
+    // Chord boundary safety: reject if pitch is non-chord-tone or avoid-note
+    // in the next chord AND the safe duration doesn't cover enough of the skip.
+    auto info = harmony.analyzeChordBoundary(pitch, tick, extended_dur);
+    if (info.safety == CrossBoundarySafety::NonChordTone ||
+        info.safety == CrossBoundarySafety::AvoidNote) {
+      Tick min_useful = (i + static_cast<size_t>(skip) < onsets.size())
+          ? section.start_tick +
+            static_cast<Tick>(onsets[i + static_cast<size_t>(skip)] * TICKS_PER_BEAT) - tick
+          : extended_dur;
+      if (info.safe_duration < min_useful) {
+        continue;  // This skip count crosses into unsafe chord territory
+      }
+    }
+
+    return skip;
+  }
+
+  return 0;  // No safe extension possible
+}
+
 /**
  * @brief Generate a single pitch sequence candidate for locked rhythm evaluation.
  * @param rhythm Locked rhythm pattern to use
@@ -487,21 +685,56 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
     durations.push_back(0.5f);  // Default half-beat duration
   }
 
-  // Detect phrase boundaries for breath insertion
-  auto boundaries = detectPhraseBoundariesFromRhythm(rhythm);
+  // Detect phrase boundaries for breath insertion (section-type aware)
+  auto boundaries = detectPhraseBoundariesFromRhythm(rhythm, section.type);
   std::set<float> boundary_set(boundaries.begin(), boundaries.end());
 
   // Determine breath duration based on section type and mood
   bool is_ballad = MoodClassification::isBallad(ctx.mood);
   Tick breath_duration = getBreathDuration(section.type, is_ballad);
 
+  // Gate ratio by section type for legato control
+  float gate_ratio;
+  switch (section.type) {
+    case SectionType::Chorus:
+    case SectionType::Drop:
+      gate_ratio = 0.96f;
+      break;
+    case SectionType::B:
+      gate_ratio = 0.94f;
+      break;
+    case SectionType::Bridge:
+      gate_ratio = 0.96f;
+      break;
+    case SectionType::A:
+    default:
+      gate_ratio = 0.90f;
+      break;
+  }
+
+  // Phrase-end minimum duration by section type
+  Tick phrase_end_min;
+  switch (section.type) {
+    case SectionType::Chorus:
+    case SectionType::Drop:
+    case SectionType::B:
+    case SectionType::Bridge:
+      phrase_end_min = TICK_QUARTER;
+      break;
+    default:
+      phrase_end_min = TICK_EIGHTH;
+      break;
+  }
+
   uint8_t prev_pitch = (ctx.vocal_low + ctx.vocal_high) / 2;  // Start at center
   int direction_inertia = 0;  // Track melodic direction momentum
   int same_pitch_streak = 0;  // Track consecutive same pitch for progressive penalty
+  int onsets_since_long = 100;  // Start high so first onset can be long if desired
+  std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
 
-  for (size_t i = 0; i < onsets.size(); ++i) {
+  size_t i = 0;
+  while (i < onsets.size()) {
     float beat = onsets[i];
-    float dur = durations[i];
 
     // Insert breath at phrase boundaries by shortening previous note
     if (i > 0 && boundary_set.count(beat) > 0 && !notes.empty()) {
@@ -512,38 +745,71 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
     }
 
     Tick tick = section.start_tick + static_cast<Tick>(beat * TICKS_PER_BEAT);
-    Tick duration = static_cast<Tick>(dur * TICKS_PER_BEAT);
+    Tick section_end = section.endTick();
 
-    // Prevent overlap with next note (legato is OK, overlap is not)
-    // This ensures singability: a vocalist cannot sing two notes at once
-    if (i + 1 < onsets.size()) {
-      Tick next_start = section.start_tick + static_cast<Tick>(onsets[i + 1] * TICKS_PER_BEAT);
-      if (tick + duration > next_start) {
-        duration = next_start - tick;  // Clamp to legato (no gap, no overlap)
+    // Compute base available_span (to next immediate onset)
+    Tick immediate_next = (i + 1 < onsets.size())
+        ? section.start_tick + static_cast<Tick>(onsets[i + 1] * TICKS_PER_BEAT)
+        : section_end;
+    Tick base_span = (immediate_next > tick) ? (immediate_next - tick) : TICK_SIXTEENTH;
+
+    Tick base_duration = static_cast<Tick>(base_span * gate_ratio);
+    base_duration = std::max(base_duration, TICK_SIXTEENTH);
+
+    // ======================================================================
+    // Evaluate long-note desire BEFORE pitch selection.
+    // For high-probability positions (phrase-end, section-end), we use the
+    // extended duration for pitch candidate lookup so the chosen pitch is
+    // guaranteed safe for the full extension.
+    // ======================================================================
+    auto desire = evaluateLongNoteDesire(i, onsets, section, boundary_set, onsets_since_long);
+
+    Tick candidate_duration = base_duration;
+    bool using_extended_candidates = false;
+    if (desire.max_skip > 0 && desire.probability >= 0.3f) {
+      // For likely-long notes, compute extended duration for pitch selection
+      size_t ext_active = std::min(i + 1 + static_cast<size_t>(desire.max_skip),
+                                   onsets.size());
+      Tick ext_onset = (ext_active < onsets.size())
+          ? section.start_tick + static_cast<Tick>(onsets[ext_active] * TICKS_PER_BEAT)
+          : section_end;
+      if (ext_onset > tick) {
+        candidate_duration = ext_onset - tick;
+        using_extended_candidates = true;
       }
     }
 
     // Get chord at this position for provenance tracking
     [[maybe_unused]] int8_t chord_degree = harmony.getChordDegreeAt(tick);
 
-    // Apply pitch safety check to avoid collisions with other tracks
-    // Use prev_pitch as the base to get candidates centered on current melodic position.
-    // This ensures selectBestCandidate can compare same-pitch vs movement options.
-    auto candidates = getSafePitchCandidates(harmony, prev_pitch, tick, duration, TrackRole::Vocal,
-                                              ctx.vocal_low, ctx.vocal_high,
-                                              PitchPreference::Default, 10);  // More candidates
+    // Apply pitch safety check to avoid collisions with other tracks.
+    // When using extended candidates, fetch with the longer duration so the
+    // selected pitch is safe across the full extension.
+    auto candidates = getSafePitchCandidates(harmony, prev_pitch, tick, candidate_duration,
+                                              TrackRole::Vocal, ctx.vocal_low, ctx.vocal_high,
+                                              PitchPreference::Default, 10);
+
+    // Fallback: if extended search yields no candidates, try with base duration
+    if (candidates.empty() && using_extended_candidates) {
+      candidates = getSafePitchCandidates(harmony, prev_pitch, tick, base_duration,
+                                          TrackRole::Vocal, ctx.vocal_low, ctx.vocal_high,
+                                          PitchPreference::Default, 10);
+      desire.max_skip = 0;  // Can't extend with any pitch
+      using_extended_candidates = false;
+    }
 
     if (candidates.empty()) {
+      ++i;
+      onsets_since_long++;
       continue;  // No safe pitch available for this onset
     }
-    // Select pitch with probabilistic element to ensure variety across candidates.
-    // For RhythmSync, consecutive same pitch is problematic so we enforce movement
-    // when streak reaches threshold.
+
+    // Select pitch with probabilistic element to ensure variety across candidates
     uint8_t safe_pitch;
+    Tick hint_duration = using_extended_candidates ? candidate_duration : base_duration;
 
     // Force movement after 3 consecutive same pitches
     if (same_pitch_streak >= 3 && candidates.size() > 1) {
-      // Filter out prev_pitch from candidates and pick randomly
       std::vector<uint8_t> different_pitches;
       for (const auto& c : candidates) {
         if (c.pitch != prev_pitch) {
@@ -554,10 +820,9 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
         std::uniform_int_distribution<size_t> dist(0, different_pitches.size() - 1);
         safe_pitch = different_pitches[dist(rng)];
       } else {
-        // Fallback: use selectBestCandidate
         PitchSelectionHints hints;
         hints.prev_pitch = static_cast<int8_t>(prev_pitch);
-        hints.note_duration = duration;
+        hints.note_duration = hint_duration;
         hints.tessitura_center = ctx.tessitura.center;
         hints.same_pitch_streak = static_cast<int8_t>(same_pitch_streak);
         if (direction_inertia > 0) hints.contour_direction = 1;
@@ -565,38 +830,102 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
         safe_pitch = selectBestCandidate(candidates, prev_pitch, hints);
       }
     } else {
-      // Normal selection with probabilistic weighting for variety
       PitchSelectionHints hints;
       hints.prev_pitch = static_cast<int8_t>(prev_pitch);
-      hints.note_duration = duration;
+      hints.note_duration = hint_duration;
       hints.tessitura_center = ctx.tessitura.center;
       hints.same_pitch_streak = static_cast<int8_t>(same_pitch_streak);
       if (direction_inertia > 0) hints.contour_direction = 1;
       else if (direction_inertia < 0) hints.contour_direction = -1;
 
       // Add randomness: 70% best candidate, 30% random from top 3
-      std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
       if (candidates.size() >= 3 && prob_dist(rng) < 0.3f) {
-        std::uniform_int_distribution<size_t> idx_dist(0, std::min(static_cast<size_t>(2), candidates.size() - 1));
+        std::uniform_int_distribution<size_t> idx_dist(
+            0, std::min(static_cast<size_t>(2), candidates.size() - 1));
         safe_pitch = candidates[idx_dist(rng)].pitch;
       } else {
         safe_pitch = selectBestCandidate(candidates, prev_pitch, hints);
       }
     }
 
+    // ======================================================================
+    // Compute actual skips with the chosen pitch
+    // ======================================================================
+    int actual_skips = 0;
+    if (desire.max_skip > 0 && prob_dist(rng) < desire.probability) {
+      actual_skips = computeSafeSkipCount(
+          safe_pitch, tick, onsets, i, desire.max_skip, section, harmony);
+    }
+
+    // Compute actual next_onset and available_span based on skips
+    size_t next_active = i + 1 + static_cast<size_t>(actual_skips);
+    Tick next_onset;
+    bool is_last_note;
+    if (next_active < onsets.size()) {
+      next_onset = section.start_tick +
+                   static_cast<Tick>(onsets[next_active] * TICKS_PER_BEAT);
+      is_last_note = false;
+    } else {
+      next_onset = section_end;
+      is_last_note = true;
+    }
+    Tick available_span = (next_onset > tick) ? (next_onset - tick) : TICK_SIXTEENTH;
+
+    // Determine if this is a phrase-end note.
+    // Check not only the next active onset but also any skipped onsets that
+    // might contain a phrase boundary (which we're sustaining through).
+    bool is_phrase_end = false;
+    if (!is_last_note) {
+      for (size_t k = i + 1; k <= next_active && k < onsets.size(); ++k) {
+        if (boundary_set.count(onsets[k]) > 0) {
+          is_phrase_end = true;
+          break;
+        }
+      }
+    }
+
+    // Compute final duration
+    Tick duration;
+    if (is_last_note) {
+      duration = section_end - tick;
+    } else if (is_phrase_end) {
+      // Phrase-end note: sustain with breath gap before next phrase
+      Tick breath_gap = breath_duration;
+      if (available_span > breath_gap + TICK_SIXTEENTH) {
+        duration = available_span - breath_gap;
+      } else {
+        // Very short span: use full span with gate ratio, no room for breath
+        duration = static_cast<Tick>(available_span * gate_ratio);
+      }
+      duration = std::max(duration, phrase_end_min);
+      if (tick + duration > next_onset) {
+        duration = next_onset - tick;
+      }
+    } else {
+      duration = static_cast<Tick>(available_span * gate_ratio);
+      duration = std::max(duration, TICK_SIXTEENTH);
+      if (tick + duration > next_onset) {
+        duration = next_onset - tick;
+      }
+    }
+
+    // Note: Track collision clip (getMaxSafeEnd) is intentionally omitted here.
+    // In RhythmSync, the Motif plays dense patterns and brief passing dissonance
+    // with a sustained vocal note is musically normal. Chord boundary safety is
+    // already checked in computeSafeSkipCount().
+
     // Update direction inertia based on movement
     int movement = static_cast<int>(safe_pitch) - static_cast<int>(prev_pitch);
     if (movement > 0) {
       direction_inertia = std::min(direction_inertia + 1, 3);
-      same_pitch_streak = 0;  // Reset streak on pitch change
+      same_pitch_streak = 0;
     } else if (movement < 0) {
       direction_inertia = std::max(direction_inertia - 1, -3);
-      same_pitch_streak = 0;  // Reset streak on pitch change
+      same_pitch_streak = 0;
     } else {
-      // Same pitch - decay inertia toward neutral
       if (direction_inertia > 0) direction_inertia--;
       if (direction_inertia < 0) direction_inertia++;
-      same_pitch_streak++;  // Increment consecutive same pitch counter
+      same_pitch_streak++;
     }
 
     // Calculate velocity: use Motif template accent pattern if available (RhythmSync),
@@ -604,13 +933,11 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
     uint8_t velocity = 80;
     bool accent_applied = false;
     if (ctx.paradigm == GenerationParadigm::RhythmSync) {
-      // Try to get accent weight from Motif rhythm template
       const auto& motif_params = ctx.motif_params;
       if (motif_params != nullptr &&
           motif_params->rhythm_template != MotifRhythmTemplate::None) {
         const auto& tmpl_config =
             motif_detail::getTemplateConfig(motif_params->rhythm_template);
-        // Map the note's beat position within the bar to the nearest template onset
         float beat_in_bar = std::fmod(beat, 4.0f);
         float best_dist = 100.0f;
         int best_idx = -1;
@@ -624,7 +951,6 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
         }
         if (best_idx >= 0 && best_dist < 0.2f) {
           float accent = tmpl_config.accent_weights[best_idx];
-          // Vocal accent scaling: base=80, strong(1.0)=95, weak(0.5)=75
           velocity = static_cast<uint8_t>(75 + accent * 20.0f);
           accent_applied = true;
         }
@@ -634,7 +960,8 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
       float beat_in_bar = std::fmod(beat, 4.0f);
       if (beat_in_bar < 0.1f || std::abs(beat_in_bar - 2.0f) < 0.1f) {
         velocity = 95;  // Strong beats
-      } else if (std::abs(beat_in_bar - 1.0f) < 0.1f || std::abs(beat_in_bar - 3.0f) < 0.1f) {
+      } else if (std::abs(beat_in_bar - 1.0f) < 0.1f ||
+                 std::abs(beat_in_bar - 3.0f) < 0.1f) {
         velocity = 85;  // Medium beats
       }
     }
@@ -648,6 +975,81 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
 #endif
     notes.push_back(note);
     prev_pitch = safe_pitch;
+
+    // Advance: skip consumed onsets
+    onsets_since_long = (actual_skips > 0) ? 0 : onsets_since_long + 1;
+    i += 1 + static_cast<size_t>(actual_skips);
+  }
+
+  // ======================================================================
+  // Post-process: ensure phrase-end resolution.
+  // Scan for phrase boundaries (gap >= TICK_EIGHTH between notes). If the
+  // tail (last 2 beats, matching analyzer criterion) lacks a sustained note
+  // (>= 1 beat), merge 2-3 adjacent notes within the tail into one longer
+  // note. The phrase boundary gap is preserved.
+  // ======================================================================
+  std::set<size_t> indices_to_remove;
+  for (size_t ni = 1; ni < notes.size(); ++ni) {
+    Tick gap = notes[ni].start_tick - (notes[ni - 1].start_tick + notes[ni - 1].duration);
+    if (gap < TICK_EIGHTH) continue;  // Not a phrase boundary
+
+    // Found phrase boundary before notes[ni].
+    Tick phrase_end_tick = notes[ni - 1].start_tick + notes[ni - 1].duration;
+    Tick tail_start = (phrase_end_tick > TICKS_PER_BEAT * 2)
+        ? (phrase_end_tick - TICKS_PER_BEAT * 2) : 0;
+
+    // Find tail note indices
+    size_t tail_begin = ni;
+    for (size_t k = ni; k > 0; --k) {
+      if (notes[k - 1].start_tick < tail_start) break;
+      tail_begin = k - 1;
+    }
+
+    // Check if tail already has a sustained note
+    bool has_sustained = false;
+    for (size_t k = tail_begin; k < ni; ++k) {
+      if (notes[k].duration >= TICKS_PER_BEAT) {
+        has_sustained = true;
+        break;
+      }
+    }
+    if (has_sustained) continue;
+
+    // No sustained note in tail. Merge within the tail: find 2-3 adjacent
+    // notes that, when combined, reach >= TICKS_PER_BEAT. Extend the first
+    // note of the group to cover the others, and remove the rest.
+    bool merged = false;
+    for (size_t start = tail_begin; start + 1 < ni && !merged; ++start) {
+      // Try merging 2 then 3 notes from 'start'
+      for (size_t count = 2; count <= 3 && start + count <= ni; ++count) {
+        size_t end_idx = start + count - 1;  // Last note in merge group
+        // Extend first note to cover last note's onset + its original gate ratio
+        Tick extend_to;
+        if (end_idx < ni - 1) {
+          // Not the last note before gap: extend to next note's onset with gate ratio
+          extend_to = notes[end_idx + 1].start_tick;
+          Tick ext_span = extend_to - notes[start].start_tick;
+          extend_to = notes[start].start_tick + static_cast<Tick>(ext_span * gate_ratio);
+        } else {
+          // Last note before gap: extend within available span (keep gap)
+          extend_to = notes[ni].start_tick - TICK_SIXTEENTH;
+        }
+        Tick new_dur = (extend_to > notes[start].start_tick)
+            ? (extend_to - notes[start].start_tick) : notes[start].duration;
+        if (new_dur >= TICKS_PER_BEAT) {
+          notes[start].duration = new_dur;
+          for (size_t rm = start + 1; rm <= end_idx; ++rm) {
+            indices_to_remove.insert(rm);
+          }
+          merged = true;
+          break;
+        }
+      }
+    }
+  }
+  // Remove marked notes in reverse order to preserve indices
+  for (auto it = indices_to_remove.rbegin(); it != indices_to_remove.rend(); ++it) {
+    notes.erase(notes.begin() + static_cast<ptrdiff_t>(*it));
   }
 
   return notes;
@@ -1037,6 +1439,22 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
           }
         }
 
+        // Fallback: use stored Motif base pattern (available even when Motif is muted)
+        if (current_rhythm_lock == nullptr && params.paradigm == GenerationParadigm::RhythmSync) {
+          const auto& base_pattern = song.motifPattern();
+          if (!base_pattern.empty()) {
+            uint8_t pattern_beats = static_cast<uint8_t>(
+                (base_pattern.back().start_tick + base_pattern.back().duration + TICKS_PER_BEAT - 1) /
+                TICKS_PER_BEAT);
+            if (pattern_beats > 0) {
+              motif_rhythm_pattern = extractRhythmPattern(base_pattern, 0, pattern_beats);
+              if (motif_rhythm_pattern.isValid()) {
+                current_rhythm_lock = &motif_rhythm_pattern;
+              }
+            }
+          }
+        }
+
         // Fallback: use cached Vocal rhythm if Motif pattern not available
         if (current_rhythm_lock == nullptr) {
           if (use_per_section_type_lock) {
@@ -1250,6 +1668,9 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
   // MidiWriter applies modulation to all tracks when generating MIDI bytes.
   // This ensures consistent behavior and avoids double-modulation.
 
+  // Apply section-end sustain (歌い上げ) - extend final notes of each section
+  applySectionEndSustain(all_notes, song.arrangement().sections(), harmony);
+
   // Apply groove feel timing adjustments
   applyGrooveFeel(all_notes, params.vocal_groove);
 
@@ -1275,11 +1696,13 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
   // Vocal-friendly post-processing:
   // Merge same-pitch notes only with very short gaps (64th note = ~30 ticks).
   // Larger gaps preserve intentional articulation (staccato, rhythmic patterns).
-  // SKIP for RhythmSync paradigm to preserve the locked rhythm pattern
   // SKIP for UltraVocaloid: same-pitch rapid-fire is intentional (machine-gun style)
-  if (params.paradigm != GenerationParadigm::RhythmSync &&
-      params.vocal_style != VocalStylePreset::UltraVocaloid) {
-    constexpr Tick kMergeMaxGap = 30;
+  constexpr Tick kMergeMaxGap = 30;
+  if (params.paradigm == GenerationParadigm::RhythmSync) {
+    // RhythmSync: only merge near section ends (last 2 bars) where sustain is desired
+    // This preserves the locked rhythm pattern in the body while allowing section-end legato
+    mergeSamePitchNotesNearSectionEnds(all_notes, song.arrangement().sections(), kMergeMaxGap);
+  } else if (params.vocal_style != VocalStylePreset::UltraVocaloid) {
     mergeSamePitchNotes(all_notes, kMergeMaxGap);
   }
 

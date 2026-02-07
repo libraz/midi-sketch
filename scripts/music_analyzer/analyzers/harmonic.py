@@ -46,6 +46,7 @@ class HarmonicAnalyzer(BaseAnalyzer):
         self._analyze_bass_chord_spacing()
         self._analyze_guitar_voicing()
         self._analyze_guitar_bass_spacing()
+        self._analyze_chord_duration_consistency()
         return self.issues
 
     # -----------------------------------------------------------------
@@ -1110,3 +1111,92 @@ class HarmonicAnalyzer(BaseAnalyzer):
                          "muddy_count": muddy_count,
                          "total_checked": total_checked},
             )
+
+    def _analyze_chord_duration_consistency(self):
+        """Check duration consistency within chord onsets.
+
+        Groups chord track (channel 1) notes by start_ticks and checks
+        if notes within the same onset have wildly different durations.
+        A max/min ratio > 3.0 is flagged as ERROR, > 2.0 as WARNING.
+        If more than 30% of onsets are inconsistent, an aggregate
+        WARNING is also issued.
+        """
+        chord_notes = self.notes_by_channel.get(1, [])
+        if not chord_notes:
+            return
+
+        onsets = defaultdict(list)
+        for note in chord_notes:
+            onsets[note.start].append(note)
+
+        inconsistent_count = 0
+        total_checked = 0
+
+        for tick in sorted(onsets.keys()):
+            notes = onsets[tick]
+            if len(notes) < 2:
+                continue
+
+            durations = [n.duration for n in notes]
+            min_dur = min(durations)
+            max_dur = max(durations)
+
+            if min_dur <= 0:
+                continue
+
+            total_checked += 1
+            ratio = max_dur / min_dur
+
+            if ratio > 3.0:
+                inconsistent_count += 1
+                self.add_issue(
+                    severity=Severity.ERROR,
+                    category=Category.HARMONIC,
+                    subcategory="chord_duration_mismatch",
+                    message=(f"Chord voices have {ratio:.1f}:1 duration ratio "
+                             f"(max={max_dur}, min={min_dur})"),
+                    tick=tick,
+                    track="Chord",
+                    details={
+                        "ratio": ratio,
+                        "max_duration": max_dur,
+                        "min_duration": min_dur,
+                        "voice_count": len(notes),
+                    },
+                )
+            elif ratio > 2.0:
+                inconsistent_count += 1
+                self.add_issue(
+                    severity=Severity.WARNING,
+                    category=Category.HARMONIC,
+                    subcategory="chord_duration_mismatch",
+                    message=(f"Chord voices have {ratio:.1f}:1 duration ratio "
+                             f"(max={max_dur}, min={min_dur})"),
+                    tick=tick,
+                    track="Chord",
+                    details={
+                        "ratio": ratio,
+                        "max_duration": max_dur,
+                        "min_duration": min_dur,
+                        "voice_count": len(notes),
+                    },
+                )
+
+        if total_checked > 0:
+            incon_ratio = inconsistent_count / total_checked
+            if incon_ratio > 0.3:
+                agg_severity = Severity.ERROR if incon_ratio > 0.6 else Severity.WARNING
+                self.add_issue(
+                    severity=agg_severity,
+                    category=Category.HARMONIC,
+                    subcategory="chord_duration_mismatch",
+                    message=(f"Chord duration inconsistency widespread "
+                             f"({inconsistent_count}/{total_checked} onsets)"),
+                    tick=0,
+                    track="Chord",
+                    details={
+                        "inconsistent_count": inconsistent_count,
+                        "total_checked": total_checked,
+                        "ratio": incon_ratio,
+                    },
+                )

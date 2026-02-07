@@ -230,17 +230,47 @@ void enforceMaxPhraseDuration(std::vector<NoteEvent>& notes, uint8_t max_phrase_
     // Check if current phrase exceeds limit
     Tick phrase_end = notes[idx].start_tick + notes[idx].duration;
     if (phrase_end - phrase_start > max_phrase_ticks) {
-      // Create a breath gap before notes[idx].
-      // Use extra margin to survive PostProcessor ritardando (up to 30% duration stretch).
-      // The analyzer detects breath at gap >= breath_ticks, so we need the gap to
-      // remain >= breath_ticks even after ritardando extends the preceding note.
+      // Find the best barline-aligned breath point.
+      // Prefer inserting breath at a barline (start of a bar) for musical naturalness.
+      // Walk backward from the break point to find the nearest barline-aligned note.
       constexpr Tick kRitMargin = 60;  // ~30% of TICK_SIXTEENTH (120 * 0.3 ≈ 36, rounded up)
       Tick target_gap = breath_ticks + kRitMargin;
-      Tick last_kept_end = notes[idx].start_tick - target_gap;
+
+      // Find the best break index: prefer a note starting near a barline
+      size_t break_idx = idx;
+      Tick best_barline_dist = TICKS_PER_BAR;
+      for (size_t scan = idx; scan > 0 && scan > idx - std::min(idx, static_cast<size_t>(8)); --scan) {
+        Tick pos_in_bar = notes[scan].start_tick % TICKS_PER_BAR;
+        Tick barline_dist = std::min(pos_in_bar, TICKS_PER_BAR - pos_in_bar);
+        if (barline_dist < best_barline_dist) {
+          best_barline_dist = barline_dist;
+          break_idx = scan;
+        }
+      }
+
+      // If barline-aligned break is too far back, use original position
+      if (break_idx < idx && notes[break_idx].start_tick < phrase_start + max_phrase_ticks / 2) {
+        break_idx = idx;
+      }
+
+      Tick last_kept_end = notes[break_idx].start_tick - target_gap;
+
+      // Extend the note before the break to the barline for a natural sustain before breath.
+      // Only extend if the barline is between the note's current end and the break point.
+      size_t cur = break_idx - 1;
+      if (cur < notes.size()) {
+        Tick note_bar_end = ((notes[cur].start_tick / TICKS_PER_BAR) + 1) * TICKS_PER_BAR;
+        // Extend to barline if it doesn't overlap with the break note
+        if (note_bar_end > notes[cur].start_tick + notes[cur].duration &&
+            note_bar_end <= notes[break_idx].start_tick - target_gap) {
+          notes[cur].duration = note_bar_end - notes[cur].start_tick;
+          last_kept_end = note_bar_end;
+        }
+      }
 
       // Walk backward, truncating/removing notes until the gap is sufficient
-      size_t cur = idx - 1;
-      while (true) {
+      cur = break_idx - 1;
+      while (cur < notes.size()) {  // size_t underflow check
         if (notes[cur].start_tick + kMinNoteDuration <= last_kept_end) {
           // This note can be kept; truncate its duration
           notes[cur].duration = std::min(notes[cur].duration,
@@ -253,7 +283,8 @@ void enforceMaxPhraseDuration(std::vector<NoteEvent>& notes, uint8_t max_phrase_
         --cur;
       }
 
-      phrase_start = notes[idx].start_tick;
+      phrase_start = notes[break_idx].start_tick;
+      idx = break_idx;  // Resume scanning from break point
     }
   }
 

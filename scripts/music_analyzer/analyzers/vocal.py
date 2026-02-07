@@ -32,6 +32,9 @@ class VocalAnalyzer(BaseAnalyzer):
         self._analyze_vocal_section_contrast()
         self._analyze_climax_placement()
         self._analyze_repetition_balance()
+        self._analyze_phrase_end_resolution()
+        self._analyze_section_range_contrast()
+        self._analyze_pitch_repetition_rate()
         return self.issues
 
     def _analyze_vocal_breathability(self):
@@ -355,5 +358,186 @@ class VocalAnalyzer(BaseAnalyzer):
                     "repetition_rate": repetition_rate,
                     "total_phrases": total_phrases,
                     "unique_phrases": len(fingerprint_counts),
+                },
+            )
+
+    def _analyze_phrase_end_resolution(self):
+        """Check if phrases end with sustained notes rather than short notes.
+
+        A phrase boundary is detected when the gap between notes is at
+        least half a beat (240 ticks). Phrases where the last 2 beats
+        lack a note >= 1 beat in duration suggest missing sustain/resolution.
+        Only checks phrases with 4+ notes.
+        """
+        vocal = self.notes_by_channel.get(0, [])
+        if len(vocal) < 8:
+            return
+
+        phrase_gap = TICKS_PER_BEAT // 2
+        phrases = []
+        current_phrase = [vocal[0]]
+
+        for idx in range(1, len(vocal)):
+            if vocal[idx].start - vocal[idx - 1].end >= phrase_gap:
+                phrases.append(current_phrase)
+                current_phrase = [vocal[idx]]
+            else:
+                current_phrase.append(vocal[idx])
+        if current_phrase:
+            phrases.append(current_phrase)
+
+        short_end_count = 0
+        checked_count = 0
+
+        for phrase in phrases:
+            if len(phrase) < 4:
+                continue
+            checked_count += 1
+
+            phrase_end_tick = phrase[-1].end
+            tail_start = phrase_end_tick - TICKS_PER_BEAT * 2
+
+            tail_notes = [n for n in phrase if n.start >= tail_start]
+            has_sustained = any(
+                n.duration >= TICKS_PER_BEAT for n in tail_notes
+            )
+
+            if not has_sustained:
+                short_end_count += 1
+                self.add_issue(
+                    severity=Severity.WARNING,
+                    category=Category.MELODIC,
+                    subcategory="phrase_end_short",
+                    message="Phrase ends with short notes (no sustained resolution)",
+                    tick=phrase[-1].start,
+                    track="Vocal",
+                    details={
+                        "phrase_notes": len(phrase),
+                        "tail_durations": [n.duration for n in tail_notes],
+                    },
+                )
+
+        if checked_count > 0:
+            ratio = short_end_count / checked_count
+            if ratio > 0.7:
+                agg_severity = Severity.ERROR if ratio > 0.9 else Severity.WARNING
+                self.add_issue(
+                    severity=agg_severity,
+                    category=Category.MELODIC,
+                    subcategory="phrase_end_short",
+                    message=(f"Most phrases ({short_end_count}/{checked_count}) "
+                             f"lack sustained ending"),
+                    tick=0,
+                    track="Vocal",
+                    details={
+                        "short_end_count": short_end_count,
+                        "checked_count": checked_count,
+                        "ratio": ratio,
+                    },
+                )
+
+    def _analyze_section_range_contrast(self):
+        """Check if chorus has wider pitch range than verse.
+
+        In typical pop music, the chorus should have at least as wide
+        a pitch range as the verse. A significantly narrower chorus
+        range suggests flat, unemotional delivery in the most important
+        section.
+        """
+        vocal = self.notes_by_channel.get(0, [])
+        if len(vocal) < 16:
+            return
+
+        verses = [s for s in self.sections if s['type'] == 'verse']
+        choruses = [s for s in self.sections if s['type'] == 'chorus']
+        if not verses or not choruses:
+            return
+
+        def _section_pitch_range(sections):
+            ranges = []
+            for sec in sections:
+                sec_notes = [
+                    n for n in vocal
+                    if (sec['start_bar'] - 1) * TICKS_PER_BAR <= n.start
+                    < sec['end_bar'] * TICKS_PER_BAR
+                ]
+                if len(sec_notes) >= 4:
+                    pitches = [n.pitch for n in sec_notes]
+                    ranges.append(max(pitches) - min(pitches))
+            return sum(ranges) / len(ranges) if ranges else 0
+
+        verse_range = _section_pitch_range(verses)
+        chorus_range = _section_pitch_range(choruses)
+
+        if verse_range > 0 and chorus_range < verse_range * 0.7:
+            self.add_issue(
+                severity=Severity.WARNING,
+                category=Category.MELODIC,
+                subcategory="section_range_inversion",
+                message=(f"Chorus pitch range ({chorus_range:.0f}st) narrower than "
+                         f"verse ({verse_range:.0f}st)"),
+                tick=0,
+                track="Vocal",
+                details={
+                    "chorus_range": chorus_range,
+                    "verse_range": verse_range,
+                    "ratio": chorus_range / verse_range if verse_range > 0 else 0,
+                },
+            )
+
+    def _analyze_pitch_repetition_rate(self):
+        """Check overall pitch repetition rate in vocal track.
+
+        Measures the ratio of unison intervals (0 semitones) among all
+        consecutive vocal intervals. Existing checks only flag 4+
+        consecutive same pitches; this catches high overall repetition
+        rate that indicates melodic monotony.
+        """
+        vocal = self.notes_by_channel.get(0, [])
+        if len(vocal) < 12:
+            return
+
+        total_intervals = 0
+        unison_count = 0
+
+        for idx in range(1, len(vocal)):
+            gap = vocal[idx].start - vocal[idx - 1].end
+            if gap > TICKS_PER_BEAT * 2:
+                continue
+            total_intervals += 1
+            if vocal[idx].pitch == vocal[idx - 1].pitch:
+                unison_count += 1
+
+        if total_intervals < 8:
+            return
+
+        unison_rate = unison_count / total_intervals
+
+        if unison_rate > 0.50:
+            self.add_issue(
+                severity=Severity.ERROR,
+                category=Category.MELODIC,
+                subcategory="pitch_repetition_rate",
+                message=f"Very high pitch repetition rate ({unison_rate:.0%})",
+                tick=0,
+                track="Vocal",
+                details={
+                    "unison_rate": unison_rate,
+                    "unison_count": unison_count,
+                    "total_intervals": total_intervals,
+                },
+            )
+        elif unison_rate > 0.35:
+            self.add_issue(
+                severity=Severity.WARNING,
+                category=Category.MELODIC,
+                subcategory="pitch_repetition_rate",
+                message=f"High pitch repetition rate ({unison_rate:.0%})",
+                tick=0,
+                track="Vocal",
+                details={
+                    "unison_rate": unison_rate,
+                    "unison_count": unison_count,
+                    "total_intervals": total_intervals,
                 },
             )

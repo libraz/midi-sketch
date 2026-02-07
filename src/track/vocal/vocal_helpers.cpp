@@ -603,4 +603,165 @@ void resolveIsolatedShortNotes(std::vector<NoteEvent>& notes, Tick min_duration,
   }
 }
 
+void applySectionEndSustain(std::vector<NoteEvent>& notes, const std::vector<Section>& sections,
+                            IHarmonyContext& harmony) {
+  if (notes.empty() || sections.empty()) return;
+
+  // Sort notes by start tick
+  std::sort(notes.begin(), notes.end(),
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+
+  // Target duration for section-end sustain by section type
+  auto getTargetDuration = [](SectionType type) -> Tick {
+    switch (type) {
+      case SectionType::Chorus:
+      case SectionType::Drop:
+        return TICK_WHOLE;       // 1920 ticks - maximum sustain
+      case SectionType::B:
+        return TICK_HALF + TICK_QUARTER;  // 1440 ticks - dotted half
+      case SectionType::Bridge:
+        return TICK_HALF;        // 960 ticks
+      case SectionType::A:
+        return TICK_QUARTER;     // 480 ticks - modest but natural
+      default:
+        return TICK_HALF;        // 960 ticks - Intro/Outro余韻
+    }
+  };
+
+  constexpr Tick kMinBreathGap = TICK_EIGHTH;  // Minimum gap before next section
+
+  for (const auto& section : sections) {
+    Tick section_end = section.endTick();
+    Tick target = getTargetDuration(section.type);
+
+    // Find the last note in this section
+    int last_idx = -1;
+    for (int i = static_cast<int>(notes.size()) - 1; i >= 0; --i) {
+      if (notes[i].start_tick >= section.start_tick && notes[i].start_tick < section_end) {
+        last_idx = i;
+        break;
+      }
+    }
+    if (last_idx < 0) continue;
+
+    NoteEvent& last_note = notes[last_idx];
+    Tick desired_end = last_note.start_tick + target;
+
+    // Constraint 1: Do not cross section boundary
+    desired_end = std::min(desired_end, section_end);
+
+    // Constraint 2: Maintain breath gap before next section's first note
+    if (static_cast<size_t>(last_idx) + 1 < notes.size()) {
+      Tick next_start = notes[last_idx + 1].start_tick;
+      if (desired_end > next_start - kMinBreathGap) {
+        desired_end = (next_start > kMinBreathGap) ? (next_start - kMinBreathGap) : next_start;
+      }
+    }
+
+    // Guard against unsigned underflow: desired_end could be before note start
+    // when next note is very close (within kMinBreathGap)
+    if (desired_end <= last_note.start_tick) {
+      continue;
+    }
+
+    // Constraint 3: Check chord boundary safety
+    Tick desired_duration = desired_end - last_note.start_tick;
+    if (desired_duration > last_note.duration) {
+      auto boundary_info = harmony.analyzeChordBoundary(
+          last_note.note, last_note.start_tick, desired_duration);
+
+      if (boundary_info.safety == CrossBoundarySafety::NonChordTone ||
+          boundary_info.safety == CrossBoundarySafety::AvoidNote) {
+        // Use safe_duration (before chord boundary) if it's longer than current
+        if (boundary_info.safe_duration > last_note.duration) {
+          desired_duration = boundary_info.safe_duration;
+        } else {
+          continue;  // Can't extend safely
+        }
+      }
+
+      // Constraint 4: Check collision safety with other tracks
+      Tick safe_end = harmony.getMaxSafeEnd(
+          last_note.start_tick, last_note.note, TrackRole::Vocal,
+          last_note.start_tick + desired_duration);
+      desired_duration = safe_end - last_note.start_tick;
+    }
+
+    // Only extend, never shorten
+    if (desired_duration > last_note.duration) {
+      last_note.duration = desired_duration;
+    }
+  }
+}
+
+void mergeSamePitchNotesNearSectionEnds(std::vector<NoteEvent>& notes,
+                                         const std::vector<Section>& sections, Tick max_gap) {
+  if (notes.size() < 2 || sections.empty()) return;
+
+  // Sort by start tick
+  std::sort(notes.begin(), notes.end(),
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+
+  constexpr uint8_t kMergeBarsFromEnd = 2;  // Only merge in last 2 bars of each section
+
+  // Build a set of merge-eligible regions (last 2 bars of each section)
+  std::vector<std::pair<Tick, Tick>> merge_regions;
+  for (const auto& section : sections) {
+    Tick section_end = section.endTick();
+    Tick merge_start = section_end - std::min(static_cast<Tick>(kMergeBarsFromEnd * TICKS_PER_BAR),
+                                               static_cast<Tick>(section.bars * TICKS_PER_BAR));
+    merge_regions.push_back({merge_start, section_end});
+  }
+
+  auto isInMergeRegion = [&merge_regions](Tick tick) -> bool {
+    for (const auto& region : merge_regions) {
+      if (tick >= region.first && tick < region.second) return true;
+    }
+    return false;
+  };
+
+  // Merge same-pitch notes in merge regions
+  std::vector<NoteEvent> merged;
+  merged.reserve(notes.size());
+
+  size_t i = 0;
+  while (i < notes.size()) {
+    NoteEvent current = notes[i];
+
+    // Only merge if current note is in a merge region
+    if (isInMergeRegion(current.start_tick)) {
+      while (i + 1 < notes.size()) {
+        const NoteEvent& next = notes[i + 1];
+        Tick current_end = current.start_tick + current.duration;
+        Tick gap = (next.start_tick > current_end) ? (next.start_tick - current_end) : 0;
+
+        if (next.note == current.note && gap <= max_gap &&
+            isInMergeRegion(next.start_tick)) {
+          Tick next_end = next.start_tick + next.duration;
+          current.duration = next_end - current.start_tick;
+          current.velocity = std::max(current.velocity, next.velocity);
+          i++;
+        } else {
+          break;
+        }
+      }
+    }
+
+    merged.push_back(current);
+    i++;
+  }
+
+  // Ensure no overlaps after merging
+  for (size_t j = 0; j + 1 < merged.size(); ++j) {
+    Tick end_tick = merged[j].start_tick + merged[j].duration;
+    if (end_tick > merged[j + 1].start_tick) {
+      if (merged[j + 1].start_tick > merged[j].start_tick) {
+        merged[j].duration = merged[j + 1].start_tick - merged[j].start_tick;
+      }
+    }
+  }
+
+  notes = std::move(merged);
+}
+
 }  // namespace midisketch

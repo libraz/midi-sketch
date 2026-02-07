@@ -273,6 +273,8 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
       } else {
         current_tick += actual_beats * TICKS_PER_BEAT;
       }
+      // Snap to nearest 8th note grid to prevent drift from triplet/gate durations
+      current_tick = ((current_tick + TICK_EIGHTH - 1) / TICK_EIGHTH) * TICK_EIGHTH;
     } else {
       current_tick += actual_beats * TICKS_PER_BEAT;
     }
@@ -293,6 +295,8 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
       }
       current_tick += getBreathDuration(ctx.section_type, ctx.mood, phrase_density,
                                         phrase_high_pitch, nullptr, ctx.vocal_style);
+      // Snap to 8th note grid after breath to prevent drift from float multiplication
+      current_tick = ((current_tick + TICK_EIGHTH - 1) / TICK_EIGHTH) * TICK_EIGHTH;
     }
 
     // Snap to next half-bar boundary (phrase_beats/2 * TICKS_PER_BEAT grid)

@@ -146,6 +146,12 @@ std::vector<PitchBendEvent> generateVibrato(Tick start_tick, Tick duration, int 
   // Use higher resolution for vibrato (4 points per cycle minimum)
   size_t points_per_cycle = 4;
   size_t total_points = static_cast<size_t>(num_cycles) * points_per_cycle;
+
+  // Safety cap: prevent runaway allocation from abnormally long durations
+  constexpr size_t kMaxVibratoPoints = 2000;  // ~500 cycles, far beyond musical need
+  if (total_points > kMaxVibratoPoints) {
+    total_points = kMaxVibratoPoints;
+  }
   events.reserve(total_points + 1);
 
   int16_t max_bend = centsToBendValue(depth_cents);
