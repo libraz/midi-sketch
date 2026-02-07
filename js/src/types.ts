@@ -150,6 +150,9 @@ export interface SongConfig {
   /** Enable Behavioral Loop mode (fixed riff, maximum hook) */
   addictiveMode: boolean;
 
+  /** Mora rhythm mode: 0=Standard, 1=MoraTimed, 2=Auto */
+  moraRhythmMode: number;
+
   // Syncopation
   /** Enable syncopation effects (default=false) */
   enableSyncopation: boolean;

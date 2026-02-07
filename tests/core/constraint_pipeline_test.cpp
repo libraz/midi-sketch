@@ -25,8 +25,8 @@ TEST(ConstraintPipelineTest, GateRatio_PhraseEnd) {
   GateContext ctx;
   ctx.is_phrase_end = true;
   ctx.interval_from_prev = 0;
-  // Short note (default 0) gets gentler gate (0.92)
-  EXPECT_FLOAT_EQ(calculateGateRatio(ctx), 0.92f);
+  // Phrase end: no gate shortening (PhrasePlanner handles breath gaps)
+  EXPECT_FLOAT_EQ(calculateGateRatio(ctx), 1.0f);
 }
 
 TEST(ConstraintPipelineTest, GateRatio_PhraseStart) {
@@ -89,8 +89,8 @@ TEST(ConstraintPipelineTest, GateRatio_PhraseEndTakesPriority) {
   ctx.is_phrase_end = true;
   ctx.is_phrase_start = true;  // Contradictory, but phrase_end is checked first
   ctx.interval_from_prev = 0;
-  // Short note (default 0) gets gentler gate
-  EXPECT_FLOAT_EQ(calculateGateRatio(ctx), 0.92f);
+  // Phrase end takes priority: no gate shortening
+  EXPECT_FLOAT_EQ(calculateGateRatio(ctx), 1.0f);
 }
 
 // ============================================================================
@@ -107,8 +107,8 @@ TEST(ConstraintPipelineTest, ApplyGateRatio_ShortensNote) {
 
 TEST(ConstraintPipelineTest, ApplyGateRatio_RespectsMinDuration) {
   GateContext ctx;
-  ctx.is_phrase_end = true;  // 0.92f (short note)
-  // Very short note: 60 * 0.92 = 55, but min_duration = 120
+  ctx.is_phrase_end = true;  // 1.0f (no gate)
+  // Very short note: 60 * 1.0 = 60, but min_duration = 120
   Tick result = applyGateRatio(60, ctx, TICK_SIXTEENTH);
   EXPECT_EQ(result, TICK_SIXTEENTH);
 }
@@ -116,7 +116,7 @@ TEST(ConstraintPipelineTest, ApplyGateRatio_RespectsMinDuration) {
 TEST(ConstraintPipelineTest, ApplyGateRatio_DefaultMinIsSixteenth) {
   GateContext ctx;
   ctx.is_phrase_end = true;
-  // 100 * 0.92 = 92, which is < TICK_SIXTEENTH (120)
+  // 100 * 1.0 = 100, which is < TICK_SIXTEENTH (120)
   Tick result = applyGateRatio(100, ctx);
   EXPECT_EQ(result, TICK_SIXTEENTH);
 }

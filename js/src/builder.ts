@@ -585,6 +585,15 @@ export class SongConfigBuilder {
   }
 
   /**
+   * Set mora rhythm mode
+   * @param mode 0=Standard, 1=MoraTimed, 2=Auto
+   */
+  setMoraRhythmMode(mode: number): this {
+    this.setField('moraRhythmMode', mode, 'vocal');
+    return this;
+  }
+
+  /**
    * Set mood override
    * @param mood Mood preset ID (0-23)
    */

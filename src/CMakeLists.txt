@@ -47,6 +47,7 @@ set(MIDISKETCH_CORE_SOURCES
   track/vocal/vocal_helpers.cpp
   track/vocal/melody_designer.cpp
   track/vocal/vocal_analysis.cpp
+  track/vocal/phrase_planner.cpp
   track/chord/voicing_generator.cpp
   track/chord/voice_leading.cpp
   track/chord/bass_coordination.cpp

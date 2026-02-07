@@ -294,6 +294,9 @@ struct SongConfig {
   /// === Behavioral Loop (addictive generation) ===
   bool addictive_mode = false;  ///< Enable Behavioral Loop mode (fixed riff, maximum hook)
 
+  /// Mora rhythm mode: 0=Standard, 1=MoraTimed, 2=Auto
+  uint8_t mora_rhythm_mode = 2;
+
   /// Visitor-based JSON serialization for config interchange (WASM/CLI/metadata)
   /// Field list is defined once in visitFields; writeTo/readFrom delegate to visitors.
   template <typename Self, typename V>
@@ -340,6 +343,7 @@ struct SongConfig {
     v("enable_syncopation", self.enable_syncopation);
     v("energy_curve", self.energy_curve);
     v("addictive_mode", self.addictive_mode);
+    v("mora_rhythm_mode", self.mora_rhythm_mode);
     // Melody overrides
     v("melody_max_leap", self.melody_max_leap);
     v("melody_syncopation_prob", self.melody_syncopation_prob);

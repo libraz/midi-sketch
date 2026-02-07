@@ -17,10 +17,10 @@ namespace midisketch {
 namespace melody {
 
 float calculateGateRatio(const GateContext& ctx) {
-  // Phrase ending: breath preparation
-  // Short notes (< quarter) get gentler gate to avoid excessive truncation
+  // Phrase ending: PhrasePlanner breath gaps handle phrase separation,
+  // so no gate shortening needed here.
   if (ctx.is_phrase_end) {
-    return (ctx.note_duration < TICK_QUARTER) ? 0.92f : 0.85f;
+    return 1.0f;
   }
 
   // Phrase start: clear attack, no gate

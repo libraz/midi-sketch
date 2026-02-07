@@ -82,6 +82,7 @@ set(TEST_SOURCES
   track/leap_resolution_test.cpp
   track/vocal_test.cpp
   track/vocal_helpers_test.cpp
+  track/phrase_plan_test.cpp
   track/chord_track_test.cpp
   track/bass_test.cpp
   track/bass_theory_test.cpp
@@ -114,6 +115,8 @@ set(TEST_SOURCES
   core/harmony_interface_test.cpp
   track/phrase_tail_rest_test.cpp
   track/vocal_guide_tone_test.cpp
+  track/phrase_planner_test.cpp
+  track/mora_rhythm_test.cpp
 )
 
 add_executable(midisketch_tests ${TEST_SOURCES})

@@ -240,6 +240,17 @@ enum class AnticipationRestMode : uint8_t {
   Pronounced = 3  ///< Quarter note rest before phrase
 };
 
+/// @brief Mora rhythm mode for Japanese lyrics compatibility.
+///
+/// Controls whether melody rhythm uses stress-timed (English) or
+/// mora-timed (Japanese) patterns. Mora-timed generates uniform
+/// syllable groups typical of J-POP vocal lines.
+enum class MoraRhythmMode : uint8_t {
+  Standard = 0,   // Current behavior (English stress-timed)
+  MoraTimed = 1,  // Japanese mora-timed (uniform syllable groups)
+  Auto = 2        // Auto from VocalStylePreset
+};
+
 /// @brief Arrangement growth method.
 enum class ArrangementGrowth : uint8_t {
   LayerAdd,    ///< Add instruments/voices
@@ -415,6 +426,11 @@ struct StyleMelodyParams {
   bool disable_vowel_constraints =
       false;                            ///< Disable vowel section step limits for Vocaloid styles
   bool disable_breathing_gaps = false;  ///< Disable breathing rests between phrases (machine-like)
+  /// @}
+
+  /// @name Mora rhythm
+  /// @{
+  MoraRhythmMode mora_rhythm_mode = MoraRhythmMode::Auto;  ///< Rhythm mode for lyrics compat
   /// @}
 
 

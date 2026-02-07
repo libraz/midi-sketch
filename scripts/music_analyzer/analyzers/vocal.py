@@ -397,7 +397,7 @@ class VocalAnalyzer(BaseAnalyzer):
             phrase_end_tick = phrase[-1].end
             tail_start = phrase_end_tick - TICKS_PER_BEAT * 2
 
-            tail_notes = [n for n in phrase if n.start >= tail_start]
+            tail_notes = [n for n in phrase if n.end > tail_start]
             has_sustained = any(
                 n.duration >= TICKS_PER_BEAT for n in tail_notes
             )

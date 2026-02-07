@@ -39,7 +39,8 @@ void StyleMelodyParams::writeTo(json::Writer& w) const {
       .write("bridge_thirtysecond_ratio", bridge_thirtysecond_ratio)
       .write("consecutive_same_note_prob", consecutive_same_note_prob)
       .write("disable_vowel_constraints", disable_vowel_constraints)
-      .write("disable_breathing_gaps", disable_breathing_gaps);
+      .write("disable_breathing_gaps", disable_breathing_gaps)
+      .write("mora_rhythm_mode", static_cast<int>(mora_rhythm_mode));
 }
 
 void StyleMelodyParams::readFrom(const json::Parser& p) {
@@ -73,6 +74,7 @@ void StyleMelodyParams::readFrom(const json::Parser& p) {
   consecutive_same_note_prob = p.getFloat("consecutive_same_note_prob", 0.6f);
   disable_vowel_constraints = p.getBool("disable_vowel_constraints", false);
   disable_breathing_gaps = p.getBool("disable_breathing_gaps", false);
+  mora_rhythm_mode = static_cast<MoraRhythmMode>(p.getInt("mora_rhythm_mode", 2));
 }
 
 }  // namespace midisketch

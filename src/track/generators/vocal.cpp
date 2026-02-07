@@ -28,6 +28,7 @@
 #include "core/velocity.h"
 #include "track/vocal/melody_designer.h"
 #include "track/vocal/phrase_cache.h"
+#include "track/vocal/phrase_planner.h"
 #include "track/vocal/phrase_variation.h"
 #include "track/generators/motif.h"
 #include "track/melody/melody_utils.h"
@@ -553,10 +554,17 @@ static LongNoteDesire evaluateLongNoteDesire(size_t i, const std::vector<float>&
   // "short note at phrase end" artifacts. If harmony rejects the skip, the note
   // stays short as a last resort, but we always attempt.
   bool near_boundary = false;
-  if (i + 1 < onsets.size() && boundary_set.count(onsets[i + 1]) > 0) {
-    near_boundary = true;
-  } else if (i + 2 < onsets.size() && boundary_set.count(onsets[i + 2]) > 0) {
-    near_boundary = true;
+  {
+    constexpr float kEps = 0.01f;
+    float look_end = (i + 2 < onsets.size()) ? onsets[i + 2]
+                   : (i + 1 < onsets.size()) ? onsets[i + 1]
+                   : onsets[i] + 4.0f;
+    for (float boundary : boundary_set) {
+      if (boundary > onsets[i] + kEps && boundary <= look_end + kEps) {
+        near_boundary = true;
+        break;
+      }
+    }
   }
   if (near_boundary) {
     desire.max_skip = std::max(desire.max_skip, 2);
@@ -664,11 +672,13 @@ static int computeSafeSkipCount(uint8_t pitch, Tick tick, const std::vector<floa
  * @param harmony Harmony context
  * @param ctx Section context
  * @param rng Random number generator
+ * @param phrase_plan Optional pre-planned phrase boundaries (nullptr = use detection fallback)
  * @return Generated notes with locked rhythm and new pitches
  */
 static std::vector<NoteEvent> generateLockedRhythmCandidate(
     const CachedRhythmPattern& rhythm, const Section& section, MelodyDesigner& /*designer*/,
-    const IHarmonyContext& harmony, const MelodyDesigner::SectionContext& ctx, std::mt19937& rng) {
+    const IHarmonyContext& harmony, const MelodyDesigner::SectionContext& ctx, std::mt19937& rng,
+    const PhrasePlan* phrase_plan = nullptr) {
   std::vector<NoteEvent> notes;
   uint8_t section_beats = section.bars * 4;
 
@@ -685,9 +695,20 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
     durations.push_back(0.5f);  // Default half-beat duration
   }
 
-  // Detect phrase boundaries for breath insertion (section-type aware)
-  auto boundaries = detectPhraseBoundariesFromRhythm(rhythm, section.type);
-  std::set<float> boundary_set(boundaries.begin(), boundaries.end());
+  // Use PhrasePlan boundaries if available, otherwise fall back to detection
+  std::set<float> boundary_set;
+  if (phrase_plan != nullptr && !phrase_plan->phrases.empty()) {
+    // Convert planned phrase start ticks to beat positions relative to section
+    for (const auto& planned : phrase_plan->phrases) {
+      if (planned.phrase_index > 0) {  // Skip first phrase (no boundary before it)
+        float beat = static_cast<float>(planned.start_tick - section.start_tick) / TICKS_PER_BEAT;
+        boundary_set.insert(beat);
+      }
+    }
+  } else {
+    auto boundaries = detectPhraseBoundariesFromRhythm(rhythm, section.type);
+    boundary_set.insert(boundaries.begin(), boundaries.end());
+  }
 
   // Determine breath duration based on section type and mood
   bool is_ballad = MoodClassification::isBallad(ctx.mood);
@@ -872,12 +893,16 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
     Tick available_span = (next_onset > tick) ? (next_onset - tick) : TICK_SIXTEENTH;
 
     // Determine if this is a phrase-end note.
-    // Check not only the next active onset but also any skipped onsets that
-    // might contain a phrase boundary (which we're sustaining through).
+    // Use range-based check: any boundary between current onset and next active
+    // onset triggers phrase-end handling (boundaries may not align exactly with onsets).
     bool is_phrase_end = false;
     if (!is_last_note) {
-      for (size_t k = i + 1; k <= next_active && k < onsets.size(); ++k) {
-        if (boundary_set.count(onsets[k]) > 0) {
+      float current_beat = onsets[i];
+      float look_ahead = (next_active < onsets.size()) ? onsets[next_active]
+                                                        : section_beats;
+      constexpr float kEps = 0.01f;
+      for (float boundary : boundary_set) {
+        if (boundary > current_beat + kEps && boundary <= look_ahead + kEps) {
           is_phrase_end = true;
           break;
         }
@@ -1069,11 +1094,13 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
  * @param harmony Harmony context
  * @param ctx Section context
  * @param rng Random number generator
+ * @param phrase_plan Optional pre-planned phrase boundaries (nullptr = use detection fallback)
  * @return Best-scoring candidate notes
  */
 static std::vector<NoteEvent> generateLockedRhythmWithEvaluation(
     const CachedRhythmPattern& rhythm, const Section& section, MelodyDesigner& designer,
-    const IHarmonyContext& harmony, const MelodyDesigner::SectionContext& ctx, std::mt19937& rng) {
+    const IHarmonyContext& harmony, const MelodyDesigner::SectionContext& ctx, std::mt19937& rng,
+    const PhrasePlan* phrase_plan = nullptr) {
 
   constexpr int kCandidateCount = 20;  // 1/5 of normal mode (100) for performance
 
@@ -1083,7 +1110,7 @@ static std::vector<NoteEvent> generateLockedRhythmWithEvaluation(
 
   for (int i = 0; i < kCandidateCount; ++i) {
     std::vector<NoteEvent> melody = generateLockedRhythmCandidate(
-        rhythm, section, designer, harmony, ctx, rng);
+        rhythm, section, designer, harmony, ctx, rng, phrase_plan);
 
     if (melody.empty()) {
       continue;
@@ -1116,7 +1143,7 @@ static std::vector<NoteEvent> generateLockedRhythmWithEvaluation(
 
   if (candidates.empty()) {
     // Fallback: generate single candidate without evaluation
-    return generateLockedRhythmCandidate(rhythm, section, designer, harmony, ctx, rng);
+    return generateLockedRhythmCandidate(rhythm, section, designer, harmony, ctx, rng, phrase_plan);
   }
 
   // Sort by score (highest first)
@@ -1474,10 +1501,30 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
         }
       }
 
+      // Build phrase plan for this section (uses rhythm lock if available)
+      PhrasePlan phrase_plan = PhrasePlanner::buildPlan(
+          section.type, section_start, section_end, section.bars,
+          params.mood, params.vocal_style,
+          current_rhythm_lock);
+
+      // Mark first chorus phrase as hold-burst entry if previous section was B
+      if (section.type == SectionType::Chorus && !phrase_plan.phrases.empty()) {
+        const auto& sections = song.arrangement().sections();
+        for (size_t si = 0; si < sections.size(); ++si) {
+          if (&sections[si] == &section && si > 0 &&
+              sections[si - 1].type == SectionType::B) {
+            phrase_plan.phrases[0].is_hold_burst_entry = true;
+            phrase_plan.phrases[0].density_modifier *= 1.3f;
+            break;
+          }
+        }
+      }
+
       if (current_rhythm_lock != nullptr) {
         // Use locked rhythm pattern with evaluation-based pitch selection
         section_notes =
-            generateLockedRhythmWithEvaluation(*current_rhythm_lock, section, designer, harmony, sctx, rng);
+            generateLockedRhythmWithEvaluation(*current_rhythm_lock, section, designer, harmony, sctx, rng,
+                                               &phrase_plan);
       } else {
         // Generate melody with evaluation (candidate count varies by section importance)
         int candidate_count = MelodyDesigner::getCandidateCountForSection(section.type);

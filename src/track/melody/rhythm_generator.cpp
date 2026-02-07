@@ -487,5 +487,148 @@ uint8_t selectPitchForLockedRhythmEnhancedImpl(
   return scored_candidates[0].first;
 }
 
+MoraRhythmMode resolveMoraMode(MoraRhythmMode mode, VocalStylePreset style) {
+  if (mode != MoraRhythmMode::Auto) {
+    return mode;
+  }
+  // Auto resolution based on vocal style
+  switch (style) {
+    case VocalStylePreset::Rock:
+    case VocalStylePreset::CityPop:
+    case VocalStylePreset::UltraVocaloid:
+    case VocalStylePreset::PowerfulShout:
+      return MoraRhythmMode::Standard;
+    default:
+      // Standard, Idol, Anime, Vocaloid, KPop, BrightKira, CuteAffected, etc.
+      return MoraRhythmMode::MoraTimed;
+  }
+}
+
+std::vector<RhythmNote> generateMoraTimedRhythm(
+    uint8_t phrase_beats, uint8_t target_note_count,
+    float density_modifier, std::mt19937& rng) {
+  std::vector<RhythmNote> rhythm;
+  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+
+  if (phrase_beats == 0 || target_note_count == 0) {
+    return rhythm;
+  }
+
+  float end_beat = static_cast<float>(phrase_beats);
+
+  // Apply density modifier to target count
+  int target = static_cast<int>(std::round(
+      static_cast<float>(target_note_count) * density_modifier));
+  target = std::max(target, 2);  // At least 2 notes
+
+  // Generate word groups (2-5 morae each)
+  // Weights: {2: 15%, 3: 35%, 4: 35%, 5: 15%}
+  std::vector<int> word_groups;
+  int total_morae = 0;
+  while (total_morae < target) {
+    float rand_val = dist(rng);
+    int group_size;
+    if (rand_val < 0.15f) {
+      group_size = 2;
+    } else if (rand_val < 0.50f) {
+      group_size = 3;
+    } else if (rand_val < 0.85f) {
+      group_size = 4;
+    } else {
+      group_size = 5;
+    }
+    // Don't exceed target
+    if (total_morae + group_size > target + 1) {
+      group_size = target - total_morae;
+      if (group_size <= 0) break;
+    }
+    word_groups.push_back(group_size);
+    total_morae += group_size;
+  }
+
+  if (word_groups.empty() || total_morae == 0) {
+    return rhythm;
+  }
+
+  // Assign uniform duration per mora within each group
+  float base_duration = end_beat / static_cast<float>(total_morae);
+  // Quantize to 8th note grid (0.5 beat increments)
+  float grid = 0.5f;
+  if (base_duration < 0.375f) {
+    grid = 0.25f;  // Use 16th note grid for dense phrases
+  }
+  base_duration = std::max(grid, std::floor(base_duration / grid) * grid);
+
+  // Articulation gap between word groups (1/32nd note = 0.125 beats)
+  constexpr float kArticulationGap = 0.125f;
+
+  float current_beat = 0.0f;
+
+  for (size_t group_idx = 0; group_idx < word_groups.size(); ++group_idx) {
+    int group_size = word_groups[group_idx];
+    bool is_last_group = (group_idx == word_groups.size() - 1);
+
+    for (int mora_idx = 0; mora_idx < group_size; ++mora_idx) {
+      if (current_beat >= end_beat - 0.1f) break;
+
+      bool is_last_mora_in_group = (mora_idx == group_size - 1);
+      bool is_last_mora_overall = is_last_group && is_last_mora_in_group;
+
+      float duration = base_duration;
+
+      // Phrase-ending extension: last mora gets 1.5x-2x duration
+      if (is_last_mora_overall) {
+        float extend = 1.5f + dist(rng) * 0.5f;  // 1.5x-2.0x
+        duration *= extend;
+      }
+
+      // Shorten last mora of each group by articulation gap (except phrase-ending)
+      if (is_last_mora_in_group && !is_last_mora_overall) {
+        duration -= kArticulationGap;
+        duration = std::max(duration, 0.25f);  // Minimum 16th note
+      }
+
+      // Clamp to remaining time
+      if (current_beat + duration > end_beat) {
+        duration = end_beat - current_beat;
+      }
+
+      if (duration > 0.1f) {
+        RhythmNote note;
+        note.beat = current_beat;
+        note.eighths = duration * 2.0f;  // Convert beats to eighths
+
+        // Accent first mora of each group (strong beat marking)
+        note.strong = (mora_idx == 0);
+
+        rhythm.push_back(note);
+      }
+
+      current_beat += base_duration;
+      if (is_last_mora_in_group && !is_last_mora_overall) {
+        current_beat += kArticulationGap;  // Add gap between word groups
+      }
+    }
+  }
+
+  // Melisma avoidance: no 3+ consecutive very short notes (< 16th note = 0.5 eighths)
+  // If found, merge into one 8th note
+  for (size_t idx = 0; idx + 2 < rhythm.size(); ++idx) {
+    if (rhythm[idx].eighths < 0.5f &&
+        rhythm[idx + 1].eighths < 0.5f &&
+        rhythm[idx + 2].eighths < 0.5f) {
+      // Merge three into one
+      float merged_duration = rhythm[idx].eighths +
+                              rhythm[idx + 1].eighths +
+                              rhythm[idx + 2].eighths;
+      rhythm[idx].eighths = std::max(merged_duration, 1.0f);  // At least 8th note
+      rhythm.erase(rhythm.begin() + static_cast<long>(idx + 1),
+                   rhythm.begin() + static_cast<long>(idx + 3));
+    }
+  }
+
+  return rhythm;
+}
+
 }  // namespace melody
 }  // namespace midisketch

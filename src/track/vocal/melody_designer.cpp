@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "core/chord_utils.h"
 #include "core/harmonic_rhythm.h"
 #include "core/hook_utils.h"
 #include "core/i_harmony_context.h"
@@ -32,6 +33,7 @@
 #include "track/melody/pitch_resolver.h"
 #include "track/melody/rhythm_generator.h"
 #include "track/melody/motif_support.h"
+#include "track/vocal/phrase_planner.h"
 
 namespace midisketch {
 
@@ -80,6 +82,78 @@ using melody::getHookRhythmPatterns;
 using melody::getHookRhythmPatternCount;
 using melody::selectHookRhythmPatternIndex;
 
+/// @brief Apply cadence constraint based on phrase pair role.
+/// Antecedent phrases should end on non-root (3rd/5th) for tension.
+/// Consequent phrases should resolve to root for resolution.
+void applyPhrasePairCadence(std::vector<NoteEvent>& notes,
+                            PhrasePairRole pair_role,
+                            const IHarmonyContext& harmony,
+                            uint8_t vocal_low,
+                            uint8_t vocal_high) {
+  if (notes.empty() || pair_role == PhrasePairRole::Independent) {
+    return;
+  }
+
+  NoteEvent& last_note = notes.back();
+  int8_t chord_degree = harmony.getChordDegreeAt(last_note.start_tick);
+  std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
+  int pitch_class = last_note.note % 12;
+
+  // Root pitch class for the current chord degree
+  int root_pc = chord_tones.empty() ? 0 : chord_tones[0];
+  bool is_root = (pitch_class == root_pc);
+
+  if (pair_role == PhrasePairRole::Antecedent && is_root && chord_tones.size() >= 2) {
+    // Antecedent ends on root -> move to nearest 3rd or 5th
+    int target_pc = chord_tones[1];  // 3rd is usually chord_tones[1]
+    int current = static_cast<int>(last_note.note);
+    // Find nearest note with target pitch class within vocal range
+    for (int offset = 0; offset <= 6; ++offset) {
+      int up_pitch = current + offset;
+      int down_pitch = current - offset;
+      if (up_pitch <= vocal_high && up_pitch >= vocal_low && (up_pitch % 12) == target_pc) {
+        auto new_pitch = static_cast<uint8_t>(up_pitch);
+        if (harmony.isConsonantWithOtherTracks(new_pitch, last_note.start_tick,
+                                                last_note.duration, TrackRole::Vocal)) {
+          last_note.note = new_pitch;
+          return;
+        }
+      }
+      if (down_pitch >= vocal_low && down_pitch <= vocal_high && (down_pitch % 12) == target_pc) {
+        auto new_pitch = static_cast<uint8_t>(down_pitch);
+        if (harmony.isConsonantWithOtherTracks(new_pitch, last_note.start_tick,
+                                                last_note.duration, TrackRole::Vocal)) {
+          last_note.note = new_pitch;
+          return;
+        }
+      }
+    }
+  } else if (pair_role == PhrasePairRole::Consequent && !is_root) {
+    // Consequent not on root -> move to nearest root within vocal range
+    int current = static_cast<int>(last_note.note);
+    for (int offset = 0; offset <= 6; ++offset) {
+      int up_pitch = current + offset;
+      int down_pitch = current - offset;
+      if (up_pitch <= vocal_high && up_pitch >= vocal_low && (up_pitch % 12) == root_pc) {
+        auto new_pitch = static_cast<uint8_t>(up_pitch);
+        if (harmony.isConsonantWithOtherTracks(new_pitch, last_note.start_tick,
+                                                last_note.duration, TrackRole::Vocal)) {
+          last_note.note = new_pitch;
+          return;
+        }
+      }
+      if (down_pitch >= vocal_low && down_pitch <= vocal_high && (down_pitch % 12) == root_pc) {
+        auto new_pitch = static_cast<uint8_t>(down_pitch);
+        if (harmony.isConsonantWithOtherTracks(new_pitch, last_note.start_tick,
+                                                last_note.duration, TrackRole::Vocal)) {
+          last_note.note = new_pitch;
+          return;
+        }
+      }
+    }
+  }
+}
+
 }  // namespace
 
 std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmpl,
@@ -88,82 +162,33 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
                                                        std::mt19937& rng) {
   std::vector<NoteEvent> result;
 
-  // Calculate phrase structure aligned with harmonic rhythm
-  // SectionContext phrase_length_bars override takes priority over template
-  uint8_t phrase_beats = (ctx.phrase_length_bars > 0)
-      ? static_cast<uint8_t>(ctx.phrase_length_bars * 4)
-      : tmpl.max_phrase_beats;
-
-  // Get harmonic rhythm for this section to align phrases with chord changes
-  HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(ctx.section_type, ctx.mood);
-
-  // Determine chord change interval in beats
-  // Slow: 8 beats (2 bars), Normal: 4 beats (1 bar), Dense: 4 beats minimum
-  uint8_t chord_unit_beats = (harmonic.density == HarmonicDensity::Slow) ? 8 : 4;
-
-  // Align phrase length to chord boundaries
-  // This prevents melodies from sustaining across chord changes
-  if (phrase_beats > chord_unit_beats) {
-    phrase_beats = chord_unit_beats;
-  }
-
-  uint8_t phrase_bars = (phrase_beats + 3) / 4;  // Convert to bars
-  uint8_t phrase_count = calculatePhraseCount(ctx.section_bars, phrase_bars);
+  // Build phrase plan - replaces manual phrase count, timing, contour, and density calculation
+  PhrasePlan plan = PhrasePlanner::buildPlan(
+      ctx.section_type, ctx.section_start, ctx.section_end,
+      ctx.section_bars, ctx.mood, ctx.vocal_style);
 
   int prev_pitch = -1;
   int direction_inertia = 0;
 
-  Tick current_tick = ctx.section_start;
+  for (const auto& planned : plan.phrases) {
+    // Calculate actual beats for this phrase
+    uint8_t actual_beats = planned.beats;
+    if (actual_beats < 2) continue;
 
-  for (uint8_t i = 0; i < phrase_count; ++i) {
-    // Calculate actual phrase length for this iteration
-    Tick remaining = ctx.section_end - current_tick;
-    uint8_t actual_beats = std::min(static_cast<uint8_t>(phrase_beats),
-                                    static_cast<uint8_t>(remaining / TICKS_PER_BEAT));
-
-    if (actual_beats < 2) break;  // Too short for a phrase
-
-    // Calculate sub-phrase index (internal 4-stage arc) based on bar position
-    // For 8-bar sections: bars 1-2 → 0 (Presentation), 3-4 → 1 (Development),
-    //                     5-6 → 2 (Climax), 7-8 → 3 (Resolution)
-    // For shorter sections, compress proportionally
+    // Set up phrase context from plan
     SectionContext phrase_ctx = ctx;
-    if (ctx.section_bars >= 4) {
-      Tick elapsed = current_tick - ctx.section_start;
-      uint8_t current_bar = static_cast<uint8_t>(elapsed / TICKS_PER_BAR);
-      phrase_ctx.sub_phrase_index =
-          static_cast<uint8_t>((current_bar * 4) / ctx.section_bars);
-      if (phrase_ctx.sub_phrase_index > 3) phrase_ctx.sub_phrase_index = 3;
+    phrase_ctx.sub_phrase_index = planned.arc_stage;
+    phrase_ctx.forced_contour = planned.contour;
+    phrase_ctx.density_modifier *= planned.density_modifier;
 
-      // Diversify chorus contour per sub-phrase for melodic variety
-      // Instead of Peak for every chorus phrase, cycle through contour types:
-      //   0 (Presentation): Peak   — arch shape introduces the hook
-      //   1 (Development):  Valley — call & response contrast
-      //   2 (Climax):       Peak   — arch returns for emotional peak
-      //   3 (Resolution):   Descending — converge toward section end
-      if (phrase_ctx.section_type == SectionType::Chorus &&
-          phrase_ctx.forced_contour.has_value() &&
-          *phrase_ctx.forced_contour == ContourType::Peak) {
-        constexpr ContourType kChorusContours[] = {
-            ContourType::Peak, ContourType::Valley,
-            ContourType::Peak, ContourType::Descending};
-        phrase_ctx.forced_contour = kChorusContours[phrase_ctx.sub_phrase_index];
-      }
-
-      // Modulate density by arc stage
-      // Presentation=1.0x, Development=1.15x, Climax=1.0x, Resolution=0.85x
-      constexpr float kArcDensityMultipliers[] = {1.0f, 1.15f, 1.0f, 0.85f};
-      phrase_ctx.density_modifier *= kArcDensityMultipliers[phrase_ctx.sub_phrase_index];
-    }
-
-    // Apply anticipation rest before phrases (except first phrase of section)
-    // This creates "tame" (溜め) effect common in J-POP for building anticipation
+    // Apply anticipation rest for non-first phrases
+    // This creates "tame" effect common in J-POP for building anticipation
     // Skip for UltraVocaloid (high thirtysecond_ratio) which needs continuous machine-gun passages
-    if (i > 0 && phrase_ctx.anticipation_rest != AnticipationRestMode::Off && phrase_ctx.thirtysecond_ratio < 0.8f) {
+    Tick phrase_start = planned.start_tick;
+    if (planned.phrase_index > 0 &&
+        phrase_ctx.anticipation_rest != AnticipationRestMode::Off &&
+        phrase_ctx.thirtysecond_ratio < 0.8f) {
       Tick anticipation_duration = 0;
-      // Reduced anticipation durations to minimize cumulative gaps
-      // Original: Subtle=SIXTEENTH, Moderate=EIGHTH, Pronounced=QUARTER
-      // New: Subtle=32ND, Moderate=SIXTEENTH, Pronounced=EIGHTH
       switch (phrase_ctx.anticipation_rest) {
         case AnticipationRestMode::Subtle:
           anticipation_duration = TICK_32ND;
@@ -177,31 +202,36 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
         default:
           break;
       }
-      current_tick += anticipation_duration;
-      // Recalculate remaining time after adding anticipation rest
-      remaining = phrase_ctx.section_end - current_tick;
-      actual_beats = std::min(actual_beats, static_cast<uint8_t>(remaining / TICKS_PER_BEAT));
-      if (actual_beats < 2) break;
+      phrase_start += anticipation_duration;
+      // Recalculate beats after anticipation
+      if (planned.end_tick > phrase_start) {
+        Tick remaining = planned.end_tick - phrase_start;
+        actual_beats = std::min(actual_beats, static_cast<uint8_t>(remaining / TICKS_PER_BEAT));
+      }
+      if (actual_beats < 2) continue;
     }
 
-    // Generate hook for chorus at specific positions
+    // Generate hook or melody phrase
     // Skip hook for UltraVocaloid (high thirtysecond_ratio) - needs continuous machine-gun passages
-    bool is_hook_position =
-        (phrase_ctx.section_type == SectionType::Chorus) && (i == 0 || (i == 2 && phrase_count > 3));
-    bool use_hook = is_hook_position && tmpl.hook_note_count > 0 && phrase_ctx.thirtysecond_ratio < 0.8f;
+    bool use_hook = planned.is_hook_position && tmpl.hook_note_count > 0 &&
+                    phrase_ctx.thirtysecond_ratio < 0.8f;
 
     PhraseResult phrase_result;
     if (use_hook) {
-      phrase_result = generateHook(tmpl, current_tick, phrase_ctx, prev_pitch, harmony, rng);
+      phrase_result = generateHook(tmpl, phrase_start, phrase_ctx, prev_pitch, harmony, rng);
     } else {
-      phrase_result = generateMelodyPhrase(tmpl, current_tick, actual_beats, phrase_ctx, prev_pitch,
+      phrase_result = generateMelodyPhrase(tmpl, phrase_start, actual_beats, phrase_ctx, prev_pitch,
                                            direction_inertia, harmony, rng);
     }
 
     // Apply sequential transposition for B sections (Zekvenz effect)
     // Creates ascending sequence: each phrase rises by 2-4-5 semitones
-    applySequentialTransposition(phrase_result.notes, i, ctx.section_type, ctx.key_offset,
-                                 ctx.vocal_low, ctx.vocal_high);
+    applySequentialTransposition(phrase_result.notes, planned.phrase_index, ctx.section_type,
+                                 ctx.key_offset, ctx.vocal_low, ctx.vocal_high);
+
+    // Apply cadence constraint based on antecedent-consequent pair role
+    applyPhrasePairCadence(phrase_result.notes, planned.pair_role, harmony,
+                           ctx.vocal_low, ctx.vocal_high);
 
     // Append notes to result, enforcing interval constraint between phrases
     constexpr int MAX_PHRASE_INTERVAL = 9;  // Major 6th
@@ -269,72 +299,6 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
       prev_pitch = phrase_result.last_pitch;
     }
     direction_inertia = phrase_result.direction_inertia;
-
-    // Move to next phrase position
-    // For hooks, calculate actual duration from generated notes to avoid overlap
-    // when hook spans multiple phrase lengths (e.g., Idol style with 4 repeats)
-    if (is_hook_position && !phrase_result.notes.empty()) {
-      // Find the end tick of the last generated note
-      Tick last_note_end = 0;
-      for (const auto& note : phrase_result.notes) {
-        Tick note_end = note.start_tick + note.duration;
-        if (note_end > last_note_end) {
-          last_note_end = note_end;
-        }
-      }
-      // Advance current_tick to after the hook (with small gap)
-      if (last_note_end > current_tick) {
-        current_tick = last_note_end;
-      } else {
-        current_tick += actual_beats * TICKS_PER_BEAT;
-      }
-      // Snap to nearest 8th note grid to prevent drift from triplet/gate durations
-      current_tick = ((current_tick + TICK_EIGHTH - 1) / TICK_EIGHTH) * TICK_EIGHTH;
-    } else {
-      current_tick += actual_beats * TICKS_PER_BEAT;
-    }
-
-    // Add rest between phrases (breathing) - skip if breathing gaps disabled
-    // Breath duration varies by section type, mood, and phrase characteristics
-    if (i < phrase_count - 1 && !ctx.disable_breathing_gaps) {
-      // Calculate phrase characteristics for context-aware breathing
-      float phrase_density = 0.0f;
-      uint8_t phrase_high_pitch = 60;  // Default: middle C
-      if (!phrase_result.notes.empty() && actual_beats > 0) {
-        phrase_density = static_cast<float>(phrase_result.notes.size()) / actual_beats;
-        for (const auto& note : phrase_result.notes) {
-          if (note.note > phrase_high_pitch) {
-            phrase_high_pitch = note.note;
-          }
-        }
-      }
-      current_tick += getBreathDuration(ctx.section_type, ctx.mood, phrase_density,
-                                        phrase_high_pitch, nullptr, ctx.vocal_style);
-      // Snap to 8th note grid after breath to prevent drift from float multiplication
-      current_tick = ((current_tick + TICK_EIGHTH - 1) / TICK_EIGHTH) * TICK_EIGHTH;
-    }
-
-    // Snap to next half-bar boundary (phrase_beats/2 * TICKS_PER_BEAT grid)
-    // Using half-bar intervals reduces gaps while respecting harmonic rhythm
-    // This ensures phrases start at musically sensible points without large silences
-    // Cap the snap gap to 1 beat max to prevent excessive gaps between phrases
-    constexpr Tick kMaxSnapGap = TICKS_PER_BEAT;  // 1 beat max gap from snapping
-    Tick half_phrase_beats = std::max(static_cast<Tick>(phrase_beats / 2), static_cast<Tick>(2));
-    Tick snap_interval = half_phrase_beats * TICKS_PER_BEAT;
-    Tick relative_tick = current_tick - ctx.section_start;
-    Tick next_boundary = ((relative_tick + snap_interval - 1) / snap_interval) * snap_interval;
-    Tick proposed_snap = ctx.section_start + next_boundary;
-    // Only apply snapping if the gap is reasonable (1 beat or less)
-    if (proposed_snap > current_tick && proposed_snap - current_tick <= kMaxSnapGap) {
-      current_tick = proposed_snap;
-    } else if (proposed_snap <= current_tick) {
-      // If proposed snap is at or before current position, move to next boundary
-      current_tick = ctx.section_start + next_boundary + snap_interval;
-    }
-    // If gap > 1 beat, skip snapping and continue from current position
-
-    // Ensure we don't exceed section end
-    if (current_tick >= ctx.section_end) break;
   }
 
   // Apply melodic embellishment (non-chord tones) if enabled
@@ -1108,6 +1072,11 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
         prev.duration = safe_dur;
         result.notes.pop_back();
         current_pitch = result.notes.back().note;
+      } else {
+        // Can't extend prev across chord boundary.
+        // Remove the short trailing note — phrase resolves on the previous sustained note.
+        result.notes.pop_back();
+        current_pitch = result.notes.empty() ? current_pitch : result.notes.back().note;
       }
     }
   }
@@ -1506,6 +1475,12 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
         prev.duration = safe_dur;
         result.notes.pop_back();
         prev_hook_pitch = result.notes.back().note;
+      } else {
+        // Can't extend prev across chord boundary.
+        // Remove the short trailing note — phrase resolves on the previous sustained note.
+        result.notes.pop_back();
+        prev_hook_pitch =
+            result.notes.empty() ? prev_hook_pitch : result.notes.back().note;
       }
     }
   }

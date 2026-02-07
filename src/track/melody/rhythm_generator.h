@@ -37,6 +37,30 @@ std::vector<RhythmNote> generatePhraseRhythmImpl(
     GenerationParadigm paradigm = GenerationParadigm::Traditional,
     float syncopation_weight = 0.15f, SectionType section_type = SectionType::Intro);
 
+/// @brief Generate mora-timed rhythm for Japanese lyrics compatibility.
+///
+/// Creates uniform syllable groups typical of J-POP vocal lines.
+/// Word groups of 2-5 morae with articulation gaps between groups
+/// and phrase-ending extension.
+///
+/// @param phrase_beats Length of phrase in beats
+/// @param target_note_count Target number of notes (from PhrasePlan mora hint)
+/// @param density_modifier Section-specific density modifier
+/// @param rng Random number generator
+/// @return Vector of rhythm positions for the phrase
+std::vector<RhythmNote> generateMoraTimedRhythm(
+    uint8_t phrase_beats, uint8_t target_note_count,
+    float density_modifier, std::mt19937& rng);
+
+/// @brief Resolve the effective MoraRhythmMode from Auto.
+/// Auto maps based on VocalStylePreset:
+///   MoraTimed for: Standard, Idol, Anime, Vocaloid, KPop, BrightKira, CuteAffected
+///   Standard for: Rock, CityPop, UltraVocaloid, PowerfulShout
+/// @param mode The configured mode (may be Auto)
+/// @param style The vocal style preset for Auto resolution
+/// @return Resolved mode (Standard or MoraTimed)
+MoraRhythmMode resolveMoraMode(MoraRhythmMode mode, VocalStylePreset style);
+
 /// @brief Context for enhanced locked rhythm pitch selection.
 ///
 /// Provides additional context for melodic quality improvements:
