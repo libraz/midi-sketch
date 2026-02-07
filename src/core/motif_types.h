@@ -42,8 +42,9 @@ enum class MotifRhythmTemplate : uint8_t {
   MixedGrooveC,    ///< 6 notes: syncopated push [0,1,1.5,2,3,3.5]
   PushGroove,      ///< 7 notes: anticipation [0,.5,1,1.5,2,2.5,3.5]
   EighthPickup,    ///< 8 notes: 16th pickup [0,.5,1,1.5,2,2.5,3,3.75]
-  HalfNoteSparse,  ///< 4 notes: 2-bar half-note rhythm [0,2,4,6]
-  Count            ///< Sentinel for iteration
+  HalfNoteSparse,     ///< 4 notes: 2-bar half-note rhythm [0,2,4,6]
+  StraightSixteenth,  ///< 16 notes: straight 16ths [0,.25,.5,.75,1,...,3.75]
+  Count               ///< Sentinel for iteration
 };
 
 /// @brief Motif melodic motion.
@@ -52,7 +53,8 @@ enum class MotifMotion : uint8_t {
   GentleLeap, ///< Up to 3rd intervals
   WideLeap,   ///< Up to 5th intervals (more dramatic)
   NarrowStep, ///< Tight scale-degree motion (±1 degree, jazzy/tense feel)
-  Disjunct    ///< Irregular leaps (experimental, avant-garde)
+  Disjunct,   ///< Irregular leaps (experimental, avant-garde)
+  Ostinato    ///< All notes same pitch class (root), with root/5th variation
 };
 
 /// @brief Motif repetition scope.

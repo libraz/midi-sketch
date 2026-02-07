@@ -47,9 +47,10 @@ PercussionConfig getPercussionConfig(Mood mood, SectionType section);
 /// @param drum_role Drum role (affects whether percussion is played)
 /// @param density_mult Density multiplier for velocity
 /// @param rng Random number generator
+/// @param bpm Tempo in BPM (shaker switches to 8th notes at high tempos)
 void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start,
                                   const PercussionConfig& config, DrumRole drum_role,
-                                  float density_mult, std::mt19937& rng);
+                                  float density_mult, std::mt19937& rng, uint16_t bpm = 0);
 
 }  // namespace drums
 }  // namespace midisketch

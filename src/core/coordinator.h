@@ -269,6 +269,11 @@ class Coordinator {
   /// @brief Apply cross-section coordination after generation.
   /// @param song Song to coordinate
   void applyCrossSectionCoordination(Song& song);
+
+  /// @brief Apply max_moving_voices constraint by freezing low-priority tracks.
+  /// @param song The song with generated tracks
+  /// @param sections The section list
+  void applyVoiceLimit(Song& song, const std::vector<Section>& sections);
 };
 
 }  // namespace midisketch

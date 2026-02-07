@@ -137,6 +137,13 @@ int applyAllPitchConstraints(int pitch, const NoteGenerationContext& ctx,
                                         ctx.current_pitch, params.vocal_low, params.vocal_high,
                                         params.disable_vowel_constraints);
 
+  // 6b. Guide tone priority: on strong beats, bias toward 3rd/7th
+  if (params.guide_tone_rate > 0 && params.vocal_attitude != VocalAttitude::Raw) {
+    new_pitch = enforceGuideToneOnDownbeat(new_pitch, ctx.note_start, ctx.chord_degree,
+                                            params.vocal_low, params.vocal_high,
+                                            params.guide_tone_rate, rng);
+  }
+
   // 7. Leap-after-reversal rule
   if (ctx.note_index > 0 && ctx.prev_note_pitch >= 0) {
     new_pitch = applyLeapReversalRule(new_pitch, ctx.current_pitch, ctx.prev_interval,

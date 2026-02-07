@@ -6,17 +6,21 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <map>
 #include <set>
 #include <vector>
 
+#include "core/arrangement.h"
 #include "core/basic_types.h"
 #include "core/generator.h"
+#include "core/i_harmony_coordinator.h"
 #include "core/i_track_base.h"
 #include "core/note_source.h"
 #include "core/preset_data.h"
 #include "core/preset_types.h"
 #include "core/section_types.h"
 #include "core/song.h"
+#include "core/structure.h"
 #include "core/timing_constants.h"
 #include "track/generators/guitar.h"
 
@@ -935,11 +939,11 @@ TEST_F(GuitarGenerationTest, FingerpickMoodsSofterThanStrumMoods) {
 }
 
 TEST_F(GuitarGenerationTest, AllGuitarEnabledMoodsProduceNotes) {
-  // All 10 moods that have guitar != 0xFF should produce guitar notes
+  // All 11 moods that have guitar != 0xFF should produce guitar notes
   std::vector<Mood> enabled_moods = {
       Mood::StraightPop, Mood::LightRock, Mood::EmotionalPop, Mood::Ballad,
       Mood::Nostalgic, Mood::Anthem, Mood::CityPop, Mood::RnBNeoSoul,
-      Mood::LatinPop, Mood::Lofi};
+      Mood::LatinPop, Mood::Lofi, Mood::Yoasobi};
 
   for (Mood mood : enabled_moods) {
     params_.mood = mood;
@@ -975,6 +979,8 @@ TEST_F(GuitarGenerationTest, MoodStyleMappingCorrect) {
             GuitarStyle::Strum);
   EXPECT_EQ(guitarStyleFromProgram(getMoodPrograms(Mood::Anthem).guitar),
             GuitarStyle::PowerChord);
+  EXPECT_EQ(guitarStyleFromProgram(getMoodPrograms(Mood::Yoasobi).guitar),
+            GuitarStyle::Strum);
 }
 
 // ============================================================================
@@ -982,11 +988,11 @@ TEST_F(GuitarGenerationTest, MoodStyleMappingCorrect) {
 // ============================================================================
 
 TEST_F(GuitarGenerationTest, AllDisabledMoodsProduceNoGuitarNotes) {
-  // All 14 moods with guitar == 0xFF should produce zero guitar notes
+  // All 13 moods with guitar == 0xFF should produce zero guitar notes
   std::vector<Mood> disabled_moods = {
       Mood::BrightUpbeat, Mood::EnergeticDance, Mood::MidPop, Mood::Sentimental,
       Mood::Chill, Mood::DarkPop, Mood::Dramatic, Mood::ModernPop,
-      Mood::ElectroPop, Mood::IdolPop, Mood::Yoasobi, Mood::Synthwave,
+      Mood::ElectroPop, Mood::IdolPop, Mood::Synthwave,
       Mood::FutureBass, Mood::Trap};
 
   for (Mood mood : disabled_moods) {
@@ -1094,4 +1100,214 @@ TEST_F(GuitarGenerationTest, GuitarNotesFollowChordChanges) {
   // With a chord progression, guitar should use at least 4 different pitch classes
   EXPECT_GE(pitch_classes.size(), 4u)
       << "Guitar should use multiple pitch classes following chord changes";
+}
+
+// ============================================================================
+// 6. Yoasobi Guitar Enable Tests
+// ============================================================================
+
+TEST(GuitarTrackTest, YoasobiHasCleanGuitar) {
+  const auto& progs = getMoodPrograms(Mood::Yoasobi);
+  EXPECT_NE(progs.guitar, 0xFF);
+  EXPECT_EQ(progs.guitar, 27);  // Clean Guitar = Strum
+}
+
+TEST_F(GuitarGenerationTest, YoasobiProducesGuitarNotes) {
+  params_.mood = Mood::Yoasobi;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& guitar = gen.getSong().guitar();
+  EXPECT_FALSE(guitar.empty()) << "Yoasobi mood should now produce guitar notes";
+  EXPECT_GT(guitar.notes().size(), 0u);
+}
+
+// ============================================================================
+// 7. PedalTone and RhythmChord Style Tests
+// ============================================================================
+
+TEST_F(GuitarGenerationTest, GuitarStyleHintOverride) {
+  // Generate a full song first to build arrangement and harmony context
+  params_.mood = Mood::LightRock;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  // Copy sections and set guitar_style_hint to PedalTone (hint=4, i.e. enum index 3)
+  auto sections = gen.getSong().arrangement().sections();
+  ASSERT_FALSE(sections.empty());
+  for (auto& section : sections) {
+    section.guitar_style_hint = 4;  // PedalTone
+  }
+  gen.getSong().setArrangement(Arrangement(sections));
+
+  // Clear and regenerate guitar track
+  gen.getSong().guitar().clear();
+  GuitarGenerator guitar_gen;
+  std::mt19937 rng(42);
+  FullTrackContext ctx;
+  ctx.song = &gen.getSong();
+  ctx.params = &gen.getParams();
+  ctx.rng = &rng;
+  ctx.harmony = dynamic_cast<IHarmonyCoordinator*>(&gen.getHarmonyContext());
+  guitar_gen.generateFullTrack(gen.getSong().guitar(), ctx);
+
+  const auto& guitar = gen.getSong().guitar();
+  ASSERT_FALSE(guitar.notes().empty())
+      << "Guitar with PedalTone hint should produce notes";
+
+  // PedalTone pattern: 16th note grid, so many notes per bar.
+  // With LightRock default (Strum = 4 hits/bar), PedalTone (16 hits/bar)
+  // should produce significantly more notes.
+  // Original strum count is available from before clear.
+  // Instead just verify the notes have short durations (16th note based)
+  Tick expected_dur = static_cast<Tick>(120 * 0.55f);  // TICK_SIXTEENTH * 0.55
+  int short_notes = 0;
+  for (const auto& note : guitar.notes()) {
+    if (note.duration <= expected_dur + 10) {
+      short_notes++;
+    }
+  }
+  float short_ratio = static_cast<float>(short_notes) / guitar.notes().size();
+  EXPECT_GT(short_ratio, 0.8f)
+      << "PedalTone should produce mostly short (16th note) durations";
+}
+
+TEST_F(GuitarGenerationTest, PedalTonePitchRange) {
+  // Generate with PedalTone via style hint
+  params_.mood = Mood::LightRock;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  auto sections = gen.getSong().arrangement().sections();
+  for (auto& section : sections) {
+    section.guitar_style_hint = 4;  // PedalTone
+  }
+  gen.getSong().setArrangement(Arrangement(sections));
+
+  gen.getSong().guitar().clear();
+  GuitarGenerator guitar_gen;
+  std::mt19937 rng(42);
+  FullTrackContext ctx;
+  ctx.song = &gen.getSong();
+  ctx.params = &gen.getParams();
+  ctx.rng = &rng;
+  ctx.harmony = dynamic_cast<IHarmonyCoordinator*>(&gen.getHarmonyContext());
+  guitar_gen.generateFullTrack(gen.getSong().guitar(), ctx);
+
+  const auto& guitar = gen.getSong().guitar();
+  ASSERT_FALSE(guitar.notes().empty());
+
+  // PedalTone produces root + octave variation, with occasional 5th decoration.
+  // Per section (same chord), expect at most 2 pitch classes + rare decoration.
+  // Over the whole song with multiple chords, expect more pitch classes,
+  // but each chord should contribute at most ~3 (root, root+12, root+7).
+  // Check that per-bar, at most 3 unique pitch classes appear.
+  std::map<int, std::set<int>> bar_pitches;
+  for (const auto& note : guitar.notes()) {
+    int bar = static_cast<int>(note.start_tick / TICKS_PER_BAR);
+    bar_pitches[bar].insert(note.note % 12);
+  }
+
+  int bars_with_excess = 0;
+  for (const auto& [bar, pitches] : bar_pitches) {
+    if (pitches.size() > 3) {
+      bars_with_excess++;
+    }
+  }
+
+  // Allow a small percentage of bars with more pitch classes due to chord changes
+  float excess_ratio = static_cast<float>(bars_with_excess) / bar_pitches.size();
+  EXPECT_LT(excess_ratio, 0.15f)
+      << "PedalTone should use at most ~3 pitch classes per bar (root, 5th, octave)";
+}
+
+TEST_F(GuitarGenerationTest, RhythmChordPitchRange) {
+  // Generate with RhythmChord via style hint
+  params_.mood = Mood::LightRock;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  auto sections = gen.getSong().arrangement().sections();
+  for (auto& section : sections) {
+    section.guitar_style_hint = 5;  // RhythmChord
+  }
+  gen.getSong().setArrangement(Arrangement(sections));
+
+  gen.getSong().guitar().clear();
+  GuitarGenerator guitar_gen;
+  std::mt19937 rng(42);
+  FullTrackContext ctx;
+  ctx.song = &gen.getSong();
+  ctx.params = &gen.getParams();
+  ctx.rng = &rng;
+  ctx.harmony = dynamic_cast<IHarmonyCoordinator*>(&gen.getHarmonyContext());
+  guitar_gen.generateFullTrack(gen.getSong().guitar(), ctx);
+
+  const auto& guitar = gen.getSong().guitar();
+  ASSERT_FALSE(guitar.notes().empty());
+
+  // RhythmChord uses root + 5th (2 simultaneous notes).
+  // Per bar, expect at most 3 unique pitch classes (root, 5th, and octave variants).
+  std::map<int, std::set<int>> bar_pitches;
+  for (const auto& note : guitar.notes()) {
+    int bar = static_cast<int>(note.start_tick / TICKS_PER_BAR);
+    bar_pitches[bar].insert(note.note % 12);
+  }
+
+  int bars_with_excess = 0;
+  for (const auto& [bar, pitches] : bar_pitches) {
+    if (pitches.size() > 3) {
+      bars_with_excess++;
+    }
+  }
+
+  float excess_ratio = static_cast<float>(bars_with_excess) / bar_pitches.size();
+  EXPECT_LT(excess_ratio, 0.15f)
+      << "RhythmChord should use at most ~3 pitch classes per bar (root, 5th, collision-resolved)";
+
+  // RhythmChord should have simultaneous notes (root + 5th pairs)
+  int simultaneous = 0;
+  for (size_t idx = 1; idx < guitar.notes().size(); ++idx) {
+    if (guitar.notes()[idx].start_tick == guitar.notes()[idx - 1].start_tick) {
+      simultaneous++;
+    }
+  }
+  EXPECT_GT(simultaneous, 0) << "RhythmChord should produce simultaneous note pairs";
+}
+
+TEST_F(GuitarGenerationTest, StyleHintZeroKeepsDefault) {
+  // hint=0 should use the mood's default style (LightRock = Strum)
+  params_.mood = Mood::LightRock;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  // Verify sections have hint=0 by default
+  for (const auto& section : gen.getSong().arrangement().sections()) {
+    EXPECT_EQ(section.guitar_style_hint, 0u)
+        << "Default guitar_style_hint should be 0";
+  }
+
+  // LightRock = Clean Guitar (27) = Strum style
+  // Strum produces chordal hits (multiple simultaneous notes)
+  const auto& guitar = gen.getSong().guitar();
+  ASSERT_FALSE(guitar.notes().empty());
+
+  int simultaneous = 0;
+  for (size_t idx = 1; idx < guitar.notes().size(); ++idx) {
+    if (guitar.notes()[idx].start_tick == guitar.notes()[idx - 1].start_tick) {
+      simultaneous++;
+    }
+  }
+  EXPECT_GT(simultaneous, 0)
+      << "With hint=0, LightRock should use default Strum style (simultaneous notes)";
 }

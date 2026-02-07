@@ -38,9 +38,9 @@ HiHatLevel adjustHiHatDenser(HiHatLevel level) {
 
 HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity backing_density,
                          uint16_t bpm, std::mt19937& rng, GenerationParadigm paradigm) {
-  // RhythmSync always uses 16th note hi-hat for constant clock
+  // RhythmSync uses 16th note hi-hat for constant clock, but respects BPM limit
   if (paradigm == GenerationParadigm::RhythmSync) {
-    return HiHatLevel::Sixteenth;
+    return (bpm < HH_16TH_BPM_THRESHOLD) ? HiHatLevel::Sixteenth : HiHatLevel::Eighth;
   }
 
   bool allow_16th = (bpm < HH_16TH_BPM_THRESHOLD);
@@ -63,7 +63,7 @@ HiHatLevel getHiHatLevel(SectionType section, DrumStyle style, BackingDensity ba
     }
     return HiHatLevel::Sixteenth;
   } else if (style == DrumStyle::Trap) {
-    return HiHatLevel::Sixteenth;
+    return allow_16th ? HiHatLevel::Sixteenth : HiHatLevel::Eighth;
   } else if (style == DrumStyle::Latin) {
     if (allow_16th && section == SectionType::Chorus && rng_util::rollProbability(rng, 0.30f)) {
       return HiHatLevel::Sixteenth;

@@ -218,6 +218,7 @@ struct SongConfig {
 
   /// Options
   bool drums_enabled = true;
+  bool drums_enabled_explicit = false;  ///< True if user explicitly set drums_enabled
   bool arpeggio_enabled = false;
   bool guitar_enabled = true;    ///< Enable guitar track
   bool skip_vocal = false;  ///< Skip vocal generation (for BGM-first workflow)
@@ -229,6 +230,7 @@ struct SongConfig {
 
   /// Chord extensions
   ChordExtensionParams chord_extension;
+  bool chord_ext_prob_explicit = false;  ///< True if user explicitly set chord extension probabilities
 
   /// Composition style
   CompositionStyle composition_style = CompositionStyle::MelodyLead;
@@ -311,6 +313,7 @@ struct SongConfig {
     v("vocal_style", self.vocal_style);
     v("drive_feel", self.drive_feel);
     v("drums_enabled", self.drums_enabled);
+    v("drums_enabled_explicit", self.drums_enabled_explicit);
     v("arpeggio_enabled", self.arpeggio_enabled);
     v("guitar_enabled", self.guitar_enabled);
     v("skip_vocal", self.skip_vocal);
@@ -351,6 +354,7 @@ struct SongConfig {
     v("motif_motion", self.motif_motion);
     v("motif_register_high", self.motif_register_high);
     v("motif_rhythm_density", self.motif_rhythm_density);
+    v("chord_ext_prob_explicit", self.chord_ext_prob_explicit);
     // Nested structs
     v.nested("arpeggio", self.arpeggio);
     v.nested("chord_extension", self.chord_extension);
@@ -385,6 +389,7 @@ struct GeneratorParams {
   RiffPolicy riff_policy = RiffPolicy::Free;                      ///< Riff management policy
   bool drums_sync_vocal = false;  ///< Sync drum kicks/snares to vocal onsets
   bool drums_enabled = true;      ///< Enable drums track
+  bool drums_enabled_explicit = false;  ///< True if user explicitly set drums_enabled
   bool skip_vocal = false;        ///< Skip vocal track generation (for BGM-first workflow)
   /// Note: Modulation is controlled via Generator::modulation_timing_ (set from SongConfig)
   uint8_t vocal_low = 60;                ///< Vocal range lower bound (MIDI note)
@@ -444,7 +449,11 @@ struct GeneratorParams {
   /// Behavioral Loop (addictive generation)
   bool addictive_mode = false;  ///< Enable Behavioral Loop mode (fixed riff, maximum hook)
 
-  /// Melody parameter override flags (true = user explicitly set the value)
+  /// Explicit parameter flags (true = user explicitly set the value)
+  bool bpm_explicit = false;  ///< True if BPM was explicitly set (skip RhythmSync clamp)
+  bool motif_length_explicit = false;          ///< True if motif length was explicitly set
+  bool motif_note_count_explicit = false;      ///< True if motif note_count was explicitly set
+  bool motif_rhythm_density_explicit = false;  ///< True if motif rhythm_density was explicitly set
   bool melody_max_leap_override = false;
   bool melody_long_note_ratio_override = false;
 

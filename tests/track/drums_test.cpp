@@ -2419,6 +2419,170 @@ TEST_F(DrumsTest, IntroKickEnabledFlagDifferenceTest) {
   }
 }
 
+// ============================================================================
+// High BPM Drum Density Tests
+// ============================================================================
+
+TEST_F(DrumsTest, RhythmSyncHighBPMUsesEighthHiHat) {
+  // At BPM 170 with RhythmSync paradigm (BP1), hi-hat should be 8th notes
+  // not 16th notes, to avoid physically unrealistic density
+  params_.blueprint_id = 1;  // RhythmLock (RhythmSync paradigm)
+  params_.bpm = 170;
+  params_.seed = 42;
+  params_.structure = StructurePattern::StandardPop;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  // Count hi-hat notes per bar in a chorus section
+  for (const auto& sec : sections) {
+    if (sec.type != SectionType::Chorus) continue;
+    Tick sec_end = sec.endTick();
+    int hh_count = 0;
+    for (const auto& note : track.notes()) {
+      if ((note.note == CHH || note.note == OHH || note.note == RIDE) &&
+          note.start_tick >= sec.start_tick && note.start_tick < sec_end) {
+        hh_count++;
+      }
+    }
+    if (sec.bars > 0) {
+      double hh_per_bar = static_cast<double>(hh_count) / sec.bars;
+      // 8th note HH = 8 per bar, 16th = 16 per bar
+      // Allow some margin for open HH accents etc.
+      EXPECT_LE(hh_per_bar, 12.0)
+          << "At BPM 170, RhythmSync HH should be 8th notes (~8/bar), got "
+          << hh_per_bar << "/bar";
+    }
+    break;  // Check first Chorus only
+  }
+}
+
+TEST_F(DrumsTest, RhythmSyncHighBPMReducesDrumDensityPerBar) {
+  // Verify that at high BPM, average drum notes per bar is lower
+  // (accounts for different total bars between BPM settings)
+  params_.blueprint_id = 1;  // RhythmLock (RhythmSync paradigm)
+  params_.seed = 42;
+  params_.mood = Mood::EnergeticDance;  // Uses shaker + dense HH
+  params_.structure = StructurePattern::StandardPop;
+
+  auto drumsPerBar = [](const Generator& gen) -> double {
+    const auto& sections = gen.getSong().arrangement().sections();
+    int total_bars = 0;
+    for (const auto& sec : sections) {
+      total_bars += sec.bars;
+    }
+    return (total_bars > 0) ? static_cast<double>(gen.getSong().drums().notes().size()) / total_bars
+                            : 0.0;
+  };
+
+  params_.bpm = 100;
+  Generator gen_slow;
+  gen_slow.generate(params_);
+  double slow_density = drumsPerBar(gen_slow);
+
+  params_.bpm = 170;
+  Generator gen_fast;
+  gen_fast.generate(params_);
+  double fast_density = drumsPerBar(gen_fast);
+
+  // At high BPM, drums per bar should be lower due to HH/shaker/kick density limits
+  EXPECT_GT(slow_density, fast_density)
+      << "Slow BPM drums/bar (" << slow_density
+      << ") should exceed fast BPM drums/bar (" << fast_density << ")";
+}
+
+TEST_F(DrumsTest, ShakerHighBPMUsesEighthGrid) {
+  // At BPM 170, shaker should use 8th note grid instead of 16th
+  params_.mood = Mood::EnergeticDance;
+  params_.bpm = 170;
+  params_.seed = 42;
+  params_.structure = StructurePattern::StandardPop;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+
+  // Verify shaker notes are on 8th note grid (not 16th)
+  int shaker_count = 0;
+  for (const auto& note : track.notes()) {
+    if (note.note == SHAKER) {
+      shaker_count++;
+      Tick tick_in_beat = note.start_tick % TICKS_PER_BEAT;
+      Tick eighth = TICKS_PER_BEAT / 2;  // 240 ticks
+      EXPECT_EQ(tick_in_beat % eighth, 0u)
+          << "Shaker at tick " << note.start_tick
+          << " should be on 8th note grid at high BPM (remainder = "
+          << (tick_in_beat % eighth) << ")";
+    }
+  }
+  // Should still have shaker notes
+  EXPECT_GT(shaker_count, 0) << "Should have shaker notes at high BPM";
+
+  // At 8th note grid: 8 per bar instead of 16
+  // Count per bar to verify density reduction
+  const auto& sections = gen.getSong().arrangement().sections();
+  for (const auto& sec : sections) {
+    if (sec.type != SectionType::A) continue;  // Shaker in verse for EnergeticDance
+    Tick sec_end = sec.endTick();
+    int sec_shaker = 0;
+    for (const auto& note : track.notes()) {
+      if (note.note == SHAKER && note.start_tick >= sec.start_tick &&
+          note.start_tick < sec_end) {
+        sec_shaker++;
+      }
+    }
+    if (sec.bars > 0) {
+      double shaker_per_bar = static_cast<double>(sec_shaker) / sec.bars;
+      EXPECT_LE(shaker_per_bar, 10.0)
+          << "At BPM 170, shaker should be ~8/bar (8th grid), got "
+          << shaker_per_bar << "/bar";
+    }
+    break;
+  }
+}
+
+TEST_F(DrumsTest, VocalSyncKickLimitedAtHighBPM) {
+  // At BPM 170 with RhythmSync (vocal sync kicks), each bar should not
+  // have excessive kicks
+  params_.blueprint_id = 1;  // RhythmLock (RhythmSync with vocal sync)
+  params_.bpm = 170;
+  params_.seed = 42;
+  params_.structure = StructurePattern::StandardPop;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  // Check kicks per bar across all sections
+  for (const auto& sec : sections) {
+    Tick sec_end = sec.endTick();
+    for (uint8_t bar = 0; bar < sec.bars; ++bar) {
+      Tick bar_start = sec.start_tick + bar * TICKS_PER_BAR;
+      Tick bar_end = bar_start + TICKS_PER_BAR;
+
+      int kick_count = 0;
+      for (const auto& note : track.notes()) {
+        if (note.note == KICK && note.start_tick >= bar_start &&
+            note.start_tick < bar_end && note.start_tick < sec_end) {
+          kick_count++;
+        }
+      }
+
+      // At high BPM, kicks per bar should be reasonable (max ~5 including
+      // both vocal-sync and fallback kicks)
+      EXPECT_LE(kick_count, 5)
+          << "Bar at tick " << bar_start << " in " << sec.name
+          << " has " << kick_count << " kicks at BPM 170 (should be <= 5)";
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch
 

@@ -57,6 +57,44 @@ std::vector<int> getChordTonePitchClasses(int8_t degree) {
   return result;
 }
 
+std::vector<int> getGuideTonePitchClasses(int8_t degree) {
+  std::vector<int> guides;
+
+  // Get chord intervals from central chord definition
+  Chord chord = getChordNotes(degree);
+  int root_pc = ((degreeToSemitone(degree) % 12) + 12) % 12;
+
+  // 3rd is interval index 1 (after root)
+  if (chord.note_count > 1) {
+    guides.push_back((root_pc + chord.intervals[1]) % 12);
+  }
+
+  // 7th: if chord has 4+ notes, index 3 is the 7th
+  if (chord.note_count > 3) {
+    guides.push_back((root_pc + chord.intervals[3]) % 12);
+  } else {
+    // For triads, infer diatonic 7th from scale degree
+    // Major chords (I, IV): major 7th (11 semitones)
+    // Dominant (V): minor 7th (10 semitones)
+    // Minor chords (ii, iii, vi): minor 7th (10 semitones)
+    // Diminished (vii): minor 7th (10 semitones)
+    int normalized = ((degree % 7) + 7) % 7;
+    int seventh_interval = 0;
+    switch (normalized) {
+      case 0:  // I - major 7th
+      case 3:  // IV - major 7th
+        seventh_interval = 11;
+        break;
+      default:  // ii, iii, V, vi, vii - minor 7th
+        seventh_interval = 10;
+        break;
+    }
+    guides.push_back((root_pc + seventh_interval) % 12);
+  }
+
+  return guides;
+}
+
 std::vector<int> getScalePitchClasses(uint8_t key) {
   std::vector<int> result;
   result.reserve(7);

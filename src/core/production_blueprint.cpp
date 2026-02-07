@@ -19,64 +19,82 @@ namespace {
 
 // RhythmLock-style section flow: rhythm-synced, staggered intro build
 // Uses Pushed time_feel for tight rhythm sync, Dramatic drops for EDM-like impact
+// New field legend (appended after ChorusDropStyle when non-default):
+// stagger_bars, custom_layer_schedule, layer_add_at_mid, layer_remove_at_end,
+// guitar_style_hint(GT), phrase_tail_rest(PT), max_moving_voices(MV),
+// motif_motion_hint(MM), guide_tone_rate(GR), vocal_range_span(VS)
 constexpr SectionSlot RHYTHMLOCK_FLOW[] = {
     // Intro: all tracks with staggered entry, atmospheric drums
     {SectionType::Intro, 4, TrackMask::All, EntryPattern::Stagger, SectionEnergy::Low, 60, 50,
      PeakLevel::None, DrumRole::Ambient, -1.0f, SectionModifier::None, 100,
      ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None},
 
-    // A melody: vocal + minimal backing + motif for riff repetition
+    // A melody: PedalTone guitar, Ostinato motif, voice limit=2, guide tone 50%
     {SectionType::A, 8, TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass | TrackMask::Motif,
      EntryPattern::GradualBuild, SectionEnergy::Medium, 70, 70, PeakLevel::None, DrumRole::Full,
      -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::Pushed, 1.0f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::Pushed, 1.0f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     4, true, 2, 6, 50, 0},
 
-    // B melody: add chord, higher energy + motif, dramatic drop before chorus
+    // B melody: PedalTone, voice limit=3, guide tone 60%, phrase tail rest
     {SectionType::B, 8,
      TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass | TrackMask::Chord | TrackMask::Motif,
      EntryPattern::Immediate, SectionEnergy::High, 80, 85, PeakLevel::None, DrumRole::Full,
      -1.0f, SectionModifier::None, 100,
-     ExitPattern::CutOff, TimeFeel::Pushed, 0.5f, ChorusDropStyle::Dramatic},
+     ExitPattern::CutOff, TimeFeel::Pushed, 0.5f, ChorusDropStyle::Dramatic,
+     0, false, TrackMask::None, TrackMask::None,
+     4, true, 3, 0, 60, 0},
 
-    // Chorus: full arrangement, strong entry
+    // Chorus: RhythmChord, voice limit=3, guide tone 55%
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 90, 100,
      PeakLevel::None, DrumRole::Full, -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     5, false, 3, 0, 55, 0},
 
-    // Interlude: drums solo
+    // Interlude: drums solo (all defaults)
     {SectionType::Interlude, 4, TrackMask::Drums, EntryPattern::Immediate, SectionEnergy::Low, 65,
      60, PeakLevel::None, DrumRole::Ambient, -1.0f, SectionModifier::None, 100,
      ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None},
 
-    // 2nd A melody + motif
+    // 2nd A melody: PedalTone, Ostinato, voice limit=2, guide tone 50%
     {SectionType::A, 8, TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass | TrackMask::Motif,
      EntryPattern::Immediate, SectionEnergy::Medium, 72, 75, PeakLevel::None, DrumRole::Full,
      -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::Pushed, 1.0f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::Pushed, 1.0f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     4, true, 2, 6, 50, 0},
 
-    // 2nd B melody + motif, dramatic drop before chorus
+    // 2nd B melody: PedalTone, voice limit=3, guide tone 60%, phrase tail rest
     {SectionType::B, 8,
      TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass | TrackMask::Chord | TrackMask::Motif,
      EntryPattern::GradualBuild, SectionEnergy::High, 82, 90, PeakLevel::None, DrumRole::Full,
      -1.0f, SectionModifier::None, 100,
-     ExitPattern::CutOff, TimeFeel::Pushed, 0.5f, ChorusDropStyle::Dramatic},
+     ExitPattern::CutOff, TimeFeel::Pushed, 0.5f, ChorusDropStyle::Dramatic,
+     0, false, TrackMask::None, TrackMask::None,
+     4, true, 3, 0, 60, 0},
 
-    // 2nd Chorus (Medium peak)
+    // 2nd Chorus: RhythmChord, voice limit=3, guide tone 55%
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 92, 100,
      PeakLevel::Medium, DrumRole::Full, -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     5, false, 3, 0, 55, 0},
 
-    // Drop chorus: vocal solo (dramatic pause)
+    // Drop chorus: vocal solo (all defaults)
     {SectionType::Chorus, 4, TrackMask::Vocal, EntryPattern::Immediate, SectionEnergy::High, 85, 70,
      PeakLevel::None, DrumRole::Full, -1.0f, SectionModifier::None, 100,
      ExitPattern::CutOff, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::DrumHit},
 
-    // Last chorus: everyone drops in (Maximum peak, Climactic modifier)
+    // Last chorus: RhythmChord, voice limit=4 (relaxed), guide tone 55%
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 95, 100,
      PeakLevel::Max, DrumRole::Full, -1.0f, SectionModifier::Climactic, 100,
-     ExitPattern::FinalHit, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None},
+     ExitPattern::FinalHit, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     5, false, 4, 0, 55, 0},
 
-    // Outro: fade out with drums + bass
+    // Outro: fade out (all defaults)
     {SectionType::Outro, 4, TrackMask::Drums | TrackMask::Bass, EntryPattern::Immediate,
      SectionEnergy::Low, 60, 50, PeakLevel::None, DrumRole::Ambient, -1.0f, SectionModifier::None, 100,
      ExitPattern::Fadeout, TimeFeel::OnBeat, 2.0f, ChorusDropStyle::None},
@@ -85,53 +103,69 @@ constexpr SectionSlot RHYTHMLOCK_FLOW[] = {
 // StoryPop-style section flow: melody-driven, full arrangement
 // Uses OnBeat time_feel for precise pop timing, Subtle drops for smooth transitions
 constexpr SectionSlot STORYPOP_FLOW[] = {
-    // Intro: full arrangement
+    // Intro: full arrangement (all defaults)
     {SectionType::Intro, 4, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Medium, 70, 80,
      PeakLevel::None, DrumRole::Full, -1.0f, SectionModifier::None, 100,
      ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None},
 
-    // A melody: full
+    // A melody: PedalTone, Ostinato motif, voice limit=2, guide tone 60%, vocal range 15st
     {SectionType::A, 8, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Medium, 75, 85,
      PeakLevel::None, DrumRole::Full, -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     4, true, 2, 6, 60, 15},
 
-    // B melody: build up, higher energy, subtle drop before chorus
+    // B melody: PedalTone, voice limit=3, guide tone 70%, vocal range 15st, phrase tail rest
     {SectionType::B, 8, TrackMask::All, EntryPattern::GradualBuild, SectionEnergy::High, 82, 90,
      PeakLevel::None, DrumRole::Full, -1.0f, SectionModifier::None, 100,
-     ExitPattern::Sustain, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::Subtle},
+     ExitPattern::Sustain, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::Subtle,
+     0, false, TrackMask::None, TrackMask::None,
+     4, true, 3, 0, 70, 15},
 
-    // Chorus: strong entry, dense harmony
+    // Chorus: RhythmChord, voice limit=3, guide tone 65%, vocal range 15st
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 90, 100,
      PeakLevel::None, DrumRole::Full, -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     5, false, 3, 0, 65, 15},
 
-    // 2nd A melody
+    // 2nd A melody: PedalTone, Ostinato, voice limit=2, guide tone 60%, vocal range 15st
     {SectionType::A, 8, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Medium, 77, 85,
      PeakLevel::None, DrumRole::Full, -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     4, true, 2, 6, 60, 15},
 
-    // 2nd B melody, subtle drop before chorus
+    // 2nd B melody: PedalTone, voice limit=3, guide tone 70%, vocal range 15st, phrase tail rest
     {SectionType::B, 8, TrackMask::All, EntryPattern::GradualBuild, SectionEnergy::High, 85, 92,
      PeakLevel::None, DrumRole::Full, -1.0f, SectionModifier::None, 100,
-     ExitPattern::Sustain, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::Subtle},
+     ExitPattern::Sustain, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::Subtle,
+     0, false, TrackMask::None, TrackMask::None,
+     4, true, 3, 0, 70, 15},
 
-    // 2nd Chorus (Medium peak)
+    // 2nd Chorus: RhythmChord, voice limit=3, guide tone 65%, vocal range 15st
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 92, 100,
      PeakLevel::Medium, DrumRole::Full, -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     5, false, 3, 0, 65, 15},
 
-    // Bridge: thinner arrangement (Transitional modifier for preparation)
+    // Bridge: sparse, guide tone 70%, vocal range 15st, phrase tail rest
     {SectionType::Bridge, 8, TrackMask::Vocal | TrackMask::Chord | TrackMask::Drums,
      EntryPattern::Immediate, SectionEnergy::High, 78, 75, PeakLevel::None, DrumRole::Minimal,
      -1.0f, SectionModifier::Transitional, 100,
-     ExitPattern::Sustain, TimeFeel::LaidBack, 1.0f, ChorusDropStyle::Dramatic},
+     ExitPattern::Sustain, TimeFeel::LaidBack, 1.0f, ChorusDropStyle::Dramatic,
+     0, false, TrackMask::None, TrackMask::None,
+     0, true, 2, 0, 70, 15},
 
-    // Last chorus (Maximum peak, Climactic modifier)
+    // Last chorus: RhythmChord, voice limit=3, guide tone 65%, vocal range 15st
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 95, 100,
      PeakLevel::Max, DrumRole::Full, -1.0f, SectionModifier::Climactic, 100,
-     ExitPattern::FinalHit, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None},
+     ExitPattern::FinalHit, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     5, false, 3, 0, 65, 15},
 
-    // Outro
+    // Outro (all defaults)
     {SectionType::Outro, 4, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Low, 65, 70,
      PeakLevel::None, DrumRole::Full, -1.0f, SectionModifier::None, 100,
      ExitPattern::Fadeout, TimeFeel::LaidBack, 2.0f, ChorusDropStyle::None},
@@ -141,54 +175,68 @@ constexpr SectionSlot STORYPOP_FLOW[] = {
 // Light swing (0.15f) throughout for gentle sway feel
 // Uses LaidBack time_feel for relaxed timing, sparse harmonic_rhythm (2.0) in intro
 constexpr SectionSlot BALLAD_FLOW[] = {
-    // Intro: chord only (piano feel), sparse harmonic rhythm
+    // Intro: chord only (all defaults)
     {SectionType::Intro, 4, TrackMask::Chord, EntryPattern::Immediate, SectionEnergy::Low, 60, 60,
      PeakLevel::None, DrumRole::Full, 0.15f, SectionModifier::None, 100,
      ExitPattern::None, TimeFeel::LaidBack, 2.0f, ChorusDropStyle::None},
 
-    // A melody: vocal + chord, laid back feel
+    // A melody: Fingerpick, voice limit=2, guide tone 70%, vocal range 15st, phrase tail rest
     {SectionType::A, 8, TrackMask::Vocal | TrackMask::Chord, EntryPattern::Immediate,
      SectionEnergy::Low, 65, 70, PeakLevel::None, DrumRole::Full, 0.15f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::LaidBack, 1.0f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::LaidBack, 1.0f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     1, true, 2, 0, 70, 15},
 
-    // B melody: add bass, subtle drop before chorus
+    // B melody: Fingerpick, voice limit=2, guide tone 70%, vocal range 15st, phrase tail rest
     {SectionType::B, 8, TrackMask::Vocal | TrackMask::Chord | TrackMask::Bass,
      EntryPattern::GradualBuild, SectionEnergy::Medium, 70, 75, PeakLevel::None, DrumRole::Full,
      0.15f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::LaidBack, 1.0f, ChorusDropStyle::Subtle},
+     ExitPattern::None, TimeFeel::LaidBack, 1.0f, ChorusDropStyle::Subtle,
+     0, false, TrackMask::None, TrackMask::None,
+     1, true, 2, 0, 70, 15},
 
-    // Chorus: add drums (gentle, Minimal DrumRole)
+    // Chorus: Strum, voice limit=2, guide tone 65%, vocal range 15st, phrase tail rest
     {SectionType::Chorus, 8, TrackMask::Basic, EntryPattern::GradualBuild, SectionEnergy::High, 78,
      80, PeakLevel::None, DrumRole::Minimal, 0.2f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::LaidBack, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::LaidBack, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     2, true, 2, 0, 65, 15},
 
-    // Interlude: chord only
+    // Interlude: chord only (all defaults)
     {SectionType::Interlude, 4, TrackMask::Chord, EntryPattern::Immediate, SectionEnergy::Low, 60,
      55, PeakLevel::None, DrumRole::Full, 0.15f, SectionModifier::None, 100,
      ExitPattern::None, TimeFeel::LaidBack, 2.0f, ChorusDropStyle::None},
 
-    // 2nd A melody
+    // 2nd A melody: Fingerpick, voice limit=2, guide tone 70%, vocal range 15st, phrase tail rest
     {SectionType::A, 8, TrackMask::Vocal | TrackMask::Chord, EntryPattern::Immediate,
      SectionEnergy::Low, 67, 72, PeakLevel::None, DrumRole::Full, 0.15f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::LaidBack, 1.0f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::LaidBack, 1.0f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     1, true, 2, 0, 70, 15},
 
-    // 2nd B melody, subtle drop before chorus
+    // 2nd B melody: Fingerpick, voice limit=2, guide tone 70%, vocal range 15st, phrase tail rest
     {SectionType::B, 8, TrackMask::Vocal | TrackMask::Chord | TrackMask::Bass,
      EntryPattern::GradualBuild, SectionEnergy::Medium, 73, 80, PeakLevel::None, DrumRole::Full,
      0.2f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::LaidBack, 1.0f, ChorusDropStyle::Subtle},
+     ExitPattern::None, TimeFeel::LaidBack, 1.0f, ChorusDropStyle::Subtle,
+     0, false, TrackMask::None, TrackMask::None,
+     1, true, 2, 0, 70, 15},
 
-    // 2nd Chorus (Ochisabi - "falling sabi"): quiet, intimate before final climax
+    // Ochisabi Chorus: Strum, voice limit=2, guide tone 65%, vocal range 15st
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::GradualBuild, SectionEnergy::High, 82,
      90, PeakLevel::Medium, DrumRole::Full, 0.25f, SectionModifier::Ochisabi, 100,
-     ExitPattern::None, TimeFeel::LaidBack, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::LaidBack, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     2, false, 2, 0, 65, 15},
 
-    // Last chorus: emotional peak (Maximum peak, Climactic modifier)
+    // Last chorus: Strum, voice limit=3 (relaxed), guide tone 60%, vocal range 18st (wider)
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 90, 100,
      PeakLevel::Max, DrumRole::Full, 0.3f, SectionModifier::Climactic, 100,
-     ExitPattern::FinalHit, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None},
+     ExitPattern::FinalHit, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     2, false, 3, 0, 60, 18},
 
-    // Outro: fade out with chord, explicit fadeout pattern
+    // Outro: fade out (all defaults)
     {SectionType::Outro, 8, TrackMask::Chord, EntryPattern::Immediate, SectionEnergy::Low, 55, 50,
      PeakLevel::None, DrumRole::Full, 0.1f, SectionModifier::None, 100,
      ExitPattern::Fadeout, TimeFeel::LaidBack, 2.0f, ChorusDropStyle::None},
@@ -199,57 +247,73 @@ constexpr SectionSlot BALLAD_FLOW[] = {
 //            -> Bridge(8) -> LastChorus(16) -> Outro(4) = 80 bars
 // Uses OnBeat time_feel for clean idol pop timing, Subtle drops for smooth transitions
 constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
-    // Intro: kick only, building anticipation
+    // Intro: kick only (all defaults)
     {SectionType::Intro, 4, TrackMask::Drums, EntryPattern::Immediate, SectionEnergy::Low, 60, 50,
      PeakLevel::None, DrumRole::Minimal, -1.0f, SectionModifier::None, 100,
      ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None},
 
-    // A melody: vocal with light backing
+    // A melody: Strum, voice limit=3, guide tone 55%, phrase tail rest
     {SectionType::A, 8, TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord,
      EntryPattern::GradualBuild, SectionEnergy::Low, 65, 60, PeakLevel::None, DrumRole::Minimal,
      -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     2, true, 3, 0, 55, 0},
 
-    // B melody: add bass, rising energy, subtle drop before chorus
+    // B melody: Strum, voice limit=3, guide tone 65%, phrase tail rest
     {SectionType::B, 8, TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass | TrackMask::Chord,
      EntryPattern::GradualBuild, SectionEnergy::Medium, 72, 75, PeakLevel::None, DrumRole::Full,
      -1.0f, SectionModifier::None, 100,
-     ExitPattern::Sustain, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::Subtle},
+     ExitPattern::Sustain, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::Subtle,
+     0, false, TrackMask::None, TrackMask::None,
+     2, true, 3, 0, 65, 0},
 
-    // First Chorus: full arrangement, dense harmony
+    // First Chorus: Strum, no voice limit, guide tone 60%
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::High, 82, 90,
      PeakLevel::None, DrumRole::Full, -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     2, false, 0, 0, 60, 0},
 
-    // 2nd A melody: slightly fuller
+    // 2nd A melody: Strum, voice limit=3, guide tone 55%, phrase tail rest
     {SectionType::A, 8, TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord | TrackMask::Bass,
      EntryPattern::Immediate, SectionEnergy::Medium, 68, 65, PeakLevel::None, DrumRole::Full,
      -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     2, true, 3, 0, 55, 0},
 
-    // 2nd B melody: build up, subtle drop before chorus
+    // 2nd B melody: Strum, voice limit=3, guide tone 65%, phrase tail rest
     {SectionType::B, 8, TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass | TrackMask::Chord,
      EntryPattern::GradualBuild, SectionEnergy::High, 75, 80, PeakLevel::None, DrumRole::Full,
      -1.0f, SectionModifier::None, 100,
-     ExitPattern::Sustain, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::Subtle},
+     ExitPattern::Sustain, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::Subtle,
+     0, false, TrackMask::None, TrackMask::None,
+     2, true, 3, 0, 65, 0},
 
-    // 2nd Chorus: fuller, medium peak
+    // 2nd Chorus: Strum, no voice limit, guide tone 60%
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::High, 85, 95,
      PeakLevel::Medium, DrumRole::Full, -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     2, false, 0, 0, 60, 0},
 
-    // Bridge: emotional pause (Transitional modifier for preparation)
+    // Bridge: sparse, voice limit=2, guide tone 70%, phrase tail rest
     {SectionType::Bridge, 8, TrackMask::Vocal | TrackMask::Chord | TrackMask::Drums,
      EntryPattern::Immediate, SectionEnergy::Medium, 70, 70, PeakLevel::None, DrumRole::Minimal,
      -1.0f, SectionModifier::Transitional, 100,
-     ExitPattern::Sustain, TimeFeel::LaidBack, 1.0f, ChorusDropStyle::Dramatic},
+     ExitPattern::Sustain, TimeFeel::LaidBack, 1.0f, ChorusDropStyle::Dramatic,
+     0, false, TrackMask::None, TrackMask::None,
+     0, true, 2, 0, 70, 0},
 
-    // Last Chorus: maximum peak, extended (Climactic modifier)
+    // Last Chorus: Strum, no voice limit, guide tone 60%
     {SectionType::Chorus, 16, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 95, 100,
      PeakLevel::Max, DrumRole::Full, -1.0f, SectionModifier::Climactic, 100,
-     ExitPattern::FinalHit, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None},
+     ExitPattern::FinalHit, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     2, false, 0, 0, 60, 0},
 
-    // Outro: fade out
+    // Outro (all defaults)
     {SectionType::Outro, 4, TrackMask::Drums | TrackMask::Chord, EntryPattern::Immediate,
      SectionEnergy::Low, 60, 50, PeakLevel::None, DrumRole::Ambient, -1.0f, SectionModifier::None, 100,
      ExitPattern::Fadeout, TimeFeel::LaidBack, 2.0f, ChorusDropStyle::None},
@@ -261,45 +325,59 @@ constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
 // Strong swing (0.5f) for high energy shuffle feel
 // Uses Pushed time_feel for driving energy, Dramatic drop before chorus
 constexpr SectionSlot IDOL_HYPER_FLOW[] = {
-    // Intro: immediate high energy, very short
+    // Intro: RhythmChord, immediate high energy
     {SectionType::Intro, 2, TrackMask::All, EntryPattern::DropIn, SectionEnergy::High, 85, 90,
      PeakLevel::None, DrumRole::Full, 0.5f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     5, false, 0, 0, 0, 0},
 
-    // First Chorus: hook immediately (chorus-first structure)
+    // First Chorus: RhythmChord, guide tone 55%
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Peak, 90, 100,
      PeakLevel::None, DrumRole::Full, 0.5f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     5, false, 0, 0, 55, 0},
 
-    // A melody: brief verse, high density maintained
+    // A melody: PedalTone, voice limit=3, guide tone 50%
     {SectionType::A, 4, TrackMask::All, EntryPattern::Immediate, SectionEnergy::High, 82, 85,
      PeakLevel::None, DrumRole::Full, 0.45f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     4, false, 3, 0, 50, 0},
 
-    // 2nd Chorus: keep momentum
+    // 2nd Chorus: RhythmChord, guide tone 55%
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 92, 100,
      PeakLevel::None, DrumRole::Full, 0.5f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     5, false, 0, 0, 55, 0},
 
-    // B melody: brief, building tension, dramatic drop before chorus
+    // B melody: PedalTone, voice limit=3, guide tone 60%, phrase tail rest
     {SectionType::B, 4, TrackMask::All, EntryPattern::GradualBuild, SectionEnergy::High, 85, 90,
      PeakLevel::None, DrumRole::Full, 0.45f, SectionModifier::None, 100,
-     ExitPattern::CutOff, TimeFeel::Pushed, 0.5f, ChorusDropStyle::Dramatic},
+     ExitPattern::CutOff, TimeFeel::Pushed, 0.5f, ChorusDropStyle::Dramatic,
+     0, false, TrackMask::None, TrackMask::None,
+     4, true, 3, 0, 60, 0},
 
-    // 3rd Chorus: pre-drop energy
+    // 3rd Chorus: RhythmChord, guide tone 55%
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 93, 100,
      PeakLevel::Medium, DrumRole::Full, 0.55f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     5, false, 0, 0, 55, 0},
 
-    // Drop: tension release (MixBreak = tension pause)
+    // MixBreak (all defaults)
     {SectionType::MixBreak, 4, TrackMask::Vocal | TrackMask::Drums, EntryPattern::Immediate,
      SectionEnergy::High, 80, 70, PeakLevel::None, DrumRole::Ambient, 0.3f, SectionModifier::None, 100,
      ExitPattern::CutOff, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::DrumHit},
 
-    // Last Chorus: explosive finale (Climactic modifier)
+    // Last Chorus: RhythmChord, guide tone 55%
     {SectionType::Chorus, 16, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 95, 100,
      PeakLevel::Max, DrumRole::Full, 0.55f, SectionModifier::Climactic, 100,
-     ExitPattern::FinalHit, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None},
+     ExitPattern::FinalHit, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     5, false, 0, 0, 55, 0},
 };
 
 // IdolKawaii: Sweet, bouncy idol pop - restrained dynamics, cute vibe
@@ -307,43 +385,53 @@ constexpr SectionSlot IDOL_HYPER_FLOW[] = {
 //            -> LastChorus(12) = 52 bars
 // Uses OnBeat time_feel for bouncy feel, Subtle drops for gentle transitions
 constexpr SectionSlot IDOL_KAWAII_FLOW[] = {
-    // Intro: soft, cute opening
+    // Intro: soft, cute (all defaults)
     {SectionType::Intro, 4, TrackMask::Chord | TrackMask::Drums, EntryPattern::Immediate,
      SectionEnergy::Low, 55, 50, PeakLevel::None, DrumRole::Minimal, -1.0f, SectionModifier::None, 100,
      ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None},
 
-    // A melody: sweet vocals with light accompaniment
+    // A melody: Fingerpick, voice limit=2, guide tone 60%, vocal range 12st, phrase tail rest
     {SectionType::A, 8, TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord,
      EntryPattern::Immediate, SectionEnergy::Low, 60, 60, PeakLevel::None, DrumRole::Minimal,
      -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::Subtle},
+     ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::Subtle,
+     0, false, TrackMask::None, TrackMask::None,
+     1, true, 2, 0, 60, 12},
 
-    // First Chorus: bouncy but restrained
+    // First Chorus: Strum, voice limit=3, guide tone 55%, vocal range 12st
     {SectionType::Chorus, 8,
      TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord | TrackMask::Bass, EntryPattern::DropIn,
      SectionEnergy::Medium, 70, 75, PeakLevel::None, DrumRole::Minimal, -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     2, false, 3, 0, 55, 12},
 
-    // 2nd A melody: slightly fuller
+    // 2nd A melody: Fingerpick, voice limit=2, guide tone 60%, vocal range 12st, phrase tail rest
     {SectionType::A, 8, TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord | TrackMask::Bass,
      EntryPattern::Immediate, SectionEnergy::Medium, 65, 65, PeakLevel::None, DrumRole::Minimal,
      -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::Subtle},
+     ExitPattern::None, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::Subtle,
+     0, false, TrackMask::None, TrackMask::None,
+     1, true, 2, 0, 60, 12},
 
-    // 2nd Chorus: Ochisabi (falling sabi) - quiet intimate before finale
+    // 2nd Chorus: Strum, voice limit=3, guide tone 55%, vocal range 12st
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::High, 75, 80,
      PeakLevel::None, DrumRole::Full, -1.0f, SectionModifier::Ochisabi, 100,
-     ExitPattern::None, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     2, false, 3, 0, 55, 12},
 
-    // Cute Break: very soft interlude (using Interlude for CuteBreak)
+    // Cute Break (all defaults)
     {SectionType::Interlude, 4, TrackMask::Chord | TrackMask::Vocal, EntryPattern::Immediate,
      SectionEnergy::Low, 55, 50, PeakLevel::None, DrumRole::Minimal, -1.0f, SectionModifier::None, 100,
      ExitPattern::None, TimeFeel::LaidBack, 2.0f, ChorusDropStyle::Subtle},
 
-    // Last Chorus: peak moment but still kawaii (Climactic modifier)
+    // Last Chorus: Strum, voice limit=3, guide tone 55%, vocal range 12st
     {SectionType::Chorus, 12, TrackMask::All, EntryPattern::DropIn, SectionEnergy::High, 80, 85,
      PeakLevel::Max, DrumRole::Full, -1.0f, SectionModifier::Climactic, 100,
-     ExitPattern::FinalHit, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None},
+     ExitPattern::FinalHit, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     2, false, 3, 0, 55, 12},
 };
 
 // IdolCoolPop: Cool, stylish idol pop - four-on-floor, uniform dynamics
@@ -352,41 +440,53 @@ constexpr SectionSlot IDOL_KAWAII_FLOW[] = {
 // Straight timing (0.0f) for tight four-on-floor dance feel
 // Uses Pushed time_feel for driving energy, Dramatic drop for tension
 constexpr SectionSlot IDOL_COOLPOP_FLOW[] = {
-    // Intro: driving four-on-floor beat with staggered entry
+    // Intro: PedalTone, voice limit=3
     {SectionType::Intro, 8, TrackMask::All, EntryPattern::Stagger, SectionEnergy::Medium, 75, 80,
      PeakLevel::None, DrumRole::Full, 0.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     4, false, 3, 0, 0, 0},
 
-    // A melody: cool, steady groove
+    // A melody: PedalTone, voice limit=3, guide tone 50%
     {SectionType::A, 8, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Medium, 78, 85,
      PeakLevel::None, DrumRole::Full, 0.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     4, false, 3, 0, 50, 0},
 
-    // First Chorus: powerful but controlled
+    // First Chorus: RhythmChord, voice limit=3, guide tone 50%
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::High, 85, 90,
      PeakLevel::None, DrumRole::Full, 0.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     5, false, 3, 0, 50, 0},
 
-    // B melody: variation while maintaining groove, dramatic drop before chorus
+    // B melody: PedalTone, voice limit=3, guide tone 55%, phrase tail rest
     {SectionType::B, 8, TrackMask::All, EntryPattern::Immediate, SectionEnergy::Medium, 80, 85,
      PeakLevel::None, DrumRole::Full, 0.0f, SectionModifier::None, 100,
-     ExitPattern::CutOff, TimeFeel::Pushed, 0.5f, ChorusDropStyle::Dramatic},
+     ExitPattern::CutOff, TimeFeel::Pushed, 0.5f, ChorusDropStyle::Dramatic,
+     0, false, TrackMask::None, TrackMask::None,
+     4, true, 3, 0, 55, 0},
 
-    // 2nd Chorus: stronger, medium peak
+    // 2nd Chorus: RhythmChord, voice limit=3, guide tone 50%
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::High, 88, 95,
      PeakLevel::Medium, DrumRole::Full, 0.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     5, false, 3, 0, 50, 0},
 
-    // Dance Break: high energy instrumental (using Interlude)
+    // Dance Break (all defaults)
     {SectionType::Interlude, 8, TrackMask::Drums | TrackMask::Bass | TrackMask::Arpeggio,
      EntryPattern::Immediate, SectionEnergy::High, 85, 95, PeakLevel::None, DrumRole::Full, 0.0f,
      SectionModifier::None, 100,
      ExitPattern::CutOff, TimeFeel::Pushed, 0.5f, ChorusDropStyle::DrumHit},
 
-    // Last Chorus: climactic finish (Climactic modifier)
+    // Last Chorus: RhythmChord, no voice limit, guide tone 50%
     {SectionType::Chorus, 16, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 92, 100,
      PeakLevel::Max, DrumRole::Full, 0.0f, SectionModifier::Climactic, 100,
-     ExitPattern::FinalHit, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None},
+     ExitPattern::FinalHit, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     5, false, 0, 0, 50, 0},
 };
 
 // IdolEmo: Emotional idol pop - quiet start, explosive finish
@@ -394,45 +494,57 @@ constexpr SectionSlot IDOL_COOLPOP_FLOW[] = {
 //            -> LastChorus(16) -> Outro(4) = 60 bars
 // Uses LaidBack time_feel for intimate sections, Pushed for climax
 constexpr SectionSlot IDOL_EMO_FLOW[] = {
-    // Intro: soft, contemplative, sparse harmony
+    // Intro: chord only (all defaults)
     {SectionType::Intro, 4, TrackMask::Chord, EntryPattern::Immediate, SectionEnergy::Low, 55, 50,
      PeakLevel::None, DrumRole::Ambient, -1.0f, SectionModifier::None, 100,
      ExitPattern::None, TimeFeel::LaidBack, 2.0f, ChorusDropStyle::None},
 
-    // A melody: quiet, intimate vocals
+    // A melody: Fingerpick, voice limit=2, guide tone 70%, vocal range 12st, phrase tail rest
     {SectionType::A, 8, TrackMask::Vocal | TrackMask::Chord, EntryPattern::Immediate,
      SectionEnergy::Low, 58, 55, PeakLevel::None, DrumRole::Ambient, -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::LaidBack, 1.0f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::LaidBack, 1.0f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     1, true, 2, 0, 70, 12},
 
-    // B melody: slowly building emotion
+    // B melody: Strum, voice limit=3, guide tone 65%, vocal range 15st, phrase tail rest
     {SectionType::B, 8, TrackMask::Vocal | TrackMask::Chord | TrackMask::Bass,
      EntryPattern::GradualBuild, SectionEnergy::Medium, 65, 65, PeakLevel::None, DrumRole::Minimal,
      -1.0f, SectionModifier::None, 100,
-     ExitPattern::Sustain, TimeFeel::LaidBack, 1.0f, ChorusDropStyle::Subtle},
+     ExitPattern::Sustain, TimeFeel::LaidBack, 1.0f, ChorusDropStyle::Subtle,
+     0, false, TrackMask::None, TrackMask::None,
+     2, true, 3, 0, 65, 15},
 
-    // First Chorus: breakthrough, but still building
+    // First Chorus: PowerChord, voice limit=3, guide tone 60%
     {SectionType::Chorus, 8,
      TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord | TrackMask::Bass, EntryPattern::DropIn,
      SectionEnergy::High, 78, 80, PeakLevel::None, DrumRole::Full, -1.0f, SectionModifier::None, 100,
-     ExitPattern::None, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     3, false, 3, 0, 60, 0},
 
-    // Quiet A (Ochisabi): return to intimacy - "falling sabi" moment
+    // Quiet A (Ochisabi): Fingerpick, voice limit=2, guide tone 70%, vocal range 12st, phrase tail rest
     {SectionType::A, 4, TrackMask::Vocal | TrackMask::Chord, EntryPattern::Immediate,
      SectionEnergy::Low, 55, 50, PeakLevel::None, DrumRole::Ambient, -1.0f,
      SectionModifier::Ochisabi, 100,
-     ExitPattern::None, TimeFeel::LaidBack, 2.0f, ChorusDropStyle::None},
+     ExitPattern::None, TimeFeel::LaidBack, 2.0f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     1, true, 2, 0, 70, 12},
 
-    // Build: tension rising (using B for GradualBuild), dramatic drop
+    // Build: Strum, voice limit=3, guide tone 65%, phrase tail rest
     {SectionType::B, 8, TrackMask::All, EntryPattern::GradualBuild, SectionEnergy::High, 75, 85,
      PeakLevel::None, DrumRole::Full, -1.0f, SectionModifier::None, 100,
-     ExitPattern::CutOff, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::Dramatic},
+     ExitPattern::CutOff, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::Dramatic,
+     0, false, TrackMask::None, TrackMask::None,
+     2, true, 3, 0, 65, 0},
 
-    // Last Chorus: emotional explosion (Climactic modifier)
+    // Last Chorus: RhythmChord, voice limit=4 (relaxed), guide tone 55%
     {SectionType::Chorus, 16, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 95, 100,
      PeakLevel::Max, DrumRole::Full, -1.0f, SectionModifier::Climactic, 100,
-     ExitPattern::FinalHit, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None},
+     ExitPattern::FinalHit, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
+     0, false, TrackMask::None, TrackMask::None,
+     5, false, 4, 0, 55, 0},
 
-    // Outro: lingering emotion, fadeout
+    // Outro (all defaults)
     {SectionType::Outro, 4, TrackMask::Chord | TrackMask::Vocal, EntryPattern::Immediate,
      SectionEnergy::Low, 55, 50, PeakLevel::None, DrumRole::Ambient, -1.0f, SectionModifier::None, 100,
      ExitPattern::Fadeout, TimeFeel::LaidBack, 2.0f, ChorusDropStyle::None},
@@ -485,7 +597,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         {127, 108, 9, false,  // max_velocity, max_pitch, max_leap, prefer_stepwise
          InstrumentSkillLevel::Advanced, InstrumentSkillLevel::Advanced,
          InstrumentModelMode::Full,
-         true, false, false},  // enable_slap for punchy rhythm
+         true, false, false,  // enable_slap for punchy rhythm
+         true},               // guitar_below_vocal
     },
 
     // 2: StoryPop (melody-driven, formerly YOASOBI)
@@ -506,7 +619,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         {127, 108, 12, false,  // max_velocity, max_pitch, max_leap, prefer_stepwise
          InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
          InstrumentModelMode::ConstraintsOnly,
-         false, false, false},
+         false, false, false,  // techniques
+         true},                // guitar_below_vocal
     },
 
     // 3: Ballad (sparse, emotional)
@@ -527,7 +641,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         {100, 84, 9, true,  // max_vel=100, max_pitch=C6(84), prefer_stepwise for lyrical flow
          InstrumentSkillLevel::Beginner, InstrumentSkillLevel::Beginner,
          InstrumentModelMode::ConstraintsOnly,
-         false, false, false},  // no techniques for ballad simplicity
+         false, false, false,  // no techniques for ballad simplicity
+         true},                // guitar_below_vocal
     },
 
     // 4: IdolStandard (classic idol pop: memorable melody, gradual build)
@@ -570,7 +685,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         {110, 96, 12, false,  // max_vel=110, max_pitch=C7(96), max_leap=12
          InstrumentSkillLevel::Advanced, InstrumentSkillLevel::Advanced,
          InstrumentModelMode::Full,
-         true, false, false},  // enable_slap for high-energy punch
+         true, false, false,  // enable_slap for high-energy punch
+         true},               // guitar_below_vocal
     },
 
     // 6: IdolKawaii (sweet, bouncy, restrained)
@@ -592,7 +708,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         {80, 79, 7, true,  // max_vel=80, max_pitch=G5(79), max_leap=7, prefer_stepwise
          InstrumentSkillLevel::Beginner, InstrumentSkillLevel::Beginner,
          InstrumentModelMode::ConstraintsOnly,
-         false, false, false},  // simple patterns for cute vibe
+         false, false, false,  // simple patterns for cute vibe
+         true},                // guitar_below_vocal
     },
 
     // 7: IdolCoolPop (cool, four-on-floor, uniform)
@@ -613,7 +730,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         {120, 108, 9, false,  // max_vel=120, max_leap=9 for controlled coolness
          InstrumentSkillLevel::Advanced, InstrumentSkillLevel::Advanced,
          InstrumentModelMode::Full,
-         true, false, false},  // enable_slap for funky grooves
+         true, false, false,  // enable_slap for funky grooves
+         true},               // guitar_below_vocal
     },
 
     // 8: IdolEmo (quiet→explosive, emotional, late peak)
@@ -634,7 +752,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         {127, 108, 12, false,  // default (emotional dynamics need full range)
          InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
          InstrumentModelMode::ConstraintsOnly,
-         false, false, false},
+         false, false, false,  // techniques
+         true},                // guitar_below_vocal
     },
 
     // 9: BehavioralLoop (addictive, highly repetitive hooks)

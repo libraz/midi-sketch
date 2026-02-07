@@ -55,6 +55,10 @@ struct BlueprintConstraints {
   bool enable_slap = false;       ///< Enable slap/pop technique for bass
   bool enable_tapping = false;    ///< Enable two-hand tapping
   bool enable_harmonics = false;  ///< Enable natural harmonics
+
+  /// Restrict guitar upper range to below vocal lowest pitch.
+  /// When true, guitar notes are capped at vocal_low - 2 semitones.
+  bool guitar_below_vocal = false;
 };
 
 /// @brief Section slot definition for blueprint section flow.
@@ -135,6 +139,35 @@ struct SectionSlot {
   /// @brief Tracks to remove near section end (bar = bars-1).
   /// Only used if custom_layer_schedule is true.
   TrackMask layer_remove_at_end = TrackMask::None;
+
+  // ========================================================================
+  // Blueprint-controlled generation hints
+  // ========================================================================
+
+  /// @brief Guitar style hint (0=auto, 1=Fingerpick, 2=Strum, 3=PowerChord,
+  ///                           4=PedalTone, 5=RhythmChord).
+  /// When > 0, overrides guitarStyleFromProgram() selection.
+  uint8_t guitar_style_hint = 0;
+
+  /// @brief Enable phrase tail rest (accompaniment sparseness at section end).
+  /// When true, accompaniment tracks thin out in the last 1-2 bars.
+  bool phrase_tail_rest = false;
+
+  /// @brief Maximum simultaneous moving voices (0=unlimited, 2-4 typical).
+  /// Counts pitch-class changes on strong beats only (passing tones excluded).
+  uint8_t max_moving_voices = 0;
+
+  /// @brief Motif motion hint (0=auto, otherwise cast to MotifMotion enum).
+  /// When > 0, overrides automatic motion selection.
+  uint8_t motif_motion_hint = 0;
+
+  /// @brief Guide tone (3rd/7th) priority rate on downbeats (0=disabled, 1-100%).
+  /// When > 0, vocal downbeat pitch selection favors 3rd/7th at this rate.
+  uint8_t guide_tone_rate = 0;
+
+  /// @brief Vocal range span limit in semitones (0=unlimited, e.g. 15=oct+m3).
+  /// When > 0, effective vocal range is clamped to this span.
+  uint8_t vocal_range_span = 0;
 };
 
 /// @brief Production blueprint defining how a song is generated.

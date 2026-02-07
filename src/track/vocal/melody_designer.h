@@ -87,6 +87,9 @@ class MelodyDesigner {
     uint8_t max_leap_semitones = 12;  ///< Maximum melodic leap in semitones (default: octave)
     bool prefer_stepwise = false;      ///< Prefer stepwise motion over leaps
 
+    // Guide tone priority for downbeat pitch selection
+    uint8_t guide_tone_rate = 0;  ///< Guide tone (3rd/7th) priority rate (0=disabled, 1-100%)
+
     // Anticipation rest mode for phrase breathing
     AnticipationRestMode anticipation_rest = AnticipationRestMode::Off;  ///< Rest before phrases
 

@@ -36,6 +36,7 @@ export const CONFIG_FIELDS: readonly ConfigField[] = [
   { js: 'vocalStyle', cpp: 'vocal_style', default: 0, type: 'number' },
   { js: 'driveFeel', cpp: 'drive_feel', default: 50, type: 'number' },
   { js: 'drumsEnabled', cpp: 'drums_enabled', default: true, type: 'boolean' },
+  { js: 'drumsEnabledExplicit', cpp: 'drums_enabled_explicit', default: false, type: 'boolean' },
   { js: 'arpeggioEnabled', cpp: 'arpeggio_enabled', default: false, type: 'boolean' },
   { js: 'guitarEnabled', cpp: 'guitar_enabled', default: false, type: 'boolean' },
   { js: 'skipVocal', cpp: 'skip_vocal', default: false, type: 'boolean' },
@@ -81,6 +82,8 @@ export const CONFIG_FIELDS: readonly ConfigField[] = [
   { js: 'motifMotion', cpp: 'motif_motion', default: 0xff, type: 'number' },
   { js: 'motifRegisterHigh', cpp: 'motif_register_high', default: 0, type: 'number' },
   { js: 'motifRhythmDensity', cpp: 'motif_rhythm_density', default: 0xff, type: 'number' },
+  // Explicit override flags
+  { js: 'chordExtProbExplicit', cpp: 'chord_ext_prob_explicit', default: false, type: 'boolean' },
 ] as const;
 
 // Arpeggio nested struct fields

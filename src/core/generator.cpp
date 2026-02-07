@@ -130,8 +130,9 @@ void Generator::initializeBlueprint(uint32_t seed) {
   // Store blueprint reference for constraint access during generation
   params_.blueprint_ref = blueprint_;
 
-  // Force drums on if blueprint requires it
-  if (blueprint_->drums_required) {
+  // Force drums on if blueprint requires it (unless user explicitly disabled)
+  if (blueprint_->drums_required &&
+      !(params_.drums_enabled_explicit && !params_.drums_enabled)) {
     params_.drums_enabled = true;
   }
 
@@ -153,17 +154,24 @@ void Generator::initializeBlueprint(uint32_t seed) {
 
 void Generator::configureRhythmSyncMotif() {
   if (params_.paradigm == GenerationParadigm::RhythmSync) {
-    // Select rhythm template based on effective BPM
+    // Select rhythm template based on effective BPM (always apply)
     uint16_t effective_bpm = params_.bpm > 0 ? params_.bpm : getMoodDefaultBpm(params_.mood);
     params_.motif.rhythm_template =
         motif_detail::selectRhythmSyncTemplate(effective_bpm, rng_);
     const auto& tmpl = motif_detail::getTemplateConfig(params_.motif.rhythm_template);
-    params_.motif.note_count = tmpl.note_count;
-    params_.motif.rhythm_density = tmpl.effective_density;
-    // HalfNoteSparse spans 2 bars; all other templates fit in 1 bar
-    params_.motif.length = (params_.motif.rhythm_template == MotifRhythmTemplate::HalfNoteSparse)
-                               ? MotifLength::Bars2
-                               : MotifLength::Bars1;
+    // Only override values that were not explicitly set by user
+    if (!params_.motif_note_count_explicit) {
+      params_.motif.note_count = tmpl.note_count;
+    }
+    if (!params_.motif_rhythm_density_explicit) {
+      params_.motif.rhythm_density = tmpl.effective_density;
+    }
+    if (!params_.motif_length_explicit) {
+      // HalfNoteSparse spans 2 bars; all other templates fit in 1 bar
+      params_.motif.length = (params_.motif.rhythm_template == MotifRhythmTemplate::HalfNoteSparse)
+                                 ? MotifLength::Bars2
+                                 : MotifLength::Bars1;
+    }
   }
 }
 
@@ -302,8 +310,8 @@ uint16_t Generator::initializeGenerationState() {
     bpm = getMoodDefaultBpm(params_.mood);
   }
 
-  // BPM validation for Orangestar style
-  if (params_.paradigm == GenerationParadigm::RhythmSync) {
+  // BPM validation for Orangestar style (only clamp auto-resolved BPM)
+  if (params_.paradigm == GenerationParadigm::RhythmSync && !params_.bpm_explicit) {
     constexpr uint16_t kOrangestarBpmMin = 160;
     constexpr uint16_t kOrangestarBpmMax = 175;
     uint16_t original_bpm = bpm;

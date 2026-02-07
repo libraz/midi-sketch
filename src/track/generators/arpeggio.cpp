@@ -458,7 +458,21 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
         Tick half_bar = bc.bar_start + (TICKS_PER_BAR / 2);
         float arp_swing_amount = sec_params.swing_amount;
 
+        // Phrase tail rest: determine gate modifier and cutoff for tail bars
+        bool in_phrase_tail = bc.section.phrase_tail_rest &&
+            isPhraseTail(bc.bar_index, bc.section.bars);
+        bool is_final_bar = in_phrase_tail &&
+            isLastBar(bc.bar_index, bc.section.bars);
+        // Last bar: stop generating at beat 4 (skip last beat)
+        Tick tail_cutoff = is_final_bar
+            ? (bc.bar_start + TICKS_PER_BEAT * 3)
+            : (bc.bar_start + TICKS_PER_BAR);
+        // Gate shortening: 50% for last bar, 75% for penultimate
+        float tail_gate_mult = is_final_bar ? 0.5f : (in_phrase_tail ? 0.75f : 1.0f);
+
         while (pos < bc.bar_start + TICKS_PER_BAR && pos < section_end) {
+          // Phrase tail rest: stop at cutoff tick
+          if (in_phrase_tail && pos >= tail_cutoff) break;
           const std::vector<uint8_t>& current_notes =
               (should_split && pos >= half_bar && !next_arp_notes.empty()) ? next_arp_notes
                                                                            : arp_notes;
@@ -484,8 +498,9 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
             uint8_t vocal_at_onset = harmony->getHighestPitchForTrackInRange(
                 note_pos, note_pos + section_gated_duration, TrackRole::Vocal);
             NoteOptions opts;
+            Tick effective_gate = static_cast<Tick>(section_gated_duration * tail_gate_mult);
             opts.start = note_pos;
-            opts.duration = section_gated_duration;
+            opts.duration = effective_gate;
             opts.desired_pitch = note;
             opts.velocity = velocity;
             opts.role = TrackRole::Arpeggio;

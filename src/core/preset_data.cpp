@@ -1104,7 +1104,7 @@ constexpr MoodProgramSet MOOD_PROGRAMS[24] = {
     // 15: Anthem - Strings for epic feel
     {0, 48, 33, 81, 81, 49, 29},
     // 16: Yoasobi - Piano chord + synth anime style (Ayase piano riff)
-    {81, 0, 38, 81, 81, 89, 0xFF},
+    {81, 0, 38, 81, 81, 89, 27},
     // 17: Synthwave - Synth lead, EP, synth bass
     {81, 4, 38, 81, 81, 89, 0xFF},
     // 18: FutureBass - Pad chord + synth EDM (supersaw pad)

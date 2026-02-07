@@ -64,6 +64,7 @@ set(TEST_SOURCES
   core/genre_expansion_test.cpp
   core/section_modifier_test.cpp
   core/coordinator_test.cpp
+  core/voice_limit_test.cpp
   core/note_creator_test.cpp
   core/chord_boundary_test.cpp
   core/select_best_candidate_test.cpp
@@ -111,6 +112,8 @@ set(TEST_SOURCES
   track/chord_collision_regression_test.cpp
   track/generator_iteration_snapshot_test.cpp
   core/harmony_interface_test.cpp
+  track/phrase_tail_rest_test.cpp
+  track/vocal_guide_tone_test.cpp
 )
 
 add_executable(midisketch_tests ${TEST_SOURCES})

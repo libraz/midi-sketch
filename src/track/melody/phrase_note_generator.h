@@ -72,6 +72,9 @@ struct PhraseNoteParams {
   // Template parameters
   const MelodyTemplate* tmpl;
 
+  // Guide tone priority
+  uint8_t guide_tone_rate = 0;  ///< Guide tone (3rd/7th) priority rate (0-100%)
+
   // Phrase timing
   Tick phrase_start;
   Tick phrase_end;

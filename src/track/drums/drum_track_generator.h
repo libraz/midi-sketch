@@ -94,8 +94,9 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
 
 /// @brief Create vocal sync callback for kick drum synchronization.
 /// @param vocal_analysis Vocal analysis data
+/// @param bpm Tempo in BPM (used to limit kick density at high tempos)
 /// @return Callback function for generateDrumsTrackImpl
-VocalSyncCallback createVocalSyncCallback(const VocalAnalysis& vocal_analysis);
+VocalSyncCallback createVocalSyncCallback(const VocalAnalysis& vocal_analysis, uint16_t bpm);
 
 /// @brief Create MelodyDriven callback for phrase-aware drum generation.
 ///

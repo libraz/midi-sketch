@@ -9,6 +9,7 @@
 #include <optional>
 
 #include "core/chord.h"
+#include "core/pitch_utils.h"
 #include "core/harmony_coordinator.h"
 #include "core/midi_track.h"
 #include "core/preset_data.h"
@@ -368,6 +369,9 @@ void Coordinator::generateAllTracks(Song& song) {
 
   // Apply cross-section coordination
   applyCrossSectionCoordination(song);
+
+  // Apply max_moving_voices constraint
+  applyVoiceLimit(song, arrangement_.sections());
 }
 
 void Coordinator::regenerateTrack(TrackRole role, Song& song) {
@@ -523,8 +527,8 @@ void Coordinator::buildArrangement() {
 }
 
 void Coordinator::validateBpm() {
-  // Validate BPM for paradigm
-  if (paradigm_ == GenerationParadigm::RhythmSync) {
+  // Validate BPM for paradigm (only clamp auto-resolved BPM)
+  if (paradigm_ == GenerationParadigm::RhythmSync && !params_.bpm_explicit) {
     constexpr uint16_t kMinBpm = 160;
     constexpr uint16_t kMaxBpm = 175;
     uint16_t original_bpm = bpm_;
@@ -571,6 +575,317 @@ void Coordinator::applyCrossSectionCoordination([[maybe_unused]] Song& song) {
   if (riff_policy_ != RiffPolicy::Free) {
     // TODO: Implement hook/riff sharing across sections
     // This will be implemented in Phase 3 when tracks are rewritten
+  }
+}
+
+// ============================================================================
+// Voice Limit Post-Process
+// ============================================================================
+
+namespace {
+
+/// @brief Priority order for voice limiting (highest to lowest).
+/// Tracks not in this list (Drums, SE) are excluded from voice limiting.
+constexpr TrackRole kVoiceLimitPriority[] = {
+    TrackRole::Vocal, TrackRole::Bass,    TrackRole::Chord,
+    TrackRole::Aux,   TrackRole::Motif,   TrackRole::Arpeggio,
+    TrackRole::Guitar,
+};
+constexpr size_t kVoiceLimitTrackCount = sizeof(kVoiceLimitPriority) / sizeof(kVoiceLimitPriority[0]);
+
+/// @brief Collect all pitch classes of notes starting within a bar at a given beat.
+///
+/// Finds notes whose start_tick falls within [beat_tick, beat_tick + TICKS_PER_BEAT).
+/// Returns sorted, deduplicated set of pitch classes.
+///
+/// @param notes Note list
+/// @param bar_start Start tick of the bar
+/// @param bar_end End tick of the bar
+/// @param beat_tick Absolute tick of the beat
+/// @return Sorted vector of unique pitch classes (0-11)
+std::vector<int> getPitchClassesOnBeat(const std::vector<NoteEvent>& notes,
+                                        Tick bar_start, Tick bar_end,
+                                        Tick beat_tick) {
+  std::vector<int> result;
+  Tick beat_end = beat_tick + TICKS_PER_BEAT;
+  // Clamp beat window to bar boundaries
+  if (beat_end > bar_end) beat_end = bar_end;
+
+  for (const auto& note : notes) {
+    // Note must start within the bar
+    if (note.start_tick < bar_start || note.start_tick >= bar_end) continue;
+    // Note must start within the beat window
+    if (note.start_tick >= beat_tick && note.start_tick < beat_end) {
+      int pitch_class = note.note % 12;
+      // Deduplicate
+      bool found = false;
+      for (int pc_val : result) {
+        if (pc_val == pitch_class) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        result.push_back(pitch_class);
+      }
+    }
+  }
+  std::sort(result.begin(), result.end());
+  return result;
+}
+
+/// @brief Check if a track is "moving" between two bars.
+///
+/// A track is moving if the set of pitch classes starting on any strong beat
+/// differs between the previous bar and the current bar.
+///
+/// @param notes Track notes
+/// @param prev_bar_start Start tick of the previous bar
+/// @param curr_bar_start Start tick of the current bar
+/// @return true if the track has different pitch classes on any strong beat
+bool isTrackMoving(const std::vector<NoteEvent>& notes, Tick prev_bar_start,
+                   Tick curr_bar_start) {
+  Tick prev_bar_end = prev_bar_start + TICKS_PER_BAR;
+  Tick curr_bar_end = curr_bar_start + TICKS_PER_BAR;
+
+  for (uint8_t beat = 0; beat < BEATS_PER_BAR; ++beat) {
+    Tick prev_beat = prev_bar_start + beat * TICKS_PER_BEAT;
+    Tick curr_beat = curr_bar_start + beat * TICKS_PER_BEAT;
+
+    auto prev_pcs = getPitchClassesOnBeat(notes, prev_bar_start, prev_bar_end, prev_beat);
+    auto curr_pcs = getPitchClassesOnBeat(notes, curr_bar_start, curr_bar_end, curr_beat);
+
+    // Both empty means no notes on this beat - not moving
+    if (prev_pcs.empty() && curr_pcs.empty()) continue;
+    // One has notes and the other doesn't - moving
+    if (prev_pcs.empty() != curr_pcs.empty()) return true;
+    // Different pitch class sets - moving
+    if (prev_pcs != curr_pcs) return true;
+  }
+  return false;
+}
+
+/// @brief Remove all notes in a bar range from a track.
+/// @param notes Mutable note list
+/// @param bar_start Start tick of the bar
+/// @param bar_end End tick of the bar
+void removeNotesInBar(std::vector<NoteEvent>& notes, Tick bar_start, Tick bar_end) {
+  notes.erase(
+      std::remove_if(notes.begin(), notes.end(),
+                     [bar_start, bar_end](const NoteEvent& note) {
+                       return note.start_tick >= bar_start && note.start_tick < bar_end;
+                     }),
+      notes.end());
+}
+
+/// @brief Copy notes from one bar to another (shift by TICKS_PER_BAR).
+/// @param notes Mutable note list (destination - notes will be appended)
+/// @param all_notes All notes to scan for source bar
+/// @param src_bar_start Source bar start tick
+/// @param src_bar_end Source bar end tick
+/// @param offset Tick offset to apply (dst_start - src_start)
+void copyNotesFromBar(std::vector<NoteEvent>& notes,
+                      const std::vector<NoteEvent>& all_notes, Tick src_bar_start,
+                      Tick src_bar_end, Tick offset) {
+  for (const auto& note : all_notes) {
+    if (note.start_tick >= src_bar_start && note.start_tick < src_bar_end) {
+      NoteEvent copied = note;
+      copied.start_tick += offset;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      copied.prov_lookup_tick += offset;
+#endif
+      notes.push_back(copied);
+    }
+  }
+}
+
+/// @brief Check if a pitch is consonant with all other tracks' notes in the song.
+///
+/// Used after voice-limit re-quantization to avoid creating new dissonances.
+/// Uses the same interval threshold (24 semitones) as the clash analysis tests.
+///
+/// @param song The Song containing all tracks
+/// @param pitch Pitch to check
+/// @param start Start tick of the note
+/// @param duration Duration of the note
+/// @param exclude_role Track to exclude from checking
+/// @param chord_degree Chord degree at this tick (for context-dependent dissonance)
+/// @return true if the pitch is consonant with all other tracks
+bool isConsonantWithSongTracks(const Song& song, uint8_t pitch, Tick start, Tick duration,
+                               TrackRole exclude_role, int8_t chord_degree) {
+  constexpr int kMaxClashSeparation = 24;
+  Tick end = start + duration;
+
+  for (size_t t = 0; t < kTrackCount; ++t) {
+    auto role = static_cast<TrackRole>(t);
+    if (role == exclude_role) continue;
+    if (role == TrackRole::Drums || role == TrackRole::SE) continue;
+
+    const auto& notes = song.track(role).notes();
+    for (const auto& note : notes) {
+      Tick note_end = note.start_tick + note.duration;
+      if (note.start_tick >= end) continue;
+      if (note_end <= start) continue;
+
+      int actual_semitones =
+          std::abs(static_cast<int>(pitch) - static_cast<int>(note.note));
+      if (actual_semitones >= kMaxClashSeparation) continue;
+
+      if (isDissonantActualInterval(actual_semitones, chord_degree)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/// @brief Find a consonant chord tone for a voice-limited note.
+///
+/// Tries all chord tones in nearby octaves, sorted by distance from the
+/// original pitch. Returns the closest consonant chord tone, or the
+/// original snapped pitch if none is consonant.
+///
+/// @param harmony Harmony context for chord tone lookup
+/// @param song The Song containing all tracks
+/// @param snapped Already-snapped chord tone (fallback)
+/// @param original Original pitch before snapping
+/// @param start Start tick of the note
+/// @param duration Duration of the note
+/// @param role Track role of this note
+/// @return Consonant chord tone pitch
+uint8_t findConsonantChordTone(IHarmonyCoordinator& harmony, const Song& song,
+                               uint8_t snapped, uint8_t original, Tick start,
+                               Tick duration, TrackRole role) {
+  int8_t chord_degree = harmony.getChordDegreeAt(start);
+  auto chord_tones = harmony.getChordTonesAt(start);
+  int orig_octave = original / 12;
+
+  // Collect all candidate pitches (chord tones in nearby octaves)
+  struct Candidate {
+    int distance;
+    uint8_t pitch;
+  };
+  std::vector<Candidate> candidates;
+  for (int ct_pc : chord_tones) {
+    for (int oct = orig_octave - 1; oct <= orig_octave + 1; ++oct) {
+      int p = oct * 12 + ct_pc;
+      if (p < 0 || p > 127) continue;
+      int dist = std::abs(p - static_cast<int>(original));
+      candidates.push_back({dist, static_cast<uint8_t>(p)});
+    }
+  }
+
+  // Sort by distance from original pitch
+  std::sort(candidates.begin(), candidates.end(),
+            [](const Candidate& a, const Candidate& b) { return a.distance < b.distance; });
+
+  for (const auto& c : candidates) {
+    if (isConsonantWithSongTracks(song, c.pitch, start, duration, role, chord_degree)) {
+      return c.pitch;
+    }
+  }
+
+  // No consonant chord tone found; keep snapped pitch
+  return snapped;
+}
+
+}  // namespace
+
+void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sections) {
+  // Track which (track, bar_start, bar_end) ranges were frozen so we can
+  // re-quantize them in a second pass without disturbing the freeze logic.
+  struct FrozenBar {
+    TrackRole role;
+    Tick bar_start;
+    Tick bar_end;
+  };
+  std::vector<FrozenBar> frozen_bars;
+
+  // Pass 1: Determine freeze decisions and copy notes from previous bars.
+  // Re-quantization is deferred so that isTrackMoving() comparisons in
+  // subsequent bars see the original (un-quantized) copied pitches.
+  for (const auto& section : sections) {
+    if (section.max_moving_voices == 0) continue;
+    if (section.bars <= 1) continue;
+
+    Tick section_start = section.start_tick;
+    uint8_t max_voices = section.max_moving_voices;
+
+    // Process each bar after the first
+    for (uint8_t bar_idx = 1; bar_idx < section.bars; ++bar_idx) {
+      Tick prev_bar_start = section_start + (bar_idx - 1) * TICKS_PER_BAR;
+      Tick curr_bar_start = section_start + bar_idx * TICKS_PER_BAR;
+
+      // Count moving tracks and collect them in priority order (lowest first)
+      std::vector<TrackRole> moving_tracks;
+      for (size_t pri = 0; pri < kVoiceLimitTrackCount; ++pri) {
+        TrackRole role = kVoiceLimitPriority[pri];
+        const auto& notes = song.track(role).notes();
+        if (isTrackMoving(notes, prev_bar_start, curr_bar_start)) {
+          moving_tracks.push_back(role);
+        }
+      }
+
+      // If within limit, nothing to do
+      if (moving_tracks.size() <= max_voices) continue;
+
+      // Need to freeze (moving_count - max_voices) tracks.
+      // Freeze lowest-priority tracks first (they appear last in moving_tracks
+      // since kVoiceLimitPriority is ordered highest-first).
+      size_t freeze_count = moving_tracks.size() - max_voices;
+      for (size_t idx = 0; idx < freeze_count; ++idx) {
+        // Freeze from the end (lowest priority)
+        TrackRole role = moving_tracks[moving_tracks.size() - 1 - idx];
+        auto& notes = song.track(role).notes();
+
+        // Save previous bar notes before removing current bar
+        std::vector<NoteEvent> prev_bar_notes;
+        Tick prev_bar_end = prev_bar_start + TICKS_PER_BAR;
+        for (const auto& note : notes) {
+          if (note.start_tick >= prev_bar_start && note.start_tick < prev_bar_end) {
+            prev_bar_notes.push_back(note);
+          }
+        }
+
+        // Remove current bar notes
+        Tick curr_bar_end = curr_bar_start + TICKS_PER_BAR;
+        removeNotesInBar(notes, curr_bar_start, curr_bar_end);
+
+        // Copy previous bar's notes shifted by TICKS_PER_BAR
+        copyNotesFromBar(notes, prev_bar_notes, prev_bar_start, prev_bar_end,
+                         TICKS_PER_BAR);
+
+        frozen_bars.push_back({role, curr_bar_start, curr_bar_end});
+      }
+    }
+  }
+
+  // Pass 2: Re-quantize frozen notes to the current bar's chord tones.
+  // Without this, frozen notes from a previous chord would cause dissonance
+  // when the chord changes (e.g., I→V with stale C-E-G notes).
+  // Additionally, check that the snapped pitch doesn't clash with other tracks'
+  // notes. If it does, try alternative chord tones sorted by distance.
+  if (!frozen_bars.empty()) {
+    IHarmonyCoordinator& harmony = getActiveHarmony();
+    for (const auto& fb : frozen_bars) {
+      auto& notes = song.track(fb.role).notes();
+      for (auto& note : notes) {
+        if (note.start_tick >= fb.bar_start && note.start_tick < fb.bar_end) {
+          int snapped = harmony.snapToNearestChordTone(
+              static_cast<int>(note.note), note.start_tick);
+          uint8_t candidate = static_cast<uint8_t>(std::clamp(snapped, 0, 127));
+
+          int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
+          if (!isConsonantWithSongTracks(song, candidate, note.start_tick,
+                                        note.duration, fb.role, chord_degree)) {
+            candidate = findConsonantChordTone(harmony, song, candidate, note.note,
+                                              note.start_tick, note.duration, fb.role);
+          }
+
+          note.note = candidate;
+        }
+      }
+    }
   }
 }
 

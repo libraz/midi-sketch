@@ -223,7 +223,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
   drum_params.humanize_timing = params.humanize_timing;
 
   drums::generateDrumsTrackImpl(track, song, drum_params, rng,
-                                drums::createVocalSyncCallback(vocal_analysis));
+                                drums::createVocalSyncCallback(vocal_analysis, params.bpm));
 }
 
 void generateDrumsTrackMelodyDriven(MidiTrack& track, const Song& song, const GeneratorParams& params,

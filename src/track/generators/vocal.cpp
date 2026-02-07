@@ -1248,6 +1248,14 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
                    static_cast<int>(effective_vocal_low) + 6,
                    static_cast<int>(effective_vocal_high) + climax_extension));
 
+    // Apply vocal_range_span constraint
+    if (section.vocal_range_span > 0) {
+      int span = section.vocal_range_span;
+      if (static_cast<int>(section_vocal_high) - static_cast<int>(section_vocal_low) > span) {
+        section_vocal_high = static_cast<uint8_t>(section_vocal_low + span);
+      }
+    }
+
     // Recalculate tessitura for section
     TessituraRange section_tessitura = calculateTessitura(section_vocal_low, section_vocal_high);
 
@@ -1354,6 +1362,9 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
       if (params.blueprint_ref != nullptr) {
         sctx.prefer_stepwise = params.blueprint_ref->constraints.prefer_stepwise;
       }
+
+      // Wire guide tone rate from section
+      sctx.guide_tone_rate = section.guide_tone_rate;
 
       // Set anticipation rest mode based on groove feel and drive
       // Driving/Syncopated grooves benefit from anticipation rests for "tame" effect

@@ -137,8 +137,9 @@ TEST_F(ChordCollisionRegressionTest, HarmonyContextReportsCollisionsConsistently
 
 // Test that total clashes across all track pairs stay within bounds
 TEST_F(ChordCollisionRegressionTest, TotalClashCountBelowThreshold) {
-  // Generous threshold: this is a safety net, not a strict limit
-  constexpr size_t kMaxTotalClashes = 80;
+  // DO NOT raise this threshold. 0 is the only correct value.
+  // Any clash is a bug in collision avoidance and must be root-caused and fixed.
+  constexpr size_t kMaxTotalClashes = 0;
 
   for (uint8_t blueprint : kAllBlueprints) {
     // Use just one seed per blueprint for total clash analysis (it's expensive)

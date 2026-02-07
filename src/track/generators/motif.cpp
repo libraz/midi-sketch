@@ -94,6 +94,10 @@ constexpr MotifRhythmTemplateConfig kRhythmTemplates[] = {
     {{0.0f, 2.0f, 4.0f, 6.0f, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
      {1.0f, 0.8f, 0.9f, 0.7f, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
      4, MotifRhythmDensity::Sparse},
+    // StraightSixteenth: 16 notes, straight 16ths (1 bar)
+    {{0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f, 2.75f, 3.0f, 3.25f, 3.5f, 3.75f},
+     {1.0f, 0.5f, 0.7f, 0.5f, 1.0f, 0.5f, 0.7f, 0.5f, 1.0f, 0.5f, 0.7f, 0.5f, 1.0f, 0.5f, 0.7f, 0.5f},
+     16, MotifRhythmDensity::Driving},
 };
 
 static_assert(sizeof(kRhythmTemplates) / sizeof(kRhythmTemplates[0]) ==
@@ -114,22 +118,22 @@ const MotifRhythmTemplateConfig& getTemplateConfig(MotifRhythmTemplate tmpl) {
 MotifRhythmTemplate selectRhythmSyncTemplate(uint16_t bpm, std::mt19937& rng) {
   // Probability weights for each template by BPM band.
   // Order: EighthDrive, GallopDrive, MixedGrooveA, MixedGrooveB, MixedGrooveC,
-  //        PushGroove, EighthPickup, HalfNoteSparse
-  constexpr int kTemplateCount = 8;
+  //        PushGroove, EighthPickup, HalfNoteSparse, StraightSixteenth
+  constexpr int kTemplateCount = 9;
   struct TemplateWeights {
     int weights[kTemplateCount];
   };
 
   TemplateWeights w;
   if (bpm >= 160) {
-    // Fast (Orangestar core): HalfNoteSparse ~25% for spacious contrast
-    w = {{22, 14, 9, 8, 8, 6, 4, 25}};
+    // Fast (Orangestar core): StraightSixteenth adds driving energy
+    w = {{22, 18, 7, 6, 6, 10, 10, 8, 13}};
   } else if (bpm >= 130) {
-    // Medium: half-note works well at moderate tempos
-    w = {{20, 7, 13, 10, 9, 6, 5, 25}};
+    // Medium: StraightSixteenth used moderately
+    w = {{20, 10, 12, 10, 9, 8, 7, 16, 8}};
   } else {
-    // Slow: sparse patterns shine at low BPM
-    w = {{12, 4, 20, 15, 15, 8, 4, 22}};
+    // Slow: sparse patterns shine at low BPM, StraightSixteenth rare
+    w = {{12, 4, 20, 15, 15, 8, 4, 19, 3}};
   }
 
   int total = 0;
@@ -344,6 +348,19 @@ std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, s
                                        int max_leap_degrees = 7, bool prefer_stepwise = false) {
   std::vector<int> degrees;
 
+  // Ostinato: static harmonic foundation - root with 5th/octave variation
+  if (motion == MotifMotion::Ostinato) {
+    for (uint8_t idx = 0; idx < note_count; ++idx) {
+      if (idx % 2 == 0) {
+        degrees.push_back(0);  // Root at base octave
+      } else {
+        // Odd notes: 5th (degree 4) or octave (degree 7)
+        degrees.push_back(rng_util::rollRange(rng, 0, 1) ? 4 : 7);
+      }
+    }
+    return degrees;
+  }
+
   auto constrainedStep = [max_leap_degrees, prefer_stepwise](int step) {
     int limit = prefer_stepwise ? std::min(2, max_leap_degrees) : max_leap_degrees;
     return std::clamp(step, -limit, limit);
@@ -386,6 +403,8 @@ std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, s
         step = rng_util::rollRange(rng, 0, 1) ? magnitude : -magnitude;
         break;
       }
+      case MotifMotion::Ostinato:
+        break;  // Handled by early return above
     }
     step = constrainedStep(step);
     current += step;
@@ -429,6 +448,8 @@ std::vector<int> generatePitchSequence(uint8_t note_count, MotifMotion motion, s
         step = (rng_util::rollRange(rng, 0, 2) < 2) ? -magnitude : magnitude;
         break;
       }
+      case MotifMotion::Ostinato:
+        break;  // Handled by early return above
     }
     step = constrainedStep(step);
     current += step;
@@ -907,6 +928,15 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
     bool add_octave =
         is_chorus && motif_params.octave_layering_chorus && role_meta.allow_octave_layer;
 
+    // motif_motion_hint override: generate section-specific pattern with hinted motion
+    std::vector<NoteEvent> hint_pattern;
+    if (section.motif_motion_hint > 0) {
+      GeneratorParams hint_params = params;
+      hint_params.motif.motion =
+          static_cast<MotifMotion>(section.motif_motion_hint - 1);
+      hint_pattern = generateMotifPattern(hint_params, rng);
+    }
+
     // L2: Determine which pattern to use based on RiffPolicy
     std::vector<NoteEvent>* current_pattern = &pattern;
     std::vector<NoteEvent> section_pattern;
@@ -941,6 +971,11 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
       riff_cache.cached = true;
     }
 
+    // Override pattern with motif_motion_hint if set
+    if (!hint_pattern.empty()) {
+      current_pattern = &hint_pattern;
+    }
+
     // Repeat motif across the section
     for (Tick pos = section.start_tick; pos < section_end; pos += motif_length) {
       std::map<uint8_t, size_t> bar_note_count;
@@ -950,6 +985,20 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
         if (absolute_tick >= section_end) continue;
 
         uint8_t current_bar = static_cast<uint8_t>((absolute_tick - pos) / TICKS_PER_BAR);
+
+        // Phrase tail rest: skip ~50% of notes in the last bar, reduce in penultimate
+        if (section.phrase_tail_rest) {
+          uint8_t section_bar = static_cast<uint8_t>(
+              (absolute_tick - section.start_tick) / TICKS_PER_BAR);
+          if (isPhraseTail(section_bar, section.bars)) {
+            if (isLastBar(section_bar, section.bars)) {
+              // Last bar: skip notes in the second half of the bar
+              Tick bar_start = section.start_tick + section_bar * TICKS_PER_BAR;
+              Tick bar_half = bar_start + TICKS_PER_BAR / 2;
+              if (absolute_tick >= bar_half) continue;
+            }
+          }
+        }
 
         // Apply density_percent to skip notes
         uint8_t effective_density = section.getModifiedDensity(section.density_percent);

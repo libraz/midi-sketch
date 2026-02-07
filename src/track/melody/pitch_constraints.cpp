@@ -105,6 +105,44 @@ int enforceDownbeatChordTone(int pitch, Tick tick, int8_t chord_degree, int prev
                                                vocal_low, vocal_high, 0);
 }
 
+int enforceGuideToneOnDownbeat(int pitch, Tick tick, int8_t chord_degree,
+                                uint8_t vocal_low, uint8_t vocal_high,
+                                uint8_t guide_tone_rate, std::mt19937& rng) {
+  if (guide_tone_rate == 0) return pitch;
+  if (!isStrongBeat(tick)) return pitch;
+
+  // Roll probability
+  std::uniform_int_distribution<int> prob_dist(1, 100);
+  if (prob_dist(rng) > guide_tone_rate) return pitch;
+
+  // Get guide tones (3rd and 7th) for this chord
+  std::vector<int> guide_pcs = getGuideTonePitchClasses(chord_degree);
+  if (guide_pcs.empty()) return pitch;
+
+  // Check if already a guide tone
+  int pitch_pc = pitch % 12;
+  for (int gpc : guide_pcs) {
+    if (pitch_pc == gpc) return pitch;
+  }
+
+  // Find nearest guide tone in range
+  int best_pitch = -1;
+  int best_dist = 127;
+  for (int gpc : guide_pcs) {
+    for (int oct = 4; oct <= 6; ++oct) {
+      int candidate = oct * 12 + gpc;
+      if (candidate < vocal_low || candidate > vocal_high) continue;
+      int dist = std::abs(candidate - pitch);
+      if (dist < best_dist) {
+        best_dist = dist;
+        best_pitch = candidate;
+      }
+    }
+  }
+
+  return (best_pitch >= 0) ? best_pitch : pitch;
+}
+
 int enforceAvoidNoteConstraint(int pitch, int8_t chord_degree,
                                 uint8_t vocal_low, uint8_t vocal_high) {
   int bass_root_pc = getBassRootPitchClass(chord_degree);

@@ -27,6 +27,8 @@ export interface SongConfig {
   vocalAttitude: number;
   /** Enable drums */
   drumsEnabled: boolean;
+  /** True if drumsEnabled was explicitly set by user */
+  drumsEnabledExplicit: boolean;
   /** Blueprint ID: 0=Traditional, 1=Orangestar, 2=YOASOBI, 3=Ballad, 255=random */
   blueprintId: number;
 
@@ -183,6 +185,10 @@ export interface SongConfig {
   motifRegisterHigh: number;
   /** Motif rhythm density: 0xFF=preset, 0-2=override (0=Sparse..2=Driving) */
   motifRhythmDensity: number;
+
+  // Explicit override flags
+  /** True if chord extension probabilities were explicitly set by user */
+  chordExtProbExplicit: boolean;
 }
 
 /**

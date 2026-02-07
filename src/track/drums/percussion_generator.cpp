@@ -71,7 +71,7 @@ PercussionConfig getPercussionConfig(Mood mood, SectionType section) {
 
 void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start,
                                   const PercussionConfig& config, DrumRole drum_role,
-                                  float density_mult, std::mt19937& rng) {
+                                  float density_mult, std::mt19937& rng, uint16_t bpm) {
   if (drum_role == DrumRole::Minimal || drum_role == DrumRole::FXOnly) {
     return;
   }
@@ -89,14 +89,29 @@ void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start,
   }
 
   // Shaker: 16th note pattern with dynamic accents
+  // At high BPM (>= 150), switch to 8th note pattern for playability
   if (config.shaker) {
-    constexpr float SHAKER_16TH_VEL[4] = {0.75f, 0.45f, 0.60f, 0.45f};
-    for (int beat = 0; beat < 4; ++beat) {
-      for (int sub = 0; sub < 4; ++sub) {
-        Tick sub_tick = bar_start + beat * TICKS_PER_BEAT + sub * SIXTEENTH;
-        float raw_vel = 80.0f * SHAKER_16TH_VEL[sub] * density_mult * vel_var(rng);
-        uint8_t shk_vel = static_cast<uint8_t>(std::clamp(raw_vel, 25.0f, 85.0f));
-        addDrumNote(track, sub_tick, SIXTEENTH, SHAKER, shk_vel);
+    constexpr uint16_t kShakerBPMThreshold = 150;
+    if (bpm >= kShakerBPMThreshold) {
+      // 8th note shaker pattern: 2 subdivisions per beat
+      constexpr float SHAKER_8TH_VEL[2] = {0.75f, 0.55f};
+      for (int beat = 0; beat < 4; ++beat) {
+        for (int sub = 0; sub < 2; ++sub) {
+          Tick sub_tick = bar_start + beat * TICKS_PER_BEAT + sub * TICK_EIGHTH;
+          float raw_vel = 80.0f * SHAKER_8TH_VEL[sub] * density_mult * vel_var(rng);
+          uint8_t shk_vel = static_cast<uint8_t>(std::clamp(raw_vel, 25.0f, 85.0f));
+          addDrumNote(track, sub_tick, TICK_EIGHTH, SHAKER, shk_vel);
+        }
+      }
+    } else {
+      constexpr float SHAKER_16TH_VEL[4] = {0.75f, 0.45f, 0.60f, 0.45f};
+      for (int beat = 0; beat < 4; ++beat) {
+        for (int sub = 0; sub < 4; ++sub) {
+          Tick sub_tick = bar_start + beat * TICKS_PER_BEAT + sub * SIXTEENTH;
+          float raw_vel = 80.0f * SHAKER_16TH_VEL[sub] * density_mult * vel_var(rng);
+          uint8_t shk_vel = static_cast<uint8_t>(std::clamp(raw_vel, 25.0f, 85.0f));
+          addDrumNote(track, sub_tick, SIXTEENTH, SHAKER, shk_vel);
+        }
       }
     }
   }

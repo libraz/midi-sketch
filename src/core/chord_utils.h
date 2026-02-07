@@ -39,6 +39,20 @@ ChordTones getChordTones(int8_t degree);
 std::vector<int> getChordTonePitchClasses(int8_t degree);
 
 // ============================================================================
+// Guide Tone Functions
+// ============================================================================
+
+/// @brief Get guide tone pitch classes (3rd and 7th) for a chord degree.
+///
+/// Guide tones define harmonic quality and are priorities for melodic voice leading.
+/// The 3rd determines major/minor quality, the 7th adds tension.
+/// For triads without an explicit 7th, the diatonic 7th is inferred.
+///
+/// @param degree Scale degree (0-based: 0=I, 1=ii, 2=iii, 3=IV, 4=V, 5=vi, 6=vii)
+/// @return Vector of pitch classes (mod 12) for 3rd and 7th of the chord
+std::vector<int> getGuideTonePitchClasses(int8_t degree);
+
+// ============================================================================
 // Scale Tone Functions
 // ============================================================================
 

@@ -774,6 +774,14 @@ std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blue
     section.harmonic_rhythm = slot.harmonic_rhythm;
     section.drop_style = slot.drop_style;
 
+    // Transfer blueprint-controlled generation hints
+    section.guitar_style_hint = slot.guitar_style_hint;
+    section.phrase_tail_rest = slot.phrase_tail_rest;
+    section.max_moving_voices = slot.max_moving_voices;
+    section.motif_motion_hint = slot.motif_motion_hint;
+    section.guide_tone_rate = slot.guide_tone_rate;
+    section.vocal_range_span = slot.vocal_range_span;
+
     // Convert PeakLevel to fill_before for backward compatibility
     // (fill_before is true when peak_level is not None)
     section.fill_before = (slot.peak_level != PeakLevel::None);

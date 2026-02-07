@@ -212,6 +212,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   params.chord_id = config.chord_progression_id;
   params.key = config.key;
   params.drums_enabled = config.drums_enabled;
+  params.drums_enabled_explicit = config.drums_enabled_explicit;
   params.vocal_low = config.vocal_low;
   params.vocal_high = config.vocal_high;
   params.seed = config.seed;
@@ -220,6 +221,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
 
   // Use config BPM if specified, otherwise use style preset default
   params.bpm = (config.bpm != 0) ? config.bpm : preset.tempo_default;
+  params.bpm_explicit = (config.bpm != 0);
 
   // Map style preset to mood and composition style using lookup table
   if (config.style_preset_id < kStylePresetCount) {
@@ -249,21 +251,23 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
 
   // Apply mood-based chord extension probability adjustments.
   // NOTE: enable_* flags are NOT overridden here - they come from the user/preset config.
-  // Mood only adjusts probabilities and other style parameters when extensions are enabled.
-  if (params.mood == Mood::CityPop) {
-    params.chord_extension.seventh_probability = 0.40f;
-    params.chord_extension.ninth_probability = 0.25f;
-  } else if (params.mood == Mood::RnBNeoSoul) {
-    params.chord_extension.seventh_probability = 0.50f;
-    params.chord_extension.ninth_probability = 0.35f;
-  } else if (params.mood == Mood::Ballad || params.mood == Mood::Sentimental) {
-    params.chord_extension.seventh_probability = 0.30f;
-    params.chord_extension.sus_probability = 0.25f;
-  } else if (params.mood == Mood::Nostalgic || params.mood == Mood::Chill) {
-    params.chord_extension.seventh_probability = 0.25f;
-  } else if (params.mood == Mood::Lofi) {
-    params.chord_extension.seventh_probability = 0.40f;
-    params.chord_extension.ninth_probability = 0.30f;
+  // Mood only adjusts probabilities when extensions are enabled AND user didn't explicitly set them.
+  if (!config.chord_ext_prob_explicit) {
+    if (params.mood == Mood::CityPop) {
+      params.chord_extension.seventh_probability = 0.40f;
+      params.chord_extension.ninth_probability = 0.25f;
+    } else if (params.mood == Mood::RnBNeoSoul) {
+      params.chord_extension.seventh_probability = 0.50f;
+      params.chord_extension.ninth_probability = 0.35f;
+    } else if (params.mood == Mood::Ballad || params.mood == Mood::Sentimental) {
+      params.chord_extension.seventh_probability = 0.30f;
+      params.chord_extension.sus_probability = 0.25f;
+    } else if (params.mood == Mood::Nostalgic || params.mood == Mood::Chill) {
+      params.chord_extension.seventh_probability = 0.25f;
+    } else if (params.mood == Mood::Lofi) {
+      params.chord_extension.seventh_probability = 0.40f;
+      params.chord_extension.ninth_probability = 0.30f;
+    }
   }
 
   // Composition style (override preset if explicitly set)
@@ -363,9 +367,11 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
       case 4: params.motif.length = MotifLength::Bars4; break;
       default: break;  // Invalid value, keep preset default
     }
+    params.motif_length_explicit = true;
   }
   if (config.motif_note_count != 0) {
     params.motif.note_count = std::clamp(config.motif_note_count, uint8_t(3), uint8_t(8));
+    params.motif_note_count_explicit = true;
   }
   if (config.motif_motion != 0xFF) {
     params.motif.motion = static_cast<MotifMotion>(
@@ -377,6 +383,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   if (config.motif_rhythm_density != 0xFF) {
     params.motif.rhythm_density = static_cast<MotifRhythmDensity>(
         std::min(config.motif_rhythm_density, uint8_t(2)));
+    params.motif_rhythm_density_explicit = true;
   }
 
   // Melody parameter overrides (applied AFTER applyMelodicComplexity and applyVocalStylePreset)

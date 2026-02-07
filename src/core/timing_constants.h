@@ -41,6 +41,22 @@ inline double ticksToSeconds(Tick ticks, double bpm) {
   return static_cast<double>(ticks) / TICKS_PER_BEAT / bpm * 60.0;
 }
 
+/// @brief Check if current bar is in the phrase tail region.
+/// Only meaningful when section.phrase_tail_rest == true.
+/// @param bar_index 0-based bar index within section
+/// @param section_bars Total bars in section
+/// @return true if bar is in the tail region
+inline bool isPhraseTail(uint8_t bar_index, uint8_t section_bars) {
+  if (section_bars >= 4) return bar_index >= section_bars - 2;
+  if (section_bars == 3) return bar_index >= section_bars - 1;
+  return false;
+}
+
+/// @brief Check if this is the very last bar of the section.
+inline bool isLastBar(uint8_t bar_index, uint8_t section_bars) {
+  return bar_index == section_bars - 1;
+}
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_TIMING_CONSTANTS_H_

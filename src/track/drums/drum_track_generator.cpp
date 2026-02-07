@@ -429,7 +429,8 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
       if (!ctx.is_background_motif) {
         PercussionConfig perc_config = getPercussionConfig(params.mood, section.type);
         generateAuxPercussionForBar(track, bar_start, perc_config,
-                                    section.getEffectiveDrumRole(), ctx.density_mult, rng);
+                                    section.getEffectiveDrumRole(), ctx.density_mult, rng,
+                                    params.bpm);
       }
     }
   }
@@ -446,8 +447,8 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
   }
 }
 
-VocalSyncCallback createVocalSyncCallback(const VocalAnalysis& vocal_analysis) {
-  return [&vocal_analysis](MidiTrack& track, Tick bar_start, Tick bar_end,
+VocalSyncCallback createVocalSyncCallback(const VocalAnalysis& vocal_analysis, uint16_t bpm) {
+  return [&vocal_analysis, bpm](MidiTrack& track, Tick bar_start, Tick bar_end,
                            const Section& section, uint8_t velocity, std::mt19937& rng) -> bool {
     // Get DrumRole-based kick probability
     float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
@@ -463,6 +464,31 @@ VocalSyncCallback createVocalSyncCallback(const VocalAnalysis& vocal_analysis) {
 
     if (onsets.empty()) {
       return false;  // No vocal in this bar, use normal pattern
+    }
+
+    // At high BPM, limit kicks per bar to avoid excessive density.
+    // Keep onsets closest to strong beats (1, 3, 2 priority).
+    constexpr size_t kMaxKicksHighBPM = 3;
+    if (bpm >= HH_16TH_BPM_THRESHOLD && onsets.size() > kMaxKicksHighBPM) {
+      // Score each onset by distance to strong beats (beat 0, 2, 1 priority)
+      auto beatDistance = [bar_start](Tick onset) -> Tick {
+        Tick relative = onset - bar_start;
+        // Distance to nearest of beats 0, 2, 1 (in priority order)
+        Tick beat_positions[] = {0, TICKS_PER_BEAT * 2, TICKS_PER_BEAT};
+        Tick min_dist = TICKS_PER_BAR;
+        for (Tick bp : beat_positions) {
+          Tick dist = (relative >= bp) ? (relative - bp) : (bp - relative);
+          if (dist < min_dist) min_dist = dist;
+        }
+        return min_dist;
+      };
+
+      // Sort by distance to strong beats (closest first)
+      std::sort(onsets.begin(), onsets.end(),
+                [&beatDistance](Tick a, Tick b) { return beatDistance(a) < beatDistance(b); });
+      onsets.resize(kMaxKicksHighBPM);
+      // Re-sort chronologically for playback order
+      std::sort(onsets.begin(), onsets.end());
     }
 
     std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);

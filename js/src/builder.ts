@@ -402,6 +402,14 @@ export class SongConfigBuilder {
     if (opts.ninthProb !== undefined) {
       this.setField('chordExt9thProb', opts.ninthProb, 'chord');
     }
+    // Mark explicit if any probability was set (prevents mood override)
+    if (
+      opts.susProb !== undefined ||
+      opts.seventhProb !== undefined ||
+      opts.ninthProb !== undefined
+    ) {
+      this.config.chordExtProbExplicit = true;
+    }
     return this;
   }
 
@@ -728,8 +736,8 @@ export class SongConfigBuilder {
   /**
    * Set BPM with cascade detection
    *
-   * For RhythmSync blueprints, BPM will be clamped to 160-175 range
-   * unless explicitly set.
+   * For RhythmSync blueprints, warns if BPM is outside 160-175 range.
+   * C++ respects explicit BPM and skips clamping.
    *
    * @param bpm BPM value (0 = use style default)
    */
@@ -737,30 +745,19 @@ export class SongConfigBuilder {
     const tracker = new ChangeTracker();
 
     const oldBpm = this.config.bpm;
-    let newBpm = bpm;
 
-    // Check if we're using a RhythmSync blueprint
-    if (this.config.blueprintId !== 255) {
+    // Check if we're using a RhythmSync blueprint and warn (but don't clamp)
+    // C++ will respect explicit BPM via bpm_explicit flag
+    if (this.config.blueprintId !== 255 && bpm > 0) {
       const paradigm = getBlueprintParadigm(this.config.blueprintId);
-      if (paradigm === GenerationParadigm.RhythmSync && bpm > 0) {
-        if (bpm < 160 || bpm > 175) {
-          newBpm = Math.max(160, Math.min(175, bpm));
-          tracker.addWarning(
-            `BPM clamped to ${newBpm} for RhythmSync blueprint (original: ${bpm})`,
-          );
-        }
+      if (paradigm === GenerationParadigm.RhythmSync && (bpm < 160 || bpm > 175)) {
+        tracker.addWarning(`RhythmSync blueprint works best with BPM 160-175 (set: ${bpm})`);
       }
     }
 
-    this.config.bpm = newBpm;
+    this.config.bpm = bpm;
     this.explicitFields.add('bpm');
-    tracker.addChange(
-      'bpm',
-      'bpm',
-      oldBpm,
-      newBpm,
-      newBpm !== bpm ? 'Clamped for RhythmSync blueprint' : 'User set BPM',
-    );
+    tracker.addChange('bpm', 'bpm', oldBpm, bpm, 'User set BPM');
 
     this.lastChangeResult = tracker.toResult();
     return this;
@@ -874,6 +871,7 @@ export class SongConfigBuilder {
     const oldDrums = this.config.drumsEnabled;
 
     this.config.drumsEnabled = enabled;
+    this.config.drumsEnabledExplicit = true;
     this.explicitFields.add('drumsEnabled');
     tracker.addChange('drums', 'drumsEnabled', oldDrums, enabled, 'User set drums');
 

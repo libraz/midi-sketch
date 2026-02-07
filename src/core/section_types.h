@@ -496,6 +496,29 @@ struct Section {
   /// Empty means all tracks in track_mask are active for the entire section.
   std::vector<LayerEvent> layer_events;
 
+  // ========================================================================
+  // Blueprint-controlled generation hints (copied from SectionSlot)
+  // ========================================================================
+
+  /// @brief Guitar style hint (0=auto, 1=Fingerpick, 2=Strum, 3=PowerChord,
+  ///                           4=PedalTone, 5=RhythmChord).
+  uint8_t guitar_style_hint = 0;
+
+  /// @brief Enable phrase tail rest (accompaniment sparseness at section end).
+  bool phrase_tail_rest = false;
+
+  /// @brief Maximum simultaneous moving voices (0=unlimited).
+  uint8_t max_moving_voices = 0;
+
+  /// @brief Motif motion hint (0=auto, otherwise cast to MotifMotion enum).
+  uint8_t motif_motion_hint = 0;
+
+  /// @brief Guide tone (3rd/7th) priority rate on downbeats (0=disabled, 1-100%).
+  uint8_t guide_tone_rate = 0;
+
+  /// @brief Vocal range span limit in semitones (0=unlimited).
+  uint8_t vocal_range_span = 0;
+
   /// @brief Compute the end tick for this section.
   Tick endTick() const { return start_tick + bars * TICKS_PER_BAR; }
 

@@ -58,6 +58,24 @@ int findBestChordTonePreservingDirection(int target_pitch, int prev_pitch, int8_
                                           uint8_t vocal_low, uint8_t vocal_high,
                                           int max_interval = 0);
 
+/// @brief Bias downbeat pitch toward guide tones (3rd/7th) with given probability.
+///
+/// On strong beats (beats 1 and 3), with probability guide_tone_rate/100,
+/// snaps the pitch to the nearest guide tone instead of any chord tone.
+/// If no guide tone is in range, falls back to the original pitch.
+///
+/// @param pitch Current pitch candidate (should already be a chord tone from enforceDownbeatChordTone)
+/// @param tick Tick position for strong beat check
+/// @param chord_degree Current chord degree
+/// @param vocal_low Minimum allowed pitch
+/// @param vocal_high Maximum allowed pitch
+/// @param guide_tone_rate Probability percentage (0-100)
+/// @param rng Random number generator
+/// @return Adjusted pitch (guide tone if selected)
+int enforceGuideToneOnDownbeat(int pitch, Tick tick, int8_t chord_degree,
+                                uint8_t vocal_low, uint8_t vocal_high,
+                                uint8_t guide_tone_rate, std::mt19937& rng);
+
 /// @brief Enforce avoid note constraint against chord tones.
 ///
 /// Checks if the pitch forms a dissonant interval (tritone, minor 2nd) with

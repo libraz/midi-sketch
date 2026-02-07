@@ -894,6 +894,13 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
                                                   current_pitch, ctx.vocal_low, ctx.vocal_high,
                                                   ctx.disable_vowel_constraints);
 
+    // Guide tone priority: on strong beats, bias toward 3rd/7th at configured rate
+    if (ctx.guide_tone_rate > 0 && ctx.vocal_attitude != VocalAttitude::Raw) {
+      new_pitch = melody::enforceGuideToneOnDownbeat(new_pitch, note_start, note_chord_degree,
+                                                      ctx.vocal_low, ctx.vocal_high,
+                                                      ctx.guide_tone_rate, rng);
+    }
+
     // Leap-after-reversal rule: prefer step motion in opposite direction after leaps
     if (i > 0 && !result.notes.empty()) {
       int prev_note = result.notes.back().note;
