@@ -1130,20 +1130,11 @@ void removeVocalClashingNotes(MidiTrack& track, const MidiTrack& vocal,
 
 }  // namespace
 
-void PostProcessor::fixChordVocalClashes(MidiTrack& chord, const MidiTrack& vocal) {
-  removeVocalClashingNotes(chord, vocal, /*include_close_major_2nd=*/true);
-}
-
-void PostProcessor::fixAuxVocalClashes(MidiTrack& aux, const MidiTrack& vocal) {
-  removeVocalClashingNotes(aux, vocal, /*include_close_major_2nd=*/true);
-}
-
-void PostProcessor::fixBassVocalClashes(MidiTrack& bass, const MidiTrack& vocal) {
-  removeVocalClashingNotes(bass, vocal, /*include_close_major_2nd=*/false);
-}
-
-void PostProcessor::fixGuitarVocalClashes(MidiTrack& guitar, const MidiTrack& vocal) {
-  removeVocalClashingNotes(guitar, vocal, /*include_close_major_2nd=*/true);
+void PostProcessor::fixTrackVocalClashes(MidiTrack& track, const MidiTrack& vocal, TrackRole role) {
+  // Bass tracks skip close major 2nd detection because octave separation
+  // makes the interval acceptable.
+  bool include_close_major_2nd = (role != TrackRole::Bass);
+  removeVocalClashingNotes(track, vocal, include_close_major_2nd);
 }
 
 void PostProcessor::fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass,
@@ -1162,6 +1153,7 @@ void PostProcessor::fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass
   for (size_t idx = 0; idx < notes.size(); ++idx) {
     const auto& note = notes[idx];
     Tick note_end = note.start_tick + note.duration;
+    bool should_remove = false;
 
     // Check against bass
     for (const auto& b_note : bass.notes()) {
@@ -1169,25 +1161,29 @@ void PostProcessor::fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass
       if (note.start_tick < b_end && note_end > b_note.start_tick) {
         int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(b_note.note));
         if (isDissonantClose(interval)) {
-          notes_to_remove.push_back(idx);
-          goto next_note;
+          should_remove = true;
+          break;
         }
       }
     }
 
-    // Check against motif
-    for (const auto& m_note : motif.notes()) {
-      Tick m_end = m_note.start_tick + m_note.duration;
-      if (note.start_tick < m_end && note_end > m_note.start_tick) {
-        int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(m_note.note));
-        if (isDissonantClose(interval)) {
-          notes_to_remove.push_back(idx);
-          goto next_note;
+    // Check against motif (only if not already marked for removal)
+    if (!should_remove) {
+      for (const auto& m_note : motif.notes()) {
+        Tick m_end = m_note.start_tick + m_note.duration;
+        if (note.start_tick < m_end && note_end > m_note.start_tick) {
+          int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(m_note.note));
+          if (isDissonantClose(interval)) {
+            should_remove = true;
+            break;
+          }
         }
       }
     }
 
-    next_note:;
+    if (should_remove) {
+      notes_to_remove.push_back(idx);
+    }
   }
 
   for (auto it = notes_to_remove.rbegin(); it != notes_to_remove.rend(); ++it) {

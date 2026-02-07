@@ -419,10 +419,10 @@ void Generator::applyPostProcessingEffects() {
   // FINAL STEP: Fix inter-track clashes that may occur after all post-processing.
   // Must run AFTER humanization (which shifts note timing) and all duration
   // extensions (applyEnhancedFinalHit, ritardando, etc.).
-  PostProcessor::fixChordVocalClashes(song_.chord(), song_.vocal());
-  PostProcessor::fixAuxVocalClashes(song_.aux(), song_.vocal());
-  PostProcessor::fixBassVocalClashes(song_.bass(), song_.vocal());
-  PostProcessor::fixGuitarVocalClashes(song_.guitar(), song_.vocal());
+  PostProcessor::fixTrackVocalClashes(song_.chord(), song_.vocal(), TrackRole::Chord);
+  PostProcessor::fixTrackVocalClashes(song_.aux(), song_.vocal(), TrackRole::Aux);
+  PostProcessor::fixTrackVocalClashes(song_.bass(), song_.vocal(), TrackRole::Bass);
+  PostProcessor::fixTrackVocalClashes(song_.guitar(), song_.vocal(), TrackRole::Guitar);
   PostProcessor::fixMotifVocalClashes(song_.motif(), song_.vocal(), *harmony_context_);
   PostProcessor::fixInterTrackClashes(song_.chord(), song_.bass(), song_.motif());
 
@@ -430,7 +430,7 @@ void Generator::applyPostProcessingEffects() {
   PostProcessor::fixVocalOverlaps(song_.vocal());
 
   // Smooth large leaps in Aux track caused by note removal in earlier passes
-  // (fixAuxVocalClashes, applyArrangementHoles, etc.)
+  // (fixTrackVocalClashes, applyArrangementHoles, etc.)
   PostProcessor::smoothLargeLeaps(song_.aux());
 
   // Align chord note durations: ensure all notes at the same onset have

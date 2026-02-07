@@ -332,6 +332,18 @@ uint16_t getMinimumBarsForCall(IntroChant intro_chant, MixPattern mix_pattern, u
 // @returns Minimum seconds required
 uint16_t getMinimumSecondsForCall(IntroChant intro_chant, MixPattern mix_pattern, uint16_t bpm);
 
+// ============================================================================
+// Blueprint Aux Program Override
+// ============================================================================
+
+/// Returns the effective MIDI program for the Aux track.
+/// If the blueprint has a program override (!= 0xFF), uses it.
+/// Otherwise falls back to the mood default.
+/// @param mood Mood preset for default program lookup
+/// @param blueprint_id Blueprint ID for override lookup
+/// @return MIDI program number for Aux track
+uint8_t getEffectiveAuxProgram(Mood mood, uint8_t blueprint_id);
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_PRESET_DATA_H

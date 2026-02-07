@@ -33,8 +33,8 @@ inline constexpr int kDefaultMaxLeapSemitones = 12;
  *
  * Fallback chain for monotony resolution:
  * 1. Chord tones (different pitch class, within leap constraint if enabled)
- * 2. Step ±2 semitones
- * 3. Octave shift ±12
+ * 2. Nearby pitch snapped to nearest chord tone
+ * 3. Octave shift ±12 (preserves pitch class)
  */
 struct PitchMonotonyTracker {
   uint8_t last_pitch = 0;
@@ -132,13 +132,22 @@ struct PitchMonotonyTracker {
       }
     }
 
-    // Fallback: clamp the leap
+    // Fallback: clamp the leap, then snap to chord tone if possible
+    int clamped;
     if (desired > last_pitch) {
-      return static_cast<uint8_t>(
-          std::min(static_cast<int>(last_pitch) + max_leap, static_cast<int>(range_high)));
+      clamped = std::min(static_cast<int>(last_pitch) + max_leap, static_cast<int>(range_high));
+    } else {
+      clamped = std::max(static_cast<int>(last_pitch) - max_leap, static_cast<int>(range_low));
     }
-    return static_cast<uint8_t>(
-        std::max(static_cast<int>(last_pitch) - max_leap, static_cast<int>(range_low)));
+    if (chord_degree >= 0) {
+      int snapped = nearestChordTonePitch(clamped, chord_degree);
+      snapped = std::clamp(snapped, static_cast<int>(range_low), static_cast<int>(range_high));
+      // Only use snapped pitch if it still respects leap constraint
+      if (std::abs(snapped - static_cast<int>(last_pitch)) <= max_leap) {
+        return static_cast<uint8_t>(snapped);
+      }
+    }
+    return static_cast<uint8_t>(clamped);
   }
 
   /**
@@ -187,19 +196,25 @@ struct PitchMonotonyTracker {
       }
     }
 
-    // Fallback: try step up (+2 semitones for whole step)
-    if (current + 2 <= range_high && current + 2 != last_pitch) {
-      if (isWithinLeap(current + 2)) return current + 2;
+    // Fallback: snap nearby pitches to chord tones when possible
+    if (chord_degree >= 0) {
+      // Try snapping ±2 to nearest chord tone
+      for (int offset : {2, -2}) {
+        int candidate = static_cast<int>(current) + offset;
+        if (candidate < range_low || candidate > range_high) continue;
+        if (candidate == last_pitch) continue;
+        int snapped = nearestChordTonePitch(candidate, chord_degree);
+        snapped = std::clamp(snapped, static_cast<int>(range_low), static_cast<int>(range_high));
+        if (snapped != current && isWithinLeap(static_cast<uint8_t>(snapped))) {
+          return static_cast<uint8_t>(snapped);
+        }
+      }
     }
-    // Try step down
-    if (current >= range_low + 2 && current - 2 != last_pitch) {
-      if (isWithinLeap(current - 2)) return static_cast<uint8_t>(current - 2);
-    }
-    // Try octave shift up
+
+    // Last resort: octave shift (preserves pitch class, acceptable if already chord tone)
     if (current + 12 <= range_high) {
       if (isWithinLeap(current + 12)) return current + 12;
     }
-    // Try octave shift down
     if (current >= range_low + 12) {
       if (isWithinLeap(current - 12)) return static_cast<uint8_t>(current - 12);
     }

@@ -616,7 +616,7 @@ std::vector<int> getPitchClassesOnBeat(const std::vector<NoteEvent>& notes,
     if (note.start_tick < bar_start || note.start_tick >= bar_end) continue;
     // Note must start within the beat window
     if (note.start_tick >= beat_tick && note.start_tick < beat_end) {
-      int pitch_class = note.note % 12;
+      int pitch_class = getPitchClass(note.note);
       // Deduplicate
       bool found = false;
       for (int pc_val : result) {
@@ -752,10 +752,13 @@ bool isConsonantWithSongTracks(const Song& song, uint8_t pitch, Tick start, Tick
 /// @param start Start tick of the note
 /// @param duration Duration of the note
 /// @param role Track role of this note
-/// @return Consonant chord tone pitch
+/// @param range_low Minimum allowed pitch (0 = no constraint)
+/// @param range_high Maximum allowed pitch (127 = no constraint)
+/// @return Consonant chord tone pitch within range
 uint8_t findConsonantChordTone(IHarmonyCoordinator& harmony, const Song& song,
                                uint8_t snapped, uint8_t original, Tick start,
-                               Tick duration, TrackRole role) {
+                               Tick duration, TrackRole role,
+                               uint8_t range_low = 0, uint8_t range_high = 127) {
   int8_t chord_degree = harmony.getChordDegreeAt(start);
   auto chord_tones = harmony.getChordTonesAt(start);
   int orig_octave = original / 12;
@@ -769,7 +772,7 @@ uint8_t findConsonantChordTone(IHarmonyCoordinator& harmony, const Song& song,
   for (int ct_pc : chord_tones) {
     for (int oct = orig_octave - 1; oct <= orig_octave + 1; ++oct) {
       int p = oct * 12 + ct_pc;
-      if (p < 0 || p > 127) continue;
+      if (p < range_low || p > range_high) continue;
       int dist = std::abs(p - static_cast<int>(original));
       candidates.push_back({dist, static_cast<uint8_t>(p)});
     }
@@ -785,8 +788,10 @@ uint8_t findConsonantChordTone(IHarmonyCoordinator& harmony, const Song& song,
     }
   }
 
-  // No consonant chord tone found; keep snapped pitch
-  return snapped;
+  // No consonant chord tone found; keep snapped pitch (clamped to range)
+  return static_cast<uint8_t>(std::clamp(static_cast<int>(snapped),
+                                          static_cast<int>(range_low),
+                                          static_cast<int>(range_high)));
 }
 
 }  // namespace
@@ -865,21 +870,43 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
   // when the chord changes (e.g., I→V with stale C-E-G notes).
   // Additionally, check that the snapped pitch doesn't clash with other tracks'
   // notes. If it does, try alternative chord tones sorted by distance.
+  // Use track-specific pitch ranges to avoid out-of-range notes.
   if (!frozen_bars.empty()) {
     IHarmonyCoordinator& harmony = getActiveHarmony();
     for (const auto& fb : frozen_bars) {
+      // Determine track-specific pitch range
+      uint8_t range_low = 0;
+      uint8_t range_high = 127;
+      switch (fb.role) {
+        case TrackRole::Bass:
+          range_low = BASS_LOW;
+          range_high = BASS_HIGH;
+          break;
+        case TrackRole::Chord:
+          range_low = CHORD_LOW;
+          range_high = CHORD_HIGH;
+          break;
+        case TrackRole::Motif:
+          range_low = MOTIF_LOW;
+          range_high = MOTIF_HIGH;
+          break;
+        default:
+          break;
+      }
+
       auto& notes = song.track(fb.role).notes();
       for (auto& note : notes) {
         if (note.start_tick >= fb.bar_start && note.start_tick < fb.bar_end) {
-          int snapped = harmony.snapToNearestChordTone(
-              static_cast<int>(note.note), note.start_tick);
+          int snapped = harmony.snapToNearestChordToneInRange(
+              static_cast<int>(note.note), note.start_tick, range_low, range_high);
           uint8_t candidate = static_cast<uint8_t>(std::clamp(snapped, 0, 127));
 
           int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
           if (!isConsonantWithSongTracks(song, candidate, note.start_tick,
                                         note.duration, fb.role, chord_degree)) {
             candidate = findConsonantChordTone(harmony, song, candidate, note.note,
-                                              note.start_tick, note.duration, fb.role);
+                                              note.start_tick, note.duration, fb.role,
+                                              range_low, range_high);
           }
 
           note.note = candidate;

@@ -15,10 +15,10 @@
 namespace midisketch {
 namespace melody {
 
-int applyPitchChoiceImpl(PitchChoice choice, int current_pitch, int target_pitch,
-                         int8_t chord_degree, int key_offset, uint8_t vocal_low,
-                         uint8_t vocal_high, VocalAttitude attitude, bool disable_singability,
-                         float note_eighths, float tension_usage) {
+int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
+                     int8_t chord_degree, int key_offset, uint8_t vocal_low,
+                     uint8_t vocal_high, VocalAttitude attitude, bool disable_singability,
+                     float note_eighths, float tension_usage) {
   // VocalAttitude affects candidate pitch selection:
   //   Clean: chord tones only (1, 3, 5)
   //   Expressive: chord tones + tensions (7, 9)
@@ -313,10 +313,10 @@ int applyPitchChoiceImpl(PitchChoice choice, int current_pitch, int target_pitch
   return new_pitch;
 }
 
-int calculateTargetPitchImpl([[maybe_unused]] const MelodyTemplate& tmpl, int tessitura_center,
-                             int tessitura_range,
-                             uint8_t vocal_low, uint8_t vocal_high, Tick section_start,
-                             const IHarmonyContext& harmony) {
+int calculateTargetPitch([[maybe_unused]] const MelodyTemplate& tmpl, int tessitura_center,
+                         int tessitura_range,
+                         uint8_t vocal_low, uint8_t vocal_high, Tick section_start,
+                         const IHarmonyContext& harmony) {
   // Target is typically a chord tone in the upper part of tessitura
   std::vector<int> chord_tones = harmony.getChordTonesAt(section_start);
 

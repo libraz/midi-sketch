@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <random>
 
+#include "core/melody_types.h"
 #include "core/section_types.h"
 
 namespace midisketch {
@@ -49,6 +50,7 @@ struct BlueprintConstraints {
   // Fretted instrument constraints
   InstrumentSkillLevel bass_skill = InstrumentSkillLevel::Intermediate;    ///< Bass skill level
   InstrumentSkillLevel guitar_skill = InstrumentSkillLevel::Intermediate;  ///< Guitar skill level
+  InstrumentSkillLevel keys_skill = InstrumentSkillLevel::Intermediate;    ///< Keyboard skill level
   InstrumentModelMode instrument_mode = InstrumentModelMode::Off;          ///< Physical constraint mode
 
   // Technique enablement (only applies when instrument_mode includes Techniques)
@@ -175,6 +177,20 @@ struct SectionSlot {
   uint8_t bass_style_hint = 0;
 };
 
+/// @brief Blueprint-specific aux track behavior profile.
+///
+/// Controls which AuxFunction is used for each section type, MIDI program
+/// override, velocity/density scaling, and vocal range ceiling offset.
+struct AuxProfile {
+  uint8_t program_override = 0xFF;  ///< MIDI program override (0xFF = use Mood default)
+  AuxFunction intro_function = AuxFunction::MelodicHook;    ///< Function for Intro sections
+  AuxFunction verse_function = AuxFunction::MotifCounter;    ///< Function for A/B/Bridge sections
+  AuxFunction chorus_function = AuxFunction::EmotionalPad;   ///< Function for Chorus sections
+  float velocity_scale = 1.0f;   ///< Velocity multiplier (applied to section velocity)
+  float density_scale = 1.0f;    ///< Density multiplier (applied to section density)
+  int8_t range_ceiling = -2;     ///< Offset from vocal tessitura high (-2 = 2 semitones below)
+};
+
 /// @brief Production blueprint defining how a song is generated.
 ///
 /// This is independent from StylePreset/Mood/VocalStyle and controls:
@@ -220,6 +236,10 @@ struct ProductionBlueprint {
   /// @brief Blueprint-level generation constraints.
   /// Controls velocity ceiling, pitch range, and melodic leap limits.
   BlueprintConstraints constraints;
+
+  /// @brief Blueprint-specific aux track behavior profile.
+  /// Controls function selection, MIDI program, velocity/density, and range ceiling.
+  AuxProfile aux_profile;
 };
 
 // ============================================================================

@@ -23,6 +23,8 @@
 #include "core/harmony_context.h"
 #include "core/i_harmony_context.h"
 #include "core/motif.h"
+#include "core/preset_data.h"
+#include "core/production_blueprint.h"
 #include "core/timing_constants.h"
 #include "midisketch.h"
 #include "test_helpers/note_event_test_helper.h"
@@ -1250,6 +1252,113 @@ TEST(MotifSnappingRegression, MotifNotesMustBeChordTones) {
 
     EXPECT_TRUE(is_chord_tone) << "Snapped pitch " << snapped << " (pc " << snapped_pc
                                << ") should be chord tone in G chord";
+  }
+}
+
+// ============================================================================
+// Blueprint AuxProfile Tests
+// ============================================================================
+
+TEST(AuxBlueprintProfile, BalladUsesSustainPad) {
+  // Ballad blueprint (ID 3) should use SustainPad for all sections
+  const auto& bp = getProductionBlueprint(3);
+  EXPECT_EQ(bp.aux_profile.intro_function, AuxFunction::SustainPad);
+  EXPECT_EQ(bp.aux_profile.verse_function, AuxFunction::SustainPad);
+  EXPECT_EQ(bp.aux_profile.chorus_function, AuxFunction::SustainPad);
+}
+
+TEST(AuxBlueprintProfile, RhythmLockUsesPulseLoopAndGrooveAccent) {
+  // RhythmLock blueprint (ID 1) should use rhythmic functions
+  const auto& bp = getProductionBlueprint(1);
+  EXPECT_EQ(bp.aux_profile.intro_function, AuxFunction::PulseLoop);
+  EXPECT_EQ(bp.aux_profile.verse_function, AuxFunction::PulseLoop);
+  EXPECT_EQ(bp.aux_profile.chorus_function, AuxFunction::GrooveAccent);
+}
+
+TEST(AuxBlueprintProfile, IdolKawaiiUsesMelodicHook) {
+  // IdolKawaii blueprint (ID 6) should use MelodicHook throughout
+  const auto& bp = getProductionBlueprint(6);
+  EXPECT_EQ(bp.aux_profile.intro_function, AuxFunction::MelodicHook);
+  EXPECT_EQ(bp.aux_profile.verse_function, AuxFunction::MelodicHook);
+  EXPECT_EQ(bp.aux_profile.chorus_function, AuxFunction::MelodicHook);
+}
+
+TEST(AuxBlueprintProfile, VelocityScaling) {
+  // Ballad (ID 3) should have low velocity scale
+  const auto& ballad = getProductionBlueprint(3);
+  EXPECT_FLOAT_EQ(ballad.aux_profile.velocity_scale, 0.5f);
+
+  // Traditional (ID 0) should have default (1.0) velocity scale
+  const auto& trad = getProductionBlueprint(0);
+  EXPECT_FLOAT_EQ(trad.aux_profile.velocity_scale, 1.0f);
+
+  // IdolHyper (ID 5) should have higher velocity
+  const auto& hyper = getProductionBlueprint(5);
+  EXPECT_GT(hyper.aux_profile.velocity_scale, 0.8f);
+}
+
+TEST(AuxBlueprintProfile, DensityScaling) {
+  // Ballad (ID 3) should have low density
+  const auto& ballad = getProductionBlueprint(3);
+  EXPECT_FLOAT_EQ(ballad.aux_profile.density_scale, 0.5f);
+
+  // IdolKawaii (ID 6) should have low density
+  const auto& kawaii = getProductionBlueprint(6);
+  EXPECT_FLOAT_EQ(kawaii.aux_profile.density_scale, 0.6f);
+}
+
+TEST(AuxBlueprintProfile, RangeCeiling) {
+  // Ballad/Emo have wider negative ceiling (further below vocal)
+  const auto& ballad = getProductionBlueprint(3);
+  EXPECT_EQ(ballad.aux_profile.range_ceiling, -7);
+
+  const auto& emo = getProductionBlueprint(8);
+  EXPECT_EQ(emo.aux_profile.range_ceiling, -7);
+
+  // RhythmSync blueprints have moderate negative ceiling
+  const auto& rhythm = getProductionBlueprint(1);
+  EXPECT_EQ(rhythm.aux_profile.range_ceiling, -4);
+
+  // Traditional has small negative ceiling
+  const auto& trad = getProductionBlueprint(0);
+  EXPECT_EQ(trad.aux_profile.range_ceiling, -2);
+}
+
+TEST(EffectiveAuxProgram, BlueprintOverride) {
+  // Ballad (ID 3) overrides to Choir Aahs (52)
+  uint8_t prog = getEffectiveAuxProgram(Mood::StraightPop, 3);
+  EXPECT_EQ(prog, 52);
+
+  // RhythmLock (ID 1) overrides to Square Lead (80)
+  prog = getEffectiveAuxProgram(Mood::StraightPop, 1);
+  EXPECT_EQ(prog, 80);
+
+  // IdolKawaii (ID 6) overrides to Music Box (10)
+  prog = getEffectiveAuxProgram(Mood::StraightPop, 6);
+  EXPECT_EQ(prog, 10);
+}
+
+TEST(EffectiveAuxProgram, MoodFallback) {
+  // Traditional (ID 0) uses 0xFF = Mood default
+  const auto& bp = getProductionBlueprint(0);
+  EXPECT_EQ(bp.aux_profile.program_override, 0xFF);
+
+  // Result should match mood default
+  uint8_t prog = getEffectiveAuxProgram(Mood::StraightPop, 0);
+  EXPECT_EQ(prog, getMoodPrograms(Mood::StraightPop).aux);
+}
+
+TEST(AuxBlueprintProfile, AllBlueprintsHaveValidAuxProfile) {
+  uint8_t count = getProductionBlueprintCount();
+  for (uint8_t i = 0; i < count; ++i) {
+    const auto& bp = getProductionBlueprint(i);
+    // Verify all profiles have valid velocity/density scales
+    EXPECT_GT(bp.aux_profile.velocity_scale, 0.0f) << "BP " << static_cast<int>(i);
+    EXPECT_LE(bp.aux_profile.velocity_scale, 1.0f) << "BP " << static_cast<int>(i);
+    EXPECT_GT(bp.aux_profile.density_scale, 0.0f) << "BP " << static_cast<int>(i);
+    EXPECT_LE(bp.aux_profile.density_scale, 1.0f) << "BP " << static_cast<int>(i);
+    // range_ceiling should be negative or zero (aux shouldn't exceed vocal)
+    EXPECT_LE(bp.aux_profile.range_ceiling, 0) << "BP " << static_cast<int>(i);
   }
 }
 

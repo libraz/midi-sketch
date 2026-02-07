@@ -11,6 +11,7 @@
 
 #include "core/chord.h"
 #include "core/generator.h"
+#include "core/production_blueprint.h"
 #include "core/song.h"
 #include "core/types.h"
 #include "test_support/generator_test_fixture.h"
@@ -1159,6 +1160,135 @@ TEST_F(ChordTrackTest, UpdateConsecutiveVoicingCount_InitOnFirstVoicing) {
   int count = 0;
   chord_voicing::updateConsecutiveVoicingCount(a, {}, false, count);
   EXPECT_EQ(count, 1);
+}
+
+// ============================================================================
+// Keyboard Playability Integration Tests
+// ============================================================================
+
+class ChordKeyboardPlayabilityTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    params_.structure = StructurePattern::StandardPop;
+    params_.mood = Mood::StraightPop;
+    params_.chord_id = 0;
+    params_.key = Key::C;
+    params_.bpm = 120;
+    params_.seed = 42;
+    params_.humanize = false;
+  }
+
+  GeneratorParams params_;
+};
+
+TEST_F(ChordKeyboardPlayabilityTest, AllBlueprintsGenerateValidChords) {
+  // Verify chord generation works for all blueprints, including those with
+  // keyboard playability constraints enabled.
+  for (uint8_t idx = 0; idx < getProductionBlueprintCount(); ++idx) {
+    const auto& bp_data = getProductionBlueprint(idx);
+    params_.blueprint_id = idx;
+    params_.seed = 42 + idx;
+
+    Generator gen;
+    gen.generate(params_);
+    const auto& chord = gen.getSong().chord();
+
+    EXPECT_GT(chord.notes().size(), 0u)
+        << "Blueprint " << bp_data.name << " should generate chord notes";
+
+    for (const auto& note : chord.notes()) {
+      EXPECT_GE(note.note, 0) << "Blueprint " << bp_data.name << " has invalid note";
+      EXPECT_LE(note.note, 127) << "Blueprint " << bp_data.name << " has invalid note";
+      EXPECT_GT(note.velocity, 0) << "Blueprint " << bp_data.name << " has zero velocity";
+    }
+  }
+}
+
+TEST_F(ChordKeyboardPlayabilityTest, ConstraintsOnlyModeProducesValidChords) {
+  // Use a blueprint with ConstraintsOnly mode (Traditional, id=0)
+  params_.blueprint_id = 0;
+  params_.bpm = 180;  // High tempo to test playability constraints
+
+  Generator gen;
+  gen.generate(params_);
+  const auto& chord = gen.getSong().chord();
+
+  EXPECT_GT(chord.notes().size(), 0u) << "Chord track should have notes";
+
+  // All chord notes should be in the chord register (C3-C6)
+  constexpr uint8_t kChordLow = 48;
+  constexpr uint8_t kChordHigh = 84;
+  for (const auto& note : chord.notes()) {
+    EXPECT_GE(note.note, kChordLow) << "Chord note below range";
+    EXPECT_LE(note.note, kChordHigh) << "Chord note above range";
+  }
+}
+
+TEST_F(ChordKeyboardPlayabilityTest, FullModeProducesValidChords) {
+  // Use a blueprint with Full mode (RhythmLock, id=1)
+  params_.blueprint_id = 1;
+  params_.bpm = 160;
+
+  Generator gen;
+  gen.generate(params_);
+  const auto& chord = gen.getSong().chord();
+
+  EXPECT_GT(chord.notes().size(), 0u) << "Chord track should have notes with Full mode";
+
+  for (const auto& note : chord.notes()) {
+    EXPECT_GE(note.note, 0);
+    EXPECT_LE(note.note, 127);
+    EXPECT_GT(note.velocity, 0);
+  }
+}
+
+TEST_F(ChordKeyboardPlayabilityTest, SameSeedDeterminismWithPlayability) {
+  // Verify determinism is preserved with keyboard playability enabled
+  params_.blueprint_id = 0;  // ConstraintsOnly mode
+  params_.seed = 99999;
+
+  Generator gen1;
+  gen1.generate(params_);
+  const auto& chord1 = gen1.getSong().chord();
+
+  Generator gen2;
+  gen2.generate(params_);
+  const auto& chord2 = gen2.getSong().chord();
+
+  ASSERT_EQ(chord1.notes().size(), chord2.notes().size())
+      << "Same seed should produce same number of chord notes";
+
+  for (size_t idx = 0; idx < chord1.notes().size(); ++idx) {
+    EXPECT_EQ(chord1.notes()[idx].note, chord2.notes()[idx].note)
+        << "Chord note mismatch at index " << idx;
+  }
+}
+
+TEST_F(ChordKeyboardPlayabilityTest, ChordVoicingsHaveMultipleNotes) {
+  // Verify that keyboard playability does not reduce voicings to single notes
+  params_.blueprint_id = 0;
+
+  Generator gen;
+  gen.generate(params_);
+  const auto& chord = gen.getSong().chord();
+  ASSERT_GT(chord.notes().size(), 3u);
+
+  // Count simultaneous notes per tick
+  std::map<Tick, int> notes_per_tick;
+  for (const auto& note : chord.notes()) {
+    notes_per_tick[note.start_tick]++;
+  }
+
+  // At least some chords should have 3+ notes
+  int chords_with_3_plus = 0;
+  for (const auto& [tick, count] : notes_per_tick) {
+    if (count >= 3) {
+      chords_with_3_plus++;
+    }
+  }
+
+  EXPECT_GT(chords_with_3_plus, 0)
+      << "Keyboard playability should not reduce all voicings below 3 notes";
 }
 
 }  // namespace

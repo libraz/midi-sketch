@@ -23,7 +23,7 @@ namespace melody {
 ///
 /// @param notes Notes to analyze
 /// @return Extracted GlobalMotif structure
-GlobalMotif extractGlobalMotifImpl(const std::vector<NoteEvent>& notes);
+GlobalMotif extractGlobalMotif(const std::vector<NoteEvent>& notes);
 
 /// @brief Evaluate candidate similarity to GlobalMotif.
 ///
@@ -39,7 +39,7 @@ GlobalMotif extractGlobalMotifImpl(const std::vector<NoteEvent>& notes);
 /// @param candidate Candidate melody notes
 /// @param global_motif Reference motif from chorus
 /// @return Bonus score (0.0-0.25)
-float evaluateWithGlobalMotifImpl(const std::vector<NoteEvent>& candidate,
+float evaluateWithGlobalMotif(const std::vector<NoteEvent>& candidate,
                                   const GlobalMotif& global_motif);
 
 }  // namespace melody

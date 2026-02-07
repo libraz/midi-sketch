@@ -43,21 +43,22 @@ using melody::getBreathDuration;
 using melody::getMotifWeightForSection;
 using melody::getRhythmUnit;
 using melody::LeapResolutionState;
-using melody::applyPitchChoiceImpl;
-using melody::calculateTargetPitchImpl;
-using melody::generatePhraseRhythmImpl;
-using melody::selectPitchForLockedRhythmEnhancedImpl;
 using melody::LockedRhythmContext;
-using melody::extractGlobalMotifImpl;
-using melody::evaluateWithGlobalMotifImpl;
 using melody::getDirectionBiasForContour;
-using melody::selectPitchChoiceImpl;
-using melody::applyDirectionInertiaImpl;
-using melody::getEffectivePlateauRatioImpl;
-using melody::shouldLeapImpl;
-using melody::getStabilizeStepImpl;
-using melody::isInSameVowelSectionImpl;
-using melody::getMaxStepInVowelSectionImpl;
+// Free functions (formerly wrapped by MelodyDesigner methods)
+using melody::applyDirectionInertia;
+using melody::applyPitchChoice;
+using melody::calculateTargetPitch;
+using melody::evaluateWithGlobalMotif;
+using melody::extractGlobalMotif;
+using melody::generatePhraseRhythm;
+using melody::getEffectivePlateauRatio;
+using melody::getMaxStepInVowelSection;
+using melody::getStabilizeStep;
+using melody::isInSameVowelSection;
+using melody::selectPitchChoice;
+using melody::selectPitchForLockedRhythmEnhanced;
+using melody::shouldLeap;
 
 namespace {
 
@@ -97,7 +98,7 @@ void applyPhrasePairCadence(std::vector<NoteEvent>& notes,
   NoteEvent& last_note = notes.back();
   int8_t chord_degree = harmony.getChordDegreeAt(last_note.start_tick);
   std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
-  int pitch_class = last_note.note % 12;
+  int pitch_class = getPitchClass(last_note.note);
 
   // Root pitch class for the current chord degree
   int root_pc = chord_tones.empty() ? 0 : chord_tones[0];
@@ -325,7 +326,7 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
     if (is_downbeat) {
       int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
       std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
-      int pitch_pc = note.note % 12;
+      int pitch_pc = getPitchClass(note.note);
       bool is_chord_tone = false;
       for (int ct : chord_tones) {
         if (pitch_pc == ct) {
@@ -1492,41 +1493,9 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   return result;
 }
 
-// getDirectionBiasForContour moved to contour_direction.cpp
-
-PitchChoice MelodyDesigner::selectPitchChoice(const MelodyTemplate& tmpl, float phrase_pos,
-                                              bool has_target, SectionType section_type,
-                                              std::mt19937& rng, float note_eighths,
-                                              std::optional<ContourType> forced_contour) {
-  return selectPitchChoiceImpl(tmpl, phrase_pos, has_target, section_type, rng, note_eighths,
-                               forced_contour);
-}
-
-PitchChoice MelodyDesigner::applyDirectionInertia(PitchChoice choice, int inertia,
-                                                  const MelodyTemplate& tmpl, std::mt19937& rng) {
-  return applyDirectionInertiaImpl(choice, inertia, tmpl, rng);
-}
-
-float MelodyDesigner::getEffectivePlateauRatio(const MelodyTemplate& tmpl, int current_pitch,
-                                               const TessituraRange& tessitura) {
-  return getEffectivePlateauRatioImpl(tmpl, current_pitch, tessitura);
-}
-
-bool MelodyDesigner::shouldLeap(LeapTrigger trigger, float phrase_pos, float section_pos) {
-  return shouldLeapImpl(trigger, phrase_pos, section_pos);
-}
-
-int MelodyDesigner::getStabilizeStep(int leap_direction, int max_step) {
-  return getStabilizeStepImpl(leap_direction, max_step);
-}
-
-bool MelodyDesigner::isInSameVowelSection(float pos1, float pos2, uint8_t phrase_length) {
-  return isInSameVowelSectionImpl(pos1, pos2, phrase_length);
-}
-
-int8_t MelodyDesigner::getMaxStepInVowelSection(bool in_same_vowel) {
-  return getMaxStepInVowelSectionImpl(in_same_vowel);
-}
+// selectPitchChoice, applyDirectionInertia, getEffectivePlateauRatio, shouldLeap,
+// getStabilizeStep, isInSameVowelSection, getMaxStepInVowelSection
+// moved to contour_direction.h/cpp as free functions in melody:: namespace.
 
 void MelodyDesigner::applyTransitionApproach(std::vector<NoteEvent>& notes,
                                              const SectionContext& ctx,
@@ -1676,31 +1645,17 @@ void MelodyDesigner::insertLeadingTone(std::vector<NoteEvent>& notes, const Sect
   }
 }
 
-int MelodyDesigner::applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
-                                     int8_t chord_degree, int key_offset, uint8_t vocal_low,
-                                     uint8_t vocal_high, VocalAttitude attitude,
-                                     bool disable_singability, float note_eighths,
-                                     float tension_usage) {
-  return applyPitchChoiceImpl(choice, current_pitch, target_pitch, chord_degree, key_offset,
-                              vocal_low, vocal_high, attitude, disable_singability, note_eighths,
-                              tension_usage);
-}
+// applyPitchChoice moved to pitch_resolver.h/cpp as free function in melody:: namespace.
 
 int MelodyDesigner::calculateTargetPitch(const MelodyTemplate& tmpl, const SectionContext& ctx,
                                          [[maybe_unused]] int current_pitch,
                                          const IHarmonyContext& harmony,
                                          [[maybe_unused]] std::mt19937& rng) {
-  return calculateTargetPitchImpl(tmpl, ctx.tessitura.center, tmpl.tessitura_range, ctx.vocal_low,
-                                  ctx.vocal_high, ctx.section_start, harmony);
+  return melody::calculateTargetPitch(tmpl, ctx.tessitura.center, tmpl.tessitura_range, ctx.vocal_low,
+                                      ctx.vocal_high, ctx.section_start, harmony);
 }
 
-std::vector<RhythmNote> MelodyDesigner::generatePhraseRhythm(
-    const MelodyTemplate& tmpl, uint8_t phrase_beats, float density_modifier,
-    float thirtysecond_ratio, std::mt19937& rng, GenerationParadigm paradigm,
-    float syncopation_weight, SectionType section_type) {
-  return generatePhraseRhythmImpl(tmpl, phrase_beats, density_modifier, thirtysecond_ratio, rng,
-                                  paradigm, syncopation_weight, section_type);
-}
+// generatePhraseRhythm moved to rhythm_generator.h/cpp as free function in melody:: namespace.
 
 // === Locked Rhythm Pitch Selection ===
 
@@ -1727,20 +1682,14 @@ uint8_t MelodyDesigner::selectPitchForLockedRhythmEnhanced(
     ctx.motif_interval_count = 0;
   }
 
-  return selectPitchForLockedRhythmEnhancedImpl(prev_pitch, chord_degree, vocal_low, vocal_high,
-                                                 ctx, rng);
+  return melody::selectPitchForLockedRhythmEnhanced(prev_pitch, chord_degree, vocal_low, vocal_high,
+                                                    ctx, rng);
 }
 
 // === GlobalMotif Support ===
 
-GlobalMotif MelodyDesigner::extractGlobalMotif(const std::vector<NoteEvent>& notes) {
-  return extractGlobalMotifImpl(notes);
-}
-
-float MelodyDesigner::evaluateWithGlobalMotif(const std::vector<NoteEvent>& candidate,
-                                              const GlobalMotif& global_motif) {
-  return evaluateWithGlobalMotifImpl(candidate, global_motif);
-}
+// extractGlobalMotif and evaluateWithGlobalMotif moved to motif_support.h/cpp
+// as free functions in melody:: namespace.
 
 // ============================================================================
 // Section-Specific Motif Variants

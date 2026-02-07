@@ -22,56 +22,88 @@
 namespace midisketch {
 namespace drums {
 
+// ============================================================================
+// Parameter Structs
+// ============================================================================
+
+/// @brief Common per-beat context shared across all beat processors.
+///
+/// Contains the beat position, velocity, section metadata, and RNG reference
+/// that every beat processor needs. Constructed once per beat in the main
+/// drum generation loop.
+struct BeatContext {
+  Tick beat_tick;              ///< Tick position of the beat
+  uint8_t beat;               ///< Beat number within bar (0-3)
+  uint8_t velocity;           ///< Base velocity for this beat
+  SectionType section_type;   ///< Current section type
+  Mood mood;                  ///< Current mood
+  uint16_t bpm;               ///< Tempo in BPM
+  uint8_t bar;                ///< Current bar number within section
+  uint8_t section_bars;       ///< Total bars in section
+  bool in_prechorus_lift;     ///< Whether in pre-chorus buildup zone
+  std::mt19937& rng;          ///< Random number generator
+};
+
+/// @brief Kick drum-specific beat parameters.
+struct KickBeatParams {
+  Tick adjusted_beat_tick;     ///< Time-feel adjusted tick position
+  const KickPattern& kick;    ///< Kick pattern flags
+  float kick_prob;             ///< DrumRole-based kick probability
+  float humanize_timing;      ///< Global humanization scaling (0.0-1.0)
+};
+
+/// @brief Snare drum-specific beat parameters.
+struct SnareBeatParams {
+  DrumStyle style;             ///< Drum style
+  DrumRole role;               ///< Drum role
+  float snare_prob;            ///< DrumRole-based snare probability
+  bool use_groove_snare;       ///< Whether to use groove template snare pattern
+  uint16_t groove_snare_pattern;  ///< Groove template snare bitmask
+  bool is_intro_first;         ///< Whether this is first bar of intro
+};
+
+/// @brief Ghost note-specific beat parameters.
+struct GhostBeatParams {
+  BackingDensity backing_density;  ///< Backing density setting
+  bool use_euclidean;              ///< Whether using Euclidean rhythms
+  float groove_ghost_density;      ///< Ghost density from groove template
+};
+
+/// @brief Hi-hat-specific beat parameters.
+struct HiHatBeatParams {
+  DrumRole role;               ///< Drum role
+  float density_mult;          ///< Density multiplier
+  bool bar_has_open_hh;        ///< Whether this bar has open hi-hat accent
+  uint8_t open_hh_beat;        ///< Beat for open hi-hat (if applicable)
+  bool peak_open_hh_24;        ///< Whether peak level forces open HH on 2/4
+  float swing_amount;          ///< Current swing amount
+  DrumGrooveFeel groove;       ///< Groove feel
+};
+
+// ============================================================================
+// Beat Processor Functions
+// ============================================================================
+
 /// @brief Generate kick drum for a single beat.
 /// @param track Target MIDI track
-/// @param beat_tick Tick position of the beat
-/// @param adjusted_beat_tick Time-feel adjusted tick position
-/// @param kick Kick pattern flags
-/// @param beat Beat number (0-3)
-/// @param velocity Base velocity
-/// @param kick_prob DrumRole-based kick probability
-/// @param in_prechorus_lift Whether in pre-chorus buildup zone
-/// @param rng Random number generator
-/// @param humanize_timing Global humanization scaling (0.0-1.0)
-void generateKickForBeat(MidiTrack& track, Tick beat_tick, Tick adjusted_beat_tick,
-                         const KickPattern& kick, uint8_t beat, uint8_t velocity,
-                         float kick_prob, bool in_prechorus_lift, std::mt19937& rng,
-                         float humanize_timing = 1.0f);
+/// @param beat_ctx Common beat context
+/// @param params Kick-specific parameters
+void generateKickForBeat(MidiTrack& track, const BeatContext& beat_ctx,
+                         const KickBeatParams& params);
 
 /// @brief Generate snare drum for a single beat.
 /// @param track Target MIDI track
-/// @param beat_tick Tick position of the beat
-/// @param beat Beat number (0-3)
-/// @param velocity Base velocity
-/// @param section_type Current section type
-/// @param style Drum style
-/// @param role Drum role
-/// @param snare_prob DrumRole-based snare probability
-/// @param use_groove_snare Whether to use groove template snare pattern
-/// @param groove_snare_pattern Groove template snare bitmask
-/// @param is_intro_first Whether this is first bar of intro
-/// @param in_prechorus_lift Whether in pre-chorus buildup zone
-void generateSnareForBeat(MidiTrack& track, Tick beat_tick, uint8_t beat, uint8_t velocity,
-                          SectionType section_type, DrumStyle style, DrumRole role,
-                          float snare_prob, bool use_groove_snare, uint16_t groove_snare_pattern,
-                          bool is_intro_first, bool in_prechorus_lift);
+/// @param beat_ctx Common beat context
+/// @param params Snare-specific parameters
+void generateSnareForBeat(MidiTrack& track, const BeatContext& beat_ctx,
+                          const SnareBeatParams& params);
 
 /// @brief Generate ghost notes for a single beat.
 /// @param track Target MIDI track
-/// @param beat_tick Tick position of the beat
-/// @param beat Beat number (0-3)
-/// @param velocity Base velocity
-/// @param section_type Current section type
-/// @param mood Current mood
-/// @param backing_density Backing density setting
-/// @param bpm Tempo in BPM
-/// @param use_euclidean Whether using Euclidean rhythms
-/// @param groove_ghost_density Ghost density from groove template
-/// @param rng Random number generator
-void generateGhostNotesForBeat(MidiTrack& track, Tick beat_tick, uint8_t beat, uint8_t velocity,
-                               SectionType section_type, Mood mood, BackingDensity backing_density,
-                               uint16_t bpm, bool use_euclidean, float groove_ghost_density,
-                               std::mt19937& rng);
+/// @param beat_ctx Common beat context
+/// @param params Ghost note-specific parameters
+void generateGhostNotesForBeat(MidiTrack& track, const BeatContext& beat_ctx,
+                               const GhostBeatParams& params);
 
 /// @brief Generate pre-chorus buildup pattern for a beat.
 /// @param track Target MIDI track
@@ -87,29 +119,11 @@ bool generatePreChorusBuildup(MidiTrack& track, Tick beat_tick, uint8_t beat, ui
 
 /// @brief Generate hi-hat for a single beat.
 /// @param track Target MIDI track
-/// @param beat_tick Tick position of the beat
-/// @param beat Beat number (0-3)
-/// @param velocity Base velocity
+/// @param beat_ctx Common beat context
 /// @param ctx Section context
-/// @param section_type Current section type
-/// @param role Drum role
-/// @param density_mult Density multiplier
-/// @param bar_has_open_hh Whether this bar has open hi-hat accent
-/// @param open_hh_beat Beat for open hi-hat (if applicable)
-/// @param peak_open_hh_24 Whether peak level forces open HH on 2/4
-/// @param bar Current bar number
-/// @param section_bars Total bars in section
-/// @param swing_amount Current swing amount
-/// @param groove Groove feel
-/// @param mood Current mood
-/// @param bpm Tempo in BPM
-/// @param rng Random number generator
-void generateHiHatForBeat(MidiTrack& track, Tick beat_tick, uint8_t beat, uint8_t velocity,
-                          const DrumSectionContext& ctx, SectionType section_type,
-                          DrumRole role, float density_mult, bool bar_has_open_hh,
-                          uint8_t open_hh_beat, bool peak_open_hh_24, uint8_t bar,
-                          uint8_t section_bars, float swing_amount, DrumGrooveFeel groove,
-                          Mood mood, uint16_t bpm, std::mt19937& rng);
+/// @param params Hi-hat-specific parameters
+void generateHiHatForBeat(MidiTrack& track, const BeatContext& beat_ctx,
+                          const DrumSectionContext& ctx, const HiHatBeatParams& params);
 
 /// @brief Get hi-hat swing factor based on mood.
 /// @param mood Current mood

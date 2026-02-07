@@ -73,6 +73,17 @@ inline int getMaxMelodicIntervalForSection(SectionType section) {
 /// @}
 
 // ============================================================================
+// Pitch Class Extraction
+// ============================================================================
+
+/**
+ * @brief Get pitch class (0-11) from MIDI pitch.
+ * @param pitch MIDI pitch (0-127)
+ * @return Pitch class: 0=C, 1=C#, 2=D, ..., 11=B
+ */
+inline int getPitchClass(uint8_t pitch) { return pitch % 12; }
+
+// ============================================================================
 // Pitch Clamp Functions
 // ============================================================================
 
@@ -242,7 +253,7 @@ constexpr const char* NOTE_NAMES[] = {"C",  "C#", "D",  "D#", "E",  "F",
 /// @return Note name string (e.g., "C4")
 inline std::string pitchToNoteName(uint8_t pitch) {
   int octave = (pitch / 12) - 1;
-  return std::string(NOTE_NAMES[pitch % 12]) + std::to_string(octave);
+  return std::string(NOTE_NAMES[getPitchClass(pitch)]) + std::to_string(octave);
 }
 
 // ============================================================================

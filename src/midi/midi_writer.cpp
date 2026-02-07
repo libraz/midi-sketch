@@ -317,33 +317,36 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
 }
 
 void MidiWriter::build(const Song& song, Key key, Mood mood, const std::string& metadata,
-                       MidiFormat format) {
+                       MidiFormat format, uint8_t blueprint_id) {
 #ifdef MIDISKETCH_WASM
   // WASM build only supports SMF1
   (void)format;
-  buildSMF1(song, key, mood, metadata);
+  buildSMF1(song, key, mood, metadata, blueprint_id);
 #else
   if (format == MidiFormat::SMF2) {
-    buildSMF2(song, key, mood, metadata);
+    buildSMF2(song, key, mood, metadata, blueprint_id);
   } else {
-    buildSMF1(song, key, mood, metadata);
+    buildSMF1(song, key, mood, metadata, blueprint_id);
   }
 #endif
 }
 
 #ifndef MIDISKETCH_WASM
-void MidiWriter::buildSMF2(const Song& song, Key key, Mood mood, const std::string& metadata) {
+void MidiWriter::buildSMF2(const Song& song, Key key, Mood mood, const std::string& metadata,
+                           uint8_t blueprint_id) {
   if (!midi2_writer_) {
     midi2_writer_ = std::make_unique<Midi2Writer>();
   }
   // TODO: Pass mood to buildContainer when MIDI 2.0 supports instrument mapping
   (void)mood;
+  (void)blueprint_id;
   midi2_writer_->buildContainer(song, key, metadata);
   data_ = midi2_writer_->toBytes();
 }
 #endif
 
-void MidiWriter::buildSMF1(const Song& song, Key key, Mood mood, const std::string& metadata) {
+void MidiWriter::buildSMF1(const Song& song, Key key, Mood mood, const std::string& metadata,
+                           uint8_t blueprint_id) {
   data_.clear();
 
   // Validate BPM once at entry point (downstream checks are defensive only)
@@ -387,7 +390,8 @@ void MidiWriter::buildSMF1(const Song& song, Key key, Mood mood, const std::stri
   }
 
   if (!song.aux().empty()) {
-    writeTrack(song.aux(), "Aux", AUX_CH, progs.aux, bpm, key, false, mod_tick, mod_amount);
+    uint8_t aux_prog = getEffectiveAuxProgram(mood, blueprint_id);
+    writeTrack(song.aux(), "Aux", AUX_CH, aux_prog, bpm, key, false, mod_tick, mod_amount);
   }
 
   if (!song.guitar().empty()) {

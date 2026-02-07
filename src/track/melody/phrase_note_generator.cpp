@@ -210,7 +210,7 @@ int applyPhraseEndResolution(int pitch, int8_t chord_degree, SectionType section
   }
 
   std::vector<int> chord_tones = getChordTonePitchClasses(chord_degree);
-  int pitch_pc = pitch % 12;
+  int pitch_pc = getPitchClass(static_cast<uint8_t>(pitch));
   bool is_chord_tone = false;
   for (int ct : chord_tones) {
     if (pitch_pc == ct) {

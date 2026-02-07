@@ -339,7 +339,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
   // This preserves melodic contour instead of silently dropping notes, which could create gaps.
   if (!config.chromatic_approach) {
     for (auto& note : result) {
-      if (!isScaleTone(note.note % 12, key_offset)) {
+      if (!isScaleTone(getPitchClass(note.note), key_offset)) {
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         uint8_t old_pitch = note.note;
 #endif
@@ -653,7 +653,7 @@ std::optional<NoteEvent> MelodicEmbellisher::tryAddAnticipation(const NoteEvent&
 
   // Find chord tone nearest to current pitch
   int best_ct = chord_tones[0];
-  int current_pc = current.note % 12;
+  int current_pc = getPitchClass(current.note);
   int best_dist = 100;
 
   for (int ct : chord_tones) {

@@ -1412,8 +1412,8 @@ BassAnalysis BassAnalysis::analyzeBar(const MidiTrack& track, Tick bar_start,
     }
 
     Tick relative_tick = note.start_tick - bar_start;
-    uint8_t pitch_class = note.note % 12;
-    uint8_t root_class = expected_root % 12;
+    uint8_t pitch_class = getPitchClass(note.note);
+    uint8_t root_class = getPitchClass(expected_root);
     uint8_t fifth_class = (expected_root + 7) % 12;
 
     // Check beat 1 (first quarter note)

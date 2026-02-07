@@ -86,6 +86,8 @@ set(MIDISKETCH_CORE_SOURCES
   instrument/fretted/bass_model.cpp
   instrument/fretted/guitar_model.cpp
   instrument/fretted/fretted_note_factory.cpp
+  instrument/keyboard/piano_model.cpp
+  instrument/keyboard/keyboard_note_factory.cpp
   instrument/drums/drum_performer.cpp
 )
 

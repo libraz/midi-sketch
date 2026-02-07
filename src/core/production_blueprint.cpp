@@ -575,8 +575,12 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         0,      // mood_mask: all moods allowed
         {127, 108, 12, false,  // max_velocity, max_pitch, max_leap, prefer_stepwise
          InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
+         InstrumentSkillLevel::Intermediate,  // keys_skill
          InstrumentModelMode::ConstraintsOnly,
          false, false, false},  // enable_slap, enable_tapping, enable_harmonics
+        // aux_profile: Mood default, standard functions, default scaling
+        {0xFF, AuxFunction::MelodicHook, AuxFunction::MotifCounter, AuxFunction::EmotionalPad,
+         1.0f, 1.0f, -2},
     },
 
     // 1: RhythmLock (rhythm-synced, formerly Orangestar)
@@ -596,9 +600,13 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         0,      // mood_mask: all moods allowed
         {127, 108, 9, false,  // max_velocity, max_pitch, max_leap, prefer_stepwise
          InstrumentSkillLevel::Advanced, InstrumentSkillLevel::Advanced,
+         InstrumentSkillLevel::Advanced,  // keys_skill
          InstrumentModelMode::Full,
          true, false, false,  // enable_slap for punchy rhythm
          true},               // guitar_below_vocal
+        // aux_profile: Square Lead, PulseLoop/GrooveAccent, punchy rhythm focus
+        {80, AuxFunction::PulseLoop, AuxFunction::PulseLoop, AuxFunction::GrooveAccent,
+         0.8f, 0.85f, -4},
     },
 
     // 2: StoryPop (melody-driven, formerly YOASOBI)
@@ -618,9 +626,13 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         0,      // mood_mask: all moods allowed
         {127, 108, 12, false,  // max_velocity, max_pitch, max_leap, prefer_stepwise
          InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
+         InstrumentSkillLevel::Intermediate,  // keys_skill
          InstrumentModelMode::ConstraintsOnly,
          false, false, false,  // techniques
          true},                // guitar_below_vocal
+        // aux_profile: Mood default, PhraseTail for gap-filling, gentle EmotionalPad chorus
+        {0xFF, AuxFunction::MelodicHook, AuxFunction::PhraseTail, AuxFunction::EmotionalPad,
+         0.7f, 0.75f, -2},
     },
 
     // 3: Ballad (sparse, emotional)
@@ -640,9 +652,13 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         (1u << 5) | (1u << 6) | (1u << 7) | (1u << 8) | (1u << 11),
         {100, 84, 9, true,  // max_vel=100, max_pitch=C6(84), prefer_stepwise for lyrical flow
          InstrumentSkillLevel::Beginner, InstrumentSkillLevel::Beginner,
+         InstrumentSkillLevel::Beginner,  // keys_skill
          InstrumentModelMode::ConstraintsOnly,
          false, false, false,  // no techniques for ballad simplicity
          true},                // guitar_below_vocal
+        // aux_profile: Choir Aahs, SustainPad throughout, very quiet and sparse
+        {52, AuxFunction::SustainPad, AuxFunction::SustainPad, AuxFunction::SustainPad,
+         0.5f, 0.5f, -7},
     },
 
     // 4: IdolStandard (classic idol pop: memorable melody, gradual build)
@@ -662,8 +678,12 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         0,      // mood_mask: all moods allowed
         {127, 108, 10, false,  // max_leap=10 for memorable melodies
          InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
+         InstrumentSkillLevel::Intermediate,  // keys_skill
          InstrumentModelMode::ConstraintsOnly,
          false, false, false},
+        // aux_profile: Mood default, PhraseTail verse, Unison chorus for idol power
+        {0xFF, AuxFunction::MelodicHook, AuxFunction::PhraseTail, AuxFunction::Unison,
+         0.75f, 0.8f, -2},
     },
 
     // 5: IdolHyper (high BPM, chorus-first, high density)
@@ -684,9 +704,13 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         (1u << 2) | (1u << 13) | (1u << 14) | (1u << 18),
         {110, 96, 12, false,  // max_vel=110, max_pitch=C7(96), max_leap=12
          InstrumentSkillLevel::Advanced, InstrumentSkillLevel::Advanced,
+         InstrumentSkillLevel::Advanced,  // keys_skill
          InstrumentModelMode::Full,
          true, false, false,  // enable_slap for high-energy punch
          true},               // guitar_below_vocal
+        // aux_profile: Square Lead, PulseLoop/GrooveAccent, high energy punch
+        {80, AuxFunction::GrooveAccent, AuxFunction::PulseLoop, AuxFunction::GrooveAccent,
+         0.85f, 0.9f, -4},
     },
 
     // 6: IdolKawaii (sweet, bouncy, restrained)
@@ -707,9 +731,13 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         (1u << 1) | (1u << 14) | (1u << 16),
         {80, 79, 7, true,  // max_vel=80, max_pitch=G5(79), max_leap=7, prefer_stepwise
          InstrumentSkillLevel::Beginner, InstrumentSkillLevel::Beginner,
+         InstrumentSkillLevel::Beginner,  // keys_skill
          InstrumentModelMode::ConstraintsOnly,
          false, false, false,  // simple patterns for cute vibe
          true},                // guitar_below_vocal
+        // aux_profile: Music Box, MelodicHook throughout for cute sparkle, low density
+        {10, AuxFunction::MelodicHook, AuxFunction::MelodicHook, AuxFunction::MelodicHook,
+         0.6f, 0.6f, -5},
     },
 
     // 7: IdolCoolPop (cool, four-on-floor, uniform)
@@ -729,9 +757,13 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         0,      // mood_mask: all moods allowed
         {120, 108, 9, false,  // max_vel=120, max_leap=9 for controlled coolness
          InstrumentSkillLevel::Advanced, InstrumentSkillLevel::Advanced,
+         InstrumentSkillLevel::Advanced,  // keys_skill
          InstrumentModelMode::Full,
          true, false, false,  // enable_slap for funky grooves
          true},               // guitar_below_vocal
+        // aux_profile: Square Lead, PulseLoop/GrooveAccent, cool driving energy
+        {80, AuxFunction::PulseLoop, AuxFunction::PulseLoop, AuxFunction::GrooveAccent,
+         0.8f, 0.85f, -4},
     },
 
     // 8: IdolEmo (quiet→explosive, emotional, late peak)
@@ -751,9 +783,13 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         (1u << 5) | (1u << 6) | (1u << 8),
         {127, 108, 12, false,  // default (emotional dynamics need full range)
          InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
+         InstrumentSkillLevel::Intermediate,  // keys_skill
          InstrumentModelMode::ConstraintsOnly,
          false, false, false,  // techniques
          true},                // guitar_below_vocal
+        // aux_profile: Choir Aahs, SustainPad throughout, very quiet and sparse
+        {52, AuxFunction::SustainPad, AuxFunction::SustainPad, AuxFunction::SustainPad,
+         0.55f, 0.5f, -7},
     },
 
     // 9: BehavioralLoop (addictive, highly repetitive hooks)
@@ -772,8 +808,12 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         0,      // mood_mask: all moods allowed
         {127, 108, 12, false,  // default constraints
          InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
+         InstrumentSkillLevel::Intermediate,  // keys_skill
          InstrumentModelMode::ConstraintsOnly,
          false, false, false},
+        // aux_profile: Mood default, PulseLoop for addictive loop feel
+        {0xFF, AuxFunction::MelodicHook, AuxFunction::PulseLoop, AuxFunction::PulseLoop,
+         0.9f, 0.9f, -2},
     },
 };
 

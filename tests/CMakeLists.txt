@@ -100,6 +100,7 @@ set(TEST_SOURCES
   track/motif_vocal_coordination_test.cpp
   track/guitar_test.cpp
   track/fretted_instrument_test.cpp
+  instrument/keyboard_model_test.cpp
   track/rhythm_sync_test.cpp
   track/melody_utils_test.cpp
   instrument/drum_performer_test.cpp

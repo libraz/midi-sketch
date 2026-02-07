@@ -210,42 +210,20 @@ class PostProcessor {
   static void fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& vocal,
                                     const ICollisionDetector& harmony);
 
-  /// @brief Fix chord-vocal clashes that may occur after post-processing.
+  /// @brief Fix track-vocal clashes that may occur after post-processing.
   ///
-  /// Post-processing (humanization, duration extension) can create chord-vocal
+  /// Post-processing (humanization, duration extension) can create track-vocal
   /// clashes that weren't detected during generation. This function removes
-  /// clashing chord notes to resolve minor 2nd, major 2nd, and major 7th intervals.
+  /// clashing notes to resolve minor 2nd, major 7th, and (for non-bass tracks)
+  /// close major 2nd intervals.
   ///
-  /// @param chord Chord track to adjust (in-place)
+  /// Bass tracks skip close major 2nd detection because octave separation
+  /// makes the interval acceptable.
+  ///
+  /// @param track Track to adjust (in-place)
   /// @param vocal Vocal track (read-only reference)
-  static void fixChordVocalClashes(MidiTrack& chord, const MidiTrack& vocal);
-
-  /// @brief Fix aux-vocal clashes that may occur after post-processing.
-  ///
-  /// Similar to fixChordVocalClashes, but for aux track. Removes clashing aux notes
-  /// to resolve minor 2nd, major 2nd, and major 7th intervals.
-  ///
-  /// @param aux Aux track to adjust (in-place)
-  /// @param vocal Vocal track (read-only reference)
-  static void fixAuxVocalClashes(MidiTrack& aux, const MidiTrack& vocal);
-
-  /// @brief Fix bass-vocal clashes that may occur after post-processing.
-  ///
-  /// Similar to fixChordVocalClashes, but for bass track. Removes clashing bass notes
-  /// to resolve minor 2nd, major 2nd, and major 7th intervals.
-  ///
-  /// @param bass Bass track to adjust (in-place)
-  /// @param vocal Vocal track (read-only reference)
-  static void fixBassVocalClashes(MidiTrack& bass, const MidiTrack& vocal);
-
-  /// @brief Fix guitar-vocal clashes that may occur after post-processing.
-  ///
-  /// Similar to fixChordVocalClashes, but for guitar track. Removes clashing guitar notes
-  /// to resolve minor 2nd, major 2nd, and major 7th intervals.
-  ///
-  /// @param guitar Guitar track to adjust (in-place)
-  /// @param vocal Vocal track (read-only reference)
-  static void fixGuitarVocalClashes(MidiTrack& guitar, const MidiTrack& vocal);
+  /// @param role TrackRole of the track being adjusted (Bass skips close major 2nd)
+  static void fixTrackVocalClashes(MidiTrack& track, const MidiTrack& vocal, TrackRole role);
 
   /// @brief Fix inter-track clashes between non-vocal tracks after humanization.
   ///

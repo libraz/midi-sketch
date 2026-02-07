@@ -16,7 +16,7 @@
 #include "core/melody_templates.h"
 #include "core/melody_types.h"
 #include "core/timing_constants.h"
-#include "track/vocal/melody_designer.h"
+#include "track/melody/rhythm_generator.h"
 
 namespace midisketch {
 namespace {
@@ -26,8 +26,6 @@ namespace {
 // ============================================================================
 
 TEST(PhraseEndingTest, FinalNoteOnStrongBeat) {
-  MelodyDesigner designer;
-
   // Test across multiple seeds
   for (uint32_t seed = 1; seed <= 20; ++seed) {
     std::mt19937 rng(seed);
@@ -37,7 +35,7 @@ TEST(PhraseEndingTest, FinalNoteOnStrongBeat) {
       const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::SparseAnchor);
 
       // Generate rhythm
-      auto rhythm = designer.generatePhraseRhythm(tmpl, phrase_beats, 1.0f, 0.0f, rng);
+      auto rhythm = melody::generatePhraseRhythm(tmpl, phrase_beats, 1.0f, 0.0f, rng);
 
       ASSERT_GT(rhythm.size(), 0u)
           << "Seed " << seed << ", " << static_cast<int>(phrase_beats) << " beats";
@@ -60,15 +58,13 @@ TEST(PhraseEndingTest, FinalNoteOnStrongBeat) {
 // ============================================================================
 
 TEST(PhraseEndingTest, FinalNoteMinimumQuarterNote) {
-  MelodyDesigner designer;
-
   for (uint32_t seed = 1; seed <= 20; ++seed) {
     std::mt19937 rng(seed);
 
     for (uint8_t phrase_beats : {4, 8}) {
       const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
 
-      auto rhythm = designer.generatePhraseRhythm(tmpl, phrase_beats, 1.0f, 0.0f, rng);
+      auto rhythm = melody::generatePhraseRhythm(tmpl, phrase_beats, 1.0f, 0.0f, rng);
 
       ASSERT_GT(rhythm.size(), 0u);
 
@@ -87,15 +83,13 @@ TEST(PhraseEndingTest, FinalNoteMinimumQuarterNote) {
 // ============================================================================
 
 TEST(PhraseEndingTest, NoFractionalBeatAtPhraseEnd) {
-  MelodyDesigner designer;
-
   for (uint32_t seed = 1; seed <= 20; ++seed) {
     std::mt19937 rng(seed);
 
     const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::RunUpTarget);
 
     // Use 4-beat phrase (typical for pop)
-    auto rhythm = designer.generatePhraseRhythm(tmpl, 4, 1.0f, 0.0f, rng);
+    auto rhythm = melody::generatePhraseRhythm(tmpl, 4, 1.0f, 0.0f, rng);
 
     ASSERT_GT(rhythm.size(), 0u);
 
@@ -119,14 +113,12 @@ TEST(PhraseEndingTest, NoFractionalBeatAtPhraseEnd) {
 // ============================================================================
 
 TEST(PhraseEndingTest, FinalNoteMarkedStrong) {
-  MelodyDesigner designer;
-
   for (uint32_t seed = 1; seed <= 10; ++seed) {
     std::mt19937 rng(seed);
 
     const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::SparseAnchor);
 
-    auto rhythm = designer.generatePhraseRhythm(tmpl, 4, 1.0f, 0.0f, rng);
+    auto rhythm = melody::generatePhraseRhythm(tmpl, 4, 1.0f, 0.0f, rng);
 
     ASSERT_GT(rhythm.size(), 0u);
 
@@ -143,14 +135,12 @@ TEST(PhraseEndingTest, FinalNoteMarkedStrong) {
 // ============================================================================
 
 TEST(PhraseEndingTest, FinalNoteStartsAfterPhraseBody) {
-  MelodyDesigner designer;
-
   for (uint32_t seed = 1; seed <= 10; ++seed) {
     std::mt19937 rng(seed);
 
     const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
 
-    auto rhythm = designer.generatePhraseRhythm(tmpl, 4, 1.0f, 0.0f, rng);
+    auto rhythm = melody::generatePhraseRhythm(tmpl, 4, 1.0f, 0.0f, rng);
 
     if (rhythm.size() >= 2) {
       // The final note should start at or after the second-to-last note ends

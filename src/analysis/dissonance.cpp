@@ -449,7 +449,7 @@ struct DetectionContext {
 // Internal version of midiNoteToName for use within anonymous namespace
 std::string midiNoteToNameInternal(uint8_t midi_note) {
   int octave = (midi_note / 12) - 1;
-  int note_class = midi_note % 12;
+  int note_class = getPitchClass(midi_note);
   return std::string(NOTE_NAMES[note_class]) + std::to_string(octave);
 }
 
@@ -601,7 +601,7 @@ void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_
   for (const auto& note : track.notes()) {
     uint32_t bar = note.start_tick / TICKS_PER_BAR;
     int8_t degree = ctx.chord_lookup.getChordDegreeAt(note.start_tick);
-    int pitch_class = note.note % 12;
+    int pitch_class = getPitchClass(note.note);
 
     if (isPitchClassChordTone(pitch_class, degree, ctx.ext_params)) continue;
     if (isAvailableTension(pitch_class, degree)) continue;
@@ -706,7 +706,7 @@ void detectSustainedInTrack(const MidiTrack& track, TrackRole role,
   for (const auto& note : track.notes()) {
     Tick note_start = note.start_tick;
     Tick note_end = note.start_tick + note.duration;
-    int pitch_class = note.note % 12;
+    int pitch_class = getPitchClass(note.note);
 
     int8_t start_degree = ctx.chord_lookup.getChordDegreeAt(note_start);
 
@@ -777,7 +777,7 @@ void detectSustainedOverChordChange(const DetectionContext& ctx, DissonanceRepor
 void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
                                const DetectionContext& ctx, DissonanceReport& report) {
   for (const auto& note : track.notes()) {
-    int pitch_class = note.note % 12;
+    int pitch_class = getPitchClass(note.note);
 
     if (isDiatonic(pitch_class)) continue;
 
@@ -859,7 +859,7 @@ void detectNonDiatonicNotes(const DetectionContext& ctx, Key key, DissonanceRepo
 
 std::string midiNoteToName(uint8_t midi_note) {
   int octave = (midi_note / 12) - 1;
-  int note_class = midi_note % 12;
+  int note_class = getPitchClass(midi_note);
   return std::string(NOTE_NAMES[note_class]) + std::to_string(octave);
 }
 

@@ -34,9 +34,9 @@ float getDirectionBiasForContour(ContourType contour, float phrase_pos) {
   return 0.50f;  // Default: balanced
 }
 
-PitchChoice selectPitchChoiceImpl(const MelodyTemplate& tmpl, float phrase_pos, bool has_target,
-                                  SectionType section_type, std::mt19937& rng, float note_eighths,
-                                  std::optional<ContourType> forced_contour) {
+PitchChoice selectPitchChoice(const MelodyTemplate& tmpl, float phrase_pos, bool has_target,
+                              SectionType section_type, std::mt19937& rng, float note_eighths,
+                              std::optional<ContourType> forced_contour) {
   // Rhythm-melody coupling: note duration affects plateau probability
   // Short notes (16th or less) prefer staying on same pitch for stability
   // Long notes (half or longer) encourage movement for melodic interest
@@ -96,9 +96,9 @@ PitchChoice selectPitchChoiceImpl(const MelodyTemplate& tmpl, float phrase_pos, 
   return rng_util::rollProbability(rng, upward_bias) ? PitchChoice::StepUp : PitchChoice::StepDown;
 }
 
-PitchChoice applyDirectionInertiaImpl(PitchChoice choice, int inertia,
-                                      [[maybe_unused]] const MelodyTemplate& tmpl,
-                                      std::mt19937& rng) {
+PitchChoice applyDirectionInertia(PitchChoice choice, int inertia,
+                                  [[maybe_unused]] const MelodyTemplate& tmpl,
+                                  std::mt19937& rng) {
   // Same pitch or target step - don't modify
   if (choice == PitchChoice::Same || choice == PitchChoice::TargetStep) {
     return choice;
@@ -131,8 +131,8 @@ PitchChoice applyDirectionInertiaImpl(PitchChoice choice, int inertia,
   return choice;
 }
 
-float getEffectivePlateauRatioImpl(const MelodyTemplate& tmpl, int current_pitch,
-                                   const TessituraRange& tessitura) {
+float getEffectivePlateauRatio(const MelodyTemplate& tmpl, int current_pitch,
+                               const TessituraRange& tessitura) {
   float base_ratio = tmpl.plateau_ratio;
 
   // Boost plateau ratio in high register for stability
@@ -148,7 +148,7 @@ float getEffectivePlateauRatioImpl(const MelodyTemplate& tmpl, int current_pitch
   return std::min(base_ratio, 0.9f);  // Cap at 90%
 }
 
-bool shouldLeapImpl(LeapTrigger trigger, float phrase_pos, float section_pos) {
+bool shouldLeap(LeapTrigger trigger, float phrase_pos, float section_pos) {
   switch (trigger) {
     case LeapTrigger::None:
       return false;
@@ -167,14 +167,14 @@ bool shouldLeapImpl(LeapTrigger trigger, float phrase_pos, float section_pos) {
   return false;
 }
 
-int getStabilizeStepImpl(int leap_direction, int max_step) {
+int getStabilizeStep(int leap_direction, int max_step) {
   // Return opposite direction, smaller magnitude
   int stabilize = -leap_direction;
   int magnitude = std::max(1, max_step / 2);
   return stabilize * magnitude;
 }
 
-bool isInSameVowelSectionImpl(float pos1, float pos2, [[maybe_unused]] uint8_t phrase_length) {
+bool isInSameVowelSection(float pos1, float pos2, [[maybe_unused]] uint8_t phrase_length) {
   // Simple vowel section model: divide phrase into 2-beat sections
   constexpr float VOWEL_SECTION_BEATS = 2.0f;
 
@@ -184,7 +184,7 @@ bool isInSameVowelSectionImpl(float pos1, float pos2, [[maybe_unused]] uint8_t p
   return section1 == section2;
 }
 
-int8_t getMaxStepInVowelSectionImpl(bool in_same_vowel) { return in_same_vowel ? 2 : 4; }
+int8_t getMaxStepInVowelSection(bool in_same_vowel) { return in_same_vowel ? 2 : 4; }
 
 }  // namespace melody
 }  // namespace midisketch

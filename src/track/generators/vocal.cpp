@@ -26,6 +26,7 @@
 #include "core/production_blueprint.h"
 #include "core/song.h"
 #include "core/velocity.h"
+#include "track/melody/motif_support.h"
 #include "track/vocal/melody_designer.h"
 #include "track/vocal/phrase_cache.h"
 #include "track/vocal/phrase_planner.h"
@@ -1130,7 +1131,7 @@ static std::vector<NoteEvent> generateLockedRhythmWithEvaluation(
     float motif_bonus = 0.0f;
     if (designer.getCachedGlobalMotif().has_value() &&
         designer.getCachedGlobalMotif()->isValid()) {
-      motif_bonus = MelodyDesigner::evaluateWithGlobalMotif(
+      motif_bonus = melody::evaluateWithGlobalMotif(
           melody, *designer.getCachedGlobalMotif());
     }
 
@@ -1567,7 +1568,7 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
       // Extract GlobalMotif from first Chorus for song-wide melodic unity
       // Subsequent sections will receive bonus for similar contour/intervals
       if (section.type == SectionType::Chorus && !designer.getCachedGlobalMotif().has_value()) {
-        GlobalMotif motif = MelodyDesigner::extractGlobalMotif(section_notes);
+        GlobalMotif motif = melody::extractGlobalMotif(section_notes);
         if (motif.isValid()) {
           designer.setGlobalMotif(motif);
         }

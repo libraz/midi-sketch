@@ -14,11 +14,11 @@
 namespace midisketch {
 namespace melody {
 
-std::vector<RhythmNote> generatePhraseRhythmImpl(const MelodyTemplate& tmpl, uint8_t phrase_beats,
-                                                  float density_modifier, float thirtysecond_ratio,
-                                                  std::mt19937& rng, GenerationParadigm paradigm,
-                                                  float syncopation_weight,
-                                                  SectionType section_type) {
+std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t phrase_beats,
+                                              float density_modifier, float thirtysecond_ratio,
+                                              std::mt19937& rng, GenerationParadigm paradigm,
+                                              float syncopation_weight,
+                                              SectionType section_type) {
   std::vector<RhythmNote> rhythm;
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
@@ -302,7 +302,7 @@ static int getMaxInertia(SectionType type) {
   }
 }
 
-uint8_t selectPitchForLockedRhythmEnhancedImpl(
+uint8_t selectPitchForLockedRhythmEnhanced(
     uint8_t prev_pitch, int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
     const LockedRhythmContext& ctx, std::mt19937& rng) {
   // Build candidate pitch classes based on VocalAttitude

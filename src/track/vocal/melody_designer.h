@@ -232,31 +232,6 @@ class MelodyDesigner {
                                     std::mt19937& rng);
 
   /**
-   * @brief Extract GlobalMotif from chorus hook notes.
-   *
-   * Called after generating the first chorus to establish song-wide
-   * melodic reference. Does not constrain generation, only provides
-   * evaluation bonus for similar patterns.
-   *
-   * @param notes Chorus hook notes
-   * @return Extracted GlobalMotif structure
-   */
-  static GlobalMotif extractGlobalMotif(const std::vector<NoteEvent>& notes);
-
-  /**
-   * @brief Evaluate candidate similarity to GlobalMotif.
-   *
-   * Returns a bonus score (0.0-0.1) for candidates that share
-   * similar contour or interval patterns with the global motif.
-   *
-   * @param candidate Candidate melody notes
-   * @param global_motif Reference motif from chorus
-   * @return Bonus score (0.0-0.25)
-   */
-  static float evaluateWithGlobalMotif(const std::vector<NoteEvent>& candidate,
-                                       const GlobalMotif& global_motif);
-
-  /**
    * @brief Get cached GlobalMotif (if any).
    * @return Optional GlobalMotif, empty if not yet extracted
    */
@@ -299,87 +274,15 @@ class MelodyDesigner {
   PhraseResult generateHook(const MelodyTemplate& tmpl, Tick hook_start, const SectionContext& ctx,
                             int prev_pitch, const IHarmonyContext& harmony, std::mt19937& rng);
 
-  /**
-   * @brief Select pitch choice based on template and phrase position.
-   *
-   * Implements rhythm-melody coupling: note duration influences pitch selection.
-   * Short notes prefer chord tones for stability, long notes allow tensions.
-   *
-   * Supports phrase contour templates when forced_contour is set. Contours control
-   * the overall shape of melodic phrases:
-   * - Ascending: generally rising (builds energy)
-   * - Descending: generally falling (release)
-   * - Peak: rise then fall (arch shape, common in chorus)
-   * - Valley: fall then rise (bowl shape)
-   * - Plateau: relatively flat (stable)
-   *
-   * @param tmpl Melody template with movement probabilities
-   * @param phrase_pos Position within phrase (0.0-1.0)
-   * @param has_target Whether we're approaching a target pitch
-   * @param section_type Section type for directional bias
-   * @param rng Random number generator
-   * @param note_eighths Note duration in eighths (affects movement probability)
-   * @param forced_contour Optional contour override for explicit phrase shaping
-   * @return Selected pitch choice
-   */
-  static PitchChoice selectPitchChoice(const MelodyTemplate& tmpl, float phrase_pos,
-                                       bool has_target, SectionType section_type,
-                                       std::mt19937& rng, float note_eighths = 2.0f,
-                                       std::optional<ContourType> forced_contour = std::nullopt);
-
-  /**
-   * @brief Apply direction inertia to pitch movement.
-   * @param choice Current pitch choice
-   * @param inertia Accumulated direction (-N to +N)
-   * @param tmpl Melody template
-   * @param rng Random number generator
-   * @return Modified pitch choice (may change direction)
-   */
-  static PitchChoice applyDirectionInertia(PitchChoice choice, int inertia,
-                                           const MelodyTemplate& tmpl, std::mt19937& rng);
-
-  /**
-   * @brief Get effective plateau ratio considering register.
-   * @param tmpl Melody template with base plateau ratio
-   * @param current_pitch Current pitch
-   * @param tessitura Tessitura range for register calculation
-   * @return Effective plateau ratio (may be boosted for high notes)
-   */
-  static float getEffectivePlateauRatio(const MelodyTemplate& tmpl, int current_pitch,
-                                        const TessituraRange& tessitura);
-
-  /**
-   * @brief Check if a leap should occur based on trigger conditions.
-   * @param trigger Leap trigger type from template
-   * @param phrase_pos Position within phrase (0.0-1.0)
-   * @param section_pos Position within section (0.0-1.0)
-   * @return true if conditions are right for a leap
-   */
-  static bool shouldLeap(LeapTrigger trigger, float phrase_pos, float section_pos);
-
-  /**
-   * @brief Get stabilization step after a leap (leap compensation).
-   * @param leap_direction Direction of the leap (+1 up, -1 down)
-   * @param max_step Maximum step size in semitones
-   * @return Stabilization step (opposite direction, small magnitude)
-   */
-  static int getStabilizeStep(int leap_direction, int max_step);
-
-  /**
-   * @brief Check if two positions are in the same vowel section.
-   * @param pos1 First position in beats
-   * @param pos2 Second position in beats
-   * @param phrase_length Phrase length in beats
-   * @return true if positions are likely within same syllable
-   */
-  static bool isInSameVowelSection(float pos1, float pos2, uint8_t phrase_length);
-
-  /**
-   * @brief Get maximum step size within a vowel section.
-   * @param in_same_vowel Whether positions are in same vowel section
-   * @return Maximum step in semitones (smaller if in same vowel)
-   */
-  static int8_t getMaxStepInVowelSection(bool in_same_vowel);
+  // selectPitchChoice, applyDirectionInertia, getEffectivePlateauRatio, shouldLeap,
+  // getStabilizeStep, isInSameVowelSection, getMaxStepInVowelSection:
+  //   -> melody::selectPitchChoice etc. in contour_direction.h
+  //
+  // generatePhraseRhythm:
+  //   -> melody::generatePhraseRhythm in rhythm_generator.h
+  //
+  // extractGlobalMotif, evaluateWithGlobalMotif:
+  //   -> melody::extractGlobalMotif etc. in motif_support.h
 
   /**
    * @brief Apply transition approach processing to section end.
@@ -389,29 +292,6 @@ class MelodyDesigner {
    */
   void applyTransitionApproach(std::vector<NoteEvent>& notes, const SectionContext& ctx,
                                const IHarmonyContext& harmony);
-
-  /**
-   * @brief Generate rhythm pattern for a phrase.
-   *
-   * Creates a sequence of RhythmNote positions for a phrase.
-   * Ensures proper phrase endings: final note on strong beat with longer duration.
-   *
-   * @param tmpl Melody template with rhythm parameters
-   * @param phrase_beats Length of phrase in beats
-   * @param density_modifier Section-specific density multiplier (1.0 = default)
-   * @param thirtysecond_ratio Ratio of 32nd notes (0.0-1.0)
-   * @param rng Random number generator
-   * @param paradigm Generation paradigm (affects grid quantization)
-   * @param syncopation_weight Base syncopation probability (0.0-0.35, default 0.15)
-   * @param section_type Section type for context-aware syncopation (default Intro)
-   * @return Vector of rhythm positions for the phrase
-   */
-  std::vector<RhythmNote> generatePhraseRhythm(
-      const MelodyTemplate& tmpl, uint8_t phrase_beats, float density_modifier,
-      float thirtysecond_ratio, std::mt19937& rng,
-      GenerationParadigm paradigm = GenerationParadigm::Traditional,
-      float syncopation_weight = 0.15f,
-      SectionType section_type = SectionType::Intro);
 
   /**
    * @brief Enhanced pitch selection for locked rhythm with melodic quality.
@@ -450,19 +330,9 @@ class MelodyDesigner {
   // @param harmony Harmony context
   void insertLeadingTone(std::vector<NoteEvent>& notes, const SectionContext& ctx,
                          const IHarmonyContext& harmony);
-  // Apply pitch choice to get new pitch.
-  // VocalAttitude affects candidate pitches:
-  //   Clean: chord tones only (1, 3, 5)
-  //   Expressive: chord tones + tensions (7, 9)
-  //   Raw: all scale tones
-  // note_eighths: Rhythm-melody coupling - short notes prefer chord tones
-  // tension_usage: Gates tension note inclusion (0.0=none, 1.0=always)
-  int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch, int8_t chord_degree,
-                       int key_offset, uint8_t vocal_low, uint8_t vocal_high,
-                       VocalAttitude attitude, bool disable_singability = false,
-                       float note_eighths = 2.0f, float tension_usage = 0.2f);
 
   // Calculate target pitch for phrase based on template.
+  // Adapts SectionContext fields to melody::calculateTargetPitch parameters.
   int calculateTargetPitch(const MelodyTemplate& tmpl, const SectionContext& ctx, int current_pitch,
                            const IHarmonyContext& harmony, std::mt19937& rng);
 

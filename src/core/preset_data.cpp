@@ -9,6 +9,7 @@
 #include <random>
 
 #include "core/chord.h"
+#include "core/production_blueprint.h"
 
 namespace midisketch {
 
@@ -1553,6 +1554,14 @@ std::optional<uint8_t> findChordProgressionByName(const std::string& name) {
     }
   }
   return std::nullopt;
+}
+
+uint8_t getEffectiveAuxProgram(Mood mood, uint8_t blueprint_id) {
+  const auto& bp = getProductionBlueprint(blueprint_id);
+  if (bp.aux_profile.program_override != 0xFF) {
+    return bp.aux_profile.program_override;
+  }
+  return getMoodPrograms(mood).aux;
 }
 
 }  // namespace midisketch

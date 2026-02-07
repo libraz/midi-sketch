@@ -166,6 +166,7 @@ class AuxGenerator : public TrackBase {
     VocalStylePreset vocal_style = VocalStylePreset::CityPop;  ///< For template selection
     uint8_t vocal_low = 60;                                    ///< Vocal range low
     uint8_t vocal_high = 72;                                   ///< Vocal range high
+    uint8_t blueprint_id = 0;                                  ///< Blueprint ID for aux profile
   };
 
   AuxGenerator() = default;
@@ -258,7 +259,7 @@ class AuxGenerator : public TrackBase {
 
  private:
   void calculateAuxRange(const AuxConfig& config, const TessituraRange& main_tessitura,
-                         uint8_t& out_low, uint8_t& out_high);
+                         uint8_t& out_low, uint8_t& out_high, int8_t range_ceiling = 0);
   bool isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration,
                    const std::vector<NoteEvent>* main_melody, const IHarmonyContext& harmony,
                    float dissonance_tolerance = 0.0f);

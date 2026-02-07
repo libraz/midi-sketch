@@ -1,6 +1,12 @@
 /**
  * @file harmony_coordinator.cpp
  * @brief Implementation of HarmonyCoordinator.
+ *
+ * HarmonyCoordinator wraps HarmonyContext via composition and forwards
+ * IHarmonyContext methods to base_context_. Pure delegation uses the
+ * FORWARD_* macros below to reduce boilerplate. Only initialize(),
+ * clearNotes(), and clearNotesForTrack() have additional coordinator
+ * logic and are implemented manually.
  */
 
 #include "core/harmony_coordinator.h"
@@ -13,6 +19,25 @@
 #include "core/timing_constants.h"
 
 namespace midisketch {
+
+// ============================================================================
+// Forwarding macros for pure delegation to base_context_.
+// Each macro generates a single method that forwards all arguments.
+// Undefined immediately after the forwarding block to avoid pollution.
+// ============================================================================
+
+// NOLINT(cppcoreguidelines-macro-usage): macros used to eliminate ~100 lines
+// of identical delegation boilerplate; defined and undefined in this file only.
+
+// Forward a const method with a return value.
+#define FORWARD_CONST(ret, method, ...) \
+  ret HarmonyCoordinator::method(__VA_ARGS__) const
+
+// Forward a non-const void method.
+#define FORWARD_VOID(method, ...) \
+  void HarmonyCoordinator::method(__VA_ARGS__)
+
+// ============================================================================
 
 HarmonyCoordinator::HarmonyCoordinator() {
   // Initialize default priorities (Traditional paradigm)
@@ -27,7 +52,7 @@ HarmonyCoordinator::HarmonyCoordinator() {
 }
 
 // ============================================================================
-// IHarmonyContext delegation
+// IHarmonyContext delegation -- methods with additional coordinator logic
 // ============================================================================
 
 void HarmonyCoordinator::initialize(const Arrangement& arrangement,
@@ -52,36 +77,6 @@ void HarmonyCoordinator::initialize(const Arrangement& arrangement,
   generated_tracks_.clear();
 }
 
-int8_t HarmonyCoordinator::getChordDegreeAt(Tick tick) const {
-  return base_context_.getChordDegreeAt(tick);
-}
-
-std::vector<int> HarmonyCoordinator::getChordTonesAt(Tick tick) const {
-  return base_context_.getChordTonesAt(tick);
-}
-
-void HarmonyCoordinator::registerNote(Tick start, Tick duration, uint8_t pitch, TrackRole track) {
-  base_context_.registerNote(start, duration, pitch, track);
-}
-
-void HarmonyCoordinator::registerTrack(const MidiTrack& track, TrackRole role) {
-  base_context_.registerTrack(track, role);
-}
-
-bool HarmonyCoordinator::isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration, TrackRole exclude,
-                                      bool is_weak_beat) const {
-  return base_context_.isConsonantWithOtherTracks(pitch, start, duration, exclude, is_weak_beat);
-}
-
-CollisionInfo HarmonyCoordinator::getCollisionInfo(uint8_t pitch, Tick start, Tick duration,
-                                                    TrackRole exclude) const {
-  return base_context_.getCollisionInfo(pitch, start, duration, exclude);
-}
-
-Tick HarmonyCoordinator::getNextChordChangeTick(Tick after) const {
-  return base_context_.getNextChordChangeTick(after);
-}
-
 void HarmonyCoordinator::clearNotes() {
   base_context_.clearNotes();
   precomputed_candidates_.clear();
@@ -100,56 +95,76 @@ void HarmonyCoordinator::clearNotesForTrack(TrackRole track) {
       generated_tracks_.end());
 }
 
-bool HarmonyCoordinator::hasBassCollision(uint8_t pitch, Tick start, Tick duration,
-                                           int threshold) const {
+// ============================================================================
+// IHarmonyContext delegation -- pure forwarding to base_context_
+// ============================================================================
+
+FORWARD_CONST(int8_t, getChordDegreeAt, Tick tick) {
+  return base_context_.getChordDegreeAt(tick);
+}
+FORWARD_CONST(std::vector<int>, getChordTonesAt, Tick tick) {
+  return base_context_.getChordTonesAt(tick);
+}
+FORWARD_CONST(Tick, getNextChordChangeTick, Tick after) {
+  return base_context_.getNextChordChangeTick(after);
+}
+FORWARD_CONST(bool, isConsonantWithOtherTracks,
+              uint8_t pitch, Tick start, Tick duration, TrackRole exclude, bool is_weak_beat) {
+  return base_context_.isConsonantWithOtherTracks(pitch, start, duration, exclude, is_weak_beat);
+}
+FORWARD_CONST(CollisionInfo, getCollisionInfo,
+              uint8_t pitch, Tick start, Tick duration, TrackRole exclude) {
+  return base_context_.getCollisionInfo(pitch, start, duration, exclude);
+}
+FORWARD_CONST(bool, hasBassCollision,
+              uint8_t pitch, Tick start, Tick duration, int threshold) {
   return base_context_.hasBassCollision(pitch, start, duration, threshold);
 }
-
-std::vector<int> HarmonyCoordinator::getPitchClassesFromTrackAt(Tick tick, TrackRole role) const {
+FORWARD_CONST(std::vector<int>, getPitchClassesFromTrackAt, Tick tick, TrackRole role) {
   return base_context_.getPitchClassesFromTrackAt(tick, role);
 }
-
-std::vector<int> HarmonyCoordinator::getPitchClassesFromTrackInRange(Tick start, Tick end,
-                                                                       TrackRole role) const {
+FORWARD_CONST(std::vector<int>, getPitchClassesFromTrackInRange,
+              Tick start, Tick end, TrackRole role) {
   return base_context_.getPitchClassesFromTrackInRange(start, end, role);
 }
-
-void HarmonyCoordinator::registerSecondaryDominant(Tick start, Tick end, int8_t degree) {
+FORWARD_CONST(std::string, dumpNotesAt, Tick tick, Tick range_ticks) {
+  return base_context_.dumpNotesAt(tick, range_ticks);
+}
+FORWARD_CONST(CollisionSnapshot, getCollisionSnapshot, Tick tick, Tick range_ticks) {
+  return base_context_.getCollisionSnapshot(tick, range_ticks);
+}
+FORWARD_CONST(Tick, getMaxSafeEnd,
+              Tick note_start, uint8_t pitch, TrackRole exclude, Tick desired_end) {
+  return base_context_.getMaxSafeEnd(note_start, pitch, exclude, desired_end);
+}
+FORWARD_CONST(std::vector<int>, getSoundingPitchClasses,
+              Tick start, Tick end, TrackRole exclude) {
+  return base_context_.getSoundingPitchClasses(start, end, exclude);
+}
+FORWARD_CONST(std::vector<uint8_t>, getSoundingPitches,
+              Tick start, Tick end, TrackRole exclude) {
+  return base_context_.getSoundingPitches(start, end, exclude);
+}
+FORWARD_CONST(uint8_t, getHighestPitchForTrackInRange,
+              Tick start, Tick end, TrackRole role) {
+  return base_context_.getHighestPitchForTrackInRange(start, end, role);
+}
+FORWARD_CONST(uint8_t, getLowestPitchForTrackInRange,
+              Tick start, Tick end, TrackRole role) {
+  return base_context_.getLowestPitchForTrackInRange(start, end, role);
+}
+FORWARD_VOID(registerNote, Tick start, Tick duration, uint8_t pitch, TrackRole track) {
+  base_context_.registerNote(start, duration, pitch, track);
+}
+FORWARD_VOID(registerTrack, const MidiTrack& track, TrackRole role) {
+  base_context_.registerTrack(track, role);
+}
+FORWARD_VOID(registerSecondaryDominant, Tick start, Tick end, int8_t degree) {
   base_context_.registerSecondaryDominant(start, end, degree);
 }
 
-std::string HarmonyCoordinator::dumpNotesAt(Tick tick, Tick range_ticks) const {
-  return base_context_.dumpNotesAt(tick, range_ticks);
-}
-
-CollisionSnapshot HarmonyCoordinator::getCollisionSnapshot(Tick tick, Tick range_ticks) const {
-  return base_context_.getCollisionSnapshot(tick, range_ticks);
-}
-
-Tick HarmonyCoordinator::getMaxSafeEnd(Tick note_start, uint8_t pitch, TrackRole exclude,
-                                        Tick desired_end) const {
-  return base_context_.getMaxSafeEnd(note_start, pitch, exclude, desired_end);
-}
-
-std::vector<int> HarmonyCoordinator::getSoundingPitchClasses(Tick start, Tick end,
-                                                               TrackRole exclude) const {
-  return base_context_.getSoundingPitchClasses(start, end, exclude);
-}
-
-std::vector<uint8_t> HarmonyCoordinator::getSoundingPitches(Tick start, Tick end,
-                                                              TrackRole exclude) const {
-  return base_context_.getSoundingPitches(start, end, exclude);
-}
-
-uint8_t HarmonyCoordinator::getHighestPitchForTrackInRange(Tick start, Tick end,
-                                                            TrackRole role) const {
-  return base_context_.getHighestPitchForTrackInRange(start, end, role);
-}
-
-uint8_t HarmonyCoordinator::getLowestPitchForTrackInRange(Tick start, Tick end,
-                                                            TrackRole role) const {
-  return base_context_.getLowestPitchForTrackInRange(start, end, role);
-}
+#undef FORWARD_CONST
+#undef FORWARD_VOID
 
 // ============================================================================
 // Track Priority System

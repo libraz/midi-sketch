@@ -18,6 +18,8 @@
 #include "core/melody_templates.h"
 #include "core/timing_constants.h"
 #include "test_helpers/note_event_test_helper.h"
+#include "track/melody/contour_direction.h"
+#include "track/melody/motif_support.h"
 
 namespace midisketch {
 namespace {
@@ -46,7 +48,7 @@ TEST(MelodyDesignerTest, SelectPitchChoiceReturnsValidChoice) {
   const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
 
   for (int i = 0; i < 100; ++i) {
-    PitchChoice choice = MelodyDesigner::selectPitchChoice(tmpl, 0.5f, false, SectionType::A, rng);
+    PitchChoice choice = melody::selectPitchChoice(tmpl, 0.5f, false, SectionType::A, rng);
     // Should be one of the valid choices
     EXPECT_TRUE(choice == PitchChoice::Same || choice == PitchChoice::StepUp ||
                 choice == PitchChoice::StepDown || choice == PitchChoice::TargetStep);
@@ -60,7 +62,7 @@ TEST(MelodyDesignerTest, SelectPitchChoiceWithHighPlateau) {
 
   int same_count = 0;
   for (int i = 0; i < 100; ++i) {
-    PitchChoice choice = MelodyDesigner::selectPitchChoice(tmpl, 0.5f, false, SectionType::A, rng);
+    PitchChoice choice = melody::selectPitchChoice(tmpl, 0.5f, false, SectionType::A, rng);
     if (choice == PitchChoice::Same) same_count++;
   }
 
@@ -76,7 +78,7 @@ TEST(MelodyDesignerTest, SelectPitchChoiceWithTarget) {
   int target_count = 0;
   // Test at phrase position > target_attraction_start
   for (int i = 0; i < 100; ++i) {
-    PitchChoice choice = MelodyDesigner::selectPitchChoice(tmpl, 0.7f, true, SectionType::A, rng);
+    PitchChoice choice = melody::selectPitchChoice(tmpl, 0.7f, true, SectionType::A, rng);
     if (choice == PitchChoice::TargetStep) target_count++;
   }
 
@@ -92,7 +94,7 @@ TEST(MelodyDesignerTest, ApplyDirectionInertiaSameUnchanged) {
   std::mt19937 rng(42);
   const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
 
-  PitchChoice result = MelodyDesigner::applyDirectionInertia(PitchChoice::Same, 3, tmpl, rng);
+  PitchChoice result = melody::applyDirectionInertia(PitchChoice::Same, 3, tmpl, rng);
   EXPECT_EQ(result, PitchChoice::Same);
 }
 
@@ -101,7 +103,7 @@ TEST(MelodyDesignerTest, ApplyDirectionInertiaTargetUnchanged) {
   const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
 
   PitchChoice result =
-      MelodyDesigner::applyDirectionInertia(PitchChoice::TargetStep, -3, tmpl, rng);
+      melody::applyDirectionInertia(PitchChoice::TargetStep, -3, tmpl, rng);
   EXPECT_EQ(result, PitchChoice::TargetStep);
 }
 
@@ -112,7 +114,7 @@ TEST(MelodyDesignerTest, ApplyDirectionInertiaInfluencesStep) {
   // With strong positive inertia, should tend toward StepUp
   int up_count = 0;
   for (int i = 0; i < 100; ++i) {
-    PitchChoice result = MelodyDesigner::applyDirectionInertia(PitchChoice::StepDown, 3, tmpl, rng);
+    PitchChoice result = melody::applyDirectionInertia(PitchChoice::StepDown, 3, tmpl, rng);
     if (result == PitchChoice::StepUp) up_count++;
   }
 
@@ -128,7 +130,7 @@ TEST(MelodyDesignerTest, EffectivePlateauRatioBasic) {
   const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
   TessituraRange t{60, 72, 66, 55, 77};
 
-  float ratio = MelodyDesigner::getEffectivePlateauRatio(tmpl, 66, t);
+  float ratio = melody::getEffectivePlateauRatio(tmpl, 66, t);
   EXPECT_FLOAT_EQ(ratio, tmpl.plateau_ratio);
 }
 
@@ -136,7 +138,7 @@ TEST(MelodyDesignerTest, EffectivePlateauRatioHighRegister) {
   const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
   TessituraRange t{60, 72, 66, 55, 77};
 
-  float ratio = MelodyDesigner::getEffectivePlateauRatio(tmpl, 75, t);
+  float ratio = melody::getEffectivePlateauRatio(tmpl, 75, t);
   // Should be boosted above tessitura
   EXPECT_GT(ratio, tmpl.plateau_ratio);
 }
@@ -145,7 +147,7 @@ TEST(MelodyDesignerTest, EffectivePlateauRatioCappedAt90) {
   const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
   TessituraRange t{60, 72, 66, 55, 77};
 
-  float ratio = MelodyDesigner::getEffectivePlateauRatio(tmpl, 80, t);
+  float ratio = melody::getEffectivePlateauRatio(tmpl, 80, t);
   EXPECT_LE(ratio, 0.9f);
 }
 
@@ -154,27 +156,27 @@ TEST(MelodyDesignerTest, EffectivePlateauRatioCappedAt90) {
 // ============================================================================
 
 TEST(MelodyDesignerTest, ShouldLeapNone) {
-  EXPECT_FALSE(MelodyDesigner::shouldLeap(LeapTrigger::None, 0.0f, 0.0f));
-  EXPECT_FALSE(MelodyDesigner::shouldLeap(LeapTrigger::None, 0.5f, 0.5f));
-  EXPECT_FALSE(MelodyDesigner::shouldLeap(LeapTrigger::None, 1.0f, 1.0f));
+  EXPECT_FALSE(melody::shouldLeap(LeapTrigger::None, 0.0f, 0.0f));
+  EXPECT_FALSE(melody::shouldLeap(LeapTrigger::None, 0.5f, 0.5f));
+  EXPECT_FALSE(melody::shouldLeap(LeapTrigger::None, 1.0f, 1.0f));
 }
 
 TEST(MelodyDesignerTest, ShouldLeapPhraseStart) {
-  EXPECT_TRUE(MelodyDesigner::shouldLeap(LeapTrigger::PhraseStart, 0.0f, 0.5f));
-  EXPECT_TRUE(MelodyDesigner::shouldLeap(LeapTrigger::PhraseStart, 0.05f, 0.5f));
-  EXPECT_FALSE(MelodyDesigner::shouldLeap(LeapTrigger::PhraseStart, 0.5f, 0.5f));
+  EXPECT_TRUE(melody::shouldLeap(LeapTrigger::PhraseStart, 0.0f, 0.5f));
+  EXPECT_TRUE(melody::shouldLeap(LeapTrigger::PhraseStart, 0.05f, 0.5f));
+  EXPECT_FALSE(melody::shouldLeap(LeapTrigger::PhraseStart, 0.5f, 0.5f));
 }
 
 TEST(MelodyDesignerTest, ShouldLeapEmotionalPeak) {
-  EXPECT_FALSE(MelodyDesigner::shouldLeap(LeapTrigger::EmotionalPeak, 0.5f, 0.3f));
-  EXPECT_TRUE(MelodyDesigner::shouldLeap(LeapTrigger::EmotionalPeak, 0.5f, 0.7f));
-  EXPECT_FALSE(MelodyDesigner::shouldLeap(LeapTrigger::EmotionalPeak, 0.5f, 0.9f));
+  EXPECT_FALSE(melody::shouldLeap(LeapTrigger::EmotionalPeak, 0.5f, 0.3f));
+  EXPECT_TRUE(melody::shouldLeap(LeapTrigger::EmotionalPeak, 0.5f, 0.7f));
+  EXPECT_FALSE(melody::shouldLeap(LeapTrigger::EmotionalPeak, 0.5f, 0.9f));
 }
 
 TEST(MelodyDesignerTest, ShouldLeapSectionBoundary) {
-  EXPECT_TRUE(MelodyDesigner::shouldLeap(LeapTrigger::SectionBoundary, 0.5f, 0.02f));
-  EXPECT_FALSE(MelodyDesigner::shouldLeap(LeapTrigger::SectionBoundary, 0.5f, 0.5f));
-  EXPECT_TRUE(MelodyDesigner::shouldLeap(LeapTrigger::SectionBoundary, 0.5f, 0.98f));
+  EXPECT_TRUE(melody::shouldLeap(LeapTrigger::SectionBoundary, 0.5f, 0.02f));
+  EXPECT_FALSE(melody::shouldLeap(LeapTrigger::SectionBoundary, 0.5f, 0.5f));
+  EXPECT_TRUE(melody::shouldLeap(LeapTrigger::SectionBoundary, 0.5f, 0.98f));
 }
 
 // ============================================================================
@@ -182,18 +184,18 @@ TEST(MelodyDesignerTest, ShouldLeapSectionBoundary) {
 // ============================================================================
 
 TEST(MelodyDesignerTest, StabilizeStepOppositeDirection) {
-  int step = MelodyDesigner::getStabilizeStep(1, 4);
+  int step = melody::getStabilizeStep(1, 4);
   EXPECT_LT(step, 0);  // Opposite direction
 
-  step = MelodyDesigner::getStabilizeStep(-1, 4);
+  step = melody::getStabilizeStep(-1, 4);
   EXPECT_GT(step, 0);  // Opposite direction
 }
 
 TEST(MelodyDesignerTest, StabilizeStepSmallerMagnitude) {
-  int step = MelodyDesigner::getStabilizeStep(1, 6);
+  int step = melody::getStabilizeStep(1, 6);
   EXPECT_LE(std::abs(step), 3);  // Half of max_step
 
-  step = MelodyDesigner::getStabilizeStep(-1, 6);
+  step = melody::getStabilizeStep(-1, 6);
   EXPECT_LE(std::abs(step), 3);
 }
 
@@ -203,14 +205,14 @@ TEST(MelodyDesignerTest, StabilizeStepSmallerMagnitude) {
 
 TEST(MelodyDesignerTest, SameVowelSectionTrue) {
   // Positions within same 2-beat section
-  EXPECT_TRUE(MelodyDesigner::isInSameVowelSection(0.0f, 1.0f, 8));
-  EXPECT_TRUE(MelodyDesigner::isInSameVowelSection(2.0f, 3.5f, 8));
+  EXPECT_TRUE(melody::isInSameVowelSection(0.0f, 1.0f, 8));
+  EXPECT_TRUE(melody::isInSameVowelSection(2.0f, 3.5f, 8));
 }
 
 TEST(MelodyDesignerTest, SameVowelSectionFalse) {
   // Positions in different 2-beat sections
-  EXPECT_FALSE(MelodyDesigner::isInSameVowelSection(1.5f, 2.5f, 8));
-  EXPECT_FALSE(MelodyDesigner::isInSameVowelSection(0.0f, 4.0f, 8));
+  EXPECT_FALSE(melody::isInSameVowelSection(1.5f, 2.5f, 8));
+  EXPECT_FALSE(melody::isInSameVowelSection(0.0f, 4.0f, 8));
 }
 
 // ============================================================================
@@ -218,11 +220,11 @@ TEST(MelodyDesignerTest, SameVowelSectionFalse) {
 // ============================================================================
 
 TEST(MelodyDesignerTest, MaxStepInSameVowelSection) {
-  EXPECT_EQ(MelodyDesigner::getMaxStepInVowelSection(true), 2);
+  EXPECT_EQ(melody::getMaxStepInVowelSection(true), 2);
 }
 
 TEST(MelodyDesignerTest, MaxStepInDifferentVowelSection) {
-  EXPECT_EQ(MelodyDesigner::getMaxStepInVowelSection(false), 4);
+  EXPECT_EQ(melody::getMaxStepInVowelSection(false), 4);
 }
 
 // ============================================================================
@@ -919,7 +921,7 @@ TEST(MelodyDesignerTest, NonDownbeatAllowsNonChordTones) {
 
 TEST(GlobalMotifTest, ExtractFromEmptyNotes) {
   std::vector<NoteEvent> empty_notes;
-  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(empty_notes);
+  GlobalMotif motif = melody::extractGlobalMotif(empty_notes);
 
   EXPECT_FALSE(motif.isValid());
   EXPECT_EQ(motif.interval_count, 0);
@@ -928,7 +930,7 @@ TEST(GlobalMotifTest, ExtractFromEmptyNotes) {
 TEST(GlobalMotifTest, ExtractFromSingleNote) {
   // NoteEvent: {start_tick, duration, note, velocity}
   std::vector<NoteEvent> notes = {NoteEventTestHelper::create(0, 480, 60, 100)};
-  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
+  GlobalMotif motif = melody::extractGlobalMotif(notes);
 
   EXPECT_FALSE(motif.isValid());
   EXPECT_EQ(motif.interval_count, 0);
@@ -939,7 +941,7 @@ TEST(GlobalMotifTest, ExtractAscendingContour) {
   // NoteEvent: {start_tick, duration, note, velocity}
   std::vector<NoteEvent> notes = {
       NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 62, 100), NoteEventTestHelper::create(960, 480, 64, 100), NoteEventTestHelper::create(1440, 480, 65, 100)};
-  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
+  GlobalMotif motif = melody::extractGlobalMotif(notes);
 
   EXPECT_TRUE(motif.isValid());
   EXPECT_EQ(motif.interval_count, 3);
@@ -953,7 +955,7 @@ TEST(GlobalMotifTest, ExtractDescendingContour) {
   // F4 -> E4 -> D4 -> C4 (descending pattern)
   std::vector<NoteEvent> notes = {
       NoteEventTestHelper::create(0, 480, 65, 100), NoteEventTestHelper::create(480, 480, 64, 100), NoteEventTestHelper::create(960, 480, 62, 100), NoteEventTestHelper::create(1440, 480, 60, 100)};
-  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
+  GlobalMotif motif = melody::extractGlobalMotif(notes);
 
   EXPECT_TRUE(motif.isValid());
   EXPECT_EQ(motif.contour_type, ContourType::Descending);
@@ -964,7 +966,7 @@ TEST(GlobalMotifTest, ExtractPeakContour) {
   // intervals: +7, -3, -4 → first half positive, second half negative
   std::vector<NoteEvent> notes = {
       NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 67, 100), NoteEventTestHelper::create(960, 480, 64, 100), NoteEventTestHelper::create(1440, 480, 60, 100)};
-  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
+  GlobalMotif motif = melody::extractGlobalMotif(notes);
 
   EXPECT_TRUE(motif.isValid());
   EXPECT_EQ(motif.contour_type, ContourType::Peak);
@@ -975,7 +977,7 @@ TEST(GlobalMotifTest, ExtractValleyContour) {
   // intervals: -7, +4, +3 → first half negative, second half positive
   std::vector<NoteEvent> notes = {
       NoteEventTestHelper::create(0, 480, 67, 100), NoteEventTestHelper::create(480, 480, 60, 100), NoteEventTestHelper::create(960, 480, 64, 100), NoteEventTestHelper::create(1440, 480, 67, 100)};
-  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
+  GlobalMotif motif = melody::extractGlobalMotif(notes);
 
   EXPECT_TRUE(motif.isValid());
   EXPECT_EQ(motif.contour_type, ContourType::Valley);
@@ -985,7 +987,7 @@ TEST(GlobalMotifTest, ExtractPlateauContour) {
   // C4 -> C4 -> D4 -> C4 (mostly flat = plateau)
   std::vector<NoteEvent> notes = {
       NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 60, 100), NoteEventTestHelper::create(960, 480, 62, 100), NoteEventTestHelper::create(1440, 480, 60, 100)};
-  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
+  GlobalMotif motif = melody::extractGlobalMotif(notes);
 
   EXPECT_TRUE(motif.isValid());
   EXPECT_EQ(motif.contour_type, ContourType::Plateau);
@@ -999,7 +1001,7 @@ TEST(GlobalMotifTest, ExtractRhythmSignature) {
       NoteEventTestHelper::create(1440, 480, 64, 100),  // quarter
       NoteEventTestHelper::create(1920, 1920, 65, 100)  // whole
   };
-  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(notes);
+  GlobalMotif motif = melody::extractGlobalMotif(notes);
 
   EXPECT_TRUE(motif.isValid());
   EXPECT_EQ(motif.rhythm_count, 4);
@@ -1013,7 +1015,7 @@ TEST(GlobalMotifTest, EvaluateWithInvalidMotif) {
   GlobalMotif invalid_motif;
   std::vector<NoteEvent> candidate = {NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 62, 100)};
 
-  float bonus = MelodyDesigner::evaluateWithGlobalMotif(candidate, invalid_motif);
+  float bonus = melody::evaluateWithGlobalMotif(candidate, invalid_motif);
 
   EXPECT_EQ(bonus, 0.0f);
 }
@@ -1021,10 +1023,10 @@ TEST(GlobalMotifTest, EvaluateWithInvalidMotif) {
 TEST(GlobalMotifTest, EvaluateWithIdenticalPattern) {
   // Create a motif from ascending pattern
   std::vector<NoteEvent> source = {NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 62, 100), NoteEventTestHelper::create(960, 480, 64, 100)};
-  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(source);
+  GlobalMotif motif = melody::extractGlobalMotif(source);
 
   // Evaluate same pattern (should get maximum bonus)
-  float bonus = MelodyDesigner::evaluateWithGlobalMotif(source, motif);
+  float bonus = melody::evaluateWithGlobalMotif(source, motif);
 
   // Max bonus is 0.25 (0.10 contour + 0.05 intervals + 0.05 direction + 0.05 consistency)
   EXPECT_GT(bonus, 0.15f);
@@ -1036,13 +1038,13 @@ TEST(GlobalMotifTest, EvaluateDifferentContour) {
   // Need intervals summing to >= 3 in each half to avoid Plateau classification
   std::vector<NoteEvent> ascending = {
       NoteEventTestHelper::create(0, 480, 55, 100), NoteEventTestHelper::create(480, 480, 60, 100), NoteEventTestHelper::create(960, 480, 64, 100), NoteEventTestHelper::create(1440, 480, 69, 100)};
-  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(ascending);
+  GlobalMotif motif = melody::extractGlobalMotif(ascending);
   EXPECT_EQ(motif.contour_type, ContourType::Ascending);
 
   // Evaluate clearly descending pattern (different contour)
   std::vector<NoteEvent> descending = {
       NoteEventTestHelper::create(0, 480, 69, 100), NoteEventTestHelper::create(480, 480, 64, 100), NoteEventTestHelper::create(960, 480, 60, 100), NoteEventTestHelper::create(1440, 480, 55, 100)};
-  float bonus = MelodyDesigner::evaluateWithGlobalMotif(descending, motif);
+  float bonus = melody::evaluateWithGlobalMotif(descending, motif);
 
   // No contour bonus (different contour types), no direction bonus (opposite),
   // but may get interval similarity (magnitudes match) and consistency bonus (both leaps)
@@ -1449,9 +1451,9 @@ TEST(GlobalMotifTest, MaxBonusIsPointTwoFive) {
       NoteEventTestHelper::create(1440, 480, 62, 100), // D4 (-3, leap down)
       NoteEventTestHelper::create(1920, 480, 64, 100), // E4 (+2, step up)
   };
-  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(source);
+  GlobalMotif motif = melody::extractGlobalMotif(source);
 
-  float bonus = MelodyDesigner::evaluateWithGlobalMotif(source, motif);
+  float bonus = melody::evaluateWithGlobalMotif(source, motif);
 
   // Exact same pattern: all components should be at maximum
   EXPECT_FLOAT_EQ(bonus, 0.25f);
@@ -1461,17 +1463,17 @@ TEST(GlobalMotifTest, ContourDirectionMatchingBonus) {
   // DNA pattern: ascending (up, up)
   std::vector<NoteEvent> dna = {
       NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 64, 100), NoteEventTestHelper::create(960, 480, 67, 100)};
-  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(dna);
+  GlobalMotif motif = melody::extractGlobalMotif(dna);
 
   // Candidate also ascending (up, up) but different intervals
   std::vector<NoteEvent> same_dir = {
       NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 61, 100), NoteEventTestHelper::create(960, 480, 63, 100)};
-  float bonus_same = MelodyDesigner::evaluateWithGlobalMotif(same_dir, motif);
+  float bonus_same = melody::evaluateWithGlobalMotif(same_dir, motif);
 
   // Candidate descending (down, down) - opposite direction
   std::vector<NoteEvent> opp_dir = {
       NoteEventTestHelper::create(0, 480, 67, 100), NoteEventTestHelper::create(480, 480, 64, 100), NoteEventTestHelper::create(960, 480, 60, 100)};
-  float bonus_opp = MelodyDesigner::evaluateWithGlobalMotif(opp_dir, motif);
+  float bonus_opp = melody::evaluateWithGlobalMotif(opp_dir, motif);
 
   // Same direction should get higher bonus than opposite direction
   EXPECT_GT(bonus_same, bonus_opp);
@@ -1481,17 +1483,17 @@ TEST(GlobalMotifTest, IntervalConsistencyBonusStepsMatchSteps) {
   // DNA with all steps (1-2 semitones)
   std::vector<NoteEvent> dna_steps = {
       NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 62, 100), NoteEventTestHelper::create(960, 480, 64, 100), NoteEventTestHelper::create(1440, 480, 65, 100)};
-  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(dna_steps);
+  GlobalMotif motif = melody::extractGlobalMotif(dna_steps);
 
   // Candidate with all steps (different pitches but same step character)
   std::vector<NoteEvent> cand_steps = {
       NoteEventTestHelper::create(0, 480, 65, 100), NoteEventTestHelper::create(480, 480, 67, 100), NoteEventTestHelper::create(960, 480, 69, 100), NoteEventTestHelper::create(1440, 480, 71, 100)};
-  float bonus_steps = MelodyDesigner::evaluateWithGlobalMotif(cand_steps, motif);
+  float bonus_steps = melody::evaluateWithGlobalMotif(cand_steps, motif);
 
   // Candidate with all leaps (3+ semitones) - different character
   std::vector<NoteEvent> cand_leaps = {
       NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 67, 100), NoteEventTestHelper::create(960, 480, 72, 100), NoteEventTestHelper::create(1440, 480, 79, 100)};
-  float bonus_leaps = MelodyDesigner::evaluateWithGlobalMotif(cand_leaps, motif);
+  float bonus_leaps = melody::evaluateWithGlobalMotif(cand_leaps, motif);
 
   // Steps matching steps should get higher consistency bonus
   EXPECT_GT(bonus_steps, bonus_leaps);
@@ -1504,19 +1506,19 @@ TEST(GlobalMotifTest, StrengthenedBonusImprovesCoherence) {
   std::vector<NoteEvent> dna = {
       NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 64, 100), NoteEventTestHelper::create(960, 480, 67, 100),
       NoteEventTestHelper::create(1440, 480, 65, 100), NoteEventTestHelper::create(1920, 480, 62, 100)};
-  GlobalMotif motif = MelodyDesigner::extractGlobalMotif(dna);
+  GlobalMotif motif = melody::extractGlobalMotif(dna);
 
   // Nearly identical pattern (transposed up 1 semitone)
   std::vector<NoteEvent> similar = {
       NoteEventTestHelper::create(0, 480, 61, 100), NoteEventTestHelper::create(480, 480, 65, 100), NoteEventTestHelper::create(960, 480, 68, 100),
       NoteEventTestHelper::create(1440, 480, 66, 100), NoteEventTestHelper::create(1920, 480, 63, 100)};
-  float bonus_similar = MelodyDesigner::evaluateWithGlobalMotif(similar, motif);
+  float bonus_similar = melody::evaluateWithGlobalMotif(similar, motif);
 
   // Completely different pattern (static then big leap)
   std::vector<NoteEvent> different = {
       NoteEventTestHelper::create(0, 480, 60, 100), NoteEventTestHelper::create(480, 480, 60, 100), NoteEventTestHelper::create(960, 480, 60, 100),
       NoteEventTestHelper::create(1440, 480, 72, 100), NoteEventTestHelper::create(1920, 480, 72, 100)};
-  float bonus_different = MelodyDesigner::evaluateWithGlobalMotif(different, motif);
+  float bonus_different = melody::evaluateWithGlobalMotif(different, motif);
 
   // The gap between similar and different should be meaningful (> 0.10)
   // to influence candidate selection during melody evaluation

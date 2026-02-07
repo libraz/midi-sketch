@@ -67,13 +67,13 @@ MidiSketch::~MidiSketch() {}
 void MidiSketch::rebuildMidi() {
   const auto& params = generator_.getParams();
   midi_writer_.build(generator_.getSong(), params.key, params.mood,
-                     generateMetadata(params), midi_format_);
+                     generateMetadata(params), midi_format_, params.blueprint_id);
 }
 
 void MidiSketch::rebuildMidi(const SongConfig& config) {
   const auto& params = generator_.getParams();
   midi_writer_.build(generator_.getSong(), config.key, params.mood,
-                     generateMetadata(params, config), midi_format_);
+                     generateMetadata(params, config), midi_format_, params.blueprint_id);
 }
 
 void MidiSketch::generate(const GeneratorParams& params) {
@@ -268,7 +268,8 @@ std::string MidiSketch::getEventsJson() const {
     writeTrack(song.arpeggio(), "Arpeggio", 4, arp_program, true);
   }
   if (!song.aux().empty()) {
-    writeTrack(song.aux(), "Aux", 5, progs.aux, true);
+    uint8_t aux_prog = getEffectiveAuxProgram(params.mood, params.blueprint_id);
+    writeTrack(song.aux(), "Aux", 5, aux_prog, true);
   }
   if (!song.guitar().empty()) {
     uint8_t guitar_prog = progs.guitar != 0xFF ? progs.guitar : GUITAR_PROG;

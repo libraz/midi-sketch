@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <memory>
 #include <random>
 
 #include "core/chord.h"
@@ -23,11 +24,14 @@
 #include "core/note_source.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
+#include "core/production_blueprint.h"
 #include "core/section_properties.h"
 #include "core/timing_constants.h"
 #include "core/track_layer.h"
 #include "core/velocity.h"
 #include "track/generators/bass.h"
+#include "instrument/keyboard/keyboard_note_factory.h"
+#include "instrument/keyboard/piano_model.h"
 #include "track/chord/bass_coordination.h"
 #include "track/chord/chord_rhythm.h"
 #include "track/chord/voice_leading.h"
@@ -697,6 +701,87 @@ void generateChordBar(MidiTrack& track, Tick bar_start, const VoicedChord& voici
   }
 }
 
+/// @brief Wrapper for keyboard playability checking on chord voicings.
+///
+/// Lazily initializes PianoModel and KeyboardNoteFactory on first use.
+/// When instrument_mode is Off, all methods pass through (legacy behavior).
+class KeyboardPlayabilityChecker {
+ public:
+  /// @brief Construct with default intermediate skill level.
+  KeyboardPlayabilityChecker(const IHarmonyContext& harmony, uint16_t bpm)
+      : harmony_(harmony),
+        bpm_(bpm),
+        instrument_mode_(InstrumentModelMode::Off),
+        skill_level_(InstrumentSkillLevel::Intermediate) {}
+
+  /// @brief Construct with BlueprintConstraints.
+  KeyboardPlayabilityChecker(const IHarmonyContext& harmony, uint16_t bpm,
+                             const BlueprintConstraints& constraints)
+      : harmony_(harmony),
+        bpm_(bpm),
+        instrument_mode_(constraints.instrument_mode),
+        skill_level_(constraints.keys_skill) {}
+
+  /// @brief Ensure a chord voicing is physically playable.
+  ///
+  /// When mode is Off, returns the voicing unchanged.
+  /// When active, validates and adjusts the voicing for playability.
+  ///
+  /// @param pitches Voicing pitches
+  /// @param root_pitch_class Root note pitch class (0-11)
+  /// @param start Start tick
+  /// @param duration Duration in ticks
+  /// @return Playable voicing pitches
+  std::vector<uint8_t> ensurePlayable(const std::vector<uint8_t>& pitches,
+                                       uint8_t root_pitch_class, uint32_t start,
+                                       uint32_t duration) {
+    if (instrument_mode_ == InstrumentModelMode::Off) {
+      return pitches;
+    }
+    ensureInitialized();
+    return factory_->ensurePlayableVoicing(pitches, root_pitch_class, start, duration);
+  }
+
+  /// @brief Reset state (call at section boundaries).
+  void resetState() {
+    if (factory_) {
+      factory_->resetState();
+    }
+  }
+
+ private:
+  void ensureInitialized() {
+    if (!piano_model_) {
+      piano_model_ = std::make_unique<PianoModel>(skill_level_);
+      factory_ = std::make_unique<KeyboardNoteFactory>(harmony_, *piano_model_, bpm_);
+
+      // Adjust cost threshold based on skill level
+      float max_cost = 50.0f;
+      switch (skill_level_) {
+        case InstrumentSkillLevel::Beginner:
+          max_cost = 30.0f;
+          break;
+        case InstrumentSkillLevel::Advanced:
+          max_cost = 70.0f;
+          break;
+        case InstrumentSkillLevel::Virtuoso:
+          max_cost = 100.0f;
+          break;
+        default:
+          break;
+      }
+      factory_->setMaxPlayabilityCost(max_cost);
+    }
+  }
+
+  const IHarmonyContext& harmony_;
+  uint16_t bpm_;
+  InstrumentModelMode instrument_mode_;
+  InstrumentSkillLevel skill_level_;
+  std::unique_ptr<PianoModel> piano_model_;
+  std::unique_ptr<KeyboardNoteFactory> factory_;
+};
+
 }  // namespace
 
 // =========================================================================
@@ -741,23 +826,38 @@ void generateChordTrackUnified(ChordGenerationMode mode, MidiTrack& track, const
   int8_t prev_section_last_degree = 0;
 
 
+  // Keyboard playability checker
+  KeyboardPlayabilityChecker keys_playability =
+      params.blueprint_ref != nullptr
+          ? KeyboardPlayabilityChecker(harmony, params.bpm, params.blueprint_ref->constraints)
+          : KeyboardPlayabilityChecker(harmony, params.bpm);
+
   // === Note addition helpers ===
   // Diff #3,5,7,8,11: Basic uses addSafeChordNote; WithContext uses addChordNoteWithState
   // These lambdas unify the pattern.
   auto addNotesForVoicing = [&](Tick start, Tick duration, const VoicedChord& voicing,
                                 uint8_t velocity, uint8_t vocal_ceiling, uint8_t root,
                                 ChordVoicingState* state_ptr) {
+    // Apply keyboard playability check
+    std::vector<uint8_t> checked_pitches;
+    checked_pitches.reserve(voicing.count);
+    for (size_t idx = 0; idx < voicing.count; ++idx) {
+      checked_pitches.push_back(voicing.pitches[idx]);
+    }
+    auto playable_pitches =
+        keys_playability.ensurePlayable(checked_pitches, root % 12, start, duration);
+
     if (is_basic) {
-      for (size_t idx = 0; idx < voicing.count; ++idx) {
-        addSafeChordNote(track, harmony, start, duration, voicing.pitches[idx], velocity, vocal_ceiling);
+      for (uint8_t pitch : playable_pitches) {
+        addSafeChordNote(track, harmony, start, duration, pitch, velocity, vocal_ceiling);
       }
     } else {
       if (state_ptr) state_ptr->reset(start);
       ChordVoicingState local_state;
       ChordVoicingState& state = state_ptr ? *state_ptr : local_state;
       if (!state_ptr) state.reset(start);
-      for (size_t idx = 0; idx < voicing.count; ++idx) {
-        addChordNoteWithState(track, harmony, start, duration, voicing.pitches[idx], velocity, state, vocal_ceiling);
+      for (uint8_t pitch : playable_pitches) {
+        addChordNoteWithState(track, harmony, start, duration, pitch, velocity, state, vocal_ceiling);
       }
       ensureMinVoicesAtTick(track, harmony, start, duration, velocity, state, vocal_ceiling, root);
     }
@@ -765,6 +865,9 @@ void generateChordTrackUnified(ChordGenerationMode mode, MidiTrack& track, const
 
   for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
     const auto& section = sections[sec_idx];
+
+    // Reset keyboard state at section boundaries
+    keys_playability.resetState();
 
     // Skip sections where chord is disabled by track_mask
     if (!hasTrack(section.track_mask, TrackMask::Chord)) {

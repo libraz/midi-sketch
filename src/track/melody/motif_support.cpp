@@ -11,7 +11,7 @@
 namespace midisketch {
 namespace melody {
 
-GlobalMotif extractGlobalMotifImpl(const std::vector<NoteEvent>& notes) {
+GlobalMotif extractGlobalMotif(const std::vector<NoteEvent>& notes) {
   GlobalMotif motif;
 
   if (notes.size() < 2) {
@@ -80,7 +80,7 @@ GlobalMotif extractGlobalMotifImpl(const std::vector<NoteEvent>& notes) {
   return motif;
 }
 
-float evaluateWithGlobalMotifImpl(const std::vector<NoteEvent>& candidate,
+float evaluateWithGlobalMotif(const std::vector<NoteEvent>& candidate,
                                   const GlobalMotif& global_motif) {
   if (!global_motif.isValid() || candidate.size() < 2) {
     return 0.0f;
@@ -89,7 +89,7 @@ float evaluateWithGlobalMotifImpl(const std::vector<NoteEvent>& candidate,
   float bonus = 0.0f;
 
   // Extract candidate's contour
-  GlobalMotif candidate_motif = extractGlobalMotifImpl(candidate);
+  GlobalMotif candidate_motif = extractGlobalMotif(candidate);
 
   // Contour similarity bonus (0.0-0.10)
   // Increased from 0.05 to strengthen melodic coherence across sections.

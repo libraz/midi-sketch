@@ -907,7 +907,7 @@ const char* midisketch_collision_to_string(const MidiSketchCollisionInfo* collis
   }
 
   int octave = collision->colliding_pitch / 12 - 1;
-  const char* note_name = midisketch::NOTE_NAMES[collision->colliding_pitch % 12];
+  const char* note_name = midisketch::NOTE_NAMES[midisketch::getPitchClass(collision->colliding_pitch)];
 
   const char* interval_name = (collision->interval_semitones == 1)    ? "minor 2nd"
                               : (collision->interval_semitones == 6)  ? "tritone"

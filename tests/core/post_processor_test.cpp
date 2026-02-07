@@ -1493,6 +1493,174 @@ TEST(PostProcessorTest, RegressionIdolHyperSeed88888) {
 }
 
 // ============================================================================
+// fixTrackVocalClashes Tests (unified vocal clash resolution)
+// ============================================================================
+
+TEST(PostProcessorTest, FixTrackVocalClashesRemovesMinor2ndForChord) {
+  // Chord note C4 (60) clashes with Vocal B3 (59) - minor 2nd
+  MidiTrack chord, vocal;
+  chord.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4
+  vocal.addNote(NoteEventBuilder::create(0, 480, 59, 80));  // B3
+
+  PostProcessor::fixTrackVocalClashes(chord, vocal, TrackRole::Chord);
+
+  // Chord note should be removed (minor 2nd is dissonant)
+  EXPECT_EQ(chord.notes().size(), 0u)
+      << "Chord note clashing by minor 2nd should be removed";
+}
+
+TEST(PostProcessorTest, FixTrackVocalClashesRemovesMajor7thForAux) {
+  // Aux note B4 (71) clashes with Vocal C4 (60) - major 7th
+  MidiTrack aux, vocal;
+  aux.addNote(NoteEventBuilder::create(0, 480, 71, 80));  // B4
+  vocal.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4
+
+  PostProcessor::fixTrackVocalClashes(aux, vocal, TrackRole::Aux);
+
+  EXPECT_EQ(aux.notes().size(), 0u)
+      << "Aux note clashing by major 7th should be removed";
+}
+
+TEST(PostProcessorTest, FixTrackVocalClashesRemovesCloseMajor2ndForChord) {
+  // Chord note D4 (62) clashes with Vocal C4 (60) - close major 2nd (interval = 2)
+  MidiTrack chord, vocal;
+  chord.addNote(NoteEventBuilder::create(0, 480, 62, 80));  // D4
+  vocal.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4
+
+  PostProcessor::fixTrackVocalClashes(chord, vocal, TrackRole::Chord);
+
+  EXPECT_EQ(chord.notes().size(), 0u)
+      << "Chord note clashing by close major 2nd should be removed";
+}
+
+TEST(PostProcessorTest, FixTrackVocalClashesSkipsCloseMajor2ndForBass) {
+  // Bass note D2 (38) with Vocal C4 (60) - major 2nd but wide separation
+  // Bass should NOT be removed for close major 2nd because octave separation
+  // makes this interval acceptable. (interval = 22, interval_class = 2, but
+  // include_close_major_2nd is false for Bass)
+  MidiTrack bass, vocal;
+  bass.addNote(NoteEventBuilder::create(0, 480, 62, 80));  // D4
+  vocal.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4
+
+  PostProcessor::fixTrackVocalClashes(bass, vocal, TrackRole::Bass);
+
+  // Bass should keep the note (close M2 skipped for Bass)
+  EXPECT_EQ(bass.notes().size(), 1u)
+      << "Bass note should NOT be removed for close major 2nd";
+}
+
+TEST(PostProcessorTest, FixTrackVocalClashesRemovesMinor2ndForBass) {
+  // Bass note B3 (59) with Vocal C4 (60) - minor 2nd (always dissonant)
+  MidiTrack bass, vocal;
+  bass.addNote(NoteEventBuilder::create(0, 480, 59, 80));  // B3
+  vocal.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4
+
+  PostProcessor::fixTrackVocalClashes(bass, vocal, TrackRole::Bass);
+
+  // Minor 2nd is always removed even for Bass
+  EXPECT_EQ(bass.notes().size(), 0u)
+      << "Bass note clashing by minor 2nd should still be removed";
+}
+
+TEST(PostProcessorTest, FixTrackVocalClashesRemovesMinor2ndForGuitar) {
+  // Guitar note C4 (60) clashes with Vocal B3 (59) - minor 2nd
+  MidiTrack guitar, vocal;
+  guitar.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4
+  vocal.addNote(NoteEventBuilder::create(0, 480, 59, 80));   // B3
+
+  PostProcessor::fixTrackVocalClashes(guitar, vocal, TrackRole::Guitar);
+
+  EXPECT_EQ(guitar.notes().size(), 0u)
+      << "Guitar note clashing by minor 2nd should be removed";
+}
+
+TEST(PostProcessorTest, FixTrackVocalClashesPreservesConsonantInterval) {
+  // Chord note G4 (67) with Vocal C4 (60) - perfect 5th (consonant)
+  MidiTrack chord, vocal;
+  chord.addNote(NoteEventBuilder::create(0, 480, 67, 80));  // G4
+  vocal.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4
+
+  PostProcessor::fixTrackVocalClashes(chord, vocal, TrackRole::Chord);
+
+  EXPECT_EQ(chord.notes().size(), 1u)
+      << "Consonant interval (perfect 5th) should not be removed";
+}
+
+// ============================================================================
+// fixInterTrackClashes Tests (goto removal verification)
+// ============================================================================
+
+TEST(PostProcessorTest, FixInterTrackClashesRemovesChordBassMinor2nd) {
+  // Chord C4 (60) clashes with Bass B3 (59) - minor 2nd
+  MidiTrack chord, bass, motif;
+  chord.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4
+  bass.addNote(NoteEventBuilder::create(0, 480, 59, 80));   // B3
+
+  PostProcessor::fixInterTrackClashes(chord, bass, motif);
+
+  EXPECT_EQ(chord.notes().size(), 0u)
+      << "Chord note clashing with bass by minor 2nd should be removed";
+}
+
+TEST(PostProcessorTest, FixInterTrackClashesRemovesChordMotifMinor2nd) {
+  // Chord C4 (60) clashes with Motif B3 (59) - minor 2nd
+  MidiTrack chord, bass, motif;
+  chord.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4
+  motif.addNote(NoteEventBuilder::create(0, 480, 59, 80));  // B3
+
+  PostProcessor::fixInterTrackClashes(chord, bass, motif);
+
+  EXPECT_EQ(chord.notes().size(), 0u)
+      << "Chord note clashing with motif by minor 2nd should be removed";
+}
+
+TEST(PostProcessorTest, FixInterTrackClashesRemovesOnceForBothClashes) {
+  // Chord C4 (60) clashes with BOTH Bass B3 (59) and Motif Db4 (61)
+  // Should be removed only once (not duplicated in removal list)
+  MidiTrack chord, bass, motif;
+  chord.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4
+  bass.addNote(NoteEventBuilder::create(0, 480, 59, 80));   // B3 - minor 2nd with chord
+  motif.addNote(NoteEventBuilder::create(0, 480, 61, 80));  // Db4 - minor 2nd with chord
+
+  PostProcessor::fixInterTrackClashes(chord, bass, motif);
+
+  EXPECT_EQ(chord.notes().size(), 0u)
+      << "Chord note clashing with both bass and motif should be removed";
+}
+
+TEST(PostProcessorTest, FixInterTrackClashesPreservesConsonantNotes) {
+  // Chord E4 (64) with Bass C3 (48) - major 3rd + octave (consonant)
+  // Chord E4 (64) with Motif G4 (67) - minor 3rd (consonant)
+  MidiTrack chord, bass, motif;
+  chord.addNote(NoteEventBuilder::create(0, 480, 64, 80));  // E4
+  bass.addNote(NoteEventBuilder::create(0, 480, 48, 80));   // C3
+  motif.addNote(NoteEventBuilder::create(0, 480, 67, 80));  // G4
+
+  PostProcessor::fixInterTrackClashes(chord, bass, motif);
+
+  EXPECT_EQ(chord.notes().size(), 1u)
+      << "Consonant chord note should be preserved";
+}
+
+TEST(PostProcessorTest, FixInterTrackClashesHandlesMultipleNotes) {
+  // Multiple chord notes, some clashing, some not
+  MidiTrack chord, bass, motif;
+  chord.addNote(NoteEventBuilder::create(0, 480, 60, 80));     // C4 - clashes with B3
+  chord.addNote(NoteEventBuilder::create(0, 480, 64, 80));     // E4 - no clash
+  chord.addNote(NoteEventBuilder::create(480, 480, 67, 80));   // G4 - clashes with Ab4
+  bass.addNote(NoteEventBuilder::create(0, 480, 59, 80));      // B3 - minor 2nd with C4
+  motif.addNote(NoteEventBuilder::create(480, 480, 68, 80));   // Ab4 - minor 2nd with G4
+
+  PostProcessor::fixInterTrackClashes(chord, bass, motif);
+
+  // C4 and G4 should be removed, E4 should remain
+  EXPECT_EQ(chord.notes().size(), 1u)
+      << "Only consonant note should remain after clash removal";
+  EXPECT_EQ(chord.notes()[0].note, 64)
+      << "E4 (consonant) should be the remaining note";
+}
+
+// ============================================================================
 // Per-Section ChorusDropStyle Tests
 // ============================================================================
 
@@ -2245,7 +2413,7 @@ TEST_F(SmoothLargeLeapsTest, SectionBoundaryLeapRegression) {
   track_.addNote(NoteEventBuilder::create(960, 240, 72, 70));
   track_.addNote(NoteEventBuilder::create(1440, 240, 76, 70));
 
-  // Gap (simulating removed notes from fixAuxVocalClashes)
+  // Gap (simulating removed notes from fixTrackVocalClashes)
 
   // Chorus notes (low register ~55-57)
   track_.addNote(NoteEventBuilder::create(3840, 1920, 57, 60));

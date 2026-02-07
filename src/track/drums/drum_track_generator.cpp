@@ -381,6 +381,11 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
           continue;
         }
 
+        // Common beat context (shared across all beat processors)
+        BeatContext beat_ctx{beat_tick, beat, velocity, section.type,
+                             params.mood, params.bpm, bar, section.bars,
+                             in_prechorus_lift, rng};
+
         // Kick drum
         // Check intro_kick_enabled from blueprint
         bool intro_kick_disabled = (section.type == SectionType::Intro &&
@@ -388,8 +393,8 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
         if (!kicks_added && !intro_kick_disabled) {
           float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
           Tick adjusted_beat_tick = applyTimeFeel(beat_tick, time_feel, params.bpm);
-          generateKickForBeat(track, beat_tick, adjusted_beat_tick, kick, beat, velocity,
-                              kick_prob, in_prechorus_lift, rng, params.humanize_timing);
+          KickBeatParams kick_params{adjusted_beat_tick, kick, kick_prob, params.humanize_timing};
+          generateKickForBeat(track, beat_ctx, kick_params);
         }
 
         // Snare drum
@@ -398,23 +403,23 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
         bool use_groove_snare = use_euclidean &&
                                 (groove_template == GrooveTemplate::HalfTime ||
                                  groove_template == GrooveTemplate::Trap);
-        generateSnareForBeat(track, beat_tick, beat, velocity, section.type, ctx.style,
-                             section.getEffectiveDrumRole(), snare_prob, use_groove_snare,
-                             groove_pattern.snare, is_intro_first, in_prechorus_lift);
+        SnareBeatParams snare_params{ctx.style, section.getEffectiveDrumRole(), snare_prob,
+                                     use_groove_snare, groove_pattern.snare, is_intro_first};
+        generateSnareForBeat(track, beat_ctx, snare_params);
 
         // Ghost notes
         if (ctx.use_ghost_notes) {
-          generateGhostNotesForBeat(track, beat_tick, beat, velocity, section.type, params.mood,
-                                    section.getEffectiveBackingDensity(), params.bpm, use_euclidean,
-                                    groove_pattern.ghost_density / 100.0f, rng);
+          GhostBeatParams ghost_params{section.getEffectiveBackingDensity(), use_euclidean,
+                                       groove_pattern.ghost_density / 100.0f};
+          generateGhostNotesForBeat(track, beat_ctx, ghost_params);
         }
 
         // Hi-hat
         float swing_amount = calculateSwingAmount(section.type, bar, section.bars, section.swing_amount);
-        generateHiHatForBeat(track, beat_tick, beat, velocity, ctx, section.type,
-                             section.getEffectiveDrumRole(), ctx.density_mult, bar_has_open_hh,
-                             open_hh_beat, peak_open_hh_24, bar, section.bars, swing_amount,
-                             ctx.groove, params.mood, params.bpm, rng);
+        HiHatBeatParams hh_params{section.getEffectiveDrumRole(), ctx.density_mult,
+                                   bar_has_open_hh, open_hh_beat, peak_open_hh_24,
+                                   swing_amount, ctx.groove};
+        generateHiHatForBeat(track, beat_ctx, ctx, hh_params);
       }
 
       // Foot hi-hat (independent pedal timekeeping)

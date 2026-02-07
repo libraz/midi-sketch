@@ -116,7 +116,7 @@ float MelodyEvaluator::calcChordToneRatio(const std::vector<NoteEvent>& notes,
 
       // Check if note is a chord tone
       std::vector<int> chord_tones = harmony.getChordTonesAt(note.start_tick);
-      int pitch_class = note.note % 12;
+      int pitch_class = getPitchClass(note.note);
 
       for (int tone : chord_tones) {
         if (pitch_class == tone) {

@@ -30,9 +30,9 @@ namespace melody {
 
 std::vector<RhythmNote> MelodyGenerationPipeline::generateRhythm(
     const MelodyTemplate& tmpl, const RhythmGenerationContext& ctx, std::mt19937& rng) const {
-  return generatePhraseRhythmImpl(tmpl, ctx.phrase_beats, ctx.density_modifier,
-                                  ctx.thirtysecond_ratio, rng, ctx.paradigm,
-                                  ctx.syncopation_weight, ctx.section_type);
+  return melody::generatePhraseRhythm(tmpl, ctx.phrase_beats, ctx.density_modifier,
+                                      ctx.thirtysecond_ratio, rng, ctx.paradigm,
+                                      ctx.syncopation_weight, ctx.section_type);
 }
 
 // ============================================================================
@@ -42,30 +42,30 @@ std::vector<RhythmNote> MelodyGenerationPipeline::generateRhythm(
 PitchChoice MelodyGenerationPipeline::selectPitchChoice(
     const MelodyTemplate& tmpl, float phrase_pos, const PitchGenerationContext& ctx,
     std::optional<ContourType> forced_contour, std::mt19937& rng) const {
-  return selectPitchChoiceImpl(tmpl, phrase_pos, ctx.target_pitch >= 0, ctx.section_type, rng,
-                               ctx.note_eighths, forced_contour);
+  return melody::selectPitchChoice(tmpl, phrase_pos, ctx.target_pitch >= 0, ctx.section_type, rng,
+                                   ctx.note_eighths, forced_contour);
 }
 
 PitchChoice MelodyGenerationPipeline::applyDirectionInertia(PitchChoice choice,
                                                             const PhraseGenerationState& state,
                                                             const MelodyTemplate& tmpl,
                                                             std::mt19937& rng) const {
-  return applyDirectionInertiaImpl(choice, state.direction_inertia, tmpl, rng);
+  return melody::applyDirectionInertia(choice, state.direction_inertia, tmpl, rng);
 }
 
 int MelodyGenerationPipeline::applyPitchChoice(PitchChoice choice,
                                                const PitchGenerationContext& ctx) const {
-  return applyPitchChoiceImpl(choice, ctx.current_pitch, ctx.target_pitch, ctx.chord_degree,
-                              ctx.key_offset, ctx.vocal_low, ctx.vocal_high, ctx.attitude,
-                              ctx.disable_singability, ctx.note_eighths);
+  return melody::applyPitchChoice(choice, ctx.current_pitch, ctx.target_pitch, ctx.chord_degree,
+                                  ctx.key_offset, ctx.vocal_low, ctx.vocal_high, ctx.attitude,
+                                  ctx.disable_singability, ctx.note_eighths);
 }
 
 int MelodyGenerationPipeline::calculateTargetPitch(const MelodyTemplate& tmpl,
                                                    const PitchGenerationContext& ctx,
                                                    Tick section_start,
                                                    const IHarmonyContext& harmony) const {
-  return calculateTargetPitchImpl(tmpl, ctx.tessitura.center, tmpl.tessitura_range, ctx.vocal_low,
-                                  ctx.vocal_high, section_start, harmony);
+  return melody::calculateTargetPitch(tmpl, ctx.tessitura.center, tmpl.tessitura_range, ctx.vocal_low,
+                                      ctx.vocal_high, section_start, harmony);
 }
 
 // ============================================================================

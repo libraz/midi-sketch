@@ -31,7 +31,7 @@ namespace melody {
 /// @param syncopation_weight Base syncopation probability (0.0-0.35, default 0.15)
 /// @param section_type Section type for context-aware syncopation
 /// @return Vector of rhythm positions for the phrase
-std::vector<RhythmNote> generatePhraseRhythmImpl(
+std::vector<RhythmNote> generatePhraseRhythm(
     const MelodyTemplate& tmpl, uint8_t phrase_beats, float density_modifier,
     float thirtysecond_ratio, std::mt19937& rng,
     GenerationParadigm paradigm = GenerationParadigm::Traditional,
@@ -96,7 +96,7 @@ struct LockedRhythmContext {
 /// @param ctx Context with phrase position, inertia, and motif info
 /// @param rng Random number generator
 /// @return Selected pitch (MIDI note number)
-uint8_t selectPitchForLockedRhythmEnhancedImpl(
+uint8_t selectPitchForLockedRhythmEnhanced(
     uint8_t prev_pitch, int8_t chord_degree, uint8_t vocal_low, uint8_t vocal_high,
     const LockedRhythmContext& ctx, std::mt19937& rng);
 

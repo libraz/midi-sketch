@@ -65,7 +65,7 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes, PhraseVariation variati
       int shift = shift_dist(rng);
       if (shift == 0) shift = 1;
       // Shift by scale degrees: find current scale position and move
-      int pc = last.note % 12;
+      int pc = getPitchClass(last.note);
       int octave = last.note / 12;
       // Find current scale index
       int scale_idx = 0;
@@ -182,7 +182,7 @@ CadenceType detectCadenceType(const std::vector<NoteEvent>& notes, int8_t chord_
   if (notes.empty()) return CadenceType::None;
 
   const auto& last_note = notes.back();
-  uint8_t pitch_class = last_note.note % 12;  // 0=C, 2=D, 4=E, 5=F, 7=G, 9=A, 11=B
+  uint8_t pitch_class = getPitchClass(last_note.note);  // 0=C, 2=D, 4=E, 5=F, 7=G, 9=A, 11=B
 
   // Strong cadence: ends on chord tone of tonic (I chord)
   // In C major: C(0), E(4), G(7) - the "stable" tones

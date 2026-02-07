@@ -36,9 +36,10 @@ class MidiWriter {
    * @param mood Mood preset for instrument selection
    * @param metadata Optional JSON metadata to embed
    * @param format MIDI format (SMF1 or SMF2)
+   * @param blueprint_id Blueprint ID for aux program override
    */
   void build(const Song& song, Key key, Mood mood, const std::string& metadata = "",
-             MidiFormat format = kDefaultMidiFormat);
+             MidiFormat format = kDefaultMidiFormat, uint8_t blueprint_id = 0);
 
   /**
    * @brief Build vocal preview MIDI (vocal + root bass only).
@@ -57,9 +58,11 @@ class MidiWriter {
   std::unique_ptr<Midi2Writer> midi2_writer_;
 #endif
 
-  void buildSMF1(const Song& song, Key key, Mood mood, const std::string& metadata);
+  void buildSMF1(const Song& song, Key key, Mood mood, const std::string& metadata,
+                 uint8_t blueprint_id = 0);
 #ifndef MIDISKETCH_WASM
-  void buildSMF2(const Song& song, Key key, Mood mood, const std::string& metadata);
+  void buildSMF2(const Song& song, Key key, Mood mood, const std::string& metadata,
+                 uint8_t blueprint_id = 0);
 #endif
   void writeHeader(uint16_t num_tracks, uint16_t division);
   void writeTrack(const MidiTrack& track, const std::string& name, uint8_t channel, uint8_t program,

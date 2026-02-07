@@ -652,5 +652,62 @@ TEST(PitchUtilsTest, TransposePitch_ClampsToMin) {
   EXPECT_EQ(transposePitch(0, Key::C), 0);
 }
 
+// ============================================================================
+// getPitchClass Tests
+// ============================================================================
+
+TEST(PitchUtilsTest, GetPitchClass_MiddleC) {
+  // C4 = MIDI 60, pitch class = 0 (C)
+  EXPECT_EQ(getPitchClass(60), 0);
+}
+
+TEST(PitchUtilsTest, GetPitchClass_AllPitchClasses) {
+  // Verify all 12 pitch classes in octave 4
+  EXPECT_EQ(getPitchClass(60), 0);   // C
+  EXPECT_EQ(getPitchClass(61), 1);   // C#
+  EXPECT_EQ(getPitchClass(62), 2);   // D
+  EXPECT_EQ(getPitchClass(63), 3);   // D#
+  EXPECT_EQ(getPitchClass(64), 4);   // E
+  EXPECT_EQ(getPitchClass(65), 5);   // F
+  EXPECT_EQ(getPitchClass(66), 6);   // F#
+  EXPECT_EQ(getPitchClass(67), 7);   // G
+  EXPECT_EQ(getPitchClass(68), 8);   // G#
+  EXPECT_EQ(getPitchClass(69), 9);   // A
+  EXPECT_EQ(getPitchClass(70), 10);  // A#
+  EXPECT_EQ(getPitchClass(71), 11);  // B
+}
+
+TEST(PitchUtilsTest, GetPitchClass_OctaveInvariant) {
+  // Same pitch class across different octaves
+  EXPECT_EQ(getPitchClass(0), 0);    // C-1
+  EXPECT_EQ(getPitchClass(12), 0);   // C0
+  EXPECT_EQ(getPitchClass(24), 0);   // C1
+  EXPECT_EQ(getPitchClass(60), 0);   // C4
+  EXPECT_EQ(getPitchClass(72), 0);   // C5
+  EXPECT_EQ(getPitchClass(84), 0);   // C6
+  EXPECT_EQ(getPitchClass(120), 0);  // C9
+}
+
+TEST(PitchUtilsTest, GetPitchClass_BoundaryValues) {
+  // MIDI note 0 (lowest)
+  EXPECT_EQ(getPitchClass(0), 0);
+  // MIDI note 127 (highest) = G9, pitch class 7
+  EXPECT_EQ(getPitchClass(127), 7);
+}
+
+TEST(PitchUtilsTest, GetPitchClass_ConsistentWithNoteNames) {
+  // Verify getPitchClass result indexes into NOTE_NAMES correctly
+  for (uint8_t pitch = 0; pitch < 128; ++pitch) {
+    int pc = getPitchClass(pitch);
+    EXPECT_GE(pc, 0);
+    EXPECT_LE(pc, 11);
+    // Verify it matches the NOTE_NAMES array indexing used by pitchToNoteName
+    std::string name = pitchToNoteName(pitch);
+    std::string expected_prefix = NOTE_NAMES[pc];
+    EXPECT_EQ(name.substr(0, expected_prefix.size()), expected_prefix)
+        << "Mismatch for MIDI pitch " << static_cast<int>(pitch);
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

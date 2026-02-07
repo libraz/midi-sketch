@@ -16,6 +16,7 @@
 #include "core/melody_templates.h"
 #include "core/note_creator.h"
 #include "core/note_source.h"
+#include "core/production_blueprint.h"
 #include "core/velocity_helper.h"
 #include "core/note_timeline_utils.h"
 #include "core/song.h"
@@ -123,6 +124,7 @@ void AuxGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& c
   song_ctx.vocal_style = ctx.params->vocal_style;
   song_ctx.vocal_low = ctx.params->vocal_low;
   song_ctx.vocal_high = ctx.params->vocal_high;
+  song_ctx.blueprint_id = ctx.params->blueprint_id;
 
   generateFromSongContext(track, song_ctx, *ctx.harmony, *ctx.rng);
 }
@@ -202,10 +204,16 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
   // Analyze vocal for MotifCounter generation
   VocalAnalysis vocal_analysis = analyzeVocal(vocal_track);
 
-  // Vocal ceiling: restrict aux range_high to not exceed vocal's highest pitch.
+  // Get blueprint aux profile
+  const auto& bp = getProductionBlueprint(song_ctx.blueprint_id);
+  const auto& aux_profile = bp.aux_profile;
+
+  // Vocal ceiling: restrict aux range_high using blueprint's range_ceiling offset.
+  // range_ceiling is relative to vocal's highest pitch (e.g. -2 = 2 semitones below vocal high).
   uint8_t aux_vocal_ceiling = 84;  // Default aux high
   if (vocal_analysis.highest_pitch > 0) {
-    aux_vocal_ceiling = std::min(static_cast<uint8_t>(84), vocal_analysis.highest_pitch);
+    int ceiling = static_cast<int>(vocal_analysis.highest_pitch) + aux_profile.range_ceiling;
+    aux_vocal_ceiling = static_cast<uint8_t>(std::clamp(ceiling, 36, 84));
   }
 
   // Extract motif from first chorus for intro placement
@@ -270,11 +278,11 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     // Provide rest positions for call-and-response patterns
     ctx.rest_positions = &vocal_analysis.rest_positions;
 
-    // Select aux configuration based on section type and vocal density
+    // Select aux configuration based on blueprint profile and section type
     AuxConfig config;
 
     if (section.type == SectionType::Intro) {
-      // Intro: Use cached chorus motif if available, otherwise MelodicHook
+      // Intro: Use cached chorus motif if available, otherwise blueprint intro_function
       if (cached_chorus_motif_.has_value()) {
         // Apply hook-appropriate variation (80% Exact, 20% Fragmented)
         // WORKAROUND: Use local rng instead of rng reference.
@@ -293,7 +301,8 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
         // Center of vocal range, snapped to scale
         int center = (song_ctx.vocal_low + song_ctx.vocal_high) / 2;
         uint8_t base_pitch = static_cast<uint8_t>(snapToNearestScaleTone(center, 0));
-        uint8_t velocity = vel::scale(ctx.base_velocity, 0.8f);
+        uint8_t velocity = vel::scale(ctx.base_velocity,
+                                      0.8f * aux_profile.velocity_scale);
         auto motif_notes =
             placeMotifInIntro(varied_motif, section.start_tick, section_end, base_pitch, velocity);
         for (auto note : motif_notes) {
@@ -314,81 +323,92 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
         }
         continue;  // Skip aux generator for this section
       }
-      // Fallback: Use MelodicHook (Fortune Cookie style backing hook)
-      config.function = AuxFunction::MelodicHook;
+      // Fallback: Use blueprint intro function
+      config.function = aux_profile.intro_function;
       config.range_offset = 0;
       config.range_width = 6;
-      config.velocity_ratio = 0.8f;
-      config.density_ratio = 1.0f;
+      config.velocity_ratio = 0.8f * aux_profile.velocity_scale;
+      config.density_ratio = 1.0f * aux_profile.density_scale;
       config.sync_phrase_boundary = true;
     } else if (section.type == SectionType::A || section.type == SectionType::B ||
                section.type == SectionType::Bridge) {
-      // A/B/Bridge: Use MotifCounter for counter melody
-      // This creates rhythmic complementation with vocal
-      config.function = AuxFunction::MotifCounter;
+      // A/B/Bridge: Use blueprint verse function
+      config.function = aux_profile.verse_function;
       config.range_offset = -12;  // Below vocal
       config.range_width = 12;
-      config.velocity_ratio = 0.7f;
-      config.density_ratio = 0.8f;
+      config.velocity_ratio = 0.7f * aux_profile.velocity_scale;
+      config.density_ratio = 0.8f * aux_profile.density_scale;
       config.sync_phrase_boundary = true;
 
-      // Generate MotifCounter directly (requires VocalAnalysis)
-      auto counter_notes = generateMotifCounter(ctx, config, harmony, vocal_analysis, rng);
-      for (const auto& note : counter_notes) {
-        all_notes.push_back(note);
-      }
-      continue;  // Skip normal generation for this section
-    } else if (section.type == SectionType::Chorus) {
-      if (section.vocal_density == VocalDensity::Full) {
-        // UltraVocaloid Chorus: Use GrooveAccent for rhythmic counter-melody
-        // GrooveAccent provides rhythmic accents that complement the dense vocal
-        // without trying to analyze vocal phrases (which doesn't work well with machine-gun style)
-        if (song_ctx.vocal_style == VocalStylePreset::UltraVocaloid) {
-          config.function = AuxFunction::GrooveAccent;
-          config.range_offset = -6;   // Slightly below vocal
-          config.range_width = 12;
-          config.velocity_ratio = 0.75f;
-          config.density_ratio = 0.8f;  // More notes for melodic presence
-          config.sync_phrase_boundary = true;
-
-          // Generate GrooveAccent
-          MidiTrack section_aux = generate(config, ctx, harmony, rng);
-          for (const auto& note : section_aux.notes()) {
-            all_notes.push_back(note);
-          }
-          continue;  // Skip normal generation for this section
+      // MotifCounter requires VocalAnalysis - generate directly
+      if (config.function == AuxFunction::MotifCounter) {
+        auto counter_notes = generateMotifCounter(ctx, config, harmony, vocal_analysis, rng);
+        for (const auto& note : counter_notes) {
+          all_notes.push_back(note);
         }
+        continue;  // Skip normal generation for this section
+      }
+    } else if (section.type == SectionType::Chorus) {
+      // Safety: UltraVocaloid Full density always uses GrooveAccent
+      if (section.vocal_density == VocalDensity::Full &&
+          song_ctx.vocal_style == VocalStylePreset::UltraVocaloid) {
+        config.function = AuxFunction::GrooveAccent;
+        config.range_offset = -6;
+        config.range_width = 12;
+        config.velocity_ratio = 0.75f * aux_profile.velocity_scale;
+        config.density_ratio = 0.8f * aux_profile.density_scale;
+        config.sync_phrase_boundary = true;
 
-        // Other styles with Full density: Use EmotionalPad for harmonic support
-        config.function = AuxFunction::EmotionalPad;
-        config.range_offset = -12;            // One octave below vocal for clarity
-        config.range_width = 12;              // Reasonable pad range
-        config.velocity_ratio = 0.6f;         // Softer than vocal
-        config.density_ratio = 0.8f;          // Allow some space
-        config.sync_phrase_boundary = false;  // Pad sustains independently
-      } else {
-        // Normal density Chorus: Try unison for powerful doubling effect
+        MidiTrack section_aux = generate(config, ctx, harmony, rng);
+        for (const auto& note : section_aux.notes()) {
+          all_notes.push_back(note);
+        }
+        continue;
+      }
+
+      // Use blueprint chorus function
+      config.function = aux_profile.chorus_function;
+
+      if (config.function == AuxFunction::Unison) {
+        // Unison: check derivability first
         DerivabilityScore score = analyzeDerivability(*ctx.main_melody);
         if (score.rhythm_stability >= 0.5f) {
-          // Rhythm stable enough for unison doubling
-          config.function = AuxFunction::Unison;
           config.range_offset = 0;
           config.range_width = 12;
-          config.velocity_ratio = 0.75f;  // Slightly softer than lead vocal
-          config.density_ratio = 1.0f;
+          config.velocity_ratio = 0.75f * aux_profile.velocity_scale;
+          config.density_ratio = 1.0f * aux_profile.density_scale;
           config.sync_phrase_boundary = true;
 
           auto unison_notes = generateUnison(ctx, config, harmony, rng);
           for (const auto& note : unison_notes) {
             all_notes.push_back(note);
           }
-          continue;  // Skip normal generation for this section
+          continue;
         }
-        // Rhythm unstable: fall through to default handling
+        // Rhythm unstable: fall back to EmotionalPad
+        config.function = AuxFunction::EmotionalPad;
+      }
+
+      if (config.function == AuxFunction::EmotionalPad ||
+          config.function == AuxFunction::SustainPad) {
+        config.range_offset = -12;
+        config.range_width = 12;
+        config.velocity_ratio = 0.6f * aux_profile.velocity_scale;
+        config.density_ratio = 0.8f * aux_profile.density_scale;
+        config.sync_phrase_boundary = false;
+      } else {
+        // Rhythmic chorus functions (GrooveAccent, PulseLoop, MelodicHook, etc.)
+        config.range_offset = -6;
+        config.range_width = 12;
+        config.velocity_ratio = 0.75f * aux_profile.velocity_scale;
+        config.density_ratio = 0.85f * aux_profile.density_scale;
+        config.sync_phrase_boundary = true;
       }
     } else if (aux_count > 0) {
-      // Other sections: Use default aux config
+      // Other sections: Use default aux config with blueprint scaling
       config = aux_configs[0];
+      config.velocity_ratio *= aux_profile.velocity_scale;
+      config.density_ratio *= aux_profile.density_scale;
     } else {
       // No aux config available, skip
       continue;
@@ -432,12 +452,7 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     opts.desired_pitch = suggested_pitch;
     opts.velocity = note.velocity;
     opts.role = TrackRole::Aux;
-    // Use PreserveContour so collision avoidance also respects the
-    // max-leap constraint from PitchMonotonyTracker.  Without this,
-    // collision avoidance can push a pitch far from prev_pitch,
-    // creating leaps of 20+ semitones across section boundaries.
-    opts.preference = (actual_last_pitch > 0) ? PitchPreference::PreserveContour
-                                              : PitchPreference::Default;
+    opts.preference = PitchPreference::PreferChordTones;
     opts.range_low = 55;
     opts.range_high = aux_vocal_ceiling;
     opts.source = NoteSource::Aux;
@@ -465,7 +480,25 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
         }
       }
 
-      // Register to harmony now that the note passed the leap guard
+      // Defensive guard: if collision avoidance exhaustive search returned a
+      // non-chord-tone (all chord tones were occupied), skip the note.
+      // Aux is non-essential so silence is preferable to dissonance.
+      {
+        int fpc = result.final_pitch % 12;
+        ChordTones fct = getChordTones(chord_degree);
+        bool final_is_chord_tone = false;
+        for (uint8_t ci = 0; ci < fct.count; ++ci) {
+          if (fct.pitch_classes[ci] == fpc) {
+            final_is_chord_tone = true;
+            break;
+          }
+        }
+        if (!final_is_chord_tone) {
+          continue;
+        }
+      }
+
+      // Register to harmony now that the note passed all guards
       harmony.registerNote(opts.start, result.note->duration, result.final_pitch, opts.role);
 
       track.addNote(*result.note);
@@ -1040,12 +1073,19 @@ std::vector<NoteEvent> AuxGenerator::generateEmotionalPad(const AuxContext& ctx,
 
 void AuxGenerator::calculateAuxRange(const AuxConfig& config,
                                       const TessituraRange& main_tessitura, uint8_t& out_low,
-                                      uint8_t& out_high) {
+                                      uint8_t& out_high, int8_t range_ceiling) {
   int center = main_tessitura.center + config.range_offset;
   int half_width = config.range_width / 2;
 
-  out_low = static_cast<uint8_t>(std::clamp(center - half_width, 36, 96));
-  out_high = static_cast<uint8_t>(std::clamp(center + half_width, 36, 96));
+  // Apply vocal ceiling constraint from blueprint range_ceiling
+  int max_pitch = 96;
+  if (range_ceiling != 0 && main_tessitura.high > 0) {
+    int vocal_cap = static_cast<int>(main_tessitura.high) + range_ceiling;
+    max_pitch = std::min(96, vocal_cap);
+  }
+
+  out_low = static_cast<uint8_t>(std::clamp(center - half_width, 36, max_pitch));
+  out_high = static_cast<uint8_t>(std::clamp(center + half_width, 36, max_pitch));
 
   if (out_low > out_high) {
     std::swap(out_low, out_high);
