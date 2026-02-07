@@ -22,6 +22,9 @@ import type {
   VocalConfig,
 } from './types';
 
+/** sizeof(MidiSketchPianoRollInfo) - must match C++ struct layout */
+const PIANO_ROLL_INFO_SIZE = 784;
+
 /**
  * MidiSketch instance for MIDI generation
  */
@@ -37,6 +40,36 @@ export class MidiSketch {
   }
 
   /**
+   * Handle a generation result code, throwing appropriate errors.
+   * For methods that accept a full config JSON (result===1 triggers validation).
+   */
+  private handleGenerationResult(result: number, json: string, operation: string): void {
+    if (result === 0) {
+      return;
+    }
+    const a = getApi();
+    if (result === 1) {
+      const validationResult = a.validateConfigJson(json, json.length);
+      if (validationResult !== 0) {
+        const msg = a.configErrorString(validationResult);
+        throw new MidiSketchConfigError(validationResult, msg);
+      }
+    }
+    const errorMessage = a.configErrorString(result);
+    throw new MidiSketchGenerationError(result, `${operation} failed: ${errorMessage}`);
+  }
+
+  /**
+   * Throw a generation error with a resolved error message.
+   * For methods that don't take a full config JSON.
+   */
+  private throwGenerationError(result: number, operation: string): void {
+    const a = getApi();
+    const errorMessage = a.configErrorString(result);
+    throw new MidiSketchGenerationError(result, `${operation} failed: ${errorMessage}`);
+  }
+
+  /**
    * Generate MIDI from a SongConfig
    * @throws {MidiSketchConfigError} If config validation fails
    * @throws {MidiSketchGenerationError} If generation fails for other reasons
@@ -45,17 +78,7 @@ export class MidiSketch {
     const a = getApi();
     const json = serializeConfig(config);
     const result = a.generateFromJson(this.handle, json, json.length);
-    if (result !== 0) {
-      if (result === 1) {
-        const validationResult = a.validateConfigJson(json, json.length);
-        if (validationResult !== 0) {
-          const validationMessage = a.configErrorString(validationResult);
-          throw new MidiSketchConfigError(validationResult, validationMessage);
-        }
-      }
-      const errorMessage = a.configErrorString(result);
-      throw new MidiSketchGenerationError(result, `Generation failed: ${errorMessage}`);
-    }
+    this.handleGenerationResult(result, json, 'Generation');
   }
 
   /**
@@ -90,19 +113,7 @@ export class MidiSketch {
     const a = getApi();
     const json = serializeConfig(config);
     const result = a.generateVocalFromJson(this.handle, json, json.length);
-    if (result !== 0) {
-      if (result === 1) {
-        const validationResult = a.validateConfigJson(json, json.length);
-        if (validationResult !== 0) {
-          const validationMessage = a.configErrorString(validationResult);
-          throw new MidiSketchConfigError(validationResult, validationMessage);
-        }
-      }
-      throw new MidiSketchGenerationError(
-        result,
-        `Vocal generation failed with error code: ${result}`,
-      );
-    }
+    this.handleGenerationResult(result, json, 'Vocal generation');
   }
 
   /**
@@ -120,10 +131,7 @@ export class MidiSketch {
     const json = serializeVocalConfig(vocalConfig);
     const result = a.regenerateVocalFromJson(this.handle, json, json.length);
     if (result !== 0) {
-      throw new MidiSketchGenerationError(
-        result,
-        `Vocal regeneration failed with error code: ${result}`,
-      );
+      this.throwGenerationError(result, 'Vocal regeneration');
     }
   }
 
@@ -139,19 +147,13 @@ export class MidiSketch {
     if (config === undefined) {
       const result = a.generateAccompaniment(this.handle);
       if (result !== 0) {
-        throw new MidiSketchGenerationError(
-          result,
-          `Accompaniment generation failed with error code: ${result}`,
-        );
+        this.throwGenerationError(result, 'Accompaniment generation');
       }
     } else {
       const json = serializeAccompanimentConfig(config);
       const result = a.generateAccompanimentFromJson(this.handle, json, json.length);
       if (result !== 0) {
-        throw new MidiSketchGenerationError(
-          result,
-          `Accompaniment generation failed with error code: ${result}`,
-        );
+        this.throwGenerationError(result, 'Accompaniment generation');
       }
     }
   }
@@ -169,19 +171,13 @@ export class MidiSketch {
     if (typeof seedOrConfig === 'number') {
       const result = a.regenerateAccompaniment(this.handle, seedOrConfig);
       if (result !== 0) {
-        throw new MidiSketchGenerationError(
-          result,
-          `Accompaniment regeneration failed with error code: ${result}`,
-        );
+        this.throwGenerationError(result, 'Accompaniment regeneration');
       }
     } else {
       const json = serializeAccompanimentConfig(seedOrConfig);
       const result = a.regenerateAccompanimentFromJson(this.handle, json, json.length);
       if (result !== 0) {
-        throw new MidiSketchGenerationError(
-          result,
-          `Accompaniment regeneration failed with error code: ${result}`,
-        );
+        this.throwGenerationError(result, 'Accompaniment regeneration');
       }
     }
   }
@@ -197,16 +193,7 @@ export class MidiSketch {
     const a = getApi();
     const json = serializeConfig(config);
     const result = a.generateWithVocalFromJson(this.handle, json, json.length);
-    if (result !== 0) {
-      if (result === 1) {
-        const validationResult = a.validateConfigJson(json, json.length);
-        if (validationResult !== 0) {
-          const validationMessage = a.configErrorString(validationResult);
-          throw new MidiSketchConfigError(validationResult, validationMessage);
-        }
-      }
-      throw new MidiSketchGenerationError(result, `Generation failed with error code: ${result}`);
-    }
+    this.handleGenerationResult(result, json, 'Generation');
   }
 
   /**
@@ -240,31 +227,18 @@ export class MidiSketch {
   setVocalNotes(config: SongConfig, notes: NoteInput[]): void {
     const a = getApi();
 
-    // Build combined JSON with config and notes
+    // Build combined JSON with config and notes without double-parsing
     const configJson = serializeConfig(config);
-    const configObj = JSON.parse(configJson);
     const notesArray = notes.map((note) => ({
       start_tick: note.startTick,
       duration: note.duration,
       pitch: note.pitch,
       velocity: note.velocity,
     }));
-    const combined = JSON.stringify({ config: configObj, notes: notesArray });
+    const combined = `{"config":${configJson},"notes":${JSON.stringify(notesArray)}}`;
 
     const result = a.setVocalNotesFromJson(this.handle, combined, combined.length);
-    if (result !== 0) {
-      if (result === 1) {
-        const validationResult = a.validateConfigJson(configJson, configJson.length);
-        if (validationResult !== 0) {
-          const validationMessage = a.configErrorString(validationResult);
-          throw new MidiSketchConfigError(validationResult, validationMessage);
-        }
-      }
-      throw new MidiSketchGenerationError(
-        result,
-        `Set vocal notes failed with error code: ${result}`,
-      );
-    }
+    this.handleGenerationResult(result, configJson, 'Set vocal notes');
   }
 
   /**
@@ -390,10 +364,9 @@ export class MidiSketch {
       const count = m.HEAPU32[(dataPtr + 4) >> 2];
 
       const results: PianoRollInfo[] = [];
-      const infoSize = 784; // sizeof(MidiSketchPianoRollInfo)
 
-      for (let i = 0; i < count; i++) {
-        const infoPtr = infoArrayPtr + i * infoSize;
+      for (let idx = 0; idx < count; idx++) {
+        const infoPtr = infoArrayPtr + idx * PIANO_ROLL_INFO_SIZE;
         results.push(this.parsePianoRollInfo(m, infoPtr));
       }
 
@@ -430,20 +403,20 @@ export class MidiSketch {
 
     // Parse safety array (128 bytes at offset 6)
     const safety: NoteSafetyLevel[] = [];
-    for (let i = 0; i < 128; i++) {
-      safety.push(view.getUint8(ptr + 6 + i) as NoteSafetyLevel);
+    for (let idx = 0; idx < 128; idx++) {
+      safety.push(view.getUint8(ptr + 6 + idx) as NoteSafetyLevel);
     }
 
     // Parse reason array (128 * 2 bytes at offset 134)
     const reason: NoteReasonFlags[] = [];
-    for (let i = 0; i < 128; i++) {
-      reason.push(view.getUint16(ptr + 134 + i * 2, true));
+    for (let idx = 0; idx < 128; idx++) {
+      reason.push(view.getUint16(ptr + 134 + idx * 2, true));
     }
 
     // Parse collision array (128 * 3 bytes at offset 390)
     const collision: CollisionInfo[] = [];
-    for (let i = 0; i < 128; i++) {
-      const collisionOffset = ptr + 390 + i * 3;
+    for (let idx = 0; idx < 128; idx++) {
+      const collisionOffset = ptr + 390 + idx * 3;
       collision.push({
         trackRole: view.getUint8(collisionOffset),
         collidingPitch: view.getUint8(collisionOffset + 1),
@@ -454,8 +427,8 @@ export class MidiSketch {
     // Parse recommended array (up to 8 bytes at offset 774)
     const recommendedCount = view.getUint8(ptr + 782);
     const recommended: number[] = [];
-    for (let i = 0; i < recommendedCount && i < 8; i++) {
-      recommended.push(view.getUint8(ptr + 774 + i));
+    for (let idx = 0; idx < recommendedCount && idx < 8; idx++) {
+      recommended.push(view.getUint8(ptr + 774 + idx));
     }
 
     return {

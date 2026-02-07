@@ -66,6 +66,40 @@ export interface ParameterChangeResult {
 }
 
 // ============================================================================
+// ChangeTracker (internal helper for cascade setters)
+// ============================================================================
+
+class ChangeTracker {
+  private changes: ParameterChange[] = [];
+  private warnings: string[] = [];
+  private categories = new Set<ParameterCategory>();
+
+  addChange(
+    category: ParameterCategory,
+    field: string,
+    oldValue: unknown,
+    newValue: unknown,
+    reason: string,
+  ): void {
+    this.changes.push({ category, field, oldValue, newValue, reason });
+    this.categories.add(category);
+  }
+
+  addWarning(message: string): void {
+    this.warnings.push(message);
+  }
+
+  toResult(): ParameterChangeResult {
+    return {
+      changedCount: this.changes.length,
+      changedCategories: Array.from(this.categories),
+      changes: this.changes,
+      warnings: this.warnings,
+    };
+  }
+}
+
+// ============================================================================
 // SongConfigBuilder
 // ============================================================================
 
@@ -234,21 +268,12 @@ export class SongConfigBuilder {
    * @param style Vocal style ID (0=Auto, 1=Standard, 2=Vocaloid, etc.)
    */
   setVocalStyle(style: number): this {
-    const changes: ParameterChange[] = [];
-    const warnings: string[] = [];
-    const categories = new Set<ParameterCategory>();
+    const tracker = new ChangeTracker();
 
     const oldStyle = this.config.vocalStyle;
     this.config.vocalStyle = style;
     this.explicitFields.add('vocalStyle');
-    changes.push({
-      category: 'vocal',
-      field: 'vocalStyle',
-      oldValue: oldStyle,
-      newValue: style,
-      reason: 'User set vocal style',
-    });
-    categories.add('vocal');
+    tracker.addChange('vocal', 'vocalStyle', oldStyle, style, 'User set vocal style');
 
     // Idol-style vocalStyles auto-enable call if not explicitly set
     // vocalStyle: 4=Idol, 9=BrightKira, 11=CuteAffected
@@ -257,24 +282,17 @@ export class SongConfigBuilder {
       if (!this.config.callEnabled) {
         const oldCall = this.config.callEnabled;
         this.config.callEnabled = true;
-        changes.push({
-          category: 'call',
-          field: 'callEnabled',
-          oldValue: oldCall,
-          newValue: true,
-          reason: `Idol-style vocalStyle (${style}) auto-enables call system`,
-        });
-        categories.add('call');
+        tracker.addChange(
+          'call',
+          'callEnabled',
+          oldCall,
+          true,
+          `Idol-style vocalStyle (${style}) auto-enables call system`,
+        );
       }
     }
 
-    this.lastChangeResult = {
-      changedCount: changes.length,
-      changedCategories: Array.from(categories),
-      changes,
-      warnings,
-    };
-
+    this.lastChangeResult = tracker.toResult();
     return this;
   }
 
@@ -314,52 +332,43 @@ export class SongConfigBuilder {
    * @param semitones Modulation amount (+1 to +4), required when timing≠0
    */
   setModulation(timing: number, semitones?: number): this {
-    const changes: ParameterChange[] = [];
-    const warnings: string[] = [];
-    const categories = new Set<ParameterCategory>();
+    const tracker = new ChangeTracker();
 
     const oldTiming = this.config.modulationTiming;
     this.config.modulationTiming = timing;
     this.explicitFields.add('modulationTiming');
-    changes.push({
-      category: 'modulation',
-      field: 'modulationTiming',
-      oldValue: oldTiming,
-      newValue: timing,
-      reason: 'User set modulation timing',
-    });
-    categories.add('modulation');
+    tracker.addChange(
+      'modulation',
+      'modulationTiming',
+      oldTiming,
+      timing,
+      'User set modulation timing',
+    );
 
     if (semitones !== undefined) {
       const oldSemitones = this.config.modulationSemitones;
       this.config.modulationSemitones = semitones;
       this.explicitFields.add('modulationSemitones');
-      changes.push({
-        category: 'modulation',
-        field: 'modulationSemitones',
-        oldValue: oldSemitones,
-        newValue: semitones,
-        reason: 'User set modulation semitones',
-      });
+      tracker.addChange(
+        'modulation',
+        'modulationSemitones',
+        oldSemitones,
+        semitones,
+        'User set modulation semitones',
+      );
     }
 
-    // Warn about invalid combination: timing≠0 but semitones=0 or not set
+    // Warn about invalid combination: timing!=0 but semitones=0 or not set
     if (timing !== 0) {
       const currentSemitones = semitones ?? this.config.modulationSemitones;
       if (currentSemitones === 0 || currentSemitones < 1 || currentSemitones > 4) {
-        warnings.push(
+        tracker.addWarning(
           `Modulation timing=${timing} requires modulationSemitones to be 1-4. Current value: ${currentSemitones}`,
         );
       }
     }
 
-    this.lastChangeResult = {
-      changedCount: changes.length,
-      changedCategories: Array.from(categories),
-      changes,
-      warnings,
-    };
-
+    this.lastChangeResult = tracker.toResult();
     return this;
   }
 
@@ -604,23 +613,14 @@ export class SongConfigBuilder {
    * @param id Blueprint ID (0-9, 255=random)
    */
   setBlueprint(id: number): this {
-    const changes: ParameterChange[] = [];
-    const warnings: string[] = [];
-    const categories = new Set<ParameterCategory>();
+    const tracker = new ChangeTracker();
 
     const oldBlueprint = this.config.blueprintId;
 
     // Set the blueprint
     this.config.blueprintId = id;
     this.explicitFields.add('blueprintId');
-    changes.push({
-      category: 'basic',
-      field: 'blueprintId',
-      oldValue: oldBlueprint,
-      newValue: id,
-      reason: 'User set blueprint',
-    });
-    categories.add('basic');
+    tracker.addChange('basic', 'blueprintId', oldBlueprint, id, 'User set blueprint');
 
     // If not random, resolve cascade effects
     if (id !== 255) {
@@ -636,16 +636,15 @@ export class SongConfigBuilder {
         if (!this.config.drumsEnabled) {
           const oldDrums = this.config.drumsEnabled;
           this.config.drumsEnabled = true;
-          changes.push({
-            category: 'drums',
-            field: 'drumsEnabled',
-            oldValue: oldDrums,
-            newValue: true,
-            reason: `Blueprint ${getBlueprintName(id)} requires drums (drums_required=true)`,
-          });
-          categories.add('drums');
+          tracker.addChange(
+            'drums',
+            'drumsEnabled',
+            oldDrums,
+            true,
+            `Blueprint ${getBlueprintName(id)} requires drums (drums_required=true)`,
+          );
           // Note: drums setting will be hidden in UI for these blueprints
-          warnings.push(
+          tracker.addWarning(
             `Blueprint ${getBlueprintName(id)} has drums_required=true; drumsEnabled forced to true`,
           );
         }
@@ -654,16 +653,15 @@ export class SongConfigBuilder {
         if (!this.config.drumsEnabled && !this.explicitFields.has('drumsEnabled')) {
           const oldDrums = this.config.drumsEnabled;
           this.config.drumsEnabled = true;
-          changes.push({
-            category: 'drums',
-            field: 'drumsEnabled',
-            oldValue: oldDrums,
-            newValue: true,
-            reason: 'RhythmSync blueprint works best with drums',
-          });
-          categories.add('drums');
+          tracker.addChange(
+            'drums',
+            'drumsEnabled',
+            oldDrums,
+            true,
+            'RhythmSync blueprint works best with drums',
+          );
         } else if (!this.config.drumsEnabled) {
-          warnings.push('RhythmSync blueprint works best with drums enabled');
+          tracker.addWarning('RhythmSync blueprint works best with drums enabled');
         }
       }
 
@@ -677,16 +675,15 @@ export class SongConfigBuilder {
           const oldBpm = this.config.bpm;
           const newBpm = Math.max(160, Math.min(175, this.config.bpm));
           this.config.bpm = newBpm;
-          changes.push({
-            category: 'bpm',
-            field: 'bpm',
-            oldValue: oldBpm,
-            newValue: newBpm,
-            reason: 'RhythmSync blueprint prefers BPM 160-175',
-          });
-          categories.add('bpm');
+          tracker.addChange(
+            'bpm',
+            'bpm',
+            oldBpm,
+            newBpm,
+            'RhythmSync blueprint prefers BPM 160-175',
+          );
         } else if (this.config.bpm > 0 && (this.config.bpm < 160 || this.config.bpm > 175)) {
-          warnings.push('RhythmSync blueprint works best with BPM 160-175');
+          tracker.addWarning('RhythmSync blueprint works best with BPM 160-175');
         }
       }
 
@@ -699,40 +696,32 @@ export class SongConfigBuilder {
         ) {
           const oldHook = this.config.hookIntensity;
           this.config.hookIntensity = HOOK_INTENSITY_MAXIMUM;
-          changes.push({
-            category: 'hook',
-            field: 'hookIntensity',
-            oldValue: oldHook,
-            newValue: HOOK_INTENSITY_MAXIMUM,
-            reason: 'BehavioralLoop blueprint forces HookIntensity=Maximum',
-          });
-          categories.add('hook');
+          tracker.addChange(
+            'hook',
+            'hookIntensity',
+            oldHook,
+            HOOK_INTENSITY_MAXIMUM,
+            'BehavioralLoop blueprint forces HookIntensity=Maximum',
+          );
         }
-        warnings.push(
+        tracker.addWarning(
           'BehavioralLoop (ID 9) enables addictive_mode with maximum hook repetition and LockedPitch riff policy',
         );
       }
 
       // Store paradigm and riff policy info for reference
       if (riffPolicy === RiffPolicy.LockedPitch || riffPolicy === RiffPolicy.LockedAll) {
-        changes.push({
-          category: 'riffPolicy',
-          field: '_riffPolicy',
-          oldValue: null,
-          newValue: riffPolicy,
-          reason: `Blueprint uses ${riffPolicy === RiffPolicy.LockedPitch ? 'LockedPitch' : 'LockedAll'} riff policy`,
-        });
-        categories.add('riffPolicy');
+        tracker.addChange(
+          'riffPolicy',
+          '_riffPolicy',
+          null,
+          riffPolicy,
+          `Blueprint uses ${riffPolicy === RiffPolicy.LockedPitch ? 'LockedPitch' : 'LockedAll'} riff policy`,
+        );
       }
     }
 
-    this.lastChangeResult = {
-      changedCount: changes.length,
-      changedCategories: Array.from(categories),
-      changes,
-      warnings,
-    };
-
+    this.lastChangeResult = tracker.toResult();
     return this;
   }
 
@@ -745,9 +734,7 @@ export class SongConfigBuilder {
    * @param bpm BPM value (0 = use style default)
    */
   setBpm(bpm: number): this {
-    const changes: ParameterChange[] = [];
-    const warnings: string[] = [];
-    const categories = new Set<ParameterCategory>();
+    const tracker = new ChangeTracker();
 
     const oldBpm = this.config.bpm;
     let newBpm = bpm;
@@ -758,29 +745,24 @@ export class SongConfigBuilder {
       if (paradigm === GenerationParadigm.RhythmSync && bpm > 0) {
         if (bpm < 160 || bpm > 175) {
           newBpm = Math.max(160, Math.min(175, bpm));
-          warnings.push(`BPM clamped to ${newBpm} for RhythmSync blueprint (original: ${bpm})`);
+          tracker.addWarning(
+            `BPM clamped to ${newBpm} for RhythmSync blueprint (original: ${bpm})`,
+          );
         }
       }
     }
 
     this.config.bpm = newBpm;
     this.explicitFields.add('bpm');
-    changes.push({
-      category: 'bpm',
-      field: 'bpm',
-      oldValue: oldBpm,
-      newValue: newBpm,
-      reason: newBpm !== bpm ? 'Clamped for RhythmSync blueprint' : 'User set BPM',
-    });
-    categories.add('bpm');
+    tracker.addChange(
+      'bpm',
+      'bpm',
+      oldBpm,
+      newBpm,
+      newBpm !== bpm ? 'Clamped for RhythmSync blueprint' : 'User set BPM',
+    );
 
-    this.lastChangeResult = {
-      changedCount: changes.length,
-      changedCategories: Array.from(categories),
-      changes,
-      warnings,
-    };
-
+    this.lastChangeResult = tracker.toResult();
     return this;
   }
 
@@ -794,22 +776,13 @@ export class SongConfigBuilder {
    * @param style 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven
    */
   setCompositionStyle(style: number): this {
-    const changes: ParameterChange[] = [];
-    const warnings: string[] = [];
-    const categories = new Set<ParameterCategory>();
+    const tracker = new ChangeTracker();
 
     const oldStyle = this.config.compositionStyle;
 
     this.config.compositionStyle = style;
     this.explicitFields.add('compositionStyle');
-    changes.push({
-      category: 'basic',
-      field: 'compositionStyle',
-      oldValue: oldStyle,
-      newValue: style,
-      reason: 'User set composition style',
-    });
-    categories.add('basic');
+    tracker.addChange('basic', 'compositionStyle', oldStyle, style, 'User set composition style');
 
     // BackgroundMotif and SynthDriven typically skip vocal
     if (
@@ -819,17 +792,15 @@ export class SongConfigBuilder {
       const oldSkipVocal = this.config.skipVocal;
       if (!oldSkipVocal) {
         this.config.skipVocal = true;
-        changes.push({
-          category: 'vocal',
-          field: 'skipVocal',
-          oldValue: oldSkipVocal,
-          newValue: true,
-          reason:
-            style === CompositionStyle.BackgroundMotif
-              ? 'BackgroundMotif style skips vocal'
-              : 'SynthDriven style skips vocal',
-        });
-        categories.add('vocal');
+        tracker.addChange(
+          'vocal',
+          'skipVocal',
+          oldSkipVocal,
+          true,
+          style === CompositionStyle.BackgroundMotif
+            ? 'BackgroundMotif style skips vocal'
+            : 'SynthDriven style skips vocal',
+        );
       }
     }
 
@@ -838,24 +809,17 @@ export class SongConfigBuilder {
       const oldArpeggio = this.config.arpeggioEnabled;
       if (!oldArpeggio) {
         this.config.arpeggioEnabled = true;
-        changes.push({
-          category: 'arpeggio',
-          field: 'arpeggioEnabled',
-          oldValue: oldArpeggio,
-          newValue: true,
-          reason: 'SynthDriven style enables arpeggio',
-        });
-        categories.add('arpeggio');
+        tracker.addChange(
+          'arpeggio',
+          'arpeggioEnabled',
+          oldArpeggio,
+          true,
+          'SynthDriven style enables arpeggio',
+        );
       }
     }
 
-    this.lastChangeResult = {
-      changedCount: changes.length,
-      changedCategories: Array.from(categories),
-      changes,
-      warnings,
-    };
-
+    this.lastChangeResult = tracker.toResult();
     return this;
   }
 
@@ -867,9 +831,7 @@ export class SongConfigBuilder {
    * @param id Style preset ID (0-12)
    */
   setStylePreset(id: number): this {
-    const changes: ParameterChange[] = [];
-    const warnings: string[] = [];
-    const categories = new Set<ParameterCategory>();
+    const tracker = new ChangeTracker();
 
     const oldStyleId = this.config.stylePresetId;
     const defaultConfig = createDefaultConfig(id);
@@ -877,14 +839,7 @@ export class SongConfigBuilder {
     // Update style preset ID
     this.config.stylePresetId = id;
     this.explicitFields.add('stylePresetId');
-    changes.push({
-      category: 'basic',
-      field: 'stylePresetId',
-      oldValue: oldStyleId,
-      newValue: id,
-      reason: 'User set style preset',
-    });
-    categories.add('basic');
+    tracker.addChange('basic', 'stylePresetId', oldStyleId, id, 'User set style preset');
 
     // Reset non-explicit fields to new style defaults
     const fieldsToReset: (keyof SongConfig)[] = [
@@ -897,25 +852,12 @@ export class SongConfigBuilder {
     for (const field of fieldsToReset) {
       if (!this.explicitFields.has(field) && this.config[field] !== defaultConfig[field]) {
         const oldValue = this.config[field];
-        // biome-ignore lint/suspicious/noExplicitAny: Dynamic field assignment requires any
-        (this.config as any)[field] = defaultConfig[field];
-        changes.push({
-          category: 'basic',
-          field,
-          oldValue,
-          newValue: defaultConfig[field],
-          reason: 'Reset to style default',
-        });
+        this.setConfigValue(field, defaultConfig[field]);
+        tracker.addChange('basic', field, oldValue, defaultConfig[field], 'Reset to style default');
       }
     }
 
-    this.lastChangeResult = {
-      changedCount: changes.length,
-      changedCategories: Array.from(categories),
-      changes,
-      warnings,
-    };
-
+    this.lastChangeResult = tracker.toResult();
     return this;
   }
 
@@ -927,38 +869,23 @@ export class SongConfigBuilder {
    * @param enabled Whether drums are enabled
    */
   setDrums(enabled: boolean): this {
-    const changes: ParameterChange[] = [];
-    const warnings: string[] = [];
-    const categories = new Set<ParameterCategory>();
+    const tracker = new ChangeTracker();
 
     const oldDrums = this.config.drumsEnabled;
 
     this.config.drumsEnabled = enabled;
     this.explicitFields.add('drumsEnabled');
-    changes.push({
-      category: 'drums',
-      field: 'drumsEnabled',
-      oldValue: oldDrums,
-      newValue: enabled,
-      reason: 'User set drums',
-    });
-    categories.add('drums');
+    tracker.addChange('drums', 'drumsEnabled', oldDrums, enabled, 'User set drums');
 
     // Check if blueprint requires drums
     if (!enabled && this.config.blueprintId !== 255) {
       const paradigm = getBlueprintParadigm(this.config.blueprintId);
       if (paradigm === GenerationParadigm.RhythmSync) {
-        warnings.push('RhythmSync blueprint works best with drums enabled');
+        tracker.addWarning('RhythmSync blueprint works best with drums enabled');
       }
     }
 
-    this.lastChangeResult = {
-      changedCount: changes.length,
-      changedCategories: Array.from(categories),
-      changes,
-      warnings,
-    };
-
+    this.lastChangeResult = tracker.toResult();
     return this;
   }
 
@@ -966,10 +893,17 @@ export class SongConfigBuilder {
   // Private Helpers
   // ============================================================================
 
-  private setField(field: keyof SongConfig, value: unknown, category: ParameterCategory): void {
+  private setConfigValue<K extends keyof SongConfig>(field: K, value: SongConfig[K]): void {
+    this.config[field] = value;
+  }
+
+  private setField(
+    field: keyof SongConfig,
+    value: SongConfig[keyof SongConfig],
+    category: ParameterCategory,
+  ): void {
     const oldValue = this.config[field];
-    // biome-ignore lint/suspicious/noExplicitAny: Dynamic field assignment requires any
-    (this.config as any)[field] = value;
+    this.setConfigValue(field, value as SongConfig[typeof field]);
     this.explicitFields.add(field);
 
     this.lastChangeResult = {

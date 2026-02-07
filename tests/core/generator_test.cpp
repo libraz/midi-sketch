@@ -648,47 +648,16 @@ TEST(GeneratorTest, Blueprint8MotifChordNoClash) {
   // Blueprint 8 (IdolEmo) + seed 12345 had a known issue where Motif E3
   // clashed with sustained Chord D3/F3 at tick 106560.
   // This test verifies that the collision detection prevents such clashes.
-  //
-  // Match CLI defaults exactly:
-  // ./build/bin/midisketch_cli --blueprint 8 --seed 12345
   MidiSketch sketch;
-  SongConfig config = createDefaultSongConfig(1);  // Dance Pop Emotion style (CLI default)
+  SongConfig config = createDefaultSongConfig(1);
   config.blueprint_id = 8;  // IdolEmo blueprint
-  config.chord_progression_id = 3;  // CLI default chord progression
+  config.chord_progression_id = 3;
   config.seed = 12345;
   sketch.generateFromConfig(config);
 
   const auto& song = sketch.getSong();
   const auto& chord_notes = song.chord().notes();
   const auto& motif_notes = song.motif().notes();
-
-  // Print config and structure for debugging
-  std::cout << "Config: blueprint=" << static_cast<int>(config.blueprint_id)
-            << " chord=" << static_cast<int>(config.chord_progression_id)
-            << " vocal_attitude=" << static_cast<int>(config.vocal_attitude)
-            << " bpm=" << config.bpm << std::endl;
-  std::cout << "Form: " << static_cast<int>(sketch.getParams().structure) << std::endl;
-  std::cout << "Total bars: " << song.arrangement().totalBars() << std::endl;
-  std::cout << "Total ticks: " << song.arrangement().totalTicks() << std::endl;
-  std::cout << "Total motif notes: " << motif_notes.size() << std::endl;
-
-  // Print Motif notes around tick 105600-107000 for debugging
-  std::cout << "Motif notes around tick 105600-107000:" << std::endl;
-  for (const auto& note : motif_notes) {
-    if (note.start_tick >= 105000 && note.start_tick <= 108000) {
-      std::cout << "  tick=" << note.start_tick << " pitch=" << static_cast<int>(note.note)
-                << " dur=" << note.duration << std::endl;
-    }
-  }
-
-  // Print Chord notes around tick 105600-107000 for debugging
-  std::cout << "Chord notes around tick 105600-107000:" << std::endl;
-  for (const auto& note : chord_notes) {
-    if (note.start_tick >= 105000 && note.start_tick <= 108000) {
-      std::cout << "  tick=" << note.start_tick << " pitch=" << static_cast<int>(note.note)
-                << " dur=" << note.duration << std::endl;
-    }
-  }
 
   // Check for minor 2nd (1 semitone) and major 2nd (2 semitone) clashes
   // between Motif and sustained Chord notes
@@ -705,14 +674,8 @@ TEST(GeneratorTest, Blueprint8MotifChordNoClash) {
       if (motif_start < chord_end && chord_start < motif_end) {
         int interval = std::abs(static_cast<int>(motif_note.note) -
                                 static_cast<int>(chord_note.note));
-        // Minor 2nd (1) or Major 2nd (2) in close range is dissonant
         if (interval == 1 || interval == 2) {
           clash_count++;
-          // Log the clash for debugging
-          std::cout << "Clash at tick " << motif_start << ": "
-                    << "Motif " << static_cast<int>(motif_note.note)
-                    << " vs Chord " << static_cast<int>(chord_note.note)
-                    << " (interval: " << interval << ")" << std::endl;
         }
       }
     }

@@ -46,18 +46,7 @@ TEST_F(VocalTest, VocalHasNotes) {
   EXPECT_GT(track.notes().size(), 0u);
 }
 
-TEST_F(VocalTest, VocalNotesInValidMidiRange) {
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& track = gen.getSong().vocal();
-  for (const auto& note : track.notes()) {
-    EXPECT_GE(note.note, 0) << "Note pitch below 0";
-    EXPECT_LE(note.note, 127) << "Note pitch above 127";
-    EXPECT_GT(note.velocity, 0) << "Velocity is 0";
-    EXPECT_LE(note.velocity, 127) << "Velocity above 127";
-  }
-}
+// VocalNotesInValidMidiRange: consolidated into AllNotesHaveValidData below
 
 TEST_F(VocalTest, VocalNotesWithinConfiguredRange) {
   Generator gen;
@@ -95,27 +84,32 @@ TEST_F(VocalTest, VocalNotesAreScaleTones) {
 }
 
 TEST_F(VocalTest, VocalIntervalConstraints) {
-  Generator gen;
-  gen.generate(params_);
+  // Test that large leaps (>octave) are rare across multiple seeds
+  for (uint32_t seed : {42u, 22222u, 33333u}) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
 
-  const auto& track = gen.getSong().vocal();
-  ASSERT_GT(track.notes().size(), 1u);
+    const auto& track = gen.getSong().vocal();
+    ASSERT_GT(track.notes().size(), 1u);
 
-  int large_leaps = 0;
-  constexpr int MAX_REASONABLE_LEAP = 12;  // One octave
+    int large_leaps = 0;
+    constexpr int MAX_REASONABLE_LEAP = 12;  // One octave
 
-  for (size_t i = 1; i < track.notes().size(); ++i) {
-    int interval = std::abs(static_cast<int>(track.notes()[i].note) -
-                            static_cast<int>(track.notes()[i - 1].note));
-    if (interval > MAX_REASONABLE_LEAP) {
-      large_leaps++;
+    for (size_t i = 1; i < track.notes().size(); ++i) {
+      int interval = std::abs(static_cast<int>(track.notes()[i].note) -
+                              static_cast<int>(track.notes()[i - 1].note));
+      if (interval > MAX_REASONABLE_LEAP) {
+        large_leaps++;
+      }
     }
-  }
 
-  // Very few leaps should exceed an octave
-  double large_leap_ratio = static_cast<double>(large_leaps) / (track.notes().size() - 1);
-  EXPECT_LT(large_leap_ratio, 0.1)
-      << "Too many large leaps: " << large_leaps << " of " << track.notes().size() - 1;
+    // Very few leaps should exceed an octave
+    double large_leap_ratio = static_cast<double>(large_leaps) / (track.notes().size() - 1);
+    EXPECT_LT(large_leap_ratio, 0.1)
+        << "Too many large leaps at seed=" << seed << ": " << large_leaps << " of "
+        << track.notes().size() - 1;
+  }
 }
 
 TEST_F(VocalTest, VocalPrefersTessitura) {
@@ -244,67 +238,20 @@ TEST_F(VocalTest, BasicMelodyGeneration) {
   EXPECT_GT(note_count, 0u) << "Vocal track should have notes";
 }
 
-TEST_F(VocalTest, MelodyIntervalsReasonable) {
-  // Most intervals should stay within reasonable range
-  params_.seed = 22222;
-  Generator gen;
-  gen.generate(params_);
-  const auto& track = gen.getSong().vocal();
-
-  if (track.notes().size() < 2) {
-    GTEST_SKIP() << "Not enough notes to check intervals";
-  }
-
-  int large_leaps = 0;
-  for (size_t i = 1; i < track.notes().size(); ++i) {
-    int interval = std::abs(static_cast<int>(track.notes()[i].note) -
-                            static_cast<int>(track.notes()[i - 1].note));
-    if (interval > 12) {
-      large_leaps++;
-    }
-  }
-
-  // Extreme leaps should be rare
-  float leap_ratio = static_cast<float>(large_leaps) / track.notes().size();
-  EXPECT_LT(leap_ratio, 0.1f) << "Extreme leaps (>octave) should be rare";
-}
-
-TEST_F(VocalTest, IntervalsWithinReasonableRange) {
-  // Intervals should stay within reasonable range
-  params_.seed = 33333;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& track = gen.getSong().vocal();
-  int over_octave_leaps = 0;
-
-  for (size_t i = 1; i < track.notes().size(); ++i) {
-    int interval = std::abs(static_cast<int>(track.notes()[i].note) -
-                            static_cast<int>(track.notes()[i - 1].note));
-    if (interval > 12) {
-      over_octave_leaps++;
-    }
-  }
-
-  // Very few intervals should exceed an octave (12 semitones)
-  double over_octave_ratio =
-      track.notes().size() > 1 ? static_cast<double>(over_octave_leaps) / (track.notes().size() - 1)
-                               : 0.0;
-  EXPECT_LT(over_octave_ratio, 0.1)
-      << "Even with extreme leap, octave should be the practical limit";
-}
+// MelodyIntervalsReasonable and IntervalsWithinReasonableRange consolidated
+// into VocalIntervalConstraints above (tests same property with multiple seeds)
 
 // === Note Overlap Prevention Tests ===
 
-TEST_F(VocalTest, NoOverlappingNotesWithVariousSeeds) {
-  // Test that notes never overlap with various seeds.
+TEST_F(VocalTest, NoExcessiveOverlapWithVariousSeeds) {
+  // Test that notes never excessively overlap across many seeds.
   // Phase 3 exit patterns (Fadeout/FinalHit/CutOff/Sustain) may extend the last
   // note of a section slightly into the next section boundary. Allow up to 1 beat
   // (480 ticks) of overlap at section boundaries only.
   constexpr Tick kSectionBoundaryTolerance = 480;
 
-  for (uint32_t seed : {12345u, 54321u, 99999u, 11111u, 77777u}) {
+  for (uint32_t seed : {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 10u,
+                        12345u, 54321u, 99999u, 11111u, 77777u}) {
     params_.seed = seed;
 
     Generator gen;
@@ -319,52 +266,6 @@ TEST_F(VocalTest, NoOverlappingNotesWithVariousSeeds) {
           << "Excessive overlap at seed=" << seed << ", note " << i << ": end=" << end_tick
           << ", next_start=" << next_start << ", overlap=" << overlap;
     }
-  }
-}
-
-TEST_F(VocalTest, NoOverlapAtPhraseEndings) {
-  // Verify no excessive overlap at phrase endings where duration_extend is applied.
-  // Phase 3 exit patterns may cause up to 1 beat overlap at section boundaries.
-  constexpr Tick kSectionBoundaryTolerance = 480;
-  params_.seed = 12345;
-
-  Generator gen;
-  gen.generate(params_);
-  const auto& notes = gen.getSong().vocal().notes();
-
-  for (size_t i = 0; i + 1 < notes.size(); ++i) {
-    Tick end_tick = notes[i].start_tick + notes[i].duration;
-    Tick next_start = notes[i + 1].start_tick;
-    Tick overlap = (end_tick > next_start) ? (end_tick - next_start) : 0;
-    EXPECT_LE(overlap, kSectionBoundaryTolerance)
-        << "Excessive overlap at note " << i << ": end=" << end_tick
-        << ", next_start=" << next_start << ", overlap=" << overlap;
-  }
-}
-
-TEST_F(VocalTest, NoOverlapWithMultipleSeeds) {
-  // Test with various seeds to ensure robustness.
-  // Phase 3 exit patterns may cause small overlaps at section boundaries
-  // (up to 1 beat = 480 ticks). Only flag excessive overlaps.
-  constexpr Tick kSectionBoundaryTolerance = 480;
-
-  for (uint32_t seed = 1; seed <= 10; ++seed) {
-    params_.seed = seed;
-
-    Generator gen;
-    gen.generate(params_);
-    const auto& notes = gen.getSong().vocal().notes();
-
-    bool has_excessive_overlap = false;
-    for (size_t i = 0; i + 1 < notes.size(); ++i) {
-      Tick end_tick = notes[i].start_tick + notes[i].duration;
-      Tick next_start = notes[i + 1].start_tick;
-      if (end_tick > next_start + kSectionBoundaryTolerance) {
-        has_excessive_overlap = true;
-        break;
-      }
-    }
-    EXPECT_FALSE(has_excessive_overlap) << "Excessive overlap detected with seed=" << seed;
   }
 }
 
@@ -437,48 +338,27 @@ TEST_F(VocalTest, HumanizeProducesValidNotes) {
 
 // === VocalStylePreset Tests ===
 
-TEST_F(VocalTest, VocaloidStyleGeneratesNotes) {
-  // Test that Vocaloid style doesn't crash and generates notes
-  // Note: MelodyDesigner now controls note density via templates
-  params_.seed = 12345;
-  params_.vocal_style = VocalStylePreset::Vocaloid;
-
-  Generator gen;
-  gen.generate(params_);
-  size_t note_count = gen.getSong().vocal().notes().size();
-
-  EXPECT_GT(note_count, 0u) << "Vocaloid style should generate notes";
-}
-
-TEST_F(VocalTest, UltraVocaloidStyleGeneratesNotes) {
-  // Test that UltraVocaloid style doesn't crash and generates notes
-  // Note: MelodyDesigner now controls note density via templates
-  params_.seed = 12345;
-  params_.vocal_style = VocalStylePreset::UltraVocaloid;
-
-  Generator gen;
-  gen.generate(params_);
-  size_t note_count = gen.getSong().vocal().notes().size();
-
-  EXPECT_GT(note_count, 0u) << "UltraVocaloid style should generate notes";
-}
-
-TEST_F(VocalTest, VocaloidStyleNoOverlaps) {
-  // Vocaloid style should still have no excessive overlapping notes.
-  // Phase 3 exit patterns may cause up to 1 beat overlap at section boundaries.
+TEST_F(VocalTest, VocaloidStylesGenerateValidNoOverlapOutput) {
+  // Test that Vocaloid and UltraVocaloid styles generate valid notes without excessive overlap
   constexpr Tick kSectionBoundaryTolerance = 480;
-  params_.seed = 12345;
-  params_.vocal_style = VocalStylePreset::Vocaloid;
 
-  Generator gen;
-  gen.generate(params_);
-  const auto& notes = gen.getSong().vocal().notes();
+  for (auto style : {VocalStylePreset::Vocaloid, VocalStylePreset::UltraVocaloid}) {
+    params_.seed = 12345;
+    params_.vocal_style = style;
 
-  for (size_t i = 0; i + 1 < notes.size(); ++i) {
-    Tick end_tick = notes[i].start_tick + notes[i].duration;
-    Tick next_start = notes[i + 1].start_tick;
-    Tick overlap = (end_tick > next_start) ? (end_tick - next_start) : 0;
-    EXPECT_LE(overlap, kSectionBoundaryTolerance) << "Excessive overlap at note " << i;
+    Generator gen;
+    gen.generate(params_);
+    const auto& notes = gen.getSong().vocal().notes();
+
+    EXPECT_GT(notes.size(), 0u) << "Style " << static_cast<int>(style) << " should generate notes";
+
+    for (size_t i = 0; i + 1 < notes.size(); ++i) {
+      Tick end_tick = notes[i].start_tick + notes[i].duration;
+      Tick next_start = notes[i + 1].start_tick;
+      Tick overlap = (end_tick > next_start) ? (end_tick - next_start) : 0;
+      EXPECT_LE(overlap, kSectionBoundaryTolerance)
+          << "Excessive overlap at note " << i << " for style " << static_cast<int>(style);
+    }
   }
 }
 
@@ -1059,20 +939,9 @@ TEST_F(VocalTest, SwingGrooveShiftsWeakBeatTiming) {
   EXPECT_GT(swing_count, 0);
   EXPECT_GT(straight_count, 0);
 
-  // Count notes on upbeat positions (8th note offsets: 240, 720, 1200, 1680 ticks in bar)
-  // Swing timing shifts these positions slightly later
-  int swing_upbeats_shifted = 0;
-  for (const auto& note : swing_notes) {
-    Tick pos_in_beat = note.start_tick % TICKS_PER_BEAT;
-    // Check if note is shifted from straight 8th position (240) to swing position (280-360)
-    if (pos_in_beat >= 280 && pos_in_beat <= 400) {
-      swing_upbeats_shifted++;
-    }
-  }
-
-  // Swing should have at least some upbeats shifted (not all notes land exactly on beat)
-  // This is a weak test but validates the groove is being applied
-  EXPECT_GE(swing_upbeats_shifted, 0) << "Swing groove should shift some upbeat timing";
+  // Swing should generate a reasonable number of notes
+  // Note: swing timing is probabilistic, so we verify generation works correctly
+  EXPECT_GT(swing_notes.size(), 10u) << "Swing groove should generate reasonable number of notes";
 }
 
 TEST_F(VocalTest, OffBeatGrooveGeneratesValidOutput) {
@@ -1375,36 +1244,10 @@ TEST_F(VocalTest, ChorusHookRepetitionImproved) {
       }
     }
 
-    // Check for similarity between first motif and later motifs
-    if (motif_pitches.size() >= 2) {
-      const auto& first_motif = motif_pitches[0];
-      int similar_count = 0;
-
-      for (size_t i = 1; i < motif_pitches.size(); ++i) {
-        const auto& later_motif = motif_pitches[i];
-        // Count matching pitches (allowing for transposition)
-        if (first_motif.size() > 0 && later_motif.size() > 0) {
-          size_t min_size = std::min(first_motif.size(), later_motif.size());
-          int matches = 0;
-          for (size_t j = 0; j < min_size; ++j) {
-            // Allow 2 semitone difference (for climax transposition)
-            if (std::abs(static_cast<int>(first_motif[j]) - static_cast<int>(later_motif[j])) <=
-                2) {
-              ++matches;
-            }
-          }
-          if (matches >= static_cast<int>(min_size) / 2) {
-            ++similar_count;
-          }
-        }
-      }
-
-      // At least one later motif should be similar to the first
-      // Note: Post-processing (same-pitch merging) can change note counts,
-      // making position-based matching less reliable. This test verifies
-      // that some level of melodic repetition exists in the chorus.
-      EXPECT_GE(similar_count, 0) << "Chorus should have repeated hook patterns";
-    }
+    // Verify hook repetition mechanism is working.
+    // Post-processing (same-pitch merging) can change note counts,
+    // making position-based matching less reliable.
+    EXPECT_GE(motif_pitches.size(), 2u) << "Chorus should have multiple motif units";
   }
 }
 
@@ -1419,58 +1262,35 @@ TEST_F(VocalTest, SectionMotifRepetitionInVerse) {
   const auto& vocal = gen.getSong().vocal().notes();
   const auto& sections = gen.getSong().arrangement().sections();
 
-  int verse_with_repetition = 0;
   int verse_count = 0;
 
   for (const auto& sec : sections) {
     if (sec.type != SectionType::A || sec.bars < 4) continue;
     ++verse_count;
 
-    // Collect notes per 2-bar motif
-    std::vector<std::vector<uint8_t>> motif_pitches;
+    // Verify verse has multiple motif units (2-bar chunks)
+    int motif_units = 0;
     for (uint8_t bar = 0; bar < sec.bars; bar += 2) {
       Tick motif_start = sec.start_tick + bar * TICKS_PER_BAR;
       Tick motif_end = motif_start + 2 * TICKS_PER_BAR;
 
-      std::vector<uint8_t> pitches;
+      bool has_notes = false;
       for (const auto& note : vocal) {
         if (note.start_tick >= motif_start && note.start_tick < motif_end) {
-          pitches.push_back(note.note);
+          has_notes = true;
+          break;
         }
       }
-      if (!pitches.empty()) {
-        motif_pitches.push_back(pitches);
+      if (has_notes) {
+        motif_units++;
       }
     }
 
-    // Check for any similarity
-    if (motif_pitches.size() >= 2) {
-      const auto& first_motif = motif_pitches[0];
-      for (size_t i = 1; i < motif_pitches.size(); ++i) {
-        const auto& later_motif = motif_pitches[i];
-        if (first_motif.size() > 0 && later_motif.size() > 0) {
-          size_t min_size = std::min(first_motif.size(), later_motif.size());
-          int matches = 0;
-          for (size_t j = 0; j < min_size; ++j) {
-            if (first_motif[j] == later_motif[j]) {
-              ++matches;
-            }
-          }
-          // At least 30% of notes match = repetition detected
-          if (matches >= static_cast<int>(min_size) * 3 / 10) {
-            ++verse_with_repetition;
-            break;
-          }
-        }
-      }
-    }
+    EXPECT_GE(motif_units, 2) << "Verse section should have multiple motif units";
   }
 
-  // At least some verses should show motif repetition
-  // (probabilistic, so we check for at least 1 occurrence)
-  if (verse_count > 0) {
-    EXPECT_GE(verse_with_repetition, 0) << "Verse sections should have motif repetition capability";
-  }
+  // Verify verse sections exist and motif mechanism is active
+  EXPECT_GT(verse_count, 0) << "Should have verse sections to analyze";
 }
 
 TEST_F(VocalTest, MotifRepetitionMaintainsHarmony) {
@@ -1561,25 +1381,7 @@ TEST_F(VocalTest, CachedPhraseVariationMaintainsRecognizability) {
   }
 }
 
-TEST_F(VocalTest, CachedPhraseVariationProducesValidOutput) {
-  // Verify that phrase variation does not produce invalid notes
-  params_.structure = StructurePattern::FullPop;
-  params_.seed = 88888;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& vocal = gen.getSong().vocal().notes();
-
-  // All notes should be valid
-  for (const auto& note : vocal) {
-    EXPECT_GE(note.note, 0) << "Note pitch should be >= 0";
-    EXPECT_LE(note.note, 127) << "Note pitch should be <= 127";
-    EXPECT_GT(note.duration, 0u) << "Note duration should be > 0";
-    EXPECT_GT(note.velocity, 0) << "Note velocity should be > 0";
-    EXPECT_LE(note.velocity, 127) << "Note velocity should be <= 127";
-  }
-}
+// CachedPhraseVariationProducesValidOutput: consolidated into AllNotesHaveValidData
 
 // ============================================================================
 // Regression Tests: duration_ticks underflow bug (fixed 2026-01-07)
@@ -1924,16 +1726,18 @@ TEST_F(VocalTest, CadenceTypeStrongOnStableEndings) {
 
   const auto& boundaries = gen.getSong().phraseBoundaries();
 
-  int strong_count = 0;
+  // Verify cadence detection is running (boundaries exist with valid types)
+  EXPECT_FALSE(boundaries.empty()) << "Should have phrase boundaries with cadence types";
+
+  // Verify at least some boundaries have valid cadence types assigned
+  bool has_cadence = false;
   for (const auto& boundary : boundaries) {
-    if (boundary.cadence == CadenceType::Strong) {
-      strong_count++;
+    if (boundary.cadence != CadenceType::None) {
+      has_cadence = true;
+      break;
     }
   }
-
-  // At least some boundaries should have strong cadence
-  // (exact count depends on melody generation, so we check for at least 0)
-  EXPECT_GE(strong_count, 0) << "CadenceType detection should identify some strong cadences";
+  EXPECT_TRUE(has_cadence) << "Some boundaries should have non-None cadence types";
 }
 
 TEST_F(VocalTest, CadenceTypeFloatingOnTensionEndings) {

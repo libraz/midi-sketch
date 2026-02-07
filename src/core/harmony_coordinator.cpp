@@ -338,6 +338,9 @@ void HarmonyCoordinator::applyMotifToSections(const std::vector<NoteEvent>& moti
         // Create note copy
         NoteEvent new_note = note;
         new_note.start_tick = absolute_tick;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        new_note.prov_lookup_tick = absolute_tick;
+#endif
 
         // Clip duration to section boundary
         if (absolute_tick + new_note.duration > section_end) {

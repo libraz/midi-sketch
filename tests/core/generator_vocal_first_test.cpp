@@ -5,13 +5,14 @@
 
 #include <gtest/gtest.h>
 
-#include <set>
-
 #include "core/generator.h"
 #include "core/types.h"
+#include "test_support/test_constants.h"
 
 namespace midisketch {
 namespace {
+
+using test::kCMajorPitchClasses;
 
 class GeneratorVocalFirstTest : public ::testing::Test {
  protected:
@@ -422,27 +423,23 @@ TEST_F(GeneratorVocalFirstTest, TrialAndErrorWorkflow) {
 // === Scale Adherence Tests ===
 
 TEST_F(GeneratorVocalFirstTest, VocalOnlyStaysOnScale) {
-  std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
-
   Generator gen;
   gen.generateVocal(params_);
 
   for (const auto& note : gen.getSong().vocal().notes()) {
     int pc = note.note % 12;
-    EXPECT_TRUE(c_major_pcs.count(pc) > 0)
+    EXPECT_TRUE(kCMajorPitchClasses.count(pc) > 0)
         << "Chromatic note in vocal-only: pitch " << static_cast<int>(note.note);
   }
 }
 
 TEST_F(GeneratorVocalFirstTest, GenerateWithVocalStaysOnScale) {
-  std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
-
   Generator gen;
   gen.generateWithVocal(params_);
 
   for (const auto& note : gen.getSong().vocal().notes()) {
     int pc = note.note % 12;
-    EXPECT_TRUE(c_major_pcs.count(pc) > 0)
+    EXPECT_TRUE(kCMajorPitchClasses.count(pc) > 0)
         << "Chromatic note in vocal: pitch " << static_cast<int>(note.note);
   }
 }

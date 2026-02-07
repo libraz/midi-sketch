@@ -9,6 +9,7 @@
 #include "core/i_harmony_context.h"
 #include "core/note_creator.h"
 #include "core/preset_data.h"
+#include "core/section_iteration_helper.h"
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/velocity.h"
@@ -303,99 +304,66 @@ void GuitarGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext
   auto& rng = *ctx.rng;
 
   uint8_t base_vel = 80;
-  int total_bar = 0;
 
-  for (const auto& section : sections) {
-    // Skip if guitar not enabled in this section's track mask
-    if (!hasTrack(section.track_mask, TrackMask::Guitar)) {
-      total_bar += section.bars;
-      continue;
+  // Helper to generate one half-bar with the appropriate style
+  auto generateHalf = [&](Tick start, Tick end, const std::vector<uint8_t>& pitches,
+                          SectionType sec_type) {
+    switch (style) {
+      case GuitarStyle::Fingerpick:
+        generateFingerpickBar(track, *ctx.harmony, start, end, pitches, sec_type, base_vel);
+        break;
+      case GuitarStyle::Strum:
+        generateStrumBar(track, *ctx.harmony, start, end, pitches, sec_type, base_vel, rng);
+        break;
+      case GuitarStyle::PowerChord:
+        generatePowerChordBar(track, *ctx.harmony, start, end, pitches, sec_type, base_vel);
+        break;
     }
+  };
 
-    HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, params.mood);
-    bool slow_harmonic = (harmonic.density == HarmonicDensity::Slow);
+  forEachSectionBar(
+      sections, params.mood, TrackMask::Guitar,
+      [](const Section&, size_t, SectionType, const HarmonicRhythmInfo&) {},
+      [&](const BarContext& bc) {
+        int abs_bar = static_cast<int>(bc.bar_start / TICKS_PER_BAR);
+        bool slow_harmonic = (bc.harmonic.density == HarmonicDensity::Slow);
+        Tick half_bar = bc.bar_start + TICKS_PER_BAR / 2;
 
-    for (uint8_t bar = 0; bar < section.bars; ++bar) {
-      Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
-      Tick bar_end = std::min(bar_start + TICKS_PER_BAR, section.endTick());
-      Tick half_bar = bar_start + TICKS_PER_BAR / 2;
-
-      // Get chord for this bar (handle harmonic subdivision)
-      int chord_idx;
-      if (harmonic.subdivision == 2) {
-        chord_idx = getChordIndexForSubdividedBar(
-            total_bar + bar, 0, progression.length);
-      } else {
-        chord_idx = getChordIndexForBar(total_bar + bar, slow_harmonic,
-                                         progression.length);
-      }
-      int8_t degree = progression.at(chord_idx);
-      uint8_t root = degreeToRoot(degree, Key::C);
-      Chord chord = getChordNotes(degree);
-      auto pitches = buildGuitarChordPitches(root, chord, style);
-
-      // Check for phrase-end split (matches chord_track/arpeggio behavior)
-      bool should_split = shouldSplitPhraseEnd(
-          bar, section.bars, progression.length, harmonic,
-          section.type, params.mood);
-
-      // Build second-half pitches if split or subdivided
-      std::vector<uint8_t> pitches_2nd;
-      if (should_split || harmonic.subdivision == 2) {
-        int next_idx;
-        if (harmonic.subdivision == 2) {
-          next_idx = getChordIndexForSubdividedBar(
-              total_bar + bar, 1, progression.length);
+        // Get chord for this bar
+        int chord_idx;
+        if (bc.harmonic.subdivision == 2) {
+          chord_idx = getChordIndexForSubdividedBar(abs_bar, 0, progression.length);
         } else {
-          next_idx = getChordIndexForBar(total_bar + bar + 1, slow_harmonic,
-                                          progression.length);
+          chord_idx = getChordIndexForBar(abs_bar, slow_harmonic, progression.length);
         }
-        int8_t deg2 = progression.at(next_idx);
-        uint8_t root2 = degreeToRoot(deg2, Key::C);
-        Chord chord2 = getChordNotes(deg2);
-        pitches_2nd = buildGuitarChordPitches(root2, chord2, style);
-      }
+        int8_t degree = progression.at(chord_idx);
+        uint8_t root = degreeToRoot(degree, Key::C);
+        Chord chord = getChordNotes(degree);
+        auto pitches = buildGuitarChordPitches(root, chord, style);
 
-      // Generate first half
-      switch (style) {
-        case GuitarStyle::Fingerpick:
-          generateFingerpickBar(track, *ctx.harmony, bar_start,
-                                (should_split || harmonic.subdivision == 2) ? half_bar : bar_end,
-                                pitches, section.type, base_vel);
-          break;
-        case GuitarStyle::Strum:
-          generateStrumBar(track, *ctx.harmony, bar_start,
-                           (should_split || harmonic.subdivision == 2) ? half_bar : bar_end,
-                           pitches, section.type, base_vel, rng);
-          break;
-        case GuitarStyle::PowerChord:
-          generatePowerChordBar(track, *ctx.harmony, bar_start,
-                                (should_split || harmonic.subdivision == 2) ? half_bar : bar_end,
-                                pitches, section.type, base_vel);
-          break;
-      }
+        bool should_split = shouldSplitPhraseEnd(
+            bc.bar_index, bc.section.bars, progression.length, bc.harmonic,
+            bc.section.type, params.mood);
+        bool split = should_split || bc.harmonic.subdivision == 2;
 
-      // Generate second half with next chord if split
-      if ((should_split || harmonic.subdivision == 2) && !pitches_2nd.empty()) {
-        switch (style) {
-          case GuitarStyle::Fingerpick:
-            generateFingerpickBar(track, *ctx.harmony, half_bar, bar_end,
-                                  pitches_2nd, section.type, base_vel);
-            break;
-          case GuitarStyle::Strum:
-            generateStrumBar(track, *ctx.harmony, half_bar, bar_end,
-                             pitches_2nd, section.type, base_vel, rng);
-            break;
-          case GuitarStyle::PowerChord:
-            generatePowerChordBar(track, *ctx.harmony, half_bar, bar_end,
-                                  pitches_2nd, section.type, base_vel);
-            break;
+        // Generate first half (or full bar)
+        generateHalf(bc.bar_start, split ? half_bar : bc.bar_end, pitches, bc.section.type);
+
+        // Generate second half with next chord if split
+        if (split) {
+          int next_idx;
+          if (bc.harmonic.subdivision == 2) {
+            next_idx = getChordIndexForSubdividedBar(abs_bar, 1, progression.length);
+          } else {
+            next_idx = getChordIndexForBar(abs_bar + 1, slow_harmonic, progression.length);
+          }
+          int8_t deg2 = progression.at(next_idx);
+          uint8_t root2 = degreeToRoot(deg2, Key::C);
+          Chord chord2 = getChordNotes(deg2);
+          auto pitches_2nd = buildGuitarChordPitches(root2, chord2, style);
+          generateHalf(half_bar, bc.bar_end, pitches_2nd, bc.section.type);
         }
-      }
-    }
-
-    total_bar += section.bars;
-  }
+      });
 }
 
 }  // namespace midisketch

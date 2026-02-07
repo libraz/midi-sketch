@@ -47,6 +47,8 @@ inline std::string getTrackName(const MidiTrack* track, const Song& song) {
   if (track == &song.chord()) return "Chord";
   if (track == &song.motif()) return "Motif";
   if (track == &song.aux()) return "Aux";
+  if (track == &song.arpeggio()) return "Arpeggio";
+  if (track == &song.guitar()) return "Guitar";
   return "Unknown";
 }
 
@@ -114,6 +116,8 @@ inline std::vector<ClashInfo> analyzeAllTrackPairs(const Song& song,
   if (!song.chord().empty()) tracks.push_back({&song.chord(), "Chord"});
   if (!song.motif().empty()) tracks.push_back({&song.motif(), "Motif"});
   if (!song.aux().empty()) tracks.push_back({&song.aux(), "Aux"});
+  if (!song.arpeggio().empty()) tracks.push_back({&song.arpeggio(), "Arpeggio"});
+  if (!song.guitar().empty()) tracks.push_back({&song.guitar(), "Guitar"});
 
   // Check all unique pairs
   for (size_t idx = 0; idx < tracks.size(); ++idx) {

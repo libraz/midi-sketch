@@ -15,13 +15,14 @@
 #include "core/section_types.h"
 #include "core/types.h"
 
-// Forward declaration
-namespace midisketch { class IChordLookup; }
+// Forward declarations
+namespace midisketch {
+class IChordLookup;
+class ICollisionDetector;
+class IHarmonyContext;
+}  // namespace midisketch
 
 namespace midisketch {
-
-// Forward declaration
-class IHarmonyContext;
 
 /// @brief Position within a 4-bar phrase for timing adjustments.
 /// Used by applyMicroTimingOffsets to vary timing based on phrase position.
@@ -99,19 +100,19 @@ class PostProcessor {
   // @param harmony Harmony context for inter-track collision checking during sustain
   static void applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
                                    const std::vector<Section>& sections,
-                                   IHarmonyContext* harmony = nullptr);
+                                   ICollisionDetector* harmony = nullptr);
   static void applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
                                    const std::vector<TrackRole>& roles,
                                    const std::vector<Section>& sections,
-                                   IHarmonyContext* harmony = nullptr);
+                                   ICollisionDetector* harmony = nullptr);
 
   // Applies a single exit pattern to one track within a section.
   // @param track Track to modify (in-place)
   // @param section Section defining the exit pattern and time range
-  // @param harmony Harmony context for inter-track collision checking
+  // @param harmony Collision detector for inter-track collision checking
   // @param track_role TrackRole for collision checking
   static void applyExitPattern(MidiTrack& track, const Section& section,
-                               IHarmonyContext* harmony = nullptr,
+                               ICollisionDetector* harmony = nullptr,
                                TrackRole track_role = TrackRole::Vocal);
 
   // ============================================================================
@@ -191,7 +192,7 @@ class PostProcessor {
   static void applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum_track,
                                      MidiTrack* chord_track, const MidiTrack* vocal_track,
                                      const Section& section,
-                                     const IHarmonyContext* harmony = nullptr);
+                                     const ICollisionDetector* harmony = nullptr);
 
   // ============================================================================
   // Motif-Vocal Clash Resolution
@@ -207,7 +208,7 @@ class PostProcessor {
   /// @param vocal Vocal track (read-only reference)
   /// @param harmony Harmony context for chord tone lookup
   static void fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& vocal,
-                                    const IHarmonyContext& harmony);
+                                    const ICollisionDetector& harmony);
 
   /// @brief Fix chord-vocal clashes that may occur after post-processing.
   ///
@@ -337,7 +338,7 @@ class PostProcessor {
   static void applyExitSustain(std::vector<NoteEvent>& notes, Tick section_start,
                                Tick section_end,
                                const IChordLookup* chord_lookup = nullptr,
-                               const IHarmonyContext* harmony = nullptr,
+                               const ICollisionDetector* harmony = nullptr,
                                TrackRole track_role = TrackRole::Vocal);
 };
 

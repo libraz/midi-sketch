@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <random>
+#include <set>
 
 #include "core/arrangement.h"
 #include "core/generator.h"
@@ -360,6 +361,121 @@ TEST(CallSettingTest, EnabledWithBalladStyleEnablesCalls) {
   const auto& se = gen.getSong().se();
   // Should have call notes despite Ballad style
   EXPECT_GT(se.noteCount(), 0u) << "Enabled should override Ballad style defaults";
+}
+
+// ============================================================================
+// Text Event / Section Marker Tests
+// ============================================================================
+
+TEST(SETextEventTest, FullPopHasSectionMarkers) {
+  Generator gen;
+  GeneratorParams params;
+  params.structure = StructurePattern::FullPop;
+  params.mood = Mood::ElectroPop;
+  params.seed = 42;
+  params.humanize = false;
+
+  gen.generate(params);
+  const auto& se = gen.getSong().se();
+
+  // FullPop has many sections; SE should have text events for section markers
+  EXPECT_GT(se.textEvents().size(), 4u)
+      << "FullPop should produce multiple section markers";
+}
+
+TEST(SETextEventTest, StandardPopHasSectionMarkers) {
+  Generator gen;
+  GeneratorParams params;
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::ElectroPop;
+  params.seed = 42;
+  params.humanize = false;
+
+  gen.generate(params);
+  const auto& se = gen.getSong().se();
+
+  // StandardPop should have at least a few section markers
+  EXPECT_GT(se.textEvents().size(), 2u)
+      << "StandardPop should produce section markers";
+}
+
+TEST(SETextEventTest, SectionMarkersAtSectionBoundaries) {
+  Generator gen;
+  GeneratorParams params;
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::ElectroPop;
+  params.seed = 42;
+  params.humanize = false;
+
+  gen.generate(params);
+  const auto& se = gen.getSong().se();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  ASSERT_GT(se.textEvents().size(), 0u);
+  ASSERT_GT(sections.size(), 0u);
+
+  // Build set of section start ticks
+  std::set<Tick> section_starts;
+  for (const auto& section : sections) {
+    section_starts.insert(section.start_tick);
+  }
+
+  // Verify text events align with section boundaries or other known positions
+  // (modulation tick, call positions are also valid)
+  int aligned_count = 0;
+  for (const auto& text_event : se.textEvents()) {
+    if (section_starts.count(text_event.time) > 0) {
+      aligned_count++;
+    }
+  }
+
+  // At least some text events should align with section starts
+  EXPECT_GT(aligned_count, 0) << "Section markers should align with section boundaries";
+}
+
+TEST(SETextEventTest, FirstTextEventAtTickZero) {
+  Generator gen;
+  GeneratorParams params;
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::ElectroPop;
+  params.seed = 42;
+  params.humanize = false;
+
+  gen.generate(params);
+  const auto& se = gen.getSong().se();
+
+  ASSERT_GT(se.textEvents().size(), 0u);
+
+  // First section marker should be at or very near tick 0
+  EXPECT_LE(se.textEvents()[0].time, static_cast<Tick>(TICKS_PER_BAR))
+      << "First text event should be near the start of the song";
+}
+
+TEST(SETextEventTest, ModulationMarkerPresent) {
+  Generator gen;
+  SongConfig config = createDefaultSongConfig(0);
+  config.form = StructurePattern::FullPop;
+  config.seed = 42;
+  config.humanize = false;
+  config.modulation_timing = ModulationTiming::LastChorus;
+  config.modulation_semitones = 2;
+
+  gen.generateFromConfig(config);
+  const auto& se = gen.getSong().se();
+
+  // With modulation enabled, SE should have a modulation text event
+  bool found_modulation = false;
+  for (const auto& text_event : se.textEvents()) {
+    if (text_event.text.find("MOD") != std::string::npos ||
+        text_event.text.find("mod") != std::string::npos ||
+        text_event.text.find("+") != std::string::npos) {
+      found_modulation = true;
+      break;
+    }
+  }
+
+  EXPECT_TRUE(found_modulation)
+      << "SE track should contain a modulation marker text event";
 }
 
 }  // namespace

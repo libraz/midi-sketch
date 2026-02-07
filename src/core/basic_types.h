@@ -61,6 +61,8 @@ enum class TransformStepType : uint8_t {
   ChordToneSnap,      ///< nearestChordTonePitch()
   ChordBoundaryClip,  ///< Duration clipped at chord boundary
   ArticulationGate,   ///< Duration modified by articulation gate (bass staccato/legato)
+  PostProcessVelocity,   ///< PostProcessor velocity modification (input=old, output=new)
+  PostProcessDuration,   ///< PostProcessor duration modification (param1=reason)
 };
 
 /// @brief Strategy used to resolve a pitch collision.
@@ -123,6 +125,10 @@ inline const char* transformStepTypeToString(TransformStepType type) {
       return "chord_boundary_clip";
     case TransformStepType::ArticulationGate:
       return "articulation_gate";
+    case TransformStepType::PostProcessVelocity:
+      return "post_process_velocity";
+    case TransformStepType::PostProcessDuration:
+      return "post_process_duration";
   }
   return "unknown";
 }

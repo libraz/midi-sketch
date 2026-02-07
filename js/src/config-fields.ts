@@ -84,7 +84,7 @@ export const CONFIG_FIELDS: readonly ConfigField[] = [
 ] as const;
 
 // Arpeggio nested struct fields
-export const ARPEGGIO_FIELDS: readonly ConfigField[] = [
+const ARPEGGIO_FIELDS: readonly ConfigField[] = [
   { js: 'arpeggioPattern' as keyof SongConfig, cpp: 'pattern', default: 0, type: 'number' },
   { js: 'arpeggioSpeed' as keyof SongConfig, cpp: 'speed', default: 1, type: 'number' },
   {
@@ -103,7 +103,7 @@ export const ARPEGGIO_FIELDS: readonly ConfigField[] = [
 ] as const;
 
 // ChordExtension nested struct fields
-export const CHORD_EXT_FIELDS: readonly ConfigField[] = [
+const CHORD_EXT_FIELDS: readonly ConfigField[] = [
   { js: 'chordExtSus' as keyof SongConfig, cpp: 'enable_sus', default: false, type: 'boolean' },
   { js: 'chordExt7th' as keyof SongConfig, cpp: 'enable_7th', default: false, type: 'boolean' },
   { js: 'chordExt9th' as keyof SongConfig, cpp: 'enable_9th', default: false, type: 'boolean' },
@@ -128,7 +128,7 @@ export const CHORD_EXT_FIELDS: readonly ConfigField[] = [
 ] as const;
 
 // MotifChord nested struct fields
-export const MOTIF_CHORD_FIELDS: readonly ConfigField[] = [
+const MOTIF_CHORD_FIELDS: readonly ConfigField[] = [
   {
     js: 'motifFixedProgression' as keyof SongConfig,
     cpp: 'fixed_progression',
@@ -144,7 +144,7 @@ export const MOTIF_CHORD_FIELDS: readonly ConfigField[] = [
 ] as const;
 
 // Nested struct definitions
-export const NESTED_STRUCTS: readonly NestedField[] = [
+const NESTED_STRUCTS: readonly NestedField[] = [
   { cpp: 'arpeggio', fields: ARPEGGIO_FIELDS },
   { cpp: 'chord_extension', fields: CHORD_EXT_FIELDS },
   { cpp: 'motif_chord', fields: MOTIF_CHORD_FIELDS },
@@ -214,14 +214,13 @@ export const ACCOMPANIMENT_FIELDS: readonly {
 // Serialize VocalConfig / AccompanimentConfig
 // ============================================================================
 
-/**
- * Serialize a JS VocalConfig to a C++ snake_case JSON string.
- */
-export function serializeVocalConfig(config: VocalConfig): string {
+function serializeWithFields(
+  config: Record<string, unknown>,
+  fields: readonly { js: string; cpp: string }[],
+): string {
   const obj: Record<string, unknown> = {};
-  const c = config as unknown as Record<string, unknown>;
-  for (const { js, cpp } of VOCAL_FIELDS) {
-    const val = c[js];
+  for (const { js, cpp } of fields) {
+    const val = config[js];
     if (val !== undefined) {
       obj[cpp] = val;
     }
@@ -230,18 +229,17 @@ export function serializeVocalConfig(config: VocalConfig): string {
 }
 
 /**
+ * Serialize a JS VocalConfig to a C++ snake_case JSON string.
+ */
+export function serializeVocalConfig(config: VocalConfig): string {
+  return serializeWithFields(config as unknown as Record<string, unknown>, VOCAL_FIELDS);
+}
+
+/**
  * Serialize a JS AccompanimentConfig to a C++ snake_case JSON string.
  */
 export function serializeAccompanimentConfig(config: AccompanimentConfig): string {
-  const obj: Record<string, unknown> = {};
-  const c = config as unknown as Record<string, unknown>;
-  for (const { js, cpp } of ACCOMPANIMENT_FIELDS) {
-    const val = c[js];
-    if (val !== undefined) {
-      obj[cpp] = val;
-    }
-  }
-  return JSON.stringify(obj);
+  return serializeWithFields(config as unknown as Record<string, unknown>, ACCOMPANIMENT_FIELDS);
 }
 
 // ============================================================================

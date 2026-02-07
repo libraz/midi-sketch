@@ -64,6 +64,11 @@ MidiTrack MidiTrack::slice(Tick fromTick, Tick toTick) const {
     if (note.start_tick >= fromTick && noteEnd <= toTick) {
       NoteEvent sliced = note;
       sliced.start_tick -= fromTick;  // Adjust to relative position
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      if (sliced.prov_lookup_tick >= fromTick) {
+        sliced.prov_lookup_tick -= fromTick;
+      }
+#endif
       result.notes_.push_back(sliced);
     }
   }
@@ -95,6 +100,9 @@ void MidiTrack::append(const MidiTrack& other, Tick offsetTick) {
   for (const auto& note : other.notes_) {
     NoteEvent shifted = note;
     shifted.start_tick += offsetTick;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    shifted.prov_lookup_tick += offsetTick;
+#endif
     notes_.push_back(shifted);
   }
   for (const auto& text : other.textEvents_) {

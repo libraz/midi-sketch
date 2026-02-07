@@ -5,6 +5,10 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
+#include <set>
+#include <vector>
+
 #include "core/basic_types.h"
 #include "core/generator.h"
 #include "core/i_track_base.h"
@@ -13,6 +17,7 @@
 #include "core/preset_types.h"
 #include "core/section_types.h"
 #include "core/song.h"
+#include "core/timing_constants.h"
 #include "track/generators/guitar.h"
 
 using namespace midisketch;
@@ -202,64 +207,20 @@ class GuitarGenerationTest : public ::testing::Test {
   GeneratorParams params_;
 };
 
-TEST_F(GuitarGenerationTest, LightRockGeneratesNotes) {
-  params_.mood = Mood::LightRock;
-  params_.seed = 42;
+TEST_F(GuitarGenerationTest, AllGuitarMoodsGenerateNotes) {
+  for (Mood mood : {Mood::LightRock, Mood::Ballad, Mood::Anthem,
+                    Mood::LatinPop, Mood::StraightPop}) {
+    params_.mood = mood;
+    params_.seed = 42;
 
-  Generator gen;
-  gen.generate(params_);
+    Generator gen;
+    gen.generate(params_);
 
-  const auto& guitar = gen.getSong().guitar();
-  EXPECT_FALSE(guitar.empty());
-  EXPECT_GT(guitar.notes().size(), 0u);
-}
-
-TEST_F(GuitarGenerationTest, BalladGeneratesNotes) {
-  params_.mood = Mood::Ballad;
-  params_.seed = 42;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& guitar = gen.getSong().guitar();
-  EXPECT_FALSE(guitar.empty());
-  EXPECT_GT(guitar.notes().size(), 0u);
-}
-
-TEST_F(GuitarGenerationTest, AnthemGeneratesNotes) {
-  params_.mood = Mood::Anthem;
-  params_.seed = 42;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& guitar = gen.getSong().guitar();
-  EXPECT_FALSE(guitar.empty());
-  EXPECT_GT(guitar.notes().size(), 0u);
-}
-
-TEST_F(GuitarGenerationTest, LatinPopGeneratesNotes) {
-  params_.mood = Mood::LatinPop;
-  params_.seed = 42;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& guitar = gen.getSong().guitar();
-  EXPECT_FALSE(guitar.empty());
-  EXPECT_GT(guitar.notes().size(), 0u);
-}
-
-TEST_F(GuitarGenerationTest, StraightPopGeneratesNotes) {
-  params_.mood = Mood::StraightPop;
-  params_.seed = 42;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& guitar = gen.getSong().guitar();
-  EXPECT_FALSE(guitar.empty());
-  EXPECT_GT(guitar.notes().size(), 0u);
+    const auto& guitar = gen.getSong().guitar();
+    EXPECT_FALSE(guitar.empty()) << "Mood " << static_cast<int>(mood)
+                                 << " should generate guitar notes";
+    EXPECT_GT(guitar.notes().size(), 0u) << "Mood " << static_cast<int>(mood);
+  }
 }
 
 TEST_F(GuitarGenerationTest, DisabledGuitarSilent) {
@@ -383,4 +344,754 @@ TEST_F(GuitarGenerationTest, AnthemUsesPowerChordStyle) {
 
   // At least some simultaneous notes expected
   EXPECT_GT(same_tick_notes, 0) << "Power chords should have simultaneous notes";
+}
+
+// ============================================================================
+// 1. Playing Style Transitions (multi-section)
+// ============================================================================
+
+TEST_F(GuitarGenerationTest, GuitarSpansMultipleSections) {
+  // Use FullPop structure for many sections (Intro, A, B, Chorus, etc.)
+  params_.structure = StructurePattern::FullPop;
+  params_.mood = Mood::LightRock;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& guitar = gen.getSong().guitar();
+  const auto& sections = gen.getSong().arrangement().sections();
+  ASSERT_FALSE(guitar.notes().empty());
+  ASSERT_GT(sections.size(), 3u) << "FullPop should have multiple sections";
+
+  // Count how many sections contain guitar notes
+  int sections_with_guitar = 0;
+  for (const auto& section : sections) {
+    Tick section_end = section.start_tick + section.bars * TICKS_PER_BAR;
+    for (const auto& note : guitar.notes()) {
+      if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
+        sections_with_guitar++;
+        break;
+      }
+    }
+  }
+
+  // Guitar should appear in multiple sections (at least half of sections
+  // that have guitar enabled in their track mask)
+  int enabled_sections = 0;
+  for (const auto& section : sections) {
+    if (hasTrack(section.track_mask, TrackMask::Guitar)) {
+      enabled_sections++;
+    }
+  }
+
+  EXPECT_GE(sections_with_guitar, std::max(1, enabled_sections / 2))
+      << "Guitar should appear across multiple sections (" << sections_with_guitar
+      << " of " << enabled_sections << " enabled)";
+}
+
+TEST_F(GuitarGenerationTest, FingerpickDensityHigherThanPowerChord) {
+  // Fingerpick = 8 eighth notes per bar vs. PowerChord = 2 half-note hits per bar
+  // So fingerpick should have more total notes per bar on average
+
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 42;
+
+  // Fingerpick (Ballad, nylon GM 25)
+  params_.mood = Mood::Ballad;
+  Generator gen_fp;
+  gen_fp.generate(params_);
+  const auto& fp_notes = gen_fp.getSong().guitar().notes();
+
+  // PowerChord (Anthem, overdriven GM 29)
+  params_.mood = Mood::Anthem;
+  Generator gen_pc;
+  gen_pc.generate(params_);
+  const auto& pc_notes = gen_pc.getSong().guitar().notes();
+
+  ASSERT_FALSE(fp_notes.empty());
+  ASSERT_FALSE(pc_notes.empty());
+
+  // Fingerpick (8 onsets/bar) should produce significantly more notes
+  // than power chord (2 x 2 = 4 notes/bar, but half-note rhythm)
+  EXPECT_GT(fp_notes.size(), pc_notes.size())
+      << "Fingerpick (" << fp_notes.size() << " notes) should produce more notes "
+      << "than power chord (" << pc_notes.size() << " notes)";
+}
+
+TEST_F(GuitarGenerationTest, StrumAndPowerChordBothProduceSimultaneousNotes) {
+  // Verify both chordal styles produce simultaneous notes at some onsets
+  auto countSimultaneous = [](const std::vector<NoteEvent>& notes) -> int {
+    int count = 0;
+    for (size_t idx = 1; idx < notes.size(); ++idx) {
+      if (notes[idx].start_tick == notes[idx - 1].start_tick) {
+        count++;
+      }
+    }
+    return count;
+  };
+
+  // Strum (LightRock, Clean GM 27)
+  params_.mood = Mood::LightRock;
+  params_.seed = 42;
+  Generator gen_strum;
+  gen_strum.generate(params_);
+  int strum_sim = countSimultaneous(gen_strum.getSong().guitar().notes());
+
+  // PowerChord (Anthem, Overdriven GM 29)
+  params_.mood = Mood::Anthem;
+  Generator gen_pc;
+  gen_pc.generate(params_);
+  int pc_sim = countSimultaneous(gen_pc.getSong().guitar().notes());
+
+  EXPECT_GT(strum_sim, 0) << "Strum should produce simultaneous notes";
+  EXPECT_GT(pc_sim, 0) << "PowerChord should produce simultaneous notes";
+}
+
+TEST_F(GuitarGenerationTest, FingerpickProducesMainlySingleNotes) {
+  // Fingerpick style arpeggiates chord tones individually
+  params_.mood = Mood::Ballad;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& notes = gen.getSong().guitar().notes();
+  ASSERT_FALSE(notes.empty());
+
+  int simultaneous = 0;
+  for (size_t idx = 1; idx < notes.size(); ++idx) {
+    if (notes[idx].start_tick == notes[idx - 1].start_tick) {
+      simultaneous++;
+    }
+  }
+
+  float sim_ratio = static_cast<float>(simultaneous) / notes.size();
+  EXPECT_LT(sim_ratio, 0.15f)
+      << "Fingerpick should produce mainly single notes (" << simultaneous
+      << "/" << notes.size() << " simultaneous)";
+}
+
+TEST_F(GuitarGenerationTest, PowerChordIntervalsArePerfectFifths) {
+  params_.mood = Mood::Anthem;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& guitar = gen.getSong().guitar();
+  ASSERT_FALSE(guitar.notes().empty());
+
+  int power_chord_count = 0;
+  int valid_intervals = 0;
+  for (size_t idx = 1; idx < guitar.notes().size(); ++idx) {
+    if (guitar.notes()[idx].start_tick == guitar.notes()[idx - 1].start_tick) {
+      int interval = std::abs(guitar.notes()[idx].note - guitar.notes()[idx - 1].note);
+      if (interval == 7 || interval == 12) {
+        valid_intervals++;
+      }
+      power_chord_count++;
+    }
+  }
+
+  ASSERT_GT(power_chord_count, 0) << "Should have found power chord pairs";
+  float valid_ratio = static_cast<float>(valid_intervals) / power_chord_count;
+  EXPECT_GE(valid_ratio, 0.8f)
+      << "Most power chord intervals should be perfect 5ths (" << valid_intervals
+      << "/" << power_chord_count << ")";
+}
+
+TEST_F(GuitarGenerationTest, PowerChordDurationsAreHalfNotes) {
+  // Power chord pattern uses half-note (TICK_HALF) duration hits
+  params_.mood = Mood::Anthem;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& guitar = gen.getSong().guitar();
+  ASSERT_FALSE(guitar.notes().empty());
+
+  // Group simultaneous notes and check duration of each onset group
+  Tick half_note_dur = static_cast<Tick>(TICK_HALF * 0.9f);
+  int long_notes = 0;
+  int short_notes = 0;
+  for (const auto& note : guitar.notes()) {
+    if (note.duration >= half_note_dur - 10) {
+      long_notes++;
+    } else {
+      short_notes++;
+    }
+  }
+
+  // Power chords should produce mostly long (half-note) durations
+  EXPECT_GT(long_notes, short_notes)
+      << "Power chord notes should be mostly half-note duration ("
+      << long_notes << " long vs " << short_notes << " short)";
+}
+
+// ============================================================================
+// 2. Physical Model Compliance
+// ============================================================================
+
+TEST_F(GuitarGenerationTest, AllNotesWithinPhysicalModelPitchRange) {
+  // Test all guitar-enabled moods with multiple seeds
+  std::vector<Mood> guitar_moods = {
+      Mood::StraightPop, Mood::LightRock, Mood::EmotionalPop, Mood::Ballad,
+      Mood::Nostalgic, Mood::Anthem, Mood::CityPop, Mood::RnBNeoSoul,
+      Mood::LatinPop, Mood::Lofi};
+  std::vector<uint32_t> seeds = {42, 12345, 99999, 7777};
+
+  for (Mood mood : guitar_moods) {
+    for (uint32_t seed : seeds) {
+      params_.mood = mood;
+      params_.seed = seed;
+
+      Generator gen;
+      gen.generate(params_);
+
+      for (const auto& note : gen.getSong().guitar().notes()) {
+        EXPECT_GE(note.note, PhysicalModels::kElectricGuitar.pitch_low)
+            << "Mood " << static_cast<int>(mood) << " seed " << seed
+            << " note " << static_cast<int>(note.note) << " below guitar range "
+            << static_cast<int>(PhysicalModels::kElectricGuitar.pitch_low);
+        EXPECT_LE(note.note, PhysicalModels::kElectricGuitar.pitch_high)
+            << "Mood " << static_cast<int>(mood) << " seed " << seed
+            << " note " << static_cast<int>(note.note) << " above guitar range "
+            << static_cast<int>(PhysicalModels::kElectricGuitar.pitch_high);
+      }
+    }
+  }
+}
+
+TEST_F(GuitarGenerationTest, SimultaneousNotesWithinGuitarStringCount) {
+  // A 6-string guitar can play at most 6 simultaneous notes.
+  // Verify no onset has more than 6 notes.
+  std::vector<Mood> guitar_moods = {Mood::LightRock, Mood::Anthem, Mood::CityPop};
+
+  for (Mood mood : guitar_moods) {
+    params_.mood = mood;
+    params_.seed = 42;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& notes = gen.getSong().guitar().notes();
+    if (notes.empty()) continue;
+
+    int max_simultaneous = 1;
+    int current_count = 1;
+    for (size_t idx = 1; idx < notes.size(); ++idx) {
+      if (notes[idx].start_tick == notes[idx - 1].start_tick) {
+        current_count++;
+      } else {
+        max_simultaneous = std::max(max_simultaneous, current_count);
+        current_count = 1;
+      }
+    }
+    max_simultaneous = std::max(max_simultaneous, current_count);
+
+    EXPECT_LE(max_simultaneous, 6)
+        << "Mood " << static_cast<int>(mood)
+        << " has " << max_simultaneous << " simultaneous notes (max 6 strings)";
+  }
+}
+
+TEST_F(GuitarGenerationTest, ChordVoicingsStayInPracticalStrumRange) {
+  // Strum voicings use kGuitarLow=40 (E2) to kGuitarHigh=76 (E5).
+  // Verify all notes fall within this practical range.
+  params_.mood = Mood::LightRock;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& guitar = gen.getSong().guitar();
+  ASSERT_FALSE(guitar.notes().empty());
+
+  // The generator uses kGuitarLow=40 and kGuitarHigh=76 internally
+  for (const auto& note : guitar.notes()) {
+    EXPECT_GE(note.note, 36)
+        << "Guitar note below practical range at tick " << note.start_tick;
+    EXPECT_LE(note.note, 88)
+        << "Guitar note above practical range at tick " << note.start_tick;
+  }
+}
+
+TEST_F(GuitarGenerationTest, VelocitiesWithinPhysicalModelBounds) {
+  // PhysicalModel kElectricGuitar has velocity_min=40, velocity_max=110
+  // but calculateGuitarVelocity clamps to [40, 120].
+  // Verify all velocities are within valid bounds.
+  std::vector<Mood> moods = {Mood::Ballad, Mood::LightRock, Mood::Anthem};
+
+  for (Mood mood : moods) {
+    params_.mood = mood;
+    params_.seed = 42;
+
+    Generator gen;
+    gen.generate(params_);
+
+    for (const auto& note : gen.getSong().guitar().notes()) {
+      EXPECT_GE(note.velocity, 1)
+          << "Mood " << static_cast<int>(mood) << " zero velocity at tick " << note.start_tick;
+      EXPECT_LE(note.velocity, 127)
+          << "Mood " << static_cast<int>(mood) << " velocity overflow at tick " << note.start_tick;
+    }
+  }
+}
+
+TEST_F(GuitarGenerationTest, NotesAreDiatonicToCMajorAcrossMoods) {
+  // Internal representation is C major. Test across multiple moods and seeds.
+  std::vector<Mood> moods = {Mood::LightRock, Mood::Ballad, Mood::Anthem,
+                              Mood::CityPop, Mood::Lofi};
+  const std::set<int> diatonic = {0, 2, 4, 5, 7, 9, 11};
+
+  for (Mood mood : moods) {
+    for (uint32_t seed : {42u, 999u, 54321u}) {
+      params_.mood = mood;
+      params_.seed = seed;
+
+      Generator gen;
+      gen.generate(params_);
+
+      const auto& guitar = gen.getSong().guitar();
+      if (guitar.notes().empty()) continue;
+
+      int total = 0;
+      int diatonic_count = 0;
+      for (const auto& note : guitar.notes()) {
+        total++;
+        if (diatonic.count(note.note % 12) > 0) {
+          diatonic_count++;
+        }
+      }
+
+      float ratio = static_cast<float>(diatonic_count) / total;
+      EXPECT_GE(ratio, 0.95f)
+          << "Mood " << static_cast<int>(mood) << " seed " << seed
+          << " diatonic ratio " << diatonic_count << "/" << total;
+    }
+  }
+}
+
+// ============================================================================
+// 3. Guitar-Specific Collision Avoidance
+// ============================================================================
+
+// Helper: count minor 2nd / minor 9th clashes between two tracks
+static int countDissonantClashes(const MidiTrack& track_a, const MidiTrack& track_b) {
+  int clash_count = 0;
+  for (const auto& note_a : track_a.notes()) {
+    Tick end_a = note_a.start_tick + note_a.duration;
+    for (const auto& note_b : track_b.notes()) {
+      Tick end_b = note_b.start_tick + note_b.duration;
+      bool overlaps = (note_a.start_tick < end_b) && (note_b.start_tick < end_a);
+      if (!overlaps) continue;
+
+      int interval = std::abs(static_cast<int>(note_a.note) - static_cast<int>(note_b.note));
+      // Minor 2nd (1 semitone) and minor 9th (13 semitones) are dissonant
+      if (interval < 24 && (interval == 1 || interval == 13)) {
+        clash_count++;
+      }
+    }
+  }
+  return clash_count;
+}
+
+TEST_F(GuitarGenerationTest, GuitarDoesNotClashWithVocal) {
+  // Guitar uses vocal ceiling to avoid register collision.
+  // Verify no minor 2nd/9th clashes with vocal across moods and seeds.
+  std::vector<Mood> moods = {Mood::LightRock, Mood::Ballad, Mood::Anthem,
+                              Mood::StraightPop, Mood::CityPop};
+
+  for (Mood mood : moods) {
+    for (uint32_t seed : {42u, 100u, 9999u}) {
+      params_.mood = mood;
+      params_.seed = seed;
+
+      Generator gen;
+      gen.generate(params_);
+
+      const auto& guitar = gen.getSong().guitar();
+      const auto& vocal = gen.getSong().vocal();
+      if (guitar.notes().empty()) continue;
+
+      int clashes = countDissonantClashes(guitar, vocal);
+      int total = static_cast<int>(guitar.notes().size());
+      float clash_rate = static_cast<float>(clashes) / total;
+
+      EXPECT_LT(clash_rate, 0.05f)
+          << "Mood " << static_cast<int>(mood) << " seed " << seed
+          << " guitar-vocal m2/m9 clashes: " << clashes << "/" << total;
+    }
+  }
+}
+
+TEST_F(GuitarGenerationTest, GuitarDoesNotClashWithBass) {
+  std::vector<Mood> moods = {Mood::LightRock, Mood::Ballad, Mood::Anthem,
+                              Mood::LatinPop, Mood::StraightPop};
+
+  for (Mood mood : moods) {
+    for (uint32_t seed : {42u, 100u, 9999u}) {
+      params_.mood = mood;
+      params_.seed = seed;
+
+      Generator gen;
+      gen.generate(params_);
+
+      const auto& guitar = gen.getSong().guitar();
+      const auto& bass = gen.getSong().bass();
+      if (guitar.notes().empty()) continue;
+
+      int clashes = countDissonantClashes(guitar, bass);
+      int total = static_cast<int>(guitar.notes().size());
+      float clash_rate = static_cast<float>(clashes) / total;
+
+      EXPECT_LT(clash_rate, 0.05f)
+          << "Mood " << static_cast<int>(mood) << " seed " << seed
+          << " guitar-bass m2/m9 clashes: " << clashes << "/" << total;
+    }
+  }
+}
+
+TEST_F(GuitarGenerationTest, GuitarDoesNotClashWithChord) {
+  std::vector<Mood> moods = {Mood::LightRock, Mood::StraightPop, Mood::CityPop};
+
+  for (Mood mood : moods) {
+    for (uint32_t seed : {42u, 100u, 9999u}) {
+      params_.mood = mood;
+      params_.seed = seed;
+
+      Generator gen;
+      gen.generate(params_);
+
+      const auto& guitar = gen.getSong().guitar();
+      const auto& chord = gen.getSong().chord();
+      if (guitar.notes().empty()) continue;
+
+      int clashes = countDissonantClashes(guitar, chord);
+      int total = static_cast<int>(guitar.notes().size());
+      float clash_rate = static_cast<float>(clashes) / total;
+
+      EXPECT_LT(clash_rate, 0.05f)
+          << "Mood " << static_cast<int>(mood) << " seed " << seed
+          << " guitar-chord m2/m9 clashes: " << clashes << "/" << total;
+    }
+  }
+}
+
+TEST_F(GuitarGenerationTest, GuitarWithAllTracksActive_NoMajorClashes) {
+  // Full ensemble test: vocal + bass + chord + guitar + drums + arpeggio all active.
+  // Verify guitar does not produce excessive dissonance with any pitched track.
+  params_.mood = Mood::LightRock;
+  params_.drums_enabled = true;
+  params_.arpeggio_enabled = true;
+  params_.guitar_enabled = true;
+
+  for (uint32_t seed : {42u, 777u, 31415u}) {
+    params_.seed = seed;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& guitar = gen.getSong().guitar();
+    if (guitar.notes().empty()) continue;
+
+    int total_clashes = 0;
+    total_clashes += countDissonantClashes(guitar, gen.getSong().vocal());
+    total_clashes += countDissonantClashes(guitar, gen.getSong().bass());
+    total_clashes += countDissonantClashes(guitar, gen.getSong().chord());
+    total_clashes += countDissonantClashes(guitar, gen.getSong().motif());
+    total_clashes += countDissonantClashes(guitar, gen.getSong().aux());
+
+    int total = static_cast<int>(guitar.notes().size());
+    float clash_rate = static_cast<float>(total_clashes) / total;
+
+    EXPECT_LT(clash_rate, 0.10f)
+        << "Seed " << seed << " full ensemble guitar clash rate: "
+        << total_clashes << "/" << total << " = " << (clash_rate * 100) << "%";
+  }
+}
+
+// ============================================================================
+// 4. Mood-Based Behavior
+// ============================================================================
+
+TEST_F(GuitarGenerationTest, BalladProducesFingerpickPattern) {
+  // Ballad mood: nylon guitar (GM 25) -> fingerpick style
+  params_.mood = Mood::Ballad;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& notes = gen.getSong().guitar().notes();
+  ASSERT_FALSE(notes.empty());
+
+  // Fingerpick: mostly single notes, short duration (eighth-note based)
+  int simultaneous = 0;
+  for (size_t idx = 1; idx < notes.size(); ++idx) {
+    if (notes[idx].start_tick == notes[idx - 1].start_tick) {
+      simultaneous++;
+    }
+  }
+
+  float sim_ratio = static_cast<float>(simultaneous) / notes.size();
+  EXPECT_LT(sim_ratio, 0.15f) << "Ballad guitar should use fingerpick (mostly single notes)";
+
+  // Fingerpick notes should be short (eighth note = TICK_EIGHTH ~= 240)
+  for (const auto& note : notes) {
+    EXPECT_LE(note.duration, static_cast<uint32_t>(TICKS_PER_BEAT * 1.1f))
+        << "Fingerpick note too long at tick " << note.start_tick;
+  }
+}
+
+TEST_F(GuitarGenerationTest, LightRockProducesStrumPattern) {
+  // LightRock mood: clean guitar (GM 27) -> strum style
+  params_.mood = Mood::LightRock;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& notes = gen.getSong().guitar().notes();
+  ASSERT_FALSE(notes.empty());
+
+  // Strum: multiple simultaneous notes at some onsets
+  int simultaneous = 0;
+  for (size_t idx = 1; idx < notes.size(); ++idx) {
+    if (notes[idx].start_tick == notes[idx - 1].start_tick) {
+      simultaneous++;
+    }
+  }
+
+  EXPECT_GT(simultaneous, 0) << "LightRock guitar should use strum (multi-note onsets)";
+}
+
+TEST_F(GuitarGenerationTest, AnthemProducesPowerChordPattern) {
+  // Anthem mood: overdriven guitar (GM 29) -> power chord style
+  params_.mood = Mood::Anthem;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& notes = gen.getSong().guitar().notes();
+  ASSERT_FALSE(notes.empty());
+
+  // Power chords: pairs of notes, intervals of 7 semitones (perfect 5th)
+  int pair_count = 0;
+  int fifth_count = 0;
+  for (size_t idx = 1; idx < notes.size(); ++idx) {
+    if (notes[idx].start_tick == notes[idx - 1].start_tick) {
+      pair_count++;
+      int interval = std::abs(notes[idx].note - notes[idx - 1].note);
+      if (interval == 7) {
+        fifth_count++;
+      }
+    }
+  }
+
+  EXPECT_GT(pair_count, 0) << "Anthem guitar should produce note pairs";
+  EXPECT_GT(fifth_count, 0) << "Anthem guitar should include perfect 5th intervals";
+}
+
+TEST_F(GuitarGenerationTest, FingerpickMoodsSofterThanStrumMoods) {
+  // Average velocity: Fingerpick (0.75 multiplier) < Strum (0.85) < PowerChord (1.0)
+  auto averageVelocity = [](const MidiTrack& track) -> double {
+    if (track.notes().empty()) return 0.0;
+    double sum = 0;
+    for (const auto& note : track.notes()) sum += note.velocity;
+    return sum / track.notes().size();
+  };
+
+  // Fingerpick: Ballad (25)
+  params_.mood = Mood::Ballad;
+  params_.seed = 42;
+  Generator gen_fp;
+  gen_fp.generate(params_);
+  double fp_vel = averageVelocity(gen_fp.getSong().guitar());
+
+  // Strum: LightRock (27)
+  params_.mood = Mood::LightRock;
+  Generator gen_strum;
+  gen_strum.generate(params_);
+  double strum_vel = averageVelocity(gen_strum.getSong().guitar());
+
+  // PowerChord: Anthem (29)
+  params_.mood = Mood::Anthem;
+  Generator gen_pc;
+  gen_pc.generate(params_);
+  double pc_vel = averageVelocity(gen_pc.getSong().guitar());
+
+  ASSERT_GT(fp_vel, 0.0) << "Ballad guitar should have notes";
+  ASSERT_GT(strum_vel, 0.0) << "LightRock guitar should have notes";
+  ASSERT_GT(pc_vel, 0.0) << "Anthem guitar should have notes";
+
+  // Fingerpick should be softer than power chord
+  EXPECT_LT(fp_vel, pc_vel)
+      << "Fingerpick avg velocity (" << fp_vel << ") should be softer than power chord ("
+      << pc_vel << ")";
+}
+
+TEST_F(GuitarGenerationTest, AllGuitarEnabledMoodsProduceNotes) {
+  // All 10 moods that have guitar != 0xFF should produce guitar notes
+  std::vector<Mood> enabled_moods = {
+      Mood::StraightPop, Mood::LightRock, Mood::EmotionalPop, Mood::Ballad,
+      Mood::Nostalgic, Mood::Anthem, Mood::CityPop, Mood::RnBNeoSoul,
+      Mood::LatinPop, Mood::Lofi};
+
+  for (Mood mood : enabled_moods) {
+    params_.mood = mood;
+    params_.seed = 42;
+
+    Generator gen;
+    gen.generate(params_);
+
+    EXPECT_FALSE(gen.getSong().guitar().empty())
+        << "Mood " << static_cast<int>(mood) << " should produce guitar notes";
+  }
+}
+
+TEST_F(GuitarGenerationTest, MoodStyleMappingCorrect) {
+  // Verify the mood->program->style mapping is consistent
+  EXPECT_EQ(guitarStyleFromProgram(getMoodPrograms(Mood::Ballad).guitar),
+            GuitarStyle::Fingerpick);
+  EXPECT_EQ(guitarStyleFromProgram(getMoodPrograms(Mood::EmotionalPop).guitar),
+            GuitarStyle::Fingerpick);
+  EXPECT_EQ(guitarStyleFromProgram(getMoodPrograms(Mood::Nostalgic).guitar),
+            GuitarStyle::Fingerpick);
+  EXPECT_EQ(guitarStyleFromProgram(getMoodPrograms(Mood::RnBNeoSoul).guitar),
+            GuitarStyle::Fingerpick);
+  EXPECT_EQ(guitarStyleFromProgram(getMoodPrograms(Mood::LatinPop).guitar),
+            GuitarStyle::Fingerpick);
+  EXPECT_EQ(guitarStyleFromProgram(getMoodPrograms(Mood::Lofi).guitar),
+            GuitarStyle::Fingerpick);
+  EXPECT_EQ(guitarStyleFromProgram(getMoodPrograms(Mood::LightRock).guitar),
+            GuitarStyle::Strum);
+  EXPECT_EQ(guitarStyleFromProgram(getMoodPrograms(Mood::StraightPop).guitar),
+            GuitarStyle::Strum);
+  EXPECT_EQ(guitarStyleFromProgram(getMoodPrograms(Mood::CityPop).guitar),
+            GuitarStyle::Strum);
+  EXPECT_EQ(guitarStyleFromProgram(getMoodPrograms(Mood::Anthem).guitar),
+            GuitarStyle::PowerChord);
+}
+
+// ============================================================================
+// 5. Guitar Disabled via Mood Sentinel (0xFF)
+// ============================================================================
+
+TEST_F(GuitarGenerationTest, AllDisabledMoodsProduceNoGuitarNotes) {
+  // All 14 moods with guitar == 0xFF should produce zero guitar notes
+  std::vector<Mood> disabled_moods = {
+      Mood::BrightUpbeat, Mood::EnergeticDance, Mood::MidPop, Mood::Sentimental,
+      Mood::Chill, Mood::DarkPop, Mood::Dramatic, Mood::ModernPop,
+      Mood::ElectroPop, Mood::IdolPop, Mood::Yoasobi, Mood::Synthwave,
+      Mood::FutureBass, Mood::Trap};
+
+  for (Mood mood : disabled_moods) {
+    params_.mood = mood;
+    params_.seed = 42;
+
+    Generator gen;
+    gen.generate(params_);
+
+    EXPECT_TRUE(gen.getSong().guitar().empty())
+        << "Mood " << static_cast<int>(mood)
+        << " has guitar=0xFF but produced " << gen.getSong().guitar().notes().size()
+        << " notes";
+  }
+}
+
+TEST_F(GuitarGenerationTest, DisabledViaParamsProducesNoNotes) {
+  // Even with a guitar-enabled mood, guitar_enabled=false should silence it
+  params_.mood = Mood::LightRock;
+  params_.guitar_enabled = false;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  EXPECT_TRUE(gen.getSong().guitar().empty())
+      << "guitar_enabled=false should silence guitar regardless of mood";
+}
+
+TEST_F(GuitarGenerationTest, DisabledMoodSentinelTakesPrecedence) {
+  // With guitar_enabled=true but mood sentinel=0xFF, no guitar notes
+  params_.mood = Mood::ElectroPop;
+  params_.guitar_enabled = true;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  EXPECT_TRUE(gen.getSong().guitar().empty())
+      << "Mood sentinel 0xFF should override guitar_enabled=true";
+}
+
+// ============================================================================
+// Blueprint and Multi-config Tests
+// ============================================================================
+
+TEST_F(GuitarGenerationTest, AllBlueprintsWithGuitarProduceValidNotes) {
+  for (uint8_t bp_idx = 0; bp_idx < 9; ++bp_idx) {
+    params_.blueprint_id = bp_idx;
+    params_.mood = Mood::LightRock;
+    params_.seed = 42;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& guitar = gen.getSong().guitar();
+    for (const auto& note : guitar.notes()) {
+      EXPECT_GE(note.note, PhysicalModels::kElectricGuitar.pitch_low)
+          << "Blueprint " << static_cast<int>(bp_idx) << " guitar note below range";
+      EXPECT_LE(note.note, PhysicalModels::kElectricGuitar.pitch_high)
+          << "Blueprint " << static_cast<int>(bp_idx) << " guitar note above range";
+      EXPECT_GE(note.velocity, 1)
+          << "Blueprint " << static_cast<int>(bp_idx) << " guitar zero velocity";
+      EXPECT_LE(note.velocity, 127)
+          << "Blueprint " << static_cast<int>(bp_idx) << " guitar velocity overflow";
+    }
+  }
+}
+
+TEST_F(GuitarGenerationTest, GuitarNotesHaveValidDuration) {
+  std::vector<Mood> moods = {Mood::LightRock, Mood::Ballad, Mood::Anthem};
+
+  for (Mood mood : moods) {
+    params_.mood = mood;
+    params_.seed = 42;
+
+    Generator gen;
+    gen.generate(params_);
+
+    for (const auto& note : gen.getSong().guitar().notes()) {
+      EXPECT_GT(note.duration, 0u)
+          << "Mood " << static_cast<int>(mood) << " has zero-duration guitar note at tick "
+          << note.start_tick;
+      EXPECT_LT(note.duration, static_cast<uint32_t>(TICKS_PER_BAR * 4))
+          << "Mood " << static_cast<int>(mood) << " has unreasonably long guitar note";
+    }
+  }
+}
+
+TEST_F(GuitarGenerationTest, GuitarNotesFollowChordChanges) {
+  params_.mood = Mood::LightRock;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& guitar = gen.getSong().guitar();
+  ASSERT_GT(guitar.notes().size(), 10u);
+
+  std::set<int> pitch_classes;
+  for (const auto& note : guitar.notes()) {
+    pitch_classes.insert(note.note % 12);
+  }
+
+  // With a chord progression, guitar should use at least 4 different pitch classes
+  EXPECT_GE(pitch_classes.size(), 4u)
+      << "Guitar should use multiple pitch classes following chord changes";
 }

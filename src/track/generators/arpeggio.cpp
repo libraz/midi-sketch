@@ -15,6 +15,7 @@
 #include "core/i_harmony_context.h"
 #include "core/note_creator.h"
 #include "core/production_blueprint.h"
+#include "core/section_iteration_helper.h"
 #include "core/song.h"
 #include "core/swing_quantize.h"
 #include "core/timing_constants.h"
@@ -368,165 +369,145 @@ void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackConte
   std::vector<uint8_t> persistent_arp_notes;
   int persistent_pattern_index = 0;
 
-  for (const auto& section : sections) {
-    // Skip sections where arpeggio is disabled by track_mask
-    if (!hasTrack(section.track_mask, TrackMask::Arpeggio)) {
-      continue;
-    }
+  // Section-level state (set in on_section, used in on_bar)
+  ArpeggioSectionParams sec_params{};
+  Tick section_note_duration = 0;
+  Tick section_gated_duration = 0;
+  Tick section_end = 0;
 
-    // Calculate section-specific arpeggio parameters using helper
-    ArpeggioSectionParams sec_params =
-        calculateArpeggioSectionParams(section, arp, style, params);
+  forEachSectionBar(
+      sections, params.mood, TrackMask::Arpeggio,
+      [&](const Section& section, size_t, SectionType, const HarmonicRhythmInfo& harmonic) {
+        sec_params = calculateArpeggioSectionParams(section, arp, style, params);
+        section_note_duration = getNoteDuration(sec_params.speed);
+        section_gated_duration = static_cast<Tick>(section_note_duration * sec_params.gate);
+        section_end = section.endTick();
 
-    Tick section_note_duration = getNoteDuration(sec_params.speed);
-    Tick section_gated_duration = static_cast<Tick>(section_note_duration * sec_params.gate);
+        // Periodic refresh for non-sync mode
+        if (!arp.sync_chord) {
+          uint32_t total_bar = section.start_tick / TICKS_PER_BAR;
+          bool slow_harmonic = (harmonic.density == HarmonicDensity::Slow);
+          int chord_idx =
+              getChordIndexForBar(static_cast<int>(total_bar), slow_harmonic, progression.length);
+          int8_t degree = progression.at(chord_idx);
+          uint8_t root = degreeToRoot(degree, Key::C);
+          while (root < sec_params.base_octave) root += 12;
+          while (root >= sec_params.base_octave + 12) root -= 12;
+          Chord chord = getChordNotes(degree);
+          std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, sec_params.octave_range);
+          persistent_arp_notes = arrangeByPattern(chord_notes, sec_params.pattern, rng);
+          persistent_pattern_index = 0;
+        }
+      },
+      [&](const BarContext& bc) {
+        bool should_split = shouldSplitPhraseEnd(bc.bar_index, bc.section.bars, progression.length,
+                                                 bc.harmonic, bc.section.type, params.mood);
 
-    Tick section_end = section.endTick();
+        std::vector<uint8_t> arp_notes;
+        std::vector<uint8_t> next_arp_notes;
+        int pattern_index;
 
-    // Get harmonic rhythm info for this section
-    HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, params.mood);
+        if (arp.sync_chord) {
+          bool slow = (bc.harmonic.density == HarmonicDensity::Slow);
+          int chord_idx;
+          if (bc.harmonic.subdivision == 2) {
+            chord_idx = getChordIndexForSubdividedBar(bc.bar_index, 0, progression.length);
+          } else {
+            chord_idx = getChordIndexForBar(bc.bar_index, slow, progression.length);
+          }
+          int8_t degree = progression.at(chord_idx);
+          uint8_t root = degreeToRoot(degree, Key::C);
+          while (root < sec_params.base_octave) root += 12;
+          while (root >= sec_params.base_octave + 12) root -= 12;
 
-    // === PERIODIC REFRESH FOR NON-SYNC MODE ===
-    if (!arp.sync_chord) {
-      uint32_t total_bar = section.start_tick / TICKS_PER_BAR;
-      bool slow_harmonic = (harmonic.density == HarmonicDensity::Slow);
-      int chord_idx =
-          getChordIndexForBar(static_cast<int>(total_bar), slow_harmonic, progression.length);
-      int8_t degree = progression.at(chord_idx);
-      uint8_t root = degreeToRoot(degree, Key::C);
-      while (root < sec_params.base_octave) root += 12;
-      while (root >= sec_params.base_octave + 12) root -= 12;
-      Chord chord = getChordNotes(degree);
-      std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, sec_params.octave_range);
-      persistent_arp_notes = arrangeByPattern(chord_notes, sec_params.pattern, rng);
-      persistent_pattern_index = 0;
-    }
+          Chord chord = getChordNotes(degree);
+          std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, sec_params.octave_range);
+          arp_notes = arrangeByPattern(chord_notes, sec_params.pattern, rng);
+          pattern_index = 0;
 
-    for (uint8_t bar = 0; bar < section.bars; ++bar) {
-      Tick bar_start = section.start_tick + (bar * TICKS_PER_BAR);
-
-      // Check for phrase-end split (matches chord_track behavior)
-      bool should_split = shouldSplitPhraseEnd(bar, section.bars, progression.length, harmonic,
-                                               section.type, params.mood);
-
-      std::vector<uint8_t> arp_notes;
-      std::vector<uint8_t> next_arp_notes;
-      int pattern_index;
-
-      if (arp.sync_chord) {
-        // Sync with chord: rebuild pattern each bar
-        bool slow = (harmonic.density == HarmonicDensity::Slow);
-        int chord_idx;
-        if (harmonic.subdivision == 2) {
-          chord_idx = getChordIndexForSubdividedBar(bar, 0, progression.length);
+          if (bc.harmonic.subdivision == 2) {
+            int second_half_idx = getChordIndexForSubdividedBar(bc.bar_index, 1, progression.length);
+            int8_t second_half_degree = progression.at(second_half_idx);
+            uint8_t second_half_root = degreeToRoot(second_half_degree, Key::C);
+            while (second_half_root < sec_params.base_octave) second_half_root += 12;
+            while (second_half_root >= sec_params.base_octave + 12) second_half_root -= 12;
+            Chord second_half_chord = getChordNotes(second_half_degree);
+            std::vector<uint8_t> second_half_notes =
+                buildChordNotes(second_half_root, second_half_chord, sec_params.octave_range);
+            next_arp_notes = arrangeByPattern(second_half_notes, sec_params.pattern, rng);
+            should_split = true;
+          } else if (should_split) {
+            int next_chord_idx = (chord_idx + 1) % progression.length;
+            int8_t next_degree = progression.at(next_chord_idx);
+            uint8_t next_root = degreeToRoot(next_degree, Key::C);
+            while (next_root < sec_params.base_octave) next_root += 12;
+            while (next_root >= sec_params.base_octave + 12) next_root -= 12;
+            Chord next_chord = getChordNotes(next_degree);
+            std::vector<uint8_t> next_chord_notes =
+                buildChordNotes(next_root, next_chord, sec_params.octave_range);
+            next_arp_notes = arrangeByPattern(next_chord_notes, sec_params.pattern, rng);
+          }
         } else {
-          chord_idx = getChordIndexForBar(bar, slow, progression.length);
-        }
-        int8_t degree = progression.at(chord_idx);
-        uint8_t root = degreeToRoot(degree, Key::C);
-
-        while (root < sec_params.base_octave) root += 12;
-        while (root >= sec_params.base_octave + 12) root -= 12;
-
-        Chord chord = getChordNotes(degree);
-        std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, sec_params.octave_range);
-        arp_notes = arrangeByPattern(chord_notes, sec_params.pattern, rng);
-        pattern_index = 0;
-
-        // Harmonic rhythm subdivision
-        if (harmonic.subdivision == 2) {
-          int second_half_idx = getChordIndexForSubdividedBar(bar, 1, progression.length);
-          int8_t second_half_degree = progression.at(second_half_idx);
-          uint8_t second_half_root = degreeToRoot(second_half_degree, Key::C);
-          while (second_half_root < sec_params.base_octave) second_half_root += 12;
-          while (second_half_root >= sec_params.base_octave + 12) second_half_root -= 12;
-          Chord second_half_chord = getChordNotes(second_half_degree);
-          std::vector<uint8_t> second_half_notes =
-              buildChordNotes(second_half_root, second_half_chord, sec_params.octave_range);
-          next_arp_notes = arrangeByPattern(second_half_notes, sec_params.pattern, rng);
-          should_split = true;
-        } else if (should_split) {
-          int next_chord_idx = (chord_idx + 1) % progression.length;
-          int8_t next_degree = progression.at(next_chord_idx);
-          uint8_t next_root = degreeToRoot(next_degree, Key::C);
-          while (next_root < sec_params.base_octave) next_root += 12;
-          while (next_root >= sec_params.base_octave + 12) next_root -= 12;
-          Chord next_chord = getChordNotes(next_degree);
-          std::vector<uint8_t> next_chord_notes =
-              buildChordNotes(next_root, next_chord, sec_params.octave_range);
-          next_arp_notes = arrangeByPattern(next_chord_notes, sec_params.pattern, rng);
-        }
-      } else {
-        // No sync: continue with persistent pattern
-        arp_notes = persistent_arp_notes;
-        pattern_index = persistent_pattern_index;
-      }
-
-      if (arp_notes.empty()) continue;
-
-      // Generate arpeggio pattern for this bar
-      Tick pos = bar_start;
-      Tick half_bar = bar_start + (TICKS_PER_BAR / 2);
-
-      float arp_swing_amount = sec_params.swing_amount;
-
-      while (pos < bar_start + TICKS_PER_BAR && pos < section_end) {
-        // Select notes based on phrase-end split
-        const std::vector<uint8_t>& current_notes =
-            (should_split && pos >= half_bar && !next_arp_notes.empty()) ? next_arp_notes
-                                                                         : arp_notes;
-
-        uint8_t note = current_notes[pattern_index % current_notes.size()];
-        uint8_t velocity = calculateArpeggioVelocity(arp.base_velocity, section.type,
-                                                     pattern_index % current_notes.size());
-
-        // Apply density_percent to skip notes probabilistically
-        int density_threshold = getDensityThreshold(section.getEffectiveBackingDensity());
-        bool add_note = true;
-        if (sec_params.effective_density < density_threshold) {
-          std::uniform_real_distribution<float> density_dist(0.0f, 100.0f);
-          add_note = (density_dist(rng) <= sec_params.effective_density);
+          arp_notes = persistent_arp_notes;
+          pattern_index = persistent_pattern_index;
         }
 
-        if (add_note) {
-          // Apply swing to upbeat notes
-          Tick note_pos = pos;
-          if (arp_swing_amount > 0.0f && (pattern_index % 2 == 1)) {
-            Tick swing_offset = static_cast<Tick>(section_note_duration * arp_swing_amount);
-            note_pos += swing_offset;
+        if (arp_notes.empty()) return;
+
+        Tick pos = bc.bar_start;
+        Tick half_bar = bc.bar_start + (TICKS_PER_BAR / 2);
+        float arp_swing_amount = sec_params.swing_amount;
+
+        while (pos < bc.bar_start + TICKS_PER_BAR && pos < section_end) {
+          const std::vector<uint8_t>& current_notes =
+              (should_split && pos >= half_bar && !next_arp_notes.empty()) ? next_arp_notes
+                                                                           : arp_notes;
+
+          uint8_t note = current_notes[pattern_index % current_notes.size()];
+          uint8_t velocity = calculateArpeggioVelocity(arp.base_velocity, bc.section.type,
+                                                       pattern_index % current_notes.size());
+
+          int density_threshold = getDensityThreshold(bc.section.getEffectiveBackingDensity());
+          bool add_note = true;
+          if (sec_params.effective_density < density_threshold) {
+            std::uniform_real_distribution<float> density_dist(0.0f, 100.0f);
+            add_note = (density_dist(rng) <= sec_params.effective_density);
           }
 
-          // Use createNoteAndAdd for safe note creation with registration
-          // Per-onset vocal ceiling: arpeggio should not exceed vocal at this onset
-          uint8_t vocal_at_onset = harmony->getHighestPitchForTrackInRange(
-              note_pos, note_pos + section_gated_duration, TrackRole::Vocal);
-          NoteOptions opts;
-          opts.start = note_pos;
-          opts.duration = section_gated_duration;
-          opts.desired_pitch = note;
-          opts.velocity = velocity;
-          opts.role = TrackRole::Arpeggio;
-          opts.preference = PitchPreference::PreferChordTones;
-          opts.range_low = 48;   // C3 (from PhysicalModels::kArpeggioSynth)
-          opts.range_high = (vocal_at_onset > 0)
-              ? std::min(108, static_cast<int>(vocal_at_onset))
-              : 108;
-          opts.source = NoteSource::Arpeggio;
-          opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
+          if (add_note) {
+            Tick note_pos = pos;
+            if (arp_swing_amount > 0.0f && (pattern_index % 2 == 1)) {
+              Tick swing_offset = static_cast<Tick>(section_note_duration * arp_swing_amount);
+              note_pos += swing_offset;
+            }
 
-          createNoteAndAdd(track, *harmony, opts);
+            uint8_t vocal_at_onset = harmony->getHighestPitchForTrackInRange(
+                note_pos, note_pos + section_gated_duration, TrackRole::Vocal);
+            NoteOptions opts;
+            opts.start = note_pos;
+            opts.duration = section_gated_duration;
+            opts.desired_pitch = note;
+            opts.velocity = velocity;
+            opts.role = TrackRole::Arpeggio;
+            opts.preference = PitchPreference::PreferChordTones;
+            opts.range_low = 48;
+            opts.range_high = (vocal_at_onset > 0)
+                ? std::min(108, static_cast<int>(vocal_at_onset))
+                : 108;
+            opts.source = NoteSource::Arpeggio;
+            opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
+
+            createNoteAndAdd(track, *harmony, opts);
+          }
+
+          pos += section_note_duration;
+          pattern_index++;
         }
 
-        pos += section_note_duration;
-        pattern_index++;
-      }
-
-      // Update persistent index if not syncing
-      if (!arp.sync_chord) {
-        persistent_pattern_index = pattern_index;
-      }
-    }
-  }
+        if (!arp.sync_chord) {
+          persistent_pattern_index = pattern_index;
+        }
+      });
 }
 
 }  // namespace midisketch

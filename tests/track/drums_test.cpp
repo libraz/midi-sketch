@@ -1388,46 +1388,28 @@ TEST_F(DrumsTest, HandClapVelocityRange) {
   }
 }
 
-TEST_F(DrumsTest, BalladHasNoExtraPercussion) {
-  // Ballad mood (Calm category) should have minimal extra percussion.
+TEST_F(DrumsTest, CalmMoodsHaveMinimalExtraPercussion) {
+  // Calm category moods (Ballad, Sentimental) should have minimal extra percussion.
   // Note: Percussion generation involves probabilistic decisions that can
   // vary with different random seeds. We check for minimal counts rather
   // than strict zero to accommodate this variation.
-  params_.mood = Mood::Ballad;
-  params_.structure = StructurePattern::StandardPop;
-  params_.seed = 42;
-  Generator gen;
-  gen.generate(params_);
+  for (Mood mood : {Mood::Ballad, Mood::Sentimental}) {
+    params_.mood = mood;
+    params_.structure = StructurePattern::StandardPop;
+    params_.seed = 42;
+    Generator gen;
+    gen.generate(params_);
 
-  const auto& track = gen.getSong().drums();
-  int tam_count = countDrumNotes(track, TAMBOURINE);
-  int shaker_count = countDrumNotes(track, SHAKER);
-  int clap_count = countDrumNotes(track, HANDCLAP);
+    const auto& track = gen.getSong().drums();
+    int tam_count = countDrumNotes(track, TAMBOURINE);
+    int shaker_count = countDrumNotes(track, SHAKER);
+    int clap_count = countDrumNotes(track, HANDCLAP);
 
-  // Allow some tolerance for probabilistic variation
-  EXPECT_LE(tam_count, 50) << "Ballad should have minimal tambourine";
-  EXPECT_LE(shaker_count, 50) << "Ballad should have minimal shaker";
-  EXPECT_LE(clap_count, 50) << "Ballad should have minimal hand clap";
-}
-
-TEST_F(DrumsTest, SentimentalHasNoExtraPercussion) {
-  // Sentimental mood (Calm category) should have minimal extra percussion.
-  // Note: Percussion generation involves probabilistic decisions.
-  params_.mood = Mood::Sentimental;
-  params_.structure = StructurePattern::StandardPop;
-  params_.seed = 42;
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& track = gen.getSong().drums();
-  int tam_count = countDrumNotes(track, TAMBOURINE);
-  int shaker_count = countDrumNotes(track, SHAKER);
-  int clap_count = countDrumNotes(track, HANDCLAP);
-
-  // Allow some tolerance for probabilistic variation
-  EXPECT_LE(tam_count, 50) << "Sentimental should have minimal tambourine";
-  EXPECT_LE(shaker_count, 50) << "Sentimental should have minimal shaker";
-  EXPECT_LE(clap_count, 50) << "Sentimental should have minimal hand clap";
+    // Allow some tolerance for probabilistic variation
+    EXPECT_LE(tam_count, 50) << "Mood " << static_cast<int>(mood) << " should have minimal tambourine";
+    EXPECT_LE(shaker_count, 50) << "Mood " << static_cast<int>(mood) << " should have minimal shaker";
+    EXPECT_LE(clap_count, 50) << "Mood " << static_cast<int>(mood) << " should have minimal hand clap";
+  }
 }
 
 TEST_F(DrumsTest, DarkPopHasClapOnlyInChorus) {
@@ -1527,56 +1509,46 @@ TEST_F(DrumsTest, OpenHiHatAppearsInGeneratedTrack) {
   EXPECT_TRUE(found_open_hh) << "Open hi-hat (46) should appear in drum tracks";
 }
 
-TEST_F(DrumsTest, FootHiHatAppearsInIntroSection) {
-  bool found_foot_hh = false;
-  for (int seed = 1; seed <= 10; ++seed) {
-    params_.seed = seed;
-    params_.mood = Mood::StraightPop;
-    params_.structure = StructurePattern::BuildUp;
-    Generator gen;
-    gen.generate(params_);
-    const auto& track = gen.getSong().drums();
-    const auto& sections = gen.getSong().arrangement().sections();
-    for (const auto& sec : sections) {
-      if (sec.type == SectionType::Intro) {
-        Tick sec_end = sec.endTick();
-        for (const auto& note : track.notes()) {
-          if (note.note == FOOT_HH && note.start_tick >= sec.start_tick && note.start_tick < sec_end) {
-            found_foot_hh = true; break;
-          }
-        }
-      }
-      if (found_foot_hh) break;
-    }
-    if (found_foot_hh) break;
-  }
-  EXPECT_TRUE(found_foot_hh) << "Foot hi-hat (44) should appear in Intro sections";
-}
+TEST_F(DrumsTest, FootHiHatAppearsInQuietSections) {
+  // Foot hi-hat (44) should appear in Intro and Bridge sections
+  struct SectionSearch {
+    SectionType type;
+    StructurePattern structure;
+    const char* name;
+  };
+  std::vector<SectionSearch> searches = {
+      {SectionType::Intro, StructurePattern::BuildUp, "Intro"},
+      {SectionType::Bridge, StructurePattern::FullWithBridge, "Bridge"},
+  };
 
-TEST_F(DrumsTest, FootHiHatAppearsInBridgeSection) {
-  bool found_foot_hh = false;
-  for (int seed = 1; seed <= 10; ++seed) {
-    params_.seed = seed;
-    params_.mood = Mood::StraightPop;
-    params_.structure = StructurePattern::FullWithBridge;
-    Generator gen;
-    gen.generate(params_);
-    const auto& track = gen.getSong().drums();
-    const auto& sections = gen.getSong().arrangement().sections();
-    for (const auto& sec : sections) {
-      if (sec.type == SectionType::Bridge) {
-        Tick sec_end = sec.endTick();
-        for (const auto& note : track.notes()) {
-          if (note.note == FOOT_HH && note.start_tick >= sec.start_tick && note.start_tick < sec_end) {
-            found_foot_hh = true; break;
+  for (const auto& search : searches) {
+    bool found_foot_hh = false;
+    for (int seed = 1; seed <= 10; ++seed) {
+      params_.seed = seed;
+      params_.mood = Mood::StraightPop;
+      params_.structure = search.structure;
+      Generator gen;
+      gen.generate(params_);
+      const auto& track = gen.getSong().drums();
+      const auto& sections = gen.getSong().arrangement().sections();
+      for (const auto& sec : sections) {
+        if (sec.type == search.type) {
+          Tick sec_end = sec.endTick();
+          for (const auto& note : track.notes()) {
+            if (note.note == FOOT_HH && note.start_tick >= sec.start_tick &&
+                note.start_tick < sec_end) {
+              found_foot_hh = true;
+              break;
+            }
           }
         }
+        if (found_foot_hh) break;
       }
       if (found_foot_hh) break;
     }
-    if (found_foot_hh) break;
+    EXPECT_TRUE(found_foot_hh) << "Foot hi-hat (44) should appear in " << search.name
+                               << " sections";
   }
-  EXPECT_TRUE(found_foot_hh) << "Foot hi-hat (44) should appear in Bridge sections";
 }
 
 TEST_F(DrumsTest, OpenHiHatReplacesClosedHiHatAtSamePosition) {

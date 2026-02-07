@@ -18,6 +18,7 @@
 
 namespace midisketch {
 
+class ICollisionDetector;
 class IHarmonyContext;
 class MidiTrack;
 
@@ -170,7 +171,7 @@ NoteEvent createNoteWithoutHarmonyAndAdd(MidiTrack& track, Tick start, Tick dura
  * @return Vector of PitchCandidate sorted by preference
  */
 std::vector<PitchCandidate> getSafePitchCandidates(
-    const IHarmonyContext& harmony,
+    const ICollisionDetector& harmony,
     uint8_t desired_pitch,
     Tick start,
     Tick duration,
@@ -229,7 +230,7 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
  * @param duration Note duration in ticks
  */
 void annotateBoundarySafety(std::vector<PitchCandidate>& candidates,
-                            const IHarmonyContext& harmony,
+                            const ICollisionDetector& harmony,
                             Tick start, Tick duration);
 
 }  // namespace midisketch

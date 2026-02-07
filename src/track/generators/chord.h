@@ -17,6 +17,11 @@
 
 namespace midisketch {
 
+/// @brief Generation mode for chord track.
+/// Basic: standard generation without vocal context.
+/// WithContext: enhanced generation with vocal-aware collision resolution.
+enum class ChordGenerationMode : uint8_t { Basic, WithContext };
+
 /// @brief Open voicing subtypes. Drop2=jazz, Drop3=big band, Spread=atmospheric.
 enum class OpenVoicingType : uint8_t {
   Drop2,  ///< Drop 2nd voice from top down an octave (jazz standard)

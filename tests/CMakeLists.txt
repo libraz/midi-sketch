@@ -83,20 +83,14 @@ set(TEST_SOURCES
   track/vocal_helpers_test.cpp
   track/chord_track_test.cpp
   track/bass_test.cpp
-  track/bass_with_vocal_test.cpp
-  track/bass_diatonic_test.cpp
+  track/bass_theory_test.cpp
+  track/bass_integration_test.cpp
   track/chord_with_context_test.cpp
   track/drums_test.cpp
   track/melody_designer_test.cpp
   track/motif_test.cpp
-  track/aux_track_test.cpp
-  track/aux_dissonance_regression_test.cpp
-  track/aux_chorus_behavior_test.cpp
+  track/aux_test.cpp
   track/phrase_ending_test.cpp
-  track/bass_dissonance_regression_test.cpp
-  track/bass_chord_tone_test.cpp
-  track/bass_music_theory_test.cpp
-  track/bass_physical_model_test.cpp
   track/dissonance_fixes_test.cpp
   track/se_test.cpp
   track/vocal_analysis_test.cpp
@@ -112,6 +106,11 @@ set(TEST_SOURCES
   api/c_api_test.cpp
   integration/dissonance_integration_test.cpp
   integration/dissonance_diagnostic_test.cpp
+  integration/cross_paradigm_test.cpp
+  track/chord_merge_characterization_test.cpp
+  track/chord_collision_regression_test.cpp
+  track/generator_iteration_snapshot_test.cpp
+  core/harmony_interface_test.cpp
 )
 
 add_executable(midisketch_tests ${TEST_SOURCES})

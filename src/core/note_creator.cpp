@@ -510,7 +510,7 @@ NoteEvent createNoteWithoutHarmonyAndAdd(MidiTrack& track, Tick start, Tick dura
 // ============================================================================
 
 std::vector<PitchCandidate> getSafePitchCandidates(
-    const IHarmonyContext& harmony,
+    const ICollisionDetector& harmony,
     uint8_t desired_pitch,
     Tick start,
     Tick duration,
@@ -978,7 +978,7 @@ uint8_t selectBestCandidate(const std::vector<PitchCandidate>& candidates,
 // ============================================================================
 
 void annotateBoundarySafety(std::vector<PitchCandidate>& candidates,
-                            const IHarmonyContext& harmony,
+                            const ICollisionDetector& harmony,
                             Tick start, Tick duration) {
   for (auto& c : candidates) {
     auto info = harmony.analyzeChordBoundary(c.pitch, start, duration);

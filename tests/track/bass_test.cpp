@@ -185,55 +185,32 @@ TEST_F(BassTest, TranspositionWorksCorrectly) {
 // Bass Pattern Tests
 // ============================================================================
 
-TEST_F(BassTest, BassHasOctaveJumps) {
-  params_.seed = 100;
+TEST_F(BassTest, BassHasCharacteristicIntervals) {
+  // Bass should have characteristic intervals like octave jumps and fifths
+  // across multiple seeds (root-fifth and root-octave motion are staples)
+  bool found_octave = false;
+  bool found_fifth = false;
 
-  Generator gen;
-  gen.generate(params_);
+  for (uint32_t seed : {100u, 200u, 300u, 400u, 500u}) {
+    params_.seed = seed;
+    Generator gen;
+    gen.generate(params_);
 
-  const auto& track = gen.getSong().bass();
+    const auto& track = gen.getSong().bass();
+    EXPECT_GT(track.notes().size(), 0u);
 
-  // Check for octave intervals between consecutive notes
-  bool has_octave_jump = false;
-  for (size_t i = 1; i < track.notes().size(); ++i) {
-    int interval = std::abs(static_cast<int>(track.notes()[i].note) -
-                            static_cast<int>(track.notes()[i - 1].note));
-    if (interval == 12) {  // Octave
-      has_octave_jump = true;
-      break;
+    for (size_t i = 1; i < track.notes().size(); ++i) {
+      int interval = std::abs(static_cast<int>(track.notes()[i].note) -
+                              static_cast<int>(track.notes()[i - 1].note));
+      if (interval == 12) found_octave = true;
+      if (interval == 7) found_fifth = true;
     }
+    if (found_octave && found_fifth) break;
   }
 
-  // Bass patterns may include octave jumps
-  // This is a verification, not an assertion (style-dependent)
-  EXPECT_TRUE(track.notes().size() > 0);
-  // Octave jumps are style-dependent, just verify the check ran
-  (void)has_octave_jump;
-}
-
-TEST_F(BassTest, BassHasFifths) {
-  params_.seed = 100;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& track = gen.getSong().bass();
-
-  // Check for fifth intervals
-  bool has_fifth = false;
-  for (size_t i = 1; i < track.notes().size(); ++i) {
-    int interval = std::abs(static_cast<int>(track.notes()[i].note) -
-                            static_cast<int>(track.notes()[i - 1].note));
-    if (interval == 7) {  // Perfect fifth
-      has_fifth = true;
-      break;
-    }
-  }
-
-  // Bass often uses root-fifth motion
-  EXPECT_TRUE(track.notes().size() > 0);
-  // Fifths are style-dependent, just verify the check ran
-  (void)has_fifth;
+  // Across multiple seeds, bass should exhibit root-octave and root-fifth motion
+  EXPECT_TRUE(found_octave || found_fifth)
+      << "Bass should use characteristic intervals (octave and/or fifth) across seeds";
 }
 
 TEST_F(BassTest, BassVelocityDynamics) {
@@ -352,40 +329,18 @@ TEST_F(BassTest, IntroMayHaveSparserBass) {
 // Mood-Specific Bass Tests
 // ============================================================================
 
-TEST_F(BassTest, BalladBassStyle) {
-  params_.mood = Mood::Ballad;
-  params_.seed = 100;
+TEST_F(BassTest, AllMoodStylesGenerateBass) {
+  for (Mood mood : {Mood::Ballad, Mood::EnergeticDance, Mood::LightRock}) {
+    params_.mood = mood;
+    params_.seed = 100;
 
-  Generator gen;
-  gen.generate(params_);
+    Generator gen;
+    gen.generate(params_);
 
-  const auto& track = gen.getSong().bass();
-
-  EXPECT_FALSE(track.notes().empty()) << "Ballad should have bass";
-}
-
-TEST_F(BassTest, DanceBassStyle) {
-  params_.mood = Mood::EnergeticDance;
-  params_.seed = 100;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& track = gen.getSong().bass();
-
-  EXPECT_FALSE(track.notes().empty()) << "Dance should have bass";
-}
-
-TEST_F(BassTest, RockBassStyle) {
-  params_.mood = Mood::LightRock;
-  params_.seed = 100;
-
-  Generator gen;
-  gen.generate(params_);
-
-  const auto& track = gen.getSong().bass();
-
-  EXPECT_FALSE(track.notes().empty()) << "Rock should have bass";
+    const auto& track = gen.getSong().bass();
+    EXPECT_FALSE(track.notes().empty())
+        << "Mood " << static_cast<int>(mood) << " should have bass";
+  }
 }
 
 // ============================================================================
