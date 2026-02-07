@@ -501,7 +501,8 @@ struct Section {
   // ========================================================================
 
   /// @brief Guitar style hint (0=auto, 1=Fingerpick, 2=Strum, 3=PowerChord,
-  ///                           4=PedalTone, 5=RhythmChord).
+  ///                           4=PedalTone, 5=RhythmChord, 6=TremoloPick,
+  ///                           7=SweepArpeggio).
   uint8_t guitar_style_hint = 0;
 
   /// @brief Enable phrase tail rest (accompaniment sparseness at section end).
@@ -518,6 +519,10 @@ struct Section {
 
   /// @brief Vocal range span limit in semitones (0=unlimited).
   uint8_t vocal_range_span = 0;
+
+  /// @brief Bass style hint (0=auto, 1-17 = BassPattern enum + 1).
+  /// When > 0, overrides genre table pattern selection.
+  uint8_t bass_style_hint = 0;
 
   /// @brief Compute the end tick for this section.
   Tick endTick() const { return start_tick + bars * TICKS_PER_BAR; }

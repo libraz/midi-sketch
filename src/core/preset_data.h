@@ -89,7 +89,10 @@ enum class BassPatternId : uint8_t {
   OctaveJump = 10,
   PedalTone = 11,
   Tresillo = 12,     // Latin 3+3+2 pattern
-  SubBass808 = 13    // Trap long sustained 808 sub-bass
+  SubBass808 = 13,   // Trap long sustained 808 sub-bass
+  RnBNeoSoul = 14,   // R&B/Neo-soul groove
+  SlapPop = 15,      // Slap + pop combination
+  FastRun = 16       // 32nd note diatonic scale run
 };
 
 // Section indices for bass pattern table

@@ -776,6 +776,7 @@ std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blue
 
     // Transfer blueprint-controlled generation hints
     section.guitar_style_hint = slot.guitar_style_hint;
+    section.bass_style_hint = slot.bass_style_hint;
     section.phrase_tail_rest = slot.phrase_tail_rest;
     section.max_moving_voices = slot.max_moving_voices;
     section.motif_motion_hint = slot.motif_motion_hint;

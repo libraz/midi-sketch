@@ -110,7 +110,9 @@ enum class BassPattern : uint8_t {
   // Genre expansion patterns
   Tresillo,        ///< Latin 3+3+2 rhythmic pattern (LatinPop)
   SubBass808,      ///< Long sustained 808-style sub-bass (Trap)
-  RnBNeoSoul       ///< R&B/Neo-soul pattern (alias for groove context)
+  RnBNeoSoul,      ///< R&B/Neo-soul pattern (alias for groove context)
+  SlapPop,         ///< Slap + pop combination (funk technique)
+  FastRun          ///< 32nd note diatonic scale run
 };
 
 // ============================================================================

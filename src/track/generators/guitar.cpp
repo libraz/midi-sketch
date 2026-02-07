@@ -115,6 +115,12 @@ static uint8_t calculateGuitarVelocity(uint8_t base, SectionType section,
     case GuitarStyle::RhythmChord:
       style_mult = 0.90f;   // Near full energy rhythm chord
       break;
+    case GuitarStyle::TremoloPick:
+      style_mult = 0.65f;   // Moderate tremolo
+      break;
+    case GuitarStyle::SweepArpeggio:
+      style_mult = 0.70f;   // Sweep energy
+      break;
   }
 
   // Downbeat accent
@@ -427,6 +433,150 @@ static void generateRhythmChordBar(MidiTrack& track, IHarmonyContext& harmony,
   }
 }
 
+/// TremoloPick pattern: 32nd note tremolo picking with diatonic scale runs.
+/// 32 notes per bar (60 tick intervals), ascending 4 + descending 4 wave pattern.
+/// Gate: 55% (33 ticks). Beat-head accent (every 8 notes).
+static void generateTremoloPickBar(MidiTrack& track, IHarmonyContext& harmony,
+                                    Tick bar_start, Tick bar_end, uint8_t root_pitch,
+                                    SectionType section, uint8_t base_vel,
+                                    std::mt19937& /*rng*/) {
+  static constexpr int kNotesPerBar = 32;
+  Tick note_dur = static_cast<Tick>(TICK_32ND * 0.55f);  // 33 ticks
+
+  // Place root in guitar range
+  uint8_t base_root = root_pitch;
+  while (base_root < kBaseOctave) base_root += 12;
+  while (base_root >= kBaseOctave + 12) base_root -= 12;
+
+  // C major scale tones for diatonic stepping
+  static constexpr int kScaleUp[] = {0, 2, 4, 5, 7, 9, 11, 12};
+  static constexpr int kScaleDown[] = {12, 11, 9, 7, 5, 4, 2, 0};
+
+  for (int pos_idx = 0; pos_idx < kNotesPerBar; ++pos_idx) {
+    Tick pos = bar_start + pos_idx * TICK_32ND;
+    if (pos + note_dur > bar_end) break;
+
+    // Wave pattern: groups of 8 notes, alternating ascending/descending
+    int group = pos_idx / 8;
+    int within = pos_idx % 8;
+    bool ascending = (group % 2 == 0);
+    int interval = ascending ? kScaleUp[within] : kScaleDown[within];
+
+    uint8_t pitch = static_cast<uint8_t>(
+        std::clamp(static_cast<int>(base_root) + interval,
+                   static_cast<int>(kGuitarLow), static_cast<int>(kGuitarHigh)));
+
+    // Velocity: beat-head accent (every 8 notes), others -10
+    int beat_pos = pos_idx / 8;
+    uint8_t vel = calculateGuitarVelocity(base_vel, section, GuitarStyle::TremoloPick, beat_pos);
+    if (pos_idx % 8 != 0) {
+      vel = static_cast<uint8_t>(std::max(40, static_cast<int>(vel) - 10));
+    }
+
+    // Per-onset vocal ceiling
+    uint8_t vocal_at_onset = harmony.getHighestPitchForTrackInRange(
+        pos, pos + note_dur, TrackRole::Vocal);
+    uint8_t effective_high = (vocal_at_onset > 0)
+        ? std::min(static_cast<int>(kGuitarHigh), static_cast<int>(vocal_at_onset))
+        : kGuitarHigh;
+
+    NoteOptions opts;
+    opts.start = pos;
+    opts.duration = note_dur;
+    opts.desired_pitch = pitch;
+    opts.velocity = vel;
+    opts.role = TrackRole::Guitar;
+    opts.preference = PitchPreference::PreferChordTones;
+    opts.range_low = kGuitarLow;
+    opts.range_high = effective_high;
+    opts.source = NoteSource::Guitar;
+    opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
+
+    createNoteAndAdd(track, harmony, opts);
+  }
+}
+
+/// SweepArpeggio pattern: 32nd note sweep arpeggios across chord tones.
+/// Up-sweep (8 notes) then down-sweep (8 notes), repeated for 4 beats.
+/// Gate: 70% (42 ticks). Accent on sweep starts.
+static void generateSweepArpeggioBar(MidiTrack& track, IHarmonyContext& harmony,
+                                       Tick bar_start, Tick bar_end,
+                                       const std::vector<uint8_t>& pitches,
+                                       SectionType section, uint8_t base_vel) {
+  if (pitches.empty()) return;
+
+  static constexpr int kNotesPerBar = 32;
+  Tick note_dur = static_cast<Tick>(TICK_32ND * 0.70f);  // 42 ticks
+
+  // Expand chord tones across 2 octaves for sweep material
+  std::vector<uint8_t> sweep_pitches;
+  for (int oct = -1; oct <= 1; ++oct) {
+    for (uint8_t pitch : pitches) {
+      int expanded = static_cast<int>(pitch) + oct * 12;
+      if (expanded >= kGuitarLow && expanded <= kGuitarHigh) {
+        sweep_pitches.push_back(static_cast<uint8_t>(expanded));
+      }
+    }
+  }
+  std::sort(sweep_pitches.begin(), sweep_pitches.end());
+  // Remove duplicates
+  sweep_pitches.erase(std::unique(sweep_pitches.begin(), sweep_pitches.end()),
+                       sweep_pitches.end());
+
+  if (sweep_pitches.empty()) return;
+
+  for (int pos_idx = 0; pos_idx < kNotesPerBar; ++pos_idx) {
+    Tick pos = bar_start + pos_idx * TICK_32ND;
+    if (pos + note_dur > bar_end) break;
+
+    // Beat-level direction: even beats = up, odd beats = down
+    int beat = pos_idx / 8;
+    int within = pos_idx % 8;
+    bool ascending = (beat % 2 == 0);
+
+    // Map position within 8-note group to sweep pitch
+    size_t sweep_size = sweep_pitches.size();
+    size_t idx;
+    if (sweep_size <= 1) {
+      idx = 0;
+    } else {
+      // Scale within to sweep_pitches range
+      float frac = static_cast<float>(within) / 7.0f;
+      if (!ascending) frac = 1.0f - frac;
+      idx = static_cast<size_t>(frac * (sweep_size - 1));
+      idx = std::min(idx, sweep_size - 1);
+    }
+
+    uint8_t pitch = sweep_pitches[idx];
+
+    // Velocity: accent on sweep start (first note of each 8-note group)
+    int beat_pos = beat;
+    uint8_t vel = calculateGuitarVelocity(base_vel, section, GuitarStyle::SweepArpeggio, beat_pos);
+    if (within == 0) {
+      vel = static_cast<uint8_t>(std::min(120, static_cast<int>(vel) + 8));
+    }
+
+    // Pre-check consonance (same as strum - skip unsafe rather than remap)
+    if (!harmony.isConsonantWithOtherTracks(pitch, pos, note_dur, TrackRole::Guitar)) {
+      continue;
+    }
+
+    NoteOptions opts;
+    opts.start = pos;
+    opts.duration = note_dur;
+    opts.desired_pitch = pitch;
+    opts.velocity = vel;
+    opts.role = TrackRole::Guitar;
+    opts.preference = PitchPreference::NoCollisionCheck;  // Already verified safe
+    opts.range_low = kGuitarLow;
+    opts.range_high = kGuitarHigh;
+    opts.source = NoteSource::Guitar;
+    opts.chord_boundary = ChordBoundaryPolicy::ClipAtBoundary;
+
+    createNoteAndAdd(track, harmony, opts);
+  }
+}
+
 // ============================================================================
 // GuitarGenerator implementation
 // ============================================================================
@@ -473,6 +623,12 @@ void GuitarGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext
         break;
       case GuitarStyle::RhythmChord:
         generateRhythmChordBar(track, *ctx.harmony, start, end, root, sec_type, base_vel, rng);
+        break;
+      case GuitarStyle::TremoloPick:
+        generateTremoloPickBar(track, *ctx.harmony, start, end, root, sec_type, base_vel, rng);
+        break;
+      case GuitarStyle::SweepArpeggio:
+        generateSweepArpeggioBar(track, *ctx.harmony, start, end, pitches, sec_type, base_vel);
         break;
     }
   };

@@ -945,7 +945,7 @@ constexpr BassGenrePatterns BASS_GENRE_PATTERNS[static_cast<int>(BassGenre::COUN
         {BP::WholeNote, BP::RootFifth, BP::RootFifth},    // Intro
         {BP::PowerDrive, BP::RootFifth, BP::Syncopated},  // A
         {BP::PowerDrive, BP::Driving, BP::Syncopated},    // B
-        {BP::Aggressive, BP::PowerDrive, BP::Driving},    // Chorus
+        {BP::Aggressive, BP::PowerDrive, BP::SlapPop},    // Chorus
         {BP::RootFifth, BP::PowerDrive, BP::Syncopated},  // Bridge
         {BP::RootFifth, BP::WholeNote, BP::WholeNote},    // Outro
         {BP::Aggressive, BP::PowerDrive, BP::Driving},    // Mix
@@ -958,7 +958,7 @@ constexpr BassGenrePatterns BASS_GENRE_PATTERNS[static_cast<int>(BassGenre::COUN
         {BP::Aggressive, BP::Driving, BP::OctaveJump},    // Chorus
         {BP::RootFifth, BP::Syncopated, BP::Syncopated},  // Bridge
         {BP::RootFifth, BP::WholeNote, BP::WholeNote},    // Outro
-        {BP::Aggressive, BP::OctaveJump, BP::Driving},    // Mix
+        {BP::Aggressive, BP::OctaveJump, BP::FastRun},    // Mix
     }},
     // Electronic (sidechain, modern EDM)
     {{
@@ -985,7 +985,7 @@ constexpr BassGenrePatterns BASS_GENRE_PATTERNS[static_cast<int>(BassGenre::COUN
         {BP::WholeNote, BP::RootFifth, BP::RootFifth},    // Intro
         {BP::RootFifth, BP::Syncopated, BP::OctaveJump},  // A
         {BP::Syncopated, BP::Driving, BP::OctaveJump},    // B
-        {BP::Driving, BP::OctaveJump, BP::Aggressive},    // Chorus
+        {BP::Driving, BP::OctaveJump, BP::SlapPop},    // Chorus
         {BP::RootFifth, BP::Syncopated, BP::Syncopated},  // Bridge
         {BP::RootFifth, BP::WholeNote, BP::WholeNote},    // Outro
         {BP::Aggressive, BP::OctaveJump, BP::Driving},    // Mix

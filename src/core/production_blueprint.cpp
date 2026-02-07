@@ -87,12 +87,12 @@ constexpr SectionSlot RHYTHMLOCK_FLOW[] = {
      PeakLevel::None, DrumRole::Full, -1.0f, SectionModifier::None, 100,
      ExitPattern::CutOff, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::DrumHit},
 
-    // Last chorus: RhythmChord, voice limit=4 (relaxed), guide tone 55%
+    // Last chorus: TremoloPick, voice limit=4 (relaxed), guide tone 55%
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 95, 100,
      PeakLevel::Max, DrumRole::Full, -1.0f, SectionModifier::Climactic, 100,
      ExitPattern::FinalHit, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
      0, false, TrackMask::None, TrackMask::None,
-     5, false, 4, 0, 55, 0},
+     6, false, 4, 0, 55, 0},
 
     // Outro: fade out (all defaults)
     {SectionType::Outro, 4, TrackMask::Drums | TrackMask::Bass, EntryPattern::Immediate,
@@ -291,12 +291,12 @@ constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
      0, false, TrackMask::None, TrackMask::None,
      2, true, 3, 0, 65, 0},
 
-    // 2nd Chorus: Strum, no voice limit, guide tone 60%
+    // 2nd Chorus: Strum, no voice limit, guide tone 60%, SlapPop bass
     {SectionType::Chorus, 8, TrackMask::All, EntryPattern::DropIn, SectionEnergy::High, 85, 95,
      PeakLevel::Medium, DrumRole::Full, -1.0f, SectionModifier::None, 100,
      ExitPattern::None, TimeFeel::OnBeat, 0.5f, ChorusDropStyle::None,
      0, false, TrackMask::None, TrackMask::None,
-     2, false, 0, 0, 60, 0},
+     2, false, 0, 0, 60, 0, 16},
 
     // Bridge: sparse, voice limit=2, guide tone 70%, phrase tail rest
     {SectionType::Bridge, 8, TrackMask::Vocal | TrackMask::Chord | TrackMask::Drums,
@@ -372,12 +372,12 @@ constexpr SectionSlot IDOL_HYPER_FLOW[] = {
      SectionEnergy::High, 80, 70, PeakLevel::None, DrumRole::Ambient, 0.3f, SectionModifier::None, 100,
      ExitPattern::CutOff, TimeFeel::OnBeat, 1.0f, ChorusDropStyle::DrumHit},
 
-    // Last Chorus: RhythmChord, guide tone 55%
+    // Last Chorus: TremoloPick, FastRun bass, guide tone 55%
     {SectionType::Chorus, 16, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 95, 100,
      PeakLevel::Max, DrumRole::Full, 0.55f, SectionModifier::Climactic, 100,
      ExitPattern::FinalHit, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
      0, false, TrackMask::None, TrackMask::None,
-     5, false, 0, 0, 55, 0},
+     6, false, 0, 0, 55, 0, 17},
 };
 
 // IdolKawaii: Sweet, bouncy idol pop - restrained dynamics, cute vibe
@@ -481,12 +481,12 @@ constexpr SectionSlot IDOL_COOLPOP_FLOW[] = {
      SectionModifier::None, 100,
      ExitPattern::CutOff, TimeFeel::Pushed, 0.5f, ChorusDropStyle::DrumHit},
 
-    // Last Chorus: RhythmChord, no voice limit, guide tone 50%
+    // Last Chorus: SweepArpeggio, no voice limit, guide tone 50%
     {SectionType::Chorus, 16, TrackMask::All, EntryPattern::DropIn, SectionEnergy::Peak, 92, 100,
      PeakLevel::Max, DrumRole::Full, 0.0f, SectionModifier::Climactic, 100,
      ExitPattern::FinalHit, TimeFeel::Pushed, 0.5f, ChorusDropStyle::None,
      0, false, TrackMask::None, TrackMask::None,
-     5, false, 0, 0, 50, 0},
+     7, false, 0, 0, 50, 0},
 };
 
 // IdolEmo: Emotional idol pop - quiet start, explosive finish

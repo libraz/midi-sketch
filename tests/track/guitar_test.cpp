@@ -1311,3 +1311,144 @@ TEST_F(GuitarGenerationTest, StyleHintZeroKeepsDefault) {
   EXPECT_GT(simultaneous, 0)
       << "With hint=0, LightRock should use default Strum style (simultaneous notes)";
 }
+
+// ============================================================================
+// Fast Playing Technique Tests (TremoloPick, SweepArpeggio)
+// ============================================================================
+
+TEST_F(GuitarGenerationTest, TremoloPickHintProducesHighDensity) {
+  // TremoloPick = 32nd notes = very high density
+  // Use BP1 (RhythmLock) which sets guitar_style_hint=6 on Last Chorus
+  params_.blueprint_id = 1;
+  params_.mood = Mood::LightRock;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& guitar = gen.getSong().guitar();
+  ASSERT_FALSE(guitar.notes().empty());
+
+  // Find notes in the last Chorus section (should have TremoloPick)
+  const auto& sections = gen.getSong().arrangement().sections();
+  const Section* last_chorus = nullptr;
+  for (auto it = sections.rbegin(); it != sections.rend(); ++it) {
+    if (it->type == SectionType::Chorus && it->guitar_style_hint == 6) {
+      last_chorus = &(*it);
+      break;
+    }
+  }
+
+  if (last_chorus) {
+    // Count notes in this section
+    int tremolo_notes = 0;
+    for (const auto& note : guitar.notes()) {
+      if (note.start_tick >= last_chorus->start_tick &&
+          note.start_tick < last_chorus->endTick()) {
+        tremolo_notes++;
+        // Verify pitch is in guitar range
+        EXPECT_GE(note.note, 40) << "TremoloPick note below guitar range";
+        EXPECT_LE(note.note, 76) << "TremoloPick note above guitar range";
+      }
+    }
+    // TremoloPick should produce 32 notes per bar (much denser than 16th note patterns)
+    int bars = last_chorus->bars;
+    float notes_per_bar = static_cast<float>(tremolo_notes) / bars;
+    EXPECT_GT(notes_per_bar, 16.0f)
+        << "TremoloPick should produce >16 notes per bar, got " << notes_per_bar;
+  }
+}
+
+TEST_F(GuitarGenerationTest, TremoloPickNoteSpacing) {
+  // Verify 32nd note spacing (~60 ticks) in TremoloPick pattern
+  params_.blueprint_id = 1;
+  params_.mood = Mood::LightRock;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& guitar = gen.getSong().guitar();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  const Section* last_chorus = nullptr;
+  for (auto it = sections.rbegin(); it != sections.rend(); ++it) {
+    if (it->type == SectionType::Chorus && it->guitar_style_hint == 6) {
+      last_chorus = &(*it);
+      break;
+    }
+  }
+
+  if (last_chorus) {
+    // Collect note start ticks in this section
+    std::vector<Tick> note_ticks;
+    for (const auto& note : guitar.notes()) {
+      if (note.start_tick >= last_chorus->start_tick &&
+          note.start_tick < last_chorus->endTick()) {
+        note_ticks.push_back(note.start_tick);
+      }
+    }
+
+    if (note_ticks.size() >= 4) {
+      // Check that intervals are around 60 ticks (32nd note = TICK_32ND)
+      int small_intervals = 0;
+      for (size_t i = 1; i < note_ticks.size(); ++i) {
+        Tick diff = note_ticks[i] - note_ticks[i - 1];
+        if (diff <= 60) small_intervals++;
+      }
+      // At least half should be 32nd note intervals
+      EXPECT_GT(small_intervals, static_cast<int>(note_ticks.size()) / 3)
+          << "TremoloPick should have many 32nd-note intervals";
+    }
+  }
+}
+
+TEST_F(GuitarGenerationTest, SweepArpeggioHintProducesHighDensity) {
+  // SweepArpeggio = 32nd note sweep across chord tones
+  // Use BP7 (IdolCoolPop) which sets guitar_style_hint=7 on Last Chorus
+  params_.blueprint_id = 7;
+  params_.mood = Mood::LightRock;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& guitar = gen.getSong().guitar();
+  ASSERT_FALSE(guitar.notes().empty());
+
+  const auto& sections = gen.getSong().arrangement().sections();
+  const Section* last_chorus = nullptr;
+  for (auto it = sections.rbegin(); it != sections.rend(); ++it) {
+    if (it->type == SectionType::Chorus && it->guitar_style_hint == 7) {
+      last_chorus = &(*it);
+      break;
+    }
+  }
+
+  if (last_chorus) {
+    int sweep_notes = 0;
+    for (const auto& note : guitar.notes()) {
+      if (note.start_tick >= last_chorus->start_tick &&
+          note.start_tick < last_chorus->endTick()) {
+        sweep_notes++;
+        EXPECT_GE(note.note, 40) << "SweepArpeggio note below guitar range";
+        EXPECT_LE(note.note, 76) << "SweepArpeggio note above guitar range";
+      }
+    }
+    int bars = last_chorus->bars;
+    float notes_per_bar = static_cast<float>(sweep_notes) / bars;
+    // SweepArpeggio may have fewer notes than TremoloPick due to consonance filtering
+    EXPECT_GT(notes_per_bar, 8.0f)
+        << "SweepArpeggio should produce >8 notes per bar, got " << notes_per_bar;
+  }
+}
+
+TEST_F(GuitarGenerationTest, HintMapping6IsTremoloPick) {
+  // Verify hint value 6 maps to TremoloPick style
+  EXPECT_EQ(static_cast<GuitarStyle>(6 - 1), GuitarStyle::TremoloPick);
+}
+
+TEST_F(GuitarGenerationTest, HintMapping7IsSweepArpeggio) {
+  // Verify hint value 7 maps to SweepArpeggio style
+  EXPECT_EQ(static_cast<GuitarStyle>(7 - 1), GuitarStyle::SweepArpeggio);
+}

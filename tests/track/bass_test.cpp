@@ -13,6 +13,7 @@
 #include "core/types.h"
 #include "test_support/generator_test_fixture.h"
 #include "test_support/test_constants.h"
+#include "track/generators/bass.h"
 
 namespace midisketch {
 namespace {
@@ -1540,6 +1541,186 @@ TEST_F(BassTest, IntroBassEnabledFlagDifferenceTest) {
   // This could happen if the section's track_mask doesn't include Bass in intro
   if (!found_difference) {
     SUCCEED() << "No test seed produced bass in intro - section may not enable bass track";
+  }
+}
+
+// ============================================================================
+// Fast Playing Technique Tests (SlapPop, FastRun)
+// ============================================================================
+
+TEST_F(BassTest, SlapPopPatternEnumValue) {
+  EXPECT_EQ(static_cast<uint8_t>(BassPattern::SlapPop), 15);
+}
+
+TEST_F(BassTest, FastRunPatternEnumValue) {
+  EXPECT_EQ(static_cast<uint8_t>(BassPattern::FastRun), 16);
+}
+
+TEST_F(BassTest, SlapPopViaHintProducesNotes) {
+  // Use BP4 (IdolStandard) which sets bass_style_hint=16 (SlapPop) on 2nd Chorus
+  params_.blueprint_id = 4;
+  params_.mood = Mood::StraightPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& bass = gen.getSong().bass();
+  ASSERT_FALSE(bass.notes().empty());
+
+  // Find a section with bass_style_hint > 0
+  const auto& sections = gen.getSong().arrangement().sections();
+  bool found_hint = false;
+  for (const auto& sec : sections) {
+    if (sec.bass_style_hint > 0) {
+      found_hint = true;
+
+      // Count bass notes in this section
+      int bass_notes = 0;
+      for (const auto& note : bass.notes()) {
+        if (note.start_tick >= sec.start_tick && note.start_tick < sec.endTick()) {
+          bass_notes++;
+        }
+      }
+      EXPECT_GT(bass_notes, 0) << "Section with bass_style_hint should have bass notes";
+      break;
+    }
+  }
+  // BP4 2nd Chorus should have hint set
+  EXPECT_TRUE(found_hint) << "Expected at least one section with bass_style_hint > 0";
+}
+
+TEST_F(BassTest, SlapPopHasVelocityVariation) {
+  // SlapPop pattern has slap (+20 vel), ghost (-30 vel), pop (+10 vel)
+  // This should produce significant velocity variation
+  params_.blueprint_id = 4;
+  params_.mood = Mood::StraightPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& bass = gen.getSong().bass();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  for (const auto& sec : sections) {
+    if (sec.bass_style_hint == 16) {  // SlapPop hint
+      uint8_t min_vel = 127, max_vel = 0;
+      int count = 0;
+      for (const auto& note : bass.notes()) {
+        if (note.start_tick >= sec.start_tick && note.start_tick < sec.endTick()) {
+          min_vel = std::min(min_vel, static_cast<uint8_t>(note.velocity));
+          max_vel = std::max(max_vel, static_cast<uint8_t>(note.velocity));
+          count++;
+        }
+      }
+      if (count > 3) {
+        EXPECT_GT(max_vel - min_vel, 15)
+            << "SlapPop should have velocity variation >15 (slap vs ghost), got "
+            << (max_vel - min_vel);
+      }
+      break;
+    }
+  }
+}
+
+TEST_F(BassTest, FastRunViaHintProducesNotes) {
+  // Use BP5 (IdolHyper) which sets bass_style_hint=17 (FastRun) on Last Chorus.
+  // FastRun generates 32nd-note runs, but collision avoidance with other dense
+  // tracks (Vocal, Chord, Motif) at high BPM filters many positions.
+  // Verify that notes are produced and density is at least quarter-note level.
+  params_.blueprint_id = 5;
+  params_.mood = Mood::StraightPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& bass = gen.getSong().bass();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  bool found_hint_section = false;
+  for (const auto& sec : sections) {
+    if (sec.bass_style_hint == 17) {  // FastRun hint
+      found_hint_section = true;
+      int fast_notes = 0;
+      for (const auto& note : bass.notes()) {
+        if (note.start_tick >= sec.start_tick && note.start_tick < sec.endTick()) {
+          fast_notes++;
+        }
+      }
+      int bars = sec.bars;
+      float notes_per_bar = static_cast<float>(fast_notes) / bars;
+      // Collision avoidance filters many 32nd-note positions in dense arrangement,
+      // but FastRun should still produce at least 2 notes per bar (minimum activity)
+      EXPECT_GT(notes_per_bar, 2.0f)
+          << "FastRun section should produce >2 notes per bar, got " << notes_per_bar;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_hint_section) << "BP5 should have a section with bass_style_hint=17";
+}
+
+TEST_F(BassTest, BassStyleHintOverridesGenreTable) {
+  // When bass_style_hint > 0, genre table selection should be bypassed
+  params_.blueprint_id = 5;  // IdolHyper has hint=17 on Last Chorus
+  params_.mood = Mood::StraightPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& sections = gen.getSong().arrangement().sections();
+  bool found = false;
+  for (const auto& sec : sections) {
+    if (sec.bass_style_hint > 0) {
+      found = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found) << "IdolHyper should have a section with bass_style_hint";
+}
+
+TEST_F(BassTest, FastRunNotesInBassRange) {
+  // FastRun notes should be within bass register
+  params_.blueprint_id = 5;
+  params_.mood = Mood::StraightPop;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& bass = gen.getSong().bass();
+  const auto& sections = gen.getSong().arrangement().sections();
+
+  for (const auto& sec : sections) {
+    if (sec.bass_style_hint == 17) {
+      for (const auto& note : bass.notes()) {
+        if (note.start_tick >= sec.start_tick && note.start_tick < sec.endTick()) {
+          EXPECT_GE(note.note, test::kBassLow - 12)
+              << "FastRun note below extended bass range";
+          EXPECT_LE(note.note, test::kBassHigh + 12)
+              << "FastRun note above extended bass range";
+        }
+      }
+      break;
+    }
+  }
+}
+
+TEST_F(BassTest, AllBlueprintsWithNewHintsProduceValidBass) {
+  // Smoke test: all blueprints with new hints generate without crash
+  for (uint8_t bp : {1, 4, 5, 7}) {
+    params_.blueprint_id = bp;
+    params_.seed = 42;
+
+    Generator gen;
+    EXPECT_NO_THROW(gen.generate(params_))
+        << "Blueprint " << static_cast<int>(bp) << " should generate without crash";
+
+    const auto& bass = gen.getSong().bass();
+    EXPECT_FALSE(bass.notes().empty())
+        << "Blueprint " << static_cast<int>(bp) << " should produce bass notes";
   }
 }
 

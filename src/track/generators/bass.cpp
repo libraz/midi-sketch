@@ -74,6 +74,10 @@ const auto kBassTransformer = DensityTransformer<BassPattern>::builder()
     .addLimit(BassPattern::Tresillo)
     .addLimit(BassPattern::SubBass808)
     .addLimit(BassPattern::RnBNeoSoul)
+    .addTransition(BassPattern::FastRun, BassPattern::Aggressive)
+    .addTransition(BassPattern::SlapPop, BassPattern::Syncopated)
+    .addLimit(BassPattern::FastRun)
+    .addLimit(BassPattern::SlapPop)
     .build();
 
 // ============================================================================
@@ -506,11 +510,13 @@ struct BassRiffCache {
 // Pattern Selection (using Genre Master from preset_data)
 // ============================================================================
 
-// BassPatternId (preset_data.h) and BassPattern (bass.h) share matching values 0-13.
-// BassPattern has an additional RnBNeoSoul=14 not present in BassPatternId.
+// BassPatternId (preset_data.h) and BassPattern (bass.h) share matching values 0-16.
 // static_assert ensures the shared values stay in sync.
 static_assert(static_cast<uint8_t>(BassPatternId::WholeNote) == static_cast<uint8_t>(BassPattern::WholeNote), "");
 static_assert(static_cast<uint8_t>(BassPatternId::SubBass808) == static_cast<uint8_t>(BassPattern::SubBass808), "");
+static_assert(static_cast<uint8_t>(BassPatternId::RnBNeoSoul) == static_cast<uint8_t>(BassPattern::RnBNeoSoul), "");
+static_assert(static_cast<uint8_t>(BassPatternId::SlapPop) == static_cast<uint8_t>(BassPattern::SlapPop), "");
+static_assert(static_cast<uint8_t>(BassPatternId::FastRun) == static_cast<uint8_t>(BassPattern::FastRun), "");
 
 BassPattern fromPatternId(BassPatternId id) {
   return static_cast<BassPattern>(static_cast<uint8_t>(id));
@@ -671,6 +677,14 @@ BassPattern applyPeakLevelPromotion(BassPattern pattern, PeakLevel peak_level) {
 /// @return Selected bass pattern
 BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section, size_t sec_idx,
                                     const GeneratorParams& params, std::mt19937& rng) {
+  // bass_style_hint overrides genre table selection
+  if (section.bass_style_hint > 0) {
+    uint8_t idx = section.bass_style_hint - 1;
+    if (idx <= static_cast<uint8_t>(BassPattern::FastRun)) {
+      return static_cast<BassPattern>(idx);
+    }
+  }
+
   BassPattern base_pattern = selectPatternWithPolicyCore(cache, sec_idx, params, rng, [&]() {
     return selectPattern(section.type, params.drums_enabled, params.mood, section.getEffectiveBackingDensity(),
                          rng);
@@ -1178,6 +1192,152 @@ void generateRnBNeoSoulPattern(const BassBarContext& ctx) {
                           ctx.root, ctx.vel_weak);
 }
 
+void generateSlapPopPattern(const BassBarContext& ctx) {
+  // Slap + Pop combination - funk technique
+  // Beat 1: Slap root (staccato, +20 vel)
+  addBassNotePreferRoot(ctx.track, ctx.bar_start,
+                        static_cast<Tick>(TICK_QUARTER * 0.50f),
+                        ctx.root, static_cast<uint8_t>(std::min(127, ctx.vel + 20)),
+                        ctx.harmony);
+
+  // Beat 1 "and": Ghost root (mute, -30 vel)
+  uint8_t ghost_vel = static_cast<uint8_t>(std::max(30, static_cast<int>(ctx.vel) - 30));
+  {
+    NoteOptions opts;
+    opts.start = ctx.bar_start + TICK_EIGHTH;
+    opts.duration = static_cast<Tick>(TICK_EIGHTH * 0.25f);
+    opts.desired_pitch = ctx.root;
+    opts.velocity = ghost_vel;
+    opts.role = TrackRole::Bass;
+    opts.preference = PitchPreference::SkipIfUnsafe;
+    opts.range_low = BASS_LOW;
+    opts.range_high = BASS_HIGH;
+    opts.register_to_harmony = true;
+    opts.source = NoteSource::BassPattern;
+    createNoteAndAdd(ctx.track, ctx.harmony, opts);
+  }
+
+  // Beat 1 "a": Pop octave (35% gate, +10 vel)
+  addBassNoteWithTritoneCheck(ctx.track, ctx.harmony,
+                              ctx.bar_start + TICK_EIGHTH + TICK_SIXTEENTH,
+                              static_cast<Tick>(TICK_SIXTEENTH * 0.35f),
+                              ctx.octave, ctx.root,
+                              static_cast<uint8_t>(std::min(127, ctx.vel + 10)));
+
+  // Beat 2: Ghost root
+  {
+    NoteOptions opts;
+    opts.start = ctx.bar_start + TICK_QUARTER;
+    opts.duration = static_cast<Tick>(TICK_EIGHTH * 0.25f);
+    opts.desired_pitch = ctx.root;
+    opts.velocity = ghost_vel;
+    opts.role = TrackRole::Bass;
+    opts.preference = PitchPreference::SkipIfUnsafe;
+    opts.range_low = BASS_LOW;
+    opts.range_high = BASS_HIGH;
+    opts.register_to_harmony = true;
+    opts.source = NoteSource::BassPattern;
+    createNoteAndAdd(ctx.track, ctx.harmony, opts);
+  }
+
+  // Beat 2.5: Slap fifth (staccato)
+  addBassNoteWithTritoneCheck(ctx.track, ctx.harmony,
+                              ctx.bar_start + TICK_QUARTER + TICK_EIGHTH,
+                              static_cast<Tick>(TICK_QUARTER * 0.50f),
+                              ctx.fifth, ctx.root, ctx.vel);
+
+  // Beat 3: Slap root (+15 vel)
+  addBassNotePreferRoot(ctx.track, ctx.bar_start + 2 * TICK_QUARTER,
+                        static_cast<Tick>(TICK_QUARTER * 0.50f),
+                        ctx.root, static_cast<uint8_t>(std::min(127, ctx.vel + 15)),
+                        ctx.harmony);
+
+  // Beat 3 "and": Ghost root
+  {
+    NoteOptions opts;
+    opts.start = ctx.bar_start + 2 * TICK_QUARTER + TICK_EIGHTH;
+    opts.duration = static_cast<Tick>(TICK_EIGHTH * 0.25f);
+    opts.desired_pitch = ctx.root;
+    opts.velocity = ghost_vel;
+    opts.role = TrackRole::Bass;
+    opts.preference = PitchPreference::SkipIfUnsafe;
+    opts.range_low = BASS_LOW;
+    opts.range_high = BASS_HIGH;
+    opts.register_to_harmony = true;
+    opts.source = NoteSource::BassPattern;
+    createNoteAndAdd(ctx.track, ctx.harmony, opts);
+  }
+
+  // Beat 3 "a": Pop octave
+  addBassNoteWithTritoneCheck(ctx.track, ctx.harmony,
+                              ctx.bar_start + 2 * TICK_QUARTER + TICK_EIGHTH + TICK_SIXTEENTH,
+                              static_cast<Tick>(TICK_SIXTEENTH * 0.35f),
+                              ctx.octave, ctx.root,
+                              static_cast<uint8_t>(std::min(127, ctx.vel + 10)));
+
+  // Beat 4: Ghost root
+  {
+    NoteOptions opts;
+    opts.start = ctx.bar_start + 3 * TICK_QUARTER;
+    opts.duration = static_cast<Tick>(TICK_EIGHTH * 0.25f);
+    opts.desired_pitch = ctx.root;
+    opts.velocity = ghost_vel;
+    opts.role = TrackRole::Bass;
+    opts.preference = PitchPreference::SkipIfUnsafe;
+    opts.range_low = BASS_LOW;
+    opts.range_high = BASS_HIGH;
+    opts.register_to_harmony = true;
+    opts.source = NoteSource::BassPattern;
+    createNoteAndAdd(ctx.track, ctx.harmony, opts);
+  }
+
+  // Beat 4.5: Slap approach note
+  uint8_t approach = (ctx.next_root != ctx.root)
+                         ? getApproachNote(ctx.root, ctx.next_root, ctx.next_degree)
+                         : getNextDiatonic(ctx.root, -1);
+  addBassNoteWithTritoneCheck(ctx.track, ctx.harmony,
+                              ctx.bar_start + 3 * TICK_QUARTER + TICK_EIGHTH,
+                              static_cast<Tick>(TICK_QUARTER * 0.50f),
+                              approach, ctx.root, ctx.vel);
+}
+
+void generateFastRunPattern(const BassBarContext& ctx) {
+  // 32nd note diatonic scale run: ascending beats 1-2, descending beats 3-4
+  static constexpr int kNotesPerBar = 32;
+  Tick note_dur = static_cast<Tick>(TICK_32ND * 0.55f);  // 33 ticks, staccato
+
+  uint8_t pitch = ctx.root;
+
+  for (int pos_idx = 0; pos_idx < kNotesPerBar; ++pos_idx) {
+    Tick pos = ctx.bar_start + pos_idx * TICK_32ND;
+
+    bool ascending = (pos_idx < 16);  // First 16 ascending, last 16 descending
+    bool is_beat_head = (pos_idx % 8 == 0);
+
+    // Root anchor on beat heads
+    if (is_beat_head) {
+      pitch = ctx.root;
+    } else {
+      pitch = getNextDiatonic(pitch, ascending ? +1 : -1);
+    }
+
+    // Clamp to bass range
+    while (pitch > BASS_HIGH) pitch -= 12;
+    while (pitch < BASS_LOW) pitch += 12;
+
+    // Velocity: beat head +10, off-beat -5
+    uint8_t vel = is_beat_head
+        ? static_cast<uint8_t>(std::min(127, static_cast<int>(ctx.vel) + 10))
+        : static_cast<uint8_t>(std::max(30, static_cast<int>(ctx.vel_weak) - 5));
+
+    if (is_beat_head) {
+      addBassNotePreferRoot(ctx.track, pos, note_dur, pitch, vel, ctx.harmony);
+    } else {
+      addBassNoteWithTritoneCheck(ctx.track, ctx.harmony, pos, note_dur, pitch, ctx.root, vel);
+    }
+  }
+}
+
 // ============================================================================
 // Bass Pattern Dispatch Table
 // ============================================================================
@@ -1189,7 +1349,7 @@ void generateRnBNeoSoulPattern(const BassBarContext& ctx) {
 using BassPatternHandler = void (*)(const BassBarContext&);
 
 // Pattern handler table indexed by BassPattern enum value
-constexpr std::array<BassPatternHandler, 15> kBassPatternHandlers = {{
+constexpr std::array<BassPatternHandler, 17> kBassPatternHandlers = {{
     generateWholeNotePattern,      // WholeNote = 0
     generateRootFifthPattern,      // RootFifth = 1
     generateSyncopatedPattern,     // Syncopated = 2
@@ -1205,6 +1365,8 @@ constexpr std::array<BassPatternHandler, 15> kBassPatternHandlers = {{
     generateTresilloPattern,       // Tresillo = 12
     generateSubBass808Pattern,     // SubBass808 = 13
     generateRnBNeoSoulPattern,     // RnBNeoSoul = 14
+    generateSlapPopPattern,        // SlapPop = 15
+    generateFastRunPattern,        // FastRun = 16
 }};
 
 // Generate one bar of bass based on pattern
@@ -1668,6 +1830,14 @@ BassPattern selectPatternForVocalDensity(float vocal_density, SectionType sectio
 BassPattern selectPatternWithPolicyForVocal(BassRiffCache& cache, const Section& section,
                                             size_t sec_idx, const GeneratorParams& params,
                                             float vocal_density, std::mt19937& rng) {
+  // bass_style_hint overrides genre table selection
+  if (section.bass_style_hint > 0) {
+    uint8_t idx = section.bass_style_hint - 1;
+    if (idx <= static_cast<uint8_t>(BassPattern::FastRun)) {
+      return static_cast<BassPattern>(idx);
+    }
+  }
+
   BassPattern pattern = selectPatternWithPolicyCore(cache, sec_idx, params, rng, [&]() {
     return selectPatternForVocalDensity(vocal_density, section.type, params.mood, rng);
   });

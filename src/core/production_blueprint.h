@@ -145,7 +145,8 @@ struct SectionSlot {
   // ========================================================================
 
   /// @brief Guitar style hint (0=auto, 1=Fingerpick, 2=Strum, 3=PowerChord,
-  ///                           4=PedalTone, 5=RhythmChord).
+  ///                           4=PedalTone, 5=RhythmChord, 6=TremoloPick,
+  ///                           7=SweepArpeggio).
   /// When > 0, overrides guitarStyleFromProgram() selection.
   uint8_t guitar_style_hint = 0;
 
@@ -168,6 +169,10 @@ struct SectionSlot {
   /// @brief Vocal range span limit in semitones (0=unlimited, e.g. 15=oct+m3).
   /// When > 0, effective vocal range is clamped to this span.
   uint8_t vocal_range_span = 0;
+
+  /// @brief Bass style hint (0=auto, 1-17 = BassPattern enum + 1).
+  /// When > 0, overrides genre table pattern selection.
+  uint8_t bass_style_hint = 0;
 };
 
 /// @brief Production blueprint defining how a song is generated.
