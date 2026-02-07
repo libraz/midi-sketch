@@ -298,6 +298,30 @@ inline uint8_t transposePitch(uint8_t pitch, Key key) {
   return static_cast<uint8_t>(std::clamp(result, 0, 127));
 }
 
+/**
+ * @brief Transpose pitch by key and apply modulation if applicable.
+ *
+ * Combines key transposition and time-based modulation into a single call.
+ * This is used by MIDI writers and JSON export to convert internal pitches
+ * (in C major) to the output key, with optional modulation after a given tick.
+ *
+ * @param pitch Original MIDI pitch (0-127)
+ * @param key Key to transpose to
+ * @param note_tick Tick at which the note starts
+ * @param mod_tick Tick after which modulation is applied (0 = no modulation)
+ * @param mod_amount Semitone modulation offset
+ * @return Transposed (and possibly modulated) pitch clamped to 0-127
+ */
+inline uint8_t transposeAndModulate(uint8_t pitch, Key key, Tick note_tick, Tick mod_tick,
+                                    int8_t mod_amount) {
+  pitch = transposePitch(pitch, key);
+  if (mod_tick > 0 && note_tick >= mod_tick && mod_amount != 0) {
+    int new_pitch = pitch + mod_amount;
+    pitch = static_cast<uint8_t>(std::clamp(new_pitch, 0, 127));
+  }
+  return pitch;
+}
+
 // ============================================================================
 // TessituraRange
 // ============================================================================
@@ -512,12 +536,40 @@ bool isAvoidNoteSimple(int pitch, uint8_t chord_root, bool is_minor);
 // ============================================================================
 
 /**
+ * @brief Check if a pitch class is a scale tone in the given key.
+ * @param pitch_class Pitch class (0-11, 0=C)
+ * @param key Key offset from C (0-11, 0=C major)
+ * @return true if pitch_class is in the major scale of the given key
+ */
+inline bool isScaleTone(int pitch_class, int key = 0) {
+  int relative_pc = ((pitch_class - key) % 12 + 12) % 12;
+  return DIATONIC_PITCH_CLASS[relative_pc];
+}
+
+/**
  * @brief Snap a pitch to the nearest scale tone.
  * @param pitch MIDI pitch to snap (may be chromatic)
  * @param key_offset Transposition from C major (0 = C, 2 = D, 7 = G, etc.)
  * @return Pitch snapped to nearest scale tone in the given key
  */
 int snapToNearestScaleTone(int pitch, int key_offset);
+
+// ============================================================================
+// Track Pitch Clamping
+// ============================================================================
+
+class MidiTrack;
+
+/**
+ * @brief Clamp all notes in a track to a maximum pitch by octave transposition.
+ *
+ * Notes above max_pitch are transposed down by octaves until within range.
+ * Updates provenance with RangeClamp transform when applicable.
+ *
+ * @param track Track to modify (in-place)
+ * @param max_pitch Maximum allowed MIDI pitch (0-127)
+ */
+void clampTrackPitch(MidiTrack& track, uint8_t max_pitch);
 
 }  // namespace midisketch
 

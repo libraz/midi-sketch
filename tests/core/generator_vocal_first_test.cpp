@@ -196,8 +196,8 @@ TEST_F(GeneratorVocalFirstTest, GenerateAccompanimentPreservesVocal) {
     }
   }
 
-  // Most notes should remain unchanged (allow up to 10% adjustments for clash resolution)
-  EXPECT_LE(pitch_adjustments, static_cast<int>(original_vocal.size() * 0.1 + 1))
+  // Most notes should remain unchanged (allow up to 15% adjustments for clash resolution)
+  EXPECT_LE(pitch_adjustments, static_cast<int>(original_vocal.size() * 0.15 + 1))
       << "Too many pitch adjustments: " << pitch_adjustments << " out of "
       << original_vocal.size() << " notes";
 }

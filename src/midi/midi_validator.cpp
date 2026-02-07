@@ -9,6 +9,8 @@
 #include <fstream>
 #include <sstream>
 
+#include "midi/byte_order.h"
+
 namespace midisketch {
 
 // MidiValidationReport methods
@@ -646,33 +648,6 @@ bool MidiValidator::validateSMF2Container(const uint8_t* data, size_t size,
   }
 
   return true;
-}
-
-bool MidiValidator::readVariableLength(const uint8_t* data, size_t& offset, size_t max_size,
-                                       uint32_t& value) {
-  value = 0;
-  size_t count = 0;
-
-  do {
-    if (offset >= max_size || count > 4) {
-      return false;
-    }
-    uint8_t byte = data[offset++];
-    value = (value << 7) | (byte & 0x7F);
-    if (!(byte & 0x80)) break;
-    count++;
-  } while (true);
-
-  return true;
-}
-
-uint16_t MidiValidator::readUint16BE(const uint8_t* data) {
-  return (static_cast<uint16_t>(data[0]) << 8) | data[1];
-}
-
-uint32_t MidiValidator::readUint32BE(const uint8_t* data) {
-  return (static_cast<uint32_t>(data[0]) << 24) | (static_cast<uint32_t>(data[1]) << 16) |
-         (static_cast<uint32_t>(data[2]) << 8) | data[3];
 }
 
 void MidiValidator::addError(MidiValidationReport& report, const std::string& msg, size_t offset,

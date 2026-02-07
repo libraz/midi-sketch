@@ -25,7 +25,8 @@ TEST(ConstraintPipelineTest, GateRatio_PhraseEnd) {
   GateContext ctx;
   ctx.is_phrase_end = true;
   ctx.interval_from_prev = 0;
-  EXPECT_FLOAT_EQ(calculateGateRatio(ctx), 0.85f);
+  // Short note (default 0) gets gentler gate (0.92)
+  EXPECT_FLOAT_EQ(calculateGateRatio(ctx), 0.92f);
 }
 
 TEST(ConstraintPipelineTest, GateRatio_PhraseStart) {
@@ -53,21 +54,24 @@ TEST(ConstraintPipelineTest, GateRatio_StepMotion) {
   GateContext ctx;
   ctx.note_duration = TICK_EIGHTH;
   ctx.interval_from_prev = 2;  // Whole step
-  EXPECT_FLOAT_EQ(calculateGateRatio(ctx), 0.98f);
+  // Step motion is now full legato
+  EXPECT_FLOAT_EQ(calculateGateRatio(ctx), 1.0f);
 }
 
 TEST(ConstraintPipelineTest, GateRatio_Skip) {
   GateContext ctx;
   ctx.note_duration = TICK_EIGHTH;
   ctx.interval_from_prev = 4;  // Major 3rd
-  EXPECT_FLOAT_EQ(calculateGateRatio(ctx), 0.95f);
+  // Skip is now near-legato
+  EXPECT_FLOAT_EQ(calculateGateRatio(ctx), 0.98f);
 }
 
 TEST(ConstraintPipelineTest, GateRatio_Leap) {
   GateContext ctx;
   ctx.note_duration = TICK_EIGHTH;
   ctx.interval_from_prev = 7;  // Perfect 5th
-  EXPECT_FLOAT_EQ(calculateGateRatio(ctx), 0.92f);
+  // Leap now has slight articulation (was 0.92)
+  EXPECT_FLOAT_EQ(calculateGateRatio(ctx), 0.95f);
 }
 
 TEST(ConstraintPipelineTest, GateRatio_NegativeInterval) {
@@ -75,7 +79,8 @@ TEST(ConstraintPipelineTest, GateRatio_NegativeInterval) {
   GateContext ctx;
   ctx.note_duration = TICK_EIGHTH;
   ctx.interval_from_prev = -3;  // Minor 3rd descending
-  EXPECT_FLOAT_EQ(calculateGateRatio(ctx), 0.95f);
+  // Skip (3-5st) is now near-legato
+  EXPECT_FLOAT_EQ(calculateGateRatio(ctx), 0.98f);
 }
 
 TEST(ConstraintPipelineTest, GateRatio_PhraseEndTakesPriority) {
@@ -84,7 +89,8 @@ TEST(ConstraintPipelineTest, GateRatio_PhraseEndTakesPriority) {
   ctx.is_phrase_end = true;
   ctx.is_phrase_start = true;  // Contradictory, but phrase_end is checked first
   ctx.interval_from_prev = 0;
-  EXPECT_FLOAT_EQ(calculateGateRatio(ctx), 0.85f);
+  // Short note (default 0) gets gentler gate
+  EXPECT_FLOAT_EQ(calculateGateRatio(ctx), 0.92f);
 }
 
 // ============================================================================
@@ -94,15 +100,15 @@ TEST(ConstraintPipelineTest, GateRatio_PhraseEndTakesPriority) {
 TEST(ConstraintPipelineTest, ApplyGateRatio_ShortensNote) {
   GateContext ctx;
   ctx.note_duration = TICK_EIGHTH;
-  ctx.interval_from_prev = 7;  // Leap => 0.92f
-  Tick result = applyGateRatio(TICK_QUARTER, ctx);  // 480 * 0.92 = 441
-  EXPECT_EQ(result, 441u);
+  ctx.interval_from_prev = 7;  // Leap => 0.95f
+  Tick result = applyGateRatio(TICK_QUARTER, ctx);  // 480 * 0.95 = 456
+  EXPECT_EQ(result, 456u);
 }
 
 TEST(ConstraintPipelineTest, ApplyGateRatio_RespectsMinDuration) {
   GateContext ctx;
-  ctx.is_phrase_end = true;  // 0.85f
-  // Very short note: 60 * 0.85 = 51, but min_duration = 120
+  ctx.is_phrase_end = true;  // 0.92f (short note)
+  // Very short note: 60 * 0.92 = 55, but min_duration = 120
   Tick result = applyGateRatio(60, ctx, TICK_SIXTEENTH);
   EXPECT_EQ(result, TICK_SIXTEENTH);
 }
@@ -110,7 +116,7 @@ TEST(ConstraintPipelineTest, ApplyGateRatio_RespectsMinDuration) {
 TEST(ConstraintPipelineTest, ApplyGateRatio_DefaultMinIsSixteenth) {
   GateContext ctx;
   ctx.is_phrase_end = true;
-  // 100 * 0.85 = 85, which is < TICK_SIXTEENTH (120)
+  // 100 * 0.92 = 92, which is < TICK_SIXTEENTH (120)
   Tick result = applyGateRatio(100, ctx);
   EXPECT_EQ(result, TICK_SIXTEENTH);
 }
@@ -259,13 +265,13 @@ TEST(ConstraintPipelineTest, FindChordTone_DifferentChord) {
 TEST_F(ChordBoundaryClampTest, AllConstraints_CombinesCorrectly) {
   GateContext ctx;
   ctx.note_duration = TICK_EIGHTH;
-  ctx.interval_from_prev = 2;  // Step motion => 0.98f gate ratio
+  ctx.interval_from_prev = 2;  // Step motion => 1.0f gate ratio (full legato)
 
   // Note within bar, not crossing chord boundary, within phrase
   Tick result = applyAllDurationConstraints(0, TICK_QUARTER, harmony_, TICK_WHOLE * 4, ctx, 60);
 
-  // 480 * 0.98 = 470, no chord boundary clip, within phrase
-  EXPECT_EQ(result, 470u);
+  // 480 * 1.0 = 480, no chord boundary clip, within phrase
+  EXPECT_EQ(result, 480u);
 }
 
 TEST_F(ChordBoundaryClampTest, AllConstraints_PhraseClampTakesPriority) {

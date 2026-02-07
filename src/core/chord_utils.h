@@ -42,12 +42,6 @@ std::vector<int> getChordTonePitchClasses(int8_t degree);
 // Scale Tone Functions
 // ============================================================================
 
-// Check if a pitch class is a scale tone in the given key.
-// @param pitch_class Pitch class (0-11, 0=C)
-// @param key Current key (0-11, 0=C)
-// @returns true if pitch_class is in the major scale of key
-bool isScaleTone(int pitch_class, uint8_t key);
-
 // Get all pitch classes in the major scale of the given key.
 // @param key Current key (0-11, 0=C)
 // @returns Vector of 7 pitch classes (0-11)

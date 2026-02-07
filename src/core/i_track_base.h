@@ -150,6 +150,10 @@ struct TrackContext {
 // Forward declarations for FullTrackContext
 class Song;
 struct GeneratorParams;
+struct DrumGrid;
+struct KickPatternCache;
+struct MotifContext;
+struct VocalAnalysis;
 
 /// @brief Full track generation context for generateFullTrack().
 ///
@@ -162,12 +166,12 @@ struct FullTrackContext {
   IHarmonyCoordinator* harmony = nullptr;  ///< Harmony coordinator
 
   // Track-specific options (set by Coordinator based on paradigm)
-  bool skip_collision_avoidance = false;   ///< For vocal-first mode
-  const void* drum_grid = nullptr;         ///< DrumGrid* for RhythmSync
-  const void* kick_cache = nullptr;        ///< KickPatternCache* for bass-kick sync
-  const void* vocal_ctx = nullptr;         ///< MotifContext* for motif generation
-  const void* vocal_analysis = nullptr;    ///< VocalAnalysis* for adapting to vocal
-  const void* motif_track = nullptr;       ///< MidiTrack* for RhythmSync motif reference
+  bool skip_collision_avoidance = false;          ///< For vocal-first mode
+  const DrumGrid* drum_grid = nullptr;            ///< DrumGrid for RhythmSync
+  const KickPatternCache* kick_cache = nullptr;   ///< KickPatternCache for bass-kick sync
+  const MotifContext* vocal_ctx = nullptr;         ///< MotifContext for motif generation
+  const VocalAnalysis* vocal_analysis = nullptr;   ///< VocalAnalysis for adapting to vocal
+  const MidiTrack* motif_track = nullptr;          ///< MidiTrack for RhythmSync motif reference
 
   // Call system options (for SE track)
   bool call_enabled = false;
@@ -207,11 +211,17 @@ class ITrackBase {
   virtual void configure(const TrackConfig& config) = 0;
 
   /// @brief Generate notes for a section.
+  ///
+  /// Default no-op. Override only for generators that use per-section logic
+  /// (most generators override generateFullTrack() instead).
+  ///
   /// @param track Target MIDI track
   /// @param section Section to generate
   /// @param ctx Track generation context
   virtual void generateSection(MidiTrack& track, const Section& section,
-                                TrackContext& ctx) = 0;
+                                TrackContext& ctx) {
+    (void)track; (void)section; (void)ctx;
+  }
 
   /// @brief Clamp a pitch to the physical model range.
   /// @param pitch Input pitch

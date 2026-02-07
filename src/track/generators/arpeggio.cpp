@@ -251,12 +251,6 @@ uint8_t calculateArpeggioVelocity(uint8_t base_velocity, SectionType section, in
 
 }  // namespace
 
-void ArpeggioGenerator::generateSection(MidiTrack& /* track */, const Section& /* section */,
-                                         TrackContext& /* ctx */) {
-  // ArpeggioGenerator uses generateFullTrack() for chord-following patterns
-  // This method is kept for ITrackBase compliance but not used directly.
-}
-
 // ============================================================================
 // Arpeggio Generation Helpers
 // ============================================================================

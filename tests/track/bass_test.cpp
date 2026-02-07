@@ -11,29 +11,13 @@
 #include "core/generator.h"
 #include "core/song.h"
 #include "core/types.h"
+#include "test_support/generator_test_fixture.h"
+#include "test_support/test_constants.h"
 
 namespace midisketch {
 namespace {
 
-class BassTest : public ::testing::Test {
- protected:
-  void SetUp() override {
-    params_.structure = StructurePattern::StandardPop;
-    params_.mood = Mood::ElectroPop;
-    params_.chord_id = 0;  // Canon progression
-    params_.key = Key::C;
-    params_.drums_enabled = false;
-    params_.vocal_low = 60;
-    params_.vocal_high = 84;
-    params_.bpm = 120;
-    params_.seed = 42;
-    params_.arpeggio_enabled = false;
-    // Disable humanization for deterministic tests
-    params_.humanize = false;
-  }
-
-  GeneratorParams params_;
-};
+class BassTest : public test::GeneratorTestFixture {};
 
 TEST_F(BassTest, BassTrackGenerated) {
   Generator gen;
@@ -66,9 +50,6 @@ TEST_F(BassTest, BassNotesInValidMidiRange) {
 
 TEST_F(BassTest, BassNotesInBassRange) {
   // Bass should be in bass register (C1 to C4 for electric bass)
-  constexpr uint8_t BASS_LOW = 24;   // C1
-  constexpr uint8_t BASS_HIGH = 60;  // C4
-
   Generator gen;
   gen.generate(params_);
 
@@ -76,7 +57,7 @@ TEST_F(BassTest, BassNotesInBassRange) {
   int out_of_range = 0;
 
   for (const auto& note : track.notes()) {
-    if (note.note < BASS_LOW || note.note > BASS_HIGH) {
+    if (note.note < test::kBassLow || note.note > test::kBassHigh) {
       out_of_range++;
     }
   }
@@ -88,9 +69,6 @@ TEST_F(BassTest, BassNotesInBassRange) {
 }
 
 TEST_F(BassTest, BassNotesAreScaleTones) {
-  // C major scale pitch classes
-  std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
-
   params_.key = Key::C;
   Generator gen;
   gen.generate(params_);
@@ -100,7 +78,7 @@ TEST_F(BassTest, BassNotesAreScaleTones) {
 
   for (const auto& note : track.notes()) {
     int pc = note.note % 12;
-    if (c_major_pcs.find(pc) == c_major_pcs.end()) {
+    if (test::kCMajorPitchClasses.find(pc) == test::kCMajorPitchClasses.end()) {
       out_of_scale_count++;
     }
   }
@@ -781,9 +759,6 @@ TEST_F(BassTest, GhostNotesInBassRange) {
   params_.mood = Mood::CityPop;
   params_.drums_enabled = true;
 
-  constexpr uint8_t BASS_LOW = 24;         // C1
-  constexpr uint8_t BASS_HIGH_LIMIT = 60;  // C4
-
   for (uint32_t seed = 1; seed <= 10; ++seed) {
     params_.seed = seed;
     Generator gen;
@@ -792,10 +767,10 @@ TEST_F(BassTest, GhostNotesInBassRange) {
     const auto& track = gen.getSong().bass();
     for (const auto& note : track.notes()) {
       if (note.velocity <= 43) {
-        EXPECT_GE(note.note, BASS_LOW)
+        EXPECT_GE(note.note, test::kBassLow)
             << "Ghost note pitch " << static_cast<int>(note.note)
             << " below bass range (seed=" << seed << ")";
-        EXPECT_LE(note.note, BASS_HIGH_LIMIT)
+        EXPECT_LE(note.note, test::kBassHigh)
             << "Ghost note pitch " << static_cast<int>(note.note)
             << " above bass range (seed=" << seed << ")";
       }
@@ -881,14 +856,13 @@ TEST_F(BassTest, PedalToneInBalladIntro) {
   // PedalTone (sustains tonic), WholeNote (root changes with chord), RootFifth.
   // When PedalTone is selected, all notes have the same pitch class.
   // When other patterns are selected, pitches follow chord changes.
-  // Check that notes have valid pitch classes (C major scale: 0,2,4,5,7,9,11)
-  std::set<int> valid_pcs = {0, 2, 4, 5, 7, 9, 11};  // C major scale
+  // Check that notes have valid pitch classes (C major scale)
   if (!intro_pitches.empty()) {
     uint8_t first_pc = intro_pitches[0] % 12;
     int same_pc_count = 0;
     for (size_t idx = 0; idx < intro_pitches.size(); ++idx) {
       int pc = intro_pitches[idx] % 12;
-      EXPECT_TRUE(valid_pcs.count(pc) > 0)
+      EXPECT_TRUE(test::kCMajorPitchClasses.count(pc) > 0)
           << "Bass pitch should be in C major scale at note " << idx;
       if (pc == first_pc) same_pc_count++;
     }
@@ -1146,9 +1120,6 @@ TEST_F(BassTest, PedalToneInBassRange) {
   params_.structure = StructurePattern::BuildUp;
   params_.drums_enabled = true;
 
-  constexpr uint8_t BASS_RANGE_LOW = 24;   // C1
-  constexpr uint8_t BASS_RANGE_HIGH = 60;  // C4
-
   for (uint32_t seed = 1; seed <= 5; ++seed) {
     params_.seed = seed;
     Generator gen;
@@ -1165,9 +1136,9 @@ TEST_F(BassTest, PedalToneInBassRange) {
 
       for (const auto& note : track.notes()) {
         if (note.start_tick >= sec_start && note.start_tick < sec_end) {
-          EXPECT_GE(note.note, BASS_RANGE_LOW)
+          EXPECT_GE(note.note, test::kBassLow)
               << "Pedal tone below bass range (seed=" << seed << ")";
-          EXPECT_LE(note.note, BASS_RANGE_HIGH)
+          EXPECT_LE(note.note, test::kBassHigh)
               << "Pedal tone above bass range (seed=" << seed << ")";
         }
       }
@@ -1271,11 +1242,9 @@ TEST_F(BassTest, RnBSoulPatternGeneratesBass) {
       << "RnBNeoSoul should generate bass notes";
 
   // Check notes are in valid range (C1 to C4)
-  constexpr uint8_t BASS_LOW = 24;   // C1
-  constexpr uint8_t BASS_HIGH = 60;  // C4
   for (const auto& note : track.notes()) {
-    EXPECT_GE(note.note, BASS_LOW);
-    EXPECT_LE(note.note, BASS_HIGH);
+    EXPECT_GE(note.note, test::kBassLow);
+    EXPECT_LE(note.note, test::kBassHigh);
   }
 }
 

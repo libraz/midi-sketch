@@ -432,14 +432,6 @@ bool MelodicEmbellisher::isInPentatonicMode(int pitch_class, int key_offset, Pen
   return false;
 }
 
-bool MelodicEmbellisher::isScaleTone(int pitch_class, int key_offset) {
-  int relative_pc = ((pitch_class - key_offset) % 12 + 12) % 12;
-
-  for (int pc : SCALE) {
-    if (relative_pc == pc) return true;
-  }
-  return false;
-}
 
 int MelodicEmbellisher::scaleStep(int pitch, int direction, int key_offset,
                                   bool prefer_pentatonic) {

@@ -24,11 +24,11 @@ typedef void* MidiSketchHandle;
 typedef enum {
   MIDISKETCH_OK = 0,
   MIDISKETCH_ERROR_INVALID_PARAM = 1,
-  MIDISKETCH_ERROR_INVALID_STRUCTURE = 2,
-  MIDISKETCH_ERROR_INVALID_MOOD = 3,
-  MIDISKETCH_ERROR_INVALID_CHORD = 4,
-  MIDISKETCH_ERROR_GENERATION_FAILED = 5,
-  MIDISKETCH_ERROR_OUT_OF_MEMORY = 6,
+  MIDISKETCH_ERROR_INVALID_STRUCTURE = 2,  ///< @deprecated Unused. Kept for ABI stability.
+  MIDISKETCH_ERROR_INVALID_MOOD = 3,       ///< @deprecated Unused. Kept for ABI stability.
+  MIDISKETCH_ERROR_INVALID_CHORD = 4,      ///< @deprecated Unused. Kept for ABI stability.
+  MIDISKETCH_ERROR_GENERATION_FAILED = 5,  ///< @deprecated Unused. Kept for ABI stability.
+  MIDISKETCH_ERROR_OUT_OF_MEMORY = 6,      ///< @deprecated Unused. Kept for ABI stability.
 } MidiSketchError;
 
 // ============================================================================

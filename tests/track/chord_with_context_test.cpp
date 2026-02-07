@@ -55,7 +55,7 @@ TEST_F(ChordWithContextTest, GeneratesChordTrack) {
   MidiTrack bass_track;
   std::mt19937 rng(params_.seed);
   HarmonyContext harmony;
-  generateBassTrackWithVocal(bass_track, gen.getSong(), params_, rng, va, harmony);
+  generateBassTrack(bass_track, gen.getSong(), params_, rng, harmony, nullptr, &va);
 
   // Generate chord with context
   MidiTrack chord_track;
@@ -79,7 +79,7 @@ TEST_F(ChordWithContextTest, ChordNotesInValidRange) {
   MidiTrack bass_track;
   std::mt19937 rng(params_.seed);
   HarmonyContext harmony;
-  generateBassTrackWithVocal(bass_track, gen.getSong(), params_, rng, va, harmony);
+  generateBassTrack(bass_track, gen.getSong(), params_, rng, harmony, nullptr, &va);
 
   MidiTrack chord_track;
   std::mt19937 rng2(params_.seed + 1);
@@ -104,7 +104,7 @@ TEST_F(ChordWithContextTest, DeterministicGeneration) {
   MidiTrack bass_track;
   std::mt19937 rng_bass(params_.seed);
   HarmonyContext harmony;
-  generateBassTrackWithVocal(bass_track, gen.getSong(), params_, rng_bass, va, harmony);
+  generateBassTrack(bass_track, gen.getSong(), params_, rng_bass, harmony, nullptr, &va);
 
   // First generation
   MidiTrack chord1;
@@ -142,7 +142,7 @@ TEST_F(ChordWithContextTest, AvoidsVocalDoublingWhenPossible) {
   MidiTrack bass_track;
   std::mt19937 rng_bass(params_.seed);
   HarmonyContext harmony;
-  generateBassTrackWithVocal(bass_track, gen.getSong(), params_, rng_bass, va, harmony);
+  generateBassTrack(bass_track, gen.getSong(), params_, rng_bass, harmony, nullptr, &va);
 
   MidiTrack chord_track;
   std::mt19937 rng(params_.seed + 1);
@@ -199,7 +199,7 @@ TEST_F(ChordWithContextTest, GeneratesWithAuxTrack) {
   MidiTrack bass_track;
   std::mt19937 rng_bass(params_.seed);
   HarmonyContext harmony;
-  generateBassTrackWithVocal(bass_track, gen.getSong(), params_, rng_bass, va, harmony);
+  generateBassTrack(bass_track, gen.getSong(), params_, rng_bass, harmony, nullptr, &va);
 
   // Create a simple aux track
   MidiTrack aux_track;
@@ -228,7 +228,7 @@ TEST_F(ChordWithContextTest, ReducesMinor2ndClashesWithAux) {
   MidiTrack bass_track;
   std::mt19937 rng_bass(params_.seed);
   HarmonyContext harmony;
-  generateBassTrackWithVocal(bass_track, gen.getSong(), params_, rng_bass, va, harmony);
+  generateBassTrack(bass_track, gen.getSong(), params_, rng_bass, harmony, nullptr, &va);
 
   // Create aux track with specific notes to test clash avoidance
   MidiTrack aux_track;
@@ -296,7 +296,7 @@ TEST_F(ChordWithContextTest, FallbackWhenAllVoicingsFiltered) {
   MidiTrack bass_track;
   std::mt19937 rng_bass(params_.seed);
   HarmonyContext harmony;
-  generateBassTrackWithVocal(bass_track, gen.getSong(), params_, rng_bass, va, harmony);
+  generateBassTrack(bass_track, gen.getSong(), params_, rng_bass, harmony, nullptr, &va);
 
   // Create aux track that covers many pitch classes
   MidiTrack aux_track;

@@ -68,9 +68,6 @@ class ChordGenerator : public TrackBase {
 
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kElectricPiano; }
 
-  void generateSection(MidiTrack& track, const Section& section,
-                       TrackContext& ctx) override;
-
   /// @brief Generate full chord track using FullTrackContext.
   void generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 };

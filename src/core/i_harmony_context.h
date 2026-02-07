@@ -13,7 +13,6 @@
 
 #include "core/basic_types.h"
 #include "core/i_chord_lookup.h"
-#include "core/safe_pitch_resolver.h"
 #include "core/types.h"
 
 namespace midisketch {

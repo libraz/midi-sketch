@@ -18,6 +18,17 @@
 
 namespace midisketch {
 
+namespace {
+
+// Helper to check if a track role produces harmonic (pitched) content
+bool isHarmonicTrack(TrackRole role) {
+  return role == TrackRole::Bass || role == TrackRole::Chord ||
+         role == TrackRole::Vocal || role == TrackRole::Motif ||
+         role == TrackRole::Aux || role == TrackRole::Guitar;
+}
+
+}  // namespace
+
 void TrackCollisionDetector::registerNote(Tick start, Tick duration, uint8_t pitch,
                                           TrackRole track) {
   size_t idx = notes_.size();
@@ -74,10 +85,7 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(uint8_t pitch, Tick star
   }
 
   // Determine if exclude track is harmonic (pre-compute outside loop)
-  bool exclude_is_harmonic =
-      (exclude == TrackRole::Bass || exclude == TrackRole::Chord ||
-       exclude == TrackRole::Vocal || exclude == TrackRole::Motif ||
-       exclude == TrackRole::Aux || exclude == TrackRole::Guitar);
+  bool exclude_is_harmonic = isHarmonicTrack(exclude);
 
   // Use beat-indexed lookup
   std::vector<size_t> indices;
@@ -102,11 +110,7 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(uint8_t pitch, Tick star
 
       // Special case: Tritone between harmonic tracks is ALWAYS dissonant
       if (exclude_is_harmonic) {
-        bool note_is_harmonic =
-            (note.track == TrackRole::Bass || note.track == TrackRole::Chord ||
-             note.track == TrackRole::Vocal || note.track == TrackRole::Motif ||
-             note.track == TrackRole::Aux || note.track == TrackRole::Guitar);
-        if (note_is_harmonic) {
+        if (isHarmonicTrack(note.track)) {
           int pc_interval = actual_semitones % 12;
           if (pc_interval == 6 && actual_semitones < 36) {
             return false;
@@ -133,10 +137,7 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(uint8_t pitch, Tick start
     chord_degree = chord_tracker->getChordDegreeAt(start);
   }
 
-  bool exclude_is_harmonic =
-      (exclude == TrackRole::Bass || exclude == TrackRole::Chord ||
-       exclude == TrackRole::Vocal || exclude == TrackRole::Motif ||
-       exclude == TrackRole::Aux || exclude == TrackRole::Guitar);
+  bool exclude_is_harmonic = isHarmonicTrack(exclude);
 
   std::vector<size_t> indices;
   indices.reserve(32);
@@ -151,11 +152,7 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(uint8_t pitch, Tick start
       int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
 
       if (exclude_is_harmonic) {
-        bool note_is_harmonic =
-            (note.track == TrackRole::Bass || note.track == TrackRole::Chord ||
-             note.track == TrackRole::Vocal || note.track == TrackRole::Motif ||
-             note.track == TrackRole::Aux || note.track == TrackRole::Guitar);
-        if (note_is_harmonic) {
+        if (isHarmonicTrack(note.track)) {
           int pc_interval = actual_semitones % 12;
           if (pc_interval == 6 && actual_semitones < 36) {
             info.has_collision = true;

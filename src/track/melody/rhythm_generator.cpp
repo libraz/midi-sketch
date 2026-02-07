@@ -30,10 +30,10 @@ std::vector<RhythmNote> generatePhraseRhythmImpl(const MelodyTemplate& tmpl, uin
   // Clamp to valid range [0.0, 0.95]
   effective_sixteenth_density = std::min(effective_sixteenth_density, 0.95f);
 
-  // Reserve space for final phrase-ending note
+  // Reserve space for final phrase-ending note (quarter note = 1.0 beat)
   // UltraVocaloid: shorter reservation to maximize machine-gun notes
-  // Standard: 0.5 beat reservation (reduced from 1.0 to increase density)
-  float phrase_body_end = (thirtysecond_ratio >= 0.8f) ? end_beat - 0.25f : end_beat - 0.5f;
+  // Standard: 1.0 beat reservation ensures final note gets full quarter note duration
+  float phrase_body_end = (thirtysecond_ratio >= 0.8f) ? end_beat - 0.25f : end_beat - 1.0f;
 
   // Track consecutive short notes to prevent breath-difficult passages
   // Pop vocal principle: limit rapid-fire notes to maintain singability
@@ -223,22 +223,40 @@ std::vector<RhythmNote> generatePhraseRhythmImpl(const MelodyTemplate& tmpl, uin
   // Add final phrase-ending note on a strong beat
   // In pop music, phrases should end on strong beats (1, 2, 3, 4) with longer notes
   if (phrase_beats >= 2) {
-    // Snap to nearest integer beat for the final note
-    float final_beat = std::floor(current_beat);
-    if (final_beat < current_beat) {
-      final_beat = std::ceil(current_beat);
-    }
+    // Place final note at the reservation boundary, snapped to integer beat
+    float final_beat = std::floor(phrase_body_end);
+    if (final_beat < 0.0f) final_beat = 0.0f;
     // Ensure we don't exceed the phrase
     if (final_beat >= end_beat) {
       final_beat = end_beat - 1.0f;
     }
-    // Final note duration: UltraVocaloid uses quarter note for phrase ending
-    float final_eighths = (end_beat - final_beat) * 2.0f;
-    if (thirtysecond_ratio >= 0.8f) {
-      final_eighths = std::max(final_eighths, 2.0f);  // At least quarter note for UltraVocaloid
-    } else {
-      final_eighths = std::max(final_eighths, 2.0f);  // At least quarter note
+
+    // If body notes extend past the intended final beat, trim and adjust
+    if (!rhythm.empty()) {
+      float last_body_end = rhythm.back().beat + rhythm.back().eighths * 0.5f;
+      if (final_beat < last_body_end) {
+        // Trim last body note to end at final_beat
+        float trimmed_eighths = (final_beat - rhythm.back().beat) * 2.0f;
+        if (trimmed_eighths >= 0.5f) {
+          // Enough room to trim: shorten body note, add final note at integer beat
+          rhythm.back().eighths = trimmed_eighths;
+        } else {
+          // Too short to trim: remove last body note and use its beat as final
+          // The final note takes over from that position
+          float replaced_beat = rhythm.back().beat;
+          rhythm.pop_back();
+          // Snap to nearest integer beat
+          final_beat = std::ceil(replaced_beat);
+          if (final_beat >= end_beat) {
+            final_beat = std::floor(replaced_beat);
+          }
+        }
+      }
     }
+
+    // Final note duration fills remaining phrase time
+    float final_eighths = (end_beat - final_beat) * 2.0f;
+    final_eighths = std::max(final_eighths, 2.0f);  // At least quarter note
 
     rhythm.push_back({final_beat, final_eighths, true});  // Strong beat
   }

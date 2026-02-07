@@ -31,6 +31,16 @@ constexpr Tick TICK_SIXTEENTH_TRIPLET = TICKS_PER_BEAT / 12;  // 40 ticks
 // microseconds_per_beat = kMicrosecondsPerMinute / BPM
 constexpr uint32_t kMicrosecondsPerMinute = 60000000;
 
+/**
+ * @brief Convert MIDI ticks to seconds at a given BPM.
+ * @param ticks Number of MIDI ticks
+ * @param bpm Beats per minute
+ * @return Duration in seconds
+ */
+inline double ticksToSeconds(Tick ticks, double bpm) {
+  return static_cast<double>(ticks) / TICKS_PER_BEAT / bpm * 60.0;
+}
+
 }  // namespace midisketch
 
 #endif  // MIDISKETCH_CORE_TIMING_CONSTANTS_H_

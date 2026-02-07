@@ -922,28 +922,4 @@ void clampTrackVelocity(MidiTrack& track, uint8_t max_velocity) {
   }
 }
 
-void clampTrackPitch(MidiTrack& track, uint8_t max_pitch) {
-  if (max_pitch >= 127) {
-    return;  // No clamping needed
-  }
-
-  auto& notes = track.notes();
-  for (auto& note : notes) {
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-    uint8_t old_pitch = note.note;
-#endif
-    // Transpose down by octaves until within range
-    while (note.note > max_pitch && note.note >= 12) {
-      note.note -= 12;
-    }
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-    if (old_pitch != note.note) {
-      note.prov_original_pitch = old_pitch;
-      note.addTransformStep(TransformStepType::RangeClamp, old_pitch, note.note,
-                            static_cast<int8_t>(0), static_cast<int8_t>(max_pitch));
-    }
-#endif
-  }
-}
-
 }  // namespace midisketch

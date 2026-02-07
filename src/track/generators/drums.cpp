@@ -10,19 +10,13 @@
 
 namespace midisketch {
 
-void DrumsGenerator::generateSection(MidiTrack& /* track */, const Section& /* section */,
-                                      TrackContext& /* ctx */) {
-  // DrumsGenerator uses generateFullTrack() for fill coordination across sections
-  // This method is kept for ITrackBase compliance but not used directly.
-}
-
 void DrumsGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   if (!ctx.song || !ctx.params || !ctx.rng) {
     return;
   }
   // Check for vocal-dependent generation modes
   if (ctx.vocal_analysis) {
-    const VocalAnalysis* va = static_cast<const VocalAnalysis*>(ctx.vocal_analysis);
+    const VocalAnalysis* va = ctx.vocal_analysis;
     if (ctx.params->drums_sync_vocal) {
       generateDrumsTrackWithVocal(track, *ctx.song, *ctx.params, *ctx.rng, *va);
       return;

@@ -15,7 +15,6 @@ interface ConfigField {
 }
 
 interface NestedField {
-  js: string;
   cpp: string;
   fields: readonly ConfigField[];
 }
@@ -146,9 +145,9 @@ export const MOTIF_CHORD_FIELDS: readonly ConfigField[] = [
 
 // Nested struct definitions
 export const NESTED_STRUCTS: readonly NestedField[] = [
-  { js: 'arpeggio', cpp: 'arpeggio', fields: ARPEGGIO_FIELDS },
-  { js: 'chordExtension', cpp: 'chord_extension', fields: CHORD_EXT_FIELDS },
-  { js: 'motifChord', cpp: 'motif_chord', fields: MOTIF_CHORD_FIELDS },
+  { cpp: 'arpeggio', fields: ARPEGGIO_FIELDS },
+  { cpp: 'chord_extension', fields: CHORD_EXT_FIELDS },
+  { cpp: 'motif_chord', fields: MOTIF_CHORD_FIELDS },
 ] as const;
 
 // ============================================================================

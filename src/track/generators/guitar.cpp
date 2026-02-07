@@ -286,11 +286,6 @@ static void generatePowerChordBar(MidiTrack& track, IHarmonyContext& harmony,
 // GuitarGenerator implementation
 // ============================================================================
 
-void GuitarGenerator::generateSection(MidiTrack& /*track*/, const Section& /*section*/,
-                                       TrackContext& /*ctx*/) {
-  // Not used: guitar uses generateFullTrack for section-spanning logic
-}
-
 void GuitarGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   if (!ctx.isValid()) return;
 

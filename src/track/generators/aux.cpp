@@ -12,6 +12,7 @@
 #include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
+#include "core/pitch_monotony_tracker.h"
 #include "core/melody_templates.h"
 #include "core/note_creator.h"
 #include "core/note_source.h"
@@ -70,156 +71,12 @@ constexpr Tick kAnticipationThreshold = 120;
 /// Minimum note length after trimming or splitting
 constexpr Tick kMinNoteDuration = 120;
 
-/// Maximum consecutive same pitches before forcing variation
-constexpr int kMaxConsecutiveSamePitch = 3;
-
 // ============================================================================
 // Helper Functions
 // ============================================================================
 
-/// Maximum leap in semitones before constraining (1 octave)
-constexpr int kMaxLeapSemitones = 12;
-
-/// @brief Track consecutive same pitches and large leaps, suggest variations when needed.
-///
-/// This prevents:
-/// 1. Monotonous runs of the same note (e.g., 16 consecutive G3)
-/// 2. Large melodic leaps (> 12 semitones)
-struct PitchMonotonyTracker {
-  uint8_t last_pitch = 0;
-  int consecutive_count = 0;
-
-  /// @brief Record a pitch and return suggested pitch (may differ if issues detected).
-  /// @param desired Original desired pitch
-  /// @param aux_low Lower bound of aux range
-  /// @param aux_high Upper bound of aux range
-  /// @param chord_degree Current chord degree for alternative pitch selection
-  /// @return Suggested pitch (may be different if monotony or large leap detected)
-  uint8_t trackAndSuggest(uint8_t desired, uint8_t aux_low, uint8_t aux_high, int8_t chord_degree) {
-    uint8_t result = desired;
-
-    // First check for large leap (if we have a previous pitch)
-    if (last_pitch > 0) {
-      int leap = std::abs(static_cast<int>(desired) - static_cast<int>(last_pitch));
-      if (leap > kMaxLeapSemitones) {
-        // Constrain the leap: find a pitch closer to last_pitch that's still a chord tone
-        ChordTones ct = getChordTones(chord_degree);
-        int last_octave = last_pitch / 12;
-        int best_pitch = -1;
-        int best_distance = 1000;
-
-        for (uint8_t i = 0; i < ct.count; ++i) {
-          int pc = ct.pitch_classes[i];
-          if (pc < 0) continue;
-
-          // Try pitches in nearby octaves
-          for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
-            int candidate = (last_octave + oct_offset) * 12 + pc;
-            if (candidate < aux_low || candidate > aux_high) continue;
-
-            int dist_from_last = std::abs(candidate - static_cast<int>(last_pitch));
-            int dist_from_desired = std::abs(candidate - static_cast<int>(desired));
-
-            // Must be within max leap from last pitch
-            if (dist_from_last > kMaxLeapSemitones) continue;
-
-            // Prefer pitches closer to desired (within leap constraint)
-            if (dist_from_desired < best_distance) {
-              best_distance = dist_from_desired;
-              best_pitch = candidate;
-            }
-          }
-        }
-
-        if (best_pitch >= 0) {
-          result = static_cast<uint8_t>(best_pitch);
-        } else {
-          // No chord tone found within constraint, clamp the leap
-          if (desired > last_pitch) {
-            result = static_cast<uint8_t>(std::min(static_cast<int>(last_pitch) + kMaxLeapSemitones,
-                                                    static_cast<int>(aux_high)));
-          } else {
-            result = static_cast<uint8_t>(std::max(static_cast<int>(last_pitch) - kMaxLeapSemitones,
-                                                    static_cast<int>(aux_low)));
-          }
-        }
-      }
-    }
-
-    // Now check for monotony (consecutive same pitch)
-    if (result == last_pitch) {
-      consecutive_count++;
-    } else {
-      consecutive_count = 1;
-    }
-
-    // If we've hit the monotony threshold, suggest an alternative
-    if (consecutive_count > kMaxConsecutiveSamePitch) {
-      ChordTones ct = getChordTones(chord_degree);
-      int octave = result / 12;
-
-      // Try different chord tones to find one that's different from last_pitch
-      for (uint8_t i = 0; i < ct.count; ++i) {
-        int pc = ct.pitch_classes[i];
-        if (pc < 0) continue;
-        uint8_t candidate = static_cast<uint8_t>(octave * 12 + pc);
-
-        // Check both monotony and leap constraints
-        if (candidate >= aux_low && candidate <= aux_high && candidate != last_pitch) {
-          int leap = std::abs(static_cast<int>(candidate) - static_cast<int>(last_pitch));
-          if (leap <= kMaxLeapSemitones) {
-            last_pitch = candidate;
-            consecutive_count = 1;
-            return candidate;
-          }
-        }
-        // Try octave below
-        if (octave > 0) {
-          candidate = static_cast<uint8_t>((octave - 1) * 12 + pc);
-          if (candidate >= aux_low && candidate <= aux_high && candidate != last_pitch) {
-            int leap = std::abs(static_cast<int>(candidate) - static_cast<int>(last_pitch));
-            if (leap <= kMaxLeapSemitones) {
-              last_pitch = candidate;
-              consecutive_count = 1;
-              return candidate;
-            }
-          }
-        }
-        // Try octave above
-        candidate = static_cast<uint8_t>((octave + 1) * 12 + pc);
-        if (candidate >= aux_low && candidate <= aux_high && candidate != last_pitch) {
-          int leap = std::abs(static_cast<int>(candidate) - static_cast<int>(last_pitch));
-          if (leap <= kMaxLeapSemitones) {
-            last_pitch = candidate;
-            consecutive_count = 1;
-            return candidate;
-          }
-        }
-      }
-
-      // Fallback: try step up or down (within leap constraint)
-      if (result + 2 <= aux_high && result + 2 != last_pitch) {
-        last_pitch = result + 2;
-        consecutive_count = 1;
-        return last_pitch;
-      }
-      if (result >= aux_low + 2 && result - 2 != last_pitch) {
-        last_pitch = result - 2;
-        consecutive_count = 1;
-        return last_pitch;
-      }
-    }
-
-    last_pitch = result;
-    return result;
-  }
-
-  /// Reset tracker state (e.g., at section boundary)
-  void reset() {
-    last_pitch = 0;
-    consecutive_count = 0;
-  }
-};
+/// Maximum leap in semitones before constraining (used by final leap guard)
+constexpr int kMaxLeapSemitones = kDefaultMaxLeapSemitones;
 
 // Smooth motif rhythm for Intro aux (extend short notes to minimum 8th note)
 // This prevents machine-gun style from UltraVocaloid bleeding into Intro
@@ -250,12 +107,6 @@ const AuxFunctionMeta& getAuxFunctionMeta(AuxFunction func) {
 // ============================================================================
 // ITrackBase Interface Implementation
 // ============================================================================
-
-void AuxGenerator::generateSection(MidiTrack& /* track */, const Section& /* section */,
-                                    TrackContext& /* ctx */) {
-  // AuxGenerator uses generateFullTrack() for function selection and phrase caching
-  // This method is kept for ITrackBase compliance but not used directly.
-}
 
 void AuxGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   if (!ctx.isValid()) {
@@ -569,7 +420,7 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
 
     // Use PitchMonotonyTracker to suggest initial pitch based on desired pitch
-    PitchMonotonyTracker temp_tracker;
+    PitchMonotonyTracker temp_tracker(/*enable_leap_guard=*/true);
     temp_tracker.last_pitch = actual_last_pitch;
     temp_tracker.consecutive_count = actual_consecutive_count;
     uint8_t suggested_pitch = temp_tracker.trackAndSuggest(

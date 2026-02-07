@@ -2,10 +2,9 @@
  * @file harmony_context.h
  * @brief Facade for inter-track harmonic coordination.
  *
- * HarmonyContext is a Facade that composes three specialized classes:
+ * HarmonyContext is a Facade that composes two specialized classes:
  * - ChordProgressionTracker: chord progression timing and lookup
  * - TrackCollisionDetector: note registration and collision detection
- * - SafePitchResolver: safe pitch resolution strategies
  */
 
 #ifndef MIDISKETCH_CORE_HARMONY_CONTEXT_H
@@ -15,7 +14,6 @@
 
 #include "core/chord_progression_tracker.h"
 #include "core/i_harmony_context.h"
-#include "core/safe_pitch_resolver.h"
 #include "core/track_collision_detector.h"
 #include "core/types.h"
 
@@ -28,13 +26,12 @@ struct ChordProgression;
 /**
  * @brief Facade for inter-track harmonic coordination.
  *
- * Composes ChordProgressionTracker, TrackCollisionDetector, and SafePitchResolver
+ * Composes ChordProgressionTracker and TrackCollisionDetector
  * to provide a unified interface for track generation coordination.
  *
  * Responsibilities (delegated to composed classes):
  * - Chord progression tracking → ChordProgressionTracker
  * - Note registration and collision detection → TrackCollisionDetector
- * - Safe pitch resolution → SafePitchResolver
  */
 class HarmonyContext : public IHarmonyContext {
  public:
@@ -106,13 +103,9 @@ class HarmonyContext : public IHarmonyContext {
   /// Access the collision detector directly.
   const TrackCollisionDetector& collisionDetector() const { return collision_detector_; }
 
-  /// Access the safe pitch resolver directly.
-  const SafePitchResolver& pitchResolver() const { return pitch_resolver_; }
-
  private:
   ChordProgressionTracker chord_tracker_;
   TrackCollisionDetector collision_detector_;
-  SafePitchResolver pitch_resolver_;
 };
 
 }  // namespace midisketch

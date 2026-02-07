@@ -193,6 +193,11 @@ class MidiSketch {
   uint8_t resolvedBlueprintId() const { return generator_.resolvedBlueprintId(); }
 
  private:
+  /// @brief Rebuild MIDI from current generator state (legacy params only).
+  void rebuildMidi();
+  /// @brief Rebuild MIDI from current generator state with SongConfig metadata.
+  void rebuildMidi(const SongConfig& config);
+
   Generator generator_;
   MidiWriter midi_writer_;
   MidiFormat midi_format_ = kDefaultMidiFormat;

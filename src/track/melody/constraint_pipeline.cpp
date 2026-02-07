@@ -17,9 +17,10 @@ namespace midisketch {
 namespace melody {
 
 float calculateGateRatio(const GateContext& ctx) {
-  // Phrase ending: breath preparation (85%)
+  // Phrase ending: breath preparation
+  // Short notes (< quarter) get gentler gate to avoid excessive truncation
   if (ctx.is_phrase_end) {
-    return 0.85f;
+    return (ctx.note_duration < TICK_QUARTER) ? 0.92f : 0.85f;
   }
 
   // Phrase start: clear attack, no gate
@@ -33,20 +34,21 @@ float calculateGateRatio(const GateContext& ctx) {
   }
 
   // Interior notes: gate based on interval
+  // Vocal principle: stepwise motion should be fully legato for singability
   int interval = std::abs(ctx.interval_from_prev);
 
   if (interval == 0) {
     // Same pitch: legato connection (100%)
     return 1.0f;
   } else if (interval <= 2) {
-    // Step motion (1-2 semitones): smooth legato (98%)
-    return 0.98f;
+    // Step motion (1-2 semitones): full legato for smooth vocal line
+    return 1.0f;
   } else if (interval <= 5) {
-    // Skip (3-5 semitones): slight articulation (95%)
-    return 0.95f;
+    // Skip (3-5 semitones): near-legato with minimal gap
+    return 0.98f;
   } else {
-    // Leap (6+ semitones): preparation time needed (92%)
-    return 0.92f;
+    // Leap (6+ semitones): slight articulation for breath preparation
+    return 0.95f;
   }
 }
 

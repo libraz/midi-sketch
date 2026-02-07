@@ -14,8 +14,6 @@ export interface EmscriptenModule {
     argTypes: string[],
   ) => (...args: unknown[]) => unknown;
   UTF8ToString: (ptr: number) => string;
-  _malloc: (size: number) => number;
-  _free: (ptr: number) => void;
   HEAPU8: Uint8Array;
   HEAPU32: Uint32Array;
 }
@@ -54,7 +52,6 @@ export interface Api {
   getPianoRollSafetyWithContext: (handle: number, tick: number, prevPitch: number) => number;
   freePianoRollData: (ptr: number) => void;
   reasonToString: (reason: number) => string;
-  collisionToString: (collisionPtr: number) => string;
   // JSON Config API
   generateFromJson: (handle: number, json: string, length: number) => number;
   createDefaultConfigJson: (styleId: number) => string;
@@ -103,14 +100,6 @@ export function getApi(): Api {
     throw new Error('Module not initialized. Call init() first.');
   }
   return api;
-}
-
-/**
- * Check if module is initialized
- * @internal
- */
-export function isInitialized(): boolean {
-  return moduleInstance !== null && api !== null;
 }
 
 // ============================================================================
@@ -214,9 +203,6 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
     ) => void,
     reasonToString: m.cwrap('midisketch_reason_to_string', 'string', ['number']) as (
       reason: number,
-    ) => string,
-    collisionToString: m.cwrap('midisketch_collision_to_string', 'string', ['number']) as (
-      collisionPtr: number,
     ) => string,
     // JSON Config API
     generateFromJson: m.cwrap('midisketch_generate_from_json', 'number', [

@@ -51,7 +51,7 @@ TEST_F(BassWithVocalTest, GeneratesBassTrack) {
   MidiTrack bass_track;
   std::mt19937 rng(params_.seed);
   HarmonyContext harmony;
-  generateBassTrackWithVocal(bass_track, gen.getSong(), params_, rng, va, harmony);
+  generateBassTrack(bass_track, gen.getSong(), params_, rng, harmony, nullptr, &va);
 
   EXPECT_FALSE(bass_track.empty()) << "Bass track should be generated";
   EXPECT_GT(bass_track.noteCount(), 0u) << "Bass track should have notes";
@@ -66,7 +66,7 @@ TEST_F(BassWithVocalTest, BassNotesInValidRange) {
   MidiTrack bass_track;
   std::mt19937 rng(params_.seed);
   HarmonyContext harmony;
-  generateBassTrackWithVocal(bass_track, gen.getSong(), params_, rng, va, harmony);
+  generateBassTrack(bass_track, gen.getSong(), params_, rng, harmony, nullptr, &va);
 
   for (const auto& note : bass_track.notes()) {
     EXPECT_GE(note.note, 24) << "Bass note too low: " << static_cast<int>(note.note);
@@ -84,13 +84,13 @@ TEST_F(BassWithVocalTest, DeterministicGeneration) {
   MidiTrack bass1;
   std::mt19937 rng1(params_.seed);
   HarmonyContext harmony1;
-  generateBassTrackWithVocal(bass1, gen.getSong(), params_, rng1, va, harmony1);
+  generateBassTrack(bass1, gen.getSong(), params_, rng1, harmony1, nullptr, &va);
 
   // Second generation with same seed
   MidiTrack bass2;
   std::mt19937 rng2(params_.seed);
   HarmonyContext harmony2;
-  generateBassTrackWithVocal(bass2, gen.getSong(), params_, rng2, va, harmony2);
+  generateBassTrack(bass2, gen.getSong(), params_, rng2, harmony2, nullptr, &va);
 
   ASSERT_EQ(bass1.noteCount(), bass2.noteCount());
   for (size_t i = 0; i < bass1.noteCount(); ++i) {
@@ -110,7 +110,7 @@ TEST_F(BassWithVocalTest, MaintainsOctaveSeparation) {
   MidiTrack bass_track;
   std::mt19937 rng(params_.seed);
   HarmonyContext harmony;
-  generateBassTrackWithVocal(bass_track, gen.getSong(), params_, rng, va, harmony);
+  generateBassTrack(bass_track, gen.getSong(), params_, rng, harmony, nullptr, &va);
 
   // Check that bass and vocal don't have same pitch class within 2 octaves
   // when sounding at the same time
@@ -165,7 +165,7 @@ TEST_F(BassWithVocalTest, AdaptsToDenseVocal) {
   MidiTrack bass_track;
   std::mt19937 rng(params_.seed);
   HarmonyContext harmony;
-  generateBassTrackWithVocal(bass_track, gen.getSong(), params_, rng, va, harmony);
+  generateBassTrack(bass_track, gen.getSong(), params_, rng, harmony, nullptr, &va);
 
   // Just verify bass was generated successfully
   EXPECT_FALSE(bass_track.empty());
@@ -184,7 +184,7 @@ TEST_F(BassWithVocalTest, AdaptsToSparseVocal) {
   MidiTrack bass_track;
   std::mt19937 rng(params_.seed);
   HarmonyContext harmony;
-  generateBassTrackWithVocal(bass_track, gen.getSong(), params_, rng, va, harmony);
+  generateBassTrack(bass_track, gen.getSong(), params_, rng, harmony, nullptr, &va);
 
   EXPECT_FALSE(bass_track.empty());
 }
@@ -208,7 +208,7 @@ TEST_F(BassWithVocalTest, WorksWithDifferentMoods) {
     MidiTrack bass_track;
     std::mt19937 rng(params_.seed);
     HarmonyContext harmony;
-    generateBassTrackWithVocal(bass_track, gen.getSong(), params_, rng, va, harmony);
+    generateBassTrack(bass_track, gen.getSong(), params_, rng, harmony, nullptr, &va);
 
     EXPECT_FALSE(bass_track.empty())
         << "Bass should be generated for mood " << static_cast<int>(mood);
@@ -234,7 +234,7 @@ TEST_F(BassWithVocalTest, WorksWithDifferentStructures) {
     MidiTrack bass_track;
     std::mt19937 rng(params_.seed);
     HarmonyContext harmony;
-    generateBassTrackWithVocal(bass_track, gen.getSong(), params_, rng, va, harmony);
+    generateBassTrack(bass_track, gen.getSong(), params_, rng, harmony, nullptr, &va);
 
     EXPECT_FALSE(bass_track.empty())
         << "Bass should be generated for structure " << static_cast<int>(structure);
@@ -258,7 +258,7 @@ TEST_F(BassWithVocalTest, HandlesEmptyVocalAnalysis) {
   MidiTrack bass_track;
   std::mt19937 rng(params_.seed);
   HarmonyContext harmony;
-  generateBassTrackWithVocal(bass_track, gen.getSong(), params_, rng, empty_va, harmony);
+  generateBassTrack(bass_track, gen.getSong(), params_, rng, harmony, nullptr, &empty_va);
 
   // Bass should be generated (uses default patterns when vocal is empty)
   EXPECT_FALSE(bass_track.empty());

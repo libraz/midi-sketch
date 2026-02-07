@@ -96,14 +96,6 @@ class MidiValidator {
   bool validateSMF1Track(const uint8_t* data, size_t size, int track_index,
                          MidiValidationReport& report, ValidatedTrack& track_info) const;
 
-  // Helper: read variable-length quantity
-  static bool readVariableLength(const uint8_t* data, size_t& offset, size_t max_size,
-                                 uint32_t& value);
-
-  // Helper: read big-endian integers
-  static uint16_t readUint16BE(const uint8_t* data);
-  static uint32_t readUint32BE(const uint8_t* data);
-
   // Helper: add issue to report
   static void addError(MidiValidationReport& report, const std::string& msg, size_t offset = 0,
                        int track = -1);

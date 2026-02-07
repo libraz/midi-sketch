@@ -135,6 +135,21 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
           static_cast<uint8_t>((current_bar * 4) / ctx.section_bars);
       if (phrase_ctx.sub_phrase_index > 3) phrase_ctx.sub_phrase_index = 3;
 
+      // Diversify chorus contour per sub-phrase for melodic variety
+      // Instead of Peak for every chorus phrase, cycle through contour types:
+      //   0 (Presentation): Peak   — arch shape introduces the hook
+      //   1 (Development):  Valley — call & response contrast
+      //   2 (Climax):       Peak   — arch returns for emotional peak
+      //   3 (Resolution):   Descending — converge toward section end
+      if (phrase_ctx.section_type == SectionType::Chorus &&
+          phrase_ctx.forced_contour.has_value() &&
+          *phrase_ctx.forced_contour == ContourType::Peak) {
+        constexpr ContourType kChorusContours[] = {
+            ContourType::Peak, ContourType::Valley,
+            ContourType::Peak, ContourType::Descending};
+        phrase_ctx.forced_contour = kChorusContours[phrase_ctx.sub_phrase_index];
+      }
+
       // Modulate density by arc stage
       // Presentation=1.0x, Development=1.15x, Climax=1.0x, Resolution=0.85x
       constexpr float kArcDensityMultipliers[] = {1.0f, 1.15f, 1.0f, 0.85f};
@@ -1064,6 +1079,32 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
                                                   note.note);
   }
 
+  // Absorb short final note into previous note when chord-boundary clipping
+  // creates a very short phrase ending (< quarter note). A 230t fragment at
+  // phrase end sounds choppy; extending the previous note is more singable.
+  if (result.notes.size() >= 2) {
+    auto& last = result.notes.back();
+    if (last.duration < TICK_QUARTER) {
+      auto& prev = result.notes[result.notes.size() - 2];
+      Tick target_end = last.start_tick + last.duration;
+      Tick extended_dur = target_end - prev.start_tick;
+      // Verify the extension is safe at chord boundaries for the previous note's pitch
+      Tick safe_dur = melody::clampToChordBoundary(prev.start_tick, extended_dur, harmony,
+                                                    prev.note);
+      if (safe_dur > prev.duration) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        Tick old_dur = prev.duration;
+        prev.addTransformStep(TransformStepType::ChordBoundaryClip,
+                              static_cast<uint8_t>(old_dur >> 8),
+                              static_cast<uint8_t>(safe_dur >> 8), 0, 0);
+#endif
+        prev.duration = safe_dur;
+        result.notes.pop_back();
+        current_pitch = result.notes.back().note;
+      }
+    }
+  }
+
   result.last_pitch = current_pitch;
   return result;
 }
@@ -1436,6 +1477,30 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
     }
     hook_cache_.pitches_cached = true;
     hook_cache_.rhythm_cached = true;
+  }
+
+  // Absorb short final note into previous note when chord-boundary clipping
+  // or gate ratio creates a very short hook ending (< quarter note).
+  if (result.notes.size() >= 2) {
+    auto& last = result.notes.back();
+    if (last.duration < TICK_QUARTER) {
+      auto& prev = result.notes[result.notes.size() - 2];
+      Tick target_end = last.start_tick + last.duration;
+      Tick extended_dur = target_end - prev.start_tick;
+      Tick safe_dur = melody::clampToChordBoundary(prev.start_tick, extended_dur, harmony,
+                                                    prev.note);
+      if (safe_dur > prev.duration) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        Tick old_dur = prev.duration;
+        prev.addTransformStep(TransformStepType::ChordBoundaryClip,
+                              static_cast<uint8_t>(old_dur >> 8),
+                              static_cast<uint8_t>(safe_dur >> 8), 0, 0);
+#endif
+        prev.duration = safe_dur;
+        result.notes.pop_back();
+        prev_hook_pitch = result.notes.back().note;
+      }
+    }
   }
 
   // Return last pitch for smooth transition to next phrase

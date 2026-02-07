@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+#include "midi/byte_order.h"
+
 namespace midisketch {
 namespace ump {
 
@@ -42,11 +44,15 @@ enum class StreamStatus : uint8_t {
   DCTPQ = 0x00  // Delta Clockstamp Ticks Per Quarter (format=0x00)
 };
 
-// Write 32-bit word in big-endian to buffer
-void writeUint32BE(std::vector<uint8_t>& buf, uint32_t value);
+// Write 32-bit word in big-endian to buffer (delegates to midisketch::writeUint32BE)
+inline void writeUint32BE(std::vector<uint8_t>& buf, uint32_t value) {
+  midisketch::writeUint32BE(buf, value);
+}
 
-// Write 16-bit word in big-endian to buffer
-void writeUint16BE(std::vector<uint8_t>& buf, uint16_t value);
+// Write 16-bit word in big-endian to buffer (delegates to midisketch::writeUint16BE)
+inline void writeUint16BE(std::vector<uint8_t>& buf, uint16_t value) {
+  midisketch::writeUint16BE(buf, value);
+}
 
 // Build MIDI 1.0 Channel Voice Note On message (32-bit UMP)
 // Returns: [MT=2][Group][Status=9][Channel][Note][Velocity]

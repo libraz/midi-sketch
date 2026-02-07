@@ -1148,13 +1148,6 @@ static std::vector<NoteEvent> generateLockedRhythmWithEvaluation(
   return std::move(candidates[0].first);
 }
 
-void VocalGenerator::generateSection(MidiTrack& /* track */, const Section& /* section */,
-                                      TrackContext& /* ctx */) {
-  // VocalGenerator uses generateFullTrack() for section-spanning logic
-  // (phrases, hooks, etc. cross section boundaries)
-  // This method is kept for ITrackBase compliance but not used directly.
-}
-
 void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   if (!ctx.isValid()) {
     return;
@@ -1164,7 +1157,7 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
   const GeneratorParams& params = *ctx.params;
   std::mt19937& rng = *ctx.rng;
   IHarmonyContext& harmony = *ctx.harmony;
-  const DrumGrid* drum_grid = static_cast<const DrumGrid*>(ctx.drum_grid);
+  const DrumGrid* drum_grid = ctx.drum_grid;
   bool skip_collision_avoidance = ctx.skip_collision_avoidance;
 
   // Calculate effective vocal range (extracted helper)
@@ -1425,7 +1418,7 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
       if (use_rhythm_lock) {
         // RhythmSync paradigm: extract rhythm from Motif track (coordinate axis)
         // Try ctx.motif_track first (from Coordinator), then fall back to motif_track_ member
-        const MidiTrack* motif_ref = static_cast<const MidiTrack*>(ctx.motif_track);
+        const MidiTrack* motif_ref = ctx.motif_track;
         if (motif_ref == nullptr) {
           motif_ref = motif_track_;
         }

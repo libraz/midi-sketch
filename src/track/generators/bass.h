@@ -119,14 +119,11 @@ enum class BassPattern : uint8_t {
 
 /// Generate bass track with pattern selection based on section type.
 /// @param kick_cache Optional pre-computed kick positions for Bass-Kick sync (can be nullptr)
+/// @param vocal_analysis Optional vocal analysis for motion-aware generation (can be nullptr)
 void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,
                        std::mt19937& rng, IHarmonyContext& harmony,
-                       const KickPatternCache* kick_cache = nullptr);
-
-/// Generate bass adapted to vocal (motion type, density reciprocity, doubling avoidance).
-void generateBassTrackWithVocal(MidiTrack& track, const Song& song, const GeneratorParams& params,
-                                std::mt19937& rng, const VocalAnalysis& vocal_analysis,
-                                IHarmonyContext& harmony);
+                       const KickPatternCache* kick_cache = nullptr,
+                       const VocalAnalysis* vocal_analysis = nullptr);
 
 // ============================================================================
 // Bass Articulation Post-Processing (Task 4-2, 4-3)
@@ -180,9 +177,6 @@ class BassGenerator : public TrackBase {
   TrackPriority getDefaultPriority() const override { return TrackPriority::Low; }
 
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kElectricBass; }
-
-  void generateSection(MidiTrack& track, const Section& section,
-                       TrackContext& ctx) override;
 
   /// @brief Generate full bass track using FullTrackContext.
   void generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;

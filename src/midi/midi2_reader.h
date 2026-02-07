@@ -72,8 +72,6 @@ class Midi2Reader {
   bool parseContainer(const uint8_t* data, size_t size);
   bool parseClip(const uint8_t* data, size_t size);
   void parseUmpMessages(const uint8_t* data, size_t size, size_t offset);
-  void extractMetadataFromSysEx8(const uint8_t* data, size_t len);
-
   ParsedMidi2 midi_;
   std::string error_;
 };

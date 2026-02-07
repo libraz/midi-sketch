@@ -9,19 +9,10 @@
 #include <fstream>
 
 #include "core/timing_constants.h"
+#include "midi/byte_order.h"
 #include "midi/midi2_format.h"
 
 namespace midisketch {
-
-namespace {
-
-// Read big-endian uint32
-uint32_t readUint32BE(const uint8_t* data) {
-  return (static_cast<uint32_t>(data[0]) << 24) | (static_cast<uint32_t>(data[1]) << 16) |
-         (static_cast<uint32_t>(data[2]) << 8) | data[3];
-}
-
-}  // namespace
 
 bool Midi2Reader::isMidi2Format(const uint8_t* data, size_t size) {
   if (size >= kContainerMagicLen && std::memcmp(data, kContainerMagic, kContainerMagicLen) == 0) {
@@ -218,16 +209,6 @@ void Midi2Reader::parseUmpMessages(const uint8_t* data, size_t size, size_t offs
         midi_.metadata = text_buffer.substr(json_start, json_end - json_start);
       }
     }
-  }
-}
-
-void Midi2Reader::extractMetadataFromSysEx8(const uint8_t* data, size_t len) {
-  // Look for MIDISKETCH: prefix
-  const std::string prefix = "MIDISKETCH:";
-  std::string text(reinterpret_cast<const char*>(data), len);
-
-  if (text.compare(0, prefix.size(), prefix) == 0) {
-    midi_.metadata = text.substr(prefix.size());
   }
 }
 

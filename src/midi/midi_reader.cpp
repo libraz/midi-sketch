@@ -12,21 +12,11 @@
 #include <map>
 
 #include "core/timing_constants.h"
+#include "midi/byte_order.h"
 
 namespace midisketch {
 
 namespace {
-
-// Helper to read big-endian uint16
-uint16_t readUint16BE(const uint8_t* data) {
-  return (static_cast<uint16_t>(data[0]) << 8) | data[1];
-}
-
-// Helper to read big-endian uint32
-uint32_t readUint32BE(const uint8_t* data) {
-  return (static_cast<uint32_t>(data[0]) << 24) | (static_cast<uint32_t>(data[1]) << 16) |
-         (static_cast<uint32_t>(data[2]) << 8) | data[3];
-}
 
 // Case-insensitive string compare
 bool iequals(const std::string& a, const std::string& b) {
@@ -151,17 +141,7 @@ bool MidiReader::read(const std::vector<uint8_t>& data) {
 
 uint32_t MidiReader::readVariableLength(const uint8_t* data, size_t& offset, size_t max_size) {
   uint32_t result = 0;
-  uint8_t byte;
-  int count = 0;
-
-  // MIDI VLQ allows maximum 4 bytes (28 bits of data)
-  do {
-    if (offset >= max_size || count >= 4) return result;
-    byte = data[offset++];
-    result = (result << 7) | (byte & 0x7F);
-    count++;
-  } while (byte & 0x80);
-
+  midisketch::readVariableLength(data, offset, max_size, result);
   return result;
 }
 

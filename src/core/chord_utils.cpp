@@ -57,20 +57,6 @@ std::vector<int> getChordTonePitchClasses(int8_t degree) {
   return result;
 }
 
-bool isScaleTone(int pitch_class, uint8_t key) {
-  // Normalize pitch class
-  int normalized_pc = ((pitch_class % 12) + 12) % 12;
-
-  // Check each scale degree (SCALE is defined in pitch_utils.h)
-  for (int interval : SCALE) {
-    int scale_pc = (key + interval) % 12;
-    if (normalized_pc == scale_pc) {
-      return true;
-    }
-  }
-  return false;
-}
-
 std::vector<int> getScalePitchClasses(uint8_t key) {
   std::vector<int> result;
   result.reserve(7);

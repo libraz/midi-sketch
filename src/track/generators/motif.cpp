@@ -16,6 +16,7 @@
 #include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
+#include "core/pitch_monotony_tracker.h"
 #include "core/motif.h"
 #include "core/motif_types.h"
 #include "core/note_creator.h"
@@ -51,111 +52,8 @@ namespace motif_detail {
 // Scale interval arrays and getScaleIntervals() are now in pitch_utils.h.
 
 // =============================================================================
-// Pitch Monotony Tracking
+// Pitch Monotony Tracking - uses shared PitchMonotonyTracker from core/
 // =============================================================================
-
-/// Maximum consecutive same pitches before forcing variation (3 = allow max 3, vary on 4th)
-constexpr int kMaxConsecutiveSamePitch = 3;
-
-/// @brief Track consecutive same pitches and suggest variation when threshold exceeded.
-///
-/// Prevents monotonous runs of the same note (e.g., 5+ consecutive G4).
-/// Uses chord tones for alternatives to avoid collision avoidance loops.
-struct MotifPitchMonotonyTracker {
-  uint8_t last_pitch = 0;
-  int consecutive_count = 0;
-
-  /// @brief Record a pitch and return suggested pitch (may differ if monotony detected).
-  /// @param desired Original desired pitch
-  /// @param motif_low Lower bound of motif range
-  /// @param motif_high Upper bound of motif range
-  /// @param chord_degree Current chord degree (-1 to use simple step logic)
-  /// @return Suggested pitch (may be different if monotony threshold exceeded)
-  uint8_t trackAndSuggest(uint8_t desired, uint8_t motif_low, uint8_t motif_high,
-                          int8_t chord_degree = -1) {
-    if (desired == last_pitch) {
-      consecutive_count++;
-    } else {
-      consecutive_count = 1;
-      last_pitch = desired;
-    }
-
-    // If we've hit the monotony threshold, suggest an alternative
-    if (consecutive_count > kMaxConsecutiveSamePitch) {
-      // Use chord tones to select alternatives (avoids collision avoidance loops)
-      if (chord_degree >= 0) {
-        ChordToneHelper helper(chord_degree);
-        auto chord_tones = helper.allInRange(motif_low, motif_high);
-
-        // Find chord tones that differ from current pitch
-        // Prefer alternatives within a reasonable interval (octave or less)
-        std::vector<uint8_t> alternatives;
-        std::vector<uint8_t> close_alternatives;  // Within 12 semitones
-        for (uint8_t ct : chord_tones) {
-          // Skip same pitch class (octave doubling won't help monotony)
-          if ((ct % 12) != (desired % 12)) {
-            alternatives.push_back(ct);
-            int dist = std::abs(static_cast<int>(ct) - static_cast<int>(desired));
-            if (dist <= 12) {
-              close_alternatives.push_back(ct);
-            }
-          }
-        }
-
-        // Prefer close alternatives to avoid large leaps
-        const auto& candidates = close_alternatives.empty() ? alternatives : close_alternatives;
-
-        // Select closest alternative that isn't the same pitch
-        if (!candidates.empty()) {
-          uint8_t best = candidates[0];
-          int best_dist = std::abs(static_cast<int>(best) - static_cast<int>(desired));
-          for (uint8_t alt : candidates) {
-            int dist = std::abs(static_cast<int>(alt) - static_cast<int>(desired));
-            if (dist < best_dist) {
-              best_dist = dist;
-              best = alt;
-            }
-          }
-          last_pitch = best;
-          consecutive_count = 1;
-          return last_pitch;
-        }
-      }
-
-      // Fallback: try step up (scale-wise, +2 semitones for whole step)
-      if (desired + 2 <= motif_high) {
-        last_pitch = desired + 2;
-        consecutive_count = 1;
-        return last_pitch;
-      }
-      // Try step down
-      if (desired >= motif_low + 2) {
-        last_pitch = desired - 2;
-        consecutive_count = 1;
-        return last_pitch;
-      }
-      // Try octave shift
-      if (desired + 12 <= motif_high) {
-        last_pitch = desired + 12;
-        consecutive_count = 1;
-        return last_pitch;
-      }
-      if (desired >= motif_low + 12) {
-        last_pitch = desired - 12;
-        consecutive_count = 1;
-        return last_pitch;
-      }
-    }
-
-    return desired;
-  }
-
-  /// Reset tracker state
-  void reset() {
-    last_pitch = 0;
-    consecutive_count = 0;
-  }
-};
 
 // =============================================================================
 // RhythmSync Motif Rhythm Template System
@@ -603,12 +501,6 @@ int applyContraryMotion(int pitch, int8_t vocal_direction, float strength, std::
 // MotifGenerator Implementation
 // =============================================================================
 
-void MotifGenerator::generateSection(MidiTrack& /* track */, const Section& /* section */,
-                                      TrackContext& /* ctx */) {
-  // MotifGenerator uses generateFullTrack() for pattern repetition across sections
-  // This method is kept for ITrackBase compliance but not used directly.
-}
-
 std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::mt19937& rng) {
   const MotifParams& motif_params = params.motif;
   std::vector<NoteEvent> pattern;
@@ -861,7 +753,7 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
   const auto& params = *ctx.params;
   std::mt19937& rng = *ctx.rng;
   IHarmonyCoordinator* harmony = ctx.harmony;
-  const MotifContext* vocal_ctx = static_cast<const MotifContext*>(ctx.vocal_ctx);
+  const MotifContext* vocal_ctx = ctx.vocal_ctx;
 
   // L1: Generate base motif pattern
   std::vector<NoteEvent> pattern = generateMotifPattern(params, rng);
@@ -907,7 +799,7 @@ void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
   size_t sec_idx = 0;
 
   // Monotony tracker for consecutive same pitch avoidance
-  motif_detail::MotifPitchMonotonyTracker monotony_tracker;
+  PitchMonotonyTracker monotony_tracker;
 
   // Check if this is RhythmLock mode (coordinate axis)
   RiffPolicy policy = params.riff_policy;

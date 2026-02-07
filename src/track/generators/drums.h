@@ -38,9 +38,6 @@ class DrumsGenerator : public TrackBase {
     return PhysicalModel{0, 127, 1, 127, 30, false, 0};
   }
 
-  void generateSection(MidiTrack& track, const Section& section,
-                       TrackContext& ctx) override;
-
   /// @brief Generate full drums track using FullTrackContext.
   void generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 

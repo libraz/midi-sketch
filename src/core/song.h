@@ -53,6 +53,16 @@ class Song {
   /// @{
   std::array<MidiTrack, kTrackCount>& tracks() { return tracks_; }
   const std::array<MidiTrack, kTrackCount>& tracks() const { return tracks_; }
+
+  /// @brief Count non-empty tracks (excluding SE which is always included).
+  uint16_t countNonEmptyTracks() const {
+    uint16_t count = 0;
+    for (size_t idx = 0; idx < kTrackCount; ++idx) {
+      if (static_cast<TrackRole>(idx) == TrackRole::SE) continue;
+      if (!tracks_[idx].empty()) ++count;
+    }
+    return count;
+  }
   /// @}
 
   /// @name Track Management

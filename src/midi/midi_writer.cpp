@@ -18,7 +18,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <fstream>
 
 namespace midisketch {
 
@@ -144,12 +143,7 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uin
   for (const auto& note : track.notes()) {
     uint8_t pitch = note.note;
     if (channel != 9) {  // Not drums
-      pitch = transposePitch(pitch, key);
-      // Apply modulation if note starts after modulation point
-      if (mod_tick > 0 && note.start_tick >= mod_tick && mod_amount != 0) {
-        int new_pitch = pitch + mod_amount;
-        pitch = static_cast<uint8_t>(std::clamp(new_pitch, 0, 127));
-      }
+      pitch = transposeAndModulate(pitch, key, note.start_tick, mod_tick, mod_amount);
     }
     events.push_back({note.start_tick, 0x90, pitch, note.velocity});
     events.push_back({note.start_tick + note.duration, 0x80, pitch, 0});
@@ -359,16 +353,8 @@ void MidiWriter::buildSMF1(const Song& song, Key key, Mood mood, const std::stri
   // Get mood-specific program numbers
   const MoodProgramSet& progs = getMoodPrograms(mood);
 
-  // Count non-empty tracks (SE track always included)
-  uint16_t num_tracks = 1;  // SE track
-  if (!song.vocal().empty()) num_tracks++;
-  if (!song.chord().empty()) num_tracks++;
-  if (!song.bass().empty()) num_tracks++;
-  if (!song.drums().empty()) num_tracks++;
-  if (!song.motif().empty()) num_tracks++;
-  if (!song.arpeggio().empty()) num_tracks++;
-  if (!song.aux().empty()) num_tracks++;
-  if (!song.guitar().empty()) num_tracks++;
+  // Count non-empty tracks (SE track always included as marker track)
+  uint16_t num_tracks = song.countNonEmptyTracks() + 1;  // +1 for SE marker track
 
   writeHeader(num_tracks, TICKS_PER_BEAT);
 
@@ -417,15 +403,6 @@ void MidiWriter::buildSMF1(const Song& song, Key key, Mood mood, const std::stri
 }
 
 std::vector<uint8_t> MidiWriter::toBytes() const { return data_; }
-
-bool MidiWriter::writeToFile(const std::string& path) const {
-  std::ofstream file(path, std::ios::binary);
-  if (!file) return false;
-
-  file.write(reinterpret_cast<const char*>(data_.data()),
-             static_cast<std::streamsize>(data_.size()));
-  return file.good();
-}
 
 void MidiWriter::buildVocalPreview(const Song& song, const IHarmonyContext& harmony, Key key) {
   data_.clear();

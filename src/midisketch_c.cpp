@@ -14,6 +14,7 @@
 #include "core/chord.h"
 #include "core/chord_utils.h"
 #include "core/piano_roll_safety.h"
+#include "core/pitch_utils.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
 #include "core/structure.h"
@@ -210,7 +211,7 @@ MidiSketchInfo midisketch_get_info(MidiSketchHandle handle) {
   info.total_bars = song.arrangement().totalBars();
   info.total_ticks = song.arrangement().totalTicks();
   info.bpm = song.bpm();
-  info.track_count = 8;  // Vocal, Chord, Bass, Drums, SE, Motif, Arpeggio, Aux, Guitar
+  info.track_count = 9;  // Vocal, Chord, Bass, Drums, SE, Motif, Arpeggio, Aux, Guitar
 
   return info;
 }
@@ -430,6 +431,23 @@ MidiSketchConfigError mapConfigError(midisketch::SongConfigError error) {
 // Static buffer for JSON config output
 std::string s_json_config_buffer;
 
+/// Parse JSON config and validate. Returns nullptr on error (sets error codes).
+midisketch::MidiSketch* parseAndValidateConfig(MidiSketchHandle handle, const char* config_json,
+                                                size_t json_length, midisketch::SongConfig& out) {
+  g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
+
+  midisketch::json::Parser p(std::string(config_json, json_length));
+  out.readFrom(p);
+
+  auto validation = midisketch::validateSongConfig(out);
+  if (validation != midisketch::SongConfigError::OK) {
+    g_last_config_errors[handle] = mapConfigError(validation);
+    return nullptr;
+  }
+
+  return static_cast<midisketch::MidiSketch*>(handle);
+}
+
 }  // namespace
 
 MidiSketchError midisketch_generate_from_json(MidiSketchHandle handle, const char* config_json,
@@ -438,19 +456,10 @@ MidiSketchError midisketch_generate_from_json(MidiSketchHandle handle, const cha
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
-
-  midisketch::json::Parser p(std::string(config_json, json_length));
   midisketch::SongConfig config;
-  config.readFrom(p);
+  auto* sketch = parseAndValidateConfig(handle, config_json, json_length, config);
+  if (!sketch) return MIDISKETCH_ERROR_INVALID_PARAM;
 
-  auto validation = midisketch::validateSongConfig(config);
-  if (validation != midisketch::SongConfigError::OK) {
-    g_last_config_errors[handle] = mapConfigError(validation);
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
   sketch->generateFromConfig(config);
   return MIDISKETCH_OK;
 }
@@ -486,19 +495,10 @@ MidiSketchError midisketch_generate_vocal_from_json(MidiSketchHandle handle,
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
-
-  midisketch::json::Parser p(std::string(config_json, json_length));
   midisketch::SongConfig config;
-  config.readFrom(p);
+  auto* sketch = parseAndValidateConfig(handle, config_json, json_length, config);
+  if (!sketch) return MIDISKETCH_ERROR_INVALID_PARAM;
 
-  auto validation = midisketch::validateSongConfig(config);
-  if (validation != midisketch::SongConfigError::OK) {
-    g_last_config_errors[handle] = mapConfigError(validation);
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
   sketch->generateVocal(config);
   return MIDISKETCH_OK;
 }
@@ -510,19 +510,10 @@ MidiSketchError midisketch_generate_with_vocal_from_json(MidiSketchHandle handle
     return MIDISKETCH_ERROR_INVALID_PARAM;
   }
 
-  g_last_config_errors[handle] = MIDISKETCH_CONFIG_OK;
-
-  midisketch::json::Parser p(std::string(config_json, json_length));
   midisketch::SongConfig config;
-  config.readFrom(p);
+  auto* sketch = parseAndValidateConfig(handle, config_json, json_length, config);
+  if (!sketch) return MIDISKETCH_ERROR_INVALID_PARAM;
 
-  auto validation = midisketch::validateSongConfig(config);
-  if (validation != midisketch::SongConfigError::OK) {
-    g_last_config_errors[handle] = mapConfigError(validation);
-    return MIDISKETCH_ERROR_INVALID_PARAM;
-  }
-
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
   sketch->generateWithVocal(config);
   return MIDISKETCH_OK;
 }
@@ -672,9 +663,6 @@ bool containsPitchClass(const std::vector<int>& vec, int value) {
 
 // Static buffer for single-tick queries
 MidiSketchPianoRollInfo s_single_info;
-
-// Note name lookup table
-const char* NOTE_NAMES[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 
 // Track name lookup
 const char* TRACK_NAMES[] = {"Vocal", "Chord", "Bass", "Drums", "SE", "Motif", "Arpeggio", "Aux", "Guitar"};
@@ -919,7 +907,7 @@ const char* midisketch_collision_to_string(const MidiSketchCollisionInfo* collis
   }
 
   int octave = collision->colliding_pitch / 12 - 1;
-  const char* note_name = NOTE_NAMES[collision->colliding_pitch % 12];
+  const char* note_name = midisketch::NOTE_NAMES[collision->colliding_pitch % 12];
 
   const char* interval_name = (collision->interval_semitones == 1)    ? "minor 2nd"
                               : (collision->interval_semitones == 6)  ? "tritone"

@@ -18,86 +18,16 @@
 
 #include "core/generator.h"
 #include "core/i_harmony_context.h"
-#include "core/pitch_utils.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
+#include "test_support/clash_analysis_helper.h"
 
 namespace midisketch {
 namespace {
 
-// Maximum allowed register separation for clash detection (2 octaves)
-constexpr int MAX_CLASH_SEPARATION = 24;
-
-struct ClashInfo {
-  std::string track_a;
-  std::string track_b;
-  uint8_t pitch_a;
-  uint8_t pitch_b;
-  Tick tick;
-  int interval;
-};
-
-// Find all dissonant clashes between two tracks using chord context
-std::vector<ClashInfo> findClashes(const MidiTrack& track_a, const std::string& name_a,
-                                   const MidiTrack& track_b, const std::string& name_b,
-                                   const IHarmonyContext& harmony) {
-  std::vector<ClashInfo> clashes;
-
-  for (const auto& note_a : track_a.notes()) {
-    Tick start_a = note_a.start_tick;
-    Tick end_a = start_a + note_a.duration;
-
-    for (const auto& note_b : track_b.notes()) {
-      Tick start_b = note_b.start_tick;
-      Tick end_b = start_b + note_b.duration;
-
-      // Check temporal overlap
-      bool overlap = (start_a < end_b) && (start_b < end_a);
-      if (!overlap) continue;
-
-      // Calculate actual interval
-      int actual_interval = std::abs(static_cast<int>(note_a.note) - static_cast<int>(note_b.note));
-
-      // Skip wide separations (perceptually not clashing)
-      if (actual_interval >= MAX_CLASH_SEPARATION) continue;
-
-      // Check dissonance using unified logic from pitch_utils
-      Tick overlap_tick = std::max(start_a, start_b);
-      int8_t chord_degree = harmony.getChordDegreeAt(overlap_tick);
-
-      if (isDissonantActualInterval(actual_interval, chord_degree)) {
-        clashes.push_back(
-            {name_a, name_b, note_a.note, note_b.note, overlap_tick, actual_interval});
-      }
-    }
-  }
-
-  return clashes;
-}
-
-// Analyze all track pairs in a song for dissonances using chord context
-std::vector<ClashInfo> analyzeAllTrackPairs(const Song& song, const IHarmonyContext& harmony) {
-  std::vector<ClashInfo> all_clashes;
-
-  // Get all melodic tracks (skip drums and SE)
-  std::vector<std::pair<const MidiTrack*, std::string>> tracks;
-  if (!song.vocal().empty()) tracks.push_back({&song.vocal(), "Vocal"});
-  if (!song.bass().empty()) tracks.push_back({&song.bass(), "Bass"});
-  if (!song.chord().empty()) tracks.push_back({&song.chord(), "Chord"});
-  if (!song.motif().empty()) tracks.push_back({&song.motif(), "Motif"});
-  if (!song.aux().empty()) tracks.push_back({&song.aux(), "Aux"});
-
-  // Check all unique pairs
-  for (size_t i = 0; i < tracks.size(); ++i) {
-    for (size_t j = i + 1; j < tracks.size(); ++j) {
-      auto clashes = findClashes(*tracks[i].first, tracks[i].second, *tracks[j].first,
-                                 tracks[j].second, harmony);
-      all_clashes.insert(all_clashes.end(), clashes.begin(), clashes.end());
-    }
-  }
-
-  return all_clashes;
-}
+using test::analyzeAllTrackPairs;
+using test::ClashInfo;
+using test::findClashes;
 
 class DiagnosticTest : public ::testing::Test {
  protected:

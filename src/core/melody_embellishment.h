@@ -279,15 +279,6 @@ class MelodicEmbellisher {
    */
   static bool isInPentatonicMode(int pitch_class, int key_offset, PentatonicMode mode);
 
-  /**
-   * @brief Check if a pitch class is a scale tone.
-   *
-   * @param pitch_class Pitch class (0-11)
-   * @param key_offset Key offset from C
-   * @return true if in major scale
-   */
-  static bool isScaleTone(int pitch_class, int key_offset = 0);
-
  private:
   // === NCT Generation Functions ===
 

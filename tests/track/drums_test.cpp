@@ -10,6 +10,7 @@
 #include "core/generator.h"
 #include "core/song.h"
 #include "core/types.h"
+#include "test_support/generator_test_fixture.h"
 
 namespace midisketch {
 namespace {
@@ -25,22 +26,12 @@ constexpr uint8_t TOM_H = 50;  // High Tom
 constexpr uint8_t TOM_M = 47;  // Mid Tom
 constexpr uint8_t TOM_L = 45;  // Low Tom
 
-class DrumsTest : public ::testing::Test {
+class DrumsTest : public test::GeneratorTestFixture {
  protected:
   void SetUp() override {
-    params_.structure = StructurePattern::StandardPop;
-    params_.mood = Mood::ElectroPop;
-    params_.chord_id = 0;
-    params_.key = Key::C;
+    GeneratorTestFixture::SetUp();
     params_.drums_enabled = true;  // Enable drums
-    params_.vocal_low = 60;
-    params_.vocal_high = 84;
-    params_.bpm = 120;
-    params_.seed = 42;
-    params_.arpeggio_enabled = false;
   }
-
-  GeneratorParams params_;
 };
 
 TEST_F(DrumsTest, DrumsTrackGenerated) {

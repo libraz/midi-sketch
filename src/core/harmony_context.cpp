@@ -2,8 +2,8 @@
  * @file harmony_context.cpp
  * @brief Implementation of HarmonyContext facade.
  *
- * Delegates to ChordProgressionTracker, TrackCollisionDetector, and
- * SafePitchResolver for actual functionality.
+ * Delegates to ChordProgressionTracker and TrackCollisionDetector
+ * for actual functionality.
  */
 
 #include "core/harmony_context.h"

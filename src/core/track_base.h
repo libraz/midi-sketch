@@ -23,7 +23,7 @@ namespace midisketch {
 /// - Safe note creation
 /// - Priority coordination
 ///
-/// Subclasses implement generateSection() with track-specific logic.
+/// Subclasses override generateFullTrack() or generateSection() with track-specific logic.
 class TrackBase : public ITrackBase {
  public:
   ~TrackBase() override = default;

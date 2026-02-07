@@ -183,7 +183,7 @@ class TrackCollisionDetector {
   /// Clear notes from a specific track only.
   void clearNotesForTrack(TrackRole track);
 
-  /// Get all registered notes (for SafePitchResolver).
+  /// Get all registered notes.
   const auto& notes() const { return notes_; }
 
   /**

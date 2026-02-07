@@ -278,18 +278,6 @@ void applyAccentPatterns(MidiTrack& track, const std::vector<Section>& sections)
  */
 void clampTrackVelocity(MidiTrack& track, uint8_t max_velocity);
 
-/**
- * @brief Clamp all note pitches to a maximum value.
- *
- * Used to enforce blueprint constraints (e.g., IdolKawaii max_pitch=79/G5).
- * Should be called as the final pitch processing step.
- * Notes exceeding max_pitch are transposed down by octaves until in range.
- *
- * @param track Track to modify (in-place)
- * @param max_pitch Maximum allowed MIDI pitch (0-127)
- */
-void clampTrackPitch(MidiTrack& track, uint8_t max_pitch);
-
 // ============================================================================
 // Micro-Dynamics (Beat-Level Velocity Curves)
 // ============================================================================

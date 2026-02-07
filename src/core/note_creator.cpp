@@ -10,29 +10,17 @@
 
 #include "core/i_harmony_context.h"
 #include "core/midi_track.h"
+#include "core/pitch_utils.h"
 
 namespace midisketch {
 
 namespace {
 
-// Helper to check if a pitch class is a scale tone (C major scale)
-bool isScaleTone(int pitch_class) {
-  // C major scale: C, D, E, F, G, A, B (0, 2, 4, 5, 7, 9, 11)
-  static const bool kScaleTones[12] = {
-    true,   // C (0)
-    false,  // C# (1)
-    true,   // D (2)
-    false,  // D# (3)
-    true,   // E (4)
-    true,   // F (5)
-    false,  // F# (6)
-    true,   // G (7)
-    false,  // G# (8)
-    true,   // A (9)
-    false,  // A# (10)
-    true    // B (11)
-  };
-  return kScaleTones[pitch_class % 12];
+// Helper to check if a boundary safety level is considered safe
+bool isSafeBoundary(CrossBoundarySafety safety) {
+  return safety == CrossBoundarySafety::NoBoundary ||
+         safety == CrossBoundarySafety::ChordTone ||
+         safety == CrossBoundarySafety::Tension;
 }
 
 // Helper to check if a pitch class is root or 5th of the chord
@@ -326,9 +314,7 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
     for (auto& c : candidates) {
       auto c_boundary = harmony.analyzeChordBoundary(c.pitch, opts.start, opts.duration);
       c.cross_boundary_safety = c_boundary.safety;
-      c.is_safe_across_boundary = (c_boundary.safety == CrossBoundarySafety::NoBoundary ||
-                                    c_boundary.safety == CrossBoundarySafety::ChordTone ||
-                                    c_boundary.safety == CrossBoundarySafety::Tension);
+      c.is_safe_across_boundary = isSafeBoundary(c_boundary.safety);
     }
     // Re-rank with boundary awareness and monotony avoidance
     rankCandidates(candidates, opts.preference, true,
@@ -562,10 +548,7 @@ std::vector<PitchCandidate> getSafePitchCandidates(
     if (duration >= 240) {  // TICK_EIGHTH
       auto binfo = harmony.analyzeChordBoundary(pitch, start, duration);
       candidate.cross_boundary_safety = binfo.safety;
-      candidate.is_safe_across_boundary =
-          (binfo.safety == CrossBoundarySafety::NoBoundary ||
-           binfo.safety == CrossBoundarySafety::ChordTone ||
-           binfo.safety == CrossBoundarySafety::Tension);
+      candidate.is_safe_across_boundary = isSafeBoundary(binfo.safety);
     }
 
     // Get collision info if there was a collision
@@ -1000,10 +983,7 @@ void annotateBoundarySafety(std::vector<PitchCandidate>& candidates,
   for (auto& c : candidates) {
     auto info = harmony.analyzeChordBoundary(c.pitch, start, duration);
     c.cross_boundary_safety = info.safety;
-    c.is_safe_across_boundary =
-        (info.safety == CrossBoundarySafety::NoBoundary ||
-         info.safety == CrossBoundarySafety::ChordTone ||
-         info.safety == CrossBoundarySafety::Tension);
+    c.is_safe_across_boundary = isSafeBoundary(info.safety);
   }
 }
 

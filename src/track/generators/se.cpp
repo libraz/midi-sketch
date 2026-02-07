@@ -227,12 +227,6 @@ void insertMIXAtIntroImpl(MidiTrack& track, const std::vector<Section>& sections
 
 }  // namespace
 
-void SEGenerator::generateSection(MidiTrack& /* track */, const Section& /* section */,
-                                   TrackContext& /* ctx */) {
-  // SEGenerator uses generateFullTrack() for call system coordination
-  // This method is kept for ITrackBase compliance but not used directly.
-}
-
 void SEGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   if (!ctx.song) {
     return;

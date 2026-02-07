@@ -11,18 +11,6 @@
 namespace midisketch {
 namespace ump {
 
-void writeUint32BE(std::vector<uint8_t>& buf, uint32_t value) {
-  buf.push_back((value >> 24) & 0xFF);
-  buf.push_back((value >> 16) & 0xFF);
-  buf.push_back((value >> 8) & 0xFF);
-  buf.push_back(value & 0xFF);
-}
-
-void writeUint16BE(std::vector<uint8_t>& buf, uint16_t value) {
-  buf.push_back((value >> 8) & 0xFF);
-  buf.push_back(value & 0xFF);
-}
-
 uint32_t makeNoteOn(uint8_t group, uint8_t channel, uint8_t note, uint8_t velocity) {
   // [MT=2:4][Group:4][Status=9:4][Channel:4][Note:8][Velocity:8]
   return (static_cast<uint32_t>(MessageType::Midi1ChannelVoice) << 28) | ((group & 0x0F) << 24) |

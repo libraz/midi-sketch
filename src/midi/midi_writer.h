@@ -51,9 +51,6 @@ class MidiWriter {
   /** @brief Get MIDI data as byte vector. @return Binary MIDI data */
   std::vector<uint8_t> toBytes() const;
 
-  /** @brief Write MIDI to file. @param path Output path @return Success */
-  bool writeToFile(const std::string& path) const;
-
  private:
   std::vector<uint8_t> data_;
 #ifndef MIDISKETCH_WASM

@@ -40,8 +40,6 @@ class MotifGenerator : public TrackBase {
 
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kMotifSynth; }
 
-  void generateSection(MidiTrack& track, const Section& section, TrackContext& ctx) override;
-
   /// @brief Generate full motif track using FullTrackContext.
   void generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 };

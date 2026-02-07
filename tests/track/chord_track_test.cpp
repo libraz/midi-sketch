@@ -13,29 +13,15 @@
 #include "core/generator.h"
 #include "core/song.h"
 #include "core/types.h"
+#include "test_support/generator_test_fixture.h"
+#include "test_support/test_constants.h"
 #include "track/chord/voice_leading.h"
 #include "track/chord/voicing_generator.h"
 
 namespace midisketch {
 namespace {
 
-class ChordTrackTest : public ::testing::Test {
- protected:
-  void SetUp() override {
-    params_.structure = StructurePattern::StandardPop;
-    params_.mood = Mood::ElectroPop;
-    params_.chord_id = 0;  // Canon progression
-    params_.key = Key::C;
-    params_.drums_enabled = false;
-    params_.vocal_low = 60;
-    params_.vocal_high = 84;
-    params_.bpm = 120;
-    params_.seed = 42;
-    params_.arpeggio_enabled = false;
-  }
-
-  GeneratorParams params_;
-};
+class ChordTrackTest : public test::GeneratorTestFixture {};
 
 TEST_F(ChordTrackTest, ChordTrackGenerated) {
   Generator gen;
@@ -130,9 +116,6 @@ TEST_F(ChordTrackTest, DifferentProgressionsProduceDifferentChords) {
 }
 
 TEST_F(ChordTrackTest, ChordNotesAreScaleTones) {
-  // C major scale pitch classes
-  std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
-
   params_.key = Key::C;
   Generator gen;
   gen.generate(params_);
@@ -142,7 +125,7 @@ TEST_F(ChordTrackTest, ChordNotesAreScaleTones) {
 
   for (const auto& note : track.notes()) {
     int pc = note.note % 12;
-    if (c_major_pcs.find(pc) == c_major_pcs.end()) {
+    if (test::kCMajorPitchClasses.find(pc) == test::kCMajorPitchClasses.end()) {
       out_of_scale_count++;
     }
   }

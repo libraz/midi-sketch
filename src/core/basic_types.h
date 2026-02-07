@@ -63,7 +63,7 @@ enum class TransformStepType : uint8_t {
   ArticulationGate,   ///< Duration modified by articulation gate (bass staccato/legato)
 };
 
-/// @brief Strategy used by SafePitchResolver to resolve a collision.
+/// @brief Strategy used to resolve a pitch collision.
 enum class CollisionAvoidStrategy : uint8_t {
   None = 0,           ///< Pitch was already safe, no resolution needed
   ActualSounding,     ///< Doubled an existing note from another track
@@ -144,7 +144,7 @@ constexpr size_t kMaxTransformSteps = 8;
 
 #endif  // MIDISKETCH_NOTE_PROVENANCE
 
-/// @brief Strategy used by SafePitchResolver to resolve a collision.
+/// @brief Strategy used to resolve a pitch collision.
 ///
 /// This enum is used outside provenance tracking (e.g., PitchCandidate,
 /// PitchResolutionResult), so it must be available regardless of the
@@ -436,10 +436,10 @@ enum class ChordBoundaryPolicy : uint8_t {
 
 /// @brief Pitch selection preference for createNote().
 ///
-/// Determines how SafePitchResolver selects alternative pitches when
+/// Determines how alternative pitches are selected when
 /// the desired pitch causes a collision.
 enum class PitchPreference : uint8_t {
-  Default,           ///< Standard SafePitchResolver strategy
+  Default,           ///< Standard collision resolution strategy
   PreferRootFifth,   ///< Prefer root/5th (Bass)
   PreferChordTones,  ///< Prefer chord tones (Chord, Arpeggio)
   PreserveContour,   ///< Preserve melody contour with octave shifts (Motif)

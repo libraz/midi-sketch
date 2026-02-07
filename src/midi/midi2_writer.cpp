@@ -88,12 +88,7 @@ void Midi2Writer::writeTrackData(const MidiTrack& track, uint8_t group, uint8_t 
   for (const auto& note : track.notes()) {
     uint8_t pitch = note.note;
     if (channel != 9) {  // Not drums
-      pitch = transposePitch(pitch, key);
-      // Apply modulation if note starts after modulation point
-      if (mod_tick > 0 && note.start_tick >= mod_tick && mod_amount != 0) {
-        int new_pitch = pitch + mod_amount;
-        pitch = static_cast<uint8_t>(std::clamp(new_pitch, 0, 127));
-      }
+      pitch = transposeAndModulate(pitch, key, note.start_tick, mod_tick, mod_amount);
     }
     events.push_back({note.start_tick, 0x90, pitch, note.velocity});
     events.push_back({note.start_tick + note.duration, 0x80, pitch, 0});
@@ -187,16 +182,8 @@ void Midi2Writer::buildClip(const MidiTrack& track, const std::string& name, uin
 void Midi2Writer::buildContainer(const Song& song, Key key, const std::string& metadata) {
   data_.clear();
 
-  // Count non-empty tracks
-  uint16_t numTracks = 1;  // SE track always included
-  if (!song.vocal().empty()) numTracks++;
-  if (!song.chord().empty()) numTracks++;
-  if (!song.bass().empty()) numTracks++;
-  if (!song.drums().empty()) numTracks++;
-  if (!song.motif().empty()) numTracks++;
-  if (!song.arpeggio().empty()) numTracks++;
-  if (!song.aux().empty()) numTracks++;
-  if (!song.guitar().empty()) numTracks++;
+  // Count non-empty tracks (SE always included as marker)
+  uint16_t numTracks = song.countNonEmptyTracks() + 1;  // +1 for SE marker track
 
   // Container header
   writeContainerHeader(numTracks, TICKS_PER_BEAT);

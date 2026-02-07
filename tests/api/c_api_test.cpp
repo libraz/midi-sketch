@@ -36,8 +36,8 @@ TEST(CApiTest, GetInfoReturnsCorrectTrackCount) {
 
   MidiSketchInfo info = midisketch_get_info(handle);
 
-  // track_count should be 8: Vocal, Chord, Bass, Drums, SE, Motif, Arpeggio, Aux, Guitar
-  EXPECT_EQ(info.track_count, 8u);
+  // track_count should be 9: Vocal, Chord, Bass, Drums, SE, Motif, Arpeggio, Aux, Guitar
+  EXPECT_EQ(info.track_count, 9u);
 
   midisketch_destroy(handle);
 }
@@ -54,8 +54,8 @@ TEST(CApiTest, GetInfoWithMinimalGeneration) {
 
   MidiSketchInfo info = midisketch_get_info(handle);
 
-  // track_count is still 8 (the struct reports max possible tracks)
-  EXPECT_EQ(info.track_count, 8u);
+  // track_count is still 9 (the struct reports max possible tracks)
+  EXPECT_EQ(info.track_count, 9u);
 
   midisketch_destroy(handle);
 }
