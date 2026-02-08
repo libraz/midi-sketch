@@ -13,6 +13,7 @@
 
 #include "core/i_track_base.h"
 #include "core/note_source.h"
+#include "core/section_types.h"
 
 namespace midisketch {
 
@@ -58,9 +59,19 @@ class TrackBase : public ITrackBase {
 
   /// @brief Generate the full track (called after context validation).
   ///
-  /// Default implementation loops through sections and calls generateSection().
-  /// Override for tracks that need section-spanning logic (phrases, pattern caching).
-  virtual void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx);
+  /// Must be overridden by concrete track generators.
+  virtual void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) = 0;
+
+  /// @brief Check if this track should skip a section based on the section's track mask.
+  ///
+  /// Converts the generator's TrackRole to the corresponding TrackMask bit
+  /// and checks whether it is enabled in the section's track_mask field.
+  ///
+  /// @param section The section to check
+  /// @return true if this track is disabled for the given section (should skip)
+  bool shouldSkipSection(const Section& section) const {
+    return !hasTrack(section.track_mask, trackRoleToMask(getRole()));
+  }
 
   /// @brief Check if this track is the coordinate axis (no pitch adjustment).
   bool isCoordinateAxis(const TrackContext& ctx) const {

@@ -36,8 +36,8 @@ void TrackCollisionDetector::registerNote(Tick start, Tick duration, uint8_t pit
   notes_.push_back({start, end, pitch, track});
 
   // Add to beat index
-  Tick first_beat = start / TICKS_PER_BEAT;
-  Tick last_beat = (end > 0) ? ((end - 1) / TICKS_PER_BEAT) : first_beat;
+  Tick first_beat = tickToBeat(start);
+  Tick last_beat = (end > 0) ? tickToBeat(end - 1) : first_beat;
   if (last_beat >= beat_index_.size()) {
     beat_index_.resize(last_beat + 64);
   }
@@ -60,8 +60,8 @@ void TrackCollisionDetector::registerTrack(const MidiTrack& track, TrackRole rol
 void TrackCollisionDetector::collectNoteIndices(Tick start, Tick end,
                                                  std::vector<size_t>& out) const {
   if (beat_index_.empty()) return;
-  Tick first_beat = start / TICKS_PER_BEAT;
-  Tick last_beat = (end > 0) ? ((end - 1) / TICKS_PER_BEAT) : first_beat;
+  Tick first_beat = tickToBeat(start);
+  Tick last_beat = (end > 0) ? tickToBeat(end - 1) : first_beat;
   if (last_beat >= beat_index_.size()) {
     last_beat = beat_index_.size() - 1;
   }
@@ -389,8 +389,8 @@ void TrackCollisionDetector::rebuildBeatIndex() {
   beat_index_.clear();
   for (size_t idx = 0; idx < notes_.size(); ++idx) {
     const auto& note = notes_[idx];
-    Tick first_beat = note.start / TICKS_PER_BEAT;
-    Tick last_beat = (note.end > 0) ? ((note.end - 1) / TICKS_PER_BEAT) : first_beat;
+    Tick first_beat = tickToBeat(note.start);
+    Tick last_beat = (note.end > 0) ? tickToBeat(note.end - 1) : first_beat;
     if (last_beat >= beat_index_.size()) {
       beat_index_.resize(last_beat + 64);
     }

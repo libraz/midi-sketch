@@ -47,10 +47,9 @@ PitchChoice selectPitchChoice(const MelodyTemplate& tmpl, float phrase_pos, bool
 /// @brief Apply direction inertia to pitch movement.
 /// @param choice Current pitch choice
 /// @param inertia Accumulated direction (-N to +N)
-/// @param tmpl Melody template
 /// @param rng Random number generator
 /// @return Modified pitch choice (may change direction)
-PitchChoice applyDirectionInertia(PitchChoice choice, int inertia, const MelodyTemplate& tmpl,
+PitchChoice applyDirectionInertia(PitchChoice choice, int inertia,
                                   std::mt19937& rng);
 
 /// @brief Get effective plateau ratio considering register.

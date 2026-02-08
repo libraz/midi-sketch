@@ -20,18 +20,6 @@
 
 namespace midisketch {
 
-/// @name Singing Effort Thresholds
-/// Used to calculate vocal difficulty score for phrases.
-/// @{
-
-/// D5 (MIDI 74) and above requires significant vocal effort (passaggio).
-constexpr int kHighRegisterThreshold = 74;
-
-/// Perfect 5th (7 semitones) and above is a significant vocal leap.
-constexpr int kLargeIntervalThreshold = 7;
-
-/// @}
-
 /**
  * @brief Shift note timings by offset.
  * @param notes Source notes
@@ -172,16 +160,6 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
                                                    uint8_t vocal_low, uint8_t vocal_high);
 
 /**
- * @brief Calculate singing effort score for a phrase.
- *
- * Factors: high register usage, large intervals, note density.
- *
- * @param notes Notes in the phrase
- * @return Effort score 0.0 (easy) to 1.0+ (demanding)
- */
-float calculateSingingEffort(const std::vector<NoteEvent>& notes);
-
-/**
  * @brief Merge same-pitch notes with short gaps (tie/legato).
  *
  * In pop vocals, same-pitch notes with tiny gaps should be connected
@@ -227,24 +205,6 @@ void applySectionEndSustain(std::vector<NoteEvent>& notes, const std::vector<Sec
  */
 void mergeSamePitchNotesNearSectionEnds(std::vector<NoteEvent>& notes,
                                          const std::vector<Section>& sections, Tick max_gap);
-
-/**
- * @brief Resolve isolated short notes by extending or merging.
- *
- * In pop vocals, isolated short notes (surrounded by rests) are difficult
- * to sing because they don't have melodic context. This function either:
- * - Extends the note to minimum singable duration
- * - Merges with adjacent notes if close enough
- *
- * Music theory: A note needs melodic context. Isolated staccato notes
- * in vocal lines are rare except for specific effects.
- *
- * @param notes Notes to modify (in-place)
- * @param min_duration Minimum duration for isolated notes (default: 1 beat = 480 ticks)
- * @param isolation_threshold Gap size that defines "isolated" (default: 0.5 beat = 240 ticks)
- */
-void resolveIsolatedShortNotes(std::vector<NoteEvent>& notes, Tick min_duration = 480,
-                               Tick isolation_threshold = 240);
 
 }  // namespace midisketch
 

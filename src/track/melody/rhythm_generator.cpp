@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "core/chord_utils.h"
+#include "core/pitch_utils.h"
 #include "core/velocity.h"
 
 namespace midisketch {
@@ -354,8 +355,8 @@ uint8_t selectPitchForLockedRhythmEnhanced(
     // Fallback: use diatonic scale tones
     for (int p = vocal_low; p <= vocal_high; ++p) {
       int pc = p % 12;
-      // C major diatonic: 0, 2, 4, 5, 7, 9, 11
-      if (pc == 0 || pc == 2 || pc == 4 || pc == 5 || pc == 7 || pc == 9 || pc == 11) {
+      // C major diatonic scale
+      if (isScaleTone(pc)) {
         candidates.push_back(static_cast<uint8_t>(p));
       }
     }

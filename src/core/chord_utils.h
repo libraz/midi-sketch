@@ -78,6 +78,19 @@ std::vector<int> getAvailableTensionPitchClasses(int8_t degree);
 // @returns Nearest chord tone pitch
 int nearestChordTonePitch(int pitch, int8_t degree);
 
+/// @brief Find the nearest chord tone within a pitch range.
+///
+/// Searches chord tones in nearby octaves (up to +/-2 from the target's octave)
+/// and returns the closest one within [range_low, range_high].
+/// Returns the original pitch if no chord tone is found in range.
+///
+/// @param pitch Target MIDI pitch
+/// @param degree Scale degree of the chord (0-6 for I-vii)
+/// @param range_low Minimum allowed pitch (inclusive)
+/// @param range_high Maximum allowed pitch (inclusive)
+/// @return Nearest chord tone pitch within range, or pitch if none found
+int findNearestChordToneInRange(int pitch, int8_t degree, int range_low, int range_high);
+
 // Find the closest chord tone to target within max_interval of prev_pitch.
 // Optionally prefers pitches within the tessitura range.
 // @param target_pitch Desired target pitch

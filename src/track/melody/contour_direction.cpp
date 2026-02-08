@@ -97,7 +97,6 @@ PitchChoice selectPitchChoice(const MelodyTemplate& tmpl, float phrase_pos, bool
 }
 
 PitchChoice applyDirectionInertia(PitchChoice choice, int inertia,
-                                  [[maybe_unused]] const MelodyTemplate& tmpl,
                                   std::mt19937& rng) {
   // Same pitch or target step - don't modify
   if (choice == PitchChoice::Same || choice == PitchChoice::TargetStep) {

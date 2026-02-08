@@ -248,7 +248,7 @@ void enforceMaxPhraseDuration(std::vector<NoteEvent>& notes, uint8_t max_phrase_
       size_t break_idx = idx;
       Tick best_barline_dist = TICKS_PER_BAR;
       for (size_t scan = idx; scan > 0 && scan > idx - std::min(idx, static_cast<size_t>(8)); --scan) {
-        Tick pos_in_bar = notes[scan].start_tick % TICKS_PER_BAR;
+        Tick pos_in_bar = positionInBar(notes[scan].start_tick);
         Tick barline_dist = std::min(pos_in_bar, TICKS_PER_BAR - pos_in_bar);
         if (barline_dist < best_barline_dist) {
           best_barline_dist = barline_dist;
@@ -267,7 +267,7 @@ void enforceMaxPhraseDuration(std::vector<NoteEvent>& notes, uint8_t max_phrase_
       // Only extend if the barline is between the note's current end and the break point.
       size_t cur = break_idx - 1;
       if (cur < notes.size()) {
-        Tick note_bar_end = ((notes[cur].start_tick / TICKS_PER_BAR) + 1) * TICKS_PER_BAR;
+        Tick note_bar_end = barToTick(tickToBar(notes[cur].start_tick) + 1);
         // Extend to barline if it doesn't overlap with the break note
         if (note_bar_end > notes[cur].start_tick + notes[cur].duration &&
             note_bar_end <= notes[break_idx].start_tick - target_gap) {

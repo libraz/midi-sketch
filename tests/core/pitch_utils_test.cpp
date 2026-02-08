@@ -398,7 +398,7 @@ TEST(PitchUtilsTest, MaxIntervalForSection_Intro) {
 }
 
 // ============================================================================
-// clampPitch / clampBass / clampChord / clampMotif Tests
+// clampPitch / clampBass Tests
 // ============================================================================
 
 TEST(PitchUtilsTest, ClampPitch_WithinRange) {
@@ -417,20 +417,6 @@ TEST(PitchUtilsTest, ClampBass) {
   EXPECT_EQ(clampBass(20), BASS_LOW);   // Below
   EXPECT_EQ(clampBass(40), 40);         // Within
   EXPECT_EQ(clampBass(70), BASS_HIGH);  // Above
-}
-
-TEST(PitchUtilsTest, ClampChord) {
-  // CHORD_LOW = 48 (C3), CHORD_HIGH = 84 (C6)
-  EXPECT_EQ(clampChord(40), CHORD_LOW);  // Below range: clamp to CHORD_LOW (48)
-  EXPECT_EQ(clampChord(50), 50);         // Within range: unchanged
-  EXPECT_EQ(clampChord(72), 72);         // Within range: unchanged
-  EXPECT_EQ(clampChord(90), CHORD_HIGH); // Above range: clamp to CHORD_HIGH (84)
-}
-
-TEST(PitchUtilsTest, ClampMotif) {
-  EXPECT_EQ(clampMotif(50), MOTIF_LOW);
-  EXPECT_EQ(clampMotif(80), 80);
-  EXPECT_EQ(clampMotif(120), MOTIF_HIGH);
 }
 
 // ============================================================================
@@ -707,6 +693,252 @@ TEST(PitchUtilsTest, GetPitchClass_ConsistentWithNoteNames) {
     EXPECT_EQ(name.substr(0, expected_prefix.size()), expected_prefix)
         << "Mismatch for MIDI pitch " << static_cast<int>(pitch);
   }
+}
+
+// ============================================================================
+// Unified Dissonance Check Tests (isDissonantSemitoneInterval)
+// ============================================================================
+
+// --- Default options (standard Pop theory rules) ---
+
+TEST(UnifiedDissonanceTest, Minor2ndAlwaysDissonant) {
+  // Minor 2nd (1 semitone) is always dissonant
+  EXPECT_TRUE(isDissonantSemitoneInterval(1));
+}
+
+TEST(UnifiedDissonanceTest, Minor9thDissonant) {
+  // Minor 9th (13 semitones = compound minor 2nd) is dissonant
+  EXPECT_TRUE(isDissonantSemitoneInterval(13));
+}
+
+TEST(UnifiedDissonanceTest, CompoundMinor2ndBeyond13NotDissonant) {
+  // 25 semitones (m2 + 2 octaves) is too far for perceptual harshness
+  EXPECT_FALSE(isDissonantSemitoneInterval(25));
+}
+
+TEST(UnifiedDissonanceTest, Major2ndCloseRangeDissonant) {
+  // Major 2nd (2 semitones) is dissonant in default (close voicing)
+  EXPECT_TRUE(isDissonantSemitoneInterval(2));
+}
+
+TEST(UnifiedDissonanceTest, Major9thNotDissonant) {
+  // Major 9th (14 semitones) is a common chord extension, NOT dissonant
+  EXPECT_FALSE(isDissonantSemitoneInterval(14));
+}
+
+TEST(UnifiedDissonanceTest, Major7thDissonant) {
+  // Major 7th (11 semitones) is dissonant
+  EXPECT_TRUE(isDissonantSemitoneInterval(11));
+}
+
+TEST(UnifiedDissonanceTest, CompoundMajor7thDissonant) {
+  // Compound M7 at various octaves
+  EXPECT_TRUE(isDissonantSemitoneInterval(23));   // M7 + octave
+  EXPECT_TRUE(isDissonantSemitoneInterval(35));   // M7 + 2 octaves
+}
+
+TEST(UnifiedDissonanceTest, TritoneDissonantByDefault) {
+  // Tritone (6 semitones) is dissonant with default options (chord_degree=-1)
+  EXPECT_TRUE(isDissonantSemitoneInterval(6));
+  EXPECT_TRUE(isDissonantSemitoneInterval(18));   // Compound tritone
+}
+
+TEST(UnifiedDissonanceTest, ConsonantIntervalsNotDissonant) {
+  // All consonant intervals should not be flagged
+  EXPECT_FALSE(isDissonantSemitoneInterval(0));    // Unison
+  EXPECT_FALSE(isDissonantSemitoneInterval(3));    // Minor 3rd
+  EXPECT_FALSE(isDissonantSemitoneInterval(4));    // Major 3rd
+  EXPECT_FALSE(isDissonantSemitoneInterval(5));    // Perfect 4th
+  EXPECT_FALSE(isDissonantSemitoneInterval(7));    // Perfect 5th
+  EXPECT_FALSE(isDissonantSemitoneInterval(8));    // Minor 6th
+  EXPECT_FALSE(isDissonantSemitoneInterval(9));    // Major 6th
+  EXPECT_FALSE(isDissonantSemitoneInterval(10));   // Minor 7th
+  EXPECT_FALSE(isDissonantSemitoneInterval(12));   // Octave
+}
+
+TEST(UnifiedDissonanceTest, WideIntervalCutoff) {
+  // Intervals >= 36 semitones (3 octaves) are not dissonant
+  EXPECT_FALSE(isDissonantSemitoneInterval(36));   // 3 octaves
+  EXPECT_FALSE(isDissonantSemitoneInterval(37));   // 3 octaves + m2
+  EXPECT_FALSE(isDissonantSemitoneInterval(42));   // 3 octaves + tritone
+  EXPECT_FALSE(isDissonantSemitoneInterval(47));   // 3 octaves + M7
+}
+
+TEST(UnifiedDissonanceTest, NegativeIntervalNotDissonant) {
+  // Negative intervals should not crash and return false
+  EXPECT_FALSE(isDissonantSemitoneInterval(-1));
+  EXPECT_FALSE(isDissonantSemitoneInterval(-12));
+}
+
+// --- Tritone chord context ---
+
+TEST(UnifiedDissonanceTest, TritoneAllowedOnDominant) {
+  DissonanceCheckOptions opts;
+  opts.check_tritone = true;
+  opts.chord_degree = 4;  // V chord
+  EXPECT_FALSE(isDissonantSemitoneInterval(6, opts));
+  EXPECT_FALSE(isDissonantSemitoneInterval(18, opts));   // Compound
+}
+
+TEST(UnifiedDissonanceTest, TritoneAllowedOnDiminished) {
+  DissonanceCheckOptions opts;
+  opts.check_tritone = true;
+  opts.chord_degree = 6;  // vii chord
+  EXPECT_FALSE(isDissonantSemitoneInterval(6, opts));
+}
+
+TEST(UnifiedDissonanceTest, TritoneDissonantOnTonic) {
+  DissonanceCheckOptions opts;
+  opts.check_tritone = true;
+  opts.chord_degree = 0;  // I chord
+  EXPECT_TRUE(isDissonantSemitoneInterval(6, opts));
+}
+
+TEST(UnifiedDissonanceTest, TritoneDissonantOnSubdominant) {
+  DissonanceCheckOptions opts;
+  opts.check_tritone = true;
+  opts.chord_degree = 3;  // IV chord
+  EXPECT_TRUE(isDissonantSemitoneInterval(6, opts));
+}
+
+TEST(UnifiedDissonanceTest, TritoneAlwaysDissonantWithNegativeDegree) {
+  // chord_degree = -1 means no context: treat tritone as always dissonant
+  DissonanceCheckOptions opts;
+  opts.check_tritone = true;
+  opts.chord_degree = -1;
+  EXPECT_TRUE(isDissonantSemitoneInterval(6, opts));
+}
+
+// --- Major 2nd options ---
+
+TEST(UnifiedDissonanceTest, Major2ndSkippedWhenDisabled) {
+  DissonanceCheckOptions opts;
+  opts.check_major_2nd = false;
+  EXPECT_FALSE(isDissonantSemitoneInterval(2, opts));
+}
+
+TEST(UnifiedDissonanceTest, Major2ndWithWiderThreshold) {
+  DissonanceCheckOptions opts;
+  opts.major_2nd_max_distance = Interval::TWO_OCTAVES;  // 24
+  // 2 semitones: dissonant (< 24)
+  EXPECT_TRUE(isDissonantSemitoneInterval(2, opts));
+  // 14 semitones: major 9th, NOT m2 (pc=2 but actual >= 12, well below 24)
+  // Actually 14 % 12 = 2, and 14 < 24, so it should be dissonant with this threshold
+  EXPECT_TRUE(isDissonantSemitoneInterval(14, opts));
+  // 26 semitones: pc=2, but actual >= 24, so NOT dissonant
+  EXPECT_FALSE(isDissonantSemitoneInterval(26, opts));
+}
+
+// --- Tritone disabled ---
+
+TEST(UnifiedDissonanceTest, TritoneNotCheckedWhenDisabled) {
+  DissonanceCheckOptions opts;
+  opts.check_tritone = false;
+  EXPECT_FALSE(isDissonantSemitoneInterval(6, opts));
+  EXPECT_FALSE(isDissonantSemitoneInterval(18, opts));
+  EXPECT_FALSE(isDissonantSemitoneInterval(30, opts));
+}
+
+// --- Wide interval cutoff disabled ---
+
+TEST(UnifiedDissonanceTest, WideIntervalCutoffDisabled) {
+  DissonanceCheckOptions opts;
+  opts.apply_wide_interval_cutoff = false;
+  // M7 at 3+ octaves should be dissonant when cutoff is off
+  EXPECT_TRUE(isDissonantSemitoneInterval(47, opts));  // M7 + 3 octaves
+  // Tritone at 3+ octaves should be dissonant when cutoff is off
+  EXPECT_TRUE(isDissonantSemitoneInterval(42, opts));  // Tritone + 3 octaves
+}
+
+// --- Factory presets ---
+
+TEST(UnifiedDissonanceTest, StandardPreset) {
+  auto opts = DissonanceCheckOptions::standard();
+  // Same as default
+  EXPECT_TRUE(isDissonantSemitoneInterval(1, opts));    // m2
+  EXPECT_TRUE(isDissonantSemitoneInterval(2, opts));    // M2
+  EXPECT_TRUE(isDissonantSemitoneInterval(6, opts));    // tritone (no context)
+  EXPECT_TRUE(isDissonantSemitoneInterval(11, opts));   // M7
+  EXPECT_TRUE(isDissonantSemitoneInterval(13, opts));   // m9
+  EXPECT_FALSE(isDissonantSemitoneInterval(7, opts));   // P5
+}
+
+TEST(UnifiedDissonanceTest, MinimalClashPreset) {
+  auto opts = DissonanceCheckOptions::minimalClash();
+  // Only m2/m9 and M7 - no tritone, no M2
+  EXPECT_TRUE(isDissonantSemitoneInterval(1, opts));    // m2
+  EXPECT_TRUE(isDissonantSemitoneInterval(13, opts));   // m9
+  EXPECT_TRUE(isDissonantSemitoneInterval(11, opts));   // M7
+  EXPECT_FALSE(isDissonantSemitoneInterval(2, opts));   // M2 skipped
+  EXPECT_FALSE(isDissonantSemitoneInterval(6, opts));   // tritone skipped
+}
+
+TEST(UnifiedDissonanceTest, CloseVoicingPreset) {
+  auto opts = DissonanceCheckOptions::closeVoicing();
+  // m2, M7, close M2 - no tritone
+  EXPECT_TRUE(isDissonantSemitoneInterval(1, opts));    // m2
+  EXPECT_TRUE(isDissonantSemitoneInterval(2, opts));    // M2 close
+  EXPECT_TRUE(isDissonantSemitoneInterval(11, opts));   // M7
+  EXPECT_FALSE(isDissonantSemitoneInterval(6, opts));   // tritone skipped
+  EXPECT_FALSE(isDissonantSemitoneInterval(14, opts));  // M9 not close
+}
+
+TEST(UnifiedDissonanceTest, FullWithTritonePreset) {
+  auto opts = DissonanceCheckOptions::fullWithTritone();
+  // All intervals including tritone (always dissonant, no chord context)
+  EXPECT_TRUE(isDissonantSemitoneInterval(1, opts));    // m2
+  EXPECT_TRUE(isDissonantSemitoneInterval(2, opts));    // M2
+  EXPECT_TRUE(isDissonantSemitoneInterval(6, opts));    // tritone
+  EXPECT_TRUE(isDissonantSemitoneInterval(11, opts));   // M7
+}
+
+TEST(UnifiedDissonanceTest, VocalClashPreset) {
+  auto opts = DissonanceCheckOptions::vocalClash();
+  // m2, M7, M2 within 2 octaves - no tritone
+  EXPECT_TRUE(isDissonantSemitoneInterval(1, opts));    // m2
+  EXPECT_TRUE(isDissonantSemitoneInterval(2, opts));    // M2 (< 24)
+  EXPECT_TRUE(isDissonantSemitoneInterval(14, opts));   // M9 (pc=2, < 24)
+  EXPECT_TRUE(isDissonantSemitoneInterval(11, opts));   // M7
+  EXPECT_FALSE(isDissonantSemitoneInterval(6, opts));   // tritone skipped
+  EXPECT_FALSE(isDissonantSemitoneInterval(26, opts));  // M2 compound (>= 24)
+}
+
+// --- isDissonantPitchPair convenience function ---
+
+TEST(UnifiedDissonanceTest, PitchPairMinor2nd) {
+  // C4 (60) and C#4 (61) = 1 semitone
+  EXPECT_TRUE(isDissonantPitchPair(60, 61));
+  // B3 (59) and C4 (60) = 1 semitone
+  EXPECT_TRUE(isDissonantPitchPair(59, 60));
+}
+
+TEST(UnifiedDissonanceTest, PitchPairConsonant) {
+  // C4 (60) and E4 (64) = 4 semitones (major 3rd)
+  EXPECT_FALSE(isDissonantPitchPair(60, 64));
+  // C4 (60) and G4 (67) = 7 semitones (perfect 5th)
+  EXPECT_FALSE(isDissonantPitchPair(60, 67));
+}
+
+TEST(UnifiedDissonanceTest, PitchPairSymmetric) {
+  // Order should not matter
+  EXPECT_TRUE(isDissonantPitchPair(60, 61));
+  EXPECT_TRUE(isDissonantPitchPair(61, 60));
+  EXPECT_FALSE(isDissonantPitchPair(60, 67));
+  EXPECT_FALSE(isDissonantPitchPair(67, 60));
+}
+
+TEST(UnifiedDissonanceTest, PitchPairWithOptions) {
+  auto opts = DissonanceCheckOptions::minimalClash();
+  // C4 (60) and D4 (62) = 2 semitones (M2) - skipped in minimalClash
+  EXPECT_FALSE(isDissonantPitchPair(60, 62, opts));
+  // C4 (60) and C#4 (61) = 1 semitone (m2) - still dissonant
+  EXPECT_TRUE(isDissonantPitchPair(60, 61, opts));
+}
+
+TEST(UnifiedDissonanceTest, PitchPairUnison) {
+  // Same pitch = unison = not dissonant
+  EXPECT_FALSE(isDissonantPitchPair(60, 60));
+  EXPECT_FALSE(isDissonantPitchPair(72, 72));
 }
 
 }  // namespace

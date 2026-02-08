@@ -10,7 +10,6 @@
 #include <random>
 #include <vector>
 
-#include "core/melody_templates.h"
 #include "core/melody_types.h"
 #include "core/types.h"
 
@@ -53,7 +52,6 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
 ///
 /// Target is typically a chord tone in the upper part of tessitura.
 ///
-/// @param tmpl Melody template with tessitura settings
 /// @param tessitura_center Center of tessitura range
 /// @param tessitura_range Range of tessitura
 /// @param vocal_low Minimum allowed pitch
@@ -61,7 +59,7 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
 /// @param section_start Section start tick
 /// @param harmony Harmony context for chord lookup
 /// @return Target pitch
-int calculateTargetPitch(const MelodyTemplate& tmpl, int tessitura_center, int tessitura_range,
+int calculateTargetPitch(int tessitura_center, int tessitura_range,
                          uint8_t vocal_low, uint8_t vocal_high, Tick section_start,
                          const IHarmonyContext& harmony);
 

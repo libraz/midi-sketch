@@ -368,7 +368,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
 
 BeatStrength MelodicEmbellisher::getBeatStrength(Tick tick) {
   // Position within bar
-  Tick pos_in_bar = tick % TICKS_PER_BAR;
+  Tick pos_in_bar = positionInBar(tick);
 
   // Position within beat
   Tick pos_in_beat = tick % TICKS_PER_BEAT;

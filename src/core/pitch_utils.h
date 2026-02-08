@@ -101,12 +101,6 @@ inline uint8_t clampPitch(int pitch, uint8_t low, uint8_t high) {
 /// Clamp pitch to bass range (E1-G3). Bass notes outside this sound muddy.
 inline uint8_t clampBass(int pitch) { return clampPitch(pitch, BASS_LOW, BASS_HIGH); }
 
-/// Clamp pitch to chord voicing range (C3-C6). Keeps chords out of bass/vocal.
-inline uint8_t clampChord(int pitch) { return clampPitch(pitch, CHORD_LOW, CHORD_HIGH); }
-
-/// Clamp pitch to motif range (C2-C8). Wide range for synth flexibility.
-inline uint8_t clampMotif(int pitch) { return clampPitch(pitch, MOTIF_LOW, MOTIF_HIGH); }
-
 // ============================================================================
 // Passaggio Constants
 // ============================================================================
@@ -238,7 +232,130 @@ constexpr int MINOR_7TH = 10;
 constexpr int MAJOR_7TH = 11;
 constexpr int OCTAVE = 12;
 constexpr int TWO_OCTAVES = 24;
+constexpr int THREE_OCTAVES = 36;
 }  // namespace Interval
+
+// ============================================================================
+// Unified Dissonance Checking
+// ============================================================================
+
+/// @brief Options for context-dependent dissonance detection.
+///
+/// Controls which intervals are treated as dissonant. Default settings match
+/// the full `isDissonantActualInterval()` rules (Pop theory):
+/// - Minor 2nd (1) and minor 9th (13): always dissonant
+/// - Major 2nd (2): dissonant in close voicing only
+/// - Tritone (6): dissonant except on V/vii chords
+/// - Major 7th (11): dissonant under 3 octaves
+///
+/// Customize these options for specific use cases (e.g., post-processing
+/// where only certain intervals should be checked, or bass tracks where
+/// major 2nd is acceptable due to octave separation).
+struct DissonanceCheckOptions {
+  /// @brief Check tritone (6 semitones) as dissonant.
+  /// When true, tritone is checked. The `chord_degree` field controls whether
+  /// the V/vii exception applies.
+  /// When false, tritone is never flagged as dissonant.
+  bool check_tritone = true;
+
+  /// @brief Chord degree for tritone context (0=I, 4=V, 6=vii).
+  /// Only used when `check_tritone` is true.
+  /// Set to -1 to treat tritone as always dissonant (no V/vii exception).
+  int8_t chord_degree = -1;
+
+  /// @brief Check major 2nd (2 semitones) as dissonant.
+  /// When false, major 2nd is never flagged as dissonant (e.g., bass tracks
+  /// where octave separation makes M2 acceptable).
+  bool check_major_2nd = true;
+
+  /// @brief Maximum actual semitone distance at which major 2nd is dissonant.
+  /// Only applies when `check_major_2nd` is true.
+  /// Default: 12 (only close-range major 2nds are dissonant).
+  /// Set to 24 for stricter checking (e.g., vocal clash detection).
+  int major_2nd_max_distance = Interval::OCTAVE;
+
+  /// @brief Apply 3-octave cutoff (>= 36 semitones = not dissonant).
+  /// When true, very wide intervals are never flagged as dissonant
+  /// because perceptual harshness is reduced at extreme distances.
+  /// When false, compound intervals follow interval-class rules.
+  bool apply_wide_interval_cutoff = true;
+
+  /// @brief Static factory: Default rules matching isDissonantActualInterval().
+  static constexpr DissonanceCheckOptions standard() { return {}; }
+
+  /// @brief Static factory: No tritone check, no M2 check (bass vs vocal).
+  /// Used when only the most severe clashes (m2, M7) need detection.
+  static DissonanceCheckOptions minimalClash() {
+    DissonanceCheckOptions opts;
+    opts.check_tritone = false;
+    opts.check_major_2nd = false;
+    return opts;
+  }
+
+  /// @brief Static factory: Close voicing check (m2, M7, close M2).
+  /// Used for chord-vs-bass/motif inter-track clash detection.
+  static DissonanceCheckOptions closeVoicing() {
+    DissonanceCheckOptions opts;
+    opts.check_tritone = false;
+    return opts;
+  }
+
+  /// @brief Static factory: Full check including tritone (always dissonant).
+  /// Used for motif-vs-vocal where tritone should not be allowed.
+  static DissonanceCheckOptions fullWithTritone() {
+    DissonanceCheckOptions opts;
+    opts.chord_degree = -1;  // Always treat tritone as dissonant
+    return opts;
+  }
+
+  /// @brief Static factory: Vocal clash detection (wider M2 threshold).
+  /// Used in generator's findVocalClashes with 2-octave M2 threshold.
+  static DissonanceCheckOptions vocalClash() {
+    DissonanceCheckOptions opts;
+    opts.check_tritone = false;
+    opts.major_2nd_max_distance = Interval::TWO_OCTAVES;
+    return opts;
+  }
+};
+
+/**
+ * @brief Unified dissonance check for actual semitone intervals.
+ *
+ * This is the single source of truth for determining whether an interval
+ * between two simultaneously sounding notes is dissonant. All other
+ * dissonance check functions and inline checks should delegate to this.
+ *
+ * Rules (based on Pop music theory):
+ * - Minor 2nd (1 semitone): Always dissonant (harsh beating)
+ * - Minor 9th (13 semitones): Always dissonant (compound m2)
+ * - Major 2nd (2 semitones): Dissonant only in close voicing (configurable)
+ * - Tritone (6 semitones): Configurable; OK on V/vii chords
+ * - Major 7th (11 semitones): Dissonant under 3 octaves
+ * - >= 36 semitones: Configurable wide-interval cutoff
+ *
+ * @param actual_semitones Absolute semitone distance between two pitches
+ * @param opts Options controlling context-dependent rules
+ * @return true if the interval is considered dissonant
+ */
+bool isDissonantSemitoneInterval(int actual_semitones,
+                                  const DissonanceCheckOptions& opts = {});
+
+/**
+ * @brief Check if two MIDI pitches form a dissonant interval.
+ *
+ * Convenience wrapper that computes the absolute semitone distance
+ * and delegates to isDissonantSemitoneInterval().
+ *
+ * @param pitch1 First MIDI pitch (0-127)
+ * @param pitch2 Second MIDI pitch (0-127)
+ * @param opts Options controlling context-dependent rules
+ * @return true if the pitch pair is dissonant
+ */
+inline bool isDissonantPitchPair(uint8_t pitch1, uint8_t pitch2,
+                                  const DissonanceCheckOptions& opts = {}) {
+  int actual_semitones = std::abs(static_cast<int>(pitch1) - static_cast<int>(pitch2));
+  return isDissonantSemitoneInterval(actual_semitones, opts);
+}
 
 // ============================================================================
 // Debug/Display Utilities

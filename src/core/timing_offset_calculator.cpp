@@ -71,8 +71,8 @@ TimingOffsetCalculator::TimingOffsetCalculator(uint8_t drive_feel, VocalStylePre
 // ============================================================================
 
 int TimingOffsetCalculator::getDrumTimingOffset(uint8_t note_number, Tick tick) const {
-  Tick pos_in_bar = tick % TICKS_PER_BAR;
-  int beat_in_bar = static_cast<int>(pos_in_bar / TICKS_PER_BEAT);
+  Tick pos_in_bar = positionInBar(tick);
+  int beat_in_bar = static_cast<int>(beatInBar(tick));
   bool is_offbeat = (pos_in_bar % TICKS_PER_BEAT) >= (TICKS_PER_BEAT / 2);
 
   int base_offset = 0;
@@ -143,14 +143,14 @@ int TimingOffsetCalculator::getRhythmSyncBeatOffset(Tick tick) const {
   // Stronger beats anchor tighter, weaker beats add groove feel.
   // Values are max shifts at humanize_timing=1.0; actual scaling applied in caller.
   // Negative bias (-60%/+40%) for Orangestar's forward-leaning feel.
-  Tick pos_in_bar = tick % TICKS_PER_BAR;
+  Tick pos_in_bar = positionInBar(tick);
   Tick beat_pos = pos_in_bar % TICKS_PER_BEAT;
-  int beat_in_bar = static_cast<int>(pos_in_bar / TICKS_PER_BEAT);
+  int beat_idx = static_cast<int>(beatInBar(tick));
 
   int max_shift = 0;
   if (beat_pos == 0) {
     // On-beat positions
-    if (beat_in_bar == 0 || beat_in_bar == 2) {
+    if (beat_idx == 0 || beat_idx == 2) {
       max_shift = 8;    // Strong beats: tight anchor
     } else {
       max_shift = 15;   // Weak beats: moderate groove
@@ -273,7 +273,7 @@ PhrasePosition TimingOffsetCalculator::getPhrasePosition(Tick tick,
     Tick section_end = section.endTick();
     if (tick >= section.start_tick && tick < section_end) {
       Tick relative = tick - section.start_tick;
-      int bar_in_section = static_cast<int>(relative / TICKS_PER_BAR);
+      int bar_in_section = static_cast<int>(tickToBar(relative));
       int bar_in_phrase = bar_in_section % kPhraseBars;
 
       if (bar_in_phrase == 0) {

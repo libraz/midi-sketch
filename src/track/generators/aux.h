@@ -265,7 +265,7 @@ class AuxGenerator : public TrackBase {
                    float dissonance_tolerance = 0.0f);
   uint8_t resolveAuxPitch(uint8_t desired, Tick start, Tick duration,
                           const std::vector<NoteEvent>* main_melody, const IHarmonyContext& harmony,
-                          uint8_t low, uint8_t high, int8_t chord_degree,
+                          uint8_t low, uint8_t high,
                           float dissonance_tolerance = 0.0f);
   std::vector<Tick> findBreathPointsInRange(const std::vector<PhraseBoundary>* boundaries,
                                             Tick start, Tick end);
@@ -286,18 +286,6 @@ class AuxGenerator : public TrackBase {
   std::unordered_map<AuxCacheKey, CachedAuxPhrase, AuxCacheKeyHash> phrase_cache_;
   std::optional<Motif> cached_chorus_motif_;  ///< Chorus motif for intro placement
 };
-
-// ============================================================================
-// Standalone Generation Functions (backward compatibility)
-// ============================================================================
-
-/// Generate aux track using legacy interface.
-/// @param track Output track to populate
-/// @param song_ctx Song-level context
-/// @param harmony HarmonyContext for chord info and collision avoidance
-/// @param rng Random number generator
-void generateAuxTrack(MidiTrack& track, const AuxGenerator::SongContext& song_ctx,
-                      IHarmonyContext& harmony, std::mt19937& rng);
 
 }  // namespace midisketch
 

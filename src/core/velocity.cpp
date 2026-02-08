@@ -420,7 +420,7 @@ void applyBarVelocityCurve(MidiTrack& track, const Section& section) {
     if (note.start_tick >= section.start_tick && note.start_tick < section_end) {
       // Calculate bar position within section
       Tick relative_tick = note.start_tick - section.start_tick;
-      int bar_in_section = static_cast<int>(relative_tick / TICKS_PER_BAR);
+      int bar_in_section = static_cast<int>(tickToBar(relative_tick));
 
       // Get velocity multiplier for this bar position
       float multiplier = getBarVelocityMultiplier(bar_in_section, section.bars, section.type);
@@ -471,12 +471,10 @@ void applyMelodyContourVelocity(MidiTrack& track, const std::vector<Section>& se
 
       // Find notes in this phrase and track the highest pitch
       uint8_t highest_pitch = 0;
-      [[maybe_unused]] Tick highest_tick = 0;  // Reserved for future climax positioning
       for (const auto& note : notes) {
         if (note.start_tick >= phrase_start && note.start_tick < phrase_end) {
           if (note.note > highest_pitch) {
             highest_pitch = note.note;
-            highest_tick = note.start_tick;
           }
         }
       }
@@ -499,7 +497,7 @@ void applyMelodyContourVelocity(MidiTrack& track, const std::vector<Section>& se
         if (note.note == highest_pitch) {
           // Determine bar position for this specific note
           int note_bar_in_section =
-              static_cast<int>((note.start_tick - section_start) / TICKS_PER_BAR);
+              static_cast<int>(tickToBar(note.start_tick - section_start));
           bool note_in_climax = false;
 
           if (section.bars >= 6) {
@@ -765,7 +763,7 @@ void applyBeatMicroDynamics(MidiTrack& track) {
 
   for (auto& note : notes) {
     // Calculate beat position within bar
-    float beat_position = static_cast<float>(note.start_tick % TICKS_PER_BAR) /
+    float beat_position = static_cast<float>(positionInBar(note.start_tick)) /
                           static_cast<float>(TICKS_PER_BEAT);
 
     // Get micro-curve multiplier

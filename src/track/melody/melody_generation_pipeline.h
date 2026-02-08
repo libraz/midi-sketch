@@ -122,12 +122,10 @@ class MelodyGenerationPipeline {
   /// @brief Apply direction inertia to modify pitch choice.
   /// @param choice Initial pitch choice
   /// @param state Current phrase state (contains inertia)
-  /// @param tmpl Melody template
   /// @param rng Random number generator
   /// @return Modified pitch choice
   PitchChoice applyDirectionInertia(PitchChoice choice,
                                     const PhraseGenerationState& state,
-                                    const MelodyTemplate& tmpl,
                                     std::mt19937& rng) const;
 
   /// @brief Resolve final pitch from pitch choice and context.
@@ -207,12 +205,10 @@ class MelodyGenerationPipeline {
   /// @param mood Current mood
   /// @param phrase_density Note density of previous phrase
   /// @param phrase_high Highest note in previous phrase
-  /// @param breath_ctx Additional breath context (optional)
   /// @param vocal_style Vocal style preset
   /// @return Breath duration in ticks
   Tick getBreathDuration(SectionType section_type, Mood mood,
                          float phrase_density, uint8_t phrase_high,
-                         const void* breath_ctx,
                          VocalStylePreset vocal_style) const;
 
   /// @brief Get rhythm unit based on grid type.

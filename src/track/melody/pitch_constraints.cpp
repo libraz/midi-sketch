@@ -18,14 +18,13 @@ namespace midisketch {
 namespace melody {
 
 bool isDownbeat(Tick tick) {
-  Tick bar_pos = tick % TICKS_PER_BAR;
+  Tick bar_pos = positionInBar(tick);
   return bar_pos < TICKS_PER_BEAT / 4;
 }
 
 bool isStrongBeat(Tick tick) {
-  Tick bar_pos = tick % TICKS_PER_BAR;
-  Tick beat_in_bar = bar_pos / TICKS_PER_BEAT;
-  return beat_in_bar == 0 || beat_in_bar == 2;
+  uint8_t beat = beatInBar(tick);
+  return beat == 0 || beat == 2;
 }
 
 int findBestChordTonePreservingDirection(int target_pitch, int prev_pitch, int8_t chord_degree,

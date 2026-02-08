@@ -11,6 +11,7 @@
 #include <fstream>
 #include <map>
 
+#include "core/note_timeline_utils.h"
 #include "core/timing_constants.h"
 #include "midi/byte_order.h"
 
@@ -336,8 +337,7 @@ bool MidiReader::parseTrack(const uint8_t* data, size_t size) {
   }
 
   // Sort notes by start time
-  std::sort(track.notes.begin(), track.notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+  NoteTimeline::sortByStartTick(track.notes);
 
   midi_.tracks.push_back(std::move(track));
   return true;

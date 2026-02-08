@@ -150,6 +150,7 @@ struct TrackContext {
 // Forward declarations for FullTrackContext
 class Song;
 struct GeneratorParams;
+struct ChordProgression;
 struct DrumGrid;
 struct KickPatternCache;
 struct MotifContext;
@@ -164,6 +165,7 @@ struct FullTrackContext {
   const GeneratorParams* params = nullptr; ///< Generation parameters
   std::mt19937* rng = nullptr;             ///< Random number generator
   IHarmonyCoordinator* harmony = nullptr;  ///< Harmony coordinator
+  const ChordProgression* chord_progression = nullptr;  ///< Chord progression (convenience)
 
   // Track-specific options (set by Coordinator based on paradigm)
   bool skip_collision_avoidance = false;          ///< For vocal-first mode
@@ -209,19 +211,6 @@ class ITrackBase {
   /// @brief Configure the generator with parameters.
   /// @param config Track configuration
   virtual void configure(const TrackConfig& config) = 0;
-
-  /// @brief Generate notes for a section.
-  ///
-  /// Default no-op. Override only for generators that use per-section logic
-  /// (most generators override generateFullTrack() instead).
-  ///
-  /// @param track Target MIDI track
-  /// @param section Section to generate
-  /// @param ctx Track generation context
-  virtual void generateSection(MidiTrack& track, const Section& section,
-                                TrackContext& ctx) {
-    (void)track; (void)section; (void)ctx;
-  }
 
   /// @brief Clamp a pitch to the physical model range.
   /// @param pitch Input pitch

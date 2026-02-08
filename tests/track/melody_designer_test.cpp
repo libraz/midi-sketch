@@ -92,29 +92,26 @@ TEST(MelodyDesignerTest, SelectPitchChoiceWithTarget) {
 
 TEST(MelodyDesignerTest, ApplyDirectionInertiaSameUnchanged) {
   std::mt19937 rng(42);
-  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
 
-  PitchChoice result = melody::applyDirectionInertia(PitchChoice::Same, 3, tmpl, rng);
+  PitchChoice result = melody::applyDirectionInertia(PitchChoice::Same, 3, rng);
   EXPECT_EQ(result, PitchChoice::Same);
 }
 
 TEST(MelodyDesignerTest, ApplyDirectionInertiaTargetUnchanged) {
   std::mt19937 rng(42);
-  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
 
   PitchChoice result =
-      melody::applyDirectionInertia(PitchChoice::TargetStep, -3, tmpl, rng);
+      melody::applyDirectionInertia(PitchChoice::TargetStep, -3, rng);
   EXPECT_EQ(result, PitchChoice::TargetStep);
 }
 
 TEST(MelodyDesignerTest, ApplyDirectionInertiaInfluencesStep) {
   std::mt19937 rng(42);
-  const MelodyTemplate& tmpl = getTemplate(MelodyTemplateId::PlateauTalk);
 
   // With strong positive inertia, should tend toward StepUp
   int up_count = 0;
   for (int i = 0; i < 100; ++i) {
-    PitchChoice result = melody::applyDirectionInertia(PitchChoice::StepDown, 3, tmpl, rng);
+    PitchChoice result = melody::applyDirectionInertia(PitchChoice::StepDown, 3, rng);
     if (result == PitchChoice::StepUp) up_count++;
   }
 

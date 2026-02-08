@@ -159,27 +159,6 @@ class StubHarmonyContext : public IHarmonyCoordinator {
     return false;  // Stub says no avoidance needed
   }
 
-  void precomputeCandidatesForTrack(TrackRole /*track*/,
-                                     const std::vector<Section>& /*sections*/) override {
-    // No-op for stub
-  }
-
-  TimeSliceCandidates getCandidatesAt(Tick /*tick*/, TrackRole /*track*/) const override {
-    return {};  // Empty candidates
-  }
-
-  SafeNoteOptions getSafeNoteOptions(Tick start, Tick duration, uint8_t desired_pitch,
-                                      TrackRole /*track*/, uint8_t /*low*/,
-                                      uint8_t /*high*/) const override {
-    SafeNoteOptions options;
-    options.start = start;
-    options.duration = duration;
-    options.max_safe_duration = duration;
-    // Return the desired pitch as the only candidate with full safety
-    options.candidates.push_back({desired_pitch, 1.0f, true, true});
-    return options;
-  }
-
   void applyMotifToSections(const std::vector<NoteEvent>& /*motif_pattern*/,
                              const std::vector<Section>& /*targets*/,
                              MidiTrack& /*track*/) override {

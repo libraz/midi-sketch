@@ -859,7 +859,7 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
   std::map<SectionType, std::vector<LockedNoteEntry>> coord_axis_note_cache;
 
   for (const auto& section : sections) {
-    if (!hasTrack(section.track_mask, TrackMask::Motif)) {
+    if (shouldSkipSection(section)) {
       sec_idx++;
       continue;
     }
@@ -994,12 +994,12 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
         Tick absolute_tick = pos + note.start_tick;
         if (absolute_tick >= section_end) continue;
 
-        uint8_t current_bar = static_cast<uint8_t>((absolute_tick - pos) / TICKS_PER_BAR);
+        uint8_t current_bar = static_cast<uint8_t>(tickToBar(absolute_tick - pos));
 
         // Phrase tail rest: skip ~50% of notes in the last bar, reduce in penultimate
         if (section.phrase_tail_rest) {
           uint8_t section_bar = static_cast<uint8_t>(
-              (absolute_tick - section.start_tick) / TICKS_PER_BAR);
+              tickToBar(absolute_tick - section.start_tick));
           if (isPhraseTail(section_bar, section.bars)) {
             if (isLastBar(section_bar, section.bars)) {
               // Last bar: skip notes in the second half of the bar

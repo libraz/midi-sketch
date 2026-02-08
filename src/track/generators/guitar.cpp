@@ -131,6 +131,31 @@ static uint8_t calculateGuitarVelocity(uint8_t base, SectionType section,
 }
 
 // ============================================================================
+// Vocal ceiling helper
+// ============================================================================
+
+/// @brief Get effective high pitch for guitar, capped by vocal register.
+///
+/// Queries the harmony context for the highest vocal pitch sounding in the
+/// given time range and returns the minimum of kGuitarHigh and that vocal pitch.
+/// If no vocal is sounding, returns kGuitarHigh unchanged.
+///
+/// @param harmony Harmony context for vocal pitch lookup
+/// @param onset_start Start tick of the note onset window
+/// @param onset_end End tick of the note onset window
+/// @return Effective maximum pitch for guitar at this onset
+static uint8_t getEffectiveHighForVocal(const IHarmonyContext& harmony,
+                                         Tick onset_start, Tick onset_end) {
+  uint8_t vocal_at_onset = harmony.getHighestPitchForTrackInRange(
+      onset_start, onset_end, TrackRole::Vocal);
+  if (vocal_at_onset > 0) {
+    return static_cast<uint8_t>(
+        std::min(static_cast<int>(kGuitarHigh), static_cast<int>(vocal_at_onset)));
+  }
+  return kGuitarHigh;
+}
+
+// ============================================================================
 // Pattern generation per style
 // ============================================================================
 
@@ -167,11 +192,7 @@ static void generateFingerpickBar(MidiTrack& track, IHarmonyContext& harmony,
     uint8_t vel = calculateGuitarVelocity(base_vel, section, GuitarStyle::Fingerpick, beat_pos);
 
     // Per-onset vocal ceiling: guitar should not exceed vocal register
-    uint8_t vocal_at_onset = harmony.getHighestPitchForTrackInRange(
-        pos, pos + note_dur, TrackRole::Vocal);
-    uint8_t effective_high = (vocal_at_onset > 0)
-        ? std::min(static_cast<int>(kGuitarHigh), static_cast<int>(vocal_at_onset))
-        : kGuitarHigh;
+    uint8_t effective_high = getEffectiveHighForVocal(harmony, pos, pos + note_dur);
 
     NoteOptions opts;
     opts.start = pos;
@@ -218,11 +239,7 @@ static void generateStrumBar(MidiTrack& track, IHarmonyContext& harmony,
     uint8_t vel = calculateGuitarVelocity(base_vel, section, GuitarStyle::Strum, beat_pos);
 
     // Per-onset vocal ceiling
-    uint8_t vocal_at_onset = harmony.getHighestPitchForTrackInRange(
-        pos, pos + strum_dur, TrackRole::Vocal);
-    uint8_t effective_high = (vocal_at_onset > 0)
-        ? std::min(static_cast<int>(kGuitarHigh), static_cast<int>(vocal_at_onset))
-        : kGuitarHigh;
+    uint8_t effective_high = getEffectiveHighForVocal(harmony, pos, pos + strum_dur);
 
     // Strum all chord notes simultaneously.
     // For chordal strums, pre-check each pitch against other tracks and skip
@@ -267,11 +284,7 @@ static void generatePowerChordBar(MidiTrack& track, IHarmonyContext& harmony,
     uint8_t vel = calculateGuitarVelocity(base_vel, section, GuitarStyle::PowerChord, beat * 2);
 
     // Per-onset vocal ceiling
-    uint8_t vocal_at_onset = harmony.getHighestPitchForTrackInRange(
-        pos, pos + dur, TrackRole::Vocal);
-    uint8_t effective_high = (vocal_at_onset > 0)
-        ? std::min(static_cast<int>(kGuitarHigh), static_cast<int>(vocal_at_onset))
-        : kGuitarHigh;
+    uint8_t effective_high = getEffectiveHighForVocal(harmony, pos, pos + dur);
 
     // Power chord: pre-check and skip unsafe pitches (same as strum)
     for (uint8_t pitch : pitches) {
@@ -350,11 +363,7 @@ static void generatePedalToneBar(MidiTrack& track, IHarmonyContext& harmony,
     if (pitch < kGuitarLow) pitch += 12;
 
     // Per-onset vocal ceiling
-    uint8_t vocal_at_onset = harmony.getHighestPitchForTrackInRange(
-        pos, pos + note_dur, TrackRole::Vocal);
-    uint8_t effective_high = (vocal_at_onset > 0)
-        ? std::min(static_cast<int>(kGuitarHigh), static_cast<int>(vocal_at_onset))
-        : kGuitarHigh;
+    uint8_t effective_high = getEffectiveHighForVocal(harmony, pos, pos + note_dur);
 
     NoteOptions opts;
     opts.start = pos;
@@ -403,11 +412,7 @@ static void generateRhythmChordBar(MidiTrack& track, IHarmonyContext& harmony,
     uint8_t vel = calculateGuitarVelocity(base_vel, section, GuitarStyle::RhythmChord, beat_pos);
 
     // Per-onset vocal ceiling
-    uint8_t vocal_at_onset = harmony.getHighestPitchForTrackInRange(
-        pos, pos + note_dur, TrackRole::Vocal);
-    uint8_t effective_high = (vocal_at_onset > 0)
-        ? std::min(static_cast<int>(kGuitarHigh), static_cast<int>(vocal_at_onset))
-        : kGuitarHigh;
+    uint8_t effective_high = getEffectiveHighForVocal(harmony, pos, pos + note_dur);
 
     // Root + 5th (2 simultaneous notes), pre-check consonance
     for (uint8_t pitch : {base_root, fifth}) {
@@ -474,11 +479,7 @@ static void generateTremoloPickBar(MidiTrack& track, IHarmonyContext& harmony,
     }
 
     // Per-onset vocal ceiling
-    uint8_t vocal_at_onset = harmony.getHighestPitchForTrackInRange(
-        pos, pos + note_dur, TrackRole::Vocal);
-    uint8_t effective_high = (vocal_at_onset > 0)
-        ? std::min(static_cast<int>(kGuitarHigh), static_cast<int>(vocal_at_onset))
-        : kGuitarHigh;
+    uint8_t effective_high = getEffectiveHighForVocal(harmony, pos, pos + note_dur);
 
     NoteOptions opts;
     opts.start = pos;
@@ -654,7 +655,7 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
             ? static_cast<GuitarStyle>(bc.section.guitar_style_hint - 1)
             : base_style;
 
-        int abs_bar = static_cast<int>(bc.bar_start / TICKS_PER_BAR);
+        int abs_bar = static_cast<int>(tickToBar(bc.bar_start));
         bool slow_harmonic = (bc.harmonic.density == HarmonicDensity::Slow);
         Tick half_bar = bc.bar_start + TICKS_PER_BAR / 2;
 

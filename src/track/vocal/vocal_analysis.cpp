@@ -12,6 +12,8 @@
 #include <cmath>
 #include <random>
 
+#include "core/note_timeline_utils.h"
+
 namespace midisketch {
 
 namespace {
@@ -119,8 +121,7 @@ std::vector<VocalPhraseInfo> extractPhrases(const std::vector<NoteEvent>& notes,
 
   // Sort notes chronologically for gap detection
   std::vector<NoteEvent> sorted_notes = notes;
-  std::sort(sorted_notes.begin(), sorted_notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+  NoteTimeline::sortByStartTick(sorted_notes);
 
   // Initialize first phrase with first note
   Tick phrase_start = sorted_notes[0].start_tick;
@@ -177,8 +178,7 @@ std::vector<Tick> findRestPositions(const std::vector<NoteEvent>& notes, Tick /*
 
   // Sort notes chronologically
   std::vector<NoteEvent> sorted_notes = notes;
-  std::sort(sorted_notes.begin(), sorted_notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+  NoteTimeline::sortByStartTick(sorted_notes);
 
   // Check for initial rest (silence before first note)
   if (sorted_notes[0].start_tick > 0) {

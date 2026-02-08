@@ -35,6 +35,37 @@ constexpr Tick TICKS_PER_BAR = TICKS_PER_BEAT * BEATS_PER_BAR;
 /// MIDI note number for Middle C (C4).
 constexpr uint8_t MIDI_C4 = 60;
 
+// ============================================================================
+// Tick/Bar/Beat Conversion Utilities
+// ============================================================================
+
+/// @brief Convert tick position to zero-based bar index.
+/// @param tick Absolute tick position
+/// @return Bar index (0-based)
+inline constexpr Tick tickToBar(Tick tick) { return tick / TICKS_PER_BAR; }
+
+/// @brief Convert tick position to zero-based beat index within the song.
+/// @param tick Absolute tick position
+/// @return Beat index (0-based, absolute within song)
+inline constexpr Tick tickToBeat(Tick tick) { return tick / TICKS_PER_BEAT; }
+
+/// @brief Get the tick position within the current bar (0 to TICKS_PER_BAR-1).
+/// @param tick Absolute tick position
+/// @return Position within bar (0 to 1919)
+inline constexpr Tick positionInBar(Tick tick) { return tick % TICKS_PER_BAR; }
+
+/// @brief Get the beat position within the current bar (0 to BEATS_PER_BAR-1).
+/// @param tick Absolute tick position
+/// @return Beat index within bar (0 to 3)
+inline constexpr uint8_t beatInBar(Tick tick) {
+  return static_cast<uint8_t>(positionInBar(tick) / TICKS_PER_BEAT);
+}
+
+/// @brief Convert bar index to tick position (start of that bar).
+/// @param bar Zero-based bar index
+/// @return Tick at the start of the bar
+inline constexpr Tick barToTick(Tick bar) { return bar * TICKS_PER_BAR; }
+
 /// @brief Raw MIDI event for SMF output only.
 struct MidiEvent {
   Tick tick;       ///< Absolute time in ticks

@@ -20,6 +20,7 @@
 #include "core/melody_templates.h"
 #include "core/mood_utils.h"
 #include "core/note_creator.h"
+#include "core/note_timeline_utils.h"
 #include "core/note_source.h"
 #include "core/pitch_bend_curves.h"
 #include "core/pitch_utils.h"
@@ -202,8 +203,7 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
   if (all_notes.size() < static_cast<size_t>(max_consecutive + 1)) return;
 
   // Sort by time first
-  std::sort(all_notes.begin(), all_notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+  NoteTimeline::sortByStartTick(all_notes);
 
   size_t streak_start = 0;
   int streak_count = 1;
@@ -238,7 +238,7 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
             // Check if it's a chord tone or at least in scale
             int pc = candidate % 12;
             bool is_chord_tone = std::find(chord_tones.begin(), chord_tones.end(), pc) != chord_tones.end();
-            bool is_scale = (pc == 0 || pc == 2 || pc == 4 || pc == 5 || pc == 7 || pc == 9 || pc == 11);
+            bool is_scale = isScaleTone(pc);
 
             if (is_chord_tone) {
               // Verify no harsh collision
@@ -1661,7 +1661,7 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       continue;
     }
     // Skip sections where vocal is disabled by track_mask
-    if (!hasTrack(section.track_mask, TrackMask::Vocal)) {
+    if (shouldSkipSection(section)) {
       continue;
     }
 
@@ -1951,7 +1951,7 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
         if (is_chromatic) {
           // Preserve if on a weak beat (not beats 1 or 3) and resolves by half-step
           // to the next note (which should be a scale tone)
-          Tick pos_in_bar = note.start_tick % TICKS_PER_BAR;
+          Tick pos_in_bar = positionInBar(note.start_tick);
           bool is_weak = (pos_in_bar >= TICKS_PER_BEAT / 2) &&
                          !(pos_in_bar >= 2 * TICKS_PER_BEAT &&
                            pos_in_bar < 2 * TICKS_PER_BEAT + TICKS_PER_BEAT / 2);

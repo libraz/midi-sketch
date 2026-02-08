@@ -315,20 +315,6 @@ TEST_F(HarmonyInterfaceTest, MustAvoidReturnsFalse) {
   EXPECT_FALSE(stub_->mustAvoid(TrackRole::Motif, TrackRole::Vocal));
 }
 
-TEST_F(HarmonyInterfaceTest, GetCandidatesAtReturnsEmpty) {
-  auto candidates = stub_->getCandidatesAt(0, TrackRole::Chord);
-  EXPECT_TRUE(candidates.safe_pitches.empty());
-}
-
-TEST_F(HarmonyInterfaceTest, GetSafeNoteOptionsReturnsDesiredPitch) {
-  auto options = stub_->getSafeNoteOptions(0, 480, 60, TrackRole::Chord, 48, 84);
-  EXPECT_EQ(options.start, 0u);
-  EXPECT_EQ(options.duration, 480u);
-  EXPECT_EQ(options.max_safe_duration, 480u);
-  ASSERT_EQ(options.candidates.size(), 1u);
-  EXPECT_EQ(options.candidates[0].pitch, 60);
-}
-
 // ============================================================================
 // Polymorphic Interface Tests
 // ============================================================================

@@ -194,6 +194,19 @@ void Generator::validateVocalRange() {
   }
 }
 
+uint16_t Generator::resolveAndClampBpm() {
+  uint16_t bpm = params_.bpm;
+  if (bpm == 0) {
+    bpm = getMoodDefaultBpm(params_.mood);
+  }
+  auto [clamped, warn] = clampRhythmSyncBpm(bpm, params_.paradigm, params_.bpm_explicit);
+  bpm = clamped;
+  if (warn) warnings_.push_back(*warn);
+  song_.setBpm(bpm);
+  params_.bpm = bpm;  // Propagate clamped BPM to params for Coordinator
+  return bpm;
+}
+
 void Generator::applyAccompanimentConfig(const AccompanimentConfig& config) {
   params_.drums_enabled = config.drums_enabled;
   params_.arpeggio_enabled = config.arpeggio_enabled;
@@ -214,12 +227,12 @@ void Generator::applyAccompanimentConfig(const AccompanimentConfig& config) {
   params_.humanize = config.humanize;
   params_.humanize_timing = config.humanize_timing / 100.0f;
   params_.humanize_velocity = config.humanize_velocity / 100.0f;
-  se_enabled_ = config.se_enabled;
-  call_enabled_ = config.call_enabled;
-  call_density_ = static_cast<CallDensity>(config.call_density);
-  intro_chant_ = static_cast<IntroChant>(config.intro_chant);
-  mix_pattern_ = static_cast<MixPattern>(config.mix_pattern);
-  call_notes_enabled_ = config.call_notes_enabled;
+  params_.se_enabled = config.se_enabled;
+  params_.call_enabled = config.call_enabled;
+  params_.call_density = static_cast<CallDensity>(config.call_density);
+  params_.intro_chant = static_cast<IntroChant>(config.intro_chant);
+  params_.mix_pattern = static_cast<MixPattern>(config.mix_pattern);
+  params_.call_notes_enabled = config.call_notes_enabled;
 }
 
 void Generator::clearAccompanimentTracks() {
@@ -247,25 +260,26 @@ std::vector<Section> Generator::buildSongStructure(uint16_t bpm) {
   // Priority: target_duration > explicit form > Blueprint section_flow > StructurePattern
   std::vector<Section> sections;
   if (params_.target_duration_seconds > 0) {
-    sections = buildStructureForDuration(params_.target_duration_seconds, bpm, call_enabled_,
-                                         intro_chant_, mix_pattern_, params_.structure);
+    sections = buildStructureForDuration(params_.target_duration_seconds, bpm,
+                                         params_.call_enabled, params_.intro_chant,
+                                         params_.mix_pattern, params_.structure);
   } else if (params_.form_explicit) {
     // Explicit form setting takes precedence over Blueprint section_flow
     sections = buildStructure(params_.structure);
-    if (call_enabled_) {
-      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
+    if (params_.call_enabled) {
+      insertCallSections(sections, params_.intro_chant, params_.mix_pattern, bpm);
     }
   } else if (blueprint_->section_flow != nullptr && blueprint_->section_count > 0) {
     // Use Blueprint's custom section flow
     sections = buildStructureFromBlueprint(*blueprint_);
-    if (call_enabled_) {
-      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
+    if (params_.call_enabled) {
+      insertCallSections(sections, params_.intro_chant, params_.mix_pattern, bpm);
     }
   } else {
     // Use traditional StructurePattern
     sections = buildStructure(params_.structure);
-    if (call_enabled_) {
-      insertCallSections(sections, intro_chant_, mix_pattern_, bpm);
+    if (params_.call_enabled) {
+      insertCallSections(sections, params_.intro_chant, params_.mix_pattern, bpm);
     }
   }
 
@@ -281,18 +295,24 @@ std::vector<Section> Generator::buildSongStructure(uint16_t bpm) {
 void Generator::generateFromConfig(const SongConfig& config) {
   // Convert SongConfig to GeneratorParams (single source of truth)
   GeneratorParams params = ConfigConverter::convert(config);
-
-  // Copy settings from params to Generator members for use during generation
-  se_enabled_ = params.se_enabled;
-  call_enabled_ = params.call_enabled;
-  call_notes_enabled_ = params.call_notes_enabled;
-  intro_chant_ = params.intro_chant;
-  mix_pattern_ = params.mix_pattern;
-  call_density_ = params.call_density;
-  modulation_timing_ = params.modulation_timing;
-  modulation_semitones_ = params.modulation_semitones;
-
   generate(params);
+}
+
+void Generator::acceptParams(const GeneratorParams& params) {
+  // Preserve pre-set modulation timing if incoming params has default values.
+  // setModulationTiming() sets params_ before generate() is called, and we
+  // don't want params_ = params to overwrite those pre-set values.
+  ModulationTiming saved_mod_timing = params_.modulation_timing;
+  int8_t saved_mod_semitones = params_.modulation_semitones;
+
+  params_ = params;
+
+  // Restore pre-set modulation if incoming params has defaults
+  if (params.modulation_timing == ModulationTiming::None &&
+      saved_mod_timing != ModulationTiming::None) {
+    params_.modulation_timing = saved_mod_timing;
+    params_.modulation_semitones = saved_mod_semitones;
+  }
 }
 
 uint16_t Generator::initializeGenerationState() {
@@ -310,19 +330,8 @@ uint16_t Generator::initializeGenerationState() {
   configureRhythmSyncMotif();
   configureAddictiveMotif();
 
-  // Resolve BPM
-  uint16_t bpm = params_.bpm;
-  if (bpm == 0) {
-    bpm = getMoodDefaultBpm(params_.mood);
-  }
-
-  // BPM validation for RhythmSync paradigm
-  auto [clamped_bpm, bpm_warning] = clampRhythmSyncBpm(bpm, params_.paradigm, params_.bpm_explicit);
-  bpm = clamped_bpm;
-  if (bpm_warning) warnings_.push_back(*bpm_warning);
-
-  song_.setBpm(bpm);
-  params_.bpm = bpm;  // Propagate clamped BPM to params for Coordinator
+  // Resolve and clamp BPM for paradigm constraints
+  uint16_t bpm = resolveAndClampBpm();
 
   // Build song structure
   std::vector<Section> sections = buildSongStructure(bpm);
@@ -370,14 +379,6 @@ uint16_t Generator::initializeGenerationState() {
 }
 
 void Generator::generateAllTracksViaCoordinator() {
-  // Sync internal state to params for Coordinator
-  params_.se_enabled = se_enabled_;
-  params_.call_enabled = call_enabled_;
-  params_.call_notes_enabled = call_notes_enabled_;
-  params_.intro_chant = intro_chant_;
-  params_.mix_pattern = mix_pattern_;
-  params_.call_density = call_density_;
-
   // Initialize Coordinator with external dependencies
   coordinator_->initialize(params_, song_.arrangement(), rng_, harmony_context_.get());
 
@@ -400,8 +401,8 @@ void Generator::applyPostProcessingEffects() {
   // Apply layer scheduling (per-bar track activation/deactivation)
   applyLayerSchedule();
 
-  // Apply transition dynamics to melodic tracks
-  applyTransitionDynamics();
+  // Apply post-processing pipeline to melodic tracks
+  applyPostProcessingPipeline();
 
   // Generate CC11 Expression curves for melodic tracks
   generateExpressionCurves();
@@ -435,7 +436,7 @@ void Generator::applyPostProcessingEffects() {
 }
 
 void Generator::generate(const GeneratorParams& params) {
-  params_ = params;
+  acceptParams(params);
 
   // Phase 1: Initialize all state
   initializeGenerationState();
@@ -458,62 +459,8 @@ void Generator::generate(const GeneratorParams& params) {
  * Skips collision avoidance so vocal uses full creative range.
  */
 void Generator::generateVocal(const GeneratorParams& params) {
-  params_ = params;
-  warnings_.clear();  // Reset warnings for new generation
-  validateVocalRange();
-
-  // Initialize seed
-  uint32_t seed = resolveSeed(params.seed);
-  rng_.seed(seed);
-  song_.setMelodySeed(seed);
-  song_.setMotifSeed(seed);
-
-  // Initialize blueprint and motif configuration
-  initializeBlueprint(seed);
-  configureRhythmSyncMotif();
-  configureAddictiveMotif();
-
-  // Resolve BPM
-  uint16_t bpm = params.bpm;
-  if (bpm == 0) {
-    bpm = getMoodDefaultBpm(params.mood);
-  }
-
-  // BPM validation for RhythmSync paradigm
-  {
-    auto [clamped, warn] = clampRhythmSyncBpm(bpm, params_.paradigm, params_.bpm_explicit);
-    bpm = clamped;
-    if (warn) warnings_.push_back(*warn);
-  }
-
-  song_.setBpm(bpm);
-  params_.bpm = bpm;  // Propagate clamped BPM to params for Coordinator
-
-  // Build song structure
-  std::vector<Section> sections = buildSongStructure(bpm);
-
-  // Apply density progression for Orangestar style
-  applyDensityProgressionToSections(sections, params_.paradigm);
-
-  // Apply default layer scheduling for staggered track entrances/exits
-  applyDefaultLayerSchedule(sections);
-
-  song_.setArrangement(Arrangement(sections));
-
-  // Clear all tracks
-  song_.clearAll();
-
-  // Initialize harmony context (needed for chord tones reference)
-  const auto& progression = getChordProgression(params.chord_id);
-  harmony_context_->initialize(song_.arrangement(), progression, params.mood);
-
-  // Calculate modulation for all composition styles
-  calculateModulation();
-
-  // Pre-compute drum grid for RhythmSync paradigm
-  if (params_.paradigm == GenerationParadigm::RhythmSync) {
-    computeDrumGrid();
-  }
+  acceptParams(params);
+  initializeGenerationState();
 
   // RhythmSync: generate Motif first as coordinate axis
   // Vocal will use the Motif's rhythm pattern for quantization
@@ -527,11 +474,7 @@ void Generator::generateVocal(const GeneratorParams& params) {
   VocalGenerator vocal_gen;
 
   // Build FullTrackContext
-  FullTrackContext ctx;
-  ctx.song = &song_;
-  ctx.params = &params_;
-  ctx.rng = &rng_;
-  ctx.harmony = harmony_context_.get();
+  FullTrackContext ctx = buildBaseContext();
   ctx.skip_collision_avoidance = true;  // Vocal-first mode
   ctx.drum_grid = getDrumGrid();
 
@@ -549,23 +492,26 @@ void Generator::regenerateVocal(uint32_t new_seed) {
   rng_.seed(seed);
   song_.setMelodySeed(seed);
 
-  // Clear only vocal track (preserve structure and other settings)
+  // Clear vocal track
   song_.clearTrack(TrackRole::Vocal);
 
+  // RhythmSync: regenerate Motif as new coordinate axis for the new Vocal
+  if (params_.paradigm == GenerationParadigm::RhythmSync) {
+    song_.setMotifSeed(seed);
+    song_.clearTrack(TrackRole::Motif);
+    harmony_context_->clearNotesForTrack(TrackRole::Motif);
+    generateMotif();
+  }
+
   // Regenerate vocal with collision avoidance skipped
-  // BUT we still pass harmony_context_ for chord-aware melody generation
   VocalGenerator vocal_gen;
 
   // Build FullTrackContext
-  FullTrackContext ctx;
-  ctx.song = &song_;
-  ctx.params = &params_;
-  ctx.rng = &rng_;
-  ctx.harmony = harmony_context_.get();
+  FullTrackContext ctx = buildBaseContext();
   ctx.skip_collision_avoidance = true;  // Vocal-first mode
   ctx.drum_grid = getDrumGrid();
 
-  // RhythmSync: pass existing Motif as coordinate axis
+  // RhythmSync: pass Motif as coordinate axis for Vocal generation
   if (params_.paradigm == GenerationParadigm::RhythmSync &&
       !song_.motif().empty()) {
     ctx.motif_track = &song_.motif();
@@ -605,22 +551,26 @@ void Generator::regenerateVocal(const VocalConfig& config) {
   rng_.seed(seed);
   song_.setMelodySeed(seed);
 
-  // Clear only vocal track
+  // Clear vocal track
   song_.clearTrack(TrackRole::Vocal);
+
+  // RhythmSync: regenerate Motif unless keep_motif is set
+  if (params_.paradigm == GenerationParadigm::RhythmSync && !config.keep_motif) {
+    song_.setMotifSeed(seed);
+    song_.clearTrack(TrackRole::Motif);
+    harmony_context_->clearNotesForTrack(TrackRole::Motif);
+    generateMotif();
+  }
 
   // Regenerate vocal using VocalGenerator
   VocalGenerator vocal_gen;
 
   // Build FullTrackContext
-  FullTrackContext ctx;
-  ctx.song = &song_;
-  ctx.params = &params_;
-  ctx.rng = &rng_;
-  ctx.harmony = harmony_context_.get();
+  FullTrackContext ctx = buildBaseContext();
   ctx.skip_collision_avoidance = true;  // Vocal-first mode
   ctx.drum_grid = getDrumGrid();
 
-  // RhythmSync: pass existing Motif as coordinate axis
+  // RhythmSync: pass Motif as coordinate axis for Vocal generation
   if (params_.paradigm == GenerationParadigm::RhythmSync &&
       !song_.motif().empty()) {
     ctx.motif_track = &song_.motif();
@@ -723,14 +673,11 @@ std::vector<Generator::VocalClash> Generator::detectVocalAccompanimentClashes() 
           continue;  // No overlap
         }
 
-        // Check for dissonant interval
-        // - Minor 2nd (1): Always dissonant
-        // - Major 2nd (2): Dissonant in close voicing (within 2 octaves)
-        // - Major 7th (11): Context-dependent, treat as dissonant
+        // Check for dissonant interval using unified API:
+        // m2/m9 always, M2 within 2 octaves, M7, no tritone check
         int actual_interval = std::abs(static_cast<int>(v_pitch) - static_cast<int>(a_pitch));
-        int interval = actual_interval % 12;
-        bool is_close_voicing = (actual_interval < 24);  // Within 2 octaves
-        bool is_dissonant = (interval == 1 || interval == 11 || (interval == 2 && is_close_voicing));
+        bool is_dissonant = isDissonantSemitoneInterval(
+            actual_interval, DissonanceCheckOptions::vocalClash());
 
         if (is_dissonant) {
           // Find a safe pitch using getSafePitchCandidates
@@ -843,12 +790,12 @@ void Generator::regenerateAccompaniment(uint32_t new_seed) {
   config.humanize = params_.humanize;
   config.humanize_timing = static_cast<uint8_t>(params_.humanize_timing * 100);
   config.humanize_velocity = static_cast<uint8_t>(params_.humanize_velocity * 100);
-  config.se_enabled = se_enabled_;
-  config.call_enabled = call_enabled_;
-  config.call_density = static_cast<uint8_t>(call_density_);
-  config.intro_chant = static_cast<uint8_t>(intro_chant_);
-  config.mix_pattern = static_cast<uint8_t>(mix_pattern_);
-  config.call_notes_enabled = call_notes_enabled_;
+  config.se_enabled = params_.se_enabled;
+  config.call_enabled = params_.call_enabled;
+  config.call_density = static_cast<uint8_t>(params_.call_density);
+  config.intro_chant = static_cast<uint8_t>(params_.intro_chant);
+  config.mix_pattern = static_cast<uint8_t>(params_.mix_pattern);
+  config.call_notes_enabled = params_.call_notes_enabled;
 
   regenerateAccompaniment(config);
 }
@@ -886,61 +833,8 @@ void Generator::setMelody(const MelodyData& melody) {
 }
 
 void Generator::setVocalNotes(const GeneratorParams& params, const std::vector<NoteEvent>& notes) {
-  params_ = params;
-  validateVocalRange();
-
-  // Initialize seed (use provided seed or generate)
-  uint32_t seed = resolveSeed(params.seed);
-  rng_.seed(seed);
-  song_.setMelodySeed(seed);
-  song_.setMotifSeed(seed);
-
-  // Initialize blueprint and motif configuration
-  initializeBlueprint(seed);
-  configureRhythmSyncMotif();
-  configureAddictiveMotif();
-
-  // Resolve BPM
-  uint16_t bpm = params.bpm;
-  if (bpm == 0) {
-    bpm = getMoodDefaultBpm(params.mood);
-  }
-
-  // BPM validation for RhythmSync paradigm
-  {
-    auto [clamped, warn] = clampRhythmSyncBpm(bpm, params_.paradigm, params_.bpm_explicit);
-    bpm = clamped;
-    if (warn) warnings_.push_back(*warn);
-  }
-
-  song_.setBpm(bpm);
-  params_.bpm = bpm;  // Propagate clamped BPM to params for Coordinator
-
-  // Build song structure
-  std::vector<Section> sections = buildSongStructure(bpm);
-
-  // Apply density progression for Orangestar style
-  applyDensityProgressionToSections(sections, params_.paradigm);
-
-  // Apply default layer scheduling for staggered track entrances/exits
-  applyDefaultLayerSchedule(sections);
-
-  song_.setArrangement(Arrangement(sections));
-
-  // Clear all tracks
-  song_.clearAll();
-
-  // Initialize harmony context
-  const auto& progression = getChordProgression(params.chord_id);
-  harmony_context_->initialize(song_.arrangement(), progression, params.mood);
-
-  // Calculate modulation for all composition styles
-  calculateModulation();
-
-  // Pre-compute drum grid for RhythmSync paradigm
-  if (params_.paradigm == GenerationParadigm::RhythmSync) {
-    computeDrumGrid();
-  }
+  acceptParams(params);
+  initializeGenerationState();
 
   // RhythmSync: generate Motif first as coordinate axis
   // Motif must exist before vocal notes are set so accompaniment can reference it
@@ -955,6 +849,16 @@ void Generator::setVocalNotes(const GeneratorParams& params, const std::vector<N
 
   // Register vocal notes with harmony context for accompaniment coordination
   harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
+}
+
+FullTrackContext Generator::buildBaseContext() {
+  FullTrackContext ctx;
+  ctx.song = &song_;
+  ctx.params = &params_;
+  ctx.rng = &rng_;
+  ctx.harmony = harmony_context_.get();
+  ctx.chord_progression = &getChordProgression(params_.chord_id);
+  return ctx;
 }
 
 void Generator::generateVocal() {
@@ -974,11 +878,7 @@ void Generator::generateVocal() {
   vocal_gen.setMotifTrack(motif_track);
 
   // Build FullTrackContext
-  FullTrackContext ctx;
-  ctx.song = &song_;
-  ctx.params = &params_;
-  ctx.rng = &rng_;
-  ctx.harmony = harmony_context_.get();
+  FullTrackContext ctx = buildBaseContext();
   ctx.drum_grid = getDrumGrid();
 
   vocal_gen.generateFullTrack(song_.vocal(), ctx);
@@ -992,11 +892,7 @@ void Generator::generateChord() {
   ChordGenerator chord_gen;
 
   // Build FullTrackContext
-  FullTrackContext ctx;
-  ctx.song = &song_;
-  ctx.params = &params_;
-  ctx.rng = &rng_;
-  ctx.harmony = harmony_context_.get();
+  FullTrackContext ctx = buildBaseContext();
 
   // Compute vocal analysis for register avoidance
   std::optional<VocalAnalysis> vocal_analysis;
@@ -1017,15 +913,11 @@ void Generator::generateBass() {
 
   // Compute kick pattern for Bass-Kick sync if not already cached
   if (!kick_cache_.has_value()) {
-    kick_cache_ = computeKickPattern(song_.arrangement().sections(), params_.mood, params_.bpm);
+    kick_cache_ = computeKickPattern(song_.arrangement().sections(), params_.mood);
   }
 
   // Build FullTrackContext
-  FullTrackContext ctx;
-  ctx.song = &song_;
-  ctx.params = &params_;
-  ctx.rng = &rng_;
-  ctx.harmony = harmony_context_.get();
+  FullTrackContext ctx = buildBaseContext();
   ctx.kick_cache = kick_cache_.has_value() ? &kick_cache_.value() : nullptr;
 
   bass_gen.generateFullTrack(song_.bass(), ctx);
@@ -1043,11 +935,7 @@ void Generator::generateDrums() {
   DrumsGenerator drums_gen;
 
   // Build FullTrackContext
-  FullTrackContext ctx;
-  ctx.song = &song_;
-  ctx.params = &params_;
-  ctx.rng = &rng_;
-  ctx.harmony = harmony_context_.get();
+  FullTrackContext ctx = buildBaseContext();
 
   // Pass vocal analysis if vocals exist (for RhythmSync/MelodyDriven modes)
   std::optional<VocalAnalysis> vocal_analysis;
@@ -1064,11 +952,7 @@ void Generator::generateArpeggio() {
   ArpeggioGenerator arpeggio_gen;
 
   // Build FullTrackContext
-  FullTrackContext ctx;
-  ctx.song = &song_;
-  ctx.params = &params_;
-  ctx.rng = &rng_;
-  ctx.harmony = harmony_context_.get();
+  FullTrackContext ctx = buildBaseContext();
 
   arpeggio_gen.generateFullTrack(song_.arpeggio(), ctx);
 }
@@ -1087,11 +971,7 @@ void Generator::generateAux() {
   AuxGenerator aux_gen;
 
   // Build FullTrackContext
-  FullTrackContext ctx;
-  ctx.song = &song_;
-  ctx.params = &params_;
-  ctx.rng = &rng_;
-  ctx.harmony = harmony_context_.get();
+  FullTrackContext ctx = buildBaseContext();
 
   aux_gen.generateFullTrack(song_.aux(), ctx);
 }
@@ -1099,8 +979,8 @@ void Generator::generateAux() {
 void Generator::calculateModulation() {
   // Use ModulationCalculator for modulation calculation
   auto result =
-      ModulationCalculator::calculate(modulation_timing_, modulation_semitones_, params_.structure,
-                                      song_.arrangement().sections(), rng_);
+      ModulationCalculator::calculate(params_.modulation_timing, params_.modulation_semitones,
+                                      params_.structure, song_.arrangement().sections(), rng_);
 
   song_.setModulation(result.tick, result.amount);
 }
@@ -1110,16 +990,12 @@ void Generator::generateSE() {
   SEGenerator se_gen;
 
   // Build FullTrackContext with call system options
-  FullTrackContext ctx;
-  ctx.song = &song_;
-  ctx.params = &params_;
-  ctx.rng = &rng_;
-  ctx.harmony = harmony_context_.get();
-  ctx.call_enabled = call_enabled_;
-  ctx.call_notes_enabled = call_notes_enabled_;
-  ctx.intro_chant = static_cast<uint8_t>(intro_chant_);
-  ctx.mix_pattern = static_cast<uint8_t>(mix_pattern_);
-  ctx.call_density = static_cast<uint8_t>(call_density_);
+  FullTrackContext ctx = buildBaseContext();
+  ctx.call_enabled = params_.call_enabled;
+  ctx.call_notes_enabled = params_.call_notes_enabled;
+  ctx.intro_chant = static_cast<uint8_t>(params_.intro_chant);
+  ctx.mix_pattern = static_cast<uint8_t>(params_.mix_pattern);
+  ctx.call_density = static_cast<uint8_t>(params_.call_density);
 
   se_gen.generateFullTrack(song_.se(), ctx);
 }
@@ -1133,11 +1009,7 @@ void Generator::generateMotif() {
   VocalAnalysis va;  // Keep in scope for pointer validity
 
   // Build FullTrackContext
-  FullTrackContext ctx;
-  ctx.song = &song_;
-  ctx.params = &params_;
-  ctx.rng = &rng_;
-  ctx.harmony = harmony_context_.get();
+  FullTrackContext ctx = buildBaseContext();
 
   // Only provide vocal context if:
   // 1. Vocal track exists and has notes
@@ -1253,10 +1125,8 @@ void Generator::rebuildMotifFromPattern() {
   }
 }
 
-void Generator::applyTransitionDynamics() {
-  const auto& sections = song_.arrangement().sections();
-
-  // Apply to melodic tracks (not SE or Drums)
+void Generator::applyPostProcessingPipeline() {
+  // Build track lists (not SE or Drums)
   // Exclude motif track when velocity_fixed=true to maintain consistent velocity
   std::vector<MidiTrack*> tracks = {&song_.vocal(), &song_.chord(), &song_.bass(),
                                     &song_.arpeggio(), &song_.guitar()};
@@ -1266,6 +1136,19 @@ void Generator::applyTransitionDynamics() {
     tracks.push_back(&song_.motif());
     track_roles.push_back(TrackRole::Motif);
   }
+
+  // Phase 1: Velocity shaping
+  applyVelocityShaping(tracks);
+
+  // Phase 2: Transition effects
+  applyTransitionEffects(tracks, track_roles);
+
+  // Phase 3: Final adjustments
+  applyFinalAdjustments();
+}
+
+void Generator::applyVelocityShaping(std::vector<MidiTrack*>& tracks) {
+  const auto& sections = song_.arrangement().sections();
 
   // Apply melody contour-following velocity to vocal track
   midisketch::applyMelodyContourVelocity(song_.vocal(), sections);
@@ -1278,7 +1161,7 @@ void Generator::applyTransitionDynamics() {
   // Apply bar-level velocity curves (4-bar phrase dynamics)
   midisketch::applyAllBarVelocityCurves(tracks, sections);
 
-  // Apply micro-dynamics for natural breathing (Proposal D)
+  // Apply micro-dynamics for natural breathing
   // Beat-level subtle velocity curves for all melodic tracks
   // Note: Drums excluded - Beat 4 reduction (0.92x) would damage groove feel
   for (MidiTrack* track : tracks) {
@@ -1286,9 +1169,15 @@ void Generator::applyTransitionDynamics() {
       midisketch::applyBeatMicroDynamics(*track);
     }
   }
+
   // Phrase-end decay for vocal track to create natural exhale at phrase boundaries
   // drive_feel affects duration stretch: laid-back = longer endings, aggressive = shorter
   midisketch::applyPhraseEndDecay(song_.vocal(), sections, params_.drive_feel);
+}
+
+void Generator::applyTransitionEffects(std::vector<MidiTrack*>& tracks,
+                                        const std::vector<TrackRole>& track_roles) {
+  const auto& sections = song_.arrangement().sections();
 
   // Apply transition dynamics (section endings)
   midisketch::applyAllTransitionDynamics(tracks, sections);
@@ -1299,7 +1188,6 @@ void Generator::applyTransitionDynamics() {
   // Apply exit patterns for musical section endings (boundary-aware sustain)
   PostProcessor::applyAllExitPatterns(tracks, track_roles, sections, harmony_context_.get());
 
-  // Phase 2: Section transition effects
   // Apply chorus drop (moment of silence before chorus)
   // Note: Vocal is excluded - it's the main melody and should continue through
   // Only backing tracks (chord, bass, etc.) are truncated for dramatic effect
@@ -1366,6 +1254,10 @@ void Generator::applyTransitionDynamics() {
       PostProcessor::fixMotifVocalClashes(song_.motif(), song_.vocal(), *harmony_context_);
     }
   }
+}
+
+void Generator::applyFinalAdjustments() {
+  const auto& sections = song_.arrangement().sections();
 
   // Clip vocal notes that sustain over chord changes with non-chord-tone pitches.
   // Must run AFTER all post-processing that may extend note durations
@@ -1385,13 +1277,9 @@ void Generator::applyTransitionDynamics() {
       if (clipped >= TICK_SIXTEENTH) {
         note.duration = clipped;
       }
-      // If clipped < TICK_SIXTEENTH, note starts too close to boundary — keep as-is
+      // If clipped < TICK_SIXTEENTH, note starts too close to boundary -- keep as-is
     }
   }
-
-  // NOTE: Track-vocal clash fixes have been moved to applyPostProcessingEffects()
-  // to run AFTER humanization. They were previously here but humanize had not yet
-  // been applied, so humanize-induced clashes were missed.
 
   // Apply arrangement holes for contrast (mute background at section boundaries)
   PostProcessor::applyArrangementHoles(song_.motif(), song_.arpeggio(), song_.aux(),
@@ -1629,7 +1517,7 @@ bool shouldRemoveNoteForLayerSchedule(const NoteEvent& note, Tick section_start,
   }
 
   // Calculate which bar this note falls in (0-based)
-  uint8_t bar_offset = static_cast<uint8_t>((note.start_tick - section_start) / TICKS_PER_BAR);
+  uint8_t bar_offset = static_cast<uint8_t>(tickToBar(note.start_tick - section_start));
 
   // Check if this track is active at this bar
   return !isTrackActiveAtBar(layer_events, bar_offset, track_mask);

@@ -262,13 +262,15 @@ class Coordinator {
   /// @brief Register track generators.
   void registerTrackGenerators();
 
-  // =========================================================================
-  // Cross-Section Coordination
-  // =========================================================================
-
-  /// @brief Apply cross-section coordination after generation.
-  /// @param song Song to coordinate
-  void applyCrossSectionCoordination(Song& song);
+  /// @brief Determine whether a track should be skipped during generation.
+  ///
+  /// Consolidates all skip conditions: disabled flags, composition style,
+  /// paradigm constraints, mood sentinel checks, and blueprint requirements.
+  ///
+  /// @param role Track role to check
+  /// @param song Song reference (needed to check if Motif already exists)
+  /// @return true if the track should be skipped
+  bool shouldSkipTrack(TrackRole role, const Song& song) const;
 
   /// @brief Apply max_moving_voices constraint by freezing low-priority tracks.
   /// @param song The song with generated tracks

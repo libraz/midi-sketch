@@ -154,10 +154,9 @@ TimeFeel getMoodTimeFeel(Mood mood);
  *
  * @param sections Song sections
  * @param mood Current mood (affects drum style)
- * @param bpm Tempo (for density calculation)
  * @return KickPatternCache with predicted kick positions
  */
-KickPatternCache computeKickPattern(const std::vector<Section>& sections, Mood mood, uint16_t bpm);
+KickPatternCache computeKickPattern(const std::vector<Section>& sections, Mood mood);
 
 }  // namespace midisketch
 

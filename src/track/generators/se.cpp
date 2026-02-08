@@ -245,7 +245,7 @@ void SEGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& 
   if (ctx.call_enabled && ctx.rng) {
     for (const auto& section : sections) {
       // Skip sections where SE is disabled by track_mask
-      if (!hasTrack(section.track_mask, TrackMask::SE)) {
+      if (shouldSkipSection(section)) {
         continue;
       }
       generateCallsForSection(track, section, static_cast<IntroChant>(ctx.intro_chant),

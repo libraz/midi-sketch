@@ -81,22 +81,6 @@ inline bool isGrooveOriented(Mood mood) { return mood == Mood::CityPop || mood =
 // @returns true if idol bass patterns preferred
 inline bool isIdol(Mood mood) { return mood == Mood::IdolPop || mood == Mood::BrightUpbeat; }
 
-// Mood category for higher-level classification.
-enum class MoodCategory { Ballad, Dance, JazzInfluenced, Rock, Dramatic, Synth, Standard };
-
-// Get the high-level category for a mood.
-// @param mood Mood to categorize
-// @returns MoodCategory enum value
-inline MoodCategory categorize(Mood mood) {
-  if (isBallad(mood)) return MoodCategory::Ballad;
-  if (isDramatic(mood)) return MoodCategory::Dramatic;
-  if (isDanceOriented(mood)) return MoodCategory::Dance;
-  if (isJazzInfluenced(mood)) return MoodCategory::JazzInfluenced;
-  if (isRock(mood)) return MoodCategory::Rock;
-  if (isSynthOriented(mood)) return MoodCategory::Synth;
-  return MoodCategory::Standard;
-}
-
 }  // namespace MoodClassification
 
 }  // namespace midisketch

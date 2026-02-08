@@ -271,39 +271,6 @@ TEST(PhysicalModelTest, VocalCeilingOffset) {
 }
 
 // ============================================================================
-// SafeNoteOptions Tests
-// ============================================================================
-
-TEST(SafeNoteOptionsTest, GetBestPitch_Empty) {
-  SafeNoteOptions options;
-
-  auto result = options.getBestPitch();
-  EXPECT_FALSE(result.has_value());
-}
-
-TEST(SafeNoteOptionsTest, GetBestPitch_PreferChordTone) {
-  SafeNoteOptions options;
-  options.candidates.push_back({60, 1.0f, true, true});   // Chord tone, safe
-  options.candidates.push_back({62, 1.0f, false, true});  // Scale tone, safe
-
-  auto result = options.getBestPitch(true);
-  EXPECT_TRUE(result.has_value());
-  EXPECT_EQ(*result, 60);  // Prefer chord tone
-}
-
-TEST(SafeNoteOptionsTest, GetSafePitches) {
-  SafeNoteOptions options;
-  options.candidates.push_back({60, 1.0f, true, true});   // Safe
-  options.candidates.push_back({61, 0.5f, false, true});  // Not safe enough
-  options.candidates.push_back({62, 0.95f, false, true}); // Safe
-
-  auto safe = options.getSafePitches(0.9f);
-  EXPECT_EQ(safe.size(), 2);
-  EXPECT_EQ(safe[0], 60);
-  EXPECT_EQ(safe[1], 62);
-}
-
-// ============================================================================
 // GenerateAllTracks Tests
 // ============================================================================
 

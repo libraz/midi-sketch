@@ -27,7 +27,7 @@
 namespace midisketch {
 
 bool PostProcessor::isStrongBeat(Tick tick) {
-  Tick position_in_bar = tick % TICKS_PER_BAR;
+  Tick position_in_bar = positionInBar(tick);
   // Beats 1 and 3 are at 0 and TICKS_PER_BEAT*2
   return position_in_bar < TICKS_PER_BEAT / 4 ||
          (position_in_bar >= TICKS_PER_BEAT * 2 &&
@@ -1032,18 +1032,10 @@ void PostProcessor::fixMotifVocalClashes(MidiTrack& motif, const MidiTrack& voca
       // Check overlap: motif note and vocal note must be sounding simultaneously
       if (m_note.start_tick < v_end && m_end > v_note.start_tick) {
         int interval = std::abs(static_cast<int>(m_note.note) - static_cast<int>(v_note.note));
-        int interval_class = interval % 12;
 
-        // Dissonant intervals:
-        // - Minor 2nd (1): always dissonant
-        // - Major 2nd (2): dissonant in close voicing (actual interval < 12)
-        // - Tritone (6): dissonant between harmonic tracks
-        // - Major 7th (11): always dissonant
-        // - Minor 9th (13 -> 1 in interval_class): handled by minor 2nd
-        bool is_dissonant = (interval_class == 1) ||            // minor 2nd / minor 9th
-                            (interval_class == 6) ||            // tritone
-                            (interval_class == 11) ||           // major 7th
-                            (interval_class == 2 && interval < 12);  // major 2nd (close only)
+        // Use unified dissonance check: m2, M2 (close), tritone (always), M7
+        bool is_dissonant = isDissonantSemitoneInterval(
+            interval, DissonanceCheckOptions::fullWithTritone());
 
         if (is_dissonant) {
           int8_t degree = harmony.getChordDegreeAt(m_note.start_tick);
@@ -1098,12 +1090,11 @@ void removeVocalClashingNotes(MidiTrack& track, const MidiTrack& vocal,
   const auto& vocal_notes = vocal.notes();
   if (notes.empty() || vocal_notes.empty()) return;
 
-  auto isDissonant = [include_close_major_2nd](int interval) {
-    int interval_class = interval % 12;
-    if (interval_class == 1 || interval_class == 11) return true;  // m2, M7
-    if (include_close_major_2nd && interval_class == 2 && interval < 12) return true;
-    return false;
-  };
+  // Bass: skip M2 check (octave separation makes it acceptable) = minimalClash
+  // Chord/Aux: include close M2 check = closeVoicing
+  auto dissonance_opts = include_close_major_2nd
+      ? DissonanceCheckOptions::closeVoicing()
+      : DissonanceCheckOptions::minimalClash();
 
   std::vector<size_t> notes_to_remove;
   for (size_t idx = 0; idx < notes.size(); ++idx) {
@@ -1114,7 +1105,7 @@ void removeVocalClashingNotes(MidiTrack& track, const MidiTrack& vocal,
       Tick v_end = v_note.start_tick + v_note.duration;
       if (note.start_tick < v_end && note_end > v_note.start_tick) {
         int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(v_note.note));
-        if (isDissonant(interval)) {
+        if (isDissonantSemitoneInterval(interval, dissonance_opts)) {
           notes_to_remove.push_back(idx);
           break;
         }
@@ -1141,11 +1132,8 @@ void PostProcessor::fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass
   auto& notes = chord.notes();
   if (notes.empty()) return;
 
-  auto isDissonantClose = [](int interval) {
-    int interval_class = interval % 12;
-    // m2 (1), M7 (11), and close-range M2 (exactly 2 semitones)
-    return interval_class == 1 || interval_class == 11 || interval == 2;
-  };
+  // Close voicing check: m2, M7, and close-range M2 (no tritone)
+  auto close_opts = DissonanceCheckOptions::closeVoicing();
 
   std::vector<size_t> notes_to_remove;
 
@@ -1159,7 +1147,7 @@ void PostProcessor::fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass
       Tick b_end = b_note.start_tick + b_note.duration;
       if (note.start_tick < b_end && note_end > b_note.start_tick) {
         int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(b_note.note));
-        if (isDissonantClose(interval)) {
+        if (isDissonantSemitoneInterval(interval, close_opts)) {
           should_remove = true;
           break;
         }
@@ -1172,7 +1160,7 @@ void PostProcessor::fixInterTrackClashes(MidiTrack& chord, const MidiTrack& bass
         Tick m_end = m_note.start_tick + m_note.duration;
         if (note.start_tick < m_end && note_end > m_note.start_tick) {
           int interval = std::abs(static_cast<int>(note.note) - static_cast<int>(m_note.note));
-          if (isDissonantClose(interval)) {
+          if (isDissonantSemitoneInterval(interval, close_opts)) {
             should_remove = true;
             break;
           }

@@ -16,13 +16,6 @@
 
 namespace midisketch {
 
-namespace {
-
-/// Medium effort score for calculating singing difficulty.
-constexpr float kMediumEffortScore = 0.5f;
-
-}  // namespace
-
 std::vector<NoteEvent> shiftTiming(const std::vector<NoteEvent>& notes, Tick offset) {
   std::vector<NoteEvent> result;
   result.reserve(notes.size());
@@ -274,7 +267,7 @@ int32_t calculateGrooveShift(const NoteEvent& note, VocalGrooveFeel groove) {
       break;
 
     case VocalGrooveFeel::Syncopated: {
-      Tick bar_pos = note.start_tick % TICKS_PER_BAR;
+      Tick bar_pos = positionInBar(note.start_tick);
       // Beats 2 and 4 (at 480 and 1440 ticks)
       if ((bar_pos >= TICKS_PER_BEAT - static_cast<Tick>(TICK_16TH) &&
            bar_pos < TICKS_PER_BEAT + static_cast<Tick>(TICK_16TH)) ||
@@ -313,8 +306,7 @@ void applyGrooveFeel(std::vector<NoteEvent>& notes, VocalGrooveFeel groove) {
   }
 
   // Sort notes by start tick (pre-shift order)
-  std::sort(notes.begin(), notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+  NoteTimeline::sortByStartTick(notes);
 
   constexpr int32_t TICK_8TH = TICKS_PER_BEAT / 2;   // 240 ticks
   constexpr Tick kMinGap = 10;                       // Minimum gap between notes
@@ -459,55 +451,11 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
   }
 }
 
-float calculateSingingEffort(const std::vector<NoteEvent>& notes) {
-  if (notes.empty()) return 0.0f;
-
-  float effort = 0.0f;
-
-  for (size_t i = 0; i < notes.size(); ++i) {
-    // High register penalty
-    if (notes[i].note >= kHighRegisterThreshold) {
-      // Longer high notes = more effort
-      effort += kMediumEffortScore * (notes[i].duration / static_cast<float>(TICKS_PER_BEAT));
-    }
-
-    // Large interval penalty
-    if (i > 0) {
-      int interval =
-          std::abs(static_cast<int>(notes[i].note) - static_cast<int>(notes[i - 1].note));
-      if (interval >= kLargeIntervalThreshold) {
-        effort += kMediumEffortScore;
-      }
-    }
-  }
-
-  // Density penalty: many notes in short time
-  if (notes.size() > 1) {
-    Tick phrase_length = notes.back().start_tick + notes.back().duration - notes[0].start_tick;
-    float notes_per_beat = notes.size() * TICKS_PER_BEAT / static_cast<float>(phrase_length);
-    if (notes_per_beat > 2.0f) {  // More than 2 notes per beat = dense
-      effort += (notes_per_beat - 2.0f) * kMediumEffortScore;
-    }
-  }
-
-  // Normalize by phrase length (effort per bar)
-  if (notes.size() > 0) {
-    Tick phrase_length = notes.back().start_tick + notes.back().duration - notes[0].start_tick;
-    float bars = phrase_length / static_cast<float>(TICKS_PER_BAR);
-    if (bars > 0) {
-      effort /= bars;
-    }
-  }
-
-  return effort;
-}
-
 void mergeSamePitchNotes(std::vector<NoteEvent>& notes, Tick max_gap) {
   if (notes.size() < 2) return;
 
   // Sort by start tick
-  std::sort(notes.begin(), notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+  NoteTimeline::sortByStartTick(notes);
 
   // Merge same-pitch notes with short gaps
   std::vector<NoteEvent> merged;
@@ -554,62 +502,12 @@ void mergeSamePitchNotes(std::vector<NoteEvent>& notes, Tick max_gap) {
   notes = std::move(merged);
 }
 
-void resolveIsolatedShortNotes(std::vector<NoteEvent>& notes, Tick min_duration,
-                               Tick isolation_threshold) {
-  if (notes.size() < 2) return;
-
-  // Sort by start tick
-  std::sort(notes.begin(), notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
-
-  // Process each note
-  for (size_t i = 0; i < notes.size(); ++i) {
-    NoteEvent& note = notes[i];
-
-    // Skip if already long enough
-    if (note.duration >= min_duration) continue;
-
-    // Calculate gaps before and after
-    Tick gap_before = 0;
-    Tick gap_after = 0;
-
-    if (i > 0) {
-      Tick prev_end = notes[i - 1].start_tick + notes[i - 1].duration;
-      gap_before = (note.start_tick > prev_end) ? (note.start_tick - prev_end) : 0;
-    } else {
-      gap_before = isolation_threshold + 1;  // First note: treat as isolated before
-    }
-
-    if (i + 1 < notes.size()) {
-      Tick note_end = note.start_tick + note.duration;
-      gap_after = (notes[i + 1].start_tick > note_end) ? (notes[i + 1].start_tick - note_end) : 0;
-    } else {
-      gap_after = isolation_threshold + 1;  // Last note: treat as isolated after
-    }
-
-    // Check if isolated (surrounded by rests)
-    bool is_isolated = (gap_before > isolation_threshold) && (gap_after > isolation_threshold);
-
-    if (is_isolated) {
-      // Extend the note to minimum duration
-      // But don't overlap with next note
-      Tick max_extension = min_duration;
-      if (i + 1 < notes.size()) {
-        Tick space_available = notes[i + 1].start_tick - note.start_tick;
-        max_extension = std::min(max_extension, space_available);
-      }
-      note.duration = std::max(note.duration, max_extension);
-    }
-  }
-}
-
 void applySectionEndSustain(std::vector<NoteEvent>& notes, const std::vector<Section>& sections,
                             IHarmonyContext& harmony) {
   if (notes.empty() || sections.empty()) return;
 
   // Sort notes by start tick
-  std::sort(notes.begin(), notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+  NoteTimeline::sortByStartTick(notes);
 
   // Target duration for section-end sustain by section type
   auto getTargetDuration = [](SectionType type) -> Tick {
@@ -702,8 +600,7 @@ void mergeSamePitchNotesNearSectionEnds(std::vector<NoteEvent>& notes,
   if (notes.size() < 2 || sections.empty()) return;
 
   // Sort by start tick
-  std::sort(notes.begin(), notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+  NoteTimeline::sortByStartTick(notes);
 
   constexpr uint8_t kMergeBarsFromEnd = 2;  // Only merge in last 2 bars of each section
 

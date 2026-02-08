@@ -62,6 +62,32 @@ inline constexpr bool hasTrack(TrackMask mask, TrackMask track) {
   return (static_cast<uint16_t>(mask) & static_cast<uint16_t>(track)) != 0;
 }
 
+/// @brief Convert a TrackRole to its corresponding TrackMask bit.
+///
+/// The TrackRole enum order differs from TrackMask bit positions,
+/// so a lookup table is required for correct mapping.
+///
+/// @param role Track role to convert
+/// @return Corresponding TrackMask bit
+inline constexpr TrackMask trackRoleToMask(TrackRole role) {
+  // TrackRole order: Vocal=0, Chord=1, Bass=2, Drums=3, SE=4, Motif=5, Arpeggio=6, Aux=7, Guitar=8
+  // TrackMask bits:  Vocal=0, Chord=1, Bass=2, Motif=3, Arpeggio=4, Aux=5, Drums=6, SE=7, Guitar=8
+  constexpr TrackMask kRoleToMask[] = {
+      TrackMask::Vocal,     // TrackRole::Vocal    = 0
+      TrackMask::Chord,     // TrackRole::Chord    = 1
+      TrackMask::Bass,      // TrackRole::Bass     = 2
+      TrackMask::Drums,     // TrackRole::Drums    = 3
+      TrackMask::SE,        // TrackRole::SE       = 4
+      TrackMask::Motif,     // TrackRole::Motif    = 5
+      TrackMask::Arpeggio,  // TrackRole::Arpeggio = 6
+      TrackMask::Aux,       // TrackRole::Aux      = 7
+      TrackMask::Guitar,    // TrackRole::Guitar   = 8
+  };
+  auto idx = static_cast<size_t>(role);
+  if (idx >= kTrackCount) return TrackMask::None;
+  return kRoleToMask[idx];
+}
+
 // ============================================================================
 // LayerEvent - Per-bar track scheduling within a section
 // ============================================================================

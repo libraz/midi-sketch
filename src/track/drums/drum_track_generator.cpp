@@ -58,7 +58,7 @@ inline bool isAuxiliaryPercussion(uint8_t note) {
 /// from validation as these are typically performed by a separate player.
 class DrumPlayabilityChecker {
  public:
-  explicit DrumPlayabilityChecker(uint16_t bpm) : bpm_(bpm), performer_() {
+  DrumPlayabilityChecker() : performer_() {
     state_ = performer_.createInitialState();
   }
 
@@ -143,7 +143,6 @@ class DrumPlayabilityChecker {
   }
 
  private:
-  [[maybe_unused]] uint16_t bpm_;  // Reserved for tempo-dependent checks
   DrumPerformer performer_;
   std::unique_ptr<PerformerState> state_;
 };
@@ -447,7 +446,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
   // At high tempos or with dense patterns, some combinations become
   // physically impossible (e.g., 5+ simultaneous hits, ultra-fast rolls).
   {
-    DrumPlayabilityChecker playability_checker(params.bpm);
+    DrumPlayabilityChecker playability_checker;
     playability_checker.applyToTrack(track);
   }
 }

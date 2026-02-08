@@ -381,7 +381,7 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
 
         // Periodic refresh for non-sync mode
         if (!arp.sync_chord) {
-          uint32_t total_bar = section.start_tick / TICKS_PER_BAR;
+          uint32_t total_bar = tickToBar(section.start_tick);
           bool slow_harmonic = (harmonic.density == HarmonicDensity::Slow);
           int chord_idx =
               getChordIndexForBar(static_cast<int>(total_bar), slow_harmonic, progression.length);

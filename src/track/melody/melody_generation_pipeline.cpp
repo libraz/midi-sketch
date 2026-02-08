@@ -48,9 +48,8 @@ PitchChoice MelodyGenerationPipeline::selectPitchChoice(
 
 PitchChoice MelodyGenerationPipeline::applyDirectionInertia(PitchChoice choice,
                                                             const PhraseGenerationState& state,
-                                                            const MelodyTemplate& tmpl,
                                                             std::mt19937& rng) const {
-  return melody::applyDirectionInertia(choice, state.direction_inertia, tmpl, rng);
+  return melody::applyDirectionInertia(choice, state.direction_inertia, rng);
 }
 
 int MelodyGenerationPipeline::applyPitchChoice(PitchChoice choice,
@@ -64,7 +63,7 @@ int MelodyGenerationPipeline::calculateTargetPitch(const MelodyTemplate& tmpl,
                                                    const PitchGenerationContext& ctx,
                                                    Tick section_start,
                                                    const IHarmonyContext& harmony) const {
-  return melody::calculateTargetPitch(tmpl, ctx.tessitura.center, tmpl.tessitura_range, ctx.vocal_low,
+  return melody::calculateTargetPitch(ctx.tessitura.center, tmpl.tessitura_range, ctx.vocal_low,
                                       ctx.vocal_high, section_start, harmony);
 }
 
@@ -159,7 +158,6 @@ Tick MelodyGenerationPipeline::getBaseBreathDuration(SectionType section_type, M
 
 Tick MelodyGenerationPipeline::getBreathDuration(SectionType section_type, Mood mood,
                                                  float phrase_density, uint8_t phrase_high,
-                                                 [[maybe_unused]] const void* breath_ctx,
                                                  VocalStylePreset vocal_style) const {
   return melody::getBreathDuration(section_type, mood, phrase_density, phrase_high, nullptr,
                                    vocal_style);

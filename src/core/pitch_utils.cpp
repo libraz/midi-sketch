@@ -265,6 +265,70 @@ bool isDissonantActualInterval(int actual_semitones, int8_t chord_degree) {
   return false;
 }
 
+bool isDissonantSemitoneInterval(int actual_semitones,
+                                  const DissonanceCheckOptions& opts) {
+  // Negative intervals are invalid; treat as non-dissonant.
+  if (actual_semitones < 0) {
+    return false;
+  }
+
+  // Unison (0 semitones) is never dissonant - doubling is always safe.
+  if (actual_semitones == 0) {
+    return false;
+  }
+
+  // Wide interval cutoff: beyond 3 octaves, perceptual harshness is reduced.
+  // Beating frequencies become too slow to perceive as dissonance, and the
+  // notes occupy different registral spaces (bass vs. soprano).
+  if (opts.apply_wide_interval_cutoff && actual_semitones >= Interval::THREE_OCTAVES) {
+    return false;
+  }
+
+  // Pitch class interval for octave-equivalent checks.
+  int pc_interval = actual_semitones % 12;
+
+  // Minor 2nd (1 semitone): always dissonant due to harsh beating.
+  // Minor 9th (13 semitones): compound m2, still perceptually dissonant.
+  // Beyond 13 semitones (e.g. 25), the beating is no longer harsh.
+  if (pc_interval == 1 && actual_semitones <= 13) {
+    return true;
+  }
+
+  // Major 2nd: dissonant only in close range (configurable threshold).
+  // Major 9th (14 semitones) is a common chord extension in pop - NOT dissonant.
+  if (opts.check_major_2nd && pc_interval == 2 &&
+      actual_semitones < opts.major_2nd_max_distance) {
+    return true;
+  }
+
+  // Major 7th (pitch class 11): dissonant under 3 octaves.
+  // Compound M7 (e.g. bass C2 vs motif B4 = 35 semitones) creates audible
+  // beating even across registers, unlike consonant intervals at the same
+  // distance. Beyond 3 octaves (handled by cutoff above), the beating
+  // is no longer perceptible in a pop mix.
+  if (pc_interval == 11) {
+    return true;
+  }
+
+  // Tritone (pitch class 6): context-dependent.
+  // Acceptable on V (dominant) and vii (diminished) chords where it forms
+  // a structural interval. Catches: 6, 18, 30 semitones.
+  if (opts.check_tritone && pc_interval == 6) {
+    if (opts.chord_degree < 0) {
+      // No chord context: treat tritone as always dissonant.
+      return true;
+    }
+    int normalized = ((opts.chord_degree % 7) + 7) % 7;
+    if (normalized != 4 && normalized != 6) {
+      return true;  // Not V or vii - tritone is dissonant.
+    }
+  }
+
+  // All other intervals: consonant in Pop context.
+  // Minor 7th (10), major 9th (14), perfect 12th (19), etc.
+  return false;
+}
+
 int snapToNearestScaleTone(int pitch, int key_offset) {
   // Get pitch class relative to key
   int pc = ((pitch - key_offset) % 12 + 12) % 12;

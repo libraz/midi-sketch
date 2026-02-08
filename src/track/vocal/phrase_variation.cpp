@@ -189,7 +189,7 @@ CadenceType detectCadenceType(const std::vector<NoteEvent>& notes, int8_t chord_
   bool is_tonic_tone = (pitch_class == 0 || pitch_class == 4 || pitch_class == 7);
 
   // Check if on strong beat (beats 1 or 3 in 4/4)
-  Tick beat_pos = last_note.start_tick % TICKS_PER_BAR;
+  Tick beat_pos = positionInBar(last_note.start_tick);
   bool is_strong_beat =
       (beat_pos < TICKS_PER_BEAT / 4) || (beat_pos >= TICKS_PER_BEAT * 2 - TICKS_PER_BEAT / 4 &&
                                           beat_pos < TICKS_PER_BEAT * 2 + TICKS_PER_BEAT / 4);

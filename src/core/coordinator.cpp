@@ -103,8 +103,18 @@ void Coordinator::initialize(const GeneratorParams& params,
   // Note: We don't own the RNG, just use it for generation
   external_rng_ = &rng;
 
-  // Initialize blueprint from params
-  initializeBlueprint();
+  // Use blueprint already resolved by Generator (stored in params_.blueprint_ref).
+  // This avoids re-selecting the blueprint, which Generator has already done
+  // including drums_required enforcement and addictive_mode application.
+  if (params.blueprint_ref != nullptr) {
+    blueprint_ = params.blueprint_ref;
+    blueprint_id_ = 0;  // Not needed when using external blueprint ref
+    paradigm_ = params.paradigm;
+    riff_policy_ = params.riff_policy;
+  } else {
+    // Standalone mode: select blueprint from scratch
+    initializeBlueprint();
+  }
 
   // Use BPM from params (already resolved by Generator)
   bpm_ = params.bpm;
@@ -283,54 +293,8 @@ void Coordinator::generateAllTracks(Song& song) {
 
   // Generate tracks in order
   for (TrackRole role : order) {
-    // Skip disabled tracks
-    if (role == TrackRole::Drums && !params_.drums_enabled) continue;
-    if (role == TrackRole::Vocal && params_.skip_vocal) continue;
-    // RhythmSync vocal-first: Motif was preserved, skip regeneration
-    // (only when Motif already exists; BGM-only mode needs fresh generation)
-    if (role == TrackRole::Motif && params_.skip_vocal &&
-        paradigm_ == GenerationParadigm::RhythmSync &&
-        !song.motif().empty()) continue;
-    if (role == TrackRole::Arpeggio && !params_.arpeggio_enabled) continue;
-    if (role == TrackRole::SE && !params_.se_enabled) continue;
-    if (role == TrackRole::Guitar) {
-      if (!params_.guitar_enabled) continue;
-      const auto& progs = getMoodPrograms(params_.mood);
-      if (progs.guitar == 0xFF) continue;  // Mood has no guitar
-    }
-
-    // Skip tracks based on composition style
-    // BackgroundMotif and SynthDriven are BGM-only modes (no vocal)
-    if (role == TrackRole::Vocal &&
-        (params_.composition_style == CompositionStyle::BackgroundMotif ||
-         params_.composition_style == CompositionStyle::SynthDriven)) {
-      continue;
-    }
-
-    // Skip Motif for MelodyLead unless RhythmSync paradigm or Blueprint explicitly requires it
-    if (role == TrackRole::Motif &&
-        params_.composition_style == CompositionStyle::MelodyLead) {
-      // RhythmSync always needs Motif (coordinate axis)
-      bool motif_needed = (paradigm_ == GenerationParadigm::RhythmSync);
-
-      // Check Blueprint section_flow for explicit Motif requirement
-      if (!motif_needed && blueprint_ && blueprint_->section_flow) {
-        for (const auto& sec : arrangement_.sections()) {
-          if (hasTrack(sec.track_mask, TrackMask::Motif)) {
-            motif_needed = true;
-            break;
-          }
-        }
-      }
-
-      if (!motif_needed) continue;
-    }
-
-    // Skip Aux for SynthDriven style
-    if (role == TrackRole::Aux &&
-        params_.composition_style == CompositionStyle::SynthDriven) {
-      continue;
-    }
+    // Consolidate all skip conditions in shouldSkipTrack()
+    if (shouldSkipTrack(role, song)) continue;
 
     // Get track generator (if registered)
     auto it = track_generators_.find(role);
@@ -343,6 +307,7 @@ void Coordinator::generateAllTracks(Song& song) {
       ctx.params = &params_;
       ctx.rng = &rng;
       ctx.harmony = &harmony;
+      ctx.chord_progression = &midisketch::getChordProgression(chord_id_);
 
       // Pass drum grid for RhythmSync paradigm (Vocal uses this for quantization)
       if (drum_grid_.grid_resolution > 0) {
@@ -395,9 +360,6 @@ void Coordinator::generateAllTracks(Song& song) {
     }
   }
 
-  // Apply cross-section coordination
-  applyCrossSectionCoordination(song);
-
   // Apply max_moving_voices constraint
   applyVoiceLimit(song, arrangement_.sections());
 }
@@ -424,6 +386,7 @@ void Coordinator::regenerateTrack(TrackRole role, Song& song) {
     ctx.params = &params_;
     ctx.rng = &rng;
     ctx.harmony = &harmony;
+    ctx.chord_progression = &midisketch::getChordProgression(chord_id_);
 
     it->second->generateFullTrack(track, ctx);
 
@@ -573,6 +536,62 @@ void Coordinator::registerTrackGenerators() {
   track_generators_[TrackRole::Guitar] = std::make_unique<GuitarGenerator>();
 }
 
+bool Coordinator::shouldSkipTrack(TrackRole role, const Song& song) const {
+  // Check per-track enabled flags
+  if (role == TrackRole::Drums && !params_.drums_enabled) return true;
+  if (role == TrackRole::Arpeggio && !params_.arpeggio_enabled) return true;
+  if (role == TrackRole::SE && !params_.se_enabled) return true;
+
+  // Vocal: skip if vocal-first workflow or BGM-only composition style
+  if (role == TrackRole::Vocal) {
+    if (params_.skip_vocal) return true;
+    if (params_.composition_style == CompositionStyle::BackgroundMotif ||
+        params_.composition_style == CompositionStyle::SynthDriven) {
+      return true;
+    }
+  }
+
+  // Motif: skip if RhythmSync vocal-first with existing motif,
+  // or MelodyLead unless paradigm/blueprint requires it
+  if (role == TrackRole::Motif) {
+    // RhythmSync vocal-first: Motif was preserved, skip regeneration
+    // (only when Motif already exists; BGM-only mode needs fresh generation)
+    if (params_.skip_vocal &&
+        paradigm_ == GenerationParadigm::RhythmSync &&
+        !song.motif().empty()) {
+      return true;
+    }
+    // MelodyLead: skip unless RhythmSync or Blueprint explicitly requires Motif
+    if (params_.composition_style == CompositionStyle::MelodyLead) {
+      bool motif_needed = (paradigm_ == GenerationParadigm::RhythmSync);
+      if (!motif_needed && blueprint_ && blueprint_->section_flow) {
+        for (const auto& sec : arrangement_.sections()) {
+          if (hasTrack(sec.track_mask, TrackMask::Motif)) {
+            motif_needed = true;
+            break;
+          }
+        }
+      }
+      if (!motif_needed) return true;
+    }
+  }
+
+  // Guitar: check enabled flag and mood sentinel
+  if (role == TrackRole::Guitar) {
+    if (!params_.guitar_enabled) return true;
+    const auto& progs = getMoodPrograms(params_.mood);
+    if (progs.guitar == 0xFF) return true;  // Mood has no guitar
+  }
+
+  // Aux: skip for SynthDriven style
+  if (role == TrackRole::Aux &&
+      params_.composition_style == CompositionStyle::SynthDriven) {
+    return true;
+  }
+
+  return false;
+}
+
 ITrackBase* Coordinator::getTrackGenerator(TrackRole role) {
   auto it = track_generators_.find(role);
   return (it != track_generators_.end()) ? it->second.get() : nullptr;
@@ -583,13 +602,6 @@ const ITrackBase* Coordinator::getTrackGenerator(TrackRole role) const {
   return (it != track_generators_.end()) ? it->second.get() : nullptr;
 }
 
-void Coordinator::applyCrossSectionCoordination([[maybe_unused]] Song& song) {
-  // Apply RiffPolicy-based coordination
-  if (riff_policy_ != RiffPolicy::Free) {
-    // TODO: Implement hook/riff sharing across sections
-    // This will be implemented in Phase 3 when tracks are rewritten
-  }
-}
 
 // ============================================================================
 // Voice Limit Post-Process

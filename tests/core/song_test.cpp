@@ -125,6 +125,71 @@ TEST(SongTest, TimeInfo) {
 }
 
 // ============================================================================
+// Track Group Helper Tests
+// ============================================================================
+
+TEST(SongTest, GetMelodicTracks) {
+  Song song;
+  auto tracks = song.getMelodicTracks();
+  EXPECT_EQ(tracks.size(), 3u);
+  // Should contain Vocal, Aux, Motif
+  EXPECT_EQ(tracks[0], &song.vocal());
+  EXPECT_EQ(tracks[1], &song.aux());
+  EXPECT_EQ(tracks[2], &song.motif());
+}
+
+TEST(SongTest, GetMelodicTracksConst) {
+  const Song song;
+  auto tracks = song.getMelodicTracks();
+  EXPECT_EQ(tracks.size(), 3u);
+  EXPECT_EQ(tracks[0], &song.vocal());
+  EXPECT_EQ(tracks[1], &song.aux());
+  EXPECT_EQ(tracks[2], &song.motif());
+}
+
+TEST(SongTest, GetBackingTracks) {
+  Song song;
+  auto tracks = song.getBackingTracks();
+  EXPECT_EQ(tracks.size(), 4u);
+  // Should contain Chord, Bass, Arpeggio, Guitar
+  EXPECT_EQ(tracks[0], &song.chord());
+  EXPECT_EQ(tracks[1], &song.bass());
+  EXPECT_EQ(tracks[2], &song.arpeggio());
+  EXPECT_EQ(tracks[3], &song.guitar());
+}
+
+TEST(SongTest, GetPitchedTracks) {
+  Song song;
+  auto tracks = song.getPitchedTracks();
+  // Should contain everything except Drums and SE
+  EXPECT_EQ(tracks.size(), 7u);
+  EXPECT_EQ(tracks[0], &song.vocal());
+  EXPECT_EQ(tracks[1], &song.chord());
+  EXPECT_EQ(tracks[2], &song.bass());
+  EXPECT_EQ(tracks[3], &song.motif());
+  EXPECT_EQ(tracks[4], &song.arpeggio());
+  EXPECT_EQ(tracks[5], &song.aux());
+  EXPECT_EQ(tracks[6], &song.guitar());
+}
+
+TEST(SongTest, GetPitchedTracksExcludesDrumsAndSE) {
+  Song song;
+  auto tracks = song.getPitchedTracks();
+  for (auto* track : tracks) {
+    EXPECT_NE(track, &song.drums());
+    EXPECT_NE(track, &song.se());
+  }
+}
+
+TEST(SongTest, GetMelodicTracksModifiable) {
+  Song song;
+  auto tracks = song.getMelodicTracks();
+  // Verify we can modify through the returned pointers
+  tracks[0]->addNote(NoteEventBuilder::create(0, 480, 60, 100));
+  EXPECT_EQ(song.vocal().noteCount(), 1u);
+}
+
+// ============================================================================
 // Phase 0: Phrase Boundary Tests
 // ============================================================================
 

@@ -525,9 +525,8 @@ void printIssueWithContext(const midisketch::DissonanceIssue& issue, const char*
 
 // Display notes at a specific bar, grouped by track
 void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num) {
-  constexpr midisketch::Tick TICKS_PER_BAR = 1920;  // 480 * 4
-  midisketch::Tick bar_start = static_cast<midisketch::Tick>((bar_num - 1) * TICKS_PER_BAR);
-  midisketch::Tick bar_end = bar_start + TICKS_PER_BAR;
+  midisketch::Tick bar_start = midisketch::barToTick(static_cast<midisketch::Tick>(bar_num - 1));
+  midisketch::Tick bar_end = bar_start + midisketch::TICKS_PER_BAR;
 
   std::cout << "\n=== Bar " << bar_num << " (tick " << bar_start << "-" << bar_end << ") ===\n\n";
 
@@ -551,7 +550,7 @@ void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num) {
 
       if (starts_in_bar || sustains_into_bar) {
         float beat = (note.start_tick >= bar_start)
-                         ? (static_cast<float>(note.start_tick - bar_start) / 480.0f + 1.0f)
+                         ? (static_cast<float>(note.start_tick - bar_start) / static_cast<float>(midisketch::TICKS_PER_BEAT) + 1.0f)
                          : 0.0f;  // Sustained from previous bar
 
         std::string note_name = midisketch::midiNoteToName(note.note);
@@ -565,9 +564,9 @@ void showBarNotes(const midisketch::ParsedMidi& midi, int bar_num) {
           if (note.duration == 0) {
             dur_str = "dur=0 ⚠️";
           } else if (note.duration >= 1920) {
-            dur_str = std::to_string(note.duration / 1920) + " bar";
+            dur_str = std::to_string(note.duration / midisketch::TICKS_PER_BAR) + " bar";
           } else if (note.duration >= 480) {
-            dur_str = std::to_string(note.duration / 480) + " beat";
+            dur_str = std::to_string(note.duration / midisketch::TICKS_PER_BEAT) + " beat";
           } else {
             dur_str = std::to_string(note.duration) + " tick";
           }

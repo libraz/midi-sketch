@@ -63,6 +63,51 @@ class Song {
     }
     return count;
   }
+
+  /// @brief Get melodic tracks (Vocal, Aux, Motif).
+  ///
+  /// These carry the primary and secondary melodic content.
+  /// Useful for melody-related post-processing and analysis.
+  ///
+  /// @return Vector of pointers to melodic tracks
+  std::vector<MidiTrack*> getMelodicTracks() {
+    return {&vocal(), &aux(), &motif()};
+  }
+
+  /// @brief Get melodic tracks (const version).
+  std::vector<const MidiTrack*> getMelodicTracks() const {
+    return {&vocal(), &aux(), &motif()};
+  }
+
+  /// @brief Get backing/accompaniment tracks (Chord, Bass, Arpeggio, Guitar).
+  ///
+  /// These provide harmonic and rhythmic accompaniment.
+  /// Useful for backing-specific operations like chorus drop.
+  ///
+  /// @return Vector of pointers to backing tracks
+  std::vector<MidiTrack*> getBackingTracks() {
+    return {&chord(), &bass(), &arpeggio(), &guitar()};
+  }
+
+  /// @brief Get backing tracks (const version).
+  std::vector<const MidiTrack*> getBackingTracks() const {
+    return {&chord(), &bass(), &arpeggio(), &guitar()};
+  }
+
+  /// @brief Get all pitched tracks (everything except Drums and SE).
+  ///
+  /// This is the most commonly needed filter in post-processing,
+  /// collision detection, and dynamics operations.
+  ///
+  /// @return Vector of pointers to pitched tracks
+  std::vector<MidiTrack*> getPitchedTracks() {
+    return {&vocal(), &chord(), &bass(), &motif(), &arpeggio(), &aux(), &guitar()};
+  }
+
+  /// @brief Get all pitched tracks (const version).
+  std::vector<const MidiTrack*> getPitchedTracks() const {
+    return {&vocal(), &chord(), &bass(), &motif(), &arpeggio(), &aux(), &guitar()};
+  }
   /// @}
 
   /// @name Track Management

@@ -1,9 +1,8 @@
 /**
  * @file harmony_coordinator.h
- * @brief Extended harmony context with pre-computed safety candidates.
+ * @brief Extended harmony context with track coordination.
  *
  * HarmonyCoordinator extends HarmonyContext with:
- * - Pre-computed safety candidates per beat for each track
  * - Track priority tracking for generation order
  * - Cross-track coordination support
  */
@@ -20,10 +19,9 @@
 
 namespace midisketch {
 
-/// @brief Extended harmony context with pre-computed candidates.
+/// @brief Extended harmony context with track coordination.
 ///
-/// Adds pre-computation layer on top of HarmonyContext for:
-/// - Beat-by-beat safety candidates
+/// Adds coordination layer on top of HarmonyContext for:
 /// - Track priority tracking
 /// - Cross-track pattern application
 class HarmonyCoordinator : public IHarmonyCoordinator {
@@ -97,16 +95,6 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
 
   bool mustAvoid(TrackRole generator, TrackRole target) const override;
 
-  // --- Pre-computed Candidates ---
-
-  void precomputeCandidatesForTrack(TrackRole track,
-                                     const std::vector<Section>& sections) override;
-
-  TimeSliceCandidates getCandidatesAt(Tick tick, TrackRole track) const override;
-
-  SafeNoteOptions getSafeNoteOptions(Tick start, Tick duration, uint8_t desired_pitch,
-                                      TrackRole track, uint8_t low, uint8_t high) const override;
-
   // --- Cross-track Coordination ---
 
   void applyMotifToSections(const std::vector<NoteEvent>& motif_pattern,
@@ -122,40 +110,6 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
 
   // Generated tracks (for mustAvoid logic)
   std::vector<TrackRole> generated_tracks_;
-
-  // Pre-computed candidates per track per beat
-  // Key: TrackRole, Value: map from beat tick to candidates
-  std::map<TrackRole, std::map<Tick, TimeSliceCandidates>> precomputed_candidates_;
-
-  // Cached sections for beat iteration
-  std::vector<Section> cached_sections_;
-
-  // Total ticks in song (for pre-computation bounds)
-  Tick total_ticks_ = 0;
-
-  /// @brief Compute candidates for a single beat.
-  /// @param beat_start Start tick of the beat
-  /// @param beat_end End tick of the beat
-  /// @param track Track to compute for
-  /// @return Candidates for this time slice
-  TimeSliceCandidates computeCandidatesForBeat(Tick beat_start, Tick beat_end,
-                                                TrackRole track) const;
-
-  /// @brief Get all registered pitches in a time range.
-  /// @param start Start tick
-  /// @param end End tick
-  /// @param exclude Track to exclude
-  /// @return Set of pitches sounding in the range
-  std::vector<uint8_t> getRegisteredPitchesInRange(Tick start, Tick end,
-                                                    TrackRole exclude) const;
-
-  /// @brief Check if a pitch collides with registered notes.
-  /// @param pitch Pitch to check
-  /// @param start Start tick
-  /// @param end End tick
-  /// @param exclude Track to exclude
-  /// @return true if collision detected
-  bool hasCollisionWith(uint8_t pitch, Tick start, Tick end, TrackRole exclude) const;
 };
 
 }  // namespace midisketch

@@ -188,26 +188,8 @@ uint8_t ChordToneHelper::nearestChordTone(uint8_t pitch) const {
 }
 
 uint8_t ChordToneHelper::nearestInRange(uint8_t pitch, uint8_t low, uint8_t high) const {
-  int octave = pitch / 12;
-  int best_pitch = pitch;
-  int best_dist = 1000;
-
-  for (int ct_pc : pitch_classes_) {
-    // Check multiple octaves
-    for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
-      int candidate = (octave + oct_offset) * 12 + ct_pc;
-      if (candidate < low || candidate > high) continue;
-      if (candidate < 0 || candidate > 127) continue;
-
-      int dist = std::abs(candidate - static_cast<int>(pitch));
-      if (dist < best_dist) {
-        best_dist = dist;
-        best_pitch = candidate;
-      }
-    }
-  }
-
-  return static_cast<uint8_t>(std::clamp(best_pitch, static_cast<int>(low), static_cast<int>(high)));
+  return static_cast<uint8_t>(
+      findNearestChordToneInRange(static_cast<int>(pitch), degree_, low, high));
 }
 
 std::vector<uint8_t> ChordToneHelper::allInRange(uint8_t low, uint8_t high) const {
@@ -236,19 +218,27 @@ int ChordToneHelper::rootPitchClass() const {
 // ============================================================================
 
 int nearestChordTonePitch(int pitch, int8_t degree) {
+  // No range restriction: use full MIDI range
+  return findNearestChordToneInRange(pitch, degree, 0, 127);
+}
+
+int findNearestChordToneInRange(int pitch, int8_t degree, int range_low, int range_high) {
   ChordTones ct = getChordTones(degree);
   int octave = pitch / 12;
 
   int best_pitch = pitch;
-  int best_dist = 100;
+  int best_dist = 1000;
 
-  for (uint8_t i = 0; i < ct.count; ++i) {
-    int ct_pc = ct.pitch_classes[i];
+  for (uint8_t idx = 0; idx < ct.count; ++idx) {
+    int ct_pc = ct.pitch_classes[idx];
     if (ct_pc < 0) continue;
 
-    // Check same octave and adjacent octaves
-    for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
+    // Check nearby octaves (-2 to +2)
+    for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
       int candidate = (octave + oct_offset) * 12 + ct_pc;
+      if (candidate < range_low || candidate > range_high) continue;
+      if (candidate < 0 || candidate > 127) continue;
+
       int dist = std::abs(candidate - pitch);
       if (dist < best_dist) {
         best_dist = dist;

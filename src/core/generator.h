@@ -193,8 +193,8 @@ class Generator {
    * @param semitones Steps to modulate up (1-4, typically 2)
    */
   void setModulationTiming(ModulationTiming timing, int8_t semitones = 2) {
-    modulation_timing_ = timing;
-    modulation_semitones_ = semitones;
+    params_.modulation_timing = timing;
+    params_.modulation_semitones = semitones;
   }
 
   /** @brief Get warnings generated during last generation.
@@ -277,22 +277,9 @@ class Generator {
   std::unique_ptr<Coordinator> coordinator_;
   /// @}
 
-  /// @name Call/SE System Settings
-  /// Stored from SongConfig for SE track generation
-  /// @{
-  bool se_enabled_ = true;                            ///< Enable SE (sound effect) track
-  bool call_enabled_ = false;                         ///< Enable call-and-response patterns
-  bool call_notes_enabled_ = true;                    ///< Include pitched notes in calls
-  IntroChant intro_chant_ = IntroChant::None;         ///< Intro chant style
-  MixPattern mix_pattern_ = MixPattern::None;         ///< Mix breakdown pattern
-  CallDensity call_density_ = CallDensity::Standard;  ///< Call frequency
-  /// @}
-
-  /// @name Modulation Settings
-  /// @{
-  ModulationTiming modulation_timing_ = ModulationTiming::None;
-  int8_t modulation_semitones_ = 2;  ///< Key change amount (1-4 semitones)
-  /// @}
+  // Call/SE and Modulation settings are stored directly in params_.
+  // See GeneratorParams::se_enabled, call_enabled, call_notes_enabled,
+  // intro_chant, mix_pattern, call_density, modulation_timing, modulation_semitones.
 
   /// @name Warnings
   /// @{
@@ -301,6 +288,14 @@ class Generator {
 
   /// @name Generation Phase Helpers
   /// @{
+
+  /** @brief Accept incoming params while preserving pre-set state.
+   *
+   *  Preserves modulation timing set via setModulationTiming() if the
+   *  incoming params has default modulation values.
+   *
+   *  @param params Incoming generation parameters */
+  void acceptParams(const GeneratorParams& params);
 
   /** @brief Initialize all generation state (seed, blueprint, BPM, structure).
    *  @return Resolved BPM value */
@@ -334,6 +329,14 @@ class Generator {
    *  Swaps low/high if inverted, clamps to valid MIDI range. */
   void validateVocalRange();
 
+  /** @brief Resolve BPM from params and clamp for paradigm constraints.
+   *
+   *  Resolves BPM=0 to mood default, clamps for RhythmSync paradigm,
+   *  stores result in params_.bpm and song_.setBpm().
+   *
+   *  @return Resolved and clamped BPM value */
+  uint16_t resolveAndClampBpm();
+
   /** @brief Apply AccompanimentConfig to params_ and internal state.
    *  @param config Accompaniment configuration to apply */
   void applyAccompanimentConfig(const AccompanimentConfig& config);
@@ -357,6 +360,15 @@ class Generator {
   void computeDrumGrid();
 
   /// @}
+
+  /// @brief Build a FullTrackContext pre-filled with common fields.
+  ///
+  /// Sets song, params, rng, harmony to reduce boilerplate across the
+  /// multiple context construction sites in track generation methods.
+  /// Callers may then set track-specific fields before passing to generators.
+  ///
+  /// @return Pre-filled FullTrackContext
+  FullTrackContext buildBaseContext();
 
   /// @name Track Generation Methods
   /// Each generates a single track and registers notes with HarmonyContext
@@ -421,8 +433,33 @@ class Generator {
   /** @brief Calculate modulation point and amount from structure/mood. */
   void calculateModulation();
 
-  /** @brief Apply transition dynamics to melodic tracks. */
-  void applyTransitionDynamics();
+  /** @brief Apply post-processing pipeline to melodic tracks.
+   *
+   *  Orchestrates three sub-phases:
+   *  1. Velocity shaping (contour, accent, bar curves, micro-dynamics)
+   *  2. Transition effects (section transitions, exit patterns, clash fixes)
+   *  3. Final adjustments (chord boundary clipping, panning, expression) */
+  void applyPostProcessingPipeline();
+
+  /** @brief Phase 1: Apply velocity shaping to melodic tracks.
+   *
+   *  Applies melody contour velocity, accent patterns, bar-level velocity
+   *  curves, beat-level micro-dynamics, and phrase-end decay. */
+  void applyVelocityShaping(std::vector<MidiTrack*>& tracks);
+
+  /** @brief Phase 2: Apply transition effects for section boundaries.
+   *
+   *  Applies section transition dynamics, entry patterns, exit patterns,
+   *  chorus drop, ritardando, motif-vocal clash fixes, enhanced final hit,
+   *  emotion-based dynamics, and blueprint constraints. */
+  void applyTransitionEffects(std::vector<MidiTrack*>& tracks,
+                              const std::vector<TrackRole>& track_roles);
+
+  /** @brief Phase 3: Apply final adjustments after all dynamics processing.
+   *
+   *  Clips vocal notes at chord boundaries, creates arrangement holes,
+   *  applies stereo panning, and generates expression curves. */
+  void applyFinalAdjustments();
 
   /** @brief Apply EmotionCurve-based velocity adjustments for section transitions. */
   void applyEmotionBasedDynamics(std::vector<MidiTrack*>& tracks,

@@ -246,8 +246,7 @@ void generateDrumsTrackMelodyDriven(MidiTrack& track, const Song& song, const Ge
 // Kick Pattern Pre-computation
 // ============================================================================
 
-KickPatternCache computeKickPattern(const std::vector<Section>& sections, Mood mood,
-                                    [[maybe_unused]] uint16_t bpm) {
+KickPatternCache computeKickPattern(const std::vector<Section>& sections, Mood mood) {
   KickPatternCache cache;
 
   // Determine drum style for kick pattern

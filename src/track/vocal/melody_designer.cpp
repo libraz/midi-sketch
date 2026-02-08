@@ -321,7 +321,7 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
   int prev_final_pitch = -1;
   for (size_t note_idx = 0; note_idx < result.size(); ++note_idx) {
     auto& note = result[note_idx];
-    Tick bar_pos = note.start_tick % TICKS_PER_BAR;
+    Tick bar_pos = positionInBar(note.start_tick);
     bool is_downbeat = bar_pos < TICKS_PER_BEAT / 4;
     if (is_downbeat) {
       int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
@@ -761,7 +761,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
 
     // Apply direction inertia (only if not using motif fragment)
     if (!using_motif_fragment) {
-      choice = applyDirectionInertia(choice, result.direction_inertia, tmpl, rng);
+      choice = applyDirectionInertia(choice, result.direction_inertia, rng);
     }
 
     // Check vowel section constraint (skip if vowel constraints disabled)
@@ -1133,7 +1133,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   // This makes the beginning more catchy while allowing variety later.
   // Two cached skeletons: one for first half (boosted), one for second half (base)
   uint8_t bar_in_section = static_cast<uint8_t>(
-      (hook_start - ctx.section_start) / TICKS_PER_BAR);
+      tickToBar(hook_start - ctx.section_start));
   bool is_first_half = (bar_in_section < ctx.section_bars / 2);
 
   HookSkeleton selected_skeleton;
@@ -1656,7 +1656,7 @@ int MelodyDesigner::calculateTargetPitch(const MelodyTemplate& tmpl, const Secti
                                          [[maybe_unused]] int current_pitch,
                                          const IHarmonyContext& harmony,
                                          [[maybe_unused]] std::mt19937& rng) {
-  return melody::calculateTargetPitch(tmpl, ctx.tessitura.center, tmpl.tessitura_range, ctx.vocal_low,
+  return melody::calculateTargetPitch(ctx.tessitura.center, tmpl.tessitura_range, ctx.vocal_low,
                                       ctx.vocal_high, ctx.section_start, harmony);
 }
 

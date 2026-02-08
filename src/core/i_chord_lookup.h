@@ -17,6 +17,9 @@
 
 namespace midisketch {
 
+// Forward declaration for unified chord tone search
+int findNearestChordToneInRange(int pitch, int8_t degree, int range_low, int range_high);
+
 /**
  * @brief Interface for chord degree lookup at any tick position.
  *
@@ -60,22 +63,7 @@ class IChordLookup {
    * @return Nearest chord tone pitch (absolute MIDI pitch)
    */
   virtual int snapToNearestChordTone(int pitch, Tick tick) const {
-    auto chord_tones = getChordTonesAt(tick);
-    int octave = pitch / 12;
-    int best_pitch = pitch;
-    int best_dist = 100;
-
-    for (int ct_pc : chord_tones) {
-      for (int oct_offset = -1; oct_offset <= 1; ++oct_offset) {
-        int candidate = (octave + oct_offset) * 12 + ct_pc;
-        int dist = std::abs(candidate - pitch);
-        if (dist < best_dist) {
-          best_dist = dist;
-          best_pitch = candidate;
-        }
-      }
-    }
-    return best_pitch;
+    return findNearestChordToneInRange(pitch, getChordDegreeAt(tick), 0, 127);
   }
 
   /**
@@ -91,23 +79,7 @@ class IChordLookup {
    */
   virtual int snapToNearestChordToneInRange(int pitch, Tick tick,
                                              int range_low, int range_high) const {
-    auto chord_tones = getChordTonesAt(tick);
-    int octave = pitch / 12;
-    int best_pitch = pitch;
-    int best_dist = 100;
-
-    for (int oct_offset = -2; oct_offset <= 2; ++oct_offset) {
-      for (int ct_pc : chord_tones) {
-        int candidate = (octave + oct_offset) * 12 + ct_pc;
-        if (candidate < range_low || candidate > range_high) continue;
-        int dist = std::abs(candidate - pitch);
-        if (dist < best_dist) {
-          best_dist = dist;
-          best_pitch = candidate;
-        }
-      }
-    }
-    return best_pitch;
+    return findNearestChordToneInRange(pitch, getChordDegreeAt(tick), range_low, range_high);
   }
 
   /**

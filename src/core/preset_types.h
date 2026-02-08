@@ -420,7 +420,7 @@ struct GeneratorParams {
   bool drums_enabled = true;      ///< Enable drums track
   bool drums_enabled_explicit = false;  ///< True if user explicitly set drums_enabled
   bool skip_vocal = false;        ///< Skip vocal track generation (for BGM-first workflow)
-  /// Note: Modulation is controlled via Generator::modulation_timing_ (set from SongConfig)
+  /// Note: Modulation is controlled via params_.modulation_timing (set from SongConfig)
   uint8_t vocal_low = 60;                ///< Vocal range lower bound (MIDI note)
   uint8_t vocal_high = 79;               ///< Vocal range upper bound (MIDI note)
   uint16_t bpm = 0;                      ///< Tempo (0 = use mood default)
@@ -672,6 +672,7 @@ struct VocalConfig {
   HookIntensity hook_intensity = HookIntensity::Normal;
   VocalGrooveFeel vocal_groove = VocalGrooveFeel::Straight;
   CompositionStyle composition_style = CompositionStyle::MelodyLead;
+  bool keep_motif = false;  ///< RhythmSync: keep existing Motif as coordinate axis (default: regenerate both)
 
   template <typename Self, typename V>
   static void visitFields(Self&& self, V&& v) {
@@ -685,6 +686,7 @@ struct VocalConfig {
     v("hook_intensity", self.hook_intensity);
     v("vocal_groove", self.vocal_groove);
     v("composition_style", self.composition_style);
+    v("keep_motif", self.keep_motif);
   }
 
   void writeTo(json::Writer& w) const {

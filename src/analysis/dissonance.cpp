@@ -338,7 +338,7 @@ enum class BeatStrength {
 };
 
 BeatStrength getBeatStrength(Tick tick) {
-  Tick beat_pos = tick % TICKS_PER_BAR;
+  Tick beat_pos = positionInBar(tick);
   Tick within_beat = beat_pos % TICKS_PER_BEAT;
 
   // Check if on the beat or offbeat
@@ -370,15 +370,15 @@ enum class SectionPosition {
 // Get section position context for a tick.
 SectionPosition getSectionPosition(Tick tick, const Song& song) {
   const auto& arrangement = song.arrangement();
-  uint32_t bar = tick / TICKS_PER_BAR;
-  Tick beat_pos = tick % TICKS_PER_BAR;
+  uint32_t bar = tickToBar(tick);
+  Tick beat_pos = positionInBar(tick);
 
   // Check if this is beat 1
   bool is_beat_1 = beat_pos < TICKS_PER_BEAT;
 
   // Find which section this tick belongs to
   for (const auto& section : arrangement.sections()) {
-    uint32_t section_start_bar = section.start_tick / TICKS_PER_BAR;
+    uint32_t section_start_bar = tickToBar(section.start_tick);
     uint32_t section_end_bar = section_start_bar + section.bars;
 
     if (bar >= section_start_bar && bar < section_end_bar) {
@@ -524,7 +524,7 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes,
       if (reported_clashes.count(clash_key) > 0) continue;
 
       Tick overlap_start = std::max(note_a.start, note_b.start);
-      uint32_t bar = overlap_start / TICKS_PER_BAR;
+      uint32_t bar = tickToBar(overlap_start);
       int8_t degree = ctx.chord_lookup.getChordDegreeAt(overlap_start);
 
       auto [is_dissonant, base_severity] = checkIntervalDissonance(actual_interval, degree);
@@ -569,7 +569,7 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes,
         issue.severity = severity;
         issue.tick = overlap_start;
         issue.bar = bar + 1;  // 1-indexed to match --bar command
-        issue.beat = 1.0f + static_cast<float>(overlap_start % TICKS_PER_BAR) / TICKS_PER_BEAT;
+        issue.beat = 1.0f + static_cast<float>(positionInBar(overlap_start)) / TICKS_PER_BEAT;
         issue.interval_semitones = actual_interval;
         issue.interval_name = intervalToNameInternal(actual_interval);
         issue.overlap_duration = overlap_duration;
@@ -612,7 +612,7 @@ std::tuple<bool, uint8_t, uint8_t> checkCloseIntervalWithChord(
 void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_bass,
                                  const DetectionContext& ctx, DissonanceReport& report) {
   for (const auto& note : track.notes()) {
-    uint32_t bar = note.start_tick / TICKS_PER_BAR;
+    uint32_t bar = tickToBar(note.start_tick);
     int8_t degree = ctx.chord_lookup.getChordDegreeAt(note.start_tick);
     int pitch_class = getPitchClass(note.note);
 
@@ -655,7 +655,7 @@ void detectNonChordTonesInTrack(const MidiTrack& track, TrackRole role, bool is_
     issue.severity = severity;
     issue.tick = note.start_tick;
     issue.bar = bar + 1;  // 1-indexed to match --bar command
-    issue.beat = 1.0f + static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
+    issue.beat = 1.0f + static_cast<float>(positionInBar(note.start_tick)) / TICKS_PER_BEAT;
     issue.track_name = trackRoleToString(role);
     issue.pitch = note.note;
     issue.pitch_name = midiNoteToNameInternal(note.note);
@@ -745,14 +745,14 @@ void detectSustainedInTrack(const MidiTrack& track, TrackRole role,
                                                              : DissonanceSeverity::Low;
         }
 
-        uint32_t bar = change.tick / TICKS_PER_BAR;
+        uint32_t bar = tickToBar(change.tick);
 
         DissonanceIssue issue;
         issue.type = DissonanceType::SustainedOverChordChange;
         issue.severity = severity;
         issue.tick = change.tick;
         issue.bar = bar + 1;  // 1-indexed to match --bar command
-        issue.beat = 1.0f + static_cast<float>(change.tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
+        issue.beat = 1.0f + static_cast<float>(positionInBar(change.tick)) / TICKS_PER_BEAT;
         issue.track_name = trackRoleToString(role);
         issue.pitch = note.note;
         issue.pitch_name = midiNoteToNameInternal(note.note);
@@ -805,7 +805,7 @@ void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
     }
 
     if (!is_borrowed_chord_tone) {
-      uint32_t bar = note.start_tick / TICKS_PER_BAR;
+      uint32_t bar = tickToBar(note.start_tick);
       int bar_in_progression = bar % ctx.progression.length;
       int next_chord_idx = (bar_in_progression + 1) % ctx.progression.length;
       int8_t next_degree = ctx.progression.degrees[next_chord_idx];
@@ -829,7 +829,7 @@ void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
       default: severity = DissonanceSeverity::Medium; break;
     }
 
-    uint32_t bar = note.start_tick / TICKS_PER_BAR;
+    uint32_t bar = tickToBar(note.start_tick);
     int key_offset = static_cast<int>(key);
     uint8_t transposed_pitch =
         static_cast<uint8_t>(std::clamp(static_cast<int>(note.note) + key_offset, 0, 127));
@@ -839,7 +839,7 @@ void detectNonDiatonicInTrack(const MidiTrack& track, TrackRole role, Key key,
     issue.severity = severity;
     issue.tick = note.start_tick;
     issue.bar = bar + 1;  // 1-indexed to match --bar command
-    issue.beat = 1.0f + static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT;
+    issue.beat = 1.0f + static_cast<float>(positionInBar(note.start_tick)) / TICKS_PER_BEAT;
     issue.track_name = trackRoleToString(role);
     issue.pitch = transposed_pitch;
     issue.pitch_name = midiNoteToNameInternal(transposed_pitch);

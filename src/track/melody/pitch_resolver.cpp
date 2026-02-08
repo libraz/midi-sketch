@@ -313,8 +313,7 @@ int applyPitchChoice(PitchChoice choice, int current_pitch, int target_pitch,
   return new_pitch;
 }
 
-int calculateTargetPitch([[maybe_unused]] const MelodyTemplate& tmpl, int tessitura_center,
-                         int tessitura_range,
+int calculateTargetPitch(int tessitura_center, int tessitura_range,
                          uint8_t vocal_low, uint8_t vocal_high, Tick section_start,
                          const IHarmonyContext& harmony) {
   // Target is typically a chord tone in the upper part of tessitura

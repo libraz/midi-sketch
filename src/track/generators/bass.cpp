@@ -21,6 +21,7 @@
 #include "core/i_harmony_context.h"
 #include "core/mood_utils.h"
 #include "core/note_creator.h"
+#include "core/note_timeline_utils.h"
 #include "core/pitch_utils.h"
 #include "core/preset_data.h"
 #include "core/timing_constants.h"
@@ -1660,7 +1661,7 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
         dominant_pattern = selectPatternWithPolicy(temp_cache, sections[0], 0, params, rng);
       }
     }
-    applyBassArticulation(track, dominant_pattern, params.mood, sections, &harmony);
+    applyBassArticulation(track, dominant_pattern, params.mood, &harmony);
   }
 
   // Post-processing 3: Apply density adjustment per section with collision checking
@@ -2059,20 +2060,18 @@ BassArticulation determineArticulation(BassPattern pattern, Mood mood, Tick note
 // ============================================================================
 
 void applyBassArticulation(MidiTrack& track, BassPattern pattern, Mood mood,
-                           [[maybe_unused]] const std::vector<Section>& sections,
                            const IHarmonyContext* harmony) {
   auto& notes = track.notes();
   if (notes.empty()) return;
 
   // Sort notes by start tick for proper processing
-  std::sort(notes.begin(), notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+  NoteTimeline::sortByStartTick(notes);
 
   int prev_pitch = -1;
 
   for (auto& note : notes) {
     // Find which section this note belongs to
-    Tick bar_start = (note.start_tick / TICKS_PER_BAR) * TICKS_PER_BAR;
+    Tick bar_start = barToTick(tickToBar(note.start_tick));
 
     // Determine articulation
     BassArticulation art =
@@ -2174,7 +2173,7 @@ void applyDensityAdjustmentWithHarmony(MidiTrack& track, const Section& section,
       }
 
       // Check if note is on a quarter note position
-      Tick pos_in_bar = note.start_tick % TICKS_PER_BAR;
+      Tick pos_in_bar = positionInBar(note.start_tick);
       bool is_quarter_pos = (pos_in_bar % TICK_QUARTER) < TICK_SIXTEENTH;
 
       if (is_quarter_pos) {

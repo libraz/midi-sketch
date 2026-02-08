@@ -424,8 +424,7 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
   postProcessNotes(all_notes, harmony);
 
   // Sort notes by start tick for monotony tracking
-  std::sort(all_notes.begin(), all_notes.end(),
-            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+  NoteTimeline::sortByStartTick(all_notes);
 
   // Add to output track with monotony tracking and collision detection
   // Track actual output pitches (after collision avoidance) for accurate monotony detection
@@ -664,7 +663,7 @@ std::vector<NoteEvent> AuxGenerator::generatePulseLoop(const AuxContext& ctx,
 
     // A7: Check for collision with function-specific tolerance
     pitch = resolveAuxPitch(pitch, current_tick, note_duration, ctx.main_melody, harmony, aux_low,
-                         aux_high, ctx.chord_degree, meta.dissonance_tolerance);
+                         aux_high, meta.dissonance_tolerance);
 
     result.push_back({current_tick, note_duration, pitch, velocity});
 
@@ -704,7 +703,7 @@ std::vector<NoteEvent> AuxGenerator::generatePulseLoop(const AuxContext& ctx,
 
       // Check for safety
       response_pitch = resolveAuxPitch(response_pitch, rest_start, TICK_QUARTER, ctx.main_melody,
-                                    harmony, aux_low, aux_high, rest_chord_degree,
+                                    harmony, aux_low, aux_high,
                                     meta.dissonance_tolerance);
 
       result.push_back({rest_start, TICK_QUARTER, response_pitch, response_velocity});
@@ -776,7 +775,7 @@ std::vector<NoteEvent> AuxGenerator::generateTargetHint(const AuxContext& ctx,
 
     // A7: Use function-specific dissonance tolerance
     pitch = resolveAuxPitch(pitch, hint_start, TICK_QUARTER, ctx.main_melody, harmony, aux_low,
-                         aux_high, ctx.chord_degree, meta.dissonance_tolerance);
+                         aux_high, meta.dissonance_tolerance);
 
     result.push_back({hint_start, TICK_QUARTER, pitch, velocity});
   }
@@ -822,7 +821,7 @@ std::vector<NoteEvent> AuxGenerator::generateGrooveAccent(const AuxContext& ctx,
         // A7: Use function-specific dissonance tolerance (very low for accents)
         uint8_t pitch =
             resolveAuxPitch(root_pitch, beat2, TICK_EIGHTH, ctx.main_melody, harmony, aux_low,
-                         aux_high, ctx.chord_degree, meta.dissonance_tolerance);
+                         aux_high, meta.dissonance_tolerance);
         result.push_back({beat2, TICK_EIGHTH, pitch, velocity});
       }
     }
@@ -834,7 +833,7 @@ std::vector<NoteEvent> AuxGenerator::generateGrooveAccent(const AuxContext& ctx,
       if (density_dist(rng) < config.density_ratio * meta.base_density) {
         uint8_t pitch =
             resolveAuxPitch(root_pitch, beat4, TICK_EIGHTH, ctx.main_melody, harmony, aux_low,
-                         aux_high, ctx.chord_degree, meta.dissonance_tolerance);
+                         aux_high, meta.dissonance_tolerance);
         result.push_back({beat4, TICK_EIGHTH, pitch, velocity});
       }
     }
@@ -874,7 +873,7 @@ std::vector<NoteEvent> AuxGenerator::generateGrooveAccent(const AuxContext& ctx,
 
       // Check for safety
       accent_pitch = resolveAuxPitch(accent_pitch, rest_start, TICK_EIGHTH, ctx.main_melody,
-                                  harmony, aux_low, aux_high, rest_chord_degree,
+                                  harmony, aux_low, aux_high,
                                   meta.dissonance_tolerance);
 
       result.push_back({rest_start, TICK_EIGHTH, accent_pitch, accent_velocity});
@@ -959,7 +958,7 @@ std::vector<NoteEvent> AuxGenerator::generatePhraseTail(const AuxContext& ctx,
     // A7: Use function-specific dissonance tolerance (moderate for tails)
     uint8_t pitch =
         resolveAuxPitch(static_cast<uint8_t>(tail_pitch), tail_start, TICK_EIGHTH, ctx.main_melody,
-                     harmony, aux_low, aux_high, ctx.chord_degree, meta.dissonance_tolerance);
+                     harmony, aux_low, aux_high, meta.dissonance_tolerance);
 
     result.push_back({tail_start, TICK_EIGHTH, pitch, static_cast<uint8_t>(velocity * 0.8f)});
   }
@@ -1027,7 +1026,7 @@ std::vector<NoteEvent> AuxGenerator::generateEmotionalPad(const AuxContext& ctx,
     // Root note (always)
     uint8_t safe_root =
         resolveAuxPitch(root_pitch, current_tick, actual_duration, ctx.main_melody, harmony, aux_low,
-                     aux_high, current_chord_degree, meta.dissonance_tolerance);
+                     aux_high, meta.dissonance_tolerance);
     result.push_back({current_tick, actual_duration, safe_root, velocity});
 
     // Fifth note (if voice_count >= 2)
@@ -1035,7 +1034,7 @@ std::vector<NoteEvent> AuxGenerator::generateEmotionalPad(const AuxContext& ctx,
         std::abs(static_cast<int>(fifth_pitch) - static_cast<int>(safe_root)) > 2) {
       uint8_t safe_fifth =
           resolveAuxPitch(fifth_pitch, current_tick, actual_duration, ctx.main_melody, harmony,
-                       aux_low, aux_high, current_chord_degree, meta.dissonance_tolerance);
+                       aux_low, aux_high, meta.dissonance_tolerance);
       if (safe_fifth != safe_root) {
         result.push_back(
             {current_tick, actual_duration, safe_fifth, static_cast<uint8_t>(velocity * 0.9f)});
@@ -1054,7 +1053,7 @@ std::vector<NoteEvent> AuxGenerator::generateEmotionalPad(const AuxContext& ctx,
         // Tension notes use higher dissonance tolerance
         uint8_t safe_tension =
             resolveAuxPitch(tension_pitch, current_tick, actual_duration, ctx.main_melody, harmony,
-                         aux_low, aux_high, current_chord_degree, 0.5f);
+                         aux_low, aux_high, 0.5f);
         if (safe_tension != safe_root && safe_tension != fifth_pitch) {
           result.push_back({current_tick, actual_duration, safe_tension,
                             static_cast<uint8_t>(velocity * 0.7f)});  // Softer tension
@@ -1140,17 +1139,24 @@ bool AuxGenerator::isConsonantWithMelodyAndTracks(uint8_t pitch, Tick start, Tic
   return harmony.isConsonantWithOtherTracks(pitch, start, duration, TrackRole::Aux);
 }
 
+// NOTE: resolveAuxPitch intentionally does NOT delegate to SafePitchResolver.
+//
+// SafePitchResolver requires ChordProgressionTracker + TrackCollisionDetector
+// (internal types), while this function uses IHarmonyContext (the public API).
+// Additionally, aux-specific logic (strong-beat chord-tone preference, melody
+// consonance checking with dissonance_tolerance, and dual safe/unsafe chord-tone
+// tracking) has no counterpart in SafePitchResolver's strategy chain.
+// See safe_pitch_resolver.h for the alternative approach used by note_creator.
 uint8_t AuxGenerator::resolveAuxPitch(uint8_t desired, Tick start, Tick duration,
                                     const std::vector<NoteEvent>* main_melody,
                                     const IHarmonyContext& harmony, uint8_t low, uint8_t high,
-                                    [[maybe_unused]] int8_t chord_degree,
                                     float dissonance_tolerance) {
   // Get actual chord degree at this tick (not section start)
   int8_t actual_chord_degree = harmony.getChordDegreeAt(start);
 
   // Check if this is a strong beat (beat 1 or 3)
   // Use full beat range to catch notes slightly off the beat
-  Tick bar_pos = start % TICKS_PER_BAR;
+  Tick bar_pos = positionInBar(start);
   bool is_strong_beat =
       (bar_pos < TICKS_PER_BEAT) || (bar_pos >= 2 * TICKS_PER_BEAT && bar_pos < 3 * TICKS_PER_BEAT);
 
@@ -1391,7 +1397,7 @@ std::vector<NoteEvent> AuxGenerator::generateMelodicHook(const AuxContext& ctx,
 
     // Apply safety check to avoid clashes with vocal
     pitch = resolveAuxPitch(static_cast<uint8_t>(pitch), current_tick, NOTE_DURATION, ctx.main_melody,
-                         harmony, aux_low, aux_high, chord_degree, meta.dissonance_tolerance);
+                         harmony, aux_low, aux_high, meta.dissonance_tolerance);
 
     // Create hook note (pitch will be re-checked when placed)
     Tick note_duration = NOTE_DURATION - TICKS_PER_BEAT / 8;  // Slight gap
@@ -1438,7 +1444,7 @@ std::vector<NoteEvent> AuxGenerator::generateMelodicHook(const AuxContext& ctx,
       int8_t current_chord = harmony.getChordDegreeAt(hook_note.start_tick);
       hook_note.note =
           resolveAuxPitch(hook_note.note, hook_note.start_tick, hook_note.duration, ctx.main_melody,
-                       harmony, aux_low, aux_high, current_chord, meta.dissonance_tolerance);
+                       harmony, aux_low, aux_high, meta.dissonance_tolerance);
 
       result.push_back(hook_note);
     }
@@ -1590,7 +1596,7 @@ std::vector<NoteEvent> AuxGenerator::generateMotifCounter(const AuxContext& ctx,
 
       uint8_t safe_pitch = resolveAuxPitch(static_cast<uint8_t>(counter_pitch), current_tick,
                                         note_duration, ctx.main_melody, harmony, aux_low, aux_high,
-                                        current_chord_degree, meta.dissonance_tolerance);
+                                        meta.dissonance_tolerance);
 
       // Add note
       result.push_back({current_tick, note_duration, safe_pitch, velocity});
@@ -1623,7 +1629,7 @@ std::vector<NoteEvent> AuxGenerator::generateMotifCounter(const AuxContext& ctx,
 
       uint8_t safe_pitch = resolveAuxPitch(static_cast<uint8_t>(counter_pitch), rest_start,
                                         TICK_QUARTER, ctx.main_melody, harmony, aux_low, aux_high,
-                                        current_chord_degree, meta.dissonance_tolerance);
+                                        meta.dissonance_tolerance);
 
       result.push_back({rest_start, TICK_QUARTER, safe_pitch, velocity});
     }
@@ -1792,7 +1798,7 @@ std::vector<NoteEvent> AuxGenerator::generateSustainPad(const AuxContext& ctx,
     // Root note (always play)
     uint8_t safe_root =
         resolveAuxPitch(root_pitch, current_tick, actual_duration, ctx.main_melody, harmony, aux_low,
-                     aux_high, current_chord_degree, meta.dissonance_tolerance);
+                     aux_high, meta.dissonance_tolerance);
 
     // Softer velocity for sustained pad effect
     uint8_t pad_velocity = static_cast<uint8_t>(velocity * 0.7f);
@@ -1803,7 +1809,7 @@ std::vector<NoteEvent> AuxGenerator::generateSustainPad(const AuxContext& ctx,
         std::abs(static_cast<int>(third_pitch) - static_cast<int>(safe_root)) > 2) {
       uint8_t safe_third =
           resolveAuxPitch(third_pitch, current_tick, actual_duration, ctx.main_melody, harmony,
-                       aux_low, aux_high, current_chord_degree, meta.dissonance_tolerance);
+                       aux_low, aux_high, meta.dissonance_tolerance);
       if (safe_third != safe_root) {
         result.push_back(
             {current_tick, actual_duration, safe_third, static_cast<uint8_t>(pad_velocity * 0.85f)});
@@ -1821,7 +1827,7 @@ std::vector<NoteEvent> AuxGenerator::generateSustainPad(const AuxContext& ctx,
       if (fifth_pitch != safe_root && fifth_pitch != third_pitch) {
         uint8_t safe_fifth =
             resolveAuxPitch(fifth_pitch, current_tick, actual_duration, ctx.main_melody, harmony,
-                         aux_low, aux_high, current_chord_degree, meta.dissonance_tolerance);
+                         aux_low, aux_high, meta.dissonance_tolerance);
         result.push_back(
             {current_tick, actual_duration, safe_fifth, static_cast<uint8_t>(pad_velocity * 0.75f)});
       }
@@ -1831,16 +1837,6 @@ std::vector<NoteEvent> AuxGenerator::generateSustainPad(const AuxContext& ctx,
   }
 
   return result;
-}
-
-// ============================================================================
-// Standalone Function (backward compatibility)
-// ============================================================================
-
-void generateAuxTrack(MidiTrack& track, const AuxGenerator::SongContext& song_ctx,
-                      IHarmonyContext& harmony, std::mt19937& rng) {
-  AuxGenerator generator;
-  generator.generateFromSongContext(track, song_ctx, harmony, rng);
 }
 
 }  // namespace midisketch
