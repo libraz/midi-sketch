@@ -67,6 +67,9 @@ class MelodyDesigner {
     bool enable_embellishment = true;  ///< Enable melodic embellishment (NCT insertion)
     VocalAttitude vocal_attitude = VocalAttitude::Expressive;  ///< Vocal style attitude
     HookIntensity hook_intensity = HookIntensity::Normal;      ///< Hook pattern selection intensity
+    // BPM for tempo-aware duration and breath calculations
+    uint16_t bpm = 120;  ///< Beats per minute
+
     // RhythmSync support
     GenerationParadigm paradigm = GenerationParadigm::Traditional;  ///< Generation paradigm
     const DrumGrid* drum_grid = nullptr;  ///< Drum grid for RhythmSync quantization

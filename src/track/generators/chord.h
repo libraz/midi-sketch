@@ -74,7 +74,7 @@ class ChordGenerator : public TrackBase {
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kElectricPiano; }
 
   /// @brief Generate full chord track using FullTrackContext.
-  void generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
+  void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 };
 
 }  // namespace midisketch

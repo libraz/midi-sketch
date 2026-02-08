@@ -36,7 +36,7 @@ class ArpeggioGenerator : public TrackBase {
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kArpeggioSynth; }
 
   /// @brief Generate full arpeggio track using FullTrackContext.
-  void generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
+  void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 };
 
 // =============================================================================

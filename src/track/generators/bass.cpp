@@ -247,7 +247,6 @@ float getBassKickSyncToleranceMultiplier(BassGenre genre) {
 
 // Use interval constants from pitch_utils.h
 using namespace Interval;
-constexpr int DIMINISHED_5TH = TRITONE;  ///< Alias for clarity in bass context
 
 /// Convert degree to bass root pitch, using appropriate octave.
 /// Tries one octave down first, then two octaves if still above BASS_HIGH.
@@ -260,79 +259,8 @@ uint8_t getBassRoot(int8_t degree, Key key = Key::C) {
   return clampBass(root);
 }
 
-/// Get diatonic 5th above root (in C major context).
-/// Returns perfect 5th for most roots, but diminished 5th for B (vii chord).
-/// When the 5th exceeds BASS_HIGH, shifts down an octave to preserve pitch class.
-uint8_t getFifth(uint8_t root) {
-  int pitch_class = root % OCTAVE;
-  // B (pitch class 11) has a diminished 5th in C major (B->F)
-  // All other diatonic roots have perfect 5th
-  int interval = (pitch_class == 11) ? DIMINISHED_5TH : PERFECT_5TH;
-  int fifth = root + interval;
-  // Shift octave down if above bass range (preserves pitch class)
-  if (fifth > BASS_HIGH) {
-    fifth -= OCTAVE;
-  }
-  return clampBass(fifth);
-}
-
-/// Get safe 5th that doesn't clash with other tracks and is a chord tone.
-/// When slash chords change the bass root, the diatonic 5th of that root may not
-/// be a chord tone. In such cases, falls back to the chord's actual 5th or 3rd.
-/// @param root The chord root pitch (may be slash chord bass note)
-/// @param harmony Harmony context for collision and chord degree lookup
-/// @param start Start tick for collision check
-/// @param duration Duration for collision check
-/// @return Safe pitch that is a chord tone and consonant, or root as fallback
-uint8_t getSafeFifth(uint8_t root, const IHarmonyContext& harmony, Tick start, Tick duration) {
-  int8_t degree = harmony.getChordDegreeAt(start);
-  auto chord_pcs = getChordTonePitchClasses(degree);
-
-  // Helper: check if pitch class is a chord tone
-  auto isChordTone = [&](int pc) {
-    for (int ct : chord_pcs) {
-      if (ct == pc) return true;
-    }
-    return false;
-  };
-
-  // Helper: find pitch in bass range near root and check consonance
-  auto tryPitch = [&](int pitch_class) -> int {
-    int root_oct = root / OCTAVE;
-    // Try same octave as root, then octave above, then below
-    for (int oct_offset : {0, 1, -1}) {
-      int candidate = (root_oct + oct_offset) * OCTAVE + pitch_class;
-      if (candidate >= BASS_LOW && candidate <= BASS_HIGH && candidate != root &&
-          harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), start, duration,
-                                             TrackRole::Bass)) {
-        return candidate;
-      }
-    }
-    return -1;
-  };
-
-  // First try: diatonic 5th of root (most common case, works when root is actual chord root)
-  uint8_t fifth = getFifth(root);
-  if (isChordTone(fifth % OCTAVE)) {
-    int result = tryPitch(fifth % OCTAVE);
-    if (result >= 0) return static_cast<uint8_t>(result);
-  }
-
-  // Second try: chord's actual 5th (for slash chord cases)
-  if (chord_pcs.size() >= 3) {
-    int result = tryPitch(chord_pcs[2]);
-    if (result >= 0) return static_cast<uint8_t>(result);
-  }
-
-  // Third try: chord's 3rd
-  if (chord_pcs.size() >= 2) {
-    int result = tryPitch(chord_pcs[1]);
-    if (result >= 0) return static_cast<uint8_t>(result);
-  }
-
-  // Fall back to root (always safest for bass)
-  return root;
-}
+// getFifth() and getSafeFifth() moved to core/chord_utils.h as
+// getDiatonicFifth() and getSafeChordTone()
 
 /// Get the next diatonic note in C major, stepping from the given pitch.
 /// direction: +1 for ascending, -1 for descending
@@ -733,15 +661,7 @@ void addBassNotePreferRoot(MidiTrack& track, Tick start, Tick duration,
   createNoteAndAdd(track, harmony, opts);
 }
 
-// Check if a pitch forms a tritone with any chord pitch class
-bool hasTritoneWithChord(int pitch_pc, const std::vector<int>& chord_pcs) {
-  for (int chord_pc : chord_pcs) {
-    int interval = std::abs(pitch_pc - chord_pc);
-    if (interval > 6) interval = 12 - interval;
-    if (interval == 6) return true;  // Tritone
-  }
-  return false;
-}
+// hasTritoneWithChord() moved to core/chord_utils.h
 
 // Helper to add a bass note with fallback when non-root pitch clashes.
 // Simplifies the common pattern: try pitch (fifth, octave, approach), fall back to chord tone.
@@ -1380,7 +1300,8 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
   // Use getSafeFifth to pre-check collision with other tracks (Motif, Vocal, etc.)
   // This prevents major 7th clashes at pattern-selection time, not just at note-creation
-  uint8_t fifth = getSafeFifth(root, harmony, bar_start, TICKS_PER_BEAT);
+  uint8_t fifth = getSafeChordTone(root, harmony, bar_start, TICKS_PER_BEAT,
+                                   TrackRole::Bass, BASS_LOW, BASS_HIGH);
   uint8_t octave = getOctave(root);
 
   // Build context for pattern functions
@@ -1473,7 +1394,8 @@ void generateBassHalfBar(MidiTrack& track, Tick half_start, uint8_t root, Sectio
   uint8_t vel = calculateVelocity(section, 0, mood);
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
   // Pre-check 5th for collision with other tracks
-  uint8_t fifth = getSafeFifth(root, harmony, half_start, TICK_QUARTER);
+  uint8_t fifth = getSafeChordTone(root, harmony, half_start, TICK_QUARTER,
+                                   TrackRole::Bass, BASS_LOW, BASS_HIGH);
 
   // Simple half-bar pattern: root + fifth or root, all with safety checks
   if (is_first_half) {
@@ -2297,10 +2219,7 @@ void applyDensityAdjustment(MidiTrack& track, const Section& section) {
 // BassGenerator Implementation
 // ============================================================================
 
-void BassGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
-  if (!ctx.isValid()) {
-    return;
-  }
+void BassGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   // Unified bass generation: pass both kick_cache and vocal_analysis (either/both may be nullptr)
   generateBassTrack(track, *ctx.song, *ctx.params, *ctx.rng, *ctx.harmony,
                     ctx.kick_cache, ctx.vocal_analysis);

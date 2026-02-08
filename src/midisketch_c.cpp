@@ -127,44 +127,31 @@ MidiSketchError midisketch_regenerate_accompaniment(MidiSketchHandle handle, uin
   return MIDISKETCH_OK;
 }
 
-MidiSketchMidiData* midisketch_get_midi(MidiSketchHandle handle) {
-  if (!handle) return nullptr;
-
-  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
-  auto midi_bytes = sketch->getMidi();
-
+static MidiSketchMidiData* allocateMidiData(const std::vector<uint8_t>& bytes) {
   auto* result = static_cast<MidiSketchMidiData*>(malloc(sizeof(MidiSketchMidiData)));
   if (!result) return nullptr;
 
-  result->size = midi_bytes.size();
+  result->size = bytes.size();
   result->data = static_cast<uint8_t*>(malloc(result->size));
   if (!result->data) {
     free(result);
     return nullptr;
   }
 
-  memcpy(result->data, midi_bytes.data(), result->size);
+  memcpy(result->data, bytes.data(), result->size);
   return result;
+}
+
+MidiSketchMidiData* midisketch_get_midi(MidiSketchHandle handle) {
+  if (!handle) return nullptr;
+  auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
+  return allocateMidiData(sketch->getMidi());
 }
 
 MidiSketchMidiData* midisketch_get_vocal_preview_midi(MidiSketchHandle handle) {
   if (!handle) return nullptr;
-
   auto* sketch = static_cast<midisketch::MidiSketch*>(handle);
-  auto midi_bytes = sketch->getVocalPreviewMidi();
-
-  auto* result = static_cast<MidiSketchMidiData*>(malloc(sizeof(MidiSketchMidiData)));
-  if (!result) return nullptr;
-
-  result->size = midi_bytes.size();
-  result->data = static_cast<uint8_t*>(malloc(result->size));
-  if (!result->data) {
-    free(result);
-    return nullptr;
-  }
-
-  memcpy(result->data, midi_bytes.data(), result->size);
-  return result;
+  return allocateMidiData(sketch->getVocalPreviewMidi());
 }
 
 void midisketch_free_midi(MidiSketchMidiData* data) {
@@ -374,58 +361,13 @@ MidiSketchFormCandidates midisketch_get_forms_by_style(uint8_t style_id) {
 namespace {
 
 MidiSketchConfigError mapConfigError(midisketch::SongConfigError error) {
-  switch (error) {
-    case midisketch::SongConfigError::OK:
-      return MIDISKETCH_CONFIG_OK;
-    case midisketch::SongConfigError::InvalidStylePreset:
-      return MIDISKETCH_CONFIG_INVALID_STYLE;
-    case midisketch::SongConfigError::InvalidChordProgression:
-      return MIDISKETCH_CONFIG_INVALID_CHORD;
-    case midisketch::SongConfigError::InvalidForm:
-      return MIDISKETCH_CONFIG_INVALID_FORM;
-    case midisketch::SongConfigError::InvalidVocalAttitude:
-      return MIDISKETCH_CONFIG_INVALID_ATTITUDE;
-    case midisketch::SongConfigError::InvalidVocalRange:
-      return MIDISKETCH_CONFIG_INVALID_VOCAL_RANGE;
-    case midisketch::SongConfigError::InvalidBpm:
-      return MIDISKETCH_CONFIG_INVALID_BPM;
-    case midisketch::SongConfigError::DurationTooShortForCall:
-      return MIDISKETCH_CONFIG_DURATION_TOO_SHORT;
-    case midisketch::SongConfigError::InvalidModulationAmount:
-      return MIDISKETCH_CONFIG_INVALID_MODULATION;
-    case midisketch::SongConfigError::InvalidKey:
-      return MIDISKETCH_CONFIG_INVALID_KEY;
-    case midisketch::SongConfigError::InvalidCompositionStyle:
-      return MIDISKETCH_CONFIG_INVALID_COMPOSITION_STYLE;
-    case midisketch::SongConfigError::InvalidArpeggioPattern:
-      return MIDISKETCH_CONFIG_INVALID_ARPEGGIO_PATTERN;
-    case midisketch::SongConfigError::InvalidArpeggioSpeed:
-      return MIDISKETCH_CONFIG_INVALID_ARPEGGIO_SPEED;
-    case midisketch::SongConfigError::InvalidVocalStyle:
-      return MIDISKETCH_CONFIG_INVALID_VOCAL_STYLE;
-    case midisketch::SongConfigError::InvalidMelodyTemplate:
-      return MIDISKETCH_CONFIG_INVALID_MELODY_TEMPLATE;
-    case midisketch::SongConfigError::InvalidMelodicComplexity:
-      return MIDISKETCH_CONFIG_INVALID_MELODIC_COMPLEXITY;
-    case midisketch::SongConfigError::InvalidHookIntensity:
-      return MIDISKETCH_CONFIG_INVALID_HOOK_INTENSITY;
-    case midisketch::SongConfigError::InvalidVocalGroove:
-      return MIDISKETCH_CONFIG_INVALID_VOCAL_GROOVE;
-    case midisketch::SongConfigError::InvalidCallDensity:
-      return MIDISKETCH_CONFIG_INVALID_CALL_DENSITY;
-    case midisketch::SongConfigError::InvalidIntroChant:
-      return MIDISKETCH_CONFIG_INVALID_INTRO_CHANT;
-    case midisketch::SongConfigError::InvalidMixPattern:
-      return MIDISKETCH_CONFIG_INVALID_MIX_PATTERN;
-    case midisketch::SongConfigError::InvalidMotifRepeatScope:
-      return MIDISKETCH_CONFIG_INVALID_MOTIF_REPEAT_SCOPE;
-    case midisketch::SongConfigError::InvalidArrangementGrowth:
-      return MIDISKETCH_CONFIG_INVALID_ARRANGEMENT_GROWTH;
-    case midisketch::SongConfigError::InvalidModulationTiming:
-      return MIDISKETCH_CONFIG_INVALID_MODULATION_TIMING;
-    default:
-      return MIDISKETCH_CONFIG_INVALID_STYLE;
-  }
+  // C++ SongConfigError and C MidiSketchConfigError have identical numeric values
+  static_assert(static_cast<int>(midisketch::SongConfigError::OK) == MIDISKETCH_CONFIG_OK,
+                "Enum value mismatch: OK");
+  static_assert(static_cast<int>(midisketch::SongConfigError::InvalidModulationTiming) ==
+                    MIDISKETCH_CONFIG_INVALID_MODULATION_TIMING,
+                "Enum value mismatch: last entry");
+  return static_cast<MidiSketchConfigError>(error);
 }
 
 // Static buffer for JSON config output

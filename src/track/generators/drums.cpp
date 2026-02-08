@@ -10,10 +10,7 @@
 
 namespace midisketch {
 
-void DrumsGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
-  if (!ctx.song || !ctx.params || !ctx.rng) {
-    return;
-  }
+void DrumsGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   // Check for vocal-dependent generation modes
   if (ctx.vocal_analysis) {
     const VocalAnalysis* va = ctx.vocal_analysis;
@@ -30,18 +27,5 @@ void DrumsGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
   generateDrumsTrack(track, *ctx.song, *ctx.params, *ctx.rng);
 }
 
-void DrumsGenerator::generateWithVocal(MidiTrack& track, const Song& song,
-                                        const GeneratorParams& params, std::mt19937& rng,
-                                        const VocalAnalysis& vocal_analysis) {
-  // Delegate to existing generateDrumsTrackWithVocal function
-  generateDrumsTrackWithVocal(track, song, params, rng, vocal_analysis);
-}
-
-void DrumsGenerator::generateMelodyDriven(MidiTrack& track, const Song& song,
-                                           const GeneratorParams& params, std::mt19937& rng,
-                                           const VocalAnalysis& vocal_analysis) {
-  // Delegate to existing generateDrumsTrackMelodyDriven function
-  generateDrumsTrackMelodyDriven(track, song, params, rng, vocal_analysis);
-}
 
 }  // namespace midisketch

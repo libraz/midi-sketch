@@ -1727,10 +1727,7 @@ void generateChordTrackWithContext(MidiTrack& track, const TrackGenerationContex
 // ChordGenerator Implementation
 // ============================================================================
 
-void ChordGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
-  if (!ctx.isValid()) {
-    return;
-  }
+void ChordGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   TrackGenerationContext gen_ctx{*ctx.song, *ctx.params, *ctx.rng, *ctx.harmony};
   gen_ctx.bass_track = &ctx.song->bass();
 

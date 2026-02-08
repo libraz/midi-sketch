@@ -227,11 +227,7 @@ void insertMIXAtIntroImpl(MidiTrack& track, const std::vector<Section>& sections
 
 }  // namespace
 
-void SEGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
-  if (!ctx.song) {
-    return;
-  }
-
+void SEGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   const auto& sections = ctx.song->arrangement().sections();
 
   // Always add section markers

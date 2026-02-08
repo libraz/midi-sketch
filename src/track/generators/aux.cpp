@@ -109,10 +109,7 @@ const AuxFunctionMeta& getAuxFunctionMeta(AuxFunction func) {
 // ITrackBase Interface Implementation
 // ============================================================================
 
-void AuxGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
-  if (!ctx.isValid()) {
-    return;
-  }
+void AuxGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   // Build SongContext from FullTrackContext
   const auto& progression = getChordProgression(ctx.params->chord_id);
   const auto& sections = ctx.song->arrangement().sections();
@@ -1106,7 +1103,7 @@ std::vector<Tick> AuxGenerator::findBreathPointsInRange(
   return result;
 }
 
-bool AuxGenerator::isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration,
+bool AuxGenerator::isConsonantWithMelodyAndTracks(uint8_t pitch, Tick start, Tick duration,
                                 const std::vector<NoteEvent>* main_melody,
                                 const IHarmonyContext& harmony, float dissonance_tolerance) {
   // Check against main melody
@@ -1173,7 +1170,7 @@ uint8_t AuxGenerator::resolveAuxPitch(uint8_t desired, Tick start, Tick duration
         int candidate = (octave + oct_offset) * 12 + pc;
         if (candidate < low || candidate > high) continue;
 
-        if (isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), start, duration, main_melody, harmony,
+        if (isConsonantWithMelodyAndTracks(static_cast<uint8_t>(candidate), start, duration, main_melody, harmony,
                         dissonance_tolerance)) {
           int dist = std::abs(candidate - static_cast<int>(desired));
           if (dist < best_dist) {
@@ -1191,7 +1188,7 @@ uint8_t AuxGenerator::resolveAuxPitch(uint8_t desired, Tick start, Tick duration
   }
 
   // Weak beats or no safe chord tone found: check if desired is safe
-  if (isConsonantWithOtherTracks(desired, start, duration, main_melody, harmony, dissonance_tolerance)) {
+  if (isConsonantWithMelodyAndTracks(desired, start, duration, main_melody, harmony, dissonance_tolerance)) {
     return desired;
   }
 
@@ -1221,7 +1218,7 @@ uint8_t AuxGenerator::resolveAuxPitch(uint8_t desired, Tick start, Tick duration
       }
 
       // Track nearest safe chord tone
-      if (isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), start, duration, main_melody, harmony,
+      if (isConsonantWithMelodyAndTracks(static_cast<uint8_t>(candidate), start, duration, main_melody, harmony,
                       dissonance_tolerance)) {
         if (dist < best_safe_dist) {
           best_safe_dist = dist;

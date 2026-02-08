@@ -42,9 +42,6 @@ class SEGenerator : public TrackBase {
     return PhysicalModel{0, 127, 1, 127, 30, false, 0};
   }
 
-  /// @brief Generate full SE track using FullTrackContext.
-  void generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
-
   /// @brief Generate SE track with call system.
   /// @param track Target track
   /// @param song Song containing arrangement
@@ -57,6 +54,15 @@ class SEGenerator : public TrackBase {
   void generateWithCalls(MidiTrack& track, const Song& song, bool call_enabled,
                          bool call_notes_enabled, IntroChant intro_chant, MixPattern mix_pattern,
                          CallDensity call_density, std::mt19937& rng);
+
+ protected:
+  /// @brief SE only needs song (text events, no params/rng/harmony required).
+  bool validateContext(const FullTrackContext& ctx) const override {
+    return ctx.song != nullptr;
+  }
+
+  /// @brief Generate full SE track.
+  void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 };
 
 // =============================================================================

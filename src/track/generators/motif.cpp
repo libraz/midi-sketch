@@ -766,11 +766,7 @@ uint8_t calculateMotifVelocity(uint8_t base_vel, bool is_chorus, SectionType sec
 
 }  // namespace
 
-void MotifGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
-  if (!ctx.song || !ctx.params || !ctx.rng || !ctx.harmony) {
-    return;
-  }
-
+void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   const auto& params = *ctx.params;
   std::mt19937& rng = *ctx.rng;
   IHarmonyCoordinator* harmony = ctx.harmony;

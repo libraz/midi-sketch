@@ -106,14 +106,4 @@ PitchResolutionResult SafePitchResolver::resolvePitchWithStrategy(
   return {desired, CollisionAvoidStrategy::Failed};
 }
 
-uint8_t SafePitchResolver::getBestAvailablePitch(uint8_t desired, Tick start, Tick duration,
-                                                 TrackRole track, uint8_t low, uint8_t high,
-                                                 const ChordProgressionTracker& chord_tracker,
-                                                 const TrackCollisionDetector& collision_detector)
-    const {
-  return resolvePitchWithStrategy(desired, start, duration, track, low, high, chord_tracker,
-                                   collision_detector)
-      .pitch;
-}
-
 }  // namespace midisketch

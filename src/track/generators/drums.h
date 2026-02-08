@@ -6,15 +6,10 @@
 #ifndef MIDISKETCH_TRACK_GENERATORS_DRUMS_H
 #define MIDISKETCH_TRACK_GENERATORS_DRUMS_H
 
-#include <random>
-
 #include "core/track_base.h"
 #include "core/types.h"
 
 namespace midisketch {
-
-class Song;
-struct VocalAnalysis;
 
 /// @brief Drums track generator implementing ITrackBase interface.
 ///
@@ -39,25 +34,13 @@ class DrumsGenerator : public TrackBase {
   }
 
   /// @brief Generate full drums track using FullTrackContext.
-  void generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
+  void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 
-  /// @brief Generate drums with vocal synchronization (RhythmSync paradigm).
-  /// @param track Target track
-  /// @param song Song containing arrangement
-  /// @param params Generation parameters
-  /// @param rng Random number generator
-  /// @param vocal_analysis Pre-analyzed vocal track
-  void generateWithVocal(MidiTrack& track, const Song& song, const GeneratorParams& params,
-                         std::mt19937& rng, const VocalAnalysis& vocal_analysis);
-
-  /// @brief Generate drums for MelodyDriven paradigm.
-  /// @param track Target track
-  /// @param song Song containing arrangement
-  /// @param params Generation parameters
-  /// @param rng Random number generator
-  /// @param vocal_analysis Pre-analyzed vocal track
-  void generateMelodyDriven(MidiTrack& track, const Song& song, const GeneratorParams& params,
-                            std::mt19937& rng, const VocalAnalysis& vocal_analysis);
+ protected:
+  /// @brief Drums only need song, params, and rng (no harmony).
+  bool validateContext(const FullTrackContext& ctx) const override {
+    return ctx.song != nullptr && ctx.params != nullptr && ctx.rng != nullptr;
+  }
 };
 
 }  // namespace midisketch

@@ -178,9 +178,8 @@ void PostProcessor::applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass,
 // ExitPattern Helper Functions
 // ============================================================================
 
-void PostProcessor::applyExitFadeout(std::vector<NoteEvent>& notes, Tick section_start,
-                                     Tick section_end, uint8_t section_bars) {
-  (void)section_start;  // Not used in fadeout
+void PostProcessor::applyExitFadeout(std::vector<NoteEvent>& notes, Tick section_end,
+                                     uint8_t section_bars) {
 
   // Velocity gradually decreases in last 2 bars (1.0 -> 0.4)
   uint8_t fade_bars = std::min(section_bars, static_cast<uint8_t>(2));
@@ -352,7 +351,7 @@ void PostProcessor::applyExitPattern(MidiTrack& track, const Section& section,
 
   switch (section.exit_pattern) {
     case ExitPattern::Fadeout:
-      applyExitFadeout(notes, section_start, section_end, section.bars);
+      applyExitFadeout(notes, section_end, section.bars);
       break;
     case ExitPattern::FinalHit:
       applyExitFinalHit(notes, section_end);

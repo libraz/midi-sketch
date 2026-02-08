@@ -27,9 +27,8 @@ class ConfigConverter {
   /**
    * @brief Apply VocalStylePreset to melody parameters.
    * @param params Parameters to modify
-   * @param config Configuration with style settings
    */
-  static void applyVocalStylePreset(GeneratorParams& params, const SongConfig& config);
+  static void applyVocalStylePreset(GeneratorParams& params);
 
   /**
    * @brief Apply MelodicComplexity to melody parameters.

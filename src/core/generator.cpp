@@ -568,8 +568,7 @@ void Generator::regenerateVocal(const VocalConfig& config) {
   params_.vocal_groove = config.vocal_groove;
 
   // Apply VocalStylePreset and MelodicComplexity settings
-  SongConfig dummy_config;
-  ConfigConverter::applyVocalStylePreset(params_, dummy_config);
+  ConfigConverter::applyVocalStylePreset(params_);
   ConfigConverter::applyMelodicComplexity(params_);
 
   // Resolve and apply seed

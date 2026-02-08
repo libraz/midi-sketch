@@ -181,7 +181,7 @@ class BassGenerator : public TrackBase {
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kElectricBass; }
 
   /// @brief Generate full bass track using FullTrackContext.
-  void generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
+  void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 
   /// @brief Generate bass adapted to vocal (with VocalAnalysis).
   /// @param track Target track

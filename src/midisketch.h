@@ -194,9 +194,9 @@ class MidiSketch {
 
  private:
   /// @brief Rebuild MIDI from current generator state (legacy params only).
-  void rebuildMidi();
+  void rebuildMidiLegacy();
   /// @brief Rebuild MIDI from current generator state with SongConfig metadata.
-  void rebuildMidi(const SongConfig& config);
+  void rebuildMidiWithConfig(const SongConfig& config);
 
   Generator generator_;
   MidiWriter midi_writer_;

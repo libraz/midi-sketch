@@ -19,11 +19,13 @@ namespace midisketch {
 /// @brief Base implementation for track generators.
 ///
 /// Provides common functionality that all track generators share:
+/// - Context validation (Template Method pattern)
 /// - Physical model enforcement
 /// - Safe note creation
 /// - Priority coordination
 ///
-/// Subclasses override generateFullTrack() or generateSection() with track-specific logic.
+/// Subclasses override doGenerateFullTrack() with track-specific logic.
+/// Context validation is handled automatically by generateFullTrack().
 class TrackBase : public ITrackBase {
  public:
   ~TrackBase() override = default;
@@ -36,13 +38,29 @@ class TrackBase : public ITrackBase {
     config_ = config;
   }
 
-  /// @brief Default implementation: loop through sections and call generateSection().
+  /// @brief Template Method: validates context, then delegates to doGenerateFullTrack().
   ///
-  /// Override this for tracks that need section-spanning logic (phrases, pattern caching).
+  /// Subclasses should NOT override this. Override doGenerateFullTrack() instead.
   void generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 
  protected:
   TrackConfig config_;
+
+  /// @brief Validate the generation context before proceeding.
+  ///
+  /// Default checks that song, params, rng, and harmony are all non-null (ctx.isValid()).
+  /// Override for tracks with different requirements (e.g., Drums don't need harmony,
+  /// SE only needs song).
+  /// @return true if context is valid and generation should proceed
+  virtual bool validateContext(const FullTrackContext& ctx) const {
+    return ctx.isValid();
+  }
+
+  /// @brief Generate the full track (called after context validation).
+  ///
+  /// Default implementation loops through sections and calls generateSection().
+  /// Override for tracks that need section-spanning logic (phrases, pattern caching).
+  virtual void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx);
 
   /// @brief Check if this track is the coordinate axis (no pitch adjustment).
   bool isCoordinateAxis(const TrackContext& ctx) const {

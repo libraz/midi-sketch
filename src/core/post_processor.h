@@ -308,8 +308,8 @@ class PostProcessor {
   static SectionType getSectionTypeAtTick(Tick tick, const std::vector<Section>& sections);
 
   // Exit pattern helper functions
-  static void applyExitFadeout(std::vector<NoteEvent>& notes, Tick section_start,
-                               Tick section_end, uint8_t section_bars);
+  static void applyExitFadeout(std::vector<NoteEvent>& notes, Tick section_end,
+                               uint8_t section_bars);
   static void applyExitFinalHit(std::vector<NoteEvent>& notes, Tick section_end);
   static void applyExitCutOff(std::vector<NoteEvent>& notes, Tick section_start,
                               Tick section_end);

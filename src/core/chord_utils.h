@@ -174,6 +174,46 @@ class ChordToneHelper {
 };
 
 // ============================================================================
+// Tritone Detection
+// ============================================================================
+
+/// @brief Check if a pitch forms a tritone interval with any chord pitch class.
+/// @param pitch_pc Pitch class to check (0-11)
+/// @param chord_pcs Vector of chord pitch classes
+/// @return true if any interval is a tritone (6 semitones)
+bool hasTritoneWithChord(int pitch_pc, const std::vector<int>& chord_pcs);
+
+// ============================================================================
+// Diatonic Fifth Utilities
+// ============================================================================
+
+class IHarmonyContext;
+enum class TrackRole : uint8_t;
+
+/// @brief Get diatonic 5th above root in C major, clamped to bass range.
+///
+/// Returns perfect 5th for most roots, diminished 5th for B (vii chord).
+/// Shifts down an octave if above BASS_HIGH.
+/// @param root Root MIDI pitch
+/// @return Fifth pitch clamped to bass range
+uint8_t getDiatonicFifth(uint8_t root);
+
+/// @brief Get safe chord tone (preferring 5th) that doesn't clash with other tracks.
+///
+/// When slash chords change the bass root, the diatonic 5th may not be a chord tone.
+/// Falls back to the chord's actual 5th, then 3rd, then root.
+/// @param root The chord root pitch (may be slash chord bass note)
+/// @param harmony Harmony context for collision and chord degree lookup
+/// @param start Start tick for collision check
+/// @param duration Duration for collision check
+/// @param role Track role for collision checking (default: Bass)
+/// @param range_low Minimum pitch (default: BASS_LOW)
+/// @param range_high Maximum pitch (default: BASS_HIGH)
+/// @return Safe pitch that is a chord tone and consonant, or root as fallback
+uint8_t getSafeChordTone(uint8_t root, const IHarmonyContext& harmony, Tick start, Tick duration,
+                         TrackRole role, uint8_t range_low, uint8_t range_high);
+
+// ============================================================================
 // Stepwise Motion Functions
 // ============================================================================
 

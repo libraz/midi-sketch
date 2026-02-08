@@ -47,8 +47,7 @@ constexpr size_t kStylePresetCount = sizeof(kStylePresetMappings) / sizeof(kStyl
 
 }  // namespace
 
-void ConfigConverter::applyVocalStylePreset(GeneratorParams& params,
-                                            const SongConfig& /* config */) {
+void ConfigConverter::applyVocalStylePreset(GeneratorParams& params) {
   // Skip Auto and Standard - they use StylePreset defaults
   if (params.vocal_style == VocalStylePreset::Auto ||
       params.vocal_style == VocalStylePreset::Standard) {
@@ -307,7 +306,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   params.melody_template = config.melody_template;
 
   // Apply VocalStylePreset-specific parameter adjustments
-  applyVocalStylePreset(params, config);
+  applyVocalStylePreset(params);
 
   // Transfer melodic complexity, hook intensity, groove feel, and drive
   params.melodic_complexity = config.melodic_complexity;

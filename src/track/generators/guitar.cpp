@@ -581,9 +581,7 @@ static void generateSweepArpeggioBar(MidiTrack& track, IHarmonyContext& harmony,
 // GuitarGenerator implementation
 // ============================================================================
 
-void GuitarGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
-  if (!ctx.isValid()) return;
-
+void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   const auto& params = *ctx.params;
   const auto& sections = ctx.song->arrangement().sections();
   if (sections.empty()) return;

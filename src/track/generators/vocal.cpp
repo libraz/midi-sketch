@@ -477,15 +477,20 @@ struct LongNoteDesire {
 static LongNoteDesire evaluateLongNoteDesire(size_t i, const std::vector<float>& onsets,
                                               const Section& section,
                                               const std::set<float>& boundary_set,
-                                              int onsets_since_long) {
+                                              int onsets_since_long,
+                                              uint16_t bpm = 120) {
   LongNoteDesire desire{0, 0.0f};
   size_t remaining = onsets.size() - i;
 
   // Cooldown: prevent consecutive long notes from destroying rhythmic feel.
   // Chorus/Drop allow shorter cooldown since they benefit from more sustained singing.
+  // At fast tempos (>=150), reduce cooldown to allow more frequent long notes.
   int cooldown_threshold = (section.type == SectionType::Chorus ||
                             section.type == SectionType::Drop ||
                             section.type == SectionType::Bridge) ? 1 : 2;
+  if (bpm >= 150) {
+    cooldown_threshold = std::max(0, cooldown_threshold - 1);
+  }
   if (onsets_since_long < cooldown_threshold) {
     return desire;
   }
@@ -525,8 +530,20 @@ static LongNoteDesire evaluateLongNoteDesire(size_t i, const std::vector<float>&
       break;
   }
 
-  desire.max_skip = base_max_skip;
-  desire.probability = base_prob;
+  // BPM boost: at fast tempos, each onset is physically shorter so we need
+  // more long notes to maintain natural vocal phrasing
+  float bpm_boost = 0.0f;
+  int bpm_skip_boost = 0;
+  if (bpm >= 150) {
+    bpm_boost = 0.15f;
+    bpm_skip_boost = 2;
+  } else if (bpm >= 120) {
+    bpm_boost = 0.08f;
+    bpm_skip_boost = 1;
+  }
+
+  desire.max_skip = base_max_skip + bpm_skip_boost;
+  desire.probability = base_prob + bpm_boost;
 
   // Cap max_skip to not consume all remaining onsets (keep at least 1 after)
   if (desire.max_skip >= static_cast<int>(remaining)) {
@@ -612,8 +629,10 @@ static LongNoteDesire evaluateLongNoteDesire(size_t i, const std::vector<float>&
   }
 
   // (6) Spacing-based fallback: if too many consecutive short notes,
-  // force a long note attempt. Threshold: 5 onsets (~2.5 beats).
-  if (onsets_since_long >= 5) {
+  // force a long note attempt. At fast tempos, trigger earlier to prevent
+  // long runs of uniform short notes.
+  int spacing_threshold = (bpm >= 150) ? 3 : 5;
+  if (onsets_since_long >= spacing_threshold) {
     desire.max_skip = std::max(desire.max_skip, 1);
     desire.probability = 0.85f;
     return desire;
@@ -713,7 +732,7 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
 
   // Determine breath duration based on section type and mood
   bool is_ballad = MoodClassification::isBallad(ctx.mood);
-  Tick breath_duration = getBreathDuration(section.type, is_ballad);
+  Tick breath_duration = getBreathDuration(section.type, is_ballad, false, ctx.bpm);
 
   // Gate ratio by section type for legato control
   float gate_ratio;
@@ -734,17 +753,22 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
       break;
   }
 
-  // Phrase-end minimum duration by section type
+  // Phrase-end minimum duration by section type.
+  // At fast tempos, cadential notes need more ticks to feel "sustained" (~400ms).
+  constexpr float kMinPhraseEndSeconds = 0.4f;
+  Tick bpm_phrase_end_min = static_cast<Tick>(
+      kMinPhraseEndSeconds * ctx.bpm * TICKS_PER_BEAT / 60.0f);
+
   Tick phrase_end_min;
   switch (section.type) {
     case SectionType::Chorus:
     case SectionType::Drop:
     case SectionType::B:
     case SectionType::Bridge:
-      phrase_end_min = TICK_QUARTER;
+      phrase_end_min = std::max(TICK_QUARTER, bpm_phrase_end_min);
       break;
     default:
-      phrase_end_min = TICK_EIGHTH;
+      phrase_end_min = std::max(TICK_EIGHTH, bpm_phrase_end_min);
       break;
   }
 
@@ -784,7 +808,7 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
     // extended duration for pitch candidate lookup so the chosen pitch is
     // guaranteed safe for the full extension.
     // ======================================================================
-    auto desire = evaluateLongNoteDesire(i, onsets, section, boundary_set, onsets_since_long);
+    auto desire = evaluateLongNoteDesire(i, onsets, section, boundary_set, onsets_since_long, ctx.bpm);
 
     Tick candidate_duration = base_duration;
     bool using_extended_candidates = false;
@@ -928,7 +952,13 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
         duration = next_onset - tick;
       }
     } else {
-      duration = static_cast<Tick>(available_span * gate_ratio);
+      // Same pitch as previous: legato (no gap) to avoid unnatural micro-splits.
+      // In singing, consecutive same-pitch notes are sustained as one long note.
+      if (safe_pitch == prev_pitch) {
+        duration = available_span;
+      } else {
+        duration = static_cast<Tick>(available_span * gate_ratio);
+      }
       duration = std::max(duration, TICK_SIXTEENTH);
       if (tick + duration > next_onset) {
         duration = next_onset - tick;
@@ -1176,11 +1206,279 @@ static std::vector<NoteEvent> generateLockedRhythmWithEvaluation(
   return std::move(candidates[0].first);
 }
 
-void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
-  if (!ctx.isValid()) {
-    return;
+// =============================================================================
+// Extracted sub-methods for doGenerateFullTrack decomposition
+// =============================================================================
+
+MelodyDesigner::SectionContext VocalGenerator::buildSectionContext(
+    const Section& section, const GeneratorParams& params,
+    const Song& song, const TessituraRange& tessitura,
+    uint8_t vocal_low, uint8_t vocal_high, int8_t chord_degree,
+    int occurrence, const DrumGrid* drum_grid,
+    const MelodyDesigner& designer) const {
+  MelodyDesigner::SectionContext sctx;
+  sctx.section_type = section.type;
+  sctx.section_start = section.start_tick;
+  sctx.section_end = section.endTick();
+  sctx.section_bars = section.bars;
+  sctx.chord_degree = chord_degree;
+  sctx.key_offset = 0;  // Always C major internally
+  sctx.tessitura = tessitura;
+  sctx.vocal_low = vocal_low;
+  sctx.vocal_high = vocal_high;
+  sctx.mood = params.mood;  // For harmonic rhythm alignment
+  sctx.bpm = params.bpm;
+  // Apply section's density_percent to density modifier (with SectionModifier)
+  float base_density = getDensityModifier(section.type, params.melody_params);
+  uint8_t effective_density = section.getModifiedDensity(section.density_percent);
+  float density_factor = effective_density / 100.0f;
+  sctx.density_modifier = base_density * density_factor;
+  sctx.thirtysecond_ratio = getThirtysecondRatio(section.type, params.melody_params);
+  sctx.consecutive_same_note_prob =
+      getConsecutiveSameNoteProb(section.type, params.melody_params);
+  sctx.disable_vowel_constraints = params.melody_params.disable_vowel_constraints;
+  sctx.disable_breathing_gaps = params.melody_params.disable_breathing_gaps;
+  // Wire StyleMelodyParams zombie parameters to SectionContext
+  sctx.chorus_long_tones = params.melody_params.chorus_long_tones;
+  sctx.allow_bar_crossing = params.melody_params.allow_bar_crossing;
+  sctx.min_note_division = params.melody_params.min_note_division;
+  sctx.tension_usage = params.melody_params.tension_usage;
+  sctx.syncopation_prob = params.melody_params.syncopation_prob;
+  if (params.melody_long_note_ratio_override) {
+    sctx.long_note_ratio_override = params.melody_params.long_note_ratio;
+  }
+  sctx.phrase_length_bars = params.melody_params.phrase_length_bars;
+  // allow_unison_repeat: when false, hard-disable consecutive same notes
+  if (!params.melody_params.allow_unison_repeat) {
+    sctx.consecutive_same_note_prob = 0.0f;
+  }
+  // note_density: apply as additional multiplier to density_modifier
+  sctx.density_modifier *= params.melody_params.note_density;
+  sctx.vocal_attitude = params.vocal_attitude;
+  sctx.hook_intensity = params.hook_intensity;  // For HookSkeleton selection
+  // RhythmSync support
+  sctx.paradigm = params.paradigm;
+  sctx.drum_grid = drum_grid;
+  // Motif template for accent-linked velocity (RhythmSync)
+  if (params.paradigm == GenerationParadigm::RhythmSync) {
+    sctx.motif_params = &params.motif;
+  }
+  // Behavioral Loop support
+  sctx.addictive_mode = params.addictive_mode;
+  // Vocal groove feel for syncopation control
+  sctx.vocal_groove = params.vocal_groove;
+  // Syncopation enable flag
+  sctx.enable_syncopation = params.enable_syncopation;
+  // Drive feel for timing and syncopation modulation
+  sctx.drive_feel = params.drive_feel;
+
+  // Vocal style for physics parameters (breath, timing, pitch bend)
+  sctx.vocal_style = params.vocal_style;
+
+  // Occurrence count for occurrence-dependent embellishment density
+  sctx.section_occurrence = occurrence;
+
+  // Apply melodic leap constraint: user override > blueprint > default
+  if (params.melody_max_leap_override) {
+    sctx.max_leap_semitones = params.melody_params.max_leap_interval;
+  } else if (params.blueprint_ref != nullptr) {
+    sctx.max_leap_semitones = params.blueprint_ref->constraints.max_leap_semitones;
+  }
+  if (params.blueprint_ref != nullptr) {
+    sctx.prefer_stepwise = params.blueprint_ref->constraints.prefer_stepwise;
   }
 
+  // Wire guide tone rate from section
+  sctx.guide_tone_rate = section.guide_tone_rate;
+
+  // Set anticipation rest mode based on groove feel and drive
+  // Driving/Syncopated grooves benefit from anticipation rests for "tame" effect
+  // Higher drive_feel increases anticipation intensity
+  if (params.vocal_groove == VocalGrooveFeel::Driving16th) {
+    sctx.anticipation_rest = (params.drive_feel >= 70) ? AnticipationRestMode::Moderate
+                                                        : AnticipationRestMode::Subtle;
+  } else if (params.vocal_groove == VocalGrooveFeel::Syncopated) {
+    sctx.anticipation_rest = AnticipationRestMode::Moderate;
+  } else if (params.drive_feel >= 80) {
+    // High drive with any groove gets subtle anticipation
+    sctx.anticipation_rest = AnticipationRestMode::Subtle;
+  }
+
+  // Set phrase contour template based on section type
+  // Common J-POP practice:
+  // - Chorus: Peak (arch shape) for memorable hook contour
+  // - A (Verse): Ascending for storytelling build
+  // - B (Pre-chorus): Ascending to build tension before chorus
+  // - Bridge: Descending for contrast
+  switch (section.type) {
+    case SectionType::Chorus:
+      sctx.forced_contour = ContourType::Peak;
+      break;
+    case SectionType::A:
+      sctx.forced_contour = ContourType::Ascending;
+      break;
+    case SectionType::B:
+      sctx.forced_contour = ContourType::Ascending;
+      break;
+    case SectionType::Bridge:
+      sctx.forced_contour = ContourType::Descending;
+      break;
+    default:
+      sctx.forced_contour = std::nullopt;  // Use default section-aware bias
+      break;
+  }
+
+  // Enable motif fragment enforcement for A/B sections after first chorus
+  // This creates song-wide melodic unity by echoing chorus motif fragments
+  if (designer.getCachedGlobalMotif().has_value() &&
+      (section.type == SectionType::A || section.type == SectionType::B)) {
+    sctx.enforce_motif_fragments = true;
+  }
+
+  // Set transition info for next section (if any)
+  const auto& sections = song.arrangement().sections();
+  for (size_t idx = 0; idx < sections.size(); ++idx) {
+    if (&sections[idx] == &section && idx + 1 < sections.size()) {
+      sctx.transition_to_next = getTransition(section.type, sections[idx + 1].type);
+      break;
+    }
+  }
+
+  return sctx;
+}
+
+CachedRhythmPattern* VocalGenerator::resolveRhythmLock(
+    const Section& section, const GeneratorParams& params,
+    const Song& song, const FullTrackContext& ctx,
+    CachedRhythmPattern& motif_storage,
+    bool use_per_section_type_lock,
+    std::unordered_map<SectionType, CachedRhythmPattern>& section_type_locks,
+    CachedRhythmPattern* active_rhythm_lock,
+    Tick section_start, Tick section_end) const {
+  CachedRhythmPattern* current_rhythm_lock = nullptr;
+
+  // RhythmSync paradigm: extract rhythm from Motif track (coordinate axis)
+  // Try ctx.motif_track first (from Coordinator), then fall back to motif_track_ member
+  const MidiTrack* motif_ref = ctx.motif_track;
+  if (motif_ref == nullptr) {
+    motif_ref = motif_track_;
+  }
+  if (params.paradigm == GenerationParadigm::RhythmSync && motif_ref != nullptr &&
+      !motif_ref->empty()) {
+    // Extract Motif's rhythm pattern for this section
+    motif_storage = extractRhythmPatternFromTrack(
+        motif_ref->notes(), section_start, section_end);
+    if (motif_storage.isValid()) {
+      current_rhythm_lock = &motif_storage;
+    }
+  }
+
+  // Fallback: use stored Motif base pattern (available even when Motif is muted)
+  if (current_rhythm_lock == nullptr && params.paradigm == GenerationParadigm::RhythmSync) {
+    const auto& base_pattern = song.motifPattern();
+    if (!base_pattern.empty()) {
+      uint8_t pattern_beats = static_cast<uint8_t>(
+          (base_pattern.back().start_tick + base_pattern.back().duration + TICKS_PER_BEAT - 1) /
+          TICKS_PER_BEAT);
+      if (pattern_beats > 0) {
+        motif_storage = extractRhythmPattern(base_pattern, 0, pattern_beats);
+        if (motif_storage.isValid()) {
+          current_rhythm_lock = &motif_storage;
+        }
+      }
+    }
+  }
+
+  // Fallback: use cached Vocal rhythm if Motif pattern not available
+  if (current_rhythm_lock == nullptr) {
+    if (use_per_section_type_lock) {
+      // Per-section-type lock: look up by section type
+      auto iter = section_type_locks.find(section.type);
+      if (iter != section_type_locks.end() && iter->second.isValid()) {
+        current_rhythm_lock = &iter->second;
+      }
+    } else if (active_rhythm_lock->isValid()) {
+      // Global lock: use single rhythm pattern
+      current_rhythm_lock = active_rhythm_lock;
+    }
+  }
+
+  return current_rhythm_lock;
+}
+
+void VocalGenerator::postProcessVocalNotes(
+    std::vector<NoteEvent>& all_notes, MidiTrack& track,
+    const Song& song, const GeneratorParams& params,
+    IHarmonyContext& harmony, std::mt19937& rng,
+    float velocity_scale,
+    uint8_t effective_vocal_low, uint8_t effective_vocal_high) const {
+  // Apply section-end sustain - extend final notes of each section
+  applySectionEndSustain(all_notes, song.arrangement().sections(), harmony);
+
+  // Apply groove feel timing adjustments
+  applyGrooveFeel(all_notes, params.vocal_groove);
+
+  // Remove overlapping notes
+  // UltraVocaloid allows 32nd notes (60 ticks), standard vocals need 16th notes (120 ticks)
+  Tick min_note_duration =
+      (params.vocal_style == VocalStylePreset::UltraVocaloid) ? TICK_32ND : TICK_SIXTEENTH;
+  removeOverlaps(all_notes, min_note_duration);
+
+  // Enforce maximum phrase duration with breath gaps
+  VocalPhysicsParams physics = getVocalPhysicsParams(params.vocal_style);
+  if (physics.requires_breath && physics.max_phrase_bars < 255) {
+    uint8_t effective_max_bars = physics.max_phrase_bars;
+    // RhythmSync: tighter breath enforcement (4 bars = 16 beats)
+    // Dense note generation in RhythmSync rarely produces natural phrase gaps,
+    // so shorter max phrase prevents 30+ beat continuous phrases.
+    if (params.paradigm == GenerationParadigm::RhythmSync && effective_max_bars > 4) {
+      effective_max_bars = 4;
+    }
+    melody::enforceMaxPhraseDuration(all_notes, effective_max_bars);
+  }
+
+  // Vocal-friendly post-processing:
+  // Merge same-pitch notes with BPM-aware gap threshold.
+  // At fast tempos, gate_ratio creates larger tick gaps that should still be merged.
+  // SKIP for UltraVocaloid: same-pitch rapid-fire is intentional (machine-gun style)
+  if (params.vocal_style != VocalStylePreset::UltraVocaloid) {
+    // BPM-aware merge gap: ~50ms in real time, minimum 30 ticks
+    Tick merge_gap = static_cast<Tick>(std::max(
+        30.0f, 0.05f * params.bpm * TICKS_PER_BEAT / 60.0f));
+    mergeSamePitchNotes(all_notes, merge_gap);
+  }
+
+  // NOTE: resolveIsolatedShortNotes() removed - short notes are often
+  // intentional articulation (staccato bursts, rhythmic motifs).
+
+  // Apply velocity scale
+  applyVelocityBalance(all_notes, velocity_scale);
+
+  // Enforce pitch constraints (interval limits and scale enforcement)
+  enforceVocalPitchConstraints(all_notes, params, harmony);
+
+  // Break up excessive consecutive same-pitch notes (RhythmSync compatibility)
+  // This addresses monotonous melody issues in RhythmSync paradigm where
+  // collision avoidance can cause long runs of the same pitch.
+  // max_consecutive=3 means 4th note onwards gets alternated for melodic interest.
+  breakConsecutiveSamePitch(all_notes, harmony, effective_vocal_low, effective_vocal_high, 3);
+
+  // Final overlap check - ensures no overlaps after all processing
+  removeOverlaps(all_notes, min_note_duration);
+
+  // Add notes to track
+  // Note: Registration with HarmonyContext is handled by Coordinator after generateFullTrack()
+  // to avoid double registration and ensure MidiTrack and HarmonyContext are in sync
+  for (const auto& note : all_notes) {
+    track.addNote(note);
+  }
+
+  // Apply pitch bend expressions (scoop-up, fall-off, vibrato, portamento)
+  const auto* sections_ptr = &song.arrangement().sections();
+  applyVocalPitchBendExpressions(track, all_notes, params, rng, sections_ptr);
+}
+
+void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   Song& song = *ctx.song;
   const GeneratorParams& params = *ctx.params;
   std::mt19937& rng = *ctx.rng;
@@ -1320,186 +1618,19 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
       }
     } else {
       // Cache miss: generate new melody
-      MelodyDesigner::SectionContext sctx;
-      sctx.section_type = section.type;
-      sctx.section_start = section_start;
-      sctx.section_end = section_end;
-      sctx.section_bars = section.bars;
-      sctx.chord_degree = chord_degree;
-      sctx.key_offset = 0;  // Always C major internally
-      sctx.tessitura = section_tessitura;
-      sctx.vocal_low = section_vocal_low;
-      sctx.vocal_high = section_vocal_high;
-      sctx.mood = params.mood;  // For harmonic rhythm alignment
-      // Apply section's density_percent to density modifier (with SectionModifier)
-      float base_density = getDensityModifier(section.type, params.melody_params);
-      uint8_t effective_density = section.getModifiedDensity(section.density_percent);
-      float density_factor = effective_density / 100.0f;
-      sctx.density_modifier = base_density * density_factor;
-      sctx.thirtysecond_ratio = getThirtysecondRatio(section.type, params.melody_params);
-      sctx.consecutive_same_note_prob =
-          getConsecutiveSameNoteProb(section.type, params.melody_params);
-      sctx.disable_vowel_constraints = params.melody_params.disable_vowel_constraints;
-      sctx.disable_breathing_gaps = params.melody_params.disable_breathing_gaps;
-      // Wire StyleMelodyParams zombie parameters to SectionContext
-      sctx.chorus_long_tones = params.melody_params.chorus_long_tones;
-      sctx.allow_bar_crossing = params.melody_params.allow_bar_crossing;
-      sctx.min_note_division = params.melody_params.min_note_division;
-      sctx.tension_usage = params.melody_params.tension_usage;
-      sctx.syncopation_prob = params.melody_params.syncopation_prob;
-      if (params.melody_long_note_ratio_override) {
-        sctx.long_note_ratio_override = params.melody_params.long_note_ratio;
-      }
-      sctx.phrase_length_bars = params.melody_params.phrase_length_bars;
-      // allow_unison_repeat: when false, hard-disable consecutive same notes
-      if (!params.melody_params.allow_unison_repeat) {
-        sctx.consecutive_same_note_prob = 0.0f;
-      }
-      // note_density: apply as additional multiplier to density_modifier
-      sctx.density_modifier *= params.melody_params.note_density;
-      sctx.vocal_attitude = params.vocal_attitude;
-      sctx.hook_intensity = params.hook_intensity;  // For HookSkeleton selection
-      // RhythmSync support
-      sctx.paradigm = params.paradigm;
-      sctx.drum_grid = drum_grid;
-      // Motif template for accent-linked velocity (RhythmSync)
-      if (params.paradigm == GenerationParadigm::RhythmSync) {
-        sctx.motif_params = &params.motif;
-      }
-      // Behavioral Loop support
-      sctx.addictive_mode = params.addictive_mode;
-      // Vocal groove feel for syncopation control
-      sctx.vocal_groove = params.vocal_groove;
-      // Syncopation enable flag
-      sctx.enable_syncopation = params.enable_syncopation;
-      // Drive feel for timing and syncopation modulation
-      sctx.drive_feel = params.drive_feel;
+      MelodyDesigner::SectionContext sctx = buildSectionContext(
+          section, params, song, section_tessitura,
+          section_vocal_low, section_vocal_high, chord_degree,
+          occurrence, drum_grid, designer);
 
-      // Vocal style for physics parameters (breath, timing, pitch bend)
-      sctx.vocal_style = params.vocal_style;
-
-      // Occurrence count for occurrence-dependent embellishment density
-      sctx.section_occurrence = occurrence;
-
-      // Apply melodic leap constraint: user override > blueprint > default
-      if (params.melody_max_leap_override) {
-        sctx.max_leap_semitones = params.melody_params.max_leap_interval;
-      } else if (params.blueprint_ref != nullptr) {
-        sctx.max_leap_semitones = params.blueprint_ref->constraints.max_leap_semitones;
-      }
-      if (params.blueprint_ref != nullptr) {
-        sctx.prefer_stepwise = params.blueprint_ref->constraints.prefer_stepwise;
-      }
-
-      // Wire guide tone rate from section
-      sctx.guide_tone_rate = section.guide_tone_rate;
-
-      // Set anticipation rest mode based on groove feel and drive
-      // Driving/Syncopated grooves benefit from anticipation rests for "tame" effect
-      // Higher drive_feel increases anticipation intensity
-      if (params.vocal_groove == VocalGrooveFeel::Driving16th) {
-        sctx.anticipation_rest = (params.drive_feel >= 70) ? AnticipationRestMode::Moderate
-                                                          : AnticipationRestMode::Subtle;
-      } else if (params.vocal_groove == VocalGrooveFeel::Syncopated) {
-        sctx.anticipation_rest = AnticipationRestMode::Moderate;
-      } else if (params.drive_feel >= 80) {
-        // High drive with any groove gets subtle anticipation
-        sctx.anticipation_rest = AnticipationRestMode::Subtle;
-      }
-
-      // Set phrase contour template based on section type
-      // Common J-POP practice:
-      // - Chorus: Peak (arch shape) for memorable hook contour
-      // - A (Verse): Ascending for storytelling build
-      // - B (Pre-chorus): Ascending to build tension before chorus
-      // - Bridge: Descending for contrast
-      switch (section.type) {
-        case SectionType::Chorus:
-          sctx.forced_contour = ContourType::Peak;
-          break;
-        case SectionType::A:
-          sctx.forced_contour = ContourType::Ascending;
-          break;
-        case SectionType::B:
-          sctx.forced_contour = ContourType::Ascending;
-          break;
-        case SectionType::Bridge:
-          sctx.forced_contour = ContourType::Descending;
-          break;
-        default:
-          sctx.forced_contour = std::nullopt;  // Use default section-aware bias
-          break;
-      }
-
-      // Enable motif fragment enforcement for A/B sections after first chorus
-      // This creates song-wide melodic unity by echoing chorus motif fragments
-      if (designer.getCachedGlobalMotif().has_value() &&
-          (section.type == SectionType::A || section.type == SectionType::B)) {
-        sctx.enforce_motif_fragments = true;
-      }
-
-      // Set transition info for next section (if any)
-      const auto& sections = song.arrangement().sections();
-      for (size_t i = 0; i < sections.size(); ++i) {
-        if (&sections[i] == &section && i + 1 < sections.size()) {
-          sctx.transition_to_next = getTransition(section.type, sections[i + 1].type);
-          break;
-        }
-      }
-
-      // Check for rhythm lock
-      // RhythmSync paradigm: use Motif's rhythm pattern as coordinate axis
-      // UltraVocaloid uses per-section-type rhythm lock (Verse->Verse, Chorus->Chorus)
-      // Other styles use global rhythm lock (first section's rhythm for all)
-      CachedRhythmPattern* current_rhythm_lock = nullptr;
+      // Resolve rhythm lock for this section
       CachedRhythmPattern motif_rhythm_pattern;  // Local storage for Motif-derived pattern
-
+      CachedRhythmPattern* current_rhythm_lock = nullptr;
       if (use_rhythm_lock) {
-        // RhythmSync paradigm: extract rhythm from Motif track (coordinate axis)
-        // Try ctx.motif_track first (from Coordinator), then fall back to motif_track_ member
-        const MidiTrack* motif_ref = ctx.motif_track;
-        if (motif_ref == nullptr) {
-          motif_ref = motif_track_;
-        }
-        if (params.paradigm == GenerationParadigm::RhythmSync && motif_ref != nullptr &&
-            !motif_ref->empty()) {
-          // Extract Motif's rhythm pattern for this section
-          motif_rhythm_pattern = extractRhythmPatternFromTrack(
-              motif_ref->notes(), section_start, section_end);
-          if (motif_rhythm_pattern.isValid()) {
-            current_rhythm_lock = &motif_rhythm_pattern;
-          }
-        }
-
-        // Fallback: use stored Motif base pattern (available even when Motif is muted)
-        if (current_rhythm_lock == nullptr && params.paradigm == GenerationParadigm::RhythmSync) {
-          const auto& base_pattern = song.motifPattern();
-          if (!base_pattern.empty()) {
-            uint8_t pattern_beats = static_cast<uint8_t>(
-                (base_pattern.back().start_tick + base_pattern.back().duration + TICKS_PER_BEAT - 1) /
-                TICKS_PER_BEAT);
-            if (pattern_beats > 0) {
-              motif_rhythm_pattern = extractRhythmPattern(base_pattern, 0, pattern_beats);
-              if (motif_rhythm_pattern.isValid()) {
-                current_rhythm_lock = &motif_rhythm_pattern;
-              }
-            }
-          }
-        }
-
-        // Fallback: use cached Vocal rhythm if Motif pattern not available
-        if (current_rhythm_lock == nullptr) {
-          if (use_per_section_type_lock) {
-            // Per-section-type lock: look up by section type
-            auto it = section_type_rhythm_locks.find(section.type);
-            if (it != section_type_rhythm_locks.end() && it->second.isValid()) {
-              current_rhythm_lock = &it->second;
-            }
-          } else if (active_rhythm_lock->isValid()) {
-            // Global lock: use single rhythm pattern
-            current_rhythm_lock = active_rhythm_lock;
-          }
-        }
+        current_rhythm_lock = resolveRhythmLock(
+            section, params, song, ctx, motif_rhythm_pattern,
+            use_per_section_type_lock, section_type_rhythm_locks,
+            active_rhythm_lock, section_start, section_end);
       }
 
       // Build phrase plan for this section (uses rhythm lock if available)
@@ -1720,72 +1851,10 @@ void VocalGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext&
   // MidiWriter applies modulation to all tracks when generating MIDI bytes.
   // This ensures consistent behavior and avoids double-modulation.
 
-  // Apply section-end sustain (歌い上げ) - extend final notes of each section
-  applySectionEndSustain(all_notes, song.arrangement().sections(), harmony);
-
-  // Apply groove feel timing adjustments
-  applyGrooveFeel(all_notes, params.vocal_groove);
-
-  // Remove overlapping notes
-  // UltraVocaloid allows 32nd notes (60 ticks), standard vocals need 16th notes (120 ticks)
-  Tick min_note_duration =
-      (params.vocal_style == VocalStylePreset::UltraVocaloid) ? TICK_32ND : TICK_SIXTEENTH;
-  removeOverlaps(all_notes, min_note_duration);
-
-  // Enforce maximum phrase duration with breath gaps
-  VocalPhysicsParams physics = getVocalPhysicsParams(params.vocal_style);
-  if (physics.requires_breath && physics.max_phrase_bars < 255) {
-    uint8_t effective_max_bars = physics.max_phrase_bars;
-    // RhythmSync: tighter breath enforcement (4 bars = 16 beats)
-    // Dense note generation in RhythmSync rarely produces natural phrase gaps,
-    // so shorter max phrase prevents 30+ beat continuous phrases.
-    if (params.paradigm == GenerationParadigm::RhythmSync && effective_max_bars > 4) {
-      effective_max_bars = 4;
-    }
-    melody::enforceMaxPhraseDuration(all_notes, effective_max_bars);
-  }
-
-  // Vocal-friendly post-processing:
-  // Merge same-pitch notes only with very short gaps (64th note = ~30 ticks).
-  // Larger gaps preserve intentional articulation (staccato, rhythmic patterns).
-  // SKIP for UltraVocaloid: same-pitch rapid-fire is intentional (machine-gun style)
-  constexpr Tick kMergeMaxGap = 30;
-  if (params.paradigm == GenerationParadigm::RhythmSync) {
-    // RhythmSync: only merge near section ends (last 2 bars) where sustain is desired
-    // This preserves the locked rhythm pattern in the body while allowing section-end legato
-    mergeSamePitchNotesNearSectionEnds(all_notes, song.arrangement().sections(), kMergeMaxGap);
-  } else if (params.vocal_style != VocalStylePreset::UltraVocaloid) {
-    mergeSamePitchNotes(all_notes, kMergeMaxGap);
-  }
-
-  // NOTE: resolveIsolatedShortNotes() removed - short notes are often
-  // intentional articulation (staccato bursts, rhythmic motifs).
-
-  // Apply velocity scale
-  applyVelocityBalance(all_notes, velocity_scale);
-
-  // Enforce pitch constraints (interval limits and scale enforcement)
-  enforceVocalPitchConstraints(all_notes, params, harmony);
-
-  // Break up excessive consecutive same-pitch notes (RhythmSync compatibility)
-  // This addresses monotonous melody issues in RhythmSync paradigm where
-  // collision avoidance can cause long runs of the same pitch.
-  // max_consecutive=3 means 4th note onwards gets alternated for melodic interest.
-  breakConsecutiveSamePitch(all_notes, harmony, effective_vocal_low, effective_vocal_high, 3);
-
-  // Final overlap check - ensures no overlaps after all processing
-  removeOverlaps(all_notes, min_note_duration);
-
-  // Add notes to track
-  // Note: Registration with HarmonyContext is handled by Coordinator after generateFullTrack()
-  // to avoid double registration and ensure MidiTrack and HarmonyContext are in sync
-  for (const auto& note : all_notes) {
-    track.addNote(note);
-  }
-
-  // Apply pitch bend expressions (scoop-up, fall-off, vibrato, portamento)
-  const auto* sections_ptr = &song.arrangement().sections();
-  applyVocalPitchBendExpressions(track, all_notes, params, rng, sections_ptr);
+  // Final post-processing: sustain, groove, overlaps, breath, merge, velocity,
+  // pitch constraints, same-pitch breaks, and pitch bend expressions
+  postProcessVocalNotes(all_notes, track, song, params, harmony, rng,
+                        velocity_scale, effective_vocal_low, effective_vocal_high);
 }
 
 }  // namespace midisketch

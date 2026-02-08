@@ -10,6 +10,7 @@
 #include <random>
 
 #include "core/chord.h"
+#include "core/i_harmony_context.h"
 
 namespace midisketch {
 
@@ -429,6 +430,89 @@ int stepwiseToTarget(int prev_pitch, int target_pitch, int8_t chord_degree, int 
   // Step motion failed - stay on current pitch (better than jumping to chord tone)
   // This prioritizes singability over harmonic "correctness"
   return std::clamp(prev_pitch, range_low, range_high);
+}
+
+// ============================================================================
+// Tritone Detection
+// ============================================================================
+
+bool hasTritoneWithChord(int pitch_pc, const std::vector<int>& chord_pcs) {
+  for (int chord_pc : chord_pcs) {
+    int interval = std::abs(pitch_pc - chord_pc);
+    if (interval > 6) interval = 12 - interval;
+    if (interval == 6) return true;
+  }
+  return false;
+}
+
+// ============================================================================
+// Diatonic Fifth Utilities
+// ============================================================================
+
+using namespace Interval;
+
+uint8_t getDiatonicFifth(uint8_t root) {
+  int pitch_class = root % OCTAVE;
+  // B (pitch class 11) has a diminished 5th in C major (B->F)
+  // All other diatonic roots have perfect 5th
+  int interval = (pitch_class == 11) ? TRITONE : PERFECT_5TH;
+  int fifth = root + interval;
+  // Shift octave down if above bass range (preserves pitch class)
+  if (fifth > BASS_HIGH) {
+    fifth -= OCTAVE;
+  }
+  return clampBass(fifth);
+}
+
+uint8_t getSafeChordTone(uint8_t root, const IHarmonyContext& harmony, Tick start, Tick duration,
+                         TrackRole role, uint8_t range_low, uint8_t range_high) {
+  int8_t degree = harmony.getChordDegreeAt(start);
+  auto chord_pcs = getChordTonePitchClasses(degree);
+
+  // Helper: check if pitch class is a chord tone
+  auto isChordTone = [&](int pc) {
+    for (int ct : chord_pcs) {
+      if (ct == pc) return true;
+    }
+    return false;
+  };
+
+  // Helper: find pitch in range near root and check consonance
+  auto tryPitch = [&](int pitch_class) -> int {
+    int root_oct = root / OCTAVE;
+    // Try same octave as root, then octave above, then below
+    for (int oct_offset : {0, 1, -1}) {
+      int candidate = (root_oct + oct_offset) * OCTAVE + pitch_class;
+      if (candidate >= range_low && candidate <= range_high && candidate != root &&
+          harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(candidate), start, duration,
+                                             role)) {
+        return candidate;
+      }
+    }
+    return -1;
+  };
+
+  // First try: diatonic 5th of root (most common case)
+  uint8_t fifth = getDiatonicFifth(root);
+  if (isChordTone(fifth % OCTAVE)) {
+    int result = tryPitch(fifth % OCTAVE);
+    if (result >= 0) return static_cast<uint8_t>(result);
+  }
+
+  // Second try: chord's actual 5th (for slash chord cases)
+  if (chord_pcs.size() >= 3) {
+    int result = tryPitch(chord_pcs[2]);
+    if (result >= 0) return static_cast<uint8_t>(result);
+  }
+
+  // Third try: chord's 3rd
+  if (chord_pcs.size() >= 2) {
+    int result = tryPitch(chord_pcs[1]);
+    if (result >= 0) return static_cast<uint8_t>(result);
+  }
+
+  // Fall back to root (always safest)
+  return root;
 }
 
 }  // namespace midisketch

@@ -64,13 +64,13 @@ MidiSketch::MidiSketch() {}
 
 MidiSketch::~MidiSketch() {}
 
-void MidiSketch::rebuildMidi() {
+void MidiSketch::rebuildMidiLegacy() {
   const auto& params = generator_.getParams();
   midi_writer_.build(generator_.getSong(), params.key, params.mood,
                      generateMetadata(params), midi_format_, params.blueprint_id);
 }
 
-void MidiSketch::rebuildMidi(const SongConfig& config) {
+void MidiSketch::rebuildMidiWithConfig(const SongConfig& config) {
   const auto& params = generator_.getParams();
   midi_writer_.build(generator_.getSong(), config.key, params.mood,
                      generateMetadata(params, config), midi_format_, params.blueprint_id);
@@ -78,54 +78,54 @@ void MidiSketch::rebuildMidi(const SongConfig& config) {
 
 void MidiSketch::generate(const GeneratorParams& params) {
   generator_.generate(params);
-  rebuildMidi();
+  rebuildMidiLegacy();
 }
 
 void MidiSketch::generateFromConfig(const SongConfig& config) {
   generator_.generateFromConfig(config);
-  rebuildMidi(config);
+  rebuildMidiWithConfig(config);
 }
 
 void MidiSketch::generateVocal(const SongConfig& config) {
   GeneratorParams params = ConfigConverter::convert(config);
   generator_.generateVocal(params);
-  rebuildMidi(config);
+  rebuildMidiWithConfig(config);
 }
 
 void MidiSketch::regenerateVocal(uint32_t new_seed) {
   generator_.regenerateVocal(new_seed);
-  rebuildMidi();
+  rebuildMidiLegacy();
 }
 
 void MidiSketch::regenerateVocal(const VocalConfig& config) {
   generator_.regenerateVocal(config);
-  rebuildMidi();
+  rebuildMidiLegacy();
 }
 
 void MidiSketch::generateAccompanimentForVocal() {
   generator_.generateAccompanimentForVocal();
-  rebuildMidi();
+  rebuildMidiLegacy();
 }
 
 void MidiSketch::regenerateAccompaniment(uint32_t new_seed) {
   generator_.regenerateAccompaniment(new_seed);
-  rebuildMidi();
+  rebuildMidiLegacy();
 }
 
 void MidiSketch::regenerateAccompaniment(const AccompanimentConfig& config) {
   generator_.regenerateAccompaniment(config);
-  rebuildMidi();
+  rebuildMidiLegacy();
 }
 
 void MidiSketch::generateAccompanimentForVocal(const AccompanimentConfig& config) {
   generator_.generateAccompanimentForVocal(config);
-  rebuildMidi();
+  rebuildMidiLegacy();
 }
 
 void MidiSketch::generateWithVocal(const SongConfig& config) {
   GeneratorParams params = ConfigConverter::convert(config);
   generator_.generateWithVocal(params);
-  rebuildMidi(config);
+  rebuildMidiWithConfig(config);
 }
 
 MelodyData MidiSketch::getMelody() const {
@@ -135,13 +135,13 @@ MelodyData MidiSketch::getMelody() const {
 
 void MidiSketch::setMelody(const MelodyData& melody) {
   generator_.setMelody(melody);
-  rebuildMidi();
+  rebuildMidiLegacy();
 }
 
 void MidiSketch::setVocalNotes(const SongConfig& config, const std::vector<NoteEvent>& notes) {
   GeneratorParams params = ConfigConverter::convert(config);
   generator_.setVocalNotes(params, notes);
-  rebuildMidi(config);
+  rebuildMidiWithConfig(config);
 }
 
 void MidiSketch::setMidiFormat(MidiFormat format) { midi_format_ = format; }

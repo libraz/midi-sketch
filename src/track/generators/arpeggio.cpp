@@ -346,11 +346,7 @@ int getDensityThreshold(BackingDensity backing_density) {
 
 }  // namespace
 
-void ArpeggioGenerator::generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
-  if (!ctx.isValid()) {
-    return;
-  }
-
+void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
   const auto& sections = ctx.song->arrangement().sections();
   if (sections.empty()) return;
 

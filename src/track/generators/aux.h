@@ -183,7 +183,7 @@ class AuxGenerator : public TrackBase {
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kAuxVocal; }
 
   /// @brief Generate full aux track using FullTrackContext.
-  void generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
+  void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 
   // =========================================================================
   // Aux Generation Methods
@@ -260,7 +260,7 @@ class AuxGenerator : public TrackBase {
  private:
   void calculateAuxRange(const AuxConfig& config, const TessituraRange& main_tessitura,
                          uint8_t& out_low, uint8_t& out_high, int8_t range_ceiling = 0);
-  bool isConsonantWithOtherTracks(uint8_t pitch, Tick start, Tick duration,
+  bool isConsonantWithMelodyAndTracks(uint8_t pitch, Tick start, Tick duration,
                    const std::vector<NoteEvent>* main_melody, const IHarmonyContext& harmony,
                    float dissonance_tolerance = 0.0f);
   uint8_t resolveAuxPitch(uint8_t desired, Tick start, Tick duration,

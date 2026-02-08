@@ -298,7 +298,8 @@ inline std::vector<float> detectPhraseBoundariesFromRhythm(
  * @return Breath duration in ticks
  */
 inline Tick getBreathDuration(SectionType section_type, bool is_ballad,
-                               bool is_section_boundary = false) {
+                               bool is_section_boundary = false,
+                               uint16_t bpm = 120) {
   Tick base;
   if (is_section_boundary) {
     // Section boundary: larger breath for dramatic pause
@@ -323,6 +324,14 @@ inline Tick getBreathDuration(SectionType section_type, bool is_ballad,
   if (is_ballad) {
     base = static_cast<Tick>(base * 1.5f);
   }
+
+  // BPM compensation: singers need ~150ms minimum for a breath regardless of tempo.
+  // At fast tempos, fewer ticks correspond to the same real time, so we need more ticks.
+  constexpr float kMinBreathSeconds = 0.15f;
+  Tick min_breath_ticks = static_cast<Tick>(
+      kMinBreathSeconds * bpm * TICKS_PER_BEAT / 60.0f);
+  base = std::max(base, min_breath_ticks);
+
   return base;
 }
 

@@ -44,7 +44,7 @@ class GuitarGenerator : public TrackBase {
   PhysicalModel getPhysicalModel() const override { return PhysicalModels::kElectricGuitar; }
 
   /// @brief Generate full guitar track using FullTrackContext.
-  void generateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
+  void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) override;
 };
 
 /// @brief Get guitar style from GM program number.
