@@ -25,7 +25,8 @@ PhrasePlan PhrasePlanner::buildPlan(
     uint8_t section_bars,
     Mood mood,
     VocalStylePreset vocal_style,
-    const CachedRhythmPattern* rhythm_pattern) {
+    const CachedRhythmPattern* rhythm_pattern,
+    uint16_t bpm) {
   PhrasePlan plan;
   plan.section_type = section_type;
   plan.section_start = section_start;
@@ -36,7 +37,7 @@ PhrasePlan PhrasePlanner::buildPlan(
   determinePhraseStructure(plan);
 
   // Step 2: Assign timing with breath gaps
-  assignPhraseTiming(plan, mood, vocal_style);
+  assignPhraseTiming(plan, mood, vocal_style, bpm);
 
   // Step 3: Reconcile with locked rhythm (if provided)
   if (rhythm_pattern != nullptr && rhythm_pattern->isValid()) {
@@ -122,14 +123,15 @@ void PhrasePlanner::determinePhraseStructure(PhrasePlan& plan) {
 // ============================================================================
 
 void PhrasePlanner::assignPhraseTiming(PhrasePlan& plan, Mood mood,
-                                       VocalStylePreset vocal_style) {
+                                       VocalStylePreset vocal_style,
+                                       uint16_t bpm) {
   if (plan.phrases.empty()) {
     return;
   }
 
   // Get breath duration using the existing melody utility
   Tick breath = melody::getBreathDuration(
-      plan.section_type, mood, 0.5f, 60, nullptr, vocal_style);
+      plan.section_type, mood, 0.5f, 60, nullptr, vocal_style, bpm);
 
   // Half-bar snap grid
   constexpr Tick kHalfBar = TICKS_PER_BAR / 2;

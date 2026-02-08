@@ -478,6 +478,9 @@ void printIssueWithContext(const midisketch::DissonanceIssue& issue, const char*
       if (i > 0) std::cout << " vs ";
       std::cout << issue.notes[i].track_name << "(" << issue.notes[i].pitch_name << ")";
     }
+    if (issue.overlap_duration > 0 && issue.overlap_duration < 480) {
+      std::cout << " [passing: " << issue.overlap_duration << " ticks]";
+    }
   } else if (issue.type == DT::SustainedOverChordChange) {
     std::cout << "Sustained: " << issue.track_name << "(" << issue.pitch_name << ") "
               << "held from " << issue.original_chord_name << " into " << issue.chord_name;

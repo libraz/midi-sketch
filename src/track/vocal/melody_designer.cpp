@@ -166,7 +166,7 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
   // Build phrase plan - replaces manual phrase count, timing, contour, and density calculation
   PhrasePlan plan = PhrasePlanner::buildPlan(
       ctx.section_type, ctx.section_start, ctx.section_end,
-      ctx.section_bars, ctx.mood, ctx.vocal_style);
+      ctx.section_bars, ctx.mood, ctx.vocal_style, nullptr, ctx.bpm);
 
   int prev_pitch = -1;
   int direction_inertia = 0;
@@ -588,7 +588,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   // Generate rhythm pattern with section density modifier and 32nd note ratio
   std::vector<RhythmNote> rhythm = generatePhraseRhythm(
       effective_tmpl, phrase_beats, ctx.density_modifier, ctx.thirtysecond_ratio, rng, ctx.paradigm,
-      syncopation_weight, ctx.section_type);
+      syncopation_weight, ctx.section_type, ctx.bpm);
 
   // RhythmSync density boost: if output is too sparse, regenerate with higher density
   // Target: at least 2 notes per beat (phrase_beats * 2) for RhythmSync paradigm
@@ -598,7 +598,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     float boost = std::max(1.5f, static_cast<float>(phrase_beats * 2) / rhythm.size());
     float boosted_density = ctx.density_modifier * boost;
     rhythm = generatePhraseRhythm(effective_tmpl, phrase_beats, boosted_density, ctx.thirtysecond_ratio, rng,
-                                   ctx.paradigm, syncopation_weight, ctx.section_type);
+                                   ctx.paradigm, syncopation_weight, ctx.section_type, ctx.bpm);
   }
 
   // =========================================================================
@@ -923,9 +923,14 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     bool is_phrase_end = (i == rhythm.size() - 1);
     bool is_phrase_start = (i == 0);
 
-    // Phrase ending: ensure minimum quarter note duration for proper cadence
+    // Phrase ending: ensure minimum duration for proper cadence
+    // At fast tempos, use BPM-scaled minimum (~400ms) instead of fixed quarter note
     if (is_phrase_end) {
-      note_duration = std::max(note_duration, static_cast<Tick>(TICK_QUARTER));
+      constexpr float kMinPhraseEndSeconds = 0.4f;
+      Tick bpm_phrase_end_min = static_cast<Tick>(
+          kMinPhraseEndSeconds * ctx.bpm * TICKS_PER_BEAT / 60.0f);
+      Tick phrase_end_min = std::max(static_cast<Tick>(TICK_QUARTER), bpm_phrase_end_min);
+      note_duration = std::max(note_duration, phrase_end_min);
     }
 
     // Build gate context for constraint pipeline

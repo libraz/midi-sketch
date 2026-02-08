@@ -56,7 +56,7 @@ Tick getBaseBreathDuration(SectionType section, Mood mood) {
 
 Tick getBreathDuration(SectionType section, Mood mood, float phrase_density,
                        uint8_t phrase_high_pitch, const BreathContext* ctx,
-                       VocalStylePreset vocal_style) {
+                       VocalStylePreset vocal_style, uint16_t bpm) {
   VocalPhysicsParams physics = getVocalPhysicsParams(vocal_style);
 
   if (!physics.requires_breath) {
@@ -91,6 +91,14 @@ Tick getBreathDuration(SectionType section, Mood mood, float phrase_density,
   mult *= physics.breath_scale;
 
   Tick result = static_cast<Tick>(base * mult);
+
+  // BPM compensation: ensure minimum real-time breath (~150ms).
+  // Consistent with phrase_cache.h::getBreathDuration() BPM floor.
+  constexpr float kMinBreathSeconds = 0.15f;
+  Tick min_breath_ticks = static_cast<Tick>(
+      kMinBreathSeconds * bpm * TICKS_PER_BEAT / 60.0f);
+  result = std::max(result, min_breath_ticks);
+
   // Cap breath duration to 1 beat max (reduced from 2 beats/TICK_HALF)
   // This reduces cumulative gaps between phrases while still allowing natural breathing
   return std::min(result, TICK_QUARTER);

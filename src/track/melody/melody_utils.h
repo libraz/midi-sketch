@@ -80,7 +80,8 @@ Tick getBaseBreathDuration(SectionType section, Mood mood);
 /// @return Adjusted breath duration in ticks
 Tick getBreathDuration(SectionType section, Mood mood, float phrase_density = 0.0f,
                        uint8_t phrase_high_pitch = 60, const BreathContext* ctx = nullptr,
-                       VocalStylePreset vocal_style = VocalStylePreset::Standard);
+                       VocalStylePreset vocal_style = VocalStylePreset::Standard,
+                       uint16_t bpm = 120);
 
 /// @brief Get rhythm unit based on grid type.
 /// @param grid Rhythm grid type

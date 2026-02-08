@@ -229,11 +229,18 @@ TEST_F(CallSystemTest, Generator_WithCallEnabled_ProducesCallSections) {
 }
 
 TEST_F(CallSystemTest, Generator_WithCallDisabled_NoCallSections) {
+  // Verify that CallSetting::Disabled prevents insertCallSections() from adding
+  // Chant/MixBreak sections, even when intro_chant and mix_pattern are set.
+  // Uses target_duration_seconds to enter buildStructureForDuration() path,
+  // which does not include Blueprint section_flow (Blueprint section_flow may
+  // contain MixBreak independently of call_setting).
   Generator gen;
   SongConfig config = createDefaultSongConfig(0);
+  config.seed = 42;
   config.call_setting = CallSetting::Disabled;
   config.intro_chant = IntroChant::Gachikoi;  // Set but should be ignored
   config.mix_pattern = MixPattern::Tiger;
+  config.target_duration_seconds = 120;
 
   gen.generateFromConfig(config);
 

@@ -70,6 +70,7 @@ struct DissonanceIssue {
   uint8_t prov_source = 0;          ///< NoteSource enum value
   uint8_t prov_original_pitch = 0;  ///< Pitch before modification
   bool has_provenance = false;      ///< True if provenance data is valid
+  Tick overlap_duration = 0;        ///< Duration of overlap in ticks (for SimultaneousClash)
   // SustainedOverChordChange fields
   Tick note_start_tick;             ///< When note started
   std::string original_chord_name;  ///< Chord when note started

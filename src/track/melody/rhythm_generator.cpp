@@ -18,7 +18,7 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
                                               float density_modifier, float thirtysecond_ratio,
                                               std::mt19937& rng, GenerationParadigm paradigm,
                                               float syncopation_weight,
-                                              SectionType section_type) {
+                                              SectionType section_type, uint16_t bpm) {
   std::vector<RhythmNote> rhythm;
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
@@ -30,6 +30,15 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
   // Clamp to valid range [0.0, 0.95]
   effective_sixteenth_density = std::min(effective_sixteenth_density, 0.95f);
 
+  // BPM scaling: reduce short note probability at fast tempos
+  // BPM 120 = identity (factor 1.0), BPM 170 = attenuation 0.706
+  // UltraVocaloid (thirtysecond_ratio >= 0.8) is exempt from BPM scaling
+  float bpm_factor = bpm / 120.0f;
+  float bpm_attenuation = (bpm_factor > 1.0f && thirtysecond_ratio < 0.8f)
+      ? 1.0f / bpm_factor : 1.0f;
+  float long_note_boost = (bpm_factor > 1.0f && thirtysecond_ratio < 0.8f)
+      ? 1.0f + (bpm_factor - 1.0f) * 0.5f : 1.0f;
+
   // Reserve space for final phrase-ending note (quarter note = 1.0 beat)
   // UltraVocaloid: shorter reservation to maximize machine-gun notes
   // Standard: 1.0 beat reservation ensures final note gets full quarter note duration
@@ -39,7 +48,14 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
   // Pop vocal principle: limit rapid-fire notes to maintain singability
   // UltraVocaloid: allow machine-gun bursts (32+ consecutive short notes)
   int consecutive_short_count = 0;
-  int max_consecutive_short = (thirtysecond_ratio >= 0.8f) ? 32 : 3;
+  int max_consecutive_short;
+  if (thirtysecond_ratio >= 0.8f) {
+    max_consecutive_short = 32;  // UltraVocaloid: no limit
+  } else if (bpm >= 150) {
+    max_consecutive_short = 2;   // Fast tempo: max 2 consecutive short notes
+  } else {
+    max_consecutive_short = 3;   // Standard
+  }
 
   // Track previous note duration for "溜め→爆発" (hold→burst) pattern
   // After a long note (>=half note), boost density to create energy release
@@ -145,8 +161,8 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
       // Strong beat (non-UltraVocaloid): allow shorter notes for denser melodies
       // Base 30% chance for 8th notes on strong beats, plus density bonus
       // This creates J-POP/K-POP conversational feel with more rhythmic activity
-      float eighth_prob = 0.30f + effective_sixteenth_density * 0.3f;  // 30-60% for 8th
-      float half_prob = tmpl.long_note_ratio * 0.8f;  // Reduced half note probability
+      float eighth_prob = (0.30f + effective_sixteenth_density * 0.3f) * bpm_attenuation;
+      float half_prob = tmpl.long_note_ratio * 0.8f * long_note_boost;
       float roll = dist(rng);
       if (roll < eighth_prob) {
         eighths = 1.0f;  // 8th note
@@ -166,11 +182,11 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
 
       if (thirtysecond_ratio > 0.0f && dist(rng) < thirtysecond_ratio * local_density_boost) {
         eighths = 0.25f;  // 32nd note (0.25 eighth = 60 ticks)
-      } else if (dist(rng) < (0.35f + effective_sixteenth_density) * local_density_boost) {
-        // 35% base + density bonus for 8th notes (removed rhythm_driven requirement)
+      } else if (dist(rng) < (0.35f + effective_sixteenth_density) * local_density_boost * bpm_attenuation) {
+        // 35% base + density bonus for 8th notes, attenuated at fast tempos
         eighths = 1.0f;  // 8th note
-      } else if (dist(rng) < tmpl.long_note_ratio * 0.5f / local_density_boost) {
-        eighths = 4.0f;  // Half note (reduced probability)
+      } else if (dist(rng) < tmpl.long_note_ratio * 0.5f * long_note_boost / local_density_boost) {
+        eighths = 4.0f;  // Half note (boosted at fast tempos)
       } else {
         eighths = 2.0f;  // Quarter note
       }

@@ -643,10 +643,9 @@ static LongNoteDesire evaluateLongNoteDesire(size_t i, const std::vector<float>&
 
 /// @brief Compute the maximum safe skip count given a chosen pitch.
 ///
-/// Only checks chord boundary safety (not track collisions). In RhythmSync,
-/// the Motif plays dense 8th-note patterns and brief passing dissonance with
-/// a sustained vocal note is musically acceptable. The pitch was already
-/// verified safe at the base duration by getSafePitchCandidates().
+/// Checks both chord boundary safety AND inter-track collision safety.
+/// Brief passing dissonance from base_duration notes is acceptable, but
+/// note extension must not create sustained dissonance with other tracks.
 static int computeSafeSkipCount(uint8_t pitch, Tick tick, const std::vector<float>& onsets,
                                 size_t i, int max_desired, const Section& section,
                                 const IHarmonyContext& harmony) {
@@ -676,6 +675,13 @@ static int computeSafeSkipCount(uint8_t pitch, Tick tick, const std::vector<floa
       if (info.safe_duration < min_useful) {
         continue;  // This skip count crosses into unsafe chord territory
       }
+    }
+
+    // Inter-track collision check: prevent extension from creating sustained
+    // dissonance with other tracks (e.g., Vocal D5 extended over Motif C5).
+    // Brief passing dissonance from base_duration notes is unaffected.
+    if (!harmony.isConsonantWithOtherTracks(pitch, tick, extended_dur, TrackRole::Vocal)) {
+      continue;
     }
 
     return skip;
@@ -965,10 +971,11 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
       }
     }
 
-    // Note: Track collision clip (getMaxSafeEnd) is intentionally omitted here.
-    // In RhythmSync, the Motif plays dense patterns and brief passing dissonance
-    // with a sustained vocal note is musically normal. Chord boundary safety is
-    // already checked in computeSafeSkipCount().
+    // Note: Track collision clip (getMaxSafeEnd) is intentionally omitted for
+    // the final duration. In RhythmSync, the Motif plays dense 8th-note patterns
+    // and brief passing dissonance with a sustained vocal note is musically normal.
+    // Extension safety is handled by computeSafeSkipCount() which checks both
+    // chord boundary AND inter-track collision before allowing note extension.
 
     // Update direction inertia based on movement
     int movement = static_cast<int>(safe_pitch) - static_cast<int>(prev_pitch);
@@ -1637,7 +1644,7 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       PhrasePlan phrase_plan = PhrasePlanner::buildPlan(
           section.type, section_start, section_end, section.bars,
           params.mood, params.vocal_style,
-          current_rhythm_lock);
+          current_rhythm_lock, params.bpm);
 
       // Mark first chorus phrase as hold-burst entry if previous section was B
       if (section.type == SectionType::Chorus && !phrase_plan.phrases.empty()) {

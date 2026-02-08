@@ -49,7 +49,8 @@ class PhrasePlanner {
       uint8_t section_bars,
       Mood mood,
       VocalStylePreset vocal_style = VocalStylePreset::Standard,
-      const CachedRhythmPattern* rhythm_pattern = nullptr);
+      const CachedRhythmPattern* rhythm_pattern = nullptr,
+      uint16_t bpm = 120);
 
  private:
   /// @brief Step 1: Determine phrase count and antecedent-consequent structure.
@@ -61,7 +62,8 @@ class PhrasePlanner {
   /// @param mood Mood for breath duration calculation
   /// @param vocal_style Vocal style for breath duration
   static void assignPhraseTiming(PhrasePlan& plan, Mood mood,
-                                 VocalStylePreset vocal_style);
+                                 VocalStylePreset vocal_style,
+                                 uint16_t bpm = 120);
 
   /// @brief Step 3: Reconcile planned boundaries with locked rhythm pattern.
   /// @param plan Plan with phrases to reconcile

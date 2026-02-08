@@ -546,6 +546,18 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes,
       }
 
       if (is_dissonant) {
+        // Calculate overlap duration for passing-tone classification.
+        Tick overlap_end = std::min(note_a.end, note_b.end);
+        Tick overlap_duration = overlap_end - overlap_start;
+
+        // Brief passing dissonance downgrade: in pop music, a melody note
+        // sustained over a moving accompaniment creates brief intervallic
+        // tensions that are musically normal. Only sustained overlaps
+        // (>= 1 beat) warrant high severity.
+        if (overlap_duration < TICKS_PER_BEAT) {
+          base_severity = DissonanceSeverity::Low;
+        }
+
         BeatStrength beat_strength = getBeatStrength(overlap_start);
         SectionPosition section_pos = getSectionPosition(overlap_start, ctx.song);
         DissonanceSeverity severity = adjustSeverityForContext(base_severity, beat_strength, section_pos);
@@ -560,6 +572,7 @@ void detectSimultaneousClashes(const std::vector<TimedNote>& all_notes,
         issue.beat = 1.0f + static_cast<float>(overlap_start % TICKS_PER_BAR) / TICKS_PER_BEAT;
         issue.interval_semitones = actual_interval;
         issue.interval_name = intervalToNameInternal(actual_interval);
+        issue.overlap_duration = overlap_duration;
         issue.notes.push_back(createNoteInfo(note_a));
         issue.notes.push_back(createNoteInfo(note_b));
 
@@ -1140,6 +1153,7 @@ std::string dissonanceReportToJson(const DissonanceReport& report) {
     if (issue.type == DissonanceType::SimultaneousClash) {
       w.write("interval_semitones", static_cast<int>(issue.interval_semitones))
           .write("interval_name", issue.interval_name)
+          .write("overlap_duration", issue.overlap_duration)
           .beginArray("notes");
 
       for (const auto& note : issue.notes) {
