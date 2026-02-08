@@ -613,5 +613,159 @@ TEST_F(GeneratorVocalFirstTest, DetectVocalAccompanimentClashesFindsDissonance) 
   EXPECT_FALSE(song.chord().empty()) << "Chord track should exist";
 }
 
+// ============================================================================
+// RhythmSync Vocal-First Tests
+// ============================================================================
+
+class RhythmSyncVocalFirstTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    params_.structure = StructurePattern::StandardPop;
+    params_.mood = Mood::ElectroPop;
+    params_.chord_id = 0;
+    params_.key = Key::C;
+    params_.drums_enabled = true;
+    params_.vocal_low = 60;
+    params_.vocal_high = 84;
+    params_.bpm = 170;
+    params_.bpm_explicit = true;
+    params_.seed = 12345;
+    params_.arpeggio_enabled = false;
+    params_.humanize = false;
+    params_.blueprint_id = 1;  // RhythmLock (RhythmSync paradigm)
+  }
+
+  GeneratorParams params_;
+};
+
+TEST_F(RhythmSyncVocalFirstTest, MotifPreservedDuringAccompanimentRegeneration) {
+  Generator gen;
+  gen.generateVocal(params_);
+
+  // RhythmSync should have generated Motif as coordinate axis
+  const auto& motif_after_vocal = gen.getSong().motif();
+  ASSERT_FALSE(motif_after_vocal.empty())
+      << "Motif should be generated as coordinate axis in RhythmSync";
+
+  // Save a sample of original motif notes (post-processing may add/remove edge notes)
+  auto original_motif_notes = motif_after_vocal.notes();
+  size_t sample_count = std::min(original_motif_notes.size(), size_t(20));
+
+  // Regenerate accompaniment
+  gen.generateAccompanimentForVocal();
+
+  // Motif should be preserved (not regenerated from scratch)
+  const auto& motif_after_accomp = gen.getSong().motif();
+  ASSERT_FALSE(motif_after_accomp.empty())
+      << "Motif should still exist after accompaniment regeneration";
+
+  // Core pattern should be preserved: check first N notes match
+  // (post-processing like fixMotifVocalClashes may modify edge notes)
+  const auto& final_notes = motif_after_accomp.notes();
+  size_t check_count = std::min({sample_count, final_notes.size()});
+  int matching_notes = 0;
+  for (size_t i = 0; i < check_count; ++i) {
+    if (final_notes[i].start_tick == original_motif_notes[i].start_tick &&
+        final_notes[i].note == original_motif_notes[i].note) {
+      ++matching_notes;
+    }
+  }
+  EXPECT_GT(matching_notes, static_cast<int>(check_count) / 2)
+      << "Majority of motif notes should be preserved (not regenerated from scratch)";
+}
+
+TEST_F(RhythmSyncVocalFirstTest, MotifPreservedDuringRegenerateAccompaniment) {
+  Generator gen;
+  gen.generateVocal(params_);
+
+  auto original_motif_notes = gen.getSong().motif().notes();
+  ASSERT_FALSE(original_motif_notes.empty());
+
+  // regenerateAccompaniment with a different seed
+  gen.regenerateAccompaniment(99999);
+
+  const auto& motif_after = gen.getSong().motif();
+  ASSERT_FALSE(motif_after.empty())
+      << "Motif should still exist after regenerateAccompaniment";
+
+  // Core pattern should be preserved (post-processing may modify some notes)
+  const auto& final_notes = motif_after.notes();
+  size_t check_count = std::min({size_t(20), original_motif_notes.size(), final_notes.size()});
+  int matching_notes = 0;
+  for (size_t i = 0; i < check_count; ++i) {
+    if (final_notes[i].start_tick == original_motif_notes[i].start_tick &&
+        final_notes[i].note == original_motif_notes[i].note) {
+      ++matching_notes;
+    }
+  }
+  EXPECT_GT(matching_notes, static_cast<int>(check_count) / 2)
+      << "Majority of motif notes should be preserved across regenerateAccompaniment";
+}
+
+TEST_F(RhythmSyncVocalFirstTest, GenerateVocalAppliesDensityProgression) {
+  // Compare vocal-first vs a hypothetical no-progression baseline.
+  // We verify that density progression is applied by checking that at least
+  // one repeated section type has a later occurrence with boosted density
+  // relative to its base velocity (density_percent can be capped at 100,
+  // but base_velocity is always boosted by progression).
+  Generator gen;
+  gen.generateVocal(params_);
+
+  const auto& sections = gen.getSong().arrangement().sections();
+  ASSERT_GT(sections.size(), 3u);
+
+  // Track base_velocity per section type occurrence
+  // applyDensityProgressionToSections boosts velocity by 3 per occurrence
+  std::map<SectionType, std::vector<uint8_t>> velocities_by_type;
+  for (const auto& section : sections) {
+    velocities_by_type[section.type].push_back(section.base_velocity);
+  }
+
+  // At least one section type should show velocity progression
+  bool found_progression = false;
+  for (const auto& [type, velocities] : velocities_by_type) {
+    if (velocities.size() > 1 && velocities.back() > velocities.front()) {
+      found_progression = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_progression)
+      << "RhythmSync density progression should boost base_velocity for repeated sections";
+}
+
+TEST_F(RhythmSyncVocalFirstTest, GenerateVocalClampsBpmWhenNotExplicit) {
+  params_.bpm = 120;
+  params_.bpm_explicit = false;
+
+  Generator gen;
+  gen.generateVocal(params_);
+
+  uint16_t actual_bpm = gen.getSong().bpm();
+  EXPECT_GE(actual_bpm, 160u) << "RhythmSync BPM should be clamped to >= 160";
+  EXPECT_LE(actual_bpm, 175u) << "RhythmSync BPM should be clamped to <= 175";
+
+  // Should have a warning about BPM adjustment
+  const auto& warnings = gen.getWarnings();
+  bool found_bpm_warning = false;
+  for (const auto& w : warnings) {
+    if (w.find("BPM adjusted") != std::string::npos) {
+      found_bpm_warning = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_bpm_warning) << "Should warn about BPM clamping";
+}
+
+TEST_F(RhythmSyncVocalFirstTest, GenerateVocalDoesNotClampExplicitBpm) {
+  params_.bpm = 120;
+  params_.bpm_explicit = true;
+
+  Generator gen;
+  gen.generateVocal(params_);
+
+  EXPECT_EQ(gen.getSong().bpm(), 120u)
+      << "Explicit BPM should not be clamped";
+}
+
 }  // namespace
 }  // namespace midisketch

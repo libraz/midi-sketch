@@ -244,6 +244,15 @@ void Coordinator::generateAllTracks(Song& song) {
   std::mt19937& rng = getActiveRng();
   IHarmonyCoordinator& harmony = getActiveHarmony();
 
+  // Set up RhythmSync motif context for register separation
+  if (paradigm_ == GenerationParadigm::RhythmSync &&
+      !params_.rhythm_sync_motif_ctx.has_value()) {
+    MotifContext mctx;
+    mctx.vocal_low = params_.vocal_low;
+    mctx.vocal_high = params_.vocal_high;
+    params_.rhythm_sync_motif_ctx = mctx;
+  }
+
   // Get generation order
   std::vector<TrackRole> order = getGenerationOrder();
 
@@ -263,11 +272,25 @@ void Coordinator::generateAllTracks(Song& song) {
     }
   }
 
+  // RhythmSync vocal-first: preserve existing Motif (coordinate axis for Vocal sync)
+  if (params_.skip_vocal && paradigm_ == GenerationParadigm::RhythmSync &&
+      !song.motif().empty()) {
+    harmony.registerTrack(song.motif(), TrackRole::Motif);
+    if (harmony_coord) {
+      harmony_coord->markTrackGenerated(TrackRole::Motif);
+    }
+  }
+
   // Generate tracks in order
   for (TrackRole role : order) {
     // Skip disabled tracks
     if (role == TrackRole::Drums && !params_.drums_enabled) continue;
     if (role == TrackRole::Vocal && params_.skip_vocal) continue;
+    // RhythmSync vocal-first: Motif was preserved, skip regeneration
+    // (only when Motif already exists; BGM-only mode needs fresh generation)
+    if (role == TrackRole::Motif && params_.skip_vocal &&
+        paradigm_ == GenerationParadigm::RhythmSync &&
+        !song.motif().empty()) continue;
     if (role == TrackRole::Arpeggio && !params_.arpeggio_enabled) continue;
     if (role == TrackRole::SE && !params_.se_enabled) continue;
     if (role == TrackRole::Guitar) {
@@ -347,6 +370,11 @@ void Coordinator::generateAllTracks(Song& song) {
         if (!motif.empty()) {
           ctx.motif_track = &motif;
         }
+      }
+
+      // Pass RhythmSync motif context for register separation
+      if (role == TrackRole::Motif && params_.rhythm_sync_motif_ctx.has_value()) {
+        ctx.vocal_ctx = &params_.rhythm_sync_motif_ctx.value();
       }
 
       // Use generateFullTrack() pattern (section-spanning logic supported)
@@ -527,24 +555,9 @@ void Coordinator::buildArrangement() {
 }
 
 void Coordinator::validateBpm() {
-  // Validate BPM for paradigm (only clamp auto-resolved BPM)
-  if (paradigm_ == GenerationParadigm::RhythmSync && !params_.bpm_explicit) {
-    constexpr uint16_t kMinBpm = 160;
-    constexpr uint16_t kMaxBpm = 175;
-    uint16_t original_bpm = bpm_;
-
-    if (bpm_ < kMinBpm) {
-      bpm_ = kMinBpm;
-    } else if (bpm_ > kMaxBpm) {
-      bpm_ = kMaxBpm;
-    }
-
-    if (bpm_ != original_bpm) {
-      warnings_.push_back("BPM adjusted from " + std::to_string(original_bpm) +
-                          " to " + std::to_string(bpm_) +
-                          " for RhythmSync paradigm (optimal: 160-175)");
-    }
-  }
+  auto [clamped, warn] = clampRhythmSyncBpm(bpm_, paradigm_, params_.bpm_explicit);
+  bpm_ = clamped;
+  if (warn) warnings_.push_back(*warn);
 }
 
 void Coordinator::registerTrackGenerators() {

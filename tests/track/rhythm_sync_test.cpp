@@ -268,6 +268,7 @@ TEST_F(RhythmSyncTest, BreathDoesNotShiftNoteOnsets) {
   // Check that vocal notes don't appear slightly after motif onsets
   // (which would indicate a shifted onset due to breath insertion)
   constexpr Tick kBreathMaxDuration = TICK_QUARTER;  // Maximum expected breath
+  int suspicious_count = 0;
 
   for (const auto& vocal_note : vocal_notes) {
     // Skip if this vocal onset exactly matches a motif onset
@@ -286,12 +287,20 @@ TEST_F(RhythmSyncTest, BreathDoesNotShiftNoteOnsets) {
       }
     }
 
-    // This is not necessarily a failure, but we log it for analysis
-    // The real test is VocalOnsetsMatchMotifOnsets above
     if (found_suspicious_shift) {
-      // Suspicious but not necessarily wrong - could be intentional variation
-      // Just log for manual review if needed
+      suspicious_count++;
     }
+  }
+
+  // Allow up to 10% of vocal notes to be slightly shifted (intentional variation),
+  // but the majority should align exactly with motif onsets.
+  int total_vocal = static_cast<int>(vocal_notes.size());
+  if (total_vocal > 0) {
+    float suspicious_ratio = static_cast<float>(suspicious_count) / total_vocal;
+    EXPECT_LE(suspicious_ratio, 0.10f)
+        << suspicious_count << " of " << total_vocal
+        << " vocal notes (" << (suspicious_ratio * 100) << "%) appear shifted from motif onsets. "
+        << "Expected <= 10%.";
   }
 }
 
@@ -938,6 +947,457 @@ TEST_F(RhythmSyncTest, MotifContinuityAcrossVocalSections) {
   EXPECT_EQ(missing_bars, 0) << "Found " << missing_bars
                               << " bars where Vocal is present but Motif is absent. "
                               << "First missing bars: [" << detail << "]";
+}
+
+// =============================================================================
+// RhythmLock Vocal Rhythm Quality Tests
+// =============================================================================
+
+class RhythmLockVocalQuality : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    params_.blueprint_id = 1;  // RhythmLock
+    params_.bpm = 170;
+    params_.vocal_low = 60;   // C4
+    params_.vocal_high = 84;  // C6
+  }
+
+  // Helper: get vocal notes for a specific section type
+  std::vector<NoteEvent> getVocalNotesInSection(const Song& song, SectionType type) const {
+    std::vector<NoteEvent> result;
+    const auto& vocal_notes = song.vocal().notes();
+    const auto& sections = song.arrangement().sections();
+    for (const auto& section : sections) {
+      if (section.type != type) continue;
+      Tick start = section.start_tick;
+      Tick end = section.endTick();
+      for (const auto& note : vocal_notes) {
+        if (note.start_tick >= start && note.start_tick < end) {
+          result.push_back(note);
+        }
+      }
+    }
+    return result;
+  }
+
+  // Helper: count bars for a section type
+  int countBarsForSection(const Song& song, SectionType type) const {
+    int total = 0;
+    for (const auto& section : song.arrangement().sections()) {
+      if (section.type == type) total += section.bars;
+    }
+    return total;
+  }
+
+  GeneratorParams params_;
+};
+
+// Test: Phrase start notes should predominantly land on strong beats (beat 0 or 2)
+TEST_F(RhythmLockVocalQuality, PhraseStartOnStrongBeat) {
+  constexpr int kNumSeeds = 5;
+  int total_phrase_starts = 0;
+  int strong_beat_starts = 0;
+
+  for (int s = 0; s < kNumSeeds; ++s) {
+    params_.seed = 7000 + s * 137;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& vocal_notes = gen.getSong().vocal().notes();
+    if (vocal_notes.size() < 4) continue;
+
+    // Sort by time
+    std::vector<NoteEvent> sorted = vocal_notes;
+    std::sort(sorted.begin(), sorted.end(),
+              [](const NoteEvent& a, const NoteEvent& b) {
+                return a.start_tick < b.start_tick;
+              });
+
+    // Detect phrase starts: first note, or after a gap >= half beat
+    constexpr Tick kGapThreshold = TICKS_PER_BEAT / 2;
+    for (size_t i = 0; i < sorted.size(); ++i) {
+      bool is_phrase_start = (i == 0);
+      if (i > 0) {
+        Tick prev_end = sorted[i - 1].start_tick + sorted[i - 1].duration;
+        if (sorted[i].start_tick - prev_end >= kGapThreshold) {
+          is_phrase_start = true;
+        }
+      }
+      if (!is_phrase_start) continue;
+
+      total_phrase_starts++;
+      float beat_in_bar = std::fmod(
+          static_cast<float>(sorted[i].start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT, 4.0f);
+      bool is_strong = (beat_in_bar < 0.2f || std::abs(beat_in_bar - 2.0f) < 0.2f);
+      if (is_strong) strong_beat_starts++;
+    }
+  }
+
+  if (total_phrase_starts < 5) {
+    GTEST_SKIP() << "Not enough phrase starts detected";
+  }
+
+  float ratio = static_cast<float>(strong_beat_starts) / total_phrase_starts;
+  EXPECT_GE(ratio, 0.35f)
+      << "Only " << (ratio * 100) << "% of phrase starts on strong beats. "
+      << "Expected >= 35% (" << strong_beat_starts << "/" << total_phrase_starts << ").";
+}
+
+// Test: Strong beat notes should have minimum duration (no grace notes on downbeats)
+TEST_F(RhythmLockVocalQuality, MinStrongBeatDuration) {
+  constexpr int kNumSeeds = 5;
+  int total_strong_beat_notes = 0;
+  int short_strong_beat_notes = 0;
+
+  for (int s = 0; s < kNumSeeds; ++s) {
+    params_.seed = 8000 + s * 151;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& vocal_notes = gen.getSong().vocal().notes();
+    for (const auto& note : vocal_notes) {
+      float beat_in_bar = std::fmod(
+          static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT, 4.0f);
+      bool is_strong = (beat_in_bar < 0.1f || std::abs(beat_in_bar - 2.0f) < 0.1f);
+      if (!is_strong) continue;
+
+      total_strong_beat_notes++;
+      if (note.duration < TICK_EIGHTH) {
+        short_strong_beat_notes++;
+      }
+    }
+  }
+
+  if (total_strong_beat_notes < 10) {
+    GTEST_SKIP() << "Not enough strong beat notes";
+  }
+
+  float short_ratio = static_cast<float>(short_strong_beat_notes) / total_strong_beat_notes;
+  EXPECT_LE(short_ratio, 0.15f)
+      << short_strong_beat_notes << " of " << total_strong_beat_notes
+      << " strong beat notes (" << (short_ratio * 100) << "%) are shorter than an 8th note. "
+      << "Expected <= 15%.";
+}
+
+// Test: Chorus sections should have adequate note density
+TEST_F(RhythmLockVocalQuality, ChorusNoteDensityAdequate) {
+  constexpr int kNumSeeds = 5;
+  int seeds_with_good_density = 0;
+
+  for (int s = 0; s < kNumSeeds; ++s) {
+    params_.seed = 9000 + s * 173;
+    Generator gen;
+    gen.generate(params_);
+
+    auto chorus_notes = getVocalNotesInSection(gen.getSong(), SectionType::Chorus);
+    int chorus_bars = countBarsForSection(gen.getSong(), SectionType::Chorus);
+
+    if (chorus_bars == 0 || chorus_notes.empty()) continue;
+
+    float notes_per_bar = static_cast<float>(chorus_notes.size()) / chorus_bars;
+    if (notes_per_bar >= 2.0f) {
+      seeds_with_good_density++;
+    }
+  }
+
+  // At least 2 out of 5 seeds should have adequate chorus density
+  // (onset thinning + long-note mechanism may reduce some seeds below 2.0)
+  EXPECT_GE(seeds_with_good_density, 2)
+      << "Only " << seeds_with_good_density << " out of " << kNumSeeds
+      << " seeds had Chorus note density >= 2.0 notes/bar.";
+}
+
+// Test: Chorus sections should have adequate pitch range
+TEST_F(RhythmLockVocalQuality, ChorusPitchRangeAdequate) {
+  constexpr int kNumSeeds = 5;
+  int seeds_with_good_range = 0;
+
+  for (int s = 0; s < kNumSeeds; ++s) {
+    params_.seed = 10000 + s * 191;
+    Generator gen;
+    gen.generate(params_);
+
+    auto chorus_notes = getVocalNotesInSection(gen.getSong(), SectionType::Chorus);
+    if (chorus_notes.size() < 4) continue;
+
+    uint8_t min_pitch = 127, max_pitch = 0;
+    for (const auto& note : chorus_notes) {
+      min_pitch = std::min(min_pitch, note.note);
+      max_pitch = std::max(max_pitch, note.note);
+    }
+
+    int range = max_pitch - min_pitch;
+    if (range >= 7) {
+      seeds_with_good_range++;
+    }
+  }
+
+  // At least 3 out of 5 seeds should have adequate chorus range
+  EXPECT_GE(seeds_with_good_range, 3)
+      << "Only " << seeds_with_good_range << " out of " << kNumSeeds
+      << " seeds had Chorus pitch range >= 7 semitones.";
+}
+
+// Test: Phrase contour coherence (pitch trajectory should follow contour direction)
+TEST_F(RhythmLockVocalQuality, PhraseContourCoherence) {
+  constexpr int kNumSeeds = 5;
+  int total_phrases = 0;
+  int coherent_phrases = 0;
+
+  for (int s = 0; s < kNumSeeds; ++s) {
+    params_.seed = 11000 + s * 211;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& vocal_notes = gen.getSong().vocal().notes();
+    if (vocal_notes.size() < 8) continue;
+
+    // Sort by time
+    std::vector<NoteEvent> sorted = vocal_notes;
+    std::sort(sorted.begin(), sorted.end(),
+              [](const NoteEvent& a, const NoteEvent& b) {
+                return a.start_tick < b.start_tick;
+              });
+
+    // Segment into phrases (gap >= half beat)
+    constexpr Tick kGapThreshold = TICKS_PER_BEAT / 2;
+    std::vector<std::vector<NoteEvent>> phrases;
+    phrases.push_back({sorted[0]});
+
+    for (size_t i = 1; i < sorted.size(); ++i) {
+      Tick prev_end = sorted[i - 1].start_tick + sorted[i - 1].duration;
+      if (sorted[i].start_tick - prev_end >= kGapThreshold) {
+        phrases.push_back({});
+      }
+      phrases.back().push_back(sorted[i]);
+    }
+
+    // Analyze each phrase with >= 4 notes
+    for (const auto& phrase : phrases) {
+      if (phrase.size() < 4) continue;
+      total_phrases++;
+
+      // Compute net pitch direction (first half vs second half)
+      size_t mid = phrase.size() / 2;
+      float first_half_avg = 0.0f, second_half_avg = 0.0f;
+      for (size_t j = 0; j < mid; ++j)
+        first_half_avg += phrase[j].note;
+      first_half_avg /= mid;
+      for (size_t j = mid; j < phrase.size(); ++j)
+        second_half_avg += phrase[j].note;
+      second_half_avg /= (phrase.size() - mid);
+
+      // A phrase is "coherent" if it has a discernible direction
+      // (not completely flat) OR forms an arch/valley shape
+      float diff = second_half_avg - first_half_avg;
+      bool has_direction = std::abs(diff) >= 1.0f;
+
+      // Check for arch shape: middle notes higher than start and end
+      float start_pitch = phrase.front().note;
+      float end_pitch = phrase.back().note;
+      float mid_pitch = phrase[mid].note;
+      bool is_arch = (mid_pitch > start_pitch + 1.0f && mid_pitch > end_pitch + 1.0f) ||
+                     (mid_pitch < start_pitch - 1.0f && mid_pitch < end_pitch - 1.0f);
+
+      if (has_direction || is_arch) {
+        coherent_phrases++;
+      }
+    }
+  }
+
+  if (total_phrases < 5) {
+    GTEST_SKIP() << "Not enough phrases to analyze contour coherence";
+  }
+
+  float ratio = static_cast<float>(coherent_phrases) / total_phrases;
+  EXPECT_GE(ratio, 0.50f)
+      << "Only " << (ratio * 100) << "% of phrases have coherent contour. "
+      << "Expected >= 50% (" << coherent_phrases << "/" << total_phrases << ").";
+}
+
+// =============================================================================
+// Fix E/F/G: Register Separation & Onset Thinning Tests
+// =============================================================================
+
+// Test: Motif and Vocal registers should not heavily overlap in RhythmSync
+TEST_F(RhythmLockVocalQuality, MotifVocalRegisterOverlap) {
+  constexpr int kNumSeeds = 10;
+  int seeds_with_good_separation = 0;
+
+  for (int s = 0; s < kNumSeeds; ++s) {
+    params_.seed = 20000 + s * 127;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& vocal_notes = gen.getSong().vocal().notes();
+    const auto& motif_notes = gen.getSong().motif().notes();
+
+    if (vocal_notes.size() < 4 || motif_notes.size() < 4) continue;
+
+    // Get vocal pitch range
+    uint8_t vocal_min = 127, vocal_max = 0;
+    for (const auto& n : vocal_notes) {
+      vocal_min = std::min(vocal_min, n.note);
+      vocal_max = std::max(vocal_max, n.note);
+    }
+
+    // Get motif pitch median
+    std::vector<uint8_t> motif_pitches;
+    motif_pitches.reserve(motif_notes.size());
+    for (const auto& n : motif_notes) {
+      motif_pitches.push_back(n.note);
+    }
+    std::sort(motif_pitches.begin(), motif_pitches.end());
+    uint8_t motif_median = motif_pitches[motif_pitches.size() / 2];
+
+    // Get vocal median
+    std::vector<uint8_t> vocal_pitches;
+    vocal_pitches.reserve(vocal_notes.size());
+    for (const auto& n : vocal_notes) {
+      vocal_pitches.push_back(n.note);
+    }
+    std::sort(vocal_pitches.begin(), vocal_pitches.end());
+    uint8_t vocal_median = vocal_pitches[vocal_pitches.size() / 2];
+
+    // Separation: distance between medians should be 5-20 semitones
+    int separation = std::abs(static_cast<int>(motif_median) - static_cast<int>(vocal_median));
+
+    // Overlap: fraction of vocal range occupied by motif
+    int vocal_range = vocal_max - vocal_min;
+    if (vocal_range <= 0) continue;
+
+    int overlap_low = std::max(static_cast<int>(vocal_min), static_cast<int>(motif_pitches.front()));
+    int overlap_high = std::min(static_cast<int>(vocal_max), static_cast<int>(motif_pitches.back()));
+    float overlap_ratio = (overlap_high > overlap_low)
+        ? static_cast<float>(overlap_high - overlap_low) / vocal_range
+        : 0.0f;
+
+    // Good separation: overlap <= 50% OR median distance >= 5
+    if (overlap_ratio <= 0.50f || separation >= 5) {
+      seeds_with_good_separation++;
+    }
+  }
+
+  // At least 6 out of 10 seeds should have good register separation
+  EXPECT_GE(seeds_with_good_separation, 6)
+      << "Only " << seeds_with_good_separation << " out of " << kNumSeeds
+      << " seeds had adequate Motif-Vocal register separation.";
+}
+
+// Test: Short vocal notes should be limited (onset thinning effect)
+TEST_F(RhythmLockVocalQuality, VocalShortNoteRatio) {
+  constexpr int kNumSeeds = 10;
+  int total_notes = 0;
+  int short_notes = 0;
+
+  for (int s = 0; s < kNumSeeds; ++s) {
+    params_.seed = 21000 + s * 131;
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& vocal_notes = gen.getSong().vocal().notes();
+    uint16_t bpm = gen.getSong().bpm();
+
+    // Short note threshold: 250 ticks AND < 120ms at current BPM
+    Tick tick_threshold = 250;
+    float ms_per_tick = 60000.0f / (bpm * TICKS_PER_BEAT);
+    Tick ms_threshold = static_cast<Tick>(120.0f / ms_per_tick);
+    Tick threshold = std::min(tick_threshold, ms_threshold);
+
+    for (const auto& note : vocal_notes) {
+      total_notes++;
+      if (note.duration < threshold) {
+        // Also check if it's on a weak beat (strong beat short notes are OK for articulation)
+        float beat_in_bar = std::fmod(
+            static_cast<float>(note.start_tick % TICKS_PER_BAR) / TICKS_PER_BEAT, 4.0f);
+        bool is_strong = (beat_in_bar < 0.1f || std::abs(beat_in_bar - 2.0f) < 0.1f);
+        if (!is_strong) {
+          short_notes++;
+        }
+      }
+    }
+  }
+
+  if (total_notes < 50) {
+    GTEST_SKIP() << "Not enough vocal notes to analyze";
+  }
+
+  float short_ratio = static_cast<float>(short_notes) / total_notes;
+  EXPECT_LE(short_ratio, 0.20f)
+      << short_notes << " of " << total_notes
+      << " vocal notes (" << (short_ratio * 100) << "%) are weak-beat short notes. "
+      << "Expected <= 20%.";
+}
+
+// Test: Chorus note density should be stable across seeds
+TEST_F(RhythmLockVocalQuality, ChorusNoteDensityStable) {
+  constexpr int kNumSeeds = 10;
+  std::vector<float> densities;
+
+  for (int s = 0; s < kNumSeeds; ++s) {
+    params_.seed = 22000 + s * 139;
+    Generator gen;
+    gen.generate(params_);
+
+    auto chorus_notes = getVocalNotesInSection(gen.getSong(), SectionType::Chorus);
+    int chorus_bars = countBarsForSection(gen.getSong(), SectionType::Chorus);
+
+    if (chorus_bars == 0) continue;
+    float density = static_cast<float>(chorus_notes.size()) / chorus_bars;
+    densities.push_back(density);
+  }
+
+  if (densities.size() < 5) {
+    GTEST_SKIP() << "Not enough seeds with chorus sections";
+  }
+
+  // Calculate standard deviation
+  float sum = 0.0f;
+  for (float d : densities) sum += d;
+  float mean = sum / densities.size();
+
+  float var_sum = 0.0f;
+  for (float d : densities) var_sum += (d - mean) * (d - mean);
+  float stddev = std::sqrt(var_sum / densities.size());
+
+  // Standard deviation should be reasonable (< 1.5 notes/bar)
+  EXPECT_LT(stddev, 1.5f)
+      << "Chorus density stddev = " << stddev << " (mean = " << mean
+      << "). Expected < 1.5 for stable density.";
+}
+
+// Test: Chorus pitch range should be adequate across seeds
+TEST_F(RhythmLockVocalQuality, ChorusPitchRangeStatistical) {
+  constexpr int kNumSeeds = 10;
+  std::vector<int> ranges;
+
+  for (int s = 0; s < kNumSeeds; ++s) {
+    params_.seed = 23000 + s * 149;
+    Generator gen;
+    gen.generate(params_);
+
+    auto chorus_notes = getVocalNotesInSection(gen.getSong(), SectionType::Chorus);
+    if (chorus_notes.size() < 4) continue;
+
+    uint8_t min_pitch = 127, max_pitch = 0;
+    for (const auto& note : chorus_notes) {
+      min_pitch = std::min(min_pitch, note.note);
+      max_pitch = std::max(max_pitch, note.note);
+    }
+    ranges.push_back(max_pitch - min_pitch);
+  }
+
+  if (ranges.size() < 5) {
+    GTEST_SKIP() << "Not enough seeds with chorus sections";
+  }
+
+  // Median range should be >= 5 semitones
+  std::sort(ranges.begin(), ranges.end());
+  int median_range = ranges[ranges.size() / 2];
+
+  EXPECT_GE(median_range, 5)
+      << "Median chorus pitch range = " << median_range << " semitones. "
+      << "Expected >= 5 for adequate melodic variety.";
 }
 
 }  // namespace

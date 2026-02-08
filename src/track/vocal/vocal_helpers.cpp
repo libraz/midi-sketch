@@ -628,8 +628,6 @@ void applySectionEndSustain(std::vector<NoteEvent>& notes, const std::vector<Sec
     }
   };
 
-  constexpr Tick kMinBreathGap = TICK_EIGHTH;  // Minimum gap before next section
-
   for (const auto& section : sections) {
     Tick section_end = section.endTick();
     Tick target = getTargetDuration(section.type);
@@ -650,11 +648,16 @@ void applySectionEndSustain(std::vector<NoteEvent>& notes, const std::vector<Sec
     // Constraint 1: Do not cross section boundary
     desired_end = std::min(desired_end, section_end);
 
-    // Constraint 2: Maintain breath gap before next section's first note
+    // Constraint 2: Maintain breath gap before next note
+    // Use wider gap at section boundaries to preserve inter-section breath
     if (static_cast<size_t>(last_idx) + 1 < notes.size()) {
       Tick next_start = notes[last_idx + 1].start_tick;
-      if (desired_end > next_start - kMinBreathGap) {
-        desired_end = (next_start > kMinBreathGap) ? (next_start - kMinBreathGap) : next_start;
+      Tick min_gap = TICK_EIGHTH;  // 240 ticks within section
+      if (notes[last_idx + 1].start_tick >= section_end) {
+        min_gap = TICK_QUARTER;  // 480 ticks at section boundary
+      }
+      if (desired_end > next_start - min_gap) {
+        desired_end = (next_start > min_gap) ? (next_start - min_gap) : next_start;
       }
     }
 

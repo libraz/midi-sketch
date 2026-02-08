@@ -1638,5 +1638,137 @@ TEST(UltraVocaloidTest, ChorusNotesOnThirtysecondGrid) {
       << " out of " << chorus_notes << ")";
 }
 
+// ============================================================================
+// setVocalNotes with RhythmSync Tests
+// ============================================================================
+
+TEST(CustomVocalTest, SetVocalNotesRhythmSyncGeneratesMotif) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ShortForm;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.blueprint_id = 1;  // RhythmLock (RhythmSync paradigm)
+  params.bpm = 170;
+  params.bpm_explicit = true;
+
+  std::vector<NoteEvent> custom_notes;
+  custom_notes.push_back(NoteEventTestHelper::create(0, 480, 60, 100));
+  custom_notes.push_back(NoteEventTestHelper::create(480, 480, 64, 100));
+  custom_notes.push_back(NoteEventTestHelper::create(960, 480, 67, 100));
+
+  gen.setVocalNotes(params, custom_notes);
+
+  // RhythmSync should generate Motif as coordinate axis
+  EXPECT_FALSE(gen.getSong().motif().empty())
+      << "setVocalNotes with RhythmSync should generate Motif";
+
+  // Custom vocal notes should still be preserved
+  EXPECT_EQ(gen.getSong().vocal().notes().size(), 3u);
+}
+
+TEST(CustomVocalTest, SetVocalNotesRhythmSyncThenAccompaniment) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ShortForm;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.drums_enabled = true;
+  params.blueprint_id = 1;  // RhythmLock (RhythmSync)
+  params.bpm = 170;
+  params.bpm_explicit = true;
+
+  std::vector<NoteEvent> custom_notes;
+  custom_notes.push_back(NoteEventTestHelper::create(0, 480, 60, 100));
+  custom_notes.push_back(NoteEventTestHelper::create(480, 480, 64, 100));
+  custom_notes.push_back(NoteEventTestHelper::create(960, 480, 67, 100));
+  custom_notes.push_back(NoteEventTestHelper::create(1440, 480, 72, 100));
+
+  gen.setVocalNotes(params, custom_notes);
+
+  auto motif_before = gen.getSong().motif().notes();
+  ASSERT_FALSE(motif_before.empty());
+
+  gen.generateAccompanimentForVocal();
+
+  // Motif should be preserved (not regenerated from scratch)
+  // Post-processing may add/remove edge notes, so check core pattern
+  const auto& motif_after = gen.getSong().motif().notes();
+  ASSERT_FALSE(motif_after.empty())
+      << "Motif should still exist after accompaniment generation";
+
+  size_t check_count = std::min({size_t(10), motif_before.size(), motif_after.size()});
+  int matching = 0;
+  for (size_t i = 0; i < check_count; ++i) {
+    if (motif_after[i].start_tick == motif_before[i].start_tick &&
+        motif_after[i].note == motif_before[i].note) {
+      ++matching;
+    }
+  }
+  EXPECT_GT(matching, static_cast<int>(check_count) / 2)
+      << "Motif core pattern should be preserved";
+
+  // Accompaniment should be generated
+  EXPECT_FALSE(gen.getSong().bass().empty());
+  EXPECT_FALSE(gen.getSong().chord().empty());
+
+  // Custom vocal notes should be preserved
+  EXPECT_EQ(gen.getSong().vocal().notes().size(), 4u);
+}
+
+TEST(CustomVocalTest, SetVocalNotesRhythmSyncClampsBpm) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::ShortForm;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.blueprint_id = 1;  // RhythmLock (RhythmSync)
+  params.bpm = 100;
+  params.bpm_explicit = false;
+
+  std::vector<NoteEvent> custom_notes;
+  custom_notes.push_back(NoteEventTestHelper::create(0, 480, 60, 100));
+
+  gen.setVocalNotes(params, custom_notes);
+
+  EXPECT_GE(gen.getSong().bpm(), 160u) << "RhythmSync BPM should be clamped to >= 160";
+  EXPECT_LE(gen.getSong().bpm(), 175u) << "RhythmSync BPM should be clamped to <= 175";
+}
+
+TEST(CustomVocalTest, SetVocalNotesRhythmSyncDensityProgression) {
+  Generator gen;
+  GeneratorParams params{};
+  params.structure = StructurePattern::StandardPop;
+  params.mood = Mood::StraightPop;
+  params.seed = 42;
+  params.blueprint_id = 1;  // RhythmLock (RhythmSync)
+  params.bpm = 170;
+  params.bpm_explicit = true;
+
+  std::vector<NoteEvent> custom_notes;
+  custom_notes.push_back(NoteEventTestHelper::create(0, 480, 60, 100));
+
+  gen.setVocalNotes(params, custom_notes);
+
+  const auto& sections = gen.getSong().arrangement().sections();
+  ASSERT_GT(sections.size(), 3u);
+
+  // Check that repeated section types have increasing density
+  std::map<SectionType, std::vector<uint8_t>> densities;
+  for (const auto& section : sections) {
+    densities[section.type].push_back(section.density_percent);
+  }
+
+  bool found_progression = false;
+  for (const auto& [type, d] : densities) {
+    if (d.size() > 1 && d.back() > d.front()) {
+      found_progression = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_progression)
+      << "RhythmSync density progression should be applied";
+}
+
 }  // namespace
 }  // namespace midisketch

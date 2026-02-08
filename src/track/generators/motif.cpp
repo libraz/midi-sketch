@@ -487,9 +487,9 @@ uint8_t calculateMotifRegister(uint8_t vocal_low, uint8_t vocal_high, bool regis
     base_note = std::min(static_cast<uint8_t>(vocal_high), static_cast<uint8_t>(96));
   } else {
     if (vocal_center >= 66) {
-      base_note = std::min(static_cast<uint8_t>(55), static_cast<uint8_t>(vocal_low - 7));
+      base_note = static_cast<uint8_t>(std::min(55, std::max(0, static_cast<int>(vocal_low) - 7)));
     } else {
-      base_note = std::max(static_cast<uint8_t>(72), static_cast<uint8_t>(vocal_high + 5));
+      base_note = static_cast<uint8_t>(std::max(72, std::min(127, static_cast<int>(vocal_high) + 5)));
     }
   }
 
@@ -649,6 +649,15 @@ MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteConte
     // coordinate axis - other tracks adapt to it.
     int pitch = static_cast<int>(note.note);
 
+    // Dynamic register separation: shift pattern to avoid vocal register.
+    // base_note_override is computed from calculateMotifRegister() using
+    // config-based vocal range (not vocal analysis, since Motif is generated first).
+    if (base_note_override != 0) {
+      int pattern_base = motif_params.register_high ? 67 : 60;
+      int register_shift = static_cast<int>(base_note_override) - pattern_base;
+      pitch += register_shift;
+    }
+
     // Section-based register variation for melodic diversity.
     // Chorus/Drop uses higher register, Bridge uses lower register.
     // Use moderate intervals (P5/P4) rather than full octaves to avoid
@@ -664,6 +673,11 @@ MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteConte
         break;
       default:
         break;  // Verse, Intro, Outro, Interlude use original register
+    }
+    // Reduce shift if it would push pitch into ceiling (causes pitch concentration)
+    constexpr int kCeilingMargin = 5;
+    if (octave_shift > 0 && pitch + octave_shift > static_cast<int>(MOTIF_HIGH) - kCeilingMargin) {
+      octave_shift = std::max(0, static_cast<int>(MOTIF_HIGH) - kCeilingMargin - pitch);
     }
     pitch += octave_shift;
     result.section_octave_shift = octave_shift;

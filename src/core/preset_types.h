@@ -7,6 +7,8 @@
 #define MIDISKETCH_CORE_PRESET_TYPES_H
 
 #include <cstdint>
+#include <optional>
+#include <string>
 #include <vector>
 
 #include "core/basic_types.h"
@@ -376,6 +378,29 @@ struct SongConfig {
   }
 };
 
+/// @brief Clamp BPM for RhythmSync paradigm (optimal: 160-175).
+/// Only clamps when paradigm is RhythmSync and BPM was not explicitly set by user.
+/// @return {clamped_bpm, warning_message_if_changed}
+inline std::pair<uint16_t, std::optional<std::string>> clampRhythmSyncBpm(
+    uint16_t bpm, GenerationParadigm paradigm, bool bpm_explicit) {
+  constexpr uint16_t kRhythmSyncBpmMin = 160;
+  constexpr uint16_t kRhythmSyncBpmMax = 175;
+  if (paradigm != GenerationParadigm::RhythmSync || bpm_explicit) {
+    return {bpm, std::nullopt};
+  }
+  uint16_t clamped = bpm;
+  if (clamped < kRhythmSyncBpmMin) {
+    clamped = kRhythmSyncBpmMin;
+  } else if (clamped > kRhythmSyncBpmMax) {
+    clamped = kRhythmSyncBpmMax;
+  }
+  if (clamped != bpm) {
+    return {clamped, "BPM adjusted from " + std::to_string(bpm) + " to " +
+                         std::to_string(clamped) + " for RhythmSync paradigm (optimal: 160-175)"};
+  }
+  return {clamped, std::nullopt};
+}
+
 /// @brief Input parameters for MIDI generation.
 struct GeneratorParams {
   /// Core parameters
@@ -410,6 +435,11 @@ struct GeneratorParams {
   MotifChordParams motif_chord;
   MotifDrumParams motif_drum;
   MotifVocalParams motif_vocal;
+
+  /// RhythmSync: MotifContext for register separation (config-based, not vocal-analysis-based).
+  /// Set by Coordinator/Generator before Motif generation in RhythmSync paradigm.
+  /// @note Transient runtime state, not serialized (excluded from visitFields).
+  std::optional<MotifContext> rhythm_sync_motif_ctx;
 
   /// Arrangement
   ArrangementGrowth arrangement_growth = ArrangementGrowth::LayerAdd;

@@ -228,13 +228,19 @@ void Generator::clearAccompanimentTracks() {
   song_.clearTrack(TrackRole::Chord);
   song_.clearTrack(TrackRole::Drums);
   song_.clearTrack(TrackRole::Arpeggio);
-  song_.clearTrack(TrackRole::Motif);
+  // RhythmSync: preserve Motif as coordinate axis (Vocal is synced to it)
+  if (params_.paradigm != GenerationParadigm::RhythmSync) {
+    song_.clearTrack(TrackRole::Motif);
+  }
   song_.clearTrack(TrackRole::SE);
   song_.clearTrack(TrackRole::Guitar);
 
-  // Clear harmony context notes and re-register vocal
+  // Clear harmony context notes and re-register preserved tracks
   harmony_context_->clearNotes();
   harmony_context_->registerTrack(song_.vocal(), TrackRole::Vocal);
+  if (params_.paradigm == GenerationParadigm::RhythmSync && !song_.motif().empty()) {
+    harmony_context_->registerTrack(song_.motif(), TrackRole::Motif);
+  }
 }
 
 std::vector<Section> Generator::buildSongStructure(uint16_t bpm) {
@@ -310,21 +316,10 @@ uint16_t Generator::initializeGenerationState() {
     bpm = getMoodDefaultBpm(params_.mood);
   }
 
-  // BPM validation for Orangestar style (only clamp auto-resolved BPM)
-  if (params_.paradigm == GenerationParadigm::RhythmSync && !params_.bpm_explicit) {
-    constexpr uint16_t kOrangestarBpmMin = 160;
-    constexpr uint16_t kOrangestarBpmMax = 175;
-    uint16_t original_bpm = bpm;
-    if (bpm < kOrangestarBpmMin) {
-      bpm = kOrangestarBpmMin;
-    } else if (bpm > kOrangestarBpmMax) {
-      bpm = kOrangestarBpmMax;
-    }
-    if (bpm != original_bpm) {
-      warnings_.push_back("BPM adjusted from " + std::to_string(original_bpm) + " to " +
-                          std::to_string(bpm) + " for RhythmSync paradigm (optimal: 160-175)");
-    }
-  }
+  // BPM validation for RhythmSync paradigm
+  auto [clamped_bpm, bpm_warning] = clampRhythmSyncBpm(bpm, params_.paradigm, params_.bpm_explicit);
+  bpm = clamped_bpm;
+  if (bpm_warning) warnings_.push_back(*bpm_warning);
 
   song_.setBpm(bpm);
   params_.bpm = bpm;  // Propagate clamped BPM to params for Coordinator
@@ -483,10 +478,26 @@ void Generator::generateVocal(const GeneratorParams& params) {
   if (bpm == 0) {
     bpm = getMoodDefaultBpm(params.mood);
   }
+
+  // BPM validation for RhythmSync paradigm
+  {
+    auto [clamped, warn] = clampRhythmSyncBpm(bpm, params_.paradigm, params_.bpm_explicit);
+    bpm = clamped;
+    if (warn) warnings_.push_back(*warn);
+  }
+
   song_.setBpm(bpm);
+  params_.bpm = bpm;  // Propagate clamped BPM to params for Coordinator
 
   // Build song structure
   std::vector<Section> sections = buildSongStructure(bpm);
+
+  // Apply density progression for Orangestar style
+  applyDensityProgressionToSections(sections, params_.paradigm);
+
+  // Apply default layer scheduling for staggered track entrances/exits
+  applyDefaultLayerSchedule(sections);
+
   song_.setArrangement(Arrangement(sections));
 
   // Clear all tracks
@@ -504,8 +515,14 @@ void Generator::generateVocal(const GeneratorParams& params) {
     computeDrumGrid();
   }
 
-  // Generate ONLY vocal track with collision avoidance skipped
-  // (no other tracks exist yet, so collision avoidance is meaningless)
+  // RhythmSync: generate Motif first as coordinate axis
+  // Vocal will use the Motif's rhythm pattern for quantization
+  if (params_.paradigm == GenerationParadigm::RhythmSync) {
+    generateMotif();
+  }
+
+  // Generate vocal track with collision avoidance skipped
+  // (no other tracks exist yet besides Motif, so collision avoidance is meaningless)
   // BUT we still pass harmony_context_ for chord-aware melody generation
   VocalGenerator vocal_gen;
 
@@ -517,6 +534,12 @@ void Generator::generateVocal(const GeneratorParams& params) {
   ctx.harmony = harmony_context_.get();
   ctx.skip_collision_avoidance = true;  // Vocal-first mode
   ctx.drum_grid = getDrumGrid();
+
+  // RhythmSync: pass Motif as coordinate axis for Vocal generation
+  if (params_.paradigm == GenerationParadigm::RhythmSync &&
+      !song_.motif().empty()) {
+    ctx.motif_track = &song_.motif();
+  }
 
   vocal_gen.generateFullTrack(song_.vocal(), ctx);
 }
@@ -541,6 +564,12 @@ void Generator::regenerateVocal(uint32_t new_seed) {
   ctx.harmony = harmony_context_.get();
   ctx.skip_collision_avoidance = true;  // Vocal-first mode
   ctx.drum_grid = getDrumGrid();
+
+  // RhythmSync: pass existing Motif as coordinate axis
+  if (params_.paradigm == GenerationParadigm::RhythmSync &&
+      !song_.motif().empty()) {
+    ctx.motif_track = &song_.motif();
+  }
 
   vocal_gen.generateFullTrack(song_.vocal(), ctx);
 }
@@ -591,6 +620,12 @@ void Generator::regenerateVocal(const VocalConfig& config) {
   ctx.skip_collision_avoidance = true;  // Vocal-first mode
   ctx.drum_grid = getDrumGrid();
 
+  // RhythmSync: pass existing Motif as coordinate axis
+  if (params_.paradigm == GenerationParadigm::RhythmSync &&
+      !song_.motif().empty()) {
+    ctx.motif_track = &song_.motif();
+  }
+
   vocal_gen.generateFullTrack(song_.vocal(), ctx);
 }
 
@@ -609,10 +644,12 @@ void Generator::generateAccompanimentForVocal() {
   // drum_grid, SE/Call context, markTrackGenerated, etc.
   params_.skip_vocal = true;
   generateAllTracksViaCoordinator();
-  params_.skip_vocal = false;
 
-  // Apply same post-processing as CLI path
+  // Keep skip_vocal=true during post-processing so applyLayerSchedule
+  // preserves custom vocal notes (they may be in sections like Intro
+  // where Vocal is not in the default layer schedule).
   applyPostProcessingEffects();
+  params_.skip_vocal = false;
 
   // Vocal-first specific: refine vocal against accompaniment
   int adjustments = refineVocalForAccompaniment(2);
@@ -868,10 +905,26 @@ void Generator::setVocalNotes(const GeneratorParams& params, const std::vector<N
   if (bpm == 0) {
     bpm = getMoodDefaultBpm(params.mood);
   }
+
+  // BPM validation for RhythmSync paradigm
+  {
+    auto [clamped, warn] = clampRhythmSyncBpm(bpm, params_.paradigm, params_.bpm_explicit);
+    bpm = clamped;
+    if (warn) warnings_.push_back(*warn);
+  }
+
   song_.setBpm(bpm);
+  params_.bpm = bpm;  // Propagate clamped BPM to params for Coordinator
 
   // Build song structure
   std::vector<Section> sections = buildSongStructure(bpm);
+
+  // Apply density progression for Orangestar style
+  applyDensityProgressionToSections(sections, params_.paradigm);
+
+  // Apply default layer scheduling for staggered track entrances/exits
+  applyDefaultLayerSchedule(sections);
+
   song_.setArrangement(Arrangement(sections));
 
   // Clear all tracks
@@ -883,6 +936,17 @@ void Generator::setVocalNotes(const GeneratorParams& params, const std::vector<N
 
   // Calculate modulation for all composition styles
   calculateModulation();
+
+  // Pre-compute drum grid for RhythmSync paradigm
+  if (params_.paradigm == GenerationParadigm::RhythmSync) {
+    computeDrumGrid();
+  }
+
+  // RhythmSync: generate Motif first as coordinate axis
+  // Motif must exist before vocal notes are set so accompaniment can reference it
+  if (params_.paradigm == GenerationParadigm::RhythmSync) {
+    generateMotif();
+  }
 
   // Set custom vocal notes
   for (const auto& note : notes) {
@@ -1087,6 +1151,18 @@ void Generator::generateMotif() {
     motif_ctx.vocal_density = va.density;
     motif_ctx.direction_at_tick = &va.direction_at_tick;
     ctx.vocal_ctx = &motif_ctx;
+  }
+
+  // RhythmSync: use config-based vocal range for register separation
+  // (Motif is generated before Vocal, so no vocal analysis available)
+  if (params_.paradigm == GenerationParadigm::RhythmSync) {
+    if (!params_.rhythm_sync_motif_ctx.has_value()) {
+      MotifContext mctx;
+      mctx.vocal_low = params_.vocal_low;
+      mctx.vocal_high = params_.vocal_high;
+      params_.rhythm_sync_motif_ctx = mctx;
+    }
+    ctx.vocal_ctx = &params_.rhythm_sync_motif_ctx.value();
   }
 
   motif_gen.generateFullTrack(song_.motif(), ctx);
@@ -1590,6 +1666,13 @@ void Generator::applyLayerSchedule() {
 
     // For each track, check bar-by-bar activity and remove inactive notes
     for (auto& mapping : track_map) {
+      // Vocal-first workflow: protect custom vocal notes from layer schedule
+      // removal (custom notes may be in sections like Intro where Vocal
+      // is not in the default layer schedule).
+      if (params_.skip_vocal && mapping.mask == TrackMask::Vocal) {
+        continue;
+      }
+
       // In RhythmSync paradigm, protect the coordinate axis track (Motif)
       // from layer schedule removal. Motif must remain present for
       // Vocal-Motif rhythm alignment to be audible in the output.
