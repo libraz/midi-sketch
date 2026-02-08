@@ -53,6 +53,13 @@ class IChordLookup {
   virtual Tick getNextChordChangeTick(Tick after) const = 0;
 
   /**
+   * @brief Check if a secondary dominant is active at a given tick.
+   * @param tick Position in ticks
+   * @return true if a pre-registered secondary dominant covers this tick
+   */
+  virtual bool isSecondaryDominantAt(Tick /*tick*/) const { return false; }
+
+  /**
    * @brief Snap a pitch to the nearest chord tone at a given tick.
    *
    * Combines getChordTonesAt() with nearest-pitch search to find the

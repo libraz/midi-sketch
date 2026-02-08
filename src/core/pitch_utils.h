@@ -211,6 +211,19 @@ inline int degreeToPitch(int degree, int base_note, int key_offset,
   return base_note + oct_adjust * 12 + scale_intervals[d] + key_offset;
 }
 
+/// @brief Convert MIDI pitch to C major scale degree relative to base_note.
+/// Inverse of degreeToPitch() for Major scale.
+/// @param pitch MIDI pitch to convert
+/// @param base_note Base MIDI pitch (root of the octave, same as degreeToPitch)
+/// @return Scale degree (may be negative or > 6 for pitches outside base octave)
+inline int pitchToMajorDegree(int pitch, int base_note) {
+  static constexpr int kSemitoneToDegree[] = {0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6};
+  int diff = pitch - base_note;
+  int octaves = (diff >= 0) ? (diff / 12) : ((diff - 11) / 12);
+  int semitone = diff - octaves * 12;  // 0-11
+  return octaves * 7 + kSemitoneToDegree[semitone];
+}
+
 // ============================================================================
 // Interval Constants
 // ============================================================================

@@ -874,27 +874,8 @@ void generateChordTrackUnified(ChordGenerationMode mode, MidiTrack& track, const
       continue;
     }
 
-    // === Diff #1: SECONDARY DOMINANT AT CHORUS START (Basic only) ===
-    if (is_basic && sec_idx > 0 && section.type == SectionType::Chorus) {
-      bool is_good_target = (prev_section_last_degree == 1 ||   // ii
-                             prev_section_last_degree == 3 ||   // IV
-                             prev_section_last_degree == 5);    // vi
-
-      if (is_good_target) {
-        Tick prev_section_end = section.start_tick;
-        Tick insert_start = prev_section_end - TICK_HALF;
-
-        int8_t sec_dom_degree;
-        switch (prev_section_last_degree) {
-          case 1:  sec_dom_degree = 5; break;
-          case 3:  sec_dom_degree = 0; break;
-          case 5:  sec_dom_degree = 2; break;
-          default: sec_dom_degree = 4; break;
-        }
-
-        harmony.registerSecondaryDominant(insert_start, prev_section_end, sec_dom_degree);
-      }
-    }
+    // Section boundary secondary dominants are now pre-registered by
+    // planAndRegisterSecondaryDominants() during coordinator initialization.
 
     SectionType next_section_type =
         (sec_idx + 1 < sections.size()) ? sections[sec_idx + 1].type : section.type;
@@ -1263,6 +1244,8 @@ void generateChordTrackUnified(ChordGenerationMode mode, MidiTrack& track, const
       }
 
       // === Diff #2: Within-bar secondary dominant (Basic only) ===
+      // Secondary dominants are pre-registered by planAndRegisterSecondaryDominants().
+      // Here we detect pre-registered flags and generate notes accordingly.
       bool inserted_secondary_dominant = false;
       if (is_basic && bar < section.bars - 2) {
         int next_chord_idx = (chord_idx + 1) % effective_prog_length;
@@ -1272,9 +1255,11 @@ void generateChordTrackUnified(ChordGenerationMode mode, MidiTrack& track, const
         SecondaryDominantInfo sec_dom = checkSecondaryDominant(degree, next_degree, tension);
 
         if (sec_dom.should_insert) {
-          bool random_check = rng_util::rollProbability(rng, tension);
+          // Dummy RNG consumption to maintain stream compatibility with planner.
+          rng_util::rollProbability(rng, tension);
 
-          if (random_check) {
+          // Check if pre-registered by planner (actual decision was made during init)
+          if (harmony.isSecondaryDominantAt(bar_start + TICK_HALF)) {
             uint8_t vel = calculateVelocity(section.type, 0, params.mood);
 
             // First half: current chord
@@ -1297,9 +1282,6 @@ void generateChordTrackUnified(ChordGenerationMode mode, MidiTrack& track, const
             for (size_t idx = 0; idx < sec_dom_voicing.count; ++idx) {
               addSafeChordNote(track, harmony, bar_start + TICK_HALF, TICK_HALF, sec_dom_voicing.pitches[idx], vel_accent, bar_vocal_high);
             }
-
-            harmony.registerSecondaryDominant(bar_start + TICK_HALF, bar_start + TICKS_PER_BAR,
-                                               sec_dom.dominant_degree);
 
             updateConsecutiveVoicing(sec_dom_voicing);
             prev_voicing = sec_dom_voicing;

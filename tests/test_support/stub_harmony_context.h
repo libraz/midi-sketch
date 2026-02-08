@@ -94,6 +94,8 @@ class StubHarmonyContext : public IHarmonyCoordinator {
     ++secondary_dominant_count_;
   }
 
+  bool isSecondaryDominantAt(Tick /*tick*/) const override { return false; }
+
   std::string dumpNotesAt(Tick tick, Tick /*range_ticks*/ = 1920) const override {
     return "StubHarmonyContext::dumpNotesAt(" + std::to_string(tick) + ") - no real data";
   }

@@ -77,6 +77,8 @@ class HarmonyContext : public IHarmonyContext {
 
   void registerSecondaryDominant(Tick start, Tick end, int8_t degree) override;
 
+  bool isSecondaryDominantAt(Tick tick) const override;
+
   std::string dumpNotesAt(Tick tick, Tick range_ticks = 1920) const override;
 
   CollisionSnapshot getCollisionSnapshot(Tick tick, Tick range_ticks = 1920) const override;

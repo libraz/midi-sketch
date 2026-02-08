@@ -17,6 +17,7 @@ set(MIDISKETCH_CORE_SOURCES
   core/i_track_base.cpp
   core/track_base.cpp
   core/chord_progression_tracker.cpp
+  core/secondary_dominant_planner.cpp
   core/track_collision_detector.cpp
   core/track_registration_guard.cpp
   core/motif.cpp

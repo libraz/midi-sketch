@@ -78,6 +78,11 @@ class ChordProgressionTracker : public IChordLookup {
    */
   void registerSecondaryDominant(Tick start, Tick end, int8_t degree);
 
+  /// @brief Check if a secondary dominant is active at a given tick.
+  /// @param tick Position in ticks
+  /// @return true if a pre-registered secondary dominant covers this tick
+  bool isSecondaryDominantAt(Tick tick) const override;
+
   /// Clear all chord data (for reinitialization).
   void clear();
 
@@ -90,6 +95,7 @@ class ChordProgressionTracker : public IChordLookup {
     Tick start;
     Tick end;
     int8_t degree;
+    bool is_secondary_dominant = false;
   };
 
   std::vector<ChordInfo> chords_;

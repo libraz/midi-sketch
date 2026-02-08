@@ -644,12 +644,28 @@ MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteConte
   MotifPitchResult result = {0, 0, 0, false};
 
   if (ctx.is_rhythm_lock_global) {
-    // Coordinate axis mode: use pattern pitch directly, but snap avoid notes.
-    // Non-chord tones (passing tones) are acceptable since Motif is the
-    // coordinate axis - other tracks adapt to it.
+    // Coordinate axis mode: preserve riff shape via cycle-unit diatonic transposition,
+    // then correct avoid notes against the current chord.
     int pitch = static_cast<int>(note.note);
 
-    // Dynamic register separation: shift pattern to avoid vocal register.
+    // --- Step 1: Cycle-unit diatonic transposition ---
+    // Use chord at riff cycle start to transpose the entire riff diatonically.
+    // This preserves the riff's interval relationships while following the chord progression.
+    Tick cycle_start = ctx.absolute_tick - note.start_tick;
+    int8_t cycle_degree = harmony->getChordDegreeAt(cycle_start);
+    uint8_t cycle_root_midi = degreeToRoot(cycle_degree, Key::C);
+    int cycle_root_pc = static_cast<int>(cycle_root_midi) % 12;
+    static constexpr int kSemitoneToDegree[] = {0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6};
+    int chord_scale_degree = kSemitoneToDegree[cycle_root_pc];
+
+    if (chord_scale_degree != 0) {
+      int base_note = motif_params.register_high ? 67 : 60;
+      int original_degree = pitchToMajorDegree(pitch, base_note);
+      int transposed_degree = original_degree + chord_scale_degree;
+      pitch = degreeToPitch(transposed_degree, base_note, 0);
+    }
+
+    // --- Step 2: Dynamic register separation ---
     // base_note_override is computed from calculateMotifRegister() using
     // config-based vocal range (not vocal analysis, since Motif is generated first).
     if (base_note_override != 0) {
@@ -658,7 +674,7 @@ MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteConte
       pitch += register_shift;
     }
 
-    // Section-based register variation for melodic diversity.
+    // --- Step 3: Section-based register variation ---
     // Chorus/Drop uses higher register, Bridge uses lower register.
     // Use moderate intervals (P5/P4) rather than full octaves to avoid
     // extremes that could clash with other tracks or hit ceiling.
@@ -682,8 +698,11 @@ MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteConte
     pitch += octave_shift;
     result.section_octave_shift = octave_shift;
 
-    // Handle pitches below MOTIF_LOW by shifting up an octave.
-    // This prevents negative degrees from clamping to C4 and causing concentration.
+    // --- Step 4: Snap to diatonic after shifts ---
+    // Register and section shifts may introduce non-diatonic pitches.
+    pitch = motif_detail::adjustToDiatonic(pitch);
+
+    // --- Step 5: Octave fold-up and range clamp ---
     int range_octave_up = 0;
     while (pitch < static_cast<int>(MOTIF_LOW) && pitch + 12 <= static_cast<int>(MOTIF_HIGH)) {
       pitch += 12;
@@ -692,9 +711,21 @@ MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteConte
     result.range_octave_up = range_octave_up;
     pitch = std::clamp(pitch, static_cast<int>(MOTIF_LOW), static_cast<int>(MOTIF_HIGH));
 
-    // Coordinate axis: skip avoid note snapping.
-    // Motif is generated first in RhythmSync - other tracks adapt to it.
-    // Avoid snapping changes pitches per chord, breaking Locked riff consistency.
+    // --- Step 6: Avoid note correction ---
+    // Check against current chord (not cycle start chord) to handle mid-riff
+    // chord changes. Use nearestInRange to resolve within valid range,
+    // preventing clamp→avoid→clamp cycles.
+    int8_t current_degree = harmony->getChordDegreeAt(ctx.absolute_tick);
+    uint8_t current_root = degreeToRoot(current_degree, Key::C);
+    Chord current_chord = getChordNotes(current_degree);
+    bool current_is_minor = (current_chord.intervals[1] == 3);
+    int pre_avoid = pitch;
+    if (isAvoidNoteWithContext(pitch, current_root, current_is_minor, current_degree)) {
+      ChordToneHelper ct_helper(current_degree);
+      pitch = ct_helper.nearestInRange(
+          static_cast<uint8_t>(std::clamp(pitch, 0, 127)), MOTIF_LOW, MOTIF_HIGH);
+    }
+    result.avoid_note_snapped = (pitch != pre_avoid);
 
     result.pitch = pitch;
     return result;
@@ -901,8 +932,10 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       }
     }
 
-    // RhythmSync coordinate axis + Locked: replay cached notes verbatim
-    // Uses NoCollisionCheck since coordinate axis tracks skip collision avoidance.
+    // RhythmSync coordinate axis + Locked: replay cached notes with avoid correction.
+    // Uses NoCollisionCheck since coordinate axis tracks skip collision avoidance,
+    // but applies avoid note correction against the current chord at each tick
+    // to prevent residual avoid notes when chord timing differs between instances.
     if (is_rhythm_lock_global) {
       auto cache_it = coord_axis_note_cache.find(section.type);
       if (cache_it != coord_axis_note_cache.end()) {
@@ -910,10 +943,23 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
           Tick absolute_tick = section.start_tick + entry.relative_tick;
           if (absolute_tick >= section.endTick()) continue;
 
+          // Re-apply avoid note correction for the replay position's chord.
+          // Use nearestInRange to stay within range while avoiding the note.
+          int replay_pitch = static_cast<int>(entry.pitch);
+          int8_t replay_degree = harmony->getChordDegreeAt(absolute_tick);
+          uint8_t replay_root = degreeToRoot(replay_degree, Key::C);
+          Chord replay_chord = getChordNotes(replay_degree);
+          bool replay_minor = (replay_chord.intervals[1] == 3);
+          if (isAvoidNoteWithContext(replay_pitch, replay_root, replay_minor, replay_degree)) {
+            ChordToneHelper ct_helper(replay_degree);
+            replay_pitch = ct_helper.nearestInRange(
+                static_cast<uint8_t>(replay_pitch), MOTIF_LOW, motif_range_high);
+          }
+
           NoteOptions opts;
           opts.start = absolute_tick;
           opts.duration = entry.duration;
-          opts.desired_pitch = entry.pitch;
+          opts.desired_pitch = static_cast<uint8_t>(replay_pitch);
           opts.velocity = entry.velocity;
           opts.role = TrackRole::Motif;
           opts.preference = PitchPreference::NoCollisionCheck;
@@ -1071,6 +1117,22 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
 
         // Clamp to vocal ceiling
         int adjusted_pitch = std::min(pitch_result.pitch, static_cast<int>(motif_range_high));
+
+        // Re-apply avoid note correction after vocal ceiling clamp, since clamping
+        // may have changed the pitch to an avoid note for the current chord.
+        // Use nearestInRange to find a chord tone within the valid range, avoiding
+        // the clamp→avoid→clamp cycle that adjustForChord + clamp would cause.
+        if (is_rhythm_lock_global) {
+          int8_t post_degree = harmony->getChordDegreeAt(absolute_tick);
+          uint8_t post_root = degreeToRoot(post_degree, Key::C);
+          Chord post_chord = getChordNotes(post_degree);
+          bool post_minor = (post_chord.intervals[1] == 3);
+          if (isAvoidNoteWithContext(adjusted_pitch, post_root, post_minor, post_degree)) {
+            ChordToneHelper ct_helper(post_degree);
+            adjusted_pitch = ct_helper.nearestInRange(
+                static_cast<uint8_t>(adjusted_pitch), MOTIF_LOW, motif_range_high);
+          }
+        }
 
         // Calculate velocity: use pattern velocity for template mode (has accent weights),
         // otherwise use the standard helper.
@@ -1255,6 +1317,9 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
 
     sec_idx++;
   }
+  // Post-generation avoid note correction is no longer needed because
+  // secondary dominants are now pre-registered in the harmony context
+  // before track generation (see secondary_dominant_planner.h).
 }
 
 }  // namespace midisketch

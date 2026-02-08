@@ -13,6 +13,7 @@
 #include "core/harmony_coordinator.h"
 #include "core/midi_track.h"
 #include "core/preset_data.h"
+#include "core/secondary_dominant_planner.h"
 #include "core/song.h"
 #include "core/structure.h"
 #include "core/timing_constants.h"
@@ -72,6 +73,17 @@ void Coordinator::initialize(const GeneratorParams& params) {
   // Initialize harmony coordinator
   const auto& progression = midisketch::getChordProgression(chord_id_);
   harmony_->initialize(arrangement_, progression, params.mood);
+
+  // Pre-register secondary dominants before track generation.
+  // Uses a dedicated sub-RNG to avoid disturbing the main RNG stream.
+  {
+    constexpr uint32_t kSecDomSalt = 0x5ECD0A17;
+    uint32_t sec_dom_seed = params.seed ^ kSecDomSalt;
+    if (sec_dom_seed == 0) sec_dom_seed = kSecDomSalt;
+    std::mt19937 sec_dom_rng(sec_dom_seed);
+    planAndRegisterSecondaryDominants(arrangement_, progression, params.mood,
+                                      sec_dom_rng, *harmony_);
+  }
 
   // Set track priorities in harmony coordinator
   auto* harmony_coord = dynamic_cast<HarmonyCoordinator*>(harmony_.get());
@@ -134,6 +146,18 @@ void Coordinator::initialize(const GeneratorParams& params,
 
   // Use external harmony coordinator (shared with Generator)
   external_harmony_ = harmony;
+
+  // Pre-register secondary dominants before track generation.
+  // Uses a dedicated sub-RNG to avoid disturbing the main RNG stream.
+  {
+    const auto& progression = midisketch::getChordProgression(chord_id_);
+    constexpr uint32_t kSecDomSalt = 0x5ECD0A17;
+    uint32_t sec_dom_seed = params.seed ^ kSecDomSalt;
+    if (sec_dom_seed == 0) sec_dom_seed = kSecDomSalt;
+    std::mt19937 sec_dom_rng(sec_dom_seed);
+    planAndRegisterSecondaryDominants(arrangement_, progression, params.mood,
+                                      sec_dom_rng, *harmony);
+  }
 
   // Set track priorities in external harmony coordinator
   auto* harmony_coord = dynamic_cast<HarmonyCoordinator*>(harmony);

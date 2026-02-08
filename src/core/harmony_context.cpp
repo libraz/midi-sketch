@@ -80,6 +80,10 @@ void HarmonyContext::registerSecondaryDominant(Tick start, Tick end, int8_t degr
   chord_tracker_.registerSecondaryDominant(start, end, degree);
 }
 
+bool HarmonyContext::isSecondaryDominantAt(Tick tick) const {
+  return chord_tracker_.isSecondaryDominantAt(tick);
+}
+
 std::string HarmonyContext::dumpNotesAt(Tick tick, Tick range_ticks) const {
   return collision_detector_.dumpNotesAt(tick, range_ticks);
 }

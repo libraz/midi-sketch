@@ -52,6 +52,13 @@ class IHarmonyContext : public ICollisionDetector, public INoteRegistration {
    * @param degree Scale degree of the secondary dominant
    */
   virtual void registerSecondaryDominant(Tick start, Tick end, int8_t degree) = 0;
+
+  /**
+   * @brief Check if a secondary dominant is active at a given tick.
+   * @param tick Position in ticks
+   * @return true if a pre-registered secondary dominant covers this tick
+   */
+  virtual bool isSecondaryDominantAt(Tick tick) const = 0;
 };
 
 }  // namespace midisketch

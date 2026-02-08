@@ -141,6 +141,9 @@ FORWARD_VOID(registerTrack, const MidiTrack& track, TrackRole role) {
 FORWARD_VOID(registerSecondaryDominant, Tick start, Tick end, int8_t degree) {
   base_context_.registerSecondaryDominant(start, end, degree);
 }
+FORWARD_CONST(bool, isSecondaryDominantAt, Tick tick) {
+  return base_context_.isSecondaryDominantAt(tick);
+}
 
 #undef FORWARD_CONST
 #undef FORWARD_VOID

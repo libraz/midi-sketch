@@ -166,6 +166,25 @@ ChordBoundaryInfo ChordProgressionTracker::analyzeChordBoundary(uint8_t pitch, T
 
 void ChordProgressionTracker::clear() { chords_.clear(); }
 
+bool ChordProgressionTracker::isSecondaryDominantAt(Tick tick) const {
+  if (chords_.empty()) {
+    return false;
+  }
+
+  // Binary search: find first chord whose start > tick
+  auto it = std::upper_bound(chords_.begin(), chords_.end(), tick,
+                             [](Tick t, const ChordInfo& c) { return t < c.start; });
+
+  if (it != chords_.begin()) {
+    --it;
+    if (tick >= it->start && tick < it->end) {
+      return it->is_secondary_dominant;
+    }
+  }
+
+  return false;
+}
+
 void ChordProgressionTracker::registerSecondaryDominant(Tick start, Tick end, int8_t degree) {
   if (chords_.empty() || start >= end) {
     return;
@@ -181,12 +200,12 @@ void ChordProgressionTracker::registerSecondaryDominant(Tick start, Tick end, in
       // Shrink current chord to end at 'start'
       chord.end = start;
 
-      // Insert secondary dominant
-      ChordInfo sec_dom_info{start, end, degree};
+      // Insert secondary dominant with flag set
+      ChordInfo sec_dom_info{start, end, degree, true};
 
       // If there's remaining portion after the secondary dominant, add it back
       if (end < original_end) {
-        ChordInfo remaining{end, original_end, original_degree};
+        ChordInfo remaining{end, original_end, original_degree, false};
         // Insert both after current position
         chords_.insert(chords_.begin() + static_cast<long>(i) + 1, sec_dom_info);
         chords_.insert(chords_.begin() + static_cast<long>(i) + 2, remaining);

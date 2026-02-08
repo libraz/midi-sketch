@@ -29,6 +29,7 @@ set(TEST_SOURCES
   core/track_registration_guard_test.cpp
   core/call_test.cpp
   core/randomness_test.cpp
+  core/secondary_dominant_planner_test.cpp
   core/motif_test.cpp
   core/motif_transform_test.cpp
   core/struct_layout_test.cpp

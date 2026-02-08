@@ -10,8 +10,11 @@
 #include <set>
 #include <vector>
 
+#include "core/chord.h"
 #include "core/generator.h"
 #include "core/motif_types.h"
+#include "core/note_source.h"
+#include "core/pitch_utils.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
 #include "track/generators/motif.h"
@@ -1093,6 +1096,72 @@ TEST_F(MotifRhythmLockTest, MultipleSeeedsProduceValidRiffs) {
 
   EXPECT_GE(valid_riffs, 4) << "At least 4 out of 5 seeds should produce valid riffs";
 }
+
+// Test that RhythmLock motif notes are all diatonic (C major scale)
+TEST_F(MotifRhythmLockTest, AllNotesDiatonic) {
+  std::vector<uint32_t> test_seeds = {12345, 42, 99999, 54321, 777};
+
+  for (uint32_t seed : test_seeds) {
+    params_.seed = seed;
+    params_.structure = StructurePattern::FullPop;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& motif_notes = gen.getSong().motif().notes();
+    if (motif_notes.empty()) continue;
+
+    int non_diatonic = 0;
+    for (const auto& note : motif_notes) {
+      if (!isDiatonic(note.note)) {
+        non_diatonic++;
+      }
+    }
+
+    EXPECT_EQ(non_diatonic, 0)
+        << "Seed " << seed << ": Found " << non_diatonic
+        << " non-diatonic motif notes out of " << motif_notes.size();
+  }
+}
+
+// Test that RhythmLock motif has zero avoid notes against the current chord
+TEST_F(MotifRhythmLockTest, NoAvoidNotesAgainstChord) {
+  std::vector<uint32_t> test_seeds = {12345, 42, 99999, 54321, 777};
+
+  for (uint32_t seed : test_seeds) {
+    params_.seed = seed;
+    params_.structure = StructurePattern::FullPop;
+
+    Generator gen;
+    gen.generate(params_);
+
+    const auto& motif_notes = gen.getSong().motif().notes();
+    if (motif_notes.empty()) continue;
+
+    const auto& harmony = gen.getHarmonyContext();
+    int avoid_count = 0;
+
+    for (const auto& note : motif_notes) {
+      int8_t degree = harmony.getChordDegreeAt(note.start_tick);
+      uint8_t chord_root = degreeToRoot(degree, Key::C);
+      Chord chord = getChordNotes(degree);
+      bool is_minor = (chord.intervals[1] == 3);
+
+      if (isAvoidNoteWithContext(note.note, chord_root, is_minor, degree)) {
+        avoid_count++;
+      }
+    }
+
+    EXPECT_EQ(avoid_count, 0)
+        << "Seed " << seed << ": Found " << avoid_count
+        << " avoid notes in motif out of " << motif_notes.size();
+  }
+}
+
+// PostGenerationAvoidNoteCorrection test removed: secondary dominants are now
+// pre-registered before track generation (see secondary_dominant_planner.h),
+// so post-generation correction is no longer needed. The NoAvoidNotesAgainstChord
+// test above verifies the same invariant.
 
 // =============================================================================
 // Locked Note Caching Test (non-axis / MelodyDriven)
