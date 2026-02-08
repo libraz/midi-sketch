@@ -8,6 +8,7 @@
 #include <algorithm>
 
 #include "core/pitch_utils.h"
+#include "core/rng_util.h"
 
 namespace midisketch {
 
@@ -27,10 +28,8 @@ PhraseVariation selectPhraseVariation(int reuse_count, int occurrence, std::mt19
     exact_probability = 0.6f;
   }
 
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-
   // Roll for exact vs variation (kMaxExactReuse still applies for reuse_count==0 above)
-  if (reuse_count <= kMaxExactReuse && dist(rng) < exact_probability) {
+  if (reuse_count <= kMaxExactReuse && rng_util::rollProbability(rng, exact_probability)) {
     return PhraseVariation::Exact;
   }
 
@@ -61,8 +60,7 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes, PhraseVariation variati
       // Shift last note by ±1-2 scale degrees (not semitones)
       auto& last = notes.back();
       [[maybe_unused]] uint8_t old_pitch = last.note;  // For provenance tracking
-      std::uniform_int_distribution<int> shift_dist(-2, 2);
-      int shift = shift_dist(rng);
+      int shift = rng_util::rollRange(rng, -2, 2);
       if (shift == 0) shift = 1;
       // Shift by scale degrees: find current scale position and move
       int pc = getPitchClass(last.note);
@@ -110,8 +108,7 @@ void applyPhraseVariation(std::vector<NoteEvent>& notes, PhraseVariation variati
       if (notes.size() >= 2) {
         auto& last = notes.back();
         // Reduce duration by 60-120 ticks (1/8 to 1/4 beat of rest)
-        std::uniform_int_distribution<Tick> rest_dist(60, 120);
-        Tick rest_amount = rest_dist(rng);
+        Tick rest_amount = static_cast<Tick>(rng_util::rollRange(rng, 60, 120));
         if (last.duration > rest_amount + 60) {  // Keep at least 60 ticks
           last.duration -= rest_amount;
         }

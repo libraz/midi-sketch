@@ -419,6 +419,20 @@ export interface StylePresetInfo {
 }
 
 /**
+ * Chord event from generation (includes secondary dominants)
+ */
+export interface ChordEvent {
+  /** Start tick */
+  tick: number;
+  /** End tick */
+  endTick: number;
+  /** Scale degree (0-6) */
+  degree: number;
+  /** Whether this is a secondary dominant (V/x) */
+  isSecondaryDominant: boolean;
+}
+
+/**
  * Event data from generation
  */
 export interface EventData {
@@ -449,4 +463,6 @@ export interface EventData {
     start_seconds: number;
     end_seconds: number;
   }>;
+  /** Chord timeline with secondary dominant info */
+  chords?: ChordEvent[];
 }

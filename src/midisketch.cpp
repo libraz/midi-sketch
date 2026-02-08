@@ -326,7 +326,29 @@ std::string MidiSketch::getEventsJson() const {
         .endObject();
   }
 
-  w.endArray().endObject();
+  w.endArray();
+
+  // Chord timeline (includes secondary dominants)
+  w.beginArray("chords");
+  const auto& harmony = generator_.getHarmonyContext();
+  Tick current = 0;
+  while (current < total_ticks) {
+    int8_t degree = harmony.getChordDegreeAt(current);
+    bool is_sec_dom = harmony.isSecondaryDominantAt(current);
+    Tick next = harmony.getNextChordChangeTick(current);
+    if (next == 0 || next <= current) next = total_ticks;
+
+    w.beginObject()
+        .write("tick", current)
+        .write("endTick", next)
+        .write("degree", static_cast<int>(degree))
+        .write("isSecondaryDominant", is_sec_dom)
+        .endObject();
+    current = next;
+  }
+  w.endArray();
+
+  w.endObject();
 
   return oss.str();
 }

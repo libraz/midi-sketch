@@ -194,37 +194,6 @@ void generateCallsForSection(MidiTrack& track, const Section& section, IntroChan
   }
 }
 
-// Insert PPPH pattern at B→Chorus transitions.
-void insertPPPHAtBtoChorusImpl(MidiTrack& track, const std::vector<Section>& sections,
-                                bool notes_enabled) {
-  for (size_t i = 0; i + 1 < sections.size(); ++i) {
-    if (sections[i].type == SectionType::B && sections[i + 1].type == SectionType::Chorus) {
-      // Start PPPH at the last bar of B section
-      Tick ppph_start = sections[i].start_tick + (sections[i].bars - 1) * TICKS_PER_BAR;
-
-      // Add text marker
-      track.addText(ppph_start, "PPPH");
-
-      // Add the chant notes
-      addChantNotes(track, ppph_start, PPPH_PATTERN, notes_enabled);
-    }
-  }
-}
-
-// Insert MIX pattern at Intro sections.
-void insertMIXAtIntroImpl(MidiTrack& track, const std::vector<Section>& sections,
-                          bool notes_enabled) {
-  for (const auto& section : sections) {
-    if (section.type == SectionType::Intro) {
-      // Add text marker
-      track.addText(section.start_tick, "IntroMix");
-
-      // Add the intro MIX pattern
-      addChantNotes(track, section.start_tick, INTRO_MIX_PATTERN, notes_enabled);
-    }
-  }
-}
-
 }  // namespace
 
 void SEGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
@@ -255,10 +224,10 @@ void SEGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& 
     }
 
     // Insert PPPH at B→Chorus transitions (Wotagei culture)
-    insertPPPHAtBtoChorusImpl(track, sections, ctx.call_notes_enabled);
+    insertPPPHAtBtoChorus(track, sections, ctx.call_notes_enabled);
 
     // Insert MIX at Intro sections
-    insertMIXAtIntroImpl(track, sections, ctx.call_notes_enabled);
+    insertMIXAtIntro(track, sections, ctx.call_notes_enabled);
   }
 }
 
@@ -306,11 +275,30 @@ bool isCallEnabled(VocalStylePreset style) {
 
 void insertPPPHAtBtoChorus(MidiTrack& track, const std::vector<Section>& sections,
                            bool notes_enabled) {
-  insertPPPHAtBtoChorusImpl(track, sections, notes_enabled);
+  for (size_t idx = 0; idx + 1 < sections.size(); ++idx) {
+    if (sections[idx].type == SectionType::B && sections[idx + 1].type == SectionType::Chorus) {
+      // Start PPPH at the last bar of B section
+      Tick ppph_start = sections[idx].start_tick + (sections[idx].bars - 1) * TICKS_PER_BAR;
+
+      // Add text marker
+      track.addText(ppph_start, "PPPH");
+
+      // Add the chant notes
+      addChantNotes(track, ppph_start, PPPH_PATTERN, notes_enabled);
+    }
+  }
 }
 
 void insertMIXAtIntro(MidiTrack& track, const std::vector<Section>& sections, bool notes_enabled) {
-  insertMIXAtIntroImpl(track, sections, notes_enabled);
+  for (const auto& section : sections) {
+    if (section.type == SectionType::Intro) {
+      // Add text marker
+      track.addText(section.start_tick, "IntroMix");
+
+      // Add the intro MIX pattern
+      addChantNotes(track, section.start_tick, INTRO_MIX_PATTERN, notes_enabled);
+    }
+  }
 }
 
 }  // namespace midisketch

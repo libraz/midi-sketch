@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "core/chord_utils.h"
+#include "core/rng_util.h"
 
 namespace midisketch {
 namespace melody {
@@ -32,8 +33,7 @@ float ConsecutiveSameNoteTracker::getAllowProbability() const {
 
 bool ConsecutiveSameNoteTracker::shouldForceMovement(std::mt19937& rng) const {
   float allow_prob = getAllowProbability();
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-  return dist(rng) > allow_prob;
+  return !rng_util::rollProbability(rng, allow_prob);
 }
 
 bool isChordTone(int pitch_pc, int8_t chord_degree) {

@@ -10,6 +10,7 @@
 #include <random>
 
 #include "core/midi_track.h"
+#include "core/rng_util.h"
 #include "core/note_source.h"
 #include "core/section_types.h"
 #include "core/timing_constants.h"
@@ -87,11 +88,10 @@ inline void addKickWithHumanize(MidiTrack& track, Tick tick, Tick duration, uint
   // Scale humanize_amount by humanize_timing for unified control
   float effective_amount = humanize_amount * std::clamp(humanize_timing, 0.0f, 1.0f);
   int max_offset = static_cast<int>(SIXTEENTH * effective_amount);
-  std::uniform_int_distribution<int> offset_dist(-max_offset, max_offset);
 
   Tick humanized_tick = tick;
   if (max_offset > 0) {
-    int offset = offset_dist(rng);
+    int offset = rng_util::rollRange(rng, -max_offset, max_offset);
     humanized_tick = static_cast<Tick>(std::max(0, static_cast<int>(tick) + offset));
   }
 

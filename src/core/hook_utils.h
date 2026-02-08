@@ -13,6 +13,8 @@
 #include <random>
 #include <vector>
 
+#include "core/rng_util.h"
+
 #include "core/melody_types.h"
 #include "core/pitch_utils.h"
 #include "core/types.h"
@@ -441,8 +443,7 @@ inline HookSkeleton selectHookSkeleton(SectionType type, std::mt19937& rng,
                 weights.symmetric_arch + weights.anticipation_build + weights.echo_phrasing +
                 weights.stutter_repeat + weights.ostinato;
 
-  std::uniform_real_distribution<float> dist(0.0f, total);
-  float roll = dist(rng);
+  float roll = rng_util::rollFloat(rng, 0.0f, total);
 
   float cumulative = 0.0f;
   cumulative += weights.repeat;
@@ -542,8 +543,7 @@ inline HookBetrayal selectBetrayal(int repetition_index, std::mt19937& rng) {
 
   float total = kLastPitchWeight + kExtendOneWeight + kSingleRestWeight + kSingleLeapWeight;
 
-  std::uniform_real_distribution<float> dist(0.0f, total);
-  float roll = dist(rng);
+  float roll = rng_util::rollFloat(rng, 0.0f, total);
 
   float cumulative = 0.0f;
   cumulative += kLastPitchWeight;

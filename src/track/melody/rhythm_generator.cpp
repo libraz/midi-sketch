@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "core/chord_utils.h"
+#include "core/rng_util.h"
 #include "core/pitch_utils.h"
 #include "core/velocity.h"
 
@@ -21,7 +22,6 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
                                               float syncopation_weight,
                                               SectionType section_type, uint16_t bpm) {
   std::vector<RhythmNote> rhythm;
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
   float current_beat = 0.0f;
   float end_beat = static_cast<float>(phrase_beats);
@@ -68,7 +68,7 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
   // 0 = immediate 32nd notes, 1 = quarter accent first, 2 = gradual acceleration
   int ultra_start_pattern = 0;
   if (thirtysecond_ratio >= 0.8f) {
-    float r = dist(rng);
+    float r = rng_util::rollFloat(rng, 0.0f, 1.0f);
     if (r < 0.5f) {
       ultra_start_pattern = 0;  // 50%: immediate machine-gun
     } else if (r < 0.8f) {
@@ -100,8 +100,7 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
       float contextual_weight =
           getContextualSyncopationWeight(syncopation_weight, phrase_progress, beat_in_bar, section_type);
 
-      float synco_roll = dist(rng);
-      if (synco_roll < contextual_weight) {
+      if (rng_util::rollProbability(rng, contextual_weight)) {
         // Skip this strong beat, advance to the off-beat (8th note = 0.5 beats)
         apply_syncopation = true;
         current_beat += 0.5f;
@@ -164,7 +163,7 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
       // This creates J-POP/K-POP conversational feel with more rhythmic activity
       float eighth_prob = (0.30f + effective_sixteenth_density * 0.3f) * bpm_attenuation;
       float half_prob = tmpl.long_note_ratio * 0.8f * long_note_boost;
-      float roll = dist(rng);
+      float roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
       if (roll < eighth_prob) {
         eighths = 1.0f;  // 8th note
       } else if (roll < eighth_prob + half_prob) {
@@ -181,12 +180,12 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
         local_density_boost = kPostLongNoteDensityBoost;
       }
 
-      if (thirtysecond_ratio > 0.0f && dist(rng) < thirtysecond_ratio * local_density_boost) {
+      if (thirtysecond_ratio > 0.0f && rng_util::rollProbability(rng, thirtysecond_ratio * local_density_boost)) {
         eighths = 0.25f;  // 32nd note (0.25 eighth = 60 ticks)
-      } else if (dist(rng) < (0.35f + effective_sixteenth_density) * local_density_boost * bpm_attenuation) {
+      } else if (rng_util::rollProbability(rng, (0.35f + effective_sixteenth_density) * local_density_boost * bpm_attenuation)) {
         // 35% base + density bonus for 8th notes, attenuated at fast tempos
         eighths = 1.0f;  // 8th note
-      } else if (dist(rng) < tmpl.long_note_ratio * 0.5f * long_note_boost / local_density_boost) {
+      } else if (rng_util::rollProbability(rng, tmpl.long_note_ratio * 0.5f * long_note_boost / local_density_boost)) {
         eighths = 4.0f;  // Half note (boosted at fast tempos)
       } else {
         eighths = 2.0f;  // Quarter note
@@ -484,8 +483,7 @@ uint8_t selectPitchForLockedRhythmEnhanced(
 
   // Weighted probabilistic selection from top candidates
   // This maintains some variety while preferring better options
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-  float roll = dist(rng);
+  float roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
 
   // Top candidate: 55%, Second: 25%, Third: 15%, Fourth+: 5%
   if (roll < 0.55f || scored_candidates.size() == 1) {
@@ -497,8 +495,8 @@ uint8_t selectPitchForLockedRhythmEnhanced(
   } else if (scored_candidates.size() > 3) {
     // Random from remaining top candidates
     size_t max_idx = std::min(static_cast<size_t>(6), scored_candidates.size());
-    std::uniform_int_distribution<size_t> idx_dist(3, max_idx - 1);
-    return scored_candidates[idx_dist(rng)].first;
+    size_t rand_idx = static_cast<size_t>(rng_util::rollRange(rng, 3, static_cast<int>(max_idx - 1)));
+    return scored_candidates[rand_idx].first;
   }
 
   return scored_candidates[0].first;
@@ -525,7 +523,6 @@ std::vector<RhythmNote> generateMoraTimedRhythm(
     uint8_t phrase_beats, uint8_t target_note_count,
     float density_modifier, std::mt19937& rng) {
   std::vector<RhythmNote> rhythm;
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
   if (phrase_beats == 0 || target_note_count == 0) {
     return rhythm;
@@ -543,7 +540,7 @@ std::vector<RhythmNote> generateMoraTimedRhythm(
   std::vector<int> word_groups;
   int total_morae = 0;
   while (total_morae < target) {
-    float rand_val = dist(rng);
+    float rand_val = rng_util::rollFloat(rng, 0.0f, 1.0f);
     int group_size;
     if (rand_val < 0.15f) {
       group_size = 2;
@@ -595,7 +592,7 @@ std::vector<RhythmNote> generateMoraTimedRhythm(
 
       // Phrase-ending extension: last mora gets 1.5x-2x duration
       if (is_last_mora_overall) {
-        float extend = 1.5f + dist(rng) * 0.5f;  // 1.5x-2.0x
+        float extend = 1.5f + rng_util::rollFloat(rng, 0.0f, 1.0f) * 0.5f;  // 1.5x-2.0x
         duration *= extend;
       }
 

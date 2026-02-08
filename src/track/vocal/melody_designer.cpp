@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "core/chord_utils.h"
+#include "core/rng_util.h"
 #include "core/harmonic_rhythm.h"
 #include "core/hook_utils.h"
 #include "core/i_harmony_context.h"
@@ -547,8 +548,7 @@ std::vector<NoteEvent> MelodyDesigner::generateSectionWithEvaluation(
   }
 
   if (total_weight > 0.0f) {
-    std::uniform_real_distribution<float> dist(0.0f, total_weight);
-    float roll = dist(rng);
+    float roll = rng_util::rollFloat(rng, 0.0f, total_weight);
     float cumulative = 0.0f;
     for (size_t i = 0; i < keep_count; ++i) {
       cumulative += candidates[i].second;
@@ -659,9 +659,9 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     const GlobalMotif& motif = getMotifForSection(ctx.section_type);
 
     // Extract 2-4 intervals from the motif signature (random count for variety)
-    std::uniform_int_distribution<size_t> count_dist(2, std::min(static_cast<size_t>(4),
-                                                                  static_cast<size_t>(motif.interval_count)));
-    size_t fragment_length = count_dist(rng);
+    size_t fragment_length = static_cast<size_t>(rng_util::rollRange(rng, 2,
+        static_cast<int>(std::min(static_cast<size_t>(4),
+                                  static_cast<size_t>(motif.interval_count)))));
 
     for (size_t i = 0; i < fragment_length && i < motif.interval_count; ++i) {
       motif_fragment_intervals.push_back(motif.interval_signature[i]);
@@ -773,8 +773,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
           // Constrain to smaller steps within vowel section
           if (choice != PitchChoice::Same) {
             // Force step movement only
-            std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-            if (dist(rng) < 0.5f) {
+            if (rng_util::rollProbability(rng, 0.5f)) {
               choice = PitchChoice::Same;
             }
           }
@@ -818,9 +817,8 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     // Check if pending resolution should override the selected pitch
     if (leap_state.shouldApplyStep() && !result.notes.empty()) {
       float step_probability = ctx.prefer_stepwise ? 1.0f : 0.80f;
-      std::uniform_real_distribution<float> step_dist(0.0f, 1.0f);
 
-      if (step_dist(rng) < step_probability) {
+      if (rng_util::rollProbability(rng, step_probability)) {
         std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
         int best_step_pitch = melody::findStepwiseResolutionPitch(
             current_pitch, chord_tones, leap_state.direction, ctx.vocal_low, ctx.vocal_high);
@@ -953,8 +951,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     // For Chorus sections, prefer root note for maximum stability and memorability.
     // This creates natural phrase endings that singers instinctively expect.
     if (is_phrase_end && tmpl.phrase_end_resolution > 0.0f) {
-      std::uniform_real_distribution<float> resolve_dist(0.0f, 1.0f);
-      if (resolve_dist(rng) < tmpl.phrase_end_resolution) {
+      if (rng_util::rollProbability(rng, tmpl.phrase_end_resolution)) {
         std::vector<int> chord_tones = getChordTonePitchClasses(note_chord_degree);
         int pitch_pc = new_pitch % 12;
         bool is_chord_tone = false;
@@ -971,7 +968,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
                                  static_cast<int>(ctx.vocal_high));
         }
         // For Chorus sections, prefer root note resolution for strong cadence
-        if (ctx.section_type == SectionType::Chorus && resolve_dist(rng) < 0.6f) {
+        if (ctx.section_type == SectionType::Chorus && rng_util::rollProbability(rng, 0.6f)) {
           // Find root of current chord
           int root_pc = chord_tones.empty() ? 0 : chord_tones[0];
           // Find nearest root in vocal range

@@ -174,8 +174,6 @@ void generateGhostNotesForBeat(MidiTrack& track, const BeatContext& beat_ctx,
     ghost_prob *= params.groove_ghost_density;
   }
 
-  std::uniform_real_distribution<float> vel_variation(0.85f, 1.15f);
-
   bool is_after_snare = (beat_ctx.beat == 1 || beat_ctx.beat == 3);
 
   for (auto pos : ghost_positions) {
@@ -183,7 +181,7 @@ void generateGhostNotesForBeat(MidiTrack& track, const BeatContext& beat_ctx,
     float pos_prob = getGhostProbabilityAtPosition(beat_ctx.beat, sixteenth_in_beat, beat_ctx.mood);
 
     if (rng_util::rollProbability(beat_ctx.rng, ghost_prob * pos_prob)) {
-      float variation = vel_variation(beat_ctx.rng);
+      float variation = rng_util::rollFloat(beat_ctx.rng, 0.85f, 1.15f);
       float ghost_base = getGhostVelocity(beat_ctx.section_type, beat_ctx.beat % 2, is_after_snare);
       float base_ghost = beat_ctx.velocity * ghost_base * variation;
       uint8_t ghost_vel = static_cast<uint8_t>(std::clamp(base_ghost, 20.0f, 100.0f));

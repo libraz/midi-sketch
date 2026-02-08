@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "core/rng_util.h"
+
 namespace midisketch {
 namespace melody {
 
@@ -128,8 +130,7 @@ int applyLeapReversalRule(int new_pitch, int current_pitch, int prev_interval,
   if (best_reversal_pitch >= 0) {
     float reversal_probability = prefer_stepwise ? 1.0f
         : getReversalProbability(section_type_int, phrase_position);
-    std::uniform_real_distribution<float> rev_dist(0.0f, 1.0f);
-    if (rev_dist(rng) < reversal_probability) {
+    if (rng_util::rollProbability(rng, reversal_probability)) {
       return best_reversal_pitch;
     }
   }

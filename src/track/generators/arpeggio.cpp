@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "core/chord.h"
+#include "core/rng_util.h"
 #include "core/harmonic_rhythm.h"
 #include "core/i_harmony_context.h"
 #include "core/note_creator.h"
@@ -480,8 +481,7 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
           int density_threshold = getDensityThreshold(bc.section.getEffectiveBackingDensity());
           bool add_note = true;
           if (sec_params.effective_density < density_threshold) {
-            std::uniform_real_distribution<float> density_dist(0.0f, 100.0f);
-            add_note = (density_dist(rng) <= sec_params.effective_density);
+            add_note = (rng_util::rollFloat(rng, 0.0f, 100.0f) <= sec_params.effective_density);
           }
 
           if (add_note) {

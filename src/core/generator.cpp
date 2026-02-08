@@ -21,6 +21,7 @@
 #include <map>
 
 #include "core/chord.h"
+#include "core/rng_util.h"
 #include "core/chord_utils.h"
 #include "core/collision_resolver.h"
 #include "core/config_converter.h"
@@ -475,7 +476,6 @@ void Generator::generateVocal(const GeneratorParams& params) {
 
   // Build FullTrackContext
   FullTrackContext ctx = buildBaseContext();
-  ctx.skip_collision_avoidance = true;  // Vocal-first mode
   ctx.drum_grid = getDrumGrid();
 
   // RhythmSync: pass Motif as coordinate axis for Vocal generation
@@ -503,12 +503,10 @@ void Generator::regenerateVocal(uint32_t new_seed) {
     generateMotif();
   }
 
-  // Regenerate vocal with collision avoidance skipped
   VocalGenerator vocal_gen;
 
   // Build FullTrackContext
   FullTrackContext ctx = buildBaseContext();
-  ctx.skip_collision_avoidance = true;  // Vocal-first mode
   ctx.drum_grid = getDrumGrid();
 
   // RhythmSync: pass Motif as coordinate axis for Vocal generation
@@ -567,7 +565,6 @@ void Generator::regenerateVocal(const VocalConfig& config) {
 
   // Build FullTrackContext
   FullTrackContext ctx = buildBaseContext();
-  ctx.skip_collision_avoidance = true;  // Vocal-first mode
   ctx.drum_grid = getDrumGrid();
 
   // RhythmSync: pass Motif as coordinate axis for Vocal generation
@@ -1484,8 +1481,7 @@ void Generator::applyStaggeredEntryToSections() {
       apply_stagger = true;
     } else if (blueprint_ != nullptr && blueprint_->intro_stagger_percent > 0) {
       // Probabilistic application based on blueprint setting
-      std::uniform_int_distribution<uint8_t> dist(0, 99);
-      apply_stagger = dist(rng_) < blueprint_->intro_stagger_percent;
+      apply_stagger = rng_util::rollRange(rng_, 0, 99) < blueprint_->intro_stagger_percent;
     }
 
     if (apply_stagger) {

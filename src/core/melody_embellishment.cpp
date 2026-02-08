@@ -13,6 +13,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "core/rng_util.h"
+
 #include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
 #include "core/note_source.h"
@@ -54,8 +56,7 @@ constexpr int SIXTEENTH_NOTE_PROBABILITY = 25;
 // Returns the quantization grid size (TICK_EIGHTH or TICK_SIXTEENTH)
 // based on probability. 25% chance of using 16th note grid.
 inline Tick getQuantizationGrid(std::mt19937& rng) {
-  std::uniform_int_distribution<int> dist(0, 99);
-  return (dist(rng) < SIXTEENTH_NOTE_PROBABILITY) ? TICK_SIXTEENTH : TICK_EIGHTH;
+  return (rng_util::rollRange(rng, 0, 99) < SIXTEENTH_NOTE_PROBABILITY) ? TICK_SIXTEENTH : TICK_EIGHTH;
 }
 
 }  // namespace
@@ -204,7 +205,6 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
   std::vector<NoteEvent> result;
   result.reserve(skeleton.size() * 2);  // May add notes
 
-  std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
   int consecutive_ncts = 0;
 
   for (size_t i = 0; i < skeleton.size(); ++i) {
@@ -214,7 +214,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
     BeatStrength beat = getBeatStrength(current.start_tick);
     int8_t chord_degree = harmony.getChordDegreeAt(current.start_tick);
 
-    float roll = prob_dist(rng);
+    float roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
     float cumulative = 0.0f;
 
     // Reset consecutive NCT count on chord tones
@@ -251,7 +251,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
     if (roll < cumulative && beat != BeatStrength::Strong &&
         current.duration >= MIN_SPLIT_DURATION * 2 &&
         consecutive_ncts < config.max_consecutive_ncts) {
-      bool upper = prob_dist(rng) > 0.5f;
+      bool upper = rng_util::rollFloat(rng, 0.0f, 1.0f) > 0.5f;
       auto nt_pair = tryAddNeighborTone(current, upper, key_offset, config.prefer_pentatonic, rng);
       if (nt_pair && harmony.isConsonantWithOtherTracks(nt_pair->first.note, nt_pair->first.start_tick,
                                                          nt_pair->first.duration, TrackRole::Vocal)) {
@@ -269,7 +269,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
     if (roll < cumulative && beat == BeatStrength::Strong &&
         current.duration >= MIN_SPLIT_DURATION * 2 &&
         consecutive_ncts < config.max_consecutive_ncts) {
-      bool upper = prob_dist(rng) > 0.5f;
+      bool upper = rng_util::rollFloat(rng, 0.0f, 1.0f) > 0.5f;
       auto app_pair =
           tryConvertToAppoggiatura(current, upper, key_offset, config.chromatic_approach, rng);
       if (app_pair && harmony.isConsonantWithOtherTracks(app_pair->first.note,
@@ -287,7 +287,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
 
     // 4. Anticipation: syncopation before chord change
     cumulative += config.anticipation_ratio;
-    if (roll < cumulative && next != nullptr && prob_dist(rng) < config.syncopation_level &&
+    if (roll < cumulative && next != nullptr && rng_util::rollFloat(rng, 0.0f, 1.0f) < config.syncopation_level &&
         consecutive_ncts < config.max_consecutive_ncts) {
       // Check if chord changes between current and next
       int8_t next_chord_degree = harmony.getChordDegreeAt(next->start_tick);
@@ -313,7 +313,7 @@ std::vector<NoteEvent> MelodicEmbellisher::embellish(const std::vector<NoteEvent
 
     // 5. Tension: replace CT with tension tone (if enabled)
     if (config.enable_tensions && config.tension_ratio > 0.0f &&
-        prob_dist(rng) < config.tension_ratio) {
+        rng_util::rollFloat(rng, 0.0f, 1.0f) < config.tension_ratio) {
       auto tension_pitch = getTensionPitch(chord_degree, current.note, 48, 84, rng);
       if (tension_pitch &&
           harmony.isConsonantWithOtherTracks(*tension_pitch, current.start_tick, current.duration,
@@ -688,8 +688,7 @@ std::optional<uint8_t> MelodicEmbellisher::getTensionPitch(int8_t chord_degree, 
   if (tensions.empty()) return std::nullopt;
 
   // Random tension selection
-  std::uniform_int_distribution<size_t> dist(0, tensions.size() - 1);
-  int tension_pc = tensions[dist(rng)];
+  int tension_pc = rng_util::selectRandom(rng, tensions);
 
   // Find tension pitch near base
   int octave = base_pitch / 12;

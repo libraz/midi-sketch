@@ -9,6 +9,7 @@
 #include <random>
 
 #include "core/chord.h"
+#include "core/rng_util.h"
 #include "core/production_blueprint.h"
 
 namespace midisketch {
@@ -1174,8 +1175,7 @@ StructurePattern selectRandomForm(uint8_t style_id, uint32_t seed) {
 
   // Use seed to generate a random value
   std::mt19937 rng(seed);
-  std::uniform_int_distribution<uint32_t> dist(0, total_weight - 1);
-  uint32_t roll = dist(rng);
+  uint32_t roll = static_cast<uint32_t>(rng_util::rollRange(rng, 0, static_cast<int>(total_weight - 1)));
 
   // Select form based on weighted random roll
   uint32_t cumulative = 0;
@@ -1210,8 +1210,7 @@ VocalStylePreset selectRandomVocalStyle(uint8_t style_id, uint32_t seed) {
 
   // Use seed to generate a random value
   std::mt19937 rng(seed);
-  std::uniform_int_distribution<uint32_t> dist(0, total_weight - 1);
-  uint32_t roll = dist(rng);
+  uint32_t roll = static_cast<uint32_t>(rng_util::rollRange(rng, 0, static_cast<int>(total_weight - 1)));
 
   // Select style based on weighted random roll
   uint32_t cumulative = 0;

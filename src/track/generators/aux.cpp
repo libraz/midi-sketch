@@ -10,6 +10,7 @@
 #include <cmath>
 
 #include "core/chord.h"
+#include "core/rng_util.h"
 #include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
 #include "core/pitch_monotony_tracker.h"
@@ -625,8 +626,7 @@ std::vector<NoteEvent> AuxGenerator::generatePulseLoop(const AuxContext& ctx,
   if (ct.count == 0) return result;
 
   // Create a short repeating pattern (2-4 notes)
-  std::uniform_int_distribution<int> pattern_len_dist(2, 4);
-  int pattern_length = pattern_len_dist(rng);
+  int pattern_length = rng_util::rollRange(rng, 2, 4);
 
   // Build pattern pitches from chord tones
   std::vector<uint8_t> pattern_pitches;
@@ -653,8 +653,7 @@ std::vector<NoteEvent> AuxGenerator::generatePulseLoop(const AuxContext& ctx,
 
   while (current_tick < ctx.section_end) {
     // A2: Apply density ratio (EventProbability behavior)
-    std::uniform_real_distribution<float> density_dist(0.0f, 1.0f);
-    if (density_dist(rng) > config.density_ratio * meta.base_density) {
+    if (!rng_util::rollProbability(rng, config.density_ratio * meta.base_density)) {
       current_tick += note_duration;
       continue;
     }
@@ -674,7 +673,6 @@ std::vector<NoteEvent> AuxGenerator::generatePulseLoop(const AuxContext& ctx,
   // Call-and-response: Add response notes at vocal rest positions (60% probability)
   // This creates musical conversation with the vocal line
   if (ctx.rest_positions != nullptr && !ctx.rest_positions->empty()) {
-    std::uniform_real_distribution<float> response_dist(0.0f, 1.0f);
     constexpr float kResponseProbability = 0.60f;
     uint8_t response_velocity =
         static_cast<uint8_t>(std::min(static_cast<int>(velocity * 1.1f), 127));  // Slightly louder
@@ -685,7 +683,7 @@ std::vector<NoteEvent> AuxGenerator::generatePulseLoop(const AuxContext& ctx,
       }
 
       // 60% chance to add a response note at this rest position
-      if (response_dist(rng) > kResponseProbability) {
+      if (!rng_util::rollProbability(rng, kResponseProbability)) {
         continue;
       }
 
@@ -754,8 +752,7 @@ std::vector<NoteEvent> AuxGenerator::generateTargetHint(const AuxContext& ctx,
   // Add hints before phrase ends
   for (Tick phrase_end : phrase_ends) {
     // A2: Apply density ratio (EventProbability behavior)
-    std::uniform_real_distribution<float> density_dist(0.0f, 1.0f);
-    if (density_dist(rng) > config.density_ratio * meta.base_density) continue;
+    if (!rng_util::rollProbability(rng, config.density_ratio * meta.base_density)) continue;
 
     // Play hint note half a bar before phrase end
     Tick hint_start = phrase_end - TICK_HALF;
@@ -765,8 +762,7 @@ std::vector<NoteEvent> AuxGenerator::generateTargetHint(const AuxContext& ctx,
     ChordTones ct = getChordTones(ctx.chord_degree);
     if (ct.count == 0) continue;
 
-    std::uniform_int_distribution<int> tone_dist(0, ct.count - 1);
-    int pc = ct.pitch_classes[tone_dist(rng)];
+    int pc = ct.pitch_classes[rng_util::rollRange(rng, 0, ct.count - 1)];
     if (pc < 0) continue;
 
     int octave = (aux_low + aux_high) / 2 / 12;
@@ -816,8 +812,7 @@ std::vector<NoteEvent> AuxGenerator::generateGrooveAccent(const AuxContext& ctx,
     Tick beat2 = current_bar + TICKS_PER_BEAT;
     if (beat2 >= ctx.section_start && beat2 < ctx.section_end) {
       // A2: Apply density ratio (EventProbability behavior)
-      std::uniform_real_distribution<float> density_dist(0.0f, 1.0f);
-      if (density_dist(rng) < config.density_ratio * meta.base_density) {
+      if (rng_util::rollProbability(rng, config.density_ratio * meta.base_density)) {
         // A7: Use function-specific dissonance tolerance (very low for accents)
         uint8_t pitch =
             resolveAuxPitch(root_pitch, beat2, TICK_EIGHTH, ctx.main_melody, harmony, aux_low,
@@ -829,8 +824,7 @@ std::vector<NoteEvent> AuxGenerator::generateGrooveAccent(const AuxContext& ctx,
     // Beat 4
     Tick beat4 = current_bar + TICKS_PER_BEAT * 3;
     if (beat4 >= ctx.section_start && beat4 < ctx.section_end) {
-      std::uniform_real_distribution<float> density_dist(0.0f, 1.0f);
-      if (density_dist(rng) < config.density_ratio * meta.base_density) {
+      if (rng_util::rollProbability(rng, config.density_ratio * meta.base_density)) {
         uint8_t pitch =
             resolveAuxPitch(root_pitch, beat4, TICK_EIGHTH, ctx.main_melody, harmony, aux_low,
                          aux_high, meta.dissonance_tolerance);
@@ -844,7 +838,6 @@ std::vector<NoteEvent> AuxGenerator::generateGrooveAccent(const AuxContext& ctx,
   // Call-and-response: Add accent notes at vocal rest positions (50% probability)
   // Creates rhythmic conversation during vocal pauses
   if (ctx.rest_positions != nullptr && !ctx.rest_positions->empty()) {
-    std::uniform_real_distribution<float> response_dist(0.0f, 1.0f);
     constexpr float kAccentProbability = 0.50f;
     uint8_t accent_velocity =
         static_cast<uint8_t>(std::min(static_cast<int>(velocity * 1.15f), 127));  // Accented
@@ -855,7 +848,7 @@ std::vector<NoteEvent> AuxGenerator::generateGrooveAccent(const AuxContext& ctx,
       }
 
       // 50% chance to add an accent at this rest position
-      if (response_dist(rng) > kAccentProbability) {
+      if (!rng_util::rollProbability(rng, kAccentProbability)) {
         continue;
       }
 
@@ -943,8 +936,7 @@ std::vector<NoteEvent> AuxGenerator::generatePhraseTail(const AuxContext& ctx,
   // Generate tail notes
   for (const auto& [phrase_end, last_pitch] : phrase_info) {
     // A2: Apply density ratio (SkipRatio behavior)
-    std::uniform_real_distribution<float> density_dist(0.0f, 1.0f);
-    if (density_dist(rng) > config.density_ratio * meta.base_density) continue;
+    if (!rng_util::rollProbability(rng, config.density_ratio * meta.base_density)) continue;
 
     // Add tail note after phrase ending
     Tick tail_start = phrase_end + TICK_EIGHTH;
@@ -1043,10 +1035,9 @@ std::vector<NoteEvent> AuxGenerator::generateEmotionalPad(const AuxContext& ctx,
 
     // A6: Add tension note (9th or sus4) at section ending
     if (is_section_ending && voice_count >= 2) {
-      std::uniform_real_distribution<float> tension_dist(0.0f, 1.0f);
-      if (tension_dist(rng) < 0.5f) {  // 50% chance of tension
+      if (rng_util::rollProbability(rng, 0.5f)) {  // 50% chance of tension
         // Add 9th (2 semitones above root) or sus4 (5 semitones above root)
-        int tension_pc = (tension_dist(rng) < 0.5f) ? (root_pc + 2) % 12 : (root_pc + 5) % 12;
+        int tension_pc = rng_util::rollProbability(rng, 0.5f) ? (root_pc + 2) % 12 : (root_pc + 5) % 12;
         uint8_t tension_pitch = static_cast<uint8_t>(octave * 12 + tension_pc);
         tension_pitch = std::clamp(tension_pitch, aux_low, aux_high);
 
@@ -1260,18 +1251,14 @@ std::vector<NoteEvent> AuxGenerator::generateUnison(
     return result;
   }
 
-  // Timing offset distribution (±5-10 ticks for natural doubling feel)
-  std::uniform_int_distribution<int> offset_dist(5, 10);
-  std::uniform_int_distribution<int> sign_dist(0, 1);
-
   for (const auto& note : *ctx.main_melody) {
     // Only process notes within section range
     if (note.start_tick < ctx.section_start || note.start_tick >= ctx.section_end) continue;
 
     NoteEvent unison = note;
 
-    // Add slight timing offset for natural doubling feel
-    int offset = offset_dist(rng) * (sign_dist(rng) ? 1 : -1);
+    // Add slight timing offset for natural doubling feel (+-5-10 ticks)
+    int offset = rng_util::rollRange(rng, 5, 10) * (rng_util::rollRange(rng, 0, 1) ? 1 : -1);
     unison.start_tick = static_cast<Tick>(
         std::max(static_cast<int>(ctx.section_start), static_cast<int>(note.start_tick) + offset));
 
@@ -1303,10 +1290,6 @@ std::vector<NoteEvent> AuxGenerator::generateHarmony(const AuxContext& ctx,
     return result;
   }
 
-  // Timing offset distribution
-  std::uniform_int_distribution<int> offset_dist(3, 8);
-  std::uniform_int_distribution<int> sign_dist(0, 1);
-
   int note_count = 0;
   for (const auto& note : *ctx.main_melody) {
     // Only process notes within section range
@@ -1333,7 +1316,7 @@ std::vector<NoteEvent> AuxGenerator::generateHarmony(const AuxContext& ctx,
     }
 
     // Add slight timing offset FIRST
-    int offset = offset_dist(rng) * (sign_dist(rng) ? 1 : -1);
+    int offset = rng_util::rollRange(rng, 3, 8) * (rng_util::rollRange(rng, 0, 1) ? 1 : -1);
     harm.start_tick = static_cast<Tick>(
         std::max(static_cast<int>(ctx.section_start), static_cast<int>(note.start_tick) + offset));
 
@@ -1411,8 +1394,6 @@ std::vector<NoteEvent> AuxGenerator::generateMelodicHook(const AuxContext& ctx,
   Tick section_length = ctx.section_end - ctx.section_start;
   int phrases_needed = static_cast<int>(section_length / HOOK_PHRASE_TICKS);
 
-  std::uniform_int_distribution<int> variation_dist(-2, 2);
-
   for (int phrase = 0; phrase < phrases_needed; ++phrase) {
     Tick phrase_start = ctx.section_start + phrase * HOOK_PHRASE_TICKS;
 
@@ -1422,7 +1403,7 @@ std::vector<NoteEvent> AuxGenerator::generateMelodicHook(const AuxContext& ctx,
 
       // Apply variation on the B phrase (every 4th phrase)
       if (phrase % 4 == 3) {
-        int variation = variation_dist(rng);
+        int variation = rng_util::rollRange(rng, -2, 2);
         int new_pitch = hook_note.note + variation;
 #ifdef MIDISKETCH_NOTE_PROVENANCE
         uint8_t old_pitch = hook_note.note;
@@ -1536,8 +1517,7 @@ std::vector<NoteEvent> AuxGenerator::generateMotifCounter(const AuxContext& ctx,
 
     while (current_tick < phrase_end) {
       // Apply density ratio
-      std::uniform_real_distribution<float> density_dist(0.0f, 1.0f);
-      if (density_dist(rng) > config.density_ratio * meta.base_density) {
+      if (!rng_util::rollProbability(rng, config.density_ratio * meta.base_density)) {
         current_tick += base_note_duration;
         continue;
       }
@@ -1614,8 +1594,7 @@ std::vector<NoteEvent> AuxGenerator::generateMotifCounter(const AuxContext& ctx,
       }
 
       // Apply density
-      std::uniform_real_distribution<float> density_dist(0.0f, 1.0f);
-      if (density_dist(rng) > config.density_ratio) {
+      if (!rng_util::rollProbability(rng, config.density_ratio)) {
         continue;
       }
 
@@ -1817,8 +1796,7 @@ std::vector<NoteEvent> AuxGenerator::generateSustainPad(const AuxContext& ctx,
     }
 
     // Optional: Add subtle variation every other bar
-    std::uniform_real_distribution<float> variation_dist(0.0f, 1.0f);
-    if (variation_dist(rng) < 0.3f && voice_count >= 2) {
+    if (rng_util::rollProbability(rng, 0.3f) && voice_count >= 2) {
       // Occasionally add fifth for richer texture
       int fifth_pc = (current_ct.count >= 3) ? current_ct.pitch_classes[2] : root_pc;
       uint8_t fifth_pitch = static_cast<uint8_t>(std::clamp(octave * 12 + fifth_pc + 12, 48, 96));

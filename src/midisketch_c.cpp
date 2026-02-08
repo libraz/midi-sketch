@@ -622,8 +622,21 @@ void fillPianoRollInfo(MidiSketchPianoRollInfo* info, const midisketch::Song& so
   info->current_key = midisketch::getCurrentKey(song, tick, base_key);
 
   // Get chord tones and tensions for current degree
-  auto chord_tones = midisketch::getChordTonePitchClasses(info->chord_degree);
-  auto tensions = midisketch::getAvailableTensionPitchClasses(info->chord_degree);
+  bool is_sec_dom = harmony.isSecondaryDominantAt(tick);
+  std::vector<int> chord_tones;
+  std::vector<int> tensions;
+  if (is_sec_dom) {
+    // Secondary dominants use Dom7 quality regardless of diatonic chord type
+    int normalized = ((info->chord_degree % 7) + 7) % 7;
+    int root_pc = (midisketch::SCALE[normalized] + info->current_key) % 12;
+    // Dom7 intervals: root, major 3rd, perfect 5th, minor 7th
+    chord_tones = {root_pc, (root_pc + 4) % 12, (root_pc + 7) % 12, (root_pc + 10) % 12};
+    // Dom7 tensions: 9th and 13th
+    tensions = {(root_pc + 2) % 12, (root_pc + 9) % 12};
+  } else {
+    chord_tones = midisketch::getChordTonePitchClasses(info->chord_degree);
+    tensions = midisketch::getAvailableTensionPitchClasses(info->chord_degree);
+  }
   auto scale_tones = midisketch::getScalePitchClasses(info->current_key);
 
   // Clear recommended notes

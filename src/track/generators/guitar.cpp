@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "core/chord.h"
+#include "core/rng_util.h"
 #include "core/harmonic_rhythm.h"
 #include "core/i_harmony_context.h"
 #include "core/note_creator.h"
@@ -226,14 +227,12 @@ static void generateStrumBar(MidiTrack& track, IHarmonyContext& harmony,
 
   Tick strum_dur = static_cast<Tick>(TICK_EIGHTH * 0.75f);
 
-  std::uniform_int_distribution<int> skip_dist(0, 5);
-
   for (int s = 0; s < kStrumCount; ++s) {
     Tick pos = bar_start + kStrumPositions[s] * TICK_EIGHTH;
     if (pos + strum_dur > bar_end) break;
 
     // Occasional skip for groove variation (20% chance on weak positions)
-    if (s > 0 && skip_dist(rng) == 0) continue;
+    if (s > 0 && rng_util::rollRange(rng, 0, 5) == 0) continue;
 
     int beat_pos = kStrumPositions[s] / 2;
     uint8_t vel = calculateGuitarVelocity(base_vel, section, GuitarStyle::Strum, beat_pos);
@@ -332,7 +331,6 @@ static void generatePedalToneBar(MidiTrack& track, IHarmonyContext& harmony,
   while (base_root >= kBaseOctave + 12) base_root -= 12;
 
   // Decoration chance: 5-10% on non-accent positions
-  std::uniform_int_distribution<int> decorate_dist(0, 14);  // ~7% chance
 
   for (int pos_idx = 0; pos_idx < kNotesPerBar; ++pos_idx) {
     Tick pos = bar_start + pos_idx * TICK_SIXTEENTH;
@@ -354,7 +352,7 @@ static void generatePedalToneBar(MidiTrack& track, IHarmonyContext& harmony,
 
     // Occasional decoration on non-accent positions: 5th (+7) or extra octave
     bool is_accent = (pos_idx % 4 == 0);
-    if (!is_accent && decorate_dist(rng) == 0) {
+    if (!is_accent && rng_util::rollRange(rng, 0, 14) == 0) {  // ~7% chance
       pitch = base_root + 7;  // perfect 5th
     }
 
@@ -397,16 +395,13 @@ static void generateRhythmChordBar(MidiTrack& track, IHarmonyContext& harmony,
 
   uint8_t fifth = base_root + 7;  // perfect 5th
 
-  // Skip distribution: ~25% chance on weak positions
-  std::uniform_int_distribution<int> skip_dist(0, 3);
-
   for (int pos_idx = 0; pos_idx < kNotesPerBar; ++pos_idx) {
     Tick pos = bar_start + pos_idx * TICK_SIXTEENTH;
     if (pos + note_dur > bar_end) break;
 
     // ~25% skip on weak 16th positions
     bool is_beat_head = (pos_idx % 4 == 0);
-    if (!is_beat_head && skip_dist(rng) == 0) continue;
+    if (!is_beat_head && rng_util::rollRange(rng, 0, 3) == 0) continue;
 
     int beat_pos = pos_idx / 4;
     uint8_t vel = calculateGuitarVelocity(base_vel, section, GuitarStyle::RhythmChord, beat_pos);

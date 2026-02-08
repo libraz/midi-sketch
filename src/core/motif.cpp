@@ -8,6 +8,7 @@
 #include <algorithm>
 
 #include "core/chord_utils.h"
+#include "core/rng_util.h"
 #include "core/note_creator.h"
 #include "core/pitch_utils.h"
 
@@ -103,10 +104,9 @@ Motif applyVariation(const Motif& original, MotifVariation variation, int8_t par
     case MotifVariation::Embellished:
       // Add passing tones (simplified: just add some variation to degrees)
       {
-        std::uniform_int_distribution<int> dist(-1, 1);
         for (size_t i = 1; i < result.contour_degrees.size() - 1; ++i) {
           if (!result.rhythm[i].strong) {
-            int8_t delta = static_cast<int8_t>(dist(rng));
+            int8_t delta = static_cast<int8_t>(rng_util::rollRange(rng, -1, 1));
             result.contour_degrees[i] += delta;
             if (i < result.absolute_pitches.size()) {
               result.absolute_pitches[i] = static_cast<uint8_t>(
@@ -163,9 +163,8 @@ Motif designChorusHook(const StyleMelodyParams& params, std::mt19937& rng) {
   // - hook_repetition=false: random selection for variety
   size_t contour_idx = 0;
   if (!params.hook_repetition) {
-    std::uniform_int_distribution<size_t> contour_dist(
-        1, kMemorableHookContourCount - 1);  // Skip Type 0 (reserved for repetition)
-    contour_idx = contour_dist(rng);
+    contour_idx = static_cast<size_t>(rng_util::rollRange(rng, 1,
+        static_cast<int>(kMemorableHookContourCount - 1)));  // Skip Type 0 (reserved for repetition)
   }
   const int8_t* selected_contour = kMemorableHookContours[contour_idx];
 
@@ -217,8 +216,7 @@ Motif designChorusHook(const StyleMelodyParams& params, std::mt19937& rng) {
 MotifVariation selectHookVariation(std::mt19937& rng) {
   // "Variation is the enemy, Exact is justice"
   // 80% Exact (main), 20% Fragmented (allowed exception)
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-  if (dist(rng) < 0.8f) {
+  if (rng_util::rollProbability(rng, 0.8f)) {
     return MotifVariation::Exact;
   }
   return MotifVariation::Fragmented;
@@ -386,9 +384,8 @@ std::vector<NoteEvent> placeMotifInBridge(const Motif& motif, Tick section_start
                                           const IHarmonyContext& harmony, TrackRole track) {
   // Apply variation for Bridge: 50% Inverted, 50% Fragmented
   // This creates contrast while maintaining thematic connection
-  std::uniform_int_distribution<int> var_dist(0, 1);
   MotifVariation variation =
-      (var_dist(rng) == 0) ? MotifVariation::Inverted : MotifVariation::Fragmented;
+      (rng_util::rollRange(rng, 0, 1) == 0) ? MotifVariation::Inverted : MotifVariation::Fragmented;
 
   Motif varied = applyVariation(motif, variation, 0, rng);
 

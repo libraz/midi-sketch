@@ -5,6 +5,7 @@
 
 #include "track/drums/fill_generator.h"
 
+#include "core/rng_util.h"
 #include "track/drums/drum_constants.h"
 
 namespace midisketch {
@@ -27,15 +28,13 @@ FillType selectFillType(SectionType from, SectionType to, DrumStyle style,
                         SectionEnergy next_energy, std::mt19937& rng) {
   // Sparse style: simple crash or breakdown fill
   if (style == DrumStyle::Sparse) {
-    std::uniform_int_distribution<int> sparse_dist(0, 1);
-    return sparse_dist(rng) == 0 ? FillType::SimpleCrash : FillType::BreakdownFill;
+    return rng_util::rollRange(rng, 0, 1) == 0 ? FillType::SimpleCrash : FillType::BreakdownFill;
   }
 
   // Energy-based bias for destination section
   if (next_energy == SectionEnergy::Low) {
     // Low energy destination: subtle fills only
-    std::uniform_int_distribution<int> low_dist(0, 2);
-    switch (low_dist(rng)) {
+    switch (rng_util::rollRange(rng, 0, 2)) {
       case 0: return FillType::SimpleCrash;
       case 1: return FillType::BreakdownFill;
       default: return FillType::HalfTimeFill;
@@ -44,8 +43,7 @@ FillType selectFillType(SectionType from, SectionType to, DrumStyle style,
 
   if (next_energy == SectionEnergy::Peak) {
     // Peak energy destination: dramatic fills for maximum impact
-    std::uniform_int_distribution<int> peak_dist(0, 3);
-    switch (peak_dist(rng)) {
+    switch (rng_util::rollRange(rng, 0, 3)) {
       case 0: return FillType::TomDescend;
       case 1: return FillType::SnareRoll;
       case 2: return FillType::LinearFill;
@@ -59,8 +57,7 @@ FillType selectFillType(SectionType from, SectionType to, DrumStyle style,
   bool from_intro = (from == SectionType::Intro);
   bool high_energy = (style == DrumStyle::Rock || style == DrumStyle::FourOnFloor);
 
-  std::uniform_int_distribution<int> fill_dist(0, 7);
-  int choice = fill_dist(rng);
+  int choice = rng_util::rollRange(rng, 0, 7);
 
   // Into Chorus: prefer dramatic fills
   if (to_chorus) {

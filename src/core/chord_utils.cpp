@@ -10,6 +10,7 @@
 #include <random>
 
 #include "core/chord.h"
+#include "core/rng_util.h"
 #include "core/i_harmony_context.h"
 
 namespace midisketch {
@@ -337,8 +338,7 @@ int stepwiseToTarget(int prev_pitch, int target_pitch, int8_t chord_degree, int 
     return std::clamp(prev_pitch, range_low, range_high);
   }
   if (rng != nullptr && prefer_same_note > 0) {
-    std::uniform_int_distribution<int> dist(0, 99);
-    if (dist(*rng) < prefer_same_note) {
+    if (rng_util::rollRange(*rng, 0, 99) < prefer_same_note) {
       return std::clamp(prev_pitch, range_low, range_high);
     }
   }
@@ -356,8 +356,7 @@ int stepwiseToTarget(int prev_pitch, int target_pitch, int8_t chord_degree, int 
 
   bool prefer_half_step = is_leading_tone_resolution;
   if (!prefer_half_step && rng != nullptr) {
-    std::uniform_int_distribution<int> step_dist(0, 99);
-    prefer_half_step = (step_dist(*rng) < 30);  // 30% chance
+    prefer_half_step = (rng_util::rollRange(*rng, 0, 99) < 30);  // 30% chance
   }
 
   // Try step motion (1-2 semitones in the direction)

@@ -107,7 +107,6 @@ PitchChoice applyDirectionInertia(PitchChoice choice, int inertia,
   // Coefficient 0.7 for better melodic continuity (was 0.5)
   constexpr float kInertiaCoefficient = 0.7f;
 
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
   int abs_inertia = std::abs(inertia);
 
   // Decay after 3 consecutive same-direction moves to prevent monotony

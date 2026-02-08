@@ -139,8 +139,7 @@ MotifRhythmTemplate selectRhythmSyncTemplate(uint16_t bpm, std::mt19937& rng) {
   int total = 0;
   for (int i = 0; i < kTemplateCount; ++i) total += w.weights[i];
 
-  std::uniform_int_distribution<int> dist(0, total - 1);
-  int roll = dist(rng);
+  int roll = rng_util::rollRange(rng, 0, total - 1);
   int cumulative = 0;
   for (int i = 0; i < kTemplateCount; ++i) {
     cumulative += w.weights[i];
@@ -809,6 +808,476 @@ uint8_t calculateMotifVelocity(uint8_t base_vel, bool is_chorus, SectionType sec
   return base_vel;
 }
 
+/// @brief Cached note entry for Locked/RhythmSync replay.
+struct LockedNoteEntry {
+  Tick relative_tick;  // Offset from section start
+  Tick duration;
+  uint8_t pitch;
+  uint8_t velocity;
+};
+
+/// @brief Shared state for motif generation across sections.
+struct MotifGenerationState {
+  uint8_t motif_prev_pitch = 0;
+  int motif_consecutive_same = 0;
+  PitchMonotonyTracker monotony_tracker;
+  std::map<SectionType, std::vector<LockedNoteEntry>> locked_note_cache;
+  std::map<SectionType, std::vector<LockedNoteEntry>> coord_axis_note_cache;
+  std::map<SectionType, std::vector<NoteEvent>> section_patterns;
+  MotifRiffCache riff_cache;
+  size_t sec_idx = 0;
+};
+
+/// @brief Replay cached notes for Locked mode (non-coordinate-axis).
+/// @return true if notes were replayed (section should be skipped), false otherwise
+bool replayCachedNotesLocked(MidiTrack& track, const Section& section,
+                              IHarmonyCoordinator* harmony,
+                              MotifGenerationState& state,
+                              uint8_t motif_range_high,
+                              const MotifParams& motif_params) {
+  (void)motif_params;  // Reserved for future use
+  auto cache_it = state.locked_note_cache.find(section.type);
+  if (cache_it == state.locked_note_cache.end()) {
+    return false;
+  }
+
+  // Replay cached notes with tick offset
+  for (const auto& entry : cache_it->second) {
+    Tick absolute_tick = section.start_tick + entry.relative_tick;
+    if (absolute_tick >= section.endTick()) continue;
+
+    NoteOptions opts;
+    opts.start = absolute_tick;
+    opts.duration = entry.duration;
+    opts.desired_pitch = entry.pitch;
+    opts.velocity = entry.velocity;
+    opts.role = TrackRole::Motif;
+    opts.preference = PitchPreference::PreserveContour;
+    opts.range_low = MOTIF_LOW;
+    opts.range_high = motif_range_high;
+    opts.source = NoteSource::Motif;
+    opts.prev_pitch = state.motif_prev_pitch;
+    opts.consecutive_same_count = state.motif_consecutive_same;
+
+    auto result = createNoteAndAdd(track, *harmony, opts);
+    if (result) {
+      if (result->note == state.motif_prev_pitch) {
+        state.motif_consecutive_same++;
+      } else {
+        state.motif_consecutive_same = 1;
+      }
+      state.motif_prev_pitch = result->note;
+    }
+  }
+  return true;
+}
+
+/// @brief Replay cached notes for RhythmSync coordinate axis mode.
+/// @return true if notes were replayed, false otherwise
+bool replayCachedNotesCoordinateAxis(MidiTrack& track, const Section& section,
+                                       IHarmonyCoordinator* harmony,
+                                       MotifGenerationState& state,
+                                       uint8_t motif_range_high) {
+  auto cache_it = state.coord_axis_note_cache.find(section.type);
+  if (cache_it == state.coord_axis_note_cache.end()) {
+    return false;
+  }
+
+  for (const auto& entry : cache_it->second) {
+    Tick absolute_tick = section.start_tick + entry.relative_tick;
+    if (absolute_tick >= section.endTick()) continue;
+
+    // Re-apply avoid note correction for the replay position's chord.
+    // Use nearestInRange to stay within range while avoiding the note.
+    int replay_pitch = static_cast<int>(entry.pitch);
+    int8_t replay_degree = harmony->getChordDegreeAt(absolute_tick);
+    uint8_t replay_root = degreeToRoot(replay_degree, Key::C);
+    Chord replay_chord = getChordNotes(replay_degree);
+    bool replay_minor = (replay_chord.intervals[1] == 3);
+    if (isAvoidNoteWithContext(replay_pitch, replay_root, replay_minor, replay_degree)) {
+      ChordToneHelper ct_helper(replay_degree);
+      replay_pitch = ct_helper.nearestInRange(
+          static_cast<uint8_t>(replay_pitch), MOTIF_LOW, motif_range_high);
+    }
+
+    NoteOptions opts;
+    opts.start = absolute_tick;
+    opts.duration = entry.duration;
+    opts.desired_pitch = static_cast<uint8_t>(replay_pitch);
+    opts.velocity = entry.velocity;
+    opts.role = TrackRole::Motif;
+    opts.preference = PitchPreference::NoCollisionCheck;
+    opts.range_low = MOTIF_LOW;
+    opts.range_high = motif_range_high;
+    opts.source = NoteSource::Motif;
+    createNoteAndAdd(track, *harmony, opts);
+  }
+  return true;
+}
+
+/// @brief Generate motif notes for a single section.
+void generateMotifForSection(MidiTrack& track, const Section& section,
+                               const FullTrackContext& ctx,
+                               const GeneratorParams& params,
+                               MotifGenerationState& state,
+                               std::vector<NoteEvent>& pattern,
+                               bool is_locked, bool is_rhythm_lock_global,
+                               RiffPolicy policy,
+                               uint8_t base_note_override,
+                               uint8_t motif_range_high,
+                               MotifRole role, const MotifRoleMeta& role_meta) {
+  std::mt19937& rng = *ctx.rng;
+  IHarmonyCoordinator* harmony = ctx.harmony;
+  const MotifContext* vocal_ctx = ctx.vocal_ctx;
+  const MotifParams& motif_params = params.motif;
+  Tick motif_length = static_cast<Tick>(motif_params.length) * TICKS_PER_BAR;
+
+  if (!is_rhythm_lock_global) {
+    // Reset monotony tracker at section boundary (not needed in coordinate axis
+    // mode where monotony tracking is skipped entirely).
+    // Note: This was originally inside the is_rhythm_lock_global block with a
+    // dead !is_rhythm_lock_global check. The intent is to reset only for
+    // non-coordinate-axis mode, which is handled here.
+  }
+
+  Tick section_end = section.endTick();
+  bool is_chorus = (section.type == SectionType::Chorus);
+
+  bool add_octave =
+      is_chorus && motif_params.octave_layering_chorus && role_meta.allow_octave_layer;
+
+  // motif_motion_hint override: generate section-specific pattern with hinted motion
+  std::vector<NoteEvent> hint_pattern;
+  if (section.motif_motion_hint > 0) {
+    GeneratorParams hint_params = params;
+    hint_params.motif.motion =
+        static_cast<MotifMotion>(section.motif_motion_hint - 1);
+    hint_pattern = generateMotifPattern(hint_params, rng);
+  }
+
+  // L2: Determine which pattern to use based on RiffPolicy
+  std::vector<NoteEvent>* current_pattern = &pattern;
+  std::vector<NoteEvent> section_pattern;
+
+  if (is_locked && state.riff_cache.cached) {
+    current_pattern = &state.riff_cache.pattern;
+  } else if (policy == RiffPolicy::Evolving && state.riff_cache.cached) {
+    if (state.sec_idx % 2 == 0 && rng_util::rollProbability(rng, 0.3f)) {
+      state.riff_cache.pattern = generateMotifPattern(params, rng);
+    }
+    current_pattern = &state.riff_cache.pattern;
+  } else if (policy == RiffPolicy::Free) {
+    if (motif_params.repeat_scope == MotifRepeatScope::Section) {
+      auto iter = state.section_patterns.find(section.type);
+      if (iter == state.section_patterns.end()) {
+        if (rng_util::rollProbability(rng, role_meta.exact_repeat_prob)) {
+          state.section_patterns[section.type] = pattern;
+        } else {
+          section_pattern = generateMotifPattern(params, rng);
+          state.section_patterns[section.type] = section_pattern;
+        }
+        current_pattern = &state.section_patterns[section.type];
+      } else {
+        current_pattern = &iter->second;
+      }
+    }
+  } else {
+    current_pattern = &state.riff_cache.pattern;
+  }
+
+  if (!state.riff_cache.cached) {
+    state.riff_cache.cached = true;
+  }
+
+  // Override pattern with motif_motion_hint if set
+  if (!hint_pattern.empty()) {
+    current_pattern = &hint_pattern;
+  }
+
+  // Repeat motif across the section
+  for (Tick pos = section.start_tick; pos < section_end; pos += motif_length) {
+    std::map<uint8_t, size_t> bar_note_count;
+
+    for (const auto& note : *current_pattern) {
+      Tick absolute_tick = pos + note.start_tick;
+      if (absolute_tick >= section_end) continue;
+
+      uint8_t current_bar = static_cast<uint8_t>(tickToBar(absolute_tick - pos));
+
+      // Phrase tail rest: skip ~50% of notes in the last bar, reduce in penultimate
+      if (section.phrase_tail_rest) {
+        uint8_t section_bar = static_cast<uint8_t>(
+            tickToBar(absolute_tick - section.start_tick));
+        if (isPhraseTail(section_bar, section.bars)) {
+          if (isLastBar(section_bar, section.bars)) {
+            // Last bar: skip notes in the second half of the bar
+            Tick bar_start = section.start_tick + section_bar * TICKS_PER_BAR;
+            Tick bar_half = bar_start + TICKS_PER_BAR / 2;
+            if (absolute_tick >= bar_half) continue;
+          }
+        }
+      }
+
+      // Apply density_percent to skip notes
+      uint8_t effective_density = section.getModifiedDensity(section.density_percent);
+
+      float density_mult = 1.0f;
+      switch (section.getEffectiveBackingDensity()) {
+        case BackingDensity::Thin:
+          density_mult = 0.85f;
+          break;
+        case BackingDensity::Normal:
+          break;
+        case BackingDensity::Thick:
+          density_mult = 1.10f;
+          break;
+      }
+      effective_density = static_cast<uint8_t>(
+          std::min(100.0f, static_cast<float>(effective_density) * density_mult));
+
+      // In coordinate axis mode (RhythmLock), skip density/response thinning
+      // to maintain riff consistency - the motif pattern should repeat exactly.
+      bool should_skip = false;
+      if (!is_rhythm_lock_global && effective_density < 100) {
+        should_skip = (rng_util::rollFloat(rng, 0.0f, 100.0f) > effective_density);
+
+        if (should_skip && bar_note_count[current_bar] == 0) {
+          should_skip = false;
+        }
+      }
+      if (should_skip) {
+        continue;
+      }
+
+      // L5: Vocal Coordination - Response Mode (skip in coordinate axis mode)
+      if (!is_rhythm_lock_global && vocal_ctx && motif_params.response_mode) {
+        bool in_rest = motif_detail::isInVocalRest(absolute_tick, vocal_ctx->rest_positions);
+        if (!in_rest) {
+          float skip_prob = vocal_ctx->vocal_density * 0.4f;
+          if (rng_util::rollProbability(rng, skip_prob) && bar_note_count[current_bar] > 0) {
+            continue;
+          }
+        }
+      }
+
+      // Build note context for helper functions
+      MotifNoteContext note_ctx;
+      note_ctx.absolute_tick = absolute_tick;
+      note_ctx.section_end = section_end;
+      note_ctx.current_bar = current_bar;
+      note_ctx.effective_density = effective_density;
+      note_ctx.is_rhythm_lock_global = is_rhythm_lock_global;
+      note_ctx.add_octave = add_octave;
+      note_ctx.base_velocity = role_meta.velocity_base;
+      note_ctx.role = role;
+      note_ctx.section_type = section.type;
+
+      // Calculate adjusted pitch using helper
+      MotifPitchResult pitch_result =
+          calculateMotifPitch(note, note_ctx, params, motif_params, harmony, vocal_ctx,
+                              base_note_override, rng);
+
+      // Clamp to vocal ceiling
+      int adjusted_pitch = std::min(pitch_result.pitch, static_cast<int>(motif_range_high));
+
+      // Re-apply avoid note correction after vocal ceiling clamp, since clamping
+      // may have changed the pitch to an avoid note for the current chord.
+      // Use nearestInRange to find a chord tone within the valid range, avoiding
+      // the clamp->avoid->clamp cycle that adjustForChord + clamp would cause.
+      if (is_rhythm_lock_global) {
+        int8_t post_degree = harmony->getChordDegreeAt(absolute_tick);
+        uint8_t post_root = degreeToRoot(post_degree, Key::C);
+        Chord post_chord = getChordNotes(post_degree);
+        bool post_minor = (post_chord.intervals[1] == 3);
+        if (isAvoidNoteWithContext(adjusted_pitch, post_root, post_minor, post_degree)) {
+          ChordToneHelper ct_helper(post_degree);
+          adjusted_pitch = ct_helper.nearestInRange(
+              static_cast<uint8_t>(adjusted_pitch), MOTIF_LOW, motif_range_high);
+        }
+      }
+
+      // Calculate velocity: use pattern velocity for template mode (has accent weights),
+      // otherwise use the standard helper.
+      uint8_t vel;
+      if (is_rhythm_lock_global &&
+          motif_params.rhythm_template != MotifRhythmTemplate::None) {
+        // Template mode: use pattern velocity (already has accent weighting)
+        vel = note.velocity;
+        if (is_chorus) {
+          vel = std::min(static_cast<uint8_t>(127), static_cast<uint8_t>(vel + 10));
+        }
+      } else {
+        vel = calculateMotifVelocity(role_meta.velocity_base, is_chorus, section.type,
+                                     motif_params.velocity_fixed);
+      }
+
+      uint8_t final_pitch;
+      if (is_rhythm_lock_global) {
+        // Coordinate axis + Locked: use pitch as-is from pattern + section shift.
+        // Monotony tracking would alter the locked pattern.
+        final_pitch = static_cast<uint8_t>(adjusted_pitch);
+      } else {
+        // Apply monotony tracking to avoid consecutive same pitches
+        // Pass chord degree so alternatives are selected from chord tones
+        int8_t current_degree = harmony->getChordDegreeAt(absolute_tick);
+        final_pitch = state.monotony_tracker.trackAndSuggest(
+            static_cast<uint8_t>(adjusted_pitch), MOTIF_LOW, motif_range_high, current_degree);
+      }
+
+      if (is_rhythm_lock_global) {
+        // Coordinate axis mode: add note directly with registration (no collision avoidance)
+        NoteOptions opts;
+        opts.start = absolute_tick;
+        opts.duration = note.duration;
+        opts.desired_pitch = final_pitch;
+        opts.velocity = vel;
+        opts.role = TrackRole::Motif;
+        opts.preference = PitchPreference::NoCollisionCheck;  // Coordinate axis
+        opts.range_low = MOTIF_LOW;
+        opts.range_high = motif_range_high;
+        opts.source = NoteSource::Motif;
+        opts.original_pitch = note.note;  // Track pre-adjustment pitch
+
+        auto added_note_opt = createNoteAndAdd(track, *harmony, opts);
+
+        // Record transforms for provenance tracking
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        if (added_note_opt) {
+          NoteEvent& added_note = track.notes().back();
+          if (pitch_result.section_octave_shift != 0) {
+            added_note.addTransformStep(
+                TransformStepType::OctaveAdjust, note.note,
+                static_cast<uint8_t>(note.note + pitch_result.section_octave_shift),
+                static_cast<int8_t>(pitch_result.section_octave_shift / 12), 0);
+          }
+          if (pitch_result.range_octave_up != 0) {
+            uint8_t pre_range = static_cast<uint8_t>(
+                std::clamp(note.note + pitch_result.section_octave_shift, 0, 127));
+            added_note.addTransformStep(
+                TransformStepType::OctaveAdjust, pre_range,
+                static_cast<uint8_t>(pre_range + pitch_result.range_octave_up),
+                static_cast<int8_t>(pitch_result.range_octave_up / 12), 1);
+          }
+          if (pitch_result.avoid_note_snapped) {
+            uint8_t pre_snap = static_cast<uint8_t>(std::clamp(
+                note.note + pitch_result.section_octave_shift + pitch_result.range_octave_up, 0, 127));
+            added_note.addTransformStep(TransformStepType::ChordToneSnap, pre_snap, final_pitch, 0, 0);
+          }
+        }
+#else
+        (void)added_note_opt;  // Suppress unused variable warning
+#endif
+        bar_note_count[current_bar]++;
+
+        // Octave doubling in RhythmLock
+        if (add_octave) {
+          int octave_pitch = final_pitch + 12;
+          if (octave_pitch <= 108) {
+            uint8_t octave_vel = static_cast<uint8_t>(vel * 0.85f);
+            NoteOptions octave_opts = opts;
+            octave_opts.desired_pitch = static_cast<uint8_t>(octave_pitch);
+            octave_opts.velocity = octave_vel;
+            createNoteAndAdd(track, *harmony, octave_opts);
+          }
+        }
+      } else {
+        // Standard mode: use createNoteAndAdd with PreserveContour for collision avoidance
+        constexpr Tick kSwingMargin = 120;
+        Tick check_duration = note.duration + kSwingMargin;
+
+        NoteOptions opts;
+        opts.start = absolute_tick;
+        opts.duration = check_duration;  // Include swing margin for collision check
+        opts.desired_pitch = final_pitch;
+        opts.velocity = vel;
+        opts.role = TrackRole::Motif;
+        opts.preference = PitchPreference::PreserveContour;  // Prefers octave shifts
+        opts.range_low = MOTIF_LOW;
+        opts.range_high = motif_range_high;
+        opts.source = NoteSource::Motif;
+        opts.chord_boundary = ChordBoundaryPolicy::ClipIfUnsafe;
+        opts.original_pitch = note.note;  // Track pre-adjustment pitch
+        opts.prev_pitch = state.motif_prev_pitch;
+        opts.consecutive_same_count = state.motif_consecutive_same;
+
+        auto motif_note = createNoteAndAdd(track, *harmony, opts);
+
+        if (!motif_note) {
+          continue;
+        }
+
+        // Update monotony tracker
+        if (motif_note->note == state.motif_prev_pitch) {
+          state.motif_consecutive_same++;
+        } else {
+          state.motif_consecutive_same = 1;
+        }
+        state.motif_prev_pitch = motif_note->note;
+
+        bar_note_count[current_bar]++;
+
+        // L4: Add octave doubling for chorus
+        if (add_octave) {
+          int octave_pitch = motif_note->note + 12;
+          if (octave_pitch <= 108) {
+            uint8_t octave_vel = static_cast<uint8_t>(vel * 0.85f);
+            NoteOptions octave_opts;
+            octave_opts.start = absolute_tick;
+            octave_opts.duration = note.duration;
+            octave_opts.desired_pitch = static_cast<uint8_t>(octave_pitch);
+            octave_opts.velocity = octave_vel;
+            octave_opts.role = TrackRole::Motif;
+            octave_opts.preference = PitchPreference::SkipIfUnsafe;  // Optional layer
+            octave_opts.range_low = MOTIF_LOW;
+            octave_opts.range_high = 108;
+            octave_opts.source = NoteSource::Motif;
+
+            createNoteAndAdd(track, *harmony, octave_opts);
+          }
+        }
+      }
+    }
+  }
+
+  // Locked mode: cache output notes for this section type
+  if (is_locked && !is_rhythm_lock_global &&
+      state.locked_note_cache.find(section.type) == state.locked_note_cache.end()) {
+    std::vector<LockedNoteEntry> entries;
+    for (const auto& evt : track.notes()) {
+      if (evt.start_tick >= section.start_tick && evt.start_tick < section.endTick()) {
+        entries.push_back({
+          evt.start_tick - section.start_tick,
+          evt.duration,
+          evt.note,
+          evt.velocity
+        });
+      }
+    }
+    if (!entries.empty()) {
+      state.locked_note_cache[section.type] = std::move(entries);
+    }
+  }
+
+  // RhythmSync coordinate axis + Locked: cache output notes for replay
+  if (is_rhythm_lock_global &&
+      state.coord_axis_note_cache.find(section.type) == state.coord_axis_note_cache.end()) {
+    std::vector<LockedNoteEntry> entries;
+    for (const auto& evt : track.notes()) {
+      if (evt.start_tick >= section.start_tick && evt.start_tick < section.endTick()) {
+        entries.push_back({
+          evt.start_tick - section.start_tick,
+          evt.duration,
+          evt.note,
+          evt.velocity
+        });
+      }
+    }
+    if (!entries.empty()) {
+      state.coord_axis_note_cache[section.type] = std::move(entries);
+    }
+  }
+}
+
 }  // namespace
 
 void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) {
@@ -824,7 +1293,6 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
   if (pattern.empty()) return;
 
   const MotifParams& motif_params = params.motif;
-  Tick motif_length = static_cast<Tick>(motif_params.length) * TICKS_PER_BAR;
 
   // L5 (Vocal Coordination Layer): Calculate vocal-aware base note if context provided
   uint8_t base_note_override = 0;
@@ -852,16 +1320,9 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
                                                                                     : MotifRole::Texture;
   MotifRoleMeta role_meta = getMotifRoleMeta(role);
 
-  // M4: Cache for section-specific patterns
-  std::map<SectionType, std::vector<NoteEvent>> section_patterns;
-
-  // RiffPolicy cache for Locked/Evolving modes
-  MotifRiffCache riff_cache;
-  riff_cache.pattern = pattern;
-  size_t sec_idx = 0;
-
-  // Monotony tracker for consecutive same pitch avoidance
-  PitchMonotonyTracker monotony_tracker;
+  // Initialize shared generation state
+  MotifGenerationState state;
+  state.riff_cache.pattern = pattern;
 
   // Check if this is RhythmLock mode (coordinate axis)
   RiffPolicy policy = params.riff_policy;
@@ -869,453 +1330,35 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
                     policy == RiffPolicy::LockedAll);
   bool is_rhythm_lock_global = (params.paradigm == GenerationParadigm::RhythmSync) && is_locked;
 
-  // Monotony tracking for collision avoidance - persist across sections
-  uint8_t motif_prev_pitch = 0;
-  int motif_consecutive_same = 0;
-
-  // Locked mode: cache actual output notes per section type for exact replay.
-  // When is_locked && !is_rhythm_lock_global, density skipping, pitch
-  // adjustments, monotony tracker state, and collision avoidance cause
-  // different pitches in repeat sections. Caching the first occurrence's
-  // output notes and replaying them verbatim ensures consistency.
-  struct LockedNoteEntry {
-    Tick relative_tick;  // Offset from section start
-    Tick duration;
-    uint8_t pitch;
-    uint8_t velocity;
-  };
-  std::map<SectionType, std::vector<LockedNoteEntry>> locked_note_cache;
-  // Separate cache for RhythmSync coordinate axis mode (is_rhythm_lock_global)
-  // Uses NoCollisionCheck so cached pitches are replayed exactly as generated.
-  std::map<SectionType, std::vector<LockedNoteEntry>> coord_axis_note_cache;
-
   for (const auto& section : sections) {
     if (shouldSkipSection(section)) {
-      sec_idx++;
+      state.sec_idx++;
       continue;
     }
 
     // Locked mode: replay cached notes for repeat section types
     if (is_locked && !is_rhythm_lock_global) {
-      auto cache_it = locked_note_cache.find(section.type);
-      if (cache_it != locked_note_cache.end()) {
-        // Replay cached notes with tick offset
-        for (const auto& entry : cache_it->second) {
-          Tick absolute_tick = section.start_tick + entry.relative_tick;
-          if (absolute_tick >= section.endTick()) continue;
-
-          NoteOptions opts;
-          opts.start = absolute_tick;
-          opts.duration = entry.duration;
-          opts.desired_pitch = entry.pitch;
-          opts.velocity = entry.velocity;
-          opts.role = TrackRole::Motif;
-          opts.preference = PitchPreference::PreserveContour;
-          opts.range_low = MOTIF_LOW;
-          opts.range_high = motif_range_high;
-          opts.source = NoteSource::Motif;
-          opts.prev_pitch = motif_prev_pitch;
-          opts.consecutive_same_count = motif_consecutive_same;
-
-          auto result = createNoteAndAdd(track, *harmony, opts);
-          if (result) {
-            if (result->note == motif_prev_pitch) {
-              motif_consecutive_same++;
-            } else {
-              motif_consecutive_same = 1;
-            }
-            motif_prev_pitch = result->note;
-          }
-        }
-        sec_idx++;
+      if (replayCachedNotesLocked(track, section, harmony, state,
+                                   motif_range_high, motif_params)) {
+        state.sec_idx++;
         continue;
       }
     }
 
     // RhythmSync coordinate axis + Locked: replay cached notes with avoid correction.
-    // Uses NoCollisionCheck since coordinate axis tracks skip collision avoidance,
-    // but applies avoid note correction against the current chord at each tick
-    // to prevent residual avoid notes when chord timing differs between instances.
     if (is_rhythm_lock_global) {
-      auto cache_it = coord_axis_note_cache.find(section.type);
-      if (cache_it != coord_axis_note_cache.end()) {
-        for (const auto& entry : cache_it->second) {
-          Tick absolute_tick = section.start_tick + entry.relative_tick;
-          if (absolute_tick >= section.endTick()) continue;
-
-          // Re-apply avoid note correction for the replay position's chord.
-          // Use nearestInRange to stay within range while avoiding the note.
-          int replay_pitch = static_cast<int>(entry.pitch);
-          int8_t replay_degree = harmony->getChordDegreeAt(absolute_tick);
-          uint8_t replay_root = degreeToRoot(replay_degree, Key::C);
-          Chord replay_chord = getChordNotes(replay_degree);
-          bool replay_minor = (replay_chord.intervals[1] == 3);
-          if (isAvoidNoteWithContext(replay_pitch, replay_root, replay_minor, replay_degree)) {
-            ChordToneHelper ct_helper(replay_degree);
-            replay_pitch = ct_helper.nearestInRange(
-                static_cast<uint8_t>(replay_pitch), MOTIF_LOW, motif_range_high);
-          }
-
-          NoteOptions opts;
-          opts.start = absolute_tick;
-          opts.duration = entry.duration;
-          opts.desired_pitch = static_cast<uint8_t>(replay_pitch);
-          opts.velocity = entry.velocity;
-          opts.role = TrackRole::Motif;
-          opts.preference = PitchPreference::NoCollisionCheck;
-          opts.range_low = MOTIF_LOW;
-          opts.range_high = motif_range_high;
-          opts.source = NoteSource::Motif;
-          createNoteAndAdd(track, *harmony, opts);
-        }
-        sec_idx++;
+      if (replayCachedNotesCoordinateAxis(track, section, harmony, state,
+                                            motif_range_high)) {
+        state.sec_idx++;
         continue;
       }
-      if (!is_rhythm_lock_global) {
-        // Reset monotony tracker at section boundary (not needed in coordinate axis
-        // mode where monotony tracking is skipped entirely).
-        monotony_tracker.reset();
-      }
     }
 
-    Tick section_end = section.endTick();
-    bool is_chorus = (section.type == SectionType::Chorus);
+    generateMotifForSection(track, section, ctx, params, state, pattern,
+                              is_locked, is_rhythm_lock_global, policy,
+                              base_note_override, motif_range_high, role, role_meta);
 
-    bool add_octave =
-        is_chorus && motif_params.octave_layering_chorus && role_meta.allow_octave_layer;
-
-    // motif_motion_hint override: generate section-specific pattern with hinted motion
-    std::vector<NoteEvent> hint_pattern;
-    if (section.motif_motion_hint > 0) {
-      GeneratorParams hint_params = params;
-      hint_params.motif.motion =
-          static_cast<MotifMotion>(section.motif_motion_hint - 1);
-      hint_pattern = generateMotifPattern(hint_params, rng);
-    }
-
-    // L2: Determine which pattern to use based on RiffPolicy
-    std::vector<NoteEvent>* current_pattern = &pattern;
-    std::vector<NoteEvent> section_pattern;
-
-    if (is_locked && riff_cache.cached) {
-      current_pattern = &riff_cache.pattern;
-    } else if (policy == RiffPolicy::Evolving && riff_cache.cached) {
-      if (sec_idx % 2 == 0 && rng_util::rollProbability(rng, 0.3f)) {
-        riff_cache.pattern = generateMotifPattern(params, rng);
-      }
-      current_pattern = &riff_cache.pattern;
-    } else if (policy == RiffPolicy::Free) {
-      if (motif_params.repeat_scope == MotifRepeatScope::Section) {
-        auto it = section_patterns.find(section.type);
-        if (it == section_patterns.end()) {
-          if (rng_util::rollProbability(rng, role_meta.exact_repeat_prob)) {
-            section_patterns[section.type] = pattern;
-          } else {
-            section_pattern = generateMotifPattern(params, rng);
-            section_patterns[section.type] = section_pattern;
-          }
-          current_pattern = &section_patterns[section.type];
-        } else {
-          current_pattern = &it->second;
-        }
-      }
-    } else {
-      current_pattern = &riff_cache.pattern;
-    }
-
-    if (!riff_cache.cached) {
-      riff_cache.cached = true;
-    }
-
-    // Override pattern with motif_motion_hint if set
-    if (!hint_pattern.empty()) {
-      current_pattern = &hint_pattern;
-    }
-
-    // Repeat motif across the section
-    for (Tick pos = section.start_tick; pos < section_end; pos += motif_length) {
-      std::map<uint8_t, size_t> bar_note_count;
-
-      for (const auto& note : *current_pattern) {
-        Tick absolute_tick = pos + note.start_tick;
-        if (absolute_tick >= section_end) continue;
-
-        uint8_t current_bar = static_cast<uint8_t>(tickToBar(absolute_tick - pos));
-
-        // Phrase tail rest: skip ~50% of notes in the last bar, reduce in penultimate
-        if (section.phrase_tail_rest) {
-          uint8_t section_bar = static_cast<uint8_t>(
-              tickToBar(absolute_tick - section.start_tick));
-          if (isPhraseTail(section_bar, section.bars)) {
-            if (isLastBar(section_bar, section.bars)) {
-              // Last bar: skip notes in the second half of the bar
-              Tick bar_start = section.start_tick + section_bar * TICKS_PER_BAR;
-              Tick bar_half = bar_start + TICKS_PER_BAR / 2;
-              if (absolute_tick >= bar_half) continue;
-            }
-          }
-        }
-
-        // Apply density_percent to skip notes
-        uint8_t effective_density = section.getModifiedDensity(section.density_percent);
-
-        float density_mult = 1.0f;
-        switch (section.getEffectiveBackingDensity()) {
-          case BackingDensity::Thin:
-            density_mult = 0.85f;
-            break;
-          case BackingDensity::Normal:
-            break;
-          case BackingDensity::Thick:
-            density_mult = 1.10f;
-            break;
-        }
-        effective_density = static_cast<uint8_t>(
-            std::min(100.0f, static_cast<float>(effective_density) * density_mult));
-
-        // In coordinate axis mode (RhythmLock), skip density/response thinning
-        // to maintain riff consistency - the motif pattern should repeat exactly.
-        bool should_skip = false;
-        if (!is_rhythm_lock_global && effective_density < 100) {
-          should_skip = (rng_util::rollFloat(rng, 0.0f, 100.0f) > effective_density);
-
-          if (should_skip && bar_note_count[current_bar] == 0) {
-            should_skip = false;
-          }
-        }
-        if (should_skip) {
-          continue;
-        }
-
-        // L5: Vocal Coordination - Response Mode (skip in coordinate axis mode)
-        if (!is_rhythm_lock_global && vocal_ctx && motif_params.response_mode) {
-          bool in_rest = motif_detail::isInVocalRest(absolute_tick, vocal_ctx->rest_positions);
-          if (!in_rest) {
-            float skip_prob = vocal_ctx->vocal_density * 0.4f;
-            if (rng_util::rollProbability(rng, skip_prob) && bar_note_count[current_bar] > 0) {
-              continue;
-            }
-          }
-        }
-
-        // Build note context for helper functions
-        MotifNoteContext note_ctx;
-        note_ctx.absolute_tick = absolute_tick;
-        note_ctx.section_end = section_end;
-        note_ctx.current_bar = current_bar;
-        note_ctx.effective_density = effective_density;
-        note_ctx.is_rhythm_lock_global = is_rhythm_lock_global;
-        note_ctx.add_octave = add_octave;
-        note_ctx.base_velocity = role_meta.velocity_base;
-        note_ctx.role = role;
-        note_ctx.section_type = section.type;
-
-        // Calculate adjusted pitch using helper
-        MotifPitchResult pitch_result =
-            calculateMotifPitch(note, note_ctx, params, motif_params, harmony, vocal_ctx,
-                                base_note_override, rng);
-
-        // Clamp to vocal ceiling
-        int adjusted_pitch = std::min(pitch_result.pitch, static_cast<int>(motif_range_high));
-
-        // Re-apply avoid note correction after vocal ceiling clamp, since clamping
-        // may have changed the pitch to an avoid note for the current chord.
-        // Use nearestInRange to find a chord tone within the valid range, avoiding
-        // the clamp→avoid→clamp cycle that adjustForChord + clamp would cause.
-        if (is_rhythm_lock_global) {
-          int8_t post_degree = harmony->getChordDegreeAt(absolute_tick);
-          uint8_t post_root = degreeToRoot(post_degree, Key::C);
-          Chord post_chord = getChordNotes(post_degree);
-          bool post_minor = (post_chord.intervals[1] == 3);
-          if (isAvoidNoteWithContext(adjusted_pitch, post_root, post_minor, post_degree)) {
-            ChordToneHelper ct_helper(post_degree);
-            adjusted_pitch = ct_helper.nearestInRange(
-                static_cast<uint8_t>(adjusted_pitch), MOTIF_LOW, motif_range_high);
-          }
-        }
-
-        // Calculate velocity: use pattern velocity for template mode (has accent weights),
-        // otherwise use the standard helper.
-        uint8_t vel;
-        if (is_rhythm_lock_global &&
-            motif_params.rhythm_template != MotifRhythmTemplate::None) {
-          // Template mode: use pattern velocity (already has accent weighting)
-          vel = note.velocity;
-          if (is_chorus) {
-            vel = std::min(static_cast<uint8_t>(127), static_cast<uint8_t>(vel + 10));
-          }
-        } else {
-          vel = calculateMotifVelocity(role_meta.velocity_base, is_chorus, section.type,
-                                       motif_params.velocity_fixed);
-        }
-
-        uint8_t final_pitch;
-        if (is_rhythm_lock_global) {
-          // Coordinate axis + Locked: use pitch as-is from pattern + section shift.
-          // Monotony tracking would alter the locked pattern.
-          final_pitch = static_cast<uint8_t>(adjusted_pitch);
-        } else {
-          // Apply monotony tracking to avoid consecutive same pitches
-          // Pass chord degree so alternatives are selected from chord tones
-          int8_t current_degree = harmony->getChordDegreeAt(absolute_tick);
-          final_pitch = monotony_tracker.trackAndSuggest(
-              static_cast<uint8_t>(adjusted_pitch), MOTIF_LOW, motif_range_high, current_degree);
-        }
-
-        if (is_rhythm_lock_global) {
-          // Coordinate axis mode: add note directly with registration (no collision avoidance)
-          NoteOptions opts;
-          opts.start = absolute_tick;
-          opts.duration = note.duration;
-          opts.desired_pitch = final_pitch;
-          opts.velocity = vel;
-          opts.role = TrackRole::Motif;
-          opts.preference = PitchPreference::NoCollisionCheck;  // Coordinate axis
-          opts.range_low = MOTIF_LOW;
-          opts.range_high = motif_range_high;
-          opts.source = NoteSource::Motif;
-          opts.original_pitch = note.note;  // Track pre-adjustment pitch
-
-          auto added_note_opt = createNoteAndAdd(track, *harmony, opts);
-
-          // Record transforms for provenance tracking
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-          if (added_note_opt) {
-            NoteEvent& added_note = track.notes().back();
-            if (pitch_result.section_octave_shift != 0) {
-              added_note.addTransformStep(
-                  TransformStepType::OctaveAdjust, note.note,
-                  static_cast<uint8_t>(note.note + pitch_result.section_octave_shift),
-                  static_cast<int8_t>(pitch_result.section_octave_shift / 12), 0);
-            }
-            if (pitch_result.range_octave_up != 0) {
-              uint8_t pre_range = static_cast<uint8_t>(
-                  std::clamp(note.note + pitch_result.section_octave_shift, 0, 127));
-              added_note.addTransformStep(
-                  TransformStepType::OctaveAdjust, pre_range,
-                  static_cast<uint8_t>(pre_range + pitch_result.range_octave_up),
-                  static_cast<int8_t>(pitch_result.range_octave_up / 12), 1);
-            }
-            if (pitch_result.avoid_note_snapped) {
-              uint8_t pre_snap = static_cast<uint8_t>(std::clamp(
-                  note.note + pitch_result.section_octave_shift + pitch_result.range_octave_up, 0, 127));
-              added_note.addTransformStep(TransformStepType::ChordToneSnap, pre_snap, final_pitch, 0, 0);
-            }
-          }
-#else
-          (void)added_note_opt;  // Suppress unused variable warning
-#endif
-          bar_note_count[current_bar]++;
-
-          // Octave doubling in RhythmLock
-          if (add_octave) {
-            int octave_pitch = final_pitch + 12;
-            if (octave_pitch <= 108) {
-              uint8_t octave_vel = static_cast<uint8_t>(vel * 0.85f);
-              NoteOptions octave_opts = opts;
-              octave_opts.desired_pitch = static_cast<uint8_t>(octave_pitch);
-              octave_opts.velocity = octave_vel;
-              createNoteAndAdd(track, *harmony, octave_opts);
-            }
-          }
-        } else {
-          // Standard mode: use createNoteAndAdd with PreserveContour for collision avoidance
-          constexpr Tick kSwingMargin = 120;
-          Tick check_duration = note.duration + kSwingMargin;
-
-          NoteOptions opts;
-          opts.start = absolute_tick;
-          opts.duration = check_duration;  // Include swing margin for collision check
-          opts.desired_pitch = final_pitch;
-          opts.velocity = vel;
-          opts.role = TrackRole::Motif;
-          opts.preference = PitchPreference::PreserveContour;  // Prefers octave shifts
-          opts.range_low = MOTIF_LOW;
-          opts.range_high = motif_range_high;
-          opts.source = NoteSource::Motif;
-          opts.chord_boundary = ChordBoundaryPolicy::ClipIfUnsafe;
-          opts.original_pitch = note.note;  // Track pre-adjustment pitch
-          opts.prev_pitch = motif_prev_pitch;
-          opts.consecutive_same_count = motif_consecutive_same;
-
-          auto motif_note = createNoteAndAdd(track, *harmony, opts);
-
-          if (!motif_note) {
-            continue;
-          }
-
-          // Update monotony tracker
-          if (motif_note->note == motif_prev_pitch) {
-            motif_consecutive_same++;
-          } else {
-            motif_consecutive_same = 1;
-          }
-          motif_prev_pitch = motif_note->note;
-
-          bar_note_count[current_bar]++;
-
-          // L4: Add octave doubling for chorus
-          if (add_octave) {
-            int octave_pitch = motif_note->note + 12;
-            if (octave_pitch <= 108) {
-              uint8_t octave_vel = static_cast<uint8_t>(vel * 0.85f);
-              NoteOptions octave_opts;
-              octave_opts.start = absolute_tick;
-              octave_opts.duration = note.duration;
-              octave_opts.desired_pitch = static_cast<uint8_t>(octave_pitch);
-              octave_opts.velocity = octave_vel;
-              octave_opts.role = TrackRole::Motif;
-              octave_opts.preference = PitchPreference::SkipIfUnsafe;  // Optional layer
-              octave_opts.range_low = MOTIF_LOW;
-              octave_opts.range_high = 108;
-              octave_opts.source = NoteSource::Motif;
-
-              createNoteAndAdd(track, *harmony, octave_opts);
-            }
-          }
-        }
-      }
-    }
-
-    // Locked mode: cache output notes for this section type
-    if (is_locked && !is_rhythm_lock_global &&
-        locked_note_cache.find(section.type) == locked_note_cache.end()) {
-      std::vector<LockedNoteEntry> entries;
-      for (const auto& evt : track.notes()) {
-        if (evt.start_tick >= section.start_tick && evt.start_tick < section.endTick()) {
-          entries.push_back({
-            evt.start_tick - section.start_tick,
-            evt.duration,
-            evt.note,
-            evt.velocity
-          });
-        }
-      }
-      if (!entries.empty()) {
-        locked_note_cache[section.type] = std::move(entries);
-      }
-    }
-
-    // RhythmSync coordinate axis + Locked: cache output notes for replay
-    if (is_rhythm_lock_global &&
-        coord_axis_note_cache.find(section.type) == coord_axis_note_cache.end()) {
-      std::vector<LockedNoteEntry> entries;
-      for (const auto& evt : track.notes()) {
-        if (evt.start_tick >= section.start_tick && evt.start_tick < section.endTick()) {
-          entries.push_back({
-            evt.start_tick - section.start_tick,
-            evt.duration,
-            evt.note,
-            evt.velocity
-          });
-        }
-      }
-      if (!entries.empty()) {
-        coord_axis_note_cache[section.type] = std::move(entries);
-      }
-    }
-
-    sec_idx++;
+    state.sec_idx++;
   }
   // Post-generation avoid note correction is no longer needed because
   // secondary dominants are now pre-registered in the harmony context

@@ -5,6 +5,8 @@
 
 #include "core/modulation_calculator.h"
 
+#include "core/rng_util.h"
+
 namespace midisketch {
 
 Tick ModulationCalculator::findLastChorus(const std::vector<Section>& sections) {
@@ -141,8 +143,7 @@ ModulationCalculator::ModulationResult ModulationCalculator::calculate(
         }
       }
       if (!chorus_ticks.empty()) {
-        std::uniform_int_distribution<size_t> dist(0, chorus_ticks.size() - 1);
-        mod_tick = chorus_ticks[dist(rng)];
+        mod_tick = rng_util::selectRandom(rng, chorus_ticks);
       }
       break;
     }

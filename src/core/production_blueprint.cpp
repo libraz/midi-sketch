@@ -6,6 +6,8 @@
 #include "core/production_blueprint.h"
 
 #include <algorithm>
+
+#include "core/rng_util.h"
 #include <cctype>
 #include <cstring>
 
@@ -852,8 +854,7 @@ uint8_t selectProductionBlueprint(std::mt19937& rng, uint8_t explicit_id) {
   }
 
   // Random selection based on weights
-  std::uniform_int_distribution<uint32_t> dist(0, total_weight - 1);
-  uint32_t roll = dist(rng);
+  uint32_t roll = static_cast<uint32_t>(rng_util::rollRange(rng, 0, static_cast<int>(total_weight - 1)));
 
   uint32_t cumulative = 0;
   for (uint8_t i = 0; i < BLUEPRINT_COUNT; ++i) {

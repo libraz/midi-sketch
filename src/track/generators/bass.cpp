@@ -14,6 +14,7 @@
 #include <optional>
 
 #include "core/chord.h"
+#include "core/rng_util.h"
 #include "core/chord_utils.h"
 #include "core/density_transformer.h"
 #include "core/production_blueprint.h"
@@ -482,8 +483,7 @@ BassPattern selectFromGenreTable(BassGenre genre, BassSection section, std::mt19
   const auto& choice = patterns.sections[static_cast<int>(section)];
 
   // 60% primary, 30% secondary, 10% tertiary
-  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-  float roll = dist(rng);
+  float roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
 
   if (roll < 0.60f) return fromPatternId(choice.primary);
   if (roll < 0.90f) return fromPatternId(choice.secondary);
@@ -553,8 +553,7 @@ BassPattern selectPatternWithPolicyCore(BassRiffCache& cache, size_t sec_idx,
     pattern = cache.pattern;
   } else if (policy == RiffPolicy::Evolving && cache.cached) {
     // Evolving: 30% chance to select new pattern every 2 sections
-    std::uniform_real_distribution<float> evolve_dist(0.0f, 1.0f);
-    if (sec_idx % 2 == 0 && evolve_dist(rng) < 0.3f) {
+    if (sec_idx % 2 == 0 && rng_util::rollProbability(rng, 0.3f)) {
       // Allow evolution - select new pattern
       pattern = selector();
       cache.pattern = pattern;
@@ -725,11 +724,6 @@ void addBassNoteWithTritoneCheck(MidiTrack& track, IHarmonyContext& harmony,
 // They are barely audible but add rhythmic feel typical of funk/groove bass playing.
 void addBassGhostNotes(MidiTrack& track, IHarmonyContext& harmony,
                        Tick bar_start, uint8_t root, std::mt19937& rng) {
-  // Ghost note velocity range: 25-35 (barely audible, felt more than heard)
-  std::uniform_int_distribution<int> vel_dist(25, 35);
-  // 40% chance per available 16th position
-  std::uniform_int_distribution<int> chance_dist(0, 99);
-
   constexpr Tick SIXTEENTH = TICK_SIXTEENTH;
 
   // Check each 16th position in the bar (16 positions total)
@@ -741,7 +735,7 @@ void addBassGhostNotes(MidiTrack& track, IHarmonyContext& harmony,
     if (pos % 2 == 0) continue;
 
     // 40% probability per eligible position
-    if (chance_dist(rng) >= 40) continue;
+    if (rng_util::rollRange(rng, 0, 99) >= 40) continue;
 
     // Check it does not overlap with existing notes in the track
     bool overlaps = false;
@@ -754,7 +748,8 @@ void addBassGhostNotes(MidiTrack& track, IHarmonyContext& harmony,
     }
     if (overlaps) continue;
 
-    uint8_t ghost_vel = static_cast<uint8_t>(vel_dist(rng));
+    // Ghost note velocity range: 25-35 (barely audible, felt more than heard)
+    uint8_t ghost_vel = static_cast<uint8_t>(rng_util::rollRange(rng, 25, 35));
 
     // Use root note for ghost (dead note / muted string effect)
     // SkipIfUnsafe: ghost notes are optional, skip if collision
@@ -953,8 +948,7 @@ void generateAggressivePattern(const BassBarContext& ctx) {
       note_vel = ctx.vel;
     }
     if (ctx.rng) {
-      std::uniform_int_distribution<int8_t> vel_var(-5, 5);
-      int varied = note_vel + vel_var(*ctx.rng);
+      int varied = note_vel + rng_util::rollRange(*ctx.rng, -5, 5);
       note_vel = static_cast<uint8_t>(std::clamp(varied, 40, 127));
     }
     uint8_t pitch = ctx.root;
@@ -1481,8 +1475,7 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
       // Check if a slash chord should override the bass root for smoother voice leading.
       // This creates stepwise bass motion (e.g., C/E before F gives E->F bass walk).
       {
-        std::uniform_real_distribution<float> slash_dist(0.0f, 1.0f);
-        float slash_roll = slash_dist(rng);
+        float slash_roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
         SlashChordInfo slash_info =
             checkSlashChord(degree, next_degree, section.type, slash_roll);
         if (slash_info.has_override) {

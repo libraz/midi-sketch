@@ -7,6 +7,8 @@
 
 #include <vector>
 
+#include "core/rng_util.h"
+
 namespace midisketch {
 namespace melody {
 
@@ -81,8 +83,7 @@ size_t selectHookRhythmPatternIndex(const MelodyTemplate& tmpl, std::mt19937& rn
     }
   }
 
-  std::uniform_int_distribution<size_t> dist(0, candidates.size() - 1);
-  return candidates[dist(rng)];
+  return rng_util::selectRandom(rng, candidates);
 }
 
 }  // namespace melody

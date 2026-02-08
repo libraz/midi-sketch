@@ -176,10 +176,6 @@ void applyVelocityBalance(std::vector<NoteEvent>& notes, float scale) {
   }
 }
 
-void removeOverlaps(std::vector<NoteEvent>& notes, Tick min_duration) {
-  NoteTimeline::fixOverlapsWithMinDuration(notes, min_duration);
-}
-
 void applyHookIntensity(std::vector<NoteEvent>& notes, SectionType section_type,
                         HookIntensity intensity, Tick section_start) {
   if (intensity == HookIntensity::Off || notes.empty()) {

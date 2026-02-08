@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "core/chord_utils.h"
+#include "core/rng_util.h"
 #include "core/pitch_utils.h"
 #include "core/timing_constants.h"
 #include "track/melody/melody_utils.h"
@@ -111,8 +112,7 @@ int enforceGuideToneOnDownbeat(int pitch, Tick tick, int8_t chord_degree,
   if (!isStrongBeat(tick)) return pitch;
 
   // Roll probability
-  std::uniform_int_distribution<int> prob_dist(1, 100);
-  if (prob_dist(rng) > guide_tone_rate) return pitch;
+  if (rng_util::rollRange(rng, 1, 100) > guide_tone_rate) return pitch;
 
   // Get guide tones (3rd and 7th) for this chord
   std::vector<int> guide_pcs = getGuideTonePitchClasses(chord_degree);
@@ -209,8 +209,7 @@ int encourageLeapAfterLongNote(int new_pitch, int prev_pitch, Tick prev_duration
   }
 
   // Probabilistically encourage leap
-  std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
-  if (prob_dist(rng) >= LEAP_ENCOURAGE_PROB) {
+  if (!rng_util::rollProbability(rng, LEAP_ENCOURAGE_PROB)) {
     return new_pitch;  // Keep original
   }
 
@@ -234,8 +233,7 @@ int encourageLeapAfterLongNote(int new_pitch, int prev_pitch, Tick prev_duration
   }
 
   // Pick random leap candidate
-  std::uniform_int_distribution<size_t> idx_dist(0, leap_candidates.size() - 1);
-  return leap_candidates[idx_dist(rng)];
+  return rng_util::selectRandom(rng, leap_candidates);
 }
 
 }  // namespace melody

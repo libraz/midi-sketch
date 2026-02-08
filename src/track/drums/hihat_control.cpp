@@ -153,8 +153,7 @@ float getHiHatVelocityMultiplier(int sixteenth, std::mt19937& rng) {
       break;
   }
 
-  std::uniform_real_distribution<float> variation(0.95f, 1.05f);
-  return base * variation(rng);
+  return base * rng_util::rollFloat(rng, 0.95f, 1.05f);
 }
 
 int getOpenHiHatBarInterval(SectionType section, DrumStyle style) {
@@ -187,8 +186,7 @@ int getOpenHiHatBarInterval(SectionType section, DrumStyle style) {
 
 uint8_t getOpenHiHatBeat(SectionType section, int bar, std::mt19937& rng) {
   if (section == SectionType::Chorus || section == SectionType::MixBreak) {
-    std::uniform_int_distribution<int> beat_dist(0, 3);
-    int choice = beat_dist(rng);
+    int choice = rng_util::rollRange(rng, 0, 3);
     if (choice < 2) return 3;
     if (choice < 3) return 1;
     return 2;
@@ -300,8 +298,7 @@ bool shouldAddOpenHHAccent(SectionType section, int beat, int bar, std::mt19937&
 }
 
 uint8_t getFootHiHatVelocity(std::mt19937& rng) {
-  std::uniform_int_distribution<int> vel_dist(FHH_VEL_MIN, FHH_VEL_MAX);
-  return static_cast<uint8_t>(vel_dist(rng));
+  return static_cast<uint8_t>(rng_util::rollRange(rng, FHH_VEL_MIN, FHH_VEL_MAX));
 }
 
 bool hasCrashAtTick(const MidiTrack& track, Tick tick) {

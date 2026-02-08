@@ -14,6 +14,7 @@
 
 #include "core/chord.h"
 #include "core/chord_utils.h"
+#include "core/rng_util.h"
 #include "core/i_harmony_context.h"
 #include "core/melody_embellishment.h"
 #include "core/melody_evaluator.h"
@@ -297,7 +298,6 @@ void applyVocalPitchBendExpressions(MidiTrack& track, const std::vector<NoteEven
     return;
   }
 
-  std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
   constexpr Tick kPhraseGapThreshold = TICKS_PER_BEAT;
 
   for (size_t note_idx = 0; note_idx < all_notes.size(); ++note_idx) {
@@ -329,7 +329,7 @@ void applyVocalPitchBendExpressions(MidiTrack& track, const std::vector<NoteEven
     fall_prob *= physics.pitch_bend_scale;
 
     // Apply attack bend (scoop-up) at phrase starts
-    if (is_phrase_start && note.duration >= TICK_EIGHTH && prob_dist(rng) < scoop_prob) {
+    if (is_phrase_start && note.duration >= TICK_EIGHTH && rng_util::rollProbability(rng, scoop_prob)) {
       int base_depth = (params.vocal_attitude == VocalAttitude::Raw) ? -40 : -25;
       int depth = static_cast<int>(base_depth * physics.pitch_bend_scale);
       if (depth != 0) {
@@ -341,7 +341,7 @@ void applyVocalPitchBendExpressions(MidiTrack& track, const std::vector<NoteEven
     }
 
     // Apply fall-off at phrase ends
-    if (is_phrase_end && note.duration >= TICK_HALF && prob_dist(rng) < fall_prob) {
+    if (is_phrase_end && note.duration >= TICK_HALF && rng_util::rollProbability(rng, fall_prob)) {
       int base_depth = (params.vocal_attitude == VocalAttitude::Raw) ? -100 : -60;
       int depth = static_cast<int>(base_depth * physics.pitch_bend_scale);
       if (depth != 0) {
@@ -361,7 +361,7 @@ void applyVocalPitchBendExpressions(MidiTrack& track, const std::vector<NoteEven
       float vibrato_prob = (params.vocal_attitude == VocalAttitude::Raw) ? 0.7f : 0.5f;
       vibrato_prob *= physics.pitch_bend_scale;
 
-      if (prob_dist(rng) < vibrato_prob) {
+      if (rng_util::rollProbability(rng, vibrato_prob)) {
         int base_vibrato_depth = (params.vocal_attitude == VocalAttitude::Raw) ? 25 : 15;
         int vibrato_depth = static_cast<int>(base_vibrato_depth * physics.pitch_bend_scale);
         float vibrato_rate = (params.vocal_attitude == VocalAttitude::Raw) ? 5.0f : 5.5f;
@@ -410,7 +410,7 @@ void applyVocalPitchBendExpressions(MidiTrack& track, const std::vector<NoteEven
         float portamento_prob = (params.vocal_attitude == VocalAttitude::Raw) ? 0.5f : 0.3f;
         portamento_prob *= physics.pitch_bend_scale;
 
-        if (prob_dist(rng) < portamento_prob) {
+        if (rng_util::rollProbability(rng, portamento_prob)) {
           // Glide from current pitch toward next pitch over last 16th of current note
           Tick glide_start = note.start_tick + note.duration - TICK_SIXTEENTH;
           if (glide_start > note.start_tick) {
@@ -888,7 +888,6 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
   int direction_inertia = 0;  // Track melodic direction momentum
   int same_pitch_streak = 0;  // Track consecutive same pitch for progressive penalty
   int onsets_since_long = 100;  // Start high so first onset can be long if desired
-  std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
 
   size_t i = 0;
   while (i < onsets.size()) {
@@ -977,8 +976,7 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
         }
       }
       if (!different_pitches.empty()) {
-        std::uniform_int_distribution<size_t> dist(0, different_pitches.size() - 1);
-        safe_pitch = different_pitches[dist(rng)];
+        safe_pitch = rng_util::selectRandom(rng, different_pitches);
       } else {
         PitchSelectionHints hints;
         hints.prev_pitch = static_cast<int8_t>(prev_pitch);
@@ -1019,10 +1017,10 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
       }
 
       // Add randomness: 70% best candidate, 30% random from top 3
-      if (candidates.size() >= 3 && prob_dist(rng) < 0.3f) {
-        std::uniform_int_distribution<size_t> idx_dist(
-            0, std::min(static_cast<size_t>(2), candidates.size() - 1));
-        safe_pitch = candidates[idx_dist(rng)].pitch;
+      if (candidates.size() >= 3 && rng_util::rollProbability(rng, 0.3f)) {
+        size_t rand_idx = rng_util::rollRange(rng, 0,
+            static_cast<int>(std::min(static_cast<size_t>(2), candidates.size() - 1)));
+        safe_pitch = candidates[rand_idx].pitch;
       } else {
         safe_pitch = selectBestCandidate(candidates, prev_pitch, hints);
       }
@@ -1032,7 +1030,7 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
     // Compute actual skips with the chosen pitch
     // ======================================================================
     int actual_skips = 0;
-    if (desire.max_skip > 0 && prob_dist(rng) < desire.probability) {
+    if (desire.max_skip > 0 && rng_util::rollProbability(rng, desire.probability)) {
       actual_skips = computeSafeSkipCount(
           safe_pitch, tick, onsets, i, desire.max_skip, section, harmony);
     }
@@ -1326,8 +1324,7 @@ static std::vector<NoteEvent> generateLockedRhythmWithEvaluation(
   }
 
   if (total_weight > 0.0f) {
-    std::uniform_real_distribution<float> dist(0.0f, total_weight);
-    float roll = dist(rng);
+    float roll = rng_util::rollFloat(rng, 0.0f, total_weight);
     float cumulative = 0.0f;
     for (size_t i = 0; i < keep_count; ++i) {
       cumulative += candidates[i].second;
@@ -1557,7 +1554,7 @@ void VocalGenerator::postProcessVocalNotes(
   // UltraVocaloid allows 32nd notes (60 ticks), standard vocals need 16th notes (120 ticks)
   Tick min_note_duration =
       (params.vocal_style == VocalStylePreset::UltraVocaloid) ? TICK_32ND : TICK_SIXTEENTH;
-  removeOverlaps(all_notes, min_note_duration);
+  NoteTimeline::fixOverlapsWithMinDuration(all_notes, min_note_duration);
 
   // Safety net: enforce maximum phrase duration for very long sections.
   // Inter-section breaths are handled during generation; this catches edge cases
@@ -1594,7 +1591,7 @@ void VocalGenerator::postProcessVocalNotes(
   breakConsecutiveSamePitch(all_notes, harmony, effective_vocal_low, effective_vocal_high, 3);
 
   // Final overlap check - ensures no overlaps after all processing
-  removeOverlaps(all_notes, min_note_duration);
+  NoteTimeline::fixOverlapsWithMinDuration(all_notes, min_note_duration);
 
   // Add notes to track
   // Note: Registration with HarmonyContext is handled by Coordinator after generateFullTrack()
@@ -1614,7 +1611,6 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
   std::mt19937& rng = *ctx.rng;
   IHarmonyContext& harmony = *ctx.harmony;
   const DrumGrid* drum_grid = ctx.drum_grid;
-  bool skip_collision_avoidance = ctx.skip_collision_avoidance;
 
   // Calculate effective vocal range (extracted helper)
   VocalRangeResult range = calculateEffectiveVocalRange(params, song, motif_track_);
@@ -1746,10 +1742,8 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
                                        section_vocal_low, section_vocal_high);
 
       // Re-apply collision avoidance (chord context may differ)
-      if (!skip_collision_avoidance) {
-        applyCollisionAvoidanceWithIntervalConstraint(section_notes, harmony, section_vocal_low,
-                                                      section_vocal_high);
-      }
+      applyCollisionAvoidanceWithIntervalConstraint(section_notes, harmony, section_vocal_low,
+                                                    section_vocal_high);
     } else {
       // Cache miss: generate new melody
       MelodyDesigner::SectionContext sctx = buildSectionContext(
@@ -1825,10 +1819,8 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       }
 
       // Apply HarmonyContext collision avoidance with interval constraint
-      if (!skip_collision_avoidance) {
-        applyCollisionAvoidanceWithIntervalConstraint(section_notes, harmony, section_vocal_low,
-                                                      section_vocal_high);
-      }
+      applyCollisionAvoidanceWithIntervalConstraint(section_notes, harmony, section_vocal_low,
+                                                    section_vocal_high);
 
       // Extract GlobalMotif from first Chorus for song-wide melodic unity
       // Subsequent sections will receive bonus for similar contour/intervals

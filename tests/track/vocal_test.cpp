@@ -2028,18 +2028,17 @@ TEST_F(VocalTest, NoMinor2ndClashesWithChord) {
       << "Should be < 15 (some chromatic passing tones are acceptable).";
 }
 
-// === Skip Collision Avoidance Tests (Vocal-First Mode) ===
+// === Vocal-First Mode Tests ===
 
-TEST_F(VocalTest, SkipCollisionAvoidanceGeneratesVocal) {
-  // Test that vocal can be generated with skip_collision_avoidance=true
-  // This is used in vocal-first generation mode
+TEST_F(VocalTest, VocalFirstModeGeneratesVocal) {
+  // Test that vocal can be generated in vocal-first mode (no other tracks registered)
   params_.seed = 12345;
   params_.structure = StructurePattern::StandardPop;
 
   Generator gen;
   gen.generate(params_);  // Normal generation first to set up song structure
 
-  // Now generate vocal with collision avoidance skipped
+  // Generate vocal standalone (no other tracks in harmony context)
   MidiTrack vocal_track;
   std::mt19937 rng(params_.seed);
   auto& song = const_cast<Song&>(gen.getSong());
@@ -2051,18 +2050,18 @@ TEST_F(VocalTest, SkipCollisionAvoidanceGeneratesVocal) {
   ctx.params = &params_;
   ctx.rng = &rng;
   ctx.harmony = &harmony;
-  ctx.skip_collision_avoidance = true;
+
   vocal_gen.generateFullTrack(vocal_track, ctx);
 
   // Should still generate notes
   EXPECT_FALSE(vocal_track.empty())
-      << "Vocal track should be generated even with skip_collision_avoidance=true";
+      << "Vocal track should be generated in vocal-first mode";
   EXPECT_GT(vocal_track.noteCount(), 0u)
-      << "Vocal track should have notes with skip_collision_avoidance=true";
+      << "Vocal track should have notes in vocal-first mode";
 }
 
-TEST_F(VocalTest, SkipCollisionAvoidancePreservesScaleTones) {
-  // Verify that skip_collision_avoidance doesn't introduce chromatic notes
+TEST_F(VocalTest, VocalFirstModePreservesScaleTones) {
+  // Verify that vocal-first mode preserves scale tones
   std::set<int> c_major_pcs = {0, 2, 4, 5, 7, 9, 11};
 
   params_.seed = 42;
@@ -2082,19 +2081,19 @@ TEST_F(VocalTest, SkipCollisionAvoidancePreservesScaleTones) {
   ctx.params = &params_;
   ctx.rng = &rng;
   ctx.harmony = &harmony;
-  ctx.skip_collision_avoidance = true;
+
   vocal_gen.generateFullTrack(vocal_track, ctx);
 
   // All notes should still be on the C major scale
   for (const auto& note : vocal_track.notes()) {
     int pc = note.note % 12;
     EXPECT_TRUE(c_major_pcs.count(pc) > 0)
-        << "Chromatic note found with skip_collision_avoidance: pitch "
+        << "Chromatic note found in vocal-first mode: pitch "
         << static_cast<int>(note.note) << " (pitch class " << pc << ")";
   }
 }
 
-TEST_F(VocalTest, SkipCollisionAvoidanceDeterminism) {
+TEST_F(VocalTest, VocalFirstModeDeterminism) {
   // Verify determinism: same seed should produce same output
   params_.seed = 99999;
   params_.structure = StructurePattern::StandardPop;
@@ -2114,7 +2113,7 @@ TEST_F(VocalTest, SkipCollisionAvoidanceDeterminism) {
   ctx.params = &params_;
   ctx.rng = &rng1;
   ctx.harmony = &harmony;
-  ctx.skip_collision_avoidance = true;
+
   vocal_gen.generateFullTrack(vocal1, ctx);
 
   // Second generation with same seed (need fresh HarmonyCoordinator)

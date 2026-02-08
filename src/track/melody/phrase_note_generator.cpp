@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "core/chord_utils.h"
+#include "core/rng_util.h"
 #include "core/i_harmony_context.h"
 #include "core/note_creator.h"
 #include "core/pitch_utils.h"
@@ -96,9 +97,8 @@ int applyAllPitchConstraints(int pitch, const NoteGenerationContext& ctx,
   // Check if pending resolution should override the selected pitch
   if (leap_state.shouldApplyStep() && ctx.prev_note_pitch >= 0) {
     float step_probability = params.prefer_stepwise ? 1.0f : 0.80f;
-    std::uniform_real_distribution<float> step_dist(0.0f, 1.0f);
 
-    if (step_dist(rng) < step_probability) {
+    if (rng_util::rollProbability(rng, step_probability)) {
       int best_step = findStepwiseResolutionPitch(ctx.current_pitch, chord_tones,
                                                    leap_state.direction,
                                                    params.vocal_low, params.vocal_high);
@@ -204,8 +204,7 @@ int applyPhraseEndResolution(int pitch, int8_t chord_degree, SectionType section
     return pitch;
   }
 
-  std::uniform_real_distribution<float> resolve_dist(0.0f, 1.0f);
-  if (resolve_dist(rng) >= phrase_end_resolution) {
+  if (!rng_util::rollProbability(rng, phrase_end_resolution)) {
     return pitch;
   }
 
@@ -227,7 +226,7 @@ int applyPhraseEndResolution(int pitch, int8_t chord_degree, SectionType section
   }
 
   // For Chorus sections, prefer root note resolution for strong cadence
-  if (section_type == SectionType::Chorus && resolve_dist(rng) < 0.6f) {
+  if (section_type == SectionType::Chorus && rng_util::rollProbability(rng, 0.6f)) {
     int root_pc = chord_tones.empty() ? 0 : chord_tones[0];
     int octave = new_pitch / 12;
     int root_pitch = octave * 12 + root_pc;

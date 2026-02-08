@@ -196,8 +196,7 @@ VoicedChord selectVoicing(uint8_t root, const Chord& chord, const VoicedChord& p
       }
     }
     // Random selection among tied candidates
-    std::uniform_int_distribution<size_t> dist(0, tied_indices.size() - 1);
-    return candidates[tied_indices[dist(rng)]];
+    return candidates[rng_util::selectRandom(rng, tied_indices)];
   }
 
   // Voice leading: prefer common tones, minimal movement, and preferred type
@@ -231,8 +230,7 @@ VoicedChord selectVoicing(uint8_t root, const Chord& chord, const VoicedChord& p
   }
 
   // Random selection among tied candidates
-  std::uniform_int_distribution<size_t> dist(0, tied_indices.size() - 1);
-  return candidates[tied_indices[dist(rng)]];
+  return candidates[rng_util::selectRandom(rng, tied_indices)];
 }
 
 int voicingRepetitionPenalty(const VoicedChord& candidate, const VoicedChord& prev,

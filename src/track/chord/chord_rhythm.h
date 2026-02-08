@@ -13,6 +13,8 @@
 #include <random>
 #include <vector>
 
+#include "core/rng_util.h"
+
 #include "core/mood_utils.h"
 #include "core/section_properties.h"
 #include "core/section_types.h"
@@ -84,8 +86,7 @@ inline ChordRhythm selectRhythm(SectionType section, Mood mood, BackingDensity b
   // Motif is the "coordinate axis" in RhythmSync, so Chord must use shorter notes
   // to avoid long notes clashing with moving Motif pitches during their sustain.
   if (paradigm == GenerationParadigm::RhythmSync) {
-    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-    float roll = dist(rng);
+    float roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
 
     // RhythmSync: prefer longer notes (Half/Whole). Collisions with Motif are
     // handled reactively via duration shortening in createNoteWithResult().
@@ -207,8 +208,7 @@ inline ChordRhythm selectRhythm(SectionType section, Mood mood, BackingDensity b
   if (allowed.size() == 1) {
     selected = allowed[0];
   } else {
-    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-    float roll = dist(rng);
+    float roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
     float cumulative = 0.0f;
     selected = allowed[0];  // Default fallback
     for (size_t i = 0; i < allowed.size(); ++i) {

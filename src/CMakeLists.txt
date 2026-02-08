@@ -32,7 +32,9 @@ set(MIDISKETCH_CORE_SOURCES
   core/collision_resolver.cpp
   core/config_converter.cpp
   core/modulation_calculator.cpp
-  core/post_processor.cpp
+  core/post_processor_humanization.cpp
+  core/post_processor_section_effects.cpp
+  core/post_processor_polish.cpp
   core/section_utils.cpp
   core/production_blueprint.cpp
   core/euclidean_rhythm.cpp
@@ -73,7 +75,6 @@ set(MIDISKETCH_CORE_SOURCES
   track/melody/leap_resolution.cpp
   track/melody/isolated_note_resolver.cpp
   track/melody/phrase_note_generator.cpp
-  track/melody/melody_generation_pipeline.cpp
   track/generators/vocal.cpp
   track/generators/bass.cpp
   track/generators/chord.cpp

@@ -168,7 +168,6 @@ struct FullTrackContext {
   const ChordProgression* chord_progression = nullptr;  ///< Chord progression (convenience)
 
   // Track-specific options (set by Coordinator based on paradigm)
-  bool skip_collision_avoidance = false;          ///< For vocal-first mode
   const DrumGrid* drum_grid = nullptr;            ///< DrumGrid for RhythmSync
   const KickPatternCache* kick_cache = nullptr;   ///< KickPatternCache for bass-kick sync
   const MotifContext* vocal_ctx = nullptr;         ///< MotifContext for motif generation

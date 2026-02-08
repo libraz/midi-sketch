@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include "core/note_timeline_utils.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
 #include "test_helpers/note_event_test_helper.h"
@@ -39,7 +40,7 @@ TEST_F(RemoveOverlapsTest, NoOverlapNoChange) {
       {480, 240, 64},  // 480-720 (no overlap)
   });
 
-  removeOverlaps(notes);
+  NoteTimeline::fixOverlapsWithMinDuration(notes, TICK_SIXTEENTH);
 
   EXPECT_EQ(notes[0].duration, 240u);
   EXPECT_EQ(notes[1].duration, 240u);
@@ -54,7 +55,7 @@ TEST_F(RemoveOverlapsTest, OverlapTrimmedToAvailableSpace) {
       {60, 240, 62},  // 60-300, gap is only 60 ticks (< 120)
   });
 
-  removeOverlaps(notes, TICK_SIXTEENTH);  // min_duration = 120
+  NoteTimeline::fixOverlapsWithMinDuration(notes, TICK_SIXTEENTH);  // min_duration = 120
 
   // Gap of 60 is less than minimum 120, but we still truncate to prevent overlap
   EXPECT_EQ(notes[0].duration, 60u) << "Duration should be trimmed to available space";
@@ -69,7 +70,7 @@ TEST_F(RemoveOverlapsTest, OverlapTrimmedWhenAboveMinimum) {
       {240, 240, 62},  // 240-480, gap is 240 ticks (>= 120)
   });
 
-  removeOverlaps(notes, TICK_SIXTEENTH);
+  NoteTimeline::fixOverlapsWithMinDuration(notes, TICK_SIXTEENTH);
 
   // Gap of 240 is >= minimum 120, so duration should be trimmed
   EXPECT_EQ(notes[0].duration, 240u) << "Duration should be trimmed to prevent overlap";
@@ -84,7 +85,7 @@ TEST_F(RemoveOverlapsTest, MinDurationParameterRespected) {
   });
 
   // With min_duration = 120, short note should be extended
-  removeOverlaps(notes1, 120);
+  NoteTimeline::fixOverlapsWithMinDuration(notes1, 120);
   EXPECT_EQ(notes1[0].duration, 120u) << "Should extend to min_duration when space available";
 
   auto notes2 = createNotes({
@@ -93,7 +94,7 @@ TEST_F(RemoveOverlapsTest, MinDurationParameterRespected) {
   });
 
   // With min_duration = 60 (UltraVocaloid), short note should be extended to 60
-  removeOverlaps(notes2, 60);
+  NoteTimeline::fixOverlapsWithMinDuration(notes2, 60);
   EXPECT_EQ(notes2[0].duration, 60u) << "Should extend to min_duration of 60";
 }
 
@@ -104,7 +105,7 @@ TEST_F(RemoveOverlapsTest, UltraVocaloidAllows32ndNotes) {
       {60, 120, 62},  // 60-180, overlap of 60 ticks
   });
 
-  removeOverlaps(notes, TICK_32ND);  // min_duration = 60 (32nd note)
+  NoteTimeline::fixOverlapsWithMinDuration(notes, TICK_32ND);  // min_duration = 60 (32nd note)
 
   // Gap is exactly 60, which equals min_duration, so it should be trimmed
   EXPECT_EQ(notes[0].duration, 60u) << "32nd note duration should be allowed for UltraVocaloid";
@@ -118,7 +119,7 @@ TEST_F(RemoveOverlapsTest, ChainedOverlapsHandled) {
       {480, 480, 64},  // 480-960, overlaps with previous (after adjustment)
   });
 
-  removeOverlaps(notes, TICK_SIXTEENTH);
+  NoteTimeline::fixOverlapsWithMinDuration(notes, TICK_SIXTEENTH);
 
   // Each note should end where the next begins
   EXPECT_LE(notes[0].start_tick + notes[0].duration, notes[1].start_tick);

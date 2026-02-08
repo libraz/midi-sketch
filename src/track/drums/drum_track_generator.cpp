@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "core/euclidean_rhythm.h"
+#include "core/rng_util.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
 #include "core/section_properties.h"
@@ -253,8 +254,7 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
   const auto& blueprint = getProductionBlueprint(params.blueprint_id);
   bool use_euclidean = false;
   if (blueprint.euclidean_drums_percent > 0) {
-    std::uniform_int_distribution<uint8_t> dist(0, 99);
-    use_euclidean = dist(rng) < blueprint.euclidean_drums_percent;
+    use_euclidean = rng_util::rollRange(rng, 0, 99) < blueprint.euclidean_drums_percent;
   }
 
   const GrooveTemplate groove_template = getMoodGrooveTemplate(params.mood);
@@ -495,8 +495,6 @@ VocalSyncCallback createVocalSyncCallback(const VocalAnalysis& vocal_analysis, u
       std::sort(onsets.begin(), onsets.end());
     }
 
-    std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
-
     // Add kicks at vocal onset positions
     for (Tick onset : onsets) {
       // Quantize to 16th note grid
@@ -505,7 +503,7 @@ VocalSyncCallback createVocalSyncCallback(const VocalAnalysis& vocal_analysis, u
       Tick kick_tick = bar_start + quantized;
 
       // Apply DrumRole probability
-      if (kick_prob < 1.0f && prob_dist(rng) >= kick_prob) {
+      if (kick_prob < 1.0f && !rng_util::rollProbability(rng, kick_prob)) {
         continue;
       }
 
@@ -543,8 +541,6 @@ VocalSyncCallback createMelodyDrivenCallback(const VocalAnalysis& vocal_analysis
     // 4 notes per bar is considered "normal", more = dense, fewer = sparse
     float density_factor = std::min(1.0f, static_cast<float>(note_count) / 6.0f);
 
-    std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
-
     // MelodyDriven kick pattern: standard positions with density-adjusted probability
     // Higher vocal density = higher kick density for support
     const Tick kick_positions[] = {
@@ -574,7 +570,7 @@ VocalSyncCallback createMelodyDrivenCallback(const VocalAnalysis& vocal_analysis
         if (density_factor < 0.5f) continue;  // Skip if sparse
       }
 
-      if (prob_dist(rng) < pos_prob) {
+      if (rng_util::rollProbability(rng, pos_prob)) {
         uint8_t kick_vel = (i < 2) ? velocity : static_cast<uint8_t>(velocity * 0.85f);
         addDrumNote(track, kick_tick, EIGHTH, BD, kick_vel);
       }

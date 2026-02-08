@@ -1083,8 +1083,7 @@ void generateChordTrackUnified(ChordGenerationMode mode, MidiTrack& track, const
               tied_indices.push_back(i);
             }
           }
-          std::uniform_int_distribution<size_t> dist(0, tied_indices.size() - 1);
-          voicing = filtered[tied_indices[dist(rng)]];
+          voicing = filtered[rng_util::selectRandom(rng, tied_indices)];
         } else {
           // === Diff #13: Voice leading scoring ===
           // WithContext: parallel 5ths/octaves penalty
@@ -1109,8 +1108,7 @@ void generateChordTrackUnified(ChordGenerationMode mode, MidiTrack& track, const
               tied_indices.push_back(i);
             }
           }
-          std::uniform_int_distribution<size_t> dist(0, tied_indices.size() - 1);
-          voicing = filtered[tied_indices[dist(rng)]];
+          voicing = filtered[rng_util::selectRandom(rng, tied_indices)];
         }
       }
 
