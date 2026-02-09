@@ -148,6 +148,81 @@ TEST_F(NoteCreatorTest, NoCollisionCheck) {
   EXPECT_EQ(note->note, 61);  // Unchanged
 }
 
+TEST_F(NoteCreatorTest, NoCollisionCheckClampsToRange) {
+  // desired_pitch > range_high should be clamped to range_high
+  NoteOptions opts;
+  opts.start = 0;
+  opts.duration = 480;
+  opts.desired_pitch = 90;  // Well above range_high
+  opts.velocity = 100;
+  opts.role = TrackRole::Vocal;
+  opts.preference = PitchPreference::NoCollisionCheck;
+  opts.range_low = 60;
+  opts.range_high = 84;
+  opts.source = NoteSource::MelodyPhrase;
+
+  auto note = createNote(harmony_, opts);
+
+  ASSERT_TRUE(note.has_value());
+  EXPECT_EQ(note->note, 84);  // Clamped to range_high
+}
+
+TEST_F(NoteCreatorTest, NoCollisionCheckClampsToRangeLow) {
+  // desired_pitch < range_low should be clamped to range_low
+  NoteOptions opts;
+  opts.start = 0;
+  opts.duration = 480;
+  opts.desired_pitch = 50;  // Below range_low
+  opts.velocity = 100;
+  opts.role = TrackRole::Vocal;
+  opts.preference = PitchPreference::NoCollisionCheck;
+  opts.range_low = 60;
+  opts.range_high = 84;
+  opts.source = NoteSource::MelodyPhrase;
+
+  auto note = createNote(harmony_, opts);
+
+  ASSERT_TRUE(note.has_value());
+  EXPECT_EQ(note->note, 60);  // Clamped to range_low
+}
+
+TEST_F(NoteCreatorTest, NoCollisionCheckNoClampWhenInRange) {
+  // desired_pitch within range should pass through unchanged
+  NoteOptions opts;
+  opts.start = 0;
+  opts.duration = 480;
+  opts.desired_pitch = 72;  // Within range
+  opts.velocity = 100;
+  opts.role = TrackRole::Vocal;
+  opts.preference = PitchPreference::NoCollisionCheck;
+  opts.range_low = 60;
+  opts.range_high = 84;
+  opts.source = NoteSource::MelodyPhrase;
+
+  auto note = createNote(harmony_, opts);
+
+  ASSERT_TRUE(note.has_value());
+  EXPECT_EQ(note->note, 72);  // Unchanged
+}
+
+TEST_F(NoteCreatorTest, NoCollisionCheckNoClampWhenRangeUnset) {
+  // When range_high=0 (unset), no clamping should occur
+  NoteOptions opts;
+  opts.start = 0;
+  opts.duration = 480;
+  opts.desired_pitch = 90;
+  opts.velocity = 100;
+  opts.role = TrackRole::Vocal;
+  opts.preference = PitchPreference::NoCollisionCheck;
+  // range_low=0, range_high=0 (defaults)
+  opts.source = NoteSource::MelodyPhrase;
+
+  auto note = createNote(harmony_, opts);
+
+  ASSERT_TRUE(note.has_value());
+  EXPECT_EQ(note->note, 90);  // No clamping when range is unset
+}
+
 TEST_F(NoteCreatorTest, RegisterToHarmony) {
   NoteOptions opts;
   opts.start = 0;

@@ -311,5 +311,53 @@ TEST(ChordUtilsTest, StepwiseToTargetRespectsRange) {
   EXPECT_LE(result, 65);
 }
 
+// ============================================================================
+// findNearestChordToneInRange Tests
+// ============================================================================
+
+TEST(FindNearestChordToneInRangeTest, NearestToNonChordTone) {
+  // C#4 (61) is not a chord tone of I (C, E, G)
+  // Nearest chord tones: C4 (60, dist=1) or E4 (64, dist=3)
+  int result = findNearestChordToneInRange(61, 0, 48, 84);
+  EXPECT_EQ(result, 60);  // C4 is closest
+}
+
+TEST(FindNearestChordToneInRangeTest, ExactChordTone) {
+  // C4 (60) is already a chord tone of I chord
+  int result = findNearestChordToneInRange(60, 0, 48, 84);
+  EXPECT_EQ(result, 60);
+}
+
+TEST(FindNearestChordToneInRangeTest, RangeForcesHigherTone) {
+  // C4 (60) is a chord tone but range_low=64 excludes it
+  // Lowest chord tone in range: E4 (64)
+  int result = findNearestChordToneInRange(60, 0, 64, 84);
+  EXPECT_EQ(result, 64);
+}
+
+TEST(FindNearestChordToneInRangeTest, VChordRootIsChordTone) {
+  // G4 (67) is root of V chord (G, B, D)
+  int result = findNearestChordToneInRange(67, 4, 48, 84);
+  EXPECT_EQ(result, 67);
+}
+
+TEST(FindNearestChordToneInRangeTest, NearestVChordTone) {
+  // G#4 (68) is not a chord tone of V (G=7, B=11, D=2)
+  // Nearest: G4 (67, dist=1) or B4 (71, dist=3)
+  int result = findNearestChordToneInRange(68, 4, 48, 84);
+  EXPECT_EQ(result, 67);  // G4 is closest
+}
+
+TEST(FindNearestChordToneInRangeTest, ResultWithinRange) {
+  // Verify result is always within [range_low, range_high]
+  for (int degree = 0; degree < 7; ++degree) {
+    for (int pitch = 48; pitch <= 84; ++pitch) {
+      int result = findNearestChordToneInRange(pitch, static_cast<int8_t>(degree), 48, 84);
+      EXPECT_GE(result, 48) << "degree=" << degree << " pitch=" << pitch;
+      EXPECT_LE(result, 84) << "degree=" << degree << " pitch=" << pitch;
+    }
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

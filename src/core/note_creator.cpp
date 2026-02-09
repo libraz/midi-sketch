@@ -325,14 +325,21 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
 
   // NoCollisionCheck: skip safety check, just create the note
   if (opts.preference == PitchPreference::NoCollisionCheck) {
+    // Safety net: clamp to [range_low, range_high] if range is specified
+    uint8_t final_pitch = opts.desired_pitch;
+    if (opts.range_high > 0 && opts.range_low <= opts.range_high) {
+      if (final_pitch > opts.range_high) final_pitch = opts.range_high;
+      if (final_pitch < opts.range_low) final_pitch = opts.range_low;
+    }
+
     NoteEvent event = buildNoteEvent(harmony, opts.start, effective_duration,
-                                      opts.desired_pitch, opts.velocity,
+                                      final_pitch, opts.velocity,
                                       opts.source, opts.record_provenance, true_original);
 
     ProvenanceParams prov;
     prov.true_original = true_original;
     prov.desired_pitch = opts.desired_pitch;
-    prov.final_pitch = opts.desired_pitch;
+    prov.final_pitch = final_pitch;
     prov.record_provenance = opts.record_provenance;
     prov.was_chord_clipped = result.was_chord_clipped;
     prov.original_duration = opts.duration;
@@ -340,7 +347,7 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
     prov.next_degree = boundary_info.next_degree;
     recordProvenanceTransforms(event, prov);
 
-    finalizeResult(result, event, opts.desired_pitch, true_original,
+    finalizeResult(result, event, final_pitch, true_original,
                    CollisionAvoidStrategy::None, effective_duration, harmony, opts);
     return result;
   }

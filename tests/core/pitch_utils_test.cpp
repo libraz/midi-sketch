@@ -941,5 +941,50 @@ TEST(UnifiedDissonanceTest, PitchPairUnison) {
   EXPECT_FALSE(isDissonantPitchPair(72, 72));
 }
 
+// ============================================================================
+// pitchToMajorDegree Tests
+// ============================================================================
+
+TEST(PitchToMajorDegreeTest, Unison) {
+  // Same pitch => degree 0
+  EXPECT_EQ(pitchToMajorDegree(60, 60), 0);
+}
+
+TEST(PitchToMajorDegreeTest, DegreeOne) {
+  // D4 (62) = degree 1 relative to C4 (60)
+  EXPECT_EQ(pitchToMajorDegree(62, 60), 1);
+}
+
+TEST(PitchToMajorDegreeTest, DegreeTwo) {
+  // E4 (64) = degree 2 relative to C4 (60)
+  EXPECT_EQ(pitchToMajorDegree(64, 60), 2);
+}
+
+TEST(PitchToMajorDegreeTest, DegreeFour) {
+  // G4 (67) = degree 4 relative to C4 (60)
+  EXPECT_EQ(pitchToMajorDegree(67, 60), 4);
+}
+
+TEST(PitchToMajorDegreeTest, OctaveAbove) {
+  // C5 (72) = degree 7 (one octave = 7 scale degrees)
+  EXPECT_EQ(pitchToMajorDegree(72, 60), 7);
+}
+
+TEST(PitchToMajorDegreeTest, BelowBase) {
+  // B3 (59) is one semitone below C4 (60) → negative degree
+  int result = pitchToMajorDegree(59, 60);
+  EXPECT_LT(result, 0);
+}
+
+TEST(PitchToMajorDegreeTest, RoundTripWithDegreeToPitch) {
+  // For diatonic degrees, pitchToMajorDegree(degreeToPitch(d, 60, 0), 60) == d
+  for (int deg = -7; deg <= 14; ++deg) {
+    int pitch = degreeToPitch(deg, 60, 0);
+    int recovered = pitchToMajorDegree(pitch, 60);
+    EXPECT_EQ(recovered, deg) << "Round-trip failed for degree " << deg
+                               << " (pitch=" << pitch << ")";
+  }
+}
+
 }  // namespace
 }  // namespace midisketch

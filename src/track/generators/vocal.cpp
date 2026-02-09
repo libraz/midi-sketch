@@ -889,15 +889,23 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
   int same_pitch_streak = 0;  // Track consecutive same pitch for progressive penalty
   int onsets_since_long = 100;  // Start high so first onset can be long if desired
 
+  // Whether run-based onset map is active: breath gaps and density thinning
+  // are already handled by buildRunBasedOnsetMap() in this mode.
+  bool run_based_active =
+      (phrase_plan != nullptr && !phrase_plan->phrases.empty() &&
+       ctx.paradigm == GenerationParadigm::RhythmSync &&
+       ctx.motif_params != nullptr &&
+       ctx.motif_params->rhythm_template != MotifRhythmTemplate::None &&
+       ctx.vocal_style != VocalStylePreset::UltraVocaloid);
+
   size_t i = 0;
   while (i < onsets.size()) {
     float beat = onsets[i];
 
     // Insert breath at phrase boundaries by shortening previous note.
-    // When PhrasePlan is provided, breath gaps are already handled by
-    // run-based onset selection, so skip retroactive breath insertion.
-    bool breath_handled_by_plan =
-        (phrase_plan != nullptr && !phrase_plan->phrases.empty());
+    // When run-based onset map is active, breath gaps are already handled by
+    // buildRunBasedOnsetMap(), so skip retroactive breath insertion.
+    bool breath_handled_by_plan = run_based_active;
     if (i > 0 && boundary_set.count(beat) > 0 && !notes.empty() && !breath_handled_by_plan) {
       Tick min_duration = TICK_SIXTEENTH;
       if (notes.back().duration > breath_duration + min_duration) {
@@ -926,12 +934,7 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
     // ======================================================================
     // When buildRunBasedOnsetMap has already controlled density (RhythmSync
     // with PhrasePlan), skip evaluateLongNoteDesire to prevent double-thinning.
-    bool onset_pre_thinned =
-        (phrase_plan != nullptr && !phrase_plan->phrases.empty() &&
-         ctx.paradigm == GenerationParadigm::RhythmSync &&
-         ctx.motif_params != nullptr &&
-         ctx.motif_params->rhythm_template != MotifRhythmTemplate::None &&
-         ctx.vocal_style != VocalStylePreset::UltraVocaloid);
+    bool onset_pre_thinned = run_based_active;
 
     LongNoteDesire desire{0, 0.0f};
     if (!onset_pre_thinned) {

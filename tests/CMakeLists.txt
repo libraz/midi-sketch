@@ -33,6 +33,7 @@ set(TEST_SOURCES
   core/motif_test.cpp
   core/motif_transform_test.cpp
   core/struct_layout_test.cpp
+  core/basic_types_test.cpp
   core/pitch_utils_test.cpp
   core/chord_utils_test.cpp
   core/melody_templates_test.cpp
@@ -103,11 +104,13 @@ set(TEST_SOURCES
   track/fretted_instrument_test.cpp
   instrument/keyboard_model_test.cpp
   track/rhythm_sync_test.cpp
+  track/bpm_scaling_test.cpp
   track/melody_utils_test.cpp
   instrument/drum_performer_test.cpp
   analysis/dissonance_test.cpp
   analysis/non_diatonic_detection_test.cpp
   api/c_api_test.cpp
+  api/events_json_test.cpp
   integration/dissonance_integration_test.cpp
   integration/dissonance_diagnostic_test.cpp
   integration/cross_paradigm_test.cpp

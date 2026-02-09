@@ -3244,5 +3244,35 @@ TEST_F(VocalTest, RhythmSyncDirectionInertiaLimits) {
       << "Direction inertia should limit consecutive downward movements";
 }
 
+TEST_F(VocalTest, MelodyDrivenHasBreathGaps) {
+  // MelodyDriven paradigm (StoryPop blueprint) should have breath gaps
+  // between vocal phrases, even when PhrasePlan is provided.
+  // Regression test: breath_handled_by_plan guard was too broad, skipping
+  // retroactive breath insertion for non-RhythmSync paradigms.
+  params_.blueprint_id = 2;  // StoryPop = MelodyDriven paradigm
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal = gen.getSong().vocal();
+  ASSERT_GT(vocal.notes().size(), 10u) << "Need multiple notes for breath analysis";
+
+  // Count gaps between notes that could be breath points
+  int breath_gaps = 0;
+  constexpr Tick kBreathGapThreshold = TICKS_PER_BEAT / 4;  // Quarter beat
+
+  for (size_t i = 1; i < vocal.notes().size(); ++i) {
+    Tick prev_end = vocal.notes()[i-1].start_tick + vocal.notes()[i-1].duration;
+    Tick gap = vocal.notes()[i].start_tick - prev_end;
+    if (gap >= kBreathGapThreshold) {
+      breath_gaps++;
+    }
+  }
+  // MelodyDriven should produce natural breath opportunities
+  EXPECT_GE(breath_gaps, 2)
+      << "MelodyDriven vocal should have breath gaps between phrases";
+}
+
 }  // namespace
 }  // namespace midisketch
