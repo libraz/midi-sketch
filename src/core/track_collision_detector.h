@@ -183,6 +183,22 @@ class TrackCollisionDetector {
   /// Clear notes from a specific track only.
   void clearNotesForTrack(TrackRole track);
 
+  /**
+   * @brief Register a phantom note (guide chord).
+   *
+   * Same collision behavior as normal notes, but can be selectively
+   * cleared without affecting real track notes.
+   *
+   * @param start Start tick of the note
+   * @param duration Duration in ticks
+   * @param pitch MIDI pitch
+   * @param track Which track this note belongs to
+   */
+  void registerPhantomNote(Tick start, Tick duration, uint8_t pitch, TrackRole track);
+
+  /// Clear only phantom notes (preserves real track notes).
+  void clearPhantomNotes();
+
   /// Get all registered notes.
   const auto& notes() const { return notes_; }
 
@@ -232,6 +248,7 @@ class TrackCollisionDetector {
     Tick end;
     uint8_t pitch;
     TrackRole track;
+    bool is_phantom = false;  ///< Guide chord phantom note (clearable separately)
   };
 
   // Collect note indices overlapping [start, end) using beat index.

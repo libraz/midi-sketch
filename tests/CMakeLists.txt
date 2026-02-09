@@ -115,6 +115,7 @@ set(TEST_SOURCES
   track/chord_collision_regression_test.cpp
   track/generator_iteration_snapshot_test.cpp
   core/harmony_interface_test.cpp
+  core/guide_chord_test.cpp
   track/phrase_tail_rest_test.cpp
   track/vocal_guide_tone_test.cpp
   track/phrase_planner_test.cpp

@@ -9,6 +9,7 @@
 #ifndef MIDISKETCH_TRACK_VOCAL_PHRASE_CACHE_H
 #define MIDISKETCH_TRACK_VOCAL_PHRASE_CACHE_H
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <functional>
@@ -17,6 +18,8 @@
 #include "core/section_types.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
+#include "track/generators/motif.h"
+#include "track/vocal/phrase_plan.h"
 
 namespace midisketch {
 
@@ -333,6 +336,182 @@ inline Tick getBreathDuration(SectionType section_type, bool is_ballad,
   base = std::max(base, min_breath_ticks);
 
   return base;
+}
+
+// ============================================================================
+// Run-Based Onset Selection for RhythmSync Vocal
+// ============================================================================
+
+/// @brief Minimum vocal onset interval based on vocal physiology (~200ms).
+constexpr float kMinVocalOnsetSeconds = 0.2f;
+
+/// @brief Calculate BPM-dependent minimum onset interval in ticks.
+inline Tick calcMinOnsetInterval(uint16_t bpm) {
+  return static_cast<Tick>(
+      std::ceil(kMinVocalOnsetSeconds * bpm * TICKS_PER_BEAT / 60.0f));
+}
+
+/// @brief Position bonus constants for onset scoring.
+constexpr float kFirstRunBonus = 0.3f;
+constexpr float kLastRunBonus = 0.2f;
+constexpr float kStrongBeatBonus = 0.1f;
+
+/// @brief Build run-based filtered onset map for RhythmSync vocal.
+///
+/// Groups Motif onsets into "runs" (contiguous onset clusters), then
+/// selectively keeps/trims runs to match PhrasePlan target_note_count.
+/// This ensures rhythmic coherence: short notes only appear in dense
+/// runs, never in isolation.
+///
+/// @param pattern Full Motif rhythm pattern for the section
+/// @param phrase_plan PhrasePlan with per-phrase target_note_count
+/// @param tmpl_config Motif rhythm template config (for accent weights)
+/// @param bpm Current BPM
+/// @param section_start Section start tick (absolute)
+/// @return Filtered CachedRhythmPattern (onset_beats only, durations empty)
+inline CachedRhythmPattern buildRunBasedOnsetMap(
+    const CachedRhythmPattern& pattern,
+    const PhrasePlan& phrase_plan,
+    const motif_detail::MotifRhythmTemplateConfig& tmpl_config,
+    uint16_t bpm,
+    Tick section_start) {
+
+  CachedRhythmPattern result;
+  result.phrase_beats = pattern.phrase_beats;
+  result.is_locked = pattern.is_locked;
+
+  if (pattern.onset_beats.empty() || phrase_plan.phrases.empty()) {
+    result.onset_beats = pattern.onset_beats;
+    return result;
+  }
+
+  Tick min_interval_ticks = calcMinOnsetInterval(bpm);
+  float min_interval_beats = static_cast<float>(min_interval_ticks) / TICKS_PER_BEAT;
+
+  // Collect accent weights from template (beat_position -> weight mapping)
+  // Build a lookup: for each onset beat, find closest template accent weight
+  auto getAccentWeight = [&](float beat) -> float {
+    float beat_in_bar = std::fmod(beat, 4.0f);
+    if (beat_in_bar < 0.0f) beat_in_bar += 4.0f;
+    float best_dist = 100.0f;
+    float best_weight = 0.5f;
+    for (uint8_t ti = 0; ti < tmpl_config.note_count; ++ti) {
+      if (tmpl_config.beat_positions[ti] < 0) break;
+      float dist = std::abs(beat_in_bar - tmpl_config.beat_positions[ti]);
+      if (dist < best_dist) {
+        best_dist = dist;
+        best_weight = tmpl_config.accent_weights[ti];
+      }
+    }
+    return best_weight;
+  };
+
+  // Process each phrase independently
+  for (const auto& phrase : phrase_plan.phrases) {
+    // Convert phrase boundaries to beat-relative (from section start)
+    float phrase_start_beat =
+        static_cast<float>(phrase.start_tick - section_start) / TICKS_PER_BEAT;
+    // Subtract breath_after from end to get singable region
+    float phrase_end_beat =
+        static_cast<float>(phrase.end_tick - phrase.breath_after - section_start) / TICKS_PER_BEAT;
+
+    // Collect onsets within this phrase's singable region
+    std::vector<size_t> phrase_onset_indices;
+    for (size_t i = 0; i < pattern.onset_beats.size(); ++i) {
+      float b = pattern.onset_beats[i];
+      if (b >= phrase_start_beat && b < phrase_end_beat) {
+        phrase_onset_indices.push_back(i);
+      }
+    }
+
+    if (phrase_onset_indices.empty()) continue;
+
+    int target = static_cast<int>(phrase.target_note_count * phrase.density_modifier);
+    target = std::max(target, 2);  // At least 2 notes per phrase
+
+    int total_onsets = static_cast<int>(phrase_onset_indices.size());
+
+    if (total_onsets <= target) {
+      // All onsets fit within target — keep all
+      for (size_t idx : phrase_onset_indices) {
+        result.onset_beats.push_back(pattern.onset_beats[idx]);
+      }
+    } else {
+      // ================================================================
+      // Phase 3: Select target onsets from all phrase onsets
+      // ================================================================
+      // Strategy: score each onset by accent weight + position bonus,
+      // then keep the top `target` onsets.
+
+      struct ScoredOnset {
+        size_t pattern_index;  // Index into pattern.onset_beats
+        float score;
+        float beat;
+      };
+
+      std::vector<ScoredOnset> scored;
+      scored.reserve(phrase_onset_indices.size());
+
+      for (size_t idx : phrase_onset_indices) {
+        float b = pattern.onset_beats[idx];
+        float s = getAccentWeight(b);
+
+        // Strong beat bonus
+        float beat_in_bar = std::fmod(b, 4.0f);
+        if (beat_in_bar < 0.0f) beat_in_bar += 4.0f;
+        if (beat_in_bar < 0.1f || std::abs(beat_in_bar - 2.0f) < 0.1f) {
+          s += kStrongBeatBonus;
+        }
+
+        // Phrase boundary bonus (first/last onset)
+        if (idx == phrase_onset_indices.front()) s += kFirstRunBonus;
+        if (idx == phrase_onset_indices.back()) s += kLastRunBonus;
+
+        scored.push_back({idx, s, b});
+      }
+
+      // Sort by score descending (keep highest scored)
+      std::sort(scored.begin(), scored.end(),
+                [](const ScoredOnset& a, const ScoredOnset& b) {
+                  return a.score > b.score;
+                });
+
+      // Keep top `target` onsets
+      size_t keep_count = static_cast<size_t>(std::max(target, 2));
+      if (keep_count > scored.size()) keep_count = scored.size();
+
+      std::vector<float> kept_beats;
+      kept_beats.reserve(keep_count);
+      for (size_t k = 0; k < keep_count; ++k) {
+        kept_beats.push_back(scored[k].beat);
+      }
+
+      // Sort by beat position (chronological order)
+      std::sort(kept_beats.begin(), kept_beats.end());
+
+      // ================================================================
+      // Phase 5: min_interval check
+      // ================================================================
+      std::vector<float> final_beats;
+      if (!kept_beats.empty()) {
+        final_beats.push_back(kept_beats[0]);
+        for (size_t k = 1; k < kept_beats.size(); ++k) {
+          float gap_beats = kept_beats[k] - final_beats.back();
+          if (gap_beats >= min_interval_beats) {
+            final_beats.push_back(kept_beats[k]);
+          }
+        }
+      }
+
+      for (float b : final_beats) {
+        result.onset_beats.push_back(b);
+      }
+    }
+  }
+
+  // Sort to ensure monotonic order
+  std::sort(result.onset_beats.begin(), result.onset_beats.end());
+  return result;
 }
 
 }  // namespace midisketch

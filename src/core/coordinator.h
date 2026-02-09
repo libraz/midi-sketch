@@ -272,6 +272,15 @@ class Coordinator {
   /// @return true if the track should be skipped
   bool shouldSkipTrack(TrackRole role, const Song& song) const;
 
+  /// @brief Register guide chord phantom notes for collision detection.
+  ///
+  /// Registers Root + 3rd + 7th as phantom notes in the Vocal-adapted register
+  /// for each bar, using the effective chord degree (including secondary dominants).
+  /// Called after secondary dominant planning, before track generation.
+  ///
+  /// @param harmony Harmony coordinator to register phantom notes with
+  void registerGuideChord(IHarmonyCoordinator& harmony);
+
   /// @brief Apply max_moving_voices constraint by freezing low-priority tracks.
   /// @param song The song with generated tracks
   /// @param sections The section list

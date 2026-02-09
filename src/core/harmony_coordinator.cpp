@@ -144,6 +144,12 @@ FORWARD_VOID(registerSecondaryDominant, Tick start, Tick end, int8_t degree) {
 FORWARD_CONST(bool, isSecondaryDominantAt, Tick tick) {
   return base_context_.isSecondaryDominantAt(tick);
 }
+FORWARD_VOID(registerPhantomNote, Tick start, Tick duration, uint8_t pitch, TrackRole track) {
+  base_context_.registerPhantomNote(start, duration, pitch, track);
+}
+void HarmonyCoordinator::clearPhantomNotes() {
+  base_context_.clearPhantomNotes();
+}
 
 #undef FORWARD_CONST
 #undef FORWARD_VOID

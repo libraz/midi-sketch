@@ -83,6 +83,9 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
   uint8_t getHighestPitchForTrackInRange(Tick start, Tick end, TrackRole role) const override;
   uint8_t getLowestPitchForTrackInRange(Tick start, Tick end, TrackRole role) const override;
 
+  void registerPhantomNote(Tick start, Tick duration, uint8_t pitch, TrackRole track) override;
+  void clearPhantomNotes() override;
+
   // =========================================================================
   // IHarmonyCoordinator interface (new functionality)
   // =========================================================================

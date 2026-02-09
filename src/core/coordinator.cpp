@@ -9,6 +9,7 @@
 #include <optional>
 
 #include "core/chord.h"
+#include "core/chord_utils.h"
 #include "core/pitch_utils.h"
 #include "core/harmony_coordinator.h"
 #include "core/midi_track.h"
@@ -315,10 +316,22 @@ void Coordinator::generateAllTracks(Song& song) {
     }
   }
 
+  // Register guide chord phantom notes (Root + 3rd + 7th) before track generation.
+  // These provide harmonic gravity for SafePitch collision detection.
+  registerGuideChord(harmony);
+
   // Generate tracks in order
   for (TrackRole role : order) {
     // Consolidate all skip conditions in shouldSkipTrack()
     if (shouldSkipTrack(role, song)) continue;
+
+    // Clear phantom guide chord notes before Chord track generates its own voicings.
+    // Chord excludes TrackRole::Chord from collision checks, but phantom notes
+    // registered under Chord role would remain invisible. Clear them to avoid
+    // stale phantom notes after Chord generates real notes.
+    if (role == TrackRole::Chord) {
+      harmony.clearPhantomNotes();
+    }
 
     // Get track generator (if registered)
     auto it = track_generators_.find(role);
@@ -558,6 +571,60 @@ void Coordinator::registerTrackGenerators() {
   track_generators_[TrackRole::Drums] = std::make_unique<DrumsGenerator>();
   track_generators_[TrackRole::SE] = std::make_unique<SEGenerator>();
   track_generators_[TrackRole::Guitar] = std::make_unique<GuitarGenerator>();
+}
+
+void Coordinator::registerGuideChord(IHarmonyCoordinator& harmony) {
+  const auto& sections = arrangement_.sections();
+  if (sections.empty()) return;
+
+  // Guide base register: adapted to vocal range, separated from bass.
+  // guide_base >= BASS_HIGH + 1 (Bass separation invariant)
+  // guide_base <= vocal_low (below vocal register)
+  // guide_base <= CHORD_HIGH - 12 (room for guide tones + octave)
+  uint8_t vocal_low = params_.vocal_low;
+  if (vocal_low == 0) vocal_low = 60;  // Default C4
+
+  int guide_base_raw = std::max(static_cast<int>(BASS_HIGH) + 1,
+                                 static_cast<int>(vocal_low) - 7);
+  // Clamp to ensure guide tones + 1 octave fit within CHORD_HIGH
+  int guide_base = std::min(guide_base_raw, static_cast<int>(CHORD_HIGH) - 12);
+
+  constexpr Tick kGuideDuration = TICKS_PER_BAR / 2;  // Half-bar (beat 1-2)
+
+  for (const auto& section : sections) {
+    Tick section_start = section.start_tick;
+    for (uint8_t bar = 0; bar < section.bars; ++bar) {
+      Tick bar_start = section_start + bar * TICKS_PER_BAR;
+
+      // Get effective chord degree (includes secondary dominants)
+      int8_t degree = harmony.getChordDegreeAt(bar_start);
+
+      // Root pitch class
+      int root_pc = ((degreeToSemitone(degree) % 12) + 12) % 12;
+
+      // Place root in guide register
+      int root_pitch = guide_base + root_pc;
+      if (root_pitch > CHORD_HIGH) root_pitch -= 12;
+      if (root_pitch < BASS_HIGH + 1) root_pitch += 12;
+
+      harmony.registerPhantomNote(bar_start, kGuideDuration,
+                                   static_cast<uint8_t>(root_pitch), TrackRole::Chord);
+
+      // Guide tones (3rd + 7th)
+      auto guide_pcs = getGuideTonePitchClasses(degree);
+      for (int gpc : guide_pcs) {
+        int guide_pitch = guide_base + gpc;
+        // Ensure within valid range
+        if (guide_pitch > CHORD_HIGH) guide_pitch -= 12;
+        if (guide_pitch < BASS_HIGH + 1) guide_pitch += 12;
+        // Final clamp
+        if (guide_pitch < 0 || guide_pitch > 127) continue;
+
+        harmony.registerPhantomNote(bar_start, kGuideDuration,
+                                     static_cast<uint8_t>(guide_pitch), TrackRole::Chord);
+      }
+    }
+  }
 }
 
 bool Coordinator::shouldSkipTrack(TrackRole role, const Song& song) const {

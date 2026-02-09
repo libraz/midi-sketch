@@ -47,6 +47,17 @@ class INoteRegistration {
 
   /// Clear notes from a specific track only.
   virtual void clearNotesForTrack(TrackRole track) = 0;
+
+  /**
+   * @brief Register a phantom note (guide chord).
+   *
+   * Same collision behavior as normal notes, but can be selectively
+   * cleared without affecting real track notes.
+   */
+  virtual void registerPhantomNote(Tick start, Tick duration, uint8_t pitch, TrackRole track) = 0;
+
+  /// Clear only phantom notes (preserves real track notes).
+  virtual void clearPhantomNotes() = 0;
 };
 
 }  // namespace midisketch

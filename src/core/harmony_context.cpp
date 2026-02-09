@@ -117,4 +117,13 @@ uint8_t HarmonyContext::getLowestPitchForTrackInRange(Tick start, Tick end,
   return collision_detector_.getLowestPitchForTrackInRange(start, end, role);
 }
 
+void HarmonyContext::registerPhantomNote(Tick start, Tick duration, uint8_t pitch,
+                                          TrackRole track) {
+  collision_detector_.registerPhantomNote(start, duration, pitch, track);
+}
+
+void HarmonyContext::clearPhantomNotes() {
+  collision_detector_.clearPhantomNotes();
+}
+
 }  // namespace midisketch

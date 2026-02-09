@@ -76,6 +76,13 @@ class StubHarmonyContext : public IHarmonyCoordinator {
 
   void clearNotesForTrack(TrackRole /*track*/) override { ++clear_track_count_; }
 
+  void registerPhantomNote(Tick /*start*/, Tick /*duration*/, uint8_t /*pitch*/,
+                            TrackRole /*track*/) override {
+    ++phantom_note_count_;
+  }
+
+  void clearPhantomNotes() override { ++clear_phantom_count_; }
+
   bool hasBassCollision(uint8_t /*pitch*/, Tick /*start*/, Tick /*duration*/,
                         int /*threshold*/) const override {
     return false;  // No collisions
@@ -177,6 +184,8 @@ class StubHarmonyContext : public IHarmonyCoordinator {
   int getRegisteredTrackCount() const { return registered_track_count_; }
   int getClearCount() const { return clear_count_; }
   int getClearTrackCount() const { return clear_track_count_; }
+  int getPhantomNoteCount() const { return phantom_note_count_; }
+  int getClearPhantomCount() const { return clear_phantom_count_; }
 
  private:
   uint8_t highest_pitch_for_track_ = 0;
@@ -194,6 +203,8 @@ class StubHarmonyContext : public IHarmonyCoordinator {
   int clear_count_ = 0;
   int clear_track_count_ = 0;
   int secondary_dominant_count_ = 0;
+  int phantom_note_count_ = 0;
+  int clear_phantom_count_ = 0;
 };
 
 }  // namespace test

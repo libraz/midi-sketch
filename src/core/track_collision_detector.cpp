@@ -27,6 +27,7 @@ bool isHarmonicTrack(TrackRole role) {
          role == TrackRole::Aux || role == TrackRole::Guitar;
 }
 
+
 }  // namespace
 
 void TrackCollisionDetector::registerNote(Tick start, Tick duration, uint8_t pitch,
@@ -99,6 +100,11 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(uint8_t pitch, Tick star
     // Skip drums - they are non-harmonic and should not cause pitch collisions
     if (note.track == TrackRole::Drums) continue;
 
+    // Phantom notes (guide chords) do not participate in collision detection.
+    // They influence track generation only through guide tone ranking
+    // in PitchCandidate (is_guide_tone tiebreaker in rankCandidates).
+    if (note.is_phantom) continue;
+
     // Check if notes overlap in time
     if (note.start < end && note.end > start) {
       int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
@@ -147,6 +153,7 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(uint8_t pitch, Tick start
     const auto& note = notes_[idx];
     if (note.track == exclude) continue;
     if (note.track == TrackRole::Drums) continue;
+    if (note.is_phantom) continue;
 
     if (note.start < end && note.end > start) {
       int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
@@ -385,6 +392,30 @@ void TrackCollisionDetector::clearNotesForTrack(TrackRole track) {
   rebuildBeatIndex();
 }
 
+void TrackCollisionDetector::registerPhantomNote(Tick start, Tick duration, uint8_t pitch,
+                                                  TrackRole track) {
+  size_t idx = notes_.size();
+  Tick end = start + duration;
+  notes_.push_back({start, end, pitch, track, /*is_phantom=*/true});
+
+  // Add to beat index
+  Tick first_beat = tickToBeat(start);
+  Tick last_beat = (end > 0) ? tickToBeat(end - 1) : first_beat;
+  if (last_beat >= beat_index_.size()) {
+    beat_index_.resize(last_beat + 64);
+  }
+  for (Tick b = first_beat; b <= last_beat; ++b) {
+    beat_index_[b].push_back(idx);
+  }
+}
+
+void TrackCollisionDetector::clearPhantomNotes() {
+  notes_.erase(std::remove_if(notes_.begin(), notes_.end(),
+                              [](const RegisteredNote& n) { return n.is_phantom; }),
+               notes_.end());
+  rebuildBeatIndex();
+}
+
 void TrackCollisionDetector::rebuildBeatIndex() {
   beat_index_.clear();
   for (size_t idx = 0; idx < notes_.size(); ++idx) {
@@ -411,6 +442,7 @@ Tick TrackCollisionDetector::getMaxSafeEnd(Tick note_start, uint8_t pitch, Track
   for (size_t idx : indices) {
     const auto& note = notes_[idx];
     if (note.track == exclude) continue;
+    if (note.is_phantom) continue;
     if (note.end <= note_start) continue;
     if (note.start >= desired_end) continue;
 

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "core/chord_utils.h"
 #include "core/i_harmony_context.h"
 #include "core/midi_track.h"
 #include "core/pitch_utils.h"
@@ -108,6 +109,13 @@ void rankCandidates(std::vector<PitchCandidate>& candidates, PitchPreference pre
           break;
 
         default:
+          // Guide tones (3rd/7th) preferred as tiebreaker among chord tones.
+          // Non-chord-tone candidates are not affected (melodic freedom preserved).
+          if (a.is_chord_tone && b.is_chord_tone) {
+            if (a.is_guide_tone != b.is_guide_tone) {
+              return a.is_guide_tone;
+            }
+          }
           break;
       }
 
@@ -618,6 +626,13 @@ std::vector<PitchCandidate> getSafePitchCandidates(
     candidate.is_scale_tone = isScaleTone(pc);
     candidate.is_root_or_fifth = isRootOrFifth(pc, chord_tones);
 
+    // Guide tone annotation (3rd/7th)
+    {
+      int8_t degree = harmony.getChordDegreeAt(start);
+      auto guide_pcs = getGuideTonePitchClasses(degree);
+      candidate.is_guide_tone = std::find(guide_pcs.begin(), guide_pcs.end(), pc) != guide_pcs.end();
+    }
+
     // Annotate cross-boundary safety for notes with meaningful duration
     if (duration >= 240) {  // TICK_EIGHTH
       auto binfo = harmony.analyzeChordBoundary(pitch, start, duration);
@@ -806,6 +821,11 @@ std::vector<PitchCandidate> getSafePitchCandidates(
             candidate.is_chord_tone = true;  // We know it's a chord tone
             candidate.is_scale_tone = isScaleTone(pc);
             candidate.is_root_or_fifth = isRootOrFifth(pc, chord_tones);
+            {
+              int8_t deg = harmony.getChordDegreeAt(start);
+              auto gpcs = getGuideTonePitchClasses(deg);
+              candidate.is_guide_tone = std::find(gpcs.begin(), gpcs.end(), pc) != gpcs.end();
+            }
             candidates.push_back(candidate);
           }
         }

@@ -491,8 +491,8 @@ TEST_F(RhythmSyncTest, ConsistentPhraseQualityAcrossSeeds) {
     }
   }
 
-  // All seeds should produce good variety
-  EXPECT_EQ(seeds_with_good_variety, kNumSeeds)
+  // All 5 seeds should produce good variety
+  EXPECT_GE(seeds_with_good_variety, kNumSeeds)
       << "Only " << seeds_with_good_variety << " out of " << kNumSeeds
       << " seeds produced well-distributed phrases.";
 }
@@ -1100,9 +1100,8 @@ TEST_F(RhythmLockVocalQuality, ChorusNoteDensityAdequate) {
     }
   }
 
-  // At least 2 out of 5 seeds should have adequate chorus density
-  // (onset thinning + long-note mechanism may reduce some seeds below 2.0)
-  EXPECT_GE(seeds_with_good_density, 2)
+  // At least 3 out of 5 seeds should have adequate chorus density
+  EXPECT_GE(seeds_with_good_density, 3)
       << "Only " << seeds_with_good_density << " out of " << kNumSeeds
       << " seeds had Chorus note density >= 2.0 notes/bar.";
 }
@@ -1398,6 +1397,148 @@ TEST_F(RhythmLockVocalQuality, ChorusPitchRangeStatistical) {
   EXPECT_GE(median_range, 5)
       << "Median chorus pitch range = " << median_range << " semitones. "
       << "Expected >= 5 for adequate melodic variety.";
+}
+
+// =============================================================================
+// Run-Based Onset Selection Tests
+// =============================================================================
+
+// Test: Short vocal notes should not appear in isolation (only in dense runs)
+TEST_F(RhythmLockVocalQuality, RhythmSyncVocalNoIsolatedShortNotes) {
+  constexpr int kNumSeeds = 5;
+  // Test across all RhythmSync blueprints
+  const int blueprints[] = {1, 5, 7};
+
+  for (int bp : blueprints) {
+    for (int s = 0; s < kNumSeeds; ++s) {
+      params_.blueprint_id = bp;
+      params_.seed = 30000 + bp * 1000 + s * 137;
+      Generator gen;
+      gen.generate(params_);
+
+      const auto& vocal_notes = gen.getSong().vocal().notes();
+      if (vocal_notes.size() < 3) continue;
+
+      uint16_t bpm = gen.getSong().bpm();
+      // min_interval based on 200ms vocal onset constraint
+      Tick min_interval = static_cast<Tick>(
+          std::ceil(0.2f * bpm * TICKS_PER_BEAT / 60.0f));
+
+      // Sort by time
+      std::vector<NoteEvent> sorted = vocal_notes;
+      std::sort(sorted.begin(), sorted.end(),
+                [](const NoteEvent& a, const NoteEvent& b) {
+                  return a.start_tick < b.start_tick;
+                });
+
+      int isolated_short_count = 0;
+      for (size_t i = 0; i < sorted.size(); ++i) {
+        if (sorted[i].duration >= min_interval) continue;  // Not a short note
+
+        // Check if neighbors are also short (= part of a dense run)
+        bool prev_short = (i > 0 && sorted[i - 1].duration < min_interval);
+        bool next_short = (i + 1 < sorted.size() && sorted[i + 1].duration < min_interval);
+
+        if (!prev_short && !next_short) {
+          // Check exceptions: phrase boundary vicinity
+          bool near_phrase_boundary = false;
+          if (i > 0) {
+            Tick gap_before = sorted[i].start_tick -
+                (sorted[i - 1].start_tick + sorted[i - 1].duration);
+            if (gap_before > TICK_QUARTER) near_phrase_boundary = true;
+          }
+          if (i + 1 < sorted.size()) {
+            Tick gap_after = sorted[i + 1].start_tick -
+                (sorted[i].start_tick + sorted[i].duration);
+            if (gap_after > TICK_QUARTER) near_phrase_boundary = true;
+          }
+          // Last note in section is also exempt
+          bool is_last = (i == sorted.size() - 1);
+
+          if (!near_phrase_boundary && !is_last) {
+            isolated_short_count++;
+          }
+        }
+      }
+
+      // Allow at most 12% isolated short notes
+      float ratio = static_cast<float>(isolated_short_count) / sorted.size();
+      EXPECT_LE(ratio, 0.12f)
+          << "Blueprint " << bp << " seed " << params_.seed
+          << ": " << isolated_short_count << "/" << sorted.size()
+          << " isolated short notes (" << (ratio * 100) << "%). Expected <= 12%.";
+    }
+  }
+}
+
+// Test: Vocal note count per phrase respects target_note_count bounds
+TEST_F(RhythmLockVocalQuality, RhythmSyncVocalDensityControl) {
+  constexpr int kNumSeeds = 5;
+  const int blueprints[] = {1, 5, 7};
+
+  for (int bp : blueprints) {
+    for (int s = 0; s < kNumSeeds; ++s) {
+      params_.blueprint_id = bp;
+      params_.seed = 40000 + bp * 1000 + s * 149;
+      Generator gen;
+      gen.generate(params_);
+
+      const auto& song = gen.getSong();
+      const auto& vocal_notes = song.vocal().notes();
+      const auto& sections = song.arrangement().sections();
+
+      if (vocal_notes.empty()) continue;
+
+      // Sort vocal notes by time
+      std::vector<NoteEvent> sorted = vocal_notes;
+      std::sort(sorted.begin(), sorted.end(),
+                [](const NoteEvent& a, const NoteEvent& b) {
+                  return a.start_tick < b.start_tick;
+                });
+
+      // Check overall vocal density across all non-empty sections
+      int total_vocal = 0;
+      int total_bars = 0;
+      for (const auto& section : sections) {
+        Tick sec_start = section.start_tick;
+        Tick sec_end = section.endTick();
+
+        int note_count = 0;
+        for (const auto& note : sorted) {
+          if (note.start_tick >= sec_start && note.start_tick < sec_end) {
+            note_count++;
+          }
+        }
+
+        if (note_count > 0) {
+          total_vocal += note_count;
+          total_bars += section.bars;
+        }
+
+        // Per-section density bounds
+        if (note_count >= 2) {
+          float notes_per_bar = static_cast<float>(note_count) / section.bars;
+          EXPECT_GE(notes_per_bar, 1.0f)
+              << "Blueprint " << bp << " seed " << params_.seed
+              << " section '" << section.name << "': " << notes_per_bar
+              << " notes/bar is below lower bound of 1.0.";
+          EXPECT_LE(notes_per_bar, 10.0f)
+              << "Blueprint " << bp << " seed " << params_.seed
+              << " section '" << section.name << "': " << notes_per_bar
+              << " notes/bar exceeds upper bound of 10.0.";
+        }
+      }
+
+      // Overall density: at least 1.5 notes/bar across all vocal sections
+      if (total_bars > 0) {
+        float overall_density = static_cast<float>(total_vocal) / total_bars;
+        EXPECT_GE(overall_density, 1.5f)
+            << "Blueprint " << bp << " seed " << params_.seed
+            << ": overall vocal density " << overall_density
+            << " notes/bar is below 1.5.";
+      }
+    }
+  }
 }
 
 }  // namespace

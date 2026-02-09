@@ -893,8 +893,12 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
   while (i < onsets.size()) {
     float beat = onsets[i];
 
-    // Insert breath at phrase boundaries by shortening previous note
-    if (i > 0 && boundary_set.count(beat) > 0 && !notes.empty()) {
+    // Insert breath at phrase boundaries by shortening previous note.
+    // When PhrasePlan is provided, breath gaps are already handled by
+    // run-based onset selection, so skip retroactive breath insertion.
+    bool breath_handled_by_plan =
+        (phrase_plan != nullptr && !phrase_plan->phrases.empty());
+    if (i > 0 && boundary_set.count(beat) > 0 && !notes.empty() && !breath_handled_by_plan) {
       Tick min_duration = TICK_SIXTEENTH;
       if (notes.back().duration > breath_duration + min_duration) {
         notes.back().duration -= breath_duration;
@@ -920,8 +924,20 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
     // extended duration for pitch candidate lookup so the chosen pitch is
     // guaranteed safe for the full extension.
     // ======================================================================
-    auto desire = evaluateLongNoteDesire(i, onsets, section, boundary_set, onsets_since_long, ctx.bpm,
-                                         phrase_start_beats);
+    // When buildRunBasedOnsetMap has already controlled density (RhythmSync
+    // with PhrasePlan), skip evaluateLongNoteDesire to prevent double-thinning.
+    bool onset_pre_thinned =
+        (phrase_plan != nullptr && !phrase_plan->phrases.empty() &&
+         ctx.paradigm == GenerationParadigm::RhythmSync &&
+         ctx.motif_params != nullptr &&
+         ctx.motif_params->rhythm_template != MotifRhythmTemplate::None &&
+         ctx.vocal_style != VocalStylePreset::UltraVocaloid);
+
+    LongNoteDesire desire{0, 0.0f};
+    if (!onset_pre_thinned) {
+      desire = evaluateLongNoteDesire(i, onsets, section, boundary_set, onsets_since_long, ctx.bpm,
+                                       phrase_start_beats);
+    }
 
     Tick candidate_duration = base_duration;
     bool using_extended_candidates = false;
@@ -1778,6 +1794,18 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
             break;
           }
         }
+      }
+
+      // Run-based onset selection for RhythmSync (skip for UltraVocaloid)
+      CachedRhythmPattern run_filtered_pattern;
+      if (current_rhythm_lock != nullptr &&
+          params.paradigm == GenerationParadigm::RhythmSync &&
+          params.motif.rhythm_template != MotifRhythmTemplate::None &&
+          params.vocal_style != VocalStylePreset::UltraVocaloid) {
+        const auto& tmpl = motif_detail::getTemplateConfig(params.motif.rhythm_template);
+        run_filtered_pattern = buildRunBasedOnsetMap(
+            *current_rhythm_lock, phrase_plan, tmpl, params.bpm, section_start);
+        current_rhythm_lock = &run_filtered_pattern;
       }
 
       if (current_rhythm_lock != nullptr) {
