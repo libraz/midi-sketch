@@ -5,7 +5,7 @@
  * Contains: applyExitFadeout, applyExitFinalHit, applyExitCutOff,
  * applyExitSustain, applyExitPattern, applyAllExitPatterns,
  * applyChorusDrop,
- * applyRitardando, applyEnhancedFinalHit.
+ * applyRitDecrescendo, applyEnhancedFinalHit.
  */
 
 #include "core/post_processor.h"
@@ -366,74 +366,13 @@ void PostProcessor::applyChorusDrop(std::vector<MidiTrack*>& tracks,
 // ============================================================================
 
 namespace {
-// Helper: Check if extending note duration would create dissonance with other tracks
-// Returns the maximum safe end tick (may be less than desired_end if clash found)
-Tick getSafeEndForRitardando(const NoteEvent& note, Tick desired_end,
-                              const std::vector<MidiTrack*>& all_tracks,
-                              const MidiTrack* current_track) {
-  Tick safe_end = desired_end;
-
-  for (const MidiTrack* other_track : all_tracks) {
-    if (other_track == nullptr || other_track == current_track) continue;
-
-    for (const auto& other_note : other_track->notes()) {
-      // Skip notes that end before or at note start
-      Tick other_end = other_note.start_tick + other_note.duration;
-      if (other_end <= note.start_tick) continue;
-
-      // Skip notes that start at or after desired_end
-      if (other_note.start_tick >= desired_end) continue;
-
-      // Check if extension would create dissonance
-      int actual_semitones = std::abs(static_cast<int>(note.note) -
-                                       static_cast<int>(other_note.note));
-      bool is_dissonant = isDissonantActualInterval(actual_semitones, 0);
-
-      if (is_dissonant) {
-        // If other note starts after our note, we can extend up to (but not including) it
-        if (other_note.start_tick > note.start_tick && other_note.start_tick < safe_end) {
-          safe_end = other_note.start_tick;
-        }
-      }
-    }
-  }
-
-  return safe_end;
-}
 }  // namespace
 
-void PostProcessor::applyRitardando(std::vector<MidiTrack*>& tracks,
-                                     const std::vector<Section>& sections,
-                                     const std::vector<MidiTrack*>& collision_check_tracks) {
-  // Build combined list for collision checking (tracks + collision_check_tracks)
-  std::vector<MidiTrack*> all_tracks_for_collision;
-  all_tracks_for_collision.reserve(tracks.size() + collision_check_tracks.size());
-  for (MidiTrack* t : tracks) {
-    all_tracks_for_collision.push_back(t);
-  }
-  for (MidiTrack* t : collision_check_tracks) {
-    // Avoid duplicates
-    bool found = false;
-    for (MidiTrack* existing : all_tracks_for_collision) {
-      if (existing == t) {
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      all_tracks_for_collision.push_back(t);
-    }
-  }
+void PostProcessor::applyRitDecrescendo(std::vector<MidiTrack*>& tracks,
+                                         const std::vector<Section>& sections) {
+  for (const Section& section : sections) {
+    if (section.type != SectionType::Outro) continue;
 
-  // Find Outro sections (usually the last section)
-  for (size_t idx = 0; idx < sections.size(); ++idx) {
-    const Section& section = sections[idx];
-
-    if (section.type != SectionType::Outro) {
-      continue;
-    }
-
-    // Need at least 4 bars for ritardando effect
     uint8_t rit_bars = std::min(section.bars, static_cast<uint8_t>(4));
     if (rit_bars < 2) continue;
 
@@ -444,28 +383,10 @@ void PostProcessor::applyRitardando(std::vector<MidiTrack*>& tracks,
     for (MidiTrack* track : tracks) {
       if (track == nullptr) continue;
 
-      auto& notes = track->notes();
-      NoteEvent* last_note_in_rit = nullptr;
-
-      for (auto& note : notes) {
+      for (auto& note : track->notes()) {
         if (note.start_tick >= rit_start_tick && note.start_tick < section_end_tick) {
-          // Calculate progress through ritardando zone (0.0 to 1.0)
           float progress = static_cast<float>(note.start_tick - rit_start_tick) /
                            static_cast<float>(rit_duration);
-
-          // Duration stretch: 1.0 -> 1.3 (30% longer at the end)
-          float duration_mult = 1.0f + progress * 0.3f;
-          Tick desired_duration = static_cast<Tick>(note.duration * duration_mult);
-          Tick desired_end = note.start_tick + desired_duration;
-
-          // Check for dissonance with other tracks and limit extension
-          Tick safe_end = getSafeEndForRitardando(note, desired_end, all_tracks_for_collision, track);
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-          if (safe_end - note.start_tick != note.duration) {
-            note.addTransformStep(TransformStepType::PostProcessDuration, 0, 0, 1, 0);
-          }
-#endif
-          note.duration = safe_end - note.start_tick;
 
           // Velocity decrescendo: 1.0 -> 0.75 (25% softer at the end)
           float velocity_mult = 1.0f - progress * 0.25f;
@@ -478,28 +399,6 @@ void PostProcessor::applyRitardando(std::vector<MidiTrack*>& tracks,
           }
 #endif
           note.velocity = clamped_vel;
-
-          // Track the last note for fermata
-          if (last_note_in_rit == nullptr ||
-              note.start_tick > last_note_in_rit->start_tick) {
-            last_note_in_rit = &note;
-          }
-        }
-      }
-
-      // Fermata effect: extend final note duration to fill until section end
-      // Also check for dissonance before extending
-      if (last_note_in_rit != nullptr) {
-        Tick target_end = section_end_tick - TICKS_PER_BEAT / 8;  // Small release gap
-        if (last_note_in_rit->start_tick < target_end) {
-          Tick safe_end = getSafeEndForRitardando(*last_note_in_rit, target_end,
-                                                   all_tracks_for_collision, track);
-          if (safe_end > last_note_in_rit->start_tick + last_note_in_rit->duration) {
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-            last_note_in_rit->addTransformStep(TransformStepType::PostProcessDuration, 0, 0, 1, 0);
-#endif
-            last_note_in_rit->duration = safe_end - last_note_in_rit->start_tick;
-          }
         }
       }
     }

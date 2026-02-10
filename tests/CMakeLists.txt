@@ -44,6 +44,7 @@ set(TEST_SOURCES
   core/music_theory_test.cpp
   core/velocity_test.cpp
   core/post_processor_test.cpp
+  core/tempo_map_test.cpp
   core/modulation_calculator_test.cpp
   core/modulation_bgm_test.cpp
   core/modulation_vocal_range_test.cpp

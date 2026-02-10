@@ -579,7 +579,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
          InstrumentSkillLevel::Intermediate,  // keys_skill
          InstrumentModelMode::ConstraintsOnly,
-         false, false, false},  // enable_slap, enable_tapping, enable_harmonics
+         false, false, false,  // enable_slap, enable_tapping, enable_harmonics
+         false,                 // guitar_below_vocal
+         0.3f},                 // ritardando_amount (Traditional: default)
         // aux_profile: Mood default, standard functions, default scaling
         {0xFF, AuxFunction::MelodicHook, AuxFunction::MotifCounter, AuxFunction::EmotionalPad,
          1.0f, 1.0f, -2},
@@ -605,7 +607,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          InstrumentSkillLevel::Advanced,  // keys_skill
          InstrumentModelMode::Full,
          true, false, false,  // enable_slap for punchy rhythm
-         true},               // guitar_below_vocal
+         true,                // guitar_below_vocal
+         0.15f},              // ritardando_amount (RhythmLock: tight rhythm, subtle)
         // aux_profile: Square Lead, PulseLoop/GrooveAccent, punchy rhythm focus
         {80, AuxFunction::PulseLoop, AuxFunction::PulseLoop, AuxFunction::GrooveAccent,
          0.8f, 0.85f, -4},
@@ -631,7 +634,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          InstrumentSkillLevel::Intermediate,  // keys_skill
          InstrumentModelMode::ConstraintsOnly,
          false, false, false,  // techniques
-         true},                // guitar_below_vocal
+         true,                 // guitar_below_vocal
+         0.3f},                // ritardando_amount (StoryPop: narrative ending)
         // aux_profile: Mood default, PhraseTail for gap-filling, gentle EmotionalPad chorus
         {0xFF, AuxFunction::MelodicHook, AuxFunction::PhraseTail, AuxFunction::EmotionalPad,
          0.7f, 0.75f, -2},
@@ -657,7 +661,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          InstrumentSkillLevel::Beginner,  // keys_skill
          InstrumentModelMode::ConstraintsOnly,
          false, false, false,  // no techniques for ballad simplicity
-         true},                // guitar_below_vocal
+         true,                 // guitar_below_vocal
+         0.4f},                // ritardando_amount (Ballad: dramatic slowdown)
         // aux_profile: Choir Aahs, SustainPad throughout, very quiet and sparse
         {52, AuxFunction::SustainPad, AuxFunction::SustainPad, AuxFunction::SustainPad,
          0.5f, 0.5f, -7},
@@ -682,7 +687,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
          InstrumentSkillLevel::Intermediate,  // keys_skill
          InstrumentModelMode::ConstraintsOnly,
-         false, false, false},
+         false, false, false,  // techniques
+         false,                // guitar_below_vocal
+         0.25f},               // ritardando_amount (IdolStandard)
         // aux_profile: Mood default, PhraseTail verse, Unison chorus for idol power
         {0xFF, AuxFunction::MelodicHook, AuxFunction::PhraseTail, AuxFunction::Unison,
          0.75f, 0.8f, -2},
@@ -709,7 +716,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          InstrumentSkillLevel::Advanced,  // keys_skill
          InstrumentModelMode::Full,
          true, false, false,  // enable_slap for high-energy punch
-         true},               // guitar_below_vocal
+         true,                // guitar_below_vocal
+         0.1f},               // ritardando_amount (IdolHyper: minimal, high-energy)
         // aux_profile: Square Lead, PulseLoop/GrooveAccent, high energy punch
         {80, AuxFunction::GrooveAccent, AuxFunction::PulseLoop, AuxFunction::GrooveAccent,
          0.85f, 0.9f, -4},
@@ -736,7 +744,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          InstrumentSkillLevel::Beginner,  // keys_skill
          InstrumentModelMode::ConstraintsOnly,
          false, false, false,  // simple patterns for cute vibe
-         true},                // guitar_below_vocal
+         true,                 // guitar_below_vocal
+         0.2f},                // ritardando_amount (IdolKawaii: soft ending)
         // aux_profile: Music Box, MelodicHook throughout for cute sparkle, low density
         {10, AuxFunction::MelodicHook, AuxFunction::MelodicHook, AuxFunction::MelodicHook,
          0.6f, 0.6f, -5},
@@ -762,7 +771,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          InstrumentSkillLevel::Advanced,  // keys_skill
          InstrumentModelMode::Full,
          true, false, false,  // enable_slap for funky grooves
-         true},               // guitar_below_vocal
+         true,                // guitar_below_vocal
+         0.15f},              // ritardando_amount (IdolCoolPop: cool, subtle)
         // aux_profile: Square Lead, PulseLoop/GrooveAccent, cool driving energy
         {80, AuxFunction::PulseLoop, AuxFunction::PulseLoop, AuxFunction::GrooveAccent,
          0.8f, 0.85f, -4},
@@ -788,7 +798,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          InstrumentSkillLevel::Intermediate,  // keys_skill
          InstrumentModelMode::ConstraintsOnly,
          false, false, false,  // techniques
-         true},                // guitar_below_vocal
+         true,                 // guitar_below_vocal
+         0.35f},               // ritardando_amount (IdolEmo: emotional slowdown)
         // aux_profile: Choir Aahs, SustainPad throughout, very quiet and sparse
         {52, AuxFunction::SustainPad, AuxFunction::SustainPad, AuxFunction::SustainPad,
          0.55f, 0.5f, -7},
@@ -812,7 +823,9 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          InstrumentSkillLevel::Intermediate, InstrumentSkillLevel::Intermediate,
          InstrumentSkillLevel::Intermediate,  // keys_skill
          InstrumentModelMode::ConstraintsOnly,
-         false, false, false},
+         false, false, false,  // techniques
+         false,                // guitar_below_vocal
+         0.3f},                // ritardando_amount (BehavioralLoop: default)
         // aux_profile: Mood default, PulseLoop for addictive loop feel
         {0xFF, AuxFunction::MelodicHook, AuxFunction::PulseLoop, AuxFunction::PulseLoop,
          0.9f, 0.9f, -2},

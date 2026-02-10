@@ -61,6 +61,9 @@ struct BlueprintConstraints {
   /// Restrict guitar upper range to below vocal lowest pitch.
   /// When true, guitar notes are capped at vocal_low - 2 semitones.
   bool guitar_below_vocal = false;
+
+  /// Ritardando intensity for outro (0.0=none, 0.3=default, 0.5=dramatic).
+  float ritardando_amount = 0.3f;
 };
 
 /// @brief Section slot definition for blueprint section flow.

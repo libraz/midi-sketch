@@ -164,7 +164,8 @@ std::string MidiSketch::getEventsJson() const {
   json::Writer w(oss);
 
   Tick total_ticks = song.arrangement().totalTicks();
-  double duration_seconds = ticksToSeconds(total_ticks, song.bpm());
+  const auto& tempo_map = song.tempoMap();
+  double duration_seconds = ticksToSecondsWithTempoMap(total_ticks, song.bpm(), tempo_map);
 
   // Get modulation info
   Tick mod_tick = song.modulationTick();
@@ -173,8 +174,10 @@ std::string MidiSketch::getEventsJson() const {
 
   // Helper to write a single note
   auto writeNote = [&](const NoteEvent& note, bool apply_transpose) {
-    double start_seconds = ticksToSeconds(note.start_tick, song.bpm());
-    double duration_secs = ticksToSeconds(note.duration, song.bpm());
+    double start_seconds = ticksToSecondsWithTempoMap(note.start_tick, song.bpm(), tempo_map);
+    double duration_secs =
+        ticksToSecondsWithTempoMap(note.start_tick + note.duration, song.bpm(), tempo_map) -
+        start_seconds;
 
     uint8_t pitch = note.note;
     if (apply_transpose) {
@@ -293,7 +296,7 @@ std::string MidiSketch::getEventsJson() const {
     w.endArray().beginArray("textEvents");
 
     for (const auto& evt : se_track.textEvents()) {
-      double time_seconds = ticksToSeconds(evt.time, song.bpm());
+      double time_seconds = ticksToSecondsWithTempoMap(evt.time, song.bpm(), tempo_map);
       w.beginObject()
           .write("tick", evt.time)
           .write("time_seconds", time_seconds)
@@ -309,8 +312,8 @@ std::string MidiSketch::getEventsJson() const {
   // Sections
   for (const auto& section : song.arrangement().sections()) {
     Tick end_tick = section.endTick();
-    double start_seconds = ticksToSeconds(section.start_tick, song.bpm());
-    double end_seconds = ticksToSeconds(end_tick, song.bpm());
+    double start_seconds = ticksToSecondsWithTempoMap(section.start_tick, song.bpm(), tempo_map);
+    double end_seconds = ticksToSecondsWithTempoMap(end_tick, song.bpm(), tempo_map);
 
     w.beginObject()
         .write("name", section.name)
@@ -326,6 +329,18 @@ std::string MidiSketch::getEventsJson() const {
         .endObject();
   }
 
+  w.endArray();
+
+  // Tempo map
+  w.beginArray("tempo_map");
+  for (const auto& evt : tempo_map) {
+    double evt_seconds = ticksToSecondsWithTempoMap(evt.tick, song.bpm(), tempo_map);
+    w.beginObject()
+        .write("tick", evt.tick)
+        .write("bpm", static_cast<int>(evt.bpm))
+        .write("seconds", evt_seconds)
+        .endObject();
+  }
   w.endArray();
 
   // Chord timeline (includes secondary dominants)

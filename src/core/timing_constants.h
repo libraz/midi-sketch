@@ -41,6 +41,29 @@ inline double ticksToSeconds(Tick ticks, double bpm) {
   return static_cast<double>(ticks) / TICKS_PER_BEAT / bpm * 60.0;
 }
 
+/// Convert ticks to seconds accounting for tempo changes.
+inline double ticksToSecondsWithTempoMap(
+    Tick ticks, double base_bpm,
+    const std::vector<TempoEvent>& tempo_map) {
+  if (tempo_map.empty()) return ticksToSeconds(ticks, base_bpm);
+
+  double seconds = 0.0;
+  Tick prev_tick = 0;
+  double current_bpm = base_bpm;
+
+  for (const auto& evt : tempo_map) {
+    if (evt.tick >= ticks) break;
+    seconds += static_cast<double>(evt.tick - prev_tick) / TICKS_PER_BEAT /
+               current_bpm * 60.0;
+    prev_tick = evt.tick;
+    current_bpm = evt.bpm;
+  }
+
+  seconds += static_cast<double>(ticks - prev_tick) / TICKS_PER_BEAT /
+             current_bpm * 60.0;
+  return seconds;
+}
+
 /// @brief Check if current bar is in the phrase tail region.
 /// Only meaningful when section.phrase_tail_rest == true.
 /// @param bar_index 0-based bar index within section

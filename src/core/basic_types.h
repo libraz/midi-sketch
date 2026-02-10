@@ -573,6 +573,12 @@ struct TextEvent {
   std::string text;  ///< Text content
 };
 
+/// A tempo change event for MIDI Set Tempo meta-events
+struct TempoEvent {
+  Tick tick;      ///< Event time in ticks
+  uint16_t bpm;   ///< Tempo in beats per minute
+};
+
 /// @brief Musical key (C=0 through B=11).
 enum class Key : uint8_t { C = 0, Cs, D, Eb, E, F, Fs, G, Ab, A, Bb, B };
 

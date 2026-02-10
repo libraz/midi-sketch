@@ -129,6 +129,7 @@ void Midi2Writer::writeTrackData(const MidiTrack& track, uint8_t group, uint8_t 
 }
 
 void Midi2Writer::writeMarkerData(const MidiTrack& track, uint8_t group, uint16_t bpm,
+                                  const std::vector<TempoEvent>& tempo_map,
                                   const std::string& metadata) {
   // Write metadata as text event if present
   if (!metadata.empty()) {
@@ -148,14 +149,41 @@ void Midi2Writer::writeMarkerData(const MidiTrack& track, uint8_t group, uint16_
   ump::writeDeltaClockstamp(data_, group, 0);
   ump::writeTimeSignature(data_, group, 4, 4);
 
-  // Write marker events (text events for section names)
+  // Merge marker events and tempo events by tick order
+  struct TimedEvent {
+    Tick tick;
+    bool is_tempo;
+    size_t index;
+  };
+  std::vector<TimedEvent> events;
+  events.reserve(track.textEvents().size() + tempo_map.size());
+
+  for (size_t i = 0; i < track.textEvents().size(); ++i) {
+    events.push_back({track.textEvents()[i].time, false, i});
+  }
+  for (size_t i = 0; i < tempo_map.size(); ++i) {
+    events.push_back({tempo_map[i].tick, true, i});
+  }
+
+  std::sort(events.begin(), events.end(), [](const TimedEvent& a, const TimedEvent& b) {
+    if (a.tick != b.tick) return a.tick < b.tick;
+    return !a.is_tempo && b.is_tempo;
+  });
+
   Tick prevTime = 0;
-  for (const auto& marker : track.textEvents()) {
-    Tick delta = marker.time - prevTime;
-    prevTime = marker.time;
+  for (const auto& evt : events) {
+    Tick delta = evt.tick - prevTime;
+    prevTime = evt.tick;
 
     ump::writeDeltaClockstamp(data_, group, static_cast<uint32_t>(delta));
-    ump::writeMetadataText(data_, group, marker.text);
+    if (evt.is_tempo) {
+      uint16_t evt_bpm = tempo_map[evt.index].bpm;
+      if (evt_bpm == 0) evt_bpm = 1;
+      uint32_t usPerBeat = kMicrosecondsPerMinute / evt_bpm;
+      ump::writeTempo(data_, group, usPerBeat);
+    } else {
+      ump::writeMetadataText(data_, group, track.textEvents()[evt.index].text);
+    }
   }
 }
 
@@ -205,7 +233,7 @@ void Midi2Writer::buildContainer(const Song& song, Key key, const std::string& m
   {
     writeClipHeader();
     writeClipConfig(TICKS_PER_BEAT, song.bpm());
-    writeMarkerData(song.se(), 0, song.bpm(), metadata);
+    writeMarkerData(song.se(), 0, song.bpm(), song.tempoMap(), metadata);
     ump::writeDeltaClockstamp(data_, 0, 0);
     ump::writeEndOfClip(data_);
   }

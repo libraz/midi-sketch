@@ -56,6 +56,7 @@ class Midi2Writer {
 
   // Write marker/text events (for SE track)
   void writeMarkerData(const MidiTrack& track, uint8_t group, uint16_t bpm,
+                       const std::vector<TempoEvent>& tempo_map,
                        const std::string& metadata);
 };
 

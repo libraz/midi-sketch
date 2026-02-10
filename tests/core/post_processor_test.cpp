@@ -194,13 +194,12 @@ TEST_F(ChorusDropTest, OnlyAffectsBToChorusTransition) {
 }
 
 // ============================================================================
-// applyRitardando Tests
+// applyRitDecrescendo Tests
 // ============================================================================
 
-class RitardandoTest : public ::testing::Test {
+class RitDecrescendoTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    // Create Outro section
     Section outro;
     outro.type = SectionType::Outro;
     outro.start_tick = 0;
@@ -213,56 +212,30 @@ class RitardandoTest : public ::testing::Test {
   std::vector<Section> sections_;
 };
 
-TEST_F(RitardandoTest, StretchesDurationInLast4Bars) {
-  // In Outro's last 4 bars, note durations should be stretched
-  // Ratio: 1.0 at start -> 1.3 at end
-
-  MidiTrack track;
-  Tick rit_zone_start = 8 * TICKS_PER_BAR - 4 * TICKS_PER_BAR;  // Last 4 bars
-  Tick original_duration = TICKS_PER_BEAT;
-
-  // Add notes throughout the ritardando zone
-  track.addNote(NoteEventBuilder::create(rit_zone_start, original_duration, 60, 80));      // Start of rit zone
-  track.addNote(NoteEventBuilder::create(rit_zone_start + 2 * TICKS_PER_BAR, original_duration, 64, 80));  // Middle
-  track.addNote(NoteEventBuilder::create(8 * TICKS_PER_BAR - TICKS_PER_BAR, original_duration, 67, 80));   // Near end
-
-  std::vector<MidiTrack*> tracks = {&track};
-  PostProcessor::applyRitardando(tracks, sections_);
-
-  // Check that durations increase progressively
-  const auto& notes = track.notes();
-  ASSERT_EQ(notes.size(), 3u);
-
-  // First note: stretched minimally (progress ~0.0)
-  EXPECT_GE(notes[0].duration, original_duration)
-      << "First note should be stretched";
-
-  // Middle note: stretched more (progress ~0.5)
-  EXPECT_GT(notes[1].duration, notes[0].duration)
-      << "Middle note should be stretched more than first";
-
-  // Last note: stretched most (progress ~0.75)
-  EXPECT_GT(notes[2].duration, notes[1].duration)
-      << "Last note should be stretched most";
-}
-
-TEST_F(RitardandoTest, VelocityDecrescendo) {
+TEST_F(RitDecrescendoTest, VelocityDecrescendo) {
   // Velocities should decrease in the ritardando zone (decrescendo)
+  // Duration should NOT change (tempo-based ritardando handles that)
 
   MidiTrack track;
   Tick rit_zone_start = 4 * TICKS_PER_BAR;  // Last 4 bars start
   uint8_t original_velocity = 100;
+  Tick original_duration = TICKS_PER_BEAT;
 
-  // Add notes at different positions in the ritardando zone
-  track.addNote(NoteEventBuilder::create(rit_zone_start, TICKS_PER_BEAT, 60, original_velocity));
-  track.addNote(NoteEventBuilder::create(rit_zone_start + 2 * TICKS_PER_BAR, TICKS_PER_BEAT, 64, original_velocity));
-  track.addNote(NoteEventBuilder::create(8 * TICKS_PER_BAR - TICKS_PER_BAR, TICKS_PER_BEAT, 67, original_velocity));
+  track.addNote(NoteEventBuilder::create(rit_zone_start, original_duration, 60, original_velocity));
+  track.addNote(NoteEventBuilder::create(rit_zone_start + 2 * TICKS_PER_BAR, original_duration, 64, original_velocity));
+  track.addNote(NoteEventBuilder::create(8 * TICKS_PER_BAR - TICKS_PER_BAR, original_duration, 67, original_velocity));
 
   std::vector<MidiTrack*> tracks = {&track};
-  PostProcessor::applyRitardando(tracks, sections_);
+  PostProcessor::applyRitDecrescendo(tracks, sections_);
 
   const auto& notes = track.notes();
   ASSERT_EQ(notes.size(), 3u);
+
+  // Duration should be unchanged
+  for (const auto& note : notes) {
+    EXPECT_EQ(note.duration, original_duration)
+        << "Duration should not be modified by decrescendo";
+  }
 
   // First note: minimal reduction
   EXPECT_LE(notes[0].velocity, original_velocity)
@@ -279,35 +252,7 @@ TEST_F(RitardandoTest, VelocityDecrescendo) {
       << "Velocity should not go below minimum threshold";
 }
 
-TEST_F(RitardandoTest, FinalNoteExtendedToSectionEnd) {
-  // The final note in the ritardando zone should be extended (fermata effect)
-
-  MidiTrack track;
-  Tick section_end = 8 * TICKS_PER_BAR;
-  Tick original_duration = TICKS_PER_BEAT;
-
-  // Add the final note in the section
-  track.addNote(NoteEventBuilder::create(section_end - TICKS_PER_BAR, original_duration, 60, 80));
-
-  std::vector<MidiTrack*> tracks = {&track};
-  PostProcessor::applyRitardando(tracks, sections_);
-
-  const auto& notes = track.notes();
-  ASSERT_EQ(notes.size(), 1u);
-
-  // Final note should be extended to near the section end
-  Tick expected_end = section_end - TICKS_PER_BEAT / 8;  // Small release gap
-  Tick actual_end = notes[0].start_tick + notes[0].duration;
-
-  EXPECT_GT(notes[0].duration, original_duration)
-      << "Final note should be extended (fermata)";
-  EXPECT_GE(actual_end, expected_end - TICKS_PER_BEAT / 4)
-      << "Final note should extend close to section end";
-}
-
-TEST_F(RitardandoTest, OnlyAffectsOutroSection) {
-  // Ritardando should only apply to Outro sections
-
+TEST_F(RitDecrescendoTest, OnlyAffectsOutroSection) {
   Section a_section;
   a_section.type = SectionType::A;
   a_section.start_tick = 0;
@@ -318,15 +263,13 @@ TEST_F(RitardandoTest, OnlyAffectsOutroSection) {
   MidiTrack track;
   Tick original_duration = TICKS_PER_BEAT;
   uint8_t original_velocity = 100;
-  // Add notes in the last 4 bars
   track.addNote(NoteEventBuilder::create(4 * TICKS_PER_BAR, original_duration, 60, original_velocity));
   track.addNote(NoteEventBuilder::create(6 * TICKS_PER_BAR, original_duration, 64, original_velocity));
 
   std::vector<MidiTrack*> tracks = {&track};
-  PostProcessor::applyRitardando(tracks, non_outro_sections);
+  PostProcessor::applyRitDecrescendo(tracks, non_outro_sections);
 
   const auto& notes = track.notes();
-  // Notes should be unchanged in non-Outro section
   for (const auto& note : notes) {
     EXPECT_EQ(note.duration, original_duration)
         << "Duration should be unchanged in non-Outro section";
@@ -622,7 +565,7 @@ TEST_F(SustainPatternTest, HandlesNotesOutsideLastBar) {
 // Integration Tests
 // ============================================================================
 
-TEST(PostProcessorIntegrationTest, ChorusDropAndRitardandoDoNotInterfere) {
+TEST(PostProcessorIntegrationTest, ChorusDropAndRitDecrescendoDoNotInterfere) {
   // Test that both effects can be applied to different sections without conflict
 
   Section b_section;
@@ -647,39 +590,38 @@ TEST(PostProcessorIntegrationTest, ChorusDropAndRitardandoDoNotInterfere) {
   Tick b_drop_zone = 8 * TICKS_PER_BAR - TICKS_PER_BEAT;
   track.addNote(NoteEventBuilder::create(b_drop_zone - TICKS_PER_BEAT, TICKS_PER_BEAT * 2, 60, 80));
 
-  // Add notes in Outro section (affected by ritardando)
+  // Add notes in Outro section (affected by decrescendo)
   Tick outro_rit_zone = 20 * TICKS_PER_BAR - 4 * TICKS_PER_BAR;
   track.addNote(NoteEventBuilder::create(outro_rit_zone, TICKS_PER_BEAT, 72, 90));
-  track.addNote(NoteEventBuilder::create(19 * TICKS_PER_BAR, TICKS_PER_BEAT, 72, 90));  // Final note
+  track.addNote(NoteEventBuilder::create(19 * TICKS_PER_BAR, TICKS_PER_BEAT, 72, 90));
 
   std::vector<MidiTrack*> tracks = {&track};
 
   // Apply both effects
   PostProcessor::applyChorusDrop(tracks, sections, nullptr);
-  PostProcessor::applyRitardando(tracks, sections);
+  PostProcessor::applyRitDecrescendo(tracks, sections);
 
   // Verify both effects were applied appropriately
   bool found_truncated_b = false;
-  bool found_stretched_outro = false;
+  bool found_decrescendo_outro = false;
 
   for (const auto& note : track.notes()) {
-    // B section note should be truncated
     if (note.start_tick < 8 * TICKS_PER_BAR) {
       Tick note_end = note.start_tick + note.duration;
       if (note_end <= b_drop_zone) {
         found_truncated_b = true;
       }
     }
-    // Outro notes should have stretched duration
+    // Outro notes should have reduced velocity (decrescendo)
     if (note.start_tick >= outro_rit_zone) {
-      if (note.duration > TICKS_PER_BEAT) {
-        found_stretched_outro = true;
+      if (note.velocity < 90) {
+        found_decrescendo_outro = true;
       }
     }
   }
 
   EXPECT_TRUE(found_truncated_b) << "B section note should be truncated by chorus drop";
-  EXPECT_TRUE(found_stretched_outro) << "Outro note should be stretched by ritardando";
+  EXPECT_TRUE(found_decrescendo_outro) << "Outro note should have reduced velocity from decrescendo";
 }
 
 // ============================================================================

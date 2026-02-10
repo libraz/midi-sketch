@@ -364,6 +364,9 @@ uint16_t Generator::initializeGenerationState() {
     }
   }
 
+  // Plan tempo map for ritardando (before harmony init, uses arrangement only)
+  planTempoMap();
+
   // Initialize harmony context
   const auto& progression = getChordProgression(params_.chord_id);
   harmony_context_->initialize(song_.arrangement(), progression, params_.mood);
@@ -982,6 +985,54 @@ void Generator::calculateModulation() {
   song_.setModulation(result.tick, result.amount);
 }
 
+void Generator::planTempoMap() {
+  const auto& sections = song_.arrangement().sections();
+
+  // Find the last Outro section with at least 2 bars
+  const Section* outro = nullptr;
+  for (auto it = sections.rbegin(); it != sections.rend(); ++it) {
+    if (it->type == SectionType::Outro && it->bars >= 2) {
+      outro = &(*it);
+      break;
+    }
+  }
+  if (!outro) return;
+
+  // Skip ritardando for dramatic exit patterns (FinalHit, CutOff)
+  if (outro->exit_pattern == ExitPattern::FinalHit ||
+      outro->exit_pattern == ExitPattern::CutOff) {
+    return;
+  }
+
+  // Determine ritardando intensity from blueprint
+  float amount = blueprint_ ? blueprint_->constraints.ritardando_amount : 0.3f;
+  if (amount <= 0.0f) return;
+
+  // Scale down for high BPM (above 120, the perceptual effect is already stronger)
+  uint16_t bpm = params_.bpm;
+  if (bpm > 120) {
+    amount *= 120.0f / static_cast<float>(bpm);
+  }
+
+  // Generate half-bar tempo steps over the last 2-4 bars of the outro
+  int rit_bars = std::min(static_cast<int>(outro->bars), 4);
+  Tick rit_start = outro->endTick() - static_cast<Tick>(rit_bars) * TICKS_PER_BAR;
+  int step_count = rit_bars * 2;  // half-bar steps
+
+  std::vector<TempoEvent> tempo_map;
+  tempo_map.reserve(static_cast<size_t>(step_count));
+
+  for (int i = 0; i < step_count; ++i) {
+    float progress = static_cast<float>(i + 1) / static_cast<float>(step_count);
+    auto step_bpm =
+        static_cast<uint16_t>(static_cast<float>(bpm) / (1.0f + progress * amount));
+    Tick step_tick = rit_start + static_cast<Tick>(i) * (TICKS_PER_BAR / 2);
+    tempo_map.push_back({step_tick, step_bpm});
+  }
+
+  song_.setTempoMap(tempo_map);
+}
+
 void Generator::generateSE() {
   // Use SEGenerator for track generation
   SEGenerator se_gen;
@@ -1195,17 +1246,8 @@ void Generator::applyTransitionEffects(std::vector<MidiTrack*>& tracks,
   }
   PostProcessor::applyChorusDrop(backing_tracks, sections, &song_.drums());
 
-  // Apply ritardando to outro sections
-  // Pass motif and guitar as collision check tracks so duration extension
-  // doesn't create Chord/Bass vs Motif/Guitar clashes
-  std::vector<MidiTrack*> ritardando_collision_tracks;
-  if (params_.motif.velocity_fixed) {
-    ritardando_collision_tracks.push_back(&song_.motif());
-  }
-  if (params_.guitar_enabled) {
-    ritardando_collision_tracks.push_back(&song_.guitar());
-  }
-  PostProcessor::applyRitardando(tracks, sections, ritardando_collision_tracks);
+  // Apply velocity decrescendo to outro sections
+  PostProcessor::applyRitDecrescendo(tracks, sections);
 
   // Fix motif-vocal clashes for RhythmSync mode.
   // When motif is generated as "coordinate axis" before vocal,
@@ -1391,8 +1433,6 @@ void Generator::applyHumanization() {
 
   // Synchronize bass-kick timing for tighter groove pocket
   PostProcessor::synchronizeBassKick(song_.bass(), song_.drums(), drum_style);
-
-  PostProcessor::fixVocalOverlaps(song_.vocal());
 }
 
 // ============================================================================

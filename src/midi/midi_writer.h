@@ -68,7 +68,9 @@ class MidiWriter {
   void writeTrack(const MidiTrack& track, const std::string& name, uint8_t channel, uint8_t program,
                   uint16_t bpm, Key key, bool is_first_track, Tick mod_tick = 0,
                   int8_t mod_amount = 0);
-  void writeMarkerTrack(const MidiTrack& track, uint16_t bpm, const std::string& metadata = "");
+  void writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
+                        const std::vector<TempoEvent>& tempo_map,
+                        const std::string& metadata = "");
   static void writeVariableLength(std::vector<uint8_t>& buf, uint32_t value);
 };
 

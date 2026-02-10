@@ -228,6 +228,7 @@ void MidiWriter::writeTrack(const MidiTrack& track, const std::string& name, uin
 }
 
 void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
+                                  const std::vector<TempoEvent>& tempo_map,
                                   const std::string& metadata) {
   std::vector<uint8_t> track_data;
 
@@ -255,7 +256,7 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
     }
   }
 
-  // Tempo
+  // Initial tempo (delta 0)
   uint32_t microseconds_per_beat = kMicrosecondsPerMinute / bpm;
   track_data.push_back(0x00);
   track_data.push_back(0xFF);
@@ -275,23 +276,57 @@ void MidiWriter::writeMarkerTrack(const MidiTrack& track, uint16_t bpm,
   track_data.push_back(0x18);
   track_data.push_back(0x08);
 
-  // Write marker events (Meta event 0x06)
+  // Merge marker events and tempo events by tick, then write in order
+  // Build a unified event list: each entry has (tick, type) for ordering
+  struct TimedEvent {
+    Tick tick;
+    bool is_tempo;       // true = tempo event, false = marker event
+    size_t index;        // index into markers or tempo_map
+  };
+  std::vector<TimedEvent> events;
+  events.reserve(track.textEvents().size() + tempo_map.size());
+
+  for (size_t i = 0; i < track.textEvents().size(); ++i) {
+    events.push_back({track.textEvents()[i].time, false, i});
+  }
+  for (size_t i = 0; i < tempo_map.size(); ++i) {
+    events.push_back({tempo_map[i].tick, true, i});
+  }
+
+  // Sort by tick, with markers before tempo events at the same tick
+  std::sort(events.begin(), events.end(), [](const TimedEvent& a, const TimedEvent& b) {
+    if (a.tick != b.tick) return a.tick < b.tick;
+    return !a.is_tempo && b.is_tempo;  // markers first at same tick
+  });
+
   Tick prev_time = 0;
-  for (const auto& marker : track.textEvents()) {
-    Tick delta = marker.time - prev_time;
-    prev_time = marker.time;
+  for (const auto& evt : events) {
+    Tick delta = evt.tick - prev_time;
+    prev_time = evt.tick;
 
-    // Truncate marker text if too long for MIDI meta text limit
-    std::string marker_text = marker.text.size() > kMaxMetaTextLength
-                                  ? marker.text.substr(0, kMaxMetaTextLength)
-                                  : marker.text;
-
-    writeVariableLength(track_data, delta);
-    track_data.push_back(0xFF);
-    track_data.push_back(0x06);
-    track_data.push_back(static_cast<uint8_t>(marker_text.size()));
-    for (char c : marker_text) {
-      track_data.push_back(static_cast<uint8_t>(c));
+    if (evt.is_tempo) {
+      uint16_t evt_bpm = tempo_map[evt.index].bpm;
+      if (evt_bpm == 0) evt_bpm = 1;
+      uint32_t us_per_beat = kMicrosecondsPerMinute / evt_bpm;
+      writeVariableLength(track_data, delta);
+      track_data.push_back(0xFF);
+      track_data.push_back(0x51);
+      track_data.push_back(0x03);
+      track_data.push_back((us_per_beat >> 16) & 0xFF);
+      track_data.push_back((us_per_beat >> 8) & 0xFF);
+      track_data.push_back(us_per_beat & 0xFF);
+    } else {
+      const auto& marker = track.textEvents()[evt.index];
+      std::string marker_text = marker.text.size() > kMaxMetaTextLength
+                                    ? marker.text.substr(0, kMaxMetaTextLength)
+                                    : marker.text;
+      writeVariableLength(track_data, delta);
+      track_data.push_back(0xFF);
+      track_data.push_back(0x06);
+      track_data.push_back(static_cast<uint8_t>(marker_text.size()));
+      for (char c : marker_text) {
+        track_data.push_back(static_cast<uint8_t>(c));
+      }
     }
   }
 
@@ -362,7 +397,7 @@ void MidiWriter::buildSMF1(const Song& song, Key key, Mood mood, const std::stri
   writeHeader(num_tracks, TICKS_PER_BEAT);
 
   // SE track first (contains tempo, markers, and metadata)
-  writeMarkerTrack(song.se(), bpm, metadata);
+  writeMarkerTrack(song.se(), bpm, song.tempoMap(), metadata);
 
   Tick mod_tick = song.modulationTick();
   int8_t mod_amount = song.modulationAmount();
@@ -453,7 +488,7 @@ void MidiWriter::buildVocalPreview(const Song& song, const IHarmonyContext& harm
 
   // SE track (tempo only, no markers)
   MidiTrack empty_se;
-  writeMarkerTrack(empty_se, song.bpm(), "");
+  writeMarkerTrack(empty_se, song.bpm(), {}, "");
 
   // Vocal track
   constexpr uint8_t VOCAL_CH = 0;

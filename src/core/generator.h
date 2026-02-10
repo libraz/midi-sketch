@@ -433,6 +433,9 @@ class Generator {
   /** @brief Calculate modulation point and amount from structure/mood. */
   void calculateModulation();
 
+  /// Plan tempo map for ritardando in outro sections.
+  void planTempoMap();
+
   /** @brief Apply post-processing pipeline to melodic tracks.
    *
    *  Orchestrates three sub-phases:

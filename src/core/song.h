@@ -166,6 +166,10 @@ class Song {
   void addPhraseBoundary(const PhraseBoundary& boundary) { phrase_boundaries_.push_back(boundary); }
   const std::vector<PhraseBoundary>& phraseBoundaries() const { return phrase_boundaries_; }
   void clearPhraseBoundaries() { phrase_boundaries_.clear(); }
+
+  /// Tempo map (for ritardando etc.)
+  void setTempoMap(const std::vector<TempoEvent>& map) { tempo_map_ = map; }
+  const std::vector<TempoEvent>& tempoMap() const { return tempo_map_; }
   /// @}
 
  private:
@@ -179,6 +183,7 @@ class Song {
   uint32_t arpeggio_seed_ = 0;
   std::vector<NoteEvent> motif_pattern_;
   std::vector<PhraseBoundary> phrase_boundaries_;
+  std::vector<TempoEvent> tempo_map_;
 };
 
 }  // namespace midisketch

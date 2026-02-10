@@ -134,21 +134,16 @@ class PostProcessor {
                                MidiTrack* drum_track,
                                ChorusDropStyle default_style = ChorusDropStyle::Subtle);
 
-  /// @brief Apply ritardando (gradual slowdown) to outro section.
+  /// @brief Apply velocity decrescendo to outro section.
   ///
   /// For the last 4 bars of Outro:
-  /// - Extends duration by (1.0 + progress * 0.3) for gradual slowdown feel
-  /// - Applies velocity decrescendo (1.0 - progress * 0.25)
-  /// - Extends final note to section end (fermata effect)
-  /// - Duration extension is limited to avoid creating dissonance with other tracks
+  /// - Applies velocity decrescendo (1.0 → 0.75, minimum 30)
+  /// - Tempo-based ritardando is handled separately via MIDI Set Tempo events
   ///
-  /// @param tracks Vector of track pointers to process (duration will be modified)
+  /// @param tracks Vector of track pointers to process
   /// @param sections Song sections for Outro detection
-  /// @param collision_check_tracks Additional tracks to check for collisions when extending
-  ///                               duration (these tracks are not modified)
-  static void applyRitardando(std::vector<MidiTrack*>& tracks,
-                               const std::vector<Section>& sections,
-                               const std::vector<MidiTrack*>& collision_check_tracks = {});
+  static void applyRitDecrescendo(std::vector<MidiTrack*>& tracks,
+                                   const std::vector<Section>& sections);
 
   /// @brief Enhanced FinalHit for stronger ending impact.
   ///
