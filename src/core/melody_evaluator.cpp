@@ -419,7 +419,7 @@ float MelodyEvaluator::calcCatchiness(const std::vector<NoteEvent>& notes) {
       consecutive_same = 0;
     }
   }
-  // Graduated repeat bonus/penalty: 2音:0.2, 3音:0.4, 4音:0.3, 5+音:-0.3 (penalty)
+  // Graduated repeat bonus/penalty: 2-note:0.2, 3-note:0.4, 4-note:0.3, 5+-note:-0.3 (penalty)
   float repeat_bonus = 0.0f;
   if (max_consecutive_same >= 5) {
     repeat_bonus = -0.3f;  // PENALTY for excessive repetition (5+ consecutive)

@@ -4,7 +4,7 @@
  *
  * Contains: fixMotifVocalClashes, fixTrackVocalClashes, fixInterTrackClashes,
  * synchronizeBassKick, applyTrackPanning, applyExpressionCurves,
- * applyArrangementHoles, smoothLargeLeaps, alignChordNoteDurations.
+ * smoothLargeLeaps, alignChordNoteDurations.
  */
 
 #include "core/post_processor.h"
@@ -324,6 +324,13 @@ void PostProcessor::synchronizeBassKick(MidiTrack& bass, const MidiTrack& drums,
 
     // Snap if within tolerance and not already aligned
     if (best_diff <= tolerance && best_diff > 0) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      {
+        int sync_offset = static_cast<int>(best_kick) - static_cast<int>(note.start_tick);
+        note.addTransformStep(TransformStepType::PostProcessTiming, 0, 0,
+                              static_cast<int8_t>(std::clamp(sync_offset, -128, 127)), 5);
+      }
+#endif
       note.start_tick = best_kick;
     }
   }
@@ -412,54 +419,6 @@ void PostProcessor::applyExpressionCurves(MidiTrack& vocal, MidiTrack& chord, Mi
   }
 }
 
-void PostProcessor::applyArrangementHoles(MidiTrack& motif, MidiTrack& arpeggio, MidiTrack& aux,
-                                          MidiTrack& chord, MidiTrack& bass, MidiTrack& guitar,
-                                          const std::vector<Section>& sections) {
-  // Helper: remove notes that overlap with [hole_start, hole_end)
-  auto muteRange = [](MidiTrack& track, Tick hole_start, Tick hole_end) {
-    auto& notes = track.notes();
-    notes.erase(std::remove_if(notes.begin(), notes.end(),
-                               [hole_start, hole_end](const NoteEvent& n) {
-                                 Tick note_end = n.start_tick + n.duration;
-                                 // Remove if note overlaps with hole range
-                                 return n.start_tick < hole_end && note_end > hole_start;
-                               }),
-                notes.end());
-  };
-
-  constexpr Tick kTwoBeats = TICKS_PER_BEAT * 2;
-
-  for (size_t i = 0; i < sections.size(); ++i) {
-    const auto& section = sections[i];
-
-    // Chorus final 2 beats: mute background tracks for buildup effect
-    // Only apply to Max peak level sections
-    if (section.type == SectionType::Chorus && section.peak_level == PeakLevel::Max) {
-      Tick hole_start = section.endTick() - kTwoBeats;
-      Tick hole_end = section.endTick();
-      if (hole_start >= section.start_tick) {
-        muteRange(motif, hole_start, hole_end);
-        muteRange(arpeggio, hole_start, hole_end);
-        muteRange(aux, hole_start, hole_end);
-        muteRange(guitar, hole_start, hole_end);
-      }
-    }
-
-    // Bridge first 2 beats: mute non-vocal/non-drum tracks for contrast
-    if (section.type == SectionType::Bridge) {
-      Tick hole_start = section.start_tick;
-      Tick hole_end = section.start_tick + kTwoBeats;
-      if (hole_end <= section.endTick()) {
-        muteRange(motif, hole_start, hole_end);
-        muteRange(arpeggio, hole_start, hole_end);
-        muteRange(aux, hole_start, hole_end);
-        muteRange(chord, hole_start, hole_end);
-        muteRange(bass, hole_start, hole_end);
-        muteRange(guitar, hole_start, hole_end);
-      }
-    }
-  }
-}
 
 void PostProcessor::smoothLargeLeaps(MidiTrack& track, int max_semitones) {
   auto& notes = track.notes();
@@ -513,6 +472,11 @@ void PostProcessor::alignChordNoteDurations(MidiTrack& track) {
   // Second pass: apply minimum duration to all notes at ticks with 2+ notes
   for (auto& n : notes) {
     if (count[n.start_tick] > 1) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      if (n.duration != min_dur[n.start_tick]) {
+        n.addTransformStep(TransformStepType::PostProcessDuration, 0, 0, -1, 0);
+      }
+#endif
       n.duration = min_dur[n.start_tick];
     }
   }

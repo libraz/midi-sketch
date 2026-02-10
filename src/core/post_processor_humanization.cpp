@@ -28,36 +28,15 @@ bool PostProcessor::isStrongBeat(Tick tick) {
 
 void PostProcessor::applyHumanization(std::vector<MidiTrack*>& tracks, const HumanizeParams& params,
                                       std::mt19937& rng) {
-  // ENHANCED: Stronger humanization for more natural feel.
-  // Maximum timing offset in ticks (approximately 13ms at 120 BPM, was ~8ms)
-  // This adds more "pocket" feel without being noticeable as timing errors.
-  constexpr Tick MAX_TIMING_OFFSET = 25;  // Was 15
   // Maximum velocity variation - more expressive dynamics
   constexpr int MAX_VELOCITY_VARIATION = 12;  // Was 8
 
-  // Scale factors from parameters
-  float timing_scale = params.timing;
   float velocity_scale = params.velocity;
-
-  // Create distributions
-  std::normal_distribution<float> timing_dist(0.0f, 3.0f);
   std::uniform_int_distribution<int> velocity_dist(-MAX_VELOCITY_VARIATION, MAX_VELOCITY_VARIATION);
 
   for (MidiTrack* track : tracks) {
     auto& notes = track->notes();
     for (auto& note : notes) {
-      // Timing humanization: only on weak beats
-      if (!isStrongBeat(note.start_tick)) {
-        float offset = timing_dist(rng) * timing_scale;
-        int tick_offset = static_cast<int>(offset * MAX_TIMING_OFFSET / 3.0f);
-        tick_offset = std::clamp(tick_offset, -static_cast<int>(MAX_TIMING_OFFSET),
-                                 static_cast<int>(MAX_TIMING_OFFSET));
-        // Ensure we don't go negative
-        if (note.start_tick > static_cast<Tick>(-tick_offset)) {
-          note.start_tick = static_cast<Tick>(static_cast<int>(note.start_tick) + tick_offset);
-        }
-      }
-
       // Velocity humanization: less variation on strong beats
       // Minimum velocity of 36 ensures non-ghost notes stay above ghost range (25-35)
       // after humanization. Actual ghost notes (25-35) are intentionally created
@@ -68,7 +47,15 @@ void PostProcessor::applyHumanization(std::vector<MidiTrack*>& tracks, const Hum
       // Preserve intentional ghost notes (25-35), but prevent non-ghost notes from
       // falling into ghost range. Notes originally above 35 should stay above 35.
       int min_velocity = (note.velocity <= 35) ? 1 : 36;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      uint8_t old_vel = note.velocity;
+#endif
       note.velocity = vel::clamp(new_velocity, min_velocity, 127);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      if (note.velocity != old_vel) {
+        note.addTransformStep(TransformStepType::PostProcessVelocity, old_vel, note.velocity, 3, 0);
+      }
+#endif
     }
   }
 }
@@ -129,7 +116,15 @@ void PostProcessor::applySectionAwareVelocityHumanization(
       // Preserve intentional ghost notes (25-35), but prevent non-ghost notes from
       // falling into ghost range. Notes originally above 35 should stay above 35.
       int min_velocity = (note.velocity <= 35) ? 1 : 36;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      uint8_t old_vel = note.velocity;
+#endif
       note.velocity = vel::clamp(new_vel, min_velocity, 127);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      if (note.velocity != old_vel) {
+        note.addTransformStep(TransformStepType::PostProcessVelocity, old_vel, note.velocity, 4, 0);
+      }
+#endif
     }
   }
 }
@@ -137,9 +132,9 @@ void PostProcessor::applySectionAwareVelocityHumanization(
 // Helper functions for micro-timing have been extracted to TimingOffsetCalculator.
 // See src/core/timing_offset_calculator.h for the refactored implementation.
 
-void PostProcessor::applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass,
+void PostProcessor::applyMicroTimingOffsets(MidiTrack& /*vocal*/, MidiTrack& bass,
                                              MidiTrack& drum_track,
-                                             const std::vector<Section>* sections,
+                                             const std::vector<Section>* /*sections*/,
                                              uint8_t drive_feel,
                                              VocalStylePreset vocal_style,
                                              DrumStyle drum_style,
@@ -156,14 +151,10 @@ void PostProcessor::applyMicroTimingOffsets(MidiTrack& vocal, MidiTrack& bass,
   // Apply bass timing (consistent layback)
   calculator.applyBassOffset(bass);
 
-  // Apply vocal timing (phrase-position-aware with human body model)
-  if (sections != nullptr && !sections->empty()) {
-    calculator.applyVocalOffsets(vocal, *sections);
-  } else {
-    // Fallback: uniform offset
-    int vocal_offset = static_cast<int>(4 * calculator.getTimingMultiplier());
-    TimingOffsetCalculator::applyUniformOffset(vocal, vocal_offset);
-  }
+  // Vocal timing offsets DISABLED: vocal is a reference track (Vocaloid=precise,
+  // recorded=pre-humanized). Timing shifts caused cascading issues:
+  // jitter → overlaps → fixVocalOverlaps → new collisions → fixTrackVocalClashes.
+  // Groove comes from drums/bass layback, not vocal drift.
 }
 
 }  // namespace midisketch

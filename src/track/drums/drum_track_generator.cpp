@@ -392,7 +392,8 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
         if (!kicks_added && !intro_kick_disabled) {
           float kick_prob = getDrumRoleKickProbability(section.getEffectiveDrumRole());
           Tick adjusted_beat_tick = applyTimeFeel(beat_tick, time_feel, params.bpm);
-          KickBeatParams kick_params{adjusted_beat_tick, kick, kick_prob, params.humanize_timing};
+          KickBeatParams kick_params{adjusted_beat_tick, kick, kick_prob,
+                                       params.humanize ? params.humanize_timing : 0.0f};
           generateKickForBeat(track, beat_ctx, kick_params);
         }
 

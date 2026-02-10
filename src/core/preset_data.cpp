@@ -1530,7 +1530,7 @@ std::optional<uint8_t> findChordProgressionByName(const std::string& name) {
       {"fifties", 1},      // I-vi-IV-V
       {"doo_wop", 1},
       {"jazz", 2},         // ii-V-I-vi
-      {"royal_road", 3},   // IV-V-iii-vi (王道進行)
+      {"royal_road", 3},   // IV-V-iii-vi ("oudou" / royal road progression)
       {"strong_wish", 4},  // I-IV-V-I
       {"four_chord", 5},   // vi-IV-I-V
       {"emotional", 6},    // I-iii-vi-IV

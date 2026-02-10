@@ -1384,9 +1384,15 @@ std::vector<NoteEvent> AuxGenerator::generateMelodicHook(const AuxContext& ctx,
 
     // Create hook note (pitch will be re-checked when placed)
     Tick note_duration = NOTE_DURATION - TICKS_PER_BEAT / 8;  // Slight gap
-    base_hook.push_back(createNoteWithoutHarmony(
+    auto note = createNoteWithoutHarmony(
         current_tick, note_duration, static_cast<uint8_t>(pitch),
-        vel::scale(ctx.base_velocity, config.velocity_ratio)));
+        vel::scale(ctx.base_velocity, config.velocity_ratio));
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    note.prov_source = static_cast<uint8_t>(NoteSource::Aux);
+    note.prov_lookup_tick = current_tick;
+    note.prov_original_pitch = static_cast<uint8_t>(pitch);
+#endif
+    base_hook.push_back(note);
     current_tick += NOTE_DURATION;
   }
 

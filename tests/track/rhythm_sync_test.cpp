@@ -551,49 +551,45 @@ TEST_F(RhythmSyncTest, MotifAccentPatternApplied) {
 }
 
 // Test: RhythmSync with humanize=true adds timing variation compared to humanize=false
-TEST_F(RhythmSyncTest, RhythmSyncHumanizeAddsTimingVariation) {
-  // Generate without humanization
+TEST_F(RhythmSyncTest, RhythmSyncHumanizeKeepsVocalTimingStable) {
+  // Vocal timing is intentionally not humanized (reference track).
+  // Humanization should affect velocity but not timing.
   params_.humanize = false;
   Generator gen_no_humanize;
   gen_no_humanize.generate(params_);
 
-  // Collect vocal onset ticks
-  std::vector<Tick> onsets_no_humanize;
-  for (const auto& note : gen_no_humanize.getSong().vocal().notes()) {
-    onsets_no_humanize.push_back(note.start_tick);
-  }
+  const auto& vocal_no_h = gen_no_humanize.getSong().vocal().notes();
 
-  // Generate with humanization (same seed)
   params_.humanize = true;
   params_.humanize_timing = 1.0f;
   params_.humanize_velocity = 0.5f;
   Generator gen_humanize;
   gen_humanize.generate(params_);
 
-  std::vector<Tick> onsets_humanize;
-  for (const auto& note : gen_humanize.getSong().vocal().notes()) {
-    onsets_humanize.push_back(note.start_tick);
-  }
+  const auto& vocal_h = gen_humanize.getSong().vocal().notes();
 
-  if (onsets_no_humanize.empty() || onsets_humanize.empty()) {
+  if (vocal_no_h.empty() || vocal_h.empty()) {
     GTEST_SKIP() << "Vocal track empty";
   }
 
-  // Compare: humanized version should have some timing differences.
-  // Use the minimum common note count for comparison.
-  size_t compare_count = std::min(onsets_no_humanize.size(), onsets_humanize.size());
-  int differences = 0;
+  // Vocal timing should be identical (no timing humanization)
+  size_t compare_count = std::min(vocal_no_h.size(), vocal_h.size());
   for (size_t i = 0; i < compare_count; ++i) {
-    if (onsets_no_humanize[i] != onsets_humanize[i]) {
-      differences++;
-    }
+    EXPECT_EQ(vocal_no_h[i].start_tick, vocal_h[i].start_tick)
+        << "Vocal timing should not change with humanization (note " << i << ")";
   }
 
-  // At least some notes should have different timing
-  float diff_ratio = static_cast<float>(differences) / compare_count;
-  EXPECT_GT(diff_ratio, 0.05f)
-      << "Only " << (diff_ratio * 100) << "% of notes have timing differences. "
-      << "Expected humanization to shift at least 5% of note onsets.";
+  // But velocity should differ (velocity humanization is active)
+  int vel_diffs = 0;
+  for (size_t i = 0; i < compare_count; ++i) {
+    if (vocal_no_h[i].velocity != vocal_h[i].velocity) {
+      vel_diffs++;
+    }
+  }
+  float vel_diff_ratio = static_cast<float>(vel_diffs) / compare_count;
+  EXPECT_GT(vel_diff_ratio, 0.1f)
+      << "Velocity humanization should still affect vocal (found "
+      << (vel_diff_ratio * 100) << "% differences)";
 }
 
 // Test: RhythmSync motif should maintain density consistent with its template

@@ -38,7 +38,6 @@ class PostProcessor {
  public:
   // Humanization parameters.
   struct HumanizeParams {
-    float timing = 0.5f;    // Timing variation amount (0.0-1.0)
     float velocity = 0.5f;  // Velocity variation amount (0.0-1.0)
   };
 
@@ -115,31 +114,6 @@ class PostProcessor {
                                ICollisionDetector* harmony = nullptr,
                                TrackRole track_role = TrackRole::Vocal);
 
-  // ============================================================================
-  // Pre-chorus Lift Processing
-  // ============================================================================
-
-  /// @brief Apply pre-chorus lift effect to melodic tracks.
-  ///
-  /// In the last 2 bars of B sections before Chorus:
-  /// - Melodic tracks sustain their last notes (extend duration to fill)
-  /// - Creates anticipation effect
-  ///
-  /// @param tracks Vector of track pointers to process (melodic tracks only)
-  /// @param sections Song sections for B->Chorus detection
-  static void applyPreChorusLift(std::vector<MidiTrack*>& tracks,
-                                  const std::vector<Section>& sections);
-
-  /// @brief Apply pre-chorus lift to a single track within a section.
-  ///
-  /// Extends notes in the lift zone to create sustained/held effect.
-  ///
-  /// @param track Track to modify (in-place)
-  /// @param section The B section that precedes Chorus
-  /// @param lift_start_tick Start tick of the lift zone (last 2 bars)
-  /// @param section_end_tick End tick of the B section
-  static void applyPreChorusLiftToTrack(MidiTrack& track, const Section& section,
-                                         Tick lift_start_tick, Tick section_end_tick);
 
   // ============================================================================
   // Section Transition Effects (Phase 2)
@@ -270,19 +244,6 @@ class PostProcessor {
   static void applyExpressionCurves(MidiTrack& vocal, MidiTrack& chord, MidiTrack& aux,
                                     const std::vector<Section>& sections);
 
-  /// @brief Create arrangement holes for contrast and impact.
-  /// - Chorus final 2 beats: mute Motif/Arpeggio/Aux (pre-chorus-repeat buildup)
-  /// - Bridge first 2 beats: mute non-drum tracks except Vocal (contrast creation)
-  /// Only applies to sections with PeakLevel::Max to avoid over-application.
-  /// @param motif Motif track
-  /// @param arpeggio Arpeggio track
-  /// @param aux Aux track
-  /// @param chord Chord track
-  /// @param bass Bass track
-  /// @param sections Song sections
-  static void applyArrangementHoles(MidiTrack& motif, MidiTrack& arpeggio, MidiTrack& aux,
-                                    MidiTrack& chord, MidiTrack& bass, MidiTrack& guitar,
-                                    const std::vector<Section>& sections);
 
   /// @brief Remove notes that create large melodic leaps (> max_semitones).
   ///

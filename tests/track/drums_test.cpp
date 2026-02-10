@@ -578,8 +578,9 @@ TEST_F(DrumsTest, KickTimingVariation) {
   // Test that kicks don't all land on exact grid positions
   // This is tested indirectly by running multiple seeds and checking for variation
   params_.mood = Mood::ElectroPop;
-  // Use full humanization to ensure timing variation is applied
+  // Enable humanize master switch and use full timing to ensure variation
   // (default humanize_timing=0.4 results in very small offsets)
+  params_.humanize = true;
   params_.humanize_timing = 1.0f;
 
   std::set<Tick> kick_offsets;

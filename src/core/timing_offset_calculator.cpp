@@ -115,6 +115,10 @@ void TimingOffsetCalculator::applyDrumOffsets(MidiTrack& drum_track) const {
     if (offset != 0) {
       int new_tick = static_cast<int>(note.start_tick) + offset;
       if (new_tick > 0) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        note.addTransformStep(TransformStepType::PostProcessTiming, note.note, 0,
+                              static_cast<int8_t>(std::clamp(offset, -128, 127)), 1);
+#endif
         note.start_tick = static_cast<Tick>(new_tick);
       }
     }
@@ -262,6 +266,10 @@ void TimingOffsetCalculator::applyUniformOffset(MidiTrack& track, int offset) {
   for (auto& note : notes) {
     int new_tick = static_cast<int>(note.start_tick) + offset;
     if (new_tick > 0) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      note.addTransformStep(TransformStepType::PostProcessTiming, 0, 0,
+                            static_cast<int8_t>(std::clamp(offset, -128, 127)), 2);
+#endif
       note.start_tick = static_cast<Tick>(new_tick);
     }
   }

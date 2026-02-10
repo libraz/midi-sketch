@@ -205,6 +205,7 @@ void generateDrumsTrack(MidiTrack& track, const Song& song, const GeneratorParam
   drum_params.composition_style = params.composition_style;
   drum_params.paradigm = params.paradigm;
   drum_params.motif_drum = params.motif_drum;
+  drum_params.humanize = params.humanize;
   drum_params.humanize_timing = params.humanize_timing;
 
   drums::generateDrumsTrackImpl(track, song, drum_params, rng, nullptr);
@@ -220,6 +221,7 @@ void generateDrumsTrackWithVocal(MidiTrack& track, const Song& song, const Gener
   drum_params.composition_style = params.composition_style;
   drum_params.paradigm = params.paradigm;
   drum_params.motif_drum = params.motif_drum;
+  drum_params.humanize = params.humanize;
   drum_params.humanize_timing = params.humanize_timing;
 
   drums::generateDrumsTrackImpl(track, song, drum_params, rng,
@@ -236,6 +238,7 @@ void generateDrumsTrackMelodyDriven(MidiTrack& track, const Song& song, const Ge
   drum_params.composition_style = params.composition_style;
   drum_params.paradigm = params.paradigm;
   drum_params.motif_drum = params.motif_drum;
+  drum_params.humanize = params.humanize;
   drum_params.humanize_timing = params.humanize_timing;
 
   drums::generateDrumsTrackImpl(track, song, drum_params, rng,

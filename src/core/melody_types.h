@@ -231,7 +231,7 @@ enum class VocalGrooveFeel : uint8_t {
 
 /// @brief Anticipation rest mode for phrase breathing control.
 ///
-/// Controls intentional silence before phrase starts to create "tame" (溜め) effect.
+/// Controls intentional silence before phrase starts to create "tame" (build-up) effect.
 /// This is a common technique in J-POP to build anticipation before melodic phrases.
 enum class AnticipationRestMode : uint8_t {
   Off = 0,        ///< No anticipation rest (default behavior)

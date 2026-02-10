@@ -329,7 +329,7 @@ enum class DrumRole : uint8_t {
 /// - Transitional: Preparation for next section
 enum class SectionModifier : uint8_t {
   None = 0,        ///< Standard section (no modification)
-  Ochisabi = 1,    ///< 落ちサビ: -30% velocity, drums FX only, thin backing
+  Ochisabi = 1,    ///< "Ochi-sabi" (quiet/fallen chorus): -30% velocity, drums FX only, thin backing
   Climactic = 2,   ///< Climax: +15% velocity, maximum density
   Transitional = 3 ///< Transition: -10% velocity, preparing for next section
 };

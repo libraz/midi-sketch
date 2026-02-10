@@ -4,7 +4,7 @@
  *
  * Contains: applyExitFadeout, applyExitFinalHit, applyExitCutOff,
  * applyExitSustain, applyExitPattern, applyAllExitPatterns,
- * applyPreChorusLift, applyPreChorusLiftToTrack, applyChorusDrop,
+ * applyChorusDrop,
  * applyRitardando, applyEnhancedFinalHit.
  */
 
@@ -242,87 +242,6 @@ void PostProcessor::applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
   }
 }
 
-// ============================================================================
-// Pre-chorus Lift Implementation
-// ============================================================================
-
-void PostProcessor::applyPreChorusLift(std::vector<MidiTrack*>& tracks,
-                                        const std::vector<Section>& sections) {
-  // Find B sections that are followed by Chorus
-  for (size_t idx = 0; idx + 1 < sections.size(); ++idx) {
-    const Section& section = sections[idx];
-    const Section& next_section = sections[idx + 1];
-
-    // Only B sections before Chorus
-    if (section.type != SectionType::B || next_section.type != SectionType::Chorus) {
-      continue;
-    }
-
-    // Need at least 3 bars for lift effect (last 2 bars = lift zone)
-    if (section.bars < 3) {
-      continue;
-    }
-
-    // Calculate lift zone (last 2 bars of B section)
-    Tick section_end_tick = section.endTick();
-    Tick lift_start_tick = section_end_tick - 2 * TICKS_PER_BAR;
-
-    // Apply lift effect to each melodic track
-    for (MidiTrack* track : tracks) {
-      if (track != nullptr) {
-        applyPreChorusLiftToTrack(*track, section, lift_start_tick, section_end_tick);
-      }
-    }
-  }
-}
-
-void PostProcessor::applyPreChorusLiftToTrack(MidiTrack& track, const Section& section,
-                                               Tick lift_start_tick, Tick section_end_tick) {
-  (void)section;  // Used for potential future extension
-
-  auto& notes = track.notes();
-  if (notes.empty()) return;
-
-  // Find notes that start in the lift zone
-  std::vector<NoteEvent*> lift_notes;
-  for (auto& note : notes) {
-    if (note.start_tick >= lift_start_tick && note.start_tick < section_end_tick) {
-      lift_notes.push_back(&note);
-    }
-  }
-
-  if (lift_notes.empty()) return;
-
-  // Strategy: Extend the last note in the lift zone to sustain until section end
-  // This creates a "held breath" effect before Chorus
-  NoteEvent* last_note = lift_notes.back();
-
-  // Find the latest note that starts before the section end
-  for (auto* note : lift_notes) {
-    if (note->start_tick > last_note->start_tick) {
-      last_note = note;
-    }
-  }
-
-  // Extend the last note to fill until section boundary
-  // (minus a small gap for natural release)
-  constexpr Tick RELEASE_GAP = TICKS_PER_BEAT / 4;  // 16th note gap
-  Tick target_end = section_end_tick - RELEASE_GAP;
-
-  if (last_note->start_tick < target_end) {
-    Tick new_duration = target_end - last_note->start_tick;
-    // Only extend if it makes the note longer
-    if (new_duration > last_note->duration) {
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-      last_note->addTransformStep(TransformStepType::PostProcessDuration, 0, 0, 1, 0);
-#endif
-      last_note->duration = new_duration;
-    }
-  }
-
-  // Additionally, remove notes that might overlap with the extended note
-  // (after the last note) - but this should rarely happen in practice
-}
 
 // ============================================================================
 // Chorus Drop Implementation (Phase 2, Task 2-2)
@@ -657,6 +576,11 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
 
     for (auto& note : bass_notes) {
       if (note.start_tick >= final_beat_start && note.start_tick < section_end) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        if (note.velocity < FINAL_HIT_VEL) {
+          note.addTransformStep(TransformStepType::PostProcessVelocity, note.velocity, FINAL_HIT_VEL, 5, 0);
+        }
+#endif
         note.velocity = std::max(note.velocity, FINAL_HIT_VEL);
         has_final_bass = true;
       }
@@ -708,6 +632,11 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
       if (note.start_tick >= final_beat_start && note.start_tick < section_end) {
         // Only boost kick, snare, and crash velocity
         if (note.note == BD_NOTE || note.note == SD_NOTE || note.note == CRASH_NOTE) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+          if (note.velocity < FINAL_HIT_VEL) {
+            note.addTransformStep(TransformStepType::PostProcessVelocity, note.velocity, FINAL_HIT_VEL, 5, 0);
+          }
+#endif
           note.velocity = std::max(note.velocity, FINAL_HIT_VEL);
         }
         if (note.note == BD_NOTE) has_final_kick = true;
@@ -765,8 +694,18 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
           safe_end = getMaxSafeEndTick(note, section_end, vocal_track);
         }
         if (safe_end > note.start_tick) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+          if (safe_end - note.start_tick != note.duration) {
+            note.addTransformStep(TransformStepType::PostProcessDuration, 0, 0, 1, 0);
+          }
+#endif
           note.duration = safe_end - note.start_tick;
         }
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        if (note.velocity < FINAL_HIT_VEL) {
+          note.addTransformStep(TransformStepType::PostProcessVelocity, note.velocity, FINAL_HIT_VEL, 5, 0);
+        }
+#endif
         note.velocity = std::max(note.velocity, FINAL_HIT_VEL);
       }
     }
@@ -783,6 +722,11 @@ void PostProcessor::applyEnhancedFinalHit(MidiTrack* bass_track, MidiTrack* drum
           safe_end = getMaxSafeEndTick(note, section_end, vocal_track);
         }
         if (safe_end > note.start_tick + note.duration) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+          if (safe_end - note.start_tick != note.duration) {
+            note.addTransformStep(TransformStepType::PostProcessDuration, 0, 0, 1, 0);
+          }
+#endif
           note.duration = safe_end - note.start_tick;
         }
       }

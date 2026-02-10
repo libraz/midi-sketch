@@ -62,6 +62,13 @@ class TrackBase : public ITrackBase {
   /// Must be overridden by concrete track generators.
   virtual void doGenerateFullTrack(MidiTrack& track, const FullTrackContext& ctx) = 0;
 
+  /// @brief Remove notes that fall within arrangement holes.
+  ///
+  /// Arrangement holes create silence at specific section boundaries for dramatic effect:
+  /// - Chorus (PeakLevel::Max) final 2 beats: background tracks (Motif/Arpeggio/Aux/Guitar) muted
+  /// - Bridge first 2 beats: all non-vocal/non-drum tracks muted for contrast
+  void removeArrangementHoleNotes(MidiTrack& track, const FullTrackContext& ctx);
+
   /// @brief Check if this track should skip a section based on the section's track mask.
   ///
   /// Converts the generator's TrackRole to the corresponding TrackMask bit

@@ -58,7 +58,7 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
     max_consecutive_short = 3;   // Standard
   }
 
-  // Track previous note duration for "溜め→爆発" (hold→burst) pattern
+  // Track previous note duration for "tame→burst" (build-up→release) pattern
   // After a long note (>=half note), boost density to create energy release
   float prev_note_eighths = 0.0f;
   constexpr float kLongNoteThreshold = 4.0f;       // Half note (4 eighths)
@@ -174,7 +174,7 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
       consecutive_short_count = 0;  // Reset counter on strong beat
     } else {
       // Weak beat: favor shorter notes for density
-      // Apply "溜め→爆発" (hold→burst) pattern: boost density after long notes
+      // Apply "tame→burst" (build-up→release) pattern: boost density after long notes
       float local_density_boost = 1.0f;
       if (prev_note_eighths >= kLongNoteThreshold) {
         local_density_boost = kPostLongNoteDensityBoost;
@@ -211,7 +211,7 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
     // Store actual eighths value as float to preserve short note durations
     rhythm.push_back({current_beat, eighths, strong});
 
-    // Track previous note for "溜め→爆発" pattern
+    // Track previous note for "tame→burst" pattern
     prev_note_eighths = eighths;
 
     current_beat += eighths * 0.5f;  // Convert eighths to beats

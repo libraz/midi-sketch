@@ -518,7 +518,7 @@ void applySectionEndSustain(std::vector<NoteEvent>& notes, const std::vector<Sec
       case SectionType::A:
         return TICK_QUARTER;     // 480 ticks - modest but natural
       default:
-        return TICK_HALF;        // 960 ticks - Intro/Outro余韻
+        return TICK_HALF;        // 960 ticks - Intro/Outro resonance (lingering)
     }
   };
 

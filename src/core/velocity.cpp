@@ -844,7 +844,7 @@ float getContextualSyncopationWeight(float base_weight, float phrase_progress, i
   float adjusted = base_weight;
 
   // Phrase position boost: more syncopation in latter half of phrase
-  // Creates natural momentum building toward phrase climax ("溜め→爆発" pattern)
+  // Creates natural momentum building toward phrase climax ("tame→burst" / build-up→release pattern)
   // Progress 0.5-1.0 maps to multiplier 1.0-1.5 (increased for catchier feel)
   if (phrase_progress > velocity::kSyncoPhraseProgressThreshold) {
     float progress_factor = (phrase_progress - velocity::kSyncoPhraseProgressThreshold) * 2.0f;

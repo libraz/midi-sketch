@@ -11,10 +11,13 @@
 #include <cmath>
 #include <vector>
 
+#include "core/arrangement.h"
 #include "core/midi_track.h"
 #include "core/note_source.h"
 #include "core/preset_data.h"
 #include "core/section_types.h"
+#include "core/song.h"
+#include "core/track_base.h"
 #include "core/types.h"
 #include "test_support/stub_harmony_context.h"
 
@@ -901,8 +904,9 @@ TEST(MicroTimingTest, VocalTimingVariesByPhrasePosition) {
   EXPECT_LE(end_offset, 2);
 }
 
-TEST(MicroTimingTest, VocalTimingUniformWithoutSections) {
-  // Without sections, vocal should get uniform +4 offset
+TEST(MicroTimingTest, VocalTimingDisabled) {
+  // Vocal timing offsets are disabled: vocal is a reference track
+  // (Vocaloid=precise, recorded=pre-humanized). No offset applied.
   MidiTrack vocal, bass, drums;
 
   Tick start_tick = TICKS_PER_BAR;
@@ -913,8 +917,8 @@ TEST(MicroTimingTest, VocalTimingUniformWithoutSections) {
   // Apply without sections (nullptr)
   PostProcessor::applyMicroTimingOffsets(vocal, bass, drums, nullptr);
 
-  // Should have uniform +4 offset
-  EXPECT_EQ(vocal.notes()[0].start_tick, orig + 4) << "Without sections, vocal gets +4";
+  // Vocal timing is disabled - no offset applied
+  EXPECT_EQ(vocal.notes()[0].start_tick, orig) << "Vocal timing disabled, no offset";
 }
 
 TEST(MicroTimingTest, BassAlwaysLaysBack) {
@@ -2199,16 +2203,37 @@ TEST_F(BassKickSyncTest, BassBeforeKickSnapsForward) {
 
 // ============================================================================
 // Arrangement Holes Tests (Phase 3-1)
+// Now tests TrackBase::removeArrangementHoleNotes() instead of PostProcessor
 // ============================================================================
+
+// Test-only TrackBase subclass that exposes removeArrangementHoleNotes()
+class TestTrackForHoles : public TrackBase {
+ public:
+  explicit TestTrackForHoles(TrackRole role) : role_(role) {}
+  TrackRole getRole() const override { return role_; }
+  TrackPriority getDefaultPriority() const override { return TrackPriority::None; }
+  PhysicalModel getPhysicalModel() const override { return {}; }
+  void doGenerateFullTrack(MidiTrack&, const FullTrackContext&) override {}
+
+  void applyHoles(MidiTrack& track, const FullTrackContext& ctx) {
+    removeArrangementHoleNotes(track, ctx);
+  }
+
+ private:
+  TrackRole role_;
+};
 
 class ArrangementHolesTest : public ::testing::Test {
  protected:
-  MidiTrack motif_;
-  MidiTrack arpeggio_;
-  MidiTrack aux_;
-  MidiTrack chord_;
-  MidiTrack bass_;
-  MidiTrack guitar_;
+  Song song_;
+  FullTrackContext ctx_;
+
+  void SetUp() override { ctx_.song = &song_; }
+
+  void applyHoles(MidiTrack& track, TrackRole role) {
+    TestTrackForHoles gen(role);
+    gen.applyHoles(track, ctx_);
+  }
 };
 
 TEST_F(ArrangementHolesTest, ChorusMaxPeakMutesBackgroundFinalTwoBeats) {
@@ -2218,28 +2243,32 @@ TEST_F(ArrangementHolesTest, ChorusMaxPeakMutesBackgroundFinalTwoBeats) {
   chorus.start_tick = 0;
   chorus.bars = 8;
   chorus.peak_level = PeakLevel::Max;
-  std::vector<Section> sections = {chorus};
+  song_.setArrangement(Arrangement({chorus}));
 
   Tick section_end = chorus.endTick();  // 8 * 1920 = 15360
   Tick hole_start = section_end - TICKS_PER_BEAT * 2;  // last 2 beats
 
   // Notes in the hole zone
-  motif_.addNote(NoteEventBuilder::create(hole_start, 240, 60, 80));
-  arpeggio_.addNote(NoteEventBuilder::create(hole_start + 240, 240, 64, 80));
-  aux_.addNote(NoteEventBuilder::create(hole_start + 480, 240, 67, 80));
+  MidiTrack motif, arpeggio, aux, chord;
+  motif.addNote(NoteEventBuilder::create(hole_start, 240, 60, 80));
+  arpeggio.addNote(NoteEventBuilder::create(hole_start + 240, 240, 64, 80));
+  aux.addNote(NoteEventBuilder::create(hole_start + 480, 240, 67, 80));
 
   // Notes before the hole zone (should survive)
-  motif_.addNote(NoteEventBuilder::create(0, 480, 60, 80));
-  chord_.addNote(NoteEventBuilder::create(0, 480, 64, 80));
+  motif.addNote(NoteEventBuilder::create(0, 480, 60, 80));
+  chord.addNote(NoteEventBuilder::create(0, 480, 64, 80));
 
-  PostProcessor::applyArrangementHoles(motif_, arpeggio_, aux_, chord_, bass_, guitar_, sections);
+  applyHoles(motif, TrackRole::Motif);
+  applyHoles(arpeggio, TrackRole::Arpeggio);
+  applyHoles(aux, TrackRole::Aux);
+  applyHoles(chord, TrackRole::Chord);
 
   // Notes in hole zone should be removed
-  EXPECT_EQ(motif_.notes().size(), 1u) << "Motif should keep note before hole, remove note in hole";
-  EXPECT_EQ(arpeggio_.notes().size(), 0u) << "Arpeggio note in hole should be removed";
-  EXPECT_EQ(aux_.notes().size(), 0u) << "Aux note in hole should be removed";
-  // Chord should be unaffected (chorus holes only mute motif/arpeggio/aux)
-  EXPECT_EQ(chord_.notes().size(), 1u) << "Chord should be unaffected by chorus hole";
+  EXPECT_EQ(motif.notes().size(), 1u) << "Motif should keep note before hole, remove note in hole";
+  EXPECT_EQ(arpeggio.notes().size(), 0u) << "Arpeggio note in hole should be removed";
+  EXPECT_EQ(aux.notes().size(), 0u) << "Aux note in hole should be removed";
+  // Chord should be unaffected (chorus holes only mute motif/arpeggio/aux/guitar)
+  EXPECT_EQ(chord.notes().size(), 1u) << "Chord should be unaffected by chorus hole";
 }
 
 TEST_F(ArrangementHolesTest, ChorusNonMaxPeakNotAffected) {
@@ -2248,16 +2277,17 @@ TEST_F(ArrangementHolesTest, ChorusNonMaxPeakNotAffected) {
   chorus.start_tick = 0;
   chorus.bars = 8;
   chorus.peak_level = PeakLevel::None;  // Not Max
-  std::vector<Section> sections = {chorus};
+  song_.setArrangement(Arrangement({chorus}));
 
   Tick section_end = chorus.endTick();
   Tick hole_start = section_end - TICKS_PER_BEAT * 2;
 
-  motif_.addNote(NoteEventBuilder::create(hole_start, 240, 60, 80));
+  MidiTrack motif;
+  motif.addNote(NoteEventBuilder::create(hole_start, 240, 60, 80));
 
-  PostProcessor::applyArrangementHoles(motif_, arpeggio_, aux_, chord_, bass_, guitar_, sections);
+  applyHoles(motif, TrackRole::Motif);
 
-  EXPECT_EQ(motif_.notes().size(), 1u) << "Non-Max chorus should not mute notes";
+  EXPECT_EQ(motif.notes().size(), 1u) << "Non-Max chorus should not mute notes";
 }
 
 TEST_F(ArrangementHolesTest, BridgeMutesFirstTwoBeats) {
@@ -2265,34 +2295,67 @@ TEST_F(ArrangementHolesTest, BridgeMutesFirstTwoBeats) {
   bridge.type = SectionType::Bridge;
   bridge.start_tick = 0;
   bridge.bars = 4;
-  std::vector<Section> sections = {bridge};
+  song_.setArrangement(Arrangement({bridge}));
 
   Tick hole_end = TICKS_PER_BEAT * 2;
 
   // Notes in hole zone (bridge first 2 beats)
-  motif_.addNote(NoteEventBuilder::create(0, 480, 60, 80));
-  arpeggio_.addNote(NoteEventBuilder::create(240, 240, 64, 80));
-  chord_.addNote(NoteEventBuilder::create(0, 960, 48, 80));
-  bass_.addNote(NoteEventBuilder::create(0, 480, 36, 80));
+  MidiTrack motif, arpeggio, chord, bass;
+  motif.addNote(NoteEventBuilder::create(0, 480, 60, 80));
+  arpeggio.addNote(NoteEventBuilder::create(240, 240, 64, 80));
+  chord.addNote(NoteEventBuilder::create(0, 960, 48, 80));
+  bass.addNote(NoteEventBuilder::create(0, 480, 36, 80));
 
   // Notes after hole zone (should survive)
-  motif_.addNote(NoteEventBuilder::create(hole_end, 480, 60, 80));
-  bass_.addNote(NoteEventBuilder::create(hole_end, 480, 36, 80));
+  motif.addNote(NoteEventBuilder::create(hole_end, 480, 60, 80));
+  bass.addNote(NoteEventBuilder::create(hole_end, 480, 36, 80));
 
-  PostProcessor::applyArrangementHoles(motif_, arpeggio_, aux_, chord_, bass_, guitar_, sections);
+  applyHoles(motif, TrackRole::Motif);
+  applyHoles(arpeggio, TrackRole::Arpeggio);
+  applyHoles(chord, TrackRole::Chord);
+  applyHoles(bass, TrackRole::Bass);
 
-  EXPECT_EQ(motif_.notes().size(), 1u) << "Motif: keep note after hole, remove note in hole";
-  EXPECT_EQ(arpeggio_.notes().size(), 0u) << "Arpeggio in hole should be removed";
-  EXPECT_EQ(chord_.notes().size(), 0u) << "Chord in hole should be removed (bridge)";
-  EXPECT_EQ(bass_.notes().size(), 1u) << "Bass: keep note after hole, remove note in hole";
+  EXPECT_EQ(motif.notes().size(), 1u) << "Motif: keep note after hole, remove note in hole";
+  EXPECT_EQ(arpeggio.notes().size(), 0u) << "Arpeggio in hole should be removed";
+  EXPECT_EQ(chord.notes().size(), 0u) << "Chord in hole should be removed (bridge)";
+  EXPECT_EQ(bass.notes().size(), 1u) << "Bass: keep note after hole, remove note in hole";
 }
 
 TEST_F(ArrangementHolesTest, EmptySectionsDoNothing) {
-  motif_.addNote(NoteEventBuilder::create(0, 480, 60, 80));
-  std::vector<Section> sections;
+  // Empty arrangement (no sections)
+  MidiTrack motif;
+  motif.addNote(NoteEventBuilder::create(0, 480, 60, 80));
 
-  PostProcessor::applyArrangementHoles(motif_, arpeggio_, aux_, chord_, bass_, guitar_, sections);
-  EXPECT_EQ(motif_.notes().size(), 1u);
+  applyHoles(motif, TrackRole::Motif);
+  EXPECT_EQ(motif.notes().size(), 1u);
+}
+
+TEST_F(ArrangementHolesTest, VocalNotAffected) {
+  Section bridge;
+  bridge.type = SectionType::Bridge;
+  bridge.start_tick = 0;
+  bridge.bars = 4;
+  song_.setArrangement(Arrangement({bridge}));
+
+  MidiTrack vocal;
+  vocal.addNote(NoteEventBuilder::create(0, 480, 60, 80));
+
+  applyHoles(vocal, TrackRole::Vocal);
+  EXPECT_EQ(vocal.notes().size(), 1u) << "Vocal should never be affected by arrangement holes";
+}
+
+TEST_F(ArrangementHolesTest, DrumsNotAffected) {
+  Section bridge;
+  bridge.type = SectionType::Bridge;
+  bridge.start_tick = 0;
+  bridge.bars = 4;
+  song_.setArrangement(Arrangement({bridge}));
+
+  MidiTrack drums;
+  drums.addNote(NoteEventBuilder::create(0, 480, 36, 80));
+
+  applyHoles(drums, TrackRole::Drums);
+  EXPECT_EQ(drums.notes().size(), 1u) << "Drums should never be affected by arrangement holes";
 }
 
 // ============================================================================

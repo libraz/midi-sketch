@@ -590,8 +590,13 @@ std::vector<NoteEvent> generateMotifPattern(const GeneratorParams& params, std::
       velocity = static_cast<uint8_t>(base_velocity * (0.55f + accent * 0.45f));
     }
 
-    pattern.push_back(
-        createNoteWithoutHarmony(pos, note_duration, static_cast<uint8_t>(pitch), velocity));
+    auto note = createNoteWithoutHarmony(pos, note_duration, static_cast<uint8_t>(pitch), velocity);
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    note.prov_source = static_cast<uint8_t>(NoteSource::Motif);
+    note.prov_lookup_tick = pos;
+    note.prov_original_pitch = static_cast<uint8_t>(pitch);
+#endif
+    pattern.push_back(note);
     pitch_idx++;
   }
 

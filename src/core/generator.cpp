@@ -427,7 +427,7 @@ void Generator::applyPostProcessingEffects() {
   PostProcessor::fixVocalOverlaps(song_.vocal());
 
   // Smooth large leaps in Aux track caused by note removal in earlier passes
-  // (fixTrackVocalClashes, applyArrangementHoles, etc.)
+  // (fixTrackVocalClashes, etc.)
   PostProcessor::smoothLargeLeaps(song_.aux());
 
   // Align chord note durations: ensure all notes at the same onset have
@@ -921,7 +921,7 @@ void Generator::generateBass() {
 
   // Apply triplet-grid swing quantization to bass (only for non-straight grooves)
   // Scale swing by humanize_timing for unified control of all timing variations
-  if (getMoodDrumGrooveFeel(params_.mood) != DrumGrooveFeel::Straight) {
+  if (params_.humanize && getMoodDrumGrooveFeel(params_.mood) != DrumGrooveFeel::Straight) {
     applySwingToTrackBySections(song_.bass(), song_.arrangement().sections(), TrackRole::Bass,
                                 params_.humanize_timing);
   }
@@ -1258,7 +1258,7 @@ void Generator::applyFinalAdjustments() {
 
   // Clip vocal notes that sustain over chord changes with non-chord-tone pitches.
   // Must run AFTER all post-processing that may extend note durations
-  // (applyExitSustain, applyPreChorusLift, etc.).
+  // (applyExitSustain, etc.).
   for (auto& note : song_.vocal().notes()) {
     auto boundary_info =
         harmony_context_->analyzeChordBoundary(note.note, note.start_tick, note.duration);
@@ -1278,9 +1278,8 @@ void Generator::applyFinalAdjustments() {
     }
   }
 
-  // Apply arrangement holes for contrast (mute background at section boundaries)
-  PostProcessor::applyArrangementHoles(song_.motif(), song_.arpeggio(), song_.aux(),
-                                       song_.chord(), song_.bass(), song_.guitar(), sections);
+  // Arrangement holes (mute background at section boundaries) are now handled
+  // by TrackBase::removeArrangementHoleNotes() during generation.
 
   // Apply stereo panning (CC#10) for spatial width
   PostProcessor::applyTrackPanning(song_.vocal(), song_.chord(), song_.bass(),
@@ -1372,7 +1371,6 @@ void Generator::applyHumanization() {
                                     &song_.arpeggio(), &song_.guitar()};
 
   PostProcessor::HumanizeParams humanize_params;
-  humanize_params.timing = params_.humanize_timing;
   humanize_params.velocity = params_.humanize_velocity;
 
   PostProcessor::applyHumanization(tracks, humanize_params, rng_);

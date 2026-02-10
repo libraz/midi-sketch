@@ -94,6 +94,7 @@ enum class TransformStepType : uint8_t {
   ArticulationGate,   ///< Duration modified by articulation gate (bass staccato/legato)
   PostProcessVelocity,   ///< PostProcessor velocity modification (input=old, output=new)
   PostProcessDuration,   ///< PostProcessor duration modification (param1=reason)
+  PostProcessTiming,     ///< PostProcessor timing modification (param1=offset, param2=reason)
 };
 
 /// @brief Strategy used to resolve a pitch collision.
@@ -160,6 +161,8 @@ inline const char* transformStepTypeToString(TransformStepType type) {
       return "post_process_velocity";
     case TransformStepType::PostProcessDuration:
       return "post_process_duration";
+    case TransformStepType::PostProcessTiming:
+      return "post_process_timing";
   }
   return "unknown";
 }

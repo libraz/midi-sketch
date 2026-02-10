@@ -165,7 +165,7 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
 void mergeSamePitchNotes(std::vector<NoteEvent>& notes, Tick max_gap = 120);
 
 /**
- * @brief Extend the last note of each section for "sustain" (歌い上げ) effect.
+ * @brief Extend the last note of each section for "utaiage" (vocal sustain) effect.
  *
  * Pop vocal practice: section-ending notes are held longer for emotional impact.
  * Chorus endings get whole notes, pre-chorus gets dotted half, etc.
