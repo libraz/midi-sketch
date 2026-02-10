@@ -13,12 +13,24 @@
 #include <vector>
 
 #include "core/i_harmony_context.h"
+#include "core/melody_types.h"
 #include "core/preset_types.h"
 #include "core/section_types.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
 
 namespace midisketch {
+
+/**
+ * @brief Check if a vocal style is a high-energy idol style.
+ *
+ * Used to relax BPM-based density suppression for idol songs at BPM 145+.
+ * These styles benefit from denser 8th-note-driven vocal lines even at fast tempos.
+ *
+ * @param style The vocal style preset to check
+ * @return true if the style is a high-energy idol style
+ */
+bool isHighEnergyVocalStyle(VocalStylePreset style);
 
 /**
  * @brief Shift note timings by offset.

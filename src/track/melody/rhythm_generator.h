@@ -36,7 +36,8 @@ std::vector<RhythmNote> generatePhraseRhythm(
     float thirtysecond_ratio, std::mt19937& rng,
     GenerationParadigm paradigm = GenerationParadigm::Traditional,
     float syncopation_weight = 0.15f, SectionType section_type = SectionType::Intro,
-    uint16_t bpm = 120);
+    uint16_t bpm = 120,
+    VocalStylePreset vocal_style = VocalStylePreset::Auto);
 
 /// @brief Generate mora-timed rhythm for Japanese lyrics compatibility.
 ///

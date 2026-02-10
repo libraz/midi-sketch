@@ -35,6 +35,7 @@
 #include "track/melody/rhythm_generator.h"
 #include "track/melody/motif_support.h"
 #include "track/vocal/phrase_planner.h"
+#include "track/vocal/vocal_helpers.h"
 
 namespace midisketch {
 
@@ -588,7 +589,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
   // Generate rhythm pattern with section density modifier and 32nd note ratio
   std::vector<RhythmNote> rhythm = generatePhraseRhythm(
       effective_tmpl, phrase_beats, ctx.density_modifier, ctx.thirtysecond_ratio, rng, ctx.paradigm,
-      syncopation_weight, ctx.section_type, ctx.bpm);
+      syncopation_weight, ctx.section_type, ctx.bpm, ctx.vocal_style);
 
   // RhythmSync density boost: if output is too sparse, regenerate with higher density
   // Target: at least 2 notes per beat (phrase_beats * 2) for RhythmSync paradigm
@@ -598,7 +599,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
     float boost = std::max(1.5f, static_cast<float>(phrase_beats * 2) / rhythm.size());
     float boosted_density = ctx.density_modifier * boost;
     rhythm = generatePhraseRhythm(effective_tmpl, phrase_beats, boosted_density, ctx.thirtysecond_ratio, rng,
-                                   ctx.paradigm, syncopation_weight, ctx.section_type, ctx.bpm);
+                                   ctx.paradigm, syncopation_weight, ctx.section_type, ctx.bpm, ctx.vocal_style);
   }
 
   // =========================================================================
@@ -607,7 +608,10 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
 
   // chorus_long_tones: Extend short notes to create sustained melody in Chorus.
   // Converts eighth-note durations to quarter notes for a more open, singable feel.
-  if (ctx.section_type == SectionType::Chorus && ctx.chorus_long_tones) {
+  // At BPM >= 145 with high-energy idol styles, disable to preserve rapid-fire density.
+  bool apply_long_tones = ctx.chorus_long_tones
+      && !(ctx.bpm >= 145 && isHighEnergyVocalStyle(ctx.vocal_style));
+  if (ctx.section_type == SectionType::Chorus && apply_long_tones) {
     for (auto& rn : rhythm) {
       // Extend eighth notes (1.0 eighths) to quarter notes (2.0 eighths)
       if (rn.eighths >= 0.5f && rn.eighths < 2.0f) {
@@ -1606,36 +1610,32 @@ void MelodyDesigner::insertLeadingTone(std::vector<NoteEvent>& notes, const Sect
                                        const IHarmonyContext& harmony) {
   if (notes.empty()) return;
 
-  // Maximum allowed interval (major 6th = 9 semitones)
-  // kMaxMelodicInterval from pitch_utils.h
-
   // Find the last note
   auto& last_note = notes.back();
 
-  // Leading tone: one semitone below the expected first note of next section
-  // In C major, this is typically B (11) leading to C (0)
-  // We approximate by using a semitone below the current tessitura center
-  int leading_pitch = ctx.tessitura.center - 1;
+  // Insert a short pickup note just before section end
+  Tick last_note_end = last_note.start_tick + last_note.duration;
+  Tick leading_tone_start = ctx.section_end - TICKS_PER_BEAT / 4;  // 16th note before end
+
+  // Use chord tone at the pickup position for harmonically correct approach note.
+  // The old approach (tessitura.center - 1) produced chromatic pitches (e.g. F# in C major)
+  // that are non-diatonic. Chord tones are always diatonic and create natural pickup motion.
+  int8_t degree = harmony.getChordDegreeAt(leading_tone_start);
+  ChordToneHelper helper(degree);
+  int leading_pitch = helper.nearestChordTone(
+      static_cast<uint8_t>(std::clamp(static_cast<int>(ctx.tessitura.center) - 1,
+                                       static_cast<int>(ctx.vocal_low),
+                                       static_cast<int>(ctx.vocal_high))));
 
   // Ensure it's within range
-  if (leading_pitch < static_cast<int>(ctx.vocal_low)) {
-    leading_pitch = ctx.vocal_low;
-  }
-  if (leading_pitch > static_cast<int>(ctx.vocal_high)) {
-    leading_pitch = ctx.vocal_high;
-  }
+  leading_pitch = std::clamp(leading_pitch, static_cast<int>(ctx.vocal_low),
+                             static_cast<int>(ctx.vocal_high));
 
   // Check interval constraint with last note
   int interval = std::abs(leading_pitch - static_cast<int>(last_note.note));
   if (interval > kMaxMelodicInterval) {
-    // Skip inserting leading tone if interval is too large
     return;
   }
-
-  // Insert a short leading tone just before section end
-  // Only if there's space and the last note ends before section end
-  Tick last_note_end = last_note.start_tick + last_note.duration;
-  Tick leading_tone_start = ctx.section_end - TICKS_PER_BEAT / 4;  // 16th note before end
 
   // Skip if gap is too large - leading tone needs melodic context
   // An isolated note after a long gap sounds unnatural

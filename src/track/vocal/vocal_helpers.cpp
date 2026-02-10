@@ -16,6 +16,19 @@
 
 namespace midisketch {
 
+bool isHighEnergyVocalStyle(VocalStylePreset style) {
+  switch (style) {
+    case VocalStylePreset::Idol:
+    case VocalStylePreset::BrightKira:
+    case VocalStylePreset::CuteAffected:
+    case VocalStylePreset::Anime:
+    case VocalStylePreset::KPop:
+      return true;
+    default:
+      return false;
+  }
+}
+
 std::vector<NoteEvent> shiftTiming(const std::vector<NoteEvent>& notes, Tick offset) {
   std::vector<NoteEvent> result;
   result.reserve(notes.size());
@@ -388,6 +401,14 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
     // Apply collision avoidance
     auto candidates = getSafePitchCandidates(harmony, note.note, note.start_tick, note.duration,
                                               TrackRole::Vocal, vocal_low, vocal_high);
+    // Prefer diatonic candidates for vocal track
+    {
+      auto it = std::remove_if(candidates.begin(), candidates.end(),
+                               [](const PitchCandidate& c) { return !c.is_scale_tone; });
+      if (it != candidates.begin()) {
+        candidates.erase(it, candidates.end());
+      }
+    }
     // Select best candidate considering melodic continuity
     PitchSelectionHints hints;
     if (i > 0) {
@@ -405,8 +426,17 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
         std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high)));
     // Re-verify collision safety after snapping (snapping can introduce new clashes)
     if (!harmony.isConsonantWithOtherTracks(snapped_pitch, note.start_tick, note.duration, TrackRole::Vocal)) {
-      // Snapping broke collision safety - revert to the collision-safe pitch
-      snapped_pitch = safe_pitch;
+      // Snapping broke collision safety - try diatonic snap of safe_pitch first
+      int diatonic_safe = snapToNearestScaleTone(safe_pitch, 0);
+      diatonic_safe = std::clamp(diatonic_safe, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
+      if (static_cast<uint8_t>(diatonic_safe) != snapped_pitch &&
+          harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(diatonic_safe), note.start_tick,
+                                              note.duration, TrackRole::Vocal)) {
+        snapped_pitch = static_cast<uint8_t>(diatonic_safe);
+      } else {
+        // Last resort: collision-safe pitch (may be non-diatonic)
+        snapped_pitch = safe_pitch;
+      }
     }
     note.note = snapped_pitch;
 #ifdef MIDISKETCH_NOTE_PROVENANCE

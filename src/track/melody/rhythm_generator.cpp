@@ -12,6 +12,7 @@
 #include "core/rng_util.h"
 #include "core/pitch_utils.h"
 #include "core/velocity.h"
+#include "track/vocal/vocal_helpers.h"
 
 namespace midisketch {
 namespace melody {
@@ -20,7 +21,8 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
                                               float density_modifier, float thirtysecond_ratio,
                                               std::mt19937& rng, GenerationParadigm paradigm,
                                               float syncopation_weight,
-                                              SectionType section_type, uint16_t bpm) {
+                                              SectionType section_type, uint16_t bpm,
+                                              VocalStylePreset vocal_style) {
   std::vector<RhythmNote> rhythm;
 
   float current_beat = 0.0f;
@@ -33,12 +35,25 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
 
   // BPM scaling: reduce short note probability at fast tempos
   // BPM 120 = identity (factor 1.0), BPM 170 = attenuation 0.706
+  // High-energy idol styles at BPM 145+: no attenuation (preserve 8th-note density)
   // UltraVocaloid (thirtysecond_ratio >= 0.8) is exempt from BPM scaling
+  bool high_energy_fast = isHighEnergyVocalStyle(vocal_style) && bpm >= 145;
   float bpm_factor = bpm / 120.0f;
-  float bpm_attenuation = (bpm_factor > 1.0f && thirtysecond_ratio < 0.8f)
-      ? 1.0f / bpm_factor : 1.0f;
-  float long_note_boost = (bpm_factor > 1.0f && thirtysecond_ratio < 0.8f)
-      ? 1.0f + (bpm_factor - 1.0f) * 0.5f : 1.0f;
+  float bpm_attenuation;
+  float long_note_boost;
+  if (high_energy_fast) {
+    bpm_attenuation = 1.0f;   // No suppression for idol rapid-fire
+    long_note_boost = 0.7f;   // Reduce long notes to keep density up
+  } else if (thirtysecond_ratio >= 0.8f) {
+    bpm_attenuation = 1.0f;
+    long_note_boost = 1.0f;
+  } else if (bpm_factor > 1.0f) {
+    bpm_attenuation = 1.0f / bpm_factor;
+    long_note_boost = 1.0f + (bpm_factor - 1.0f) * 0.5f;
+  } else {
+    bpm_attenuation = 1.0f;
+    long_note_boost = 1.0f;
+  }
 
   // Reserve space for final phrase-ending note (quarter note = 1.0 beat)
   // UltraVocaloid: shorter reservation to maximize machine-gun notes
@@ -48,10 +63,13 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
   // Track consecutive short notes to prevent breath-difficult passages
   // Pop vocal principle: limit rapid-fire notes to maintain singability
   // UltraVocaloid: allow machine-gun bursts (32+ consecutive short notes)
+  // High-energy idol: allow 4 consecutive (relaxed in run_window below)
   int consecutive_short_count = 0;
   int max_consecutive_short;
   if (thirtysecond_ratio >= 0.8f) {
     max_consecutive_short = 32;  // UltraVocaloid: no limit
+  } else if (high_energy_fast) {
+    max_consecutive_short = 4;   // Idol fast: more consecutive 8ths allowed
   } else if (bpm >= 150) {
     max_consecutive_short = 2;   // Fast tempo: max 2 consecutive short notes
   } else {
@@ -159,10 +177,12 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
       }
     } else if (force_long_on_beat) {
       // Strong beat (non-UltraVocaloid): allow shorter notes for denser melodies
-      // Base 30% chance for 8th notes on strong beats, plus density bonus
-      // This creates J-POP/K-POP conversational feel with more rhythmic activity
-      float eighth_prob = (0.30f + effective_sixteenth_density * 0.3f) * bpm_attenuation;
-      float half_prob = tmpl.long_note_ratio * 0.8f * long_note_boost;
+      // High-energy idol: heavily favor 8th notes for rapid-fire feel
+      // Standard: base 30% chance for 8th notes, plus density bonus
+      float eighth_prob = high_energy_fast
+          ? 0.45f + effective_sixteenth_density * 0.2f
+          : (0.30f + effective_sixteenth_density * 0.3f) * bpm_attenuation;
+      float half_prob = tmpl.long_note_ratio * (high_energy_fast ? 0.3f : 0.8f) * long_note_boost;
       float roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
       if (roll < eighth_prob) {
         eighths = 1.0f;  // 8th note
@@ -182,22 +202,30 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
 
       if (thirtysecond_ratio > 0.0f && rng_util::rollProbability(rng, thirtysecond_ratio * local_density_boost)) {
         eighths = 0.25f;  // 32nd note (0.25 eighth = 60 ticks)
-      } else if (rng_util::rollProbability(rng, (0.35f + effective_sixteenth_density) * local_density_boost * bpm_attenuation)) {
-        // 35% base + density bonus for 8th notes, attenuated at fast tempos
+      } else if (rng_util::rollProbability(rng, high_energy_fast
+          ? (0.50f + effective_sixteenth_density) * local_density_boost
+          : (0.35f + effective_sixteenth_density) * local_density_boost * bpm_attenuation)) {
+        // High-energy idol: 50% base 8th note probability (no attenuation)
+        // Standard: 35% base + density bonus, attenuated at fast tempos
         eighths = 1.0f;  // 8th note
-      } else if (rng_util::rollProbability(rng, tmpl.long_note_ratio * 0.5f * long_note_boost / local_density_boost)) {
-        eighths = 4.0f;  // Half note (boosted at fast tempos)
+      } else if (rng_util::rollProbability(rng, tmpl.long_note_ratio * (high_energy_fast ? 0.3f : 0.5f) * long_note_boost / local_density_boost)) {
+        eighths = 4.0f;  // Half note
       } else {
         eighths = 2.0f;  // Quarter note
       }
     }
+
+    // Run window: last 25% of phrase allows denser 16th note runs for idol styles
+    float phrase_progress = current_beat / end_beat;
+    bool in_run_window = high_energy_fast && phrase_progress >= 0.75f;
+    int effective_max_short = in_run_window ? 6 : max_consecutive_short;
 
     // Enforce consecutive short note limit for singability
     // Vocal physiology: too many rapid notes without breath points causes strain
     // UltraVocaloid: relaxed limit (32) allows machine-gun passages
     if (eighths <= 1.0f) {
       consecutive_short_count++;
-      if (consecutive_short_count >= max_consecutive_short) {
+      if (consecutive_short_count >= effective_max_short) {
         eighths = 2.0f;  // Force quarter note for breathing room
         consecutive_short_count = 0;
       }
@@ -226,8 +254,9 @@ std::vector<RhythmNote> generatePhraseRhythm(const MelodyTemplate& tmpl, uint8_t
       // UltraVocaloid: 32nd note grid for machine-gun bursts
       // Beat positions: 0, 0.125, 0.25, 0.375, 0.5, ...
       current_beat = std::ceil(current_beat * 8.0f) / 8.0f;
-    } else if (paradigm == GenerationParadigm::RhythmSync) {
+    } else if (paradigm == GenerationParadigm::RhythmSync || in_run_window) {
       // 16th note grid: 0, 0.25, 0.5, 0.75, 1.0, 1.25, ...
+      // Run window also uses 16th grid for idol rapid passages
       current_beat = std::ceil(current_beat * 4.0f) / 4.0f;
     } else {
       // Traditional: 8th note grid for natural pop vocal rhythm
@@ -332,10 +361,14 @@ uint8_t selectPitchForLockedRhythmEnhanced(
     candidate_pcs = getChordTonePitchClasses(chord_degree);
 
     // Expressive: Add tensions (9th, 13th) for colorful harmonies
+    // Only add tensions that are diatonic in C major to avoid chromatic pitches
+    // (e.g., Em 9th=F#, Am 13th=F# are non-diatonic and sound out of place in pop)
     if (ctx.vocal_attitude >= VocalAttitude::Expressive && !candidate_pcs.empty()) {
       int root = candidate_pcs[0];
-      candidate_pcs.push_back((root + 2) % 12);   // 9th = root + 2
-      candidate_pcs.push_back((root + 9) % 12);   // 13th = root + 9
+      int ninth = (root + 2) % 12;
+      int thirteenth = (root + 9) % 12;
+      if (isScaleTone(ninth)) candidate_pcs.push_back(ninth);
+      if (isScaleTone(thirteenth)) candidate_pcs.push_back(thirteenth);
     }
   }
 

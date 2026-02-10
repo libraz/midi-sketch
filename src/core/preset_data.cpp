@@ -636,7 +636,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // Idol (4) - Love Live/Idolmaster style: catchy, unison-friendly
     // -------------------------------------------------------------------------
     {VocalStylePreset::Idol, 7, 0.15f, false,  // leap=5th, low synco (easy to dance)
-     1.0f, 1.0f, 0.85f, 1.0f,                  // chorus slightly sparser (long tones)
+     1.05f, 1.0f, 1.10f, 1.0f,                 // verse+5%, chorus+10% (chorus_long_tones BPM-gated)
      0.0f, 0.0f, 0.0f, 0.0f,                   // no 32nd notes
      1.0f, false, true, true, 5, 0.2f},        // hook repeat + long tones in chorus
 
@@ -668,7 +668,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // Anime (8) - Anime OP/ED style: dramatic, wide leaps, building energy
     // -------------------------------------------------------------------------
     {VocalStylePreset::Anime, 10, 0.25f, true,  // leap=minor 7th, medium synco
-     1.0f, 1.0f, 1.0f, 1.0f,                    // chorus=100% (balanced for drama)
+     1.0f, 1.0f, 1.10f, 1.0f,                    // chorus=110% (dense anime OP feel)
      0.0f, 0.0f, 0.0f, 0.0f,                    // no 32nd notes
      1.0f, false, true, true, 5, 0.2f},         // hook repeat + long tones
 
@@ -676,7 +676,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // BrightKira (9) - Bright sparkly idol style: energetic, high register
     // -------------------------------------------------------------------------
     {VocalStylePreset::BrightKira, 10, 0.15f, false,  // leap=minor 7th, low synco
-     1.0f, 1.0f, 1.0f, 1.0f,                          // chorus=100% (bright but not rushed)
+     1.0f, 1.0f, 1.10f, 1.0f,                          // chorus=110% (bright, dense at high BPM)
      0.0f, 0.0f, 0.0f, 0.0f,                          // no 32nd notes
      1.0f, false, true, true, 7, 0.2f},               // hook + long, chorus +7 semitones
 
@@ -692,7 +692,7 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     // CuteAffected (11) - Cute affected style: slightly wider leaps
     // -------------------------------------------------------------------------
     {VocalStylePreset::CuteAffected, 8, 0.15f, false,  // leap=minor 6th, low synco
-     1.0f, 1.0f, 0.9f, 1.0f,                           // chorus=90% (cute, not frantic)
+     1.0f, 1.0f, 1.05f, 1.0f,                           // chorus=105% (slightly denser)
      0.0f, 0.0f, 0.0f, 0.0f,                           // no 32nd notes
      1.0f, false, true, true, 5, 0.2f},                // hook repeat + long tones
 

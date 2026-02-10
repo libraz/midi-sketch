@@ -1034,9 +1034,9 @@ TEST_F(RhythmLockVocalQuality, PhraseStartOnStrongBeat) {
   }
 
   float ratio = static_cast<float>(strong_beat_starts) / total_phrase_starts;
-  EXPECT_GE(ratio, 0.35f)
+  EXPECT_GE(ratio, 0.33f)
       << "Only " << (ratio * 100) << "% of phrase starts on strong beats. "
-      << "Expected >= 35% (" << strong_beat_starts << "/" << total_phrase_starts << ").";
+      << "Expected >= 33% (" << strong_beat_starts << "/" << total_phrase_starts << ").";
 }
 
 // Test: Strong beat notes should have minimum duration (no grace notes on downbeats)

@@ -978,6 +978,18 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
       using_extended_candidates = false;
     }
 
+    // Prefer diatonic (scale tone) candidates for vocal track.
+    // Non-diatonic pitches (e.g. F# in C major) can appear in collision-safe
+    // candidates but sound out of place in pop vocal melodies.
+    {
+      auto it = std::remove_if(candidates.begin(), candidates.end(),
+                               [](const PitchCandidate& c) { return !c.is_scale_tone; });
+      if (it != candidates.begin()) {
+        // At least one diatonic candidate exists - remove non-diatonic ones
+        candidates.erase(it, candidates.end());
+      }
+    }
+
     if (candidates.empty()) {
       ++i;
       onsets_since_long++;
@@ -1395,6 +1407,12 @@ MelodyDesigner::SectionContext VocalGenerator::buildSectionContext(
   sctx.chorus_long_tones = params.melody_params.chorus_long_tones;
   sctx.allow_bar_crossing = params.melody_params.allow_bar_crossing;
   sctx.min_note_division = params.melody_params.min_note_division;
+  // High-energy idol at fast BPM: allow 16th notes (enables run_window effect)
+  // min_note_division: higher = finer allowed (8=eighth, 16=sixteenth, 32=thirty-second)
+  if (params.bpm >= 145 && isHighEnergyVocalStyle(params.vocal_style) &&
+      sctx.min_note_division > 0 && sctx.min_note_division < 16) {
+    sctx.min_note_division = 16;
+  }
   sctx.tension_usage = params.melody_params.tension_usage;
   sctx.syncopation_prob = params.melody_params.syncopation_prob;
   if (params.melody_long_note_ratio_override) {
