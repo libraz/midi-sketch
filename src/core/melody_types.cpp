@@ -40,7 +40,12 @@ void StyleMelodyParams::writeTo(json::Writer& w) const {
       .write("consecutive_same_note_prob", consecutive_same_note_prob)
       .write("disable_vowel_constraints", disable_vowel_constraints)
       .write("disable_breathing_gaps", disable_breathing_gaps)
-      .write("mora_rhythm_mode", static_cast<int>(mora_rhythm_mode));
+      .write("mora_rhythm_mode", static_cast<int>(mora_rhythm_mode))
+      .write("syllabic_sub_ratio", syllabic_sub_ratio)
+      .write("verse_sub_ratio", verse_sub_ratio)
+      .write("prechorus_sub_ratio", prechorus_sub_ratio)
+      .write("chorus_sub_ratio", chorus_sub_ratio)
+      .write("bridge_sub_ratio", bridge_sub_ratio);
 }
 
 void StyleMelodyParams::readFrom(const json::Parser& p) {
@@ -75,6 +80,11 @@ void StyleMelodyParams::readFrom(const json::Parser& p) {
   disable_vowel_constraints = p.getBool("disable_vowel_constraints", false);
   disable_breathing_gaps = p.getBool("disable_breathing_gaps", false);
   mora_rhythm_mode = static_cast<MoraRhythmMode>(p.getInt("mora_rhythm_mode", 2));
+  syllabic_sub_ratio = p.getFloat("syllabic_sub_ratio", 0.0f);
+  verse_sub_ratio = p.getFloat("verse_sub_ratio", 0.0f);
+  prechorus_sub_ratio = p.getFloat("prechorus_sub_ratio", 0.0f);
+  chorus_sub_ratio = p.getFloat("chorus_sub_ratio", 0.0f);
+  bridge_sub_ratio = p.getFloat("bridge_sub_ratio", 0.0f);
 }
 
 }  // namespace midisketch

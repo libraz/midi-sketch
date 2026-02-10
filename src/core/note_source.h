@@ -28,6 +28,7 @@ enum class NoteSource : uint8_t {
   Guitar,          ///< Guitar track generation
   Embellishment,   ///< Melodic embellishment (passing/neighbor/appoggiatura/anticipation)
   CollisionAvoid,  ///< Modified by collision avoidance
+  SyllabicSub,    ///< Syllabic subdivision (同音分割)
   PostProcess,     ///< Modified by post-processing
 };
 
@@ -60,6 +61,8 @@ inline const char* noteSourceToString(NoteSource source) {
       return "embellishment";
     case NoteSource::CollisionAvoid:
       return "collision_avoid";
+    case NoteSource::SyllabicSub:
+      return "syllabic_sub";
     case NoteSource::PostProcess:
       return "post_process";
   }

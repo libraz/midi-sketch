@@ -433,6 +433,15 @@ struct StyleMelodyParams {
   MoraRhythmMode mora_rhythm_mode = MoraRhythmMode::Auto;  ///< Rhythm mode for lyrics compat
   /// @}
 
+  /// @name Syllabic subdivision (同音分割)
+  /// @{
+  float syllabic_sub_ratio = 0.0f;    ///< Base probability (0.0-0.5)
+  float verse_sub_ratio = 0.0f;       ///< Verse override (0=use base)
+  float prechorus_sub_ratio = 0.0f;   ///< Pre-chorus override
+  float chorus_sub_ratio = 0.0f;      ///< Chorus override
+  float bridge_sub_ratio = 0.0f;      ///< Bridge override
+  /// @}
+
 
   void writeTo(json::Writer& w) const;
   void readFrom(const json::Parser& p);

@@ -64,6 +64,7 @@ export const CONFIG_FIELDS: readonly ConfigField[] = [
   { js: 'energyCurve', cpp: 'energy_curve', default: 0, type: 'number' },
   { js: 'addictiveMode', cpp: 'addictive_mode', default: false, type: 'boolean' },
   { js: 'moraRhythmMode', cpp: 'mora_rhythm_mode', default: 2, type: 'number' },
+  { js: 'syllabicSubRate', cpp: 'syllabic_sub_rate', default: 0, type: 'number' },
   // Melody overrides
   { js: 'melodyMaxLeap', cpp: 'melody_max_leap', default: 0, type: 'number' },
   { js: 'melodySyncopationProb', cpp: 'melody_syncopation_prob', default: 0xff, type: 'number' },

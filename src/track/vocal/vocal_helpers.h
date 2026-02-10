@@ -96,6 +96,16 @@ float getDensityModifier(SectionType type, const StyleMelodyParams& params);
 float getThirtysecondRatio(SectionType type, const StyleMelodyParams& params);
 
 /**
+ * @brief Get syllabic subdivision ratio for section type.
+ *
+ * Returns section-specific override if set, otherwise base ratio.
+ * @param type Section type
+ * @param params Melody parameters
+ * @return Subdivision ratio (0.0 to 0.5)
+ */
+float getSubdivisionRatio(SectionType type, const StyleMelodyParams& params);
+
+/**
  * @brief Get consecutive same note probability for section type.
  *
  * Controls how often the same pitch can repeat consecutively.

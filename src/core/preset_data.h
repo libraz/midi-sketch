@@ -294,6 +294,7 @@ struct VocalStylePresetData {
   bool chorus_long_tones;            // Use long sustained tones in chorus
   int8_t chorus_register_shift;      // Chorus register shift (semitones)
   float tension_usage;               // Tension usage probability (0.0-1.0)
+  float syllabic_sub_ratio;          // Base syllabic subdivision ratio (0.0-0.5)
 };
 
 // Returns the vocal style preset data for the given style.

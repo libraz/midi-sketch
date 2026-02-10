@@ -103,6 +103,10 @@ class MelodyDesigner {
     // Vocal style preset for style-specific physics
     VocalStylePreset vocal_style = VocalStylePreset::Standard;  ///< Affects breath and timing
 
+    // Syllabic subdivision parameters
+    float syllabic_sub_ratio = 0.0f;  ///< Syllabic subdivision probability
+    bool is_mora_timed = false;       ///< True when MoraRhythmMode resolved to MoraTimed
+
     // Motif fragment enforcement for A/B sections
     // When true, inject fragments from GlobalMotif at phrase beginnings
     // Creates song-wide melodic unity by echoing chorus motif in verses

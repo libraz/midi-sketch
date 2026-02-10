@@ -85,6 +85,137 @@ using melody::getHookRhythmPatterns;
 using melody::getHookRhythmPatternCount;
 using melody::selectHookRhythmPatternIndex;
 
+/// Calculate effective subdivision ratio considering BPM and mora mode.
+///
+/// BPM scaling:
+///   - Low BPM (<=80): long notes are natural → ×0.5
+///   - Mid BPM (80-120): linear interpolation → 0.5→1.0
+///   - High BPM (120-160): remaining long notes stand out → 1.0→1.3
+///   - Very high (>160): cap → ×1.3
+///
+/// Mora scaling:
+///   - MoraTimed active: rhythm generator already reflects mora density → ×0.5
+///   - Standard (stress-timed): stress timing leaves long notes → ×1.0
+float calcEffectiveSubRatio(float base_ratio, uint16_t bpm, bool is_mora_timed) {
+  float bpm_factor;
+  if (bpm <= 80) {
+    bpm_factor = 0.5f;
+  } else if (bpm <= 120) {
+    bpm_factor = 0.5f + static_cast<float>(bpm - 80) * 0.0125f;  // 0.5→1.0
+  } else if (bpm <= 160) {
+    bpm_factor = 1.0f + static_cast<float>(bpm - 120) * 0.0075f;  // 1.0→1.3
+  } else {
+    bpm_factor = 1.3f;
+  }
+
+  float mora_factor = is_mora_timed ? 0.5f : 1.0f;
+
+  return std::min(0.5f, base_ratio * bpm_factor * mora_factor);
+}
+
+/// Syllabic subdivision: split long notes into repeated same-pitch notes.
+/// @param notes      Input melody notes
+/// @param ratio      Probability of subdividing each eligible note (0.0-0.5)
+/// @param bpm        Beats per minute (for singability check)
+/// @param min_ms     Minimum singable note duration in milliseconds
+/// @param rng        Random number generator
+std::vector<NoteEvent> subdivideSyllabic(const std::vector<NoteEvent>& notes, float ratio,
+                                         uint16_t bpm, float min_ms, std::mt19937& rng) {
+  if (notes.empty() || ratio <= 0.0f) {
+    return notes;
+  }
+
+  // Calculate minimum singable duration in ticks
+  Tick min_ticks = static_cast<Tick>(min_ms / 1000.0f * (bpm / 60.0f) * TICKS_PER_BEAT);
+  if (min_ticks < TICK_SIXTEENTH) {
+    min_ticks = TICK_SIXTEENTH;
+  }
+
+  std::vector<NoteEvent> result;
+  result.reserve(notes.size() * 2);  // Estimate
+
+  for (size_t i = 0; i < notes.size(); ++i) {
+    const auto& note = notes[i];
+
+    // Skip short notes (< quarter note)
+    if (note.duration < TICK_QUARTER) {
+      result.push_back(note);
+      continue;
+    }
+
+    // Skip last note in phrase (phrase ending should sustain)
+    if (i + 1 >= notes.size()) {
+      result.push_back(note);
+      continue;
+    }
+
+    // Skip if there's a gap before next note (rest before = sustain)
+    Tick note_end = note.start_tick + note.duration;
+    if (note_end < notes[i + 1].start_tick) {
+      result.push_back(note);
+      continue;
+    }
+
+    // Probability check
+    if (!rng_util::rollProbability(rng, ratio)) {
+      result.push_back(note);
+      continue;
+    }
+
+    // Determine split count
+    int split_count = 2;
+    if (note.duration >= min_ticks * 4) {
+      // 30% chance of 4-split for long notes
+      split_count = rng_util::rollProbability(rng, 0.3f) ? 4 : 2;
+    } else if (note.duration < min_ticks * 2) {
+      // Too short to split
+      result.push_back(note);
+      continue;
+    }
+
+    // Calculate split duration, quantized to 16th note grid
+    Tick raw_dur = note.duration / split_count;
+    Tick split_dur = (raw_dur / TICK_SIXTEENTH) * TICK_SIXTEENTH;
+    if (split_dur < min_ticks) {
+      // Fallback: try 2-split if 4-split was too small
+      if (split_count == 4) {
+        split_count = 2;
+        raw_dur = note.duration / 2;
+        split_dur = (raw_dur / TICK_SIXTEENTH) * TICK_SIXTEENTH;
+      }
+      if (split_dur < min_ticks) {
+        result.push_back(note);
+        continue;
+      }
+    }
+
+    // Generate subdivided notes
+    std::uniform_int_distribution<int> vel_dist(-4, 4);
+    Tick current_tick = note.start_tick;
+    for (int s = 0; s < split_count; ++s) {
+      NoteEvent sub_note = note;
+      sub_note.start_tick = current_tick;
+      // Last segment gets remaining duration
+      if (s == split_count - 1) {
+        sub_note.duration = note.start_tick + note.duration - current_tick;
+      } else {
+        sub_note.duration = split_dur;
+      }
+      // Velocity micro-variation
+      int vel_delta = vel_dist(rng);
+      sub_note.velocity = static_cast<uint8_t>(
+          std::clamp(static_cast<int>(note.velocity) + vel_delta, 1, 127));
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      sub_note.prov_source = static_cast<uint8_t>(NoteSource::SyllabicSub);
+#endif
+      result.push_back(sub_note);
+      current_tick += split_dur;
+    }
+  }
+
+  return result;
+}
+
 /// @brief Apply cadence constraint based on phrase pair role.
 /// Antecedent phrases should end on non-root (3rd/5th) for tension.
 /// Consequent phrases should resolve to root for resolution.
@@ -421,6 +552,16 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
       }
     }
     prev_final_pitch = note.note;
+  }
+
+  // Syllabic subdivision: split long same-pitch notes for lyric syllables
+  if (ctx.syllabic_sub_ratio > 0.0f && !result.empty()) {
+    float min_ms = isHighEnergyVocalStyle(ctx.vocal_style) ? 80.0f : 120.0f;
+    float effective_ratio = calcEffectiveSubRatio(
+        ctx.syllabic_sub_ratio, ctx.bpm, ctx.is_mora_timed);
+    if (effective_ratio > 0.0f) {
+      result = subdivideSyllabic(result, effective_ratio, ctx.bpm, min_ms, rng);
+    }
   }
 
   // Remove duplicate notes at same tick (can happen from phrase boundary edge cases)

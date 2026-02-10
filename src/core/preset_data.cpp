@@ -605,7 +605,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     {VocalStylePreset::Auto, 7, 0.15f, false,  // leap=5th, low synco, no bar cross
      1.0f, 1.0f, 0.9f, 1.0f,                   // chorus=90% (avoid 8th note saturation)
      0.0f, 0.0f, 0.0f, 0.0f,                   // no 32nd notes
-     1.0f, false, false, false, 5, 0.2f},      // all same-note OK, no special flags
+     1.0f, false, false, false, 5, 0.2f,       // all same-note OK, no special flags
+     0.0f},                                     // syllabic_sub: disabled
 
     // -------------------------------------------------------------------------
     // Standard (1) - General purpose pop melody
@@ -613,7 +614,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     {VocalStylePreset::Standard, 7, 0.15f, false,  // leap=5th, low synco, no bar cross
      1.0f, 1.0f, 0.85f, 1.0f,                      // chorus=85% (room for long notes)
      0.0f, 0.0f, 0.0f, 0.0f,                       // no 32nd notes
-     1.0f, false, false, false, 5, 0.2f},          // standard settings
+     1.0f, false, false, false, 5, 0.2f,           // standard settings
+     0.0f},                                         // syllabic_sub: disabled
 
     // -------------------------------------------------------------------------
     // Vocaloid (2) - YOASOBI style: energetic, wide leaps, singable
@@ -621,7 +623,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     {VocalStylePreset::Vocaloid, 12, 0.35f, true,  // leap=octave, high synco, bar cross OK
      0.8f, 0.9f, 1.0f, 0.85f,                      // verse sparse, chorus=100% (singable pace)
      0.0f, 0.0f, 0.0f, 0.0f,                       // no 32nd notes (still singable)
-     1.0f, true, false, false, 5, 0.2f},           // disable vowel limits
+     1.0f, true, false, false, 5, 0.2f,            // disable vowel limits
+     0.15f},                                        // syllabic_sub: moderate
 
     // -------------------------------------------------------------------------
     // UltraVocaloid (3) - Miku Disappearance style: ballad verse + barrage chorus
@@ -630,7 +633,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     {VocalStylePreset::UltraVocaloid, 14, 0.4f, true,  // leap=9th(!), high synco, bar cross OK
      0.3f, 0.5f, 1.4f, 0.35f,                          // verse=ballad(30%), chorus=140%
      0.0f, 0.0f, 1.0f, 0.0f,                           // 32nd: verse=0%, chorus=100% (contrast!)
-     0.1f, true, false, false, 5, 0.2f},               // same-note=10% only, disable vowel
+     0.1f, true, false, false, 5, 0.2f,                // same-note=10% only, disable vowel
+     0.25f},                                            // syllabic_sub: high
 
     // -------------------------------------------------------------------------
     // Idol (4) - Love Live/Idolmaster style: catchy, unison-friendly
@@ -638,7 +642,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     {VocalStylePreset::Idol, 7, 0.15f, false,  // leap=5th, low synco (easy to dance)
      1.05f, 1.0f, 1.10f, 1.0f,                 // verse+5%, chorus+10% (chorus_long_tones BPM-gated)
      0.0f, 0.0f, 0.0f, 0.0f,                   // no 32nd notes
-     1.0f, false, true, true, 5, 0.2f},        // hook repeat + long tones in chorus
+     1.0f, false, true, true, 5, 0.2f,         // hook repeat + long tones in chorus
+     0.20f},                                    // syllabic_sub: moderate-high
 
     // -------------------------------------------------------------------------
     // Ballad (5) - Slow emotional ballad: small leaps, sustained notes
@@ -646,7 +651,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     {VocalStylePreset::Ballad, 5, 0.15f, false,  // leap=4th only, gentle movement
      1.0f, 1.0f, 0.55f, 1.0f,                    // chorus=55% (long tones, breathing room)
      0.0f, 0.0f, 0.0f, 0.0f,                     // no 32nd notes
-     1.0f, false, false, true, 5, 0.2f},         // long tones in chorus
+     1.0f, false, false, true, 5, 0.2f,          // long tones in chorus
+     0.05f},                                      // syllabic_sub: minimal
 
     // -------------------------------------------------------------------------
     // Rock (6) - Rock style: powerful, driving, wide chorus register
@@ -654,7 +660,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     {VocalStylePreset::Rock, 9, 0.25f, true,  // leap=6th, medium synco, bar cross OK
      1.0f, 1.0f, 0.75f, 1.0f,                 // chorus=75% (power needs sustain)
      0.0f, 0.0f, 0.0f, 0.0f,                  // no 32nd notes
-     1.0f, false, true, true, 7, 0.2f},       // hook + long tones, chorus +7 semitones
+     1.0f, false, true, true, 7, 0.2f,        // hook + long tones, chorus +7 semitones
+     0.05f},                                   // syllabic_sub: minimal
 
     // -------------------------------------------------------------------------
     // CityPop (7) - 80s Japanese city pop: groovy, jazzy tensions
@@ -662,7 +669,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     {VocalStylePreset::CityPop, 7, 0.35f, true,  // leap=5th, high synco (groovy)
      1.0f, 1.0f, 0.75f, 1.0f,                    // chorus=75% (relaxed groove)
      0.0f, 0.0f, 0.0f, 0.0f,                     // no 32nd notes
-     1.0f, false, false, false, 5, 0.4f},        // tension=0.4 (jazzy chords)
+     1.0f, false, false, false, 5, 0.4f,         // tension=0.4 (jazzy chords)
+     0.0f},                                       // syllabic_sub: disabled
 
     // -------------------------------------------------------------------------
     // Anime (8) - Anime OP/ED style: dramatic, wide leaps, building energy
@@ -670,7 +678,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     {VocalStylePreset::Anime, 10, 0.25f, true,  // leap=minor 7th, medium synco
      1.0f, 1.0f, 1.10f, 1.0f,                    // chorus=110% (dense anime OP feel)
      0.0f, 0.0f, 0.0f, 0.0f,                    // no 32nd notes
-     1.0f, false, true, true, 5, 0.2f},         // hook repeat + long tones
+     1.0f, false, true, true, 5, 0.2f,          // hook repeat + long tones
+     0.10f},                                     // syllabic_sub: light
 
     // -------------------------------------------------------------------------
     // BrightKira (9) - Bright sparkly idol style: energetic, high register
@@ -678,7 +687,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     {VocalStylePreset::BrightKira, 10, 0.15f, false,  // leap=minor 7th, low synco
      1.0f, 1.0f, 1.10f, 1.0f,                          // chorus=110% (bright, dense at high BPM)
      0.0f, 0.0f, 0.0f, 0.0f,                          // no 32nd notes
-     1.0f, false, true, true, 7, 0.2f},               // hook + long, chorus +7 semitones
+     1.0f, false, true, true, 7, 0.2f,                // hook + long, chorus +7 semitones
+     0.10f},                                            // syllabic_sub: light
 
     // -------------------------------------------------------------------------
     // CoolSynth (10) - Cool synthetic style: mechanical, flowing phrases
@@ -686,7 +696,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     {VocalStylePreset::CoolSynth, 7, 0.15f, true,  // leap=5th, low synco, bar cross OK
      1.0f, 1.0f, 0.75f, 1.0f,                      // chorus=75% (cool and relaxed)
      0.0f, 0.0f, 0.0f, 0.0f,                       // no 32nd notes
-     1.0f, false, true, false, 5, 0.2f},           // hook repeat, no long tones
+     1.0f, false, true, false, 5, 0.2f,            // hook repeat, no long tones
+     0.0f},                                         // syllabic_sub: disabled
 
     // -------------------------------------------------------------------------
     // CuteAffected (11) - Cute affected style: slightly wider leaps
@@ -694,7 +705,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     {VocalStylePreset::CuteAffected, 8, 0.15f, false,  // leap=minor 6th, low synco
      1.0f, 1.0f, 1.05f, 1.0f,                           // chorus=105% (slightly denser)
      0.0f, 0.0f, 0.0f, 0.0f,                           // no 32nd notes
-     1.0f, false, true, true, 5, 0.2f},                // hook repeat + long tones
+     1.0f, false, true, true, 5, 0.2f,                 // hook repeat + long tones
+     0.10f},                                             // syllabic_sub: light
 
     // -------------------------------------------------------------------------
     // PowerfulShout (12) - Powerful shout style: big leaps, power sustain
@@ -702,7 +714,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     {VocalStylePreset::PowerfulShout, 12, 0.2f, false,  // leap=octave, medium synco
      1.0f, 1.0f, 0.75f, 1.0f,                           // chorus=75% (power needs sustain)
      0.0f, 0.0f, 0.0f, 0.0f,                            // no 32nd notes
-     1.0f, false, true, true, 5, 0.2f},                 // hook repeat + long tones
+     1.0f, false, true, true, 5, 0.2f,                  // hook repeat + long tones
+     0.0f},                                              // syllabic_sub: disabled
 
     // -------------------------------------------------------------------------
     // KPop (13) - K-POP style: syncopated hooks, rap-like repetition, offbeat
@@ -710,7 +723,8 @@ const VocalStylePresetData VOCAL_STYLE_PRESET_DATA[] = {
     {VocalStylePreset::KPop, 9, 0.35f, true,  // leap=6th, high synco, bar cross OK
      1.0f, 1.0f, 1.0f, 1.0f,                  // chorus=100% (dense hook-driven)
      0.0f, 0.0f, 0.0f, 0.0f,                  // no 32nd notes
-     1.0f, true, true, false, 5, 0.2f},       // disable vowel, hook repeat, no long tones
+     1.0f, true, true, false, 5, 0.2f,        // disable vowel, hook repeat, no long tones
+     0.10f},                                   // syllabic_sub: light
 };
 
 }  // namespace

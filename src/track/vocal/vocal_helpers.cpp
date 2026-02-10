@@ -155,6 +155,25 @@ float getThirtysecondRatio(SectionType type, const StyleMelodyParams& params) {
   }
 }
 
+float getSubdivisionRatio(SectionType type, const StyleMelodyParams& params) {
+  switch (type) {
+    case SectionType::A:
+      return params.verse_sub_ratio > 0.0f ? params.verse_sub_ratio
+                                            : params.syllabic_sub_ratio;
+    case SectionType::B:
+      return params.prechorus_sub_ratio > 0.0f ? params.prechorus_sub_ratio
+                                                : params.syllabic_sub_ratio;
+    case SectionType::Chorus:
+      return params.chorus_sub_ratio > 0.0f ? params.chorus_sub_ratio
+                                             : params.syllabic_sub_ratio;
+    case SectionType::Bridge:
+      return params.bridge_sub_ratio > 0.0f ? params.bridge_sub_ratio
+                                             : params.syllabic_sub_ratio;
+    default:
+      return params.syllabic_sub_ratio;  // Fallback to base ratio
+  }
+}
+
 float getConsecutiveSameNoteProb(SectionType type, const StyleMelodyParams& params) {
   // Hook sections (Chorus, B) benefit from same-note repetition for catchiness.
   // Higher probability = more pitch repetition = more memorable hooks.

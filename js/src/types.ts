@@ -153,6 +153,9 @@ export interface SongConfig {
   /** Mora rhythm mode: 0=Standard, 1=MoraTimed, 2=Auto */
   moraRhythmMode: number;
 
+  /** Syllabic subdivision rate: 0=style default, 1-100=override % */
+  syllabicSubRate?: number;
+
   // Syncopation
   /** Enable syncopation effects (default=false) */
   enableSyncopation: boolean;

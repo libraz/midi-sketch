@@ -88,6 +88,7 @@ void ConfigConverter::applyVocalStylePreset(GeneratorParams& params) {
   params.melody_params.chorus_long_tones = data.chorus_long_tones;
   params.melody_params.chorus_register_shift = data.chorus_register_shift;
   params.melody_params.tension_usage = data.tension_usage;
+  params.melody_params.syllabic_sub_ratio = data.syllabic_sub_ratio;
 }
 
 namespace {
@@ -413,6 +414,11 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
     params.melody_params.use_leading_tone = false;
   } else if (config.melody_use_leading_tone == 2) {
     params.melody_params.use_leading_tone = true;
+  }
+
+  // Syllabic subdivision rate override
+  if (config.syllabic_sub_rate > 0 && config.syllabic_sub_rate <= 100) {
+    params.melody_params.syllabic_sub_ratio = config.syllabic_sub_rate / 100.0f;
   }
 
   // Master switch: when syncopation is off, zero all syncopation params.

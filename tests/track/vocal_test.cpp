@@ -3279,5 +3279,53 @@ TEST_F(VocalTest, MelodyDrivenHasBreathGaps) {
       << "MelodyDriven vocal should have breath gaps between phrases";
 }
 
+// ============================================================================
+// Syllabic Subdivision Integration Tests
+// ============================================================================
+
+TEST_F(VocalTest, SyllabicSubdivisionProducesSyllabicSubNotes) {
+  // Set syllabic subdivision directly (GeneratorTestFixture doesn't use ConfigConverter)
+  params_.melody_params.syllabic_sub_ratio = 0.30f;  // High ratio for reliable activation
+  params_.bpm = 120;
+  params_.seed = 42;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal = gen.getSong().vocal();
+  ASSERT_GT(vocal.notes().size(), 0u);
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+  int syllabic_count = 0;
+  for (const auto& note : vocal.notes()) {
+    if (note.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub)) {
+      syllabic_count++;
+    }
+  }
+  EXPECT_GT(syllabic_count, 0)
+      << "syllabic_sub_ratio=0.30 should produce subdivided notes";
+#endif
+}
+
+TEST_F(VocalTest, SyllabicSubdivisionDisabledByDefault) {
+  // Standard style has syllabic_sub_ratio=0.0
+  params_.vocal_style = VocalStylePreset::Standard;
+  params_.seed = 42;
+  params_.bpm = 120;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& vocal = gen.getSong().vocal();
+  ASSERT_GT(vocal.notes().size(), 0u);
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+  for (const auto& note : vocal.notes()) {
+    EXPECT_NE(note.prov_source, static_cast<uint8_t>(NoteSource::SyllabicSub))
+        << "Standard style should not produce syllabic subdivisions";
+  }
+#endif
+}
+
 }  // namespace
 }  // namespace midisketch

@@ -299,6 +299,9 @@ struct SongConfig {
   /// Mora rhythm mode: 0=Standard, 1=MoraTimed, 2=Auto
   uint8_t mora_rhythm_mode = 2;
 
+  /// Syllabic subdivision rate: 0=style default, 1-100=override %
+  uint8_t syllabic_sub_rate = 0;
+
   /// Visitor-based JSON serialization for config interchange (WASM/CLI/metadata)
   /// Field list is defined once in visitFields; writeTo/readFrom delegate to visitors.
   template <typename Self, typename V>
@@ -346,6 +349,7 @@ struct SongConfig {
     v("energy_curve", self.energy_curve);
     v("addictive_mode", self.addictive_mode);
     v("mora_rhythm_mode", self.mora_rhythm_mode);
+    v("syllabic_sub_rate", self.syllabic_sub_rate);
     // Melody overrides
     v("melody_max_leap", self.melody_max_leap);
     v("melody_syncopation_prob", self.melody_syncopation_prob);

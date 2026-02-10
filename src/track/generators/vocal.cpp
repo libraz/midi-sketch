@@ -35,6 +35,7 @@
 #include "track/vocal/phrase_variation.h"
 #include "track/generators/motif.h"
 #include "track/melody/melody_utils.h"
+#include "track/melody/rhythm_generator.h"
 #include "track/vocal/vocal_helpers.h"
 
 namespace midisketch {
@@ -1445,6 +1446,12 @@ MelodyDesigner::SectionContext VocalGenerator::buildSectionContext(
 
   // Vocal style for physics parameters (breath, timing, pitch bend)
   sctx.vocal_style = params.vocal_style;
+
+  // Syllabic subdivision parameters
+  sctx.syllabic_sub_ratio = getSubdivisionRatio(section.type, params.melody_params);
+  auto resolved_mora = melody::resolveMoraMode(
+      params.melody_params.mora_rhythm_mode, params.vocal_style);
+  sctx.is_mora_timed = (resolved_mora == MoraRhythmMode::MoraTimed);
 
   // Occurrence count for occurrence-dependent embellishment density
   sctx.section_occurrence = occurrence;
