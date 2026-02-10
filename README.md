@@ -97,21 +97,7 @@ sketch.destroy();
 
 ## License
 
-This project is dual-licensed:
-
-- **Open Source**: [Apache License 2.0](LICENSE) - For evaluation, research, and non-commercial use
-- **Commercial**: [Commercial License](LICENSE-COMMERCIAL) - For closed-source, proprietary, or SaaS use
-
-### Which License Do I Need?
-
-| Use Case | License |
-|----------|---------|
-| Evaluation / Research | Apache-2.0 (free) |
-| Non-commercial use | Apache-2.0 (free) |
-| Closed-source product | Commercial (paid) |
-| Commercial SaaS | Commercial (paid) |
-
-For commercial licensing inquiries: libraz@libraz.net
+[Apache-2.0](LICENSE) / [Commercial](LICENSE-COMMERCIAL) dual license. For commercial inquiries: libraz@libraz.net
 
 ### Scope Notice
 
