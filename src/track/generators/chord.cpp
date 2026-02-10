@@ -822,9 +822,6 @@ void generateChordTrackUnified(ChordGenerationMode mode, MidiTrack& track, const
   // === SUS RESOLUTION TRACKING ===
   ChordExtension prev_extension = ChordExtension::None;
 
-  // === PREVIOUS SECTION LAST DEGREE TRACKING (Diff #1: Basic only) ===
-  int8_t prev_section_last_degree = 0;
-
 
   // Keyboard playability checker
   KeyboardPlayabilityChecker keys_playability =
@@ -1669,10 +1666,6 @@ void generateChordTrackUnified(ChordGenerationMode mode, MidiTrack& track, const
 
       has_prev = true;
 
-      // === Diff #1: Track last chord degree (Basic only) ===
-      if (is_basic) {
-        prev_section_last_degree = degree;
-      }
     }
   }
 }

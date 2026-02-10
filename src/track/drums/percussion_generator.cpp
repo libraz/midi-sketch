@@ -7,6 +7,7 @@
 
 #include <algorithm>
 
+#include "core/production_blueprint.h"
 #include "core/rng_util.h"
 #include "core/timing_constants.h"
 #include "track/drums/drum_constants.h"
@@ -27,7 +28,7 @@ struct PercActivation {
 static constexpr PercActivation PERC_TABLE[5][9] = {
   //            Intro              A                  B                  Chorus             Bridge             Inter              Outro              Chant              Mix
   /* Calm */  {{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,false}},
-  /* Std  */  {{false,false,false},{false,true, false},{false,true, false},{true, false,true },{false,false,false},{false,false,false},{false,false,false},{false,false,false},{true, false,true }},
+  /* Std  */  {{false,false,false},{false,false,false},{false,true, false},{true, false,true },{false,false,false},{false,false,false},{false,false,false},{false,false,false},{true, false,true }},
   /* Ener */  {{false,false,false},{false,true, false},{false,true, false},{true, true, true },{false,false,false},{false,false,false},{false,false,false},{false,false,false},{true, true, true }},
   /* Idol */  {{false,false,false},{false,true, false},{false,true, false},{true, true, true },{false,false,false},{false,false,false},{false,false,false},{false,false,false},{true, true, true }},
   /* Rock */  {{false,false,false},{false,false,false},{false,false,false},{false,false,true },{false,false,false},{false,false,false},{false,false,false},{false,false,false},{false,false,true }},
@@ -63,11 +64,35 @@ PercMoodCategory getPercMoodCategory(Mood mood) {
   }
 }
 
-PercussionConfig getPercussionConfig(Mood mood, SectionType section) {
+PercussionConfig getPercussionConfig(Mood mood, SectionType section,
+                                     PercussionPolicy policy) {
+  // Policy::None → all off
+  if (policy == PercussionPolicy::None) {
+    return {false, false, false, false};
+  }
+
+  // Policy::Minimal → handclap only in Chorus/MixBreak/Drop
+  if (policy == PercussionPolicy::Minimal) {
+    bool is_peak_section = (section == SectionType::Chorus ||
+                            section == SectionType::MixBreak ||
+                            section == SectionType::Drop);
+    return {false, false, is_peak_section, false};
+  }
+
+  // Standard / Full → table-driven
   int mood_idx = static_cast<int>(getPercMoodCategory(mood));
   int section_idx = getSectionIndex(section);
   const auto& act = PERC_TABLE[mood_idx][section_idx];
-  return {act.tambourine, act.shaker, act.handclap};
+
+  bool shaker_16th = false;
+  if (act.shaker) {
+    // Full policy or LatinPop mood enables 16th note shaker
+    if (policy == PercussionPolicy::Full || mood == Mood::LatinPop) {
+      shaker_16th = true;
+    }
+  }
+
+  return {act.tambourine, act.shaker, act.handclap, shaker_16th};
 }
 
 void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start,
@@ -87,22 +112,14 @@ void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start,
     }
   }
 
-  // Shaker: 16th note pattern with dynamic accents
-  // At high BPM (>= 150), switch to 8th note pattern for playability
+  // Shaker: density controlled by shaker_16th flag
+  // High BPM (>=150) always falls back to 8th note grid regardless of policy
   if (config.shaker) {
     constexpr uint16_t kShakerBPMThreshold = 150;
-    if (bpm >= kShakerBPMThreshold) {
-      // 8th note shaker pattern: 2 subdivisions per beat
-      constexpr float SHAKER_8TH_VEL[2] = {0.75f, 0.55f};
-      for (int beat = 0; beat < 4; ++beat) {
-        for (int sub = 0; sub < 2; ++sub) {
-          Tick sub_tick = bar_start + beat * TICKS_PER_BEAT + sub * TICK_EIGHTH;
-          float raw_vel = 80.0f * SHAKER_8TH_VEL[sub] * density_mult * rng_util::rollFloat(rng, 0.90f, 1.10f);
-          uint8_t shk_vel = static_cast<uint8_t>(std::clamp(raw_vel, 25.0f, 85.0f));
-          addDrumNote(track, sub_tick, TICK_EIGHTH, SHAKER, shk_vel);
-        }
-      }
-    } else {
+    bool use_16th = config.shaker_16th && (bpm == 0 || bpm < kShakerBPMThreshold);
+
+    if (use_16th) {
+      // 16th note shaker pattern: 4 subdivisions per beat
       constexpr float SHAKER_16TH_VEL[4] = {0.75f, 0.45f, 0.60f, 0.45f};
       for (int beat = 0; beat < 4; ++beat) {
         for (int sub = 0; sub < 4; ++sub) {
@@ -110,6 +127,17 @@ void generateAuxPercussionForBar(MidiTrack& track, Tick bar_start,
           float raw_vel = 80.0f * SHAKER_16TH_VEL[sub] * density_mult * rng_util::rollFloat(rng, 0.90f, 1.10f);
           uint8_t shk_vel = static_cast<uint8_t>(std::clamp(raw_vel, 25.0f, 85.0f));
           addDrumNote(track, sub_tick, SIXTEENTH, SHAKER, shk_vel);
+        }
+      }
+    } else {
+      // 8th note shaker pattern: 2 subdivisions per beat (default)
+      constexpr float SHAKER_8TH_VEL[2] = {0.75f, 0.55f};
+      for (int beat = 0; beat < 4; ++beat) {
+        for (int sub = 0; sub < 2; ++sub) {
+          Tick sub_tick = bar_start + beat * TICKS_PER_BEAT + sub * TICK_EIGHTH;
+          float raw_vel = 80.0f * SHAKER_8TH_VEL[sub] * density_mult * rng_util::rollFloat(rng, 0.90f, 1.10f);
+          uint8_t shk_vel = static_cast<uint8_t>(std::clamp(raw_vel, 25.0f, 85.0f));
+          addDrumNote(track, sub_tick, TICK_EIGHTH, SHAKER, shk_vel);
         }
       }
     }

@@ -302,8 +302,13 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
         addDrumNote(track, bar_start, EIGHTH, CRASH, crash_vel);
       }
 
-      if (section.peak_level == PeakLevel::Max) {
+      if (section.peak_level == PeakLevel::Max &&
+          blueprint.percussion_policy != PercussionPolicy::None) {
+        // Minimal policy: only beats 2 & 4 offbeat (2 hits/bar)
+        // Standard/Full: all 4 offbeats (4 hits/bar)
+        bool minimal_tambourine = (blueprint.percussion_policy == PercussionPolicy::Minimal);
         for (uint8_t beat = 0; beat < 4; ++beat) {
+          if (minimal_tambourine && beat % 2 == 0) continue;  // skip beats 1 & 3
           Tick offbeat_tick = bar_start + beat * TICKS_PER_BEAT + EIGHTH;
           uint8_t tam_vel = static_cast<uint8_t>(std::min(90.0f, 65.0f * ctx.density_mult));
           addDrumNote(track, offbeat_tick, EIGHTH, TAMBOURINE, tam_vel);
@@ -432,7 +437,8 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
 
       // Auxiliary percussion
       if (!ctx.is_background_motif) {
-        PercussionConfig perc_config = getPercussionConfig(params.mood, section.type);
+        PercussionConfig perc_config = getPercussionConfig(params.mood, section.type,
+                                                            blueprint.percussion_policy);
         generateAuxPercussionForBar(track, bar_start, perc_config,
                                     section.getEffectiveDrumRole(), ctx.density_mult, rng,
                                     params.bpm);

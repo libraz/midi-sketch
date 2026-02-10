@@ -1428,7 +1428,6 @@ std::vector<NoteEvent> AuxGenerator::generateMelodicHook(const AuxContext& ctx,
       if (hook_note.start_tick >= ctx.section_end) continue;
 
       // Re-check safety for repeated/varied notes
-      int8_t current_chord = harmony.getChordDegreeAt(hook_note.start_tick);
       hook_note.note =
           resolveAuxPitch(hook_note.note, hook_note.start_tick, hook_note.duration, ctx.main_melody,
                        harmony, aux_low, aux_high, meta.dissonance_tolerance);

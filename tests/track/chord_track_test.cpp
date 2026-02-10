@@ -801,43 +801,8 @@ TEST_F(ChordTrackTest, NonSusExtensionDoesNotSplitBar) {
   gen.generate(params_);
 
   const auto& chord_track = gen.getSong().chord();
-  const auto& sections = gen.getSong().arrangement().sections();
 
-  // Count bars that have the specific sus-resolution split pattern:
-  // notes at bar_start with HALF duration AND notes at bar_start+HALF with HALF duration
-  // AND the pitch content differs between the two halves
-  int sus_like_splits = 0;
-
-  for (const auto& sec : sections) {
-    for (uint8_t bar = 0; bar < sec.bars; ++bar) {
-      Tick bar_start = sec.start_tick + bar * TICKS_PER_BAR;
-      Tick half_start = bar_start + TICKS_PER_BAR / 2;
-
-      std::set<int> first_half_pcs;
-      std::set<int> second_half_pcs;
-
-      for (const auto& note : chord_track.notes()) {
-        if (note.start_tick == bar_start && note.duration == TICKS_PER_BAR / 2) {
-          first_half_pcs.insert(note.note % 12);
-        }
-        if (note.start_tick == half_start && note.duration == TICKS_PER_BAR / 2) {
-          second_half_pcs.insert(note.note % 12);
-        }
-      }
-
-      // Check for sus-like pattern: both halves have different chord content
-      if (first_half_pcs.size() >= 2 && second_half_pcs.size() >= 2 &&
-          first_half_pcs != second_half_pcs) {
-        // This could be from other split mechanisms (secondary dominant, phrase end),
-        // but should not be from sus resolution since sus is disabled
-        ++sus_like_splits;
-      }
-    }
-  }
-
-  // Some splits may still occur from other mechanisms (dominant prep, secondary dom),
-  // but with sus disabled, we should not see sus-specific resolution splits.
-  // We just verify the generation works correctly.
+  // With sus disabled, we just verify the generation works correctly.
   EXPECT_GE(chord_track.notes().size(), 10u)
       << "Chord track should have sufficient notes with 7th extensions";
 }

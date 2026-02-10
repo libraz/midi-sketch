@@ -9,17 +9,20 @@
 #include <random>
 
 #include "core/midi_track.h"
+#include "core/production_blueprint.h"
 #include "core/section_types.h"
 #include "core/types.h"
 
 namespace midisketch {
+
 namespace drums {
 
 /// @brief Percussion element activation flags per section.
 struct PercussionConfig {
-  bool tambourine;  ///< GM 54 - backbeat on 2 & 4 in energetic sections
-  bool shaker;      ///< GM 70 - 16th note pattern for subtle rhythm
-  bool handclap;    ///< GM 39 - layered with snare on 2 & 4
+  bool tambourine;     ///< GM 54 - backbeat on 2 & 4 in energetic sections
+  bool shaker;         ///< GM 82 - rhythmic shaker pattern
+  bool handclap;       ///< GM 39 - layered with snare on 2 & 4
+  bool shaker_16th;    ///< Use 16th note grid for shaker (vs 8th note default)
 };
 
 /// @brief Mood category for percussion activation.
@@ -34,11 +37,13 @@ enum class PercMoodCategory : uint8_t {
 /// @brief Get percussion mood category from mood.
 PercMoodCategory getPercMoodCategory(Mood mood);
 
-/// @brief Get percussion configuration for section and mood.
+/// @brief Get percussion configuration for section, mood, and blueprint policy.
 /// @param mood Current mood
 /// @param section Section type
+/// @param policy Blueprint-level percussion policy (default: Standard)
 /// @return PercussionConfig with enabled instruments
-PercussionConfig getPercussionConfig(Mood mood, SectionType section);
+PercussionConfig getPercussionConfig(Mood mood, SectionType section,
+                                     PercussionPolicy policy = PercussionPolicy::Standard);
 
 /// @brief Generate auxiliary percussion for one bar.
 /// @param track Target MIDI track

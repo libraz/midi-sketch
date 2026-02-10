@@ -46,7 +46,7 @@ TEST_F(NoteCreatorTest, CreateNoteWithoutHarmony) {
 
 TEST_F(NoteCreatorTest, CreateNoteWithoutHarmonyAndAdd) {
   MidiTrack track;
-  NoteEvent note = createNoteWithoutHarmonyAndAdd(track, 0, 480, 60, 100);
+  createNoteWithoutHarmonyAndAdd(track, 0, 480, 60, 100);
 
   EXPECT_EQ(track.noteCount(), 1);
   EXPECT_EQ(track.notes()[0].note, 60);
@@ -355,15 +355,6 @@ TEST_F(NoteCreatorTest, PreserveContourPreference) {
 
   EXPECT_FALSE(candidates.empty());
 
-  // Should prefer octave shifts (same pitch class)
-  bool found_octave_shift = false;
-  for (const auto& c : candidates) {
-    if (c.pitch % 12 == 73 % 12 && c.pitch != 73) {
-      found_octave_shift = true;
-      break;
-    }
-  }
-  // May or may not find octave shift depending on collision state
-  // Just verify we got candidates
+  // Verify we got candidates (may or may not include octave shifts)
   EXPECT_GT(candidates.size(), 0u);
 }

@@ -573,6 +573,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         true,   // intro_bass
         40,     // intro_stagger_percent
         30,     // euclidean_drums_percent
+        PercussionPolicy::Standard,  // percussion_policy
         false,  // addictive_mode
         0,      // mood_mask: all moods allowed
         {127, 108, 12, false,  // max_velocity, max_pitch, max_leap, prefer_stepwise
@@ -600,6 +601,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,  // intro_bass (no bass in intro)
         70,     // intro_stagger_percent (high chance for staggered build)
         50,     // euclidean_drums_percent (rhythm-sync benefits from euclidean)
+        PercussionPolicy::Full,  // percussion_policy (high energy, rhythm-driven)
         false,  // addictive_mode
         0,      // mood_mask: all moods allowed
         {127, 108, 9, false,  // max_velocity, max_pitch, max_leap, prefer_stepwise
@@ -627,6 +629,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         true,   // intro_bass
         50,     // intro_stagger_percent
         40,     // euclidean_drums_percent
+        PercussionPolicy::Minimal,  // percussion_policy (story focus, minimal percussion)
         false,  // addictive_mode
         0,      // mood_mask: all moods allowed
         {127, 108, 12, false,  // max_velocity, max_pitch, max_leap, prefer_stepwise
@@ -653,6 +656,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,  // intro_bass
         60,     // intro_stagger_percent
         20,     // euclidean_drums_percent (keep simple patterns for ballad)
+        PercussionPolicy::None,  // percussion_policy (ballad: no aux percussion)
         false,  // addictive_mode
         // mood_mask: EmotionalPop(5), Sentimental(6), Chill(7), Ballad(8), Nostalgic(11)
         (1u << 5) | (1u << 6) | (1u << 7) | (1u << 8) | (1u << 11),
@@ -681,6 +685,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,  // intro_bass
         70,     // intro_stagger_percent (gradual build concept)
         35,     // euclidean_drums_percent
+        PercussionPolicy::Standard,  // percussion_policy (classic idol)
         false,  // addictive_mode
         0,      // mood_mask: all moods allowed
         {127, 108, 10, false,  // max_leap=10 for memorable melodies
@@ -708,6 +713,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         true,  // intro_bass
         0,     // intro_stagger_percent (2-bar intro, too short)
         60,    // euclidean_drums_percent (high energy, synth-like patterns)
+        PercussionPolicy::Full,  // percussion_policy (high energy, full percussion)
         false,  // addictive_mode
         // mood_mask: EnergeticDance(2), ElectroPop(13), IdolPop(14), FutureBass(18)
         (1u << 2) | (1u << 13) | (1u << 14) | (1u << 18),
@@ -736,6 +742,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,  // intro_bass
         40,     // intro_stagger_percent
         25,     // euclidean_drums_percent (simple bouncy patterns)
+        PercussionPolicy::Minimal,  // percussion_policy (kawaii: clap only)
         false,  // addictive_mode
         // mood_mask: BrightUpbeat(1), IdolPop(14), Yoasobi(16)
         (1u << 1) | (1u << 14) | (1u << 16),
@@ -764,6 +771,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         true,   // intro_bass
         80,     // intro_stagger_percent (8-bar intro, full effect)
         70,     // euclidean_drums_percent (four-on-floor + euclidean = great match)
+        PercussionPolicy::Full,  // percussion_policy (funky, full percussion)
         false,  // addictive_mode
         0,      // mood_mask: all moods allowed
         {120, 108, 9, false,  // max_vel=120, max_leap=9 for controlled coolness
@@ -790,6 +798,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         false,  // intro_bass
         50,     // intro_stagger_percent
         20,     // euclidean_drums_percent (emotional, simple patterns)
+        PercussionPolicy::None,  // percussion_policy (emotional: no aux percussion)
         false,  // addictive_mode
         // mood_mask: EmotionalPop(5), Sentimental(6), Ballad(8)
         (1u << 5) | (1u << 6) | (1u << 8),
@@ -817,6 +826,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
         true,   // intro_bass
         40,     // intro_stagger_percent
         30,     // euclidean_drums_percent
+        PercussionPolicy::Standard,  // percussion_policy
         true,   // addictive_mode - enables Behavioral Loop
         0,      // mood_mask: all moods allowed
         {127, 108, 12, false,  // default constraints

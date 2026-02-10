@@ -749,7 +749,6 @@ TEST(DissonanceIntegrationTest, MediumSeverityMetrics) {
 
   int total_medium = 0;
   int total_tests = 0;
-  int seeds_with_medium = 0;
 
   for (uint32_t seed : random_seeds) {
     Generator gen;
@@ -769,14 +768,10 @@ TEST(DissonanceIntegrationTest, MediumSeverityMetrics) {
     auto report = analyzeDissonance(song, params);
     total_tests++;
     total_medium += report.summary.medium_severity;
-    if (report.summary.medium_severity > 0) {
-      seeds_with_medium++;
-    }
   }
 
   // Report metrics (informational, not strict)
   float avg_medium = static_cast<float>(total_medium) / total_tests;
-  float pct_with_medium = static_cast<float>(seeds_with_medium) / total_tests * 100;
 
   // Quality thresholds: average < 7 medium issues per song.
   // Phase 3 harmonic features (slash chords, tritone substitution, modal interchange)

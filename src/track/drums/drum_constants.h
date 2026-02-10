@@ -36,7 +36,7 @@ constexpr uint8_t TAMBOURINE = 54;  ///< Tambourine
 constexpr uint8_t TOM_H = 50;       ///< High Tom
 constexpr uint8_t TOM_M = 47;       ///< Mid Tom
 constexpr uint8_t TOM_L = 45;       ///< Low Tom
-constexpr uint8_t SHAKER = 70;      ///< Maracas/Shaker
+constexpr uint8_t SHAKER = 82;      ///< Shaker (GM2)
 
 // ============================================================================
 // Timing Aliases

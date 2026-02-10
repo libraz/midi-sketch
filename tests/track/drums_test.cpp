@@ -80,7 +80,7 @@ TEST_F(DrumsTest, DrumsUseGMDrumNotes) {
       42, 44, 46,                  // Hi-hats
       49, 51, 52, 53, 54, 55, 57, 59,  // Cymbals, Tambourine
       41, 43, 45, 47, 48, 50,     // Toms
-      70                           // Maracas/Shaker
+      82                           // Shaker (GM2)
   };
 
   Generator gen;
@@ -1214,7 +1214,7 @@ TEST_F(DrumsTest, HiHatVelocityFollowsMetricHierarchy) {
 // GM Percussion constants for tests
 constexpr uint8_t HANDCLAP = 39;
 constexpr uint8_t TAMBOURINE = 54;
-constexpr uint8_t SHAKER = 70;
+constexpr uint8_t SHAKER = 82;
 
 // Helper: count notes of a given pitch in the drum track
 int countDrumNotes(const MidiTrack& track, uint8_t note_num) {
@@ -1274,8 +1274,9 @@ TEST_F(DrumsTest, TambourineOnBackbeats) {
 
 TEST_F(DrumsTest, ShakerHas16thNotePattern) {
   // Shaker should appear with 16th note subdivisions (every 120 ticks at 480 TPB).
-  // Use EnergeticDance which has shaker in verse (A) sections.
+  // Use EnergeticDance + Full policy blueprint (RhythmLock BP1) for 16th note shaker.
   params_.mood = Mood::EnergeticDance;
+  params_.blueprint_id = 1;  // RhythmLock (Full percussion policy)
   params_.structure = StructurePattern::StandardPop;
   params_.seed = 42;
   Generator gen;
@@ -1302,7 +1303,9 @@ TEST_F(DrumsTest, ShakerHas16thNotePattern) {
 
 TEST_F(DrumsTest, ShakerVelocityDynamics) {
   // Shaker should have velocity dynamics: accented on beats, softer on off-beats.
+  // Uses Full policy blueprint to get shaker with clear velocity pattern.
   params_.mood = Mood::EnergeticDance;
+  params_.blueprint_id = 1;  // RhythmLock (Full percussion policy)
   params_.structure = StructurePattern::StandardPop;
   params_.seed = 42;
   Generator gen;
@@ -1486,6 +1489,183 @@ TEST_F(DrumsTest, EnergeticMoodHasAllThreeInChorus) {
   EXPECT_GT(tam_count, 0) << "EnergeticDance should have tambourine";
   EXPECT_GT(shaker_count, 0) << "EnergeticDance should have shaker";
   EXPECT_GT(clap_count, 0) << "EnergeticDance should have hand clap";
+}
+
+// ============================================================================
+// PercussionPolicy Tests
+// ============================================================================
+
+TEST_F(DrumsTest, PercussionPolicyNone_NoAuxPercussion) {
+  // Ballad BP (PercussionPolicy::None) should have no auxiliary percussion.
+  params_.blueprint_id = 3;  // Ballad
+  params_.mood = Mood::Ballad;
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  int tam_count = countDrumNotes(track, TAMBOURINE);
+  int shaker_count = countDrumNotes(track, SHAKER);
+  int clap_count = countDrumNotes(track, HANDCLAP);
+
+  // PeakLevel::Max tambourine is also guarded by policy
+  EXPECT_EQ(tam_count, 0) << "Ballad BP should have no tambourine";
+  EXPECT_EQ(shaker_count, 0) << "Ballad BP should have no shaker";
+  EXPECT_EQ(clap_count, 0) << "Ballad BP should have no hand clap";
+}
+
+TEST_F(DrumsTest, PercussionPolicyMinimal_ClapOnlyInChorus) {
+  // StoryPop BP (PercussionPolicy::Minimal) should only have handclap in chorus/mix sections.
+  // Note: PeakLevel::Max may still add limited tambourine on beats 2 & 4.
+  params_.blueprint_id = 2;  // StoryPop
+  params_.mood = Mood::StraightPop;
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  int shaker_count = countDrumNotes(track, SHAKER);
+  int clap_count = countDrumNotes(track, HANDCLAP);
+
+  // No auxiliary percussion shaker under Minimal policy
+  EXPECT_EQ(shaker_count, 0) << "Minimal policy should have no shaker";
+  EXPECT_GT(clap_count, 0) << "Minimal policy should have handclap in chorus";
+}
+
+TEST_F(DrumsTest, PercussionPolicyFull_16thShaker) {
+  // Full policy BP (RhythmLock BP1) should have 16th note shaker (note 82).
+  params_.blueprint_id = 1;  // RhythmLock (Full percussion policy)
+  params_.mood = Mood::EnergeticDance;
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  int shaker_count = countDrumNotes(track, SHAKER);
+  EXPECT_GT(shaker_count, 16) << "Full policy should have many 16th shaker notes";
+
+  // Verify on 16th note grid
+  for (const auto& note : track.notes()) {
+    if (note.note == SHAKER) {
+      Tick tick_in_beat = note.start_tick % TICKS_PER_BEAT;
+      Tick sixteenth = TICKS_PER_BEAT / 4;
+      EXPECT_EQ(tick_in_beat % sixteenth, 0u)
+          << "Shaker note at tick " << note.start_tick << " not on 16th grid";
+    }
+  }
+}
+
+TEST_F(DrumsTest, PercussionPolicyStandard_8thShaker) {
+  // Standard policy BP (Traditional BP0) should have 8th note shaker.
+  params_.blueprint_id = 0;  // Traditional (Standard percussion policy)
+  params_.mood = Mood::EnergeticDance;
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  int shaker_count = countDrumNotes(track, SHAKER);
+  EXPECT_GT(shaker_count, 0) << "Standard policy should have shaker";
+
+  // Verify on 8th note grid (not 16th)
+  for (const auto& note : track.notes()) {
+    if (note.note == SHAKER) {
+      Tick tick_in_beat = note.start_tick % TICKS_PER_BEAT;
+      Tick eighth = TICKS_PER_BEAT / 2;
+      EXPECT_EQ(tick_in_beat % eighth, 0u)
+          << "Shaker at tick " << note.start_tick << " should be on 8th note grid";
+    }
+  }
+}
+
+TEST_F(DrumsTest, PeakMaxRespectsPolicyNone) {
+  // PeakLevel::Max tambourine should be suppressed when PercussionPolicy::None.
+  params_.blueprint_id = 8;  // IdolEmo (None percussion policy)
+  params_.mood = Mood::EmotionalPop;
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  int tam_count = countDrumNotes(track, TAMBOURINE);
+  EXPECT_EQ(tam_count, 0) << "PeakLevel::Max should respect PercussionPolicy::None";
+}
+
+TEST_F(DrumsTest, StandardMoodNoShakerInVerse) {
+  // Standard mood category should have no shaker in A sections (verse).
+  params_.blueprint_id = 0;  // Traditional (Standard policy)
+  params_.mood = Mood::StraightPop;  // Standard mood category
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  const auto& sections = gen.getSong().arrangement().sections();
+  for (const auto& sec : sections) {
+    if (sec.type != SectionType::A) continue;
+    Tick sec_end = sec.endTick();
+    int sec_shaker = 0;
+    for (const auto& note : track.notes()) {
+      if (note.note == SHAKER && note.start_tick >= sec.start_tick &&
+          note.start_tick < sec_end) {
+        sec_shaker++;
+      }
+    }
+    EXPECT_EQ(sec_shaker, 0) << "Standard mood should have no shaker in verse (A) sections";
+  }
+}
+
+TEST_F(DrumsTest, StandardMoodShakerInPreChorus) {
+  // Standard mood category should still have shaker in B sections (pre-chorus).
+  params_.blueprint_id = 0;  // Traditional (Standard policy)
+  params_.mood = Mood::StraightPop;  // Standard mood category
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  const auto& sections = gen.getSong().arrangement().sections();
+  bool found_b_section = false;
+  for (const auto& sec : sections) {
+    if (sec.type != SectionType::B) continue;
+    found_b_section = true;
+    Tick sec_end = sec.endTick();
+    int sec_shaker = 0;
+    for (const auto& note : track.notes()) {
+      if (note.note == SHAKER && note.start_tick >= sec.start_tick &&
+          note.start_tick < sec_end) {
+        sec_shaker++;
+      }
+    }
+    EXPECT_GT(sec_shaker, 0) << "Standard mood should have shaker in pre-chorus (B) sections";
+    break;
+  }
+  EXPECT_TRUE(found_b_section) << "Test requires at least one B section";
+}
+
+TEST_F(DrumsTest, ShakerUsesGM82) {
+  // Verify that shaker notes use GM note 82, not 70 (maracas).
+  params_.blueprint_id = 1;  // RhythmLock (Full policy, shaker enabled)
+  params_.mood = Mood::EnergeticDance;
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 42;
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  bool found_shaker = false;
+  for (const auto& note : track.notes()) {
+    EXPECT_NE(note.note, 70) << "Should not use GM note 70 (maracas)";
+    if (note.note == 82) found_shaker = true;
+  }
+  EXPECT_TRUE(found_shaker) << "Should have shaker notes at GM note 82";
 }
 
 // ============================================================================
@@ -2498,7 +2678,9 @@ TEST_F(DrumsTest, RhythmSyncHighBPMReducesDrumDensityPerBar) {
 
 TEST_F(DrumsTest, ShakerHighBPMUsesEighthGrid) {
   // At BPM 170, shaker should use 8th note grid instead of 16th
+  // even with Full policy blueprint (high BPM overrides 16th grid)
   params_.mood = Mood::EnergeticDance;
+  params_.blueprint_id = 1;  // RhythmLock (Full percussion policy, normally 16th)
   params_.bpm = 170;
   params_.seed = 42;
   params_.structure = StructurePattern::StandardPop;

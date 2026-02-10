@@ -39,6 +39,15 @@ enum class InstrumentModelMode : uint8_t {
   Full              ///< Both constraints and techniques
 };
 
+/// @brief Auxiliary percussion policy for a blueprint.
+/// Controls which percussion elements are enabled and their density.
+enum class PercussionPolicy : uint8_t {
+  None = 0,      ///< No auxiliary percussion (shaker, tambourine, handclap all off)
+  Minimal = 1,   ///< Handclap only in Chorus/MixBreak/Drop sections
+  Standard = 2,  ///< Table-driven defaults, shaker uses 8th note grid
+  Full = 3,      ///< Table-driven, shaker uses 16th note grid when enabled
+};
+
 /// @brief Blueprint-level constraints for generation.
 /// These override default limits for specific musical characteristics.
 struct BlueprintConstraints {
@@ -227,6 +236,10 @@ struct ProductionBlueprint {
   /// Euclidean patterns provide mathematically-spaced, natural-feeling rhythms.
   /// 0 = always use traditional patterns, 100 = always use Euclidean.
   uint8_t euclidean_drums_percent = 0;
+
+  /// @brief Auxiliary percussion policy for this blueprint.
+  /// Controls which percussion elements (shaker, tambourine, handclap) are enabled.
+  PercussionPolicy percussion_policy = PercussionPolicy::Standard;
 
   /// @brief Enable Behavioral Loop mode (addictive generation).
   /// Forces RiffPolicy::LockedPitch, HookIntensity::Maximum, and CutOff exit patterns.
