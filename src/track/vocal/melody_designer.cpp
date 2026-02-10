@@ -967,18 +967,38 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
           new_pitch = std::clamp(new_pitch, static_cast<int>(ctx.vocal_low),
                                  static_cast<int>(ctx.vocal_high));
         }
-        // For Chorus sections, prefer root note resolution for strong cadence
-        if (ctx.section_type == SectionType::Chorus && rng_util::rollProbability(rng, 0.6f)) {
-          // Find root of current chord
+        // For Chorus/Drop sections, prefer root note for strong cadence (75%)
+        // For B/Bridge sections, prefer root or 5th for moderate resolution (50%)
+        float root_prob = 0.0f;
+        bool allow_fifth = false;
+        if (ctx.section_type == SectionType::Chorus ||
+            ctx.section_type == SectionType::Drop) {
+          root_prob = 0.75f;
+        } else if (ctx.section_type == SectionType::B ||
+                   ctx.section_type == SectionType::Bridge) {
+          root_prob = 0.50f;
+          allow_fifth = true;
+        }
+        if (root_prob > 0.0f && rng_util::rollProbability(rng, root_prob)) {
           int root_pc = chord_tones.empty() ? 0 : chord_tones[0];
-          // Find nearest root in vocal range
           int octave = new_pitch / 12;
           int root_pitch = octave * 12 + root_pc;
           if (root_pitch < static_cast<int>(ctx.vocal_low)) root_pitch += 12;
           if (root_pitch > static_cast<int>(ctx.vocal_high)) root_pitch -= 12;
-          if (root_pitch >= static_cast<int>(ctx.vocal_low) &&
-              root_pitch <= static_cast<int>(ctx.vocal_high)) {
+          bool resolved = (root_pitch >= static_cast<int>(ctx.vocal_low) &&
+                           root_pitch <= static_cast<int>(ctx.vocal_high));
+          if (resolved) {
             new_pitch = root_pitch;
+          } else if (allow_fifth && chord_tones.size() >= 3) {
+            // Fall back to 5th for B/Bridge when root is out of range
+            int fifth_pc = chord_tones[2];  // root(0), 3rd(1), 5th(2)
+            int fifth_pitch = octave * 12 + fifth_pc;
+            if (fifth_pitch < static_cast<int>(ctx.vocal_low)) fifth_pitch += 12;
+            if (fifth_pitch > static_cast<int>(ctx.vocal_high)) fifth_pitch -= 12;
+            if (fifth_pitch >= static_cast<int>(ctx.vocal_low) &&
+                fifth_pitch <= static_cast<int>(ctx.vocal_high)) {
+              new_pitch = fifth_pitch;
+            }
           }
         }
       }

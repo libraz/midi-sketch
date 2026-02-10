@@ -848,8 +848,8 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
   }
 
   // Phrase-end minimum duration by section type.
-  // At fast tempos, cadential notes need more ticks to feel "sustained" (~400ms).
-  constexpr float kMinPhraseEndSeconds = 0.4f;
+  // At fast tempos, cadential notes need more ticks to feel "sustained" (~500ms).
+  constexpr float kMinPhraseEndSeconds = 0.5f;
   Tick bpm_phrase_end_min = static_cast<Tick>(
       kMinPhraseEndSeconds * ctx.bpm * TICKS_PER_BEAT / 60.0f);
 
@@ -857,12 +857,14 @@ static std::vector<NoteEvent> generateLockedRhythmCandidate(
   switch (section.type) {
     case SectionType::Chorus:
     case SectionType::Drop:
+      phrase_end_min = std::max(TICK_HALF, bpm_phrase_end_min);
+      break;
     case SectionType::B:
     case SectionType::Bridge:
-      phrase_end_min = std::max(TICK_QUARTER, bpm_phrase_end_min);
+      phrase_end_min = std::max(TICK_QUARTER + TICK_EIGHTH, bpm_phrase_end_min);
       break;
     default:
-      phrase_end_min = std::max(TICK_EIGHTH, bpm_phrase_end_min);
+      phrase_end_min = std::max(TICK_QUARTER, bpm_phrase_end_min);
       break;
   }
 
@@ -1728,6 +1730,19 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       int span = section.vocal_range_span;
       if (static_cast<int>(section_vocal_high) - static_cast<int>(section_vocal_low) > span) {
         section_vocal_high = static_cast<uint8_t>(section_vocal_low + span);
+      }
+    }
+
+    // Verse/Bridge ceiling: prevent non-Chorus sections from reaching Chorus highs.
+    // This ensures the Chorus climax is perceptually distinct.
+    constexpr int kVerseCeilingMarginSt = 3;
+    if (section.type == SectionType::A || section.type == SectionType::Bridge) {
+      int chorus_ceiling = static_cast<int>(effective_vocal_high)
+                           + params.melody_params.chorus_register_shift;
+      int ceiling = chorus_ceiling - kVerseCeilingMarginSt;
+      if (static_cast<int>(section_vocal_high) > ceiling) {
+        section_vocal_high = static_cast<uint8_t>(
+            std::max(ceiling, static_cast<int>(section_vocal_low) + 6));
       }
     }
 

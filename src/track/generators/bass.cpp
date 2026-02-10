@@ -407,16 +407,26 @@ BassPattern adjustPatternSparser(BassPattern pattern) {
   return kBassTransformer.sparser(pattern);
 }
 
-// RhythmSync-aware sparsification: at high BPM (>=140), prevent over-sparsification
-// that kills rhythmic drive. Keeps Driving/Syncopated patterns instead of degrading
-// to RootFifth/WholeNote which lack 8th notes and syncopation.
-BassPattern applyRhythmSyncSparsification(BassPattern pattern, uint16_t bpm) {
-  BassPattern candidate = adjustPatternSparser(pattern);
-  if (bpm >= 140 &&
-      (candidate == BassPattern::RootFifth || candidate == BassPattern::WholeNote)) {
-    return pattern;  // High BPM: preserve rhythmic drive
+// RhythmSync-aware density adjustment: at high BPM (>=150), promote sparse patterns
+// to Driving (8th note pulse) for rhythmic drive. At mid-high BPM (140-149), allow
+// sparsification but prevent degradation to RootFifth/WholeNote. Below 140, conventional.
+BassPattern applyRhythmSyncDensityAdjust(BassPattern pattern, uint16_t bpm) {
+  if (bpm >= 150) {
+    // High BPM: promote sparse patterns to Driving (8th note pulse)
+    if (pattern == BassPattern::WholeNote ||
+        pattern == BassPattern::RootFifth ||
+        pattern == BassPattern::Syncopated) {
+      return BassPattern::Driving;
+    }
+    return pattern;  // Driving and above: keep as-is
+  } else if (bpm >= 140) {
+    // Mid-high BPM: allow sparsification but prevent degradation to RootFifth/WholeNote
+    BassPattern candidate = adjustPatternSparser(pattern);
+    if (candidate == BassPattern::RootFifth || candidate == BassPattern::WholeNote)
+      return pattern;
+    return candidate;
   }
-  return candidate;
+  return adjustPatternSparser(pattern);  // Low BPM: conventional behavior
 }
 
 // Adjust pattern one level denser (increase density/aggression)
@@ -618,11 +628,12 @@ BassPattern selectPatternWithPolicy(BassRiffCache& cache, const Section& section
                          rng);
   });
 
-  // RhythmSync paradigm: Motif provides rhythm foundation, so bass can use simpler patterns.
-  // This prevents over-fragmented bass lines when motif already drives the rhythm.
-  // At high BPM (>=140), avoid degrading to RootFifth/WholeNote to preserve drive.
+  // RhythmSync paradigm: adjust bass density based on BPM.
+  // High BPM (>=150): promote sparse patterns to Driving for rhythmic pulse.
+  // Mid-high BPM (140-149): prevent degradation to RootFifth/WholeNote.
+  // Low BPM: conventional sparsification since motif drives the rhythm.
   if (params.paradigm == GenerationParadigm::RhythmSync) {
-    base_pattern = applyRhythmSyncSparsification(base_pattern, params.bpm);
+    base_pattern = applyRhythmSyncDensityAdjust(base_pattern, params.bpm);
   }
 
   // Avoid PedalTone when arpeggio is active - they conflict musically.
@@ -1758,10 +1769,10 @@ BassPattern selectPatternWithPolicyForVocal(BassRiffCache& cache, const Section&
     return selectPatternForVocalDensity(vocal_density, section.type, params.mood, rng);
   });
 
-  // RhythmSync paradigm: Motif provides rhythm foundation, so bass can use simpler patterns.
-  // At high BPM (>=140), avoid degrading to RootFifth/WholeNote to preserve drive.
+  // RhythmSync paradigm: adjust bass density based on BPM.
+  // High BPM (>=150): promote sparse to Driving. Mid-high: prevent over-degradation.
   if (params.paradigm == GenerationParadigm::RhythmSync) {
-    pattern = applyRhythmSyncSparsification(pattern, params.bpm);
+    pattern = applyRhythmSyncDensityAdjust(pattern, params.bpm);
   }
 
   // Avoid PedalTone when arpeggio is active in high-energy sections.

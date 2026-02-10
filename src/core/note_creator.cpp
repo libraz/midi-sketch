@@ -454,7 +454,8 @@ CreateNoteResult createNoteWithResult(IHarmonyContext& harmony, const NoteOption
 
   auto candidates = getSafePitchCandidates(harmony, opts.desired_pitch, opts.start,
                                             effective_duration, opts.role, opts.range_low,
-                                            opts.range_high, opts.preference, 5);
+                                            opts.range_high, opts.preference, 5,
+                                            opts.prev_pitch, opts.consecutive_same_count);
 
   // Annotate candidates with cross-boundary safety for PreferSafe
   if (consider_boundary && !candidates.empty()) {
@@ -607,7 +608,9 @@ std::vector<PitchCandidate> getSafePitchCandidates(
     uint8_t range_low,
     uint8_t range_high,
     PitchPreference preference,
-    size_t max_candidates) {
+    size_t max_candidates,
+    uint8_t prev_pitch,
+    int consecutive_same_count) {
 
   std::vector<PitchCandidate> candidates;
   candidates.reserve(max_candidates * 2);  // May generate more, then trim
@@ -725,7 +728,27 @@ std::vector<PitchCandidate> getSafePitchCandidates(
       break;
 
     case PitchPreference::PreserveContour:
-      // Try octave shifts first (preserves pitch class)
+      // When consecutive same pitches detected, prioritize different pitch class chord tones
+      if (consecutive_same_count >= 2 && prev_pitch > 0 && !chord_tones.empty()) {
+        int prev_pc = getPitchClass(prev_pitch);
+        for (int ct : chord_tones) {
+          if (ct == prev_pc) continue;  // Skip same pitch class as previous
+          for (int oct_offset = 0; oct_offset <= 1; ++oct_offset) {
+            // Try octaves near the desired pitch first, then expand
+            for (int sign : {0, -1, 1}) {
+              int oct = octave + sign + oct_offset * (sign >= 0 ? 1 : -1);
+              if (oct < 0 || oct > 10) continue;
+              uint8_t candidate_pitch = static_cast<uint8_t>(oct * 12 + ct);
+              // Prefer candidates close to previous pitch for smooth contour
+              int dist = std::abs(static_cast<int>(candidate_pitch) - static_cast<int>(prev_pitch));
+              if (dist <= 7) {  // Within a 5th
+                tryAddCandidate(candidate_pitch, CollisionAvoidStrategy::ChordTones);
+              }
+            }
+          }
+        }
+      }
+      // Try octave shifts (preserves pitch class)
       for (int oct_offset : {-1, 1, -2, 2}) {
         int pitch = desired_pitch + oct_offset * 12;
         if (pitch >= static_cast<int>(range_low) && pitch <= static_cast<int>(range_high)) {
@@ -878,7 +901,7 @@ std::vector<PitchCandidate> getSafePitchCandidates(
 
   // Rank and trim (consider boundary if notes are long enough)
   bool has_boundary = (duration >= 240);
-  rankCandidates(candidates, preference, has_boundary);
+  rankCandidates(candidates, preference, has_boundary, prev_pitch, consecutive_same_count);
   if (candidates.size() > max_candidates) {
     candidates.resize(max_candidates);
   }

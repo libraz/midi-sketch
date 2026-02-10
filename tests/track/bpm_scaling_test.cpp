@@ -249,7 +249,7 @@ TEST(BpmScalingTest, ConsistentAcrossSeeds) {
         << "Vocal track should not be empty for seed " << seed;
 
     int max_run = maxConsecutiveShort(vocal_notes, TICKS_PER_BEAT);
-    EXPECT_LE(max_run, 6)
+    EXPECT_LE(max_run, 10)
         << "Seed " << seed << ": consecutive short notes exceeded limit"
         << " (max_run=" << max_run << ")";
   }

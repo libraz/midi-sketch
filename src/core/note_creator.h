@@ -179,7 +179,9 @@ std::vector<PitchCandidate> getSafePitchCandidates(
     uint8_t range_low,
     uint8_t range_high,
     PitchPreference preference = PitchPreference::Default,
-    size_t max_candidates = 5);
+    size_t max_candidates = 5,
+    uint8_t prev_pitch = 0,
+    int consecutive_same_count = 0);
 
 // ============================================================================
 // Musical candidate selection (for melody generation)

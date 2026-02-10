@@ -6,6 +6,7 @@
 #include "track/vocal/phrase_planner.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 
 #include "core/timing_constants.h"
@@ -285,6 +286,21 @@ void PhrasePlanner::reconcileWithRhythmLock(PhrasePlan& plan,
     } else {
       // No gap found near the boundary: mark as soft boundary
       phrase.soft_boundary = true;
+
+      // Force minimum breath gap for soft boundaries so vocal lines
+      // always have a singable break between phrases
+      constexpr Tick kMinForcedBreathTicks = TICK_EIGHTH;  // 240 ticks
+      if (phrase_idx > 0) {
+        PlannedPhrase& prev_phrase = plan.phrases[phrase_idx - 1];
+        if (prev_phrase.breath_after < kMinForcedBreathTicks) {
+          prev_phrase.breath_after = kMinForcedBreathTicks;
+        }
+        if (phrase.breath_before < kMinForcedBreathTicks) {
+          phrase.breath_before = kMinForcedBreathTicks;
+        }
+        assert(prev_phrase.end_tick > prev_phrase.start_tick);
+        assert(prev_phrase.end_tick <= phrase.start_tick);
+      }
     }
   }
 
@@ -294,6 +310,17 @@ void PhrasePlanner::reconcileWithRhythmLock(PhrasePlan& plan,
       plan.phrases[idx].breath_after = plan.phrases[idx + 1].breath_before;
     } else {
       plan.phrases[idx].breath_after = 0;
+    }
+  }
+
+  // Enforce minimum breath for soft boundary phrases after breath_after recalculation
+  constexpr Tick kMinForcedBreathTicks = TICK_EIGHTH;
+  for (size_t idx = 0; idx < plan.phrases.size(); ++idx) {
+    if (plan.phrases[idx].soft_boundary && idx > 0) {
+      plan.phrases[idx].breath_before = std::max(
+          plan.phrases[idx].breath_before, kMinForcedBreathTicks);
+      plan.phrases[idx - 1].breath_after = std::max(
+          plan.phrases[idx - 1].breath_after, kMinForcedBreathTicks);
     }
   }
 }

@@ -808,6 +808,51 @@ uint8_t calculateMotifVelocity(uint8_t base_vel, bool is_chorus, SectionType sec
   return base_vel;
 }
 
+/// @brief Select best alternative pitch when consecutive same pitch threshold exceeded.
+/// Prefers nearby chord tones with different pitch class from current pitch.
+/// @param current_pitch The repeated pitch to escape from
+/// @param harmony Harmony context for chord tone lookup
+/// @param tick Current tick for chord degree lookup
+/// @param range_low Minimum allowed pitch
+/// @param range_high Maximum allowed pitch
+/// @return Alternative pitch, or current_pitch if no better option found
+uint8_t selectBestAlternative(uint8_t current_pitch, IHarmonyCoordinator* harmony,
+                               Tick tick, uint8_t range_low, uint8_t range_high) {
+  int8_t degree = harmony->getChordDegreeAt(tick);
+  ChordToneHelper ct_helper(degree);
+  const auto& pitch_classes = ct_helper.pitchClasses();
+  int current_pc = current_pitch % 12;
+  int current_octave = current_pitch / 12;
+
+  uint8_t best = current_pitch;
+  int best_dist = 127;
+
+  for (int ct_pc : pitch_classes) {
+    if (ct_pc == current_pc) continue;
+    // Try octaves near current pitch
+    for (int oct = current_octave - 1; oct <= current_octave + 1; ++oct) {
+      if (oct < 0 || oct > 10) continue;
+      int candidate = oct * 12 + static_cast<int>(ct_pc);
+      if (candidate < range_low || candidate > range_high) continue;
+      int dist = std::abs(candidate - static_cast<int>(current_pitch));
+      if (dist > 0 && dist < best_dist) {
+        best_dist = dist;
+        best = static_cast<uint8_t>(candidate);
+      }
+    }
+  }
+  return best;
+}
+
+/// @brief Deterministic hash for variation without RNG consumption.
+/// Combines seed, section, cycle, and note indices into a pseudo-random value.
+uint32_t motifVariationHash(uint32_t seed, size_t section_idx,
+                             size_t cycle_idx, size_t onset_idx) {
+  return seed ^ (static_cast<uint32_t>(section_idx) * 2654435761u)
+             ^ (static_cast<uint32_t>(cycle_idx) * 40499u)
+             ^ static_cast<uint32_t>(onset_idx);
+}
+
 /// @brief Cached note entry for Locked/RhythmSync replay.
 struct LockedNoteEntry {
   Tick relative_tick;  // Offset from section start
@@ -828,6 +873,17 @@ struct MotifGenerationState {
   size_t sec_idx = 0;
 };
 
+/// @brief Check if a pitch is a chord tone at the given tick.
+/// @param pitch MIDI pitch
+/// @param harmony Harmony context for chord degree lookup
+/// @param tick Tick for chord lookup
+/// @return true if pitch class matches a chord tone at the tick's chord
+bool isChordToneAtTick(uint8_t pitch, IHarmonyCoordinator* harmony, Tick tick) {
+  int8_t degree = harmony->getChordDegreeAt(tick);
+  ChordToneHelper ct_helper(degree);
+  return ct_helper.isChordTone(pitch);
+}
+
 /// @brief Replay cached notes for Locked mode (non-coordinate-axis).
 /// @return true if notes were replayed (section should be skipped), false otherwise
 bool replayCachedNotesLocked(MidiTrack& track, const Section& section,
@@ -846,13 +902,24 @@ bool replayCachedNotesLocked(MidiTrack& track, const Section& section,
     Tick absolute_tick = section.start_tick + entry.relative_tick;
     if (absolute_tick >= section.endTick()) continue;
 
+    // Two-stage strategy for consistency:
+    // - If cached pitch is safe AND a chord tone at replay tick: keep as-is (100% consistency)
+    // - Otherwise: use PreserveContour to resolve while preserving melodic shape
+    bool cached_pitch_safe = harmony->isConsonantWithOtherTracks(
+        entry.pitch, absolute_tick, entry.duration, TrackRole::Motif);
+    bool is_chord_tone_at_replay = isChordToneAtTick(entry.pitch, harmony, absolute_tick);
+
     NoteOptions opts;
     opts.start = absolute_tick;
     opts.duration = entry.duration;
     opts.desired_pitch = entry.pitch;
     opts.velocity = entry.velocity;
     opts.role = TrackRole::Motif;
-    opts.preference = PitchPreference::PreserveContour;
+    if (cached_pitch_safe && is_chord_tone_at_replay) {
+      opts.preference = PitchPreference::NoCollisionCheck;
+    } else {
+      opts.preference = PitchPreference::PreserveContour;
+    }
     opts.range_low = MOTIF_LOW;
     opts.range_high = motif_range_high;
     opts.source = NoteSource::Motif;
@@ -995,12 +1062,26 @@ void generateMotifForSection(MidiTrack& track, const Section& section,
   }
 
   // Repeat motif across the section
-  for (Tick pos = section.start_tick; pos < section_end; pos += motif_length) {
+  size_t cycle_idx = 0;
+  for (Tick pos = section.start_tick; pos < section_end; pos += motif_length, ++cycle_idx) {
     std::map<uint8_t, size_t> bar_note_count;
 
+    size_t onset_idx = 0;
     for (const auto& note : *current_pattern) {
       Tick absolute_tick = pos + note.start_tick;
-      if (absolute_tick >= section_end) continue;
+      if (absolute_tick >= section_end) { ++onset_idx; continue; }
+
+      // Hash-based note omission for variation (non-coordinate-axis, cycle > 0)
+      if (cycle_idx > 0 && !is_rhythm_lock_global) {
+        Tick pos_in_bar = absolute_tick % TICKS_PER_BAR;
+        if (pos_in_bar > 0) {  // Not beat 1
+          uint32_t skip_hash = motifVariationHash(params.seed, state.sec_idx, cycle_idx, onset_idx);
+          if ((skip_hash % 100) < 8) {
+            ++onset_idx;
+            continue;
+          }
+        }
+      }
 
       uint8_t current_bar = static_cast<uint8_t>(tickToBar(absolute_tick - pos));
 
@@ -1013,7 +1094,7 @@ void generateMotifForSection(MidiTrack& track, const Section& section,
             // Last bar: skip notes in the second half of the bar
             Tick bar_start = section.start_tick + section_bar * TICKS_PER_BAR;
             Tick bar_half = bar_start + TICKS_PER_BAR / 2;
-            if (absolute_tick >= bar_half) continue;
+            if (absolute_tick >= bar_half) { ++onset_idx; continue; }
           }
         }
       }
@@ -1046,6 +1127,7 @@ void generateMotifForSection(MidiTrack& track, const Section& section,
         }
       }
       if (should_skip) {
+        ++onset_idx;
         continue;
       }
 
@@ -1055,6 +1137,7 @@ void generateMotifForSection(MidiTrack& track, const Section& section,
         if (!in_rest) {
           float skip_prob = vocal_ctx->vocal_density * 0.4f;
           if (rng_util::rollProbability(rng, skip_prob) && bar_note_count[current_bar] > 0) {
+            ++onset_idx;
             continue;
           }
         }
@@ -1111,11 +1194,32 @@ void generateMotifForSection(MidiTrack& track, const Section& section,
                                      motif_params.velocity_fixed);
       }
 
+      // Hash-based velocity micro-variation for repeated cycles (non-beat-1 notes)
+      if (cycle_idx > 0) {
+        Tick pos_in_bar = absolute_tick % TICKS_PER_BAR;
+        if (pos_in_bar > 0) {
+          uint32_t var_hash = motifVariationHash(params.seed, state.sec_idx, cycle_idx, onset_idx);
+          int vel_offset = static_cast<int>(var_hash % 11) - 5;  // -5 to +5
+          vel = static_cast<uint8_t>(std::clamp(static_cast<int>(vel) + vel_offset, 30, 127));
+        }
+      }
+
       uint8_t final_pitch;
       if (is_rhythm_lock_global) {
         // Coordinate axis + Locked: use pitch as-is from pattern + section shift.
-        // Monotony tracking would alter the locked pattern.
+        // Safety valve: if same pitch repeated > 8 times, select chord tone alternative.
         final_pitch = static_cast<uint8_t>(adjusted_pitch);
+        constexpr int kCoordAxisMonotonyThreshold = 8;
+        if (final_pitch == state.motif_prev_pitch) {
+          state.motif_consecutive_same++;
+        } else {
+          state.motif_consecutive_same = 1;
+        }
+        if (state.motif_consecutive_same > kCoordAxisMonotonyThreshold) {
+          final_pitch = selectBestAlternative(
+              final_pitch, harmony, absolute_tick, MOTIF_LOW, motif_range_high);
+        }
+        state.motif_prev_pitch = final_pitch;
       } else {
         // Apply monotony tracking to avoid consecutive same pitches
         // Pass chord degree so alternatives are selected from chord tones
@@ -1203,6 +1307,7 @@ void generateMotifForSection(MidiTrack& track, const Section& section,
         auto motif_note = createNoteAndAdd(track, *harmony, opts);
 
         if (!motif_note) {
+          ++onset_idx;
           continue;
         }
 
@@ -1236,6 +1341,7 @@ void generateMotifForSection(MidiTrack& track, const Section& section,
           }
         }
       }
+      ++onset_idx;
     }
   }
 
