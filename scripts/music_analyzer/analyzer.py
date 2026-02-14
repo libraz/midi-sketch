@@ -393,6 +393,9 @@ class MusicAnalyzer:
                 'kick_excess_density': {
                     Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.3,
                 },
+                'bass_rhythm_monotony': {
+                    Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
+                },
             },
             Category.ARRANGEMENT: {
                 'register_overlap': {
@@ -431,6 +434,21 @@ class MusicAnalyzer:
                 'guitar_dynamic_variation': {
                     Severity.ERROR: 0.5, Severity.WARNING: 0.3, Severity.INFO: 0.1,
                 },
+                'rhythm_section_gap': {
+                    Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.3,
+                },
+                'track_density_surge': {
+                    Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.3,
+                },
+                'pitch_concentration': {
+                    Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.3,
+                },
+                'velocity_flatness': {
+                    Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
+                },
+                'inaudible_track': {
+                    Severity.ERROR: 2.0, Severity.WARNING: 1.0, Severity.INFO: 0.3,
+                },
             },
             Category.STRUCTURE: {
                 'short_phrase': {
@@ -456,6 +474,9 @@ class MusicAnalyzer:
                 },
                 'section_contrast': {
                     Severity.ERROR: 0.5, Severity.WARNING: 0.3, Severity.INFO: 0.1,
+                },
+                'drums_energy_inversion': {
+                    Severity.ERROR: 1.5, Severity.WARNING: 0.8, Severity.INFO: 0.2,
                 },
             },
         }

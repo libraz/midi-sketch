@@ -248,6 +248,26 @@ int adjustToDiatonic(int pitch) {
   return pitch + adjustment;
 }
 
+// Adjust pitch to nearest diatonic scale tone, rounding toward range_center
+// to distribute pitches more evenly across the range.
+int adjustToDiatonicTowardCenter(int pitch, int range_center) {
+  if (isDiatonic(pitch)) {
+    return pitch;
+  }
+  // Try rounding toward center first, then away if result is not diatonic
+  int toward_center = (pitch < range_center) ? pitch + 1 : pitch - 1;
+  if (isDiatonic(toward_center)) {
+    return toward_center;
+  }
+  // Toward-center wasn't diatonic, try the other direction
+  int away_from_center = (pitch < range_center) ? pitch - 1 : pitch + 1;
+  if (isDiatonic(away_from_center)) {
+    return away_from_center;
+  }
+  // Fallback to original fixed-direction logic
+  return adjustToDiatonic(pitch);
+}
+
 // Adjust pitch to nearest scale tone
 int adjustPitchToScale(int pitch, uint8_t key_root, ScaleType scale) {
   const int* intervals = getScaleIntervals(scale);
@@ -620,6 +640,8 @@ struct MotifNoteContext {
   uint8_t base_velocity;       ///< Base velocity from role meta
   MotifRole role;              ///< Motif role (Hook or Texture)
   SectionType section_type;    ///< Current section type for register variation
+  uint8_t motif_range_high;    ///< Effective upper range limit (vocal-aware)
+  uint8_t motif_range_low;     ///< Effective lower range limit (vocal-aware)
 };
 
 /// @brief Result of motif pitch calculation with transform tracking.
@@ -696,29 +718,37 @@ MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteConte
     }
     // Reduce shift if it would push pitch into ceiling (causes pitch concentration)
     constexpr int kCeilingMargin = 5;
-    if (octave_shift > 0 && pitch + octave_shift > static_cast<int>(MOTIF_HIGH) - kCeilingMargin) {
-      octave_shift = std::max(0, static_cast<int>(MOTIF_HIGH) - kCeilingMargin - pitch);
+    int effective_high = static_cast<int>(ctx.motif_range_high);
+    int effective_low = static_cast<int>(ctx.motif_range_low);
+    if (octave_shift > 0 && pitch + octave_shift > effective_high - kCeilingMargin) {
+      octave_shift = std::max(0, effective_high - kCeilingMargin - pitch);
     }
     pitch += octave_shift;
     result.section_octave_shift = octave_shift;
 
     // --- Step 4: Snap to diatonic after shifts ---
     // Register and section shifts may introduce non-diatonic pitches.
-    pitch = motif_detail::adjustToDiatonic(pitch);
+    // Round toward range center to distribute pitches more evenly.
+    int range_center = (effective_low + effective_high) / 2;
+    pitch = motif_detail::adjustToDiatonicTowardCenter(pitch, range_center);
 
-    // --- Step 5: Octave fold-up and range clamp ---
+    // --- Step 5: Octave fold-down (if above range), then fold-up, and clamp ---
+    // Fold down first: pitches above motif_range_high are folded into range.
+    while (pitch > effective_high && pitch - 12 >= effective_low) {
+      pitch -= 12;
+    }
     int range_octave_up = 0;
-    while (pitch < static_cast<int>(MOTIF_LOW) && pitch + 12 <= static_cast<int>(MOTIF_HIGH)) {
+    while (pitch < effective_low && pitch + 12 <= effective_high) {
       pitch += 12;
       range_octave_up += 12;
     }
     result.range_octave_up = range_octave_up;
-    pitch = std::clamp(pitch, static_cast<int>(MOTIF_LOW), static_cast<int>(MOTIF_HIGH));
+    pitch = std::clamp(pitch, effective_low, effective_high);
 
     // --- Step 6: Avoid note correction ---
     // Check against current chord (not cycle start chord) to handle mid-riff
     // chord changes. Use nearestInRange to resolve within valid range,
-    // preventing clamp→avoid→clamp cycles.
+    // preventing clamp->avoid->clamp cycles.
     int8_t current_degree = harmony->getChordDegreeAt(ctx.absolute_tick);
     uint8_t current_root = degreeToRoot(current_degree, Key::C);
     Chord current_chord = getChordNotes(current_degree);
@@ -727,7 +757,8 @@ MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteConte
     if (isAvoidNoteWithContext(pitch, current_root, current_is_minor, current_degree)) {
       ChordToneHelper ct_helper(current_degree);
       pitch = ct_helper.nearestInRange(
-          static_cast<uint8_t>(std::clamp(pitch, 0, 127)), MOTIF_LOW, MOTIF_HIGH);
+          static_cast<uint8_t>(std::clamp(pitch, 0, 127)),
+          ctx.motif_range_low, ctx.motif_range_high);
     }
     result.avoid_note_snapped = (pitch != pre_avoid);
 
@@ -758,14 +789,21 @@ MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteConte
         adjusted_pitch, vocal_dir, motif_params.contrary_motion_strength, rng);
   }
 
-  adjusted_pitch = motif_detail::adjustToDiatonic(adjusted_pitch);
+  {
+    int std_high = static_cast<int>(ctx.motif_range_high);
+    int std_low = static_cast<int>(ctx.motif_range_low);
+    int std_center = (std_low + std_high) / 2;
+    adjusted_pitch = motif_detail::adjustToDiatonicTowardCenter(adjusted_pitch, std_center);
 
-  while (adjusted_pitch < static_cast<int>(MOTIF_LOW) &&
-         adjusted_pitch + 12 <= static_cast<int>(MOTIF_HIGH)) {
-    adjusted_pitch += 12;
+    // Fold down first: pitches above range_high are folded into range
+    while (adjusted_pitch > std_high && adjusted_pitch - 12 >= std_low) {
+      adjusted_pitch -= 12;
+    }
+    while (adjusted_pitch < std_low && adjusted_pitch + 12 <= std_high) {
+      adjusted_pitch += 12;
+    }
+    adjusted_pitch = std::clamp(adjusted_pitch, std_low, std_high);
   }
-  adjusted_pitch =
-      std::clamp(adjusted_pitch, static_cast<int>(MOTIF_LOW), static_cast<int>(MOTIF_HIGH));
 
   if (params.paradigm == GenerationParadigm::RhythmSync) {
     int8_t degree_for_snap = harmony->getChordDegreeAt(ctx.absolute_tick);
@@ -785,7 +823,7 @@ MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteConte
     ChordToneHelper ct_helper(degree);
     uint8_t clamped = static_cast<uint8_t>(std::clamp(adjusted_pitch, 0, 127));
     if (!ct_helper.isChordTone(clamped)) {
-      adjusted_pitch = ct_helper.nearestInRange(clamped, MOTIF_LOW, MOTIF_HIGH);
+      adjusted_pitch = ct_helper.nearestInRange(clamped, ctx.motif_range_low, ctx.motif_range_high);
     }
   }
 
@@ -798,19 +836,37 @@ MotifPitchResult calculateMotifPitch(const NoteEvent& note, const MotifNoteConte
 /// @param is_chorus Whether in chorus section
 /// @param section_type Current section type
 /// @param velocity_fixed Whether velocity is fixed
+/// @param is_phrase_start Whether this is the first note in a phrase cycle
+/// @param is_phrase_end Whether this is the last note in a phrase cycle
 /// @return Adjusted velocity
 uint8_t calculateMotifVelocity(uint8_t base_vel, bool is_chorus, SectionType section_type,
-                                bool velocity_fixed) {
-  if (velocity_fixed) {
-    return base_vel;
+                                bool velocity_fixed, bool is_phrase_start = false,
+                                bool is_phrase_end = false) {
+  int vel = static_cast<int>(base_vel);
+
+  if (!velocity_fixed) {
+    if (is_chorus) {
+      vel += 10;
+    } else if (isBookendSection(section_type)) {
+      vel = static_cast<int>(base_vel * 0.85f);
+    }
   }
 
-  if (is_chorus) {
-    return std::min(static_cast<uint8_t>(127), static_cast<uint8_t>(base_vel + 10));
-  } else if (isBookendSection(section_type)) {
-    return static_cast<uint8_t>(base_vel * 0.85f);
+  // Phrase-shaped micro-variation (applied even when velocity_fixed)
+  if (is_phrase_start) {
+    vel += 3;  // Attack feel at phrase head
+  } else if (is_phrase_end) {
+    vel -= 2;  // Tail fade at phrase end
   }
-  return base_vel;
+
+  // Section type adjustment for expressiveness
+  if (section_type == SectionType::Chorus) {
+    vel += 5;
+  } else if (section_type == SectionType::Bridge) {
+    vel -= 3;
+  }
+
+  return static_cast<uint8_t>(std::clamp(vel, 30, 127));
 }
 
 /// @brief Select best alternative pitch when consecutive same pitch threshold exceeded.
@@ -895,6 +951,7 @@ bool replayCachedNotesLocked(MidiTrack& track, const Section& section,
                               IHarmonyCoordinator* harmony,
                               MotifGenerationState& state,
                               uint8_t motif_range_high,
+                              uint8_t motif_range_low,
                               const MotifParams& motif_params) {
   (void)motif_params;  // Reserved for future use
   auto cache_it = state.locked_note_cache.find(section.type);
@@ -925,7 +982,7 @@ bool replayCachedNotesLocked(MidiTrack& track, const Section& section,
     } else {
       opts.preference = PitchPreference::PreserveContour;
     }
-    opts.range_low = MOTIF_LOW;
+    opts.range_low = motif_range_low;
     opts.range_high = motif_range_high;
     opts.source = NoteSource::Motif;
     opts.prev_pitch = state.motif_prev_pitch;
@@ -949,7 +1006,8 @@ bool replayCachedNotesLocked(MidiTrack& track, const Section& section,
 bool replayCachedNotesCoordinateAxis(MidiTrack& track, const Section& section,
                                        IHarmonyCoordinator* harmony,
                                        MotifGenerationState& state,
-                                       uint8_t motif_range_high) {
+                                       uint8_t motif_range_high,
+                                       uint8_t motif_range_low) {
   auto cache_it = state.coord_axis_note_cache.find(section.type);
   if (cache_it == state.coord_axis_note_cache.end()) {
     return false;
@@ -969,7 +1027,7 @@ bool replayCachedNotesCoordinateAxis(MidiTrack& track, const Section& section,
     if (isAvoidNoteWithContext(replay_pitch, replay_root, replay_minor, replay_degree)) {
       ChordToneHelper ct_helper(replay_degree);
       replay_pitch = ct_helper.nearestInRange(
-          static_cast<uint8_t>(replay_pitch), MOTIF_LOW, motif_range_high);
+          static_cast<uint8_t>(replay_pitch), motif_range_low, motif_range_high);
     }
 
     NoteOptions opts;
@@ -979,7 +1037,7 @@ bool replayCachedNotesCoordinateAxis(MidiTrack& track, const Section& section,
     opts.velocity = entry.velocity;
     opts.role = TrackRole::Motif;
     opts.preference = PitchPreference::NoCollisionCheck;
-    opts.range_low = MOTIF_LOW;
+    opts.range_low = motif_range_low;
     opts.range_high = motif_range_high;
     opts.source = NoteSource::Motif;
     createNoteAndAdd(track, *harmony, opts);
@@ -997,6 +1055,7 @@ void generateMotifForSection(MidiTrack& track, const Section& section,
                                RiffPolicy policy,
                                uint8_t base_note_override,
                                uint8_t motif_range_high,
+                               uint8_t motif_range_low,
                                MotifRole role, const MotifRoleMeta& role_meta) {
   std::mt19937& rng = *ctx.rng;
   IHarmonyCoordinator* harmony = ctx.harmony;
@@ -1159,6 +1218,8 @@ void generateMotifForSection(MidiTrack& track, const Section& section,
       note_ctx.base_velocity = role_meta.velocity_base;
       note_ctx.role = role;
       note_ctx.section_type = section.type;
+      note_ctx.motif_range_high = motif_range_high;
+      note_ctx.motif_range_low = motif_range_low;
 
       // Calculate adjusted pitch using helper
       MotifPitchResult pitch_result =
@@ -1180,7 +1241,7 @@ void generateMotifForSection(MidiTrack& track, const Section& section,
         if (isAvoidNoteWithContext(adjusted_pitch, post_root, post_minor, post_degree)) {
           ChordToneHelper ct_helper(post_degree);
           adjusted_pitch = ct_helper.nearestInRange(
-              static_cast<uint8_t>(adjusted_pitch), MOTIF_LOW, motif_range_high);
+              static_cast<uint8_t>(adjusted_pitch), motif_range_low, motif_range_high);
         }
       }
 
@@ -1195,8 +1256,10 @@ void generateMotifForSection(MidiTrack& track, const Section& section,
           vel = std::min(static_cast<uint8_t>(127), static_cast<uint8_t>(vel + 10));
         }
       } else {
+        bool phrase_start = (onset_idx == 0);
+        bool phrase_end = (onset_idx + 1 == current_pattern->size());
         vel = calculateMotifVelocity(role_meta.velocity_base, is_chorus, section.type,
-                                     motif_params.velocity_fixed);
+                                     motif_params.velocity_fixed, phrase_start, phrase_end);
       }
 
       // Hash-based velocity micro-variation for repeated cycles (non-beat-1 notes)
@@ -1222,7 +1285,7 @@ void generateMotifForSection(MidiTrack& track, const Section& section,
         }
         if (state.motif_consecutive_same > kCoordAxisMonotonyThreshold) {
           final_pitch = selectBestAlternative(
-              final_pitch, harmony, absolute_tick, MOTIF_LOW, motif_range_high);
+              final_pitch, harmony, absolute_tick, motif_range_low, motif_range_high);
         }
         state.motif_prev_pitch = final_pitch;
       } else {
@@ -1230,7 +1293,7 @@ void generateMotifForSection(MidiTrack& track, const Section& section,
         // Pass chord degree so alternatives are selected from chord tones
         int8_t current_degree = harmony->getChordDegreeAt(absolute_tick);
         final_pitch = state.monotony_tracker.trackAndSuggest(
-            static_cast<uint8_t>(adjusted_pitch), MOTIF_LOW, motif_range_high, current_degree);
+            static_cast<uint8_t>(adjusted_pitch), motif_range_low, motif_range_high, current_degree);
       }
 
       if (is_rhythm_lock_global) {
@@ -1242,7 +1305,7 @@ void generateMotifForSection(MidiTrack& track, const Section& section,
         opts.velocity = vel;
         opts.role = TrackRole::Motif;
         opts.preference = PitchPreference::NoCollisionCheck;  // Coordinate axis
-        opts.range_low = MOTIF_LOW;
+        opts.range_low = motif_range_low;
         opts.range_high = motif_range_high;
         opts.source = NoteSource::Motif;
         opts.original_pitch = note.note;  // Track pre-adjustment pitch
@@ -1301,7 +1364,7 @@ void generateMotifForSection(MidiTrack& track, const Section& section,
         opts.velocity = vel;
         opts.role = TrackRole::Motif;
         opts.preference = PitchPreference::PreserveContour;  // Prefers octave shifts
-        opts.range_low = MOTIF_LOW;
+        opts.range_low = motif_range_low;
         opts.range_high = motif_range_high;
         opts.source = NoteSource::Motif;
         opts.chord_boundary = ChordBoundaryPolicy::ClipIfUnsafe;
@@ -1338,7 +1401,7 @@ void generateMotifForSection(MidiTrack& track, const Section& section,
             octave_opts.velocity = octave_vel;
             octave_opts.role = TrackRole::Motif;
             octave_opts.preference = PitchPreference::SkipIfUnsafe;  // Optional layer
-            octave_opts.range_low = MOTIF_LOW;
+            octave_opts.range_low = motif_range_low;
             octave_opts.range_high = 108;
             octave_opts.source = NoteSource::Motif;
 
@@ -1415,14 +1478,32 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
 
   const auto& sections = ctx.song->arrangement().sections();
 
-  // Vocal ceiling: restrict motif range_high to not exceed vocal's highest pitch.
-  // Use global vocal highest (across entire song) since motif patterns repeat.
+  // Vocal median basis: restrict motif range using vocal median rather than
+  // vocal ceiling alone. This prevents pitch concentration at the top of
+  // the motif range (e.g., C4/D4/E4 when vocal ceiling is low).
   uint8_t motif_range_high = MOTIF_HIGH;
+  uint8_t motif_range_low = MOTIF_LOW;
   {
     Tick song_end = ctx.song->arrangement().totalTicks();
     uint8_t vocal_high = harmony->getHighestPitchForTrackInRange(0, song_end, TrackRole::Vocal);
-    if (vocal_high > 0) {
-      motif_range_high = std::min(static_cast<int>(MOTIF_HIGH), static_cast<int>(vocal_high));
+    uint8_t vocal_low = harmony->getLowestPitchForTrackInRange(0, song_end, TrackRole::Vocal);
+    if (vocal_high > 0 && vocal_low > 0) {
+      // Use actual vocal data from harmony context (available when vocal is generated first)
+      int vocal_median = (static_cast<int>(vocal_low) + static_cast<int>(vocal_high)) / 2;
+      motif_range_high = static_cast<uint8_t>(
+          std::min(static_cast<int>(MOTIF_HIGH), vocal_median + 3));
+      // Guard against Chord/Bass interference in low register
+      motif_range_low = static_cast<uint8_t>(
+          std::max(55, vocal_median - 15));
+    } else if (vocal_ctx) {
+      // Fallback: use config-based vocal range from MotifContext
+      // (for RhythmSync where motif is generated before vocal)
+      int vocal_median = (static_cast<int>(vocal_ctx->vocal_low) +
+                          static_cast<int>(vocal_ctx->vocal_high)) / 2;
+      motif_range_high = static_cast<uint8_t>(
+          std::min(static_cast<int>(MOTIF_HIGH), vocal_median + 3));
+      motif_range_low = static_cast<uint8_t>(
+          std::max(55, vocal_median - 15));
     }
   }
 
@@ -1450,7 +1531,7 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
     // Locked mode: replay cached notes for repeat section types
     if (is_locked && !is_rhythm_lock_global) {
       if (replayCachedNotesLocked(track, section, harmony, state,
-                                   motif_range_high, motif_params)) {
+                                   motif_range_high, motif_range_low, motif_params)) {
         state.sec_idx++;
         continue;
       }
@@ -1459,7 +1540,7 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
     // RhythmSync coordinate axis + Locked: replay cached notes with avoid correction.
     if (is_rhythm_lock_global) {
       if (replayCachedNotesCoordinateAxis(track, section, harmony, state,
-                                            motif_range_high)) {
+                                            motif_range_high, motif_range_low)) {
         state.sec_idx++;
         continue;
       }
@@ -1467,7 +1548,8 @@ void MotifGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
 
     generateMotifForSection(track, section, ctx, params, state, pattern,
                               is_locked, is_rhythm_lock_global, policy,
-                              base_note_override, motif_range_high, role, role_meta);
+                              base_note_override, motif_range_high, motif_range_low,
+                              role, role_meta);
 
     state.sec_idx++;
   }

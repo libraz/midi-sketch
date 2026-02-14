@@ -448,6 +448,21 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
     opts.duration = note.duration;
     opts.desired_pitch = suggested_pitch;
     opts.velocity = note.velocity;
+
+    // Energy-linked velocity floor to ensure audibility
+    SectionEnergy note_energy = SectionEnergy::Medium;
+    for (const auto& sec : *song_ctx.sections) {
+      if (note.start_tick >= sec.start_tick && note.start_tick < sec.endTick()) {
+        note_energy = sec.energy;
+        break;
+      }
+    }
+    uint8_t vel_floor = static_cast<uint8_t>(
+        std::clamp(30 + static_cast<int>(note_energy) * 5, 30, 45));
+    if (opts.velocity < vel_floor) {
+      opts.velocity = vel_floor;
+    }
+
     opts.role = TrackRole::Aux;
     opts.preference = PitchPreference::PreferChordTones;
     opts.range_low = 55;

@@ -261,6 +261,22 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
   const FullGroovePattern& groove_pattern = getGroovePattern(groove_template);
   const TimeFeel time_feel = getMoodTimeFeel(params.mood);
 
+  // Pre-scan: find max Chorus density_mult for B-section density cap.
+  // B sections should not exceed Chorus density to maintain proper energy arc.
+  float max_chorus_density = 0.0f;
+  for (const auto& sec : all_sections) {
+    if (sec.type != SectionType::Chorus) continue;
+    if (!hasTrack(sec.track_mask, TrackMask::Drums)) continue;
+    // Replicate density calculation from computeSectionContext()
+    float density = 1.0f;  // Chorus base density
+    switch (sec.getEffectiveBackingDensity()) {
+      case BackingDensity::Thin:  density *= 0.75f; break;
+      case BackingDensity::Normal: break;
+      case BackingDensity::Thick: density *= 1.15f; break;
+    }
+    max_chorus_density = std::max(max_chorus_density, density);
+  }
+
   for (size_t sec_idx = 0; sec_idx < all_sections.size(); ++sec_idx) {
     const auto& section = all_sections[sec_idx];
 
@@ -270,6 +286,13 @@ void generateDrumsTrackImpl(MidiTrack& track, const Song& song,
 
     bool is_last_section = (sec_idx == all_sections.size() - 1);
     DrumSectionContext ctx = computeSectionContext(section, params, style, rng);
+
+    // Cap B-section density to not exceed Chorus density.
+    // Use 90% of chorus max to keep B clearly subordinate in energy.
+    if (section.type == SectionType::B && max_chorus_density > 0.0f) {
+      float cap = max_chorus_density * 0.9f;
+      ctx.density_mult = std::min(ctx.density_mult, cap);
+    }
 
     // Add crash cymbal accent at start of Chorus
     if (ctx.add_crash_accent && sec_idx > 0) {

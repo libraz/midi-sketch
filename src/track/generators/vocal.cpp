@@ -210,8 +210,23 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
   size_t streak_start = 0;
   int streak_count = 1;
   uint8_t streak_pitch = all_notes[0].note;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+  // Syllabic subdivision notes are intentional same-pitch rearticulation;
+  // the first note of a subdivision group should not seed a monotony streak.
+  if (all_notes[0].prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub)) {
+    streak_count = 0;
+  }
+#endif
 
   for (size_t i = 1; i <= all_notes.size(); ++i) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    // Syllabic subdivision notes are intentional same-pitch rearticulation;
+    // they should not count toward monotony streaks.
+    if (i < all_notes.size() &&
+        all_notes[i].prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub)) {
+      continue;
+    }
+#endif
     bool streak_continues = (i < all_notes.size() && all_notes[i].note == streak_pitch);
 
     if (streak_continues) {
@@ -223,6 +238,12 @@ void breakConsecutiveSamePitch(std::vector<NoteEvent>& all_notes, const IHarmony
       if (streak_count > max_consecutive) {
         // Break up the streak: modify every other note starting from position max_consecutive
         for (size_t j = streak_start + static_cast<size_t>(max_consecutive); j < i; j += 2) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+          // Never change pitch of syllabic subdivision notes.
+          if (all_notes[j].prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub)) {
+            continue;
+          }
+#endif
           Tick tick = all_notes[j].start_tick;
           Tick duration = all_notes[j].duration;
 

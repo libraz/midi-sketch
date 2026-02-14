@@ -126,92 +126,70 @@ void PhrasePlanner::determinePhraseStructure(PhrasePlan& plan) {
 void PhrasePlanner::assignPhraseTiming(PhrasePlan& plan, Mood mood,
                                        VocalStylePreset vocal_style,
                                        uint16_t bpm) {
-  if (plan.phrases.empty()) {
-    return;
-  }
+  if (plan.phrases.empty()) return;
 
-  // Get breath duration using the existing melody utility
+  // Section boundaries must be bar-aligned (structural invariant)
+  assert((plan.section_start % TICKS_PER_BAR) == 0);
+  assert((plan.section_end % TICKS_PER_BAR) == 0);
+
   Tick breath = melody::getBreathDuration(
       plan.section_type, mood, 0.5f, 60, nullptr, vocal_style, bpm);
 
-  // Half-bar snap grid
-  constexpr Tick kHalfBar = TICKS_PER_BAR / 2;
-  constexpr Tick kMaxSnapGap = TICKS_PER_BEAT;
-
-  Tick section_duration = plan.section_end - plan.section_start;
   uint8_t phrase_count = static_cast<uint8_t>(plan.phrases.size());
 
-  // Calculate raw phrase duration (equal division of section)
-  Tick raw_phrase_duration = section_duration / phrase_count;
+  // --- Bar-discrete distribution ---
+  // Distribute section bars evenly among phrases.
+  // Example: 8 bars / 4 phrases -> [2, 2, 2, 2]
+  // Example: 7 bars / 3 phrases -> [3, 2, 2] (remainder distributed front-to-back)
+  Tick section_duration = plan.section_end - plan.section_start;
+  uint8_t total_bars = static_cast<uint8_t>(section_duration / TICKS_PER_BAR);
 
-  Tick current_tick = plan.section_start;
+  // Clamp phrase_count to total_bars (sub-bar phrases are unnatural in POPS)
+  if (total_bars > 0 && phrase_count > total_bars) {
+    phrase_count = total_bars;
+    plan.phrases.resize(phrase_count);
+  }
 
+  uint8_t base_bars = total_bars / phrase_count;
+  uint8_t remainder = total_bars % phrase_count;
+
+  Tick cumulative = plan.section_start;
   for (uint8_t idx = 0; idx < phrase_count; ++idx) {
     PlannedPhrase& phrase = plan.phrases[idx];
 
-    // First phrase starts at section start (no breath before)
-    if (idx == 0) {
-      phrase.start_tick = current_tick;
-      phrase.breath_before = 0;
-    } else {
-      // Subsequent phrases: add breath after previous phrase
-      Tick raw_start = current_tick + breath;
+    // Distribute remainder bars front-to-back (+1 bar each)
+    uint8_t bars_for_this = base_bars + (idx < remainder ? 1 : 0);
 
-      // Snap to half-bar boundary, but cap the snap gap
-      Tick remainder = raw_start % kHalfBar;
-      Tick snapped_start = raw_start;
-      if (remainder > 0) {
-        Tick snap_up = raw_start + (kHalfBar - remainder);
-        Tick snap_gap = snap_up - raw_start;
-        if (snap_gap <= kMaxSnapGap) {
-          snapped_start = snap_up;
-        }
-      }
+    phrase.start_tick = cumulative;
+    Tick raw_end = cumulative + bars_for_this * TICKS_PER_BAR;
 
-      // Ensure we do not exceed section end
-      if (snapped_start >= plan.section_end) {
-        snapped_start = current_tick + breath;
-      }
-
-      phrase.start_tick = snapped_start;
-      phrase.breath_before = snapped_start - current_tick;
-    }
-
-    // Calculate end tick
     if (idx < phrase_count - 1) {
-      // Not the last phrase: end at raw boundary
-      Tick raw_end = plan.section_start + raw_phrase_duration * (idx + 1);
-      // Ensure end does not exceed section end
       phrase.end_tick = std::min(raw_end, plan.section_end);
     } else {
-      // Last phrase ends at section end
+      // Last phrase absorbs any fractional remainder to section_end
       phrase.end_tick = plan.section_end;
     }
 
-    // Ensure end is after start
+    // Safety: ensure end > start
     if (phrase.end_tick <= phrase.start_tick) {
-      phrase.end_tick = phrase.start_tick + TICKS_PER_BAR;
-      if (phrase.end_tick > plan.section_end) {
-        phrase.end_tick = plan.section_end;
-      }
+      phrase.end_tick = std::min(phrase.start_tick + TICKS_PER_BAR, plan.section_end);
     }
 
-    // Calculate actual beats
+    // Breath is a tail guard (no-sing zone at phrase end)
+    phrase.breath_before = 0;
+    phrase.breath_after = (idx < phrase_count - 1) ? breath : 0;
+
+    // Beat count
     Tick phrase_duration = phrase.end_tick - phrase.start_tick;
     phrase.beats = static_cast<uint8_t>(
-        std::max(static_cast<Tick>(1),
-                 phrase_duration / TICKS_PER_BEAT));
+        std::max(static_cast<Tick>(1), phrase_duration / TICKS_PER_BEAT));
 
-    current_tick = phrase.end_tick;
+    cumulative = phrase.end_tick;
   }
 
-  // Assign breath_after for each phrase (breath_before of the next phrase)
-  for (uint8_t idx = 0; idx < phrase_count; ++idx) {
-    if (idx < phrase_count - 1) {
-      plan.phrases[idx].breath_after = plan.phrases[idx + 1].breath_before;
-    } else {
-      plan.phrases[idx].breath_after = 0;
-    }
+  // Set singable_end for all phrases
+  for (auto& phrase : plan.phrases) {
+    phrase.singable_end = phrase.end_tick - phrase.breath_after;
   }
 }
 
@@ -225,12 +203,12 @@ void PhrasePlanner::reconcileWithRhythmLock(PhrasePlan& plan,
     return;
   }
 
-  constexpr float kMinGapBeats = 0.5f;  // Minimum gap for a natural boundary
-  constexpr Tick kSearchRadius = TICKS_PER_BEAT;  // +/- 1 beat search window
+  constexpr float kMinGapBeats = 0.5f;
+  constexpr Tick kSearchRadius = TICKS_PER_BEAT;
+  constexpr Tick kMinForcedBreathTicks = TICK_EIGHTH;
+  constexpr Tick kMinSingableTicks = TICKS_PER_BEAT;  // Minimum 1 beat singable
 
-  // Build a list of gap positions in the onset array (in ticks)
-  // A "gap" is a position between two consecutive onsets where the
-  // silence is >= kMinGapBeats
+  // Build gap position list (unchanged from before)
   std::vector<Tick> gap_ticks;
   for (size_t idx = 1; idx < rhythm.onset_beats.size(); ++idx) {
     float prev_end = rhythm.onset_beats[idx - 1];
@@ -239,28 +217,23 @@ void PhrasePlanner::reconcileWithRhythmLock(PhrasePlan& plan,
     }
     float gap = rhythm.onset_beats[idx] - prev_end;
     if (gap >= kMinGapBeats) {
-      // Gap position is at the onset of the next note
       Tick gap_tick = plan.section_start +
                       static_cast<Tick>(rhythm.onset_beats[idx] * TICKS_PER_BEAT);
       gap_ticks.push_back(gap_tick);
     }
   }
 
-  // For each phrase boundary (except the first phrase), try to align
-  // to a nearby gap in the rhythm pattern
   for (size_t phrase_idx = 1; phrase_idx < plan.phrases.size(); ++phrase_idx) {
     PlannedPhrase& phrase = plan.phrases[phrase_idx];
-    Tick planned_boundary = phrase.start_tick;
+    Tick boundary = phrase.start_tick;  // Bar-aligned, NOT shifted
 
     // Find nearest gap within search radius
     Tick best_gap = 0;
-    Tick best_distance = kSearchRadius + 1;  // Initialize beyond search radius
+    Tick best_distance = kSearchRadius + 1;
     bool found_gap = false;
-
     for (Tick gap_tick : gap_ticks) {
-      Tick distance = (gap_tick > planned_boundary)
-                          ? (gap_tick - planned_boundary)
-                          : (planned_boundary - gap_tick);
+      Tick distance = (gap_tick > boundary) ? (gap_tick - boundary)
+                                            : (boundary - gap_tick);
       if (distance <= kSearchRadius && distance < best_distance) {
         best_gap = gap_tick;
         best_distance = distance;
@@ -268,60 +241,38 @@ void PhrasePlanner::reconcileWithRhythmLock(PhrasePlan& plan,
       }
     }
 
+    PlannedPhrase& prev = plan.phrases[phrase_idx - 1];
+
     if (found_gap) {
-      // Shift phrase boundary to the gap
-      Tick old_start = phrase.start_tick;
-      phrase.start_tick = best_gap;
       phrase.soft_boundary = false;
-
-      // Update breath_before
-      if (phrase_idx > 0) {
-        PlannedPhrase& prev_phrase = plan.phrases[phrase_idx - 1];
-        phrase.breath_before = phrase.start_tick - prev_phrase.end_tick;
-        // Also update previous phrase's end_tick if the shift pushed us earlier
-        if (phrase.start_tick < old_start) {
-          prev_phrase.end_tick = std::min(prev_phrase.end_tick, phrase.start_tick);
-        }
+      // Absorb gap into previous phrase's tail guard
+      if (best_gap < boundary) {
+        Tick guard = boundary - best_gap;
+        prev.breath_after = std::max(prev.breath_after, guard);
       }
+      // best_gap >= boundary: rhythm has natural gap at/after boundary,
+      // no extra guard needed (soft_boundary=false is the benefit)
     } else {
-      // No gap found near the boundary: mark as soft boundary
       phrase.soft_boundary = true;
+      prev.breath_after = std::max(prev.breath_after, kMinForcedBreathTicks);
+    }
 
-      // Force minimum breath gap for soft boundaries so vocal lines
-      // always have a singable break between phrases
-      constexpr Tick kMinForcedBreathTicks = TICK_EIGHTH;  // 240 ticks
-      if (phrase_idx > 0) {
-        PlannedPhrase& prev_phrase = plan.phrases[phrase_idx - 1];
-        if (prev_phrase.breath_after < kMinForcedBreathTicks) {
-          prev_phrase.breath_after = kMinForcedBreathTicks;
-        }
-        if (phrase.breath_before < kMinForcedBreathTicks) {
-          phrase.breath_before = kMinForcedBreathTicks;
-        }
-        assert(prev_phrase.end_tick > prev_phrase.start_tick);
-        assert(prev_phrase.end_tick <= phrase.start_tick);
+    // Minimum singable length guard:
+    // Prevent breath_after from consuming too much of the phrase
+    Tick prev_singable = prev.end_tick - prev.breath_after;
+    if (prev_singable < prev.start_tick + kMinSingableTicks) {
+      // Clamp breath_after to preserve minimum singable region
+      if (prev.end_tick >= prev.start_tick + kMinSingableTicks) {
+        prev.breath_after = prev.end_tick - (prev.start_tick + kMinSingableTicks);
+      } else {
+        prev.breath_after = 0;  // Phrase too short for any guard
       }
     }
   }
 
-  // Recalculate breath_after for all phrases
-  for (size_t idx = 0; idx < plan.phrases.size(); ++idx) {
-    if (idx < plan.phrases.size() - 1) {
-      plan.phrases[idx].breath_after = plan.phrases[idx + 1].breath_before;
-    } else {
-      plan.phrases[idx].breath_after = 0;
-    }
-  }
-
-  // Enforce minimum breath for soft boundary phrases after breath_after recalculation
-  constexpr Tick kMinForcedBreathTicks = TICK_EIGHTH;
-  for (size_t idx = 0; idx < plan.phrases.size(); ++idx) {
-    if (plan.phrases[idx].soft_boundary && idx > 0) {
-      plan.phrases[idx].breath_before = std::max(
-          plan.phrases[idx].breath_before, kMinForcedBreathTicks);
-      plan.phrases[idx - 1].breath_after = std::max(
-          plan.phrases[idx - 1].breath_after, kMinForcedBreathTicks);
-    }
+  // Recalculate singable_end for all phrases
+  for (auto& phrase : plan.phrases) {
+    phrase.singable_end = phrase.end_tick - phrase.breath_after;
   }
 }
 

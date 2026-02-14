@@ -146,6 +146,26 @@ BackingDensity trackMaskToBackingDensity(TrackMask mask);
 
 /// @}
 
+/**
+ * @brief Apply blueprint section properties to duration-based structure.
+ *
+ * When target_duration > 0, buildStructureForDuration() creates sections from
+ * StructurePattern, ignoring blueprint SectionSlot definitions. This function
+ * overlays blueprint properties (track_mask, drum_role, energy, etc.) onto
+ * those auto-generated sections by matching section types.
+ *
+ * Match strategy:
+ * 1. Primary match by Section.type → SectionSlot.type
+ * 2. Multiple same-type sections use occurrence index (A1→slot[0], A2→slot[1])
+ * 3. Slot shortage: repeat last matching slot
+ * 4. Slot surplus: ignore unused slots
+ * 5. Type not in blueprint: skip overlay (keep defaults)
+ *
+ * @param sections Sections to modify (in-place)
+ * @param blueprint The production blueprint with section flow
+ */
+void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBlueprint& blueprint);
+
 /// @name Layer Scheduling Functions
 /// @{
 

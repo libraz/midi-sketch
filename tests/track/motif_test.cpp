@@ -958,8 +958,10 @@ TEST_F(MotifRhythmLockTest, SectionShiftsUseModerateIntervals) {
 
 // Test that all motif pitches stay within valid range after section shifts
 TEST_F(MotifRhythmLockTest, PitchesStayWithinRangeAfterShifts) {
-  constexpr uint8_t MOTIF_LOW = 60;   // C4
-  constexpr uint8_t MOTIF_HIGH = 108; // C8 (from pitch_utils.h)
+  // Motif range low can extend to 55 (G3) when vocal-aware range is active,
+  // to prevent concentration at C4/D4/E4.
+  constexpr uint8_t MOTIF_RANGE_LOW_MIN = 55;  // G3 (vocal-aware lower guard)
+  constexpr uint8_t MOTIF_HIGH = 108;           // C8 (from pitch_utils.h)
 
   std::vector<uint32_t> test_seeds = {12345, 42, 99999, 54321, 11111};
 
@@ -975,7 +977,7 @@ TEST_F(MotifRhythmLockTest, PitchesStayWithinRangeAfterShifts) {
 
     int out_of_range = 0;
     for (const auto& note : motif_notes) {
-      if (note.note < MOTIF_LOW || note.note > MOTIF_HIGH) {
+      if (note.note < MOTIF_RANGE_LOW_MIN || note.note > MOTIF_HIGH) {
         out_of_range++;
       }
     }
@@ -983,7 +985,7 @@ TEST_F(MotifRhythmLockTest, PitchesStayWithinRangeAfterShifts) {
     // All notes should be within range (clamping should handle edge cases)
     EXPECT_EQ(out_of_range, 0)
         << "Seed " << seed << ": Found " << out_of_range
-        << " motif notes outside valid range [" << (int)MOTIF_LOW
+        << " motif notes outside valid range [" << (int)MOTIF_RANGE_LOW_MIN
         << ", " << (int)MOTIF_HIGH << "]";
   }
 }

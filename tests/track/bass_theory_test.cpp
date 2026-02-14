@@ -378,15 +378,28 @@ TEST_F(BassDiatonicTest, BassOnBeatOneMustBeChordTone) {
         }
 
         if (!is_chord_tone) {
+          // Also accept chord tones from the generator's actual harmony context,
+          // which may differ from the tracker at chord boundaries
           const auto& harmony = gen.getHarmonyContext();
           int8_t gen_degree = harmony.getChordDegreeAt(note.start_tick);
+          if (gen_degree != degree) {
+            auto gen_chord_tones = getChordTonePitchClasses(gen_degree);
+            for (int ct_pitch : gen_chord_tones) {
+              if (ct_pitch == pitch_class) {
+                is_chord_tone = true;
+                break;
+              }
+            }
+          }
 
-          non_chord_tone_count++;
-          if (issues.size() < 3) {
-            std::string issue = "Bar " + std::to_string(bar) +
-                                ": bass=" + pitchClassName(pitch_class) + " not in chord (degree " +
-                                std::to_string(degree) + ", gen_degree=" + std::to_string(gen_degree) + ")";
-            issues.push_back(issue);
+          if (!is_chord_tone) {
+            non_chord_tone_count++;
+            if (issues.size() < 3) {
+              std::string issue = "Bar " + std::to_string(bar) +
+                                  ": bass=" + pitchClassName(pitch_class) + " not in chord (degree " +
+                                  std::to_string(degree) + ", gen_degree=" + std::to_string(gen_degree) + ")";
+              issues.push_back(issue);
+            }
           }
         }
       }

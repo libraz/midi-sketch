@@ -41,6 +41,7 @@ class RhythmAnalyzer(BaseAnalyzer):
         self._analyze_guitar_rhythm_consistency()
         self._analyze_guitar_fingerpick_monotony()
         self._analyze_vocal_harmonic_rhythm_alignment()
+        self._analyze_bass_rhythm_monotony()
         return self.issues
 
     # -----------------------------------------------------------------
@@ -922,5 +923,86 @@ class RhythmAnalyzer(BaseAnalyzer):
                     "emphasis_ratio": emphasis_ratio,
                     "emphasis_count": emphasis_count,
                     "checked_changes": checked_changes,
+                },
+            )
+
+    # -----------------------------------------------------------------
+    # Bass rhythm monotony
+    # -----------------------------------------------------------------
+
+    def _analyze_bass_rhythm_monotony(self):
+        """Detect bass tracks with identical rhythm pattern every bar.
+
+        Quantizes bass IOI within each bar to 16th-note grid and
+        checks if the same pattern repeats for 8+ consecutive bars.
+        Pop bass should vary between sections at minimum.
+        """
+        bass = self.notes_by_channel.get(2, [])
+        if len(bass) < 16:
+            return
+
+        sixteenth = TICKS_PER_BEAT // 4  # 120 ticks
+
+        # Build per-bar rhythm patterns (quantized attack positions)
+        bar_patterns = defaultdict(list)
+        for note in bass:
+            bar = tick_to_bar(note.start)
+            pos_in_bar = note.start % TICKS_PER_BAR
+            quantized = round(pos_in_bar / sixteenth)
+            bar_patterns[bar].append(quantized)
+
+        sorted_bars = sorted(bar_patterns.keys())
+        if len(sorted_bars) < 8:
+            return
+
+        # Find consecutive identical patterns
+        prev_pattern = None
+        consecutive = 0
+        run_start_bar = 0
+
+        for bar in sorted_bars:
+            pattern = tuple(sorted(bar_patterns[bar]))
+            if pattern == prev_pattern:
+                consecutive += 1
+            else:
+                if consecutive >= 8:
+                    self.add_issue(
+                        severity=Severity.WARNING if consecutive >= 12
+                        else Severity.INFO,
+                        category=Category.RHYTHM,
+                        subcategory="bass_rhythm_monotony",
+                        message=(
+                            f"Bass repeats same rhythm for "
+                            f"{consecutive + 1} bars"
+                        ),
+                        tick=(run_start_bar - 1) * TICKS_PER_BAR,
+                        track="Bass",
+                        details={
+                            "bar_count": consecutive + 1,
+                            "start_bar": run_start_bar,
+                            "pattern": list(pattern),
+                        },
+                    )
+                consecutive = 1
+                run_start_bar = bar
+                prev_pattern = pattern
+
+        # Final flush
+        if consecutive >= 8:
+            self.add_issue(
+                severity=Severity.WARNING if consecutive >= 12
+                else Severity.INFO,
+                category=Category.RHYTHM,
+                subcategory="bass_rhythm_monotony",
+                message=(
+                    f"Bass repeats same rhythm for "
+                    f"{consecutive + 1} bars"
+                ),
+                tick=(run_start_bar - 1) * TICKS_PER_BAR,
+                track="Bass",
+                details={
+                    "bar_count": consecutive + 1,
+                    "start_bar": run_start_bar,
+                    "pattern": list(prev_pattern) if prev_pattern else [],
                 },
             )

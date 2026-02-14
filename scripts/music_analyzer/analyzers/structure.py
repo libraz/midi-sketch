@@ -27,6 +27,7 @@ class StructureAnalyzer(BaseAnalyzer):
         self._analyze_energy_contrast()
         self._analyze_section_density()
         self._analyze_chorus_density_inversion()
+        self._analyze_drums_energy_inversion()
         return self.issues
 
     # -----------------------------------------------------------------
@@ -333,5 +334,78 @@ class StructureAnalyzer(BaseAnalyzer):
                         "max_ab_density": round(max_ab, 2),
                         "ratio": round(avg_chorus / max_ab, 3),
                         "comparison": f"chorus_vs_{compared_section.lower()}",
+                    },
+                )
+
+    def _analyze_drums_energy_inversion(self):
+        """Detect when drums are denser in verse/B than chorus.
+
+        In pop music, chorus should have the most energetic drum
+        pattern. When a verse or B-section has higher drum density
+        than the chorus, the energy arc is inverted.
+        """
+        explicit_sections = self.metadata.get('sections', [])
+        if not explicit_sections:
+            return
+
+        drums = self.notes_by_channel.get(9, [])
+        if not drums:
+            return
+
+        # Build per-section drum density entries
+        section_entries = []
+        for section in explicit_sections:
+            sec_type = section.get('type', '').upper()
+            start_tick = section.get('start_ticks', 0)
+            end_tick = section.get('end_ticks', 0)
+            if end_tick <= start_tick:
+                continue
+
+            num_bars = max(1, (end_tick - start_tick) / TICKS_PER_BAR)
+            sec_drums = [
+                n for n in drums if start_tick <= n.start < end_tick
+            ]
+            density = len(sec_drums) / num_bars
+            section_entries.append({
+                'type': sec_type,
+                'name': section.get('name', sec_type),
+                'density': density,
+                'start_tick': start_tick,
+            })
+
+        chorus_entries = [e for e in section_entries if e['type'] == 'CHORUS']
+        if not chorus_entries:
+            return
+
+        chorus_densities = [e['density'] for e in chorus_entries]
+        avg_chorus = sum(chorus_densities) / len(chorus_densities)
+        if avg_chorus <= 0:
+            return
+
+        # Compare each individual A/B section against avg chorus
+        for entry in section_entries:
+            if entry['type'] not in ('A', 'B'):
+                continue
+            sec_density = entry['density']
+            if sec_density > avg_chorus * 1.2:
+                ratio = sec_density / avg_chorus
+                sev = Severity.WARNING if ratio > 1.5 else Severity.INFO
+                self.add_issue(
+                    severity=sev,
+                    category=Category.STRUCTURE,
+                    subcategory="drums_energy_inversion",
+                    message=(
+                        f"Drums denser in {entry['name']} than chorus "
+                        f"({entry['name']}: {sec_density:.1f}/bar, "
+                        f"chorus avg: {avg_chorus:.1f}/bar)"
+                    ),
+                    tick=entry['start_tick'],
+                    track="Drums",
+                    details={
+                        "section_name": entry['name'],
+                        "section_type": entry['type'],
+                        "section_density": round(sec_density, 2),
+                        "chorus_density": round(avg_chorus, 2),
+                        "ratio": round(ratio, 2),
                     },
                 )

@@ -315,35 +315,10 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
     phrase_ctx.forced_contour = planned.contour;
     phrase_ctx.density_modifier *= planned.density_modifier;
 
-    // Apply anticipation rest for non-first phrases
-    // This creates "tame" effect common in J-POP for building anticipation
-    // Skip for UltraVocaloid (high thirtysecond_ratio) which needs continuous machine-gun passages
     Tick phrase_start = planned.start_tick;
-    if (planned.phrase_index > 0 &&
-        phrase_ctx.anticipation_rest != AnticipationRestMode::Off &&
-        phrase_ctx.thirtysecond_ratio < 0.8f) {
-      Tick anticipation_duration = 0;
-      switch (phrase_ctx.anticipation_rest) {
-        case AnticipationRestMode::Subtle:
-          anticipation_duration = TICK_32ND;
-          break;
-        case AnticipationRestMode::Moderate:
-          anticipation_duration = TICK_SIXTEENTH;
-          break;
-        case AnticipationRestMode::Pronounced:
-          anticipation_duration = TICK_EIGHTH;
-          break;
-        default:
-          break;
-      }
-      phrase_start += anticipation_duration;
-      // Recalculate beats after anticipation
-      if (planned.end_tick > phrase_start) {
-        Tick remaining = planned.end_tick - phrase_start;
-        actual_beats = std::min(actual_beats, static_cast<uint8_t>(remaining / TICKS_PER_BEAT));
-      }
-      if (actual_beats < 2) continue;
-    }
+    // TODO(anacrusis): Future pickup note implementation should place notes
+    // BEFORE phrase_start (in the previous phrase's tail guard zone),
+    // not delay phrase_start forward. See AnticipationRestMode.
 
     // Generate hook or melody phrase
     // Skip hook for UltraVocaloid (high thirtysecond_ratio) - needs continuous machine-gun passages

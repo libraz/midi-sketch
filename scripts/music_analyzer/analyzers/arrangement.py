@@ -9,6 +9,8 @@ and blueprint paradigm conformance.
 from collections import defaultdict
 from typing import List
 
+from collections import Counter
+
 from ..constants import (
     TICKS_PER_BEAT, TICKS_PER_BAR, TRACK_NAMES, GUITAR_CHANNEL,
     Severity, Category,
@@ -40,6 +42,11 @@ class ArrangementAnalyzer(BaseAnalyzer):
         self._analyze_submelody_vocal_crossing()
         self._analyze_guitar_chord_redundancy()
         self._analyze_guitar_dynamic_variation()
+        self._analyze_rhythm_section_gaps()
+        self._analyze_track_density_surge()
+        self._analyze_pitch_concentration()
+        self._analyze_velocity_flatness()
+        self._analyze_inaudible_track()
         return self.issues
 
     # -----------------------------------------------------------------
@@ -801,3 +808,257 @@ class ArrangementAnalyzer(BaseAnalyzer):
                 details={"avg_verse_velocity": avg_verse,
                          "avg_chorus_velocity": avg_chorus},
             )
+
+    # -----------------------------------------------------------------
+    # Rhythm section gaps and density
+    # -----------------------------------------------------------------
+
+    def _analyze_rhythm_section_gaps(self):
+        """Detect drums/bass absence in non-intro/outro sections.
+
+        In pop music, the rhythm section (drums and bass) should be present
+        in most active sections. Extended absence in A/B/Chorus sections
+        indicates arrangement sparsity.
+        """
+        explicit_sections = self.metadata.get('sections', [])
+        if not explicit_sections:
+            return
+
+        rhythm_tracks = {
+            9: 'Drums',
+            2: 'Bass',
+        }
+
+        for channel, track_name in rhythm_tracks.items():
+            notes = self.notes_by_channel.get(channel, [])
+            for section in explicit_sections:
+                sec_type = section.get('type', '').upper()
+                # Skip intro/outro -- absence is expected
+                if sec_type in ('INTRO', 'OUTRO'):
+                    continue
+
+                start_tick = section.get('start_ticks', 0)
+                end_tick = section.get('end_ticks', 0)
+                if end_tick <= start_tick:
+                    continue
+
+                num_bars = max(1, (end_tick - start_tick) / TICKS_PER_BAR)
+                sec_notes = [
+                    n for n in notes if start_tick <= n.start < end_tick
+                ]
+                note_count = len(sec_notes)
+                sec_name = section.get('name', sec_type)
+
+                if note_count == 0 and num_bars >= 4:
+                    sev = (Severity.WARNING if sec_type == 'CHORUS'
+                           else Severity.INFO)
+                    self.add_issue(
+                        severity=sev,
+                        category=Category.ARRANGEMENT,
+                        subcategory="rhythm_section_gap",
+                        message=(f"{track_name} absent in {sec_name} "
+                                 f"({int(num_bars)} bars)"),
+                        tick=start_tick,
+                        track=track_name,
+                        details={
+                            "section": sec_name,
+                            "section_type": sec_type,
+                            "bars": int(num_bars),
+                        },
+                    )
+
+    def _analyze_track_density_surge(self):
+        """Detect sudden density changes between adjacent sections.
+
+        Flags tracks where note density jumps or drops dramatically
+        (>5x ratio) between consecutive sections. This often sounds
+        like an arrangement glitch rather than intentional build-up.
+        """
+        explicit_sections = self.metadata.get('sections', [])
+        if len(explicit_sections) < 2:
+            return
+
+        # Check all non-drum tracks
+        channels_to_check = [
+            ch for ch in self.notes_by_channel if ch != 9
+        ]
+
+        for channel in channels_to_check:
+            notes = self.notes_by_channel.get(channel, [])
+            if not notes:
+                continue
+            track_name = TRACK_NAMES.get(channel, f"Ch{channel}")
+
+            prev_density = None
+            prev_name = None
+
+            for section in explicit_sections:
+                start_tick = section.get('start_ticks', 0)
+                end_tick = section.get('end_ticks', 0)
+                if end_tick <= start_tick:
+                    continue
+
+                num_bars = max(1, (end_tick - start_tick) / TICKS_PER_BAR)
+                sec_notes = [
+                    n for n in notes if start_tick <= n.start < end_tick
+                ]
+                density = len(sec_notes) / num_bars
+                sec_name = section.get('name', section.get('type', ''))
+
+                if prev_density is not None and prev_density > 0 and density > 0:
+                    ratio = max(density / prev_density,
+                                prev_density / density)
+                    if ratio > 4.0:
+                        self.add_issue(
+                            severity=Severity.WARNING,
+                            category=Category.ARRANGEMENT,
+                            subcategory="track_density_surge",
+                            message=(
+                                f"{track_name} density surge between "
+                                f"{prev_name} and {sec_name} "
+                                f"({prev_density:.1f} -> {density:.1f} "
+                                f"notes/bar, {ratio:.1f}x)"
+                            ),
+                            tick=start_tick,
+                            track=track_name,
+                            details={
+                                "prev_section": prev_name,
+                                "curr_section": sec_name,
+                                "prev_density": round(prev_density, 2),
+                                "curr_density": round(density, 2),
+                                "ratio": round(ratio, 2),
+                            },
+                        )
+
+                prev_density = density
+                prev_name = sec_name
+
+    # -----------------------------------------------------------------
+    # Track quality: pitch concentration, velocity flatness
+    # -----------------------------------------------------------------
+
+    def _analyze_pitch_concentration(self):
+        """Detect tracks where too few pitches dominate.
+
+        In pop music, melodic tracks should use a reasonable pitch
+        variety. When the top 3 pitches account for >90% of notes
+        AND there are 20+ notes, the track sounds monotonous.
+        Drums (ch 9) are excluded.
+        """
+        channels_to_check = [3, 5, 4]  # Motif, Aux, Arpeggio
+        for channel in channels_to_check:
+            notes = self.notes_by_channel.get(channel, [])
+            if len(notes) < 20:
+                continue
+
+            track_name = TRACK_NAMES.get(channel, f"Ch{channel}")
+            pitch_counts = Counter(n.pitch for n in notes)
+            total = len(notes)
+
+            top3 = pitch_counts.most_common(3)
+            top3_count = sum(c for _, c in top3)
+            top3_ratio = top3_count / total
+
+            unique_pitches = len(pitch_counts)
+
+            # Flag if top pitch > 40% AND top 3 > 90%
+            top1_ratio = top3[0][1] / total if top3 else 0
+            if top3_ratio > 0.90 and top1_ratio > 0.40:
+                sev = (Severity.WARNING if top3_ratio > 0.95
+                       else Severity.INFO)
+                top3_names = [note_name(p) for p, _ in top3]
+                self.add_issue(
+                    severity=sev,
+                    category=Category.ARRANGEMENT,
+                    subcategory="pitch_concentration",
+                    message=(
+                        f"{track_name} pitch too concentrated: "
+                        f"{', '.join(top3_names)} = {top3_ratio:.0%} "
+                        f"of {total} notes"
+                    ),
+                    tick=0,
+                    track=track_name,
+                    details={
+                        "top3_ratio": round(top3_ratio, 3),
+                        "unique_pitches": unique_pitches,
+                        "total_notes": total,
+                        "top3": [(p, c) for p, c in top3],
+                    },
+                )
+
+    def _analyze_velocity_flatness(self):
+        """Detect tracks with no velocity variation (all same velocity).
+
+        Fixed velocity across an entire track sounds mechanical and
+        lifeless. Drums are excluded (drum machines sometimes use
+        fixed velocity intentionally).
+        """
+        channels_to_check = [0, 1, 2, 3, 4, 5, 6]
+        for channel in channels_to_check:
+            notes = self.notes_by_channel.get(channel, [])
+            if len(notes) < 8:
+                continue
+
+            track_name = TRACK_NAMES.get(channel, f"Ch{channel}")
+            velocities = set(n.velocity for n in notes)
+
+            if len(velocities) == 1:
+                vel = next(iter(velocities))
+                self.add_issue(
+                    severity=Severity.WARNING,
+                    category=Category.ARRANGEMENT,
+                    subcategory="velocity_flatness",
+                    message=(f"{track_name} has completely flat velocity "
+                             f"(all notes at {vel})"),
+                    tick=0,
+                    track=track_name,
+                    details={
+                        "velocity": vel,
+                        "note_count": len(notes),
+                    },
+                )
+            elif len(velocities) <= 3 and len(notes) >= 20:
+                self.add_issue(
+                    severity=Severity.INFO,
+                    category=Category.ARRANGEMENT,
+                    subcategory="velocity_flatness",
+                    message=(f"{track_name} has very limited velocity range "
+                             f"({sorted(velocities)})"),
+                    tick=0,
+                    track=track_name,
+                    details={
+                        "unique_velocities": sorted(velocities),
+                        "note_count": len(notes),
+                    },
+                )
+
+    def _analyze_inaudible_track(self):
+        """Detect tracks with very low average velocity (likely inaudible).
+
+        If a track's average velocity is below 30 (on 0-127 scale),
+        it will be barely audible in most contexts. This wastes a
+        track slot without contributing to the arrangement.
+        """
+        channels_to_check = [0, 1, 2, 3, 4, 5, 6]
+        for channel in channels_to_check:
+            notes = self.notes_by_channel.get(channel, [])
+            if len(notes) < 4:
+                continue
+
+            track_name = TRACK_NAMES.get(channel, f"Ch{channel}")
+            avg_vel = sum(n.velocity for n in notes) / len(notes)
+
+            if avg_vel < 30:
+                self.add_issue(
+                    severity=Severity.WARNING,
+                    category=Category.ARRANGEMENT,
+                    subcategory="inaudible_track",
+                    message=(f"{track_name} nearly inaudible "
+                             f"(avg velocity: {avg_vel:.0f}/127)"),
+                    tick=0,
+                    track=track_name,
+                    details={
+                        "avg_velocity": round(avg_vel, 1),
+                        "note_count": len(notes),
+                    },
+                )

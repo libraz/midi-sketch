@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <map>
 
 #include "core/preset_data.h"
 #include "core/section_properties.h"
@@ -837,6 +838,85 @@ std::vector<Section> buildStructureFromBlueprint(const ProductionBlueprint& blue
   assignExitPatterns(sections);
 
   return sections;
+}
+
+// ============================================================================
+// Blueprint Overlay for Duration-based Structures
+// ============================================================================
+
+void applyBlueprintOverlay(std::vector<Section>& sections, const ProductionBlueprint& blueprint) {
+  if (blueprint.section_flow == nullptr || blueprint.section_count == 0) {
+    return;
+  }
+  if (sections.empty()) {
+    return;
+  }
+
+  // Build per-type slot lists from blueprint's section_flow
+  // Key: SectionType, Value: ordered list of SectionSlot pointers
+  std::map<SectionType, std::vector<const SectionSlot*>> slot_map;
+  for (uint8_t i = 0; i < blueprint.section_count; ++i) {
+    slot_map[blueprint.section_flow[i].type].push_back(&blueprint.section_flow[i]);
+  }
+
+  // Track occurrence index per section type across the generated sections
+  std::map<SectionType, size_t> occurrence_index;
+
+  for (auto& section : sections) {
+    auto it = slot_map.find(section.type);
+    if (it == slot_map.end() || it->second.empty()) {
+      // No matching blueprint slots for this section type — skip overlay
+      continue;
+    }
+
+    const auto& slots = it->second;
+    size_t idx = occurrence_index[section.type]++;
+
+    // Slot shortage: repeat last matching slot
+    const SectionSlot& slot = *slots[std::min(idx, slots.size() - 1)];
+
+    // --- Overlay fields (limited list) ---
+    section.track_mask = slot.enabled_tracks;
+    section.drum_role = slot.drum_role;
+    section.energy = slot.energy;
+    section.base_velocity = slot.base_velocity;
+    section.density_percent = slot.density_percent;
+    section.guitar_style_hint = slot.guitar_style_hint;
+    section.bass_style_hint = slot.bass_style_hint;
+    section.motif_motion_hint = slot.motif_motion_hint;
+    section.phrase_tail_rest = slot.phrase_tail_rest;
+    section.max_moving_voices = slot.max_moving_voices;
+    section.guide_tone_rate = slot.guide_tone_rate;
+    section.time_feel = slot.time_feel;
+    section.drop_style = slot.drop_style;
+    section.peak_level = slot.peak_level;
+    section.entry_pattern = slot.entry_pattern;
+
+    // Override exit_pattern only if blueprint explicitly sets it
+    if (slot.exit_pattern != ExitPattern::None) {
+      section.exit_pattern = slot.exit_pattern;
+    }
+
+    // Apply swing amount from blueprint
+    section.swing_amount = slot.swing_amount;
+
+    // Apply modifier from blueprint
+    section.modifier = slot.modifier;
+    section.modifier_intensity = slot.modifier_intensity;
+
+    // Apply harmonic rhythm from blueprint
+    section.harmonic_rhythm = slot.harmonic_rhythm;
+
+    // Apply vocal range span from blueprint
+    section.vocal_range_span = slot.vocal_range_span;
+
+    // Derive vocal_density and backing_density from the overlaid track_mask
+    section.vocal_density = trackMaskToVocalDensity(slot.enabled_tracks);
+    section.backing_density = trackMaskToBackingDensity(slot.enabled_tracks);
+
+    // Derive fill_before from PeakLevel
+    section.fill_before = (slot.peak_level != PeakLevel::None);
+  }
 }
 
 // ============================================================================

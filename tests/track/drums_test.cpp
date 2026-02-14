@@ -384,6 +384,52 @@ TEST_F(DrumsTest, ChorusHasHigherDensity) {
   EXPECT_GT(chorus_notes, 0) << "Chorus should have drum notes";
 }
 
+TEST_F(DrumsTest, BSectionDensityDoesNotExceedChorus) {
+  // B section drum density per bar should not exceed Chorus density per bar.
+  // This ensures proper energy arc (B < Chorus).
+  params_.structure = StructurePattern::StandardPop;
+  params_.seed = 100;
+
+  Generator gen;
+  gen.generate(params_);
+
+  const auto& track = gen.getSong().drums();
+  const auto& arrangement = gen.getSong().arrangement();
+
+  // Accumulate notes and bars for B and Chorus sections
+  int b_notes = 0, chorus_notes = 0;
+  int b_bars = 0, chorus_bars = 0;
+
+  for (const auto& section : arrangement.sections()) {
+    Tick sec_start = section.start_tick;
+    Tick sec_end = section.endTick();
+    int count = 0;
+    for (const auto& note : track.notes()) {
+      if (note.start_tick >= sec_start && note.start_tick < sec_end) {
+        count++;
+      }
+    }
+    if (section.type == SectionType::B) {
+      b_notes += count;
+      b_bars += section.bars;
+    } else if (section.type == SectionType::Chorus) {
+      chorus_notes += count;
+      chorus_bars += section.bars;
+    }
+  }
+
+  ASSERT_GT(b_bars, 0) << "Need B section bars";
+  ASSERT_GT(chorus_bars, 0) << "Need Chorus section bars";
+
+  float b_density = static_cast<float>(b_notes) / b_bars;
+  float chorus_density = static_cast<float>(chorus_notes) / chorus_bars;
+
+  // B section density should not exceed Chorus density
+  EXPECT_LE(b_density, chorus_density)
+      << "B section density (" << b_density << "/bar) should not exceed "
+      << "Chorus density (" << chorus_density << "/bar)";
+}
+
 TEST_F(DrumsTest, CrashOnSectionStart) {
   params_.structure = StructurePattern::StandardPop;
   params_.seed = 100;

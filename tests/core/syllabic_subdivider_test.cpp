@@ -13,6 +13,7 @@
 #include "core/rng_util.h"
 #include "core/timing_constants.h"
 #include "test_helpers/note_event_test_helper.h"
+#include "track/vocal/vocal_helpers.h"
 
 namespace midisketch {
 
@@ -329,5 +330,46 @@ TEST(SyllabicSubdivideTest, HighBpmMinDurationRespected) {
     }
   }
 }
+
+// ============================================================================
+// E2E: subdivideSyllabic + mergeSamePitchNotes
+// ============================================================================
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+
+TEST(SyllabicSubdivideE2E, SubdividedNotesSurviveMerge) {
+  // After subdivision, mergeSamePitchNotes must NOT undo the split.
+  std::mt19937 rng(42);
+  std::vector<NoteEvent> notes = {
+      makeNote(0, TICK_QUARTER * 2, 72, 80),           // Half note — will be subdivided
+      makeNote(TICK_QUARTER * 2, TICK_QUARTER, 74, 80), // Trigger note
+  };
+
+  auto subdivided = subdivideSyllabic(notes, 1.0f, 120, 120.0f, rng);
+  size_t count_before = subdivided.size();
+  ASSERT_GE(count_before, 3u) << "Should have at least 3 notes after subdivision";
+
+  // Verify subdivision notes carry SyllabicSub provenance
+  for (size_t i = 0; i < count_before - 1; ++i) {
+    if (subdivided[i].note == 72) {
+      EXPECT_EQ(subdivided[i].prov_source, static_cast<uint8_t>(NoteSource::SyllabicSub));
+    }
+  }
+
+  // Now apply mergeSamePitchNotes — this previously destroyed the split
+  mergeSamePitchNotes(subdivided, TICK_EIGHTH);
+
+  EXPECT_EQ(subdivided.size(), count_before)
+      << "mergeSamePitchNotes must not reduce the note count of syllabic subdivisions";
+
+  // Total duration of pitch-72 notes should still equal original half note
+  Tick total_dur = 0;
+  for (const auto& n : subdivided) {
+    if (n.note == 72) total_dur += n.duration;
+  }
+  EXPECT_EQ(total_dur, TICK_QUARTER * 2);
+}
+
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 }  // namespace midisketch

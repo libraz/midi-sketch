@@ -411,9 +411,9 @@ inline CachedRhythmPattern buildRunBasedOnsetMap(
     // Convert phrase boundaries to beat-relative (from section start)
     float phrase_start_beat =
         static_cast<float>(phrase.start_tick - section_start) / TICKS_PER_BEAT;
-    // Subtract breath_after from end to get singable region
+    // Use singable_end (pre-computed: end_tick - breath_after)
     float phrase_end_beat =
-        static_cast<float>(phrase.end_tick - phrase.breath_after - section_start) / TICKS_PER_BEAT;
+        static_cast<float>(phrase.singable_end - section_start) / TICKS_PER_BEAT;
 
     // Collect onsets within this phrase's singable region
     std::vector<size_t> phrase_onset_indices;

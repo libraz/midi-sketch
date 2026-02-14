@@ -129,15 +129,15 @@ TEST(PhrasePlannerTest, LastPhraseEndsAtSectionEnd) {
   EXPECT_EQ(plan.phrases.back().end_tick, k8BarEnd);
 }
 
-TEST(PhrasePlannerTest, PhraseTimingIsMonotonicallyIncreasing) {
+TEST(PhrasePlannerTest, PhraseTimingIsContiguous) {
   PhrasePlan plan = PhrasePlanner::buildPlan(
       SectionType::A, kSectionStart, k8BarEnd, 8, Mood::StraightPop);
 
   for (size_t idx = 1; idx < plan.phrases.size(); ++idx) {
     EXPECT_GT(plan.phrases[idx].start_tick, plan.phrases[idx - 1].start_tick)
         << "Phrase " << idx << " start should be after phrase " << (idx - 1);
-    EXPECT_GE(plan.phrases[idx].start_tick, plan.phrases[idx - 1].end_tick)
-        << "Phrase " << idx << " should not overlap with phrase " << (idx - 1);
+    EXPECT_EQ(plan.phrases[idx].start_tick, plan.phrases[idx - 1].end_tick)
+        << "Phrase " << idx << " should be contiguous with phrase " << (idx - 1);
   }
 }
 
@@ -151,17 +151,27 @@ TEST(PhrasePlannerTest, PhraseStartAlwaysBeforeEnd) {
   }
 }
 
-TEST(PhrasePlannerTest, BreathAfterMatchesNextBreathBefore) {
+TEST(PhrasePlannerTest, BreathBeforeIsAlwaysZero) {
   PhrasePlan plan = PhrasePlanner::buildPlan(
       SectionType::A, kSectionStart, k8BarEnd, 8, Mood::StraightPop);
 
-  for (size_t idx = 0; idx + 1 < plan.phrases.size(); ++idx) {
-    EXPECT_EQ(plan.phrases[idx].breath_after, plan.phrases[idx + 1].breath_before)
-        << "Breath after phrase " << idx << " should match breath before phrase "
-        << (idx + 1);
+  for (size_t idx = 0; idx < plan.phrases.size(); ++idx) {
+    EXPECT_EQ(plan.phrases[idx].breath_before, 0u)
+        << "Phrase " << idx << " breath_before should always be 0";
   }
-  // Last phrase should have 0 breath after
-  EXPECT_EQ(plan.phrases.back().breath_after, 0u);
+}
+
+TEST(PhrasePlannerTest, BreathAfterPositiveForNonLastPhrases) {
+  PhrasePlan plan = PhrasePlanner::buildPlan(
+      SectionType::A, kSectionStart, k8BarEnd, 8, Mood::StraightPop);
+
+  ASSERT_GE(plan.phrases.size(), 2u);
+  for (size_t idx = 0; idx + 1 < plan.phrases.size(); ++idx) {
+    EXPECT_GT(plan.phrases[idx].breath_after, 0u)
+        << "Non-last phrase " << idx << " should have positive breath_after";
+  }
+  EXPECT_EQ(plan.phrases.back().breath_after, 0u)
+      << "Last phrase should have 0 breath_after";
 }
 
 TEST(PhrasePlannerTest, NonZeroSectionStartOffset) {
@@ -540,11 +550,11 @@ TEST(PhrasePlannerTest, LargeSectionBarCount) {
   EXPECT_EQ(plan.phrases.size(), 8u);
   EXPECT_EQ(plan.pair_count, 4u);
 
-  // All timing should be valid
+  // All timing should be valid and contiguous
   for (size_t idx = 0; idx < plan.phrases.size(); ++idx) {
     EXPECT_LT(plan.phrases[idx].start_tick, plan.phrases[idx].end_tick);
     if (idx > 0) {
-      EXPECT_GE(plan.phrases[idx].start_tick, plan.phrases[idx - 1].end_tick);
+      EXPECT_EQ(plan.phrases[idx].start_tick, plan.phrases[idx - 1].end_tick);
     }
   }
 }
@@ -602,12 +612,177 @@ TEST(PhrasePlannerTest, PlannedPhraseDefaultValues) {
   EXPECT_EQ(phrase.phrase_index, 0u);
   EXPECT_EQ(phrase.breath_before, 0u);
   EXPECT_EQ(phrase.breath_after, 0u);
+  EXPECT_EQ(phrase.singable_end, 0u);
   EXPECT_EQ(phrase.target_note_count, 12u);
   EXPECT_FLOAT_EQ(phrase.density_modifier, 1.0f);
   EXPECT_EQ(phrase.contour, ContourType::Ascending);
   EXPECT_FALSE(phrase.is_hook_position);
   EXPECT_FALSE(phrase.is_hold_burst_entry);
   EXPECT_FALSE(phrase.soft_boundary);
+}
+
+// ============================================================================
+// Bar-aligned timing tests (new design)
+// ============================================================================
+
+TEST(PhrasePlannerTest, PhraseStartsAlignToBarBoundaries) {
+  PhrasePlan plan = PhrasePlanner::buildPlan(
+      SectionType::A, kSectionStart, k8BarEnd, 8, Mood::StraightPop);
+
+  ASSERT_EQ(plan.phrases.size(), 4u);
+  for (size_t idx = 0; idx < plan.phrases.size(); ++idx) {
+    EXPECT_EQ(plan.phrases[idx].start_tick % TICKS_PER_BAR, 0u)
+        << "Phrase " << idx << " start_tick=" << plan.phrases[idx].start_tick
+        << " should be bar-aligned";
+  }
+}
+
+TEST(PhrasePlannerTest, PhrasesAreContiguous) {
+  PhrasePlan plan = PhrasePlanner::buildPlan(
+      SectionType::Chorus, kSectionStart, k8BarEnd, 8, Mood::StraightPop);
+
+  ASSERT_GE(plan.phrases.size(), 2u);
+  for (size_t idx = 1; idx < plan.phrases.size(); ++idx) {
+    EXPECT_EQ(plan.phrases[idx].start_tick, plan.phrases[idx - 1].end_tick)
+        << "Phrase " << idx << " should be contiguous with phrase " << (idx - 1);
+  }
+}
+
+TEST(PhrasePlannerTest, OffsetSectionAlignsToBars) {
+  constexpr Tick kOffset = 4 * TICKS_PER_BAR;  // 7680
+  PhrasePlan plan = PhrasePlanner::buildPlan(
+      SectionType::A, kOffset, kOffset + k8BarEnd, 8, Mood::StraightPop);
+
+  for (size_t idx = 0; idx < plan.phrases.size(); ++idx) {
+    EXPECT_EQ(plan.phrases[idx].start_tick % TICKS_PER_BAR, 0u)
+        << "Phrase " << idx << " at offset section should be bar-aligned";
+  }
+}
+
+TEST(PhrasePlannerTest, SevenBarsThreePhrasesDistributeCorrectly) {
+  constexpr Tick k7BarEnd = 7 * TICKS_PER_BAR;  // 13440
+  PhrasePlan plan = PhrasePlanner::buildPlan(
+      SectionType::B, kSectionStart, k7BarEnd, 6, Mood::StraightPop);
+
+  // 6 bars, 3 phrases determined by determinePhraseStructure
+  ASSERT_EQ(plan.phrases.size(), 3u);
+
+  // 6 bars / 3 phrases = 2 bars each (no remainder)
+  // But section is actually 7 bars worth of ticks, last phrase absorbs extra
+  // Actually section_bars=6, so determinePhraseStructure gives 3 phrases
+  // total_bars = 7 (from tick calculation), base=2, remainder=1
+  // Distribution: [3, 2, 2] bars
+
+  EXPECT_EQ(plan.phrases[0].start_tick, 0u);
+  EXPECT_EQ(plan.phrases[0].end_tick, 3 * TICKS_PER_BAR);
+
+  EXPECT_EQ(plan.phrases[1].start_tick, 3 * TICKS_PER_BAR);
+  EXPECT_EQ(plan.phrases[1].end_tick, 5 * TICKS_PER_BAR);
+
+  EXPECT_EQ(plan.phrases[2].start_tick, 5 * TICKS_PER_BAR);
+  EXPECT_EQ(plan.phrases[2].end_tick, k7BarEnd);  // Last absorbs to section_end
+}
+
+TEST(PhrasePlannerTest, PhraseStartsAreBarAlignedForAllSectionTypes) {
+  for (auto section_type : {SectionType::Intro, SectionType::A, SectionType::B,
+                            SectionType::Chorus, SectionType::Bridge,
+                            SectionType::Interlude, SectionType::Outro,
+                            SectionType::Drop}) {
+    PhrasePlan plan = PhrasePlanner::buildPlan(
+        section_type, kSectionStart, k8BarEnd, 8, Mood::StraightPop);
+
+    for (size_t idx = 0; idx < plan.phrases.size(); ++idx) {
+      EXPECT_EQ(plan.phrases[idx].start_tick % TICKS_PER_BAR, 0u)
+          << "Section type " << static_cast<int>(section_type)
+          << " phrase " << idx << " should be bar-aligned";
+    }
+  }
+}
+
+TEST(PhrasePlannerTest, BarDistributionIsBalanced) {
+  // 8 bars / 4 phrases -> 2 bars each
+  PhrasePlan plan8 = PhrasePlanner::buildPlan(
+      SectionType::A, kSectionStart, k8BarEnd, 8, Mood::StraightPop);
+  ASSERT_EQ(plan8.phrases.size(), 4u);
+  for (const auto& phrase : plan8.phrases) {
+    Tick duration = phrase.end_tick - phrase.start_tick;
+    EXPECT_EQ(duration, 2 * TICKS_PER_BAR)
+        << "8 bars / 4 phrases: each should be 2 bars";
+  }
+
+  // 16 bars / 8 phrases -> 2 bars each
+  constexpr Tick k16BarEnd = 16 * TICKS_PER_BAR;
+  PhrasePlan plan16 = PhrasePlanner::buildPlan(
+      SectionType::A, kSectionStart, k16BarEnd, 16, Mood::StraightPop);
+  ASSERT_EQ(plan16.phrases.size(), 8u);
+  for (const auto& phrase : plan16.phrases) {
+    Tick duration = phrase.end_tick - phrase.start_tick;
+    EXPECT_EQ(duration, 2 * TICKS_PER_BAR)
+        << "16 bars / 8 phrases: each should be 2 bars";
+  }
+}
+
+TEST(PhrasePlannerTest, PhraseCountClampedToTotalBars) {
+  // 3 bars section with determinePhraseStructure returning > 3 phrases
+  // section_bars=3 -> phrase_count=1 (since < 4), but let's test clamp logic
+  // Use 2 bars with section_bars=4 to trick determinePhraseStructure into 2 phrases
+  // but only 2 bars of ticks
+  constexpr Tick k3BarEnd = 3 * TICKS_PER_BAR;
+  // section_bars=4 would give 2 phrases, but only 3 bar ticks
+  // Actually section_bars=4 gives 2 phrases, and 3 bars / 2 phrases = [2,1]
+  PhrasePlan plan = PhrasePlanner::buildPlan(
+      SectionType::A, kSectionStart, k3BarEnd, 4, Mood::StraightPop);
+
+  // phrase_count should be <= 3 (total_bars from ticks)
+  EXPECT_LE(plan.phrases.size(), 3u);
+  // All phrases should be valid
+  for (const auto& phrase : plan.phrases) {
+    EXPECT_LT(phrase.start_tick, phrase.end_tick);
+  }
+}
+
+TEST(PhrasePlannerTest, SingableEndIsSet) {
+  PhrasePlan plan = PhrasePlanner::buildPlan(
+      SectionType::A, kSectionStart, k8BarEnd, 8, Mood::StraightPop);
+
+  for (size_t idx = 0; idx < plan.phrases.size(); ++idx) {
+    EXPECT_EQ(plan.phrases[idx].singable_end,
+              plan.phrases[idx].end_tick - plan.phrases[idx].breath_after)
+        << "Phrase " << idx << " singable_end should equal end_tick - breath_after";
+  }
+}
+
+TEST(PhrasePlannerTest, SingableEndWithRhythmLock) {
+  // Create rhythm pattern with gaps
+  CachedRhythmPattern rhythm;
+  rhythm.phrase_beats = 32;
+  rhythm.is_locked = true;
+  for (int beat = 0; beat < 8; ++beat) {
+    rhythm.onset_beats.push_back(static_cast<float>(beat));
+    rhythm.durations.push_back(0.5f);
+  }
+  for (int beat = 9; beat < 16; ++beat) {
+    rhythm.onset_beats.push_back(static_cast<float>(beat));
+    rhythm.durations.push_back(0.5f);
+  }
+  for (int beat = 17; beat < 24; ++beat) {
+    rhythm.onset_beats.push_back(static_cast<float>(beat));
+    rhythm.durations.push_back(0.5f);
+  }
+  for (int beat = 25; beat < 32; ++beat) {
+    rhythm.onset_beats.push_back(static_cast<float>(beat));
+    rhythm.durations.push_back(0.5f);
+  }
+
+  PhrasePlan plan = PhrasePlanner::buildPlan(
+      SectionType::A, kSectionStart, k8BarEnd, 8, Mood::StraightPop,
+      VocalStylePreset::Standard, &rhythm);
+
+  for (size_t idx = 0; idx < plan.phrases.size(); ++idx) {
+    EXPECT_EQ(plan.phrases[idx].singable_end,
+              plan.phrases[idx].end_tick - plan.phrases[idx].breath_after)
+        << "Phrase " << idx << " singable_end should be consistent after rhythm lock";
+  }
 }
 
 }  // namespace

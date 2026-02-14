@@ -49,8 +49,10 @@ struct PlannedPhrase {
   uint8_t phrase_index = 0;      ///< Index within section (0-based)
 
   // Breath
-  Tick breath_before = 0;        ///< Breath gap before this phrase (0 for first)
-  Tick breath_after = 0;         ///< Breath gap after this phrase (0 for last)
+  Tick breath_before = 0;        ///< Always 0 (phrases start at bar boundaries)
+  Tick breath_after = 0;         ///< Tail guard: no-sing zone at phrase end
+  Tick singable_end = 0;         ///< end_tick - breath_after (convenience, set by PhrasePlanner)
+                                 ///< Generators should use this instead of computing manually
 
   // Density (J-POP mora hints)
   uint8_t target_note_count = 12;  ///< Target notes for this phrase (mora count hint)

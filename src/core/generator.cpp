@@ -264,6 +264,13 @@ std::vector<Section> Generator::buildSongStructure(uint16_t bpm) {
     sections = buildStructureForDuration(params_.target_duration_seconds, bpm,
                                          params_.call_enabled, params_.intro_chant,
                                          params_.mix_pattern, params_.structure);
+    // Apply blueprint section properties to duration-generated structure.
+    // buildStructureForDuration uses StructurePattern and ignores blueprint
+    // SectionSlot definitions, so we overlay track_mask, drum_role, energy,
+    // etc. from blueprint slots matched by section type.
+    if (blueprint_ != nullptr) {
+      applyBlueprintOverlay(sections, *blueprint_);
+    }
   } else if (params_.form_explicit) {
     // Explicit form setting takes precedence over Blueprint section_flow
     sections = buildStructure(params_.structure);

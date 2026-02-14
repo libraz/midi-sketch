@@ -1322,6 +1322,136 @@ void generateBassBar(MidiTrack& track, Tick bar_start, uint8_t root, uint8_t nex
   }
 }
 
+// ============================================================================
+// Bass 4-bar Microvariation
+// ============================================================================
+// Applies subtle variation to the last note of every 4th bar (bar_index % 4 == 3)
+// to break rhythmic monotony. One of four strategies is chosen randomly:
+//   1. Rest insertion (25%): Remove the last note in the bar
+//   2. Octave jump (25%): Shift the last note up or down by one octave
+//   3. Approach note (25%): Replace last note with chromatic approach to next root
+//   4. Pass (25%): No change
+
+/// @brief Find the index of the last note within the given bar range.
+/// @return Index into track.notes(), or -1 if no note found in bar.
+int findLastNoteInBar(const MidiTrack& track, Tick bar_start, Tick bar_end) {
+  int last_idx = -1;
+  Tick latest_start = 0;
+  const auto& notes = track.notes();
+  for (int idx = static_cast<int>(notes.size()) - 1; idx >= 0; --idx) {
+    const auto& note = notes[idx];
+    if (note.start_tick >= bar_start && note.start_tick < bar_end) {
+      if (last_idx < 0 || note.start_tick > latest_start) {
+        last_idx = idx;
+        latest_start = note.start_tick;
+      }
+    }
+    // Notes are roughly ordered; once we pass before bar_start, stop
+    if (note.start_tick < bar_start && idx < static_cast<int>(notes.size()) - 20) {
+      break;
+    }
+  }
+  return last_idx;
+}
+
+/// @brief Apply microvariation to the last note of the bar for rhythm variety.
+///
+/// Modifies the track's notes in place after bar generation. The collision
+/// tracker is NOT updated per-bar; caller must re-register the entire bass
+/// track after all microvariations are applied (see generateBassTrack).
+///
+/// @param track The bass track (notes may be modified in place or removed)
+/// @param bar_start Start tick of the current bar
+/// @param harmony Harmony context for consonance checking
+/// @param next_root Root pitch of the next bar's chord (for approach notes)
+/// @param rng Random number generator
+void applyBassMicrovariation(MidiTrack& track, Tick bar_start,
+                             IHarmonyContext& harmony, uint8_t next_root,
+                             std::mt19937& rng) {
+  Tick bar_end = bar_start + TICKS_PER_BAR;
+
+  int last_idx = findLastNoteInBar(track, bar_start, bar_end);
+  if (last_idx < 0) return;  // No notes in this bar
+
+  // Roll for variation type: 0=rest, 1=octave, 2=approach, 3=pass
+  int variation = rng_util::rollRange(rng, 0, 3);
+
+  if (variation == 3) {
+    return;  // Pass: no change
+  }
+
+  auto& notes = track.notes();
+
+  if (variation == 0) {
+    // Rest insertion: remove the last note
+    notes.erase(notes.begin() + last_idx);
+    return;
+  }
+
+  auto& target = notes[last_idx];
+
+  if (variation == 1) {
+    // Octave jump: shift pitch by +12 or -12
+    uint8_t original_pitch = target.note;
+    int up = static_cast<int>(original_pitch) + 12;
+    int down = static_cast<int>(original_pitch) - 12;
+    bool up_ok = up <= BASS_HIGH;
+    bool down_ok = down >= BASS_LOW;
+
+    uint8_t new_pitch = original_pitch;
+    if (up_ok && down_ok) {
+      // Both directions possible; pick randomly
+      new_pitch = (rng_util::rollRange(rng, 0, 1) == 0)
+                      ? static_cast<uint8_t>(up)
+                      : static_cast<uint8_t>(down);
+    } else if (up_ok) {
+      new_pitch = static_cast<uint8_t>(up);
+    } else if (down_ok) {
+      new_pitch = static_cast<uint8_t>(down);
+    }
+
+    if (new_pitch != original_pitch) {
+      // Check consonance before applying
+      if (harmony.isConsonantWithOtherTracks(new_pitch, target.start_tick,
+                                             target.duration, TrackRole::Bass)) {
+        target.note = new_pitch;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        target.prov_original_pitch = original_pitch;
+#endif
+      }
+    }
+    return;
+  }
+
+  if (variation == 2) {
+    // Approach note: diatonic step approach to next bar's root
+    // Try diatonic neighbors (step below, step above, two steps below, two steps above)
+    uint8_t original_pitch = target.note;
+    int candidates[] = {
+        static_cast<int>(next_root) - 1,  // half-step below
+        static_cast<int>(next_root) - 2,  // whole-step below
+        static_cast<int>(next_root) + 1,  // half-step above
+        static_cast<int>(next_root) + 2   // whole-step above
+    };
+
+    for (int cand : candidates) {
+      if (cand < BASS_LOW || cand > BASS_HIGH) continue;
+      // Only accept diatonic pitches to maintain key consistency
+      if (!isDiatonic(cand)) continue;
+      uint8_t cand_u8 = static_cast<uint8_t>(cand);
+      if (harmony.isConsonantWithOtherTracks(cand_u8, target.start_tick,
+                                             target.duration, TrackRole::Bass)) {
+        target.note = cand_u8;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        target.prov_original_pitch = original_pitch;
+#endif
+        break;
+      }
+    }
+    return;
+  }
+}
+
 }  // namespace
 
 BassAnalysis BassAnalysis::analyzeBar(const MidiTrack& track, Tick bar_start,
@@ -1615,8 +1745,19 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
       if (pattern == BassPattern::Groove) {
         addBassGhostNotes(track, harmony, bar_start, effective_root, rng);
       }
+
+      // 4-bar microvariation: on every 4th bar, apply subtle variation to last note
+      if (bar % 4 == 3) {
+        applyBassMicrovariation(track, bar_start, harmony, next_root, rng);
+      }
     }
   }
+
+  // Re-register bass track after microvariations to keep collision tracker in sync.
+  // Chord track (generated after bass) uses buildBassPitchMask() which reads
+  // registered bass pitches -- stale data would cause unexpected clashes.
+  harmony.clearNotesForTrack(TrackRole::Bass);
+  harmony.registerTrack(track, TrackRole::Bass);
 
   // Post-processing 1: Apply playability check for physical realism
   // At high tempos, some bass lines become physically impossible to play.

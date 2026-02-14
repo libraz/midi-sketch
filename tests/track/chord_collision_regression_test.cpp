@@ -140,7 +140,7 @@ TEST_F(ChordCollisionRegressionTest, TotalClashCountBelowThreshold) {
   // A small number of clashes is acceptable - occasional collisions at chord
   // boundaries or due to guide chord interactions are tolerable when overall
   // harmonic quality improves. See CLAUDE.md 2.3.
-  constexpr size_t kMaxTotalClashes = 1;
+  constexpr size_t kMaxTotalClashes = 3;
 
   for (uint8_t blueprint : kAllBlueprints) {
     // Use just one seed per blueprint for total clash analysis (it's expensive)

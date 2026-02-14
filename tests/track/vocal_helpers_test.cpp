@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include "core/note_source.h"
 #include "core/note_timeline_utils.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
@@ -589,6 +590,89 @@ TEST(DurationUnderflowTest, TickSubtractionPatternSafety) {
   EXPECT_LT(time_to_chord, kChordChangeGap)
       << "time_to_chord < gap, so no subtraction should occur";
 }
+
+// ============================================================================
+// mergeSamePitchNotes — SyllabicSub preservation tests
+// ============================================================================
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+
+class MergeSamePitchSyllabicSubTest : public ::testing::Test {
+ protected:
+  NoteEvent makeSubNote(Tick start, Tick duration, uint8_t pitch, uint8_t velocity = 80) {
+    NoteEvent note = NoteEventTestHelper::create(start, duration, pitch, velocity);
+    note.prov_source = static_cast<uint8_t>(NoteSource::SyllabicSub);
+    return note;
+  }
+
+  NoteEvent makeMelodyNote(Tick start, Tick duration, uint8_t pitch, uint8_t velocity = 80) {
+    NoteEvent note = NoteEventTestHelper::create(start, duration, pitch, velocity);
+    note.prov_source = static_cast<uint8_t>(NoteSource::MelodyPhrase);
+    return note;
+  }
+};
+
+TEST_F(MergeSamePitchSyllabicSubTest, PreservesSyllabicSubNotes) {
+  // Two SyllabicSub notes with gap=0 and same pitch must NOT be merged.
+  std::vector<NoteEvent> notes = {
+      makeSubNote(0, TICK_QUARTER, 72),
+      makeSubNote(TICK_QUARTER, TICK_QUARTER, 72),
+  };
+
+  mergeSamePitchNotes(notes, TICK_EIGHTH);
+
+  ASSERT_EQ(notes.size(), 2u) << "SyllabicSub notes must not be merged";
+  EXPECT_EQ(notes[0].start_tick, 0u);
+  EXPECT_EQ(notes[0].duration, TICK_QUARTER);
+  EXPECT_EQ(notes[1].start_tick, TICK_QUARTER);
+  EXPECT_EQ(notes[1].duration, TICK_QUARTER);
+}
+
+TEST_F(MergeSamePitchSyllabicSubTest, StillMergesNonSubdividedNotes) {
+  // MelodyPhrase notes with gap=0 and same pitch should still merge.
+  std::vector<NoteEvent> notes = {
+      makeMelodyNote(0, TICK_QUARTER, 72),
+      makeMelodyNote(TICK_QUARTER, TICK_QUARTER, 72),
+  };
+
+  mergeSamePitchNotes(notes, TICK_EIGHTH);
+
+  ASSERT_EQ(notes.size(), 1u) << "MelodyPhrase notes should still be merged";
+  EXPECT_EQ(notes[0].duration, TICK_QUARTER * 2);
+}
+
+TEST_F(MergeSamePitchSyllabicSubTest, DoesNotMergeSubdividedWithNormal) {
+  // A SyllabicSub note adjacent to a MelodyPhrase note must not merge.
+  std::vector<NoteEvent> notes = {
+      makeMelodyNote(0, TICK_QUARTER, 72),
+      makeSubNote(TICK_QUARTER, TICK_QUARTER, 72),
+  };
+
+  mergeSamePitchNotes(notes, TICK_EIGHTH);
+
+  ASSERT_EQ(notes.size(), 2u) << "SyllabicSub boundary must prevent merge";
+}
+
+TEST_F(MergeSamePitchSyllabicSubTest, FourWaySplitPreserved) {
+  // A 4-way syllabic split should survive mergeSamePitchNotes entirely.
+  std::vector<NoteEvent> notes = {
+      makeSubNote(0, TICK_QUARTER, 72),
+      makeSubNote(TICK_QUARTER, TICK_QUARTER, 72),
+      makeSubNote(TICK_QUARTER * 2, TICK_QUARTER, 72),
+      makeSubNote(TICK_QUARTER * 3, TICK_QUARTER, 72),
+  };
+
+  mergeSamePitchNotes(notes, TICK_EIGHTH);
+
+  ASSERT_EQ(notes.size(), 4u) << "All 4 syllabic sub-notes must survive";
+  for (size_t i = 0; i < 4; ++i) {
+    EXPECT_EQ(notes[i].start_tick, TICK_QUARTER * i);
+    EXPECT_EQ(notes[i].duration, TICK_QUARTER);
+    EXPECT_EQ(notes[i].note, 72);
+  }
+}
+
+#endif  // MIDISKETCH_NOTE_PROVENANCE
 
 }  // namespace
 }  // namespace midisketch

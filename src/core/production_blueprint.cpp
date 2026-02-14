@@ -697,7 +697,7 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          0.25f},               // ritardando_amount (IdolStandard)
         // aux_profile: Mood default, PhraseTail verse, Unison chorus for idol power
         {0xFF, AuxFunction::MelodicHook, AuxFunction::PhraseTail, AuxFunction::Unison,
-         0.75f, 0.8f, -2},
+         0.90f, 0.8f, -2},
     },
 
     // 5: IdolHyper (high BPM, chorus-first, high density)

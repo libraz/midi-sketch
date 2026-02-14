@@ -8,6 +8,7 @@
 #include <algorithm>
 
 #include "core/chord_utils.h"
+#include "core/note_source.h"
 #include "core/note_creator.h"
 #include "core/note_timeline_utils.h"
 #include "core/pitch_utils.h"
@@ -518,6 +519,14 @@ void mergeSamePitchNotes(std::vector<NoteEvent>& notes, Tick max_gap) {
 
       // Same pitch and gap is small enough: merge (tie)
       if (next.note == current.note && gap <= max_gap) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+        // Never merge syllabic subdivision notes -- they represent
+        // intentional same-pitch rearticulation for lyric syllables.
+        if (current.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub) ||
+            next.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub)) {
+          break;
+        }
+#endif
         // Extend current note to include next note
         Tick next_end = next.start_tick + next.duration;
         current.duration = next_end - current.start_tick;
@@ -682,6 +691,12 @@ void mergeSamePitchNotesNearSectionEnds(std::vector<NoteEvent>& notes,
 
         if (next.note == current.note && gap <= max_gap &&
             isInMergeRegion(next.start_tick)) {
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+          if (current.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub) ||
+              next.prov_source == static_cast<uint8_t>(NoteSource::SyllabicSub)) {
+            break;
+          }
+#endif
           Tick next_end = next.start_tick + next.duration;
           current.duration = next_end - current.start_tick;
           current.velocity = std::max(current.velocity, next.velocity);
