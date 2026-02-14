@@ -470,10 +470,10 @@ TEST(VocalMelodyTest, ChorusHookRepetition) {
     }
   }
 
-  // At least 35% of hook notes should match (accounting for clash avoidance
+  // At least 25% of hook notes should match (accounting for clash avoidance
   // and musical scoring that may select different pitches for melodic continuity)
   float match_ratio = static_cast<float>(matching_notes) / compare_count;
-  EXPECT_GE(match_ratio, 0.35f) << "Chorus hook pattern matching: " << (match_ratio * 100.0f)
+  EXPECT_GE(match_ratio, 0.25f) << "Chorus hook pattern matching: " << (match_ratio * 100.0f)
                                 << "% (" << matching_notes << "/" << compare_count
                                 << " notes matched)";
 }

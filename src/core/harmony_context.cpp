@@ -28,6 +28,10 @@ Tick HarmonyContext::getNextChordChangeTick(Tick after) const {
   return chord_tracker_.getNextChordChangeTick(after);
 }
 
+Tick HarmonyContext::getNextChordEntryTick(Tick after) const {
+  return chord_tracker_.getNextChordEntryTick(after);
+}
+
 std::vector<int> HarmonyContext::getChordTonesAt(Tick tick) const {
   return chord_tracker_.getChordTonesAt(tick);
 }

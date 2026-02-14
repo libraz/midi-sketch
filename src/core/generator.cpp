@@ -28,6 +28,7 @@
 #include "core/coordinator.h"
 #include "core/harmony_coordinator.h"
 #include "core/modulation_calculator.h"
+#include "core/secondary_dominant_planner.h"
 #include "core/mood_utils.h"
 #include "core/note_creator.h"
 #include "core/pitch_utils.h"
@@ -472,6 +473,19 @@ void Generator::generate(const GeneratorParams& params) {
 void Generator::generateVocal(const GeneratorParams& params) {
   acceptParams(params);
   initializeGenerationState();
+
+  // Pre-register secondary dominants so vocal preview sees correct chords.
+  // Full generation path uses Coordinator::initialize() which does this,
+  // but generateVocal() bypasses the Coordinator.
+  {
+    const auto& progression = getChordProgression(params_.chord_id);
+    constexpr uint32_t kSecDomSalt = 0x5ECD0A17;
+    uint32_t sec_dom_seed = params_.seed ^ kSecDomSalt;
+    if (sec_dom_seed == 0) sec_dom_seed = kSecDomSalt;
+    std::mt19937 sec_dom_rng(sec_dom_seed);
+    planAndRegisterSecondaryDominants(song_.arrangement(), progression,
+                                      params_.mood, sec_dom_rng, *harmony_context_);
+  }
 
   // RhythmSync: generate Motif first as coordinate axis
   // Vocal will use the Motif's rhythm pattern for quantization

@@ -59,6 +59,12 @@ class ChordProgressionTracker : public IChordLookup {
   Tick getNextChordChangeTick(Tick after) const override;
 
   /**
+   * @brief Get the tick of the next chord entry boundary after the given tick.
+   * Unlike getNextChordChangeTick(), does not skip same-degree entries.
+   */
+  Tick getNextChordEntryTick(Tick after) const override;
+
+  /**
    * @brief Analyze chord boundary with full tension/avoid classification.
    *
    * Overrides IChordLookup default to provide accurate classification using

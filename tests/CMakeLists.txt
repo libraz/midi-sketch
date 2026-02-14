@@ -123,6 +123,7 @@ set(TEST_SOURCES
   core/guide_chord_test.cpp
   track/phrase_tail_rest_test.cpp
   track/vocal_guide_tone_test.cpp
+  track/vocal_hook_boundary_test.cpp
   track/phrase_planner_test.cpp
   track/mora_rhythm_test.cpp
 )
