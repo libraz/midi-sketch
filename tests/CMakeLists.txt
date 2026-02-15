@@ -75,6 +75,7 @@ set(TEST_SOURCES
   core/velocity_helper_test.cpp
   core/constraint_pipeline_test.cpp
   core/chord_progression_tracker_test.cpp
+  core/passing_tone_tolerance_test.cpp
   midi/midi_writer_smf1_test.cpp
   midi/cc_event_test.cpp
   midi/midi_reader_test.cpp

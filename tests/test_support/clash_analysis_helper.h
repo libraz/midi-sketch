@@ -19,6 +19,7 @@
 #include "core/midi_track.h"
 #include "core/pitch_utils.h"
 #include "core/song.h"
+#include "core/track_collision_detector.h"
 
 namespace midisketch {
 namespace test {
@@ -85,13 +86,21 @@ inline std::vector<ClashInfo> findClashes(const MidiTrack& track_a, const std::s
       // Skip wide separations (perceptually not clashing)
       if (actual_interval >= kMaxClashSeparation) continue;
 
+      // Duration-aware passing tone tolerance (consistent with collision detector)
+      Tick overlap_start = std::max(start_a, start_b);
+      Tick overlap_end = std::min(end_a, end_b);
+      Tick overlap_duration = overlap_end - overlap_start;
+      if (isToleratedPassingTone(actual_interval, overlap_duration,
+                                 note_a.note, note_b.note, overlap_start)) {
+        continue;
+      }
+
       // Check dissonance using unified logic from pitch_utils
-      Tick overlap_tick = std::max(start_a, start_b);
-      int8_t chord_degree = harmony.getChordDegreeAt(overlap_tick);
+      int8_t chord_degree = harmony.getChordDegreeAt(overlap_start);
 
       if (isDissonantActualInterval(actual_interval, chord_degree)) {
         clashes.push_back(
-            {name_a, name_b, note_a.note, note_b.note, overlap_tick, actual_interval});
+            {name_a, name_b, note_a.note, note_b.note, overlap_start, actual_interval});
       }
     }
   }

@@ -32,6 +32,11 @@ class TrackCollisionDetector {
   /// C4 (middle C) - below this, stricter low-register rules apply.
   static constexpr uint8_t LOW_REGISTER_THRESHOLD = 60;
 
+  /// Duration thresholds for passing tone tolerance.
+  /// Brief dissonances (m2, M2) are tolerated when overlap is short enough.
+  static constexpr Tick PASSING_TONE_16TH_OVERLAP = 120;  ///< 16th note: m2,M2 tolerated
+  static constexpr Tick PASSING_TONE_8TH_OVERLAP = 240;   ///< 8th note: M2 tolerated
+
   TrackCollisionDetector() = default;
 
   /**
@@ -263,6 +268,50 @@ class TrackCollisionDetector {
   // Beat-indexed note lookup: beat_index_[beat_number] = {note indices in notes_}
   std::vector<std::vector<size_t>> beat_index_;
 };
+
+/// @brief Check if a dissonance should be tolerated as a brief passing tone.
+///
+/// Applies strong-beat reduction: thresholds halved on beats 1 and 3.
+/// Only tolerates stepwise intervals (m2 = 1, M2 = 2).
+/// Low register guard: both notes below C4 are never tolerated (muddy).
+///
+/// @param actual_semitones Absolute interval in semitones
+/// @param overlap_duration Temporal overlap in ticks between the two notes
+/// @param candidate_pitch MIDI pitch of the note being checked
+/// @param existing_pitch MIDI pitch of the already-registered note
+/// @param note_start Start tick of the candidate note (for beat position)
+/// @return true if the dissonance should be tolerated
+inline bool isToleratedPassingTone(int actual_semitones, Tick overlap_duration,
+                                   uint8_t candidate_pitch, uint8_t existing_pitch,
+                                   Tick note_start) {
+  if (actual_semitones != 1 && actual_semitones != 2) return false;
+
+  // Low register guard: both notes < C4 → muddy regardless of duration
+  if (candidate_pitch < TrackCollisionDetector::LOW_REGISTER_THRESHOLD &&
+      existing_pitch < TrackCollisionDetector::LOW_REGISTER_THRESHOLD) {
+    return false;
+  }
+
+  // Strong beat reduction: halve thresholds on beats 1 and 3
+  constexpr Tick kHalfBar = TICKS_PER_BAR / 2;
+  Tick tick_in_bar = note_start % TICKS_PER_BAR;
+  bool is_strong_beat = (tick_in_bar % kHalfBar) < TICKS_PER_BEAT;
+
+  Tick threshold_16th = TrackCollisionDetector::PASSING_TONE_16TH_OVERLAP;
+  Tick threshold_8th = TrackCollisionDetector::PASSING_TONE_8TH_OVERLAP;
+  if (is_strong_beat) {
+    threshold_16th /= 2;  // 120 → 60
+    threshold_8th /= 2;   // 240 → 120
+  }
+
+  // m2 (1 semitone): chromatic passing tone, short overlap only
+  if (actual_semitones == 1) {
+    return overlap_duration <= threshold_16th;
+  }
+
+  // M2 (2 semitones): diatonic passing tone, wider tolerance
+  return overlap_duration <= threshold_8th;
+}
 
 }  // namespace midisketch
 
