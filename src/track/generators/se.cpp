@@ -231,13 +231,13 @@ void SEGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContext& 
   }
 }
 
-void SEGenerator::generateWithCalls(MidiTrack& track, const Song& song, bool call_enabled,
+void SEGenerator::generateWithCalls(MidiTrack& track, Song& song, bool call_enabled,
                                      bool call_notes_enabled, IntroChant intro_chant,
                                      MixPattern mix_pattern, CallDensity call_density,
                                      std::mt19937& rng) {
   // Build FullTrackContext and delegate
   FullTrackContext ctx;
-  ctx.song = const_cast<Song*>(&song);  // Safe: we only read from song
+  ctx.song = &song;
   ctx.call_enabled = call_enabled;
   ctx.call_notes_enabled = call_notes_enabled;
   ctx.intro_chant = static_cast<uint8_t>(intro_chant);

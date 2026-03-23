@@ -1557,191 +1557,348 @@ BassPattern selectPatternWithPolicyForVocal(BassRiffCache& cache, const Section&
 uint8_t adjustPitchForMotion(uint8_t base_pitch, MotionType motion, int8_t vocal_direction,
                              uint8_t vocal_pitch, int8_t degree);
 
+// ============================================================================
+// BassTrackContext: shared state for generateBassTrack helper functions
+// ============================================================================
+
+struct BassTrackContext {
+  MidiTrack& track;
+  const Song& song;
+  const GeneratorParams& params;
+  std::mt19937& rng;
+  IHarmonyContext& harmony;
+  const KickPatternCache* kick_cache;
+  const VocalAnalysis* vocal_analysis;
+
+  // Derived state
+  bool has_vocal;
+  const ChordProgression& progression;
+  const std::vector<Section>& sections;
+  BassRiffCache riff_cache;
+
+  BassTrackContext(MidiTrack& track, const Song& song, const GeneratorParams& params,
+                   std::mt19937& rng, IHarmonyContext& harmony,
+                   const KickPatternCache* kick_cache, const VocalAnalysis* vocal_analysis)
+      : track(track),
+        song(song),
+        params(params),
+        rng(rng),
+        harmony(harmony),
+        kick_cache(kick_cache),
+        vocal_analysis(vocal_analysis),
+        has_vocal(vocal_analysis != nullptr),
+        progression(getChordProgression(params.chord_id)),
+        sections(song.arrangement().sections()) {}
+};
+
+// Check if a section should be skipped for bass generation
+bool shouldSkipSection(const Section& section, const GeneratorParams& params) {
+  // Skip sections where bass is disabled by track_mask
+  if (!hasTrack(section.track_mask, TrackMask::Bass)) {
+    return true;
+  }
+  // Check intro_bass_enabled from blueprint
+  if (section.type == SectionType::Intro && params.blueprint_ref != nullptr &&
+      !params.blueprint_ref->intro_bass_enabled) {
+    return true;
+  }
+  return false;
+}
+
+// Select bass pattern for a section (vocal-aware when vocal analysis available)
+BassPattern selectSectionPattern(BassTrackContext& ctx, const Section& section, size_t sec_idx) {
+  if (ctx.has_vocal) {
+    float vocal_density = getVocalDensityForSection(*ctx.vocal_analysis, section);
+    return selectPatternWithPolicyForVocal(ctx.riff_cache, section, sec_idx, ctx.params,
+                                           vocal_density, ctx.rng);
+  }
+  return selectPatternWithPolicy(ctx.riff_cache, section, sec_idx, ctx.params, ctx.rng);
+}
+
+// Apply slash chord bass override for smoother voice leading.
+// Modifies root in-place if slash chord is applicable and doesn't clash.
+void applySlashChordOverride(BassTrackContext& ctx, uint8_t& root, int8_t degree,
+                             int8_t next_degree, SectionType section_type, Tick bar_start) {
+  float slash_roll = rng_util::rollFloat(ctx.rng, 0.0f, 1.0f);
+  SlashChordInfo slash_info =
+      checkSlashChord(degree, next_degree, section_type, slash_roll);
+  if (!slash_info.has_override) {
+    return;
+  }
+  // Convert pitch class to bass octave range
+  int slash_pitch = static_cast<int>(slash_info.bass_note_semitone);
+  int root_octave = root / Interval::OCTAVE;
+  int slash_bass = root_octave * Interval::OCTAVE + slash_pitch;
+  // Ensure slash bass is in valid range, adjusting octave if needed
+  if (slash_bass > BASS_HIGH) {
+    slash_bass -= Interval::OCTAVE;
+  }
+  if (slash_bass < BASS_LOW) {
+    slash_bass += Interval::OCTAVE;
+  }
+  // Check if slash bass creates major 7th with Motif track.
+  // Major 7th (pitch class interval 11) sounds harsh even at wide range.
+  uint8_t candidate_bass = clampBass(slash_bass);
+  int bass_pc = candidate_bass % 12;
+  bool has_m7_clash = false;
+  auto motif_pcs = ctx.harmony.getPitchClassesFromTrackInRange(bar_start,
+      bar_start + TICKS_PER_BAR, TrackRole::Motif);
+  for (int motif_pc : motif_pcs) {
+    int pc_interval = std::abs(bass_pc - motif_pc);
+    if (pc_interval > 6) pc_interval = 12 - pc_interval;
+    if (pc_interval == 11 || pc_interval == 1) {  // M7 or m2
+      has_m7_clash = true;
+      break;
+    }
+  }
+  if (!has_m7_clash) {
+    root = candidate_bass;
+  }
+  // If slash bass clashes, keep original root (no assignment)
+}
+
+// Apply vocal motion adjustment to bass root if vocal analysis is available
+uint8_t resolveEffectiveRoot(BassTrackContext& ctx, uint8_t root, int8_t degree, Tick bar_start,
+                             uint8_t bar) {
+  if (!ctx.has_vocal) {
+    return root;
+  }
+  int8_t vocal_direction = getVocalDirectionAt(*ctx.vocal_analysis, bar_start);
+  uint8_t vocal_pitch = getVocalPitchAt(*ctx.vocal_analysis, bar_start);
+  MotionType motion = selectMotionType(vocal_direction, bar, ctx.rng);
+  return adjustPitchForMotion(root, motion, vocal_direction, vocal_pitch, degree);
+}
+
+// Try dominant preparation before Chorus. Returns true if bar was handled (caller should continue).
+bool tryDominantPreparation(BassTrackContext& ctx, Tick bar_start, uint8_t effective_root,
+                            SectionType section_type, SectionType next_section_type,
+                            int8_t degree, bool is_last_bar) {
+  if (!is_last_bar ||
+      !shouldAddDominantPreparation(section_type, next_section_type, degree, ctx.params.mood)) {
+    return false;
+  }
+  // Split bar: first half current chord, second half dominant (V)
+  int8_t dominant_degree = 4;  // V
+  uint8_t dominant_root = getBassRoot(dominant_degree);
+  generateBassHalfBar(ctx.track, bar_start, effective_root, section_type, ctx.params.mood, true,
+                      ctx.harmony);
+  generateBassHalfBar(ctx.track, bar_start + TICK_HALF, dominant_root, section_type, ctx.params.mood,
+                      false, ctx.harmony);
+  return true;
+}
+
+// Try harmonic rhythm subdivision. Returns true if bar was handled (caller should continue).
+bool tryHarmonicSubdivision(BassTrackContext& ctx, Tick bar_start, uint8_t effective_root,
+                            const Section& section) {
+  HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, ctx.params.mood);
+  if (harmonic.subdivision != 2) {
+    return false;
+  }
+  // First half: current chord root (with vocal adjustment if available)
+  generateBassHalfBar(ctx.track, bar_start, effective_root, section.type, ctx.params.mood, true,
+                      ctx.harmony);
+  // Second half: next chord in subdivided progression
+  int8_t second_half_degree = ctx.harmony.getChordDegreeAt(bar_start + TICK_HALF);
+  uint8_t second_half_root = getBassRoot(second_half_degree);
+  generateBassHalfBar(ctx.track, bar_start + TICK_HALF, second_half_root, section.type,
+                      ctx.params.mood, false, ctx.harmony);
+  return true;
+}
+
+// Check if anticipation root would clash with registered tracks or vocal
+bool wouldAnticipationClash(BassTrackContext& ctx, uint8_t anticipate_root, Tick bar_start) {
+  for (Tick offset :
+       {TICK_HALF, TICK_HALF + TICK_QUARTER / 2, TICK_HALF + TICK_QUARTER, TICK_HALF + TICK_QUARTER + TICK_QUARTER / 2}) {
+    if (!ctx.harmony.isConsonantWithOtherTracks(anticipate_root, bar_start + offset, TICK_QUARTER, TrackRole::Bass)) {
+      return true;
+    }
+    // When vocal analysis available, also check manual vocal for unregistered cases
+    if (ctx.has_vocal) {
+      uint8_t vocal_pitch_at = getVocalPitchAt(*ctx.vocal_analysis, bar_start + offset);
+      if (vocal_pitch_at > 0) {
+        int interval = std::abs(static_cast<int>(anticipate_root % 12) -
+                                static_cast<int>(vocal_pitch_at % 12));
+        if (interval > 6) interval = 12 - interval;
+        if (interval == 1 || interval == 6) {  // m2 or tritone
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+// Try phrase-end split with anticipation. Returns true if bar was handled (caller should continue).
+bool tryPhraseEndSplit(BassTrackContext& ctx, Tick bar_start, uint8_t effective_root,
+                       const Section& section, uint8_t bar, bool slow_harmonic) {
+  HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, ctx.params.mood);
+  int effective_prog_length = slow_harmonic ? (ctx.progression.length + 1) / 2
+                                            : ctx.progression.length;
+  if (!shouldSplitPhraseEnd(bar, section.bars, effective_prog_length, harmonic, section.type,
+                            ctx.params.mood)) {
+    return false;
+  }
+  // Use HarmonyContext to get the anticipated degree (tracker handles phrase-end splits)
+  int8_t anticipate_degree = ctx.harmony.getChordDegreeAt(bar_start + TICK_HALF);
+  uint8_t anticipate_root = getBassRoot(anticipate_degree);
+
+  if (wouldAnticipationClash(ctx, anticipate_root, bar_start)) {
+    return false;  // Fall through to generate full bar without anticipation
+  }
+  generateBassHalfBar(ctx.track, bar_start, effective_root, section.type, ctx.params.mood, true,
+                      ctx.harmony);
+  generateBassHalfBar(ctx.track, bar_start + TICK_HALF, anticipate_root, section.type,
+                      ctx.params.mood, false, ctx.harmony);
+  return true;
+}
+
+// Post-processing: Apply playability check for physical realism.
+// At high tempos, some bass lines become physically impossible to play.
+// Uses BlueprintConstraints for skill-level-aware playability checking.
+void applyPlayabilityPostProcess(BassTrackContext& ctx) {
+  BassPlayabilityChecker playability_checker =
+      ctx.params.blueprint_ref != nullptr
+          ? BassPlayabilityChecker(ctx.harmony, ctx.params.bpm, ctx.params.blueprint_ref->constraints)
+          : BassPlayabilityChecker(ctx.harmony, ctx.params.bpm);
+  auto& notes = ctx.track.notes();
+  for (auto& note : notes) {
+    uint8_t original_pitch = note.note;
+    uint8_t playable_pitch = playability_checker.ensurePlayable(
+        note.note, note.start_tick, note.duration);
+    if (playable_pitch != original_pitch) {
+      // Re-check collision: if the playable pitch clashes with other tracks,
+      // keep the original pitch (which was already collision-safe).
+      if (!ctx.harmony.isConsonantWithOtherTracks(playable_pitch, note.start_tick,
+                                                  note.duration, TrackRole::Bass)) {
+        playable_pitch = original_pitch;
+      }
+    }
+    note.note = playable_pitch;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    if (note.note != original_pitch) {
+      note.prov_original_pitch = original_pitch;
+      note.addTransformStep(TransformStepType::RangeClamp, original_pitch, note.note,
+                            static_cast<int8_t>(0), static_cast<int8_t>(0));
+    }
+#endif
+  }
+}
+
+// Post-processing: Apply articulation (gate, velocity adjustments)
+void applyArticulationPostProcess(BassTrackContext& ctx) {
+  BassPattern dominant_pattern = BassPattern::RootFifth;
+  BassRiffCache temp_cache;
+  if (!ctx.sections.empty()) {
+    if (ctx.has_vocal) {
+      float density = getVocalDensityForSection(*ctx.vocal_analysis, ctx.sections[0]);
+      dominant_pattern = selectPatternWithPolicyForVocal(temp_cache, ctx.sections[0], 0, ctx.params,
+                                                         density, ctx.rng);
+    } else {
+      dominant_pattern = selectPatternWithPolicy(temp_cache, ctx.sections[0], 0, ctx.params, ctx.rng);
+    }
+  }
+  applyBassArticulation(ctx.track, dominant_pattern, ctx.params.mood, &ctx.harmony);
+}
+
+// Post-processing: Sync bass notes with kick positions for tighter groove.
+// Tolerance and max adjustment scale with kick density and genre.
+void applyKickSyncPostProcess(BassTrackContext& ctx) {
+  if (ctx.kick_cache == nullptr || ctx.kick_cache->isEmpty()) {
+    return;
+  }
+  // Get genre-specific tolerance multiplier
+  BassGenre genre = getMoodBassGenre(ctx.params.mood);
+  float genre_multiplier = getBassKickSyncToleranceMultiplier(genre);
+
+  // Scale sync_tolerance inversely with kicks_per_bar, then by genre
+  Tick base_tolerance = static_cast<Tick>(
+      TICK_EIGHTH / std::max(ctx.kick_cache->kicks_per_bar, 1.0f));
+  Tick sync_tolerance = static_cast<Tick>(base_tolerance * genre_multiplier);
+  sync_tolerance = std::clamp(sync_tolerance,
+                              static_cast<Tick>(TICK_SIXTEENTH / 3),
+                              static_cast<Tick>(TICK_EIGHTH));
+
+  // Scale max_adjust based on dominant_interval and genre
+  // (tighter genres allow smaller adjustments for precision)
+  Tick max_adjust = std::min(
+      static_cast<Tick>(ctx.kick_cache->dominant_interval / 16 * genre_multiplier),
+      static_cast<Tick>(TICK_SIXTEENTH / 2));
+
+  auto& notes = ctx.track.notes();
+  for (auto& note : notes) {
+    // Check if this note is close to a kick but not exactly on it
+    Tick nearest = ctx.kick_cache->nearestKick(note.start_tick);
+    Tick diff = (note.start_tick > nearest) ? (note.start_tick - nearest) : (nearest - note.start_tick);
+
+    // If within tolerance but not already aligned, adjust timing
+    if (diff > 0 && diff <= sync_tolerance) {
+      Tick adjust = std::min(diff, max_adjust);
+      if (note.start_tick > nearest) {
+        note.start_tick -= adjust;  // Move earlier toward kick
+      } else {
+        note.start_tick += adjust;  // Move later toward kick
+      }
+    }
+  }
+}
+
 void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams& params,
                        std::mt19937& rng, IHarmonyContext& harmony,
                        const KickPatternCache* kick_cache,
                        const VocalAnalysis* vocal_analysis) {
-  const bool has_vocal = (vocal_analysis != nullptr);
-  const auto& progression = getChordProgression(params.chord_id);
-  const auto& sections = song.arrangement().sections();
+  BassTrackContext ctx(track, song, params, rng, harmony, kick_cache, vocal_analysis);
 
-  // RiffPolicy cache for Locked/Evolving modes
-  BassRiffCache riff_cache;
+  for (size_t sec_idx = 0; sec_idx < ctx.sections.size(); ++sec_idx) {
+    const auto& section = ctx.sections[sec_idx];
 
-  for (size_t sec_idx = 0; sec_idx < sections.size(); ++sec_idx) {
-    const auto& section = sections[sec_idx];
-
-    // Skip sections where bass is disabled by track_mask
-    if (!hasTrack(section.track_mask, TrackMask::Bass)) {
-      continue;
-    }
-
-    // Check intro_bass_enabled from blueprint
-    if (section.type == SectionType::Intro && params.blueprint_ref != nullptr &&
-        !params.blueprint_ref->intro_bass_enabled) {
+    if (shouldSkipSection(section, params)) {
       continue;
     }
 
     SectionType next_section_type =
-        (sec_idx + 1 < sections.size()) ? sections[sec_idx + 1].type : section.type;
+        (sec_idx + 1 < ctx.sections.size()) ? ctx.sections[sec_idx + 1].type : section.type;
 
-    // Use RiffPolicy-aware pattern selection (vocal-aware when vocal analysis available)
-    BassPattern pattern;
-    float section_vocal_density = 0.0f;
-    if (has_vocal) {
-      section_vocal_density = getVocalDensityForSection(*vocal_analysis, section);
-      pattern = selectPatternWithPolicyForVocal(riff_cache, section, sec_idx, params,
-                                                 section_vocal_density, rng);
-    } else {
-      pattern = selectPatternWithPolicy(riff_cache, section, sec_idx, params, rng);
-    }
-
-    // Use same harmonic rhythm as chord_track.cpp
+    BassPattern pattern = selectSectionPattern(ctx, section, sec_idx);
     bool slow_harmonic = useSlowHarmonicRhythm(section.type);
 
     for (uint8_t bar = 0; bar < section.bars; ++bar) {
       Tick bar_start = section.start_tick + bar * TICKS_PER_BAR;
 
-      // === Use HarmonyContext for chord degree lookup ===
-      // This ensures bass sees the same chords as registered with the tracker,
-      // including phrase-end anticipations and secondary dominants.
+      // Chord degree lookup via HarmonyContext (includes anticipations and secondary dominants)
       int8_t degree = harmony.getChordDegreeAt(bar_start);
       int8_t next_degree = harmony.getChordDegreeAt(bar_start + TICKS_PER_BAR);
-
-      // Internal processing is always in C major; transpose at MIDI output time
       uint8_t root = getBassRoot(degree);
       uint8_t next_root = getBassRoot(next_degree);
 
-      // === SLASH CHORD BASS OVERRIDE ===
-      // Check if a slash chord should override the bass root for smoother voice leading.
-      // This creates stepwise bass motion (e.g., C/E before F gives E->F bass walk).
-      {
-        float slash_roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
-        SlashChordInfo slash_info =
-            checkSlashChord(degree, next_degree, section.type, slash_roll);
-        if (slash_info.has_override) {
-          // Convert pitch class to bass octave range
-          int slash_pitch = static_cast<int>(slash_info.bass_note_semitone);
-          int root_octave = root / Interval::OCTAVE;
-          int slash_bass = root_octave * Interval::OCTAVE + slash_pitch;
-          // Ensure slash bass is in valid range, adjusting octave if needed
-          if (slash_bass > BASS_HIGH) {
-            slash_bass -= Interval::OCTAVE;
-          }
-          if (slash_bass < BASS_LOW) {
-            slash_bass += Interval::OCTAVE;
-          }
-          // Check if slash bass creates major 7th with Motif track.
-          // Major 7th (pitch class interval 11) sounds harsh even at wide range.
-          uint8_t candidate_bass = clampBass(slash_bass);
-          int bass_pc = candidate_bass % 12;
-          bool has_m7_clash = false;
-          auto motif_pcs = harmony.getPitchClassesFromTrackInRange(bar_start,
-              bar_start + TICKS_PER_BAR, TrackRole::Motif);
-          for (int motif_pc : motif_pcs) {
-            int pc_interval = std::abs(bass_pc - motif_pc);
-            if (pc_interval > 6) pc_interval = 12 - pc_interval;
-            if (pc_interval == 11 || pc_interval == 1) {  // M7 or m2
-              has_m7_clash = true;
-              break;
-            }
-          }
-          if (!has_m7_clash) {
-            root = candidate_bass;
-          }
-          // If slash bass clashes, keep original root (no assignment)
-        }
-      }
+      // Slash chord override for smoother voice leading
+      applySlashChordOverride(ctx, root, degree, next_degree, section.type, bar_start);
 
-      // Apply vocal motion adjustment if vocal analysis is available
-      uint8_t effective_root = root;
-      if (has_vocal) {
-        int8_t vocal_direction = getVocalDirectionAt(*vocal_analysis, bar_start);
-        uint8_t vocal_pitch = getVocalPitchAt(*vocal_analysis, bar_start);
-        MotionType motion = selectMotionType(vocal_direction, bar, rng);
-        effective_root = adjustPitchForMotion(root, motion, vocal_direction, vocal_pitch, degree);
-      }
+      // Vocal motion adjustment
+      uint8_t effective_root = resolveEffectiveRoot(ctx, root, degree, bar_start, bar);
 
       bool is_last_bar = (bar == section.bars - 1);
 
-      // Add dominant preparation before Chorus (sync with chord_track.cpp)
-      if (is_last_bar &&
-          shouldAddDominantPreparation(section.type, next_section_type, degree, params.mood)) {
-        // Split bar: first half current chord, second half dominant (V)
-        int8_t dominant_degree = 4;  // V
-        uint8_t dominant_root = getBassRoot(dominant_degree);
-
-        generateBassHalfBar(track, bar_start, effective_root, section.type, params.mood, true,
-                            harmony);
-        generateBassHalfBar(track, bar_start + TICK_HALF, dominant_root, section.type, params.mood,
-                            false, harmony);
+      // Dominant preparation before Chorus (sync with chord_track.cpp)
+      if (tryDominantPreparation(ctx, bar_start, effective_root, section.type,
+                                 next_section_type, degree, is_last_bar)) {
         continue;
       }
 
-      // === HARMONIC RHYTHM SUBDIVISION ===
-      // When subdivision=2 (B sections), split bar into two half-bar bass changes.
-      HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, params.mood);
-      if (harmonic.subdivision == 2) {
-        // First half: current chord root (with vocal adjustment if available)
-        generateBassHalfBar(track, bar_start, effective_root, section.type, params.mood, true,
-                            harmony);
-
-        // Second half: next chord in subdivided progression
-        // Use HarmonyContext to get the degree for the second half of the bar
-        int8_t second_half_degree = harmony.getChordDegreeAt(bar_start + TICK_HALF);
-        uint8_t second_half_root = getBassRoot(second_half_degree);
-        generateBassHalfBar(track, bar_start + TICK_HALF, second_half_root, section.type, params.mood,
-                            false, harmony);
+      // Harmonic rhythm subdivision (B sections)
+      if (tryHarmonicSubdivision(ctx, bar_start, effective_root, section)) {
         continue;
       }
 
-      // Phrase-end split: sync with chord_track.cpp anticipation
-      int effective_prog_length = slow_harmonic ? (progression.length + 1) / 2 : progression.length;
-      if (shouldSplitPhraseEnd(bar, section.bars, effective_prog_length, harmonic, section.type,
-                               params.mood)) {
-        // Split bar: first half current root, second half next root
-        // Use HarmonyContext to get the anticipated degree (tracker handles phrase-end splits)
-        int8_t anticipate_degree = harmony.getChordDegreeAt(bar_start + TICK_HALF);
-        uint8_t anticipate_root = getBassRoot(anticipate_degree);
-
-        // Check if anticipation would clash with registered tracks (Vocal, etc.)
-        bool anticipate_clashes = false;
-        for (Tick offset :
-             {TICK_HALF, TICK_HALF + TICK_QUARTER / 2, TICK_HALF + TICK_QUARTER, TICK_HALF + TICK_QUARTER + TICK_QUARTER / 2}) {
-          if (!harmony.isConsonantWithOtherTracks(anticipate_root, bar_start + offset, TICK_QUARTER, TrackRole::Bass)) {
-            anticipate_clashes = true;
-            break;
-          }
-          // When vocal analysis available, also check manual vocal for unregistered cases
-          if (has_vocal) {
-            uint8_t vocal_pitch_at = getVocalPitchAt(*vocal_analysis, bar_start + offset);
-            if (vocal_pitch_at > 0) {
-              int interval = std::abs(static_cast<int>(anticipate_root % 12) -
-                                      static_cast<int>(vocal_pitch_at % 12));
-              if (interval > 6) interval = 12 - interval;
-              if (interval == 1 || interval == 6) {  // m2 or tritone
-                anticipate_clashes = true;
-                break;
-              }
-            }
-          }
-        }
-
-        if (!anticipate_clashes) {
-          generateBassHalfBar(track, bar_start, effective_root, section.type, params.mood, true,
-                              harmony);
-          generateBassHalfBar(track, bar_start + TICK_HALF, anticipate_root, section.type, params.mood,
-                              false, harmony);
-          continue;
-        }
-        // Fall through to generate full bar without anticipation
+      // Phrase-end split with anticipation
+      if (tryPhraseEndSplit(ctx, bar_start, effective_root, section, bar, slow_harmonic)) {
+        continue;
       }
 
+      // Standard bar generation
       generateBassBar(track, bar_start, effective_root, next_root, next_degree, pattern, section.type,
                       params.mood, is_last_bar, harmony, &rng);
 
-      // Add ghost notes for Groove pattern (rhythmic texture).
-      // Aggressive pattern handles ghost notes inline (velocity drops in generateBassBar).
+      // Ghost notes for Groove pattern (rhythmic texture)
       if (pattern == BassPattern::Groove) {
         addBassGhostNotes(track, harmony, bar_start, effective_root, rng);
       }
@@ -1759,101 +1916,13 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
   harmony.clearNotesForTrack(TrackRole::Bass);
   harmony.registerTrack(track, TrackRole::Bass);
 
-  // Post-processing 1: Apply playability check for physical realism
-  // At high tempos, some bass lines become physically impossible to play.
-  // This ensures generated notes are executable on a real 4-string bass.
-  // Uses BlueprintConstraints for skill-level-aware playability checking.
-  {
-    BassPlayabilityChecker playability_checker =
-        params.blueprint_ref != nullptr
-            ? BassPlayabilityChecker(harmony, params.bpm, params.blueprint_ref->constraints)
-            : BassPlayabilityChecker(harmony, params.bpm);
-    auto& notes = track.notes();
-    for (auto& note : notes) {
-      uint8_t original_pitch = note.note;
-      uint8_t playable_pitch = playability_checker.ensurePlayable(
-          note.note, note.start_tick, note.duration);
-      if (playable_pitch != original_pitch) {
-        // Re-check collision: if the playable pitch clashes with other tracks,
-        // keep the original pitch (which was already collision-safe).
-        if (!harmony.isConsonantWithOtherTracks(playable_pitch, note.start_tick,
-                                                note.duration, TrackRole::Bass)) {
-          playable_pitch = original_pitch;
-        }
-      }
-      note.note = playable_pitch;
-#ifdef MIDISKETCH_NOTE_PROVENANCE
-      if (note.note != original_pitch) {
-        note.prov_original_pitch = original_pitch;
-        note.addTransformStep(TransformStepType::RangeClamp, original_pitch, note.note,
-                              static_cast<int8_t>(0), static_cast<int8_t>(0));
-      }
-#endif
-    }
-  }
-
-  // Post-processing 2: Apply articulation (gate, velocity adjustments)
-  {
-    // Determine the dominant pattern for articulation
-    BassPattern dominant_pattern = BassPattern::RootFifth;
-    BassRiffCache temp_cache;
-    if (!sections.empty()) {
-      if (has_vocal) {
-        float density = getVocalDensityForSection(*vocal_analysis, sections[0]);
-        dominant_pattern = selectPatternWithPolicyForVocal(temp_cache, sections[0], 0, params,
-                                                           density, rng);
-      } else {
-        dominant_pattern = selectPatternWithPolicy(temp_cache, sections[0], 0, params, rng);
-      }
-    }
-    applyBassArticulation(track, dominant_pattern, params.mood, &harmony);
-  }
-
-  // Post-processing 3: Apply density adjustment per section with collision checking
-  for (const auto& section : sections) {
+  // Post-processing pipeline
+  applyPlayabilityPostProcess(ctx);
+  applyArticulationPostProcess(ctx);
+  for (const auto& section : ctx.sections) {
     applyDensityAdjustmentWithHarmony(track, section, &harmony);
   }
-
-  // Post-processing 4: sync bass notes with kick positions for tighter groove
-  // Tolerance and max adjustment scale with:
-  //   1. Kick density: High density → tight sync, Low density → loose sync
-  //   2. Genre: Dance/Electronic → tight, Ballad/Jazz → loose
-  if (kick_cache != nullptr && !kick_cache->isEmpty()) {
-    // Get genre-specific tolerance multiplier
-    BassGenre genre = getMoodBassGenre(params.mood);
-    float genre_multiplier = getBassKickSyncToleranceMultiplier(genre);
-
-    // Scale sync_tolerance inversely with kicks_per_bar, then by genre
-    Tick base_tolerance = static_cast<Tick>(
-        TICK_EIGHTH / std::max(kick_cache->kicks_per_bar, 1.0f));
-    Tick sync_tolerance = static_cast<Tick>(base_tolerance * genre_multiplier);
-    sync_tolerance = std::clamp(sync_tolerance,
-                                static_cast<Tick>(TICK_SIXTEENTH / 3),
-                                static_cast<Tick>(TICK_EIGHTH));
-
-    // Scale max_adjust based on dominant_interval and genre
-    // (tighter genres allow smaller adjustments for precision)
-    Tick max_adjust = std::min(
-        static_cast<Tick>(kick_cache->dominant_interval / 16 * genre_multiplier),
-        static_cast<Tick>(TICK_SIXTEENTH / 2));
-
-    auto& notes = track.notes();
-    for (auto& note : notes) {
-      // Check if this note is close to a kick but not exactly on it
-      Tick nearest = kick_cache->nearestKick(note.start_tick);
-      Tick diff = (note.start_tick > nearest) ? (note.start_tick - nearest) : (nearest - note.start_tick);
-
-      // If within tolerance but not already aligned, adjust timing
-      if (diff > 0 && diff <= sync_tolerance) {
-        Tick adjust = std::min(diff, max_adjust);
-        if (note.start_tick > nearest) {
-          note.start_tick -= adjust;  // Move earlier toward kick
-        } else {
-          note.start_tick += adjust;  // Move later toward kick
-        }
-      }
-    }
-  }
+  applyKickSyncPostProcess(ctx);
 }
 
 // Select bass pattern based on vocal density (Rhythmic Complementation)

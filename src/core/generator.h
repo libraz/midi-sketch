@@ -16,10 +16,12 @@
 #include "core/emotion_curve.h"
 #include "core/i_harmony_context.h"
 #include "core/motif.h"
+#include "core/post_processing_pipeline.h"
 #include "core/production_blueprint.h"
 #include "core/section_types.h"
 #include "core/song.h"
 #include "core/types.h"
+#include "track/vocal/vocal_analysis.h"
 
 namespace midisketch {
 
@@ -273,8 +275,14 @@ class Generator {
   /// Emotion curve for song-wide emotional planning
   EmotionCurve emotion_curve_;  ///< Planned emotional arc
 
+  /// Cached vocal analysis (lazily computed, invalidated on new generation)
+  std::optional<VocalAnalysis> vocal_analysis_cache_;
+
   /// Coordinator for track generation
   std::unique_ptr<Coordinator> coordinator_;
+
+  /// Post-processing pipeline for velocity/dynamics/expression
+  PostProcessingPipeline post_pipeline_;
   /// @}
 
   // Call/SE and Modulation settings are stored directly in params_.
@@ -285,6 +293,13 @@ class Generator {
   /// @{
   std::vector<std::string> warnings_;  ///< Accumulated warnings during generation
   /// @}
+
+  /// @brief Get or compute cached vocal analysis.
+  /// Returns nullptr if vocal track is empty.
+  const VocalAnalysis* getCachedVocalAnalysis();
+
+  /// @brief Invalidate cached vocal analysis (call when vocal track changes).
+  void invalidateVocalAnalysisCache() { vocal_analysis_cache_.reset(); }
 
   /// @name Generation Phase Helpers
   /// @{
@@ -386,22 +401,6 @@ class Generator {
   /// @name Post-Processing Methods
   /// @{
 
-  /** @brief Apply staggered entry to intro sections.
-   *
-   * Implements gradual instrument participation by:
-   * 1. Removing notes before each track's entry bar
-   * 2. Applying velocity fade-in for smooth entry
-   *
-   * @param section The intro section to process
-   * @param config Staggered entry configuration
-   */
-  void applyStaggeredEntry(const Section& section, const StaggeredEntryConfig& config);
-
-  /** @brief Apply staggered entry to all qualifying sections.
-   *  Called automatically after track generation if EntryPattern::Stagger is used.
-   */
-  void applyStaggeredEntryToSections();
-
   /**
    * @brief Detect clashes between vocal and accompaniment tracks.
    * @return Vector of VocalClash describing each clash with suggested fixes
@@ -435,57 +434,6 @@ class Generator {
 
   /// Plan tempo map for ritardando in outro sections.
   void planTempoMap();
-
-  /** @brief Apply post-processing pipeline to melodic tracks.
-   *
-   *  Orchestrates three sub-phases:
-   *  1. Velocity shaping (contour, accent, bar curves, micro-dynamics)
-   *  2. Transition effects (section transitions, exit patterns, clash fixes)
-   *  3. Final adjustments (chord boundary clipping, panning, expression) */
-  void applyPostProcessingPipeline();
-
-  /** @brief Phase 1: Apply velocity shaping to melodic tracks.
-   *
-   *  Applies melody contour velocity, accent patterns, bar-level velocity
-   *  curves, beat-level micro-dynamics, and phrase-end decay. */
-  void applyVelocityShaping(std::vector<MidiTrack*>& tracks);
-
-  /** @brief Phase 2: Apply transition effects for section boundaries.
-   *
-   *  Applies section transition dynamics, entry patterns, exit patterns,
-   *  chorus drop, ritardando, motif-vocal clash fixes, enhanced final hit,
-   *  emotion-based dynamics, and blueprint constraints. */
-  void applyTransitionEffects(std::vector<MidiTrack*>& tracks,
-                              const std::vector<TrackRole>& track_roles);
-
-  /** @brief Phase 3: Apply final adjustments after all dynamics processing.
-   *
-   *  Clips vocal notes at chord boundaries, creates arrangement holes,
-   *  applies stereo panning, and generates expression curves. */
-  void applyFinalAdjustments();
-
-  /** @brief Apply EmotionCurve-based velocity adjustments for section transitions. */
-  void applyEmotionBasedDynamics(std::vector<MidiTrack*>& tracks,
-                                  const std::vector<Section>& sections);
-
-  /** @brief Apply emotion-based velocity adjustment to a single note.
-   *  @param base_velocity Original velocity
-   *  @param emotion SectionEmotion for the note's section
-   *  @return Adjusted velocity (clamped 30-127) */
-  uint8_t applyEmotionToVelocity(uint8_t base_velocity, const SectionEmotion& emotion);
-
-  /** @brief Find which section a tick belongs to.
-   *  @param sections Song sections
-   *  @param tick Tick position to look up
-   *  @return Section index (or sections.size() if not found) */
-  size_t findSectionIndex(const std::vector<Section>& sections, Tick tick) const;
-
-  /** @brief Apply humanization to all melodic tracks. */
-  void applyHumanization();
-
-  /** @brief Generate CC11 Expression curves for melodic tracks.
-   *  Adds section-based expression curves to vocal, bass, and chord tracks. */
-  void generateExpressionCurves();
 
   /**
    * @brief Resolve seed value (0 = generate from system clock).

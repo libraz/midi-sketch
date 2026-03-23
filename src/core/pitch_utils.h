@@ -152,6 +152,10 @@ constexpr bool DIATONIC_PITCH_CLASS[12] = {
 
 /**
  * @brief Check if a pitch is on the diatonic (C major) scale.
+ *
+ * Equivalent to isScaleTone(pitch_class, 0). Kept as a convenience
+ * alias since internal processing is always in C major.
+ *
  * @param pitch MIDI pitch to check (any octave)
  * @return true if pitch class is C, D, E, F, G, A, or B
  */

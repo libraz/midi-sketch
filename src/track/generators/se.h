@@ -51,7 +51,7 @@ class SEGenerator : public TrackBase {
   /// @param mix_pattern Mix breakdown pattern
   /// @param call_density Call frequency
   /// @param rng Random number generator
-  void generateWithCalls(MidiTrack& track, const Song& song, bool call_enabled,
+  void generateWithCalls(MidiTrack& track, Song& song, bool call_enabled,
                          bool call_notes_enabled, IntroChant intro_chant, MixPattern mix_pattern,
                          CallDensity call_density, std::mt19937& rng);
 
