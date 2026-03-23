@@ -50,8 +50,16 @@ set(MIDISKETCH_CORE_SOURCES
   track/vocal/phrase_variation.cpp
   track/vocal/vocal_helpers.cpp
   track/vocal/melody_designer.cpp
+  track/vocal/melody_hook.cpp
+  track/vocal/melody_transition.cpp
+  track/vocal/melody_motif_variants.cpp
   track/vocal/vocal_analysis.cpp
   track/vocal/phrase_planner.cpp
+  track/vocal/vocal_range.cpp
+  track/vocal/rhythm_lock_evaluator.cpp
+  track/vocal/locked_rhythm_generator.cpp
+  track/vocal/vocal_pitch_hints.cpp
+  track/vocal/vocal_post_process.cpp
   track/chord/voicing_generator.cpp
   track/chord/voice_leading.cpp
   track/chord/bass_coordination.cpp
