@@ -327,7 +327,9 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
 
     PhraseResult phrase_result;
     if (use_hook) {
-      phrase_result = generateHook(tmpl, phrase_start, phrase_ctx, prev_pitch, harmony, rng);
+      Tick phrase_end = planned.end_tick - planned.breath_after;
+      phrase_result =
+          generateHook(tmpl, phrase_start, phrase_end, phrase_ctx, prev_pitch, harmony, rng);
     } else {
       phrase_result = generateMelodyPhrase(tmpl, phrase_start, actual_beats, phrase_ctx, prev_pitch,
                                            direction_inertia, harmony, rng);
@@ -1229,7 +1231,7 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateMelodyPhrase(
 }
 
 MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& tmpl,
-                                                          Tick hook_start,
+                                                          Tick hook_start, Tick phrase_end,
                                                           const SectionContext& ctx, int prev_pitch,
                                                           const IHarmonyContext& harmony,
                                                           std::mt19937& rng) {
@@ -1357,7 +1359,9 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
   size_t total_note_idx = 0;
 
   for (uint8_t rep = 0; rep < repeat_count; ++rep) {
+    if (current_tick >= phrase_end) break;
     for (size_t i = 0; i < contour_limit; ++i, ++total_note_idx) {
+      if (current_tick >= phrase_end) break;
       // Get chord at this note's position
       int8_t note_chord_degree = harmony.getChordDegreeAt(current_tick);
 
@@ -1459,14 +1463,34 @@ MelodyDesigner::PhraseResult MelodyDesigner::generateHook(const MelodyTemplate& 
         tick_advance = hook_cache_.sabi_tick_advances[total_note_idx];
       }
 
+      // Clamp duration so hook notes never exceed phrase boundary
+      if (current_tick + final_duration > phrase_end) {
+        final_duration = phrase_end - current_tick;
+        if (final_duration < TICK_SIXTEENTH) break;  // Too short to be singable
+      }
+
       // Apply pitch safety check to avoid collisions with other tracks (e.g., Motif tritone)
       // Use getSafePitchCandidates for unified collision resolution
       auto candidates = getSafePitchCandidates(harmony, static_cast<uint8_t>(pitch), current_tick,
                                                 final_duration, TrackRole::Vocal, ctx.vocal_low,
                                                 ctx.vocal_high);
       if (candidates.empty()) {
-        current_tick += tick_advance;
-        continue;  // No safe pitch available
+        // First note of hook MUST exist — try chord tones as fallback
+        if (i == 0 && rep == 0) {
+          uint8_t fallback_pitch = static_cast<uint8_t>(
+              nearestChordTonePitch(pitch, note_chord_degree));
+          fallback_pitch = static_cast<uint8_t>(std::clamp(
+              static_cast<int>(fallback_pitch),
+              static_cast<int>(ctx.vocal_low), static_cast<int>(ctx.vocal_high)));
+          PitchCandidate fallback;
+          fallback.pitch = fallback_pitch;
+          fallback.max_safe_duration = final_duration;
+          fallback.is_chord_tone = true;
+          candidates.push_back(fallback);
+        } else {
+          current_tick += tick_advance;
+          continue;  // No safe pitch available
+        }
       }
 
       // Select best candidate preserving hook shape

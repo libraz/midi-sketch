@@ -463,7 +463,7 @@ void MidiWriter::buildVocalPreview(const Song& song, const IHarmonyContext& harm
   Tick current_tick = 0;
   while (current_tick < total_ticks) {
     int8_t degree = harmony.getChordDegreeAt(current_tick);
-    Tick next_change = harmony.getNextChordChangeTick(current_tick);
+    Tick next_change = harmony.getNextChordEntryTick(current_tick);
     if (next_change == 0 || next_change <= current_tick) {
       next_change = total_ticks;  // Last chord extends to end
     }

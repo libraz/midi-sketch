@@ -61,6 +61,8 @@ class HarmonyContext : public IHarmonyContext {
 
   Tick getNextChordChangeTick(Tick after) const override;
 
+  Tick getNextChordEntryTick(Tick after) const override;
+
   ChordBoundaryInfo analyzeChordBoundary(uint8_t pitch, Tick start,
                                           Tick duration) const override;
 

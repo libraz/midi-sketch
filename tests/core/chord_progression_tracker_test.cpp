@@ -127,6 +127,62 @@ TEST_F(ChordProgressionTrackerTest, NextChordChange_Empty) {
 }
 
 // ============================================================================
+// getNextChordEntryTick
+// ============================================================================
+
+TEST_F(ChordProgressionTrackerTest, NextChordEntry_FromBarStart) {
+  // From tick 0 (I chord), next entry is at tick 1920 regardless of degree
+  Tick next = tracker_.getNextChordEntryTick(0);
+  EXPECT_EQ(next, 1920u);
+}
+
+TEST_F(ChordProgressionTrackerTest, NextChordEntry_SameDegreeNotSkipped) {
+  // Canon: I-V-vi-IV repeats. Bar 3 = IV (degree 3), Bar 4 = I (degree 0).
+  // getNextChordChangeTick from bar 4 skips to bar 5 (V, 9600) because bar 0=I=bar 4.
+  // getNextChordEntryTick should return bar 5 start (9600) regardless.
+  // BUT more importantly: if we construct a case with consecutive same degrees...
+
+  // Create a progression with consecutive same degrees: I-I-IV-V
+  Section section;
+  section.type = SectionType::Chorus;
+  section.start_tick = 0;
+  section.bars = 4;
+  section.name = "Test";
+  Arrangement arr({section});
+
+  ChordProgression prog;
+  prog.length = 4;
+  prog.degrees[0] = 0;  // I
+  prog.degrees[1] = 0;  // I (same!)
+  prog.degrees[2] = 3;  // IV
+  prog.degrees[3] = 4;  // V
+
+  ChordProgressionTracker t;
+  t.initialize(arr, prog, Mood::StraightPop);
+
+  // getNextChordChangeTick skips I→I, returns IV at tick 3840
+  EXPECT_EQ(t.getNextChordChangeTick(0), 3840u);
+
+  // getNextChordEntryTick returns next entry boundary at tick 1920
+  EXPECT_EQ(t.getNextChordEntryTick(0), 1920u);
+}
+
+TEST_F(ChordProgressionTrackerTest, NextChordEntry_FromMidBar) {
+  Tick next = tracker_.getNextChordEntryTick(960);
+  EXPECT_EQ(next, 1920u);
+}
+
+TEST_F(ChordProgressionTrackerTest, NextChordEntry_NoneAtEnd) {
+  Tick next = tracker_.getNextChordEntryTick(14000);
+  EXPECT_EQ(next, 0u);
+}
+
+TEST_F(ChordProgressionTrackerTest, NextChordEntry_Empty) {
+  ChordProgressionTracker empty;
+  EXPECT_EQ(empty.getNextChordEntryTick(0), 0u);
+}
+
+// ============================================================================
 // analyzeChordBoundary (tension/avoid classification)
 // ============================================================================
 

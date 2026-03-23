@@ -20,16 +20,16 @@ import threading
 
 # Source file mapping for quick navigation
 SOURCE_FILES = {
-    "melody_phrase": "src/track/melody_designer.cpp",
-    "hook": "src/track/melody_designer.cpp",
-    "bass_pattern": "src/track/bass.cpp",
-    "chord_voicing": "src/track/chord_track.cpp",
-    "arpeggio": "src/track/arpeggio.cpp",
-    "aux": "src/track/aux.cpp",
-    "motif": "src/track/motif.cpp",
-    "drums": "src/track/drums.cpp",
+    "melody_phrase": "src/track/vocal/melody_designer.cpp",
+    "hook": "src/track/vocal/melody_designer.cpp",
+    "bass_pattern": "src/track/generators/bass.cpp",
+    "chord_voicing": "src/track/generators/chord.cpp",
+    "arpeggio": "src/track/generators/arpeggio.cpp",
+    "aux": "src/track/generators/aux.cpp",
+    "motif": "src/track/generators/motif.cpp",
+    "drums": "src/track/drums/drum_track_generator.cpp",
     "embellishment": "src/core/melody_embellishment.cpp",
-    "collision_avoid": "src/core/collision_avoider.cpp",
+    "collision_avoid": "src/core/collision_resolver.cpp",
     "post_process": "src/core/post_processor.cpp",
 }
 

@@ -114,6 +114,16 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(uint8_t pitch, Tick star
         continue;
       }
 
+      // Duration-aware passing tone tolerance:
+      // Brief overlaps allow stepwise dissonances for contrapuntal movement.
+      {
+        Tick overlap_duration = std::min(end, note.end) - std::max(start, note.start);
+        if (isToleratedPassingTone(actual_semitones, overlap_duration,
+                                   pitch, note.pitch, start)) {
+          continue;
+        }
+      }
+
       // Special case: Tritone between harmonic tracks is ALWAYS dissonant
       if (exclude_is_harmonic) {
         if (isHarmonicTrack(note.track)) {
@@ -157,6 +167,15 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(uint8_t pitch, Tick start
 
     if (note.start < end && note.end > start) {
       int actual_semitones = std::abs(static_cast<int>(pitch) - static_cast<int>(note.pitch));
+
+      // Duration-aware passing tone tolerance (consistent with isConsonantWithOtherTracks)
+      {
+        Tick overlap_duration = std::min(end, note.end) - std::max(start, note.start);
+        if (isToleratedPassingTone(actual_semitones, overlap_duration,
+                                   pitch, note.pitch, start)) {
+          continue;
+        }
+      }
 
       if (exclude_is_harmonic) {
         if (isHarmonicTrack(note.track)) {
@@ -539,6 +558,14 @@ std::string TrackCollisionDetector::dumpNotesAt(Tick tick, Tick range_ticks) con
                          pitch_class_interval == 2);
 
         if (is_clash) {
+          // Duration-aware passing tone tolerance
+          Tick overlap_duration = std::min(a->end, b->end) - std::max(a->start, b->start);
+          Tick overlap_start = std::max(a->start, b->start);
+          if (isToleratedPassingTone(interval, overlap_duration,
+                                     a->pitch, b->pitch, overlap_start)) {
+            continue;
+          }
+
           found_clash = true;
           const char* interval_name =
               (pitch_class_interval == 1) ? "minor 2nd" :
@@ -609,6 +636,13 @@ CollisionSnapshot TrackCollisionDetector::getCollisionSnapshot(Tick tick, Tick r
                        pitch_class_interval == 2);
 
       if (is_clash) {
+        // Duration-aware passing tone tolerance (consistent with isConsonantWithOtherTracks)
+        Tick overlap_duration = std::min(a.end, b.end) - std::max(a.start, b.start);
+        Tick overlap_start = std::max(a.start, b.start);
+        if (isToleratedPassingTone(interval, overlap_duration,
+                                   a.pitch, b.pitch, overlap_start)) {
+          continue;
+        }
         ClashDetail detail;
         detail.note_a = a;
         detail.note_b = b;

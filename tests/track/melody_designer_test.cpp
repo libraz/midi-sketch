@@ -293,7 +293,7 @@ TEST(MelodyDesignerTest, GenerateHookProducesNotes) {
   ctx.section_type = SectionType::Chorus;
   HarmonyContext harmony;
 
-  auto result = designer.generateHook(tmpl, 0, ctx, -1, harmony, rng);
+  auto result = designer.generateHook(tmpl, 0, ctx.section_end, ctx, -1, harmony, rng);
 
   EXPECT_GT(result.notes.size(), 0u);
 }
@@ -306,7 +306,7 @@ TEST(MelodyDesignerTest, GenerateHookRepeatsPattern) {
   ctx.section_type = SectionType::Chorus;
   HarmonyContext harmony;
 
-  auto result = designer.generateHook(tmpl, 0, ctx, -1, harmony, rng);
+  auto result = designer.generateHook(tmpl, 0, ctx.section_end, ctx, -1, harmony, rng);
 
   // HookRepeat has hook_note_count=2, hook_repeat_count=4
   // So expect 2*4 = 8 notes minimum

@@ -107,6 +107,16 @@ Tick ChordProgressionTracker::getNextChordChangeTick(Tick after) const {
   return 0;  // No chord change found
 }
 
+Tick ChordProgressionTracker::getNextChordEntryTick(Tick after) const {
+  if (chords_.empty()) return 0;
+  for (size_t i = 0; i < chords_.size(); ++i) {
+    if (after >= chords_[i].start && after < chords_[i].end) {
+      return (i + 1 < chords_.size()) ? chords_[i + 1].start : 0;
+    }
+  }
+  return 0;
+}
+
 std::vector<int> ChordProgressionTracker::getChordTonesAt(Tick tick) const {
   int8_t degree = getChordDegreeAt(tick);
   return getChordTonePitchClasses(degree);

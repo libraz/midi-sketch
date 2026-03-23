@@ -42,6 +42,7 @@ set(MIDISKETCH_CORE_SOURCES
   core/swing_quantize.cpp
   core/pitch_bend_curves.cpp
   core/note_creator.cpp
+  core/post_processing_pipeline.cpp
   core/note_timeline_utils.cpp
   core/timing_offset_calculator.cpp
   midi/midi_writer.cpp
@@ -130,7 +131,15 @@ if(BUILD_WASM)
   )
 elseif(BUILD_CLI)
   # CLI executable for testing
-  add_executable(midisketch_cli cli_main.cpp)
+  add_executable(midisketch_cli
+    cli_main.cpp
+    cli/args.cpp
+    cli/display_helpers.cpp
+    cli/generate_mode.cpp
+    cli/validate_mode.cpp
+    cli/regenerate_mode.cpp
+    cli/input_mode.cpp
+  )
   target_link_libraries(midisketch_cli PRIVATE midisketch_lib)
 
   # Benchmark executable for profiling

@@ -75,6 +75,7 @@ set(TEST_SOURCES
   core/velocity_helper_test.cpp
   core/constraint_pipeline_test.cpp
   core/chord_progression_tracker_test.cpp
+  core/passing_tone_tolerance_test.cpp
   midi/midi_writer_smf1_test.cpp
   midi/cc_event_test.cpp
   midi/midi_reader_test.cpp
@@ -123,6 +124,7 @@ set(TEST_SOURCES
   core/guide_chord_test.cpp
   track/phrase_tail_rest_test.cpp
   track/vocal_guide_tone_test.cpp
+  track/vocal_hook_boundary_test.cpp
   track/phrase_planner_test.cpp
   track/mora_rhythm_test.cpp
 )

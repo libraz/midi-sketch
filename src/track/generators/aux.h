@@ -270,16 +270,10 @@ class AuxGenerator : public TrackBase {
   std::vector<Tick> findBreathPointsInRange(const std::vector<PhraseBoundary>* boundaries,
                                             Tick start, Tick end);
 
-  /// Post-process notes: resolve chord crossings, fix bass clashes.
+  /// Post-process notes: fix clashes with other harmonic tracks.
   void postProcessNotes(std::vector<NoteEvent>& notes, IHarmonyContext& harmony);
 
-  /// First pass: resolve notes that sustain over chord changes.
-  /// Handles anticipation, note splitting, or pitch adjustment at chord boundaries.
-  void resolveNotesOverChordBoundary(std::vector<NoteEvent>& notes,
-                                     std::vector<NoteEvent>& notes_to_add,
-                                     IHarmonyContext& harmony);
-
-  /// Second pass: fix remaining clashes with other harmonic tracks.
+  /// Fix remaining clashes with other harmonic tracks.
   /// Finds safe pitch alternatives for notes that clash with Bass, Chord, etc.
   void resolvePitchClashes(std::vector<NoteEvent>& notes, IHarmonyContext& harmony);
 

@@ -526,12 +526,6 @@ void AuxGenerator::generateFromSongContext(MidiTrack& track, const SongContext& 
   }
 }
 
-void AuxGenerator::resolveNotesOverChordBoundary(std::vector<NoteEvent>& /*notes*/,
-                                                  std::vector<NoteEvent>& /*notes_to_add*/,
-                                                  IHarmonyContext& /*harmony*/) {
-  // Chord boundary handling now done in createNoteAndAdd() pipeline
-}
-
 void AuxGenerator::resolvePitchClashes(std::vector<NoteEvent>& notes, IHarmonyContext& harmony) {
   // Try to fix any remaining clashes with other harmonic tracks (Bass, Chord, etc.)
   // If no safe pitch can be found, keep the original pitch and let createNoteAndAdd handle it
@@ -610,17 +604,6 @@ void AuxGenerator::resolvePitchClashes(std::vector<NoteEvent>& notes, IHarmonyCo
 }
 
 void AuxGenerator::postProcessNotes(std::vector<NoteEvent>& notes, IHarmonyContext& harmony) {
-  std::vector<NoteEvent> notes_to_add;
-
-  // First pass: resolve notes that sustain over chord changes
-  resolveNotesOverChordBoundary(notes, notes_to_add, harmony);
-
-  // Add resolved notes
-  for (const auto& note : notes_to_add) {
-    notes.push_back(note);
-  }
-
-  // Second pass: fix remaining clashes
   resolvePitchClashes(notes, harmony);
 }
 

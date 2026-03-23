@@ -52,6 +52,8 @@ class HarmonyCoordinator : public IHarmonyCoordinator {
 
   Tick getNextChordChangeTick(Tick after) const override;
 
+  Tick getNextChordEntryTick(Tick after) const override;
+
   void clearNotes() override;
 
   void clearNotesForTrack(TrackRole track) override;

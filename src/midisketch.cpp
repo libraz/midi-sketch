@@ -344,14 +344,30 @@ std::string MidiSketch::getEventsJson() const {
   w.endArray();
 
   // Chord timeline (includes secondary dominants)
+  // Uses getNextChordEntryTick() to avoid section-boundary crossing bugs
+  // that occur with getNextChordChangeTick() when a sec dom has the same
+  // degree as the following chord entry. Consecutive same-degree non-sec-dom
+  // entries (e.g., slow harmonic rhythm I,I) are merged for cleaner output.
   w.beginArray("chords");
   const auto& harmony = generator_.getHarmonyContext();
   Tick current = 0;
   while (current < total_ticks) {
     int8_t degree = harmony.getChordDegreeAt(current);
     bool is_sec_dom = harmony.isSecondaryDominantAt(current);
-    Tick next = harmony.getNextChordChangeTick(current);
+    Tick next = harmony.getNextChordEntryTick(current);
     if (next == 0 || next <= current) next = total_ticks;
+
+    // Merge consecutive same-degree non-sec-dom entries
+    if (!is_sec_dom) {
+      while (next < total_ticks) {
+        int8_t next_deg = harmony.getChordDegreeAt(next);
+        bool next_sd = harmony.isSecondaryDominantAt(next);
+        if (next_deg != degree || next_sd) break;
+        Tick after = harmony.getNextChordEntryTick(next);
+        if (after == 0 || after <= next) { next = total_ticks; break; }
+        next = after;
+      }
+    }
 
     w.beginObject()
         .write("tick", current)

@@ -53,6 +53,21 @@ class IChordLookup {
   virtual Tick getNextChordChangeTick(Tick after) const = 0;
 
   /**
+   * @brief Get the tick of the next chord entry boundary after the given tick.
+   *
+   * Unlike getNextChordChangeTick() which skips consecutive entries with the
+   * same degree, this method returns the start tick of the very next entry
+   * regardless of whether the degree changes. Use this for building chord
+   * timelines where every entry boundary matters (e.g., vocal preview bass).
+   *
+   * @param after Position to search from
+   * @return Tick of next chord entry, or 0 if none found
+   */
+  virtual Tick getNextChordEntryTick(Tick after) const {
+    return getNextChordChangeTick(after);  // default fallback
+  }
+
+  /**
    * @brief Check if a secondary dominant is active at a given tick.
    * @param tick Position in ticks
    * @return true if a pre-registered secondary dominant covers this tick

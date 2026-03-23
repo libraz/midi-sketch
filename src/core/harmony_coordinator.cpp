@@ -87,6 +87,9 @@ FORWARD_CONST(std::vector<int>, getChordTonesAt, Tick tick) {
 FORWARD_CONST(Tick, getNextChordChangeTick, Tick after) {
   return base_context_.getNextChordChangeTick(after);
 }
+FORWARD_CONST(Tick, getNextChordEntryTick, Tick after) {
+  return base_context_.getNextChordEntryTick(after);
+}
 FORWARD_CONST(bool, isConsonantWithOtherTracks,
               uint8_t pitch, Tick start, Tick duration, TrackRole exclude, bool is_weak_beat) {
   return base_context_.isConsonantWithOtherTracks(pitch, start, duration, exclude, is_weak_beat);

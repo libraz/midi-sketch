@@ -272,14 +272,16 @@ class MelodyDesigner {
    * @brief Generate a hook pattern for chorus sections.
    * @param tmpl Melody template
    * @param hook_start Start tick of hook
+   * @param phrase_end Hard boundary: no notes at or beyond this tick
    * @param ctx Section context
    * @param prev_pitch Previous pitch for continuity
    * @param harmony Harmony context
    * @param rng Random number generator
    * @return Phrase result with hook notes
    */
-  PhraseResult generateHook(const MelodyTemplate& tmpl, Tick hook_start, const SectionContext& ctx,
-                            int prev_pitch, const IHarmonyContext& harmony, std::mt19937& rng);
+  PhraseResult generateHook(const MelodyTemplate& tmpl, Tick hook_start, Tick phrase_end,
+                            const SectionContext& ctx, int prev_pitch,
+                            const IHarmonyContext& harmony, std::mt19937& rng);
 
   // selectPitchChoice, applyDirectionInertia, getEffectivePlateauRatio, shouldLeap,
   // getStabilizeStep, isInSameVowelSection, getMaxStepInVowelSection:
