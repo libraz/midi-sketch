@@ -8,7 +8,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <set>
+
 #include "core/arrangement.h"
+#include "core/basic_types.h"
 #include "core/chord.h"
 #include "core/coordinator.h"
 #include "core/harmony_coordinator.h"
@@ -16,6 +20,7 @@
 #include "core/song.h"
 #include "core/timing_constants.h"
 #include "core/types.h"
+#include "test_helpers/note_event_test_helper.h"
 
 namespace midisketch {
 namespace test {
@@ -306,6 +311,160 @@ TEST(VoiceLimitTest, FrozenNotesAreReQuantizedToChordTones) {
   EXPECT_GE(chord_tone_ratio, 0.60)
       << "At least 60% of notes should be chord tones after re-quantization "
       << "(got " << chord_tone_count << "/" << checked << " = " << chord_tone_ratio * 100.0 << "%)";
+}
+
+// ============================================================================
+// Frozen-bar re-quantization tests (direct applyVoiceLimit API)
+// ============================================================================
+
+namespace {
+
+/// @brief Build a single 2-bar section at tick 0 with max_moving_voices=1.
+std::vector<Section> makeFrozenBarSections() {
+  Section sec;
+  sec.type = SectionType::A;
+  sec.name = "A";
+  sec.bars = 2;
+  sec.start_bar = 0;
+  sec.start_tick = 0;
+  sec.max_moving_voices = 1;
+  return {sec};
+}
+
+/// @brief Craft a song that forces the limiter to freeze Motif's bar 1.
+///
+/// Vocal and Motif both change pitch classes between bar 0 and bar 1, so both
+/// count as "moving". With max_moving_voices=1, the lowest-priority moving
+/// track (Motif) is frozen: its bar-1 notes are replaced by copies of bar 0
+/// and re-quantized to the current chord.
+///
+/// Motif uses F#4 (66, non-diatonic in C major) so re-quantization is
+/// guaranteed to change the pitch regardless of which chord is active.
+void buildFrozenMotifSong(Song& song) {
+  // Vocal: C5 on every beat in bar 0, D5 in bar 1 (moving, stays unfrozen)
+  for (int beat = 0; beat < 4; ++beat) {
+    song.vocal().addNote(
+        NoteEventTestHelper::create(beat * TICKS_PER_BEAT, TICKS_PER_BEAT, 72, 90));
+    song.vocal().addNote(
+        NoteEventTestHelper::create(TICKS_PER_BAR + beat * TICKS_PER_BEAT, TICKS_PER_BEAT, 74, 90));
+  }
+  // Motif: F#4 on every beat in bar 0, A4 in bar 1 (moving, gets frozen)
+  for (int beat = 0; beat < 4; ++beat) {
+    song.motif().addNote(
+        NoteEventTestHelper::create(beat * TICKS_PER_BEAT, TICKS_PER_BEAT, 66, 80));
+    song.motif().addNote(
+        NoteEventTestHelper::create(TICKS_PER_BAR + beat * TICKS_PER_BEAT, TICKS_PER_BEAT, 69, 80));
+  }
+}
+
+/// @brief Run applyVoiceLimit on a crafted song and return bar-1 motif notes
+///        sorted chronologically.
+std::vector<NoteEvent> applyVoiceLimitToFrozenMotif(Song& song) {
+  auto params = makeVoiceLimitParams();
+  auto sections = makeFrozenBarSections();
+  Arrangement arrangement(sections);
+
+  HarmonyCoordinator harmony;
+  const auto& progression = getChordProgression(params.chord_id);
+  harmony.initialize(arrangement, progression, params.mood);
+
+  Coordinator coord;
+  std::mt19937 rng(params.seed);
+  coord.initialize(params, arrangement, rng, &harmony);
+
+  buildFrozenMotifSong(song);
+  coord.applyVoiceLimit(song, sections);
+
+  std::vector<NoteEvent> bar1_notes;
+  for (const auto& note : song.motif().notes()) {
+    if (note.start_tick >= TICKS_PER_BAR && note.start_tick < 2 * TICKS_PER_BAR) {
+      bar1_notes.push_back(note);
+    }
+  }
+  std::sort(bar1_notes.begin(), bar1_notes.end(),
+            [](const NoteEvent& a, const NoteEvent& b) { return a.start_tick < b.start_tick; });
+  return bar1_notes;
+}
+
+}  // namespace
+
+TEST(VoiceLimitRequantizeTest, FrozenBarReplacesNotesWithPreviousBarCopy) {
+  Song song;
+  auto bar1_notes = applyVoiceLimitToFrozenMotif(song);
+
+  // Bar 1's original A4 notes were replaced by copies of bar 0 (one per beat)
+  ASSERT_EQ(bar1_notes.size(), 4u);
+  for (const auto& note : bar1_notes) {
+    EXPECT_NE(note.note, 69) << "Original bar-1 notes should have been removed";
+  }
+}
+
+TEST(VoiceLimitRequantizeTest, RequantizedPitchChangesFromNonDiatonicSource) {
+  Song song;
+  auto bar1_notes = applyVoiceLimitToFrozenMotif(song);
+
+  // F#4 (66) is not a chord tone of any diatonic C-major chord, so every
+  // frozen copy must have been re-quantized to a different pitch.
+  ASSERT_EQ(bar1_notes.size(), 4u);
+  for (const auto& note : bar1_notes) {
+    EXPECT_NE(note.note, 66) << "Non-diatonic frozen pitch must be re-quantized";
+  }
+}
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+TEST(VoiceLimitRequantizeTest, RecordsChordToneSnapTransform) {
+  Song song;
+  auto bar1_notes = applyVoiceLimitToFrozenMotif(song);
+
+  // Every re-quantized note must record the pitch change as a ChordToneSnap
+  // transform step so provenance debugging can trace the modification.
+  ASSERT_EQ(bar1_notes.size(), 4u);
+  for (const auto& note : bar1_notes) {
+    if (note.note == 66) continue;  // Not re-quantized (should not happen)
+
+    bool has_snap_step = false;
+    for (uint8_t s = 0; s < note.transform_count; ++s) {
+      const auto& step = note.transform_steps[s];
+      if (step.type == TransformStepType::ChordToneSnap && step.input_pitch == 66) {
+        EXPECT_EQ(step.output_pitch, note.note) << "Transform output should match the final pitch";
+        has_snap_step = true;
+      }
+    }
+    EXPECT_TRUE(has_snap_step) << "Re-quantized note at tick " << note.start_tick << " (pitch "
+                               << static_cast<int>(note.note)
+                               << ") must record a ChordToneSnap transform";
+  }
+}
+#endif  // MIDISKETCH_NOTE_PROVENANCE
+
+TEST(VoiceLimitRequantizeTest, BreaksSamePitchRuns) {
+  Song song;
+  auto bar1_notes = applyVoiceLimitToFrozenMotif(song);
+
+  // All four frozen copies share the same source pitch (F#4), so naive
+  // nearest-chord-tone snapping would map them all to the same pitch,
+  // producing a monotone run. The limiter must diversify the run once it
+  // exceeds kMaxFrozenSameRun (3).
+  ASSERT_EQ(bar1_notes.size(), 4u);
+  std::set<uint8_t> distinct_pitches;
+  for (const auto& note : bar1_notes) {
+    distinct_pitches.insert(note.note);
+  }
+  EXPECT_GE(distinct_pitches.size(), 2u)
+      << "Re-quantization must not collapse a whole bar onto a single pitch";
+}
+
+TEST(VoiceLimitRequantizeTest, RequantizedPitchStaysBelowConcurrentVocal) {
+  Song song;
+  auto bar1_notes = applyVoiceLimitToFrozenMotif(song);
+
+  // The source pitch (F#4=66) is below the concurrent vocal (D5=74).
+  // Re-quantization must not push backing notes above the main melody.
+  ASSERT_EQ(bar1_notes.size(), 4u);
+  for (const auto& note : bar1_notes) {
+    EXPECT_LT(note.note, 74) << "Backing note below the vocal must stay below it "
+                             << "(tick " << note.start_tick << ")";
+  }
 }
 
 }  // namespace test

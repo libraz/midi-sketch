@@ -199,6 +199,18 @@ class Coordinator {
   /// @return Pointer to generator, or nullptr if not registered
   const ITrackBase* getTrackGenerator(TrackRole role) const;
 
+  /// @brief Apply max_moving_voices constraint by freezing low-priority tracks.
+  ///
+  /// Frozen bars are replaced by copies of the previous bar and re-quantized
+  /// to the current chord (recording ChordToneSnap transforms, breaking
+  /// same-pitch runs, and keeping below-vocal notes below the vocal).
+  /// Public so the re-quantization behavior can be unit-tested with crafted
+  /// songs; normally invoked internally by generateAllTracks().
+  ///
+  /// @param song The song with generated tracks
+  /// @param sections The section list
+  void applyVoiceLimit(Song& song, const std::vector<Section>& sections);
+
  private:
   // =========================================================================
   // Song Structure (Coordinator-owned)
@@ -276,11 +288,6 @@ class Coordinator {
   ///
   /// @param harmony Harmony coordinator to register phantom notes with
   void registerGuideChord(IHarmonyCoordinator& harmony);
-
-  /// @brief Apply max_moving_voices constraint by freezing low-priority tracks.
-  /// @param song The song with generated tracks
-  /// @param sections The section list
-  void applyVoiceLimit(Song& song, const std::vector<Section>& sections);
 };
 
 }  // namespace midisketch
