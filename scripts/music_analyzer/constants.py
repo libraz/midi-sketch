@@ -49,6 +49,22 @@ BLUEPRINT_NAMES = {
     6: "IdolKawaii",
     7: "IdolCoolPop",
     8: "IdolEmo",
+    9: "BehavioralLoop",
+}
+
+# Generation source -> primary C++ source file (for navigation in reports)
+SOURCE_FILES = {
+    "melody_phrase": "src/track/vocal/melody_designer.cpp",
+    "hook": "src/track/vocal/melody_designer.cpp",
+    "bass_pattern": "src/track/generators/bass.cpp",
+    "chord_voicing": "src/track/generators/chord.cpp",
+    "arpeggio": "src/track/generators/arpeggio.cpp",
+    "aux": "src/track/generators/aux.cpp",
+    "motif": "src/track/generators/motif.cpp",
+    "drums": "src/track/drums/drum_track_generator.cpp",
+    "embellishment": "src/core/melody_embellishment.cpp",
+    "collision_avoid": "src/core/collision_resolver.cpp",
+    "post_process": "src/core/post_processor.cpp",
 }
 
 # C major scale pitch classes

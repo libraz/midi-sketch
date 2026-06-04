@@ -93,12 +93,20 @@ TEST(ConfigConverterMotifTest, MotifMotionOverrideStepwise) {
 }
 
 TEST(ConfigConverterMotifTest, MotifMotionOverrideClampedToMax) {
-  // Values > 4 should be clamped to 4 (Disjunct)
+  // Values > 5 should be clamped to 5 (Ostinato)
   SongConfig config = createDefaultSongConfig(0);
   config.motif_motion = 10;  // Out of range but not sentinel
   config.seed = 12345;
   GeneratorParams params = ConfigConverter::convert(config);
-  EXPECT_EQ(params.motif.motion, MotifMotion::Disjunct);
+  EXPECT_EQ(params.motif.motion, MotifMotion::Ostinato);
+}
+
+TEST(ConfigConverterMotifTest, MotifMotionOverrideOstinato) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.motif_motion = 5;  // Ostinato
+  config.seed = 12345;
+  GeneratorParams params = ConfigConverter::convert(config);
+  EXPECT_EQ(params.motif.motion, MotifMotion::Ostinato);
 }
 
 TEST(ConfigConverterMotifTest, MotifRhythmDensitySentinelPreservesPreset) {
@@ -242,8 +250,16 @@ TEST(SongConfigJsonTest, RoundtripNonDefaultValues) {
   original.motif_motion = 2;
   original.addictive_mode = true;
   original.arpeggio.pattern = ArpeggioPattern::UpDown;
+  original.arpeggio.base_velocity = 110;
   original.chord_extension.enable_7th = true;
   original.chord_extension.seventh_probability = 0.5f;
+  original.chord_extension.tritone_sub = true;
+  original.chord_extension.tritone_sub_probability = 0.7f;
+  original.chord_ext_prob_explicit = true;
+  original.drums_enabled_explicit = true;
+  original.guitar_enabled = false;
+  original.mora_rhythm_mode = 1;
+  original.syllabic_sub_rate = 40;
 
   std::ostringstream oss;
   json::Writer w(oss);
@@ -273,8 +289,16 @@ TEST(SongConfigJsonTest, RoundtripNonDefaultValues) {
   EXPECT_EQ(restored.motif_motion, 2);
   EXPECT_TRUE(restored.addictive_mode);
   EXPECT_EQ(restored.arpeggio.pattern, ArpeggioPattern::UpDown);
+  EXPECT_EQ(restored.arpeggio.base_velocity, 110);
   EXPECT_TRUE(restored.chord_extension.enable_7th);
   EXPECT_FLOAT_EQ(restored.chord_extension.seventh_probability, 0.5f);
+  EXPECT_TRUE(restored.chord_extension.tritone_sub);
+  EXPECT_FLOAT_EQ(restored.chord_extension.tritone_sub_probability, 0.7f);
+  EXPECT_TRUE(restored.chord_ext_prob_explicit);
+  EXPECT_TRUE(restored.drums_enabled_explicit);
+  EXPECT_FALSE(restored.guitar_enabled);
+  EXPECT_EQ(restored.mora_rhythm_mode, 1);
+  EXPECT_EQ(restored.syllabic_sub_rate, 40);
 }
 
 TEST(SongConfigJsonTest, AllStylePresetsRoundtrip) {
@@ -430,6 +454,33 @@ TEST(JsonApiTest, SetVocalNotesFromJson) {
   })";
   MidiSketchError result = midisketch_set_vocal_notes_from_json(handle, json, strlen(json));
   EXPECT_EQ(result, MIDISKETCH_OK);
+
+  midisketch_destroy(handle);
+}
+
+TEST(JsonApiTest, SetVocalNotesRejectsInvalidNotes) {
+  MidiSketchHandle handle = midisketch_create();
+  ASSERT_NE(handle, nullptr);
+
+  const char* invalid_pitch_json = R"({
+    "config": {"style_preset_id":0,"seed":42,"bpm":120},
+    "notes": [
+      {"start_tick":0,"duration":480,"pitch":128,"velocity":100}
+    ]
+  })";
+  MidiSketchError result =
+      midisketch_set_vocal_notes_from_json(handle, invalid_pitch_json, strlen(invalid_pitch_json));
+  EXPECT_EQ(result, MIDISKETCH_ERROR_INVALID_PARAM);
+
+  const char* zero_duration_json = R"({
+    "config": {"style_preset_id":0,"seed":42,"bpm":120},
+    "notes": [
+      {"start_tick":0,"duration":0,"pitch":60,"velocity":100}
+    ]
+  })";
+  result =
+      midisketch_set_vocal_notes_from_json(handle, zero_duration_json, strlen(zero_duration_json));
+  EXPECT_EQ(result, MIDISKETCH_ERROR_INVALID_PARAM);
 
   midisketch_destroy(handle);
 }

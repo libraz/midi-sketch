@@ -10,7 +10,7 @@ import {
   RiffPolicy,
 } from './blueprint';
 import { createDefaultConfig } from './config';
-import { CompositionStyle } from './constants';
+import { CompositionStyle, HookIntensity } from './constants';
 import type { SongConfig } from './types';
 
 // ============================================================================
@@ -130,7 +130,7 @@ export class SongConfigBuilder {
 
   /**
    * Create a new builder with default config for the given style
-   * @param styleId Style preset ID (0-12)
+   * @param styleId Style preset ID (0-16)
    */
   constructor(styleId: number = 0) {
     this.config = createDefaultConfig(styleId);
@@ -263,7 +263,7 @@ export class SongConfigBuilder {
    * Set vocal style preset with cascade detection
    *
    * Idol-style vocalStyles (4=Idol, 9=BrightKira, 11=CuteAffected) will
-   * auto-enable call system if callEnabled is not explicitly set.
+   * auto-enable call system if callSetting/callEnabled is not explicitly set.
    *
    * @param style Vocal style ID (0=Auto, 1=Standard, 2=Vocaloid, etc.)
    */
@@ -278,10 +278,15 @@ export class SongConfigBuilder {
     // Idol-style vocalStyles auto-enable call if not explicitly set
     // vocalStyle: 4=Idol, 9=BrightKira, 11=CuteAffected
     const idolStyles = [4, 9, 11];
-    if (idolStyles.includes(style) && !this.explicitFields.has('callEnabled')) {
+    if (
+      idolStyles.includes(style) &&
+      !this.explicitFields.has('callSetting') &&
+      !this.explicitFields.has('callEnabled')
+    ) {
       if (!this.config.callEnabled) {
         const oldCall = this.config.callEnabled;
         this.config.callEnabled = true;
+        this.config.callSetting = 1;
         tracker.addChange(
           'call',
           'callEnabled',
@@ -380,9 +385,11 @@ export class SongConfigBuilder {
     sus?: boolean;
     seventh?: boolean;
     ninth?: boolean;
+    tritone?: boolean;
     susProb?: number;
     seventhProb?: number;
     ninthProb?: number;
+    tritoneProb?: number;
   }): this {
     if (opts.sus !== undefined) {
       this.setField('chordExtSus', opts.sus, 'chord');
@@ -393,6 +400,9 @@ export class SongConfigBuilder {
     if (opts.ninth !== undefined) {
       this.setField('chordExt9th', opts.ninth, 'chord');
     }
+    if (opts.tritone !== undefined) {
+      this.setField('chordExtTritoneSub', opts.tritone, 'chord');
+    }
     if (opts.susProb !== undefined) {
       this.setField('chordExtSusProb', opts.susProb, 'chord');
     }
@@ -402,11 +412,15 @@ export class SongConfigBuilder {
     if (opts.ninthProb !== undefined) {
       this.setField('chordExt9thProb', opts.ninthProb, 'chord');
     }
+    if (opts.tritoneProb !== undefined) {
+      this.setField('chordExtTritoneSubProb', opts.tritoneProb, 'chord');
+    }
     // Mark explicit if any probability was set (prevents mood override)
     if (
       opts.susProb !== undefined ||
       opts.seventhProb !== undefined ||
-      opts.ninthProb !== undefined
+      opts.ninthProb !== undefined ||
+      opts.tritoneProb !== undefined
     ) {
       this.config.chordExtProbExplicit = true;
     }
@@ -476,14 +490,22 @@ export class SongConfigBuilder {
    */
   setCall(opts: {
     enabled?: boolean;
+    setting?: number;
     notesEnabled?: boolean;
     density?: number;
     introChant?: number;
     mixPattern?: number;
     seEnabled?: boolean;
   }): this {
+    if (opts.setting !== undefined) {
+      this.setField('callSetting', opts.setting, 'call');
+      this.config.callEnabled = opts.setting === 1;
+      this.explicitFields.add('callEnabled');
+    }
     if (opts.enabled !== undefined) {
       this.setField('callEnabled', opts.enabled, 'call');
+      this.config.callSetting = opts.enabled ? 1 : 2;
+      this.explicitFields.add('callSetting');
     }
     if (opts.notesEnabled !== undefined) {
       this.setField('callNotesEnabled', opts.notesEnabled, 'call');
@@ -644,7 +666,11 @@ export class SongConfigBuilder {
       const paradigm = getBlueprintParadigm(id);
       const riffPolicy = getBlueprintRiffPolicy(id);
 
-      // Blueprint IDs with drums_required=true: 1, 5, 6, 7
+      // Blueprint IDs with drums_required=true: 1, 5, 6, 7.
+      // Source of truth is C++ midisketch_blueprint_drums_required(id) (see internal.ts
+      // Api.blueprintDrumsRequired). The builder is a pure data object without a module
+      // instance, so this list is mirrored here; keep it in sync with the C++ blueprint
+      // constraints (production_blueprint.cpp).
       const drumsRequiredBlueprints = [1, 5, 6, 7];
       const isDrumsRequired = drumsRequiredBlueprints.includes(id);
 
@@ -706,18 +732,17 @@ export class SongConfigBuilder {
 
       // BehavioralLoop (ID 9): addictive_mode, forces HookIntensity=Maximum (4)
       if (id === 9) {
-        const HOOK_INTENSITY_MAXIMUM = 4;
         if (
-          this.config.hookIntensity !== HOOK_INTENSITY_MAXIMUM &&
+          this.config.hookIntensity !== HookIntensity.Maximum &&
           !this.explicitFields.has('hookIntensity')
         ) {
           const oldHook = this.config.hookIntensity;
-          this.config.hookIntensity = HOOK_INTENSITY_MAXIMUM;
+          this.config.hookIntensity = HookIntensity.Maximum;
           tracker.addChange(
             'hook',
             'hookIntensity',
             oldHook,
-            HOOK_INTENSITY_MAXIMUM,
+            HookIntensity.Maximum,
             'BehavioralLoop blueprint forces HookIntensity=Maximum',
           );
         }
@@ -834,7 +859,7 @@ export class SongConfigBuilder {
    *
    * Changing style preset resets mood, chord, form, bpm to style defaults.
    *
-   * @param id Style preset ID (0-12)
+   * @param id Style preset ID (0-16)
    */
   setStylePreset(id: number): this {
     const tracker = new ChangeTracker();

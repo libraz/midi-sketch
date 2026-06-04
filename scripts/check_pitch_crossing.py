@@ -7,7 +7,6 @@ When accompaniment tracks (Chord, Motif, Arpeggio, Aux) play notes above
 the vocal, the melody gets buried. This script detects such crossings.
 """
 
-import subprocess
 import json
 import sys
 import argparse
@@ -16,7 +15,12 @@ from dataclasses import dataclass, field
 from typing import Optional
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
+
+# Ensure scripts/ is importable so the music_analyzer package and
+# cli_utils module resolve whether run from repo root or scripts/.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from cli_utils import ProgressCounter, run_cli
+from music_analyzer import BLUEPRINT_NAMES
 
 
 # MIDI note name lookup
@@ -27,19 +31,6 @@ TICKS_PER_BAR = 1920
 
 # Default tracks to check (Bass, Drums, SE excluded)
 DEFAULT_CHECK_TRACKS = ["chord", "motif", "arpeggio", "aux"]
-
-# Blueprint names
-BLUEPRINT_NAMES = {
-    0: "Traditional",
-    1: "RhythmLock",
-    2: "StoryPop",
-    3: "Ballad",
-    4: "IdolStandard",
-    5: "IdolHyper",
-    6: "IdolKawaii",
-    7: "IdolCoolPop",
-    8: "IdolEmo",
-}
 
 
 def pitch_name(pitch: int) -> str:
@@ -232,8 +223,7 @@ def run_single_test(
     output_dir: Path,
 ) -> TestResult:
     """Run a single generation and check for pitch crossings."""
-    cmd = [
-        cli_path,
+    args = [
         "--json",
         "--seed", str(seed),
         "--style", str(style),
@@ -241,22 +231,18 @@ def run_single_test(
         "--blueprint", str(blueprint),
     ]
 
-    # Use unique output file per test
-    output_file = output_dir / f"output_{seed}_{style}_{chord}_{blueprint}.json"
-
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            cwd=work_dir,
-        )
+        returncode, message = run_cli(cli_path, args, work_dir, timeout=60)
 
-        if result.returncode != 0:
+        if returncode is None:
             return TestResult(
                 seed=seed, style=style, chord=chord, blueprint=blueprint,
-                error=f"CLI error: {result.stderr[:200]}",
+                error=message,
+            )
+        if returncode != 0:
+            return TestResult(
+                seed=seed, style=style, chord=chord, blueprint=blueprint,
+                error=f"CLI error: {message}",
             )
 
         # Read output.json
@@ -286,11 +272,6 @@ def run_single_test(
             violations=violations,
         )
 
-    except subprocess.TimeoutExpired:
-        return TestResult(
-            seed=seed, style=style, chord=chord, blueprint=blueprint,
-            error="Timeout (>60s)",
-        )
     except Exception as e:
         return TestResult(
             seed=seed, style=style, chord=chord, blueprint=blueprint,
@@ -306,22 +287,20 @@ def analyze_existing_file(
     work_dir: Path,
 ) -> TestResult:
     """Analyze an existing MIDI file for pitch crossings."""
-    # Generate JSON from MIDI file
-    cmd = [cli_path, "--json", "--input", str(midi_path)]
-
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            cwd=work_dir,
+        # Generate JSON from MIDI file
+        returncode, message = run_cli(
+            cli_path, ["--json", "--input", str(midi_path)], work_dir, timeout=60
         )
 
-        if result.returncode != 0:
+        if returncode is None:
+            return TestResult(
+                seed=0, style=0, chord=0, blueprint=0, error=message,
+            )
+        if returncode != 0:
             return TestResult(
                 seed=0, style=0, chord=0, blueprint=0,
-                error=f"CLI error: {result.stderr[:200]}",
+                error=f"CLI error: {message}",
             )
 
         std_output = work_dir / "output.json"
@@ -347,30 +326,8 @@ def analyze_existing_file(
             violations=violations,
         )
 
-    except subprocess.TimeoutExpired:
-        return TestResult(seed=0, style=0, chord=0, blueprint=0, error="Timeout (>60s)")
     except Exception as e:
         return TestResult(seed=0, style=0, chord=0, blueprint=0, error=str(e)[:200])
-
-
-class ProgressCounter:
-    def __init__(self, total: int):
-        self.total = total
-        self.current = 0
-        self.lock = threading.Lock()
-        self.failed = 0
-        self.warned = 0
-        self.errors = 0
-
-    def increment(self, result: TestResult):
-        with self.lock:
-            self.current += 1
-            if result.error:
-                self.errors += 1
-            elif result.has_high_severity:
-                self.failed += 1
-            elif result.has_violations:
-                self.warned += 1
 
 
 def run_tests(

@@ -307,17 +307,22 @@ inline Tick getBreathDuration(SectionType section_type, bool is_ballad,
     // Section boundary: larger breath for dramatic pause
     base = TICK_QUARTER;  // 480 ticks
   } else {
-    // Phrase boundary: standard breath
+    // Phrase boundary: standard breath.
+    // Minimum is an 8th note (TICK_EIGHTH = 240 ticks = half a beat) so the
+    // inter-phrase rest is always a perceptible breath. Anything shorter is not
+    // recognized as a phrase boundary (the breathability heuristic treats gaps
+    // below a half-beat as continuous singing), which would let phrases run on
+    // for an entire section without breathing room.
     switch (section_type) {
       case SectionType::Chorus:
       case SectionType::Drop:
-        base = TICK_SIXTEENTH;  // 120 ticks - minimal breath for energy
+        base = TICK_EIGHTH;  // 240 ticks - minimal real breath for energy
         break;
       case SectionType::Bridge:
         base = TICK_EIGHTH;  // 240 ticks - spacious
         break;
       default:
-        base = TICK_SIXTEENTH;  // 120 ticks
+        base = TICK_EIGHTH;  // 240 ticks
         break;
     }
   }

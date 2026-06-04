@@ -47,6 +47,15 @@ TEST(ChordTest, MinorChord) {
   EXPECT_EQ(chord.intervals[2], 7);  // Perfect 5th
 }
 
+TEST(ChordTest, ChordQualityClassification) {
+  EXPECT_EQ(getChordQuality(0), ChordQuality::Major);        // I
+  EXPECT_EQ(getChordQuality(1), ChordQuality::Minor);        // ii
+  EXPECT_EQ(getChordQuality(6), ChordQuality::Diminished);   // vii
+  EXPECT_EQ(getChordQuality(10), ChordQuality::Major);       // bVII
+  EXPECT_EQ(getChordQuality(12), ChordQuality::Minor);       // borrowed iv
+  EXPECT_EQ(getChordQuality(14), ChordQuality::Diminished);  // #IVdim
+}
+
 TEST(ChordTest, ProgressionNames) {
   EXPECT_STREQ(getChordProgressionName(0), "Canon");
   EXPECT_STREQ(getChordProgressionName(1), "Pop1");

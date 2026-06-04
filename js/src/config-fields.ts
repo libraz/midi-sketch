@@ -38,7 +38,7 @@ export const CONFIG_FIELDS: readonly ConfigField[] = [
   { js: 'drumsEnabled', cpp: 'drums_enabled', default: true, type: 'boolean' },
   { js: 'drumsEnabledExplicit', cpp: 'drums_enabled_explicit', default: false, type: 'boolean' },
   { js: 'arpeggioEnabled', cpp: 'arpeggio_enabled', default: false, type: 'boolean' },
-  { js: 'guitarEnabled', cpp: 'guitar_enabled', default: false, type: 'boolean' },
+  { js: 'guitarEnabled', cpp: 'guitar_enabled', default: true, type: 'boolean' },
   { js: 'skipVocal', cpp: 'skip_vocal', default: false, type: 'boolean' },
   { js: 'vocalLow', cpp: 'vocal_low', default: 60, type: 'number' },
   { js: 'vocalHigh', cpp: 'vocal_high', default: 79, type: 'number' },
@@ -51,7 +51,7 @@ export const CONFIG_FIELDS: readonly ConfigField[] = [
   { js: 'modulationTiming', cpp: 'modulation_timing', default: 0, type: 'number' },
   { js: 'modulationSemitones', cpp: 'modulation_semitones', default: 2, type: 'number' },
   { js: 'seEnabled', cpp: 'se_enabled', default: true, type: 'boolean' },
-  { js: 'callEnabled', cpp: 'call_setting', default: 0, type: 'number' },
+  { js: 'callSetting', cpp: 'call_setting', default: 0, type: 'number' },
   { js: 'callNotesEnabled', cpp: 'call_notes_enabled', default: true, type: 'boolean' },
   { js: 'introChant', cpp: 'intro_chant', default: 0, type: 'number' },
   { js: 'mixPattern', cpp: 'mix_pattern', default: 0, type: 'number' },
@@ -105,6 +105,12 @@ const ARPEGGIO_FIELDS: readonly ConfigField[] = [
     default: true,
     type: 'boolean',
   },
+  {
+    js: 'arpeggioBaseVelocity' as keyof SongConfig,
+    cpp: 'base_velocity',
+    default: 90,
+    type: 'number',
+  },
 ] as const;
 
 // ChordExtension nested struct fields
@@ -112,6 +118,12 @@ const CHORD_EXT_FIELDS: readonly ConfigField[] = [
   { js: 'chordExtSus' as keyof SongConfig, cpp: 'enable_sus', default: false, type: 'boolean' },
   { js: 'chordExt7th' as keyof SongConfig, cpp: 'enable_7th', default: false, type: 'boolean' },
   { js: 'chordExt9th' as keyof SongConfig, cpp: 'enable_9th', default: false, type: 'boolean' },
+  {
+    js: 'chordExtTritoneSub' as keyof SongConfig,
+    cpp: 'tritone_sub',
+    default: false,
+    type: 'boolean',
+  },
   {
     js: 'chordExtSusProb' as keyof SongConfig,
     cpp: 'sus_probability',
@@ -128,6 +140,12 @@ const CHORD_EXT_FIELDS: readonly ConfigField[] = [
     js: 'chordExt9thProb' as keyof SongConfig,
     cpp: 'ninth_probability',
     default: 0.25,
+    type: 'number',
+  },
+  {
+    js: 'chordExtTritoneSubProb' as keyof SongConfig,
+    cpp: 'tritone_sub_probability',
+    default: 0.5,
     type: 'number',
   },
 ] as const;
@@ -175,6 +193,7 @@ export const VOCAL_FIELDS: readonly {
   { js: 'hookIntensity', cpp: 'hook_intensity', default: 2, type: 'number' },
   { js: 'vocalGroove', cpp: 'vocal_groove', default: 0, type: 'number' },
   { js: 'compositionStyle', cpp: 'composition_style', default: 0, type: 'number' },
+  { js: 'keepMotif', cpp: 'keep_motif', default: false, type: 'boolean' },
 ] as const;
 
 // ============================================================================
@@ -261,13 +280,13 @@ export function serializeConfig(config: SongConfig): string {
   for (const { js, cpp } of CONFIG_FIELDS) {
     const val = c[js];
     if (val !== undefined) {
-      // callEnabled (bool) -> call_setting (number): true=1(Enabled), false=0(Auto)
-      if (js === 'callEnabled') {
-        obj[cpp] = val ? 1 : 0;
-      } else {
-        obj[cpp] = val;
-      }
+      obj[cpp] = val;
     }
+  }
+
+  if (c.callSetting === undefined && c.callEnabled !== undefined) {
+    // Backward compatibility: explicit boolean callers can still force call on/off.
+    obj.call_setting = c.callEnabled ? 1 : 2;
   }
 
   // Nested structs: flatten from JS top-level fields into C++ nested objects
@@ -295,12 +314,19 @@ export function deserializeConfig(json: string): SongConfig {
   const config: Record<string, unknown> = {};
 
   for (const { js, cpp, default: def } of CONFIG_FIELDS) {
-    // call_setting (number) -> callEnabled (bool): 0=Auto(false), 1=Enabled(true)
-    if (js === 'callEnabled') {
-      config[js] = (obj[cpp] ?? def) !== 0;
-    } else {
-      config[js] = obj[cpp] ?? def;
-    }
+    config[js] = obj[cpp] ?? def;
+  }
+  // callSetting (0=Auto, 1=Enabled, 2=Disabled) is the source of truth.
+  // Derive the legacy callEnabled boolean only when callSetting is unambiguous:
+  // Enabled -> true, Disabled -> false, Auto -> leave undefined so callers can
+  // distinguish "auto" from an explicit on/off decision.
+  const callSetting = config.callSetting as number | undefined;
+  if (callSetting === 1) {
+    config.callEnabled = true;
+  } else if (callSetting === 2) {
+    config.callEnabled = false;
+  } else {
+    config.callEnabled = undefined;
   }
 
   // Nested structs: unflatten from C++ nested objects to JS top-level fields

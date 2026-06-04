@@ -226,8 +226,16 @@ void PostProcessor::applyAllExitPatterns(std::vector<MidiTrack*>& tracks,
 
     for (size_t i = 0; i < tracks.size(); ++i) {
       if (tracks[i] != nullptr) {
-        TrackRole role = (i < roles.size()) ? roles[i] : TrackRole::Vocal;
-        applyExitPattern(*tracks[i], section, harmony, role);
+        if (i < roles.size()) {
+          applyExitPattern(*tracks[i], section, harmony, roles[i]);
+        } else {
+          // No real role available for this track. Do NOT pretend TrackRole::Vocal:
+          // that would apply wrong dissonance rules in getMaxSafeEnd for Sustain
+          // exit patterns (a non-vocal note checked as if it were vocal, excluding
+          // the wrong track). Skip the harmony-dependent inter-track collision check
+          // instead by passing no harmony context for this track.
+          applyExitPattern(*tracks[i], section, nullptr, TrackRole::Vocal);
+        }
       }
     }
   }

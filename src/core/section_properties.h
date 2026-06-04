@@ -25,9 +25,10 @@ struct SectionProperties {
   int energy_level;           ///< Energy level (1-4)
 
   // === Structure (structure.cpp) ===
-  VocalDensity vocal_density;      ///< Vocal presence in section
-  BackingDensity backing_density;  ///< Backing instrument density
-  bool allow_deviation;            ///< Allow raw vocal attitude (Chorus/Bridge only)
+  VocalDensity vocal_density;       ///< Vocal presence in section
+  BackingDensity backing_density;   ///< Backing instrument density
+  bool allow_deviation;             ///< Allow raw vocal attitude (Chorus/Bridge only)
+  uint8_t default_density_percent;  ///< Default note density (assignDensityGradient)
 
   // === Chord (chord.cpp, chord_track.cpp) ===
   float slash_chord_threshold;  ///< Slash chord probability (0.0-0.55)
@@ -52,27 +53,27 @@ struct SectionProperties {
 /// - drums.cpp: shouldUseRide()
 // clang-format off
 constexpr std::array<SectionProperties, 10> kSectionProperties = {{
-  //        vel_mult  energy  vocal_dens          backing_dens          allow_dev  slash   sec_ten  antic   ride
+  //        vel_mult  energy  vocal_dens          backing_dens          allow_dev  density  slash   sec_ten  antic   ride
   // Intro: quiet, no vocal, thin backing
-  /* 0 */ { 0.70f,    1,      VocalDensity::None,   BackingDensity::Thin,   false,   0.00f,  0.35f,   false,  false },
+  /* 0 */ { 0.70f,    1,      VocalDensity::None,   BackingDensity::Thin,   false,   70,     0.00f,  0.35f,   false,  false },
   // A: subdued verse, sparse vocal, normal backing
-  /* 1 */ { 0.70f,    2,      VocalDensity::Sparse, BackingDensity::Normal, false,   0.50f,  0.45f,   true,   false },
+  /* 1 */ { 0.70f,    2,      VocalDensity::Sparse, BackingDensity::Normal, false,   80,     0.50f,  0.45f,   true,   false },
   // B: building pre-chorus, full vocal, normal backing
-  /* 2 */ { 0.85f,    3,      VocalDensity::Full,   BackingDensity::Normal, false,   0.55f,  0.65f,   true,   false },
+  /* 2 */ { 0.85f,    3,      VocalDensity::Full,   BackingDensity::Normal, false,   90,     0.55f,  0.65f,   true,   false },
   // Chorus: energetic, full vocal, thick backing, allows deviation
-  /* 3 */ { 1.10f,    4,      VocalDensity::Full,   BackingDensity::Thick,  true,    0.30f,  0.75f,   true,   true  },
+  /* 3 */ { 1.10f,    4,      VocalDensity::Full,   BackingDensity::Thick,  true,    100,    0.30f,  0.75f,   true,   true  },
   // Bridge: reflective, sparse vocal, thin backing, allows deviation
-  /* 4 */ { 0.70f,    2,      VocalDensity::Sparse, BackingDensity::Thin,   true,    0.45f,  0.60f,   true,   true  },
+  /* 4 */ { 0.70f,    2,      VocalDensity::Sparse, BackingDensity::Thin,   true,    85,     0.45f,  0.60f,   true,   true  },
   // Interlude: quiet, no vocal, thin backing
-  /* 5 */ { 0.70f,    1,      VocalDensity::None,   BackingDensity::Thin,   false,   0.40f,  0.35f,   false,  true  },
+  /* 5 */ { 0.70f,    1,      VocalDensity::None,   BackingDensity::Thin,   false,   60,     0.40f,  0.35f,   false,  true  },
   // Outro: fading, no vocal, normal backing
-  /* 6 */ { 0.75f,    2,      VocalDensity::None,   BackingDensity::Normal, false,   0.00f,  0.25f,   false,  false },
+  /* 6 */ { 0.75f,    2,      VocalDensity::None,   BackingDensity::Normal, false,   70,     0.00f,  0.25f,   false,  false },
   // Chant: very subdued, no vocal, thin backing
-  /* 7 */ { 0.55f,    1,      VocalDensity::None,   BackingDensity::Thin,   false,   0.00f,  0.25f,   false,  false },
+  /* 7 */ { 0.55f,    1,      VocalDensity::None,   BackingDensity::Thin,   false,   50,     0.00f,  0.25f,   false,  false },
   // MixBreak: high energy, no vocal, thick backing
-  /* 8 */ { 1.10f,    1,      VocalDensity::None,   BackingDensity::Thick,  false,   0.00f,  0.55f,   true,   true  },
+  /* 8 */ { 1.10f,    1,      VocalDensity::None,   BackingDensity::Thick,  false,   100,    0.00f,  0.55f,   true,   true  },
   // Drop: high energy, no vocal, thin backing (kick + sub-bass only initially)
-  /* 9 */ { 1.10f,    4,      VocalDensity::None,   BackingDensity::Thin,   false,   0.00f,  0.40f,   true,   true  },
+  /* 9 */ { 1.10f,    4,      VocalDensity::None,   BackingDensity::Thin,   false,   100,    0.00f,  0.40f,   true,   true  },
 }};
 // clang-format on
 

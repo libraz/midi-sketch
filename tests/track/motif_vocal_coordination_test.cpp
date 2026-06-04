@@ -77,10 +77,13 @@ TEST_F(MotifHelperTest, CalculateMotifRegisterHighVocal) {
 }
 
 TEST_F(MotifHelperTest, CalculateMotifRegisterLowVocal) {
-  // Vocal is low (C3-C4), motif should go above
+  // Vocal is low (C3-C4) and register_high is false (low-register intent).
+  // The motif must be placed BELOW the vocal so it does not cross above the
+  // melody. (Previously this branch placed the motif at vocal_high + 5, i.e.
+  // ABOVE the vocal, which contradicted the low-register intent and caused
+  // motif-above-vocal crossings.)
   uint8_t result = motif_detail::calculateMotifRegister(48, 60, false, 0);
-  // When vocal center is < 66, motif goes above
-  EXPECT_GE(result, 60) << "Motif should be above low vocal";
+  EXPECT_LE(result, 48) << "Low-register motif should sit at or below the low vocal";
 }
 
 TEST_F(MotifHelperTest, CalculateMotifRegisterHighMode) {

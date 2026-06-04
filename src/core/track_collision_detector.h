@@ -268,22 +268,44 @@ class TrackCollisionDetector {
   std::vector<std::vector<size_t>> beat_index_;
 };
 
+/// @brief Check if a track role plays sustained harmonic (chordal) content.
+///
+/// Sustained harmony tracks (Guitar strums, Chord voicings) hold pitches as
+/// vertical harmony rather than melodic movement, so the passing-tone
+/// exemption (meant for brief melodic stepwise motion) must NOT apply to them.
+/// A sustained guitar/chord m2 or M2 against another track is a real clash.
+inline bool isSustainedHarmonicRole(TrackRole role) {
+  return role == TrackRole::Guitar || role == TrackRole::Chord;
+}
+
 /// @brief Check if a dissonance should be tolerated as a brief passing tone.
 ///
 /// Applies strong-beat reduction: thresholds halved on beats 1 and 3.
 /// Only tolerates stepwise intervals (m2 = 1, M2 = 2).
 /// Low register guard: both notes below C4 are never tolerated (muddy).
+/// Sustained-harmony guard: if either note belongs to a sustained harmonic
+/// track (Guitar/Chord), the exemption does not apply — those are vertical
+/// chord hits, not melodic passing tones.
 ///
 /// @param actual_semitones Absolute interval in semitones
 /// @param overlap_duration Temporal overlap in ticks between the two notes
 /// @param candidate_pitch MIDI pitch of the note being checked
 /// @param existing_pitch MIDI pitch of the already-registered note
 /// @param note_start Start tick of the candidate note (for beat position)
+/// @param candidate_role Role of the note being checked (default: melodic)
+/// @param existing_role Role of the already-registered note (default: melodic)
 /// @return true if the dissonance should be tolerated
 inline bool isToleratedPassingTone(int actual_semitones, Tick overlap_duration,
-                                   uint8_t candidate_pitch, uint8_t existing_pitch,
-                                   Tick note_start) {
+                                   uint8_t candidate_pitch, uint8_t existing_pitch, Tick note_start,
+                                   TrackRole candidate_role = TrackRole::Vocal,
+                                   TrackRole existing_role = TrackRole::Vocal) {
   if (actual_semitones != 1 && actual_semitones != 2) return false;
+
+  // Sustained-harmony guard: Guitar/Chord hits are vertical harmony, not
+  // melodic passing tones. A stepwise clash involving them is a real collision.
+  if (isSustainedHarmonicRole(candidate_role) || isSustainedHarmonicRole(existing_role)) {
+    return false;
+  }
 
   // Low register guard: both notes < C4 → muddy regardless of duration
   if (candidate_pitch < TrackCollisionDetector::LOW_REGISTER_THRESHOLD &&

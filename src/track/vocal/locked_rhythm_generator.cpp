@@ -110,12 +110,14 @@ uint8_t selectPitchForOnset(const std::vector<PitchCandidate>& candidates,
 Tick computeNoteDuration(bool is_last_note, bool is_phrase_end, Tick tick, Tick section_end,
                          Tick next_onset, Tick available_span, Tick breath_duration,
                          Tick phrase_end_min, float gate_ratio, uint8_t safe_pitch,
-                         uint8_t prev_pitch) {
+                         uint8_t prev_pitch, Tick min_singable) {
   Tick duration;
   if (is_last_note) {
     duration = section_end - tick;
   } else if (is_phrase_end) {
-    // Phrase-end note: sustain with breath gap before next phrase
+    // Phrase-end note: sustain but always leave a breath gap before the next
+    // phrase. The breath gap MUST be preserved as an actual rest so that the
+    // continuous-singing span is broken at phrase boundaries (breathability).
     Tick breath_gap = breath_duration;
     if (available_span > breath_gap + TICK_SIXTEENTH) {
       duration = available_span - breath_gap;
@@ -124,8 +126,30 @@ Tick computeNoteDuration(bool is_last_note, bool is_phrase_end, Tick tick, Tick 
       duration = static_cast<Tick>(available_span * gate_ratio);
     }
     duration = std::max(duration, phrase_end_min);
-    if (tick + duration > next_onset) {
-      duration = next_onset - tick;
+    // Clip to the next onset, but reserve a breath gap when there is room.
+    // Reserving the gap here (rather than clipping flush to next_onset) is what
+    // actually inserts the inter-phrase rest the breathability analyzer expects.
+    // The reservation is only applied when it leaves the phrase-end note at a
+    // singable length (>= min_singable): clipping the note shorter than that
+    // would turn the phrase-ending into an isolated short note in front of the
+    // rest, which is musically worse than a slightly shorter breath. When there
+    // is not enough room for both a singable note and a full breath, shrink the
+    // breath instead of the note (still leaving a perceptible 8th-note rest).
+    Tick max_end = next_onset;
+    if (available_span > breath_gap + TICK_SIXTEENTH) {
+      Tick reserved_end = next_onset - breath_gap;
+      if (reserved_end - tick >= min_singable) {
+        // Enough room for both a singable note and a full breath.
+        max_end = reserved_end;
+      } else if (next_onset - tick > min_singable) {
+        // Not enough room for both: keep the note singable and take whatever
+        // breath remains. This guarantees a rest while never producing an
+        // isolated short note in front of it.
+        max_end = tick + min_singable;
+      }
+    }
+    if (tick + duration > max_end) {
+      duration = (max_end > tick) ? (max_end - tick) : (next_onset - tick);
     }
   } else {
     // Same pitch as previous: legato (no gap) to avoid unnatural micro-splits.
@@ -308,9 +332,14 @@ std::vector<NoteEvent> generateLockedRhythmCandidate(
     // and brief passing dissonance with a sustained vocal note is musically normal.
     // Extension safety is handled by computeSafeSkipCount() which checks both
     // chord boundary AND inter-track collision before allowing note extension.
+    // A phrase-end note must stay at least an 8th note long so that reserving a
+    // breath gap never turns it into an isolated short note. An 8th note also
+    // matches the minimum perceptible breath, letting note and breath share a
+    // one-beat span evenly at fast tempos.
+    Tick min_singable = TICK_EIGHTH;
     Tick duration = computeNoteDuration(is_last_note, is_phrase_end, tick, section_end, next_onset,
                                         available_span, breath_duration, phrase_end_min, gate_ratio,
-                                        safe_pitch, state.prev_pitch);
+                                        safe_pitch, state.prev_pitch, min_singable);
 
     // Update melodic state (direction inertia, same-pitch streak)
     updateMelodicState(state, safe_pitch);

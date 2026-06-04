@@ -157,8 +157,8 @@ Chord buildChord(int8_t degree) {
   c.note_count = 3;
   c.is_diminished = false;
 
-  // vii and #IVdim are diminished (0, 3, 6) - minor 3rd + diminished 5th
-  if (degree == 6 || degree == 14) {
+  ChordQuality quality = getChordQuality(degree);
+  if (quality == ChordQuality::Diminished) {
     c.intervals = {0, 3, 6, -1, -1};  // Diminished triad
     c.is_diminished = true;
     return c;
@@ -191,9 +191,7 @@ Chord buildChord(int8_t degree) {
   //     Rationale: Neapolitan chord, always major quality
   //     Common use: bII-V-I (Neapolitan cadence)
   //
-  bool is_minor = (degree == 1 || degree == 2 || degree == 5 || degree == 12);
-
-  if (is_minor) {
+  if (quality == ChordQuality::Minor) {
     c.intervals = {0, 3, 7, -1, -1};  // Minor triad
   } else {
     c.intervals = {0, 4, 7, -1, -1};  // Major triad
@@ -277,6 +275,16 @@ uint8_t degreeToRoot(int8_t degree, Key key) {
   return static_cast<uint8_t>(root + MIDI_C4);  // C4 base
 }
 
+ChordQuality getChordQuality(int8_t degree) {
+  if (degree == 6 || degree == 14) {
+    return ChordQuality::Diminished;
+  }
+  if (degree == 1 || degree == 2 || degree == 5 || degree == 12) {
+    return ChordQuality::Minor;
+  }
+  return ChordQuality::Major;
+}
+
 Chord getChordNotes(int8_t degree) { return buildChord(degree); }
 
 Chord getExtendedChord(int8_t degree, ChordExtension extension) {
@@ -290,12 +298,14 @@ Chord getExtendedChord(int8_t degree, ChordExtension extension) {
       // Replace 3rd with 2nd: (0, 2, 7) - works for any chord
       base.intervals = {0, 2, 7, -1, -1};
       base.note_count = 3;
+      base.is_diminished = false;
       break;
 
     case ChordExtension::Sus4:
       // Replace 3rd with 4th: (0, 5, 7) - works for any chord
       base.intervals = {0, 5, 7, -1, -1};
       base.note_count = 3;
+      base.is_diminished = false;
       break;
 
     case ChordExtension::Maj7:
@@ -320,6 +330,7 @@ Chord getExtendedChord(int8_t degree, ChordExtension extension) {
       // Force major 3rd for dominant function: (0, 4, 7, 10)
       base.intervals = {0, 4, 7, 10, -1};
       base.note_count = 4;
+      base.is_diminished = false;
       break;
 
     case ChordExtension::Add9:
@@ -346,6 +357,7 @@ Chord getExtendedChord(int8_t degree, ChordExtension extension) {
       // Dominant 9th: major 3rd + minor 7th + 9th
       base.intervals = {0, 4, 7, 10, 14};
       base.note_count = 5;
+      base.is_diminished = false;
       break;
 
     case ChordExtension::None:
@@ -510,7 +522,8 @@ TritoneSubInfo checkTritoneSubstitution(int8_t degree, bool is_dominant, float p
 // ============================================================================
 
 ReharmonizationResult reharmonizeForSection(int8_t degree, SectionType section_type, bool is_minor,
-                                            bool is_dominant, bool enable_7th) {
+                                            bool is_dominant, bool enable_7th, int8_t next_degree,
+                                            int8_t prev_degree) {
   ReharmonizationResult result{degree, ChordExtension::None, false};
 
   switch (section_type) {
@@ -532,11 +545,25 @@ ReharmonizationResult reharmonizeForSection(int8_t degree, SectionType section_t
     }
 
     case SectionType::A: {
-      // Verse: simplify IV (degree 3) to ii (degree 1) for softer feel
+      // Verse: simplify IV (degree 3) to ii (degree 1) for softer feel.
       // IV (F major) -> ii (Dm) in C major: both have subdominant function
-      // but ii has a gentler, more introspective quality
+      // but ii has a gentler, more introspective quality.
+      //
+      // Gating (deterministic, neighbor-aware):
+      //  - Cadential IV: when IV resolves to V (4) or I (0), it is acting as a
+      //    plagal/pre-dominant cadence chord; the strong subdominant->dominant
+      //    or plagal IV->I motion is wanted, so keep IV intact.
+      //  - Adjacent ii: when ii (1) is already the previous or next chord,
+      //    substituting would create consecutive ii chords (static harmony);
+      //    keep IV to preserve harmonic motion.
+      // Unknown neighbors (kReharmNoNeighbor) disable the corresponding gate,
+      // preserving legacy behavior when context is unavailable.
       if (degree == 3) {
-        result.degree = 1;  // IV -> ii substitution
+        bool cadential = (next_degree == 4 || next_degree == 0);
+        bool adjacent_ii = (next_degree == 1 || prev_degree == 1);
+        if (!cadential && !adjacent_ii) {
+          result.degree = 1;  // IV -> ii substitution
+        }
       }
       break;
     }
@@ -550,7 +577,7 @@ ReharmonizationResult reharmonizeForSection(int8_t degree, SectionType section_t
   return result;
 }
 
-PassingChordInfo checkPassingDiminished(int8_t /*current_degree*/, int8_t next_degree,
+PassingChordInfo checkPassingDiminished(int8_t current_degree, int8_t next_degree,
                                         SectionType section_type) {
   PassingChordInfo info{false, 0, {}};
 
@@ -559,10 +586,31 @@ PassingChordInfo checkPassingDiminished(int8_t /*current_degree*/, int8_t next_d
     return info;
   }
 
+  // Suppress musically incoherent insertions based on the current chord.
+  // 1. No chord change (current == next): a passing chord between identical
+  //    chords adds tension without a target to resolve into.
+  if (current_degree == next_degree) {
+    return info;
+  }
+  // 2. Current chord is already diminished (vii° = 6, #IVdim = 14): stacking a
+  //    second diminished approach chord is harmonically muddy.
+  if (current_degree == 6 || current_degree == 14) {
+    return info;
+  }
+
   // Build a diminished chord a half-step below the next chord's root.
   // This creates chromatic approach tension (e.g., C#dim -> Dm, F#dim -> G).
   int next_root_semitone = degreeToSemitone(next_degree);
   int passing_root_semitone = (next_root_semitone + 11) % 12;  // One half-step below
+
+  // 3. The passing diminished root coincides with the current chord's root.
+  //    The "passing" chord would not move the bass, defeating the chromatic
+  //    approach (e.g., current bVII=Bb into next vii° target yields a Bdim that
+  //    re-sounds the same root region as the current chord).
+  int current_root_semitone = ((degreeToSemitone(current_degree) % 12) + 12) % 12;
+  if (passing_root_semitone == current_root_semitone) {
+    return info;
+  }
 
   info.should_insert = true;
   info.root_semitone = static_cast<int8_t>(passing_root_semitone);

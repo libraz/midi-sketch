@@ -21,6 +21,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <random>
 #include <string>
 #include <vector>
@@ -129,7 +130,12 @@ class Coordinator {
   ///
   /// Traditional:  Vocal → Aux → Motif → Bass → Chord → Arpeggio
   /// RhythmSync:   Motif → Vocal → Aux → Bass → Chord → Arpeggio
-  /// MelodyDriven: Vocal → Aux → Bass → Chord → Motif → Arpeggio
+  /// MelodyDriven: Vocal → Aux → Motif → Bass → Chord → Arpeggio
+  ///
+  /// Note: MelodyDriven places Motif before Bass (deliberate, commit 7689487)
+  /// so the Bass can avoid Motif collisions during generation. The Vocal still
+  /// drives the harmony as the highest-priority coordinate axis; ordering only
+  /// affects who-avoids-whom, not priority. (Drums/SE/Guitar trail all paradigms.)
   ///
   /// @return Vector of track roles in generation order
   std::vector<TrackRole> getGenerationOrder() const;
@@ -250,6 +256,8 @@ class Coordinator {
   std::vector<std::string> warnings_;              ///< Accumulated warnings
   std::map<TrackRole, TrackPriority> priorities_;  ///< Track priorities
   DrumGrid drum_grid_;                             ///< Drum grid for RhythmSync paradigm
+  std::optional<KickPatternCache> kick_cache_;     ///< Predicted kick positions (Bass-Kick sync)
+  std::unique_ptr<VocalAnalysis> vocal_analysis_;  ///< Cached vocal analysis (Bass/Chord/Drums)
 
   // =========================================================================
   // Initialization Helpers
@@ -279,6 +287,21 @@ class Coordinator {
   /// @param song Song reference (needed to check if Motif already exists)
   /// @return true if the track should be skipped
   bool shouldSkipTrack(TrackRole role, const Song& song) const;
+
+  /// @brief Build a complete FullTrackContext for a track role.
+  ///
+  /// Centralizes all context-construction logic (drum grid, kick cache, vocal
+  /// analysis, motif reference, motif/SE-specific options) so that both
+  /// generateAllTracks() and regenerateTrack() produce identical, complete
+  /// contexts. Caches (kick_cache_, vocal_analysis_) are computed lazily.
+  ///
+  /// @param role Track role being generated
+  /// @param song Song under generation (used for motif/vocal lookups)
+  /// @param rng Active RNG reference
+  /// @param harmony Active harmony coordinator reference
+  /// @return Fully populated FullTrackContext
+  FullTrackContext buildFullTrackContext(TrackRole role, Song& song, std::mt19937& rng,
+                                         IHarmonyCoordinator& harmony);
 
   /// @brief Register guide chord phantom notes for collision detection.
   ///

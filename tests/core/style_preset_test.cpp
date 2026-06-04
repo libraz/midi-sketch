@@ -98,6 +98,15 @@ TEST(StylePresetTest, AnimeHighEnergyMoodUsesReferenceTempoWhenBpmIsAuto) {
   EXPECT_FALSE(params.bpm_explicit);
 }
 
+TEST(StylePresetTest, MoraRhythmModeFlowsThroughConfigConverter) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.mora_rhythm_mode = static_cast<uint8_t>(MoraRhythmMode::MoraTimed);
+
+  GeneratorParams params = ConfigConverter::convert(config);
+
+  EXPECT_EQ(params.melody_params.mora_rhythm_mode, MoraRhythmMode::MoraTimed);
+}
+
 // ============================================================================
 // ChordProgressionMeta Tests
 // ============================================================================
@@ -1225,16 +1234,79 @@ TEST(SongConfigValidationTest, InvalidModulationTimingRejected) {
   EXPECT_EQ(error, SongConfigError::InvalidModulationTiming);
 }
 
+TEST(SongConfigValidationTest, InvalidBlueprintRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.blueprint_id = 254;
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidBlueprint);
+}
+
+TEST(SongConfigValidationTest, InvalidCallSettingRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.call_setting = static_cast<CallSetting>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidCallSetting);
+}
+
+TEST(SongConfigValidationTest, InvalidEnergyCurveRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.energy_curve = static_cast<EnergyCurve>(99);
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidEnergyCurve);
+}
+
+TEST(SongConfigValidationTest, InvalidDriveFeelRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.drive_feel = 101;
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidDriveFeel);
+}
+
+TEST(SongConfigValidationTest, InvalidMoraRhythmModeRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.mora_rhythm_mode = 3;
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidMoraRhythmMode);
+}
+
+TEST(SongConfigValidationTest, InvalidProbabilityRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.chord_extension.seventh_probability = 1.1f;
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidProbability);
+}
+
+TEST(SongConfigValidationTest, InvalidArpeggioRangeRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.arpeggio.octave_range = 4;
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidArpeggioRange);
+}
+
+TEST(SongConfigValidationTest, InvalidMelodyOverrideRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.melody_chorus_register_shift = 13;
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidMelodyOverride);
+}
+
+TEST(SongConfigValidationTest, InvalidMotifOverrideRejected) {
+  SongConfig config = createDefaultSongConfig(0);
+  config.motif_motion = 6;
+  SongConfigError error = validateSongConfig(config);
+  EXPECT_EQ(error, SongConfigError::InvalidMotifOverride);
+}
+
 TEST(SongConfigValidationTest, AllValidEnumValuesAccepted) {
   SongConfig config = createDefaultSongConfig(0);
   config.key = Key::B;                                         // Max valid
   config.composition_style = CompositionStyle::SynthDriven;    // Max valid (2)
-  config.arpeggio.pattern = ArpeggioPattern::Random;           // Max valid (3)
+  config.arpeggio.pattern = ArpeggioPattern::BrokenChord;      // Max valid (7)
   config.arpeggio.speed = ArpeggioSpeed::Triplet;              // Max valid (2)
-  config.vocal_style = VocalStylePreset::PowerfulShout;        // Max valid (12)
+  config.vocal_style = VocalStylePreset::KPop;                 // Max valid (13)
   config.melody_template = MelodyTemplateId::JumpAccent;       // Max valid (7)
   config.melodic_complexity = MelodicComplexity::Complex;      // Max valid (2)
-  config.hook_intensity = HookIntensity::Strong;               // Max valid (3)
+  config.hook_intensity = HookIntensity::Maximum;              // Max valid (4)
   config.vocal_groove = VocalGrooveFeel::Bouncy8th;            // Max valid (5)
   config.call_density = CallDensity::Intense;                  // Max valid (3)
   config.intro_chant = IntroChant::Shouting;                   // Max valid (2)
@@ -1243,6 +1315,12 @@ TEST(SongConfigValidationTest, AllValidEnumValuesAccepted) {
   config.arrangement_growth = ArrangementGrowth::RegisterAdd;  // Max valid (1)
   config.modulation_timing = ModulationTiming::Random;         // Max valid (4)
   config.modulation_semitones = 2;                             // Needed when timing != None
+  config.blueprint_id = 255;                                   // Random sentinel
+  config.call_setting = CallSetting::Disabled;                 // Max valid (2)
+  config.energy_curve = EnergyCurve::SteadyState;              // Max valid (3)
+  config.drive_feel = 100;                                     // Max valid
+  config.mora_rhythm_mode = 2;                                 // Max valid
+  config.motif_motion = 5;                                     // Max valid
 
   SongConfigError error = validateSongConfig(config);
   EXPECT_EQ(error, SongConfigError::OK);

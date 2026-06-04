@@ -86,52 +86,12 @@ bool getAllowDeviationForType(SectionType type) {
 void assignDensityGradient(std::vector<Section>& sections) {
   if (sections.empty()) return;
 
+  // Per-section-type default densities are centralized in kSectionProperties:
+  // - A (Verse): 80% (min for arpeggio rhythm), B (PreChorus): 90%, Chorus: 100%
+  // - Intro/Outro: 70%, Bridge: 85%, Interlude: 60%, MixBreak/Drop: 100%, Chant: 50%
   for (size_t idx = 0; idx < sections.size(); ++idx) {
     auto& section = sections[idx];
-
-    switch (section.type) {
-      case SectionType::A:
-        // Verse: lower density for breathing room (min 80% for arpeggio rhythm)
-        section.density_percent = 80;
-        break;
-
-      case SectionType::B:
-        // PreChorus: building toward chorus
-        section.density_percent = 90;
-        break;
-
-      case SectionType::Chorus:
-        // Chorus: full density
-        section.density_percent = 100;
-        break;
-
-      case SectionType::Intro:
-      case SectionType::Outro:
-        // Bookend sections: moderate density (arpeggios less common here)
-        section.density_percent = 70;
-        break;
-
-      case SectionType::Bridge:
-        // Bridge: contrast section, moderate-high density
-        section.density_percent = 85;
-        break;
-
-      case SectionType::Interlude:
-        // Interlude: breathing room (no active vocals/arpeggios typically)
-        section.density_percent = 60;
-        break;
-
-      case SectionType::MixBreak:
-      case SectionType::Drop:
-        // High-energy sections
-        section.density_percent = 100;
-        break;
-
-      case SectionType::Chant:
-        // Minimal backing
-        section.density_percent = 50;
-        break;
-    }
+    section.density_percent = getSectionProperties(section.type).default_density_percent;
   }
 }
 

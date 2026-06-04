@@ -14,6 +14,7 @@
 #include "core/harmonic_rhythm.h"
 #include "core/i_harmony_context.h"
 #include "core/note_creator.h"
+#include "core/pitch_utils.h"
 #include "core/production_blueprint.h"
 #include "core/rng_util.h"
 #include "core/section_iteration_helper.h"
@@ -400,9 +401,8 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
           int chord_idx =
               getChordIndexForBar(static_cast<int>(total_bar), slow_harmonic, progression.length);
           int8_t degree = progression.at(chord_idx);
-          uint8_t root = degreeToRoot(degree, Key::C);
-          while (root < sec_params.base_octave) root += 12;
-          while (root >= sec_params.base_octave + 12) root -= 12;
+          uint8_t root = static_cast<uint8_t>(
+              normalizeToOctave(degreeToRoot(degree, Key::C), sec_params.base_octave));
           Chord chord = getChordNotes(degree);
           std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, sec_params.octave_range);
           persistent_arp_notes = arrangeByPattern(chord_notes, sec_params.pattern, rng);
@@ -426,9 +426,8 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
             chord_idx = getChordIndexForBar(bc.bar_index, slow, progression.length);
           }
           int8_t degree = progression.at(chord_idx);
-          uint8_t root = degreeToRoot(degree, Key::C);
-          while (root < sec_params.base_octave) root += 12;
-          while (root >= sec_params.base_octave + 12) root -= 12;
+          uint8_t root = static_cast<uint8_t>(
+              normalizeToOctave(degreeToRoot(degree, Key::C), sec_params.base_octave));
 
           Chord chord = getChordNotes(degree);
           std::vector<uint8_t> chord_notes = buildChordNotes(root, chord, sec_params.octave_range);
@@ -439,9 +438,8 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
             int second_half_idx =
                 getChordIndexForSubdividedBar(bc.bar_index, 1, progression.length);
             int8_t second_half_degree = progression.at(second_half_idx);
-            uint8_t second_half_root = degreeToRoot(second_half_degree, Key::C);
-            while (second_half_root < sec_params.base_octave) second_half_root += 12;
-            while (second_half_root >= sec_params.base_octave + 12) second_half_root -= 12;
+            uint8_t second_half_root = static_cast<uint8_t>(normalizeToOctave(
+                degreeToRoot(second_half_degree, Key::C), sec_params.base_octave));
             Chord second_half_chord = getChordNotes(second_half_degree);
             std::vector<uint8_t> second_half_notes =
                 buildChordNotes(second_half_root, second_half_chord, sec_params.octave_range);
@@ -450,9 +448,8 @@ void ArpeggioGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackCon
           } else if (should_split) {
             int next_chord_idx = (chord_idx + 1) % progression.length;
             int8_t next_degree = progression.at(next_chord_idx);
-            uint8_t next_root = degreeToRoot(next_degree, Key::C);
-            while (next_root < sec_params.base_octave) next_root += 12;
-            while (next_root >= sec_params.base_octave + 12) next_root -= 12;
+            uint8_t next_root = static_cast<uint8_t>(
+                normalizeToOctave(degreeToRoot(next_degree, Key::C), sec_params.base_octave));
             Chord next_chord = getChordNotes(next_degree);
             std::vector<uint8_t> next_chord_notes =
                 buildChordNotes(next_root, next_chord, sec_params.octave_range);

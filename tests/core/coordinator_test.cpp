@@ -9,6 +9,7 @@
 
 #include "core/harmony_coordinator.h"
 #include "core/i_track_base.h"
+#include "core/pitch_utils.h"
 #include "core/preset_data.h"
 #include "core/song.h"
 
@@ -436,6 +437,167 @@ TEST(CoordinatorTest, GenerateAllTracks_SeedReproducibility) {
   // Different seed may produce different results (with high probability)
   // Note: We don't assert they're different, just that the same seed is reproducible
   (void)generateWithSeed(88888);  // Just verify it runs without error
+}
+
+// ============================================================================
+// Generation Order Invariants (documented per-paradigm contract)
+// ============================================================================
+
+namespace {
+// Helper: index of a role within an order vector (-1 if absent).
+int orderIndex(const std::vector<TrackRole>& order, TrackRole role) {
+  for (size_t i = 0; i < order.size(); ++i) {
+    if (order[i] == role) return static_cast<int>(i);
+  }
+  return -1;
+}
+}  // namespace
+
+TEST(CoordinatorTest, GenerationOrder_Traditional_MatchesDocumentedOrder) {
+  Coordinator coord;
+  GeneratorParams params;
+  params.seed = 12345;
+  params.blueprint_id = 0;  // Traditional
+  coord.initialize(params);
+
+  std::vector<TrackRole> order = coord.getGenerationOrder();
+  // Documented: Vocal -> Aux -> Motif -> Bass -> Chord -> ... -> Drums -> SE
+  EXPECT_LT(orderIndex(order, TrackRole::Vocal), orderIndex(order, TrackRole::Aux));
+  EXPECT_LT(orderIndex(order, TrackRole::Aux), orderIndex(order, TrackRole::Motif));
+  EXPECT_LT(orderIndex(order, TrackRole::Motif), orderIndex(order, TrackRole::Bass));
+  EXPECT_LT(orderIndex(order, TrackRole::Bass), orderIndex(order, TrackRole::Chord));
+  // Drums and SE trail all paradigms.
+  EXPECT_LT(orderIndex(order, TrackRole::Chord), orderIndex(order, TrackRole::Drums));
+  EXPECT_LT(orderIndex(order, TrackRole::Drums), orderIndex(order, TrackRole::SE));
+}
+
+TEST(CoordinatorTest, GenerationOrder_RhythmSync_MotifIsCoordinateAxis) {
+  Coordinator coord;
+  GeneratorParams params;
+  params.seed = 12345;
+  params.blueprint_id = 1;  // RhythmLock (RhythmSync)
+  coord.initialize(params);
+
+  std::vector<TrackRole> order = coord.getGenerationOrder();
+  // Documented: Motif -> Vocal -> Aux -> Bass -> Chord -> ...
+  EXPECT_EQ(order[0], TrackRole::Motif);
+  EXPECT_LT(orderIndex(order, TrackRole::Motif), orderIndex(order, TrackRole::Vocal));
+  EXPECT_LT(orderIndex(order, TrackRole::Vocal), orderIndex(order, TrackRole::Aux));
+  EXPECT_LT(orderIndex(order, TrackRole::Aux), orderIndex(order, TrackRole::Bass));
+  EXPECT_LT(orderIndex(order, TrackRole::Bass), orderIndex(order, TrackRole::Chord));
+}
+
+TEST(CoordinatorTest, GenerationOrder_MelodyDriven_MotifBeforeBass) {
+  Coordinator coord;
+  GeneratorParams params;
+  params.seed = 12345;
+  params.blueprint_id = 2;  // StoryPop (MelodyDriven)
+  coord.initialize(params);
+
+  ASSERT_EQ(coord.getParadigm(), GenerationParadigm::MelodyDriven);
+  std::vector<TrackRole> order = coord.getGenerationOrder();
+  // Documented & deliberate (commit 7689487): Vocal -> Aux -> Motif -> Bass ->
+  // Chord -> ... Motif precedes Bass so the Bass can avoid Motif collisions.
+  EXPECT_EQ(order[0], TrackRole::Vocal);
+  EXPECT_LT(orderIndex(order, TrackRole::Vocal), orderIndex(order, TrackRole::Aux));
+  EXPECT_LT(orderIndex(order, TrackRole::Aux), orderIndex(order, TrackRole::Motif));
+  EXPECT_LT(orderIndex(order, TrackRole::Motif), orderIndex(order, TrackRole::Bass));
+  EXPECT_LT(orderIndex(order, TrackRole::Bass), orderIndex(order, TrackRole::Chord));
+  // Vocal remains the highest-priority coordinate axis.
+  EXPECT_EQ(coord.getTrackPriority(TrackRole::Vocal), TrackPriority::Highest);
+}
+
+// ============================================================================
+// regenerateTrack: context-completeness
+// ============================================================================
+
+TEST(CoordinatorTest, RegenerateBass_ProducesInRangeNotes) {
+  Coordinator coord;
+  GeneratorParams params;
+  params.seed = 4242;
+  params.blueprint_id = 0;  // Traditional
+  coord.initialize(params);
+
+  Song song;
+  coord.generateAllTracks(song);
+  ASSERT_GT(song.bass().notes().size(), 0u);
+
+  coord.regenerateTrack(TrackRole::Bass, song);
+
+  // Regenerated bass must be non-empty and within the bass physical range.
+  const auto& bass_notes = song.bass().notes();
+  ASSERT_GT(bass_notes.size(), 0u);
+  for (const auto& note : bass_notes) {
+    EXPECT_GE(note.note, BASS_LOW);
+    EXPECT_LE(note.note, BASS_HIGH);
+  }
+}
+
+TEST(CoordinatorTest, RegenerateChord_RespectsVocalCeiling) {
+  Coordinator coord;
+  GeneratorParams params;
+  params.seed = 7777;
+  params.blueprint_id = 2;  // MelodyDriven: chord adapts to vocal register
+  params.vocal_low = 60;
+  params.vocal_high = 79;
+  coord.initialize(params);
+
+  Song song;
+  coord.generateAllTracks(song);
+  ASSERT_GT(song.vocal().notes().size(), 0u);
+  ASSERT_GT(song.chord().notes().size(), 0u);
+
+  // Regenerate the chord track in isolation. With the context-complete helper,
+  // vocal analysis is recomputed from the existing vocal track so the chord
+  // keeps its register below the concurrently sounding vocal.
+  coord.regenerateTrack(TrackRole::Chord, song);
+
+  const auto& chord_notes = song.chord().notes();
+  ASSERT_GT(chord_notes.size(), 0u);
+
+  // For each chord note, no concurrently sounding vocal note should sit below
+  // it by more than a small tolerance: the chord must not dominate above the
+  // vocal melody. We assert the bulk of chord notes stay at or below the
+  // lowest concurrent vocal pitch (allowing brief overlaps at phrase edges).
+  const auto& vocal_notes = song.vocal().notes();
+  size_t total = 0;
+  size_t below_or_equal = 0;
+  for (const auto& cn : chord_notes) {
+    int vocal_floor = 128;
+    for (const auto& vn : vocal_notes) {
+      bool overlaps = vn.start_tick < cn.start_tick + cn.duration &&
+                      vn.start_tick + vn.duration > cn.start_tick;
+      if (overlaps) vocal_floor = std::min(vocal_floor, static_cast<int>(vn.note));
+    }
+    if (vocal_floor == 128) continue;  // No concurrent vocal
+    ++total;
+    if (cn.note <= vocal_floor) ++below_or_equal;
+  }
+  if (total > 0) {
+    // At least 80% of concurrent chord notes stay at/below the vocal floor.
+    EXPECT_GE(below_or_equal * 100, total * 80)
+        << below_or_equal << "/" << total << " chord notes below/at vocal floor";
+  }
+  // Chord notes must remain within the chord physical range.
+  for (const auto& cn : chord_notes) {
+    EXPECT_GE(cn.note, CHORD_LOW);
+    EXPECT_LE(cn.note, CHORD_HIGH);
+  }
+}
+
+TEST(CoordinatorTest, RegenerateBass_ReproducibleAcrossInstances) {
+  auto run = []() {
+    Coordinator coord;
+    GeneratorParams params;
+    params.seed = 31337;
+    params.blueprint_id = 0;
+    coord.initialize(params);
+    Song song;
+    coord.generateAllTracks(song);
+    coord.regenerateTrack(TrackRole::Bass, song);
+    return song.bass().notes().size();
+  };
+  EXPECT_EQ(run(), run());
 }
 
 }  // namespace

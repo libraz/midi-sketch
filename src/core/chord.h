@@ -24,6 +24,9 @@ struct Chord {
   bool is_diminished;               ///< True for diminished chords (vii°)
 };
 
+/// @brief Triad quality implied by a scale degree.
+enum class ChordQuality : uint8_t { Major, Minor, Diminished };
+
 /// Maximum chords in a progression (most are 4-6).
 constexpr uint8_t MAX_PROGRESSION_LENGTH = 8;
 
@@ -104,6 +107,17 @@ uint8_t degreeToRoot(int8_t degree, Key key);
  * @return Chord struct with intervals and note count
  */
 Chord getChordNotes(int8_t degree);
+
+/**
+ * @brief Get the triad quality implied by a scale degree.
+ *
+ * Centralizes diatonic and borrowed-chord quality rules so extension
+ * selection and note construction stay in sync.
+ *
+ * @param degree Scale degree (0-6, or borrowed: 8,10,11,12,13,14)
+ * @return ChordQuality for the degree
+ */
+ChordQuality getChordQuality(int8_t degree);
 
 /**
  * @brief Get chord with extension applied.
@@ -283,8 +297,15 @@ struct PassingChordInfo {
  * @param is_dominant Whether the chord has dominant function (degree 4 = V)
  * @return ReharmonizationResult with possibly modified degree and extension
  */
+/// @brief Sentinel meaning "neighbor degree unknown" for reharmonizeForSection.
+/// When passed, the IV->ii substitution gating that depends on that neighbor is
+/// skipped (preserving legacy unconditional behavior for that side).
+constexpr int8_t kReharmNoNeighbor = -1;
+
 ReharmonizationResult reharmonizeForSection(int8_t degree, SectionType section_type, bool is_minor,
-                                            bool is_dominant, bool enable_7th = true);
+                                            bool is_dominant, bool enable_7th = true,
+                                            int8_t next_degree = kReharmNoNeighbor,
+                                            int8_t prev_degree = kReharmNoNeighbor);
 
 /**
  * @brief Check if a passing diminished chord should be inserted in B sections.

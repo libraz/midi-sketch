@@ -243,17 +243,26 @@ enum class SongConfigError : uint8_t {
   InvalidCompositionStyle,   // CompositionStyle out of range (0-2)
   InvalidArpeggioPattern,    // ArpeggioPattern out of range (0-3)
   InvalidArpeggioSpeed,      // ArpeggioSpeed out of range (0-2)
-  InvalidVocalStyle,         // VocalStylePreset out of range (0-12)
+  InvalidVocalStyle,         // VocalStylePreset out of range (0-13)
   InvalidMelodyTemplate,     // MelodyTemplateId out of range (0-7)
   InvalidMelodicComplexity,  // MelodicComplexity out of range (0-2)
-  InvalidHookIntensity,      // HookIntensity out of range (0-3)
+  InvalidHookIntensity,      // HookIntensity out of range (0-4)
   InvalidVocalGroove,        // VocalGrooveFeel out of range (0-5)
   InvalidCallDensity,        // CallDensity out of range (0-3)
   InvalidIntroChant,         // IntroChant out of range (0-2)
   InvalidMixPattern,         // MixPattern out of range (0-2)
   InvalidMotifRepeatScope,   // MotifRepeatScope out of range (0-1)
   InvalidArrangementGrowth,  // ArrangementGrowth out of range (0-1)
-  InvalidModulationTiming    // ModulationTiming out of range (0-4)
+  InvalidModulationTiming,   // ModulationTiming out of range (0-4)
+  InvalidBlueprint,          // Production blueprint out of range (0-count-1 or 255)
+  InvalidCallSetting,        // CallSetting out of range (0-2)
+  InvalidEnergyCurve,        // EnergyCurve out of range (0-3)
+  InvalidDriveFeel,          // Drive feel out of range (0-100)
+  InvalidMoraRhythmMode,     // MoraRhythmMode out of range (0-2)
+  InvalidProbability,        // Probability parameter out of range (0.0-1.0)
+  InvalidArpeggioRange,      // Arpeggio octave/base velocity/gate out of range
+  InvalidMelodyOverride,     // Melody override out of accepted range
+  InvalidMotifOverride       // Motif override out of accepted range
 };
 
 // Validates a SongConfig.

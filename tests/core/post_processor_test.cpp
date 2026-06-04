@@ -1184,9 +1184,12 @@ TEST(PostProcessorTest, FixMotifVocalClashesResolveMajor2ndClose) {
       << "Motif pitch class should be C(0), E(4), or G(7), got " << pc;
 }
 
-TEST(PostProcessorTest, FixMotifVocalClashesIgnoresMajor9th) {
-  // Motif D5 (74) vs Vocal C4 (60) - major 9th (14 semitones)
-  // Major 2nd interval class (2), but actual interval >= 12, so OK
+TEST(PostProcessorTest, FixMotifVocalClashesLowersMajor9thAboveVocal) {
+  // Motif D5 (74) vs Vocal C4 (60) - major 9th (14 semitones).
+  // The interval is not a close-voicing dissonance, but the motif sits a 9th
+  // ABOVE the vocal, which buries the melody (vocal should own the top
+  // register). fixMotifVocalClashes now lowers such crossing notes to at or
+  // below the concurrent vocal (mirrors scripts/check_pitch_crossing.py).
   MidiTrack motif, vocal;
   motif.addNote(NoteEventBuilder::create(0, 480, 74, 80));  // D5
   vocal.addNote(NoteEventBuilder::create(0, 480, 60, 80));  // C4 (major 9th = 14 semitones)
@@ -1196,8 +1199,9 @@ TEST(PostProcessorTest, FixMotifVocalClashesIgnoresMajor9th) {
 
   PostProcessor::fixMotifVocalClashes(motif, vocal, harmony);
 
-  // Major 9th is a tension, not a close-voicing clash - should not change
-  EXPECT_EQ(motif.notes()[0].note, 74) << "Major 9th (wide interval) should not be modified";
+  // Motif must no longer cross above the vocal.
+  EXPECT_LE(motif.notes()[0].note, 60)
+      << "Motif crossing a 9th above the vocal should be lowered to at or below the vocal";
 }
 
 TEST(PostProcessorTest, FixMotifVocalClashesIgnoresConsonant) {

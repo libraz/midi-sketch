@@ -9,6 +9,7 @@
 #include "core/post_processing_pipeline.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 #include "core/midi_track.h"
@@ -51,10 +52,10 @@ void PostProcessingPipeline::run(const Context& ctx) {
 void PostProcessingPipeline::applyPostProcessingPipeline(const Context& ctx) {
   // Build track lists (not SE or Drums)
   // Exclude motif track when velocity_fixed=true to maintain consistent velocity
-  std::vector<MidiTrack*> tracks = {&ctx.song.vocal(), &ctx.song.chord(), &ctx.song.bass(),
-                                    &ctx.song.arpeggio(), &ctx.song.guitar()};
-  std::vector<TrackRole> track_roles = {TrackRole::Vocal, TrackRole::Chord, TrackRole::Bass,
-                                        TrackRole::Arpeggio, TrackRole::Guitar};
+  std::vector<MidiTrack*> tracks = {&ctx.song.vocal(),    &ctx.song.chord(), &ctx.song.bass(),
+                                    &ctx.song.arpeggio(), &ctx.song.aux(),   &ctx.song.guitar()};
+  std::vector<TrackRole> track_roles = {TrackRole::Vocal,    TrackRole::Chord, TrackRole::Bass,
+                                        TrackRole::Arpeggio, TrackRole::Aux,   TrackRole::Guitar};
   if (!ctx.params.motif.velocity_fixed) {
     tracks.push_back(&ctx.song.motif());
     track_roles.push_back(TrackRole::Motif);
@@ -301,7 +302,8 @@ void PostProcessingPipeline::applyEmotionBasedDynamics(const Context& ctx,
 void PostProcessingPipeline::applyHumanization(const Context& ctx) {
   // Use PostProcessor for humanization
   std::vector<MidiTrack*> tracks = {&ctx.song.vocal(), &ctx.song.chord(),    &ctx.song.bass(),
-                                    &ctx.song.motif(), &ctx.song.arpeggio(), &ctx.song.guitar()};
+                                    &ctx.song.motif(), &ctx.song.arpeggio(), &ctx.song.aux(),
+                                    &ctx.song.guitar()};
 
   PostProcessor::HumanizeParams humanize_params;
   humanize_params.velocity = ctx.params.humanize_velocity;
@@ -426,6 +428,116 @@ void PostProcessingPipeline::applyStaggeredEntryToSections(const Context& ctx) {
 
 namespace {
 
+/// @brief Section-type-indexed start/mid/end values for a two-phase CC curve.
+struct CcCurveData {
+  uint8_t start;  ///< Value at section start
+  uint8_t mid;    ///< Value at section midpoint
+  uint8_t end;    ///< Value at section end
+};
+
+/// @brief CC11 Expression curve values per section type.
+/// Indexed by SectionType: Intro=0, A=1, B=2, Chorus=3, Bridge=4,
+/// Interlude=5, Outro=6, Chant=7, MixBreak=8, Drop=9.
+/// Chant/MixBreak/Drop use the default moderate-sustained curve (90/95/90),
+/// matching the original switch's default branch.
+constexpr std::array<CcCurveData, 10> kExpressionCurves = {{
+    /* Intro     */ {64, 82, 100},
+    /* A         */ {90, 100, 90},
+    /* B         */ {90, 105, 95},
+    /* Chorus    */ {100, 110, 100},
+    /* Bridge    */ {80, 100, 90},
+    /* Interlude */ {80, 90, 80},
+    /* Outro     */ {100, 82, 64},
+    /* Chant     */ {90, 95, 90},
+    /* MixBreak  */ {90, 95, 90},
+    /* Drop      */ {90, 95, 90},
+}};
+
+/// @brief CC74 Brightness curve values per section type.
+/// Chant/MixBreak use the default moderate curve (60/70/60),
+/// matching the original switch's default branch.
+constexpr std::array<CcCurveData, 10> kBrightnessCurves = {{
+    /* Intro     */ {40, 60, 70},
+    /* A         */ {55, 65, 55},
+    /* B         */ {60, 80, 85},
+    /* Chorus    */ {80, 100, 80},
+    /* Bridge    */ {50, 70, 60},
+    /* Interlude */ {50, 60, 50},
+    /* Outro     */ {70, 55, 40},
+    /* Chant     */ {60, 70, 60},
+    /* MixBreak  */ {60, 70, 60},
+    /* Drop      */ {80, 100, 80},
+}};
+
+/// @brief CC1 Modulation peak value per section type.
+/// Chorus/MixBreak/Drop=80, B=70, Bridge=60, Intro/Outro=50,
+/// default (A/Interlude/Chant)=64, matching the original switch.
+constexpr std::array<uint8_t, 10> kModulationPeaks = {{
+    /* Intro     */ 50,
+    /* A         */ 64,
+    /* B         */ 70,
+    /* Chorus    */ 80,
+    /* Bridge    */ 60,
+    /* Interlude */ 64,
+    /* Outro     */ 50,
+    /* Chant     */ 64,
+    /* MixBreak  */ 80,
+    /* Drop      */ 80,
+}};
+
+/// @brief Look up a two-phase CC curve for a section type, with a default
+/// for any out-of-range value (defensive; all SectionType values are in-range).
+const CcCurveData& lookupCcCurve(const std::array<CcCurveData, 10>& table, SectionType type,
+                                 const CcCurveData& fallback) {
+  auto idx = static_cast<size_t>(type);
+  if (idx >= table.size()) return fallback;
+  return table[idx];
+}
+
+/// @brief Look up the modulation peak value for a section type, with a default.
+uint8_t lookupModulationPeak(SectionType type, uint8_t fallback) {
+  auto idx = static_cast<size_t>(type);
+  if (idx >= kModulationPeaks.size()) return fallback;
+  return kModulationPeaks[idx];
+}
+
+/// @brief Emit a two-phase (start->mid, mid->end) CC curve over a section.
+///
+/// Shared by Expression (CC11) and Brightness (CC74) generation: both used an
+/// identical interpolation loop with per-event clamp to the valid MIDI range.
+///
+/// @param track Target track to add CC events to
+/// @param section_start Tick at section start
+/// @param section_length Section length in ticks (must be > 0)
+/// @param curve Start/mid/end values
+/// @param resolution Tick interval between CC events
+/// @param cc MIDI CC number to emit
+void emitTwoPhaseCcCurve(MidiTrack& track, Tick section_start, Tick section_length,
+                         const CcCurveData& curve, Tick resolution, uint8_t cc) {
+  Tick half_length = section_length / 2;
+
+  for (Tick offset = 0; offset < section_length; offset += resolution) {
+    Tick current_tick = section_start + offset;
+    uint8_t value;
+
+    if (offset < half_length) {
+      // First half: interpolate start -> mid
+      float phase_progress = static_cast<float>(offset) / static_cast<float>(half_length);
+      value = static_cast<uint8_t>(curve.start + (curve.mid - curve.start) * phase_progress);
+    } else {
+      // Second half: interpolate mid -> end
+      float phase_progress = static_cast<float>(offset - half_length) /
+                             static_cast<float>(section_length - half_length);
+      value = static_cast<uint8_t>(curve.mid + (curve.end - curve.mid) * phase_progress);
+    }
+
+    // Clamp to valid MIDI CC range
+    value = std::min(value, static_cast<uint8_t>(127));
+
+    track.addCC(current_tick, cc, value);
+  }
+}
+
 /// @brief Generate CC11 Expression events for a section on one track.
 /// @param track Target track to add CC events to
 /// @param section Section defining time range and type
@@ -438,83 +550,11 @@ void generateSectionExpression(MidiTrack& track, const Section& section,
 
   if (section_length == 0) return;
 
-  // Define start/end expression values based on section type
-  uint8_t value_start = 90;
-  uint8_t value_mid = 100;
-  uint8_t value_end = 90;
-
-  switch (section.type) {
-    case SectionType::Intro:
-      value_start = 64;
-      value_mid = 82;
-      value_end = 100;
-      break;
-    case SectionType::A:
-      value_start = 90;
-      value_mid = 100;
-      value_end = 90;
-      break;
-    case SectionType::B:
-      value_start = 90;
-      value_mid = 105;
-      value_end = 95;
-      break;
-    case SectionType::Chorus:
-      value_start = 100;
-      value_mid = 110;
-      value_end = 100;
-      break;
-    case SectionType::Bridge:
-      value_start = 80;
-      value_mid = 100;
-      value_end = 90;
-      break;
-    case SectionType::Interlude:
-      value_start = 80;
-      value_mid = 90;
-      value_end = 80;
-      break;
-    case SectionType::Outro:
-      value_start = 100;
-      value_mid = 82;
-      value_end = 64;
-      break;
-    default:
-      // Chant, MixBreak: moderate sustained
-      value_start = 90;
-      value_mid = 95;
-      value_end = 90;
-      break;
-  }
-
-  // Clamp all values to valid MIDI range
-  value_start = std::min(value_start, static_cast<uint8_t>(127));
-  value_mid = std::min(value_mid, static_cast<uint8_t>(127));
-  value_end = std::min(value_end, static_cast<uint8_t>(127));
-
-  // Generate CC events: two-phase curve (start->mid, mid->end)
-  Tick half_length = section_length / 2;
-
-  for (Tick offset = 0; offset < section_length; offset += resolution) {
-    Tick current_tick = section_start + offset;
-    uint8_t value;
-
-    if (offset < half_length) {
-      // First half: interpolate start -> mid
-      float phase_progress = static_cast<float>(offset) / static_cast<float>(half_length);
-      value = static_cast<uint8_t>(value_start + (value_mid - value_start) * phase_progress);
-    } else {
-      // Second half: interpolate mid -> end
-      float phase_progress = static_cast<float>(offset - half_length) /
-                             static_cast<float>(section_length - half_length);
-      value = static_cast<uint8_t>(value_mid + (value_end - value_mid) * phase_progress);
-    }
-
-    // Clamp to valid MIDI CC range
-    value = std::min(value, static_cast<uint8_t>(127));
-
-    track.addCC(current_tick, MidiCC::kExpression, value);
-  }
+  // Default (Chant, MixBreak): moderate sustained
+  constexpr CcCurveData kDefault = {90, 95, 90};
+  emitTwoPhaseCcCurve(track, section_start, section_length,
+                      lookupCcCurve(kExpressionCurves, section.type, kDefault), resolution,
+                      MidiCC::kExpression);
 }
 
 /// @brief Generate CC1 Modulation curve for a section on synth tracks.
@@ -533,27 +573,7 @@ void generateModulationCurve(MidiTrack& track, const Section& section) {
 
   // Modulation intensity varies by section type
   // Chorus/Climactic sections have stronger modulation
-  uint8_t peak_value = 64;  // Default peak
-  switch (section.type) {
-    case SectionType::Chorus:
-    case SectionType::MixBreak:
-    case SectionType::Drop:
-      peak_value = 80;  // Stronger modulation for energy sections
-      break;
-    case SectionType::B:
-      peak_value = 70;  // Building tension
-      break;
-    case SectionType::Bridge:
-      peak_value = 60;  // Moderate
-      break;
-    case SectionType::Intro:
-    case SectionType::Outro:
-      peak_value = 50;  // Subtle
-      break;
-    default:
-      peak_value = 64;  // Standard
-      break;
-  }
+  uint8_t peak_value = lookupModulationPeak(section.type, 64);
 
   // Generate bell curve: 0 -> peak -> 0
   // Use sine-based curve for smooth modulation
@@ -641,86 +661,11 @@ void generateBrightnessCurve(MidiTrack& track, const Section& section) {
   // Resolution: one CC event per beat
   constexpr Tick resolution = TICKS_PER_BEAT;
 
-  // Brightness ranges by section type
-  uint8_t value_start = 70;
-  uint8_t value_mid = 80;
-  uint8_t value_end = 70;
-
-  switch (section.type) {
-    case SectionType::Chorus:
-    case SectionType::Drop:
-      // Bright and open for energy
-      value_start = 80;
-      value_mid = 100;
-      value_end = 80;
-      break;
-    case SectionType::B:
-      // Building toward chorus - gradually brighten
-      value_start = 60;
-      value_mid = 80;
-      value_end = 85;
-      break;
-    case SectionType::A:
-      // Verse - more muted/intimate
-      value_start = 55;
-      value_mid = 65;
-      value_end = 55;
-      break;
-    case SectionType::Bridge:
-      // Bridge - contrasting, more filtered
-      value_start = 50;
-      value_mid = 70;
-      value_end = 60;
-      break;
-    case SectionType::Intro:
-      // Intro - start dark, gradually open
-      value_start = 40;
-      value_mid = 60;
-      value_end = 70;
-      break;
-    case SectionType::Outro:
-      // Outro - start bright, fade to dark
-      value_start = 70;
-      value_mid = 55;
-      value_end = 40;
-      break;
-    case SectionType::Interlude:
-      // Interlude - subdued
-      value_start = 50;
-      value_mid = 60;
-      value_end = 50;
-      break;
-    default:
-      // Default: moderate
-      value_start = 60;
-      value_mid = 70;
-      value_end = 60;
-      break;
-  }
-
-  // Generate two-phase curve (start->mid, mid->end)
-  Tick half_length = section_length / 2;
-
-  for (Tick offset = 0; offset < section_length; offset += resolution) {
-    Tick current_tick = section_start + offset;
-    uint8_t value;
-
-    if (offset < half_length) {
-      // First half: interpolate start -> mid
-      float phase_progress = static_cast<float>(offset) / static_cast<float>(half_length);
-      value = static_cast<uint8_t>(value_start + (value_mid - value_start) * phase_progress);
-    } else {
-      // Second half: interpolate mid -> end
-      float phase_progress = static_cast<float>(offset - half_length) /
-                             static_cast<float>(section_length - half_length);
-      value = static_cast<uint8_t>(value_mid + (value_end - value_mid) * phase_progress);
-    }
-
-    // Clamp to valid MIDI CC range
-    value = std::min(value, static_cast<uint8_t>(127));
-
-    track.addCC(current_tick, MidiCC::kBrightness, value);
-  }
+  // Brightness ranges by section type. Default (Chant, MixBreak): moderate.
+  constexpr CcCurveData kDefault = {60, 70, 60};
+  emitTwoPhaseCcCurve(track, section_start, section_length,
+                      lookupCcCurve(kBrightnessCurves, section.type, kDefault), resolution,
+                      MidiCC::kBrightness);
 }
 
 /// @brief Generate sustain pedal (CC64) for ballad-style chord accompaniment.

@@ -113,9 +113,16 @@ bool TrackCollisionDetector::isConsonantWithOtherTracks(
 
       // Duration-aware passing tone tolerance:
       // Brief overlaps allow stepwise dissonances for contrapuntal movement.
+      // Pass the candidate's role so sustained harmony tracks (Guitar/Chord)
+      // are excluded from the melodic passing-tone exemption: a guitar strum or
+      // chord voicing is vertical harmony, not a brief melodic passing tone.
+      // The existing note's role is left at the default (melodic) so that a
+      // melodic candidate (e.g. Motif) keeps its passing-tone tolerance even
+      // against a sustained chord note.
       {
         Tick overlap_duration = std::min(end, note.end) - std::max(start, note.start);
-        if (isToleratedPassingTone(actual_semitones, overlap_duration, pitch, note.pitch, start)) {
+        if (isToleratedPassingTone(actual_semitones, overlap_duration, pitch, note.pitch, start,
+                                   exclude)) {
           continue;
         }
       }
@@ -167,7 +174,8 @@ CollisionInfo TrackCollisionDetector::getCollisionInfo(
       // Duration-aware passing tone tolerance (consistent with isConsonantWithOtherTracks)
       {
         Tick overlap_duration = std::min(end, note.end) - std::max(start, note.start);
-        if (isToleratedPassingTone(actual_semitones, overlap_duration, pitch, note.pitch, start)) {
+        if (isToleratedPassingTone(actual_semitones, overlap_duration, pitch, note.pitch, start,
+                                   exclude)) {
           continue;
         }
       }
@@ -553,11 +561,13 @@ std::string TrackCollisionDetector::dumpNotesAt(Tick tick, Tick range_ticks) con
             (pitch_class_interval == 1 || pitch_class_interval == 11 || pitch_class_interval == 2);
 
         if (is_clash) {
-          // Duration-aware passing tone tolerance
+          // Duration-aware passing tone tolerance. Pass both roles so a
+          // sustained Guitar/Chord hit on either side disables the melodic
+          // passing-tone exemption and the clash is surfaced.
           Tick overlap_duration = std::min(a->end, b->end) - std::max(a->start, b->start);
           Tick overlap_start = std::max(a->start, b->start);
-          if (isToleratedPassingTone(interval, overlap_duration, a->pitch, b->pitch,
-                                     overlap_start)) {
+          if (isToleratedPassingTone(interval, overlap_duration, a->pitch, b->pitch, overlap_start,
+                                     a->track, b->track)) {
             continue;
           }
 
@@ -631,10 +641,13 @@ CollisionSnapshot TrackCollisionDetector::getCollisionSnapshot(Tick tick, Tick r
           (pitch_class_interval == 1 || pitch_class_interval == 11 || pitch_class_interval == 2);
 
       if (is_clash) {
-        // Duration-aware passing tone tolerance (consistent with isConsonantWithOtherTracks)
+        // Duration-aware passing tone tolerance (consistent with isConsonantWithOtherTracks).
+        // Pass both roles so a sustained Guitar/Chord hit on either side disables
+        // the melodic passing-tone exemption and the clash is surfaced.
         Tick overlap_duration = std::min(a.end, b.end) - std::max(a.start, b.start);
         Tick overlap_start = std::max(a.start, b.start);
-        if (isToleratedPassingTone(interval, overlap_duration, a.pitch, b.pitch, overlap_start)) {
+        if (isToleratedPassingTone(interval, overlap_duration, a.pitch, b.pitch, overlap_start,
+                                   a.track, b.track)) {
           continue;
         }
         ClashDetail detail;

@@ -29,6 +29,9 @@ constexpr uint8_t CHORD_HIGH = 84;  ///< C6 - Chord voicing upper limit
 constexpr uint8_t MOTIF_LOW = 60;    ///< C4 - Motif lower limit (above bass)
 constexpr uint8_t MOTIF_HIGH = 108;  ///< C8 - Motif upper limit (wide for synths)
 
+constexpr uint8_t AUX_LOW = 55;   ///< G3 - Aux (sub-melody) lower limit
+constexpr uint8_t AUX_HIGH = 84;  ///< C6 - Aux (sub-melody) upper limit
+
 constexpr uint8_t VOCAL_LOW_MIN = 36;   ///< C2 - Absolute minimum for vocal range
 constexpr uint8_t VOCAL_HIGH_MAX = 96;  ///< C7 - Absolute maximum for vocal range
 /// @}
@@ -100,6 +103,23 @@ inline uint8_t clampPitch(int pitch, uint8_t low, uint8_t high) {
 
 /// Clamp pitch to bass range (E1-G3). Bass notes outside this sound muddy.
 inline uint8_t clampBass(int pitch) { return clampPitch(pitch, BASS_LOW, BASS_HIGH); }
+
+/**
+ * @brief Fold a pitch into a single octave starting at base_octave.
+ *
+ * Adds/subtracts octaves until the pitch lies in [base_octave, base_octave + 12).
+ * Equivalent to the common `while (p < base) p += 12; while (p >= base + 12) p -= 12;`
+ * pattern used to normalize chord roots into a target octave register.
+ *
+ * @param pitch Input pitch (any value)
+ * @param base_octave Lower bound of the target octave (inclusive)
+ * @return Pitch folded into [base_octave, base_octave + 12)
+ */
+inline int normalizeToOctave(int pitch, int base_octave) {
+  while (pitch < base_octave) pitch += 12;
+  while (pitch >= base_octave + 12) pitch -= 12;
+  return pitch;
+}
 
 // ============================================================================
 // Passaggio Constants
@@ -657,9 +677,15 @@ constexpr int AVOID_MAJOR_7TH = 11;   ///< M7 - context-dependent
  * @param chord_root Chord root pitch (any octave, uses pitch class)
  * @param is_minor true if the chord quality is minor
  * @param chord_degree Scale degree of the chord (0=I, 4=V, etc.)
+ * @param chord_has_major7 true if the active chord is a Maj7 (or otherwise
+ *        contains the major 7th as a chord tone, e.g. CMaj7). When true the
+ *        major 7th (interval 11 from root) is treated as a chord tone rather
+ *        than an avoid note. Defaults to false to preserve legacy behavior for
+ *        callers that do not know the chord extension.
  * @return true if the pitch should be avoided in this harmonic context
  */
-bool isAvoidNoteWithContext(int pitch, uint8_t chord_root, bool is_minor, int8_t chord_degree);
+bool isAvoidNoteWithContext(int pitch, uint8_t chord_root, bool is_minor, int8_t chord_degree,
+                            bool chord_has_major7 = false);
 
 /**
  * @brief Simple avoid note check without harmonic context.

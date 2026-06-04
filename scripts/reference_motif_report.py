@@ -37,6 +37,8 @@ class TrackProfile:
     avg_pitch: float
     lead_overlap_ratio: float | None = None
     lead_overtake_ratio: float | None = None
+    role: str | None = None
+    ms_role: str | None = None
 
 
 def load_notes(path: Path) -> tuple[int, list[Note], dict[int, str], list[dict]]:
@@ -63,6 +65,69 @@ def load_notes(path: Path) -> tuple[int, list[Note], dict[int, str], list[dict]]
 
     midi = parse_smf(path)
     return midi["division"], midi["notes"], midi["track_names"], []
+
+
+def load_track_roles(path: Path) -> dict[tuple[int, int], dict] | None:
+    """Load role labels for a MIDI file from track_roles.json in its directory.
+
+    Returns {(track, channel): info} or None when no labels exist for this file.
+    """
+    roles_path = path.parent / "track_roles.json"
+    if not roles_path.exists():
+        return None
+    data = json.loads(roles_path.read_text())
+    entries = data.get(path.name)
+    if not entries:
+        return None
+    result: dict[tuple[int, int], dict] = {}
+    for key, info in entries.items():
+        if key.startswith("_"):  # e.g. _file_note
+            continue
+        trk_part, ch_part = key.split("ch")
+        result[(int(trk_part[3:]), int(ch_part))] = info
+    return result
+
+
+def skyline(notes: list[Note]) -> list[Note]:
+    """Keep only the highest pitch at each onset (melody extraction from dyads)."""
+    best: dict[int, Note] = {}
+    for note in notes:
+        cur = best.get(note.start)
+        if cur is None or note.pitch > cur.pitch:
+            best[note.start] = note
+    return sorted(best.values(), key=lambda n: n.start)
+
+
+def labeled_tracks(
+    notes: list[Note], roles: dict[tuple[int, int], dict], role_filter: set[str] | None
+) -> list[tuple[str, str, str | None, list[Note], list[Note] | None]]:
+    """Group notes by labeled (track, channel).
+
+    Returns (label, role, ms_role, notes, lead) per track. The vocal track
+    (skyline-filtered) is used as lead for overlap stats on support tracks.
+    """
+    by_key: dict[tuple[int, int], list[Note]] = defaultdict(list)
+    for note in notes:
+        by_key[(note.track, note.channel)].append(note)
+    lead: list[Note] = []
+    for key, info in roles.items():
+        if info.get("role") == "vocal" and by_key.get(key):
+            lead = skyline(by_key[key])
+            break
+    result = []
+    for key, info in sorted(roles.items()):
+        role = info.get("role", "other")
+        if role in ("drums", "se"):
+            continue
+        if role_filter and role not in role_filter:
+            continue
+        track_notes = by_key.get(key)
+        if not track_notes:
+            continue
+        label = f"trk{key[0]}ch{key[1]}:{info.get('instrument', '?')}"
+        is_lead = role in ("vocal", "vocal_double")
+        result.append((label, role, info.get("ms_role"), track_notes, None if is_lead else lead))
+    return result
 
 
 def end_tick(notes: Iterable[Note]) -> int:
@@ -126,11 +191,12 @@ def overlap_stats(track: list[Note], lead: list[Note]) -> tuple[float, float]:
 
 
 def profile_track(source: str, label: str, notes: list[Note], division: int,
-                  lead: list[Note] | None) -> TrackProfile:
+                  lead: list[Note] | None, role: str | None = None,
+                  ms_role: str | None = None) -> TrackProfile:
     bars = max(end_tick(notes) / (division * 4), 1.0)
     short_pulse = sum(1 for n in notes if n.duration <= division / 4) / len(notes) if notes else 0.0
     overlap = overtake = None
-    if lead is not None:
+    if lead:
         overlap, overtake = overlap_stats(notes, lead)
     return TrackProfile(
         source=source,
@@ -145,6 +211,8 @@ def profile_track(source: str, label: str, notes: list[Note], division: int,
         avg_pitch=round(mean([n.pitch for n in notes]), 2) if notes else 0.0,
         lead_overlap_ratio=round(overlap, 3) if overlap is not None else None,
         lead_overtake_ratio=round(overtake, 3) if overtake is not None else None,
+        role=role,
+        ms_role=ms_role,
     )
 
 
@@ -183,8 +251,15 @@ def generated_tracks(notes: list[Note], names: dict[int, str]) -> list[tuple[str
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("sources", nargs="+", type=Path)
-    parser.add_argument("--top", type=int, default=5)
+    parser.add_argument("--top", type=int, default=5,
+                        help="candidate tracks per MIDI in heuristic mode")
+    parser.add_argument("--role", type=str, default=None,
+                        help="comma-separated role filter for labeled MIDIs "
+                             "(e.g. 'riff,arpeggio')")
+    parser.add_argument("--heuristic", action="store_true",
+                        help="ignore track_roles.json and use heuristic track selection")
     args = parser.parse_args()
+    role_filter = set(args.role.split(",")) if args.role else None
 
     report = []
     for path in args.sources:
@@ -192,14 +267,25 @@ def main() -> int:
         if path.suffix.lower() == ".json":
             tracks = generated_tracks(notes, names)
             profiles = [
-                profile_track(str(path), label, track_notes, division, lead)
+                profile_track(str(path), label, track_notes, division, lead,
+                              role=label.lower(), ms_role=label)
                 for label, track_notes, lead in tracks
             ]
         else:
-            profiles = [
-                profile_track(str(path), label, track_notes, division, None)
-                for label, track_notes in select_candidate_tracks(notes, names, division, args.top)
-            ]
+            roles = None if args.heuristic else load_track_roles(path)
+            if roles:
+                profiles = [
+                    profile_track(str(path), label, track_notes, division, lead,
+                                  role=role, ms_role=ms_role)
+                    for label, role, ms_role, track_notes, lead
+                    in labeled_tracks(notes, roles, role_filter)
+                ]
+            else:
+                profiles = [
+                    profile_track(str(path), label, track_notes, division, None)
+                    for label, track_notes
+                    in select_candidate_tracks(notes, names, division, args.top)
+                ]
         report.extend(profile.__dict__ for profile in profiles)
 
     print(json.dumps(report, indent=2, ensure_ascii=False))

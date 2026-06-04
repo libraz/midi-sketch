@@ -399,6 +399,22 @@ std::vector<NoteEvent> MelodyDesigner::generateSection(const MelodyTemplate& tmp
       result.push_back(adjusted_note);
     }
 
+    // Insert an inter-phrase breath gap by shortening the last note of this
+    // phrase so it ends at singable_end (= end_tick - breath_after). Without
+    // this, consecutive phrases produce one continuous, un-breathable stream
+    // that runs for an entire section. The breath gap must be at least a
+    // half-beat (TICK_EIGHTH) for the phrase boundary to register as a real
+    // breath; otherwise it is perceived as continuous singing.
+    if (planned.breath_after > 0 && !phrase_result.notes.empty() && !result.empty()) {
+      Tick breath = std::max<Tick>(planned.breath_after, TICK_EIGHTH);
+      Tick singable_end = (planned.end_tick > breath) ? (planned.end_tick - breath) : 0;
+      NoteEvent& last = result.back();
+      Tick last_end = last.start_tick + last.duration;
+      if (last_end > singable_end && singable_end > last.start_tick + TICK_SIXTEENTH) {
+        last.duration = singable_end - last.start_tick;
+      }
+    }
+
     // Update state for next phrase
     // Use actual last pitch after transposition and adjustment (not original)
     if (!result.empty()) {

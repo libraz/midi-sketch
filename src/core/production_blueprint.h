@@ -73,6 +73,11 @@ struct BlueprintConstraints {
 
   /// Ritardando intensity for outro (0.0=none, 0.3=default, 0.5=dramatic).
   float ritardando_amount = 0.3f;
+
+  /// Motif onsets per cycle override (0 = use MotifParams default).
+  /// Idol references run busy synth riffs (4.8-9 notes/bar); the default
+  /// 6 onsets / 2 bars reads sparse for those blueprints.
+  uint8_t motif_note_count = 0;
 };
 
 /// @brief Section slot definition for blueprint section flow.

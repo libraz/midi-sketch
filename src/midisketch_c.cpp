@@ -53,17 +53,17 @@ const char* midisketch_config_error_string(MidiSketchConfigError error) {
     case MIDISKETCH_CONFIG_INVALID_COMPOSITION_STYLE:
       return "Invalid composition style (must be 0-2)";
     case MIDISKETCH_CONFIG_INVALID_ARPEGGIO_PATTERN:
-      return "Invalid arpeggio pattern (must be 0-3)";
+      return "Invalid arpeggio pattern (must be 0-7)";
     case MIDISKETCH_CONFIG_INVALID_ARPEGGIO_SPEED:
       return "Invalid arpeggio speed (must be 0-2)";
     case MIDISKETCH_CONFIG_INVALID_VOCAL_STYLE:
-      return "Invalid vocal style (must be 0-12)";
+      return "Invalid vocal style (must be 0-13)";
     case MIDISKETCH_CONFIG_INVALID_MELODY_TEMPLATE:
       return "Invalid melody template (must be 0-7)";
     case MIDISKETCH_CONFIG_INVALID_MELODIC_COMPLEXITY:
       return "Invalid melodic complexity (must be 0-2)";
     case MIDISKETCH_CONFIG_INVALID_HOOK_INTENSITY:
-      return "Invalid hook intensity (must be 0-3)";
+      return "Invalid hook intensity (must be 0-4)";
     case MIDISKETCH_CONFIG_INVALID_VOCAL_GROOVE:
       return "Invalid vocal groove (must be 0-5)";
     case MIDISKETCH_CONFIG_INVALID_CALL_DENSITY:
@@ -78,6 +78,24 @@ const char* midisketch_config_error_string(MidiSketchConfigError error) {
       return "Invalid arrangement growth (must be 0-1)";
     case MIDISKETCH_CONFIG_INVALID_MODULATION_TIMING:
       return "Invalid modulation timing (must be 0-4)";
+    case MIDISKETCH_CONFIG_INVALID_BLUEPRINT:
+      return "Invalid blueprint ID (must be a valid blueprint ID, or 255 for random)";
+    case MIDISKETCH_CONFIG_INVALID_CALL_SETTING:
+      return "Invalid call setting (must be 0-2)";
+    case MIDISKETCH_CONFIG_INVALID_ENERGY_CURVE:
+      return "Invalid energy curve (must be 0-3)";
+    case MIDISKETCH_CONFIG_INVALID_DRIVE_FEEL:
+      return "Invalid drive feel (must be 0-100)";
+    case MIDISKETCH_CONFIG_INVALID_MORA_RHYTHM_MODE:
+      return "Invalid mora rhythm mode (must be 0-2)";
+    case MIDISKETCH_CONFIG_INVALID_PROBABILITY:
+      return "Invalid probability value (must be 0.0-1.0)";
+    case MIDISKETCH_CONFIG_INVALID_ARPEGGIO_RANGE:
+      return "Invalid arpeggio range/gate/velocity value";
+    case MIDISKETCH_CONFIG_INVALID_MELODY_OVERRIDE:
+      return "Invalid melody override value";
+    case MIDISKETCH_CONFIG_INVALID_MOTIF_OVERRIDE:
+      return "Invalid motif override value";
     default:
       return "Unknown config error";
   }
@@ -364,8 +382,8 @@ MidiSketchConfigError mapConfigError(midisketch::SongConfigError error) {
   // C++ SongConfigError and C MidiSketchConfigError have identical numeric values
   static_assert(static_cast<int>(midisketch::SongConfigError::OK) == MIDISKETCH_CONFIG_OK,
                 "Enum value mismatch: OK");
-  static_assert(static_cast<int>(midisketch::SongConfigError::InvalidModulationTiming) ==
-                    MIDISKETCH_CONFIG_INVALID_MODULATION_TIMING,
+  static_assert(static_cast<int>(midisketch::SongConfigError::InvalidMotifOverride) ==
+                    MIDISKETCH_CONFIG_INVALID_MOTIF_OVERRIDE,
                 "Enum value mismatch: last entry");
   return static_cast<MidiSketchConfigError>(error);
 }
@@ -569,8 +587,14 @@ MidiSketchError midisketch_set_vocal_notes_from_json(MidiSketchHandle handle, co
           midisketch::json::Parser np(note_json);
           uint32_t start_tick = np.getUint("start_tick", 0);
           uint32_t duration = np.getUint("duration", 0);
-          uint8_t pitch = static_cast<uint8_t>(np.getInt("pitch", 60));
-          uint8_t velocity = static_cast<uint8_t>(np.getInt("velocity", 100));
+          int pitch_value = np.getInt("pitch", 60);
+          int velocity_value = np.getInt("velocity", 100);
+          if (duration == 0 || pitch_value < 0 || pitch_value > 127 || velocity_value < 0 ||
+              velocity_value > 127 || start_tick > UINT32_MAX - duration) {
+            return MIDISKETCH_ERROR_INVALID_PARAM;
+          }
+          uint8_t pitch = static_cast<uint8_t>(pitch_value);
+          uint8_t velocity = static_cast<uint8_t>(velocity_value);
           notes.push_back(
               midisketch::NoteEventBuilder::create(start_tick, duration, pitch, velocity));
         } else {

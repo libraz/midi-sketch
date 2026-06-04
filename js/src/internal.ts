@@ -22,6 +22,7 @@ export interface Api {
   create: () => number;
   destroy: (handle: number) => void;
   getMidi: (handle: number) => number;
+  getVocalPreviewMidi: (handle: number) => number;
   freeMidi: (ptr: number) => void;
   getEvents: (handle: number) => number;
   freeEvents: (ptr: number) => void;
@@ -43,6 +44,7 @@ export interface Api {
   getProgressionsByStylePtr: (styleId: number) => number;
   getFormsByStylePtr: (styleId: number) => number;
   configErrorString: (error: number) => string;
+  getLastConfigError: (handle: number) => number;
   // Vocal-first generation APIs (no-config versions)
   generateAccompaniment: (handle: number) => number;
   regenerateAccompaniment: (handle: number, seed: number) => number;
@@ -68,6 +70,7 @@ export interface Api {
   blueprintParadigm: (id: number) => number;
   blueprintRiffPolicy: (id: number) => number;
   blueprintWeight: (id: number) => number;
+  blueprintDrumsRequired: (id: number) => number;
   getResolvedBlueprintId: (handle: number) => number;
 }
 
@@ -131,6 +134,9 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
     create: m.cwrap('midisketch_create', 'number', []) as () => number,
     destroy: m.cwrap('midisketch_destroy', null, ['number']) as (handle: number) => void,
     getMidi: m.cwrap('midisketch_get_midi', 'number', ['number']) as (handle: number) => number,
+    getVocalPreviewMidi: m.cwrap('midisketch_get_vocal_preview_midi', 'number', ['number']) as (
+      handle: number,
+    ) => number,
     freeMidi: m.cwrap('midisketch_free_midi', null, ['number']) as (ptr: number) => void,
     getEvents: m.cwrap('midisketch_get_events', 'number', ['number']) as (handle: number) => number,
     freeEvents: m.cwrap('midisketch_free_events', null, ['number']) as (ptr: number) => void,
@@ -174,6 +180,9 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
     configErrorString: m.cwrap('midisketch_config_error_string', 'string', ['number']) as (
       error: number,
     ) => string,
+    getLastConfigError: m.cwrap('midisketch_get_last_config_error', 'number', ['number']) as (
+      handle: number,
+    ) => number,
     // Vocal-first generation APIs (no-config versions)
     generateAccompaniment: m.cwrap('midisketch_generate_accompaniment', 'number', ['number']) as (
       handle: number,
@@ -261,6 +270,9 @@ export async function init(options?: { wasmPath?: string }): Promise<void> {
     blueprintWeight: m.cwrap('midisketch_blueprint_weight', 'number', ['number']) as (
       id: number,
     ) => number,
+    blueprintDrumsRequired: m.cwrap('midisketch_blueprint_drums_required', 'number', [
+      'number',
+    ]) as (id: number) => number,
     getResolvedBlueprintId: m.cwrap('midisketch_get_resolved_blueprint_id', 'number', [
       'number',
     ]) as (handle: number) => number,

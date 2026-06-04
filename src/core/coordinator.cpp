@@ -18,6 +18,7 @@
 #include "core/song.h"
 #include "core/structure.h"
 #include "core/timing_constants.h"
+#include "track/drums.h"
 #include "track/generators/arpeggio.h"
 #include "track/generators/aux.h"
 #include "track/generators/bass.h"
@@ -146,6 +147,16 @@ void Coordinator::initialize(const GeneratorParams& params, const Arrangement& a
 
   // Pre-register secondary dominants before track generation.
   // Uses a dedicated sub-RNG to avoid disturbing the main RNG stream.
+  //
+  // Contract: the supplied harmony coordinator's chord tracker must NOT already
+  // contain secondary-dominant splits. registerSecondaryDominant() mutates the
+  // chord list by splitting chords (see ChordProgressionTracker), so a second
+  // pass on the same tracker corrupts the progression. Note that clearNotes()
+  // resets only the collision detector, NOT the chord tracker; callers that
+  // pre-register secondary dominants on the same harmony (e.g. the vocal-first
+  // generateVocal path) must reset the chord tracker before this overload runs.
+  // The standard full-generation path re-initializes the tracker in
+  // initializeGenerationState(), so it is registered exactly once.
   {
     const auto& progression = midisketch::getChordProgression(chord_id_);
     constexpr uint32_t kSecDomSalt = 0x5ECD0A17;
@@ -268,6 +279,66 @@ bool Coordinator::isRhythmLockActive() const {
   return policy >= 1 && policy <= 3;  // LockedContour, LockedPitch, LockedAll
 }
 
+FullTrackContext Coordinator::buildFullTrackContext(TrackRole role, Song& song, std::mt19937& rng,
+                                                    IHarmonyCoordinator& harmony) {
+  FullTrackContext ctx;
+  ctx.song = &song;
+  ctx.params = &params_;
+  ctx.rng = &rng;
+  ctx.harmony = &harmony;
+  ctx.chord_progression = &midisketch::getChordProgression(chord_id_);
+
+  // Drum grid (RhythmSync quantization axis; Vocal/Bass align to it).
+  if (drum_grid_.grid_resolution > 0) {
+    ctx.drum_grid = &drum_grid_;
+  }
+
+  // Vocal analysis (Bass/Chord/Drums adapt their register to the vocal).
+  // Cached in vocal_analysis_; computed lazily either from a pre-generated
+  // vocal (skip_vocal workflow) or from the just-generated vocal track during
+  // generateAllTracks(). For regenerateTrack() of a non-vocal track, the vocal
+  // already exists in the song, so recompute if the cache is empty.
+  if (!vocal_analysis_ && role != TrackRole::Vocal && !song.vocal().notes().empty()) {
+    vocal_analysis_ = std::make_unique<VocalAnalysis>(analyzeVocal(song.vocal()));
+  }
+  if (vocal_analysis_) {
+    ctx.vocal_analysis = vocal_analysis_.get();
+  }
+
+  // Kick pattern cache for Bass-Kick groove sync. Computed lazily on first
+  // Bass request (matches Generator::generateBass() behavior).
+  if (role == TrackRole::Bass) {
+    if (!kick_cache_) {
+      kick_cache_ = computeKickPattern(arrangement_.sections(), params_.mood);
+    }
+    ctx.kick_cache = &kick_cache_.value();
+  }
+
+  // SE/Call context.
+  if (role == TrackRole::SE) {
+    ctx.call_enabled = params_.call_enabled;
+    ctx.call_notes_enabled = params_.call_notes_enabled;
+    ctx.intro_chant = static_cast<uint8_t>(params_.intro_chant);
+    ctx.mix_pattern = static_cast<uint8_t>(params_.mix_pattern);
+    ctx.call_density = static_cast<uint8_t>(params_.call_density);
+  }
+
+  // RhythmSync: Vocal uses Motif's rhythm pattern as coordinate axis.
+  if (role == TrackRole::Vocal && paradigm_ == GenerationParadigm::RhythmSync) {
+    const MidiTrack& motif = song.motif();
+    if (!motif.empty()) {
+      ctx.motif_track = &motif;
+    }
+  }
+
+  // RhythmSync motif context for register separation.
+  if (role == TrackRole::Motif && params_.rhythm_sync_motif_ctx.has_value()) {
+    ctx.vocal_ctx = &params_.rhythm_sync_motif_ctx.value();
+  }
+
+  return ctx;
+}
+
 void Coordinator::generateAllTracks(Song& song) {
   // Set up song arrangement and metadata
   song.setArrangement(arrangement_);
@@ -291,14 +362,16 @@ void Coordinator::generateAllTracks(Song& song) {
   // Pre-compute candidates for each track before generation
   auto* harmony_coord = dynamic_cast<HarmonyCoordinator*>(&harmony);
 
-  // Cache vocal analysis after vocal track is generated
-  // Used by Bass, Drums, Chord for adapting to vocal
-  std::optional<VocalAnalysis> vocal_analysis;
+  // Reset per-run caches (this Coordinator instance may be reused across runs).
+  // vocal_analysis_ caches the vocal contour for Bass/Chord/Drums register
+  // avoidance; kick_cache_ caches predicted kick positions for Bass-Kick sync.
+  vocal_analysis_.reset();
+  kick_cache_.reset();
 
   // If vocal is pre-generated (vocal-first workflow), register and cache analysis
   if (params_.skip_vocal && !song.vocal().notes().empty()) {
     harmony.registerTrack(song.vocal(), TrackRole::Vocal);
-    vocal_analysis = analyzeVocal(song.vocal());
+    vocal_analysis_ = std::make_unique<VocalAnalysis>(analyzeVocal(song.vocal()));
     if (harmony_coord) {
       harmony_coord->markTrackGenerated(TrackRole::Vocal);
     }
@@ -334,46 +407,10 @@ void Coordinator::generateAllTracks(Song& song) {
     if (it != track_generators_.end()) {
       MidiTrack& track = song.getTrack(role);
 
-      // Build FullTrackContext for generateFullTrack()
-      FullTrackContext ctx;
-      ctx.song = &song;
-      ctx.params = &params_;
-      ctx.rng = &rng;
-      ctx.harmony = &harmony;
-      ctx.chord_progression = &midisketch::getChordProgression(chord_id_);
-
-      // Pass drum grid for RhythmSync paradigm (Vocal uses this for quantization)
-      if (drum_grid_.grid_resolution > 0) {
-        ctx.drum_grid = &drum_grid_;
-      }
-
-      // Pass vocal analysis to tracks that need it (Bass, Drums, Chord)
-      if (vocal_analysis.has_value()) {
-        ctx.vocal_analysis = &vocal_analysis.value();
-      }
-
-      // Pass SE/Call context for SE track generation
-      if (role == TrackRole::SE) {
-        ctx.call_enabled = params_.call_enabled;
-        ctx.call_notes_enabled = params_.call_notes_enabled;
-        ctx.intro_chant = static_cast<uint8_t>(params_.intro_chant);
-        ctx.mix_pattern = static_cast<uint8_t>(params_.mix_pattern);
-        ctx.call_density = static_cast<uint8_t>(params_.call_density);
-      }
-
-      // Pass Motif track reference for RhythmSync paradigm
-      // Vocal uses Motif's rhythm pattern as coordinate axis
-      if (role == TrackRole::Vocal && paradigm_ == GenerationParadigm::RhythmSync) {
-        const MidiTrack& motif = song.motif();
-        if (!motif.empty()) {
-          ctx.motif_track = &motif;
-        }
-      }
-
-      // Pass RhythmSync motif context for register separation
-      if (role == TrackRole::Motif && params_.rhythm_sync_motif_ctx.has_value()) {
-        ctx.vocal_ctx = &params_.rhythm_sync_motif_ctx.value();
-      }
+      // Build the complete FullTrackContext (drum grid, kick cache, vocal
+      // analysis, motif reference, motif/SE options) via the shared helper so
+      // generateAllTracks() and regenerateTrack() stay in sync.
+      FullTrackContext ctx = buildFullTrackContext(role, song, rng, harmony);
 
       // Use generateFullTrack() pattern (section-spanning logic supported)
       it->second->generateFullTrack(track, ctx);
@@ -381,9 +418,10 @@ void Coordinator::generateAllTracks(Song& song) {
       // Register track with harmony context
       harmony.registerTrack(track, role);
 
-      // Compute vocal analysis after vocal track is generated
+      // Compute vocal analysis after vocal track is generated so later tracks
+      // (Bass, Chord, Drums) can adapt their register to the vocal contour.
       if (role == TrackRole::Vocal && !track.notes().empty()) {
-        vocal_analysis = analyzeVocal(track);
+        vocal_analysis_ = std::make_unique<VocalAnalysis>(analyzeVocal(track));
       }
     }
 
@@ -413,18 +451,32 @@ void Coordinator::regenerateTrack(TrackRole role, Song& song) {
   if (it != track_generators_.end()) {
     MidiTrack& track = song.getTrack(role);
 
-    // Build FullTrackContext
-    FullTrackContext ctx;
-    ctx.song = &song;
-    ctx.params = &params_;
-    ctx.rng = &rng;
-    ctx.harmony = &harmony;
-    ctx.chord_progression = &midisketch::getChordProgression(chord_id_);
+    // Build the SAME complete context generateAllTracks() builds, so a
+    // regenerated track keeps vocal-aware register separation, kick-aligned
+    // bass, the RhythmSync motif reference, and motif/SE-specific options.
+    // The helper recomputes vocal analysis from the existing vocal track and
+    // the kick cache lazily, so a track regenerated in isolation (without a
+    // preceding full generation pass) is still context-complete.
+    //
+    // Caveat: vocal analysis is derived from the vocal track as it currently
+    // stands in the song. If the vocal itself is being regenerated, callers
+    // should regenerate dependent tracks afterwards; the cache below is reset
+    // for that role so it is recomputed on the next request.
+    if (role == TrackRole::Vocal) {
+      vocal_analysis_.reset();
+    }
+
+    FullTrackContext ctx = buildFullTrackContext(role, song, rng, harmony);
 
     it->second->generateFullTrack(track, ctx);
 
     // Re-register track
     harmony.registerTrack(track, role);
+
+    // Refresh the vocal-analysis cache if the vocal was just regenerated.
+    if (role == TrackRole::Vocal && !track.notes().empty()) {
+      vocal_analysis_ = std::make_unique<VocalAnalysis>(analyzeVocal(track));
+    }
   }
 }
 
@@ -743,12 +795,16 @@ std::vector<int> getPitchClassesOnBeat(const std::vector<NoteEvent>& notes, Tick
 /// @brief Check if a track is "moving" between two bars.
 ///
 /// A track is moving if the set of pitch classes starting on any strong beat
-/// differs between the previous bar and the current bar.
+/// differs between the previous bar and the current bar, or if the onset
+/// rhythm (any note start offset within the bar) differs. The rhythm check
+/// catches weak-beat variation (subdivision, displacement, pickups) that the
+/// strong-beat pitch-class comparison alone misses.
 ///
 /// @param notes Track notes
 /// @param prev_bar_start Start tick of the previous bar
 /// @param curr_bar_start Start tick of the current bar
 /// @return true if the track has different pitch classes on any strong beat
+///         or a different onset rhythm
 bool isTrackMoving(const std::vector<NoteEvent>& notes, Tick prev_bar_start, Tick curr_bar_start) {
   Tick prev_bar_end = prev_bar_start + TICKS_PER_BAR;
   Tick curr_bar_end = curr_bar_start + TICKS_PER_BAR;
@@ -767,7 +823,21 @@ bool isTrackMoving(const std::vector<NoteEvent>& notes, Tick prev_bar_start, Tic
     // Different pitch class sets - moving
     if (prev_pcs != curr_pcs) return true;
   }
-  return false;
+
+  // Onset rhythm comparison: bar-level rhythm variation is movement even
+  // when strong-beat pitch classes match.
+  std::vector<Tick> prev_onsets;
+  std::vector<Tick> curr_onsets;
+  for (const auto& note : notes) {
+    if (note.start_tick >= prev_bar_start && note.start_tick < prev_bar_end) {
+      prev_onsets.push_back(note.start_tick - prev_bar_start);
+    } else if (note.start_tick >= curr_bar_start && note.start_tick < curr_bar_end) {
+      curr_onsets.push_back(note.start_tick - curr_bar_start);
+    }
+  }
+  std::sort(prev_onsets.begin(), prev_onsets.end());
+  std::sort(curr_onsets.begin(), curr_onsets.end());
+  return prev_onsets != curr_onsets;
 }
 
 /// @brief Remove all notes in a bar range from a track.
@@ -1081,9 +1151,27 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
           range_low = MOTIF_LOW;
           range_high = MOTIF_HIGH;
           break;
+        case TrackRole::Aux:
+          // Aux physical model range (PhysicalModels::kAuxVocal = [55, 84]).
+          // Without this case the requantization snapped aux notes to chord
+          // tones across the full [0, 127] range, dropping them as low as G2.
+          range_low = 55;
+          range_high = 84;
+          break;
         default:
           break;
       }
+
+      // Vocal ceiling: accompaniment tracks must not be re-quantized above the
+      // concurrent vocal. The freeze copies a prior bar's notes into this bar
+      // (a different chord/register), and snapToNearestChordToneInRange below is
+      // bounded only by the track's static range (e.g. MOTIF_HIGH), so a copied
+      // note can be snapped to a chord tone above the (lower) vocal in this bar,
+      // burying the melody (see scripts/check_pitch_crossing.py). The ceiling is
+      // applied per-note below (not per-bar) so it mirrors the per-overlap
+      // crossing criterion exactly.
+      bool is_accompaniment = (fb.role == TrackRole::Motif || fb.role == TrackRole::Chord ||
+                               fb.role == TrackRole::Arpeggio || fb.role == TrackRole::Aux);
 
       auto& notes = song.track(fb.role).notes();
 
@@ -1145,15 +1233,29 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
           onset_note_count = 1;
         }
 
-        int snapped = harmony.snapToNearestChordToneInRange(static_cast<int>(note.note),
-                                                            note.start_tick, range_low, range_high);
+        // Per-note vocal ceiling for accompaniment tracks: never snap above the
+        // vocal note(s) overlapping this note's time span. The crossing
+        // criterion flags ANY overlapping vocal, so use the LOWEST overlapping
+        // vocal pitch (a note spanning a descending vocal run must clear the
+        // lowest vocal note it overlaps).
+        uint8_t note_range_high = range_high;
+        if (is_accompaniment) {
+          uint8_t local_vocal_low = harmony.getLowestPitchForTrackInRange(
+              note.start_tick, note.start_tick + note.duration, TrackRole::Vocal);
+          if (local_vocal_low > 0) {
+            note_range_high = std::min(range_high, std::max(local_vocal_low, range_low));
+          }
+        }
+
+        int snapped = harmony.snapToNearestChordToneInRange(
+            static_cast<int>(note.note), note.start_tick, range_low, note_range_high);
         uint8_t candidate = static_cast<uint8_t>(std::clamp(snapped, 0, 127));
 
         int8_t chord_degree = harmony.getChordDegreeAt(note.start_tick);
         if (!isConsonantWithSongTracks(song, candidate, note.start_tick, note.duration, fb.role,
                                        chord_degree)) {
           candidate = findConsonantChordTone(harmony, song, candidate, note.note, note.start_tick,
-                                             note.duration, fb.role, range_low, range_high);
+                                             note.duration, fb.role, range_low, note_range_high);
         }
 
         // Break long same-pitch runs: re-quantization collapses copied
@@ -1162,7 +1264,7 @@ void Coordinator::applyVoiceLimit(Song& song, const std::vector<Section>& sectio
         if (!is_stack && has_prev && candidate == prev_pitch && same_run >= kMaxFrozenSameRun) {
           candidate = diversifyRepeatedChordTone(harmony, song, candidate, prev_pitch, note.note,
                                                  note.start_tick, note.duration, fb.role, range_low,
-                                                 range_high);
+                                                 note_range_high);
         }
 
 #ifdef MIDISKETCH_NOTE_PROVENANCE

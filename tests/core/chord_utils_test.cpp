@@ -7,8 +7,12 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <random>
+#include <set>
+#include <vector>
 
+#include "core/chord.h"
 #include "core/pitch_utils.h"
 
 namespace midisketch {
@@ -357,6 +361,124 @@ TEST(FindNearestChordToneInRangeTest, ResultWithinRange) {
       EXPECT_LE(result, 84) << "degree=" << degree << " pitch=" << pitch;
     }
   }
+}
+
+// ============================================================================
+// Borrowed-chord root correctness (regression tests)
+// ============================================================================
+//
+// Confirmed degree -> root semitone (C major) and chord-tone pitch-class sets
+// via degreeToSemitone() and buildChord() in chord.cpp:
+//
+//   Degree  Name    root_pc  Quality  Intervals  ChordTones (PCs)
+//   0       I       0  (C)   Major    0,4,7      {0,4,7}
+//   1       ii      2  (D)   Minor    0,3,7      {2,5,9}
+//   2       iii     4  (E)   Minor    0,3,7      {4,7,11}
+//   3       IV      5  (F)   Major    0,4,7      {5,9,0}
+//   4       V       7  (G)   Major    0,4,7      {7,11,2}
+//   5       vi      9  (A)   Minor    0,3,7      {9,0,4}
+//   6       vii     11 (B)   Dim      0,3,6      {11,2,5}
+//   8       bVI     8  (Ab)  Major    0,4,7      {8,0,3}
+//   10      bVII    10 (Bb)  Major    0,4,7      {10,2,5}
+//   11      bIII    3  (Eb)  Major    0,4,7      {3,7,10}
+//   12      iv      5  (F)   Minor    0,3,7      {5,8,0}
+//   13      bII     1  (Db)  Major    0,4,7      {1,5,8}
+//   14      #IVdim  6  (F#)  Dim      0,3,6      {6,9,0}
+
+namespace {
+
+// All chord degrees the codebase supports.
+const std::vector<int8_t> kAllDegrees = {0, 1, 2, 3, 4, 5, 6, 8, 10, 11, 12, 13, 14};
+
+std::set<int> toSet(const std::vector<int>& v) { return std::set<int>(v.begin(), v.end()); }
+
+}  // namespace
+
+TEST(ChordUtilsBorrowedTest, GetChordTonePitchClassesAllDiatonic) {
+  // Diatonic degrees 0-6: verify unchanged, correct pitch-class sets.
+  EXPECT_EQ(toSet(getChordTonePitchClasses(0)), (std::set<int>{0, 4, 7}));   // I  : C E G
+  EXPECT_EQ(toSet(getChordTonePitchClasses(1)), (std::set<int>{2, 5, 9}));   // ii : D F A
+  EXPECT_EQ(toSet(getChordTonePitchClasses(2)), (std::set<int>{4, 7, 11}));  // iii: E G B
+  EXPECT_EQ(toSet(getChordTonePitchClasses(3)), (std::set<int>{5, 9, 0}));   // IV : F A C
+  EXPECT_EQ(toSet(getChordTonePitchClasses(4)), (std::set<int>{7, 11, 2}));  // V  : G B D
+  EXPECT_EQ(toSet(getChordTonePitchClasses(5)), (std::set<int>{9, 0, 4}));   // vi : A C E
+  EXPECT_EQ(toSet(getChordTonePitchClasses(6)), (std::set<int>{11, 2, 5}));  // vii: B D F
+}
+
+TEST(ChordUtilsBorrowedTest, GetChordTonePitchClassesAllBorrowed) {
+  // Borrowed degrees must use the correct chromatic root, not %7 collapse.
+  EXPECT_EQ(toSet(getChordTonePitchClasses(8)), (std::set<int>{8, 0, 3}));    // bVI  : Ab C Eb
+  EXPECT_EQ(toSet(getChordTonePitchClasses(10)), (std::set<int>{10, 2, 5}));  // bVII : Bb D F
+  EXPECT_EQ(toSet(getChordTonePitchClasses(11)), (std::set<int>{3, 7, 10}));  // bIII : Eb G Bb
+  EXPECT_EQ(toSet(getChordTonePitchClasses(12)), (std::set<int>{5, 8, 0}));   // iv   : F Ab C
+  EXPECT_EQ(toSet(getChordTonePitchClasses(13)), (std::set<int>{1, 5, 8}));   // bII  : Db F Ab
+  EXPECT_EQ(toSet(getChordTonePitchClasses(14)), (std::set<int>{6, 9, 0}));   // #IVdim: F# A C
+}
+
+TEST(ChordUtilsBorrowedTest, GetChordTonePitchClassesMatchesGetChordTones) {
+  // getChordTonePitchClasses(d) must equal pitch classes of getChordTones(d)
+  // for ALL supported degrees (root computation must be consistent).
+  for (int8_t d : kAllDegrees) {
+    ChordTones ct = getChordTones(d);
+    std::vector<int> from_struct;
+    for (uint8_t i = 0; i < ct.count; ++i) {
+      from_struct.push_back(ct.pitch_classes[i]);
+    }
+    EXPECT_EQ(toSet(getChordTonePitchClasses(d)), toSet(from_struct))
+        << "Mismatch for degree " << static_cast<int>(d);
+  }
+}
+
+TEST(ChordUtilsBorrowedTest, GetAvailableTensionRootCorrectness) {
+  // bIII root = Eb (3). 9th above Eb = F (5). Tensions must be rooted on Eb,
+  // not on the wrong %7-collapsed root.
+  auto tens_biii = getAvailableTensionPitchClasses(11);
+  ASSERT_FALSE(tens_biii.empty());
+  EXPECT_NE(std::find(tens_biii.begin(), tens_biii.end(), 5), tens_biii.end())
+      << "bIII (Eb major) should expose 9th = F (5)";
+
+  // bVII root = Bb (10). 9th above Bb = C (0).
+  auto tens_bvii = getAvailableTensionPitchClasses(10);
+  ASSERT_FALSE(tens_bvii.empty());
+  EXPECT_NE(std::find(tens_bvii.begin(), tens_bvii.end(), 0), tens_bvii.end())
+      << "bVII (Bb major) should expose 9th = C (0)";
+
+  // bVI root = Ab (8). 9th above Ab = Bb (10).
+  auto tens_bvi = getAvailableTensionPitchClasses(8);
+  ASSERT_FALSE(tens_bvi.empty());
+  EXPECT_NE(std::find(tens_bvi.begin(), tens_bvi.end(), 10), tens_bvi.end())
+      << "bVI (Ab major) should expose 9th = Bb (10)";
+}
+
+TEST(ChordUtilsBorrowedTest, GuideToneViiSeventhIsADiatonic) {
+  // vii (degree 6): guide tones are 3rd (D=2) and 7th. The diatonic 7th above
+  // B in C major is A (9), giving Bm7b5 (half-diminished). Must NOT be Bb (10).
+  auto guides = getGuideTonePitchClasses(6);
+  ASSERT_EQ(guides.size(), 2u);
+  EXPECT_NE(std::find(guides.begin(), guides.end(), 9), guides.end())
+      << "vii guide 7th should be A (9), diatonic half-diminished";
+  EXPECT_EQ(std::find(guides.begin(), guides.end(), 10), guides.end())
+      << "vii guide 7th must NOT be Bb (10), which is non-diatonic";
+  // 3rd of B dim = D (2)
+  EXPECT_NE(std::find(guides.begin(), guides.end(), 2), guides.end());
+}
+
+TEST(ChordUtilsBorrowedTest, GuideToneDiatonicSevenths) {
+  // I: 3rd=E(4), maj7=B(11)
+  EXPECT_EQ(toSet(getGuideTonePitchClasses(0)), (std::set<int>{4, 11}));
+  // IV: 3rd=A(9), maj7=E(4)
+  EXPECT_EQ(toSet(getGuideTonePitchClasses(3)), (std::set<int>{9, 4}));
+  // V: 3rd=B(11), min7=F(5)  -> G7
+  EXPECT_EQ(toSet(getGuideTonePitchClasses(4)), (std::set<int>{11, 5}));
+  // ii: 3rd=F(5), min7=C(0)  -> Dm7
+  EXPECT_EQ(toSet(getGuideTonePitchClasses(1)), (std::set<int>{5, 0}));
+}
+
+TEST(ChordUtilsBorrowedTest, GuideToneBorrowedRootCorrectness) {
+  // bIII (Eb major): 3rd = G (7). Root must be Eb, so 3rd is G not something else.
+  auto g_biii = getGuideTonePitchClasses(11);
+  ASSERT_EQ(g_biii.size(), 2u);
+  EXPECT_NE(std::find(g_biii.begin(), g_biii.end(), 7), g_biii.end()) << "bIII 3rd should be G (7)";
 }
 
 }  // namespace

@@ -716,9 +716,10 @@ constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
      TimeFeel::OnBeat, 1.0f, ChorusDropStyle::None},
 
     // A melody: Strum, voice limit=3, guide tone 55%, phrase tail rest
+    // Bass joins from 1st A: idol references keep bass through verses
     {SectionType::A,
      8,
-     TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord,
+     TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord | TrackMask::Bass,
      EntryPattern::GradualBuild,
      SectionEnergy::Low,
      65,
@@ -744,9 +745,11 @@ constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
      0},
 
     // B melody: Strum, voice limit=3, guide tone 65%, phrase tail rest
+    // Guitar/Aux join here: idol references keep comping through the pre-chorus
     {SectionType::B,
      8,
-     TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass | TrackMask::Chord,
+     TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass | TrackMask::Chord | TrackMask::Guitar |
+         TrackMask::Aux,
      EntryPattern::GradualBuild,
      SectionEnergy::Medium,
      72,
@@ -769,9 +772,10 @@ constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
      3,
      0,
      65,
-     0},
+     0,
+     4},
 
-    // First Chorus: Strum, no voice limit, guide tone 60%
+    // First Chorus: Strum, no voice limit, guide tone 60%, Driving bass (8th pulse)
     {SectionType::Chorus,
      8,
      TrackMask::All,
@@ -797,12 +801,15 @@ constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
      0,
      0,
      60,
-     0},
+     0,
+     4},
 
     // 2nd A melody: Strum, voice limit=3, guide tone 55%, phrase tail rest
+    // Guitar+Motif join from 2nd A (energy escalation vs 1st A)
     {SectionType::A,
      8,
-     TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord | TrackMask::Bass,
+     TrackMask::Vocal | TrackMask::Drums | TrackMask::Chord | TrackMask::Bass | TrackMask::Guitar |
+         TrackMask::Motif,
      EntryPattern::Immediate,
      SectionEnergy::Medium,
      68,
@@ -828,9 +835,11 @@ constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
      0},
 
     // 2nd B melody: Strum, voice limit=3, guide tone 65%, phrase tail rest
+    // Guitar/Aux/Motif join: final build before last choruses
     {SectionType::B,
      8,
-     TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass | TrackMask::Chord,
+     TrackMask::Vocal | TrackMask::Drums | TrackMask::Bass | TrackMask::Chord | TrackMask::Guitar |
+         TrackMask::Aux | TrackMask::Motif,
      EntryPattern::GradualBuild,
      SectionEnergy::High,
      75,
@@ -853,7 +862,8 @@ constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
      3,
      0,
      65,
-     0},
+     0,
+     4},
 
     // 2nd Chorus: Strum, no voice limit, guide tone 60%, SlapPop bass
     {SectionType::Chorus,
@@ -912,7 +922,7 @@ constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
      70,
      0},
 
-    // Last Chorus: Strum, no voice limit, guide tone 60%
+    // Last Chorus: Strum, no voice limit, guide tone 60%, Driving bass (8th pulse)
     {SectionType::Chorus,
      16,
      TrackMask::All,
@@ -938,7 +948,8 @@ constexpr SectionSlot IDOL_STANDARD_FLOW[] = {
      0,
      0,
      60,
-     0},
+     0,
+     4},
 
     // Outro (all defaults)
     {SectionType::Outro, 4, TrackMask::Drums | TrackMask::Chord, EntryPattern::Immediate,
@@ -1711,7 +1722,11 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          false,  // guitar_below_vocal
          0.3f},  // ritardando_amount (Traditional: default)
         // aux_profile: Mood default, standard functions, default scaling
-        {0xFF, AuxFunction::MelodicHook, AuxFunction::MotifCounter, AuxFunction::EmotionalPad, 1.0f,
+        // Chorus MelodicHook: pop references carry an active aux line in
+        // choruses (1.9-6.7 notes/bar); EmotionalPad measured ~0.7
+        // Chorus MelodicHook: pop references carry an active aux line in
+        // choruses (1.9-6.7 notes/bar); EmotionalPad measured ~0.7
+        {0xFF, AuxFunction::MelodicHook, AuxFunction::MotifCounter, AuxFunction::MelodicHook, 1.0f,
          1.0f, -2},
     },
 
@@ -1739,7 +1754,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          true,                                           // guitar_below_vocal
          0.15f},  // ritardando_amount (RhythmLock: tight rhythm, subtle)
         // aux_profile: Square Lead, PulseLoop/GrooveAccent, punchy rhythm focus
-        {80, AuxFunction::PulseLoop, AuxFunction::PulseLoop, AuxFunction::GrooveAccent, 0.8f, 0.85f,
+        // density 1.0: references show aux/pad lines at 2.9+ notes/bar
+        {80, AuxFunction::PulseLoop, AuxFunction::PulseLoop, AuxFunction::GrooveAccent, 0.8f, 1.0f,
          -4},
     },
 
@@ -1823,9 +1839,11 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          InstrumentSkillLevel::Intermediate,                         // keys_skill
          InstrumentModelMode::ConstraintsOnly, false, false, false,  // techniques
          false,                                                      // guitar_below_vocal
-         0.25f},  // ritardando_amount (IdolStandard)
+         0.25f,  // ritardando_amount (IdolStandard)
+         10},    // motif_note_count: busy idol synth riff (refs 4.8-9 notes/bar)
         // aux_profile: Mood default, PhraseTail verse, Unison chorus for idol power
-        {0xFF, AuxFunction::MelodicHook, AuxFunction::PhraseTail, AuxFunction::Unison, 0.90f, 0.8f,
+        // density 1.0: idol references show aux lines at 2.9-10.3 notes/bar
+        {0xFF, AuxFunction::MelodicHook, AuxFunction::PhraseTail, AuxFunction::Unison, 0.90f, 1.0f,
          -2},
     },
 
@@ -1882,7 +1900,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          InstrumentModelMode::ConstraintsOnly, false, false,
          false,  // simple patterns for cute vibe
          true,   // guitar_below_vocal
-         0.2f},  // ritardando_amount (IdolKawaii: soft ending)
+         0.2f,   // ritardando_amount (IdolKawaii: soft ending)
+         8},     // motif_note_count: bouncy but restrained
         // aux_profile: Music Box, MelodicHook throughout for cute sparkle, low density
         {10, AuxFunction::MelodicHook, AuxFunction::MelodicHook, AuxFunction::MelodicHook, 0.6f,
          0.6f, -5},
@@ -1939,7 +1958,8 @@ constexpr ProductionBlueprint BLUEPRINTS[] = {
          InstrumentSkillLevel::Intermediate,                         // keys_skill
          InstrumentModelMode::ConstraintsOnly, false, false, false,  // techniques
          true,                                                       // guitar_below_vocal
-         0.35f},  // ritardando_amount (IdolEmo: emotional slowdown)
+         0.35f,  // ritardando_amount (IdolEmo: emotional slowdown)
+         10},    // motif_note_count: busy riff for explosive chorus energy
         // aux_profile: Choir Aahs, SustainPad throughout, very quiet and sparse
         {52, AuxFunction::SustainPad, AuxFunction::SustainPad, AuxFunction::SustainPad, 0.55f, 0.5f,
          -7},

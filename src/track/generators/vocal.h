@@ -8,6 +8,7 @@
 
 #include <random>
 #include <unordered_map>
+#include <vector>
 
 #include "core/track_base.h"
 #include "core/types.h"
@@ -90,10 +91,21 @@ class VocalGenerator : public TrackBase {
   /// @param velocity_scale Velocity scaling factor
   /// @param effective_vocal_low Overall effective vocal low bound
   /// @param effective_vocal_high Overall effective vocal high bound
+  /// @brief Per-section vocal pitch ceiling used to keep the global melodic
+  /// peak inside the Chorus during final, song-wide post-processing.
+  struct SectionCeiling {
+    Tick start_tick;  ///< Section start tick (inclusive)
+    Tick end_tick;    ///< Section end tick (exclusive)
+    uint8_t low;      ///< Section vocal range low bound
+    uint8_t high;     ///< Section vocal range high bound (ceiling)
+    bool is_chorus;   ///< True for Chorus/Drop (ceiling not enforced)
+  };
+
   void postProcessVocalNotes(std::vector<NoteEvent>& notes, MidiTrack& track, const Song& song,
                              const GeneratorParams& params, IHarmonyContext& harmony,
                              std::mt19937& rng, float velocity_scale, uint8_t effective_vocal_low,
-                             uint8_t effective_vocal_high) const;
+                             uint8_t effective_vocal_high,
+                             const std::vector<SectionCeiling>& section_ceilings) const;
 
   const MidiTrack* motif_track_ = nullptr;
 };

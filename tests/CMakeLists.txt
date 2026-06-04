@@ -15,12 +15,14 @@ set(TEST_SOURCES
   core/types_test.cpp
   core/structure_test.cpp
   core/chord_test.cpp
+  core/chord_theory_improvements_test.cpp
   core/generator_test.cpp
   core/generator_di_test.cpp
   core/generator_vocal_test.cpp
   core/generator_vocal_first_test.cpp
   core/generator_motif_test.cpp
   core/generator_dynamics_test.cpp
+  core/generator_state_test.cpp
   core/midi_track_test.cpp
   core/arrangement_test.cpp
   core/song_test.cpp
@@ -44,6 +46,7 @@ set(TEST_SOURCES
   core/piano_roll_test.cpp
   core/music_theory_test.cpp
   core/velocity_test.cpp
+  core/velocity_clamp_test.cpp
   core/post_processor_test.cpp
   core/tempo_map_test.cpp
   core/modulation_calculator_test.cpp
@@ -92,6 +95,7 @@ set(TEST_SOURCES
   track/bass_test.cpp
   track/bass_theory_test.cpp
   track/bass_integration_test.cpp
+  track/bass_pattern_test.cpp
   track/chord_with_context_test.cpp
   track/drums_test.cpp
   track/melody_designer_test.cpp
@@ -104,6 +108,7 @@ set(TEST_SOURCES
   track/swing_control_test.cpp
   track/motif_vocal_coordination_test.cpp
   track/guitar_test.cpp
+  track/guitar_collision_test.cpp
   track/fretted_instrument_test.cpp
   instrument/keyboard_model_test.cpp
   track/rhythm_sync_test.cpp

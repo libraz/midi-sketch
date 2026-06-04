@@ -277,6 +277,13 @@ class AuxGenerator : public TrackBase {
   /// Finds safe pitch alternatives for notes that clash with Bass, Chord, etc.
   void resolvePitchClashes(std::vector<NoteEvent>& notes, IHarmonyContext& harmony);
 
+  /// Eliminate isolated notes (>1 bar of silence on both sides) by giving them
+  /// a companion chord-tone note a beat away.  An aux line peppered with lone
+  /// notes reads as accidental noise rather than a counter-melody; pairing them
+  /// turns each into a tiny gesture.  Companions are placed within the same bar
+  /// so they never bleed into masked-off (silent) sections.
+  void deisolateNotes(std::vector<NoteEvent>& notes, IHarmonyContext& harmony);
+
   std::unordered_map<AuxCacheKey, CachedAuxPhrase, AuxCacheKeyHash> phrase_cache_;
   std::optional<Motif> cached_chorus_motif_;  ///< Chorus motif for intro placement
 };

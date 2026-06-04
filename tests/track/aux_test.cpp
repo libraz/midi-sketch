@@ -258,13 +258,29 @@ TEST(AuxTest, GrooveAccentOnBackbeats) {
 
   EXPECT_GE(notes.size(), 4u);
 
+  // GrooveAccent places strong accents on beats 2 & 4 (backbeat) plus 8th-note
+  // offbeat fills (on the "and" of each beat) so the line reads as a groove
+  // rather than two isolated hits/bar.  Every note must land on either a
+  // backbeat (2/4) or an 8th-note offbeat, and at least one backbeat must exist.
+  bool found_backbeat = false;
   for (const auto& note : notes) {
     Tick beat_in_bar = note.start_tick % TICKS_PER_BAR;
     bool is_beat2 = (beat_in_bar >= TICKS_PER_BEAT - 10 && beat_in_bar <= TICKS_PER_BEAT + 10);
     bool is_beat4 =
         (beat_in_bar >= TICKS_PER_BEAT * 3 - 10 && beat_in_bar <= TICKS_PER_BEAT * 3 + 10);
-    EXPECT_TRUE(is_beat2 || is_beat4);
+    bool is_offbeat = false;
+    for (int beat = 0; beat < 4; ++beat) {
+      Tick offbeat = beat * TICKS_PER_BEAT + TICK_EIGHTH;
+      if (beat_in_bar >= offbeat - 10 && beat_in_bar <= offbeat + 10) {
+        is_offbeat = true;
+        break;
+      }
+    }
+    if (is_beat2 || is_beat4) found_backbeat = true;
+    EXPECT_TRUE(is_beat2 || is_beat4 || is_offbeat)
+        << "Note at beat_in_bar=" << beat_in_bar << " is neither backbeat nor offbeat fill";
   }
+  EXPECT_TRUE(found_backbeat) << "GrooveAccent must retain its 2/4 backbeat identity";
 }
 
 // ============================================================================
@@ -1360,6 +1376,97 @@ TEST(AuxBlueprintProfile, AllBlueprintsHaveValidAuxProfile) {
     EXPECT_LE(bp.aux_profile.density_scale, 1.0f) << "BP " << static_cast<int>(i);
     // range_ceiling should be negative or zero (aux shouldn't exceed vocal)
     EXPECT_LE(bp.aux_profile.range_ceiling, 0) << "BP " << static_cast<int>(i);
+  }
+}
+
+// ============================================================================
+// Part 14: Counter-Melody Density (RhythmSync sparseness regression)
+// ============================================================================
+
+namespace {
+
+/// Aux track range as documented by PhysicalModels::kAuxVocal (i_track_base.h).
+constexpr int kAuxRangeLow = 55;
+constexpr int kAuxRangeHigh = 84;
+
+/// Count aux notes that fall inside [start, end).
+int countAuxNotesIn(const std::vector<NoteEvent>& aux, Tick start, Tick end) {
+  int count = 0;
+  for (const auto& n : aux) {
+    if (n.start_tick >= start && n.start_tick < end) ++count;
+  }
+  return count;
+}
+
+}  // namespace
+
+// (a) RhythmSync (IdolHyper, BP5) aux should read as a counter-melody:
+//     non-empty sections average >= 1.5 notes/bar and no note is isolated
+//     (>1 bar of silence on both sides).
+TEST(AuxCounterMelodyDensity, RhythmSyncSectionsAreDenseAndNotIsolated) {
+  Generator gen;
+  GeneratorParams params;
+  params.blueprint_id = 5;  // IdolHyper (RhythmSync)
+  params.seed = 42;
+  gen.generate(params);
+
+  const auto& song = gen.getSong();
+  const auto& aux = song.aux().notes();
+  const auto& sections = song.arrangement().sections();
+
+  ASSERT_FALSE(aux.empty()) << "RhythmSync aux must not be empty";
+
+  // Per-section density: every section that has aux notes should be dense.
+  int active_sections = 0;
+  for (const auto& sec : sections) {
+    int notes = countAuxNotesIn(aux, sec.start_tick, sec.endTick());
+    if (notes == 0) continue;  // Aux intentionally drops out of some sections
+    ++active_sections;
+    float per_bar = static_cast<float>(notes) / static_cast<float>(std::max<uint8_t>(sec.bars, 1));
+    EXPECT_GE(per_bar, 1.5f) << "Section at bar " << sec.start_bar << " ("
+                             << static_cast<int>(notes) << " notes / " << static_cast<int>(sec.bars)
+                             << " bars) too sparse";
+  }
+  EXPECT_GT(active_sections, 0) << "Expected at least one section with aux notes";
+
+  // No isolated notes: a note with > 1 bar of silence on BOTH sides.
+  std::vector<Tick> starts;
+  starts.reserve(aux.size());
+  for (const auto& n : aux) starts.push_back(n.start_tick);
+  std::sort(starts.begin(), starts.end());
+
+  for (size_t i = 0; i < starts.size(); ++i) {
+    bool left_gap = (i == 0) || (starts[i] - starts[i - 1] > TICKS_PER_BAR);
+    bool right_gap = (i + 1 == starts.size()) || (starts[i + 1] - starts[i] > TICKS_PER_BAR);
+    EXPECT_FALSE(left_gap && right_gap) << "Isolated aux note at tick " << starts[i] << " (bar "
+                                        << (starts[i] / TICKS_PER_BAR) << ")";
+  }
+}
+
+// (b) Aux pitches must stay within the documented physical-model range
+//     [55, 84] across several seeds and RhythmSync blueprints.  This guards
+//     against the requantization escape that previously snapped aux notes down
+//     to G2 (43) in voice-limited (RhythmLock-style) blueprints.
+TEST(AuxPitchRange, StaysWithinDocumentedRangeAcrossSeeds) {
+  const std::array<uint8_t, 3> blueprints = {1, 5, 7};  // RhythmSync / voice-limited
+  const std::array<uint32_t, 5> seeds = {42, 7, 100, 2024, 31337};
+
+  for (uint8_t bp : blueprints) {
+    for (uint32_t seed : seeds) {
+      Generator gen;
+      GeneratorParams params;
+      params.blueprint_id = bp;
+      params.seed = seed;
+      gen.generate(params);
+
+      const auto& aux = gen.getSong().aux().notes();
+      for (const auto& n : aux) {
+        EXPECT_GE(static_cast<int>(n.note), kAuxRangeLow)
+            << "Aux pitch below range in BP" << static_cast<int>(bp) << " seed" << seed;
+        EXPECT_LE(static_cast<int>(n.note), kAuxRangeHigh)
+            << "Aux pitch above range in BP" << static_cast<int>(bp) << " seed" << seed;
+      }
+    }
   }
 }
 

@@ -449,33 +449,51 @@ TEST(VocalMelodyTest, ChorusHookRepetition) {
   ASSERT_FALSE(chorus1_notes.empty()) << "First chorus should have notes";
   ASSERT_FALSE(chorus2_notes.empty()) << "Second chorus should have notes";
 
-  // Compare first 4-8 notes (hook pattern)
+  // Compare first 4-8 notes (hook pattern).
+  //
+  // The later chorus is intentionally lifted in register (climax build-up), so
+  // the hook recurs TRANSPOSED rather than at identical absolute pitches. We
+  // therefore compare two transposition-invariant properties:
+  //   1. The melodic contour (interval shape between consecutive notes), and
+  //   2. A consistent transposition offset (the lift), allowing the modulation
+  //      amount plus a few semitones of register lift.
   size_t compare_count = std::min({chorus1_notes.size(), chorus2_notes.size(), size_t(8)});
   ASSERT_GE(compare_count, 4u) << "Each chorus should have at least 4 notes for hook comparison";
 
-  int matching_notes = 0;
   int modulation_amount = song.modulationAmount();  // Usually +1 semitone
+  // Allow the modulation plus up to a perfect-4th of climax register lift.
+  const int kMaxLiftSemitones = modulation_amount + 5;
 
+  // 1. Contour match: count consecutive intervals that share the same direction
+  //    (transposition-invariant hook shape).
+  int contour_matches = 0;
+  int contour_total = 0;
+  for (size_t i = 1; i < compare_count; ++i) {
+    int d1 = static_cast<int>(chorus1_notes[i].note) - static_cast<int>(chorus1_notes[i - 1].note);
+    int d2 = static_cast<int>(chorus2_notes[i].note) - static_cast<int>(chorus2_notes[i - 1].note);
+    ++contour_total;
+    bool same_dir = (d1 > 0 && d2 > 0) || (d1 < 0 && d2 < 0) || (d1 == 0 && d2 == 0);
+    if (same_dir) ++contour_matches;
+  }
+  float contour_ratio =
+      (contour_total > 0) ? static_cast<float>(contour_matches) / contour_total : 1.0f;
+
+  // 2. Transposition match: count notes whose lift is a small, upward register
+  //    shift (the deliberate chorus build-up).
+  int transpose_matches = 0;
   for (size_t i = 0; i < compare_count; ++i) {
-    // Adjust first chorus notes by modulation amount for comparison
-    // (internal representation has same notes, modulation applied at output)
-    int chorus1_adjusted = static_cast<int>(chorus1_notes[i].note);
-    int chorus2_pitch = static_cast<int>(chorus2_notes[i].note);
-
-    // Notes should be identical (no modulation in internal representation)
-    // or differ by modulation amount (if applied internally)
-    int pitch_diff = std::abs(chorus1_adjusted - chorus2_pitch);
-    if (pitch_diff <= modulation_amount || pitch_diff == 0) {
-      matching_notes++;
+    int diff = static_cast<int>(chorus2_notes[i].note) - static_cast<int>(chorus1_notes[i].note);
+    if (diff >= 0 && diff <= kMaxLiftSemitones) {
+      ++transpose_matches;
     }
   }
+  float transpose_ratio = static_cast<float>(transpose_matches) / compare_count;
 
-  // At least 25% of hook notes should match (accounting for clash avoidance
-  // and musical scoring that may select different pitches for melodic continuity)
-  float match_ratio = static_cast<float>(matching_notes) / compare_count;
-  EXPECT_GE(match_ratio, 0.25f) << "Chorus hook pattern matching: " << (match_ratio * 100.0f)
-                                << "% (" << matching_notes << "/" << compare_count
-                                << " notes matched)";
+  // The hook must recur recognizably: either a strong contour match or a
+  // consistent (modest, upward) register transposition of the same notes.
+  EXPECT_TRUE(contour_ratio >= 0.4f || transpose_ratio >= 0.5f)
+      << "Chorus hook not recognizable: contour match " << (contour_ratio * 100.0f)
+      << "%, transposition match " << (transpose_ratio * 100.0f) << "%";
 }
 
 TEST(VocalMelodyTest, VocalNoteDurationMinimum) {

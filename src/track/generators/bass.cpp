@@ -808,15 +808,43 @@ struct BassBarContext {
 // Bass Pattern Implementations
 // ============================================================================
 
+/// @brief Deterministic per-bar variant selector for repetitive bass patterns.
+/// A verbatim onset cell on every bar measures as one repeated cell
+/// (repeat_cell_consistency 0.72 vs reference <=0.49). Position-hashed
+/// variants break the verbatim repeat while keeping each pattern's feel.
+/// 0,1 = original cell, 2/3 = pattern-specific variations.
+int bassBarVariant(Tick bar_start) {
+  uint32_t h = static_cast<uint32_t>(bar_start) * 2654435761u;
+  return static_cast<int>((h >> 16) % 4);
+}
+
 void generateWholeNotePattern(const BassBarContext& ctx) {
   addBassNotePreferRoot(ctx.track, ctx.bar_start, TICK_HALF, ctx.root, ctx.vel, ctx.harmony);
   if ((ctx.is_last_bar || ctx.next_root != ctx.root) && ctx.next_root != 0) {
-    addBassNotePreferRoot(ctx.track, ctx.bar_start + TICK_HALF, TICK_QUARTER + TICK_EIGHTH,
-                          ctx.root, ctx.vel_weak, ctx.harmony);
     uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
-    addBassNoteWithTritoneCheck(ctx.track, ctx.harmony,
-                                ctx.bar_start + 3 * TICK_QUARTER + TICK_EIGHTH, TICK_EIGHTH,
-                                approach, ctx.root, ctx.vel_weak);
+    int variant = bassBarVariant(ctx.bar_start);
+    if (variant == 2) {
+      // Sustain through beat 3, quarter approach on beat 4
+      addBassNotePreferRoot(ctx.track, ctx.bar_start + TICK_HALF, TICK_QUARTER, ctx.root,
+                            ctx.vel_weak, ctx.harmony);
+      addBassNoteWithTritoneCheck(ctx.track, ctx.harmony, ctx.bar_start + 3 * TICK_QUARTER,
+                                  TICK_QUARTER, approach, ctx.root, ctx.vel_weak);
+    } else if (variant == 3) {
+      // Fifth color tone on the and-of-3 before the approach 8th
+      addBassNotePreferRoot(ctx.track, ctx.bar_start + TICK_HALF, TICK_EIGHTH, ctx.root,
+                            ctx.vel_weak, ctx.harmony);
+      addBassNoteWithTritoneCheck(ctx.track, ctx.harmony, ctx.bar_start + TICK_HALF + TICK_EIGHTH,
+                                  TICK_QUARTER, ctx.fifth, ctx.root, ctx.vel_weak);
+      addBassNoteWithTritoneCheck(ctx.track, ctx.harmony,
+                                  ctx.bar_start + 3 * TICK_QUARTER + TICK_EIGHTH, TICK_EIGHTH,
+                                  approach, ctx.root, ctx.vel_weak);
+    } else {
+      addBassNotePreferRoot(ctx.track, ctx.bar_start + TICK_HALF, TICK_QUARTER + TICK_EIGHTH,
+                            ctx.root, ctx.vel_weak, ctx.harmony);
+      addBassNoteWithTritoneCheck(ctx.track, ctx.harmony,
+                                  ctx.bar_start + 3 * TICK_QUARTER + TICK_EIGHTH, TICK_EIGHTH,
+                                  approach, ctx.root, ctx.vel_weak);
+    }
   } else {
     addBassNotePreferRoot(ctx.track, ctx.bar_start + TICK_HALF, TICK_HALF, ctx.root, ctx.vel_weak,
                           ctx.harmony);
@@ -850,7 +878,7 @@ void generateSyncopatedPattern(const BassBarContext& ctx) {
                         ctx.root, ctx.vel_weak, ctx.harmony);
   addBassNotePreferRoot(ctx.track, ctx.bar_start + 2 * TICK_QUARTER, TICK_QUARTER, ctx.root,
                         ctx.vel, ctx.harmony);
-  if (ctx.is_last_bar || ctx.next_root != ctx.root) {
+  if ((ctx.is_last_bar || ctx.next_root != ctx.root) && ctx.next_root != 0) {
     uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
     addBassNoteWithTritoneCheck(ctx.track, ctx.harmony,
                                 ctx.bar_start + 3 * TICK_QUARTER + TICK_EIGHTH, TICK_EIGHTH,
@@ -862,6 +890,7 @@ void generateSyncopatedPattern(const BassBarContext& ctx) {
 }
 
 void generateDrivingPattern(const BassBarContext& ctx) {
+  int variant = bassBarVariant(ctx.bar_start);
   for (int beat = 0; beat < 4; ++beat) {
     Tick beat_tick = ctx.bar_start + beat * TICK_QUARTER;
     uint8_t beat_vel = (beat == 0 || beat == 2) ? ctx.vel : ctx.vel_weak;
@@ -879,6 +908,16 @@ void generateDrivingPattern(const BassBarContext& ctx) {
       uint8_t approach = getApproachNote(ctx.root, ctx.next_root, ctx.next_degree);
       addBassNoteWithTritoneCheck(ctx.track, ctx.harmony, beat_tick + TICK_EIGHTH, TICK_EIGHTH,
                                   approach, ctx.root, ctx.vel_weak);
+    } else if (variant == 2 && beat == 1) {
+      // Rest on the off-8th of beat 2: syncopated push into beat 3
+      addBassNotePreferRoot(ctx.track, beat_tick, TICK_EIGHTH, ctx.root, beat_vel, ctx.harmony);
+    } else if (variant == 3 && beat == 3) {
+      // 16th split at the bar tail: drive into the next bar
+      addBassNotePreferRoot(ctx.track, beat_tick, TICK_EIGHTH, ctx.root, beat_vel, ctx.harmony);
+      addBassNotePreferRoot(ctx.track, beat_tick + TICK_EIGHTH, TICK_SIXTEENTH, ctx.root,
+                            ctx.vel_weak, ctx.harmony);
+      addBassNotePreferRoot(ctx.track, beat_tick + TICK_EIGHTH + TICK_SIXTEENTH, TICK_SIXTEENTH,
+                            ctx.root, ctx.vel_weak, ctx.harmony);
     } else {
       addBassNotePreferRoot(ctx.track, beat_tick, TICK_EIGHTH, ctx.root, beat_vel, ctx.harmony);
       addBassNotePreferRoot(ctx.track, beat_tick + TICK_EIGHTH, TICK_EIGHTH, ctx.root, ctx.vel_weak,
@@ -889,9 +928,14 @@ void generateDrivingPattern(const BassBarContext& ctx) {
 
 void generateRhythmicDrivePattern(const BassBarContext& ctx) {
   uint8_t accent_vel = static_cast<uint8_t>(std::min(127, ctx.vel + 10));
+  int variant = bassBarVariant(ctx.bar_start);
   for (int eighth = 0; eighth < 8; ++eighth) {
     Tick tick = ctx.bar_start + eighth * TICK_EIGHTH;
     uint8_t note_vel = ctx.vel_weak;
+
+    // Per-bar cell variation: rest one weak 8th (positions vary by bar hash)
+    if (variant == 2 && eighth == 5) continue;
+    if (variant == 3 && eighth == 1) continue;
 
     if (eighth == 0) {
       addBassNotePreferRoot(ctx.track, tick, TICK_EIGHTH, ctx.root, accent_vel, ctx.harmony);
@@ -1099,7 +1143,8 @@ void generateTresilloPattern(const BassBarContext& ctx) {
 
 void generateSubBass808Pattern(const BassBarContext& ctx) {
   uint8_t sub_pitch = ctx.root;
-  while (sub_pitch > 40) {
+  // Drop into sub-bass octave, but never below the physical bass floor.
+  while (sub_pitch > 40 && sub_pitch - 12 >= BASS_LOW) {
     sub_pitch -= 12;
   }
   uint8_t sub_vel = static_cast<uint8_t>(std::min(127, ctx.vel + 10));
@@ -1107,11 +1152,14 @@ void generateSubBass808Pattern(const BassBarContext& ctx) {
     addBassNotePreferRoot(ctx.track, ctx.bar_start, 3 * TICK_QUARTER + TICK_EIGHTH, sub_pitch,
                           sub_vel, ctx.harmony);
     uint8_t next_sub = ctx.next_root;
-    while (next_sub > 40) {
+    while (next_sub > 40 && next_sub - 12 >= BASS_LOW) {
       next_sub -= 12;
     }
-    uint8_t slide_note = (sub_pitch < next_sub) ? static_cast<uint8_t>(sub_pitch + 1)
-                                                : static_cast<uint8_t>(sub_pitch - 1);
+    // Chromatic slide toward the next root; clamp into the playable bass range
+    // so sub_pitch == BASS_LOW does not underflow below the low limit.
+    int slide_raw =
+        (sub_pitch < next_sub) ? static_cast<int>(sub_pitch) + 1 : static_cast<int>(sub_pitch) - 1;
+    uint8_t slide_note = clampBass(slide_raw);
     NoteOptions slide_opts;
     slide_opts.start = ctx.bar_start + 3 * TICK_QUARTER + TICK_EIGHTH;
     slide_opts.duration = TICK_EIGHTH;
@@ -1356,6 +1404,10 @@ int findLastNoteInBar(const MidiTrack& track, Tick bar_start, Tick bar_end) {
   int last_idx = -1;
   Tick latest_start = 0;
   const auto& notes = track.notes();
+  // Full scan: notes may be unsorted after prior erase/insert during
+  // microvariation, so a positional early-exit heuristic is unsafe (it can
+  // miss the bar's last note when it sits at a low index). The scan is over a
+  // single track, so the cost is negligible.
   for (int idx = static_cast<int>(notes.size()) - 1; idx >= 0; --idx) {
     const auto& note = notes[idx];
     if (note.start_tick >= bar_start && note.start_tick < bar_end) {
@@ -1363,10 +1415,6 @@ int findLastNoteInBar(const MidiTrack& track, Tick bar_start, Tick bar_end) {
         last_idx = idx;
         latest_start = note.start_tick;
       }
-    }
-    // Notes are roughly ordered; once we pass before bar_start, stop
-    if (note.start_tick < bar_start && idx < static_cast<int>(notes.size()) - 20) {
-      break;
     }
   }
   return last_idx;
@@ -1543,13 +1591,55 @@ bool shouldAddDominantPreparation(SectionType current, SectionType next, int8_t 
 
 // Generate half-bar of bass (for split bars with dominant preparation)
 // Uses HarmonyContext for all notes to ensure vocal priority
+/// Dense patterns keep an 8th-note pulse even when the bar is subdivided
+/// (harmonic rhythm 0.5 / phrase-end splits). Without this, half-bar
+/// generation silently degrades Driving-class patterns to quarter notes.
+bool isDenseBassPattern(BassPattern pattern) {
+  switch (pattern) {
+    case BassPattern::Driving:
+    case BassPattern::RhythmicDrive:
+    case BassPattern::PowerDrive:
+    case BassPattern::Aggressive:
+    case BassPattern::SlapPop:
+    case BassPattern::FastRun:
+      return true;
+    default:
+      return false;
+  }
+}
+
 void generateBassHalfBar(MidiTrack& track, Tick half_start, uint8_t root, SectionType section,
-                         Mood mood, bool is_first_half, IHarmonyContext& harmony) {
+                         Mood mood, bool is_first_half, IHarmonyContext& harmony,
+                         BassPattern pattern = BassPattern::RootFifth) {
   uint8_t vel = calculateVelocity(section, 0, mood);
   uint8_t vel_weak = static_cast<uint8_t>(vel * 0.85f);
   // Pre-check 5th for collision with other tracks
   uint8_t fifth = getSafeChordTone(root, harmony, half_start, TICK_QUARTER, TrackRole::Bass,
                                    BASS_LOW, BASS_HIGH);
+
+  if (isDenseBassPattern(pattern)) {
+    // 8th-note pulse across the half bar (Driving-style): R R R/5 R
+    // with per-half-bar cell variation (see bassBarVariant)
+    int variant = bassBarVariant(half_start);
+    for (int i = 0; i < 4; ++i) {
+      Tick tick = half_start + i * TICK_EIGHTH;
+      uint8_t v = (i == 0) ? vel : vel_weak;
+      if (variant == 2 && i == 1) continue;  // rest: push into the 5th
+      if (variant == 3 && i == 3) {
+        // 16th split on the last 8th: drive into the next half bar
+        addBassNotePreferRoot(track, tick, TICK_SIXTEENTH, root, vel_weak, harmony);
+        addBassNotePreferRoot(track, tick + TICK_SIXTEENTH, TICK_SIXTEENTH, root, vel_weak,
+                              harmony);
+        continue;
+      }
+      if (i == 2) {
+        addBassNoteWithTritoneCheck(track, harmony, tick, TICK_EIGHTH, fifth, root, vel_weak);
+      } else {
+        addBassNotePreferRoot(track, tick, TICK_EIGHTH, root, v, harmony);
+      }
+    }
+    return;
+  }
 
   // Simple half-bar pattern: root + fifth or root, all with safety checks
   if (is_first_half) {
@@ -1705,19 +1795,19 @@ bool tryDominantPreparation(BassTrackContext& ctx, Tick bar_start, uint8_t effec
 
 // Try harmonic rhythm subdivision. Returns true if bar was handled (caller should continue).
 bool tryHarmonicSubdivision(BassTrackContext& ctx, Tick bar_start, uint8_t effective_root,
-                            const Section& section) {
+                            const Section& section, BassPattern pattern) {
   HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, ctx.params.mood);
   if (harmonic.subdivision != 2) {
     return false;
   }
   // First half: current chord root (with vocal adjustment if available)
   generateBassHalfBar(ctx.track, bar_start, effective_root, section.type, ctx.params.mood, true,
-                      ctx.harmony);
+                      ctx.harmony, pattern);
   // Second half: next chord in subdivided progression
   int8_t second_half_degree = ctx.harmony.getChordDegreeAt(bar_start + TICK_HALF);
   uint8_t second_half_root = getBassRoot(second_half_degree);
   generateBassHalfBar(ctx.track, bar_start + TICK_HALF, second_half_root, section.type,
-                      ctx.params.mood, false, ctx.harmony);
+                      ctx.params.mood, false, ctx.harmony, pattern);
   return true;
 }
 
@@ -1747,7 +1837,8 @@ bool wouldAnticipationClash(BassTrackContext& ctx, uint8_t anticipate_root, Tick
 
 // Try phrase-end split with anticipation. Returns true if bar was handled (caller should continue).
 bool tryPhraseEndSplit(BassTrackContext& ctx, Tick bar_start, uint8_t effective_root,
-                       const Section& section, uint8_t bar, bool slow_harmonic) {
+                       const Section& section, uint8_t bar, bool slow_harmonic,
+                       BassPattern pattern) {
   HarmonicRhythmInfo harmonic = HarmonicRhythmInfo::forSection(section, ctx.params.mood);
   int effective_prog_length =
       slow_harmonic ? (ctx.progression.length + 1) / 2 : ctx.progression.length;
@@ -1763,9 +1854,9 @@ bool tryPhraseEndSplit(BassTrackContext& ctx, Tick bar_start, uint8_t effective_
     return false;  // Fall through to generate full bar without anticipation
   }
   generateBassHalfBar(ctx.track, bar_start, effective_root, section.type, ctx.params.mood, true,
-                      ctx.harmony);
+                      ctx.harmony, pattern);
   generateBassHalfBar(ctx.track, bar_start + TICK_HALF, anticipate_root, section.type,
-                      ctx.params.mood, false, ctx.harmony);
+                      ctx.params.mood, false, ctx.harmony, pattern);
   return true;
 }
 
@@ -1903,12 +1994,12 @@ void generateBassTrack(MidiTrack& track, const Song& song, const GeneratorParams
       }
 
       // Harmonic rhythm subdivision (B sections)
-      if (tryHarmonicSubdivision(ctx, bar_start, effective_root, section)) {
+      if (tryHarmonicSubdivision(ctx, bar_start, effective_root, section, pattern)) {
         continue;
       }
 
       // Phrase-end split with anticipation
-      if (tryPhraseEndSplit(ctx, bar_start, effective_root, section, bar, slow_harmonic)) {
+      if (tryPhraseEndSplit(ctx, bar_start, effective_root, section, bar, slow_harmonic, pattern)) {
         continue;
       }
 

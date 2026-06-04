@@ -277,11 +277,11 @@ CachedRhythmPattern* VocalGenerator::resolveRhythmLock(
   return current_rhythm_lock;
 }
 
-void VocalGenerator::postProcessVocalNotes(std::vector<NoteEvent>& all_notes, MidiTrack& track,
-                                           const Song& song, const GeneratorParams& params,
-                                           IHarmonyContext& harmony, std::mt19937& rng,
-                                           float velocity_scale, uint8_t effective_vocal_low,
-                                           uint8_t effective_vocal_high) const {
+void VocalGenerator::postProcessVocalNotes(
+    std::vector<NoteEvent>& all_notes, MidiTrack& track, const Song& song,
+    const GeneratorParams& params, IHarmonyContext& harmony, std::mt19937& rng,
+    float velocity_scale, uint8_t effective_vocal_low, uint8_t effective_vocal_high,
+    const std::vector<SectionCeiling>& section_ceilings) const {
   // Apply section-end sustain - extend final notes of each section
   applySectionEndSustain(all_notes, song.arrangement().sections(), harmony);
 
@@ -296,10 +296,16 @@ void VocalGenerator::postProcessVocalNotes(std::vector<NoteEvent>& all_notes, Mi
 
   // Safety net: enforce maximum phrase duration for very long sections.
   // Inter-section breaths are handled during generation; this catches edge cases
-  // within individual sections that exceed max_phrase_bars.
+  // (e.g. RhythmSync seeds whose onsets do not align with planned phrase
+  // boundaries) where notes run on for a whole section without a breath.
+  // The cap is tightened to 6 bars so the continuous-singing span stays within
+  // the breathability budget (the analyzer flags spans over ~24 beats / 6 bars),
+  // while never exceeding the style's physical max_phrase_bars.
   VocalPhysicsParams physics = getVocalPhysicsParams(params.vocal_style);
   if (physics.requires_breath && physics.max_phrase_bars < 255) {
-    melody::enforceMaxPhraseDuration(all_notes, physics.max_phrase_bars, TICK_EIGHTH);
+    constexpr uint8_t kBreathabilityMaxBars = 6;
+    uint8_t safety_bars = std::min(physics.max_phrase_bars, kBreathabilityMaxBars);
+    melody::enforceMaxPhraseDuration(all_notes, safety_bars, TICK_EIGHTH);
   }
 
   // Vocal-friendly post-processing:
@@ -327,6 +333,29 @@ void VocalGenerator::postProcessVocalNotes(std::vector<NoteEvent>& all_notes, Mi
   // collision avoidance can cause long runs of the same pitch.
   // max_consecutive=3 means 4th note onwards gets alternated for melodic interest.
   breakConsecutiveSamePitch(all_notes, harmony, effective_vocal_low, effective_vocal_high, 3);
+
+  // Re-enforce per-section ceilings AFTER all song-wide pitch passes. Earlier
+  // passes (enforceVocalPitchConstraints, breakConsecutiveSamePitch) operate on
+  // the global effective range and can lift non-Chorus notes back above their
+  // section ceiling, which would let the global melodic peak escape the Chorus.
+  // This pass is the final authority on non-Chorus ceilings: it clamps each note
+  // in place using its owning section's bounds (no reordering, no aliasing).
+  for (auto& note : all_notes) {
+    for (const auto& sc : section_ceilings) {
+      if (sc.is_chorus) continue;
+      if (note.start_tick < sc.start_tick || note.start_tick >= sc.end_tick) continue;
+      if (note.note <= sc.high) break;
+      // Single-note slice keeps enforceSectionCeiling's octave-drop + scale-snap
+      // + collision-safety logic as the single source of truth for the clamp.
+      std::vector<NoteEvent> one{note};
+      enforceSectionCeiling(one, harmony, sc.low, sc.high);
+      note.note = one.front().note;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+      note.prov_original_pitch = one.front().prov_original_pitch;
+#endif
+      break;
+    }
+  }
 
   // Final overlap check - ensures no overlaps after all processing
   NoteTimeline::fixOverlapsWithMinDuration(all_notes, min_note_duration);
@@ -364,6 +393,9 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
 
   // Collect all notes
   std::vector<NoteEvent> all_notes;
+
+  // Collect per-section pitch ceilings for the final, song-wide ceiling pass.
+  std::vector<SectionCeiling> section_ceilings;
 
   // Phrase cache for section repetition (V2: extended key with bars + chord_degree)
   std::unordered_map<PhraseCacheKey, CachedPhrase, PhraseCacheKeyHash> phrase_cache;
@@ -427,14 +459,24 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
     // This gives the vocalist room to "break out" at the climax
     // ========================================================================
     int climax_extension = 0;
-    if (section.type == SectionType::Chorus && section.peak_level == PeakLevel::Max) {
-      climax_extension = 2;  // +2 semitones for climax
+    if (section.type == SectionType::Chorus || section.type == SectionType::Drop) {
+      // Give the Chorus headroom above the base ceiling so the global melodic
+      // peak reliably lands in a Chorus (rather than tying a Verse/Pre-chorus
+      // that reaches the same effective_vocal_high). Raising the Chorus (rather
+      // than lowering everything else) keeps non-Chorus registers intact, which
+      // preserves accompaniment tracks that anchor to the vocal ceiling
+      // (e.g. Motif staying below vocal).
+      //
+      // The headroom grows for later occurrences and the final climax Chorus so
+      // that successive choruses "lift" rather than repeat the first verbatim.
+      climax_extension = (section.peak_level == PeakLevel::Max) ? 2 : 0;
     }
 
     // Register shift adjusts the preferred center but must not exceed original range
-    // (except for climax extension which allows exceeding the range)
+    // (except for climax extension which allows exceeding the range).
+    int low_lift = 0;
     uint8_t section_vocal_low = static_cast<uint8_t>(
-        std::clamp(static_cast<int>(effective_vocal_low) + register_shift,
+        std::clamp(static_cast<int>(effective_vocal_low) + register_shift + low_lift,
                    static_cast<int>(effective_vocal_low),
                    static_cast<int>(effective_vocal_high) - 6));  // At least 6 semitone range
     uint8_t section_vocal_high = static_cast<uint8_t>(
@@ -450,18 +492,31 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       }
     }
 
-    // Verse/Bridge ceiling: prevent non-Chorus sections from reaching Chorus highs.
-    // This ensures the Chorus climax is perceptually distinct.
-    constexpr int kVerseCeilingMarginSt = 3;
-    if (section.type == SectionType::A || section.type == SectionType::Bridge) {
-      int chorus_ceiling =
-          static_cast<int>(effective_vocal_high) + params.melody_params.chorus_register_shift;
-      int ceiling = chorus_ceiling - kVerseCeilingMarginSt;
-      if (static_cast<int>(section_vocal_high) > ceiling) {
-        section_vocal_high =
-            static_cast<uint8_t>(std::max(ceiling, static_cast<int>(section_vocal_low) + 6));
+    // Non-Chorus ceiling: keep non-Chorus sections at or below the base
+    // effective_vocal_high. The Chorus is lifted above this base (via
+    // climax_extension), so capping non-Chorus at the base guarantees the
+    // global melodic peak lands in a Chorus while leaving the Verse/Pre-chorus
+    // register fully intact (so accompaniment that anchors to the vocal ceiling
+    // is unaffected).
+    if (section.type != SectionType::Chorus && section.type != SectionType::Drop) {
+      int non_chorus_ceiling = static_cast<int>(effective_vocal_high);
+      // RhythmSync exception: the locked-rhythm Chorus is pitch-constrained by
+      // the motif grid and rarely reaches the lifted ceiling, so it tops out at
+      // effective_vocal_high. Drop the Pre-chorus (B) one semitone below that so
+      // the peak still lands in the Chorus instead of tying the Pre-chorus.
+      if (params.paradigm == GenerationParadigm::RhythmSync && section.type == SectionType::B) {
+        non_chorus_ceiling -= 1;
+      }
+      if (static_cast<int>(section_vocal_high) > non_chorus_ceiling) {
+        section_vocal_high = static_cast<uint8_t>(
+            std::max(non_chorus_ceiling, static_cast<int>(section_vocal_low) + 6));
       }
     }
+
+    // Record this section's ceiling for the final song-wide ceiling pass.
+    section_ceilings.push_back(
+        SectionCeiling{section_start, section_end, section_vocal_low, section_vocal_high,
+                       section.type == SectionType::Chorus || section.type == SectionType::Drop});
 
     // Recalculate tessitura for section
     TessituraRange section_tessitura = calculateTessitura(section_vocal_low, section_vocal_high);
@@ -495,6 +550,12 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       // Re-apply collision avoidance (chord context may differ)
       applyCollisionAvoidanceWithIntervalConstraint(section_notes, harmony, section_vocal_low,
                                                     section_vocal_high);
+
+      // Enforce non-Chorus ceiling so the global peak stays in the Chorus
+      // (see detailed rationale in the cache-miss branch below).
+      if (section.type != SectionType::Chorus && section.type != SectionType::Drop) {
+        enforceSectionCeiling(section_notes, harmony, section_vocal_low, section_vocal_high);
+      }
     } else {
       // Cache miss: generate new melody
       MelodyDesigner::SectionContext sctx =
@@ -578,6 +639,16 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
       // Apply HarmonyContext collision avoidance with interval constraint
       applyCollisionAvoidanceWithIntervalConstraint(section_notes, harmony, section_vocal_low,
                                                     section_vocal_high);
+
+      // Enforce non-Chorus ceiling AFTER all pitch transforms. Earlier pitch
+      // resolution (collision avoidance, interval fixes) can push individual
+      // notes above section_vocal_high; left unchecked, the global melodic peak
+      // can land in a Verse/Pre-chorus/Bridge instead of the Chorus. Any note
+      // above the ceiling is dropped an octave and snapped to a safe scale tone
+      // so the Chorus remains the clear melodic climax.
+      if (section.type != SectionType::Chorus && section.type != SectionType::Drop) {
+        enforceSectionCeiling(section_notes, harmony, section_vocal_low, section_vocal_high);
+      }
 
       // Extract GlobalMotif from first Chorus for song-wide melodic unity
       // Subsequent sections will receive bonus for similar contour/intervals
@@ -780,7 +851,7 @@ void VocalGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackContex
   // Final post-processing: sustain, groove, overlaps, breath, merge, velocity,
   // pitch constraints, same-pitch breaks, and pitch bend expressions
   postProcessVocalNotes(all_notes, track, song, params, harmony, rng, velocity_scale,
-                        effective_vocal_low, effective_vocal_high);
+                        effective_vocal_low, effective_vocal_high, section_ceilings);
 }
 
 }  // namespace midisketch

@@ -43,7 +43,7 @@ export interface SongConfig {
   arpeggioSpeed: number;
   /** Arpeggio octave range (1-3) */
   arpeggioOctaveRange: number;
-  /** Arpeggio gate length (0-100) */
+  /** Arpeggio gate length (0.0-1.0) */
   arpeggioGate: number;
 
   // Vocal settings
@@ -55,26 +55,35 @@ export interface SongConfig {
   skipVocal: boolean;
 
   // Humanization
+  // NOTE: SongConfig humanize amounts are floats 0.0-1.0 (defaults 0.4 / 0.3),
+  // unlike AccompanimentConfig which uses uint8 0-100.
   /** Enable humanization */
   humanize: boolean;
-  /** Timing variation (0-100) */
+  /** Timing variation (0.0-1.0) */
   humanizeTiming: number;
-  /** Velocity variation (0-100) */
+  /** Velocity variation (0.0-1.0) */
   humanizeVelocity: number;
 
   // Chord extensions
+  // NOTE: SongConfig chord extension probabilities are floats 0.0-1.0 (maps to
+  // C++ ChordExtensionParams float fields). This differs from AccompanimentConfig,
+  // whose chordExt*Prob fields are uint8 0-100.
   /** Enable sus2/sus4 chords */
   chordExtSus: boolean;
   /** Enable 7th chords */
   chordExt7th: boolean;
   /** Enable 9th chords */
   chordExt9th: boolean;
-  /** Sus chord probability (0-100) */
+  /** Enable tritone substitution (V7 -> bII7) */
+  chordExtTritoneSub: boolean;
+  /** Sus chord probability (0.0-1.0) */
   chordExtSusProb: number;
-  /** 7th chord probability (0-100) */
+  /** 7th chord probability (0.0-1.0) */
   chordExt7thProb: number;
-  /** 9th chord probability (0-100) */
+  /** 9th chord probability (0.0-1.0) */
   chordExt9thProb: number;
+  /** Tritone substitution probability (0.0-1.0) */
+  chordExtTritoneSubProb: number;
 
   // Composition style
   /** Composition style: 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven */
@@ -93,8 +102,14 @@ export interface SongConfig {
   // SE/Call settings
   /** Enable SE track */
   seEnabled: boolean;
-  /** Enable call feature (maps to call_setting: false=Auto(0), true=Enabled(1)) */
-  callEnabled: boolean;
+  /** Call setting: 0=Auto, 1=Enabled, 2=Disabled. Source of truth for call state. */
+  callSetting?: number;
+  /**
+   * Enable call feature (legacy boolean view of callSetting).
+   * Deprecated for config state; use callSetting for the Auto/Enabled/Disabled distinction.
+   * Derived as: Enabled(1) -> true, Disabled(2) -> false, Auto(0) -> undefined.
+   */
+  callEnabled?: boolean;
   /** Output calls as notes */
   callNotesEnabled: boolean;
   /** Intro chant: 0=None, 1=Gachikoi, 2=Shouting */
@@ -117,6 +132,8 @@ export interface SongConfig {
   // Arpeggio sync settings
   /** Sync arpeggio with chord changes (default=true) */
   arpeggioSyncChord: boolean;
+  /** Base velocity for arpeggio notes (0-127, default=90) */
+  arpeggioBaseVelocity: number;
 
   // Motif settings (for BackgroundMotif style)
   /** Motif repeat scope: 0=FullSong, 1=Section */
@@ -239,6 +256,8 @@ export interface VocalConfig {
   vocalGroove?: number;
   /** Composition style: 0=MelodyLead, 1=BackgroundMotif, 2=SynthDriven */
   compositionStyle?: number;
+  /** RhythmSync: keep existing Motif as coordinate axis (default: regenerate both) */
+  keepMotif?: boolean;
 }
 
 /**

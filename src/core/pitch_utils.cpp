@@ -349,14 +349,18 @@ int snapToNearestScaleTone(int pitch, int key_offset) {
   return octave * 12 + best_pc + key_offset;
 }
 
-bool isAvoidNoteWithContext(int pitch, uint8_t chord_root, bool is_minor, int8_t chord_degree) {
+bool isAvoidNoteWithContext(int pitch, uint8_t chord_root, bool is_minor, int8_t chord_degree,
+                            bool chord_has_major7) {
   int interval = ((pitch - chord_root) % 12 + 12) % 12;
   ChordFunction function = getChordFunction(chord_degree);
 
-  // Major 7th (11): generally dissonant as it clashes with root
-  // Exception: Maj7 chords exist, but for melody avoid notes this is still harsh
+  // Major 7th (11): generally dissonant as it clashes with root.
+  // Exception: when the active chord is a Maj7 (chord_has_major7), the major
+  // 7th IS a chord tone (e.g. B over CMaj7), so it must not be treated as an
+  // avoid note. Callers that do not know the extension default to false,
+  // preserving the conservative legacy behavior.
   if (interval == AVOID_MAJOR_7TH) {
-    return true;
+    return !chord_has_major7;
   }
 
   // Minor 2nd (1): harsh dissonance on non-dominant chords

@@ -172,6 +172,23 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
                                                    uint8_t vocal_low, uint8_t vocal_high);
 
 /**
+ * @brief Enforce a hard upper pitch ceiling on a section's notes.
+ *
+ * Used to keep non-Chorus sections (Verse/Pre-chorus/Bridge) below the Chorus
+ * ceiling so the global melodic peak lands inside the Chorus. Notes above
+ * vocal_high are dropped by octaves until at or below the ceiling, then snapped
+ * to the nearest in-range scale tone while preserving inter-track collision
+ * safety where possible.
+ *
+ * @param notes Notes to modify (in-place)
+ * @param harmony Harmony context for collision-safety verification
+ * @param vocal_low Section vocal range low limit
+ * @param vocal_high Section vocal range high limit (the ceiling to enforce)
+ */
+void enforceSectionCeiling(std::vector<NoteEvent>& notes, const IHarmonyContext& harmony,
+                           uint8_t vocal_low, uint8_t vocal_high);
+
+/**
  * @brief Merge same-pitch notes with short gaps (tie/legato).
  *
  * In pop vocals, same-pitch notes with tiny gaps should be connected

@@ -45,10 +45,13 @@ uint8_t selectPitchForOnset(const std::vector<PitchCandidate>& candidates,
                             const std::vector<OnsetContourInfo>& onset_contours, std::mt19937& rng);
 
 /// @brief Compute final note duration based on position (last/phrase-end/normal).
+/// @param min_singable Minimum note length (ticks) below which a phrase-end note
+///        is considered an isolated short note; the breath reservation is only
+///        applied when it leaves the phrase-end note at or above this length.
 Tick computeNoteDuration(bool is_last_note, bool is_phrase_end, Tick tick, Tick section_end,
                          Tick next_onset, Tick available_span, Tick breath_duration,
                          Tick phrase_end_min, float gate_ratio, uint8_t safe_pitch,
-                         uint8_t prev_pitch);
+                         uint8_t prev_pitch, Tick min_singable);
 
 /**
  * @brief Generate a single pitch sequence candidate for locked rhythm evaluation.

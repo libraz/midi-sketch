@@ -6,13 +6,16 @@ progress tracking, and summary reporting.
 
 import os
 import shutil
-import subprocess
 import tempfile
-import threading
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import List
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from cli_utils import ProgressCounter, run_cli
 
 from .constants import BLUEPRINT_NAMES, Severity
 from .models import TestResult, QualityScore
@@ -20,27 +23,13 @@ from .loader import load_json_output, load_json_metadata
 from .analyzer import MusicAnalyzer
 
 
-class ProgressCounter:
-    """Thread-safe progress counter for batch testing."""
-
-    def __init__(self, total: int):
-        self.total = total
-        self.current = 0
-        self.lock = threading.Lock()
-        self.passed = 0
-        self.failed = 0
-        self.errors = 0
-
-    def increment(self, result: TestResult):
-        """Increment counter and classify result."""
-        with self.lock:
-            self.current += 1
-            if result.error:
-                self.errors += 1
-            elif result.error_count > 0:
-                self.failed += 1
-            else:
-                self.passed += 1
+def _classify_result(result: TestResult) -> str:
+    """Classify a batch TestResult for ProgressCounter."""
+    if result.error:
+        return "error"
+    if result.error_count > 0:
+        return "failed"
+    return "passed"
 
 
 def run_single_test(
@@ -86,18 +75,18 @@ def run_single_test(
         # Each worker gets its own temp directory to avoid file collisions
         tmp_dir = tempfile.mkdtemp(prefix="midisketch_batch_")
 
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            cwd=tmp_dir,
-        )
+        # cli_abs is already absolute; run from the isolated temp dir.
+        returncode, message = run_cli(cli_abs, cmd[1:], Path(tmp_dir), timeout=60)
 
-        if result.returncode != 0:
+        if returncode is None:
             return TestResult(
                 seed=seed, style=style, chord=chord, blueprint=blueprint,
-                error=f"CLI error: {result.stderr[:200]}",
+                error=message,
+            )
+        if returncode != 0:
+            return TestResult(
+                seed=seed, style=style, chord=chord, blueprint=blueprint,
+                error=f"CLI error: {message}",
             )
 
         # Load output.json from the temp directory
@@ -134,11 +123,6 @@ def run_single_test(
             info_count=info_count,
         )
 
-    except subprocess.TimeoutExpired:
-        return TestResult(
-            seed=seed, style=style, chord=chord, blueprint=blueprint,
-            error="Timeout (>60s)",
-        )
     except Exception as exc:
         return TestResult(
             seed=seed, style=style, chord=chord, blueprint=blueprint,
@@ -189,7 +173,7 @@ def run_batch_tests(
     print()
 
     if parallel > 1:
-        counter = ProgressCounter(total)
+        counter = ProgressCounter(total, classifier=_classify_result)
         results_dict = {}
 
         with ThreadPoolExecutor(max_workers=parallel) as executor:

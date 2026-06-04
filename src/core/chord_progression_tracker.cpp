@@ -119,7 +119,33 @@ Tick ChordProgressionTracker::getNextChordEntryTick(Tick after) const {
 
 std::vector<int> ChordProgressionTracker::getChordTonesAt(Tick tick) const {
   int8_t degree = getChordDegreeAt(tick);
-  return getChordTonePitchClasses(degree);
+  std::vector<int> tones = getChordTonePitchClasses(degree);
+
+  // Secondary dominants are voiced as Dom7 by the chord track
+  // (getExtendedChord(degree, Dom7)). The base triad lookup above omits the
+  // dominant minor 7th, so other tracks (Motif/Aux/Arpeggio) would pick pitches
+  // without it. Add the minor 7th (interval 10 from the chord root) over a
+  // registered secondary-dominant span so chord-tone selection sees the full
+  // Dom7. Also force a major 3rd (interval 4): a secondary dominant always has
+  // dominant quality even if the underlying diatonic degree is minor.
+  if (isSecondaryDominantAt(tick)) {
+    int root_pc = ((degreeToSemitone(degree) % 12) + 12) % 12;
+    int major_third_pc = (root_pc + 4) % 12;
+    int minor_third_pc = (root_pc + 3) % 12;
+    int seventh_pc = (root_pc + 10) % 12;
+
+    // Replace any minor 3rd with the dominant major 3rd.
+    tones.erase(std::remove(tones.begin(), tones.end(), minor_third_pc), tones.end());
+    if (std::find(tones.begin(), tones.end(), major_third_pc) == tones.end()) {
+      tones.push_back(major_third_pc);
+    }
+    // Add the dominant 7th if not already present.
+    if (std::find(tones.begin(), tones.end(), seventh_pc) == tones.end()) {
+      tones.push_back(seventh_pc);
+    }
+  }
+
+  return tones;
 }
 
 ChordBoundaryInfo ChordProgressionTracker::analyzeChordBoundary(uint8_t pitch, Tick start,

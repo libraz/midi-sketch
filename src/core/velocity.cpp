@@ -79,7 +79,7 @@ uint8_t calculateVelocity(SectionType section, uint8_t beat, Mood mood) {
   float mood_adj = getMoodVelocityAdjustment(mood);
 
   int velocity = static_cast<int>((BASE + beat_adj) * section_mult * mood_adj);
-  return vel::clamp(velocity, 0, 127);
+  return vel::clamp(velocity, 1, 127);
 }
 
 int getSectionEnergy(SectionType section) { return getSectionProperties(section).energy_level; }
@@ -160,7 +160,7 @@ uint8_t calculateEffectiveVelocity(const Section& section, uint8_t beat, Mood mo
   // Calculate final velocity
   int velocity = static_cast<int>((base + beat_adj) * energy_mult * peak_mult * mood_adj);
 
-  return vel::clamp(velocity, 0, 127);
+  return vel::clamp(velocity, 1, 127);
 }
 
 uint8_t calculateEmotionAwareVelocity(const Section& section, uint8_t beat, Mood mood,

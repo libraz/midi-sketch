@@ -5,6 +5,7 @@
 
 #include "core/preset_data.h"
 
+#include <climits>
 #include <cmath>
 #include <random>
 
@@ -15,6 +16,8 @@
 namespace midisketch {
 
 namespace {
+
+bool isProbability(float value) { return value >= 0.0f && value <= 1.0f; }
 
 // Mood default BPM values
 constexpr uint16_t MOOD_BPM[24] = {
@@ -1108,14 +1111,14 @@ constexpr MoodProgramSet MOOD_PROGRAMS[24] = {
     // The arpeggio column here uses the default (81) as a fallback only.
     // guitar: 0xFF = Silent (disabled), 25 = Nylon Guitar, 27 = Clean Guitar, 29 = Overdriven
     {0, 4, 33, 81, 81, 89, 27},
-    // 1: BrightUpbeat - Bright piano, brighter overall
-    {1, 5, 33, 81, 81, 89, 0xFF},
+    // 1: BrightUpbeat - Bright piano, brighter overall + clean guitar comping
+    {1, 5, 33, 81, 81, 89, 27},
     // 2: EnergeticDance - Synth bass for dance energy
     {0, 4, 38, 81, 81, 89, 0xFF},
     // 3: LightRock - Distortion guitar, pick bass
     {0, 30, 34, 81, 81, 89, 27},
-    // 4: MidPop - Standard pop instruments
-    {0, 4, 33, 81, 81, 89, 0xFF},
+    // 4: MidPop - Standard pop instruments + clean guitar comping
+    {0, 4, 33, 81, 81, 89, 27},
     // 5: EmotionalPop - Square lead, strings aux, nylon guitar
     {0, 4, 33, 80, 81, 49, 25},
     // 6: Sentimental - Vibraphone, acoustic bass, strings
@@ -1134,8 +1137,9 @@ constexpr MoodProgramSet MOOD_PROGRAMS[24] = {
     {0, 4, 33, 81, 81, 89, 0xFF},
     // 13: ElectroPop - Full synth setup
     {81, 81, 38, 81, 81, 89, 0xFF},
-    // 14: IdolPop - Bright instruments
-    {1, 5, 33, 81, 81, 89, 0xFF},
+    // 14: IdolPop - Bright instruments + clean guitar comping (idol references
+    // keep rhythm guitar through verses and choruses)
+    {1, 5, 33, 81, 81, 89, 27},
     // 15: Anthem - Strings for epic feel
     {0, 48, 33, 81, 81, 49, 29},
     // 16: AnimeHighEnergy - Piano chord + synth anime style (anime-pop piano riff)
@@ -1303,6 +1307,10 @@ SongConfigError validateSongConfig(const SongConfig& config) {
     return SongConfigError::InvalidChordProgression;
   }
 
+  if (config.blueprint_id != 255 && config.blueprint_id >= getProductionBlueprintCount()) {
+    return SongConfigError::InvalidBlueprint;
+  }
+
   // Validate form
   if (static_cast<uint8_t>(config.form) >= STRUCTURE_COUNT) {
     return SongConfigError::InvalidForm;
@@ -1359,6 +1367,17 @@ SongConfigError validateSongConfig(const SongConfig& config) {
   if (static_cast<uint8_t>(config.arpeggio.speed) > 2) {
     return SongConfigError::InvalidArpeggioSpeed;
   }
+  if (config.arpeggio.octave_range < 1 || config.arpeggio.octave_range > 3 ||
+      !isProbability(config.arpeggio.gate) || config.arpeggio.base_velocity > 127) {
+    return SongConfigError::InvalidArpeggioRange;
+  }
+
+  if (!isProbability(config.chord_extension.sus_probability) ||
+      !isProbability(config.chord_extension.seventh_probability) ||
+      !isProbability(config.chord_extension.ninth_probability) ||
+      !isProbability(config.chord_extension.tritone_sub_probability)) {
+    return SongConfigError::InvalidProbability;
+  }
 
   // Validate vocal style (0-13)
   if (static_cast<uint8_t>(config.vocal_style) > 13) {
@@ -1376,7 +1395,7 @@ SongConfigError validateSongConfig(const SongConfig& config) {
   }
 
   // Validate hook intensity (0-3)
-  if (static_cast<uint8_t>(config.hook_intensity) > 3) {
+  if (static_cast<uint8_t>(config.hook_intensity) > 4) {
     return SongConfigError::InvalidHookIntensity;
   }
 
@@ -1388,6 +1407,9 @@ SongConfigError validateSongConfig(const SongConfig& config) {
   // Validate call density (0-3)
   if (static_cast<uint8_t>(config.call_density) > 3) {
     return SongConfigError::InvalidCallDensity;
+  }
+  if (static_cast<uint8_t>(config.call_setting) > 2) {
+    return SongConfigError::InvalidCallSetting;
   }
 
   // Validate intro chant (0-2)
@@ -1408,6 +1430,49 @@ SongConfigError validateSongConfig(const SongConfig& config) {
   // Validate arrangement growth (0-1)
   if (static_cast<uint8_t>(config.arrangement_growth) > 1) {
     return SongConfigError::InvalidArrangementGrowth;
+  }
+
+  if (static_cast<uint8_t>(config.energy_curve) > 3) {
+    return SongConfigError::InvalidEnergyCurve;
+  }
+  if (config.drive_feel > 100) {
+    return SongConfigError::InvalidDriveFeel;
+  }
+  if (config.mora_rhythm_mode > 2) {
+    return SongConfigError::InvalidMoraRhythmMode;
+  }
+  if (config.syllabic_sub_rate > 100) {
+    return SongConfigError::InvalidMelodyOverride;
+  }
+  if (config.humanize_timing < 0.0f || config.humanize_timing > 1.0f ||
+      config.humanize_velocity < 0.0f || config.humanize_velocity > 1.0f) {
+    return SongConfigError::InvalidProbability;
+  }
+  if (config.melody_max_leap > 12 ||
+      (config.melody_syncopation_prob != 0xFF && config.melody_syncopation_prob > 100) ||
+      config.melody_phrase_length > 8 ||
+      (config.melody_long_note_ratio != 0xFF && config.melody_long_note_ratio > 100) ||
+      (config.melody_chorus_register_shift != INT8_MIN &&
+       (config.melody_chorus_register_shift < -12 || config.melody_chorus_register_shift > 12)) ||
+      config.melody_hook_repetition > 2 || config.melody_use_leading_tone > 2) {
+    return SongConfigError::InvalidMelodyOverride;
+  }
+  if (config.motif_length != 0 && config.motif_length != 1 && config.motif_length != 2 &&
+      config.motif_length != 4) {
+    return SongConfigError::InvalidMotifOverride;
+  }
+  if (config.motif_note_count != 0 &&
+      (config.motif_note_count < 3 || config.motif_note_count > 8)) {
+    return SongConfigError::InvalidMotifOverride;
+  }
+  if (config.motif_motion != 0xFF && config.motif_motion > 5) {
+    return SongConfigError::InvalidMotifOverride;
+  }
+  if (config.motif_register_high > 2 ||
+      (config.motif_rhythm_density != 0xFF && config.motif_rhythm_density > 2) ||
+      config.motif_chord.max_chord_count > 8 ||
+      (config.motif_chord.max_chord_count != 0 && config.motif_chord.max_chord_count < 2)) {
+    return SongConfigError::InvalidMotifOverride;
   }
 
   // Validate call/duration compatibility

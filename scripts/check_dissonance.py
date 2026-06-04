@@ -15,23 +15,13 @@ from dataclasses import dataclass, field
 from typing import Optional
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
 
-
-# Source file mapping for quick navigation
-SOURCE_FILES = {
-    "melody_phrase": "src/track/vocal/melody_designer.cpp",
-    "hook": "src/track/vocal/melody_designer.cpp",
-    "bass_pattern": "src/track/generators/bass.cpp",
-    "chord_voicing": "src/track/generators/chord.cpp",
-    "arpeggio": "src/track/generators/arpeggio.cpp",
-    "aux": "src/track/generators/aux.cpp",
-    "motif": "src/track/generators/motif.cpp",
-    "drums": "src/track/drums/drum_track_generator.cpp",
-    "embellishment": "src/core/melody_embellishment.cpp",
-    "collision_avoid": "src/core/collision_resolver.cpp",
-    "post_process": "src/core/post_processor.cpp",
-}
+# Ensure scripts/ is importable so the music_analyzer package and
+# cli_utils module resolve whether run from repo root or scripts/.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from cli_utils import ProgressCounter, run_cli
+from music_analyzer import BLUEPRINT_NAMES, SOURCE_FILES
+from music_analyzer.issue_parser import Issue, parse_issues
 
 # Track names for display
 TRACK_NAMES = ["vocal", "chord", "bass", "motif", "arpeggio", "aux"]
@@ -66,46 +56,6 @@ SECTION_NAMES = {
     9: "Drop",
 }
 
-# Blueprint names
-BLUEPRINT_NAMES = {
-    0: "Traditional",
-    1: "RhythmLock",
-    2: "StoryPop",
-    3: "Ballad",
-    4: "IdolStandard",
-    5: "IdolHyper",
-    6: "IdolKawaii",
-    7: "IdolCoolPop",
-    8: "IdolEmo",
-}
-
-
-@dataclass
-class Issue:
-    type: str
-    severity: str
-    tick: int
-    bar: int
-    beat: float
-    track: str
-    pitch: int
-    pitch_name: str
-    chord_name: str
-    chord_tones: list[str]
-    provenance_source: str = ""
-    original_pitch: int = 0
-    description: str = ""
-    # For simultaneous_clash: involved notes
-    clash_notes: list[dict] = field(default_factory=list)
-    interval_name: str = ""
-    interval_semitones: int = 0
-    # For sustained_over_chord_change
-    original_chord: str = ""
-    new_chord: str = ""
-    # Track pair (for clash analysis)
-    track_pair: tuple[str, str] = ("", "")
-
-
 @dataclass
 class TestResult:
     seed: int
@@ -138,125 +88,6 @@ class TestResult:
                 f"--chord {self.chord} --blueprint {self.blueprint}")
 
 
-def parse_issues(analysis: dict) -> list[Issue]:
-    """Parse issues from analysis.json into Issue objects."""
-    issues = []
-    for item in analysis.get("issues", []):
-        issue_type = item.get("type", "")
-
-        # Handle provenance - may be in different locations based on issue type
-        prov = item.get("provenance", {})
-        prov_source = prov.get("generation_source", "") or prov.get("source", "")
-
-        if issue_type == "simultaneous_clash":
-            # Clash has multiple notes involved
-            notes = item.get("notes", [])
-            # Collect provenance sources from all notes
-            sources = [n.get("provenance", {}).get("source", "") for n in notes]
-            # Extract track pair
-            tracks = sorted([n.get("track", "") for n in notes])
-            track_pair = (tracks[0], tracks[1]) if len(tracks) >= 2 else ("", "")
-
-            interval_semitones = item.get("interval_semitones", 0)
-
-            issues.append(Issue(
-                type=issue_type,
-                severity=item.get("severity", ""),
-                tick=item.get("tick", 0),
-                bar=item.get("bar", 0),
-                beat=item.get("beat", 0),
-                track=", ".join(n.get("track", "") for n in notes),
-                pitch=notes[0].get("pitch", 0) if notes else 0,
-                pitch_name=", ".join(n.get("name", "") for n in notes),
-                chord_name="",
-                chord_tones=[],
-                provenance_source=", ".join(set(s for s in sources if s)),
-                original_pitch=0,
-                description=f"{item.get('interval_name', '')} clash",
-                clash_notes=notes,
-                interval_name=item.get("interval_name", ""),
-                interval_semitones=interval_semitones,
-                track_pair=track_pair,
-            ))
-        elif issue_type == "sustained_over_chord_change":
-            # Sustained note over chord change
-            issues.append(Issue(
-                type=issue_type,
-                severity=item.get("severity", ""),
-                tick=item.get("tick", 0),
-                bar=item.get("bar", 0),
-                beat=item.get("beat", 0),
-                track=item.get("track", ""),
-                pitch=item.get("pitch", 0),
-                pitch_name=item.get("pitch_name", ""),
-                chord_name=item.get("new_chord", ""),
-                chord_tones=item.get("new_chord_tones", []),
-                provenance_source=prov_source,
-                original_pitch=prov.get("original_pitch", 0),
-                description=f"held over {item.get('original_chord', '')} -> {item.get('new_chord', '')}",
-                original_chord=item.get("original_chord", ""),
-                new_chord=item.get("new_chord", ""),
-            ))
-        elif issue_type == "non_diatonic_note":
-            # Non-diatonic note
-            prov = item.get("provenance", {})
-            issues.append(Issue(
-                type=issue_type,
-                severity=item.get("severity", ""),
-                tick=item.get("tick", 0),
-                bar=item.get("bar", 0),
-                beat=item.get("beat", 0),
-                track=item.get("track", ""),
-                pitch=item.get("pitch", 0),
-                pitch_name=item.get("pitch_name", ""),
-                chord_name="",
-                chord_tones=[],
-                provenance_source=prov.get("source", ""),
-                original_pitch=prov.get("original_pitch", 0),
-                description=f"non-diatonic in {item.get('key', 'C major')}",
-            ))
-        else:
-            # Regular issue (non_chord_tone, etc.)
-            prov = item.get("provenance", {})
-            issues.append(Issue(
-                type=issue_type,
-                severity=item.get("severity", ""),
-                tick=item.get("tick", 0),
-                bar=item.get("bar", 0),
-                beat=item.get("beat", 0),
-                track=item.get("track", ""),
-                pitch=item.get("pitch", 0),
-                pitch_name=item.get("pitch_name", ""),
-                chord_name=item.get("chord_name", ""),
-                chord_tones=item.get("chord_tones", []),
-                provenance_source=prov.get("generation_source", ""),
-                original_pitch=prov.get("original_pitch", 0),
-                description="",
-            ))
-    return issues
-
-
-# Thread-safe counter for progress display
-class ProgressCounter:
-    def __init__(self, total: int):
-        self.total = total
-        self.current = 0
-        self.lock = threading.Lock()
-        self.failed = 0
-        self.warned = 0
-        self.errors = 0
-
-    def increment(self, result: TestResult):
-        with self.lock:
-            self.current += 1
-            if result.error:
-                self.errors += 1
-            elif result.has_critical:
-                self.failed += 1
-            elif result.has_warnings:
-                self.warned += 1
-
-
 def run_single_test(
     cli_path: str,
     seed: int,
@@ -267,8 +98,7 @@ def run_single_test(
     output_dir: Path,
 ) -> TestResult:
     """Run a single generation test and return the result."""
-    cmd = [
-        cli_path,
+    args = [
         "--analyze",
         "--seed", str(seed),
         "--style", str(style),
@@ -276,22 +106,18 @@ def run_single_test(
         "--blueprint", str(blueprint),
     ]
 
-    # Use unique output file per test to avoid race conditions
-    analysis_file = output_dir / f"analysis_{seed}_{style}_{chord}_{blueprint}.json"
-
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            cwd=work_dir,
-        )
+        returncode, message = run_cli(cli_path, args, work_dir, timeout=60)
 
-        if result.returncode != 0:
+        if returncode is None:
             return TestResult(
                 seed=seed, style=style, chord=chord, blueprint=blueprint,
-                error=f"CLI error: {result.stderr[:200]}",
+                error=message,
+            )
+        if returncode != 0:
+            return TestResult(
+                seed=seed, style=style, chord=chord, blueprint=blueprint,
+                error=f"CLI error: {message}",
             )
 
         # Read from the standard analysis.json location
@@ -330,11 +156,6 @@ def run_single_test(
             critical_issues=critical,
         )
 
-    except subprocess.TimeoutExpired:
-        return TestResult(
-            seed=seed, style=style, chord=chord, blueprint=blueprint,
-            error="Timeout (>60s)",
-        )
     except Exception as e:
         return TestResult(
             seed=seed, style=style, chord=chord, blueprint=blueprint,

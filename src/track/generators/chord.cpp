@@ -450,8 +450,10 @@ ChordExtension selectChordExtension(int8_t degree, SectionType section, int bar_
 
   float roll = rng_util::rollFloat(rng, 0.0f, 1.0f);
 
-  // Determine if chord is major or minor based on degree
-  bool is_minor = (degree == 1 || degree == 2 || degree == 5);
+  // Determine chord quality from the shared theory helper so borrowed chords
+  // such as iv stay in sync with getChordNotes()/getExtendedChord().
+  ChordQuality quality = getChordQuality(degree);
+  bool is_minor = (quality == ChordQuality::Minor);
   bool is_dominant = (degree == 4);  // V chord
   bool is_tonic = (degree == 0);     // I chord
 
@@ -1148,9 +1150,7 @@ bool trySecondaryDominant(ChordBarContext& ctx) {
 
   // Second half: secondary dominant (V/x)
   uint8_t sec_dom_root = degreeToRoot(sec_dom.dominant_degree, Key::C);
-  ChordExtension sec_ext =
-      ctx.params.chord_extension.enable_7th ? sec_dom.extension : ChordExtension::None;
-  Chord sec_dom_chord = getExtendedChord(sec_dom.dominant_degree, sec_ext);
+  Chord sec_dom_chord = getExtendedChord(sec_dom.dominant_degree, sec_dom.extension);
   VoicedChord sec_dom_voicing = chord_voicing::selectVoicing(
       sec_dom_root, sec_dom_chord, ctx.voicing, true, ctx.voicing_type, ctx.bass_pitch_mask,
       ctx.rng, ctx.open_subtype, ctx.params.mood, ctx.consecutive_same_voicing);
@@ -1758,12 +1758,18 @@ void generateChordTrackUnified(ChordGenerationMode mode, MidiTrack& track, const
 
       int8_t degree = progression.at(chord_idx);
 
+      // Neighbor degrees for reharmonization gating (cadential IV / adjacent ii).
+      int next_chord_idx_reharm = (chord_idx + 1) % effective_prog_length;
+      int prev_chord_idx_reharm = (chord_idx + effective_prog_length - 1) % effective_prog_length;
+      int8_t next_degree_reharm = progression.at(next_chord_idx_reharm);
+      int8_t prev_degree_reharm = progression.at(prev_chord_idx_reharm);
+
       // === SECTION-BASED REHARMONIZATION ===
       bool is_minor_chord = (degree == 1 || degree == 2 || degree == 5);
       bool is_dominant_chord = (degree == 4);
-      ReharmonizationResult reharm =
-          reharmonizeForSection(degree, section.type, is_minor_chord, is_dominant_chord,
-                                params.chord_extension.enable_7th);
+      ReharmonizationResult reharm = reharmonizeForSection(
+          degree, section.type, is_minor_chord, is_dominant_chord,
+          params.chord_extension.enable_7th, next_degree_reharm, prev_degree_reharm);
       degree = reharm.degree;
       is_minor_chord = (degree == 1 || degree == 2 || degree == 5);
       is_dominant_chord = (degree == 4);

@@ -498,6 +498,58 @@ void applyCollisionAvoidanceWithIntervalConstraint(std::vector<NoteEvent>& notes
   }
 }
 
+void enforceSectionCeiling(std::vector<NoteEvent>& notes, const IHarmonyContext& harmony,
+                           uint8_t vocal_low, uint8_t vocal_high) {
+  for (auto& note : notes) {
+    if (note.note <= vocal_high) continue;
+
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    uint8_t old_pitch = note.note;
+#endif
+
+    // Clamp down to the ceiling, staying as close to the original contour as
+    // possible (a gentle step down, not an octave drop, so the melody and any
+    // tracks tracking the vocal ceiling are not disrupted).
+    int lowered = std::clamp(static_cast<int>(note.note), static_cast<int>(vocal_low),
+                             static_cast<int>(vocal_high));
+
+    // Snap to the nearest diatonic scale tone at or below the ceiling so the
+    // result never exceeds vocal_high (snapping up would re-breach the ceiling).
+    int snapped = snapToNearestScaleTone(lowered, 0);  // C major internally
+    if (snapped > vocal_high) {
+      snapped = snapToNearestScaleTone(lowered - 1, 0);
+    }
+    snapped = std::clamp(snapped, static_cast<int>(vocal_low), static_cast<int>(vocal_high));
+    uint8_t candidate = static_cast<uint8_t>(snapped);
+
+    // Prefer a collision-safe result; if the snapped scale tone clashes, try the
+    // next diatonic scale tone an octave lower (or the same pitch class an octave
+    // down) so the vocal stays diatonic. Never fall back to a chromatic pitch.
+    if (!harmony.isConsonantWithOtherTracks(candidate, note.start_tick, note.duration,
+                                            TrackRole::Vocal)) {
+      int alt = snapped - 12;  // Same scale tone, octave lower
+      if (alt >= vocal_low &&
+          harmony.isConsonantWithOtherTracks(static_cast<uint8_t>(alt), note.start_tick,
+                                             note.duration, TrackRole::Vocal)) {
+        candidate = static_cast<uint8_t>(alt);
+      }
+      // Otherwise keep the (diatonic) snapped pitch even if it clashes:
+      // a transient clash is preferable to a chromatic vocal note.
+    }
+
+    note.note = candidate;
+#ifdef MIDISKETCH_NOTE_PROVENANCE
+    if (old_pitch != note.note) {
+      if (note.prov_original_pitch == 0) {
+        note.prov_original_pitch = old_pitch;
+      }
+      note.addTransformStep(TransformStepType::RangeClamp, old_pitch, note.note,
+                            static_cast<int16_t>(vocal_low), static_cast<int16_t>(vocal_high));
+    }
+#endif
+  }
+}
+
 void mergeSamePitchNotes(std::vector<NoteEvent>& notes, Tick max_gap) {
   if (notes.size() < 2) return;
 

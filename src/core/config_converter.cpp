@@ -319,6 +319,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
   params.vocal_groove = config.vocal_groove;
   params.enable_syncopation = config.enable_syncopation;
   params.drive_feel = config.drive_feel;
+  params.melody_params.mora_rhythm_mode = static_cast<MoraRhythmMode>(config.mora_rhythm_mode);
 
   // Apply MelodicComplexity-specific parameter adjustments
   applyMelodicComplexity(params);
@@ -385,7 +386,7 @@ GeneratorParams ConfigConverter::convert(const SongConfig& config) {
     params.motif_note_count_explicit = true;
   }
   if (config.motif_motion != 0xFF) {
-    params.motif.motion = static_cast<MotifMotion>(std::min(config.motif_motion, uint8_t(4)));
+    params.motif.motion = static_cast<MotifMotion>(std::min(config.motif_motion, uint8_t(5)));
   }
   if (config.motif_register_high != 0) {
     params.motif.register_high = (config.motif_register_high == 2);

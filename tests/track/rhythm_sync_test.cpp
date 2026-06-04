@@ -1414,16 +1414,20 @@ TEST_F(RhythmLockVocalQuality, RhythmSyncVocalNoIsolatedShortNotes) {
         bool next_short = (i + 1 < sorted.size() && sorted[i + 1].duration < min_interval);
 
         if (!prev_short && !next_short) {
-          // Check exceptions: phrase boundary vicinity
+          // Check exceptions: phrase boundary vicinity.
+          // A note adjacent to an inter-phrase breath rest is a deliberate
+          // phrase ending, not a stray isolated note. The vocal generator now
+          // inserts an 8th-note (TICK_EIGHTH) breath at phrase boundaries for
+          // breathability, so any gap >= an 8th note counts as a phrase break.
           bool near_phrase_boundary = false;
           if (i > 0) {
             Tick gap_before =
                 sorted[i].start_tick - (sorted[i - 1].start_tick + sorted[i - 1].duration);
-            if (gap_before > TICK_QUARTER) near_phrase_boundary = true;
+            if (gap_before >= TICK_EIGHTH) near_phrase_boundary = true;
           }
           if (i + 1 < sorted.size()) {
             Tick gap_after = sorted[i + 1].start_tick - (sorted[i].start_tick + sorted[i].duration);
-            if (gap_after > TICK_QUARTER) near_phrase_boundary = true;
+            if (gap_after >= TICK_EIGHTH) near_phrase_boundary = true;
           }
           // Last note in section is also exempt
           bool is_last = (i == sorted.size() - 1);

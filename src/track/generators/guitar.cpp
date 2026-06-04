@@ -8,6 +8,7 @@
 #include "core/harmonic_rhythm.h"
 #include "core/i_harmony_context.h"
 #include "core/note_creator.h"
+#include "core/pitch_utils.h"
 #include "core/preset_data.h"
 #include "core/production_blueprint.h"
 #include "core/rng_util.h"
@@ -61,14 +62,19 @@ static std::vector<uint8_t> buildGuitarChordPitches(uint8_t root, const Chord& c
     while (r < kBaseOctave) r += 12;
     while (r >= kBaseOctave + 12) r -= 12;
     pitches.push_back(r);
-    pitches.push_back(r + 7);  // perfect 5th
+    // Perfect 5th: keep within guitar range. If above kGuitarHigh, fold down an
+    // octave (becomes a perfect 4th below the root) so the chord stays in range.
+    int fifth = static_cast<int>(r) + 7;
+    if (fifth > kGuitarHigh) fifth -= 12;
+    if (fifth >= kGuitarLow && fifth <= kGuitarHigh) {
+      pitches.push_back(static_cast<uint8_t>(fifth));
+    }
     return pitches;
   }
 
   // Full chord voicing
   uint8_t r = root;
-  while (r < kBaseOctave) r += 12;
-  while (r >= kBaseOctave + 12) r -= 12;
+  r = static_cast<uint8_t>(normalizeToOctave(r, kBaseOctave));
 
   for (uint8_t i = 0; i < chord.note_count; ++i) {
     if (chord.intervals[i] >= 0) {
@@ -88,6 +94,44 @@ static std::vector<uint8_t> buildGuitarChordPitches(uint8_t root, const Chord& c
   }
 
   return pitches;
+}
+
+/// @brief Find a consonant pitch for a sustained chordal hit.
+///
+/// Guitar strums and power chords are vertical harmony, so a tone that clashes
+/// must not be remapped to an arbitrary nearby pitch (that creates intra-chord
+/// dissonance). Instead, try the original pitch first, then octave displacements
+/// (+12, -12) that preserve the pitch class, keeping the note within the guitar
+/// range. Returns the first consonant candidate, or 0 if none is safe (caller
+/// should then drop the tone).
+///
+/// @param harmony Harmony context for consonance checking
+/// @param desired Desired pitch (chord tone)
+/// @param pos Onset tick
+/// @param dur Note duration
+/// @param range_high Effective upper bound (vocal-aware ceiling)
+/// @return Consonant pitch in [kGuitarLow, range_high], or 0 if none found
+static uint8_t resolveSustainedChordPitch(IHarmonyContext& harmony, uint8_t desired, Tick pos,
+                                          Tick dur, uint8_t range_high) {
+  // Candidate order: original, octave up, octave down. Pitch class is preserved
+  // so the candidate remains a valid chord tone. Octave-up is preferred over
+  // octave-down so the alternative keeps headroom for downstream octave
+  // adjustments (post-processing voice limiting can shift notes down an octave).
+  const int candidates[] = {static_cast<int>(desired), static_cast<int>(desired) + 12,
+                            static_cast<int>(desired) - 12};
+  // Floor for octave-down candidates: leave one octave of headroom above
+  // kGuitarLow so a later -12 octave shift cannot push below the physical low.
+  const int octave_down_floor = kGuitarLow + 12;
+  for (int cand : candidates) {
+    if (cand < kGuitarLow || cand > range_high) continue;
+    // Octave-down candidate must stay clear of the bottom octave.
+    if (cand < static_cast<int>(desired) && cand < octave_down_floor) continue;
+    uint8_t p = static_cast<uint8_t>(cand);
+    if (harmony.isConsonantWithOtherTracks(p, pos, dur, TrackRole::Guitar)) {
+      return p;
+    }
+  }
+  return 0;  // No consonant octave available
 }
 
 // ============================================================================
@@ -211,45 +255,70 @@ static void generateFingerpickBar(MidiTrack& track, IHarmonyContext& harmony, Ti
 }
 
 /// Strum pattern: chordal strums on rhythmic grid.
-/// Pattern: D-x-DU-D-x-DU (D=downstrum, U=upstrum, x=rest)
+/// Normal: D-x-DU-D-x-DU (D=downstrum, U=upstrum, x=rest)
+/// High/Peak energy: straight 8th down-up strumming (J-pop chorus comping)
 static void generateStrumBar(MidiTrack& track, IHarmonyContext& harmony, Tick bar_start,
                              Tick bar_end, const std::vector<uint8_t>& pitches, SectionType section,
-                             uint8_t base_vel, std::mt19937& rng) {
+                             SectionEnergy energy, uint8_t base_vel, std::mt19937& rng) {
   if (pitches.empty()) return;
 
-  // Strum rhythm: 8th note grid, hits on beats 1, 2.5, 3, 4.5
+  // Normal strum rhythm: 8th note grid, hits on beats 1, 2.5, 3, 4.5
   // (positions 0, 3, 4, 7 in 8th-note grid)
-  static constexpr int kStrumPositions[] = {0, 3, 4, 7};
-  static constexpr int kStrumCount = 4;
+  static constexpr int kStrumPositionsNormal[] = {0, 3, 4, 7};
+  // Dense strum rhythm: straight 8ths for high-energy sections
+  static constexpr int kStrumPositionsDense[] = {0, 1, 2, 3, 4, 5, 6, 7};
+
+  bool dense = (energy == SectionEnergy::High || energy == SectionEnergy::Peak);
+  const int* strum_positions = dense ? kStrumPositionsDense : kStrumPositionsNormal;
+  int strum_count = dense ? 8 : 4;
 
   Tick strum_dur = static_cast<Tick>(TICK_EIGHTH * 0.75f);
 
-  for (int s = 0; s < kStrumCount; ++s) {
-    Tick pos = bar_start + kStrumPositions[s] * TICK_EIGHTH;
+  for (int s = 0; s < strum_count; ++s) {
+    Tick pos = bar_start + strum_positions[s] * TICK_EIGHTH;
     if (pos + strum_dur > bar_end) break;
 
-    // Occasional skip for groove variation (20% chance on weak positions)
-    if (s > 0 && rng_util::rollRange(rng, 0, 5) == 0) continue;
+    bool is_upstroke = (strum_positions[s] % 2 == 1);
 
-    int beat_pos = kStrumPositions[s] / 2;
+    // Occasional skip for groove variation
+    // (20% on weak positions normally; 25% on upstrokes in dense mode)
+    if (dense) {
+      if (is_upstroke && rng_util::rollRange(rng, 0, 3) == 0) continue;
+    } else {
+      if (s > 0 && rng_util::rollRange(rng, 0, 5) == 0) continue;
+    }
+
+    int beat_pos = strum_positions[s] / 2;
     uint8_t vel = calculateGuitarVelocity(base_vel, section, GuitarStyle::Strum, beat_pos);
+
+    // Upstrokes are lighter for natural strumming feel
+    if (dense && is_upstroke) {
+      vel = static_cast<uint8_t>(std::max(40, static_cast<int>(vel) - 10));
+    }
 
     // Per-onset vocal ceiling
     uint8_t effective_high = getEffectiveHighForVocal(harmony, pos, pos + strum_dur);
 
     // Strum all chord notes simultaneously.
-    // For chordal strums, pre-check each pitch against other tracks and skip
-    // unsafe ones rather than letting collision avoidance remap them.
-    // Remapped pitches can cause intra-chord dissonance (e.g., B3→C4 next to D4).
+    // For chordal strums, pre-check each pitch against other tracks. Rather than
+    // letting collision avoidance remap to an arbitrary pitch (which can cause
+    // intra-chord dissonance, e.g. B3→C4 next to D4), try the original pitch
+    // then octave displacements that preserve the pitch class. Only drop the
+    // tone if no octave is consonant, keeping voicings >= 3 voices when possible.
+    std::vector<uint8_t> placed;
+    placed.reserve(pitches.size());
     for (uint8_t pitch : pitches) {
-      if (!harmony.isConsonantWithOtherTracks(pitch, pos, strum_dur, TrackRole::Guitar)) {
-        continue;  // Skip this chord tone rather than remap
-      }
+      uint8_t safe = resolveSustainedChordPitch(harmony, pitch, pos, strum_dur, effective_high);
+      if (safe == 0) continue;  // No consonant octave: drop this tone
+
+      // Avoid duplicate pitches within the same strum (octave fold may collide).
+      if (std::find(placed.begin(), placed.end(), safe) != placed.end()) continue;
+      placed.push_back(safe);
 
       NoteOptions opts;
       opts.start = pos;
       opts.duration = strum_dur;
-      opts.desired_pitch = pitch;
+      opts.desired_pitch = safe;
       opts.velocity = vel;
       opts.role = TrackRole::Guitar;
       opts.preference = PitchPreference::NoCollisionCheck;  // Already verified safe
@@ -281,16 +350,21 @@ static void generatePowerChordBar(MidiTrack& track, IHarmonyContext& harmony, Ti
     // Per-onset vocal ceiling
     uint8_t effective_high = getEffectiveHighForVocal(harmony, pos, pos + dur);
 
-    // Power chord: pre-check and skip unsafe pitches (same as strum)
+    // Power chord: pre-check each pitch; try octave displacement before dropping
+    // (same strategy as strum) to keep root+5th intact when possible.
+    std::vector<uint8_t> placed;
+    placed.reserve(pitches.size());
     for (uint8_t pitch : pitches) {
-      if (!harmony.isConsonantWithOtherTracks(pitch, pos, dur, TrackRole::Guitar)) {
-        continue;
-      }
+      uint8_t safe = resolveSustainedChordPitch(harmony, pitch, pos, dur, effective_high);
+      if (safe == 0) continue;
+
+      if (std::find(placed.begin(), placed.end(), safe) != placed.end()) continue;
+      placed.push_back(safe);
 
       NoteOptions opts;
       opts.start = pos;
       opts.duration = dur;
-      opts.desired_pitch = pitch;
+      opts.desired_pitch = safe;
       opts.velocity = vel;
       opts.role = TrackRole::Guitar;
       opts.preference = PitchPreference::NoCollisionCheck;
@@ -322,8 +396,7 @@ static void generatePedalToneBar(MidiTrack& track, IHarmonyContext& harmony, Tic
 
   // Place root in guitar range
   uint8_t base_root = root_pitch;
-  while (base_root < kBaseOctave) base_root += 12;
-  while (base_root >= kBaseOctave + 12) base_root -= 12;
+  base_root = static_cast<uint8_t>(normalizeToOctave(base_root, kBaseOctave));
 
   // Decoration chance: 5-10% on non-accent positions
 
@@ -384,8 +457,7 @@ static void generateRhythmChordBar(MidiTrack& track, IHarmonyContext& harmony, T
 
   // Place root in guitar range
   uint8_t base_root = root_pitch;
-  while (base_root < kBaseOctave) base_root += 12;
-  while (base_root >= kBaseOctave + 12) base_root -= 12;
+  base_root = static_cast<uint8_t>(normalizeToOctave(base_root, kBaseOctave));
 
   uint8_t fifth = base_root + 7;  // perfect 5th
 
@@ -438,8 +510,7 @@ static void generateTremoloPickBar(MidiTrack& track, IHarmonyContext& harmony, T
 
   // Place root in guitar range
   uint8_t base_root = root_pitch;
-  while (base_root < kBaseOctave) base_root += 12;
-  while (base_root >= kBaseOctave + 12) base_root -= 12;
+  base_root = static_cast<uint8_t>(normalizeToOctave(base_root, kBaseOctave));
 
   // C major scale tones for diatonic stepping
   static constexpr int kScaleUp[] = {0, 2, 4, 5, 7, 9, 11, 12};
@@ -592,13 +663,13 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
   // Helper to generate one half-bar with the appropriate style.
   // PedalTone and RhythmChord take root pitch directly; others use chord pitches.
   auto generateHalf = [&](Tick start, Tick end, const std::vector<uint8_t>& pitches, uint8_t root,
-                          SectionType sec_type, GuitarStyle cur_style) {
+                          SectionType sec_type, SectionEnergy energy, GuitarStyle cur_style) {
     switch (cur_style) {
       case GuitarStyle::Fingerpick:
         generateFingerpickBar(track, *ctx.harmony, start, end, pitches, sec_type, base_vel);
         break;
       case GuitarStyle::Strum:
-        generateStrumBar(track, *ctx.harmony, start, end, pitches, sec_type, base_vel, rng);
+        generateStrumBar(track, *ctx.harmony, start, end, pitches, sec_type, energy, base_vel, rng);
         break;
       case GuitarStyle::PowerChord:
         generatePowerChordBar(track, *ctx.harmony, start, end, pitches, sec_type, base_vel);
@@ -667,11 +738,13 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
         if (bc.section.phrase_tail_rest && isPhraseTail(bc.bar_index, bc.section.bars)) {
           if (isLastBar(bc.bar_index, bc.section.bars)) {
             // Last bar: generate first half only (second half is silence)
-            generateHalf(bc.bar_start, half_bar, pitches, root, bc.section.type, style);
+            generateHalf(bc.bar_start, half_bar, pitches, root, bc.section.type, bc.section.energy,
+                         style);
             return;
           }
           // Penultimate bar: generate first half normally, second half with sparse feel
-          generateHalf(bc.bar_start, half_bar, pitches, root, bc.section.type, style);
+          generateHalf(bc.bar_start, half_bar, pitches, root, bc.section.type, bc.section.energy,
+                       style);
 
           int next_idx = bc.harmonic.subdivision == 2
                              ? getChordIndexForSubdividedBar(abs_bar, 1, progression.length)
@@ -680,7 +753,8 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
           uint8_t root2 = degreeToRoot(deg2, Key::C);
           Chord chord2 = getChordNotes(deg2);
           auto pitches_2nd = buildGuitarChordPitches(root2, chord2, style);
-          generateHalf(half_bar, bc.bar_end, pitches_2nd, root2, bc.section.type, style);
+          generateHalf(half_bar, bc.bar_end, pitches_2nd, root2, bc.section.type, bc.section.energy,
+                       style);
           return;
         }
 
@@ -690,7 +764,7 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
 
         // Generate first half (or full bar)
         generateHalf(bc.bar_start, split ? half_bar : bc.bar_end, pitches, root, bc.section.type,
-                     style);
+                     bc.section.energy, style);
 
         // Generate second half with next chord if split
         if (split) {
@@ -704,7 +778,8 @@ void GuitarGenerator::doGenerateFullTrack(MidiTrack& track, const FullTrackConte
           uint8_t root2 = degreeToRoot(deg2, Key::C);
           Chord chord2 = getChordNotes(deg2);
           auto pitches_2nd = buildGuitarChordPitches(root2, chord2, style);
-          generateHalf(half_bar, bc.bar_end, pitches_2nd, root2, bc.section.type, style);
+          generateHalf(half_bar, bc.bar_end, pitches_2nd, root2, bc.section.type, bc.section.energy,
+                       style);
         }
       });
 }

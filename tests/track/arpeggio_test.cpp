@@ -740,9 +740,19 @@ TEST_F(ArpeggioTest, ChordTrackArpeggioSyncInSlowDensity) {
   for (const auto& note : arpeggio.notes()) {
     if (note.start_tick < bar3_start || note.start_tick >= bar3_end) continue;
     int8_t degree = harmony.getChordDegreeAt(note.start_tick);
-    EXPECT_TRUE(isChordTone(note.note, degree))
-        << "Arpeggio bar 3 note " << static_cast<int>(note.note)
-        << " should be chord tone of degree " << static_cast<int>(degree);
+    int pc = getPitchClass(note.note);
+    bool is_tone = isChordTone(note.note, degree);
+    // Over a registered secondary-dominant span (V/IV = C7, degree 0), the
+    // chord is voiced as Dom7, so getChordTonesAt() now exposes the dominant
+    // 7th to the arpeggio. Allow the 7th extension here just like the chord
+    // track loop below.
+    if (!is_tone) {
+      constexpr int SCALE[] = {0, 2, 4, 5, 7, 9, 11};
+      int root_pc = SCALE[degree % 7];
+      is_tone = (pc == (root_pc + 10) % 12) || (pc == (root_pc + 11) % 12);
+    }
+    EXPECT_TRUE(is_tone) << "Arpeggio bar 3 note " << static_cast<int>(note.note)
+                         << " should be chord tone of degree " << static_cast<int>(degree);
   }
 
   for (const auto& note : chord_track.notes()) {

@@ -967,11 +967,12 @@ TEST_F(GuitarGenerationTest, MoodStyleMappingCorrect) {
 // ============================================================================
 
 TEST_F(GuitarGenerationTest, AllDisabledMoodsProduceNoGuitarNotes) {
-  // All 13 moods with guitar == 0xFF should produce zero guitar notes
+  // All 10 moods with guitar == 0xFF should produce zero guitar notes.
+  // BrightUpbeat/MidPop/IdolPop now enable clean guitar comping (idol
+  // references keep rhythm guitar through verses and choruses).
   std::vector<Mood> disabled_moods = {
-      Mood::BrightUpbeat, Mood::EnergeticDance, Mood::MidPop,    Mood::Sentimental, Mood::Chill,
-      Mood::DarkPop,      Mood::Dramatic,       Mood::ModernPop, Mood::ElectroPop,  Mood::IdolPop,
-      Mood::Synthwave,    Mood::FutureBass,     Mood::Trap};
+      Mood::EnergeticDance, Mood::Sentimental, Mood::Chill,     Mood::DarkPop,    Mood::Dramatic,
+      Mood::ModernPop,      Mood::ElectroPop,  Mood::Synthwave, Mood::FutureBass, Mood::Trap};
 
   for (Mood mood : disabled_moods) {
     params_.mood = mood;

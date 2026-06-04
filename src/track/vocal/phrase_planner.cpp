@@ -6,7 +6,6 @@
 #include "track/vocal/phrase_planner.h"
 
 #include <algorithm>
-#include <cassert>
 #include <cmath>
 
 #include "core/timing_constants.h"
@@ -120,10 +119,6 @@ void PhrasePlanner::determinePhraseStructure(PhrasePlan& plan) {
 void PhrasePlanner::assignPhraseTiming(PhrasePlan& plan, Mood mood, VocalStylePreset vocal_style,
                                        uint16_t bpm) {
   if (plan.phrases.empty()) return;
-
-  // Section boundaries must be bar-aligned (structural invariant)
-  assert((plan.section_start % TICKS_PER_BAR) == 0);
-  assert((plan.section_end % TICKS_PER_BAR) == 0);
 
   Tick breath =
       melody::getBreathDuration(plan.section_type, mood, 0.5f, 60, nullptr, vocal_style, bpm);

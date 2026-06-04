@@ -34,6 +34,15 @@ export const ConfigError = {
   InvalidMotifRepeatScope: 21,
   InvalidArrangementGrowth: 22,
   InvalidModulationTiming: 23,
+  InvalidBlueprint: 24,
+  InvalidCallSetting: 25,
+  InvalidEnergyCurve: 26,
+  InvalidDriveFeel: 27,
+  InvalidMoraRhythmMode: 28,
+  InvalidProbability: 29,
+  InvalidArpeggioRange: 30,
+  InvalidMelodyOverride: 31,
+  InvalidMotifOverride: 32,
 } as const;
 
 export type ConfigErrorCode = (typeof ConfigError)[keyof typeof ConfigError];
@@ -152,6 +161,7 @@ export const HookIntensity = {
   Light: 1,
   Normal: 2,
   Strong: 3,
+  Maximum: 4, // Behavioral Loop: maximum repetition, simple patterns only
 } as const;
 
 // Vocal groove feel constants
@@ -180,4 +190,6 @@ export const VocalStylePreset = {
   CoolSynth: 10,
   CuteAffected: 11,
   PowerfulShout: 12,
+  // Extended styles (13+)
+  KPop: 13, // K-POP style (syncopation, hooks, rap-like passages)
 } as const;

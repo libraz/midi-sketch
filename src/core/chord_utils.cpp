@@ -43,9 +43,10 @@ ChordTones getChordTones(int8_t degree) {
 std::vector<int> getChordTonePitchClasses(int8_t degree) {
   std::vector<int> result;
 
-  // Normalize degree to 0-6 range
-  int normalized = ((degree % 7) + 7) % 7;
-  int root_pc = SCALE[normalized];
+  // Get root pitch class from degree. Use degreeToSemitone() so borrowed
+  // degrees (8=bVI, 10=bVII, 11=bIII, 12=iv, 13=bII, 14=#IVdim) resolve to
+  // their correct chromatic root instead of collapsing into 0-6 via %7.
+  int root_pc = ((degreeToSemitone(degree) % 12) + 12) % 12;
 
   // Get chord from chord.cpp for accurate intervals
   Chord chord = getChordNotes(degree);
@@ -75,21 +76,37 @@ std::vector<int> getGuideTonePitchClasses(int8_t degree) {
   if (chord.note_count > 3) {
     guides.push_back((root_pc + chord.intervals[3]) % 12);
   } else {
-    // For triads, infer diatonic 7th from scale degree
-    // Major chords (I, IV): major 7th (11 semitones)
-    // Dominant (V): minor 7th (10 semitones)
-    // Minor chords (ii, iii, vi): minor 7th (10 semitones)
-    // Diminished (vii): minor 7th (10 semitones)
-    int normalized = ((degree % 7) + 7) % 7;
-    int seventh_interval = 0;
-    switch (normalized) {
-      case 0:  // I - major 7th
-      case 3:  // IV - major 7th
-        seventh_interval = 11;
-        break;
-      default:  // ii, iii, V, vi, vii - minor 7th
-        seventh_interval = 10;
-        break;
+    // For triads, infer the diatonic 7th above the root.
+    //
+    // Diatonic degrees (intervals measured within the C major scale):
+    //   I  (0): major 7th (11)  -> CMaj7
+    //   ii (1): minor 7th (10)  -> Dm7
+    //   iii(2): minor 7th (10)  -> Em7
+    //   IV (3): major 7th (11)  -> FMaj7
+    //   V  (4): minor 7th (10)  -> G7 (dominant)
+    //   vi (5): minor 7th (10)  -> Am7
+    //   vii(6): minor 7th (10)  -> Bm7b5 (B + 10 semitones = A, diatonic).
+    //           NOT 9 (diminished 7th = Ab, non-diatonic Bdim7).
+    //
+    // Borrowed chords (degree > 6): there is no single in-key 7th, so pick by
+    // quality. Borrowed major chords (bVI, bVII, bIII, bII) take a minor 7th
+    // (Mixolydian/dominant color, the most idiomatic for modal interchange),
+    // borrowed minor iv takes a minor 7th (Fm7), and diminished #IVdim takes a
+    // minor 7th (yielding a half-diminished color, parallel to vii°).
+    int seventh_interval;
+    if (degree >= 0 && degree <= 6) {
+      switch (degree) {
+        case 0:  // I  - major 7th
+        case 3:  // IV - major 7th
+          seventh_interval = 11;
+          break;
+        default:  // ii, iii, V, vi, vii - minor 7th (vii: B + 10 = A, half-dim)
+          seventh_interval = 10;
+          break;
+      }
+    } else {
+      // Borrowed chords: minor 7th color regardless of triad quality.
+      seventh_interval = 10;
     }
     guides.push_back((root_pc + seventh_interval) % 12);
   }
@@ -111,9 +128,30 @@ std::vector<int> getScalePitchClasses(uint8_t key) {
 std::vector<int> getAvailableTensionPitchClasses(int8_t degree) {
   std::vector<int> result;
 
-  // Normalize degree to 0-6 range
+  // Root pitch class via degreeToSemitone() so borrowed degrees resolve to the
+  // correct chromatic root (not collapsed into 0-6 by %7).
+  int root_pc = ((degreeToSemitone(degree) % 12) + 12) % 12;
+
+  // For borrowed chords there is no single canonical diatonic-tension set. Use a
+  // conservative selection based on chord quality: major borrowed chords get the
+  // safe 9th, minor borrowed chords (iv) get 9th + 11th, diminished (#IVdim) gets
+  // the 11th only. This mirrors the diatonic logic below without guessing at
+  // modal-interchange-specific colors.
+  if (degree < 0 || degree > 6) {
+    ChordQuality quality = getChordQuality(degree);
+    if (quality == ChordQuality::Diminished) {
+      result.push_back((root_pc + 5) % 12);  // 11th
+    } else if (quality == ChordQuality::Minor) {
+      result.push_back((root_pc + 2) % 12);  // 9th
+      result.push_back((root_pc + 5) % 12);  // 11th
+    } else {
+      result.push_back((root_pc + 2) % 12);  // 9th
+    }
+    return result;
+  }
+
+  // Normalize degree to 0-6 range (only reached for diatonic degrees).
   int normalized = ((degree % 7) + 7) % 7;
-  int root_pc = SCALE[normalized];
 
   // Available tensions by degree (in semitones from root):
   // I (0): 9th (+2), 13th (+9) - avoid 11th (#4 clashes with 3rd)

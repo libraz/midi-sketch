@@ -1,6 +1,16 @@
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { CompositionStyle, init, MidiSketch, SongConfigBuilder } from '../../js/src/index';
+import {
+  CompositionStyle,
+  deserializeConfig,
+  HookIntensity,
+  init,
+  MidiSketch,
+  serializeConfig,
+  SongConfigBuilder,
+  VocalStylePreset,
+} from '../../js/src/index';
+import type { SongConfig } from '../../js/src/index';
 
 describe('SongConfigBuilder', () => {
   beforeAll(async () => {
@@ -13,6 +23,10 @@ describe('SongConfigBuilder', () => {
       const builder = new SongConfigBuilder(0);
       const config = builder.build();
       expect(config.stylePresetId).toBe(0);
+      expect(config.guitarEnabled).toBe(true);
+      // callSetting Auto(0) -> callEnabled undefined (Auto/Disabled distinction preserved)
+      expect(config.callEnabled).toBeUndefined();
+      expect(config.callSetting).toBe(0);
     });
 
     it('should create builder with default config for style 1', () => {
@@ -138,6 +152,7 @@ describe('SongConfigBuilder', () => {
       });
       const config = builder.build();
       expect(config.callEnabled).toBe(true);
+      expect(config.callSetting).toBe(1);
       expect(config.callNotesEnabled).toBe(true);
       expect(config.callDensity).toBe(2);
       expect(config.introChant).toBe(1);
@@ -347,6 +362,7 @@ describe('SongConfigBuilder', () => {
 
       const config = builder.build();
       expect(config.callEnabled).toBe(true);
+      expect(config.callSetting).toBe(1);
     });
 
     it('should auto-enable call for vocalStyle=9 (BrightKira)', () => {
@@ -355,6 +371,7 @@ describe('SongConfigBuilder', () => {
 
       const config = builder.build();
       expect(config.callEnabled).toBe(true);
+      expect(config.callSetting).toBe(1);
     });
 
     it('should auto-enable call for vocalStyle=11 (CuteAffected)', () => {
@@ -363,6 +380,7 @@ describe('SongConfigBuilder', () => {
 
       const config = builder.build();
       expect(config.callEnabled).toBe(true);
+      expect(config.callSetting).toBe(1);
     });
 
     it('should not override explicitly set callEnabled=false', () => {
@@ -372,6 +390,14 @@ describe('SongConfigBuilder', () => {
 
       const config = builder.build();
       expect(config.callEnabled).toBe(false); // Should remain false
+      expect(config.callSetting).toBe(2); // Explicit Disabled
+    });
+
+    it('should preserve callSetting=Auto separately from callEnabled=false', () => {
+      const builder = new SongConfigBuilder(0).setCall({ setting: 0 });
+      const config = builder.build();
+      expect(config.callEnabled).toBe(false);
+      expect(config.callSetting).toBe(0);
     });
   });
 
@@ -516,6 +542,80 @@ describe('SongConfigBuilder', () => {
         sketch1.destroy();
         sketch2.destroy();
       }
+    });
+  });
+
+  describe('serializeConfig / deserializeConfig round-trip', () => {
+    // Build a minimal config from defaults, then override specific fields.
+    function baseConfig(overrides: Partial<SongConfig>): SongConfig {
+      const config = new SongConfigBuilder(0).build();
+      return { ...config, ...overrides };
+    }
+
+    it('should preserve callSetting=0 (Auto) through round-trip', () => {
+      const json = serializeConfig(baseConfig({ callSetting: 0 }));
+      const restored = deserializeConfig(json);
+      expect(restored.callSetting).toBe(0);
+      // Auto -> callEnabled undefined (Auto/Disabled distinction preserved)
+      expect(restored.callEnabled).toBeUndefined();
+    });
+
+    it('should preserve callSetting=1 (Enabled) through round-trip', () => {
+      const json = serializeConfig(baseConfig({ callSetting: 1 }));
+      const restored = deserializeConfig(json);
+      expect(restored.callSetting).toBe(1);
+      expect(restored.callEnabled).toBe(true);
+    });
+
+    it('should preserve callSetting=2 (Disabled) through round-trip', () => {
+      const json = serializeConfig(baseConfig({ callSetting: 2 }));
+      const restored = deserializeConfig(json);
+      expect(restored.callSetting).toBe(2);
+      // Disabled must not collapse into Auto
+      expect(restored.callEnabled).toBe(false);
+    });
+
+    it('should serialize chordExtTritoneSub/Prob nested under chord_extension', () => {
+      const json = serializeConfig(
+        baseConfig({ chordExtTritoneSub: true, chordExtTritoneSubProb: 0.7 }),
+      );
+      const obj = JSON.parse(json) as {
+        chord_extension?: { tritone_sub?: boolean; tritone_sub_probability?: number };
+      };
+      expect(obj.chord_extension?.tritone_sub).toBe(true);
+      expect(obj.chord_extension?.tritone_sub_probability).toBe(0.7);
+
+      const restored = deserializeConfig(json);
+      expect(restored.chordExtTritoneSub).toBe(true);
+      expect(restored.chordExtTritoneSubProb).toBe(0.7);
+    });
+
+    it('should serialize arpeggioBaseVelocity nested under arpeggio', () => {
+      const json = serializeConfig(baseConfig({ arpeggioBaseVelocity: 110 }));
+      const obj = JSON.parse(json) as { arpeggio?: { base_velocity?: number } };
+      expect(obj.arpeggio?.base_velocity).toBe(110);
+
+      const restored = deserializeConfig(json);
+      expect(restored.arpeggioBaseVelocity).toBe(110);
+    });
+  });
+
+  describe('VocalConfig serialization', () => {
+    it('should serialize keepMotif as keep_motif', async () => {
+      const { serializeVocalConfig } = await import('../../js/src/config-fields');
+      const json = serializeVocalConfig({ seed: 1, keepMotif: true });
+      const obj = JSON.parse(json) as { keep_motif?: boolean };
+      expect(obj.keep_motif).toBe(true);
+    });
+  });
+
+  describe('enum constants match C++', () => {
+    it('HookIntensity.Maximum should be 4', () => {
+      expect(HookIntensity.Maximum).toBe(4);
+    });
+
+    it('VocalStylePreset.KPop should be 13', () => {
+      expect(VocalStylePreset.KPop).toBe(13);
     });
   });
 });
